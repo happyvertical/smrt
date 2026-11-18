@@ -24,24 +24,28 @@ import {
   type SmrtObject,
 } from '@happyvertical/smrt-core';
 import {
-  decideMailAccess,
+  assertHydratedMailAccess,
   deniedMailAccountIds,
-  getMailAccessConfig,
+  getEffectiveMailAccessConfig,
   inMailSystemAccess,
+  learnMailAccessOptions,
   MailAccessError,
   runWithMailSystemAccess,
 } from './access.js';
+import { Account } from './models/Account.js';
 import { Attachment } from './models/Attachment.js';
 import { EmailFolder } from './models/EmailFolder.js';
 import { Message } from './models/Message.js';
 
-type Kind = 'message' | 'folder' | 'attachment';
+type Kind = 'message' | 'folder' | 'attachment' | 'account';
 
 const NAME_FALLBACK: Record<string, Kind> = {
   Message: 'message',
   Email: 'message',
   EmailFolder: 'folder',
   Attachment: 'attachment',
+  Account: 'account',
+  EmailAccount: 'account',
   EmailAttachment: 'attachment',
 };
 
@@ -63,6 +67,7 @@ function kindOf(className: string, context: InterceptorContext): Kind | null {
     if (descends(ctor, Message)) return 'message';
     if (descends(ctor, EmailFolder)) return 'folder';
     if (descends(ctor, Attachment)) return 'attachment';
+    if (descends(ctor, Account)) return 'account';
     return null;
   }
   return NAME_FALLBACK[className] ?? null;
@@ -74,75 +79,41 @@ const MAX_EXCLUDED_IDS = 900;
 function restrict(
   where: ListOptions['where'],
   denied: string[],
-  column = 'accountId',
+  unaccounted: Record<string, unknown>[],
 ): ListOptions['where'] {
   const groups: Record<string, unknown>[][] = Array.isArray(where)
     ? where
     : [[where ?? {}]];
-  // NOT IN drops NULL accountIds, which are not an owned account's rows.
+  // NOT IN drops NULL accountIds, so rows with no account are added back
+  // explicitly, and only the shapes that are provably not a mailbox's.
   return groups.flatMap((group) => [
-    [...group, { [`${column} not in`]: denied }],
-    [...group, { [column]: null }],
+    [...group, { 'accountId not in': denied }],
+    ...unaccounted.map((extra) => [...group, extra]),
   ]);
 }
 
-/** The owning message's account id: '' for none, null when the message is missing. */
-async function accountIdOfMessage(messageId: string): Promise<string | null> {
-  const config = getMailAccessConfig();
-  if (!config) return '';
-  const { MessageCollection } = await import(
-    './collections/MessageCollection.js'
-  );
-  // System scope: the message read must not be filtered by the very policy
-  // being evaluated, or a hidden message would look like a missing one.
-  const message = await runWithMailSystemAccess(async () =>
-    (await MessageCollection.create(config.options)).get({ id: messageId }),
-  );
-  return message ? message.accountId || '' : null;
-}
-
-async function accountAllowed(accountId: string | null): Promise<boolean> {
-  if (!accountId) return true;
-  const config = getMailAccessConfig();
-  if (!config) return true;
-  const { AccountCollection } = await import(
-    './collections/AccountCollection.js'
-  );
-  const account = await runWithMailSystemAccess(async () =>
-    (await AccountCollection.create(config.options)).get({ id: accountId }),
-  );
-  // An account that cannot be found (deleted by another path, or outside this
-  // tenant) must not turn its mail into tenant-wide mail: fail closed.
-  if (!account) return false;
-  return (
-    await decideMailAccess(
-      {
-        id: account.id,
-        tenantId: account.tenantId,
-        ownerUserId: account.ownerUserId,
-      },
-      'read',
-    )
-  ).allowed;
-}
+type Row = {
+  accountId?: string | null;
+  messageId?: string | null;
+  options?: unknown;
+};
 
 async function allowedInstance(
   kind: Kind,
   instance: SmrtObject,
 ): Promise<boolean> {
-  const row = instance as unknown as {
-    accountId?: string | null;
-    messageId?: string | null;
-    id?: string;
-  };
-  if (kind === 'attachment') {
-    if (row.accountId) return accountAllowed(row.accountId);
-    if (!row.messageId) return true;
-    const accountId = await accountIdOfMessage(row.messageId);
-    // A parent message that cannot be found is not provably the caller's.
-    return accountId === null ? false : accountAllowed(accountId);
+  const row = instance as unknown as Row;
+  try {
+    await assertHydratedMailAccess(
+      kind === 'attachment'
+        ? row
+        : { accountId: row.accountId, options: row.options },
+    );
+    return true;
+  } catch (error) {
+    if (error instanceof MailAccessError) return false;
+    throw error;
   }
-  return accountAllowed(row.accountId || null);
 }
 
 export const MAIL_ACCESS_INTERCEPTOR_NAME = 'smrt-messages-account-access';
@@ -154,44 +125,67 @@ export function createMailAccessInterceptor(): CollectionInterceptor {
     priority: 50,
 
     async beforeList(className, options, context) {
-      if (!getMailAccessConfig() || inMailSystemAccess()) return options;
+      const config = getEffectiveMailAccessConfig();
+      if (!config || inMailSystemAccess()) return options;
       const kind = kindOf(className, context);
-      if (!kind) return options;
+      if (!kind || kind === 'account') return options;
       const denied = await deniedMailAccountIds('read');
       if (!denied.length) return options;
       if (denied.length > MAX_EXCLUDED_IDS) {
         throw new MailAccessError('read', 'denied');
       }
-      return { ...options, where: restrict(options.where, denied) };
+      const unaccounted =
+        kind === 'attachment'
+          ? [
+              { accountId: null, messageId: null },
+              { accountId: null, messageId: '' },
+            ]
+          : [{ accountId: null }];
+      return {
+        ...options,
+        where: restrict(options.where, denied, unaccounted),
+      };
     },
 
     async beforeSave(instance, context) {
-      if (!getMailAccessConfig()) return;
       const kind = kindOf(instance.constructor.name, context);
+      if (kind === 'account') {
+        learnMailAccessOptions((instance as unknown as Row).options as never);
+        return;
+      }
       if (kind !== 'attachment') return;
-      const row = instance as unknown as {
-        accountId?: string | null;
-        messageId?: string | null;
-      };
-      if (row.accountId || !row.messageId) return;
-      // Denormalize the owning account so reads can be filtered in SQL.
-      const accountId = await accountIdOfMessage(row.messageId);
-      if (accountId) row.accountId = accountId;
+      const row = instance as unknown as Row;
+      // Always derive the account from the message: a caller-supplied
+      // accountId (for instance through a generated create) is never trusted.
+      row.accountId = null;
+      if (!row.messageId || !row.options) return;
+      const { MessageCollection } = await import(
+        './collections/MessageCollection.js'
+      );
+      const message = await runWithMailSystemAccess(async () =>
+        (await MessageCollection.create(row.options as never)).get({
+          id: row.messageId as string,
+        }),
+      );
+      row.accountId = message?.accountId || null;
     },
 
     async afterList(className, results, context) {
-      if (!getMailAccessConfig() || inMailSystemAccess()) return results;
+      if (inMailSystemAccess()) return results;
       const kind = kindOf(className, context);
       if (!kind) return results;
-      // Defense in depth for rows that reached here by another path, and the
-      // only filter for attachments.
+      if (kind === 'account') {
+        for (const item of results) {
+          learnMailAccessOptions((item as unknown as Row).options as never);
+        }
+        return results;
+      }
+      // Filters hydrated rows (the only filter for legacy attachments) and
+      // defends rows that reached here by another path.
       const kept: typeof results = [];
       const cache = new Map<string, boolean>();
       for (const item of results) {
-        const row = item as unknown as {
-          accountId?: string | null;
-          messageId?: string | null;
-        };
+        const row = item as unknown as Row;
         const key = `${kind}:${row.accountId ?? ''}:${row.messageId ?? ''}`;
         let ok = cache.get(key);
         if (ok === undefined) {
@@ -204,11 +198,13 @@ export function createMailAccessInterceptor(): CollectionInterceptor {
     },
 
     async afterGet(className, instance, context) {
-      if (!instance || !getMailAccessConfig() || inMailSystemAccess()) {
-        return instance;
-      }
+      if (!instance || inMailSystemAccess()) return instance;
       const kind = kindOf(className, context);
       if (!kind) return instance;
+      if (kind === 'account') {
+        learnMailAccessOptions((instance as unknown as Row).options as never);
+        return instance;
+      }
       return (await allowedInstance(kind, instance)) ? instance : null;
     },
 
@@ -218,8 +214,11 @@ export function createMailAccessInterceptor(): CollectionInterceptor {
       context,
     ): Promise<QueryInterceptResult> {
       const unchanged = { sql: options.sql, params: options.params };
-      if (!getMailAccessConfig() || inMailSystemAccess()) return unchanged;
-      if (!kindOf(className, context)) return unchanged;
+      if (!getEffectiveMailAccessConfig() || inMailSystemAccess()) {
+        return unchanged;
+      }
+      const kind = kindOf(className, context);
+      if (!kind || kind === 'account') return unchanged;
       // Raw SQL cannot be narrowed to granted accounts. When any account is
       // closed to the principal, refuse rather than leak its rows.
       if ((await deniedMailAccountIds('read')).length) {

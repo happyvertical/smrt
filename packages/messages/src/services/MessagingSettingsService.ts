@@ -127,6 +127,16 @@ export class MessagingSettingsService {
        * refuse the connection.
        */
       validateMailbox?: (request: MailboxValidationRequest) => Promise<void>;
+      /**
+       * Hostnames the built-in validator may connect to: exact names or
+       * `*.suffix`. Without this list (and without a custom `validateMailbox`)
+       * connecting a mailbox is refused, so a permission holder cannot make
+       * the server probe arbitrary hosts. Private, loopback and link-local
+       * addresses are refused even when listed.
+       */
+      allowedMailHosts?: readonly string[];
+      /** Ports the built-in validator may use. Default: standard mail ports. */
+      allowedMailPorts?: readonly number[];
     },
   ) {}
 
@@ -514,12 +524,12 @@ export class MessagingSettingsService {
   private async validateConnection(
     request: MailboxValidationRequest,
   ): Promise<void> {
-    const secrets = collectSecretStrings(request.credentials);
     try {
       if (this.options.validateMailbox) {
         await this.options.validateMailbox(request);
         return;
       }
+      this.assertAllowedTarget(request.configuration);
       const create = request.provider.createEmailClient;
       if (!create) {
         throw new Error('this provider cannot check a mailbox sign-in');
@@ -538,13 +548,37 @@ export class MessagingSettingsService {
       } finally {
         await client.disconnect().catch(() => undefined);
       }
-    } catch (error) {
-      let reason = error instanceof Error ? error.message : String(error);
-      for (const secret of secrets) reason = reason.split(secret).join('***');
-      throw new Error(
-        `The mail server did not accept this connection: ${reason.slice(0, 200)}`,
-      );
+    } catch {
+      // Never echo server or network detail: it would let a permission
+      // holder map internal hosts, and it can carry the secret.
+      throw new Error('The mail server did not accept this connection.');
     }
+  }
+
+  /** Host and port allowlist for the built-in validator (SSRF guard). */
+  private assertAllowedTarget(configuration: Record<string, unknown>): void {
+    let host = typeof configuration.host === 'string' ? configuration.host : '';
+    let port =
+      typeof configuration.port === 'number' ? configuration.port : undefined;
+    if (!host && typeof configuration.endpoint === 'string') {
+      const url = new URL(configuration.endpoint);
+      if (url.protocol !== 'https:') throw new Error('refused');
+      host = url.hostname;
+      port ??= url.port ? Number(url.port) : 443;
+    }
+    host = host.toLowerCase().replace(/^\[|\]$/g, '');
+    const allowed = this.options.allowedMailHosts ?? [];
+    const ports = this.options.allowedMailPorts ?? [
+      143, 443, 465, 587, 993, 995,
+    ];
+    const listed = allowed.some((entry) => {
+      const pattern = entry.toLowerCase();
+      return pattern.startsWith('*.')
+        ? host.endsWith(pattern.slice(1)) && host.length > pattern.length - 1
+        : host === pattern;
+    });
+    if (!host || !listed || isPrivateMailHost(host)) throw new Error('refused');
+    if (port !== undefined && !ports.includes(port)) throw new Error('refused');
   }
 
   private assert(permission: string): void {
@@ -692,12 +726,30 @@ export class MessagingSettingsService {
   }
 }
 
-/** Every string inside a credential payload, longest first, for redaction. */
-function collectSecretStrings(value: unknown, out: string[] = []): string[] {
-  if (typeof value === 'string') {
-    if (value.length >= 4) out.push(value);
-  } else if (value && typeof value === 'object') {
-    for (const child of Object.values(value)) collectSecretStrings(child, out);
+/** Loopback, private, link-local and unspecified addresses and names. */
+function isPrivateMailHost(host: string): boolean {
+  if (host === 'localhost' || host.endsWith('.localhost')) return true;
+  const v4 = host.match(/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/);
+  if (v4) {
+    const [a, b] = [Number(v4[1]), Number(v4[2])];
+    return (
+      a === 0 ||
+      a === 10 ||
+      a === 127 ||
+      (a === 100 && b >= 64 && b <= 127) ||
+      (a === 169 && b === 254) ||
+      (a === 172 && b >= 16 && b <= 31) ||
+      (a === 192 && b === 168)
+    );
   }
-  return out.sort((a, b) => b.length - a.length);
+  if (host.includes(':')) {
+    return (
+      host === '::' ||
+      host === '::1' ||
+      /^f[cd]/.test(host) ||
+      /^fe[89ab]/.test(host) ||
+      host.startsWith('::ffff:')
+    );
+  }
+  return false;
 }

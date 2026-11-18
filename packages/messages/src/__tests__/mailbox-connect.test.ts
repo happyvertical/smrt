@@ -14,6 +14,7 @@ import {
 } from '@happyvertical/smrt-tenancy';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { resetMailAccess } from '../access.js';
 import {
   ConnectError,
   completeMailOAuthConnect,
@@ -84,6 +85,7 @@ describe('mailbox connect', () => {
   });
 
   afterEach(async () => {
+    resetMailAccess();
     unregister();
     disableTenancy();
     delete process.env.SMRT_SECRET_MASTER_KEY;
@@ -338,6 +340,115 @@ describe('mailbox connect', () => {
           ownerUserId: 'user-2',
         }),
       ).rejects.toThrow(/creator/);
+    });
+  });
+
+  describe('default validator (SSRF guard)', () => {
+    let unregisterReal: () => void;
+    const connectSpy = vi.fn(async () => undefined);
+    beforeEach(() => {
+      connectSpy.mockClear();
+      unregisterReal = registerMessagingProvider({
+        id: 'jmap-real',
+        label: 'JMAP (real client)',
+        channel: 'email',
+        available: true,
+        configurationFields: [
+          {
+            id: 'endpoint',
+            label: 'JMAP endpoint',
+            type: 'url',
+            required: true,
+          },
+          { id: 'email', label: 'Address', type: 'email', required: true },
+        ],
+        credentialFields: [
+          { id: 'username', label: 'Username', type: 'string', required: true },
+          {
+            id: 'password',
+            label: 'App password',
+            type: 'password',
+            required: true,
+          },
+        ],
+        endpointFields: [],
+        createEmailClient: (async () => ({
+          connect: connectSpy,
+          disconnect: async () => undefined,
+        })) as never,
+      });
+    });
+    afterEach(() => unregisterReal());
+
+    const withDefault = (extra: Record<string, unknown>) =>
+      new MessagingSettingsService({
+        db,
+        tenantId: TENANT,
+        principal: messagingPrincipalFromPermissions(
+          [MANAGE_MESSAGE_CREDENTIALS_PERMISSION],
+          { id: 'user-1', tenantId: TENANT },
+        ),
+        resolvePersonaTenantId: async () => null,
+        ...extra,
+      });
+    const attempt = (svc: MessagingSettingsService, endpoint: string) =>
+      svc.connectMailbox({
+        name: 'x',
+        providerId: 'jmap-real',
+        configuration: { endpoint, email: 'me@example.com' },
+        credentials: { username: 'me', password: PASSWORD },
+      });
+
+    it('refuses everything without a host allowlist, and never reaches the network', async () => {
+      await expect(
+        attempt(withDefault({}), 'https://mail.example.com/jmap'),
+      ).rejects.toThrow('The mail server did not accept this connection.');
+      expect(connectSpy).not.toHaveBeenCalled();
+    });
+
+    it('refuses unlisted hosts, private and loopback addresses even when listed, plain http and odd ports', async () => {
+      const svc = withDefault({
+        allowedMailHosts: [
+          'mail.example.com',
+          '127.0.0.1',
+          '169.254.169.254',
+          '*.corp.example.com',
+          'localhost',
+        ],
+      });
+      for (const endpoint of [
+        'https://other.example.com/jmap',
+        'https://127.0.0.1/jmap',
+        'https://169.254.169.254/latest',
+        'https://localhost/jmap',
+        'http://mail.example.com/jmap',
+        'https://mail.example.com:6379/jmap',
+        'https://corp.example.com/jmap',
+      ]) {
+        await expect(attempt(svc, endpoint)).rejects.toThrow(
+          'The mail server did not accept this connection.',
+        );
+      }
+      expect(connectSpy).not.toHaveBeenCalled();
+    });
+
+    it('connects an allowlisted public host and still returns only a generic error on failure', async () => {
+      const svc = withDefault({
+        allowedMailHosts: ['mail.example.com', '*.corp.example.com'],
+      });
+      const view = await attempt(svc, 'https://mail.example.com/jmap');
+      expect(view.connectionStatus).toBe('connected');
+      await attempt(svc, 'https://a.corp.example.com:443/jmap');
+      expect(connectSpy).toHaveBeenCalledTimes(2);
+      connectSpy.mockRejectedValueOnce(
+        new Error(`ECONNREFUSED 10.0.0.5 ${PASSWORD}`),
+      );
+      const error = await attempt(svc, 'https://mail.example.com/jmap').catch(
+        (e) => e as Error,
+      );
+      expect((error as Error).message).toBe(
+        'The mail server did not accept this connection.',
+      );
     });
   });
 

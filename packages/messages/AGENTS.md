@@ -55,13 +55,14 @@ owners and call `configureMailAccess({ options, resolvePrincipal })` at startup
   resolver or a foreign tenant means owned accounts are invisible. No tenant
   admin or super-admin bypass; trusted work (sync, outbox) uses
   `runWithMailSystemAccess()`. `EmailAccount.syncFrom()` does so itself.
-- Attachments carry a denormalized `accountId` (copied from the message in a
-  `beforeSave` interceptor) so lists, projections and counts filter in SQL; run
+- Attachments carry a denormalized `accountId` (always derived from the message in a
+  `beforeSave` interceptor, never caller-supplied) so lists, projections and counts filter in SQL; run
   `AttachmentCollection.backfillAccountIds()` once after upgrading (legacy rows
-  are still hidden when hydrated, but not from projections or counts until then).
-- Residual risks for hosts: the default `connectMailbox` validator opens a real
-  connection to the host named in the (permission-gated) configuration, so pass
-  a `validateMailbox` that enforces an allowlist; policy lookups use the
+  without it are hidden from every read until then).
+- `connectMailbox` refuses by default: give the service `allowedMailHosts`
+  (and optionally `allowedMailPorts`) or your own `validateMailbox`. The
+  built-in validator never connects to private, loopback or link-local
+  addresses and returns only a generic error. Policy lookups use the
   configured db handle, not a caller's transaction.
 - `Message.send()` needs the `send` scope on an owned account. Account rows are
   not filtered (senders, routes and the outbox read them without a principal).
@@ -69,9 +70,11 @@ owners and call `configureMailAccess({ options, resolvePrincipal })` at startup
   `messages.manage-access` AND ownership (or delegation); an administrator
   cannot read, self-grant or take over an owned mailbox. Unowned accounts can be
   claimed once with `messages.manage-credentials`.
-- Not unconfigured-safe: with no `configureMailAccess` call, reads are
-  unenforced (the collection layer has no database handle); only sends from an
-  owned account fail closed.
+- Before `configureMailAccess` is called the policy still fails closed on
+  owned accounts: it learns the database from the first mail or account row it
+  sees and, with no principal resolver, hides every owned account's mail.
+  Direct hydration (`new Email({ id }).initialize()`, `loadRelated()`) is gated
+  in the models' `loadFromId`/`loadFromSlug`.
 - `connectionStatus` (`connected` / `needs_reconnect`) and `statusMessage` mark
   an account whose sign-in the server refused; `syncFrom()` sets it.
 

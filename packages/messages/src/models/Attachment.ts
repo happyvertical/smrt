@@ -14,6 +14,7 @@ import {
   smrt,
 } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy/decorators';
+import { assertHydratedMailAccess } from '../access.js';
 import type { AttachmentOptions } from '../types';
 
 /**
@@ -83,6 +84,21 @@ export class Attachment extends SmrtObject {
     if (options.filePath !== undefined) this.filePath = options.filePath;
     if (options.sourceUrl !== undefined) this.sourceUrl = options.sourceUrl;
     if (options.createdAt) this.createdAt = options.createdAt;
+  }
+
+  /**
+   * Direct hydration (`new X({ id }).initialize()`, `loadRelated()`) bypasses
+   * the collection read hooks, so the per-account mail policy is applied here
+   * too: a row of an account closed to the principal never hydrates.
+   */
+  override async loadFromId() {
+    await super.loadFromId();
+    await assertHydratedMailAccess(this);
+  }
+
+  override async loadFromSlug() {
+    await super.loadFromSlug();
+    await assertHydratedMailAccess(this);
   }
 
   /**

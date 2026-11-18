@@ -232,7 +232,8 @@ describe('mail account access (#5129)', () => {
     // attachment account; a deployed host runs this once after upgrading.
     await withTenant({ tenantId: tenantA }, async () => {
       const attachments = await AttachmentCollection.create(options);
-      expect(await attachments.backfillAccountIds()).toBe(3);
+      // Attachments get their account at save time, so nothing is left to fill.
+      expect(await attachments.backfillAccountIds()).toBe(0);
     });
   });
 
@@ -248,21 +249,17 @@ describe('mail account access (#5129)', () => {
       expect(await subjects(principalFor(stranger))).toEqual(['open subject']);
     });
 
-    it('is unenforced until configured, except that an owned account cannot be sent from', async () => {
+    it('fails closed on owned accounts even before the host configures anything', async () => {
       resetMailAccess();
-      expect(await subjects(null)).toEqual([
-        'open subject',
-        'private subject',
-        'shared subject',
-      ]);
+      // Hydrated reads learn the database from the rows and hide owned mail.
+      expect(await subjects(null)).toEqual(['open subject']);
+      expect(await subjects(principalFor(owner))).toEqual(['open subject']);
+      // And the send gate cannot be checked, so it is closed too.
       const decision = await decideMailAccess(
         { id: privateAccountId, tenantId: tenantA, ownerUserId: owner.id },
         'send',
       );
-      expect(decision).toMatchObject({
-        allowed: false,
-        reason: 'not_configured',
-      });
+      expect(decision.allowed).toBe(false);
     });
   });
 
@@ -384,6 +381,87 @@ describe('mail account access (#5129)', () => {
         (await (await AttachmentCollection.create(options)).list({})).map(
           (row) => row.filename,
         ),
+      );
+      expect(names).toEqual(['open.pdf']);
+    });
+
+    it('does not hydrate a denied row directly or through a relationship', async () => {
+      const ids = await withTenant({ tenantId: tenantA }, () =>
+        runWithMailSystemAccess(async () => {
+          const emails = await EmailCollection.create(options);
+          const attachments = await AttachmentCollection.create(options);
+          const folders = await EmailFolderCollection.create(options);
+          const email = (
+            await emails.list({ where: { accountId: privateAccountId } })
+          )[0];
+          const attachment = (
+            await attachments.list({ where: { messageId: email?.id } })
+          )[0];
+          const folder = (
+            await folders.list({ where: { accountId: privateAccountId } })
+          )[0];
+          return {
+            email: email?.id as string,
+            attachment: attachment?.id as string,
+            folder: folder?.id as string,
+          };
+        }),
+      );
+      current = principalFor(stranger);
+      await withTenant({ tenantId: tenantA }, async () => {
+        await expect(
+          new Email({ ...options, id: ids.email }).initialize(),
+        ).rejects.toThrow(/Mail access denied/);
+        await expect(
+          new EmailFolder({ ...options, id: ids.folder }).initialize(),
+        ).rejects.toThrow(/Mail access denied/);
+        const attachment = new Attachment({ ...options, id: ids.attachment });
+        await expect(attachment.initialize()).rejects.toThrow(
+          /Mail access denied/,
+        );
+      });
+      current = principalFor(owner);
+      await withTenant({ tenantId: tenantA }, async () => {
+        const email = new Email({ ...options, id: ids.email });
+        await email.initialize();
+        expect(email.subject).toBe('private subject');
+      });
+    });
+
+    it('derives an attachment account from its message, never from the caller', async () => {
+      const privateEmailId = await withTenant({ tenantId: tenantA }, () =>
+        runWithMailSystemAccess(
+          async () =>
+            (
+              await (
+                await EmailCollection.create(options)
+              ).list({
+                where: { accountId: privateAccountId },
+              })
+            )[0]?.id as string,
+        ),
+      );
+      await withTenant({ tenantId: tenantA }, async () => {
+        const forged = new Attachment({
+          ...options,
+          tenantId: tenantA,
+          messageId: privateEmailId,
+          accountId: openAccountId,
+          filename: 'forged.pdf',
+        });
+        await forged.initialize();
+        await forged.save();
+        expect(forged.accountId).toBe(privateAccountId);
+      });
+      current = principalFor(stranger);
+      const names = await withTenant({ tenantId: tenantA }, async () =>
+        (
+          await (
+            await AttachmentCollection.create(options)
+          ).list({
+            select: ['filename'],
+          })
+        ).map((row) => row.filename),
       );
       expect(names).toEqual(['open.pdf']);
     });
@@ -802,6 +880,24 @@ describe('mail account access (#5129)', () => {
           canDelegate: true,
         }),
       ).rejects.toThrow(/delegate/);
+    });
+
+    it('only hands ownership to an active member of the tenant', async () => {
+      const inactive = await withSystemContext(() =>
+        newPerson(tenantA, ALL_MAIL_SLUGS, 'inactive'),
+      );
+      await withSystemContext(async () => {
+        const memberships = await MembershipCollection.create(options);
+        for (const row of await memberships.list({
+          where: { userId: inactive.id },
+        })) {
+          row.status = 'inactive' as never;
+          await row.save();
+        }
+      });
+      await expect(
+        asUser(owner).setOwner(sharedAccountId, inactive.id),
+      ).rejects.toThrow(/active member/);
     });
 
     it('only hands ownership to a member of the tenant', async () => {

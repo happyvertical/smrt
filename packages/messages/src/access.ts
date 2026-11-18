@@ -109,6 +109,8 @@ export interface MailAccessConfig {
 
 interface MailAccessState {
   config: MailAccessConfig | null;
+  /** Database options seen on a mail row, used until the host configures. */
+  learned: SmrtClassOptions | null;
   system: ReturnType<typeof createHandoffContext<true>>;
 }
 
@@ -120,7 +122,11 @@ function state(): MailAccessState {
   const holder = globalThis as Record<symbol, unknown>;
   let current = holder[STATE_KEY] as MailAccessState | undefined;
   if (!current) {
-    current = { config: null, system: createHandoffContext<true>() };
+    current = {
+      config: null,
+      learned: null,
+      system: createHandoffContext<true>(),
+    };
     holder[STATE_KEY] = current;
   }
   return current;
@@ -134,9 +140,32 @@ export function configureMailAccess(config: MailAccessConfig): void {
   state().config = config;
 }
 
-/** Remove the configuration (tests). Owned accounts are then unenforced. */
+/** Remove the configuration (tests). Owned accounts then fail closed. */
 export function resetMailAccess(): void {
   state().config = null;
+  state().learned = null;
+}
+
+/**
+ * Remember the database a mail row was read with. Until the host calls
+ * {@link configureMailAccess}, this lets the policy still find owned accounts
+ * and hide their mail (no principal resolver means no one is a principal).
+ */
+export function learnMailAccessOptions(
+  options: SmrtClassOptions | undefined,
+): void {
+  const current = state();
+  if (!current.config && options) {
+    current.learned = options;
+  }
+}
+
+/** The configured policy, else a closed one over the learned database. */
+export function getEffectiveMailAccessConfig(): MailAccessConfig | null {
+  const current = state();
+  return (
+    current.config ?? (current.learned ? { options: current.learned } : null)
+  );
 }
 
 export function getMailAccessConfig(): MailAccessConfig | null {
@@ -257,7 +286,7 @@ export async function decideMailAccess(
   principalOverride?: MailPrincipal | null,
 ): Promise<MailAccessDecision> {
   if (inMailSystemAccess()) return { allowed: true, reason: 'system' };
-  const config = state().config;
+  const config = getEffectiveMailAccessConfig();
   const owned = Boolean(account.ownerUserId);
   if (!config) {
     // Nothing configured: unowned accounts keep the framework default
@@ -328,7 +357,7 @@ export async function deniedMailAccountIds(
   scope: MailScope,
 ): Promise<string[]> {
   if (inMailSystemAccess()) return [];
-  const config = state().config;
+  const config = getEffectiveMailAccessConfig();
   if (!config) return [];
   const { AccountCollection } = await import(
     './collections/AccountCollection.js'
@@ -352,6 +381,65 @@ export async function deniedMailAccountIds(
     if (!decision.allowed) denied.push(account.id);
   }
   return denied;
+}
+
+/** Whether the current principal may read mail of `accountId` (empty: yes). */
+export async function accountReadable(
+  accountId: string | null | undefined,
+  options: SmrtClassOptions | undefined,
+): Promise<boolean> {
+  if (inMailSystemAccess()) return true;
+  learnMailAccessOptions(options);
+  if (!accountId) return true;
+  const config = getEffectiveMailAccessConfig();
+  if (!config) return true;
+  const { AccountCollection } = await import(
+    './collections/AccountCollection.js'
+  );
+  const account = await runWithMailSystemAccess(async () =>
+    (await AccountCollection.create(config.options)).get({ id: accountId }),
+  );
+  // An account that cannot be found (deleted by another path, or outside this
+  // tenant) must not turn its mail into tenant-wide mail: fail closed.
+  if (!account) return false;
+  return (
+    await decideMailAccess(
+      {
+        id: account.id,
+        tenantId: account.tenantId,
+        ownerUserId: account.ownerUserId,
+      },
+      'read',
+    )
+  ).allowed;
+}
+
+/**
+ * Gate for direct hydration (`new Email({ id }).initialize()`,
+ * `loadRelated('messageId')`), which bypasses collection read hooks: throws
+ * when the loaded row belongs to an account closed to the principal.
+ */
+export async function assertHydratedMailAccess(row: {
+  accountId?: string | null;
+  messageId?: string | null;
+  options?: unknown;
+}): Promise<void> {
+  if (inMailSystemAccess()) return;
+  const options = row.options as SmrtClassOptions | undefined;
+  let accountId = row.accountId || null;
+  if (!accountId && row.messageId && options) {
+    const { MessageCollection } = await import(
+      './collections/MessageCollection.js'
+    );
+    const message = await runWithMailSystemAccess(async () =>
+      (await MessageCollection.create(options)).get({ id: row.messageId }),
+    );
+    if (!message) throw new MailAccessError('read', 'denied');
+    accountId = message.accountId || null;
+  }
+  if (!(await accountReadable(accountId, options))) {
+    throw new MailAccessError('read', 'denied');
+  }
 }
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -407,11 +495,11 @@ export class MailAccessService {
     const users = await import('@happyvertical/smrt-users');
     const memberships = await users.MembershipCollection.create(this.options);
     const rows = await memberships.list({
-      where: { tenantId: this.actor.tenantId, userId },
+      where: { tenantId: this.actor.tenantId, userId, status: 'active' },
       limit: 1,
     });
     if (!rows.length) {
-      throw new Error('The new owner must be a member of this tenant.');
+      throw new Error('The new owner must be an active member of this tenant.');
     }
   }
 
