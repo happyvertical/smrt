@@ -6,6 +6,7 @@ import {
   ExpenseAllocationRevision as BaseExpenseAllocationRevision,
 } from '../models/ExpenseAllocation.js';
 @smrt({
+  replaceParent: true,
   packageName: '@local/issue4931-expenses',
   api: { include: [] },
   mcp: { include: [] },
@@ -14,6 +15,7 @@ import {
 })
 export class ExpenseAllocationRevision extends BaseExpenseAllocationRevision {}
 @smrt({
+  replaceParent: true,
   packageName: '@local/issue4931-expenses',
   api: { include: [] },
   mcp: { include: [] },
@@ -22,6 +24,7 @@ export class ExpenseAllocationRevision extends BaseExpenseAllocationRevision {}
 })
 export class ExpenseAllocationPortion extends BaseExpenseAllocationPortion {}
 @smrt({
+  replaceParent: true,
   packageName: '@local/issue4931-expenses',
   api: { include: [] },
   mcp: { include: [] },
