@@ -29,6 +29,7 @@ no default key anywhere in this package.
 | `retrieve(name)` | Decrypt + audit + increment accessCount |
 | `diagnoseTenantSecretKeyDrift(tenantId)` | Report active secret/key drift without exposing values. Checks `secrets`, SDK `tenant_encryption_keys`, and SMRT `tenant_keys`. |
 | `repairTenantSecretKeyDrift(tenantId, opts)` | Explicit repair path for unrecoverable drift. Use `dryRun` first; destructive cleanup requires `confirmDeleteUnrecoverableData: true`. |
+| `storeForTenant` / `retrieveForTenant` / `deleteForTenant` | Explicit-tenant forms of `store` / `retrieve` / `delete` for integrations running outside the ambient tenant context. |
 | `rotateKey()` | Create new TDEK, mark old as retired |
 | `reencryptAll()` | Decrypt with old TDEK, re-encrypt with new — **must call separately after rotateKey()** |
 | `disable(name)` / `enable(name)` | Toggle status |

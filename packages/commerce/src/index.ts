@@ -66,8 +66,11 @@
 // module loads below. See __smrt-register__.ts for issue #1132 context.
 import './__smrt-register__.js';
 
+// Tenant-scoped accounting connection (#5136)
+export * from './accounting-connection.js';
 // Billing-period close, provider events, prepaid credit (#3060)
 export * from './billing/index.js';
+export { AccountingConnectionCollection } from './collections/AccountingConnectionCollection.js';
 export {
   HistoricalCustomerFundsAllocationCollection,
   HistoricalCustomerFundsCollection,
@@ -300,6 +303,13 @@ export {
   type CommercePartyLinksPreflight,
   preflightCommercePartyLinks,
 } from './migrations/partyLinks.js';
+export {
+  AccountingConnection,
+  type AccountingConnectionEnvironment,
+  type AccountingConnectionOptions,
+  type AccountingConnectionProvider,
+  type AccountingConnectionStatus,
+} from './models/AccountingConnection.js';
 export {
   HistoricalCustomerFunds,
   type HistoricalCustomerFundsOptions,

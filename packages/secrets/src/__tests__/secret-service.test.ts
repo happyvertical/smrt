@@ -205,6 +205,26 @@ describe('SecretService', () => {
       expect(rows[0]?.tenant_id).toBe('tenant-1');
     });
 
+    it('can delete with an explicit tenant id', async () => {
+      disableTenancy();
+
+      await service.storeForTenant('tenant-1', 'explicit-delete', 'value');
+      await service.storeForTenant('tenant-2', 'explicit-delete', 'other');
+
+      expect(await service.deleteForTenant('tenant-1', 'explicit-delete')).toBe(
+        true,
+      );
+      expect(await service.deleteForTenant('tenant-1', 'explicit-delete')).toBe(
+        false,
+      );
+      await expect(
+        service.retrieveForTenant('tenant-1', 'explicit-delete'),
+      ).rejects.toThrow("Secret 'explicit-delete' not found");
+      expect(
+        (await service.retrieveForTenant('tenant-2', 'explicit-delete')).value,
+      ).toBe('other');
+    });
+
     it('can store and retrieve with an explicit tenant id', async () => {
       disableTenancy();
 

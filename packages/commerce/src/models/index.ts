@@ -4,6 +4,13 @@
  */
 
 export {
+  AccountingConnection,
+  type AccountingConnectionEnvironment,
+  type AccountingConnectionOptions,
+  type AccountingConnectionProvider,
+  type AccountingConnectionStatus,
+} from './AccountingConnection.js';
+export {
   BillingAccount,
   type BillingCloseKind,
   BillingLineSource,

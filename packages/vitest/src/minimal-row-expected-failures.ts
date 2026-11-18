@@ -222,6 +222,15 @@ export const minimalRowExpectedFailures: readonly MinimalRowExpectedFailure[] =
         'TenantPaymentDispute writes are owned by handleConnectedPaymentWebhook; its owner must run once against a minimal row.',
     },
     {
+      model: '@happyvertical/smrt-commerce:AccountingConnection',
+      kind: 'service-only',
+      field: '(service-only write)',
+      error:
+        'AccountingConnection is written only by the accounting-connection commands',
+      reason:
+        'AccountingConnection writes are owned by completeQuickBooksConnection and the accounting-connection commands (lease, refresh, reconnect, disconnect, live enablement); its owner must run once against a minimal row.',
+    },
+    {
       model: '@happyvertical/smrt-content:ContentContributionType',
       kind: 'optional-field',
       field: 'promotion',

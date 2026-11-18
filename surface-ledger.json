@@ -3422,6 +3422,16 @@
   },
   {
     "kind": "model",
+    "name": "@happyvertical/smrt-commerce:AccountingConnection",
+    "issue": 5136,
+    "nearest": [
+      "@happyvertical/smrt-commerce:TenantPaymentAccount",
+      "@happyvertical/smrt-social:SocialAccount"
+    ],
+    "reason": "A tenant-level (not user-owned) connection to an accounting provider: realm, environment, status, last error and the refresh lease that serializes Intuit's rotating refresh token. TenantPaymentAccount is a Stripe Connect payments account with its own capability and fee model, and SocialAccount is user-bound publishing state; neither can hold the accounting lease or the needs_reconnect/disconnected lifecycle, and the token itself stays in smrt-secrets."
+  },
+  {
+    "kind": "model",
     "name": "@happyvertical/smrt-commerce:Agreement",
     "grandfathered": true
   },

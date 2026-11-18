@@ -3,6 +3,7 @@
  * @packageDocumentation
  */
 
+export { AccountingConnectionCollection } from './AccountingConnectionCollection.js';
 export { ContractCollection } from './ContractCollection.js';
 export { ContractLineItemCollection } from './ContractLineItemCollection.js';
 export { CustomerCollection } from './CustomerCollection.js';

@@ -32,6 +32,7 @@ recipes show carry `@field({ description })` text; keep both in plain
 language for end users and update them when a recipe's fields change. See
 [core recipes](../core/agents/recipes.md).
 
+See [tenant accounting connection](agents/accounting-connection.md) for the tenant-level QuickBooks connection, serialized refresh-token rotation, `needs_reconnect` and revoke.
 See [historical issued sales](agents/historical-sales.md) for exact original source
 money, immutable source children and combined historical/live customer funds.
 See [payment allocation integrity](agents/payment-allocations.md) for atomic splits,
