@@ -231,7 +231,7 @@ describe('own-field display label (#3599)', () => {
   it('skips a sensitive or relationship default candidate', () => {
     const manifest = generate({
       name: text({ sensitive: true }),
-      title: { type: 'foreignKey', required: false, related: 'X' },
+      title: { type: 'foreignKey', required: false, related: 'Order' },
       label: text(),
     });
     expect(manifest.objects[`${PKG}:Order`].displayLabelField).toBe('label');

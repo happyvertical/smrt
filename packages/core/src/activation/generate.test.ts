@@ -28,7 +28,16 @@ function workspace() {
   workspaces.push(files);
   files.write(
     'package.json',
-    JSON.stringify({ name: '@activation/app', type: 'module' }),
+    // The app declares the packages it imports models from.
+    JSON.stringify({
+      name: '@activation/app',
+      type: 'module',
+      dependencies: {
+        '@activation/customer': '*',
+        '@activation/invoice': '*',
+        '@activation/unused': '*',
+      },
+    }),
   );
   const coreLink = files.path('node_modules/@happyvertical/smrt-core');
   mkdirSync(dirname(coreLink), { recursive: true });

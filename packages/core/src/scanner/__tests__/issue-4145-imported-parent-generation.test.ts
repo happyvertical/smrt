@@ -25,6 +25,7 @@ const { COMMERCE, SALES, APP, manifests } = vi.hoisted(() => {
     methods: {},
     decoratorConfig: {},
     packageName,
+    importPath: packageName,
     ...extra,
   });
   const manifests: Record<string, unknown> = {
@@ -84,7 +85,10 @@ function generate(child: Partial<SmartObjectDefinition>) {
 
 describe('#4145 import-qualified parent in manifest generation', () => {
   it('inherits the imported package parent, not the first same-named one', () => {
-    const child = generate({ extendsQualified: `${COMMERCE}:Agreement` });
+    const child = generate({
+      extendsQualified: `${COMMERCE}:Agreement`,
+      extendsImportPath: COMMERCE,
+    });
     expect(child?.extendsQualified).toBe(`${COMMERCE}:Agreement`);
     expect(child?.extends).toBe('Agreement');
     expect(child?.decoratorConfig.tableName).toBe('contracts');
@@ -94,10 +98,14 @@ describe('#4145 import-qualified parent in manifest generation', () => {
     expect(child?.fields.partyA).toBeUndefined();
   });
 
-  it('drops a qualification the named package does not declare', () => {
-    const child = generate({ extendsQualified: '@test4145/barrel:Agreement' });
-    expect(child?.extendsQualified).toBeUndefined();
-    expect(child?.extends).toBe('Agreement');
+  it('fails for a package-like specifier no package or tsconfig alias resolves', () => {
+    // `@test4145/barrel` is not installed and no tsconfig `paths` entry maps
+    // it, so a same-named class elsewhere is not evidence of the parent.
+    expect(() =>
+      generate({ extendsQualified: '@test4145/barrel:Agreement' }),
+    ).toThrow(
+      expect.objectContaining({ code: 'CONFIG_UNRESOLVED_IMPORTED_PARENT' }),
+    );
   });
 
   it('keeps simple-name resolution unchanged without a qualification', () => {
@@ -130,6 +138,7 @@ describe('#4145 import-qualified parent in manifest generation', () => {
       local('Imported', {
         extends: 'Agreement',
         extendsQualified: `${COMMERCE}:Agreement`,
+        extendsImportPath: COMMERCE,
       }),
       local('LocalChild', { extends: 'Agreement' }),
     ];

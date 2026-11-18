@@ -13,8 +13,14 @@
  * without exporting it.
  */
 
-import { existsSync, readFileSync, realpathSync } from 'node:fs';
-import { isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { getNodeBuiltins } from './store.js';
+
+type NodeHost = NonNullable<ReturnType<typeof getNodeBuiltins>>;
+
+// `fs`/`path` come from the lazy Node host, not static `node:` imports: the
+// manifest loader imports this module and is part of core's browser entry
+// graph (#2838). Without a Node host there is no package to read, so every
+// export answers "no candidates".
 
 /**
  * Export subpaths a SMRT package may use to publish its manifest, in
@@ -83,13 +89,14 @@ function collectExportTargets(entry: unknown, targets: string[]): void {
  * unparseable. Callers that already hold the parsed manifest pass it in.
  */
 function readPackageJson(
+  { fs, path }: NodeHost,
   packageDir: string,
 ): ManifestExportsPackageJson | null {
-  const packageJsonPath = join(packageDir, 'package.json');
-  if (!existsSync(packageJsonPath)) return null;
+  const packageJsonPath = path.join(packageDir, 'package.json');
+  if (!fs.existsSync(packageJsonPath)) return null;
   try {
     return JSON.parse(
-      readFileSync(packageJsonPath, 'utf-8'),
+      fs.readFileSync(packageJsonPath, 'utf-8'),
     ) as ManifestExportsPackageJson;
   } catch {
     return null;
@@ -97,11 +104,15 @@ function readPackageJson(
 }
 
 /** Lexical containment: `candidate` is at or below `base`. */
-function isWithin(base: string, candidate: string): boolean {
-  const within = relative(base, candidate);
+function isWithin(
+  { path }: NodeHost,
+  base: string,
+  candidate: string,
+): boolean {
+  const within = path.relative(base, candidate);
   if (!within) return false;
-  if (within === '..' || within.startsWith(`..${sep}`)) return false;
-  return !isAbsolute(within);
+  if (within === '..' || within.startsWith(`..${path.sep}`)) return false;
+  return !path.isAbsolute(within);
 }
 
 /**
@@ -120,13 +131,37 @@ function isWithin(base: string, candidate: string): boolean {
  * A candidate that does not exist cannot be read and is left to the caller's
  * existence probe.
  */
-function resolvesWithinPackage(packageDir: string, candidate: string): boolean {
-  if (!existsSync(candidate)) return true;
+function resolvesWithinPackage(
+  host: NodeHost,
+  packageDir: string,
+  candidate: string,
+): boolean {
+  if (!host.fs.existsSync(candidate)) return true;
   try {
-    return isWithin(realpathSync(packageDir), realpathSync(candidate));
+    return isWithin(
+      host,
+      host.fs.realpathSync(packageDir),
+      host.fs.realpathSync(candidate),
+    );
   } catch {
     return false;
   }
+}
+
+/**
+ * Conventional JSON manifest locations of a package that ships a manifest
+ * without exporting a subpath for it, in preference order. Probed after
+ * {@link manifestExportCandidates} by every reader that follows the
+ * convention (the consumer plugin, and build-time dependency resolution), so
+ * they agree on which packages have a manifest.
+ */
+export function conventionalManifestCandidates(packageDir: string): string[] {
+  const host = getNodeBuiltins();
+  if (!host) return [];
+  return [
+    host.path.join(packageDir, 'dist', 'manifest.json'),
+    host.path.join(packageDir, 'manifest.json'),
+  ];
 }
 
 /**
@@ -146,7 +181,9 @@ export function manifestExportCandidates(
   packageDir: string,
   packageJson?: ManifestExportsPackageJson | null,
 ): string[] {
-  const parsed = packageJson ?? readPackageJson(packageDir);
+  const host = getNodeBuiltins();
+  if (!host) return [];
+  const parsed = packageJson ?? readPackageJson(host, packageDir);
   const exportsMap = parsed?.exports;
   if (
     !exportsMap ||
@@ -163,9 +200,9 @@ export function manifestExportCandidates(
     collectExportTargets(entries[subpath], targets);
 
     for (const target of targets) {
-      const resolved = resolve(packageDir, target);
-      if (!isWithin(packageDir, resolved)) continue;
-      if (!resolvesWithinPackage(packageDir, resolved)) continue;
+      const resolved = host.path.resolve(packageDir, target);
+      if (!isWithin(host, packageDir, resolved)) continue;
+      if (!resolvesWithinPackage(host, packageDir, resolved)) continue;
       if (candidates.includes(resolved)) continue;
 
       candidates.push(resolved);

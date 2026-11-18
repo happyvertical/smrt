@@ -56,6 +56,10 @@ import {
   require,
   statSync,
 } from './node-host.js';
+import {
+  conventionalManifestCandidates,
+  manifestExportCandidates,
+} from './package-manifest-exports.js';
 import { getDefaultCompositeSource } from './sources/composite.js';
 import {
   getLocalTestManifestCache as getLocalTestManifestCacheFromStore,
@@ -729,9 +733,14 @@ function findWorkspaceRoot(startDir: string): string | null {
   }
 }
 
-function resolveInstalledPackageJsonPath(packageName: string): string | null {
+function resolveInstalledPackageJsonPath(
+  packageName: string,
+  baseDir?: string,
+): string | null {
   if (!nodeHost()) return null;
-  let currentDir = process.cwd();
+  // Read the working directory only behind the host check: a browser has no
+  // cwd, and a default parameter would be evaluated before the guard.
+  let currentDir = baseDir ?? process.cwd();
 
   while (true) {
     const packageJsonPath = join(
@@ -754,9 +763,12 @@ function resolveInstalledPackageJsonPath(packageName: string): string | null {
   }
 }
 
-function resolveWorkspacePackageJsonPath(packageName: string): string | null {
+function resolveWorkspacePackageJsonPath(
+  packageName: string,
+  baseDir?: string,
+): string | null {
   if (!nodeHost()) return null;
-  const workspaceRoot = findWorkspaceRoot(process.cwd());
+  const workspaceRoot = findWorkspaceRoot(baseDir ?? process.cwd());
   if (!workspaceRoot) {
     return null;
   }
@@ -818,25 +830,80 @@ function resolveWorkspaceSourceManifestPath(packageDir: string): string | null {
 
 interface ManifestLoadOptions {
   warn?: boolean;
+  /**
+   * Directory the package is resolved from, as that project's own module
+   * resolution would: its `node_modules` chain, then its workspace. Defaults
+   * to `process.cwd()`, which is right for an app process loading its own
+   * dependencies. A build that generates a manifest for a project elsewhere
+   * (a Vite `root`, a multi-project test run) passes that project's root, so
+   * the dependency it finds is the one the project installs. With a
+   * `baseDir` the process-wide cache is not read: an entry there may have
+   * been resolved from another project.
+   */
+  baseDir?: string;
+  /**
+   * `false`: read and write no cache at all, so every call reads the
+   * manifest from disk. Generation passes it; it holds its own per-run cache.
+   */
+  cache?: boolean;
+}
+
+/**
+ * The JSON manifest of a package found where the consumer plugin would find
+ * it: any JSON target of its export map, then the conventional locations.
+ * Used for root-anchored (build-time) resolution only, so the producer can
+ * read every dependency manifest the consumer build aggregates.
+ */
+function resolveConventionalManifestPath(packageDir: string): string | null {
+  for (const candidate of [
+    ...manifestExportCandidates(packageDir),
+    ...conventionalManifestCandidates(packageDir),
+  ]) {
+    if (
+      candidate.endsWith('.json') &&
+      existsSync(candidate) &&
+      !isRefusedTestArtifactFile(candidate)
+    ) {
+      return candidate;
+    }
+  }
+  return null;
 }
 
 function resolveManifestExportPath(
   packageName: string,
   options: ManifestLoadOptions = {},
 ): string | null {
-  const shouldWarn = options.warn ?? true;
   const packageJsonPath =
-    resolveInstalledPackageJsonPath(packageName) ||
-    resolveWorkspacePackageJsonPath(packageName);
+    resolveInstalledPackageJsonPath(packageName, options.baseDir) ||
+    resolveWorkspacePackageJsonPath(packageName, options.baseDir);
 
   if (!packageJsonPath) {
     return null;
   }
 
   const packageDir = dirname(packageJsonPath);
-  const packageJson = parse<ExternalPackageJson>(
-    readFileSync(packageJsonPath, 'utf-8'),
+  const declared = resolveDeclaredManifestPath(
+    packageName,
+    packageDir,
+    parse<ExternalPackageJson>(readFileSync(packageJsonPath, 'utf-8')),
+    options,
   );
+  // Root-anchored (build-time) resolution also reads a manifest the package
+  // ships without a usable `./manifest` export, where the consumer plugin
+  // reads it.
+  if (declared || !options.baseDir) return declared;
+  return resolveConventionalManifestPath(packageDir);
+}
+
+/** The manifest a package declares through its `./manifest` export. */
+function resolveDeclaredManifestPath(
+  packageName: string,
+  packageDir: string,
+  packageJson: ExternalPackageJson,
+  options: ManifestLoadOptions,
+): string | null {
+  const shouldWarn = options.warn ?? true;
   const manifestExports = ['./manifest.json', './manifest'];
 
   for (const exportKey of manifestExports) {
@@ -927,8 +994,20 @@ export function loadExternalManifestSync(
   packageName: string,
   options: ManifestLoadOptions = {},
 ): Manifest | null {
-  // Check cache first
-  if (getManifestCacheMap().has(packageName)) {
+  // Check cache first. The process-wide cache is keyed by package name alone
+  // and answers only for the default (cwd) resolution root. A load from an
+  // explicit root has its own cache, keyed by root and package, and never
+  // writes the process-wide one: a build for another project must not
+  // decide what this process's own lookups return.
+  const useCache = options.cache ?? true;
+  const rootKey = options.baseDir
+    ? rootManifestCacheKey(options.baseDir, packageName)
+    : undefined;
+  if (!useCache) {
+    // Read from disk below; nothing is cached.
+  } else if (rootKey !== undefined) {
+    if (rootManifestCache.has(rootKey)) return rootManifestCache.get(rootKey)!;
+  } else if (getManifestCacheMap().has(packageName)) {
     debugLog(`[manifest-loader] Using cached manifest for ${packageName}`);
     return getManifestCacheMap().get(packageName)!;
   }
@@ -969,7 +1048,13 @@ export function loadExternalManifestSync(
       ? manifest
       : { ...manifest, packageName };
 
-    getManifestCacheMap().set(packageName, cachedManifest);
+    if (!useCache) {
+      // Uncached load.
+    } else if (rootKey !== undefined) {
+      rootManifestCache.set(rootKey, cachedManifest);
+    } else {
+      getManifestCacheMap().set(packageName, cachedManifest);
+    }
     debugLog(
       `[manifest-loader] ✅ Loaded external manifest for ${packageName} (${Object.keys(cachedManifest.objects).length} objects)`,
     );
@@ -994,14 +1079,43 @@ export async function loadExternalManifest(
 }
 
 /**
+ * Manifests loaded from an explicit resolution root, keyed by
+ * {@link rootManifestCacheKey}. Kept apart from the process-wide cache that
+ * runtime lookups read.
+ */
+const rootManifestCache = new Map<string, Manifest>();
+
+function rootManifestCacheKey(baseDir: string, packageName: string): string {
+  return `${baseDir}\u0000${packageName}`;
+}
+
+/**
+ * Whether `packageName` resolves from `baseDir` (default: the working
+ * directory) the way the project would resolve it: through its
+ * `node_modules` chain or its workspace. A scoped specifier that resolves to
+ * no package is not a dependency (for example a path alias).
+ */
+export function isPackageResolvableSync(
+  packageName: string,
+  options: { baseDir?: string } = {},
+): boolean {
+  return Boolean(
+    resolveInstalledPackageJsonPath(packageName, options.baseDir) ||
+      resolveWorkspacePackageJsonPath(packageName, options.baseDir),
+  );
+}
+
+/**
  * Load a manifest directly from a known file path and cache it by package name.
  *
  * This is used by workspace/dev flows where sibling packages may not be
  * installed into node_modules yet, but their generated manifests are still
- * available on disk.
+ * available on disk. With `cache: false` (a load for a build rooted in
+ * another project) the process-wide cache is left untouched.
  */
 export function loadManifestFromPathSync(
   manifestPath: string,
+  options: { cache?: boolean } = {},
 ): Manifest | null {
   try {
     const manifestJson = readFileSync(manifestPath, 'utf-8');
@@ -1020,7 +1134,7 @@ export function loadManifestFromPathSync(
     }
 
     const cacheKey = manifest.packageName || manifestPath;
-    getManifestCacheMap().set(cacheKey, manifest);
+    if (options.cache ?? true) getManifestCacheMap().set(cacheKey, manifest);
     debugLog(
       `[manifest-loader] ✅ Loaded manifest from path ${manifestPath} (${Object.keys(manifest.objects).length} objects)`,
     );
@@ -1560,6 +1674,7 @@ export function clearManifestCache(): void {
   setTestManifestLoadAttempted(false);
   setLocalTestManifestCache(undefined);
   getManifestCacheMap().clear();
+  rootManifestCache.clear();
   getManifestCollisionsMap().clear();
   getSTISiblingCache().clear();
   projectManifestReads.clear();

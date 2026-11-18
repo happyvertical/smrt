@@ -32,11 +32,17 @@ const CONTENT = '@happyvertical/smrt-content';
 const IMAGES = '@happyvertical/smrt-images';
 const PEER = '@happyvertical/smrt-peer-only';
 
-function manifest(className: string): string {
+function manifest(className: string, importPath?: string): string {
   return JSON.stringify({
     moduleType: 'smrt',
     objects: {
-      [className]: { className, fields: {}, methods: {} },
+      [className]: {
+        className,
+        fields: {},
+        methods: {},
+        // The entry a dependent imports the class from.
+        ...(importPath ? { importPath } : {}),
+      },
     },
   });
 }
@@ -61,7 +67,7 @@ function smrtPackage(
     join(dir, 'dist', 'index.js'),
     `export class ${className} {}\n`,
   );
-  writeFileSync(join(dir, 'dist', 'manifest.json'), manifest(className));
+  writeFileSync(join(dir, 'dist', 'manifest.json'), manifest(className, name));
 }
 
 let root: string;
@@ -115,6 +121,10 @@ beforeEach(() => {
       name: '@test/consumer',
       type: 'module',
       dependencies: { [CONTENT]: '1.0.0' },
+      // A class imported from a package is imported from one the app
+      // declares; the package itself is still installed only through
+      // smrt-content.
+      peerDependencies: { [IMAGES]: '1.0.0' },
     }),
   );
   writeFileSync(

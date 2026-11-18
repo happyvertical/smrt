@@ -182,6 +182,18 @@ export interface FieldDefinition {
    */
   enum?: ReadonlyArray<string | number>;
   related?: string; // For foreignKey, crossPackageRef, oneToMany, manyToMany
+  /**
+   * For a relationship whose target class is imported from another package:
+   * that package and export (`@pkg:Export`). Generation confirms it against
+   * the package's manifest and records the declaring class as `related`.
+   */
+  relatedQualified?: string;
+  /**
+   * The full specifier `relatedQualified` is imported from. Generation
+   * requires it to be the entry the package's manifest declares the class at
+   * (its `importPath`).
+   */
+  relatedImportPath?: string;
   description?: string;
   _meta?: FieldMeta;
   transient?: boolean; // Field not persisted to database
@@ -585,7 +597,20 @@ export interface SmartObjectDefinition {
   abstractDeclaredApi?: SmartObjectConfig['api'] | null;
   extends?: string; // Base class name (simple name, not qualified)
   extendsQualified?: string; // Base class qualified name
+  /**
+   * The full specifier a parent of another package is imported from. Generation
+   * requires it to be the entry the package's manifest declares the parent at
+   * (its `importPath`).
+   */
+  extendsImportPath?: string;
   extendsTypeArg?: string; // Generic type argument (e.g., "Meeting" from "SmrtCollection<Meeting>")
+  /**
+   * A collection's item imported from another package (`@pkg:Export`). The
+   * item is looked up by this identity, never by `extendsTypeArg` alone.
+   */
+  extendsTypeArgQualified?: string;
+  /** The full specifier {@link extendsTypeArgQualified} is imported from. */
+  extendsTypeArgImportPath?: string;
   /**
    * Generated surfaces (`api`/`mcp`/`cli`) in `decoratorConfig` that the
    * scanner copied from a collection's model rather than the collection

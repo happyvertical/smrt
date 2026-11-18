@@ -22,7 +22,10 @@ import { foreignKey } from '../decorators';
 import { MCPGenerator } from '../generators/mcp';
 import { APIGenerator } from '../generators/rest';
 import { buildDomainKnowledgeManifest } from '../knowledge';
-import { clearManifestCache } from '../manifest/manifest-loader';
+import {
+  clearManifestCache,
+  loadExternalManifestSync,
+} from '../manifest/manifest-loader';
 import { annotateModelReplacements } from '../manifest/model-replacements';
 import { generateSchemaDiff } from '../migrations/differ';
 import { createMigrationDefinition } from '../migrations/generator';
@@ -95,7 +98,13 @@ async function scan(root: string, pkg: string, deps: string[] = []) {
     packageName: pkg,
   }) as SmartObjectManifest;
   manifest.smrtDependencies = deps;
-  new ManifestGenerator().applyGenerationPasses(manifest, { packageName: pkg });
+  // As a producer does: with the package.json, so each class records the
+  // entry it is exported from (`importPath`), which a dependent's import is
+  // confirmed against.
+  new ManifestGenerator().applyGenerationPasses(manifest, {
+    packageName: pkg,
+    packageJson: { name: pkg },
+  });
   return manifest;
 }
 
@@ -195,7 +204,11 @@ beforeEach(async () => {
   ObjectRegistry.clear();
   ws = createConsumerWorkspace('smrt-a2');
   cwd = process.cwd();
-  ws.writePackage('app', APP);
+  // The app declares the package it imports its parents from.
+  ws.write(
+    'app/package.json',
+    JSON.stringify({ name: APP, dependencies: { [UP]: '*' } }),
+  );
   ws.write(
     'node_modules/@fixture/a2-upstream/package.json',
     JSON.stringify({
@@ -217,6 +230,9 @@ beforeEach(async () => {
   );
   ws.write('app/src/models.ts', appSource());
   app = await scan(ws.path('app'), APP, [UP]);
+  // The app process loads its dependency's manifest, as its runtime does.
+  // (Generation no longer leaves it in the process-wide cache.)
+  loadExternalManifestSync(UP, { warn: false });
   merged = annotateModelReplacements({
     ...app,
     objects: { ...up.objects, ...app.objects },

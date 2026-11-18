@@ -9,7 +9,10 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { manifestExportCandidates } from './package-manifest-exports.js';
+import {
+  conventionalManifestCandidates,
+  manifestExportCandidates,
+} from './package-manifest-exports.js';
 
 /** Resolve installed package metadata through the actual host/workspace links. */
 export function findInstalledPackageJson(
@@ -55,8 +58,7 @@ export function packageManifestCandidates(
   return [
     ...manifestExportCandidates(packageDir, packageJson),
     legacyStaticManifestPath(packageDir),
-    path.join(packageDir, 'dist', 'manifest.json'),
-    path.join(packageDir, 'manifest.json'),
+    ...conventionalManifestCandidates(packageDir),
   ];
 }
 

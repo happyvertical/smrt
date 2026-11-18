@@ -41,6 +41,7 @@ function fixture() {
           className: 'ExplicitRootBase',
           fields: {},
           methods: {},
+          importPath: provider,
         },
       },
     }),

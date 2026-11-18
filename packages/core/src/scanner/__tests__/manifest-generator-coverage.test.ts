@@ -343,6 +343,7 @@ describe('ManifestGenerator coverage', () => {
             extends: baseName,
             fields: { contentId: { type: 'foreignKey', related: 'Content' } },
           }),
+          def('Content', { extends: 'SmrtObject', fields: {}, methods: {} }),
         ]),
       ]);
 

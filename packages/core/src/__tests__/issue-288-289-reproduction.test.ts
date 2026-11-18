@@ -30,11 +30,22 @@ class TestArticle extends SmrtObject {
 @smrt()
 class TestMeetingAnnouncement extends TestArticle {
   @field({ required: true })
-  @foreignKey('Meeting')
+  @foreignKey('TestMeeting')
   meetingId: string = '';
 
-  @foreignKey('Council')
+  @foreignKey('TestCouncil')
   councilId: string = '';
+}
+
+// Relationship targets: every target names a model the manifest declares.
+@smrt()
+class TestMeeting extends SmrtObject {
+  title: string = '';
+}
+
+@smrt()
+class TestCouncil extends SmrtObject {
+  name: string = '';
 }
 
 // Collections
@@ -44,6 +55,28 @@ class TestArticleCollection extends SmrtCollection<TestArticle> {
 
 class TestMeetingAnnouncementCollection extends SmrtCollection<TestMeetingAnnouncement> {
   static readonly _itemClass = TestMeetingAnnouncement;
+}
+
+class TestMeetingCollection extends SmrtCollection<TestMeeting> {
+  static readonly _itemClass = TestMeeting;
+}
+
+class TestCouncilCollection extends SmrtCollection<TestCouncil> {
+  static readonly _itemClass = TestCouncil;
+}
+
+/** Rows the announcement's foreign keys reference (the schema enforces them). */
+async function createTargets(path: string) {
+  const db = { type: 'sqlite' as const, url: path };
+  const meeting = await (await TestMeetingCollection.create({ db })).create({
+    title: 'Meeting',
+  });
+  await meeting.save();
+  const council = await (await TestCouncilCollection.create({ db })).create({
+    name: 'Council',
+  });
+  await council.save();
+  return { meetingId: meeting.id as string, councilId: council.id as string };
 }
 
 describe('Issue #288 and #289 Reproduction', () => {
@@ -103,10 +136,11 @@ describe('Issue #288 and #289 Reproduction', () => {
     });
 
     it('should allow querying by foreign key fields', async () => {
+      const { meetingId, councilId } = await createTargets(dbPath);
       // Create an announcement
       const announcement = await collection.create({
-        meetingId: 'meeting-123',
-        councilId: 'council-456',
+        meetingId,
+        councilId,
         title: 'Test Announcement',
         body: 'Test body',
       });
@@ -114,11 +148,11 @@ describe('Issue #288 and #289 Reproduction', () => {
 
       // Query by foreign key field - this should NOT throw
       const result = await collection.findOne({
-        where: { meetingId: 'meeting-123' },
+        where: { meetingId },
       });
 
       expect(result).toBeDefined();
-      expect(result?.meetingId).toBe('meeting-123');
+      expect(result?.meetingId).toBe(meetingId);
     });
   });
 
@@ -173,9 +207,10 @@ describe('Issue #288 and #289 Reproduction', () => {
     });
 
     it('should save without validation errors', async () => {
+      const { meetingId, councilId } = await createTargets(dbPath);
       const announcement = await collection.create({
-        meetingId: 'meeting-123',
-        councilId: 'council-456',
+        meetingId,
+        councilId,
         title: 'Test Announcement',
         body: 'Test body',
       });
