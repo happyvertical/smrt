@@ -611,3 +611,170 @@ describe('app model editor: reserved field names', () => {
     await applier(e)(planned.edit);
   });
 });
+
+describe('app model editor: one customised registry per process', () => {
+  const OTHER_TENANT = '55555555-5555-4555-8555-555555555555';
+  let restore: () => void;
+  let db: Awaited<ReturnType<typeof getDatabase>>;
+  beforeEach(async () => {
+    restore = snapshotObjectRegistryState();
+    ObjectRegistry.clear();
+    globalThis.__smrtModelReadiness?.clear();
+    db = await getTestDatabase({
+      type: databaseType,
+      classes: [],
+      includeSystemTables: false,
+    });
+    registerMember();
+    enableTenancy();
+    await migrateSmrtSchemas({ db, packageName: APP, engineHint: engine });
+  });
+  afterEach(async () => {
+    setRuntimeExposureGate(undefined);
+    globalThis.__smrtModelReadiness?.clear();
+    disableTenancy();
+    await db.close?.();
+    restore();
+  });
+  const editorFor = (tenantId: string, application = 'editor-guards-slot') =>
+    createAppModelEditor({
+      db,
+      application,
+      tenantId,
+      packageName: APP,
+      cookbook: memberBook(),
+      catalog: memberCatalog,
+      authorize: (c) => c.actor === 'owner',
+    });
+  const applier =
+    (e: Awaited<ReturnType<typeof editorFor>>, tenantId: string) =>
+    (value: AppModelEdit) =>
+      e.apply(value, {
+        actor: 'owner',
+        tenantId,
+        expectedRevision: e.snapshot().revision,
+        requestId: `req-${crypto.randomUUID()}`,
+      });
+
+  it('refuses a second tenant editor once the first has customised the registry', async () => {
+    const first = await editorFor(TENANT);
+    await applier(
+      first,
+      TENANT,
+    )({
+      type: 'add_field',
+      model: MEMBER,
+      name: 'vip',
+      field: { type: 'boolean' },
+    });
+    await expect(editorFor(OTHER_TENANT)).rejects.toThrow(
+      /MODEL_EDIT_CONFLICT: this process already holds/,
+    );
+    await expect(editorFor(TENANT, 'editor-guards-other-app')).rejects.toThrow(
+      /MODEL_EDIT_CONFLICT: this process already holds/,
+    );
+    // The same journal reopens, and the first editor keeps working.
+    expect((await editorFor(TENANT)).snapshot().revision).toBe(1);
+    await applier(
+      first,
+      TENANT,
+    )({
+      type: 'create_list',
+      name: 'GuardMat',
+      list: mats,
+    });
+    const fields = await ObjectRegistry.getAllFields(`${APP}:GuardMember`);
+    expect([...fields.keys()]).toContain('vip');
+  });
+
+  it('refuses the later edit when two uncustomised editors were opened first', async () => {
+    const first = await editorFor(TENANT);
+    const second = await editorFor(OTHER_TENANT);
+    await applier(
+      second,
+      OTHER_TENANT,
+    )({
+      type: 'add_field',
+      model: MEMBER,
+      name: 'loyalty',
+      field: { type: 'text' },
+    });
+    await expect(
+      first.apply(
+        {
+          type: 'add_field',
+          model: MEMBER,
+          name: 'vip',
+          field: { type: 'boolean' },
+        },
+        {
+          actor: 'owner',
+          tenantId: TENANT,
+          expectedRevision: 0,
+          requestId: 'req-later',
+        },
+      ),
+    ).rejects.toThrow(/MODEL_EDIT_CONFLICT: this process already holds/);
+    const fields = await ObjectRegistry.getAllFields(`${APP}:GuardMember`);
+    expect([...fields.keys()]).not.toContain('vip');
+    expect(await first.history()).toEqual([]);
+  });
+
+  it('refuses one of two populated journals constructed at the same time', async () => {
+    const populate = async (tenantId: string, name: string) => {
+      const e = await editorFor(tenantId);
+      await applier(
+        e,
+        tenantId,
+      )({
+        type: 'add_field',
+        model: MEMBER,
+        name,
+        field: { type: 'text' },
+      });
+      // A process restart: a fresh registry.
+      ObjectRegistry.clear();
+      globalThis.__smrtModelReadiness?.clear();
+      registerMember();
+    };
+    await populate(TENANT, 'vip');
+    await populate(OTHER_TENANT, 'loyalty');
+    const results = await Promise.allSettled([
+      editorFor(TENANT),
+      editorFor(OTHER_TENANT),
+    ]);
+    expect(results.map((result) => result.status).sort()).toEqual([
+      'fulfilled',
+      'rejected',
+    ]);
+    const refused = results.find((result) => result.status === 'rejected') as
+      | PromiseRejectedResult
+      | undefined;
+    expect(String(refused?.reason)).toMatch(
+      /MODEL_EDIT_CONFLICT: this process already holds/,
+    );
+    const fields = [
+      ...(await ObjectRegistry.getAllFields(`${APP}:GuardMember`)).keys(),
+    ];
+    // Exactly one journal's field is registered, never both.
+    expect(fields.includes('vip') !== fields.includes('loyalty')).toBe(true);
+  });
+
+  it('a pre-opened editor never projects another journal customisation', async () => {
+    const first = await editorFor(TENANT);
+    const second = await editorFor(OTHER_TENANT);
+    await applier(
+      second,
+      OTHER_TENANT,
+    )({
+      type: 'add_field',
+      model: MEMBER,
+      name: 'loyalty',
+      field: { type: 'text' },
+    });
+    expect(() => first.snapshot()).toThrow(
+      /MODEL_EDIT_CONFLICT: this process already holds/,
+    );
+    expect(() => second.snapshot()).not.toThrow();
+  });
+});
