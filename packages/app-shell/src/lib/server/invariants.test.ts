@@ -34,7 +34,7 @@ describe('approval gate invariants', () => {
     expect(offenders).toEqual([]);
   });
 
-  it('only approvals.ts calls decideApproval, and only Approval.decide uses it', () => {
+  it('only approvals.ts and Approval.decide call decideApproval', () => {
     // server code only: the browser's `decideApproval` in lib/ui/api is just
     // the fetch wrapper for POST /api/shell/approvals/<id>
     const users = files
@@ -50,6 +50,41 @@ describe('approval gate invariants', () => {
       'lib/objects/Approval.ts',
       'lib/server/approvals.ts',
     ]);
+  });
+
+  it('decideApproval has exactly two callers: Approval.decide and the owner-publish path', () => {
+    const approvals =
+      files.find(([f]) => f === 'lib/server/approvals.ts')?.[1] ?? '';
+    // the definition plus the one call inside publishOwnDraft
+    expect(approvals.match(/decideApproval\s*\(/g)?.length).toBe(2);
+    expect(approvals).toMatch(
+      /export async function publishOwnDraft[\s\S]*await assertOwner\(\)[\s\S]*typeof expect !== 'string'[\s\S]*requestPublish\(expect, owner\.id\)[\s\S]*decideApproval\(pending\.approvalId, true, owner\.id\)/,
+    );
+  });
+
+  it('only the owner session route POST /api/shell/draft/publish uses publishOwnDraft', () => {
+    // never a tool, the assistant, /mcp, the generated REST or an agent CLI:
+    // those reach publishing only through App.publishDraft (a pending Approval)
+    const users = files
+      .filter(
+        ([f, t]) =>
+          f !== 'lib/server/approvals.ts' &&
+          // a call, or an import of it (prose in comments may name it)
+          /publishOwnDraft\s*\(|\{[^}]*\bpublishOwnDraft\b[^}]*\}\s*from/.test(
+            t,
+          ),
+      )
+      .map(([f]) => f);
+    expect(users).toEqual(['routes/api/shell/draft/publish/+server.ts']);
+    const route = files.find(
+      ([f]) => f === 'routes/api/shell/draft/publish/+server.ts',
+    )?.[1];
+    expect(route).toMatch(/await ownerOf\(event\)/);
+    expect(route).toMatch(
+      /runAs\(owner, \(\) => publishOwnDraft\(body\.expect\)\)/,
+    );
+    const app = files.find(([f]) => f === 'lib/objects/App.ts')?.[1] ?? '';
+    expect(app).toMatch(/return requestPublish\(expect, owner\.id\)/);
   });
 
   it('request handlers never read an `approved` input', () => {

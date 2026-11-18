@@ -25,9 +25,12 @@ import {
   importFieldName,
   importModelName,
 } from '../../engine/import-target.ts';
+import { AppDraftCollection } from '../objects/AppDraft.ts';
 import { AppImportCollection } from '../objects/AppImport.ts';
 import { ApprovalCollection } from '../objects/Approval.ts';
+import { runCommand } from './builder.ts';
 import {
+  discardIfUnused,
   discardNow,
   draftInfo,
   previewDraft,
@@ -597,15 +600,58 @@ it('refuses nonowners, invalid uploads, occupied draft and simultaneous imports'
     ),
   ).rejects.toMatchObject({ status: 415 });
   await startDraft('My draft', h.owner.id);
+  await runCommand(
+    {
+      type: 'defineModel',
+      name: 'Scratch',
+      fields: { note: { type: 'text' } },
+    },
+    h.owner.id,
+    'draft',
+  );
   await expect(service.start(h.owner, await request())).rejects.toMatchObject({
     status: 409,
+    message: /A draft is already open/,
   });
+  expect((await draftInfo())?.name).toBe('My draft');
   await discardNow();
   await service.start(h.owner, await request());
   await expect(service.start(h.owner, await request())).rejects.toMatchObject({
     status: 409,
   });
   expect(await service.current(h.member).catch(() => null)).toBeNull();
+});
+it('reuses an open draft that has no changes', async () => {
+  const unused = await startDraft('Never used', h.owner.id);
+  await service.start(h.owner, await request());
+  expect(
+    (await (await AppDraftCollection.create({ db: h.db })).get(unused.id))
+      ?.status,
+  ).toBe('discarded');
+});
+it('keeps a draft that gets a change after the unused check', async () => {
+  await startDraft('Changed after check', h.owner.id);
+  const host = await hostFor('draft');
+  const chain = host.draftChain.bind(host);
+  let reads = 0;
+  // The first read (the caller's own check) sees an empty draft; the change
+  // lands before the in-lock read.
+  vi.spyOn(host, 'draftChain').mockImplementation(async () => {
+    reads += 1;
+    if (reads === 1) return chain();
+    await host.execute(
+      {
+        type: 'defineModel',
+        name: 'Pets',
+        fields: { name: { type: 'text' } },
+      },
+      { author: h.owner.id },
+    );
+    return chain();
+  });
+  expect(await discardIfUnused()).toBe(false);
+  expect(reads).toBe(2);
+  expect((await getDraftSlot())?.name).toBe('Changed after check');
 });
 it('refuses tracking-off and disconnected AI before consuming bytes, and validates owner cell settings', async () => {
   config({ usage: { enabled: false } });

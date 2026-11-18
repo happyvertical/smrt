@@ -7,7 +7,11 @@ import type {
   TurnStop,
 } from './events.ts';
 
-import { reportLink, reportPresentation, toolSummary } from './tool-summary.ts';
+import {
+  reportLink,
+  reportPresentation,
+  shownSummary,
+} from './tool-summary.ts';
 
 export type ApprovalState =
   | 'pending'
@@ -209,7 +213,7 @@ export function reduce(state: DockState, action: Action): DockState {
             id: `m${seq}`,
             name: m.tool.name,
             state: m.tool.ok ? 'ok' : 'error',
-            summary: toolSummary(m.tool.name, m.tool.summary, m.tool.ok),
+            summary: shownSummary(m.tool.name, m.tool.summary, m.tool.ok),
             ...(reportLink(m.tool.reportHref)
               ? { reportHref: reportLink(m.tool.reportHref) }
               : {}),
@@ -339,7 +343,7 @@ function onEvent(state: DockState, e: TurnEvent): DockState {
           (i) => ({
             ...(i as Extract<Item, { kind: 'tool' }>),
             state: e.ok ? 'ok' : 'error',
-            summary: toolSummary(e.name, e.summary, e.ok),
+            summary: shownSummary(e.name, e.summary, e.ok),
             ...(e.report && reportPresentation(e.name, e.report.result, e.ok)
               ? {
                   report: {
@@ -415,14 +419,17 @@ function onEvent(state: DockState, e: TurnEvent): DockState {
 /** A short label for a tool chip: `chore_create` -> `Chore create`. */
 export function toolLabel(name: string): string {
   const labels: Record<string, string> = {
-    app_definereport: 'Make report',
-    app_renamereport: 'Rename report',
-    app_removereport: 'Remove report',
-    app_runreport: 'Run report',
-    app_setcalculation: 'Calculate field',
-    app_loadrecords: 'Load records',
-    app_extractmodel: 'Make linked records',
-    app_mergerecords: 'Merge records',
+    app_definereport: 'Making a report',
+    app_renamereport: 'Renaming a report',
+    app_removereport: 'Removing a report',
+    app_runreport: 'Running a report',
+    app_describe: 'Looking at your app',
+    app_history: 'Checking recent changes',
+    approval_pending: 'Checking what needs your approval',
+    app_setcalculation: 'Setting up a calculated field',
+    app_loadrecords: 'Loading records',
+    app_extractmodel: 'Splitting out linked records',
+    app_mergerecords: 'Merging records',
   };
   if (labels[name]) return labels[name];
   const words = name.replace(/^app_/, '').replace(/[_-]+/g, ' ').trim();
@@ -457,4 +464,41 @@ export function announcement(state: DockState): string {
   return state.items.at(-1)?.kind === 'assistant'
     ? 'The assistant replied.'
     : '';
+}
+
+type ToolItem = Extract<Item, { kind: 'tool' }>;
+export type ViewItem = Item | (ToolItem & { failures: number });
+
+/**
+ * Consecutive failed tool cards (retries) collapse into one card that keeps
+ * the newest plain reason and counts the attempts.
+ */
+export function collapseFailures(items: Item[]): ViewItem[] {
+  const out: ViewItem[] = [];
+  for (const item of items) {
+    const prev = out.at(-1);
+    if (item.kind === 'tool' && item.state === 'error') {
+      if (prev?.kind === 'tool' && prev.state === 'error') {
+        const failures = ('failures' in prev ? prev.failures : 1) + 1;
+        out[out.length - 1] = { ...item, id: prev.id, failures };
+        continue;
+      }
+      out.push({ ...item, failures: 1 });
+      continue;
+    }
+    out.push(item);
+  }
+  return out;
+}
+
+/** The visible working line, from send until the reply finishes. */
+export function workingStep(state: DockState): string {
+  if (!state.running) return '';
+  const last = state.items.at(-1);
+  if (last?.kind === 'tool' && last.state === 'running')
+    return toolLabel(last.name);
+  if (last?.kind === 'approval' && last.state === 'pending')
+    return 'Waiting for your decision';
+  if (last?.kind === 'assistant' && last.streaming) return 'Writing a reply';
+  return 'Thinking';
 }

@@ -19,6 +19,29 @@ export function reportFailure(
       400,
       'Give each report result a different name using lowercase words separated by underscores, or omit the result names. Keep the app’s source field names unchanged.',
     );
+  if (error instanceof RuntimeReportError && error.code === 'invalid_spec') {
+    // Parser paths and reasons are fixed grammar text, never SQL or file paths.
+    // The model needs them to correct its own spec instead of guessing again.
+    const path = /^spec[\w.[\]]*$/.test(error.path) ? error.path : 'spec';
+    const prefix = `${error.path}: `;
+    const reason = (
+      error.path && error.message.startsWith(prefix)
+        ? error.message.slice(prefix.length)
+        : error.message
+    )
+      .replace(/[^\x20-\x7e]/g, ' ')
+      .slice(0, 200)
+      .trim();
+    const hint = /^spec\.sort\[\d+\]/.test(path)
+      ? ' Sort entries are {"by": output alias, "direction": "asc" or "desc"}.'
+      : /^spec\.dimensions\[\d+\]\.bucket$/.test(path)
+        ? ' A bucket is only valid on a date or datetime field.'
+        : '';
+    return new HttpError(
+      400,
+      `The report definition is invalid at ${path}: ${reason}.${hint} Correct that part and run the report again.`,
+    );
+  }
   if (error instanceof RuntimeReportError && error.code === 'invalid_result') {
     const measure = report?.spec.measures.find((m) => m.as === error.path);
     const model = report && definition?.models[report.spec.source];

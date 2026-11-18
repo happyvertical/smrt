@@ -5,6 +5,8 @@ import type {
   UntranslatedFormula,
 } from '@happyvertical/smrt-spreadsheets/import';
 import type { RetainedImportPlan } from '../../engine/import-names.ts';
+import { recordLabel } from './fields.ts';
+import type { ModelInfo, RecordRow } from './types.ts';
 export interface ImportState {
   id: string;
   state: string;
@@ -64,6 +66,84 @@ export function fieldLabel(
   return field
     ? (t?.fields.find((f) => f.key === field)?.label ?? 'Field')
     : (t?.label ?? 'Table');
+}
+
+/** Row preview: rows shown before "Show all", and the read ceiling. */
+export const IMPORT_PREVIEW_ROWS = 3;
+export const IMPORT_PREVIEW_MAX = 1000;
+
+/** Plain-words type shown under a preview column name. */
+export function previewType(
+  field: {
+    type: string;
+    money?: { currency: string };
+    reference?: { table: string };
+  },
+  plan?: ImportPlan,
+): string {
+  if (field.type === 'money')
+    return field.money ? `money · ${field.money.currency}` : 'money';
+  if (field.type === 'reference')
+    return field.reference
+      ? `link · ${fieldLabel(plan, field.reference.table)}`
+      : 'link';
+  return (
+    { integer: 'whole number', boolean: 'yes or no' }[field.type] ?? field.type
+  );
+}
+
+/** A model whose draft records label the link cells of a preview. */
+export interface LinkTarget {
+  model: string;
+  fields: Record<string, { type: string }>;
+}
+/** Link labels by model, then record id: the label the record pages show. */
+export type LinkLabels = Record<string, Record<string, string>>;
+
+/** Read each linked table once from the draft and label its records. */
+export async function readLinkLabels(
+  targets: LinkTarget[],
+): Promise<LinkLabels> {
+  const out: LinkLabels = {};
+  await Promise.all(
+    [...new Map(targets.map((t) => [t.model, t])).values()].map(
+      async (target) => {
+        try {
+          const response = await fetch(
+            `/api/shell/records/${encodeURIComponent(target.model)}?target=draft&limit=${IMPORT_PREVIEW_MAX}`,
+          );
+          if (!response.ok) return;
+          const body = await response.json();
+          if (!Array.isArray(body.records)) return;
+          out[target.model] = Object.fromEntries(
+            (body.records as RecordRow[]).map((row) => [
+              row.id,
+              recordLabel(target as Pick<ModelInfo, 'fields'>, row),
+            ]),
+          );
+        } catch {
+          // Labels are optional; the cell keeps the id without them.
+        }
+      },
+    ),
+  );
+  return out;
+}
+
+/** One cell of a loaded draft row, in the words the review uses. */
+export function previewCell(
+  value: unknown,
+  field: { type: string; money?: { currency: string; scale: number } },
+  label?: string,
+): string {
+  if (value === null || value === undefined || value === '') return '';
+  if (field.type === 'reference' && label) return label;
+  if (field.type === 'boolean') return value ? 'Yes' : 'No';
+  if (field.type === 'money' && field.money && Number.isSafeInteger(value))
+    return importTotal(value as number, field.money);
+  if (field.type === 'date' && typeof value === 'string')
+    return /^\d{4}-\d{2}-\d{2}T/.test(value) ? value.slice(0, 10) : value;
+  return typeof value === 'object' ? JSON.stringify(value) : String(value);
 }
 
 /** Render exact checked money totals in the workbook's currency. */

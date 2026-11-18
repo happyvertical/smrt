@@ -168,6 +168,8 @@ export function startDraft(
         `a draft is already open ("${open.name}"); publish or discard it first`,
         'refused',
       );
+    // A draft forks live, so live is repaired first (it is not frozen yet).
+    await live.repairLegacyImport().catch(() => 0);
     const db = await getShellDb();
     const dir = join(await dataRoot(), DRAFT_DIRNAME);
     // A leftover copy no row refers to (host.ts removes these at start): the
@@ -296,7 +298,9 @@ export async function previewDraft(): Promise<{
 /**
  * Ask to publish: ALWAYS an Approval, pinned to the digest of a preview taken
  * now. `expect`, when given, is the digest the person reviewed: a draft that
- * changed since is refused (review it again), not published.
+ * changed since is refused (review it again), not published. Tools leave it
+ * pending; only the owner's review-page Publish (`publishOwnDraft`, which
+ * requires `expect`) decides it in the same request.
  */
 export async function requestPublish(
   expect: unknown,
@@ -373,6 +377,7 @@ export function publishApproved(
       );
     }
     live.setFrozen(false);
+    await live.repairLegacyImport().catch(() => 0);
     publish({
       type: 'draft',
       status: 'published',
@@ -386,7 +391,10 @@ export function publishApproved(
 }
 
 /** Discard the open draft now: closes it, deletes its copy, thaws live. Owner's direct action. */
-export function discardNow(expectId?: string): Promise<{ discarded: string }> {
+export function discardNow(
+  expectId?: string,
+  options: { expectEmpty?: boolean } = {},
+): Promise<{ discarded: string }> {
   return exclusive(async () => {
     const live = await getHost();
     const slot = await getDraftSlot();
@@ -396,6 +404,14 @@ export function discardNow(expectId?: string): Promise<{ discarded: string }> {
         'this is not the draft that was asked about',
         'refused',
       );
+    // A change that landed after the caller's own check keeps the draft. Edits
+    // do not take this lock, so a change landing after this read and before
+    // the discard below can still be lost: that narrow window is accepted.
+    if (
+      options.expectEmpty &&
+      (!slot.host || (await slot.host.draftChain()).versions.length > 0)
+    )
+      throw new EngineError('this draft has changes', 'refused');
     if (slot.host) await slot.host.discard();
     else if (existsSync(slot.dir)) discardDraftDirectory(slot.dir);
     const row = await (
@@ -409,6 +425,7 @@ export function discardNow(expectId?: string): Promise<{ discarded: string }> {
     }
     setDraftSlot(null);
     live.setFrozen(false);
+    await live.repairLegacyImport().catch(() => 0);
     publish({
       type: 'draft',
       status: 'discarded',
@@ -417,6 +434,32 @@ export function discardNow(expectId?: string): Promise<{ discarded: string }> {
     });
     return { discarded: slot.name };
   });
+}
+
+/**
+ * Close the open draft only when it is provably unused: no hold, an open copy
+ * and an empty change chain. A draft with changes, or one that cannot be read,
+ * stays. Lets an import take over a draft the owner never used.
+ */
+export async function discardIfUnused(): Promise<boolean> {
+  const slot = await getDraftSlot();
+  if (!slot || slot.hold || !slot.host) return false;
+  try {
+    if ((await slot.host.draftChain()).versions.length > 0) return false;
+  } catch {
+    return false;
+  }
+  try {
+    await discardNow(slot.id, { expectEmpty: true });
+  } catch (error) {
+    const current = await getDraftSlot();
+    if (current?.id === slot.id) {
+      if (error instanceof EngineError && error.code === 'refused')
+        return false;
+      throw error;
+    }
+  }
+  return true;
 }
 
 /** Ask to discard (a tool's way): an Approval. */

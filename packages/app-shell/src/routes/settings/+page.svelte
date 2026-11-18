@@ -11,12 +11,14 @@ const extraSections = [
   {
     id: 'assistant',
     label: 'Assistant',
-    description: 'Connect Claude Code or Codex, or choose an API key.',
+    description:
+      'Choose what runs the assistant: Claude Code, Codex or an API key.',
   },
   {
     id: 'inference',
-    label: 'Inference',
-    description: 'The assistant’s provider, API key and model.',
+    label: 'Inference (advanced)',
+    description:
+      'Fine-tune the API provider, model and key the assistant uses when you chose an API key.',
   },
 ];
 </script>

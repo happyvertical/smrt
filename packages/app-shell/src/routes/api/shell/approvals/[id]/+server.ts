@@ -1,7 +1,9 @@
 /**
  * `POST /api/shell/approvals/<id>` body `{ "approve": true | false }`: the
  * owner decides. Approve applies the change; deny only records. Goes through
- * `Approval.decide`, the only place the engine's `approved` flag is set.
+ * `Approval.decide` -> `decideApproval`, the only place the engine's
+ * `approved` flag is set (its one other caller is the owner's review-page
+ * Publish, `publishOwnDraft`).
  * -> { id, status: 'approved' | 'denied' | 'failed', result?, error? }
  * 404 unknown id, 409 already decided.
  */

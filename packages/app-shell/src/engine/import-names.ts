@@ -7,9 +7,9 @@ import {
   tableFor,
   validate,
 } from './definition.ts';
+import { WORKBOOK_LOOKUP, WORKBOOK_ROW } from './import-bookkeeping.ts';
 
-export const WORKBOOK_ROW = 'workbookRow';
-export const WORKBOOK_LOOKUP = 'workbookLookup';
+export { WORKBOOK_LOOKUP, WORKBOOK_ROW };
 
 /** Retained with the plan, before any engine command is applied. */
 export interface ImportNames {

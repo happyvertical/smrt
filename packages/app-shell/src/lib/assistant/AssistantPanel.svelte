@@ -1,4 +1,5 @@
 <script lang="ts">
+import { renderAssistantMarkdown } from '@happyvertical/smrt-chat/svelte';
 import { ReportResult } from '@happyvertical/smrt-reports/svelte';
 import { Badge } from '@happyvertical/smrt-ui';
 import { onDestroy, onMount, tick, untrack } from 'svelte';
@@ -20,12 +21,14 @@ import {
 import {
   type Action,
   announcement,
+  collapseFailures,
   type DockState,
   type Item,
   initialState,
   reduce,
   stopNote,
   toolLabel,
+  workingStep,
 } from './reducer';
 
 // The assistant's chat column, docked between the sidebar and the content by
@@ -35,10 +38,13 @@ import {
 let {
   open = true,
   buildingInDraft = false,
+  viewingDraft = true,
   owner = null,
 }: {
   open?: boolean;
   buildingInDraft?: boolean;
+  /** The header's Live/Draft switch: the badge must not contradict it. */
+  viewingDraft?: boolean;
   owner?: OwnerProfile | null;
 } = $props();
 
@@ -243,7 +249,7 @@ onDestroy(() => controller?.abort());
   <header class="smrt-assistant-panel__bar">
     <div class="smrt-assistant-panel__title">
       <h2>Assistant</h2>
-      {#if buildingInDraft}<Badge variant="warning">Building in draft</Badge>{/if}
+      {#if buildingInDraft}<Badge variant="warning">{viewingDraft ? 'Building in draft' : 'Changes go to the draft'}</Badge>{/if}
       {#if dock.engineLabel}<p class="smrt-app-shell__muted smrt-assistant-panel__engine">Using {dock.engineLabel}</p>{/if}
     </div>
     <div class="smrt-assistant-panel__bar-actions">
@@ -272,11 +278,11 @@ onDestroy(() => controller?.abort());
       </p>
     {/if}
 
-    {#each dock.items as item (item.id)}
+    {#each collapseFailures(dock.items) as item (item.id)}
       {#if item.kind === 'user'}
         <p class="smrt-assistant-panel__msg smrt-assistant-panel__user"><span class="smrt-assistant-panel__sr-only">You: </span>{item.text}</p>
       {:else if item.kind === 'assistant'}
-        <p class="smrt-assistant-panel__msg smrt-assistant-panel__bot"><span class="smrt-assistant-panel__sr-only">Assistant: </span>{item.text}</p>
+        <div class="smrt-assistant-panel__msg smrt-assistant-panel__bot smrt-assistant-panel__markdown"><span class="smrt-assistant-panel__sr-only">Assistant: </span>{@html renderAssistantMarkdown(item.text)}</div>
       {:else if item.kind === 'tool'}
         <p
           class="smrt-assistant-panel__chip"
@@ -284,9 +290,10 @@ onDestroy(() => controller?.abort());
           title={item.summary}
         >
           <span aria-hidden="true">{item.state === 'running' ? '…' : item.state === 'ok' ? '✓' : '!'}</span>
-          <span>{toolLabel(item.name)}</span>
+          <span>{toolLabel(item.name)}{item.state === 'error' ? " didn't work" : ''}</span>
+          {#if 'failures' in item && item.failures > 1}<span class="smrt-app-shell__muted">Tried {item.failures} times.</span>{/if}
           {#if item.summary}<span class="smrt-app-shell__muted smrt-assistant-panel__sum">{item.summary}</span>{/if}
-          {#if item.copy}<span class="smrt-app-shell__muted">{item.copy === 'draft' ? 'Draft copy. Your live app is unchanged.' : 'Live copy.'}</span>{/if}
+          {#if item.copy}<span class="smrt-app-shell__muted">{item.copy === 'draft' ? 'Tried in a draft. Your live app is unchanged.' : 'Changed in your live app.'}</span>{/if}
           <span class="smrt-assistant-panel__sr-only">{item.state === 'running' ? 'running' : item.state === 'ok' ? 'done' : 'did not work'}</span>
         </p>
         {#if item.report}<div class="smrt-app-shell__card"><ReportResult result={item.report.result} formatCell={reportCell} cellHref={reportCellHref} />{#if item.report.href}<a href={item.report.href}>Open report</a>{/if}</div>
@@ -310,6 +317,9 @@ onDestroy(() => controller?.abort());
         <p class="smrt-app-shell__alert {item.tone === 'error' ? 'smrt-app-shell__alert-error' : ''}" role={item.tone === 'error' ? 'alert' : 'status'}>{item.text}{#if item.action} <a class="smrt-app-shell__link" href={item.action.href}>{item.action.label}</a>{/if}</p>
       {/if}
     {/each}
+    {#if dock.running}
+      <p class="smrt-assistant-panel__working" data-testid="assistant-working"><span class="smrt-assistant-panel__dots" aria-hidden="true"><i></i><i></i><i></i></span><span>{workingStep(dock)}…</span></p>
+    {/if}
   </div>
 
   <div class="smrt-assistant-panel__sr-only" aria-live="polite" role="status">{announce}</div>
@@ -339,6 +349,20 @@ onDestroy(() => controller?.abort());
 @layer smrt.reset, smrt.structure, smrt.theme;
 
 @layer smrt.structure {
+  .smrt-assistant-panel__working {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin: 0;
+  }
+  .smrt-assistant-panel__dots {
+    display: inline-flex;
+    gap: 0.2rem;
+  }
+  .smrt-assistant-panel__dots i {
+    width: 0.35rem;
+    height: 0.35rem;
+  }
   /* Fills the docked column the layout gives it; the column owns the edge,
   width and resizing. */
   .smrt-assistant-panel__panel {
@@ -384,6 +408,20 @@ onDestroy(() => controller?.abort());
     padding: var(--smrt-spacing-xs, 0.25rem) var(--smrt-spacing-md, 0.75rem);
     white-space: pre-wrap;
     max-inline-size: 90%;
+  }
+  /* The renderer's blocks carry their own spacing, so no pre-wrap here. */
+  .smrt-assistant-panel__markdown {
+    white-space: normal;
+    overflow-x: auto;
+  }
+  .smrt-assistant-panel__markdown :global(:is(p, ul, ol, pre, table)) {
+    margin: 0 0 var(--smrt-spacing-xs, 0.25rem);
+  }
+  .smrt-assistant-panel__markdown :global(:is(p, ul, ol, pre, table):last-child) {
+    margin-bottom: 0;
+  }
+  .smrt-assistant-panel__markdown :global(:is(th, td)) {
+    padding: 0.2rem 0.5rem;
   }
   .smrt-assistant-panel__user {
     align-self: flex-end;
@@ -436,6 +474,15 @@ onDestroy(() => controller?.abort());
 }
 
 @layer smrt.theme {
+  .smrt-assistant-panel__dots i {
+    border-radius: 50%;
+    background: currentColor;
+    animation: smrt-assistant-pulse 1s infinite ease-in-out;
+  }
+  .smrt-assistant-panel__dots i:nth-child(2) { animation-delay: 0.15s; }
+  .smrt-assistant-panel__dots i:nth-child(3) { animation-delay: 0.3s; }
+  @keyframes smrt-assistant-pulse { 0%, 80%, 100% { opacity: 0.25; } 40% { opacity: 1; } }
+  @media (prefers-reduced-motion: reduce) { .smrt-assistant-panel__dots i { animation: none; } }
   /* Fills the docked column the layout gives it; the column owns the edge,
   width and resizing. */
   .smrt-assistant-panel__panel {
@@ -474,6 +521,17 @@ onDestroy(() => controller?.abort());
   }
   .smrt-assistant-panel__sr-only {
     border: 0;
+  }
+  .smrt-assistant-panel__markdown :global(table) {
+    border-collapse: collapse;
+    font-size: 0.9em;
+  }
+  .smrt-assistant-panel__markdown :global(:is(th, td)) {
+    border: 1px solid var(--smrt-color-outline-variant, currentColor);
+    text-align: start;
+  }
+  .smrt-assistant-panel__markdown :global(th) {
+    font-weight: 600;
   }
 }
 </style>

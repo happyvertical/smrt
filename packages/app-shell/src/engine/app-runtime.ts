@@ -941,16 +941,20 @@ export class AppRuntime {
     fields: string[],
     order: string,
     sourceRows?: number[],
+    options: { limit?: number; nullsLast?: boolean } = {},
   ): Promise<Row[]> {
+    const { limit = 10001, nullsLast = false } = options;
     const md = this.modelDef(model);
     if (md.extends)
       throw new AppError('Stored read-back requires an app-owned model.');
     if (
       fields.length > 202 ||
-      !fields.every((f) => Object.hasOwn(md.fields, f)) ||
+      !fields.every((f) => f === 'id' || Object.hasOwn(md.fields, f)) ||
       !Object.hasOwn(md.fields, order)
     )
       throw new AppError('Unknown read-back field.');
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 10001)
+      throw new AppError('Invalid read-back limit.');
     if (
       sourceRows &&
       (sourceRows.length > 10000 ||
@@ -969,19 +973,27 @@ export class AppRuntime {
       : '';
     const rows = (
       await this.db.query(
-        `SELECT ${select} FROM ${q(tableFor(model, md))}${where} ORDER BY ${q(snake(order))}, id LIMIT 10001`,
-        sourceRows ?? [],
+        `SELECT ${select} FROM ${q(tableFor(model, md))}${where} ORDER BY ${q(snake(order))} ASC${nullsLast ? ' NULLS LAST' : ''}, id ASC LIMIT ?`,
+        [...(sourceRows ?? []), limit],
       )
     ).rows as Row[];
     for (const row of rows)
       for (const f of fields)
         if (
-          ['integer', 'money'].includes(md.fields[f].type) &&
+          ['integer', 'money'].includes(md.fields[f]?.type ?? '') &&
           typeof row[f] === 'string' &&
           /^-?\d+$/.test(row[f] as string)
         )
           row[f] = BigInt(row[f] as string);
     return rows;
+  }
+
+  /** Hydrated, visible records for just these ids; core bounds the IN batches. */
+  async listByIds(model: string, ids: string[]): Promise<Row[]> {
+    if (ids.length > 1000 || ids.some((id) => typeof id !== 'string'))
+      throw new AppError('Invalid record ids.');
+    const rows = await (await this.collection(model)).listByIds(ids);
+    return rows.map((row) => this.plain(model, row));
   }
 
   async list(model: string, limit = 200): Promise<Row[]> {
@@ -1031,7 +1043,9 @@ export class AppRuntime {
           fd.required &&
           (data[k] === undefined || data[k] === null || data[k] === '')
         )
-          throw new AppError(`${model}.${k} is required`);
+          throw new AppError(
+            `${fd.label ?? k} is required for ${this.def.models[model]?.label ?? model}`,
+          );
     return out;
   }
 
@@ -1044,8 +1058,29 @@ export class AppRuntime {
     if (recipeModelFor(model, this.def.models[model]))
       base.typeId = await this.personType();
     if (opts.id) base.id = opts.id;
-    const obj = await (await this.collection(model)).create(base as never);
+    const obj = await (await this.collection(model))
+      .create(base as never)
+      .catch((e) => {
+        throw this.named(model, e);
+      });
     return this.get(model, String(obj.id));
+  }
+
+  /**
+   * Core's required-field error names the column id; the owner sees the
+   * field's label instead. Any other error is returned as it came.
+   */
+  private named(model: string, error: unknown): unknown {
+    const e = error as { code?: unknown; details?: { fieldName?: unknown } };
+    if (e?.code !== 'VALIDATION_REQUIRED_FIELD') return error;
+    const column = String(e.details?.fieldName ?? '');
+    const found = Object.entries(this.fieldsOf(model)).find(
+      ([k]) => k === column || snake(k) === column,
+    );
+    if (!found) return error;
+    return new AppError(
+      `${found[1].label ?? found[0]} is required for ${this.def.models[model]?.label ?? model}`,
+    );
   }
 
   async update(model: string, id: string, data: Row): Promise<Row> {
@@ -1053,7 +1088,9 @@ export class AppRuntime {
     const obj: any = await (await this.collection(model)).get(id);
     if (!obj) throw new AppError(`no ${model} ${id}`);
     for (const [k, v] of Object.entries(base)) obj[k] = v;
-    await obj.save();
+    await obj.save().catch((e: unknown) => {
+      throw this.named(model, e);
+    });
     return this.get(model, id);
   }
 

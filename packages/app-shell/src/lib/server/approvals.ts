@@ -1,7 +1,8 @@
 // The approval gate. A risky builder command, app tool call or REST DELETE
 // does not run: it becomes an `Approval` row for the owner. Only
-// `decideApproval` (called from `Approval.decide`) ever passes the engine's
-// `approved: true`; nothing taken from a request body can set it.
+// `decideApproval` ever passes the engine's `approved: true`; it is called by
+// `Approval.decide` and by `publishOwnDraft` (the owner's own Publish click on
+// the review page, nothing else). Nothing taken from a request body can set it.
 
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { createHash } from 'node:crypto';
@@ -9,13 +10,15 @@ import { OwnerApprovalError } from '@happyvertical/smrt-app-runtime';
 import {
   ApprovalRequiredError,
   type Command,
+  EngineError,
   type Plan,
 } from '../../engine/index.ts';
 import { type Approval, ApprovalCollection } from '../objects/Approval.ts';
 import { shellApprovalAuthority } from './approval-store.ts';
-import { discardNow, publishApproved } from './drafts.ts';
+import { discardNow, publishApproved, requestPublish } from './drafts.ts';
 import { publish } from './events.ts';
 import { getHost, getShellDb } from './host.ts';
+import { assertOwner } from './owner.ts';
 import { publicChangeResult } from './results.ts';
 
 /** What an approval runs once the owner says yes. */
@@ -297,10 +300,6 @@ function isAction(v: unknown): v is ApprovalAction {
   return false;
 }
 
-/**
- * Decide an approval. CALL ONLY FROM `Approval.decide` (which has checked the
- * owner): this is the single place the engine's `approved: true` is set.
- */
 /** The failure text when the host RETURNED an error instead of throwing. */
 export function returnedFailure(
   kind: string,
@@ -329,6 +328,11 @@ export function returnedFailure(
   return undefined;
 }
 
+/**
+ * Decide an approval. CALL ONLY FROM `Approval.decide` or `publishOwnDraft`
+ * (both check the owner first): this is the single place the engine's
+ * `approved: true` is set.
+ */
 export async function decideApproval(
   id: string,
   approve: boolean,
@@ -437,4 +441,47 @@ export async function decideApproval(
       throw new Error('approval is already decided');
     throw error;
   }
+}
+
+/**
+ * The owner's own Publish click on the review page, in one step. CALL ONLY
+ * FROM `POST /api/shell/draft/publish` (the owner's same-origin session
+ * route; `invariants.test.ts` keeps it there). Tools, the assistant, `/mcp`
+ * and the generated `/api/apps/publishDraft` go through `App.publishDraft`,
+ * which only asks (a pending Approval).
+ *
+ * `expect` is required: the digest of the preview the owner reviewed. The
+ * publish Approval is recorded pinned to that digest (a fresh server preview
+ * must match it, else 409 review again) and the same owner decides it at
+ * once, so the audit row and the engine's apply-time digest check are the
+ * ordinary ones. A failed apply (the draft changed in between) is a 409 too.
+ */
+export async function publishOwnDraft(
+  expect: unknown,
+): Promise<ApprovalOutcome> {
+  const owner = await assertOwner();
+  if (typeof expect !== 'string' || !expect)
+    throw new EngineError(
+      'expect must be the digest of the preview you reviewed',
+      'invalid',
+    );
+  const pending = await requestPublish(expect, owner.id);
+  let outcome: ApprovalOutcome;
+  try {
+    outcome = await decideApproval(pending.approvalId, true, owner.id);
+  } catch (e) {
+    if (e instanceof Error && /^approval is already/.test(e.message))
+      throw new EngineError(
+        'this publish was already decided; review the draft again',
+        'refused',
+      );
+    throw e;
+  }
+  if (outcome.status !== 'approved')
+    throw new EngineError(
+      outcome.error ??
+        'the draft changed since it was reviewed; review it again',
+      'refused',
+    );
+  return outcome;
 }

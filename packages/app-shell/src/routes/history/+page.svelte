@@ -10,12 +10,16 @@ import {
 } from '$lib/ui/api';
 import { DEPENDS } from '$lib/ui/events';
 import { authorName, fullTime, timeAgo } from '$lib/ui/format';
-import { groupHistory, type HistoryGroup } from '$lib/ui/publish';
+import {
+  groupHistory,
+  type HistoryGroup,
+  historyEntries,
+} from '$lib/ui/publish';
 import type { PageProps } from './$types';
 
 let { data }: PageProps = $props();
 
-const groups = $derived(groupHistory(data.versions));
+const entries = $derived(historyEntries(groupHistory(data.versions)));
 let selected = $state<HistoryGroup | null>(null);
 const current = $derived(data.versions.find((v) => v.current));
 const canUndo = $derived(!!current && current.parent !== null);
@@ -82,37 +86,39 @@ async function undo() {
     </div>
   {:else}
     <ol class="smrt-app-shell__list">
-      {#each groups as group (group.id)}
+      {#each entries as entry (entry.group.id)}
+        {@const group = entry.group}
         <li>
-          {#if group.name}
-            <h2>{group.name}</h2>
-            {#if group.canUndo}
-              <Button variant="secondary" onclick={() => { selected = group; error = ''; confirming = true; }}>Undo this publish</Button>
-            {/if}
-          {/if}
-          {#each group.versions as v (v.version)}
-          <article class="smrt-app-shell__card" aria-current={v.current ? 'true' : undefined}>
+          <article class="smrt-app-shell__card" aria-current={entry.current ? 'true' : undefined}>
             <div class="smrt-app-shell-history__row">
-              <h2>{v.humanSummary || 'Change to your app'}</h2>
+              <h2>{entry.title}</h2>
               <div class="smrt-app-shell-history__badges" data-smrt-part="badges">
-                {#if v.current}<span class="smrt-app-shell__badge smrt-app-shell__badge-ok" data-smrt-part="badge">Current</span>{/if}
-                {#if v.purged}<span class="smrt-app-shell__badge smrt-app-shell__badge-warn" data-smrt-part="badge">Cannot be undone</span>{/if}
+                {#if entry.current}<span class="smrt-app-shell__badge smrt-app-shell__badge-ok" data-smrt-part="badge">Current</span>{/if}
+                {#if entry.purged}<span class="smrt-app-shell__badge smrt-app-shell__badge-warn" data-smrt-part="badge">Cannot be undone</span>{/if}
               </div>
             </div>
             <p class="smrt-app-shell__muted" data-smrt-part="description">
-              Version {v.version}{#if v.author}
-                {' · by '}{authorName(v.author, data.session?.user)}{/if}
-              ·
-              <time datetime={v.createdAt} title={fullTime(v.createdAt)}
-                >{timeAgo(v.createdAt)}</time
+              {#if entry.newest.author}{authorName(entry.newest.author, data.session?.user)}
+                {' · '}{/if}<time datetime={entry.newest.createdAt} title={fullTime(entry.newest.createdAt)}
+                >{timeAgo(entry.newest.createdAt)}</time
               >
             </p>
-            {#if v.purged}
+            {#if group.name && entry.changes.length}
+              <details class="smrt-app-shell-history__changes" data-smrt-part="changes">
+                <summary>{entry.changes.length === 1 ? '1 change' : `${entry.changes.length} changes`}</summary>
+                <ul>
+                  {#each entry.changes as change}<li>{change}</li>{/each}
+                </ul>
+              </details>
+            {/if}
+            {#if entry.purged}
               <p class="smrt-app-shell__muted" data-smrt-part="description">
                 Its saved data was cleaned up, so going back past this change is no longer possible.
               </p>
             {/if}
-            {#if !group.name && v.current && canUndo}
+            {#if group.name && group.canUndo}
+              <Button variant="secondary" onclick={() => { selected = group; error = ''; confirming = true; }}>Undo this publish</Button>
+            {:else if !group.name && entry.current && canUndo}
               <button
                 type="button"
                 class="smrt-app-shell__btn"
@@ -126,7 +132,6 @@ async function undo() {
               </button>
             {/if}
           </article>
-          {/each}
         </li>
       {/each}
     </ol>
@@ -165,6 +170,10 @@ async function undo() {
   .smrt-app-shell-history__badges {
     display: flex;
     gap: var(--smrt-spacing-sm);
+  }
+  .smrt-app-shell-history__changes ul {
+    margin: var(--smrt-spacing-sm, 0.5rem) 0 0;
+    padding-left: var(--smrt-spacing-lg, 1.25rem);
   }
   .smrt-app-shell__card p {
     margin: var(--smrt-spacing-sm, 0.5rem) 0;

@@ -3,11 +3,13 @@ import type { TurnEvent } from './events.ts';
 import {
   type Action,
   announcement,
+  collapseFailures,
   type DockState,
   initialState,
   reduce,
   stopNote,
   toolLabel,
+  workingStep,
 } from './reducer.ts';
 
 const run = (actions: Action[], from: DockState = initialState) =>
@@ -269,5 +271,79 @@ describe('tool copy metadata', () => {
       ],
     });
     expect(reopened.items[0]).toMatchObject({ kind: 'tool', copy: 'live' });
+  });
+
+  it('uses plain words for tool labels', () => {
+    for (const n of ['app_describe', 'app_runreport', 'app_history'])
+      expect(toolLabel(n)).not.toMatch(/^(Describe|Run report|History)$/);
+    expect(toolLabel('app_describe')).toBe('Looking at your app');
+  });
+
+  it('shows a working step from send until done', () => {
+    let s = reduce(initialState, { type: 'send', text: 'hi' });
+    expect(workingStep(s)).toBe('Thinking');
+    s = reduce(
+      s,
+      ev({ type: 'tool_call', id: '1', name: 'app_describe', args: '{}' }),
+    );
+    expect(workingStep(s)).toBe('Looking at your app');
+    s = reduce(s, ev({ type: 'text', delta: 'ok' }));
+    expect(workingStep(s)).toBe('Writing a reply');
+    s = reduce(s, ev({ type: 'done', stop: 'complete' }));
+    expect(workingStep(s)).toBe('');
+  });
+
+  it('collapses consecutive failed retries into one card', () => {
+    const fail = (id: string): Action[] => [
+      ev({ type: 'tool_call', id, name: 'app_runreport', args: '{}' }),
+      ev({
+        type: 'tool_result',
+        id,
+        name: 'app_runreport',
+        ok: false,
+        summary: 'x',
+      }),
+    ];
+    const s = run([
+      { type: 'send', text: 'go' },
+      ...fail('1'),
+      ...fail('2'),
+      ...fail('3'),
+    ]);
+    const view = collapseFailures(s.items);
+    expect(view.map((i) => i.kind)).toEqual(['user', 'tool']);
+    expect(view[1]).toMatchObject({ state: 'error', failures: 3 });
+    const mixed = collapseFailures([
+      ...s.items,
+      { kind: 'tool', id: 'z', name: 'a', state: 'ok', summary: '' },
+    ]);
+    expect(mixed).toHaveLength(3);
+  });
+
+  it('keeps the plain reason on failed cards and drops unsafe text', () => {
+    const fail = (id: string, summary: string): Action[] => [
+      ev({ type: 'tool_call', id, name: 'app_runreport', args: '{}' }),
+      ev({
+        type: 'tool_result',
+        id,
+        name: 'app_runreport',
+        ok: false,
+        summary,
+      }),
+    ];
+    const plain = 'Give each report result a different name.';
+    const s = run([
+      { type: 'send', text: 'go' },
+      ...fail('1', 'SELECT a FROM /tmp/x'),
+      ...fail('2', plain),
+    ]);
+    expect(s.items.filter((i) => i.kind === 'tool')).toMatchObject([
+      { summary: 'Could not complete this action' },
+      { summary: plain },
+    ]);
+    expect(collapseFailures(s.items).at(-1)).toMatchObject({
+      summary: plain,
+      failures: 2,
+    });
   });
 });

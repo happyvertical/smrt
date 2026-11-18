@@ -509,7 +509,7 @@ describe('phone width', () => {
   });
 });
 
-describe('draft controls in the content column', () => {
+describe('draft controls in the shell header', () => {
   const button = (label: string) =>
     [...container.querySelectorAll<HTMLButtonElement>('button')].find(
       (b) => b.textContent?.trim() === label,
@@ -520,18 +520,21 @@ describe('draft controls in the content column', () => {
       liveDescription: draftDescription('live'),
     });
 
-  it('offers a quiet Start draft within content when no draft is open', async () => {
+  it('offers a quiet Start draft in the header when no draft is open', async () => {
     await render();
-    expect(button('Start draft')).toBeTruthy();
+    expect(button('Start a draft')).toBeTruthy();
     expect(
-      q('#smrt-admin-shell-main')?.contains(button('Start draft') ?? null),
+      q('[data-slot="header.end"]')?.contains(button('Start a draft') ?? null),
     ).toBe(true);
+    expect(
+      q('#smrt-admin-shell-main')?.contains(button('Start a draft') ?? null),
+    ).toBe(false);
     expect(q('.smrt-draft-bar__draft-strip')).toBeNull();
   });
 
   it('starts a draft and explicitly saves the draft view', async () => {
     await render();
-    button('Start draft')?.click();
+    button('Start a draft')?.click();
     await vi.waitFor(() => expect(navigation.invalidateAll).toHaveBeenCalled());
     expect(fetch).toHaveBeenCalledWith(
       '/api/shell/draft?target=live',
@@ -562,9 +565,9 @@ describe('draft controls in the content column', () => {
       state.description = draftDescription();
     });
     await render(state);
-    button('Start draft')?.click();
+    button('Start a draft')?.click();
     await tick();
-    expect(button('Start draft')?.disabled).toBe(true);
+    expect(button('Start a draft')?.disabled).toBe(true);
     expect(q('a[href="/draft/review"]')).toBeNull();
     // A layout refresh may learn about the draft before the start request resolves.
     state.description = draftDescription();
@@ -602,7 +605,9 @@ describe('draft controls in the content column', () => {
     expect(button('Live')?.getAttribute('aria-pressed')).toBe('true');
     expect(q('.smrt-draft-bar__draft-strip')).toBeNull();
     expect(q('.smrt-tenant-nav a[href="/m/Order"]')).toBeNull();
-    expect(panel()?.textContent).toContain('Building in draft');
+    // The badge agrees with the Live switch instead of claiming Draft.
+    expect(panel()?.textContent).toContain('Changes go to the draft');
+    expect(panel()?.textContent).not.toContain('Building in draft');
   });
 
   it('persists switching copies and sends the new target on subsequent data loads', async () => {
@@ -690,19 +695,43 @@ describe('draft controls in the content column', () => {
     const review = [...container.querySelectorAll('a')].find(
       (a) => a.textContent?.trim() === 'Review and publish',
     );
-    expect(review?.getAttribute('aria-disabled')).toBe('true');
-    expect(review?.getAttribute('href')).toBeNull();
+    expect(review).toBeUndefined();
+    expect(q('a[href="/draft/review"]')).toBeNull();
+  });
+
+  it('offers no review link on the review page itself', async () => {
+    page.url = new URL('/draft/review', 'http://localhost');
+    await render(draftData());
+    expect(q('[data-testid="draft-header"]')).toBeTruthy();
+    expect(q('a[href="/draft/review"]')).toBeNull();
+    expect(button('Discard')).toBeTruthy();
   });
 
   it('keeps the switch, actions and warning inside content at phone width', async () => {
     phone = true;
     await render(draftData());
     const main = q('#smrt-admin-shell-main');
-    expect(main?.contains(q('[role="group"][aria-label="View copy"]'))).toBe(
-      true,
-    );
-    expect(main?.contains(q('.smrt-draft-bar__draft-actions'))).toBe(true);
-    expect(main?.contains(q('.smrt-draft-bar__draft-strip'))).toBe(true);
+    expect(main?.contains(q('[data-testid="draft-header"]'))).toBe(false);
+    expect(q('[role="group"][aria-label="View copy"]')).toBeTruthy();
+    expect(q('.smrt-draft-bar__draft-actions')).toBeTruthy();
+    expect(q('.smrt-draft-bar__draft-strip')).toBeTruthy();
+  });
+
+  it('shows no Discard or Review for a draft with nothing in it', async () => {
+    const desc = draftDescription('draft');
+    desc.draft = { ...draftInfo, changes: 0 };
+    await render(data({ description: desc }));
+    expect(button('Live')).toBeTruthy();
+    expect(container.textContent).toContain('No changes yet');
+    expect(button('Discard')).toBeUndefined();
+    expect(q('a[href="/draft/review"]')).toBeNull();
+    expect(button('Close draft')).toBeTruthy();
+  });
+
+  it('keeps the draft out of the header in a plugin view', async () => {
+    await render(data({ embedded: true }));
+    expect(q('[data-testid="draft-header"]')).toBeNull();
+    expect(container.textContent).not.toContain('Start a draft');
   });
 
   it.each([
@@ -751,7 +780,7 @@ describe('draft controls in the content column', () => {
     );
     await flush();
     if (status === 'published' || status === 'discarded')
-      expect(button('Start draft')).toBeTruthy();
+      expect(button('Start a draft')).toBeTruthy();
     else expect(button('Discard')).toBeTruthy();
     if (status === 'unpublishable')
       expect(container.textContent).toContain('The data folder moved.');
@@ -814,17 +843,10 @@ describe('onboarding chat visibility', () => {
 });
 
 describe('draft bar routes', () => {
-  it.each([
-    '/welcome',
-    '/settings',
-    '/settings/assistant',
-    '/settings/inference',
-    '/settings/appearance',
-    '/approvals',
-  ])('hides draft controls on %s', async (path) => {
+  it.each(['/welcome'])('hides draft controls on %s', async (path) => {
     page.url = new URL(path, 'http://localhost');
     await render();
-    expect(container.textContent).not.toContain('Start draft');
+    expect(container.textContent).not.toContain('Start a draft');
     expect(q('[data-testid="draft-header"]')).toBeNull();
   });
   it.each([
@@ -834,10 +856,13 @@ describe('draft bar routes', () => {
     '/m/Customer/record-1',
     '/history',
     '/draft/review',
+    '/settings',
+    '/settings/assistant',
+    '/approvals',
   ])('shows draft controls on %s', async (path) => {
     page.url = new URL(path, 'http://localhost');
     await render();
-    expect(container.textContent).toContain('Start draft');
+    expect(container.textContent).toContain('Start a draft');
   });
 });
 

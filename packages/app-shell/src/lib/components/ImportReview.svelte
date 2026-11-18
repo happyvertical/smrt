@@ -5,11 +5,65 @@ import { formulaWords } from '../../engine/formula.ts';
 import {
   fieldLabel,
   findingLabel,
+  IMPORT_PREVIEW_MAX,
+  IMPORT_PREVIEW_ROWS,
   type ImportState,
   importTotal,
+  previewCell,
+  previewType,
 } from '../ui/import.ts';
 
 let { current }: { current: ImportState } = $props();
+// Loaded draft rows and link labels from the workbook-ordered preview read.
+let rows = $state<Record<string, Record<string, unknown>[]>>({});
+let expanded = $state<Record<string, boolean>>({});
+let labels = $state<Record<string, Record<string, Record<string, string>>>>({});
+async function read(key: string, limit: number) {
+  try {
+    const response = await fetch(
+      `/api/shell/import/preview?table=${encodeURIComponent(key)}&limit=${limit}`,
+    );
+    if (!response.ok) return;
+    const body = await response.json();
+    if (Array.isArray(body.records)) {
+      rows[key] = body.records;
+      labels[key] = body.labels ?? {};
+    }
+  } catch {
+    // The preview is optional; the proof above stands without it.
+  }
+}
+const previewable = $derived(
+  current.status === 'review' && current.proof?.ok === true,
+);
+$effect(() => {
+  if (!previewable) return;
+  for (const table of current.plan?.tables ?? [])
+    if (!rows[table.key]) void read(table.key, IMPORT_PREVIEW_ROWS);
+});
+/** Everything the column list used to say, now once under the column name. */
+function columnHint(
+  table: NonNullable<ImportState['plan']>['tables'][number],
+  field: (typeof table.fields)[number],
+): string {
+  const parts = [previewType(field, current.plan)];
+  if (field.column) parts.push(`column ${columnName(field.column)}`);
+  if (field.choices) parts.push(field.choices.join(', '));
+  if (field.calculated) {
+    parts.push(
+      `calculated: ${formulaWords(field.calculated as GeneratedExpression, Object.fromEntries(table.fields.map((f) => [f.key, f.label])))}`,
+    );
+    if (field.cachedColumn)
+      parts.push(
+        `workbook result in column ${columnName(field.cachedColumn)} · ${current.proof?.ok ? 'matches the workbook' : 'not yet proven'}`,
+      );
+  }
+  return parts.join(' · ');
+}
+async function showAll(key: string) {
+  expanded[key] = true;
+  await read(key, IMPORT_PREVIEW_MAX);
+}
 </script>
 <div data-smrt-component="AppShellImportReview" class="smrt-app-shell__page">
   {#each current.plan?.tables ?? [] as table (table.key)}
@@ -18,28 +72,31 @@ let { current }: { current: ImportState } = $props();
       <h2>{table.label}</h2>
       <p>{table.source.sheet} · {table.source.range}</p>
       {#if facts}<p>{facts.read} rows read · {facts.skipped} skipped · {current.proof?.loaded[table.key] ?? 0} loaded</p>{/if}
-      <ul data-smrt-part="list">
-        {#each table.fields as field (field.key)}
-          <li><strong>{field.label}</strong> · {field.type === 'reference' ? 'link' : field.type === 'integer' ? 'whole number' : field.type === 'boolean' ? 'yes or no' : field.type}
-            {#if field.column} · column {columnName(field.column)}{/if}
-            {#if field.money} · {field.money.currency}, {field.money.scale} decimal places{/if}
-            {#if field.choices} · {field.choices.join(', ')}{/if}
-            {#if field.reference} · links to {fieldLabel(current.plan, field.reference.table)}{/if}
-            {#if field.calculated} · calculated: {formulaWords(field.calculated as GeneratedExpression, Object.fromEntries(table.fields.map((f) => [f.key, f.label])))}
-              {#if field.cachedColumn} · workbook result in column {columnName(field.cachedColumn)} · {current.proof?.ok ? 'matches the workbook' : 'not yet proven'}{/if}
-            {/if}
-          </li>
-        {/each}
-      </ul>
+      <p data-smrt-part="hint">{#if current.proof?.ok}<span>Totals match</span> · {/if}<span>{table.fields.length} {table.fields.length === 1 ? 'column' : 'columns'} detected</span></p>
+      {#if table.fields.length}
+        {@const names = current.plan?.engineNames?.tables[table.key]?.fields ?? {}}
+        {@const have = rows[table.key] ?? []}
+        {@const loaded = current.proof?.loaded[table.key] ?? have.length}
+        {@const shown = expanded[table.key] ? have : have.slice(0, IMPORT_PREVIEW_ROWS)}
+        <div class="smrt-app-shell__tablewrap" data-smrt-part="body">
+          <table class="smrt-app-shell__table" data-smrt-part="table" aria-label="{table.label} row preview">
+            <thead><tr>{#each table.fields as field (field.key)}<th scope="col">{field.label}<br /><small data-smrt-part="hint">{columnHint(table, field)}</small></th>{/each}</tr></thead>
+            <tbody>{#each shown as row, index (row.id ?? index)}<tr>{#each table.fields as field (field.key)}<td>{previewCell(row[names[field.key]], field, labels[table.key]?.[String(row.id)]?.[names[field.key]])}</td>{/each}</tr>{/each}</tbody>
+          </table>
+        </div>
+        {#if have.length}<p data-smrt-part="hint">Showing {shown.length} of {loaded} rows
+          {#if !expanded[table.key] && loaded > shown.length} · <button type="button" onclick={() => showAll(table.key)}>Show all {loaded} rows</button>{/if}
+          {#if expanded[table.key] && loaded > IMPORT_PREVIEW_MAX} · The first {IMPORT_PREVIEW_MAX} are shown{/if}</p>{/if}
+      {/if}
       {#if current.proof}
-        <h3>Totals proof</h3>
-        <p>{current.proof.ok ? 'Row counts and source column checks match the workbook.' : 'The loaded data did not pass every check.'}</p>
-        <ul>{#each Object.entries(current.proof.facts.sums[table.key] ?? {}) as [field, total] (field)}
-          {@const definition = table.fields.find((f) => f.key === field)}
-          {#if definition && (definition.type !== 'integer' || /^(qty|quantity|units|count)$/.test(definition.key))}
-            <li>{fieldLabel(current.plan, table.key, field)}: {importTotal(total, definition.money)}</li>
-          {/if}
-        {/each}</ul>
+        {@const totals = Object.entries(current.proof.facts.sums[table.key] ?? {}).flatMap(([field, total]) => {
+          const definition = table.fields.find((f) => f.key === field);
+          return definition && (definition.type !== 'integer' || /^(qty|quantity|units|count)$/.test(definition.key))
+            ? [`${fieldLabel(current.plan, table.key, field)}: ${importTotal(total, definition.money)}`]
+            : [];
+        })}
+        <p data-smrt-part="hint"><strong>Totals proof</strong> · {current.proof.ok ? 'Row counts and source column checks match the workbook.' : 'The loaded data did not pass every check.'}</p>
+        {#if totals.length}<p data-smrt-part="hint">{totals.join(' · ')}</p>{/if}
       {/if}
     </section>
   {/each}

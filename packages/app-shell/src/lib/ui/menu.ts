@@ -1,4 +1,5 @@
 // The side menu, built from the definition.
+import { modelIcons } from './model-icon.ts';
 import type { Description } from './types.ts';
 
 export interface MenuItem {
@@ -30,12 +31,13 @@ export function buildMenu(
   const items: MenuItem[] = [
     { id: 'home', href: '/', label: 'Home', icon: 'home' },
   ];
+  const icons = modelIcons(description?.models ?? {});
   for (const [name, model] of Object.entries(description?.models ?? {}))
     items.push({
       id: `model:${name}`,
       href: modelHref(name),
       label: model.label || name,
-      icon: 'book',
+      icon: icons[name],
     });
   const reports = Object.entries(description?.reports ?? {});
   if (reports.length)

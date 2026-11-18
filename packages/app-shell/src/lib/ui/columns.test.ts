@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 import {
   cellText,
   indexReferences,
+  mainDateField,
   orderByCreated,
+  orderRows,
   referencedModels,
   selectColumns,
 } from './columns.ts';
@@ -73,5 +75,56 @@ describe('columns', () => {
         c: { type: 'text' },
       }),
     ).toEqual(['P']);
+  });
+});
+
+describe('ordering by the main date', () => {
+  const walks = {
+    fields: {
+      client: { type: 'reference' as const, ref: 'Client' },
+      day: { type: 'date' as const },
+      notes: { type: 'text' as const },
+    },
+  };
+
+  it('finds the first visible date field, preferring a date-named one', () => {
+    expect(mainDateField(walks)).toBe('day');
+    expect(mainDateField({ fields: { n: { type: 'text' } } })).toBeNull();
+    expect(
+      mainDateField({
+        fields: {
+          paid: { type: 'date' },
+          date: { type: 'date' },
+        },
+      }),
+    ).toBe('date');
+    expect(
+      mainDateField({ fields: { d: { type: 'date', hidden: true } } }),
+    ).toBeNull();
+  });
+
+  it('orders rows newest first by that date, undated rows last', () => {
+    const rows = [
+      { id: 'a', day: '2026-03-01', createdAt: '2026-01-01T00:00:00Z' },
+      { id: 'b', day: '2026-05-01', createdAt: '2026-01-02T00:00:00Z' },
+      { id: 'c', createdAt: '2026-01-03T00:00:00Z' },
+      { id: 'd', day: '2026-04-01', createdAt: '2026-01-04T00:00:00Z' },
+    ];
+    expect(orderRows(walks, rows).map((r) => r.id)).toEqual([
+      'b',
+      'd',
+      'a',
+      'c',
+    ]);
+  });
+
+  it('falls back to newest created without a date field', () => {
+    const rows = [
+      { id: 'a', createdAt: '2026-01-01T00:00:00Z' },
+      { id: 'b', createdAt: '2026-03-01T00:00:00Z' },
+    ];
+    expect(
+      orderRows({ fields: { n: { type: 'text' } } }, rows).map((r) => r.id),
+    ).toEqual(['b', 'a']);
   });
 });

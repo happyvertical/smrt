@@ -1,3 +1,7 @@
+import {
+  WORKBOOK_LOOKUP,
+  WORKBOOK_ROW,
+} from '../../engine/import-bookkeeping.ts';
 import { versionSummary } from './command-summary.ts';
 import { fieldLabel, humanize } from './fields.ts';
 import { formulaWords } from './formula.ts';
@@ -109,7 +113,7 @@ function meaningfulChange(
     JSON.stringify(to)
   );
 }
-/** Data-command undo journals are not removed app values; show archive decisions only. */
+/** Saved undo history is not removed app values; show archive decisions only. */
 function archiveItems(preview: PublishPreview) {
   const steps = preview.versions.flatMap((v) => v.steps);
   if (
@@ -141,12 +145,12 @@ function archiveItems(preview: PublishPreview) {
         ),
     ]),
   ];
-  if (
-    steps.some((s) =>
-      ['loadRecords', 'extractModel', 'mergeRecords'].includes(s.op),
-    )
-  )
-    subjects.push('data-command undo journals');
+  const savedHistory = steps.some((s) =>
+    ['loadRecords', 'extractModel', 'mergeRecords'].includes(s.op),
+  );
+  // Loading data saves undo history, which is not a decision to archive anything.
+  if (savedHistory && !subjects.length) return [];
+  if (savedHistory) subjects.push('undo history saved');
   return [
     ...(preview.archives.values
       ? [
@@ -181,26 +185,153 @@ function addedField(model: string, field: string, preview: PublishPreview) {
   return `Add field ${fieldSubject(model, field, preview)}${calculation ? `: calculated as ${formulaWords(calculation, fields)}` : ''}.`;
 }
 
+function dataLine(
+  step: NonNullable<PublishPreview['versions'][number]['dataSteps']>[number],
+  preview: PublishPreview,
+) {
+  const c = step.counts;
+  const model = modelLabel(step.model, preview);
+  if (step.op === 'loadRecords')
+    return `Load records into ${model} (${step.mode}): ${c.insert} inserted, ${c.update} updated, ${c.unchanged} unchanged, ${c.rejected} rejected.`;
+  if (step.op === 'extractModel')
+    return `Extract from ${model}: ${c.rows} records, ${c.distinct} distinct values, ${c.folded} folded, ${c.create} created, ${c.matched} matched.`;
+  const references =
+    Object.entries((c.references ?? {}) as Record<string, number>)
+      .map(
+        ([model, count]) =>
+          `${count} ${count === 1 ? 'reference' : 'references'} in ${modelLabel(model, preview)}`,
+      )
+      .join(', ') || 'none';
+  return `Merge ${c.removed} ${c.removed === 1 ? 'record' : 'records'} in ${model}; references repointed (${references}).`;
+}
+
 /** Every replayed data step is counted against the current live rehearsal. */
 export function publishDataLines(preview: PublishPreview): string[] {
   return preview.versions.flatMap((v) =>
-    (v.dataSteps ?? []).map((step) => {
-      const c = step.counts;
-      const model = modelLabel(step.model, preview);
-      if (step.op === 'loadRecords')
-        return `Load records into ${model} (${step.mode}): ${c.insert} inserted, ${c.update} updated, ${c.unchanged} unchanged, ${c.rejected} rejected.`;
-      if (step.op === 'extractModel')
-        return `Extract from ${model}: ${c.rows} records, ${c.distinct} distinct values, ${c.folded} folded, ${c.create} created, ${c.matched} matched.`;
-      const references =
-        Object.entries((c.references ?? {}) as Record<string, number>)
-          .map(
-            ([model, count]) =>
-              `${count} ${count === 1 ? 'reference' : 'references'} in ${modelLabel(model, preview)}`,
-          )
-          .join(', ') || 'none';
-      return `Merge ${c.removed} ${c.removed === 1 ? 'record' : 'records'} in ${model}; references repointed (${references}).`;
-    }),
+    (v.dataSteps ?? []).map((step) => dataLine(step, preview)),
   );
+}
+
+/** Data steps other than record loads (those get a table of their own). */
+export function publishOtherDataLines(preview: PublishPreview): string[] {
+  return preview.versions.flatMap((v) =>
+    (v.dataSteps ?? [])
+      .filter((step) => step.op !== 'loadRecords')
+      .map((step) => dataLine(step, preview)),
+  );
+}
+
+export interface PublishDataTable {
+  model: string;
+  label: string;
+  inserted: number;
+  /** "12 records added", plus any non-zero other counts. */
+  sentence: string;
+  columns: { key: string; label: string; field: FieldDef }[];
+  /** Tables the link columns point to, to label their cells. */
+  links: { model: string; fields: Record<string, FieldDef> }[];
+}
+
+const num = (value: unknown) =>
+  typeof value === 'number' && Number.isFinite(value) ? value : 0;
+const plural = (n: number, one: string, many: string) =>
+  `${n} ${n === 1 ? one : many}`;
+
+/** One entry per table that records are loaded into; zero parts are left out. */
+export function publishDataTables(preview: PublishPreview): PublishDataTable[] {
+  const totals = new Map<
+    string,
+    { insert: number; update: number; unchanged: number; rejected: number }
+  >();
+  for (const version of preview.versions)
+    for (const step of version.dataSteps ?? []) {
+      if (step.op !== 'loadRecords') continue;
+      const t = totals.get(step.model) ?? {
+        insert: 0,
+        update: 0,
+        unchanged: 0,
+        rejected: 0,
+      };
+      t.insert += num(step.counts.insert);
+      t.update += num(step.counts.update);
+      t.unchanged += num(step.counts.unchanged);
+      t.rejected += num(step.counts.rejected);
+      totals.set(step.model, t);
+    }
+  return [...totals].map(([model, t]) => {
+    const parts = [
+      ...(t.insert || (!t.update && !t.unchanged && !t.rejected)
+        ? [`${plural(t.insert, 'record', 'records')} added`]
+        : []),
+      ...(t.update ? [`${t.update} updated`] : []),
+      ...(t.unchanged ? [`${t.unchanged} unchanged`] : []),
+      ...(t.rejected ? [`${t.rejected} skipped`] : []),
+    ];
+    return {
+      model,
+      label: modelLabel(model, preview),
+      inserted: t.insert,
+      sentence: parts.join(', '),
+      columns: Object.entries(preview.fields?.[model] ?? {})
+        .filter(
+          ([key, field]) =>
+            !field.hidden && key !== WORKBOOK_ROW && key !== WORKBOOK_LOOKUP,
+        )
+        .map(([key, field]) => ({
+          key,
+          label: fieldLabel(key, field),
+          field,
+        })),
+      links: [
+        ...new Set(
+          Object.values(preview.fields?.[model] ?? {})
+            .filter((f) => f.type === 'reference' && f.ref)
+            .map((f) => f.ref as string),
+        ),
+      ].map((ref) => ({ model: ref, fields: preview.fields?.[ref] ?? {} })),
+    };
+  });
+}
+
+/** Bookkeeping the importer adds to every table; owners never decide on it. */
+export function isPlumbingSummary(text: string): boolean {
+  return /^Hide field: Workbook (row|lookup) in /i.test(text.trim());
+}
+
+/** Ordered changes with importer bookkeeping removed. */
+export function publishChanges(preview: PublishPreview) {
+  return preview.versions
+    .map((version) => ({
+      version: version.version,
+      text: publishVersionSummary(version, preview),
+    }))
+    .filter((change) => !isPlumbingSummary(change.text));
+}
+
+/** The non-empty definition groups; zero-count groups are not shown. */
+export function publishSummaryGroups(preview: PublishPreview): PublishGroup[] {
+  return publishGroups(preview).filter(
+    (group) => group.name !== 'Data' && group.items.length > 0,
+  );
+}
+
+/** One line for everything that does not change; null when nothing is hidden. */
+export function publishQuietLine(preview: PublishPreview): string | null {
+  const shown = new Set(publishSummaryGroups(preview).map((g) => g.name));
+  const words: [PublishGroup['name'], string][] = [
+    ['Added', 'added'],
+    ['Removed', 'removed'],
+    ['Changed', 'changed'],
+    ['Archived', 'archived'],
+  ];
+  const quiet = words.filter(([name]) => !shown.has(name)).map(([, w]) => w);
+  if (!quiet.length) return null;
+  if (shown.size === 0)
+    return publishDataLines(preview).length
+      ? 'No other changes.'
+      : 'No changes to publish.';
+  const last = quiet.pop();
+  return `Nothing ${quiet.length ? `${quiet.join(', ')} or ${last}` : last}.`;
 }
 
 /** Only calculation changes in this publish, including models and fields added. */
@@ -390,4 +521,44 @@ export function groupHistory(versions: VersionInfo[]): HistoryGroup[] {
     g.versions.reverse();
   }
   return groups.reverse();
+}
+
+export interface HistoryEntry {
+  group: HistoryGroup;
+  title: string;
+  /** Each change of the entry, oldest first, importer bookkeeping removed. */
+  changes: string[];
+  /** The newest version of the entry, which dates it. */
+  newest: VersionInfo;
+  current: boolean;
+  purged: boolean;
+}
+
+/**
+ * One entry per publish. Importer bookkeeping (the rule the review page
+ * uses) is left out; an entry that is only bookkeeping is dropped unless it
+ * is the current state, so it can still be undone.
+ */
+export function historyEntries(groups: HistoryGroup[]): HistoryEntry[] {
+  return groups.flatMap((group) => {
+    // Versions run newest first inside a group.
+    const newest = group.versions[0];
+    if (!newest) return [];
+    const changes = [...group.versions]
+      .reverse()
+      .map((v) => v.humanSummary || 'Change to your app')
+      .filter((text) => !isPlumbingSummary(text));
+    const current = group.versions.some((v) => v.current);
+    if (!changes.length && !current) return [];
+    return [
+      {
+        group,
+        title: group.name || changes[0] || 'Change to your app',
+        changes,
+        newest,
+        current,
+        purged: group.versions.some((v) => v.purged),
+      },
+    ];
+  });
 }

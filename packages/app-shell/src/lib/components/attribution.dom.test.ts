@@ -50,24 +50,32 @@ it('shows the owner name with spaces in requested and decided approval attributi
   expect(container.textContent).not.toContain(session.user.id);
 });
 it('resolves history names while retaining recorded assistant and engine attribution', async () => {
-  container = document.createElement('div');
-  document.body.append(container);
-  component = mount(History, {
-    target: container,
-    props: {
-      data: {
-        session,
-        description: description('live'),
-        versions: versions.map((v, i) => ({
-          ...v,
-          author: [session.user.id, 'assistant', 'engine'][i],
-        })),
+  // A publish group shows its newest entry's author, so vary who wrote it.
+  const authors = [
+    { newest: 'engine', expected: 'engine · ' },
+    { newest: 'assistant', expected: 'the assistant · ' },
+  ];
+  for (const { newest, expected } of authors) {
+    container = document.createElement('div');
+    document.body.append(container);
+    component = mount(History, {
+      target: container,
+      props: {
+        data: {
+          session,
+          description: description('live'),
+          versions: versions.map((v, i) => ({
+            ...v,
+            author: [session.user.id, 'assistant', newest][i],
+          })),
+        },
       },
-    } as never,
-  });
-  const text = container.textContent?.replace(/\s+/g, ' ');
-  expect(text).toContain('Version 1 · by Jamie');
-  expect(text).toContain('by the assistant');
-  expect(text).toContain('by engine');
-  expect(text).not.toContain(session.user.id);
+    } as never);
+    const text = container.textContent?.replace(/\s+/g, ' ');
+    expect(text).toContain('Jamie · ');
+    expect(text).toContain(expected);
+    expect(text).not.toContain(session.user.id);
+    await unmount(component);
+    container.remove();
+  }
 });

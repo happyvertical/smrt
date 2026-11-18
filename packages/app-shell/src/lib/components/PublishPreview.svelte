@@ -1,84 +1,103 @@
 <script lang="ts">
-import { Badge, Card, Stack } from '@happyvertical/smrt-ui';
+import { Badge, Stack } from '@happyvertical/smrt-ui';
+import type { Snippet } from 'svelte';
 import {
   publishCalculations,
-  publishGroups,
+  publishChanges,
+  publishDataTables,
   publishMethodLabel,
-  publishVersionSummary,
+  publishOtherDataLines,
+  publishQuietLine,
+  publishSummaryGroups,
 } from '$lib/ui/publish';
 import type { PublishPreview } from '$lib/ui/types';
+import PublishDataTable from './PublishDataTable.svelte';
 
-let { preview }: { preview: PublishPreview } = $props();
-const groups = $derived(publishGroups(preview));
+let { preview, actions }: { preview: PublishPreview; actions?: Snippet } =
+  $props();
+const tables = $derived(publishDataTables(preview));
+const otherData = $derived(publishOtherDataLines(preview));
+const groups = $derived(publishSummaryGroups(preview));
+const quiet = $derived(publishQuietLine(preview));
+const changes = $derived(publishChanges(preview));
 const calculations = $derived(publishCalculations(preview));
 </script>
 
 <Stack gap="lg">
-<div class="smrt-publish-preview__groups">
+<section class="smrt-publish-preview__summary" aria-label="Summary">
+  <h2>What will be published</h2>
+  {#if tables.length || otherData.length}
+    <section aria-label="Data">
+      <h3 class="smrt-publish-preview__heading">Data <Badge variant="neutral">{tables.length + otherData.length}</Badge></h3>
+      {#each tables as table (table.model)}<PublishDataTable {table} />{/each}
+      {#if otherData.length}<ul>{#each otherData as line (line)}<li>{line}</li>{/each}</ul>{/if}
+      <p class="smrt-app-shell__muted">Replayed against current live records. Records you add by hand in the draft are not published.</p>
+    </section>
+  {/if}
   {#each groups as group (group.name)}
-    <section class="smrt-publish-preview__group" aria-label={group.name}>
-      <Card padding="sm">
-        <Stack gap="sm">
-          <div class="smrt-publish-preview__group-heading">
-            <h2>{group.name}</h2><Badge variant="neutral">{group.count}</Badge>
-          </div>
-          {#if group.items.length}
-            <ul>{#each group.items as item (item)}<li>{item}</li>{/each}</ul>
-          {:else}<p class="smrt-app-shell__muted">None.</p>{/if}
-          {#if group.note}<p class="smrt-app-shell__muted">{group.note}</p>{/if}
-        </Stack>
-      </Card>
+    <section aria-label={group.name}>
+      <h3 class="smrt-publish-preview__heading">{group.name} <Badge variant="neutral">{group.count}</Badge></h3>
+      <ul>{#each group.items as item (item)}<li>{item}</li>{/each}</ul>
+      {#if group.note}<p class="smrt-app-shell__muted">{group.note}</p>{/if}
     </section>
   {/each}
-</div>
-<p>Data commands replay against current live records. If reviewed counts change, review a fresh preview before publishing. Direct record edits made in the draft are discarded; records loaded by a draft command are replayed.</p>
-<h2>Changes to publish ({preview.versions.length})</h2>
-<ol>
-  {#each preview.versions as version (version.version)}
-    <li>
-      <p>{publishVersionSummary(version, preview)}</p>
-    </li>
-  {/each}
-</ol>
+  {#if quiet}<p class="smrt-app-shell__muted">{quiet}</p>{/if}
+</section>
 {#if calculations.length}
 <h2>Calculated field changes</h2>
 <ul>{#each calculations as line (line)}<li>{line}</li>{/each}</ul>
 {/if}
-<h2>All method code ({preview.methods.length})</h2>
-{#each preview.methods as method (method.model + '.' + method.name)}
-  <section aria-label={publishMethodLabel(method, preview)}>
-    <h3>{publishMethodLabel(method, preview)} · {method.change}</h3>
-    <p>{method.description}</p>
-    <!-- svelte-ignore a11y_no_noninteractive_tabindex (keyboard scrolling of full method code) -->
-    <pre class="smrt-app-shell__code" tabindex="0" aria-label="Code for {publishMethodLabel(method, preview)}"><code>{method.code}</code></pre>
-  </section>
-{/each}
-
+{#if changes.length}
+<details>
+  <summary>Changes in order ({changes.length})</summary>
+  <ol>
+    {#each changes as change (change.version)}<li><p>{change.text}</p></li>{/each}
+  </ol>
+</details>
+{/if}
+{#if preview.methods.length}
+<details>
+  <summary>All method code ({preview.methods.length})</summary>
+  {#each preview.methods as method (method.model + '.' + method.name)}
+    <section aria-label={publishMethodLabel(method, preview)}>
+      <h3>{publishMethodLabel(method, preview)} · {method.change}</h3>
+      <p>{method.description}</p>
+      <!-- svelte-ignore a11y_no_noninteractive_tabindex (keyboard scrolling of full method code) -->
+      <pre class="smrt-app-shell__code" tabindex="0" aria-label="Code for {publishMethodLabel(method, preview)}"><code>{method.code}</code></pre>
+    </section>
+  {/each}
+</details>
+{/if}
+{#if actions}<div class="smrt-publish-preview__actions" data-smrt-part="actions">{@render actions()}</div>{/if}
 </Stack>
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
 
 @layer smrt.structure {
-  .smrt-publish-preview__groups {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr));
-    gap: var(--smrt-spacing-md);
-    min-width: 0;
-  }
-  .smrt-publish-preview__group {
+  .smrt-publish-preview__summary {
     min-width: 0;
     overflow-wrap: normal;
     word-break: normal;
   }
-  .smrt-publish-preview__group-heading {
+  /* Every section sits above the action, which stays in reach on a long review. */
+  .smrt-publish-preview__actions {
+    position: sticky;
+    bottom: 0;
+    z-index: 1;
+    padding-block: var(--smrt-spacing-sm);
+  }
+  .smrt-publish-preview__heading {
     display: flex;
     align-items: center;
     gap: var(--smrt-spacing-sm);
     white-space: nowrap;
   }
-  .smrt-publish-preview__group-heading h2 {
-    margin: 0;
+}
+
+@layer smrt.theme {
+  .smrt-publish-preview__actions {
+    background: var(--smrt-color-surface);
   }
 }
 </style>

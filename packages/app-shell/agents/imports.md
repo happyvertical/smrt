@@ -3,6 +3,8 @@
 `/import` uploads raw `.xlsx` bytes to owner-only `POST /api/shell/import`.
 `GET` polls; `POST /api/shell/import/stop|resume|retry|cancel|discard` controls the
 current owner's import. All routes use `ownerOf` (same-origin for writes).
+`GET /api/shell/import/preview?table=<plan key>&limit=` reads only its review draft,
+ordered by workbook row (NULLs last, id tie-break), with record-page labels resolved by id.
 The streamed byte ceiling is `IMPORT_MAX_BYTES` (25 MiB). The adapter-node
 startup wrapper sets its default `BODY_SIZE_LIMIT` before importing the server,
 including `node build` in the desktop sidecar. A lower operator setting remains

@@ -60,7 +60,7 @@ import { AppDraftCollection } from '../objects/AppDraft.ts';
 import { type AppImport, AppImportCollection } from '../objects/AppImport.ts';
 import type { ImportState } from '../ui/import.ts';
 import { assistantEngine, engineLabel } from './assistant/engine.ts';
-import { discardNow, startDraft } from './drafts.ts';
+import { discardIfUnused, discardNow, startDraft } from './drafts.ts';
 import { subscribe } from './events.ts';
 import { getDraftSlot } from './host.ts';
 import { HttpError } from './http.ts';
@@ -1060,7 +1060,7 @@ export function createShellImportService(options: ShellImportOptions) {
               'Another workbook import is open. Finish it or discard it first.',
             );
         }
-        if (await getDraftSlot())
+        if ((await getDraftSlot()) && !(await discardIfUnused()))
           throw new HttpError(
             409,
             'A draft is already open. Publish or discard it before importing a workbook.',
@@ -1171,7 +1171,7 @@ export function createShellImportService(options: ShellImportOptions) {
               409,
               'This import cannot be retried. Choose a workbook to start again.',
             );
-          if (await getDraftSlot())
+          if ((await getDraftSlot()) && !(await discardIfUnused()))
             throw new HttpError(
               409,
               'A draft is already open. Publish or discard it before trying again.',

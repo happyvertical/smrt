@@ -11,7 +11,9 @@
  *
  * Supported: paragraphs (single newlines become `<br>`), `#`/`##`/`###`
  * headings, `-`/`*`/`+` and `1.`/`1)` lists (one level), fenced code blocks
- * (``` or ~~~), inline `code`, `**bold**`/`__bold__`, `*italic*`/`_italic_`,
+ * (``` or ~~~), pipe tables (a header row, a `---` delimiter row, then
+ * body rows; cells hold inline Markdown, column alignment is ignored),
+ * inline `code`, `**bold**`/`__bold__`, `*italic*`/`_italic_`,
  * and `[text](https://…)` links. Anything else renders as literal text.
  */
 
@@ -36,6 +38,10 @@ const FENCE = /^ {0,3}(`{3,}|~{3,})[ \t]*([A-Za-z0-9_+-]{0,32})[ \t]*$/;
 const HEADING = /^ {0,3}(#{1,3})[ \t]+(.*?)(?:[ \t]+#+)?[ \t]*$/;
 const UNORDERED_ITEM = /^ {0,3}[-*+][ \t]+(.*)$/;
 const ORDERED_ITEM = /^ {0,3}(\d{1,9})[.)][ \t]+(.*)$/;
+const TABLE_DELIMITER_CELL = /^:?-{1,}:?$/;
+/** Table budget: wider or larger tables render as escaped plain text. */
+export const MAX_TABLE_COLUMNS = 20;
+export const MAX_TABLE_CELLS = 2000;
 const CONTINUATION = /^(?: {2,}|\t)\S/;
 
 /** A safe absolute http(s) URL for an href, already attribute-escaped. */
@@ -120,6 +126,33 @@ function inline(text: string): string {
   return out;
 }
 
+/** Cells of a pipe-table row (outer pipes optional, `\\|` is a literal pipe). */
+function tableCells(line: string): string[] | null {
+  if (!line.includes('|')) return null;
+  const body = line
+    .trim()
+    .replace(/^\|/, '')
+    .replace(/(?<!\\)\|$/, '');
+  return body
+    .split(/(?<!\\)\|/)
+    .map((cell) => cell.trim().replace(/\\\|/g, '|'));
+}
+
+/** The header cells when `line` + `next` open a table, else null. */
+function tableHeader(line: string, next: string | undefined): string[] | null {
+  if (next === undefined || next.length > LINE_PARSE_LIMIT) return null;
+  const header = tableCells(line);
+  const delimiter = tableCells(next);
+  if (
+    !header ||
+    !delimiter ||
+    header.length !== delimiter.length ||
+    !delimiter.every((cell) => TABLE_DELIMITER_CELL.test(cell))
+  )
+    return null;
+  return header;
+}
+
 type ListKind = 'ul' | 'ol';
 
 /**
@@ -191,6 +224,52 @@ export function renderAssistantMarkdown(source: string): string {
     }
     if (line.trim() === '') {
       flush();
+      continue;
+    }
+    const header = tableHeader(line, lines[index + 1]);
+    if (header) {
+      flush();
+      const columns = header.length;
+      const rows: string[] = [];
+      const sourceLines = [line, lines[index + 1]];
+      let rowCount = 0;
+      index += 2;
+      while (
+        index < lines.length &&
+        lines[index].trim() !== '' &&
+        lines[index].length <= LINE_PARSE_LIMIT
+      ) {
+        const cells = tableCells(lines[index]);
+        if (!cells) break;
+        sourceLines.push(lines[index]);
+        rowCount += 1;
+        // Over budget: stop building rows (the block falls back to text).
+        if (
+          columns <= MAX_TABLE_COLUMNS &&
+          columns * (rowCount + 1) <= MAX_TABLE_CELLS
+        ) {
+          // Short rows are padded and long rows trimmed to the header width.
+          const row = Array.from({ length: columns }, (_, c) => cells[c] ?? '');
+          rows.push(
+            `<tr>${row.map((c) => `<td>${inline(c)}</td>`).join('')}</tr>`,
+          );
+        }
+        index += 1;
+      }
+      index -= 1;
+      if (
+        columns > MAX_TABLE_COLUMNS ||
+        columns * (rowCount + 1) > MAX_TABLE_CELLS
+      ) {
+        blocks.push(
+          `<p>${sourceLines.map((l) => escapeHtml(l)).join('<br>')}</p>`,
+        );
+        continue;
+      }
+      blocks.push(
+        `<table><thead><tr>${header.map((c) => `<th>${inline(c)}</th>`).join('')}</tr></thead>` +
+          `<tbody>${rows.join('')}</tbody></table>`,
+      );
       continue;
     }
     const heading = HEADING.exec(line);

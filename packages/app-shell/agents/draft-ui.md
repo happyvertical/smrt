@@ -1,6 +1,6 @@
 # Draft UI validation
 
-The content header owns draft controls on home, model, history and review pages; welcome and settings have none. Chat is hidden during onboarding. The publish preview groups Added, Removed, Changed and Archived items in counted cards before its ordered changes and full method code. The saved owner view selects the
+The content header owns draft controls on home, model, history and review pages; welcome and settings have none. Chat is hidden during onboarding. The publish review is one column: a summary first (loaded tables with counts and a row preview, then only non-empty Added, Removed, Changed and Archived lists and one quiet line for the rest), then Publish, then collapsed ordered changes (importer bookkeeping hidden) and full method code. The review page has no header review link. The saved owner view selects the
 layout description; loaders and mutations carry that description's explicit
 target. Changing copies remounts forms and returns home. Approvals always name
 live. Reports use the same saved copy at `/reports` and `/reports/[name]`; both keep the content-header draft controls. Shell copy uses the existing plain-text
@@ -12,7 +12,7 @@ pattern (the package has no message catalog).
 | Explicit copy | Switch persists view; description drives reads and writes | Failed switch keeps rendered copy; other-copy record events ignored | Owner, server event.fetch and browser fetch | Node 26 + jsdom / REST and MCP targets | Node + DOM / package test |
 | Draft records | Draft delete 200 navigates away | Live delete 202 waits for approval | Owner, existing server gate | SQLite through server (unchanged) | DOM / package test |
 | Navigation | Draft-only model has new badge | Live lists only live models | Owner layout | jsdom / describe | DOM / package test |
-| Review | Full preview, all code and archive counts | Chain change before request or approval offers review again | Owner gesture, pinned Approval | jsdom / preview + publish + decide | DOM / package test |
+| Review | Full preview, all code and archive counts; the owner's Publish applies in one step (no second Approve) | Chain change since the review (409) offers review again | Owner gesture on the session route, digest-pinned Approval recorded and decided in one request | jsdom / preview + publish; Node / draft-routes + invariants | DOM + Node / package test |
 | History | Publish versions grouped, undo-to uses first parent | Purged/current boundaries disable undo; 202 links to approvals | Owner, existing undo transaction | Node 26 + jsdom / history | Node + DOM / package test |
 | Lifecycle | Started/published/discarded/unpublishable refresh dependencies | Unknown events ignored; reconnect refreshes all | Owner SSE subscription | jsdom / EventSource | DOM + Node / package test |
 | Live data survives | Define, fork, edit, write live, publish, undo, discard | Draft test rows excluded on publish | Owner HTTP session, real engine | Node 26 + SQLite / production server | Manual / README Run it |
@@ -48,7 +48,7 @@ pre-fix implementation as well as the fixed code.
 |---|---|---|---|---|
 | Assistant readiness | Connect Claude Code or ChatGPT, save key; open composer updates | Sign out disables composer; failed requests preserve known state | Browser connection controls and status route; no credentials in events | DOM |
 | Onboarding chat | Welcome or unfinished onboarding hides panel | Finished/skipped onboarding restores saved chat choice; plugin stays hidden | Layout server data and browser layout | DOM |
-| Draft bar routes | Home, model list/record, history and review show controls | Welcome and all settings pages hide controls | Browser pathname | DOM |
+| Draft bar (shell header) | Every owner page shows it in the header; quiet Start a draft with no draft; switch, count, Discard, Review and publish only while the draft has changes | Welcome, setup and plugin views hide it; empty draft has no Discard or Review (Close draft only); unpublishable draft keeps Discard, no Review | Browser pathname; pure plan in `src/lib/ui/draft-bar.ts` | Node + DOM |
 | Per-turn mode | Start draft after existing conversation, change viewed copy, resume CLI | No draft after discard/publish replaces stale draft context | Stub model and Claude Code/Codex subprocesses; same tool scopes | Node |
 | Tool summaries | Builder summary and describe/list phrase | No raw JSON, SQL or snapshot paths; unknown tools get generic phrase | API and CLI events, stored thread replay, HTTP responses | Node + DOM |
 | Attribution | Owner id resolves to profile name; recorded assistant and engine remain | Unknown identity uses neutral label; spacing survives DOM rendering | Session profile, approval cards and history | DOM |
@@ -108,7 +108,7 @@ sides and never display the key.
 Draft review rechecks the server's current draft after the parent layout loads,
 so layout data fetched during a draft start cannot produce a false no-draft
 screen. With no open draft the loader redirects home and the component never
-requests a preview. The draft bar keeps review links disabled through the
+requests a preview. The header draft state keeps review links disabled through the
 start request and view refresh.
 
 Failed report tools return an MCP `isError` result tagged `report_failure` with
@@ -190,3 +190,32 @@ the assistant tool returns the same sentence-case reason without a pending
 marker. Existing blocked pending cards retain a Deny action through the normal
 decision endpoint. A later edit after a valid preview still fails at apply; the
 engine preflight and migration guards remain in place.
+
+
+## Related records on the record page (#5064)
+
+Reuse check: the intent index was read; `smrt-dev-mcp review` was unavailable
+(server down). Reused `cellText`, `indexReferences`, `orderByCreated`,
+`loadRecords`, `hostFor` and the shell records route. The route gained an
+owner-only `field`/`equals` filter (no raw SQL, no engine change).
+
+Below the record's details, `RelatedRecords.svelte` shows the reverse of link
+(`reference`) fields: one tab per model (the field is named in the label only
+when two fields of one model link here), with a count pill. Pure rules live in
+`src/lib/ui/related.ts`: `reverseRelations` (visible link fields only; one level,
+a related record's own relations are never loaded), `arrangeTabs` (at most 4 tabs
+ordered by count; empty relations and the overflow go under More),
+`relatedColumns` (first four visible non-json fields without the link back),
+`parseLinkParam`/`matchLink`. A tab shows up to 8 rows, "Showing X of Y", Add
+(`/m/<Model>/new?with=field:id`, prefilled, returning to the record) and "See
+all ... for <record>" (`/m/<Model>?where=field:id`, with a banner and Show all).
+At 40rem and narrower the relations stack as collapsible sections.
+
+| Behavior | Trigger and positive case | Failure case | Level |
+|---|---|---|---|
+| Reverse relations, tab order, overflow, link params | Client with Invoice (two links) and Walk | Hidden/other-target links skipped; 0-count under More; bad `field:id` ignored | Node `related.test.ts` |
+| Filtered records route | `?field=client&equals=<id>&limit=2` returns 2 of 3 with total | Anonymous 401, member 403, missing/unsafe values 400 | Node `related-records-route.test.ts` |
+| Tabs, More menu, stacked sections, prefilled Add | Record page with related rows | The loader carries the viewed copy, so a draft reads draft rows | DOM not run here (jsdom cannot start); CI |
+
+Rows beyond the first 1000 of a related model are not counted (`truncated` is
+set and the "Showing" line shows a plus).

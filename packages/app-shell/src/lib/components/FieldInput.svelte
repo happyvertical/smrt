@@ -1,6 +1,6 @@
 <script lang="ts">
 import type { FieldSpec, FormValue } from '$lib/ui/fields';
-import { recordLabel } from '$lib/ui/fields';
+import { recordLabel, sortByLabel } from '$lib/ui/fields';
 import { minorToInput } from '$lib/ui/money';
 import type { ModelInfo, RecordRow } from '$lib/ui/types';
 
@@ -26,6 +26,7 @@ let {
   disabled = false,
 }: Props = $props();
 
+const ordered = $derived(sortByLabel(refModel, options));
 const hintId = $derived(`${id}-hint`);
 const errorId = $derived(`${id}-error`);
 const describedBy = $derived(
@@ -86,7 +87,7 @@ function hintFor(s: FieldSpec): string {
         aria-describedby={describedBy} data-smrt-part="input"
       >
         <option value="">{spec.required ? 'Choose…' : 'None'}</option>
-        {#each options as option (option.id)}
+        {#each ordered as option (option.id)}
           <option value={option.id}>{recordLabel(refModel, option)}</option>
         {/each}
         {#if typeof value === 'string' && value && !options.some((o) => o.id === value)}

@@ -69,7 +69,7 @@ it('shows source columns, links, choice and money metadata, cached formula proof
     'column B',
     'CAD',
     'Price: 17.50 CAD',
-    'links to Customers',
+    'link · Customers',
     'matches the workbook',
     'Price × Quantity',
     'Totals proof',
@@ -119,9 +119,14 @@ it('offers only existing draft review/publish and discard after proof', async ()
   expect(document.body.textContent).toContain(
     'choose Draft in the Live/Draft switch',
   );
-  expect(document.body.textContent).toContain(
-    'Publishing still needs your approval',
-  );
+  expect(document.body.textContent).toContain('publish in one step');
+  expect(document.body.textContent).not.toContain('still needs your approval');
+  // The previous proof sits in the sheet cards: no bullets or section headings.
+  expect(document.querySelector('h3')).toBeNull();
+  for (const card of document.querySelectorAll(
+    'section[aria-label="Orders"], section[aria-label="Customers"]',
+  ))
+    expect(card.querySelector('ul')).toBeNull();
   expect(document.querySelector('input[type="file"]')).toBeNull();
 });
 it('shows saved budget-stop progress with Resume and Cancel, and preserves the server refusal', async () => {
@@ -436,4 +441,27 @@ it('keeps year checks in the proof without presenting years as a useful total', 
   expect(text).not.toContain('85,092');
   expect(current.proof!.facts.sums).toEqual(sums);
   expect(sums.orders.year).toBe(2026 * 42);
+});
+it('names the running import actions Pause import and Cancel import, never a bare Stop', async () => {
+  const current: ImportState = {
+    ...ready(),
+    state: 'running',
+    status: 'running',
+    step: 'planning',
+    progress: [{ stage: 'planning', at: Date.now() }],
+    proof: undefined,
+    plan: undefined,
+  };
+  vi.stubGlobal('fetch', vi.fn());
+  component = mount(Page, {
+    target: document.body,
+    props: { data: { current } as never, params: {}, form: null },
+  });
+  await tick();
+  const labels = [...document.querySelectorAll('button')].map((b) =>
+    b.textContent?.trim(),
+  );
+  expect(labels).toContain('Pause import');
+  expect(labels).toContain('Cancel import');
+  expect(labels).not.toContain('Stop');
 });

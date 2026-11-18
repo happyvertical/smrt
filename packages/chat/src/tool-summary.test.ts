@@ -54,6 +54,16 @@ describe('shared tool descriptions', () => {
     expect(toolSummary('customers.create', { name: 'Ada' }, false)).toBe(
       'Could not complete this action',
     );
+    expect(
+      toolSummary(
+        'app_runreport',
+        { summary: 'Give each report result a different name.' },
+        false,
+      ),
+    ).toBe('Give each report result a different name.');
+    expect(
+      toolSummary('app_runreport', { summary: 'SELECT a FROM /tmp/x' }, false),
+    ).toBe('Could not complete this action');
   });
 });
 

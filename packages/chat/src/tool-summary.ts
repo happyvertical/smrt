@@ -55,6 +55,17 @@ function payload(
   return record;
 }
 
+/** The plain reason a tool failed, when its error carries a safe sentence. */
+function failureReason(observation: unknown): string | undefined {
+  const record = payload(observation, 0, false);
+  if (!record || Array.isArray(record)) return;
+  return (
+    safeText(record.summary) ??
+    safeText(record.message) ??
+    safeText(record.error)
+  );
+}
+
 /** Short bounded summaries; never echoes an unknown tool name or a raw payload. */
 export const describeAssistantTool: DescribeAssistantTool = (
   name,
@@ -62,7 +73,10 @@ export const describeAssistantTool: DescribeAssistantTool = (
   outcome,
   options,
 ) => {
-  if (outcome && !outcome.ok) return 'Could not complete this action';
+  if (outcome && !outcome.ok)
+    return (
+      failureReason(outcome.observation) ?? 'Could not complete this action'
+    );
   const special: Record<string, string> = {
     app_describe: 'Checked the app structure',
     'app.describe': 'Checked the app structure',
@@ -131,7 +145,7 @@ export function toolSummary(
   ok = true,
   options?: { recordLabels?: 'generic'; plainTextSummary?: boolean },
 ): string {
-  if (!ok) return 'Could not complete this action';
+  if (!ok) return failureReason(result) ?? 'Could not complete this action';
   const compatible = options?.plainTextSummary
     ? payload(result, 0, true)
     : undefined;

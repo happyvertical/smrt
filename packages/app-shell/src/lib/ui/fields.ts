@@ -71,8 +71,12 @@ export function formFields(model: Pick<ModelInfo, 'fields'>): FieldSpec[] {
     .map(([n, d]) => fieldSpec(n, d));
 }
 
-/** A form value: text for most inputs, a boolean for checkboxes. */
-export type FormValue = string | boolean;
+/**
+ * A form value: text for most inputs, a boolean for checkboxes. A number input
+ * bound with `bind:value` yields a number (null/undefined when empty, NaN for a
+ * half-typed value), so numbers are accepted as input.
+ */
+export type FormValue = string | boolean | number | null;
 export type FormValues = Record<string, FormValue>;
 
 function isTrue(v: unknown): boolean {
@@ -130,13 +134,20 @@ export interface Serialized {
   errors: FormErrors;
 }
 
+/** A form value as the text the coercers parse; non-finite numbers are empty. */
+function formText(raw: FormValue | undefined): string {
+  if (typeof raw === 'string') return raw;
+  if (typeof raw === 'number') return Number.isFinite(raw) ? String(raw) : '';
+  return '';
+}
+
 /** One form value -> the value to send, or an error message. */
 export function coerceInput(
   def: FieldDef,
   raw: FormValue | undefined,
 ): { ok: true; value: unknown } | { ok: false; error: string } {
   if (def.type === 'boolean') return { ok: true, value: raw === true };
-  const text = typeof raw === 'string' ? raw : '';
+  const text = formText(raw);
   const empty = text.trim() === '';
   if (empty) {
     return def.required
@@ -213,7 +224,10 @@ export function changedFields(
   record: RecordRow,
 ): string[] {
   const base = initialValues(fields, record);
-  return Object.keys(base).filter((k) => base[k] !== values[k]);
+  return Object.keys(base).filter((k) => {
+    const now = values[k];
+    return base[k] !== (typeof now === 'number' ? formText(now) : now);
+  });
 }
 
 /**
@@ -237,19 +251,71 @@ export function stripFieldPrefix(message: string, model: string): string {
   return message.replace(new RegExp(`^${model}\\.[A-Za-z0-9]+:?\\s*`), '');
 }
 
-/** A short label for a record, for selects and links. */
+/** A text field whose name or label reads as the record's name or title. */
+function nameLike(name: string, def: FieldDef): boolean {
+  return /(^|\s)(name|title)$/i.test(fieldLabel(name, def));
+}
+
+/**
+ * A short label for a record, for selects, links and page titles: the first
+ * name/title-like text field with a value (a "Client #" code column ahead of
+ * "Name" does not win), else the first text field with a value, else a short id.
+ */
 export function recordLabel(
   model: Pick<ModelInfo, 'fields'> | undefined,
   record: RecordRow,
 ): string {
   if (model) {
-    for (const [name, def] of Object.entries(model.fields)) {
-      if (def.type !== 'text') continue;
+    const texts = Object.entries(model.fields).filter(
+      ([, def]) => def.type === 'text' && !def.hidden,
+    );
+    const value = (name: string) => {
       const v = record[name];
-      if (typeof v === 'string' && v.trim()) return v.trim();
-    }
+      return typeof v === 'string' && v.trim() ? v.trim() : null;
+    };
+    for (const pick of [
+      ([name, def]: [string, FieldDef]) => nameLike(name, def),
+      () => true,
+    ])
+      for (const entry of texts.filter(pick)) {
+        const v = value(entry[0]);
+        if (v) return v;
+      }
   }
   return record.id.length > 8 ? `${record.id.slice(0, 8)}…` : record.id;
+}
+
+const NATURAL = new Intl.Collator(undefined, {
+  numeric: true,
+  sensitivity: 'base',
+});
+
+/** Records ordered naturally by their label (INV-8 before INV-10). */
+export function sortByLabel(
+  model: Pick<ModelInfo, 'fields'> | undefined,
+  records: RecordRow[],
+): RecordRow[] {
+  return records
+    .map((record) => ({ record, label: recordLabel(model, record) }))
+    .sort((a, b) => NATURAL.compare(a.label, b.label))
+    .map((e) => e.record);
+}
+
+/**
+ * The singular of a model label for buttons ("Walks" -> "Walk",
+ * "Categories" -> "Category"). Only the last word changes; a label that does
+ * not look plural is returned as is.
+ */
+export function singularLabel(label: string): string {
+  const m = /^(.*?)([A-Za-z]+)$/s.exec(label.trim());
+  if (!m) return label;
+  const [, head, word] = m;
+  let one = word;
+  if (/[^aeiou]ies$/i.test(word)) one = `${word.slice(0, -3)}y`;
+  else if (/(ss|x|z|ch|sh)es$/i.test(word)) one = word.slice(0, -2);
+  else if (/[^sui]s$/i.test(word) && !/ss$/i.test(word) && word.length > 3)
+    one = word.slice(0, -1);
+  return `${head}${one}`;
 }
 
 /** The generated tool for a method: `<classname lowercased>_<method>`. */

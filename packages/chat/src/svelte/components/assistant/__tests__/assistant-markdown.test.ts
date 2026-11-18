@@ -2,6 +2,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   escapeHtml,
+  MAX_TABLE_CELLS,
+  MAX_TABLE_COLUMNS,
   renderAssistantMarkdown as md,
 } from '../assistant-markdown.js';
 
@@ -114,5 +116,47 @@ describe('renderAssistantMarkdown (#4505)', () => {
     expect(escapeHtml(`<a href="x">'&'</a>`)).toBe(
       '&lt;a href=&quot;x&quot;&gt;&#39;&amp;&#39;&lt;/a&gt;',
     );
+  });
+
+  it('renders pipe tables as escaped tables', () => {
+    expect(
+      md(
+        'Here you go:\n| Dog | Walks |\n| --- | :-: |\n| Rex | **3** |\n| <b>Bo</b> | a \\| b |\n\nDone',
+      ),
+    ).toBe(
+      '<p>Here you go:</p><table><thead><tr><th>Dog</th><th>Walks</th></tr></thead>' +
+        '<tbody><tr><td>Rex</td><td><strong>3</strong></td></tr>' +
+        '<tr><td>&lt;b&gt;Bo&lt;/b&gt;</td><td>a | b</td></tr></tbody></table><p>Done</p>',
+    );
+    // Outer pipes are optional; short rows are padded.
+    expect(md('a | b\n- | -\n1 |')).toBe(
+      '<table><thead><tr><th>a</th><th>b</th></tr></thead>' +
+        '<tbody><tr><td>1</td><td></td></tr></tbody></table>',
+    );
+  });
+
+  it('leaves a pipe line without a delimiter row as text', () => {
+    expect(md('| a | b |\n| c | d |')).toBe('<p>| a | b |<br>| c | d |</p>');
+    expect(md('| a | b |\n| --- |')).not.toContain('<table');
+  });
+  it('bounds rendered cells for wide or huge tables (#5102)', () => {
+    const wide = `|${Array.from({ length: 500 }, (_, i) => `h${i}`).join('|')}|\n|${'---|'.repeat(500)}\n${'| x |\n'.repeat(1000)}`;
+    const html = md(wide);
+    expect((html.match(/<td>/g) ?? []).length).toBeLessThanOrEqual(
+      MAX_TABLE_CELLS,
+    );
+    expect(html).not.toContain('<table');
+    expect(html).toContain('h499');
+
+    const rows = `| a | b |\n| --- | --- |\n${'| 1 | 2 |\n'.repeat(MAX_TABLE_CELLS)}`;
+    expect(md(rows)).not.toContain('<table');
+    expect(md(rows)).toContain('<br>');
+  });
+
+  it('keeps a small table within the budget as a table', () => {
+    const html = md('| a | b |\n| --- | --- |\n| 1 | 2 |');
+    expect(html).toContain('<table');
+    expect((html.match(/<td>/g) ?? []).length).toBe(2);
+    expect(MAX_TABLE_COLUMNS).toBeGreaterThanOrEqual(2);
   });
 });

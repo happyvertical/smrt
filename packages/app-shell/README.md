@@ -110,9 +110,11 @@ owner). Writes must be same-origin `application/json`. Errors are
 | `GET /api/shell/approvals?status=` | | `{ approvals: ApprovalView[], pending }`; `status` is `pending`, `approved`, `denied` or `failed` |
 | `POST /api/shell/approvals/<id>` | `{ approve: boolean }` | `{ id, status: 'approved'\|'denied'\|'failed', result?, error? }`; 404 unknown, 409 already decided |
 | `GET /api/shell/records/<Model>?limit=&target=` | | `{ records: object[] }` |
+| `GET /api/shell/records/<Model>?field=&equals=&limit=&target=` | | The related records of one record: `{ records, total, truncated }` for the rows whose link field equals the id (`records` newest first by the model's main date field, else creation time, capped at `limit`; `total` counts matches among the first 1000 rows, `truncated` when that scan hit its limit). Owner only, one named copy; no new SQL |
 | `POST /api/shell/records/<Model>?target=` | the record's fields | 201 the record |
 | `GET /PUT /api/shell/records/<Model>/<id>?target=` | PUT: changed fields | the record |
 | `DELETE /api/shell/records/<Model>/<id>?target=` | | live: **202** `PendingApproval`, nothing is deleted until approved; draft: **200** `{ deleted: id }` |
+| `GET /m/<Model>?where=<field>:<id>` and `/m/<Model>/new?with=<field>:<id>` | | Pages: the table filtered to the records linked to one record, and a new-record form with that link field set (saving returns to the linked record). Only a visible link field and a plain id are honored |
 | `/api/app/<route>` (any method; copy in the `x-shell-target` header) | as the app's REST | the app's generated REST (`/api/app/chores` is the app's `/api/chores`); `DELETE` answers **202** `PendingApproval`; only the app's own collection routes are served (`sync/apply`, `_changes`, `_events` and unknown collections are 404) |
 | `GET /reports`, `GET /reports/<name>` | | Saved report list and live result in the owner's saved copy; sidebar group appears when reports exist |
 | `GET /api/shell/reports/<name>?target=` | | Bounded engine result; labels and reference destinations remain separate from raw ids |
@@ -175,7 +177,7 @@ The chat column (`src/lib/assistant/AssistantPanel.svelte`, the `panel` of
 smrt-svelte's `AppShell` in `src/routes/+layout.svelte`, mounted for the owner)
 talks to `mountAssistantRoutes` (`src/lib/server/assistant/`). The layout is
 left sidebar, chat, content; the voice and assistant toggles and the user menu
-sit in the sidebar footer. The sidebar collapses to an icon rail (nav icons with
+sit in the sidebar footer. Each model gets its own sidebar icon, picked from its name and fields (`src/lib/ui/model-icon.ts`) and stable across reloads. The sidebar collapses to an icon rail (nav icons with
 tooltips, the footer controls as icons) from the chevron above the footer; the
 choice is remembered per owner, and the footer has no divider line (it would sit
 beside the chat composer's top border). The boundary between chat and content is a draggable
@@ -397,7 +399,7 @@ can rely on:
 | `GET /api/shell/draft` | | `{ draft: DraftInfo \| null, view: 'live'\|'draft' }` |
 | `POST /api/shell/draft` | `{ name? }` | **201** `DraftInfo`; 409 if one is already open |
 | `POST /api/shell/draft/preview` | none | `{ draft: DraftInfo, preview: PublishPreview }`; 404 no draft; 409 unpublishable |
-| `POST /api/shell/draft/publish` | `{ expect? }` (the preview's `digest`) | **always 202** `PendingApproval`; 409 when `expect` no longer matches (review again) |
+| `POST /api/shell/draft/publish` | `{ expect }` (required: the reviewed preview's `digest`) | the owner's own Publish, one step: `{ id, status: 'approved', result }`; 400 no `expect`; 409 when `expect` no longer matches or the apply refused (review again) |
 | `POST /api/shell/draft/discard` | `{ draftId? }` | `{ discarded: name }`; the owner's direct action (the UI confirms first); 404 none, 409 wrong id |
 | `GET /api/shell/draft/view` | | `{ view }` (`live` whenever no draft is open) |
 | `PUT /api/shell/draft/view` | `{ view: 'live'\|'draft' }` | `{ view }`; `draft` with no usable draft is 409 |
@@ -422,8 +424,11 @@ it). Archive counts are of that moment and can drift. The publish Approval's
 `preview` is this object plus `draft` (the name); its `action` is
 `{ kind: 'publish-draft', draftId, draftName, digest }`. Approving applies
 exactly that chain and **fails** (status `failed`, the draft stays open) if the
-draft changed since. Approve through `POST /api/shell/approvals/<id>` as for any
-Approval. A discard asked by a tool is `{ kind: 'discard-draft', draftId,
+draft changed since. A tool, the assistant, `/mcp` or the generated REST leaves
+it pending; approve through `POST /api/shell/approvals/<id>` as for any
+Approval. The owner's review-page Publish (`POST /api/shell/draft/publish`,
+session cookie and same origin only) records the same Approval and decides it
+in one step, so it stays in Approvals as the audit row. A discard asked by a tool is `{ kind: 'discard-draft', draftId,
 draftName }`. A successful publish result is `{ version, versions, summary,
 archives, appRestartMs, draft }`.
 
@@ -516,8 +521,10 @@ See [AGENTS.md](AGENTS.md) for the invariants and [agents/engine.md](agents/engi
 
 ### Draft UI
 
-The content header offers **Start draft**, then **Live / Draft**, the unpublished
-change count, **Discard** (confirmed), and **Review and publish**. Starting a draft
+The app header (every owner page, not plugin views) offers a quiet **Start a draft**.
+Once a draft has changes it shows **Live / Draft**, the unpublished change count,
+**Discard** (confirmed), and **Review and publish**; an empty draft shows only the
+switch and **Close draft**. Starting a draft
 opens its view; switching copies saves the owner's choice and returns home. In
 Draft, a warning explains that test records are thrown away and draft-only models
 have a **new** marker. Chat shows **Building in draft**; tool chips name the copy,

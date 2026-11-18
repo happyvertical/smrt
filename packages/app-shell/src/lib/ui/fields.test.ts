@@ -11,6 +11,8 @@ import {
   methodToolName,
   recordLabel,
   serializeForm,
+  singularLabel,
+  sortByLabel,
   stripFieldPrefix,
 } from './fields.ts';
 import type { FieldDef, RecordRow } from './types.ts';
@@ -115,6 +117,41 @@ describe('values', () => {
     });
   });
 
+  it.each([
+    'integer',
+    'number',
+  ] as const)('reads %s fields bound as numbers by a number input', (type) => {
+    const opt: FieldDef = { type };
+    const req: FieldDef = { type, required: true };
+    expect(coerceInput(opt, 7)).toEqual({ ok: true, value: 7 });
+    expect(coerceInput(req, 0)).toEqual({ ok: true, value: 0 });
+    expect(coerceInput(req, '7')).toEqual({ ok: true, value: 7 });
+    expect(coerceInput(opt, null)).toEqual({ ok: true, value: null });
+    expect(coerceInput(opt, '')).toEqual({ ok: true, value: null });
+    expect(coerceInput(opt, Number.NaN)).toEqual({ ok: true, value: null });
+    expect(coerceInput(req, null)).toEqual({
+      ok: false,
+      error: 'This field is required',
+    });
+    expect(coerceInput(req, '')).toMatchObject({ ok: false });
+    expect(coerceInput(req, Number.NaN)).toMatchObject({ ok: false });
+  });
+
+  it('rejects a fractional number for an integer field', () => {
+    expect(coerceInput({ type: 'integer' }, 1.5)).toMatchObject({ ok: false });
+    expect(coerceInput({ type: 'number' }, 1.5)).toEqual({
+      ok: true,
+      value: 1.5,
+    });
+  });
+
+  it('does not see a retyped number as a change', () => {
+    const rec: RecordRow = { id: 'r', title: 'a', qty: 7 };
+    const base = initialValues(fields, rec);
+    expect(changedFields(fields, { ...base, qty: 7 }, rec)).toEqual([]);
+    expect(changedFields(fields, { ...base, qty: 8 }, rec)).toEqual(['qty']);
+  });
+
   it('reports required, number, choice, json and money problems', () => {
     const { errors } = serializeForm(fields, {
       title: '  ',
@@ -190,5 +227,61 @@ describe('labels', () => {
 
   it('names the generated tool of a method', () => {
     expect(methodToolName('Chore', 'complete')).toBe('chore_complete');
+  });
+});
+
+describe('record titles, selects and singular labels', () => {
+  const client = {
+    fields: {
+      code: { type: 'text' as const, label: 'Client #' },
+      name: { type: 'text' as const },
+      balance: { type: 'money' as const },
+    },
+  };
+
+  it('titles a record by its name, not a leading code column', () => {
+    expect(
+      recordLabel(client, { id: 'x1', code: 'C003', name: 'Ada Lovelace' }),
+    ).toBe('Ada Lovelace');
+    // No name value: the first text value still labels it.
+    expect(recordLabel(client, { id: 'x1', code: 'C003', name: ' ' })).toBe(
+      'C003',
+    );
+    // A name-like label wins over declared order.
+    expect(
+      recordLabel(
+        {
+          fields: {
+            note: { type: 'text' },
+            title: { type: 'text', label: 'Walk title' },
+          },
+        },
+        { id: 'w1', note: 'n', title: 'Park loop' },
+      ),
+    ).toBe('Park loop');
+  });
+
+  it('sorts select options naturally by label', () => {
+    const invoice = { fields: { number: { type: 'text' as const } } };
+    const rows = ['INV-10', 'INV-8', 'INV-9', 'INV-1'].map(
+      (number, i) => ({ id: `i${i}`, number }) as RecordRow,
+    );
+    expect(sortByLabel(invoice, rows).map((r) => r.number)).toEqual([
+      'INV-1',
+      'INV-8',
+      'INV-9',
+      'INV-10',
+    ]);
+  });
+
+  it('makes a model label singular for buttons', () => {
+    expect(singularLabel('Walks')).toBe('Walk');
+    expect(singularLabel('Orders')).toBe('Order');
+    expect(singularLabel('Categories')).toBe('Category');
+    expect(singularLabel('Boxes')).toBe('Box');
+    expect(singularLabel('Order items')).toBe('Order item');
+    expect(singularLabel('Status')).toBe('Status');
+    expect(singularLabel('Address')).toBe('Address');
+    expect(singularLabel('Client')).toBe('Client');
   });
 });

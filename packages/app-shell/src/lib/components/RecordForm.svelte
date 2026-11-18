@@ -1,7 +1,7 @@
 <script lang="ts">
 import { goto, invalidate } from '$app/navigation';
 import { ApiError, isPendingApproval, records } from '$lib/ui/api';
-import { cellText } from '$lib/ui/columns';
+import { cellText, indexReferences } from '$lib/ui/columns';
 import { DEPENDS } from '$lib/ui/events';
 import {
   changedFields,
@@ -11,6 +11,7 @@ import {
   initialValues,
   recordLabel,
   serializeForm,
+  singularLabel,
   stripFieldPrefix,
 } from '$lib/ui/fields';
 import { formulaWords } from '$lib/ui/formula';
@@ -28,14 +29,32 @@ interface Props {
   record?: RecordRow | null;
   /** Records of the models this one refers to, by model name. */
   references?: Record<string, RecordRow[]>;
+  /** Values a new record starts with (link fields set from a related tab). */
+  prefill?: Record<string, string>;
+  /** Where to go after a new record is saved; default its table. */
+  returnTo?: string | null;
 }
 
-let { model, description, record = null, references = {} }: Props = $props();
+let {
+  model,
+  description,
+  record = null,
+  references = {},
+  prefill = {},
+  returnTo = null,
+}: Props = $props();
 
 const info = $derived(description.models[model]);
 const specs = $derived(formFields(info));
 const uid = `f-${Math.random().toString(36).slice(2, 8)}`;
 const editing = $derived(record !== null);
+const lookup = $derived(indexReferences(references));
+const singular = $derived(singularLabel(info.label).toLowerCase());
+// A saved record opens as a read view; Edit swaps in the form.
+let changing = $state(false);
+const reading = $derived(editing && !changing);
+const shown = (def: (typeof info.fields)[string], value: unknown) =>
+  cellText(def, value, description.models, lookup) || '—';
 
 let values: FormValues = $state({});
 let errors: Record<string, string> = $state({});
@@ -54,10 +73,14 @@ let loadedId: string | null | undefined;
 $effect(() => {
   const id = record?.id ?? null;
   if (id !== loadedId || !touched) {
-    values = initialValues(info.fields, record);
+    values = {
+      ...initialValues(info.fields, record),
+      ...(record ? {} : prefill),
+    };
     errors = {};
     touched = false;
   }
+  if (id !== loadedId) changing = false;
   loadedId = id;
 });
 
@@ -68,6 +91,7 @@ async function save(event: SubmitEvent) {
   const only = record ? changedFields(info.fields, values, record) : undefined;
   if (record && only?.length === 0) {
     saved = true;
+    changing = false;
     return;
   }
   const { data, errors: found } = serializeForm(info.fields, values, only);
@@ -83,11 +107,12 @@ async function save(event: SubmitEvent) {
       touched = false;
       await invalidate(DEPENDS.records);
       saved = true;
+      changing = false;
     } else {
       await records.create(model, data, description.mode);
       touched = false;
       await invalidate(DEPENDS.records);
-      await goto(modelHref(model));
+      await goto(returnTo ?? modelHref(model));
     }
   } catch (e) {
     const message = e instanceof ApiError ? e.message : 'Could not save.';
@@ -125,8 +150,51 @@ async function confirmDelete() {
 }
 
 const methods = $derived(Object.entries(info.methods));
+
+function cancelEdit() {
+  touched = false;
+  errors = {};
+  formError = '';
+  values = initialValues(info.fields, record);
+  changing = false;
+}
+function askDelete() {
+  deleteError = '';
+  confirming = true;
+}
 </script>
 
+{#snippet deleteButton()}
+  <button type="button" class="smrt-app-shell__btn smrt-app-shell__btn-danger" onclick={askDelete}>Delete</button>
+{/snippet}
+
+{#if reading && record}
+  <section class="smrt-record-form__details" aria-label="{info.label} details" data-smrt-part="details">
+    <dl class="smrt-record-form__grid">
+      {#each specs as spec (spec.name)}
+        {@const field = info.fields[spec.name]}
+        <div class="smrt-record-form__item">
+          <dt class="smrt-app-shell__muted">{spec.label}</dt>
+          <dd>{shown(field, record[spec.name])}</dd>
+        </div>
+      {/each}
+    </dl>
+    {#if specs.length === 0}
+      <p class="smrt-app-shell__muted">This model has no fields yet. Ask the assistant to add some.</p>
+    {/if}
+    <div class="smrt-app-shell__actions">
+      <button type="button" class="smrt-app-shell__btn smrt-app-shell__btn-primary" disabled={specs.length === 0} onclick={() => {
+          saved = false;
+          changing = true;
+        }}>
+        Edit
+      </button>
+      <a class="smrt-app-shell__btn" href={modelHref(model)}>Back to list</a>
+      {@render deleteButton()}
+    </div>
+    <p class="smrt-app-shell__muted" aria-live="polite" role="status">{saved ? 'Saved.' : ''}</p>
+  </section>
+{:else}
 <form
   oninput={() => (touched = true)}
   onchange={() => (touched = true)}
@@ -162,22 +230,16 @@ const methods = $derived(Object.entries(info.methods));
     <button type="submit" class="smrt-app-shell__btn smrt-app-shell__btn-primary" disabled={saving || specs.length === 0}>
       {saving ? 'Saving…' : editing ? 'Save changes' : 'Create'}
     </button>
-    <a class="smrt-app-shell__btn" href={modelHref(model)}>{editing ? 'Back to list' : 'Cancel'}</a>
     {#if editing}
-      <button
-        type="button"
-        class="smrt-app-shell__btn smrt-app-shell__btn-danger"
-        onclick={() => {
-          deleteError = '';
-          confirming = true;
-        }}
-      >
-        Delete
-      </button>
+      <button type="button" class="smrt-app-shell__btn" disabled={saving} onclick={cancelEdit}>Cancel</button>
+      {@render deleteButton()}
+    {:else}
+      <a class="smrt-app-shell__btn" href={modelHref(model)}>Cancel</a>
     {/if}
   </div>
   <p class="smrt-app-shell__muted" aria-live="polite" role="status">{saved ? 'Saved.' : ''}</p>
 </form>
+{/if}
 
 {#if pending}
   <p class="smrt-app-shell__alert smrt-app-shell__alert-warn" role="status">
@@ -204,7 +266,7 @@ const methods = $derived(Object.entries(info.methods));
 {#if record}
   <ConfirmDialog
     open={confirming}
-    title="Delete this {info.label.toLowerCase()}?"
+    title="Delete this {singular}?"
     confirmLabel={description.mode === 'draft' ? 'Delete' : 'Ask to delete'}
     danger
     busy={deleting}
@@ -223,3 +285,26 @@ const methods = $derived(Object.entries(info.methods));
     </p>
   </ConfirmDialog>
 {/if}
+
+<style>
+@layer smrt.reset, smrt.structure, smrt.theme;
+
+@layer smrt.structure {
+  .smrt-record-form__grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 14rem), 1fr));
+    gap: var(--smrt-spacing-md, 0.75rem) var(--smrt-spacing-lg, 1rem);
+    margin: 0 0 var(--smrt-spacing-lg, 1rem);
+  }
+  .smrt-record-form__item dd {
+    margin: 0;
+    overflow-wrap: break-word;
+  }
+}
+
+@layer smrt.theme {
+  .smrt-record-form__item dt {
+    font-size: 0.8125rem;
+  }
+}
+</style>
