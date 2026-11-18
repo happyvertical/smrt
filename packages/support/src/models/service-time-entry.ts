@@ -34,6 +34,10 @@ import {
 @TenantScoped({ mode: 'optional' })
 @smrt({
   tableName: 'service_time_entries',
+  // Same name as the smrt-timesheets entry it extends, on the same table:
+  // with smrt-support installed this class is the one `ServiceTimeEntry`
+  // model, and the timesheets name and its aliases resolve to it (#5143).
+  replaceParent: true,
   api: { include: ['list', 'get'] },
   mcp: { include: ['list', 'get'] },
   cli: { include: ['list', 'get'] },
