@@ -46,6 +46,11 @@ async function generateTestManifest() {
           'src/manifest/static-manifest.ts',
           'src/manifest/test-manifest-stub.ts',
           'node_modules/**',
+          // Stands in for an app that replaces the #4921 smrt fixture's
+          // classes under the same class names. A manifest holds one class
+          // per name, so only the smrt fixture is scanned; the app fixture is
+          // loaded by its test at runtime.
+          'src/__tests__/issue-4921-app.fixture.ts',
         ],
 
         // === SCANNER CONFIGURATION ===
