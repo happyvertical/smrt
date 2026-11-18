@@ -217,6 +217,13 @@ async function main(): Promise<void> {
     process.exit(results.errors.length > 0 ? 1 : 0);
   }
 
+  // A scan with errors has no complete manifest to write: the diagnostics
+  // above name values and classes that would be missing from it.
+  if (results.errors.some((error) => error.severity === 'error')) {
+    console.error('No manifest written: fix the scan errors above.');
+    process.exit(1);
+  }
+
   // Read package.json for metadata (Issue #713 - namespace isolation)
   let packageName: string | undefined;
   let packageVersion: string | undefined;
@@ -241,6 +248,20 @@ async function main(): Promise<void> {
     typeAliases: results.typeAliases,
   });
 
+  // The generation checks a SMRT producer runs (confirmed parents, known
+  // relationship and report targets) need the dependency manifests, which
+  // this standalone command does not read. Anything it cannot confirm from
+  // the scan itself refuses the output rather than publish it unchecked.
+  const unconfirmed = unconfirmedIdentities(manifest);
+  if (unconfirmed.length > 0) {
+    console.error('Cannot confirm from this scan alone:');
+    for (const problem of unconfirmed) console.error(`  ${problem}`);
+    console.error(
+      'No manifest written: build with the SMRT producer (ManifestBuilder or the Vite plugin), which reads dependency manifests, or name targets this package declares.',
+    );
+    process.exit(1);
+  }
+
   const output = JSON.stringify(manifest, null, 2);
 
   // Write output
@@ -254,6 +275,87 @@ async function main(): Promise<void> {
   }
 
   process.exit(results.errors.length > 0 ? 1 : 0);
+}
+
+/**
+ * Parents, relationship targets and report sources in `manifest` that the
+ * scan alone cannot confirm: another package's export (its manifest is not
+ * read here), or a name no class of this manifest has.
+ */
+function unconfirmedIdentities(manifest: {
+  objects: Record<
+    string,
+    {
+      className: string;
+      extendsQualified?: string;
+      fields?: Record<
+        string,
+        { type?: string; related?: string; relatedQualified?: string }
+      >;
+      decoratorConfig?: Record<string, unknown>;
+    }
+  >;
+}): string[] {
+  const names = new Set(
+    Object.values(manifest.objects).map((obj) => obj.className.toLowerCase()),
+  );
+  const known = (name: string) =>
+    names.has(name.split(':').at(-1)?.split('.')[0]?.toLowerCase() ?? '');
+  const problems: string[] = [];
+  for (const obj of Object.values(manifest.objects)) {
+    if (obj.extendsQualified) {
+      problems.push(
+        `${obj.className} extends ${obj.extendsQualified}, another package's export`,
+      );
+    }
+    for (const [name, field] of Object.entries(obj.fields ?? {})) {
+      if (!['foreignKey', 'oneToMany', 'manyToMany'].includes(field.type ?? ''))
+        continue;
+      if (field.relatedQualified) {
+        problems.push(
+          `${obj.className}.${name} targets ${field.relatedQualified}, another package's export`,
+        );
+      } else if (!field.related?.trim()) {
+        problems.push(`${obj.className}.${name} names no target`);
+      } else if (!known(field.related)) {
+        problems.push(
+          `${obj.className}.${name} targets "${field.related}", which no class of this scan declares`,
+        );
+      }
+    }
+    const report = obj.decoratorConfig?.report as
+      | {
+          source?: unknown;
+          sourceQualified?: unknown;
+          joins?: Record<
+            string,
+            { source?: unknown; sourceQualified?: unknown }
+          >;
+        }
+      | undefined;
+    for (const [path, holder] of [
+      ['source', report],
+      ...Object.entries(report?.joins ?? {}).map(
+        ([join, entry]) => [`joins.${join}.source`, entry] as const,
+      ),
+    ] as const) {
+      if (!holder) continue;
+      if (typeof holder.sourceQualified === 'string') {
+        problems.push(
+          `${obj.className} @report() ${path} is ${holder.sourceQualified}, another package's export`,
+        );
+      } else if (
+        typeof holder.source === 'string' &&
+        holder.source !== '' &&
+        !known(holder.source)
+      ) {
+        problems.push(
+          `${obj.className} @report() ${path} is "${holder.source}", which no class of this scan declares`,
+        );
+      }
+    }
+  }
+  return problems;
 }
 
 main().catch((error) => {
