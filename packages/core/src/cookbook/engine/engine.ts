@@ -447,7 +447,6 @@ export function createCookbookEngine(
       revision,
       withUndo(),
     );
-    notify();
     return result;
   }
 
@@ -508,9 +507,12 @@ export function createCookbookEngine(
         );
       }
       if (parsed.name === 'undo') {
-        return finish(
+        // Journal the undo before subscribers hear of it, like any command.
+        const result = finish(
           runUndo(id, parsed.input as { undoId: string; force?: boolean }),
         );
+        notify();
+        return result;
       }
       const before = current;
       const outcome = execute(
