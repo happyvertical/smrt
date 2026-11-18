@@ -41,7 +41,7 @@ export class MailboxRecipe extends SmrtRecipe {
     {
       id: 'email-inbox',
       kind: 'email',
-      options: ['imap', 'pop3', 'gmail'],
+      options: ['imap', 'pop3', 'gmail', 'jmap'],
       required: true,
     },
     {

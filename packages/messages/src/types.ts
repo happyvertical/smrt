@@ -166,7 +166,7 @@ export type AccountType =
 /**
  * Email provider type
  */
-export type ProviderType = 'smtp' | 'imap' | 'pop3' | 'gmail';
+export type ProviderType = 'smtp' | 'imap' | 'pop3' | 'gmail' | 'jmap';
 
 // ─────────────────────────────────────────────────────────────────────────
 // Base Options
@@ -294,6 +294,8 @@ export interface AttachmentOptions extends SmrtObjectOptions {
  */
 export interface EmailOptions extends MessageOptions {
   messageId?: string; // RFC 822 Message-ID
+  /** The mail server's own id for this message (JMAP Email id). */
+  providerMessageId?: string;
   inReplyTo?: string;
   ccAddresses?: string;
   bccAddresses?: string;
@@ -318,6 +320,8 @@ export interface EmailAccountOptions extends AccountOptions {
   email?: string;
   providerType?: ProviderType;
   syncIntervalMinutes?: number;
+  /** Opaque change-feed resume point; see `EmailAccount.syncChanges()`. */
+  syncCursor?: string | null;
 }
 
 /**

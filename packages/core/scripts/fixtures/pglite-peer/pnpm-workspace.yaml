@@ -1,4 +1,4 @@
 packages: []
 minimumReleaseAgeExclude:
-  - '@happyvertical/sql@0.114.0'
-  - '@happyvertical/utils@0.114.0'
+  - '@happyvertical/sql@0.115.0'
+  - '@happyvertical/utils@0.115.0'

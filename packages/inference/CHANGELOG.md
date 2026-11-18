@@ -1,5 +1,17 @@
 # @happyvertical/smrt-inference
 
+## 0.62.8
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.62.8
+  - @happyvertical/smrt-prompts@0.62.8
+  - @happyvertical/smrt-secrets@0.62.8
+  - @happyvertical/smrt-tenancy@0.62.8
+  - @happyvertical/smrt-users@0.62.8
+  - @happyvertical/smrt-config@0.62.8
+
 ## 0.62.7
 
 ### Patch Changes
