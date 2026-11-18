@@ -147,7 +147,10 @@ describe('PermissionCatalogService', () => {
     const CatalogRootBase = CatalogRoot;
     if (replace) {
       const AppRoot = class CatalogRoot extends CatalogRootBase {};
-      ObjectRegistry.register(AppRoot, { packageName: '@fixture/catalog-app' });
+      ObjectRegistry.register(AppRoot, {
+        packageName: '@fixture/catalog-app',
+        replaceParent: true,
+      });
     }
     function definitions() {
       return PermissionCatalogService.create()
