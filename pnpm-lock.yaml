@@ -2600,6 +2600,9 @@ importers:
       '@happyvertical/smrt-core':
         specifier: workspace:*
         version: link:../core
+      '@happyvertical/smrt-jobs':
+        specifier: workspace:*
+        version: link:../jobs
       '@happyvertical/smrt-profiles':
         specifier: workspace:*
         version: link:../profiles
@@ -2625,9 +2628,6 @@ importers:
         specifier: ^0.115.0
         version: 0.115.0
     devDependencies:
-      '@happyvertical/smrt-jobs':
-        specifier: workspace:*
-        version: link:../jobs
       '@happyvertical/smrt-ledgers':
         specifier: workspace:*
         version: link:../ledgers

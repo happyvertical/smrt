@@ -7,7 +7,7 @@
  * or running returns the same job. Runs are at-least-once and safe to repeat:
  * the change-feed cursor only moves after a batch is applied.
  *
- * `@happyvertical/smrt-jobs` is an optional peer, loaded on first use. A host
+ * `@happyvertical/smrt-jobs` is a regular dependency, loaded lazily on first use. A host
  * that schedules mail sync installs it and runs a TaskRunner on the
  * {@link MAIL_SYNC_QUEUE} queue (and calls these helpers from its scheduler).
  *

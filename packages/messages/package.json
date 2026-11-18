@@ -82,10 +82,11 @@
     "@happyvertical/logger": "catalog:",
     "@happyvertical/messages": "catalog:",
     "@happyvertical/smrt-core": "workspace:*",
+    "@happyvertical/smrt-jobs": "workspace:*",
     "@happyvertical/smrt-profiles": "workspace:*",
-    "@happyvertical/smrt-types": "workspace:*",
     "@happyvertical/smrt-secrets": "workspace:*",
     "@happyvertical/smrt-tenancy": "workspace:*",
+    "@happyvertical/smrt-types": "workspace:*",
     "@happyvertical/smrt-ui": "workspace:*",
     "@happyvertical/smrt-users": "workspace:*",
     "@happyvertical/sql": "catalog:",
@@ -93,14 +94,10 @@
   },
   "peerDependencies": {
     "@happyvertical/encryption": "*",
-    "@happyvertical/smrt-jobs": "workspace:*",
     "svelte": "^5.57.0"
   },
   "peerDependenciesMeta": {
     "@happyvertical/encryption": {
-      "optional": true
-    },
-    "@happyvertical/smrt-jobs": {
       "optional": true
     },
     "svelte": {
@@ -108,7 +105,6 @@
     }
   },
   "devDependencies": {
-    "@happyvertical/smrt-jobs": "workspace:*",
     "@happyvertical/smrt-ledgers": "workspace:*",
     "@happyvertical/smrt-vitest": "workspace:*",
     "@sveltejs/package": "^2.5.8",
