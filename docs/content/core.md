@@ -1065,6 +1065,14 @@ const total = await collection.count({
 });
 ```
 
+A key may be written in camelCase or snake_case (`categoryId` and `category_id`
+name the same column), but a column gets one condition per operator. A `where`
+in which two keys resolve to the same column and operator, such as
+`{ categoryId: 'a', category_id: 'b' }`, is rejected with a `WhereClauseError`
+(`INVALID_WHERE_CLAUSE`, HTTP 400 on generated routes) instead of keeping
+whichever key came last. Different operators on one column, as with the two
+`price` conditions above, are combined with AND.
+
 #### Query bounds
 
 `limit` and `offset` must be non-negative integers; anything else (`NaN`, a

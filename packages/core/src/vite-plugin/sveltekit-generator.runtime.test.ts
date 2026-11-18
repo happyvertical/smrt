@@ -24,6 +24,7 @@ import { ObjectRegistry, smrt } from '../registry.js';
 import { setRuntimeExposureGate } from '../runtime-exposure.js';
 import type { SmartObjectManifest } from '../scanner/types.js';
 import { snapshotObjectRegistryState } from '../test-utils.js';
+import { applyWhereScope, WhereClauseError } from '../where-keys.js';
 import { generateSvelteKitRoutes } from './sveltekit-generator.js';
 
 // Canonical instance injection prevents provider/env/file configuration fallback.
@@ -212,6 +213,9 @@ function writeWorkspaceCoreShim(projectRoot: string): void {
       '}',
       'export async function getTableVersion() { return 1; }',
       `export const parseRestListWhere = (${parseRestListWhere.toString()});`,
+      // The real scope helper: the emitted tenant-scoped list route calls it.
+      'export const applyWhereScope = globalThis.__smrtGeneratedApplyWhereScope;',
+      "export function resolveTenantEtagDiscriminator() { return 't:global'; }",
       'export function ifNoneMatchHasConcreteMatch() { return false; }',
       'export function ifNoneMatchSatisfied() { return false; }',
       'export function normalizeCustomActionFailure() { return undefined; }',
@@ -258,6 +262,8 @@ describe('generated SvelteKit helper runtime', () => {
   beforeEach(async () => {
     (globalThis as Record<string, unknown>).__smrtGeneratedReportError =
       reportUnexpectedHttpError;
+    (globalThis as Record<string, unknown>).__smrtGeneratedApplyWhereScope =
+      applyWhereScope;
     (globalThis as Record<string, unknown>).__smrtGeneratedHelperCalls = [];
     (globalThis as Record<string, unknown>).__smrtGeneratedHelperRegistrations =
       [];
@@ -306,6 +312,8 @@ describe('generated SvelteKit helper runtime', () => {
   afterEach(() => {
     setRuntimeExposureGate(undefined);
     delete (globalThis as Record<string, unknown>).__smrtGeneratedReportError;
+    delete (globalThis as Record<string, unknown>)
+      .__smrtGeneratedApplyWhereScope;
     vi.restoreAllMocks();
     clearCache();
 
@@ -2219,6 +2227,123 @@ describe('generated SvelteKit helper runtime', () => {
     it('rejects a malformed ?offset the same way', async () => {
       const { invoke } = await listWithQuery('?offset=abc');
       await expect(invoke()).rejects.toMatchObject({ status: 400 });
+    });
+  });
+
+  /**
+   * The emitted list route of a tenant-scoped, publicly readable model. With
+   * tenancy enabled and no tenant context, the only tenant predicate it hands
+   * the collection is its own `{ tenantId: null }`, whatever spelling of the
+   * tenant key the query string carries.
+   */
+  describe('generated list route tenant read scope', () => {
+    async function importTenantScopedList() {
+      const objectFilePath = join(projectRoot, 'src/lib/objects/Widget.ts');
+      const manifest = createManifest(projectRoot, objectFilePath, ['list']);
+      manifest.objects.Widget.decoratorConfig = {
+        api: { include: ['list'], public: 'read' },
+        tenantScoped: { mode: 'optional' },
+      } as never;
+      await generateSvelteKitRoutes(projectRoot, manifest, {
+        configFileName: 'smrt.ts',
+        configPath: 'src/lib/server',
+        enabled: true,
+        objectsDir: 'src/lib/objects',
+        routesDir: 'src/routes/api',
+      });
+      return await bundleGeneratedRoute(
+        'src/routes/api/widgets/+server.ts',
+        'generated-tenant-list-route.mjs',
+      );
+    }
+
+    async function listWithQuery(
+      query: string,
+      locals: Record<string, unknown>,
+      list: (
+        options: Record<string, unknown>,
+      ) => Promise<unknown[]> = async () => [],
+    ) {
+      const route = await importTenantScopedList();
+      const listCalls: Array<Record<string, unknown>> = [];
+      const countCalls: Array<Record<string, unknown>> = [];
+      (globalThis as Record<string, unknown>).__smrtGeneratedRouteCollection = {
+        count: async (options: Record<string, unknown>) => {
+          countCalls.push(options);
+          return 0;
+        },
+        db: { type: 'sqlite', url: ':memory:' },
+        list: async (options: Record<string, unknown>) => {
+          listCalls.push(options);
+          return list(options);
+        },
+        tableName: 'widgets',
+      };
+      const url = new URL(`http://localhost/api/widgets${query}`);
+      const invoke = () =>
+        route.GET({ locals, request: new Request(url), url });
+      return { countCalls, invoke, listCalls };
+    }
+
+    it.each([
+      '?tenantId=x&tenant_id=tenant-b',
+      '?tenant_id=tenant-b&tenantId=x',
+      '?TenantId=tenant-b',
+      '?%20tenant_id=tenant-b',
+      '?tenant_id%20%3D=tenant-b',
+      '?tenant_id%5B%3D%5D=tenant-b',
+      '?TenantId%5Bin%5D=tenant-a,tenant-b',
+      '?tenant_id%5Bne%5D=x',
+    ])('an anonymous read keeps only its own tenant predicate for %s', async (query) => {
+      const { countCalls, invoke, listCalls } = await listWithQuery(
+        `${query}&title=kept`,
+        {},
+      );
+      const response = await invoke();
+      expect(response.status).toBe(200);
+      expect(listCalls[0].where).toEqual({ title: 'kept', tenantId: null });
+      expect(countCalls[0].where).toEqual({ title: 'kept', tenantId: null });
+    });
+
+    it('passes the caller filter through unchanged when a tenant context is active', async () => {
+      const { invoke, listCalls } = await listWithQuery(
+        '?tenantId=tenant-a&tenant_id=tenant-b',
+        { tenantId: 'tenant-a', user: { id: 'user-1' } },
+      );
+      await invoke();
+      // The collection and the tenant interceptor decide what to do with it;
+      // the route adds no scope of its own here.
+      expect(listCalls[0].where).toEqual({
+        tenantId: 'tenant-a',
+        tenant_id: 'tenant-b',
+      });
+    });
+
+    it('answers a where clause the collection refuses with its 4xx status', async () => {
+      const refused = await listWithQuery(
+        '?title=a&Title=b',
+        { tenantId: 'tenant-a', user: { id: 'user-1' } },
+        async () => {
+          throw new WhereClauseError(
+            "Invalid WHERE clause: 'title' and 'Title' both filter 'title' with operator '='.",
+          );
+        },
+      );
+      await expect(refused.invoke()).rejects.toMatchObject({
+        status: 400,
+        message: expect.stringContaining("both filter 'title'"),
+      });
+
+      // Any other failure is rethrown untouched.
+      const failure = new Error('driver failure');
+      const failed = await listWithQuery(
+        '',
+        { tenantId: 'tenant-a', user: { id: 'user-1' } },
+        async () => {
+          throw failure;
+        },
+      );
+      await expect(failed.invoke()).rejects.toBe(failure);
     });
   });
 });

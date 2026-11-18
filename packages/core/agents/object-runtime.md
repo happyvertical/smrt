@@ -129,6 +129,29 @@ renders `IS NULL` and `{ 'deletedAt !=': null }` renders `IS NOT NULL`.
 explicit wildcards. Adding operators requires SQL support first.
 `src/__tests__/issue-2276-where-contract.test.ts` executes the accepted set.
 
+**WHERE keys are caller spelling, not column names.** `ownerId`, `owner_id`,
+`OwnerId` and `ownerId =` all resolve to the column `owner_id`
+(`resolveWhereKey()` in `src/where-keys.ts`, the one definition of that
+mapping). `convertWhereKeys` runs last, after interceptors and the collection's
+own predicates are merged, and refuses a record in which two keys resolve to
+the same column and operator (`WhereClauseError`, code `INVALID_WHERE_CLAUSE`,
+a typed 400). A predicate an interceptor or the collection added is therefore
+in the query or the query does not run; no other spelling replaces it. Two
+operators on one column are a range and stay legal. An array under the default
+operator is an `in`, so `{ ownerId: [a], 'owner_id in': [b] }` is refused too.
+In the DNF form each condition record is checked alone; records of one branch
+are ANDed by the SQL layer. Hydration filters (`loadFromId`, `loadFromSlug`,
+`getId`) apply the same rule after `beforeGet`.
+
+Anything that inspects a filter before the collection resolves it compares
+`resolveWhereKey(key).column`, never a literal key: a `beforeList`/`beforeGet`
+interceptor deciding whether a column is already filtered, or a route forcing a
+scope. Collection-owned predicates (`mergeOwnedWhere`, used for the STI
+discriminator) win over a caller key for the same column and operator under any
+spelling; a forced scope (`applyWhereScope`) drops every caller filter on its
+columns, any operator. Tests: `src/__tests__/where-key-collisions.test.ts`,
+`packages/tenancy/src/__tests__/tenant-filter-key-spellings.test.ts`.
+
 STI child collections auto-filter by `_meta_type`. Query bounds — `LIMIT 1` on `get()`, the `limit`/`offset` parser, the `orderBy` whitelist and sensitive/permission refusals, and the deterministic generated-list ordering (#2367) — are in [query-bounds.md](query-bounds.md).
 
 

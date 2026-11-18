@@ -71,7 +71,11 @@ collection after a write. Requested display projections bypass the row cache and
 REST uses a body-hash ETag so target renames cannot leave stale names behind.
 Generated SvelteKit list routes share `parseRestListWhere()` with runtime REST,
 honor explicit `orderBy` with the existing stable default, and count the filtered
-rows. Their tenant predicate still applies to client-supplied filters. Generated
+rows. Their tenant predicate still applies to client-supplied filters: both
+transports force the anonymous `{ tenantId: null }` scope with
+`applyWhereScope()`, which drops every query filter on the tenant column under
+any spelling or operator, and both answer a refused where clause
+(`INVALID_WHERE_CLAUSE`) with its 400. Generated
 list/get routes use the same body-hash rule and strip computed label writes.
 
 ### B1b test design
@@ -148,7 +152,9 @@ the first error.
 `where` operators must remain aligned with `@happyvertical/sql`'s `buildWhere`:
 `=`, `>`, `<`, `>=`, `<=`, `!=`, `in`, `not in`, and `like`. Arrays imply `IN`,
 and null values render `IS NULL`/`IS NOT NULL`. `contains` and dot-notation JSON
-paths are intentionally rejected until the SQL layer supports them.
+paths are intentionally rejected until the SQL layer supports them. Two keys
+that resolve to the same column and operator are refused; see "WHERE keys" in
+[object-runtime.md](object-runtime.md).
 
 For subclass-owned bounded SQL, `resolveListReadPredicate()` provides SQL scope
 plus `finish(instances)`. Call `finish` exactly once on the final hydrated page
