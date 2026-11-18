@@ -93,6 +93,11 @@ migration and awaited publication (completion bookkeeping excluded).
 Names use bounded ASCII camel/Pascal identifiers. Reserved JS/framework/SQL
 names, inherited fields/methods, duplicate storage names, table/model
 collisions and disabled reference targets fail before history mutation.
+A new list's name is checked against every installed catalog model, loaded or
+not, and its table against registered models and the tables the database
+already keeps (a disabled recipe's retained table). Lists the journal already
+holds keep their name and table, so editing or removing one never depends on
+what else is loaded.
 Optimistic revisions and request ids reject stale/racing edits and mismatched
 retries; identical committed requests replay.
 

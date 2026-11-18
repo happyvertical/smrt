@@ -871,6 +871,18 @@ export function createCookbookToolService(options: CookbookToolOptions) {
         await options.approvals.complete(context.tenantId!, hold, false, {
           status: 'refused',
         });
+      // The editor also checks installed models that are not loaded and
+      // tables the database keeps; report that as a naming collision.
+      if (
+        planned.edit.type === 'create_list' &&
+        error instanceof Error &&
+        /^MODEL_(NAME|TABLE)_COLLISION\b/.test(error.message)
+      )
+        return read({
+          status: 'collision',
+          summary: `“${planned.edit.list.label}” is already used; choose a different list name.`,
+          candidates: [],
+        });
       throw error;
     }
   }

@@ -238,6 +238,21 @@ function storageModels(
   return result;
 }
 
+/** Whether a physical table exists, kept (for example) by a disabled recipe. */
+async function tableExists(
+  db: DatabaseInterface,
+  engine: string,
+  table: string,
+): Promise<boolean> {
+  const { rows } = await db.query(
+    engine === 'postgres'
+      ? "SELECT 1 AS live FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = current_schema() AND c.relname = ? AND c.relkind IN ('r', 'p')"
+      : "SELECT 1 AS live FROM sqlite_master WHERE type = 'table' AND lower(name) = lower(?)",
+    [table],
+  );
+  return rows.length > 0;
+}
+
 /** Async construction replays persisted customizations and resolves pending activation BEFORE serving. */
 export async function createAppModelEditor(options: AppModelEditorOptions) {
   if (!options.application || !options.tenantId || !options.authorize)
@@ -286,7 +301,23 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
         ]
       : [];
 
-  async function validate(doc: Cookbook, archived?: CookbookModels) {
+  /** Installed model names from the catalog, loaded or not. */
+  function installed() {
+    const names = new Map<string, string>();
+    for (const model of options.catalog.models)
+      names.set(model.name.toLowerCase(), model.id);
+    return { names };
+  }
+
+  /**
+   * `live` is the database to probe for an existing table. Edits pass it;
+   * boot does not, since lists the journal already holds own their tables.
+   */
+  async function validate(
+    doc: Cookbook,
+    archived?: CookbookModels,
+    live?: DatabaseInterface,
+  ) {
     if (!doc.models) return;
     const models = doc.models;
     if (models.packageName !== options.packageName)
@@ -307,9 +338,11 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
       names.add(name);
     }
     const tables = new Set<string>();
+    const reserved = installed();
     for (const [name, list] of Object.entries(models.lists)) {
       if (names.has(name)) throw new Error(`MODEL_NAME_COLLISION: ${name}`);
       names.add(name);
+      const own = `${models.packageName}:${name}`;
       const entry = runtimeModelEntry({
         packageName: models.packageName,
         name,
@@ -325,14 +358,30 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
       const table = entry.schema!.tableName;
       if (tables.has(table)) throw new Error(`MODEL_TABLE_COLLISION: ${table}`);
       tables.add(table);
+      // A list the journal already holds keeps its name and table, so its
+      // edits (removing it included) still apply if an installed model with
+      // the same table was loaded beside it before these checks existed.
+      if (archived?.lists[name]) continue;
+      // A new list's name and table must be free among installed models
+      // whether or not their recipe is on (lazy hosts load only enabled ones),
+      // and among tables the database keeps for disabled or removed models.
+      const named = reserved.names.get(name.toLowerCase());
+      if (named && named !== own)
+        throw new Error(
+          `MODEL_NAME_COLLISION: ${name} is the name of the installed model ${named}; choose another list name`,
+        );
       for (const existing of ObjectRegistry.getAllClasses().values())
         if (
           ObjectRegistry.getTableName(
             existing.qualifiedName ?? existing.name,
           ) === table &&
-          existing.qualifiedName !== `${models.packageName}:${name}`
+          existing.qualifiedName !== own
         )
           throw new Error(`MODEL_TABLE_COLLISION: ${table}`);
+      if (live && (await tableExists(live, engine, table)))
+        throw new Error(
+          `MODEL_TABLE_COLLISION: ${table} already exists in the database (kept for a disabled or removed model); choose another list name`,
+        );
     }
     const protectedNames = new Set<string>();
     for (
@@ -1005,7 +1054,7 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
       }
       next = checked(next);
       const archived = storageModels(documents());
-      await validate(next, archived);
+      await validate(next, archived, options.db);
       // A removed/undone field keeps its stored definition, hidden through the existing policy rail.
       for (const [model, fields] of Object.entries(archived?.fields ?? {}))
         for (const name of Object.entries(fields).flatMap(([name, field]) => [
