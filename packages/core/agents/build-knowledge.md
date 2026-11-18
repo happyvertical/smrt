@@ -294,6 +294,18 @@ writes only `src/manifest/test-manifest.json` (`outputMode: 'explicit'`; its
 Turbo outputs exclude `.smrt/`). Disabling knowledge in a production build
 removes a previous local knowledge artifact, so consumers cannot mistake it for
 current enabled output.
+Installed-package discovery (`manifest/discover-smrt-packages.ts`) caches its
+answer in `.smrt/discovery-cache.json`, keyed on the nearest lockfile at or
+above the project (a workspace app has none of its own), the project's
+`package.json`, each selected manifest, and a stat signature (mtime, ctime,
+size, device and inode) of the manifest candidates of every installed
+directory of a dependency that had no manifest yet, together with where that
+name resolves now (a repointed workspace link invalidates it); selected
+providers' manifests and package.json use the same full stat marker, so building
+a linked workspace package invalidates the cache in this process and the
+next. A discovery that throws is never cached. Repeat calls in one process
+reuse the answer while a stat-only fingerprint of those inputs holds, without
+re-reading or re-hashing the lockfile (module-private, no new export).
 `new ManifestBuilder(projectRoot)` keeps discovery, package identity, and output
 at that explicit root, including installed providers and external base classes;
 omitting the argument retains the current-working-directory
