@@ -461,7 +461,10 @@ preset fills that allowlist: with `smrt.cookbook.json` present it is the models
 of the cookbook's recipes plus `features`, minus models the cookbook `exposure`
 turns off for `api` or a recipe's `options[model].exposure.api === false`
 (`vite-preset/cookbook-exposure.ts`; recipe `{ exclude }` narrowing is not
-applied by the build yet). `smrt({ expose })` replaces the derived list. No
+applied by the build yet). Each consumed package's manifest is read from the
+nearest `node_modules` at or above the project, as the consumer plugin does,
+so hoisted and workspace installs host too; a package without a readable JSON
+manifest is named in a warning rather than silently hosting nothing. `smrt({ expose })` replaces the derived list. No
 cookbook and no `expose` keeps `svelteKit: true` (nothing hosted). The producer's
 `@happyvertical/smrt-virt-web` still covers only the app's own models; read
 package models from `@smrt/web`. `smrt({ objectsDir })` is passed to the hosting
