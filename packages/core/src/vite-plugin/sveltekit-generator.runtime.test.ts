@@ -749,6 +749,7 @@ describe('generated SvelteKit helper runtime', () => {
       const Parent = Widget;
       ObjectRegistry.register(class Widget extends Parent {}, {
         packageName: '@test/generated-app',
+        replaceParent: true,
       });
     }
     const globals = globalThis as Record<string, unknown>;

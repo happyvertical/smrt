@@ -5282,8 +5282,11 @@ export function smrt(config: SmartObjectConfig = {}) {
           ? tableName
           : ObjectRegistry.getClassByConstructor(itemClass)?.schema
               ?.tableName || tableName;
+        // `replaceParent` is the collection's own declaration about a
+        // same-named parent collection; it says nothing about the item (#5143).
+        const { replaceParent: _collectionChoice, ...itemConfig } = config;
         ObjectRegistry.register(itemClass, {
-          ...config,
+          ...itemConfig,
           // The collection may belong to a different package. Its config must
           // not move an already-registered item out of its declaring package.
           packageName:
@@ -5324,6 +5327,26 @@ export function smrt(config: SmartObjectConfig = {}) {
     } else {
       // Handle SmrtObject registration (existing behavior)
       let tableName = config.tableName;
+
+      if (!tableName && config.replaceParent === true) {
+        // A declared replacement stores rows in the table of the same-named
+        // class it extends (#5143); a name derived from this class could
+        // differ from a parent's explicit one.
+        const ownName = config.name ?? ctor.name;
+        for (
+          let proto = Object.getPrototypeOf(ctor);
+          typeof proto === 'function' && proto !== Function.prototype;
+          proto = Object.getPrototypeOf(proto)
+        ) {
+          const parent = ObjectRegistry.getEffectiveClassByConstructor(
+            proto as SmrtObjectConstructor,
+          );
+          if (parent?.name === ownName && parent.schema?.tableName) {
+            tableName = parent.schema.tableName;
+            break;
+          }
+        }
+      }
 
       if (!tableName) {
         // First, check manifest for tableName (manifest generator correctly handles STI inheritance)
@@ -5369,6 +5392,10 @@ export function smrt(config: SmartObjectConfig = {}) {
         const manifestEntry = keepForeignEntry ? lookedUp : undefined;
         if (manifestEntry?.decoratorConfig?.tableName) {
           tableName = manifestEntry.decoratorConfig.tableName;
+        } else if (config.replaceParent === true) {
+          // A declared replacement whose parent has not registered yet takes
+          // that parent's table when it does (#5143); a name derived here
+          // would read as declared and contradict it.
         } else if (config.tableStrategy === 'sti') {
           // Fallback: Runtime prototype chain walking for STI detection
           // This is used when:
