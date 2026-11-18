@@ -71,19 +71,22 @@ it('previews the first three loaded rows per sheet with types and expands to all
     vi.fn(async (url: string) => {
       urls.push(url);
       const limit = Number(new URL(url, 'http://x').searchParams.get('limit'));
-      const records = url.includes('/Customer?')
-        ? people.slice(0, limit)
-        : [
-            {
-              id: 'o1',
-              customer: 'c0',
-              price: 1750,
-              quantity: 2,
-              total: 3500,
-              status: 'Paid',
-            },
-          ];
-      return new Response(JSON.stringify({ records }));
+      const records =
+        new URL(url, 'http://x').searchParams.get('table') === 'customers'
+          ? people.slice(0, limit)
+          : [
+              {
+                id: 'o1',
+                customer: 'c0',
+                price: 1750,
+                quantity: 2,
+                total: 3500,
+                status: 'Paid',
+              },
+            ];
+      return new Response(
+        JSON.stringify({ records, labels: { o1: { customer: 'Person 0' } } }),
+      );
     }),
   );
   component = mount(ImportReview, {
@@ -91,7 +94,7 @@ it('previews the first three loaded rows per sheet with types and expands to all
     props: { current: ready() },
   });
   await settle();
-  expect(urls).toContain('/api/shell/records/Customer?target=draft&limit=3');
+  expect(urls).toContain('/api/shell/import/preview?table=customers&limit=3');
   const customers = document.querySelector(
     'table[aria-label="Customers row preview"]',
   )!;
@@ -108,7 +111,10 @@ it('previews the first three loaded rows per sheet with types and expands to all
   // The link cell shows the linked record's label, not its id.
   expect(orders.querySelector('tbody')?.textContent).toContain('Person 0');
   expect(orders.querySelector('tbody')?.textContent).not.toContain('c0');
-  expect(urls).toContain('/api/shell/records/Customer?target=draft&limit=1000');
+  expect(urls).toHaveLength(2);
+  expect(
+    urls.every((url) => url.startsWith('/api/shell/import/preview?')),
+  ).toBe(true);
   // Columns appear once, in the table header, not again as a list.
   expect(
     document.querySelector(
@@ -123,6 +129,10 @@ it('previews the first three loaded rows per sheet with types and expands to all
     .find((b) => b.textContent?.includes('Show all 5 rows'))
     ?.click();
   await settle();
+  expect(urls).toContain(
+    '/api/shell/import/preview?table=customers&limit=1000',
+  );
+  expect(urls).toHaveLength(3);
   expect(customers.querySelectorAll('tbody tr')).toHaveLength(5);
   expect(document.body.textContent).toContain('Showing 5 of 5 rows');
 });
