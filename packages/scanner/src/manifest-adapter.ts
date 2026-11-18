@@ -7,7 +7,10 @@
 
 import type { RecipeDefinition } from '@happyvertical/smrt-types';
 import { type EnumValue, resolveEnumValues } from './enum-values.js';
-import { FRAMEWORK_BASE_CLASSES } from './inheritance-resolver.js';
+import {
+  FRAMEWORK_BASE_CLASSES,
+  scopedPackageOfSpecifier,
+} from './inheritance-resolver.js';
 import {
   fieldDecoratorArgumentKind,
   MANIFEST_STATIC_PROPERTIES,
@@ -52,6 +55,8 @@ interface FieldDefinition {
     | 'meta';
   required?: boolean;
   default?: unknown;
+  /** A target imported from another package: `@pkg:Export` (see core's FieldDefinition). */
+  relatedQualified?: string;
   min?: number;
   max?: number;
   maxLength?: number;
@@ -360,6 +365,8 @@ function resolveRelatedArgument(raw: string | undefined): string | undefined {
 // Manifest Adapter
 // ============================================================================
 
+export { scopedPackageOfSpecifier };
+
 /**
  * Create a qualified name for a class (namespace isolation - Issue #713)
  * Format: @package/name:ClassName
@@ -369,21 +376,6 @@ function createQualifiedName(
   className: string,
 ): QualifiedClassName {
   return `${packageName}:${className}` as QualifiedClassName;
-}
-
-/**
- * npm package name of a bare, scoped module specifier
- * (`@scope/pkg` or `@scope/pkg/subpath` → `@scope/pkg`), else `undefined`.
- * Relative, absolute, protocol (`node:`), unscoped, and alias-like specifiers
- * (`@/lib`, `$lib/…`) name no SMRT package: qualified names are always scoped.
- */
-export function scopedPackageOfSpecifier(
-  specifier: string,
-): string | undefined {
-  const match = /^(@[a-z0-9][\w.~-]*\/[a-z0-9][\w.~-]*)(?:\/.*)?$/i.exec(
-    specifier,
-  );
-  return match?.[1];
 }
 
 /**
@@ -522,6 +514,18 @@ export class ManifestAdapter {
       // This enables namespace isolation for multi-package scenarios
       const manifestKey =
         definition.qualifiedName || definition.name.toLowerCase();
+      // One key holds one class. Two classes that reach the same key are a
+      // scan diagnostic (`InheritanceResolver.resolveAll`); a caller that
+      // converts anyway must not get a manifest with one of them missing.
+      const existing = objects[manifestKey];
+      if (existing) {
+        throw new Error(
+          `Class name collision: '${definition.className}' (${manifestKey}) is defined in multiple files:\n` +
+            `  1. ${existing.filePath}\n` +
+            `  2. ${definition.filePath}\n\n` +
+            `Class names must be unique within a package. Rename one of the classes.`,
+        );
+      }
       objects[manifestKey] = definition;
     }
 
@@ -691,6 +695,24 @@ export class ManifestAdapter {
       }
     }
 
+    // A relationship target the scanner traced to another package's export
+    // keeps that identity; generation confirms it against the package's
+    // manifest rather than match the bare name.
+    const ownPackage = options.packageName || classDef.packageName;
+    for (const field of classDef.allFields) {
+      const converted = fields[field.name];
+      if (!converted || !RELATIONSHIP_TYPES.has(converted.type)) continue;
+      const origin = field.decorators.find(
+        (decorator) => decorator.argumentValues?.[0]?.package,
+      )?.argumentValues?.[0]?.package;
+      if (origin && origin.packageName !== ownPackage) {
+        converted.relatedQualified = createQualifiedName(
+          origin.packageName,
+          origin.exportName,
+        );
+      }
+    }
+
     // Convert methods
     const methods: Record<string, MethodDefinition> = {};
     for (const method of classDef.methods) {
@@ -714,10 +736,27 @@ export class ManifestAdapter {
     const qualifiedName = packageName
       ? createQualifiedName(packageName, classDef.className)
       : undefined;
-    const extendsQualified = importedParentQualifiedName(
-      classDef,
-      packageName || undefined,
-    );
+    // A parent the module resolver traced: qualified only when it is another
+    // package's export. Hand-built definitions keep the import-based rule.
+    const extendsQualified =
+      classDef.extendsResolution === undefined
+        ? importedParentQualifiedName(classDef, packageName || undefined)
+        : classDef.extendsResolution === 'package' &&
+            classDef.extendsPackage &&
+            classDef.extendsPackage.packageName !== packageName
+          ? createQualifiedName(
+              classDef.extendsPackage.packageName,
+              classDef.extendsPackage.exportName,
+            )
+          : // A parent that is a class of this package but not a model: its
+            // own identity, so generation never matches a same-named model of
+            // a dependency for it.
+            classDef.extendsResolution === 'local' &&
+              classDef.extendsIsModel === false &&
+              packageName &&
+              classDef.extendsName
+            ? createQualifiedName(packageName, classDef.extendsName)
+            : undefined;
 
     return {
       name: classDef.className.toLowerCase(),
@@ -730,7 +769,7 @@ export class ManifestAdapter {
       fields,
       methods,
       decoratorConfig: (classDef.decoratorConfig || {}) as SmartObjectConfig,
-      extends: classDef.extendsClause || undefined,
+      extends: classDef.extendsName || classDef.extendsClause || undefined,
       ...(extendsQualified ? { extendsQualified } : {}),
       extendsTypeArg: classDef.extendsTypeArg || undefined,
       exportName: classDef.exportName ?? classDef.className,
