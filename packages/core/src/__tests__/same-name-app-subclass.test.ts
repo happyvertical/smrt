@@ -72,14 +72,14 @@ const appSource = (
   custom = true,
 ) => `import { smrt, SmrtCollection } from '@happyvertical/smrt-core';
 import { Customer as CustomerBase, Profile as ProfileBase, Base as BaseBase } from '${UP}';
-@smrt({})
+@smrt({ replaceParent: true })
 export class AppCustomer extends CustomerBase { ${custom ? "favoritePose = ''; visits = 0;" : ''} greeting() { return 'app'; } }
 export { AppCustomer as Customer };
 @smrt({})
 export class Customers extends SmrtCollection<AppCustomer> { static readonly _itemClass = AppCustomer; }
-@smrt({})
+@smrt({ replaceParent: true })
 export class Profile extends ProfileBase { badge = ''; }
-@smrt({})
+@smrt({ replaceParent: true })
 export class Base extends BaseBase { extra = ''; }
 `;
 

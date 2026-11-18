@@ -2442,8 +2442,14 @@ export class ManifestGenerator {
         manifest,
         objectsByName,
       );
+      // Only a class that itself declares `replaceParent: true` takes its
+      // same-named parent's configuration. The choice is read from the
+      // class's own decorator before anything is inherited, and it is never
+      // inherited: a same-named subclass of a replacement declares its own,
+      // and a subtype keeps only the collection it declares (#5143).
       const replacementParent =
         directParent?.className === obj.className &&
+        obj.decoratorConfig.replaceParent === true &&
         (!obj.decoratorConfig.tableName ||
           obj.decoratorConfig.tableName ===
             (directParent.schema?.tableName ??
@@ -2586,8 +2592,11 @@ export class ManifestGenerator {
 
       if (replacementParent) {
         // Model-move aliases belong to the declaring identity, not subclasses.
-        const { previousQualifiedNames: _aliases, ...parentConfig } =
-          replacementParent.decoratorConfig;
+        const {
+          previousQualifiedNames: _aliases,
+          replaceParent: _parentChoice,
+          ...parentConfig
+        } = replacementParent.decoratorConfig;
         obj.decoratorConfig = {
           ...parentConfig,
           ...obj.decoratorConfig,

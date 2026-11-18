@@ -46,6 +46,7 @@ import {
 } from '../utils/stack-frames.js';
 import { isAbsoluteManifestPath } from './file-paths.js';
 import { LocalManifestReader } from './local-manifest-reader.js';
+import { sameNameSubclassChoice } from './model-replacements.js';
 import {
   dirname,
   existsSync,
@@ -245,23 +246,29 @@ function getClassNameIndex(
         const newExtends = (entry.extends || '').toLowerCase();
         const existingExtends = (existing.extends || '').toLowerCase();
 
-        // Issue #950: STI child-wins — if new entry extends existing, replace
+        // A same-named subclass holds the simple name only when it declares
+        // that it replaces its parent (`replaceParent: true`, #5143);
+        // otherwise the parent keeps it, whichever entry comes first.
+        const newReplaces =
+          sameNameSubclassChoice(entry.decoratorConfig) === 'replace';
+        const existingReplaces =
+          sameNameSubclassChoice(existing.decoratorConfig) === 'replace';
         if (
           newExtends &&
           (newExtends === existingName || newExtends === name)
         ) {
-          index.set(name, entry);
+          if (newReplaces) index.set(name, entry);
           debugLog(
-            `Manifest className '${name}': child '${key}' replaces parent`,
+            `Manifest className '${name}': child '${key}' ${newReplaces ? 'replaces' : 'leaves the name to'} its parent`,
           );
         } else if (
           existingExtends &&
           (existingExtends === (entry.className || key).toLowerCase() ||
             existingExtends === name)
         ) {
-          // Existing is already the child, keep it
+          if (!existingReplaces) index.set(name, entry);
           debugLog(
-            `Manifest className '${name}': keeping child, ignoring parent '${key}'`,
+            `Manifest className '${name}': ${existingReplaces ? 'keeping the replacing child over' : 'restoring the name to'} parent '${key}'`,
           );
         } else {
           debugLog(

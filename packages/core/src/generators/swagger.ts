@@ -139,19 +139,24 @@ function generateSchemas(
 
   for (const [key, classInfo] of registeredClasses) {
     if (classInfo.generatedFields?.error) continue;
-    // Issue #951: Use simple name for schema keys, not the qualified map key
-    const name = classInfo.name || key;
+    // Issue #951: Use simple name for schema keys, not the qualified map key.
+    // A same-named subtype is served through its parent's schema and paths,
+    // or named by the collection it declares; metadata is read by registry
+    // key, never the shared simple name (#5143).
+    const name = ObjectRegistry.getSurfaceName(key);
+    if (name === undefined) continue;
+    const lookupKey = classInfo.qualifiedName ?? key;
     // `api: false` disables REST generation (see rest.ts) and is already
     // skipped in generatePaths(); mirror that here so component schemas don't
     // leak the field shape of a surface with no working handlers. Skip ONLY
     // when api is explicitly false — default (undefined) and
     // `{ include: [...] }` configs still publish their schema (#1540).
-    if (ObjectRegistry.getConfig(name).api === false) {
+    if (ObjectRegistry.getConfig(lookupKey).api === false) {
       continue;
     }
-    schemas[name] = generateObjectSchema(name);
+    schemas[name] = generateObjectSchema(lookupKey);
     const inputName = inputNames.get(key);
-    if (inputName) schemas[inputName] = generateObjectSchema(name, true);
+    if (inputName) schemas[inputName] = generateObjectSchema(lookupKey, true);
     schemas[`${name}List`] = {
       type: 'object',
       properties: {
@@ -285,13 +290,28 @@ function generatePaths(
       )
     )
       continue;
-    // Issue #951: Use simple name, not the qualified map key
-    const name = classInfo.name || key;
+    // Issue #951: Use simple name, not the qualified map key. A same-named
+    // subtype is served through its parent's paths or by its own collection
+    // (#5143); see generateSchemas.
+    const name = ObjectRegistry.getSurfaceName(key);
+    if (name === undefined) continue;
     const inputName = inputNames.get(key) ?? name;
-    const pluralName = pluralize(name.toLowerCase());
+    // A declared collection (`collection: 'clips'`, or a same-named
+    // subtype's own) is the segment REST serves the class under
+    // (`findClassByCollectionSegment` matches it first); otherwise the
+    // pluralised simple name, as before.
+    const declaredCollection = ObjectRegistry.getConfig(
+      classInfo.qualifiedName ?? key,
+    ).collection;
+    const pluralName =
+      typeof declaredCollection === 'string'
+        ? declaredCollection
+        : name === (classInfo.name || key)
+          ? pluralize(name.toLowerCase())
+          : name;
     const objectPath = `${basePath}/${pluralName}`;
 
-    const config = ObjectRegistry.getConfig(name);
+    const config = ObjectRegistry.getConfig(classInfo.qualifiedName ?? key);
     const apiConfig = config.api;
     // `api: false` disables REST generation (see rest.ts); don't advertise its
     // paths in the OpenAPI spec either, or the spec leaks the shape of a
