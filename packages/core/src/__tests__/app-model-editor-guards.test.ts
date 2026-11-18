@@ -11,12 +11,17 @@ import {
   type ActivationManifest,
   createActivationCoordinator,
 } from '../activation.js';
+import { planAppEdit } from '../cookbook/app-tool-edits.js';
 import {
   type AppModelEdit,
   type AppModelEditorOptions,
   createAppModelEditor,
 } from '../cookbook/model-editor.js';
-import { abandonAppModelRevision } from '../cookbook/model-history.js';
+import {
+  abandonAppModelRevision,
+  createAppModelHistory,
+} from '../cookbook/model-history.js';
+import { fitsStorageIdentifier, storageColumns } from '../cookbook/models.js';
 import { COOKBOOK_SCHEMA_URL } from '../cookbook/validate.js';
 import { field } from '../decorators/index.js';
 import { migrateSmrtSchemas } from '../migrations/orchestrate.js';
@@ -26,6 +31,7 @@ import { setRuntimeExposureGate } from '../runtime-exposure.js';
 import { runtimeListTableName } from '../runtime-list-table.js';
 import { snapshotObjectRegistryState } from '../test-utils.js';
 import { getTestDatabase } from '../testing/database.js';
+import { toSnakeCase } from '../utils/naming.js';
 
 const databaseType = process.env.SMRT_TEST_PGLITE === '1' ? 'pglite' : 'sqlite';
 const engine = databaseType === 'pglite' ? 'postgres' : 'sqlite';
@@ -538,5 +544,201 @@ describe('app model editor: reconciliation scope and pending revisions', () => {
       `${APP}:GuardMat`,
     );
     expect((await reopened.history()).at(-1)?.undoes).toBe(1);
+  });
+});
+
+/** identifier('Name Of The Person Who Signed Off On The Last Fire Inspection Here'): a 66-byte column. */
+const LONG_FIELD = 'nameOfThePersonWhoSignedOffOnTheLastFireInspectionHere';
+/** A 61-byte column whose money companion is 70 bytes. */
+const LONG_MONEY = 'dateOfLastInspectionByTheFireMarshalForThisLocation';
+
+describe('app model editor: storage identifier length', () => {
+  let restore: () => void;
+  let db: Awaited<ReturnType<typeof getDatabase>>;
+  beforeEach(async () => {
+    restore = snapshotObjectRegistryState();
+    ObjectRegistry.clear();
+    globalThis.__smrtModelReadiness?.clear();
+    db = await getTestDatabase({
+      type: databaseType,
+      classes: [],
+      includeSystemTables: false,
+    });
+    registerMember();
+    enableTenancy();
+    await migrateSmrtSchemas({ db, packageName: APP, engineHint: engine });
+  });
+  afterEach(async () => {
+    setRuntimeExposureGate(undefined);
+    globalThis.__smrtModelReadiness?.clear();
+    disableTenancy();
+    await db.close?.();
+    restore();
+  });
+  const application = 'editor-guards-identifiers';
+  const editorFor = () =>
+    createAppModelEditor({
+      db,
+      application,
+      tenantId: TENANT,
+      packageName: APP,
+      cookbook: memberBook(),
+      catalog: memberCatalog,
+      authorize: (c) => c.actor === 'owner',
+    });
+  const applier =
+    (e: Awaited<ReturnType<typeof editorFor>>) => (value: AppModelEdit) =>
+      e.apply(value, {
+        actor: 'owner',
+        tenantId: TENANT,
+        expectedRevision: e.snapshot().revision,
+        requestId: `req-${crypto.randomUUID()}`,
+      });
+
+  it('refuses derived tables and columns over 63 bytes, money companions included', async () => {
+    const e = await editorFor();
+    const apply = applier(e);
+    await expect(
+      apply({
+        type: 'add_field',
+        model: MEMBER,
+        name: LONG_FIELD,
+        field: { type: 'text' },
+      }),
+    ).rejects.toThrow(
+      /MODEL_IDENTIFIER_TOO_LONG: .*name_of_the_person_who_signed_off_on_the_last_fire_inspection_here" \(66 bytes\); PostgreSQL allows 63/,
+    );
+    await expect(
+      apply({
+        type: 'add_field',
+        model: MEMBER,
+        name: LONG_MONEY,
+        field: { type: 'money', currency: 'CAD' },
+      }),
+    ).rejects.toThrow(/MODEL_IDENTIFIER_TOO_LONG: .*_currency" \(70 bytes\)/);
+    await expect(
+      apply({
+        type: 'create_list',
+        name: 'GuardAnExceptionallyLongListNameThatNoPostgresTableCouldEverHold',
+        list: mats,
+      }),
+    ).rejects.toThrow(
+      /MODEL_IDENTIFIER_TOO_LONG: models\.lists\..* stores as table/,
+    );
+    expect(await e.history()).toEqual([]);
+    // The same 61-byte name is fine as a plain field.
+    await apply({
+      type: 'add_field',
+      model: MEMBER,
+      name: LONG_MONEY,
+      field: { type: 'date' },
+    });
+  });
+
+  it('the assistant derives names that fit from long labels', async () => {
+    const e = await editorFor();
+    const snapshot = e.snapshot();
+    const field = planAppEdit(
+      'app.addField',
+      {
+        list: MEMBER,
+        label: 'Date Of Last Inspection By The Fire Marshal For This Location',
+        kind: 'money',
+        currency: 'CAD',
+        expectedRevision: 0,
+      },
+      snapshot,
+      memberCatalog,
+    );
+    const name = (field.edit as { name: string }).name;
+    expect(
+      storageColumns(name, { type: 'money' }).every(fitsStorageIdentifier),
+    ).toBe(true);
+    await applier(e)(field.edit);
+    const list = planAppEdit(
+      'app.addList',
+      {
+        label:
+          'Equipment Loaned Out To Members During The Winter Season Every Year',
+        nameField: 'Item',
+        fields: [{ label: 'Item', kind: 'text' }],
+        expectedRevision: 1,
+      },
+      e.snapshot(),
+      memberCatalog,
+    );
+    const listName = (list.edit as { name: string }).name;
+    expect(fitsStorageIdentifier(runtimeListTableName(listName))).toBe(true);
+    await applier(e)(list.edit);
+  });
+
+  it('an editor holding an over-long declaration from before the check still opens and edits other models', async () => {
+    const e = await editorFor();
+    await applier(e)({ type: 'create_list', name: 'GuardMat', list: mats });
+    // Journal the over-long field the way an unchecked editor did.
+    const before = e.snapshot().cookbook;
+    const after = structuredClone(before);
+    after.models!.fields[MEMBER] = { [LONG_FIELD]: { type: 'text' } };
+    const store = await createAppModelHistory({
+      db,
+      application,
+      tenantId: TENANT,
+    });
+    await store.append(
+      {
+        revision: 2,
+        requestId: 'req-before-check',
+        actor: 'owner',
+        command: JSON.stringify({
+          type: 'add_field',
+          model: MEMBER,
+          name: LONG_FIELD,
+          field: { type: 'text' },
+        }),
+        before,
+        after,
+        status: 'pending',
+      },
+      1,
+    );
+    // PostgreSQL stores the column truncated to 63 bytes.
+    await db.query(
+      `ALTER TABLE ${MEMBER_TABLE} ADD COLUMN ${toSnakeCase(LONG_FIELD)} TEXT`,
+    );
+    await store.complete(2, 0);
+
+    ObjectRegistry.clear();
+    globalThis.__smrtModelReadiness?.clear();
+    registerMember();
+    const reopened = await editorFor();
+    expect(reopened.snapshot().revision).toBe(2);
+    const apply = applier(reopened);
+    await apply({ type: 'relabel_list', name: 'GuardMat', label: 'Mats' });
+    await apply({
+      type: 'add_field',
+      model: 'GuardMat',
+      name: 'colour',
+      field: { type: 'text' },
+    });
+    await apply({
+      type: 'label_field',
+      model: MEMBER,
+      name: LONG_FIELD,
+      label: 'Signed off by',
+    });
+    const addToSameModel = apply({
+      type: 'add_field',
+      model: MEMBER,
+      name: 'vip',
+      field: { type: 'boolean' },
+    });
+    if (engine === 'postgres')
+      await expect(addToSameModel).rejects.toThrow(
+        /MODEL_IDENTIFIER_TOO_LONG: guard_members\.name_of_the_person.* cannot take new fields/,
+      );
+    else await addToSameModel;
+    expect(
+      (await reopened.history()).every((row) => row.status === 'applied'),
+    ).toBe(true);
   });
 });

@@ -90,6 +90,16 @@ and the editor's import operation; package identity must match.
 committed publications. Receipt `elapsedMs` measures journal append through
 migration and awaited publication (completion bookkeeping excluded).
 
+Every derived table and column name, a money field's `_currency` companion
+included, must fit PostgreSQL's 63-byte identifier limit (the strictest
+supported engine; `MAX_STORAGE_IDENTIFIER_BYTES`), checked in bytes when an edit
+or import adds it: `MODEL_IDENTIFIER_TOO_LONG` names the path, the derived
+identifier and its size. The app tools shorten a long label's derived name to
+fit and keep the full label for display. A declaration journalled before this
+check is still accepted, and an applied journal reopens without DDL; on
+PostgreSQL an edit that would migrate a table holding such a truncated column
+is refused with `MODEL_IDENTIFIER_TOO_LONG` while every other model stays
+editable.
 Names use bounded ASCII camel/Pascal identifiers. Reserved JS/framework/SQL
 names, inherited fields/methods, duplicate storage names, table/model
 collisions and disabled reference targets fail before history mutation.
