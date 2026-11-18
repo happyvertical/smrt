@@ -124,8 +124,10 @@ describe('generated feature isolation #4972 round5', () => {
     expect(declarationWalks).toBe(0);
   });
 
-  it('plain manifest field policies retain the pre-PR own metadata shape', () => {
-    // Expectations computed the pre-PR way: metadata bag plus required/default/description/enum only.
+  it('a plain manifest field keeps the policy attributes its definition states', () => {
+    // A definition may state its policy only at the top level (a run-time
+    // model does). Registration records it in `_meta`, where every consumer
+    // reads it, whether or not the model has a calculated field.
     const field = {
       type: 'text' as const,
       readonly: true,
@@ -137,7 +139,14 @@ describe('generated feature isolation #4972 round5', () => {
     };
     const expected = {
       type: 'text',
-      _meta: { description: 'kept', required: true },
+      _meta: {
+        description: 'kept',
+        required: true,
+        sensitive: true,
+        readonly: true,
+        readPermission: 'read.secret',
+        transient: true,
+      },
     };
     expect(createFieldFromManifest(field)).toEqual(expected);
     expect(mergeManifestField({ type: 'text', _meta: {} }, field)).toEqual(
