@@ -901,6 +901,10 @@ export class AppRuntime {
       {
         basePath: '/api',
         authMiddleware: () => async (r: Request) => r,
+        // One owner and one local database: a request acts for no tenant. A
+        // tenant-scoped model would then be read as global rows and refused
+        // for writes, never written across tenants.
+        resolveTenant: () => ({ authenticated: true }),
       } as any,
       { db: this.db },
     );
