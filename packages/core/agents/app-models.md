@@ -214,6 +214,14 @@ requires an operator migration. See the
 
 `AppModelHistoryStore` has `read()`, atomic
 `append(change, expectedRevision)` and `complete(revision, elapsedMs)`.
+Editor reads are bounded: each stored receipt holds a full projection, so with
+a store made by `createAppModelHistory` (or a wrapper keeping its `read`) the
+editor reads the journal once at boot without receipts, keeps it in memory, and
+per edit reads only the latest row and the row for its request id; other
+stores fall back to `read()`. After `complete` the editor reads its row back:
+if another process completed the revision first it adopts and publishes that
+receipt, and if the row is not applied it fails `MODEL_EDIT_CONFLICT` and
+stays closed instead of reporting success.
 A supplied host store must scope reads/writes to one app/tenant and preserve
 the pending/CAS contract. PostgreSQL stores must also implement
 `transaction(work)` with a scoped store/executor, so revision CAS and DDL share

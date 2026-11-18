@@ -12,8 +12,14 @@ import { createCookbookEngine } from '../cookbook/engine/engine.js';
 import {
   type AppModelEdit,
   type AppModelEditorOptions,
+  type AppModelEditReceipt,
+  type AppModelSnapshot,
   createAppModelEditor,
 } from '../cookbook/model-editor.js';
+import {
+  type AppModelHistoryStore,
+  createAppModelHistory,
+} from '../cookbook/model-history.js';
 import { fitsStorageIdentifier, storageColumns } from '../cookbook/models.js';
 import { COOKBOOK_SCHEMA_URL } from '../cookbook/validate.js';
 import { field } from '../decorators/index.js';
@@ -890,5 +896,152 @@ describe('app model editor: provider fields across recipe disable', () => {
     expect(enabled.models?.fields[MEMBER]).toHaveProperty('vip');
     const fields = await ObjectRegistry.getAllFields(`${APP}:GuardMember`);
     expect([...fields.keys()]).toContain('vip');
+  });
+});
+
+describe('app model editor: history reads and completion', () => {
+  let restore: () => void;
+  let db: Awaited<ReturnType<typeof getDatabase>>;
+  beforeEach(async () => {
+    restore = snapshotObjectRegistryState();
+    ObjectRegistry.clear();
+    globalThis.__smrtModelReadiness?.clear();
+    db = await getTestDatabase({
+      type: databaseType,
+      classes: [],
+      includeSystemTables: false,
+    });
+    registerMember();
+    enableTenancy();
+    await migrateSmrtSchemas({ db, packageName: APP, engineHint: engine });
+  });
+  afterEach(async () => {
+    setRuntimeExposureGate(undefined);
+    globalThis.__smrtModelReadiness?.clear();
+    disableTenancy();
+    await db.close?.();
+    restore();
+  });
+  const application = 'editor-guards-history';
+  const open = (store?: AppModelEditorOptions['store']) =>
+    createAppModelEditor({
+      db,
+      application,
+      tenantId: TENANT,
+      packageName: APP,
+      cookbook: memberBook(),
+      catalog: memberCatalog,
+      authorize: (c) => c.actor === 'owner',
+      ...(store ? { store } : {}),
+    });
+  const applyTo =
+    (e: Awaited<ReturnType<typeof open>>) =>
+    (value: AppModelEdit, requestId: string = crypto.randomUUID()) =>
+      e.apply(value, {
+        actor: 'owner',
+        tenantId: TENANT,
+        expectedRevision: e.snapshot().revision,
+        requestId,
+      });
+
+  it('an edit reads single journal rows, never the whole history or its receipts', async () => {
+    const e = await open();
+    const apply = applyTo(e);
+    await apply({ type: 'create_list', name: 'GuardMat', list: mats });
+    const statements: string[] = [];
+    const query = db.query.bind(db);
+    db.query = ((sql: string, ...rest: unknown[]) => {
+      if (/_smrt_app_model_changes/.test(sql) && /^\s*SELECT/i.test(sql))
+        statements.push(sql);
+      return (query as (...args: unknown[]) => unknown)(sql, ...rest);
+    }) as typeof db.query;
+    for (let i = 0; i < 4; i++)
+      await apply({
+        type: 'relabel_list',
+        name: 'GuardMat',
+        label: `Mats ${i}`,
+      });
+    const receipt = await apply(
+      { type: 'relabel_list', name: 'GuardMat', label: 'Final' },
+      'req-final',
+    );
+    db.query = query;
+    expect(receipt.revision).toBe(6);
+    expect(statements.length).toBeGreaterThan(0);
+    // Every journal read during edits is a single-row read.
+    for (const sql of statements)
+      expect(sql).toMatch(/LIMIT 1|request_id = \?/);
+    // A committed retry still replays its stored receipt.
+    const replayed = await e.apply(
+      { type: 'relabel_list', name: 'GuardMat', label: 'Final' },
+      {
+        actor: 'owner',
+        tenantId: TENANT,
+        expectedRevision: 5,
+        requestId: 'req-final',
+      },
+    );
+    expect(replayed).toMatchObject({ revision: 6, replayed: true });
+    expect((await open()).snapshot().revision).toBe(6);
+  });
+
+  it('adopts the journal receipt when another process completed the revision first', async () => {
+    const base = await createAppModelHistory({
+      db,
+      application,
+      tenantId: TENANT,
+    });
+    let foreign: AppModelEditReceipt | undefined;
+    const store: AppModelHistoryStore = {
+      ...base,
+      // Another process's boot recovery completes the pending revision first.
+      async complete(revision, elapsedMs, receipt, result) {
+        if (receipt && revision === 2) {
+          foreign = {
+            ...structuredClone(receipt),
+            elapsedMs: 4242,
+            cookbook: { ...structuredClone(receipt.cookbook), name: 'Winner' },
+          };
+          await base.complete(revision, 4242, foreign, result);
+        }
+        return base.complete(revision, elapsedMs, receipt, result);
+      },
+    };
+    const e = await open(store);
+    const seen: AppModelSnapshot[] = [];
+    e.subscribe((snapshot) => seen.push(snapshot));
+    const apply = applyTo(e);
+    await apply({ type: 'create_list', name: 'GuardMat', list: mats });
+    const receipt = await apply({
+      type: 'relabel_list',
+      name: 'GuardMat',
+      label: 'Mats',
+    });
+    expect(receipt.elapsedMs).toBe(4242);
+    expect(receipt.cookbook.name).toBe('Winner');
+    expect(seen.at(-1)?.cookbook.name).toBe('Winner');
+  });
+
+  it('refuses to report success when the revision was not completed as this edit', async () => {
+    const base = await createAppModelHistory({
+      db,
+      application,
+      tenantId: TENANT,
+    });
+    const store: AppModelHistoryStore = {
+      ...base,
+      // The completion is lost: the row is still pending afterwards.
+      async complete(revision, elapsedMs, receipt, result) {
+        if (revision === 2) return;
+        return base.complete(revision, elapsedMs, receipt, result);
+      },
+    };
+    const e = await open(store);
+    const apply = applyTo(e);
+    await apply({ type: 'create_list', name: 'GuardMat', list: mats });
+    await expect(
+      apply({ type: 'relabel_list', name: 'GuardMat', label: 'Mats' }),
+    ).rejects.toThrow(/MODEL_EDIT_CONFLICT: revision 2 was not completed/);
+    expect(() => e.snapshot()).toThrow(/MODEL_ACTIVATION_PENDING/);
   });
 });

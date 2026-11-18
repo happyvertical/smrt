@@ -47,6 +47,7 @@ import {
   createAppModelHistory,
   isAppModelJournalStore,
 } from './model-history.js';
+import { journalReader } from './model-history-readers.js';
 import {
   CUSTOM_MODEL_REF,
   cookbookModelCatalog,
@@ -212,8 +213,9 @@ function fieldValidators(fields: Record<string, RuntimeFieldDefinition>) {
 /** Keep archived storage declarations through removal/undo; never drop data as a side effect. */
 function storageModels(
   documents: readonly Cookbook[],
+  seed?: CookbookModels,
 ): CookbookModels | undefined {
-  let result: CookbookModels | undefined;
+  let result: CookbookModels | undefined = seed && structuredClone(seed);
   for (const document of documents) {
     const model = document.models;
     if (!model) continue;
@@ -321,7 +323,32 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
     throw new Error(
       'MODEL_HISTORY_TRANSACTION_REQUIRED: PostgreSQL history must bind revision CAS and migration DDL to one locked transaction',
     );
-  let history = await store.read();
+  // The editor never needs stored receipts in bulk: it keeps the light journal
+  // (documents, no receipts) in memory and reads single rows per edit.
+  const reader = journalReader(store);
+  let history = await (reader ? reader.light() : store.read());
+  const latestRow = async () =>
+    reader ? reader.latest() : (await store.read()).at(-1);
+  const findRow = async (requestId: string) =>
+    reader
+      ? reader.find(requestId)
+      : (await store.read()).find((row) => row.requestId === requestId);
+  /**
+   * Read back a revision this editor just completed. complete() keeps only
+   * the first completion, so another process (boot recovery elsewhere) may
+   * have won: the caller adopts the journal's receipt. A row that is not
+   * applied means this editor must not report or publish success.
+   */
+  const completedRow = async (requestId: string, at: number) => {
+    const row = await findRow(requestId);
+    if (row?.status !== 'applied' || row.revision !== at) {
+      ready = false;
+      throw new Error(
+        `MODEL_EDIT_CONFLICT: revision ${at} was not completed as this edit; reopen the editor`,
+      );
+    }
+    return row;
+  };
   let revision = history.at(-1)?.revision ?? 0;
   let doc = checked(history.at(-1)?.after ?? options.cookbook);
   let ready = false;
@@ -333,6 +360,16 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
     ...history.flatMap((row) => [row.before, row.after]),
     doc,
   ];
+  // The union of every journalled declaration, recomputed only when the
+  // journal or document changes (not on every snapshot or edit). Read-only.
+  let storageMemo:
+    | { history: AppModelChange[]; doc: Cookbook; value?: CookbookModels }
+    | undefined;
+  const storage = () => {
+    if (storageMemo?.history !== history || storageMemo.doc !== doc)
+      storageMemo = { history, doc, value: storageModels(documents()) };
+    return storageMemo.value;
+  };
   const identities = (models?: CookbookModels) =>
     models
       ? [
@@ -581,7 +618,7 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
     const allowed = coveredModels(options.catalog, doc);
     const catalog = cookbookModelCatalog(options.catalog, doc.models);
     const nav = buildNav(catalog, doc).flatMap((section) => section.items);
-    const archived = storageModels(documents());
+    const archived = storage();
 
     manifest.objects = Object.fromEntries(
       Object.entries(manifest.objects).filter(
@@ -921,9 +958,7 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
       throw new Error('MODEL_EDIT_FORBIDDEN');
     if (!store.supportsDurableOperations)
       throw new Error('MODEL_DURABLE_OPERATIONS_UNSUPPORTED');
-    const found = (await store.read()).find(
-      (row) => row.requestId === context.requestId,
-    );
+    const found = await findRow(context.requestId);
     if (!found) return null;
     if (
       found.actor !== context.actor ||
@@ -942,8 +977,7 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
   }
 
   /** Boot reconciles every active journalled storage declaration, as before. */
-  const bootChanges = () =>
-    changedModels(undefined, active(storageModels(documents()), doc));
+  const bootChanges = () => changedModels(undefined, active(storage(), doc));
 
   await withRuntimeSchemaActivation(async () => {
     // Boots are serialized here; check again, so two editors constructed at
@@ -953,14 +987,15 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
     let restore = () => {};
     const readiness = new Map<string, boolean | undefined>();
     const checkpoint = () => {
-      const held = identities(active(storageModels(documents()), doc));
+      const held = identities(active(storage(), doc));
       for (const id of held) readiness.set(id, getRuntimeModelReadiness(id));
       restore = ObjectRegistry.checkpointRegistrations(held);
     };
     try {
       if (engine === 'postgres') {
         await store.transaction!(async (scoped, db) => {
-          history = await scoped.read();
+          const scopedReader = journalReader(scoped);
+          history = await (scopedReader ? scopedReader.light() : scoped.read());
           revision = history.at(-1)?.revision ?? 0;
           doc = checked(history.at(-1)?.after ?? options.cookbook);
           await validate(
@@ -968,13 +1003,7 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
             storageModels(history.flatMap((row) => [row.before, row.after])),
           );
           checkpoint();
-          await activate(
-            doc,
-            active(storageModels(documents()), doc),
-            bootChanges(),
-            db,
-            false,
-          );
+          await activate(doc, active(storage(), doc), bootChanges(), db, false);
         });
       } else {
         await validate(
@@ -984,7 +1013,7 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
         checkpoint();
         await activate(
           doc,
-          active(storageModels(documents()), doc),
+          active(storage(), doc),
           bootChanges(),
           options.db,
           false,
@@ -1012,9 +1041,17 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
         receipt,
         appOperationResult(pending.operation, receipt),
       );
-      history = await store.read();
+      const row = await completedRow(pending.requestId, pending.revision);
+      history = [
+        ...history.slice(0, -1),
+        {
+          ...pending,
+          status: 'applied',
+          elapsedMs: row.elapsedMs ?? receipt.elapsedMs,
+        },
+      ];
     }
-    release(active(storageModels(documents()), doc));
+    release(active(storage(), doc));
   });
 
   async function apply(
@@ -1037,7 +1074,7 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
         (!store.supportsDurableOperations || !context.operation.result)
       )
         throw new Error('MODEL_DURABLE_OPERATIONS_UNSUPPORTED');
-      const latest = await store.read();
+      const tip = await latestRow();
       const print = JSON.stringify(edit);
       if ('model' in edit) {
         const name = edit.model.split(':').at(-1)!;
@@ -1053,7 +1090,7 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
         );
         edit = { ...edit, model: listName ?? upstream ?? edit.model };
       }
-      const replay = latest.find((row) => row.requestId === context.requestId);
+      const replay = await findRow(context.requestId);
       if (replay) {
         if (replay.command !== print || replay.actor !== context.actor)
           throw new Error('MODEL_REQUEST_ID_REUSED');
@@ -1077,13 +1114,16 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
           replayed: true,
         };
       }
-      if (!ready || latest.at(-1)?.status === 'pending')
+      if (!ready || tip?.status === 'pending')
         throw new Error('MODEL_ACTIVATION_PENDING');
       if (
         context.expectedRevision !== revision ||
-        (latest.at(-1)?.revision ?? 0) !== revision
+        (tip?.revision ?? 0) !== revision
       )
         throw new Error('MODEL_EDIT_CONFLICT');
+      // From here the in-memory journal equals the durable one: another
+      // process's revision would have moved the tip.
+      const latest = history;
       const before = structuredClone(doc);
       let next = structuredClone(doc);
       next.models ??= {
@@ -1253,7 +1293,7 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
           throw new Error('UNKNOWN_MODEL_EDIT');
       }
       next = checked(next);
-      const archived = storageModels(documents());
+      const archived = storage();
       await validate(next, archived, options.db);
       // A removed/undone field keeps its stored definition, hidden through the existing policy rail.
       for (const [model, fields] of Object.entries(archived?.fields ?? {}))
@@ -1319,7 +1359,8 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
           : {}),
       };
       const previous = { history, revision, doc, ready };
-      const all = active(storageModels([...documents(), next]), next);
+      const union = storageModels([next], storage());
+      const all = active(union, next);
       const changed = changedModels(active(archived, doc), all);
       const held = identities(all);
       const readiness = new Map(
@@ -1367,6 +1408,7 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
         await migrate(options.db, tables);
         doc = structuredClone(next);
       }
+      storageMemo = { history, doc, value: union };
       // Schema + pending history are durable before any external publication.
       // A callback failure stays pending and closed, and boot retries it.
       await publish();
@@ -1378,9 +1420,29 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
         receipt,
         appOperationResult(change.operation, receipt),
       );
-      history = await store.read();
-      release(active(storageModels(documents()), doc));
-      const result = snapshot();
+      const row = await completedRow(change.requestId, change.revision);
+      // A first completion elsewhere wins; publish and return its receipt.
+      const won =
+        row.receipt && stableStringify(row.receipt) !== stableStringify(receipt)
+          ? row.receipt
+          : undefined;
+      history = history.map((entry) =>
+        entry.revision === change.revision
+          ? {
+              ...entry,
+              status: 'applied' as const,
+              elapsedMs: row.elapsedMs ?? elapsedMs,
+            }
+          : entry,
+      );
+      storageMemo = { history, doc, value: union };
+      release(active(storage(), doc));
+      let result: AppModelSnapshot = snapshot();
+      if (won) {
+        const { revision, cookbook, manifest, webDefinitions } = won;
+        result = { revision, cookbook, manifest, webDefinitions };
+        await options.publish?.(structuredClone(result));
+      }
       for (const listener of listeners) {
         try {
           listener(result);
@@ -1388,10 +1450,7 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
           /* Transport subscriber cannot undo a committed revision. */
         }
       }
-      return structuredClone(
-        history.find((row) => row.revision === change.revision)?.receipt ??
-          receipt,
-      );
+      return structuredClone(won ?? receipt);
     };
     const operation = tail.then(() => withRuntimeSchemaActivation(execute));
     tail = operation.then(
