@@ -583,9 +583,34 @@ export async function openAiRun(
       // The parent and the retried run are locked in the page's order:
       // by depth, then id.
       const locked = new Map<string, AiRunRow | null>();
-      const targets = [input.parentRunId, retryOf].filter(
+      const requested = [input.parentRunId, retryOf].filter(
         (id): id is string => typeof id === 'string' && id.length > 0,
       );
+      // A referenced run of another tenant (global `null` included) is
+      // treated exactly as a run that is not there: the new run is written
+      // under the store's tenant, so a parent or retry source must share it.
+      // The tenant is compared first, from one unlocked read of the
+      // immutable `tenant_id`: another tenant's run is never locked, and
+      // neither its ancestry nor its status, definition or checkpoint is
+      // read, so a refusal says nothing about it.
+      const tenantId = store.tenantId ?? null;
+      const targets: string[] = [];
+      for (const id of new Set(requested)) {
+        const owner = getRows(
+          await aiRunQuery(
+            tx.db,
+            'SELECT tenant_id FROM _smrt_ai_runs WHERE id = $1',
+            id,
+          ),
+        )[0];
+        if (owner && (text(owner.tenant_id) ?? null) === tenantId) {
+          targets.push(id);
+        } else {
+          locked.set(id, null);
+        }
+      }
+      // The parent and the retried run are locked in the page's order:
+      // by depth, then id.
       const depths = new Map<string, number>();
       for (const id of targets) {
         const ids = await readAiRunChainIds(tx.db, id).catch((error) => {
@@ -594,11 +619,12 @@ export async function openAiRun(
         });
         depths.set(id, ids.length);
       }
-      for (const id of [...new Set(targets)].sort(
+      for (const id of targets.sort(
         (a, b) =>
           (depths.get(a) ?? 0) - (depths.get(b) ?? 0) || a.localeCompare(b),
       )) {
-        locked.set(id, await lockAiRun(tx, id));
+        const row = await lockAiRun(tx, id);
+        locked.set(id, row && (row.tenantId ?? null) === tenantId ? row : null);
       }
       if (input.parentRunId) {
         const parent = locked.get(input.parentRunId);
@@ -703,7 +729,7 @@ async function retryStartTx(
   }
   if ((input.definitionKey ?? null) !== failed.definitionKey) {
     throw refuse(
-      `A retry of ${failedId} must run definition ${String(failed.definitionKey)}`,
+      `A retry of ${failedId} must run the failed run's definition`,
       'not_retryable',
     );
   }

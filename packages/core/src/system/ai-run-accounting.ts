@@ -736,7 +736,10 @@ export async function reconcileAiCall(
   );
 }
 
-/** The run and its descendants that are not durable, stopping at durable ones. */
+/**
+ * The run and its descendants that are not durable, stopping at durable ones
+ * and at a child of another tenant (never this run's).
+ */
 async function nonDurableSubtree(
   db: DatabaseInterface,
   runId: string,
@@ -749,7 +752,10 @@ async function nonDurableSubtree(
       await aiRunQuery(
         db,
         `SELECT r.id FROM _smrt_ai_runs r
+           JOIN _smrt_ai_runs p ON p.id = r.parent_run_id
           WHERE r.parent_run_id = $1
+            AND (r.tenant_id = p.tenant_id
+                 OR (r.tenant_id IS NULL AND p.tenant_id IS NULL))
             AND NOT EXISTS (SELECT 1 FROM _smrt_ai_run_checkpoints c
                              WHERE c.run_id = r.id)
           ORDER BY r.id`,

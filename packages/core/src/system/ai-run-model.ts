@@ -680,7 +680,10 @@ const MAX_CHAIN_DEPTH = 64;
 
 /**
  * The run's ancestor ids, root first, ending with the run itself. Read
- * without locks: `parent_run_id` never changes after a run is created.
+ * without locks: `parent_run_id` and `tenant_id` never change after a run is
+ * created. The chain stays in the run's tenant: an ancestor of another
+ * tenant (a link written before parents were tenant-checked) ends it, like
+ * a pruned one, so no charge, stop or lock ever crosses a tenant.
  */
 export async function readAiRunChainIds(
   db: DatabaseInterface,
@@ -689,23 +692,36 @@ export async function readAiRunChainIds(
   const ids: string[] = [];
   const seen = new Set<string>();
   let current: string | null = runId;
+  let tenant: string | null | undefined;
   while (current) {
     if (seen.has(current) || ids.length >= MAX_CHAIN_DEPTH) {
       throw new TypeError(`AI run ${runId} has a parent cycle or is too deep`);
     }
     seen.add(current);
+    // Each ancestor is looked up in the run's tenant (a SQL predicate): one
+    // of another tenant is not read at all and ends the chain like a pruned
+    // one.
+    const scoped =
+      tenant === undefined
+        ? ''
+        : tenant === null
+          ? ' AND tenant_id IS NULL'
+          : ' AND tenant_id = $2';
     const rows = getRows(
       await aiRunQuery(
         db,
-        'SELECT id, parent_run_id FROM _smrt_ai_runs WHERE id = $1',
+        `SELECT id, tenant_id, parent_run_id FROM _smrt_ai_runs WHERE id = $1${scoped}`,
         current,
+        ...(tenant === undefined || tenant === null ? [] : [tenant]),
       ),
     );
     if (!rows[0]) {
       if (current === runId) throw new AiRunNotFoundError(runId);
-      // A pruned ancestor: the chain ends at the oldest one still kept.
+      // A pruned ancestor (or one of another tenant): the chain ends at the
+      // oldest one still kept.
       break;
     }
+    if (tenant === undefined) tenant = text(rows[0].tenant_id) ?? null;
     ids.push(current);
     current = text(rows[0].parent_run_id);
   }
@@ -724,6 +740,17 @@ export async function readAiRunDescendantIds(
   const out: string[] = [];
   const seen = new Set<string>([runId]);
   let level = [runId];
+  // Only the run's own tenant: a child of another tenant (a link written
+  // before parents were tenant-checked) and everything under it are not
+  // this run's to cancel.
+  const root = getRows(
+    await aiRunQuery(
+      db,
+      'SELECT tenant_id FROM _smrt_ai_runs WHERE id = $1',
+      runId,
+    ),
+  )[0];
+  const tenant = root ? (text(root.tenant_id) ?? null) : null;
   for (let depth = 0; level.length > 0; depth++) {
     if (depth >= MAX_CHAIN_DEPTH) {
       throw new TypeError(`AI run ${runId} has a subtree that is too deep`);
@@ -733,8 +760,11 @@ export async function readAiRunDescendantIds(
       for (const row of getRows(
         await aiRunQuery(
           db,
-          'SELECT id FROM _smrt_ai_runs WHERE parent_run_id = $1',
+          `SELECT id FROM _smrt_ai_runs WHERE parent_run_id = $1 AND ${
+            tenant === null ? 'tenant_id IS NULL' : 'tenant_id = $2'
+          }`,
           parent,
+          ...(tenant === null ? [] : [tenant]),
         ),
       )) {
         const id = String(row.id);

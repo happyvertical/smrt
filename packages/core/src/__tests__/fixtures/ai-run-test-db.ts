@@ -72,3 +72,56 @@ export function usageEvent(
     ...(estimatedCost !== undefined ? { estimatedCost } : {}),
   };
 }
+
+/**
+ * Record every statement run on `db`, on the handle and inside its
+ * transactions; returns the restore function.
+ */
+export function recordStatements(
+  db: DatabaseInterface,
+  onStatement: (sql: string, params: unknown[]) => void,
+): () => void {
+  const wrap = (handle: DatabaseInterface): DatabaseInterface =>
+    new Proxy(handle, {
+      get(target, property, receiver) {
+        const value = Reflect.get(target, property, receiver);
+        if (property === 'query' && typeof value === 'function') {
+          return (sql: string, ...params: unknown[]) => {
+            onStatement(sql.replace(/\s+/g, ' ').trim(), params);
+            return value.call(target, sql, ...params);
+          };
+        }
+        return typeof value === 'function' ? value.bind(target) : value;
+      },
+    });
+  const mutable = db as unknown as {
+    query: DatabaseInterface['query'];
+    transaction?: DatabaseInterface['transaction'];
+  };
+  const originalQuery = mutable.query;
+  const originalTransaction = mutable.transaction;
+  mutable.query = ((sql: string, ...params: unknown[]) => {
+    onStatement(sql.replace(/\s+/g, ' ').trim(), params);
+    return originalQuery.call(db, sql, ...params);
+  }) as DatabaseInterface['query'];
+  if (originalTransaction) {
+    mutable.transaction = ((
+      operation: (tx: DatabaseInterface) => Promise<unknown>,
+      ...rest: unknown[]
+    ) =>
+      (originalTransaction as (...args: unknown[]) => Promise<unknown>).call(
+        db,
+        (tx: DatabaseInterface) => operation(wrap(tx)),
+        ...rest,
+      )) as DatabaseInterface['transaction'];
+  }
+  return () => {
+    mutable.query = originalQuery;
+    if (originalTransaction) mutable.transaction = originalTransaction;
+  };
+}
+
+/** Whether a statement names its tenant as a predicate. */
+export function hasTenantPredicate(sql: string): boolean {
+  return /tenant_id (=|IS NULL)/.test(sql);
+}

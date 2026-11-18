@@ -144,7 +144,17 @@ reads the whole chain and refuses with `AiRunResumeRefusedError`:
 `not_resumable`, `ancestor_missing`, `ancestor_final`, `budget_unchanged`,
 `budget_lowered`, `above_ceiling`, `definition_changed`; a retry (`openAiRun`
 with `retryOfRunId`) adds `not_retryable` and `retry_source_pruned` (the
-failed run or its checkpoint is gone).
+failed run or its checkpoint is gone). `openAiRun` compares the locked
+parent's and retry source's `tenant_id` (null-safe) with `store.tenantId`
+before reading anything else: another tenant's run is treated as absent
+(`AiRunNotFoundError` for a parent, `retry_source_pruned` for a retry), and
+refusal messages never name the other run's definition. The tenant is
+compared from one unlocked read of `tenant_id` before anything of the
+referenced run is locked or read. Every chain walk (`readAiRunChainIds`,
+hence `lockAiRunChain`, fences and charges) and every descendant walk
+(`readAiRunDescendantIds`, cancel; the sweep's non-durable subtree) stops at
+a tenant boundary, so a link written before this check never carries a
+charge, stop or cancel across tenants.
 
 **Accounting.** Run totals are the budget authority and change only in short
 transactions that lock the chain root first (claim fence, then run rows by

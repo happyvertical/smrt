@@ -105,7 +105,9 @@ Reading the picture:
   (see [section 6](#6-budgets-and-how-they-are-accounted)).
 - `parent_run_id` points **up**, from a child run to the run that started it.
   `retry_of_run_id` points **back**, from a retry to the failed run it picks
-  up from.
+  up from. Both stay inside one tenant: opening a run whose parent or retry
+  source belongs to another tenant (or to the global scope, when the new run
+  is a tenant's, and the reverse) fails as if that run did not exist.
 - **Events** are the ordered record of what happened. `seq` is append order,
   not causal order; `parent_event_id` carries cause.
 - A **checkpoint** exists only for a durable run and holds what resuming needs.
