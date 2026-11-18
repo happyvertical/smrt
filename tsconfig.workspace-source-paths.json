@@ -271,6 +271,9 @@
       "@happyvertical/smrt-core/cookbook/tools": [
         "./packages/core/src/cookbook/tools.ts"
       ],
+      "@happyvertical/smrt-core/error-contract": [
+        "./packages/core/src/error-contract.ts"
+      ],
       "@happyvertical/smrt-core/filesystem": [
         "./packages/core/src/filesystem.ts"
       ],
@@ -345,6 +348,9 @@
       ],
       "@happyvertical/smrt-core/testing": [
         "./packages/core/src/testing.ts"
+      ],
+      "@happyvertical/smrt-core/transport": [
+        "./packages/core/src/transport.ts"
       ],
       "@happyvertical/smrt-core/ui-metadata": [
         "./packages/core/src/ui-metadata.ts"

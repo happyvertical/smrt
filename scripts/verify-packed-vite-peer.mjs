@@ -234,6 +234,9 @@ void [validTransform, validConfig, invalidTransform, invalidConfig, api, invalid
   }
   graph.forEach(noVite);
   run(process.execPath, ['--input-type=module', '-e', "import { SmrtError } from '@happyvertical/smrt-core/smrt-error'; if (typeof SmrtError !== 'function') throw Error('Missing server export');"], server);
+  // The transport kernel and the error contract are imported by emitted routes
+  // and servers, which never have Vite (#5158).
+  run(process.execPath, ['--input-type=module', '-e', "import { ERROR_CONTRACT, publicError } from '@happyvertical/smrt-core/error-contract'; import { LEGACY_PROFILES, TRANSPORT_OPERATIONS } from '@happyvertical/smrt-core/transport'; if (typeof publicError !== 'function' || !ERROR_CONTRACT.NOT_FOUND || TRANSPORT_OPERATIONS.length !== 6 || !LEGACY_PROFILES['rest-runtime']) throw Error('Missing transport kernel export');"], server);
   summary.cases.push({ serverWithoutVite: true, status: 'passed' });
   if (evidence) writeJson(join(evidence, 'summary.json'), summary);
   console.log(JSON.stringify(summary));

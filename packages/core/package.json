@@ -188,6 +188,16 @@
       "import": "./dist/smrt-error.js",
       "default": "./dist/smrt-error.js"
     },
+    "./error-contract": {
+      "types": "./dist/error-contract.d.ts",
+      "import": "./dist/error-contract.js",
+      "default": "./dist/error-contract.js"
+    },
+    "./transport": {
+      "types": "./dist/transport.d.ts",
+      "import": "./dist/transport.js",
+      "default": "./dist/transport.js"
+    },
     "./inference-availability": {
       "types": "./dist/inference-availability.d.ts",
       "import": "./dist/inference-availability.js",

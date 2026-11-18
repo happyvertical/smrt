@@ -1021,6 +1021,16 @@
   },
   {
     "kind": "entry-point",
+    "name": "@happyvertical/smrt-core#./error-contract",
+    "issue": 5158,
+    "nearest": [
+      "@happyvertical/smrt-core#./smrt-error",
+      "@happyvertical/smrt-core#."
+    ],
+    "reason": "The table of public error codes (status and caller-visible text per code) with publicError() and registerErrorCodes(), on a module that imports nothing. ./smrt-error publishes only the base class and must stay a single import-free class for browser-safe subclasses; the root entry loads the registry and manifest, which a browser client or a sibling package registering its codes must not pull in."
+  },
+  {
+    "kind": "entry-point",
     "name": "@happyvertical/smrt-core#./filesystem",
     "grandfathered": true
   },
@@ -1153,6 +1163,17 @@
     "kind": "entry-point",
     "name": "@happyvertical/smrt-core#./testing",
     "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-core#./transport",
+    "issue": 5158,
+    "nearest": [
+      "@happyvertical/smrt-core#./generators",
+      "@happyvertical/smrt-core#./generators/rest",
+      "@happyvertical/smrt-core#./generators/mcp"
+    ],
+    "reason": "The shared request pipeline generated REST, SvelteKit, MCP, sync and CLI transports call: model identity, principal, authorization, input, query, tenant gate, projection and error rendering, with the legacy profiles. The ./generators subpaths each publish one transport and are where these rules are currently duplicated; a server-only subpath keeps the pipeline out of the root and browser entries and lets emitted routes import it without loading a whole generator."
   },
   {
     "kind": "entry-point",
