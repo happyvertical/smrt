@@ -55,6 +55,7 @@ import { Email } from '../models/Email';
 import { EmailAccount } from '../models/EmailAccount';
 import { EmailFolder } from '../models/EmailFolder';
 import { Tweet } from '../models/Tweet';
+import { messagingPrincipalFromPermissions } from '../permissions.js';
 import { NotificationOutboxService } from '../services/NotificationOutboxService.js';
 import { prepareMessageParents } from './fk-fixtures.js';
 
@@ -1197,6 +1198,79 @@ describe('mail account access (#5129)', () => {
       );
       // Past the mail gate and the message store: only the provider is missing.
       expect(stored?.lastError ?? '').toMatch(/no client implementation/);
+    });
+
+    describe('with a messaging principal', () => {
+      const outboxFor = (person: Person) =>
+        new NotificationOutboxService({
+          db,
+          linkBaseUrl: 'https://work.example.com',
+          resolveRecipient: () => ({ address: 'someone@example.com' }),
+          resolveSenderAccountId: () => sharedAccountId,
+          principal: messagingPrincipalFromPermissions(['messages.send'], {
+            tenantId: tenantA,
+            id: person.id,
+            userId: person.id,
+          }),
+        });
+      const queue = (outbox: NotificationOutboxService, ref: string) =>
+        outbox.enqueueEmail({
+          tenantId: tenantA,
+          recipientUserId: grantee.id,
+          sourceRef: ref,
+          kind: 'access-test',
+          subject: 'hello',
+          text: 'hello',
+          path: '/x',
+        });
+      const reload = (id: string) =>
+        withTenant({ tenantId: tenantA }, async () =>
+          (await NotificationDeliveryCollection.create(options)).get({ id }),
+        );
+
+      it('blocks dispatch from an account the principal holds no send grant on', async () => {
+        const outbox = outboxFor(stranger);
+        const queued = await queue(outbox, 'principal:1');
+        const report = await outbox.dispatchDue({ tenantIds: [tenantA] });
+        expect(report.leased).toBe(0);
+        expect(report.outcomes.map((o) => o.outcome)).toEqual(['blocked']);
+        const stored = await reload(queued.delivery.id as string);
+        expect(stored?.status).toBe('pending');
+        expect(stored?.attempts).toBe(0);
+        expect(stored?.lastError).toMatch(/access denied/);
+      });
+
+      it('dispatches once the principal holds the send grant', async () => {
+        await grantRow(grantee.id, sharedAccountId, 'send');
+        const outbox = outboxFor(grantee);
+
+        await queue(outbox, 'principal:2');
+        const report = await outbox.dispatchDue({ tenantIds: [tenantA] });
+        expect(report.leased).toBe(1);
+      });
+
+      it('refuses to reconcile a delivery on an account without the send grant', async () => {
+        const trusted = new NotificationOutboxService({
+          db,
+          linkBaseUrl: 'https://work.example.com',
+          resolveRecipient: () => ({ address: 'someone@example.com' }),
+          resolveSenderAccountId: () => sharedAccountId,
+        });
+        const queued = await queue(trusted, 'principal:3');
+        await withTenant({ tenantId: tenantA }, () =>
+          queued.delivery.transition({ status: 'uncertain' }),
+        );
+        const input = {
+          tenantId: tenantA,
+          deliveryId: queued.delivery.id as string,
+          outcome: 'failed' as const,
+        };
+        expect(await outboxFor(stranger).reconcile(input)).toBe(false);
+        expect((await reload(input.deliveryId))?.status).toBe('uncertain');
+        await grantRow(grantee.id, sharedAccountId, 'send');
+        expect(await outboxFor(grantee).reconcile(input)).toBe(true);
+        expect((await reload(input.deliveryId))?.status).toBe('failed');
+      });
     });
   });
 

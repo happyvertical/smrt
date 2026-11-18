@@ -2,7 +2,7 @@ import {
   isUniqueViolationError,
   type SmrtClassOptions,
 } from '@happyvertical/smrt-core';
-import { runWithMailSystemAccess } from '../access.js';
+import { decideMailAccess, runWithMailSystemAccess } from '../access.js';
 import { AccountCollection } from '../collections/AccountCollection.js';
 import { EmailCollection } from '../collections/EmailCollection.js';
 import { MessageCollection } from '../collections/MessageCollection.js';
@@ -741,8 +741,22 @@ export class NotificationOutboxService {
         });
         continue;
       }
-      // The outbox is trusted server work: callers were authorized per tenant
-      // above, so the per-account mail policy is lifted for the handoff.
+      // Without a principal this is trusted worker code and the per-account
+      // policy is lifted. With a principal, the tenant permission is only a
+      // ceiling: the principal must also hold `send` on the sender account.
+      if (!(await this.principalMaySend(candidate))) {
+        const lastError = 'Blocked: mail access denied for scope send';
+        if (candidate.lastError !== lastError)
+          await withTenant({ tenantId: candidate.tenantId }, () =>
+            candidate.transition({ lastError }),
+          );
+        report.outcomes.push({
+          deliveryId: candidate.id as string,
+          tenantId: candidate.tenantId,
+          outcome: 'blocked',
+        });
+        continue;
+      }
       const outcome = await withTenant({ tenantId: candidate.tenantId }, () =>
         runWithMailSystemAccess(() => this.dispatchOne(candidate)),
       );
@@ -791,9 +805,45 @@ export class NotificationOutboxService {
     // Ids may come from requests; on a native uuid column (PostgreSQL) a
     // malformed one would fail the query (22P02) instead of matching nothing.
     if (!UUID_PATTERN.test(input.deliveryId ?? '')) return false;
-    return withTenant({ tenantId }, () =>
-      runWithMailSystemAccess(() => this.reconcileImpl(tenantId, input)),
+    return withTenant({ tenantId }, async () => {
+      if (this.options.principal) {
+        const delivery = (
+          await (
+            await this.collection()
+          ).list({ where: { tenantId, id: input.deliveryId }, limit: 1 })
+        )[0];
+        if (!delivery || !(await this.principalMaySend(delivery))) return false;
+      }
+      return runWithMailSystemAccess(() => this.reconcileImpl(tenantId, input));
+    });
+  }
+
+  /** True without a principal (trusted worker); else needs `send` on the account. */
+  private async principalMaySend(
+    delivery: NotificationDelivery,
+  ): Promise<boolean> {
+    const principal = this.options.principal;
+    if (!principal) return true;
+    const tenantId = delivery.tenantId;
+    const userId = principal.userId ?? principal.id;
+    if (!delivery.accountId) return false;
+    const account = await withTenant({ tenantId }, () =>
+      runWithMailSystemAccess(async () =>
+        (await AccountCollection.create({ db: this.options.db })).get({
+          id: delivery.accountId,
+        }),
+      ),
     );
+    if (!account || account.tenantId !== tenantId) return false;
+    // No user identity: only unowned (tenant-wide) accounts pass.
+    const decision = await withTenant({ tenantId }, () =>
+      decideMailAccess(
+        account,
+        'send',
+        userId ? { id: principal.id ?? userId, tenantId, userId } : null,
+      ),
+    );
+    return decision.allowed;
   }
 
   private async reconcileImpl(
