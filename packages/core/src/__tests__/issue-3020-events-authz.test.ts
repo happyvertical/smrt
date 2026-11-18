@@ -77,6 +77,26 @@ function signal(overrides: Partial<ChangeSignal> = {}): ChangeSignal {
   };
 }
 
+/**
+ * Append a real feed row and publish its signal, as the write path does: the
+ * `_events` stream reads every frame from the durable feed, so a signal with
+ * no row behind it delivers nothing.
+ */
+async function appendAndSignal(
+  db: DatabaseInterface,
+  overrides: Partial<Omit<ChangeSignal, 'seq'>> = {},
+): Promise<void> {
+  const base = signal(overrides);
+  const seq = await appendChange(db, {
+    table: base.table,
+    rowId: base.rowId,
+    operation: base.operation,
+    tenantId: base.tenantId,
+  });
+  if (seq == null) throw new Error('expected a direct append');
+  publishChangeSignal(db, { ...base, seq });
+}
+
 async function flushAsync(): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, 15));
 }
@@ -138,7 +158,7 @@ describe('change-feed authorization seam (issue #3020, push side)', () => {
         request: stationRequest,
       });
       await flushAsync();
-      publishChangeSignal(db, signal());
+      await appendAndSignal(db);
       await flushAsync();
       const text = await readStreamText(stream);
       expect(text).toContain(`"rowId":"${OTHER_ROW_ID}"`);
@@ -160,11 +180,8 @@ describe('change-feed authorization seam (issue #3020, push side)', () => {
         request: stationRequest,
       });
       await flushAsync();
-      publishChangeSignal(db, signal({ table: PUNCHES_TABLE, seq: 1 }));
-      publishChangeSignal(
-        db,
-        signal({ table: NOTES_TABLE, rowId: 'n1', seq: 2 }),
-      );
+      await appendAndSignal(db, { table: PUNCHES_TABLE });
+      await appendAndSignal(db, { table: NOTES_TABLE, rowId: 'n1' });
       await flushAsync();
       const text = await readStreamText(stream);
       expect(text).not.toContain(PUNCHES_TABLE);
@@ -183,7 +200,7 @@ describe('change-feed authorization seam (issue #3020, push side)', () => {
         request: stationRequest,
       });
       await flushAsync();
-      publishChangeSignal(db, signal());
+      await appendAndSignal(db);
       await flushAsync();
       const text = await readStreamText(stream);
       expect(text).not.toContain('event: change');
@@ -206,8 +223,8 @@ describe('change-feed authorization seam (issue #3020, push side)', () => {
         request: stationRequest,
       });
       await flushAsync();
-      publishChangeSignal(db, signal({ rowId: OTHER_ROW_ID, seq: 1 }));
-      publishChangeSignal(db, signal({ rowId: OWN_ROW_ID, seq: 2 }));
+      await appendAndSignal(db, { rowId: OTHER_ROW_ID });
+      await appendAndSignal(db, { rowId: OWN_ROW_ID });
       await flushAsync();
       const text = await readStreamText(stream);
       expect(text).not.toContain(OTHER_ROW_ID);
@@ -226,7 +243,7 @@ describe('change-feed authorization seam (issue #3020, push side)', () => {
         request: stationRequest,
       });
       await flushAsync();
-      publishChangeSignal(db, signal({ rowId: OWN_ROW_ID }));
+      await appendAndSignal(db, { rowId: OWN_ROW_ID });
       await flushAsync();
       const text = await readStreamText(stream);
       expect(text).not.toContain('event: change');
@@ -280,7 +297,7 @@ describe('change-feed authorization seam (issue #3020, push side)', () => {
       expect(changeSignalSubscriberCount(db)).toBe(0);
 
       // Constructing the stream starts running its (async) start() callback,
-      // which awaits the table authorizer before subscribing to anything.
+      // which subscribes and then awaits the table authorizer.
       const stream = buildChangeEventStream(db, {
         cursor: null,
         tenantScope: UNENFORCED_SCOPE,
@@ -289,17 +306,15 @@ describe('change-feed authorization seam (issue #3020, push side)', () => {
       });
 
       // Let start() reach — and suspend on — the pending authorization await,
-      // then disconnect while it is still pending. cancel() runs teardown()
-      // before any subscription exists (unsubscribe is still null), so it
-      // only releases the (no-op here) slot and marks the stream closed.
+      // then disconnect while it is still pending. cancel() runs teardown(),
+      // which removes the subscription and marks the stream closed.
       await flushAsync();
       await stream.cancel().catch(() => {});
       expect(changeSignalSubscriberCount(db)).toBe(0);
 
-      // Authorization now resolves. Before the fix, start() would subscribe
-      // anyway despite the stream already being closed, permanently leaking
-      // a change-signals listener that no later teardown() call could ever
-      // remove (teardown() short-circuits once `closed` is true).
+      // Authorization now resolves. start() must notice the stream closed and
+      // stop, never re-registering a listener that no later teardown() call
+      // could remove (teardown() short-circuits once `closed` is true).
       resolveAuthorization([PUNCHES_TABLE]);
       await flushAsync();
 
@@ -346,7 +361,7 @@ describe('change-feed authorization seam (issue #3020, push side)', () => {
 
       // cursor: null → live-forward-only, no explicit catch-up requested.
       // Constructing the stream starts its (async) start(), which — with a
-      // table hook registered — awaits the authorizer before subscribing.
+      // table hook registered — awaits the authorizer before reading.
       const stream = buildChangeEventStream(db, {
         cursor: null,
         tenantScope: UNENFORCED_SCOPE,
@@ -355,16 +370,14 @@ describe('change-feed authorization seam (issue #3020, push side)', () => {
       });
 
       // Let start() reach and suspend on the pending authorization await.
-      // `unsubscribe` is still null here — no subscription exists yet.
+      // The stream subscribes before that await and fixes its starting
+      // cursor before it too, so a write landing now is still read.
       await flushAsync();
-      expect(changeSignalSubscriberCount(db)).toBe(0);
+      expect(changeSignalSubscriberCount(db)).toBe(1);
 
-      // A write commits (and, via appendChange's own publishChangeSignal
-      // call, signals) while the authorizer is still pending. With no
-      // subscription attached yet, that live signal has no listener to
-      // reach — before the fix, this entry would be lost forever once the
-      // stream finally subscribes, since live-forward mode runs no explicit
-      // catch-up phase to recover it.
+      // A write commits while the authorizer is still pending. appendChange
+      // publishes no signal, so only the read from the cursor fixed before
+      // the await can deliver it.
       await appendChange(db, {
         table: PUNCHES_TABLE,
         rowId: OTHER_ROW_ID,
