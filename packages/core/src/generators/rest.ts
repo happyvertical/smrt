@@ -8,6 +8,7 @@ import { getRegistryGeneration } from '../registry/generation.js';
 import http from 'node:http';
 import { getTableVersion } from '../change-feed';
 import type { SmrtCollection, SmrtCollectionOptions } from '../collection';
+import { ConfigurationError } from '../errors';
 import type { PublicJsonOptions, SmrtObject } from '../object';
 import { publicSerializerOf } from '../public-json';
 import { assertQueryAccess } from '../query-access';
@@ -333,6 +334,46 @@ export function computeRuntimeWebManifestHash(
   return computeWebManifestHash(getRuntimeManifest(classes));
 }
 
+/** What one collection segment resolves to; see `collectionSegmentIndex()`. */
+interface CollectionSegmentEntry {
+  /** Distinct models serving the segment, by registry key. */
+  models: Map<string, RegisteredClass>;
+  /** A registered class of the segment whose generated fields failed. */
+  error?: unknown;
+}
+
+/**
+ * Restricts auto-discovery to a set of registry keys. Set only by
+ * `createRestServer(objects)`; not part of {@link APIConfig}.
+ */
+const MODEL_SCOPE = Symbol('smrt.rest.modelScope');
+type ScopedAPIConfig = APIConfig & { [MODEL_SCOPE]?: ReadonlySet<string> };
+
+function ambiguousSegmentError(
+  ambiguous: Map<string, CollectionSegmentEntry>,
+): ConfigurationError {
+  const segments = Object.fromEntries(
+    [...ambiguous].map(([segment, entry]) => [
+      segment,
+      [...entry.models.keys()],
+    ]),
+  );
+  const listed = Object.entries(segments)
+    .map(([segment, models]) => `'${segment}' (${models.join(', ')})`)
+    .join('; ');
+  return new ConfigurationError(
+    `REST collection segment resolves to more than one model: ${listed}. ` +
+      'Give each model a distinct `collection`, or serve one of them with `api: false`.',
+    'REST_COLLECTION_SEGMENT_AMBIGUOUS',
+    { segments },
+  );
+}
+
+/** The registry key policy lookups use: the qualified name when there is one. */
+function registryKeyOf(info: RegisteredClass): string {
+  return info.qualifiedName || info.name;
+}
+
 /** A request's tenant after defaults; see {@link APIConfig.resolveTenant}. */
 interface ResolvedRequestTenant {
   tenantId: string | null;
@@ -374,6 +415,11 @@ export class APIGenerator {
   private context: APIContext;
   private runtimeManifestHash: string | undefined;
   private manifestGeneration = -1;
+  /** Models auto-discovery may serve; every registered model when unset. */
+  private readonly modelScope: ReadonlySet<string> | undefined;
+  private segmentIndex:
+    | { generation: number; entries: Map<string, CollectionSegmentEntry> }
+    | undefined;
 
   constructor(config: APIConfig = {}, context: APIContext = {}) {
     this.config = {
@@ -386,6 +432,21 @@ export class APIGenerator {
       ...config,
     };
     this.context = context;
+    this.modelScope = (config as ScopedAPIConfig)[MODEL_SCOPE];
+    // A server given its models (`createRestServer(objects)`) must be able to
+    // serve each of them: two of them on one collection segment is a
+    // configuration error now. Without a list, auto-discovery spans the whole
+    // registry, which may hold models the host never serves (a run-time
+    // subclass reached through `registerCollection`, a dependency's model), so
+    // an ambiguous segment is refused when a request names it.
+    if (this.modelScope) {
+      const ambiguous = new Map(
+        [...this.collectionSegmentIndex()].filter(
+          ([, entry]) => entry.models.size > 1,
+        ),
+      );
+      if (ambiguous.size > 0) throw ambiguousSegmentError(ambiguous);
+    }
   }
 
   /**
@@ -748,10 +809,14 @@ export class APIGenerator {
     ) {
       return this.createErrorResponse(404, 'Not found');
     }
+    // Every policy lookup below uses the model's qualified registry key. Two
+    // packages may declare models with the same simple name; a simple name
+    // resolves to whichever registered first.
+    const objectName = registryKeyOf(classInfo);
     // Apply auth middleware if configured
     if (this.config.authMiddleware) {
       const authCheck = this.config.authMiddleware(
-        classInfo.name,
+        objectName,
         req.method.toLowerCase(),
       );
       const authResult = await authCheck(req);
@@ -760,7 +825,7 @@ export class APIGenerator {
       }
       // Auth passed, use the potentially modified request
       req = authResult;
-    } else if (!this.isRoutePublic(classInfo.name, req.method)) {
+    } else if (!this.isRoutePublic(objectName, req.method)) {
       // Fail-closed (#1540): see registered-collection branch above.
       return this.createErrorResponse(401, 'Authentication required');
     }
@@ -773,9 +838,7 @@ export class APIGenerator {
       collection,
       objectId,
       url,
-      // The qualified identity, so request-time tenant scoping resolves the
-      // model the route found rather than a same-named class.
-      classInfo.qualifiedName ?? classInfo.name,
+      objectName,
     );
   }
 
@@ -1760,7 +1823,7 @@ export class APIGenerator {
         })
       ) {
         collection = await this.getCollection(info);
-        objectName = info.name;
+        objectName = registryKeyOf(info);
       }
     }
 
@@ -1853,12 +1916,10 @@ export class APIGenerator {
   private async getCollection(
     classInfo: RegisteredClass,
   ): Promise<SmrtCollection<SmrtObject>> {
-    return ObjectRegistry.getCollection(
-      classInfo.qualifiedName ?? classInfo.name,
-      { ai: this.context.ai, db: this.context.db } as Parameters<
-        typeof ObjectRegistry.getCollection
-      >[1],
-    );
+    return ObjectRegistry.getCollection(registryKeyOf(classInfo), {
+      ai: this.context.ai,
+      db: this.context.db,
+    } as Parameters<typeof ObjectRegistry.getCollection>[1]);
   }
 
   /**
@@ -2233,45 +2294,90 @@ export class APIGenerator {
   private findClassByCollectionSegment(
     segment: string,
   ): RegisteredClass | null {
+    const entry = this.collectionSegmentIndex().get(segment);
+    if (!entry) return null;
+    if (entry.error) throw entry.error;
+    if (entry.models.size > 1) {
+      throw ambiguousSegmentError(new Map([[segment, entry]]));
+    }
+    return entry.models.values().next().value ?? null;
+  }
+
+  /**
+   * Every collection segment auto-discovery can serve, with the model each
+   * resolves to. Rebuilt when the registry generation moves.
+   *
+   * A segment resolves to one model or to none. Two distinct models that
+   * resolve to the same segment (for example same-named models of two
+   * packages that derive the same collection) are ambiguous: a lookup of the
+   * segment throws {@link ConfigurationError} instead of picking one by
+   * registration order, and a `createRestServer(objects)` server refuses to
+   * start. Models with `api: false`, and models outside a
+   * `createRestServer(objects)` scope, are not candidates.
+   */
+  private collectionSegmentIndex(): Map<string, CollectionSegmentEntry> {
+    const generation = ObjectRegistry.getGeneration();
+    if (this.segmentIndex?.generation === generation) {
+      return this.segmentIndex.entries;
+    }
+    const entries = new Map<string, CollectionSegmentEntry>();
+    const entryFor = (segment: string): CollectionSegmentEntry => {
+      let entry = entries.get(segment);
+      if (!entry) {
+        entry = { models: new Map() };
+        entries.set(segment, entry);
+      }
+      return entry;
+    };
     for (const [key, info] of ObjectRegistry.getAllClasses()) {
       // The framework's own abstract base classes are scaffolding, not
       // resources — never resolve a request to one of them, regardless of
       // config (#2642).
       if (isFrameworkBaseClass(info.name || key, info.packageName)) continue;
-      // Primary match: the canonical manifest `collection` segment.
-      if (info.collection === segment) {
-        if (info.generatedFields?.error) throw info.generatedFields.error;
-        // Collections and their row models share a URL. All downstream gates,
-        // policy checks and execution must use the effective row identity,
-        // independent of registration order.
-        const model = ObjectRegistry.getExposureModel(
-          info.qualifiedName || key,
-        );
-        if (!model) continue;
-        const registryKey = model.qualifiedName || model.name;
-        if (ObjectRegistry.getSTIBase(registryKey)) {
-          const owner = ObjectRegistry.getInheritanceChain(registryKey)
-            .map((ancestor) => ObjectRegistry.getClass(ancestor))
-            .find((ancestor) => ancestor?.collection === segment);
-          if (owner) return owner;
-        }
-        return model;
+      // The segment IS the canonical manifest `collection` value; match it
+      // verbatim (#1794). Classes registered without a `collection`
+      // (inline/test stubs) derive the plural segment from the simple name
+      // (#951).
+      const segment =
+        info.collection || this.pluralize((info.name || key).toLowerCase());
+      if (info.generatedFields?.error) {
+        entryFor(segment).error ??= info.generatedFields.error;
+        continue;
       }
-      // Back-compat fallback for classes registered without a `collection`
-      // (inline/test stubs): derive the plural segment from the simple name and
-      // compare to the raw URL segment. Issue #951: use the simple name
-      // (info.name), not the qualified map key.
-      if (
-        !info.collection &&
-        this.pluralize((info.name || key).toLowerCase()) === segment
-      ) {
-        if (info.generatedFields?.error) throw info.generatedFields.error;
-        return (
-          ObjectRegistry.getExposureModel(info.qualifiedName || key) ?? null
-        );
-      }
+      const model = this.segmentModel(info, key, segment);
+      if (!model) continue;
+      const modelKey = registryKeyOf(model);
+      if (this.modelScope && !this.modelScope.has(modelKey)) continue;
+      if (ObjectRegistry.getConfig(modelKey).api === false) continue;
+      entryFor(segment).models.set(modelKey, model);
     }
-    return null;
+    this.segmentIndex = { generation, entries };
+    return entries;
+  }
+
+  /**
+   * The model a class registered under `segment` serves. Collections and
+   * their row models share a URL, and STI subtypes that keep their base's
+   * collection resolve to the ancestor that owns it, so every gate, policy
+   * check and execution uses the effective row identity, independent of
+   * registration order.
+   */
+  private segmentModel(
+    info: RegisteredClass,
+    key: string,
+    segment: string,
+  ): RegisteredClass | null {
+    const model = ObjectRegistry.getExposureModel(info.qualifiedName || key);
+    if (!model) return null;
+    if (!info.collection) return model;
+    const modelKey = registryKeyOf(model);
+    if (ObjectRegistry.getSTIBase(modelKey)) {
+      const owner = ObjectRegistry.getInheritanceChain(modelKey)
+        .map((ancestor) => ObjectRegistry.getClass(ancestor))
+        .find((ancestor) => ancestor?.collection === segment);
+      if (owner) return owner;
+    }
+    return model;
   }
 
   /**
@@ -2299,21 +2405,46 @@ export interface RestServerConfig extends APIConfig {
 }
 
 /**
- * Create REST server with health checks using Bun
+ * Create a Node HTTP REST server for `objects`.
+ *
+ * The server serves the models in `objects` and no other registered model:
+ * auto-discovery resolves a collection segment only to one of them (an STI
+ * base also serves the subtypes that share its collection). A class that is
+ * not registered with `@smrt()` is not served, and is reported with a
+ * warning.
+ *
+ * @param objects - The `@smrt()` classes to serve
+ * @param context - Fixed request context (database, tenant, permissions)
+ * @param config - Server and route configuration
+ * @throws {ConfigurationError} when two of `objects` resolve to one segment
  */
 export function createRestServer(
   objects: (typeof SmrtObject)[],
   context: APIContext = {},
   config: RestServerConfig = {},
 ): { server: http.Server; url: string } {
-  // Register objects if not already registered
-  objects.forEach((obj) => {
-    if (!ObjectRegistry.hasClass(obj.name)) {
+  const scope = new Set<string>();
+  for (const obj of objects) {
+    const registered = ObjectRegistry.getClassByConstructor(
+      obj as unknown as SmrtObjectConstructor,
+    );
+    if (!registered) {
       console.warn(`Object ${obj.name} not registered with @smrt decorator`);
+      continue;
     }
-  });
+    // The model that serves the class's rows (a replacement, if any).
+    scope.add(
+      registryKeyOf(
+        ObjectRegistry.getExposureModel(registryKeyOf(registered)) ??
+          registered,
+      ),
+    );
+  }
 
-  const generator = new APIGenerator(config, context);
+  const generator = new APIGenerator(
+    { ...config, [MODEL_SCOPE]: scope } as ScopedAPIConfig,
+    context,
+  );
   const { server, url } = generator.createServer();
 
   console.log(`🚀 smrt REST API server running at ${url}`);

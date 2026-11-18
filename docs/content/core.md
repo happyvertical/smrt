@@ -597,7 +597,7 @@ CLI generation does not live here. `@happyvertical/smrt-core` shipped an in-proc
 
 ### REST API Generation
 
-`APIGenerator` serves REST for whatever `@smrt()` objects are registered. `APIConfig` is `{ basePath?, enableCors?, allowedOrigins?, allowCredentials?, customRoutes?, authMiddleware?, resolveTenant?, port?, hostname?, eventsRoute?, manifestHash?, playbookPreflight? }` — there is no `collections`, `outputDir`, `includeSwagger`, or `middleware` option, and no `generate()` method.
+`APIGenerator` serves REST for whatever `@smrt()` objects are registered; `createRestServer(objects)` / `startRestServer(objects)` serve only `objects`. `APIConfig` is `{ basePath?, enableCors?, allowedOrigins?, allowCredentials?, customRoutes?, authMiddleware?, resolveTenant?, port?, hostname?, eventsRoute?, manifestHash?, playbookPreflight? }` — there is no `collections`, `outputDir`, `includeSwagger`, or `middleware` option, and no `generate()` method.
 
 ```typescript
 import { APIGenerator, startRestServer } from '@happyvertical/smrt-core/generators';
@@ -610,12 +610,22 @@ const handler = generator.generateHandler(); // (req: Request) => Promise<Respon
 generator.registerCollection('products', productCollection);
 const { server, url } = generator.createServer();
 
-// Or the startRestServer() convenience wrapper: warns for any of the passed
-// classes not already registered by their own @smrt() decorator (it does not
-// register them itself), starts a Node http.Server, and resolves a
-// graceful-shutdown function.
+// Or the startRestServer() convenience wrapper: serves the passed classes and
+// no other registered model (a class not registered by its own @smrt()
+// decorator is warned about and not served), starts a Node http.Server, and
+// resolves a graceful-shutdown function.
 const shutdown = await startRestServer([Product, Order], { db }, { basePath: '/api/v1' });
 ```
+
+Each request resolves to one model, and that model's qualified name
+(`@scope/pkg:Class`) is what `authMiddleware(objectName, action)` receives and
+what every policy lookup uses, so same-named models of two packages keep their
+own policies. A collection segment that two models serve is refused rather
+than served by registration order; give each a distinct `collection`, or
+`api: false` on the one that should not be served. `startRestServer` refuses to
+start when two of the passed classes share a segment. A create through an STI
+base selects (`createType`) only subtypes whose own `api` surface opens
+`create`.
 
 #### Tenant-scoped models need a tenant per request
 
