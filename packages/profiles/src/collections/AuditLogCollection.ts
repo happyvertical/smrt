@@ -77,7 +77,6 @@ export class AuditLogCollection extends SmrtCollection<AuditLog> {
     changes?: Record<string, AuditChange>;
   }): Promise<AuditLog> {
     const log = await this.create({
-      ...this.options,
       profileId: options.profile.id as string,
       action: options.action,
       reason: options.reason,
