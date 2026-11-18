@@ -191,6 +191,40 @@ describe('@smrt() config spread resolution (#2100)', () => {
     expect(config).toMatchObject({ api: false, mcp: false });
   });
 
+  it('resolves a spread nested inside an option, with nested values and quoted keys', () => {
+    // A feature table declared once and spread into `features` is the
+    // documented way to share it with the code that reads the flags.
+    const { config, errors } = configOf(`
+      export const WIDGET_FEATURES = {
+        'pricing.tiered': {
+          defaultEnabled: false,
+          label: 'Tiered pricing',
+          metadata: { owner: 'sales', tags: ['beta'] },
+        },
+        'pricing.rounding': { defaultEnabled: true, label: 'Rounding' },
+      } as const;
+      export type WidgetFeatureKey = keyof typeof WIDGET_FEATURES;
+
+      @smrt({
+        tableName: 'widgets',
+        api: { include: [] },
+        features: { ...WIDGET_FEATURES, 'pricing.extra': { defaultEnabled: false } },
+      })
+      class Widget extends SmrtObject {}
+    `);
+
+    expect(errors).toHaveLength(0);
+    expect(config?.features).toEqual({
+      'pricing.tiered': {
+        defaultEnabled: false,
+        label: 'Tiered pricing',
+        metadata: { owner: 'sales', tags: ['beta'] },
+      },
+      'pricing.rounding': { defaultEnabled: true, label: 'Rounding' },
+      'pricing.extra': { defaultEnabled: false },
+    });
+  });
+
   it('resolves a computed literal property key', () => {
     const { config, errors } = configOf(`
       const INTERNAL_SURFACE = { api: true, ['api']: false };
@@ -233,10 +267,10 @@ describe('@smrt() config spread resolution (#2100)', () => {
       expect(errors[0].message).toContain('MUTABLE');
     });
 
-    it('reports a spread inside an include array', () => {
+    it('reports an unresolvable spread inside an include array', () => {
       // Dropping an element silently shrinks an allowlist.
       const { errors } = configOf(`
-        const BASE_ACTIONS = ['list', 'get'];
+        import { BASE_ACTIONS } from './actions.js';
 
         @smrt({ cli: { include: [...BASE_ACTIONS, 'archive'] } })
         class Widget extends SmrtObject {}
@@ -244,6 +278,7 @@ describe('@smrt() config spread resolution (#2100)', () => {
 
       expect(errors).toHaveLength(1);
       expect(errors[0].message).toContain('BASE_ACTIONS');
+      expect(errors[0].message).toContain('cli.include');
     });
 
     it('reports a call-expression spread', () => {
@@ -255,9 +290,9 @@ describe('@smrt() config spread resolution (#2100)', () => {
       expect(errors).toHaveLength(1);
     });
 
-    it('reports shorthand values instead of serializing identifier names', () => {
-      const { errors } = configOf(`
-        const api = false;
+    it('reports unresolvable shorthand values instead of serializing identifier names', () => {
+      const { config, errors } = configOf(`
+        import { api } from './policy.js';
         const CFG = { api };
 
         @smrt({ ...CFG })
@@ -266,11 +301,12 @@ describe('@smrt() config spread resolution (#2100)', () => {
 
       expect(errors).toHaveLength(1);
       expect(errors[0].message).toContain('api');
+      expect(config).not.toHaveProperty('api');
     });
 
-    it('reports explicit identifier values instead of serializing their names', () => {
-      const { errors } = configOf(`
-        const CLOSED = false;
+    it('reports unresolvable identifier values instead of serializing their names', () => {
+      const { config, errors } = configOf(`
+        import { CLOSED } from './policy.js';
         const CFG = { api: CLOSED };
 
         @smrt({ ...CFG })
@@ -279,6 +315,7 @@ describe('@smrt() config spread resolution (#2100)', () => {
 
       expect(errors).toHaveLength(1);
       expect(errors[0].message).toContain('CLOSED');
+      expect(config).not.toHaveProperty('api');
     });
 
     it('reports call-expression values instead of serializing source text', () => {

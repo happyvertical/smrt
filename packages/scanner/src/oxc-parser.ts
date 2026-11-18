@@ -194,6 +194,7 @@ interface TSEnumBody extends BaseNode {
 
 interface TSEnumMember extends BaseNode {
   type: 'TSEnumMember';
+  id?: Identifier | Literal;
   initializer?: Expression;
 }
 
@@ -303,6 +304,8 @@ interface Literal extends BaseNode {
   type: 'Literal';
   value: string | number | boolean | null | RegExp | bigint;
   raw?: string;
+  /** Present on a regular-expression literal. */
+  regex?: { pattern: string; flags: string };
 }
 
 interface UnaryExpression extends BaseNode {
@@ -580,12 +583,11 @@ export function parseFile(filePath: string): FileScanResult {
       const importAliases = extractImportAliases(program.body);
       typeAliases = extractTypeAliases(program.body);
       smrtImports = extractSmrtImports(program.body);
-      const ctx: DecoratorConfigContext = {
-        constants: extractModuleObjectConstants(program.body, sourceText),
-        unresolved: [],
+      const ctx = createDecoratorConfigContext(
+        program.body,
+        sourceText,
         importAliases,
-        importBindings: extractImportBindings(program.body),
-      };
+      );
       for (const node of program.body) {
         const extracted = extractClassFromNode(
           node,
@@ -824,12 +826,11 @@ export function parseSource(
       const importAliases = extractImportAliases(program.body);
       typeAliases = extractTypeAliases(program.body);
       smrtImports = extractSmrtImports(program.body);
-      const ctx: DecoratorConfigContext = {
-        constants: extractModuleObjectConstants(program.body, sourceText),
-        unresolved: [],
+      const ctx = createDecoratorConfigContext(
+        program.body,
+        sourceText,
         importAliases,
-        importBindings: extractImportBindings(program.body),
-      };
+      );
       for (const node of program.body) {
         const extracted = extractClassFromNode(
           node,
@@ -1192,6 +1193,27 @@ function resolveLocalParameterAliases(
  * mixed enum has no single column type.
  */
 function enumMembersToUnion(members: TSEnumMember[]): string | null {
+  const values = enumMemberValues(members);
+  if (!values) return null;
+  const allStrings = values.every((v) => typeof v === 'string');
+  const allNumbers = values.every((v) => typeof v === 'number');
+  if (!allStrings && !allNumbers) return null;
+  return values
+    .map((v) => {
+      if (typeof v !== 'string') return String(v);
+      const encoded = JSON.stringify(v);
+      return `'${encoded.slice(1, -1).replaceAll("'", "\\'")}'`;
+    })
+    .join(' | ');
+}
+
+/**
+ * The value of each enum member in declaration order, applying TypeScript's
+ * auto-increment, or `null` when any member is not statically resolvable.
+ */
+function enumMemberValues(
+  members: TSEnumMember[],
+): Array<string | number> | null {
   const values: Array<string | number> = [];
   let next = 0;
   for (const member of members) {
@@ -1231,16 +1253,7 @@ function enumMembersToUnion(members: TSEnumMember[]): string | null {
       return null;
     }
   }
-  const allStrings = values.every((v) => typeof v === 'string');
-  const allNumbers = values.every((v) => typeof v === 'number');
-  if (!allStrings && !allNumbers) return null;
-  return values
-    .map((v) => {
-      if (typeof v !== 'string') return String(v);
-      const encoded = JSON.stringify(v);
-      return `'${encoded.slice(1, -1).replaceAll("'", "\\'")}'`;
-    })
-    .join(' | ');
+  return values;
 }
 
 /**
@@ -1290,7 +1303,22 @@ interface UnresolvedSpread {
    * Defaults to `@smrt()` when omitted.
    */
   decorator?: string;
+  /** Class the decorator is applied to, or that declares the decorated member. */
+  className?: string;
+  /** Method the decorator is applied to, when it is not the class itself. */
+  member?: string;
+  /** Dotted path of the option the expression is the value of. */
+  option?: string;
 }
+
+/**
+ * Marks a value the static reader could not resolve. It never leaves this
+ * module: a container drops the entry it would have filled, and the reader
+ * records an {@link UnresolvedSpread} for the scan error. A config key is
+ * therefore either its real value or absent with a diagnostic, never the
+ * source text or identifier name standing in for a value.
+ */
+const UNRESOLVED: unique symbol = Symbol('smrt.scanner.unresolved');
 
 /**
  * A module-scope `const` object literal available for spread resolution.
@@ -1303,12 +1331,23 @@ interface UnresolvedSpread {
  * use site's diagnostics instead.
  */
 interface ModuleConstant {
-  value: Record<string, unknown>;
+  /**
+   * `object` and `array` constants are shared by reference at runtime, so
+   * they can be mutated after declaration and carry taint. A `scalar` (string,
+   * number, boolean, `null`) is immutable and never does.
+   */
+  kind: 'object' | 'array' | 'scalar';
+  value: unknown;
   unresolved: UnresolvedSpread[];
   unsafeReferences: UnresolvedSpread[];
   dependencies: Array<{
     name: string;
     start?: number;
+    /**
+     * The dependent constant holds this one BY REFERENCE (`{ api: BASE }`),
+     * not a spread copy, so taint flows both ways regardless of position.
+     */
+    shared?: boolean;
   }>;
 }
 
@@ -1317,14 +1356,33 @@ interface ModuleConstant {
  * resolved against module-scope constants, and unresolvable ones reported.
  */
 interface DecoratorConfigContext {
-  /** Module-scope `const NAME = {...}` object literals, by identifier name. */
+  /** Module-scope `const` literals (objects, arrays, scalars), by identifier name. */
   constants: Map<string, ModuleConstant>;
+  /** Same-file `enum` member values, by enum name then member name. */
+  enums?: Map<string, Map<string, string | number>>;
   /** Collector for spreads that could not be statically resolved. */
   unresolved: UnresolvedSpread[];
   /** Constant spreads recorded while another module constant is extracted. */
   dependencies?: ModuleConstant['dependencies'];
   /** Require values to be statically literal for security-sensitive @smrt config. */
   requireLiteralValues?: boolean;
+  /**
+   * Resolve identifier, member, and shorthand values through
+   * {@link constants} and {@link enums}, and drop what cannot be resolved
+   * (with a diagnostic) instead of recording its source text. Every decorator
+   * reader sets this. Only the standalone
+   * {@link extractModuleObjectConstants} entry point leaves it off, where a
+   * consumer inspects the raw literal shape of a declaration.
+   */
+  resolveReferences?: boolean;
+  /** Dotted option path of the value being read, for diagnostics. */
+  path?: string;
+  /**
+   * Option paths whose value names a class (`@report({ source: Model })`).
+   * A class cannot be read as a literal, so an identifier there is recorded
+   * by name, the same as a relationship decorator's target.
+   */
+  classReference?: (path: string | undefined) => boolean;
   /**
    * Local-name -> imported-name for this file's renamed named imports, so a
    * decorator reached through an alias is still recognized. Without it
@@ -1342,24 +1400,14 @@ interface DecoratorConfigContext {
 }
 
 /**
- * Collect module-scope `const NAME = { ... }` object literals so that
- * `@smrt({ ...NAME })` can be resolved at scan time.
+ * Collect module-scope `const NAME = { ... }` object literals, exactly as
+ * written: an identifier or call used as a value is recorded as its source
+ * text (and listed in the constant's `unresolved`), and nothing is resolved
+ * through other declarations.
  *
- * Declaration order is honoured: a constant may spread an earlier constant, and
- * each is extracted against the map built so far. Only `const` is considered —
- * `let`/`var` could be reassigned between declaration and decorator evaluation,
- * so treating them as static would be unsound.
- *
- * Imported constants are intentionally NOT resolved (that would require
- * cross-file resolution); they surface as unresolved spreads and are reported
- * as scan errors instead of being silently dropped.
- *
- * A constant whose own initializer contains an unresolvable spread is recorded
- * as TAINTED rather than dropped: its extracted value is only partial, so any
- * decorator that spreads it replays the taint into its own diagnostics. Without
- * that, `const CFG = { ...IMPORTED }` followed by `@smrt({ ...CFG })` would
- * resolve cleanly against a partial object and report nothing — the exact
- * silent-drop failure mode this guard exists to prevent, one level removed.
+ * This is the raw-shape entry point for consumers that inspect a declaration
+ * rather than a decorator config (`ui-selectors.ts`). Decorator readers use
+ * the reference-resolving table built by `createDecoratorConfigContext`.
  *
  * @param body - Top-level statement array from the OXC-parsed `Program` node.
  * @param sourceText - Full source text, used for nested value reconstruction.
@@ -1368,6 +1416,72 @@ interface DecoratorConfigContext {
 export function extractModuleObjectConstants(
   body: Statement[],
   sourceText: string,
+): Map<string, ModuleConstant> {
+  return collectModuleConstants(body, sourceText, {});
+}
+
+/**
+ * Build the context every decorator reader in one file shares: the module
+ * constant table, same-file enum members, and the import tables used to
+ * recognize a decorator reached through an alias or a namespace.
+ */
+function createDecoratorConfigContext(
+  body: Statement[],
+  sourceText: string,
+  importAliases: Map<string, string>,
+): DecoratorConfigContext {
+  const importBindings = extractImportBindings(body);
+  const enums = extractEnumMemberValues(body);
+  return {
+    constants: collectModuleConstants(body, sourceText, {
+      resolveReferences: true,
+      enums,
+      importAliases,
+      importBindings,
+    }),
+    enums,
+    unresolved: [],
+    importAliases,
+    importBindings,
+    requireLiteralValues: true,
+    resolveReferences: true,
+  };
+}
+
+/**
+ * Collect module-scope `const` literals so decorator configs can be resolved
+ * at scan time: `@smrt({ ...NAME })`, `@smrt(NAME)`, `{ field: NAME }`.
+ *
+ * Declaration order is honoured: a constant may use an earlier constant, and
+ * each is extracted against the map built so far. Only `const` is considered —
+ * `let`/`var` could be reassigned between declaration and decorator evaluation,
+ * so treating them as static would be unsound.
+ *
+ * With `resolveReferences`, three kinds are collected: object literals, array
+ * literals, and scalars (string, number, boolean, `null`, including a
+ * constant folded from other scalars). Without it, only object literals are,
+ * with the raw-shape rules of {@link extractModuleObjectConstants}.
+ *
+ * Imported constants are intentionally NOT resolved (that would require
+ * cross-file resolution); they surface as unresolved values and are reported
+ * as scan errors instead of being silently dropped.
+ *
+ * A constant whose own initializer contains an unresolvable value is recorded
+ * as TAINTED rather than dropped: its extracted value is only partial, so any
+ * decorator that uses it replays the taint into its own diagnostics. Without
+ * that, `const CFG = { ...IMPORTED }` followed by `@smrt({ ...CFG })` would
+ * resolve cleanly against a partial object and report nothing — the exact
+ * silent-drop failure mode this guard exists to prevent, one level removed.
+ */
+function collectModuleConstants(
+  body: Statement[],
+  sourceText: string,
+  options: {
+    resolveReferences?: boolean;
+    enums?: DecoratorConfigContext['enums'];
+    importAliases?: Map<string, string>;
+    importBindings?: Map<string, ImportBinding>;
+  },
 ): Map<string, ModuleConstant> {
   const constants = new Map<string, ModuleConstant>();
 
@@ -1389,24 +1503,60 @@ export function extractModuleObjectConstants(
       if (!name || !isSafeObjectKey(name)) continue;
 
       const init = unwrapTypeAssertion(declarator.init);
-      if (init?.type !== 'ObjectExpression') continue;
+      if (!init) continue;
+      const kind: ModuleConstant['kind'] =
+        init.type === 'ObjectExpression'
+          ? 'object'
+          : init.type === 'ArrayExpression'
+            ? 'array'
+            : 'scalar';
+      if (kind !== 'object' && !options.resolveReferences) continue;
 
       // Extract against the constants seen so far, so `const B = { ...A }`
-      // resolves — and capture this constant's OWN unresolvable spreads as
+      // resolves — and capture this constant's OWN unresolvable values as
       // taint rather than discarding them. Nothing is reported here: an unused
       // constant is not a manifest problem. The taint only becomes an error
-      // when a decorator actually spreads it, and it propagates transitively
-      // because spreading a tainted constant re-collects its taint below.
+      // when a decorator actually uses it, and it propagates transitively
+      // because using a tainted constant re-collects its taint below.
       const unresolved: UnresolvedSpread[] = [];
       const dependencies: ModuleConstant['dependencies'] = [];
-      const value = extractObjectLiteral(init, sourceText, {
+      const value = extractValue(init, sourceText, {
         constants,
+        enums: options.enums,
         unresolved,
         dependencies,
         requireLiteralValues: true,
+        resolveReferences: options.resolveReferences,
       });
+      if (kind === 'scalar') {
+        // Only an immutable value read in full is a scalar constant. An alias
+        // of an object constant (`const ALIAS = CFG`) is not registered, so
+        // the reference stays an escape of `CFG` and taints it.
+        if (
+          unresolved.length > 0 ||
+          (value !== null &&
+            typeof value !== 'string' &&
+            typeof value !== 'number' &&
+            typeof value !== 'boolean')
+        ) {
+          continue;
+        }
+        // Keep what the scalar was read from: a scalar copied from an object
+        // constant's member (`const S = POLICY.sensitive`) is only as good as
+        // that object, so a write to it anywhere in the module taints the
+        // scalar too (see `propagateModuleConstantTaint`).
+        constants.set(name, {
+          kind,
+          value,
+          unresolved: [],
+          unsafeReferences: [],
+          dependencies,
+        });
+        continue;
+      }
       constants.set(name, {
-        value,
+        kind,
+        value: value === UNRESOLVED ? (kind === 'array' ? [] : {}) : value,
         unresolved,
         unsafeReferences: [],
         dependencies,
@@ -1414,9 +1564,47 @@ export function extractModuleObjectConstants(
     }
   }
 
-  taintUnsafeModuleConstantReferences(body, constants, sourceText);
+  taintUnsafeModuleConstantReferences(body, constants, sourceText, options);
   propagateModuleConstantTaint(constants);
   return constants;
+}
+
+/**
+ * Member values of each same-file `enum` whose members are all statically
+ * known, so `Status.Active` reads as its value in a decorator config. A
+ * computed or mixed enum yields no entry: a partial table would resolve some
+ * members and silently miss others.
+ */
+function extractEnumMemberValues(
+  body: Statement[],
+): Map<string, Map<string, string | number>> {
+  const enums = new Map<string, Map<string, string | number>>();
+  for (const node of body) {
+    const enumDecl =
+      node.type === 'TSEnumDeclaration'
+        ? node
+        : node.type === 'ExportNamedDeclaration' &&
+            node.declaration?.type === 'TSEnumDeclaration'
+          ? node.declaration
+          : null;
+    const name = enumDecl?.id?.name;
+    const members = enumDecl?.body?.members ?? enumDecl?.members;
+    if (!name || !isSafeObjectKey(name) || !members) continue;
+    const values = enumMemberValues(members);
+    if (!values) continue;
+    const table = new Map<string, string | number>();
+    members.forEach((member, index) => {
+      const key =
+        member.id?.type === 'Identifier'
+          ? member.id.name
+          : typeof member.id?.value === 'string'
+            ? member.id.value
+            : undefined;
+      if (key !== undefined) table.set(key, values[index]);
+    });
+    enums.set(name, table);
+  }
+  return enums;
 }
 
 /**
@@ -1435,8 +1623,14 @@ function taintUnsafeModuleConstantReferences(
   body: Statement[],
   constants: Map<string, ModuleConstant>,
   sourceText: string,
+  imports: {
+    importAliases?: Map<string, string>;
+    importBindings?: Map<string, ImportBinding>;
+  } = {},
 ): void {
-  if (constants.size === 0) return;
+  if (![...constants.values()].some((constant) => constant.kind !== 'scalar')) {
+    return;
+  }
 
   const tainted = new Set<string>();
 
@@ -1461,10 +1655,11 @@ function taintUnsafeModuleConstantReferences(
     if (
       node.type === 'Identifier' &&
       typeof node.name === 'string' &&
-      constants.has(node.name) &&
+      // A scalar cannot be mutated through a reference, so it never taints.
+      (constants.get(node.name)?.kind ?? 'scalar') !== 'scalar' &&
       !shadowed.has(node.name) &&
       !isTypeOnlyReference(node, ancestors) &&
-      !isSafeModuleConstantReference(node, ancestors, constants)
+      !isSafeModuleConstantReference(node, ancestors, constants, imports)
     ) {
       const name = node.name;
       if (!tainted.has(name)) {
@@ -1674,6 +1869,7 @@ function propagateModuleConstantTaint(
         if (!source) continue;
         for (const unresolved of source.unresolved) {
           if (
+            !dependency.shared &&
             dependency.start !== undefined &&
             unresolved.start !== undefined &&
             unresolved.start > dependency.start &&
@@ -1692,7 +1888,7 @@ function propagateModuleConstantTaint(
             changed = true;
           }
         }
-        if (hasNestedReferenceValue(source.value)) {
+        if (dependency.shared || hasNestedReferenceValue(source.value)) {
           for (const unsafeReference of constant.unsafeReferences) {
             const matchesUnsafeReference = (existing: UnresolvedSpread) =>
               existing.expression === unsafeReference.expression &&
@@ -1712,41 +1908,82 @@ function propagateModuleConstantTaint(
   }
 }
 
-function hasNestedReferenceValue(value: Record<string, unknown>): boolean {
+function hasNestedReferenceValue(value: unknown): boolean {
+  if (value === null || typeof value !== 'object') return false;
   return Object.values(value).some(
     (entry) => entry !== null && typeof entry === 'object',
   );
+}
+
+/**
+ * Whether `node` is the call of a decorator this scanner reads, as opposed to
+ * an arbitrary function the constant would escape into. `parent` is the
+ * node's direct ancestor.
+ */
+function isReadDecoratorCall(
+  node: Record<string, unknown>,
+  parent: Record<string, unknown> | undefined,
+  imports: {
+    importAliases?: Map<string, string>;
+    importBindings?: Map<string, ImportBinding>;
+  },
+): boolean {
+  if (
+    node.type !== 'CallExpression' ||
+    parent?.type !== 'Decorator' ||
+    parent.expression !== node
+  ) {
+    return false;
+  }
+  const name = resolveDecoratorName(
+    parent as unknown as Decorator,
+    imports.importAliases,
+    imports.importBindings,
+  );
+  return name !== null && READ_DECORATOR_NAMES.has(name);
 }
 
 function isSafeModuleConstantReference(
   identifier: Record<string, unknown>,
   ancestors: Array<Record<string, unknown>>,
   constants: Map<string, ModuleConstant>,
+  imports: {
+    importAliases?: Map<string, string>;
+    importBindings?: Map<string, ImportBinding>;
+  } = {},
 ): boolean {
   let child = identifier;
+  // Set once the walk passes a position that READS the constant as a value
+  // (`{ api: CFG }`, `[CFG]`, `CFG.api`, `@smrt(CFG)`) rather than copying it.
+  let readAsValue = false;
 
   for (let index = ancestors.length - 1; index >= 0; index--) {
     const parent = ancestors[index];
 
-    if (parent.type === 'VariableDeclarator' && parent.id === child) {
-      return true;
-    }
+    if (child === identifier) {
+      if (parent.type === 'VariableDeclarator' && parent.id === child) {
+        return true;
+      }
 
-    if (
-      parent.type === 'Property' &&
-      parent.key === child &&
-      parent.computed === false &&
-      parent.shorthand === false
-    ) {
-      return true;
-    }
+      // A non-computed key is a name, not a reference. For a shorthand
+      // property the key and value are distinct nodes over the same text;
+      // the VALUE occurrence is the reference and is judged below.
+      if (
+        parent.type === 'Property' &&
+        parent.key === child &&
+        parent.computed === false &&
+        parent.value !== child
+      ) {
+        return true;
+      }
 
-    if (
-      parent.type === 'MemberExpression' &&
-      parent.property === child &&
-      parent.computed === false
-    ) {
-      return true;
+      if (
+        parent.type === 'MemberExpression' &&
+        parent.property === child &&
+        parent.computed === false
+      ) {
+        return true;
+      }
     }
 
     if (
@@ -1761,7 +1998,11 @@ function isSafeModuleConstantReference(
       continue;
     }
 
-    if (parent.type === 'SpreadElement' && parent.argument === child) {
+    if (
+      !readAsValue &&
+      parent.type === 'SpreadElement' &&
+      parent.argument === child
+    ) {
       const name =
         typeof identifier.name === 'string' ? identifier.name : undefined;
       const constant = name ? constants.get(name) : undefined;
@@ -1776,26 +2017,53 @@ function isSafeModuleConstantReference(
       );
       if (moduleConstantInitializer) return true;
 
-      const smrtDecorator = ancestors.some((ancestor) => {
-        if (
-          ancestor.type !== 'Decorator' ||
-          !ancestor.expression ||
-          typeof ancestor.expression !== 'object'
-        ) {
-          return false;
-        }
-        const expression = ancestor.expression as Record<string, unknown>;
-        if (
-          expression.type !== 'CallExpression' ||
-          !expression.callee ||
-          typeof expression.callee !== 'object'
-        ) {
-          return false;
-        }
-        const callee = expression.callee as Record<string, unknown>;
-        return callee.type === 'Identifier' && callee.name === 'smrt';
-      });
-      return smrtDecorator;
+      // A spread copies only the top level, so nested values stay shared with
+      // whatever receives the copy. A decorator this scanner reads does not
+      // mutate its config; anything else might.
+      return ancestors.some((ancestor, at) =>
+        isReadDecoratorCall(ancestor, ancestors[at - 1], imports),
+      );
+    }
+
+    // The constant itself, or one of its members, is read as a value. Keep
+    // walking through the literal that holds it: the reference is safe only
+    // if that literal ends up as a read decorator's argument or as another
+    // module constant's initializer.
+    if (
+      (parent.type === 'MemberExpression' &&
+        parent.object === child &&
+        (parent.computed === false ||
+          (parent.property as Record<string, unknown> | undefined)?.type ===
+            'Literal')) ||
+      (parent.type === 'Property' && parent.value === child) ||
+      (parent.type === 'SpreadElement' && parent.argument === child) ||
+      parent.type === 'ObjectExpression' ||
+      parent.type === 'ArrayExpression'
+    ) {
+      child = parent;
+      readAsValue = true;
+      continue;
+    }
+
+    if (
+      parent.type === 'CallExpression' &&
+      Array.isArray(parent.arguments) &&
+      parent.arguments.includes(child)
+    ) {
+      return isReadDecoratorCall(parent, ancestors[index - 1], imports);
+    }
+
+    if (parent.type === 'VariableDeclarator' && parent.init === child) {
+      // Recorded while that declarator was extracted as a module constant;
+      // any other declaration (a `let`, a function-local alias) is an escape.
+      return [...constants.values()].some((candidate) =>
+        candidate.dependencies.some(
+          (dependency) =>
+            dependency.shared === true &&
+            dependency.name === identifier.name &&
+            dependency.start === identifier.start,
+        ),
+      );
     }
 
     return false;
@@ -1805,10 +2073,10 @@ function isSafeModuleConstantReference(
 }
 
 /**
- * Turn unresolvable `@smrt()` config spreads into `severity: 'error'` scan
+ * Turn unresolvable decorator config values into `severity: 'error'` scan
  * diagnostics.
  *
- * Deliberately fail-loud rather than fail-quiet. A dropped spread may have
+ * Deliberately fail-loud rather than fail-quiet. A dropped value may have
  * carried `api`/`mcp`/`cli`, and an absent surface key means *default open* —
  * so silently discarding one converts a deliberate lockdown into a published
  * CRUD surface with no signal anywhere. Erroring matches the precedent in
@@ -1824,22 +2092,58 @@ function reportUnresolvedSpreads(
   errors: ScanError[],
 ): void {
   for (const spread of unresolved) {
-    const loc =
-      spread.start === undefined
-        ? undefined
-        : getLineColumn(sourceText, spread.start);
-    errors.push({
-      message:
-        `Cannot statically resolve \`${spread.expression}\` while expanding a ${spread.decorator ?? '@smrt()'} config. ` +
-        `Only literal keys/values and unescaped module-scope \`const\` object literals ` +
-        `in the same file are supported. Inline the keys or remove the mutation/alias — ` +
-        `an unresolved expression would drop keys from the manifest, and every ` +
-        `absent exposure key defaults to open.`,
-      filePath,
-      line: loc?.line,
-      column: loc?.column,
-      severity: 'error',
-    });
+    errors.push(unresolvedToScanError(spread, filePath, sourceText));
+  }
+}
+
+/** One diagnostic naming the file, the class, the decorator and the option. */
+function unresolvedToScanError(
+  spread: UnresolvedSpread,
+  filePath: string,
+  sourceText: string,
+): ScanError {
+  const loc =
+    spread.start === undefined
+      ? undefined
+      : getLineColumn(sourceText, spread.start);
+  const target = spread.className
+    ? spread.member
+      ? `on \`${spread.className}.${spread.member}\``
+      : `on class \`${spread.className}\``
+    : undefined;
+  const where = [
+    target,
+    spread.option ? `option \`${spread.option}\`` : undefined,
+  ]
+    .filter((part): part is string => part !== undefined)
+    .join(', ');
+  return {
+    message:
+      `Cannot statically resolve \`${spread.expression}\` while expanding a ${spread.decorator ?? '@smrt()'} config${where ? ` (${where})` : ''}. ` +
+      `Only literal keys/values and unescaped module-scope \`const\` literals ` +
+      `in the same file are supported. Inline the value, or move it into such a ` +
+      `constant and remove any mutation/alias of it — ` +
+      `an unresolved expression would drop keys from the manifest, and every ` +
+      `absent exposure key defaults to open.`,
+    filePath,
+    line: loc?.line,
+    column: loc?.column,
+    severity: 'error',
+  };
+}
+
+/**
+ * Name the decorator and its target on every diagnostic a single decorator
+ * read added to the shared collector, which carries no identity of its own.
+ */
+function labelUnresolved(
+  ctx: DecoratorConfigContext | undefined,
+  from: number,
+  label: Pick<UnresolvedSpread, 'decorator' | 'className' | 'member'>,
+): void {
+  if (!ctx) return;
+  for (let index = from; index < ctx.unresolved.length; index++) {
+    Object.assign(ctx.unresolved[index], label);
   }
 }
 
@@ -1909,21 +2213,43 @@ function extractClassDeclaration(
   // Extract decorators
   const decorators = node.decorators || [];
   const smrtDecorator = decorators.find((d) =>
-    isSmrtDecorator(d, importAliases),
+    isSmrtDecorator(d, importAliases, ctx?.importBindings),
   );
   const reportDecorator = decorators.find((d) =>
-    isNamedDecorator(d, 'report', importAliases),
+    isNamedDecorator(d, 'report', importAliases, ctx?.importBindings),
   );
   const tenantScopedDecorator = decorators.find((d) =>
-    isNamedDecorator(d, 'TenantScoped', importAliases),
+    isNamedDecorator(d, 'TenantScoped', importAliases, ctx?.importBindings),
   );
   const hasSmartDecorator = !!smrtDecorator;
+  // Every class decorator is read with the same rules: a value is a literal,
+  // resolves through a same-file constant, or is a scan error. `@report` and
+  // `@TenantScoped` feed the schema (source model, tenant column), so a value
+  // that silently became its own identifier name is as wrong there as a
+  // dropped `api: false` is on `@smrt`.
+  const readClassDecorator = (
+    decorator: Decorator,
+    label: string,
+    classReference?: DecoratorConfigContext['classReference'],
+  ): RawDecoratorConfig | null => {
+    const from = ctx?.unresolved.length ?? 0;
+    const config = extractDecoratorConfig(
+      decorator,
+      sourceText,
+      ctx
+        ? {
+            ...ctx,
+            requireLiteralValues: true,
+            path: undefined,
+            classReference,
+          }
+        : ctx,
+    );
+    labelUnresolved(ctx, from, { decorator: label, className });
+    return config;
+  };
   const smrtConfig = smrtDecorator
-    ? extractDecoratorConfig(
-        smrtDecorator,
-        sourceText,
-        ctx ? { ...ctx, requireLiteralValues: true } : ctx,
-      )
+    ? readClassDecorator(smrtDecorator, '@smrt()')
     : null;
   const decoratorConfig =
     tenantScopedDecorator || reportDecorator
@@ -1931,19 +2257,18 @@ function extractClassDeclaration(
           ...(smrtConfig ?? {}),
           ...(reportDecorator
             ? {
-                report: extractDecoratorConfig(
+                report: readClassDecorator(
                   reportDecorator,
-                  sourceText,
-                  ctx,
+                  '@report()',
+                  isReportClassReferencePath,
                 ),
               }
             : {}),
           ...(tenantScopedDecorator
             ? {
-                tenantScoped: extractDecoratorConfig(
+                tenantScoped: readClassDecorator(
                   tenantScopedDecorator,
-                  sourceText,
-                  ctx,
+                  '@TenantScoped()',
                 ),
               }
             : {}),
@@ -1968,7 +2293,12 @@ function extractClassDeclaration(
         fields.push(field);
       }
     } else if (member.type === 'MethodDefinition') {
-      const method = extractMethodDefinition(member, sourceText, ctx);
+      const method = extractMethodDefinition(
+        member,
+        sourceText,
+        ctx,
+        className,
+      );
       if (method) {
         methods.push(method);
       }
@@ -2129,43 +2459,89 @@ export function summarizeJsDoc(
 }
 
 /**
+ * Decorators whose arguments this scanner reads into the manifest. A module
+ * constant handed to one of them is read, not mutated, so the reference is
+ * not an escape.
+ */
+const READ_DECORATOR_NAMES: ReadonlySet<string> = new Set([
+  'smrt',
+  'TenantScoped',
+  'report',
+  'method',
+]);
+
+/**
+ * `@report()` option paths that hold a model class: the report source and
+ * each join's source. Recorded by class name, like a relationship target.
+ */
+function isReportClassReferencePath(path: string | undefined): boolean {
+  return path === 'source' || /^joins\.[^.]+\.source$/.test(path ?? '');
+}
+
+/**
+ * The exported name of the decorator applied by `@x`, `@x()`, `@ns.x` or
+ * `@ns.x()`, or `null` for any other expression.
+ *
+ * A renamed import binds the decorator to a different local identifier
+ * (`import { smrt as model }`), and a namespace import reaches it as a member
+ * (`import * as core` then `@core.smrt()`). Both still run the real decorator,
+ * so both must be recognized here: a decorator the scanner does not see
+ * leaves the manifest without the config the runtime applies.
+ */
+function resolveDecoratorName(
+  decorator: Decorator,
+  importAliases?: Map<string, string>,
+  importBindings?: Map<string, ImportBinding>,
+): string | null {
+  const expr = decorator.expression;
+  const callee = expr.type === 'CallExpression' ? expr.callee : expr;
+  if (callee.type === 'Identifier') {
+    return importAliases?.get(callee.name) ?? callee.name;
+  }
+  if (
+    callee.type === 'MemberExpression' &&
+    !callee.computed &&
+    callee.object.type === 'Identifier' &&
+    callee.property.type === 'Identifier' &&
+    importBindings?.get(callee.object.name)?.imported === null
+  ) {
+    return callee.property.name;
+  }
+  return null;
+}
+
+/**
  * Check if a decorator is @smrt()
  */
 function isSmrtDecorator(
   decorator: Decorator,
   importAliases?: Map<string, string>,
+  importBindings?: Map<string, ImportBinding>,
 ): boolean {
-  return isNamedDecorator(decorator, 'smrt', importAliases);
+  return isNamedDecorator(decorator, 'smrt', importAliases, importBindings);
 }
 
 function isNamedDecorator(
   decorator: Decorator,
   name: string,
   importAliases?: Map<string, string>,
+  importBindings?: Map<string, ImportBinding>,
 ): boolean {
-  const expr = decorator.expression;
-  // A renamed import binds the decorator to a different local identifier;
-  // compare against the name it was imported UNDER, not the local one.
-  const resolve = (local: string): string => importAliases?.get(local) ?? local;
-
-  // @decoratorName() - CallExpression
-  if (expr.type === 'CallExpression') {
-    const callee = expr.callee;
-    if (callee.type === 'Identifier' && resolve(callee.name) === name) {
-      return true;
-    }
-  }
-
-  // @decoratorName - Identifier (no parentheses)
-  if (expr.type === 'Identifier' && resolve(expr.name) === name) {
-    return true;
-  }
-
-  return false;
+  return (
+    resolveDecoratorName(decorator, importAliases, importBindings) === name
+  );
 }
 
 /**
- * Extract @smrt() decorator configuration
+ * Extract a class or method decorator's configuration object.
+ *
+ * `@smrt()` and a bare `@smrt` declare no config and read as `{}`. Any
+ * argument that IS supplied must resolve to an object: a literal, or an
+ * identifier naming a same-file module constant (`@smrt(MODEL_CONFIG)`).
+ * Anything else — a call, an imported constant, a non-object — is recorded
+ * as unresolved and becomes a scan error. Supplied config that cannot be read
+ * is never the same thing as no config: `{}` here would publish every
+ * default-open surface the argument was written to close.
  */
 function extractDecoratorConfig(
   decorator: Decorator,
@@ -2179,10 +2555,31 @@ function extractDecoratorConfig(
     if (arg?.type === 'ObjectExpression') {
       return extractObjectLiteral(arg, sourceText, ctx) as RawDecoratorConfig;
     }
+    if (arg && ctx?.resolveReferences) {
+      const value = extractValue(arg, sourceText, ctx);
+      if (isPlainRecord(value)) return value as RawDecoratorConfig;
+      // `extractValue` already recorded an expression it could not resolve.
+      // One that resolved to something other than an object is not a config.
+      if (value !== UNRESOLVED && value !== undefined) {
+        ctx.unresolved.push({
+          expression: sliceSource(arg, sourceText) ?? '<argument>',
+          start: arg.start,
+        });
+      }
+    }
   }
 
   // @smrt() with no config or @smrt
   return {};
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return (
+    value !== null &&
+    typeof value === 'object' &&
+    !Array.isArray(value) &&
+    !(value instanceof RegExp)
+  );
 }
 
 /**
@@ -2194,6 +2591,13 @@ function extractObjectLiteral(
   ctx?: DecoratorConfigContext,
 ): Record<string, unknown> {
   const result: Record<string, unknown> = {};
+  const recordUnresolved = (expression: BaseNode, fallback: string): void => {
+    ctx?.unresolved.push({
+      expression: sliceSource(expression, sourceText) ?? fallback,
+      start: expression.start,
+      ...(ctx.path ? { option: ctx.path } : {}),
+    });
+  };
 
   // Iterate in source order so spread/property precedence matches runtime
   // semantics: `{ api: true, ...CFG }` takes `api` from CFG, while
@@ -2209,14 +2613,21 @@ function extractObjectLiteral(
         argument?.type === 'Identifier'
           ? ctx?.constants.get(argument.name)
           : undefined;
-      const resolved =
-        constant?.value ??
-        (argument?.type === 'ObjectExpression'
-          ? extractObjectLiteral(argument, sourceText, ctx)
-          : undefined);
+      const copied = constant?.kind === 'object' ? constant : undefined;
+      let resolved: unknown = copied?.value;
+      if (!copied && argument) {
+        if (argument.type === 'ObjectExpression') {
+          resolved = extractObjectLiteral(argument, sourceText, ctx);
+        } else if (ctx?.resolveReferences && argument.type !== 'Identifier') {
+          // `...CFG.api`, `...Enum.x`: read like any other value. A failure is
+          // recorded by `extractValue` itself.
+          resolved = extractValue(argument, sourceText, ctx);
+          if (resolved === UNRESOLVED) continue;
+        }
+      }
 
-      if (resolved) {
-        if (constant && ctx?.dependencies && argument?.type === 'Identifier') {
+      if (isPlainRecord(resolved)) {
+        if (copied && ctx?.dependencies && argument?.type === 'Identifier') {
           ctx.dependencies.push({
             name: argument.name,
             start: prop.start,
@@ -2224,28 +2635,33 @@ function extractObjectLiteral(
         }
         for (const [key, value] of Object.entries(resolved)) {
           if (isSafeObjectKey(key)) {
-            result[key] = value;
+            // Copy nested values: two classes that spread one constant must
+            // not end up sharing a nested config object in the manifest. The
+            // raw-shape reader keeps identity, which its consumer dedupes on.
+            result[key] =
+              copied && ctx?.resolveReferences
+                ? cloneStaticValue(value)
+                : value;
           }
         }
         // A tainted constant resolved to a PARTIAL object — replay the spreads
         // its own initializer could not resolve, or the drop would go unnoticed
         // here even though this site depends on the missing keys.
-        if (constant?.unresolved.length && ctx && !ctx.dependencies) {
+        if (copied?.unresolved.length && ctx && !ctx.dependencies) {
           ctx.unresolved.push(
-            ...constant.unresolved.filter(
-              (unresolved) =>
-                hasNestedReferenceValue(constant.value) ||
-                prop.start === undefined ||
-                unresolved.start === undefined ||
-                unresolved.start <= prop.start,
-            ),
+            ...copied.unresolved
+              .filter(
+                (unresolved) =>
+                  hasNestedReferenceValue(copied.value) ||
+                  prop.start === undefined ||
+                  unresolved.start === undefined ||
+                  unresolved.start <= prop.start,
+              )
+              .map((unresolved) => ({ ...unresolved })),
           );
         }
       } else if (ctx) {
-        ctx.unresolved.push({
-          expression: sliceSource(prop, sourceText) ?? '...<unknown>',
-          start: prop.start,
-        });
+        recordUnresolved(prop, '...<unknown>');
       }
       continue;
     }
@@ -2253,26 +2669,38 @@ function extractObjectLiteral(
     if (prop.type === 'Property') {
       const key = getPropertyKey(prop.key);
       if (
-        prop.shorthand ||
+        (prop.shorthand && !ctx?.resolveReferences) ||
         (prop.computed &&
           !(prop.key.type === 'Literal' && typeof prop.key.value === 'string'))
       ) {
-        ctx?.unresolved.push({
-          expression: sliceSource(prop, sourceText) ?? '<unknown property>',
-          start: prop.start,
-        });
+        recordUnresolved(prop, '<unknown property>');
         continue;
       }
       // Skip prototype-pollution keys (__proto__/constructor/prototype) so a
       // decorator-config property of that name cannot mutate the metadata
       // object's prototype.
       if (key && isSafeObjectKey(key)) {
-        result[key] = extractValue(prop.value, sourceText, ctx);
+        const value = extractValue(
+          prop.value,
+          sourceText,
+          ctx ? { ...ctx, path: ctx.path ? `${ctx.path}.${key}` : key } : ctx,
+        );
+        if (value !== UNRESOLVED) result[key] = value;
       }
     }
   }
 
   return result;
+}
+
+/**
+ * Copy a statically read value, so one module constant used by several
+ * decorators never becomes one shared object across their manifest entries.
+ */
+function cloneStaticValue<T>(value: T): T {
+  return value !== null && typeof value === 'object'
+    ? structuredClone(value)
+    : value;
 }
 
 /**
@@ -2289,6 +2717,107 @@ function getPropertyKey(node: Expression): string | null {
 }
 
 /**
+ * Record a value the reader cannot resolve and return what stands in for it:
+ * {@link UNRESOLVED} for a decorator reader (the key is dropped and the scan
+ * fails), or the expression's source text for the raw-shape reader.
+ */
+function unresolvedValue(
+  node: BaseNode,
+  sourceText: string,
+  ctx: DecoratorConfigContext | undefined,
+  fallback?: string,
+): unknown {
+  const source = sliceSource(node, sourceText) ?? fallback;
+  if (ctx?.requireLiteralValues && source !== undefined) {
+    ctx.unresolved.push({
+      expression: source,
+      start: node.start,
+      ...(ctx.path ? { option: ctx.path } : {}),
+    });
+  }
+  return ctx?.resolveReferences ? UNRESOLVED : source;
+}
+
+/**
+ * Read `root` (or `root.path…`) from the module constant table or a same-file
+ * enum. Returns {@link UNRESOLVED}, without recording anything, when the name
+ * is not a static declaration of this file.
+ */
+function resolveStaticReference(
+  root: Identifier,
+  path: string[],
+  ctx: DecoratorConfigContext,
+): unknown {
+  const constant = ctx.constants.get(root.name);
+  if (constant) {
+    let value = constant.value;
+    for (const key of path) {
+      if (
+        value === null ||
+        typeof value !== 'object' ||
+        !isSafeObjectKey(key) ||
+        !Object.hasOwn(value, key)
+      ) {
+        return UNRESOLVED;
+      }
+      value = (value as Record<string, unknown>)[key];
+    }
+    // An object or array constant: the decorator receives the constant
+    // itself, not a copy, so a mutation anywhere in the module changes what
+    // the runtime sees and every taint on it applies here, whatever its
+    // position. A scalar carries the taint of the object it was copied from.
+    if (constant.kind !== 'scalar' || constant.dependencies.length > 0) {
+      if (ctx.dependencies) {
+        ctx.dependencies.push({
+          name: root.name,
+          start: root.start,
+          shared: true,
+        });
+      } else if (constant.unresolved.length > 0) {
+        ctx.unresolved.push(
+          ...constant.unresolved.map((unresolved) => ({ ...unresolved })),
+        );
+      }
+    }
+    return cloneStaticValue(value);
+  }
+  if (path.length === 1) {
+    const member = ctx.enums?.get(root.name)?.get(path[0]);
+    if (member !== undefined) return member;
+  }
+  return UNRESOLVED;
+}
+
+/**
+ * `A.b.c` or `A['b']` as its root identifier and key path, or `null` for a
+ * member expression with a computed, non-literal step.
+ */
+function staticMemberChain(
+  node: MemberExpression,
+): { root: Identifier; path: string[] } | null {
+  const path: string[] = [];
+  let current: Expression = node;
+  while (current.type === 'MemberExpression') {
+    const property = current.property;
+    if (!current.computed && property.type === 'Identifier') {
+      path.unshift(property.name);
+    } else if (
+      current.computed &&
+      property.type === 'Literal' &&
+      (typeof property.value === 'string' || typeof property.value === 'number')
+    ) {
+      path.unshift(String(property.value));
+    } else {
+      return null;
+    }
+    const object = unwrapTypeAssertion(current.object);
+    if (!object) return null;
+    current = object;
+  }
+  return current.type === 'Identifier' ? { root: current, path } : null;
+}
+
+/**
  * Extract value from expression
  */
 function extractValue(
@@ -2300,9 +2829,25 @@ function extractValue(
   if (unwrapped && unwrapped !== node) {
     return extractValue(unwrapped, sourceText, ctx);
   }
+  const resolving = ctx?.resolveReferences === true;
 
   switch (node.type) {
     case 'Literal':
+      if (resolving) {
+        if (node.regex) {
+          // A regular-expression literal is static syntax; constructing it
+          // runs no source.
+          try {
+            return new RegExp(node.regex.pattern, node.regex.flags);
+          } catch {
+            return unresolvedValue(node, sourceText, ctx);
+          }
+        }
+        // A bigint has no JSON form to carry into the manifest.
+        if (typeof node.value === 'bigint') {
+          return unresolvedValue(node, sourceText, ctx);
+        }
+      }
       return node.value;
 
     case 'Identifier':
@@ -2311,6 +2856,14 @@ function extractValue(
       if (node.name === 'null') return null;
       if (node.name === 'true') return true;
       if (node.name === 'false') return false;
+      if (resolving && ctx) {
+        const resolved = resolveStaticReference(node, [], ctx);
+        if (resolved !== UNRESOLVED) return resolved;
+        if (node.name === 'Infinity') return Number.POSITIVE_INFINITY;
+        if (node.name === 'NaN') return Number.NaN;
+        if (ctx.classReference?.(ctx.path)) return node.name;
+        return unresolvedValue(node, sourceText, ctx, node.name);
+      }
       if (ctx?.requireLiteralValues) {
         ctx.unresolved.push({
           expression: sliceSource(node, sourceText) ?? node.name,
@@ -2320,37 +2873,38 @@ function extractValue(
       return node.name; // Return as string for class references
 
     case 'ArrayExpression': {
-      // Array spreads (e.g. `include: [...BASE_ACTIONS, 'archive']`) are not
-      // resolved, but must not vanish silently: a dropped element changes an
-      // include/exclude allowlist. Record for a scan error instead.
+      const elements: unknown[] = [];
       for (const el of node.elements) {
-        if (
-          el &&
-          typeof el === 'object' &&
-          el.type === 'SpreadElement' &&
-          ctx
-        ) {
-          ctx.unresolved.push({
-            expression: sliceSource(el, sourceText) ?? '...<unknown>',
-            start: el.start,
-          });
+        if (el === null || typeof el !== 'object' || !('type' in el)) continue;
+        if (el.type === 'SpreadElement') {
+          // `include: [...BASE_ACTIONS, 'archive']` must not vanish silently:
+          // a dropped element changes an include/exclude allowlist. Resolve a
+          // same-file array, or record it for a scan error.
+          const spread = resolving
+            ? resolveArraySpread(el, sourceText, ctx)
+            : UNRESOLVED;
+          if (Array.isArray(spread)) {
+            elements.push(...spread);
+          } else if (ctx) {
+            ctx.unresolved.push({
+              expression: sliceSource(el, sourceText) ?? '...<unknown>',
+              start: el.start,
+              ...(ctx.path ? { option: ctx.path } : {}),
+            });
+          }
+          continue;
         }
+        const value = extractValue(el, sourceText, ctx);
+        if (value !== UNRESOLVED) elements.push(value);
       }
-      return node.elements
-        .filter(
-          (el: Expression | SpreadElement | null): el is Expression =>
-            el !== null &&
-            typeof el === 'object' &&
-            'type' in el &&
-            el.type !== 'SpreadElement',
-        )
-        .map((el: Expression) => extractValue(el, sourceText, ctx));
+      return elements;
     }
 
     case 'ObjectExpression':
       return extractObjectLiteral(node, sourceText, ctx);
 
-    case 'UnaryExpression':
+    case 'UnaryExpression': {
+      if (resolving) return extractUnaryValue(node, sourceText, ctx);
       if (node.operator === '-' && node.argument?.type === 'Literal') {
         const value = node.argument.value;
         if (typeof value === 'number') {
@@ -2358,31 +2912,161 @@ function extractValue(
         }
       }
       break;
+    }
 
-    case 'CallExpression':
-    case 'NewExpression': {
-      // Return the raw source for complex expressions
-      const src = sliceSource(node, sourceText);
-      if (src) {
-        if (ctx?.requireLiteralValues) {
-          ctx.unresolved.push({ expression: src, start: node.start });
-        }
-        return src;
+    case 'MemberExpression': {
+      if (!resolving || !ctx) break;
+      const chain = staticMemberChain(node);
+      if (chain) {
+        const resolved = resolveStaticReference(chain.root, chain.path, ctx);
+        if (resolved !== UNRESOLVED) return resolved;
+      }
+      if (ctx.classReference?.(ctx.path)) {
+        return sliceSource(node, sourceText) ?? getMemberExpressionString(node);
       }
       break;
     }
+
+    case 'CallExpression':
+    case 'NewExpression':
+      break;
   }
 
-  // For complex expressions, return raw source if available
-  const rawSrc = sliceSource(node, sourceText);
-  if (rawSrc) {
-    if (ctx?.requireLiteralValues) {
-      ctx.unresolved.push({ expression: rawSrc, start: node.start });
+  if (resolving) {
+    const folded = extractFoldedValue(node as BaseNode, sourceText, ctx);
+    if (folded !== NOT_FOLDABLE) return folded;
+  }
+
+  // Anything else is not a static value: record it (and, for the raw-shape
+  // reader, hand back its source text).
+  return unresolvedValue(node, sourceText, ctx);
+}
+
+/** A spread inside an array literal: an inline array or a same-file array constant. */
+function resolveArraySpread(
+  spread: SpreadElement,
+  sourceText: string,
+  ctx: DecoratorConfigContext | undefined,
+): unknown {
+  const argument = unwrapTypeAssertion(spread.argument);
+  if (!argument || !ctx) return UNRESOLVED;
+  if (argument.type === 'ArrayExpression') {
+    return extractValue(argument, sourceText, ctx);
+  }
+  if (argument.type !== 'Identifier') return UNRESOLVED;
+  const constant = ctx.constants.get(argument.name);
+  if (constant?.kind !== 'array') return UNRESOLVED;
+  // Same copy semantics as an object spread of a module constant.
+  if (ctx.dependencies) {
+    ctx.dependencies.push({ name: argument.name, start: spread.start });
+  } else if (constant.unresolved.length > 0) {
+    ctx.unresolved.push(
+      ...constant.unresolved
+        .filter(
+          (unresolved) =>
+            hasNestedReferenceValue(constant.value) ||
+            spread.start === undefined ||
+            unresolved.start === undefined ||
+            unresolved.start <= spread.start,
+        )
+        .map((unresolved) => ({ ...unresolved })),
+    );
+  }
+  return cloneStaticValue(constant.value);
+}
+
+function extractUnaryValue(
+  node: UnaryExpression,
+  sourceText: string,
+  ctx: DecoratorConfigContext | undefined,
+): unknown {
+  const argument = extractValue(node.argument, sourceText, ctx);
+  if (argument === UNRESOLVED) return UNRESOLVED;
+  if (typeof argument === 'number') {
+    if (node.operator === '-') return -argument;
+    if (node.operator === '+') return argument;
+  }
+  if (node.operator === '!' && typeof argument === 'boolean') return !argument;
+  if (node.operator === 'void') return undefined;
+  return unresolvedValue(node, sourceText, ctx);
+}
+
+const NOT_FOLDABLE: unique symbol = Symbol('smrt.scanner.not-foldable');
+
+/**
+ * Fold the constant expressions authors write in place of a literal:
+ * a template literal and arithmetic or string concatenation over values that
+ * are themselves static (`60 * 60`, `` `${PREFIX}_id` ``). Returns
+ * {@link NOT_FOLDABLE} for any other node type. Nothing is evaluated beyond
+ * these operators on already-read values.
+ */
+function extractFoldedValue(
+  node: BaseNode,
+  sourceText: string,
+  ctx: DecoratorConfigContext | undefined,
+): unknown {
+  const loose = node as BaseNode & {
+    quasis?: Array<{ value?: { cooked?: string | null } }>;
+    expressions?: Expression[];
+    operator?: string;
+    left?: Expression;
+    right?: Expression;
+  };
+  if (loose.type === 'TemplateLiteral') {
+    const quasis = loose.quasis ?? [];
+    const expressions = loose.expressions ?? [];
+    let text = '';
+    for (let index = 0; index < quasis.length; index++) {
+      const cooked = quasis[index].value?.cooked;
+      if (typeof cooked !== 'string') {
+        return unresolvedValue(node, sourceText, ctx);
+      }
+      text += cooked;
+      if (index >= expressions.length) continue;
+      const part = extractValue(expressions[index], sourceText, ctx);
+      if (part === UNRESOLVED) return UNRESOLVED;
+      if (
+        typeof part !== 'string' &&
+        typeof part !== 'number' &&
+        typeof part !== 'boolean'
+      ) {
+        return unresolvedValue(expressions[index], sourceText, ctx);
+      }
+      text += String(part);
     }
-    return rawSrc;
+    return text;
   }
-
-  return undefined;
+  if (loose.type === 'BinaryExpression' && loose.left && loose.right) {
+    const left = extractValue(loose.left, sourceText, ctx);
+    const right = extractValue(loose.right, sourceText, ctx);
+    if (left === UNRESOLVED || right === UNRESOLVED) return UNRESOLVED;
+    if (typeof left === 'number' && typeof right === 'number') {
+      switch (loose.operator) {
+        case '+':
+          return left + right;
+        case '-':
+          return left - right;
+        case '*':
+          return left * right;
+        case '/':
+          return left / right;
+        case '%':
+          return left % right;
+        case '**':
+          return left ** right;
+      }
+    }
+    if (
+      loose.operator === '+' &&
+      (typeof left === 'string' || typeof right === 'string') &&
+      (typeof left === 'string' || typeof left === 'number') &&
+      (typeof right === 'string' || typeof right === 'number')
+    ) {
+      return `${left}${right}`;
+    }
+    return unresolvedValue(node, sourceText, ctx);
+  }
+  return NOT_FOLDABLE;
 }
 
 /**
@@ -2903,6 +3587,7 @@ function extractMethodDefinition(
   node: MethodDefinition,
   sourceText: string,
   ctx?: DecoratorConfigContext,
+  className?: string,
 ): RawMethodDefinition | null {
   // Skip constructors, getters, setters
   if (node.kind !== 'method') return null;
@@ -2926,7 +3611,12 @@ function extractMethodDefinition(
     ? extractTypeName(func.returnType.typeAnnotation)
     : null;
 
-  const decoratorConfig = extractMethodDecoratorConfig(node, sourceText, ctx);
+  const decoratorConfig = extractMethodDecoratorConfig(
+    node,
+    sourceText,
+    ctx,
+    className ? { className, member: name } : undefined,
+  );
 
   return {
     name,
@@ -2959,9 +3649,10 @@ function extractMethodDecoratorConfig(
   node: MethodDefinition,
   sourceText: string,
   ctx?: DecoratorConfigContext,
+  target?: { className: string; member: string },
 ): Record<string, unknown> | undefined {
   const decorator = node.decorators?.find((d) =>
-    isNamedDecorator(d, 'method', ctx?.importAliases),
+    isNamedDecorator(d, 'method', ctx?.importAliases, ctx?.importBindings),
   );
   if (!decorator) return undefined;
 
@@ -2969,16 +3660,15 @@ function extractMethodDecoratorConfig(
   const config = extractDecoratorConfig(
     decorator,
     sourceText,
-    ctx ? { ...ctx, requireLiteralValues: true } : ctx,
+    ctx ? { ...ctx, requireLiteralValues: true, path: undefined } : ctx,
   );
   // `extractDecoratorConfig` pushes into the SHARED collector, which carries no
   // decorator identity of its own; label only what this call added so the
   // diagnostic names `@method()` instead of `@smrt()`.
-  if (ctx) {
-    for (const entry of ctx.unresolved.slice(unresolvedBefore)) {
-      entry.decorator = '@method()';
-    }
-  }
+  labelUnresolved(ctx, unresolvedBefore, {
+    decorator: '@method()',
+    ...(target ?? {}),
+  });
   return config ?? {};
 }
 
