@@ -139,6 +139,11 @@ import {
   isChangeFeedSensitiveTable,
   isChangeFeedSensitiveWrite,
 } from './change-feed-sensitivity.js';
+import {
+  changeFeedTenantFields,
+  resolveChangeFeedTenantId,
+  resolveChangeFeedTenantIdFromRow,
+} from './change-feed-tenant.js';
 import { type ChangeSignal, publishChangeSignal } from './change-signals.js';
 import { resolveDbCacheKey } from './collection-cache.js';
 import { resolveDispatchTenantScope } from './dispatch/tenant-resolver.js';
@@ -2195,6 +2200,9 @@ async function deleteCounted(
 
 export const CHANGE_FEED_WAS_PERSISTED_KEY = '_smrtChangeFeedWasPersisted';
 
+/** Interceptor-context key for a deleted row's owner, captured before delete. */
+const CHANGE_FEED_DELETE_OWNER_KEY = '_smrtChangeFeedDeleteOwner';
+
 /**
  * Append-failure logging state per `database + table`: when it last logged and
  * how many failures it has suppressed since. A persistent failure on one table
@@ -2272,8 +2280,37 @@ export function registerChangeFeedWriter(): void {
       await appendForInstance(instance, wasPersisted ? 'update' : 'create');
     },
 
-    async afterDelete(instance: SmrtObject): Promise<void> {
-      await appendForInstance(instance, 'delete');
+    async beforeDelete(
+      instance: SmrtObject,
+      context: InterceptorContext,
+    ): Promise<void> {
+      // Capture the owner the stored row has, before it is deleted. The
+      // instance's ownership field is not evidence: it may have been cleared
+      // or changed in memory without being saved, and a model's
+      // `afterDelete` hook runs before this writer and may clear it. A
+      // tombstone recorded with no owner is served to every tenant.
+      let owner: string | null | undefined;
+      try {
+        owner = await persistedDeleteOwner(instance);
+      } catch {
+        // Unresolved ownership: record nothing rather than a global entry.
+        owner = undefined;
+      }
+      try {
+        context.metadata = {
+          ...context.metadata,
+          [CHANGE_FEED_DELETE_OWNER_KEY]: owner,
+        };
+      } catch {
+        // Never let feed bookkeeping block a delete.
+      }
+    },
+
+    async afterDelete(
+      instance: SmrtObject,
+      context: InterceptorContext,
+    ): Promise<void> {
+      await appendForInstance(instance, 'delete', capturedOwner(context));
     },
 
     bulkMutation: {
@@ -2291,7 +2328,11 @@ export function registerChangeFeedWriter(): void {
       },
       async afterDelete(entries): Promise<void> {
         await recordInstanceChanges(
-          entries.map(({ instance }) => ({ instance, operation: 'delete' })),
+          entries.map(({ instance, context }) => ({
+            instance,
+            operation: 'delete',
+            owner: capturedOwner(context),
+          })),
         );
       },
     },
@@ -2303,9 +2344,73 @@ export function unregisterChangeFeedWriter(): boolean {
   return GlobalInterceptors.unregister(CHANGE_FEED_INTERCEPTOR_NAME);
 }
 
+/**
+ * The owner of the stored row `instance` is about to delete, read from the
+ * row's ownership columns through the instance's own handle (so inside a
+ * framework transaction it reads that transaction's view). Falls back to the
+ * instance's fields only when nothing is stored under its id — then the delete
+ * removes nothing another tenant owns — or when the table is not recorded.
+ * `undefined` means ownership is unresolved and nothing may be recorded.
+ */
+async function persistedDeleteOwner(
+  instance: SmrtObject,
+): Promise<string | null | undefined> {
+  const table = instance.tableName;
+  if (
+    !isChangeFeedObservableTable(table) ||
+    isChangeFeedSensitiveWrite(table, instance.constructor)
+  ) {
+    return resolveChangeFeedTenantId(instance);
+  }
+  const resolved = changeFeedTenantFields(instance);
+  if (resolved === undefined) return undefined;
+  // Only ownership fields the class persists have a column to read.
+  const fields = resolved.filter((field) => field.stored);
+  const id = (instance as { id?: unknown }).id;
+  // No stored ownership column, or no id to find the row by: the instance is
+  // all there is (a class without an ownership column records global entries).
+  if (fields.length === 0 || typeof id !== 'string' || !id) {
+    return resolveChangeFeedTenantId(instance);
+  }
+  const db = instance.db;
+  const p = placeholders(db);
+  const quote = (identifier: string) => `"${identifier.replaceAll('"', '""')}"`;
+  const columns = [...new Set(fields.map(({ column }) => column))];
+  const rows = getQueryRows(
+    await db.query(
+      `SELECT ${columns.map(quote).join(', ')} FROM ${quote(table)} WHERE ${quote('id')} = ${p(1)}`,
+      id,
+    ),
+  );
+  if (rows.length === 0) return resolveChangeFeedTenantId(instance);
+  return resolveChangeFeedTenantIdFromRow(fields, rows[0]);
+}
+
+/**
+ * The owner `beforeDelete` captured, when it did: `{ tenantId }` (where
+ * `undefined` means unresolved ownership), or `undefined` when nothing was
+ * captured and the instance must be asked.
+ */
+function capturedOwner(
+  context: InterceptorContext | undefined,
+): { tenantId: string | null | undefined } | undefined {
+  const metadata = context?.metadata as Record<string, unknown> | undefined;
+  if (!metadata || !(CHANGE_FEED_DELETE_OWNER_KEY in metadata)) {
+    return undefined;
+  }
+  const value = metadata[CHANGE_FEED_DELETE_OWNER_KEY];
+  return {
+    tenantId:
+      value === undefined || value === null || typeof value === 'string'
+        ? (value as string | null | undefined)
+        : undefined,
+  };
+}
+
 async function appendForInstance(
   instance: SmrtObject,
   operation: ChangeOperation,
+  owner?: { tenantId: string | null | undefined },
 ): Promise<void> {
   let db: DatabaseInterface;
   let table: string;
@@ -2327,9 +2432,17 @@ async function appendForInstance(
     if (isChangeFeedSensitiveWrite(table, instance.constructor)) return;
     db = instance.db;
     const id = (instance as { id?: unknown }).id;
-    const tenantId = (instance as unknown as Record<string, unknown>).tenantId;
     rowId = typeof id === 'string' && id ? id : null;
-    rowTenantId = typeof tenantId === 'string' && tenantId ? tenantId : null;
+    // The row's real ownership field, not just a `tenantId` property: an
+    // entry recorded as global is served to every tenant.
+    const tenantId = owner
+      ? owner.tenantId
+      : resolveChangeFeedTenantId(instance);
+    if (tenantId === undefined) {
+      warnAmbiguousTenant(db, table);
+      return;
+    }
+    rowTenantId = tenantId;
   } catch {
     // Not a fully initialized SmrtObject (e.g. plain-object doubles in
     // tests) — nothing to record.
@@ -2381,7 +2494,12 @@ async function appendForInstance(
  * single-instance writer does.
  */
 export async function recordInstanceChanges(
-  entries: readonly { instance: SmrtObject; operation: ChangeOperation }[],
+  entries: readonly {
+    instance: SmrtObject;
+    operation: ChangeOperation;
+    /** A deleted row's owner, captured before the delete. */
+    owner?: { tenantId: string | null | undefined };
+  }[],
 ): Promise<void> {
   const prepared: Array<{
     db: DatabaseInterface;
@@ -2395,15 +2513,20 @@ export async function recordInstanceChanges(
       if (isChangeFeedSensitiveWrite(table, entry.instance.constructor))
         continue;
       const id = (entry.instance as { id?: unknown }).id;
-      const tenantId = (entry.instance as unknown as Record<string, unknown>)
-        .tenantId;
+      const tenantId = entry.owner
+        ? entry.owner.tenantId
+        : resolveChangeFeedTenantId(entry.instance);
+      if (tenantId === undefined) {
+        warnAmbiguousTenant(entry.instance.db, table);
+        continue;
+      }
       prepared.push({
         db: entry.instance.db,
         input: {
           table,
           rowId: typeof id === 'string' && id ? id : null,
           operation: entry.operation,
-          tenantId: typeof tenantId === 'string' && tenantId ? tenantId : null,
+          tenantId,
         },
       });
     } catch {
@@ -2454,33 +2577,66 @@ export async function recordInstanceChange(
 }
 
 /**
- * Log a failed feed append, at most once per {@link
- * APPEND_FAILURE_LOG_INTERVAL_MS} per `database + table`, reporting how many
- * failures were suppressed in between.
+ * Whether a warning of `kind` for `database + table` may log now — at most once
+ * per {@link APPEND_FAILURE_LOG_INTERVAL_MS} — and how many it suppressed
+ * since the last one. Each kind has its own limit, so one kind of warning can
+ * never silence another for the same table.
  */
+function takeRateLimitedWarning(
+  kind: string,
+  db: DatabaseInterface,
+  table: string,
+): { suppressed: number } | null {
+  const key = `${kind}\u0000${resolveDbCacheKey(db)}\u0000${table}`;
+  const now = Date.now();
+  const state = appendFailureLog.get(key);
+  if (state && now - state.lastLoggedAt < APPEND_FAILURE_LOG_INTERVAL_MS) {
+    state.suppressed++;
+    return null;
+  }
+  appendFailureLog.set(key, { lastLoggedAt: now, suppressed: 0 });
+  return { suppressed: state?.suppressed ?? 0 };
+}
+
+/** Log a failed feed append (rate-limited per table). */
 function warnAppendFailure(
   db: DatabaseInterface,
   table: string,
   error: unknown,
 ): void {
   try {
-    const key = `${resolveDbCacheKey(db)}\u0000${table}`;
-    const now = Date.now();
-    const state = appendFailureLog.get(key);
-    if (state && now - state.lastLoggedAt < APPEND_FAILURE_LOG_INTERVAL_MS) {
-      state.suppressed++;
-      return;
-    }
-    const suppressed = state?.suppressed ?? 0;
-    appendFailureLog.set(key, { lastLoggedAt: now, suppressed: 0 });
+    const allowed = takeRateLimitedWarning('append', db, table);
+    if (!allowed) return;
     logger.warn(
       `Change feed: failed to append a change entry for '${table}'. The ` +
         'write itself succeeded; the feed is missing this change, and nothing ' +
         'in the feed marks the gap.',
       {
         error: error instanceof Error ? error.message : String(error),
-        suppressedSinceLastWarning: suppressed,
+        suppressedSinceLastWarning: allowed.suppressed,
       },
+    );
+  } catch {
+    // Logging must never propagate into the write path.
+  }
+}
+
+/**
+ * A row whose owner cannot be resolved (ownership fields that name two
+ * different tenants, or a failed ownership lookup) is not recorded:
+ * recording it under either tenant (or as global) would serve it to readers
+ * who may not see it. Rate-limited per table on its own limit.
+ */
+function warnAmbiguousTenant(db: DatabaseInterface, table: string): void {
+  try {
+    const allowed = takeRateLimitedWarning('ambiguous-tenant', db, table);
+    if (!allowed) return;
+    logger.warn(
+      `Change feed: the owner of a '${table}' row could not be resolved ` +
+        '(its ownership fields name different tenants, or the ownership ' +
+        'lookup failed), so its change was not recorded. Fix the row or the ' +
+        'ownership registration; until then consumers of this table may miss it.',
+      { suppressedSinceLastWarning: allowed.suppressed },
     );
   } catch {
     // Logging must never propagate into the write path.
