@@ -364,6 +364,20 @@ remain skipped, ancestor-hoisted installs resolve normally, and handwritten
 `+server.ts`/`+server.js` ownership and explicit disablement remain unchanged.
 Do not change a package's export map to accommodate a mismatched detector.
 
+Dev-server rescans (`smrtPlugin` `watch`/`hmr`): Vite's watcher reports
+absolute paths, so `shouldRescan` matches the project-relative POSIX path
+against `include`/`exclude` (an absolute pattern under the root is made
+relative). It ignores the plugin's own outputs (`+server.*` under `routesDir`,
+`smrt-register.ts`, `virtual-modules.d.ts`, the knowledge route
+(`knowledgeRoutePath`, outside `routesDir`), any file starting with the route
+header), or each regeneration would trigger the next. After a rescan, change,
+add and unlink alike invalidate every loaded virtual module by its resolved
+`\0smrt:*` id in each Vite environment's module graph and send that
+environment's hot channel a full reload; `server.reloadModule` cannot be used
+because it skips modules without a file. `watcher-dev-server.test.ts` drives a
+real Vite dev server; a handler test with a relative path cannot see either
+defect.
+
 The generated API client (`generateClientModule`, behind both
 `@happyvertical/smrt-virt-client` and `@smrt/client`) sends every
 caller-supplied path value (an item `id`, a named route parameter) as exactly
