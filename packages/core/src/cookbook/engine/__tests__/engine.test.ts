@@ -1319,3 +1319,58 @@ describe('read-only cookbook policy command', () => {
     ).toBeUndefined();
   });
 });
+
+describe('commits only what it can publish', () => {
+  it('a throwing subscriber neither fails the command nor hides it from later subscribers', () => {
+    const e = engine();
+    const later: number[] = [];
+    e.subscribe((s) => {
+      if (s.revision > 0) throw new Error('render failed');
+    });
+    e.subscribe((s) => later.push(s.revision));
+    const run = e.run({
+      id: 'r1',
+      name: 'add_recipes',
+      input: { ids: ['commerce.sales'] },
+    });
+    expect(run.ok).toBe(true);
+    const batch = e.batch({
+      id: 'b1',
+      commands: [{ name: 'set_settings', input: { currency: 'CAD' } }],
+    });
+    expect(batch.ok).toBe(true);
+    expect(e.snapshot().revision).toBe(2);
+    expect(later).toEqual([0, 1, 2]);
+  });
+
+  it('fails a command whose state cannot be projected and keeps the state and later snapshots intact', () => {
+    const e = engine();
+    ok(e.run({ name: 'add_recipes', input: { ids: ['commerce.sales'] } }));
+    const item = e.snapshot().sections[0].items[0].id;
+    const before = e.state();
+    const document = {
+      ...e.cookbook(),
+      layout: { version: 1, items: { [item]: { label: 5 } } },
+    };
+    const r = e.run({
+      name: 'import_cookbook',
+      input: { document, replace: true },
+    });
+    expect(r.ok).toBe(false);
+    expect(e.state()).toEqual(before);
+    expect(() => e.snapshot()).not.toThrow();
+    // A text label is accepted.
+    ok(
+      e.run({
+        name: 'import_cookbook',
+        input: {
+          document: {
+            ...document,
+            layout: { version: 1, items: { [item]: { label: 'Clients' } } },
+          },
+          replace: true,
+        },
+      }),
+    );
+  });
+});

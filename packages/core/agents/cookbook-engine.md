@@ -60,6 +60,11 @@ engine.tools / engine.batchTool                      // JSON Schema tool definit
   byte-identical and returns `batch_failed` naming `details.index`. A batch that
   changes n times advances the revision by n, as n runs would, and has one undo.
   `undo` and per-command ids/revisions are not allowed inside a batch.
+- **Commit order**: a run, batch or undo builds its result snapshot from the
+  candidate state before committing it, so a state that cannot be projected
+  fails with the live state untouched. Subscribers are notified after the
+  commit, each isolated: a throwing subscriber neither turns a committed result
+  into a failure nor hides the revision from later subscribers.
 - **Undo** restores the document from before the change; it is a `conflict`
   while the plan differs from what that change left, unless `force`.
 - **Recovery**: `state()` is plain JSON (revision, applied library id, document,
