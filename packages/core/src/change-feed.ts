@@ -143,6 +143,7 @@ import {
   isChangeFeedSensitiveTable,
   isChangeFeedSensitiveWrite,
 } from './change-feed-sensitivity.js';
+import { resolveChangeFeedTenantId } from './change-feed-tenant.js';
 import { type ChangeSignal, publishChangeSignal } from './change-signals.js';
 import { resolveDbCacheKey } from './collection-cache.js';
 import { resolveDispatchTenantScope } from './dispatch/tenant-resolver.js';
@@ -2345,9 +2346,15 @@ async function appendForInstance(
     if (isChangeFeedSensitiveWrite(table, instance.constructor)) return;
     db = instance.db;
     const id = (instance as { id?: unknown }).id;
-    const tenantId = (instance as unknown as Record<string, unknown>).tenantId;
     rowId = typeof id === 'string' && id ? id : null;
-    rowTenantId = typeof tenantId === 'string' && tenantId ? tenantId : null;
+    // The row's real ownership field, not just a `tenantId` property: an
+    // entry recorded as global is served to every tenant.
+    const tenantId = resolveChangeFeedTenantId(instance);
+    if (tenantId === undefined) {
+      warnAmbiguousTenant(db, table);
+      return;
+    }
+    rowTenantId = tenantId;
   } catch {
     // Not a fully initialized SmrtObject (e.g. plain-object doubles in
     // tests) — nothing to record.
@@ -2416,15 +2423,18 @@ export async function recordInstanceChanges(
       if (isChangeFeedSensitiveWrite(table, entry.instance.constructor))
         continue;
       const id = (entry.instance as { id?: unknown }).id;
-      const tenantId = (entry.instance as unknown as Record<string, unknown>)
-        .tenantId;
+      const tenantId = resolveChangeFeedTenantId(entry.instance);
+      if (tenantId === undefined) {
+        warnAmbiguousTenant(entry.instance.db, table);
+        continue;
+      }
       prepared.push({
         db: entry.instance.db,
         input: {
           table,
           rowId: typeof id === 'string' && id ? id : null,
           operation: entry.operation,
-          tenantId: typeof tenantId === 'string' && tenantId ? tenantId : null,
+          tenantId,
         },
       });
     } catch {
@@ -2515,11 +2525,7 @@ function recordAppendGap(
     const key = `${entry.table}\u0000${entry.tenantId ?? ''}`;
     if (markers.has(key)) continue;
     if (markers.size >= MAX_PENDING_GAP_MARKERS) {
-      warnAppendFailure(
-        db,
-        entry.table,
-        new Error('too many unrecorded change-feed gaps; this one is dropped'),
-      );
+      warnGapMarkerDropped(db, entry.table);
       continue;
     }
     markers.set(key, { table: entry.table, tenantId: entry.tenantId });
@@ -2592,33 +2598,86 @@ export async function recordInstanceChange(
 }
 
 /**
- * Log a failed feed append, at most once per {@link
- * APPEND_FAILURE_LOG_INTERVAL_MS} per `database + table`, reporting how many
- * failures were suppressed in between.
+ * Whether a warning of `kind` for `database + table` may log now — at most once
+ * per {@link APPEND_FAILURE_LOG_INTERVAL_MS} — and how many it suppressed
+ * since the last one. Each kind has its own limit, so one kind of warning can
+ * never silence another for the same table.
  */
+function takeRateLimitedWarning(
+  kind: string,
+  db: DatabaseInterface,
+  table: string,
+): { suppressed: number } | null {
+  const key = `${kind}\u0000${resolveDbCacheKey(db)}\u0000${table}`;
+  const now = Date.now();
+  const state = appendFailureLog.get(key);
+  if (state && now - state.lastLoggedAt < APPEND_FAILURE_LOG_INTERVAL_MS) {
+    state.suppressed++;
+    return null;
+  }
+  appendFailureLog.set(key, { lastLoggedAt: now, suppressed: 0 });
+  return { suppressed: state?.suppressed ?? 0 };
+}
+
+/** Log a failed feed append (rate-limited per table). */
 function warnAppendFailure(
   db: DatabaseInterface,
   table: string,
   error: unknown,
 ): void {
   try {
-    const key = `${resolveDbCacheKey(db)}\u0000${table}`;
-    const now = Date.now();
-    const state = appendFailureLog.get(key);
-    if (state && now - state.lastLoggedAt < APPEND_FAILURE_LOG_INTERVAL_MS) {
-      state.suppressed++;
-      return;
-    }
-    const suppressed = state?.suppressed ?? 0;
-    appendFailureLog.set(key, { lastLoggedAt: now, suppressed: 0 });
+    const allowed = takeRateLimitedWarning('append', db, table);
+    if (!allowed) return;
     logger.warn(
       `Change feed: failed to append a change entry for '${table}'. The ` +
         'write itself succeeded. A table-level entry for this table is ' +
         'recorded on the next successful append, so its consumers refetch it.',
       {
         error: error instanceof Error ? error.message : String(error),
-        suppressedSinceLastWarning: suppressed,
+        suppressedSinceLastWarning: allowed.suppressed,
       },
+    );
+  } catch {
+    // Logging must never propagate into the write path.
+  }
+}
+
+/**
+ * The gap-marker bound was reached, so a lost change has no marker (rate-
+ * limited per table, separately from append failures).
+ */
+function warnGapMarkerDropped(db: DatabaseInterface, table: string): void {
+  try {
+    const allowed = takeRateLimitedWarning('gap-overflow', db, table);
+    if (!allowed) return;
+    logger.warn(
+      `Change feed: too many unrecorded change-feed gaps for this database; ` +
+        `the lost change for '${table}' gets no table-level entry.`,
+      { suppressedSinceLastWarning: allowed.suppressed },
+    );
+  } catch {
+    // Logging must never propagate into the write path.
+  }
+}
+
+/**
+ * A row whose owner cannot be resolved (ownership fields that name two
+ * different tenants, or a failed ownership lookup) is not recorded:
+ * recording it under either tenant (or as global) would serve it to readers
+ * who may not see it. No table-level entry is written for it either, since
+ * that entry would need a tenant too. Rate-limited per table on its own
+ * limit.
+ */
+function warnAmbiguousTenant(db: DatabaseInterface, table: string): void {
+  try {
+    const allowed = takeRateLimitedWarning('ambiguous-tenant', db, table);
+    if (!allowed) return;
+    logger.warn(
+      `Change feed: the owner of a '${table}' row could not be resolved ` +
+        '(its ownership fields name different tenants, or the ownership ' +
+        'lookup failed), so its change was not recorded. Fix the row or the ' +
+        'ownership registration; until then consumers of this table may miss it.',
+      { suppressedSinceLastWarning: allowed.suppressed },
     );
   } catch {
     // Logging must never propagate into the write path.

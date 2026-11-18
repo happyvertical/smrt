@@ -20,6 +20,7 @@ import {
   declareChangeFeedSensitiveTable,
   setChangeFeedSensitiveClassResolver,
 } from '../change-feed-sensitivity.js';
+import { setChangeFeedTenantFieldResolver } from '../change-feed-tenant.js';
 import { ConfigurationError } from '../errors';
 import {
   discoverManifestSync,
@@ -1024,6 +1025,32 @@ setChangeFeedSensitiveClassResolver((ctor) => {
   const key = getConstructorIndex().get(ctor as typeof SmrtObject);
   if (!key) return false;
   return getClasses().get(key)?.config?.sensitive === true;
+});
+
+// The registry's ownership-field lookup, handed to the change feed so it
+// records each change under the tenant the row really belongs to — the same
+// resolution the audit writer uses: runtime ownership registrations (the
+// tenancy package's `{ field }`) first, then the declared/ownership tenant
+// column. Without it a custom tenant field (e.g. `organizationId`) would be
+// recorded as global and served to every tenant.
+setChangeFeedTenantFieldResolver((ctor) => {
+  if (typeof ctor !== 'function') return undefined;
+  const key = getConstructorIndex().get(ctor as typeof SmrtObject);
+  if (!key) return undefined;
+  const runtime = ObjectRegistry.getRuntimeOwnershipColumns(key);
+  const columns =
+    runtime.size > 0
+      ? [...runtime]
+      : [ObjectRegistry.getOwnershipTenantColumn(key)].filter(
+          (column): column is string => typeof column === 'string',
+        );
+  if (columns.length === 0) return [];
+  const fieldNames = [...ObjectRegistry.getFields(key).keys()];
+  return columns.map(
+    (column) =>
+      fieldNames.find((fieldName) => toSnakeCase(fieldName) === column) ??
+      column.replace(/_([a-z0-9])/g, (_, char: string) => char.toUpperCase()),
+  );
 });
 
 function setSmrtTableName(ctor: typeof SmrtObject, tableName: string): void {
