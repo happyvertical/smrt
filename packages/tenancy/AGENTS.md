@@ -50,6 +50,17 @@ Hooks into SmrtCollection via `GlobalInterceptors.register()` (priority 100, run
 
 Mismatches throw `TenantIsolationError`. Missing required context throws `TenantContextError`.
 
+The tenant filter is recognised by the column a key resolves to, not by the
+literal `tenantId` key. Filter keys are caller spelling (`tenant_id`,
+`TenantId`, `tenantId =` all resolve to the tenant column), so every hook that
+reads a filter (list in object and DNF form, get, the hierarchy read scope)
+finds direct tenant filters with core's `resolveWhereKey()` and validates every
+one present. Keys with an explicit non-equality operator are not direct
+filters; the tenant predicate is added beside them. Core then refuses a record
+with two keys for one column and operator, so the predicate this interceptor
+adds is never replaced. Any new code here that asks "is the tenant already
+filtered?" must go through `directTenantFilterValues()`.
+
 With a hierarchy read scope active, `beforeList` allows only its qualified model
 allowlist and bounds list-family reads to its tenant IDs (plus explicit NULL
 rows for catalogs). `beforeGet` retains the active-tenant predicate; neither hook
@@ -61,7 +72,7 @@ It requires `enableTenancy()` and refuses nesting. See README "Authorized hierar
 read scopes" for bootstrap, RLS composition and the direct-database boundary.
 
 
-**Optional-mode reads with no context pass through UNFILTERED at the interceptor.** That is intentional for trusted/admin call paths, but it means the interceptor alone does not protect a tenant-scoped model exposed as `@smrt({ api: { public } })`: an anonymous HTTP read has no context, so the interceptor would return every tenant's rows. The generated REST + SvelteKit read routes close this by injecting a `{ tenantId: null }` filter when tenancy is enabled but no context is active, so public/anonymous reads fail closed to **global (NULL-tenant) rows only** — mirroring the dispatch resolver's *enforced, no active tenant → global rows only* rule (#1782). Authenticated reads still scope to the caller's tenant via the interceptor.
+**Optional-mode reads with no context pass through UNFILTERED at the interceptor.** That is intentional for trusted/admin call paths, but it means the interceptor alone does not protect a tenant-scoped model exposed as `@smrt({ api: { public } })`: an anonymous HTTP read has no context, so the interceptor would return every tenant's rows. The generated REST + SvelteKit read routes close this by forcing a `{ <ownership field>: null }` filter on list, count and point reads, and custom GET actions get the same keys in their options with every caller-sent ownership key (`tenantId` included) removed — the configured `field` (`@TenantScoped({ field: 'organizationId' })`), never a literal `tenantId` that may be an ordinary column, resolved at request time from the live registry so `registerTenantScopedClass()` at runtime is honoured (core's `applyWhereScope()`, which first drops every client filter on the ownership column under any spelling) when tenancy is enabled but no context is active, so public/anonymous reads fail closed to **global (NULL-tenant) rows only** — mirroring the dispatch resolver's *enforced, no active tenant → global rows only* rule (#1782). Authenticated reads still scope to the caller's tenant via the interceptor. `enableTenancy()` also installs core's request tenant context hooks (`setRequestTenantContextHooks`), through which emitted routes of a runtime-registered model enter the caller's tenant and read the super-admin bypass.
 
 ## Read-Path Coverage (#2365)
 
