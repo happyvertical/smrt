@@ -70,6 +70,16 @@ owners and call `configureMailAccess({ options, resolvePrincipal })` at startup
   `messages.manage-access` AND ownership (or delegation); an administrator
   cannot read, self-grant or take over an owned mailbox. Unowned accounts can be
   claimed once with `messages.manage-credentials`.
+- `MessagingSettingsService.listAccounts({ limit, cursor })` is the account
+  discovery for a principal: only accounts it owns or holds an active grant on
+  (never unowned or foreign accounts), with effective `scopes` and
+  `relation: 'owner' | 'shared'`, via `decideMailAccess`. Fail closed with no
+  principal user, a tenant mismatch or no `configureMailAccess`.
+- `seedMessagesRolePermissions({ db })` seeds the tenant `messages.*` slugs for
+  the system roles (owner/admin: read, triage, draft, send, manage-credentials,
+  manage-access; member: the four scopes; viewer: read). Idempotent, additive,
+  system roles only; without it grants and `manage-access` fail closed on a
+  fresh app. The matrix is `MESSAGES_ROLE_PERMISSION_MATRIX`.
 - Before `configureMailAccess` is called the policy still fails closed on
   owned accounts: every collection operation on a mail class (the core `onCollectionReady`
   interceptor hook, so STI subclasses on a default collection are covered) registers its

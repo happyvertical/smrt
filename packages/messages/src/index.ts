@@ -153,10 +153,13 @@ export {
   ensureMessagingPermissionsRegistered,
   MANAGE_MESSAGE_CREDENTIALS_PERMISSION,
   MANAGE_MESSAGE_ROUTES_PERMISSION,
+  MESSAGES_ROLE_PERMISSION_MATRIX,
   MESSAGING_PERMISSION_DEFINITIONS,
   type MessagingPrincipal,
   messagingPrincipalFromPermissions,
   SEND_MESSAGES_PERMISSION,
+  type SeedMessagesRolePermissionsResult,
+  seedMessagesRolePermissions,
 } from './permissions.js';
 export {
   ensureBuiltinMessagingProvidersRegistered,
