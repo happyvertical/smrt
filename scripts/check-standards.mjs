@@ -32,8 +32,14 @@ const FIXED_RELEASE_GROUPS = Array.isArray(CHANGESET_CONFIG.fixed)
 // Non-TypeScript packages (Kotlin Multiplatform/Gradle — ADR 0001, see
 // docs/content/standards.md §1 "Non-TypeScript packages"). Exempt from every
 // TS-shape check: vitest config, typecheck script, dist in files. Phase 6
-// adds smrt-ios here.
-const NON_TYPESCRIPT_PACKAGES = new Set(['smrt-mobile', 'smrt-android', 'smrt-ios']);
+// adds smrt-ios here. smrt-capacitor-session is a native Capacitor Android
+// plugin with no TypeScript source (#5077).
+const NON_TYPESCRIPT_PACKAGES = new Set([
+  'smrt-mobile',
+  'smrt-android',
+  'smrt-ios',
+  'smrt-capacitor-session',
+]);
 
 // Exemption tables — packages that have a documented reason to skip a check.
 // Keep narrow; expand only when adding the comment to docs/content/standards.md
