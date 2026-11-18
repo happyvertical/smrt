@@ -21,10 +21,9 @@ import { ConfigurationError } from '../errors';
 import { resolveGetStringFilter } from '../interceptors';
 import type { PublicJsonOptions, SmrtObject } from '../object';
 import { publicSerializerOf } from '../public-json';
-import { assertQueryAccess } from '../query-access';
+import { assertQueryAccess, parseRestListWhere } from '../query-access';
 import {
   buildDefaultListOrderBy,
-  parseRestListWhere,
   resolveListLimit,
   resolveListOffset,
 } from '../query-bounds';
@@ -1811,7 +1810,7 @@ export class APIGenerator {
    */
   private applyTenantReadScope(
     objectName: string | undefined,
-    where: Record<string, string | string[]> | undefined,
+    where: Record<string, unknown> | undefined,
     req?: Request,
     operation: FamilyRowOperation = 'list',
   ): Record<string, unknown> | undefined {
@@ -1968,7 +1967,7 @@ export class APIGenerator {
     // A filter or ordering may name only fields this caller may read: the
     // same permissions the rows are projected with. Checked here, with the
     // bounds, so a refused query is answered before any ETag or table work.
-    const where = parseRestListWhere(params);
+    const where = parseRestListWhere(params, objectName);
     const orderByParam = params.get('orderBy');
     assertQueryAccess(
       objectName,
@@ -2037,7 +2036,7 @@ export class APIGenerator {
     req: Request,
     objectName?: string,
   ): Promise<Response> {
-    const where = parseRestListWhere(params);
+    const where = parseRestListWhere(params, objectName);
 
     // A count answers the same question a filtered list does, so its filter
     // is held to the same rule: fields this caller may read.

@@ -3354,27 +3354,34 @@ function rejectRouteRead(cause: unknown): never {
 function generateListQueryHelper(className: string): string {
   return `
 // A query the route or the collection refuses is a client error, not a
-// server fault.
+// server fault. The public body keeps the refusal's code.
 function rejectListQuery(cause: unknown): never {
   const failure = normalizeTypedHttpError(cause);
-  if (failure) throw error(failure.status, failure.message);
+  if (failure) {
+    const body: { message: string; code: string } = {
+      message: failure.message,
+      code: failure.code,
+    };
+    throw error(failure.status, body);
+  }
   throw cause;
 }
 
 // The caller's filter and ordering. Both may name only fields this caller
-// may read: the permissions the rows are projected with.
+// may read: the permissions the rows are projected with. A repeated query
+// parameter is refused (400) rather than read as one of its values.
 function listQuery(
   url: URL,
   options: PublicJsonOptions,
-): { where: Record<string, string | string[]>; orderBy: string | null } {
-  const where = parseRestListWhere(url.searchParams);
+): { where: Record<string, unknown>; orderBy: string | null } {
   const orderBy = url.searchParams.get('orderBy');
   try {
+    const where = parseRestListWhere(url.searchParams, ${JSON.stringify(className)});
     assertQueryAccess(${JSON.stringify(className)}, { where, orderBy }, options);
+    return { where, orderBy };
   } catch (cause) {
     rejectListQuery(cause);
   }
-  return { where, orderBy };
 }
 `;
 }
