@@ -7,11 +7,19 @@
  * "not configured": an absent surface key is open, an absent `sensitive` flag
  * is public, and an absent model is a missing table.
  */
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { ManifestBuilder } from '../../manifest/generator.js';
+import { smrtPlugin } from '../../vite-plugin/index.js';
 import {
   buildWebFieldDefinitions,
   resolveStandardCrudActions,
@@ -28,7 +36,7 @@ afterEach(() => {
 const PACKAGE = '@fixture/fail-closed';
 const CORE = `import { SmrtObject, smrt, field, foreignKey } from '@happyvertical/smrt-core';`;
 
-async function build(files: Record<string, string>) {
+function writeProject(files: Record<string, string>): string {
   const root = mkdtempSync(join(tmpdir(), 'smrt-fail-closed-'));
   roots.push(root);
   writeFileSync(
@@ -39,6 +47,11 @@ async function build(files: Record<string, string>) {
     mkdirSync(dirname(join(root, path)), { recursive: true });
     writeFileSync(join(root, path), source);
   }
+  return root;
+}
+
+async function build(files: Record<string, string>) {
+  const root = writeProject(files);
   const manifest = await new ManifestBuilder(root).generate({
     include: ['src/**/*.ts'],
     outputMode: 'dev',
@@ -273,5 +286,171 @@ describe('classes that share a name in the generated manifest', () => {
         'src/sales/FailClosedInvoice.ts': MODEL,
       }),
     ).rejects.toThrow(/Class name collision.*FailClosedInvoice/s);
+  });
+});
+
+describe('class decorators reached through a computed namespace member', () => {
+  it('fails the build on a computed tenant decorator and writes no manifest', async () => {
+    const root = writeProject({
+      'src/models/ledger.ts': `${CORE}\nimport * as core from '@happyvertical/smrt-core';\nlet TENANT = 'TenantScoped';\n@smrt()\n@(core[TENANT])({ field: 'orgId' })\nexport class FailClosedLedger extends SmrtObject {\n  orgId = '';\n}`,
+    });
+
+    await expect(
+      new ManifestBuilder(root).generate({
+        include: ['src/**/*.ts'],
+        outputMode: 'dev',
+        outputDir: '.smrt',
+        generateTypeStub: false,
+      }),
+    ).rejects.toThrow(/core\[TENANT\].*FailClosedLedger/s);
+    expect(existsSync(join(root, '.smrt/manifest.json'))).toBe(false);
+  });
+});
+
+describe('a relationship with no target', () => {
+  it.each([
+    ["''"],
+    ["'  '"],
+  ])('fails the build on @foreignKey(%s) and writes no manifest', async (target) => {
+    const root = writeProject({
+      'src/models/order.ts': `${CORE}\n@smrt()\nexport class FailClosedOrder extends SmrtObject {\n  @foreignKey(${target}) ownerId = '';\n}`,
+    });
+
+    await expect(
+      new ManifestBuilder(root).generate({
+        include: ['src/**/*.ts'],
+        outputMode: 'dev',
+        outputDir: '.smrt',
+        generateTypeStub: false,
+      }),
+    ).rejects.toThrow(/FailClosedOrder\.ownerId/);
+    expect(existsSync(join(root, '.smrt/manifest.json'))).toBe(false);
+  });
+});
+
+describe('numeric options that JSON cannot carry', () => {
+  // `JSON.stringify` writes a non-finite number as `null`, which clears an
+  // inherited limit instead of carrying it. The build fails and writes nothing.
+  it.each([
+    ['Infinity', 'Infinity'],
+    ['a non-finite folded value', '1 / 0'],
+  ])('fails the build on %s and writes no manifest', async (_label, value) => {
+    const root = writeProject({
+      'src/models/stock.ts': `${CORE}\n@smrt()\nexport class FailClosedStock extends SmrtObject {\n  @field({ max: ${value} }) quantity = 0;\n}`,
+    });
+
+    await expect(
+      new ManifestBuilder(root).generate({
+        include: ['src/**/*.ts'],
+        outputMode: 'dev',
+        outputDir: '.smrt',
+        generateTypeStub: false,
+      }),
+    ).rejects.toThrow(/FailClosedStock\.quantity.*max/s);
+    expect(existsSync(join(root, '.smrt/manifest.json'))).toBe(false);
+  });
+
+  it('writes a finite limit as that number', async () => {
+    const { root } = await build({
+      'src/models/stock.ts': `${CORE}\n@smrt()\nexport class FailClosedStock extends SmrtObject {\n  @field({ max: 2 ** 10 }) quantity = 0;\n}`,
+    });
+    const written = JSON.parse(
+      readFileSync(join(root, '.smrt/manifest.json'), 'utf8'),
+    );
+
+    expect(
+      written.objects[`${PACKAGE}:FailClosedStock`].fields.quantity.max,
+    ).toBe(1024);
+  });
+});
+
+describe('a scan with errors publishes no manifest', () => {
+  // Every producer aborts before it writes: a first build creates no output,
+  // and a later one leaves the last complete manifest as it was.
+  const UNREADABLE = {
+    'src/models/vault.ts': `${CORE}\nimport { POLICY } from './policy.js';\n@smrt({ tableName: 'fail_closed_vaults', api: POLICY })\nexport class FailClosedVault extends SmrtObject { name = ''; }`,
+    'src/models/policy.ts': `export const POLICY = false;`,
+  };
+  const PREVIOUS = `${JSON.stringify({ version: '1.0.0', objects: { kept: true } })}\n`;
+  const DIAGNOSTIC =
+    /vault\.ts.*POLICY.*class `FailClosedVault`.*option `api`/s;
+
+  function seed(root: string, paths: string[]) {
+    for (const path of paths) {
+      mkdirSync(dirname(join(root, path)), { recursive: true });
+      writeFileSync(join(root, path), PREVIOUS);
+    }
+  }
+
+  const builderOptions = {
+    include: ['src/**/*.ts'],
+    outputMode: 'dev' as const,
+    outputDir: 'out',
+    outputName: 'manifest.json',
+    generateTypeStub: true,
+    stubName: 'manifest.ts',
+  };
+
+  it('ManifestBuilder creates no output on a first build', async () => {
+    const root = writeProject(UNREADABLE);
+
+    await expect(
+      new ManifestBuilder(root).generate(builderOptions),
+    ).rejects.toThrow(DIAGNOSTIC);
+
+    expect(existsSync(join(root, '.smrt/manifest.json'))).toBe(false);
+    expect(existsSync(join(root, 'out/manifest.json'))).toBe(false);
+    expect(existsSync(join(root, 'out/manifest.ts'))).toBe(false);
+  });
+
+  it('ManifestBuilder leaves existing manifests untouched', async () => {
+    const root = writeProject(UNREADABLE);
+    seed(root, ['.smrt/manifest.json', 'out/manifest.json']);
+
+    await expect(
+      new ManifestBuilder(root).generate(builderOptions),
+    ).rejects.toThrow(DIAGNOSTIC);
+
+    expect(readFileSync(join(root, '.smrt/manifest.json'), 'utf8')).toBe(
+      PREVIOUS,
+    );
+    expect(readFileSync(join(root, 'out/manifest.json'), 'utf8')).toBe(
+      PREVIOUS,
+    );
+  });
+
+  it('the Vite plugin aborts the build and writes no manifest', async () => {
+    const root = writeProject(UNREADABLE);
+    const plugin = smrtPlugin({
+      include: ['src/**/*.ts'],
+      generateTypes: false,
+    }) as unknown as {
+      configResolved(config: unknown): Promise<void>;
+    };
+
+    await expect(
+      plugin.configResolved({ root, build: {}, plugins: [] }),
+    ).rejects.toThrow(/scan errors/);
+
+    expect(existsSync(join(root, '.smrt/manifest.json'))).toBe(false);
+  });
+
+  it('the Vite plugin leaves an existing manifest untouched', async () => {
+    const root = writeProject(UNREADABLE);
+    seed(root, ['.smrt/manifest.json']);
+    const plugin = smrtPlugin({
+      include: ['src/**/*.ts'],
+      generateTypes: false,
+    }) as unknown as {
+      configResolved(config: unknown): Promise<void>;
+    };
+
+    await expect(
+      plugin.configResolved({ root, build: {}, plugins: [] }),
+    ).rejects.toThrow(/scan errors/);
+
+    expect(readFileSync(join(root, '.smrt/manifest.json'), 'utf8')).toBe(
+      PREVIOUS,
+    );
   });
 });
