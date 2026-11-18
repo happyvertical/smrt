@@ -69,6 +69,20 @@ class CmMixeds extends SmrtCollection<CmMixedBase> {
   static readonly _itemClass = CmMixedBase;
 }
 
+const initCalls: string[] = [];
+@smrt({ tableName: 'cm_initialized' })
+class CmInitialized extends SmrtObject {
+  @field({ type: 'text' }) name = '';
+  override async initialize() {
+    await super.initialize();
+    initCalls.push(this.name);
+    return this;
+  }
+}
+class CmInitializeds extends SmrtCollection<CmInitialized> {
+  static readonly _itemClass = CmInitialized;
+}
+
 const hookCalls: string[] = [];
 @smrt({ tableName: 'cm_hooked' })
 class CmHooked extends SmrtObject {
@@ -284,6 +298,24 @@ for (const type of engines) {
         { _meta_type: 'CmMixedChild', title: 'child', qty: 3, unitPrice: 7 },
       ] as never);
       expect((created[1] as CmMixedChild).total).toBe(21);
+    });
+
+    it('initializes a model with its own initialize() once per input', async () => {
+      initCalls.length = 0;
+      const initialized = await CmInitializeds.create({ db });
+      initCalls.length = 0;
+      await initialized.createMany(
+        ['a', 'b', 'c'].map((name) => ({ name })) as never,
+      );
+      expect(initCalls).toEqual(['a', 'b', 'c']);
+    });
+
+    it('reads generated values back for an upper-case explicit id', async () => {
+      const id = randomUUID().toUpperCase();
+      const [created] = await invoices.createMany([
+        { id, label: 'Upper', qty: 4, unitPrice: 5 },
+      ] as never);
+      expect(created.total).toBe(20);
     });
 
     it('rolls back with the caller transaction', async () => {

@@ -4050,7 +4050,28 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
         created.push(await this.create(input, context));
       return created;
     };
-    if (SmrtCollection.hasBaseCreateLifecycle(this)) {
+    // Decide from the classes alone: a model that overrides initialize() or
+    // any other lifecycle method must not be constructed speculatively.
+    const itemClass =
+      this.resolveItemConstructor() as unknown as typeof SmrtObject;
+    const classes = new Set<typeof SmrtObject>([itemClass]);
+    let resolvable = true;
+    for (const input of inputs) {
+      const type = (input as { _meta_type?: unknown })._meta_type;
+      if (typeof type !== 'string') continue;
+      const registered =
+        ObjectRegistry.getClassByQualifiedName(type) ??
+        ObjectRegistry.getClass(type);
+      if (registered) classes.add(registered.constructor as typeof SmrtObject);
+      else resolvable = false;
+    }
+    if (
+      resolvable &&
+      SmrtCollection.hasBaseCreateLifecycle(this) &&
+      [...classes].every((item) =>
+        itemClass.hasBaseJunctionLifecycle(item.prototype),
+      )
+    ) {
       const instances: ModelType[] = [];
       for (const input of inputs)
         instances.push(await this.createUnsaved(input));

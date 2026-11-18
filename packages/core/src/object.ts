@@ -3396,20 +3396,22 @@ export class SmrtObject extends SmrtClass {
       // One read-back per batch supplies database-generated and calculated
       // values, for the instances whose class declares any.
       const reloaded = new Set<SmrtObject>();
+      // Databases canonicalize UUID text (lower case), so match case-blind.
       const byId = new Map<string, SmrtObject>();
       for (const item of instances) {
-        if (item.getRegisteredClassInfo()?.generatedFields) {
-          byId.set(String(item.id), item);
-          reloaded.add(item);
-        }
+        if (item.getRegisteredClassInfo()?.generatedFields)
+          byId.set(String(item.id).toLowerCase(), item);
       }
-      const all = [...byId.keys()];
+      const all = [...byId.values()].map((item) => String(item.id));
       for (let at = 0; at < all.length; at += 500) {
         const filter = await first.interceptGetFilter({
           'id in': all.slice(at, at + 500),
         });
         for (const row of await first.getCanonicalPersistedRows(filter)) {
-          await byId.get(String(row.id))?.loadDataFromDb(row);
+          const item = byId.get(String(row.id).toLowerCase());
+          if (!item) continue;
+          await item.loadDataFromDb(row);
+          reloaded.add(item);
         }
       }
       const completions: BulkMutationEntry[] = [];
