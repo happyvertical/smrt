@@ -330,6 +330,12 @@ jobs:
       - name: Check new surface is recorded
         run: node scripts/check-new-surface.mjs
 
+      # Component style literals (#5117): `pnpm lint` ran this but CI did not,
+      # so a raw px value merged through Required CI and broke lint on main.
+      # Node-only, no node_modules.
+      - name: Check smrt token vocabulary
+        run: node scripts/check-smrt-token-vocabulary.mjs
+
       # Registered models are built through their collection, never `new Model()`
       # in package sources, so an app's same-named subclass applies (#4931).
       - name: Check direct model construction

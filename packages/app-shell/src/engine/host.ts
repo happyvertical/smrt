@@ -381,7 +381,14 @@ export class AppHost extends EventEmitter {
   private run<T>(fn: () => Promise<T>): Promise<T> {
     if (this.closed)
       return Promise.reject(new EngineError('the host is closed', 'refused'));
-    const p = this.queue.then(fn, fn);
+    // Re-check when the work starts: a discard or close that ran ahead of this
+    // item on the queue must refuse it, not let it restart a worker on the
+    // removed directory (#5122).
+    const guarded = () =>
+      this.closed
+        ? Promise.reject(new EngineError('the host is closed', 'refused'))
+        : fn();
+    const p = this.queue.then(guarded, guarded);
     this.queue = p.catch(() => {});
     return p;
   }
@@ -1802,6 +1809,29 @@ export class AppHost extends EventEmitter {
       throw new EngineError('only a draft can be discarded', 'refused');
     await this.close();
     removeDraftDirectory(this.dataDir);
+  }
+
+  /**
+   * Throw this draft away only if it has no changes (#5122). The empty-chain
+   * check and the close run on the change queue, so an edit queued before it
+   * runs first and keeps the draft (returns false), and one arriving after
+   * the close is refused rather than silently lost. Returns whether the draft
+   * was discarded.
+   */
+  async discardIfEmpty(): Promise<boolean> {
+    const draft = this.draft;
+    if (!draft)
+      throw new EngineError('only a draft can be discarded', 'refused');
+    return this.run(async () => {
+      const recs = await this.chain();
+      const at = recs.findIndex((r) => r.version === draft.baseVersion);
+      if (at !== 0) return false; // changes since the base, or unreadable
+      await this.drainInflight();
+      this.closed = true;
+      await this.app.terminate();
+      removeDraftDirectory(this.dataDir);
+      return true;
+    });
   }
 
   /**

@@ -363,11 +363,14 @@ function statusLabel(account: SocialAccountSettingsItem): string {
     color: var(--smrt-color-error);
   }
   .smrt-social-account-settings__confirm {
-    border: 1px solid currentColor;
+    border: var(--smrt-hairline);
+    border-color: currentColor;
     border-radius: var(--smrt-radius-md);
   }
   .smrt-social-account-settings__empty {
-    border: 1px dashed var(--smrt-color-outline-variant);
+    border: var(--smrt-hairline);
+    border-style: dashed;
+    border-color: var(--smrt-color-outline-variant);
     border-radius: var(--smrt-radius-md);
     color: var(--smrt-color-on-surface-variant);
     text-align: center;

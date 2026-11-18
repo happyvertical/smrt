@@ -48,18 +48,23 @@ it('returns a database-limited workbook prefix, nulls last, and labels for only 
   delete plan.tables[1].titleField;
   const target = createEngineImportTarget(host);
   await target.applyStructure(plan);
-  // Ada is loaded first, and will be beyond the generic newest 1,000 read.
+  // Ada is loaded first, strictly before the rest (created_at is millisecond
+  // resolution, so a same-ms tie leaves "newest 1,000" order undefined), and
+  // will be beyond the generic newest 1,000 read.
+  const customer = (i: number) => ({
+    sourceRow: i + 2,
+    references: {},
+    values: {
+      name: i === 0 ? 'Ada' : `Customer ${i}`,
+      email: `${i}@example.test`,
+    },
+  });
+  await target.load({ table: 'customers', index: 0, records: [customer(0)] });
+  await new Promise((resolve) => setTimeout(resolve, 20));
   await target.load({
     table: 'customers',
-    index: 0,
-    records: Array.from({ length: 1002 }, (_, i) => ({
-      sourceRow: i + 2,
-      references: {},
-      values: {
-        name: i === 0 ? 'Ada' : `Customer ${i}`,
-        email: `${i}@example.test`,
-      },
-    })),
+    index: 1,
+    records: Array.from({ length: 1001 }, (_, i) => customer(i + 1)),
   });
   await target.load({
     table: 'sales_orders',

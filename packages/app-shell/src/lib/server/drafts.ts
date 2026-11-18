@@ -404,15 +404,13 @@ export function discardNow(
         'this is not the draft that was asked about',
         'refused',
       );
-    // A change that landed after the caller's own check keeps the draft. Edits
-    // do not take this lock, so a change landing after this read and before
-    // the discard below can still be lost: that narrow window is accepted.
-    if (
-      options.expectEmpty &&
-      (!slot.host || (await slot.host.draftChain()).versions.length > 0)
-    )
-      throw new EngineError('this draft has changes', 'refused');
-    if (slot.host) await slot.host.discard();
+    // A change that landed after the caller's own check keeps the draft. The
+    // empty check and the close run together on the draft host's change queue,
+    // the same one edits use, so an edit cannot land between them (#5122).
+    if (options.expectEmpty) {
+      if (!slot.host || !(await slot.host.discardIfEmpty()))
+        throw new EngineError('this draft has changes', 'refused');
+    } else if (slot.host) await slot.host.discard();
     else if (existsSync(slot.dir)) discardDraftDirectory(slot.dir);
     const row = await (
       await AppDraftCollection.create({ db: await getShellDb() })
