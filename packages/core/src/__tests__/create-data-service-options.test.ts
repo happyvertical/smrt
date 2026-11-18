@@ -88,7 +88,10 @@ class ServiceOptionReportCollection extends SmrtCollection<ServiceOptionReport> 
 }
 
 // One STI table, to cover polymorphic creation and `_meta_data` hydration.
-@smrt({ tableStrategy: 'sti' })
+@smrt({
+  tableStrategy: 'sti',
+  api: { include: ['list', 'get', 'create', 'update'] },
+})
 class ServiceOptionAsset extends SmrtObject {
   @field({ type: 'text' })
   label: string = '';
@@ -265,6 +268,7 @@ describe('data never configures a service', () => {
     api.registerCollection('notes', notes as never);
     api.registerCollection('listed', listed as never);
     api.registerCollection('reports', reports as never);
+    api.registerCollection('assets', assets as never);
     handler = api.generateHandler();
   });
 
@@ -643,6 +647,24 @@ describe('data never configures a service', () => {
       expect((await response.json()).label).toBe(label);
       expect(await rowsIn(db, notes.tableName, label)).toBe(1);
       expect(await rowsInOtherDb(notes.tableName, label)).toBe(0);
+      await expectOwnServices(key);
+    });
+
+    it.each(
+      KEYS,
+    )('create of a selected subtype saves normally with %s in the body', async (key) => {
+      const label = `rest-create-type-${key}`;
+      const response = await send('POST', 'assets', {
+        label,
+        // The public selector is the subtype's qualified name.
+        createType:
+          ObjectRegistry.getClass('ServiceOptionImage')?.qualifiedName,
+        [key]: sample(key),
+      });
+      expect(response.status).toBe(201);
+      expect(saved.at(-1)).toBeInstanceOf(ServiceOptionImage);
+      expect(await rowsIn(db, assets.tableName, label)).toBe(1);
+      expect(await rowsInOtherDb(assets.tableName, label)).toBe(0);
       await expectOwnServices(key);
     });
 

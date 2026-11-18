@@ -51,6 +51,54 @@ describe('service option keys', () => {
     }
   });
 
+  it('fail the type check when an option key has no decision', () => {
+    // `SmrtClassOptions` as it would be after someone adds an option.
+    type WithNewOption = keyof (SmrtClassOptions & { addedLater?: string });
+
+    // The guard used above stops matching: the classified keys no longer
+    // cover every option key. (`@ts-expect-error` itself fails the type check
+    // if this line ever compiles.)
+    type Classified = SmrtServiceOptionKey | InternalFlag;
+    // @ts-expect-error an option key without a decision is not covered
+    expectTypeOf<Classified>().toEqualTypeOf<WithNewOption>();
+
+    // And the construct `service-options.ts` uses for its table rejects a
+    // table that is missing a key.
+    const complete = {
+      _className: 'internal',
+      db: 'service',
+      persistence: 'service',
+      fs: 'service',
+      ai: 'service',
+      decisions: 'service',
+      inference: 'service',
+      usage: 'service',
+      logging: 'service',
+      metrics: 'service',
+      pubsub: 'service',
+      sanitization: 'service',
+      signals: 'service',
+      _reuseInitializedDb: 'internal',
+      _deferRuntimeInitialization: 'internal',
+    } as const;
+    const accepted = complete satisfies Record<
+      keyof SmrtClassOptions,
+      'service' | 'internal'
+    >;
+    // @ts-expect-error the same table does not cover the added key
+    const rejected = complete satisfies Record<
+      WithNewOption,
+      'service' | 'internal'
+    >;
+    expect(Object.keys(accepted)).toHaveLength(Object.keys(rejected).length);
+    expect(
+      Object.entries(accepted)
+        .filter(([, kind]) => kind === 'service')
+        .map(([key]) => key)
+        .sort(),
+    ).toEqual([...SMRT_SERVICE_OPTION_KEYS].sort());
+  });
+
   it('are request input unless the model declares the field', () => {
     const declaresMetrics = (key: string) => key === 'metrics';
     for (const key of SMRT_SERVICE_OPTION_KEYS) {

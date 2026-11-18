@@ -8,7 +8,8 @@ import { getDatabase } from '@happyvertical/sql';
 import { describe } from 'vitest';
 import { getTestDatabase } from '../testing/database.js';
 import {
-  CREATE_FLAG_TABLE,
+  CREATE_FLAG_CLASSES,
+  CREATE_FLAG_TABLES,
   createControlFlagSuite,
 } from './create-control-flags.cases.js';
 
@@ -22,17 +23,21 @@ describe.skipIf(!pgUrl)('create control keys on PostgreSQL', () => {
       dbid: `smrt-test-create-control-flags-${crypto.randomUUID()}`,
       max: 4,
     } as Parameters<typeof getDatabase>[0])) as DatabaseInterface;
-    await db.query(`DROP TABLE IF EXISTS "${CREATE_FLAG_TABLE}"`);
+    for (const table of CREATE_FLAG_TABLES) {
+      await db.query(`DROP TABLE IF EXISTS "${table}"`);
+    }
     await getTestDatabase({
       db,
       type: 'postgres',
-      classes: ['CreateControlFlagPart'],
+      classes: CREATE_FLAG_CLASSES,
     });
     return {
       db,
       close: async () => {
         try {
-          await db.query(`DROP TABLE IF EXISTS "${CREATE_FLAG_TABLE}"`);
+          for (const table of CREATE_FLAG_TABLES) {
+            await db.query(`DROP TABLE IF EXISTS "${table}"`);
+          }
         } finally {
           await db.close?.();
         }
