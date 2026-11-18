@@ -61,6 +61,7 @@ import {
   type DispatchTenantScope,
   resolveDispatchTenantScope,
 } from '../dispatch/tenant-resolver.js';
+import { runOutsideWriteContext } from '../embedded-write-queue.js';
 import {
   type ChangesAuthMiddleware,
   resolveChangesDb,
@@ -540,7 +541,11 @@ export function buildChangeEventStream(
     pumpRequested = true;
     if (pumping || closed || sentCursor === null) return;
     pumping = true;
-    void (async () => {
+    // Detached from the caller's write context: a wake-up can arrive from a
+    // commit callback that still holds the database's write queue, and reads
+    // that inherited that hold would stop waiting for later transactions —
+    // and could then see their uncommitted feed rows.
+    void runOutsideWriteContext(async () => {
       try {
         while (pumpRequested && !closed) {
           pumpRequested = false;
@@ -553,7 +558,7 @@ export function buildChangeEventStream(
       } finally {
         pumping = false;
       }
-    })();
+    });
   };
 
   const scheduleRetry = () => {

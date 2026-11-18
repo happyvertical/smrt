@@ -1568,6 +1568,23 @@ export async function getChangesSince(
   db: DatabaseInterface,
   options: GetChangesOptions,
 ): Promise<ChangeFeedPage> {
+  // An embedded engine runs a framework transaction on the root's own
+  // connection, so a read issued on the root while one is open would see its
+  // uncommitted feed rows — and could advance a cursor past a sequence that a
+  // rollback then frees for a different change. Every framework write
+  // transaction holds the per-database write queue for its whole duration,
+  // so reading through the same queue waits for it to commit or roll back.
+  // Re-entrant: a read made inside that transaction (or any other queue hold)
+  // runs at once and sees its own work, as before.
+  return withEmbeddedWriteQueue(db, isEmbeddedDatabase(db), () =>
+    readChangesSince(db, options),
+  );
+}
+
+async function readChangesSince(
+  db: DatabaseInterface,
+  options: GetChangesOptions,
+): Promise<ChangeFeedPage> {
   const { since } = options;
   if (!Number.isFinite(since) || since < 0) {
     throw new Error(
