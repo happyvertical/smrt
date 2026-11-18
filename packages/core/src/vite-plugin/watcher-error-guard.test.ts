@@ -80,7 +80,9 @@ describe('smrtPlugin watcher error guard (#1378)', () => {
 
     // The handler returns a promise; the guard means it must RESOLVE even
     // though the underlying scan rejects.
-    await expect(changeHandler('src/thing.ts')).resolves.toBeUndefined();
+    await expect(
+      changeHandler(join(testDir as string, 'src', 'thing.ts')),
+    ).resolves.toBeUndefined();
     expect(errorSpy).toHaveBeenCalledWith(
       expect.stringContaining('Failed to rescan after change in'),
       expect.anything(),
@@ -97,7 +99,9 @@ describe('smrtPlugin watcher error guard (#1378)', () => {
     ) => Promise<void>;
     expect(addHandler).toBeDefined();
 
-    await expect(addHandler('src/thing.ts')).resolves.toBeUndefined();
+    await expect(
+      addHandler(join(testDir as string, 'src', 'thing.ts')),
+    ).resolves.toBeUndefined();
     expect(errorSpy).toHaveBeenCalledWith(
       expect.stringContaining('Failed to rescan after adding'),
       expect.anything(),
@@ -114,7 +118,9 @@ describe('smrtPlugin watcher error guard (#1378)', () => {
     ) => Promise<void>;
     expect(unlinkHandler).toBeDefined();
 
-    await expect(unlinkHandler('src/thing.ts')).resolves.toBeUndefined();
+    await expect(
+      unlinkHandler(join(testDir as string, 'src', 'thing.ts')),
+    ).resolves.toBeUndefined();
     expect(errorSpy).toHaveBeenCalledWith(
       expect.stringContaining('Failed to rescan after removing'),
       expect.anything(),
