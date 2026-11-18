@@ -108,6 +108,28 @@ function signal(overrides: Partial<ChangeSignal> = {}): ChangeSignal {
   };
 }
 
+/**
+ * Append a real feed row and publish its signal, as the write path does. The
+ * `_events` stream reads every frame from the durable feed — a signal is only
+ * a wake-up — so stream tests need the row behind the signal.
+ */
+async function appendAndSignal(
+  db: DatabaseInterface,
+  overrides: Partial<Omit<ChangeSignal, 'seq'>> = {},
+): Promise<ChangeSignal> {
+  const base = signal(overrides);
+  const seq = await appendChange(db, {
+    table: base.table,
+    rowId: base.rowId,
+    operation: base.operation,
+    tenantId: base.tenantId,
+  });
+  if (seq == null) throw new Error('expected a direct append');
+  const published = { ...base, seq };
+  publishChangeSignal(db, published);
+  return published;
+}
+
 async function flushAsync(): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, 10));
 }
@@ -621,10 +643,10 @@ describe('_events SSE route + change signals (issue #1763, server half)', () => 
       expect(preamble).toContain('retry: 3000');
 
       // Publish a live signal; the next chunk carries it.
-      publishChangeSignal(db, signal({ seq: 5, rowId: 'live-1' }));
+      const live = await appendAndSignal(db, { rowId: 'live-1' });
       const second = await reader.read();
       const event = decoder.decode(second.value);
-      expect(event).toContain('id: 5');
+      expect(event).toContain(`id: ${live.seq}`);
       expect(event).toContain('event: change');
       expect(event).toContain('"table":"events_widgets"');
       expect(event).toContain('"rowId":"live-1"');
@@ -644,14 +666,8 @@ describe('_events SSE route + change signals (issue #1763, server half)', () => 
       await reader.read(); // retry preamble
 
       // A different tenant's signal must be filtered out; tenant a's arrives.
-      publishChangeSignal(
-        db,
-        signal({ seq: 1, tenantId: 'b', rowId: 'b-row' }),
-      );
-      publishChangeSignal(
-        db,
-        signal({ seq: 2, tenantId: 'a', rowId: 'a-row' }),
-      );
+      await appendAndSignal(db, { tenantId: 'b', rowId: 'b-row' });
+      await appendAndSignal(db, { tenantId: 'a', rowId: 'a-row' });
 
       const chunk = await reader.read();
       const event = decoder.decode(chunk.value);
@@ -962,7 +978,7 @@ describe('_events SSE route + change signals (issue #1763, server half)', () => 
       const reader = (res.body as ReadableStream<Uint8Array>).getReader();
       const decoder = new TextDecoder();
       await reader.read(); // preamble
-      publishChangeSignal(db, signal({ seq: 3, rowId: 'e2e' }));
+      await appendAndSignal(db, { rowId: 'e2e' });
       let text = '';
       for (let i = 0; i < 3 && !text.includes('e2e'); i++) {
         const chunk = await reader.read();
@@ -1060,7 +1076,7 @@ describe('_events SSE route + change signals (issue #1763, server half)', () => 
         // large rowId inflates each SSE frame to force the socket buffer full.
         const bigRowId = 'x'.repeat(64 * 1024);
         for (let i = 0; i < 200; i++) {
-          publishChangeSignal(db, signal({ seq: 100 + i, rowId: bigRowId }));
+          await appendAndSignal(db, { rowId: `${bigRowId}${i}` });
         }
         await flushAsync();
 
