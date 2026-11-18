@@ -56,6 +56,7 @@ import {
 import {
   applySyncWritablePolicy,
   applyUpdateInput,
+  assertQueryAccess,
   fieldTypeToJsonSchema,
   ObjectRegistry,
   type PublicJsonOptions,
@@ -1058,6 +1059,13 @@ export async function invokeManifestTool(
             )
           : { found: false };
       }
+      // A filter may name only fields this principal may read: the same
+      // permissions each row is projected with below.
+      assertQueryAccess(
+        registryKeyFor(tool),
+        { where: args.where },
+        { permissions: run.permissions },
+      );
       const items = await collection.list({
         displayLabel: true,
         where: asRecord(args.where),
