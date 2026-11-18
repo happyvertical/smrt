@@ -104,6 +104,13 @@ export const DEFAULT_EVENTS_MAX_SUBSCRIBERS = 1000;
 /** Retry hint for over-cap `_events` connections (#1860). */
 export const DEFAULT_EVENTS_RETRY_AFTER_SECONDS = 5;
 
+/**
+ * Chunks the stream buffers ahead of its reader. The connection reads the
+ * feed only while the buffer has room, so an unread connection holds at most
+ * this many chunks plus one feed page — live writes add nothing to it.
+ */
+const EVENTS_STREAM_HIGH_WATER_MARK = 64;
+
 const encoder = new TextEncoder();
 
 /** Options for {@link buildChangeEventStream}. */
@@ -339,7 +346,13 @@ function readFeedPage(
  *     applying the captured tenant scope and table/row authorization; on
  *     `resyncRequired`, emit `event: resync` at the server's fresh horizon
  *     and continue from it.
- *  f. Start the heartbeat interval.
+ *  f. Start the heartbeat interval (skipped while the reader is not
+ *     draining).
+ *
+ * **Bounded buffering.** The connection reads the feed only while the
+ * reader has room (`pull()`), and live signals only raise a sequence number,
+ * so a connection whose client stops reading holds at most the high-water
+ * mark plus one feed page, however many writes happen meanwhile.
  *
  * `cancel()` tears down on disconnect: clears the timers and unsubscribes,
  * so a dropped client never leaks its subscription (which would pin the dead
@@ -357,6 +370,7 @@ export function buildChangeEventStream(
   let releaseSubscriberSlot = options.releaseSubscriberSlot ?? null;
   let heartbeat: ReturnType<typeof setInterval> | null = null;
   let retryTimer: ReturnType<typeof setTimeout> | null = null;
+  let capacityWaiter: (() => void) | null = null;
   let closed = false;
   let streamController: ReadableStreamDefaultController<Uint8Array> | null =
     null;
@@ -387,6 +401,7 @@ export function buildChangeEventStream(
       clearTimeout(retryTimer);
       retryTimer = null;
     }
+    wakeCapacityWaiter();
     if (unsubscribe) {
       unsubscribe();
       unsubscribe = null;
@@ -397,6 +412,17 @@ export function buildChangeEventStream(
     }
   };
 
+  /** End the stream; the client reconnects from the last id it received. */
+  const closeStream = () => {
+    if (closed) return;
+    teardown();
+    try {
+      streamController?.close();
+    } catch {
+      // Already closed or errored by the platform.
+    }
+  };
+
   /** End the stream after a failed read; the client resumes from its last id. */
   const failClosed = (error: unknown) => {
     if (closed) return;
@@ -404,12 +430,7 @@ export function buildChangeEventStream(
       '_events: change-feed read failed; closing the stream so the client resumes from its last delivered id',
       { error: error instanceof Error ? error.message : String(error) },
     );
-    teardown();
-    try {
-      streamController?.close();
-    } catch {
-      // Already closed or errored by the platform.
-    }
+    closeStream();
   };
 
   /** Tenant scope + captured table allow-list, the synchronous filters. */
@@ -423,16 +444,29 @@ export function buildChangeEventStream(
     return true;
   };
 
-  const waitForCapacity = async (): Promise<void> => {
-    while (
-      !closed &&
-      streamController !== null &&
-      streamController.desiredSize !== null &&
-      streamController.desiredSize <= 0
-    ) {
-      await new Promise((resolve) => setTimeout(resolve, 5));
-    }
+  /** True while the reader has room for at least one more chunk. */
+  const hasCapacity = (): boolean => {
+    const size = streamController?.desiredSize;
+    return size === null || size === undefined || size > 0;
   };
+
+  /**
+   * Resolve once the reader has room again (`pull()`), or the stream ends.
+   * The connection reads the feed only after this, so an unread connection
+   * stops reading instead of buffering every live write.
+   */
+  const waitForCapacity = (): Promise<void> => {
+    if (closed || hasCapacity()) return Promise.resolve();
+    return new Promise<void>((resolve) => {
+      capacityWaiter = resolve;
+    });
+  };
+
+  function wakeCapacityWaiter(): void {
+    const waiter = capacityWaiter;
+    capacityWaiter = null;
+    waiter?.();
+  }
 
   /**
    * Read forward from `sentCursor`, emitting what this connection may see.
@@ -543,81 +577,92 @@ export function buildChangeEventStream(
     schedulePump();
   };
 
-  return new ReadableStream<Uint8Array>({
-    async start(controller) {
-      streamController = controller;
-      // (a) Subscribe first; see the delivery invariant.
-      unsubscribe = subscribeToChangeSignals(db, onSignal);
-      if (releaseSubscriberSlot) {
-        releaseSubscriberSlot();
-        releaseSubscriberSlot = null;
-      }
-
-      let startCursor = cursor;
-      try {
-        // (b) Live-forward only: start from the feed's current head (one
-        // bounds read via `denyAllTables`, no row scan).
-        if (startCursor == null) {
-          const head = await getChangesSince(db, {
-            since: 0,
-            denyAllTables: true,
-          });
-          startCursor = head.resyncRequired
-            ? (head.resyncCursor ?? 0)
-            : head.cursor;
+  return new ReadableStream<Uint8Array>(
+    {
+      async start(controller) {
+        streamController = controller;
+        // (a) Subscribe first; see the delivery invariant.
+        unsubscribe = subscribeToChangeSignals(db, onSignal);
+        if (releaseSubscriberSlot) {
+          releaseSubscriberSlot();
+          releaseSubscriberSlot = null;
         }
-        if (closed) return;
-        // (c) Table authorization, captured once for the connection.
-        if (hasChangeFeedTableAuthorizerHook()) {
-          const allowedTables = await resolveAuthorizedChangeFeedTables(
-            requestContext,
-            undefined,
-          );
-          // The client may have disconnected while that awaited (#3020 P2);
-          // teardown already unsubscribed and released the slot.
-          if (closed) return;
-          allowedTableSet = allowedTables ? new Set(allowedTables) : null;
-          denyAllTables = isChangeFeedDenyAll(allowedTables);
-        }
-      } catch (error) {
-        // A rejected start errors the stream, and cancelling an errored
-        // stream never reaches `cancel()` — tear down here or the
-        // subscription and any reserved slot stay allocated forever.
-        teardown();
-        throw error;
-      }
 
-      // (d) Reconnection hint and contract advertisement (#1859).
-      controller.enqueue(encoder.encode('retry: 3000\n\n'));
-      if (manifestHash !== undefined) {
-        controller.enqueue(encodeSseManifestEvent(manifestHash));
-      }
-
-      // (e) Ordered catch-up from the starting cursor. Wake-ups received so
-      // far are covered by the same reads.
-      sentCursor = startCursor;
-      schedulePump(true);
-
-      // (f) Heartbeat keeps intermediaries from idling the connection out,
-      // and re-reads when a wake-up is still outstanding.
-      heartbeat = setInterval(() => {
-        if (closed) return;
+        let startCursor = cursor;
         try {
-          controller.enqueue(encodeSseComment('heartbeat'));
-        } catch {
+          // (b) Live-forward only: start from the feed's current head (one
+          // bounds read via `denyAllTables`, no row scan).
+          if (startCursor == null) {
+            const head = await getChangesSince(db, {
+              since: 0,
+              denyAllTables: true,
+            });
+            startCursor = head.resyncRequired
+              ? (head.resyncCursor ?? 0)
+              : head.cursor;
+          }
+          if (closed) return;
+          // (c) Table authorization, captured once for the connection.
+          if (hasChangeFeedTableAuthorizerHook()) {
+            const allowedTables = await resolveAuthorizedChangeFeedTables(
+              requestContext,
+              undefined,
+            );
+            // The client may have disconnected while that awaited (#3020 P2);
+            // teardown already unsubscribed and released the slot.
+            if (closed) return;
+            allowedTableSet = allowedTables ? new Set(allowedTables) : null;
+            denyAllTables = isChangeFeedDenyAll(allowedTables);
+          }
+        } catch (error) {
+          // A rejected start errors the stream, and cancelling an errored
+          // stream never reaches `cancel()` — tear down here or the
+          // subscription and any reserved slot stay allocated forever.
           teardown();
-          return;
+          throw error;
         }
-        if (sentCursor !== null && wantedSeq > sentCursor) schedulePump();
-      }, heartbeatMs);
-      // Do not keep the event loop alive solely for heartbeats.
-      (heartbeat as { unref?: () => void }).unref?.();
+
+        // (d) Reconnection hint and contract advertisement (#1859).
+        controller.enqueue(encoder.encode('retry: 3000\n\n'));
+        if (manifestHash !== undefined) {
+          controller.enqueue(encodeSseManifestEvent(manifestHash));
+        }
+
+        // (e) Ordered catch-up from the starting cursor. Wake-ups received so
+        // far are covered by the same reads.
+        sentCursor = startCursor;
+        schedulePump(true);
+
+        // (f) Heartbeat keeps intermediaries from idling the connection out,
+        // and re-reads when a wake-up is still outstanding. A reader that is
+        // not draining gets no heartbeat — its buffer must not grow.
+        if (closed) return;
+        heartbeat = setInterval(() => {
+          if (closed) return;
+          if (hasCapacity()) {
+            try {
+              controller.enqueue(encodeSseComment('heartbeat'));
+            } catch {
+              teardown();
+              return;
+            }
+          }
+          if (sentCursor !== null && wantedSeq > sentCursor) schedulePump();
+        }, heartbeatMs);
+        // Do not keep the event loop alive solely for heartbeats.
+        (heartbeat as { unref?: () => void }).unref?.();
+      },
+      pull() {
+        // The reader has room again; resume a read that waited for it.
+        wakeCapacityWaiter();
+      },
+      cancel() {
+        // Client disconnected (abort) — release the subscription + timers.
+        teardown();
+      },
     },
-    cancel() {
-      // Client disconnected (abort) — release the subscription + timers.
-      teardown();
-    },
-  });
+    { highWaterMark: EVENTS_STREAM_HIGH_WATER_MARK },
+  );
 }
 
 /**
