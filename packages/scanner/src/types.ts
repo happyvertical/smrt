@@ -36,12 +36,18 @@ export interface RawClassDefinition {
 
   /**
    * Module specifier the `extends` identifier is imported from, through a
-   * named (possibly aliased) or namespace import (#4145). Absent when the
-   * parent is declared in this file, default-imported, or not imported.
-   * `extendsClause` is then the parent's exported name, so a bare package
-   * specifier names the parent's package.
+   * named (possibly aliased), default or namespace import (#4145). Absent
+   * when the parent is declared in this file or not imported. For a named or
+   * namespace import `extendsClause` is the parent's exported name, so a bare
+   * package specifier names the parent's package; for a default import see
+   * {@link extendsDefaultImport}.
    */
   extendsSource?: string;
+  /**
+   * The parent is a module's DEFAULT export (`import Base from '…'`). The
+   * class's own name is not in this file; `extendsClause` is the local name.
+   */
+  extendsDefaultImport?: boolean;
 
   /** Class references in the class decorators' config imported through a module. */
   referenceImports?: RawReferenceImport[];

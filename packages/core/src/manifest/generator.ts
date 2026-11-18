@@ -375,7 +375,13 @@ export class ManifestBuilder {
     // ManifestGenerator.generateManifest() and the Vite plugin, #2360 — this
     // path used to skip the report and conflict-key passes).
     const manifestGen = new ManifestGenerator();
-    manifestGen.applyGenerationPasses(manifest, { packageName, packageJson });
+    manifestGen.applyGenerationPasses(manifest, {
+      packageName,
+      packageJson,
+      // Dependency manifests resolve from the project being built, which is
+      // not the process directory when a builder is given an explicit root.
+      projectRoot: this.root(),
+    });
 
     return manifest;
   }

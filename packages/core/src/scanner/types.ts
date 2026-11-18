@@ -182,6 +182,12 @@ export interface FieldDefinition {
    */
   enum?: ReadonlyArray<string | number>;
   related?: string; // For foreignKey, crossPackageRef, oneToMany, manyToMany
+  /**
+   * For a relationship whose target class is imported from another package:
+   * that package and export (`@pkg:Export`). Generation confirms it against
+   * the package's manifest and records the declaring class as `related`.
+   */
+  relatedQualified?: string;
   description?: string;
   _meta?: FieldMeta;
   transient?: boolean; // Field not persisted to database

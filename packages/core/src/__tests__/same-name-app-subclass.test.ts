@@ -22,7 +22,10 @@ import { foreignKey } from '../decorators';
 import { MCPGenerator } from '../generators/mcp';
 import { APIGenerator } from '../generators/rest';
 import { buildDomainKnowledgeManifest } from '../knowledge';
-import { clearManifestCache } from '../manifest/manifest-loader';
+import {
+  clearManifestCache,
+  loadExternalManifestSync,
+} from '../manifest/manifest-loader';
 import { annotateModelReplacements } from '../manifest/model-replacements';
 import { generateSchemaDiff } from '../migrations/differ';
 import { createMigrationDefinition } from '../migrations/generator';
@@ -216,6 +219,9 @@ beforeEach(async () => {
   );
   ws.write('app/src/models.ts', appSource());
   app = await scan(ws.path('app'), APP, [UP]);
+  // The app process loads its dependency's manifest, as its runtime does.
+  // (Generation no longer leaves it in the process-wide cache.)
+  loadExternalManifestSync(UP, { warn: false });
   merged = annotateModelReplacements({
     ...app,
     objects: { ...up.objects, ...app.objects },

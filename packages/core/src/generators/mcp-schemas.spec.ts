@@ -181,6 +181,12 @@ describe('MCP tool input schemas (#1500)', () => {
   });
 });
 
+// Target of the foreignKey below: every target names a declared model.
+@smrt()
+class Author extends SmrtObject {
+  name = '';
+}
+
 // foreignKey field is split out so its `ID of related ...` description renders.
 @smrt({ mcp: { include: ['create'] } })
 class McpFkWidget extends SmrtObject {

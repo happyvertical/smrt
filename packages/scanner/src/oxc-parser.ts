@@ -966,8 +966,8 @@ function extractImportAliases(body: Statement[]): Map<string, string> {
 
 /**
  * Where one local import binding comes from (#4145).
- * `imported` is the exported name for a named import, `null` for a namespace
- * import (`import * as ns`).
+ * `imported` is the exported name for a named import, `'default'` for a
+ * default import, `null` for a namespace import (`import * as ns`).
  */
 interface ImportBinding {
   source: string;
@@ -975,9 +975,10 @@ interface ImportBinding {
 }
 
 /**
- * Map each local name bound by a named or namespace VALUE import to its
- * module specifier. Default imports are left out (the exported class name is
- * unknown) and so are type-only imports (they cannot be extended).
+ * Map each local name bound by a named, default or namespace VALUE import to
+ * its module specifier. A default import is recorded with `imported:
+ * 'default'`: its source is known, the exported class's own name is not.
+ * Type-only imports are left out (they cannot be extended).
  */
 function extractImportBindings(body: Statement[]): Map<string, ImportBinding> {
   const bindings = new Map<string, ImportBinding>();
@@ -994,6 +995,8 @@ function extractImportBindings(body: Statement[]): Map<string, ImportBinding> {
         bindings.set(spec.local.name, { source, imported: spec.imported.name });
       } else if (spec.type === 'ImportNamespaceSpecifier') {
         bindings.set(spec.local.name, { source, imported: null });
+      } else if (spec.type === 'ImportDefaultSpecifier') {
+        bindings.set(spec.local.name, { source, imported: 'default' });
       }
     }
   }
@@ -2604,11 +2607,8 @@ function extractClassDeclaration(
       : smrtConfig;
 
   // Extract extends clause
-  const { extendsClause, extendsTypeArg, extendsSource } = extractExtendsClause(
-    node,
-    importAliases,
-    ctx?.importBindings,
-  );
+  const { extendsClause, extendsTypeArg, extendsSource, extendsDefaultImport } =
+    extractExtendsClause(node, importAliases, ctx?.importBindings);
 
   // Extract fields and methods
   const fields: RawFieldDefinition[] = [];
@@ -2694,6 +2694,7 @@ function extractClassDeclaration(
     extendsClause,
     extendsTypeArg,
     ...(extendsSource ? { extendsSource } : {}),
+    ...(extendsDefaultImport ? { extendsDefaultImport } : {}),
     decoratorConfig,
     hasSmartDecorator,
     ...(description ? { description } : {}),
@@ -3892,6 +3893,7 @@ function extractExtendsClause(
   extendsClause: string | null;
   extendsTypeArg: string | null;
   extendsSource?: string;
+  extendsDefaultImport?: boolean;
 } {
   if (!node.superClass) {
     return { extendsClause: null, extendsTypeArg: null };
@@ -3900,12 +3902,14 @@ function extractExtendsClause(
   let extendsClause: string | null = null;
   let extendsTypeArg: string | null = null;
   let extendsSource: string | undefined;
+  let extendsDefaultImport = false;
 
   // Get class name
   if (node.superClass.type === 'Identifier') {
     extendsClause = node.superClass.name;
     const binding = importBindings?.get(extendsClause);
     if (binding?.imported) extendsSource = binding.source;
+    if (binding?.imported === 'default') extendsDefaultImport = true;
   } else if (node.superClass.type === 'MemberExpression') {
     const member = node.superClass;
     // `ns.Class` and `ns['Class']` name the same export.
@@ -3958,6 +3962,7 @@ function extractExtendsClause(
     extendsClause,
     extendsTypeArg,
     ...(extendsSource ? { extendsSource } : {}),
+    ...(extendsDefaultImport ? { extendsDefaultImport } : {}),
   };
 }
 

@@ -276,6 +276,7 @@ describe('manifest generation: undecorated collections inherit their model surfa
       manifestOf(
         model('Tally', { report: { source: 'Entry' } } as SmartObjectConfig),
         collection('Tally'),
+        model('Entry', {}),
       ),
     );
     expect(collectionConfig(manifest, 'Tally')).toMatchObject({

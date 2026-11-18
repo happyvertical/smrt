@@ -390,7 +390,10 @@ function createQualifiedName(
  * qualifies same-package first), and for anything it cannot trace.
  */
 export function importedParentQualifiedName(
-  classDef: Pick<RawClassDefinition, 'extendsClause' | 'extendsSource'>,
+  classDef: Pick<
+    RawClassDefinition,
+    'extendsClause' | 'extendsSource' | 'extendsDefaultImport'
+  >,
   ownPackageName: string | undefined,
 ): QualifiedClassName | undefined {
   const parent = classDef.extendsClause;
@@ -398,7 +401,14 @@ export function importedParentQualifiedName(
   if (FRAMEWORK_BASE_CLASSES.has(parent)) return undefined;
   const parentPackage = scopedPackageOfSpecifier(classDef.extendsSource);
   if (!parentPackage || parentPackage === ownPackageName) return undefined;
-  return createQualifiedName(parentPackage, parent);
+  // A default import names the export, not the class: the local name is only
+  // a binding, and a package's manifest does not record which class it
+  // exports by default. Qualify it as the `default` export, which generation
+  // cannot confirm and fails on, rather than confirm a same-named class.
+  return createQualifiedName(
+    parentPackage,
+    classDef.extendsDefaultImport ? 'default' : parent,
+  );
 }
 
 /**

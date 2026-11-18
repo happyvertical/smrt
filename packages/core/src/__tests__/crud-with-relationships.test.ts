@@ -30,6 +30,12 @@ class Parent extends SmrtObject {
   relatedItems: any[] = [];
 }
 
+// Target of the second relationship: every target names a declared model.
+@smrt()
+class Related extends SmrtObject {
+  parentId: string = '';
+}
+
 // Child model
 @smrt()
 class Child extends SmrtObject {

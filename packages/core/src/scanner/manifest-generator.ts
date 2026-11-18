@@ -18,7 +18,13 @@ import {
   resolveEffectiveActionMetadata,
 } from '../generators/custom-action.js';
 import {
+  type DiscoveredSmrtPackages,
+  discoverSmrtPackageLocations,
+} from '../manifest/discover-smrt-packages.js';
+import {
+  isPackageResolvableSync,
   loadExternalManifestSync,
+  loadManifestFromPathSync,
   lookupInManifest,
 } from '../manifest/manifest-loader.js';
 import { annotateModelReplacements } from '../manifest/model-replacements';
@@ -317,6 +323,8 @@ export class ManifestGenerator {
       packageJson?: PackageJsonLike;
       smrtDependencies?: string[];
       includeVisibility?: SmrtVisibility[];
+      /** See {@link applyGenerationPasses}. */
+      projectRoot?: string;
     },
   ): SmartObjectManifest {
     const manifest: SmartObjectManifest = {
@@ -426,6 +434,7 @@ export class ManifestGenerator {
     this.applyGenerationPasses(manifest, {
       packageName: options?.packageName,
       packageJson: options?.packageJson,
+      projectRoot: options?.projectRoot,
     });
 
     return manifest;
@@ -443,8 +452,86 @@ export class ManifestGenerator {
    * @param manifest - manifest with `objects` populated (and
    *   `smrtDependencies` set, so external STI bases resolve)
    * @param options - package metadata for the agent-manifest pass
+   * @param options.projectRoot - root of the project the manifest is
+   *   generated for. Dependency manifests (parents imported from another
+   *   package, STI relatives) are resolved from it, the way the project
+   *   itself resolves them. Every producer passes it; without it resolution
+   *   starts at `process.cwd()`, which is only the same thing when the build
+   *   runs from the project directory.
    */
   applyGenerationPasses(
+    manifest: SmartObjectManifest,
+    options?: {
+      packageName?: string;
+      packageJson?: PackageJsonLike;
+      projectRoot?: string;
+    },
+  ): void {
+    const previous = this.dependencyScope;
+    // Every run reads its dependencies once, from its project root, and
+    // holds them for that run only. Without an explicit root the working
+    // directory is the root; the process-wide cache is never read, so a
+    // provider that changed between two runs is read again.
+    this.dependencyScope = {
+      root: options?.projectRoot ?? process.cwd(),
+      manifests: new Map(),
+    };
+    try {
+      this.runGenerationPasses(manifest, options);
+    } finally {
+      this.dependencyScope = previous;
+    }
+  }
+
+  /**
+   * Where dependency manifests are resolved from during one
+   * {@link applyGenerationPasses} run, and what that run has loaded.
+   */
+  private dependencyScope:
+    | {
+        root: string;
+        locations?: DiscoveredSmrtPackages;
+        manifests: Map<string, ReturnType<typeof loadExternalManifestSync>>;
+      }
+    | undefined;
+
+  /**
+   * A dependency package's manifest for the generation passes.
+   *
+   * Inside a run that names its project root, the package is resolved from
+   * that root: first the manifest package discovery selected for it (the same
+   * file the producer's `smrtDependencies` list was built from), then the
+   * package's `./manifest` export as seen from the root. The result is held
+   * for the run, so every pass reads one manifest per package. Without a
+   * root, resolution is the loader's default.
+   */
+  private loadDependencyManifest(
+    packageName: string,
+    options: { warn?: boolean } = {},
+  ): ReturnType<typeof loadExternalManifestSync> {
+    const scope = this.dependencyScope;
+    if (!scope) return loadExternalManifestSync(packageName, options);
+    const held = scope.manifests.get(packageName);
+    if (held !== undefined) return held;
+    scope.locations ??= discoverSmrtPackageLocations({ baseDir: scope.root });
+    const location = scope.locations[packageName];
+    const manifest =
+      (location
+        ? loadManifestFromPathSync(location.manifestPath, { cache: false })
+        : null) ??
+      loadExternalManifestSync(packageName, {
+        ...options,
+        baseDir: scope.root,
+        // The run holds what it loaded (`scope.manifests`); a cache that
+        // outlives the run would let a rebuild confirm a parent from a
+        // manifest that has since changed or gone.
+        cache: false,
+      });
+    scope.manifests.set(packageName, manifest);
+    return manifest;
+  }
+
+  private runGenerationPasses(
     manifest: SmartObjectManifest,
     options?: { packageName?: string; packageJson?: PackageJsonLike },
   ): void {
@@ -678,6 +765,12 @@ export class ManifestGenerator {
       options?.packageName,
       options?.packageJson,
     );
+
+    // Last, after the specific checks above have reported what they know:
+    // every relationship target and report source names a class this
+    // manifest or a dependency's declares. A target recorded under a binding
+    // or alias name would point the relationship at no model, or another.
+    this.assertKnownTargets(manifest);
   }
 
   /**
@@ -690,22 +783,213 @@ export class ManifestGenerator {
    * registry cannot find, so an unconfirmed qualification falls back to the
    * simple `extends` and today's resolution. Same-package qualifications are
    * left alone: they name this manifest's own classes.
+   *
+   * The fallback must then FIND the parent — in this manifest or in a
+   * dependency's. A parent the source imports from another package and no
+   * loaded manifest declares is not "no parent": every later pass would
+   * treat the class as a root model, give a single-table child its own
+   * table, and skip the surface it inherits. That is a generation error.
    */
   verifyImportedParents(manifest: SmartObjectManifest): void {
     for (const obj of Object.values(manifest.objects)) {
       const parent = obj.extendsQualified;
       if (!parent || !isQualifiedName(parent)) continue;
-      const { packageName } = parseQualifiedName(parent);
+      const { packageName, className: exportedName } =
+        parseQualifiedName(parent);
       if (packageName === (obj.packageName ?? manifest.packageName)) continue;
-      const parentManifest = loadExternalManifestSync(packageName, {
+      const root = this.dependencyScope?.root ?? process.cwd();
+      const fail = (reason: string): never => {
+        throw new ConfigurationError(
+          `${obj.className} (${obj.filePath}) extends ${obj.extends}, imported from ${packageName}, ` +
+            `but its parent cannot be confirmed from ${root}: ${reason}. ` +
+            `A class of the same name elsewhere is not the parent the source imports. Without its parent the class ` +
+            `would be generated as a root model, with its own table and none of the fields or surface limits it ` +
+            `inherits. Import the parent by its class name from the package that declares it, build that package so ` +
+            `its manifest exists, and declare it as a dependency of this package.`,
+          'CONFIG_UNRESOLVED_IMPORTED_PARENT',
+          {
+            className: obj.className,
+            parent,
+            parentPackage: packageName,
+            resolutionRoot: root,
+          },
+        );
+      };
+      // A default import: the manifest does not record which class a package
+      // exports by default, so the local name proves nothing.
+      if (exportedName === 'default') {
+        fail(
+          `it is the default export of ${packageName}, and a package manifest does not record which class that is`,
+        );
+      }
+      const parentManifest = this.loadDependencyManifest(packageName, {
         warn: false,
       });
       if (parentManifest && lookupInManifest(parentManifest, parent)) continue;
-      logger.debug(
-        `[manifest-generator] ${obj.className}: ${packageName} does not declare ${parent}; keeping the unqualified parent "${obj.extends}"`,
+      if (parentManifest) {
+        fail(`the manifest of ${packageName} does not declare ${exportedName}`);
+      }
+      if (isPackageResolvableSync(packageName, { baseDir: root })) {
+        fail(`${packageName} is installed there but has no readable manifest`);
+      }
+
+      // A path alias is resolved by the scanner to the file it maps to, so
+      // a qualification that reaches generation names a package. One that
+      // resolves to no package names no parent, whatever class shares its
+      // name.
+      fail(
+        `${packageName} resolves to no package there (a project path alias is resolved by the scanner through tsconfig \`paths\`; an alias declared only in a bundler config is not read)`,
       );
-      delete obj.extendsQualified;
     }
+  }
+
+  /**
+   * Fail generation when a relationship target (`@foreignKey`,
+   * `@oneToMany`, `@manyToMany`) or a report source (`@report({ source,
+   * joins })`) names no class of this manifest or of a dependency whose
+   * manifest generation can load. `@crossPackageRef` names its package and
+   * is checked at save time instead.
+   */
+  private assertKnownTargets(manifest: SmartObjectManifest): void {
+    const known = (target: string): boolean => {
+      // A target may name a column of its class (`'Author.email'`); the class
+      // is the part before the first dot of the class name.
+      const name = isQualifiedName(target)
+        ? `${parseQualifiedName(target).packageName}:${parseQualifiedName(target).className.split('.')[0]}`
+        : target.split('.')[0];
+      if (lookupInManifest(manifest, name)) return true;
+      if (isQualifiedName(name)) {
+        const dependency = this.loadDependencyManifest(
+          parseQualifiedName(name).packageName,
+          { warn: false },
+        );
+        return Boolean(dependency && lookupInManifest(dependency, name));
+      }
+      return this.parentPackages(manifest).some((packageName) => {
+        const dependency = this.loadDependencyManifest(packageName, {
+          warn: false,
+        });
+        return Boolean(dependency && lookupInManifest(dependency, name));
+      });
+    };
+    // A target the scanner traced to a package export (`@pkg:Export`) is
+    // confirmed by that identity alone: the package's manifest must declare
+    // the export, and the target becomes the declaring class. A same-named
+    // class here or in any other dependency is never it.
+    const declaredExport = (qualified: string) => {
+      if (!isQualifiedName(qualified)) return undefined;
+      const { packageName, className: exportName } =
+        parseQualifiedName(qualified);
+      const dependency = this.loadDependencyManifest(packageName, {
+        warn: false,
+      });
+      if (!dependency) return undefined;
+      return (
+        lookupInManifest(dependency, qualified) ??
+        Object.values(dependency.objects).find(
+          (entry) =>
+            entry.exportName === exportName &&
+            (entry.packageName ?? dependency.packageName) === packageName,
+        )
+      );
+    };
+    const unknown: string[] = [];
+    for (const obj of Object.values(manifest.objects)) {
+      for (const [fieldName, field] of Object.entries(obj.fields ?? {})) {
+        if (
+          field.type !== 'foreignKey' &&
+          field.type !== 'oneToMany' &&
+          field.type !== 'manyToMany'
+        ) {
+          continue;
+        }
+        const where = `${obj.className}.${fieldName} (${obj.filePath}): @${field.type}()`;
+        if (field.relatedQualified) {
+          const declared = declaredExport(field.relatedQualified);
+          if (declared) field.related = declared.className;
+          else unknown.push(`${where} targets ${field.relatedQualified}`);
+          continue;
+        }
+        if (typeof field.related !== 'string' || field.related.trim() === '') {
+          unknown.push(`${where} names no target`);
+        } else if (!known(field.related)) {
+          unknown.push(`${where} targets "${field.related}"`);
+        }
+      }
+      const report = obj.decoratorConfig?.report as
+        | {
+            source?: unknown;
+            sourceQualified?: unknown;
+            joins?: Record<
+              string,
+              { source?: unknown; sourceQualified?: unknown }
+            >;
+          }
+        | undefined;
+      const sources: Array<
+        [string, { source?: unknown; sourceQualified?: unknown } | undefined]
+      > = [
+        ['source', report],
+        ...Object.entries(report?.joins ?? {}).map(
+          ([join, entry]): [string, typeof entry] => [
+            `joins.${join}.source`,
+            entry,
+          ],
+        ),
+      ];
+      for (const [path, holder] of sources) {
+        if (!holder) continue;
+        if (typeof holder.sourceQualified === 'string') {
+          const declared = declaredExport(holder.sourceQualified);
+          if (declared) holder.source = declared.className;
+          else
+            unknown.push(
+              `${obj.className} (${obj.filePath}): @report() ${path} is ${holder.sourceQualified}`,
+            );
+          continue;
+        }
+        const source = holder.source;
+        if (typeof source === 'string' && source !== '' && !known(source)) {
+          unknown.push(
+            `${obj.className} (${obj.filePath}): @report() ${path} is "${source}"`,
+          );
+        }
+      }
+    }
+    if (unknown.length > 0) {
+      throw new ConfigurationError(
+        `Relationship and report targets must name a model class this package or one of its SMRT ` +
+          `dependencies declares; these name none:\n  ${unknown.join('\n  ')}\n` +
+          `Import the model class by its own name (or write its name as a string), and make sure the ` +
+          `package that declares it is built and is a dependency of this package.`,
+        'CONFIG_UNKNOWN_RELATIONSHIP_TARGET',
+        { targets: unknown },
+      );
+    }
+  }
+
+  /**
+   * The packages a manifest's parents can come from: its `smrtDependencies`,
+   * then the package of every confirmed import-qualified parent.
+   *
+   * A parent's package is not always a listed dependency: the list comes from
+   * package discovery, and an app may extend a class of a package it names
+   * only in its consumer configuration. `verifyImportedParents` confirmed the
+   * parent against that package's manifest, so every later pass must be able
+   * to load it from there too. A parent that is confirmed and then not found
+   * would be generated as if it did not exist.
+   */
+  private parentPackages(manifest: SmartObjectManifest): string[] {
+    const packages = new Set(manifest.smrtDependencies ?? []);
+    for (const obj of Object.values(manifest.objects)) {
+      const parent = obj.extendsQualified;
+      if (!parent || !isQualifiedName(parent)) continue;
+      const { packageName } = parseQualifiedName(parent);
+      if (packageName !== (obj.packageName ?? manifest.packageName)) {
+        packages.add(packageName);
+      }
+    }
+    return [...packages];
   }
 
   /**
@@ -733,12 +1017,15 @@ export class ManifestGenerator {
       ? (manifest.objects[ref] as SmartObjectDefinition | undefined)
       : objectsByName.get(ref);
     if (parent === child) parent = undefined;
-    if (!parent && manifest.smrtDependencies?.length) {
-      parent = this.loadParentFromExternalPackage(
-        ref,
-        manifest.smrtDependencies,
-        objectsByName,
-      );
+    if (!parent) {
+      const packages = this.parentPackages(manifest);
+      if (packages.length > 0) {
+        parent = this.loadParentFromExternalPackage(
+          ref,
+          packages,
+          objectsByName,
+        );
+      }
     }
     return parent === child ? undefined : parent;
   }
@@ -2200,23 +2487,21 @@ export class ManifestGenerator {
     const aggregatedObjects: Record<string, SmartObjectDefinition> = {
       ...manifest.objects,
     };
-
-    // Load and merge external package objects
-    if (manifest.smrtDependencies && manifest.smrtDependencies.length > 0) {
-      for (const packageName of manifest.smrtDependencies) {
-        const externalManifest = loadExternalManifestSync(packageName);
-        if (externalManifest) {
-          // Merge external objects (local objects take precedence on collision)
-          for (const [name, obj] of Object.entries(externalManifest.objects)) {
-            if (!aggregatedObjects[name]) {
-              aggregatedObjects[name] = obj;
-            }
+    // Load and merge external package objects: the listed dependencies, and
+    // the package of each confirmed imported parent.
+    for (const packageName of this.parentPackages(manifest)) {
+      const externalManifest = this.loadDependencyManifest(packageName);
+      if (externalManifest) {
+        // Merge external objects (local objects take precedence on collision)
+        for (const [name, obj] of Object.entries(externalManifest.objects)) {
+          if (!aggregatedObjects[name]) {
+            aggregatedObjects[name] = obj;
           }
-
-          logger.debug(
-            `[manifest-generator] Aggregated ${Object.keys(externalManifest.objects).length} objects from ${packageName}`,
-          );
         }
+
+        logger.debug(
+          `[manifest-generator] Aggregated ${Object.keys(externalManifest.objects).length} objects from ${packageName}`,
+        );
       }
     }
 
@@ -2497,6 +2782,25 @@ export class ManifestGenerator {
         `[manifest-generator] Inheritance chain for ${obj.className}: ${inheritanceChain.join(' -> ')}`,
       );
 
+      // A single-table child inherits its confirmed ancestors' manifest
+      // static metadata (`uiSlots`, `adminRoutes`, …) the way the runtime
+      // class inherits static members: the nearest declaration wins and the
+      // child's own apply last. The scanner merges these only along a chain
+      // it could follow inside the scan; generation completes it from the
+      // parent it confirmed.
+      if (usesSTI) {
+        const inherited: Record<string, unknown> = {};
+        for (const ancestor of ancestorDefs) {
+          Object.assign(inherited, ancestor?.staticProperties ?? {});
+        }
+        if (Object.keys(inherited).length > 0) {
+          obj.staticProperties = {
+            ...inherited,
+            ...(obj.staticProperties ?? {}),
+          };
+        }
+      }
+
       // Merge fields from ancestors (base to child) by the one shared rule
       // (`resolveInheritedFields`, #4940): STI subclasses share one table, so
       // every ancestor's columns are needed; an own-table (CTI) subclass
@@ -2772,21 +3076,18 @@ export class ManifestGenerator {
     ) {
       return undefined;
     }
-    let parent =
-      (obj.extendsQualified
-        ? (manifest.objects[obj.extendsQualified] as
-            | SmartObjectDefinition
-            | undefined)
-        : undefined) ?? objectsByName.get(obj.extends ?? simpleParent);
-    if (parent === obj) parent = undefined;
-    if (!parent && manifest.smrtDependencies?.length) {
-      parent = this.loadParentFromExternalPackage(
-        parentName,
-        manifest.smrtDependencies,
-        objectsByName,
-      );
-    }
-    if (!parent || parent === obj) return undefined;
+    // A confirmed import-qualified parent is resolved by its qualified name
+    // only: this manifest's entry of that identity, else the parent
+    // package's. A same-named class of this package is never it, so exposure
+    // inheritance and the widening check read the parent the table and
+    // fields come from.
+    const parent = this.resolveParentDefinition(
+      obj.extendsQualified ?? obj.extends ?? simpleParent,
+      obj,
+      manifest,
+      objectsByName,
+    );
+    if (!parent) return undefined;
     if (
       this.extendsCollection(parent, objectsByName, manifest) ||
       this.extendsAnyCollectionBase(parent, objectsByName, manifest)
@@ -3277,7 +3578,7 @@ export class ManifestGenerator {
   ): SmartObjectDefinition | undefined {
     // Try each external SMRT dependency
     for (const packageName of smrtDependencies) {
-      const externalManifest = loadExternalManifestSync(packageName);
+      const externalManifest = this.loadDependencyManifest(packageName);
 
       if (!externalManifest) {
         continue;

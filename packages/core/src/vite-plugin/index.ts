@@ -1826,6 +1826,9 @@ export function smrtPlugin(
       manifestGen.applyGenerationPasses(newManifest, {
         packageName,
         packageJson,
+        // The Vite root, which is not the process directory when a build is
+        // started from elsewhere (`vite build apps/web`).
+        projectRoot: rootDir,
       });
 
       // The declared surface and the generated one are only comparable once

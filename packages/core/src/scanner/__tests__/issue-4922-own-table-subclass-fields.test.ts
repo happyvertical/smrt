@@ -165,17 +165,27 @@ describe('#4922 manifest: own-table subclass fields (row 1)', () => {
     expect(leaf.fields.code.type).toBe('integer');
   });
 
-  it('an unresolvable parent adds nothing and does not throw', () => {
+  it('a parent imported from a package no manifest declares it in fails generation', () => {
+    // The class would otherwise be generated as a root model: its own
+    // columns only, with none of the parent's fields.
+    expect(() =>
+      generate(APP, [
+        def(
+          APP,
+          'Orphan',
+          { own: { type: 'text' } },
+          {
+            extends: 'NotInstalled',
+            extendsQualified: '@missing/pkg:NotInstalled',
+          },
+        ),
+      ]),
+    ).toThrow(/Orphan.*extends NotInstalled, imported from @missing\/pkg/s);
+  });
+
+  it('a parent that is not imported from a package adds nothing and does not throw', () => {
     const manifest = generate(APP, [
-      def(
-        APP,
-        'Orphan',
-        { own: { type: 'text' } },
-        {
-          extends: 'NotInstalled',
-          extendsQualified: '@missing/pkg:NotInstalled',
-        },
-      ),
+      def(APP, 'Orphan', { own: { type: 'text' } }, { extends: 'LocalMixin' }),
     ]);
     expect(Object.keys(manifest.objects[`${APP}:Orphan`].fields)).toEqual([
       'own',

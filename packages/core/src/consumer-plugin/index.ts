@@ -21,7 +21,10 @@ import { buildDomainKnowledgeManifest } from '../knowledge.js';
 import { resolveFileKnowledgeConfig } from '../knowledge-config.js';
 import { annotateModelReplacements } from '../manifest/model-replacements';
 import { selectObjectDeclarations } from '../manifest/object-declarations.js';
-import { manifestExportCandidates } from '../manifest/package-manifest-exports.js';
+import {
+  conventionalManifestCandidates,
+  manifestExportCandidates,
+} from '../manifest/package-manifest-exports.js';
 import { isTestArtifactManifest } from '../manifest/test-artifacts.js';
 import {
   BUILD_SCHEMA_MODULE,
@@ -1532,8 +1535,7 @@ function packageManifestCandidates(
   return [
     ...manifestExportCandidates(packageDir, packageJson),
     legacyStaticManifestPath(packageDir),
-    path.join(packageDir, 'dist', 'manifest.json'),
-    path.join(packageDir, 'manifest.json'),
+    ...conventionalManifestCandidates(packageDir),
   ];
 }
 
