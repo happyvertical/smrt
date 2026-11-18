@@ -29,6 +29,11 @@ import {
   isTenantScopedClassResolved,
   resolveDispatchTenantScope,
 } from './dispatch/tenant-resolver.js';
+import {
+  isEmbeddedDatabase,
+  usesEmbeddedRevisionFallback,
+  withEmbeddedWriteTransaction,
+} from './embedded-write-queue';
 import { EmbeddingProvider } from './embeddings/provider';
 import { EmbeddingStorage } from './embeddings/storage';
 import type { ClassEmbeddingConfig } from './embeddings/types';
@@ -4000,6 +4005,94 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     }
     await instance.save();
     return instance;
+  }
+
+  /**
+   * Creates and persists many instances in one all-or-nothing operation: the
+   * same rows, ids, STI discriminators, defaults, timestamps, interceptors and
+   * change-feed entries as calling {@link create} for each input in order,
+   * returned in input order.
+   *
+   * Eligible batches (the framework's own create and save lifecycle, no
+   * audit trail, no model hooks, embeddings or write-through, only
+   * bulk-compatible interceptors, and no collision with a stored row, a sync
+   * tombstone or another input) are inserted with a handful of multi-row
+   * statements, one generated-value read-back, and one change-feed append, so
+   * a 10,000-row load costs statements per batch instead of per row.
+   * Anything else — and any batch whose preparation fails — takes the
+   * per-record path: `create()` runs for each input inside one transaction, so
+   * adoption of a natural key, derived-slug renumbering, hooks, auditing and
+   * the exact per-record errors are unchanged. Interceptors and validation
+   * that already ran while the batch was prepared run again on that path.
+   *
+   * Joins the caller's transaction when there is one. A batch failure raised by
+   * the database names the table, not the offending input.
+   *
+   * @param inputs - Field values for each new object, as for {@link create}
+   * @returns The created instances, in input order
+   *
+   * @example
+   * ```typescript
+   * const rows = await products.createMany([
+   *   { name: 'Widget', price: 9.99 },
+   *   { name: 'Gadget', price: 19.99 },
+   * ]);
+   * ```
+   */
+  public async createMany(
+    inputs: ReadonlyArray<SmrtCreateInput<ModelType>>,
+    context?: Partial<AuditContext>,
+  ): Promise<ModelType[]> {
+    if (inputs.length === 0) return [];
+    const createEach = async () => {
+      const created: ModelType[] = [];
+      for (const input of inputs)
+        created.push(await this.create(input, context));
+      return created;
+    };
+    // Decide from the classes alone: a model that overrides initialize() or
+    // any other lifecycle method must not be constructed speculatively.
+    const itemClass =
+      this.resolveItemConstructor() as unknown as typeof SmrtObject;
+    const classes = new Set<typeof SmrtObject>([itemClass]);
+    let resolvable = true;
+    for (const input of inputs) {
+      const type = (input as { _meta_type?: unknown })._meta_type;
+      if (typeof type !== 'string') continue;
+      const registered =
+        ObjectRegistry.getClassByQualifiedName(type) ??
+        ObjectRegistry.getClass(type);
+      if (registered) classes.add(registered.constructor as typeof SmrtObject);
+      else resolvable = false;
+    }
+    if (
+      resolvable &&
+      SmrtCollection.hasBaseCreateLifecycle(this) &&
+      [...classes].every((item) =>
+        itemClass.hasBaseJunctionLifecycle(item.prototype),
+      )
+    ) {
+      const instances: ModelType[] = [];
+      for (const input of inputs)
+        instances.push(await this.createUnsaved(input));
+      if (
+        !instances.some((instance) => isAudited(instance)) &&
+        (await (instances[0].constructor as typeof SmrtObject).tryCreateBatch(
+          instances,
+        ))
+      ) {
+        return instances;
+      }
+    }
+    const db = this.db;
+    if (!db.transaction) return await createEach();
+    // Every record in one transaction (joined when the caller has one).
+    return await withEmbeddedWriteTransaction(
+      db,
+      isEmbeddedDatabase(db),
+      (transaction) => this.withDatabase(transaction, createEach),
+      usesEmbeddedRevisionFallback(db),
+    );
   }
 
   /** Owning seam for generated CRUD that already validates fields and permissions. */

@@ -1820,12 +1820,31 @@ export class SmrtObject extends SmrtClass {
         unknown
       > | null;
     }
+    return (await this.readNativeDuckDbRows(filter, 1))[0] ?? null;
+  }
+
+  /** Every matching row, canonicalized exactly as {@link getCanonicalPersistedRow}. */
+  protected async getCanonicalPersistedRows(
+    filter: Record<string, unknown>,
+  ): Promise<Array<Record<string, unknown>>> {
+    if (!this.isNativeDuckDb()) {
+      return (await this.db.list(this.tableName, filter)) as Array<
+        Record<string, unknown>
+      >;
+    }
+    return await this.readNativeDuckDbRows(filter);
+  }
+
+  private async readNativeDuckDbRows(
+    filter: Record<string, unknown>,
+    limit?: number,
+  ): Promise<Array<Record<string, unknown>>> {
     const schema =
       ObjectRegistry.getSchema(this.getResolvedQualifiedName()) ??
       ObjectRegistry.getSchema(this.getResolvedClassName());
     const quote = (identifier: string) =>
       `"${identifier.replaceAll('"', '""')}"`;
-    if (Object.keys(filter).length === 0) return null;
+    if (Object.keys(filter).length === 0) return [];
     for (const fieldName of Object.keys(filter)) {
       const [, rawColumnName] =
         fieldName.match(/^(.*?)(?:\s+(?:not in|in|like|>=|<=|!=|>|<|=))?$/i) ??
@@ -1839,7 +1858,7 @@ export class SmrtObject extends SmrtClass {
       }
     }
     const { sql: whereSql, values } = buildWhere(filter, 1, 'duckdb');
-    const readSql = `SELECT * FROM ${quote(this.tableName)} ${whereSql} LIMIT 1`;
+    const readSql = `SELECT * FROM ${quote(this.tableName)} ${whereSql}${limit === undefined ? '' : ` LIMIT ${limit}`}`;
     const described = await this.db.query(`DESCRIBE ${readSql}`, ...values);
     const uuidColumns = described.rows
       .filter((column) => String(column.column_type).toUpperCase() === 'UUID')
@@ -1855,7 +1874,7 @@ export class SmrtObject extends SmrtClass {
             })
             .join(', ')}) FROM (${readSql}) AS ${alias}`;
     const { rows } = await this.db.query(sql, ...values);
-    return rows[0] ?? null;
+    return rows;
   }
 
   /**
@@ -2813,14 +2832,33 @@ export class SmrtObject extends SmrtClass {
    * @internal
    */
   public supportsJunctionBatch(): boolean {
+    return this.supportsBatchLifecycle(false);
+  }
+
+  /**
+   * Whether this object's whole persistence lifecycle is the framework's own,
+   * so `SmrtCollection.createMany` may insert it in a batch. Unlike a junction
+   * replacement, a create batch may be single-table-inheritance, insert-only, or
+   * the target of other models' references: none of those change an INSERT.
+   * @internal
+   */
+  public supportsBatchCreate(): boolean {
+    return this.supportsBatchLifecycle(true);
+  }
+
+  private supportsBatchLifecycle(forCreate: boolean): boolean {
     if (!SmrtObject.hasBaseJunctionLifecycle(this)) return false;
     const name = this.getResolvedQualifiedName();
     if (
-      ObjectRegistry.getTableStrategy(name) === 'sti' ||
-      this._insertOnly ||
+      (!forCreate &&
+        (ObjectRegistry.getTableStrategy(name) === 'sti' ||
+          this._insertOnly ||
+          buildCascadePlan(ObjectRegistry, name).references.length > 0)) ||
       !GlobalInterceptors.supportsBulkMutation(this.getResolvedClassName()) ||
-      buildCascadePlan(ObjectRegistry, name).references.length > 0 ||
-      ObjectRegistry.resolveEmbeddingConfig(this.getResolvedQualifiedName())
+      ObjectRegistry.resolveEmbeddingConfig(this.getResolvedQualifiedName()) ||
+      (forCreate &&
+        Object.keys(ObjectRegistry.getConfig(name).writeThrough ?? {}).length >
+          0)
     )
       return false;
     const config = this.getRegisteredClassInfo()?.config;
@@ -3135,6 +3173,311 @@ export class SmrtObject extends SmrtClass {
   }
 
   /**
+   * Insert brand-new objects of one table as a batch (`createMany`). Returns
+   * false when nothing was persisted and the caller must create them one at a
+   * time: an ineligible lifecycle, a validation or preparation failure (the
+   * per-record path then raises the exact same error), or any collision with a
+   * stored row, a sync tombstone or another object in the batch (the per-record
+   * path owns adoption and derived-slug renumbering).
+   *
+   * Preparation, the multi-row `INSERT` and the probes run in one transaction
+   * joined to the caller's; completion (generated-value read-back, cache
+   * invalidation, `afterSave` interceptors and the change feed) then runs once
+   * for the batch, as `save()` runs it after its own write.
+   * @internal
+   */
+  public static async tryCreateBatch(
+    instances: SmrtObject[],
+  ): Promise<boolean> {
+    const first = instances[0];
+    if (!first) return true;
+    const lifecycle = new Map<unknown, boolean>();
+    for (const item of instances) {
+      let supported = lifecycle.get(item.constructor);
+      if (supported === undefined) {
+        supported = item.supportsBatchCreate();
+        lifecycle.set(item.constructor, supported);
+      }
+      if (
+        !supported ||
+        item.db !== first.db ||
+        item.tableName !== first.tableName ||
+        item._persisted ||
+        item._adoptNaturalKey ||
+        Object.keys(item._writeThroughDraft).length > 0
+      )
+        return false;
+    }
+    if (first.getDatabaseEngineHint() === 'json') return false;
+    if (isJsonAdapterHandle(first.db) || !first.db.transaction) return false;
+    const duck = first.isNativeDuckDb();
+    if (duck && !first.isPositivelyNativeDuckDb()) return false;
+    const engine = usesPostgresDialect(first.db)
+      ? 'postgres'
+      : duck
+        ? 'duckdb'
+        : detectEngine(first.db.url ?? '', first.getDatabaseEngineHint());
+    if (!['sqlite', 'duckdb', 'postgres'].includes(engine)) return false;
+    if (ObjectRegistry.getConflictPredicate(first.getResolvedQualifiedName()))
+      return false;
+
+    const prepared: Array<Awaited<ReturnType<SmrtObject['prepareSave']>>> = [];
+    try {
+      for (const item of instances)
+        prepared.push(await item.prepareSave(undefined));
+    } catch {
+      return false;
+    }
+    // Consent is mutable global state; a preparation hook cannot silently
+    // introduce an unapproved interceptor before the persistence boundary.
+    if (!GlobalInterceptors.supportsBulkMutation(first.getResolvedClassName()))
+      return false;
+
+    const conflict = prepared[0].conflictColumns;
+    const ids = new Set<string>();
+    const identities = new Set<string>();
+    for (const entry of prepared) {
+      if (
+        entry.writePlan.type !== 'upsert' ||
+        typeof entry.data.id !== 'string' ||
+        !entry.data.id ||
+        JSON.stringify(entry.conflictColumns) !== JSON.stringify(conflict) ||
+        conflict.some((column) => !Object.hasOwn(entry.data, column))
+      )
+        return false;
+      const id = entry.data.id.toLowerCase();
+      const identity = JSON.stringify(
+        conflict.map((column) => entry.data[column] ?? null),
+      );
+      if (ids.has(id) || (conflict.length > 0 && identities.has(identity)))
+        return false;
+      ids.add(id);
+      identities.add(identity);
+    }
+
+    const quote = (identifier: string) =>
+      `"${identifier.replaceAll('"', '""')}"`;
+    const bindValue = (value: unknown): unknown =>
+      value instanceof Date
+        ? value.toISOString()
+        : value === undefined
+          ? null
+          : value !== null && typeof value === 'object'
+            ? JSON.stringify(value)
+            : typeof value === 'boolean' && engine === 'sqlite'
+              ? Number(value)
+              : value;
+    const placeholder = (values: unknown[]) =>
+      engine === 'postgres' ? `$${values.length}` : '?';
+    const tracksIdentity = (item: SmrtObject) =>
+      item._explicitId === true && !item._persisted;
+    const syncIds = instances
+      .filter(tracksIdentity)
+      .map((item) => first.normalizeSyncRowId(item.id as string));
+
+    // Columns group rows: a statement inserts one column list.
+    const groups = new Map<string, Array<Record<string, unknown>>>();
+    for (const { data } of prepared) {
+      const columns = Object.keys(data).sort();
+      const key = JSON.stringify(columns);
+      const rows = groups.get(key) ?? [];
+      rows.push(Object.fromEntries(columns.map((c) => [c, data[c]])));
+      groups.set(key, rows);
+    }
+
+    type Outcome = 'inserted' | 'fallback';
+    const write = async (tx: DatabaseInterface): Promise<Outcome> => {
+      if (engine === 'postgres' && syncIds.length > 0) {
+        // The per-row path takes this lock before its write; take them all in
+        // one ordered statement so concurrent loaders cannot deadlock.
+        const keys = syncIds
+          .map((id) =>
+            JSON.stringify([SYNC_TOMBSTONES_TABLE, first.tableName, id]),
+          )
+          .sort();
+        for (let at = 0; at < keys.length; at += 500) {
+          const chunk = keys.slice(at, at + 500);
+          await tx.query(
+            `SELECT pg_advisory_xact_lock(hashtextextended(k, 0)) FROM (VALUES ${chunk
+              .map((_, i) => `($${i + 1}::text)`)
+              .join(', ')}) AS v(k) ORDER BY k`,
+            ...chunk,
+          );
+        }
+      }
+      for (let at = 0; at < syncIds.length; at += 500) {
+        const chunk = syncIds.slice(at, at + 500);
+        const values: unknown[] = [first.tableName];
+        const marks = chunk.map((id) => {
+          values.push(id);
+          return placeholder(values);
+        });
+        const found = await tx.query(
+          `SELECT row_id FROM ${quote(SYNC_TOMBSTONES_TABLE)} WHERE table_name = ${engine === 'postgres' ? '$1' : '?'} AND row_id IN (${marks.join(', ')})`,
+          ...values,
+        );
+        if (found.rows.length > 0) return 'fallback';
+      }
+      // One probe per chunk finds every row the per-record path would adopt,
+      // collide with or renumber a derived slug around.
+      for (let at = 0; at < prepared.length; at += 200) {
+        const chunk = prepared.slice(at, at + 200);
+        const values: unknown[] = [];
+        const idMarks = chunk.map(({ data }) => {
+          values.push(bindValue(data.id));
+          return placeholder(values);
+        });
+        const clauses = [`${quote('id')} IN (${idMarks.join(', ')})`];
+        if (conflict.length > 0) {
+          for (const { data } of chunk) {
+            clauses.push(
+              `(${conflict
+                .map((column) => {
+                  const value = data[column];
+                  if (value === null || value === undefined)
+                    return `${quote(column)} IS NULL`;
+                  values.push(bindValue(value));
+                  return `${quote(column)} = ${placeholder(values)}`;
+                })
+                .join(' AND ')})`,
+            );
+          }
+        }
+        const existing = await tx.query(
+          `SELECT ${quote('id')} FROM ${quote(first.tableName)} WHERE ${clauses.join(' OR ')} LIMIT 1`,
+          ...values,
+        );
+        if (existing.rows.length > 0) return 'fallback';
+      }
+      for (const rows of groups.values()) {
+        const perRow = Object.keys(rows[0]).length || 1;
+        const size = Math.max(1, Math.floor(8000 / perRow));
+        for (let at = 0; at < rows.length; at += size) {
+          await ErrorUtils.withRetry(
+            async () => {
+              try {
+                await tx.insert(first.tableName, rows.slice(at, at + size));
+              } catch (error) {
+                throw first.toTypedWriteError(
+                  error,
+                  `INSERT INTO ${first.tableName}`,
+                );
+              }
+            },
+            3,
+            500,
+          );
+        }
+      }
+      if (isPostgresDatabase(tx)) {
+        // A concurrent ordinary delete may finish while an INSERT is blocked.
+        for (let at = 0; at < syncIds.length; at += 500) {
+          const chunk = syncIds.slice(at, at + 500);
+          const values: unknown[] = [first.tableName];
+          const marks = chunk.map((id) => {
+            values.push(id);
+            return placeholder(values);
+          });
+          const found = await tx.query(
+            `SELECT row_id FROM ${quote(SYNC_TOMBSTONES_TABLE)} WHERE table_name = $1 AND row_id IN (${marks.join(', ')})`,
+            ...values,
+          );
+          if (found.rows.length > 0)
+            throw syncRevisionConflict(String(found.rows[0].row_id));
+        }
+      }
+      return 'inserted';
+    };
+    // Read-back, completion and the change feed run in the insert's
+    // transaction, so a failure there rolls the whole batch back. Instances are
+    // bound to that transaction's handle for the duration, as withDatabase()
+    // binds one.
+    const complete = async () => {
+      // One read-back per batch supplies database-generated and calculated
+      // values, for the instances whose class declares any.
+      const reloaded = new Set<SmrtObject>();
+      // Databases canonicalize UUID text (lower case), so match case-blind.
+      const byId = new Map<string, SmrtObject>();
+      for (const item of instances) {
+        if (item.getRegisteredClassInfo()?.generatedFields)
+          byId.set(String(item.id).toLowerCase(), item);
+      }
+      const all = [...byId.values()].map((item) => String(item.id));
+      for (let at = 0; at < all.length; at += 500) {
+        const filter = await first.interceptGetFilter({
+          'id in': all.slice(at, at + 500),
+        });
+        for (const row of await first.getCanonicalPersistedRows(filter)) {
+          const item = byId.get(String(row.id).toLowerCase());
+          if (!item) continue;
+          await item.loadDataFromDb(row);
+          reloaded.add(item);
+        }
+      }
+      const completions: BulkMutationEntry[] = [];
+      for (let i = 0; i < instances.length; i++) {
+        await instances[i].completeSave(
+          prepared[i].interceptorContext,
+          false,
+          reloaded.has(instances[i]),
+        );
+        completions.push({
+          instance: instances[i],
+          context: prepared[i].interceptorContext,
+        });
+      }
+      await GlobalInterceptors.executeBulkAfter('afterSave', completions);
+    };
+    const insertAndComplete = async (
+      tx: DatabaseInterface,
+    ): Promise<Outcome> => {
+      if ((await write(tx)) === 'fallback') return 'fallback';
+      if (tx === first.db) {
+        await complete();
+        return 'inserted';
+      }
+      const previous = instances.map((item) => [item._db, item.options.db]);
+      try {
+        await first.withDatabase(tx, async () => {
+          for (const item of instances) {
+            item._db = tx;
+            item.options.db = tx;
+          }
+          await complete();
+        });
+      } catch (error) {
+        for (const item of instances) item._persisted = false;
+        throw error;
+      } finally {
+        instances.forEach((item, i) => {
+          item._db = previous[i][0] as DatabaseInterface;
+          item.options.db = previous[i][1] as DatabaseInterface;
+        });
+      }
+      return 'inserted';
+    };
+    const embedded = usesEmbeddedRevisionFallback(first.db);
+    let outcome: Outcome;
+    if (embedded && isKnownDatabaseTransaction(first.db)) {
+      outcome = await withEmbeddedWriteQueue(first.db, true, () =>
+        insertAndComplete(first.db),
+      );
+    } else {
+      outcome = await withEmbeddedWriteTransaction(
+        first.db,
+        isEmbeddedDatabase(first.db),
+        insertAndComplete,
+        embedded,
+      );
+    }
+    if (outcome === 'fallback') return false;
+    // Completion invalidated through the transaction handle; the root handle's
+    // cached reads must go too.
+    first.invalidateCollectionReadCache();
+    return true;
+  }
+
+  /**
    * The columns that record a row's owner — see
    * {@link ObjectRegistry.getOwnershipColumns} (declared, `@tenantId`-marked
    * and runtime-registered ownership columns, plus `tenant_id`).
@@ -3433,6 +3776,7 @@ export class SmrtObject extends SmrtClass {
   private async completeSave(
     interceptorContext: BulkMutationEntry['context'],
     runInterceptors = true,
+    alreadyReloaded = false,
   ): Promise<void> {
     const className = this.getResolvedClassName();
     // The row now exists, so any further save() must update it by primary
@@ -3440,7 +3784,8 @@ export class SmrtObject extends SmrtClass {
     this._persisted = true;
 
     if (this.getRegisteredClassInfo()?.generatedFields) {
-      await this.loadFromId();
+      // A create batch reads every generated row back in one statement.
+      if (!alreadyReloaded) await this.loadFromId();
       this.captureGeneratedValues();
     }
 

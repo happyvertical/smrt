@@ -241,13 +241,14 @@ it('loads 10,000 rows in 500-row commands', async () => {
   expect(await target.count('items')).toBe(10000);
   await target.seal();
 });
-it('rehearses publishing four 500-row versions without journal overflow', async () => {
+it('rehearses publishing twenty 500-row versions without journal overflow', {
+  timeout: 120_000,
+}, async () => {
   // JOURNAL_LIMITS rows and bytes apply per version: each 500-row batch is
-  // its own version, so four exercise the same bounds as twenty. Restore
-  // full-size rehearsal with core bulk create: happyvertical/smrt#5066.
+  // its own version, so this is the per-table limit at full size.
   const sheet = createSheet('Rows');
   sheet.cells.set(1, 1, { value: 'Quantity', type: 'text' });
-  for (let n = 2; n <= 2001; n++)
+  for (let n = 2; n <= 10001; n++)
     sheet.cells.set(n, 1, { value: n, type: 'number' });
   const target = createEngineImportTarget(draft);
   const result = await runImport({
@@ -258,7 +259,7 @@ it('rehearses publishing four 500-row versions without journal overflow', async 
         {
           key: 'items',
           label: 'Items',
-          source: { sheet: 'Rows', range: 'A1:A2001', headerRow: 1 },
+          source: { sheet: 'Rows', range: 'A1:A10001', headerRow: 1 },
           fields: [
             { key: 'quantity', label: 'Quantity', type: 'integer', column: 1 },
           ],
@@ -269,13 +270,13 @@ it('rehearses publishing four 500-row versions without journal overflow', async 
     batchSize: 500,
   });
   expect(result.ok).toBe(true);
-  expect(await target.count('items')).toBe(2000);
+  expect(await target.count('items')).toBe(10000);
   await target.seal();
   const preview = await live.previewPublish(draft);
   expect(preview.digest).toBeTruthy();
   expect(
     preview.versions.filter((v) => v.summary.startsWith('load ')),
-  ).toHaveLength(4);
+  ).toHaveLength(20);
 });
 it('preserves unsafe integer totals as bigint rather than rounding them', async () => {
   const target = createEngineImportTarget(draft);
