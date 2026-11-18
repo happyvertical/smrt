@@ -21,7 +21,48 @@ import {
   registerChangeFeedWriter,
   resetChangeFeedWarnings,
 } from '../change-feed';
+import { publishChangeSignal, resetChangeSignals } from '../change-signals';
+import { buildChangeEventStream } from '../generators/events-route';
 import { getTestDatabase } from '../testing/database';
+
+/** Ordered `id:` values of the `change` frames in an SSE transcript. */
+function changeIds(text: string): number[] {
+  const ids: number[] = [];
+  for (const block of text.split('\n\n')) {
+    const match = /^id: (\d+)\nevent: change/m.exec(block);
+    if (match) ids.push(Number(match[1]));
+  }
+  return ids;
+}
+
+async function readUntil(
+  stream: ReadableStream<Uint8Array>,
+  predicate: (text: string) => boolean,
+  ms = 5000,
+): Promise<string> {
+  const reader = stream.getReader();
+  const decoder = new TextDecoder();
+  let text = '';
+  const deadline = Date.now() + ms;
+  try {
+    while (Date.now() < deadline && !predicate(text)) {
+      const result = await Promise.race([
+        reader.read(),
+        new Promise<'timeout'>((resolve) =>
+          setTimeout(
+            () => resolve('timeout'),
+            Math.max(1, deadline - Date.now()),
+          ),
+        ),
+      ]);
+      if (result === 'timeout' || result.done) break;
+      text += decoder.decode(result.value, { stream: true });
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  return text;
+}
 
 const pgUrl = process.env.SMRT_TEST_POSTGRES_URL;
 const TABLE = 'delivery_pg_items';
@@ -49,6 +90,7 @@ describe.skipIf(!pgUrl)('change feed delivery on PostgreSQL (optional)', () => {
 
   beforeEach(async () => {
     resetChangeFeedWarnings();
+    resetChangeSignals();
     await reader.query('DELETE FROM _smrt_changes_pending');
     await reader.query('DELETE FROM _smrt_changes');
   });
@@ -102,6 +144,35 @@ describe.skipIf(!pgUrl)('change feed delivery on PostgreSQL (optional)', () => {
       });
       expect(page.resyncRequired).toBeUndefined();
       expect(page.changes.map((change) => change.seq)).toHaveLength(12);
+    });
+  });
+
+  describe('_events ordered delivery', () => {
+    it('frames a write committed during a multi-page catch-up after the backlog', async () => {
+      for (let i = 1; i <= 600; i++) {
+        await appendChange(reader, { table: TABLE, rowId: `b${i}` });
+      }
+      const stream = buildChangeEventStream(reader, {
+        cursor: 0,
+        tenantScope: { enforced: false, tenantId: null },
+      });
+      // A write on another connection, signalled as the write path does.
+      const seq = (await appendChange(sweeper, {
+        table: TABLE,
+        rowId: 'live',
+      })) as number;
+      publishChangeSignal(reader, {
+        table: TABLE,
+        operation: 'update',
+        rowId: 'live',
+        tenantId: null,
+        seq,
+      });
+      const text = await readUntil(stream, (t) => t.includes('"live"'));
+      await stream.cancel().catch(() => {});
+      expect(changeIds(text)).toEqual(
+        Array.from({ length: 601 }, (_, index) => index + 1),
+      );
     });
   });
 });
