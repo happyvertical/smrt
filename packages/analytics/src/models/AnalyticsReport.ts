@@ -210,9 +210,14 @@ export class AnalyticsReport extends SmrtObject {
   constructor(options: AnalyticsReportOptions = {}) {
     // `AnalyticsReportOptions` re-types `metrics` as the report's JSON string,
     // which collides with the framework's `metrics?: MetricsConfig` observability
-    // option on `SmrtObjectOptions`. The base never reads a string `metrics` as
-    // config, so the value is forwarded unchanged; the assertion only reconciles
-    // the two unrelated `metrics` types at the `super()` boundary.
+    // option on `SmrtObjectOptions`. The assertion reconciles the two unrelated
+    // types at the `super()` boundary. A report built by its collection
+    // (create or load) receives this field as row data and its `metrics`
+    // option stays unset. A report constructed directly with a `metrics`
+    // string still hands that string to the base as the option, where it is
+    // not a valid `MetricsConfig`: that instance runs without the metrics
+    // signal adapter even when metrics are enabled globally. Build reports
+    // through `AnalyticsReportCollection`.
     super(options as SmrtObjectOptions);
     if (options.tenantId !== undefined) this.tenantId = options.tenantId;
     if (options.propertyId !== undefined) this.propertyId = options.propertyId;
