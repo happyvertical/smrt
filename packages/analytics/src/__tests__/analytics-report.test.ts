@@ -225,6 +225,40 @@ describe.skipIf(skipTests)(
       expect(reports[0].name).toBe('Test Report');
     });
 
+    it('stores and reloads the metrics field as report data', async () => {
+      const metrics = JSON.stringify([
+        { name: 'activeUsers' },
+        { name: 'sessions' },
+      ]);
+      const report = await collection.create({
+        propertyId: fixtureId('prop-123'),
+        name: 'Metrics Report',
+        metrics,
+      });
+      expect(report.metrics).toBe(metrics);
+
+      const [listed] = await collection.list({
+        where: { name: 'Metrics Report' },
+      });
+      expect(listed.metrics).toBe(metrics);
+      expect(listed.getMetrics()).toEqual([
+        { name: 'activeUsers' },
+        { name: 'sessions' },
+      ]);
+      const fetched = await collection.get(String(report.id));
+      expect(fetched?.getMetrics()).toHaveLength(2);
+
+      // The field shares its name with the framework's `metrics` option. The
+      // value is row data only; the option of that name stays unset.
+      expect(report.options.metrics).toBeUndefined();
+      expect(listed.options.metrics).toBeUndefined();
+
+      listed.setMetrics([{ name: 'bounceRate' }]);
+      await listed.save();
+      const saved = await collection.get(String(report.id));
+      expect(saved?.getMetrics()).toEqual([{ name: 'bounceRate' }]);
+    });
+
     it('should find reports by property', async () => {
       const report1 = await collection.create({
         propertyId: fixtureId('prop-1'),
