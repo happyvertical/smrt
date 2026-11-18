@@ -71,6 +71,7 @@ export * from './accounting-connection.js';
 export * from './accounting-live-gate.js';
 export * from './accounting-mapping.js';
 export * from './accounting-payment-sync.js';
+export * from './accounting-provider-adapters.js';
 // Billing-period close, provider events, prepaid credit (#3060)
 export * from './billing/index.js';
 export { AccountingConnectionCollection } from './collections/AccountingConnectionCollection.js';
