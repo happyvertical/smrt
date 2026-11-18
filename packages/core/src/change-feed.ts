@@ -143,6 +143,7 @@ import {
   isChangeFeedSensitiveTable,
   isChangeFeedSensitiveWrite,
 } from './change-feed-sensitivity.js';
+import { resolveChangeFeedTenantId } from './change-feed-tenant.js';
 import { type ChangeSignal, publishChangeSignal } from './change-signals.js';
 import { resolveDbCacheKey } from './collection-cache.js';
 import { resolveDispatchTenantScope } from './dispatch/tenant-resolver.js';
@@ -2345,9 +2346,15 @@ async function appendForInstance(
     if (isChangeFeedSensitiveWrite(table, instance.constructor)) return;
     db = instance.db;
     const id = (instance as { id?: unknown }).id;
-    const tenantId = (instance as unknown as Record<string, unknown>).tenantId;
     rowId = typeof id === 'string' && id ? id : null;
-    rowTenantId = typeof tenantId === 'string' && tenantId ? tenantId : null;
+    // The row's real ownership field, not just a `tenantId` property: an
+    // entry recorded as global is served to every tenant.
+    const tenantId = resolveChangeFeedTenantId(instance);
+    if (tenantId === undefined) {
+      warnAmbiguousTenant(db, table);
+      return;
+    }
+    rowTenantId = tenantId;
   } catch {
     // Not a fully initialized SmrtObject (e.g. plain-object doubles in
     // tests) — nothing to record.
@@ -2416,15 +2423,18 @@ export async function recordInstanceChanges(
       if (isChangeFeedSensitiveWrite(table, entry.instance.constructor))
         continue;
       const id = (entry.instance as { id?: unknown }).id;
-      const tenantId = (entry.instance as unknown as Record<string, unknown>)
-        .tenantId;
+      const tenantId = resolveChangeFeedTenantId(entry.instance);
+      if (tenantId === undefined) {
+        warnAmbiguousTenant(entry.instance.db, table);
+        continue;
+      }
       prepared.push({
         db: entry.instance.db,
         input: {
           table,
           rowId: typeof id === 'string' && id ? id : null,
           operation: entry.operation,
-          tenantId: typeof tenantId === 'string' && tenantId ? tenantId : null,
+          tenantId,
         },
       });
     } catch {
@@ -2623,6 +2633,21 @@ function warnAppendFailure(
   } catch {
     // Logging must never propagate into the write path.
   }
+}
+
+/**
+ * A row whose ownership fields name two different tenants is not recorded:
+ * recording it under either tenant (or as global) would serve it to readers
+ * who may not see it. Rate-limited with the append-failure warnings.
+ */
+function warnAmbiguousTenant(db: DatabaseInterface, table: string): void {
+  warnAppendFailure(
+    db,
+    table,
+    new Error(
+      'the row names different tenants in its ownership fields; the change was not recorded',
+    ),
+  );
 }
 
 function warnDrainFailureOnce(db: DatabaseInterface, error: unknown): void {
