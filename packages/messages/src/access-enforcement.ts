@@ -124,6 +124,17 @@ export function createMailAccessInterceptor(): CollectionInterceptor {
     // After tenancy (100) so tenant scoping has already narrowed the read.
     priority: 50,
 
+    onCollectionReady(className, collection, context) {
+      // Every read path starts here, whichever collection class serves the
+      // item (a default collection for an app subclass or Tweet included), so
+      // the database is registered before any filtering decision.
+      if (!kindOf(className, context)) return;
+      learnMailAccessOptions({
+        ...(collection.options as object),
+        db: collection.db,
+      } as never);
+    },
+
     async beforeList(className, options, context) {
       if (!getEffectiveMailAccessConfigs().length || inMailSystemAccess()) {
         return options;

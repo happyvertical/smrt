@@ -2981,6 +2981,17 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    * This is a fail-fast check only. It does not create or alter schema.
    */
   public async ensureStorageReady(): Promise<void> {
+    await GlobalInterceptors.executeCollectionReady(
+      this.getResolvedItemClassName(),
+      { db: this.db, options: this.options },
+      createInterceptorContext(
+        this.getResolvedItemClassName(),
+        'list',
+        this.constructor.name,
+        undefined,
+        this.getResolvedItemQualifiedName(),
+      ),
+    );
     await verifyPersistenceTable(
       this.db,
       this.tableName,

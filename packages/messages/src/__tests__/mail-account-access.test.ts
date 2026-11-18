@@ -7,7 +7,7 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import { smrt } from '@happyvertical/smrt-core';
+import { ObjectRegistry, smrt } from '@happyvertical/smrt-core';
 import { getTestDatabase } from '@happyvertical/smrt-core/testing';
 import {
   disableTenancy,
@@ -47,6 +47,7 @@ import { Attachment } from '../models/Attachment';
 import { Email } from '../models/Email';
 import { EmailAccount } from '../models/EmailAccount';
 import { EmailFolder } from '../models/EmailFolder';
+import { Tweet } from '../models/Tweet';
 import { prepareMessageParents } from './fk-fixtures.js';
 
 const ALL_MAIL_SLUGS = [
@@ -313,8 +314,77 @@ describe('mail account access (#5129)', () => {
         await EmailCollection.create({ db: other });
         const emails = await EmailCollection.create(options);
         expect(await emails.count({})).toBe(1);
+        // A closed database is forgotten, not allowed to break or open reads.
+        await other.close?.();
+        expect(await emails.count({})).toBe(1);
       });
-      await other.close?.();
+    });
+
+    describe('STI subclasses served by a default collection', () => {
+      // No collection class of their own: the registry builds a plain default
+      // collection, so the policy must not depend on a messages collection.
+      beforeEach(async () => {
+        await withTenant({ tenantId: tenantA }, () =>
+          runWithMailSystemAccess(async () => {
+            for (const [accountId, subject] of [
+              [privateAccountId, 'private app'],
+              [openAccountId, 'open app'],
+            ] as const) {
+              const row = new AppEmail({
+                ...options,
+                tenantId: tenantA,
+                accountId,
+                subject,
+              });
+              await row.initialize();
+              await row.save();
+              const tweet = new Tweet({
+                ...options,
+                tenantId: tenantA,
+                accountId,
+                subject: subject.replace('app', 'tweet'),
+              });
+              await tweet.initialize();
+              await tweet.save();
+            }
+          }),
+        );
+      });
+
+      const coldRegistry = async <T>(
+        name: string,
+        fn: (collection: any) => Promise<T>,
+      ): Promise<T> => {
+        resetMailAccess();
+        current = null;
+        return withTenant({ tenantId: tenantA }, async () =>
+          fn(await ObjectRegistry.getCollection(name, options)),
+        );
+      };
+
+      for (const name of ['AppEmail', 'Tweet']) {
+        it(`${name}: count, projection, facets and raw query are filtered`, async () => {
+          expect(await coldRegistry(name, (c) => c.count({}))).toBe(1);
+          const rows = await coldRegistry(name, (c) =>
+            c.list({ select: ['subject'] }),
+          );
+          expect(rows).toHaveLength(1);
+          const facets = JSON.stringify(
+            await coldRegistry(name, (c) =>
+              c.facets({ fields: ['accountId'] }),
+            ),
+          );
+          expect(facets).toContain(openAccountId);
+          expect(facets).not.toContain(privateAccountId);
+          await expect(
+            coldRegistry(name, (c) =>
+              c.query('SELECT * FROM messages', [], {
+                allowRawOnTenantScoped: true,
+              }),
+            ),
+          ).rejects.toThrow(/Mail access denied/);
+        });
+      }
     });
   });
 
