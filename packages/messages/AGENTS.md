@@ -240,3 +240,33 @@ handoff suite (SQLite and migrated PostgreSQL).
 ## Protected external contacts
 
 Profile email uses exclusive `recipientProfileId` plus `resolveProfileRecipient`, a reserved `profileNotificationPolicy` and exact current tenant-owned public Profile email. No User account is required. Before activating profiles, run normal framework schema migration and public `planNotificationProfileRecipients` / `migrateNotificationProfileRecipients`; runtime verifies physical constraints and never applies DDL. Legacy User notification and opt-out paths remain User-only. See [profile recipient contract and matrix](agents/profile-recipients.md).
+
+## Incremental mail sync (change feed)
+
+`EmailAccount.syncChanges({ limit?, maxBatches? })` (`mail-sync.ts`) drives
+`EmailClient.getChanges()` (JMAP provider `jmap`; `@happyvertical/email` 0.114+).
+`syncFrom()` stays the polling path for IMAP/POP3.
+
+- `EmailAccount.syncCursor` is the opaque feed cursor (sensitive + readonly, never
+  on generated surfaces). It is saved only after its batch is applied; a failure
+  anywhere leaves it where it was, so the job just retries.
+- Rows are keyed on `Email.providerMessageId` (the server's own id, per account),
+  so applying a batch twice changes nothing. Added/changed messages upsert,
+  `removed` deletes, `folders` upserts `EmailFolder` by path and counts are
+  recomputed for touched folders. Metadata-only changes keep stored bodies.
+- `resync-required` clears the cursor and runs a full pass in the same run; a
+  full pass from no cursor deletes stored messages (with a `providerMessageId`)
+  the server no longer has. A second resync request in one run throws.
+- One lane per account: runs queue behind each other in-process, work on the
+  stored (revision-guarded) row, and the job is deduplicated per tenant+account.
+  Inactive and `needs_reconnect` accounts, and clients without `getChanges`,
+  return `{ status: 'skipped' }`. Auth failures call `markNeedsReconnect()` and
+  throw with `retryable: false`. The sync runs under `runWithMailSystemAccess()`.
+- Job: `enqueueMailSync(account)` / `enqueueDueMailSyncs(accounts)`
+  (`mail-sync-jobs.ts`, queue `mail-sync`, dedupe key `mail-sync:<accountId>`)
+  target `EmailAccount.syncChanges` through `@happyvertical/smrt-jobs` (optional
+  peer). The host runs the `TaskRunner` and schedules `enqueueDueMailSyncs`.
+- Known gaps: attachment rows are not created (only `hasAttachments`/`size`);
+  a renamed server folder creates a new folder row (stored messages keep the old
+  path until they change); `jmap` has no connect-flow validator yet and is not an
+  outbound transport.

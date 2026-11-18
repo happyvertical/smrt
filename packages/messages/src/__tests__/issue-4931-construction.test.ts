@@ -221,7 +221,9 @@ describe.each([false, true])('#4931 messages app replacement=%s', (replace) => {
         { messageId: '<sync@example.com>', subject: 'Synced' },
       ],
     };
-    vi.spyOn(account, 'createClient').mockResolvedValue(client as never);
+    vi.spyOn(EmailAccount.prototype, 'createClient').mockResolvedValue(
+      client as never,
+    );
     vi.spyOn(EmailCollection, 'create').mockResolvedValue({
       getByMessageId: async () => null,
       countByFolder: async () => 1,

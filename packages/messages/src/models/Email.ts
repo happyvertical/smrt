@@ -35,6 +35,11 @@ export class Email extends Message {
     description: 'The sender-assigned reference of the email being replied to.',
   })
   inReplyTo = '';
+  @field({
+    description:
+      "The mail server's own id for this email, used to keep mailbox sync from storing it twice.",
+  })
+  providerMessageId = '';
 
   // Additional recipients
   @field({ description: 'Recipients receiving a visible copy of this email.' })
@@ -93,6 +98,8 @@ export class Email extends Message {
 
     if (options.messageId !== undefined) this.messageId = options.messageId;
     if (options.inReplyTo !== undefined) this.inReplyTo = options.inReplyTo;
+    if (options.providerMessageId !== undefined)
+      this.providerMessageId = options.providerMessageId;
     if (options.ccAddresses !== undefined)
       this.ccAddresses = options.ccAddresses;
     if (options.bccAddresses !== undefined)

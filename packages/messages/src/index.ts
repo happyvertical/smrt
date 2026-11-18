@@ -42,6 +42,19 @@ export {
   resetMailAccess,
   runWithMailSystemAccess,
 } from './access.js';
+export type {
+  MailSyncOptions,
+  MailSyncResult,
+  MailSyncSkipReason,
+} from './mail-sync.js';
+export {
+  CHANGE_FEED_PROVIDERS,
+  type EnqueueMailSyncOptions,
+  enqueueDueMailSyncs,
+  enqueueMailSync,
+  MAIL_SYNC_QUEUE,
+  mailSyncDedupeKey,
+} from './mail-sync-jobs.js';
 
 import { ensureBuiltinMessagingProvidersRegistered } from './providers.js';
 

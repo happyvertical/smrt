@@ -195,6 +195,7 @@ export class EmailAccountCollection extends AccountCollection {
       imap: 0,
       pop3: 0,
       gmail: 0,
+      jmap: 0,
     };
 
     for (const account of accounts) {
