@@ -6,6 +6,8 @@ import type {
 } from '../scanner/types';
 import {
   annotateModelReplacements,
+  assertSameNameSubclassChoices,
+  isReplacedModel,
   modelReplacements,
 } from './model-replacements';
 import { selectObjectDeclarations } from './object-declarations';
@@ -14,6 +16,7 @@ function model(
   pkg: string,
   parent?: string,
   tableName = 'customers',
+  replaceParent: boolean | undefined = parent ? true : undefined,
 ): SmartObjectDefinition {
   // This case deliberately exercises the decorator table fallback, without a
   // precomputed schema or root extends edge. Reuse the shared entry factory.
@@ -30,6 +33,10 @@ function model(
   });
   return {
     ...definition,
+    decoratorConfig: {
+      ...definition.decoratorConfig,
+      ...(replaceParent === undefined ? {} : { replaceParent }),
+    },
     collection: 'customers',
     ...(parent
       ? { extends: 'Customer', extendsQualified: `${parent}:Customer` }
@@ -64,16 +71,73 @@ describe('effective manifest identities', () => {
     ).toEqual(['CustomerData']);
     expect(source.objects['@fixture/base:Customer'].replacedBy).toBeUndefined();
   });
-  it('leaves unrelated and explicitly separate-table models independent', () => {
+  it('leaves unrelated models independent', () => {
     expect(
       modelReplacements(
-        manifest(
-          model('@fixture/base'),
-          model('@fixture/peer'),
-          model('@fixture/separate', '@fixture/base', 'other_customers'),
-        ),
+        manifest(model('@fixture/base'), model('@fixture/peer')),
       ).size,
     ).toBe(0);
+  });
+  it('replaces only where the subclass declares replaceParent: true, never by name and table', () => {
+    const base = model('@fixture/base');
+    const replacement = model('@fixture/app', '@fixture/base');
+    const declared = manifest(base, replacement);
+    expect(modelReplacements(declared)).toEqual(
+      new Map([['@fixture/base:Customer', '@fixture/app:Customer']]),
+    );
+    expect(isReplacedModel(declared, base)).toBe(true);
+    expect(isReplacedModel(declared, replacement)).toBe(false);
+    // The same name and table without the declaration is not a replacement
+    // (generation refuses such a class; the map alone never guesses).
+    for (const replaceParent of [undefined, false]) {
+      const subclass = model(
+        '@fixture/app',
+        '@fixture/base',
+        'customers',
+        replaceParent,
+      );
+      if (replaceParent === undefined)
+        subclass.decoratorConfig = { tableName: 'customers' };
+      const source = manifest(base, subclass);
+      expect(modelReplacements(source).size).toBe(0);
+      expect(isReplacedModel(source, base)).toBe(false);
+    }
+  });
+  it('refuses a same-named subclass that declares no choice, with or without its parent in the manifest', () => {
+    const undeclared = model('@fixture/app', '@fixture/base', 'customers');
+    undeclared.decoratorConfig = { tableName: 'customers' };
+    for (const source of [
+      manifest(model('@fixture/base'), undeclared),
+      manifest(undeclared),
+    ]) {
+      // Manifest generation refuses it; the replacement map alone (also read
+      // from run-time manifests) never treats it as a replacement.
+      expect(modelReplacements(source).size).toBe(0);
+      expect(() => assertSameNameSubclassChoices(source)).toThrow(
+        expect.objectContaining({
+          code: 'CONFIG_SAME_NAME_SUBCLASS_UNDECLARED',
+          message: expect.stringMatching(
+            /@fixture\/app:Customer extends @fixture\/base:Customer.*replaceParent: true.*different class name/s,
+          ),
+        }),
+      );
+      expect(() => annotateModelReplacements(source)).toThrow(/replaceParent/);
+    }
+  });
+  it('refuses a replacement on another table than its parent', () => {
+    const otherTable = manifest(
+      model('@fixture/base'),
+      model('@fixture/app', '@fixture/base', 'other_customers', true),
+    );
+    expect(modelReplacements(otherTable).size).toBe(0);
+    expect(() => annotateModelReplacements(otherTable)).toThrow(
+      expect.objectContaining({
+        code: 'CONFIG_SAME_NAME_REPLACEMENT_TABLE_MISMATCH',
+        message: expect.stringMatching(
+          /remove the tableName from @fixture\/app:Customer, or give @fixture\/app:Customer a different class name/,
+        ),
+      }),
+    );
   });
   it('refuses siblings and cycles instead of choosing by scan order', () => {
     expect(() =>

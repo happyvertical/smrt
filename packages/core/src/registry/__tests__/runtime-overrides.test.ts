@@ -38,6 +38,8 @@ function entry(
       mcp: true,
       cli: true,
       tenantScoped: { mode: 'optional' },
+      // Every same-named qualified parent here is replaced (#5143).
+      ...(parent.includes(':') ? { replaceParent: true } : {}),
     },
     schema: {
       tableName: 'override_records',
@@ -192,6 +194,7 @@ describe('consumer runtime overrides', () => {
         ObjectRegistry.register(Child, {
           packageName: '@fixture/consumer',
           tableName: 'override_records',
+          replaceParent: true,
           api: true,
           cli: true,
           mcp: true,
@@ -274,12 +277,14 @@ describe('N-level same-table subtype replacement', () => {
         packageName: `@fixture/level${index}`,
         tableName: 'override_records',
         tenantScoped: { mode: index === 3 ? 'required' : 'optional' },
+        ...(index ? { replaceParent: true } : {}),
       });
     });
     constructors.slice(0, 3).forEach((ctor, index) => {
       ObjectRegistry.register(ctor, {
         packageName: `@fixture/level${index}`,
         tableName: 'override_records',
+        ...(index ? { replaceParent: true } : {}),
       });
     });
     expect(ObjectRegistry.getAllClasses().size).toBe(1);
@@ -332,6 +337,7 @@ describe('N-level same-table subtype replacement', () => {
           ObjectRegistry.register(ctor, {
             packageName: `@fixture/branch${index}`,
             tableName: 'override_records',
+            ...(index ? { replaceParent: true } : {}),
           });
         });
       } else {
@@ -406,7 +412,7 @@ describe('N-level same-table subtype replacement', () => {
     }
   }
 
-  it('keeps a same-named runtime subclass whose isolated manifest declares another table', () => {
+  it('refuses a same-named runtime subclass whose isolated manifest declares another table', () => {
     const Base = model();
     ObjectRegistry.register(Base, {
       packageName: '@fixture/runtime',
@@ -420,20 +426,25 @@ describe('N-level same-table subtype replacement', () => {
       tableName: 'separate_records',
     };
     if (definition.schema) definition.schema.tableName = 'separate_records';
-    ObjectRegistry.register(Child, {
-      packageName: '@fixture/separate',
-      _manifestKey: childKey,
-      _manifest: {
-        version: '1.0.0',
-        timestamp: 0,
+    const register = () =>
+      ObjectRegistry.register(Child, {
         packageName: '@fixture/separate',
-        objects: { [childKey]: definition },
-      },
-    });
+        _manifestKey: childKey,
+        _manifest: {
+          version: '1.0.0',
+          timestamp: 0,
+          packageName: '@fixture/separate',
+          objects: { [childKey]: definition },
+        },
+      });
+    // A replacement shares its parent's table (#5143).
+    expect(register).toThrow(
+      expect.objectContaining({
+        code: 'CONFIG_SAME_NAME_REPLACEMENT_TABLE_MISMATCH',
+      }),
+    );
     expect(ObjectRegistry.getClass(key)?.constructor).toBe(Base);
-    expect(ObjectRegistry.getClass(childKey)?.constructor).toBe(Child);
-    expect(ObjectRegistry.getTableName(key)).toBe('override_records');
-    expect(ObjectRegistry.getTableName(childKey)).toBe('separate_records');
+    expect(ObjectRegistry.getClass(childKey)).toBeUndefined();
   });
 
   for (const [packageName, restrictParent] of [

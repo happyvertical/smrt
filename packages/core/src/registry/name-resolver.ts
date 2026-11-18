@@ -433,8 +433,9 @@ function getReplacementIndex(): Map<string, RegisteredClass[]> {
  * Resolve the same-named subclass that replaced `ctor`'s registry entry
  * (#4921), or undefined.
  *
- * A registered class loses its entry when an app class declares the same
- * simple name and extends it (the `sti-child-wins` collision policy). The
+ * A registered class loses its entry when a class of the same simple name
+ * extends it and declares `replaceParent: true` (the
+ * `same-name-subclass-replaces-parent` collision policy, #5143). The
  * constructor index keeps the old key, so the replacing entry is the one
  * whose `replacedQualifiedNames` lists that key AND whose constructor
  * extends `ctor`. Never resolves by simple name — `Account` exists in two

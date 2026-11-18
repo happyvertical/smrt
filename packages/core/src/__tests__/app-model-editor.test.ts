@@ -741,6 +741,7 @@ describe('durable app model editor', () => {
     ObjectRegistry.register(AppCustomer, {
       name: 'Customer',
       packageName: APP,
+      replaceParent: true,
     });
     const e = await editor();
     await edit(e, {
