@@ -141,6 +141,21 @@ export interface CollectionInterceptor {
   priority?: number;
 
   /**
+   * Called whenever a collection is about to read or write (every collection
+   * operation starts by checking its storage). Lets a policy learn which
+   * database a class is stored in, for example to filter reads on a process
+   * that has not been told about it yet.
+   * @param className - Name of the collection's item class
+   * @param collection - The database and options the collection uses
+   * @param context - Operation context
+   */
+  onCollectionReady?(
+    className: string,
+    collection: { db: unknown; options: unknown },
+    context: InterceptorContext,
+  ): void | Promise<void>;
+
+  /**
    * Called before list() operations
    * @param className - Name of the class being listed
    * @param options - List options (where, orderBy, limit, select, etc.)
@@ -467,6 +482,22 @@ export class GlobalInterceptors {
     }
 
     return result;
+  }
+
+  /**
+   * Execute onCollectionReady interceptors
+   * @internal Called by SmrtCollection.ensureStorageReady()
+   */
+  static async executeCollectionReady(
+    className: string,
+    collection: { db: unknown; options: unknown },
+    context: InterceptorContext,
+  ): Promise<void> {
+    for (const interceptor of this.interceptors) {
+      if (interceptor.onCollectionReady) {
+        await interceptor.onCollectionReady(className, collection, context);
+      }
+    }
   }
 
   /**

@@ -14,6 +14,7 @@ import {
   smrt,
 } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy/decorators';
+import { assertHydratedMailAccess } from '../access.js';
 import type { AttachmentOptions } from '../types';
 
 /**
@@ -47,6 +48,14 @@ export class Attachment extends SmrtObject {
 
   @foreignKey('Message')
   messageId = '';
+  /**
+   * The mail account this file belongs to. Copied from its message when the
+   * attachment is saved, so per-account mail access can filter attachment
+   * reads (lists, projections, counts) without a join. Null for rows saved
+   * before the column existed: run `AttachmentCollection.backfillAccountIds()`.
+   */
+  @foreignKey('Account')
+  accountId: string | null = null;
   filename = '';
   contentType = '';
   size = 0;
@@ -63,6 +72,8 @@ export class Attachment extends SmrtObject {
 
     if (options.tenantId !== undefined) this.tenantId = options.tenantId;
     if (options.messageId !== undefined) this.messageId = options.messageId;
+    if (options.accountId !== undefined)
+      this.accountId = options.accountId || null;
     if (options.filename !== undefined) this.filename = options.filename;
     if (options.contentType !== undefined)
       this.contentType = options.contentType;
@@ -73,6 +84,21 @@ export class Attachment extends SmrtObject {
     if (options.filePath !== undefined) this.filePath = options.filePath;
     if (options.sourceUrl !== undefined) this.sourceUrl = options.sourceUrl;
     if (options.createdAt) this.createdAt = options.createdAt;
+  }
+
+  /**
+   * Direct hydration (`new X({ id }).initialize()`, `loadRelated()`) bypasses
+   * the collection read hooks, so the per-account mail policy is applied here
+   * too: a row of an account closed to the principal never hydrates.
+   */
+  override async loadFromId() {
+    await super.loadFromId();
+    await assertHydratedMailAccess(this);
+  }
+
+  override async loadFromSlug() {
+    await super.loadFromSlug();
+    await assertHydratedMailAccess(this);
   }
 
   /**

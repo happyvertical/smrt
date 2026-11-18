@@ -7,6 +7,7 @@
  * upsert. Hosts mount two routes and supply client credentials.
  */
 
+import { ConnectError } from '@happyvertical/smrt-secrets/connect';
 import type { SocialPlatformType } from '../social-account.js';
 
 /** Client credentials issued by the platform's developer console. */
@@ -91,12 +92,9 @@ export type SocialConnectErrorCode =
  * Raised for every connect failure. Messages are safe to show to a user and
  * never contain tokens, codes, or client secrets.
  */
-export class SocialConnectError extends Error {
-  constructor(
-    readonly code: SocialConnectErrorCode,
-    message: string,
-  ) {
-    super(message);
+export class SocialConnectError extends ConnectError<SocialConnectErrorCode> {
+  constructor(code: SocialConnectErrorCode, message: string) {
+    super(code, message);
     this.name = 'SocialConnectError';
   }
 }

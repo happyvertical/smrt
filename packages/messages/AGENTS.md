@@ -34,6 +34,78 @@ Multi-channel messaging with STI hierarchies for both messages and accounts. Cre
   generated mutations around the settings service or make secret fields writable.
 - **Recipe `messages.slack`** (`src/recipes.ts`, help in `src/help/slack.md`): lists Slack messages and workspaces beside the Mailbox and Notifications recipes; workspaces stay read-only and sending goes through the senders, not generated routes. Fields it shows carry `@field({ description })` in plain words; keep them when editing the models.
 
+## Per-account mail access (owner + grants)
+
+Optional by default: `Account.ownerUserId` is nullable, and an account without
+an owner stays tenant-wide. Apps that want private or shared mailboxes set
+owners and call `configureMailAccess({ options, resolvePrincipal })` at startup
+(`access.ts`); smrt never knows the host's credential model, the host returns a
+`MailPrincipal` (`userId` + tenant, optional `scopes` / `accountIds` ceilings).
+
+- Scopes `read`, `triage`, `draft`, `send` are `ResourceGrant` rows (resource
+  type `messages:account`, permission `messages.<scope>`) checked by
+  `checkResourceOperationPermission`, so the grantee also needs the tenant
+  `messages.<scope>` permission (the ceiling). The owner holds every scope
+  implicitly. Agents are `User` rows the host maps its credential to; the
+  principal ceilings are intersected with the grant, never added to it.
+- `access-enforcement.ts` is a `GlobalInterceptors` entry registered at package
+  load. Emails, folders and attachments (matched by STI ancestry) are filtered
+  in `beforeList`/`afterList`/`afterGet`; raw `query()` on them is refused while
+  any account is closed to the principal. Fail closed: no principal, no
+  resolver or a foreign tenant means owned accounts are invisible. No tenant
+  admin or super-admin bypass; trusted work (sync, outbox) uses
+  `runWithMailSystemAccess()`. `EmailAccount.syncFrom()` does so itself.
+- Attachments carry a denormalized `accountId` (always derived from the message in a
+  `beforeSave` interceptor, never caller-supplied) so lists, projections and counts filter in SQL; run
+  `AttachmentCollection.backfillAccountIds()` once after upgrading (legacy rows
+  without it are hidden from every read until then).
+- `connectMailbox` refuses by default: give the service `allowedMailHosts`
+  (and optionally `allowedMailPorts`) or your own `validateMailbox`. The
+  built-in validator never connects to private, loopback or link-local
+  addresses and returns only a generic error. Policy lookups use the
+  configured db handle, not a caller's transaction.
+- `Message.send()` needs the `send` scope on an owned account. Account rows are
+  not filtered (senders, routes and the outbox read them without a principal).
+- `MailAccessService` (`grant`, `revoke`, `list`, `setOwner`) needs tenant
+  `messages.manage-access` AND ownership (or delegation); an administrator
+  cannot read, self-grant or take over an owned mailbox. Unowned accounts can be
+  claimed once with `messages.manage-credentials`.
+- Before `configureMailAccess` is called the policy still fails closed on
+  owned accounts: every collection operation on a mail class (the core `onCollectionReady`
+  interceptor hook, so STI subclasses on a default collection are covered) registers its
+  database, per database, and the policy hides every owned account's mail
+  through list, count, projections, facets and raw queries; it learns the database from the first mail or account row it
+  sees and, with no principal resolver, hides every owned account's mail.
+  Direct hydration (`new Email({ id }).initialize()`, `loadRelated()`) is gated
+  in the models' `loadFromId`/`loadFromSlug`.
+- `connectionStatus` (`connected` / `needs_reconnect`) and `statusMessage` mark
+  an account whose sign-in the server refused; `syncFrom()` sets it.
+
+## Mailbox connect (provider-neutral)
+
+Credentials reach smrt-secrets in two ways; neither writes the plaintext `settings` fallback.
+
+- **Write-only app password**: `MessagingSettingsService.connectMailbox()`
+  (permission `messages.manage-credentials`). The candidate credential is
+  validated by opening a session first (`validateMailbox` option, default the
+  provider's email client); a refusal leaves no account and no secret, and the
+  error text has the secret redacted. The connecting user becomes the owner;
+  `label` and the per-account endpoint (`configuration`) are stored; reconnect
+  replaces the secret and is owner-only. `setAccountActive()` pauses/resumes
+  (`isActive`), `removeAccount()` deletes the secret, the synced mail and the
+  account. IMAP/POP3 are admitted here (receive-only), not by `saveAccount`.
+- **Generic OAuth 2.0 / OIDC**: `@happyvertical/smrt-messages/connect`
+  (`startMailOAuthConnect`, `completeMailOAuthConnect`, `MailOAuthProvider`)
+  on the shared kernel `@happyvertical/smrt-secrets/connect` (single-use
+  tenant- and user-bound `ConnectState`, PKCE, safe return path, OIDC
+  discovery with issuer check). The signed-in user becomes the owner; an
+  account owned by someone else or by no one is never taken over. No role
+  checks in the flow: authorize before calling.
+- **Reconnect**: `syncFrom()` marks an auth failure `connectionStatus =
+  'needs_reconnect'` (`Account.markNeedsReconnect/markConnected`) instead of
+  failing silently.
+- The Google provider is a later step (sdk#1405), not part of this flow.
+
 ## In-app notifications (`UserNotification`)
 
 The in-app channel: one stored row per person, with read state.

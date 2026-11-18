@@ -1814,6 +1814,14 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       undefined,
       targetIdentity,
     );
+    // The target's collection is not opened on this path before its read
+    // scope is asked for, so tell policies which database it uses first (a
+    // fresh process would otherwise scope the join without knowing it).
+    await GlobalInterceptors.executeCollectionReady(
+      target.getResolvedItemClassName(),
+      { db: target.db, options: target.options },
+      context,
+    );
     const scoped = (await GlobalInterceptors.executeBeforeList(
       target.getResolvedItemClassName(),
       { where: {} },
@@ -2981,6 +2989,17 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    * This is a fail-fast check only. It does not create or alter schema.
    */
   public async ensureStorageReady(): Promise<void> {
+    await GlobalInterceptors.executeCollectionReady(
+      this.getResolvedItemClassName(),
+      { db: this.db, options: this.options },
+      createInterceptorContext(
+        this.getResolvedItemClassName(),
+        'list',
+        this.constructor.name,
+        undefined,
+        this.getResolvedItemQualifiedName(),
+      ),
+    );
     await verifyPersistenceTable(
       this.db,
       this.tableName,

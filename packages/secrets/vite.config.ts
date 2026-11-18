@@ -34,6 +34,7 @@ export default defineConfig(async () => {
         entry: {
           index: resolve(packageDir, 'src/index.ts'),
           'models/index': resolve(packageDir, 'src/models/index.ts'),
+          'connect/index': resolve(packageDir, 'src/connect/index.ts'),
           'services/SecretService': resolve(
             packageDir,
             'src/services/SecretService.ts',

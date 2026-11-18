@@ -1567,6 +1567,7 @@ GlobalInterceptors.register({
 
 | Hook | Description | Return Value |
 |------|-------------|--------------|
+| `onCollectionReady` | When a collection starts any operation (its storage is checked first); also for the display-label target. Receives the collection's `db` and `options`, so a policy can learn the database before it filters | void |
 | `beforeGet` | Before fetching single record | Modified options or void |
 | `afterGet` | After fetching single record | Modified result or void |
 | `beforeList` | Before listing records | Modified options or void |

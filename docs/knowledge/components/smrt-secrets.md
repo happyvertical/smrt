@@ -5,10 +5,10 @@ description: "Per-tenant secret management with envelope encryption for SMRT"
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-18T09:14:24Z"
+  at: "2026-11-18T16:16:57Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:7ff87ee8f8898fbbaac97c6af871ccee2ef55a95a22bc7ec90bffc46962f1f45"
+source_revision: "sha256:f46913fba811e97d33c34049f85ef39699815ffbda6d48a75909782b23755b64"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/secrets/package.json"
@@ -47,6 +47,7 @@ sources:
 ## Exports
 
 - `.`
+- `./connect`
 - `./manifest`
 - `./manifest.json`
 - `./models`
@@ -54,6 +55,8 @@ sources:
 
 ## Models
 
+- `ConnectState` (collection `connectstates`, extends `SmrtObject`)
+- `ConnectStateCollection` (collection `connectstates`, extends `SmrtCollection`)
 - `Secret` (collection `secrets`, extends `SmrtObject`)
 - `SecretAuditLog` (collection `secretauditlogs`, extends `SmrtObject`)
 - `SecretAuditLogCollection` (collection `secretauditlogs`, extends `SmrtCollection`)

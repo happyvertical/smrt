@@ -7,6 +7,7 @@
 import '../__smrt-register__.js';
 import { foreignKey, SmrtObject, smrt } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy/decorators';
+import { assertHydratedMailAccess } from '../access.js';
 import type { EmailFolderOptions } from '../types';
 
 @TenantScoped({ mode: 'optional' })
@@ -49,6 +50,27 @@ export class EmailFolder extends SmrtObject {
     if (options.subscribed !== undefined) this.subscribed = options.subscribed;
     if (options.createdAt) this.createdAt = options.createdAt;
     if (options.updatedAt) this.updatedAt = options.updatedAt;
+  }
+
+  /**
+   * Direct hydration (`new X({ id }).initialize()`, `loadRelated()`) bypasses
+   * the collection read hooks, so the per-account mail policy is applied here
+   * too: a row of an account closed to the principal never hydrates.
+   */
+  override async loadFromId() {
+    await super.loadFromId();
+    await assertHydratedMailAccess({
+      accountId: this.accountId,
+      options: this.options,
+    });
+  }
+
+  override async loadFromSlug() {
+    await super.loadFromSlug();
+    await assertHydratedMailAccess({
+      accountId: this.accountId,
+      options: this.options,
+    });
   }
 
   /**

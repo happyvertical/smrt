@@ -9,6 +9,7 @@
 import '../__smrt-register__.js';
 import type { FetchOptions, GetEmailClientOptions } from '@happyvertical/email';
 import { field, ObjectRegistry, smrt } from '@happyvertical/smrt-core';
+import { runWithMailSystemAccess } from '../access.js';
 import type {
   EmailAccountOptions,
   MessageSenderInterface,
@@ -17,6 +18,16 @@ import type {
   SyncResult,
 } from '../types';
 import { Account } from './Account';
+
+/** Whether an error means the server refused the account's sign-in. */
+export function isMailAuthFailure(error: unknown): boolean {
+  const code = (error as { code?: unknown } | null)?.code;
+  if (code === 'EAUTH' || code === 'AUTHENTICATIONFAILED') return true;
+  const message = error instanceof Error ? error.message : String(error);
+  return /\b(auth(entication|orization)?\s*(failed|failure|error)|invalid credentials|login failed|unauthori[sz]ed|401|invalid_grant)\b/i.test(
+    message,
+  );
+}
 
 @smrt({
   tableStrategy: 'sti',
@@ -150,6 +161,12 @@ export class EmailAccount extends Account {
    * Sync emails from the email server to the database
    */
   async syncFrom(options: SyncOptions = {}): Promise<SyncResult> {
+    // Sync is trusted server work: it must read the rows it dedupes against
+    // whatever account policy the host enforces for people and agents.
+    return runWithMailSystemAccess(() => this.syncFromScoped(options));
+  }
+
+  private async syncFromScoped(options: SyncOptions): Promise<SyncResult> {
     const startTime = Date.now();
     const result: SyncResult = {
       folders: [],
@@ -320,6 +337,10 @@ export class EmailAccount extends Account {
 
       // Update last sync time
       this.lastSyncAt = new Date();
+      if (!result.errors.length) {
+        this.connectionStatus = 'connected';
+        this.statusMessage = null;
+      }
       this.updatedAt = new Date();
       await this.save();
 
@@ -327,6 +348,15 @@ export class EmailAccount extends Account {
     } catch (error) {
       const err = error instanceof Error ? error : new Error(String(error));
       result.errors.push(err);
+      if (isMailAuthFailure(err)) {
+        // The server refused the saved sign-in: surface it for reconnection
+        // rather than failing every later sync the same silent way.
+        try {
+          await this.markNeedsReconnect(err.message);
+        } catch {
+          // The sync error is already recorded; do not mask it.
+        }
+      }
       if (options.onError) {
         options.onError(err);
       }

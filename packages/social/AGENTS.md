@@ -12,7 +12,7 @@ Social media account management with OAuth and post scheduling. Supports YouTube
 
 ## Gotchas
 
-- **Tokens**: raw `accessToken`/`refreshToken` columns are deprecated plaintext. The connect flow (`@happyvertical/smrt-social/connect`, X provider; state single-use + tenant-bound) stores credentials in smrt-secrets via `setCredentials`, never in those columns.
+- **Tokens**: raw `accessToken`/`refreshToken` columns are deprecated plaintext. The connect flow (`@happyvertical/smrt-social/connect`, X provider; state lifecycle from the shared `@happyvertical/smrt-secrets/connect` kernel over `OAuthState`, single-use + tenant-bound) stores credentials in smrt-secrets via `setCredentials`, never in those columns.
 - **No auto-publishing**: `scheduledAt` is metadata only — app must implement job runner to trigger publishing
 - **Analytics manual**: `analytics` field must be updated by platform sync, not auto-populated
 - **Platform enum hardcoded**: youtube/threads/x/bluesky — extending requires code changes

@@ -3,11 +3,36 @@
  */
 
 import { SmrtCollection } from '@happyvertical/smrt-core';
+import { runWithMailSystemAccess } from '../access.js';
 import { queryGlobal, queryWithGlobals } from '../host.js';
 import { Attachment } from '../models/Attachment';
 
 export class AttachmentCollection extends SmrtCollection<Attachment> {
   static readonly _itemClass = Attachment;
+
+  /**
+   * Fill `accountId` on attachments saved before the column existed, from
+   * their message. Run once per tenant after upgrading; safe to repeat.
+   * Returns the number of rows updated.
+   */
+  async backfillAccountIds(): Promise<number> {
+    return runWithMailSystemAccess(async () => {
+      const { MessageCollection } = await import('./MessageCollection');
+      const messages = await MessageCollection.create(this.options);
+      let updated = 0;
+      for (const attachment of await this.list({
+        where: { accountId: null },
+      })) {
+        if (!attachment.messageId) continue;
+        const message = await messages.get({ id: attachment.messageId });
+        if (!message?.accountId) continue;
+        attachment.accountId = message.accountId;
+        await attachment.save();
+        updated++;
+      }
+      return updated;
+    });
+  }
 
   /**
    * Get attachments for a message
