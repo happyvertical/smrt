@@ -80,6 +80,27 @@ it('shows source columns, links, choice and money metadata, cached formula proof
   expect(text).not.toContain('raw_key_not_for_display');
   expect(text).not.toContain('internal-run-id');
 });
+it.each([
+  'before upload',
+  'while planning',
+])('explains large-workbook timing %s', async (stage) => {
+  const current =
+    stage === 'before upload'
+      ? null
+      : { ...ready(), state: 'running', status: 'running', step: 'planning' };
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async () => new Response(JSON.stringify({ import: current }))),
+  );
+  component = mount(Page, {
+    target: document.body,
+    props: { data: { current } as never, params: {}, form: null },
+  });
+  await tick();
+  expect(document.body.textContent).toContain(
+    'A large workbook can take about a minute to import.',
+  );
+});
 it('offers only existing draft review/publish and discard after proof', async () => {
   vi.stubGlobal(
     'fetch',
