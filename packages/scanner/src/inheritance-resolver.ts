@@ -395,9 +395,10 @@ export class InheritanceResolver {
    *    collection classes such as `class MeetingCollection extends
    *    SmrtCollection<Meeting>` that do not carry `@smrt()` themselves.
    *
-   * Two included classes that share a name are both returned and reported
-   * through {@link getResolutionErrors}: a caller must fail on that
-   * diagnostic rather than build a manifest that can hold only one of them.
+   * Two included classes of one package that share a name are both returned
+   * and reported through {@link getResolutionErrors}: a caller must fail on
+   * that diagnostic rather than build a manifest that can hold only one of
+   * them.
    *
    * @returns An array of {@link ResolvedClassDefinition} — one entry per
    *   eligible class, with inheritance chain, STI metadata, and merged fields
@@ -415,15 +416,21 @@ export class InheritanceResolver {
       if (!this.isModelClass(classDef)) continue;
 
       resolved.push(this.resolve(classDef));
-      const sameName = included.get(classDef.className);
+      // Identity is the package and the class name. A class that declares
+      // its package (`@smrt({ packageName })`) is compared with the classes
+      // of that package only: a fixture standing in for another package does
+      // not collide with the scanned package's own class of the same name.
+      const identity = `${declaredPackageName(classDef) ?? ''}\u0000${classDef.className}`;
+      const sameName = included.get(identity);
       if (sameName) sameName.push(classDef);
-      else included.set(classDef.className, [classDef]);
+      else included.set(identity, [classDef]);
     }
 
     this.resolutionErrors = [];
-    for (const [className, declarations] of included) {
+    for (const declarations of included.values()) {
       if (declarations.length < 2) continue;
       const later = declarations[declarations.length - 1];
+      const className = later.className;
       this.resolutionErrors.push({
         message:
           `Class name collision: \`${className}\` is declared by ${declarations.length} SMRT classes in this scan ` +
@@ -1017,7 +1024,7 @@ export class InheritanceResolver {
     const models = new Map<string, RawClassDefinition>();
     for (const entry of resolved) {
       const raw = this.rawByResolved.get(entry);
-      if (!raw || !this.isScanned(raw)) continue;
+      if (!raw || declaredPackageName(raw) || !this.isScanned(raw)) continue;
       if (this.isFrameworkDeclaration(raw)) continue;
       models.set(raw.className, raw);
     }
@@ -1506,6 +1513,17 @@ export class InheritanceResolver {
       maxInheritanceDepth,
     };
   }
+}
+
+/**
+ * The package a class says it belongs to through a literal
+ * `@smrt({ packageName })`, or `undefined` for a class of the scanned package.
+ */
+export function declaredPackageName(
+  classDef: Pick<RawClassDefinition, 'decoratorConfig'>,
+): string | undefined {
+  const declared = classDef.decoratorConfig?.packageName;
+  return typeof declared === 'string' && declared !== '' ? declared : undefined;
 }
 
 /** Whether two proofs name the same class. */
