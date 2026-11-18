@@ -604,4 +604,153 @@ export class GenClientReadonly extends SmrtObject {
       expect(error.message).not.toContain('[object Object]');
     });
   });
+
+  /** Record the exact URL string each generated fetcher passes to `fetch`. */
+  function recordRequestedUrls(): string[] {
+    const urls: string[] = [];
+    vi.stubGlobal('fetch', async (input: string | URL) => {
+      urls.push(String(input));
+      return Response.json({ id: 'recorded', result: 'ok' });
+    });
+    return urls;
+  }
+
+  it('sends a caller-supplied id as one encoded path segment for get, update, delete and item actions', async () => {
+    const urls = recordRequestedUrls();
+    const client = createClient('/api/v1');
+    const id = 'a/../b?x=1#frag';
+    const encoded = encodeURIComponent(id);
+
+    await client.genclientproducts.get(id);
+    await client.genclientproducts.update(id, { name: 'Renamed' });
+    await client.genclientproducts.delete(id);
+    const readonlyClient = client.genclientreadonlies as unknown as {
+      ping(id: string, options?: Record<string, never>): Promise<unknown>;
+    };
+    await readonlyClient.ping(id);
+
+    expect(urls).toEqual([
+      `/api/v1/genclientproducts/${encoded}`,
+      `/api/v1/genclientproducts/${encoded}`,
+      `/api/v1/genclientproducts/${encoded}`,
+      `/api/v1/genclientreadonlies/${encoded}/ping`,
+    ]);
+    // Resolved against an origin, the request stays on its collection route.
+    for (const url of urls) {
+      const { pathname } = new URL(url, 'http://local');
+      expect(pathname.split('/').slice(0, 5)).toEqual([
+        '',
+        'api',
+        'v1',
+        pathname.split('/')[3],
+        encoded,
+      ]);
+    }
+  });
+
+  it('encodes a percent sign in an id instead of passing an escape through', async () => {
+    const urls = recordRequestedUrls();
+    const client = createClient('/api/v1');
+
+    await client.genclientproducts.get('a%2F..%2Fb');
+
+    expect(urls).toEqual(['/api/v1/genclientproducts/a%252F..%252Fb']);
+    expect(
+      decodeURIComponent(
+        new URL(urls[0], 'http://local').pathname.split('/')[4],
+      ),
+    ).toBe('a%2F..%2Fb');
+  });
+
+  it('keeps ordinary ids unchanged in item URLs', async () => {
+    const urls = recordRequestedUrls();
+    const client = createClient('/api/v1');
+
+    await client.genclientproducts.get('3f2b8c1e-4d5a-4b6c-9e7f-0a1b2c3d4e5f');
+
+    expect(urls).toEqual([
+      '/api/v1/genclientproducts/3f2b8c1e-4d5a-4b6c-9e7f-0a1b2c3d4e5f',
+    ]);
+  });
+
+  it('still sends a request for an id it sent one for before, now encoded', async () => {
+    const urls = recordRequestedUrls();
+    const client = createClient('/api/v1');
+
+    await client.genclientproducts.get(undefined as unknown as string);
+    await client.genclientproducts.get(42 as unknown as string);
+
+    expect(urls).toEqual([
+      '/api/v1/genclientproducts/undefined',
+      '/api/v1/genclientproducts/42',
+    ]);
+  });
+
+  it('rejects, without throwing or sending, an id that cannot be encoded', async () => {
+    const urls = recordRequestedUrls();
+    const client = createClient('/api/v1');
+    const loneSurrogate = 'a\uD800b';
+
+    let pending: Promise<unknown> | undefined;
+    expect(() => {
+      pending = client.genclientproducts.get(loneSurrogate);
+    }).not.toThrow();
+    expect(pending).toBeInstanceOf(Promise);
+    await expect(pending).rejects.toThrow(
+      /Invalid generated client route parameter id/,
+    );
+    await expect(
+      client.genclientproducts.update(loneSurrogate, {}),
+    ).rejects.toThrow(/Invalid generated client route parameter id/);
+    const art = client.artcollections as unknown as {
+      describe(id: string, options?: Record<string, unknown>): Promise<unknown>;
+    };
+    await expect(art.describe('1', { tone: loneSurrogate })).rejects.toThrow(
+      /Invalid generated client route parameter tone/,
+    );
+    expect(urls).toEqual([]);
+  });
+
+  it('still throws synchronously for a missing named route parameter', () => {
+    const client = createClient('/api/v1');
+    const art = client.artcollections as unknown as {
+      describe(id: string, options?: Record<string, unknown>): Promise<unknown>;
+    };
+    expect(() => art.describe('1', {})).toThrow(
+      /Missing generated client route parameter: tone/,
+    );
+  });
+
+  it('encodes a value that looks like a route placeholder as data', async () => {
+    const urls = recordRequestedUrls();
+    const client = createClient('/api/v1');
+    const art = client.artcollections as unknown as {
+      describe(id: string, options?: Record<string, unknown>): Promise<unknown>;
+    };
+
+    await art.describe('[tone]', { tone: '[tone]' });
+
+    expect(urls).toEqual([
+      '/api/v1/artcollections/%5Btone%5D/descriptions/%5Btone%5D',
+    ]);
+  });
+
+  it('refuses an empty, "." or ".." id before any request is sent', async () => {
+    const urls = recordRequestedUrls();
+    const client = createClient('/api/v1');
+
+    for (const id of ['', '.', '..']) {
+      // The fetcher still returns its promise (no synchronous throw); the
+      // promise rejects instead of requesting another route.
+      const pending = client.genclientproducts.get(id);
+      expect(pending).toBeInstanceOf(Promise);
+      await expect(pending).rejects.toThrow(
+        /Invalid generated client route parameter id/,
+      );
+      await expect(client.genclientproducts.delete(id)).rejects.toThrow(
+        /Invalid generated client route parameter id/,
+      );
+    }
+    expect(urls).toEqual([]);
+  });
 });

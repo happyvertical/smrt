@@ -364,6 +364,16 @@ remain skipped, ancestor-hoisted installs resolve normally, and handwritten
 `+server.ts`/`+server.js` ownership and explicit disablement remain unchanged.
 Do not change a package's export map to accommodate a mismatched detector.
 
+The generated API client (`generateClientModule`, behind both
+`@happyvertical/smrt-virt-client` and `@smrt/client`) sends every
+caller-supplied path value (an item `id`, a named route parameter) as exactly
+one `encodeURIComponent` segment (`__smrtPathSegment`). An empty, `.` or `..`
+value cannot be one segment, and a lone UTF-16 surrogate cannot be encoded, so
+its request promise rejects (nothing is sent) instead of the request resolving
+onto another route or the call throwing. Fetchers stay plain functions returning
+that promise; a missing named route parameter still throws synchronously.
+Static collection and route segments are emitted as JSON string literals.
+
 
 `src/vite-preset/` (`@happyvertical/smrt-core/vite`, `smrt()`) composes the Oxc
 decorator block, `smrtConsumer`, then `smrtPlugin` with the template path

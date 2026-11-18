@@ -35,6 +35,12 @@ export function generateClientModule(
   const clientMethods = objects
     .map(({ obj, clientKey, crudMethods, customMethods: exposedMethods }) => {
       const { collection, methods = {} } = obj;
+      // Every value that reaches a request path is one encoded segment: the
+      // static collection segment is emitted as a string literal, and a
+      // caller-supplied id passes through `__smrtItemUrl` at run time.
+      const collectionPath = `basePath + ${JSON.stringify(`/${collection}`)}`;
+      const itemUrl = (suffix = '') =>
+        `__smrtItemUrl(${collectionPath}, id${suffix ? `, ${JSON.stringify(suffix)}` : ''})`;
 
       const exposedActionNames = new Set(
         exposedMethods.map((method) => method.name),
@@ -65,8 +71,8 @@ export function generateClientModule(
             routeConfig.scope === 'collection' ? 'options' : 'id, options';
           const route =
             routeConfig.scope === 'collection'
-              ? `basePath + '/${collection}/${urlSegment}'`
-              : `basePath + '/${collection}/' + id + '/${urlSegment}'`;
+              ? `basePath + ${JSON.stringify(`/${collection}/${urlSegment}`)}`
+              : itemUrl(`/${urlSegment}`);
           const actionUrl = `__smrtActionUrl(${route}, options, ${JSON.stringify(
             routeConfig.pathParamNames,
           )}, ${routeConfig.method === 'GET'})`;
@@ -81,46 +87,46 @@ export function generateClientModule(
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(options || {})
     }`;
-          return `    ${methodName}: (${args}) => __smrtFetchActionResult(${actionUrl}, ${requestInit})`;
+          return `    ${methodName}: (${args}) => __smrtWithUrl(${actionUrl}, (url) => __smrtFetchActionResult(url, ${requestInit}))`;
         })
         .join(',\n');
 
       const enabledCrudMethods = new Set(crudMethods);
       const crudMethodImpls = [
         enabledCrudMethods.has('list')
-          ? `    list: (params) => __smrtFetchJson(basePath + '/${collection}', {
+          ? `    list: (params) => __smrtFetchJson(${collectionPath}, {
       method: 'GET',
       headers: { 'Content-Type': 'application/json' }
     })`
           : '',
         enabledCrudMethods.has('get')
-          ? `    get: (id) => __smrtFetchJson(basePath + '/${collection}/' + id, {
+          ? `    get: (id) => __smrtWithUrl(${itemUrl()}, (url) => __smrtFetchJson(url, {
       method: 'GET',
       headers: { 'Content-Type': 'application/json' }
-    })`
+    }))`
           : '',
         enabledCrudMethods.has('create')
-          ? `    create: (data) => __smrtFetchJson(basePath + '/${collection}', {
+          ? `    create: (data) => __smrtFetchJson(${collectionPath}, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data)
     })`
           : '',
         enabledCrudMethods.has('update')
-          ? `    update: (id, data) => __smrtFetchJson(basePath + '/${collection}/' + id, {
+          ? `    update: (id, data) => __smrtWithUrl(${itemUrl()}, (url) => __smrtFetchJson(url, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data)
-    })`
+    }))`
           : '',
         enabledCrudMethods.has('delete')
-          ? `    delete: (id) => __smrtFetchOk(basePath + '/${collection}/' + id, {
+          ? `    delete: (id) => __smrtWithUrl(${itemUrl()}, (url) => __smrtFetchOk(url, {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' }
-    })`
+    }))`
           : '',
         enabledCrudMethods.has('search')
-          ? `    search: (query) => __smrtFetchJson(basePath + '/${collection}/search?q=' + encodeURIComponent(query), {
+          ? `    search: (query) => __smrtFetchJson(basePath + ${JSON.stringify(`/${collection}/search?q=`)} + encodeURIComponent(query), {
       method: 'GET',
       headers: { 'Content-Type': 'application/json' }
     })`
@@ -152,19 +158,58 @@ async function __smrtFetchActionResult(url, init) {
     : body;
 }
 
+// One caller-supplied value as exactly one path segment. Encoding keeps '/',
+// '?', '#' and '%' inside the segment. An empty, '.' or '..' value, or one
+// that cannot be encoded, cannot be one segment (the URL resolves it against its neighbours, onto another
+// route), so it yields an Error that __smrtWithUrl turns into a rejected
+// request promise instead of a request.
+function __smrtPathSegment(value, name) {
+  const segment = String(value);
+  if (segment === '' || segment === '.' || segment === '..') {
+    return new Error(
+      'Invalid generated client route parameter ' + name + ': ' +
+        JSON.stringify(segment),
+    );
+  }
+  try {
+    return encodeURIComponent(segment);
+  } catch (cause) {
+    // A lone UTF-16 surrogate cannot be encoded (URIError): reject the
+    // request like any other unusable value instead of throwing.
+    return new Error(
+      'Invalid generated client route parameter ' + name +
+        ': not a well-formed string',
+      { cause },
+    );
+  }
+}
+
+function __smrtItemUrl(base, id, suffix) {
+  const segment = __smrtPathSegment(id, 'id');
+  return segment instanceof Error ? segment : base + '/' + segment + (suffix || '');
+}
+
+// Keeps every fetcher a plain function returning the request promise: an
+// unusable URL rejects that promise rather than throwing.
+function __smrtWithUrl(url, request) {
+  return url instanceof Error ? Promise.reject(url) : request(url);
+}
+
 function __smrtActionUrl(url, options, pathParamNames, includeQuery) {
   const values = options && typeof options === 'object' ? options : {};
   const pathParams = new Set(pathParamNames);
-  let resolvedUrl = url;
   for (const name of pathParamNames) {
     const value = values[name];
     if (value === undefined || value === null) {
       throw new Error('Missing generated client route parameter: ' + name);
     }
-    resolvedUrl = resolvedUrl.replace(
-      '[' + name + ']',
-      encodeURIComponent(String(value)),
-    );
+  }
+  if (url instanceof Error) return url;
+  let resolvedUrl = url;
+  for (const name of pathParamNames) {
+    const segment = __smrtPathSegment(values[name], name);
+    if (segment instanceof Error) return segment;
+    resolvedUrl = resolvedUrl.replace('[' + name + ']', segment);
   }
 
   if (!includeQuery) return resolvedUrl;
