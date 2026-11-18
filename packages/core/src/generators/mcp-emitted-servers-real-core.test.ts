@@ -255,10 +255,14 @@ console.log('EMITTED_SERVER_RESULTS' + JSON.stringify(results));
       false,
       false,
     ]);
-    for (const refused of results.slice(1, 4)) {
+    for (const refused of results.slice(1, 3)) {
       expect(refused.text).toContain('Invalid WHERE clause');
       expect(refused.text).not.toContain(label);
     }
+    // An `id` argument names a row by a string; an object is refused before
+    // it can become a filter.
+    expect(results[3].text).toContain("'id' must be a non-empty string.");
+    expect(results[3].text).not.toContain(label);
     expect(results[4].text).toContain(label);
     expect(JSON.parse(results[5].text).label).toBe(label);
   });
