@@ -89,8 +89,8 @@ Example. A smrt `Profile` does not need an email. This app does:
 import { field, smrt } from '@happyvertical/smrt-core';
 import { Profile as SmrtProfile } from '@happyvertical/smrt-profiles';
 
-// Same name: every profile in this app needs an email.
-@smrt()
+// Same name, declared as a replacement: every profile in this app needs an email.
+@smrt({ replaceParent: true })
 export class Profile extends SmrtProfile {
   @field({ required: true })
   override email: string = '';
