@@ -50,6 +50,9 @@ spreadsheet package's 250,000; `/settings/import` saves an integer in
   Proof failure discards it; successful proof seals hidden provenance, ends
   the workflow, then releases the hold. Publish uses the existing digest-pinned
   draft Approval. No live write path is added.
+- An import reuses an open draft only when `discardIfUnused` proves it empty:
+  the host's `discardIfEmpty` checks the chain and closes on the change queue
+  edits use, so a racing edit keeps the draft or is refused, never lost (#5122).
 - `src/engine/import-target.ts` implements `ImportTarget`. Names are PascalCase table keys and camelCase field keys, capped at 40
   characters. Plan order breaks ties with suffixes 2, 3, … (inside that cap),
   including engine reserved names, recipe models, existing models and shared
