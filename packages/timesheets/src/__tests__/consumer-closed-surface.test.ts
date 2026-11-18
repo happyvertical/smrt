@@ -8,9 +8,9 @@
  * same-named subclass over each table (`service_time_entries`,
  * `service_charge_snapshots`, `service_compensation_snapshots`) with
  * `@TenantScoped({ mode: 'required' })` and
- * `@smrt({ api: { include: [] }, cli: { include: [] }, mcp: { include: [] } })`.
+ * `@smrt({ replaceParent: true, api: { include: [] }, cli: { include: [] }, mcp: { include: [] } })`.
  * Its build-time manifest entry then replaces the package's (one table family,
- * child wins), so every manifest-driven surface — `smrt db:migrate`, route
+ * declared `replaceParent: true`), so every manifest-driven surface — `smrt db:migrate`, route
  * and MCP generation, the registry the consumer's generated registration
  * seeds — reads the consumer's configuration.
  *
@@ -96,6 +96,8 @@ function consumerManifest(): SmartObjectManifest {
       base.decoratorConfig as Record<string, unknown>;
     entry.decoratorConfig = {
       ...inherited,
+      // The consumer's subclass declares that it replaces the package's (#5143).
+      replaceParent: true,
       tenantScoped: { mode: 'required' },
       api: CLOSED,
       cli: CLOSED,
