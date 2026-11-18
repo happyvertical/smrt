@@ -272,31 +272,35 @@ export class GenClientReadonly extends SmrtObject {
     expect(clientSource.match(/\n {2}"genclientproducts":/g)).toHaveLength(1);
     expect(clientSource.match(/\n {2}"contents":/g)).toHaveLength(1);
     expect(clientSource).toContain('"contents2":');
-    expect(clientSource).toContain('findFeatured: (options)');
-    expect(clientSource).not.toContain('findFeatured: (id, options)');
-    expect(clientSource).not.toContain('list: (id, options)');
-    expect(clientSource).toContain('invalidItemScope: (options)');
-    expect(clientSource).not.toContain('invalidItemScope: (id, options)');
-    expect(clientSource).toContain('invalidCollectionScope: (id, options)');
-    expect(clientSource).not.toContain('invalidCollectionScope: (options)');
-    expect(clientSource).toContain('describe: (id, options)');
-    expect(clientSource).not.toContain('describe: (options)');
-    expect(clientSource).toContain('featured: (options)');
-    expect(clientSource).toContain('summarize: (id, options)');
-    expect(clientSource).toContain('findUnread: (options)');
-    expect(clientSource).not.toContain('findUnread: (id, options)');
+    expect(clientSource).toContain('findFeatured: async (options)');
+    expect(clientSource).not.toContain('findFeatured: async (id, options)');
+    expect(clientSource).not.toContain('list: async (id, options)');
+    expect(clientSource).toContain('invalidItemScope: async (options)');
+    expect(clientSource).not.toContain('invalidItemScope: async (id, options)');
+    expect(clientSource).toContain(
+      'invalidCollectionScope: async (id, options)',
+    );
+    expect(clientSource).not.toContain(
+      'invalidCollectionScope: async (options)',
+    );
+    expect(clientSource).toContain('describe: async (id, options)');
+    expect(clientSource).not.toContain('describe: async (options)');
+    expect(clientSource).toContain('featured: async (options)');
+    expect(clientSource).toContain('summarize: async (id, options)');
+    expect(clientSource).toContain('findUnread: async (options)');
+    expect(clientSource).not.toContain('findUnread: async (id, options)');
     const customOnlyClientSource = clientSource.match(
       /\n {2}"genclientsecrets": \{([\s\S]*?)\n {2}\}/,
     )?.[1];
-    expect(customOnlyClientSource).toContain('reveal: (options)');
+    expect(customOnlyClientSource).toContain('reveal: async (options)');
     expect(customOnlyClientSource).not.toMatch(
       /\b(list|get|create|update|delete|search):/,
     );
     const partialClientSource = clientSource.match(
       /\n {2}"genclientreadonlies": \{([\s\S]*?)\n {2}\}/,
     )?.[1];
-    expect(partialClientSource).toContain('get: (id)');
-    expect(partialClientSource).toContain('ping: (id, options)');
+    expect(partialClientSource).toContain('get: async (id)');
+    expect(partialClientSource).toContain('ping: async (id, options)');
     expect(partialClientSource).not.toMatch(
       /\b(list|create|update|delete|search):/,
     );
@@ -711,25 +715,17 @@ export class GenClientReadonly extends SmrtObject {
     expect(urls).toEqual([]);
   });
 
-  it('still throws URIError synchronously for a named route parameter that cannot be encoded', () => {
+  it('rejects with URIError, rather than throws, for a named route parameter that cannot be encoded', async () => {
     const urls = recordRequestedUrls();
     const client = createClient('/api/v1');
     const art = client.artcollections as unknown as {
       describe(id: string, options?: Record<string, unknown>): Promise<unknown>;
     };
 
-    expect(() => art.describe('1', { tone: 'a\uD800b' })).toThrow(URIError);
+    const pending = art.describe('1', { tone: 'a\uD800b' });
+    expect(pending).toBeInstanceOf(Promise);
+    await expect(pending).rejects.toThrow(URIError);
     expect(urls).toEqual([]);
-  });
-
-  it('still throws synchronously for a missing named route parameter', () => {
-    const client = createClient('/api/v1');
-    const art = client.artcollections as unknown as {
-      describe(id: string, options?: Record<string, unknown>): Promise<unknown>;
-    };
-    expect(() => art.describe('1', {})).toThrow(
-      /Missing generated client route parameter: tone/,
-    );
   });
 
   it('encodes a value that looks like a route placeholder as data', async () => {
@@ -751,17 +747,69 @@ export class GenClientReadonly extends SmrtObject {
     const client = createClient('/api/v1');
 
     for (const id of ['', '.', '..']) {
-      // The fetcher still returns its promise (no synchronous throw); the
-      // promise rejects instead of requesting another route.
-      const pending = client.genclientproducts.get(id);
-      expect(pending).toBeInstanceOf(Promise);
-      await expect(pending).rejects.toThrow(
+      await expect(client.genclientproducts.get(id)).rejects.toThrow(
         /Invalid generated client route parameter id/,
       );
       await expect(client.genclientproducts.delete(id)).rejects.toThrow(
         /Invalid generated client route parameter id/,
       );
     }
+    expect(urls).toEqual([]);
+  });
+
+  it('list() forwards its params as query parameters', async () => {
+    const urls = recordRequestedUrls();
+    const client = createClient('/api/v1');
+
+    await client.genclientproducts.list({
+      limit: 1,
+      offset: 2,
+      name: 'Widget',
+      unset: undefined,
+    });
+    await client.genclientproducts.list();
+
+    expect(urls).toEqual([
+      '/api/v1/genclientproducts?limit=1&offset=2&name=Widget',
+      '/api/v1/genclientproducts',
+    ]);
+  });
+
+  it('list() params narrow the rows the server returns', async () => {
+    for (const name of ['Limited A', 'Limited B']) {
+      const row = await collection.create({ name, price: 7 });
+      await row.save();
+    }
+    stubFetchToServer(handler);
+    const client = createClient('/api/v1');
+
+    const page = (await client.genclientproducts.list({
+      price: 7,
+      limit: 1,
+    })) as Array<Record<string, unknown>>;
+    const all = (await client.genclientproducts.list({
+      price: 7,
+    })) as Array<Record<string, unknown>>;
+
+    expect(page).toHaveLength(1);
+    expect(all.map((row) => row.name).sort()).toEqual([
+      'Limited A',
+      'Limited B',
+    ]);
+  });
+
+  it('rejects, rather than throws, when a named route parameter is missing', async () => {
+    const urls = recordRequestedUrls();
+    const client = createClient('/api/v1');
+    const art = client.artcollections as unknown as {
+      describe(id: string, options?: Record<string, unknown>): Promise<unknown>;
+    };
+
+    const pending = art.describe('1', {});
+    expect(pending).toBeInstanceOf(Promise);
+    await expect(pending).rejects.toThrow(
+      /Missing generated client route parameter: tone/,
+    );
     expect(urls).toEqual([]);
   });
 });
