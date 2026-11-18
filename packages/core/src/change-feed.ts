@@ -148,9 +148,13 @@ import { type ChangeSignal, publishChangeSignal } from './change-signals.js';
 import { resolveDbCacheKey } from './collection-cache.js';
 import { resolveDispatchTenantScope } from './dispatch/tenant-resolver.js';
 import {
+  databaseIdentity,
   deferUntilFrameworkCommit,
+  holdsWriteQueue,
   isEmbeddedDatabase,
   isKnownDatabaseTransaction,
+  resolveFrameworkTransactionRoot,
+  runOutsideWriteContext,
   usesPostgresDialect,
   withEmbeddedWriteQueue,
 } from './embedded-write-queue.js';
@@ -1574,6 +1578,23 @@ export async function getChangesSince(
   db: DatabaseInterface,
   options: GetChangesOptions,
 ): Promise<ChangeFeedPage> {
+  // An embedded engine runs a framework transaction on the root's own
+  // connection, so a read issued on the root while one is open would see its
+  // uncommitted feed rows — and could advance a cursor past a sequence that a
+  // rollback then frees for a different change. Every framework write
+  // transaction holds the per-database write queue for its whole duration,
+  // so reading through the same queue waits for it to commit or roll back.
+  // Re-entrant: a read made inside that transaction (or any other queue hold)
+  // runs at once and sees its own work, as before.
+  return withEmbeddedWriteQueue(db, isEmbeddedDatabase(db), () =>
+    readChangesSince(db, options),
+  );
+}
+
+async function readChangesSince(
+  db: DatabaseInterface,
+  options: GetChangesOptions,
+): Promise<ChangeFeedPage> {
   const { since } = options;
   if (!Number.isFinite(since) || since < 0) {
     throw new Error(
@@ -2222,12 +2243,38 @@ const APPEND_FAILURE_LOG_INTERVAL_MS = 60_000;
  * {@link recordAppendGap}.
  */
 const pendingGapMarkers = new Map<
-  string,
-  Map<string, { table: string; tenantId: string | null }>
+  string | object,
+  {
+    /**
+     * Handles of this database seen writing to the feed (appending, or
+     * failing to) outside any transaction the framework knows about; only
+     * these flush markers, so another handle of the same database recovers a
+     * gap the failing handle can no longer flush. A raw `db.transaction()`
+     * handle cannot be told apart from a root and is trusted the same way
+     * (residual, with raw transactions generally).
+     */
+    writers: WeakSet<DatabaseInterface>;
+    markers: Map<string, { table: string; tenantId: string | null }>;
+    /**
+     * Set once more distinct `(table, tenant)` pairs were lost than the
+     * bound allows: from then on markers are kept per table only and written
+     * for every tenant (see {@link recordAppendGap}).
+     */
+    overflowed: boolean;
+    /** A flush that has claimed markers and not yet settled. */
+    inFlight: Promise<void> | null;
+  }
 >();
 
 /** Bound on remembered gap markers per database. */
-const MAX_PENDING_GAP_MARKERS = 10_000;
+let maxPendingGapMarkers = 10_000;
+
+/** Test helper: change the gap-marker bound; returns the previous value. */
+export function setChangeFeedGapMarkerLimitForTesting(limit: number): number {
+  const previous = maxPendingGapMarkers;
+  maxPendingGapMarkers = limit;
+  return previous;
+}
 
 /** Databases we already warned about after a failed signal publish (#1763). */
 const warnedSignalPublishFailures = new Set<string>();
@@ -2371,6 +2418,7 @@ async function appendForInstance(
       operation,
       tenantId: rowTenantId,
     });
+    noteCommittedWriter(db);
 
     // A staged append (#2649) has no sequence yet, so there is no cursor to
     // signal with. The signal is published by the drain that sequences it,
@@ -2452,6 +2500,7 @@ export async function recordInstanceChanges(
       db,
       prepared.map(({ input }) => input),
     );
+    noteCommittedWriter(db);
     const signals: ChangeSignal[] = [];
     for (let index = 0; index < prepared.length; index++) {
       const seq = sequences[index];
@@ -2512,62 +2561,185 @@ function publishWhenCommitted(
  * show a consumer that it missed a change. The gap is therefore recorded as a
  * **table-level entry** (`rowId: null`, `operation: 'update'`) for the same
  * table and tenant — the documented "anything in this table may have
- * changed" signal that `bumpChangeFeed()` writes — on the next append this
- * process makes to the same database. Consumers of that table refetch it;
- * everyone else is unaffected.
+ * changed" signal that `bumpChangeFeed()` writes — on a later committed
+ * append to the same database. Consumers of that table refetch it; everyone
+ * else is unaffected.
  *
- * Residual: the marker lives in process memory until that next append. A
- * process that exits first (or a crash between the data write and its feed
- * append) leaves the gap unmarked; recovering those needs the data row and its
- * feed entry in one transaction.
+ * Markers are keyed by the database's stable identity (the write queue's
+ * key), not by the handle that failed: a transaction's handle can carry a
+ * per-instance identity and dies with the transaction.
+ *
+ * The set is bounded. Past the bound it collapses to one marker per **table**
+ * recorded with no tenant, so the entry is served to every tenant: every
+ * consumer of an affected table refetches it, and no lost pair is dropped.
+ * The number of tables bounds that state.
+ *
+ * Residual: the markers live in process memory until written. A process that
+ * exits first (or a crash between the data write and its feed append) leaves
+ * the gap unmarked; recovering those needs the data row and its feed entry in
+ * one transaction.
  */
 function recordAppendGap(
   db: DatabaseInterface,
   entries: ReadonlyArray<{ table: string; tenantId: string | null }>,
 ): void {
-  let dbKey: string;
+  let identity: string | object;
   try {
-    dbKey = resolveDbCacheKey(db);
+    identity = databaseIdentity(db);
   } catch {
     return;
   }
-  let markers = pendingGapMarkers.get(dbKey);
-  if (!markers) {
-    markers = new Map();
-    pendingGapMarkers.set(dbKey, markers);
+  let pending = pendingGapMarkers.get(identity);
+  if (!pending) {
+    pending = {
+      writers: new WeakSet(),
+      markers: new Map(),
+      overflowed: false,
+      inFlight: null,
+    };
+    pendingGapMarkers.set(identity, pending);
   }
   for (const entry of entries) {
     if (!isChangeFeedObservableTable(entry.table)) continue;
-    const key = `${entry.table}\u0000${entry.tenantId ?? ''}`;
-    if (markers.has(key)) continue;
-    if (markers.size >= MAX_PENDING_GAP_MARKERS) {
-      warnGapMarkerDropped(db, entry.table);
-      continue;
-    }
-    markers.set(key, { table: entry.table, tenantId: entry.tenantId });
+    addGapMarker(db, pending, entry.table, entry.tenantId);
+  }
+  const root = resolveFrameworkTransactionRoot(db);
+  if (root !== db) {
+    // Recorded inside a framework transaction: its root is a verified root
+    // handle, and the marker is written once that transaction commits.
+    noteCommittedWriter(root);
+    scheduleFlushAfterCommit(db, pending);
+  } else {
+    noteCommittedWriter(db);
   }
 }
 
 /**
- * Append the pending gap markers for `db` (see {@link recordAppendGap}) and
- * publish their signals. Runs ahead of a framework append, never inside a
- * transaction the framework knows about — a rollback there would discard
- * the marker with the caller's work. Best-effort: on failure the markers stay
- * pending for the next attempt.
+ * Flush `pending` on the root of the framework transaction `db` belongs to,
+ * after it commits — detached from its write context, so the insert waits in
+ * the write queue behind the next transaction instead of running inside it
+ * (where that transaction's rollback would discard the marker).
+ */
+function scheduleFlushAfterCommit(
+  db: DatabaseInterface,
+  pending: NonNullable<ReturnType<typeof pendingGapMarkers.get>>,
+): void {
+  deferUntilFrameworkCommit(db, (committedRoot) => {
+    void runOutsideWriteContext(() =>
+      withEmbeddedWriteQueue(
+        committedRoot,
+        isEmbeddedDatabase(committedRoot),
+        () => flushGapMarkersThrough(committedRoot, pending, true),
+      ),
+    ).catch(() => undefined);
+  });
+}
+
+function addGapMarker(
+  db: DatabaseInterface,
+  pending: NonNullable<ReturnType<typeof pendingGapMarkers.get>>,
+  table: string,
+  tenantId: string | null,
+): void {
+  if (pending.overflowed) {
+    pending.markers.set(`${table}\u0000`, { table, tenantId: null });
+    return;
+  }
+  const key = `${table}\u0000${tenantId ?? ''}`;
+  if (pending.markers.has(key)) return;
+  if (pending.markers.size < maxPendingGapMarkers) {
+    pending.markers.set(key, { table, tenantId });
+    return;
+  }
+  // Too many distinct pairs: collapse to one tenant-less marker per table.
+  warnGapMarkerOverflow(db, table);
+  const tables = new Set([...pending.markers.values()].map((m) => m.table));
+  tables.add(table);
+  pending.markers.clear();
+  pending.overflowed = true;
+  for (const name of tables) {
+    pending.markers.set(`${name}\u0000`, { table: name, tenantId: null });
+  }
+}
+
+/**
+ * Append the pending gap markers (see {@link recordAppendGap}) ahead of a
+ * framework append on `db`, and publish their signals.
+ *
+ * A marker is written only where nothing can roll it back afterwards:
+ *
+ * - for an append on a framework transaction's handle, after that
+ *   transaction commits — detached from its write context, so the insert
+ *   queues behind the next transaction instead of running inside it;
+ * - otherwise only through a handle of this database already seen appending
+ *   outside any transaction the framework knows about, and never inside one
+ *   (so not on a caller-owned transaction's handle).
+ *
+ * Claimed markers go back to the pending set if the write fails or is staged
+ * (PostgreSQL inside a transaction the framework could not see).
  */
 async function flushGapMarkers(db: DatabaseInterface): Promise<void> {
-  let dbKey: string;
+  let identity: string | object;
   try {
-    dbKey = resolveDbCacheKey(db);
+    identity = databaseIdentity(db);
   } catch {
     return;
   }
-  const markers = pendingGapMarkers.get(dbKey);
-  if (!markers || markers.size === 0) return;
-  if (isKnownDatabaseTransaction(db)) return;
+  const pending = pendingGapMarkers.get(identity);
+  if (!pending) return;
+  // Let a flush that already claimed markers settle first: if it fails they
+  // come back, and this append must not overtake them.
+  // (Never from inside a write-queue hold: the in-flight flush waits in that
+  // queue, so waiting for it there could never finish.)
+  if (
+    pending.inFlight &&
+    resolveFrameworkTransactionRoot(db) === db &&
+    !holdsWriteQueue(db)
+  ) {
+    await pending.inFlight;
+  }
+  if (pending.markers.size === 0) return;
+  if (resolveFrameworkTransactionRoot(db) !== db) {
+    scheduleFlushAfterCommit(db, pending);
+    return;
+  }
+  if (isKnownDatabaseTransaction(db) || !pending.writers.has(db)) return;
+  await flushGapMarkersThrough(db, pending, false);
+}
+
+async function flushGapMarkersThrough(
+  db: DatabaseInterface,
+  pending: NonNullable<ReturnType<typeof pendingGapMarkers.get>>,
+  verifiedRoot: boolean,
+): Promise<void> {
+  if (pending.markers.size === 0) return;
+  if (!verifiedRoot && !pending.writers.has(db)) return;
   // Claim synchronously so two concurrent appends do not both record them.
-  pendingGapMarkers.delete(dbKey);
-  const claimed = [...markers.values()];
+  const claimed = [...pending.markers.values()];
+  pending.markers.clear();
+  let settle: () => void = () => {};
+  const inFlight = new Promise<void>((resolve) => {
+    settle = resolve;
+  });
+  pending.inFlight = inFlight;
+  try {
+    await writeClaimedGapMarkers(db, pending, claimed);
+  } finally {
+    if (pending.inFlight === inFlight) pending.inFlight = null;
+    settle();
+  }
+}
+
+async function writeClaimedGapMarkers(
+  db: DatabaseInterface,
+  pending: NonNullable<ReturnType<typeof pendingGapMarkers.get>>,
+  claimed: Array<{ table: string; tenantId: string | null }>,
+): Promise<void> {
+  const putBack = (markers: typeof claimed) => {
+    for (const marker of markers) {
+      addGapMarker(db, pending, marker.table, marker.tenantId);
+    }
+  };
   let sequences: Array<number | null>;
   try {
     sequences = await appendChanges(
@@ -2580,10 +2752,11 @@ async function flushGapMarkers(db: DatabaseInterface): Promise<void> {
       })),
     );
   } catch {
-    recordAppendGap(db, claimed);
+    putBack(claimed);
     return;
   }
   const unsequenced: typeof claimed = [];
+  const signals: ChangeSignal[] = [];
   claimed.forEach((marker, index) => {
     const seq = sequences[index];
     if (seq == null) {
@@ -2592,17 +2765,41 @@ async function flushGapMarkers(db: DatabaseInterface): Promise<void> {
       unsequenced.push(marker);
       return;
     }
-    publishSignals(db, [
-      {
-        table: marker.table,
-        operation: 'update',
-        rowId: null,
-        tenantId: marker.tenantId,
-        seq,
-      },
-    ]);
+    signals.push({
+      table: marker.table,
+      operation: 'update',
+      rowId: null,
+      tenantId: marker.tenantId,
+      seq,
+    });
   });
-  if (unsequenced.length > 0) recordAppendGap(db, unsequenced);
+  publishWhenCommitted(db, signals);
+  if (unsequenced.length > 0) putBack(unsequenced);
+}
+
+/**
+ * Note that `db` just wrote to the feed (or tried to) outside any transaction
+ * the framework knows about, making it a trusted writer for gap markers.
+ */
+function noteCommittedWriter(db: DatabaseInterface): void {
+  try {
+    if (resolveFrameworkTransactionRoot(db) !== db) return;
+    if (isKnownDatabaseTransaction(db)) return;
+    const identity = databaseIdentity(db);
+    let pending = pendingGapMarkers.get(identity);
+    if (!pending) {
+      pending = {
+        writers: new WeakSet(),
+        markers: new Map(),
+        overflowed: false,
+        inFlight: null,
+      };
+      pendingGapMarkers.set(identity, pending);
+    }
+    pending.writers.add(db);
+  } catch {
+    // Bookkeeping must never fail the write path.
+  }
 }
 
 /** Record a framework-owned mutation that intentionally bypasses save hooks. */
@@ -2659,16 +2856,18 @@ function warnAppendFailure(
 }
 
 /**
- * The gap-marker bound was reached, so a lost change has no marker (rate-
- * limited per table, separately from append failures).
+ * The gap-marker bound was reached; markers collapse to one tenant-less entry
+ * per table (rate-limited per table, separately from append failures).
  */
-function warnGapMarkerDropped(db: DatabaseInterface, table: string): void {
+function warnGapMarkerOverflow(db: DatabaseInterface, table: string): void {
   try {
     const allowed = takeRateLimitedWarning('gap-overflow', db, table);
     if (!allowed) return;
     logger.warn(
-      `Change feed: too many unrecorded change-feed gaps for this database; ` +
-        `the lost change for '${table}' gets no table-level entry.`,
+      'Change feed: too many distinct unrecorded change-feed gaps for this ' +
+        'database; recovery entries are now written per table for every ' +
+        `tenant (first overflow on '${table}'), so all consumers of an ` +
+        'affected table refetch it.',
       { suppressedSinceLastWarning: allowed.suppressed },
     );
   } catch {

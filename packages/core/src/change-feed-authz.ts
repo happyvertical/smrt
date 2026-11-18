@@ -304,6 +304,13 @@ export async function isChangeFeedEntryVisible(
  * {@link isChangeFeedEntryVisible}, applied to a page of entries in order.
  * Returns `entries` unchanged (same array reference) when no hook is
  * registered.
+ *
+ * A **table-level** entry (`rowId: null` — a `bumpChangeFeed()` without a row,
+ * or the marker the feed writes when a change could not be appended) names no
+ * row, so the row-level hook is not asked about it: it has already passed the
+ * table authorization and the tenant filter, which are the scopes it speaks
+ * for. A hook that allows only listed row ids would otherwise reject it and
+ * drop the only notice that the table needs refetching.
  */
 export async function filterVisibleChangeFeedEntries<
   T extends ChangeFeedVisibilityEntry,
@@ -313,7 +320,9 @@ export async function filterVisibleChangeFeedEntries<
   }
   const visible: T[] = [];
   for (const entry of entries) {
-    if (await isChangeFeedEntryVisible(ctx, entry)) visible.push(entry);
+    if (entry.rowId === null || (await isChangeFeedEntryVisible(ctx, entry))) {
+      visible.push(entry);
+    }
   }
   return visible;
 }

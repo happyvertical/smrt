@@ -95,6 +95,23 @@ export function deferUntilFrameworkCommit(
   return false;
 }
 
+/**
+ * The root database behind `db`: the database the outermost framework
+ * transaction was opened on when `db` is the handle of an active framework
+ * transaction in this async context, otherwise `db` itself.
+ */
+export function resolveFrameworkTransactionRoot(
+  db: DatabaseInterface,
+): DatabaseInterface {
+  const frames = commitFrames.getStore();
+  if (frames) {
+    for (let index = frames.length - 1; index >= 0; index--) {
+      if (frames[index].handle === db) return frames[index].root;
+    }
+  }
+  return db;
+}
+
 function runCommitCallbacks(
   callbacks: Array<(root: DatabaseInterface) => void>,
   root: DatabaseInterface,
@@ -106,6 +123,48 @@ function runCommitCallbacks(
       // A post-commit announcement must never fail the committed write.
     }
   }
+}
+
+/**
+ * Run `operation` with none of the caller's write-queue holds, framework
+ * transactions or commit frames in its async context.
+ *
+ * For long-lived background work that is merely *started* from inside a
+ * hold — such as an `_events` stream woken by a signal a commit callback
+ * published. Without this, every later await of that work would inherit the
+ * hold and treat itself as re-entrant, so its reads would no longer wait for
+ * transactions that open afterwards.
+ */
+export function runOutsideWriteContext<T>(operation: () => T): T {
+  return activeQueueKeys.run(new Set(), () =>
+    frameworkTransactions.run(new Set(), () => commitFrames.run([], operation)),
+  );
+}
+
+/**
+ * A stable identity for the database behind `db`, the same one the write
+ * queue serialises on: the database URL, or the root handle itself for a
+ * per-connection in-memory database or a handle without a URL. A framework
+ * transaction's bound handle resolves to its root first, so every handle of
+ * one database maps to one identity.
+ */
+export function databaseIdentity(db: DatabaseInterface): string | object {
+  return queueKey(resolveFrameworkTransactionRoot(db));
+}
+
+/**
+ * Whether the caller's async context holds the write queue for `db` — it is
+ * running inside a framework write transaction or another queue hold on that
+ * database. Work that must wait for the queue (a detached feed read) and is
+ * awaited from here can never complete.
+ */
+export function holdsWriteQueue(db: DatabaseInterface): boolean {
+  const active = activeQueueKeys.getStore();
+  if (!active || active.size === 0) return false;
+  return (
+    active.has(queueKey(db)) ||
+    active.has(queueKey(resolveFrameworkTransactionRoot(db)))
+  );
 }
 
 /** Whether this exact handle belongs to a currently active framework transaction. */
