@@ -10,7 +10,7 @@ import { createEngineImportTarget } from '../engine/import-target.ts';
 import { startDraft } from '../lib/server/drafts.ts';
 import { closeHost, hostFor } from '../lib/server/host.ts';
 import { openShell, type ShellHarness } from '../lib/server/test-support.ts';
-import * as approvalRoute from './api/shell/approvals/[id]/+server.ts';
+import * as previewRoute from './api/shell/draft/preview/+server.ts';
 import * as publishRoute from './api/shell/draft/publish/+server.ts';
 import * as recordsRoute from './api/shell/records/[model]/+server.ts';
 import * as recordRoute from './api/shell/records/[model]/[id]/+server.ts';
@@ -46,6 +46,20 @@ function event(
   } as never;
 }
 
+/** The owner's one-step publish: review the draft, then publish that digest. */
+async function publishOpenDraft() {
+  const review = await previewRoute.POST(
+    event('/api/shell/draft/preview', 'POST', {}),
+  );
+  expect(review.status).toBe(200);
+  const { preview } = await review.json();
+  const response = await publishRoute.POST(
+    event('/api/shell/draft/publish', 'POST', { expect: preview.digest }),
+  );
+  expect(response.status).toBe(200);
+  expect((await response.json()).status).toBe('approved');
+}
+
 it.each([
   ['draft', 'host'],
   ['draft', 'route'],
@@ -75,22 +89,7 @@ it.each([
   await target.seal();
   const retainedProof = structuredClone(proof);
   if (copy === 'live') {
-    const pendingResponse = await publishRoute.POST(
-      event('/api/shell/draft/publish', 'POST', {}),
-    );
-    expect(pendingResponse.status).toBe(202);
-    const pending = await pendingResponse.json();
-    expect(pending.status).toBe('pending_approval');
-    const decision = await approvalRoute.POST(
-      event(
-        `/api/shell/approvals/${pending.approvalId}`,
-        'POST',
-        { approve: true },
-        { id: pending.approvalId },
-      ),
-    );
-    expect(decision.status).toBe(200);
-    expect((await decision.json()).status).toBe('approved');
+    await publishOpenDraft();
   }
   const host = await hostFor(copy);
   const write = async (
@@ -162,7 +161,7 @@ it.each([
       quantity: 4,
       status: 'Open',
     }),
-  ).rejects.toThrow(/cachedTotal.*required/i);
+  ).rejects.toThrow(/Workbook total.*required/i);
   const rows = await host.readStoredRows(
     'Orders',
     ['workbookRow', 'workbookLookup', 'total'],
@@ -252,26 +251,14 @@ it('repairs a persisted pre-release sealed import through a fresh draft and owne
       { type: 'hideField', model: 'Customers', field: 'workbookRow' },
       { author: h.owner.id },
     );
-    const request = await publishRoute.POST(
-      event('/api/shell/draft/publish', 'POST', {}),
-    );
-    expect(request.status).toBe(202);
-    const { approvalId } = await request.json();
-    const decision = await approvalRoute.POST(
-      event(
-        `/api/shell/approvals/${approvalId}`,
-        'POST',
-        { approve: true },
-        { id: approvalId },
-      ),
-    );
-    expect((await decision.json()).status).toBe('approved');
+    await publishOpenDraft();
     await closeHost();
     const live = await hostFor('live');
     if (phase === 'legacy') {
-      await expect(live.create('Customers', { name: 'Lin' })).rejects.toThrow(
-        /workbook_row.*missing/i,
-      );
+      // The old NOT NULL column is repaired when the published table opens.
+      expect(await live.create('Customers', { name: 'Mae' })).toMatchObject({
+        name: 'Mae',
+      });
     } else {
       expect(await live.create('Customers', { name: 'Lin' })).toMatchObject({
         name: 'Lin',
@@ -281,7 +268,11 @@ it('repairs a persisted pre-release sealed import through a fresh draft and owne
         ['workbookRow'],
         'workbookRow',
       );
-      expect(stored).toEqual([{ workbookRow: null }, { workbookRow: 2 }]);
+      expect(stored).toEqual([
+        { workbookRow: null },
+        { workbookRow: null },
+        { workbookRow: 2 },
+      ]);
       expect(live.def.models.Customers.fields.workbookRow).toMatchObject({
         required: false,
         hidden: true,
