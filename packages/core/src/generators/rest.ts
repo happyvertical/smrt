@@ -1653,6 +1653,10 @@ export class APIGenerator {
    * Mass-assignment guard (#1540): strip framework/server-managed and
    * `@field({ readonly: true })` fields from a create/update body, and — when an
    * `@smrt({ api: { writable: [...] } })` allowlist is set — intersect with it.
+   *
+   * A body sets fields and nothing else: `_`-prefixed keys and the keys that
+   * configure a service of the object (`ObjectRegistry.isServiceOptionInput`)
+   * never reach construction or a loaded instance.
    */
   private applyWritablePolicy(
     objectName: string | undefined,
@@ -1699,6 +1703,7 @@ export class APIGenerator {
     const result: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(data)) {
       if (key.startsWith('_')) continue;
+      if (ObjectRegistry.isServiceOptionInput(objectName, key)) continue;
       if (serverManaged.has(key)) continue;
       if (readonly.has(key)) continue;
       if (writable && !writable.includes(key)) continue;

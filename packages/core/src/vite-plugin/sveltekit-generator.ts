@@ -475,8 +475,14 @@ function getApiWritableAllowlist(apiConfig: unknown): string[] | null {
  * timestamps, `_`-prefixed) and `@field({ readonly: true })` fields from
  * request bodies, and — when a `writable` allowlist is configured — intersects
  * with it. Applied to every generated `create`/`update` handler.
+ *
+ * A body sets fields and nothing else: the keys that configure a service of
+ * the object are dropped by the same `ObjectRegistry.isServiceOptionInput`
+ * rule the runtime REST and MCP transports apply, evaluated for the route's
+ * model (or the selected create target).
  */
 function generateWritablePolicyHelper(
+  className: string,
   objectDef: SmartObjectDefinition,
   dynamicTarget = false,
 ): string {
@@ -516,6 +522,8 @@ ${
 }  const result: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(data as Record<string, unknown>)) {
     if (key.startsWith('_')) continue;
+    // A body sets fields only, never a service of the object.
+    if (ObjectRegistry.isServiceOptionInput(${dynamicTarget ? `targetName ?? ${JSON.stringify(className)}` : JSON.stringify(className)}, key)) continue;
     if (SERVER_MANAGED_FIELDS.includes(key)) continue;
     if (${dynamicTarget ? 'readonlyFields' : 'READONLY_FIELDS'}.includes(key)) continue;
     if (${dynamicTarget ? 'writable' : 'WRITABLE_ALLOWLIST'} && !${dynamicTarget ? 'writable' : 'WRITABLE_ALLOWLIST'}.includes(key)) continue;
@@ -3494,7 +3502,7 @@ ${serializerImports ? `${serializerImports}\n` : ''}${hasPost ? "import { Object
 ${modelType.importStatement ? `${modelType.importStatement}\n` : ''}import type { RequestHandler } from './$types';
 ${collectionAccessImports}
 // Note: ${className} is auto-registered by the Vite plugin scanner
-${generateAuthGuardHelper(objectDef, semanticManifest)}${generateTenantContextHelper(usesPrincipalContext(objectDef), !needsRouteTenantContext(objectDef))}${hasPost ? generateWritablePolicyHelper(objectDef, true) : ''}${hasPost ? generateTypedRouteErrorHelper() : ''}${hasGet ? generateListBoundsHelper(objectDef) : ''}${hasGet ? generateListWhereErrorHelper() : ''}${hasGet ? generateConditionalGetRouteHelper(objectDef.decoratorConfig?.api, { runtimeExposure: true, tenantScoped: isTenantScoped(objectDef), permissionScoped: listUsesPermissionScopedBody, modelName: className, readScopeModel: readScopeModelName(objectDef, className), useBodyHash: listUsesBodyHash, manifestHash: webManifestHash }) : ''}`;
+${generateAuthGuardHelper(objectDef, semanticManifest)}${generateTenantContextHelper(usesPrincipalContext(objectDef), !needsRouteTenantContext(objectDef))}${hasPost ? generateWritablePolicyHelper(className, objectDef, true) : ''}${hasPost ? generateTypedRouteErrorHelper() : ''}${hasGet ? generateListBoundsHelper(objectDef) : ''}${hasGet ? generateListWhereErrorHelper() : ''}${hasGet ? generateConditionalGetRouteHelper(objectDef.decoratorConfig?.api, { runtimeExposure: true, tenantScoped: isTenantScoped(objectDef), permissionScoped: listUsesPermissionScopedBody, modelName: className, readScopeModel: readScopeModelName(objectDef, className), useBodyHash: listUsesBodyHash, manifestHash: webManifestHash }) : ''}`;
 
   // #1782: tenant-scoped reads fail closed to global (NULL-tenant) rows when no
   // tenant context is active (public/anonymous read). The scope is resolved at
@@ -3690,10 +3698,10 @@ function generateItemRouteTemplate(
 // DO NOT EDIT - changes will be overwritten
 
 import { error${hasPut || hasDelete ? ', json' : ''} } from '@sveltejs/kit';
-${serializerImports ? `${serializerImports}\n` : ''}${hasPut || hasDelete ? "import { normalizeTypedHttpError, reportUnexpectedHttpError } from '@happyvertical/smrt-core';\n" : ''}${hasGet ? "import { resolveAnonymousTenantReadScope } from '@happyvertical/smrt-core';\n" : ''}
+${serializerImports ? `${serializerImports}\n` : ''}${hasPut || hasDelete ? "import { normalizeTypedHttpError, reportUnexpectedHttpError } from '@happyvertical/smrt-core';\n" : ''}${hasPut ? "import { ObjectRegistry } from '@happyvertical/smrt-core';\n" : ''}${hasGet ? "import { resolveAnonymousTenantReadScope } from '@happyvertical/smrt-core';\n" : ''}
 ${modelType.importStatement ? `${modelType.importStatement}\n` : ''}import type { RequestHandler } from './$types';
 ${collectionAccessImports}
-${generateAuthGuardHelper(objectDef, semanticManifest)}${generateTenantContextHelper(usesPrincipalContext(objectDef), !needsRouteTenantContext(objectDef))}${hasPut ? generateWritablePolicyHelper(objectDef) : ''}${hasPut || hasDelete ? generateTypedRouteErrorHelper() : ''}${hasGet ? generateConditionalGetRouteHelper(objectDef.decoratorConfig?.api, { runtimeExposure: true, tenantScoped: isTenantScoped(objectDef), permissionScoped: getUsesPermissionScopedBody, modelName: className, readScopeModel: readScopeModelName(objectDef, className), useBodyHash: getUsesBodyHash, manifestHash: webManifestHash }) : ''}`;
+${generateAuthGuardHelper(objectDef, semanticManifest)}${generateTenantContextHelper(usesPrincipalContext(objectDef), !needsRouteTenantContext(objectDef))}${hasPut ? generateWritablePolicyHelper(className, objectDef) : ''}${hasPut || hasDelete ? generateTypedRouteErrorHelper() : ''}${hasGet ? generateConditionalGetRouteHelper(objectDef.decoratorConfig?.api, { runtimeExposure: true, tenantScoped: isTenantScoped(objectDef), permissionScoped: getUsesPermissionScopedBody, modelName: className, readScopeModel: readScopeModelName(objectDef, className), useBodyHash: getUsesBodyHash, manifestHash: webManifestHash }) : ''}`;
 
   // #1782: a tenant-scoped single read fails closed to global (NULL-tenant)
   // rows when no tenant context is active, so a public/anonymous GET /:id can't

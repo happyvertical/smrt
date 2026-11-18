@@ -62,3 +62,16 @@ DDL, migration and OpenAPI digests have not moved since the recapture above.
 - Generated list routes (`compat_plain/+server.ts`, `compatroots/+server.ts`):
   the list and count handlers answer a where clause the collection refuses
   with its 400 status.
+- Generated write paths (both MCP servers `single/index.ts` and
+  `modular/handlers/index.ts`, the list and item routes of each model, and
+  `sync/apply/+server.ts`): each writable policy asks
+  `ObjectRegistry.isServiceOptionInput()` which body keys are fields.
+- Generated read routes (the list and item routes of each model:
+  `compat_plain/+server.ts`, `compat_plain/[id]/+server.ts`,
+  `compatroots/+server.ts`, `compatroots/[id]/+server.ts`): every list,
+  count and point read resolves its tenant read scope at request time with
+  `resolveAnonymousTenantReadScope()`, for every model, since tenancy can be
+  registered at runtime. The same four files then also enter the caller's
+  tenant through core's request hooks when the model is tenant-scoped at
+  request time, and choose the read cache policy and ETag tenant
+  discriminator at request time.
