@@ -38,7 +38,11 @@ import {
   publishAtomicArtifact,
 } from '../consumer-plugin/artifact-publication.js';
 import {
+  assertSmrtGenerationSnapshotSourceSet,
   loadVerifiedSmrtGenerationSnapshot,
+  loadVerifiedSmrtGenerationSnapshotSourceSet,
+  SMRT_GENERATION_INPUTS_FILE,
+  type SmrtGenerationInputs,
   type SmrtGenerationSnapshotOptions,
 } from '../generation-snapshot.js';
 import { CRUD_OPERATIONS } from '../generators/custom-action.js';
@@ -47,7 +51,10 @@ import {
   mergeKnowledgeConfig,
   resolveFileKnowledgeConfig,
 } from '../knowledge-config.js';
-import { discoverSmrtPackages } from '../manifest/discover-smrt-packages.js';
+import {
+  discoverSmrtPackageLocations,
+  discoverSmrtPackages,
+} from '../manifest/discover-smrt-packages.js';
 import {
   assertPackageRelativeFilePaths,
   relativizeManifestFilePaths,
@@ -113,7 +120,9 @@ import { buildWorkerRegistration } from './worker-registration.js';
 
 export {
   loadVerifiedSmrtGenerationSnapshot,
+  readSmrtGenerationInputs,
   type SerializeSmrtGenerationSnapshotOptions,
+  type SmrtGenerationInputs,
   type SmrtGenerationSnapshotArtifact,
   type SmrtGenerationSnapshotOptions,
   type SmrtGenerationSnapshotView,
@@ -341,6 +350,60 @@ function toProjectGlobPattern(projectRoot: string, pattern: string): string {
   if (slashed === root) return '.';
   if (slashed.startsWith(`${root}/`)) return slashed.slice(root.length + 1);
   return slashed.replace(/^(?:\.\/)+/, '');
+}
+
+/** The parts of a scanner result that name the files the scan read. */
+interface ScanInputResults {
+  files?: Array<{
+    filePath: string;
+    recipes?: Array<{ filePath: string; help?: { path: string } | null }>;
+  }>;
+  uiSelectors?: Record<string, { filePath: string }>;
+}
+
+/**
+ * Every file one project scan read: the files its source globs selected,
+ * `package.json`, the help file of each recipe in those files, the UI selector
+ * files, and the discovered dependency manifests. Recorded so a generation
+ * snapshot can digest all of them and dev rescans can watch them.
+ */
+function collectGenerationInputs(
+  rootDir: string,
+  globs: { include: string[]; exclude: string[]; followSymbolicLinks: boolean },
+  results: ScanInputResults,
+): SmrtGenerationInputs {
+  const sources = new Set<string>();
+  const files = new Set<string>();
+  for (const file of results.files ?? []) {
+    sources.add(resolve(rootDir, file.filePath));
+    for (const recipe of file.recipes ?? []) {
+      if (!recipe.help?.path) continue;
+      files.add(
+        resolve(dirname(resolve(rootDir, recipe.filePath)), recipe.help.path),
+      );
+    }
+  }
+  for (const selector of Object.values(results.uiSelectors ?? {})) {
+    files.add(resolve(rootDir, selector.filePath));
+  }
+  const packageJson = join(rootDir, 'package.json');
+  if (existsSync(packageJson)) files.add(packageJson);
+  for (const source of sources) files.delete(source);
+  const dependencies = Object.fromEntries(
+    Object.entries(discoverSmrtPackageLocations({ baseDir: rootDir }))
+      .map(([name, location]) => [name, location.manifestPath] as const)
+      .sort(([left], [right]) => left.localeCompare(right)),
+  );
+  return {
+    version: 1,
+    projectRoot: rootDir,
+    include: [...globs.include],
+    exclude: [...globs.exclude],
+    followSymbolicLinks: globs.followSymbolicLinks,
+    sources: [...sources].sort(),
+    files: [...files].sort(),
+    dependencies,
+  };
 }
 
 /**
@@ -957,6 +1020,12 @@ export function smrtPlugin(
    * manifest and stays runtime-focused; this belongs to the knowledge artifact.
    */
   let agentSurface: DomainKnowledgeAgentSurface | undefined;
+  /**
+   * Every file the most recent scan read (sources, package.json, recipe help
+   * and UI selector files, dependency manifests). Published beside the local
+   * manifest for generation snapshots, and watched for dev rescans.
+   */
+  let generationInputs: SmrtGenerationInputs | undefined;
   let activeManifestScan: Promise<SmartObjectManifest> | undefined;
   /** The last watcher rescan scheduled, running or waiting. */
   let watchedRescanTail: Promise<void> = Promise.resolve();
@@ -1058,6 +1127,14 @@ export function smrtPlugin(
           content: generateBuildSchemaModule(merged),
         },
         { path: manifestPath, content: JSON.stringify(merged, null, 2) },
+        ...(generationInputs
+          ? [
+              {
+                path: resolve(smrtDir, SMRT_GENERATION_INPUTS_FILE),
+                content: `${JSON.stringify(generationInputs, null, 2)}\n`,
+              },
+            ]
+          : []),
       ]);
       await writeDomainKnowledgeArtifact(
         merged,
@@ -1746,6 +1823,24 @@ export function smrtPlugin(
         rootDir,
         'project',
       );
+      // Inputs are digest-checked by the loader; a source added or removed
+      // under the recorded globs needs a fresh discovery to see.
+      const sourceSet = loadVerifiedSmrtGenerationSnapshotSourceSet(
+        generationSnapshot,
+        rootDir,
+      );
+      if (sourceSet) {
+        const { discoverSourceFiles } = await importScanner();
+        assertSmrtGenerationSnapshotSourceSet(
+          sourceSet,
+          await discoverSourceFiles({
+            cwd: sourceSet.projectRoot,
+            include: sourceSet.include,
+            exclude: sourceSet.exclude,
+            followSymbolicLinks: sourceSet.followSymbolicLinks,
+          }),
+        );
+      }
       console.log(
         `[smrt] Reusing verified generation snapshot (${generationSnapshot.provenance})`,
       );
@@ -1875,6 +1970,11 @@ export function smrtPlugin(
       // `.js` specifier do not reliably resolve through tsx during publish-time
       // workspace builds, even though the compiled dist path exists.
       const smrtDependencies = discoverSmrtPackages({ baseDir: rootDir });
+      generationInputs = collectGenerationInputs(
+        rootDir,
+        { include, exclude: safeExclude, followSymbolicLinks },
+        results,
+      );
       if (smrtDependencies.length > 0) {
         newManifest.smrtDependencies = smrtDependencies;
         console.log(
@@ -2051,6 +2151,8 @@ export function smrtPlugin(
       const { minimatch } = await import('minimatch');
       const absoluteFile = resolve(projectRoot, file);
       if (await isGeneratedDevOutput(absoluteFile)) return false;
+      // package.json, recipe help and UI selector files feed the manifest too.
+      if (generationInputs?.files.includes(absoluteFile)) return true;
       const projectPath = toProjectGlobPath(projectRoot, absoluteFile);
       const matches = (pattern: string) =>
         minimatch(projectPath, toProjectGlobPattern(projectRoot, pattern), {

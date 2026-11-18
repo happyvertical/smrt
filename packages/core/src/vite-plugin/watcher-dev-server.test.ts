@@ -224,6 +224,41 @@ describe('smrtPlugin dev-server rescans (real Vite dev server)', () => {
     }, WAIT);
   }, 60_000);
 
+  it('rescans when a recipe help file changes (#3596)', async () => {
+    const helpFile = join(projectRoot, 'src', 'notes.recipe.md');
+    writeFileSync(helpFile, 'Give the note a {field:title}.\n');
+    writeFileSync(
+      join(projectRoot, 'src', 'recipes.ts'),
+      `import { SmrtRecipe } from '@happyvertical/smrt-core';
+import { WatchDevNote } from './models/WatchDevNote.js';
+
+export class WatchDevNotesRecipe extends SmrtRecipe {
+  static id = 'watchdev.notes';
+  static label = 'Notes';
+  static summary = 'Keep notes.';
+  static models = [WatchDevNote];
+  static help = './notes.recipe.md';
+}
+`,
+    );
+    const help = () =>
+      (
+        JSON.parse(
+          readFileSync(join(projectRoot, '.smrt', 'manifest.json'), 'utf-8'),
+        ) as { recipes?: Array<{ help?: { markdown: string } }> }
+      ).recipes?.[0]?.help?.markdown;
+    await vi.waitFor(() => {
+      expect(help()).toBe('Give the note a {field:title}.\n');
+    }, WAIT);
+
+    // Only the Markdown changes; no source file is touched.
+    writeFileSync(helpFile, 'Title the note: {field:title}.\n');
+
+    await vi.waitFor(() => {
+      expect(help()).toBe('Title the note: {field:title}.\n');
+    }, WAIT);
+  }, 30_000);
+
   it('ignores changes to files outside the include globs', async () => {
     const before = readFileSync(
       join(projectRoot, '.smrt', 'manifest.json'),

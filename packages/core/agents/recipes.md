@@ -356,9 +356,11 @@ keeps the two from drifting. A reference to a **sensitive** or universal (`id`,
 so a host building its field list from it would silently drop the step naming
 one; describe such a field in prose without a reference.
 
-Known limitation: the help file is a generator input, but editing only it does
-not trigger a dev-server rescan (the watch matches source globs) and generation
-snapshots do not digest it, so rebuild (or touch a `.ts` source) after editing.
+The help file is a generator input: editing it triggers a dev-server rescan,
+and a generation snapshot serialized with `projectRoot` digests it (#3596).
+Known limitation: the help file of a recipe found outside the class glob (the
+scanner's separate recipe pass) is not yet recorded as an input; the scanner
+does not report that recipe's file path.
 
 **Rendering.** `src/recipe-help.ts` is pure and browser-safe (exported from
 both core entries). `renderHelp(help, models, options?)` takes the recipe's

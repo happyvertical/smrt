@@ -306,6 +306,10 @@ const sourceRoot = process.env.GITHUB_WORKSPACE ?? process.cwd();
 const manifest = JSON.parse(readFileSync('.smrt/manifest.json', 'utf8'));
 const bytes = serializeSmrtGenerationSnapshot(manifest, provenance, {
   sourceRoot,
+  // Digest every scan input recorded in .smrt/generation-inputs.json, not
+  // only model sources: added models, package.json, recipe help files and
+  // dependency manifests then fail reuse when they change.
+  projectRoot: process.cwd(),
 });
 writeFileSync('.ci/smrt-generation-snapshot.json', bytes);
 console.log(sha256SmrtGenerationSnapshot(bytes));
@@ -336,7 +340,9 @@ smrtConsumer({ generationSnapshot });
 
 Both plugins fail closed when the snapshot is missing, malformed, has different
 bytes, declares different provenance, cannot resolve its portable paths, or the
-current source-file digests differ from the prepared inputs. Reuse mode still
+current source-file digests differ from the prepared inputs. With `projectRoot`
+they also fail when any recorded scan input or dependency manifest changed, and
+`smrtPlugin()` fails when its source globs now select a different set of files. Reuse mode still
 generates routes, types, registration, and virtual modules, but it disables
 source/package scans, watch rescans, and manifest writes. Omit
 `generationSnapshot` for normal local development.

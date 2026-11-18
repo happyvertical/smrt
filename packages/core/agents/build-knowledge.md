@@ -512,10 +512,19 @@ For independent CI invocations, both `smrtPlugin()` and `smrtConsumer()` accept
 the same `generationSnapshot: { path, sha256, provenance, sourceRoot }`. The
 schema-v1 snapshot produced by `serializeSmrtGenerationSnapshot()` contains the
 merged project/dependency manifest, portable source paths, and source-file
-digests; each plugin selects its own view. Reuse mode fails closed on
+digests; each plugin selects its own view. Serialized with `projectRoot`, it
+also records `inputs`: every file the project scan read, from the
+`.smrt/generation-inputs.json` sidecar `smrtPlugin()` writes with the local
+manifest (the source set its globs selected, `package.json`, recipe help files
+of recipes in that set, UI selector files) plus each discovered dependency
+manifest's digest. Every reader verifies those digests and the dependency set;
+`smrtPlugin()` reuse also re-runs source discovery with the recorded globs, so
+an added or removed model fails too. A snapshot without `inputs` is verified
+against model source digests only. Reuse mode fails closed on
 byte/provenance/path/content drift, skips scans and manifest writes, and still
 generates routes, types, registration, and virtual modules. Omit it for normal
-local development and watch mode.
+local development and watch mode, where a change to any recorded non-source
+input (`package.json`, a help or selector file) also triggers a rescan.
 
 ## Clean consumer type checks (TypeScript 6)
 

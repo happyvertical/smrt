@@ -51,6 +51,14 @@ export interface ScannerAgentSurface {
 export interface OxcScannerLike {
   scanAndResolve(): Promise<{
     results: {
+      /** Every file the source globs selected, with the recipes read from it. */
+      files?: Array<{
+        filePath: string;
+        recipes?: Array<{
+          filePath: string;
+          help?: { path: string } | null;
+        }>;
+      }>;
       typeAliases: Record<string, string>;
       errors: Array<{
         filePath: string;
