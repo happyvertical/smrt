@@ -987,6 +987,54 @@ describe('runToolLoop', () => {
     expect(await stored()).toBe('Renamed');
   });
 
+  it('a read filters only on fields the principal may read', async () => {
+    await grant('tool_loop_plain_notes.read');
+    const notes = await ObjectRegistry.getCollection('ToolLoopPlainNote', {
+      db,
+    });
+    const seeded = await notes.create({ title: 'Filtered' });
+    (seeded as ToolLoopPlainNote).internalMemo = 'never expose this';
+    await seeded.save();
+    const read = async (where: Record<string, unknown>) => {
+      const ai = makeAI((_m, options, call) =>
+        call === 0 && toolsOffered(options)
+          ? toolCall('tool_loop_plain_notes.read', { where })
+          : textResponse('done'),
+      );
+      const result = await runToolLoop({
+        ai,
+        db,
+        messages: [{ role: 'user', content: 'find notes' }],
+        tools: tools(['tool_loop_plain_notes.read']),
+        principal: {
+          runAsUserId: userId,
+          tenantId,
+          allowedTools: ['tool_loop_plain_notes.read'],
+        },
+        audit: () => {},
+      });
+      const invocation = result.invocations[0];
+      if (!invocation) throw new Error('expected one invocation');
+      return invocation;
+    };
+
+    for (const key of ['internalMemo', 'internal_memo', 'noSuchField']) {
+      const refused = await read({ [key]: 'never expose this' });
+      expect(refused).toMatchObject({ ok: false, error: 'invalid_request' });
+      expect(refused.observation).toMatchObject({
+        code: 'QUERY_FIELD_NOT_ALLOWED',
+        error: `Invalid filter field: '${key}'.`,
+      });
+    }
+
+    const served = await read({ title: 'Filtered' });
+    expect(served.ok).toBe(true);
+    expect(served.observation).toMatchObject([{ title: 'Filtered' }]);
+    expect(JSON.stringify(served.observation)).not.toContain(
+      'never expose this',
+    );
+  });
+
   it('uses the registered MCP get serializer after principal gates', async () => {
     await grant('tool_loop_serialized_notes.read');
     const notes = await ObjectRegistry.getCollection('ToolLoopSerializedNote', {
