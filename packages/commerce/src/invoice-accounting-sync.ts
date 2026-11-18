@@ -17,6 +17,7 @@ import {
 } from '@happyvertical/accounting';
 import type { DatabaseInterface } from '@happyvertical/smrt-core/migrations';
 import { getTenantId } from '@happyvertical/smrt-tenancy';
+import { assertAccountingWriteAllowed } from './accounting-live-gate.js';
 import {
   type AccountingSnapshotInput,
   type FrozenAccountingDocumentSnapshot,
@@ -859,6 +860,13 @@ async function syncFrozenInvoice(
   },
 ): Promise<FrozenAccountingSyncResult> {
   assertPrincipalTenant(input.tenantId);
+  await assertAccountingWriteAllowed({
+    db: input.db,
+    tenantId: input.tenantId,
+    invoiceId: input.invoiceId,
+    provider: input.provider,
+    scope: input.mapping,
+  });
   const prepared = await prepareSync(input, pilot?.acceptance);
   if (prepared.kind === 'unchanged') return prepared.result;
   let result: SyncResult;

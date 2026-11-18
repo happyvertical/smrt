@@ -100,7 +100,10 @@ export async function writeAccountingConnection<T>(
   ],
   api: { include: ['list', 'get'] },
   mcp: { include: ['list', 'get'] },
-  cli: { include: ['list', 'get', 'isConnected'], skipApiCheck: true },
+  cli: {
+    include: ['list', 'get', 'isConnected', 'isLiveEnabled'],
+    skipApiCheck: true,
+  },
 })
 export class AccountingConnection extends SmrtObject {
   /** Tenant that owns the connection. */
@@ -144,6 +147,23 @@ export class AccountingConnection extends SmrtObject {
   @field({ type: 'datetime', nullable: true })
   lastRefreshedAt: Date | null = null;
 
+  /**
+   * The company live (production) accounting writes were deliberately enabled
+   * for, or empty. Production sync runs only while this equals
+   * {@link realmId} on a connected production connection (#5138).
+   */
+  liveEnabledRealmId: string = '';
+
+  /** When live writes were enabled. */
+  @field({ type: 'datetime', nullable: true })
+  liveEnabledAt: Date | null = null;
+
+  /** Who enabled live writes (an opaque user reference). */
+  liveEnabledBy: string = '';
+
+  /** Reference to the evidence that justified enabling live writes. */
+  liveEnabledEvidenceRef: string = '';
+
   /** Owner of the refresh lease (random token), or empty. Command-owned. */
   @field({ sensitive: true })
   leaseToken: string = '';
@@ -160,6 +180,16 @@ export class AccountingConnection extends SmrtObject {
     if (options.environment !== undefined)
       this.environment = options.environment;
     if (options.status !== undefined) this.status = options.status;
+  }
+
+  /** Whether production writes are enabled for the connected company. */
+  isLiveEnabled(): boolean {
+    return (
+      this.status === 'connected' &&
+      this.environment === 'production' &&
+      this.realmId !== '' &&
+      this.liveEnabledRealmId === this.realmId
+    );
   }
 
   /** Whether the connection can currently make provider calls. */

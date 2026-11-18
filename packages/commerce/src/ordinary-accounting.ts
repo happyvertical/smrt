@@ -1,4 +1,5 @@
 /** Ordinary canonical receivables: exact provider credit application and already-settled refund recording. */
+
 import { createHash } from 'node:crypto';
 import {
   type AccountingProvider,
@@ -10,6 +11,7 @@ import {
 } from '@happyvertical/accounting';
 import type { DatabaseInterface } from '@happyvertical/smrt-core/migrations';
 import { getTenantId } from '@happyvertical/smrt-tenancy';
+import { assertAccountingWriteAllowed } from './accounting-live-gate.js';
 import {
   type AccountingStep,
   type AccountingStepReconciliation,
@@ -274,6 +276,13 @@ export async function syncOrdinaryInvoiceToAccounting(
   input: SyncOrdinaryInvoiceToAccountingInput,
 ): Promise<OrdinaryInvoiceAccountingState> {
   principal(input);
+  await assertAccountingWriteAllowed({
+    db: input.db,
+    tenantId: input.tenantId,
+    invoiceId: input.invoiceId,
+    provider: input.provider,
+    scope: input.invoiceMapping,
+  });
   text(input.requestId, 'Ordinary request');
   text(input.evidenceRef, 'Ordinary evidence');
   if (input.mapping.kind !== 'ordinary') reject('Ordinary mapping is required');
@@ -413,6 +422,13 @@ export async function syncOrdinaryCreditToAccounting(
   input: SyncOrdinaryCreditToAccountingInput,
 ): Promise<OrdinaryInvoiceAccountingState> {
   principal(input);
+  await assertAccountingWriteAllowed({
+    db: input.db,
+    tenantId: input.tenantId,
+    invoiceId: input.invoiceId,
+    provider: input.provider,
+    scope: input.creditMapping,
+  });
   text(input.requestId, 'Credit adjustment request');
   text(input.evidenceRef, 'Credit adjustment evidence');
   date(input.effectiveOn, 'Credit adjustment date');
@@ -538,6 +554,12 @@ export async function syncOrdinaryRefundToAccounting(
   input: SyncOrdinaryRefundToAccountingInput,
 ): Promise<OrdinaryInvoiceAccountingState> {
   principal(input);
+  await assertAccountingWriteAllowed({
+    db: input.db,
+    tenantId: input.tenantId,
+    invoiceId: input.invoiceId,
+    provider: input.provider,
+  });
   text(input.requestId, 'Refund recording request');
   text(input.evidenceRef, 'Refund settlement evidence');
   date(input.effectiveOn, 'Refund effective date');

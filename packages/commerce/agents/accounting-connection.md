@@ -69,3 +69,8 @@ further provider calls, until `completeQuickBooksConnection` runs again.
   refresh-per-provider; today every new provider refreshes once, which the lease
   covers. A later refresh by a long-lived provider (after about 55 minutes)
   persists through `onTokenRefresh` but is not leased: build providers per job.
+
+## Live mode
+
+`enableLiveAccounting` / `disableLiveAccounting` set the per-company production
+enablement the sync functions check; see [live-mode gate](accounting-live-gate.md).

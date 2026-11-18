@@ -68,6 +68,7 @@ import './__smrt-register__.js';
 
 // Tenant-scoped accounting connection (#5136)
 export * from './accounting-connection.js';
+export * from './accounting-live-gate.js';
 export * from './accounting-mapping.js';
 // Billing-period close, provider events, prepaid credit (#3060)
 export * from './billing/index.js';

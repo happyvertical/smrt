@@ -1,4 +1,5 @@
 /** Durable retained-invoice provider orchestration. Every remote write is a separate recoverable step. */
+
 import { createHash } from 'node:crypto';
 import {
   type AccountingProvider,
@@ -10,6 +11,7 @@ import {
 } from '@happyvertical/accounting';
 import type { DatabaseInterface } from '@happyvertical/smrt-core/migrations';
 import { getTenantId } from '@happyvertical/smrt-tenancy';
+import { assertAccountingWriteAllowed } from './accounting-live-gate.js';
 import { mapFrozenAccountingSnapshot } from './accounting-snapshot.js';
 import {
   type AccountingStep,
@@ -371,6 +373,13 @@ export async function syncRetainedInvoiceToAccounting(
   input: SyncRetainedInvoiceToAccountingInput,
 ): Promise<RetainedInvoiceAccountingState> {
   principal(input);
+  await assertAccountingWriteAllowed({
+    db: input.db,
+    tenantId: input.tenantId,
+    invoiceId: input.invoiceId,
+    provider: input.provider,
+    scope: input.invoiceMapping,
+  });
   text(input.requestId, 'Retention request');
   text(input.evidenceRef, 'Retention evidence');
   date(input.effectiveOn, 'Retention effective date');
@@ -498,6 +507,12 @@ export async function releaseRetainedInvoiceToAccounting(
   input: ReleaseRetainedInvoiceToAccountingInput,
 ): Promise<RetainedInvoiceAccountingState> {
   principal(input);
+  await assertAccountingWriteAllowed({
+    db: input.db,
+    tenantId: input.tenantId,
+    invoiceId: input.invoiceId,
+    provider: input.provider,
+  });
   validateRetentionEvidence(input);
   date(input.effectiveOn, 'Release effective date');
   date(input.dueOn, 'Release due date');
@@ -644,6 +659,13 @@ export async function syncRetainedCreditToAccounting(
   input: SyncRetainedCreditToAccountingInput,
 ): Promise<RetainedInvoiceAccountingState> {
   principal(input);
+  await assertAccountingWriteAllowed({
+    db: input.db,
+    tenantId: input.tenantId,
+    invoiceId: input.invoiceId,
+    provider: input.provider,
+    scope: input.creditMapping,
+  });
   text(input.requestId, 'Credit adjustment request');
   text(input.evidenceRef, 'Credit adjustment evidence');
   date(input.effectiveOn, 'Credit adjustment date');
@@ -810,6 +832,12 @@ export async function syncRetainedRefundToAccounting(
   input: SyncRetainedRefundToAccountingInput,
 ): Promise<RetainedInvoiceAccountingState> {
   principal(input);
+  await assertAccountingWriteAllowed({
+    db: input.db,
+    tenantId: input.tenantId,
+    invoiceId: input.invoiceId,
+    provider: input.provider,
+  });
   text(input.requestId, 'Refund recording request');
   text(input.evidenceRef, 'Refund settlement evidence');
   date(input.effectiveOn, 'Refund effective date');

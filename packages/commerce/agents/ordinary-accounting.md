@@ -70,3 +70,6 @@ runs under the reservation lock, including unresolved exports; a mismatch leaves
 ordinary state absent. Once ordinary authority is reserved, base export uses the
 owning command so a competing generic export cannot replace that mapping between
 reservation and provider I/O. Read-only frozen projections remain available.
+
+Production providers or mappings are refused unless live mode is enabled for the
+tenant's connected company; see [live-mode gate](accounting-live-gate.md).

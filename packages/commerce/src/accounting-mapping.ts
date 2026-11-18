@@ -20,6 +20,7 @@
 import { createHash } from 'node:crypto';
 import type { DatabaseInterface } from '@happyvertical/smrt-core/migrations';
 import { withTenant } from '@happyvertical/smrt-tenancy';
+import { assertAccountingWriteAllowed } from './accounting-live-gate.js';
 import { AccountingConnectionCollection } from './collections/AccountingConnectionCollection.js';
 import {
   AccountingMappingCollection,
@@ -473,6 +474,12 @@ export async function resolveAccountingCustomer(
     ...(facts.email ? { email: facts.email } : {}),
   });
   if (candidates.length === 0) {
+    // Creating a customer writes to the company: it needs live mode in production.
+    await assertAccountingWriteAllowed({
+      db: input.db,
+      tenantId: input.tenantId,
+      scope,
+    });
     const created = await input.directory.create({
       name: facts.name,
       ...(facts.email ? { email: facts.email } : {}),
@@ -527,6 +534,11 @@ export async function confirmAccountingCustomer(
   const scope = await getAccountingMappingScope(input, input.tenantId);
   const facts = input.customer;
   if (input.choice === 'create') {
+    await assertAccountingWriteAllowed({
+      db: input.db,
+      tenantId: input.tenantId,
+      scope,
+    });
     const created = await input.directory.create({
       name: facts.name,
       ...(facts.email ? { email: facts.email } : {}),

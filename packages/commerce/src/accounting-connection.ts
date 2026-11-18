@@ -310,6 +310,13 @@ async function mutateConnection(
   });
 }
 
+function clearLiveEnablement(row: AccountingConnection): void {
+  row.liveEnabledRealmId = '';
+  row.liveEnabledAt = null;
+  row.liveEnabledBy = '';
+  row.liveEnabledEvidenceRef = '';
+}
+
 /** Input of {@link completeQuickBooksConnection}. */
 export interface CompleteQuickBooksConnectionInput {
   readonly tenantId: string;
@@ -368,6 +375,8 @@ export async function completeQuickBooksConnection(
       row.disconnectedAt = null;
       row.lastRefreshedAt = at;
       row.tokenVersion += 1;
+      // Live enablement belongs to one company and environment (#5138).
+      if (rebound) clearLiveEnablement(row);
     });
     // Mappings of the company or environment the tenant left are never reused.
     if (rebound)
@@ -596,9 +605,81 @@ export async function disconnectQuickBooks(
     await mutateConnection(deps, tenantId, (row) => {
       row.status = 'disconnected';
       row.disconnectedAt = at;
+      clearLiveEnablement(row);
       row.lastError = '';
       row.lastErrorAt = null;
     });
   });
   return (await findConnection(deps, tenantId)) as AccountingConnection;
+}
+
+/** Input of {@link enableLiveAccounting}. */
+export interface EnableLiveAccountingInput {
+  readonly tenantId: string;
+  /** The company being enabled; must equal the connected one. */
+  readonly realmId: string;
+  /** Who is enabling live writes (an opaque user reference). */
+  readonly enabledBy: string;
+  /** Reference to the evidence that justified it (for example a sandbox report). */
+  readonly evidenceRef: string;
+}
+
+/**
+ * Deliberately enable production accounting writes for the tenant's connected
+ * company (#5138). Requires a `connected` **production** connection to the named
+ * company; the gate in the sync functions stays closed otherwise. Enablement is
+ * per company: rebinding the connection or disconnecting clears it.
+ */
+export async function enableLiveAccounting(
+  deps: AccountingConnectionDeps,
+  input: EnableLiveAccountingInput,
+): Promise<AccountingConnection> {
+  const tenantId = requireTenant(input.tenantId);
+  const realmId = requireText(input.realmId, 'QuickBooks realmId');
+  const enabledBy = requireText(input.enabledBy, 'Enabled by');
+  const evidenceRef = requireText(input.evidenceRef, 'Evidence reference');
+  const connection = await findConnection(deps, tenantId);
+  if (
+    !connection ||
+    connection.status !== 'connected' ||
+    connection.environment !== 'production' ||
+    connection.realmId !== realmId
+  )
+    throw new AccountingConnectionError(
+      'NOT_CONNECTED',
+      'Live accounting needs a connected production company with that realm',
+    );
+  await withLease(deps, tenantId, String(connection.id), async () => {
+    const at = now(deps);
+    await mutateConnection(deps, tenantId, (row) => {
+      if (
+        row.status !== 'connected' ||
+        row.environment !== 'production' ||
+        row.realmId !== realmId
+      )
+        throw new AccountingConnectionError(
+          'NOT_CONNECTED',
+          'Live accounting needs a connected production company with that realm',
+        );
+      row.liveEnabledRealmId = realmId;
+      row.liveEnabledAt = at;
+      row.liveEnabledBy = enabledBy;
+      row.liveEnabledEvidenceRef = evidenceRef;
+    });
+  });
+  return (await findConnection(deps, tenantId)) as AccountingConnection;
+}
+
+/** Switch production accounting writes off again. Idempotent. */
+export async function disableLiveAccounting(
+  deps: AccountingConnectionDeps,
+  tenantId: string,
+): Promise<AccountingConnection | null> {
+  requireTenant(tenantId);
+  const connection = await findConnection(deps, tenantId);
+  if (!connection) return null;
+  await withLease(deps, tenantId, String(connection.id), async () => {
+    await mutateConnection(deps, tenantId, clearLiveEnablement);
+  });
+  return findConnection(deps, tenantId);
 }
