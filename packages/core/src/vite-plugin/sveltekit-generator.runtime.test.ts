@@ -19,6 +19,7 @@ import { field } from '../decorators/index.js';
 import { reportUnexpectedHttpError } from '../generators/route-error';
 import { clearManifestCache } from '../manifest/manifest-loader.js';
 import { SmrtObject } from '../object.js';
+import { publicSerializerOf, toPublicJSONValue } from '../public-json.js';
 import { parseRestListWhere } from '../query-bounds.js';
 import { ObjectRegistry, smrt } from '../registry.js';
 import { setRuntimeExposureGate } from '../runtime-exposure.js';
@@ -26,6 +27,7 @@ import type { SmartObjectManifest } from '../scanner/types.js';
 import { isServiceOptionInput } from '../service-options.js';
 import { snapshotObjectRegistryState } from '../test-utils.js';
 import { applyWhereScope, WhereClauseError } from '../where-keys.js';
+import { assignUpdateInput } from '../write-input.js';
 import { generateSvelteKitRoutes } from './sveltekit-generator.js';
 
 // Canonical instance injection prevents provider/env/file configuration fallback.
@@ -227,6 +229,17 @@ function writeWorkspaceCoreShim(projectRoot: string): void {
       'export function isTenantScopedModel(name) { return globalThis.__smrtGeneratedTenantScopedModel?.(name) === true; }',
       'export function getRequestTenantContext() { return globalThis.__smrtGeneratedActiveTenantContext; }',
       'export function enterRequestTenantContext(context) { globalThis.__smrtGeneratedActiveTenantContext = context; (globalThis.__smrtGeneratedTenantContexts ??= []).push(context); }',
+      // The real request helpers. `applyUpdateInput` runs the real update
+      // rule over the fixture registry's fields.
+      'export const publicSerializerOf = (value) => globalThis.__smrtGeneratedRequestHelpers.publicSerializerOf(value);',
+      'export const toPublicJSONValue = (value, options) => globalThis.__smrtGeneratedRequestHelpers.toPublicJSONValue(value, options);',
+      'export const applyUpdateInput = (instance, data, name) => {',
+      '  const fields = globalThis.__smrtGeneratedRegistry?.getFields(name) ?? new Map();',
+      '  return globalThis.__smrtGeneratedRequestHelpers.assignUpdateInput(instance, data, {',
+      '    declaresField: (key) => fields.has(key),',
+      '    hasFieldMetadata: fields.size > 0,',
+      '  });',
+      '};',
       "export function resolveTenantEtagDiscriminator() { return 't:global'; }",
       'export function ifNoneMatchHasConcreteMatch() { return false; }',
       'export function ifNoneMatchSatisfied() { return false; }',
@@ -279,6 +292,11 @@ describe('generated SvelteKit helper runtime', () => {
     (
       globalThis as Record<string, unknown>
     ).__smrtGeneratedIsServiceOptionInput = isServiceOptionInput;
+    (globalThis as Record<string, unknown>).__smrtGeneratedRequestHelpers = {
+      assignUpdateInput,
+      publicSerializerOf,
+      toPublicJSONValue,
+    };
     (globalThis as Record<string, unknown>).__smrtGeneratedHelperCalls = [];
     (globalThis as Record<string, unknown>).__smrtGeneratedHelperRegistrations =
       [];
@@ -331,6 +349,8 @@ describe('generated SvelteKit helper runtime', () => {
       .__smrtGeneratedApplyWhereScope;
     delete (globalThis as Record<string, unknown>)
       .__smrtGeneratedIsServiceOptionInput;
+    delete (globalThis as Record<string, unknown>)
+      .__smrtGeneratedRequestHelpers;
     vi.restoreAllMocks();
     clearCache();
 
@@ -1334,7 +1354,7 @@ describe('generated SvelteKit helper runtime', () => {
       // a mocked factory. It must construct and initialize against this DB.
       writeFileSync(
         join(projectRoot, 'node_modules/@happyvertical/smrt-core/index.js'),
-        `export const { ObjectRegistry, isRuntimeModelEnabled, hasRuntimeExposureGate, createGeneratedCollectionAccess, normalizeCustomActionFailure, normalizeTypedHttpError, reportUnexpectedHttpError, canonicalReadRepresentation, computeTableVersionEtag, getTableVersion, ifNoneMatchHasConcreteMatch, ifNoneMatchSatisfied, parseRestListWhere, applyWhereScope, resolveAnonymousTenantReadScope, scopeTenantReadOptions, isTenantScopedModel, enterRequestTenantContext, getRequestTenantContext, resolveTenantEtagDiscriminator } = globalThis.__smrt4320Core;`,
+        `export const { ObjectRegistry, isRuntimeModelEnabled, hasRuntimeExposureGate, createGeneratedCollectionAccess, normalizeCustomActionFailure, normalizeTypedHttpError, reportUnexpectedHttpError, canonicalReadRepresentation, computeTableVersionEtag, getTableVersion, ifNoneMatchHasConcreteMatch, ifNoneMatchSatisfied, parseRestListWhere, applyWhereScope, resolveAnonymousTenantReadScope, scopeTenantReadOptions, publicSerializerOf, toPublicJSONValue, isTenantScopedModel, enterRequestTenantContext, getRequestTenantContext, resolveTenantEtagDiscriminator } = globalThis.__smrt4320Core;`,
       );
       const objectFilePath = join(projectRoot, 'src/lib/objects/Widget.ts');
       writeFileSync(
@@ -1873,7 +1893,9 @@ describe('generated SvelteKit helper runtime', () => {
         'perm-item-route.mjs',
       );
       const saved: string[] = [];
+      // `name` is the field the update below sets.
       const item = {
+        name: 'Widget',
         save: async () => {
           saved.push('save');
         },
@@ -2331,7 +2353,9 @@ describe('generated SvelteKit helper runtime', () => {
     async function put(...declared: string[]) {
       const route = await importGeneratedItemPut();
       declareFields(...declared);
+      // The loaded item already holds `name`, the field the body updates.
       const item: Record<string, unknown> = {
+        name: 'Before',
         options: { db: 'collection-db' },
         save: async () => {},
         toPublicJSON: () => ({}),
@@ -2383,7 +2407,8 @@ describe('generated SvelteKit helper runtime', () => {
     });
 
     it('PUT keeps a service-named key the model declares as a field', async () => {
-      const { item } = await put('metrics');
+      const { item, response } = await put('name', 'metrics');
+      expect(response.status).toBe(200);
       expect(item.metrics).toEqual({ from: 'metrics' });
       expect(item.options).toEqual({ db: 'collection-db' });
       expect(Object.hasOwn(item, 'usage')).toBe(false);

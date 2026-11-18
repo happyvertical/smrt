@@ -146,6 +146,14 @@ Tests: `src/service-options.test.ts`,
 `src/__tests__/create-data-service-options.test.ts`,
 `src/__tests__/create-control-flags.cases.ts` (SQLite and PostgreSQL).
 
+**`collection.update(id, values)` assigns declared fields only.** A key must
+be an own entry of the model's field map or write-through map; `constructor`,
+`toString` and other names a plain object inherits are refused like any
+undeclared key (`WriteInputError`, `VALIDATION_UNKNOWN_FIELD`, a typed 400).
+Request-facing update paths use the wider `applyUpdateInput()` rule, which also
+accepts settable accessors; see [generators.md](generators.md) ("An update
+sets declared fields and settable accessors").
+
 ## SmrtCollection Query
 
 Projection, latest-related, facets, counts, and bounded read plans are

@@ -694,7 +694,7 @@ function generateAuthGuardHelper(
   return `
 // Fail-closed authorization (#1540): generated routes require an authenticated
 // principal on \`locals\` unless explicitly marked \`@smrt({ api: { public } })\`.
-import { isRuntimeModelEnabled } from '@happyvertical/smrt-core';
+import { isRuntimeModelEnabled, publicSerializerOf, toPublicJSONValue } from '@happyvertical/smrt-core';
 const RUNTIME_MODEL = ${JSON.stringify({
     qualifiedName:
       permissionObjectDef.qualifiedName ??
@@ -808,13 +808,10 @@ function applyReadPermissionRedaction(
 ): unknown {
   if (value === null || typeof value !== 'object') return value;
   if (seen.has(value)) return null;
-  if (hasPublicJson(value)) {
+  const serialize = publicSerializerOf(value);
+  if (serialize) {
     seen.add(value);
-    return applyReadPermissionRedaction(
-      value.toPublicJSON(options),
-      options,
-      seen,
-    );
+    return applyReadPermissionRedaction(serialize(options), options, seen);
   }
   if (Array.isArray(value)) {
     seen.add(value);
@@ -846,18 +843,8 @@ function applyReadPermissionRedaction(
 // custom method may return a SmrtObject (or one nested in an array/plain
 // object), so recurse and route each through toPublicJSON() rather than letting
 // JSON.stringify call toJSON(). Non-plain instances (Date, etc.) and primitives
-// pass through; a cycle guard prevents infinite loops.
-interface PublicJsonSource {
-  toPublicJSON(options?: PublicJsonOptions): unknown;
-}
-
-function hasPublicJson(value: object): value is PublicJsonSource {
-  return (
-    'toPublicJSON' in value &&
-    typeof (value as { toPublicJSON?: unknown }).toPublicJSON === 'function'
-  );
-}
-
+// pass through; a cycle guard prevents infinite loops. \`publicSerializerOf\`
+// returns the serialiser a value's class provides, never an instance property.
 function readJsonRecord(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
   return value as Record<string, unknown>;
@@ -870,9 +857,10 @@ function toPublicResult(
 ): unknown {
   if (value === null || typeof value !== 'object') return value;
   if (seen.has(value)) return null;
-  if (hasPublicJson(value)) {
+  const serialize = publicSerializerOf(value);
+  if (serialize) {
     seen.add(value);
-    return toPublicResult(value.toPublicJSON(options), options, seen);
+    return toPublicResult(serialize(options), options, seen);
   }
   if (Array.isArray(value)) {
     seen.add(value);
@@ -3565,13 +3553,13 @@ ${
     : listUsesPermissionScopedBody
       ? `${listAndCount}
   // Field read permissions make the body vary by caller permissions → v1 body-hash ETag (#1565).
-  const items_public = items.map((item) => item.toPublicJSON(publicJsonOptions));
+  const items_public = items.map((item) => toPublicJSONValue(item, publicJsonOptions));
   return conditionalJson(request, { items: items_public, count, limit, offset });`
       : `  // ETag v2 (#1765): the table-version ETag is checked first; on a concrete
   // If-None-Match the list query below never runs (zero-query 304).
   return conditionalVersionedRead(request, collection.db, collection.tableName, async () => {
 ${listAndCount}
-    const items_public = items.map((item) => item.toPublicJSON(publicJsonOptions));
+    const items_public = items.map((item) => toPublicJSONValue(item, publicJsonOptions));
     return { items: items_public, count, limit, offset };
   });`
 }
@@ -3604,7 +3592,7 @@ ${
       { status: 201 },
     );`
     : `
-    return json(item.toPublicJSON(publicJsonOptions), { status: 201 });`
+    return json(toPublicJSONValue(item, publicJsonOptions), { status: 201 });`
 }
   } catch (cause) {
     return smrtRouteErrorResponse(cause, request);
@@ -3718,7 +3706,7 @@ function generateItemRouteTemplate(
 // DO NOT EDIT - changes will be overwritten
 
 import { error${hasPut || hasDelete ? ', json' : ''} } from '@sveltejs/kit';
-${serializerImports ? `${serializerImports}\n` : ''}${hasPut || hasDelete ? "import { normalizeTypedHttpError, reportUnexpectedHttpError } from '@happyvertical/smrt-core';\n" : ''}${hasPut ? "import { ObjectRegistry } from '@happyvertical/smrt-core';\n" : ''}${hasGet ? "import { resolveAnonymousTenantReadScope } from '@happyvertical/smrt-core';\n" : ''}
+${serializerImports ? `${serializerImports}\n` : ''}${hasPut || hasDelete ? "import { normalizeTypedHttpError, reportUnexpectedHttpError } from '@happyvertical/smrt-core';\n" : ''}${hasPut ? "import { applyUpdateInput, ObjectRegistry } from '@happyvertical/smrt-core';\n" : ''}${hasGet ? "import { resolveAnonymousTenantReadScope } from '@happyvertical/smrt-core';\n" : ''}
 ${modelType.importStatement ? `${modelType.importStatement}\n` : ''}import type { RequestHandler } from './$types';
 ${collectionAccessImports}
 ${generateAuthGuardHelper(objectDef, semanticManifest)}${generateTenantContextHelper(usesPrincipalContext(objectDef), !needsRouteTenantContext(objectDef))}${hasPut ? generateWritablePolicyHelper(className, objectDef) : ''}${hasPut || hasDelete ? generateTypedRouteErrorHelper() : ''}${hasGet ? generateConditionalGetRouteHelper(objectDef.decoratorConfig?.api, { runtimeExposure: true, tenantScoped: isTenantScoped(objectDef), permissionScoped: getUsesPermissionScopedBody, modelName: className, readScopeModel: readScopeModelName(objectDef, className), useBodyHash: getUsesBodyHash, manifestHash: webManifestHash }) : ''}`;
@@ -3755,14 +3743,14 @@ ${generateNotFoundError(className)}
       ? `${getForRead}
 ${generateNotFoundError(className)}
   // Field read permissions make the body vary by caller permissions → v1 body-hash ETag (#1565).
-  return conditionalJson(request, item.toPublicJSON(publicJsonOptions));`
+  return conditionalJson(request, toPublicJSONValue(item, publicJsonOptions));`
       : `  // ETag v2 (#1765): a concrete If-None-Match answers 304 without the row fetch
   // (a delete advances the version, so a since-deleted row can't false-match);
   // a wildcard \`*\` is deferred until the fetch confirms the row exists.
   return conditionalVersionedRead(request, collection.db, collection.tableName, async () => {
 ${getForRead}
 ${generateNotFoundError(className)}
-    return item.toPublicJSON(publicJsonOptions);
+    return toPublicJSONValue(item, publicJsonOptions);
   });`
 }
 };
@@ -3783,7 +3771,8 @@ ${generateNotFoundError(className)}
   const data = applyWritablePolicy(body);
   try {
     await collection.withAuditMutation(item, 'updated', async (bound) => {
-      Object.assign(bound, data);
+      // The body sets declared fields and settable accessors, nothing else.
+      applyUpdateInput(bound, data, ${JSON.stringify(className)});
       await bound.save();
     });
   } catch (cause) {
@@ -3796,7 +3785,7 @@ ${
 
   return json(applyReadPermissionRedaction(serializedItem, publicJsonOptions));`
     : `
-  return json(item.toPublicJSON(publicJsonOptions));`
+  return json(toPublicJSONValue(item, publicJsonOptions));`
 }
 };
 `

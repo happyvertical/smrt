@@ -15,7 +15,7 @@ invariants, and the traps that apply before editing anything live in
 ### Write bodies set fields only
 
 Every generated or request-facing write path filters the body through its
-writable policy before `collection.create(data)` or `Object.assign(item, data)`:
+writable policy before `collection.create(data)` or `applyUpdateInput(item, data)`:
 runtime REST and MCP (`applyWritablePolicy` in `rest.ts` and `mcp.ts`), both
 emitted MCP servers (`mcp.ts` modular, `mcp-runtime-template.ts`), the emitted
 SvelteKit create and update handlers, and sync apply (`sync/apply.ts` and the
@@ -27,6 +27,45 @@ and `options`. A new write path must apply the same rule; the collection also
 enforces it on construction (see [object-runtime.md](object-runtime.md),
 "Services never come from data"). The policies are still separate copies;
 they share the rule, not the code.
+
+### An update sets declared fields and settable accessors
+
+No update path assigns a body with `Object.assign`. After its writable policy,
+each one calls `applyUpdateInput(instance, data, model)` (`src/request-input.ts`
+over the rule in `src/write-input.ts`): runtime REST update and sync apply,
+in-process MCP, both emitted MCP servers, the emitted SvelteKit `PUT` and sync
+route, the CLI `update` command (`packages/cli`) and the assistant tool loop
+(`packages/chat`). The structural sync processor uses the same rule for a host
+that supplies no `mutate` seam.
+
+- A key is assigned when it names a field the object's own class (or an
+  ancestor) declares, a write-through field, or an accessor with a setter on
+  the prototype chain or the instance. Models take derived input through
+  getter/setter pairs (`Contract.sellerTaxRegistrations`, `Content.assetIds`);
+  those keep working. `slug` and `context` are accessors of every object.
+- A key that names a method, an accessor without a setter, a member of
+  `Object.prototype` (`constructor`, `toString`, `__proto__`), or nothing the
+  model declares is refused: `WriteInputError`, code
+  `VALIDATION_UNKNOWN_FIELD`, a typed 400 whose message names the key. Sync
+  apply reports the item `rejected` / `invalid_payload`. Every key is checked
+  before the first is assigned.
+- The model is read from the instance's prototype, so an STI row loaded through
+  its base collection may set its own subtype's fields.
+- `displayLabel` is skipped without an error on a model that projects one, so a
+  body read from the API can be sent back.
+- A class with no registered field at all (an unscanned inline class) is judged
+  by its instance's own plain properties.
+- Create input is not restricted to declared fields here: models read
+  undeclared create options. That needs a declared input-field option.
+
+Output: every transport finds the serialiser with `publicSerializerOf()` /
+`toPublicJSONValue()` (`src/public-json.ts`), which read `toPublicJSON` from
+the prototype chain. An own property of that name on an instance is never
+called and never hides the class's serialiser.
+
+Tests: `src/__tests__/update-input-fields.test.ts` executes all seven
+transports; `packages/cli/src/__tests__/cli-writable-policy.test.ts`;
+`packages/chat/src/tool-loop.test.ts`.
 
 The same web virtual module exports `webMcpToolDefinitions` (#2518), a
 canonical per-tool array selected independently of list materialization. Every

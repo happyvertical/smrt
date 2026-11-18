@@ -28,6 +28,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { REQUEST_HELPER_EXPORTS } from '../__tests__/fixtures/emitted-core-stub.js';
 import {
   McpIntegrationTestProduct,
   McpIntegrationTestProductCollection,
@@ -101,7 +102,7 @@ async function installGeneratedServerRuntimeStubs(
     writeFile(
       join(smrtPackage, 'index.js'),
       `export { COOKBOOK_TOOL_NAMES, getCookbookToolService } from ${JSON.stringify(fileURLToPath(new URL('../../dist/cookbook/tools.js', import.meta.url)))};
-export { hasRuntimeExposureGate, isRuntimeModelEnabled, subscribeRuntimeExposure } from ${JSON.stringify(fileURLToPath(new URL('../../dist/runtime-exposure.js', import.meta.url)))}; export const ObjectRegistry = { loadAllManifests() {} }; export function normalizeCustomActionFailure() {} export const SMRT_CUSTOM_ACTION_ERROR_METADATA_KEY = 'smrt';\n`,
+export { hasRuntimeExposureGate, isRuntimeModelEnabled, subscribeRuntimeExposure } from ${JSON.stringify(fileURLToPath(new URL('../../dist/runtime-exposure.js', import.meta.url)))}; export const ObjectRegistry = { loadAllManifests() {} }; export function normalizeCustomActionFailure() {} export const SMRT_CUSTOM_ACTION_ERROR_METADATA_KEY = 'smrt';\n${REQUEST_HELPER_EXPORTS}\n`,
     ),
     writeFile(
       join(configPackage, 'package.json'),

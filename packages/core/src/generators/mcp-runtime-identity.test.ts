@@ -24,6 +24,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { REQUEST_HELPER_EXPORTS } from '../__tests__/fixtures/emitted-core-stub.js';
 import { SmrtObject } from '../object.js';
 import { ObjectRegistry } from '../registry.js';
 import { snapshotObjectRegistryState } from '../test-utils.js';
@@ -50,7 +51,10 @@ async function installRecordingRuntime(outputDirectory: string) {
   await Promise.all(
     Object.values(packages).map((dir) => mkdir(dir, { recursive: true })),
   );
+  // `title` is the field the update below sets: an update assigns only what
+  // the loaded object already declares.
   const item = `{
+    title: '',
     toPublicJSON() { return {}; },
     async save() {},
     async delete() {},
@@ -109,6 +113,7 @@ export { hasRuntimeExposureGate, isRuntimeModelEnabled, subscribeRuntimeExposure
 };
 export function normalizeCustomActionFailure() { return undefined; }
 export const SMRT_CUSTOM_ACTION_ERROR_METADATA_KEY = 'smrt';
+${REQUEST_HELPER_EXPORTS}
 `,
     ),
     writeFile(

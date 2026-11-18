@@ -9,6 +9,7 @@ import http from 'node:http';
 import { getTableVersion } from '../change-feed';
 import type { SmrtCollection, SmrtCollectionOptions } from '../collection';
 import type { PublicJsonOptions, SmrtObject } from '../object';
+import { publicSerializerOf } from '../public-json';
 import {
   buildDefaultListOrderBy,
   parseRestListWhere,
@@ -23,6 +24,7 @@ import type {
   RegisteredField,
   SmrtObjectConstructor,
 } from '../registry/types';
+import { applyUpdateInput } from '../request-input';
 import {
   hasRuntimeExposureGate,
   isRuntimeModelEnabled,
@@ -1194,13 +1196,11 @@ export class APIGenerator {
     if (seen.has(value)) {
       return null;
     }
-    const serializable = value as {
-      toPublicJSON?: (options?: PublicJsonOptions) => unknown;
-    };
-    if (typeof serializable.toPublicJSON === 'function') {
+    const serialize = publicSerializerOf(value);
+    if (serialize) {
       seen.add(value);
       return this.sanitizeActionResult(
-        serializable.toPublicJSON(this.getPublicJsonOptions()),
+        serialize(this.getPublicJsonOptions()),
         seen,
       );
     }
@@ -1485,9 +1485,9 @@ export class APIGenerator {
       return this.createErrorResponse(404, 'Object not found');
     }
 
-    // Update object properties
+    // The body sets declared fields and settable accessors, nothing else.
     await collection.withAuditMutation(object, 'updated', async (bound) => {
-      Object.assign(bound, data);
+      applyUpdateInput(bound, data, objectName);
       await bound.save();
     });
 
@@ -1595,7 +1595,7 @@ export class APIGenerator {
           op === 'update' ? 'updated' : 'deleted',
           async (bound) => {
             if (op === 'update') {
-              Object.assign(bound, data);
+              applyUpdateInput(bound, data, resolvedName);
               await bound.save();
             } else {
               await bound.delete({
@@ -1717,14 +1717,13 @@ export class APIGenerator {
   /**
    * Serialize a SmrtObject for a network response, excluding sensitive fields
    * (#1540). Falls back to the value unchanged for non-SmrtObject payloads.
+   *
+   * The serialiser is the one the object's class provides
+   * (`publicSerializerOf`), never a property read from the instance.
    */
   private toPublicData(object: unknown): unknown {
-    const serializable = object as {
-      toPublicJSON?: (options?: PublicJsonOptions) => unknown;
-    } | null;
-    return typeof serializable?.toPublicJSON === 'function'
-      ? serializable.toPublicJSON(this.getPublicJsonOptions())
-      : object;
+    const serialize = publicSerializerOf(object);
+    return serialize ? serialize(this.getPublicJsonOptions()) : object;
   }
 
   private getPublicJsonOptions(): PublicJsonOptions {

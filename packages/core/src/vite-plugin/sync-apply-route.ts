@@ -296,7 +296,7 @@ import {
   type SyncApplyOp,
   type SyncApplyTarget,
 } from '@happyvertical/smrt-core';
-import { isRuntimeModelEnabled, ObjectRegistry } from '@happyvertical/smrt-core';
+import { applyUpdateInput, isRuntimeModelEnabled, ObjectRegistry } from '@happyvertical/smrt-core';
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 ${collectionAccessImports}
@@ -395,7 +395,8 @@ ${anyTenantScoped ? '  establishTenantContext(locals);\n' : ''}
         mutate: async (row, op, data) => {
           await collection.withAuditMutation(row as import('@happyvertical/smrt-core').SmrtObject, op === 'update' ? 'updated' : 'deleted', async (bound) => {
             if (op === 'update') {
-              Object.assign(bound, data);
+              // A payload sets declared fields and settable accessors only.
+              applyUpdateInput(bound, data, target.registryKey);
               await bound.save();
             } else {
               await bound.delete({ expectedUpdatedAt: bound.updated_at ?? undefined });
