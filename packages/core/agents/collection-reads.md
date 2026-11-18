@@ -72,9 +72,20 @@ REST uses a body-hash ETag so target renames cannot leave stale names behind.
 Generated SvelteKit list routes share `parseRestListWhere()` with runtime REST,
 honor explicit `orderBy` with the existing stable default, and count the filtered
 rows. Their tenant predicate still applies to client-supplied filters: both
-transports force the anonymous `{ tenantId: null }` scope with
-`applyWhereScope()`, which drops every query filter on the tenant column under
-any spelling or operator, and both answer a refused where clause
+transports force the anonymous `{ <ownership field>: null }` scope with
+`applyWhereScope()`, which drops every query filter on the ownership column
+under any spelling or operator, on list, count and point reads, and custom
+GET actions receive the same ownership keys in their options. Both resolve the
+scope at request time from the live registry through one core module
+(`src/tenant-read-scope.ts`: `resolveAnonymousTenantReadScope`,
+`resolveTenantReadOptionsScope`), so a model whose tenancy is registered at
+runtime is covered like one declared in its manifest; emitted routes call it
+for every model and get nothing back for one that is not tenant-scoped. The
+ownership keys are the field the tenancy configuration names
+(`tenantScoped: { field }`, default `tenantId`) and every runtime ownership
+column (`ObjectRegistry.getRuntimeOwnershipColumns`). On a model owned through
+another field, a column named `tenantId` is ordinary data and is never the
+scope. Both answer a refused where clause
 (`INVALID_WHERE_CLAUSE`) with its 400. Generated
 list/get routes use the same body-hash rule and strip computed label writes.
 

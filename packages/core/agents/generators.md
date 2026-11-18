@@ -12,6 +12,22 @@ invariants, and the traps that apply before editing anything live in
 | MCP Server | `src/generators/mcp.ts` | Model Context Protocol tools |
 | Web collections | `src/vite-plugin/web-collections.ts` (selectors) + `generateWebModule` | `@happyvertical/smrt-virt-web` — one typed collection definition per API-exposed REST collection (#1761), consumed by `@happyvertical/smrt-web` |
 
+### Write bodies set fields only
+
+Every generated or request-facing write path filters the body through its
+writable policy before `collection.create(data)` or `Object.assign(item, data)`:
+runtime REST and MCP (`applyWritablePolicy` in `rest.ts` and `mcp.ts`), both
+emitted MCP servers (`mcp.ts` modular, `mcp-runtime-template.ts`), the emitted
+SvelteKit create and update handlers, and sync apply (`sync/apply.ts` and the
+emitted sync route). Each copy drops `_`-prefixed keys, server-managed fields,
+read-only fields, anything outside an `api.writable` allowlist, and every key
+for which `ObjectRegistry.isServiceOptionInput(model, key)` is true: a service
+option key (`SMRT_SERVICE_OPTION_KEYS`) the model does not declare as a field,
+and `options`. A new write path must apply the same rule; the collection also
+enforces it on construction (see [object-runtime.md](object-runtime.md),
+"Services never come from data"). The policies are still separate copies;
+they share the rule, not the code.
+
 The same web virtual module exports `webMcpToolDefinitions` (#2518), a
 canonical per-tool array selected independently of list materialization. Every
 non-empty canonical API action set contributes tools, so get-only and
