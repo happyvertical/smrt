@@ -420,17 +420,8 @@ onDestroy(() => controller?.abort());
   .smrt-assistant-panel__markdown :global(:is(p, ul, ol, pre, table):last-child) {
     margin-bottom: 0;
   }
-  .smrt-assistant-panel__markdown :global(table) {
-    border-collapse: collapse;
-    font-size: 0.9em;
-  }
   .smrt-assistant-panel__markdown :global(:is(th, td)) {
-    border: 1px solid var(--smrt-color-outline-variant, currentColor);
     padding: 0.2rem 0.5rem;
-    text-align: start;
-  }
-  .smrt-assistant-panel__markdown :global(th) {
-    font-weight: 600;
   }
   .smrt-assistant-panel__user {
     align-self: flex-end;
@@ -530,6 +521,17 @@ onDestroy(() => controller?.abort());
   }
   .smrt-assistant-panel__sr-only {
     border: 0;
+  }
+  .smrt-assistant-panel__markdown :global(table) {
+    border-collapse: collapse;
+    font-size: 0.9em;
+  }
+  .smrt-assistant-panel__markdown :global(:is(th, td)) {
+    border: 1px solid var(--smrt-color-outline-variant, currentColor);
+    text-align: start;
+  }
+  .smrt-assistant-panel__markdown :global(th) {
+    font-weight: 600;
   }
 }
 </style>

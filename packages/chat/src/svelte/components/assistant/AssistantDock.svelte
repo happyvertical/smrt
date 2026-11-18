@@ -1423,12 +1423,9 @@ async function handleConfirmAction(requestId: string) {
   .smrt-assistant-dock__markdown :global(table) {
     display: block;
     overflow-x: auto;
-    border-collapse: collapse;
   }
   .smrt-assistant-dock__markdown :global(:is(th, td)) {
-    border: 1px solid currentColor;
     padding: 0.15em 0.5em;
-    text-align: start;
   }
   .smrt-assistant-dock__markdown :global(pre) {
     overflow-x: auto;
@@ -1640,6 +1637,13 @@ async function handleConfirmAction(requestId: string) {
     color: var(--smrt-color-on-error-container);
     background: var(--smrt-color-error-container);
     border-bottom: var(--smrt-hairline);
+  }
+  .smrt-assistant-dock__markdown :global(table) {
+    border-collapse: collapse;
+  }
+  .smrt-assistant-dock__markdown :global(:is(th, td)) {
+    border: 1px solid currentColor;
+    text-align: start;
   }
 }
 </style>

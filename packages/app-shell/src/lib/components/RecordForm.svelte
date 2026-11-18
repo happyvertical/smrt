@@ -296,9 +296,6 @@ function askDelete() {
     gap: var(--smrt-spacing-md, 0.75rem) var(--smrt-spacing-lg, 1rem);
     margin: 0 0 var(--smrt-spacing-lg, 1rem);
   }
-  .smrt-record-form__item dt {
-    font-size: 0.8125rem;
-  }
   .smrt-record-form__item dd {
     margin: 0;
     overflow-wrap: break-word;
@@ -306,5 +303,8 @@ function askDelete() {
 }
 
 @layer smrt.theme {
+  .smrt-record-form__item dt {
+    font-size: 0.8125rem;
+  }
 }
 </style>
