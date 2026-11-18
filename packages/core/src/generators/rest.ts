@@ -40,6 +40,7 @@ import {
   processSyncApplyBatch,
   SYNC_APPLY_ROUTE_SEGMENTS,
   type SyncApplyOp,
+  SyncApplyRejection,
   type SyncApplyTarget,
 } from '../sync/apply';
 import {
@@ -84,6 +85,7 @@ import {
   type PlaybookPreflightProvider,
 } from './preflight-route';
 import { reportUnexpectedHttpError } from './route-error';
+import { runWithTenantGate } from './tenant-gate';
 import { normalizeTypedHttpError } from './typed-http-error';
 
 export interface APIConfig {
@@ -144,10 +146,66 @@ export interface APIConfig {
    * which preflight must never invoke.
    */
   playbookPreflight?: PlaybookPreflightProvider;
+  /**
+   * The tenant each request acts for.
+   *
+   * Every operation on a tenant-scoped model runs inside the tenant gate, the
+   * same one the in-process MCP generator uses. The gate needs to know, per
+   * request, which tenant the caller belongs to; the generator cannot derive
+   * that from a `Request`, so the host says. It is called after
+   * `authMiddleware` admitted the request, with the request that middleware
+   * returned, and only for tenant-scoped models.
+   *
+   * - `{ tenantId }` runs the operation inside that tenant.
+   * - `{ allowCrossTenant: true }` runs it across tenants. Only for a
+   *   principal that is explicitly cross-tenant (an operator).
+   * - Neither: a read of an optional-mode model serves global rows only, and
+   *   every write is refused with 403 (401 for an anonymous caller).
+   *
+   * Take the tenant from the principal your authentication verified, never
+   * from request input. When omitted, the fixed {@link APIContext.tenantId} /
+   * {@link APIContext.allowCrossTenant} are used, which suits a server that
+   * serves one tenant. A host that already runs the handler inside a tenant
+   * context (`withTenant(...)`) needs neither: an active context is kept.
+   *
+   * @example
+   * ```typescript
+   * new APIGenerator({
+   *   authMiddleware: () => async (req) => (await verify(req)) ? req : deny(),
+   *   resolveTenant: async (req) => ({ tenantId: (await sessionOf(req)).tenantId }),
+   * });
+   * ```
+   */
+  resolveTenant?: (
+    req: Request,
+  ) =>
+    | APIRequestTenant
+    | null
+    | undefined
+    | Promise<APIRequestTenant | null | undefined>;
+}
+
+/** The tenant one request acts for; see {@link APIConfig.resolveTenant}. */
+export interface APIRequestTenant {
+  /** Tenant the caller belongs to. */
+  tenantId?: string | null;
+  /** The caller is explicitly cross-tenant (an operator). */
+  allowCrossTenant?: boolean;
+  /**
+   * Whether the caller is signed in. Decides between 403 and 401 when the
+   * gate refuses. Defaults to whether an `authMiddleware` admitted the
+   * request.
+   */
+  authenticated?: boolean;
 }
 
 export interface APIContext {
   tenantId?: string;
+  /**
+   * The server's fixed principal is explicitly cross-tenant. Used with
+   * `tenantId` when no {@link APIConfig.resolveTenant} is configured.
+   */
+  allowCrossTenant?: boolean;
   db?: unknown;
   ai?: unknown;
   user?: {
@@ -273,6 +331,38 @@ export function computeRuntimeWebManifestHash(
   classes: Iterable<[string, RegisteredClass]> = ObjectRegistry.getAllClasses(),
 ): string {
   return computeWebManifestHash(getRuntimeManifest(classes));
+}
+
+/** A request's tenant after defaults; see {@link APIConfig.resolveTenant}. */
+interface ResolvedRequestTenant {
+  tenantId: string | null;
+  allowCrossTenant: boolean;
+  authenticated: boolean;
+}
+
+/**
+ * The answer to an operation the tenant gate (or the tenancy interceptor)
+ * refused for want of a tenant: 403 for a signed-in caller, 401 for an
+ * anonymous one. Matched by error code, so it holds across copies of the
+ * tenancy package. `undefined` for any other error.
+ */
+function tenantRefusal(
+  error: unknown,
+  authenticated = true,
+): { code: string; message: string; ok: false; status: number } | undefined {
+  if (
+    !error ||
+    typeof error !== 'object' ||
+    (error as { code?: unknown }).code !== 'TENANT_CONTEXT_REQUIRED'
+  ) {
+    return undefined;
+  }
+  return {
+    code: 'TENANT_CONTEXT_REQUIRED',
+    message: 'Tenant context required.',
+    ok: false,
+    status: authenticated ? 403 : 401,
+  };
 }
 
 /**
@@ -699,71 +789,22 @@ export class APIGenerator {
     url: URL,
     objectName?: string,
   ): Promise<Response> {
+    // Every operation on a tenant-scoped model runs inside the tenant gate.
+    let tenant: ResolvedRequestTenant | undefined;
     try {
-      // Decorator-declared custom collection actions dispatch BEFORE CRUD
-      // routing: without this, `POST /<collection>/<action>` would fall into
-      // `handleCreate` with the action segment silently discarded (#2047).
-      if (objectId && objectName) {
-        const customResponse = await this.dispatchCustomCollectionAction(
-          req,
-          collection,
-          objectId,
-          url,
-          objectName,
-        );
-        if (customResponse) {
-          return customResponse;
-        }
-      }
-
-      const action = this.getCrudAction(req.method, objectId);
-      if (action && !this.isApiActionEnabled(objectName, action)) {
-        return this.createErrorResponse(405, 'Method not allowed');
-      }
-
-      // Handle special /count endpoint
-      if (objectId === 'count' && req.method === 'GET') {
-        return await this.handleCount(collection, url.searchParams, objectName);
-      }
-
-      // Route to appropriate CRUD operation
-      switch (req.method) {
-        case 'GET':
-          return objectId
-            ? await this.handleGet(collection, objectId, req, objectName)
-            : await this.handleList(
-                collection,
-                url.searchParams,
-                req,
-                objectName,
-              );
-
-        case 'POST':
-          return await this.handleCreate(collection, req, objectName);
-
-        case 'PUT':
-        case 'PATCH':
-          if (!objectId) {
-            return this.createErrorResponse(
-              400,
-              'Object ID required for update',
-            );
-          }
-          return await this.handleUpdate(collection, objectId, req, objectName);
-
-        case 'DELETE':
-          if (!objectId) {
-            return this.createErrorResponse(
-              400,
-              'Object ID required for delete',
-            );
-          }
-          return await this.handleDelete(collection, objectId);
-
-        default:
-          return this.createErrorResponse(405, 'Method not allowed');
-      }
+      tenant = await this.resolveRequestTenant(req, objectName);
+      return await this.runInTenantGate(
+        objectName,
+        tenant,
+        req.method === 'GET' || req.method === 'HEAD',
+        () =>
+          this.routeCrudOperation(req, collection, objectId, url, objectName),
+      );
     } catch (error) {
+      const refusal = tenantRefusal(error, tenant?.authenticated);
+      if (refusal) {
+        return this.createJsonResponse({ error: refusal }, refusal.status);
+      }
       const failure = normalizeTypedHttpError(error);
       if (failure) {
         return this.createJsonResponse({ error: failure }, failure.status);
@@ -772,6 +813,144 @@ export class APIGenerator {
         reportUnexpectedHttpError(error, req),
         500,
       );
+    }
+  }
+
+  /**
+   * The tenant a request acts for: what the host's `resolveTenant` says, or
+   * the server's fixed context. `undefined` for a model that is not
+   * tenant-scoped, which the gate does not concern.
+   */
+  private async resolveRequestTenant(
+    req: Request,
+    objectName: string | undefined,
+  ): Promise<ResolvedRequestTenant | undefined> {
+    if (!this.isTenantScopedModel(objectName)) return undefined;
+    const resolved = this.config.resolveTenant
+      ? ((await this.config.resolveTenant(req)) ?? {})
+      : {
+          tenantId: this.context.tenantId,
+          allowCrossTenant: this.context.allowCrossTenant,
+        };
+    return {
+      tenantId:
+        typeof resolved.tenantId === 'string' && resolved.tenantId
+          ? resolved.tenantId
+          : null,
+      allowCrossTenant: resolved.allowCrossTenant === true,
+      authenticated:
+        resolved.authenticated ?? Boolean(this.config.authMiddleware),
+    };
+  }
+
+  /**
+   * Run one operation on a model inside the tenant gate (#1554), the one the
+   * in-process MCP generator runs every tool through.
+   *
+   * The gate keeps an active tenant or system context, enters the caller's
+   * tenant (or a system context for an explicitly cross-tenant caller), and
+   * otherwise refuses when tenancy is enabled. One case stays outside it: a
+   * read by a caller with no tenant. The gate has no notion of a global-only
+   * read, so that read keeps the fail-closed scope of #1782 (global rows of an
+   * optional-mode model; the interceptor refuses a required-mode one), and the
+   * refusal is mapped by the same error boundary.
+   */
+  private async runInTenantGate<T>(
+    objectName: string | undefined,
+    tenant: ResolvedRequestTenant | undefined,
+    read: boolean,
+    operation: () => Promise<T>,
+  ): Promise<T> {
+    if (!objectName || !tenant) return operation();
+    if (read && !tenant.tenantId && !tenant.allowCrossTenant) {
+      return operation();
+    }
+    return runWithTenantGate(
+      {
+        className: objectName,
+        tenantScoped: true,
+        tenantId: tenant.tenantId,
+        allowCrossTenant: tenant.allowCrossTenant,
+        surface: 'REST',
+      },
+      operation,
+    );
+  }
+
+  /**
+   * Whether a model is tenant-scoped, across both registration forms (#1782):
+   * the `@smrt({ tenantScoped })` config / manifest-merged form, and the
+   * standalone `@TenantScoped()` decorator through the tenancy-filled
+   * `isTenantScopedClassResolved` hook.
+   */
+  private isTenantScopedModel(objectName: string | undefined): boolean {
+    return !!objectName && isTenantScopedModel(objectName);
+  }
+
+  /** Route one request to its custom action or CRUD handler. */
+  private async routeCrudOperation(
+    req: Request,
+    collection: SmrtCollection<SmrtObject>,
+    objectId: string | undefined,
+    url: URL,
+    objectName?: string,
+  ): Promise<Response> {
+    // Decorator-declared custom collection actions dispatch BEFORE CRUD
+    // routing: without this, `POST /<collection>/<action>` would fall into
+    // `handleCreate` with the action segment silently discarded (#2047).
+    if (objectId && objectName) {
+      const customResponse = await this.dispatchCustomCollectionAction(
+        req,
+        collection,
+        objectId,
+        url,
+        objectName,
+      );
+      if (customResponse) {
+        return customResponse;
+      }
+    }
+
+    const action = this.getCrudAction(req.method, objectId);
+    if (action && !this.isApiActionEnabled(objectName, action)) {
+      return this.createErrorResponse(405, 'Method not allowed');
+    }
+
+    // Handle special /count endpoint
+    if (objectId === 'count' && req.method === 'GET') {
+      return await this.handleCount(collection, url.searchParams, objectName);
+    }
+
+    // Route to appropriate CRUD operation
+    switch (req.method) {
+      case 'GET':
+        return objectId
+          ? await this.handleGet(collection, objectId, req, objectName)
+          : await this.handleList(
+              collection,
+              url.searchParams,
+              req,
+              objectName,
+            );
+
+      case 'POST':
+        return await this.handleCreate(collection, req, objectName);
+
+      case 'PUT':
+      case 'PATCH':
+        if (!objectId) {
+          return this.createErrorResponse(400, 'Object ID required for update');
+        }
+        return await this.handleUpdate(collection, objectId, req, objectName);
+
+      case 'DELETE':
+        if (!objectId) {
+          return this.createErrorResponse(400, 'Object ID required for delete');
+        }
+        return await this.handleDelete(collection, objectId);
+
+      default:
+        return this.createErrorResponse(405, 'Method not allowed');
     }
   }
 
@@ -1599,9 +1778,26 @@ export class APIGenerator {
 
     const resolvedName = objectName;
     const resolvedCollection = collection;
+    // The request `authMiddleware` admitted for this item; the tenant gate
+    // reads the caller's tenant from it.
+    let admitted = req;
     return {
       objectName: resolvedName,
       collection: resolvedCollection,
+      // Every sync item is a write: it runs inside the tenant gate, like the
+      // CRUD route it mirrors. A refusal rejects the item.
+      run: async (_op, apply) => {
+        const tenant = await this.resolveRequestTenant(admitted, resolvedName);
+        try {
+          return await this.runInTenantGate(resolvedName, tenant, false, apply);
+        } catch (error) {
+          const refusal = tenantRefusal(error, tenant?.authenticated);
+          if (!refusal) throw error;
+          throw new SyncApplyRejection(
+            refusal.status === 401 ? 'auth_required' : 'forbidden',
+          );
+        }
+      },
       mutate: async (row, op, data) => {
         await resolvedCollection.withAuditMutation(
           row as SmrtObject,
@@ -1638,6 +1834,7 @@ export class APIGenerator {
           if (authResult instanceof Response) {
             return authResult.status === 401 ? 'auth_required' : 'forbidden';
           }
+          admitted = authResult;
           return 'ok';
         }
         // Fail-closed (#1540): every sync op is mutating, so only
@@ -1905,9 +2102,7 @@ export class APIGenerator {
    * whose bodies do not vary by tenant.
    */
   private readTenantDiscriminator(objectName?: string): string | undefined {
-    if (!objectName) return undefined;
-    const tenantScoped = isTenantScopedModel(objectName);
-    if (!tenantScoped) return undefined;
+    if (!this.isTenantScopedModel(objectName)) return undefined;
     // Shared with the generated SvelteKit route so both transports key the ETag
     // on the active tenant identically (cross-tenant false-304 guard).
     return resolveTenantEtagDiscriminator();

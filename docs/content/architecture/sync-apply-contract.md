@@ -108,11 +108,11 @@ HTTP 200
 | `conflict` | `create_conflict` | A create targeted an existing row whose content differs from the payload. The create was **skipped** (server state wins). |
 | `rejected` | `invalid_item` | Malformed envelope (missing/invalid `itemId`, `op`, `object`, or unparseable `baseUpdatedAt`). |
 | `rejected` | `invalid_id` | The row id is not a well-formed UUID. |
-| `rejected` | `invalid_payload` | `payload` missing or not an object on create/update. |
+| `rejected` | `invalid_payload` | `payload` missing or not an object on create/update, or an update payload names a key that is not a declared field or a settable accessor of the model. |
 | `rejected` | `unknown_object` | No model matches the `object` segment. |
 | `rejected` | `op_not_allowed` | The model's API config does not expose this op. |
-| `rejected` | `auth_required` | No authenticated principal (and the model is not `public: true`), or the auth middleware answered 401. |
-| `rejected` | `forbidden` | The auth middleware refused with a non-401 status, or (generated SvelteKit route) the principal lacks the `<collection>.<op>` permission. |
+| `rejected` | `auth_required` | No authenticated principal (and the model is not `public: true`), or the auth middleware answered 401. Also an anonymous write to a tenant-scoped model with no tenant. |
+| `rejected` | `forbidden` | The auth middleware refused with a non-401 status, or (generated SvelteKit route) the principal lacks the `<collection>.<op>` permission. Also a signed-in caller with no tenant writing a tenant-scoped model, a tenant that does not match the active context, or an incomplete principal for an `api.principalContext` model. |
 | `rejected` | `not_found` | Update target does not exist — or is not visible in the caller's tenant. |
 | `rejected` | `id_conflict` | A create collides with an existing row: its id belongs to a row the caller cannot see (e.g. another tenant's), a natural-key unique constraint (e.g. slug) matches a different row, or a concurrent writer won the race. Sync creates are strict inserts — the existing row is never adopted or overwritten. |
 | `rejected` | `write_failed` | Unexpected error applying this item; the batch continued. Safe to retry. |
@@ -235,10 +235,17 @@ interceptors guard sync exactly like CRUD:
   with a foreign row's id rejects with `id_conflict` without touching it.
 - Creates are stamped with the context tenant; a forged `tenantId` in the
   payload is stripped by the writable policy before it ever reaches the model.
-- The generated SvelteKit route establishes tenant context from `locals`
-  (same helper as generated CRUD routes) when any syncable model is
-  tenant-scoped; REST hosts establish context however they already do for
-  CRUD (e.g. the tenancy adapters).
+- The generated SvelteKit route establishes tenant context from `locals` per
+  item, with the helper the generated CRUD routes emit (one generator
+  function, `generateTenantContextHelper`), including the complete-principal
+  requirement of an `api.principalContext` model. The runtime REST server
+  runs each item inside the tenant gate with the tenant its host supplies
+  (`APIConfig.resolveTenant`), like its CRUD routes.
+- A write needs a tenant. With tenancy enabled, an item for a tenant-scoped
+  model from a caller with no tenant is rejected (`forbidden`, or
+  `auth_required` for an anonymous caller), global rows included, unless the
+  principal is explicitly cross-tenant or the host already entered a tenant
+  context.
 
 ## Mass-assignment guard (#1540)
 

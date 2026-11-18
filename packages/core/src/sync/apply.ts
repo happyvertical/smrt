@@ -206,6 +206,13 @@ export interface SyncApplyTarget {
     op: 'update' | 'delete',
     data: Record<string, unknown>,
   ) => Promise<void>;
+  /**
+   * Host-owned scope around one item's reads and writes, entered after the
+   * item is authorized: the tenant context the host's CRUD routes run in. A
+   * host that cannot establish it throws {@link SyncApplyRejection} to reject
+   * the item with a reason.
+   */
+  run?: <T>(op: SyncApplyOp, apply: () => Promise<T>) => Promise<T>;
   /** Registry/class name, for diagnostics. */
   objectName: string;
   /** Collection whose get/create/save/delete run the full interceptor stack. */
@@ -222,6 +229,59 @@ export interface SyncApplyTarget {
    * envelope `id` AFTER this runs — never from the body.
    */
   prepare(payload: Record<string, unknown>): Record<string, unknown>;
+}
+
+/**
+ * Thrown by a host's {@link SyncApplyTarget.run} scope to reject one item
+ * with a specific reason, for example `forbidden` when the caller has no
+ * tenant to write in.
+ */
+export class SyncApplyRejection extends Error {
+  /** Marker read instead of `instanceof`, so it holds across module copies. */
+  readonly syncApplyRejection: SyncApplyRejectionReason;
+
+  constructor(reason: SyncApplyRejectionReason) {
+    super(`Sync item rejected: ${reason}`);
+    this.name = 'SyncApplyRejection';
+    this.syncApplyRejection = reason;
+  }
+}
+
+const SYNC_APPLY_REJECTION_REASONS: readonly string[] = [
+  'invalid_item',
+  'invalid_id',
+  'invalid_payload',
+  'unknown_object',
+  'op_not_allowed',
+  'auth_required',
+  'forbidden',
+  'not_found',
+  'id_conflict',
+  'write_failed',
+] satisfies readonly SyncApplyRejectionReason[];
+
+function rejectionReasonOf(error: unknown): SyncApplyRejectionReason {
+  const marked =
+    error && typeof error === 'object'
+      ? (error as { syncApplyRejection?: unknown }).syncApplyRejection
+      : undefined;
+  if (
+    typeof marked === 'string' &&
+    SYNC_APPLY_REJECTION_REASONS.includes(marked)
+  ) {
+    return marked as SyncApplyRejectionReason;
+  }
+  // A row another tenant owns is a refusal, not a failure to retry; the
+  // reason says nothing about the other tenant.
+  if (
+    error &&
+    typeof error === 'object' &&
+    (error as { code?: unknown }).code === 'TENANT_ISOLATION_VIOLATION'
+  ) {
+    return 'forbidden';
+  }
+  // A payload key the object does not accept is the client's error.
+  return isWriteInputError(error) ? 'invalid_payload' : 'write_failed';
 }
 
 /** Host adapter handed to {@link processSyncApplyBatch}. */
@@ -513,6 +573,17 @@ async function applyValidatedItem(
     return { ...base, status: 'rejected', reason: 'op_not_allowed' };
   }
 
+  // Everything that touches the collection runs inside the host's scope.
+  const apply = () => applyAuthorizedItem(item, target);
+  return target.run ? target.run(item.op, apply) : apply();
+}
+
+async function applyAuthorizedItem(
+  item: SyncApplyItem,
+  target: SyncApplyTarget,
+): Promise<SyncApplyItemResult> {
+  const base = { itemId: item.itemId, id: item.id } as const;
+
   // Payload passes through the host's writable policy; the row UUID comes
   // from the validated envelope `id`, never from the body — the #1540
   // mass-assignment guard stays intact on this path too.
@@ -643,13 +714,13 @@ async function processOneItem(
     }
     return await applyValidatedItem(item, target);
   } catch (error) {
-    // One item's failure must never fail the batch. A payload key the object
-    // does not accept is the client's error, reported as such.
+    // One item's failure must never fail the batch. A reason the host gave,
+    // or a payload key the object does not accept, is reported as such.
     return {
       itemId: item.itemId,
       id: item.id,
       status: 'rejected',
-      reason: isWriteInputError(error) ? 'invalid_payload' : 'write_failed',
+      reason: rejectionReasonOf(error),
     };
   }
 }
