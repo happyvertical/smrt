@@ -247,6 +247,26 @@ function storageModels(
   return result;
 }
 
+/** Models whose stored fields `after` adds or changes relative to `before`. */
+function changedModels(
+  before: CookbookModels | undefined,
+  after: CookbookModels | undefined,
+): string[] {
+  if (!after) return [];
+  const differs = (a: unknown, b: unknown) =>
+    b === undefined || stableStringify(a) !== stableStringify(b);
+  return [
+    ...Object.entries(after.lists)
+      .filter(([name, list]) =>
+        differs(list.fields, before?.lists[name]?.fields),
+      )
+      .map(([name]) => `${after.packageName}:${name}`),
+    ...Object.entries(after.fields)
+      .filter(([model, fields]) => differs(fields, before?.fields[model]))
+      .map(([model]) => model),
+  ];
+}
+
 /** Whether a physical table exists, kept (for example) by a disabled recipe. */
 async function tableExists(
   db: DatabaseInterface,
@@ -606,23 +626,33 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
     };
   }
 
-  async function activate(
-    target: Cookbook,
-    all: CookbookModels | undefined,
-    db = options.db,
-    publishNow = true,
-  ) {
-    const held = identities(all);
-    setRuntimeModelReadiness(held, false);
+  /** Register storage declarations; affected readiness closes until release(). */
+  function register(all: CookbookModels | undefined) {
+    setRuntimeModelReadiness(identities(all), false);
     ready = false;
-    if (all) {
-      // Register non-reference fields first, so mutually referencing app lists resolve through registry APIs.
-      for (const [name, list] of Object.entries(all.lists))
-        registerRuntimeModel(
-          {
-            packageName: all.packageName,
-            name,
-            fields: runtimeFields(
+    if (!all) return;
+    // Register non-reference fields first, so mutually referencing app lists resolve through registry APIs.
+    for (const [name, list] of Object.entries(all.lists))
+      registerRuntimeModel(
+        {
+          packageName: all.packageName,
+          name,
+          fields: runtimeFields(
+            Object.fromEntries(
+              Object.entries(list.fields).filter(
+                ([, field]) => field.type !== 'reference',
+              ),
+            ),
+            all,
+          ),
+          tenantScoped: true,
+          ui: { label: list.label, icon: list.icon },
+          display: { label: list.displayField },
+        },
+        {
+          refresh: true,
+          fieldValidators: fieldValidators(
+            runtimeFields(
               Object.fromEntries(
                 Object.entries(list.fields).filter(
                   ([, field]) => field.type !== 'reference',
@@ -630,82 +660,99 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
               ),
               all,
             ),
-            tenantScoped: true,
-            ui: { label: list.label, icon: list.icon },
-            display: { label: list.displayField },
-          },
-          {
-            refresh: true,
-            fieldValidators: fieldValidators(
-              runtimeFields(
-                Object.fromEntries(
-                  Object.entries(list.fields).filter(
-                    ([, field]) => field.type !== 'reference',
-                  ),
-                ),
-                all,
-              ),
-            ),
-          },
-        );
-      for (const [name, list] of Object.entries(all.lists))
-        registerRuntimeModel(
-          {
-            packageName: all.packageName,
-            name,
-            fields: runtimeFields(list.fields, all),
-            tenantScoped: true,
-            ui: { label: list.label, icon: list.icon },
-            display: { label: list.displayField },
-          },
-          {
-            refresh: true,
-            fieldValidators: fieldValidators(runtimeFields(list.fields, all)),
-          },
-        );
-      for (const [model, fields] of Object.entries(all.fields))
-        registerRuntimeModel(
-          {
-            packageName: all.packageName,
-            name: model.split(':').at(-1)!,
-            extends: model,
-            replaces: true,
-            fields: runtimeFields(fields, all),
-          },
-          {
-            refresh: true,
-            fieldValidators: fieldValidators(runtimeFields(fields, all)),
-          },
-        );
-      const tables = new Set(
-        identities(all)
-          .map((id) => ObjectRegistry.getTableName(id))
-          .filter((name): name is string => !!name),
+          ),
+        },
       );
-      const pending = await getPendingSchemaStatements(db, {
-        engineHint: engine,
-        tables,
-      });
-      if (pending.hasManualDrift)
-        throw new Error(
-          `MODEL_MIGRATION_REQUIRED: ${JSON.stringify(pending.unactionableChanges)}`,
-        );
-      // A refused run applies nothing (a release stop, for example); the edit
-      // must fail rather than publish fields whose columns do not exist.
-      const migrated = await migrateSmrtSchemas({
-        db,
-        packageName: options.packageName,
-        version: String(revision),
-        name: `app_models_${revision}_${Date.now()}`,
-        engineHint: engine,
-        ...(engine === 'postgres'
-          ? { atomic: true, postgresSafe: false, useConcurrentIndexes: false }
-          : {}),
-        tables,
-        requireComplete: true,
-      });
-      assertMigrationAccepted(migrated);
-    }
+    for (const [name, list] of Object.entries(all.lists))
+      registerRuntimeModel(
+        {
+          packageName: all.packageName,
+          name,
+          fields: runtimeFields(list.fields, all),
+          tenantScoped: true,
+          ui: { label: list.label, icon: list.icon },
+          display: { label: list.displayField },
+        },
+        {
+          refresh: true,
+          fieldValidators: fieldValidators(runtimeFields(list.fields, all)),
+        },
+      );
+    for (const [model, fields] of Object.entries(all.fields))
+      registerRuntimeModel(
+        {
+          packageName: all.packageName,
+          name: model.split(':').at(-1)!,
+          extends: model,
+          replaces: true,
+          fields: runtimeFields(fields, all),
+        },
+        {
+          refresh: true,
+          fieldValidators: fieldValidators(runtimeFields(fields, all)),
+        },
+      );
+  }
+
+  /** Physical tables of the given (registered) model identities. */
+  const tablesOf = (models: readonly string[]) =>
+    new Set(
+      models
+        .map((id) => ObjectRegistry.getTableName(id))
+        .filter((name): name is string => !!name),
+    );
+
+  /**
+   * Refuse manual drift on the tables an edit migrates. Only those tables (and
+   * their FK closure) are inspected, so drift elsewhere never blocks an edit.
+   */
+  async function plan(db: DatabaseInterface, tables: Set<string>) {
+    if (!tables.size) return;
+    const pending = await getPendingSchemaStatements(db, {
+      engineHint: engine,
+      tables,
+    });
+    if (pending.hasManualDrift)
+      throw new Error(
+        `MODEL_MIGRATION_REQUIRED: ${JSON.stringify(pending.unactionableChanges)}`,
+      );
+  }
+
+  async function migrate(db: DatabaseInterface, tables: Set<string>) {
+    if (!tables.size) return;
+    // A refused run applies nothing (a release stop, for example); the edit
+    // must fail rather than publish fields whose columns do not exist.
+    const migrated = await migrateSmrtSchemas({
+      db,
+      packageName: options.packageName,
+      version: String(revision),
+      name: `app_models_${revision}_${Date.now()}`,
+      engineHint: engine,
+      ...(engine === 'postgres'
+        ? { atomic: true, postgresSafe: false, useConcurrentIndexes: false }
+        : {}),
+      tables,
+      requireComplete: true,
+    });
+    assertMigrationAccepted(migrated);
+  }
+
+  /**
+   * Register `all` and migrate only the tables of `changed` models: an edit's
+   * new lists and fields. Labels, hiding, removal and undo change no storage
+   * and run no DDL; provider tables otherwise stay the operator's migration.
+   */
+  async function activate(
+    target: Cookbook,
+    all: CookbookModels | undefined,
+    changed: readonly string[],
+    db = options.db,
+    publishNow = true,
+  ) {
+    register(all);
+    const tables = tablesOf(changed);
+    await plan(db, tables);
+    await migrate(db, tables);
     doc = structuredClone(target);
     return publishNow ? publish() : projection();
   }
@@ -781,17 +828,53 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
       throw new Error('MODEL_REQUEST_ID_REUSED');
     if (found.status !== 'applied')
       throw new Error('MODEL_ACTIVATION_PENDING: reopen the editor to recover');
+    if (found.abandoned)
+      throw new Error(
+        `MODEL_REVISION_ABANDONED: revision ${found.revision} was abandoned and never applied`,
+      );
     if (!found.receipt || !found.result)
       throw new Error('MODEL_RESULT_UNAVAILABLE');
     return structuredClone(found);
   }
 
+  /**
+   * The storage boot reconciles: a pending revision's own changes, or an
+   * initial cookbook's declarations before anything is journalled. An applied
+   * journal needs no DDL at boot.
+   */
+  function bootChanges(): string[] {
+    const all = storageModels(documents());
+    const pending =
+      history.at(-1)?.status === 'pending' ? history.at(-1) : undefined;
+    if (!history.length) return changedModels(undefined, all);
+    if (!pending) return [];
+    return changedModels(
+      storageModels([
+        ...history.slice(0, -1).flatMap((row) => [row.before, row.after]),
+        pending.before,
+      ]),
+      all,
+    );
+  }
+  const recoveryHint = (error: unknown) => {
+    const pending = history.at(-1);
+    if (pending?.status !== 'pending' || !(error instanceof Error))
+      return error;
+    error.message += `; pending revision ${pending.revision} cannot be applied. Repair the cause and reopen, or abandon it with abandonAppModelRevision({ revision: ${pending.revision} })`;
+    return error;
+  };
+
   await withRuntimeSchemaActivation(async () => {
     const started = performance.now();
-    if (engine === 'postgres') {
-      let restore = () => {};
-      const readiness = new Map<string, boolean | undefined>();
-      try {
+    let restore = () => {};
+    const readiness = new Map<string, boolean | undefined>();
+    const checkpoint = () => {
+      const held = identities(storageModels(documents()));
+      for (const id of held) readiness.set(id, getRuntimeModelReadiness(id));
+      restore = ObjectRegistry.checkpointRegistrations(held);
+    };
+    try {
+      if (engine === 'postgres') {
         await store.transaction!(async (scoped, db) => {
           history = await scoped.read();
           revision = history.at(-1)?.revision ?? 0;
@@ -800,27 +883,41 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
             doc,
             storageModels(history.flatMap((row) => [row.before, row.after])),
           );
-          const held = identities(storageModels(documents()));
-          for (const id of held)
-            readiness.set(id, getRuntimeModelReadiness(id));
-          restore = ObjectRegistry.checkpointRegistrations(held);
-          await activate(doc, storageModels(documents()), db, false);
+          checkpoint();
+          await activate(
+            doc,
+            storageModels(documents()),
+            bootChanges(),
+            db,
+            false,
+          );
         });
-      } catch (error) {
-        // The surrounding transaction can fail while committing, after the
-        // migration callback itself succeeded. Restore that boundary too.
-        restore();
-        for (const [id, value] of readiness)
-          setRuntimeModelReadiness([id], value);
-        throw error;
+      } else {
+        await validate(
+          doc,
+          storageModels(history.flatMap((row) => [row.before, row.after])),
+        );
+        checkpoint();
+        await activate(
+          doc,
+          storageModels(documents()),
+          bootChanges(),
+          options.db,
+          false,
+        );
       }
+    } catch (error) {
+      // The surrounding transaction can fail while committing, after the
+      // migration callback itself succeeded. Restore that boundary too.
+      restore();
+      for (const [id, value] of readiness)
+        setRuntimeModelReadiness([id], value);
+      throw recoveryHint(error);
+    }
+    try {
       await publish();
-    } else {
-      await validate(
-        doc,
-        storageModels(history.flatMap((row) => [row.before, row.after])),
-      );
-      await activate(doc, storageModels(documents()));
+    } catch (error) {
+      throw recoveryHint(error);
     }
     if (history.at(-1)?.status === 'pending') {
       const pending = history.at(-1)!;
@@ -882,6 +979,10 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
         if (replay.status === 'pending')
           throw new Error(
             'MODEL_ACTIVATION_PENDING: reopen the editor to recover',
+          );
+        if (replay.abandoned)
+          throw new Error(
+            `MODEL_REVISION_ABANDONED: revision ${replay.revision} was abandoned and never applied`,
           );
         if (context.operation) {
           const recovered = await recover(context);
@@ -1063,6 +1164,7 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
           const previous = latest.findLast(
             (row) =>
               row.status === 'applied' &&
+              !row.abandoned &&
               row.undoes === undefined &&
               !undone.has(row.revision),
           );
@@ -1140,14 +1242,21 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
           ? { operation: structuredClone(context.operation) }
           : {}),
       };
+      const previous = { history, revision, doc, ready };
+      const all = storageModels([...documents(), next]);
+      const changed = changedModels(archived, all);
+      const held = identities(all);
+      const readiness = new Map(
+        held.map((id) => [id, getRuntimeModelReadiness(id)]),
+      );
+      let restore = () => {};
+      const rollback = () => {
+        restore();
+        ({ history, revision, doc, ready } = previous);
+        for (const [id, value] of readiness)
+          setRuntimeModelReadiness([id], value);
+      };
       if (engine === 'postgres') {
-        const previous = { history, revision, doc, ready };
-        const all = storageModels([...documents(), next]);
-        const held = identities(all);
-        const readiness = new Map(
-          held.map((id) => [id, getRuntimeModelReadiness(id)]),
-        );
-        let restore = () => {};
         try {
           await store.transaction!(async (scoped, db) => {
             // Claim before touching the registry. The lock and this CAS fence
@@ -1156,24 +1265,35 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
             restore = ObjectRegistry.checkpointRegistrations(held);
             history = [...latest, change];
             revision = change.revision;
-            await activate(next, all, db, false);
+            await activate(next, all, changed, db, false);
           });
         } catch (error) {
-          restore();
-          ({ history, revision, doc, ready } = previous);
-          for (const [id, value] of readiness)
-            setRuntimeModelReadiness([id], value);
+          rollback();
           throw error;
         }
-        // Schema + pending history are durable before any external publication.
-        // A callback failure stays pending and closed, and boot retries it.
-        await publish();
       } else {
-        await store.append(change, revision);
+        // Register and plan BEFORE journalling: a refused migration (manual
+        // drift on an edited table) leaves no pending revision behind.
+        let tables: Set<string>;
+        try {
+          restore = ObjectRegistry.checkpointRegistrations(held);
+          register(all);
+          tables = tablesOf(changed);
+          await plan(options.db, tables);
+          await store.append(change, revision);
+        } catch (error) {
+          rollback();
+          throw error;
+        }
         history = [...latest, change];
         revision = change.revision;
-        await activate(next, storageModels([...documents(), next]));
+        // From here a failure stays pending and closed; reopen recovers it.
+        await migrate(options.db, tables);
+        doc = structuredClone(next);
       }
+      // Schema + pending history are durable before any external publication.
+      // A callback failure stays pending and closed, and boot retries it.
+      await publish();
       const elapsedMs = performance.now() - began;
       const receipt = receiptFor(projection(), edit, elapsedMs);
       await store.complete(

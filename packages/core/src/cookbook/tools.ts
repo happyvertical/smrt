@@ -741,7 +741,7 @@ export function createCookbookToolService(options: CookbookToolOptions) {
         changes: history.map((row) => ({
           revision: row.revision,
           actor: row.actor,
-          status: row.status,
+          status: row.abandoned ? 'abandoned' : row.status,
           change: JSON.parse(row.command),
           summary: (JSON.parse(row.command) as { summary?: string }).summary,
           undoes: row.undoes,
@@ -766,6 +766,7 @@ export function createCookbookToolService(options: CookbookToolOptions) {
       const previous = history.findLast(
         (row) =>
           row.status === 'applied' &&
+          !row.abandoned &&
           row.undoes === undefined &&
           !undone.has(row.revision),
       );
