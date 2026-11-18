@@ -345,6 +345,31 @@ export interface SmartObjectConfig {
   previousQualifiedNames?: string[];
 
   /**
+   * Required on a class that extends a class of the same simple name from
+   * another package (#5143). The class itself says so; nothing infers it
+   * from package names, paths or load order.
+   *
+   * - `true`: this class replaces its parent. One model remains, under this
+   *   class's qualified name, on the parent's table; the parent's qualified
+   *   name and its `previousQualifiedNames` resolve to this class, and the
+   *   parent's declaration is kept for ancestry only.
+   *
+   * Omitting it on such a class is `CONFIG_SAME_NAME_SUBCLASS_UNDECLARED`
+   * when the manifest is generated and when the class registers. The option
+   * is never inherited and has no meaning on any other class. See
+   * `packages/core/agents/app-subclasses.md`.
+   *
+   * @example
+   * ```typescript
+   * import { Customer as CustomerBase } from '@happyvertical/smrt-commerce';
+   *
+   * @smrt({ replaceParent: true })
+   * export class Customer extends CustomerBase {}
+   * ```
+   */
+  replaceParent?: boolean;
+
+  /**
    * Custom table name for database storage (defaults to pluralized snake_case class name)
    * Explicitly setting this ensures the table name survives code minification
    */
