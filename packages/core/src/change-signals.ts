@@ -54,11 +54,13 @@
  *   the older hazard where a pre-commit signal could describe a write a later
  *   rollback undid, and where the rolled-back seq was reused by the next
  *   append. The cost is latency: live subscribers see a transaction-wrapped
- *   write one drain after it commits, and on engines without staging
- *   (SQLite, DuckDB) the pre-commit caveat still applies. The autocommit
- *   default path — save()/delete() as independent statements — is exact and
- *   unchanged. Clients reconcile via cursor catch-up either way, so
- *   convergence holds.
+ *   write one drain after it commits. On engines without staging (SQLite,
+ *   DuckDB) a write on a framework transaction's handle hands its signal to
+ *   the transaction (`deferUntilFrameworkCommit`), which publishes it after
+ *   commit and drops it on rollback. A transaction the framework does not
+ *   manage (raw `db.transaction()`, a caller-owned scope) still signals
+ *   before commit. The autocommit default path — save()/delete() as
+ *   independent statements — is exact and unchanged.
  *
  * @see https://github.com/happyvertical/smrt/issues/1763
  * @packageDocumentation
