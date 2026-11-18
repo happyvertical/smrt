@@ -1545,7 +1545,12 @@ describe('SvelteKit Route Generator', () => {
         /Object\.fromEntries\([\s\S]*\),\n\s*\) as ActionArgs\[0\];/,
       );
       expect(content).toContain("ObjectRegistry.getClass('Document')");
-      expect(content).toContain('await ClassRef.browseFacts(options)');
+      // A GET action taking options receives the tenant read scope resolved
+      // at request time (nothing for a model that is not tenant-scoped).
+      expect(content).toContain(
+        'const readScope = resolveTenantReadOptionsScope("@test/sveltekit:Document");',
+      );
+      expect(content).toContain('await ClassRef.browseFacts(scopedOptions)');
       expect(content).not.toContain('params.id');
 
       const searchFactsRoute = vi
@@ -3329,7 +3334,7 @@ describe('SvelteKit Route Generator', () => {
         "const orderBy = url.searchParams.get('orderBy') || LIST_ORDER_BY;",
       );
       expect(collectionContent).toContain(
-        'const count = await collection.count({ where });',
+        'const count = await collection.count({ where }).catch(rejectListWhere);',
       );
       expect(collectionContent).not.toContain(
         "Number(url.searchParams.get('limit')) || 50",

@@ -722,6 +722,11 @@ export type {
 } from './system/types';
 // Table existence verification cache (for test setup reset)
 export { resetVerifiedTables } from './table-cache';
+// The tenant scope request-facing reads add when no interceptor narrows them.
+export {
+  resolveAnonymousTenantReadScope,
+  resolveTenantReadOptionsScope,
+} from './tenant-read-scope';
 // Testing utilities (for test setup only)
 export {
   getTestDatabase,

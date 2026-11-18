@@ -894,6 +894,28 @@ function isTenantScoped(objectDef: SmartObjectDefinition): boolean {
 }
 
 /**
+ * The registry name an emitted route resolves its tenant read scope with at
+ * request time: the model's qualified name, or its class name.
+ *
+ * Emitted reads resolve the scope from the live registry
+ * (`resolveAnonymousTenantReadScope`, `resolveTenantReadOptionsScope`) rather
+ * than from this manifest, so a model whose tenancy or ownership field is
+ * registered at runtime is scoped like one declared in its manifest.
+ */
+function readScopeModelName(
+  objectDef: SmartObjectDefinition | undefined,
+  fallback: string,
+): string {
+  if (!objectDef) return fallback;
+  return (
+    objectDef.qualifiedName ??
+    (objectDef.packageName
+      ? `${objectDef.packageName}:${objectDef.className}`
+      : objectDef.className || fallback)
+  );
+}
+
+/**
  * Whether generated routes must publish the authenticated principal into the
  * tenancy ALS without making the model itself tenant-scoped. This is an
  * explicit model-level opt-in: body data is never an identity source.
@@ -992,8 +1014,8 @@ function resolveDefaultListOrderBy(
 }
 
 /**
- * Emit the tenant-context establishment + fail-closed read-scope helpers for
- * `@TenantScoped` objects (#1540 facet 2; #1782). Generated handlers call
+ * Emit the tenant-context establishment helper for `@TenantScoped` objects
+ * (#1540 facet 2; #1782). Generated handlers call
  * `establishTenantContext(locals)` after the auth guard so every query runs
  * inside the tenant context derived from the authenticated principal — engaging
  * the `@TenantScoped` interceptors that auto-filter by tenant.
@@ -1004,15 +1026,20 @@ function resolveDefaultListOrderBy(
  *
  * When no context could be established, an `optional`-mode read would otherwise
  * fall through the interceptor UNFILTERED and return rows from ALL tenants (the
- * interceptor only hard-fails `required` mode) — the #1782 leak. So read
- * handlers additionally call `tenantReadScope()`, which restricts reads to
- * NULL-tenant (global) rows only when tenancy is enabled but no context is
- * active. Both helpers are imported only for tenant-scoped routes, which already
- * depend on `@happyvertical/smrt-tenancy`.
+ * interceptor only hard-fails `required` mode) — the #1782 leak. So every
+ * generated read also calls core's `resolveAnonymousTenantReadScope()` (or,
+ * for custom GET actions taking options, `resolveTenantReadOptionsScope()`),
+ * resolved at request time from the live registry, which restricts reads to
+ * rows without an owner when tenancy is on and no tenant is active. That call
+ * is emitted for every model, since tenancy can be registered at runtime; it
+ * resolves to nothing for a model that is not tenant-scoped. This helper is
+ * imported only for tenant-scoped routes, which already depend on
+ * `@happyvertical/smrt-tenancy`; `includeSuperAdminBypass` adds
+ * `isSuperAdminBypass` for routes whose action options carry the scope.
  */
 function generateTenantContextHelper(
   requirePrincipal: boolean,
-  includeReadScope: boolean,
+  includeSuperAdminBypass: boolean,
 ): string {
   const principalGuard = requirePrincipal
     ? `  if (
@@ -1030,37 +1057,9 @@ function generateTenantContextHelper(
   const activeUserMismatch = requirePrincipal
     ? 'active.userId !== userId'
     : "typeof userId === 'string' && userId && active.userId && active.userId !== userId";
-  const tenancyImport = includeReadScope
-    ? 'enterTenantContext, getCurrentTenant, hasTenantContext, isSuperAdminBypass, isTenancyEnabled'
+  const tenancyImport = includeSuperAdminBypass
+    ? 'enterTenantContext, getCurrentTenant, isSuperAdminBypass'
     : 'enterTenantContext, getCurrentTenant';
-  const readScopeHelpers = includeReadScope
-    ? `
-// Fail-closed read scope (#1782): a public/anonymous read on a @TenantScoped
-// model has no tenant context, so the tenancy interceptor (optional mode) would
-// pass the query through UNFILTERED and return every tenant's rows. When tenancy
-// is enabled but no context was established, restrict reads to NULL-tenant
-// (global) rows only — mirroring the dispatch resolver + _changes convention:
-// tenancy enforced with no context => global rows only. Returns undefined when a
-// context is active (the interceptor filters by it) or tenancy is disabled.
-function tenantReadScope(): { tenantId: null } | undefined {
-  return isTenancyEnabled() && !hasTenantContext()
-    ? { tenantId: null }
-    : undefined;
-}
-
-// Custom GET actions that accept a single options object may perform their
-// own reads instead of calling generated list/get handlers. Give those actions
-// an explicit tenant scope: active tenant when present, NULL-tenant global rows
-// when tenancy is enabled but no tenant context exists. Super-admin bypass
-// stays unscoped so admin callers keep deliberate cross-tenant access.
-function tenantReadOptionsScope(): { tenantId: string | null } | undefined {
-  if (!isTenancyEnabled() || isSuperAdminBypass()) {
-    return undefined;
-  }
-  return { tenantId: getCurrentTenant()?.tenantId ?? null };
-}
-`
-    : '';
   return `
 import { ${tenancyImport} } from '@happyvertical/smrt-tenancy';
 
@@ -1097,7 +1096,7 @@ ${requirePrincipal ? '    enterTenantContext({ ...active, tenantId, userId, perm
     );
   }
 }
-${readScopeHelpers}
+
 `;
 }
 
@@ -1391,24 +1390,36 @@ function buildActionInvocationExpression(
   ].join('\n');
 }
 
+/** Whether a GET action receives the tenant read scope in its options. */
+function receivesTenantReadOptions(
+  actionDef: MethodDefinition,
+  routeConfig: ResolvedApiActionRouteConfig,
+): boolean {
+  return routeConfig.method === 'GET' && hasSingleOptionsParameter(actionDef);
+}
+
 function buildScopedOptionsForTenantRead(
   actionDef: MethodDefinition,
   routeConfig: ResolvedApiActionRouteConfig,
-  tenantScoped: boolean,
+  readScopeModel: string,
+  superAdminBypassAvailable: boolean,
 ): { source: string; optionsIdentifier: string } {
   // The generator can only pass tenant read scope to methods that expose an
   // options object. Zero-argument methods that perform their own raw reads must
   // infer tenant scope in their implementation or adopt the options contract.
-  if (
-    !tenantScoped ||
-    routeConfig.method !== 'GET' ||
-    !hasSingleOptionsParameter(actionDef)
-  ) {
+  // The scope names the model's ownership field(s), resolved at request time
+  // from the live registry: the active tenant, or null (rows without an owner)
+  // when tenancy is on and no tenant is active; nothing for a model that is not
+  // tenant-scoped, and nothing under a super-admin bypass.
+  if (!receivesTenantReadOptions(actionDef, routeConfig)) {
     return { source: '', optionsIdentifier: 'options' };
   }
+  const bypass = superAdminBypassAvailable
+    ? ', { superAdminBypass: isSuperAdminBypass() }'
+    : '';
 
   return {
-    source: `  const readScope = tenantReadOptionsScope();
+    source: `  const readScope = resolveTenantReadOptionsScope(${JSON.stringify(readScopeModel)}${bypass});
   const scopedOptions = readScope
     ? ({ ...options, ...readScope } as ActionArgs[0])
     : options;
@@ -3399,6 +3410,25 @@ function smrtRouteErrorResponse(cause: unknown, request: Request) {
 `;
 }
 
+/**
+ * Emit the list route's answer to a where clause the collection refuses: two
+ * query filters that resolve to the same column and operator. That is the
+ * caller's error, so it is answered with the error's own 4xx status. Every
+ * other failure is rethrown unchanged.
+ */
+function generateListWhereErrorHelper(): string {
+  return `
+// A where clause the collection refuses is a client error, not a server fault.
+function rejectListWhere(cause: unknown): never {
+  const failure = normalizeTypedHttpError(cause);
+  if (failure?.code === 'INVALID_WHERE_CLAUSE') {
+    throw error(failure.status, failure.message);
+  }
+  throw cause;
+}
+`;
+}
+
 function generateCollectionRouteTemplate(
   projectRoot: string,
   className: string,
@@ -3449,23 +3479,28 @@ function generateCollectionRouteTemplate(
 // DO NOT EDIT - changes will be overwritten
 
 import { error${hasPost ? ', json' : ''} } from '@sveltejs/kit';
-${hasGet ? "import { parseRestListWhere } from '@happyvertical/smrt-core';\n" : ''}
+${hasGet ? "import { parseRestListWhere } from '@happyvertical/smrt-core';\n" : ''}${hasGet ? "import { applyWhereScope, resolveAnonymousTenantReadScope } from '@happyvertical/smrt-core';\n" : ''}${hasGet && !hasPost ? "import { normalizeTypedHttpError } from '@happyvertical/smrt-core';\n" : ''}
 ${serializerImports ? `${serializerImports}\n` : ''}${hasPost ? "import { ObjectRegistry, normalizeTypedHttpError, reportUnexpectedHttpError } from '@happyvertical/smrt-core';\n" : ''}
 ${modelType.importStatement ? `${modelType.importStatement}\n` : ''}import type { RequestHandler } from './$types';
 ${collectionAccessImports}
 // Note: ${className} is auto-registered by the Vite plugin scanner
-${generateAuthGuardHelper(objectDef, semanticManifest)}${needsRouteTenantContext(objectDef) ? generateTenantContextHelper(usesPrincipalContext(objectDef), isTenantScoped(objectDef)) : ''}${hasPost ? generateWritablePolicyHelper(objectDef, true) : ''}${hasPost ? generateTypedRouteErrorHelper() : ''}${hasGet ? generateListBoundsHelper(objectDef) : ''}${hasGet ? generateConditionalGetRouteHelper(objectDef.decoratorConfig?.api, { runtimeExposure: true, tenantScoped: isTenantScoped(objectDef), permissionScoped: listUsesPermissionScopedBody, modelName: className, useBodyHash: listUsesBodyHash, manifestHash: webManifestHash }) : ''}`;
+${generateAuthGuardHelper(objectDef, semanticManifest)}${needsRouteTenantContext(objectDef) ? generateTenantContextHelper(usesPrincipalContext(objectDef), false) : ''}${hasPost ? generateWritablePolicyHelper(objectDef, true) : ''}${hasPost ? generateTypedRouteErrorHelper() : ''}${hasGet ? generateListBoundsHelper(objectDef) : ''}${hasGet ? generateListWhereErrorHelper() : ''}${hasGet ? generateConditionalGetRouteHelper(objectDef.decoratorConfig?.api, { runtimeExposure: true, tenantScoped: isTenantScoped(objectDef), permissionScoped: listUsesPermissionScopedBody, modelName: className, useBodyHash: listUsesBodyHash, manifestHash: webManifestHash }) : ''}`;
 
   // #1782: tenant-scoped reads fail closed to global (NULL-tenant) rows when no
-  // tenant context is active (public/anonymous read). Non-tenant models keep the
-  // plain list/count.
+  // tenant context is active (public/anonymous read). The scope is resolved at
+  // request time from the live registry, as runtime REST resolves it, so
+  // tenancy registered after generation is honoured; it is `undefined` for a
+  // model that is not tenant-scoped. `applyWhereScope` drops every query filter
+  // on the ownership column, under any spelling of the key, before adding the
+  // scope, so the scope is the only ownership predicate in the query.
   // #2367: every generated page is ordered. `LIST_ORDER_BY` is emitted as a
   // module constant so the ordering is visible in the generated file rather
   // than implied by the database's row order.
-  const listAndCount = `  const where = { ...parseRestListWhere(url.searchParams)${isTenantScoped(objectDef) ? ', ...tenantReadScope()' : ''} };
+  const listWhere = `applyWhereScope(parseRestListWhere(url.searchParams), resolveAnonymousTenantReadScope(${JSON.stringify(readScopeModelName(objectDef, className))})) ?? {}`;
+  const listAndCount = `  const where = ${listWhere};
   const orderBy = url.searchParams.get('orderBy') || LIST_ORDER_BY;
-  const items = await collection.list({ limit, offset, orderBy, where${objectDef.displayLabelProjection ? ', displayLabel: true' : ''} });
-  const count = await collection.count({ where });`;
+  const items = await collection.list({ limit, offset, orderBy, where${objectDef.displayLabelProjection ? ', displayLabel: true' : ''} }).catch(rejectListWhere);
+  const count = await collection.count({ where }).catch(rejectListWhere);`;
 
   const getHandler = hasGet
     ? `
@@ -3645,21 +3680,21 @@ function generateItemRouteTemplate(
 // DO NOT EDIT - changes will be overwritten
 
 import { error${hasPut || hasDelete ? ', json' : ''} } from '@sveltejs/kit';
-${serializerImports ? `${serializerImports}\n` : ''}${hasPut || hasDelete ? "import { normalizeTypedHttpError, reportUnexpectedHttpError } from '@happyvertical/smrt-core';\n" : ''}
+${serializerImports ? `${serializerImports}\n` : ''}${hasPut || hasDelete ? "import { normalizeTypedHttpError, reportUnexpectedHttpError } from '@happyvertical/smrt-core';\n" : ''}${hasGet ? "import { resolveAnonymousTenantReadScope } from '@happyvertical/smrt-core';\n" : ''}
 ${modelType.importStatement ? `${modelType.importStatement}\n` : ''}import type { RequestHandler } from './$types';
 ${collectionAccessImports}
-${generateAuthGuardHelper(objectDef, semanticManifest)}${needsRouteTenantContext(objectDef) ? generateTenantContextHelper(usesPrincipalContext(objectDef), isTenantScoped(objectDef)) : ''}${hasPut ? generateWritablePolicyHelper(objectDef) : ''}${hasPut || hasDelete ? generateTypedRouteErrorHelper() : ''}${hasGet ? generateConditionalGetRouteHelper(objectDef.decoratorConfig?.api, { runtimeExposure: true, tenantScoped: isTenantScoped(objectDef), permissionScoped: getUsesPermissionScopedBody, modelName: className, useBodyHash: getUsesBodyHash, manifestHash: webManifestHash }) : ''}`;
+${generateAuthGuardHelper(objectDef, semanticManifest)}${needsRouteTenantContext(objectDef) ? generateTenantContextHelper(usesPrincipalContext(objectDef), false) : ''}${hasPut ? generateWritablePolicyHelper(objectDef) : ''}${hasPut || hasDelete ? generateTypedRouteErrorHelper() : ''}${hasGet ? generateConditionalGetRouteHelper(objectDef.decoratorConfig?.api, { runtimeExposure: true, tenantScoped: isTenantScoped(objectDef), permissionScoped: getUsesPermissionScopedBody, modelName: className, useBodyHash: getUsesBodyHash, manifestHash: webManifestHash }) : ''}`;
 
   // #1782: a tenant-scoped single read fails closed to global (NULL-tenant)
   // rows when no tenant context is active, so a public/anonymous GET /:id can't
-  // fetch another tenant's row by id. Mutations (PUT/DELETE) require auth, so
-  // they keep the plain id lookup and rely on the interceptor.
-  const getForRead = isTenantScoped(objectDef)
-    ? `  const readScope = tenantReadScope();
+  // fetch another tenant's row by id. The scope is resolved at request time
+  // from the live registry (undefined for a model that is not tenant-scoped).
+  // Mutations (PUT/DELETE) require auth, so they keep the plain id lookup and
+  // rely on the interceptor.
+  const getForRead = `  const readScope = resolveAnonymousTenantReadScope(${JSON.stringify(readScopeModelName(objectDef, className))});
   const item = await collection.get(
     readScope ? { id: params.id, ...readScope } : params.id,${objectDef.displayLabelProjection ? '\n    { displayLabel: true },' : ''}
-  );`
-    : `  const item = await collection.get(params.id${objectDef.displayLabelProjection ? ', { displayLabel: true }' : ''});`;
+  );`;
 
   const getHandler = hasGet
     ? `
@@ -3805,10 +3840,24 @@ function generateActionRouteTemplate(
       if (decoder) decoderImports.add(decoder);
     }
   }
+  const readsItemScope = routeSpecs.some(
+    (spec) =>
+      spec.routeConfig.method === 'GET' &&
+      spec.hostType !== 'collection' &&
+      spec.routeConfig.scope !== 'collection',
+  );
+  const readsOptionsScope = routeSpecs.some(
+    (spec) =>
+      (spec.hostType === 'collection' ||
+        spec.routeConfig.scope === 'collection') &&
+      receivesTenantReadOptions(spec.actionDef, spec.routeConfig),
+  );
   const coreImports = [
     'normalizeCustomActionFailure',
     'normalizeTypedHttpError',
     'reportUnexpectedHttpError',
+    ...(readsItemScope ? ['resolveAnonymousTenantReadScope'] : []),
+    ...(readsOptionsScope ? ['resolveTenantReadOptionsScope'] : []),
     ...[...decoderImports].sort(),
   ].join(', ');
   const usesCollection =
@@ -3879,6 +3928,7 @@ function generateActionRouteTemplate(
               semanticManifest,
             )
           : undefined,
+        readScopeModelName(spec.lookupObjectDef, spec.lookupClassName),
       ),
     )
     .join('\n');
@@ -3897,7 +3947,7 @@ ${generateAuthGuardHelper(
     isCollectionManifestClass(semanticManifest, objectDef)
     ? firstSpec.lookupObjectDef
     : objectDef,
-)}${needsTenantContext ? generateTenantContextHelper(principalContext, tenantScoped) : ''}
+)}${needsTenantContext ? generateTenantContextHelper(principalContext, tenantScoped && readsOptionsScope) : ''}
 ${generateTypedRouteErrorHelper()}
 ${handlers}`;
 }
@@ -3914,6 +3964,7 @@ function generateActionRouteHandler(
   hostTypeName: string,
   permissionAction?: string,
   collectionRegistryKey = lookupClassName,
+  readScopeModel = lookupClassName,
 ): string {
   const successResponse = `  return json({
     action: '${actionName}',
@@ -3959,6 +4010,7 @@ function generateActionRouteHandler(
     const scopedOptions = buildScopedOptionsForTenantRead(
       actionDef,
       routeConfig,
+      readScopeModel,
       tenantScoped,
     );
     const invocationArgs = buildActionInvocationArgs(
@@ -4008,6 +4060,7 @@ ${successResponse}
     const scopedOptions = buildScopedOptionsForTenantRead(
       actionDef,
       routeConfig,
+      readScopeModel,
       tenantScoped,
     );
     const invocationArgs = buildActionInvocationArgs(
@@ -4052,8 +4105,8 @@ ${successResponse}
     false,
   );
   const scopedItemLoad =
-    tenantScoped && routeConfig.method === 'GET'
-      ? `  const readScope = tenantReadScope();
+    routeConfig.method === 'GET'
+      ? `  const readScope = resolveAnonymousTenantReadScope(${JSON.stringify(readScopeModel)});
   const item = await collection.get(
     readScope ? { id: params.id, ...readScope } : params.id,
   );`

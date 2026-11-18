@@ -51,3 +51,14 @@ excludes `packages/core/src/__tests__/**` (the fixture's own folder), which the
 `**/__tests__/**` pattern did not match at that depth, so recapture was
 impossible once the fixture existed. The file name keeps `origin-main` so the
 history stays easy to follow.
+
+## Digest updates for intended changes to generated source
+
+The comparison still pins every artifact. When a change is meant to alter
+emitted source, the digests of exactly the files it alters are replaced by
+hand with the new values, and the change is listed here. Manifest, schema,
+DDL, migration and OpenAPI digests have not moved since the recapture above.
+
+- Generated list routes (`compat_plain/+server.ts`, `compatroots/+server.ts`):
+  the list and count handlers answer a where clause the collection refuses
+  with its 400 status.
