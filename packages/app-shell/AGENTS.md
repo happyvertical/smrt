@@ -6,6 +6,8 @@ for one person: the owner. Epic #4867; this package is #4872. The engine is
 documented in [shared engine](agents/engine.md) (it must not import
 SvelteKit or `src/lib`). README has the route and JSON contracts.
 
+Workbook workflow ownership, upload limits, proof and recovery: [imports](agents/imports.md).
+
 Shared assistant adapters and legacy approval storage: [agents/shared-pieces.md](agents/shared-pieces.md).
 
 ## Where things live

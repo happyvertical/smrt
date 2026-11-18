@@ -50,6 +50,7 @@ const hello = $derived(greeting(data.session.user));
     {#if models.length === 0}
       <div class="smrt-app-shell__empty" data-smrt-part="empty">
         <p><strong>Your app is empty</strong></p>
+        <a class="smrt-app-shell__btn smrt-app-shell__btn-primary" href="/import" data-smrt-part="trigger">Import a workbook</a>
         <p class="smrt-app-shell__muted" data-smrt-part="description">
           Ask the assistant to build something, for example “track my chores
           with a due date and who does them”. Your menu and forms appear here as

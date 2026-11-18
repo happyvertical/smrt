@@ -82,3 +82,8 @@ The template reference application exercises the generic dock selector, a real
 trusted browser approval click, authenticated confirmation and generated reads,
 detail execution, and the recipe-registered overview loader/renderer without
 mocking an endpoint.
+
+`ReportResult.formatCell` also formats money measures in charts and headline
+figures, so per-field currency and precision apply to the complete report. Other
+measures keep standard grouping, rounded averages and compact axis labels.
+`reportFigures` accepts optional `formatValue(value)` for the same purpose.

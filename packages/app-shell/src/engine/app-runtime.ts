@@ -935,6 +935,55 @@ export class AppRuntime {
     return out;
   }
 
+  /** Read stored values without losing unsafe integers through driver coercion. */
+  async readStoredRows(
+    model: string,
+    fields: string[],
+    order: string,
+    sourceRows?: number[],
+  ): Promise<Row[]> {
+    const md = this.modelDef(model);
+    if (md.extends)
+      throw new AppError('Stored read-back requires an app-owned model.');
+    if (
+      fields.length > 202 ||
+      !fields.every((f) => Object.hasOwn(md.fields, f)) ||
+      !Object.hasOwn(md.fields, order)
+    )
+      throw new AppError('Unknown read-back field.');
+    if (
+      sourceRows &&
+      (sourceRows.length > 10000 ||
+        sourceRows.some((n) => !Number.isSafeInteger(n) || n < 1))
+    )
+      throw new AppError('Invalid source rows.');
+    if (sourceRows?.length === 0) return [];
+    const select = fields
+      .map((f) => {
+        const column = q(snake(f));
+        return `CASE WHEN typeof(${column}) = 'integer' AND (${column} > 9007199254740991 OR ${column} < -9007199254740991) THEN CAST(${column} AS TEXT) ELSE ${column} END AS ${q(f)}`;
+      })
+      .join(', ');
+    const where = sourceRows
+      ? ` WHERE ${q(snake(order))} IN (${sourceRows.map(() => '?').join(', ')})`
+      : '';
+    const rows = (
+      await this.db.query(
+        `SELECT ${select} FROM ${q(tableFor(model, md))}${where} ORDER BY ${q(snake(order))}, id LIMIT 10001`,
+        sourceRows ?? [],
+      )
+    ).rows as Row[];
+    for (const row of rows)
+      for (const f of fields)
+        if (
+          ['integer', 'money'].includes(md.fields[f].type) &&
+          typeof row[f] === 'string' &&
+          /^-?\d+$/.test(row[f] as string)
+        )
+          row[f] = BigInt(row[f] as string);
+    return rows;
+  }
+
   async list(model: string, limit = 200): Promise<Row[]> {
     const rows = await (await this.collection(model)).list({
       limit,

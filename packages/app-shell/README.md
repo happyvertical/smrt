@@ -604,3 +604,56 @@ requires live approval. Plan lists reference counts per model. Undo restores
 exact rows and references, refusing reused deleted ids. Bounds: 1–1000 merged
 ids. Draft publish recomputes against current live references. Catalog:
 `app_mergerecords`. Calculated fields cannot be selected as writable values.
+
+## Import a workbook
+
+Choose **Import workbook** in the user menu or **Import a workbook** on an empty
+Home, or **From a spreadsheet** on Welcome. Drop an `.xlsx` file (up to 25 MB),
+or use the file picker. Connect your chosen assistant engine in Settings and
+keep AI usage persistence enabled first.
+The provisional 250,000-cell ceiling can be changed in **Settings → Import**
+(1,000 to 2,000,000 cells). Larger or complex workbooks should be split up.
+
+Planning uses the engine chosen in **Settings → Assistant**: API key, Sign in
+with ChatGPT, Claude Code or Codex. It runs as a private child turn with no app
+tools; reported usage counts toward the import budget, and calls without usage
+are recorded as uncosted. The model returns a plan; only the workflow's checked
+load can change the draft.
+
+The `app-shell.import` background workflow proposes a plan from bounded workbook
+facts, checks it, loads a fresh draft and proves row counts, source column sums
+and calculated fields against cached workbook values. Progress shows Reading,
+Planning, Checking, Loading and Proving. Stop saves resumable work; Cancel ends
+it. Interrupted work resumes on startup. A budget stop offers a bounded Resume.
+Planning shows elapsed time; completed stages remain visible between polls.
+An engine failure names the engine and links to Assistant settings. **Try again**
+reuses the private upload with a new workflow run, including after a restart.
+A refused plan explains where the assistant stumbled and offers the same saved-file
+retry, without sending you to settings. Workbook problems show their findings
+instead. Cancel/discard removes the file.
+
+The same page shows each table's rows read/skipped/loaded, typed fields and
+source columns, links, choices, calculations, reports, findings with sheet/cell
+examples and totals proof. **Formulas not translated** lists source formulas
+kept as saved values; those fields do not recalculate. **Review and publish** opens the existing draft
+review; only its normal publish approval can change live data. **Discard import**
+removes the draft and stored workbook. Failed proof also removes its draft.
+Use the Live/Draft switch and open a table to inspect its records before publishing.
+Models keep readable names such as `Customers` and `Orders`; plan fields become
+camelCase (`orderNo`, `unitPrice`, `qty`). Name collisions use numeric suffixes,
+with the resolved names retained in `plan.engineNames`. Hidden `workbookRow` and
+`workbookLookup` fields support proof and links. Calculations use field labels in
+review and History. Year and identifier checks remain in the proof without being
+presented as useful totals.
+Only one draft/import may be open. Importing into existing tables, saved mappings,
+re-import and export are not included.
+
+The API accepts a raw binary workbook at `POST /api/shell/import`, returning
+`202 { id: <workflow run id> }`. `GET` returns `{ import: <current state> | null }`;
+The state includes a machine-readable `reason` (`engine`, `plan`, `workbook`, `budget`,
+`paused`, `app`, or null) and timestamped `progress` stages.
+`POST /api/shell/import/stop|resume|retry|cancel|discard` controls it. All are owner-only;
+writes check the same origin. The adapter-node build's entry wrapper defaults
+`BODY_SIZE_LIMIT` to 25 MiB before loading its handler (also for desktop starts).
+Operators may supply a lower ceiling. No listening service is added.
+See [import invariants](agents/imports.md) for ownership, recovery and validation.

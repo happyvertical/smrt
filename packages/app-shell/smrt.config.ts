@@ -3,6 +3,7 @@ export default {
   consumer: {
     packages: [
       '@happyvertical/smrt-inference',
+      '@happyvertical/smrt-jobs',
       '@happyvertical/smrt-preferences',
       '@happyvertical/smrt-profiles',
       '@happyvertical/smrt-secrets',

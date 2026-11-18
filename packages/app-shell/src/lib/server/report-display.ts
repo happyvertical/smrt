@@ -10,6 +10,15 @@ export function reportFailure(
   definition?: AppDefinition,
   report?: ReportDef,
 ): HttpError {
+  if (
+    error instanceof RuntimeReportError &&
+    error.code === 'invalid_spec' &&
+    /^spec\.(dimensions|measures)\[\d+\]\.as$/.test(error.path)
+  )
+    return new HttpError(
+      400,
+      'Give each report result a different name using lowercase words separated by underscores, or omit the result names. Keep the app’s source field names unchanged.',
+    );
   if (error instanceof RuntimeReportError && error.code === 'invalid_result') {
     const measure = report?.spec.measures.find((m) => m.as === error.path);
     const model = report && definition?.models[report.spec.source];

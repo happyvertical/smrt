@@ -8,6 +8,7 @@ export const WORKER_OPS = [
   'compileReport',
   'runReport',
   'list',
+  'readStoredRows',
   'get',
   'create',
   'update',

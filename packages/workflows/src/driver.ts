@@ -8,6 +8,7 @@ import {
   AiRunResumeRefusedError,
   AiRunStoppedError,
   type AiRunStopReason,
+  aiRunActiveTime,
   appendAiRunEvent,
   cancelAiRun,
   finishAiRun,
@@ -18,6 +19,7 @@ import {
   startAiRunStep,
   stopAiRun,
   type TrackedAiClient,
+  transitionAiRun,
   waitAiRunApproval,
   withAiRunTransaction,
 } from '@happyvertical/smrt-core';
@@ -45,7 +47,21 @@ import {
   type WorkflowStep,
   type WorkflowStepCheck,
   type WorkflowStepContext,
+  type WorkflowValidationIssue,
 } from './types.js';
+
+/** Persist only known diagnostic fields, with a fixed upper bound. */
+const boundedIssues = (issues: readonly WorkflowValidationIssue[]) => {
+  const bounded = issues.slice(0, 20).map((issue) => ({
+    code: issue.code.slice(0, 80),
+    path: issue.path.slice(0, 300),
+    message: issue.message.slice(0, 1000),
+  }));
+  // Leave room for the note and event envelope under core's 16 KiB payload cap.
+  while (new TextEncoder().encode(JSON.stringify(bounded)).byteLength > 8192)
+    bounded.pop();
+  return bounded;
+};
 
 /** A step's output could not be read as the step's JSON (a repairable attempt). */
 export class WorkflowOutputError extends Error {
@@ -65,7 +81,10 @@ export interface WorkflowRunDriverOptions {
   ai: TrackedAiClient;
   definition: WorkflowDefinition;
   /** The host's full JSON Schema validator (Ajv or equal); errors, or none. */
-  validate(schema: Record<string, unknown>, output: unknown): readonly string[];
+  validate(
+    schema: Record<string, unknown>,
+    output: unknown,
+  ): readonly (string | WorkflowValidationIssue)[];
   /** Resolve input passed by reference (`inputRef`). */
   readInput?(
     ref: string,
@@ -629,11 +648,49 @@ export function createWorkflowRunDriver(options: WorkflowRunDriverOptions) {
               }
             }
             if (!errors.length) {
-              errors = [...options.validate(step.schema, output)];
+              const issues = options.validate(step.schema, output);
+              const diagnostics = boundedIssues(
+                issues.filter(
+                  (issue): issue is WorkflowValidationIssue =>
+                    typeof issue !== 'string',
+                ),
+              );
+              errors = issues.slice(0, 20).map((issue) =>
+                typeof issue === 'string'
+                  ? issue
+                  : JSON.stringify({
+                      ...boundedIssues([issue])[0],
+                      ...(issue.repair
+                        ? { repair: issue.repair.slice(0, 4000) }
+                        : {}),
+                    }),
+              );
+              if (diagnostics.length)
+                await appendAiRunEvent(
+                  db,
+                  runId,
+                  {
+                    type: 'check',
+                    status: 'failed',
+                    stepIndex: state.stepIndex,
+                    name: step.name,
+                    parentEventId: await judgedEvent(
+                      runId,
+                      before,
+                      state.stepIndex,
+                    ),
+                    payload: { diagnostics },
+                  },
+                  fenced,
+                );
             }
             if (errors.length) {
               const retries = loaded.run.budget.repairRetries ?? 0;
               if (state.repairs >= retries) {
+                await persist({
+                  ...state,
+                  invalid: { output: output ?? null, errors },
+                });
                 await fail('repairs_exhausted');
                 break;
               }
@@ -690,6 +747,65 @@ export function createWorkflowRunDriver(options: WorkflowRunDriverOptions) {
           const result: WorkflowStepCheck = step.check
             ? await step.check(pending.output, {
                 ...base,
+                assertActive: async () => {
+                  controller.signal.throwIfAborted();
+                  const checked = await queue(() =>
+                    withAiRunTransaction(
+                      db,
+                      async (tx) => {
+                        if (fence) {
+                          try {
+                            if ((await fence(tx.db, runId)) === false)
+                              throw new AiRunClaimLostError(runId);
+                          } catch (error) {
+                            if (
+                              error instanceof Error &&
+                              error.name === 'JobClaimLostError'
+                            )
+                              throw new AiRunClaimLostError(runId, error);
+                            throw error;
+                          }
+                        }
+                        const current = await getAiRun(tx.db, runId);
+                        if (
+                          current?.status === 'running' &&
+                          current.budget.maxDurationMs !== undefined
+                        ) {
+                          const used = aiRunActiveTime(current, tx.now);
+                          if (used >= current.budget.maxDurationMs)
+                            return transitionAiRun(
+                              tx.db,
+                              runId,
+                              {
+                                from: 'running',
+                                to: 'stopped',
+                                stopReason: 'max_duration',
+                                stoppedByRunId: runId,
+                                stopDetail: {
+                                  limit: 'maxDurationMs',
+                                  runId,
+                                  limitValue: current.budget.maxDurationMs,
+                                  used,
+                                  room: current.budget.maxDurationMs - used,
+                                },
+                              },
+                              fenced,
+                            );
+                        }
+                        return current;
+                      },
+                      { now },
+                    ),
+                  );
+                  // Throw after the accounting transaction commits a duration stop.
+                  if (!checked || checked.status !== 'running')
+                    throw new AiRunStoppedError({
+                      runId,
+                      status: checked?.status ?? 'stopped',
+                      stopReason: checked?.stopReason ?? 'interrupted',
+                      stoppedByRunId: checked?.stoppedByRunId ?? null,
+                    });
+                },
                 approval,
                 approvals: state.approvals ?? 0,
               })
@@ -712,10 +828,13 @@ export function createWorkflowRunDriver(options: WorkflowRunDriverOptions) {
                 parentEventId: pending.judgedEventId,
                 stepIndex: state.stepIndex,
                 name: step.name,
-                ...(result.note || result.failure
+                ...(result.note || result.failure || result.diagnostics?.length
                   ? {
                       payload: {
                         ...(result.note ? { note: result.note } : {}),
+                        ...(result.diagnostics?.length
+                          ? { diagnostics: boundedIssues(result.diagnostics) }
+                          : {}),
                         ...(result.failure ? { failure: result.failure } : {}),
                       },
                     }

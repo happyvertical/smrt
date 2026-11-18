@@ -49,4 +49,5 @@ export {
   type WorkflowStepCheck,
   type WorkflowStepContext,
   type WorkflowStepExecute,
+  type WorkflowValidationIssue,
 } from './types.js';

@@ -100,3 +100,22 @@ describe('line chart sizes and exploring', () => {
     expect(document.querySelector('.smrt-chart__tip')).toBeNull();
   });
 });
+
+it('uses the host value formatter in chart readouts and axes', () => {
+  render(Chart, {
+    title: 'Amounts',
+    style: 'line',
+    size: 'tall',
+    data: {
+      points: [
+        { label: 'First', value: 1234 },
+        { label: 'Second', value: 2468 },
+      ],
+      format: 'money',
+    },
+    formatValue: (value: number) => `${(value / 1000).toFixed(3)} CAD`,
+  });
+  expect(screen.getAllByText('2.468 CAD').length).toBeGreaterThan(0);
+  expect(document.body.textContent).toContain('0.000 CAD');
+  expect(document.body.textContent).not.toContain('$');
+});

@@ -110,7 +110,7 @@ onMount(() => {
     <Button href="/" variant="secondary">Back to app</Button>
   {:else}
     {#if error}<p class="smrt-app-shell__alert smrt-app-shell__alert-error" role="alert">{error}</p>{/if}
-    {#if busy}<p role="status">Working…</p>{/if}
+    {#if busy}<p role="status">Working… Reviewing and publishing a large import can each take a while.</p>{/if}
     {#if preview}<PublishPreview {preview} />{/if}
     {#if reviewAgain}
       <p>Review the latest draft before trying again.</p>

@@ -415,7 +415,7 @@ describe('the user menu', () => {
     expect(q('[data-smrt-part="trigger-badge"]')).toBeNull();
   });
 
-  it('lists Approvals, History, Theme, Settings, then Sign out', async () => {
+  it('lists Approvals, History, Import, Theme, Settings, then Sign out', async () => {
     await render();
     trigger()?.click();
     await tick();
@@ -424,13 +424,15 @@ describe('the user menu', () => {
     ).toEqual([
       'Approvals2',
       'History',
+      'Import workbook',
       'Theme: Light',
       'Settings',
       'Sign out',
     ]);
     expect(menuItems()[0]?.getAttribute('href')).toBe('/approvals');
     expect(menuItems()[1]?.getAttribute('href')).toBe('/history');
-    expect(menuItems()[3]?.getAttribute('href')).toBe('/settings');
+    expect(menuItems()[2]?.getAttribute('href')).toBe('/import');
+    expect(menuItems()[4]?.getAttribute('href')).toBe('/settings');
   });
 
   it('opens upward from the footer', async () => {
@@ -498,7 +500,7 @@ describe('phone width', () => {
     expect(q('[data-smrt-part="trigger-badge"]')?.textContent).toBe('2');
     trigger()?.click();
     await tick();
-    expect(menuItems().length).toBe(5);
+    expect(menuItems().length).toBe(6);
   });
 
   it('has no chat tab in a plugin', async () => {

@@ -20,6 +20,8 @@ export interface Props {
   title?: string;
   /** Locale used to format displayed numeric values. */
   locale?: string;
+  /** Host-owned units/precision, used for values, tooltips and value axes. */
+  formatValue?: (value: number) => string;
   /**
    * How much room the chart takes. `compact` is a sparkline for a card (a
    * line with no axis, labels or readout); `tall` gives a page's main chart
@@ -47,6 +49,7 @@ let {
   style: requestedStyle = 'bar',
   title = '',
   locale = 'en',
+  formatValue,
   size = 'regular',
   valueAxis,
   explore,
@@ -86,6 +89,7 @@ function requestedAxis(): boolean {
   return size !== 'compact' && (valueAxis ?? size === 'tall');
 }
 const fmt = (value: number): string =>
+  formatValue?.(value) ??
   formatWidgetValue(value, {
     format: chart?.format ?? 'integer',
     currency: chart?.currency,
@@ -184,6 +188,7 @@ const compact = $derived(size === 'compact');
 const showAxis = $derived(requestedAxis());
 const explorable = $derived(!compact && (explore ?? size === 'tall'));
 const short = (value: number): string =>
+  formatValue?.(value) ??
   formatWidgetValue(value, {
     format: chart?.format ?? 'integer',
     currency: chart?.currency,

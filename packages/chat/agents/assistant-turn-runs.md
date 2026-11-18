@@ -72,3 +72,20 @@ when the turn ends a stopped or cancelled child stops the parent the same way
 closes the `handoff` with how the child ended. A step on an external engine
 is the same child run with its one engine call. Tests:
 `turn-tracking-child.test.ts`.
+
+
+### Tool-free hosts without chat storage
+
+`runWorkflowStepTurn(options: WorkflowStepTurnOptions): Promise<string>` is the
+same internal child-turn runner for a host with no chat rooms, session or HTTP
+request. Pass `tracking` with its resolved registered `prompt`, tenant-bound
+`tracked` client and required `parent: { context, stepIndex, name }`, the
+server-authorized `principal`, `selection`, `signal`, and either `ai` or
+`turnDriver`. It offers no tools, persists no chat messages and returns the raw
+answer for the workflow's schema/check. External drivers must also deny tools
+at their MCP execution boundary. Never expose this trusted API as request input.
+The existing `chatClientForTracking(ai: object)` adapter is also exported from
+the root so a host can bind its chat-only provider to core without duplicating
+the adapter. It preserves parent budget stops and claim errors rather than returning a
+synthetic chat error as plan output. Existing route and turn callers are
+unchanged. Tests: `workflow-step-turn.test.ts`.

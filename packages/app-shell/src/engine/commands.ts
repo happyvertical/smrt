@@ -19,6 +19,7 @@ export type Command =
       type: 'defineModel';
       name: string;
       label?: string;
+      titleField?: string;
       fields?: Record<string, FieldDef>;
     }
   | { type: 'addField'; model: string; field: string; definition: FieldDef }

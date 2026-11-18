@@ -27,6 +27,7 @@ export interface ReportOptions {
 export type AppReportResult = Omit<RuntimeReportResult, 'columns'> & {
   columns: (RuntimeReportResult['columns'][number] & {
     choices?: string[];
+    money?: { currency: string; scale: number };
     reference?: string;
     labelColumn?: string;
   })[];
@@ -90,6 +91,7 @@ export async function runAppReport(
   for (const column of result.columns) {
     const fd = column.field ? fields[column.field] : undefined;
     if (!fd) continue;
+    if (column.format === 'money' && fd.money) column.money = { ...fd.money };
     if (fd.choices) column.choices = fd.choices;
     if (column.role !== 'dimension' || fd.type !== 'reference' || !fd.ref)
       continue;

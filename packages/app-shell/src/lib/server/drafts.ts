@@ -108,6 +108,7 @@ function realOf(path: string): string {
 
 /** Why the open draft cannot be published, or null. */
 function unpublishable(slot: DraftSlot, live: AppHost): string | null {
+  if (slot.hold) return slot.hold;
   if (!slot.host) return slot.problem ?? 'the draft copy is not open';
   const marker = slot.host.draft;
   if (!marker) return 'the draft copy is not marked as a draft';
@@ -153,7 +154,12 @@ export async function draftInfo(): Promise<DraftInfo | null> {
 }
 
 /** Start a draft. Live structure is frozen from here until it is published or discarded. */
-export function startDraft(name: unknown, ownerId: string): Promise<DraftInfo> {
+export function startDraft(
+  name: unknown,
+  ownerId: string,
+  beforeFork?: (id: string) => Promise<void>,
+  hold?: string,
+): Promise<DraftInfo> {
   return exclusive(async () => {
     const live = await getHost();
     const open = await getDraftSlot();
@@ -181,6 +187,7 @@ export function startDraft(name: unknown, ownerId: string): Promise<DraftInfo> {
     live.setFrozen(true);
     let host: AppHost | null = null;
     try {
+      await beforeFork?.(id);
       host = await live.forkDraft(dir, {
         store: new DraftVersionStore(db, id),
       });
@@ -202,7 +209,7 @@ export function startDraft(name: unknown, ownerId: string): Promise<DraftInfo> {
       throw e;
     }
     wireHostEvents(host, 'draft');
-    setDraftSlot({ id, name: row.name, dir, host, problem: null });
+    setDraftSlot({ id, name: row.name, dir, host, problem: null, hold });
     publish({ type: 'draft', status: 'started', id, name: row.name });
     return (await draftInfo()) as DraftInfo;
   });
