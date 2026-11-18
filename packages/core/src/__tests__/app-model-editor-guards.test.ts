@@ -742,3 +742,105 @@ describe('app model editor: storage identifier length', () => {
     ).toBe(true);
   });
 });
+
+describe('app model editor: reserved field names', () => {
+  let restore: () => void;
+  let db: Awaited<ReturnType<typeof getDatabase>>;
+  beforeEach(async () => {
+    restore = snapshotObjectRegistryState();
+    ObjectRegistry.clear();
+    globalThis.__smrtModelReadiness?.clear();
+    db = await getTestDatabase({
+      type: databaseType,
+      classes: [],
+      includeSystemTables: false,
+    });
+    registerMember();
+    enableTenancy();
+    await migrateSmrtSchemas({ db, packageName: APP, engineHint: engine });
+  });
+  afterEach(async () => {
+    setRuntimeExposureGate(undefined);
+    globalThis.__smrtModelReadiness?.clear();
+    disableTenancy();
+    await db.close?.();
+    restore();
+  });
+  const editorFor = () =>
+    createAppModelEditor({
+      db,
+      application: 'editor-guards-reserved',
+      tenantId: TENANT,
+      packageName: APP,
+      cookbook: memberBook(),
+      catalog: memberCatalog,
+      authorize: (c) => c.actor === 'owner',
+    });
+  const applier =
+    (e: Awaited<ReturnType<typeof editorFor>>) => (value: AppModelEdit) =>
+      e.apply(value, {
+        actor: 'owner',
+        tenantId: TENANT,
+        expectedRevision: e.snapshot().revision,
+        requestId: `req-${crypto.randomUUID()}`,
+      });
+
+  it('refuses constructor options and instance members as custom field names', async () => {
+    const e = await editorFor();
+    const apply = applier(e);
+    for (const name of ['options', 'db', 'ai', 'signals', 'persistence'])
+      await expect(
+        apply({
+          type: 'add_field',
+          model: MEMBER,
+          name,
+          field: { type: 'choice', choices: ['red', 'blue'] },
+        }),
+        name,
+      ).rejects.toThrow(/FIELD_NAME_RESERVED/);
+    await expect(
+      apply({
+        type: 'create_list',
+        name: 'GuardMat',
+        list: {
+          ...mats,
+          fields: { ...mats.fields, options: { type: 'text' } },
+        },
+      }),
+    ).rejects.toThrow(/FIELD_NAME_RESERVED: options/);
+    // Prototype members stay refused, and ordinary names still work.
+    await expect(
+      apply({
+        type: 'add_field',
+        model: MEMBER,
+        name: 'loadRelated',
+        field: { type: 'text' },
+      }),
+    ).rejects.toThrow(/FIELD_NAME_RESERVED/);
+    await apply({
+      type: 'add_field',
+      model: MEMBER,
+      name: 'optionsNote',
+      field: { type: 'text' },
+    });
+    expect(await e.history()).toHaveLength(1);
+  });
+
+  it('the assistant derives a safe name from a reserved label', async () => {
+    const e = await editorFor();
+    const planned = planAppEdit(
+      'app.addField',
+      {
+        list: MEMBER,
+        label: 'Options',
+        kind: 'choice',
+        options: ['red', 'blue'],
+        expectedRevision: 0,
+      },
+      e.snapshot(),
+      memberCatalog,
+    );
+    expect((planned.edit as { name: string }).name).toBe('customOptions');
+    await applier(e)(planned.edit);
+  });
+});

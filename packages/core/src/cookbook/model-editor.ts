@@ -59,6 +59,7 @@ import {
   storageIdentifierProblems,
   validateCookbookModels,
 } from './models.js';
+import { isReservedFieldName } from './reserved-names.js';
 import { validateCookbook } from './validate.js';
 
 export type AppModelEdit = (
@@ -487,6 +488,19 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
       for (const [name, field] of Object.entries(entry.fields)) {
         if (!isCustomIdentifier(name) || modelProtected.has(name))
           throw new Error(`FIELD_NAME_RESERVED: ${name}`);
+        // Constructor options and instance members (`options`, `db`, `ai`, …)
+        // are not on the prototype. A new field, or its money companion, must
+        // not take one; a field the journal already holds stays accepted.
+        if (
+          !(entry.archived && Object.hasOwn(entry.archived, name)) &&
+          [name, ...(field.type === 'money' ? [`${name}Currency`] : [])].some(
+            (column) =>
+              isReservedFieldName(column) || modelProtected.has(column),
+          )
+        )
+          throw new Error(
+            `FIELD_NAME_RESERVED: ${name} is used by the object runtime; choose another field name`,
+          );
         for (const columnName of [
           name,
           ...(field.type === 'money' ? [`${name}Currency`] : []),
@@ -1106,7 +1120,7 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
           }
           break;
         case 'add_field': {
-          if (!isCustomIdentifier(edit.name))
+          if (!isCustomIdentifier(edit.name) || isReservedFieldName(edit.name))
             throw new Error(
               `FIELD_NAME_RESERVED: ${edit.name}; choose a descriptive name such as sortOrder, groupName, fromDate or toDate (unquoted SDK columns, sdk#1513)`,
             );

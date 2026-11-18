@@ -100,6 +100,13 @@ check is still accepted, and an applied journal reopens without DDL; on
 PostgreSQL an edit that would migrate a table holding such a truncated column
 is refused with `MODEL_IDENTIFIER_TOO_LONG` while every other model stays
 editable.
+Reserved field names live in one place, `src/cookbook/reserved-names.ts`:
+JS/SQL/framework column names, every `SmrtClassOptions`/`SmrtObjectOptions`
+key (constructor input mixes options with field values) and every own instance
+property of a constructed `SmrtObject` (`options`, …). A new field, or its money
+companion, may not take one, nor a prototype member of its model; a field the
+journal already holds stays accepted. The app tools prefix a reserved label's
+derived name (`Options` → `customOptions`).
 Names use bounded ASCII camel/Pascal identifiers. Reserved JS/framework/SQL
 names, inherited fields/methods, duplicate storage names, table/model
 collisions and disabled reference targets fail before history mutation.

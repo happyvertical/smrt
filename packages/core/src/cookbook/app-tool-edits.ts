@@ -15,6 +15,7 @@ import {
   isCustomIdentifier,
   storageColumns,
 } from './models.js';
+import { isReservedFieldName } from './reserved-names.js';
 import type { CookbookToolOptions, CookbookToolResult } from './tools.js';
 
 /** Clarification and collisions are data the assistant/client can render without parsing prose. */
@@ -179,7 +180,10 @@ function identifier(label: string, model = false, money = false): string {
     name = `${model ? 'List' : 'Field'}${name || createHash('sha256').update(label).digest('hex').slice(0, 10)}`;
   if (!model) name = name[0].toLowerCase() + name.slice(1);
   name = name.slice(0, 56);
-  if (!isCustomIdentifier(name as unknown, model))
+  if (
+    !isCustomIdentifier(name as unknown, model) ||
+    (!model && isReservedFieldName(name))
+  )
     name = `${model ? 'Custom' : 'custom'}${name[0].toUpperCase()}${name.slice(1)}`;
   const fits = (value: string) =>
     model

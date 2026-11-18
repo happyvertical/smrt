@@ -5,6 +5,7 @@ import type {
 } from '@happyvertical/smrt-types';
 import { runtimeListTableName } from '../runtime-list-table.js';
 import { toSnakeCase } from '../utils/naming.js';
+import { RESERVED_IDENTIFIERS } from './reserved-names.js';
 
 export const CUSTOM_FIELD_TYPES = [
   'text',
@@ -18,11 +19,7 @@ export const CUSTOM_FIELD_TYPES = [
   'choice',
   'reference',
 ] as const;
-const RESERVED = new Set(
-  '__proto__ prototype constructor id slug context tenantId displayLabel createdAt updatedAt metaType metaData _meta_type _meta_data abstract arguments await boolean break byte case catch char class const continue debugger default delete do double else enum eval export extends false final finally float for function goto if implements import in instanceof int interface let long native new null package private protected public return short static super switch synchronized this throw throws transient true try typeof var void volatile while with yield save initialize toJSON toPublicJSON then select from to where table column group order insert update values join limit offset drop alter create index primary foreign key references'.split(
-    ' ',
-  ),
-);
+const RESERVED = new Set(RESERVED_IDENTIFIERS);
 export const CUSTOM_MODEL_NAME = '^[A-Z][A-Za-z0-9]{0,63}$';
 export const CUSTOM_FIELD_NAME = '^[a-z][A-Za-z0-9]{0,63}$';
 export const CUSTOM_PACKAGE_NAME = '^@[a-z0-9][a-z0-9-]*/[a-z0-9][a-z0-9-]*$';
