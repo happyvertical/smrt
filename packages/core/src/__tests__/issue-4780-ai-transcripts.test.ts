@@ -48,7 +48,7 @@ const KEY = 'sk-proj-ABCDEFGHIJKLMNOPQRSTUVWX0123';
 const BASE_AI = { provider: 'openai', apiKey: KEY, model: 'base-model' };
 const DAY = 86_400_000;
 
-class Probe extends SmrtClass {
+class TranscriptProbe extends SmrtClass {
   async init() {
     await this.initialize();
     return this;
@@ -180,7 +180,7 @@ describe('AI call transcripts (#4780)', () => {
   }
 
   const probe = async (tenantId?: string) => {
-    const instance = new Probe({
+    const instance = new TranscriptProbe({
       ai: BASE_AI,
       db,
       ...(tenantId ? { tenantId } : {}),
@@ -223,7 +223,7 @@ describe('AI call transcripts (#4780)', () => {
     });
 
     it('ignores an instance inference option: app level only', async () => {
-      const instance = new Probe({
+      const instance = new TranscriptProbe({
         ai: BASE_AI,
         db,
         inference: { transcripts: { enabled: true, sample: 1 } },
@@ -310,7 +310,7 @@ describe('AI call transcripts (#4780)', () => {
 
     it('sees substitutions before a slow caller onUsage settles', async () => {
       enable();
-      const instance = new Probe({
+      const instance = new TranscriptProbe({
         ai: {
           ...BASE_AI,
           // A caller callback that settles after the call has resolved.
