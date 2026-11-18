@@ -1265,6 +1265,55 @@ jobs:
           MIRROR_CONCURRENCY: '6'
         run: node scripts/mirror-release-to-npmjs.mjs
 
+  # Tell HappyVertical Work about the release so Garrula can draft a social
+  # post (#5123). The whole family publishes under one version, so this sends
+  # ONE `package-publish` event for the release (package `smrt`), not one per
+  # package; its changelog is the release's squash-merge subjects. It needs only
+  # a read-only token, runs outside the `release` environment, and never fails
+  # the workflow: a missing WORK_RELEASE_EVENT_SECRET skips with a notice and a
+  # failed POST warns.
+  notify-work:
+    name: Notify Work of Release
+    needs: [prepare-release, publish-release, publish-window]
+    if: |
+      github.ref == 'refs/heads/main' &&
+      always() && !cancelled() &&
+      needs.prepare-release.outputs.should-publish == 'true' &&
+      (needs.publish-release.result == 'success' || needs.publish-window.result == 'success')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    continue-on-error: true
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ env.CHECKOUT_REF }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Send release event to Work
+        env:
+          WORK_RELEASE_EVENT_SECRET: ${{ secrets.WORK_RELEASE_EVENT_SECRET }}
+          WORK_RELEASE_EVENT_URL: ${{ vars.WORK_RELEASE_EVENT_URL }}
+          RELEASE_VERSION: ${{ needs.prepare-release.outputs.version }}
+          PREVIOUS_VERSION: ${{ needs.prepare-release.outputs.previous-version }}
+        run: |
+          git fetch --tags --quiet || true
+          range=""
+          if git rev-parse -q --verify "refs/tags/v$RELEASE_VERSION" >/dev/null &&
+            git rev-parse -q --verify "refs/tags/v$PREVIOUS_VERSION" >/dev/null; then
+            range="v$PREVIOUS_VERSION..v$RELEASE_VERSION"
+          fi
+          node scripts/send-work-release-event.mjs package-publish \
+            --package smrt \
+            --version "$RELEASE_VERSION" \
+            --repo "$GITHUB_REPOSITORY" \
+            --release-url "https://github.com/$GITHUB_REPOSITORY/releases/tag/v$RELEASE_VERSION" \
+            --summary "SMRT v$RELEASE_VERSION: every @happyvertical/smrt-* package released together." \
+            --git-range "$range"
+
   # Note: Downstream dependency updates are handled by Renovate CE.
   # When SMRT publishes, Renovate detects the new version and creates
   # PRs in downstream repos (praeco, caelus, etc.) automatically.

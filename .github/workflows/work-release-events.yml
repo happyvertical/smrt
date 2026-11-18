@@ -1,0 +1,35 @@
+name: Work Release Events
+
+# Tells HappyVertical Work about merged pull requests so Garrula can draft
+# social posts (#5123). Releases are announced from publish.yml. A missing
+# WORK_RELEASE_EVENT_SECRET (forks never receive it) skips with a notice; this
+# workflow never fails a merge. `pull_request`, not `pull_request_target`
+# (#4881): the PR title is read from the event file, never interpolated.
+on:
+  pull_request:
+    branches: [main]
+    types: [closed]
+
+permissions:
+  contents: read
+
+jobs:
+  merged-pr:
+    name: Notify Work of Merged PR
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    continue-on-error: true
+    steps:
+      # The sender is read from the base branch, never from the PR head.
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          persist-credentials: false
+
+      - name: Send merged-pr event to Work
+        env:
+          WORK_RELEASE_EVENT_SECRET: ${{ secrets.WORK_RELEASE_EVENT_SECRET }}
+          WORK_RELEASE_EVENT_URL: ${{ vars.WORK_RELEASE_EVENT_URL }}
+        run: node scripts/send-work-release-event.mjs merged-pr --event "$GITHUB_EVENT_PATH"

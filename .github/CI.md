@@ -817,3 +817,22 @@ If the fleet lane is ever selected again, re-check the other direction: the cap
 should resolve to 2, and the two affected matrices can now overlap for up to
 four slots. If that pushes fleet queue wait back up, reinstate the chain rather
 than lowering the hosted cap.
+
+## Work release events
+
+Releases and merged pull requests are announced to HappyVertical Work
+(`POST https://work.happyvertical.com/api/public/release-events`, HMAC-SHA256
+signed) so Garrula can draft social posts. Both senders use
+`scripts/send-work-release-event.mjs`.
+
+- **Release:** the `notify-work` job in `publish.yml` runs after either publish
+  job succeeds. The whole family releases under one version, so it sends **one**
+  `package-publish` event (package `smrt`, `smrt@<version>`) whose changelog is
+  the release's squash-merge subjects (`v<previous>..v<version>`), not one event
+  per package. Reruns are safe: Work dedupes on `package@version`.
+- **Merge:** `work-release-events.yml` sends a `merged-pr` event
+  (`repo#number`) for each PR merged to `main`, from the event payload.
+- **Configuration:** Actions secret `WORK_RELEASE_EVENT_SECRET` (required) and
+  optional variable `WORK_RELEASE_EVENT_URL` (defaults to the URL above). Without
+  the secret both senders skip with a notice. A failed POST warns; neither sender
+  ever fails a release or a merge, and neither prints the secret or signature.
