@@ -610,6 +610,9 @@
       "@happyvertical/smrt-messages": [
         "./packages/messages/src/index.ts"
       ],
+      "@happyvertical/smrt-messages/connect": [
+        "./packages/messages/src/connect.ts"
+      ],
       "@happyvertical/smrt-messages/playground": [
         "./packages/messages/src/playground.ts"
       ],
@@ -801,6 +804,9 @@
       ],
       "@happyvertical/smrt-secrets": [
         "./packages/secrets/src/index.ts"
+      ],
+      "@happyvertical/smrt-secrets/connect": [
+        "./packages/secrets/src/connect/index.ts"
       ],
       "@happyvertical/smrt-secrets/models": [
         "./packages/secrets/src/models/index.ts"
