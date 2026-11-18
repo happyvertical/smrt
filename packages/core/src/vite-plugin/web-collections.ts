@@ -1679,6 +1679,10 @@ function canonicalize(value: unknown): unknown {
  * emitted module and every persistence key compact.
  */
 export function computeWebManifestHash(manifest: SmartObjectManifest): string {
+  if (webManifestHashScope.depth > 0) {
+    const memoized = webManifestHashScope.hashes.get(manifest);
+    if (memoized) return memoized;
+  }
   const definitions: Record<string, unknown> = {};
   for (const entry of selectWebEtagSaltEntries(manifest)) {
     definitions[entry.collection] = buildWebCollectionDefinition(
@@ -1687,10 +1691,44 @@ export function computeWebManifestHash(manifest: SmartObjectManifest): string {
     );
   }
   const canonicalJson = JSON.stringify(canonicalize(definitions));
-  return createHash('sha256')
+  const hash = createHash('sha256')
     .update(canonicalJson)
     .digest('base64url')
     .slice(0, 16);
+  if (webManifestHashScope.depth > 0) {
+    webManifestHashScope.hashes.set(manifest, hash);
+  }
+  return hash;
+}
+
+/**
+ * Hashes computed inside {@link withMemoizedWebManifestHash}, keyed by
+ * manifest identity. Generation renders one route file per object and every
+ * template salts its ETag with the same semantic manifest's hash; without
+ * the memo each file rebuilds every web definition again.
+ */
+const webManifestHashScope = {
+  depth: 0,
+  hashes: new WeakMap<SmartObjectManifest, string>(),
+};
+
+/**
+ * Run one generation pass with {@link computeWebManifestHash} memoized by
+ * manifest identity. Manifests must not be mutated inside the pass; the memo
+ * is discarded when the outermost pass ends.
+ */
+export async function withMemoizedWebManifestHash<T>(
+  run: () => Promise<T>,
+): Promise<T> {
+  webManifestHashScope.depth += 1;
+  try {
+    return await run();
+  } finally {
+    webManifestHashScope.depth -= 1;
+    if (webManifestHashScope.depth === 0) {
+      webManifestHashScope.hashes = new WeakMap();
+    }
+  }
 }
 
 /**
@@ -1704,6 +1742,13 @@ export function generateWebModule(
     kebabRoutes?: boolean;
     ssr?: boolean;
     lazyActivation?: boolean;
+    /**
+     * The generation's shared hash, when this module's manifest is one view
+     * of a larger generated surface (a producer and a consumer hosting into
+     * one SvelteKit app). Routes, `_events` and every web module must expose
+     * the same value, or clients see a contract change on every connect.
+     */
+    manifestHash?: string;
   } = {},
 ): string {
   const definitions: Record<string, unknown> = {};
@@ -1714,7 +1759,7 @@ export function generateWebModule(
     };
   }
 
-  const manifestHash = computeWebManifestHash(manifest);
+  const manifestHash = options.manifestHash ?? computeWebManifestHash(manifest);
   const webMcpToolDefinitions = buildWebMcpToolDefinitions(manifest, options);
 
   return `

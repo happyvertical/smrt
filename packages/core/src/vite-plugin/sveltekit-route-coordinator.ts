@@ -12,6 +12,10 @@ import {
   type SvelteKitUtilityManifests,
 } from './sveltekit-generator.js';
 import { canonicalSvelteKitPath } from './sveltekit-path.js';
+import {
+  computeWebManifestHash,
+  withMemoizedWebManifestHash,
+} from './web-collections.js';
 
 export type SvelteKitRouteOwner = 'producer' | 'consumer';
 
@@ -35,6 +39,8 @@ interface RouteCoordinator {
   contributions: Map<SvelteKitRouteOwner, RouteContribution>;
   expectedOwners: Set<SvelteKitRouteOwner>;
   afterRevocation: Array<() => void | Promise<void>>;
+  /** Web-manifest hash of the last generation's merged semantic manifest. */
+  webManifestHash?: string;
 }
 
 export interface ActiveSvelteKitRouteParticipant {
@@ -347,6 +353,25 @@ export function assertSvelteKitRouteCoordinationComplete(
   }
 }
 
+/**
+ * The manifestHash of the last generation `owner` contributed to in this Vite
+ * lifecycle, computed from the merged manifest the generated routes use. Web
+ * modules emit it so routes, `_events` and `manifestHash` agree in an app
+ * where a producer and a consumer share the generated surface.
+ */
+export function coordinatedWebManifestHash(
+  lifecycle: object | undefined,
+  owner: SvelteKitRouteOwner,
+): string | undefined {
+  if (!lifecycle) return undefined;
+  for (const coordinator of coordinators.get(lifecycle)?.values() ?? []) {
+    if (coordinator.contributions.has(owner) && coordinator.webManifestHash) {
+      return coordinator.webManifestHash;
+    }
+  }
+  return undefined;
+}
+
 /** Current producer-owned knowledge handlers, which may sit outside its API root. */
 export function producerKnowledgeRoutePaths(lifecycle: object): Set<string> {
   const paths = new Set<string>();
@@ -446,6 +471,23 @@ async function generateWhenReady(
   const semanticManifest = mergeManifests(
     contributions.map(({ semanticManifest }) => semanticManifest),
   );
+  const utilities = utilityManifests(
+    contributions,
+    protectedProducerKnowledgeRoutePaths(sessions, coordinator),
+    new Set(
+      [...sessions.entries()]
+        .filter(
+          ([target, candidate]) =>
+            target !==
+              routeTarget(primary.projectRoot, primary.options.routesDir) &&
+            candidate.contributions.size > 0,
+        )
+        .map(([target]) => target),
+    ),
+  );
+  // One manifestHash per generation, from the merged view every generated
+  // route salts its ETag with: `_events` and both web modules use it too.
+  utilities.eventsSemantic = semanticManifest;
   // Validate every object's routes before generation sweeps the route tree.
   assertSvelteKitObjectRoutesValid(
     primary.projectRoot,
@@ -453,33 +495,23 @@ async function generateWhenReady(
     semanticManifest,
     options,
   );
-  await generateSvelteKitRoutes(
-    primary.projectRoot,
-    routeManifest,
-    options,
-    semanticManifest,
-    utilityManifests(
-      contributions,
-      protectedProducerKnowledgeRoutePaths(sessions, coordinator),
-      new Set(
-        [...sessions.entries()]
-          .filter(
-            ([target, candidate]) =>
-              target !==
-                routeTarget(primary.projectRoot, primary.options.routesDir) &&
-              candidate.contributions.size > 0,
-          )
-          .map(([target]) => target),
+  await withMemoizedWebManifestHash(async () => {
+    await generateSvelteKitRoutes(
+      primary.projectRoot,
+      routeManifest,
+      options,
+      semanticManifest,
+      utilities,
+      mergeManifests(
+        registrationContributions.map(
+          ({ routeManifest, semanticManifest, options }) =>
+            options.lazyActivation ? semanticManifest : routeManifest,
+        ),
       ),
-    ),
-    mergeManifests(
-      registrationContributions.map(
-        ({ routeManifest, semanticManifest, options }) =>
-          options.lazyActivation ? semanticManifest : routeManifest,
-      ),
-    ),
-    hooks,
-  );
+      hooks,
+    );
+    coordinator.webManifestHash = computeWebManifestHash(semanticManifest);
+  });
   for (const contribution of contributions) {
     await contribution.afterGenerate?.();
   }

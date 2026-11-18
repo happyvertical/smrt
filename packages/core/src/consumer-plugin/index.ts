@@ -65,6 +65,7 @@ import {
   assertNoSvelteKitRouteRootSymlinkConflict,
   assertSvelteKitRouteCoordinationComplete,
   contributeSvelteKitRoutes,
+  coordinatedWebManifestHash,
   expectedSvelteKitRouteOwners,
   markSvelteKitRouteParticipant,
   producerKnowledgeRoutePaths,
@@ -1434,6 +1435,11 @@ export function smrtConsumer(
               kebabRoutes: effectiveKebabRoutes,
               ssr: loadOptions?.ssr,
               lazyActivation: options.lazyActivation,
+              // With a coordinated route target, the generation's merged hash.
+              manifestHash: coordinatedWebManifestHash(
+                routeLifecycleConfig,
+                'consumer',
+              ),
             },
           );
 

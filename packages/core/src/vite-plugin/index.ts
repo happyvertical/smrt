@@ -100,6 +100,7 @@ import { injectSvelteKitRegistration } from './sveltekit-register-injection.js';
 import {
   assertSvelteKitRouteCoordinationComplete,
   contributeSvelteKitRoutes,
+  coordinatedWebManifestHash,
   expectedSvelteKitRouteOwners,
   markSvelteKitRouteParticipant,
 } from './sveltekit-route-coordinator.js';
@@ -108,6 +109,7 @@ import {
   generateWebModule,
   renderRecipeSurfaceDeclarations,
   selectWebCollectionEntries,
+  withMemoizedWebManifestHash,
 } from './web-collections.js';
 import { buildWorkerRegistration } from './worker-registration.js';
 
@@ -298,6 +300,9 @@ const VIRTUAL_MODULES = {
 const RESOLVED_VIRTUAL_MODULE_IDS = [
   ...Object.values(VIRTUAL_MODULES),
   'smrt:index-html',
+  // smrtConsumer()'s web module emits the coordinated manifestHash, which a
+  // producer rescan changes.
+  'smrt-consumer:web',
 ].map((id) => `\0${id}`);
 
 type WatchEventKind = 'change' | 'add' | 'unlink';
@@ -1017,7 +1022,9 @@ export function smrtPlugin(
       currentManifest,
       routeOptions,
     );
-    await generateSvelteKitRoutes(rootDir, currentManifest, routeOptions);
+    await withMemoizedWebManifestHash(() =>
+      generateSvelteKitRoutes(rootDir, currentManifest, routeOptions),
+    );
   }
 
   /**
@@ -1589,6 +1596,11 @@ export function smrtPlugin(
             ssr: loadOptions?.ssr,
             lazyActivation: svelteKit.lazyActivation,
             kebabRoutes: svelteKit.kebabRoutes ?? false,
+            // With a coordinated route target, the generation's merged hash.
+            manifestHash: coordinatedWebManifestHash(
+              routeLifecycleConfig,
+              'producer',
+            ),
           });
 
         default:
