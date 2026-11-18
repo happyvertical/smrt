@@ -2,18 +2,21 @@
 /**
  * Validation for @happyvertical/smrt-capacitor-session (#5077).
  *
- * Default: structural checks, no JDK or Android SDK needed. `--test` also
- * compiles CookieFlushPolicy with javac and runs its plain-Java test; with no
- * JDK that step is skipped locally and fails when CI is set. The Gradle compile
+ * Default: structural checks, no JDK or Android SDK needed. `--test` also runs
+ * the page watch script (res/raw/smrt_session_watch.js) against fakes in a Node
+ * vm (#5160), and compiles CookieFlushPolicy with javac and runs its plain-Java
+ * test; with no JDK that step is skipped locally and fails when CI is set. The Gradle compile
  * against Capacitor happens in the consuming app's `cap sync` + assemble.
  */
 import { execFileSync } from 'node:child_process';
+import { runInNewContext } from 'node:vm';
 import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const PKG = join(dirname(fileURLToPath(import.meta.url)), '..');
 const JAVA = 'android/src/main/java/com/happyvertical/smrt/capacitor/session';
+const WATCH = 'android/src/main/res/raw/smrt_session_watch.js';
 
 const SPEC = [
   { path: 'AGENTS.md' },
@@ -30,8 +33,12 @@ const SPEC = [
       'handleOnStop',
       'handleOnDestroy',
       'webView.getUrl()',
+      'public void checkCookies(PluginCall call)',
+      'R.raw.smrt_session_watch',
+      'onPageLoaded',
     ],
   },
+  { path: WATCH, mustContain: ['PerformanceObserver', 'checkCookies'] },
   { path: `${JAVA}/CookieFlushPolicy.java`, mustContain: ['shouldFlush'] },
   { path: 'test/CookieFlushPolicyTest.java' },
   {
@@ -58,7 +65,64 @@ if (problems.length) {
 }
 console.log('validate-plugin: structure ok');
 
+/** Run the page watch script in a fresh context with a fake shell; returns what it did. */
+function runWatch({ plugin = true, observer = true, times = 1 } = {}) {
+  const calls = { check: 0 };
+  const observers = [];
+  const window = {};
+  if (plugin) {
+    window.Capacitor = {
+      Plugins: {
+        SmrtSession: {
+          checkCookies() {
+            calls.check += 1;
+            return Promise.resolve();
+          },
+        },
+      },
+    };
+  }
+  if (observer) {
+    window.PerformanceObserver = class {
+      constructor(cb) {
+        this.cb = cb;
+        observers.push(this);
+      }
+      observe(opts) {
+        this.opts = opts;
+      }
+    };
+  }
+  const script = readFileSync(join(PKG, WATCH), 'utf8');
+  for (let i = 0; i < times; i++) runInNewContext(script, { window, Promise });
+  const emit = (...kinds) => {
+    for (const o of observers) o.cb({ getEntries: () => kinds.map((initiatorType) => ({ initiatorType })) });
+  };
+  return { calls, observers, emit };
+}
+
+function testWatchScript() {
+  const fail = (what) => {
+    throw new Error(`watch script: ${what}`);
+  };
+  const shell = runWatch({ times: 2 });
+  if (shell.observers.length !== 1) fail('installs exactly one observer per document, even when injected twice');
+  if (shell.observers[0].opts?.type !== 'resource') fail('observes resource timing entries');
+  shell.emit('img', 'script', 'link', 'css');
+  if (shell.calls.check !== 0) fail('static subresources do not nudge the plugin');
+  shell.emit('fetch');
+  if (shell.calls.check !== 1) fail('a completed fetch (fetch-set sign-in cookie) nudges the plugin');
+  shell.emit('xmlhttprequest', 'fetch', 'beacon');
+  if (shell.calls.check !== 2) fail('one nudge per observer batch');
+  shell.emit('beacon');
+  if (shell.calls.check !== 3) fail('a beacon nudges the plugin');
+  if (runWatch({ plugin: false }).observers.length !== 0) fail('outside the Capacitor shell it installs nothing');
+  if (runWatch({ observer: false }).calls.check !== 0) fail('without PerformanceObserver it is a no-op');
+  console.log('validate-plugin: watch script ok');
+}
+
 if (process.argv.includes('--test')) {
+  testWatchScript();
   const out = join(PKG, 'test/out');
   mkdirSync(out, { recursive: true });
   let hasJdk = true;
