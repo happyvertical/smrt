@@ -9,11 +9,13 @@
 // runs, whichever chunk the library build places it in (#3098).
 import '../__smrt-register__.js';
 import { field, ObjectRegistry, smrt } from '@happyvertical/smrt-core';
+import type { MailTriageAction, MailTriageResult } from '../mail-triage.js';
 import type {
   EmailOptions,
   MessageSendResult,
   SendEmailOptions,
 } from '../types';
+import type { EmailAccount } from './EmailAccount';
 import { Message } from './Message';
 
 @smrt({
@@ -123,6 +125,28 @@ export class Email extends Message {
     if (options.textBody && !options.body) {
       this.body = options.textBody;
     }
+  }
+
+  /**
+   * Triage this message on the mail server and locally (see
+   * `EmailAccount.triage`). The stored row is updated when the server accepts
+   * the change (re-read it to see the new state; this instance is not
+   * mutated). Throws when the server refuses it.
+   */
+  async triage(action: MailTriageAction): Promise<MailTriageResult> {
+    if (!this.id) throw new Error('Email.triage requires a persisted email');
+    const account = (await this.getAccount()) as EmailAccount | null;
+    if (!account || typeof account.triage !== 'function') {
+      throw new Error('Email.triage requires an email account');
+    }
+    const result = await account.triage(action, [this.id]);
+    const failure = result.failed.find((f) => f.id === this.id);
+    if (failure) {
+      throw new Error(
+        `Triage '${action.kind}' refused: ${failure.code}${failure.message ? ` (${failure.message})` : ''}`,
+      );
+    }
+    return result;
   }
 
   /**
