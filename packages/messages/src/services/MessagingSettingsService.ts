@@ -719,28 +719,53 @@ export class MessagingSettingsService {
    * pins the address it connects to.
    */
   private assertAllowedTarget(configuration: Record<string, unknown>): void {
-    let host = typeof configuration.host === 'string' ? configuration.host : '';
-    let port =
-      typeof configuration.port === 'number' ? configuration.port : undefined;
-    if (!host && typeof configuration.endpoint === 'string') {
-      const url = new URL(configuration.endpoint);
-      if (url.protocol !== 'https:') throw new Error('refused');
-      host = url.hostname;
-      port ??= url.port ? Number(url.port) : 443;
+    // Every target-bearing field present is checked, so a permitted `host`
+    // cannot shelter a different `url` or `endpoint` (the JMAP provider's
+    // session URL is `url`).
+    const targets: Array<{ host: string; port: number | undefined }> = [];
+    if (typeof configuration.host === 'string' && configuration.host) {
+      targets.push({
+        host: configuration.host,
+        port:
+          typeof configuration.port === 'number'
+            ? configuration.port
+            : undefined,
+      });
     }
-    host = host.toLowerCase().replace(/^\[|\]$/g, '');
+    for (const key of ['endpoint', 'url'] as const) {
+      const value = configuration[key];
+      if (value === undefined || value === null || value === '') continue;
+      if (typeof value !== 'string') throw new Error('refused');
+      const url = new URL(value);
+      // https only, and never credentials in the URL.
+      if (url.protocol !== 'https:' || url.username || url.password) {
+        throw new Error('refused');
+      }
+      targets.push({
+        host: url.hostname,
+        port: url.port ? Number(url.port) : 443,
+      });
+    }
+    if (!targets.length) throw new Error('refused');
     const allowed = this.options.allowedMailHosts ?? [];
     const ports = this.options.allowedMailPorts ?? [
       143, 443, 465, 587, 993, 995,
     ];
-    const listed = allowed.some((entry) => {
-      const pattern = entry.toLowerCase();
-      return pattern.startsWith('*.')
-        ? host.endsWith(pattern.slice(1)) && host.length > pattern.length - 1
-        : host === pattern;
-    });
-    if (!host || !listed || isPrivateMailHost(host)) throw new Error('refused');
-    if (port !== undefined && !ports.includes(port)) throw new Error('refused');
+    for (const target of targets) {
+      const host = target.host.toLowerCase().replace(/^\[|\]$/g, '');
+      const listed = allowed.some((entry) => {
+        const pattern = entry.toLowerCase();
+        return pattern.startsWith('*.')
+          ? host.endsWith(pattern.slice(1)) && host.length > pattern.length - 1
+          : host === pattern;
+      });
+      if (!host || !listed || isPrivateMailHost(host)) {
+        throw new Error('refused');
+      }
+      if (target.port !== undefined && !ports.includes(target.port)) {
+        throw new Error('refused');
+      }
+    }
   }
 
   private assert(permission: string): void {
@@ -838,6 +863,15 @@ export class MessagingSettingsService {
     if (provider.channel !== 'email') return credentials;
     if (provider.id === 'gmail') {
       return { auth: credentials };
+    }
+    if (provider.id === 'jmap') {
+      // JMAP signs in with a bearer token or a user and password, as one
+      // `auth` value; a token must not be shadowed by an empty user/pass.
+      const { username, password, token, ...rest } = credentials;
+      if (typeof token === 'string' && token) {
+        return { ...rest, auth: { type: 'bearer', token } };
+      }
+      return { ...rest, auth: { user: username, pass: password } };
     }
     const { username, password, ...rest } = credentials;
     return {

@@ -62,7 +62,11 @@ owners and call `configureMailAccess({ options, resolvePrincipal })` at startup
 - `connectMailbox` refuses by default: give the service `allowedMailHosts`
   (and optionally `allowedMailPorts`) or your own `validateMailbox`. The
   built-in validator never connects to private, loopback or link-local
-  addresses and returns only a generic error. Policy lookups use the
+  addresses and returns only a generic error. It checks every target field
+  present (`host`, `endpoint`, and the `jmap` provider's `url`): https only, no
+  userinfo, listed host and port. The `jmap` provider stays `available: false`
+  on purpose (`available` means outbound transport; JMAP is receive and sync
+  only), and `connectMailbox` still connects it. Policy lookups use the
   configured db handle, not a caller's transaction.
 - `Message.send()` needs the `send` scope on an owned account. Account rows are
   not filtered (senders, routes and the outbox read them without a principal).
