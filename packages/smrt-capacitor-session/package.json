@@ -1,0 +1,43 @@
+{
+  "name": "@happyvertical/smrt-capacitor-session",
+  "version": "0.62.4",
+  "description": "Capacitor Android plugin that keeps a WebView cookie session durable: flushes the WebView CookieManager to disk when the cookie jar changes and on pause, stop and destroy",
+  "author": "HappyVertical",
+  "license": "MIT",
+  "type": "module",
+  "files": [
+    "android/src/main/",
+    "android/build.gradle",
+    "CLAUDE.md",
+    "AGENTS.md"
+  ],
+  "scripts": {
+    "build": "node scripts/validate-plugin.mjs",
+    "test": "node scripts/validate-plugin.mjs --test",
+    "typecheck": "node scripts/validate-plugin.mjs",
+    "clean": "rm -rf test/out"
+  },
+  "peerDependencies": {
+    "@capacitor/core": ">=8.0.0"
+  },
+  "capacitor": {
+    "android": {
+      "src": "android"
+    }
+  },
+  "keywords": [
+    "capacitor",
+    "plugin",
+    "android",
+    "session"
+  ],
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org",
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/happyvertical/smrt.git",
+    "directory": "packages/smrt-capacitor-session"
+  }
+}

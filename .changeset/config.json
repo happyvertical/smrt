@@ -18,6 +18,7 @@
       "@happyvertical/smrt-assets-ergot",
       "@happyvertical/smrt-assets-local",
       "@happyvertical/smrt-bookings",
+      "@happyvertical/smrt-capacitor-session",
       "@happyvertical/smrt-chat",
       "@happyvertical/smrt-comments",
       "@happyvertical/smrt-cli",
