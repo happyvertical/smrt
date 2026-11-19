@@ -70,8 +70,11 @@ Shared assistant adapters and legacy approval storage: [agents/shared-pieces.md]
   active and returns `status: 'change_waiting'`. Remove/put back/quick edit
   (label, choice options) rebuild the copy from the active cards
   (`ChangeEngine.rebuild`); a tail append runs incrementally; exact checks
-  (`checkBatch`) refresh after each mutation and pin `digest` =
-  `batchDigest(engine digest, active (card, revision))`. Records overwritten
+  (`checkBatch`) run in a debounced, generation-guarded job after each
+  mutation (`check-scheduler.ts`; it can only read and store results) and pin
+  `digest` = `batchDigest(review digest, active (card, revision))`; Apply
+  re-checks fresh and refuses (409 + blockers) while anything blocks, "Put it
+  back"/"Remove those too" clear `depends_on_removed`. Records overwritten
   are shown, never blocking. Apply (owner only, `expect` = digest, optional
   `generation` CAS, 409 on mismatch) records and decides an `apply-batch`
   Approval, then publishes atomically. Undo of an applied batch

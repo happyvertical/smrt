@@ -10,6 +10,9 @@
  *   `count` is the number of ACTIVE cards (the one number to show); `digest`
  *   is Apply's `expect`; `generation` guards two open windows (send it back as
  *   `generation` on a write: a stale one is 409).
+ *   `checkState`: `stale` (a change waits for its check), `checking`, `ok`,
+ *   `blocked`, `none`. Checks run a couple of seconds after the last change and
+ *   the `changes` event follows; Apply re-checks fresh and never trusts them.
  */
 
 import { changesState } from '$lib/server/changes';

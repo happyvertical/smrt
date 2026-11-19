@@ -16,7 +16,7 @@ import type { DatabaseInterface } from '@happyvertical/sql';
 import { vi } from 'vitest';
 import '../objects/index.ts';
 import { applyOwnBatch } from './approvals.ts';
-import { changesState } from './changes.ts';
+import { cancelChecks, changesState, flushChecks } from './changes.ts';
 import { configureShell, resetShell } from './host.ts';
 import { resetShellInference } from './inference.ts';
 import { type Principal, runAs, setOwnerCheck } from './owner.ts';
@@ -90,6 +90,8 @@ export async function openShell(): Promise<ShellHarness> {
     member: { id: ids.member, tenantId: tenant.id as string },
     stranger: { id: 'u-stranger', tenantId: tenant.id as string },
     async close() {
+      cancelChecks();
+      await flushChecks();
       resetShellInference();
       await resetShell();
       setOwnerCheck(null);
@@ -104,6 +106,8 @@ export async function openShell(): Promise<ShellHarness> {
  */
 export async function applyWaiting(owner: Principal): Promise<void> {
   await runAs(owner, async () => {
+    await changesState();
+    await flushChecks(); // the debounced exact checks pin the digest
     const state = await changesState();
     if (state.count) await applyOwnBatch(state.digest);
   });

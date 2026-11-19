@@ -60,6 +60,13 @@ export class ChangeCard extends SmrtObject {
   @field({ type: 'text' })
   checks: string = '[]';
 
+  /**
+   * The working copy's version numbers this card's commands made, JSON array
+   * text: how an exact-check blocker that names a version finds its card.
+   */
+  @field({ type: 'text' })
+  draftVersions: string = '[]';
+
   /** Review questions for this card, JSON array text. */
   @field({ type: 'text' })
   questions: string = '[]';

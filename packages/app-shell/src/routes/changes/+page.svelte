@@ -8,6 +8,7 @@ import {
   activeCards,
   applyBlock,
   changesApi,
+  isChecking,
   overwriteLines,
   plural,
   type QuickEdit,
@@ -30,7 +31,7 @@ const changes = $derived<ChangesState | null>(override ?? data.changes ?? null);
 const cards = $derived(changes ? activeCards(changes) : []);
 const removed = $derived(changes ? removedCards(changes) : []);
 const block = $derived(changes ? applyBlock(changes) : null);
-const checking = $derived(changes?.checkState === 'stale');
+const checking = $derived(changes ? isChecking(changes) : false);
 const blockersFor = (id: string) =>
   (changes?.blockers ?? []).filter((b) => b.cardId === id);
 const general = $derived((changes?.blockers ?? []).filter((b) => !b.cardId));
@@ -123,8 +124,9 @@ async function apply() {
     await changesApi.apply(changes.digest, gen());
   } catch (e) {
     if (e instanceof ApiError && e.status === 409) {
-      error =
-        'These changes were different when you last looked. Review them again, then Apply.';
+      error = e.message.startsWith("Can't apply yet")
+        ? e.message
+        : 'These changes were different when you last looked. Review them again, then Apply.';
       await refresh();
     } else fail(e);
     busy = false;
@@ -177,6 +179,8 @@ async function apply() {
               {busy}
               message={messages[card.id] ?? ''}
               onremove={() => remove(card.id, card.summary)}
+              onputback={(removedId) => act(() => changesApi.restoreCard(removedId, gen()), card.id, 'Put it back.')}
+              onremovedependents={() => act(() => changesApi.removeDependents(card.id, gen()), card.id, 'Removed those too.')}
               onedit={(edits) => edit(card.id, edits)}
             />
           </li>

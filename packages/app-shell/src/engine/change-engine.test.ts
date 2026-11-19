@@ -307,3 +307,55 @@ describe('undoBatch', () => {
     await w.live.close();
   });
 });
+
+describe('checkBatch review digest and plain blockers', () => {
+  it('names the version a blocker is about and never says draft or publish', async () => {
+    const w = await world();
+    const r = await w.rebuild([
+      {
+        key: 'a',
+        command: {
+          type: 'renameField',
+          model: 'Chore',
+          from: 'notes',
+          to: 'x',
+        },
+      },
+      {
+        key: 'b',
+        command: { type: 'renameField', model: 'Chore', from: 'x', to: 'y' },
+      },
+    ]);
+    const check = await engine.checkBatch(me, w.live, r.draft);
+    const [blocker] = check.blockers;
+    expect(blocker.code).toBe('same_field_twice');
+    expect(blocker.versions).toHaveLength(2);
+    expect(blocker.message).not.toMatch(/draft|publish/i);
+    await r.draft.close();
+    await w.live.close();
+  });
+
+  it('reviewDigest ignores live rows a load does not touch but sees a changed overwrite count', async () => {
+    const w = await world();
+    const load: Command = {
+      type: 'loadRecords',
+      model: 'Chore',
+      mode: 'upsert',
+      key: ['title'],
+      rows: [{ title: 'pin-me', points: 1 }],
+    };
+    const r = await w.rebuild([{ key: 'l', command: load }]);
+    const first = await engine.checkBatch(me, w.live, r.draft);
+    expect(first.reviewDigest).toBeTruthy();
+    await w.live.create('Chore', { title: 'unrelated' });
+    const second = await engine.checkBatch(me, w.live, r.draft);
+    expect(second.reviewDigest).toBe(first.reviewDigest);
+    await w.live.create('Chore', { title: 'pin-me', points: 2 }); // the load would now overwrite it
+    const third = await engine.checkBatch(me, w.live, r.draft);
+    expect(third.overwrites.recordsUpdated).toBe(1);
+    expect(third.ok).toBe(true); // shown, never blocking
+    expect(third.reviewDigest).not.toBe(first.reviewDigest);
+    await r.draft.close();
+    await w.live.close();
+  });
+});

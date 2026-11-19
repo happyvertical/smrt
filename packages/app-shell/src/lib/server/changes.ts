@@ -45,6 +45,11 @@ import {
   requestApproval,
 } from './approvals.ts';
 import {
+  type CheckClock,
+  type CheckScheduler,
+  createCheckScheduler,
+} from './check-scheduler.ts';
+import {
   type DraftPublishResult,
   discardNow,
   previewDraft,
@@ -57,6 +62,8 @@ import { assertOwner, type Principal } from './owner.ts';
 import { publicChangeResult } from './results.ts';
 
 const WORKING_COPY_NAME = CHANGES_WAITING_NAME;
+const DEPENDS_ON_REMOVED =
+  'This change needs one you removed. Put that one back, or remove this one too.';
 const engine = createSqliteChangeEngine();
 const principalOf = (owner: Principal): ChangePrincipal => ({ id: owner.id });
 
@@ -65,6 +72,8 @@ const principalOf = (owner: Principal): ChangePrincipal => ({ id: owner.id });
 export interface CardCheck {
   code: BatchBlocker['code'];
   message: string;
+  /** `depends_on_removed`: the card whose removal caused it ("Put it back" restores that one). */
+  cause?: string;
 }
 
 export interface ChangeCardView {
@@ -95,7 +104,8 @@ export interface ChangesState {
   generation: number;
   /** `batchDigest` of the last check; Apply's `expect`. Empty when there is nothing to apply. */
   digest: string;
-  checkState: 'none' | 'ok' | 'blocked' | 'stale';
+  /** `stale`: a change is waiting for its check; `checking`: the check is running. */
+  checkState: 'none' | 'ok' | 'blocked' | 'stale' | 'checking';
   canApply: boolean;
   blockers: (BatchBlocker | (CardCheck & { cardId: string }))[];
   /** Records the changes would overwrite: shown and pinned, never blocking. */
@@ -254,6 +264,7 @@ async function syncOpaqueCards(
       position: cards.length + (i - opaque.length),
       source: batch.status === 'held' ? 'import' : 'api',
       commands: '[]',
+      draftVersions: JSON.stringify([rec.version]),
       summary: versionSummary(
         rec.summary,
         records.get(rec.parent ?? -1)?.definition,
@@ -360,7 +371,11 @@ async function setBatchDraft(batch: ChangeBatch, id: string): Promise<void> {
  * gets a `depends_on_removed` check; the rest still apply. With no active
  * cards the copy is thrown away and live thaws.
  */
-async function rebuild(batch: ChangeBatch, owner: Principal): Promise<void> {
+async function rebuild(
+  batch: ChangeBatch,
+  owner: Principal,
+  cause = '',
+): Promise<void> {
   const slot = await getDraftSlot();
   if (slot && slot.id !== batch.draftId)
     throw new EngineError(
@@ -377,6 +392,7 @@ async function rebuild(batch: ChangeBatch, owner: Principal): Promise<void> {
   if (slot) await discardNow(slot.id, { rebuilding: true });
   const live = await getHost();
   if (!active.length) {
+    scheduler.cancel(batch.id as string);
     batch.draftId = '';
     batch.checkState = 'none';
     batch.digest = '';
@@ -449,9 +465,23 @@ async function rebuild(batch: ChangeBatch, owner: Principal): Promise<void> {
         ),
       );
     if (summaries.length) card.summary = summaries.join('; ');
+    card.draftVersions = JSON.stringify(versions);
     const blocker = failed.get(card.id as string);
+    // A card flagged before stays tied to the card whose removal flagged it.
+    const before = blockingChecks(card).find(
+      (k) => k.code === 'depends_on_removed',
+    );
+    const kept = before?.cause ?? cause;
     card.checks = JSON.stringify(
-      blocker ? [{ code: blocker.code, message: blocker.message }] : [],
+      blocker
+        ? [
+            {
+              code: blocker.code,
+              message: DEPENDS_ON_REMOVED,
+              ...(kept ? { cause: kept } : {}),
+            },
+          ]
+        : [],
     );
     await card.save();
   }
@@ -484,51 +514,182 @@ async function workingCopy(
 const blockingChecks = (c: ChangeCard): CardCheck[] =>
   readArray<CardCheck>(c.checks);
 
-/** Run the engine's exact checks and store the result on the batch. */
-async function refreshChecks(
-  batch: ChangeBatch,
-  owner: Principal,
-): Promise<BatchCheck | null> {
-  const cards = await cardsOf(batch.id as string);
-  const active = cards.filter(isActive);
-  if (!active.length) {
-    batch.digest = '';
-    batch.checkState = 'none';
-    batch.checkResult = '';
-    await batch.save();
-    return null;
+/** What a rebuild (not the exact check) flagged: only this survives a re-check. */
+const rebuildChecks = (c: ChangeCard): CardCheck[] =>
+  blockingChecks(c).filter((k) => k.code === 'depends_on_removed');
+
+export type OwnedBlocker = BatchBlocker & { cardId?: string };
+
+/**
+ * Hand each exact-check blocker to the card(s) whose working-copy versions it
+ * names (`versions`); the rest (base_moved, an unattributable replay failure)
+ * stay with the whole batch.
+ */
+function ownBlockers(
+  blockers: BatchBlocker[],
+  active: ChangeCard[],
+): { byCard: Map<string, CardCheck[]>; general: BatchBlocker[] } {
+  const byCard = new Map<string, CardCheck[]>();
+  const general: BatchBlocker[] = [];
+  for (const b of blockers) {
+    const owners = active.filter((c) =>
+      readArray<number>(c.draftVersions).some((v) => b.versions?.includes(v)),
+    );
+    if (!owners.length) {
+      general.push(b);
+      continue;
+    }
+    for (const c of owners)
+      byCard.set(c.id as string, [
+        ...(byCard.get(c.id as string) ?? []),
+        { code: b.code, message: b.message },
+      ]);
   }
-  const slot = await getDraftSlot();
-  if (!slot || slot.id !== batch.draftId || !slot.host) {
-    batch.checkState = 'stale';
-    await batch.save();
-    return null;
-  }
-  const live = await getHost();
-  const check = await engine.checkBatch(principalOf(owner), live, slot.host);
-  const cardBlocked = active.some((c) => blockingChecks(c).length > 0);
-  batch.digest = check.engineDigest
-    ? batchDigest(
-        check.engineDigest,
-        active.map((c) => ({
-          id: c.id as string,
-          revision: Number(c.revision),
-        })),
-      )
-    : '';
-  batch.checkState = check.ok && !cardBlocked ? 'ok' : 'blocked';
-  batch.checkResult = JSON.stringify({
-    blockers: check.blockers,
-    overwrites: {
-      recordsUpdated: check.overwrites.recordsUpdated,
-      recordsMerged: check.overwrites.recordsMerged,
-      archivedValues: check.overwrites.archivedValues,
-      archivedTables: check.overwrites.archivedTables,
-    },
-  });
-  await batch.save();
-  return check;
+  return { byCard, general };
 }
+
+// The pipeline: every batch mutation (re)starts a debounce; when it fires the
+// exact checks run on the working copy, serialised with every other changes
+// job, and the result is stored only if the batch's `generation` is still the
+// one it was scheduled for. It only READS the batch and writes check results:
+// it cannot apply, approve or edit a card (`invariants.test.ts` pins that).
+const owners = new Map<string, Principal>();
+
+/** Where slice 5's assistant review chains after the exact checks. Data only. */
+export interface AfterChecksInfo {
+  batchId: string;
+  generation: number;
+  owner: Principal;
+  /** True when the exact checks passed (no blockers). */
+  ok: boolean;
+  /** False once a later change made this generation stale; discard what you computed. */
+  isCurrent: () => Promise<boolean>;
+}
+export type AfterChecksHook = (info: AfterChecksInfo) => Promise<void> | void;
+let afterChecks: AfterChecksHook | null = null;
+/** Register (or clear) the hook run after each stored check, outside the changes queue. */
+export function setAfterChecks(hook: AfterChecksHook | null): void {
+  afterChecks = hook;
+}
+
+async function runChecksJob(
+  batchId: string,
+  generation: number,
+): Promise<void> {
+  const owner = owners.get(batchId);
+  if (!owner) return;
+  let info: AfterChecksInfo | null = null;
+  await serial(async () => {
+    const coll = await batches();
+    const batch = await coll.get(batchId);
+    // A newer change (a higher generation) owns the next job: this one is stale.
+    if (
+      !batch ||
+      batch.status !== 'open' ||
+      Number(batch.generation) !== generation
+    )
+      return;
+    const active = (await cardsOf(batchId)).filter(isActive);
+    const slot = await getDraftSlot();
+    if (!active.length || !slot || slot.id !== batch.draftId || !slot.host)
+      return;
+    if (slot.hold) return;
+    batch.checkState = 'checking';
+    await batch.save();
+    let check: BatchCheck;
+    try {
+      check = await engine.checkBatch(
+        principalOf(owner),
+        await getHost(),
+        slot.host,
+      );
+    } catch {
+      batch.checkState = 'stale';
+      await batch.save();
+      return;
+    }
+    const now = await coll.get(batchId);
+    if (!now || Number(now.generation) !== generation) return;
+    const { byCard, general } = ownBlockers(check.blockers, active);
+    let cardBlocked = false;
+    for (const card of active) {
+      const next = [
+        ...rebuildChecks(card),
+        ...(byCard.get(card.id as string) ?? []),
+      ];
+      if (next.length) cardBlocked = true;
+      const text = JSON.stringify(next);
+      if (text !== card.checks) {
+        card.checks = text;
+        await card.save();
+      }
+    }
+    batch.digest = check.reviewDigest
+      ? batchDigest(
+          check.reviewDigest,
+          active.map((c) => ({
+            id: c.id as string,
+            revision: Number(c.revision),
+          })),
+        )
+      : '';
+    batch.checkState = check.ok && !cardBlocked ? 'ok' : 'blocked';
+    batch.checkResult = JSON.stringify({
+      blockers: general,
+      overwrites: {
+        recordsUpdated: check.overwrites.recordsUpdated,
+        recordsMerged: check.overwrites.recordsMerged,
+        archivedValues: check.overwrites.archivedValues,
+        archivedTables: check.overwrites.archivedTables,
+      },
+    });
+    await batch.save();
+    emit(batch, 'changed', active.length);
+    info = {
+      batchId,
+      generation,
+      owner,
+      ok: check.ok,
+      isCurrent: async () => {
+        const row = await (await batches()).get(batchId);
+        return (
+          !!row &&
+          row.status === 'open' &&
+          Number(row.generation) === generation
+        );
+      },
+    };
+  });
+  const hook = afterChecks;
+  if (info && hook)
+    void Promise.resolve()
+      .then(() => hook(info as AfterChecksInfo))
+      .catch(() => {});
+}
+
+let scheduler: CheckScheduler = createCheckScheduler({ run: runChecksJob });
+
+/** (Re)start the debounced exact checks for this batch's current generation. */
+function scheduleChecks(batch: ChangeBatch, owner: Principal): void {
+  owners.set(batch.id as string, owner);
+  scheduler.schedule(batch.id as string, Number(batch.generation));
+}
+
+/** Test seam: change the debounce delay or clock (a fake scheduler). Cancels what is pending. */
+export function configureChecks(opts: {
+  delayMs?: number;
+  clock?: CheckClock;
+}): void {
+  scheduler.cancelAll();
+  scheduler = createCheckScheduler({ run: runChecksJob, ...opts });
+}
+/** Fire any pending debounce now and wait for the jobs (tests, shutdown). */
+export const flushChecks = (): Promise<void> => scheduler.flush();
+/** Drop pending debounces (test harness close). */
+export const cancelChecks = (): void => scheduler.cancelAll();
+/** Test seam: run the job for `generation` as if its timer had fired. */
+export const runChecksFor = (batchId: string, generation: number) =>
+  runChecksJob(batchId, generation);
 
 // ---------- state ----------
 
@@ -561,11 +722,17 @@ function undoDigestOf(batch: ChangeBatch, liveVersion: number): string {
 async function stateOf(owner: Principal): Promise<ChangesState> {
   const live = await getHost();
   const batch = await syncBatch(owner);
-  if (batch && batch.status === 'open' && batch.checkState === 'stale') {
-    // An adopted draft, or a restart: check it before showing a digest.
+  if (
+    batch &&
+    batch.status === 'open' &&
+    (batch.checkState === 'stale' || batch.checkState === 'checking') &&
+    !scheduler.busy(batch.id as string)
+  ) {
+    // An adopted draft, or a restart: nothing is scheduled yet. Queue the
+    // checks (the owner sees "Checking…" and an event follows); never block here.
     const slot = await getDraftSlot();
     if (slot?.host && !slot.hold && slot.id === batch.draftId)
-      await refreshChecks(batch, owner);
+      scheduleChecks(batch, owner);
   }
   const coll = await batches();
   let discarded: ChangesState['discarded'] = null;
@@ -792,12 +959,14 @@ export function addChangeCard(
       const before = structuredClone(host.def);
       let last: ChangeResult | null = null;
       const summaries: string[] = [];
+      const madeVersions: number[] = [];
       try {
         for (const command of input.commands) {
           const prior = structuredClone(host.def);
           last = (await host.execute(command, {
             author: author ?? owner.id,
           })) as ChangeResult;
+          madeVersions.push(last.version);
           summaries.push(commandSummary(command, prior, host.def));
         }
       } catch (e) {
@@ -816,6 +985,7 @@ export function addChangeCard(
         cardGroup: input.group ?? '',
         source: input.source,
         commands: JSON.stringify(input.commands),
+        draftVersions: JSON.stringify(madeVersions),
         summary: summaries.join('; '),
         status: 'active',
         revision: 1,
@@ -829,7 +999,7 @@ export function addChangeCard(
         batch.baseVersion = live.version;
       }
       await bump(batch);
-      await refreshChecks(batch, owner);
+      scheduleChecks(batch, owner);
       const count = (await cardsOf(batch.id as string)).filter(isActive).length;
       emit(batch, 'changed', count);
       return {
@@ -864,10 +1034,12 @@ async function afterRebuild(
   batch: ChangeBatch,
   owner: Principal,
   what: string,
+  cause = '',
 ) {
   await bump(batch);
-  await rebuild(batch, owner);
-  await refreshChecks(batch, owner);
+  await rebuild(batch, owner, cause);
+  if ((await cardsOf(batch.id as string)).some(isActive))
+    scheduleChecks(batch, owner);
   const count = (await cardsOf(batch.id as string)).filter(isActive).length;
   emit(batch, what, count);
 }
@@ -895,7 +1067,7 @@ export function removeChangeCard(
         );
       card.status = 'removed';
       await card.save();
-      await afterRebuild(batch, owner, 'changed');
+      await afterRebuild(batch, owner, 'changed', card.id as string);
       return stateOf(owner);
     });
   })();
@@ -914,6 +1086,48 @@ export function restoreChangeCard(
       card.status = 'active';
       await card.save();
       await afterRebuild(batch, owner, 'changed');
+      return stateOf(owner);
+    });
+  })();
+}
+
+/**
+ * "Remove those too": remove every waiting change that needs the one the
+ * owner removed (all flagged `depends_on_removed` for the same cause), then
+ * again for any the rebuild newly flags. `cardId` is any one flagged card.
+ */
+export function removeDependentCards(
+  cardId: string,
+  opts: { generation?: unknown } = {},
+): Promise<ChangesState> {
+  return (async () => {
+    const owner = await assertOwner();
+    return serial(async () => {
+      const { batch, card } = await withCard(cardId, owner);
+      checkGeneration(batch, opts.generation);
+      const flag = rebuildChecks(card)[0];
+      if (!isActive(card) || !flag)
+        throw new EngineError(
+          'that change is not waiting on one you removed',
+          'refused',
+        );
+      const cause = flag.cause ?? '';
+      const matches = (c: ChangeCard) =>
+        isActive(c) && rebuildChecks(c).some((k) => (k.cause ?? '') === cause);
+      let cards = await cardsOf(batch.id as string);
+      for (let round = 0; round <= cards.length; round++) {
+        const targets = cards.filter(matches);
+        if (!targets.length) break;
+        for (const t of targets) {
+          t.status = 'removed';
+          await t.save();
+        }
+        await bump(batch);
+        await rebuild(batch, owner, cause);
+        cards = await cardsOf(batch.id as string);
+      }
+      if (cards.some(isActive)) scheduleChecks(batch, owner);
+      emit(batch, 'changed', cards.filter(isActive).length);
       return stateOf(owner);
     });
   })();
@@ -1051,6 +1265,7 @@ export function discardChanges(
         throw new EngineError('there are no changes waiting', 'not_found');
       checkGeneration(batch, opts.generation);
       const slot = await getDraftSlot();
+      scheduler.cancel(batch.id as string);
       if (slot && slot.id === batch.draftId) await discardNow(slot.id);
       await syncFreeze(false);
       batch.status = 'discarded';
@@ -1130,6 +1345,12 @@ export interface ApplyAction {
   engineDigest: string;
 }
 
+/**
+ * The exact checks, run NOW on the working copy: Apply never trusts the
+ * pipeline's cached result. Refuses (409, `reason: 'blocked'`, with the
+ * blockers and the cards they belong to) while anything blocks; the only
+ * check state kept from before is what a rebuild flagged (`depends_on_removed`).
+ */
 async function freshCheck(
   batch: ChangeBatch,
   owner: Principal,
@@ -1139,24 +1360,44 @@ async function freshCheck(
   const active = cards.filter(isActive);
   const live = await getHost();
   const check = await engine.checkBatch(principalOf(owner), live, host);
-  const digest = check.engineDigest
+  const { byCard, general } = ownBlockers(check.blockers, active);
+  const blockers: OwnedBlocker[] = [
+    ...general,
+    ...active.flatMap((c) =>
+      [...rebuildChecks(c), ...(byCard.get(c.id as string) ?? [])].map((k) => ({
+        ...k,
+        cardId: c.id as string,
+      })),
+    ),
+  ];
+  if (blockers.length)
+    throw new EngineError(
+      `Can't apply yet: ${blockers[0].message}`,
+      'refused',
+      {
+        reason: 'blocked',
+        blockers,
+      },
+    );
+  const digest = check.reviewDigest
     ? batchDigest(
-        check.engineDigest,
+        check.reviewDigest,
         active.map((c) => ({
           id: c.id as string,
           revision: Number(c.revision),
         })),
       )
     : '';
-  const blocked = [
-    ...check.blockers.map((b) => b.message),
-    ...active.flatMap((c) => blockingChecks(c).map((k) => k.message)),
-  ];
-  if (blocked.length)
-    throw new EngineError(`Can't apply yet: ${blocked[0]}`, 'refused');
   if (!digest) throw new EngineError('there is nothing to apply', 'refused');
   return { check, digest, active };
 }
+
+const REVIEW_AGAIN = (): EngineError =>
+  new EngineError(
+    'the changes waiting changed since they were reviewed; review them again',
+    'refused',
+    { reason: 'changed' },
+  );
 
 /**
  * Record the `apply-batch` Approval for the digest the owner reviewed (`expect`
@@ -1188,11 +1429,7 @@ export function requestApply(
       checkGeneration(batch, opts.generation);
       const host = await workingCopy(batch, owner);
       const { check, digest, active } = await freshCheck(batch, owner, host);
-      if (digest !== expect)
-        throw new EngineError(
-          'the changes waiting changed since they were reviewed; review them again',
-          'refused',
-        );
+      if (digest !== expect) throw REVIEW_AGAIN();
       const action: ApplyAction = {
         kind: 'apply-batch',
         batchId: batch.id as string,
@@ -1245,20 +1482,13 @@ export function applyApproved(
           'this approval was for changes that are no longer waiting',
           'refused',
         );
-      if (Number(batch.generation) !== action.generation)
-        throw new EngineError(
-          'the changes waiting changed since they were reviewed; review them again',
-          'refused',
-        );
+      if (Number(batch.generation) !== action.generation) throw REVIEW_AGAIN();
       const host = await workingCopy(batch, owner);
-      const { digest } = await freshCheck(batch, owner, host);
-      if (digest !== action.digest)
-        throw new EngineError(
-          'the changes waiting changed since they were reviewed; review them again',
-          'refused',
-        );
+      const { check, digest } = await freshCheck(batch, owner, host);
+      if (digest !== action.digest) throw REVIEW_AGAIN();
+      scheduler.cancel(batch.id as string);
       const result = await publishApproved(
-        { draftId: action.draftId, digest: action.engineDigest },
+        { draftId: action.draftId, digest: check.engineDigest as string },
         publishWith,
       );
       batch.status = 'applied';

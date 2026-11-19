@@ -378,22 +378,46 @@ a restart). All routes are owner-session, same-origin; there is no ``,
 `x-shell-target` or `/mcp` any more (400 on `/mcp`).
 
 - `GET /api/shell/changes` -> `{ batchId, status: 'none'|'open'|'held', count,
-  generation, digest, checkState: 'none'|'ok'|'blocked'|'stale', canApply,
+  generation, digest, checkState: 'none'|'ok'|'blocked'|'stale'|'checking', canApply,
   blockers[], overwrites: { recordsUpdated, recordsMerged, archivedValues,
   archivedTables } | null, held, liveVersion, baseVersion, cards[], discarded:
   { batchId, count } | null, lastApplied: { batchId, appliedAt, versions,
   undone, undoDigest, count } | null }`. A card is `{ id, position, group,
   source: 'assistant'|'import'|'api'|'quick', summary, status:
-  'active'|'removed', revision, opaque, commands[], checks[{code,message}],
+  'active'|'removed', revision, opaque, commands[], checks[{code,message,cause?}],
   questions[], threadId, messageId, editable }`. `count` is the one number to
   show. Overwrite counts are shown and pinned by `digest`; they never block.
+  **Checks** run in the background: every change restarts a ~2 s debounce, then
+  the exact checks (`checkBatch`) run on the working copy, serialised with the
+  other changes work, and are stored only if `generation` is still the one
+  scheduled (an older result is dropped). `checkState` is `stale` (queued) then
+  `checking` then `ok`/`blocked`; the `changes` event follows. `digest` is empty
+  until a check finishes; Apply always re-runs the exact checks fresh. Cards
+  carry what blocks them (`checks`, with the removed change's id as `cause` for
+  `depends_on_removed`); a blocker that names no card stays in `blockers`
+  (`base_moved`). Blocker copy is plain words (never "draft" or "publish").
+  The digest pins the chain, each card's `revision` and the overwrite counts
+  only (rows a load would update, rows a merge removes): a record added to live
+  while changes wait that overwrites nothing does not move it, one that turns an
+  insert into an update does (409, review again; never a block on its own).
+  Slice 5's assistant review chains on `setAfterChecks(hook)` in
+  `lib/server/changes.ts`: the hook gets `{ batchId, generation, owner, ok,
+  isCurrent() }` after each stored check, outside the changes queue, errors
+  swallowed; it can read, never apply.
 - `POST /changes/cards/:id/remove|restore` `{ generation? }`; `PATCH
   /changes/cards/:id` `{ label?, choices?, field? , generation? }` (quick edit;
   a default cannot be set). All return the new state.
 - `POST /changes/apply` `{ expect: digest, generation? }` -> `{ id, status:
   'approved', result }`; 409 when blocked, changed since review, or stale
   `generation`. The owner's click; it records and decides an `apply-batch`
-  Approval. No tool, `/mcp` or assistant path can apply.
+  Approval. No tool, `/mcp` or assistant path can apply. A refusal body is
+  `{ error, code: 'refused', reason: 'blocked', blockers: [{code, message,
+  cardId?}] }` ("Can't apply yet": the server refuses however the client
+  behaves) or `{ ..., reason: 'changed' }`.
+- `POST /changes/cards/:id/remove-dependents` `{ generation? }` ("Remove those
+  too"): `:id` is a card flagged `depends_on_removed`; it and every card that
+  needs the same removed change go, then any the rebuild newly flags. "Put it
+  back" is `POST .../restore` of the flag's `cause`.
 - `POST /changes/discard`, `POST /changes/restore` ("Put them back"),
   `GET /changes/preview` -> `{ changes, preview }` (SQL, methods, diff).
 - `POST /changes/undo` `{ batchId, expect: lastApplied.undoDigest }`: takes an

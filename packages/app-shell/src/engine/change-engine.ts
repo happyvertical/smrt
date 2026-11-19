@@ -23,7 +23,7 @@ import type {
   PublishPreview,
   PublishResult,
 } from './host.ts';
-import { canonical, type DraftChain } from './publish.ts';
+import { canonical, chainDigest, type DraftChain } from './publish.ts';
 
 /** Who is asking. Enforced by the hosted engine (#5188); unused on SQLite. */
 export interface ChangePrincipal {
@@ -55,6 +55,12 @@ export interface BatchBlocker {
   key?: string;
   /** `checkBatch`: `table.column`, for same_field_twice. */
   field?: string;
+  /**
+   * `checkBatch`: the working-copy version numbers (`DraftChain` records) the
+   * blocker is about, so the caller can name the owning cards. Absent means
+   * the whole batch (base_moved, an unattributable replay failure).
+   */
+  versions?: number[];
 }
 
 export interface RebuildInput {
@@ -98,8 +104,15 @@ export interface BatchCheck {
   blockers: BatchBlocker[];
   /** Shown and pinned by the digest, never blocking. */
   overwrites: BatchOverwrites;
-  /** The engine's `replayDigest`: input to `batchDigest`. Null when there is nothing to check. */
+  /** The engine's `replayDigest`: what `publishDraft` is given as `expect`. Null when there is nothing to check. */
   engineDigest: string | null;
+  /**
+   * What the owner's review pins (input to `batchDigest`): the chain plus ONLY
+   * the figures shown as overwrites (rows a load would update, rows a merge
+   * removes). Records added to live while changes wait that overwrite nothing
+   * do not move it; a record that turns an insert into an update does.
+   */
+  reviewDigest: string | null;
   /** The rehearsal, absent when it could not run. */
   preview: PublishPreview | null;
 }
@@ -202,15 +215,20 @@ function touched(step: Step): { table: string; column: string }[] {
 export function findChainBlockers(chain: DraftChain): BatchBlocker[] {
   const out: BatchBlocker[] = [];
   chain.versions.forEach((rec) => {
-    for (const e of validate(rec.definition))
-      if (/^report [^:]+: unknown field/.test(e))
+    for (const e of validate(rec.definition)) {
+      const m = /^report ([^:]+): unknown field (.+)$/.exec(e);
+      if (m)
         out.push({
           code: 'report_uses_removed_field',
-          message: `"${rec.summary}": ${e}`,
+          versions: [rec.version],
+          message: `The report "${m[1]}" uses the field "${m[2]}", which these changes remove.`,
         });
+    }
   });
   const seen = new Map<string, Set<number>>();
+  const numberOf = new Map<number, number>();
   chain.versions.forEach((rec, i) => {
+    numberOf.set(i, rec.version);
     for (const step of rec.migration?.steps ?? [])
       for (const t of touched(step)) {
         const key = `${t.table}.${t.column}`;
@@ -223,7 +241,8 @@ export function findChainBlockers(chain: DraftChain): BatchBlocker[] {
       out.push({
         code: 'same_field_twice',
         field,
-        message: `${field} is changed by more than one of the waiting changes`,
+        versions: [...versions].map((i) => numberOf.get(i) as number),
+        message: `${field} is changed by more than one waiting change. Remove one of them.`,
       });
   return out;
 }
@@ -244,6 +263,48 @@ function overwritesOf(preview: PublishPreview | null): BatchOverwrites {
     archivedTables: preview?.archives.tables ?? 0,
     dataSteps,
   };
+}
+
+/**
+ * The replay failed on one version: say so in plain words and name the
+ * version so the caller can find its card. The engine's own text mentions the
+ * draft and publishing; none of that reaches the owner.
+ */
+function replayFailure(raw: string, chain: DraftChain): BatchBlocker {
+  const rec = chain.versions.find((r) => raw.startsWith(`"${r.summary}" `));
+  const reason = /(?:nothing was published|is invalid): (.+)$/s.exec(raw)?.[1];
+  return {
+    code: 'replay_failed',
+    ...(rec ? { versions: [rec.version] } : {}),
+    message: reason
+      ? `This change does not fit your current data: ${reason}`
+      : 'This change does not fit your current data.',
+  };
+}
+
+/** The figures a review pins: the overwrite counts only (see `BatchCheck.reviewDigest`). */
+function reviewDigestOf(
+  liveVersion: number,
+  chain: DraftChain,
+  preview: PublishPreview,
+): string {
+  const num = (v: unknown) => (typeof v === 'number' ? v : 0);
+  const figures = preview.versions.map((v) =>
+    (v.dataSteps ?? []).map((s) => ({
+      op: s.op,
+      model: s.model,
+      mode: s.mode ?? null,
+      overwrites:
+        s.op === 'loadRecords'
+          ? num(s.counts.update)
+          : s.op === 'mergeRecords'
+            ? num(s.counts.removed)
+            : 0,
+    })),
+  );
+  return createHash('sha256')
+    .update(canonical({ chain: chainDigest(liveVersion, chain), figures }))
+    .digest('hex');
 }
 
 const sameDefinition = (a: AppDefinition, b: AppDefinition) =>
@@ -353,7 +414,7 @@ export class SqliteChangeEngine implements ChangeEngine {
     )
       blockers.push({
         code: 'base_moved',
-        message: `the app moved from version ${chain.baseVersion} to ${live.version} since the changes started`,
+        message: `Your app changed (version ${chain.baseVersion} to ${live.version}) after these changes were started. Discard them and start again.`,
       });
     if (!chain.versions.length)
       return {
@@ -361,6 +422,7 @@ export class SqliteChangeEngine implements ChangeEngine {
         blockers,
         overwrites: overwritesOf(null),
         engineDigest: null,
+        reviewDigest: null,
         preview: null,
       };
     blockers.push(...findChainBlockers(chain));
@@ -371,7 +433,7 @@ export class SqliteChangeEngine implements ChangeEngine {
       } catch (e) {
         if (!(e instanceof EngineError)) throw e;
         if (!blockers.some((b) => b.code === 'report_uses_removed_field'))
-          blockers.push({ code: 'replay_failed', message: e.message });
+          blockers.push(replayFailure(e.message, chain));
       }
     }
     return {
@@ -379,6 +441,9 @@ export class SqliteChangeEngine implements ChangeEngine {
       blockers,
       overwrites: overwritesOf(preview),
       engineDigest: preview?.digest ?? null,
+      reviewDigest: preview
+        ? reviewDigestOf(live.version, chain, preview)
+        : null,
       preview,
     };
   }

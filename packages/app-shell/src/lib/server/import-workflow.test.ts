@@ -29,7 +29,7 @@ import { AppDraftCollection } from '../objects/AppDraft.ts';
 import { AppImportCollection } from '../objects/AppImport.ts';
 import { applyOwnBatch } from './approvals.ts';
 import { runCommand } from './builder.ts';
-import { changesState } from './changes.ts';
+import { changesState, flushChecks } from './changes.ts';
 import {
   discardIfUnused,
   discardNow,
@@ -812,6 +812,8 @@ it('applies imported records only through the owner Apply, then removes the file
   await end();
   const before = await (await AppImportCollection.create({ db: h.db })).list();
   const file = join(h.dir, 'imports', `${before[0].id}.xlsx`);
+  await runAs(h.owner, () => changesState());
+  await flushChecks(); // the debounced exact checks pin the digest
   const state = await runAs(h.owner, () => changesState());
   expect(Object.keys((await getHost()).describe().models)).toEqual([]);
   const result = await runAs(h.owner, () => applyOwnBatch(state.digest));

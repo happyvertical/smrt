@@ -100,7 +100,7 @@ export function errorResponse(error: unknown): Response {
     return json({ error: error.message }, error.status);
   if (error instanceof EngineError)
     return json(
-      { error: error.message, code: error.code },
+      { ...error.details, error: error.message, code: error.code },
       ENGINE_STATUS[error.code] ?? 400,
     );
   // biome-ignore lint/suspicious/noConsole: message only, never a stack or body

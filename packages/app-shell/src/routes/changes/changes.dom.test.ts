@@ -258,6 +258,114 @@ describe('changes waiting view', () => {
     ).toContain('Needs the Fulfillment field');
   });
 
+  it('shows Put it back and Remove those too on a card that needs a removed change', async () => {
+    const state = changes({
+      checkState: 'blocked',
+      canApply: false,
+      cards: [
+        card({
+          id: 'c2',
+          position: 1,
+          summary: 'Add field Size to Gadget',
+          checks: [
+            {
+              code: 'depends_on_removed',
+              message:
+                'This change needs one you removed. Put that one back, or remove this one too.',
+              cause: 'c1',
+            },
+          ],
+        }),
+        card({
+          id: 'c1',
+          position: 0,
+          status: 'removed',
+          summary: 'New table Gadget',
+        }),
+      ],
+      blockers: [
+        {
+          code: 'depends_on_removed',
+          message:
+            'This change needs one you removed. Put that one back, or remove this one too.',
+          cardId: 'c2',
+        },
+      ],
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => json(changes())),
+    );
+    await render(state);
+    // the same message from the card and from the blockers shows once
+    expect(
+      container.querySelectorAll(
+        '[data-card-id="c2"] .smrt-change-card__chip-bad',
+      ),
+    ).toHaveLength(1);
+    expect((button(/Apply \d+ change/) as HTMLButtonElement).disabled).toBe(
+      true,
+    );
+    expect(container.textContent).not.toMatch(/draft|publish/i);
+    button('Put it back')?.click();
+    await vi.waitFor(() =>
+      expect(calls()).toContainEqual([
+        '/api/shell/changes/cards/c1/restore',
+        'POST',
+        JSON.stringify({ generation: 3 }),
+      ]),
+    );
+    unmount(component);
+    container.innerHTML = '';
+    await render(state);
+    button('Remove those too')?.click();
+    await vi.waitFor(() =>
+      expect(calls()).toContainEqual([
+        '/api/shell/changes/cards/c2/remove-dependents',
+        'POST',
+        JSON.stringify({ generation: 3 }),
+      ]),
+    );
+  });
+
+  it('offers only Remove those too when the removed change is not known, and keeps Apply off while the check runs', async () => {
+    await render(
+      changes({
+        checkState: 'checking',
+        canApply: false,
+        cards: [
+          card({
+            checks: [
+              { code: 'depends_on_removed', message: 'Needs one you removed.' },
+            ],
+          }),
+        ],
+      }),
+    );
+    expect(button('Put it back')).toBeUndefined();
+    expect(button('Remove those too')).toBeTruthy();
+    expect((button(/Apply \d+ change/) as HTMLButtonElement).disabled).toBe(
+      true,
+    );
+  });
+
+  it('shows overwrite counts without ever disabling Apply', async () => {
+    await render(
+      changes({
+        overwrites: {
+          recordsUpdated: 4,
+          recordsMerged: 0,
+          archivedValues: 0,
+          archivedTables: 0,
+        },
+      }),
+    );
+    expect(container.textContent).toContain('4 existing records replaced');
+    expect((button(/Apply \d+ change/) as HTMLButtonElement).disabled).toBe(
+      false,
+    );
+  });
+
   it('shows the overwrite count on the summary only', async () => {
     await render(
       changes({

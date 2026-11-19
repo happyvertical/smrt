@@ -52,6 +52,13 @@ export const changesApi = {
       expect,
       ...w,
     }),
+  /** "Remove those too": the flagged change and every other that needs the same removed one. */
+  removeDependents: (id: string, w: Write = {}) =>
+    call<ChangesState>(
+      `/cards/${encodeURIComponent(id)}/remove-dependents`,
+      'POST',
+      w,
+    ),
   discard: (w: Write = {}) => call<ChangesState>('/discard', 'POST', w),
   /** "Put them back" after a discard. */
   restoreDiscarded: (w: Write = {}) =>
@@ -89,7 +96,7 @@ export function planPill(
   const state: PillState =
     changes.checkState === 'blocked' || changes.blockers.length
       ? 'blocked'
-      : changes.checkState === 'stale'
+      : changes.checkState === 'stale' || changes.checkState === 'checking'
         ? 'checking'
         : 'ready';
   const waiting = `${plural(count, 'change')} waiting`;
@@ -247,6 +254,22 @@ export function overwriteLines(changes: ChangesState): string[] {
   return lines;
 }
 
+/** True while a check is queued or running (Apply waits for it). */
+export const isChecking = (changes: ChangesState): boolean =>
+  changes.checkState === 'stale' || changes.checkState === 'checking';
+
+/**
+ * What a card that needs a removed change offers: "Put it back" (restores the
+ * removed change named by `cause`, when known) and "Remove those too".
+ */
+export function dependencyActions(
+  card: ChangeCardView,
+): { putBack: string | null } | null {
+  const flag = card.checks.find((c) => c.code === 'depends_on_removed');
+  if (!flag || card.status !== 'active') return null;
+  return { putBack: flag.cause || null };
+}
+
 /** Cards in the order they were made. */
 export const activeCards = (changes: ChangesState): ChangeCardView[] =>
   changes.cards
@@ -261,8 +284,9 @@ export const removedCards = (changes: ChangesState): ChangeCardView[] =>
 /** Why Apply cannot be used right now, in plain words; null when it can. */
 export function applyBlock(changes: ChangesState): string | null {
   if (changes.held) return changes.held;
-  if (changes.checkState === 'stale') return 'Checking your changes…';
   if (changes.blockers.length) return "Can't apply yet";
+  if (changes.checkState === 'stale' || changes.checkState === 'checking')
+    return 'Checking your changes…';
   if (!changes.canApply) return 'These changes are not ready to apply yet.';
   return null;
 }

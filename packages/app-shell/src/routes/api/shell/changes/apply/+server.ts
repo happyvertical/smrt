@@ -3,6 +3,11 @@
  * owner's own Apply click, in one step. `expect` is required: the `digest` of
  * the ChangesState the owner reviewed. The server re-runs the exact checks and
  * refuses unless they pass and still produce that digest (409, review again);
+ * a refusal carries `reason`: `'blocked'` with `blockers` (`[{code, message,
+ * cardId?}]`, "Can't apply yet": nothing is applied however the client
+ * behaves) or `'changed'` (the digest, a card revision or the generation no
+ * longer matches what was reviewed). Overwrite counts are in the digest but
+ * never block;
  * then an `apply-batch` Approval is recorded and decided by the same owner at
  * once (`applyOwnBatch`), and the engine publishes exactly that chain or
  * refuses. -> 200 `{ id, status: 'approved', result }`; 400 no `expect`; 404

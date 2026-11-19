@@ -84,6 +84,52 @@ describe('approval gate invariants', () => {
     );
   });
 
+  it('the checks pipeline can only read and store check results: it cannot apply, approve or edit a card', () => {
+    const strip = (t: string) => t.replace(/\/\/.*$|\/\*[\s\S]*?\*\//gm, '');
+    const sched = strip(
+      files.find(([f]) => f === 'lib/server/check-scheduler.ts')?.[1] ?? '',
+    );
+    // pure plumbing: imports nothing, so it can reach nothing
+    expect(sched).not.toMatch(/^\s*import\s/m);
+    expect(sched).not.toMatch(/approved|apply|publish|decideApproval/i);
+    const changes = strip(
+      files.find(([f]) => f === 'lib/server/changes.ts')?.[1] ?? '',
+    );
+    const job = changes.slice(
+      changes.indexOf('async function runChecksJob'),
+      changes.indexOf('let scheduler'),
+    );
+    expect(job.length).toBeGreaterThan(200);
+    expect(job).not.toMatch(
+      /approved|requestApply|applyApproved|publishApproved|requestApproval|decideApproval|publishDraft|\.execute\(|\.status\s*=[^=]|\.revision\s*=[^=]|\.commands\s*=[^=]/,
+    );
+    // the slice-5 hook is registered only through setAfterChecks, and nothing
+    // in a tool, /mcp, the assistant or App can reach it yet
+    const users = files
+      .filter(([, t]) => /\b(setAfterChecks|configureChecks)\b/.test(strip(t)))
+      .map(([f]) => f);
+    expect(users).toEqual(['lib/server/changes.ts']);
+  });
+
+  it('"Remove those too" is an owner-session route over one service function', () => {
+    const users = files
+      .filter(([, t]) => /\bremoveDependentCards\b/.test(t))
+      .map(([f]) => f);
+    expect(users.sort()).toEqual([
+      'lib/server/changes.ts',
+      'routes/api/shell/changes/cards/[id]/remove-dependents/+server.ts',
+    ]);
+    const route =
+      files.find(
+        ([f]) =>
+          f ===
+          'routes/api/shell/changes/cards/[id]/remove-dependents/+server.ts',
+      )?.[1] ?? '';
+    expect(route).toMatch(/await ownerOf\(event\)/);
+    expect(route).toMatch(/runAs\(owner, \(\) =>\s*removeDependentCards\(/);
+    expect(route).not.toMatch(/approved/);
+  });
+
   it('apply and undo are reachable only from their owner routes', () => {
     // changes.ts holds requestApply / applyApproved / undoOwnBatch; the
     // change engine (src/engine, outside this walk) holds undoBatch, which

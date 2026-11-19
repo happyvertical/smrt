@@ -7,6 +7,7 @@ import { afterEach, beforeEach, expect, it } from 'vitest';
 import { businessWorkbook } from '../../test-support/import-workbook.ts';
 import { toRuntimeModel } from '../engine/definition.ts';
 import { createEngineImportTarget } from '../engine/import-target.ts';
+import { flushChecks } from '../lib/server/changes.ts';
 import { startDraft } from '../lib/server/drafts.ts';
 import { closeHost, hostFor } from '../lib/server/host.ts';
 import { openShell, type ShellHarness } from '../lib/server/test-support.ts';
@@ -48,6 +49,10 @@ function event(
 
 /** The owner's one-step Apply: read the changes waiting, then apply that digest. */
 async function publishOpenDraft() {
+  // The first read queues the debounced exact checks; the owner's UI waits for
+  // the `changes` event, a test flushes them.
+  await changesRoute.GET(event('/api/shell/changes', 'GET', {}));
+  await flushChecks();
   const review = await changesRoute.GET(event('/api/shell/changes', 'GET', {}));
   expect(review.status).toBe(200);
   const state = await review.json();

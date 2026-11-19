@@ -3,7 +3,9 @@ import { card, changes, noChanges } from '../../test/changes-fixtures.ts';
 import {
   applyBlock,
   applySummary,
+  dependencyActions,
   isApplySummary,
+  isChecking,
   overwriteLines,
   planPill,
   planQuickEdit,
@@ -83,6 +85,41 @@ describe('quick edit', () => {
     expect(
       planQuickEdit(card({ commands: [{ type: 'removeField' }] })),
     ).toBeNull();
+  });
+});
+
+describe('checks and dependent cards', () => {
+  it('treats stale and checking alike, and blockers win over checking', () => {
+    expect(isChecking(changes({ checkState: 'checking' }))).toBe(true);
+    expect(isChecking(changes({ checkState: 'ok' }))).toBe(false);
+    expect(
+      applyBlock(changes({ checkState: 'checking', canApply: false })),
+    ).toMatch(/Checking/);
+    expect(
+      planPill(changes({ checkState: 'checking', canApply: false }))?.state,
+    ).toBe('checking');
+    expect(
+      applyBlock(
+        changes({
+          checkState: 'checking',
+          blockers: [{ code: 'x', message: 'm' }],
+        }),
+      ),
+    ).toBe("Can't apply yet");
+  });
+
+  it('offers Put it back only when the removed change is known', () => {
+    const flagged = card({
+      checks: [{ code: 'depends_on_removed', message: 'm', cause: 'c0' }],
+    });
+    expect(dependencyActions(flagged)).toEqual({ putBack: 'c0' });
+    expect(
+      dependencyActions(
+        card({ checks: [{ code: 'depends_on_removed', message: 'm' }] }),
+      ),
+    ).toEqual({ putBack: null });
+    expect(dependencyActions(card())).toBeNull();
+    expect(dependencyActions({ ...flagged, status: 'removed' })).toBeNull();
   });
 });
 

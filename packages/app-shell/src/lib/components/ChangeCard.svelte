@@ -4,6 +4,7 @@ import type { Snippet } from 'svelte';
 import {
   type CardKind,
   cardKind,
+  dependencyActions,
   planQuickEdit,
   type QuickEdit,
   quickEditCalls,
@@ -20,6 +21,10 @@ interface Props {
   /** Set while this card's last action failed. */
   message?: string;
   onremove: () => void;
+  /** "Put it back": restore the removed change this one needs (given its id). */
+  onputback?: (removedId: string) => void;
+  /** "Remove those too": remove this and every change that needs the same removed one. */
+  onremovedependents?: () => void;
   /** One PATCH body per changed piece; resolves true when saved. */
   onedit: (edits: QuickEdit[]) => Promise<boolean>;
   /**
@@ -38,6 +43,8 @@ let {
   busy = false,
   message = '',
   onremove,
+  onputback,
+  onremovedependents,
   onedit,
   oncomment,
   more,
@@ -85,10 +92,14 @@ async function save(event: SubmitEvent) {
   }
 }
 
+// One line per message: the card's own checks and the page's blockers repeat each other.
 const problems = $derived([
-  ...card.checks.map((c) => c.message),
-  ...blockers.map((b) => b.message),
+  ...new Set([
+    ...card.checks.map((c) => c.message),
+    ...blockers.map((b) => b.message),
+  ]),
 ]);
+const dependency = $derived(dependencyActions(card));
 </script>
 
 <article
@@ -128,6 +139,17 @@ const problems = $derived([
       {/if}
     </div>
   </div>
+
+  {#if dependency}
+    <div class="smrt-change-card__row smrt-change-card__fix" data-testid="dependency-actions">
+      {#if dependency.putBack && onputback}
+        <Button size="sm" variant="secondary" disabled={busy} onclick={() => onputback(dependency.putBack as string)}>Put it back</Button>
+      {/if}
+      {#if onremovedependents}
+        <Button size="sm" variant="ghost" disabled={busy} onclick={onremovedependents}>Remove those too</Button>
+      {/if}
+    </div>
+  {/if}
 
   {#if editing && edit}
     <form class="smrt-change-card__panel" id="{uid}-edit" onsubmit={save}>

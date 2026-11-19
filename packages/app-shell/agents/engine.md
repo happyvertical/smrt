@@ -314,7 +314,12 @@ preserves the workbook's explicit display field.
   `report_uses_removed_field`, `same_field_twice` (`findChainBlockers`, from
   versions and steps); overwrite counts (`recordsUpdated`, `recordsMerged`,
   archived values) are shown only, never blocking; `engineDigest` is the
-  rehearsal's `replayDigest`; `batchDigest(engineDigest, cards)` adds the cards.
+  rehearsal's `replayDigest` (what `publishDraft` takes as `expect`);
+  `reviewDigest` is what the owner's review pins: the chain plus ONLY the
+  overwrite figures (load `update`, merge `removed`), so live rows that
+  overwrite nothing do not move it; `batchDigest(reviewDigest, cards)` adds the
+  cards. Blockers carry plain-words messages and `versions` (the working copy's
+  version numbers) so the caller can name the owning cards.
 - `undoBatch(principal, live, { versions, author })`: `undoTo` the parent of the
   first applied version. Never restores the pre-apply snapshot, so records added
   after Apply stay and archived values come back. Live must not be frozen.

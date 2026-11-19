@@ -217,7 +217,7 @@ export interface ChangeCardView {
   /** An adopted older draft's change: no commands, no Remove, no Quick edit. */
   opaque: boolean;
   commands: Record<string, unknown>[];
-  checks: { code: string; message: string }[];
+  checks: { code: string; message: string; cause?: string }[];
   /** Slice 5 (assistant review). Shown by a later change; kept as sent. */
   questions: unknown[];
   threadId: string;
@@ -242,7 +242,8 @@ export interface ChangesState {
   generation: number;
   /** Apply's `expect`. */
   digest: string;
-  checkState: 'none' | 'ok' | 'blocked' | 'stale';
+  /** `stale`: waiting for its check; `checking`: the check is running. */
+  checkState: 'none' | 'ok' | 'blocked' | 'stale' | 'checking';
   canApply: boolean;
   blockers: ChangeBlocker[];
   overwrites: {

@@ -4,7 +4,11 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { App } from '../lib/objects/App.ts';
 import { type Approval, ApprovalCollection } from '../lib/objects/Approval.ts';
 import { applyOwnBatch, listApprovalViews } from '../lib/server/approvals.ts';
-import { changesState, discardChanges } from '../lib/server/changes.ts';
+import {
+  changesState,
+  discardChanges,
+  flushChecks,
+} from '../lib/server/changes.ts';
 import { type ShellEvent, subscribe } from '../lib/server/events.ts';
 import { getHost } from '../lib/server/host.ts';
 import { runAs } from '../lib/server/owner.ts';
@@ -444,6 +448,8 @@ it('keeps builder and applied-change snapshot paths server-side', async () => {
     App.removeField('PrivateSnapshot', 'value'),
   );
   expect(waiting).not.toHaveProperty('snapshot');
+  await runAs(h.owner, () => changesState());
+  await flushChecks(); // the debounced exact checks pin the digest
   const state = await runAs(h.owner, () => changesState());
   const applied = await runAs(h.owner, () => applyOwnBatch(state.digest));
   expect(applied.status).toBe('approved');
