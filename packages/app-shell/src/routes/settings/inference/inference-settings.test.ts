@@ -199,6 +199,30 @@ describe('Inference settings for the shell owner', () => {
   });
 });
 
+describe('local profile: the one owner is the deployment', () => {
+  it('still writes the app scope (cloud refuses it, #5191)', async () => {
+    const body = new FormData();
+    body.set(
+      'payload',
+      JSON.stringify({
+        tier: 'good',
+        scope: 'app',
+        target: { provider: 'openai', model: 'gpt-4o-mini' },
+      }),
+    );
+    const outcome = await (
+      actions.saveTier as (e: unknown) => Promise<unknown>
+    )({
+      request: new Request('http://localhost/settings/inference?/saveTier', {
+        method: 'POST',
+        body,
+      }),
+      locals: localsOf(h.owner),
+    });
+    expect(outcome).toMatchObject({ ok: true });
+  });
+});
+
 describe('first-start schema', () => {
   it('creates the inference, preference and secrets tables', async () => {
     const tables = (

@@ -17,7 +17,8 @@ behaviour and tests are the baseline and must not change.
 | User app data | `<data root>/user-app` (+ `-draft`) | `<SMRT_APP_SHELL_DATA_ROOT>/tenants/<tenant id>/<app id>` (+ `-draft`), SQLite engine |
 | Data-root custody and lease | yes | never |
 | Assistant engines | `api`, `chatgpt`, `claude-code`, `codex` | `api` on the owner's own key only |
-| Operator key (config/env) | the assistant's `base` | ignored; no key means "unavailable" (#5194 wires hosted inference) |
+| Operator key (config/env) | the assistant's `base` | never used: the resolved target must carry the tenant's own stored key, else "unavailable" (#5194 wires hosted inference) |
+| `/settings/inference` authority | the one owner is the deployment (app scope writable) | tenant scope only; app-scope writes and server-side probes refused |
 | Workbook import | yes | refused (404): its job runner is the local runtime's |
 
 Desktop-only surfaces answer 404 in cloud before touching the runtime:
@@ -89,6 +90,39 @@ Secrets and the assistant: `SMRT_SECRET_MASTER_KEY` must be set in cloud (the
 runtime generates none outside local), or an owner's key cannot be saved. The
 `/mcp` route accepts the signed session only in cloud (local MCP tokens verify
 `null` outside the local profile).
+
+## Inference boundary
+
+An owner owns one tenant, not the deployment. Two rules, both enforced in the
+shell (no core change):
+
+- **Assistant credentials.** `resolveAssistantOptions` in cloud accepts only a
+  resolution that is `via: 'resolver'`, `source: 'byo'`, carries its own literal
+  `apiKey` and whose client options hold exactly that key
+  (`assertOwnerSuppliedKey`, `assistant/config.ts`). That is the stored-key layer
+  (smrt-secrets, the user's then the tenant's) and nothing else. An app
+  `inference.tiers` binding, a tenant override row naming `apiKeyEnv`, a
+  `local`/`hosted` source, or core's provider-environment key fill
+  (`bindInferenceTarget`) all fail with `assistant_not_configured`, so an
+  account with no key never runs on the operator's.
+- **Settings authority.** `shellInference()` rebuilds the settings service in
+  cloud with an authorizer that admits only `scopeType: 'tenant'` and the
+  session's own tenant id (`tenantOnlyInCloud`, `inference.ts`). Every action of
+  the shared controller is accounted for: `saveTier`/`saveDefaultTier` at `app`,
+  `saveAlias`, `saveFusion`, `saveTranscripts` are refused (403, app-scope rows
+  are every tenant's); `saveKey`, `saveDefaults` and tenant-scope tier writes act
+  on the ambient tenant only; `testConnection`, `testCandidate` and
+  `discoverModels` are refused (they would make the server connect to an
+  owner-typed address, read operator key variables, or probe the server's
+  loopback). `load` shows the deployment's app rows read-only (operator config,
+  no keys) plus the caller's own tenant row. Desktop keeps `can: () => true`.
+- **Change feed.** `authorizeChangeFeedForOwner` offers a cloud owner only
+  `TENANT_SCOPED_TABLES`, never accounts, tenants, secrets or the global override
+  table.
+
+Tests: `routes/settings/inference/cloud-inference.test.ts`,
+`change-feed` cases in `cloud-change-feed.test.ts`, and the local-profile
+case in `inference-settings.test.ts`.
 
 ## Accounts
 

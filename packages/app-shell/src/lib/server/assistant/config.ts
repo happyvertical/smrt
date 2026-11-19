@@ -136,7 +136,10 @@ export async function resolveAssistantOptions(
 ): Promise<Record<string, unknown>> {
   // Hosted: the deployment's own key (config, environment) is the operator's,
   // and hosted inference is not wired (#5194). Only a key the owner saved
-  // answers; with none the assistant is unavailable and says so.
+  // answers; with none the assistant is unavailable and says so. Leaving out
+  // `base` is not enough: an app `inference.tiers` binding that names a
+  // provider, or core's own provider-environment fill, would still run on the
+  // operator's key, so the resolved target is checked below.
   const hosted = (await shellProfile()) === 'cloud';
   const base = hosted ? undefined : baseOptions(config.env ?? process.env);
   const resolved = await runAs(principal, () =>
@@ -152,7 +155,35 @@ export async function resolveAssistantOptions(
   );
   assertApiKeyOptions(resolved.options);
   if (!resolved.options) throw new AssistantNotConfiguredError();
+  if (hosted) assertOwnerSuppliedKey(resolved);
   return resolved.options;
+}
+
+/**
+ * Hosted: the resolved target must run on a key this tenant saved itself. The
+ * stored-key layer (the user's, else the tenant's, from smrt-secrets) is the
+ * only resolver answer that reports `source: 'byo'` WITH its own literal
+ * `apiKey`; an app binding (`app`), an environment-named key, a local server
+ * or the operator's hosted source never does. The client options must carry
+ * exactly that key, so nothing was filled in from the provider environment.
+ * Throws {@link AssistantNotConfiguredError}.
+ */
+function assertOwnerSuppliedKey(resolved: {
+  options: Record<string, unknown> | undefined;
+  bound: boolean;
+  resolution: { via?: string; target?: { source?: string; apiKey?: unknown } };
+}): void {
+  const target = resolved.resolution.target;
+  const key = target?.apiKey;
+  if (
+    !resolved.bound ||
+    resolved.resolution.via !== 'resolver' ||
+    target?.source !== 'byo' ||
+    typeof key !== 'string' ||
+    key.trim() === '' ||
+    resolved.options?.apiKey !== key.trim()
+  )
+    throw new AssistantNotConfiguredError();
 }
 
 /**
