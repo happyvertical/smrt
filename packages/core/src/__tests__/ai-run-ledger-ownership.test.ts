@@ -10,9 +10,13 @@ import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, describe, expect, it } from 'vitest';
 import { insertAiUsageRow } from '../adapters/ai-usage';
 import {
+  AiRunTotalsUnverifiableError,
+  checkAiRunTotals,
   getAiRun,
+  getRunTrajectory,
   openAiRun,
   reconcileAiCall,
+  repairAiRunTotals,
   reserveAiCall,
   settleAiCall,
 } from '../system/browser';
@@ -28,11 +32,16 @@ afterEach(async () => {
   await closeAiRunTestDatabases();
 });
 
-/** A row of tenant-two that already holds `id`, naming `runId`. */
-async function heldRow(db: DatabaseInterface, id: string, runId: string) {
+/** A row of `tenant` that already holds `id`, naming `runId`. */
+async function heldRow(
+  db: DatabaseInterface,
+  id: string,
+  runId: string,
+  tenant = 'tenant-two',
+) {
   await insertAiUsageRow(
     db,
-    { ...usageEvent(500, 5), tenantId: 'tenant-two' },
+    { ...usageEvent(500, 5), tenantId: tenant },
     { id, runId },
   );
 }
@@ -107,5 +116,79 @@ describe.each(aiRunTestEngines)('ledger ownership on %s', (engine) => {
       reservedCalls: 0,
     });
     expect(await calls(db, run.id)).toEqual(['abandoned']);
+  });
+
+  it('records a refused charge as released, not settled', async () => {
+    const db = await newAiRunTestDatabase(engine);
+    const run = await openAiRun(
+      { db, usageTracking: true, tenantId: 'tenant-one' },
+      { type: 'turn' },
+    );
+    const callId = crypto.randomUUID();
+    await heldRow(db, callId, run.id);
+    await reserveAiCall(db, run.id, { callId, inputTokens: 10 });
+    await settleAiCall(db, {
+      runId: run.id,
+      callId,
+      usage: { ...usageEvent(12, 0.01), tenantId: 'tenant-one' },
+    });
+    expect(await calls(db, run.id)).toEqual(['released']);
+  });
+
+  it.each([
+    ['another tenant', 'tenant-two', undefined],
+    ['another run of the same tenant', 'tenant-one', 'other-run'],
+  ] as const)('never totals the usage row of %s held under a call id', async (_, tenant, otherRun) => {
+    const db = await newAiRunTestDatabase(engine);
+    const run = await openAiRun(
+      { db, usageTracking: true, tenantId: 'tenant-one' },
+      { type: 'turn' },
+    );
+    const callId = crypto.randomUUID();
+    await heldRow(db, callId, otherRun ?? run.id, tenant);
+    await reserveAiCall(db, run.id, { callId, inputTokens: 10 });
+    await settleAiCall(db, {
+      runId: run.id,
+      callId,
+      usage: { ...usageEvent(12, 0.01), tenantId: 'tenant-one' },
+    });
+    // The call event reads as settled (as an older refusal left it): its
+    // own usage row does not exist, so the held row is not joined to it.
+    await db.query(
+      "UPDATE _smrt_ai_run_events SET reservation = 'settled' WHERE run_id = $1 AND call_id = $2",
+      run.id,
+      callId,
+    );
+    expect(await checkAiRunTotals(db, run.id)).toMatchObject({
+      verifiable: false,
+      missingUsageRows: 1,
+      computed: null,
+    });
+    await expect(repairAiRunTotals(db, run.id)).rejects.toBeInstanceOf(
+      AiRunTotalsUnverifiableError,
+    );
+    expect(await getAiRun(db, run.id)).toMatchObject({ calls: 0, tokens: 0 });
+  });
+
+  it('shows a call the usage row of its own run only in the trajectory', async () => {
+    const db = await newAiRunTestDatabase(engine);
+    const run = await openAiRun(
+      { db, usageTracking: true, tenantId: 'tenant-one' },
+      { type: 'turn' },
+    );
+    const callId = crypto.randomUUID();
+    // A row of the same tenant that belongs to another run holds the id.
+    await heldRow(db, callId, 'other-run', 'tenant-one');
+    await reserveAiCall(db, run.id, { callId, inputTokens: 10 });
+    const entry = async () =>
+      (await getRunTrajectory(db, run.id))?.entries.find(
+        (candidate) => candidate.event?.callId === callId,
+      );
+    expect((await entry())?.usage).toBeFalsy();
+
+    // The call's own row, once it exists, is shown (control).
+    await db.query('DELETE FROM _smrt_ai_usage WHERE id = $1', callId);
+    await heldRow(db, callId, run.id, 'tenant-one');
+    expect((await entry())?.usage?.callId).toBe(callId);
   });
 });
