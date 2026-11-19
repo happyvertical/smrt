@@ -45,3 +45,50 @@ describe('a replacement never skips its unregistered direct parent', () => {
     expect(leaf?.config.mcp).toBe(false);
   });
 });
+
+describe('a subtype of a replaced parent still gets the table check', () => {
+  it('refuses an explicit different table after a sibling replaced the single-table parent', () => {
+    const Base = class Scene extends SmrtObject {
+      title = '';
+    };
+    const Replacement = class Scene extends Base {
+      mood = '';
+    };
+    const Sub = class Scene extends Base {
+      tone = '';
+    };
+    smrt({
+      packageName: A,
+      tableStrategy: 'sti',
+      tableName: 'scenes',
+    })(Base);
+    smrt({ packageName: B, replaceParent: true })(Replacement);
+    expect(() =>
+      smrt({ packageName: C, replaceParent: false, tableName: 'other_scenes' })(
+        Sub,
+      ),
+    ).toThrow(
+      expect.objectContaining({
+        code: 'CONFIG_SAME_NAME_SUBTYPE_TABLE_MISMATCH',
+      }),
+    );
+    expect(ObjectRegistry.getClassByConstructor(Sub)).toBeUndefined();
+  });
+
+  it('accepts the subtype on the parent table after the sibling replacement', () => {
+    const Base = class Scene extends SmrtObject {
+      title = '';
+    };
+    const Replacement = class Scene extends Base {
+      mood = '';
+    };
+    const Sub = class Scene extends Base {
+      tone = '';
+    };
+    smrt({ packageName: A, tableStrategy: 'sti', tableName: 'scenes' })(Base);
+    smrt({ packageName: B, replaceParent: true })(Replacement);
+    smrt({ packageName: C, replaceParent: false })(Sub);
+    const sub = ObjectRegistry.getClassByConstructor(Sub);
+    expect(sub?.schema?.tableName).toBe('scenes');
+  });
+});

@@ -487,6 +487,17 @@ function findSameNameParent(
       byConstructor.set(entry.constructor, [key, entry]);
     }
   }
+  // A parent a replacement took over is still the parent of its other
+  // subtypes: they are checked against the declaration it left behind.
+  for (const [key, entry] of replacedDeclarations()) {
+    if (
+      entry.name === name &&
+      entry.constructor !== ctor &&
+      !byConstructor.has(entry.constructor)
+    ) {
+      byConstructor.set(entry.constructor, [key, entry]);
+    }
+  }
   if (byConstructor.size === 0) return undefined;
   for (
     let proto = Object.getPrototypeOf(ctor);
