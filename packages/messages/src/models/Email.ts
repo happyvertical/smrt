@@ -20,6 +20,13 @@ import { Message } from './Message';
 
 @smrt({
   tableStrategy: 'sti',
+  // Opt-in semantic mail search (MailSearchService mode 'semantic'). No
+  // automatic generation: sync must not call an embedding model per message.
+  embeddings: {
+    fields: ['subject', 'textBody'],
+    provider: 'auto',
+    autoGenerate: false,
+  },
   api: { include: ['list', 'get', 'create', 'update', 'delete'] },
   mcp: { include: ['list', 'get'] },
   cli: { skipApiCheck: true },
