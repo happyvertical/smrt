@@ -153,15 +153,22 @@ compared from one unlocked read of `tenant_id` before anything of the
 referenced run is locked or read. Every chain walk (`readAiRunChainIds`,
 hence `lockAiRunChain`, fences and charges) and every descendant walk
 (`readAiRunDescendantIds`, cancel; the sweep's non-durable subtree) stops at
-a tenant boundary, so a link written before this check never carries a
-charge, stop or cancel across tenants.
+a tenant boundary, with the tenant as a predicate of each lookup (another
+tenant's run is never read), and the sweep's orphan repair and both
+retention passes join a parent only within the child's tenant (null-safe),
+so a parent of another tenant reads as a missing one. A link written before
+this check never carries a charge, stop, cancel or retention decision
+across tenants.
 
 **Accounting.** Run totals are the budget authority and change only in short
 transactions that lock the chain root first (claim fence, then run rows by
 depth and id, then event rows) together with the event that justifies the
 change; usage rows are the billing ledger and are never read for a budget.
 A call is charged once: own totals of its run, inclusive totals of the run
-and every ancestor. The reservation state machine is `reserved` → `settled`
+and every ancestor, and only against its own usage row (the row under its
+id, of its run, in its run's tenant): when another run's or tenant's row
+holds the id, settlement returns the reservation and charges nothing, and
+the stale-reservation reconciler never settles from such a row. The reservation state machine is `reserved` → `settled`
 | `released` | `abandoned` → `settled_late`, plus `unreserved`; every move is
 guarded on the expected state. A refused reservation stops the calling run
 with a typed reason and `stop_detail` and throws `AiRunStoppedError`; a
@@ -281,7 +288,8 @@ are deleted, and deletes the checkpoint unless the run `failed`. Protected:
 `running`, `waiting-approval`, durable `stopped`, `experiment_id` set,
 `retain` set, and (through the top-down order) every descendant of a
 protected run; a child is never pruned before its parent, and a run with a
-call still `reserved` keeps its events. Run rows go with their usage rows at
+call still `reserved` keeps its events. Run rows go with their usage rows (only
+those of the run's own tenant: `run_id` is not a foreign key) at
 the `aiUsage.maxAgeDays` limit (90) counted from `finished_at`, never while
 the trajectory is kept, top down; the failed run's checkpoint goes with its
 row. Usage rows keep their own policy. Evaluations are never swept. Index:
@@ -297,7 +305,11 @@ tokens and cost, checks and approval decisions with their rates (from the
 events, or the saved counts of a pruned trajectory), p50 active time; other
 tenants counted in `excluded` (`tenantId` is a predicate of the page query;
 the rest is one `COUNT(*)`, never read). `getRunTrajectory(runId | { callId })` is the
-one reader for a call in a run and a call on its own. CLI: `smrt ai:usage
+one reader for a call in a run and a call on its own; a usage row leads it
+only to a run of the row's tenant (the run is read by id and tenant in one
+statement, and every event page is scoped to the run's tenant, so a pruned
+and reused id never yields another tenant's run), a call on its own carries only its tenant's evaluations, and a
+run's usage rows and evaluations are joined within the run's tenant. CLI: `smrt ai:usage
 --runs` (every type), `--by fusion` (fusion runs).
 
 **Upgrades.** Schema 1.14.0 created the fusion table; 1.17.0 rebuilt it once

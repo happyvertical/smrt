@@ -523,18 +523,48 @@ export async function getRunTrajectory(
   db: DatabaseInterface,
   target: string | { runId: string } | { callId: string },
 ): Promise<AiRunTrajectory | null> {
+  return readTrajectory(db, target, undefined);
+}
+
+/** SQL predicate on `tenant_id` (null-safe) at parameter `index`. */
+function tenantPredicate(
+  tenant: string | null,
+  index: number,
+  column = 'tenant_id',
+): { sql: string; params: unknown[] } {
+  return tenant === null
+    ? { sql: `${column} IS NULL`, params: [] }
+    : { sql: `${column} = $${index}`, params: [tenant] };
+}
+
+/**
+ * {@link getRunTrajectory}, with the run read in `tenant` when one is given:
+ * the tenant is a predicate of the run's lookup and of every event page, so
+ * the run (and its events) can never be another tenant's, even if the id was
+ * pruned and reused between statements.
+ */
+async function readTrajectory(
+  db: DatabaseInterface,
+  target: string | { runId: string } | { callId: string },
+  expectedTenant: string | null | undefined,
+): Promise<AiRunTrajectory | null> {
   if (typeof target === 'object' && 'callId' in target) {
     const usage = getRows(
       await aiRunQuery(
         db,
-        `SELECT ${USAGE_COLUMNS}, run_id FROM _smrt_ai_usage WHERE id = $1`,
+        `SELECT ${USAGE_COLUMNS}, run_id, tenant_id FROM _smrt_ai_usage WHERE id = $1`,
         target.callId,
       ),
     );
     if (!usage[0]) return null;
     const runId = text(usage[0].run_id);
+    const usageTenant = text(usage[0].tenant_id) ?? null;
     if (runId) {
-      const inRun = await getRunTrajectory(db, runId);
+      // A usage row leads only to a run of its own tenant: `run_id` is not a
+      // foreign key, so a row naming another tenant's run is read as a call
+      // on its own. The run is read in the row's tenant (one query, a SQL
+      // predicate), never checked first and read after.
+      const inRun = await readTrajectory(db, runId, usageTenant);
       if (inRun) return inRun;
     }
     return {
@@ -548,8 +578,11 @@ export async function getRunTrajectory(
             await aiRunQuery(
               db,
               `SELECT ${EVALUATION_COLUMNS} FROM _smrt_ai_evaluations
-                WHERE call_id = $1 ORDER BY created_at, id`,
+                WHERE call_id = $1 AND ${
+                  usageTenant === null ? 'tenant_id IS NULL' : 'tenant_id = $2'
+                } ORDER BY created_at, id`,
               target.callId,
+              ...(usageTenant === null ? [] : [usageTenant]),
             ),
           ).map(toEvaluation),
         },
@@ -558,11 +591,19 @@ export async function getRunTrajectory(
     };
   }
   const runId = typeof target === 'string' ? target : target.runId;
+  const expected =
+    expectedTenant === undefined
+      ? { sql: '', params: [] as unknown[] }
+      : (() => {
+          const predicate = tenantPredicate(expectedTenant, 2, 'r.tenant_id');
+          return { sql: ` AND ${predicate.sql}`, params: predicate.params };
+        })();
   const runRows = getRows(
     await aiRunQuery(
       db,
-      `SELECT ${AI_RUN_COLUMNS} FROM _smrt_ai_runs r WHERE r.id = $1`,
+      `SELECT ${AI_RUN_COLUMNS} FROM _smrt_ai_runs r WHERE r.id = $1${expected.sql}`,
       runId,
+      ...expected.params,
     ),
   );
   if (!runRows[0]) return null;
@@ -571,8 +612,11 @@ export async function getRunTrajectory(
     await aiRunQuery(
       db,
       `SELECT ${EVALUATION_COLUMNS} FROM _smrt_ai_evaluations
-        WHERE run_id = $1 ORDER BY created_at, id`,
+        WHERE run_id = $1 AND ${
+          run.tenantId === null ? 'tenant_id IS NULL' : 'tenant_id = $2'
+        } ORDER BY created_at, id`,
       runId,
+      ...(run.tenantId === null ? [] : [run.tenantId]),
     ),
   ).map(toEvaluation);
   if (run.trajectoryPruned) {
@@ -595,11 +639,19 @@ export async function getRunTrajectory(
     const page = getRows(
       await aiRunQuery(
         db,
-        `SELECT * FROM _smrt_ai_run_events
-          WHERE run_id = $1 AND seq > $2 ORDER BY seq LIMIT $3`,
+        // Events of this run only while the run with this id is the one
+        // read above (its tenant), page after page.
+        `SELECT * FROM _smrt_ai_run_events e
+          WHERE e.run_id = $1 AND e.seq > $2
+            AND EXISTS (SELECT 1 FROM _smrt_ai_runs r
+                         WHERE r.id = e.run_id AND ${
+                           tenantPredicate(run.tenantId, 4, 'r.tenant_id').sql
+})
+          ORDER BY e.seq LIMIT $3`,
         runId,
         lastSeq,
         PAGE,
+        ...tenantPredicate(run.tenantId, 4).params,
       ),
     ).map(toAiRunEvent);
     if (page.length === 0) break;
@@ -613,13 +665,19 @@ export async function getRunTrajectory(
     ];
     const usageById = new Map<string, AiRunTrajectoryUsage>();
     const evaluationsBy = new Map<string, AiRunTrajectoryEvaluation[]>();
+    // Usage rows and evaluations join only within the run's tenant.
+    const tenantParams = run.tenantId === null ? [] : [run.tenantId];
+    const tenantSql = (index: number) =>
+      run.tenantId === null ? 'tenant_id IS NULL' : `tenant_id = $${index}`;
     if (callIds.length > 0) {
       const marks = callIds.map((_, i) => `$${i + 1}`).join(', ');
       for (const row of getRows(
         await aiRunQuery(
           db,
-          `SELECT ${USAGE_COLUMNS} FROM _smrt_ai_usage WHERE id IN (${marks})`,
+          `SELECT ${USAGE_COLUMNS} FROM _smrt_ai_usage
+            WHERE id IN (${marks}) AND ${tenantSql(callIds.length + 1)}`,
           ...callIds,
+          ...tenantParams,
         ),
       )) {
         usageById.set(String(row.id), toUsage(row));
@@ -631,8 +689,10 @@ export async function getRunTrajectory(
         await aiRunQuery(
           db,
           `SELECT ${EVALUATION_COLUMNS} FROM _smrt_ai_evaluations
-            WHERE call_id IN (${marks}) ORDER BY created_at, id`,
+            WHERE call_id IN (${marks}) AND ${tenantSql(callIds.length + 1)}
+            ORDER BY created_at, id`,
           ...callIds,
+          ...tenantParams,
         ),
       )) {
         const key = String(row.call_id);

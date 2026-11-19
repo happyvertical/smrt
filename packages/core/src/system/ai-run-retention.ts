@@ -167,6 +167,8 @@ export async function pruneAiRunTrajectories(
                   p.trajectory_pruned AS parent_pruned
              FROM _smrt_ai_runs r
              LEFT JOIN _smrt_ai_runs p ON p.id = r.parent_run_id
+                  AND (p.tenant_id = r.tenant_id
+                       OR (p.tenant_id IS NULL AND r.tenant_id IS NULL))
             WHERE ${where}
             ORDER BY r.id LIMIT $${params.length}`,
           ...params,
@@ -325,6 +327,8 @@ export async function pruneAiRuns(
           `SELECT r.id, r.parent_run_id, p.id AS parent_id
              FROM _smrt_ai_runs r
              LEFT JOIN _smrt_ai_runs p ON p.id = r.parent_run_id
+                  AND (p.tenant_id = r.tenant_id
+                       OR (p.tenant_id IS NULL AND r.tenant_id IS NULL))
             WHERE ${where}
             ORDER BY r.id LIMIT $${params.length}`,
           ...params,
@@ -354,13 +358,17 @@ export async function pruneAiRuns(
             const locked = getRows(
               await aiRunQuery(
                 tx.db,
-                `SELECT r.id FROM _smrt_ai_runs r
+                `SELECT r.id, r.tenant_id FROM _smrt_ai_runs r
                   WHERE r.id = $1 AND r.trajectory_pruned <> 0
                     AND ${UNPROTECTED}${forUpdate(tx)}`,
                 id,
               ),
             );
             if (!locked[0]) return false;
+            const tenantId =
+              locked[0].tenant_id === null || locked[0].tenant_id === undefined
+                ? null
+                : String(locked[0].tenant_id);
             for (const table of [
               '_smrt_ai_run_events',
               '_smrt_ai_run_checkpoints',
@@ -371,10 +379,16 @@ export async function pruneAiRuns(
                 id,
               );
             }
+            // Only the run's own tenant's usage rows go with it: `run_id`
+            // is not a foreign key, and a row of another tenant naming
+            // this id is never this run's to delete.
             await aiRunQuery(
               tx.db,
-              'DELETE FROM _smrt_ai_usage WHERE run_id = $1',
+              tenantId === null
+                ? 'DELETE FROM _smrt_ai_usage WHERE run_id = $1 AND tenant_id IS NULL'
+                : 'DELETE FROM _smrt_ai_usage WHERE run_id = $1 AND tenant_id = $2',
               id,
+              ...(tenantId === null ? [] : [tenantId]),
             );
             await aiRunQuery(
               tx.db,

@@ -501,6 +501,28 @@ export interface SettleAiCallInput {
   status?: string;
 }
 
+/** Whether the usage row under the call id is this call's (run and tenant). */
+async function ownsUsageRow(
+  tx: AiRunTx,
+  input: { runId: string; callId: string },
+  tenantId: string | null,
+): Promise<boolean> {
+  return (
+    getRows(
+      await aiRunQuery(
+        tx.db,
+        `SELECT id FROM _smrt_ai_usage
+          WHERE id = $1 AND run_id = $2 AND ${
+            tenantId === null ? 'tenant_id IS NULL' : 'tenant_id = $3'
+          }`,
+        input.callId,
+        input.runId,
+        ...(tenantId === null ? [] : [tenantId]),
+      ),
+    ).length > 0
+  );
+}
+
 async function settleInTx(
   tx: AiRunTx,
   input: SettleAiCallInput,
@@ -556,6 +578,17 @@ async function settleInTx(
   if (path === 'unreserved') {
     // The one case where the insert, not the event, guards double charging.
     if (!inserted) return 'already_settled';
+  } else if (!inserted && !(await ownsUsageRow(tx, input, runTenant))) {
+    // The call id is held by a usage row that is not this call's (another
+    // run's or tenant's): charging would bill a call with no billing row of
+    // its own. Its reservation is returned and nothing is charged.
+    logger.warn(
+      `[smrt] AI run ${input.runId} call ${input.callId}: its usage row id is held by another run's row; returned its reservation without a charge`,
+    );
+    await chargeChain(tx, chain, null, returned);
+    return 'already_settled';
+  }
+  if (path === 'unreserved') {
     await insertAiRunEventTx(tx, input.runId, {
       id: newAiRunId(),
       type: 'call',
@@ -683,11 +716,19 @@ export async function reconcileAiCall(
     db,
     async (tx) => {
       const chain = await lockAiRunChain(tx, runId);
+      // Only this call's own row is evidence of its usage: the one under
+      // its id, of its run, in its run's tenant.
+      const tenant = chain[chain.length - 1]?.tenantId ?? null;
       const usage = getRows(
         await aiRunQuery(
           tx.db,
-          'SELECT * FROM _smrt_ai_usage WHERE id = $1',
+          `SELECT * FROM _smrt_ai_usage
+            WHERE id = $1 AND run_id = $2 AND ${
+              tenant === null ? 'tenant_id IS NULL' : 'tenant_id = $3'
+            }`,
           callId,
+          runId,
+          ...(tenant === null ? [] : [tenant]),
         ),
       );
       if (usage[0]) {
@@ -1043,6 +1084,8 @@ async function repairOrphanedAiRuns(
         db,
         `SELECT r.id FROM _smrt_ai_runs r
            LEFT JOIN _smrt_ai_runs p ON p.id = r.parent_run_id
+                  AND (p.tenant_id = r.tenant_id
+                       OR (p.tenant_id IS NULL AND r.tenant_id IS NULL))
           WHERE r.parent_run_id IS NOT NULL
             AND (
               (r.status = 'running' AND p.status = 'cancelled')
