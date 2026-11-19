@@ -3634,6 +3634,8 @@ export class SchemaComparer {
               notNull: Boolean(row.notnull),
               primaryKey: Boolean(row.pk),
               defaultValue: row.dflt_value,
+              generated: true,
+              hidden: false,
             };
             dbColumnNames.add(name);
           }
@@ -3676,6 +3678,8 @@ export class SchemaComparer {
           notNull: false,
           primaryKey: false,
           defaultValue: row.dflt_value,
+          generated: true,
+          hidden: false,
         };
         dbColumnNames.add(name);
       }

@@ -29,7 +29,7 @@ export async function inspectTableSchema(
   const oid = table.rows[0].oid;
   const columns = await db.query(
     `SELECT a.attname AS name, pg_catalog.format_type(a.atttypid, a.atttypmod) AS type,
-       a.attnotnull AS not_null, pg_catalog.pg_get_expr(d.adbin, d.adrelid) AS default_value,
+       a.attnotnull AS not_null, a.attgenerated <> '' AS generated, pg_catalog.pg_get_expr(d.adbin, d.adrelid) AS default_value,
        EXISTS (SELECT 1 FROM pg_catalog.pg_index i
          WHERE i.indrelid = a.attrelid AND i.indisprimary AND a.attnum = ANY(i.indkey)) AS primary_key
      FROM pg_catalog.pg_attribute a
@@ -78,6 +78,8 @@ export async function inspectTableSchema(
           notNull: row.not_null === true,
           primaryKey: row.primary_key === true,
           defaultValue: row.default_value,
+          generated: row.generated === true,
+          hidden: false,
         },
       ]),
     ),
