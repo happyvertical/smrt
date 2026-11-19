@@ -1,12 +1,14 @@
-// The draft lifecycle: start, describe, preview, publish, discard.
+// The working-copy lifecycle: start, describe, preview, publish, discard.
 //
-// One draft at a time. The draft is a second app host over a COPY of the live
-// data (engine: `forkDraft`); live keeps serving records but its structure is
-// FROZEN while the draft is open (frozen again after every restart, in
-// host.ts). Publishing replays the draft's changes onto live and is ALWAYS an
-// Approval pinned to the preview's digest; discarding is a direct owner action
-// from the UI and an Approval when a tool asks. All lifecycle changes run one
-// at a time (`exclusive`), so a start cannot race a publish or a discard.
+// Owners never see this as "a draft" (#5178): `changes.ts` owns the batch of
+// changes waiting and uses this module as the private copy beneath it. One
+// copy at a time. It is a second app host over a COPY of the live data
+// (engine: `forkDraft`); live keeps serving records but its structure is
+// FROZEN while it is open (frozen again after every restart, in host.ts).
+// Publishing replays the copy's changes onto live and happens only through the
+// owner's Apply (an `apply-batch` Approval pinned to the preview's digest,
+// approvals.ts). All lifecycle changes run one at a time (`exclusive`), so a
+// start cannot race a publish or a discard.
 
 import { existsSync, realpathSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -22,11 +24,6 @@ import { versionSummary } from '../ui/command-summary.ts';
 import type { ReportChange } from '../ui/reports.ts';
 import { reportChanges } from '../ui/reports.ts';
 import type { FieldDef } from '../ui/types.ts';
-import {
-  type ApprovalAction,
-  type PendingApproval,
-  requestApproval,
-} from './approvals.ts';
 import { publish } from './events.ts';
 import {
   type DraftSlot,
@@ -154,8 +151,21 @@ export async function draftInfo(): Promise<DraftInfo | null> {
   };
 }
 
-/** Start a draft. Live structure is frozen from here until it is published or discarded. */
-export function startDraft(
+/** What a fork step is given: the new copy's row id, directory and (empty) version store. */
+export interface DraftForkContext {
+  id: string;
+  dir: string;
+  store: DraftVersionStore;
+  live: AppHost;
+}
+
+/**
+ * Start a working copy with `fork` making the host (a plain `forkDraft`, or a
+ * rebuild that replays commands). Live structure is frozen from here until it
+ * is published or discarded.
+ */
+export function startDraftWith(
+  fork: (ctx: DraftForkContext) => Promise<AppHost>,
   name: unknown,
   ownerId: string,
   beforeFork?: (id: string) => Promise<void>,
@@ -193,7 +203,10 @@ export function startDraft(
     let host: AppHost | null = null;
     try {
       await beforeFork?.(id);
-      host = await live.forkDraft(dir, {
+      host = await fork({
+        id,
+        dir,
+        live,
         store: new DraftVersionStore(db, id, pin),
       });
       // The draft's store moved the row's pointer: re-read it before updating.
@@ -218,6 +231,22 @@ export function startDraft(
     publish({ type: 'draft', status: 'started', id, name: row.name });
     return (await draftInfo()) as DraftInfo;
   });
+}
+
+/** Start an empty working copy (a plain fork of live). */
+export function startDraft(
+  name: unknown,
+  ownerId: string,
+  beforeFork?: (id: string) => Promise<void>,
+  hold?: string,
+): Promise<DraftInfo> {
+  return startDraftWith(
+    ({ dir, store, live }) => live.forkDraft(dir, { store }),
+    name,
+    ownerId,
+    beforeFork,
+    hold,
+  );
 }
 
 async function usableSlot(): Promise<{
@@ -299,45 +328,9 @@ export async function previewDraft(): Promise<{
 }
 
 /**
- * Ask to publish: ALWAYS an Approval, pinned to the digest of a preview taken
- * now. `expect`, when given, is the digest the person reviewed: a draft that
- * changed since is refused (review it again), not published. Tools leave it
- * pending; only the owner's review-page Publish (`publishOwnDraft`, which
- * requires `expect`) decides it in the same request.
- */
-export async function requestPublish(
-  expect: unknown,
-  requestedBy: string,
-): Promise<PendingApproval> {
-  if (expect !== undefined && expect !== null && typeof expect !== 'string')
-    throw new EngineError('expect must be the digest of a preview', 'invalid');
-  const { draft, preview } = await previewDraft();
-  if (expect && expect !== preview.digest)
-    throw new EngineError(
-      'the draft changed since it was reviewed; review it again',
-      'refused',
-    );
-  const action: ApprovalAction = {
-    kind: 'publish-draft',
-    draftId: draft.id,
-    draftName: draft.name,
-    digest: preview.digest,
-  };
-  const n = preview.versions.length;
-  return requestApproval(
-    action,
-    {
-      summary: `Publish draft "${draft.name}": ${n} change${n === 1 ? '' : 's'} become live`,
-      risky: true,
-      preview: { draft: draft.name, ...preview } as Record<string, unknown>,
-    },
-    requestedBy,
-  );
-}
-
-/**
- * Apply an APPROVED publish. Called only from approvals.ts, which passes the
- * engine call (it owns the `approved` flag). Refuses if this is not the open
+ * Apply an APPROVED publish. Called only from changes.ts, whose Apply is
+ * reached through approvals.ts, which passes the engine call (it owns the
+ * `approved` flag). Refuses if this is not the open
  * draft any more, or if the draft is not exactly what the approval was pinned
  * to (the engine compares the digest against the chain as it is now).
  */
@@ -396,7 +389,11 @@ export function publishApproved(
 /** Discard the open draft now: closes it, deletes its copy, thaws live. Owner's direct action. */
 export function discardNow(
   expectId?: string,
-  options: { expectEmpty?: boolean } = {},
+  options: {
+    expectEmpty?: boolean;
+    /** Rebuilding the same changes: no `discarded` event, and live stays frozen. */
+    rebuilding?: boolean;
+  } = {},
 ): Promise<{ discarded: string }> {
   return exclusive(async () => {
     const live = await getHost();
@@ -420,11 +417,12 @@ export function discardNow(
     ).get(slot.id);
     if (row) {
       row.status = 'discarded';
-      row.note = 'discarded';
+      row.note = options.rebuilding ? 'rebuilt' : 'discarded';
       row.endedAt = new Date().toISOString();
       await row.save();
     }
     setDraftSlot(null);
+    if (options.rebuilding) return { discarded: slot.name };
     live.setFrozen(false);
     await live.repairLegacyImport().catch(() => 0);
     publish({
@@ -463,35 +461,14 @@ export async function discardIfUnused(): Promise<boolean> {
   return true;
 }
 
-/** Ask to discard (a tool's way): an Approval. */
-export async function requestDiscard(
-  requestedBy: string,
-): Promise<PendingApproval> {
-  const draft = await draftInfo();
-  if (!draft) throw new EngineError('there is no draft open', 'not_found');
-  return requestApproval(
-    { kind: 'discard-draft', draftId: draft.id, draftName: draft.name },
-    {
-      summary: `Discard draft "${draft.name}" and everything built in it`,
-      risky: true,
-      preview: {
-        draft: draft.name,
-        changes: draft.changes,
-        note: 'The draft is thrown away. The live app is not changed.',
-      },
-    },
-    requestedBy,
-  );
-}
-
 /**
  * The app as one copy now: `{ mode, draft, frozen, ...describe }`. `mode` is
  * the copy this describes; `draft` is the open draft (the same object whichever
  * copy is described, so a view of live can show the draft strip); `frozen` is
  * whether THIS copy's structure is frozen.
  */
-export async function describeCopy(target: Target) {
-  const host = await hostFor(target);
+export async function describeCopy(target: Target, using?: AppHost) {
+  const host = using ?? (await hostFor(target));
   return {
     mode: target,
     draft: await draftInfo(),

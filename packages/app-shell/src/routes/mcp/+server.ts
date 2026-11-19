@@ -51,12 +51,8 @@ function mount(
 }
 
 type Handler = ReturnType<typeof mount>;
-const handlers: Record<
-  'live' | 'draft' | 'assistant' | 'import-plan',
-  Handler
-> = {
+const handlers: Record<'live' | 'assistant' | 'import-plan', Handler> = {
   live: mount(() => scopeFor('live')),
-  draft: mount(() => scopeFor('draft')),
   assistant: mount((principal) => assistantScope(principal)),
   'import-plan': mount(() => scopeFor('live'), 'none'),
 };

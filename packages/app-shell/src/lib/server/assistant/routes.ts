@@ -23,6 +23,7 @@ import { tokenCredentials } from '../agent-cli/credentials.ts';
 import { type AgentCliStatus, locateCli } from '../agent-cli/detect.ts';
 import { agentCliDeps, cliStatus } from '../agent-cli/service.ts';
 import type { AgentTool } from '../agent-cli/tools.ts';
+import { beginCardComment, changesState, endCardComment } from '../changes.ts';
 import { dataRoot, shellProfile } from '../host.ts';
 import {
   errorResponse,
@@ -32,12 +33,13 @@ import {
   ownerOf,
   readJson,
 } from '../http.ts';
-import { runAs } from '../owner.ts';
+import { type Principal, runAs } from '../owner.ts';
 import { type AgentEngineDeps, runAgentTurn } from './agent-turn.ts';
 import { type AssistantConfigOptions, unavailableBody } from './config.ts';
 import { assistantEngine, cliTool, statusFor } from './engine.ts';
 import type { holdForUser } from './hold.ts';
 import { type AssistantModelFactory, createAiModelFactory } from './model.ts';
+import { withRevision } from './scope.ts';
 import {
   createThread,
   getThread,
@@ -83,6 +85,16 @@ export interface AssistantRoutes {
   threads(event: EventLike): Promise<Response>;
   thread(event: EventLike): Promise<Response>;
   turn(event: EventLike): Promise<Response>;
+  /**
+   * A comment on ONE waiting change: runs an assistant turn scoped to that card
+   * (its tools are `change_revise` and reads) and answers the new ChangesState
+   * once it ends. The caller has already verified the owner. Never applies.
+   */
+  comment(
+    event: EventLike,
+    owner: Principal,
+    input: { cardId: string; text: unknown },
+  ): Promise<Response>;
 }
 
 function guard(handler: (event: EventLike) => Promise<Response>) {
@@ -273,5 +285,106 @@ export function mountAssistantRoutes(
         },
       });
     }),
+
+    async comment(event, owner, input) {
+      if (running.has(owner.id))
+        throw new HttpError(409, 'the assistant is already working on a turn');
+      const engine = await engineOf(owner);
+      const tool = cliTool(engine);
+      let model: Awaited<ReturnType<AssistantModelFactory>> | undefined;
+      if (tool) {
+        const status = await statusFor(engine, owner, {
+          config: options,
+          cliStatus: statusOfCli,
+        });
+        if (!status.configured)
+          throw new HttpError(
+            503,
+            status.message ?? 'The assistant is not connected.',
+          );
+      } else {
+        try {
+          model = await factory({ principal: owner, engine });
+        } catch (error) {
+          const body = unavailableBody(error);
+          if (body) throw new HttpError(503, body.error);
+          throw new HttpError(503, 'The assistant could not start. Try again.');
+        }
+      }
+      running.add(owner.id);
+      let start: Awaited<ReturnType<typeof beginCardComment>> | undefined;
+      let threadId = '';
+      let reply = '';
+      try {
+        start = await runAs(owner, () =>
+          beginCardComment(input.cardId, input.text),
+        );
+        const text = String(input.text).trim().slice(0, MAX_MESSAGE_CHARS);
+        // The comment's own conversation: owned by a per-card key, so it is
+        // never the dock's "latest thread".
+        const key = `change-card:${owner.id}`;
+        const thread =
+          (start.threadId ? await getThread(key, start.threadId) : null) ??
+          (await createThread(key, 'Comment on a change'));
+        threadId = thread.id as string;
+        const message = [
+          `The owner commented on one waiting change (id ${input.cardId}): "${start.summary}".`,
+          `Its command now: ${JSON.stringify(start.commands).slice(0, 4000)}`,
+          `Their comment: ${text}`,
+        ].join('\n');
+        const emit = (e: TurnEvent) => {
+          if (e.type === 'text') reply += e.delta;
+          else if (e.type === 'error') reply = reply || e.message;
+        };
+        await runAs(owner, () =>
+          withRevision(
+            owner.id,
+            input.cardId,
+            (): Promise<TurnStop> =>
+              tool
+                ? runAgentTurn({
+                    principal: owner,
+                    thread,
+                    text: message,
+                    tool,
+                    mcpUrl: new URL('/mcp?scope=assistant', event.url.origin)
+                      .href,
+                    signal: event.request.signal,
+                    emit,
+                    deps: agent(),
+                  })
+                : runTurn({
+                    principal: owner,
+                    thread,
+                    text: message,
+                    model: model as NonNullable<typeof model>,
+                    signal: event.request.signal,
+                    emit,
+                    limits: options.limits,
+                    ...(options.hold ? { hold: options.hold } : {}),
+                  }),
+          ),
+        );
+      } catch (error) {
+        if (!start) throw error;
+        // biome-ignore lint/suspicious/noConsole: class only, never a message
+        console.error(
+          'comment turn failed:',
+          error instanceof Error ? error.name : 'unknown',
+        );
+        reply = 'I could not finish that. Nothing was changed. Try again.';
+      } finally {
+        running.delete(owner.id);
+        if (start)
+          await runAs(owner, () =>
+            endCardComment(input.cardId, {
+              reply,
+              threadId,
+              revisionBefore: start?.revision ?? 0,
+            }),
+          ).catch(() => {});
+      }
+      return json(await runAs(owner, () => changesState()));
+    },
   };
 }

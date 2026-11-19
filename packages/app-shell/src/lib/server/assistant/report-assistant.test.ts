@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import { callTool } from '../policy.ts';
-import { openShell, type ShellHarness } from '../test-support.ts';
+import { applyWaiting, openShell, type ShellHarness } from '../test-support.ts';
 import { call, drive, say, scripted } from './test-helpers.ts';
 import { historyFor, viewMessages } from './threads.ts';
 
@@ -11,6 +11,7 @@ beforeAll(async () => {
     name: 'Sale',
     fields: { amount: { type: 'money' } },
   });
+  await applyWaiting(h.owner);
   const made = await callTool(h.owner, 'app_definereport', {
     name: 'sales',
     definition: {
@@ -26,6 +27,7 @@ beforeAll(async () => {
   expect(made.structuredContent).toMatchObject({
     summary: 'Made the report Sales by month',
   });
+  await applyWaiting(h.owner);
 });
 afterAll(async () => {
   await h.close();

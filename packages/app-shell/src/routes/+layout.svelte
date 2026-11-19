@@ -1,12 +1,15 @@
 <script lang="ts">
 import { AppShell } from '@happyvertical/smrt-svelte/app';
 import type { ShellNavItem } from '@happyvertical/smrt-svelte/workspace';
+import { ToastViewport, toaster } from '@happyvertical/smrt-ui';
 import { onMount, untrack } from 'svelte';
+import { goto, invalidateAll } from '$app/navigation';
 import { page } from '$app/state';
 import '$lib/ui/ui.css';
 import AssistantPanel from '$lib/assistant/AssistantPanel.svelte';
-import DraftBar from '$lib/components/DraftBar.svelte';
-import { showDraftBar } from '$lib/ui/draft-bar';
+import ChangesPill from '$lib/components/ChangesPill.svelte';
+import { ApiError } from '$lib/ui/api';
+import { changesApi } from '$lib/ui/changes';
 import {
   ASSISTANT_OPEN_EVENT,
   assistantOpenKey,
@@ -24,6 +27,38 @@ import type { LayoutProps } from './$types';
 let { data, children }: LayoutProps = $props();
 
 const live = new LiveUpdates();
+
+/**
+ * The chat reply block's Apply: the owner's own click, on the same digest-pinned
+ * route as the Changes waiting page. `applyNow` only says which button was
+ * shown; the server decides eligibility itself and refuses (review first) when
+ * the batch is not a small, additive, assistant-made change.
+ */
+async function applyFromChat(applyNow: boolean): Promise<void> {
+  const changes = data.changes;
+  if (!changes) return;
+  try {
+    await changesApi.apply(
+      changes.digest,
+      { generation: changes.generation },
+      applyNow ? 'chat' : undefined,
+    );
+  } catch (e) {
+    if (e instanceof ApiError && e.status === 409)
+      throw new Error(
+        e.message.startsWith("Can't apply yet") ||
+          e.message.startsWith('This one needs')
+          ? e.message
+          : 'These changes were different when you last looked. Review them, then Apply.',
+      );
+    throw e;
+  }
+  toaster.success('Applied. Your app is live', {
+    duration: 8000,
+    action: { label: 'See History', run: () => goto('/history') },
+  });
+  await invalidateAll();
+}
 const isOwner = $derived(data.description !== null);
 
 // The side menu is the person's app only; Approvals and History live in the
@@ -36,23 +71,7 @@ const nav: ShellNavItem[] = $derived(
         label: item.label,
         icon: item.icon,
         description: item.description,
-        children: item.children?.map((child) => ({
-          ...child,
-          badge:
-            data.description?.mode === 'draft' &&
-            !Object.hasOwn(
-              data.liveDescription?.reports ?? {},
-              child.id.slice(7),
-            )
-              ? 'new'
-              : null,
-        })),
-        badge:
-          data.description?.mode === 'draft' &&
-          item.id.startsWith('model:') &&
-          !Object.hasOwn(data.liveDescription?.models ?? {}, item.id.slice(6))
-            ? 'new'
-            : null,
+        children: item.children,
       }))
     : [],
 );
@@ -73,16 +92,6 @@ const onboarding = $derived(
   !data.onboardingComplete || page.url.pathname === '/welcome',
 );
 const plan = $derived(planLayout({ owner: isOwner && !onboarding, plugin }));
-// Draft state lives in the header on every owner page, not per page body.
-const draftBar = $derived(
-  showDraftBar({
-    owner: data.description !== null,
-    plugin,
-    onboarding,
-    pathname: page.url.pathname,
-  }),
-);
-
 // The chat column's open/closed choice, kept per owner on this device.
 const openKey = $derived(assistantOpenKey(data.session.user?.id));
 let panelOpen = $state(true);
@@ -106,7 +115,7 @@ $effect(() => {
 
 // Live updates only make sense for the signed-in owner.
 $effect(() => {
-  if (isOwner) live.start(data.description?.mode ?? 'live');
+  if (isOwner) live.start();
   else live.stop();
 });
 onMount(() => {
@@ -123,8 +132,8 @@ onMount(() => {
 });
 </script>
 
-{#snippet draftSlot()}
-  {#if data.description}<DraftBar description={data.description} reviewing={page.url.pathname === '/draft/review'} />{/if}
+{#snippet headerEnd()}
+  {#if isOwner && !plugin && !onboarding}<ChangesPill changes={data.changes} current={page.url.pathname === '/changes'} />{/if}
 {/snippet}
 
 <AppShell
@@ -153,21 +162,20 @@ onMount(() => {
         unavailableLabel: 'Voice mode is not available yet',
       }
     : false}
-  slots={draftBar ? { 'header.end': draftSlot } : {}}
+  slots={{ 'header.end': headerEnd }}
   bind:panelOpen
 >
   {#snippet panel({ open })}
-    <AssistantPanel {open} owner={data.session.user} buildingInDraft={!!data.description?.draft} viewingDraft={data.description?.mode === 'draft'} />
+    <AssistantPanel {open} owner={data.session.user} changes={data.changes} onapply={applyFromChat} />
   {/snippet}
-  {#key data.description?.mode}
-    {@render children()}
-  {/key}
+  {@render children()}
   <!-- Screen readers hear changes made elsewhere (the assistant, another tab). -->
   <div class="smrt-app-shell-layout__sr-only" aria-live="polite" role="status" data-smrt-part="label">{live.announcement}</div>
   {#if isOwner && live.status === 'reconnecting'}
     <p class="smrt-app-shell-layout__live-note" role="status" data-smrt-part="status">Reconnecting to your app…</p>
   {/if}
 </AppShell>
+<ToastViewport />
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;

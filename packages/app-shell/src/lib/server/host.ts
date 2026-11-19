@@ -35,6 +35,8 @@ import {
 } from '../../engine/index.ts';
 import { AppDraftCollection } from '../objects/AppDraft.ts';
 import { AppImportCollection } from '../objects/AppImport.ts';
+import { ChangeBatchCollection } from '../objects/ChangeBatch.ts';
+import { ChangeCardCollection } from '../objects/ChangeCard.ts';
 import { versionSummary } from '../ui/command-summary.ts';
 import { publish, setTenantScopedEvents } from './events.ts';
 import { PolicyError } from './owner.ts';
@@ -425,6 +427,31 @@ async function directoriesFor(
   return tenantAppDirs(root, holder.tenantId, app.id as string);
 }
 
+/**
+ * Changes waiting freeze live structure even when their working copy is not
+ * open (a restart or a crash mid-rebuild): the cards are the truth, the copy
+ * is rebuilt lazily by changes.ts.
+ */
+async function freezeForWaitingChanges(
+  db: DatabaseInterface,
+  live: AppHost,
+): Promise<void> {
+  const batches = await ChangeBatchCollection.create({ db });
+  const cards = await ChangeCardCollection.create({ db });
+  for (const status of ['open', 'held']) {
+    for (const batch of await batches.list({ where: { status }, limit: 100 })) {
+      const active = await cards.list({
+        where: { batchId: batch.id as string, status: 'active' },
+        limit: 1,
+      });
+      if (active.length) {
+        live.setFrozen(true);
+        return;
+      }
+    }
+  }
+}
+
 /** The LIVE host of the request's app, opened on first use. It is never the draft. */
 export async function getHost(): Promise<AppHost> {
   const holder = await currentHolder();
@@ -441,6 +468,7 @@ export async function getHost(): Promise<AppHost> {
     wireHostEvents(host, 'live', holder.tenantId);
     try {
       await adoptDraft(holder, db, host, dirs.draft);
+      await freezeForWaitingChanges(db, host);
     } catch (e) {
       // Never serve live thawed when we could not tell whether a draft is
       // open: fail the open; the next call retries.

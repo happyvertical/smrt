@@ -13,13 +13,13 @@
 
 import { pendingApprovalCount } from '$lib/server/approvals';
 import { describeCopy } from '$lib/server/drafts';
-import { guarded, json, ownerOf, targetOf } from '$lib/server/http';
+import { guarded, json, ownerOf } from '$lib/server/http';
 import type { RequestHandler } from './$types';
 
 export const GET: RequestHandler = guarded(async (event) => {
   await ownerOf(event);
   return json({
-    ...(await describeCopy(targetOf(event))),
+    ...(await describeCopy('live')),
     pendingApprovals: await pendingApprovalCount(),
   });
 });

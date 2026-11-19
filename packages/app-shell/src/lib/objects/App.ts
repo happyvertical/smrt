@@ -11,14 +11,8 @@ import {
   type MethodDef,
 } from '../../engine/index.ts';
 import { type BuilderResult, runCommand } from '../server/builder.ts';
-import {
-  describeCopy,
-  historyFor,
-  previewDraft,
-  requestDiscard,
-  requestPublish,
-  startDraft,
-} from '../server/drafts.ts';
+import { structureHost } from '../server/changes.ts';
+import { describeCopy, historyFor } from '../server/drafts.ts';
 import { assertOwner } from '../server/owner.ts';
 import { currentScope } from '../server/target.ts';
 
@@ -69,20 +63,22 @@ function str(value: unknown, what: string): string {
 const FIELD_EXAMPLE = "{type: 'integer'}";
 
 /**
- * Run a builder command on the copy the REQUEST named (`withScope`, entered by
- * the REST route or the tool dispatch; all-live when nothing entered it).
+ * Run a builder command. A structural one becomes a change waiting for the
+ * owner (builder.ts); it never reaches the live app from here. The caller (the
+ * assistant or another API client) comes from the scope the request entry set.
  */
 async function run(command: Command): Promise<BuilderResult> {
   const owner = await assertOwner();
-  return runCommand(command, owner.id, currentScope().structure);
+  return runCommand(command, owner.id, 'live', currentScope().source ?? 'api');
 }
 
 /**
  * The shell's one app: a singleton row holding the current definition. Its
  * static methods are the builder operations (so smrt generates their REST,
- * MCP and CLI). All are owner only. A risky one does not apply: it returns
- * `{ status: 'pending_approval', approvalId, summary, preview }` and waits for
- * the owner's decision (`Approval.decide`).
+ * MCP and CLI). All are owner only. A structural one does not apply: it
+ * becomes a change waiting (`status: 'change_waiting'`) the owner applies from
+ * the changes waiting. History's own undo and clean up wait for the owner's
+ * decision when risky (`status: 'pending_approval'`).
  */
 @smrt({
   tableName: 'apps',
@@ -106,10 +102,6 @@ async function run(command: Command): Promise<BuilderResult> {
       'describe',
       'history',
       'undoTo',
-      'startDraft',
-      'previewPublish',
-      'publishDraft',
-      'discardDraft',
     ],
   },
   mcp: {
@@ -130,10 +122,6 @@ async function run(command: Command): Promise<BuilderResult> {
       'describe',
       'history',
       'undoTo',
-      'startDraft',
-      'previewPublish',
-      'publishDraft',
-      'discardDraft',
     ],
   },
   cli: {
@@ -154,10 +142,6 @@ async function run(command: Command): Promise<BuilderResult> {
       'describe',
       'history',
       'undoTo',
-      'startDraft',
-      'previewPublish',
-      'publishDraft',
-      'discardDraft',
     ],
   },
   operationPermissions: {
@@ -177,10 +161,6 @@ async function run(command: Command): Promise<BuilderResult> {
     describe: { action: 'read' },
     history: { action: 'read' },
     undoTo: { action: 'update' },
-    startDraft: { action: 'update' },
-    previewPublish: { action: 'read' },
-    publishDraft: { action: 'update' },
-    discardDraft: { action: 'update' },
   },
 })
 export class App extends SmrtObject {
@@ -355,52 +335,20 @@ export class App extends SmrtObject {
     return run({ type: 'undoTo', version: n });
   }
 
-  /**
-   * Start a draft: a test copy of the app (with its records) to build in while
-   * the live app keeps working. Live structure is frozen until the draft is
-   * published or discarded. One draft at a time.
-   */
-  static async startDraft(name?: string) {
-    const owner = await assertOwner();
-    return startDraft(name, owner.id);
-  }
-
-  /**
-   * Preview publishing the open draft: what changes, the SQL, every method's
-   * code, and a digest. Read only.
-   */
-  static async previewPublish() {
-    await assertOwner();
-    return (await previewDraft()).preview;
-  }
-
-  /**
-   * Publish the open draft's changes to the live app. ALWAYS waits for the
-   * owner's approval (`pending_approval`); it applies only if the draft is
-   * unchanged since this preview. Pass `expect` (the preview's digest) to
-   * refuse a draft that changed since you looked.
-   */
-  static async publishDraft(expect?: string) {
-    const owner = await assertOwner();
-    return requestPublish(expect, owner.id);
-  }
-
-  /** Throw the open draft away (waits for the owner's approval). The live app is not changed. */
-  static async discardDraft() {
-    const owner = await assertOwner();
-    return requestDiscard(owner.id);
-  }
-
   /** The models, fields and methods of the app now. */
   static async describe() {
     await assertOwner();
-    return describeCopy(currentScope().structure);
+    // The assistant sees the app with its waiting changes, so it can build on
+    // them; every other caller sees the live app.
+    if (currentScope().source === 'assistant')
+      return describeCopy('draft', await structureHost());
+    return describeCopy('live');
   }
 
   /** Every version of the app, newest last. */
   static async history() {
     await assertOwner();
-    return historyFor(currentScope().structure);
+    return historyFor('live');
   }
 }
 

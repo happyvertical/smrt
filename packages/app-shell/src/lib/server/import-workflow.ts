@@ -60,6 +60,12 @@ import { AppDraftCollection } from '../objects/AppDraft.ts';
 import { type AppImport, AppImportCollection } from '../objects/AppImport.ts';
 import type { ImportState } from '../ui/import.ts';
 import { assistantEngine, engineLabel } from './assistant/engine.ts';
+import {
+  recordImportCommand,
+  settled,
+  setWorkingCopyReplaced,
+  waitingCount,
+} from './changes.ts';
 import { discardIfUnused, discardNow, startDraft } from './drafts.ts';
 import { subscribe } from './events.ts';
 import { getDraftSlot } from './host.ts';
@@ -328,6 +334,22 @@ export function createShellImportService(options: ShellImportOptions) {
       if (e.code !== 'ENOENT') throw e;
     });
   };
+  /**
+   * An import has its own copy, so it cannot start while other changes wait
+   * (or while an unrelated copy is open): say so in plain words. A copy nobody
+   * used is reused.
+   */
+  const refuseWhileChangesWait = async (owner: Principal, doing: string) => {
+    if (!(await getDraftSlot())) return;
+    if (await discardIfUnused()) return;
+    const waiting = await runAs(owner, () => waitingCount());
+    throw new HttpError(
+      409,
+      waiting > 0
+        ? `You have ${waiting} ${waiting === 1 ? 'change' : 'changes'} waiting. Apply or discard ${waiting === 1 ? 'it' : 'them'} before ${doing}.`
+        : `Another set of changes is open. Apply or discard it before ${doing}.`,
+    );
+  };
   const discardOwned = async (row: AppImport) => {
     const slot = await getDraftSlot();
     if (row.draftId && slot?.id === row.draftId) {
@@ -593,14 +615,27 @@ export function createShellImportService(options: ShellImportOptions) {
             );
             const slot = await getDraftSlot();
             if (!slot?.host || slot.id !== row.draftId)
-              throw new Error('Import draft is unavailable');
+              throw new Error('The import copy is unavailable');
+            const importHost = slot.host;
+            const importer: Principal = {
+              id: row.ownerId,
+              tenantId: row.tenantId,
+            };
             const target = createEngineImportTarget(
-              slot.host,
+              importHost,
               ensureActive,
               async (engineNames) => {
                 await ensureActive();
                 await save(row, {}, { plan: { ...plan, engineNames } });
               },
+              // Every command is also a card of the changes waiting, one per table.
+              ({ command, run }) =>
+                recordImportCommand(importer, {
+                  host: importHost,
+                  group: `import:${row.id}`,
+                  command,
+                  run,
+                }),
             );
             const proofTarget = {
               ...target,
@@ -637,7 +672,7 @@ export function createShellImportService(options: ShellImportOptions) {
                   findings: proof.findings,
                   proof,
                   reason: 'workbook',
-                  note: 'The loaded data did not match the workbook. The draft was discarded. Correct the workbook and try again.',
+                  note: 'The loaded data did not match the workbook. Nothing was added to your app. Correct the workbook and try again.',
                 },
               );
               await removeBytes(row);
@@ -648,7 +683,7 @@ export function createShellImportService(options: ShellImportOptions) {
             await save(row, { status: 'proven', stage: 'proving' });
             return {
               complete: true,
-              note: 'The workbook data was loaded into a draft and proven.',
+              note: 'The workbook data was loaded and proven. Nothing is in your app until you apply it.',
             };
           } catch (error) {
             if (error instanceof AiRunClaimLostError) throw error;
@@ -676,7 +711,7 @@ export function createShellImportService(options: ShellImportOptions) {
                   : error instanceof ImportRunError &&
                       error.code === 'target-not-empty'
                     ? 'These tables already exist. Importing into existing tables is not supported.'
-                    : 'The app could not load this workbook. Its draft was discarded. Restart the app and try importing again.';
+                    : 'The app could not load this workbook. Nothing was added to your app. Restart the app and try importing again.';
             const detail = details(row);
             if (error instanceof EngineImportError && error.field)
               detail.findings = [
@@ -892,6 +927,10 @@ export function createShellImportService(options: ShellImportOptions) {
       return null;
     }
     if (run.status === 'done' && details(row).proof?.ok) {
+      // A Remove in the review rebuilds the copy under a new id: wait it out.
+      await settled();
+      const fresh = await (await collection()).get(row.id as string);
+      if (fresh) row.draftId = fresh.draftId;
       const draft = await (await AppDraftCollection.create({ db })).get(
         row.draftId,
       );
@@ -962,6 +1001,14 @@ export function createShellImportService(options: ShellImportOptions) {
     tail = result.catch(() => {});
     return result;
   };
+  // A rebuilt working copy has a new id: the review follows it.
+  setWorkingCopyReplaced(async (from, to) => {
+    const rows = await (await collection()).list({
+      where: { draftId: from },
+      limit: 1,
+    });
+    if (rows[0]) await save(rows[0], { draftId: to });
+  });
   const unsubscribe = subscribe((event) => {
     if (
       event.type !== 'draft' ||
@@ -1080,11 +1127,7 @@ export function createShellImportService(options: ShellImportOptions) {
               'Another workbook import is open. Finish it or discard it first.',
             );
         }
-        if ((await getDraftSlot()) && !(await discardIfUnused()))
-          throw new HttpError(
-            409,
-            'A draft is already open. Publish or discard it before importing a workbook.',
-          );
+        await refuseWhileChangesWait(owner, 'importing a workbook');
         const maxCells = (await importSettings(owner)).maxCells;
         const bytes = await readUpload(request);
         const book = await readWorkbook(bytes, maxCells);
@@ -1149,6 +1192,7 @@ export function createShellImportService(options: ShellImportOptions) {
       });
       // Reconcile external publish/discard even if its event was lost in a crash.
       if (row.status === 'review' && !(await getDraftSlot())) {
+        await settled();
         const draft = await (await AppDraftCollection.create({ db })).get(
           row.draftId,
         );
@@ -1191,11 +1235,7 @@ export function createShellImportService(options: ShellImportOptions) {
               409,
               'This import cannot be retried. Choose a workbook to start again.',
             );
-          if ((await getDraftSlot()) && !(await discardIfUnused()))
-            throw new HttpError(
-              409,
-              'A draft is already open. Publish or discard it before trying again.',
-            );
+          await refuseWhileChangesWait(owner, 'trying again');
           const usage = config.toJSON().usage;
           if (usage?.enabled === false || usage?.persist === false)
             throw new HttpError(
@@ -1279,6 +1319,7 @@ export function createShellImportService(options: ShellImportOptions) {
       });
     },
     dispose() {
+      setWorkingCopyReplaced(null);
       unsubscribe();
       kit.dispose();
     },

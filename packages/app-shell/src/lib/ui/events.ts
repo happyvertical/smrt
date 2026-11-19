@@ -1,5 +1,6 @@
 // Live updates: which load dependencies an `/api/events` event invalidates,
 // parsing, and the reconnect schedule. The browser store is `live.svelte.ts`.
+import { isApplySummary, plural } from './changes.ts';
 import type { ShellEvent } from './types.ts';
 
 /** `depends()` keys used by the shell's load functions. */
@@ -8,6 +9,7 @@ export const DEPENDS = {
   records: 'smrt:records',
   approvals: 'smrt:approvals',
   history: 'smrt:history',
+  changes: 'smrt:changes',
 } as const;
 
 export type DependsKey = (typeof DEPENDS)[keyof typeof DEPENDS];
@@ -52,6 +54,17 @@ export function parseShellEvent(data: string): ShellEvent | null {
       id: e.id,
       name: String(e.name ?? ''),
     };
+  if (
+    e.type === 'changes' &&
+    ['changed', 'applied', 'discarded', 'undone'].includes(String(e.status))
+  )
+    return {
+      type: 'changes',
+      status: e.status as 'changed',
+      batchId: String(e.batchId ?? ''),
+      count: Number(e.count) || 0,
+      generation: Number(e.generation) || 0,
+    };
   if (e.type === 'approval' && typeof e.id === 'string')
     return {
       type: 'approval',
@@ -74,6 +87,8 @@ export function keysFor(event: ShellEvent): DependsKey[] {
         DEPENDS.records,
         DEPENDS.approvals,
         DEPENDS.history,
+        // Apply's `undoDigest` follows the live version.
+        DEPENDS.changes,
       ];
     case 'records':
       return [DEPENDS.records];
@@ -81,8 +96,13 @@ export function keysFor(event: ShellEvent): DependsKey[] {
       // The menu badge lives in the shell data.
       return [DEPENDS.shell, DEPENDS.approvals];
     case 'draft':
-      // A draft started, ended or turned out unusable: everything is stale.
+      // The private working copy moved: everything is stale.
       return [...ALL_KEYS];
+    case 'changes':
+      // The count, and History's Undo; applied or undone changes the app too.
+      return event.status === 'applied' || event.status === 'undone'
+        ? [...ALL_KEYS]
+        : [DEPENDS.changes, DEPENDS.history];
   }
 }
 
@@ -100,8 +120,17 @@ export function reduceKeys(
 export function announcement(event: ShellEvent): string | null {
   if (event.type === 'changed')
     return event.summary ? `App changed: ${event.summary}` : 'App changed';
-  if (event.type === 'draft') return `Draft ${event.status}: ${event.name}`;
+  // The private working copy is never owner-facing.
+  if (event.type === 'draft') return null;
+  if (event.type === 'changes') {
+    if (event.status === 'applied') return 'Applied. Your app is live.';
+    if (event.status === 'undone') return 'Undone. Your app is as it was.';
+    if (event.status === 'discarded') return 'Changes discarded.';
+    return event.count > 0 ? `${plural(event.count, 'change')} waiting` : null;
+  }
   if (event.type === 'approval') {
+    // The owner's own Apply says "Applied" already.
+    if (isApplySummary(event.summary)) return null;
     if (event.status === 'pending') return `Needs approval: ${event.summary}`;
     return `Approval ${event.status}: ${event.summary}`;
   }

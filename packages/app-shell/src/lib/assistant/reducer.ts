@@ -45,6 +45,8 @@ export type Item =
       /** Left over from an earlier turn (the turn that asked is gone). */
       detached: boolean;
     }
+  /** The "N changes waiting" block: its numbers come from the live changes state. */
+  | { kind: 'changes'; id: string }
   | {
       kind: 'note';
       id: string;
@@ -200,6 +202,8 @@ export function reduce(state: DockState, action: Action): DockState {
         seq += 1;
         if (m.role === 'user')
           items.push({ kind: 'user', id: `m${seq}`, text: m.content });
+        else if (m.block === 'changes')
+          items.push({ kind: 'changes', id: `m${seq}` });
         else if (m.role === 'assistant')
           items.push({
             kind: 'assistant',
@@ -295,6 +299,15 @@ function onEvent(state: DockState, e: TurnEvent): DockState {
   switch (e.type) {
     case 'thread':
       return { ...state, threadId: e.threadId };
+    case 'changes_block':
+      return {
+        ...state,
+        seq: state.seq + 1,
+        items: [
+          ...closeStreaming(state.items),
+          { kind: 'changes', id: next(state, 'c') },
+        ],
+      };
     case 'text': {
       const last = state.items.at(-1);
       if (last?.kind === 'assistant' && last.streaming)

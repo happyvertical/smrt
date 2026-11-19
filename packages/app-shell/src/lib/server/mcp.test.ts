@@ -1,10 +1,16 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { decideApproval, listApprovalViews } from './approvals.ts';
+import { discardChanges } from './changes.ts';
 import { getHost } from './host.ts';
 import { createShellMcpServer } from './mcp-server.ts';
 import { PolicyError } from './owner.ts';
 import { authorizeCall, callTool, toolsFor } from './policy.ts';
-import { openShell, runAs, type ShellHarness } from './test-support.ts';
+import {
+  applyWaiting,
+  openShell,
+  runAs,
+  type ShellHarness,
+} from './test-support.ts';
 
 let h: ShellHarness;
 beforeAll(async () => {
@@ -30,6 +36,7 @@ describe('merged catalog and policy', () => {
       });
       expect(r.isError).toBeFalsy();
     });
+    await applyWaiting(h.owner);
     const names = (await toolsFor(h.owner)).map((t) => t.name);
     expect(names).toEqual(
       expect.arrayContaining([
@@ -78,6 +85,7 @@ describe('merged catalog and policy', () => {
       field: 'points',
       definition: { type: 'text' },
     });
+    await applyWaiting(h.owner);
     const create = (await toolsFor(h.owner)).find(
       (t) => t.name === 'chore_create',
     );
@@ -111,21 +119,24 @@ describe('merged catalog and policy', () => {
     const del = await callTool(h.owner, 'chore_delete', { id });
     expect(JSON.stringify(del.content)).toContain('pending_approval');
     expect((await host.list('Chore')).length).toBe(1);
+    // a risky builder method is not an approval any more: it waits as a change
     const rm = await callTool(h.owner, 'app_removefield', {
       model: 'Chore',
       field: 'points',
     });
-    expect(JSON.stringify(rm.content)).toContain('pending_approval');
+    expect(JSON.stringify(rm.content)).toContain('change_waiting');
     expect(host.describe().models.Chore.fields).toHaveProperty('points');
-    expect((await listApprovalViews({ status: 'pending' })).length).toBe(2);
+    expect((await listApprovalViews({ status: 'pending' })).length).toBe(1);
+    await runAs(h.owner, () => discardChanges());
     // there is no way to pass `approved` through a tool call
     const sneaky = await callTool(h.owner, 'app_removefield', {
       model: 'Chore',
       field: 'points',
       approved: true,
     });
-    expect(JSON.stringify(sneaky.content)).toContain('pending_approval');
+    expect(JSON.stringify(sneaky.content)).toContain('change_waiting');
     expect(host.describe().models.Chore.fields).toHaveProperty('points');
+    await runAs(h.owner, () => discardChanges());
   });
 
   it('the Approval tools list and decide through the same gate', async () => {
@@ -136,10 +147,8 @@ describe('merged catalog and policy', () => {
     );
     const rows: { id: string; action: { kind: string } }[] =
       listed.result ?? listed;
-    expect(rows.length).toBeGreaterThanOrEqual(2);
-    const cmd = rows.find(
-      (r) => r.action.kind === 'command',
-    ) as (typeof rows)[number];
+    expect(rows.length).toBeGreaterThanOrEqual(1);
+    const cmd = rows[0];
     // Deciding is the owner's act in the UI, never a tool: no tool caller
     // (the assistant, an outside MCP client) can approve its own call.
     await expect(
@@ -148,8 +157,6 @@ describe('merged catalog and policy', () => {
     expect((await toolsFor(h.owner)).map((t) => t.name)).not.toContain(
       'approval_decide',
     );
-    const denied = await decideApproval(cmd.id, false, h.owner.id);
-    expect(denied.status).toBe('denied');
     const tool = rows.find(
       (r) => r.action.kind === 'tool',
     ) as (typeof rows)[number];

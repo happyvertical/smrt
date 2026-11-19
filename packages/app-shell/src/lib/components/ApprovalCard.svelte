@@ -85,7 +85,7 @@ const badge = $derived(
   {/if}
   {#if failed}<p class="smrt-app-shell__alert smrt-app-shell__alert-error">{failed}</p>{/if}
   {#if approval.status === 'failed' && approval.action?.kind === 'publish-draft'}
-    <Button variant="secondary" href="/draft/review">Review again</Button>
+    <Button variant="secondary" href="/changes">Review again</Button>
   {/if}
 {/snippet}
 </AssistantApprovalCard>
