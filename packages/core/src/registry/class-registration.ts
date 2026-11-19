@@ -2818,8 +2818,12 @@ export function registerCollection(
   // class (#5143).
   const itemClass = (collectionConstructor as { _itemClass?: unknown })
     ._itemClass;
+  // A qualified key is an explicit binding (generated activation binds a
+  // collection declaration's executable class under the declaration's own
+  // key, whose entry is a manifest stub): it is always honoured.
   const ownsItem =
     !registered ||
+    isQualifiedName(objectName) ||
     typeof itemClass !== 'function' ||
     registered.constructor === itemClass ||
     ObjectRegistry.getEffectiveClassByConstructor(
