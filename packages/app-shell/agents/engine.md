@@ -205,6 +205,17 @@ only. The CLI's use is in `packages/cli/agents/app-commands.md`.
   small QuickJS stack limit keeps its error first, and a host-level failure
   discards the WASM module instance.
 
+## Worker footprint (#5183)
+
+- **Young generation cap (#5212).** `AppWorker` passes `resourceLimits` from
+  `HostOptions.workerLimits` (`{ youngMb, oldMb }`; shell: `ShellContext.workerLimits`),
+  default `DEFAULT_WORKER_LIMITS` = 16 MiB young, 512 MiB old; `youngMb: null`
+  restores V8's own (about 48 MiB committed). Measured on macOS (Node 26.8.1,
+  SQLite; RSS per added worker): unset 88, 16 MiB 61 (-31%), 8 MiB 54, 4 MiB 48
+  at 8 workers. Cost over 150 sequential creates: 16 MiB +14%, 8 MiB and 4 MiB
+  about 2x; reads of 400 rows: 16 MiB +1%, 4 MiB +20%. Hence 16 for the desktop;
+  a hosted profile that values memory over write latency may pass 4-8.
+
 ## Calculated fields (#4916)
 
 `FieldDef.calculated` uses core's `GeneratedExpression` (SQL SDK operand data).

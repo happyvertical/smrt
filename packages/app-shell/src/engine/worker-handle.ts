@@ -19,6 +19,48 @@ export class AppCallError extends Error {
 /** The app's heap is bounded; a runaway app cannot starve the host. */
 export const WORKER_HEAP_MB = 512;
 
+/**
+ * V8 memory limits of one app worker thread (`resourceLimits`). The young
+ * generation is committed up front, and left to itself V8 sizes it at about
+ * 48 MiB per thread, empty most of the time; capping it is the cheapest way to
+ * shrink an idle worker (#5212). The old generation is the runaway-app bound.
+ */
+export interface WorkerLimits {
+  /** Young generation cap in MiB; `null` leaves V8's own sizing. */
+  youngMb?: number | null;
+  /** Old generation cap in MiB. Default {@link WORKER_HEAP_MB}. */
+  oldMb?: number;
+}
+
+/**
+ * The default: the desktop keeps a roomy nursery so large lists and bulk
+ * writes do not scavenge often. Hosted profiles may pass a smaller one.
+ */
+export const DEFAULT_WORKER_LIMITS = {
+  youngMb: 16,
+  oldMb: WORKER_HEAP_MB,
+} as const satisfies WorkerLimits;
+
+/** Node's `resourceLimits` for a {@link WorkerLimits} (unset fields use the defaults). */
+export function resourceLimitsFor(limits: WorkerLimits = {}) {
+  const young =
+    limits.youngMb === undefined
+      ? DEFAULT_WORKER_LIMITS.youngMb
+      : limits.youngMb;
+  for (const [name, v] of [
+    ['youngMb', young],
+    ['oldMb', limits.oldMb],
+  ] as const)
+    if (v != null && (!Number.isInteger(v) || v < 1))
+      throw new RangeError(
+        `worker limit ${name} must be a whole MiB, 1 or more`,
+      );
+  return {
+    maxOldGenerationSizeMb: limits.oldMb ?? DEFAULT_WORKER_LIMITS.oldMb,
+    ...(young == null ? {} : { maxYoungGenerationSizeMb: young }),
+  };
+}
+
 export class AppWorker {
   readonly version: number;
   private worker: Worker;
@@ -39,12 +81,14 @@ export class AppWorker {
       migration?: Migration;
       readOnly?: boolean;
       validateOnly?: boolean;
+      limits?: WorkerLimits;
     },
   ) {
     this.version = init.version;
+    const { limits, ...data } = init;
     this.worker = new Worker(workerUrl, {
-      workerData: { appWorker: true, ...init },
-      resourceLimits: { maxOldGenerationSizeMb: WORKER_HEAP_MB },
+      workerData: { appWorker: true, ...data },
+      resourceLimits: resourceLimitsFor(limits),
     });
     const die = (e: Error) => {
       this.dead ??= e;

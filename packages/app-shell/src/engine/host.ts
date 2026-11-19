@@ -90,7 +90,7 @@ import {
 } from './reports.ts';
 import { checkSyntax } from './sandbox.ts';
 import type { VersionRecord, VersionStore } from './store.ts';
-import { AppCallError, AppWorker } from './worker-handle.ts';
+import { AppCallError, AppWorker, type WorkerLimits } from './worker-handle.ts';
 import type { BootInfo, WorkerOp } from './worker-protocol.ts';
 
 type Row = Record<string, unknown>;
@@ -100,6 +100,11 @@ export interface HostOptions {
   store: VersionStore;
   /** The worker entry. Defaults to `./app-worker.ts` or `.js` next to this module. */
   workerUrl?: URL | string;
+  /**
+   * V8 memory limits of each app worker thread. Default: a 16 MiB young
+   * generation and a 512 MiB old generation (see `DEFAULT_WORKER_LIMITS`).
+   */
+  workerLimits?: WorkerLimits;
   /**
    * Start frozen: every structural command is refused (see
    * {@link AppHost.setFrozen}). Records, reports, the app's own tools and REST
@@ -289,6 +294,7 @@ export class AppHost extends EventEmitter {
   lastSwapMs = 0;
   private store: VersionStore;
   private workerUrl: URL | string;
+  private workerLimits: WorkerLimits | undefined;
   private app!: AppWorker;
   private closed = false;
   #autoApprove = false;
@@ -308,6 +314,7 @@ export class AppHost extends EventEmitter {
     this.dataDir = dataDir;
     this.store = opts.store;
     this.workerUrl = opts.workerUrl ?? defaultWorkerUrl();
+    this.workerLimits = opts.workerLimits;
     this.frozenNow = opts.frozen === true;
     this.#autoApprove = opts.autoApprove === true;
     this.draft = readDraftMarker(dataDir);
@@ -373,6 +380,7 @@ export class AppHost extends EventEmitter {
       def,
       version,
       migration,
+      limits: this.workerLimits,
     });
   }
 
@@ -1631,6 +1639,7 @@ export class AppHost extends EventEmitter {
         dataDir: this.dataDir,
         def,
         version: this.version,
+        limits: this.workerLimits,
         validateOnly: true,
       });
       try {
@@ -1790,6 +1799,7 @@ export class AppHost extends EventEmitter {
         return await AppHost.open(dir, {
           store: opts.store,
           workerUrl: this.workerUrl,
+          workerLimits: this.workerLimits,
           autoApprove: true,
         });
       } catch (e) {
@@ -1949,6 +1959,7 @@ export class AppHost extends EventEmitter {
               dataDir: dir,
               def: chain.base.definition,
               version: chain.baseVersion,
+              limits: this.workerLimits,
             });
           carried = null;
           try {
@@ -1992,6 +2003,7 @@ export class AppHost extends EventEmitter {
           dataDir: dir,
           def: rec.definition,
           version: numbers[i],
+          limits: this.workerLimits,
           migration: steps.length
             ? { steps, direction: 'up', version: numbers[i] }
             : undefined,
@@ -2328,6 +2340,7 @@ export class AppHost extends EventEmitter {
         dataDir: this.dataDir,
         def: this.def,
         version: this.version,
+        limits: this.workerLimits,
         readOnly: true,
       });
       let timer: ReturnType<typeof setTimeout> | undefined;

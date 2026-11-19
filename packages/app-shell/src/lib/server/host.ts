@@ -32,6 +32,7 @@ import {
   AppHost,
   discardDraftDirectory,
   EngineError,
+  type WorkerLimits,
 } from '../../engine/index.ts';
 import { AppDraftCollection } from '../objects/AppDraft.ts';
 import { AppImportCollection } from '../objects/AppImport.ts';
@@ -76,6 +77,8 @@ export interface ShellContext {
   secretMasterKey?: () => Promise<string | null>;
   /** Override the app worker entry (tests; defaults to the engine's own). */
   workerUrl?: URL | string;
+  /** V8 limits of each app worker thread (engine default when absent). */
+  workerLimits?: WorkerLimits;
   /**
    * The app-runtime profile. Absent means `local` (the desktop, and every
    * test that does not choose). A function that throws or rejects leaves the
@@ -322,6 +325,7 @@ export function openDraftHost(
   return AppHost.open(dir, {
     store: new DraftVersionStore(db, id, pin),
     workerUrl: workerUrl(),
+    workerLimits: requireContext().workerLimits,
     autoApprove: true,
   });
 }
@@ -464,6 +468,7 @@ export async function getHost(): Promise<AppHost> {
     const host = await AppHost.open(dirs.live, {
       store,
       workerUrl: workerUrl(),
+      workerLimits: requireContext().workerLimits,
     });
     wireHostEvents(host, 'live', holder.tenantId);
     try {

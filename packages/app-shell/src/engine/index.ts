@@ -151,3 +151,7 @@ export {
   ENGINE_TOOLS,
   isEngineTool,
 } from './tool-definitions.ts';
+export {
+  DEFAULT_WORKER_LIMITS,
+  type WorkerLimits,
+} from './worker-handle.ts';
