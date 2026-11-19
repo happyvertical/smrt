@@ -400,7 +400,9 @@ export class MailSearchService {
               const found = await client.search(criteria);
               const emails = await EmailCollection.create({ db });
               const out: MailSearchHit[] = [];
-              for (const msg of found.slice(0, limit)) {
+              for (const msg of found) {
+                if (out.length >= limit) break;
+                if (!matchesFlags(msg, query)) continue;
                 const local = msg.id
                   ? ((
                       await emails.list({
@@ -413,7 +415,6 @@ export class MailSearchService {
                       })
                     )[0] as Email | undefined)
                   : undefined;
-                if (!matchesFlags(msg, query)) continue;
                 out.push(
                   local
                     ? { ...toHit(local), source: 'provider' as const }
@@ -451,10 +452,8 @@ export class MailSearchService {
           answered = true;
         }
       } catch (error) {
-        reason =
-          error instanceof Error
-            ? error.message.slice(0, 200)
-            : 'provider search failed';
+        // Provider text can carry account details; report a fixed reason.
+        reason = 'provider search failed';
       }
       if (!answered) {
         result.fallbackAccounts.push({ accountId: listing.id, reason });
@@ -492,15 +491,36 @@ function toSearchCriteria(q: MailSearchQuery): SearchCriteria {
   };
 }
 
-/** Flag filters the SDK criteria cannot express are applied to provider hits. */
+/**
+ * Filters the SDK criteria cannot express (label, attachments, read and
+ * flagged state in both directions) applied to provider hits.
+ */
 function matchesFlags(
-  msg: { flags?: readonly string[]; attachments?: unknown[] },
+  msg: {
+    flags?: readonly string[];
+    attachments?: unknown[];
+    labels?: string[];
+    folder?: string;
+    folders?: string[];
+  },
   q: MailSearchQuery,
 ): boolean {
+  const flags = new Set((msg.flags ?? []).map((f) => String(f).toLowerCase()));
   if (q.hasAttachment !== undefined) {
     if ((msg.attachments?.length ?? 0) > 0 !== q.hasAttachment) return false;
   }
-  if (q.isRead === true && !(msg.flags ?? []).includes('\\Seen')) return false;
+  if (q.isRead !== undefined && flags.has('\\seen') !== q.isRead) return false;
+  if (q.isFlagged !== undefined && flags.has('\\flagged') !== q.isFlagged)
+    return false;
+  if (q.label) {
+    const wanted = q.label.toLowerCase();
+    const names = [
+      ...(msg.labels ?? []),
+      ...(msg.folders ?? []),
+      ...(msg.folder ? [msg.folder] : []),
+    ];
+    if (!names.some((n) => n.toLowerCase() === wanted)) return false;
+  }
   return true;
 }
 

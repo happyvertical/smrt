@@ -21,6 +21,7 @@ export interface CorrespondentOptions extends SmrtObjectOptions {
   firstContactAt?: Date | null;
   lastContactAt?: Date | null;
   accountIds?: string;
+  accountBreakdown?: string;
   profileId?: string | null;
 }
 
@@ -83,6 +84,14 @@ export class Correspondent extends SmrtObject {
   /** JSON array of mail account ids the address was seen in. */
   accountIds = '[]';
 
+  /**
+   * JSON object keyed by mail account id with that account's own sent and
+   * received counts, first/last contact, and latest name. The service builds
+   * every view from the accounts the viewer can read only; the top-level
+   * counts above are totals kept for storage and are never shown on their own.
+   */
+  accountBreakdown = '{}';
+
   /** Optional link to a smrt-profiles `Profile`, set only by the owner. */
   @crossPackageRef('@happyvertical/smrt-profiles:Profile', { nullable: true })
   profileId: string | null = null;
@@ -105,6 +114,8 @@ export class Correspondent extends SmrtObject {
     if (options.lastContactAt !== undefined)
       this.lastContactAt = options.lastContactAt;
     if (options.accountIds !== undefined) this.accountIds = options.accountIds;
+    if (options.accountBreakdown !== undefined)
+      this.accountBreakdown = options.accountBreakdown;
     if (options.profileId !== undefined) this.profileId = options.profileId;
   }
 

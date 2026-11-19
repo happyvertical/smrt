@@ -436,6 +436,53 @@ describe('mail search and correspondents (#5132)', () => {
     spy.mockRestore();
   });
 
+  it('provider search applies label, flagged:false and read filters, fills the page after filtering, and hides provider error text', async () => {
+    const good = await seedAccount(tenantA, 'good', owner);
+    const bad = await seedAccount(tenantA, 'bad', owner);
+    const mk = (i: number, extra: Record<string, unknown> = {}) => ({
+      id: `srv-${i}`,
+      subject: `s${i}`,
+      from: { address: 'a@b.test' },
+      to: [],
+      date: new Date(Date.UTC(2026, 4, i + 1)),
+      ...extra,
+    });
+    const spy = vi
+      .spyOn(EmailAccount.prototype, 'createClient')
+      .mockImplementation(async function (this: EmailAccount) {
+        if (this.id === bad) throw new Error('secret-host.internal refused');
+        return {
+          connect: async () => undefined,
+          disconnect: async () => undefined,
+          getCapabilities: async () => ({ search: true }),
+          search: async () => [
+            mk(1, { flags: ['\\Flagged'], labels: ['Work'] }),
+            mk(2, { labels: ['Work'] }),
+            mk(3, { labels: ['Home'] }),
+            mk(4, { labels: ['Work'] }),
+          ],
+        } as never;
+      });
+    const s = search(owner);
+    const unflagged = await s.searchProvider({
+      accountIds: [good],
+      isFlagged: false,
+      label: 'work',
+      limit: 2,
+    });
+    expect(unflagged.hits.map((h) => h.subject)).toEqual(['s4', 's2']);
+    const flagged = await s.searchProvider({
+      accountIds: [good],
+      isFlagged: true,
+    });
+    expect(flagged.hits.map((h) => h.subject)).toEqual(['s1']);
+    const failed = await s.searchProvider({ accountIds: [bad] });
+    expect(failed.fallbackAccounts).toEqual([
+      { accountId: bad, reason: 'provider search failed' },
+    ]);
+    spy.mockRestore();
+  });
+
   describe('correspondents', () => {
     it('derives private correspondents from readable mail, with counts and the latest name', async () => {
       const a = await seedAccount(tenantA, 'a', owner);
@@ -514,6 +561,133 @@ describe('mail search and correspondents (#5132)', () => {
       expect((await people(grantee).list()).correspondents).toEqual([]);
       expect(await people(grantee).suggest('zed')).toEqual([]);
       await people(grantee).refresh();
+    });
+
+    it('refresh never erases data it could not scan: no policy, tenant mismatch, no read scope', async () => {
+      const a = await seedAccount(tenantA, 'a', owner);
+      await seedEmail(a, { fromAddress: 'zed@z.test' });
+      const svc = people(owner);
+      await svc.refresh();
+      resetMailAccess();
+      expect(await people(owner).refresh()).toMatchObject({
+        upserted: 0,
+        removed: 0,
+      });
+      configureMailAccess({ options, resolvePrincipal: () => null });
+      expect(await people(owner, tenantA, tenantB).refresh()).toMatchObject({
+        upserted: 0,
+        removed: 0,
+      });
+      expect((await svc.list()).correspondents).toHaveLength(1);
+    });
+
+    it('delegated principals (agent ceilings, triage-only) cannot read, refresh or link; data is untouched', async () => {
+      const a = await seedAccount(tenantA, 'a', owner);
+      const b = await seedAccount(tenantA, 'b', owner);
+      await seedEmail(a, { fromAddress: 'zed@z.test' });
+      await seedEmail(b, { fromAddress: 'yan@y.test' });
+      await people(owner).refresh();
+      const id = (await people(owner).list()).correspondents[0].id;
+      for (const extra of [
+        { accountIds: [a] },
+        { scopes: ['triage'] as MailScope[] },
+        { scopes: ['read'] as MailScope[] },
+      ]) {
+        const agent = new CorrespondentService(
+          opts(owner, tenantA, tenantA, extra),
+        );
+        await expect(agent.refresh()).rejects.toThrow(/private/);
+        await expect(agent.linkProfile(id, randomUUID())).rejects.toThrow(
+          /private/,
+        );
+        await expect(agent.unlinkProfile(id)).rejects.toThrow(/private/);
+        expect((await agent.list()).correspondents).toEqual([]);
+        expect(await agent.suggest('zed')).toEqual([]);
+        expect(await agent.get(id)).toBeNull();
+      }
+      expect((await people(owner).list()).correspondents).toHaveLength(2);
+      // Explicit owner consent lifts the gate; a narrower scan keeps the rest.
+      const consented = new CorrespondentService({
+        ...opts(owner, tenantA, tenantA, { accountIds: [a] }),
+        allowDelegated: true,
+      });
+      await consented.refresh();
+      expect((await people(owner).list()).correspondents).toHaveLength(2);
+      expect(
+        (await consented.list()).correspondents.map((c) => c.address),
+      ).toEqual(['zed@z.test']);
+    });
+
+    it("a correspondent seen in a readable and a revoked account shows only the readable account's numbers", async () => {
+      const a = await seedAccount(tenantA, 'a', owner);
+      const b = await seedAccount(tenantA, 'b', owner);
+      await grant(grantee, a, 'read');
+      const rowB = await grant(grantee, b, 'read');
+      await seedEmail(a, {
+        fromAddress: 'zed@z.test',
+        fromName: 'Zed Public',
+        date: new Date('2026-01-01'),
+      });
+      await seedEmail(b, {
+        fromAddress: 'zed@z.test',
+        fromName: 'Zed Secret',
+        date: new Date('2026-06-01'),
+      });
+      await seedEmail(b, {
+        fromAddress: 'zed@z.test',
+        fromName: '',
+        date: new Date('2026-07-01'),
+      });
+      const svc = people(grantee);
+      await svc.refresh();
+      const both = (await svc.list()).correspondents[0];
+      expect(both).toMatchObject({
+        messageCount: 3,
+        displayName: 'Zed Secret',
+      });
+      await withTenant({ tenantId: tenantA }, async () => {
+        rowB.revokedAt = new Date();
+        await rowB.save();
+      });
+      const only = (await svc.list()).correspondents[0];
+      expect(only).toMatchObject({
+        messageCount: 1,
+        sentCount: 1,
+        displayName: 'Zed Public',
+        accountIds: [a],
+      });
+      expect(only.lastContactAt).toEqual(new Date('2026-01-01'));
+      expect((await svc.suggest('zed'))[0].messageCount).toBe(1);
+      expect((await svc.get(only.id))?.messageCount).toBe(1);
+      // Refresh keeps what it could not scan, and a re-grant restores it.
+      await svc.refresh();
+      await withTenant({ tenantId: tenantA }, async () => {
+        rowB.revokedAt = null;
+        await rowB.save();
+      });
+      expect((await svc.list()).correspondents[0].messageCount).toBe(3);
+    });
+
+    it('a mailbox that no longer mentions an address drops it on refresh, unless it is linked', async () => {
+      const a = await seedAccount(tenantA, 'a', owner);
+      const id1 = await seedEmail(a, { fromAddress: 'gone@g.test' });
+      await seedEmail(a, { fromAddress: 'stay@s.test' });
+      const svc = people(owner);
+      await svc.refresh();
+      await withTenant({ tenantId: tenantA }, async () => {
+        const emails = await EmailCollection.create(options);
+        const row = (
+          await runWithMailSystemAccess(() =>
+            emails.list({ where: { id: id1 }, limit: 1 }),
+          )
+        )[0];
+        await runWithMailSystemAccess(() => row.delete());
+      });
+      const r = await svc.refresh();
+      expect(r.removed).toBe(1);
+      expect((await svc.list()).correspondents.map((c) => c.address)).toEqual([
+        'stay@s.test',
+      ]);
     });
 
     it('suggests for recipient autocomplete: address or name prefix, best first', async () => {
