@@ -18,7 +18,7 @@
  * @packageDocumentation
  */
 
-import { defineApprovalKind } from './kinds.js';
+import { defineApprovalKind, isPermissionSlug } from './kinds.js';
 import type { ApprovalService } from './service.js';
 import {
   ApprovalError,
@@ -184,7 +184,7 @@ export function createApprovalMailSendGate(
               // ledgered self-approval allowance.
               (event.actorId !== row.requestedBy ||
                 (event.selfApproved === true &&
-                  Boolean(event.selfApprovalPermission))),
+                  isPermissionSlug(event.selfApprovalPermission))),
           )
           .map((event) => event.actorId),
       ),
