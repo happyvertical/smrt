@@ -29,6 +29,7 @@ import {
 import { fitsStorageIdentifier, storageColumns } from '../cookbook/models.js';
 import { COOKBOOK_SCHEMA_URL } from '../cookbook/validate.js';
 import { field } from '../decorators/index.js';
+import { APIGenerator } from '../generators/rest.js';
 import { migrateSmrtSchemas } from '../migrations/orchestrate.js';
 import { SmrtObject } from '../object.js';
 import { ObjectRegistry } from '../registry.js';
@@ -1107,6 +1108,64 @@ describe('app model editor: one customised registry per process', () => {
     );
     expect(() => second.snapshot()).not.toThrow();
   });
+
+  it('serves a customised provider over REST only to the tenant whose journal owns it', async () => {
+    await editorFor(TENANT);
+    const second = await editorFor(OTHER_TENANT);
+    await applier(
+      second,
+      OTHER_TENANT,
+    )({
+      type: 'add_field',
+      model: MEMBER,
+      name: 'loyalty',
+      field: { type: 'text' },
+    });
+    const get = (tenantId: string) => {
+      const handler = new APIGenerator(
+        { basePath: '/api', authMiddleware: () => async (req) => req },
+        { db, tenantId },
+      ).generateHandler();
+      return withTenant({ tenantId }, () =>
+        handler(new Request('http://fixture/api/guardmembers')),
+      );
+    };
+    expect((await get(OTHER_TENANT)).status).toBe(200);
+    expect((await get(TENANT)).status).toBe(404);
+  });
+
+  it('treats the same application and tenant on another database as another journal', async () => {
+    const first = await editorFor(TENANT);
+    await applier(
+      first,
+      TENANT,
+    )({
+      type: 'add_field',
+      model: MEMBER,
+      name: 'vip',
+      field: { type: 'boolean' },
+    });
+    const other = await getTestDatabase({
+      type: databaseType,
+      classes: [],
+      includeSystemTables: false,
+    });
+    try {
+      await expect(
+        createAppModelEditor({
+          db: other,
+          application: 'editor-guards-slot',
+          tenantId: TENANT,
+          packageName: APP,
+          cookbook: memberBook(),
+          catalog: memberCatalog,
+          authorize: (c) => c.actor === 'owner',
+        }),
+      ).rejects.toThrow(/MODEL_EDIT_CONFLICT: this process already holds/);
+    } finally {
+      await other.close?.();
+    }
+  });
 });
 
 describe('app model editor: provider fields across recipe disable', () => {
@@ -1219,6 +1278,25 @@ describe('app model editor: provider fields across recipe disable', () => {
     expect(enabled.models?.fields[MEMBER]).toHaveProperty('vip');
     const fields = await ObjectRegistry.getAllFields(`${APP}:GuardMember`);
     expect([...fields.keys()]).toContain('vip');
+  });
+
+  it('disabling through a reopened editor of the same journal takes the replacement out', async () => {
+    const e = await editorFor();
+    await applier(e)({
+      type: 'add_field',
+      model: MEMBER,
+      name: 'vip',
+      field: { type: 'boolean' },
+    });
+    const reopened = await editorFor();
+    await applier(reopened)({
+      type: 'import',
+      cookbook: withoutRecipe(reopened.snapshot().cookbook),
+    });
+    expect(ObjectRegistry.getClass(`${APP}:GuardMember`)).toBeUndefined();
+    expect([
+      ...(await ObjectRegistry.getAllFields(MEMBER)).keys(),
+    ]).not.toContain('vip');
   });
 });
 

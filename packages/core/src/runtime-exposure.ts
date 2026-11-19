@@ -93,6 +93,26 @@ export function setRuntimeModelReadiness(
   notifyRuntimeExposureChanged();
 }
 
+declare global {
+  var __smrtModelOwners: Map<string, string> | undefined;
+}
+
+/**
+ * The tenant whose app model journal registered a run-time model (an editor
+ * list or provider replacement). The registry is process-global, so exposure
+ * admits such a model only for that tenant; undefined clears the owner.
+ */
+export function setRuntimeModelOwner(
+  models: Iterable<string>,
+  tenantId: string | undefined,
+): void {
+  globalThis.__smrtModelOwners ??= new Map();
+  for (const model of models)
+    if (tenantId === undefined) globalThis.__smrtModelOwners.delete(model);
+    else globalThis.__smrtModelOwners.set(model, tenantId);
+  notifyRuntimeExposureChanged();
+}
+
 /** Explicit editor readiness; undefined means this model is not managed by an editor. */
 export function getRuntimeModelReadiness(model: string): boolean | undefined {
   return globalThis.__smrtModelReadiness?.get(model);
@@ -110,6 +130,11 @@ export function isRuntimeModelEnabled(
     )
   )
     return false;
+  // Another tenant's customised registration is never served to this tenant.
+  const owner = identity?.qualifiedName
+    ? globalThis.__smrtModelOwners?.get(identity.qualifiedName)
+    : undefined;
+  if (owner !== undefined && owner !== context.tenantId) return false;
   const gate = state().gate;
   if (!gate) return true;
   try {

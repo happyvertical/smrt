@@ -23,6 +23,7 @@ import { ObjectRegistry } from '../registry.js';
 import {
   getRuntimeModelReadiness,
   notifyRuntimeExposureChanged,
+  setRuntimeModelOwner,
   setRuntimeModelReadiness,
 } from '../runtime-exposure.js';
 import {
@@ -323,6 +324,23 @@ declare global {
 }
 const editorClasses = () =>
   (globalThis.__smrtAppModelEditorClasses ??= new WeakMap<object, string>());
+/** A process-local identity per database handle, part of each journal's key. */
+const databaseIds = new WeakMap<object, number>();
+let nextDatabaseId = 1;
+const databaseId = (db: object) => {
+  let id = databaseIds.get(db);
+  if (id === undefined) {
+    id = nextDatabaseId++;
+    databaseIds.set(db, id);
+  }
+  return id;
+};
+/**
+ * Registry baselines per journal and provider: the registration state before
+ * the journal first replaced the provider, shared by every editor instance of
+ * that journal so a reopened editor can still take its replacement out.
+ */
+const journalBaselines = new Map<string, Map<string, () => void>>();
 
 /** Async construction replays persisted customizations and resolves pending activation BEFORE serving. */
 export async function createAppModelEditor(options: AppModelEditorOptions) {
@@ -345,7 +363,13 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
   // The registry is process-global: two independently customised editors
   // (another tenant's or application's journal) would merge their fields and
   // lists into the same classes. One application registry per process.
-  const journal = JSON.stringify([options.application, options.tenantId]);
+  // The journal identity includes the database: the same application and
+  // tenant on another database is an independent journal.
+  const journal = JSON.stringify([
+    options.application,
+    options.tenantId,
+    databaseId(options.db),
+  ]);
   const assertSoleEditor = () => {
     for (const entry of ObjectRegistry.getAllClasses().values()) {
       const owner = editorClasses().get(entry.constructor);
@@ -777,8 +801,10 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
     };
   }
 
-  /** Registry checkpoints taken before this editor first replaced each provider. */
-  const replacements = new Map<string, () => void>();
+  /** Registry baselines taken before this journal first replaced each provider. */
+  const replacements =
+    journalBaselines.get(journal) ??
+    journalBaselines.set(journal, new Map()).get(journal)!;
 
   /** Register storage declarations; affected readiness closes until release(). */
   function register(all: CookbookModels | undefined) {
@@ -793,6 +819,13 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
         const entry = ObjectRegistry.getClass(id);
         if (entry) editorClasses().set(entry.constructor, journal);
       }
+      // Exposure admits these registrations only for this journal's tenant.
+      setRuntimeModelOwner(
+        identities(all).filter((id) =>
+          id.startsWith(`${options.packageName}:`),
+        ),
+        options.tenantId,
+      );
     }
   }
   function registerAll(all: CookbookModels) {
@@ -845,9 +878,17 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
       );
     for (const [model, fields] of Object.entries(all.fields)) {
       const replacement = `${all.packageName}:${model.split(':').at(-1)}`;
-      // Remember the registry before this editor first adds a replacement, so
-      // disabling the provider's recipe can take the replacement out again.
-      if (!replacements.has(model) && !ObjectRegistry.getClass(replacement))
+      // Remember the registry before this journal first replaces the
+      // provider (absent, or a pre-existing app subclass), so disabling the
+      // provider's recipe restores it, from any editor instance of the
+      // journal. A baseline is stale once the registry no longer holds this
+      // journal's replacement (a reset registry): take a new one.
+      const current = ObjectRegistry.getClass(replacement);
+      if (
+        !replacements.has(model) ||
+        !current ||
+        editorClasses().get(current.constructor) !== journal
+      )
         replacements.set(
           model,
           ObjectRegistry.checkpointRegistrations([model, replacement]),
@@ -965,7 +1006,13 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
     // replacement leaves the registry so no projection shows its fields.
     for (const [model, restore] of replacements)
       if (!all?.fields[model]) {
-        restore();
+        const replacement = `${options.packageName}:${model.split(':').at(-1)}`;
+        const current = ObjectRegistry.getClass(replacement);
+        // Only a replacement this journal registered is restored.
+        if (current && editorClasses().get(current.constructor) === journal) {
+          restore();
+          setRuntimeModelOwner([replacement], undefined);
+        }
         replacements.delete(model);
       }
     // Deleted lists remain in storage/registry but are closed on every surface.
