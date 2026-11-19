@@ -23,9 +23,9 @@
         "source/sveltekit/src/lib/server/smrt.ts": "0ccb2afbd8cc5f2d935fa82bbb52653417890b2e4e225b9fae5c773282f23dbf",
         "source/sveltekit/src/routes/api/_changes/+server.ts": "0d90d327ad6437bc07aee0466797ac19851716d3e93d1781c34c7a457725819e",
         "source/sveltekit/src/routes/api/_events/+server.ts": "7d2cc146aa19cdf11640693976bc506fb86e26483970a82e26232dd3c7cb5040",
-        "source/sveltekit/src/routes/api/compat_plain/[id]/+server.ts": "09b7df526fdf36a4048e8bdf5086d754c5e1c6af0894bf3cd21fa17a51e49dad",
-        "source/sveltekit/src/routes/api/compat_plain/+server.ts": "0a32bb8aa7a390bd0e9bf8398da8f67c9a71a1a4b1f452918f1799a40c56b92b",
-        "source/sveltekit/src/routes/api/sync/apply/+server.ts": "e54612dbbfff92ebcaa76041c6e3d482f5ffeb78beaa14694c63820235209b30"
+        "source/sveltekit/src/routes/api/compat_plain/[id]/+server.ts": "314fa94bda6da22da70cb73e982bb9d32c8544f487400aa97e5474953209566c",
+        "source/sveltekit/src/routes/api/compat_plain/+server.ts": "521e0709a1ed104b997757f4d50843202057fc0dde9d918a5f5e7f44c082a115",
+        "source/sveltekit/src/routes/api/sync/apply/+server.ts": "d4752d2ece7803ffbf7b17554173e65813e8805f5b75afacb767e11a387716e5"
       }
     },
     "sti": {
@@ -54,9 +54,9 @@
         "source/sveltekit/src/lib/server/smrt.ts": "0ccb2afbd8cc5f2d935fa82bbb52653417890b2e4e225b9fae5c773282f23dbf",
         "source/sveltekit/src/routes/api/_changes/+server.ts": "51b9498c2881de41b4fc1d18155386746071681028f215478e2365cd03835e6f",
         "source/sveltekit/src/routes/api/_events/+server.ts": "f0473b6d66e0e35cb1a36c3997a2aa06215f20a18ffef3a08b86637191a14927",
-        "source/sveltekit/src/routes/api/compatroots/[id]/+server.ts": "1499dec2591b5069207b504b1f20ed2cd002984dd3831c74e1c8115875f81218",
-        "source/sveltekit/src/routes/api/compatroots/+server.ts": "e80c00a2ba10ada747f9178c485bd677661e787a95ba5d973aab2fa606189e15",
-        "source/sveltekit/src/routes/api/sync/apply/+server.ts": "9d5683a4d15d074a325b04b12b00b0863630c10d72fc091db119f32345be5337"
+        "source/sveltekit/src/routes/api/compatroots/[id]/+server.ts": "654cd7a42eee2ad8c33047a665c37c310ffd3af0c9c8dee9c6a85ddf9187f9da",
+        "source/sveltekit/src/routes/api/compatroots/+server.ts": "ebc94bef9fdc5633b8b6be41f99754b1164311efb4f77cf15dc080ed240dda3c",
+        "source/sveltekit/src/routes/api/sync/apply/+server.ts": "ff3b1de1e7ebbf9e392237da4fef3f362188c927e5cc900a6a0e9c6bd4e4efd3"
       }
     }
   }

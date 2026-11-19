@@ -694,6 +694,7 @@ export {
   applyUpdateInput,
   assertCreateInput,
   assertUpdateInput,
+  prepareWriteInput,
   updateInputRulesFor,
 } from './request-input';
 // Revision compare-and-swap predicate helpers (#2620)
@@ -837,11 +838,19 @@ export {
 export {
   assignUpdateInput,
   classifyUpdateKey,
+  FIELD_NOT_WRITABLE_CODE,
+  FieldNotWritableError,
+  isServerManagedWriteKey,
   isWriteInputError,
+  notWritableFieldOf,
   resolveUpdateInput,
+  resolveWriteBody,
+  SERVER_MANAGED_WRITE_KEYS,
   STRUCTURAL_UPDATE_RULES,
+  sameStoredValue,
   type UpdateInputRules,
   type UpdateKeyKind,
+  type WriteBodyPolicy,
   WriteInputError,
 } from './write-input';
 

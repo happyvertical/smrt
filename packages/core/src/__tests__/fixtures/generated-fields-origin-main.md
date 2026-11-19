@@ -85,8 +85,8 @@ DDL, migration and OpenAPI digests have not moved since the recapture above.
   get, update, delete and item-action cases read `id` / `slug` through
   `requireIdentifierArgument()` / `identifierArgument()`.
 - Generated sync route (`sync/apply/+server.ts`): each target carries
-  `tenantScoped` and `principalContext`, and its read-only list comes from the
-  function the CRUD routes use (`collectRouteReadonlyFields`).
+  `tenantScoped` and `principalContext`. Its write policy is no longer baked
+  into the target table: payloads pass `prepareWriteInput()` (#5195).
 - Generated create paths (both MCP servers `single/index.ts` and
   `modular/handlers/index.ts`, and the list route of each model): a create
   target selected through an STI base passes `assertCreateTargetSurface()`.
@@ -99,3 +99,8 @@ DDL, migration and OpenAPI digests have not moved since the recapture above.
   the request tenant from every \`locals\` source; item-route lookups map
   typed refusals; the sync route checks exposure in \`run\`, update payloads
   with \`assertUpdateInput()\` and super-admin bypass per target.
+- Protected-field writes (#5195; the list and item routes of each model and
+  `sync/apply/+server.ts`): the emitted `applyWritablePolicy` helper is gone.
+  Create and update bodies pass `prepareWriteInput()` from core, which refuses
+  a changed protected field with `VALIDATION_FIELD_NOT_WRITABLE`; the item
+  route builds the body after loading the row. MCP sources are unchanged.

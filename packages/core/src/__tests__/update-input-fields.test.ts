@@ -556,12 +556,21 @@ describe('update input', () => {
       expect((await keyRow(id)).label).toBe('round trip');
     });
 
-    it('a model with an api.writable allowlist keeps dropping other keys', async () => {
+    it('a model with an api.writable allowlist refuses a change to another key', async () => {
       const created = await listed.create({ label: 'a', secretHash: SECRET });
+      const refused = await patch(`${segment.listed}/${created.id}`, {
+        label: 'b',
+        secretHash: 'replaced',
+      });
+      expect(refused.status).toBe(400);
+      expect((await refused.json()).error).toMatchObject({
+        code: 'VALIDATION_FIELD_NOT_WRITABLE',
+        details: { field: 'secretHash' },
+      });
+
       const response = await patch(`${segment.listed}/${created.id}`, {
         label: 'b',
-        toPublicJSON: 0,
-        secretHash: 'replaced',
+        secretHash: SECRET,
       });
       expect(response.status).toBe(200);
       const text = await response.text();

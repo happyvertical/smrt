@@ -4,12 +4,12 @@
  *
  * The generated CRUD routes (`sveltekit-generator.ts`) and the generated
  * sync-apply route (`sync-apply-route.ts`) answer the same questions about a
- * model: which body fields a write may set, whether it is tenant-scoped, which
- * principal a request must carry. Both generators call the functions in this
+ * model: whether it is tenant-scoped, which principal a request must carry.
+ * Which body fields a write may set is decided at run time by
+ * `prepareWriteInput` (`request-input.ts`), the rule runtime REST applies. Both generators call the functions in this
  * module, so the two routes cannot answer differently.
  */
 
-import { generatedExpression } from '../generated-fields.js';
 import type { ApiConfig } from '../registry/types.js';
 import type { SmartObjectDefinition } from '../scanner/types';
 
@@ -19,50 +19,6 @@ export function getApiConfigObject(apiConfig: unknown): ApiConfig | null {
   }
 
   return apiConfig as ApiConfig;
-}
-
-/**
- * Collect property names a generated write never sets: fields marked
- * `@field({ readonly: true })` and database-calculated fields (#1540, 2b).
- */
-export function collectReadonlyFieldNames(
-  objectDef: SmartObjectDefinition,
-): string[] {
-  const fields = objectDef.fields || {};
-  const names: string[] = [];
-  for (const [name, def] of Object.entries(fields)) {
-    const meta = (def as { _meta?: Record<string, unknown> })._meta;
-    if (
-      (def as { readonly?: boolean }).readonly === true ||
-      meta?.readonly === true ||
-      generatedExpression(def) !== undefined
-    ) {
-      names.push(name);
-    }
-  }
-  return names;
-}
-
-/**
- * Every body key a generated write of this model drops as read-only: the
- * read-only and calculated fields, and the projected `displayLabel`.
- */
-export function collectRouteReadonlyFields(
-  objectDef: SmartObjectDefinition,
-): string[] {
-  return [
-    ...collectReadonlyFieldNames(objectDef),
-    ...(objectDef.displayLabelProjection ? ['displayLabel'] : []),
-  ];
-}
-
-/**
- * Resolve the optional `@smrt({ api: { writable: [...] } })` allowlist. When
- * present, only these fields may be set from a create/update request body.
- */
-export function getApiWritableAllowlist(apiConfig: unknown): string[] | null {
-  const config = getApiConfigObject(apiConfig);
-  return Array.isArray(config?.writable) ? config.writable : null;
 }
 
 /**

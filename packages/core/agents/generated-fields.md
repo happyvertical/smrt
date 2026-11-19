@@ -216,8 +216,11 @@ Persistence rejects supplied generated inputs, strips generated columns after
 the complete serialization chain, and reloads computed values before
 `afterSave`. Shared compatible bulk preparation uses the same path. Direct
 property edits after initialization are rejected against the hydrated baseline.
-REST, MCP and generated SvelteKit create/update handlers drop supplied generated
-keys exactly like readonly keys, so a fetched record can be sent back whole.
+Generated keys are protected exactly like readonly keys: runtime REST, the
+generated SvelteKit routes and sync apply accept one whose value equals the
+stored value, so a fetched record can be sent back whole, and refuse a changed
+one (`VALIDATION_FIELD_NOT_WRITABLE`, see [generators.md](generators.md)); MCP
+drops them.
 The database recomputes the value from writable inputs. Direct object and
 collection assignments still refuse generated keys. Generated REST/MCP write
 schemas omit them; output shapes retain them subject to normal read policy.

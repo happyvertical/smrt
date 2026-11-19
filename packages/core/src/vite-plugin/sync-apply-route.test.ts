@@ -81,16 +81,16 @@ describe('collectSyncApplyTargets', () => {
     expect(product).toMatchObject({
       registryKey: 'Product',
       ops: ['create', 'update', 'delete'],
-      readonlyFields: ['sku'],
-      writableAllowlist: null,
       publicAccess: false,
       tenantScoped: false,
     });
+    // The write policy is read at run time by `prepareWriteInput`.
+    expect(product).not.toHaveProperty('readonlyFields');
+    expect(product).not.toHaveProperty('writableAllowlist');
     const report = targets.find((t) => t.segment === 'reports');
     expect(report).toMatchObject({
       registryKey: 'Report',
       ops: ['create'],
-      writableAllowlist: ['title'],
       publicAccess: true,
       tenantScoped: true,
     });
@@ -180,7 +180,10 @@ describe('generateSyncApplyRouteTemplate', () => {
 
   it('delegates to the shared core engine and policy helper', () => {
     expect(content).toContain('processSyncApplyBatch');
-    expect(content).toContain('applySyncWritablePolicy');
+    expect(content).toContain(
+      'prepareWriteInput(target.registryKey, payload, stored)',
+    );
+    expect(content).not.toContain('applySyncWritablePolicy');
     expect(content).toContain("from '@happyvertical/smrt-core'");
     // #3416: collections resolve through the generated access prelude.
     expect(content).toContain(
@@ -195,7 +198,7 @@ describe('generateSyncApplyRouteTemplate', () => {
     expect(content).toContain('"products": {');
     expect(content).toContain('registryKey: "Product"');
     expect(content).toContain('ops: ["create","update","delete"]');
-    expect(content).toContain('readonlyFields: ["sku"]');
+    expect(content).not.toContain('readonlyFields');
     expect(content).toContain('"reports": {');
     expect(content).toContain('ops: ["create"]');
     expect(content).toContain('publicAccess: true');
@@ -321,6 +324,7 @@ describe('generated sync-apply route runtime: operation permissions (#3011)', ()
     rmSync(projectRoot, { force: true, recursive: true });
     delete (globalThis as Record<string, unknown>).__smrtSyncCreateCalls;
     delete (globalThis as Record<string, unknown>).__smrtSyncDeclaredFields;
+    delete (globalThis as Record<string, unknown>).__smrtSyncWritePolicy;
     delete (globalThis as Record<string, unknown>).__smrtSyncStoredRow;
     delete (globalThis as Record<string, unknown>).__smrtSyncTenantContext;
     delete (globalThis as Record<string, unknown>).__smrtSyncSystemContext;
@@ -393,7 +397,11 @@ describe('generated sync-apply route runtime: operation permissions (#3011)', ()
         // The route assigns an update payload through `applyUpdateInput`. The
         // fixture rows are structural, so the real rule runs with nothing
         // registered about them.
-        `import { assignUpdateInput, resolveUpdateInput, STRUCTURAL_UPDATE_RULES } from ${JSON.stringify(fileURLToPath(new URL('../write-input.ts', import.meta.url)))};`,
+        `import { assignUpdateInput, resolveUpdateInput, resolveWriteBody, STRUCTURAL_UPDATE_RULES } from ${JSON.stringify(fileURLToPath(new URL('../write-input.ts', import.meta.url)))};`,
+        // The route builds a write body through `prepareWriteInput`. The real
+        // rule runs over the read-only fields and allowlist a test declares
+        // (none by default), standing in for the registry's field policy.
+        "export const prepareWriteInput = (name: string, data: unknown, stored?: object) => { const policy = ((globalThis as any).__smrtSyncWritePolicy ?? {})[name] ?? {}; return resolveWriteBody(data, { isProtected: (key: string) => key.startsWith('_') || (policy.readonly ?? []).includes(key) || (Array.isArray(policy.writable) && !policy.writable.includes(key)), isSkipped: (key: string) => ObjectRegistry.isServiceOptionInput(name, key) || (policy.skipped ?? []).includes(key) }, stored); };",
         'export const applyUpdateInput = (row: object, data: Record<string, unknown>) => assignUpdateInput(row, data, STRUCTURAL_UPDATE_RULES);',
         'export const assertUpdateInput = (row: object, data: Record<string, unknown>) => { resolveUpdateInput(row, data, STRUCTURAL_UPDATE_RULES); };',
         // The fixture models are structural; nothing is registered to check create input against.
@@ -539,14 +547,38 @@ describe('generated sync-apply route runtime: operation permissions (#3011)', ()
       );
     };
 
-    it('strips the same read-only fields as the CRUD route', async () => {
-      const [target] = collectSyncApplyTargets(
-        manifestWith({ TenantWidget: tenantDef }),
-      );
-      // Read-only, calculated and projected-label fields, from the one
-      // function both generators call.
-      expect(target.readonlyFields).toEqual(['code', 'total', 'displayLabel']);
+    const tenantWidgetPolicy = () => {
+      // The registry's write policy for the fixture: read-only and calculated
+      // fields, and the projected label the model only writes into output.
+      (globalThis as Record<string, unknown>).__smrtSyncWritePolicy = {
+        TenantWidget: {
+          readonly: ['code', 'total'],
+          skipped: ['displayLabel'],
+        },
+      };
+    };
 
+    it('refuses a create payload that sets a read-only field', async () => {
+      tenantWidgetPolicy();
+      const result = await apply(
+        'tenantwidgets',
+        {
+          tenantId: 'tenant-a',
+          permissions: ['tenantwidgets.create'],
+          user: { id: 'user-1' },
+        },
+        { name: 'Widget', code: 'forged' },
+      );
+      expect(result).toMatchObject({
+        status: 'rejected',
+        reason: 'invalid_payload',
+        details: { code: 'VALIDATION_FIELD_NOT_WRITABLE', field: 'code' },
+      });
+      expect(createCalls).toEqual([]);
+    });
+
+    it('ignores the tenant and projected label, and leaves out null read-only fields', async () => {
+      tenantWidgetPolicy();
       const result = await apply(
         'tenantwidgets',
         {
@@ -556,9 +588,9 @@ describe('generated sync-apply route runtime: operation permissions (#3011)', ()
         },
         {
           name: 'Widget',
-          code: 'forged',
-          total: 999,
-          displayLabel: 'forged',
+          code: null,
+          total: null,
+          displayLabel: 'projected',
           tenantId: 'tenant-b',
         },
       );
@@ -800,8 +832,11 @@ describe('generated sync-apply route runtime: operation permissions (#3011)', ()
       name: 'Widget',
       ...Object.fromEntries(SERVICE_KEYS.map((key) => [key, { from: key }])),
       options: { db: 'file:/elsewhere.db' },
-      _skipLoad: false,
-      _className: 'Other',
+      ...(withControls ? { _skipLoad: false, _className: 'Other' } : {}),
+    });
+    let withControls = false;
+    afterEach(() => {
+      withControls = false;
     });
     const batch = (op: 'create' | 'update') =>
       new Request('http://localhost/api/sync/apply', {
@@ -875,6 +910,31 @@ describe('generated sync-apply route runtime: operation permissions (#3011)', ()
       expect(Object.keys(stored).sort()).toEqual(
         ['id', 'name', 'options', 'save', 'updated_at'].sort(),
       );
+    });
+
+    it('refuses underscore control keys in a create or update payload', async () => {
+      withControls = true;
+      const route = await importRoute({ Widget: writableDef });
+      expect(
+        await firstResult(
+          await route.POST({ locals: writer, request: batch('create') }),
+        ),
+      ).toMatchObject({ status: 'rejected', reason: 'invalid_payload' });
+      expect(createCalls).toEqual([]);
+
+      const stored: Record<string, unknown> = {
+        id: ITEM_ID,
+        name: 'Before',
+        updated_at: '2026-01-01T00:00:00.000Z',
+        save: async () => {},
+      };
+      (globalThis as Record<string, unknown>).__smrtSyncStoredRow = stored;
+      expect(
+        await firstResult(
+          await route.POST({ locals: writer, request: batch('update') }),
+        ),
+      ).toMatchObject({ status: 'rejected', reason: 'invalid_payload' });
+      expect(stored.name).toBe('Before');
     });
   });
 
@@ -950,7 +1010,6 @@ describe('one sync target per shared segment (#2807)', () => {
       segment: 'records',
       registryKey: '@fixture/app:ArchivedRecord',
       ops: ['create'],
-      readonlyFields: ['sku'],
       publicAccess: true,
     });
     const route = generatedRoute(sharedRecordModels());

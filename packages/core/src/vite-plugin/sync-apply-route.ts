@@ -26,10 +26,8 @@ import type {
 import { AUTO_GENERATED_ROUTE_HEADER } from './route-header.js';
 import {
   allowsSuperAdminBypass,
-  collectRouteReadonlyFields,
   generateTenantContextHelper,
   getApiPublicAccess,
-  getApiWritableAllowlist,
   resolvePermissionCollection,
   usesPrincipalContext,
 } from './route-policy.js';
@@ -67,8 +65,6 @@ interface SyncTargetSpec {
    */
   permissionCollection: string;
   ops: MutatingAction[];
-  readonlyFields: string[];
-  writableAllowlist: string[] | null;
   publicAccess: boolean | 'read';
   tenantScoped: boolean;
   /** `tenantScoped.allowSuperAdminBypass`: a verified bypass may write. */
@@ -189,9 +185,9 @@ export function collectSyncApplyTargets(
       permissionCollection: resolvePermissionCollection(objectDef),
       ops,
       // The same policy functions the model's CRUD routes are generated
-      // from (`route-policy.ts`), so the two routes cannot disagree.
-      readonlyFields: collectRouteReadonlyFields(objectDef),
-      writableAllowlist: getApiWritableAllowlist(apiConfig),
+      // from (`route-policy.ts`), so the two routes cannot disagree. The
+      // write policy (read-only fields, `api.writable`) is read at run time
+      // by `prepareWriteInput`, as the CRUD routes read it.
       publicAccess: getApiPublicAccess(apiConfig),
       tenantScoped: !!objectDef.decoratorConfig?.tenantScoped,
       allowSuperAdminBypass: allowsSuperAdminBypass(objectDef),
@@ -212,8 +208,6 @@ function serializeTargets(targets: SyncTargetSpec[]): string {
       `replacedQualifiedNames: ${JSON.stringify(target.replacedQualifiedNames ?? [])}`,
       `permissionCollection: ${JSON.stringify(target.permissionCollection)}`,
       `ops: ${JSON.stringify(target.ops)}`,
-      `readonlyFields: ${JSON.stringify(target.readonlyFields)}`,
-      `writableAllowlist: ${JSON.stringify(target.writableAllowlist)}`,
       `publicAccess: ${JSON.stringify(target.publicAccess)}`,
       `tenantScoped: ${JSON.stringify(target.tenantScoped)}`,
       `allowSuperAdminBypass: ${JSON.stringify(target.allowSuperAdminBypass)}`,
@@ -257,13 +251,13 @@ export function generateSyncApplyRouteTemplate(
 // Contract: docs/content/architecture/sync-apply-contract.md
 
 import {
-  applySyncWritablePolicy,
+  prepareWriteInput,
   processSyncApplyBatch,
   type SyncApplyOp,
   SyncApplyRejection,
   type SyncApplyTarget,
 } from '@happyvertical/smrt-core';
-import { applyUpdateInput, assertCreateInput, assertUpdateInput, isRuntimeModelEnabled, ObjectRegistry } from '@happyvertical/smrt-core';
+import { applyUpdateInput, assertCreateInput, assertUpdateInput, isRuntimeModelEnabled } from '@happyvertical/smrt-core';
 import { ${needsTenantContext ? 'error, ' : ''}json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 ${collectionAccessImports}
@@ -289,8 +283,6 @@ interface SyncTargetConfig {
   /** \`<collection>\` prefix of the required \`<collection>.<op>\` permission. */
   permissionCollection: string;
   ops: SyncApplyOp[];
-  readonlyFields: string[];
-  writableAllowlist: string[] | null;
   publicAccess: boolean | 'read';
   /** The model is tenant-scoped: a write needs a tenant. */
   tenantScoped: boolean;
@@ -428,14 +420,11 @@ ${
     : ''
 }          return 'ok' as const;
         },
-        prepare: (payload: Record<string, unknown>) =>
-          applySyncWritablePolicy(payload, {
-            readonlyFields: target.readonlyFields,
-            writableAllowlist: target.writableAllowlist,
-            // A payload sets fields only, never a service of the object.
-            isServiceOptionInput: (key: string) =>
-              ObjectRegistry.isServiceOptionInput(target.registryKey, key),
-          }),
+        // The write-input rule of the CRUD routes: server-managed keys and
+        // service options are skipped, and a field the caller may not write
+        // is refused when the payload would change the stored value.
+        prepare: (payload: Record<string, unknown>, stored) =>
+          prepareWriteInput(target.registryKey, payload, stored),
       };
     },
   });

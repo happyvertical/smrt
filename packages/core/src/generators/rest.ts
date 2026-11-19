@@ -42,6 +42,7 @@ import {
   assertCreateInput,
   assertUpdateInput,
   modelOfInstance,
+  prepareWriteInput,
 } from '../request-input';
 import {
   hasRuntimeExposureGate,
@@ -1909,7 +1910,8 @@ export class APIGenerator {
       }
       data = target.data;
     }
-    const writable = this.applyWritablePolicy(targetName, data);
+    // A create sets no field the caller may not write (#5195).
+    const writable = prepareWriteInput(targetName, data);
     // Create input names declared fields and settable accessors only.
     if (targetName) assertCreateInput(targetName, writable, collection);
     const create = () => collection.create({ ...writable, _skipLoad: true });
@@ -1940,10 +1942,7 @@ export class APIGenerator {
     objectName?: string,
   ): Promise<Response> {
     const rawBody = await req.text();
-    const data = this.applyWritablePolicy(
-      objectName,
-      rawBody.trim() === '' ? {} : JSON.parse(rawBody),
-    );
+    const body: unknown = rawBody.trim() === '' ? {} : JSON.parse(rawBody);
     const object = await collection.get(
       this.pointReadFilter(objectName, id, req, 'get'),
     );
@@ -1965,6 +1964,9 @@ export class APIGenerator {
       if (refusal) return refusal;
     }
 
+    // A field the caller may not write is compared with the loaded row: an
+    // unchanged value is accepted, a changed one refused (#5195).
+    const data = prepareWriteInput(objectName, body, object);
     // The body sets declared fields and settable accessors, nothing else.
     await collection.withAuditMutation(object, 'updated', async (bound) => {
       applyUpdateInput(bound, data, objectName);
@@ -2183,7 +2185,8 @@ export class APIGenerator {
           ? 'ok'
           : 'auth_required';
       },
-      prepare: (payload) => this.applyWritablePolicy(resolvedName, payload),
+      prepare: (payload, stored) =>
+        prepareWriteInput(resolvedName, payload, stored),
     };
   }
 
@@ -2197,69 +2200,6 @@ export class APIGenerator {
       ai: this.context.ai,
       db: this.context.db,
     } as Parameters<typeof ObjectRegistry.getCollection>[1]);
-  }
-
-  /**
-   * Mass-assignment guard (#1540): strip framework/server-managed and
-   * `@field({ readonly: true })` fields from a create/update body, and — when an
-   * `@smrt({ api: { writable: [...] } })` allowlist is set — intersect with it.
-   *
-   * A body sets fields and nothing else: `_`-prefixed keys and the keys that
-   * configure a service of the object (`ObjectRegistry.isServiceOptionInput`)
-   * never reach construction or a loaded instance.
-   */
-  private applyWritablePolicy(
-    objectName: string | undefined,
-    data: unknown,
-  ): Record<string, unknown> {
-    if (!data || typeof data !== 'object') {
-      return {};
-    }
-
-    const serverManaged = new Set([
-      'id',
-      'tenantId',
-      'tenant_id',
-      'createdAt',
-      'created_at',
-      'updatedAt',
-      'updated_at',
-    ]);
-
-    const readonly = new Set<string>();
-    let writable: string[] | null = null;
-
-    if (objectName) {
-      const apiConfig = ObjectRegistry.getConfig(objectName)?.api;
-      if (
-        apiConfig &&
-        typeof apiConfig === 'object' &&
-        Array.isArray((apiConfig as { writable?: unknown }).writable)
-      ) {
-        writable = (apiConfig as { writable: string[] }).writable;
-      }
-
-      if (
-        typeof ObjectRegistry.getConfig(objectName).display?.label === 'object'
-      )
-        readonly.add('displayLabel');
-      for (const [name, def] of ObjectRegistry.getFields(objectName)) {
-        if (def && (def.readonly === true || def._meta?.readonly === true)) {
-          readonly.add(name);
-        }
-      }
-    }
-
-    const result: Record<string, unknown> = {};
-    for (const [key, value] of Object.entries(data)) {
-      if (key.startsWith('_')) continue;
-      if (ObjectRegistry.isServiceOptionInput(objectName, key)) continue;
-      if (serverManaged.has(key)) continue;
-      if (readonly.has(key)) continue;
-      if (writable && !writable.includes(key)) continue;
-      result[key] = value;
-    }
-    return result;
   }
 
   /**

@@ -53,7 +53,9 @@ import { isServiceOptionInput } from '../service-options.js';
 import { jsonValuesEqual } from '../utils/json-equal.js';
 import {
   assignUpdateInput,
+  FIELD_NOT_WRITABLE_CODE,
   isWriteInputError,
+  notWritableFieldOf,
   resolveUpdateInput,
   STRUCTURAL_UPDATE_RULES,
 } from '../write-input.js';
@@ -144,6 +146,11 @@ export interface SyncApplyItemResult {
   status: SyncApplyStatus;
   reason?: SyncApplyReason;
   updatedAt?: string;
+  /**
+   * On an `invalid_payload` rejection for a field the caller may not write
+   * (`VALIDATION_FIELD_NOT_WRITABLE`, as on the CRUD routes): the field.
+   */
+  details?: { code: string; field: string };
 }
 
 /** Response body of `POST …/sync/apply` (HTTP 200). */
@@ -249,11 +256,19 @@ export interface SyncApplyTarget {
     op: SyncApplyOp,
   ): Promise<SyncApplyAuthzDecision> | SyncApplyAuthzDecision;
   /**
-   * Mass-assignment guard (#1540): strip server-managed/readonly/disallowed
-   * fields from the item payload. The row UUID is injected from the validated
-   * envelope `id` AFTER this runs — never from the body.
+   * Mass-assignment guard (#1540): the write body for the item payload.
+   * Called after the row is loaded: `stored` is the row an update targets
+   * and is absent for a create. Hosts with a registered model use
+   * `prepareWriteInput`, which skips server-managed keys and refuses a field
+   * the caller may not write when the payload would change it (#5195),
+   * throwing a `WriteInputError` that rejects the item as `invalid_payload`.
+   * The row UUID is injected from the validated envelope `id` AFTER this
+   * runs — never from the body.
    */
-  prepare(payload: Record<string, unknown>): Record<string, unknown>;
+  prepare(
+    payload: Record<string, unknown>,
+    stored?: SyncApplyRowLike,
+  ): Record<string, unknown>;
 }
 
 /**
@@ -609,11 +624,6 @@ async function applyAuthorizedItem(
 ): Promise<SyncApplyItemResult> {
   const base = { itemId: item.itemId, id: item.id } as const;
 
-  // Payload passes through the host's writable policy; the row UUID comes
-  // from the validated envelope `id`, never from the body — the #1540
-  // mass-assignment guard stays intact on this path too.
-  const data = item.op === 'delete' ? {} : target.prepare(item.payload ?? {});
-
   // Tenant isolation: collection.get runs the interceptor stack, so rows
   // outside the caller's tenant are simply not visible here.
   const row = await target.collection.get(item.id);
@@ -621,6 +631,12 @@ async function applyAuthorizedItem(
 
   switch (item.op) {
     case 'create': {
+      // Payload passes through the host's writable policy; the row UUID
+      // comes from the validated envelope `id`, never from the body — the
+      // #1540 mass-assignment guard stays intact on this path too. A create
+      // has no stored value, so a field the caller may not write is refused
+      // when sent with a value, replay or not.
+      const data = target.prepare(item.payload ?? {});
       if (row) {
         if (payloadMatchesRow(data, row)) {
           // Idempotent replay of an already-applied create.
@@ -674,8 +690,9 @@ async function applyAuthorizedItem(
         return { ...base, status: 'rejected', reason: 'not_found' };
       }
       // The payload is checked before anything is answered about the row: a
-      // key it does not accept rejects the item, never reports a replay or a
-      // stale write.
+      // key it does not accept, or a protected field it would change,
+      // rejects the item, never reports a replay or a stale write.
+      const data = target.prepare(item.payload ?? {}, row);
       if (target.assertUpdate) target.assertUpdate(row, data);
       else resolveUpdateInput(row, data, STRUCTURAL_UPDATE_RULES);
       if (payloadMatchesRow(data, row)) {
@@ -717,7 +734,7 @@ async function applyAuthorizedItem(
           updatedAt: rowUpdatedAtIso(row),
         };
       }
-      if (target.mutate) await target.mutate(row, 'delete', data);
+      if (target.mutate) await target.mutate(row, 'delete', {});
       else await row.delete();
       return { ...base, status: 'applied' };
     }
@@ -748,11 +765,13 @@ async function processOneItem(
   } catch (error) {
     // One item's failure must never fail the batch. A reason the host gave,
     // or a payload key the object does not accept, is reported as such.
+    const field = notWritableFieldOf(error);
     return {
       itemId: item.itemId,
       id: item.id,
       status: 'rejected',
       reason: rejectionReasonOf(error),
+      ...(field ? { details: { code: FIELD_NOT_WRITABLE_CODE, field } } : {}),
     };
   }
 }

@@ -108,7 +108,7 @@ HTTP 200
 | `conflict` | `create_conflict` | A create targeted an existing row whose content differs from the payload. The create was **skipped** (server state wins). |
 | `rejected` | `invalid_item` | Malformed envelope (missing/invalid `itemId`, `op`, `object`, or unparseable `baseUpdatedAt`). |
 | `rejected` | `invalid_id` | The row id is not a well-formed UUID. |
-| `rejected` | `invalid_payload` | `payload` missing or not an object on create/update, or an update payload names a key that is not a declared field or a settable accessor of the model. |
+| `rejected` | `invalid_payload` | `payload` missing or not an object on create/update, or a payload names a key that is not a declared field or a settable accessor of the model, or sets a field the caller may not write to a value other than the stored one (any non-null value on a create). The latter carries `details: { code: 'VALIDATION_FIELD_NOT_WRITABLE', field }`. |
 | `rejected` | `unknown_object` | No model matches the `object` segment. |
 | `rejected` | `op_not_allowed` | The model's API config does not expose this op. |
 | `rejected` | `auth_required` | No authenticated principal (and the model is not `public: true`), or the auth middleware answered 401. Also an anonymous write to a tenant-scoped model with no tenant. |
@@ -253,10 +253,15 @@ Plain CRUD routes **still strip client-supplied ids** — nothing about that
 changed (regression-tested). The sync contract is a *dedicated* path, not a
 relaxation:
 
-- Item payloads pass through the exact same writable policy as CRUD bodies:
-  server-managed fields (`id`, `tenantId`, timestamps), `_`-prefixed keys,
-  `@field({ readonly: true })` fields, and anything outside a configured
-  `api.writable` allowlist are stripped.
+- Item payloads pass through the exact same write-input rule as CRUD bodies
+  (`prepareWriteInput`, #5195): server-managed fields (`id`, `tenantId`,
+  timestamps, `_meta_type`, `_meta_data`) are ignored. A protected field
+  (`@field({ readonly: true })`, outside a configured `api.writable`
+  allowlist, or `_`-prefixed) is accepted on an update when it equals the
+  stored value and otherwise rejects the item `invalid_payload` with
+  `details: { code: 'VALIDATION_FIELD_NOT_WRITABLE', field }`; on a create
+  any non-null protected field rejects the item. Other items in the batch
+  proceed.
 - The row UUID is taken **only** from the validated envelope `id` field and
   injected after the policy runs. A payload `id` is dead on arrival.
 

@@ -96,9 +96,8 @@ describe('SvelteKit generated routes: conditional GET (#1757)', () => {
     for (const route of [collectionRoute, itemRoute]) {
       expect(route).toContain('function conditionalJson(');
       expect(route).not.toContain('conditionalVersionedRead');
-      expect(route).toContain(
-        'const READONLY_FIELDS: string[] = ["displayLabel"];',
-      );
+      // The projected label is skipped by `prepareWriteInput` at run time.
+      expect(route).toContain('prepareWriteInput(');
     }
     expect(collectionRoute).toContain(
       "import { assertQueryAccess, parseRestListWhere } from '@happyvertical/smrt-core';",

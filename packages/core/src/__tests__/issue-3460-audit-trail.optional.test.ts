@@ -17,7 +17,7 @@ import { normalizeTypedHttpError } from '../generators/typed-http-error.js';
 import { SmrtObject } from '../object.js';
 import { publicSerializerOf, toPublicJSONValue } from '../public-json.js';
 import { ObjectRegistry, smrt } from '../registry.js';
-import { applyUpdateInput } from '../request-input.js';
+import { applyUpdateInput, prepareWriteInput } from '../request-input.js';
 import {
   hasRuntimeExposureGate,
   isRuntimeModelEnabled,
@@ -514,6 +514,7 @@ for (const type of ['sqlite', 'duckdb', 'postgres'] as const) {
         // The real request helpers the emitted handlers assign an update and
         // serialise a row with.
         applyUpdateInput,
+        prepareWriteInput,
         publicSerializerOf,
         toPublicJSONValue,
       };
@@ -589,7 +590,7 @@ for (const type of ['sqlite', 'duckdb', 'postgres'] as const) {
                     if (args.path === '@happyvertical/smrt-core')
                       return {
                         contents:
-                          'const host = globalThis[Symbol.for("smrt.issue3460.generated-route")]; export const { isRuntimeModelEnabled, hasRuntimeExposureGate, createGeneratedCollectionAccess, normalizeTypedHttpError, reportUnexpectedHttpError, ObjectRegistry, resolveAnonymousTenantReadScope, applyUpdateInput, publicSerializerOf, toPublicJSONValue } = host;',
+                          'const host = globalThis[Symbol.for("smrt.issue3460.generated-route")]; export const { isRuntimeModelEnabled, hasRuntimeExposureGate, createGeneratedCollectionAccess, normalizeTypedHttpError, reportUnexpectedHttpError, ObjectRegistry, resolveAnonymousTenantReadScope, applyUpdateInput, prepareWriteInput, publicSerializerOf, toPublicJSONValue } = host;',
                         loader: 'js',
                       };
                     if (args.path.endsWith('smrt-register'))
@@ -627,7 +628,7 @@ for (const type of ['sqlite', 'duckdb', 'postgres'] as const) {
             request: Request;
           }): Promise<Response>;
         };
-        const event = () => ({
+        const event = (locked = 'fixed') => ({
           locals: {},
           params: { id: row.id as string },
           request: new Request('http://localhost/api/record', {
@@ -635,7 +636,7 @@ for (const type of ['sqlite', 'duckdb', 'postgres'] as const) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               title: 'Changed',
-              locked: 'overwrite',
+              locked,
               secret: 'secret-after',
             }),
           }),
@@ -654,6 +655,9 @@ for (const type of ['sqlite', 'duckdb', 'postgres'] as const) {
         expect(
           (await emitted.GET(readEvent(originalEtag as string))).status,
         ).toBe(304);
+        // A changed read-only field is refused before anything is written;
+        // the stored value is accepted unchanged (#5195).
+        expect((await emitted.PUT(event('overwrite'))).status).toBe(400);
         fail = true;
         expect((await emitted.PUT(event())).status).toBe(500);
         expect(
