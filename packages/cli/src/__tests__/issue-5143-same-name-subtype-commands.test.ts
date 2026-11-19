@@ -307,3 +307,71 @@ describe('a CLI command name with one enabled publisher', () => {
     expect(await commands('clips')).toEqual(['clips:list']);
   });
 });
+
+describe('a CLI collection cached under a command name', () => {
+  it('is rebuilt for the model that owns the name after the owner changes', async () => {
+    ObjectRegistry.clear();
+    const VideoScene = class Scene extends SmrtObject {
+      title = '';
+    };
+    const HistrioScene = class Scene extends VideoScene {
+      mood = '';
+    };
+    const AppScene = class Scene extends HistrioScene {};
+    class HistrioScenes extends SmrtCollection<
+      InstanceType<typeof HistrioScene>
+    > {
+      static readonly _itemClass = HistrioScene;
+    }
+    class AppScenes extends SmrtCollection<InstanceType<typeof AppScene>> {
+      static readonly _itemClass = AppScene;
+    }
+    ObjectRegistry.register(VideoScene, {
+      name: 'Scene',
+      packageName: '@fixture/c5143-video',
+      tableName: 'scenes',
+      tableStrategy: 'sti',
+    });
+    ObjectRegistry.register(HistrioScene, {
+      name: 'Scene',
+      packageName: '@fixture/c5143-histrio',
+      replaceParent: false,
+      collection: 'histrio_scenes',
+      cli: true,
+    });
+    smrt({ packageName: '@fixture/c5143-histrio' })(HistrioScenes);
+    const db = await getTestDatabase({
+      type: 'sqlite',
+      url: ':memory:',
+      includeSystemTables: false,
+      classes: ['@fixture/c5143-video:Scene', '@fixture/c5143-histrio:Scene'],
+    });
+    try {
+      const internal = new CLIGenerator(
+        { prompt: false, colors: false },
+        { db },
+      ) as unknown as {
+        getObjectCommandsLazy(name: string): Promise<CLICommand[]>;
+        getCollection(name: string): Promise<SmrtCollection<SmrtObject>>;
+      };
+      await internal.getObjectCommandsLazy('histrio_scenes');
+      expect(await internal.getCollection('histrio_scenes')).toBeInstanceOf(
+        HistrioScenes,
+      );
+      ObjectRegistry.register(AppScene, {
+        name: 'Scene',
+        packageName: '@fixture/c5143-app',
+        replaceParent: true,
+        collection: 'histrio_scenes',
+        cli: true,
+      });
+      smrt({ packageName: '@fixture/c5143-app' })(AppScenes);
+      await internal.getObjectCommandsLazy('histrio_scenes');
+      expect(await internal.getCollection('histrio_scenes')).toBeInstanceOf(
+        AppScenes,
+      );
+    } finally {
+      await db.close?.();
+    }
+  });
+});
