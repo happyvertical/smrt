@@ -555,17 +555,27 @@ export async function openAiRun(
   input: OpenAiRunInput,
   options: AiRunTxOptions = {},
 ): Promise<AiRunRow> {
-  assertAiRunTracking(store);
-  if (typeof input.type !== 'string' || !isValidAiRunType(input.type)) {
+  // One snapshot of the store and the input: the tenant, database, parent
+  // and handoff validated here are the ones written, even if the caller's
+  // objects change while this runs (a retry's `carry` callback runs in the
+  // middle).
+  const scope: AiRunStore = { ...store };
+  const req: OpenAiRunInput = {
+    ...input,
+    ...(input.handoff ? { handoff: { ...input.handoff } } : {}),
+    ...(input.tags ? { tags: { ...input.tags } } : {}),
+  };
+  assertAiRunTracking(scope);
+  if (typeof req.type !== 'string' || !isValidAiRunType(req.type)) {
     throw new TypeError(
-      `openAiRun: type must be fusion, turn, workflow or @scope/pkg:type, got ${String(input.type)}`,
+      `openAiRun: type must be fusion, turn, workflow or @scope/pkg:type, got ${String(req.type)}`,
     );
   }
-  const budget = normalizeAiRunBudget(input.budget, 'openAiRun: budget');
-  const id = input.id ?? newAiRunId();
-  const retryOf = input.retryOfRunId ?? null;
-  const durable = Boolean(input.durable) || retryOf !== null;
-  if (retryOf && input.type !== 'workflow') {
+  const budget = normalizeAiRunBudget(req.budget, 'openAiRun: budget');
+  const id = req.id ?? newAiRunId();
+  const retryOf = req.retryOfRunId ?? null;
+  const durable = Boolean(req.durable) || retryOf !== null;
+  if (retryOf && req.type !== 'workflow') {
     throw new AiRunResumeRefusedError(
       'Only a workflow run is retried',
       retryOf,
@@ -574,16 +584,16 @@ export async function openAiRun(
   }
 
   await withAiRunTransaction(
-    store.db,
+    scope.db,
     async (tx) => {
       let initial: { state: unknown; highestStepIndex: number | null } = {
-        state: input.checkpoint?.state ?? null,
+        state: req.checkpoint?.state ?? null,
         highestStepIndex: null,
       };
       // The parent and the retried run are locked in the page's order:
       // by depth, then id.
       const locked = new Map<string, AiRunRow | null>();
-      const requested = [input.parentRunId, retryOf].filter(
+      const requested = [req.parentRunId, retryOf].filter(
         (id): id is string => typeof id === 'string' && id.length > 0,
       );
       // A referenced run of another tenant (global `null` included) is
@@ -593,7 +603,7 @@ export async function openAiRun(
       // immutable `tenant_id`: another tenant's run is never locked, and
       // neither its ancestry nor its status, definition or checkpoint is
       // read, so a refusal says nothing about it.
-      const tenantId = store.tenantId ?? null;
+      const tenantId = scope.tenantId ?? null;
       const targets: string[] = [];
       for (const id of new Set(requested)) {
         const owner = getRows(
@@ -623,14 +633,15 @@ export async function openAiRun(
         (a, b) =>
           (depths.get(a) ?? 0) - (depths.get(b) ?? 0) || a.localeCompare(b),
       )) {
-        const row = await lockAiRun(tx, id);
-        locked.set(id, row && (row.tenantId ?? null) === tenantId ? row : null);
+        // Locked in the tenant it was read in: an id pruned and reused by
+        // another tenant since is not locked, and reads as absent.
+        locked.set(id, await lockAiRun(tx, id, tenantId));
       }
-      if (input.parentRunId) {
-        const parent = locked.get(input.parentRunId);
-        if (!parent) throw new AiRunNotFoundError(input.parentRunId);
+      if (req.parentRunId) {
+        const parent = locked.get(req.parentRunId);
+        if (!parent) throw new AiRunNotFoundError(req.parentRunId);
         if (parent.status !== 'running') throw aiRunStoppedError(parent);
-      } else if (input.handoff) {
+      } else if (req.handoff) {
         throw new TypeError('openAiRun: a handoff needs parentRunId');
       }
       if (retryOf) {
@@ -638,7 +649,7 @@ export async function openAiRun(
           tx,
           locked.get(retryOf) ?? null,
           retryOf,
-          input,
+          req,
         );
       }
       const now = tx.now.toISOString();
@@ -652,22 +663,22 @@ export async function openAiRun(
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14,
                  'running', $15, $16, $16, $16, $17)`,
         id,
-        input.type,
-        input.definitionKey ?? null,
-        input.definitionVersion ?? null,
-        store.tenantId ?? null,
-        store.className ?? null,
-        input.promptKey ?? null,
-        input.templateHash ?? null,
-        input.ownerId ?? null,
-        input.parentRunId ?? null,
+        req.type,
+        req.definitionKey ?? null,
+        req.definitionVersion ?? null,
+        scope.tenantId ?? null,
+        scope.className ?? null,
+        req.promptKey ?? null,
+        req.templateHash ?? null,
+        req.ownerId ?? null,
+        req.parentRunId ?? null,
         retryOf,
-        input.experimentId ?? null,
-        input.datasetItem ?? null,
-        input.tags ? JSON.stringify(input.tags) : null,
+        req.experimentId ?? null,
+        req.datasetItem ?? null,
+        req.tags ? JSON.stringify(req.tags) : null,
         JSON.stringify(budget),
         now,
-        input.mode ?? null,
+        req.mode ?? null,
       );
       if (durable) {
         await aiRunQuery(
@@ -676,28 +687,28 @@ export async function openAiRun(
              (run_id, revision, lease, last_seq, definition_version, state)
            VALUES ($1, 0, $2, 0, $3, $4)`,
           id,
-          input.checkpoint?.lease ?? null,
-          input.definitionVersion ?? null,
+          req.checkpoint?.lease ?? null,
+          req.definitionVersion ?? null,
           envelope(initial.highestStepIndex, initial.state),
         );
       }
-      if (input.parentRunId && input.handoff) {
+      if (req.parentRunId && req.handoff) {
         // The parent's row is locked above, as every write of its events.
-        await insertAiRunEventTx(tx, input.parentRunId, {
-          id: input.handoff.eventId ?? newAiRunId(),
+        await insertAiRunEventTx(tx, req.parentRunId, {
+          id: req.handoff.eventId ?? newAiRunId(),
           type: 'handoff',
           childRunId: id,
-          callId: input.handoff.callId ?? null,
-          name: input.handoff.name ?? null,
-          stepIndex: input.handoff.stepIndex ?? null,
-          parentEventId: input.handoff.parentEventId ?? null,
+          callId: req.handoff.callId ?? null,
+          name: req.handoff.name ?? null,
+          stepIndex: req.handoff.stepIndex ?? null,
+          parentEventId: req.handoff.parentEventId ?? null,
           status: 'running',
         });
       }
     },
     options,
   );
-  const row = await getAiRun(store.db, id);
+  const row = await getAiRun(scope.db, id);
   if (!row) throw new AiRunNotFoundError(id);
   return row;
 }
