@@ -1458,7 +1458,10 @@ describe('app model editor: history reads and completion', () => {
     restore();
   });
   const application = 'editor-guards-history';
-  const open = (store?: AppModelEditorOptions['store']) =>
+  const open = (
+    store?: AppModelEditorOptions['store'],
+    publish?: AppModelEditorOptions['publish'],
+  ) =>
     createAppModelEditor({
       db,
       application,
@@ -1468,6 +1471,7 @@ describe('app model editor: history reads and completion', () => {
       catalog: memberCatalog,
       authorize: (c) => c.actor === 'owner',
       ...(store ? { store } : {}),
+      ...(publish ? { publish } : {}),
     });
   const applyTo =
     (e: Awaited<ReturnType<typeof open>>) =>
@@ -1616,6 +1620,85 @@ describe('app model editor: history reads and completion', () => {
     expect(reopened.snapshot().revision).toBe(2);
     await applyTo(reopened)({ type: 'undo' });
     expect(reopened.snapshot().revision).toBe(3);
+  });
+
+  /** A store whose completions of `revision` lose to another process's. */
+  const losingStore = async (revision: number) => {
+    const base = await createAppModelHistory({
+      db,
+      application,
+      tenantId: TENANT,
+    });
+    const store: AppModelHistoryStore = {
+      ...base,
+      async complete(at, elapsedMs, receipt, result) {
+        if (receipt && at === revision)
+          await base.complete(
+            at,
+            4242,
+            {
+              ...structuredClone(receipt),
+              elapsedMs: 4242,
+              cookbook: {
+                ...structuredClone(receipt.cookbook),
+                name: 'Winner',
+              },
+            },
+            result,
+          );
+        return base.complete(at, elapsedMs, receipt, result);
+      },
+    };
+    return store;
+  };
+
+  it('installs a winning completion through the host before opening, and serves it', async () => {
+    const published: AppModelSnapshot[] = [];
+    const e = await open(await losingStore(2), (snapshot) => {
+      published.push(snapshot);
+    });
+    const apply = applyTo(e);
+    await apply({ type: 'create_list', name: 'GuardMat', list: mats });
+    await apply({ type: 'relabel_list', name: 'GuardMat', label: 'Mats' });
+    expect(published.at(-1)?.cookbook.name).toBe('Winner');
+    expect(e.snapshot().cookbook.name).toBe('Winner');
+  });
+
+  it('stays closed when installing the winning completion fails', async () => {
+    let calls = 0;
+    const e = await open(await losingStore(2), () => {
+      calls += 1;
+      // boot, revision 1, revision 2 local; the winner's install throws.
+      if (calls === 4) throw new Error('host publication unavailable');
+    });
+    const apply = applyTo(e);
+    await apply({ type: 'create_list', name: 'GuardMat', list: mats });
+    await expect(
+      apply({ type: 'relabel_list', name: 'GuardMat', label: 'Mats' }),
+    ).rejects.toThrow(/host publication unavailable/);
+    expect(() => e.snapshot()).toThrow(/MODEL_ACTIVATION_PENDING/);
+  });
+
+  it('a pending boot recovery that loses its completion installs and serves the winner', async () => {
+    let failPublish = false;
+    const e = await open(undefined, () => {
+      if (failPublish) throw new Error('host publication unavailable');
+    });
+    const apply = applyTo(e);
+    await apply({ type: 'create_list', name: 'GuardMat', list: mats });
+    failPublish = true;
+    await expect(
+      apply({ type: 'relabel_list', name: 'GuardMat', label: 'Mats' }),
+    ).rejects.toThrow(/host publication unavailable/);
+    ObjectRegistry.clear();
+    registerMember();
+    const published: AppModelSnapshot[] = [];
+    const reopened = await open(await losingStore(2), (snapshot) => {
+      published.push(snapshot);
+    });
+    expect(published.at(-1)?.cookbook.name).toBe('Winner');
+    expect(reopened.snapshot().cookbook.name).toBe('Winner');
+    expect((await reopened.history()).at(-1)?.status).toBe('applied');
   });
 });
 

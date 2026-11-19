@@ -248,8 +248,9 @@ a store made by `createAppModelHistory` (or a wrapper keeping its `read`) the
 editor reads the journal once at boot without receipts, keeps it in memory, and
 per edit reads only the latest row and the row for its request id; other
 stores fall back to `read()`. After `complete` the editor reads its row back:
-if another process completed the revision first it adopts and publishes that
-receipt, and if the row is not applied it fails `MODEL_EDIT_CONFLICT` and
+if another process completed the revision first it installs that receipt
+through `publish` before readiness opens (staying closed if that fails) and
+serves it from `snapshot()`, and if the row is not applied it fails `MODEL_EDIT_CONFLICT` and
 stays closed instead of reporting success.
 A supplied host store must scope reads/writes to one app/tenant and preserve
 the pending/CAS contract. PostgreSQL stores must also implement

@@ -1039,10 +1039,34 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
     );
     notifyRuntimeExposureChanged();
   }
+  /**
+   * When another process completed a revision first, its receipt is the
+   * committed projection: installed through the host before readiness opens,
+   * and served by snapshot() for that revision.
+   */
+  let adopted: AppModelSnapshot | undefined;
+  async function adoptWinner(
+    row: AppModelChange,
+    local: AppModelEditReceipt,
+  ): Promise<AppModelSnapshot | undefined> {
+    if (!row.receipt || stableStringify(row.receipt) === stableStringify(local))
+      return undefined;
+    const { revision: at, cookbook, manifest, webDefinitions } = row.receipt;
+    const winner = { revision: at, cookbook, manifest, webDefinitions };
+    try {
+      await options.publish?.(structuredClone(winner));
+    } catch (error) {
+      ready = false;
+      throw error;
+    }
+    adopted = winner;
+    return winner;
+  }
   function snapshot(): AppModelSnapshot {
     if (!ready) throw new Error('MODEL_ACTIVATION_PENDING');
     // Never project another journal's registrations as this editor's own.
     assertSoleEditor();
+    if (adopted?.revision === revision) return structuredClone(adopted);
     return projection();
   }
 
@@ -1317,6 +1341,7 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
         appOperationResult(pending.operation, receipt),
       );
       const row = await completedRow(pending.requestId, pending.revision);
+      await adoptWinner(row, receipt);
       history = [
         ...history.slice(0, -1),
         {
@@ -1769,11 +1794,10 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
         appOperationResult(change.operation, receipt),
       );
       const row = await completedRow(change.requestId, change.revision);
-      // A first completion elsewhere wins; publish and return its receipt.
-      const won =
-        row.receipt && stableStringify(row.receipt) !== stableStringify(receipt)
-          ? row.receipt
-          : undefined;
+      // A first completion elsewhere wins: install it before readiness opens,
+      // then notify and return it.
+      const winner = await adoptWinner(row, receipt);
+      const won = winner ? row.receipt : undefined;
       history = history.map((entry) =>
         entry.revision === change.revision
           ? {
@@ -1785,12 +1809,7 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
       );
       storageMemo = { history, doc, value: union };
       release(active(storage(), doc));
-      let result: AppModelSnapshot = snapshot();
-      if (won) {
-        const { revision, cookbook, manifest, webDefinitions } = won;
-        result = { revision, cookbook, manifest, webDefinitions };
-        await options.publish?.(structuredClone(result));
-      }
+      const result: AppModelSnapshot = snapshot();
       for (const listener of listeners) {
         try {
           listener(result);
