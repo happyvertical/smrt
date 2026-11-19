@@ -2281,9 +2281,11 @@ export class CLIGenerator {
     options: CliOptions,
   ): Promise<void> {
     const spinner = this.createSpinner(`Listing ${objectName} objects...`);
+    // Resolved once: the owner cannot change while this command awaits.
+    const registryKey = this.registryKeyOf(objectName);
 
     try {
-      const collection = await this.getCollection(objectName);
+      const collection = await this.getCollection(objectName, registryKey);
 
       const listOptions: NonNullable<
         Parameters<SmrtCollection<SmrtObject>['list']>[0]
@@ -2329,9 +2331,10 @@ export class CLIGenerator {
     options: CliOptions,
   ): Promise<void> {
     const spinner = this.createSpinner(`Getting ${objectName}...`);
+    const registryKey = this.registryKeyOf(objectName);
 
     try {
-      const collection = await this.getCollection(objectName);
+      const collection = await this.getCollection(objectName, registryKey);
       const result = await collection.get(id);
 
       if (!result) {
@@ -2367,6 +2370,7 @@ export class CLIGenerator {
   private applyWritablePolicy(
     objectName: string,
     data: unknown,
+    registryKey: string = this.registryKeyOf(objectName),
   ): Record<string, unknown> {
     if (!data || typeof data !== 'object' || Array.isArray(data)) return {};
     const serverManaged = new Set([
@@ -2378,9 +2382,7 @@ export class CLIGenerator {
       'updatedAt',
       'updated_at',
     ]);
-    const apiConfig = ObjectRegistry.getConfig(
-      this.registryKeyOf(objectName),
-    )?.api;
+    const apiConfig = ObjectRegistry.getConfig(registryKey)?.api;
     const writable =
       apiConfig &&
       typeof apiConfig === 'object' &&
@@ -2388,9 +2390,7 @@ export class CLIGenerator {
         ? ((apiConfig as { writable: string[] }).writable as string[])
         : null;
     const readonly = new Set<string>();
-    for (const [name, definition] of ObjectRegistry.getFields(
-      this.registryKeyOf(objectName),
-    )) {
+    for (const [name, definition] of ObjectRegistry.getFields(registryKey)) {
       const meta = definition as {
         readonly?: unknown;
         _meta?: { readonly?: unknown };
@@ -2423,8 +2423,9 @@ export class CLIGenerator {
         surface: 'cli' as const,
         tenantId: this.context.tenantId,
       };
+      const registryKey = this.registryKeyOf(objectName);
       const initialTarget = ObjectRegistry.resolveCreateTarget(
-        this.registryKeyOf(objectName),
+        registryKey,
         { createType: options.createType },
         context,
       );
@@ -2457,16 +2458,24 @@ export class CLIGenerator {
       }
 
       const target = ObjectRegistry.resolveCreateTarget(
-        this.registryKeyOf(objectName),
+        registryKey,
         options.createType === undefined
           ? data
           : { ...data, createType: options.createType },
         context,
       );
-      data = this.applyWritablePolicy(target.collectionName, target.data);
+      const collectionKey = this.registryKeyOf(target.collectionName);
+      data = this.applyWritablePolicy(
+        target.collectionName,
+        target.data,
+        collectionKey,
+      );
       const spinner = this.createSpinner(`Creating ${objectName}...`);
 
-      const collection = await this.getCollection(target.collectionName);
+      const collection = await this.getCollection(
+        target.collectionName,
+        collectionKey,
+      );
       const result = await collection.create(data);
 
       spinner.succeed(`Created ${objectName} with ID: ${result.id}`);
@@ -2489,8 +2498,12 @@ export class CLIGenerator {
     id: string,
     options: CliOptions,
   ): Promise<void> {
+    // Resolved once, before the first await: the row is read through this
+    // owner's collection and must be checked against the same owner's field
+    // policy, even if the name comes to belong to another model meanwhile.
+    const registryKey = this.registryKeyOf(objectName);
     try {
-      const collection = await this.getCollection(objectName);
+      const collection = await this.getCollection(objectName, registryKey);
       const existing = await collection.get(id);
 
       if (!existing) {
@@ -2514,16 +2527,13 @@ export class CLIGenerator {
         data = await this.promptForFields(
           objectName,
           existing as unknown as Record<string, unknown>,
+          registryKey,
         );
       } else {
         // From command line options
         const fields = new Map([
-          ...ObjectRegistry.getFields(this.registryKeyOf(objectName)),
-          ...Object.entries(
-            ObjectRegistry.getWriteThroughFields(
-              this.registryKeyOf(objectName),
-            ),
-          ),
+          ...ObjectRegistry.getFields(registryKey),
+          ...Object.entries(ObjectRegistry.getWriteThroughFields(registryKey)),
         ]);
         for (const [fieldName] of fields) {
           const optionName = fieldName.replace(/_/g, '-');
@@ -2533,7 +2543,7 @@ export class CLIGenerator {
         }
       }
 
-      data = this.applyWritablePolicy(objectName, data);
+      data = this.applyWritablePolicy(objectName, data, registryKey);
       const spinner = this.createSpinner(`Updating ${objectName}...`);
 
       await collection.withAuditMutation(existing, 'updated', async (bound) => {
@@ -2561,8 +2571,9 @@ export class CLIGenerator {
     id: string,
     options: CliOptions,
   ): Promise<void> {
+    const registryKey = this.registryKeyOf(objectName);
     try {
-      const collection = await this.getCollection(objectName);
+      const collection = await this.getCollection(objectName, registryKey);
       const existing = await collection.get(id);
 
       if (!existing) {
@@ -2606,8 +2617,9 @@ export class CLIGenerator {
     methodName: string,
     options: CliOptions,
   ): Promise<void> {
+    const registryKey = this.registryKeyOf(objectName);
     try {
-      const collection = await this.getCollection(objectName);
+      const collection = await this.getCollection(objectName, registryKey);
       const obj = await collection.get(id);
 
       if (!obj) {
@@ -2616,9 +2628,7 @@ export class CLIGenerator {
       }
 
       // Get method metadata for parameter mapping (including inherited methods)
-      const methods = await ObjectRegistry.getAllMethods(
-        this.registryKeyOf(objectName),
-      );
+      const methods = await ObjectRegistry.getAllMethods(registryKey);
       const methodDef: CliMethodDefinition | undefined =
         methods.get(methodName);
 
@@ -2971,11 +2981,11 @@ export class CLIGenerator {
    */
   private async getCollection(
     objectName: string,
+    registryKey: string = this.registryKeyOf(objectName),
   ): Promise<SmrtCollection<SmrtObject>> {
     // Keyed by the owning model, never by the command name: when another
     // model comes to own the name, its handlers must not reuse the previous
     // owner's collection (#5143).
-    const registryKey = this.registryKeyOf(objectName);
     const classInfo = ObjectRegistry.getClass(registryKey);
     const cached = this.collections.get(registryKey);
     if (
@@ -3037,6 +3047,7 @@ export class CLIGenerator {
 
       await collection.initialize();
       this.collections.set(registryKey, collection);
+      return collection;
     }
     const collection = this.collections.get(registryKey);
     if (!collection) throw new Error(`Collection ${objectName} not found`);
@@ -3049,8 +3060,9 @@ export class CLIGenerator {
   private async promptForFields(
     objectName: string,
     current: Record<string, unknown>,
+    registryKey: string = this.registryKeyOf(objectName),
   ): Promise<Record<string, unknown>> {
-    const fields = ObjectRegistry.getFields(this.registryKeyOf(objectName));
+    const fields = ObjectRegistry.getFields(registryKey);
     const result: Record<string, unknown> = {};
 
     for (const [fieldName, field] of fields) {

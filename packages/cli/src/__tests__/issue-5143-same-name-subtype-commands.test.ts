@@ -375,3 +375,83 @@ describe('a CLI collection cached under a command name', () => {
     }
   });
 });
+
+describe('a generated command that outlives a registry change', () => {
+  function pairOfOwners() {
+    ObjectRegistry.clear();
+    class Alpha extends SmrtObject {
+      title = '';
+    }
+    class Beta extends SmrtObject {
+      title = '';
+      secret = '';
+    }
+    field({ type: 'text' })(Alpha.prototype, 'title');
+    field({ type: 'text' })(Beta.prototype, 'title');
+    field({ type: 'text' })(Beta.prototype, 'secret');
+    ObjectRegistry.register(Alpha, {
+      name: 'Alpha',
+      packageName: '@fixture/c5143-owner-a',
+      cli: true,
+      api: { writable: ['title'] },
+    });
+    ObjectRegistry.register(Beta, {
+      name: 'Beta',
+      packageName: '@fixture/c5143-owner-b',
+      cli: true,
+    });
+    return {
+      keyA: '@fixture/c5143-owner-a:Alpha',
+      keyB: '@fixture/c5143-owner-b:Beta',
+    };
+  }
+
+  it('checks an update against the owner whose row it read, even if the name changes owner while it waits', async () => {
+    const { keyA, keyB } = pairOfOwners();
+    const generator = new CLIGenerator({ prompt: false, colors: false }, {});
+    const internal = generator as unknown as {
+      commandRegistryKeys: Map<string, string>;
+      getCollection(name: string, key?: string): Promise<unknown>;
+      handleUpdate(
+        name: string,
+        id: string,
+        options: Record<string, unknown>,
+      ): Promise<void>;
+    };
+    internal.commandRegistryKeys.set('widget', keyA);
+    const written: Array<Record<string, unknown>> = [];
+    internal.getCollection = async () => ({
+      get: async () => {
+        await Promise.resolve();
+        // Another model comes to own the command name mid-flight.
+        internal.commandRegistryKeys.set('widget', keyB);
+        return { id: '1' };
+      },
+      withAuditMutation: async (
+        existing: object,
+        _kind: string,
+        run: (bound: Record<string, unknown>) => Promise<void>,
+      ) => {
+        const bound = { ...existing, save: async () => {} } as Record<
+          string,
+          unknown
+        >;
+        await run(bound);
+        written.push(bound);
+      },
+    });
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      await internal.handleUpdate('widget', '1', {
+        title: 'kept',
+        secret: 'dropped',
+        quiet: true,
+      });
+    } finally {
+      log.mockRestore();
+    }
+    expect(written).toHaveLength(1);
+    expect(written[0]).toMatchObject({ title: 'kept' });
+    expect(written[0]).not.toHaveProperty('secret');
+  });
+});
