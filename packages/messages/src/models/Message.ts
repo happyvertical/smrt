@@ -27,7 +27,18 @@ import {
   withEmbeddedWriteQueue,
 } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy/decorators';
-import { assertHydratedMailAccess, decideMailAccess } from '../access.js';
+import {
+  assertHydratedMailAccess,
+  decideMailAccess,
+  inMailSystemAccess,
+  type MailPrincipal,
+  resolveMailPrincipal,
+} from '../access.js';
+import {
+  auditMailAction,
+  holdAgentSend,
+  stampHandledBy,
+} from '../send-approval.js';
 import type {
   MessageOptions,
   MessageSendResult,
@@ -168,6 +179,24 @@ export class Message extends SmrtObject {
   @field({ description: 'The earlier message this one replies to.' })
   inReplyToMessageId = '';
 
+  // Who handled this message last (a person or an agent), recorded from the
+  // host-supplied acting principal by triage, drafting and sending.
+  @field({
+    readonly: true,
+    description: 'The person or assistant who last acted on this message.',
+  })
+  handledById: string | null = null;
+  @field({
+    readonly: true,
+    description: 'Whether a person or an assistant last acted on this message.',
+  })
+  handledByKind: string | null = null;
+  @field({
+    readonly: true,
+    description: 'When someone last acted on this message.',
+  })
+  handledAt: Date | null = null;
+
   // Timestamps
   @field({ description: 'When this message was recorded.' })
   createdAt = new Date();
@@ -207,6 +236,12 @@ export class Message extends SmrtObject {
       this.scheduledSendAt = options.scheduledSendAt || null;
     if (options.inReplyToMessageId !== undefined)
       this.inReplyToMessageId = options.inReplyToMessageId;
+    if (options.handledById !== undefined)
+      this.handledById = options.handledById;
+    if (options.handledByKind !== undefined)
+      this.handledByKind = options.handledByKind;
+    if (options.handledAt !== undefined)
+      this.handledAt = options.handledAt || null;
     if (options.createdAt) this.createdAt = options.createdAt;
     if (options.updatedAt) this.updatedAt = options.updatedAt;
     rememberNotificationOrigin(this);
@@ -243,6 +278,7 @@ export class Message extends SmrtObject {
 
   private async finalizeSendLifecycle(
     result: MessageSendResult,
+    actor: MailPrincipal | null = null,
   ): Promise<void> {
     if (!this.id) throw new Error('Cannot finalize an unsaved message send');
 
@@ -264,12 +300,20 @@ export class Message extends SmrtObject {
           current.metadata,
           !result.success && result.outcomeUnknown === true,
         );
+        if (actor) stampHandledBy(this, actor, nextRevision);
         const values = {
           send_status: sendStatus,
           sent_at: result.success ? result.sentAt : null,
           send_error: sendError,
           updated_at: nextRevision,
           ...(metadata === undefined ? {} : { metadata }),
+          ...(actor
+            ? {
+                handled_by_id: this.handledById,
+                handled_by_kind: this.handledByKind,
+                handled_at: this.handledAt,
+              }
+            : {}),
         };
         if (useEmbeddedFallback) {
           await this.db.upsert(this.tableName, ['id'], {
@@ -520,6 +564,38 @@ export class Message extends SmrtObject {
       };
     }
 
+    // The acting principal (host-supplied). Trusted system work (sync, the
+    // notification outbox) has none and is never held or stamped.
+    const actor = inMailSystemAccess() ? null : await resolveMailPrincipal();
+
+    // Send-as: on an owned mail account a principal sends only from the
+    // account's own address. Sending as anyone else needs a delegation grant,
+    // which does not exist yet, so it is refused.
+    if (actor && account.ownerUserId && 'email' in account) {
+      const from = (this.fromAddress || '').trim().toLowerCase();
+      const own = String((account as { email?: unknown }).email ?? '')
+        .trim()
+        .toLowerCase();
+      if (from && from !== own) {
+        return {
+          success: false,
+          error: "Mail can only be sent from the account's own address.",
+          sentAt: new Date(),
+        };
+      }
+    }
+
+    // Agents follow the account's send policy: by default the draft is held
+    // for a person's approval and nothing leaves (smrt#5141).
+    const held = await holdAgentSend(this, account, options, actor);
+    if (held) {
+      if (held.pendingApproval?.created) {
+        stampHandledBy(this, actor);
+        await this.save();
+      }
+      return held;
+    }
+
     // Get sender from account
     let sender: Awaited<ReturnType<typeof account.createSender>>;
     try {
@@ -613,6 +689,8 @@ export class Message extends SmrtObject {
 
     let result: MessageSendResult;
     try {
+      // Audited before it leaves: an audit failure stops the send.
+      if (actor) await auditMailAction('messages.send', this);
       await assertProtectedSenderHandoff(this, options);
       result = await sender.send(this, options);
     } catch (error) {
@@ -628,8 +706,18 @@ export class Message extends SmrtObject {
         sentAt: new Date(),
       };
     }
-    await this.finalizeSendLifecycle(result);
+    await this.finalizeSendLifecycle(result, actor);
     return result;
+  }
+
+  /** Who last acted on this message, or null. */
+  getHandledBy(): { id: string; kind: string; at: Date | null } | null {
+    if (!this.handledById) return null;
+    return {
+      id: this.handledById,
+      kind: this.handledByKind || 'agent',
+      at: this.handledAt,
+    };
   }
 
   /**

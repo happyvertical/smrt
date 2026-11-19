@@ -2628,6 +2628,9 @@ importers:
         specifier: ^0.115.0
         version: 0.115.0
     devDependencies:
+      '@happyvertical/smrt-approvals':
+        specifier: workspace:*
+        version: link:../approvals
       '@happyvertical/smrt-ledgers':
         specifier: workspace:*
         version: link:../ledgers

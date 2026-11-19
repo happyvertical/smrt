@@ -36,6 +36,7 @@ import {
   READ_MAIL_PERMISSION,
   TRIAGE_MAIL_PERMISSION,
 } from './permissions.js';
+import type { AgentSendPolicy } from './types.js';
 
 export const MAIL_SCOPES = ['read', 'triage', 'draft', 'send'] as const;
 export type MailScope = (typeof MAIL_SCOPES)[number];
@@ -71,7 +72,11 @@ export interface MailPrincipal {
    * maps its credential to.
    */
   userId: string;
-  /** `'person'`, `'agent'`, or any host label; informational. */
+  /**
+   * `'person'` (or `'human'`) for a person; anything else, including no
+   * label, is treated as an agent: its sends follow the account's agent send
+   * policy and it can never approve a held send.
+   */
   kind?: string;
   /**
    * Host ceiling on scopes (for example an agent credential's mail scopes).
@@ -262,6 +267,27 @@ async function resolvePrincipal(
     return null;
   }
   return principal;
+}
+
+/**
+ * The acting principal for the current request or job, as the host's
+ * `resolvePrincipal` returns it, or null (nothing configured, no resolver, or
+ * a malformed principal).
+ */
+export async function resolveMailPrincipal(): Promise<MailPrincipal | null> {
+  const config = getEffectiveMailAccessConfig();
+  return config ? await resolvePrincipal(config) : null;
+}
+
+/**
+ * True only for a principal the host explicitly labels a person (`kind`
+ * `'person'` or `'human'`). Fail closed: a missing or unknown label is an
+ * agent, so it is held for approval and can never approve.
+ */
+export function isPersonMailPrincipal(
+  principal: Pick<MailPrincipal, 'kind'> | null | undefined,
+): boolean {
+  return principal?.kind === 'person' || principal?.kind === 'human';
 }
 
 async function hasGrant(
@@ -488,6 +514,11 @@ export interface MailAccessAdmin {
   /** The acting user (`MailPrincipal.userId`). */
   userId: string;
   tenantId: string;
+  /**
+   * The host's label for the actor (`MailPrincipal.kind`). Only a person may
+   * change an account's agent send policy; other operations ignore it.
+   */
+  kind?: string;
 }
 
 export interface GrantMailAccessInput {
@@ -599,6 +630,56 @@ export class MailAccessService {
 
   setOwner(accountId: string, ownerUserId: string): Promise<void> {
     return this.inTenant(() => this.setOwnerImpl(accountId, ownerUserId));
+  }
+
+  /**
+   * Set what happens when an agent sends from this mail account (smrt#5141).
+   * Owner only, person only, and the tenant `messages.manage-access` ceiling.
+   * Lowering to `require_approval` is instant (a kill switch); raising to
+   * `auto_send` needs `confirmAutoSend: true`, like smrt-social's public latch.
+   */
+  setAgentSendPolicy(
+    accountId: string,
+    policy: AgentSendPolicy,
+    options: { confirmAutoSend?: boolean } = {},
+  ): Promise<void> {
+    return this.inTenant(() =>
+      this.setAgentSendPolicyImpl(accountId, policy, options),
+    );
+  }
+
+  private async setAgentSendPolicyImpl(
+    accountId: string,
+    policy: AgentSendPolicy,
+    options: { confirmAutoSend?: boolean },
+  ): Promise<void> {
+    if (policy !== 'require_approval' && policy !== 'auto_send') {
+      throw new Error('Unknown agent send policy.');
+    }
+    if (!isPersonMailPrincipal(this.actor)) {
+      throw new Error('Only a person can change the agent send policy.');
+    }
+    const account = await this.account(accountId);
+    if (!('agentSendPolicy' in account)) {
+      throw new Error('The agent send policy applies to mail accounts only.');
+    }
+    if (!account.ownerUserId || account.ownerUserId !== this.actor.userId) {
+      throw new Error(
+        'Only the account owner can change the agent send policy.',
+      );
+    }
+    await this.assertManageAccess();
+    if (policy === 'auto_send' && options.confirmAutoSend !== true) {
+      throw new Error(
+        'Letting agents send without approval needs explicit confirmation (confirmAutoSend).',
+      );
+    }
+    const mail = account as typeof account & {
+      agentSendPolicy: AgentSendPolicy | null;
+    };
+    mail.agentSendPolicy = policy;
+    mail.updatedAt = new Date();
+    await mail.save();
   }
 
   private async grantImpl(input: GrantMailAccessInput) {

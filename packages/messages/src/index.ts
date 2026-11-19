@@ -25,6 +25,7 @@ export {
   deniedMailAccountIds,
   type GrantMailAccessInput,
   isMailScope,
+  isPersonMailPrincipal,
   MAIL_ACCOUNT_RESOURCE_TYPE,
   MAIL_SCOPES,
   type MailAccessAdmin,
@@ -40,8 +41,14 @@ export {
   type MailScope,
   mailScopePermission,
   resetMailAccess,
+  resolveMailPrincipal,
   runWithMailSystemAccess,
 } from './access.js';
+export {
+  MailDraftError,
+  type MailDraftInput,
+  MailDraftService,
+} from './mail-drafts.js';
 export type {
   MailSyncOptions,
   MailSyncResult,
@@ -63,6 +70,28 @@ export {
   type MailWriteBackCapability,
   MailWriteBackUnsupportedError,
 } from './mail-triage.js';
+
+export {
+  type AgentSendPolicyContext,
+  APPROVE_HELD_SEND_PERMISSION,
+  auditMailAction,
+  configureMailSendApprovals,
+  effectiveAgentSendPolicy,
+  type HeldSendDecisionResult,
+  type HeldSendEdits,
+  HeldSendError,
+  type MailSendApprovalActor,
+  type MailSendApprovalCheckResult,
+  type MailSendApprovalConfig,
+  type MailSendApprovalGate,
+  type MailSendApprovalOutcome,
+  MailSendApprovalService,
+  type MailSendApprovalView,
+  mailSendBindingHash,
+  resetMailSendApprovals,
+  stampHandledBy,
+  threadHandledBy,
+} from './send-approval.js';
 
 import { ensureBuiltinMessagingProvidersRegistered } from './providers.js';
 
@@ -263,6 +292,7 @@ export type {
   AccountOptions,
   AccountSearchFilters,
   AccountType,
+  AgentSendPolicy,
   AttachmentOptions,
   // Email options (backward compat)
   EmailAccountOptions,
