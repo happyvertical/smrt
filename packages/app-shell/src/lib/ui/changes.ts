@@ -189,7 +189,12 @@ const text = (value: unknown): string | null =>
  */
 export function planQuickEdit(card: ChangeCardView): QuickEditPlan | null {
   if (card.status !== 'active' || card.opaque || !card.editable) return null;
-  if (card.commands.length !== 1) return null;
+  // An imported table is its definition plus its loads: only the definition is edited.
+  if (
+    card.commands.length !== 1 &&
+    !(card.source === 'import' && card.commands[0]?.type === 'defineModel')
+  )
+    return null;
   const command = card.commands[0];
   const choicesOf = (def: unknown): string[] | null => {
     const d = def as { type?: unknown; choices?: unknown } | null;
@@ -293,6 +298,38 @@ export const removedCards = (changes: ChangesState): ChangeCardView[] =>
   changes.cards
     .filter((c) => c.status === 'removed')
     .sort((a, b) => a.position - b.position);
+
+/** What /changes lists: a lone card, or an import's cards under one collapsible header. */
+export type CardRow =
+  | { kind: 'card'; card: ChangeCardView }
+  | { kind: 'group'; id: string; title: string; cards: ChangeCardView[] };
+
+/** The words on a group's header: `import:<id>` is a workbook import. */
+export const groupTitle = (group: string): string =>
+  group.startsWith('import:') ? 'Imported from your workbook' : 'Changes';
+
+/**
+ * Cards in order, with each run of cards sharing a group key collapsed into
+ * one row. A card whose group is empty stands alone, so ordinary changes keep
+ * their order and look.
+ */
+export function groupCards(cards: ChangeCardView[]): CardRow[] {
+  const rows: CardRow[] = [];
+  for (const card of cards) {
+    const last = rows[rows.length - 1];
+    if (card.group && last?.kind === 'group' && last.id === card.group)
+      last.cards.push(card);
+    else if (card.group)
+      rows.push({
+        kind: 'group',
+        id: card.group,
+        title: groupTitle(card.group),
+        cards: [card],
+      });
+    else rows.push({ kind: 'card', card });
+  }
+  return rows;
+}
 
 /** Why Apply cannot be used right now, in plain words; null when it can. */
 export function applyBlock(changes: ChangesState): string | null {

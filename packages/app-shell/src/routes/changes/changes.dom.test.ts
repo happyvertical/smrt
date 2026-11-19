@@ -74,6 +74,91 @@ describe('changes waiting view', () => {
     expect(container.textContent).toContain('No existing records are replaced');
   });
 
+  const importCards = () =>
+    Array.from({ length: 4 }, (_, i) =>
+      card({
+        id: `t${i}`,
+        position: i,
+        group: 'import:one',
+        source: 'import',
+        summary: `Table ${i}: new table with 3 fields and 20 records`,
+        commands: [{ type: 'defineModel', name: `T${i}`, fields: {} }],
+      }),
+    );
+
+  it('shows an import under one collapsed group with its count, expanded on demand', async () => {
+    await render(
+      changes({
+        cards: [card({ id: 'a', position: 9 }), ...importCards()],
+      }),
+    );
+    const group = container.querySelector('[data-testid="change-group"]')!;
+    expect(group.textContent).toContain('Imported from your workbook');
+    expect(group.textContent).toContain('4 changes');
+    // Collapsed: the table cards are not listed, the ordinary card is.
+    const titles = () =>
+      [...container.querySelectorAll('article h3')].map((h) => h.textContent);
+    expect(titles()).toEqual(['Add field Fulfillment to Orders']);
+    const head = group.querySelector<HTMLButtonElement>('button')!;
+    expect(head.getAttribute('aria-expanded')).toBe('false');
+    head.click();
+    await tick();
+    expect(titles()).toHaveLength(5);
+    expect(titles()).toContain(
+      'Table 2: new table with 3 fields and 20 records',
+    );
+    // Remove and Quick edit still work per card inside the group.
+    expect(
+      button(
+        'Remove this change: Table 2: new table with 3 fields and 20 records',
+      ),
+    ).toBeTruthy();
+    expect(
+      button('Quick edit: Table 2: new table with 3 fields and 20 records'),
+    ).toBeTruthy();
+    // An import's table is not offered a comment.
+    expect(
+      button('Comment on: Table 2: new table with 3 fields and 20 records'),
+    ).toBeUndefined();
+  });
+
+  it('opens a group by itself when one of its cards needs a look', async () => {
+    const cards = importCards();
+    cards[1].checks = [
+      { code: 'depends_on_removed', message: 'Needs one you removed.' },
+    ];
+    await render(changes({ cards }));
+    expect(
+      container
+        .querySelector('[data-testid="change-group"] button')!
+        .getAttribute('aria-expanded'),
+    ).toBe('true');
+    expect(container.textContent).toContain('needs a look');
+  });
+
+  it('says it is rebuilding while a table is removed from an import', async () => {
+    const cards = importCards();
+    await render(changes({ cards }));
+    let finish!: (r: Response) => void;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => new Promise<Response>((r) => (finish = r))),
+    );
+    container
+      .querySelector<HTMLButtonElement>('[data-testid="change-group"] button')!
+      .click();
+    await tick();
+    button(
+      'Remove this change: Table 3: new table with 3 fields and 20 records',
+    )!.click();
+    await tick();
+    expect(container.textContent).toContain('Rebuilding your changes');
+    finish(json(changes({ cards: cards.slice(0, 3) })));
+    await vi.waitFor(() =>
+      expect(container.textContent).not.toContain('Rebuilding your changes'),
+    );
+  });
+
   it('has aria labels naming each card for Remove, Quick edit and Comment', async () => {
     await render();
     expect(

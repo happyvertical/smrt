@@ -29,7 +29,12 @@ import { AppDraftCollection } from '../objects/AppDraft.ts';
 import { AppImportCollection } from '../objects/AppImport.ts';
 import { applyOwnBatch } from './approvals.ts';
 import { runCommand } from './builder.ts';
-import { changesState, flushChecks } from './changes.ts';
+import {
+  changesState,
+  flushChecks,
+  removeChangeCard,
+  restoreChangeCard,
+} from './changes.ts';
 import {
   discardIfUnused,
   discardNow,
@@ -611,10 +616,14 @@ it('refuses nonowners, invalid uploads, occupied draft and simultaneous imports'
       'draft',
     ),
   );
-  await expect(service.start(h.owner, await request())).rejects.toMatchObject({
-    status: 409,
-    message: /A draft is already open/,
-  });
+  const refused = await service
+    .start(h.owner, await request())
+    .catch((e: Error) => e);
+  expect(refused).toMatchObject({ status: 409 });
+  expect((refused as Error).message).toMatch(
+    /You have \d+ changes? waiting\. Apply or discard (it|them) before importing a workbook\./,
+  );
+  expect((refused as Error).message).not.toMatch(/draft|publish/i);
   expect((await draftInfo())?.name).toBe('My draft');
   await discardNow();
   await service.start(h.owner, await request());
@@ -829,6 +838,38 @@ it('applies imported records only through the owner Apply, then removes the file
   );
   expect(existsSync(file)).toBe(false);
   expect(await getDraftSlot()).toBeNull();
+});
+it('records the import as cards by table and keeps the review through a Remove and Put back', async () => {
+  await service.start(h.owner, await request());
+  await worker();
+  await end();
+  await runAs(h.owner, () => changesState());
+  await flushChecks();
+  const state = await runAs(h.owner, () => changesState());
+  expect(state.cards.every((c) => c.source === 'import')).toBe(true);
+  expect(new Set(state.cards.map((c) => c.group)).size).toBe(1);
+  expect(state.cards.some((c) => /^Orders: new table/.test(c.summary))).toBe(
+    true,
+  );
+  const orders = state.cards.find((c) => /^Orders:/.test(c.summary))!;
+  await runAs(h.owner, () => removeChangeCard(orders.id));
+  // The copy has a new id after the rebuild; the import's review follows it.
+  const after = await service.current(h.owner);
+  expect(after?.status).toBe('review');
+  expect(after?.draftId).toBe((await getDraftSlot())?.id);
+  await runAs(h.owner, () => restoreChangeCard(orders.id));
+  expect((await service.current(h.owner))?.draftId).toBe(
+    (await getDraftSlot())?.id,
+  );
+  await runAs(h.owner, () => changesState());
+  await flushChecks();
+  const ready = await runAs(h.owner, () => changesState());
+  expect(ready.canApply).toBe(true);
+  await runAs(h.owner, () => applyOwnBatch(ready.digest));
+  await until(
+    async () => (await service.current(h.owner))?.status === 'published',
+  );
+  expect(await (await getHost()).countRows(importModelName('orders'))).toBe(2);
 });
 it('repairs a crash between job admission and saving the import run id with idempotent start', async () => {
   const started = await service.start(h.owner, await request());

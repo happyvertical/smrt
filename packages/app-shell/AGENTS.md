@@ -86,9 +86,10 @@ Shared assistant adapters and legacy approval storage: [agents/shared-pieces.md]
   applies); review questions (`change-review.ts`) and `answerReviewQuestion`
   only add visible options or a NEW card; `applyNowEligible` is the server's
   one rule for chat's "Apply now". Details: README "The assistant and changes
-  waiting". An already
-  open draft (import or older) is adopted as opaque, non-removable cards; a
-  held import cannot take cards. No request names a copy: `?target=`,
+  waiting". An older
+  open draft is adopted as opaque, non-removable cards. A workbook import
+  records its commands as cards itself (`recordImportCommand`, one card per
+  table, one group; it only records, never applies: [imports](agents/imports.md)). No request names a copy: `?target=`,
   `x-shell-target` and `/mcp?target=` are gone, `hostFor('draft')` is only for
   the working copy's checks/preview, and `autoApprove: true` stays only in
   `openDraftHost`. Table changes here are new tables only (`prepareShellSchema`

@@ -60,7 +60,7 @@ import {
 } from './drafts.ts';
 import { publish } from './events.ts';
 import { getDraftSlot, getHost, getShellDb } from './host.ts';
-import { assertOwner, type Principal } from './owner.ts';
+import { assertOwner, type Principal, requireOwner, runAs } from './owner.ts';
 import { publicChangeResult } from './results.ts';
 
 const WORKING_COPY_NAME = CHANGES_WAITING_NAME;
@@ -177,6 +177,8 @@ export interface CardInput {
   commands: Command[];
   source: ChangeCardSource;
   group?: string;
+  /** One line for the card when its commands' own summaries would be noise. */
+  summary?: string;
   threadId?: string;
   messageId?: string;
 }
@@ -283,6 +285,25 @@ async function findBatch(
   );
 }
 
+/**
+ * End a batch whose copy is gone for good. An import's cards drop their
+ * commands (the loaded rows are large and never come back: "Put them back" is
+ * not offered for an import).
+ */
+async function retireBatch(batch: ChangeBatch): Promise<void> {
+  scheduler.cancel(batch.id as string);
+  importIndex.delete(batch.id as string);
+  for (const card of await cardsOf(batch.id as string)) {
+    if (card.source !== 'import' || card.commands === '[]') continue;
+    card.commands = '[]';
+    await card.save();
+  }
+  batch.status = 'discarded';
+  batch.draftId = '';
+  await batch.save();
+  emit(batch, 'discarded', 0);
+}
+
 /** One card per version of an adopted draft, appended for versions not yet carded. */
 async function syncOpaqueCards(
   batch: ChangeBatch,
@@ -335,9 +356,16 @@ async function syncBatch(owner: Principal): Promise<ChangeBatch | null> {
     (await findBatch(owner.tenantId, 'open')) ??
     (await findBatch(owner.tenantId, 'held'));
   const slot = await getDraftSlot();
+  // A held batch is a workbook import's own copy: when that copy is gone (the
+  // import failed, was cancelled, repeated or discarded) its cards go with it.
+  if (batch?.status === 'held' && (!slot || slot.id !== batch.draftId)) {
+    await retireBatch(batch);
+    batch = null;
+  }
   if (batch?.draftId) {
     const row = await (await drafts()).get(batch.draftId);
     if (row?.status === 'published' && !slot) {
+      importIndex.delete(batch.id as string);
       batch.status = 'applied';
       batch.appliedAt = iso(row.endedAt) || new Date().toISOString();
       batch.appliedVersions = row.publishedVersions || '[]';
@@ -345,10 +373,11 @@ async function syncBatch(owner: Principal): Promise<ChangeBatch | null> {
       emit(batch, 'applied', 0);
       batch = null;
     } else if (row?.status === 'discarded' && !slot) {
+      // `discarded` is a copy someone closed on purpose (an import's Discard);
+      // `rebuilt` is only ours. A restart leaves the row open, not discarded.
       const opaque = (await cardsOf(batch.id as string)).some((c) => c.opaque);
-      if (opaque) {
-        batch.status = 'discarded';
-        await batch.save();
+      if (opaque || row.note === 'discarded') {
+        await retireBatch(batch);
         batch = null;
       }
     }
@@ -356,12 +385,14 @@ async function syncBatch(owner: Principal): Promise<ChangeBatch | null> {
   if (batch) {
     if (slot && slot.id === batch.draftId) {
       const want = slot.hold ? 'held' : 'open';
+      const importing = importIndex.has(batch.id as string);
       // An import's draft grows while it is held: keep carding it until the
       // hold ends (including the last growth). An adopted draft that is not
       // held stays as it was adopted; later changes are ordinary cards.
       if (
         (slot.hold || batch.status === 'held') &&
         slot.host &&
+        !importing &&
         !(await cardsOf(batch.id as string)).some((c) => !c.opaque)
       )
         await syncOpaqueCards(batch, slot.host, owner);
@@ -405,6 +436,13 @@ async function setBatchDraft(batch: ChangeBatch, id: string): Promise<void> {
   await batch.save();
 }
 
+type ReplacedHook = (from: string, to: string) => Promise<void>;
+let replacedHook: ReplacedHook | null = null;
+/** Register (or clear) the follower of a rebuilt working copy's new id. */
+export function setWorkingCopyReplaced(hook: ReplacedHook | null): void {
+  replacedHook = hook;
+}
+
 /**
  * Rebuild the working copy from the active cards: a fresh fork of live with
  * their commands replayed in order. A card whose command no longer applies
@@ -441,12 +479,17 @@ async function rebuild(
     await syncFreeze(false);
     return [];
   }
-  const commands = active.flatMap((card) =>
-    readArray<Command>(card.commands).map((command) => ({
-      key: card.id as string,
-      command,
-    })),
-  );
+  // An import's provenance hides replay after the LAST load: its tables look
+  // each other up by a field the hide makes invisible (the order it ran in).
+  const commands: { key: string; command: Command }[] = [];
+  const hides: { key: string; command: Command }[] = [];
+  for (const card of active)
+    for (const command of readArray<Command>(card.commands))
+      (card.source === 'import' && command.type === 'hideField'
+        ? hides
+        : commands
+      ).push({ key: card.id as string, command });
+  commands.push(...hides);
   const outcome: { blockers: BatchBlocker[]; applied: Map<string, number[]> } =
     {
       blockers: [],
@@ -483,6 +526,10 @@ async function rebuild(
   batch.draftId = fresh?.id ?? '';
   batch.baseVersion = live.version;
   await batch.save();
+  // The copy has a new identity: whoever remembered the old one (a workbook
+  // import's review) follows it here, inside the changes queue.
+  if (slot && fresh && slot.id !== fresh.id)
+    await replacedHook?.(slot.id, fresh.id).catch(() => {});
   // Summaries come from what the copy recorded; blockers from what failed.
   const host = fresh?.host;
   const chain = host ? await host.draftChain() : null;
@@ -504,7 +551,8 @@ async function rebuild(
           r.definition,
         ),
       );
-    if (summaries.length) card.summary = summaries.join('; ');
+    if (summaries.length && !fixedSummary(card))
+      card.summary = summaries.join('; ');
     card.draftVersions = JSON.stringify(versions);
     const blocker = failed.get(card.id as string);
     // A card flagged before stays tied to the card whose removal flagged it.
@@ -527,6 +575,11 @@ async function rebuild(
   }
   return outcome.blockers;
 }
+
+/** An import's table card, or a card that loads records, keeps the summary it was made with. */
+const fixedSummary = (card: ChangeCard): boolean =>
+  card.source === 'import' ||
+  readArray<Command>(card.commands).some((c) => c.type === 'loadRecords');
 
 /** The working copy of `batch`, rebuilding it when it is missing (a restart, a failed rebuild). */
 async function workingCopy(
@@ -758,6 +811,11 @@ const isRevising = (comments: CardComment[]): boolean => {
   );
 };
 
+/** A load's rows are data, not something the browser reads: the summary carries their count. */
+function withoutRows(command: Command): Command {
+  return command.type === 'loadRecords' ? { ...command, rows: [] } : command;
+}
+
 function viewOf(card: ChangeCard): ChangeCardView {
   const opaque = !!card.opaque;
   const comments = commentsOf(card);
@@ -770,7 +828,7 @@ function viewOf(card: ChangeCard): ChangeCardView {
     status: card.status,
     revision: Number(card.revision),
     opaque,
-    commands: readArray<Command>(card.commands),
+    commands: readArray<Command>(card.commands).map(withoutRows),
     checks: readArray<CardCheck>(card.checks),
     questions: questionsOf(card).map((q) => ({
       id: q.id,
@@ -821,9 +879,11 @@ async function stateOf(owner: Principal): Promise<ChangesState> {
   if (!batch) {
     const gone = sorted.find((b) => b.status === 'discarded');
     if (gone) {
-      const n = (await cardsOf(gone.id as string)).filter(
-        (c) => isActive(c) && !c.opaque,
-      ).length;
+      const gone_ = await cardsOf(gone.id as string);
+      // An import is started again from its workbook, never put back.
+      const n = gone_.some((c) => c.source === 'import')
+        ? 0
+        : gone_.filter((c) => isActive(c) && !c.opaque).length;
       if (n) discarded = { batchId: gone.id as string, count: n };
     }
   }
@@ -1002,6 +1062,139 @@ async function nextPosition(batch: ChangeBatch): Promise<number> {
   return cards.reduce((n, c) => Math.max(n, Number(c.position) + 1), 0);
 }
 
+// ---------- a workbook import's part (#5207) ----------
+//
+// The import loads into the working copy it holds (`slot.hold`); each command
+// it runs is recorded here as part of ONE card per table (its definition,
+// fields, loads and provenance hides), so the owner sees, removes and applies
+// the import like any other change. This only RECORDS: nothing here applies,
+// approves or reaches live, and it refuses unless the import holds the copy.
+
+/** Per held batch: the next card position and each table's card, so a load never rescans the cards. */
+const importIndex = new Map<
+  string,
+  { next: number; tables: Map<string, string> }
+>();
+
+const IMPORT_HIDDEN = new Set(['workbookRow', 'workbookLookup']);
+const rowWord = (n: number) => `${n} ${n === 1 ? 'record' : 'records'}`;
+
+/** "Orders: new table with 5 fields and 42 records", counted from the card's commands. */
+function importSummary(commands: Command[]): string {
+  const first = commands[0];
+  if (first?.type !== 'defineModel') return 'A workbook change';
+  const label = (first.label ?? first.name).trim() || first.name;
+  const fields = new Set(
+    Object.keys(first.fields ?? {}).filter((k) => !IMPORT_HIDDEN.has(k)),
+  );
+  let rows = 0;
+  for (const c of commands) {
+    if (c.type === 'addField' && !IMPORT_HIDDEN.has(c.field))
+      fields.add(c.field);
+    if (c.type === 'loadRecords') rows += c.rows.length;
+  }
+  const f = `${fields.size} ${fields.size === 1 ? 'field' : 'fields'}`;
+  return `${label}: new table with ${f}${rows ? ` and ${rowWord(rows)}` : ''}`;
+}
+
+export interface ImportCommandInput {
+  /** The import's own working copy (its hold names the import). */
+  host: AppHost;
+  /** The import's group on /changes: one collapsible group per import. */
+  group: string;
+  command: Command;
+  /** Runs `command` on `host`; recorded only if it succeeds. */
+  run: () => Promise<unknown>;
+}
+
+/**
+ * Run one command of a workbook import on its held working copy and record it
+ * on its table's card (creating the card at the table's first command). Cards
+ * keep the import's order; a report is a card of its own.
+ */
+export function recordImportCommand(
+  owner: Principal,
+  input: ImportCommandInput,
+): Promise<unknown> {
+  return runAs(owner, () =>
+    serial(async () => {
+      await requireOwner(owner);
+      const slot = await getDraftSlot();
+      if (!slot?.hold || !slot.host || slot.host !== input.host)
+        throw new EngineError(
+          'only a workbook import that holds the copy can add its changes',
+          'refused',
+        );
+      const batch = await syncBatch(owner);
+      if (!batch || batch.status !== 'held' || batch.draftId !== slot.id)
+        throw new EngineError(
+          'the workbook import does not own these changes',
+          'refused',
+        );
+      const id = batch.id as string;
+      let index = importIndex.get(id);
+      if (!index) {
+        const cards = await cardsOf(id);
+        index = {
+          next: cards.reduce((n, c) => Math.max(n, Number(c.position) + 1), 0),
+          tables: new Map(),
+        };
+        importIndex.set(id, index);
+      }
+      const { command } = input;
+      const prior = structuredClone(input.host.def);
+      const result = (await input.run()) as ChangeResult;
+      const model =
+        command.type === 'defineModel'
+          ? command.name
+          : command.type !== 'defineReport' && 'model' in command
+            ? String(command.model)
+            : '';
+      const coll = await cardsColl();
+      const known = model ? index.tables.get(model) : undefined;
+      let card = known ? await coll.get(known) : null;
+      let created = false;
+      if (!card) {
+        card = await coll.create({
+          batchId: id,
+          position: index.next++,
+          cardGroup: input.group,
+          source: 'import',
+          commands: '[]',
+          draftVersions: '[]',
+          summary: '',
+          status: 'active',
+          revision: 1,
+          createdBy: owner.id,
+          createdAt: new Date().toISOString(),
+        });
+        created = true;
+      }
+      const commands = [...readArray<Command>(card.commands), command];
+      card.commands = JSON.stringify(commands);
+      card.draftVersions = JSON.stringify([
+        ...readArray<number>(card.draftVersions),
+        result.version,
+      ]);
+      card.summary = model
+        ? importSummary(commands)
+        : commandSummary(command, prior, input.host.def);
+      await card.save();
+      if (created && model) index.tables.set(model, card.id as string);
+      batch.generation = Number(batch.generation) + 1;
+      batch.checkState = 'stale';
+      await batch.save();
+      // One announcement per new card (and at the end), not one per 500-row load.
+      if (created || command.type === 'hideField')
+        emit(batch, 'changed', index.next);
+      return result;
+    }),
+  );
+}
+
+/** Resolves once every change to the batch queued so far is finished (a rebuild included). */
+export const settled = (): Promise<void> => serial(async () => {});
+
 /**
  * Run `commands` as ONE card on the working copy. A tail append executes
  * incrementally (no rebuild). A command that does not apply is refused and no
@@ -1074,7 +1267,7 @@ export function addChangeCard(
         source: input.source,
         commands: JSON.stringify(input.commands),
         draftVersions: JSON.stringify(madeVersions),
-        summary: summaries.join('; '),
+        summary: input.summary ?? summaries.join('; '),
         status: 'active',
         revision: 1,
         threadId: input.threadId ?? '',
@@ -1318,14 +1511,18 @@ export function editChangeCard(
           'refused',
         );
       const commands = readArray<Command>(card.commands);
-      if (commands.length !== 1)
+      // An imported table is its definition plus its loads: only the
+      // definition (its first command) is edited, the loads stay as they are.
+      const importedTable =
+        card.source === 'import' && commands[0]?.type === 'defineModel';
+      if (commands.length !== 1 && !importedTable)
         throw new EngineError(
           'this change has several steps and cannot be edited here',
           'refused',
         );
       const before = card.commands;
       const patched = patchCommand(commands[0], edit);
-      card.commands = JSON.stringify([patched]);
+      card.commands = JSON.stringify([patched, ...commands.slice(1)]);
       card.revision = Number(card.revision) + 1;
       await card.save();
       try {
@@ -1357,11 +1554,8 @@ export function discardChanges(
       scheduler.cancel(batch.id as string);
       if (slot && slot.id === batch.draftId) await discardNow(slot.id);
       await syncFreeze(false);
-      batch.status = 'discarded';
-      batch.draftId = '';
       batch.generation = Number(batch.generation) + 1;
-      await batch.save();
-      emit(batch, 'discarded', 0);
+      await retireBatch(batch);
       return stateOf(owner);
     });
   })();
@@ -1390,7 +1584,7 @@ export function restoreDiscardedChanges(
       if (!gone) throw new EngineError('nothing was discarded', 'not_found');
       checkGeneration(gone, opts.generation);
       const cards = await cardsOf(gone.id as string);
-      if (cards.some((c) => c.opaque))
+      if (cards.some((c) => c.opaque || c.source === 'import'))
         throw new EngineError('these changes cannot be put back', 'refused');
       if (!cards.some(isActive))
         throw new EngineError('nothing was discarded', 'not_found');
@@ -1450,6 +1644,11 @@ async function openCard(
     throw new EngineError('these changes cannot be edited now', 'refused');
   if (found.card.opaque || !isActive(found.card))
     throw new EngineError('this change cannot be edited', 'refused');
+  if (found.card.source === 'import')
+    throw new EngineError(
+      'an imported table cannot be changed by comment; remove it or use Quick edit',
+      'refused',
+    );
   const cards = await cardsOf(found.batch.id as string);
   if (cards.some((c) => c.opaque && isActive(c)))
     throw new EngineError(

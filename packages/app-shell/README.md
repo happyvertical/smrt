@@ -456,8 +456,13 @@ a restart). All routes are owner-session, same-origin; there is no ``,
 - The Apply button uses a button-only shade (`--smrt-app-shell-action`, #c2470a
   in light, 5:1 with white); the global primary token is unchanged.
 
-An open draft from before changes waiting (or an import's) is adopted as
-opaque cards: no commands, not removable or editable one by one. The assistant
+An open draft from before changes waiting is adopted as opaque cards: no
+commands, not removable or editable one by one. A workbook import (#5207) is
+cards by table under one group on `/changes` (collapsed, with a count); each
+table card can be removed or its name/choices edited (a rebuild replays the
+loads, so it says "Rebuilding your changes"), and the import page's Apply is
+the same digest-pinned `POST /api/shell/changes/apply`. A template with records
+(`importTemplate`) is one card that carries them. The assistant
 gets no undo, apply or draft tool; its turn input says changes are collected.
 
 ### The assistant and changes waiting (#5206)
@@ -669,7 +674,8 @@ with the resolved names retained in `plan.engineNames`. Hidden `workbookRow` and
 `workbookLookup` fields support proof and links. Calculations use field labels in
 review and History. Year and identifier checks remain in the proof without being
 presented as useful totals.
-Only one draft/import may be open. Importing into existing tables, saved mappings,
+Only one import may run, and none starts while other changes wait (apply or
+discard them first). Importing into existing tables, saved mappings,
 re-import and export are not included.
 
 The API accepts a raw binary workbook at `POST /api/shell/import`, returning

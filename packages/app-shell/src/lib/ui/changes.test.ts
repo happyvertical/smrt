@@ -4,6 +4,7 @@ import {
   applyBlock,
   applySummary,
   dependencyActions,
+  groupCards,
   isApplySummary,
   isChecking,
   overwriteLines,
@@ -180,5 +181,27 @@ describe('apply and events', () => {
     expect(
       announcement({ type: 'draft', status: 'started', id: 'd', name: 'x' }),
     ).toBeNull();
+  });
+});
+
+describe('groupCards', () => {
+  const c = (id: string, group = '') =>
+    card({ id, group, position: Number(id.slice(1)) });
+  it('keeps ordinary cards alone and folds a run of one group into one row', () => {
+    const rows = groupCards([
+      c('c0'),
+      c('c1', 'import:x'),
+      c('c2', 'import:x'),
+      c('c3'),
+    ]);
+    expect(rows.map((r) => r.kind)).toEqual(['card', 'group', 'card']);
+    const group = rows[1];
+    expect(group.kind === 'group' && group.cards.map((x) => x.id)).toEqual([
+      'c1',
+      'c2',
+    ]);
+    expect(group.kind === 'group' && group.title).toBe(
+      'Imported from your workbook',
+    );
   });
 });

@@ -9,6 +9,7 @@ import {
   activeCards,
   applyBlock,
   changesApi,
+  groupCards,
   isChecking,
   overwriteLines,
   plural,
@@ -16,7 +17,10 @@ import {
   removedCards,
 } from '$lib/ui/changes';
 import { DEPENDS } from '$lib/ui/events';
-import type { ChangesState } from '$lib/ui/types';
+import type {
+  ChangeCardView as ChangeCardViewType,
+  ChangesState,
+} from '$lib/ui/types';
 import type { PageProps } from './$types';
 
 let { data }: PageProps = $props();
@@ -30,6 +34,15 @@ $effect(() => {
 });
 const changes = $derived<ChangesState | null>(override ?? data.changes ?? null);
 const cards = $derived(changes ? activeCards(changes) : []);
+const rows = $derived(groupCards(cards));
+// A group is shut until opened, unless one of its cards needs a look.
+let opened = $state<Record<string, boolean>>({});
+const needsLook = (group: { cards: { id: string; checks: unknown[] }[] }) =>
+  group.cards.some((c) => c.checks.length > 0 || blockersFor(c.id).length > 0);
+const isOpen = (group: {
+  id: string;
+  cards: { id: string; checks: unknown[] }[];
+}) => opened[group.id] ?? needsLook(group);
 const removed = $derived(changes ? removedCards(changes) : []);
 const block = $derived(changes ? applyBlock(changes) : null);
 const checking = $derived(changes ? isChecking(changes) : false);
@@ -38,6 +51,7 @@ const blockersFor = (id: string) =>
 const general = $derived((changes?.blockers ?? []).filter((b) => !b.cardId));
 
 let busy = $state(false);
+let working = $state('');
 let error = $state('');
 let notice = $state('');
 let messages = $state<Record<string, string>>({});
@@ -72,6 +86,10 @@ async function act(
   busy = true;
   error = '';
   notice = '';
+  // Taking one table out of an import replays the rest: say so while it runs.
+  working = changes?.cards.some((c) => c.source === 'import')
+    ? 'Rebuilding your changes. A large import can take a minute.'
+    : '';
   if (id) messages = { ...messages, [id]: '' };
   try {
     override = (await run()).data;
@@ -84,6 +102,7 @@ async function act(
     return false;
   } finally {
     busy = false;
+    working = '';
   }
 }
 
@@ -196,9 +215,31 @@ async function apply() {
   {:else}
     <div class="smrt-changes__box">
     <div class="smrt-changes">
+      {#if working}<p class="smrt-changes__check" role="status">{working}</p>{/if}
       <ol class="smrt-changes__cards" aria-label="Changes waiting, in the order they were made">
-        {#each cards as card (card.id)}
-          <li>
+        {#each rows as row (row.kind === 'group' ? row.id : row.card.id)}
+          {#if row.kind === 'group'}
+            <li class="smrt-changes__group" data-testid="change-group" data-group={row.id}>
+              <button type="button" class="smrt-changes__group-head" aria-expanded={isOpen(row)} aria-controls="group-{row.id}" onclick={() => (opened[row.id] = !isOpen(row))}>
+                <span class="smrt-changes__group-title">{row.title}</span>
+                <span class="smrt-changes__count" aria-hidden="true">{row.cards.length}</span>
+                <span class="smrt-app-shell__muted">{plural(row.cards.length, 'change')}{#if needsLook(row)} · needs a look{/if}</span>
+                <span class="smrt-changes__chev" aria-hidden="true">{isOpen(row) ? '▾' : '▸'}</span>
+              </button>
+              {#if isOpen(row)}
+                <ol class="smrt-changes__cards smrt-changes__group-cards" id="group-{row.id}" aria-label="{row.title}, {plural(row.cards.length, 'change')}">
+                  {#each row.cards as card (card.id)}
+                    <li>{@render cardView(card)}</li>
+                  {/each}
+                </ol>
+              {/if}
+            </li>
+          {:else}
+            <li>{@render cardView(row.card)}</li>
+          {/if}
+        {/each}
+      </ol>
+      {#snippet cardView(card: ChangeCardViewType)}
             <ChangeCard
               {card}
               blockers={blockersFor(card.id)}
@@ -209,7 +250,7 @@ async function apply() {
               onputback={(removedId) => act(() => changesApi.restoreCard(removedId, gen()), card.id, 'Put it back.')}
               onremovedependents={() => act(() => changesApi.removeDependents(card.id, gen()), card.id, 'Removed those too.')}
               onedit={(edits) => edit(card.id, edits)}
-              oncomment={card.editable ? (c) => (commenting = commenting === c.id ? null : c.id) : undefined}
+              oncomment={card.editable && card.source !== 'import' ? (c) => (commenting = commenting === c.id ? null : c.id) : undefined}
             >
               {#snippet more(c)}
                 <ChangeCardExtras
@@ -222,9 +263,7 @@ async function apply() {
                 />
               {/snippet}
             </ChangeCard>
-          </li>
-        {/each}
-      </ol>
+      {/snippet}
       {#if removed.length}
         <ul class="smrt-changes__removed" aria-label="Removed changes">
           {#each removed as card (card.id)}
@@ -287,6 +326,30 @@ async function apply() {
     list-style: none;
     display: grid;
     gap: 0.75rem;
+  }
+  .smrt-changes__group {
+    display: grid;
+    gap: 0.5rem;
+  }
+  .smrt-changes__group-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.6rem;
+    inline-size: 100%;
+    padding: 0.7rem 0.9rem;
+    font: inherit;
+    text-align: start;
+    cursor: pointer;
+  }
+  .smrt-changes__group-title {
+    font-weight: 600;
+  }
+  .smrt-changes__chev {
+    margin-inline-start: auto;
+  }
+  .smrt-changes__group-cards {
+    padding-inline-start: 1rem;
   }
   .smrt-changes__removed li {
     display: flex;
@@ -383,6 +446,12 @@ async function apply() {
 }
 
 @layer smrt.theme {
+  .smrt-changes__group-head {
+    border: 1px solid var(--smrt-color-outline-variant);
+    border-radius: var(--smrt-radius-lg, 0.75rem);
+    background: var(--smrt-color-surface);
+    color: inherit;
+  }
   .smrt-changes__side {
     border: 1px solid var(--smrt-color-outline-variant);
     border-radius: var(--smrt-radius-lg, 0.75rem);

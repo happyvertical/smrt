@@ -98,6 +98,7 @@ export {
   createEngineImportTarget,
   EngineImportError,
   type EngineImportTarget,
+  type ImportCommandHook,
   importFieldName,
   importModelName,
 } from './import-target.ts';

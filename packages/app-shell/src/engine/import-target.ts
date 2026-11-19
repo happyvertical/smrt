@@ -57,6 +57,18 @@ function expression(node: unknown, fields: Record<string, string>): unknown {
   );
 }
 
+/**
+ * Where an import's engine commands go. The shell hands one in so every
+ * command also becomes part of the changes waiting (a card per table); the
+ * engine stays free of shell code. `table` is the plan key the command belongs
+ * to (none for a report). `run` executes the command on the import's copy.
+ */
+export type ImportCommandHook = (input: {
+  command: Parameters<AppHost['execute']>[0];
+  table?: string;
+  run: () => Promise<unknown>;
+}) => Promise<unknown>;
+
 export interface EngineImportTarget extends ImportTarget {
   /** Hide provenance only after all loads; the owning host holds draft edits until proof. */
   seal(): Promise<void>;
@@ -67,6 +79,7 @@ export function createEngineImportTarget(
   host: AppHost,
   beforeCommand: () => Promise<void> = async () => {},
   retainNames: (names: ImportNames) => Promise<void> = async () => {},
+  onCommand?: ImportCommandHook,
 ): EngineImportTarget {
   let plan: ImportPlan | undefined;
   let sealed = false;
@@ -80,9 +93,13 @@ export function createEngineImportTarget(
     if (!found) throw new EngineImportError(key);
     return found;
   };
-  const run = async (command: Parameters<AppHost['execute']>[0]) => {
+  const run = async (
+    command: Parameters<AppHost['execute']>[0],
+    table?: string,
+  ) => {
     await beforeCommand();
-    return host.execute(command, { author: 'workbook import' });
+    const execute = () => host.execute(command, { author: 'workbook import' });
+    return onCommand ? onCommand({ command, table, run: execute }) : execute();
   };
   const target: EngineImportTarget = {
     get names() {
@@ -206,30 +223,39 @@ export function createEngineImportTarget(
         const model = modelName(key);
         const md = next.models[model];
         // Non-calculated fields first, so the engine can type-check every calculation.
-        await run({
-          type: 'defineModel',
-          name: model,
-          label: md.label,
-          titleField: md.titleField,
-          fields: Object.fromEntries(
-            Object.entries(md.fields).filter(([, f]) => !f.calculated),
-          ),
-        });
+        await run(
+          {
+            type: 'defineModel',
+            name: model,
+            label: md.label,
+            titleField: md.titleField,
+            fields: Object.fromEntries(
+              Object.entries(md.fields).filter(([, f]) => !f.calculated),
+            ),
+          },
+          key,
+        );
         for (const [field, definition] of Object.entries(md.fields).filter(
           ([, f]) => !!f.calculated,
         )) {
-          await run({
-            type: 'addField',
-            model,
-            field,
-            definition: { ...definition, calculated: undefined },
-          });
-          await run({
-            type: 'setCalculation',
-            model,
-            field,
-            calculated: definition.calculated!,
-          });
+          await run(
+            {
+              type: 'addField',
+              model,
+              field,
+              definition: { ...definition, calculated: undefined },
+            },
+            key,
+          );
+          await run(
+            {
+              type: 'setCalculation',
+              model,
+              field,
+              calculated: definition.calculated!,
+            },
+            key,
+          );
         }
       }
       for (const [name, definition] of Object.entries(next.reports ?? {}))
@@ -264,24 +290,30 @@ export function createEngineImportTarget(
         return values;
       });
       // runImport's default is 500; the engine independently checks its row/byte/journal caps.
-      await run({
-        type: 'loadRecords',
-        model: modelName(t.key),
-        mode: 'insert',
-        rows,
-        references,
-      });
+      await run(
+        {
+          type: 'loadRecords',
+          model: modelName(t.key),
+          mode: 'insert',
+          rows,
+          references,
+        },
+        t.key,
+      );
       return { loaded: rows.length };
     },
     async seal() {
       if (sealed || !plan) return;
       for (const t of plan.tables)
         for (const field of [SOURCE_ROW, LOOKUP_KEY])
-          await run({
-            type: 'hideField',
-            model: modelName(t.key),
-            field,
-          });
+          await run(
+            {
+              type: 'hideField',
+              model: modelName(t.key),
+              field,
+            },
+            t.key,
+          );
       sealed = true;
     },
     async count(key) {

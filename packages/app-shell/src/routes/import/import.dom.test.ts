@@ -101,7 +101,7 @@ it.each([
     'A large workbook can take about a minute to import.',
   );
 });
-it('offers only existing draft review/publish and discard after proof', async () => {
+it('offers Review, Apply and Discard after proof', async () => {
   vi.stubGlobal(
     'fetch',
     vi.fn(async () => new Response(JSON.stringify({ import: ready() }))),
@@ -114,7 +114,7 @@ it('offers only existing draft review/publish and discard after proof', async ()
   expect(
     document.querySelector<HTMLAnchorElement>('a[href="/changes"]')
       ?.textContent,
-  ).toContain('Review and apply');
+  ).toBe('Review');
   expect(document.body.textContent).toContain('Discard import');
   expect(document.body.textContent).not.toContain('Live/Draft');
   expect(document.body.textContent).toContain('apply it in one step');
@@ -126,6 +126,99 @@ it('offers only existing draft review/publish and discard after proof', async ()
   ))
     expect(card.querySelector('ul')).toBeNull();
   expect(document.querySelector('input[type="file"]')).toBeNull();
+});
+it('applies the import through the digest-pinned batch route, with no draft or publish words', async () => {
+  const fetchMock = vi.fn(async (url: string, init?: RequestInit) =>
+    url === '/api/shell/changes/apply'
+      ? new Response(JSON.stringify({ id: 'a', status: 'approved' }))
+      : new Response(JSON.stringify({ import: ready() })),
+  );
+  vi.stubGlobal('fetch', fetchMock);
+  const { changes } = await import('../../test/changes-fixtures.ts');
+  component = mount(Page, {
+    target: document.body,
+    props: {
+      data: {
+        current: ready(),
+        changes: changes({ digest: 'pinned' }),
+      } as never,
+      params: {},
+      form: null,
+    },
+  });
+  await tick();
+  expect(document.body.textContent).not.toMatch(/draft|publish/i);
+  const apply = [...document.querySelectorAll('button')].find((b) =>
+    /^Apply 2 changes$/.test(b.textContent?.trim() ?? ''),
+  )!;
+  expect(apply).toBeTruthy();
+  expect(document.querySelector('a[href="/changes"]')?.textContent).toBe(
+    'Review',
+  );
+  apply.click();
+  await vi.waitFor(() =>
+    expect(
+      fetchMock.mock.calls.some(([u]) => u === '/api/shell/changes/apply'),
+    ).toBe(true),
+  );
+  const call = fetchMock.mock.calls.find(
+    ([u]) => u === '/api/shell/changes/apply',
+  )!;
+  expect(JSON.parse(String(call[1]?.body))).toMatchObject({
+    expect: 'pinned',
+    generation: 3,
+  });
+});
+it('a stale digest on Apply says to review again, in plain words', async () => {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (url: string) =>
+      url === '/api/shell/changes/apply'
+        ? new Response(JSON.stringify({ error: 'stale' }), { status: 409 })
+        : new Response(JSON.stringify({ import: ready() })),
+    ),
+  );
+  const { changes } = await import('../../test/changes-fixtures.ts');
+  component = mount(Page, {
+    target: document.body,
+    props: {
+      data: { current: ready(), changes: changes() } as never,
+      params: {},
+      form: null,
+    },
+  });
+  await tick();
+  [...document.querySelectorAll('button')]
+    .find((b) => /^Apply/.test(b.textContent?.trim() ?? ''))!
+    .click();
+  await vi.waitFor(() =>
+    expect(document.body.textContent).toContain(
+      'These changes were different when you last looked',
+    ),
+  );
+});
+it('holds a new import while other changes wait, in plain words with a link', async () => {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async () => new Response(JSON.stringify({ import: null }))),
+  );
+  const { changes } = await import('../../test/changes-fixtures.ts');
+  component = mount(Page, {
+    target: document.body,
+    props: {
+      data: { current: null, changes: changes() } as never,
+      params: {},
+      form: null,
+    },
+  });
+  await tick();
+  expect(document.body.textContent).toContain(
+    'You have 2 changes waiting. Apply or discard them before importing a workbook.',
+  );
+  expect(document.querySelector('a[href="/changes"]')).toBeTruthy();
+  expect(
+    document.querySelector<HTMLInputElement>('input[type="file"]')!.disabled,
+  ).toBe(true);
 });
 it('shows saved budget-stop progress with Resume and Cancel, and preserves the server refusal', async () => {
   const current = {
@@ -338,7 +431,7 @@ it('polls each reported stage, retains completed stages and shows planning elaps
   for (const [stage, label] of [
     ['planning', 'Planning the import'],
     ['checking', 'Checking the plan'],
-    ['loading', 'Loading the draft'],
+    ['loading', 'Loading your data'],
     ['proving', 'Proving the loaded data'],
   ]) {
     next = {

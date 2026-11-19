@@ -2,18 +2,39 @@ import { readFileSync } from 'node:fs';
 import { RuntimeReportError } from '@happyvertical/smrt-reports';
 import { expect, it } from 'vitest';
 import { toolSummary } from '../lib/assistant/tool-summary.ts';
+import { applyOwnBatch } from '../lib/server/approvals.ts';
 import {
   call,
   drive,
   say,
   scripted,
 } from '../lib/server/assistant/test-helpers.ts';
+import { runCommand } from '../lib/server/builder.ts';
+import { changesState, flushChecks } from '../lib/server/changes.ts';
 import { getHost } from '../lib/server/host.ts';
 import { callTool } from '../lib/server/policy.ts';
-import { openShell } from '../lib/server/test-support.ts';
+import { openShell, runAs } from '../lib/server/test-support.ts';
 import { GET } from './api/shell/reports/[name]/+server.ts';
 import { GET as csv } from './api/shell/reports/[name]/csv/+server.ts';
 import { load } from './reports/[name]/+page.server.ts';
+
+async function importSeed(
+  h: Awaited<ReturnType<typeof openShell>>,
+  data: unknown,
+) {
+  await runAs(h.owner, async () => {
+    const waiting = await runCommand(
+      { type: 'importTemplate', data } as never,
+      h.owner.id,
+    );
+    expect(waiting).toMatchObject({ status: 'change_waiting' });
+    await changesState();
+    await flushChecks();
+    const state = await changesState();
+    expect(state.canApply).toBe(true);
+    await applyOwnBatch(state.digest);
+  });
+}
 
 it('the production QA seed imports into an empty app and exercises report states', async () => {
   const h = await openShell();
@@ -24,12 +45,8 @@ it('the production QA seed imports into an empty app and exercises report states
         'utf8',
       ),
     );
-    // The seed carries records, which a waiting change does not carry to live
-    // (a working copy's records are test data): load it on live directly.
-    await (await getHost()).execute(
-      { type: 'importTemplate', data: seed.data },
-      { author: h.owner.id, approved: true },
-    );
+    // The template's records travel with its card and arrive on Apply.
+    await importSeed(h, seed.data);
     const host = await getHost();
     expect((await host.runReport('salesByCustomer')).rows).toHaveLength(3);
     expect((await host.runReport('salesByMonth')).chart.type).toBe('line');
@@ -53,12 +70,8 @@ it('explains an unsafe seeded total consistently across the worker, page, CSV an
         'utf8',
       ),
     );
-    // The seed carries records, which a waiting change does not carry to live
-    // (a working copy's records are test data): load it on live directly.
-    await (await getHost()).execute(
-      { type: 'importTemplate', data: seed.data },
-      { author: h.owner.id, approved: true },
-    );
+    // The template's records travel with its card and arrive on Apply.
+    await importSeed(h, seed.data);
     const host = await getHost();
     const [order] = await host.list('Order');
     const huge = await host.create('Order', {

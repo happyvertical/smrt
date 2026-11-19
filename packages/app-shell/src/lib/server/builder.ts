@@ -31,6 +31,7 @@ import {
 import { hostFor } from './host.ts';
 import { type PublicExecuteResult, publicChangeResult } from './results.ts';
 import type { Target } from './target.ts';
+import { templateCommands, templateSummary } from './template-records.ts';
 
 /**
  * A structural command became a change waiting (`waiting: true`, with the
@@ -78,11 +79,9 @@ async function recordPreview(host: AppHost, model: string, id?: string) {
  * (`source: 'owner'`) and only while nothing waits; anyone else is refused.
  * Read-only commands (export) run on live.
  *
- * KNOWN GAP (#5178, slice 6 owns it): an `importTemplate` that carries
- * `records` waits as ONE card for the definition only; a waiting change does
- * not carry a working copy's records to live, so the template's records are
- * not loaded. Carrying them needs `loadRecords` cards in the same group, with
- * the template's ids and references resolved: not a few lines, so not done here.
+ * An `importTemplate` that carries records waits as ONE card holding the
+ * template, its records as `loadRecords` commands and the hides of the
+ * temporary key fields (`template-records.ts`), so Apply brings the records.
  */
 export async function runCommand(
   command: Command,
@@ -92,10 +91,16 @@ export async function runCommand(
 ): Promise<BuilderResult> {
   if (isStructuralCommand(command)) {
     if (!isMaintenanceCommand(command)) {
+      const template =
+        command.type === 'importTemplate' ? command.data : undefined;
+      const commands = template ? templateCommands(template) : [command];
       const waiting = await addChangeCard(
         {
-          commands: [command],
+          commands,
           source: source === 'assistant' ? 'assistant' : 'api',
+          ...(template && commands.length > 1
+            ? { summary: templateSummary(template) }
+            : {}),
         },
         author,
       );

@@ -277,6 +277,44 @@ describe('approval gate invariants', () => {
     expect(review).toMatch(/tools: \[\]/);
   });
 
+  it('a workbook import can only record its own commands: it cannot apply, approve, undo or reach live', () => {
+    const strip = (t: string) => t.replace(/\/\/.*$|\/\*[\s\S]*?\*\//gm, '');
+    const src = (f: string) => strip(files.find(([n]) => n === f)?.[1] ?? '');
+    const forbidden =
+      /applyOwnBatch|undoOwnBatch|applyApproved|requestApply|requestApproval|decideApproval|publishApproved|publishDraft|undoBatch|approved\s*:\s*true|\.execute\(|getHost\(/;
+    for (const f of [
+      'lib/server/import-workflow.ts',
+      'lib/server/import-assistant.ts',
+    ])
+      expect(src(f), f).not.toMatch(forbidden);
+    // the recording function and its one caller
+    const users = files
+      .filter(([, t]) => /\brecordImportCommand\b/.test(strip(t)))
+      .map(([f]) => f)
+      .sort();
+    expect(users).toEqual([
+      'lib/server/changes.ts',
+      'lib/server/import-workflow.ts',
+    ]);
+    // it refuses unless the import holds the copy, and it only records
+    const changes = src('lib/server/changes.ts');
+    const part = changes.slice(
+      changes.indexOf('export function recordImportCommand'),
+      changes.indexOf('export const settled'),
+    );
+    expect(part.length).toBeGreaterThan(500);
+    expect(part).toMatch(/slot\?\.hold/);
+    expect(part).toMatch(/requireOwner\(owner\)/);
+    expect(part).not.toMatch(
+      /applyOwnBatch|applyApproved|requestApply|publishApproved|publishDraft|undoBatch|approved\s*:\s*true|\.execute\(/,
+    );
+    // no route or tool reaches it
+    for (const [f, t] of files.filter(
+      ([f]) => f.startsWith('routes/') || f.startsWith('lib/server/assistant/'),
+    ))
+      expect(strip(t), f).not.toMatch(/recordImportCommand/);
+  });
+
   it('only changes.ts and approvals.ts-owned paths execute commands on a host', () => {
     // a direct `.execute(` is a structural write: allow-listed on purpose
     const users = files
