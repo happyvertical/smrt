@@ -95,6 +95,12 @@ owners and call `configureMailAccess({ options, resolvePrincipal })` at startup
 - `connectionStatus` (`connected` / `needs_reconnect`) and `statusMessage` mark
   an account whose sign-in the server refused; `syncFrom()` sets it.
 
+## Mail search and private correspondents (#5132)
+
+`MailSearchService` searches only `read`-scoped accounts from `listAccounts()`;
+`CorrespondentService` derives owner-private contacts (optional `Profile` link).
+Both fail closed. Details: [agents/mail-search.md](agents/mail-search.md).
+
 ## Mailbox connect (provider-neutral)
 
 Credentials reach smrt-secrets in two ways; neither writes the plaintext `settings` fallback.

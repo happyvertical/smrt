@@ -72,6 +72,7 @@ import { ensureBuiltinMessagingProvidersRegistered } from './providers.js';
 
 export { AccountCollection } from './collections/AccountCollection';
 export { AttachmentCollection } from './collections/AttachmentCollection';
+export { CorrespondentCollection } from './collections/CorrespondentCollection.js';
 // Base collections
 export { MessageCollection } from './collections/MessageCollection';
 export { MessagingEndpointCollection } from './collections/MessagingEndpointCollection.js';
@@ -81,6 +82,10 @@ export { PersonaMessageRouteCollection } from './collections/PersonaMessageRoute
 export { UserNotificationCollection } from './collections/UserNotificationCollection.js';
 export { Account } from './models/Account';
 export { Attachment } from './models/Attachment';
+export {
+  Correspondent,
+  type CorrespondentOptions,
+} from './models/Correspondent.js';
 // Base models
 export { Message } from './models/Message';
 export { MessagingEndpoint } from './models/MessagingEndpoint.js';
@@ -175,6 +180,23 @@ export { SlackSender } from './senders/SlackSender';
 export { TelegramSender } from './senders/TelegramSender.js';
 export { TweetSender } from './senders/TweetSender';
 export { ZulipSender } from './senders/ZulipSender.js';
+export {
+  type CorrespondentRefreshResult,
+  CorrespondentService,
+  type CorrespondentServiceOptions,
+  type CorrespondentView,
+  type ListCorrespondentsOptions,
+  normalizeCorrespondentAddress,
+} from './services/CorrespondentService.js';
+export {
+  type MailProviderSearchResult,
+  type MailSearchHit,
+  type MailSearchPage,
+  type MailSearchQuery,
+  MailSearchService,
+  type MailSearchServiceOptions,
+  readableMailAccounts,
+} from './services/MailSearchService.js';
 export {
   type ListAccountsOptions,
   type ListAccountsResult,
