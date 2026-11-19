@@ -61,8 +61,11 @@ See [audit contract](../../../docs/content/audit-trail.md).
   table, not the input. Read-back, `afterSave` interceptors and the change feed
   run inside the insert's transaction, so a failure there rolls the batch back.
   Two concurrent PostgreSQL loaders inserting the same caller-supplied natural
-  key can both pass the probe: the loser fails closed with a unique-violation
-  error instead of adopting the row as `create()` would (retry the batch).
+  key can both pass the probe. The multi-row INSERTs therefore run in a
+  savepoint: a unique violation rolls the savepoint back and the batch takes the
+  per-record path, which adopts the winner's row as `create()` does (the
+  transaction stays one unit, all-or-nothing). Handles without savepoints (DuckDB
+  native) keep the typed unique-violation error; their writers are serialized.
   Insert-only, STI and referenced models are batchable (unlike junction batches).
 - PostgreSQL nullable natural-key upserts recheck an initial miss on the
   bound transaction under a per-key advisory lock. A late same-owner match
