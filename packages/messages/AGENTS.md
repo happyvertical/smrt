@@ -257,7 +257,7 @@ Profile email uses exclusive `recipientProfileId` plus `resolveProfileRecipient`
 
 ## Incremental mail sync (change feed)
 
-`EmailAccount.syncChanges({ limit?, maxBatches? })` (`mail-sync.ts`) drives
+`EmailAccount.syncChanges({ limit?, maxBatches?, since? })` (`mail-sync.ts`) drives
 `EmailClient.getChanges()` (JMAP provider `jmap`; `@happyvertical/email` 0.114+).
 `syncFrom()` stays the polling path for IMAP/POP3.
 
@@ -280,6 +280,18 @@ Profile email uses exclusive `recipientProfileId` plus `resolveProfileRecipient`
   (`mail-sync-jobs.ts`, queue `mail-sync`, dedupe key `mail-sync:<accountId>`)
   target `EmailAccount.syncChanges` through `@happyvertical/smrt-jobs` (optional
   peer). The host runs the `TaskRunner` and schedules `enqueueDueMailSyncs`.
+- Backfill horizon (#5200): optional `EmailAccount.backfillSince` (null = whole
+  mailbox, the default) or per-run `since` (`Date`/ISO string, `null` lifts the
+  stored one; `enqueueMailSync({ since })` forwards it as an ISO string). A
+  message dated before it is not stored unless it already is; undated mail is
+  kept; `MailSyncResult.beforeHorizon` counts the skips. The SDK change feed
+  cannot filter by date, so the server still sends the older mail and it is
+  dropped here (saves rows, not transfer; a server-side horizon needs an SDK change).
+- Persisted health (#5200): `lastSyncError` is set on any failed run (also
+  client-build failures and sign-in refusals, which additionally set
+  `needs_reconnect`) and cleared by the next successful run; a transient failure
+  never changes `connectionStatus`. `backlog` mirrors `MailSyncResult.hasMore`
+  of the last successful run. Both are plain optional columns (additive).
 - Known gaps: attachment rows are not created (only `hasAttachments`/`size`);
   a renamed server folder creates a new folder row (stored messages keep the old
   path until they change); `jmap` has no connect-flow validator yet and is not an

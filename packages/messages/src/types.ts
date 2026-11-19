@@ -322,6 +322,12 @@ export interface EmailAccountOptions extends AccountOptions {
   syncIntervalMinutes?: number;
   /** Opaque change-feed resume point; see `EmailAccount.syncChanges()`. */
   syncCursor?: string | null;
+  /** Oldest mail worth storing; see `EmailAccount.backfillSince`. */
+  backfillSince?: Date | null;
+  /** Last transient sync failure; see `EmailAccount.lastSyncError`. */
+  lastSyncError?: string | null;
+  /** More changes were waiting when the last run stopped. */
+  backlog?: boolean;
 }
 
 /**

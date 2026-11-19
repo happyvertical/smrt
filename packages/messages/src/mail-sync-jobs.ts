@@ -68,6 +68,9 @@ export async function enqueueMailSync(
   const args: Record<string, unknown> = {};
   if (options.limit !== undefined) args.limit = options.limit;
   if (options.maxBatches !== undefined) args.maxBatches = options.maxBatches;
+  if (options.since !== undefined) {
+    args.since = options.since ? new Date(options.since).toISOString() : null;
+  }
   return jobs.enqueueJob({
     dedupeKey: mailSyncDedupeKey(account.id),
     tenantId: account.tenantId ?? null,
