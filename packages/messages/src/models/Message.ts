@@ -569,10 +569,10 @@ export class Message extends SmrtObject {
     // notification outbox) has none and is never held or stamped.
     const actor = inMailSystemAccess() ? null : await resolveMailPrincipal();
 
-    // Send-as: on an owned mail account a principal sends only from the
-    // account's own address. Sending as anyone else needs a delegation grant,
-    // which does not exist yet, so it is refused.
-    if (actor && account.ownerUserId && 'email' in account) {
+    // Send-as: from any mail account, everything but trusted system work
+    // sends only from the account's own address. Sending as anyone else needs
+    // a delegation grant, which does not exist yet, so it is refused.
+    if (!inMailSystemAccess() && 'email' in account) {
       const from = (this.fromAddress || '').trim().toLowerCase();
       const own = String((account as { email?: unknown }).email ?? '')
         .trim()
@@ -588,7 +588,9 @@ export class Message extends SmrtObject {
 
     // Agents follow the account's send policy: by default the draft is held
     // for a person's approval and nothing leaves (smrt#5141).
-    const held = await holdAgentSend(this, account, options, actor);
+    const held = inMailSystemAccess()
+      ? null
+      : await holdAgentSend(this, account, options, actor);
     if (held) {
       if (held.pendingApproval?.created) {
         stampHandledBy(this, actor);

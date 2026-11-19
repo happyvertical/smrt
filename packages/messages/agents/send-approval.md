@@ -7,9 +7,12 @@ Epic I (happyvertical.com#585). Code: `src/send-approval.ts`,
 
 The host supplies the acting principal through `configureMailAccess`'s
 `resolvePrincipal`. Only `kind: 'person'` (or `'human'`) is a person;
-anything else, including no label, is an agent. No principal (sync, the
-notification outbox, `runWithMailSystemAccess`, a host without
-`configureMailAccess`) is neither: nothing is held or stamped.
+anything else, including no label, is an agent. A persona route
+(`message.personaId`, `PersonaMessagingService`) is an agent send whoever
+invoked it (requester `persona:<id>`). Trusted system work
+(`runWithMailSystemAccess`: sync, the outbox) is never held. With no
+principal: when a gate is configured, a persona send is held and any other
+send is refused; without a gate, behaviour is unchanged.
 
 ## Policy
 
@@ -26,16 +29,18 @@ back to the account. Non-mail accounts have no policy and are not held.
 
 `Message.send()` checks `send` scope, then send-as (on an owned account a
 principal sends only from the account's own address), then
-`holdAgentSend()`. For an agent under `require_approval` it:
+`holdAgentSend()`. Send-as applies to every mail account (owned or not)
+outside system access. For an agent under `require_approval` it:
 
 1. refuses without a configured gate, without a tenant, for an unsaved draft
    or a caller copy that differs from the stored row, and for send-time
    attachment bytes;
 2. hashes the stored draft (`mailSendBindingHash`: account, from, to/cc/bcc,
-   subject, bodies, threading headers and stored attachment rows);
-3. calls the gate's `check`: `pending` returns `pendingApproval` and sends
-   nothing; `approved` (after re-verifying that every counted approver holds
-   `send` on the account now, then a single-use consume) lets the send run.
+   subject, bodies, threading headers, stored attachment rows and a SHA-256
+   of each attachment file's bytes);
+3. calls the gate's `check`, which only reports: `pending` or `approved`
+   both return `pendingApproval` and send nothing. The agent never sends a
+   held draft itself; it goes out once, as the approving person.
 
 After the row is claimed, a send an approval released re-hashes the draft
 (attachment rows included); a mismatch fails definitely and sends nothing.
@@ -50,10 +55,15 @@ on smrt-approvals for tests only.
 
 `MailSendApprovalService` acts as the resolved principal, which must be a
 person holding `read` and `send` on the draft's account in the same tenant.
-`approve(id, { edits? })` refuses a draft that changed since the request
-(`draft_changed`); with edits it approves the revised hash first
+Deciding also needs the tenant `messages.send` permission, checked through
+smrt-users with no bypass (on an unowned account the per-account decision
+checks none). `approve(id, { edits? })` refuses a draft that changed since
+the request (`draft_changed`); with edits it approves the revised hash first
 (edit-then-approve), then saves the edits; once the approval is complete it
-consumes it and sends as the person. `reject(id, reason)` keeps the draft.
+consumes it and sends as the person. `release(id)` sends a request already
+approved elsewhere (a generic inbox), only by one of its approvers. Before
+any consume every counted approver is re-verified (tenant `messages.send`
+and `send` on the account). `reject(id, reason)` keeps the draft.
 Double release is prevented by the single-use consume and the send claim.
 
 ## Audit and "handled by"
@@ -75,6 +85,7 @@ same authority as sending directly from it.
 ## Known gaps
 
 - No approval-queue or handled-by Svelte component yet.
-- Attachment bytes are bound by row (path, size, type), not file content.
+- Attachment bytes are re-read by the sender after the post-claim check, a
+  narrow window.
 - A crash between consume and send leaves a consumed approval and an unsent
   draft; the agent resubmits for a new approval.

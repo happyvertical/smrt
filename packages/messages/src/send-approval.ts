@@ -83,6 +83,10 @@ export type MailSendApprovalOutcome =
   | { ok: true; view: MailSendApprovalView }
   | { ok: false; reason: string; view?: MailSendApprovalView };
 
+/**
+ * `approved`: a person approved this revision and it waits for an approving
+ * person to release it. `check` never consumes: the requester cannot send.
+ */
 export type MailSendApprovalCheckResult =
   | { state: 'approved'; approvalId: string; approverIds: string[] }
   | { state: 'pending'; approvalId: string; created: boolean }
@@ -96,7 +100,6 @@ export interface MailSendApprovalGate {
     bindingHash: string;
     requester: MailSendApprovalActor;
     summary: string;
-    verifyApprovers(approverIds: string[]): Promise<boolean>;
   }): Promise<MailSendApprovalCheckResult>;
   get(
     tenantId: string,
@@ -125,7 +128,8 @@ export interface MailSendApprovalGate {
 export interface AgentSendPolicyContext {
   account: Account;
   message: Message;
-  principal: MailPrincipal;
+  /** Null for a persona route sent without a signed-in principal. */
+  principal: MailPrincipal | null;
 }
 
 export interface MailSendApprovalConfig {
@@ -258,7 +262,7 @@ export async function auditMailAction(
 export async function effectiveAgentSendPolicy(
   account: Account,
   message: Message,
-  principal: MailPrincipal,
+  principal: MailPrincipal | null,
 ): Promise<AgentSendPolicy | null> {
   if (!('agentSendPolicy' in account)) return null;
   const hook = state().config?.resolveAgentSendPolicy;
@@ -309,8 +313,16 @@ export async function mailSendBindingHash(message: Message): Promise<string> {
             withoutListBounds(message.options) as never,
           )
         ).list({ where: { messageId: message.id } });
-        return rows
-          .map((row) => [
+        const bound: unknown[][] = [];
+        for (const row of rows) {
+          // Bind the bytes, not just the path: a file rewritten in place
+          // after approval must not leave under the approval.
+          let content: string | null = null;
+          if (row.filePath) {
+            const bytes = await row.readContent();
+            content = bytes ? notificationSha256(bytes) : 'unreadable';
+          }
+          bound.push([
             row.id,
             row.filename,
             row.contentType,
@@ -319,12 +331,14 @@ export async function mailSendBindingHash(message: Message): Promise<string> {
             row.contentDisposition,
             row.filePath,
             row.sourceUrl,
-          ])
-          .sort((a, b) => String(a[0]).localeCompare(String(b[0])));
+            content,
+          ]);
+        }
+        return bound.sort((a, b) => String(a[0]).localeCompare(String(b[0])));
       })
     : [];
   return notificationSha256(
-    JSON.stringify({ v: 1, id: message.id ?? null, fields, attachments }),
+    JSON.stringify({ v: 2, id: message.id ?? null, fields, attachments }),
   );
 }
 
@@ -356,11 +370,44 @@ function actorOf(
   };
 }
 
-/** Every counted approver must be a person who holds `send` on the account now. */
-function approverVerifier(account: Account) {
+/**
+ * Whether `userId` holds the tenant `messages.send` permission (smrt-users
+ * RBAC, no super-admin or system bypass). Needed on every account: an
+ * unowned account's per-account decision ('unowned') checks no permission.
+ */
+async function holdsTenantSend(
+  options: SmrtClassOptions,
+  tenantId: string,
+  userId: string,
+): Promise<boolean> {
+  try {
+    const { checkOperationPermission } = await import(
+      '@happyvertical/smrt-users'
+    );
+    const decision = await checkOperationPermission({
+      ...(withoutListBounds(options) as SmrtClassOptions),
+      collection: 'messages',
+      action: 'send',
+      tenantId,
+      userId,
+      allowSuperAdminBypass: false,
+      allowSystemContextBypass: false,
+    } as never);
+    return decision.allowed;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Every counted approver must be a person who holds the tenant
+ * `messages.send` permission and `send` on the account, now.
+ */
+function approverVerifier(account: Account, options: SmrtClassOptions) {
   return async (approverIds: string[]): Promise<boolean> => {
-    if (approverIds.length === 0) return false;
+    if (approverIds.length === 0 || !account.tenantId) return false;
     for (const id of approverIds) {
+      if (!(await holdsTenantSend(options, account.tenantId, id))) return false;
       const decision = await decideMailAccess(
         {
           id: account.id,
@@ -375,8 +422,6 @@ function approverVerifier(account: Account) {
           kind: 'person',
         },
       );
-      // An unowned (tenant-wide) account has no per-account grant to check;
-      // the tenant `messages.send` permission was checked at decision time.
       if (!decision.allowed) return false;
     }
     return true;
@@ -419,16 +464,33 @@ export async function holdAgentSend(
   options: SendMessageOptions | undefined,
   principal: MailPrincipal | null,
 ): Promise<MessageSendResult | null> {
-  if (!principal || isPersonMailPrincipal(principal)) return null;
+  // An approving person's release (MailSendApprovalService) is re-checked
+  // against the approved binding after the claim, never held again.
+  if (approvedBindings.has(message)) return null;
+  const gate = state().config?.gate;
+  // A persona route is an agent send whoever invoked it.
+  const persona = message.personaId ? String(message.personaId) : null;
+  if (!persona && isPersonMailPrincipal(principal)) return null;
+  // Without a principal and without a gate the host never opted in to
+  // attributed mail (persona routes included): unchanged behaviour. Sync and
+  // the outbox run under system access and never reach this.
+  if (!principal && !gate) return null;
   const policy = await effectiveAgentSendPolicy(account, message, principal);
   if (policy === null || policy === 'auto_send') return null;
 
-  const gate = state().config?.gate;
   if (!gate) {
     return refusedResult(
       "Agent sends from this mailbox need a person's approval, and no approval gate is configured.",
     );
   }
+  if (!principal && !persona) {
+    return refusedResult(
+      'A send from this mailbox needs a signed-in person or agent.',
+    );
+  }
+  const requester: MailSendApprovalActor = persona
+    ? { id: `persona:${persona}`, kind: 'agent' }
+    : { id: (principal as MailPrincipal).userId, kind: 'agent' };
   const tenantId = message.tenantId ?? account.tenantId;
   if (!tenantId || !message.id || !message.isPersisted) {
     return refusedResult(
@@ -464,13 +526,17 @@ export async function holdAgentSend(
     tenantId,
     messageId: message.id,
     bindingHash,
-    requester: actorOf(principal),
+    requester,
     summary,
-    verifyApprovers: approverVerifier(account),
   });
   if (checked.state === 'approved') {
-    markApprovedBinding(message, bindingHash);
-    return null;
+    // Approved sends leave only when an approving person releases them.
+    return {
+      success: false,
+      error: 'Approved; it is sent when the approving person releases it.',
+      pendingApproval: { approvalId: checked.approvalId, created: false },
+      sentAt: new Date(),
+    };
   }
   if (checked.state === 'refused') {
     return refusedResult(`The send was not approved (${checked.reason}).`);
@@ -578,6 +644,20 @@ export class MailSendApprovalService {
           409,
         );
       }
+      // The tenant permission is checked explicitly: on an unowned account
+      // the per-account decision is 'unowned' and checks none.
+      if (
+        !(await holdsTenantSend(
+          this.options,
+          principal.tenantId,
+          principal.userId,
+        ))
+      ) {
+        throw new HeldSendError(
+          'forbidden',
+          "Deciding this send needs the 'messages.send' permission.",
+        );
+      }
       for (const scope of ['read', 'send'] as const) {
         const decision = await decideMailAccess(account, scope, principal);
         if (!decision.allowed) {
@@ -657,8 +737,32 @@ export class MailSendApprovalService {
       if (decided.view.status !== 'approved') {
         return { state: 'pending', approvalId } as const;
       }
-      return await this.release(gate, principal, account, approvalId, message);
+      return await this.releaseAs(
+        gate,
+        principal,
+        account,
+        approvalId,
+        message,
+      );
     });
+  }
+
+  /**
+   * Send an already approved draft (for example approved through a generic
+   * approvals inbox) as one of the people who approved it. Single use.
+   */
+  async release(approvalId: string): Promise<HeldSendDecisionResult> {
+    const { gate, principal, view, message, account } =
+      await this.context(approvalId);
+    if (view.status !== 'approved' || view.consumed || !view.live) {
+      return { state: 'refused', approvalId, reason: 'not_releasable' };
+    }
+    if (!view.approverIds.includes(principal.userId)) {
+      return { state: 'refused', approvalId, reason: 'not_an_approver' };
+    }
+    return await withTenant({ tenantId: principal.tenantId }, () =>
+      this.releaseAs(gate, principal, account, approvalId, message),
+    );
   }
 
   /** Reject a held send. The draft stays a draft; the reason is audited. */
@@ -688,7 +792,7 @@ export class MailSendApprovalService {
   }
 
   /** Consume a complete approval and send the stored draft as the person. */
-  private async release(
+  private async releaseAs(
     gate: MailSendApprovalGate,
     principal: MailPrincipal,
     account: Account,
@@ -706,7 +810,7 @@ export class MailSendApprovalService {
       approvalId,
       consumer: actorOf(principal),
       bindingHash,
-      verifyApprovers: approverVerifier(account),
+      verifyApprovers: approverVerifier(account, this.options),
     });
     if (!used.ok) return { state: 'refused', approvalId, reason: used.reason };
     // The person sends: person sends are not held. `send()` claims the row

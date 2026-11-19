@@ -9,6 +9,9 @@
  */
 
 import { randomUUID } from 'node:crypto';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import {
   ApprovalService,
   createApprovalMailSendGate,
@@ -96,7 +99,11 @@ describe('agent send policy and held sends (#5141)', () => {
     ...overrides,
   });
 
-  async function newPerson(tenantId: string, label: string): Promise<Person> {
+  async function newPerson(
+    tenantId: string,
+    label: string,
+    slugs: string[] = ALL_MAIL_SLUGS,
+  ): Promise<Person> {
     const users = await UserCollection.create(options);
     const user = await users.create({
       email: `${label}-${randomUUID()}@example.com`,
@@ -110,7 +117,7 @@ describe('agent send policy and held sends (#5141)', () => {
     await role.save();
     const permissions = await PermissionCollection.create(options);
     const rolePermissions = await RolePermissionCollection.create(options);
-    for (const slug of ALL_MAIL_SLUGS) {
+    for (const slug of slugs) {
       const permission = await permissions.findBySlug(slug);
       if (!permission?.id) throw new Error(`missing permission ${slug}`);
       await rolePermissions.addPermission(role.id as string, permission.id);
@@ -182,6 +189,21 @@ describe('agent send policy and held sends (#5141)', () => {
         new MailSendApprovalService(options).reject(id, reason),
       ),
   });
+
+  /** A person approves through the generic approvals inbox (no send). */
+  async function approveViaInbox(id: string, who: Person = owner) {
+    const view = await gate.get(tenantA, id, { id: who.id, kind: 'person' });
+    return gate.decide({
+      tenantId: tenantA,
+      approvalId: id,
+      decider: { id: who.id, kind: 'person', permissions: ['messages.send'] },
+      decision: 'approve',
+      expectedBindingHash: view?.bindingHash ?? '',
+    });
+  }
+
+  const releaseAs = (principal: MailPrincipal, id: string) =>
+    as(principal, () => new MailSendApprovalService(options).release(id));
 
   async function pendingId(draft: Email): Promise<string> {
     const held = await submitAsAgent(draft.id as string);
@@ -449,44 +471,32 @@ describe('agent send policy and held sends (#5141)', () => {
       ).rejects.toMatchObject({ reason: 'forbidden' });
       // Approving through the generic approvals service with only the tenant
       // slug does not release it either: approvers are re-checked per account.
-      const decided = await gate.decide({
+      expect((await approveViaInbox(id, outsider)).ok).toBe(true);
+      const retry = await submitAsAgent(draft.id as string);
+      expect(retry.success).toBe(false);
+      await expect(releaseAs(person(outsider), id)).rejects.toMatchObject({
+        reason: 'forbidden',
+      });
+      const used = await gate.consume({
         tenantId: tenantA,
         approvalId: id,
-        decider: {
-          id: outsider.id,
-          kind: 'person',
-          permissions: ['messages.send'],
-        },
-        decision: 'approve',
-        expectedBindingHash:
-          (await gate.get(tenantA, id, { id: outsider.id, kind: 'person' }))
+        consumer: { id: owner.id, kind: 'person' },
+        bindingHash:
+          (await gate.get(tenantA, id, { id: owner.id, kind: 'person' }))
             ?.bindingHash ?? '',
+        verifyApprovers: async () => false,
       });
-      expect(decided.ok).toBe(true);
-      const retry = await submitAsAgent(draft.id as string);
-      expect(retry.error).toMatch(/approver_not_authorized/);
+      expect(used).toMatchObject({
+        ok: false,
+        reason: 'approver_not_authorized',
+      });
       expect(providerSend).not.toHaveBeenCalled();
     });
 
     it('never releases a draft changed after it was approved', async () => {
       const draft = await draftAsAgent();
       const id = await pendingId(draft);
-      const view = await gate.get(tenantA, id, {
-        id: owner.id,
-        kind: 'person',
-      });
-      // A person approves through the generic inbox (no send yet).
-      await gate.decide({
-        tenantId: tenantA,
-        approvalId: id,
-        decider: {
-          id: owner.id,
-          kind: 'person',
-          permissions: ['messages.send'],
-        },
-        decision: 'approve',
-        expectedBindingHash: view?.bindingHash ?? '',
-      });
+      await approveViaInbox(id);
       // The agent changes the draft, then submits: a new request waits.
       await as(asAgent(), () =>
         new MailDraftService(options).save({
@@ -498,6 +508,11 @@ describe('agent send policy and held sends (#5141)', () => {
       const changed = await submitAsAgent(draft.id as string);
       expect(changed.pendingApproval?.approvalId).toBeDefined();
       expect(changed.pendingApproval?.approvalId).not.toBe(id);
+      // The old approval no longer matches the stored draft.
+      expect(await releaseAs(person(owner), id)).toMatchObject({
+        state: 'refused',
+        reason: 'revision_mismatch',
+      });
       // A new attachment row changes the draft too.
       await as(asAgent(), async () => {
         const attachment = new Attachment({
@@ -519,55 +534,50 @@ describe('agent send policy and held sends (#5141)', () => {
       expect(providerSend).not.toHaveBeenCalled();
     });
 
-    it('lets the agent release an approved, unchanged draft once', async () => {
+    it('never lets the agent send an approved draft; the approving person releases it once', async () => {
       const draft = await draftAsAgent();
       const id = await pendingId(draft);
-      const view = await gate.get(tenantA, id, {
+      await approveViaInbox(id);
+      const agentTry = await submitAsAgent(draft.id as string);
+      expect(agentTry).toMatchObject({
+        success: false,
+        pendingApproval: { approvalId: id, created: false },
+      });
+      expect(providerSend).not.toHaveBeenCalled();
+      expect(
+        await gate.get(tenantA, id, { id: owner.id, kind: 'person' }),
+      ).toMatchObject({ status: 'approved', consumed: false });
+      // Someone with send who did not approve cannot release it.
+      expect(await releaseAs(person(colleague), id)).toMatchObject({
+        state: 'refused',
+        reason: 'not_an_approver',
+      });
+      const released = await releaseAs(person(owner), id);
+      expect(released).toMatchObject({
+        state: 'sent',
+        result: { success: true },
+      });
+      expect(providerSend).toHaveBeenCalledTimes(1);
+      expect((await reload(draft.id as string)).getHandledBy()).toMatchObject({
         id: owner.id,
         kind: 'person',
       });
-      await gate.decide({
-        tenantId: tenantA,
-        approvalId: id,
-        decider: {
-          id: owner.id,
-          kind: 'person',
-          permissions: ['messages.send'],
-        },
-        decision: 'approve',
-        expectedBindingHash: view?.bindingHash ?? '',
+      await expect(releaseAs(person(owner), id)).rejects.toMatchObject({
+        reason: 'not_a_draft',
       });
-      const sent = await submitAsAgent(draft.id as string);
-      expect(sent.success).toBe(true);
-      expect(providerSend).toHaveBeenCalledTimes(1);
-      const again = await submitAsAgent(draft.id as string);
-      expect(again.success).toBe(false);
+      expect((await submitAsAgent(draft.id as string)).success).toBe(false);
       expect(providerSend).toHaveBeenCalledTimes(1);
     });
 
     it('sends nothing when an attachment row appears after the approval was consumed', async () => {
       const draft = await draftAsAgent();
       const id = await pendingId(draft);
-      const view = await gate.get(tenantA, id, {
-        id: owner.id,
-        kind: 'person',
-      });
-      await gate.decide({
-        tenantId: tenantA,
-        approvalId: id,
-        decider: {
-          id: owner.id,
-          kind: 'person',
-          permissions: ['messages.send'],
-        },
-        decision: 'approve',
-        expectedBindingHash: view?.bindingHash ?? '',
-      });
+      await approveViaInbox(id);
       configureMailSendApprovals({
         gate: {
           ...gate,
-          check: async (request) => {
-            const result = await gate.check(request);
+          consume: async (input) => {
+            const result = await gate.consume(input);
             // Lands between the consume and the provider handoff.
             const attachment = new Attachment({
               ...options,
@@ -581,11 +591,75 @@ describe('agent send policy and held sends (#5141)', () => {
           },
         },
       });
-      const result = await submitAsAgent(draft.id as string);
-      expect(result).toMatchObject({ success: false });
+      const released = await releaseAs(person(owner), id);
+      expect(released.state).toBe('sent');
+      const result = (
+        released as {
+          result: {
+            success: boolean;
+            error?: string;
+            outcomeUnknown?: boolean;
+          };
+        }
+      ).result;
+      expect(result.success).toBe(false);
       expect(result.error).toMatch(/changed after it was approved/);
       expect(result.outcomeUnknown).toBeUndefined();
       expect(providerSend).not.toHaveBeenCalled();
+    });
+
+    it('binds attachment bytes, not just the file path', async () => {
+      const dir = await mkdtemp(join(tmpdir(), 'smrt-held-send-'));
+      const file = join(dir, 'invoice.pdf');
+      await writeFile(file, 'original bytes');
+      try {
+        const draft = await draftAsAgent();
+        await as(asAgent(), async () => {
+          const attachment = new Attachment({
+            ...options,
+            tenantId: tenantA,
+            messageId: draft.id as string,
+            filename: 'invoice.pdf',
+            filePath: file,
+          });
+          await attachment.initialize();
+          await attachment.save();
+        });
+        const id = await pendingId(draft);
+        await approveViaInbox(id);
+        await writeFile(file, 'swapped bytes!');
+        expect(await releaseAs(person(owner), id)).toMatchObject({
+          state: 'refused',
+          reason: 'revision_mismatch',
+        });
+        expect(providerSend).not.toHaveBeenCalled();
+      } finally {
+        await rm(dir, { recursive: true, force: true });
+      }
+    });
+
+    it('treats a persona route as an agent send, even when a person invokes it', async () => {
+      const draft = await draftAsAgent();
+      await as(person(owner), async () => {
+        const copy = await reload(draft.id as string);
+        copy.personaId = randomUUID();
+        await copy.save();
+      });
+      const result = await as(person(owner), async () => {
+        const copy = await reload(draft.id as string);
+        current = person(owner);
+        return copy.send();
+      });
+      expect(result.pendingApproval).toBeDefined();
+      expect(providerSend).not.toHaveBeenCalled();
+      // The invoking person is not the requester and may approve it.
+      const decided = await approvals(person(owner)).approve(
+        result.pendingApproval?.approvalId as string,
+      );
+      expect(decided).toMatchObject({
+        state: 'sent',
+        result: { success: true },
+      });
     });
 
     it('keeps mail content out of the tenant-readable approval rows', async () => {
@@ -632,6 +706,98 @@ describe('agent send policy and held sends (#5141)', () => {
       await expect(
         approvals(person(owner, tenantB)).approve(id),
       ).rejects.toMatchObject({ reason: 'not_found' });
+      expect(providerSend).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('unowned (tenant-wide) mailbox', () => {
+    let openId: string;
+    let viewer: Person;
+    beforeEach(async () => {
+      viewer = await withSystemContext(() =>
+        newPerson(tenantA, 'viewer', ['messages.read']),
+      );
+      openId = await withTenant({ tenantId: tenantA }, async () => {
+        const account = new EmailAccount({
+          ...options,
+          tenantId: tenantA,
+          name: 'Support',
+          email: 'support@example.com',
+          providerType: 'smtp',
+          ownerUserId: null,
+        });
+        await account.initialize();
+        await account.save();
+        return account.id as string;
+      });
+    });
+    const openDraft = (principal: MailPrincipal | null = asAgent()) =>
+      as(principal, () =>
+        new MailDraftService(options).save({
+          accountId: openId,
+          subject: 'Ticket 42',
+          textBody: 'Fixed.',
+          toAddresses: [{ address: 'ada@example.com' }],
+        }),
+      );
+
+    it('holds an agent send and refuses a person without messages.send', async () => {
+      const draft = await openDraft();
+      const id = await pendingId(draft);
+      await expect(approvals(person(viewer)).approve(id)).rejects.toMatchObject(
+        { reason: 'forbidden' },
+      );
+      // Approved through a generic inbox that trusted the slug: the viewer
+      // still cannot release it, and is not a valid approver for anyone.
+      expect((await approveViaInbox(id, viewer)).ok).toBe(true);
+      await expect(releaseAs(person(viewer), id)).rejects.toMatchObject({
+        reason: 'forbidden',
+      });
+      expect(await releaseAs(person(colleague), id)).toMatchObject({
+        state: 'refused',
+        reason: 'not_an_approver',
+      });
+      expect(providerSend).not.toHaveBeenCalled();
+      // A person who holds messages.send approves and sends.
+      const other = await openDraft();
+      await as(asAgent(), () =>
+        new MailDraftService(options).save({
+          accountId: openId,
+          draftId: other.id as string,
+          textBody: 'Fixed, really.',
+        }),
+      );
+      const otherId = await pendingId(other);
+      expect(await approvals(person(colleague)).approve(otherId)).toMatchObject(
+        {
+          state: 'sent',
+          result: { success: true },
+        },
+      );
+      expect(providerSend).toHaveBeenCalledTimes(1);
+    });
+
+    it('refuses an unattributed send when a gate is configured', async () => {
+      const draft = await openDraft();
+      const result = await as(null, async () => {
+        const copy = await reload(draft.id as string);
+        current = null;
+        return copy.send();
+      });
+      expect(result.success).toBe(false);
+      expect(result.error).toMatch(/signed-in person or agent/);
+      expect(providerSend).not.toHaveBeenCalled();
+    });
+
+    it('refuses sending as another address', async () => {
+      const result = await as(person(colleague), async () => {
+        const draft = await openDraft(person(colleague));
+        draft.fromAddress = 'ceo@example.com';
+        await draft.save();
+        current = person(colleague);
+        return draft.send();
+      });
+      expect(result.error).toMatch(/account's own address/);
       expect(providerSend).not.toHaveBeenCalled();
     });
   });
