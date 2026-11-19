@@ -5,10 +5,10 @@ description: "Layered field policy store and resolver (defaults, visibility tier
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-19T13:59:13Z"
+  at: "2026-11-17T21:17:44Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:e9f5f629f29986c91e9d4d62531c385ecc1e783e5f21ff1321de2cff9d1a3a0e"
+source_revision: "sha256:a90ab07e867bceea21d2b6a38b710e3506cfc8d35f21c6f6d955e213ddb1e24c"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/fields/package.json"
@@ -27,7 +27,7 @@ sources:
 
 - Directory: `packages/fields`
 - Private: no
-- Object source: `scanner`
+- Object source: `domain-artifact`
 - Evidence level: `source-inspected`
 
 ## Documentation
@@ -61,11 +61,11 @@ sources:
 ## Models
 
 - `FieldPolicy` (collection `fieldpolicies`, extends `SmrtObject`)
-- `FieldPolicyCollection` (collection `fieldpolicycollections`, extends `SmrtCollection`)
+- `FieldPolicyCollection` (collection `fieldpolicies`, extends `SmrtCollection`)
 - `FieldPolicySuggestion` (collection `fieldpolicysuggestions`, extends `SmrtObject`)
-- `FieldPolicySuggestionCollection` (collection `fieldpolicysuggestioncollections`, extends `SmrtCollection`)
+- `FieldPolicySuggestionCollection` (collection `fieldpolicysuggestions`, extends `SmrtCollection`)
 - `FieldUsageCounter` (collection `fieldusagecounters`, extends `SmrtObject`)
-- `FieldUsageCounterCollection` (collection `fieldusagecountercollections`, extends `SmrtCollection`)
+- `FieldUsageCounterCollection` (collection `fieldusagecounters`, extends `SmrtCollection`)
 - `FieldUsageLearningAgent` (collection `fieldusagelearningagents`, extends `SmrtObject`)
 - `FieldUsageReportReceipt` (collection `fieldusagereportreceipts`, extends `SmrtObject`)
-- `FieldUsageReportReceiptCollection` (collection `fieldusagereportreceiptcollections`, extends `SmrtCollection`)
+- `FieldUsageReportReceiptCollection` (collection `fieldusagereportreceipts`, extends `SmrtCollection`)
