@@ -63,6 +63,7 @@ import type { SmrtClassOptions } from '@happyvertical/smrt-core';
 import { withSystemContext } from '@happyvertical/smrt-tenancy';
 import { MembershipCollection } from '../collections/MembershipCollection.js';
 import { UsersPinCredentialCollection } from '../collections/PinCredentialCollection.js';
+import { isSessionlessPrincipalUser } from '../collections/SessionCollection.js';
 import { UserCollection } from '../collections/UserCollection.js';
 import type { UsersPinCredential } from '../models/PinCredential.js';
 import {
@@ -550,7 +551,9 @@ export class DeviceCredentialService {
       }
 
       const person = await this.users.get(verified.userId);
-      if (!person?.isActive()) {
+      // A service principal (#5245) is refused like an unknown person, before
+      // the mint would refuse it, so the reservation is kept as for any miss.
+      if (!person?.isActive() || !person.canHoldSession()) {
         credentialFailed = true;
         throw new DeviceCredentialError();
       }
@@ -963,7 +966,9 @@ export class DeviceCredentialService {
         : [];
     if (
       active.length === 0 ||
-      active.some((membership) => membership.tenantId !== actor.tenantId)
+      active.some((membership) => membership.tenantId !== actor.tenantId) ||
+      // A service principal (#5245) never holds a session, so never a PIN.
+      (await isSessionlessPrincipalUser(this.memberships.db, targetUserId))
     ) {
       throw new DeviceCredentialForbiddenError();
     }

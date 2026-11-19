@@ -11,6 +11,7 @@ import { createAuthorizationServer } from '@happyvertical/auth/server';
 import { createHostedMcpResourceAuth } from '@happyvertical/smrt-app-mcp/auth';
 import { resolveApplicationRuntime } from '@happyvertical/smrt-config';
 import {
+  OidcIdentityCollection,
   ProfileCollection,
   resolveAgentProfileId,
 } from '@happyvertical/smrt-profiles';
@@ -22,6 +23,7 @@ import {
   PermissionCollection,
   RoleCollection,
   RolePermissionCollection,
+  ServicePrincipalService,
   SessionService,
   SmrtOAuthAuthorizationService,
   SmrtOAuthAuthorizationStorage,
@@ -439,6 +441,39 @@ describe('app as its own MCP issuer (#5080)', () => {
         subject: 'someone',
       }),
     ).resolves.toBeNull();
+  });
+
+  it('never maps a non-login service principal (#5245), even with a linked external identity', async () => {
+    const f = await fixture('service-principal');
+    const principal = await f.db.transaction(async (tx) =>
+      (
+        await ServicePrincipalService.create({ db: tx, transaction: 'caller' })
+      ).createServicePrincipal({
+        tenantId: f.owner.tenantId,
+        key: 'mail-agent',
+        roleSlug: DEFAULT_ROLE_SLUGS.MEMBER,
+      }),
+    );
+    // Linked around every provisioning path, as raw host code could.
+    const identities = await OidcIdentityCollection.create({ db: f.db });
+    const linked = await identities.create({
+      profileId: principal.profileId,
+      provider: 'idp',
+      issuer: 'https://idp.example/',
+      subject: 'service-principal-subject',
+    });
+    await linked.save();
+    await expect(
+      f.hosted.resolveMcpPrincipal({
+        issuer: 'https://idp.example/',
+        subject: 'service-principal-subject',
+      }),
+    ).resolves.toBeNull();
+    // Nor can it consent to a self-issued token: it never holds a session.
+    const sessions = await SessionService.create({ db: f.db });
+    await expect(
+      sessions.createSession(principal.userId, f.owner.tenantId),
+    ).rejects.toThrow('never hold a session');
   });
 
   it('maps a bot-profile user to the agent kind and a person to human', async () => {

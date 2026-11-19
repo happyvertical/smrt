@@ -5,10 +5,10 @@ description: "Multi-tenant user management for the SMRT framework - users, tenan
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-17T20:00:22Z"
+  at: "2026-11-19T18:36:02Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:c58419d063267e801c976db56801d4b3fc2735f81d676ed5c6774901b8a84a7e"
+source_revision: "sha256:3f79fe2561160036e71872b5450f3ee8663848f0faed84f17aa1fc3ec690be4d"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/users/package.json"
@@ -35,6 +35,9 @@ sources:
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/users/agents/retention.md"
     title: "@happyvertical/smrt-users packages/users/agents/retention.md"
   - id: "agents-8"
+    resource: "https://github.com/happyvertical/smrt/blob/main/packages/users/agents/service-principals.md"
+    title: "@happyvertical/smrt-users packages/users/agents/service-principals.md"
+  - id: "agents-9"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/users/agents/terminal-auth-testing.md"
     title: "@happyvertical/smrt-users packages/users/agents/terminal-auth-testing.md"
 ---
@@ -57,6 +60,7 @@ sources:
 - `packages/users/agents/oidc-provisioning.md`
 - `packages/users/agents/permissions.md`
 - `packages/users/agents/retention.md`
+- `packages/users/agents/service-principals.md`
 - `packages/users/agents/terminal-auth-testing.md`
 
 ## Framework dependencies

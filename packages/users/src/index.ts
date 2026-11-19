@@ -177,6 +177,7 @@ export {
   GroupMember,
   GroupRole,
   generateSessionId,
+  isServicePrincipalKind,
   MAX_TENANT_HIERARCHY_DEPTH,
   MagicLinkToken,
   Membership,
@@ -190,7 +191,9 @@ export {
   type ResourceGrantOptions,
   Role,
   RolePermission,
+  SERVICE_PRINCIPAL_KIND,
   SESSION_DATA_KEYS,
+  ServicePrincipalError,
   Session,
   type SessionAuthMethod,
   STEP_UP_SIGN_IN_AUTH_METHODS,
@@ -202,6 +205,7 @@ export {
   type TenantIntegrationStatus,
   TenantPermissionOverride,
   User,
+  type UserPrincipalKind,
   UsersCliAuthApproveLimit,
   UsersCliAuthRequest,
   UsersLoginAttempt,
@@ -515,6 +519,13 @@ export {
   MailboxEnrollmentService,
   type MailboxEnrollmentServiceOptions,
 } from './services/MailboxEnrollmentService.js';
+export {
+  type CreatedServicePrincipal,
+  type CreateServicePrincipalInput,
+  type ServicePrincipalRecord,
+  ServicePrincipalService,
+  type ServicePrincipalServiceOptions,
+} from './services/ServicePrincipalService.js';
 export {
   type AcceptedTenantInvitation,
   type IssuedTenantInvitation,

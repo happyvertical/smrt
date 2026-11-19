@@ -12,6 +12,7 @@ import {
   Session,
   type SessionAuthMethod,
 } from '../models/Session.js';
+import { ServicePrincipalError } from '../models/User.js';
 import { SessionStatus } from '../types/index.js';
 
 /**
@@ -34,6 +35,26 @@ export interface CreateSessionOptions {
   authMethod?: SessionAuthMethod | null;
   /** Parent session this one is layered on; the child is valid only while the parent is. */
   parentSessionId?: string | null;
+}
+
+/**
+ * Whether `userId` names a principal that may never hold a session (#5245):
+ * any user row whose `principal_kind` is set, known kind or not. Read fresh
+ * with raw SQL on the given executor, so a caller transaction sees its own
+ * writes and no cache serves a stale answer. A missing user row is not
+ * refused here; callers that need the user already fail closed on it.
+ */
+export async function isSessionlessPrincipalUser(
+  db: { query: SessionCollection['db']['query'] },
+  userId: string,
+): Promise<boolean> {
+  if (typeof userId !== 'string' || userId === '') return false;
+  const result = await db.query(
+    'SELECT principal_kind FROM users WHERE id = ?',
+    userId,
+  );
+  const kind = result.rows?.[0]?.principal_kind;
+  return kind !== null && kind !== undefined;
 }
 
 /**
@@ -68,9 +89,25 @@ export class SessionCollection extends SmrtCollection<Session> {
   }
 
   /**
-   * Create a new session with a secure ID
+   * Whether `userId` names a principal that may never hold a session
+   * (#5245); see {@link isSessionlessPrincipalUser}.
+   */
+  async isSessionlessPrincipal(userId: string): Promise<boolean> {
+    return isSessionlessPrincipalUser(this.db, userId);
+  }
+
+  /**
+   * Create a new session with a secure ID.
+   *
+   * Every session mint in this package funnels through here, so this is where
+   * a service principal (#5245) is refused: no sign-in method, layered PIN
+   * session, terminal approval, tenant switch or host call can mint one.
    */
   async createSession(options: CreateSessionOptions): Promise<Session> {
+    if (await this.isSessionlessPrincipal(options.userId))
+      throw new ServicePrincipalError(
+        'A service principal can never hold a session',
+      );
     const ttl = options.ttl ?? DEFAULT_SESSION_TTL;
     const session = await this.create({
       id: generateSessionId(),
@@ -181,6 +218,9 @@ export class SessionCollection extends SmrtCollection<Session> {
   async findValidSession(sessionId: string): Promise<Session | null> {
     const session = await this.get(sessionId);
     if (!session) return null;
+    // A session row for a service principal (#5245) can only exist if it was
+    // written around createSession(); it never validates, on any path.
+    if (await this.isSessionlessPrincipal(session.userId)) return null;
 
     // Check if session is still valid
     if (!session.isValid()) {

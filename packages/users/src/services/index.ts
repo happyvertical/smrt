@@ -277,6 +277,13 @@ export {
   type RevokeResourceGrantOptions,
 } from './ResourceGrantService.js';
 export {
+  type CreatedServicePrincipal,
+  type CreateServicePrincipalInput,
+  type ServicePrincipalRecord,
+  ServicePrincipalService,
+  type ServicePrincipalServiceOptions,
+} from './ServicePrincipalService.js';
+export {
   getCurrentSessionPermissionContext,
   getRequestScopedDatabase,
   type PrincipalPermissionRuntimeOptions,

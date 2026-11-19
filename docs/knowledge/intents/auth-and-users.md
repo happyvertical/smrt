@@ -40,7 +40,7 @@ sources:
 
 # Entry point
 
-Import from `@happyvertical/smrt-users` (SvelteKit handlers from `@happyvertical/smrt-users/sveltekit`). Identity is `User` (global) plus `Membership` per `Tenant` with `Role` permissions resolved by `PermissionResolver`; sessions by `SessionService.createSession(userId, tenantId)`; email-and-password sign-in by `PasswordCredentialService`, with passkey, device PIN, OIDC and mobile services alongside. Request-scoped tenant context comes from smrt-tenancy adapters (`createSvelteKitHandle`, `createExpressMiddleware`).[^s3]
+Import from `@happyvertical/smrt-users` (SvelteKit handlers from `@happyvertical/smrt-users/sveltekit`). Identity is `User` (global) plus `Membership` per `Tenant` with `Role` permissions resolved by `PermissionResolver`; sessions by `SessionService.createSession(userId, tenantId)`; email-and-password sign-in by `PasswordCredentialService`, with passkey, device PIN, OIDC and mobile services alongside. Request-scoped tenant context comes from smrt-tenancy adapters (`createSvelteKitHandle`, `createExpressMiddleware`).[^s3] An automated actor that holds grants but must never sign in (an agent's account) is a service principal: `ServicePrincipalService` creates one per tenant key, retires it permanently and answers `isActiveServicePrincipal`, and every session mint and resolution refuses it.[^s4]
 
 # Why not hand-roll it
 

@@ -86,4 +86,12 @@ export {
 } from './TenantIntegration.js';
 export { TenantPermissionOverride } from './TenantPermissionOverride.js';
 // Core entities
-export { isValidEmail, normalizeEmail, User } from './User.js';
+export {
+  isServicePrincipalKind,
+  isValidEmail,
+  normalizeEmail,
+  SERVICE_PRINCIPAL_KIND,
+  ServicePrincipalError,
+  User,
+  type UserPrincipalKind,
+} from './User.js';
