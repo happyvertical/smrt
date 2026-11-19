@@ -673,6 +673,9 @@ export function generateActivationRegistration(
     };
     visit(modulePaths.get(id)!);
     visitEager(modulePaths.get(id)!, new Set(), imported);
+    // A module evaluated by this one's import belongs to its closure even when
+    // the dependency walk stopped at a package entry before reaching it.
+    for (const owner of imported) dependencies.add(owner);
     // Route serializers are deferred too, but their model dependencies must
     // already be in the activation closure when a ready route calls them.
     for (const model of entries.get(id) ?? []) {

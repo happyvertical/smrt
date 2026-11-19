@@ -1147,6 +1147,55 @@ assert.equal(ObjectRegistry.getClass('${PROVIDER}').qualifiedName, '${CHILD}');`
     expect(run.status, run.output).toBe(0);
   });
 
+  it('includes a child reached only through a managed package subpath in the closure', () => {
+    const WIDGET = `${HOST}:Widget`;
+    const BRIDGE = '@ccc/pkg:Pkg';
+    const CHILD = '@activation/appc:Customer';
+    const { files, manifest } = project([
+      { key: PROVIDER },
+      { key: CHILD, parent: PROVIDER, replace: true },
+      { key: BRIDGE },
+      { key: WIDGET },
+    ]);
+    files.write(
+      'node_modules/@activation/appc/index.js',
+      `import { smrt } from '@happyvertical/smrt-core';
+import { Customer as Base } from '@activation/customer';
+export const Customer = smrt({ packageName: '@activation/appc', replaceParent: true, tableName: 'fixture_customer' })(class Customer extends Base {});
+`,
+    );
+    files.write(
+      'node_modules/@ccc/pkg/package.json',
+      JSON.stringify({
+        name: '@ccc/pkg',
+        type: 'module',
+        exports: { '.': './index.js', './bridge': './bridge.js' },
+      }),
+    );
+    files.write(
+      'node_modules/@ccc/pkg/bridge.js',
+      "export { Customer } from '@activation/appc';\n",
+    );
+    files.write(
+      'src/lib/widget.js',
+      `import { SmrtObject } from '@happyvertical/smrt-core';
+import '@ccc/pkg/bridge';
+export class Widget extends SmrtObject {}
+`,
+    );
+    const generated = generate(files, manifest);
+    const closure = activationClosure(generated.manifest, [WIDGET]).modules;
+    expect(closure).toContain('@activation/customer');
+    expectBefore(closure, '@activation/customer', '@activation/appc');
+    const run = runNode(
+      files,
+      generated,
+      `await coordinator(['${WIDGET}']).boot();
+assert.equal(ObjectRegistry.getClass('${PROVIDER}').qualifiedName, '${CHILD}');`,
+    );
+    expect(run.status, run.output).toBe(0);
+  });
+
   it('keeps a deferred route serializer out of the eager import order', () => {
     const CHILD = '@activation/appc:Customer';
     const { files, manifest } = project([
