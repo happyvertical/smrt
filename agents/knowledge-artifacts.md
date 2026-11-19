@@ -2,7 +2,7 @@
 
 Before adding a helper, read the [intent index](docs/knowledge/intents/index.md) and run
 `smrt-dev-mcp review --directory <pkg> --format summary`. Capabilities belong in
-the owning package or SDK, never a downstream helper.
+the owning package or SDK, never a downstream helper: add it there or file a framework issue.
 
 `smrt knowledge:review-context` / `knowledge:architecture-context` provide
 scoped summaries; read the selected references on demand. Runtime manifests

@@ -45,7 +45,7 @@ and AI operations. Read the package's `AGENTS.md`; see [CONTEXT-MAP.md](CONTEXT-
 Use Node/pnpm versions from `package.json`; `pnpm install`, `pnpm build`. Package
 checks first, then root: `pnpm test`, `pnpm typecheck`, `pnpm lint`,
 `pnpm format-check`, `pnpm knowledge:check --strict --format markdown`,
-`pnpm audit:policy`, `pnpm check:new-surface` (`surface-ledger.json` entry
+`pnpm audit:policy`, `pnpm check:new-surface` (full `surface-ledger.json` entry
 per new surface), `pnpm check:node-roots` (built model roots load under plain
 Node, #4219; allow-list in root `package.json`).
 [TESTING_STANDARD.md](TESTING_STANDARD.md) defines package release gates.
@@ -82,12 +82,11 @@ Lint/format, Vitest, Oxc, `svelte-check` gotchas: [agents/root-gotchas.md](agent
 
 `AGENTS.md` is canonical; `CLAUDE.md` stays exactly `@AGENTS.md`. Keep to
 locations, invariants, validation, and links; move detailed contracts into
-linked `agents/<module>.md`. No nested AGENTS; `pnpm check:agents-chain`
-enforces the 32 KB cap.
+linked `agents/<module>.md`. No nested AGENTS (ancestry is additive);
+`pnpm check:agents-chain` enforces the 32 KB cap.
 
 [WORKFLOW.md](WORKFLOW.md) routes to the lifecycle skills (`implement`, `claim-issue`,
 `review-cycle`, `ship`, `resolve`); Work/buzz variants need an explicit Work tracker.
 
-Capabilities belong in the owning package or SDK, never a downstream helper
-(check the intent index first). Knowledge commands, artifacts, and freshness:
+Capabilities belong in the owning package or SDK, never a downstream helper. Knowledge commands, artifacts, and freshness:
 [agents/knowledge-artifacts.md](agents/knowledge-artifacts.md).
