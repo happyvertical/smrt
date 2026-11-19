@@ -48,7 +48,15 @@ adds) and swaps it in once it is ready. The engine must not import SvelteKit,
   stack (128 KB), 1000 writes, 1 MB output, 8 MB input. The body is checked as a
   function body by V8 first (QuickJS's own `Function` accepts a body that closes
   the wrapper). Writes are validated and a `VACUUM INTO` snapshot is taken before
-  they are applied.
+  they are applied (#5185). Method runs are atomic and serialized per app
+  (`AppRuntime.runMethod`): one method at a time; the sandbox reads each
+  model (at most 1000 rows; more fails the call naming the model, never
+  truncates); the data is then re-read and all writes applied in one
+  transaction that rolls back on any failure, so a failed method leaves
+  nothing behind and the owner has nothing to recover. If the data changed
+  between the read and the write (an edit outside methods) the method re-runs
+  (3 retries). The snapshot stays as a pre-write undo point. SQLite only; a
+  PostgreSQL port would use serializable isolation with the same retry.
   `setMemoryLimit` does not bound large single allocations in this build, and the
   interrupt handler is polled only every ~10,000 operations, so the WebAssembly
   heap itself is capped (`SANDBOX_HEAP_PAGES`, 128 MB): a memory bomb stops in
