@@ -49,10 +49,21 @@ it('adds database-owned values, rejects writes, rewrites renames and undoes exac
         ?.inputSchema,
     ),
   ).not.toContain('"total"');
-  const post = await host.rest({
+  // REST refuses a create that sets the calculated field (#5195).
+  const refused = await host.rest({
     method: 'POST',
     url: '/api/sales',
     body: JSON.stringify({ qty: 1, price: 1, total: 2 }),
+  });
+  expect(refused.status).toBe(400);
+  expect(JSON.parse(refused.body).error).toMatchObject({
+    code: 'VALIDATION_FIELD_NOT_WRITABLE',
+    details: { field: 'total' },
+  });
+  const post = await host.rest({
+    method: 'POST',
+    url: '/api/sales',
+    body: JSON.stringify({ qty: 1, price: 1 }),
   });
   expect(post.status).toBe(201);
   expect(JSON.parse(post.body).total).toBe(1);
