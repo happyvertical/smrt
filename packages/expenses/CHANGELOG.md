@@ -1,5 +1,18 @@
 # @happyvertical/smrt-expenses
 
+## 0.62.10
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.62.10
+  - @happyvertical/smrt-assets@0.62.10
+  - @happyvertical/smrt-commerce@0.62.10
+  - @happyvertical/smrt-tenancy@0.62.10
+  - @happyvertical/smrt-users@0.62.10
+  - @happyvertical/smrt-ui@0.62.10
+  - @happyvertical/smrt-types@0.62.10
+
 ## 0.62.9
 
 ### Patch Changes

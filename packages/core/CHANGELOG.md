@@ -1,5 +1,21 @@
 # @happyvertical/smrt-core
 
+## 0.62.10
+
+### Patch Changes
+
+- ### Features
+  
+  - owner-scoped account listing, role seed, JMAP URL check (#5162, #5180) (#5182) (messages)
+  - triage write-back for synced mail (#5131) (#5177) (messages)
+  
+  ### Bug Fixes
+  
+  - patch train for token vocabulary CI, empty release skip, draft discard race (#5181)
+- @happyvertical/smrt-config@0.62.10
+  - @happyvertical/smrt-scanner@0.62.10
+  - @happyvertical/smrt-types@0.62.10
+
 ## 0.62.9
 
 ### Patch Changes
