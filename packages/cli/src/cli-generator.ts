@@ -526,6 +526,8 @@ function commandOwner(objectName: string): {
   surfaceName: string | undefined;
 } {
   const matches = [...ObjectRegistry.getAllClasses()].flatMap(([key, info]) => {
+    // A model with the CLI disabled publishes no commands, so it claims no name.
+    if (ObjectRegistry.getConfig(key).cli === false) return [];
     const surfaceName = surfaceNameOf(key, info);
     return surfaceName?.toLowerCase() === objectName.toLowerCase()
       ? [{ key, surfaceName, named: surfaceName !== (info.name || key) }]
