@@ -645,6 +645,16 @@ describe('app model editor: reconciliation scope and pending revisions', () => {
     expect(
       reopened.snapshot().cookbook.models?.lists.GuardMat.fields,
     ).not.toHaveProperty('colour');
+    // The registration is rebuilt, not merged: the abandoned field is gone
+    // from the registry and the runtime manifest too.
+    expect([
+      ...(await ObjectRegistry.getAllFields(`${APP}:GuardMat`)).keys(),
+    ]).not.toContain('colour');
+    expect(
+      Object.keys(
+        reopened.snapshot().manifest.objects[`${APP}:GuardMat`]?.fields ?? {},
+      ),
+    ).not.toContain('colour');
     expect((await reopened.history()).at(-1)).toMatchObject({
       revision: 2,
       status: 'applied',

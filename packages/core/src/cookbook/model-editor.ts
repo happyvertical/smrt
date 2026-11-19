@@ -905,6 +905,12 @@ async function openAppModelEditor(
     };
   }
 
+  /** Registry baselines taken before this journal first registered each list. */
+  const listBaselines =
+    journalBaselines().get(`${journal}\u0000lists`) ??
+    journalBaselines()
+      .set(`${journal}\u0000lists`, new Map())
+      .get(`${journal}\u0000lists`)!;
   /** Registry baselines taken before this journal first replaced each provider. */
   const replacements =
     journalBaselines().get(journal) ??
@@ -937,7 +943,32 @@ async function openAppModelEditor(
       );
     }
   }
+  /**
+   * Registration refresh merges fields into an existing class, so a field
+   * that left the journal (an abandoned revision, a reopen in the same
+   * process) would stay registered. Each of this journal's registrations is
+   * first returned to its baseline (the registry before the journal first
+   * registered it) and then registered afresh from the declarations.
+   */
+  function rebase(id: string, baselines: Map<string, () => void>, key = id) {
+    const current = ObjectRegistry.getClass(id);
+    const restore = baselines.get(key);
+    if (
+      current &&
+      restore &&
+      editorClasses().get(current.constructor) === journal
+    )
+      restore();
+    else if (
+      !restore ||
+      !current ||
+      editorClasses().get(current.constructor) !== journal
+    )
+      baselines.set(key, ObjectRegistry.checkpointRegistrations([key, id]));
+  }
   function registerAll(all: CookbookModels) {
+    for (const name of Object.keys(all.lists))
+      rebase(`${all.packageName}:${name}`, listBaselines);
     // Register non-reference fields first, so mutually referencing app lists resolve through registry APIs.
     for (const [name, list] of Object.entries(all.lists))
       registerRuntimeModel(
@@ -992,16 +1023,7 @@ async function openAppModelEditor(
       // provider's recipe restores it, from any editor instance of the
       // journal. A baseline is stale once the registry no longer holds this
       // journal's replacement (a reset registry): take a new one.
-      const current = ObjectRegistry.getClass(replacement);
-      if (
-        !replacements.has(model) ||
-        !current ||
-        editorClasses().get(current.constructor) !== journal
-      )
-        replacements.set(
-          model,
-          ObjectRegistry.checkpointRegistrations([model, replacement]),
-        );
+      rebase(replacement, replacements, model);
       registerRuntimeModel(
         {
           packageName: all.packageName,
