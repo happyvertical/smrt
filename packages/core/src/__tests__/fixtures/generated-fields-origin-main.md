@@ -103,4 +103,8 @@ DDL, migration and OpenAPI digests have not moved since the recapture above.
   `sync/apply/+server.ts`): the emitted `applyWritablePolicy` helper is gone.
   Create and update bodies pass `prepareWriteInput()` from core, which refuses
   a changed protected field with `VALIDATION_FIELD_NOT_WRITABLE`; the item
-  route builds the body after loading the row. MCP sources are unchanged.
+  route builds the body after loading the row.
+- Protected-field writes through MCP (#5195; both MCP servers
+  `single/index.ts` and `modular/handlers/index.ts`): the emitted
+  `applyWritablePolicy` helper is gone. Create and update arguments pass
+  `prepareWriteInput()` from core; an update compares them with the loaded row.

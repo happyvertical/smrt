@@ -822,18 +822,24 @@ describe('data never configures a service', () => {
       await expectOwnServices(key);
     });
 
-    it('drops underscore control keys from create arguments', async () => {
-      const result = await call('serviceoptionnote_create', {
-        label: 'mcp-controls',
-        _insertOnly: true,
-        _className: 'Other',
-        _reuseInitializedDb: true,
-      });
-      expect(result.isError).toBeFalsy();
-      const created = probe(saved.at(-1));
+    it('refuses underscore control keys in create arguments without creating', async () => {
+      const before = saved.length;
       for (const key of ['_insertOnly', '_className', '_reuseInitializedDb']) {
-        expect(created.options[key]).toBeUndefined();
+        const result = await call('serviceoptionnote_create', {
+          label: 'mcp-controls',
+          [key]: key === '_className' ? 'Other' : true,
+        });
+        expect(result.isError).toBe(true);
+        expect(JSON.stringify(result)).toContain(
+          'VALIDATION_FIELD_NOT_WRITABLE',
+        );
       }
+      expect(saved).toHaveLength(before);
+
+      // Negative control: with no underscore key the create is saved.
+      const ok = await call('serviceoptionnote_create', { label: 'mcp-plain' });
+      expect(ok.isError).toBeFalsy();
+      expect(saved).toHaveLength(before + 1);
     });
   });
 

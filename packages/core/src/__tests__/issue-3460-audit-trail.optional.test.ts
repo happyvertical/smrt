@@ -729,12 +729,23 @@ for (const type of ['sqlite', 'duckdb', 'postgres'] as const) {
         (await records.get(row.id as string, { cache: false }))?.title,
       ).toBe('MCP initial');
       fail = false;
+      // A changed read-only field is refused before anything is written or
+      // audited; the stored value sent back is accepted.
+      expect(
+        (
+          await call('update', {
+            id: row.id,
+            title: 'MCP refused',
+            locked: 'overwrite',
+          })
+        ).isError,
+      ).toBe(true);
       expect(
         (
           await call('update', {
             id: row.id,
             title: 'MCP updated',
-            locked: 'overwrite',
+            locked: 'fixed',
           })
         ).isError,
       ).not.toBe(true);

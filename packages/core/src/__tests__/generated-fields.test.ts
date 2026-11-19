@@ -1832,7 +1832,7 @@ describe('database-generated fields #4915', () => {
 
   for (const engine of persistenceEngines) {
     for (const transport of ['REST', 'MCP', 'SvelteKit'] as const) {
-      it(`#4972 round2 item7: ${engine} ${transport} round-trips a fetched record; a changed generated/readonly key is ${transport === 'MCP' ? 'dropped' : 'refused'}`, async () => {
+      it(`#4972 round2 item7: ${engine} ${transport} round-trips a fetched record; a changed generated/readonly key is refused`, async () => {
         const db = await getTestDatabase({
           type: engine === 'sqlite' ? 'sqlite' : 'pglite',
           classes: [],
@@ -1863,9 +1863,9 @@ describe('database-generated fields #4915', () => {
         expect(fetched).toHaveProperty('total', 6);
         // REST and SvelteKit compare protected keys with the stored row
         // (#5195): the fetched record goes back as is, a changed generated or
-        // read-only value is refused. MCP still drops them.
+        // read-only value is refused. REST, MCP and SvelteKit all follow it.
         const forged = { ...fetched, qty: 4, total: 999, serverNote: 'forged' };
-        const body = transport === 'MCP' ? forged : { ...fetched, qty: 4 };
+        const body = { ...fetched, qty: 4 };
         if (transport === 'REST') {
           const api = new APIGenerator({ basePath: '/api' }, { db });
           api.registerCollection('generated_invoices', collection);
@@ -1887,13 +1887,17 @@ describe('database-generated fields #4915', () => {
           expect(response.status).toBe(200);
         } else if (transport === 'MCP') {
           const generator = new MCPGenerator({ classNames: [name] }, { db });
-          const response = await generator.handleToolCall({
-            method: 'tools/call',
-            params: {
-              name: 'generatedinvoice_update',
-              arguments: body,
-            },
+          const update = (args: unknown) =>
+            generator.handleToolCall({
+              method: 'tools/call',
+              params: { name: 'generatedinvoice_update', arguments: args },
+            } as never);
+          const refused = await update(forged);
+          expect(refused.isError, JSON.stringify(refused)).toBe(true);
+          expect(refused.structuredContent).toMatchObject({
+            error: { code: 'VALIDATION_FIELD_NOT_WRITABLE' },
           });
+          const response = await update({ ...body, id: row.id });
           expect(response.isError, JSON.stringify(response)).not.toBe(true);
         } else {
           const root = await mkdtemp(

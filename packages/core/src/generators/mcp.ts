@@ -38,7 +38,11 @@ import type {
   ApiSerializerReference,
   RegisteredClass,
 } from '../registry/types.js';
-import { applyUpdateInput, assertCreateInput } from '../request-input';
+import {
+  applyUpdateInput,
+  assertCreateInput,
+  prepareWriteInput,
+} from '../request-input';
 import {
   isRuntimeModelEnabled,
   type RuntimeExposureContext,
@@ -1792,66 +1796,6 @@ export class MCPGenerator {
   }
 
   /**
-   * Mass-assignment guard (#1540): strip framework/server-managed and
-   * `@field({ readonly: true })` fields from a create/update body, and — when an
-   * `@smrt({ api: { writable: [...] } })` allowlist is set — intersect with it.
-   *
-   * Tool arguments set fields and nothing else: `_`-prefixed keys and the keys
-   * that configure a service of the object
-   * (`ObjectRegistry.isServiceOptionInput`) never reach construction or a
-   * loaded instance.
-   */
-  private applyWritablePolicy(
-    objectName: string | undefined,
-    data: unknown,
-  ): Record<string, unknown> {
-    if (!data || typeof data !== 'object') {
-      return {};
-    }
-
-    const serverManaged = new Set([
-      'id',
-      'tenantId',
-      'tenant_id',
-      'createdAt',
-      'created_at',
-      'updatedAt',
-      'updated_at',
-    ]);
-
-    const readonly = new Set<string>();
-    let writable: string[] | null = null;
-
-    if (objectName) {
-      const apiConfig = ObjectRegistry.getConfig(objectName)?.api;
-      if (
-        apiConfig &&
-        typeof apiConfig === 'object' &&
-        Array.isArray((apiConfig as { writable?: unknown }).writable)
-      ) {
-        writable = (apiConfig as { writable: string[] }).writable;
-      }
-
-      for (const [name, def] of ObjectRegistry.getFields(objectName)) {
-        if (def && (def.readonly === true || def._meta?.readonly === true)) {
-          readonly.add(name);
-        }
-      }
-    }
-
-    const result: Record<string, unknown> = {};
-    for (const [key, value] of Object.entries(data)) {
-      if (key.startsWith('_')) continue;
-      if (ObjectRegistry.isServiceOptionInput(objectName, key)) continue;
-      if (serverManaged.has(key)) continue;
-      if (readonly.has(key)) continue;
-      if (writable && !writable.includes(key)) continue;
-      result[key] = value;
-    }
-    return result;
-  }
-
-  /**
    * Execute action on collection
    */
   /**
@@ -2099,8 +2043,10 @@ export class MCPGenerator {
       }
 
       case 'create': {
-        // Mass-assignment guard (#1540): only writable fields from the caller.
-        const createData: Record<string, unknown> = this.applyWritablePolicy(
+        // Tool arguments set fields the caller may write and nothing else:
+        // server-managed keys and service options are skipped, a protected
+        // field with a value is refused (the rule of REST, #5195).
+        const createData: Record<string, unknown> = prepareWriteInput(
           objectName,
           args,
         );
@@ -2133,9 +2079,10 @@ export class MCPGenerator {
           throw new Error('Object not found');
         }
 
-        // Mass-assignment guard (#1540): strip server-managed/read-only keys
-        // (incl. `id`) before applying caller-supplied updates.
-        const updateData = this.applyWritablePolicy(objectName, args);
+        // A protected field is compared with the loaded row: an unchanged
+        // value is accepted, a changed one refused. Server-managed keys
+        // (incl. `id`) are skipped.
+        const updateData = prepareWriteInput(objectName, args, existing);
         await collection.withAuditMutation(
           existing,
           'updated',
@@ -2816,7 +2763,7 @@ ${indent}}`;
               return `${indent}case '${tool.name}': {
 ${indent}  const { collection, objectName: targetObjectName, data } = await resolveCreateTarget(${JSON.stringify(lookup)}, args, aiConfig);
 
-${indent}  const createData = applyWritablePolicy(targetObjectName, data);
+${indent}  const createData = prepareWriteInput(targetObjectName, data);
 ${indent}  // Create input names declared fields and settable accessors only.
 ${indent}  assertCreateInput(targetObjectName, createData, collection);
 ${indent}  const newItem = await collection.create(createData);
@@ -2839,9 +2786,12 @@ ${indent}  if (!existing) {
 ${indent}    throw new Error('Object not found');
 ${indent}  }
 
+${indent}  // A field the caller may not write is compared with the loaded row: an
+${indent}  // unchanged value is accepted, a changed one refused.
+${indent}  const writable = prepareWriteInput(${JSON.stringify(lookup)}, updateData, existing);
 ${indent}  await collection.withAuditMutation(existing, 'updated', async (bound) => {
 ${indent}    // Arguments set declared fields and settable accessors only.
-${indent}    applyUpdateInput(bound, applyWritablePolicy(${JSON.stringify(lookup)}, updateData), ${JSON.stringify(lookup)});
+${indent}    applyUpdateInput(bound, writable, ${JSON.stringify(lookup)});
 ${indent}    await bound.save();
 ${indent}  });
 
@@ -2996,7 +2946,7 @@ ${indent}}`;
 
 import { ObjectRegistry, normalizeCustomActionFailure, SMRT_CUSTOM_ACTION_ERROR_METADATA_KEY } from '@happyvertical/smrt-core';
 import { hasRuntimeExposureGate, isRuntimeModelEnabled } from '@happyvertical/smrt-core';
-import { applyUpdateInput, assertCreateInput, assertCreateTargetSurface, assertQueryAccess, identifierArgument, publicSerializerOf, requireIdentifierArgument, toPublicJSONValue } from '@happyvertical/smrt-core';
+import { applyUpdateInput, assertCreateInput, assertCreateTargetSurface, assertQueryAccess, identifierArgument, prepareWriteInput, publicSerializerOf, requireIdentifierArgument, toPublicJSONValue } from '@happyvertical/smrt-core';
 import { COOKBOOK_TOOL_NAMES, getCookbookToolService } from '@happyvertical/smrt-core/cookbook/tools';
 ${hasTenantScoped ? "import { enableTenancy, runTenantScopedEntryPoint } from '@happyvertical/smrt-tenancy';\n" : ''}${
   hasTenantScoped
@@ -3040,41 +2990,6 @@ async function serializeGetResult(toolName: string, item: any): Promise<any> {
     );
   }
   return toPublicResult(await serializer(item, PUBLIC_JSON_OPTIONS));
-}
-
-/**
- * Mass-assignment guard (#1540): strip framework/server-managed and
- * \`@field({ readonly: true })\` fields from create/update bodies, intersecting
- * with the optional \`@smrt({ api: { writable: [...] } })\` allowlist.
- */
-function applyWritablePolicy(objectName: string, data: any): Record<string, any> {
-  if (!data || typeof data !== 'object') return {};
-  const serverManaged = new Set<string>([
-    'id', 'tenantId', 'tenant_id',
-    'createdAt', 'created_at', 'updatedAt', 'updated_at',
-  ]);
-  const readonly = new Set<string>();
-  let writable: string[] | null = null;
-  const apiConfig = ObjectRegistry.getConfig(objectName)?.api as any;
-  if (apiConfig && typeof apiConfig === 'object' && Array.isArray(apiConfig.writable)) {
-    writable = apiConfig.writable;
-  }
-  for (const [name, def] of ObjectRegistry.getFields(objectName)) {
-    if (def && ((def as any).readonly === true || (def as any)._meta?.readonly === true)) {
-      readonly.add(name);
-    }
-  }
-  const result: Record<string, any> = {};
-  for (const [key, value] of Object.entries(data as Record<string, any>)) {
-    if (key.startsWith('_')) continue;
-    // Arguments set fields only, never a service of the object.
-    if (ObjectRegistry.isServiceOptionInput(objectName, key)) continue;
-    if (serverManaged.has(key)) continue;
-    if (readonly.has(key)) continue;
-    if (writable && !writable.includes(key)) continue;
-    result[key] = value;
-  }
-  return result;
 }
 
 /** Resolve an advertised STI discriminator to its registered subtype collection. */

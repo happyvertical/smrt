@@ -13,6 +13,7 @@ import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { SmrtCollection } from '../../collection.js';
 import { field } from '../../decorators/index.js';
+import { MCPGenerator } from '../../generators/mcp.js';
 import { APIGenerator } from '../../generators/rest.js';
 import { SmrtObject } from '../../object.js';
 import { ObjectRegistry, smrt } from '../../registry.js';
@@ -88,7 +89,16 @@ const TRANSPORTS = [
   'emitted SvelteKit route',
   'runtime sync apply',
   'emitted sync route',
+  'in-process MCP',
+  'emitted MCP server',
+  'emitted modular MCP server',
 ] as const;
+
+/** Emitted MCP servers open their own SQLite file, so they run on SQLite only. */
+const FILE_DATABASE_TRANSPORTS = new Set<string>([
+  'emitted MCP server',
+  'emitted modular MCP server',
+]);
 
 /**
  * Register the suite. `open` returns the database the suite writes to (its
@@ -259,8 +269,73 @@ export function describeProtectedFieldWrites(
             ),
           ),
       });
+      // MCP tools answer with an error result, not a status: the code is the
+      // one the tool reports and the field is named in its message.
+      const fromTool = (result: {
+        isError?: boolean;
+        structuredContent?: unknown;
+      }): Outcome => {
+        const error = (
+          result.structuredContent as
+            | { error?: { code?: string; message?: string } }
+            | undefined
+        )?.error;
+        return {
+          applied: result.isError !== true,
+          status: result.isError === true ? 'error' : 'ok',
+          code: error?.code,
+          field: error?.message?.match(/^Field '(.+)' cannot be written/)?.[1],
+          text: JSON.stringify(result),
+        };
+      };
+      const toolOf = (model: Model, verb: 'create' | 'update') =>
+        `${model === 'record' ? 'protectedwriterecord' : 'protectedwritelisted'}_${verb}`;
+      const toolTransport = (
+        name: string,
+        call: (tool: string, args: unknown) => Promise<never>,
+      ): Transport => ({
+        name,
+        update: async (model, id, body) =>
+          fromTool(
+            await call(toolOf(model, 'update'), {
+              ...(body as Record<string, unknown>),
+              id,
+            }),
+          ),
+        create: async (model, body) =>
+          fromTool(await call(toolOf(model, 'create'), body)),
+      });
+      const inProcess = new MCPGenerator({}, { db, user: { id: 'user-1' } });
+      transports.set(
+        'in-process MCP',
+        toolTransport(
+          'in-process MCP',
+          (tool, args) =>
+            inProcess.handleToolCall({
+              method: 'tools/call',
+              params: {
+                name: tool,
+                arguments: args as Record<string, unknown>,
+              },
+            } as never) as never,
+        ),
+      );
+      if (engine === 'SQLite') {
+        for (const [name, modular] of [
+          ['emitted MCP server', false],
+          ['emitted modular MCP server', true],
+        ] as const) {
+          const server = await emitted.mcp({ modular });
+          transports.set(
+            name,
+            toolTransport(
+              name,
+              (tool, args) => server.call(tool, args) as never,
+            ),
+          );
+        }
+      }
     });
-
     const syncBatch = new Map<
       string,
       (batch: unknown) => Promise<{ results: SyncResult[] }>
@@ -317,7 +392,11 @@ export function describeProtectedFieldWrites(
       };
     }
 
-    describe.each(TRANSPORTS)('%s', (name) => {
+    describe.each(
+      TRANSPORTS.filter(
+        (name) => engine === 'SQLite' || !FILE_DATABASE_TRANSPORTS.has(name),
+      ),
+    )('%s', (name) => {
       it('accepts a fetched record sent back with a writable change', async () => {
         const record = await seedRecord(`${name}: round trip`);
         const body = await fetchRecord('record', record.id as string);
@@ -355,7 +434,8 @@ export function describeProtectedFieldWrites(
         expect(outcome.field).toBe('code');
         if (typeof outcome.status === 'number')
           expect(outcome.status).toBe(400);
-        else expect(outcome.text).toContain('invalid_payload');
+        else if (name.includes('sync'))
+          expect(outcome.text).toContain('invalid_payload');
         expect(await stored(record.id as string)).toEqual(before);
       });
 

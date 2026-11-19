@@ -9,7 +9,8 @@
  * code:
  *
  * - tool arguments set fields and nothing else: a create or update carrying
- *   every service option key, `options` and underscore keys is saved normally
+ *   every service option key and `options` is saved normally, and one carrying
+ *   an underscore key is refused
  *   in the server's own database;
  * - a list or get filter with two keys for one column and operator is refused,
  *   and a range on one column is served.
@@ -87,6 +88,9 @@ describe('emitted MCP servers against the built core package', () => {
     persistence: { type: 'sqlite', url: unprepared },
     ai: { baseUrl: 'http://127.0.0.1:9/other/v1' },
     options: { db: { type: 'sqlite', url: unprepared } },
+  });
+  /** Underscore keys are not fields: a value for one is refused. */
+  const underscoreKeys = (): Record<string, unknown> => ({
     _insertOnly: true,
     _skipLoad: false,
     _className: 'Other',
@@ -231,6 +235,33 @@ console.log('EMITTED_SERVER_RESULTS' + JSON.stringify(results));
     expect(await labelsIn(appDb)).not.toContain(created);
     expect(await labelsIn(otherDb)).toEqual([]);
     expect(existsSync(unprepared)).toBe(false);
+  });
+
+  it.each([
+    'single',
+    'modular',
+  ] as const)('the %s server refuses create and update arguments that carry an underscore key', async (server) => {
+    const label = `${server}-underscore`;
+    const results = await run(server, [
+      [`${TOOL}_create`, { label, amount: 1 }],
+      ...Object.entries(underscoreKeys()).flatMap(
+        ([key, value]): ToolCall[] => [
+          [`${TOOL}_create`, { label: `${label}-refused`, [key]: value }],
+          [
+            `${TOOL}_update`,
+            { id: '$ID', label: `${label}-changed`, [key]: value },
+          ],
+        ],
+      ),
+      [`${TOOL}_get`, { id: '$ID' }],
+    ]);
+    expect(results[0].isError).toBe(false);
+    for (const refused of results.slice(1, -1)) {
+      expect(refused.isError).toBe(true);
+      expect(refused.text).toContain('cannot be written');
+    }
+    expect(JSON.parse(results[results.length - 1].text).label).toBe(label);
+    expect(await labelsIn(appDb)).not.toContain(`${label}-refused`);
   });
 
   it.each([
