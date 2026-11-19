@@ -1277,6 +1277,27 @@ describe('app customization tools', () => {
     expect(editor.snapshot().cookbook.recipes).not.toContain('customers');
   });
 
+  it('rechecks live permission after activation, inside the editor edit', async () => {
+    expect(await approve('recipes.disable', { id: 'customers' })).toMatchObject(
+      { status: 'ok' },
+    );
+    // The permission is revoked while the recipe is being activated.
+    options.activation = {
+      activate: async () => {
+        permission = false;
+      },
+    };
+    const revision = editor.snapshot().revision;
+    await expect(
+      call('recipes.enable', {
+        id: 'customers',
+        expectedRevision: engine.snapshot().revision,
+      }),
+    ).rejects.toThrow();
+    expect(editor.snapshot().revision).toBe(revision);
+    expect(editor.snapshot().cookbook.recipes).not.toContain('customers');
+  });
+
   it('loads nothing for an undo the editor refuses', async () => {
     expect(await approve('recipes.disable', { id: 'customers' })).toMatchObject(
       { status: 'ok' },

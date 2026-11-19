@@ -1498,10 +1498,16 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
     edit: AppModelEdit,
     context: AppModelEditContext,
     /**
-     * A caller's coordinator (the tool service) for `import`/`undo` when the
-     * editor has none: used only after the editor's own admission.
+     * `activation`: a caller's coordinator (the tool service) for
+     * `import`/`undo` when the editor has none, used only after the editor's
+     * own admission. `admit`: the caller's own checks, run inside the
+     * serialized edit after any activation and before anything is
+     * journalled; a throw refuses the edit.
      */
-    applyOptions: { activation?: Pick<ActivationCoordinator, 'activate'> } = {},
+    applyOptions: {
+      activation?: Pick<ActivationCoordinator, 'activate'>;
+      admit?: () => void | Promise<void>;
+    } = {},
   ): Promise<AppModelEditReceipt> {
     edit = structuredClone(edit);
     context = structuredClone(context);
@@ -1570,6 +1576,7 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
         (tip?.revision ?? 0) !== revision
       )
         throw new Error('MODEL_EDIT_CONFLICT');
+      await applyOptions.admit?.();
       // From here the in-memory journal equals the durable one: another
       // process's revision would have moved the tip.
       const latest = history;

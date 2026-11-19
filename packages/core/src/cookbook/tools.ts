@@ -717,10 +717,12 @@ export function createCookbookToolService(options: CookbookToolOptions) {
     edit: Parameters<typeof editor.apply>[0],
     unchanged: string,
     context: Parameters<typeof editor.apply>[1],
+    admit: () => Promise<void>,
   ) {
     try {
       return await editor.apply(edit, context, {
         ...(options.activation ? { activation: options.activation } : {}),
+        admit,
       });
     } catch (error) {
       if (
@@ -881,6 +883,8 @@ export function createCookbookToolService(options: CookbookToolOptions) {
               }
             : {}),
         },
+        // Activation may have taken time: recheck live authority last.
+        () => assertAllowed(context, name),
       );
       if (context.workflowAction)
         return (await recoverDesign(name, args, context))!;
@@ -1315,6 +1319,20 @@ export function createCookbookToolService(options: CookbookToolOptions) {
                     } satisfies AppModelOperation,
                   }
                 : {}),
+            },
+            // Recheck after activation, inside the edit: live authority and,
+            // for an approval-free template apply, that the app is still empty.
+            async () => {
+              await assertAllowed(context, name);
+              if (
+                name === 'cookbook.apply' &&
+                !hold &&
+                !(await options.isAppEmpty(context))
+              )
+                fail(
+                  'conflict',
+                  'Your app now contains records. Preview again before applying.',
+                );
             },
           );
           if (context.workflowAction)
