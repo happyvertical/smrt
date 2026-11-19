@@ -1,5 +1,27 @@
 # @happyvertical/smrt-core
 
+## 0.62.14
+
+### Patch Changes
+
+- ### Features
+  
+  - agent send policy, held sends and handled-by (#5250) (messages)
+  - non-login service principals for agent accounts (#5254) (users)
+  - edit-then-approve and a mail-send approval gate (#5249) (approvals)
+  - changes waiting replaces the owner-facing draft (#5178 slices 1-6) (#5228) (app-shell)
+  
+  ### Bug Fixes
+  
+  - make customer methods atomic, serialized and limit-checked (#5235) (app-shell)
+  
+  ### Other Changes
+  
+  - docs: sync the shared development kernel with have-config main (#5237) (agents)
+- @happyvertical/smrt-config@0.62.14
+  - @happyvertical/smrt-scanner@0.62.14
+  - @happyvertical/smrt-types@0.62.14
+
 ## 0.62.13
 
 ### Patch Changes

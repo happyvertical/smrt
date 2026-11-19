@@ -41,26 +41,26 @@
     "svelte-check": "^4.7.6",
     "typescript": "6.0.3",
     "vite": "8.3.3",
-    "@happyvertical/smrt-cli": "^0.62.13"
+    "@happyvertical/smrt-cli": "^0.62.14"
   },
   "dependencies": {
-    "@happyvertical/smrt-app-runtime": "^0.62.13",
-    "@happyvertical/smrt-config": "^0.62.13",
-    "@happyvertical/smrt-core": "^0.62.13",
-    "@happyvertical/smrt-inference": "^0.62.13",
-    "@happyvertical/smrt-jobs": "^0.62.13",
-    "@happyvertical/smrt-preferences": "^0.62.13",
-    "@happyvertical/smrt-profiles": "^0.62.13",
-    "@happyvertical/smrt-prompts": "^0.62.13",
-    "@happyvertical/smrt-svelte": "^0.62.13",
-    "@happyvertical/smrt-tenancy": "^0.62.13",
-    "@happyvertical/smrt-ui": "^0.62.13",
-    "@happyvertical/smrt-users": "^0.62.13",
-    "@happyvertical/smrt-web": "^0.62.13",
+    "@happyvertical/smrt-app-runtime": "^0.62.14",
+    "@happyvertical/smrt-config": "^0.62.14",
+    "@happyvertical/smrt-core": "^0.62.14",
+    "@happyvertical/smrt-inference": "^0.62.14",
+    "@happyvertical/smrt-jobs": "^0.62.14",
+    "@happyvertical/smrt-preferences": "^0.62.14",
+    "@happyvertical/smrt-profiles": "^0.62.14",
+    "@happyvertical/smrt-prompts": "^0.62.14",
+    "@happyvertical/smrt-svelte": "^0.62.14",
+    "@happyvertical/smrt-tenancy": "^0.62.14",
+    "@happyvertical/smrt-ui": "^0.62.14",
+    "@happyvertical/smrt-users": "^0.62.14",
+    "@happyvertical/smrt-web": "^0.62.14",
     "@happyvertical/sql": "^0.89.12",
     "@modelcontextprotocol/server": "^2.3.1",
-    "@happyvertical/smrt-reports": "^0.62.13",
-    "@happyvertical/smrt-secrets": "^0.62.13",
-    "@happyvertical/smrt-template-sveltekit": "^0.62.13"
+    "@happyvertical/smrt-reports": "^0.62.14",
+    "@happyvertical/smrt-secrets": "^0.62.14",
+    "@happyvertical/smrt-template-sveltekit": "^0.62.14"
   }
 }

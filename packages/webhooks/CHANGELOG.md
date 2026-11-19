@@ -1,5 +1,15 @@
 # @happyvertical/smrt-webhooks
 
+## 0.62.14
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.62.14
+  - @happyvertical/smrt-jobs@0.62.14
+  - @happyvertical/smrt-tenancy@0.62.14
+  - @happyvertical/smrt-ui@0.62.14
+
 ## 0.62.13
 
 ### Patch Changes
