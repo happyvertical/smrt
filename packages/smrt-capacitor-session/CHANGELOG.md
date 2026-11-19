@@ -1,5 +1,9 @@
 # @happyvertical/smrt-capacitor-session
 
+## 0.62.12
+
+No changes in this release.
+
 ## 0.62.11
 
 No changes in this release.
