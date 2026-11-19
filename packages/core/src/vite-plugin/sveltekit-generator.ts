@@ -1737,6 +1737,17 @@ export async function generateSvelteKitRoutes(
     );
   }
 
+  if (options.lazyActivation) {
+    // A manifest whose registration order is impossible must fail before the
+    // generated routes are cleared, so earlier output stays published and
+    // consistent with its registration.
+    generateActivationRegistration(registrationManifest, {
+      projectRoot,
+      outputDir: join(projectRoot, options.configPath || 'src/lib/server'),
+      splitDeclarations: true,
+    });
+  }
+
   await hooks.beforeCleanup?.();
 
   clearGeneratedSvelteKitRouteFiles(
