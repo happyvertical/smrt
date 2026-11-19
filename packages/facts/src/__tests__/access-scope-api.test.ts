@@ -113,15 +113,26 @@ describe('Fact accessScope generated write boundary (#3496)', () => {
     });
   }
 
-  it('MCP create strips forged scope but preserves ordinary writable fields', async () => {
-    const response = await mcp.handleToolCall({
-      method: 'tools/call',
-      params: {
-        name: 'fact_create',
-        arguments: { textRefined: 'MCP assertion', accessScope: 'private' },
-      },
+  it('MCP create refuses a forged scope but accepts ordinary writable fields', async () => {
+    const create = (args: Record<string, unknown>) =>
+      mcp.handleToolCall({
+        method: 'tools/call',
+        params: { name: 'fact_create', arguments: args },
+      });
+    const refused = await create({
+      textRefined: 'MCP forged',
+      accessScope: 'private',
     });
-    expect(response.isError).not.toBe(true);
+    expect(refused.isError).toBe(true);
+    expect(JSON.stringify(refused)).toContain('VALIDATION_FIELD_NOT_WRITABLE');
+    await withTenant({ tenantId }, async () => {
+      expect(await facts.get({ textRefined: 'MCP forged' })).toBeNull();
+    });
+
+    // Negative control: without a scope the create is saved with none.
+    expect((await create({ textRefined: 'MCP assertion' })).isError).not.toBe(
+      true,
+    );
     await withTenant({ tenantId }, async () => {
       const created = await facts.get({ textRefined: 'MCP assertion' });
       expect(created).not.toBeNull();
@@ -129,23 +140,36 @@ describe('Fact accessScope generated write boundary (#3496)', () => {
     });
   });
 
-  it('MCP update cannot reclassify a confidential fact', async () => {
+  it('MCP update refuses to reclassify a confidential fact and accepts the stored scope', async () => {
     await withTenant({ tenantId }, async () => {
       const existing = await facts.create({
         textRefined: 'MCP confidential',
         tenantId,
         accessScope: 'private',
       });
-      const response = await mcp.handleToolCall({
-        method: 'tools/call',
-        params: {
-          name: 'fact_update',
-          arguments: {
-            id: existing.id,
-            textRaw: 'Allowed MCP edit',
-            accessScope: 'public',
+      const update = (args: Record<string, unknown>) =>
+        mcp.handleToolCall({
+          method: 'tools/call',
+          params: {
+            name: 'fact_update',
+            arguments: { id: existing.id, ...args },
           },
-        },
+        });
+      const refused = await update({
+        textRaw: 'Refused MCP edit',
+        accessScope: 'public',
+      });
+      expect(refused.isError).toBe(true);
+      expect(JSON.stringify(refused)).toContain(
+        'VALIDATION_FIELD_NOT_WRITABLE',
+      );
+      const unchanged = await facts.get({ id: existing.id });
+      expect(unchanged?.textRaw).not.toBe('Refused MCP edit');
+      expect(unchanged?.accessScope).toBe('private');
+
+      const response = await update({
+        textRaw: 'Allowed MCP edit',
+        accessScope: 'private',
       });
       expect(response.isError).not.toBe(true);
       const updated = await facts.get({ id: existing.id });
