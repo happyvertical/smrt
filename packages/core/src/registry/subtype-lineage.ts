@@ -70,7 +70,11 @@ export function checkpointSubtypeLineage(
   const declarations = new Map(
     [...names].map((name) => [name, replacedDeclarations().get(name)]),
   );
+  // By value: `clearSubtypeLineage()` empties the live set in place.
+  const coexisting = new Set(runtimeCoexistingModels());
   return () => {
+    runtimeCoexistingModels().clear();
+    for (const name of coexisting) runtimeCoexistingModels().add(name);
     for (const [name, parent] of links)
       if (parent) parents().set(name, parent);
       else parents().delete(name);
