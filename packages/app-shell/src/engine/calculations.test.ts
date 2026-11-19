@@ -67,11 +67,15 @@ it('adds database-owned values, rejects writes, rewrites renames and undoes exac
   });
   expect(post.status).toBe(201);
   expect(JSON.parse(post.body).total).toBe(1);
-  const mcp = await host.callAppTool('sale_create', {
+  // The app's MCP tools follow the same rule as REST (#5195).
+  const mcpRefused = await host.callAppTool('sale_create', {
     qty: 2,
     price: 3,
     total: 999,
   });
+  expect(mcpRefused.isError).toBe(true);
+  expect(JSON.stringify(mcpRefused)).toContain('VALIDATION_FIELD_NOT_WRITABLE');
+  const mcp = await host.callAppTool('sale_create', { qty: 2, price: 3 });
   expect(mcp.isError).toBe(false);
   await expect(
     host.create('Sale', { qty: 1, price: 2, total: 9 }),
