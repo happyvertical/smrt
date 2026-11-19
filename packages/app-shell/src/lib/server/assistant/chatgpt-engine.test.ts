@@ -6,6 +6,7 @@
 // each failure in words (with "Sign in again" where it applies), and runs ONLY
 // on a target the owner's sign-in resolver produced: never on an API key, never
 // on `claude-cli`, never on a `chatgpt-plan` that came from anywhere else.
+
 import {
   type ChatGPTPlanConnection,
   createChatGPTPlanResolver,
@@ -28,7 +29,7 @@ import {
 } from '../chatgpt.ts';
 import { getHost } from '../host.ts';
 import { callTool } from '../policy.ts';
-import { openShell, type ShellHarness } from '../test-support.ts';
+import { applyWaiting, openShell, type ShellHarness } from '../test-support.ts';
 import {
   assertApiKeyProvider,
   ChatGPTSignedOutError,
@@ -123,6 +124,7 @@ beforeAll(async () => {
     name: 'Chore',
     fields: { title: { type: 'text' } },
   });
+  await applyWaiting(h.owner);
 });
 afterAll(async () => {
   setChatGPTConnection(undefined);

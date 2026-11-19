@@ -45,11 +45,31 @@ spreadsheet package's 250,000; `/settings/import` saves an integer in
   input for resume. Polling exposes typed failure reasons and bounded timestamped
   stage history; internal origins and admission keys never enter that projection.
 - The draft id is saved before `startDraft` forks. The workflow owns a durable
-  hold, restored by `adoptDraft`: no draft reads/edits or publish while loading
-  or proving. Recovery discards only its recorded draft, then repeats the step.
+  hold, restored by `adoptDraft`: no reads/edits or Apply while loading
+  or proving. Recovery discards only its recorded copy, then repeats the step.
   Proof failure discards it; successful proof seals hidden provenance, ends
-  the workflow, then releases the hold. Publish uses the existing digest-pinned
-  draft Approval. No live write path is added.
+  the workflow, then releases the hold. No live write path is added.
+- Changes waiting (#5207): `createEngineImportTarget`'s `onCommand` hook wraps
+  its one `host.execute`; the workflow passes `recordImportCommand` (changes.ts),
+  which runs the command on the held copy and records it on ITS TABLE's card
+  (define, fields, 500-row loads, provenance hides; a report is its own card),
+  all sharing group `import:<id>`; /changes shows them under one collapsible
+  header. It refuses unless the import holds the copy and can only record
+  (`invariants.test.ts`: callers are changes.ts and import-workflow.ts, no apply
+  or live path). A rebuild (Remove, Put back, Quick edit of the table name or
+  choices) replays all active cards but moves the provenance `hideField`s after
+  the last load, because tables look each other up by a field the hide makes
+  invisible; there is no tail fast path (a Remove replays every load, so /changes
+  says "Rebuilding your changes"). A rebuilt copy has a new draft id: the import
+  row follows it (`setWorkingCopyReplaced`) and reconcile waits for `settled()`.
+  A held batch whose copy is gone (failed, repeated, cancelled, discarded import)
+  is retired and its cards drop their commands; an import is never "put back".
+  Apply is the page's Apply button on `POST /api/shell/changes/apply` (layout
+  `changes.digest`; 409 means review again). Another batch waiting refuses a new
+  import in plain words ("You have N changes waiting...") instead of joining it.
+  Template records: `template-records.ts` turns `importTemplate` with records
+  into ONE card (template + `loadRecords` in link order + hides of a temporary
+  `templateId` key field), so Apply brings the records.
 - An import reuses an open draft only when `discardIfUnused` proves it empty:
   the host's `discardIfEmpty` checks the chain and closes on the change queue
   edits use, so a racing edit keeps the draft or is refused, never lost (#5122).
@@ -106,8 +126,8 @@ Shell host event wiring formats every changed summary through the same label-bas
 formatter as History, with both the before and after definitions (including removed
 fields). Calculations show label-based expressions in import review and History.
 The totals view omits integer checksums except quantity/count/units/qty; the exact
-proof still checks every numeric column. Review points owners to the Live/Draft
-switch to inspect the imported data before publishing.
+proof still checks every numeric column. Review points owners to the changes waiting
+view (`/changes`).
 
 The engine report tool advertises a count/sum/filter example validated by
 `parseRuntimeReportSpec`, and specifies exact model/field names for ad-hoc queries.

@@ -3,7 +3,7 @@ import { EMPTY_APP, type VersionRecord } from '../../engine/index.ts';
 import { App } from '../objects/App.ts';
 import { closeHost, getHost } from './host.ts';
 import { runAs } from './owner.ts';
-import { openShell, type ShellHarness } from './test-support.ts';
+import { applyWaiting, openShell, type ShellHarness } from './test-support.ts';
 import { ShellVersionStore } from './version-store.ts';
 
 let h: ShellHarness;
@@ -59,6 +59,7 @@ describe('host restart', () => {
       await runAs(h2.owner, () =>
         App.defineModel('Chore', { title: { type: 'text' } }),
       );
+      await applyWaiting(h2.owner);
       const host = await getHost();
       await host.create('Chore', { title: 'survives' });
       const version = host.version;

@@ -7,7 +7,6 @@ import {
   principalFromLocals,
   requireOwner,
 } from './owner.ts';
-import { parseTarget, type Target } from './target.ts';
 
 export const MAX_BODY_BYTES = 1_000_000;
 
@@ -101,7 +100,7 @@ export function errorResponse(error: unknown): Response {
     return json({ error: error.message }, error.status);
   if (error instanceof EngineError)
     return json(
-      { error: error.message, code: error.code },
+      { ...error.details, error: error.message, code: error.code },
       ENGINE_STATUS[error.code] ?? 400,
     );
   // biome-ignore lint/suspicious/noConsole: message only, never a stack or body
@@ -123,22 +122,6 @@ export function guarded<E extends EventLike>(
       return errorResponse(error);
     }
   };
-}
-
-/**
- * The copy a `/api/shell/*` request names: the `target` query parameter
- * (`live` or `draft`), absent = live, anything else a 400.
- */
-export function targetOf(event: { url: URL }): Target {
-  return parseTarget(event.url.searchParams.get('target'));
-}
-
-/**
- * The copy a `/api/app/*` request names, from the `x-shell-target` header
- * (that route's query string belongs to the app's own REST).
- */
-export function headerTargetOf(event: { request: Request }): Target {
-  return parseTarget(event.request.headers.get('x-shell-target'));
 }
 
 /** Segment-safe model / id parameter. */

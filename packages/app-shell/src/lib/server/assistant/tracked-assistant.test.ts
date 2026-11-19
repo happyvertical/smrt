@@ -1,6 +1,7 @@
 // The assistant as tracked AI work (#5005): its system prompt is a registered
 // prompt, its model calls go through core's tracked client on the shell
 // database, and each turn is a `turn` run with usage rows and events.
+
 import { createTrackedAiClient } from '@happyvertical/smrt-core';
 import {
   PromptRegistry,
@@ -12,7 +13,12 @@ import type { TurnEvent } from '../../assistant/events.ts';
 import { ApprovalCollection } from '../../objects/Approval.ts';
 import { getHost, getShellDb } from '../host.ts';
 import { callTool } from '../policy.ts';
-import { openShell, runAs, type ShellHarness } from '../test-support.ts';
+import {
+  applyWaiting,
+  openShell,
+  runAs,
+  type ShellHarness,
+} from '../test-support.ts';
 import {
   ASSISTANT_PROMPT_KEY,
   packagedGuidance,
@@ -216,6 +222,7 @@ describe('an assistant turn as an AI run (#5005)', () => {
         fields: { title: { type: 'text' } },
       }),
     );
+    await applyWaiting(h.owner);
     await callTool(h.owner, 'chore_create', { title: 'tracked-mop' });
     const chore = (await host.list('Chore')).find(
       (row) => (row as { title?: string }).title === 'tracked-mop',
@@ -270,6 +277,7 @@ describe('an assistant turn as an AI run (#5005)', () => {
         fields: { title: { type: 'text' } },
       }),
     );
+    await applyWaiting(h.owner);
     await callTool(h.owner, 'chore_create', { title: 'late-mop' });
     const chore = (await host.list('Chore')).find(
       (row) => (row as { title?: string }).title === 'late-mop',

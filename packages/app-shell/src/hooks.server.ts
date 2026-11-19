@@ -7,11 +7,14 @@
  */
 import { sequence } from '@sveltejs/kit/hooks';
 import { appsRestHandle } from '$lib/server/apps-rest';
+import { installChangeReview } from '$lib/server/change-review';
 import { shellImports } from '$lib/server/import-runtime';
 import { runtime } from '$lib/server/smrt';
 
 export const init = async () => {
   await runtime.ready();
+  // The assistant's review of the changes waiting runs after the exact checks.
+  installChangeReview();
   await shellImports().catch(() => {
     process.stderr.write(
       'Workbook imports are unavailable. Opening Import will try again.\n',

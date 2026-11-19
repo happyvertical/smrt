@@ -111,7 +111,7 @@ async function skip() {
           <input type="radio" name="start" value="spreadsheet" bind:group={start} />
           <span>
             <strong>From a spreadsheet</strong>
-            <span class="smrt-app-shell__muted">Bring an Excel workbook into a draft, then review and publish it.</span>
+            <span class="smrt-app-shell__muted">Bring an Excel workbook in, then review and apply it.</span>
           </span>
         </label>
         <label class="smrt-app-shell__choice smrt-app-shell__choice-off">

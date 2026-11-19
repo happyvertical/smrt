@@ -15,6 +15,7 @@ import { commandSummary } from '../ui/command-summary.ts';
 import { fieldLabel, recordLabel } from '../ui/fields.ts';
 import type { RecordRow } from '../ui/types.ts';
 import { runCommand } from './builder.ts';
+import { structureHost } from './changes.ts';
 import { hostFor } from './host.ts';
 import { assertOwner } from './owner.ts';
 import { reportFailure } from './report-display.ts';
@@ -97,7 +98,8 @@ export async function runEngineTool(
   const type = own(ENGINE_COMMAND_TYPES, name);
   if (!type) throw new Error('unknown engine tool');
   // The caller cannot override the command discriminant or supply approval.
-  const host = await hostFor(scope.structure);
+  // Planned against the app as it will be (the changes waiting included).
+  const host = await structureHost();
   const command = { ...args, type } as Command;
   const plan = await host.plan(command);
   const before = structuredClone(host.def);
@@ -142,7 +144,8 @@ export async function runEngineTool(
   const result = await runCommand(
     { ...args, type } as Command,
     owner.id,
-    scope.structure,
+    'live',
+    scope.source ?? 'api',
   );
   if ('status' in result && result.status === 'pending_approval') return result;
   if (

@@ -30,24 +30,28 @@ export async function api<T>(
     method?: string;
     body?: unknown;
     fetch?: Fetch;
-    target?: Target;
+    /** `null`: the route names no copy (changes waiting routes). */
+    target?: Target | null;
   } = {},
 ): Promise<{ status: number; data: T }> {
   const doFetch = init.fetch ?? fetch;
   let response: Response;
   try {
-    response = await doFetch(targetPath(path, init.target ?? 'live'), {
-      method: init.method ?? 'GET',
-      headers: {
-        ...(init.body !== undefined
-          ? { 'content-type': 'application/json' }
-          : {}),
-        ...(path.startsWith('/api/app/')
-          ? { 'x-shell-target': init.target ?? 'live' }
-          : {}),
+    response = await doFetch(
+      init.target === null ? path : targetPath(path, init.target ?? 'live'),
+      {
+        method: init.method ?? 'GET',
+        headers: {
+          ...(init.body !== undefined
+            ? { 'content-type': 'application/json' }
+            : {}),
+          ...(path.startsWith('/api/app/')
+            ? { 'x-shell-target': init.target ?? 'live' }
+            : {}),
+        },
+        body: init.body !== undefined ? JSON.stringify(init.body) : undefined,
       },
-      body: init.body !== undefined ? JSON.stringify(init.body) : undefined,
-    });
+    );
   } catch {
     throw new ApiError(0, 'Could not reach the app. Check your connection.');
   }

@@ -16,6 +16,8 @@ export type TurnStop = AgentTurnStop | 'max_steps' | 'max_tokens';
 export type TurnEvent =
   | Exclude<AgentTurnEvent, { type: 'done' | 'tool_result' | 'error' }>
   | { type: 'thread'; threadId: string }
+  /** The turn made changes: the reply ends in the "N changes waiting" block. */
+  | { type: 'changes_block' }
   | (Omit<Extract<AgentTurnEvent, { type: 'tool_result' }>, 'details'> & {
       /** The copy the shell's tool acted on, while a draft is open. */
       copy?: 'live' | 'draft';
@@ -58,6 +60,8 @@ export interface ThreadMessage {
   seq: number;
   role: 'user' | 'assistant' | 'tool';
   content: string;
+  /** An assistant message that stands for the "changes waiting" block. */
+  block?: 'changes';
   /** Tool messages: what the chip shows. */
   tool?: {
     id: string;

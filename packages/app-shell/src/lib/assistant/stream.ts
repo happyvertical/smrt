@@ -5,6 +5,7 @@ import type { TurnEvent } from './events.ts';
 
 const KINDS = new Set<string>([
   'thread',
+  'changes_block',
   'text',
   'tool_call',
   'tool_result',

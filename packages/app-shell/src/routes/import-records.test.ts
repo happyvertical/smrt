@@ -7,11 +7,12 @@ import { afterEach, beforeEach, expect, it } from 'vitest';
 import { businessWorkbook } from '../../test-support/import-workbook.ts';
 import { toRuntimeModel } from '../engine/definition.ts';
 import { createEngineImportTarget } from '../engine/import-target.ts';
+import { flushChecks } from '../lib/server/changes.ts';
 import { startDraft } from '../lib/server/drafts.ts';
 import { closeHost, hostFor } from '../lib/server/host.ts';
 import { openShell, type ShellHarness } from '../lib/server/test-support.ts';
-import * as previewRoute from './api/shell/draft/preview/+server.ts';
-import * as publishRoute from './api/shell/draft/publish/+server.ts';
+import * as changesRoute from './api/shell/changes/+server.ts';
+import * as applyRoute from './api/shell/changes/apply/+server.ts';
 import * as recordsRoute from './api/shell/records/[model]/+server.ts';
 import * as recordRoute from './api/shell/records/[model]/[id]/+server.ts';
 
@@ -36,7 +37,7 @@ function event(
     request: new Request(url, {
       method,
       headers: { origin: url.origin, 'content-type': 'application/json' },
-      body: JSON.stringify(body),
+      ...(method === 'GET' ? {} : { body: JSON.stringify(body) }),
     }),
     locals: {
       user: { id: h.owner.id },
@@ -46,15 +47,18 @@ function event(
   } as never;
 }
 
-/** The owner's one-step publish: review the draft, then publish that digest. */
+/** The owner's one-step Apply: read the changes waiting, then apply that digest. */
 async function publishOpenDraft() {
-  const review = await previewRoute.POST(
-    event('/api/shell/draft/preview', 'POST', {}),
-  );
+  // The first read queues the debounced exact checks; the owner's UI waits for
+  // the `changes` event, a test flushes them.
+  await changesRoute.GET(event('/api/shell/changes', 'GET', {}));
+  await flushChecks();
+  const review = await changesRoute.GET(event('/api/shell/changes', 'GET', {}));
   expect(review.status).toBe(200);
-  const { preview } = await review.json();
-  const response = await publishRoute.POST(
-    event('/api/shell/draft/publish', 'POST', { expect: preview.digest }),
+  const state = await review.json();
+  expect(state.canApply).toBe(true);
+  const response = await applyRoute.POST(
+    event('/api/shell/changes/apply', 'POST', { expect: state.digest }),
   );
   expect(response.status).toBe(200);
   expect((await response.json()).status).toBe('approved');
@@ -62,7 +66,6 @@ async function publishOpenDraft() {
 
 it.each([
   ['draft', 'host'],
-  ['draft', 'route'],
   ['live', 'host'],
   ['live', 'route'],
 ] as const)('creates and updates imported records on %s through the %s after sealing', async (copy, surface) => {
@@ -99,7 +102,7 @@ it.each([
   ) => {
     if (surface === 'host')
       return id ? host.update(model, id, values) : host.create(model, values);
-    const path = `/api/shell/records/${model}${id ? `/${id}` : ''}?target=${copy}`;
+    const path = `/api/shell/records/${model}${id ? `/${id}` : ''}`;
     const response = id
       ? await recordRoute.PUT(event(path, 'PUT', values, { model, id }))
       : await recordsRoute.POST(event(path, 'POST', values, { model }));

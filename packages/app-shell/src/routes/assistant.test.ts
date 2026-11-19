@@ -7,7 +7,11 @@ import { mountAssistantRoutes } from '../lib/server/assistant/routes.ts';
 import { call, say, scripted } from '../lib/server/assistant/test-helpers.ts';
 import { getHost } from '../lib/server/host.ts';
 import { runAs } from '../lib/server/owner.ts';
-import { openShell, type ShellHarness } from '../lib/server/test-support.ts';
+import {
+  applyWaiting,
+  openShell,
+  type ShellHarness,
+} from '../lib/server/test-support.ts';
 
 let h: ShellHarness;
 beforeAll(async () => {
@@ -15,6 +19,7 @@ beforeAll(async () => {
   await runAs(h.owner, () =>
     App.defineModel('Chore', { title: { type: 'text' } }),
   );
+  await applyWaiting(h.owner);
 });
 afterAll(async () => {
   await h.close();
