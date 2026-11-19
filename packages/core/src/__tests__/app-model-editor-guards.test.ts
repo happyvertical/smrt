@@ -1700,6 +1700,52 @@ describe('app model editor: history reads and completion', () => {
     expect(reopened.snapshot().cookbook.name).toBe('Winner');
     expect((await reopened.history()).at(-1)?.status).toBe('applied');
   });
+
+  it('refuses an import whose navigation cannot be projected before journalling it, and an existing such pending row can be abandoned', async () => {
+    const e = await open();
+    const apply = applyTo(e);
+    await apply({ type: 'create_list', name: 'GuardMat', list: mats });
+    const item = 'editor-guards-app:guardmat';
+    const bad = {
+      ...structuredClone(e.snapshot().cookbook),
+      layout: { version: 1, items: { [item]: { label: 5 } } },
+    };
+    await expect(apply({ type: 'import', cookbook: bad })).rejects.toThrow(
+      /INVALID_MODEL_EDIT/,
+    );
+    expect((await e.history()).map((row) => row.status)).toEqual(['applied']);
+
+    // A pending row written that way before: abandon it, then reopen.
+    const store = await createAppModelHistory({
+      db,
+      application,
+      tenantId: TENANT,
+    });
+    await store.append(
+      {
+        revision: 2,
+        requestId: 'req-stuck-label',
+        actor: 'owner',
+        command: JSON.stringify({ type: 'import', cookbook: bad }),
+        before: e.snapshot().cookbook,
+        after: bad as unknown as Cookbook,
+        status: 'pending',
+      },
+      1,
+    );
+    await abandonAppModelRevision({
+      db,
+      application,
+      tenantId: TENANT,
+      revision: 2,
+      actor: 'operator',
+    });
+    ObjectRegistry.clear();
+    registerMember();
+    const reopened = await open();
+    expect(reopened.snapshot().revision).toBe(2);
+    expect(reopened.snapshot().cookbook.layout?.items?.[item]).toBeUndefined();
+  });
 });
 
 describe('app model editor: undo and import activate restored recipes', () => {

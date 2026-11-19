@@ -1662,6 +1662,15 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
           throw new Error('UNKNOWN_MODEL_EDIT');
       }
       next = checked(next);
+      // Project the candidate's navigation before anything is journalled: a
+      // document it cannot render must not become a pending revision.
+      try {
+        buildNav(cookbookModelCatalog(options.catalog, next.models), next);
+      } catch (error) {
+        throw new Error(
+          `INVALID_MODEL_EDIT: the cookbook cannot be projected (${error instanceof Error ? error.message : String(error)})`,
+        );
+      }
       const archived = storage();
       await validate(next, archived, options.db);
       // A removed/undone field keeps its stored definition, hidden through the existing policy rail.
