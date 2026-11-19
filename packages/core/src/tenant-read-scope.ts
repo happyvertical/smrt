@@ -25,6 +25,7 @@ import {
   resolveDispatchTenantScope,
 } from './dispatch/tenant-resolver.js';
 import { ObjectRegistry } from './registry';
+import { getResolvedFieldsSync } from './registry/inheritance-resolver';
 import { isRequestSuperAdminBypass } from './request-tenant-context';
 import { resolveWhereKey, whereColumnName } from './where-keys';
 
@@ -62,16 +63,20 @@ function tenantOwnershipFields(className: string): Map<string, string> {
   const runtimeColumns = ObjectRegistry.getRuntimeOwnershipColumns(className);
   if (runtimeColumns.size > 0) {
     // Fields the class declares or inherits (an STI child carries its
-    // parent's ownership field), own declarations first.
+    // parent's ownership field), resolved by the registry's effective-field
+    // rule so a same-named subtype that replaced its parent does not hide the
+    // parent's declarations. Own declarations first.
     const propertyByColumn = new Map<string, string>();
-    for (const owner of [
-      className,
-      ...ObjectRegistry.getInheritanceChain(className),
+    const registered = ObjectRegistry.getClass(className);
+    const fields = registered
+      ? getResolvedFieldsSync(registered)
+      : ObjectRegistry.getFields(className);
+    for (const name of [
+      ...(registered?.fields.keys() ?? []),
+      ...fields.keys(),
     ]) {
-      for (const name of ObjectRegistry.getFields(owner).keys()) {
-        const column = whereColumnName(name);
-        if (!propertyByColumn.has(column)) propertyByColumn.set(column, name);
-      }
+      const column = whereColumnName(name);
+      if (!propertyByColumn.has(column)) propertyByColumn.set(column, name);
     }
     for (const column of runtimeColumns) {
       add(propertyByColumn.get(column) ?? column);

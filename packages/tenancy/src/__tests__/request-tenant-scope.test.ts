@@ -125,6 +125,51 @@ describe('request-time tenant scope with tenancy enabled', () => {
     expect(scoped).toEqual({ title: 'kept', organizationId: null });
   });
 
+  it('a same-named cross-package child keeps its parent ownership property in the scope', () => {
+    const OTHER_PKG = '@test/request-scope-other';
+    const parentName = `${MANIFEST_PKG}:ScopeNotice`;
+    const childName = `${OTHER_PKG}:ScopeNotice`;
+    ObjectRegistry.registerFromManifest(
+      parentName,
+      manifestEntry(
+        'ScopeNotice',
+        {
+          title: { type: 'text' },
+          organizationId: { type: 'text', nullable: true },
+        },
+        { tableStrategy: 'sti' },
+        'SmrtObject',
+      ),
+      MANIFEST_PKG,
+    );
+    ObjectRegistry.registerFromManifest(
+      childName,
+      {
+        ...(manifestEntry('ScopeNotice', {}, {}, 'ScopeNotice') as object),
+        qualifiedName: childName,
+        packageName: OTHER_PKG,
+        extendsQualified: parentName,
+      } as never,
+      OTHER_PKG,
+    );
+    registerTenantScopedClass(parentName, {
+      mode: 'optional',
+      field: 'organizationId',
+    });
+    try {
+      for (const name of [parentName, childName]) {
+        const scoped = scopeTenantReadOptions(name, {
+          organizationId: THEIRS,
+          organization_id: THEIRS,
+          title: 'kept',
+        });
+        expect(scoped).toEqual({ title: 'kept', organizationId: null });
+      }
+    } finally {
+      unregisterTenantScopedClass(parentName);
+    }
+  });
+
   it('refuses to enter a request tenant context without a tenant', async () => {
     await new AsyncResource('request').runInAsyncScope(async () => {
       for (const tenantIdValue of [null, undefined, '']) {
