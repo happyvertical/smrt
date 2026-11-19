@@ -92,21 +92,18 @@ collection returns its own.
   parent's). `sameNameSubtypes(manifest)` lists the pairs. Manifest generation
   never copies a parent's `collection` or `replaceParent` into the subclass.
 
-Both load orders give one registry, on both paths and mixed: base then
-subclass, subclass then base, manifest then constructor, constructor then
-manifest (`registry/__tests__/issue-5143-same-name-subclass.test.ts`). A
-replacement constructor that registers before its parent is withdrawn when
-the parent arrives and registered again after it, so tenancy, validators,
-sensitivity, exposure, table and alias checks come from the same derivation as
-the parent-first order; a refusal leaves the registry as it was. A same-named
-subtype that registers first is re-registered the same way, onto its parent's
-table. Only the class's own declarations count (a collection's re-registration
-of its item does not), merged across partial re-registrations, and the class
-keeps its package and its own collection class. A same-named subclass whose
-same-named direct parent has not registered yet in a single-table family waits
-for it and registers when it does, so a three-level chain converges in any
-order with one registration per class; if that intermediate never registers,
-`getAllSchemasAsDefinitions()` reports `CONFIG_STI_UNREGISTERED_PARENT`. A run-time model
+Manifest declarations arrive in either order and give one registry: base
+then subclass or subclass then base, and manifest then constructor
+(`registry/__tests__/issue-5143-same-name-subclass.test.ts`). A constructor
+registers after the same-named class it extends (its constructor, or a
+manifest declaration its own manifest names as its parent). Registering it
+first fails closed with `CONFIG_SAME_NAME_PARENT_UNREGISTERED` and leaves
+nothing registered: before the parent, nothing says what it inherits (tenancy,
+table, validators, exposure), so the result would depend on load order. In a
+single-table family a class whose same-named direct parent is not registered
+while an ancestor is fails with the existing `CONFIG_STI_UNREGISTERED_PARENT`
+(`registry/__tests__/issue-5143-load-order.test.ts`). In ESM a subclass module
+imports its parent's, so the parent's decorator runs first. A run-time model
 (`registerRuntimeModel`) keeps its own explicit option, `replaces`; without it
 the model coexists with the parent it names, and the parent may register
 again.

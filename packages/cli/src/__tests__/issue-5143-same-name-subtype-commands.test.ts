@@ -51,10 +51,11 @@ async function commands(name: string): Promise<string[]> {
 
 afterEach(() => ObjectRegistry.clear());
 
+// Parents register first: a same-named subclass before its parent is refused
+// (CONFIG_SAME_NAME_PARENT_UNREGISTERED, see issue-5143-load-order.test.ts).
 describe('CLI commands of a same-named subtype', () => {
   it.each([
     'base-first',
-    'sub-first',
   ] as const)('belong to the parent, under the parent limits (%s)', async (order) => {
     ObjectRegistry.clear();
     const fixture = pair();
@@ -70,7 +71,6 @@ describe('CLI commands of a same-named subtype', () => {
 
   it.each([
     'base-first',
-    'sub-first',
   ] as const)('are published under a collection the subtype declares (%s)', async (order) => {
     ObjectRegistry.clear();
     const fixture = pair('histrio_scenes');
@@ -91,7 +91,6 @@ describe('CLI commands of a same-named subtype', () => {
 describe('CLI handlers of a same-named subtype with its own collection', () => {
   it.each([
     'base-first',
-    'sub-first',
   ] as const)('create and update write through the subtype, reading its fields by registry key (%s)', async (order) => {
     ObjectRegistry.clear();
     // Both classes carry the shared simple name, as an app's do.
@@ -183,7 +182,6 @@ describe('CLI handlers of a same-named subtype with its own collection', () => {
 describe('CLI commands of a replacement of a served subtype', () => {
   it.each([
     'base-middle-leaf',
-    'leaf-middle-base',
   ] as const)('belong to the base (%s)', async (order) => {
     ObjectRegistry.clear();
     const VideoScene = class Scene extends SmrtObject {};

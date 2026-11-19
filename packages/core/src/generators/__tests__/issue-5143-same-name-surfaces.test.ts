@@ -78,10 +78,11 @@ beforeEach(() => {
 });
 afterEach(() => restore());
 
+// Parents register first: a same-named subclass before its parent is refused
+// (CONFIG_SAME_NAME_PARENT_UNREGISTERED, see issue-5143-load-order.test.ts).
 describe('run-time MCP and OpenAPI surfaces of a same-named subtype', () => {
   it.each([
     'base-first',
-    'sub-first',
   ] as const)('serve the subtype through the parent, under the parent limits (%s)', async (order) => {
     const fixture = pair();
     if (order === 'base-first') {
@@ -106,7 +107,6 @@ describe('run-time MCP and OpenAPI surfaces of a same-named subtype', () => {
 
   it.each([
     'base-first',
-    'sub-first',
   ] as const)('give a subtype that declares its own collection a surface under that collection (%s)', async (order) => {
     const fixture = pair('histrio_scenes');
     if (order === 'base-first') {
@@ -139,7 +139,6 @@ describe('run-time MCP and OpenAPI surfaces of a same-named subtype', () => {
 describe('a replacement of a served subtype', () => {
   it.each([
     'base-middle-leaf',
-    'leaf-middle-base',
   ] as const)('is served through the base too, in MCP and OpenAPI (%s)', async (order) => {
     const VideoScene = class Scene extends SmrtObject {
       title = '';

@@ -21,6 +21,25 @@ export const SAME_NAME_REPLACEMENT_TABLE_MISMATCH =
   'CONFIG_SAME_NAME_REPLACEMENT_TABLE_MISMATCH';
 export const SAME_NAME_SUBTYPE_TABLE_MISMATCH =
   'CONFIG_SAME_NAME_SUBTYPE_TABLE_MISMATCH';
+export const SAME_NAME_PARENT_UNREGISTERED =
+  'CONFIG_SAME_NAME_PARENT_UNREGISTERED';
+
+/**
+ * A class that declares `replaceParent` registered before the same-named
+ * class it extends. It must register after it (its constructor or its
+ * manifest declaration), so what it inherits never depends on load order.
+ */
+export function sameNameParentUnregistered(
+  child: string,
+  parentClass: string | undefined,
+): ConfigurationError {
+  return new ConfigurationError(
+    `${child} declares replaceParent, but the same-named class it extends${parentClass ? ` (${parentClass})` : ''} is not registered yet. ` +
+      `Register that class (its @smrt() decorator or its package manifest) before ${child}; if ${child} extends no class of its own name, remove replaceParent.`,
+    SAME_NAME_PARENT_UNREGISTERED,
+    { className: child, parentClass },
+  );
+}
 
 /** A same-named subtype on another table than its single-table parent. */
 export function sameNameSubtypeTableMismatch(
