@@ -196,7 +196,7 @@ Agent docs (#4878): `install` runs `docs:agents`, `dev` refreshes a missing or s
   bundle whose `userApp` section is the engine's `exportUserApp`
   (`@happyvertical/smrt-app-shell/engine`, loaded from the project's installed
   shell or injected with `deps.userAppEngine`; the CLI has no package edge to
-  the shell, which would close a build cycle, and never opens app.db): current definition, the version history read from the shell's
+  the shell, which would close a build cycle, and never opens app.db; the CLI tests inject a small fake engine through that seam, never another package's build output, and the real engine's round trip is covered in the shell's `portable-export.test.ts`): current definition, the version history read from the shell's
   `app_versions` rows, every table with every row and column (hidden fields,
   timestamps, `_archive` so undo keeps working) and per-table SHA-256 digests (table definitions are digested and must be a single
   CREATE TABLE / CREATE INDEX of that table).

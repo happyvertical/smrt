@@ -1,7 +1,9 @@
 /**
  * The app shell's user app in export, import and migration (#5193): a
- * SQLite -> bundle -> SQLite round trip with the real engine, against a
- * data root shaped like the shell's (application.sqlite + user-app/app.db).
+ * SQLite -> bundle -> SQLite round trip of the CLI's side, with a fake engine
+ * injected through the `userAppEngine` seam (the real engine's fidelity is
+ * covered in the app shell), against a data root shaped like the shell's
+ * (application.sqlite + user-app/app.db).
  */
 import {
   existsSync,
@@ -29,6 +31,7 @@ import {
 } from '../portability.js';
 import {
   hasOpenUserAppDraft,
+  loadUserAppEngine,
   type UserAppSection,
 } from '../user-app-portability.js';
 import { loadTestEngine, openCopy } from './user-app-test-support.js';
@@ -482,5 +485,39 @@ describe('user app in the cloud migration plan', () => {
         journalPath: join(f.directory, 'journal.json'),
       }),
     ).rejects.toBeInstanceOf(CloudMigrationError);
+  });
+});
+
+describe('loading the real engine from the project', () => {
+  it('finds the engine in the project node_modules and explains its absence', async () => {
+    const f = fixture();
+    const shell = join(
+      f.sourceRoot,
+      'node_modules',
+      '@happyvertical',
+      'smrt-app-shell',
+    );
+    mkdirSync(shell, { recursive: true });
+    writeFileSync(
+      join(shell, 'package.json'),
+      JSON.stringify({
+        name: '@happyvertical/smrt-app-shell',
+        type: 'module',
+        exports: { './engine': { import: './engine.js' } },
+      }),
+    );
+    writeFileSync(
+      join(shell, 'engine.js'),
+      "export const marker = 'found-in-project';\n",
+    );
+    const engine = (await loadUserAppEngine(f.sourceRoot)) as unknown as {
+      marker: string;
+    };
+    expect(engine.marker).toBe('found-in-project');
+
+    const bare = fixture();
+    await expect(loadUserAppEngine(bare.sourceRoot)).rejects.toThrow(
+      /@happyvertical\/smrt-app-shell is not installed in the project/,
+    );
   });
 });
