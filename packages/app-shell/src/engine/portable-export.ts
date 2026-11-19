@@ -78,6 +78,8 @@ export interface UserAppVerification {
   extraTables: string[];
   /** The current version and definition agree with the bundle. */
   metaMatches: boolean;
+  /** The stored table and index definitions agree with the bundle. */
+  schemaMatches: boolean;
 }
 
 export interface ExportUserAppOptions {
@@ -532,6 +534,13 @@ export async function verifyUserApp(options: {
     }
     const carried = new Set(bundle.tables.map((t) => t.name));
     const extraTables = [...actual.keys()].filter((n) => !carried.has(n));
+    // The stored CREATE and index statements too: identical rows under a
+    // missing index or a changed constraint is not the same app.
+    const carriedNames = new Set(bundle.tables.map((t) => t.name));
+    const schemaMatches =
+      schemaDigestOf(
+        read.tables.filter((t) => carriedNames.has(t.name)).map(packTable),
+      ) === bundle.schemaDigest;
     const metaMatches =
       read.meta !== null &&
       read.meta.version === bundle.version &&
@@ -539,6 +548,7 @@ export async function verifyUserApp(options: {
     return {
       ok:
         metaMatches &&
+        schemaMatches &&
         missingTables.length === 0 &&
         extraTables.length === 0 &&
         tables.every((t) => t.digestMatches && t.expectedRows === t.actualRows),
@@ -546,6 +556,7 @@ export async function verifyUserApp(options: {
       missingTables,
       extraTables,
       metaMatches,
+      schemaMatches,
     };
   } finally {
     await h.close?.();

@@ -179,6 +179,24 @@ describe('portable user app', () => {
     );
   });
 
+  it('does not call a target with the same rows but other table definitions the same app', async () => {
+    const { host, store, dataDir } = await build();
+    const bundle = viaJson(await exportOf(store, dataDir)) as PortableUserApp;
+    await host.close();
+    const target = dir();
+    await importUserApp({ dataDir: target, bundle });
+    expect(
+      (await verifyUserApp({ dataDir: target, bundle })).schemaMatches,
+    ).toBe(true);
+    const other = viaJson(bundle) as PortableUserApp;
+    other.tables[0].indexSql = [];
+    other.tables[0].createSql = `${other.tables[0].createSql} `;
+    other.schemaDigest = 'different';
+    const result = await verifyUserApp({ dataDir: target, bundle: other });
+    expect(result.schemaMatches).toBe(false);
+    expect(result.ok).toBe(false);
+  });
+
   it('refuses table definitions that were changed or are not one statement', async () => {
     const { host, store, dataDir } = await build();
     const bundle = viaJson(await exportOf(store, dataDir)) as PortableUserApp;
