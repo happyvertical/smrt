@@ -8,9 +8,6 @@ import { getClasses, getInheritanceCache } from './shared-state';
 import type { RegisteredClass } from './types';
 
 declare global {
-  var __smrtPendingSameName:
-    | Map<unknown, Array<{ ctor: unknown; config: unknown }>>
-    | undefined;
   var __smrtRuntimeCoexisting: Set<string> | undefined;
   var __smrtSubtypeParents: Map<string, string> | undefined;
   var __smrtReplacedDeclarations: Map<string, RegisteredClass> | undefined;
@@ -29,14 +26,6 @@ export function retainReplacedDeclaration(
     fields: new Map(entry.fields),
     methods: new Map(entry.methods),
   });
-}
-/** Stop retaining a declaration (it becomes, or is about to become, live again). */
-export function releaseReplacedDeclaration(
-  key: string,
-): RegisteredClass | undefined {
-  const declaration = replacedDeclarations().get(key);
-  replacedDeclarations().delete(key);
-  return declaration;
 }
 let replacementGeneration = -1;
 let replacementIndex = new Map<string, RegisteredClass>();
@@ -67,23 +56,10 @@ export function runtimeCoexistingModels(): Set<string> {
   globalThis.__smrtRuntimeCoexisting ??= new Set();
   return globalThis.__smrtRuntimeCoexisting;
 }
-/**
- * Same-named subclasses waiting for their unregistered direct parent
- * constructor (in a single-table family a class registers after its direct
- * parent), keyed by that parent. They register when it does (#5143).
- */
-export function pendingSameNameRegistrations(): Map<
-  unknown,
-  Array<{ ctor: unknown; config: unknown }>
-> {
-  globalThis.__smrtPendingSameName ??= new Map();
-  return globalThis.__smrtPendingSameName;
-}
 export function clearSubtypeLineage(): void {
   parents().clear();
   replacedDeclarations().clear();
   runtimeCoexistingModels().clear();
-  pendingSameNameRegistrations().clear();
 }
 
 /** Test registry snapshots restore lineage that ObjectRegistry.clear() drops. */

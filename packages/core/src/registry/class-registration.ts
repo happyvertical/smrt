@@ -5,7 +5,6 @@ import {
 import { ObjectRegistry } from '../registry.js';
 import {
   declaresGeneratedFields,
-  forgetGeneratedClass,
   GeneratedFieldMap,
 } from './generated-state.js';
 /**
@@ -32,6 +31,7 @@ import {
 import {
   requireSameNameSubclassChoice,
   type SameNameSubclassChoice,
+  sameNameParentUnregistered,
   sameNameReplacementTableMismatch,
   sameNameSubclassChoice,
   sameNameSubclassUndeclared,
@@ -114,11 +114,9 @@ import {
 import {
   findReplacement,
   isSubtypeOf,
-  pendingSameNameRegistrations,
   reconcileSubtypeLineage,
   recordedSubtypeParent,
   recordSubtypeParent,
-  releaseReplacedDeclaration,
   replacedDeclarations,
   replacesAncestor,
   retainReplacedDeclaration,
@@ -225,7 +223,7 @@ function unregisteredStiParent(
   return undefined;
 }
 
-export function stiUnregisteredParentError(
+function stiUnregisteredParentError(
   ctor: { name: string },
   directParent: { name: string },
 ): ConfigurationError {
@@ -239,22 +237,6 @@ export function stiUnregisteredParentError(
 function assertRegisteredStiParent(ctor: typeof SmrtObject): void {
   const directParent = unregisteredStiParent(ctor);
   if (directParent) throw stiUnregisteredParentError(ctor, directParent);
-}
-
-/**
- * Registrations of same-named subclasses still waiting for their direct
- * parent: the error each would raise. Schema planning reports the first, so a
- * genuinely missing intermediate still fails (#5143).
- */
-export function assertNoPendingSameNameRegistrations(): void {
-  for (const [parent, waiting] of pendingSameNameRegistrations()) {
-    const first = waiting[0];
-    if (first)
-      throw stiUnregisteredParentError(
-        first.ctor as { name: string },
-        parent as { name: string },
-      );
-  }
 }
 
 /**
@@ -589,111 +571,32 @@ function joinsStiFamily(
 }
 
 /**
- * The configuration each constructor was last registered with, as its
- * declaration gave it (before inherited defaults), so a replacement that
- * registered before its parent can be registered again parent-first (#5143).
+ * Whether the same-named class `ctor` extends has registered, live or kept
+ * as the declaration a replacement took over: a registered constructor of
+ * that name on its prototype chain, or the declared/recorded parent key.
  */
-const authoredRegistrationConfigs = new WeakMap<
-  typeof SmrtObject,
-  SmartObjectConfig
->();
-
-/**
- * Depth of item re-registrations a collection's `@smrt()` performs. Those
- * carry the collection's options, not the item's, so they never count as the
- * item class's own declaration (#5143).
- */
-let collectionItemRegistrations = 0;
-
-/** Register a collection's item class on the collection's behalf. */
-export function registerCollectionItem(
+function sameNameParentKnown(
   ctor: typeof SmrtObject,
-  config: SmartObjectConfig,
-): void {
-  collectionItemRegistrations++;
-  try {
-    ObjectRegistry.register(ctor, config);
-  } finally {
-    collectionItemRegistrations--;
+  name: string,
+  declaredParentKey: string | undefined,
+): boolean {
+  if (
+    declaredParentKey &&
+    (getClasses().has(declaredParentKey) ||
+      replacedDeclarations().has(declaredParentKey))
+  )
+    return true;
+  for (
+    let proto = Object.getPrototypeOf(ctor);
+    typeof proto === 'function' && proto !== SmrtObject;
+    proto = Object.getPrototypeOf(proto)
+  ) {
+    const key = getConstructorIndex().get(proto);
+    if (!key) continue;
+    const entry = getClasses().get(key) ?? replacedDeclarations().get(key);
+    if (entry?.name === name) return true;
   }
-}
-
-/**
- * Register a class (arriving after `child`, a replacement constructor that
- * extends it) as if it had registered first, then `child` again: withdraw the
- * child's registration and return every declaration it replaced, so one
- * derivation decides the pair whichever order they loaded in. On failure the
- * registry is left as it was.
- */
-function replayAfterLateParent(
-  registerParent: () => void,
-  ownName: string,
-  childKey: string,
-  child: RegisteredClass,
-  childConfig: SmartObjectConfig,
-): void {
-  const replaced = [...(child.replacedQualifiedNames ?? [])];
-  const restore = ObjectRegistry.checkpointRegistrations([
-    childKey,
-    ownName,
-    ...replaced,
-  ]);
-  const retainedConstructors = replaced.flatMap((key) => {
-    const declaration = replacedDeclarations().get(key);
-    return declaration ? [[declaration.constructor, key] as const] : [];
-  });
-  const childCtor = child.constructor as typeof SmrtObject;
-  // The child's own collection class (one whose item it is), which its
-  // authored options do not carry.
-  const ownCollection =
-    (child.collectionConstructor as { _itemClass?: unknown } | undefined)
-      ?._itemClass === childCtor
-      ? child.collectionConstructor
-      : undefined;
-  try {
-    getClasses().delete(childKey);
-    getConstructorIndex().delete(childCtor);
-    forgetGeneratedClass(child);
-    for (const key of replaced) {
-      const declaration = releaseReplacedDeclaration(key);
-      if (!declaration) continue;
-      getClasses().set(key, declaration);
-      getConstructorIndex().set(
-        declaration.constructor as typeof SmrtObject,
-        key,
-      );
-    }
-    bumpRegistryGeneration();
-    getInheritanceCache().clear();
-    registerParent();
-    // The child keeps the identity it was registered with: an unstamped
-    // class's package came from its own declaring module, which the parent's
-    // registration stack does not name.
-    recordSubtypeParent(childKey, ownName);
-    registerUntracked(childCtor, {
-      ...childConfig,
-      ...(childConfig.packageName || !child.packageName
-        ? {}
-        : { packageName: child.packageName }),
-    });
-    const rebuilt = ObjectRegistry.getClassByConstructor(childCtor);
-    if (rebuilt) {
-      if (ownCollection) rebuilt.collectionConstructor = ownCollection;
-      // The outer registration finalises the parent; the rebuilt child needs
-      // the same generated-field bookkeeping it had.
-      ObjectRegistry.recordGeneratedRegistration(
-        rebuilt,
-        getConstructorFieldDecorators().get(childCtor)?.keys(),
-      );
-      ObjectRegistry.revalidateGeneratedDescendants(rebuilt);
-    }
-  } catch (error) {
-    restore();
-    for (const [retained, key] of retainedConstructors)
-      getConstructorIndex().set(retained as typeof SmrtObject, key);
-    bumpRegistryGeneration();
-    throw error;
-  }
+  return false;
 }
 
 /**
@@ -1528,21 +1431,6 @@ export function register(
 ): void {
   bumpRegistryGeneration();
   try {
-    // A same-named subclass of a single-table family whose direct parent
-    // (a same-named intermediate) has not registered yet waits for it, so
-    // every load order converges in one pass (#5143).
-    const waitingFor =
-      config.replaceParent !== undefined
-        ? unregisteredStiParent(ctor)
-        : undefined;
-    if (waitingFor) {
-      const waiting = pendingSameNameRegistrations().get(waitingFor) ?? [];
-      pendingSameNameRegistrations().set(waitingFor, [
-        ...waiting.filter((item) => item.ctor !== ctor),
-        { ctor, config },
-      ]);
-      return;
-    }
     registerUntracked(ctor, config);
     const registered = ObjectRegistry.getClassByConstructor(ctor);
     if (registered) {
@@ -1551,15 +1439,6 @@ export function register(
         getConstructorFieldDecorators().get(ctor)?.keys(),
       );
       ObjectRegistry.revalidateGeneratedDescendants(registered);
-    }
-    const released = pendingSameNameRegistrations().get(ctor);
-    if (released) {
-      pendingSameNameRegistrations().delete(ctor);
-      for (const item of released)
-        register(
-          item.ctor as typeof SmrtObject,
-          item.config as SmartObjectConfig,
-        );
     }
   } finally {
     reconcileSubtypeLineage();
@@ -1572,12 +1451,6 @@ function registerUntracked(
   ctor: typeof SmrtObject,
   config: SmartObjectConfig = {},
 ): void {
-  if (collectionItemRegistrations === 0) {
-    authoredRegistrationConfigs.set(ctor, {
-      ...authoredRegistrationConfigs.get(ctor),
-      ...config,
-    });
-  }
   const name = config.name || ctor.name;
   // A library build stamps each class it declares with its package (#3490):
   // constructor-bound identity that holds wherever a consumer bundles it.
@@ -1892,43 +1765,7 @@ function registerUntracked(
       isolatedManifestEntry?.decoratorConfig?.replaceParent ??
       promotedRuntimeConfig?.replaceParent,
   });
-  // A replacement constructor that registered before this class (its parent,
-  // or a same-named class between it and the parent it took) is registered
-  // again after this class, exactly as in the parent-first order: tenancy,
-  // validators, sensitivity, exposure, table and lineage all come from the
-  // same derivation, and a claim made across this then-unregistered class is
-  // withdrawn (#5143).
   const deferAcrossUnregistered = joinsStiFamily(ctor, config);
-  if (!replacedDeclarations().has(ownName)) {
-    for (const [childKey, child] of findSameNameChildren(
-      ctor,
-      name,
-      ownName,
-      deferAcrossUnregistered,
-    )) {
-      const childChoice = declaredChoiceOf(childKey, child, ownName);
-      if (
-        childKey === ownName ||
-        !childChoice ||
-        // A subtype already linked to this class keeps its registration.
-        (childChoice === 'subtype' &&
-          recordedSubtypeParent(childKey) === ownName) ||
-        (child.constructor as { _isManifestStub?: boolean })._isManifestStub ===
-          true
-      )
-        continue;
-      const childConfig = authoredRegistrationConfigs.get(child.constructor);
-      if (!childConfig) continue;
-      replayAfterLateParent(
-        () => registerUntracked(ctor, config),
-        ownName,
-        childKey,
-        child,
-        childConfig,
-      );
-      return;
-    }
-  }
   const sameNameParent = findSameNameParent(
     ctor,
     name,
@@ -1958,6 +1795,27 @@ function registerUntracked(
     existing.schema?.tableName;
   let sameNameSubtypeParent: [string, RegisteredClass] | undefined;
   let replacedByExisting: RegisteredClass | undefined;
+  // A class that declares how it relates to a same-named parent registers
+  // after that parent (its constructor or its manifest declaration). Before
+  // it, nothing tells this registration what to inherit, so the order fails
+  // closed rather than registering a model whose tenancy, table and lineage
+  // depend on load order (#5143). A class already registered, or whose
+  // recorded parent it has already replaced, is a re-registration.
+  if (
+    declaredChoice &&
+    !sameNameParent &&
+    !getConstructorIndex().has(ctor) &&
+    !sameNameParentKnown(
+      ctor,
+      name,
+      isolatedManifestEntry?.extendsQualified ??
+        (ownQualifiedKey ? recordedSubtypeParent(ownQualifiedKey) : undefined),
+    )
+  )
+    throw sameNameParentUnregistered(
+      ownName,
+      (Object.getPrototypeOf(ctor) as { name?: string })?.name,
+    );
   if (sameNameParent) {
     const [key, existing] = sameNameParent;
     if (!sameName.choice) throw sameNameSubclassUndeclared(ownName, key);
@@ -2828,8 +2686,8 @@ function registerUntracked(
   }
   if (replacedByExisting) {
     // A manifest stub declared that it replaces this class and registered
-    // first (a replacement constructor never reaches here: it is registered
-    // again after this class). Keep this declaration for ancestry only,
+    // first (a replacement constructor cannot: it is refused before its
+    // parent, CONFIG_SAME_NAME_PARENT_UNREGISTERED). Keep this declaration for ancestry only,
     // exactly as if it had been registered first and then replaced. Its
     // aliases follow the replacement, so they must be free of other claimants
     // just as in the parent-first order.
@@ -3717,50 +3575,6 @@ function registerFromManifestUntracked(
     runtimeCoexistingModels().add(registrationKey);
   else if (runtimeOptions?.extendsRegistered)
     runtimeCoexistingModels().delete(registrationKey);
-
-  // A replacement constructor that registered before this declaration is
-  // registered again after it, as in the declaration-first order (#5143).
-  if (!runtimeOptions?.extendsRegistered && !effectiveReplacement) {
-    for (const [key, entry] of getClasses()) {
-      const entryChoice = sameNameSubclassChoice(entry.config);
-      const recorded = recordedSubtypeParent(key);
-      // A constructor registered before any manifest records its parent by
-      // the simple name, which for a same-named subclass is this class's.
-      const extendsThis =
-        entry.extends === registrationKey ||
-        (!!entry.extends &&
-          !isQualifiedName(entry.extends) &&
-          entry.extends === simpleClassName &&
-          recorded === undefined);
-      if (
-        key === registrationKey ||
-        entry.name !== simpleClassName ||
-        runtimeCoexistingModels().has(key) ||
-        (entry.constructor as { _isManifestStub?: boolean })._isManifestStub ===
-          true ||
-        !entryChoice ||
-        (!extendsThis && recorded !== registrationKey) ||
-        (entryChoice === 'subtype' && recorded === registrationKey)
-      )
-        continue;
-      const childConfig = authoredRegistrationConfigs.get(entry.constructor);
-      if (!childConfig) continue;
-      replayAfterLateParent(
-        () =>
-          registerFromManifestUntracked(
-            name,
-            objectDef,
-            manifestPackageName,
-            runtimeOptions,
-          ),
-        registrationKey,
-        key,
-        entry,
-        childConfig,
-      );
-      return;
-    }
-  }
 
   // Release C (#1134): collision resolution routes through
   // decideCollisionPolicy. See collision-policy.ts for the decision table;

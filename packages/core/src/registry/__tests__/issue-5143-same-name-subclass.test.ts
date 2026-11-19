@@ -406,11 +406,12 @@ describe('same-named subclass of another package: manifest registration', () => 
 
 describe('same-named subclass of another package: constructor registration', () => {
   const CTOR_SUBTYPE_REGISTRY = SUBTYPE_REGISTRY;
+  // A same-named subclass registers after its parent; the other order is
+  // refused (see `registered before its parent`).
   const CTOR_ORDERS = [
     ['base', 'shot', 'sub'],
     ['base', 'sub', 'shot'],
-    ['sub', 'base', 'shot'],
-    ['sub', 'shot', 'base'],
+    ['shot', 'base', 'sub'],
   ] as const;
 
   it.each(
@@ -456,7 +457,6 @@ describe('same-named subclass of another package: constructor registration', () 
 
   it.each([
     ['base → sub', ['base', 'sub']],
-    ['sub → base', ['sub', 'base']],
   ] as const)('refuses a subclass that declares no choice (%s)', (_label, order) => {
     const fixture = constructors(undefined);
     fixture.registrations[order[0]]();
@@ -472,7 +472,6 @@ describe('same-named subclass of another package: constructor registration', () 
 
   it.each([
     ['base → sub', ['base', 'sub']],
-    ['sub → base', ['sub', 'base']],
   ] as const)('refuses a subtype whose plain parent has no discriminator (%s)', (_label, order) => {
     const fixture = constructors(false, false);
     fixture.registrations[order[0]]();
@@ -485,7 +484,6 @@ describe('same-named subclass of another package: constructor registration', () 
 
   it.each([
     ['base → sub', ['base', 'sub']],
-    ['sub → base', ['sub', 'base']],
   ] as const)('refuses a subtype of a plain parent even on a table of its own (%s)', (_label, order) => {
     class PlainScene extends SmrtObject {
       title = '';
@@ -545,6 +543,9 @@ describe('same-named subclass of another package: manifest and constructor toget
     ['base', 'shot', 'sub'],
     ['sub', 'shot', 'base'],
   ] as const;
+  // Constructors always register parent first (a same-named subclass before
+  // its parent is refused); the manifest phase takes both orders.
+  const CTOR_ORDER = ['base', 'shot', 'sub'] as const;
 
   describe.each(PHASES)('%s', (_label, first, second) => {
     describe.each(
@@ -557,9 +558,9 @@ describe('same-named subclass of another package: manifest and constructor toget
         const fixture = constructors(replaceParent);
         const manifests = manifestSteps(subEntry(replaceParent));
         const run = (path: 'manifest' | 'constructor') => {
-          // A constructor needs its parent's constructor to exist, not to be
-          // registered: both orders are exercised on both paths.
-          for (const step of order) {
+          // Manifest entries arrive in either order; a constructor after
+          // its parent.
+          for (const step of path === 'manifest' ? order : CTOR_ORDER) {
             if (path === 'manifest') manifests[step]();
             else fixture.registrations[step]();
           }
@@ -582,7 +583,7 @@ describe('same-named subclass of another package: manifest and constructor toget
   });
 });
 
-describe('same-named replacement registered before its parent', () => {
+describe('same-named subclass registered before its parent', () => {
   /** Everything a parent-first registration derives for the effective model. */
   function effective() {
     const entry = ObjectRegistry.getClass(BASE);
@@ -636,17 +637,32 @@ describe('same-named replacement registered before its parent', () => {
     };
   }
 
-  it('derives the same model in either order: tenancy, validators, sensitivity, collection and the parent table', () => {
-    const results = (['base-first', 'sub-first'] as const).map((order) => {
+  it('fails closed, leaving nothing registered, and the parent-first order derives tenancy, validators, sensitivity and the parent table', () => {
+    const early = pair();
+    for (const choice of [true, false]) {
+      const Child = class Scene extends early.VideoScene {};
+      expect(() =>
+        ObjectRegistry.register(Child, {
+          name: 'Scene',
+          packageName: HISTRIO,
+          replaceParent: choice,
+        }),
+      ).toThrow(
+        expect.objectContaining({
+          code: 'CONFIG_SAME_NAME_PARENT_UNREGISTERED',
+          message: expect.stringContaining(
+            `${SUB} declares replaceParent, but the same-named class it extends`,
+          ),
+        }),
+      );
+      expect(ObjectRegistry.getClassByConstructor(Child)).toBeUndefined();
+    }
+    expect([...ObjectRegistry.getAllClasses().keys()]).toEqual([]);
+    const results = [0, 1].map(() => {
       ObjectRegistry.clear();
       const fixture = pair();
-      if (order === 'base-first') {
-        fixture.base();
-        fixture.sub();
-      } else {
-        fixture.sub();
-        fixture.base();
-      }
+      fixture.base();
+      fixture.sub();
       expect(ObjectRegistry.getClass(BASE)?.constructor).toBe(
         fixture.HistrioScene,
       );
@@ -664,75 +680,43 @@ describe('same-named replacement registered before its parent', () => {
     expect(results[0].validators).toBeGreaterThan(0);
   });
 
-  it('binds a decorated replacement that names no table to its custom-table parent, in either order', () => {
-    const tables = (['base-first', 'sub-first'] as const).map((order) => {
-      ObjectRegistry.clear();
-      const fixture = pair();
-      const decorate = () =>
-        smrt({ name: 'Scene', packageName: HISTRIO, replaceParent: true })(
-          fixture.HistrioScene,
-        );
-      if (order === 'base-first') {
-        fixture.base();
-        decorate();
-      } else {
-        decorate();
-        fixture.base();
-      }
-      return {
-        table: ObjectRegistry.getTableName(BASE),
-        replaced:
-          ObjectRegistry.getClass(BASE)?.constructor === fixture.HistrioScene,
-      };
-    });
-    expect(tables[1]).toEqual(tables[0]);
-    expect(tables[0]).toEqual({ table: 'video_scenes', replaced: true });
-  });
-
-  it('refuses, in either order, a replacement that names a table of its own', () => {
-    for (const order of ['base-first', 'sub-first'] as const) {
-      ObjectRegistry.clear();
-      const fixture = pair('histrio_scenes');
-      const steps =
-        order === 'base-first'
-          ? [fixture.base, fixture.sub]
-          : [fixture.sub, fixture.base];
-      steps[0]();
-      expect(() => steps[1]()).toThrow(
-        expect.objectContaining({
-          code: 'CONFIG_SAME_NAME_REPLACEMENT_TABLE_MISMATCH',
-        }),
-      );
-    }
-  });
-
-  it('refuses a late parent whose alias another model already claims, leaving the registry as it was', () => {
-    const OTHER = '@fixture/other:Clip';
-    class Clip extends SmrtObject {}
-    // Constructor path: replacement constructor first, then its parent.
-    ObjectRegistry.register(Clip, {
-      packageName: '@fixture/other',
-      tableName: 'clips',
-      previousQualifiedNames: [OLD],
-    });
+  it('binds a decorated replacement that names no table to its custom-table parent, and refuses the decorator before the parent', () => {
+    const early = pair();
+    expect(() =>
+      smrt({ name: 'Scene', packageName: HISTRIO, replaceParent: true })(
+        early.HistrioScene,
+      ),
+    ).toThrow(
+      expect.objectContaining({ code: 'CONFIG_SAME_NAME_PARENT_UNREGISTERED' }),
+    );
+    ObjectRegistry.clear();
     const fixture = pair();
-    fixture.sub();
-    const before = [...ObjectRegistry.getAllClasses().keys()].sort();
-    expect(() => fixture.base()).toThrow(
-      expect.objectContaining({
-        code: 'CONFIG_QUALIFIED_NAME_ALIAS_COLLISION',
-      }),
-    );
-    expect([...ObjectRegistry.getAllClasses().keys()].sort()).toEqual(before);
-    expect(ObjectRegistry.getClassByQualifiedName(OLD)?.qualifiedName).toBe(
-      OTHER,
-    );
-    expect(ObjectRegistry.getClass(SUB)?.constructor).toBe(
+    fixture.base();
+    smrt({ name: 'Scene', packageName: HISTRIO, replaceParent: true })(
       fixture.HistrioScene,
     );
+    expect({
+      table: ObjectRegistry.getTableName(BASE),
+      replaced:
+        ObjectRegistry.getClass(BASE)?.constructor === fixture.HistrioScene,
+    }).toEqual({ table: 'video_scenes', replaced: true });
+  });
 
-    // Manifest path: the replacing entry first, then the parent's entry.
-    ObjectRegistry.clear();
+  it('refuses a replacement that names a table of its own', () => {
+    const fixture = pair('histrio_scenes');
+    fixture.base();
+    expect(() => fixture.sub()).toThrow(
+      expect.objectContaining({
+        code: 'CONFIG_SAME_NAME_REPLACEMENT_TABLE_MISMATCH',
+      }),
+    );
+  });
+
+  it('refuses a late parent declaration whose alias another model already claims, leaving the registry as it was', () => {
+    const OTHER = '@fixture/other:Clip';
+    class Clip extends SmrtObject {}
+    // Manifest path: the replacing entry first, then the parent's entry. (A
+    // replacement constructor cannot register before its parent.)
     ObjectRegistry.register(Clip, {
       packageName: '@fixture/other',
       tableName: 'clips',
@@ -826,24 +810,39 @@ describe('three same-named levels through constructors', () => {
     PERMUTATIONS.map((order) => [order.join(' → '), order] as const),
   )('the leaf replaces only the middle subtype; the base keeps its key, alias and foreign key (%s)', (_label, order) => {
     const fixture = chain();
-    // An STI subclass whose direct same-named parent is not registered yet
-    // is refused (the existing STI parent rule) when its family is known
-    // to be STI; it registers once the intermediate has.
-    const refused: string[] = [];
+    // A same-named class registered before the class it extends fails closed:
+    // the middle or leaf before anything (CONFIG_SAME_NAME_PARENT_UNREGISTERED),
+    // the leaf after the base but before the middle (the existing STI rule,
+    // CONFIG_STI_UNREGISTERED_PARENT). Nothing waits; the refused class is
+    // registered again once its parent has.
+    const refused: Array<[string, string]> = [];
     for (const step of order) {
       try {
         fixture.steps[step]();
       } catch (error) {
-        expect(String((error as Error).message)).toMatch(
-          /unregistered direct parent/,
-        );
-        refused.push(step);
+        refused.push([step, (error as { code?: string }).code ?? '']);
       }
     }
-    for (const step of refused) fixture.steps[step]();
-    // Every order converges in one pass: a leaf whose same-named middle has
-    // not registered waits for it.
-    expect(refused).toEqual([]);
+    const expectedRefusals: Record<string, Array<[string, string]>> = {
+      'base,middle,leaf': [],
+      'base,leaf,middle': [['leaf', 'CONFIG_STI_UNREGISTERED_PARENT']],
+      'middle,base,leaf': [
+        ['middle', 'CONFIG_SAME_NAME_PARENT_UNREGISTERED'],
+        ['leaf', 'CONFIG_STI_UNREGISTERED_PARENT'],
+      ],
+      'middle,leaf,base': [
+        ['middle', 'CONFIG_SAME_NAME_PARENT_UNREGISTERED'],
+        ['leaf', 'CONFIG_SAME_NAME_PARENT_UNREGISTERED'],
+      ],
+      'leaf,base,middle': [['leaf', 'CONFIG_SAME_NAME_PARENT_UNREGISTERED']],
+      'leaf,middle,base': [
+        ['leaf', 'CONFIG_SAME_NAME_PARENT_UNREGISTERED'],
+        ['middle', 'CONFIG_SAME_NAME_PARENT_UNREGISTERED'],
+      ],
+    };
+    expect(refused).toEqual(expectedRefusals[order.join()]);
+    for (const step of ['base', 'middle', 'leaf'] as const)
+      if (refused.some(([name]) => name === step)) fixture.steps[step]();
     fixture.steps.shot();
     expect({
       keys: [...ObjectRegistry.getAllClasses().keys()].sort(),

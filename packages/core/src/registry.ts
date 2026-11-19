@@ -95,11 +95,9 @@ import {
   register as _register,
   registerCollection as _registerCollection,
   registerFromManifest as _registerFromManifest,
-  assertNoPendingSameNameRegistrations,
   ensureTenantScopedField,
   isBundledOutputPath,
   isSameSourcePath,
-  registerCollectionItem,
 } from './registry/class-registration';
 import {
   applyRuntimeOverrides,
@@ -3631,9 +3629,6 @@ export class ObjectRegistry {
   static getAllSchemasAsDefinitions(
     options?: Parameters<typeof _getAllSchemasAsDefinitions>[0],
   ): Record<string, SchemaDefinition> {
-    // A same-named subclass still waiting for its direct parent means the
-    // model set is incomplete (#5143).
-    assertNoPendingSameNameRegistrations();
     return _getAllSchemasAsDefinitions(options);
   }
   /**
@@ -5312,7 +5307,7 @@ export function smrt(config: SmartObjectConfig = {}) {
         // `replaceParent` is the collection's own declaration about a
         // same-named parent collection; it says nothing about the item (#5143).
         const { replaceParent: _collectionChoice, ...itemConfig } = config;
-        registerCollectionItem(itemClass, {
+        ObjectRegistry.register(itemClass, {
           ...itemConfig,
           // The collection may belong to a different package. Its config must
           // not move an already-registered item out of its declaring package.
