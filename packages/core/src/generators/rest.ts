@@ -680,7 +680,9 @@ export class APIGenerator {
       collection,
       objectId,
       url,
-      classInfo.name,
+      // The qualified identity, so request-time tenant scoping resolves the
+      // model the route found rather than a same-named class.
+      classInfo.qualifiedName ?? classInfo.name,
     );
   }
 
