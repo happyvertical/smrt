@@ -6,11 +6,11 @@
  * manifest-driven export never sees it. This module is the CLI's side of
  * carrying it: the engine (`@happyvertical/smrt-app-shell/engine`, the only
  * code allowed to open that database) reads and writes the database; the CLI
- * supplies the version history from the shell's own tables, refuses an open
- * draft and drops outstanding approvals.
+ * supplies the version history from the shell's own tables, refuses while
+ * changes wait and drops outstanding approvals.
  *
- * Moves: open drafts are NOT migrated (export refuses until the owner
- * publishes or discards the draft); approvals that were still waiting to be
+ * Moves: changes waiting are NOT migrated (export refuses until the owner
+ * applies or discards them); approvals that were still waiting to be
  * applied (`pending`, `accepted`, `executing`) are dropped from the bundle and
  * counted in the result, because each is pinned to data and a version that
  * the destination does not share. Decided approvals stay as history.
@@ -77,6 +77,8 @@ export const USER_APP_DIRNAME = 'user-app';
 /** Shell tables the move reads. */
 export const VERSIONS_TABLE = 'app_versions';
 export const DRAFTS_TABLE = 'app_drafts';
+export const CHANGE_BATCHES_TABLE = 'change_batches';
+export const CHANGE_CARDS_TABLE = 'change_cards';
 export const APPROVALS_TABLE = 'approvals';
 
 /** Approvals not yet applied; not carried across a move. */
@@ -86,8 +88,11 @@ export const OUTSTANDING_APPROVAL_STATUSES: ReadonlySet<string> = new Set([
   'executing',
 ]);
 
-/** Draft states that mean a draft is in progress. */
+/** Draft states that mean a working copy is in progress. */
 const OPEN_DRAFT_STATUSES: ReadonlySet<string> = new Set(['starting', 'open']);
+
+/** Batch states that hold changes the owner has not applied (`held`: an import owns them). */
+const WAITING_BATCH_STATUSES: ReadonlySet<string> = new Set(['open', 'held']);
 
 /** The user app's directory in a data root. */
 export function userAppDirectory(root: string): string {
@@ -148,24 +153,35 @@ export async function loadUserAppEngine(
 }
 
 /**
- * THE draft check. True when a draft of the user app is in progress, from the
- * shell's own record of drafts. Kept in one small function so a change to the
- * draft concept (#5178) is a change here and nowhere else.
+ * THE waiting check. True when the owner has changes waiting (#5178): a batch
+ * `open`/`held` with at least one active card, or a working copy still open
+ * (`app_drafts`). Kept in one small function so a change to the concept is a
+ * change here and nowhere else.
  */
-export function hasOpenUserAppDraft(tables: readonly PortableTable[]): boolean {
-  const drafts = tables.find((table) => table.name === DRAFTS_TABLE);
-  return (drafts?.rows ?? []).some((row) =>
-    OPEN_DRAFT_STATUSES.has(String(row.status ?? '')),
+export function hasChangesWaiting(tables: readonly PortableTable[]): boolean {
+  const rowsOf = (name: string) =>
+    tables.find((table) => table.name === name)?.rows ?? [];
+  const waitingBatches = new Set(
+    rowsOf(CHANGE_BATCHES_TABLE)
+      .filter((row) => WAITING_BATCH_STATUSES.has(String(row.status ?? '')))
+      .map((row) => String(row.id ?? '')),
+  );
+  return (
+    rowsOf(CHANGE_CARDS_TABLE).some(
+      (row) =>
+        row.status === 'active' && waitingBatches.has(String(row.batch_id)),
+    ) ||
+    rowsOf(DRAFTS_TABLE).some((row) =>
+      OPEN_DRAFT_STATUSES.has(String(row.status ?? '')),
+    )
   );
 }
 
-/** Refuse a move while a draft is open, telling the owner what to do. */
-export function assertNoOpenUserAppDraft(
-  tables: readonly PortableTable[],
-): void {
-  if (hasOpenUserAppDraft(tables)) {
+/** Refuse a move while changes wait, telling the owner what to do. */
+export function assertNoChangesWaiting(tables: readonly PortableTable[]): void {
+  if (hasChangesWaiting(tables)) {
     throw new Error(
-      'A draft of the app is open. Open drafts are not carried across an export or migration: publish the draft or discard it in the app, then run this again.',
+      'Changes are waiting in the app. Changes waiting are not carried across an export or migration: apply them or discard them in the app, then run this again.',
     );
   }
 }

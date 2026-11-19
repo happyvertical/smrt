@@ -30,7 +30,7 @@ import {
   type PortabilityContext,
 } from '../portability.js';
 import {
-  hasOpenUserAppDraft,
+  hasChangesWaiting,
   loadUserAppEngine,
   type UserAppSection,
 } from '../user-app-portability.js';
@@ -44,6 +44,10 @@ const TABLES = {
   app_versions:
     'CREATE TABLE app_versions (id TEXT PRIMARY KEY, version INTEGER, parent INTEGER, author TEXT, summary TEXT, definition TEXT, migration TEXT, created_at TEXT, purged INTEGER)',
   app_drafts: 'CREATE TABLE app_drafts (id TEXT PRIMARY KEY, status TEXT)',
+  change_batches:
+    'CREATE TABLE change_batches (id TEXT PRIMARY KEY, status TEXT)',
+  change_cards:
+    'CREATE TABLE change_cards (id TEXT PRIMARY KEY, batch_id TEXT, status TEXT)',
   approvals:
     'CREATE TABLE approvals (id TEXT PRIMARY KEY, status TEXT, summary TEXT)',
 };
@@ -85,6 +89,8 @@ function fixture(): Fixture {
             'purged',
           ],
           app_drafts: ['id', 'status'],
+          change_batches: ['id', 'status'],
+          change_cards: ['id', 'batch_id', 'status'],
           approvals: ['id', 'status', 'summary'],
         }).map(([table, columns]) => [
           `shell:${table}`,
@@ -334,19 +340,43 @@ describe('user app in export and import', () => {
     expect(existsSync(join(targetRoot, 'user-app', 'app.db'))).toBe(false);
   });
 
-  it('refuses while a draft is open and names the way out', async () => {
+  it('refuses while changes wait and names the way out', async () => {
     const f = fixture();
     const src = await source(f);
     await src.db.query(
-      "INSERT INTO app_drafts (id, status) VALUES ('d1', 'open')",
+      "INSERT INTO change_batches (id, status) VALUES ('b1', 'open')",
+    );
+    await src.db.query(
+      "INSERT INTO change_cards (id, batch_id, status) VALUES ('c1', 'b1', 'active')",
     );
     await expect(exportBundle(f, src.root)).rejects.toThrow(
-      /draft of the app is open.*publish the draft or discard it/s,
+      /changes are waiting.*apply them or discard them/is,
     );
-    await src.db.query("UPDATE app_drafts SET status = 'published'");
+    // An applied batch waits for nothing.
+    await src.db.query("UPDATE change_batches SET status = 'applied'");
     await expect(exportBundle(f, src.root)).resolves.toBeTruthy();
+    await src.db.close?.();
+  });
+
+  it('counts a held batch and an open working copy as waiting', () => {
+    const batch = (status: string) => ({
+      name: 'change_batches',
+      columns: ['id', 'status'],
+      rows: [{ id: 'b', status }],
+    });
+    const card = (status: string, batchId = 'b') => ({
+      name: 'change_cards',
+      columns: ['id', 'batch_id', 'status'],
+      rows: [{ id: 'c', batch_id: batchId, status }],
+    });
+    expect(hasChangesWaiting([batch('held'), card('active')])).toBe(true);
+    expect(hasChangesWaiting([batch('open'), card('active', 'other')])).toBe(
+      false,
+    );
+    expect(hasChangesWaiting([batch('discarded'), card('active')])).toBe(false);
+    expect(hasChangesWaiting([])).toBe(false);
     expect(
-      hasOpenUserAppDraft([
+      hasChangesWaiting([
         {
           name: 'app_drafts',
           columns: ['id', 'status'],
@@ -354,7 +384,6 @@ describe('user app in export and import', () => {
         },
       ]),
     ).toBe(true);
-    await src.db.close?.();
   });
 
   it('drops outstanding approvals with a notice and keeps decided ones', async () => {

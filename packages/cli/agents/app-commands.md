@@ -205,10 +205,11 @@ Agent docs (#4878): `install` runs `docs:agents`, `dev` refreshes a missing or s
   database in a staging directory, verifies counts and digests, renames it in,
   and is idempotent and resumable (a matching target is `already-imported`; a
   rerun after rows committed completes the user app; a rollback takes it back
-  out). It only lands in a local (SQLite) installation. Not migrated: an open
-  draft (`app_drafts` status `starting`/`open`; export refuses with "publish or
-  discard", via `hasOpenUserAppDraft`, the one place to adapt if the draft
-  concept changes) and approvals still waiting (`pending`/`accepted`/
+  out). It only lands in a local (SQLite) installation. Not migrated: changes
+  waiting (#5178: a `change_batches` row `open`/`held` with an active
+  `change_cards` row, or an open `app_drafts` working copy; export refuses with
+  "apply them or discard them", via `hasChangesWaiting`, the one place to adapt
+  if the concept changes) and approvals still waiting (`pending`/`accepted`/
   `executing`), which are dropped and reported in `notices`; decided approvals
   stay. Export while the app is stopped for an exact pair of databases.
   `restore-latest` also checks the candidate's `user-app/app.db`

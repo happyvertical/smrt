@@ -39,7 +39,7 @@ import {
   verifyPublishedFilesystemAssets,
 } from './portability-assets.js';
 import {
-  assertNoOpenUserAppDraft,
+  assertNoChangesWaiting,
   hasUserApp,
   loadUserAppEngine,
   summarizeUserApp,
@@ -404,8 +404,8 @@ export async function exportApplication(
         });
       }
       if (hasUserApp(userAppRoot)) {
-        // An open draft is not carried; outstanding approvals are dropped.
-        assertNoOpenUserAppDraft(exported.tables);
+        // Changes waiting are not carried; outstanding approvals are dropped.
+        assertNoChangesWaiting(exported.tables);
         const dropped = withoutOutstandingApprovals(exported.tables);
         exported.tables = dropped.tables;
         if (dropped.dropped > 0) {
