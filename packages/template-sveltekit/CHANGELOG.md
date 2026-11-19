@@ -1,5 +1,28 @@
 # @happyvertical/smrt-template-sveltekit
 
+## 0.62.11
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.62.11
+  - @happyvertical/smrt-agents@0.62.11
+  - @happyvertical/smrt-app-cli@0.62.11
+  - @happyvertical/smrt-app-runtime@0.62.11
+  - @happyvertical/smrt-chat@0.62.11
+  - @happyvertical/smrt-inference@0.62.11
+  - @happyvertical/smrt-jobs@0.62.11
+  - @happyvertical/smrt-preferences@0.62.11
+  - @happyvertical/smrt-prompts@0.62.11
+  - @happyvertical/smrt-app-mcp@0.62.11
+  - @happyvertical/smrt-desktop@0.62.11
+  - @happyvertical/smrt-svelte@0.62.11
+  - @happyvertical/smrt-tenancy@0.62.11
+  - @happyvertical/smrt-users@0.62.11
+  - @happyvertical/smrt-workflows@0.62.11
+  - @happyvertical/smrt-ui@0.62.11
+  - @happyvertical/smrt-types@0.62.11
+
 ## 0.62.10
 
 ### Patch Changes

@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.62.11
+
+### Patch Changes
+
+- ### Features
+  
+  - mail backfill horizon and persisted sync health (#5201) (messages)
+- @happyvertical/smrt-config@0.62.11
+  - @happyvertical/smrt-scanner@0.62.11
+  - @happyvertical/smrt-types@0.62.11
+
 ## 0.62.10
 
 ### Patch Changes
