@@ -5,6 +5,8 @@ import { disableTenancy, enableTenancy } from '@happyvertical/smrt-tenancy';
 import { TenantCollection } from '@happyvertical/smrt-users';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { App } from '../objects/App.ts';
+import { applyOwnBatch } from './approvals.ts';
+import { changesState, flushChecks } from './changes.ts';
 import { closeHost, getHost } from './host.ts';
 import { runAs } from './owner.ts';
 import { prepareShellSchema, TENANT_SCOPED_TABLES } from './schema.ts';
@@ -79,6 +81,11 @@ describe('desktop with the tenancy interceptor on', () => {
     await runAs(h.owner, () =>
       App.defineModel('Chore', { title: { type: 'text' } }),
     );
+    // Structure waits for the owner's Apply; then live holds it.
+    await runAs(h.owner, () => changesState());
+    await flushChecks();
+    const waiting = await runAs(h.owner, () => changesState());
+    await runAs(h.owner, () => applyOwnBatch(waiting.digest));
     await runAs(h.owner, async () =>
       (await getHost()).create('Chore', { title: 'kept' }),
     );
@@ -94,6 +101,14 @@ describe('desktop with the tenancy interceptor on', () => {
         (r) => r.tenant_id,
       ),
     ).toEqual([h.owner.tenantId]);
+    // So do the change batch and card the Apply consumed.
+    for (const table of ['change_batches', 'change_cards'])
+      expect(
+        (await rows(`SELECT DISTINCT tenant_id FROM ${table}`)).map(
+          (r) => r.tenant_id,
+        ),
+        table,
+      ).toEqual([h.owner.tenantId]);
     expect(
       (await rows('SELECT tenant_id FROM app_versions')).every(
         (r) => r.tenant_id === h.owner.tenantId,

@@ -39,6 +39,7 @@ import {
   wireHostEvents,
 } from './host.ts';
 import type { Target } from './target.ts';
+import { createTenantQueue } from './tenant-queue.ts';
 import { DraftVersionStore } from './version-store.ts';
 
 /** What the UI and tools see of the open draft. */
@@ -75,14 +76,8 @@ export type DraftPublishResult = Omit<PublishResult, 'snapshot'> & {
   draft: string;
 };
 
-let tail: Promise<unknown> = Promise.resolve();
-
-/** Run lifecycle work one at a time. */
-function exclusive<T>(fn: () => Promise<T>): Promise<T> {
-  const run = tail.then(fn, fn);
-  tail = run.catch(() => {});
-  return run;
-}
+/** Run lifecycle work one at a time per tenant. */
+const exclusive = createTenantQueue();
 
 function clean(name: unknown): string {
   const text =

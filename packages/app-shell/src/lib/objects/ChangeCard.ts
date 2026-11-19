@@ -22,6 +22,7 @@ export type ChangeCardStatus = 'active' | 'removed';
   mcp: false,
   cli: false,
   conflictColumns: ['id'],
+  tenantScoped: { mode: 'optional' },
 })
 export class ChangeCard extends SmrtObject {
   @field({ type: 'text', required: true, requiredFor: 'identity' })

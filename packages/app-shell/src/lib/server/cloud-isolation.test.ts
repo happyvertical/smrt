@@ -17,12 +17,19 @@ import { App } from '../objects/App.ts';
 import { Approval } from '../objects/Approval.ts';
 import { AppVersionCollection } from '../objects/AppVersion.ts';
 import { AccountError, derivedId, ownerTenantFor } from './accounts.ts';
-import { decideApproval } from './approvals.ts';
+import { applyOwnBatch, decideApproval } from './approvals.ts';
 import { assistantEngine } from './assistant/engine.ts';
-import { runCommand } from './builder.ts';
+import { requestRecordDelete } from './builder.ts';
+import {
+  addChangeCard,
+  changesState,
+  discardChanges,
+  flushChecks,
+  removeChangeCard,
+  waitingCount,
+} from './changes.ts';
 import { cloudSignInOptions } from './cloud-auth.ts';
 import { type CloudHarness, openCloudShell } from './cloud-test-support.ts';
-import { discardNow, requestPublish } from './drafts.ts';
 import { subscribe } from './events.ts';
 import {
   getDraftSlot,
@@ -31,7 +38,7 @@ import {
   hostFor,
   tenantAppDirs,
 } from './host.ts';
-import { isOwner, requireOwner, runAs } from './owner.ts';
+import { isOwner, type Principal, requireOwner, runAs } from './owner.ts';
 import { ShellVersionStore } from './version-store.ts';
 
 let h: CloudHarness;
@@ -41,6 +48,14 @@ beforeAll(async () => {
 afterAll(async () => {
   await h.close();
 });
+
+/** The owner's Apply click on what waits, after the exact checks have run. */
+async function applyWaiting(owner: Principal) {
+  await runAs(owner, () => changesState());
+  await flushChecks();
+  const state = await runAs(owner, () => changesState());
+  return runAs(owner, () => applyOwnBatch(state.digest));
+}
 
 const names = (d: { models: Record<string, unknown> }) =>
   Object.keys(d.models).sort();
@@ -53,6 +68,10 @@ describe('two owners in one deployment', () => {
     await runAs(h.b, () =>
       App.defineModel('Invoice', { number: { type: 'text' } }),
     );
+    // Structure waits for each owner's own Apply; it never reaches live alone.
+    expect(names(await runAs(h.a, () => App.describe()))).toEqual([]);
+    await applyWaiting(h.a);
+    await applyWaiting(h.b);
     await runAs(h.a, async () =>
       (await getHost()).create('Chore', { title: 'ann-secret' }),
     );
@@ -127,10 +146,12 @@ describe('two owners in one deployment', () => {
   });
 
   it('keeps approvals apart: not listed, not decided, not run', async () => {
-    const pending = (await runAs(h.a, () => App.removeModel('Chore'))) as {
-      status: string;
-      approvalId: string;
-    };
+    const record = await runAs(h.a, async () =>
+      (await getHost()).create('Chore', { title: 'to-delete' }),
+    );
+    const pending = (await runAs(h.a, () =>
+      requestRecordDelete('Chore', record.id as string, h.a.id, 'live'),
+    )) as { status: string; approvalId: string };
     expect(pending.status).toBe('pending_approval');
     expect(await runAs(h.b, () => Approval.pending())).toEqual([]);
     expect(
@@ -142,7 +163,11 @@ describe('two owners in one deployment', () => {
     await expect(
       runAs(h.b, () => decideApproval(pending.approvalId, true, h.b.id)),
     ).rejects.toThrow();
-    expect(names(await runAs(h.a, () => App.describe()))).toEqual(['Chore']);
+    expect(
+      await runAs(h.a, async () =>
+        (await getHost()).get('Chore', record.id as string),
+      ),
+    ).toBeTruthy();
     // The raw conditional UPDATE names the tenant too.
     const { shellApprovalAuthority } = await import('./approval-store.ts');
     const { authority } = await runAs(h.b, () => shellApprovalAuthority());
@@ -158,61 +183,108 @@ describe('two owners in one deployment', () => {
     await runAs(h.a, () => decideApproval(pending.approvalId, false, h.a.id));
   });
 
-  it('keeps drafts apart: one owner freezing or holding a draft changes nothing for the other', async () => {
-    await runAs(h.a, () => App.startDraft('ann draft'));
-    expect((await runAs(h.a, () => getDraftSlot()))?.name).toBe('ann draft');
-    expect(await runAs(h.b, () => getDraftSlot())).toBeNull();
-    // A's live structure is frozen by its draft; B's is not.
+  it('keeps changes waiting apart: batches, cards, freeze, check and apply', async () => {
+    // Anything left waiting by an earlier case is gone first.
+    for (const owner of [h.a, h.b])
+      if ((await runAs(owner, () => waitingCount())) > 0)
+        await runAs(owner, () => discardChanges());
+    const aCard = await runAs(h.a, () =>
+      addChangeCard({
+        commands: [
+          { type: 'defineModel', name: 'AnnOnly', fields: {} } as never,
+        ],
+        source: 'api',
+      }),
+    );
+    expect(await runAs(h.a, () => waitingCount())).toBe(1);
+    expect(await runAs(h.b, () => waitingCount())).toBe(0);
+    expect((await runAs(h.b, () => changesState())).batchId).toBeNull();
+    // A's batch and cards are rows only A's tenant can read, even by id.
+    const aState = await runAs(h.a, () => changesState());
+    const { ChangeBatchCollection } = await import('../objects/ChangeBatch.ts');
+    const { ChangeCardCollection } = await import('../objects/ChangeCard.ts');
+    expect(
+      await runAs(h.b, async () =>
+        (await ChangeBatchCollection.create({ db: h.db })).get(
+          aState.batchId as string,
+        ),
+      ),
+    ).toBeNull();
+    expect(
+      await runAs(h.b, async () =>
+        (await ChangeCardCollection.create({ db: h.db })).get(aCard.cardId),
+      ),
+    ).toBeNull();
+    const seen = (owner: Principal) =>
+      runAs(owner, async () =>
+        (await (await ChangeCardCollection.create({ db: h.db })).list({})).map(
+          (c) => c.id as string,
+        ),
+      );
+    expect(await seen(h.b)).not.toContain(aCard.cardId);
+    expect(await seen(h.a)).toContain(aCard.cardId);
+    // B names A's card id, or A's reviewed digest: refused; A's card stays.
     await expect(
-      runAs(h.a, () => App.defineModel('Other', { x: { type: 'text' } })),
-    ).rejects.toThrow(/frozen|draft/i);
+      runAs(h.b, () => removeChangeCard(aCard.cardId)),
+    ).rejects.toThrow();
+    await expect(
+      runAs(h.b, () => applyOwnBatch(aState.digest || 'x')),
+    ).rejects.toThrow();
+    // A's waiting changes freeze A's live structure; B's is untouched.
+    await expect(
+      runAs(h.a, async () =>
+        (await getHost()).execute(
+          { type: 'defineModel', name: 'Direct', fields: {} },
+          { author: h.a.id, approved: true },
+        ),
+      ),
+    ).rejects.toThrow(/frozen|waiting|draft/i);
     await runAs(h.b, () =>
       App.defineModel('Receipt', { note: { type: 'text' } }),
     );
-    await expect(runAs(h.b, () => hostFor('draft'))).rejects.toThrow(
-      /no draft/i,
-    );
-    // B opens a draft of its own; the two copies are different directories.
-    await runAs(h.b, () => App.startDraft('bob draft'));
+    // The working copies are separate directories, one per tenant.
     const aDir = (await runAs(h.a, () => getDraftSlot()))?.dir;
     const bDir = (await runAs(h.b, () => getDraftSlot()))?.dir;
     expect(aDir).toContain(h.a.tenantId);
     expect(bDir).toContain(h.b.tenantId);
     expect(aDir).not.toBe(bDir);
-    expect(
-      names(await runAs(h.b, () => App.describe())).includes('Chore'),
-    ).toBe(false);
-    for (const owner of [h.a, h.b])
-      await runAs(owner, () => discardNow(undefined, { expectEmpty: false }));
+    // B applies its own batch: A's waiting card and A's app are untouched.
+    await applyWaiting(h.b);
+    expect(names(await runAs(h.b, () => App.describe()))).toContain('Receipt');
+    expect(names(await runAs(h.a, () => App.describe()))).not.toContain(
+      'Receipt',
+    );
+    expect(await runAs(h.a, () => waitingCount())).toBe(1);
+    // A applies: only A's app gets the model.
+    const before = JSON.stringify(await runAs(h.b, () => App.history()));
+    await applyWaiting(h.a);
+    expect(names(await runAs(h.a, () => App.describe()))).toContain('AnnOnly');
+    expect(names(await runAs(h.b, () => App.describe()))).not.toContain(
+      'AnnOnly',
+    );
+    expect(JSON.stringify(await runAs(h.b, () => App.history()))).toBe(before);
     expect(await runAs(h.a, () => getDraftSlot())).toBeNull();
-    expect(await runAs(h.b, () => getDraftSlot())).toBeNull();
   });
 
-  it('publishes one owner’s draft onto that owner’s app only', async () => {
-    const before = JSON.stringify(await runAs(h.b, () => App.history()));
-    await runAs(h.a, () => App.startDraft('ann publish'));
-    await runAs(h.a, () =>
-      runCommand(
-        { type: 'defineModel', name: 'Extra', fields: {} },
-        h.a.id,
-        'draft',
-      ),
-    );
-    const pending = await runAs(h.a, () => requestPublish(undefined, h.a.id));
-    // B cannot decide A's publish; A can.
-    await expect(
-      runAs(h.b, () => decideApproval(pending.approvalId, true, h.b.id)),
-    ).rejects.toThrow();
-    const out = await runAs(h.a, () =>
-      decideApproval(pending.approvalId, true, h.a.id),
-    );
-    expect(out.status).toBe('approved');
-    expect(names(await runAs(h.a, () => App.describe()))).toContain('Extra');
-    expect(names(await runAs(h.b, () => App.describe()))).not.toContain(
-      'Extra',
-    );
-    expect(await runAs(h.a, () => getDraftSlot())).toBeNull();
-    expect(JSON.stringify(await runAs(h.b, () => App.history()))).toBe(before);
+  it('delivers changes events to their own tenant only, and queues per tenant', async () => {
+    const seenA: string[] = [];
+    const seenB: string[] = [];
+    const offA = subscribe((e) => seenA.push(e.type), h.a.tenantId);
+    const offB = subscribe((e) => seenB.push(e.type), h.b.tenantId);
+    try {
+      await runAs(h.a, () =>
+        addChangeCard({
+          commands: [{ type: 'defineModel', name: 'Ev', fields: {} } as never],
+          source: 'api',
+        }),
+      );
+      expect(seenA).toContain('changes');
+      expect(seenB).toEqual([]);
+    } finally {
+      offA();
+      offB();
+      await runAs(h.a, () => discardChanges());
+    }
   });
 
   it('delivers an owner only their own live events', async () => {

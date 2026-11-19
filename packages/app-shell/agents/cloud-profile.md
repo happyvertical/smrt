@@ -41,12 +41,14 @@ Every shell model that holds one owner's data is `tenantScoped: { mode:
 | `Approval` | `approvals` | the approval ledger |
 | `AssistantThread` | `assistant_threads` | assistant conversations |
 | `AssistantMessage` | `assistant_messages` | their messages |
+| `ChangeBatch` | `change_batches` | the owner's changes waiting (#5178); also carries an explicit `tenantId` the batch lookup filters on |
+| `ChangeCard` | `change_cards` | the cards of a batch |
 
 `AppImport` was already tenant-scoped (its `tenantId` field carries
 `requiredFor: 'tenant-scope'`). Preferences, inference settings, the secret
 store and AI usage rows belong to `smrt-preferences`/`smrt-inference`/
 `smrt-secrets`/core, which scope them by tenant themselves.
-`TENANT_SCOPED_TABLES` in `schema.ts` lists the seven above.
+`TENANT_SCOPED_TABLES` in `schema.ts` lists the nine above.
 
 Why `optional`, not `required`: `required` makes every no-context read throw,
 and the desktop still has background paths with no tenant context (import
@@ -64,6 +66,15 @@ recovery). Cloud fail-closed is enforced by the shell instead:
   their tenant's (an untenanted event reaches nobody).
 - `approval-store.ts` takes the tenant from the request in cloud and its raw
   `UPDATE` adds `AND tenant_id = ?` (raw SQL bypasses the interceptor).
+- Process-wide state is per tenant or keyed by globally unique ids, never one
+  shared slot: the changes queue (`changes.ts`) and the draft lifecycle queue
+  (`drafts.ts`) are `createTenantQueue()`s (one job at a time per tenant, so a
+  slow check for one tenant never stalls another); the check scheduler and its
+  `owners` / `importIndex` maps are keyed by batch id (a UUID of exactly one
+  tenant) and `runChecksJob` re-enters the owner's tenant (`runAs`) whatever
+  timer fired it; the assistant's comment-turn slot is keyed by the owner's user id (unique across tenants; an owner has one tenant).
+  `apply-now.ts` and `template-records.ts` are pure (no state); the
+  `setAfterChecks` / `setWorkingCopyReplaced` hooks are data-only, set once.
 - `owner.ts`: the owner check runs inside the principal's own tenant; a user
   who owns tenant A is not the owner of B.
 
@@ -137,7 +148,7 @@ comes from the request. The App row is created on the tenant's first request.
 
 ## Tests
 
-`cloud-isolation.test.ts` (two owners: definitions, history, approvals, drafts,
+`cloud-isolation.test.ts` (two owners: definitions, history, approvals, changes waiting,
 events, directories, sign-up, sessions), `cloud-surfaces.test.ts` (what must
 not exist in cloud; local unchanged), `local-tenant-scope.test.ts` (desktop
 upgrade and tenancy ON). Harness: `cloud-test-support.ts`. They run on SQLite
