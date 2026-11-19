@@ -15,6 +15,7 @@ import {
   tryResolveConfiguredAIProvider,
 } from '@happyvertical/smrt-config';
 import {
+  INFERENCE_PRESETS,
   type InferenceResolver,
   type InferenceTierRequest,
   resolveInference,
@@ -205,7 +206,7 @@ function assertOwnerSuppliedKey(resolved: {
  * owner typed (internal network) and never a local server. A stored key that
  * carries a custom base URL, or an origin that is not https, is refused.
  */
-function assertPublicProviderEndpoint(target: {
+export function assertPublicProviderEndpoint(target: {
   provider?: string;
   preset?: string;
   baseUrl?: string;
@@ -227,10 +228,20 @@ function assertPublicProviderEndpoint(target: {
     } catch {
       used = null;
     }
-    if (used !== own) throw new AssistantNotConfiguredError();
+    // A preset (OpenRouter, ...) reaches the target as an OpenAI-compatible
+    // base URL, so the origin may also be one of the presets' own endpoints.
+    const presetOrigins = new Set<string>();
+    for (const preset of Object.values(INFERENCE_PRESETS)) {
+      try {
+        presetOrigins.add(new URL(preset.baseUrl).origin);
+      } catch {
+        // a preset without a URL has no origin to allow
+      }
+    }
+    if (used !== own && !(used && presetOrigins.has(used)))
+      throw new AssistantNotConfiguredError();
   }
-  if (!used || !used.startsWith('https:'))
-    throw new AssistantNotConfiguredError();
+  if (!used?.startsWith('https:')) throw new AssistantNotConfiguredError();
 }
 
 /**

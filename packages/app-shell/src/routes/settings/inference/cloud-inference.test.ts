@@ -16,6 +16,7 @@ import {
   vi,
 } from 'vitest';
 import {
+  assertPublicProviderEndpoint,
   assistantStatus,
   resolveAssistantOptions,
 } from '$lib/server/assistant/config';
@@ -126,6 +127,28 @@ describe('cloud: the assistant runs only on the owner’s own key', () => {
     await expect(resolveAssistantOptions(h.b, config)).rejects.toMatchObject({
       code: 'assistant_not_configured',
     });
+  });
+
+  it('accepts a preset target on its own public endpoint (OpenRouter) and refuses any other destination', () => {
+    // A preset reaches the resolver as an OpenAI-compatible base URL.
+    expect(() =>
+      assertPublicProviderEndpoint({
+        provider: 'openai',
+        baseUrl: 'https://openrouter.ai/api/v1',
+      }),
+    ).not.toThrow();
+    expect(() =>
+      assertPublicProviderEndpoint({ provider: 'openai' }),
+    ).not.toThrow();
+    for (const baseUrl of [
+      'https://10.0.0.5/v1',
+      'http://localhost:11434/v1',
+      'https://169.254.169.254/latest',
+      'not a url',
+    ])
+      expect(() =>
+        assertPublicProviderEndpoint({ provider: 'openai', baseUrl }),
+      ).toThrow(/not configured|assistant/i);
   });
 
   it('a tenant with its own key runs on that key, and the other still does not', async () => {
