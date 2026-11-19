@@ -15,6 +15,7 @@ import {
   type InferenceSettingsController,
   type InferenceSettingsHost,
   InferenceSettingsService,
+  inferenceKeyOrigin,
 } from '@happyvertical/smrt-inference/server';
 import { createPreferenceStore } from '@happyvertical/smrt-preferences';
 import './inference-registry.ts';
@@ -132,6 +133,12 @@ const NO_PROBES = {
   error: 'This is not available on the hosted app.',
 };
 
+const NO_ENDPOINT = {
+  ok: false as const,
+  status: 403,
+  error: 'A custom or local endpoint is not available on the hosted app.',
+};
+
 /**
  * Hosted, the probes are refused: they make the SERVER connect to an address
  * the owner typed (an internal-network request), read the operator's key
@@ -143,6 +150,22 @@ function withoutServerProbesInCloud(
 ): InferenceSettingsController {
   return {
     ...inner,
+    async saveKey(session, change) {
+      if ((await shellProfile()) === 'cloud') {
+        // The key is later SENT to its endpoint by the server: hosted, only a
+        // provider's own public https endpoint may hold one, never an address
+        // the owner typed (an internal-network request) or a local server.
+        let origin: string | null = null;
+        try {
+          origin = inferenceKeyOrigin(change);
+        } catch {
+          origin = null; // the inner host refuses it with its own message
+        }
+        if (change.baseUrl?.trim() || (origin && !origin.startsWith('https:')))
+          return { ...NO_ENDPOINT };
+      }
+      return inner.saveKey(session, change);
+    },
     async testConnection(session, input) {
       if ((await shellProfile()) === 'cloud') return { ...NO_PROBES };
       return inner.testConnection(session, input);

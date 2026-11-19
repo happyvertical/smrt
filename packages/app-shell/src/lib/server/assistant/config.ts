@@ -24,7 +24,10 @@ import {
   inferenceUnavailableMessage,
   isInferenceUnavailableError,
 } from '@happyvertical/smrt-core/inference-availability';
-import { ChatGPTSignedOutError } from '@happyvertical/smrt-inference/server';
+import {
+  ChatGPTSignedOutError,
+  inferenceKeyOrigin,
+} from '@happyvertical/smrt-inference/server';
 import type { AssistantStatus } from '../../assistant/events.ts';
 import { CHATGPT_ASSISTANT_CLASS, CHATGPT_SETTINGS_HREF } from '../chatgpt.ts';
 import { shellProfile } from '../host.ts';
@@ -171,7 +174,16 @@ export async function resolveAssistantOptions(
 function assertOwnerSuppliedKey(resolved: {
   options: Record<string, unknown> | undefined;
   bound: boolean;
-  resolution: { via?: string; target?: { source?: string; apiKey?: unknown } };
+  resolution: {
+    via?: string;
+    target?: {
+      source?: string;
+      apiKey?: unknown;
+      provider?: string;
+      preset?: string;
+      baseUrl?: string;
+    };
+  };
 }): void {
   const target = resolved.resolution.target;
   const key = target?.apiKey;
@@ -183,6 +195,41 @@ function assertOwnerSuppliedKey(resolved: {
     key.trim() === '' ||
     resolved.options?.apiKey !== key.trim()
   )
+    throw new AssistantNotConfiguredError();
+  assertPublicProviderEndpoint(target);
+}
+
+/**
+ * Hosted, the server sends the owner's key to the target's endpoint, so the
+ * endpoint must be the provider's own public https one: never an address the
+ * owner typed (internal network) and never a local server. A stored key that
+ * carries a custom base URL, or an origin that is not https, is refused.
+ */
+function assertPublicProviderEndpoint(target: {
+  provider?: string;
+  preset?: string;
+  baseUrl?: string;
+}): void {
+  const custom = target.baseUrl?.trim();
+  let own: string | null = null;
+  try {
+    own = inferenceKeyOrigin({
+      ...(target.provider ? { provider: target.provider } : {}),
+      ...(target.preset ? { preset: target.preset } : {}),
+    });
+  } catch {
+    own = null;
+  }
+  let used: string | null = own;
+  if (custom) {
+    try {
+      used = new URL(custom).origin;
+    } catch {
+      used = null;
+    }
+    if (used !== own) throw new AssistantNotConfiguredError();
+  }
+  if (!used || !used.startsWith('https:'))
     throw new AssistantNotConfiguredError();
 }
 

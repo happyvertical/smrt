@@ -154,3 +154,11 @@ with the real tenancy interceptor; PostgreSQL, the deployed runtime's startup
 - Hosted inference (#5194), workbook import in cloud, eviction/caps (#5192),
   a cross-process lock for the first sign-in of one account (the insert-only
   ids already prevent a second tenant).
+
+## Key endpoints (cloud)
+
+A key the owner saves is later sent by the server to its endpoint, so in the cloud
+profile only a provider's own public https endpoint may hold one. `saveKey` refuses a
+custom `baseUrl` or a non-https origin, and the assistant refuses a resolved target
+whose endpoint is not the provider's own (`assertPublicProviderEndpoint`). Without that,
+a tenant could make the server call an internal address.

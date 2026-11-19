@@ -107,6 +107,27 @@ describe('cloud: the assistant runs only on the owner’s own key', () => {
     });
   });
 
+  it('refuses an owner-typed or local endpoint for a key, so the server never calls one', async () => {
+    const config = { env: ENV, tier: 'good' as const };
+    for (const input of [
+      { provider: 'openai', key: BOB_KEY, baseUrl: 'https://10.0.0.5/v1' },
+      {
+        provider: 'openai',
+        key: BOB_KEY,
+        baseUrl: 'http://localhost:11434/v1',
+      },
+      { provider: 'ollama', key: BOB_KEY },
+    ]) {
+      const outcome = await post('saveKey', h.b, input);
+      expect((outcome as { status?: number }).status).toBeGreaterThanOrEqual(
+        400,
+      );
+    }
+    await expect(resolveAssistantOptions(h.b, config)).rejects.toMatchObject({
+      code: 'assistant_not_configured',
+    });
+  });
+
   it('a tenant with its own key runs on that key, and the other still does not', async () => {
     expect(
       await post('saveKey', h.a, { provider: 'openai', key: ANN_KEY }),
