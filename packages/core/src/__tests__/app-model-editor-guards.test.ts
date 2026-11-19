@@ -320,9 +320,14 @@ describe('app model editor: installed model names and tables', () => {
             fields: {
               title: { type: 'text' },
               metrics: { type: 'text' },
-              nameOfThePersonWhoSignedOffOnTheLastFireInspectionHere: {
-                type: 'text',
-              },
+              // PostgreSQL would truncate it, so only SQLite booted it before.
+              ...(engine === 'sqlite'
+                ? {
+                    nameOfThePersonWhoSignedOffOnTheLastFireInspectionHere: {
+                      type: 'text' as const,
+                    },
+                  }
+                : {}),
             },
           },
         },
@@ -341,6 +346,42 @@ describe('app model editor: installed model names and tables', () => {
       }),
     ).rejects.toThrow(/FIELD_NAME_RESERVED/);
   });
+
+  it.skipIf(engine !== 'postgres')(
+    'checks a new table again under the shared lock, so another journal claiming it first wins',
+    async () => {
+      const base = await createAppModelHistory({
+        db,
+        application: 'editor-guards',
+        tenantId: TENANT,
+      });
+      let raced = false;
+      const store: AppModelHistoryStore = {
+        ...base,
+        // Another process (another journal) creates the table after this
+        // editor validated and before it takes the lock.
+        transaction: async (work) => {
+          if (!raced) {
+            raced = true;
+            await db.query(
+              'CREATE TABLE guard_notes (id UUID PRIMARY KEY, title TEXT)',
+            );
+          }
+          return base.transaction!(work);
+        },
+      };
+      const e = await editorFor({ store });
+      await expect(
+        applier(e)({
+          type: 'create_list',
+          name: 'GuardNotes',
+          list: listDefinition,
+        }),
+      ).rejects.toThrow(/MODEL_TABLE_COLLISION: guard_notes already exists/);
+      expect(await e.history()).toEqual([]);
+      expect(await e2eColumns('guard_notes')).toEqual(['id', 'title']);
+    },
+  );
 });
 
 const MEMBER_PKG = '@fixture/editor-guards-members';

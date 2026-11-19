@@ -1720,6 +1720,10 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
       if (engine === 'postgres') {
         try {
           await store.transaction!(async (scoped, db) => {
+            // Check new tables again under the shared lock every journal's
+            // edit takes, so two processes on different journals cannot both
+            // claim a table that was absent when they validated.
+            await validate(next, archived, db);
             // Claim before touching the registry. The lock and this CAS fence
             // every process, including two editors created at the same revision.
             await scoped.append(change, revision);
