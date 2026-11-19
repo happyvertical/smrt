@@ -1435,6 +1435,8 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
     activation = options.activation,
   ) {
     if (!activation || (edit.type !== 'undo' && edit.type !== 'import')) return;
+    // Another journal's registrations refuse the edit: load nothing for it.
+    assertSoleEditor();
     if (
       context.tenantId !== options.tenantId ||
       !context.actor ||

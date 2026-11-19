@@ -1528,6 +1528,46 @@ describe('app model editor: one customised registry per process', () => {
     await applier(e, TENANT)({ type: 'import', cookbook: staged.cookbook() });
     await expect(open(OTHER_TENANT)).resolves.toBeDefined();
   });
+
+  it('a pre-opened editor refused by another journal activates nothing for an import', async () => {
+    const calls: string[][] = [];
+    const first = await createAppModelEditor({
+      db,
+      application: 'editor-guards-slot',
+      tenantId: TENANT,
+      packageName: APP,
+      cookbook: memberBook(),
+      catalog: memberCatalog,
+      authorize: (c) => c.actor === 'owner',
+      activation: {
+        activate: async (ids) => {
+          calls.push([...ids]);
+        },
+      },
+    });
+    const second = await editorFor(OTHER_TENANT);
+    await applier(
+      second,
+      OTHER_TENANT,
+    )({
+      type: 'add_field',
+      model: MEMBER,
+      name: 'loyalty',
+      field: { type: 'text' },
+    });
+    await expect(
+      first.apply(
+        { type: 'import', cookbook: memberBook() },
+        {
+          actor: 'owner',
+          tenantId: TENANT,
+          expectedRevision: 0,
+          requestId: 'req-foreign',
+        },
+      ),
+    ).rejects.toThrow(/MODEL_EDIT_CONFLICT: this process already holds/);
+    expect(calls).toEqual([]);
+  });
 });
 
 describe('app model editor: provider fields across recipe disable', () => {
