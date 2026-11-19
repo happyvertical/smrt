@@ -1,7 +1,14 @@
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { createRequire } from 'node:module';
-import { extname, isAbsolute, relative, resolve } from 'node:path';
+import {
+  dirname,
+  extname,
+  isAbsolute,
+  join,
+  relative,
+  resolve,
+} from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { resolve as resolveImport } from 'import-meta-resolve';
 import { modelReplacements } from '../manifest/model-replacements.js';
@@ -579,6 +586,66 @@ export function generateActivationRegistration(
     importCache.set(file, parsed.deps);
     return parsed.deps;
   }
+  /** `package.json` of the package that owns `file`, found by walking up. */
+  function packageRootOf(file: string): string | undefined {
+    for (let dir = dirname(file); ; dir = dirname(dir)) {
+      if (existsSync(join(dir, 'package.json'))) return dir;
+      if (dirname(dir) === dir) return undefined;
+    }
+  }
+  const unmanagedReach = new Map<string, boolean>();
+  /**
+   * Whether the package at `root` can import a managed package, judged from
+   * the dependency fields of its `package.json` and those of its dependencies.
+   * An unmanaged package or barrel that re-exports a managed model evaluates
+   * that model when it is imported, so the eager walk must go through it; a
+   * package that cannot reach one is never read.
+   */
+  function reachesManaged(root: string, active = new Set<string>()): boolean {
+    const known = unmanagedReach.get(root);
+    if (known !== undefined) return known;
+    if (active.has(root)) return false;
+    active.add(root);
+    let manifestJson: Record<string, Record<string, string> | undefined> = {};
+    try {
+      manifestJson = JSON.parse(
+        readFileSync(join(root, 'package.json'), 'utf8'),
+      );
+    } catch {
+      return false;
+    }
+    let found = false;
+    for (const field of [
+      'dependencies',
+      'peerDependencies',
+      'optionalDependencies',
+    ]) {
+      for (const dep of Object.keys(manifestJson[field] ?? {})) {
+        if (dep === FRAMEWORK_CORE) continue;
+        if (packageModules.has(dep)) {
+          found = true;
+          break;
+        }
+        let depRoot: string | undefined;
+        for (let dir = root; ; dir = dirname(dir)) {
+          const candidate = join(dir, 'node_modules', dep);
+          if (existsSync(join(candidate, 'package.json'))) {
+            depRoot = realpathSync(candidate);
+            break;
+          }
+          if (dirname(dir) === dir) break;
+        }
+        if (depRoot && reachesManaged(depRoot, active)) {
+          found = true;
+          break;
+        }
+      }
+      if (found) break;
+    }
+    active.delete(root);
+    if (found || active.size === 0) unmanagedReach.set(root, found);
+    return found;
+  }
   /**
    * The modules whose files evaluate when `file` is imported: every file
    * reachable through static imports, across package entries and peers.
@@ -615,13 +682,18 @@ export function generateActivationRegistration(
         !specifier.startsWith('.') &&
         !specifier.startsWith('$lib/') &&
         !isAbsolute(specifier);
-      if (bare && !packageModules.has(pkg)) continue;
       let next: string;
       try {
         next = resolveSource(specifier, file);
       } catch (error) {
         if (bare || crossesPackage) continue;
         throw error;
+      }
+      if (bare && !packageModules.has(pkg)) {
+        // An unmanaged package or barrel is followed only when it can reach a
+        // managed package, so a plain dependency is never parsed.
+        const root = packageRootOf(next);
+        if (!root || !reachesManaged(root)) continue;
       }
       visitEager(next, seen, owners, crossesPackage || bare);
     }

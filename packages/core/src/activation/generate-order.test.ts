@@ -1147,6 +1147,76 @@ assert.equal(ObjectRegistry.getClass('${PROVIDER}').qualifiedName, '${CHILD}');`
     expect(run.status, run.output).toBe(0);
   });
 
+  it('registers a decorated child reached through a package that declares no models only after its parent', () => {
+    const OUTER = '@aaa/outer:Outer';
+    const CHILD = '@activation/appc:Customer';
+    const { files, manifest } = project([
+      { key: PROVIDER },
+      { key: CHILD, parent: PROVIDER, replace: true },
+      { key: OUTER },
+    ]);
+    files.write(
+      'node_modules/@activation/appc/index.js',
+      `import { smrt } from '@happyvertical/smrt-core';
+import { Customer as Base } from '@activation/customer';
+export const Customer = smrt({ packageName: '@activation/appc', replaceParent: true, tableName: 'fixture_customer' })(class Customer extends Base {});
+`,
+    );
+    files.write(
+      'node_modules/plain-helper/package.json',
+      JSON.stringify({
+        name: 'plain-helper',
+        type: 'module',
+        exports: './index.js',
+        dependencies: { '@activation/appc': '*' },
+      }),
+    );
+    files.write(
+      'node_modules/plain-helper/index.js',
+      "export { Customer } from '@activation/appc';\n",
+    );
+    files.write(
+      'node_modules/@aaa/outer/index.js',
+      `import { SmrtObject } from '@happyvertical/smrt-core';
+export { Customer } from 'plain-helper';
+export class Outer extends SmrtObject {}
+`,
+    );
+    const generated = generate(files, manifest);
+    expect(generated.manifest.modules['@aaa/outer'].after).toContain(
+      '@activation/customer',
+    );
+    const run = runNode(
+      files,
+      generated,
+      `await coordinator(['${OUTER}']).boot();
+assert.equal(ObjectRegistry.getClass('${PROVIDER}').qualifiedName, '${CHILD}');`,
+    );
+    expect(run.status, run.output).toBe(0);
+  });
+
+  it('does not walk installed packages that cannot reach a managed package', () => {
+    const OUTER = '@aaa/outer:Outer';
+    const { files, manifest } = project([{ key: PROVIDER }, { key: OUTER }]);
+    files.write(
+      'node_modules/unrelated/package.json',
+      JSON.stringify({
+        name: 'unrelated',
+        type: 'module',
+        exports: './index.js',
+      }),
+    );
+    files.write('node_modules/unrelated/index.js', 'export const x = 1;\n');
+    files.write(
+      'node_modules/@aaa/outer/index.js',
+      `import { SmrtObject } from '@happyvertical/smrt-core';
+import { x } from 'unrelated';
+export class Outer extends SmrtObject { static x = x; }
+`,
+    );
+    expect(() => generate(files, manifest)).not.toThrow();
+  });
+
   it('includes a child reached only through a managed package subpath in the closure', () => {
     const WIDGET = `${HOST}:Widget`;
     const BRIDGE = '@ccc/pkg:Pkg';
