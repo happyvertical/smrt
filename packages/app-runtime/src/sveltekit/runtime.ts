@@ -1420,7 +1420,10 @@ export function composeSmrtSvelteKitRuntime(
       if (
         typeof user?.id !== 'string' ||
         user.id.length === 0 ||
-        user.status !== UserStatus.ACTIVE
+        user.status !== UserStatus.ACTIVE ||
+        // A non-login service principal (#5245) never resolves as an
+        // external identity's principal, even if an identity is linked to it.
+        !user.canHoldSession()
       ) {
         return null;
       }

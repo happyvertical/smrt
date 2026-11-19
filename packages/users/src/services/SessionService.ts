@@ -225,7 +225,8 @@ export class SessionService {
       // Otherwise a suspended user's probe can keep extending an otherwise
       // valid session indefinitely even though no context is returned.
       const initialUser = await this.userCollection.get(session.userId);
-      if (!initialUser?.isActive()) return null;
+      if (!initialUser?.isActive() || !initialUser.canHoldSession())
+        return null;
 
       // A layered session is valid only while the session it rides on is
       // (#3276). Un-enrolling a device, or revoking its bearer, therefore
@@ -251,7 +252,8 @@ export class SessionService {
           return null;
         }
         const parentUser = await this.userCollection.get(parentSession.userId);
-        if (!parentUser?.isActive()) return null;
+        if (!parentUser?.isActive() || !parentUser.canHoldSession())
+          return null;
         parent = {
           sessionId: parentSession.id as string,
           userId: parentSession.userId,
@@ -269,7 +271,7 @@ export class SessionService {
       const tenantId = session.tenantId;
 
       const user = await this.userCollection.get(userId);
-      if (!user?.isActive()) return null;
+      if (!user?.isActive() || !user.canHoldSession()) return null;
 
       let permissions: string[] = [];
       let membership: Membership | null = null;

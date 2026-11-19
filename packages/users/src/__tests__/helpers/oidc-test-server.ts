@@ -140,8 +140,13 @@ CREATE TABLE IF NOT EXISTS "users" (
   "username" TEXT,
   "username_key" TEXT,
   "status" TEXT,
-  "last_login_at" TIMESTAMP
+  "last_login_at" TIMESTAMP,
+  "principal_kind" TEXT,
+  "service_principal_tenant_id" TEXT,
+  "service_principal_key" TEXT,
+  "retired_at" TIMESTAMP
 );
+CREATE UNIQUE INDEX IF NOT EXISTS "users_service_principal_tenant_key" ON "users" ("service_principal_tenant_id", "service_principal_key");
 CREATE UNIQUE INDEX IF NOT EXISTS "users_slug_context_idx" ON "users" ("slug", "context");
 CREATE UNIQUE INDEX IF NOT EXISTS "users_profile_id_idx" ON "users" ("profile_id");
 CREATE UNIQUE INDEX IF NOT EXISTS "users_email_key_idx" ON "users" ("email_key");
