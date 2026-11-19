@@ -313,7 +313,8 @@ export async function appendAiRunEvent(
     throw new TypeError(`appendAiRunEvent: unknown event type ${input.type}`);
   }
   checkEventStatus(input.type, input.status ?? null);
-  let tenantId: string | null = null;
+  // The tenant the payload was redacted for; the final lock is taken in it.
+  let tenantId: string | null | undefined;
   if (input.payload !== undefined && input.payload !== null) {
     // The host redactor applies the run's tenant rules, so it needs the
     // run's tenant before anything is stored. Read behind the claim fence,
@@ -330,18 +331,28 @@ export async function appendAiRunEvent(
       options,
     );
   }
-  const redacted = await redactPayload(input, runId, tenantId, options);
+  const redacted = await redactPayload(input, runId, tenantId ?? null, options);
   const capped = capAiRunEventPayload(redacted, options.maxPayloadBytes);
   const id = input.id ?? newAiRunId();
   const seq = await withAiRunTransaction(
     db,
     async (tx) => {
       await assertAiRunFence(tx, runId, options.fence);
+      // Locked in the tenant the payload was redacted for: a run whose id
+      // was pruned and reused by another tenant while the redactor ran is
+      // not found, and the payload is never written into its trajectory.
+      const scoped =
+        tenantId === undefined
+          ? { sql: '', params: [] as unknown[] }
+          : tenantId === null
+            ? { sql: ' AND tenant_id IS NULL', params: [] as unknown[] }
+            : { sql: ' AND tenant_id = $2', params: [tenantId] };
       const locked = getRows(
         await aiRunQuery(
           tx.db,
-          `SELECT id FROM _smrt_ai_runs WHERE id = $1${forUpdate(tx)}`,
+          `SELECT id FROM _smrt_ai_runs WHERE id = $1${scoped.sql}${forUpdate(tx)}`,
           runId,
+          ...scoped.params,
         ),
       );
       if (!locked[0]) throw new AiRunNotFoundError(runId);
