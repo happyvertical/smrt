@@ -61,9 +61,17 @@ function tenantOwnershipFields(className: string): Map<string, string> {
   if (configured) add(configured);
   const runtimeColumns = ObjectRegistry.getRuntimeOwnershipColumns(className);
   if (runtimeColumns.size > 0) {
+    // Fields the class declares or inherits (an STI child carries its
+    // parent's ownership field), own declarations first.
     const propertyByColumn = new Map<string, string>();
-    for (const name of ObjectRegistry.getFields(className).keys()) {
-      propertyByColumn.set(whereColumnName(name), name);
+    for (const owner of [
+      className,
+      ...ObjectRegistry.getInheritanceChain(className),
+    ]) {
+      for (const name of ObjectRegistry.getFields(owner).keys()) {
+        const column = whereColumnName(name);
+        if (!propertyByColumn.has(column)) propertyByColumn.set(column, name);
+      }
     }
     for (const column of runtimeColumns) {
       add(propertyByColumn.get(column) ?? column);
