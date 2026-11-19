@@ -248,13 +248,24 @@ for (const replace of [false, true]) {
         ]);
       });
       it(`${path}: createType selects a subtype and preserves business type`, async () => {
-        await create(path, {
+        const input = {
           name: 'selected',
           createType: child,
           type: 'article',
           detail: 'child field',
           locked: 'must not write',
-        });
+        };
+        if (path === 'REST') {
+          // REST refuses a create that sets the subtype's read-only field
+          // (#5195); the other paths drop it.
+          await expect(create(path, input)).rejects.toThrow(
+            /VALIDATION_FIELD_NOT_WRITABLE/,
+          );
+          const { locked: _locked, ...writable } = input;
+          await create(path, writable);
+        } else {
+          await create(path, input);
+        }
         const collection = await ObjectRegistry.getCollection(root, { db });
         const [item] = await collection.list({ where: { name: 'selected' } });
         expect(item).toBeInstanceOf(CreateTargetChild);
