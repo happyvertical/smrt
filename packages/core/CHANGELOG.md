@@ -1,5 +1,20 @@
 # @happyvertical/smrt-core
 
+## 0.62.13
+
+### Patch Changes
+
+- ### Features
+  
+  - readable-account mail search and private correspondents (#5232) (messages)
+  
+  ### Bug Fixes
+  
+  - createMany adopts concurrent natural keys; publish replay reuses the previous worker (#5226)
+- @happyvertical/smrt-config@0.62.13
+  - @happyvertical/smrt-scanner@0.62.13
+  - @happyvertical/smrt-types@0.62.13
+
 ## 0.62.12
 
 ### Patch Changes

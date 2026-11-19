@@ -10,6 +10,12 @@ export interface Props {
   onchange?: (recipients: RecipientEntry[]) => void;
   /** Placeholder text for the recipient input field. */
   placeholder?: string;
+  /**
+   * Autocomplete source, usually backed by the host's
+   * `CorrespondentService.suggest()` for the signed-in user. Called with the
+   * text typed so far; omit it for a plain input.
+   */
+  suggest?: (prefix: string) => Promise<RecipientEntry[]> | RecipientEntry[];
 }
 </script>
 
@@ -22,9 +28,37 @@ export interface Props {
     recipients = [],
     onchange,
     placeholder = 'Add recipient...',
+    suggest,
   }: Props = $props();
 
   let inputValue = $state('');
+  let suggestions = $state<RecipientEntry[]>([]);
+  let suggestSeq = 0;
+
+  async function refreshSuggestions(prefix: string) {
+    if (!suggest || prefix.trim().length < 1) {
+      suggestions = [];
+      return;
+    }
+    const seq = ++suggestSeq;
+    try {
+      const found = await suggest(prefix);
+      if (seq === suggestSeq) suggestions = found.slice(0, 8);
+    } catch {
+      if (seq === suggestSeq) suggestions = [];
+    }
+  }
+
+  $effect(() => {
+    void refreshSuggestions(inputValue);
+  });
+
+  function pick(entry: RecipientEntry) {
+    suggestSeq++;
+    suggestions = [];
+    inputValue = '';
+    onchange?.([...recipients, { ...entry, isValid: true }]);
+  }
   const inputId = $derived(
     `recipient-input-${label.toLowerCase().replace(/[^a-z0-9]+/gi, '-')}`,
   );
@@ -85,12 +119,32 @@ export interface Props {
       onkeydown={handleKeydown}
       onblur={addRecipient}
     />
+    {#if suggestions.length}
+      <ul class="smrt-recipient-input__suggestions" data-smrt-part="suggestions" role="listbox" aria-label={label}>
+        {#each suggestions as entry}
+          <li role="option" aria-selected="false">
+            <Button
+              variant="ghost"
+              size="sm"
+              onmousedown={(e: MouseEvent) => e.preventDefault()}
+              onclick={() => pick(entry)}
+            >{entry.name ? `${entry.name} <${entry.address}>` : entry.address}</Button>
+          </li>
+        {/each}
+      </ul>
+    {/if}
   </div>
 </div>
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
 @layer smrt.structure {
+  .smrt-recipient-input__suggestions {
+    flex-basis: 100%;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
   .smrt-recipient-input__root {
     display: flex;
     align-items: flex-start;

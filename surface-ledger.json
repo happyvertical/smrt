@@ -4807,6 +4807,16 @@
   },
   {
     "kind": "model",
+    "name": "@happyvertical/smrt-messages:Correspondent",
+    "issue": 5132,
+    "nearest": [
+      "@happyvertical/smrt-profiles:Profile",
+      "@happyvertical/smrt-messages:UserNotification"
+    ],
+    "reason": "One person's private, mail-derived address book entry (counts, last contact, readable-account lineage) with an optional link to a Profile. Profile is a tenant-visible identity record and cannot carry per-owner derived counts or per-owner privacy; UserNotification is the per-user row pattern (owner-filtered service, generated surfaces off) this follows."
+  },
+  {
+    "kind": "model",
     "name": "@happyvertical/smrt-messages:Email",
     "grandfathered": true
   },

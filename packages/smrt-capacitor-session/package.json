@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-capacitor-session",
-  "version": "0.62.12",
+  "version": "0.62.13",
   "description": "Capacitor Android plugin that keeps a WebView cookie session durable: flushes the WebView CookieManager to disk when the cookie jar changes and on pause, stop and destroy",
   "author": "HappyVertical",
   "license": "MIT",

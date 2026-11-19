@@ -6,10 +6,12 @@
 import { existsSync, mkdirSync } from 'node:fs';
 import { isAbsolute, join } from 'node:path';
 import {
+  isEmbeddedDatabase,
   ObjectRegistry,
   planRuntimeModelDDL,
   registerRuntimeModel,
   withCallerOwnedDatabaseTransaction,
+  withEmbeddedWriteTransaction,
 } from '@happyvertical/smrt-core';
 import { MCPGenerator } from '@happyvertical/smrt-core/generators/mcp';
 import { APIGenerator } from '@happyvertical/smrt-core/generators/rest';
@@ -1240,25 +1242,33 @@ export class AppRuntime {
         // Re-read and write in ONE transaction. If anything changed since the
         // sandbox read (an edit outside methods), run the method again on the
         // current data. A serializable database would retry the same way.
-        const applied = await this.db.transaction(async (tx: Handle) => {
-          const now = await this.methodData(tx);
-          const nowRecord = id ? await this.get(model, id, tx) : null;
-          if (
-            JSON.stringify([now, nowRecord]) !== JSON.stringify([data, record])
-          )
-            return null;
-          await this.checkWrites(writes, tx);
-          let n = 0;
-          for (const w of writes) {
-            if (w.op === 'create')
-              await this.create(w.model, w.data ?? {}, {}, tx);
-            else if (w.op === 'update')
-              await this.update(w.model, String(w.id), w.data ?? {}, tx);
-            else await this.remove(w.model, String(w.id), tx);
-            n++;
-          }
-          return n;
-        });
+        // The transaction takes core's per-database write queue first (as an
+        // ordinary model save does), so a concurrent create/update/delete can
+        // never hold the queue while waiting on this transaction's lock.
+        const applied = await withEmbeddedWriteTransaction(
+          this.db,
+          isEmbeddedDatabase(this.db),
+          async (tx: Handle) => {
+            const now = await this.methodData(tx);
+            const nowRecord = id ? await this.get(model, id, tx) : null;
+            if (
+              JSON.stringify([now, nowRecord]) !==
+              JSON.stringify([data, record])
+            )
+              return null;
+            await this.checkWrites(writes, tx);
+            let n = 0;
+            for (const w of writes) {
+              if (w.op === 'create')
+                await this.create(w.model, w.data ?? {}, {}, tx);
+              else if (w.op === 'update')
+                await this.update(w.model, String(w.id), w.data ?? {}, tx);
+              else await this.remove(w.model, String(w.id), tx);
+              n++;
+            }
+            return n;
+          },
+        );
         if (applied === null) {
           if (attempt >= METHOD_RETRIES)
             throw new AppError(
