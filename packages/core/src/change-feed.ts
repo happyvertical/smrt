@@ -143,6 +143,7 @@ import { type ChangeSignal, publishChangeSignal } from './change-signals.js';
 import { resolveDbCacheKey } from './collection-cache.js';
 import { resolveDispatchTenantScope } from './dispatch/tenant-resolver.js';
 import {
+  databaseReadScope,
   deferUntilFrameworkCommit,
   isEmbeddedDatabase,
   usesPostgresDialect,
@@ -1581,6 +1582,22 @@ export async function getChangesSince(
   );
 }
 
+/**
+ * {@link getChangesSince} for a reader that may go away while its read waits
+ * in the write queue: when the read reaches the front and `isCancelled()` is
+ * true, nothing runs and it resolves to `null`. Internal to the `_events`
+ * stream.
+ */
+export async function getChangesSinceUnlessCancelled(
+  db: DatabaseInterface,
+  options: GetChangesOptions,
+  isCancelled: () => boolean,
+): Promise<ChangeFeedPage | null> {
+  return withEmbeddedWriteQueue(db, isEmbeddedDatabase(db), () =>
+    isCancelled() ? Promise.resolve(null) : readChangesSince(db, options),
+  );
+}
+
 async function readChangesSince(
   db: DatabaseInterface,
   options: GetChangesOptions,
@@ -2491,28 +2508,63 @@ export async function recordInstanceChange(
  * APPEND_FAILURE_LOG_INTERVAL_MS} per `database + table`, reporting how many
  * failures were suppressed in between.
  */
+function takeAppendFailureWarning(
+  db: DatabaseInterface,
+  table: string,
+): { suppressed: number } | null {
+  // One bucket per database, whichever handle failed: a framework
+  // transaction's handle resolves to its root, and a private database (a
+  // per-connection in-memory one) is keyed weakly by its root handle so its
+  // buckets go with it.
+  const scope = databaseReadScope(db);
+  const log =
+    typeof scope === 'string'
+      ? appendFailureLog
+      : privateAppendFailureLog(scope);
+  const key = typeof scope === 'string' ? `${scope}\u0000${table}` : table;
+  const now = Date.now();
+  const state = log.get(key);
+  if (state && now - state.lastLoggedAt < APPEND_FAILURE_LOG_INTERVAL_MS) {
+    state.suppressed++;
+    return null;
+  }
+  log.set(key, { lastLoggedAt: now, suppressed: 0 });
+  return { suppressed: state?.suppressed ?? 0 };
+}
+
+/** Append-failure buckets of private databases, held weakly by root handle. */
+let privateAppendFailureLogs = new WeakMap<
+  object,
+  Map<string, { lastLoggedAt: number; suppressed: number }>
+>();
+
+function privateAppendFailureLog(
+  root: object,
+): Map<string, { lastLoggedAt: number; suppressed: number }> {
+  let log = privateAppendFailureLogs.get(root);
+  if (!log) {
+    log = new Map();
+    privateAppendFailureLogs.set(root, log);
+  }
+  return log;
+}
+
+/** Log a failed feed append (rate-limited per table). */
 function warnAppendFailure(
   db: DatabaseInterface,
   table: string,
   error: unknown,
 ): void {
   try {
-    const key = `${resolveDbCacheKey(db)}\u0000${table}`;
-    const now = Date.now();
-    const state = appendFailureLog.get(key);
-    if (state && now - state.lastLoggedAt < APPEND_FAILURE_LOG_INTERVAL_MS) {
-      state.suppressed++;
-      return;
-    }
-    const suppressed = state?.suppressed ?? 0;
-    appendFailureLog.set(key, { lastLoggedAt: now, suppressed: 0 });
+    const allowed = takeAppendFailureWarning(db, table);
+    if (!allowed) return;
     logger.warn(
       `Change feed: failed to append a change entry for '${table}'. The ` +
         'write itself succeeded; the feed is missing this change, and nothing ' +
         'in the feed marks the gap.',
       {
         error: error instanceof Error ? error.message : String(error),
-        suppressedSinceLastWarning: suppressed,
+        suppressedSinceLastWarning: allowed.suppressed,
       },
     );
   } catch {
@@ -2564,6 +2616,7 @@ function warnSignalPublishFailureOnce(
  */
 export function resetChangeFeedWarnings(): void {
   appendFailureLog.clear();
+  privateAppendFailureLogs = new WeakMap();
   warnedSignalPublishFailures.clear();
   warnedDrainFailures.clear();
   // The append path's drain interval is process state too; a test that asserts
