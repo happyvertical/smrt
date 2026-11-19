@@ -321,10 +321,28 @@ async function tableExists(
 
 declare global {
   /** Run-time classes each app model editor registered, by journal identity. */
-  var __smrtAppModelEditorClasses: WeakMap<object, string> | undefined;
+  var __smrtAppModelEditorClasses: Map<object, string> | undefined;
 }
 const editorClasses = () =>
-  (globalThis.__smrtAppModelEditorClasses ??= new WeakMap<object, string>());
+  (globalThis.__smrtAppModelEditorClasses ??= new Map<object, string>());
+/**
+ * Ownership marks and exposure claims outlive the editor that made them. A
+ * class no longer registered (a reset or reloaded registry) carries no claim:
+ * drop such marks before a new editor checks or claims anything.
+ */
+function pruneStaleOwnership() {
+  const registered = new Set<unknown>(
+    [...ObjectRegistry.getAllClasses().values()].map(
+      (entry) => entry.constructor,
+    ),
+  );
+  for (const registeredClass of [...editorClasses().keys()])
+    if (!registered.has(registeredClass))
+      editorClasses().delete(registeredClass);
+  for (const [id, claim] of [...(globalThis.__smrtModelOwners ?? [])])
+    if (claim.constructor && !registered.has(claim.constructor))
+      globalThis.__smrtModelOwners?.delete(id);
+}
 /** A process-local identity per database handle, part of each journal's key. */
 const databaseIds = new WeakMap<object, number>();
 let nextDatabaseId = 1;
@@ -380,6 +398,7 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
         );
     }
   };
+  pruneStaleOwnership();
   assertSoleEditor();
   const store = options.store ?? (await createAppModelHistory(options));
   if (engine === 'postgres' && !store.transaction)
@@ -835,9 +854,14 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
       }
       // Exposure admits these registrations only for this journal's tenant.
       setRuntimeModelOwner(
-        identities(all).filter((id) =>
-          id.startsWith(`${options.packageName}:`),
-        ),
+        identities(all)
+          .filter((id) => id.startsWith(`${options.packageName}:`))
+          .flatMap((id) => {
+            const entry = ObjectRegistry.getClass(id);
+            return entry
+              ? [{ qualifiedName: id, constructor: entry.constructor }]
+              : [];
+          }),
         options.tenantId,
       );
     }

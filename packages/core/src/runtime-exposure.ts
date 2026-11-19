@@ -94,22 +94,35 @@ export function setRuntimeModelReadiness(
 }
 
 declare global {
-  var __smrtModelOwners: Map<string, string> | undefined;
+  var __smrtModelOwners:
+    | Map<string, { tenantId: string; constructor?: unknown }>
+    | undefined;
 }
 
 /**
  * The tenant whose app model journal registered a run-time model (an editor
  * list or provider replacement). The registry is process-global, so exposure
- * admits such a model only for that tenant; undefined clears the owner.
+ * admits such a model only for that tenant. Passing the registered class
+ * scopes the claim to that registration: once the registry holds another
+ * class under the identity (a reset registry), the claim no longer applies.
+ * undefined clears the owner.
  */
 export function setRuntimeModelOwner(
-  models: Iterable<string>,
+  models: Iterable<string | { qualifiedName: string; constructor: unknown }>,
   tenantId: string | undefined,
 ): void {
   globalThis.__smrtModelOwners ??= new Map();
-  for (const model of models)
-    if (tenantId === undefined) globalThis.__smrtModelOwners.delete(model);
-    else globalThis.__smrtModelOwners.set(model, tenantId);
+  for (const model of models) {
+    const id = typeof model === 'string' ? model : model.qualifiedName;
+    if (tenantId === undefined) globalThis.__smrtModelOwners.delete(id);
+    else
+      globalThis.__smrtModelOwners.set(id, {
+        tenantId,
+        ...(typeof model === 'string'
+          ? {}
+          : { constructor: model.constructor }),
+      });
+  }
   notifyRuntimeExposureChanged();
 }
 
@@ -131,10 +144,19 @@ export function isRuntimeModelEnabled(
   )
     return false;
   // Another tenant's customised registration is never served to this tenant.
-  const owner = identity?.qualifiedName
+  const claim = identity?.qualifiedName
     ? globalThis.__smrtModelOwners?.get(identity.qualifiedName)
     : undefined;
-  if (owner !== undefined && owner !== context.tenantId) return false;
+  const registered =
+    identity && Object.hasOwn(identity, 'constructor')
+      ? (identity as { constructor?: unknown }).constructor
+      : undefined;
+  if (
+    claim &&
+    claim.tenantId !== context.tenantId &&
+    (!claim.constructor || !registered || registered === claim.constructor)
+  )
+    return false;
   const gate = state().gate;
   if (!gate) return true;
   try {
