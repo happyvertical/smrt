@@ -63,6 +63,43 @@ export class EmailAccount extends Account {
     description: 'Where the next mailbox check resumes.',
   })
   syncCursor: string | null = null;
+  /**
+   * Backfill horizon. When set, sync stores no message dated before this
+   * moment unless it is already stored (mail with no date is always kept).
+   * Null (the default) means the whole mailbox. Applied while syncing: the
+   * change feed itself cannot filter by date, so the server still sends the
+   * older mail and it is dropped before storage.
+   */
+  @field({
+    description:
+      'Mail older than this date is not stored. Empty means the whole mailbox.',
+  })
+  backfillSince: Date | null = null;
+  /**
+   * The backfill horizon `syncCursor` was built under (null: unbounded, also
+   * every cursor saved before horizons existed). A run whose horizon reaches
+   * further back, or is cleared, discards the cursor and runs a full pass so
+   * the older mail is fetched. Internal state.
+   */
+  @field({
+    readonly: true,
+    description:
+      'The backfill date the saved mailbox position was built under.',
+  })
+  cursorHorizon: Date | null = null;
+  /**
+   * Why the last sync run failed, in plain words. Written on any failed run
+   * (including sign-in refusals, which also set `needs_reconnect`) and cleared
+   * by the next successful run. A transient failure never changes
+   * `connectionStatus`.
+   */
+  @field({ description: 'Why the last mailbox check failed, if it did.' })
+  lastSyncError: string | null = null;
+  /** True when the last successful run stopped with more changes waiting. */
+  @field({
+    description: 'Whether more mail was still waiting after the last check.',
+  })
+  backlog = false;
 
   constructor(options: EmailAccountOptions = {}) {
     super(options);
@@ -74,6 +111,13 @@ export class EmailAccount extends Account {
       this.syncIntervalMinutes = options.syncIntervalMinutes;
     if (options.syncCursor !== undefined)
       this.syncCursor = options.syncCursor || null;
+    if (options.backfillSince !== undefined)
+      this.backfillSince = options.backfillSince || null;
+    if (options.cursorHorizon !== undefined)
+      this.cursorHorizon = options.cursorHorizon || null;
+    if (options.lastSyncError !== undefined)
+      this.lastSyncError = options.lastSyncError || null;
+    if (options.backlog !== undefined) this.backlog = options.backlog;
     this.channelType = 'email';
   }
 

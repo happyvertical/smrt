@@ -33,6 +33,13 @@ export interface MailSyncOptions {
   limit?: number;
   /** Most batches one run applies before stopping with `hasMore`. Default 500. */
   maxBatches?: number;
+  /**
+   * Store no message dated before this (a `Date` or an ISO string, so it
+   * survives a job's JSON args). Overrides `EmailAccount.backfillSince` for
+   * this run; `null` lifts the account's horizon. Messages already stored are
+   * still updated.
+   */
+  since?: Date | string | null;
 }
 
 export type MailSyncSkipReason = 'inactive' | 'needs-reconnect' | 'unsupported';
@@ -49,6 +56,8 @@ export interface MailSyncResult {
   resynced: boolean;
   /** The run stopped at `maxBatches` with more changes waiting. */
   hasMore: boolean;
+  /** Messages left out because they are dated before the backfill horizon. */
+  beforeHorizon: number;
   duration: number;
 }
 
@@ -139,6 +148,10 @@ export interface SyncContext {
   childOptions: Record<string, unknown>;
   /** folder path -> folder row id */
   folderIds: Map<string, string>;
+  /** Backfill horizon in effect for this run, if any. */
+  horizon?: Date | null;
+  /** Messages skipped for being older than the horizon. */
+  beforeHorizon?: number;
 }
 
 export async function ensureFolder(
@@ -201,6 +214,15 @@ async function upsertMessage(
   if (!msg.id)
     throw new Error('Mail change feed returned a message without an id');
   const [existing] = await findByProviderId(ctx, msg.id);
+  if (
+    !existing &&
+    ctx.horizon &&
+    msg.date &&
+    new Date(msg.date).getTime() < ctx.horizon.getTime()
+  ) {
+    ctx.beforeHorizon = (ctx.beforeHorizon ?? 0) + 1;
+    return;
+  }
   const folderPath = msg.folder ?? msg.folders?.[0] ?? '';
   const folderId = await folderIdFor(ctx, folderPath);
   let email = existing;
@@ -327,12 +349,38 @@ async function applyBatch(
   };
 }
 
+/** Whether `next` reaches back further than the horizon a cursor was built under. */
+function widensHorizon(
+  built: Date | null,
+  next: Date | null | undefined,
+): boolean {
+  if (!built) return false; // built unbounded: nothing was dropped
+  if (!next) return true;
+  return next.getTime() < new Date(built).getTime();
+}
+
+function resolveHorizon(
+  since: MailSyncOptions['since'],
+  stored: Date | null,
+): Date | null {
+  const value = since === undefined ? stored : since;
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    throw new Error(`Invalid mail backfill horizon: ${String(value)}`);
+  }
+  return date;
+}
+
 /** Copy the fields a sync run changes (and the revision token) onto `target`. */
 function mirrorAccountState(from: EmailAccount, to: EmailAccount): void {
   to.syncCursor = from.syncCursor;
+  to.cursorHorizon = from.cursorHorizon;
   to.lastSyncAt = from.lastSyncAt;
   to.connectionStatus = from.connectionStatus;
   to.statusMessage = from.statusMessage;
+  to.lastSyncError = from.lastSyncError;
+  to.backlog = from.backlog;
   to.isActive = from.isActive;
   to.updatedAt = from.updatedAt;
   (to as unknown as { updated_at: unknown }).updated_at = (
@@ -343,8 +391,11 @@ function mirrorAccountState(from: EmailAccount, to: EmailAccount): void {
 async function persistCursor(
   account: EmailAccount,
   cursor: string | null,
+  horizon: Date | null = null,
 ): Promise<void> {
   account.syncCursor = cursor;
+  // The cursor now covers mail as far back as this horizon (null: everything).
+  account.cursorHorizon = horizon;
   account.updatedAt = new Date();
   await account.save();
 }
@@ -353,8 +404,15 @@ export async function rethrowAfterAuthCheck(
   account: EmailAccount,
   error: unknown,
   isAuthFailure: (e: unknown) => boolean,
+  options: { recordError?: boolean } = {},
 ): Promise<never> {
   const err = error instanceof Error ? error : new Error(String(error));
+  if (options.recordError) {
+    // Persist why the run failed; never touches connectionStatus here.
+    account.lastSyncError = err.message.slice(0, 500);
+    account.updatedAt = new Date();
+    await account.save().catch(() => undefined);
+  }
   if (isAuthFailure(err)) {
     // The server refused the saved sign-in: ask the owner to reconnect, and
     // tell the job runner that retrying cannot help.
@@ -391,6 +449,7 @@ export async function syncMailChanges(
       removed: 0,
       resynced: false,
       hasMore: false,
+      beforeHorizon: 0,
       duration: 0,
     };
     const skip = (reason: MailSyncSkipReason): MailSyncResult => ({
@@ -422,8 +481,9 @@ export async function syncMailChanges(
 
       const limit = options.limit ?? DEFAULT_LIMIT;
       const maxBatches = options.maxBatches ?? DEFAULT_MAX_BATCHES;
-      const client = await deps.createClient(account);
+      let client: EmailClient | undefined;
       try {
+        client = await deps.createClient(account);
         await client.connect();
         if (typeof client.getChanges !== 'function') return skip('unsupported');
 
@@ -440,10 +500,21 @@ export async function syncMailChanges(
           folders: await FolderCollectionClass.create(deps.childOptions),
           childOptions: deps.childOptions,
           folderIds: new Map(),
+          horizon: resolveHorizon(options.since, account.backfillSince),
+          beforeHorizon: 0,
         };
 
         await reconcileAllCounts(ctx);
 
+        // A saved cursor is past mail the horizon it was built under dropped.
+        // Widening or clearing the horizon must refetch that mail: restart
+        // with a full pass (which also prunes). Narrowing needs nothing.
+        if (
+          account.syncCursor &&
+          widensHorizon(account.cursorHorizon, ctx.horizon)
+        ) {
+          await persistCursor(account, null, ctx.horizon);
+        }
         let cursor: string | undefined = account.syncCursor || undefined;
         // A pass that starts without a cursor sees every server message, so what
         // it did not see is gone; a resumed pass cannot know and never prunes.
@@ -465,7 +536,7 @@ export async function syncMailChanges(
             result.resynced = true;
             cursor = undefined;
             seen = new Set();
-            await persistCursor(account, null);
+            await persistCursor(account, null, ctx.horizon);
             continue;
           }
 
@@ -480,23 +551,28 @@ export async function syncMailChanges(
           await refreshCounts(ctx, applied.touched);
 
           // Only now is the batch durable: the cursor may move past it.
-          await persistCursor(account, next.cursor);
+          await persistCursor(account, next.cursor, ctx.horizon ?? null);
           cursor = next.cursor;
           if (!next.hasMore) break;
           if (result.batches >= maxBatches) result.hasMore = true;
         }
 
+        result.beforeHorizon = ctx.beforeHorizon ?? 0;
         account.lastSyncAt = new Date();
         account.connectionStatus = 'connected';
         account.statusMessage = null;
+        account.lastSyncError = null;
+        account.backlog = result.hasMore;
         account.updatedAt = new Date();
         await account.save();
         result.duration = Date.now() - startedAt;
         return result;
       } catch (error) {
-        return rethrowAfterAuthCheck(account, error, deps.isAuthFailure);
+        return rethrowAfterAuthCheck(account, error, deps.isAuthFailure, {
+          recordError: true,
+        });
       } finally {
-        await client.disconnect().catch(() => undefined);
+        await client?.disconnect().catch(() => undefined);
       }
     }
   });

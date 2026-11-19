@@ -830,3 +830,278 @@ describe('mail sync job', () => {
     expect(await providerIds(account)).toEqual(['m1', 'm2']);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Backfill horizon and persisted sync health (#5200)
+// ---------------------------------------------------------------------------
+
+describe('EmailAccount.syncChanges: backfill horizon', () => {
+  const old = new Date('2020-01-01T00:00:00Z');
+  const recent = new Date('2026-06-01T00:00:00Z');
+  const horizon = new Date('2026-01-01T00:00:00Z');
+
+  it('stores nothing older than the account horizon, keeps undated mail, and reports the count', async () => {
+    const account = await makeAccount({ backfillSince: horizon });
+    useFeed(
+      account,
+      makeFeed([
+        batch('c1', {
+          initial: true,
+          folders: [INBOX],
+          added: [
+            msg('old', { date: old }),
+            msg('new', { date: recent }),
+            msg('undated', { date: undefined }),
+          ],
+        }),
+      ]),
+    );
+    const result = await account.syncChanges();
+    expect(result.beforeHorizon).toBe(1);
+    expect(await providerIds(account)).toEqual(['new', 'undated']);
+    expect((await reload(account)).backfillSince).toEqual(horizon);
+  });
+
+  it('does not store an old message that later changes, but still updates a stored one', async () => {
+    const account = await makeAccount();
+    useFeed(
+      account,
+      makeFeed([
+        batch('c1', {
+          initial: true,
+          folders: [INBOX],
+          added: [msg('keep', { date: old })],
+        }),
+      ]),
+    );
+    await account.syncChanges();
+
+    const next = await reload(account);
+    useFeed(
+      next,
+      makeFeed([
+        batch('c2', {
+          changed: [
+            msg('keep', { date: old, flags: ['\\Seen'] }),
+            msg('stranger', { date: old }),
+          ],
+        }),
+      ]),
+    );
+    const result = await next.syncChanges({ since: horizon });
+    expect(result.beforeHorizon).toBe(1);
+    expect(await providerIds(account)).toEqual(['keep']);
+  });
+
+  it('lets a run override the stored horizon, and null lifts it', async () => {
+    const account = await makeAccount({ backfillSince: horizon });
+    useFeed(
+      account,
+      makeFeed([
+        batch('c1', {
+          initial: true,
+          folders: [INBOX],
+          added: [msg('old', { date: old })],
+        }),
+      ]),
+    );
+    const result = await account.syncChanges({ since: null });
+    expect(result.beforeHorizon).toBe(0);
+    expect(await providerIds(account)).toEqual(['old']);
+  });
+
+  it('accepts an ISO string (job args) and rejects an invalid horizon without moving the cursor', async () => {
+    const account = await makeAccount();
+    useFeed(
+      account,
+      makeFeed([
+        batch('c1', { initial: true, added: [msg('old', { date: old })] }),
+      ]),
+    );
+    expect(
+      (await account.syncChanges({ since: horizon.toISOString() }))
+        .beforeHorizon,
+    ).toBe(1);
+
+    const other = await makeAccount();
+    useFeed(other, makeFeed([]));
+    await expect(other.syncChanges({ since: 'nonsense' })).rejects.toThrow(
+      /Invalid mail backfill horizon/,
+    );
+    expect((await reload(other)).syncCursor).toBeNull();
+  });
+
+  it('passes the horizon through the job args as an ISO string', async () => {
+    const account = await makeAccount();
+    const job = await enqueueMailSync(account, { since: horizon });
+    expect(job?.args).toMatchObject({ since: horizon.toISOString() });
+  });
+});
+
+describe('EmailAccount.syncChanges: persisted sync health', () => {
+  it('persists a transient failure without flipping needs_reconnect, and a good run clears it', async () => {
+    const account = await makeAccount();
+    useFeed(account, makeFeed([new Error('connection reset')]));
+    await expect(account.syncChanges()).rejects.toThrow('connection reset');
+
+    let stored = await reload(account);
+    expect(stored.lastSyncError).toBe('connection reset');
+    expect(stored.needsReconnect).toBe(false);
+    expect(stored.connectionStatus).not.toBe('needs_reconnect');
+    expect(stored.lastSyncAt).toBeNull();
+
+    useFeed(stored, makeFeed([batch('c1', { initial: true })]));
+    await stored.syncChanges();
+    stored = await reload(account);
+    expect(stored.lastSyncError).toBeNull();
+    expect(stored.lastSyncAt).toBeInstanceOf(Date);
+  });
+
+  it('records the failure from a sign-in refusal alongside needs_reconnect', async () => {
+    const account = await makeAccount();
+    const denied = Object.assign(new Error('Authentication failed'), {
+      code: 'EAUTH',
+    });
+    useFeed(account, makeFeed([denied]));
+    await expect(account.syncChanges()).rejects.toMatchObject({
+      retryable: false,
+    });
+    const stored = await reload(account);
+    expect(stored.connectionStatus).toBe('needs_reconnect');
+    expect(stored.lastSyncError).toBe('Authentication failed');
+  });
+
+  it('persists a failure that happens while building the client', async () => {
+    const account = await makeAccount();
+    vi.spyOn(EmailAccount.prototype, 'createClient').mockRejectedValue(
+      new Error('no credentials'),
+    );
+    await expect(account.syncChanges()).rejects.toThrow('no credentials');
+    expect((await reload(account)).lastSyncError).toBe('no credentials');
+  });
+
+  it('keeps the cursor of applied batches when a later batch fails, and records the failure', async () => {
+    const account = await makeAccount();
+    useFeed(
+      account,
+      makeFeed([
+        batch('c1', { initial: true, hasMore: true, added: [msg('m1')] }),
+        new Error('timeout'),
+      ]),
+    );
+    await expect(account.syncChanges()).rejects.toThrow('timeout');
+    const stored = await reload(account);
+    expect(stored.syncCursor).toBe('c1');
+    expect(stored.lastSyncError).toBe('timeout');
+  });
+
+  it('reflects hasMore in backlog and clears it once the account catches up', async () => {
+    const account = await makeAccount();
+    useFeed(
+      account,
+      makeFeed([
+        batch('c1', { initial: true, hasMore: true, added: [msg('m1')] }),
+      ]),
+    );
+    const partial = await account.syncChanges({ maxBatches: 1 });
+    expect(partial.hasMore).toBe(true);
+    expect(account.backlog).toBe(true);
+    expect((await reload(account)).backlog).toBe(true);
+
+    const resumed = await reload(account);
+    useFeed(resumed, makeFeed([batch('c2', { added: [msg('m2')] })]));
+    await resumed.syncChanges();
+    expect((await reload(account)).backlog).toBe(false);
+  });
+
+  it('mirrors health onto the caller instance', async () => {
+    const account = await makeAccount();
+    useFeed(account, makeFeed([new Error('boom')]));
+    await expect(account.syncChanges()).rejects.toThrow('boom');
+    expect(account.lastSyncError).toBe('boom');
+  });
+});
+
+describe('EmailAccount.syncChanges: horizon changes vs saved cursor', () => {
+  const old = new Date('2020-01-01T00:00:00Z');
+  const mid = new Date('2025-01-01T00:00:00Z');
+  const recent = new Date('2026-06-01T00:00:00Z');
+  const h1 = new Date('2026-01-01T00:00:00Z');
+  const h0 = new Date('2024-01-01T00:00:00Z');
+
+  async function built(horizon: Date | null) {
+    const account = await makeAccount(
+      horizon ? { backfillSince: horizon } : {},
+    );
+    useFeed(
+      account,
+      makeFeed([
+        batch('c1', {
+          initial: true,
+          folders: [INBOX],
+          added: [
+            msg('o', { date: old }),
+            msg('m', { date: mid }),
+            msg('r', { date: recent }),
+          ],
+        }),
+      ]),
+    );
+    await account.syncChanges();
+    const stored = await reload(account);
+    expect(stored.cursorHorizon ?? null).toEqual(horizon);
+    return stored;
+  }
+
+  async function rerun(
+    account: EmailAccount,
+    options: Record<string, unknown>,
+  ) {
+    const feed = makeFeed([
+      batch('c2', {
+        initial: true,
+        added: [
+          msg('o', { date: old }),
+          msg('m', { date: mid }),
+          msg('r', { date: recent }),
+        ],
+      }),
+    ]);
+    useFeed(account, feed);
+    await account.syncChanges(options);
+    return feed;
+  }
+
+  it('widening the horizon restarts from no cursor and fetches the older mail', async () => {
+    const account = await built(h1);
+    expect(await providerIds(account)).toEqual(['r']);
+    const stored = await reload(account);
+    stored.backfillSince = h0;
+    await stored.save();
+    const feed = await rerun(await reload(account), {});
+    expect(feed.calls[0].cursor).toBeUndefined();
+    expect(await providerIds(account)).toEqual(['m', 'r']);
+    expect((await reload(account)).cursorHorizon).toEqual(h0);
+  });
+
+  it('clearing the horizon (since: null) restarts and stores everything', async () => {
+    const account = await built(h1);
+    const feed = await rerun(account, { since: null });
+    expect(feed.calls[0].cursor).toBeUndefined();
+    expect(await providerIds(account)).toEqual(['m', 'o', 'r']);
+    expect((await reload(account)).cursorHorizon ?? null).toBeNull();
+  });
+
+  it('narrowing keeps the cursor', async () => {
+    const account = await built(h0);
+    const feed = await rerun(account, { since: h1 });
+    expect(feed.calls[0].cursor).toBe('c1');
+  });
+
+  it('an unchanged horizon keeps the cursor, and an unbounded cursor never resets', async () => {
+    const account = await built(h1);
+    expect((await rerun(account, {})).calls[0].cursor).toBe('c1');
+    const open = await built(null);
+    expect((await rerun(open, { since: h1 })).calls[0].cursor).toBe('c1');
+  });
+});
