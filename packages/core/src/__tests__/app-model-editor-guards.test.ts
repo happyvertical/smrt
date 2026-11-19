@@ -20,6 +20,7 @@ import {
   type AppModelEditReceipt,
   type AppModelSnapshot,
   createAppModelEditor,
+  migrateAppModelStorage,
 } from '../cookbook/model-editor.js';
 import {
   type AppModelHistoryStore,
@@ -126,6 +127,18 @@ describe('app model editor: installed model names and tables', () => {
     disableTenancy();
     await db.close?.();
     restore();
+  });
+  const editorOptions = (
+    extra: Partial<AppModelEditorOptions> = {},
+  ): AppModelEditorOptions => ({
+    db,
+    application: 'editor-guards',
+    tenantId: TENANT,
+    packageName: APP,
+    cookbook: book(),
+    catalog,
+    authorize: (c) => c.actor === 'owner',
+    ...extra,
   });
   const editorFor = (extra: Partial<AppModelEditorOptions> = {}) =>
     createAppModelEditor({
@@ -293,8 +306,18 @@ describe('app model editor: installed model names and tables', () => {
     expect(await e2eColumns(LEDGER_TABLE)).not.toContain('note');
     ObjectRegistry.clear();
 
-    // A free table: the initial cookbook becomes revision 1, and reopens.
-    const first = await editorFor({ cookbook: withList('GuardNotes') });
+    // A free table: boot runs no DDL, so the list's table must first be
+    // created by the operator's storage migration.
+    await expect(
+      editorFor({ cookbook: withList('GuardNotes') }),
+    ).rejects.toThrow(
+      /MODEL_MIGRATION_REQUIRED: storage does not match the app models \(missing guard_notes\)/,
+    );
+    expect(await tableNames()).not.toContain('guard_notes');
+    ObjectRegistry.clear();
+    const first = await migrateAppModelStorage(
+      editorOptions({ cookbook: withList('GuardNotes') }),
+    );
     expect(
       (await first.history()).map((row) => [
         row.revision,
@@ -338,6 +361,9 @@ describe('app model editor: installed model names and tables', () => {
         fields: {},
       },
     };
+    // Its table exists from earlier boots; the operator migration journals it.
+    await migrateAppModelStorage(editorOptions({ cookbook: startup }));
+    ObjectRegistry.clear();
     const e = await editorFor({ cookbook: startup });
     expect(e.snapshot().revision).toBe(1);
     // New declarations are still checked.
@@ -761,6 +787,92 @@ describe('app model editor: reconciliation scope and pending revisions', () => {
     ObjectRegistry.clear();
     registerMember();
     expect((await editorFor()).snapshot().revision).toBe(1);
+  });
+
+  const scopeOptions = (): AppModelEditorOptions => ({
+    db,
+    application: 'editor-guards-scope',
+    tenantId: TENANT,
+    packageName: APP,
+    cookbook: memberBook(),
+    catalog: memberCatalog,
+    authorize: (c) => c.actor === 'owner',
+  });
+
+  it('boot runs no DDL for a pending storage edit; the operator storage migration applies it', async () => {
+    const e = await editorFor();
+    await applier(e)({ type: 'create_list', name: 'GuardMat', list: mats });
+    // A pending revision whose DDL never ran (written, then the process died).
+    const before = e.snapshot().cookbook;
+    const after = structuredClone(before);
+    after.models!.lists.GuardMat.fields.colour = { type: 'text' };
+    const store = await createAppModelHistory({
+      db,
+      application: 'editor-guards-scope',
+      tenantId: TENANT,
+    });
+    await store.append(
+      {
+        revision: 2,
+        requestId: 'req-pending-ddl',
+        actor: 'owner',
+        command: JSON.stringify({
+          type: 'add_field',
+          model: 'GuardMat',
+          name: 'colour',
+          field: { type: 'text' },
+        }),
+        before,
+        after,
+        status: 'pending',
+      },
+      1,
+    );
+    ObjectRegistry.clear();
+    registerMember();
+    await expect(editorFor()).rejects.toThrow(
+      /MODEL_MIGRATION_REQUIRED: storage does not match.*guard_mats\.colour/,
+    );
+    expect(await columns('guard_mats')).not.toContain('colour');
+    ObjectRegistry.clear();
+    registerMember();
+    const repaired = await migrateAppModelStorage(scopeOptions());
+    expect(await columns('guard_mats')).toContain('colour');
+    expect((await repaired.history()).at(-1)).toMatchObject({
+      revision: 2,
+      status: 'applied',
+    });
+  });
+
+  it('the operator storage migration recreates a lost custom column on a cold boot', async () => {
+    const e = await editorFor();
+    await applier(e)({ type: 'create_list', name: 'GuardMat', list: mats });
+    await applier(e)({
+      type: 'add_field',
+      model: 'GuardMat',
+      name: 'colour',
+      field: { type: 'text' },
+    });
+    // A restored database lost the custom column.
+    await db.query('ALTER TABLE guard_mats DROP COLUMN colour');
+    ObjectRegistry.clear();
+    globalThis.__smrtModelReadiness?.clear();
+    registerMember();
+    await expect(editorFor()).rejects.toThrow(/missing guard_mats\.colour/);
+    expect(getRuntimeModelReadiness(`${APP}:GuardMat`)).toBe(false);
+    ObjectRegistry.clear();
+    registerMember();
+    const repaired = await migrateAppModelStorage(scopeOptions());
+    expect(getRuntimeModelReadiness(`${APP}:GuardMat`)).toBe(true);
+    const row = await withTenant({ tenantId: TENANT }, async () => {
+      const list = await ObjectRegistry.getCollection(`${APP}:GuardMat`, {
+        db,
+      });
+      const created = await list.create({ size: 'L', colour: 'red' } as never);
+      return list.get((created as { id: string }).id);
+    });
+    expect(row).toMatchObject({ size: 'L', colour: 'red' });
+    expect(repaired.snapshot().revision).toBe(2);
   });
 });
 

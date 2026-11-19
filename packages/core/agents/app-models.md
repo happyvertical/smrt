@@ -177,7 +177,7 @@ Every operation uses the running process:
 | Operation | Activation |
 | --- | --- |
 | Add list / field; import | Register/refresh runtime definitions, same-name replacement (STI and CTI), tracked migration of the changed models' tables, publish, release readiness |
-| Boot replay | Register/refresh every journalled definition; DDL only for a pending revision's own changes (or an initial cookbook before any journal row); read-only check that every customised table holds its declared columns, else `MODEL_MIGRATION_REQUIRED` with those models closed; publish, release readiness |
+| Boot replay | Register/refresh every journalled definition, no DDL ever; read-only check that every customised table holds its declared columns, else `MODEL_MIGRATION_REQUIRED` with those models closed (a pending revision completes only once its storage is in place); publish, release readiness. Repair with `migrateAppModelStorage(options)`, which reconciles every active customised table from the journal |
 | Field label/hide/remove | Existing policy engine, same publication protocol; migration reconciliation is normally empty |
 | List relabel/remove | Runtime presentation refresh / feature removal, same publication protocol |
 | Undo | Restore previous cookbook, keep union of historical storage fields hidden, tracked additive reconciliation, publish |
@@ -221,12 +221,13 @@ runs while models remain gated; a publication failure stays durably pending and
 reopen completes that revision. No columns/tables are dropped. Reconciliation
 selects the tables of models whose stored fields the edit adds or changes, and
 their existing physical FK closure; label, hide, remove, relabel and undo edits
-run no DDL, and drift on an unrelated table never blocks an edit. Boot of an
-applied journal runs no DDL either: provider tables stay the operator's
-`db:migrate`. Boot inspects every customised table read-only and refuses with
+run no DDL, and drift on an unrelated table never blocks an edit. Boot runs no DDL at all, for an applied journal, a pending revision or a
+startup cookbook: provider tables stay the operator's `db:migrate`, and app
+storage (custom fields and lists, including one lost in a restore) is
+reconciled from the journal by `migrateAppModelStorage(options)`. Boot inspects every customised table read-only and refuses with
 `MODEL_MIGRATION_REQUIRED` (naming the missing columns, affected models kept
 closed) when a column is missing, for example after a provider upgrade or a
-database restore; run the operator migration and reopen. Manual drift on an
+database restore; run `migrateAppModelStorage` (custom storage) or `smrt db:migrate` (provider columns) and reopen. Manual drift on an
 edited table still requires an operator migration. See the
 [PostgreSQL scope and test matrix](postgres-parity.md).
 
@@ -268,8 +269,8 @@ journal, is journalled as revision 1 (actor `system`, an `import`). Its own
 declarations may have booted before this release, so they count as existing
 for the name, length and reserved-name checks; its lists still may not take a
 table an installed model owns (activation manifest or registry), retained or
-not. A leftover table no installed model claims cannot be told apart from the
-list's own table of an earlier boot and is used as the list's table. Export contains portable definitions/policies, not host
+not. Boot does not create its tables: `migrateAppModelStorage(options)` does,
+once, as the operator step that opens such a host. Export contains portable definitions/policies, not host
 actor/history records.
 
 SQLite and PostgreSQL are supported. PostgreSQL history stores native UUID

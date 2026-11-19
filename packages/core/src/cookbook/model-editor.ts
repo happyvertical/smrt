@@ -399,6 +399,25 @@ const journalBaselines = () =>
 
 /** Async construction replays persisted customizations and resolves pending activation BEFORE serving. */
 export async function createAppModelEditor(options: AppModelEditorOptions) {
+  return openAppModelEditor(options, {});
+}
+
+/**
+ * Operator storage repair: open the editor and reconcile every active
+ * customised table from the journal (tracked migration, refused on manual
+ * drift), the step editor boot never runs. Use it when boot refuses with
+ * MODEL_MIGRATION_REQUIRED for a missing custom column or list table, a
+ * startup cookbook's lists before their first use, or a pending revision
+ * whose DDL never ran. Returns the opened editor.
+ */
+export async function migrateAppModelStorage(options: AppModelEditorOptions) {
+  return openAppModelEditor(options, { migrate: true });
+}
+
+async function openAppModelEditor(
+  options: AppModelEditorOptions,
+  internal: { migrate?: boolean },
+) {
   if (!options.application || !options.tenantId || !options.authorize)
     throw new Error(
       'App model editor requires an application, tenant and authorizer',
@@ -1191,27 +1210,13 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
     return error;
   };
   /**
-   * The storage boot reconciles: a pending revision's own changes, or an
-   * initial cookbook's declarations before anything is journalled. An applied
-   * journal runs no DDL at boot; verifyStorage() checks it instead.
+   * Boot runs no DDL: it only verifies storage. The operator's
+   * migrateAppModelStorage() (the same boot with `migrate`) reconciles every
+   * active customised table, journal-backed, so it can recreate a lost custom
+   * column or list table that db:migrate cannot see.
    */
-  function bootChanges(): string[] {
-    const all = active(storage(), doc);
-    const pending =
-      history.at(-1)?.status === 'pending' ? history.at(-1) : undefined;
-    if (!history.length) return changedModels(undefined, all);
-    if (!pending) return [];
-    return changedModels(
-      active(
-        storageModels([
-          ...history.slice(0, -1).flatMap((row) => [row.before, row.after]),
-          pending.before,
-        ]),
-        pending.before,
-      ),
-      all,
-    );
-  }
+  const bootChanges = (): string[] =>
+    internal.migrate ? changedModels(undefined, active(storage(), doc)) : [];
 
   /**
    * An initial cookbook that declares app models, opened with an empty
@@ -1313,7 +1318,7 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
     if (missing.length) {
       storageMismatch.push(...models);
       throw new Error(
-        `MODEL_MIGRATION_REQUIRED: storage does not match the app models (missing ${missing.join(', ')}); run the operator migration (smrt db:migrate) and reopen the editor`,
+        `MODEL_MIGRATION_REQUIRED: storage does not match the app models (missing ${missing.join(', ')}); run migrateAppModelStorage() (custom fields and lists) or smrt db:migrate (provider columns), then reopen the editor`,
       );
     }
   }
