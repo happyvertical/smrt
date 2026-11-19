@@ -409,13 +409,30 @@ describe('MigrationTracker statement execution fallbacks', () => {
     const insideTx: string[] = [];
     const outsideTx: string[] = [];
     let txCalls = 0;
+    let built = false;
 
     // Records which statements run inside db.transaction() vs direct db.query().
     const db: any = {
       url: 'postgres://localhost/test',
       query: async (sql: string) => {
         outsideTx.push(sql);
-        return { rows: [] };
+        // The tracker confirms the built index is valid on its table and is
+        // the index its statement describes (after the create has run).
+        if (sql.includes('AS definition'))
+          return {
+            rows: [
+              {
+                definition: 'CREATE INDEX idx_pg ON public.t USING btree (c)',
+                predicate: null,
+                collations: [],
+                opclasses: [],
+              },
+            ],
+          };
+        if (/^CREATE INDEX CONCURRENTLY idx_pg/i.test(sql)) built = true;
+        return sql.includes('is_valid') && built
+          ? { rows: [{ index_oid: 1, is_valid: true }] }
+          : { rows: [] };
       },
       transaction: async (cb: (tx: any) => Promise<unknown>) => {
         txCalls++;
