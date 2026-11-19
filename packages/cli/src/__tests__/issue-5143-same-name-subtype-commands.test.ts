@@ -248,3 +248,34 @@ describe('CLI commands of a replacement of a subtype with its own collection', (
     expect(await commands('histrio_scenes')).toEqual(['histrio_scenes:list']);
   });
 });
+
+describe('a CLI command name two models answer to', () => {
+  it('is refused before dispatch instead of running against the other model', async () => {
+    ObjectRegistry.clear();
+    const VideoScene = class Scene extends SmrtObject {};
+    const HistrioScene = class Scene extends VideoScene {};
+    // An unrelated model whose simple name is the subtype's collection.
+    const Clips = class Clips extends SmrtObject {};
+    ObjectRegistry.register(Clips, {
+      packageName: '@fixture/c5143-other',
+      tableName: 'other_clips',
+      cli: true,
+    });
+    ObjectRegistry.register(VideoScene, {
+      name: 'Scene',
+      packageName: '@fixture/c5143-video',
+      tableName: 'scenes',
+      tableStrategy: 'sti',
+    });
+    ObjectRegistry.register(HistrioScene, {
+      name: 'Scene',
+      packageName: '@fixture/c5143-histrio',
+      replaceParent: false,
+      collection: 'Clips',
+      cli: true,
+    });
+    await expect(commands('clips')).rejects.toThrow(
+      /Command name 'clips' is claimed by .*@fixture\/c5143-other:Clips.*@fixture\/c5143-histrio:Scene|Command name 'clips' is claimed by .*@fixture\/c5143-histrio:Scene.*@fixture\/c5143-other:Clips/,
+    );
+  });
+});
