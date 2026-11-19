@@ -23,6 +23,7 @@ import {
   isCrudOperation,
   isFrameworkBaseClass,
   ObjectRegistry,
+  prepareWriteInput,
 } from '@happyvertical/smrt-core';
 import { loadLocalTestManifestSync } from '@happyvertical/smrt-core/manifest';
 import {
@@ -2292,58 +2293,6 @@ export class CLIGenerator {
   }
 
   /**
-   * Keep only the fields a generated create/update may write, exactly as the
-   * REST routes and MCP tools do: never framework/server-managed keys,
-   * underscored internals or `readonly` fields, and only `api.writable` when
-   * the model declares it. Applies to every input mode (`--from-file`,
-   * interactive, flags), so the CLI is not a way around a model's write
-   * allowlist.
-   */
-  private applyWritablePolicy(
-    objectName: string,
-    data: unknown,
-  ): Record<string, unknown> {
-    if (!data || typeof data !== 'object' || Array.isArray(data)) return {};
-    const serverManaged = new Set([
-      'id',
-      'tenantId',
-      'tenant_id',
-      'createdAt',
-      'created_at',
-      'updatedAt',
-      'updated_at',
-    ]);
-    const apiConfig = ObjectRegistry.getConfig(objectName)?.api;
-    const writable =
-      apiConfig &&
-      typeof apiConfig === 'object' &&
-      Array.isArray((apiConfig as { writable?: unknown }).writable)
-        ? ((apiConfig as { writable: string[] }).writable as string[])
-        : null;
-    const readonly = new Set<string>();
-    for (const [name, definition] of ObjectRegistry.getFields(objectName)) {
-      const meta = definition as {
-        readonly?: unknown;
-        _meta?: { readonly?: unknown };
-      } | null;
-      if (meta?.readonly === true || meta?._meta?.readonly === true)
-        readonly.add(name);
-    }
-    const result: Record<string, unknown> = {};
-    for (const [key, value] of Object.entries(
-      data as Record<string, unknown>,
-    )) {
-      if (key.startsWith('_')) continue;
-      // Input sets fields only, never a service of the object.
-      if (ObjectRegistry.isServiceOptionInput(objectName, key)) continue;
-      if (serverManaged.has(key) || readonly.has(key)) continue;
-      if (writable && !writable.includes(key)) continue;
-      result[key] = value;
-    }
-    return result;
-  }
-
-  /**
    * Handle CREATE command
    */
   private async handleCreate(
@@ -2400,7 +2349,10 @@ export class CLIGenerator {
         context,
       );
       assertCreateTargetSurface(objectName, target, 'cli');
-      data = this.applyWritablePolicy(target.collectionName, target.data);
+      // Input sets fields the caller may write and nothing else: server-managed
+      // keys are skipped, a protected field with a value is refused (#5195),
+      // whichever input mode supplied it.
+      data = prepareWriteInput(target.collectionName, target.data);
       const spinner = this.createSpinner(`Creating ${objectName}...`);
 
       const collection = await this.getCollection(target.collectionName);
@@ -2468,7 +2420,9 @@ export class CLIGenerator {
         }
       }
 
-      data = this.applyWritablePolicy(objectName, data);
+      // A protected field is compared with the loaded row: an unchanged value
+      // is accepted, a changed one refused (#5195).
+      data = prepareWriteInput(objectName, data, existing);
       const spinner = this.createSpinner(`Updating ${objectName}...`);
 
       await collection.withAuditMutation(existing, 'updated', async (bound) => {
