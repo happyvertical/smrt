@@ -1,6 +1,6 @@
 import type { Loader } from 'cosmiconfig';
 import { cosmiconfig } from 'cosmiconfig';
-import { createJiti } from 'jiti';
+import type { createJiti } from 'jiti';
 import {
   getCachedConfig,
   getExplorer,
@@ -26,8 +26,11 @@ const MODULE_NAME = 'smrt';
  */
 let jitiInstance: ReturnType<typeof createJiti> | undefined;
 
-function getJiti(): ReturnType<typeof createJiti> {
+async function getJiti(): Promise<ReturnType<typeof createJiti>> {
   if (!jitiInstance) {
+    // Imported on first use so a process that never loads a TypeScript config
+    // does not pay for jiti at module load (#5215).
+    const { createJiti } = await import('jiti');
     // moduleCache: false so a re-read after the file changes on disk (hot
     // reload, or `loadConfig({ cache: false })`) re-evaluates instead of
     // returning jiti's in-memory copy. The common `cache: true` path is already
@@ -45,7 +48,7 @@ function getJiti(): ReturnType<typeof createJiti> {
  * JS loaders treat `export default` / `module.exports`.
  */
 const typeScriptLoader: Loader = async (filepath: string) => {
-  return getJiti().import(filepath, { default: true });
+  return (await getJiti()).import(filepath, { default: true });
 };
 
 /**
