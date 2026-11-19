@@ -236,4 +236,117 @@ postgresDescribe('change feed delivery on PostgreSQL (optional)', () => {
       }
     });
   });
+
+  describe('_events shared reads across PostgreSQL sessions', () => {
+    const OTHER_SCHEMA = 'change_feed_delivery_other';
+    let other: DatabaseInterface | undefined;
+
+    afterAll(async () => {
+      await other?.close?.();
+      await admin?.query(`DROP SCHEMA IF EXISTS ${OTHER_SCHEMA} CASCADE`);
+    });
+
+    it('never shares a page between two handles on one URL whose sessions see different schemas', async () => {
+      await admin.query(`DROP SCHEMA IF EXISTS ${OTHER_SCHEMA} CASCADE`);
+      await admin.query(`CREATE SCHEMA ${OTHER_SCHEMA}`);
+      const separator = (pgUrl as string).includes('?') ? '&' : '?';
+      other = (await getDatabase({
+        type: 'postgres',
+        url: `${pgUrl}${separator}options=-c%20search_path%3D${OTHER_SCHEMA}`,
+        dbid: `smrt-test-delivery-other-${randomUUID()}`,
+      } as Parameters<typeof getDatabase>[0])) as DatabaseInterface;
+      await getTestDatabase({ db: other, classes: [] });
+      await appendChange(reader, {
+        table: TABLE,
+        rowId: 'only-in-test-schema',
+      });
+      await appendChange(other, {
+        table: TABLE,
+        rowId: 'only-in-other-schema',
+      });
+      // The same URL as `reader`, but a session that sees the other schema.
+      const sameUrl = new Proxy(other, {
+        get(target, prop, receiver) {
+          if (prop === 'url') return (reader as { url?: string }).url;
+          const value = Reflect.get(target, prop, receiver);
+          return typeof value === 'function' ? value.bind(target) : value;
+        },
+      }) as DatabaseInterface;
+
+      const streamA = buildChangeEventStream(reader, {
+        cursor: 0,
+        tenantScope: { enforced: false, tenantId: null },
+      });
+      const streamB = buildChangeEventStream(sameUrl, {
+        cursor: 0,
+        tenantScope: { enforced: false, tenantId: null },
+      });
+      const [textA, textB] = await Promise.all([
+        readUntil(streamA, (t) => t.includes('event: change')),
+        readUntil(streamB, (t) => t.includes('event: change')),
+      ]);
+      await streamA.cancel().catch(() => {});
+      await streamB.cancel().catch(() => {});
+      expect(textA).toContain('only-in-test-schema');
+      expect(textA).not.toContain('only-in-other-schema');
+      expect(textB).toContain('only-in-other-schema');
+      expect(textB).not.toContain('only-in-test-schema');
+    });
+
+    it('frames an unsequenced signal only for the handle it was published on, not another schema on the same URL', async () => {
+      await other?.close?.();
+      await admin.query(`DROP SCHEMA IF EXISTS ${OTHER_SCHEMA} CASCADE`);
+      await admin.query(`CREATE SCHEMA ${OTHER_SCHEMA}`);
+      const separator = (pgUrl as string).includes('?') ? '&' : '?';
+      other = (await getDatabase({
+        type: 'postgres',
+        url: `${pgUrl}${separator}options=-c%20search_path%3D${OTHER_SCHEMA}`,
+        dbid: `smrt-test-delivery-other-${randomUUID()}`,
+      } as Parameters<typeof getDatabase>[0])) as DatabaseInterface;
+      await getTestDatabase({ db: other, classes: [] });
+      const sameUrl = new Proxy(other, {
+        get(target, prop, receiver) {
+          if (prop === 'url') return (reader as { url?: string }).url;
+          const value = Reflect.get(target, prop, receiver);
+          return typeof value === 'function' ? value.bind(target) : value;
+        },
+      }) as DatabaseInterface;
+
+      const streamA = buildChangeEventStream(reader, {
+        cursor: null,
+        tenantScope: { enforced: false, tenantId: null },
+      });
+      const streamB = buildChangeEventStream(sameUrl, {
+        cursor: null,
+        tenantScope: { enforced: false, tenantId: null },
+      });
+      await Promise.all([
+        readUntil(streamA, (t) => t.includes('retry:'), 2000),
+        readUntil(streamB, (t) => t.includes('retry:'), 2000),
+      ]);
+      publishChangeSignal(reader, {
+        table: TABLE,
+        operation: 'update',
+        rowId: 'unsequenced-in-test-schema',
+        tenantId: null,
+        seq: 0,
+      });
+      const [textA, textB] = await Promise.all([
+        readUntil(
+          streamA,
+          (t) => t.includes('unsequenced-in-test-schema'),
+          1000,
+        ),
+        readUntil(
+          streamB,
+          (t) => t.includes('unsequenced-in-test-schema'),
+          600,
+        ),
+      ]);
+      await streamA.cancel().catch(() => {});
+      await streamB.cancel().catch(() => {});
+      expect(textA).toContain('unsequenced-in-test-schema');
+      expect(textB).not.toContain('unsequenced-in-test-schema');
+    });
+  });
 });

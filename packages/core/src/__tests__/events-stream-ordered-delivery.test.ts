@@ -8,7 +8,7 @@
  * `vite-plugin/events-route.test.ts`).
  */
 import type { DatabaseInterface } from '@happyvertical/sql';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   appendChange,
   registerChangeFeedWriter,
@@ -252,5 +252,82 @@ describe('_events delivers changes in feed order from a per-connection cursor', 
     const { text: laterText } = await readUntil(stream, () => false, 150);
     await stream.cancel().catch(() => {});
     expect(changeIds(firstText + laterText)).toEqual([seq]);
+  });
+
+  it('delivers a change committed with no signal on the next idle heartbeat read', async () => {
+    // Heartbeats are driven by hand; every other timer is real.
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] });
+    try {
+      let boundsReads = 0;
+      const counted = new Proxy(db, {
+        get(target, prop, receiver) {
+          const value = Reflect.get(target, prop, receiver);
+          if (prop === 'query' && typeof value === 'function') {
+            return async (sql: string, ...args: unknown[]) => {
+              const result = await value.call(target, sql, ...args);
+              if (/MAX\(seq\) AS horizon/.test(sql)) boundsReads++;
+              return result;
+            };
+          }
+          return typeof value === 'function' ? value.bind(target) : value;
+        },
+      }) as DatabaseInterface;
+      const heartbeatMs = 60_000;
+      const stream = buildChangeEventStream(counted, {
+        cursor: null,
+        tenantScope: UNENFORCED,
+        heartbeatMs,
+      });
+      // The head read and the initial (empty) catch-up read are both done.
+      const settledAt = Date.now() + 2000;
+      while (boundsReads < 2 && Date.now() < settledAt) {
+        await new Promise((resolve) => setTimeout(resolve, 5));
+      }
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(boundsReads).toBe(2);
+      // As from another replica with no notification channel: no signal.
+      const seq = (await appendChange(db, {
+        table: WIDGETS_TABLE,
+        rowId: 'unsignalled',
+      })) as number;
+      // No heartbeat yet: nothing reads the feed, so nothing is framed.
+      const before = await readUntil(
+        stream,
+        (t) => t.includes('unsignalled'),
+        150,
+      );
+      expect(before.text).not.toContain('unsignalled');
+      vi.advanceTimersByTime(heartbeatMs);
+      const { text } = await readUntil(stream, (t) =>
+        t.includes('unsignalled'),
+      );
+      await stream.cancel().catch(() => {});
+      expect(changeIds(text)).toEqual([seq]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('frames a signal that carries no feed sequence directly, without moving the resume id', async () => {
+    const stream = buildChangeEventStream(db, {
+      cursor: null,
+      tenantScope: UNENFORCED,
+    });
+    await readUntil(stream, (t) => t.includes('retry:'), 1000);
+    publishChangeSignal(db, {
+      table: WIDGETS_TABLE,
+      operation: 'update',
+      rowId: 'signal-only',
+      tenantId: null,
+      seq: 0,
+    });
+    const { text } = await readUntil(stream, (t) => t.includes('signal-only'));
+    await stream.cancel().catch(() => {});
+    const frame = text
+      .split('\n\n')
+      .find((block) => block.includes('signal-only'));
+    expect(frame).toBe(
+      'event: change\ndata: {"table":"ordered_delivery_widgets","operation":"update","rowId":"signal-only","tenantId":null}',
+    );
   });
 });

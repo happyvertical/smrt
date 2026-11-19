@@ -90,4 +90,34 @@ describe('a failed change-feed append is dropped with a rate-limited warning', (
     expect(feedWarnings[0]).toContain(NOTES);
     expect(feedWarnings[1]).toContain(TAGS);
   });
+
+  it('keeps one warning bucket per database across transactions on the same root', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const notes = await AppendFailureNoteCollection.create({ db });
+    await failAppendsFor(db, NOTES);
+    const first = new AppendFailureNote({ db, title: 'in-first' });
+    await first.initialize();
+    // The feed append fails inside the transaction; whether the engine then
+    // aborts the transaction does not matter here.
+    await first
+      .withTransaction(async (bound) => {
+        await bound.save();
+      })
+      .catch(() => undefined);
+    const second = new AppendFailureNote({ db, title: 'in-second' });
+    await second.initialize();
+    // The feed append fails inside the transaction; whether the engine then
+    // aborts the transaction does not matter here.
+    await second
+      .withTransaction(async (bound) => {
+        await bound.save();
+      })
+      .catch(() => undefined);
+    await notes.create({ title: 'on-root' });
+
+    const feedWarnings = warn.mock.calls
+      .map((call) => String(call[0]))
+      .filter((message) => message.includes('failed to append'));
+    expect(feedWarnings).toHaveLength(1);
+  });
 });

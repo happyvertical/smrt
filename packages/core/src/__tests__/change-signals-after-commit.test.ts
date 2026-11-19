@@ -99,6 +99,40 @@ for (const engine of ['sqlite', 'duckdb'] as const) {
       ]);
     });
 
+    it('defers a write through the root handle made inside the transaction, and drops it on rollback', async () => {
+      const items = await AfterCommitItemCollection.create({ db });
+      const anchorItem = new AfterCommitItem({ db, name: 'anchor' });
+      await anchorItem.initialize();
+      let seenInside = -1;
+      await expect(
+        anchorItem.withTransaction(async (bound) => {
+          await bound.save();
+          // A second object bound to the root, not the transaction handle.
+          await items.create({ name: 'root-bound' });
+          seenInside = received.length;
+          throw new Error('roll back');
+        }),
+      ).rejects.toThrow('roll back');
+      expect(seenInside).toBe(0);
+      expect(received).toEqual([]);
+      // The root-bound write shared the transaction and rolled back with it.
+      expect((await getChangesSince(db, { since: 0 })).changes).toEqual([]);
+      expect(await items.list({})).toEqual([]);
+
+      let seenInsideCommit = -1;
+      await anchorItem.withTransaction(async (bound) => {
+        await bound.save();
+        await items.create({ name: 'root-bound-committed' });
+        seenInsideCommit = received.length;
+      });
+      expect(seenInsideCommit).toBe(0);
+      expect(received).toHaveLength(2);
+      const { changes } = await getChangesSince(db, { since: 0 });
+      expect(received.map((signal) => signal.seq)).toEqual(
+        changes.map((change) => change.seq),
+      );
+    });
+
     it('still publishes an autocommit write immediately', async () => {
       const items = await AfterCommitItemCollection.create({ db });
       const item = await items.create({ name: 'plain' });
