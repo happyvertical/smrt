@@ -243,6 +243,11 @@ async function settleTaggedCall(
 ): Promise<void> {
   const tagged: SmrtAiUsageEvent = {
     ...event,
+    // A call of a run is billed to the run's tenant (the settlement writes
+    // the row with the run row's own), and the handlers see the same.
+    ...(context.tenantId !== undefined
+      ? { tenantId: context.tenantId ?? null }
+      : {}),
     tags: { ...(event.tags ?? {}), ...usageTags },
   };
   const input = { runId: context.runId, callId, usage: tagged, status };

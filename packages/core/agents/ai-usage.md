@@ -207,7 +207,16 @@ resort.
 transcript?, label? })` (`src/tracked-ai-client.ts`) is the entry point for code that
 is not a `SmrtObject` (chat, the app shell, background workers). It is built
 for ONE tenant and database (an internal `SmrtClass` host: nothing is kept per
-process) and refuses a run context of another database or tenant.
+process) and refuses a run context of another database or tenant: bound at
+`client()` or passed on a single call (`message(x, { runContext })`, streams
+too), the context's database, its declared tenant and its run row's tenant
+must all be the client's, checked before anything is reserved or sent;
+the context is copied before the check and only the copy is used, so
+changing the caller's object afterwards cannot move a call to another run;
+the database is likewise captured at construction, never re-read from the
+caller's options. A
+call of a run is billed to the run row's tenant (the settlement writes the
+usage row with it and the handlers see it), never the ambient tenant.
 `openRun(input)` opens a run there (`AiRunTrackingDisabledError` while usage
 persistence is off); `client(prompt, { runContext? })` returns a client made
 for one prompt: every call on it is tagged with the prompt's `promptKey` and

@@ -570,10 +570,14 @@ async function settleInTx(
       path = existing[0] ? 'already_settled' : 'unreserved';
     }
   }
-  const inserted = await insertAiUsageRow(tx.db, usage, {
-    id: input.callId,
-    runId: input.runId,
-  });
+  // A call of a run is billed to the run's tenant (global `null` included),
+  // whatever tenant the caller's context or the ambient resolver named.
+  const runTenant = chain[chain.length - 1]?.tenantId ?? null;
+  const inserted = await insertAiUsageRow(
+    tx.db,
+    { ...usage, tenantId: runTenant },
+    { id: input.callId, runId: input.runId },
+  );
   if (path === 'already_settled') return path;
   if (path === 'unreserved') {
     // The one case where the insert, not the event, guards double charging.

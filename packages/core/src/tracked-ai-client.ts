@@ -40,7 +40,7 @@ import {
   type OpenAiRunInput,
   openAiRun,
 } from './system/ai-run-lifecycle.js';
-import type { AiRunRow } from './system/ai-run-model.js';
+import { type AiRunRow, aiRunQuery, getRows } from './system/ai-run-model.js';
 
 /** A tracked call was set up without a prompt key. */
 export class AiPromptKeyRequiredError extends SmrtError {
@@ -178,6 +178,10 @@ export function createTrackedAiClient(
   if (!options?.db || typeof options.db.query !== 'function') {
     throw new TypeError('createTrackedAiClient: a database is required');
   }
+  // The database is captured once: the caller's options object may be
+  // changed afterwards, and validation, contexts and persistence must all
+  // keep naming the database the host was built on.
+  const db = options.db;
   const host = new TrackedAiHost(options);
   let ready: Promise<TrackedAiHost> | undefined;
   const initialized = () => {
@@ -188,8 +192,42 @@ export function createTrackedAiClient(
     return ready;
   };
   const tenantId = options.tenantId ?? null;
+  /**
+   * A run context is accepted only on this client's database and tenant:
+   * the context's declared tenant and its run row's tenant (global `null`
+   * included) must both be this client's. Applied to a context bound at
+   * `client()` and to one passed on a single call. The context is copied
+   * before anything is awaited and only the copy is checked and used, so a
+   * caller changing the object afterwards cannot move the call to another
+   * run.
+   */
+  const inScope = async (runContext: unknown): Promise<AiRunContext> => {
+    if (!isAiRunContext(runContext)) {
+      throw new TypeError('client: runContext is not an AI run context');
+    }
+    const checked: AiRunContext = { ...runContext };
+    const refuse = () =>
+      new TypeError('client: the run belongs to another tenant or database');
+    if (checked.db !== db || (checked.tenantId ?? null) !== tenantId) {
+      throw refuse();
+    }
+    // Looked up in the client's tenant (a SQL predicate): a run of another
+    // tenant is not read, only not found.
+    const owned = getRows(
+      await aiRunQuery(
+        db,
+        `SELECT id FROM _smrt_ai_runs WHERE id = $1 AND ${
+          tenantId === null ? 'tenant_id IS NULL' : 'tenant_id = $2'
+        }`,
+        checked.runId,
+        ...(tenantId === null ? [] : [tenantId]),
+      ),
+    );
+    if (owned.length === 0) throw refuse();
+    return checked;
+  };
   return {
-    db: options.db,
+    db,
     tenantId,
     async openRun(input) {
       await initialized();
@@ -197,7 +235,7 @@ export function createTrackedAiClient(
       const run = await openAiRun(store, input);
       return {
         run,
-        context: { runId: run.id, db: options.db, tenantId: run.tenantId },
+        context: { runId: run.id, db, tenantId: run.tenantId },
       };
     },
     async client(prompt, callOptions = {}) {
@@ -208,22 +246,10 @@ export function createTrackedAiClient(
       ) {
         throw new AiPromptKeyRequiredError();
       }
-      const runContext = callOptions.runContext;
-      if (runContext !== undefined) {
-        if (!isAiRunContext(runContext)) {
-          throw new TypeError('client: runContext is not an AI run context');
-        }
-        // A context of another database or tenant is never accepted: the
-        // tracked client is scoped to its own.
-        if (
-          runContext.db !== options.db ||
-          (runContext.tenantId ?? null) !== tenantId
-        ) {
-          throw new TypeError(
-            'client: the run belongs to another tenant or database',
-          );
-        }
-      }
+      const runContext =
+        callOptions.runContext !== undefined
+          ? await inScope(callOptions.runContext)
+          : undefined;
       await initialized();
       const inner = await host.tracked(prompt);
       const tags: Record<string, string> = {
@@ -238,10 +264,11 @@ export function createTrackedAiClient(
             return value;
           }
           if (!TRACKED_METHODS.has(property)) return value.bind(target);
-          return (
+          const send = (
             input: unknown,
-            raw?: Record<string, unknown>,
-            ...rest: unknown[]
+            raw: Record<string, unknown> | undefined,
+            rest: unknown[],
+            context: AiRunContext | undefined = runContext,
           ) =>
             value.call(
               target,
@@ -255,10 +282,45 @@ export function createTrackedAiClient(
                   // The prompt's key is not the call's to change.
                   promptKey: prompt.promptKey,
                 },
-                ...(runContext ? { runContext } : {}),
+                ...(context ? { runContext: context } : {}),
               },
               ...rest,
             );
+          // A context bound at `client()` was checked there; one passed on
+          // the call is checked before anything is reserved or sent.
+          const perCall = (raw?: Record<string, unknown>) =>
+            !runContext && raw?.runContext !== undefined;
+          if (property === 'stream') {
+            return (
+              input: unknown,
+              raw?: Record<string, unknown>,
+              ...rest: unknown[]
+            ) => {
+              if (!perCall(raw)) return send(input, raw, rest);
+              // Copied now: the stream body runs at its first read.
+              const passed = isAiRunContext(raw?.runContext)
+                ? { ...raw.runContext }
+                : raw?.runContext;
+              return (async function* () {
+                const context = await inScope(passed);
+                yield* send(
+                  input,
+                  raw,
+                  rest,
+                  context,
+                ) as AsyncIterable<unknown>;
+              })();
+            };
+          }
+          return async (
+            input: unknown,
+            raw?: Record<string, unknown>,
+            ...rest: unknown[]
+          ) => {
+            if (!perCall(raw)) return send(input, raw, rest);
+            const context = await inScope(raw?.runContext);
+            return send(input, raw, rest, context);
+          };
         },
       }) as AIClient;
     },
