@@ -1424,6 +1424,110 @@ describe('app model editor: one customised registry per process', () => {
       await other.close?.();
     }
   });
+
+  it('a rolled-back customisation of a pre-existing app subclass leaves no ownership behind', async () => {
+    const base = ObjectRegistry.getClass(MEMBER)!
+      .constructor as typeof SmrtObject;
+    class AppGuardMember extends base {}
+    ObjectRegistry.register(AppGuardMember, {
+      name: 'GuardMember',
+      packageName: APP,
+    });
+    const recipe = {
+      ...memberCatalog,
+      recipes: [
+        {
+          id: 'guards.members',
+          label: 'Members',
+          models: [MEMBER],
+          nav: [],
+          requires: [],
+        },
+      ],
+    };
+    const open = (tenantId: string) =>
+      createAppModelEditor({
+        db,
+        application: 'editor-guards-slot',
+        tenantId,
+        packageName: APP,
+        cookbook: { ...book(), recipes: ['guards.members'] },
+        catalog: recipe,
+        authorize: (c) => c.actor === 'owner',
+      });
+    const e = await open(TENANT);
+    // A refused edit (a reserved name fails after registration would not; a
+    // migration refusal does): drift on the provider table.
+    await db.query(
+      engine === 'postgres'
+        ? `ALTER TABLE ${MEMBER_TABLE} ALTER COLUMN visits TYPE REAL`
+        : `ALTER TABLE ${MEMBER_TABLE} DROP COLUMN visits`,
+    );
+    if (engine !== 'postgres')
+      await db.query(`ALTER TABLE ${MEMBER_TABLE} ADD COLUMN visits REAL`);
+    await expect(
+      applier(
+        e,
+        TENANT,
+      )({
+        type: 'add_field',
+        model: MEMBER,
+        name: 'vip',
+        field: { type: 'boolean' },
+      }),
+    ).rejects.toThrow();
+    // Nothing of tenant A's remains claimed: tenant B opens.
+    await expect(open(OTHER_TENANT)).resolves.toBeDefined();
+  });
+
+  it('a disabled customisation of a pre-existing app subclass leaves no ownership behind', async () => {
+    const base = ObjectRegistry.getClass(MEMBER)!
+      .constructor as typeof SmrtObject;
+    class AppGuardMember extends base {}
+    ObjectRegistry.register(AppGuardMember, {
+      name: 'GuardMember',
+      packageName: APP,
+    });
+    const recipe = {
+      ...memberCatalog,
+      recipes: [
+        {
+          id: 'guards.members',
+          label: 'Members',
+          models: [MEMBER],
+          nav: [],
+          requires: [],
+        },
+      ],
+    };
+    const open = (tenantId: string) =>
+      createAppModelEditor({
+        db,
+        application: 'editor-guards-slot',
+        tenantId,
+        packageName: APP,
+        cookbook: { ...book(), recipes: ['guards.members'] },
+        catalog: recipe,
+        authorize: (c) => c.actor === 'owner',
+      });
+    const e = await open(TENANT);
+    await applier(
+      e,
+      TENANT,
+    )({
+      type: 'add_field',
+      model: MEMBER,
+      name: 'vip',
+      field: { type: 'boolean' },
+    });
+    const staged = createCookbookEngine({
+      catalog: recipe,
+      cookbook: e.snapshot().cookbook,
+    });
+    staged.run({ name: 'remove_recipes', input: { ids: ['guards.members'] } });
+    await applier(e, TENANT)({ type: 'import', cookbook: staged.cookbook() });
+    await expect(open(OTHER_TENANT)).resolves.toBeDefined();
+  });
 });
 
 describe('app model editor: provider fields across recipe disable', () => {

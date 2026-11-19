@@ -330,6 +330,22 @@ declare global {
 const editorClasses = () =>
   (globalThis.__smrtAppModelEditorClasses ??= new Map<object, string>());
 /**
+ * Snapshot the journal marks and exposure claims, so a rolled-back
+ * registration (a pre-existing app subclass keeps its constructor) does not
+ * keep claiming ownership.
+ */
+function checkpointOwnership(): () => void {
+  const marks = new Map(editorClasses());
+  const claims = new Map(globalThis.__smrtModelOwners ?? []);
+  return () => {
+    editorClasses().clear();
+    for (const [key, value] of marks) editorClasses().set(key, value);
+    globalThis.__smrtModelOwners = claims;
+    notifyRuntimeExposureChanged();
+  };
+}
+
+/**
  * Ownership marks and exposure claims outlive the editor that made them. A
  * class no longer registered (a reset or reloaded registry) carries no claim:
  * drop such marks before a new editor checks or claims anything.
@@ -1070,6 +1086,10 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
         if (current && editorClasses().get(current.constructor) === journal) {
           restore();
           setRuntimeModelOwner([replacement], undefined);
+          // A pre-existing app subclass comes back with its own constructor;
+          // it no longer belongs to this journal.
+          const restored = ObjectRegistry.getClass(replacement);
+          if (restored) editorClasses().delete(restored.constructor);
         }
         replacements.delete(model);
       }
@@ -1305,7 +1325,9 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
     const started = performance.now();
     let restore = () => {};
     const readiness = new Map<string, boolean | undefined>();
+    let restoreOwnership = () => {};
     const checkpoint = () => {
+      restoreOwnership = checkpointOwnership();
       const held = identities(active(storage(), doc));
       for (const id of held) readiness.set(id, getRuntimeModelReadiness(id));
       restore = ObjectRegistry.checkpointRegistrations(held);
@@ -1352,6 +1374,7 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
       // The surrounding transaction can fail while committing, after the
       // migration callback itself succeeded. Restore that boundary too.
       restore();
+      restoreOwnership();
       for (const [id, value] of readiness)
         setRuntimeModelReadiness([id], value);
       // Models whose storage is incomplete stay closed until the operator
@@ -1803,8 +1826,10 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
         held.map((id) => [id, getRuntimeModelReadiness(id)]),
       );
       let restore = () => {};
+      const restoreOwnership = checkpointOwnership();
       const rollback = () => {
         restore();
+        restoreOwnership();
         ({ history, revision, doc, ready } = previous);
         for (const [id, value] of readiness)
           setRuntimeModelReadiness([id], value);
