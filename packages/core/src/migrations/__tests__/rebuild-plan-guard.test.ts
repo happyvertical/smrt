@@ -19,6 +19,7 @@ import { type DatabaseInterface, getDatabase } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ObjectRegistry } from '../../registry.js';
 import type { SchemaDefinition } from '../../schema/types.js';
+import { SchemaComparer } from '../differ.js';
 import {
   getPendingSchemaStatements,
   migrateSmrtSchemas,
@@ -29,7 +30,11 @@ import {
   rebuildPlanStaleMessage,
   TableChangedSincePlanError,
 } from '../rebuild-plan-guard.js';
-import { sqliteUnchangedTableGuardStatements } from '../sqlite-rebuild.js';
+import {
+  sqliteForeignKeyGuardStatements,
+  sqliteReferencedTableGuardStatements,
+  sqliteUnchangedTableGuardStatements,
+} from '../sqlite-rebuild.js';
 
 const PACKAGE = '@test/rebuild-plan-guard';
 const TABLE = 'guarded_notes';
@@ -263,7 +268,7 @@ describe.each([
   });
 });
 
-describe('a SQLite rebuild stops when a table started referencing it after the plan', () => {
+describe('a SQLite rebuild of a table that started being referenced after the plan', () => {
   const PARENT = 'lonely_parent';
   let directory: string;
   let db: DatabaseInterface;
@@ -364,7 +369,7 @@ describe('a SQLite rebuild stops when a table started referencing it after the p
     ).toHaveLength(1);
   });
 
-  it('refuses a caller that runs the planned statements itself, and keeps the child rows', async () => {
+  it('refuses a caller that runs the planned statements itself with foreign keys on, and keeps the child rows', async () => {
     const { statements } = await getPendingSchemaStatements(db, {
       engineHint: 'sqlite',
     });
@@ -379,25 +384,143 @@ describe('a SQLite rebuild stops when a table started referencing it after the p
         (error: unknown) => error,
       );
 
-    expect(asTableChangedSincePlan(failure)).toMatchObject({ table: PARENT });
+    expect(String((failure as Error)?.message ?? failure)).toContain(
+      'foreign keys are on, so DROP TABLE would delete rows of child tables',
+    );
     expect(await childRows()).toEqual([{ id: 'c1', parent_id: 'p1' }]);
     expect((await db.query(`SELECT id FROM ${PARENT}`)).rows).toEqual([
       { id: 'p1' },
     ]);
   });
 
-  it('stops the migrate by name, keeps the child rows, and the rerun rebuilds with the child in place', async () => {
+  it('is not misled by a temporary table that shadows the real child', async () => {
+    const { statements } = await getPendingSchemaStatements(db, {
+      engineHint: 'sqlite',
+    });
+    await addCascadingChild();
+
+    const failure = await db
+      .transaction?.(async (tx) => {
+        // Same name, no key: unqualified, it would answer for main.late_child.
+        await tx.query('CREATE TEMP TABLE late_child (id TEXT)');
+        for (const sql of statements) await tx.query(sql);
+      })
+      .then(
+        () => null,
+        (error: unknown) => error,
+      );
+
+    expect(String((failure as Error)?.message ?? failure)).toContain(
+      'foreign keys are on, so DROP TABLE would delete rows of child tables',
+    );
+    expect(
+      (await db.query('SELECT id, parent_id FROM main.late_child')).rows,
+    ).toEqual([{ id: 'c1', parent_id: 'p1' }]);
+  });
+
+  it('is not misled by a temporary table named pragma_foreign_keys', async () => {
+    const { statements } = await getPendingSchemaStatements(db, {
+      engineHint: 'sqlite',
+    });
+    await addCascadingChild();
+
+    const failure = await db
+      .transaction?.(async (tx) => {
+        // Empty, so an unqualified read of the setting would answer NULL.
+        await tx.query(
+          'CREATE TEMP TABLE pragma_foreign_keys ("foreign_keys" INTEGER)',
+        );
+        for (const sql of statements) await tx.query(sql);
+      })
+      .then(
+        () => null,
+        (error: unknown) => error,
+      );
+
+    expect(String((failure as Error)?.message ?? failure)).toContain(
+      'foreign keys are on, so DROP TABLE would delete rows of child tables',
+    );
+    expect(
+      (await db.query('SELECT id, parent_id FROM main.late_child')).rows,
+    ).toEqual([{ id: 'c1', parent_id: 'p1' }]);
+  });
+
+  it('rebuilds through migrate, which turns foreign keys off, and keeps the child rows', async () => {
     const { handle, changed } = changingAfterThePlan(db, addCascadingChild);
 
-    await expect(migrate(handle)).rejects.toBeInstanceOf(
-      TableChangedSincePlanError,
-    );
+    expect(await migrate(handle)).toMatchObject({
+      applied: true,
+      refused: false,
+    });
     expect(changed()).toBe(true);
     expect(await childRows()).toEqual([{ id: 'c1', parent_id: 'p1' }]);
+    expect(
+      Number((await db.query('PRAGMA foreign_keys')).rows[0]?.foreign_keys),
+    ).toBe(1);
+  });
+});
 
-    const rerun = await migrate(db);
-    expect(rerun).toMatchObject({ applied: true, refused: false });
-    expect(await childRows()).toEqual([{ id: 'c1', parent_id: 'p1' }]);
+describe('the SQLite foreign-key guard of a planned rebuild asks the live catalog', () => {
+  let db: DatabaseInterface;
+
+  beforeEach(async () => {
+    db = (await getDatabase({
+      type: 'sqlite',
+      url: ':memory:',
+    })) as DatabaseInterface;
+    await db.query('CREATE TABLE target (id TEXT PRIMARY KEY)');
+  });
+  afterEach(async () => {
+    await db.close?.();
+  });
+
+  const run = (statements: string[]) =>
+    db
+      .transaction?.(async (tx) => {
+        for (const sql of statements) await tx.query(sql);
+      })
+      .then(
+        () => null,
+        (error: unknown) => String((error as Error)?.message ?? error),
+      );
+
+  it('passes with foreign keys on while nothing references the table', async () => {
+    expect(
+      await run(sqliteReferencedTableGuardStatements('target')),
+    ).toBeNull();
+  });
+
+  it('fails with foreign keys on once a table references it, even one created after the plan', async () => {
+    const statements = sqliteReferencedTableGuardStatements('target');
+    await db.query(
+      'CREATE TABLE late_ref (id TEXT, target_id TEXT REFERENCES target (id) ON DELETE CASCADE)',
+    );
+    expect(await run(statements)).toContain('foreign keys are on');
+  });
+
+  it('fails where a temporary table named pragma_foreign_keys would answer NULL, for both guards', async () => {
+    await db.query(
+      'CREATE TABLE late_ref (id TEXT, target_id TEXT REFERENCES target (id) ON DELETE CASCADE)',
+    );
+    await db.query(
+      'CREATE TEMP TABLE pragma_foreign_keys ("foreign_keys" INTEGER)',
+    );
+    expect(await run(sqliteReferencedTableGuardStatements('target'))).toContain(
+      'foreign keys are on',
+    );
+    expect(await run(sqliteForeignKeyGuardStatements())).toContain(
+      'foreign keys are on',
+    );
+  });
+
+  it('passes with foreign keys off, whatever references the table', async () => {
+    await db.query(
+      'CREATE TABLE late_ref (id TEXT, target_id TEXT REFERENCES target (id) ON DELETE CASCADE)',
+    );
+    await db.query('PRAGMA foreign_keys = OFF');
+    expect(
+      await run(sqliteReferencedTableGuardStatements('target')),
+    ).toBeNull();
   });
 });
 
@@ -434,7 +557,6 @@ describe('the SQLite check compares the table and every index and trigger', () =
         name: String(row.name),
         sql: String(row.sql),
       })),
-      inboundReferences: [],
     };
   }
   async function run(statements: string[]) {
@@ -462,10 +584,6 @@ describe('the SQLite check compares the table and every index and trigger', () =
     [
       'an index whose name only resembles the internal prefix was added',
       'CREATE UNIQUE INDEX sqliteX_unique ON checked (label)',
-    ],
-    [
-      'a table that references it was created',
-      'CREATE TABLE late_ref (id TEXT, checked_id TEXT REFERENCES checked (id) ON DELETE CASCADE)',
     ],
   ])('fails when %s', async (_name, change) => {
     const statements = sqliteUnchangedTableGuardStatements(
@@ -502,5 +620,174 @@ describe('asTableChangedSincePlan', () => {
     ).toMatchObject({ table: null });
     expect(asTableChangedSincePlan(new Error('disk full'))).toBeNull();
     expect(asTableChangedSincePlan(undefined)).toBeNull();
+  });
+});
+
+describe('combined DuckDB rebuilds read every table once', () => {
+  let db: DatabaseInterface;
+
+  beforeEach(async () => {
+    db = (await getDatabase({
+      type: 'duckdb',
+      url: ':memory:',
+    })) as DatabaseInterface;
+    await db.query('CREATE TABLE parents (id TEXT PRIMARY KEY, v INTEGER)');
+    await db.query(
+      'CREATE TABLE children (id TEXT PRIMARY KEY, parent_id TEXT REFERENCES parents(id), note TEXT)',
+    );
+    await db.query("INSERT INTO parents VALUES ('p1', 1)");
+    await db.query("INSERT INTO children VALUES ('c1', 'p1', 'a')");
+  });
+  afterEach(async () => {
+    await db.close?.();
+  });
+
+  const definition = (
+    name: string,
+    columns: SchemaDefinition['columns'],
+    extra: Partial<SchemaDefinition> = {},
+  ): SchemaDefinition => ({
+    tableName: name,
+    columns: { id: { type: 'TEXT', primaryKey: true }, ...columns },
+    indexes: [],
+    triggers: [],
+    foreignKeys: [],
+    dependencies: [],
+    version: '',
+    ...extra,
+  });
+  /** The child first, so its rebuild reads it before the parent's does. */
+  const declared: Record<string, SchemaDefinition> = {
+    children: definition(
+      'children',
+      {
+        parent_id: { type: 'TEXT' },
+        note: { type: 'TEXT' },
+        claim: { type: 'TEXT', notNull: true, backfill: "'claim:' || id" },
+      },
+      {
+        foreignKeys: [
+          {
+            column: 'parent_id',
+            referencesTable: 'parents',
+            referencesColumn: 'id',
+          },
+        ],
+        dependencies: ['parents'],
+      },
+    ),
+    parents: definition('parents', { v: { type: 'REAL' } }),
+  };
+
+  it('stops by name when the table changed between two plans reading it, and keeps the change', async () => {
+    let reads = 0;
+    const handle = new Proxy(db, {
+      get(target, key, receiver) {
+        const value = Reflect.get(target, key, receiver);
+        if (key !== 'query')
+          return typeof value === 'function' ? value.bind(target) : value;
+        return async (sql: string, ...args: unknown[]) => {
+          if (
+            /PRAGMA table_info\("children"\)/.test(String(sql)) &&
+            ++reads === 2
+          ) {
+            // Between the child's reading and the parent plan's reading of it.
+            await target.query('ALTER TABLE children ADD COLUMN sentinel TEXT');
+            await target.query("UPDATE children SET sentinel = 'keep me'");
+          }
+          return (value as DatabaseInterface['query']).call(
+            target,
+            sql,
+            ...args,
+          );
+        };
+      },
+    });
+
+    const failure = await new SchemaComparer(handle, { engineHint: 'duckdb' })
+      .compare(declared)
+      .then(
+        () => null,
+        (error: unknown) => error,
+      );
+
+    expect(reads).toBeGreaterThanOrEqual(2);
+    expect(failure).toBeInstanceOf(TableChangedSincePlanError);
+    expect(failure).toMatchObject({ table: 'children' });
+    expect((await db.query('SELECT sentinel FROM children')).rows).toEqual([
+      { sentinel: 'keep me' },
+    ]);
+  });
+});
+
+describe('a SQLite rebuild that adds a self-referencing cascade', () => {
+  const TREE = 'tree_nodes';
+  let directory: string;
+  let db: DatabaseInterface;
+
+  beforeEach(async () => {
+    vi.spyOn(ObjectRegistry, 'getAllSchemasAsDefinitions').mockReturnValue({
+      [TREE]: {
+        tableName: TREE,
+        columns: {
+          id: { type: 'TEXT', primaryKey: true },
+          parent_ref: {
+            type: 'TEXT',
+            foreignKey: { table: TREE, column: 'id', onDelete: 'CASCADE' },
+          },
+        },
+        indexes: [],
+        foreignKeys: [],
+        triggers: [],
+        dependencies: [],
+        version: '',
+      },
+    });
+    directory = mkdtempSync(join(tmpdir(), 'smrt-rebuild-guard-self-'));
+    db = (await getDatabase({
+      type: 'sqlite',
+      url: `file:${join(directory, 'app.db')}`,
+    })) as DatabaseInterface;
+    await db.query(
+      `CREATE TABLE ${TREE} (id TEXT PRIMARY KEY, parent_ref TEXT)`,
+    );
+    await db.query(
+      `INSERT INTO ${TREE} (id, parent_ref) VALUES ('root', NULL), ('leaf', 'root')`,
+    );
+  });
+  afterEach(async () => {
+    vi.restoreAllMocks();
+    await db.close?.();
+    rmSync(directory, { recursive: true, force: true });
+  });
+
+  it('refuses a caller that runs the plan with foreign keys on before the drop, and keeps the root and the child row', async () => {
+    const { statements } = await getPendingSchemaStatements(db, {
+      engineHint: 'sqlite',
+    });
+    expect(
+      statements.some(
+        (sql) => /REFERENCES/i.test(sql) && /_smrt_rebuild_/.test(sql),
+      ),
+    ).toBe(true);
+
+    const failure = await db
+      .transaction?.(async (tx) => {
+        for (const sql of statements) await tx.query(sql);
+      })
+      .then(
+        () => null,
+        (error: unknown) => error,
+      );
+
+    expect(String((failure as Error)?.message ?? failure)).toContain(
+      'foreign keys are on, so DROP TABLE would delete rows of child tables',
+    );
+    expect(
+      (await db.query(`SELECT id, parent_ref FROM ${TREE} ORDER BY id`)).rows,
+    ).toEqual([
+      { id: 'leaf', parent_ref: 'root' },
+      { id: 'root', parent_ref: null },
+    ]);
   });
 });

@@ -955,21 +955,32 @@ These properties of that module are load-bearing; keep them if you touch it:
   everything written to it, while the migrate reported success. So the first
   statements of every plan (`sqliteUnchangedTableGuardStatements`) compare the
   live `sqlite_master` text of the table and of each of its indexes and
-  triggers, and the set of tables that declare a foreign key onto it, with
-  what was planned, inside the rebuild's transaction, and fail it on any
-  difference. The referencing set matters because the plan's foreign-key
-  guard was decided on it: a child with `ON DELETE CASCADE` created after
-  planning would otherwise lose its rows when a caller running the plan with
-  foreign keys on drops the parent. The failure is a CHECK on a temporary
-  table whose constraint name is the reason
+  triggers with what was planned, inside the rebuild's transaction, and fail
+  it on any difference. The failure is a CHECK on a temporary table whose
+  constraint name is the reason
   (`smrt table rebuild refused: the table changed after the migration was
   planned`), so it holds for the tracker, the CLI and a caller that runs the
   statements itself. `MigrationTracker` reports it as
   `TableChangedSincePlanError` (`rebuild-plan-guard.ts`; internal, not
   exported); nothing was changed, and a rerun plans from the table as it now
-  is. The guard comes from the differ's planner; the public
-  `buildSqliteRebuildStatements` does not add it, so a caller building its
-  own plan holds the database for the whole of its read-plan-apply.
+  is. The plan's foreign-key guard asks the live catalog too
+  (`sqliteReferencedTableGuardStatements`): it fails where foreign keys are on
+  and any table references the target when the rebuild runs, so a child with
+  `ON DELETE CASCADE` created after planning (or given its key by an earlier
+  statement of the batch) cannot lose rows to a caller that runs the plan with
+  foreign keys on. The tracker turns them off, so the guard passes there; a
+  stale referencing set is no stop, since nothing cascades. Every rebuild plan
+  runs the same live check again right before its `DROP TABLE`, after the
+  staging table exists: a plan that adds a self-reference makes the staging
+  table a child of the table it is about to drop. That pre-drop check is in
+  every plan, the public `buildSqliteRebuildStatements` included (the messages
+  maintenance uses it). The guard at the start, and the plan guard above, come
+  from the differ's planner only, so a caller building its own plan holds the
+  database for the whole of its read-plan-apply. Both checks read each table's
+  keys in `main`, where the table was listed (`pragma_foreign_key_list(name,
+  'main')`), so a temporary table of the same name cannot answer for a real
+  child, and read the setting from `main.pragma_foreign_keys`; a missing
+  answer counts as "on" (`CHECK ("safe" = 1)` would accept NULL).
   `rebuild-plan-guard.test.ts` covers both engines. Catalog reads skip
   SQLite's reserved `sqlite_` names by a literal prefix
   (`sqliteUserObjectName`, `schema/sqlite-internal-names.ts`): in `LIKE`, `_`
