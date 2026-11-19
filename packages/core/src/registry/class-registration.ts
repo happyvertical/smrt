@@ -1747,6 +1747,7 @@ function registerUntracked(
     throw sameNameParentUnregistered(
       ownName,
       (Object.getPrototypeOf(ctor) as { name?: string })?.name,
+      isolatedManifestEntry?.extendsQualified,
     );
   if (sameNameParent) {
     const [key, existing] = sameNameParent;

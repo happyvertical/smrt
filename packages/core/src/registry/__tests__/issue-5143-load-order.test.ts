@@ -51,6 +51,63 @@ const parentOptions = (tableName?: string) =>
     ...(tableName ? { tableName } : {}),
   }) as const;
 
+describe('the parent-first refusal says what to do', () => {
+  it('tells a replacement to register its parent first or import the parent module first', () => {
+    const { HistrioScene } = classes();
+    let message = '';
+    try {
+      smrt({ packageName: HISTRIO, replaceParent: true })(HistrioScene);
+    } catch (error) {
+      message = (error as Error).message;
+    }
+    expect(message).toMatch(
+      new RegExp(
+        `register Scene before its replacement ${SUB}, or import Scene's module first`,
+      ),
+    );
+  });
+
+  it('names the qualified parent when the manifest declaration carries it, through the manifest path', () => {
+    const { HistrioScene } = classes();
+    let thrown: { code?: string; message?: string; details?: unknown } = {};
+    try {
+      ObjectRegistry.register(HistrioScene, {
+        name: 'Scene',
+        packageName: HISTRIO,
+        replaceParent: true,
+        _manifestKey: SUB,
+        _manifest: {
+          version: '1',
+          timestamp: 0,
+          packageName: HISTRIO,
+          objects: {
+            [SUB]: {
+              name: 'scene',
+              className: 'Scene',
+              qualifiedName: SUB,
+              packageName: HISTRIO,
+              collection: 'scenes',
+              filePath: 'src/scene.ts',
+              extends: 'Scene',
+              extendsQualified: BASE,
+              fields: {},
+              methods: {},
+              decoratorConfig: { replaceParent: true },
+            },
+          },
+        } as never,
+      });
+    } catch (error) {
+      thrown = error as typeof thrown;
+    }
+    expect(thrown.code).toBe('CONFIG_SAME_NAME_PARENT_UNREGISTERED');
+    expect(thrown.message).toContain(
+      `register ${BASE} before its replacement ${SUB}, or import ${BASE}'s module first`,
+    );
+    expect(thrown.details).toMatchObject({ parentKey: BASE });
+  });
+});
+
 describe('a same-named subclass registered before its parent fails closed', () => {
   it('as a decorated replacement with its collection class: the class is refused and never registered', () => {
     const { HistrioScene } = classes();
