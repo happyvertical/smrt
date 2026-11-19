@@ -23,11 +23,13 @@ import {
   resolveWhereKey,
   setAiUsageTenantResolver,
   setDispatchTenantResolver,
+  setRequestTenantContextHooks,
   setTenantEntryPointRunner,
   setTenantScopedClassResolver,
   whereColumnName,
 } from '@happyvertical/smrt-core';
 import {
+  enterTenantContext,
   getCurrentTenant,
   getTenantId,
   isSuperAdminBypass,
@@ -912,6 +914,17 @@ export function enableTenancy(options: TenantInterceptorOptions = {}): void {
   // caller and the instance name none (#3077).
   setAiUsageTenantResolver(() => getTenantId());
 
+  // Lend core the request tenant context and the super-admin bypass, so the
+  // generated read routes of a model whose tenancy is registered at runtime
+  // can establish the caller's tenant and honour a bypass without importing
+  // this package.
+  setRequestTenantContextHooks({
+    enter: (context) =>
+      enterTenantContext(context as Parameters<typeof enterTenantContext>[0]),
+    current: () => getCurrentTenant(),
+    isSuperAdminBypass: () => isSuperAdminBypass(),
+  });
+
   setTenancyEnabled(true);
 }
 
@@ -953,6 +966,8 @@ export function disableTenancy(): void {
   setTenantScopedClassResolver(undefined);
   // Clear the AI usage ambient-tenant resolver (#3077).
   setAiUsageTenantResolver(undefined);
+  // Clear the request tenant context hooks.
+  setRequestTenantContextHooks(undefined);
   registeredInterceptor = null;
   setTenancyEnabled(false);
 }
