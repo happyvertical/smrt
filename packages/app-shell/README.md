@@ -444,8 +444,10 @@ a restart). All routes are owner-session, same-origin; there is no ``,
   a 409 refreshes the state and asks the owner to review again. A successful
   Apply toasts "Applied. Your app is live" and lands on the records. Discard is
   instant with "Put them back". Removed cards list with Put back.
-- Seams for later slices: `ChangeCard` takes an optional `oncomment` (shows
-  Comment) and a `more` snippet (questions, comment thread); blockers arrive in
+- `ChangeCard` shows Comment (`oncomment`, editable cards only) and a `more`
+  snippet that `ChangeCardExtras` fills: the comment thread ("Changing this…"
+  while the assistant works), the comment box, and the assistant's review
+  questions with click-to-answer choices (plain text only). Blockers arrive in
   `state.blockers` (`cardId` marks the card).
 - History: one entry per applied batch ("Applied N changes"); only the newest,
   not yet undone one has Undo (`POST /changes/undo` with `undoDigest`). While
@@ -457,6 +459,55 @@ a restart). All routes are owner-session, same-origin; there is no ``,
 An open draft from before changes waiting (or an import's) is adopted as
 opaque cards: no commands, not removable or editable one by one. The assistant
 gets no undo, apply or draft tool; its turn input says changes are collected.
+
+### The assistant and changes waiting (#5206)
+
+- **Reply block.** A turn that made changes ends in a `changes_block` event
+  (stored as an empty assistant message with `block: 'changes'`, never shown to
+  the model). The dock draws it from the layout's live `changes` state: "N
+  changes waiting", the first few changes, "N questions" while any is open, and
+  Review (link to `/changes`) / Apply. Review leads while a question is open or
+  Apply is not ready; Apply leads once nothing is open. Only the newest block in
+  a thread is live; nothing shows once nothing waits. Apply is the owner's own
+  click on the same `POST /changes/apply` (digest-pinned).
+- **Apply now.** `applyNowEligible` (`lib/server/apply-now.ts`, pure): exactly
+  one active card, made by the assistant, only `defineModel`/`addField`/
+  `defineReport`, and the exact check found no record updated, merged or set
+  aside. `ChangesState.applyNow` carries it (the main button reads "Apply now").
+  `POST /changes/apply` with `source: 'chat'` makes the server recompute it
+  from the batch and its fresh check and ignore the client: otherwise 409
+  `reason: 'review_first'`. It runs the exact checks only; the assistant review
+  is never part of Apply.
+- **Comment to revise.** `POST /changes/cards/:id/comment {text}` runs an
+  assistant turn scoped to that one card (the same engines as chat; its own
+  per-card thread, never the dock's latest) and answers the new state once it
+  ends; the thread is `card.comments`. The turn is offered `change_revise
+  (cardId, command)` and read tools only: no structural builder tool and no
+  record writes. `change_revise` replaces that card's commands in an open batch
+  (revision +1, rebuilt, re-checked; if it does not fit, the card is put back
+  and the engine's reason returned), only for the card the turn was scoped to,
+  and it never applies. Scoped by a per-owner slot (`withRevision`) so the CLI
+  engines' separate `/mcp` requests see it. 409 while another assistant turn
+  runs; 503 without a connected assistant.
+- **Review questions.** After the exact checks pass (`setAfterChecks`, installed
+  at startup by `hooks.server.ts` through `installChangeReview`), one tool-free
+  model call (`change-review.ts`) reads the changes, the overwrite counts and a
+  few sample records as untrusted `<data>`, and may return `{questions:
+  [{cardId, text, choices: [{label, command?}]}]}`. Output is parsed strictly
+  and capped (6 questions, 2 per card, 4 choices, 300/60 characters); each
+  choice command must be a known structural, non-History command that the
+  working copy's `plan` accepts, else the choice is dropped. Results are
+  discarded when the batch generation moved on; the review is skipped (exact
+  checks unaffected) when no assistant is connected; it runs on the owner's API
+  or ChatGPT engine as one tracked call, billed like other assistant use (the
+  local agent CLI engines are skipped). Stored in `ChangeCard.questions`
+  (alongside the comment thread; commands stay server-side). Answered
+  questions are kept so they are not asked again. `POST
+  /changes/questions/:id/answer {choice, generation?}` takes only a choice
+  INDEX: a choice with a command becomes a NEW card (source `api`, so never
+  Apply now), one without just closes the question. Questions never block
+  Apply, are not in the digest, and nothing here applies, approves or undoes
+  (`invariants.test.ts`).
 
 ## Draft then publish (engine API)
 

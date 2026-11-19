@@ -24,6 +24,8 @@ export function card(over: Partial<ChangeCardView> = {}): ChangeCardView {
     ],
     checks: [],
     questions: [],
+    comments: [],
+    revising: false,
     threadId: '',
     messageId: '',
     editable: true,
@@ -50,6 +52,7 @@ export function changes(over: Partial<ChangesState> = {}): ChangesState {
     digest: 'digest-1',
     checkState: 'ok',
     canApply: true,
+    applyNow: false,
     blockers: [],
     overwrites: {
       recordsUpdated: 0,
@@ -75,6 +78,7 @@ export const noChanges = (over: Partial<ChangesState> = {}): ChangesState =>
     digest: '',
     checkState: 'none',
     canApply: false,
+    applyNow: false,
     cards: [],
     ...over,
   });

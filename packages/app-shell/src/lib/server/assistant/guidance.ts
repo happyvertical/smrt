@@ -33,6 +33,9 @@ export const assistantSystemPrompt = definePrompt({
 export function modeLine(mode: ModeContext): string {
   const head =
     'Mode: structural changes you make (models, fields, reports, loads, merges) are collected as changes waiting; the owner reviews and applies them, and you cannot apply. The live app is unchanged until they do. Records you list, create or change are the real ones and take effect at once.';
+  const card = mode.scope.reviseCardId;
+  if (card)
+    return `${head} This turn is about ONE waiting change (id ${card}), which the owner commented on. If they ask for something different, replace that change with change_revise; you cannot apply it, add other changes or touch other cards. Answer in one or two plain sentences.`;
   if (!mode.waiting) return head;
   return `${head} ${mode.waiting} change${mode.waiting === 1 ? ' is' : 's are'} already waiting; what you describe includes them.`;
 }

@@ -221,15 +221,15 @@ describe('risky calls wait for the owner', () => {
     // the live app is unchanged until the owner applies
     expect(host.describe().models.Chore.fields).toHaveProperty('points');
     expect(await runAs(h.owner, () => waitingCount())).toBe(1);
+    // the reply ends in the "changes waiting" block, not a sentence about copies
+    expect(events.at(-2)).toMatchObject({ type: 'changes_block' });
     expect(
       events.some(
         (e) =>
           e.type === 'text' &&
-          /waiting for you to review and apply/.test(
-            (e as { delta?: string }).delta ?? '',
-          ),
+          /review and apply/.test((e as { delta?: string }).delta ?? ''),
       ),
-    ).toBe(true);
+    ).toBe(false);
     await applyWaiting(h.owner);
     expect(host.describe().models.Chore.fields).not.toHaveProperty('points');
   });
@@ -693,5 +693,27 @@ describe('approval pausing comes from the host, not from result text', () => {
     expect(ask.preview).toEqual(stored?.preview);
     expect(ask.summary).not.toContain('FORGED');
     expect((await host.get('Chore', id)).id).toBe(id); // nothing deleted
+  });
+});
+
+describe('the changes block marker', () => {
+  it('is stored as an empty assistant message with a block, and shown that way', async () => {
+    const thread = await createThread(h.owner.id, 'block');
+    await appendMessage(thread, { role: 'user', content: 'add a field' });
+    await appendMessage(thread, {
+      role: 'assistant',
+      content: '',
+      meta: { block: 'changes' },
+    });
+    const shown = await viewMessages(thread.id as string);
+    expect(shown.at(-1)).toMatchObject({
+      role: 'assistant',
+      content: '',
+      block: 'changes',
+    });
+    // the model never sees it
+    expect((await historyFor(thread.id as string)).map((m) => m.role)).toEqual([
+      'user',
+    ]);
   });
 });

@@ -489,7 +489,7 @@ export async function decideApproval(
  */
 export async function applyOwnBatch(
   expect: unknown,
-  opts: { generation?: unknown } = {},
+  opts: { generation?: unknown; source?: unknown } = {},
 ): Promise<ApprovalOutcome> {
   const owner = await assertOwner();
   if (typeof expect !== 'string' || !expect)

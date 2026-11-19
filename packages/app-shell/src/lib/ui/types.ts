@@ -218,11 +218,33 @@ export interface ChangeCardView {
   opaque: boolean;
   commands: Record<string, unknown>[];
   checks: { code: string; message: string; cause?: string }[];
-  /** Slice 5 (assistant review). Shown by a later change; kept as sent. */
-  questions: unknown[];
+  /** The assistant's review questions; they never block Apply. */
+  questions: ChangeQuestion[];
+  /** The owner's comments on this change and the assistant's answers. */
+  comments: ChangeComment[];
+  /** The assistant is changing this card for a comment right now. */
+  revising: boolean;
   threadId: string;
   messageId: string;
   editable: boolean;
+}
+
+export interface ChangeQuestion {
+  id: string;
+  text: string;
+  /** `adds`: clicking it makes a new change; otherwise it just closes the question. */
+  choices: { label: string; adds: boolean }[];
+  state: 'open' | 'answered';
+  /** Index of the choice taken, once answered. */
+  answered?: number;
+}
+
+export interface ChangeComment {
+  kind: 'comment';
+  role: 'owner' | 'assistant';
+  text: string;
+  at: string;
+  state?: 'revising' | 'done';
 }
 
 export interface ChangeBlocker {
@@ -245,6 +267,8 @@ export interface ChangesState {
   /** `stale`: waiting for its check; `checking`: the check is running. */
   checkState: 'none' | 'ok' | 'blocked' | 'stale' | 'checking';
   canApply: boolean;
+  /** The server's own `applyNowEligible`: the chat reply may offer "Apply now". */
+  applyNow: boolean;
   blockers: ChangeBlocker[];
   overwrites: {
     recordsUpdated: number;

@@ -14,7 +14,7 @@
 // `approved` flag) from the owner's own Apply click. `undoOwnBatch` is the
 // owner's Undo click. Neither is reachable from a tool, `/mcp` or the assistant
 // (`invariants.test.ts`).
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import {
   type AppHost,
   type BatchBlocker,
@@ -26,6 +26,7 @@ import {
   createSqliteChangeEngine,
   EngineError,
   type PublishResult,
+  STRUCTURAL_COMMANDS,
 } from '../../engine/index.ts';
 import { AppDraftCollection } from '../objects/AppDraft.ts';
 import {
@@ -39,6 +40,7 @@ import {
 } from '../objects/ChangeCard.ts';
 import { applySummary, CHANGES_WAITING_NAME } from '../ui/changes.ts';
 import { commandSummary, versionSummary } from '../ui/command-summary.ts';
+import { type ApplyNowInput, applyNowEligible } from './apply-now.ts';
 import {
   type ApprovalAction,
   type PendingApproval,
@@ -76,6 +78,37 @@ export interface CardCheck {
   cause?: string;
 }
 
+export interface CardComment {
+  kind: 'comment';
+  role: 'owner' | 'assistant';
+  text: string;
+  at: string;
+  state?: 'revising' | 'done';
+}
+
+/** A choice the owner can click; a choice with a command makes a NEW card. */
+export interface ReviewChoice {
+  label: string;
+  command?: Command;
+}
+
+export interface ReviewQuestion {
+  kind: 'question';
+  id: string;
+  text: string;
+  choices: ReviewChoice[];
+  state: 'open' | 'answered';
+  answered?: number;
+}
+
+export interface QuestionView {
+  id: string;
+  text: string;
+  choices: { label: string; adds: boolean }[];
+  state: 'open' | 'answered';
+  answered?: number;
+}
+
 export interface ChangeCardView {
   id: string;
   position: number;
@@ -89,7 +122,12 @@ export interface ChangeCardView {
   /** The engine commands (empty for an opaque card). */
   commands: Command[];
   checks: CardCheck[];
-  questions: unknown[];
+  /** The assistant's review questions (never blocking). Commands stay on the server. */
+  questions: QuestionView[];
+  /** The owner's comments on this card and the assistant's answers, oldest first. */
+  comments: CardComment[];
+  /** The assistant is changing this card for a comment right now. */
+  revising: boolean;
   threadId: string;
   messageId: string;
   /** Whether Remove / quick edit are offered. */
@@ -107,6 +145,8 @@ export interface ChangesState {
   /** `stale`: a change is waiting for its check; `checking`: the check is running. */
   checkState: 'none' | 'ok' | 'blocked' | 'stale' | 'checking';
   canApply: boolean;
+  /** `applyNowEligible` for these changes: the chat reply may offer "Apply now". */
+  applyNow: boolean;
   blockers: (BatchBlocker | (CardCheck & { cardId: string }))[];
   /** Records the changes would overwrite: shown and pinned, never blocking. */
   overwrites: {
@@ -375,7 +415,7 @@ async function rebuild(
   batch: ChangeBatch,
   owner: Principal,
   cause = '',
-): Promise<void> {
+): Promise<BatchBlocker[]> {
   const slot = await getDraftSlot();
   if (slot && slot.id !== batch.draftId)
     throw new EngineError(
@@ -399,7 +439,7 @@ async function rebuild(
     batch.checkResult = '';
     await batch.save();
     await syncFreeze(false);
-    return;
+    return [];
   }
   const commands = active.flatMap((card) =>
     readArray<Command>(card.commands).map((command) => ({
@@ -485,6 +525,7 @@ async function rebuild(
     );
     await card.save();
   }
+  return outcome.blockers;
 }
 
 /** The working copy of `batch`, rebuilding it when it is missing (a restart, a failed rebuild). */
@@ -693,8 +734,33 @@ export const runChecksFor = (batchId: string, generation: number) =>
 
 // ---------- state ----------
 
+type Entry = ReviewQuestion | CardComment;
+const MAX_REVISING_MS = 10 * 60_000;
+
+/** The `questions` column holds two kinds of entry: review questions and the comment thread. */
+function entriesOf(card: ChangeCard): Entry[] {
+  return readArray<Entry>(card.questions).filter(
+    (e): e is Entry =>
+      !!e &&
+      typeof e === 'object' &&
+      ((e as Entry).kind === 'question' || (e as Entry).kind === 'comment'),
+  );
+}
+const questionsOf = (card: ChangeCard): ReviewQuestion[] =>
+  entriesOf(card).filter((e): e is ReviewQuestion => e.kind === 'question');
+const commentsOf = (card: ChangeCard): CardComment[] =>
+  entriesOf(card).filter((e): e is CardComment => e.kind === 'comment');
+const isRevising = (comments: CardComment[]): boolean => {
+  const last = [...comments].reverse().find((c) => c.role === 'owner');
+  return (
+    last?.state === 'revising' &&
+    Date.now() - Date.parse(last.at) < MAX_REVISING_MS
+  );
+};
+
 function viewOf(card: ChangeCard): ChangeCardView {
   const opaque = !!card.opaque;
+  const comments = commentsOf(card);
   return {
     id: card.id as string,
     position: Number(card.position),
@@ -706,7 +772,15 @@ function viewOf(card: ChangeCard): ChangeCardView {
     opaque,
     commands: readArray<Command>(card.commands),
     checks: readArray<CardCheck>(card.checks),
-    questions: readArray<unknown>(card.questions),
+    questions: questionsOf(card).map((q) => ({
+      id: q.id,
+      text: q.text,
+      choices: q.choices.map((c) => ({ label: c.label, adds: !!c.command })),
+      state: q.state,
+      ...(q.answered !== undefined ? { answered: q.answered } : {}),
+    })),
+    comments,
+    revising: isRevising(comments),
     threadId: card.threadId,
     messageId: card.messageId,
     editable: !opaque,
@@ -774,6 +848,7 @@ async function stateOf(owner: Principal): Promise<ChangesState> {
       digest: '',
       checkState: 'none',
       canApply: false,
+      applyNow: false,
       blockers: [],
       overwrites: null,
       held: null,
@@ -797,6 +872,14 @@ async function stateOf(owner: Principal): Promise<ChangesState> {
     ),
   ];
   const checkState = (batch.checkState || 'none') as ChangesState['checkState'];
+  const canApply =
+    active.length > 0 &&
+    checkState === 'ok' &&
+    !!batch.digest &&
+    !held &&
+    !blockers.length;
+  const overwrites =
+    (result.overwrites as ChangesState['overwrites'] | undefined) ?? null;
   return {
     batchId: batch.id as string,
     status: batch.status === 'held' ? 'held' : 'open',
@@ -804,15 +887,20 @@ async function stateOf(owner: Principal): Promise<ChangesState> {
     generation: Number(batch.generation),
     digest: batch.digest,
     checkState,
-    canApply:
-      active.length > 0 &&
-      checkState === 'ok' &&
-      !!batch.digest &&
-      !held &&
-      !blockers.length,
+    canApply,
+    applyNow:
+      canApply &&
+      applyNowEligible({
+        cards: active.map((c) => ({
+          status: c.status,
+          source: c.source,
+          opaque: !!c.opaque,
+          commands: readArray<Command>(c.commands),
+        })),
+        overwrites,
+      }),
     blockers,
-    overwrites:
-      (result.overwrites as ChangesState['overwrites'] | undefined) ?? null,
+    overwrites,
     held,
     liveVersion: live.version,
     baseVersion: Number(batch.baseVersion),
@@ -1035,13 +1123,14 @@ async function afterRebuild(
   owner: Principal,
   what: string,
   cause = '',
-) {
+): Promise<BatchBlocker[]> {
   await bump(batch);
-  await rebuild(batch, owner, cause);
+  const blockers = await rebuild(batch, owner, cause);
   if ((await cardsOf(batch.id as string)).some(isActive))
     scheduleChecks(batch, owner);
   const count = (await cardsOf(batch.id as string)).filter(isActive).length;
   emit(batch, what, count);
+  return blockers;
 }
 
 export function removeChangeCard(
@@ -1314,6 +1403,413 @@ export function restoreDiscardedChanges(
   })();
 }
 
+// ---------- the assistant's part (#5206) ----------
+//
+// Everything below changes cards, never applies: a revision replaces ONE card's
+// commands in an open batch, a question answer adds a NEW card, a review stores
+// questions. None calls `requestApply`/`applyApproved`/`undoOwnBatch`;
+// `invariants.test.ts` pins that.
+
+const MAX_COMMAND_CHARS = 50_000;
+const MAX_COMMENT_CHARS = 2000;
+const MAX_COMMENTS = 40;
+
+/**
+ * A command the assistant (a revision) or a review choice may put in a card:
+ * a known STRUCTURAL command that is not a History command. An unknown type is
+ * refused here (`isStructuralCommand` would call it structural). Returns a
+ * clean JSON copy with no `approved` key; the engine validates the rest when
+ * the card is replayed.
+ */
+export function cleanCardCommand(value: unknown): Command {
+  if (!value || typeof value !== 'object' || Array.isArray(value))
+    throw new EngineError('a change must be an object', 'invalid');
+  const type = (value as { type?: unknown }).type;
+  if (
+    typeof type !== 'string' ||
+    !Object.hasOwn(STRUCTURAL_COMMANDS, type) ||
+    STRUCTURAL_COMMANDS[type as keyof typeof STRUCTURAL_COMMANDS] !== true ||
+    MAINTENANCE.has(type)
+  )
+    throw new EngineError('that kind of change cannot be made here', 'refused');
+  const text = JSON.stringify(value);
+  if (text.length > MAX_COMMAND_CHARS)
+    throw new EngineError('that change is too large', 'invalid');
+  const copy = JSON.parse(text) as Record<string, unknown>;
+  delete copy.approved;
+  return copy as unknown as Command;
+}
+
+/** A revisable card: active, one the owner can edit, in an open (not held) batch. */
+async function openCard(
+  cardId: string,
+  owner: Principal,
+): Promise<{ batch: ChangeBatch; card: ChangeCard }> {
+  const found = await withCard(cardId, owner);
+  if (found.batch.status !== 'open')
+    throw new EngineError('these changes cannot be edited now', 'refused');
+  if (found.card.opaque || !isActive(found.card))
+    throw new EngineError('this change cannot be edited', 'refused');
+  const cards = await cardsOf(found.batch.id as string);
+  if (cards.some((c) => c.opaque && isActive(c)))
+    throw new EngineError(
+      'these changes were started before changes waiting existed and cannot be edited',
+      'refused',
+    );
+  return found;
+}
+
+/**
+ * Replace the commands of ONE card in place (comment-to-revise): the revision
+ * goes up, the working copy is rebuilt and the changes are re-checked. If the
+ * new command does not apply, the card is put back exactly as it was and the
+ * engine's reason is returned as an error. NEVER applies.
+ */
+export function reviseChangeCard(
+  cardId: string,
+  command: unknown,
+): Promise<{ cardId: string; revision: number; summary: string }> {
+  return (async () => {
+    const owner = await assertOwner();
+    const next = cleanCardCommand(command);
+    return serial(async () => {
+      const { batch, card } = await openCard(cardId, owner);
+      const beforeCommands = card.commands;
+      const beforeRevision = Number(card.revision);
+      card.commands = JSON.stringify([next]);
+      card.revision = beforeRevision + 1;
+      await card.save();
+      const undo = async () => {
+        // The rebuild re-read and saved the cards: restore the row as stored now.
+        const stored = (await cardsOf(batch.id as string)).find(
+          (c) => c.id === cardId,
+        );
+        if (stored) {
+          stored.commands = beforeCommands;
+          stored.revision = beforeRevision;
+          await stored.save();
+        }
+        await afterRebuild(batch, owner, 'changed').catch(() => {});
+      };
+      let blockers: BatchBlocker[];
+      try {
+        blockers = await afterRebuild(batch, owner, 'changed');
+      } catch (e) {
+        await undo();
+        throw e;
+      }
+      const mine = blockers.find((b) => b.key === cardId);
+      if (mine) {
+        await undo();
+        throw new EngineError(
+          `That change does not fit your app as it is, so nothing was changed. ${mine.message ?? ''}`.trim(),
+          'refused',
+        );
+      }
+      const fresh = (await cardsOf(batch.id as string)).find(
+        (c) => c.id === cardId,
+      );
+      return {
+        cardId,
+        revision: Number(fresh?.revision ?? card.revision),
+        summary: fresh?.summary ?? card.summary,
+      };
+    });
+  })();
+}
+
+async function saveEntries(card: ChangeCard, entries: Entry[]): Promise<void> {
+  card.questions = JSON.stringify(entries);
+  await card.save();
+}
+
+const cleanText = (value: unknown, max: number): string =>
+  typeof value === 'string'
+    ? Array.from(value)
+        .filter((ch) => ch === '\n' || ch.charCodeAt(0) >= 0x20)
+        .join('')
+        .trim()
+        .slice(0, max)
+    : '';
+
+/** What a comment turn is told about the card it is scoped to. */
+export interface CommentStart {
+  threadId: string;
+  summary: string;
+  commands: Command[];
+  revision: number;
+}
+
+/**
+ * Record the owner's comment on one card (shown at once as "revising…") and
+ * return what the assistant turn needs. The text is the owner's own, kept as
+ * plain text. No generation bump: comments are not part of the digest.
+ */
+export function beginCardComment(
+  cardId: string,
+  text: unknown,
+): Promise<CommentStart> {
+  return (async () => {
+    const owner = await assertOwner();
+    const clean = cleanText(text, MAX_COMMENT_CHARS);
+    if (!clean) throw new EngineError('write what to change', 'invalid');
+    return serial(async () => {
+      const { batch, card } = await openCard(cardId, owner);
+      const entries = entriesOf(card);
+      if (isRevising(commentsOf(card)))
+        throw new EngineError(
+          'the assistant is already working on this change',
+          'refused',
+        );
+      entries.push({
+        kind: 'comment',
+        role: 'owner',
+        text: clean,
+        at: new Date().toISOString(),
+        state: 'revising',
+      });
+      await saveEntries(card, entries.slice(-MAX_COMMENTS));
+      emit(
+        batch,
+        'changed',
+        (await cardsOf(batch.id as string)).filter(isActive).length,
+      );
+      return {
+        threadId: card.threadId,
+        summary: card.summary,
+        commands: readArray<Command>(card.commands),
+        revision: Number(card.revision),
+      };
+    });
+  })();
+}
+
+/** Close the comment: store the assistant's answer and the thread it ran in. */
+export function endCardComment(
+  cardId: string,
+  done: { reply: string; threadId: string; revisionBefore: number },
+): Promise<void> {
+  return (async () => {
+    const owner = await assertOwner();
+    return serial(async () => {
+      const batch = await syncBatch(owner);
+      const card = batch
+        ? (await cardsOf(batch.id as string)).find((c) => c.id === cardId)
+        : undefined;
+      if (!batch || !card) return;
+      const entries = entriesOf(card).map((e) =>
+        e.kind === 'comment' && e.state === 'revising'
+          ? { ...e, state: 'done' as const }
+          : e,
+      );
+      const changed = Number(card.revision) !== done.revisionBefore;
+      entries.push({
+        kind: 'comment',
+        role: 'assistant',
+        text:
+          cleanText(done.reply, 1000) ||
+          (changed
+            ? 'Done. I changed this card.'
+            : 'I did not change anything.'),
+        at: new Date().toISOString(),
+        state: 'done',
+      });
+      if (done.threadId) card.threadId = done.threadId;
+      await saveEntries(card, entries.slice(-MAX_COMMENTS));
+      emit(
+        batch,
+        'changed',
+        (await cardsOf(batch.id as string)).filter(isActive).length,
+      );
+    });
+  })();
+}
+
+// ---------- review questions ----------
+
+export const REVIEW_LIMITS = {
+  questionsPerCard: 2,
+  questionsPerBatch: 6,
+  choices: 4,
+  textChars: 300,
+  labelChars: 60,
+} as const;
+
+export interface ReviewItem {
+  cardId: string;
+  text: string;
+  choices: { label: string; command?: unknown }[];
+}
+
+/**
+ * Store the review's questions on their cards, only if `generation` is still
+ * the batch's (a later change makes the result stale: discarded, false). Open
+ * questions are replaced, answered ones stay (so a question is not asked
+ * twice), comments stay. A choice's command is validated like any structural
+ * command (allow-list, then the working copy's own `plan`); a choice that does
+ * not validate is dropped. Writes only `questions`: no generation bump, no
+ * digest change, and nothing here can apply.
+ */
+export function setReviewQuestions(
+  batchId: string,
+  generation: number,
+  items: ReviewItem[],
+): Promise<boolean> {
+  return (async () => {
+    const owner = await assertOwner();
+    return serial(async () => {
+      const batch = await (await batches()).get(batchId);
+      if (
+        !batch ||
+        batch.tenantId !== owner.tenantId ||
+        batch.status !== 'open' ||
+        Number(batch.generation) !== generation
+      )
+        return false;
+      const active = (await cardsOf(batchId)).filter(isActive);
+      if (!active.length || active.some((c) => c.opaque)) return false;
+      const slot = await getDraftSlot();
+      const host =
+        slot && slot.id === batch.draftId && !slot.hold ? slot.host : null;
+      const byCard = new Map<string, ReviewQuestion[]>();
+      let total = 0;
+      for (const item of items) {
+        if (total >= REVIEW_LIMITS.questionsPerBatch) break;
+        const card = active.find((c) => c.id === item.cardId);
+        const text = cleanText(item?.text, REVIEW_LIMITS.textChars);
+        if (!card || !text || !Array.isArray(item.choices)) continue;
+        const list = byCard.get(card.id as string) ?? [];
+        if (list.length >= REVIEW_LIMITS.questionsPerCard) continue;
+        const choices: ReviewChoice[] = [];
+        for (const raw of item.choices.slice(0, REVIEW_LIMITS.choices)) {
+          const label = cleanText(raw?.label, REVIEW_LIMITS.labelChars);
+          if (!label || choices.some((c) => c.label === label)) continue;
+          if (raw.command === undefined || raw.command === null) {
+            choices.push({ label });
+            continue;
+          }
+          try {
+            const command = cleanCardCommand(raw.command);
+            if (!host) continue;
+            await host.plan(command);
+            choices.push({ label, command });
+          } catch {
+            // not a change this app can take: the choice is not offered
+          }
+        }
+        if (!choices.length) continue;
+        list.push({
+          kind: 'question',
+          id: `q_${randomUUID()}`,
+          text,
+          choices,
+          state: 'open',
+        });
+        byCard.set(card.id as string, list);
+        total++;
+      }
+      let changed = false;
+      for (const card of active) {
+        const before = entriesOf(card);
+        const keep = before.filter(
+          (e) => e.kind === 'comment' || e.state === 'answered',
+        );
+        const next = [...keep, ...(byCard.get(card.id as string) ?? [])];
+        // Open questions carry fresh ids, so any change shows in the text.
+        if (JSON.stringify(next) === JSON.stringify(before)) continue;
+        await saveEntries(card, next);
+        changed = true;
+      }
+      if (changed) emit(batch, 'changed', active.length);
+      return true;
+    });
+  })();
+}
+
+/**
+ * The owner clicked a choice of a review question. `choice` is an index into
+ * the stored choices: nothing the client sends is ever a command. A choice with
+ * a command becomes a NEW card (source `api`, so it is never "Apply now"
+ * material; the digest changes and the owner reviews it like any change); one
+ * without just closes the question. Never applies. 409 on a stale `generation`.
+ */
+export function answerReviewQuestion(
+  questionId: string,
+  choice: unknown,
+  opts: { generation?: unknown } = {},
+): Promise<ChangesState> {
+  return (async () => {
+    const owner = await assertOwner();
+    if (!Number.isInteger(choice) || (choice as number) < 0)
+      throw new EngineError('choice must be a number from the list', 'invalid');
+    const index = choice as number;
+    const picked = await serial(async () => {
+      const batch = await syncBatch(owner);
+      if (!batch || batch.status !== 'open')
+        throw new EngineError('there are no changes waiting', 'not_found');
+      checkGeneration(batch, opts.generation);
+      for (const card of (await cardsOf(batch.id as string)).filter(isActive)) {
+        const entries = entriesOf(card);
+        const q = entries.find(
+          (e): e is ReviewQuestion =>
+            e.kind === 'question' && e.id === questionId,
+        );
+        if (!q) continue;
+        if (q.state !== 'open')
+          throw new EngineError(
+            'that question was already answered',
+            'refused',
+          );
+        const chosen = q.choices[index];
+        if (!chosen)
+          throw new EngineError('that choice is not on the list', 'invalid');
+        // Claim it before the card is made, so a double click makes one card.
+        q.state = 'answered';
+        q.answered = index;
+        await saveEntries(card, entries);
+        return { cardId: card.id as string, command: chosen.command };
+      }
+      throw new EngineError('that question is not waiting', 'not_found');
+    });
+    if (picked.command) {
+      try {
+        await addChangeCard({ commands: [picked.command], source: 'api' });
+      } catch (e) {
+        await serial(async () => {
+          const batch = await syncBatch(owner);
+          const card = batch
+            ? (await cardsOf(batch.id as string)).find(
+                (c) => c.id === picked.cardId,
+              )
+            : undefined;
+          if (!card) return;
+          const entries = entriesOf(card);
+          const q = entries.find(
+            (x): x is ReviewQuestion =>
+              x.kind === 'question' && x.id === questionId,
+          );
+          if (q) {
+            q.state = 'open';
+            delete q.answered;
+            await saveEntries(card, entries);
+          }
+        });
+        throw e;
+      }
+    } else
+      await serial(async () => {
+        const batch = await syncBatch(owner);
+        if (batch)
+          emit(
+            batch,
+            'changed',
+            (await cardsOf(batch.id as string)).filter(isActive).length,
+          );
+      });
+    return changesState();
+  })();
+}
+
 // ---------- preview ----------
 
 /** What Apply would do: the engine's rehearsal on a copy of current live data. Read only. */
@@ -1407,7 +1903,7 @@ const REVIEW_AGAIN = (): EngineError =>
 export function requestApply(
   expect: unknown,
   requestedBy: string,
-  opts: { generation?: unknown } = {},
+  opts: { generation?: unknown; source?: unknown } = {},
 ): Promise<PendingApproval> {
   return (async () => {
     const owner = await assertOwner();
@@ -1430,6 +1926,25 @@ export function requestApply(
       const host = await workingCopy(batch, owner);
       const { check, digest, active } = await freshCheck(batch, owner, host);
       if (digest !== expect) throw REVIEW_AGAIN();
+      // "Apply now" from chat: the server decides, from the batch and the fresh
+      // exact check it just ran, never from what the client says it is.
+      if (opts.source === 'chat') {
+        const input: ApplyNowInput = {
+          cards: active.map((c) => ({
+            status: c.status,
+            source: c.source,
+            opaque: !!c.opaque,
+            commands: readArray<Command>(c.commands),
+          })),
+          overwrites: check.overwrites,
+        };
+        if (!applyNowEligible(input))
+          throw new EngineError(
+            'This one needs a closer look. Review it, then Apply.',
+            'refused',
+            { reason: 'review_first' },
+          );
+      }
       const action: ApplyAction = {
         kind: 'apply-batch',
         batchId: batch.id as string,

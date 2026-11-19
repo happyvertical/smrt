@@ -347,3 +347,34 @@ describe('tool copy metadata', () => {
     });
   });
 });
+
+describe('the changes block', () => {
+  it('a turn that made changes ends in one block item, after the reply text', () => {
+    const s = run([
+      { type: 'send', text: 'add a field' },
+      ev({ type: 'text', delta: 'Done.' }),
+      ev({ type: 'changes_block' }),
+      ev({ type: 'done', stop: 'complete' }),
+    ]);
+    expect(s.items.map((i) => i.kind)).toEqual([
+      'user',
+      'assistant',
+      'changes',
+    ]);
+    expect(s.items[1]).toMatchObject({ streaming: false });
+  });
+
+  it('a reopened thread brings the block back from the stored marker', () => {
+    const s = run([
+      {
+        type: 'loaded',
+        threadId: 't',
+        messages: [
+          { id: '1', seq: 1, role: 'user', content: 'x' },
+          { id: '2', seq: 2, role: 'assistant', content: '', block: 'changes' },
+        ],
+      },
+    ]);
+    expect(s.items.map((i) => i.kind)).toEqual(['user', 'changes']);
+  });
+});

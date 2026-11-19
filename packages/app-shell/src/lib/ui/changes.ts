@@ -47,11 +47,24 @@ export const changesApi = {
       ...w,
     }),
   /** `expect` is the digest of the state the owner reviewed (409: review again). */
-  apply: (expect: string, w: Write = {}) =>
+  apply: (expect: string, w: Write = {}, source?: 'chat') =>
     call<{ id: string; status: string }>('/apply', 'POST', {
       expect,
       ...w,
+      ...(source ? { source } : {}),
     }),
+  /** Comment on one change: the assistant revises that card (never applies). */
+  comment: (id: string, text: string) =>
+    call<ChangesState>(`/cards/${encodeURIComponent(id)}/comment`, 'POST', {
+      text,
+    }),
+  /** Click a choice of a review question (`choice` is its index). */
+  answer: (questionId: string, choice: number, w: Write = {}) =>
+    call<ChangesState>(
+      `/questions/${encodeURIComponent(questionId)}/answer`,
+      'POST',
+      { choice, ...w },
+    ),
   /** "Remove those too": the flagged change and every other that needs the same removed one. */
   removeDependents: (id: string, w: Write = {}) =>
     call<ChangesState>(
@@ -294,3 +307,51 @@ export function applyBlock(changes: ChangesState): string | null {
 /** The note beside a disabled History Undo while changes wait. */
 export const undoBlockedNote = (count: number): string =>
   `Apply or discard your ${plural(count, 'waiting change')} first.`;
+
+// ---------- the assistant's reply block ----------
+
+export interface ReplyBlock {
+  count: number;
+  /** What each change is, plain words (the first few). */
+  lines: string[];
+  more: number;
+  /** Questions still unanswered: Review leads while any are open. */
+  questions: number;
+  /** `review`: Review is the main button; `apply`: Apply is. */
+  lead: 'review' | 'apply';
+  /** One small change the owner asked for: the main button reads "Apply now". */
+  applyNow: boolean;
+  /** Apply is offered (nothing blocks and the check is done). */
+  canApply: boolean;
+  /** Plain "N changes waiting" for the block's heading and screen readers. */
+  label: string;
+}
+
+/** Null when nothing waits: the block then shows nothing (no stale status). */
+export function planReplyBlock(
+  changes: ChangesState | null | undefined,
+): ReplyBlock | null {
+  if (!changes || changes.count <= 0) return null;
+  const active = changes.cards.filter((c) => c.status === 'active');
+  const questions = active.reduce(
+    (n, c) => n + c.questions.filter((q) => q.state === 'open').length,
+    0,
+  );
+  const lines = active.slice(0, 4).map((c) => c.summary || 'A change');
+  return {
+    count: changes.count,
+    lines,
+    more: Math.max(0, active.length - lines.length),
+    questions,
+    lead: questions > 0 || !changes.canApply ? 'review' : 'apply',
+    applyNow: changes.applyNow,
+    canApply: changes.canApply,
+    label: `${plural(changes.count, 'change')} waiting`,
+  };
+}
+
+/** The open questions of the whole batch, in card order. */
+export const openQuestions = (changes: ChangesState) =>
+  changes.cards
+    .filter((c) => c.status === 'active')
+    .flatMap((c) => c.questions.filter((q) => q.state === 'open'));

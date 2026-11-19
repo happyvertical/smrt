@@ -3,6 +3,7 @@ import { Button, toaster } from '@happyvertical/smrt-ui';
 import { tick } from 'svelte';
 import { goto, invalidate, invalidateAll } from '$app/navigation';
 import ChangeCard from '$lib/components/ChangeCard.svelte';
+import ChangeCardExtras from '$lib/components/ChangeCardExtras.svelte';
 import { ApiError } from '$lib/ui/api';
 import {
   activeCards,
@@ -115,6 +116,32 @@ async function edit(id: string, edits: QuickEdit[]) {
   }
 }
 
+let commenting = $state<string | null>(null);
+let revisingId = $state<string | null>(null);
+
+/** Send the owner's comment: the assistant changes that one card; nothing is applied. */
+async function comment(id: string, text: string): Promise<boolean> {
+  revisingId = id;
+  error = '';
+  messages = { ...messages, [id]: '' };
+  try {
+    override = (await changesApi.comment(id, text)).data;
+    commenting = null;
+    await invalidate(DEPENDS.changes);
+    return true;
+  } catch (e) {
+    fail(e, id);
+    if (e instanceof ApiError && e.status === 409) await refresh();
+    return false;
+  } finally {
+    revisingId = null;
+  }
+}
+
+/** A click on a review question's choice (its index); never applies anything. */
+const answer = (id: string, questionId: string, choice: number) =>
+  act(() => changesApi.answer(questionId, choice, gen()), id);
+
 async function apply() {
   if (!changes || block) return;
   busy = true;
@@ -182,7 +209,19 @@ async function apply() {
               onputback={(removedId) => act(() => changesApi.restoreCard(removedId, gen()), card.id, 'Put it back.')}
               onremovedependents={() => act(() => changesApi.removeDependents(card.id, gen()), card.id, 'Removed those too.')}
               onedit={(edits) => edit(card.id, edits)}
-            />
+              oncomment={card.editable ? (c) => (commenting = commenting === c.id ? null : c.id) : undefined}
+            >
+              {#snippet more(c)}
+                <ChangeCardExtras
+                  card={{ ...c, revising: c.revising || revisingId === c.id }}
+                  composing={commenting === c.id}
+                  {busy}
+                  onsend={(text) => comment(c.id, text)}
+                  oncancel={() => (commenting = null)}
+                  onanswer={(questionId, choice) => answer(c.id, questionId, choice)}
+                />
+              {/snippet}
+            </ChangeCard>
           </li>
         {/each}
       </ol>

@@ -45,12 +45,7 @@ import {
   ModelFailure,
   type ModelToolCall,
 } from './model.ts';
-import {
-  assistantMode,
-  copyNote,
-  type ModeContext,
-  STRUCTURAL_TOOLS,
-} from './scope.ts';
+import { assistantMode, type ModeContext, STRUCTURAL_TOOLS } from './scope.ts';
 import { appendMessage, historyFor, threadApprovalIds } from './threads.ts';
 
 export interface TurnLimits {
@@ -290,11 +285,16 @@ export async function runTurn(options: RunTurnOptions): Promise<TurnStop> {
   // turn ends by telling the person which copy it was.
   let changedIn: ModeContext | null = null;
   const finish = async (stop: TurnStop): Promise<TurnStop> => {
-    const note = changedIn ? copyNote(changedIn) : null;
-    if (note) {
+    // A turn that made changes ends in the "N changes waiting" block, drawn
+    // from the live changes state (never from what was true when it was sent).
+    if (changedIn) {
       changedIn = null;
-      emit({ type: 'text', delta: `\n\n${note}` });
-      await appendMessage(thread, { role: 'assistant', content: note });
+      emit({ type: 'changes_block' });
+      await appendMessage(thread, {
+        role: 'assistant',
+        content: '',
+        meta: { block: 'changes' },
+      });
     }
     emit({ type: 'done', stop });
     await run?.finish(

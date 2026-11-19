@@ -30,6 +30,12 @@ export interface CallScope {
   structure: Target;
   /** Who is calling (the card's source); unset reads as `api`. */
   source?: 'assistant' | 'api';
+  /**
+   * Set only for a comment turn (#5206): the ONE waiting change the turn is
+   * about. It adds the `change_revise` tool for that card and withholds the
+   * structural builder tools and record writes.
+   */
+  reviseCardId?: string;
 }
 
 export const LIVE_SCOPE: Readonly<CallScope> = Object.freeze({

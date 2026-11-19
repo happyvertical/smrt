@@ -74,7 +74,7 @@ describe('changes waiting view', () => {
     expect(container.textContent).toContain('No existing records are replaced');
   });
 
-  it('has aria labels naming each card for Remove and Quick edit, and no Comment yet', async () => {
+  it('has aria labels naming each card for Remove, Quick edit and Comment', async () => {
     await render();
     expect(
       button('Remove this change: Add field Fulfillment to Orders'),
@@ -84,7 +84,7 @@ describe('changes waiting view', () => {
     expect(
       button('Quick edit: New report Orders by fulfillment'),
     ).toBeUndefined();
-    expect(button(/Comment/)).toBeUndefined();
+    expect(button('Comment on: New report Orders by fulfillment')).toBeTruthy();
   });
 
   it('removes a card and shows it under Removed with Put back', async () => {
@@ -390,5 +390,158 @@ describe('changes waiting view', () => {
     );
     expect(button(/Remove this change/)).toBeUndefined();
     expect(button(/Quick edit/)).toBeUndefined();
+  });
+});
+
+describe('the assistant on a card (comment and questions)', () => {
+  const askedCard = () =>
+    card({
+      questions: [
+        {
+          id: 'q_1',
+          text: 'Mark your 35 orders as Pickup?',
+          choices: [
+            { label: 'Yes, mark them', adds: true },
+            { label: 'Leave them blank', adds: false },
+          ],
+          state: 'open',
+        },
+      ],
+    });
+
+  it('a comment goes to the assistant for that one card, shows "Changing this…", then the thread; nothing is applied', async () => {
+    const answered = changes({
+      cards: [
+        card({
+          revision: 2,
+          comments: [
+            {
+              kind: 'comment',
+              role: 'owner',
+              text: 'Add Delivery too',
+              at: 'now',
+              state: 'done',
+            },
+            {
+              kind: 'comment',
+              role: 'assistant',
+              text: 'Done. I changed this card.',
+              at: 'now',
+              state: 'done',
+            },
+          ],
+        }),
+      ],
+    });
+    let release: (r: Response) => void = () => {};
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        () =>
+          new Promise<Response>((r) => {
+            release = r;
+          }),
+      ),
+    );
+    await render(changes({ cards: [card()] }));
+    button('Comment on: Add field Fulfillment to Orders')?.click();
+    await tick();
+    const box = container.querySelector<HTMLTextAreaElement>('textarea');
+    if (!box) throw new Error('no comment box');
+    box.value = 'Add Delivery too';
+    box.dispatchEvent(new Event('input', { bubbles: true }));
+    await tick();
+    button('Send')?.click();
+    await vi.waitFor(() =>
+      expect(
+        container.querySelector('[data-testid="revising"]')?.textContent,
+      ).toContain('Changing this'),
+    );
+    expect(calls()).toEqual([
+      [
+        '/api/shell/changes/cards/c1/comment',
+        'POST',
+        JSON.stringify({ text: 'Add Delivery too' }),
+      ],
+    ]);
+    release(json(answered));
+    await vi.waitFor(() =>
+      expect(
+        container.querySelector('[data-testid="comment-thread"]')?.textContent,
+      ).toContain('Done. I changed this card.'),
+    );
+    expect(container.querySelector('[data-testid="revising"]')).toBeNull();
+    expect(container.querySelector('textarea')).toBeNull();
+    // never applied: only the comment call was made
+    expect(calls().some(([url]) => /apply/.test(String(url)))).toBe(false);
+    expect(toast.success).not.toHaveBeenCalled();
+  });
+
+  it('an adopted (opaque) change cannot be commented on', async () => {
+    await render(
+      changes({
+        cards: [card({ opaque: true, editable: false, commands: [] })],
+      }),
+    );
+    expect(button(/Comment on/)).toBeUndefined();
+  });
+
+  it('shows a question with click-to-answer choices (plain text); a click sends only the choice index', async () => {
+    const after = changes({
+      cards: [
+        card({
+          questions: [
+            { ...askedCard().questions[0], state: 'answered', answered: 0 },
+          ],
+        }),
+        card({
+          id: 'c9',
+          position: 1,
+          summary: 'Set Fulfillment on 35 orders',
+        }),
+      ],
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => json(after)),
+    );
+    await render(changes({ cards: [askedCard()] }));
+    expect(
+      container.querySelector('[data-testid="review-question"]')?.textContent,
+    ).toContain('Mark your 35 orders as Pickup?');
+    // Apply is not blocked by an open question
+    expect(button('Apply 1 change')?.disabled).toBe(false);
+    button('Yes, mark them')?.click();
+    await vi.waitFor(() =>
+      expect(calls()).toEqual([
+        [
+          '/api/shell/changes/questions/q_1/answer',
+          'POST',
+          JSON.stringify({ choice: 0, generation: 3 }),
+        ],
+      ]),
+    );
+    await vi.waitFor(() =>
+      expect(container.textContent).toContain('You chose: Yes, mark them'),
+    );
+    expect(container.querySelectorAll('article')).toHaveLength(2);
+    expect(toast.success).not.toHaveBeenCalled();
+  });
+
+  it('question text from the model is shown as text, never as markup', async () => {
+    const evil = card({
+      questions: [
+        {
+          id: 'q_2',
+          text: '<img src=x onerror=alert(1)> **bold** <script>x()</script>',
+          choices: [{ label: '<b>Yes</b>', adds: false }],
+          state: 'open',
+        },
+      ],
+    });
+    await render(changes({ cards: [evil] }));
+    const q = container.querySelector('[data-testid="review-question"]');
+    expect(q?.querySelector('img, script, b')).toBeNull();
+    expect(q?.textContent).toContain('<img src=x onerror=alert(1)>');
   });
 });

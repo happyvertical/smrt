@@ -81,7 +81,12 @@ Shared assistant adapters and legacy approval storage: [agents/shared-pieces.md]
   (`POST /changes/undo {batchId, expect}`) keeps records added since. While
   changes wait, History undo/clean up are refused ("Apply or discard your N
   waiting changes first"); the assistant has no undo, apply or draft tool and
-  its scope is constant (records live, structure to the batch). An already
+  its scope is constant (records live, structure to the batch). Its only
+  card-editing tool is `change_revise` (comment turns, that one card, never
+  applies); review questions (`change-review.ts`) and `answerReviewQuestion`
+  only add visible options or a NEW card; `applyNowEligible` is the server's
+  one rule for chat's "Apply now". Details: README "The assistant and changes
+  waiting". An already
   open draft (import or older) is adopted as opaque, non-removable cards; a
   held import cannot take cards. No request names a copy: `?target=`,
   `x-shell-target` and `/mcp?target=` are gone, `hostFor('draft')` is only for

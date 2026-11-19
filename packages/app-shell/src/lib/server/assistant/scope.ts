@@ -22,6 +22,25 @@ export const ASSISTANT_SCOPE: Readonly<CallScope> = Object.freeze({
   source: 'assistant' as const,
 });
 
+// The card a comment turn is about, per owner. A slot (not request state) so
+// the local agent CLI, which calls tools in separate /mcp requests, sees it
+// too. Set only by the owner's comment route for the length of that turn.
+const revising = new Map<string, string>();
+
+/** Run `fn` as the comment turn about `cardId` for `ownerId`. */
+export async function withRevision<T>(
+  ownerId: string,
+  cardId: string,
+  fn: () => Promise<T>,
+): Promise<T> {
+  revising.set(ownerId, cardId);
+  try {
+    return await fn();
+  } finally {
+    if (revising.get(ownerId) === cardId) revising.delete(ownerId);
+  }
+}
+
 export const LIVE_MODE: ModeContext = { waiting: 0, scope: ASSISTANT_SCOPE };
 
 /** The scope for `principal`, plus how many changes already wait. */
@@ -29,9 +48,12 @@ export async function assistantMode(
   principal: Principal,
 ): Promise<ModeContext> {
   if (!(await isOwner(principal))) return LIVE_MODE;
+  const reviseCardId = revising.get(principal.id);
   return {
     waiting: await runAs(principal, () => waitingCount()).catch(() => 0),
-    scope: ASSISTANT_SCOPE,
+    scope: reviseCardId
+      ? { ...ASSISTANT_SCOPE, reviseCardId }
+      : ASSISTANT_SCOPE,
   };
 }
 
@@ -49,11 +71,3 @@ export const STRUCTURAL_TOOLS: ReadonlySet<string> = new Set(
     .filter(([, structural]) => structural)
     .map(([type]) => `app_${type.toLowerCase()}`),
 );
-
-/**
- * The sentence that closes a turn that changed structure: where it went. The
- * live app is unchanged until the owner applies.
- */
-export function copyNote(_mode: ModeContext): string {
-  return 'I collected that as a change waiting for you to review and apply, so the live app is unchanged until you do.';
-}

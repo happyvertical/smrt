@@ -16,7 +16,6 @@ import type { Principal } from '../owner.ts';
 import { systemPrompt, turnInput } from './guidance.ts';
 import {
   assistantMode,
-  copyNote,
   LIVE_MODE,
   type ModeContext,
   STRUCTURAL_TOOLS,
@@ -60,9 +59,16 @@ export async function runAgentTurn(
   options: AgentTurnOptions,
 ): Promise<TurnStop> {
   let changedIn: ModeContext | null = null;
-  return runInferenceAgentTurn({
+  let showBlock = false;
+  const stop = await runInferenceAgentTurn({
     ...options,
     emit(event) {
+      if (event.type === 'done' && changedIn) {
+        // The reply ends in the "N changes waiting" block (see turn.ts).
+        changedIn = null;
+        showBlock = true;
+        options.emit({ type: 'changes_block' });
+      }
       if (event.type === 'tool_result') {
         const { details, ...rest } = event;
         const copy = details?.copy;
@@ -139,8 +145,16 @@ export async function runAgentTurn(
         };
       },
       async completionNote() {
-        return changedIn ? copyNote(changedIn) : null;
+        return null;
       },
     },
   });
+  // After the engine's own messages, so the stored order matches the screen.
+  if (showBlock)
+    await appendMessage(options.thread, {
+      role: 'assistant',
+      content: '',
+      meta: { block: 'changes' },
+    });
+  return stop;
 }

@@ -1,12 +1,15 @@
 <script lang="ts">
 import { AppShell } from '@happyvertical/smrt-svelte/app';
 import type { ShellNavItem } from '@happyvertical/smrt-svelte/workspace';
-import { ToastViewport } from '@happyvertical/smrt-ui';
+import { ToastViewport, toaster } from '@happyvertical/smrt-ui';
 import { onMount, untrack } from 'svelte';
+import { goto, invalidateAll } from '$app/navigation';
 import { page } from '$app/state';
 import '$lib/ui/ui.css';
 import AssistantPanel from '$lib/assistant/AssistantPanel.svelte';
 import ChangesPill from '$lib/components/ChangesPill.svelte';
+import { ApiError } from '$lib/ui/api';
+import { changesApi } from '$lib/ui/changes';
 import {
   ASSISTANT_OPEN_EVENT,
   assistantOpenKey,
@@ -24,6 +27,38 @@ import type { LayoutProps } from './$types';
 let { data, children }: LayoutProps = $props();
 
 const live = new LiveUpdates();
+
+/**
+ * The chat reply block's Apply: the owner's own click, on the same digest-pinned
+ * route as the Changes waiting page. `applyNow` only says which button was
+ * shown; the server decides eligibility itself and refuses (review first) when
+ * the batch is not a small, additive, assistant-made change.
+ */
+async function applyFromChat(applyNow: boolean): Promise<void> {
+  const changes = data.changes;
+  if (!changes) return;
+  try {
+    await changesApi.apply(
+      changes.digest,
+      { generation: changes.generation },
+      applyNow ? 'chat' : undefined,
+    );
+  } catch (e) {
+    if (e instanceof ApiError && e.status === 409)
+      throw new Error(
+        e.message.startsWith("Can't apply yet") ||
+          e.message.startsWith('This one needs')
+          ? e.message
+          : 'These changes were different when you last looked. Review them, then Apply.',
+      );
+    throw e;
+  }
+  toaster.success('Applied. Your app is live', {
+    duration: 8000,
+    action: { label: 'See History', run: () => goto('/history') },
+  });
+  await invalidateAll();
+}
 const isOwner = $derived(data.description !== null);
 
 // The side menu is the person's app only; Approvals and History live in the
@@ -131,7 +166,7 @@ onMount(() => {
   bind:panelOpen
 >
   {#snippet panel({ open })}
-    <AssistantPanel {open} owner={data.session.user} />
+    <AssistantPanel {open} owner={data.session.user} changes={data.changes} onapply={applyFromChat} />
   {/snippet}
   {@render children()}
   <!-- Screen readers hear changes made elsewhere (the assistant, another tab). -->
