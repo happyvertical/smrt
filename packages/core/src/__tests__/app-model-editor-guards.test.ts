@@ -465,6 +465,67 @@ describe('app model editor: installed model names and tables', () => {
     );
   });
 
+  it('a plain boot of a startup cookbook with unmigrated storage journals nothing and never offers to abandon it', async () => {
+    const startup: Cookbook = {
+      ...book(),
+      features: [`${APP}:GuardNotes`],
+      models: {
+        version: 1,
+        packageName: APP,
+        lists: { GuardNotes: structuredClone(listDefinition) as never },
+        fields: {},
+      },
+    };
+    const refusal = await editorFor({ cookbook: startup }).then(
+      () => undefined,
+      (error: Error) => error.message,
+    );
+    expect(refusal).toMatch(/^MODEL_MIGRATION_REQUIRED: .*guard_notes/);
+    expect(refusal).not.toMatch(/abandon/);
+    ObjectRegistry.clear();
+    const history = await createAppModelHistory({
+      db,
+      application: 'editor-guards',
+      tenantId: TENANT,
+    });
+    expect(await history.read()).toEqual([]);
+    // The operator migration then journals and applies it.
+    const opened = await migrateAppModelStorage(
+      editorOptions({ cookbook: startup }),
+    );
+    expect((await opened.history()).map((row) => row.status)).toEqual([
+      'applied',
+    ]);
+  });
+
+  it('a failed operator migration of the startup cookbook does not suggest abandoning it', async () => {
+    const startup: Cookbook = {
+      ...book(),
+      features: [`${APP}:GuardNotes`],
+      models: {
+        version: 1,
+        packageName: APP,
+        lists: { GuardNotes: structuredClone(listDefinition) as never },
+        fields: {},
+      },
+    };
+    // The host cannot install the projection after the revision was journalled.
+    const refusal = await migrateAppModelStorage(
+      editorOptions({
+        cookbook: startup,
+        publish: async () => {
+          throw new Error('injected publish failure');
+        },
+      }),
+    ).then(
+      () => undefined,
+      (error: Error) => error.message,
+    );
+    expect(refusal).toMatch(/injected publish failure/);
+    expect(refusal ?? '').not.toMatch(/abandonAppModelRevision/);
+    expect(refusal).toMatch(/migrateAppModelStorage\(\) again/);
+  });
+
   it('a fresh boot never adopts a compatible table no journal records, and only the operator migration adopts it', async () => {
     const startup: Cookbook = {
       ...book(),

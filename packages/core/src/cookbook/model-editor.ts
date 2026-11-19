@@ -1263,7 +1263,12 @@ async function openAppModelEditor(
     const pending = history.at(-1);
     if (pending?.status !== 'pending' || !(error instanceof Error))
       return error;
-    error.message += `; pending revision ${pending.revision} cannot be applied. Repair the cause and reopen, or abandon it with abandonAppModelRevision({ revision: ${pending.revision} })`;
+    // Abandoning the journalled startup cookbook would drop its lists for
+    // good (and orphan their rows): the only way out is to repair and rerun.
+    error.message +=
+      pending.requestId === 'initial-cookbook'
+        ? `; pending revision ${pending.revision} (the startup cookbook) cannot be applied. Repair the cause and run migrateAppModelStorage() again; do not abandon it, which would drop the startup models`
+        : `; pending revision ${pending.revision} cannot be applied. Repair the cause and reopen, or abandon it with abandonAppModelRevision({ revision: ${pending.revision} })`;
     return error;
   };
   /**
@@ -1294,6 +1299,7 @@ async function openAppModelEditor(
       (!Object.keys(models.lists).length && !Object.keys(models.fields).length)
     )
       return;
+    const missing: string[] = [];
     // The startup document may have booted before this release: its own
     // declarations count as existing for the name, length and reserved-name
     // checks. Its tables must still not belong to an installed model.
@@ -1332,8 +1338,19 @@ async function openAppModelEditor(
           throw new Error(
             `MODEL_TABLE_COLLISION: ${table} is already in use in this database; the startup cookbook's list ${name} cannot take it. If the table is this application's own storage, adopt it with migrateAppModelStorage()`,
           );
+        missing.push(table);
       }
     }
+    // A plain boot runs no DDL, so journalling startup declarations whose
+    // storage does not exist yet would leave revision 1 pending with no way
+    // to complete it. Refuse before anything is journalled.
+    if (
+      !internal.migrate &&
+      (missing.length || Object.keys(models.fields).length)
+    )
+      throw new Error(
+        `MODEL_MIGRATION_REQUIRED: storage does not match the app models (missing ${missing.length ? missing.join(', ') : 'provider fields'}); run migrateAppModelStorage() (custom fields and lists), then reopen the editor`,
+      );
     // A coherent document without the declarations: no feature, policy or
     // provider-field reference to what revision 1 adds, so undoing it
     // leaves no enabled list without a declaration.

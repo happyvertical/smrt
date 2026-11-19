@@ -280,8 +280,13 @@ journal, is journalled as revision 1 (actor `system`, an `import`). Its own
 declarations may have booted before this release, so they count as existing
 for the name, length and reserved-name checks; its lists still may not take a
 table an installed model owns (activation manifest or registry), retained or
-not. Boot does not create its tables: `migrateAppModelStorage(options)` does,
-once, as the operator step that opens such a host. Its lists may not take the identity
+not. Boot does not create its tables and never adopts an existing one: with an empty journal a plain
+`createAppModelEditor` refuses a startup cookbook that declares models before journalling anything
+(`MODEL_TABLE_COLLISION` for a list whose table exists, `MODEL_MIGRATION_REQUIRED` otherwise), so
+no revision is left pending. `migrateAppModelStorage(options)` journals it, creates its tables (or
+adopts one the operator confirms is its own storage), once, as the operator step that opens such a
+host. A pending startup revision is never offered for `abandonAppModelRevision`, which would drop the
+startup models. Its lists may not take the identity
 of an installed app model in the manifest, nor a table another journal's list
 declares (another application or tenant on this database). Export contains portable definitions/policies, not host
 actor/history records.
