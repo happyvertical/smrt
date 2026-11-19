@@ -1099,6 +1099,90 @@ assert.equal(ObjectRegistry.getClass('${PROVIDER}').qualifiedName, '${CHILD}');`
     }
   });
 
+  it('registers a decorated child reached through two successive package barrels only after its parent', () => {
+    const OUTER = '@aaa/outer:Outer';
+    const INNER = '@bbb/inner:Inner';
+    const CHILD = '@activation/appc:Customer';
+    const { files, manifest } = project([
+      { key: PROVIDER },
+      { key: CHILD, parent: PROVIDER, replace: true },
+      { key: OUTER },
+      { key: INNER },
+    ]);
+    files.write(
+      'node_modules/@activation/appc/index.js',
+      `import { smrt } from '@happyvertical/smrt-core';
+import { Customer as Base } from '@activation/customer';
+export const Customer = smrt({ packageName: '@activation/appc', replaceParent: true, tableName: 'fixture_customer' })(class Customer extends Base {});
+`,
+    );
+    files.write(
+      'node_modules/@bbb/inner/index.js',
+      `import { SmrtObject } from '@happyvertical/smrt-core';
+export { Customer } from '@activation/appc';
+export class Inner extends SmrtObject {}
+`,
+    );
+    files.write(
+      'node_modules/@aaa/outer/index.js',
+      `import { SmrtObject } from '@happyvertical/smrt-core';
+export { Customer } from '@bbb/inner';
+export class Outer extends SmrtObject {}
+`,
+    );
+    manifest.objects[CHILD].decoratorConfig = {
+      ...manifest.objects[CHILD].decoratorConfig,
+      replaceParent: true,
+    };
+    const generated = generate(files, manifest);
+    expect(generated.manifest.modules['@aaa/outer'].after).toContain(
+      '@activation/customer',
+    );
+    const run = runNode(
+      files,
+      generated,
+      `await coordinator(['${OUTER}']).boot();
+assert.equal(ObjectRegistry.getClass('${PROVIDER}').qualifiedName, '${CHILD}');`,
+    );
+    expect(run.status, run.output).toBe(0);
+  });
+
+  it('keeps a deferred route serializer out of the eager import order', () => {
+    const CHILD = '@activation/appc:Customer';
+    const { files, manifest } = project([
+      { key: PROVIDER },
+      { key: CHILD, parent: PROVIDER, replace: true },
+    ]);
+    files.write(
+      'node_modules/@activation/appc/index.js',
+      `import { SmrtObject } from '@happyvertical/smrt-core';
+export class Customer extends SmrtObject {}
+`,
+    );
+    files.write(
+      'node_modules/@activation/ser/index.js',
+      `import { Customer } from '@activation/appc';
+export const item = (value) => ({ value, Customer });
+`,
+    );
+    manifest.objects[PROVIDER].decoratorConfig = {
+      ...manifest.objects[PROVIDER].decoratorConfig,
+      api: {
+        serializers: {
+          item: { importPath: '@activation/ser', exportName: 'item' },
+        },
+      },
+    } as never;
+    const generated = generate(files, manifest);
+    // Still in the closure for the ready route, never ahead of the provider.
+    expect(
+      generated.manifest.modules['@activation/customer'].dependencies,
+    ).toContain('@activation/appc');
+    expect(
+      generated.manifest.modules['@activation/customer'].after ?? [],
+    ).not.toContain('@activation/appc');
+  });
+
   it('rejects a module that hosts a parent while importing the module of its same-named child', () => {
     const CHILD = '@activation/appc:Customer';
     const { files, manifest } = project([
