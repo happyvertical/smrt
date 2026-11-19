@@ -9,6 +9,7 @@ import { getTestDatabase } from '@happyvertical/smrt-core';
 import type { DatabaseInterface } from '@happyvertical/smrt-core/migrations';
 import { disableTenancy, enableTenancy } from '@happyvertical/smrt-tenancy';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { defineApprovalKind } from '../kinds.js';
 import {
   APPROVE_MAIL_SEND_PERMISSION,
   createApprovalMailSendGate,
@@ -283,6 +284,71 @@ describe('mail-send approval gate (SQLite)', () => {
     }
     const view = await w.gate.get(w.tenantId, opened.approvalId, w.person);
     expect(view).toMatchObject({ status: 'pending', approverIds: [] });
+  });
+
+  it('verifies approvers only once quorum is reached', async () => {
+    const w = world();
+    const dual = defineApprovalKind({
+      key: 'messages.mail.send-dual-test',
+      subject: '@happyvertical/smrt-messages:Message',
+      permission: APPROVE_MAIL_SEND_PERMISSION,
+      allowRevisedApproval: true,
+      defaults: { requiredApprovals: 2 },
+    });
+    const gate = createApprovalMailSendGate({
+      service: new ApprovalService({ db, now: w.clock.now }),
+      kind: dual,
+      now: w.clock.now,
+    });
+    const opened = await gate.check({
+      tenantId: w.tenantId,
+      messageId: w.messageId,
+      bindingHash: 'draft-1',
+      requester: w.agent,
+      summary: 'x',
+    });
+    if (opened.state !== 'pending') throw new Error('expected pending');
+    await gate.decide({
+      tenantId: w.tenantId,
+      approvalId: opened.approvalId,
+      decider: w.person,
+      decision: 'approve',
+      expectedBindingHash: 'draft-1',
+    });
+    const seen: string[][] = [];
+    const early = await gate.consume({
+      tenantId: w.tenantId,
+      approvalId: opened.approvalId,
+      consumer: w.person,
+      bindingHash: 'draft-1',
+      verifyApprovers: async (ids) => {
+        seen.push(ids);
+        return true;
+      },
+    });
+    expect(early).toMatchObject({ ok: false, reason: 'not_approved' });
+    expect(seen).toEqual([]);
+  });
+
+  it('opens a fresh request for a revision whose request was rebound by an edit', async () => {
+    const w = world();
+    const opened = await w.check('draft-1');
+    if (opened.state !== 'pending') throw new Error('expected pending');
+    await w.gate.decide({
+      tenantId: w.tenantId,
+      approvalId: opened.approvalId,
+      decider: w.person,
+      decision: 'approve',
+      expectedBindingHash: 'draft-1',
+      revisedBindingHash: 'draft-2',
+    });
+    // The draft went back to its original content: it waits again rather
+    // than being refused forever under the rebound key.
+    const again = await w.check('draft-1');
+    expect(again).toMatchObject({ state: 'pending', created: true });
+    expect(
+      again.state === 'pending' && again.approvalId !== opened.approvalId,
+    ).toBe(true);
   });
 
   it('keeps requests per tenant', async () => {

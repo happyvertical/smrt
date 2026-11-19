@@ -210,6 +210,10 @@ export function createApprovalMailSendGate(
   ): Promise<ApprovalMailSendOutcome> {
     const current = await view(principal, approvalId);
     if (!current) return { ok: false, reason: 'not_found' };
+    // Verify the final approver set only: before quorum the list is partial.
+    if (current.status !== 'approved') {
+      return { ok: false, reason: 'not_approved', view: current };
+    }
     if (current.bindingHash !== bindingHash) {
       return { ok: false, reason: 'revision_mismatch', view: current };
     }
@@ -246,6 +250,9 @@ export function createApprovalMailSendGate(
           requestKey: epoch === 0 ? baseKey : `${baseKey}:${epoch}`,
           summary: request.summary,
         });
+        // The key's request was rebound by edit-then-approve (the stored
+        // revision no longer matches the key): move on to the next epoch.
+        if (opened.refusal?.reason === 'request_key_conflict') continue;
         if (opened.outcome === 'refused' || !opened.request) {
           return {
             state: 'refused',
@@ -259,11 +266,13 @@ export function createApprovalMailSendGate(
         if (
           row.tenantId !== request.tenantId ||
           row.requestedBy !== request.requester.id ||
-          row.subjectId !== request.messageId ||
-          row.subjectRevisionHash !== request.bindingHash
+          row.subjectId !== request.messageId
         ) {
           return { state: 'refused', reason: 'binding_mismatch', approvalId };
         }
+        // Edit-then-approve rebound this request to another revision; the
+        // key's revision needs a request of its own in the next epoch.
+        if (row.subjectRevisionHash !== request.bindingHash) continue;
         const live = row.expiresAtMs() > now().getTime();
         switch (row.status) {
           case 'approved': {
