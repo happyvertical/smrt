@@ -15,22 +15,22 @@ Shared assistant adapters and legacy approval storage: [agents/shared-pieces.md]
 | Path | What |
 |---|---|
 | `src/engine/` | `AppHost`, worker thread, migrations, QuickJS sandbox, drafts (`forkDraft`/`previewPublish`/`publishDraft`/`undoTo`, frozen host, draft-only `autoApprove`; see engine.md "Drafts"). Finished and tested on its own. |
-| `src/lib/objects/` | Shell models (`objectsDir` in `vite.config.ts`): `App`, `AppVersion`, `Approval`, `AssistantThread`, `AssistantMessage`. |
+| `src/lib/objects/` | Shell models (`objectsDir` in `vite.config.ts`): `App`, `AppVersion`, `Approval`, `AssistantThread`, `AssistantMessage`, `ChangeBatch`/`ChangeCard` (changes waiting). |
 | `src/lib/server/smrt.ts` | `createSmrtSvelteKitRuntime`, `prepareDatabase`, `configureShell`. |
 | `src/lib/server/registry.ts` | The ONE startup registration path (permissions, preference kinds); `smrt.ts` imports it before the runtime. app-runtime grants newly registered permissions to an existing owner on every start. `registry.test.ts` guards it. |
 | `src/lib/server/schema.ts` | `prepareShellSchema(db)`: additive first-run schema. |
 | `src/lib/server/host.ts` | Holders: shell db, data root, the LIVE `AppHost` (`getHost`, never the draft) and the open-draft slot; `hostFor(target)` is how a request reaches either; restart adoption of an open draft (re-freeze live, reopen the draft with `autoApprove`). |
-| `src/lib/server/target.ts`, `drafts.ts`, `view.ts` | The copy a request names (`live`/`draft`, `CallScope`), the draft lifecycle (start, describe, preview, publish and discard apply, History grouping) and the owner's saved view. README "Draft then publish (the shell)" lists routes, payloads, events. |
+| `src/lib/server/changes.ts`, `drafts.ts`, `target.ts` | Changes waiting (#5178): `changes.ts` owns the batch (cards are the truth; the draft copy is a private working copy rebuilt from them by the engine's `ChangeEngine`), `drafts.ts` is that copy's lifecycle (start, preview, publish/discard internals, History grouping), `target.ts` the always-live `CallScope` (+ `source`). Routes: `/api/shell/changes*` (JSON contracts in each route's header). |
 | `src/lib/server/version-store.ts` | `ShellVersionStore` (engine `VersionStore` on `AppVersion` + the `App` row; `commit` is one transaction, a publish's draft mark rides in it) and `DraftVersionStore` (`AppDraftVersion` rows of one `AppDraft`). |
 | `src/lib/server/owner.ts` | Owner check, `Principal`, `assertOwner`, `runAs`. |
-| `src/lib/server/approvals.ts`, `approval-store.ts` | Shared-authority storage adapter and shell action executor; the only place `approved: true` is set (`decideApproval`; `publishOwnDraft` is the owner's one-step Publish). |
+| `src/lib/server/approvals.ts`, `approval-store.ts` | Shared-authority storage adapter and shell action executor; the only place `approved: true` is set (`decideApproval`; `applyOwnBatch` is the owner's one-step Apply). |
 | `src/lib/server/engine-tools.ts` | New engine catalog adapters: owner check, explicit structure/record targets, builder approval path. |
-| `src/lib/server/builder.ts` | `runCommand`/`runAppTool`/`runRest`/`requestRecordDelete`: execute or turn into an Approval. |
+| `src/lib/server/builder.ts` | `runCommand`/`runAppTool`/`runRest`/`requestRecordDelete`: every structural command becomes a card (never live); record deletes become an Approval. |
 | `src/lib/server/catalog.ts`, `policy.ts`, `mcp-server.ts` | Merged tool catalog, the one policy, the `/mcp` server. |
 | `src/lib/server/http.ts`, `events.ts` | Route plumbing; in-process event bus for SSE. |
 | `src/lib/server/inference.ts`, `inference-registry.ts` | smrt-inference host + controller over shell.db and the runtime's master key; `asOwner` runs a settings request as the verified owner; `installShellInference` registers the user resolver (the assistant's key source). |
 | `src/lib/server/assistant/`, `src/lib/assistant/` | Assistant: turn loop, hold, config, routes (`mountAssistantRoutes`), thread store; chat column UI (`AssistantPanel`), pure reducer/stream parser, `guidance/system.md`. Definition report results use shared `ReportResult`; tool projections stay transient and stored summaries keep validated report links. |
-| `src/routes/+layout.svelte`, `src/lib/ui/layout.ts`, `src/lib/ui/menu.ts` | Shell layout over smrt-svelte `AppShell`: left sidebar (the person's app only), the chat column (`panel`), footer voice/assistant toggles, user menu (Approvals with count, History, Theme, Settings, Sign out), and the draft state in the `header.end` slot (`components/DraftBar.svelte`, rules in `ui/draft-bar.ts`: quiet Start a draft, full controls only while a draft has changes). Plugin mode (iframe or `?embed=plugin`) has no chat or toggles. Chat open state and the sidebar collapse (`edgeToggles.left`, icon rail) are per owner in localStorage; `sidebarFooterDivider={false}` removes the footer line so it does not clash with the chat composer's border. |
+| `src/routes/+layout.svelte`, `src/lib/ui/layout.ts`, `src/lib/ui/menu.ts` | Shell layout over smrt-svelte `AppShell`: left sidebar (the person's app only), the chat column (`panel`), footer voice/assistant toggles, user menu (Approvals with count, History, Theme, Settings, Sign out), the header `ChangesPill` (slot `header.end`, only while changes wait; the Live/Draft switch and bar are gone), the one `changes` state loaded by the layout (`DEPENDS.changes`, driven by the SSE `changes` event) that the pill, `/changes` and History read, and a `ToastViewport`. Plugin mode (iframe or `?embed=plugin`) has no chat or toggles. Chat open state and the sidebar collapse (`edgeToggles.left`, icon rail) are per owner in localStorage; `sidebarFooterDivider={false}` removes the footer line so it does not clash with the chat composer's border. |
 | `src/lib/server/agent-cli/`, `assistant/agent-turn.ts`, `onboarding.ts` | Thin host adapters over smrt-inference/server (CLI, token scope, shell guidance/approvals), the `assistant` preference (engine, onboarding), onboarding routes; UI `routes/welcome`, `components/ConnectAi.svelte`, `routes/settings/assistant`. |
 | `src/routes/settings/` | Settings menu (`ShellSettingsPage`), built-in sections, owner-only `inference/` (panel + actions over the shared controller). |
 | `src/routes/reports/`, `src/lib/ui/reports.ts`, `formula.ts` | Definition reports use shared `ReportResult`; owner-only result/CSV routes carry an explicit target. Display formulas in one place; never evaluate in the browser. `fields.ts` omits calculated values from save payloads; RecordForm shows outputs and RecordList sorts loaded values. See [draft UI](agents/draft-ui.md). |
@@ -46,38 +46,54 @@ Shared assistant adapters and legacy approval storage: [agents/shared-pieces.md]
   (the session handler sets it; routes and `dispatchTool` use `runAs`).
   `operationPermissions` only aliases the generated routes onto CRUD grants, a
   member role may hold those, so `assertOwner` is the rule.
-- **Approval gate.** A risky builder command, `<model>_delete` tool, REST
-  `DELETE` or record delete never runs: it becomes an `Approval`
+- **Approval gate.** A `<model>_delete` tool, REST `DELETE`, record delete, or
+  History's risky undo/clean up never runs: it becomes an `Approval`
   (`pending_approval`, idempotent per identical pending action). Only
   `decideApproval` passes the engine's `approved: true`, and it has exactly two
-  callers: `Approval.decide` and `publishOwnDraft` (the owner's own Publish
-  click, reachable only from the session route `POST /api/shell/draft/publish`);
-  `invariants.test.ts` fails if any other source sets it or calls either, or if
-  a route reads an `approved` input. The engine refuses without it as well.
-  `undo` is risky when the version being undone has a type conversion (it would
-  overwrite newer values with the archived originals); `POST /api/shell/undo`
-  then answers 202 `pending_approval` and History links to /approvals. The
-  assistant pauses only on the out-of-band `CatalogResponse.pending` marker set
-  by `dispatchTool` (from `requestApproval`), never on result text, and shows the
-  stored Approval's summary and preview. `/api/app/sync/apply` and other
-  reserved core endpoints are refused (only the app's own collections are
-  served). Snapshots are retained (20 `method-*`; clean up prunes old
-  `migrate-*`/`schema-*`).
-- **Drafts and targets.** Every request names its copy; there is no ambient
-  "current host". REST: `?target=` (`x-shell-target` on `/api/app/*`); MCP:
-  the URL (`/mcp`, `?target=draft`, `?scope=assistant`); tools and the
-  assistant pass a `CallScope`. Default live. `getHost()` is live only; the
-  draft host is reached only via `hostFor('draft')`; `invariants.test.ts` keeps
-  request paths on `hostFor` and `autoApprove: true` in `openDraftHost`. While a
-  draft is open live is frozen (also after a restart): builder calls naming live
-  are refused naming the draft; live records keep working. `publishDraft` is
-  always an Approval (`publish-draft`, pinned to the preview digest; the engine
-  refuses at apply if the chain changed): tools, the assistant, `/mcp` and the
-  generated REST leave it pending; the owner's review-page Publish (required
-  `expect` = the reviewed digest, re-checked against a fresh preview, else
-  409) records and decides it in one step; a discard is direct from the UI route,
-  an Approval from a tool. Approvals only ever run against live. Table changes
-  here are new tables only (`prepareShellSchema` cannot ALTER).
+  callers: `Approval.decide` and `applyOwnBatch` (the owner's own Apply click,
+  reachable only from the session route `POST /api/shell/changes/apply`);
+  `invariants.test.ts` fails if any other source sets it or calls either, if
+  a route reads an `approved` input, or if any tool/`/mcp`/assistant/`App`
+  path can reach apply or undo (`requestApply`, `applyApproved`,
+  `undoOwnBatch`, the engine's `undoBatch`). The engine refuses without it as
+  well. Legacy `publish-draft`/`discard-draft` rows stay readable and cannot
+  be approved; a stored structural `command` approval cannot reach live either
+  (only undo/undoTo/cleanUp commands still run on approval). The assistant
+  pauses only on the out-of-band `CatalogResponse.pending` marker set by
+  `dispatchTool`, never on result text. `/api/app/sync/apply` and other
+  reserved core endpoints are refused. Snapshots are retained (20 `method-*`;
+  clean up prunes old `migrate-*`/`schema-*`).
+- **Changes waiting.** Records are always live. EVERY structural command
+  (builder tools, REST, `/mcp`, imports, loadRecords/extractModel/mergeRecords)
+  entering `runCommand` becomes a `ChangeCard` in the open `ChangeBatch` and
+  runs only on the working copy; live structure is frozen while any card is
+  active and returns `status: 'change_waiting'`. Remove/put back/quick edit
+  (label, choice options) rebuild the copy from the active cards
+  (`ChangeEngine.rebuild`); a tail append runs incrementally; exact checks
+  (`checkBatch`) run in a debounced, generation-guarded job after each
+  mutation (`check-scheduler.ts`; it can only read and store results) and pin
+  `digest` = `batchDigest(review digest, active (card, revision))`; Apply
+  re-checks fresh and refuses (409 + blockers) while anything blocks, "Put it
+  back"/"Remove those too" clear `depends_on_removed`. Records overwritten
+  are shown, never blocking. Apply (owner only, `expect` = digest, optional
+  `generation` CAS, 409 on mismatch) records and decides an `apply-batch`
+  Approval, then publishes atomically. Undo of an applied batch
+  (`POST /changes/undo {batchId, expect}`) keeps records added since. While
+  changes wait, History undo/clean up are refused ("Apply or discard your N
+  waiting changes first"); the assistant has no undo, apply or draft tool and
+  its scope is constant (records live, structure to the batch). Its only
+  card-editing tool is `change_revise` (comment turns, that one card, never
+  applies); review questions (`change-review.ts`) and `answerReviewQuestion`
+  only add visible options or a NEW card; `applyNowEligible` is the server's
+  one rule for chat's "Apply now". Details: README "The assistant and changes
+  waiting". An older
+  open draft is adopted as opaque, non-removable cards. A workbook import
+  records its commands as cards itself (`recordImportCommand`, one card per
+  table, one group; it only records, never applies: [imports](agents/imports.md)). No request names a copy: `?target=`,
+  `x-shell-target` and `/mcp?target=` are gone, `hostFor('draft')` is only for
+  the working copy's checks/preview, and `autoApprove: true` stays only in
+  `openDraftHost`. Table changes here are new tables only (`prepareShellSchema`
+  cannot ALTER). Details: README "Changes waiting".
 - **Decorator configs are literals** (`@smrt({...})` on `App`, `Approval`). The
   scanner reads them statically; a shared constant silently falls back to full
   CRUD routes. Collections are undecorated. The shell models expose only their
@@ -139,7 +155,7 @@ Shared assistant adapters and legacy approval storage: [agents/shared-pieces.md]
   action; none is logged or returned (`inference-settings.test.ts`). The assistant is tracked AI work (#5005): its system prompt is the
   registered prompt `app-shell.assistant.system` (`assistant/guidance.ts`,
   resolved through `resolvePrompt` on shell.db with the owner's tenant, so an
-  app or tenant override applies; the mode line is appended per step), the
+  app or tenant override applies; the changes-waiting line is appended per step), the
   `api` engine's model is a tracked model over core's `createTrackedAiClient`
   on shell.db (`assistant/model.ts`; no `getAI`, no transcript copy), and each
   turn opens one `turn` run (`app-shell.assistant.turn`) through smrt-chat's

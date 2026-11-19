@@ -12,7 +12,7 @@ afterAll(async () => {
   await h.close();
 });
 
-it('answers 202 for a template with code and applies nothing', async () => {
+it('waits as a change for a template with code and applies nothing to live', async () => {
   const ORIGIN = 'http://localhost:5173';
   const url = new URL('/api/apps/importTemplate', ORIGIN);
   const data = {
@@ -48,7 +48,7 @@ it('answers 202 for a template with code and applies nothing', async () => {
     resolve: (async () => new Response('x')) as never,
   });
   const out = (await res.json()) as { status?: string; error?: string };
-  expect(res.status, JSON.stringify(out)).toBe(202);
-  expect(out.status).toBe('pending_approval');
+  expect(res.status, JSON.stringify(out)).toBe(200);
+  expect(JSON.stringify(out)).toContain('change_waiting');
   expect(Object.keys((await getHost()).describe().models)).toEqual([]);
 });

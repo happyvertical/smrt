@@ -3267,6 +3267,28 @@
   },
   {
     "kind": "model",
+    "name": "@happyvertical/smrt-app-shell:ChangeBatch",
+    "issue": 5203,
+    "nearest": [
+      "@happyvertical/smrt-app-shell:AppDraft",
+      "@happyvertical/smrt-app-shell:AppImport",
+      "@happyvertical/smrt-jobs:SmrtJob"
+    ],
+    "reason": "The owner's changes waiting (#5178): the ordered structural changes not yet applied to the live app, with the digest, check state, generation counter and the live versions Apply made (what Undo takes back). AppDraft is only the private working copy rebuilt from these cards, and has no owner-facing state, digest or applied-undo record."
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-app-shell:ChangeCard",
+    "issue": 5203,
+    "nearest": [
+      "@happyvertical/smrt-app-shell:AppDraftVersion",
+      "@happyvertical/smrt-app-shell:AppImport",
+      "@happyvertical/smrt-jobs:SmrtJob"
+    ],
+    "reason": "One owner-meaningful change in a ChangeBatch: its engine commands, order, source, revision, checks and review questions, soft-removable so it can be put back. AppDraftVersion stores resulting definitions without the commands, so a card cannot be removed from the middle of a chain from it."
+  },
+  {
+    "kind": "model",
     "name": "@happyvertical/smrt-app-shell:AppVersion",
     "grandfathered": true
   },

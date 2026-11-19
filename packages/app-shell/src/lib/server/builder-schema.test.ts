@@ -3,7 +3,7 @@ import { FIELD_TYPES } from '../../engine/index.ts';
 import { call, drive, say, scripted } from './assistant/test-helpers.ts';
 import { createShellMcpServer } from './mcp-server.ts';
 import { toolsFor } from './policy.ts';
-import { openShell, type ShellHarness } from './test-support.ts';
+import { applyWaiting, openShell, type ShellHarness } from './test-support.ts';
 
 let h: ShellHarness;
 beforeAll(async () => {
@@ -118,6 +118,8 @@ describe('the builder tools say which types and names are allowed', () => {
       ok: boolean;
     }[];
     expect(results.every((e) => e.ok)).toBe(true);
+    // the model waits for the owner; apply it to see it live
+    await applyWaiting(h.owner);
     const { getHost } = await import('./host.ts');
     expect(
       Object.keys((await getHost()).describe().models.Chore.fields),
@@ -191,6 +193,7 @@ describe('every tool the assistant sends to a provider is self-contained', () =>
         points: { type: 'integer' },
       },
     }).catch(() => undefined);
+    await applyWaiting(h.owner);
     const { requests } = await (async () => {
       const s = scripted([() => say('ok')]);
       await drive({ principal: h.owner, model: s.model, text: 'hi' });

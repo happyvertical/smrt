@@ -1,5 +1,6 @@
 import { mount, unmount } from 'svelte';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { card, changes, noChanges } from '../../test/changes-fixtures.ts';
 import { result } from '../../test/report-fixtures.ts';
 import AssistantPanel from './AssistantPanel.svelte';
 
@@ -10,70 +11,212 @@ afterEach(() => {
   container?.remove();
   vi.unstubAllGlobals();
 });
-describe('assistant copy labels', () => {
-  it.each([
-    'draft',
-    'live',
-  ] as const)('labels a streamed tool result for the %s copy', async (copy) => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async (input) => {
-        const path = String(input);
-        if (path.includes('/turn'))
-          return new Response(
-            [
-              {
-                type: 'tool_call',
-                id: 'tool',
-                name: 'chore_create',
-                args: '{}',
-              },
-              {
-                type: 'tool_result',
-                id: 'tool',
-                name: 'chore_create',
-                ok: true,
-                summary: 'Created a chore',
-                copy,
-              },
-              { type: 'done', stop: 'complete' },
-            ]
-              .map((e) => `event: turn\ndata: ${JSON.stringify(e)}\n\n`)
-              .join(''),
-            { headers: { 'content-type': 'text/event-stream' } },
-          );
+function stubTurn(events: object[], thread: object[] = []) {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (input) => {
+      const path = String(input);
+      if (path.includes('/turn'))
         return new Response(
-          JSON.stringify(
-            path.includes('/status')
-              ? { configured: true }
-              : { threads: [], approvals: [] },
-          ),
+          events
+            .map((e) => `event: turn\ndata: ${JSON.stringify(e)}\n\n`)
+            .join(''),
+          { headers: { 'content-type': 'text/event-stream' } },
         );
-      }),
-    );
-    container = document.createElement('div');
-    document.body.appendChild(container);
-    component = mount(AssistantPanel, {
-      target: container,
-      props: { open: true, buildingInDraft: true },
+      if (/\/threads\/[^/?]+/.test(path))
+        return new Response(JSON.stringify({ messages: thread }));
+      return new Response(
+        JSON.stringify(
+          path.includes('/status')
+            ? { configured: true }
+            : /\/threads(\?|$)/.test(path)
+              ? {
+                  threads: thread.length
+                    ? [{ id: 't1', title: 'x', updatedAt: '' }]
+                    : [],
+                }
+              : { approvals: [] },
+        ),
+      );
+    }),
+  );
+}
+
+async function open(props: Record<string, unknown> = {}) {
+  container = document.createElement('div');
+  document.body.appendChild(container);
+  component = mount(AssistantPanel, {
+    target: container,
+    props: { open: true, ...props },
+  });
+  await vi.waitFor(() =>
+    expect(container.textContent).toMatch(/Tell me what you want|waiting/),
+  );
+}
+
+async function say(text: string) {
+  const field = container.querySelector('textarea');
+  if (!field) throw new Error('Missing assistant input');
+  field.value = text;
+  field.dispatchEvent(new Event('input', { bubbles: true }));
+  container
+    .querySelector('form')
+    ?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+}
+
+const TOOL = [
+  { type: 'tool_call', id: 'tool', name: 'app_addfield', args: '{}' },
+  {
+    type: 'tool_result',
+    id: 'tool',
+    name: 'app_addfield',
+    ok: true,
+    summary: 'Added a field',
+  },
+];
+const block = () =>
+  container.querySelector<HTMLElement>('[data-testid="changes-block"]');
+const buttons = (el: HTMLElement) =>
+  [...el.querySelectorAll<HTMLElement>('a.smrt-app-shell__btn, button')].map(
+    (b) => ({
+      text: b.textContent?.trim(),
+      primary: b.classList.contains('smrt-app-shell__btn-primary'),
+      href: b.getAttribute('href'),
+    }),
+  );
+
+describe('the reply block', () => {
+  it('a reply that made changes ends in "N changes waiting"; Review leads while questions are open, and says nothing about drafts', async () => {
+    stubTurn([
+      ...TOOL,
+      { type: 'changes_block' },
+      { type: 'done', stop: 'complete' },
+    ]);
+    const withQuestion = changes({
+      cards: [
+        card({
+          questions: [
+            {
+              id: 'q1',
+              text: 'Mark them?',
+              choices: [{ label: 'Yes', adds: true }],
+              state: 'open',
+            },
+          ],
+        }),
+        card({ id: 'c2', summary: 'New report Orders by fulfillment' }),
+      ],
     });
-    await vi.waitFor(() =>
-      expect(container.textContent).toContain('Tell me what you want'),
+    await open({ changes: withQuestion, onapply: vi.fn() });
+    await say('Add a field');
+    await vi.waitFor(() => expect(block()).not.toBeNull());
+    const el = block() as HTMLElement;
+    expect(el.getAttribute('aria-label')).toBe('2 changes waiting');
+    expect(el.textContent).toContain('1 question');
+    expect(el.textContent).toContain('Add field Fulfillment to Orders');
+    expect(buttons(el)).toEqual([
+      { text: 'Review', primary: true, href: '/changes' },
+      { text: 'Apply', primary: false, href: null },
+    ]);
+    expect(container.textContent).not.toMatch(
+      /draft|Tried in|Changed in your live/i,
     );
-    const field = container.querySelector('textarea');
-    if (!field) throw new Error('Missing assistant input');
-    field.value = 'Add a chore';
-    field.dispatchEvent(new Event('input', { bubbles: true }));
-    container
-      .querySelector('form')
-      ?.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+  });
+
+  it("Apply leads once no question is open, and is the owner's click (calls the layout's apply, not Apply now)", async () => {
+    stubTurn([
+      ...TOOL,
+      { type: 'changes_block' },
+      { type: 'done', stop: 'complete' },
+    ]);
+    const onapply = vi.fn(async () => {});
+    await open({ changes: changes(), onapply });
+    await say('Add a field');
+    await vi.waitFor(() => expect(block()).not.toBeNull());
+    expect(buttons(block() as HTMLElement)).toEqual([
+      { text: 'Apply', primary: true, href: null },
+      { text: 'Review', primary: false, href: '/changes' },
+    ]);
+    (block()?.querySelector('button') as HTMLButtonElement | null)?.click();
+    await vi.waitFor(() => expect(onapply).toHaveBeenCalledWith(false));
+  });
+
+  it('a small addition the server says qualifies gets "Apply now"; a failed apply shows why', async () => {
+    stubTurn([
+      ...TOOL,
+      { type: 'changes_block' },
+      { type: 'done', stop: 'complete' },
+    ]);
+    const onapply = vi.fn(async () => {
+      throw new Error('This one needs a closer look. Review it, then Apply.');
+    });
+    await open({
+      changes: changes({ cards: [card()], applyNow: true }),
+      onapply,
+    });
+    await say('Add a phone field');
+    await vi.waitFor(() => expect(block()).not.toBeNull());
+    expect(block()?.getAttribute('aria-label')).toBe('1 change waiting');
+    expect(buttons(block() as HTMLElement)[0]).toEqual({
+      text: 'Apply now',
+      primary: true,
+      href: null,
+    });
+    (block()?.querySelector('button') as HTMLButtonElement | null)?.click();
+    await vi.waitFor(() => expect(onapply).toHaveBeenCalledWith(true));
     await vi.waitFor(() =>
-      expect(container.textContent).toContain(
-        copy === 'draft'
-          ? 'Tried in a draft. Your live app is unchanged.'
-          : 'Changed in your live app.',
+      expect(block()?.querySelector('[role="alert"]')?.textContent).toContain(
+        'closer look',
       ),
     );
+  });
+
+  it('Apply is not offered while the changes cannot be applied; nothing shows once nothing waits', async () => {
+    stubTurn([
+      ...TOOL,
+      { type: 'changes_block' },
+      { type: 'done', stop: 'complete' },
+    ]);
+    await open({
+      changes: changes({ canApply: false, checkState: 'checking' }),
+      onapply: vi.fn(),
+    });
+    await say('Add a field');
+    await vi.waitFor(() => expect(block()).not.toBeNull());
+    const apply = [...(block() as HTMLElement).querySelectorAll('button')].find(
+      (b) => b.textContent?.trim() === 'Apply',
+    );
+    expect(apply?.disabled).toBe(true);
+    unmount(component);
+    container.remove();
+    stubTurn([
+      ...TOOL,
+      { type: 'changes_block' },
+      { type: 'done', stop: 'complete' },
+    ]);
+    await open({ changes: noChanges() });
+    await say('Add a field');
+    await vi.waitFor(() =>
+      expect(container.textContent).toContain('Added a field'),
+    );
+    expect(block()).toBeNull();
+  });
+
+  it('a reopened thread shows only the newest block, from the live state', async () => {
+    stubTurn(
+      [],
+      [
+        { id: '1', seq: 1, role: 'user', content: 'one' },
+        { id: '2', seq: 2, role: 'assistant', content: '', block: 'changes' },
+        { id: '3', seq: 3, role: 'user', content: 'two' },
+        { id: '4', seq: 4, role: 'assistant', content: '', block: 'changes' },
+      ],
+    );
+    await open({ changes: changes(), onapply: vi.fn() });
+    await vi.waitFor(() => expect(block()).not.toBeNull());
+    expect(
+      container.querySelectorAll('[data-testid="changes-block"]'),
+    ).toHaveLength(1);
   });
 });
 

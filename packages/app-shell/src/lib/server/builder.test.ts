@@ -3,9 +3,15 @@ import { App } from '../objects/App.ts';
 import { Approval, ApprovalCollection } from '../objects/Approval.ts';
 import { AppVersionCollection } from '../objects/AppVersion.ts';
 import { listApprovalViews } from './approvals.ts';
+import { discardChanges } from './changes.ts';
 import { getHost } from './host.ts';
 import { PolicyError } from './owner.ts';
-import { openShell, runAs, type ShellHarness } from './test-support.ts';
+import {
+  applyWaiting,
+  openShell,
+  runAs,
+  type ShellHarness,
+} from './test-support.ts';
 import { ShellVersionStore } from './version-store.ts';
 
 let h: ShellHarness;
@@ -25,6 +31,9 @@ describe('App builder methods (owner)', () => {
     )) as { version: number };
     expect(made.version).toBe(1);
     await asOwner(() => App.addField('Chore', 'points', { type: 'text' }));
+    // structure waits for the owner: live has none of it until Apply
+    expect((await getHost()).def.models.Chore).toBeUndefined();
+    await applyWaiting(h.owner);
     const host = await getHost();
     const rec = await host.create('Chore', { title: 'dishes', points: '3' });
     expect(rec.title).toBe('dishes');
@@ -55,6 +64,7 @@ describe('App builder methods (owner)', () => {
       App.addField('Chore', 'notes', JSON.stringify({ type: 'text' }) as never),
     )) as { version: number };
     expect(r.version).toBe(3);
+    await applyWaiting(h.owner);
   });
 
   it('rejects malformed arguments', async () => {
@@ -143,91 +153,42 @@ describe('approval gating', () => {
     ).id as string;
   });
 
-  it('a risky method returns pending_approval and changes nothing', async () => {
+  it('a risky builder method waits as a change instead of asking for an approval', async () => {
     const host = await getHost();
     const before = host.version;
     const out = (await asOwner(() => App.removeField('Chore', 'notes'))) as {
       status: string;
-      approvalId: string;
+      count: number;
     };
-    expect(out.status).toBe('pending_approval');
+    expect(out.status).toBe('change_waiting');
+    expect(out.count).toBe(1);
     expect(host.version).toBe(before);
     expect(host.describe().models.Chore.fields).toHaveProperty('notes');
-    const pending = await listApprovalViews({ status: 'pending' });
-    expect(pending.map((p) => p.id)).toContain(out.approvalId);
+    expect(
+      (await listApprovalViews({ status: 'pending' })).some(
+        (p) => p.action?.kind === 'command',
+      ),
+    ).toBe(false);
+    await asOwner(() => discardChanges());
   });
 
-  it('an identical pending command reuses the Approval', async () => {
-    const a = (await asOwner(() => App.removeField('Chore', 'notes'))) as {
-      approvalId: string;
-    };
-    const b = (await asOwner(() => App.removeField('Chore', 'notes'))) as {
-      approvalId: string;
-    };
-    expect(a.approvalId).toBe(b.approvalId);
-    const rows = (await listApprovalViews({ status: 'pending' })).filter(
-      (p) => p.id === a.approvalId,
-    );
-    expect(rows).toHaveLength(1);
-  });
-
-  it('deny records and does not apply', async () => {
+  it('a stored structural command approval can no longer reach live', async () => {
+    const { requestApproval } = await import('./approvals.ts');
     const host = await getHost();
-    const out = (await asOwner(() => App.removeField('Chore', 'notes'))) as {
-      approvalId: string;
-    };
-    const row = (await (
-      await ApprovalCollection.create({ db: h.db })
-    ).get(out.approvalId)) as Approval;
-    const res = await runAs(h.owner, () => row.decide(false));
-    expect(res.status).toBe('denied');
-    expect(host.describe().models.Chore.fields).toHaveProperty('notes');
-    const stored = (await listApprovalViews()).find(
-      (p) => p.id === out.approvalId,
-    );
-    expect(stored).toMatchObject({ status: 'denied', decidedBy: h.owner.id });
-    // a decided approval cannot be decided again
-    await expect(runAs(h.owner, () => row.decide(true))).rejects.toThrow(
-      /already/,
-    );
-    // and a fresh identical request makes a new row
-    const again = (await asOwner(() => App.removeField('Chore', 'notes'))) as {
-      approvalId: string;
-    };
-    expect(again.approvalId).not.toBe(out.approvalId);
-  });
-
-  it('approve applies the change, attributed to the requester', async () => {
-    const host = await getHost();
-    const pending = (await listApprovalViews({ status: 'pending' })).find(
-      (p) => p.action?.kind === 'command',
-    ) as Awaited<ReturnType<typeof listApprovalViews>>[number];
-    const row = (await (
-      await ApprovalCollection.create({ db: h.db })
-    ).get(pending.id)) as Approval;
-    const res = await runAs(h.owner, () => row.decide(true));
-    expect(res.status).toBe('approved');
-    expect(host.describe().models.Chore.fields).not.toHaveProperty('notes');
-    const hist = await host.versions();
-    expect(hist.at(-1)).toMatchObject({ author: h.owner.id });
-  });
-
-  it('a failing approved command is recorded as failed', async () => {
-    const out = (await asOwner(() => App.removeField('Chore', 'points'))) as {
-      approvalId: string;
-    };
-    // make it impossible: remove the model first through the host directly
-    const host = await getHost();
-    await host.execute(
-      { type: 'removeField', model: 'Chore', field: 'points' },
-      { author: 't', approved: true },
+    const pending = await requestApproval(
+      {
+        kind: 'command',
+        command: { type: 'removeField', model: 'Chore', field: 'notes' },
+      },
+      { summary: 'old', risky: true },
+      h.owner.id,
     );
     const row = (await (
       await ApprovalCollection.create({ db: h.db })
-    ).get(out.approvalId)) as Approval;
+    ).get(pending.approvalId)) as Approval;
     const res = await runAs(h.owner, () => row.decide(true));
     expect(res.status).toBe('failed');
-    expect(res.error).toBeTruthy();
+    expect(host.describe().models.Chore.fields).toHaveProperty('notes');
   });
 
   it('app tools: <model>_delete is gated; engine refuses without approved', async () => {
@@ -279,7 +240,14 @@ describe('approval gating', () => {
 describe('undo that would overwrite newer data', () => {
   it('App.undo and the assistant/MCP door return a pending approval with the count', async () => {
     const host = await getHost();
-    await asOwner(() => App.defineModel('Dial', { level: { type: 'text' } }));
+    await host.execute(
+      {
+        type: 'defineModel',
+        name: 'Dial',
+        fields: { level: { type: 'text' } },
+      },
+      { author: 't', approved: true },
+    );
     const a = await host.create('Dial', { level: '1' });
     await host.create('Dial', { level: '2' });
     await host.execute(
@@ -294,7 +262,12 @@ describe('undo that would overwrite newer data', () => {
     await host.update('Dial', a.id as string, { level: 50 });
     const version = host.version;
 
-    const out = (await asOwner(() => App.undo())) as {
+    const { runCommand } = await import('./builder.ts');
+    const undo = () =>
+      asOwner(() => runCommand({ type: 'undo' }, h.owner.id, 'live', 'owner'));
+    // the assistant/MCP door is refused: undo is the owner's, from History
+    await expect(asOwner(() => App.undo())).rejects.toThrow(/History/);
+    const out = (await undo()) as unknown as {
       status: string;
       approvalId: string;
       preview: { replaced: number; fields: { model: string; field: string }[] };
@@ -311,7 +284,7 @@ describe('undo that would overwrite newer data', () => {
       host.execute({ type: 'undo' }, { author: 'x' }),
     ).rejects.toThrow(/approval required/);
     // an identical request reuses the card
-    const again = (await asOwner(() => App.undo())) as { approvalId: string };
+    const again = (await undo()) as unknown as { approvalId: string };
     expect(again.approvalId).toBe(out.approvalId);
 
     const row = (await (
@@ -325,129 +298,19 @@ describe('undo that would overwrite newer data', () => {
   });
 
   it('a plain undo is still immediate', async () => {
-    await asOwner(() => App.addField('Dial', 'tag', { type: 'text' }));
-    const out = (await asOwner(() => App.undo())) as { status?: string };
+    await (await getHost()).execute(
+      {
+        type: 'addField',
+        model: 'Dial',
+        field: 'tag',
+        definition: { type: 'text' },
+      },
+      { author: 't', approved: true },
+    );
+    const { runCommand } = await import('./builder.ts');
+    const out = (await asOwner(() =>
+      runCommand({ type: 'undo' }, h.owner.id, 'live', 'owner'),
+    )) as { status?: string };
     expect(out.status).toBeUndefined();
   });
-});
-
-it('requires a fresh approval when merge reference counts grow and performs no writes', async () => {
-  const { runCommand } = await import('./builder.ts');
-  const host = await getHost();
-  await host.execute(
-    {
-      type: 'defineModel',
-      name: 'MergePerson',
-      fields: { name: { type: 'text' } },
-    },
-    { author: 'test' },
-  );
-  await host.execute(
-    {
-      type: 'defineModel',
-      name: 'MergeInvoice',
-      fields: { person: { type: 'reference', ref: 'MergePerson' } },
-    },
-    { author: 'test' },
-  );
-  const keep = await host.create('MergePerson', { name: 'Keep' });
-  const duplicate = await host.create('MergePerson', { name: 'Duplicate' });
-  const pending = (await runCommand(
-    {
-      type: 'mergeRecords',
-      model: 'MergePerson',
-      keep: keep.id as string,
-      merge: [duplicate.id as string],
-    },
-    h.owner.id,
-    'live',
-  )) as { approvalId: string };
-  const invoice = await host.create('MergeInvoice', { person: duplicate.id });
-  const version = host.version;
-  const row = (await (
-    await ApprovalCollection.create({ db: h.db })
-  ).get(pending.approvalId)) as Approval;
-  expect((await runAs(h.owner, () => row.decide(true))).status).toBe('failed');
-  expect(host.version).toBe(version);
-  expect((await host.get('MergeInvoice', invoice.id as string)).person).toBe(
-    duplicate.id,
-  );
-  expect((await host.get('MergePerson', duplicate.id as string)).name).toBe(
-    'Duplicate',
-  );
-  const fresh = (await listApprovalViews({ status: 'pending' })).find(
-    (approval) =>
-      approval.action?.kind === 'command' &&
-      approval.action.command.type === 'mergeRecords',
-  );
-  expect(fresh?.id).not.toBe(pending.approvalId);
-  expect(fresh?.preview).toMatchObject({
-    removed: 1,
-    references: { MergeInvoice: 1 },
-  });
-  if (!fresh) throw new Error('missing fresh approval');
-  const next = (await (
-    await ApprovalCollection.create({ db: h.db })
-  ).get(fresh.id)) as Approval;
-  expect((await runAs(h.owner, () => next.decide(true))).status).toBe(
-    'approved',
-  );
-  expect((await host.get('MergeInvoice', invoice.id as string)).person).toBe(
-    keep.id,
-  );
-});
-
-it.each([
-  'loadRecords',
-  'extractModel',
-] as const)('%s reviews larger affected counts again before writing', async (type) => {
-  const { runCommand } = await import('./builder.ts');
-  const host = await getHost();
-  const model = type === 'loadRecords' ? 'ReviewLoad' : 'ReviewExtract';
-  await host.execute(
-    { type: 'defineModel', name: model, fields: { name: { type: 'text' } } },
-    { author: 'test' },
-  );
-  const first = await host.create(model, { name: 'One' });
-  const command =
-    type === 'loadRecords'
-      ? {
-          type,
-          model,
-          mode: 'upsert' as const,
-          key: ['name'],
-          rows: [{ name: 'One' }, { name: 'Two' }].map((row) => ({ ...row })),
-        }
-      : { type, model, field: 'name', into: 'ReviewExtractTarget' };
-  // A changed field makes the existing load row an overwrite, hence risky.
-  if (type === 'loadRecords') {
-    await host.execute(
-      { type: 'addField', model, field: 'note', definition: { type: 'text' } },
-      { author: 'test' },
-    );
-    (command as { rows: Record<string, unknown>[] }).rows.forEach((row) => {
-      row.note = 'new';
-    });
-  }
-  const pending = (await runCommand(command, h.owner.id, 'live')) as {
-    approvalId: string;
-  };
-  expect(pending.approvalId).toBeTruthy();
-  await host.create(model, { name: 'Two' });
-  const before = await host.list(model);
-  const version = host.version;
-  const row = (await (
-    await ApprovalCollection.create({ db: h.db })
-  ).get(pending.approvalId)) as Approval;
-  expect((await runAs(h.owner, () => row.decide(true))).status).toBe('failed');
-  expect(host.version).toBe(version);
-  expect(await host.list(model)).toEqual(before);
-  expect((await host.get(model, first.id as string)).name).toBe('One');
-  const fresh = (await listApprovalViews({ status: 'pending' })).find(
-    (approval) =>
-      approval.action?.kind === 'command' &&
-      approval.action.command.type === type,
-  );
-  expect(fresh?.id).not.toBe(pending.approvalId);
-  expect(fresh).toBeDefined();
 });

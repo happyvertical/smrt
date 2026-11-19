@@ -1,13 +1,14 @@
 import { writeFileSync } from 'node:fs';
 import { afterAll, beforeAll, expect, it } from 'vitest';
-import type { Command } from '../../engine/index.ts';
+import { ApprovalRequiredError, type Command } from '../../engine/index.ts';
 import { ApprovalCollection } from '../objects/Approval.ts';
 import { describeApproval } from '../ui/approvals.ts';
 import { publishDataLines } from '../ui/publish.ts';
 import type { ApprovalView, PublishPreview } from '../ui/types.ts';
 import { getApprovalView, listApprovalViews } from './approvals.ts';
-import { runCommand } from './builder.ts';
-import { discardNow, previewDraft, startDraft } from './drafts.ts';
+import { requestCommandApproval, runCommand } from './builder.ts';
+import { discardChanges } from './changes.ts';
+import { previewDraft, startDraft } from './drafts.ts';
 import { getHost } from './host.ts';
 import { openShell, runAs, type ShellHarness } from './test-support.ts';
 
@@ -24,9 +25,20 @@ const execute = async (command: Command) =>
     approved: true,
   });
 async function card(command: Command) {
-  const pending = (await runCommand(command, harness.owner.id, 'live')) as {
-    approvalId: string;
-  };
+  // Structural commands wait as changes now; a stored card from an older
+  // release is reproduced from the live host's own refusal.
+  const live = await getHost();
+  const pending = await live
+    .execute(command, { author: harness.owner.id })
+    .then(
+      () => {
+        throw new Error('expected the command to need approval');
+      },
+      (e) => {
+        if (!(e instanceof ApprovalRequiredError)) throw e;
+        return requestCommandApproval(live, command, e, harness.owner.id);
+      },
+    );
   const approval = (await listApprovalViews()).find(
     (view) => view.id === pending.approvalId,
   );
@@ -185,7 +197,7 @@ it('projects only data-step model labels into publish previews', async () =>
       const { preview } = await previewDraft();
       expect(preview.modelLabels).toEqual({ Customer: 'Customers' });
     } finally {
-      await discardNow();
+      await discardChanges();
     }
   }));
 
@@ -243,9 +255,9 @@ it('hydrates legacy merge reference labels through list, get and reused approval
     expect(JSON.stringify(direct?.preview)).not.toContain(
       'Unrelated private label',
     );
-    const reused = await runCommand(command, harness.owner.id, 'live');
-    expect(reused).toMatchObject({
-      approvalId: row.id,
+    const reused = await card(command);
+    expect(reused.approval).toMatchObject({
+      id: row.id,
       preview: { referenceLabels: { MergeOrder: 'Orders' } },
     });
     await startDraft('Merge references', harness.owner.id);
@@ -261,7 +273,7 @@ it('hydrates legacy merge reference labels through list, get and reused approval
         publishDataLines(preview as unknown as PublishPreview).join(' '),
       ).toContain('1 reference in Orders');
     } finally {
-      await discardNow();
+      await discardChanges();
     }
     await execute(command);
     const undo = await card({ type: 'undo' });

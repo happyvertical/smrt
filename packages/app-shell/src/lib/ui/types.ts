@@ -204,7 +204,101 @@ export interface PendingApproval {
   preview: unknown;
 }
 
+/** One waiting change as `GET /api/shell/changes` sends it (README "Changes waiting"). */
+export interface ChangeCardView {
+  id: string;
+  position: number;
+  group: string;
+  source: 'assistant' | 'import' | 'api' | 'quick';
+  /** Plain words for the card's heading. */
+  summary: string;
+  status: 'active' | 'removed';
+  revision: number;
+  /** An adopted older draft's change: no commands, no Remove, no Quick edit. */
+  opaque: boolean;
+  commands: Record<string, unknown>[];
+  checks: { code: string; message: string; cause?: string }[];
+  /** The assistant's review questions; they never block Apply. */
+  questions: ChangeQuestion[];
+  /** The owner's comments on this change and the assistant's answers. */
+  comments: ChangeComment[];
+  /** The assistant is changing this card for a comment right now. */
+  revising: boolean;
+  threadId: string;
+  messageId: string;
+  editable: boolean;
+}
+
+export interface ChangeQuestion {
+  id: string;
+  text: string;
+  /** `adds`: clicking it makes a new change; otherwise it just closes the question. */
+  choices: { label: string; adds: boolean; summary?: string }[];
+  state: 'open' | 'answered';
+  /** Index of the choice taken, once answered. */
+  answered?: number;
+}
+
+export interface ChangeComment {
+  kind: 'comment';
+  role: 'owner' | 'assistant';
+  text: string;
+  at: string;
+  state?: 'revising' | 'done';
+}
+
+export interface ChangeBlocker {
+  code: string;
+  message: string;
+  cardId?: string;
+  key?: string;
+  field?: string;
+}
+
+/** `GET /api/shell/changes`: the ONE source of the waiting count. */
+export interface ChangesState {
+  batchId: string | null;
+  status: 'none' | 'open' | 'held';
+  /** Active cards: the one number the owner sees. */
+  count: number;
+  generation: number;
+  /** Apply's `expect`. */
+  digest: string;
+  /** `stale`: waiting for its check; `checking`: the check is running. */
+  checkState: 'none' | 'ok' | 'blocked' | 'stale' | 'checking';
+  canApply: boolean;
+  /** The server's own `applyNowEligible`: the chat reply may offer "Apply now". */
+  applyNow: boolean;
+  blockers: ChangeBlocker[];
+  overwrites: {
+    recordsUpdated: number;
+    recordsMerged: number;
+    archivedValues: number;
+    archivedTables: number;
+  } | null;
+  held: string | null;
+  liveVersion: number;
+  baseVersion: number;
+  cards: ChangeCardView[];
+  discarded: { batchId: string; count: number; generation: number } | null;
+  lastApplied: {
+    batchId: string;
+    appliedAt: string;
+    versions: number[];
+    undone: boolean;
+    undoDigest: string;
+    count: number;
+  } | null;
+}
+
 export type ShellEvent =
+  | {
+      type: 'changes';
+      status: 'changed' | 'applied' | 'discarded' | 'undone';
+      batchId: string;
+      count: number;
+      generation: number;
+    }
   | {
       type: 'changed';
       target?: 'live' | 'draft';

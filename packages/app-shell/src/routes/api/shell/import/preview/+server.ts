@@ -46,7 +46,7 @@ export const GET: RequestHandler = guarded(async (event) => {
   if (!definition?.fields[WORKBOOK_ROW])
     throw new HttpError(
       409,
-      'This workbook preview is no longer available. Open the draft to inspect its records.',
+      'This workbook preview is no longer available. Start the import again to see them.',
     );
   const fields = table.fields
     .map((field) => names.fields[field.key])

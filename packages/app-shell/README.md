@@ -90,7 +90,6 @@ The same names and parameters on both surfaces. A wrong-shaped argument is a
 | `cleanUp` | `keep?` |
 | `importTemplate`, `exportTemplate` | `data`, `includeRecords?` |
 | `undoTo` (`app_undoto`) | `version` |
-| `startDraft`, `previewPublish`, `publishDraft`, `discardDraft` | `name?`; none; `expect?`; none. See [Draft then publish](#draft-then-publish-the-shell). `?target=live\|draft` (REST) names the copy a builder operation acts on |
 
 A FieldDef is `{ type, label?, required?, choices?, ref?, calculated? }`; `type` is one of
 text, number, integer, boolean, date, money, choice, reference, json. Field names
@@ -104,22 +103,22 @@ owner). Writes must be same-origin `application/json`. Errors are
 
 | Route | Body | Response |
 |---|---|---|
-| `GET /api/shell/describe?target=` | | `{ mode: 'live'\|'draft', draft: DraftInfo \| null, frozen, name, version, recipes, models: { [Model]: { kind: 'app'\|'shipped-subclass', label, table, className, extends, fields: { [name]: FieldDef }, ownFields: string[], methods: { [name]: { description, params } } } }, pendingApprovals }` (see [Draft then publish](#draft-then-publish-the-shell)) |
-| `GET /api/shell/history?target=` | | `{ mode, versions: { version, parent, author, summary, createdAt, purged, current, publish: { draftId, name } \| null }[] }` oldest first |
-| `POST /api/shell/undo?target=` | none | change result `{ version, summary, statements, appRestartMs, ... }`; 409 if purged; **202** `PendingApproval` (with `preview.replaced`, the rows that would be overwritten) when the change being undone converted a field's type |
+| `GET /api/shell/describe` | | `{ mode: 'live'\|'draft', draft: DraftInfo \| null, frozen, name, version, recipes, models: { [Model]: { kind: 'app'\|'shipped-subclass', label, table, className, extends, fields: { [name]: FieldDef }, ownFields: string[], methods: { [name]: { description, params } } } }, pendingApprovals }` (see [Changes waiting](#changes-waiting-the-shell)) |
+| `GET /api/shell/history` | | `{ mode, versions: { version, parent, author, summary, createdAt, purged, current, publish: { draftId, name } \| null }[] }` oldest first |
+| `POST /api/shell/undo` | none | change result `{ version, summary, statements, appRestartMs, ... }`; 409 if purged; **202** `PendingApproval` (with `preview.replaced`, the rows that would be overwritten) when the change being undone converted a field's type |
 | `GET /api/shell/approvals?status=` | | `{ approvals: ApprovalView[], pending }`; `status` is `pending`, `approved`, `denied` or `failed` |
 | `POST /api/shell/approvals/<id>` | `{ approve: boolean }` | `{ id, status: 'approved'\|'denied'\|'failed', result?, error? }`; 404 unknown, 409 already decided |
-| `GET /api/shell/records/<Model>?limit=&target=` | | `{ records: object[] }` |
-| `GET /api/shell/records/<Model>?field=&equals=&limit=&target=` | | The related records of one record: `{ records, total, truncated }` for the rows whose link field equals the id (`records` newest first by the model's main date field, else creation time, capped at `limit`; `total` counts matches among the first 1000 rows, `truncated` when that scan hit its limit). Owner only, one named copy; no new SQL |
-| `POST /api/shell/records/<Model>?target=` | the record's fields | 201 the record |
-| `GET /PUT /api/shell/records/<Model>/<id>?target=` | PUT: changed fields | the record |
-| `DELETE /api/shell/records/<Model>/<id>?target=` | | live: **202** `PendingApproval`, nothing is deleted until approved; draft: **200** `{ deleted: id }` |
+| `GET /api/shell/records/<Model>?limit=` | | `{ records: object[] }` |
+| `GET /api/shell/records/<Model>?field=&equals=&limit=` | | The related records of one record: `{ records, total, truncated }` for the rows whose link field equals the id (`records` newest first by the model's main date field, else creation time, capped at `limit`; `total` counts matches among the first 1000 rows, `truncated` when that scan hit its limit). Owner only, one named copy; no new SQL |
+| `POST /api/shell/records/<Model>` | the record's fields | 201 the record |
+| `GET /PUT /api/shell/records/<Model>/<id>` | PUT: changed fields | the record |
+| `DELETE /api/shell/records/<Model>/<id>` | | live: **202** `PendingApproval`, nothing is deleted until approved; draft: **200** `{ deleted: id }` |
 | `GET /m/<Model>?where=<field>:<id>` and `/m/<Model>/new?with=<field>:<id>` | | Pages: the table filtered to the records linked to one record, and a new-record form with that link field set (saving returns to the linked record). Only a visible link field and a plain id are honored |
 | `/api/app/<route>` (any method; copy in the `x-shell-target` header) | as the app's REST | the app's generated REST (`/api/app/chores` is the app's `/api/chores`); `DELETE` answers **202** `PendingApproval`; only the app's own collection routes are served (`sync/apply`, `_changes`, `_events` and unknown collections are 404) |
 | `GET /reports`, `GET /reports/<name>` | | Saved report list and live result in the owner's saved copy; sidebar group appears when reports exist |
-| `GET /api/shell/reports/<name>?target=` | | Bounded engine result; labels and reference destinations remain separate from raw ids |
-| `GET /api/shell/reports/<name>/csv?target=` | | Server-generated RFC 4180 CSV, screen formatting, labels instead of ids, formula-safe text |
-| `POST /api/shell/reports/<name>?target=` | `{ action: 'rename', label }` (display label) or `{ action: 'rename', to }` (definition key) or `{ action: 'remove' }` | Existing builder result or pending approval; live structure is frozen during a draft |
+| `GET /api/shell/reports/<name>` | | Bounded engine result; labels and reference destinations remain separate from raw ids |
+| `GET /api/shell/reports/<name>/csv` | | Server-generated RFC 4180 CSV, screen formatting, labels instead of ids, formula-safe text |
+| `POST /api/shell/reports/<name>` | `{ action: 'rename', label }` (display label) or `{ action: 'rename', to }` (definition key) or `{ action: 'remove' }` | Existing builder result or pending approval; live structure is frozen during a draft |
 | `GET /api/events` | | server-sent events |
 | `POST /mcp` | MCP Streamable HTTP | shell tools plus app tools, one policy |
 
@@ -368,111 +367,152 @@ and not a tier target of core's inference model). **Settings > Assistant**
 `GET`/`POST /api/shell/onboarding/chatgpt` (start, sign-out, model;
 `lib/server/onboarding.ts`).
 
-## Draft then publish (the shell)
+## Changes waiting (the shell)
 
-A draft is a test copy of the person's app (its definition and its records at
-that moment) that they build in while the live app keeps working. Rules the UI
-can rely on:
+Structural changes (models, fields, reports, loads, merges, methods, removals)
+made by the assistant, an import or any API caller do not reach the live app.
+Each becomes a **card** in the owner's changes waiting and runs only on a
+private working copy; the owner reviews them and applies them. Records are
+always live. Live **structure** is frozen while any card is active (also after
+a restart). All routes are owner-session, same-origin; there is no ``,
+`x-shell-target` or `/mcp` any more (400 on `/mcp`).
 
-- One draft at a time. While it is open **live structure is frozen** (frozen
-  again after every restart); live **records** keep working (create, edit,
-  delete, reports, the app's own REST and tools).
-- A draft's own records are throw-away test data and are **not carried** at
-  publish; records added to live meanwhile are kept.
-- A publish lands as N ordinary live versions (summaries tagged
-  `[draft: <name>] ...`) and can be undone in one step with `undoTo`.
-- **Every request names its copy**, there is no "current host": REST uses
-  `?target=live|draft` (absent = `live`; anything else is 400), `/api/app/*`
-  uses the `x-shell-target` header (its query string belongs to the app), MCP
-  uses the URL. `target=draft` with no draft open is 404 `no draft open`.
-- A structural request that names `live` while a draft is open is **409**
-  `The draft "<name>" is open, so the live app's structure is frozen. Make this
-  change in the draft (target=draft), or publish or discard the draft first.`
-- A risky change in the draft (remove a field or model, change a type, add a
-  method, delete a record, a DELETE through the app's REST) applies at once: the
-  draft host approves its own. On live it is an Approval, as before.
+- `GET /api/shell/changes` -> `{ batchId, status: 'none'|'open'|'held', count,
+  generation, digest, checkState: 'none'|'ok'|'blocked'|'stale'|'checking', canApply,
+  blockers[], overwrites: { recordsUpdated, recordsMerged, archivedValues,
+  archivedTables } | null, held, liveVersion, baseVersion, cards[], discarded:
+  { batchId, count } | null, lastApplied: { batchId, appliedAt, versions,
+  undone, undoDigest, count } | null }`. A card is `{ id, position, group,
+  source: 'assistant'|'import'|'api'|'quick', summary, status:
+  'active'|'removed', revision, opaque, commands[], checks[{code,message,cause?}],
+  questions[], threadId, messageId, editable }`. `count` is the one number to
+  show. Overwrite counts are shown and pinned by `digest`; they never block.
+  **Checks** run in the background: every change restarts a ~2 s debounce, then
+  the exact checks (`checkBatch`) run on the working copy, serialised with the
+  other changes work, and are stored only if `generation` is still the one
+  scheduled (an older result is dropped). `checkState` is `stale` (queued) then
+  `checking` then `ok`/`blocked`; the `changes` event follows. `digest` is empty
+  until a check finishes; Apply always re-runs the exact checks fresh. Cards
+  carry what blocks them (`checks`, with the removed change's id as `cause` for
+  `depends_on_removed`); a blocker that names no card stays in `blockers`
+  (`base_moved`). Blocker copy is plain words (never "draft" or "publish").
+  The digest pins the chain, each card's `revision` and the overwrite counts
+  only (rows a load would update, rows a merge removes): a record added to live
+  while changes wait that overwrites nothing does not move it, one that turns an
+  insert into an update does (409, review again; never a block on its own).
+  Slice 5's assistant review chains on `setAfterChecks(hook)` in
+  `lib/server/changes.ts`: the hook gets `{ batchId, generation, owner, ok,
+  isCurrent() }` after each stored check, outside the changes queue, errors
+  swallowed; it can read, never apply.
+- `POST /changes/cards/:id/remove|restore` `{ generation? }`; `PATCH
+  /changes/cards/:id` `{ label?, choices?, field? , generation? }` (quick edit;
+  a default cannot be set). All return the new state.
+- `POST /changes/apply` `{ expect: digest, generation? }` -> `{ id, status:
+  'approved', result }`; 409 when blocked, changed since review, or stale
+  `generation`. The owner's click; it records and decides an `apply-batch`
+  Approval. No tool, `/mcp` or assistant path can apply. A refusal body is
+  `{ error, code: 'refused', reason: 'blocked', blockers: [{code, message,
+  cardId?}] }` ("Can't apply yet": the server refuses however the client
+  behaves) or `{ ..., reason: 'changed' }`.
+- `POST /changes/cards/:id/remove-dependents` `{ generation? }` ("Remove those
+  too"): `:id` is a card flagged `depends_on_removed`; it and every card that
+  needs the same removed change go, then any the rebuild newly flags. "Put it
+  back" is `POST .../restore` of the flag's `cause`.
+- `POST /changes/discard`, `POST /changes/restore` ("Put them back"),
+  `GET /changes/preview` -> `{ changes, preview }` (SQL, methods, diff).
+- `POST /changes/undo` `{ batchId, expect: lastApplied.undoDigest }`: takes an
+  applied batch back; records added since Apply stay; 409 while changes wait.
+- Structural builder calls answer `{ status: 'change_waiting', waiting: true,
+  cardId, count, ...the engine result }`. History's undo and clean up are the
+  owner's (409 "Apply or discard your N waiting changes first" while changes
+  wait).
+- SSE (`/api/events`): `{ type: 'changes', status: 'changed'|'applied'|
+  'discarded'|'undone', batchId, count, generation }` (the older `draft` event
+  is still emitted for the import workflow).
 
-### Routes (owner only: 401 signed out, 403 anyone else; writes same-origin JSON)
+### Changes waiting UI (#5204)
 
-| Route | Body | Response |
-|---|---|---|
-| `GET /api/shell/draft` | | `{ draft: DraftInfo \| null, view: 'live'\|'draft' }` |
-| `POST /api/shell/draft` | `{ name? }` | **201** `DraftInfo`; 409 if one is already open |
-| `POST /api/shell/draft/preview` | none | `{ draft: DraftInfo, preview: PublishPreview }`; 404 no draft; 409 unpublishable |
-| `POST /api/shell/draft/publish` | `{ expect }` (required: the reviewed preview's `digest`) | the owner's own Publish, one step: `{ id, status: 'approved', result }`; 400 no `expect`; 409 when `expect` no longer matches or the apply refused (review again) |
-| `POST /api/shell/draft/discard` | `{ draftId? }` | `{ discarded: name }`; the owner's direct action (the UI confirms first); 404 none, 409 wrong id |
-| `GET /api/shell/draft/view` | | `{ view }` (`live` whenever no draft is open) |
-| `PUT /api/shell/draft/view` | `{ view: 'live'\|'draft' }` | `{ view }`; `draft` with no usable draft is 409 |
-| `POST /api/shell/undo-to?target=` | `{ version }` | the change result; 202 `PendingApproval` when an undone change converted a field's type; 409 purged |
-| `POST /api/apps/{startDraft,previewPublish,publishDraft,discardDraft,undoTo}` | as the tools | the same operations as generated REST; `publishDraft` and `discardDraft` answer **202** (an Approval) |
+- The layout loads `GET /api/shell/changes` once (`data.changes`, depends key
+  `smrt:changes`, refreshed by the SSE `changes` event); the header pill,
+  `/changes` and History read that one count. The pill (`ChangesPill`) sits in
+  the header's end slot next to the Assistant button, links to `/changes`, reads
+  "N changes waiting" (below 480px "N waiting"), and is absent when nothing
+  waits. It shows a spinner while checking and "needs a look" when blocked.
+- `/changes`: one card per active change in workbook order, with Remove (x),
+  Quick edit (name, choice options; no default) and, on the right, what will
+  change, Apply and Discard all. Apply sends the reviewed `digest` as `expect`;
+  a 409 refreshes the state and asks the owner to review again. A successful
+  Apply toasts "Applied. Your app is live" and lands on the records. Discard is
+  instant with "Put them back". Removed cards list with Put back.
+- `ChangeCard` shows Comment (`oncomment`, editable cards only) and a `more`
+  snippet that `ChangeCardExtras` fills: the comment thread ("Changing this…"
+  while the assistant works), the comment box, and the assistant's review
+  questions with click-to-answer choices (plain text only). Blockers arrive in
+  `state.blockers` (`cardId` marks the card).
+- History: one entry per applied batch ("Applied N changes"); only the newest,
+  not yet undone one has Undo (`POST /changes/undo` with `undoDigest`). While
+  changes wait every Undo is disabled with "Apply or discard your N waiting
+  changes first."
+- The Apply button uses a button-only shade (`--smrt-app-shell-action`, #c2470a
+  in light, 5:1 with white); the global primary token is unchanged.
 
-`DraftInfo = { id, name, status: 'open', baseVersion, version, changes,
-createdAt, createdBy, liveVersion, liveFrozen, publishable, problem, recovery }`.
-`changes` counts the changes made in the draft; `version` is null when its copy
-cannot be opened. `publishable: false` comes with a `problem` sentence (the data
-folder was restored or moved so the draft names another live app; its files are
-missing; it cannot be opened): show it and offer Discard (the only way out).
-`recovery: 'rolled-back'` means a restart interrupted a publish and it was
-undone; the draft is still open, publish again.
+An open draft from before changes waiting is adopted as opaque cards: no
+commands, not removable or editable one by one. A workbook import (#5207) is
+cards by table under one group on `/changes` (collapsed, with a count); each
+table card can be removed or its name/choices edited (a rebuild replays the
+loads, so it says "Rebuilding your changes"), and the import page's Apply is
+the same digest-pinned `POST /api/shell/changes/apply`. A template with records
+(`importTemplate`) is one card that carries them. The assistant
+gets no undo, apply or draft tool; its turn input says changes are collected.
 
-`PublishPreview = { digest, risky: true, fromVersion, toVersion, versions:
-{ version, draftVersion, author, summary, steps, statements }[], definition:
-DefinitionDiff, archives: { values, tables }, methods: { model, name, change:
-'added'\|'changed'\|'unchanged', description, code, ... }[] }`. EVERY method of
-the final definition is listed in full (draft code reaches live at publish, show
-it). Archive counts are of that moment and can drift. The publish Approval's
-`preview` is this object plus `draft` (the name); its `action` is
-`{ kind: 'publish-draft', draftId, draftName, digest }`. Approving applies
-exactly that chain and **fails** (status `failed`, the draft stays open) if the
-draft changed since. A tool, the assistant, `/mcp` or the generated REST leaves
-it pending; approve through `POST /api/shell/approvals/<id>` as for any
-Approval. The owner's review-page Publish (`POST /api/shell/draft/publish`,
-session cookie and same origin only) records the same Approval and decides it
-in one step, so it stays in Approvals as the audit row. A discard asked by a tool is `{ kind: 'discard-draft', draftId,
-draftName }`. A successful publish result is `{ version, versions, summary,
-archives, appRestartMs, draft }`.
+### The assistant and changes waiting (#5206)
 
-`describe` for each copy: `GET /api/shell/describe?target=live` is
-`{ mode: 'live', frozen: true, draft: DraftInfo, ... }` while a draft is open;
-`?target=draft` is `{ mode: 'draft', frozen: false, draft: DraftInfo, ... }`;
-with no draft `draft` is null and `frozen` false. A view of live therefore has
-what it needs for the draft strip from the same call.
-
-History: `GET /api/shell/history` (live) tags every version a publish made with
-`publish: { draftId, name }` (group rows by `draftId`; "Undo this publish" is
-`POST /api/shell/undo-to { version: <parent of the group's first row> }`).
-`?target=draft` lists only changes made in the draft (the live base version is
-left out).
-
-Events (`GET /api/events`) now say which copy changed:
-`{ type: 'changed', target: 'live'|'draft', version, summary }`,
-`{ type: 'records', target, model }` (reload only the view of that copy) and
-`{ type: 'draft', status: 'started'|'published'|'discarded'|'unpublishable', id, name }`
-(everything is stale: reload describe, history, lists).
-
-### Tools and MCP
-
-Tools: `app_startdraft` (`name?`), `app_previewpublish`, `app_publishdraft`
-(`expect?`; always a `pending_approval`), `app_discarddraft` (a
-`pending_approval`), `app_undoto` (`version`). `/mcp` names its copy in the URL,
-fixed per endpoint: `/mcp` is live (builder tools are refused while a draft is
-open; record tools work), `/mcp?target=draft` is the draft, and
-`/mcp?scope=assistant` is the assistant's split, resolved per call. In code,
-`callTool(principal, name, args, scope)` takes a
-`CallScope = { records, structure }` (`scopeFor('draft')` puts both on the
-draft); the default is live.
-
-### The assistant
-
-All engines (API key, ChatGPT plan, Claude Code, Codex) use the same scope
-(`assistant/scope.ts`), resolved at every call. No draft: everything is live,
-approvals as before. A draft open: builder tools go to the draft with no
-per-change approval and record tools to the copy the person is viewing (the
-saved view). The system prompt and every turn input carry the current mode (including resumed CLI sessions); stored user messages stay unchanged. `tool_result` events
-carry `copy: 'live'|'draft'` while a draft is open, and a turn that changed
-structure in the draft closes with "I made that change in the draft ... so the
-live app is unchanged". Publishing through the assistant raises the publish
-Approval and holds the turn; it never applies.
+- **Reply block.** A turn that made changes ends in a `changes_block` event
+  (stored as an empty assistant message with `block: 'changes'`, never shown to
+  the model). The dock draws it from the layout's live `changes` state: "N
+  changes waiting", the first few changes, "N questions" while any is open, and
+  Review (link to `/changes`) / Apply. Review leads while a question is open or
+  Apply is not ready; Apply leads once nothing is open. Only the newest block in
+  a thread is live; nothing shows once nothing waits. Apply is the owner's own
+  click on the same `POST /changes/apply` (digest-pinned).
+- **Apply now.** `applyNowEligible` (`lib/server/apply-now.ts`, pure): exactly
+  one active card, made by the assistant, only `defineModel`/`addField`/
+  `defineReport`, and the exact check found no record updated, merged or set
+  aside. `ChangesState.applyNow` carries it (the main button reads "Apply now").
+  `POST /changes/apply` with `source: 'chat'` makes the server recompute it
+  from the batch and its fresh check and ignore the client: otherwise 409
+  `reason: 'review_first'`. It runs the exact checks only; the assistant review
+  is never part of Apply.
+- **Comment to revise.** `POST /changes/cards/:id/comment {text}` runs an
+  assistant turn scoped to that one card (the same engines as chat; its own
+  per-card thread, never the dock's latest) and answers the new state once it
+  ends; the thread is `card.comments`. The turn is offered `change_revise
+  (cardId, command)` and read tools only: no structural builder tool and no
+  record writes. `change_revise` replaces that card's commands in an open batch
+  (revision +1, rebuilt, re-checked; if it does not fit, the card is put back
+  and the engine's reason returned), only for the card the turn was scoped to,
+  and it never applies. Scoped by a per-owner slot (`withRevision`) so the CLI
+  engines' separate `/mcp` requests see it. 409 while another assistant turn
+  runs; 503 without a connected assistant.
+- **Review questions.** After the exact checks pass (`setAfterChecks`, installed
+  at startup by `hooks.server.ts` through `installChangeReview`), one tool-free
+  model call (`change-review.ts`) reads the changes, the overwrite counts and a
+  few sample records as untrusted `<data>`, and may return `{questions:
+  [{cardId, text, choices: [{label, command?}]}]}`. Output is parsed strictly
+  and capped (6 questions, 2 per card, 4 choices, 300/60 characters); each
+  choice command must be a known structural, non-History command that the
+  working copy's `plan` accepts, else the choice is dropped. Results are
+  discarded when the batch generation moved on; the review is skipped (exact
+  checks unaffected) when no assistant is connected; it runs on the owner's API
+  or ChatGPT engine as one tracked call, billed like other assistant use (the
+  local agent CLI engines are skipped). Stored in `ChangeCard.questions`
+  (alongside the comment thread; commands stay server-side). Answered
+  questions are kept so they are not asked again. `POST
+  /changes/questions/:id/answer {choice, generation?}` takes only a choice
+  INDEX: a choice with a command becomes a NEW card (source `api`, so never
+  Apply now), one without just closes the question. Questions never block
+  Apply, are not in the digest, and nothing here applies, approves or undoes
+  (`invariants.test.ts`).
 
 ## Draft then publish (engine API)
 
@@ -519,25 +559,9 @@ pnpm --filter @happyvertical/smrt-app-shell typecheck
 
 See [AGENTS.md](AGENTS.md) for the invariants and [agents/engine.md](agents/engine.md) for the engine.
 
-### Draft UI
+### Draft UI (removed)
 
-The app header (every owner page, not plugin views) offers a quiet **Start a draft**.
-Once a draft has changes it shows **Live / Draft**, the unpublished change count,
-**Discard** (confirmed), and **Review and publish**; an empty draft shows only the
-switch and **Close draft**. Starting a draft
-opens its view; switching copies saves the owner's choice and returns home. In
-Draft, a warning explains that test records are thrown away and draft-only models
-have a **new** marker. Chat shows **Building in draft**; tool chips name the copy,
-including after reopening a thread.
-
-`/draft/review` rehearses the publish and shows definition changes, conversions,
-archive counts, and all final method code. **Publish** requests a digest-pinned
-Approval; the existing approval card resolves it. A changed-chain failure offers
-**Review again**. Counts can drift as live records change. History groups each
-publish under its draft name; **Undo this publish** returns to its first parent
-(and takes back subsequent changes), with an Approval if needed. Lifecycle events
-refresh the bar and pages without reloading. An unusable draft explains the problem
-and keeps Discard available. See [UI validation](agents/draft-ui.md).
+The Live/Draft bar and `/draft/review` are gone (#5178): owners see changes waiting instead (see [Changes waiting](#changes-waiting-the-shell); the UI is described under "Changes waiting UI" above). `agents/draft-ui.md` describes the retired bar.
 
 ### Engine calculated fields
 
@@ -642,17 +666,16 @@ instead. Cancel/discard removes the file.
 The same page shows each table's rows read/skipped/loaded, typed fields and
 source columns, links, choices, calculations, reports, findings with sheet/cell
 examples and totals proof. **Formulas not translated** lists source formulas
-kept as saved values; those fields do not recalculate. **Review and publish** opens the existing draft
-review; only its normal publish approval can change live data. **Discard import**
+kept as saved values; those fields do not recalculate. **Review and apply** opens the changes waiting view; only the owner's Apply can change live data. **Discard import**
 removes the draft and stored workbook. Failed proof also removes its draft.
-Use the Live/Draft switch and open a table to inspect its records before publishing.
 Models keep readable names such as `Customers` and `Orders`; plan fields become
 camelCase (`orderNo`, `unitPrice`, `qty`). Name collisions use numeric suffixes,
 with the resolved names retained in `plan.engineNames`. Hidden `workbookRow` and
 `workbookLookup` fields support proof and links. Calculations use field labels in
 review and History. Year and identifier checks remain in the proof without being
 presented as useful totals.
-Only one draft/import may be open. Importing into existing tables, saved mappings,
+Only one import may run, and none starts while other changes wait (apply or
+discard them first). Importing into existing tables, saved mappings,
 re-import and export are not included.
 
 The API accepts a raw binary workbook at `POST /api/shell/import`, returning

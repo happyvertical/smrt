@@ -1,12 +1,21 @@
 // The generated REST path for the builder operations (`POST /api/apps/<op>`):
-// the same owner check and approval gate as MCP, 202 for a risky operation, and
-// failures that are logged.
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+// the same owner check as MCP, structural operations wait as changes for the
+// owner (nothing reaches live), and failures that are logged.
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest';
 import { App } from '../objects/App.ts';
 import { appsRestHandle } from './apps-rest.ts';
+import { discardChanges } from './changes.ts';
 import { getHost } from './host.ts';
 import { runAs } from './owner.ts';
-import { openShell, type ShellHarness } from './test-support.ts';
+import { applyWaiting, openShell, type ShellHarness } from './test-support.ts';
 
 let h: ShellHarness;
 beforeAll(async () => {
@@ -17,12 +26,16 @@ beforeAll(async () => {
       points: { type: 'text' },
     });
   });
+  await applyWaiting(h.owner);
   const host = await getHost();
   await host.create('Chore', { title: 'a', points: '3' });
   await host.create('Chore', { title: 'b', points: 'lots' });
 });
 afterAll(async () => {
   await h.close();
+});
+afterEach(async () => {
+  await runAs(h.owner, () => discardChanges()).catch(() => {});
 });
 
 const ORIGIN = 'http://localhost:5173';
@@ -56,7 +69,7 @@ async function rest(
   return response;
 }
 
-describe('risky builder operations over REST answer 202 and apply nothing', () => {
+describe('risky builder operations over REST wait as changes and apply nothing', () => {
   const risky: [string, Record<string, unknown>][] = [
     [
       'changeFieldType',
@@ -72,33 +85,28 @@ describe('risky builder operations over REST answer 202 and apply nothing', () =
         method: { description: 'bump', code: 'return 1;' },
       },
     ],
-    ['cleanUp', { keep: 0 }],
   ];
   for (const [op, body] of risky)
     it(`${op}`, async () => {
       const before = (await getHost()).version;
       const res = await rest(h.owner, op, body);
-      expect(res.status).toBe(202);
+      expect(res.status).toBe(200);
       const out = (await res.json()) as {
-        status: string;
-        approvalId: string;
-        summary: string;
-        preview?: unknown;
+        action: string;
+        result: { status: string; waiting: boolean; count: number };
       };
-      expect(out.status).toBe('pending_approval');
-      expect(out.approvalId).toBeTruthy();
-      expect(out.summary).toBeTruthy();
+      expect(out.result).toMatchObject({
+        status: 'change_waiting',
+        waiting: true,
+        count: 1,
+      });
       expect((await getHost()).version).toBe(before);
     });
 
-  it('changeFieldType carries the conversion preview', async () => {
-    const res = await rest(h.owner, 'changeFieldType', {
-      model: 'Chore',
-      field: 'points',
-      to: { type: 'integer' },
-    });
-    const out = (await res.json()) as { preview: Record<string, unknown> };
-    expect(JSON.stringify(out.preview)).toMatch(/lots/);
+  it("clean up is the owner's from History, never an API call", async () => {
+    const res = await rest(h.owner, 'cleanUp', { keep: 0 });
+    expect(res.status).toBe(409);
+    expect(JSON.stringify(await res.json())).toContain('History');
   });
 });
 
@@ -109,7 +117,8 @@ describe('REST and MCP agree on the parameter names', () => {
       { model: 'Chore', field: 'points', to: { type: 'integer' } },
     ]) {
       const res = await rest(h.owner, 'changeFieldType', body);
-      expect(res.status).toBe(202);
+      expect(res.status).toBe(200);
+      await runAs(h.owner, () => discardChanges());
     }
   });
 
@@ -144,6 +153,11 @@ describe('the rest of the REST path', () => {
     });
     expect(res.status).toBe(200);
     expect(((await res.json()) as { action: string }).action).toBe('addField');
+    // it waits for the owner: live has no such field until Apply
+    expect((await getHost()).describe().models.Chore.fields).not.toHaveProperty(
+      'notes',
+    );
+    await applyWaiting(h.owner);
     expect((await getHost()).describe().models.Chore.fields).toHaveProperty(
       'notes',
     );

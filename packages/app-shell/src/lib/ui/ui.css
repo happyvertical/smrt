@@ -392,3 +392,14 @@
     outline-offset: 2px;
   }
 }
+
+/* Button-only action shade for the changes waiting controls: white on the
+   theme orange (#e35d12) is about 3.6:1, this is 5:1. The global primary token
+   is unchanged; dark keeps the theme's own primary. */
+:root,
+[data-color-scheme='light'] {
+  --smrt-app-shell-action: #c2470a;
+}
+[data-color-scheme='dark'] {
+  --smrt-app-shell-action: var(--smrt-color-primary);
+}

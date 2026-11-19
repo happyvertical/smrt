@@ -10,26 +10,19 @@
  */
 
 import { isPending, runCommand } from '$lib/server/builder';
-import {
-  guarded,
-  HttpError,
-  json,
-  ownerOf,
-  readJson,
-  targetOf,
-} from '$lib/server/http';
+import { guarded, HttpError, json, ownerOf, readJson } from '$lib/server/http';
 import { runAs } from '$lib/server/owner';
 import type { RequestHandler } from './$types';
 
 export const POST: RequestHandler = guarded(async (event) => {
   const owner = await ownerOf(event);
-  const target = targetOf(event);
+  const target = 'live';
   const body = await readJson(event.request);
   if (typeof body.version !== 'number' || !Number.isInteger(body.version))
     throw new HttpError(400, '`version` must be a whole number');
   const version = body.version;
   const out = await runAs(owner, () =>
-    runCommand({ type: 'undoTo', version }, owner.id, target),
+    runCommand({ type: 'undoTo', version }, owner.id, target, 'owner'),
   );
   return isPending(out) ? json(out, 202) : json(out);
 });
