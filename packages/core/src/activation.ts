@@ -138,6 +138,26 @@ export function createActivationCoordinator(
       const work = withRuntimeSchemaActivation(async () => {
         if (closure.models.every((id) => ready.has(id))) return;
         if (invalidGraph) throw invalidGraph;
+        // A standalone run-time model (an app editor list: `runtime-model:`,
+        // extending nothing, replacing nothing) can already hold one of these
+        // tables. Refuse before importing anything, so the process keeps one
+        // class family per table. Run-time subclasses and replacements of a
+        // model share its table legitimately and are not refused (the same
+        // rule as the migrate's buildOwnedTables).
+        const tables = new Set(closure.tables);
+        for (const entry of ObjectRegistry.getAllClasses().values()) {
+          const id = entry.qualifiedName ?? entry.name;
+          const standaloneRuntime =
+            entry.sourceFilePath?.startsWith('runtime-model:') === true &&
+            (!entry.extends || entry.extends === 'SmrtObject') &&
+            !entry.replacedQualifiedNames?.length;
+          if (!standaloneRuntime || closure.models.includes(id)) continue;
+          const table = ObjectRegistry.getTableName(id);
+          if (table && tables.has(table))
+            throw new Error(
+              `Activation table ${table} is already used by the run-time model ${id}; it cannot also hold ${closure.models.join(', ')}`,
+            );
+        }
         const before = new Set(ObjectRegistry.getAllClasses().keys());
         const allowed = new Set([
           ...closure.models,

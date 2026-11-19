@@ -32,6 +32,7 @@ import { SmrtObject } from '../object.js';
 import { ObjectRegistry } from '../registry.js';
 import { setRuntimeExposureGate } from '../runtime-exposure.js';
 import { runtimeListTableName } from '../runtime-list-table.js';
+import { registerRuntimeModel } from '../runtime-model.js';
 import { snapshotObjectRegistryState } from '../test-utils.js';
 import { getTestDatabase } from '../testing/database.js';
 
@@ -1253,5 +1254,43 @@ describe('app model editor: undo and import activate restored recipes', () => {
       /MODEL_TABLE_COLLISION: guard_members is the table of the installed model/,
     );
     expect(await e.history()).toEqual([]);
+  });
+  it('refuses to load a recipe onto a table a standalone run-time list holds, before importing it', async () => {
+    enabled = [];
+    const activation = await boot();
+    const e = await editorFor(undefined, book());
+    await applier(e)({ type: 'create_list', name: 'GuardMembers', list: mats });
+    await expect(activation.activate([MEMBER])).rejects.toThrow(
+      /Activation table guard_members is already used by the run-time model/,
+    );
+    expect(ObjectRegistry.getClass(MEMBER)).toBeUndefined();
+    expect(() => ObjectRegistry.getAllSchemasAsDefinitions()).not.toThrow();
+  });
+
+  it('still activates a closure whose table a run-time subclass of a model shares', async () => {
+    enabled = [];
+    const activation = await boot();
+    // The provider as a single-table family, and a run-time subclass of it.
+    class GuardMember extends SmrtObject {
+      name = '';
+      visits = 0;
+    }
+    field({ type: 'text' })(GuardMember.prototype, 'name');
+    field({ type: 'integer' })(GuardMember.prototype, 'visits');
+    ObjectRegistry.register(GuardMember, {
+      packageName: MEMBER_PKG,
+      tableName: MEMBER_TABLE,
+      tableStrategy: 'sti',
+      tenantScoped: true,
+    });
+    registerRuntimeModel({
+      packageName: '@fixture/editor-guards-extension',
+      name: 'GuardPatron',
+      extends: MEMBER,
+      tableName: MEMBER_TABLE,
+      fields: { patronLevel: { type: 'text' } },
+    });
+    await activation.activate([MEMBER]);
+    expect(activation.isReady(MEMBER)).toBe(true);
   });
 });
