@@ -19,7 +19,7 @@ vi.mock('@happyvertical/ai', async (importOriginal) => {
 
 import { setAiUsageTenantResolver } from '../adapters/ai-usage-recorder.js';
 import { config } from '../config.js';
-import { getAiRun } from '../system/browser';
+import { AiRunNotFoundError, getAiRun, openAiRun } from '../system/browser';
 import { createTrackedAiClient } from '../tracked-ai-client.js';
 import {
   hasTenantPredicate,
@@ -235,6 +235,30 @@ describe('tracked client scope', () => {
     expect(sent).toHaveLength(0);
     await client.message('hello', { runContext: context } as never);
     expect(await getAiRun(db, run.id)).toMatchObject({ calls: 1 });
+  });
+
+  it('never bills a run whose id was pruned and reused by another tenant after binding', async () => {
+    const db = await memoryDb();
+    const one = createTrackedAiClient({ db, tenantId: 'tenant-one', ai });
+    const { run, context } = await one.openRun({ type: 'turn' });
+    const client = await one.client(prompt, { runContext: context });
+    // The run is pruned and tenant-two opens one under the same id.
+    await db.query('DELETE FROM _smrt_ai_run_events WHERE run_id = $1', run.id);
+    await db.query('DELETE FROM _smrt_ai_runs WHERE id = $1', run.id);
+    await openAiRun(
+      { db, usageTracking: true, tenantId: 'tenant-two' },
+      { id: run.id, type: 'turn' },
+    );
+    await expect(client.message('hello')).rejects.toBeInstanceOf(
+      AiRunNotFoundError,
+    );
+    expect(sent).toHaveLength(0);
+    expect(await getAiRun(db, run.id)).toMatchObject({
+      tenantId: 'tenant-two',
+      calls: 0,
+      reservedCalls: 0,
+    });
+    expect(rowsOf(await db.query('SELECT id FROM _smrt_ai_usage'))).toEqual([]);
   });
 
   it('bills a global client run call to the global scope inside an ambient tenant', async () => {

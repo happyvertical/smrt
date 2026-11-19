@@ -661,6 +661,43 @@ export function forUpdate(tx: AiRunTx): string {
   return tx.engine === 'postgres' ? ' FOR UPDATE' : '';
 }
 
+/**
+ * The tenant an accounting operation established for its run, carried into
+ * the final statements and row locks (`undefined`: none established). Not
+ * part of the package surface: `system/browser.ts` lists this module's
+ * exports by name.
+ *
+ * @internal
+ */
+export interface AiRunScopedTxOptions extends AiRunTxOptions {
+  expectedTenant?: string | null;
+}
+
+/** @internal The expected tenant an options object carries, if any. */
+export function expectedTenantOf(
+  options: AiRunTxOptions | undefined,
+): string | null | undefined {
+  return (options as AiRunScopedTxOptions | undefined)?.expectedTenant;
+}
+
+const settlementTenants = new WeakMap<object, string | null>();
+
+/**
+ * @internal Remember the tenant a settlement's run was established in, for
+ * a settlement that is queued and written later.
+ */
+export function rememberSettlementTenant(
+  input: object,
+  tenant: string | null,
+): void {
+  settlementTenants.set(input, tenant);
+}
+
+/** @internal The tenant remembered for a queued settlement, if any. */
+export function settlementTenantOf(input: object): string | null | undefined {
+  return settlementTenants.get(input);
+}
+
 /** ` AND <column> = $n` (or `IS NULL`) for a known tenant; '' for none. */
 function tenantClause(
   tenant: string | null | undefined,
@@ -954,9 +991,10 @@ export async function lockAiRunChainFenced(
   tx: AiRunTx,
   runId: string,
   fence: AiRunClaimFence | undefined,
+  expectedTenant?: string | null,
 ): Promise<AiRunRow[]> {
   await assertAiRunFence(tx, runId, fence);
-  return lockAiRunChain(tx, runId);
+  return lockAiRunChainInTenant(tx, runId, expectedTenant);
 }
 
 /**

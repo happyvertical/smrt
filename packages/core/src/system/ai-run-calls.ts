@@ -28,9 +28,11 @@ import {
   AiCallLimitError,
   type AiRunClaimFence,
   AiRunNotFoundError,
+  type AiRunScopedTxOptions,
   AiRunStoppedError,
   getAiRun,
   newAiRunId,
+  rememberSettlementTenant,
 } from './ai-run-model.js';
 
 const logger = createLogger({ level: 'info' });
@@ -229,6 +231,18 @@ function isAbort(error: unknown): boolean {
 }
 
 /**
+ * The accounting options that carry the context's tenant into the run's
+ * final lookups and locks (empty when the context names none): a run whose
+ * id was pruned and reused by another tenant after the context was made is
+ * never reserved, settled or released.
+ */
+function inContextTenant(context: AiRunContext): AiRunScopedTxOptions {
+  return context.tenantId !== undefined
+    ? { expectedTenant: context.tenantId ?? null }
+    : {};
+}
+
+/**
  * Write one call's usage row with its settlement; the handlers run only
  * after it commits. A settlement that fails every retry waits on the
  * database's pending list.
@@ -252,8 +266,13 @@ async function settleTaggedCall(
   };
   const input = { runId: context.runId, callId, usage: tagged, status };
   const after = afterSettle ? () => afterSettle(tagged) : undefined;
+  // The run is settled in the tenant its context names, also when the
+  // settlement is queued and written later.
+  if (context.tenantId !== undefined) {
+    rememberSettlementTenant(input, context.tenantId ?? null);
+  }
   try {
-    await settleAiCall(context.db, input);
+    await settleAiCall(context.db, input, inContextTenant(context));
   } catch (error) {
     logger.warn(
       `[smrt] AI run ${context.runId} settlement of call ${callId} failed; kept pending: ${
@@ -375,7 +394,10 @@ export async function beginAiRunCall(
           name: request.name ?? context.stepName ?? null,
           parentEventId: request.parentEventId ?? null,
         },
-        context.fence ? { fence: context.fence } : {},
+        {
+          ...(context.fence ? { fence: context.fence } : {}),
+          ...inContextTenant(context),
+        },
       );
 
   const slot: { event?: SmrtAiUsageEvent; ended?: true } = {};
@@ -441,11 +463,11 @@ export async function beginAiRunCall(
         // It reported usage before it ended: charged, with how it ended.
         await settle(slot.event, status);
       } else {
-        await releaseAiCall(context.db, {
-          runId: context.runId,
-          callId,
-          status,
-        }).catch((releaseError) => {
+        await releaseAiCall(
+          context.db,
+          { runId: context.runId, callId, status },
+          inContextTenant(context),
+        ).catch((releaseError) => {
           logger.warn(
             `[smrt] AI run ${context.runId} could not release call ${callId}: ${
               releaseError instanceof Error

@@ -30,6 +30,7 @@ import {
   AiRunError,
   AiRunNotFoundError,
   type AiRunRow,
+  type AiRunScopedTxOptions,
   type AiRunStopDetail,
   AiRunStoppedError,
   type AiRunTx,
@@ -37,15 +38,18 @@ import {
   aiRunActiveTime,
   aiRunQuery,
   dateOrNull,
+  expectedTenantOf,
   getAiRun,
   getRows,
   isAiRunFinal,
   lockAiRun,
   lockAiRunChain,
   lockAiRunChainFenced,
+  lockAiRunChainInTenant,
   newAiRunId,
   num,
   readAiRunChainIds,
+  settlementTenantOf,
   withAiRunTransaction,
   writeAiRunTotals,
 } from './ai-run-model.js';
@@ -270,7 +274,12 @@ export async function reserveAiCalls(
   const result = await withAiRunTransaction(
     db,
     async (tx): Promise<AiCallReservation[] | AiRunStoppedError> => {
-      const chain = await lockAiRunChainFenced(tx, runId, options.fence);
+      const chain = await lockAiRunChainFenced(
+        tx,
+        runId,
+        options.fence,
+        expectedTenantOf(options),
+      );
       if (supplied.length > 0) {
         // A call id names one call: its one event and its usage row's id.
         const taken = getRows(
@@ -526,8 +535,9 @@ async function ownsUsageRow(
 async function settleInTx(
   tx: AiRunTx,
   input: SettleAiCallInput,
+  expectedTenant?: string | null,
 ): Promise<AiCallSettlement> {
-  const chain = await lockAiRunChain(tx, input.runId);
+  const chain = await lockAiRunChainInTenant(tx, input.runId, expectedTenant);
   const status = input.status ?? 'ok';
   const usage = input.usage;
   let path: AiCallSettlement;
@@ -642,7 +652,11 @@ export async function settleAiCall(
   input: SettleAiCallInput,
   options: AiRunTxOptions = {},
 ): Promise<AiCallSettlement> {
-  return withAiRunTransaction(db, (tx) => settleInTx(tx, input), options);
+  return withAiRunTransaction(
+    db,
+    (tx) => settleInTx(tx, input, expectedTenantOf(options)),
+    options,
+  );
 }
 
 async function releaseInTx(
@@ -685,7 +699,11 @@ export async function releaseAiCall(
   return withAiRunTransaction(
     db,
     async (tx) => {
-      const chain = await lockAiRunChain(tx, input.runId);
+      const chain = await lockAiRunChainInTenant(
+        tx,
+        input.runId,
+        expectedTenantOf(options),
+      );
       return releaseInTx(tx, chain, input.callId, input.status);
     },
     options,
@@ -1191,6 +1209,8 @@ async function repairOrphanedAiRuns(
 interface PendingSettlement {
   input: SettleAiCallInput;
   afterCommit?: () => Promise<void>;
+  /** The tenant the call's run was established in, when known. */
+  expectedTenant?: string | null;
   /** The write in flight for this entry, followed by every flush. */
   settling?: Promise<PendingOutcome>;
   /** When its last "still pending" warning was logged (ms since epoch). */
@@ -1242,9 +1262,11 @@ export function deferAiRunSettlement(
   input: SettleAiCallInput,
   afterCommit?: () => Promise<void>,
 ): void {
+  const expectedTenant = settlementTenantOf(input);
   pendingList(db, true)?.push({
     input,
     ...(afterCommit ? { afterCommit } : {}),
+    ...(expectedTenant !== undefined ? { expectedTenant } : {}),
   });
 }
 
@@ -1297,7 +1319,12 @@ async function writeEntry(
   const { callId, runId } = entry.input;
   const now = (options.now ?? (() => new Date()))();
   try {
-    await settleAiCall(db, entry.input, options);
+    await settleAiCall(db, entry.input, {
+      ...options,
+      ...(entry.expectedTenant !== undefined
+        ? { expectedTenant: entry.expectedTenant }
+        : {}),
+    } as AiRunScopedTxOptions);
     removePending(list, entry);
     return 'written';
   } catch (error) {
