@@ -672,6 +672,7 @@ export {
 // Request tenant context hooks (installed by smrt-tenancy, which browser
 // bundles may include).
 export {
+  type EnterRequestTenantContext,
   enterRequestTenantContext,
   getRequestTenantContext,
   type RequestTenantContext,

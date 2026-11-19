@@ -80,7 +80,9 @@ emitted collection and item actions) passes its options through
 `scopeTenantReadOptions()`, which drops every ownership key the caller sent
 (`tenantId`, and each ownership field under its property or column name) and
 sets the request's scope under the ownership property (active tenant, or
-`null` without one; untouched under a super-admin bypass). One core module
+`null` without one; untouched under a super-admin bypass only on a class that
+allows it, `allowSuperAdminBypass`, as the interceptor decides). Named GET
+action arguments are read from the same scoped options. One core module
 (`src/tenant-read-scope.ts`) resolves all of it at request time from the
 live registry, so a model whose tenancy is registered at runtime is covered
 like one declared in its manifest: emitted routes also enter the caller's

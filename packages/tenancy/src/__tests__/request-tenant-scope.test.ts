@@ -6,6 +6,7 @@
 
 import { AsyncResource } from 'node:async_hooks';
 import {
+  enterRequestTenantContext,
   field,
   ObjectRegistry,
   SmrtCollection,
@@ -122,5 +123,29 @@ describe('request-time tenant scope with tenancy enabled', () => {
     });
     // The property the base class declares, never the SQL column name.
     expect(scoped).toEqual({ title: 'kept', organizationId: null });
+  });
+
+  it('refuses to enter a request tenant context without a tenant', async () => {
+    await new AsyncResource('request').runInAsyncScope(async () => {
+      for (const tenantIdValue of [null, undefined, '']) {
+        expect(() =>
+          enterRequestTenantContext({
+            tenantId: tenantIdValue as unknown as string,
+          }),
+        ).toThrow(TypeError);
+      }
+      // Nothing was entered, so a required-mode read is refused rather than
+      // scoped to rows without an owner.
+      expect(hasTenantContext()).toBe(false);
+      await expect(ledgers.list({})).rejects.toBeInstanceOf(TenantContextError);
+    });
+  });
+
+  it('enters a request tenant context that names its tenant', async () => {
+    await new AsyncResource('request').runInAsyncScope(async () => {
+      enterRequestTenantContext({ tenantId: THEIRS });
+      expect(hasTenantContext()).toBe(true);
+      await expect(ledgers.list({})).resolves.toEqual([]);
+    });
   });
 });

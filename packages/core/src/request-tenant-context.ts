@@ -12,10 +12,17 @@ export interface RequestTenantContext {
   permissions?: ReadonlySet<string>;
 }
 
+/** A tenant context to enter: always names its tenant. */
+export interface EnterRequestTenantContext {
+  tenantId: string;
+  userId?: string;
+  permissions?: ReadonlySet<string>;
+}
+
 /** What smrt-tenancy lends core for request-time tenancy. */
 export interface RequestTenantContextHooks {
   /** Enter a tenant context for the rest of the current request. */
-  enter(context: RequestTenantContext): void;
+  enter(context: EnterRequestTenantContext): void;
   /** The active tenant context, if any. */
   current(): RequestTenantContext | undefined;
   /**
@@ -47,8 +54,24 @@ export function getRequestTenantContext(): RequestTenantContext | undefined {
   return globalThis.__smrtRequestTenantContextHooks?.current();
 }
 
-/** Enter a request tenant context; does nothing without tenancy. */
-export function enterRequestTenantContext(context: RequestTenantContext): void {
+/**
+ * Enter a request tenant context; does nothing without tenancy.
+ *
+ * Throws `TypeError`, before any context changes, unless `tenantId` is a
+ * non-empty string: a context without a tenant would read as an active one,
+ * so required-mode reads would be scoped to rows without an owner instead of
+ * being refused.
+ */
+export function enterRequestTenantContext(
+  context: EnterRequestTenantContext,
+): void {
+  const tenantId = (context as { tenantId?: unknown } | null | undefined)
+    ?.tenantId;
+  if (typeof tenantId !== 'string' || tenantId.length === 0) {
+    throw new TypeError(
+      'enterRequestTenantContext requires a non-empty string tenantId',
+    );
+  }
   globalThis.__smrtRequestTenantContextHooks?.enter(context);
 }
 

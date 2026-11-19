@@ -657,6 +657,7 @@ export {
 // The tenant scope request-facing reads add when no interceptor narrows them,
 // and the request tenant context hooks smrt-tenancy installs.
 export {
+  type EnterRequestTenantContext,
   enterRequestTenantContext,
   getRequestTenantContext,
   type RequestTenantContext,

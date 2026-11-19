@@ -920,7 +920,11 @@ export function enableTenancy(options: TenantInterceptorOptions = {}): void {
   // this package.
   setRequestTenantContextHooks({
     enter: (context) =>
-      enterTenantContext(context as Parameters<typeof enterTenantContext>[0]),
+      enterTenantContext({
+        tenantId: context.tenantId,
+        ...(context.userId ? { userId: context.userId } : {}),
+        permissions: new Set(context.permissions ?? []),
+      }),
     current: () => getCurrentTenant(),
     // The interceptor's own rule for a read: the bypass flag applies only to
     // a class that opts in, and never inside a bounded hierarchy read scope.
