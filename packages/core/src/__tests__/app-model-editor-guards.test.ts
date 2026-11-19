@@ -391,14 +391,15 @@ describe('app model editor: installed model names and tables', () => {
         application: 'editor-guards',
         tenantId: TENANT,
       });
-      let raced = false;
+      // Armed only after construction: boot also runs in a transaction.
+      let armed = false;
       const store: AppModelHistoryStore = {
         ...base,
         // Another process (another journal) creates the table after this
         // editor validated and before it takes the lock.
         transaction: async (work) => {
-          if (!raced) {
-            raced = true;
+          if (armed) {
+            armed = false;
             await db.query(
               'CREATE TABLE guard_notes (id UUID PRIMARY KEY, title TEXT)',
             );
@@ -407,13 +408,14 @@ describe('app model editor: installed model names and tables', () => {
         },
       };
       const e = await editorFor({ store });
+      armed = true;
       await expect(
         applier(e)({
           type: 'create_list',
           name: 'GuardNotes',
           list: listDefinition,
         }),
-      ).rejects.toThrow(/MODEL_TABLE_COLLISION: guard_notes already exists/);
+      ).rejects.toThrow(/MODEL_TABLE_COLLISION: guard_notes is already in use/);
       expect(await e.history()).toEqual([]);
       expect(await e2eColumns('guard_notes')).toEqual(['id', 'title']);
     },
@@ -2278,6 +2280,55 @@ describe('app model editor: history reads and completion', () => {
     const reopened = await open();
     expect(reopened.snapshot().revision).toBe(2);
     expect(reopened.snapshot().cookbook.layout?.items?.[item]).toBeUndefined();
+  });
+
+  it('refuses an edit whose projection fails after structural validation, before journalling it', async () => {
+    // A catalog entry whose projection starts failing after boot.
+    let failing = false;
+    const flaky = {
+      id: '@fixture/editor-guards-flaky:Flaky',
+      name: 'Flaky',
+      exposed: true,
+    } as Record<string, unknown>;
+    Object.defineProperty(flaky, 'packageId', {
+      enumerable: true,
+      get() {
+        if (failing) throw new Error('catalog entry unreadable');
+        return 'editor-guards-flaky';
+      },
+    });
+    const e = await createAppModelEditor({
+      db,
+      application,
+      tenantId: TENANT,
+      packageName: APP,
+      cookbook: memberBook(),
+      catalog: {
+        ...memberCatalog,
+        models: [...memberCatalog.models, flaky as never],
+      },
+      authorize: (c) => c.actor === 'owner',
+    });
+    await applyTo(e)({ type: 'create_list', name: 'GuardMat', list: mats });
+    failing = true;
+    await expect(
+      e.apply(
+        {
+          type: 'add_field',
+          model: 'GuardMat',
+          name: 'colour',
+          field: { type: 'text' },
+        },
+        {
+          actor: 'owner',
+          tenantId: TENANT,
+          expectedRevision: 1,
+          requestId: 'req-flaky',
+        },
+      ),
+    ).rejects.toThrow(/INVALID_MODEL_EDIT: the cookbook cannot be projected/);
+    // Nothing was journalled: no pending revision blocks the editor.
+    expect((await e.history()).map((row) => row.status)).toEqual(['applied']);
   });
 
   it('classifies abandoned rows by one predicate in light and full reads', async () => {
