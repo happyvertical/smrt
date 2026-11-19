@@ -25,7 +25,11 @@
  *   subjectId: post.id,
  *   subjectRevisionHash: hashOf(post),
  * });
- * await approvals.decide(editor, request.id, { decision: 'approve' });
+ * // Name the reviewed revision (required for allowRevisedApproval kinds).
+ * await approvals.decide(editor, request.id, {
+ *   decision: 'approve',
+ *   expectedSubjectRevisionHash: hashOf(post),
+ * });
  * const used = await approvals.consume(publisher, request.id, hashOf(post));
  * if (used.outcome === 'transitioned') await publish(post);
  * ```
