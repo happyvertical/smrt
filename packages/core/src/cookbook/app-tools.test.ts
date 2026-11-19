@@ -1322,6 +1322,39 @@ describe('app customization tools', () => {
     expect(await editor.history()).toHaveLength(1);
   });
 
+  it('refuses an approved undo over a host cookbook that changed while it was activating', async () => {
+    const revision = editor.snapshot().revision;
+    const edit = await editor.apply(
+      {
+        type: 'create_list',
+        name: 'Gear',
+        list: {
+          label: 'Gear',
+          icon: 'box',
+          displayField: 'title',
+          fields: { title: { type: 'text' } },
+        },
+      },
+      {
+        actor: USER,
+        tenantId: TENANT,
+        expectedRevision: revision,
+        requestId: randomUUID(),
+      },
+    );
+    options.activation = {
+      activate: async () => {
+        engine.run({ name: 'remove_recipes', input: { ids: ['customers'] } });
+      },
+    };
+    const hostRevision = engine.snapshot().revision;
+    await expect(approve('app.undo', {})).rejects.toThrow(
+      /cookbook changed before this action could apply/,
+    );
+    expect(editor.snapshot().revision).toBe(edit.revision);
+    expect(engine.snapshot().revision).toBe(hostRevision + 1);
+  });
+
   it('loads nothing for an undo the editor refuses', async () => {
     expect(await approve('recipes.disable', { id: 'customers' })).toMatchObject(
       { status: 'ok' },

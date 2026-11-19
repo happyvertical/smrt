@@ -744,6 +744,7 @@ export function createCookbookToolService(options: CookbookToolOptions) {
     const editor = options.modelEditorFor?.(context);
     if (!editor) return fail('unavailable', 'Your app editor is unavailable.');
     const before = editor.snapshot();
+    const hostBefore = options.engineFor?.(context)?.state();
     const read = async (result: CookbookToolResult) => {
       await options.audit({
         context,
@@ -883,8 +884,21 @@ export function createCookbookToolService(options: CookbookToolOptions) {
               }
             : {}),
         },
-        // Activation may have taken time: recheck live authority last.
-        () => assertAllowed(context, name),
+        // Activation may have taken time: recheck live authority, and that the
+        // host cookbook is still what the caller approved, last.
+        async () => {
+          await assertAllowed(context, name);
+          const host = options.engineFor?.(context);
+          if (
+            host &&
+            hostBefore !== undefined &&
+            !same(host.state(), hostBefore)
+          )
+            fail(
+              'conflict',
+              'The cookbook changed before this action could apply.',
+            );
+        },
       );
       if (context.workflowAction)
         return (await recoverDesign(name, args, context))!;
