@@ -736,9 +736,12 @@ async function readTrajectory(
       for (const row of getRows(
         await aiRunQuery(
           db,
+          // A call's own row only: its id, this run, the run's tenant.
           `SELECT ${USAGE_COLUMNS} FROM _smrt_ai_usage
-            WHERE id IN (${marks}) AND ${tenantSql(callIds.length + 1)}`,
+            WHERE id IN (${marks}) AND run_id = $${callIds.length + 1}
+              AND ${tenantSql(callIds.length + 2)}`,
           ...callIds,
+          runId,
           ...tenantParams,
         ),
       )) {

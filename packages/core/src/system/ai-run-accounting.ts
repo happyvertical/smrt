@@ -587,7 +587,15 @@ async function settleInTx(
     // run's or tenant's): charging would bill a call with no billing row of
     // its own. Its reservation is returned and nothing is charged.
     logger.warn(
-      `[smrt] AI run ${input.runId} call ${input.callId}: its usage row id is held by another run's row; returned its reservation without a charge`,
+      `[smrt] AI run ${input.runId} call ${input.callId}: its usage row id is held by another run's row; released it without a charge`,
+    );
+    // Recorded as released, not settled: the call was charged nothing.
+    await aiRunQuery(
+      tx.db,
+      `UPDATE _smrt_ai_run_events SET reservation = 'released'
+        WHERE run_id = $1 AND call_id = $2 AND type = 'call'`,
+      input.runId,
+      input.callId,
     );
     await chargeChain(tx, chain, null, returned);
     return 'already_settled';
@@ -1475,7 +1483,11 @@ async function computeOwnTotals(
       `SELECT e.reserved_tokens, u.id AS usage_id, u.prompt_tokens,
               u.completion_tokens, u.total_tokens, u.estimated_cost
          FROM _smrt_ai_run_events e
-         LEFT JOIN _smrt_ai_usage u ON u.id = e.call_id
+         JOIN _smrt_ai_runs r ON r.id = e.run_id
+         -- Only the call's own row: its id, its run, its run's tenant.
+         LEFT JOIN _smrt_ai_usage u ON u.id = e.call_id AND u.run_id = e.run_id
+              AND (u.tenant_id = r.tenant_id
+                   OR (u.tenant_id IS NULL AND r.tenant_id IS NULL))
         WHERE e.run_id = $1 AND e.type = 'call'
           AND e.reservation IN ('settled', 'settled_late', 'unreserved')`,
       runId,
