@@ -46,8 +46,10 @@ import {
 import {
   type ChangeFeedRequestContext,
   filterVisibleChangeFeedEntries,
+  hasChangeFeedEntryVisibilityHook,
   hasChangeFeedTableAuthorizerHook,
   isChangeFeedDenyAll,
+  isChangeFeedEntryVisible,
   resolveAuthorizedChangeFeedTables,
 } from '../change-feed-authz.js';
 import {
@@ -61,7 +63,10 @@ import {
   type DispatchTenantScope,
   resolveDispatchTenantScope,
 } from '../dispatch/tenant-resolver.js';
-import { runOutsideWriteContext } from '../embedded-write-queue.js';
+import {
+  holdsWriteQueue,
+  runOutsideWriteContext,
+} from '../embedded-write-queue.js';
 import {
   type ChangesAuthMiddleware,
   resolveChangesDb,
@@ -248,6 +253,20 @@ function encodeSseEvent(sig: ChangeSignal): Uint8Array {
   return encoder.encode(`id: ${sig.seq}\nevent: change\ndata: ${data}\n\n`);
 }
 
+/**
+ * SSE frame for a signal with no feed sequence: same data, no `id:` line, so
+ * the client's resume cursor (`Last-Event-ID`) is left where it was.
+ */
+function encodeSseUnsequencedEvent(sig: ChangeSignal): Uint8Array {
+  const data = JSON.stringify({
+    table: sig.table,
+    operation: sig.operation,
+    rowId: sig.rowId,
+    tenantId: sig.tenantId,
+  });
+  return encoder.encode(`event: change\ndata: ${data}\n\n`);
+}
+
 /** SSE manifest frame emitted at connection open for live contract detection. */
 function encodeSseManifestEvent(manifestHash: string): Uint8Array {
   return encoder.encode(
@@ -315,7 +334,7 @@ function readFeedPage(
 /**
  * Build the SSE body stream for an `_events` connection.
  *
- * **Delivery invariant.** Every `change` frame is read from the durable feed,
+ * **Delivery invariant.** Every `change` frame with an `id:` is read from the durable feed,
  * in sequence order, starting after the connection's own sent cursor. A live
  * signal is only a wake-up: it tells the connection that the feed has moved,
  * and the connection then reads from its cursor. So the stream never emits a
@@ -324,6 +343,10 @@ function readFeedPage(
  * resumes from (`Last-Event-ID`) always covers everything before it. Rows
  * the connection may not see still advance its cursor; they are simply not
  * framed.
+ *
+ * A signal that carries no feed sequence is framed directly, without an
+ * `id:` (see `frameUnsequenced`). An idle heartbeat also reads the feed, so a
+ * change committed without any signal is still delivered.
  *
  * A read that fails closes the stream. The client reconnects with the last id
  * it actually received and the server replays from there; staying open
@@ -570,9 +593,44 @@ export function buildChangeEventStream(
     (retryTimer as { unref?: () => void }).unref?.();
   };
 
-  /** A live signal is a wake-up only; the frame comes from the feed read. */
+  /**
+   * A signal that carries no feed sequence (`seq` not a positive integer) —
+   * published by a producer that writes no feed row — is framed directly,
+   * as before the ordered cursor read existed, but without an `id:` line:
+   * an id would move the client's resume cursor to a value the feed never
+   * assigned. Best-effort, like any signal: dropped when the reader is not
+   * draining, so it can never grow the buffer.
+   */
+  const frameUnsequenced = (sig: ChangeSignal) => {
+    if (!passesStaticFilters(sig)) return;
+    const enqueue = () => {
+      if (closed || !streamController || !hasCapacity()) return;
+      try {
+        streamController.enqueue(encodeSseUnsequencedEvent(sig));
+      } catch {
+        teardown();
+      }
+    };
+    if (!hasChangeFeedEntryVisibilityHook()) {
+      enqueue();
+      return;
+    }
+    void isChangeFeedEntryVisible(requestContext, sig).then((visible) => {
+      if (visible) enqueue();
+    });
+  };
+
+  /**
+   * A signal that carries a feed sequence is a wake-up only; the frame comes
+   * from the ordered feed read, so its id can never overtake an unsent
+   * earlier change.
+   */
   const onSignal = (sig: ChangeSignal) => {
     if (closed) return;
+    if (!Number.isSafeInteger(sig.seq) || sig.seq <= 0) {
+      frameUnsequenced(sig);
+      return;
+    }
     // Pre-filtering is an optimisation only: a change this connection may not
     // see never needs a read of its own — the next visible wake-up's read
     // passes over it.
@@ -586,6 +644,20 @@ export function buildChangeEventStream(
     {
       async start(controller) {
         streamController = controller;
+        // Every feed read waits in the database's write queue. A stream
+        // started from inside a framework write transaction on the same
+        // database (which holds that queue until its callback returns) could
+        // only be served after the callback finished — so a callback that
+        // awaits a frame would wait forever, and every writer queued behind
+        // it with it. Refuse instead.
+        if (holdsWriteQueue(db)) {
+          teardown();
+          throw new Error(
+            'An _events stream cannot be started inside a framework write ' +
+              'transaction on the same database: its feed reads wait for that ' +
+              'transaction to finish. Open the stream outside the transaction.',
+          );
+        }
         // (a) Subscribe first; see the delivery invariant.
         unsubscribe = subscribeToChangeSignals(db, onSignal);
         if (releaseSubscriberSlot) {
@@ -652,7 +724,13 @@ export function buildChangeEventStream(
               return;
             }
           }
-          if (sentCursor !== null && wantedSeq > sentCursor) schedulePump();
+          // A bounded durable read once per interval while idle: a change
+          // committed with no signal reaching this process (another replica
+          // without a notification channel, a lost notification, a write the
+          // framework did not signal) is still delivered. Exhaustive, so it
+          // also sequences staged PostgreSQL work, and shared with any
+          // identical read in flight.
+          if (sentCursor !== null && !pumping) schedulePump(true);
         }, heartbeatMs);
         // Do not keep the event loop alive solely for heartbeats.
         (heartbeat as { unref?: () => void }).unref?.();

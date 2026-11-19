@@ -253,4 +253,44 @@ describe('_events delivers changes in feed order from a per-connection cursor', 
     await stream.cancel().catch(() => {});
     expect(changeIds(firstText + laterText)).toEqual([seq]);
   });
+
+  it('delivers a change committed with no signal on the next idle heartbeat read', async () => {
+    const stream = buildChangeEventStream(db, {
+      cursor: null,
+      tenantScope: UNENFORCED,
+      heartbeatMs: 30,
+    });
+    await readUntil(stream, (t) => t.includes('retry:'), 1000);
+    // As from another replica with no notification channel: no signal.
+    const seq = (await appendChange(db, {
+      table: WIDGETS_TABLE,
+      rowId: 'unsignalled',
+    })) as number;
+    const { text } = await readUntil(stream, (t) => t.includes('unsignalled'));
+    await stream.cancel().catch(() => {});
+    expect(changeIds(text)).toEqual([seq]);
+  });
+
+  it('frames a signal that carries no feed sequence directly, without moving the resume id', async () => {
+    const stream = buildChangeEventStream(db, {
+      cursor: null,
+      tenantScope: UNENFORCED,
+    });
+    await readUntil(stream, (t) => t.includes('retry:'), 1000);
+    publishChangeSignal(db, {
+      table: WIDGETS_TABLE,
+      operation: 'update',
+      rowId: 'signal-only',
+      tenantId: null,
+      seq: 0,
+    });
+    const { text } = await readUntil(stream, (t) => t.includes('signal-only'));
+    await stream.cancel().catch(() => {});
+    const frame = text
+      .split('\n\n')
+      .find((block) => block.includes('signal-only'));
+    expect(frame).toBe(
+      'event: change\ndata: {"table":"ordered_delivery_widgets","operation":"update","rowId":"signal-only","tenantId":null}',
+    );
+  });
 });
