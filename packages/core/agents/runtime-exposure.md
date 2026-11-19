@@ -136,7 +136,10 @@ as optional `modules[].after`. SvelteKit generation validates before it clears
 previously generated routes. Regenerate the activation manifest to gain the order.
 
 The generator parses static imports/re-exports with the existing Oxc transformer;
-it never evaluates provider code. A provider barrel is a conservative activation
+it never evaluates provider code. The import walk that orders
+a loader follows package entries and packages that declare no models when their
+`package.json` dependencies can reach a managed package, and every module it
+discovers is part of the loader's closure. A provider barrel is a conservative activation
 unit: importing any of its declared modules includes its full manifest inventory
 and static dependency closure. Splitting a provider into independently activatable
 units requires genuinely independent published modules; a per-model callback
