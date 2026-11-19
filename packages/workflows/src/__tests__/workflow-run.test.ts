@@ -999,7 +999,7 @@ describe('workflow run safety', () => {
       ...params: unknown[]
     ) => {
       if (
-        /FROM _smrt_ai_run_checkpoints/.test(sql) &&
+        /^\s*SELECT \* FROM _smrt_ai_run_checkpoints/.test(sql) &&
         params.includes(run.id)
       ) {
         await original(
