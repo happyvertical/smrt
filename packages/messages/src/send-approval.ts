@@ -538,6 +538,15 @@ export class MailSendApprovalService {
       if (!account || account.tenantId !== principal.tenantId) {
         throw new HeldSendError('not_found', 'Held send not found.', 404);
       }
+      // Only an unsent draft can be decided: edits must never rewrite a
+      // message that already left (or is leaving).
+      if (message.sendStatus !== 'draft') {
+        throw new HeldSendError(
+          'not_a_draft',
+          `The message is already ${message.sendStatus}.`,
+          409,
+        );
+      }
       for (const scope of ['read', 'send'] as const) {
         const decision = await decideMailAccess(account, scope, principal);
         if (!decision.allowed) {

@@ -358,9 +358,17 @@ describe('agent send policy and held sends (#5141)', () => {
         id: colleague.id,
         kind: 'person',
       });
-      // Neither a second approval nor the agent's retry sends again.
-      const twice = await approvals(person(owner)).approve(id);
-      expect(twice.state).toBe('refused');
+      // Neither a second approval (with or without edits) nor the agent's
+      // retry sends again or rewrites the sent message.
+      await expect(approvals(person(owner)).approve(id)).rejects.toMatchObject({
+        reason: 'not_a_draft',
+      });
+      await expect(
+        approvals(person(owner)).approve(id, { edits: { subject: 'rewrite' } }),
+      ).rejects.toMatchObject({ reason: 'not_a_draft' });
+      expect((await reload(draft.id as string)).subject).toBe(
+        'Re: your invoice',
+      );
       const retry = await submitAsAgent(draft.id as string);
       expect(retry.success).toBe(false);
       expect(providerSend).toHaveBeenCalledTimes(1);
@@ -369,11 +377,14 @@ describe('agent send policy and held sends (#5141)', () => {
     it('releases once under concurrent approvals', async () => {
       const draft = await draftAsAgent();
       const id = await pendingId(draft);
-      const results = await Promise.all([
+      const results = await Promise.allSettled([
         approvals(person(colleague)).approve(id),
         approvals(person(owner)).approve(id),
       ]);
-      expect(results.filter((r) => r.state === 'sent')).toHaveLength(1);
+      const sent = results.filter(
+        (r) => r.status === 'fulfilled' && r.value.state === 'sent',
+      );
+      expect(sent).toHaveLength(1);
       expect(providerSend).toHaveBeenCalledTimes(1);
     });
 

@@ -62,6 +62,10 @@ thread). When the host runs the action inside smrt-core `withAuditContext()`,
 and `messages.triage.<action>`. Mail models are not `audit: true`: that makes
 every sync and outbox write demand a writer.
 
+Deciding needs an unsent draft (`not_a_draft` otherwise). On an unowned
+(tenant-wide) account the per-account checks pass for any tenant person, the
+same authority as sending directly from it.
+
 ## Known gaps
 
 - No approval-queue or handled-by Svelte component yet.
