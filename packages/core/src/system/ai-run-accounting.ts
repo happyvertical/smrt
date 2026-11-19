@@ -1568,26 +1568,14 @@ export interface AiRunTotalsCheck {
 
 const COST_TOLERANCE = 1e-6;
 
-async function computeOwnTotals(
-  db: DatabaseInterface,
-  runId: string,
-): Promise<{ computed: AiRunOwnTotals; missing: number }> {
-  const rows = getRows(
-    await aiRunQuery(
-      db,
-      `SELECT e.reserved_tokens, u.id AS usage_id, u.prompt_tokens,
-              u.completion_tokens, u.total_tokens, u.estimated_cost
-         FROM _smrt_ai_run_events e
-         JOIN _smrt_ai_runs r ON r.id = e.run_id
-         -- Only the call's own row: its id, its run, its run's tenant.
-         LEFT JOIN _smrt_ai_usage u ON u.id = e.call_id AND u.run_id = e.run_id
-              AND (u.tenant_id = r.tenant_id
-                   OR (u.tenant_id IS NULL AND r.tenant_id IS NULL))
-        WHERE e.run_id = $1 AND e.type = 'call'
-          AND e.reservation IN ('settled', 'settled_late', 'unreserved')`,
-      runId,
-    ),
-  );
+const OWN_TOTALS_USAGE = `u.id AS usage_id, u.prompt_tokens, u.completion_tokens,
+              u.total_tokens, u.estimated_cost`;
+
+/** Fold charged call rows (`reserved_tokens` plus their usage row) into totals. */
+function foldOwnTotals(rows: Record<string, unknown>[]): {
+  computed: AiRunOwnTotals;
+  missing: number;
+} {
   const computed: AiRunOwnTotals = {
     tokens: 0,
     cost: 0,
@@ -1619,6 +1607,28 @@ async function computeOwnTotals(
   return { computed, missing };
 }
 
+async function computeOwnTotals(
+  db: DatabaseInterface,
+  runId: string,
+): Promise<{ computed: AiRunOwnTotals; missing: number }> {
+  const rows = getRows(
+    await aiRunQuery(
+      db,
+      `SELECT e.reserved_tokens, ${OWN_TOTALS_USAGE}
+         FROM _smrt_ai_run_events e
+         JOIN _smrt_ai_runs r ON r.id = e.run_id
+         -- Only the call's own row: its id, its run, its run's tenant.
+         LEFT JOIN _smrt_ai_usage u ON u.id = e.call_id AND u.run_id = e.run_id
+              AND (u.tenant_id = r.tenant_id
+                   OR (u.tenant_id IS NULL AND r.tenant_id IS NULL))
+        WHERE e.run_id = $1 AND e.type = 'call'
+          AND e.reservation IN ('settled', 'settled_late', 'unreserved')`,
+      runId,
+    ),
+  );
+  return foldOwnTotals(rows);
+}
+
 function sameTotals(a: AiRunOwnTotals, b: AiRunOwnTotals): boolean {
   return (
     a.tokens === b.tokens &&
@@ -1638,15 +1648,40 @@ export async function checkAiRunTotals(
   db: DatabaseInterface,
   runId: string,
 ): Promise<AiRunTotalsCheck> {
-  const run = await getAiRun(db, runId);
-  if (!run) throw new AiRunNotFoundError(runId);
+  // One statement anchored on the run: its stored totals and every charged
+  // call with its own usage row are read in one snapshot, so a settle or a
+  // prune committing meanwhile is seen whole or not at all, and a run that
+  // is gone reads as not found, never as stored totals beside empty
+  // figures.
+  const rows = getRows(
+    await aiRunQuery(
+      db,
+      `SELECT r.tokens AS run_tokens, r.cost_used AS run_cost,
+              r.calls AS run_calls, r.uncosted_calls AS run_uncosted,
+              e.id AS event_id, e.reserved_tokens, ${OWN_TOTALS_USAGE}
+         FROM _smrt_ai_runs r
+         LEFT JOIN _smrt_ai_run_events e ON e.run_id = r.id
+              AND e.type = 'call'
+              AND e.reservation IN ('settled', 'settled_late', 'unreserved')
+         -- Only the call's own row: its id, its run, its run's tenant.
+         LEFT JOIN _smrt_ai_usage u ON u.id = e.call_id AND u.run_id = r.id
+              AND (u.tenant_id = r.tenant_id
+                   OR (u.tenant_id IS NULL AND r.tenant_id IS NULL))
+        WHERE r.id = $1`,
+      runId,
+    ),
+  );
+  const first = rows[0];
+  if (!first) throw new AiRunNotFoundError(runId);
   const stored: AiRunOwnTotals = {
-    tokens: run.tokens,
-    cost: run.costUsed,
-    calls: run.calls,
-    uncostedCalls: run.uncostedCalls,
+    tokens: num(first.run_tokens),
+    cost: num(first.run_cost),
+    calls: num(first.run_calls),
+    uncostedCalls: num(first.run_uncosted),
   };
-  const { computed, missing } = await computeOwnTotals(db, runId);
+  const { computed, missing } = foldOwnTotals(
+    rows.filter((row) => row.event_id !== null && row.event_id !== undefined),
+  );
   if (missing > 0) {
     return {
       runId,

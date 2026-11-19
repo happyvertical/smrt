@@ -1050,7 +1050,9 @@ rebuilt automatically, and resuming never recomputes them.
 `checkAiRunTotals(runId)` compares a run's own totals with its usage
 rows. It can do so only while every `settled`, `settled_late` and `unreserved`
 call event of the run still has its usage row; otherwise it reports the run as
-unverifiable, never as wrong.
+unverifiable, never as wrong. It reads the run's stored totals and those
+usage rows in one statement, so a settlement or a prune that commits while it
+runs is seen whole or not at all; a run that is gone is not found.
 
 `repairAiRunTotals(runId)` is an explicit operator action. It
 refuses an unverifiable run. Otherwise it recomputes the run's own totals from
