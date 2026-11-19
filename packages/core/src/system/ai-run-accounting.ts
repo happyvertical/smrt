@@ -51,6 +51,7 @@ import {
   num,
   readAiRunChainIds,
   settlementTenantOf,
+  text,
   withAiRunTransaction,
   writeAiRunTotals,
 } from './ai-run-model.js';
@@ -782,7 +783,11 @@ export async function reconcileAiCall(
   return withAiRunTransaction(
     db,
     async (tx) => {
-      const chain = await lockAiRunChain(tx, runId);
+      const chain = await lockAiRunChainInTenant(
+        tx,
+        runId,
+        expectedTenantOf(options),
+      );
       // Only this call's own row is evidence of its usage: the one under
       // its id, of its run, in its run's tenant.
       const tenant = chain[chain.length - 1]?.tenantId ?? null;
@@ -846,11 +851,13 @@ export async function reconcileAiCall(
 
 /**
  * The run and its descendants that are not durable, stopping at durable ones
- * and at a child of another tenant (never this run's).
+ * and at a child of another tenant (never this run's). Every lookup carries
+ * the run's tenant as a predicate.
  */
 async function nonDurableSubtree(
   db: DatabaseInterface,
   runId: string,
+  tenant: string | null,
 ): Promise<string[]> {
   const out = [runId];
   const queue = [runId];
@@ -860,14 +867,13 @@ async function nonDurableSubtree(
       await aiRunQuery(
         db,
         `SELECT r.id FROM _smrt_ai_runs r
-           JOIN _smrt_ai_runs p ON p.id = r.parent_run_id
           WHERE r.parent_run_id = $1
-            AND (r.tenant_id = p.tenant_id
-                 OR (r.tenant_id IS NULL AND p.tenant_id IS NULL))
+            AND ${tenant === null ? 'r.tenant_id IS NULL' : 'r.tenant_id = $2'}
             AND NOT EXISTS (SELECT 1 FROM _smrt_ai_run_checkpoints c
                              WHERE c.run_id = r.id)
           ORDER BY r.id`,
         parent,
+        ...(tenant === null ? [] : [tenant]),
       ),
     );
     for (const child of children) {
@@ -900,20 +906,45 @@ export async function reconcileAiRunOnClaim(
   runId: string,
   options: AiRunTxOptions = {},
 ): Promise<AiRunClaimReconciliation> {
-  const ids = await nonDurableSubtree(db, runId);
   const out: AiRunClaimReconciliation = {
     settled: 0,
     abandoned: 0,
     abandonedRuns: [],
   };
+  // The claimed run's tenant, established once and carried into every
+  // descendant lookup, reservation read and status lock below: a row that
+  // left the tenant after discovery is neither reconciled nor failed.
+  const expected = expectedTenantOf(options);
+  const root = getRows(
+    await aiRunQuery(
+      db,
+      `SELECT tenant_id FROM _smrt_ai_runs WHERE id = $1${
+        expected === undefined
+          ? ''
+          : expected === null
+            ? ' AND tenant_id IS NULL'
+            : ' AND tenant_id = $2'
+      }`,
+      runId,
+      ...(expected === undefined || expected === null ? [] : [expected]),
+    ),
+  )[0];
+  if (!root) return out;
+  const tenant = text(root.tenant_id) ?? null;
+  const scoped: AiRunScopedTxOptions = { ...options, expectedTenant: tenant };
+  const ids = await nonDurableSubtree(db, runId, tenant);
   for (const id of ids) {
     const reserved = getRows(
       await aiRunQuery(
         db,
-        `SELECT call_id FROM _smrt_ai_run_events
-          WHERE run_id = $1 AND type = 'call' AND reservation = 'reserved'
-          ORDER BY seq`,
+        `SELECT e.call_id FROM _smrt_ai_run_events e
+           JOIN _smrt_ai_runs r ON r.id = e.run_id
+          WHERE e.run_id = $1 AND e.type = 'call'
+            AND e.reservation = 'reserved'
+            AND ${tenant === null ? 'r.tenant_id IS NULL' : 'r.tenant_id = $2'}
+          ORDER BY e.seq`,
         id,
+        ...(tenant === null ? [] : [tenant]),
       ),
     );
     for (const row of reserved) {
@@ -921,7 +952,7 @@ export async function reconcileAiRunOnClaim(
         db,
         id,
         String(row.call_id),
-        options,
+        scoped,
       );
       if (outcome === 'settled') out.settled++;
       else if (outcome === 'abandoned') out.abandoned++;
@@ -931,7 +962,7 @@ export async function reconcileAiRunOnClaim(
     const failed = await withAiRunTransaction(
       db,
       async (tx) => {
-        const run = await lockAiRun(tx, id);
+        const run = await lockAiRun(tx, id, tenant);
         if (run?.status !== 'running') return false;
         return writeAiRunStatusTx(tx, run, 'failed', {
           stopReason: 'abandoned',

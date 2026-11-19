@@ -315,7 +315,13 @@ run that is not durable after 24 quiet hours as `failed` / `abandoned`;
 cancels any run left under a cancelled ancestor and any `waiting-approval` or
 durable `stopped` run under a final or missing ancestor; then prunes
 trajectories and run rows (below). Worker reconciliation on claim:
-`reconcileAiRunOnClaim`.
+`reconcileAiRunOnClaim`, which establishes the claimed run's tenant once and
+carries it into every descendant lookup, reservation read, reconciliation
+and status lock, so a row that left the tenant after discovery is neither
+reconciled nor failed. `checkAiRunTotals` reads the run's stored totals and
+its charged calls with their own usage rows in one statement anchored on the
+run: a settle or prune committing meanwhile is seen whole or not at all, and
+a run that is gone is `AiRunNotFoundError`.
 
 **Retention** (page section 8). A finished, unprotected run keeps its
 trajectory `aiRuns.trajectoryMaxAgeDays` (30) after `finished_at`; with
