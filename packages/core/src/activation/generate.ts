@@ -6,7 +6,10 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { resolve as resolveImport } from 'import-meta-resolve';
 import { modelReplacements } from '../manifest/model-replacements.js';
 import { isFrameworkBaseClass } from '../registry/framework-base-classes.js';
-import type { SmartObjectManifest } from '../scanner/types.js';
+import type {
+  SmartObjectDefinition,
+  SmartObjectManifest,
+} from '../scanner/types.js';
 import {
   findManifestObjectByName,
   isCollectionManifestClass,
@@ -17,24 +20,259 @@ import {
   type ActivationManifest,
   type ActivationModule,
   activationClosure,
+  describeModuleCycle,
+  isSameNamePair,
+  type ModuleEdge,
+  moduleEdges,
 } from './manifest.js';
+import { byCodeUnit, findCycle, topologicalOrder } from './topo.js';
+
+type Objects = SmartObjectManifest['objects'];
+
+/** The manifest with its objects in key order, so nothing downstream follows listing order. */
+function sortedManifest(manifest: SmartObjectManifest): SmartObjectManifest {
+  const keys = Object.keys(manifest.objects);
+  if (keys.every((key, index) => index === 0 || keys[index - 1] <= key))
+    return manifest;
+  return {
+    ...manifest,
+    objects: Object.fromEntries(
+      keys.sort(byCodeUnit).map((key) => [key, manifest.objects[key]]),
+    ) as Objects,
+  };
+}
+
+const QUALIFIED = /^[^\s:]+:[^\s:]+$/;
+const FRAMEWORK_CORE = '@happyvertical/smrt-core';
+
+function parentField(
+  id: string,
+  object: SmartObjectDefinition,
+  field: 'extends' | 'extendsQualified',
+): string | undefined {
+  const value = (object as unknown as Record<string, unknown>)[field];
+  if (value === undefined || value === null) return undefined;
+  if (typeof value !== 'string' || !value.trim())
+    throw new Error(
+      `${id} declares an invalid ${field}: expected a non-blank string, received ${JSON.stringify(value)}`,
+    );
+  return value;
+}
+
+interface ResolvedParent {
+  /** Manifest key of the non-framework parent. */
+  parent?: string;
+  /** The declared parent that names no manifest object (an error for a model). */
+  missing?: string;
+  declared?: string;
+}
+
+/**
+ * Resolve every object's parent from the raw declaration, before anything is
+ * classified as a collection or framework class, and refuse a declaration that
+ * does not say what it names. Only an absent field means "no parent".
+ */
+function resolveParents(manifest: SmartObjectManifest) {
+  const resolved = new Map<string, ResolvedParent>();
+  for (const [id, object] of Object.entries(manifest.objects)) {
+    const colon = id.lastIndexOf(':');
+    if (colon > 0 && object.packageName !== undefined) {
+      if (id.slice(0, colon) !== object.packageName)
+        throw new Error(
+          `Activation manifest key ${id} disagrees with its declared packageName ${object.packageName}`,
+        );
+    }
+    if (object.qualifiedName !== undefined && object.qualifiedName !== id)
+      throw new Error(
+        `Activation manifest key ${id} disagrees with its declared qualifiedName ${object.qualifiedName}`,
+      );
+  }
+  for (const [id, object] of Object.entries(manifest.objects)) {
+    if (isFrameworkBaseClass(object.className, object.packageName)) continue;
+    const extendsName = parentField(id, object, 'extends');
+    const qualified = parentField(id, object, 'extendsQualified');
+    if (qualified !== undefined && !QUALIFIED.test(qualified))
+      throw new Error(
+        `${id} declares an invalid extendsQualified: ${JSON.stringify(qualified)} is not a package-qualified class name`,
+      );
+    if (
+      extendsName?.includes(':') &&
+      qualified !== undefined &&
+      extendsName !== qualified
+    )
+      throw new Error(
+        `${id} declares extends ${extendsName} but extendsQualified ${qualified}; the two disagree`,
+      );
+    const declared = qualified ?? extendsName;
+    if (declared === undefined) continue;
+    const simple = declared.slice(declared.lastIndexOf(':') + 1);
+    if (declared.includes(':')) {
+      if (declared === id)
+        throw new Error(
+          `${id} extends itself (extendsQualified names its own key)`,
+        );
+      if (isFrameworkBaseClass(simple, declared.split(':')[0])) continue;
+      resolved.set(
+        id,
+        manifest.objects[declared]
+          ? { parent: declared, declared }
+          : { missing: declared, declared },
+      );
+      continue;
+    }
+    const local = `${object.packageName}:${declared}`;
+    // An unqualified name that resolves to the class itself means the parent
+    // is not in the manifest (the same-named parent was never verified): no edge.
+    if (local === id) continue;
+    if (manifest.objects[local]) {
+      resolved.set(id, { parent: local, declared });
+      continue;
+    }
+    if (isFrameworkBaseClass(declared, FRAMEWORK_CORE)) continue;
+    const candidates = Object.entries(manifest.objects).filter(
+      ([, entry]) => entry.className === declared,
+    );
+    if (candidates.length > 1)
+      throw new Error(
+        `${id} extends ${declared}, which names ${candidates.length} classes in the activation manifest (${candidates.map(([key]) => key).join(', ')}); declare the parent's package so the extends is qualified`,
+      );
+    if (
+      candidates.length === 1 &&
+      findManifestObjectByName(manifest, declared, object) === candidates[0][1]
+    ) {
+      const [key, entry] = candidates[0];
+      if (!isFrameworkBaseClass(entry.className, entry.packageName))
+        resolved.set(id, { parent: key, declared });
+      continue;
+    }
+    resolved.set(id, { missing: local, declared });
+  }
+  return resolved;
+}
+
+interface OrderEdge {
+  from: string;
+  to: string;
+  kind: 'parent' | 'item' | 'binding';
+}
+
+/**
+ * One deterministic registration order over every activation object, from the
+ * resolved parents and the collection bindings (never from listing order):
+ * a parent before its children; an item and its effective replacement before
+ * its collection; of two collections bound to one effective item, the one of
+ * the more derived item last, because the later binding wins.
+ */
+function activationPlan(manifest: SmartObjectManifest) {
+  const resolved = resolveParents(manifest);
+  const replacements = modelReplacements(manifest);
+  const keys = new Map(
+    Object.entries(manifest.objects).map(([id, object]) => [object, id]),
+  );
+  const nodes: string[] = [];
+  const collections = new Set<string>();
+  for (const [id, object] of Object.entries(manifest.objects)) {
+    if (isFrameworkBaseClass(object.className, object.packageName)) continue;
+    nodes.push(id);
+    if (isCollectionManifestClass(manifest, object)) collections.add(id);
+  }
+  const parentOf = new Map<string, string>();
+  for (const id of nodes) {
+    const parent = resolved.get(id)?.parent;
+    if (parent && !collections.has(id) && !collections.has(parent))
+      parentOf.set(id, parent);
+  }
+  const edges: OrderEdge[] = [];
+  for (const [child, parent] of parentOf)
+    edges.push({ from: parent, to: child, kind: 'parent' });
+  const itemOf = new Map<string, string>();
+  const effectiveOf = (item: string) => replacements.get(item) ?? item;
+  for (const id of collections) {
+    const collection = manifest.objects[id];
+    // A qualified item declaration names its manifest key exactly; the public
+    // index omits a replaced declaration, so prefer the key over name lookup.
+    const declared = collection.collectionOf ?? collection.extendsTypeArg;
+    const item = resolveCollectionItemObject(manifest, collection);
+    const itemId =
+      typeof declared === 'string' && manifest.objects[declared]
+        ? declared
+        : item
+          ? keys.get(item)
+          : undefined;
+    if (!itemId || collections.has(itemId)) continue;
+    itemOf.set(id, itemId);
+    for (const model of new Set([itemId, effectiveOf(itemId)]))
+      if (manifest.objects[model])
+        edges.push({ from: model, to: id, kind: 'item' });
+  }
+  const depth = (id: string) => {
+    let count = 0;
+    for (let next = parentOf.get(id); next; next = parentOf.get(next)) {
+      count += 1;
+      if (count > nodes.length) break;
+    }
+    return count;
+  };
+  const bound = new Map<string, string[]>();
+  for (const [collection, item] of itemOf) {
+    const group = bound.get(effectiveOf(item)) ?? [];
+    group.push(collection);
+    bound.set(effectiveOf(item), group);
+  }
+  for (const group of bound.values()) {
+    group.sort(
+      (a, b) =>
+        depth(itemOf.get(a)!) - depth(itemOf.get(b)!) || byCodeUnit(a, b),
+    );
+    for (let index = 1; index < group.length; index += 1)
+      edges.push({ from: group[index - 1], to: group[index], kind: 'binding' });
+  }
+  const pairs = edges.map((edge) => [edge.from, edge.to] as const);
+  const { order, remaining } = topologicalOrder(nodes, pairs);
+  if (remaining.length) {
+    const cycle = findCycle(remaining, pairs);
+    throw new Error(
+      `Activation order is impossible: ${[...cycle, cycle[0]].join(' -> ')} forms a cycle (each must register before the next); a class cannot extend itself through its ancestors`,
+    );
+  }
+  return {
+    resolved,
+    order,
+    index: new Map(order.map((id, position) => [id, position])),
+    parentOf,
+    collections,
+    itemOf,
+    edges,
+    effectiveOf,
+  };
+}
 
 /** Build from the complete, generated manifest, never from the live registry. */
 export function buildActivationManifest(
-  manifest: SmartObjectManifest,
+  input: SmartObjectManifest,
   modules: Record<string, ActivationModule>,
 ): ActivationManifest {
+  const manifest = sortedManifest(input);
+  const plan = activationPlan(manifest);
   const graph: ActivationManifest = {
     version: 1,
     modules: Object.fromEntries(
-      Object.entries(modules).map(([id, module]) => [
-        id,
-        {
-          ...module,
-          models: [...module.models],
-          dependencies: [...module.dependencies],
-        },
-      ]),
+      Object.entries(modules)
+        .sort(([a], [b]) => byCodeUnit(a, b))
+        .map(([id, module]) => [
+          id,
+          {
+            ...module,
+            models: [...module.models].sort(byCodeUnit),
+            ...(module.collections
+              ? { collections: [...module.collections].sort(byCodeUnit) }
+              : {}),
+            dependencies: [...module.dependencies].sort(byCodeUnit),
+            ...(module.after?.length
+              ? { after: [...module.after].sort(byCodeUnit) }
+              : {}),
+          },
+        ]),
     ),
     models: {},
     tables: {},
@@ -56,39 +294,14 @@ export function buildActivationManifest(
         throw new Error(`Duplicate activation owner: ${id}`);
       if (isCollectionManifestClass(manifest, object)) continue;
       const table = object.schema?.tableName;
-      const parent = object.extendsQualified ?? object.extends;
       const dependencies: string[] = [];
-      if (
-        parent &&
-        !isFrameworkBaseClass(
-          parent.split(':').at(-1),
-          parent.includes(':')
-            ? parent.split(':')[0]
-            : '@happyvertical/smrt-core',
-        )
-      ) {
-        let resolved = parent.includes(':')
-          ? parent
-          : `${object.packageName}:${parent}`;
-        if (!parent.includes(':') && !manifest.objects[resolved]) {
-          const candidates = Object.entries(manifest.objects).filter(
-            ([, entry]) => entry.className === parent,
-          );
-          if (
-            candidates.length === 1 &&
-            findManifestObjectByName(manifest, parent, object) ===
-              candidates[0][1]
-          )
-            resolved = candidates[0][0];
-        }
-        if (
-          !isFrameworkBaseClass(
-            resolved.split(':').at(-1),
-            resolved.split(':')[0],
-          )
-        )
-          dependencies.push(resolved);
-      }
+      const resolution = plan.resolved.get(id);
+      if (resolution?.missing)
+        throw new Error(
+          `${id} extends ${resolution.declared}, which is not in the activation manifest; include ${resolution.missing}'s package manifest (or correct the extends declaration) and regenerate`,
+        );
+      const parent = plan.parentOf.get(id);
+      if (parent) dependencies.push(parent);
       // Logical references (including cross-package refs) need constructors even
       // when the schema deliberately omits a physical FK constraint.
       for (const field of Object.values(object.fields)) {
@@ -131,6 +344,7 @@ export function buildActivationManifest(
         module,
         effective: replacements.get(id) ?? id,
         table,
+        ...(parent ? { parent } : {}),
         dependencies: [...new Set(dependencies)].sort(),
       };
       if (table) {
@@ -151,10 +365,67 @@ export function buildActivationManifest(
     table.owners.sort();
     table.dependencies = [...new Set(table.dependencies)].sort();
   }
+  recordCollectionOrder(graph, plan);
   // Validate the entire graph now, so an unknown edge cannot become a partial
-  // import/migration at runtime. Also validates all replacement targets.
+  // import/migration at runtime. Also validates all replacement targets and
+  // that the registry's parent-first rule has an order (modules registering
+  // as units can still be asked for a cycle).
   activationClosure(graph, Object.keys(graph.models));
   return graph;
+}
+
+/**
+ * Persist the cross-module order a module's loader cannot see from parents
+ * alone: competing collection bindings (the registry keeps the later one) and
+ * a collection after its item. Binding order is enforced; item order is kept
+ * only where it leaves the module graph acyclic, since nothing refuses the
+ * opposite order. A cycle among the enforced edges fails generation.
+ */
+function recordCollectionOrder(
+  graph: ActivationManifest,
+  plan: ReturnType<typeof activationPlan>,
+) {
+  const moduleOf = new Map<string, string>();
+  for (const [id, module] of Object.entries(graph.modules))
+    for (const key of [...module.models, ...(module.collections ?? [])])
+      moduleOf.set(key, id);
+  const all = new Set(Object.keys(graph.modules));
+  const hard = moduleEdges(graph, all, Object.keys(graph.models)).filter(
+    (edge) => edge.hard,
+  );
+  const soft: ModuleEdge[] = [];
+  for (const edge of plan.edges) {
+    if (edge.kind === 'parent') continue;
+    const from = moduleOf.get(edge.from);
+    const to = moduleOf.get(edge.to);
+    if (!from || !to || from === to) continue;
+    (edge.kind === 'binding' ? hard : soft).push({
+      from,
+      to,
+      hard: edge.kind === 'binding',
+      because: `${edge.from} (in ${from}) is registered before ${edge.to} (in ${to})`,
+    });
+  }
+  const pairs = (edges: readonly ModuleEdge[]) =>
+    edges.map((edge) => [edge.from, edge.to] as const);
+  const { remaining } = topologicalOrder(all, pairs(hard));
+  if (remaining.length) throw new Error(describeModuleCycle(remaining, hard));
+  const kept = [...hard];
+  for (const edge of soft.sort(
+    (a, b) => byCodeUnit(a.from, b.from) || byCodeUnit(a.to, b.to),
+  ))
+    if (!topologicalOrder(all, pairs([...kept, edge])).remaining.length)
+      kept.push(edge);
+  const after = new Map<string, Set<string>>();
+  for (const edge of kept) {
+    // Parent edges are carried by `models[].parent`; keep only the rest.
+    if (edge.parent) continue;
+    const set = after.get(edge.to) ?? new Set(graph.modules[edge.to].after);
+    set.add(edge.from);
+    after.set(edge.to, set);
+  }
+  for (const [id, set] of after)
+    graph.modules[id].after = [...set].sort(byCodeUnit);
 }
 
 /**
@@ -163,7 +434,7 @@ export function buildActivationManifest(
  * conservative activation units: all their declared modules are included.
  */
 export function generateActivationRegistration(
-  manifest: SmartObjectManifest,
+  input: SmartObjectManifest,
   options: {
     projectRoot: string;
     outputDir: string;
@@ -176,8 +447,13 @@ export function generateActivationRegistration(
   source: string;
   files: Record<string, string>;
 } {
-  const modules: Record<string, ActivationModule> = {};
-  const entries = new Map<string, string[]>();
+  const manifest = sortedManifest(input);
+  // Resolve and order first: a malformed or impossible manifest fails before
+  // any module is resolved, imported or emitted.
+  const plan = activationPlan(manifest);
+  let modules: Record<string, ActivationModule> = {};
+  const importedOwners = new Map<string, Set<string>>();
+  let entries = new Map<string, string[]>();
   const packageModules = new Map<string, Set<string>>();
   const modulePaths = new Map<string, string>();
   const sourceOwners = new Map<string, Set<string>>();
@@ -303,8 +579,16 @@ export function generateActivationRegistration(
     importCache.set(file, parsed.deps);
     return parsed.deps;
   }
+  const byModule = <T>(map: Map<string, T>) =>
+    new Map([...map].sort(([a], [b]) => byCodeUnit(a, b)));
+  entries = byModule(entries);
+  modules = Object.fromEntries(
+    Object.entries(modules).sort(([a], [b]) => byCodeUnit(a, b)),
+  );
   for (const [id, module] of Object.entries(modules)) {
     const dependencies = new Set<string>();
+    const imported = new Set<string>();
+    importedOwners.set(id, imported);
     // A provider can register its whole manifest as a root side effect. Include
     // its complete declared model/module inventory, not just named exports.
     for (const group of packageModules.values()) {
@@ -315,7 +599,10 @@ export function generateActivationRegistration(
     const visit = (file: string) => {
       if (seen.has(file)) return;
       seen.add(file);
-      for (const owner of sourceOwners.get(file) ?? []) dependencies.add(owner);
+      for (const owner of sourceOwners.get(file) ?? []) {
+        dependencies.add(owner);
+        imported.add(owner);
+      }
       for (const specifier of staticImports(file)) {
         if (
           specifier === '@happyvertical/smrt-core' ||
@@ -328,6 +615,15 @@ export function generateActivationRegistration(
         const group = packageModules.get(pkg);
         if (group) {
           for (const peer of group) dependencies.add(peer);
+          // The entry file this specifier names is evaluated by the import.
+          try {
+            for (const owner of sourceOwners.get(
+              resolveSource(specifier, file),
+            ) ?? [])
+              imported.add(owner);
+          } catch {
+            // An unresolvable entry is reported where the module is resolved.
+          }
           // Each peer's own scan supplies its transitive module edges.
           continue;
         }
@@ -368,13 +664,34 @@ export function generateActivationRegistration(
       ids.map((id) => [id, module] as const),
     ),
   );
-  const objectKeys = new Map(
-    Object.entries(manifest.objects).map(([id, object]) => [object, id]),
-  );
+  // Importing a module evaluates every module it imports, and a decorated
+  // class registers when its file is evaluated. So a module that imports
+  // the host of a same-named child must load after the module that hosts that
+  // child's parent; when it hosts the parent itself, no order can help.
+  for (const [importer, owners] of importedOwners) {
+    const earlier = new Set<string>();
+    for (const owner of owners) {
+      if (owner === importer) continue;
+      for (const child of entries.get(owner) ?? []) {
+        const parent = plan.parentOf.get(child);
+        if (!parent || !isSameNamePair(child, parent)) continue;
+        const home = moduleByObject.get(parent);
+        if (!home || home === owner) continue;
+        if (home === importer)
+          throw new Error(
+            `Activation order is impossible: module ${importer} imports ${owner}, which hosts ${child}, but ${importer} also hosts its parent ${parent}; ${child} would register before ${parent}. Stop importing ${owner} from ${importer}, or move ${parent} into a module of its own.`,
+          );
+        earlier.add(home);
+      }
+    }
+    if (earlier.size)
+      modules[importer].after = [
+        ...new Set([...(modules[importer].after ?? []), ...earlier]),
+      ].sort(byCodeUnit);
+  }
   for (const [id, object] of Object.entries(manifest.objects)) {
     if (!isCollectionManifestClass(manifest, object)) continue;
-    const item = resolveCollectionItemObject(manifest, object);
-    const itemId = item ? objectKeys.get(item) : undefined;
+    const itemId = plan.itemOf.get(id);
     const itemModule = itemId ? moduleByObject.get(itemId) : undefined;
     const collectionModule = moduleByObject.get(id);
     if (itemModule && collectionModule && itemModule !== collectionModule) {
@@ -404,7 +721,11 @@ export function generateActivationRegistration(
   // overload, so optional exports and models with specialized constructor
   // options are checked at the existing runtime registration boundary.
   const files: Record<string, string> = {};
-  const loaders = [...entries].map(([module, ids]) => {
+  const loaders = [...entries].map(([module, unordered]) => {
+    // Registration order follows the plan, never the manifest's listing order.
+    const ids = [...unordered].sort(
+      (a, b) => (plan.index.get(a) ?? 0) - (plan.index.get(b) ?? 0),
+    );
     const data = JSON.stringify({
       ...portable,
       objects: Object.fromEntries(ids.map((id) => [id, portable.objects[id]])),
@@ -422,8 +743,7 @@ export function generateActivationRegistration(
       const object = manifest.objects[id];
       const name = object.exportName ?? object.className;
       if (isCollectionManifestClass(manifest, object)) {
-        const item = resolveCollectionItemObject(manifest, object);
-        const itemId = item ? objectKeys.get(item) : undefined;
+        const itemId = plan.itemOf.get(id);
         const effective = itemId ? graph.models[itemId]?.effective : undefined;
         return `${options.collectionMetadata?.includes(id) ? `ObjectRegistry.registerPackageManifest({ ...declarations, packageName: ${JSON.stringify(object.packageName)}, objects: { [${JSON.stringify(id)}]: declarations.objects[${JSON.stringify(id)}] } });` : ''}
 if (Reflect.get(provider, String(${JSON.stringify(name)}))) {
