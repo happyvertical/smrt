@@ -34,6 +34,7 @@ import {
 } from '../system/schema.js';
 import { toSafeBooleanInteger, toSafeInteger } from '../utils/safe-integer.js';
 import { computeChecksum, verifyChecksum } from './checksum.js';
+import { asTableChangedSincePlan } from './rebuild-plan-guard.js';
 import { runRetireAwareStatement } from './retire-guard.js';
 import { SQLITE_RELAX_REBUILD_MARKER } from './sqlite-rebuild.js';
 import type {
@@ -701,8 +702,10 @@ export class MigrationTracker {
         execution_time_ms: executionTime,
       };
     } catch (error) {
+      // A rebuild that found its table changed since the plan stops by name.
       const migrationError =
-        error instanceof Error ? error : new Error(String(error));
+        asTableChangedSincePlan(error) ??
+        (error instanceof Error ? error : new Error(String(error)));
 
       // Mark as failed. In an outer atomic Postgres transaction, a DDL error
       // aborts the transaction and this status write must be skipped so the

@@ -71,8 +71,12 @@
  */
 
 import { createLogger } from '@happyvertical/logger';
-import { quoteIdentifier } from '../schema/sql-identifiers.js';
+import {
+  quoteIdentifier,
+  quoteStringLiteral,
+} from '../schema/sql-identifiers.js';
 import type { SchemaChange, SQLDataType } from '../schema/types.js';
+import { rebuildPlanStaleMessage } from './rebuild-plan-guard.js';
 import type { DatabaseInterface } from './types.js';
 
 const logger = createLogger({ level: 'info' });
@@ -108,6 +112,88 @@ export function sqliteForeignKeyGuardStatements(): string[] {
     `CREATE TEMP TABLE ${guard} ("foreign_keys" INTEGER CONSTRAINT ${quoteIdentifier(SQLITE_REBUILD_GUARD_REASON)} CHECK ("foreign_keys" = 0))`,
     `INSERT INTO temp.${guard} ("foreign_keys") SELECT "foreign_keys" FROM pragma_foreign_keys`,
     `DROP TABLE temp.${guard}`,
+  ];
+}
+
+/** A table as it was read when its rebuild was planned. Internal to core. */
+export interface SqliteLiveTableDefinition {
+  /** The table's `sqlite_master.sql`, exactly as read. */
+  createTableSql: string;
+  /** Every index and trigger of the table that has SQL text, exactly as read. */
+  objects: { name: string; sql: string }[];
+  /**
+   * The tables that declared a foreign key onto it (itself included when it
+   * references itself), as read.
+   */
+  inboundReferences: string[];
+}
+
+/**
+ * The statements that make a rebuild refuse to run when the table is no
+ * longer the one it was planned from (see `rebuild-plan-guard.ts`).
+ *
+ * A rebuild builds the new table from the definition and the column list read
+ * at planning time, and replays the indexes and triggers read then. A column,
+ * index or trigger another connection added since is in none of them and
+ * would be dropped with the old table. A table another connection gave a
+ * foreign key onto this one since is not in the plan's foreign-key guard
+ * either, and where foreign keys are on `DROP TABLE` would fire its
+ * `ON DELETE` actions. These statements compare the live `sqlite_master` text
+ * of the table and of its indexes and triggers, and the set of tables that
+ * reference it, with what was planned, inside the rebuild's transaction and
+ * ahead of every statement that changes anything, and fail it on any
+ * difference. Like the foreign-key
+ * guard, the failure is a CHECK on a temporary table whose constraint name is
+ * the reason, so it holds for whoever runs the plan.
+ *
+ * The comparison and the failing statement are two statements on purpose.
+ * The SQL adapter removes every string literal of a failing statement from
+ * the error it reports, and the comparison is all literals; the statement
+ * that fails holds none, so its reason arrives whole.
+ */
+export function sqliteUnchangedTableGuardStatements(
+  tableName: string,
+  planned: SqliteLiveTableDefinition,
+): string[] {
+  const guard = quoteIdentifier('_smrt_rebuild_plan_guard');
+  const found = quoteIdentifier('_smrt_rebuild_plan_found');
+  const table = quoteStringLiteral(tableName);
+  const owned = `tbl_name = ${table} AND sql IS NOT NULL AND type IN ('index', 'trigger') AND name NOT LIKE 'sqlite_%'`;
+  const referencing = `m.type = 'table' AND m.name NOT LIKE 'sqlite_%' AND EXISTS (SELECT 1 FROM pragma_foreign_key_list(m.name) f WHERE lower(f."table") = lower(${table}))`;
+  const unchanged = [
+    `(SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ${table} AND sql = ${quoteStringLiteral(planned.createTableSql)}) = 1`,
+    // No index or trigger more or fewer than the plan replays ...
+    `(SELECT COUNT(*) FROM sqlite_master WHERE ${owned}) = ${planned.objects.length}`,
+    // ... and each of them with the text the plan replays.
+    ...(planned.objects.length > 0
+      ? [
+          `(SELECT COUNT(*) FROM sqlite_master WHERE ${owned} AND (${planned.objects
+            .map(
+              (object) =>
+                `(name = ${quoteStringLiteral(object.name)} AND sql = ${quoteStringLiteral(object.sql)})`,
+            )
+            .join(' OR ')})) = ${planned.objects.length}`,
+        ]
+      : []),
+    // No table references it that did not when it was planned, and none
+    // stopped: the plan's foreign-key handling was decided on that set.
+    `(SELECT COUNT(*) FROM sqlite_master m WHERE ${referencing}) = ${planned.inboundReferences.length}`,
+    ...(planned.inboundReferences.length > 0
+      ? [
+          `(SELECT COUNT(*) FROM sqlite_master m WHERE ${referencing} AND m.name IN (${planned.inboundReferences
+            .map(quoteStringLiteral)
+            .join(', ')})) = ${planned.inboundReferences.length}`,
+        ]
+      : []),
+  ];
+  return [
+    `DROP TABLE IF EXISTS temp.${found}`,
+    `CREATE TEMP TABLE ${found} AS SELECT (${unchanged.join(' AND ')}) AS "unchanged"`,
+    `DROP TABLE IF EXISTS temp.${guard}`,
+    `CREATE TEMP TABLE ${guard} ("unchanged" INTEGER CONSTRAINT ${quoteIdentifier(rebuildPlanStaleMessage(tableName))} CHECK ("unchanged" = 1))`,
+    `INSERT INTO temp.${guard} ("unchanged") SELECT "unchanged" FROM temp.${found}`,
+    `DROP TABLE temp.${guard}`,
+    `DROP TABLE temp.${found}`,
   ];
 }
 
@@ -530,7 +616,7 @@ export async function planSqliteTableRebuildsWithConstraints(
     }
   }
 
-  const plan = buildSqliteRebuildStatements({
+  const plan = buildPlannedSqliteRebuildStatements({
     tableName,
     createTableSql: context.createTableSql,
     columnTypes,
@@ -548,6 +634,11 @@ export async function planSqliteTableRebuildsWithConstraints(
     appendConstraints,
     preserveRowid: newOperations,
     inboundReferences: context.inboundReferences,
+    plannedFrom: {
+      createTableSql: context.createTableSql,
+      objects: context.objects,
+      inboundReferences: context.inboundReferences,
+    },
   });
 
   if (!plan) {
@@ -783,6 +874,18 @@ export interface BuildSqliteRebuildStatementsInput {
   inboundReferences?: string[];
 }
 
+/**
+ * The planner's input: the public one plus the table exactly as it was read
+ * for this plan. With it the plan starts with
+ * {@link sqliteUnchangedTableGuardStatements}, which refuses to run when the
+ * table, its indexes, its triggers or the tables that reference it changed
+ * since. Internal to core: a caller of {@link buildSqliteRebuildStatements}
+ * holds the database for the whole of its own read-plan-apply.
+ */
+interface PlannedSqliteRebuildInput extends BuildSqliteRebuildStatementsInput {
+  plannedFrom?: SqliteLiveTableDefinition;
+}
+
 /** A column a rebuild appends to the table (#3008). */
 export interface SqliteAppendedColumn {
   name: string;
@@ -812,6 +915,13 @@ export interface SqliteAppendedColumn {
  */
 export function buildSqliteRebuildStatements(
   input: BuildSqliteRebuildStatementsInput,
+): SqliteTableRebuildPlan | null {
+  return buildPlannedSqliteRebuildStatements(input);
+}
+
+/** {@link buildSqliteRebuildStatements}, with the planner's plan guard. */
+function buildPlannedSqliteRebuildStatements(
+  input: PlannedSqliteRebuildInput,
 ): SqliteTableRebuildPlan | null {
   const {
     tableName,
@@ -885,6 +995,10 @@ export function buildSqliteRebuildStatements(
       ? sqliteForeignKeyGuardStatements()
       : [];
   const statements = [
+    // First of all: the table must still be the one this plan was built from.
+    ...(input.plannedFrom
+      ? sqliteUnchangedTableGuardStatements(tableName, input.plannedFrom)
+      : []),
     ...guard,
     // Deferred FK enforcement survives the window where the table is absent.
     // Unlike `PRAGMA foreign_keys`, this one is honored inside a transaction

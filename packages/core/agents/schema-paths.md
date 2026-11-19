@@ -579,6 +579,19 @@ How each engine gets there:
   lost the change while the migrate succeeded (rv4,
   `issue-4937-overlapping-rebuilds.test.ts`). Rebuilds that cannot be combined
   stop the whole migration before anything runs.
+- **Combined DuckDB rebuilds read every table once.** When two rebuilds of
+  one migration read the same table and it changed between the readings (a
+  column added and filled by another connection), combining them would build
+  the earlier definition and check it against the later catalog; planning
+  stops with `TableChangedSincePlanError` instead, and a rerun plans from one
+  reading.
+- **The DuckDB rebuild checks its tables before it starts.** Its first
+  statements (`planGuardStatements`) compare the live `duckdb_tables()` and
+  `duckdb_indexes()` text of every table of the group with the text read when
+  the rebuild was planned, and raise on a difference, for the reason given
+  under "A SQLite type change is a table rebuild": a column or index added
+  after planning is not in the plan and would be dropped with the table. The
+  tracker reports it as `TableChangedSincePlanError`.
 - **The DuckDB rebuild checks itself** before its staging tables are dropped:
   for every table of the group it compares the columns, indexes, foreign keys
   and row count with what the plan meant to build, and fails the transaction
@@ -932,7 +945,32 @@ statement list SQLite's own docs prescribe: stage a new table under
 "requires table recreation" placeholder, so `db:migrate` applies it inside the
 normal atomic batch instead of exiting 1 forever.
 
-Four properties of that module are load-bearing; keep them if you touch it:
+These properties of that module are load-bearing; keep them if you touch it:
+
+- **The plan starts by checking that the table is still the one it was planned
+  from.** The staging DDL, the copy list and the replayed indexes and triggers
+  are all read at diff time, and SQLite holds nothing between planning and
+  applying. A column, index or trigger another connection adds in that window
+  is in none of them: it was not copied and went with the dropped table, with
+  everything written to it, while the migrate reported success. So the first
+  statements of every plan (`sqliteUnchangedTableGuardStatements`) compare the
+  live `sqlite_master` text of the table and of each of its indexes and
+  triggers, and the set of tables that declare a foreign key onto it, with
+  what was planned, inside the rebuild's transaction, and fail it on any
+  difference. The referencing set matters because the plan's foreign-key
+  guard was decided on it: a child with `ON DELETE CASCADE` created after
+  planning would otherwise lose its rows when a caller running the plan with
+  foreign keys on drops the parent. The failure is a CHECK on a temporary
+  table whose constraint name is the reason
+  (`smrt table rebuild refused: the table changed after the migration was
+  planned`), so it holds for the tracker, the CLI and a caller that runs the
+  statements itself. `MigrationTracker` reports it as
+  `TableChangedSincePlanError` (`rebuild-plan-guard.ts`; internal, not
+  exported); nothing was changed, and a rerun plans from the table as it now
+  is. The guard comes from the differ's planner; the public
+  `buildSqliteRebuildStatements` does not add it, so a caller building its
+  own plan holds the database for the whole of its read-plan-apply.
+  `rebuild-plan-guard.test.ts` covers both engines.
 
 - **The target shape comes from the live `sqlite_master` DDL**, retyping only
   the drifted columns. It is not regenerated from the manifest, so the rebuild
