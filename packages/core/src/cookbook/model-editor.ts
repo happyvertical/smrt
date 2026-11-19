@@ -1254,8 +1254,29 @@ async function openAppModelEditor(
           `MODEL_TABLE_COLLISION: ${table} is the table of the installed model ${owner}; the startup cookbook's list ${name} cannot take it`,
         );
     }
+    // A coherent document without the declarations: no feature, policy or
+    // provider-field reference to what revision 1 adds, so undoing it
+    // leaves no enabled list without a declaration.
     const before = structuredClone(doc);
     delete before.models;
+    const declared = new Set(
+      Object.keys(models.lists).map((name) => `${models.packageName}:${name}`),
+    );
+    const customFields = new Set(
+      Object.entries(models.fields).flatMap(([model, fields]) =>
+        Object.entries(fields).flatMap(([name, field]) =>
+          [name, ...(field.type === 'money' ? [`${name}Currency`] : [])].map(
+            (column) => `${model}\u0000${column}`,
+          ),
+        ),
+      ),
+    );
+    before.features = before.features.filter((id) => !declared.has(id));
+    before.policies = before.policies.filter(
+      (policy) =>
+        !declared.has(policy.objectRef) &&
+        !customFields.has(`${policy.objectRef}\u0000${policy.fieldName}`),
+    );
     const change: AppModelChange = {
       revision: 1,
       requestId: 'initial-cookbook',

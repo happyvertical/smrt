@@ -328,6 +328,12 @@ describe('app model editor: installed model names and tables', () => {
     ObjectRegistry.clear();
     const again = await editorFor({ cookbook: withList('GuardNotes') });
     expect(again.snapshot().revision).toBe(1);
+    // Undoing revision 1 leaves no enabled list without a declaration.
+    await applier(again)({ type: 'undo' });
+    expect(again.snapshot().cookbook.features).not.toContain(
+      `${APP}:GuardNotes`,
+    );
+    expect(again.snapshot().cookbook.models?.lists ?? {}).toEqual({});
   });
 
   it('still boots a startup cookbook whose own declarations predate the name checks', async () => {
