@@ -12,7 +12,7 @@ const plan = $derived(planPill(changes));
 
 {#if plan}
   <a
-    class="smrt-changes-pill"
+    class="smrt-changes-pill__root"
     class:smrt-changes-pill__bad={plan.state === 'blocked'}
     href="/changes"
     aria-label={plan.label}
@@ -34,18 +34,13 @@ const plan = $derived(planPill(changes));
 @layer smrt.reset, smrt.structure, smrt.theme;
 
 @layer smrt.structure {
-  .smrt-changes-pill {
+  .smrt-changes-pill__root {
     display: inline-flex;
     align-items: center;
     gap: 0.45rem;
     block-size: 2rem;
     padding-inline: 0.3rem 0.75rem;
-    border: 1px solid transparent;
-    border-radius: var(--smrt-radius-full, 999px);
-    font-size: 0.875rem;
-    font-weight: 600;
     white-space: nowrap;
-    text-decoration: none;
   }
   .smrt-changes-pill__n {
     display: inline-grid;
@@ -53,18 +48,11 @@ const plan = $derived(planPill(changes));
     min-inline-size: 1.5rem;
     block-size: 1.5rem;
     padding-inline: 0.35rem;
-    border-radius: var(--smrt-radius-full, 999px);
-    font-size: 0.8125rem;
-    font-weight: 700;
   }
   .smrt-changes-pill__spin {
     inline-size: 0.9rem;
     block-size: 0.9rem;
     margin-inline-start: 0.35rem;
-    border: 2px solid currentColor;
-    border-inline-end-color: transparent;
-    border-radius: 50%;
-    animation: smrt-changes-spin 0.8s linear infinite;
   }
   .smrt-changes-pill__short {
     display: none;
@@ -82,22 +70,17 @@ const plan = $derived(planPill(changes));
       transform: rotate(360deg);
     }
   }
-  @media (prefers-reduced-motion: reduce) {
-    .smrt-changes-pill__spin {
-      animation: none;
-    }
-  }
 }
 
 @layer smrt.theme {
-  .smrt-changes-pill {
+  .smrt-changes-pill__root {
     background: var(--smrt-color-primary-container);
     color: var(--smrt-color-on-primary-container);
   }
-  .smrt-changes-pill:hover {
+  .smrt-changes-pill__root:hover {
     border-color: var(--smrt-color-on-primary-container);
   }
-  .smrt-changes-pill:focus-visible {
+  .smrt-changes-pill__root:focus-visible {
     outline: 2px solid var(--smrt-color-primary);
     outline-offset: 2px;
   }
@@ -113,6 +96,29 @@ const plan = $derived(planPill(changes));
   .smrt-changes-pill__bad .smrt-changes-pill__n {
     background: var(--smrt-color-error);
     color: var(--smrt-color-surface);
+  }
+  .smrt-changes-pill__root {
+    border: 1px solid transparent;
+    border-radius: var(--smrt-radius-full);
+    font-size: 0.875rem;
+    font-weight: 600;
+    text-decoration: none;
+  }
+  .smrt-changes-pill__n {
+    border-radius: var(--smrt-radius-full);
+    font-size: 0.8125rem;
+    font-weight: 700;
+  }
+  .smrt-changes-pill__spin {
+    border: 2px solid currentColor;
+    border-inline-end-color: transparent;
+    border-radius: 50%;
+    animation: smrt-changes-spin 0.8s linear infinite;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .smrt-changes-pill__spin {
+      animation: none;
+    }
   }
 }
 </style>

@@ -98,9 +98,6 @@ async function send(event: SubmitEvent) {
     margin: 0;
     overflow-wrap: anywhere;
   }
-  .smrt-change-extras__who {
-    font-weight: 600;
-  }
   .smrt-change-extras__row {
     display: flex;
     flex-wrap: wrap;
@@ -112,12 +109,7 @@ async function send(event: SubmitEvent) {
   }
   .smrt-change-extras__text {
     padding: 0.4rem 0.6rem;
-    font: inherit;
     resize: vertical;
-  }
-  .smrt-change-extras__label {
-    font-size: 0.8125rem;
-    font-weight: 600;
   }
 }
 
@@ -138,6 +130,16 @@ async function send(event: SubmitEvent) {
     border-radius: var(--smrt-radius-md, 0.5rem);
     background: var(--smrt-color-surface);
     color: inherit;
+  }
+  .smrt-change-extras__who {
+    font-weight: 600;
+  }
+  .smrt-change-extras__text {
+    font: inherit;
+  }
+  .smrt-change-extras__label {
+    font-size: 0.8125rem;
+    font-weight: 600;
   }
 }
 </style>

@@ -214,7 +214,7 @@ async function apply() {
     </div>
   {:else}
     <div class="smrt-changes__box">
-    <div class="smrt-changes">
+    <div class="smrt-changes__root">
       {#if working}<p class="smrt-changes__check" role="status">{working}</p>{/if}
       <ol class="smrt-changes__cards" aria-label="Changes waiting, in the order they were made">
         {#each rows as row (row.kind === 'group' ? row.id : row.card.id)}
@@ -313,7 +313,7 @@ async function apply() {
   .smrt-changes__box {
     container-type: inline-size;
   }
-  .smrt-changes {
+  .smrt-changes__root {
     display: grid;
     grid-template-columns: minmax(0, 1fr) 17.5rem;
     gap: 1.25rem;
@@ -338,12 +338,7 @@ async function apply() {
     gap: 0.6rem;
     inline-size: 100%;
     padding: 0.7rem 0.9rem;
-    font: inherit;
-    text-align: start;
     cursor: pointer;
-  }
-  .smrt-changes__group-title {
-    font-weight: 600;
   }
   .smrt-changes__chev {
     margin-inline-start: auto;
@@ -366,7 +361,6 @@ async function apply() {
   }
   .smrt-changes__side h2 {
     margin: 0;
-    font-size: 0.9375rem;
   }
   .smrt-changes__sum {
     margin: 0;
@@ -374,7 +368,6 @@ async function apply() {
     list-style: none;
     display: grid;
     gap: 0.35rem;
-    font-size: 0.875rem;
   }
   .smrt-changes__check {
     display: flex;
@@ -393,23 +386,16 @@ async function apply() {
   }
   .smrt-changes__count {
     display: inline-grid;
-    vertical-align: middle;
     place-items: center;
     min-inline-size: 1.5rem;
     block-size: 1.5rem;
     padding-inline: 0.4rem;
-    font-size: 0.8125rem;
-    font-weight: 700;
   }
   .smrt-changes__spin {
     display: inline-block;
     inline-size: 0.9rem;
     block-size: 0.9rem;
     margin-inline-end: 0.5rem;
-    border: 2px solid currentColor;
-    border-inline-end-color: transparent;
-    border-radius: 50%;
-    animation: smrt-changes-page-spin 0.8s linear infinite;
   }
   .smrt-app-shell-changes__sr-only {
     position: absolute;
@@ -424,13 +410,8 @@ async function apply() {
       transform: rotate(360deg);
     }
   }
-  @media (prefers-reduced-motion: reduce) {
-    .smrt-changes__spin {
-      animation: none;
-    }
-  }
   @container (max-width: 40rem) {
-    .smrt-changes {
+    .smrt-changes__root {
       grid-template-columns: minmax(0, 1fr);
     }
     .smrt-changes__side {
@@ -458,7 +439,7 @@ async function apply() {
     background: var(--smrt-color-surface);
   }
   .smrt-changes__count {
-    border-radius: 999px;
+    border-radius: var(--smrt-radius-full);
     background: var(--smrt-color-primary-container);
     color: var(--smrt-color-on-primary-container);
   }
@@ -485,7 +466,36 @@ async function apply() {
   /* Button-only shade: white text on the theme orange is about 3.6:1, this is 5:1.
      The global primary token is unchanged. */
   .smrt-changes__actions :global(.smrt-button__primary) {
-    --smrt-color-primary: var(--smrt-app-shell-action, #c2470a);
+    --smrt-color-primary: var(--smrt-app-shell-action, var(--smrt-color-primary));
+  }
+  .smrt-changes__group-head {
+    font: inherit;
+    text-align: start;
+  }
+  .smrt-changes__group-title {
+    font-weight: 600;
+  }
+  .smrt-changes__side h2 {
+    font-size: 0.9375rem;
+  }
+  .smrt-changes__sum {
+    font-size: 0.875rem;
+  }
+  .smrt-changes__count {
+    vertical-align: middle;
+    font-size: 0.8125rem;
+    font-weight: 700;
+  }
+  .smrt-changes__spin {
+    border: 2px solid currentColor;
+    border-inline-end-color: transparent;
+    border-radius: 50%;
+    animation: smrt-changes-page-spin 0.8s linear infinite;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .smrt-changes__spin {
+      animation: none;
+    }
   }
 }
 </style>

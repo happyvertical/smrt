@@ -103,7 +103,7 @@ const dependency = $derived(dependencyActions(card));
 </script>
 
 <article
-  class="smrt-change-card"
+  class="smrt-change-card__root"
   class:smrt-change-card__blocked={problems.length > 0}
   aria-labelledby="{uid}-title"
   data-testid="change-card"
@@ -186,7 +186,7 @@ const dependency = $derived(dependencyActions(card));
 @layer smrt.reset, smrt.structure, smrt.theme;
 
 @layer smrt.structure {
-  .smrt-change-card {
+  .smrt-change-card__root {
     padding: 0.875rem 1rem;
   }
   .smrt-change-card__top {
@@ -201,10 +201,8 @@ const dependency = $derived(dependencyActions(card));
     inline-size: 2.25rem;
     block-size: 2.25rem;
   }
-  .smrt-change-card h3 {
+  .smrt-change-card__root h3 {
     margin: 0;
-    font-size: 1rem;
-    line-height: 1.35;
   }
   .smrt-change-card__chips,
   .smrt-change-card__choices,
@@ -223,16 +221,10 @@ const dependency = $derived(dependencyActions(card));
     align-items: center;
     gap: 0.3rem;
     padding: 0.1rem 0.55rem;
-    border-radius: 999px;
-    font-size: 0.8125rem;
-    font-weight: 500;
   }
   .smrt-change-card__chip-x {
-    border: 0;
-    background: none;
     padding: 0 0.15rem;
     cursor: pointer;
-    color: inherit;
   }
   .smrt-change-card__panel {
     display: grid;
@@ -243,15 +235,11 @@ const dependency = $derived(dependencyActions(card));
   .smrt-change-card__f {
     display: grid;
     gap: 0.2rem;
-    font-size: 0.8125rem;
-    font-weight: 600;
   }
   .smrt-change-card__input,
   .smrt-change-card__add {
     min-block-size: 2.25rem;
     padding: 0.3rem 0.6rem;
-    font: inherit;
-    font-weight: 400;
   }
   .smrt-change-card__row {
     justify-content: flex-end;
@@ -259,7 +247,7 @@ const dependency = $derived(dependencyActions(card));
   .smrt-change-card__err {
     margin: 0.5rem 0 0;
   }
-  .smrt-change-card {
+  .smrt-change-card__root {
     container-type: inline-size;
   }
   @container (max-width: 26rem) {
@@ -274,7 +262,7 @@ const dependency = $derived(dependencyActions(card));
 }
 
 @layer smrt.theme {
-  .smrt-change-card {
+  .smrt-change-card__root {
     border: 1px solid var(--smrt-color-outline-variant);
     border-radius: var(--smrt-radius-lg, 0.75rem);
     background: var(--smrt-color-surface-container-low, var(--smrt-color-surface));
@@ -310,8 +298,31 @@ const dependency = $derived(dependencyActions(card));
     color: var(--smrt-color-error);
   }
   /* Button-only shade (5:1 with white); the global primary token is unchanged. */
-  .smrt-change-card :global(.smrt-button__primary) {
-    --smrt-color-primary: var(--smrt-app-shell-action, #c2470a);
+  .smrt-change-card__root :global(.smrt-button__primary) {
+    --smrt-color-primary: var(--smrt-app-shell-action, var(--smrt-color-primary));
+  }
+  .smrt-change-card__root h3 {
+    font-size: 1rem;
+    line-height: 1.35;
+  }
+  .smrt-change-card__chip {
+    border-radius: var(--smrt-radius-full);
+    font-size: 0.8125rem;
+    font-weight: 500;
+  }
+  .smrt-change-card__chip-x {
+    border: 0;
+    background: none;
+    color: inherit;
+  }
+  .smrt-change-card__f {
+    font-size: 0.8125rem;
+    font-weight: 600;
+  }
+  .smrt-change-card__input,
+  .smrt-change-card__add {
+    font: inherit;
+    font-weight: 400;
   }
 }
 </style>
