@@ -278,7 +278,8 @@ export async function effectiveAgentSendPolicy(
 
 function readField(source: object, name: string): unknown {
   const value = (source as Record<string, unknown>)[name];
-  return value === undefined ? null : value;
+  // Storage normalizes an empty optional reference to null; so does the hash.
+  return value === undefined || value === '' ? null : value;
 }
 
 type AttachmentRowLike = {
@@ -560,8 +561,11 @@ export async function holdAgentSend(
   if (
     (options as { attachments?: unknown[] } | undefined)?.attachments?.length
   ) {
+    // Send-time bytes are not stored, so no person could review them and
+    // nothing could bind them once this call returns. Store them as
+    // Attachment rows on the message (bound byte for byte) instead.
     return refusedResult(
-      'A held send cannot carry send-time attachments; store them on the draft.',
+      'A held send cannot carry send-time attachments; store them as attachments on the message.',
     );
   }
   // Bind the stored draft, and refuse when the caller's copy differs from it:

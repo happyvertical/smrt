@@ -43,13 +43,18 @@ import {
   type MailPrincipal,
   type MailScope,
   resetMailAccess,
+  runWithMailSystemAccess,
 } from '../access.js';
 // The package entry registers the messages permission catalog.
 import '../index.js';
+import { MessageCollection } from '../collections/MessageCollection';
 import { MailDraftService } from '../mail-drafts.js';
 import { Attachment } from '../models/Attachment';
 import { Email } from '../models/Email';
 import { EmailAccount } from '../models/EmailAccount';
+import { MessagingEndpoint } from '../models/MessagingEndpoint.js';
+import { PersonaMessageRoute } from '../models/PersonaMessageRoute.js';
+import { messagingPrincipalFromPermissions } from '../permissions.js';
 import {
   configureMailSendApprovals,
   type MailSendApprovalGate,
@@ -58,6 +63,7 @@ import {
   threadHandledBy,
 } from '../send-approval.js';
 import { EmailSender } from '../senders/EmailSender';
+import { PersonaMessagingService } from '../services/PersonaMessagingService.js';
 import { prepareMessageParents } from './fk-fixtures.js';
 
 const ALL_MAIL_SLUGS = [
@@ -868,6 +874,114 @@ describe('agent send policy and held sends (#5141)', () => {
         return draft.send();
       });
       expect(result.error).toMatch(/account's own address/);
+      expect(providerSend).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('persona routes (PersonaMessagingService)', () => {
+    async function personaService() {
+      const personaId = randomUUID();
+      return withTenant({ tenantId: tenantA }, async () => {
+        const account = new EmailAccount({
+          ...options,
+          tenantId: tenantA,
+          name: 'Shop',
+          email: 'shop@example.com',
+          providerType: 'smtp',
+        });
+        await account.initialize();
+        await account.save();
+        const endpoint = new MessagingEndpoint({
+          ...options,
+          tenantId: tenantA,
+          label: 'Vendor',
+          channel: 'email',
+          address: JSON.stringify({ email: 'orders@vendor.example' }),
+        });
+        await endpoint.initialize();
+        await endpoint.save();
+        const route = new PersonaMessageRoute({
+          ...options,
+          tenantId: tenantA,
+          personaId,
+          accountId: account.id as string,
+          endpointId: endpoint.id as string,
+          purpose: 'default',
+          priority: 10,
+        });
+        await route.initialize();
+        await route.save();
+        return {
+          personaId,
+          service: new PersonaMessagingService({
+            db,
+            tenantId: tenantA,
+            principal: messagingPrincipalFromPermissions(['messages.send'], {
+              tenantId: tenantA,
+            }),
+          }),
+        };
+      });
+    }
+
+    it('holds a real persona send as a draft, then a person approves and it is sent once', async () => {
+      const { personaId, service } = await personaService();
+      const sent = await as(null, () =>
+        service.send({
+          personaId,
+          subject: 'PO-1042',
+          body: 'Order attached.',
+        }),
+      );
+      expect(sent.delivery).toMatchObject({ success: false });
+      if (!sent.delivery.pendingApproval)
+        throw new Error(String(sent.delivery.error));
+      const approvalId = sent.delivery.pendingApproval?.approvalId;
+      expect(approvalId).toBeDefined();
+      expect(providerSend).not.toHaveBeenCalled();
+      expect((await reload(sent.messageId)).sendStatus).toBe('draft');
+
+      // A system drain neither lists it nor sends it.
+      await withTenant({ tenantId: tenantA }, () =>
+        runWithMailSystemAccess(async () => {
+          const outbox = await (
+            await MessageCollection.create(options)
+          ).getOutbox();
+          expect(outbox.map((m) => m.id)).not.toContain(sent.messageId);
+          const message = (await (
+            await MessageCollection.create(options)
+          ).get({ id: sent.messageId })) as Email;
+          const drained = await message.send();
+          expect(drained.success).toBe(false);
+        }),
+      );
+      expect(providerSend).not.toHaveBeenCalled();
+
+      const decided = await approvals(person(colleague)).approve(
+        approvalId as string,
+      );
+      expect(decided).toMatchObject({
+        state: 'sent',
+        result: { success: true },
+      });
+      expect(providerSend).toHaveBeenCalledTimes(1);
+      expect((await reload(sent.messageId)).sendStatus).toBe('sent');
+    });
+
+    it('refuses persona send-time attachments on a held send, sending nothing', async () => {
+      const { personaId, service } = await personaService();
+      const sent = await as(null, () =>
+        service.send({
+          personaId,
+          subject: 'PO-1043',
+          body: 'Order attached.',
+          attachments: [
+            { filename: 'po.pdf', content: new Uint8Array([1, 2, 3]) },
+          ],
+        }),
+      );
+      expect(sent.delivery.success).toBe(false);
+      expect(sent.delivery.error).toMatch(/send-time attachments/);
       expect(providerSend).not.toHaveBeenCalled();
     });
   });

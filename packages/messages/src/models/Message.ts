@@ -588,14 +588,20 @@ export class Message extends SmrtObject {
 
     // Agents follow the account's send policy: by default the draft is held
     // for a person's approval and nothing leaves (smrt#5141).
-    const held = inMailSystemAccess()
-      ? null
-      : await holdAgentSend(this, account, options, actor);
+    // Trusted system work is not held, except a persona (agent) message: a
+    // system drain must never send an agent's message around its approval.
+    const held =
+      inMailSystemAccess() && !this.personaId
+        ? null
+        : await holdAgentSend(this, account, options, actor);
     if (held) {
-      if (held.pendingApproval?.created) {
-        stampHandledBy(this, actor);
-        await this.save();
-      }
+      // A held message is a draft: out of any pending/scheduled outbox, and
+      // decidable by a person. Content is untouched, so the binding holds.
+      const toDraft =
+        held.pendingApproval !== undefined && this.sendStatus !== 'draft';
+      if (toDraft) this.sendStatus = 'draft';
+      if (held.pendingApproval?.created) stampHandledBy(this, actor);
+      if (toDraft || held.pendingApproval?.created) await this.save();
       return held;
     }
     // Audited before anything is claimed: an audit failure sends nothing.

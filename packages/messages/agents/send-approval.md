@@ -42,6 +42,14 @@ outside system access. For an agent under `require_approval` it:
    both return `pendingApproval` and send nothing. The agent never sends a
    held draft itself; it goes out once, as the approving person.
 
+A held message is set to `draft` (a persona route creates it `pending`), so
+it leaves every pending/scheduled outbox and a person can decide it. A
+persona message is held even under system access, so a system drain never
+sends it around its approval. Send-time attachment bytes (for example
+`PersonaMessagingService` `attachments`) are refused on a held send: they are
+not stored, so no person could review them and nothing could bind them;
+store them as `Attachment` rows on the message instead.
+
 After the row is claimed, a send an approval released re-hashes the draft
 (attachment rows included); a mismatch fails definitely and sends nothing.
 The approval request carries a neutral summary, never mail content: request
