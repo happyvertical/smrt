@@ -328,6 +328,42 @@ describe('a SQLite rebuild stops when a table started referencing it after the p
     ).toBe(1);
   });
 
+  it('carries an index whose name only resembles the internal prefix through the rebuild', async () => {
+    await db.query(`CREATE UNIQUE INDEX sqliteX_title ON ${PARENT} (title)`);
+
+    expect(await migrate(db)).toMatchObject({ applied: true, refused: false });
+
+    expect(
+      (
+        await db.query(
+          `SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = '${PARENT}' AND sql IS NOT NULL`,
+        )
+      ).rows,
+    ).toEqual([{ name: 'sqliteX_title' }]);
+    await expect(
+      db.query(`INSERT INTO ${PARENT} (id, title) VALUES ('p2', 'hello')`),
+    ).rejects.toThrow();
+  });
+
+  it('stops by name when an index whose name only resembles the internal prefix was added after the plan', async () => {
+    const { handle } = changingAfterThePlan(db, async () => {
+      await other.query(
+        `CREATE UNIQUE INDEX sqliteX_late ON ${PARENT} (title)`,
+      );
+    });
+
+    await expect(migrate(handle)).rejects.toBeInstanceOf(
+      TableChangedSincePlanError,
+    );
+    expect(
+      (
+        await db.query(
+          `SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'sqliteX_late'`,
+        )
+      ).rows,
+    ).toHaveLength(1);
+  });
+
   it('refuses a caller that runs the planned statements itself, and keeps the child rows', async () => {
     const { statements } = await getPendingSchemaStatements(db, {
       engineHint: 'sqlite',
@@ -423,6 +459,10 @@ describe('the SQLite check compares the table and every index and trigger', () =
       'DROP TRIGGER checked_touch | CREATE TRIGGER checked_touch AFTER UPDATE ON checked BEGIN SELECT 2; END',
     ],
     ['the table was dropped', 'DROP TABLE checked'],
+    [
+      'an index whose name only resembles the internal prefix was added',
+      'CREATE UNIQUE INDEX sqliteX_unique ON checked (label)',
+    ],
     [
       'a table that references it was created',
       'CREATE TABLE late_ref (id TEXT, checked_id TEXT REFERENCES checked (id) ON DELETE CASCADE)',

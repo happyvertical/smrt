@@ -970,7 +970,12 @@ These properties of that module are load-bearing; keep them if you touch it:
   is. The guard comes from the differ's planner; the public
   `buildSqliteRebuildStatements` does not add it, so a caller building its
   own plan holds the database for the whole of its read-plan-apply.
-  `rebuild-plan-guard.test.ts` covers both engines.
+  `rebuild-plan-guard.test.ts` covers both engines. Catalog reads skip
+  SQLite's reserved `sqlite_` names by a literal prefix
+  (`sqliteUserObjectName`, `schema/sqlite-internal-names.ts`): in `LIKE`, `_`
+  matches any character, so `NOT LIKE 'sqlite_%'` also hid user objects such
+  as `sqliteX_unique` from the rebuild's capture and its guard, and the
+  rebuild dropped them.
 
 - **The target shape comes from the live `sqlite_master` DDL**, retyping only
   the drifted columns. It is not regenerated from the manifest, so the rebuild

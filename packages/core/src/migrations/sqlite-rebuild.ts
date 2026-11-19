@@ -75,6 +75,7 @@ import {
   quoteIdentifier,
   quoteStringLiteral,
 } from '../schema/sql-identifiers.js';
+import { sqliteUserObjectName } from '../schema/sqlite-internal-names.js';
 import type { SchemaChange, SQLDataType } from '../schema/types.js';
 import { rebuildPlanStaleMessage } from './rebuild-plan-guard.js';
 import type { DatabaseInterface } from './types.js';
@@ -158,8 +159,8 @@ export function sqliteUnchangedTableGuardStatements(
   const guard = quoteIdentifier('_smrt_rebuild_plan_guard');
   const found = quoteIdentifier('_smrt_rebuild_plan_found');
   const table = quoteStringLiteral(tableName);
-  const owned = `tbl_name = ${table} AND sql IS NOT NULL AND type IN ('index', 'trigger') AND name NOT LIKE 'sqlite_%'`;
-  const referencing = `m.type = 'table' AND m.name NOT LIKE 'sqlite_%' AND EXISTS (SELECT 1 FROM pragma_foreign_key_list(m.name) f WHERE lower(f."table") = lower(${table}))`;
+  const owned = `tbl_name = ${table} AND sql IS NOT NULL AND type IN ('index', 'trigger') AND ${sqliteUserObjectName()}`;
+  const referencing = `m.type = 'table' AND ${sqliteUserObjectName('m.name')} AND EXISTS (SELECT 1 FROM pragma_foreign_key_list(m.name) f WHERE lower(f."table") = lower(${table}))`;
   const unchanged = [
     `(SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ${table} AND sql = ${quoteStringLiteral(planned.createTableSql)}) = 1`,
     // No index or trigger more or fewer than the plan replays ...
@@ -751,7 +752,7 @@ async function readSqliteRebuildContext(
   const objectRows = await db.query(
     `SELECT name, sql FROM sqlite_master
       WHERE tbl_name = ? AND sql IS NOT NULL
-        AND type IN ('index', 'trigger') AND name NOT LIKE 'sqlite_%'`,
+        AND type IN ('index', 'trigger') AND ${sqliteUserObjectName()}`,
     tableName,
   );
   const objects: { name: string; sql: string }[] = [];
@@ -798,7 +799,7 @@ async function readInboundForeignKeys(
 ): Promise<string[]> {
   const tables = await db.query(
     `SELECT name FROM sqlite_master
-      WHERE type = 'table' AND name NOT LIKE 'sqlite_%'`,
+      WHERE type = 'table' AND ${sqliteUserObjectName()}`,
   );
 
   const referencing: string[] = [];

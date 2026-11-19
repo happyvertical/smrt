@@ -342,7 +342,7 @@ export async function smokeSidecar(options) {
         const { DatabaseSync } = await import('node:sqlite');
         const database = new DatabaseSync(join(data, options.databaseFile), { readOnly: true });
         try {
-          tableCount = Number(database.prepare("SELECT count(*) AS count FROM sqlite_schema WHERE type = 'table' AND name NOT LIKE 'sqlite_%'").get().count);
+          tableCount = Number(database.prepare("SELECT count(*) AS count FROM sqlite_schema WHERE type = 'table' AND name NOT LIKE 'sqlite\\_%' ESCAPE '\\'").get().count);
         } finally { database.close(); }
       }
       const request = async (path, init = {}) => {

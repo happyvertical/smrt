@@ -34,6 +34,7 @@ import {
   renderForeignKeyOrphanDetector,
   schemaForeignKeysForEngine,
 } from './foreign-key-ddl.js';
+import { sqliteUserObjectName } from './sqlite-internal-names.js';
 import type { SchemaDefinition } from './types.js';
 
 /** One manifest foreign key's live orphan count. */
@@ -448,7 +449,7 @@ async function listLiveTables(
   const sql =
     engine === 'postgres'
       ? `SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'`
-      : `SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'`;
+      : `SELECT name FROM sqlite_master WHERE type='table' AND ${sqliteUserObjectName()}`;
 
   const result = await db.query(sql);
   const rows = normalizeQueryRows(result) as {
