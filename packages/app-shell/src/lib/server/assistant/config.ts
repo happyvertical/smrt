@@ -27,6 +27,7 @@ import {
 import { ChatGPTSignedOutError } from '@happyvertical/smrt-inference/server';
 import type { AssistantStatus } from '../../assistant/events.ts';
 import { CHATGPT_ASSISTANT_CLASS, CHATGPT_SETTINGS_HREF } from '../chatgpt.ts';
+import { shellProfile } from '../host.ts';
 import { type Principal, runAs } from '../owner.ts';
 import { assistantSystemPrompt } from './guidance.ts';
 
@@ -133,7 +134,11 @@ export async function resolveAssistantOptions(
   principal: Principal,
   config: AssistantConfigOptions = {},
 ): Promise<Record<string, unknown>> {
-  const base = baseOptions(config.env ?? process.env);
+  // Hosted: the deployment's own key (config, environment) is the operator's,
+  // and hosted inference is not wired (#5194). Only a key the owner saved
+  // answers; with none the assistant is unavailable and says so.
+  const hosted = (await shellProfile()) === 'cloud';
+  const base = hosted ? undefined : baseOptions(config.env ?? process.env);
   const resolved = await runAs(principal, () =>
     resolveInferenceTarget({
       tier: tierOf(config),

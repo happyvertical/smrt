@@ -23,7 +23,7 @@ import { tokenCredentials } from '../agent-cli/credentials.ts';
 import { type AgentCliStatus, locateCli } from '../agent-cli/detect.ts';
 import { agentCliDeps, cliStatus } from '../agent-cli/service.ts';
 import type { AgentTool } from '../agent-cli/tools.ts';
-import { dataRoot } from '../host.ts';
+import { dataRoot, shellProfile } from '../host.ts';
 import {
   errorResponse,
   HttpError,
@@ -153,6 +153,9 @@ export function mountAssistantRoutes(
         throw new HttpError(409, 'the assistant is already working on a turn');
 
       const engine = await engineOf(owner);
+      // Hosted: never a program or a sign-in on the server's own machine.
+      if ((await shellProfile()) === 'cloud' && engine !== 'api')
+        throw new HttpError(409, 'The hosted assistant uses your own API key.');
       const tool = cliTool(engine);
       let model: Awaited<ReturnType<AssistantModelFactory>> | undefined;
       if (tool) {

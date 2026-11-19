@@ -14,6 +14,7 @@ import type { AgentCliStatus } from '../agent-cli/detect.ts';
 import { asSettingsOwner, assistantSettings } from '../agent-cli/service.ts';
 import type { AgentTool } from '../agent-cli/tools.ts';
 import { CHATGPT_SETTINGS_HREF, chatgptConnection } from '../chatgpt.ts';
+import { shellProfile } from '../host.ts';
 import type { Principal } from '../owner.ts';
 import { type AssistantConfigOptions, assistantStatus } from './config.ts';
 
@@ -21,8 +22,16 @@ export const SETUP_ACTION = { label: 'Set up the assistant', href: '/welcome' };
 
 export { cliTool, engineLabel } from '@happyvertical/smrt-inference/server';
 
-/** The owner's stored engine, shared by chat and workbook planning. */
-export function assistantEngine(owner: Principal): Promise<AssistantEngineId> {
+/**
+ * The owner's stored engine, shared by chat and workbook planning. The hosted
+ * app has exactly one: the API key engine on the owner's own key. A stored
+ * `claude-code`, `codex` or `chatgpt` choice (a program on, or a sign-in made
+ * from, the server's machine) is never honoured there.
+ */
+export async function assistantEngine(
+  owner: Principal,
+): Promise<AssistantEngineId> {
+  if ((await shellProfile()) === 'cloud') return 'api';
   return asSettingsOwner(
     owner,
     async () => (await assistantSettings().read()).engine,

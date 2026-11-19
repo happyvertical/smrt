@@ -9,7 +9,7 @@
 // at a time (`exclusive`), so a start cannot race a publish or a discard.
 
 import { existsSync, realpathSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { resolve } from 'node:path';
 import {
   type AppHost,
   discardDraftDirectory,
@@ -29,13 +29,14 @@ import {
 } from './approvals.ts';
 import { publish } from './events.ts';
 import {
-  DRAFT_DIRNAME,
   type DraftSlot,
-  dataRoot,
+  getAppTenantId,
+  getDraftDir,
   getDraftSlot,
   getHost,
   getLiveStore,
   getShellDb,
+  getStorePin,
   hostFor,
   setDraftSlot,
   wireHostEvents,
@@ -171,7 +172,9 @@ export function startDraft(
     // A draft forks live, so live is repaired first (it is not frozen yet).
     await live.repairLegacyImport().catch(() => 0);
     const db = await getShellDb();
-    const dir = join(await dataRoot(), DRAFT_DIRNAME);
+    const dir = await getDraftDir();
+    const tenantId = await getAppTenantId();
+    const pin = await getStorePin();
     // A leftover copy no row refers to (host.ts removes these at start): the
     // engine only removes a directory that is one of its own drafts.
     if (existsSync(dir)) discardDraftDirectory(dir);
@@ -191,7 +194,7 @@ export function startDraft(
     try {
       await beforeFork?.(id);
       host = await live.forkDraft(dir, {
-        store: new DraftVersionStore(db, id),
+        store: new DraftVersionStore(db, id, pin),
       });
       // The draft's store moved the row's pointer: re-read it before updating.
       const fresh = (await drafts.get(id)) ?? row;
@@ -210,7 +213,7 @@ export function startDraft(
       }
       throw e;
     }
-    wireHostEvents(host, 'draft');
+    wireHostEvents(host, 'draft', tenantId);
     setDraftSlot({ id, name: row.name, dir, host, problem: null, hold });
     publish({ type: 'draft', status: 'started', id, name: row.name });
     return (await draftInfo()) as DraftInfo;

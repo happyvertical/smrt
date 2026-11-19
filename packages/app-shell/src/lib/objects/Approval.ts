@@ -32,6 +32,7 @@ export type ApprovalStatus =
 @smrt({
   tableName: 'approvals',
   conflictColumns: ['id'],
+  tenantScoped: { mode: 'optional' },
   // Only the owner decides. The generated list/get/create/update/delete are
   // not exposed: the owner reads approvals through `pending` and
   // /api/shell/approvals, and rows are written only by the approval service.

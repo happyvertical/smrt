@@ -2,7 +2,7 @@
 
 import { readOriginFile } from '@happyvertical/smrt-app-runtime';
 import type { TaskRunner } from '@happyvertical/smrt-jobs';
-import { closeHost } from './host.ts';
+import { closeHost, requireLocalProfile } from './host.ts';
 import { createShellImportService } from './import-workflow.ts';
 import { runtime } from './smrt.ts';
 
@@ -12,6 +12,9 @@ let service: ReturnType<typeof createShellImportService> | undefined;
 let hooked = false;
 export function shellImports() {
   pending ??= (async () => {
+    // Workbook import runs on the embedded job runner of the desktop's local
+    // runtime; the hosted app has no such runner yet.
+    await requireLocalProfile('Workbook import');
     const local = await runtime.localRuntime();
     const next = createShellImportService({
       db: local.db,

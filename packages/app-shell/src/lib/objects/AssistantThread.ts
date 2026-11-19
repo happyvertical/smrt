@@ -16,6 +16,7 @@ import {
   mcp: false,
   cli: false,
   conflictColumns: ['id'],
+  tenantScoped: { mode: 'optional' },
 })
 export class AssistantThread extends SmrtObject {
   /** The owner's user id. */

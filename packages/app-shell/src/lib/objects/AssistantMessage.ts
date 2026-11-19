@@ -18,6 +18,7 @@ export type AssistantRole = 'user' | 'assistant' | 'tool';
   mcp: false,
   cli: false,
   conflictColumns: ['id'],
+  tenantScoped: { mode: 'optional' },
 })
 export class AssistantMessage extends SmrtObject {
   @field({ type: 'text' })

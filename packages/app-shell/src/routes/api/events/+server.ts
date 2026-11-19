@@ -12,8 +12,9 @@ import { errorResponse, ownerOf } from '$lib/server/http';
 import type { RequestHandler } from './$types';
 
 export const GET: RequestHandler = async (event) => {
+  let tenantId: string;
   try {
-    await ownerOf(event);
+    tenantId = (await ownerOf(event)).tenantId;
   } catch (error) {
     return errorResponse(error);
   }
@@ -29,8 +30,10 @@ export const GET: RequestHandler = async (event) => {
         }
       };
       send('event: ready\ndata: {}\n\n');
-      const off = subscribe((e) =>
-        send(`event: shell\ndata: ${JSON.stringify(e)}\n\n`),
+      // Only this owner's tenant's events (the hosted app shares one bus).
+      const off = subscribe(
+        (e) => send(`event: shell\ndata: ${JSON.stringify(e)}\n\n`),
+        tenantId,
       );
       const ping = setInterval(() => send(': ping\n\n'), 25_000);
       cleanup = () => {

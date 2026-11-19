@@ -50,6 +50,7 @@ import {
 } from './assistant/engine.ts';
 import { chatgptConnection, openSystemBrowser } from './chatgpt.ts';
 import { isDesktopWrapper } from './desktop.ts';
+import { requireLocalProfile, shellProfile } from './host.ts';
 import { guarded, HttpError, json, ownerOf, readJson } from './http.ts';
 import { principalFromLocals, requireOwner } from './owner.ts';
 
@@ -149,6 +150,21 @@ export function mountOnboardingRoutes(
   return {
     state: guarded(async (event) => {
       const owner = await ownerOf(event);
+      if ((await shellProfile()) === 'cloud') {
+        // Hosted: no local tool is probed and no sign-in is offered. The only
+        // engine is the API key engine on the owner's own key.
+        const settings = await asSettingsOwner(owner, () =>
+          assistantSettings().read(),
+        );
+        return json({
+          engine: 'api',
+          hosted: true,
+          tools: [],
+          chatgpt: { signedIn: false, signingIn: false },
+          onboarding: settings.onboarding,
+          api: await assistantStatus(owner, options.config),
+        });
+      }
       // Use the same preflight-backed, secret-safe status projection as the
       // cookbook host. Shell metadata supplements it, never decides readiness.
       const response = await shared.GET(event);
@@ -173,6 +189,7 @@ export function mountOnboardingRoutes(
     }),
 
     connect: guarded(async (event) => {
+      await requireLocalProfile('Connecting a local AI tool');
       const owner = await ownerOf(event);
       const body = await readJson(event.request);
       if (!isAgentTool(body.tool)) throw new HttpError(400, 'unknown tool');
@@ -190,6 +207,7 @@ export function mountOnboardingRoutes(
     }),
 
     engine: guarded(async (event) => {
+      await requireLocalProfile('Choosing an AI engine');
       const owner = await ownerOf(event);
       const body = await readJson(event.request);
       if (!isAssistantEngine(body.engine))
@@ -199,6 +217,7 @@ export function mountOnboardingRoutes(
     }),
 
     chatgptState: guarded(async (event) => {
+      await requireLocalProfile('Sign in with ChatGPT');
       const owner = await ownerOf(event);
       const connection = await chatgptConnection();
       const [status, settings] = await Promise.all([
@@ -222,6 +241,7 @@ export function mountOnboardingRoutes(
     }),
 
     chatgpt: guarded(async (event) => {
+      await requireLocalProfile('Sign in with ChatGPT');
       const owner = await ownerOf(event);
       const body = await readJson(event.request);
       const connection = await chatgptConnection();
@@ -273,7 +293,9 @@ export function mountOnboardingRoutes(
       const settings = await asSettingsOwner(owner, () =>
         assistantSettings().read(),
       );
-      if (!(await ready(settings.engine, owner, options.config)))
+      const engine =
+        (await shellProfile()) === 'cloud' ? 'api' : settings.engine;
+      if (!(await ready(engine, owner, options.config)))
         throw new HttpError(409, 'Connect your AI first.');
       await asSettingsOwner(owner, () =>
         assistantSettings().write({ onboarding: 'fresh' }),

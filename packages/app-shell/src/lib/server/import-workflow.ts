@@ -712,6 +712,26 @@ export function createShellImportService(options: ShellImportOptions) {
       },
     ],
   };
+  // A workflow step runs on a job, outside any request. Enter the import
+  // owner's own tenant context for every hook, so the shell rows it writes
+  // carry the owner's tenant and the reads that follow find them.
+  for (const step of definition.steps) {
+    for (const hook of ['execute', 'variables', 'check'] as const) {
+      const inner = step[hook] as
+        | ((...args: never[]) => Promise<unknown>)
+        | undefined;
+      if (!inner) continue;
+      (step as unknown as Record<string, unknown>)[hook] = async (
+        ...args: unknown[]
+      ) => {
+        const context = args[args.length - 1] as { input: unknown };
+        const row = await fromInput(context.input);
+        return runAs({ id: row.ownerId, tenantId: row.tenantId }, () =>
+          inner(...(args as never[])),
+        );
+      };
+    }
+  }
   const kit = createWorkflowRunJobs<{ importId: string }>({
     db,
     definition,

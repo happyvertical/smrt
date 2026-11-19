@@ -1,10 +1,13 @@
 # @happyvertical/smrt-app-shell
 
-An ordinary smrt app (SvelteKit + adapter-node, app-runtime **local** profile)
+An ordinary smrt app (SvelteKit + adapter-node, app-runtime **local** profile,
+or **cloud** for many owners: [cloud profile](agents/cloud-profile.md))
 that builds and runs a person's own smrt app from a versioned JSON definition,
-for one person: the owner. Epic #4867; this package is #4872. The engine is
+for one person per app: the owner. Epic #4867; this package is #4872. The engine is
 documented in [shared engine](agents/engine.md) (it must not import
 SvelteKit or `src/lib`). README has the route and JSON contracts.
+
+Cloud profile (tenant scoping, accounts, what must not exist there): [cloud profile](agents/cloud-profile.md).
 
 Workbook workflow ownership, upload limits, proof and recovery: [imports](agents/imports.md).
 
@@ -19,7 +22,7 @@ Shared assistant adapters and legacy approval storage: [agents/shared-pieces.md]
 | `src/lib/server/smrt.ts` | `createSmrtSvelteKitRuntime`, `prepareDatabase`, `configureShell`. |
 | `src/lib/server/registry.ts` | The ONE startup registration path (permissions, preference kinds); `smrt.ts` imports it before the runtime. app-runtime grants newly registered permissions to an existing owner on every start. `registry.test.ts` guards it. |
 | `src/lib/server/schema.ts` | `prepareShellSchema(db)`: additive first-run schema. |
-| `src/lib/server/host.ts` | Holders: shell db, data root, the LIVE `AppHost` (`getHost`, never the draft) and the open-draft slot; `hostFor(target)` is how a request reaches either; restart adoption of an open draft (re-freeze live, reopen the draft with `autoApprove`). |
+| `src/lib/server/host.ts` | Holders: shell db, data root, profile (`shellProfile`, `requireLocalProfile`), the LIVE `AppHost` (`getHost`, never the draft) and the open-draft slot, keyed by tenant in cloud; `hostFor(target)` is how a request reaches either; restart adoption of an open draft (re-freeze live, reopen the draft with `autoApprove`). |
 | `src/lib/server/target.ts`, `drafts.ts`, `view.ts` | The copy a request names (`live`/`draft`, `CallScope`), the draft lifecycle (start, describe, preview, publish and discard apply, History grouping) and the owner's saved view. README "Draft then publish (the shell)" lists routes, payloads, events. |
 | `src/lib/server/version-store.ts` | `ShellVersionStore` (engine `VersionStore` on `AppVersion` + the `App` row; `commit` is one transaction, a publish's draft mark rides in it) and `DraftVersionStore` (`AppDraftVersion` rows of one `AppDraft`). |
 | `src/lib/server/owner.ts` | Owner check, `Principal`, `assertOwner`, `runAs`. |
@@ -101,8 +104,9 @@ Shared assistant adapters and legacy approval storage: [agents/shared-pieces.md]
   smrt#4835 (pending, another session). Until it lands the shell passes
   `prepareShellSchema` as the existing `prepareDatabase` option. Do not edit
   `packages/app-runtime` from here. Switching is one line in `smrt.ts`.
-  `prepareShellSchema` only creates missing tables (no ALTER): a model that
-  gains a column later needs a real migration step added there.
+  `prepareShellSchema` only creates missing tables (no ALTER, but the one
+  `tenant_id` adoption for older desktop databases): a model that gains a
+  column later needs a real migration step added there.
 - **Generated change feed** (`_changes`, `_events`) is limited to the owner by
   `change-feed.ts`.
 - `/mcp` is stateless Streamable HTTP, so `tools/list_changed` cannot be

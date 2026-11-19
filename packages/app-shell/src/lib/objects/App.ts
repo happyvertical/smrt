@@ -87,6 +87,7 @@ async function run(command: Command): Promise<BuilderResult> {
 @smrt({
   tableName: 'apps',
   conflictColumns: ['id'],
+  tenantScoped: { mode: 'optional' },
   api: {
     include: [
       'defineModel',
