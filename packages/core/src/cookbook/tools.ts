@@ -741,7 +741,7 @@ export function createCookbookToolService(options: CookbookToolOptions) {
         changes: history.map((row) => ({
           revision: row.revision,
           actor: row.actor,
-          status: row.status,
+          status: row.abandoned ? 'abandoned' : row.status,
           change: JSON.parse(row.command),
           summary: (JSON.parse(row.command) as { summary?: string }).summary,
           undoes: row.undoes,
@@ -763,10 +763,14 @@ export function createCookbookToolService(options: CookbookToolOptions) {
     let restored: Cookbook | undefined;
     if (name === 'app.undo') {
       const history = await editor.history();
-      const undone = new Set(history.map((row) => row.undoes));
+      // An abandoned row never applied, so its `undoes` reversed nothing.
+      const undone = new Set(
+        history.flatMap((row) => (row.abandoned ? [] : [row.undoes])),
+      );
       const previous = history.findLast(
         (row) =>
           row.status === 'applied' &&
+          !row.abandoned &&
           row.undoes === undefined &&
           !undone.has(row.revision),
       );

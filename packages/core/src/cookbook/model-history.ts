@@ -29,6 +29,12 @@ export interface AppModelChange {
   before: Cookbook;
   after: Cookbook;
   status: 'pending' | 'applied';
+  /**
+   * The revision was abandoned by an operator while pending: it is completed
+   * with its `before` document as `after`, never applied, never an undo
+   * target and never counted as a reversal. Its command and actor stay.
+   */
+  abandoned?: true;
   undoes?: number;
   elapsedMs?: number;
   operation?: AppModelOperation;
@@ -45,6 +51,14 @@ export interface AppModelHistoryStore {
     elapsedMs: number,
     receipt?: AppModelEditReceipt,
     result?: Record<string, unknown>,
+  ): Promise<void>;
+  /**
+   * Abandon the pending revision `revision` (see {@link abandonAppModelRevision}).
+   * Optional for custom stores; the default store implements it.
+   */
+  abandon?(
+    revision: number,
+    by: { actor: string; reason?: string },
   ): Promise<void>;
   /** PostgreSQL revision CAS and application DDL must share this locked transaction. */
   transaction?<T>(
@@ -130,8 +144,7 @@ export async function createAppModelHistory(options: {
   };
   // Receipts and results each hold a full projection; the light column list
   // leaves them out of the editor's per-edit reads.
-  const LIGHT =
-    'revision, request_id, actor, command, before_doc, after_doc, status, undoes, elapsed_ms, operation_json';
+  const LIGHT = `revision, request_id, actor, command, before_doc, after_doc, status, undoes, elapsed_ms, operation_json, CASE WHEN result_json LIKE '{"abandoned":%' THEN 1 ELSE 0 END AS abandoned_marker`;
   const toChange = (row: Record<string, unknown>): AppModelChange => ({
     revision: toSafeInteger(row.revision, 'App model revision'),
     requestId: String(row.request_id),
@@ -140,6 +153,9 @@ export async function createAppModelHistory(options: {
     before: JSON.parse(String(row.before_doc)),
     after: JSON.parse(String(row.after_doc)),
     status: row.status as AppModelChange['status'],
+    ...(Number(row.abandoned_marker) === 1 || abandonedResult(row.result_json)
+      ? { abandoned: true as const }
+      : {}),
     ...(row.operation_json
       ? { operation: JSON.parse(String(row.operation_json)) }
       : {}),
@@ -167,6 +183,33 @@ export async function createAppModelHistory(options: {
         [application, tenantId],
       );
       return rows.map(toChange);
+    },
+    async abandon(revision, by) {
+      if (!Number.isSafeInteger(revision) || !by.actor)
+        throw new Error(
+          'MODEL_ABANDON_INVALID: a revision and an actor are required',
+        );
+      // Completes the pending row as a no-op: its after document becomes its
+      // before document, so no later read or boot applies the abandoned edit.
+      // The journal schema allows only pending/applied; the marker is the result.
+      const { rows } = await db.query(
+        `UPDATE _smrt_app_model_changes SET status = 'applied', after_doc = before_doc, elapsed_ms = 0, receipt_json = NULL, result_json = ? WHERE application = ? AND tenant_id = ? AND revision = ? AND status = 'pending' RETURNING revision`,
+        [
+          JSON.stringify({
+            abandoned: {
+              actor: by.actor,
+              ...(by.reason ? { reason: by.reason } : {}),
+            },
+          }),
+          application,
+          tenantId,
+          revision,
+        ],
+      );
+      if (rows.length !== 1)
+        throw new Error(
+          `MODEL_ABANDON_NOT_PENDING: revision ${revision} is not a pending revision`,
+        );
     },
     async append(change, expectedRevision) {
       if (
@@ -254,6 +297,42 @@ export async function createAppModelHistory(options: {
       });
   }
   return store;
+}
+
+function abandonedResult(value: unknown): boolean {
+  if (!value) return false;
+  try {
+    const parsed = JSON.parse(String(value));
+    return !!parsed && typeof parsed === 'object' && 'abandoned' in parsed;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Operator recovery for a pending revision that can never apply (its
+ * migration is refused, or its publication keeps failing). Run it while no
+ * editor for this application and tenant is serving, then open the editor
+ * again: boot no longer replays the abandoned edit. Nothing is dropped; any
+ * column the failed attempt added stays unused.
+ */
+export async function abandonAppModelRevision(options: {
+  db: DatabaseInterface;
+  application: string;
+  tenantId: string;
+  revision: number;
+  actor: string;
+  reason?: string;
+}): Promise<void> {
+  const store = await createAppModelHistory(options);
+  const run = (target: AppModelHistoryStore) =>
+    target.abandon!(options.revision, {
+      actor: options.actor,
+      ...(options.reason ? { reason: options.reason } : {}),
+    });
+  await (store.transaction
+    ? store.transaction((scoped) => run(scoped))
+    : run(store));
 }
 
 /** Compatibility name retained for existing local hosts. */

@@ -22,6 +22,7 @@ import {
 } from '../cookbook/model-editor.js';
 import {
   type AppModelHistoryStore,
+  abandonAppModelRevision,
   createAppModelHistory,
 } from '../cookbook/model-history.js';
 import { fitsStorageIdentifier, storageColumns } from '../cookbook/models.js';
@@ -395,6 +396,150 @@ describe('app model editor: reconciliation scope and pending revisions', () => {
       field: { type: 'text' },
     });
     expect(await columns(MEMBER_TABLE)).toContain('nickname');
+  });
+  it('a pending revision that cannot complete can be abandoned and is never replayed', async () => {
+    let failPublish = false;
+    const publish = () => {
+      if (failPublish) throw new Error('host publication unavailable');
+    };
+    const e = await editorFor({ publish });
+    const apply = applier(e);
+    await apply({ type: 'create_list', name: 'GuardMat', list: mats });
+    failPublish = true;
+    await expect(
+      apply(
+        {
+          type: 'add_field',
+          model: 'GuardMat',
+          name: 'colour',
+          field: { type: 'text' },
+        },
+        'req-stuck',
+      ),
+    ).rejects.toThrow(/host publication unavailable/);
+    expect((await e.history()).at(-1)).toMatchObject({
+      revision: 2,
+      status: 'pending',
+    });
+    await expect(editorFor({ publish })).rejects.toThrow(
+      /host publication unavailable.*abandonAppModelRevision\(\{ revision: 2 \}\)/,
+    );
+
+    await abandonAppModelRevision({
+      db,
+      application: 'editor-guards-scope',
+      tenantId: TENANT,
+      revision: 2,
+      actor: 'operator',
+      reason: 'publication target retired',
+    });
+    await expect(
+      abandonAppModelRevision({
+        db,
+        application: 'editor-guards-scope',
+        tenantId: TENANT,
+        revision: 2,
+        actor: 'operator',
+      }),
+    ).rejects.toThrow(/MODEL_ABANDON_NOT_PENDING/);
+    failPublish = false;
+    const reopened = await editorFor({ publish });
+    expect(reopened.snapshot().revision).toBe(2);
+    expect(
+      reopened.snapshot().cookbook.models?.lists.GuardMat.fields,
+    ).not.toHaveProperty('colour');
+    expect((await reopened.history()).at(-1)).toMatchObject({
+      revision: 2,
+      status: 'applied',
+      abandoned: true,
+    });
+    // A retry of the abandoned request is refused, not replayed as success.
+    await expect(
+      applier(reopened)(
+        {
+          type: 'add_field',
+          model: 'GuardMat',
+          name: 'colour',
+          field: { type: 'text' },
+        },
+        'req-stuck',
+      ),
+    ).rejects.toThrow(/MODEL_REVISION_ABANDONED/);
+    // Undo skips the abandoned revision and reverses the list creation.
+    await applier(reopened)({ type: 'undo' });
+    expect(reopened.snapshot().cookbook.features).not.toContain(
+      `${APP}:GuardMat`,
+    );
+    expect((await reopened.history()).at(-1)?.undoes).toBe(1);
+  });
+
+  it('an abandoned pending undo reverses nothing: the next undo still targets the original edit', async () => {
+    let failPublish = false;
+    const publish = () => {
+      if (failPublish) throw new Error('host publication unavailable');
+    };
+    const e = await editorFor({ publish });
+    const apply = applier(e);
+    await apply({ type: 'create_list', name: 'GuardMat', list: mats });
+    failPublish = true;
+    await expect(apply({ type: 'undo' })).rejects.toThrow(
+      /host publication unavailable/,
+    );
+    await abandonAppModelRevision({
+      db,
+      application: 'editor-guards-scope',
+      tenantId: TENANT,
+      revision: 2,
+      actor: 'operator',
+    });
+    failPublish = false;
+    const reopened = await editorFor({ publish });
+    expect(reopened.snapshot().cookbook.features).toContain(`${APP}:GuardMat`);
+    await applier(reopened)({ type: 'undo' });
+    expect(reopened.snapshot().cookbook.features).not.toContain(
+      `${APP}:GuardMat`,
+    );
+    expect((await reopened.history()).at(-1)?.undoes).toBe(1);
+  });
+
+  it('a completion that loses to an operator abandon is refused, not reported as committed', async () => {
+    const base = await createAppModelHistory({
+      db,
+      application: 'editor-guards-scope',
+      tenantId: TENANT,
+    });
+    const store: AppModelHistoryStore = {
+      ...base,
+      async complete(revision, elapsedMs, receipt, result) {
+        if (revision === 2)
+          await abandonAppModelRevision({
+            db,
+            application: 'editor-guards-scope',
+            tenantId: TENANT,
+            revision: 2,
+            actor: 'operator',
+          });
+        return base.complete(revision, elapsedMs, receipt, result);
+      },
+    };
+    const e = await editorFor({ store });
+    const apply = applier(e);
+    await apply({ type: 'create_list', name: 'GuardMat', list: mats });
+    await expect(
+      apply({
+        type: 'add_field',
+        model: 'GuardMat',
+        name: 'colour',
+        field: { type: 'text' },
+      }),
+    ).rejects.toThrow(/MODEL_EDIT_CONFLICT: revision 2 was not completed/);
+    expect(() => e.snapshot()).toThrow(/MODEL_ACTIVATION_PENDING/);
+    ObjectRegistry.clear();
+    registerMember();
+    const reopened = await editorFor();
+    expect(
+      reopened.snapshot().cookbook.models?.lists.GuardMat.fields,
+    ).not.toHaveProperty('colour');
   });
 });
 

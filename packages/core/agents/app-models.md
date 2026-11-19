@@ -220,7 +220,17 @@ requires an operator migration. See the
 ## Durable history
 
 `AppModelHistoryStore` has `read()`, atomic
-`append(change, expectedRevision)` and `complete(revision, elapsedMs)`.
+`append(change, expectedRevision)`, `complete(revision, elapsedMs)` and the
+optional `abandon(revision, { actor, reason? })`.
+A pending revision that can never complete (its migration keeps failing, or
+its publication target is gone) is abandoned by an operator with
+`abandonAppModelRevision({ db, application, tenantId, revision, actor, reason? })`
+while no editor for that tenant is serving; boot names it in its error. The row
+stays for audit: it is completed with its `before` document as `after`, read
+back with `abandoned: true`, never replayed (a retry of its request id fails
+`MODEL_REVISION_ABANDONED`), never an undo target, and its `undoes` never
+counts as a reversal. An editor whose completion loses to an abandon fails
+`MODEL_EDIT_CONFLICT` and stays closed. Nothing is dropped.
 Editor reads are bounded: each stored receipt holds a full projection, so with
 a store made by `createAppModelHistory` (or a wrapper keeping its `read`) the
 editor reads the journal once at boot without receipts, keeps it in memory, and

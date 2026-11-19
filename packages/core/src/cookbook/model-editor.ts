@@ -351,7 +351,8 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
    */
   const completedRow = async (requestId: string, at: number) => {
     const row = await findRow(requestId);
-    if (row?.status !== 'applied' || row.revision !== at) {
+    // An operator abandoning the revision meanwhile also loses this completion.
+    if (row?.status !== 'applied' || row.abandoned || row.revision !== at) {
       ready = false;
       throw new Error(
         `MODEL_EDIT_CONFLICT: revision ${at} was not completed as this edit; reopen the editor`,
@@ -994,11 +995,22 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
       throw new Error('MODEL_REQUEST_ID_REUSED');
     if (found.status !== 'applied')
       throw new Error('MODEL_ACTIVATION_PENDING: reopen the editor to recover');
+    if (found.abandoned)
+      throw new Error(
+        `MODEL_REVISION_ABANDONED: revision ${found.revision} was abandoned and never applied`,
+      );
     if (!found.receipt || !found.result)
       throw new Error('MODEL_RESULT_UNAVAILABLE');
     return structuredClone(found);
   }
 
+  const recoveryHint = (error: unknown) => {
+    const pending = history.at(-1);
+    if (pending?.status !== 'pending' || !(error instanceof Error))
+      return error;
+    error.message += `; pending revision ${pending.revision} cannot be applied. Repair the cause and reopen, or abandon it with abandonAppModelRevision({ revision: ${pending.revision} })`;
+    return error;
+  };
   /** Boot reconciles every active journalled storage declaration, as before. */
   const bootChanges = () => changedModels(undefined, active(storage(), doc));
 
@@ -1048,9 +1060,13 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
       restore();
       for (const [id, value] of readiness)
         setRuntimeModelReadiness([id], value);
-      throw error;
+      throw recoveryHint(error);
     }
-    await publish();
+    try {
+      await publish();
+    } catch (error) {
+      throw recoveryHint(error);
+    }
     if (history.at(-1)?.status === 'pending') {
       const pending = history.at(-1)!;
       const receipt = receiptFor(
@@ -1108,12 +1124,13 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
     } else {
       const undone = new Set(
         history.flatMap((row) =>
-          row.undoes === undefined ? [] : [row.undoes],
+          row.undoes === undefined || row.abandoned ? [] : [row.undoes],
         ),
       );
       target = history.findLast(
         (row) =>
           row.status === 'applied' &&
+          !row.abandoned &&
           row.undoes === undefined &&
           !undone.has(row.revision),
       )?.before;
@@ -1181,6 +1198,10 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
         if (replay.status === 'pending')
           throw new Error(
             'MODEL_ACTIVATION_PENDING: reopen the editor to recover',
+          );
+        if (replay.abandoned)
+          throw new Error(
+            `MODEL_REVISION_ABANDONED: revision ${replay.revision} was abandoned and never applied`,
           );
         if (context.operation) {
           const recovered = await recover(context);
@@ -1359,12 +1380,13 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
         case 'undo': {
           const undone = new Set(
             latest.flatMap((row) =>
-              row.undoes === undefined ? [] : [row.undoes],
+              row.undoes === undefined || row.abandoned ? [] : [row.undoes],
             ),
           );
           const previous = latest.findLast(
             (row) =>
               row.status === 'applied' &&
+              !row.abandoned &&
               row.undoes === undefined &&
               !undone.has(row.revision),
           );
