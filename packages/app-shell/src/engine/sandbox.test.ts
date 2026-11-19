@@ -404,6 +404,25 @@ describe('method atomicity (#5185)', () => {
     expect((await rt.get('Stock', row.id as string)).qty).toBe(0);
   });
 
+  it('ordinary edits interleaved with methods neither deadlock nor lose a write', async () => {
+    const row = await rt.create('Stock', { name: 'mixed', qty: 40 });
+    const id = row.id as string;
+    const others: string[] = [];
+    for (let i = 0; i < 10; i++)
+      others.push(
+        (await rt.create('Stock', { name: `other${i}`, qty: 1 })).id as string,
+      );
+    const work: Promise<unknown>[] = [];
+    for (let i = 0; i < 10; i++) {
+      work.push(rt.runMethod('Stock', 'take', id));
+      work.push(rt.create('Stock', { name: `side${i}`, qty: 1 }));
+      work.push(rt.update('Stock', others[i], { name: `edited${i}` }));
+    }
+    const settled = await Promise.allSettled(work);
+    expect(settled.filter((r) => r.status === 'rejected')).toEqual([]);
+    expect((await rt.get('Stock', id)).qty).toBe(30);
+  });
+
   it('a model over the row limit fails with an error naming it', async () => {
     for (let i = 0; i < 1001; i++)
       await rt.create('Stock', { name: `b${i}`, qty: 1 });
