@@ -5,10 +5,10 @@ description: "Unified multi-channel messaging with STI-based hierarchies"
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-19T02:33:32Z"
+  at: "2026-11-19T13:58:36Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:c567cee21e773040711febd6b592642b33662e763b86839b724ac7855436b291"
+source_revision: "sha256:6657ab803d25413fa59a7fc4d02e9c4355872f67483d7406cc36ab047d37b981"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/messages/package.json"
@@ -84,6 +84,8 @@ sources:
 - `AttachmentCollection` (collection `attachments`, extends `SmrtCollection`)
 - `Blacklist` (collection `blacklists`, extends `SmrtObject`)
 - `BlacklistCollection` (collection `blacklists`, extends `SmrtCollection`)
+- `Correspondent` (collection `correspondents`, extends `SmrtObject`)
+- `CorrespondentCollection` (collection `correspondents`, extends `SmrtCollection`)
 - `Email` (collection `messages`, extends `Message`, STI table)
 - `EmailAccount` (collection `accounts`, extends `Account`, STI table)
 - `EmailAccountCollection` (collection `accounts`, extends `AccountCollection`)
