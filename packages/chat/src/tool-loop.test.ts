@@ -3170,7 +3170,7 @@ describe('runToolLoop', () => {
       ).toBe(true);
     });
 
-    it('uses the generated writable policy before assigning update fields', async () => {
+    it('refuses an update that changes a field the generated write policy protects', async () => {
       await grant('tool_loop_notes.update');
       const notes = await ObjectRegistry.getCollection('ToolLoopNote', { db });
       const seeded = await notes.create({
@@ -3182,34 +3182,47 @@ describe('runToolLoop', () => {
       });
       await seeded.save();
 
-      const ai = makeAI((_messages, options, call) =>
-        call === 0 && toolsOffered(options)
-          ? toolCall('tool_loop_notes.update', {
-              id: seeded.id,
-              title: 'Allowed title',
-              calculatedTotal: 0,
-              internalScore: 999,
-            })
-          : textResponse('updated'),
-      );
-      const result = await runToolLoop({
-        ai,
-        db,
-        messages: [{ role: 'user', content: 'update the note' }],
-        tools: tools(['tool_loop_notes.update']),
-        principal: {
-          runAsUserId: userId,
-          tenantId,
-          allowedTools: ['tool_loop_notes.update'],
-        },
-        audit: () => {},
-      });
+      const update = async (args: Record<string, unknown>) => {
+        const ai = makeAI((_messages, options, call) =>
+          call === 0 && toolsOffered(options)
+            ? toolCall('tool_loop_notes.update', { id: seeded.id, ...args })
+            : textResponse('updated'),
+        );
+        return runToolLoop({
+          ai,
+          db,
+          messages: [{ role: 'user', content: 'update the note' }],
+          tools: tools(['tool_loop_notes.update']),
+          principal: {
+            runAsUserId: userId,
+            tenantId,
+            allowedTools: ['tool_loop_notes.update'],
+          },
+          audit: () => {},
+        });
+      };
 
+      // A model cannot change either a readonly calculated field or an
+      // ordinary field excluded by api.writable: nothing is applied.
+      for (const refused of [{ calculatedTotal: 0 }, { internalScore: 999 }]) {
+        const result = await update({ title: 'Not applied', ...refused });
+        expect(result.invocations[0]).toMatchObject({ ok: false });
+        const row = await notes.get(seeded.id as string, { cache: false });
+        expect(row?.title).toBe('Before');
+        expect(row?.calculatedTotal).toBe(120);
+        expect(row?.internalScore).toBe(7);
+      }
+
+      // Negative control: the stored values sent back are accepted and the
+      // writable field changes.
+      const result = await update({
+        title: 'Allowed title',
+        calculatedTotal: 120,
+        internalScore: 7,
+      });
       expect(result.invocations[0]).toMatchObject({ ok: true });
-      const updated = await notes.get(seeded.id as string);
+      const updated = await notes.get(seeded.id as string, { cache: false });
       expect(updated?.title).toBe('Allowed title');
-      // A model cannot mass-assign either a readonly calculated field or an
-      // ordinary field excluded by api.writable.
       expect(updated?.calculatedTotal).toBe(120);
       expect(updated?.internalScore).toBe(7);
     });
