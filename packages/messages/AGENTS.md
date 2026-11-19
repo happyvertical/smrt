@@ -62,7 +62,11 @@ owners and call `configureMailAccess({ options, resolvePrincipal })` at startup
 - `connectMailbox` refuses by default: give the service `allowedMailHosts`
   (and optionally `allowedMailPorts`) or your own `validateMailbox`. The
   built-in validator never connects to private, loopback or link-local
-  addresses and returns only a generic error. Policy lookups use the
+  addresses and returns only a generic error. It checks every target field
+  present (`host`, `endpoint`, and the `jmap` provider's `url`): https only, no
+  userinfo, listed host and port. The `jmap` provider stays `available: false`
+  on purpose (`available` means outbound transport; JMAP is receive and sync
+  only), and `connectMailbox` still connects it. Policy lookups use the
   configured db handle, not a caller's transaction.
 - `Message.send()` needs the `send` scope on an owned account. Account rows are
   not filtered (senders, routes and the outbox read them without a principal).
@@ -70,6 +74,16 @@ owners and call `configureMailAccess({ options, resolvePrincipal })` at startup
   `messages.manage-access` AND ownership (or delegation); an administrator
   cannot read, self-grant or take over an owned mailbox. Unowned accounts can be
   claimed once with `messages.manage-credentials`.
+- `MessagingSettingsService.listAccounts({ limit, cursor })` is the account
+  discovery for a principal: only accounts it owns or holds an active grant on
+  (never unowned or foreign accounts), with effective `scopes` and
+  `relation: 'owner' | 'shared'`, via `decideMailAccess`. Fail closed with no
+  principal user, a tenant mismatch or no `configureMailAccess`.
+- `seedMessagesRolePermissions({ db })` seeds the tenant `messages.*` slugs for
+  the system roles (owner/admin: read, triage, draft, send, manage-credentials,
+  manage-access; member: the four scopes; viewer: read). Idempotent, additive,
+  system roles only; without it grants and `manage-access` fail closed on a
+  fresh app. The matrix is `MESSAGES_ROLE_PERMISSION_MATRIX`.
 - Before `configureMailAccess` is called the policy still fails closed on
   owned accounts: every collection operation on a mail class (the core `onCollectionReady`
   interceptor hook, so STI subclasses on a default collection are covered) registers its

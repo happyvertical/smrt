@@ -2,6 +2,7 @@ import {
   type PermissionDefinition,
   registerPermissionDefinitions,
 } from '@happyvertical/smrt-users/permission-registry';
+import type { MailScope } from './access.js';
 
 export const SEND_MESSAGES_PERMISSION = 'messages.send';
 export const MANAGE_MESSAGE_ROUTES_PERMISSION = 'messages.manage-routes';
@@ -56,6 +57,94 @@ export const MESSAGING_PERMISSION_DEFINITIONS: PermissionDefinition[] = [
   },
 ];
 
+/**
+ * Tenant `messages.*` permissions for the built-in system roles. Per-account
+ * mail access (grants, `MailAccessService`) is checked against smrt-users role
+ * permissions, so a fresh app fails closed for everyone, owners included,
+ * until these exist.
+ *
+ * - `owner`, `admin`: every mail scope plus `manage-credentials` and
+ *   `manage-access`
+ * - `member`: the four scope ceilings (read, triage, draft, send)
+ * - `viewer`: read
+ *
+ * Tenant ceilings only: a non-owner still needs a per-account grant before
+ * seeing any mail. `manage-routes` (persona routing) is not part of the mail
+ * matrix.
+ */
+export const MESSAGES_ROLE_PERMISSION_MATRIX: Readonly<
+  Record<'owner' | 'admin' | 'member' | 'viewer', readonly string[]>
+> = Object.freeze({
+  owner: Object.freeze([
+    READ_MAIL_PERMISSION,
+    TRIAGE_MAIL_PERMISSION,
+    DRAFT_MAIL_PERMISSION,
+    SEND_MESSAGES_PERMISSION,
+    MANAGE_MESSAGE_CREDENTIALS_PERMISSION,
+    MANAGE_MAIL_ACCESS_PERMISSION,
+  ]),
+  admin: Object.freeze([
+    READ_MAIL_PERMISSION,
+    TRIAGE_MAIL_PERMISSION,
+    DRAFT_MAIL_PERMISSION,
+    SEND_MESSAGES_PERMISSION,
+    MANAGE_MESSAGE_CREDENTIALS_PERMISSION,
+    MANAGE_MAIL_ACCESS_PERMISSION,
+  ]),
+  member: Object.freeze([
+    READ_MAIL_PERMISSION,
+    TRIAGE_MAIL_PERMISSION,
+    DRAFT_MAIL_PERMISSION,
+    SEND_MESSAGES_PERMISSION,
+  ]),
+  viewer: Object.freeze([READ_MAIL_PERMISSION]),
+});
+
+export interface SeedMessagesRolePermissionsResult {
+  /** Slugs newly granted per system role; empty on a rerun. */
+  added: Record<string, string[]>;
+  /** Built-in roles absent from the database (not created here). */
+  missingRoles: string[];
+}
+
+/**
+ * Register the messaging permission catalog entries and grant
+ * {@link MESSAGES_ROLE_PERMISSION_MATRIX} to the system roles. Idempotent and
+ * additive: reruns add nothing, nothing is ever removed (`prune: false`), and
+ * only system roles (no tenant, `isSystem`) are touched, so tenant-defined
+ * roles keep whatever the tenant chose. Throws if a slug is not in the
+ * catalog after sync.
+ */
+export async function seedMessagesRolePermissions(options: {
+  db: unknown;
+}): Promise<SeedMessagesRolePermissionsResult> {
+  ensureMessagingPermissionsRegistered();
+  const { RolePermissionCollection } = await import(
+    '@happyvertical/smrt-users'
+  );
+  const grants = await RolePermissionCollection.create(options as never);
+  const result = await grants.seedRolePermissions(
+    MESSAGES_ROLE_PERMISSION_MATRIX as unknown as Record<string, string[]>,
+    { prune: false, systemRolesOnly: true },
+  );
+  const missing = Object.entries(result.missingPermissions).filter(
+    ([, slugs]) => slugs.length > 0,
+  );
+  if (missing.length > 0) {
+    throw new Error(
+      `Messaging permissions missing from the catalog after sync: ${missing
+        .map(([role, slugs]) => `${role}: ${slugs.join(', ')}`)
+        .join('; ')}`,
+    );
+  }
+  return {
+    added: Object.fromEntries(
+      Object.entries(result.added).filter(([, slugs]) => slugs.length > 0),
+    ),
+    missingRoles: result.missingRoles,
+  };
+}
+
 export interface MessagingPrincipal {
   readonly id?: string;
   /**
@@ -64,12 +153,22 @@ export interface MessagingPrincipal {
    */
   readonly userId?: string;
   readonly tenantId?: string;
+  /** Host ceiling on mail scopes (agent credential); omit for none. */
+  readonly scopes?: readonly MailScope[];
+  /** Host ceiling on mail account ids (agent allow-list); omit for none. */
+  readonly accountIds?: readonly string[];
   can(slug: string): boolean;
 }
 
 export function messagingPrincipalFromPermissions(
   permissions: Iterable<string>,
-  options: { id?: string; userId?: string; tenantId?: string } = {},
+  options: {
+    id?: string;
+    userId?: string;
+    tenantId?: string;
+    scopes?: readonly MailScope[];
+    accountIds?: readonly string[];
+  } = {},
 ): MessagingPrincipal {
   const granted = new Set(permissions);
   return {

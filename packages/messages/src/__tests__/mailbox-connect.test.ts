@@ -452,6 +452,182 @@ describe('mailbox connect', () => {
     });
   });
 
+  describe('builtin jmap provider (#5180)', () => {
+    let unregisterJmap: () => void;
+    let restoreJmap: () => void;
+    const created: Record<string, unknown>[] = [];
+    const connectSpy = vi.fn(async () => undefined);
+    beforeEach(async () => {
+      created.length = 0;
+      connectSpy.mockClear();
+      const { getMessagingProvider } = await import('../providers.js');
+      const definition = getMessagingProvider('jmap');
+      expect(definition?.channel).toBe('email');
+      restoreJmap = () => {
+        registerMessagingProvider(definition as NonNullable<typeof definition>);
+      };
+      // The fake JMAP client stands in for @happyvertical/email.
+      unregisterJmap = registerMessagingProvider({
+        ...(definition as NonNullable<typeof definition>),
+        createEmailClient: (async (options: Record<string, unknown>) => {
+          created.push(options);
+          return {
+            connect: connectSpy,
+            disconnect: async () => undefined,
+          };
+        }) as never,
+      });
+    });
+    afterEach(() => {
+      unregisterJmap();
+      restoreJmap();
+    });
+
+    const svc = (extra: Record<string, unknown> = {}) =>
+      new MessagingSettingsService({
+        db,
+        tenantId: TENANT,
+        principal: messagingPrincipalFromPermissions(
+          [MANAGE_MESSAGE_CREDENTIALS_PERMISSION],
+          { id: 'user-1', tenantId: TENANT },
+        ),
+        resolvePersonaTenantId: async () => null,
+        allowedMailHosts: ['mail.example.com'],
+        allowedMailPorts: [443],
+        ...extra,
+      });
+    const attempt = (
+      service: MessagingSettingsService,
+      configuration: Record<string, unknown>,
+      credentials: Record<string, unknown> = {
+        username: 'me',
+        password: PASSWORD,
+      },
+    ) =>
+      service.connectMailbox({
+        name: 'JMAP',
+        providerId: 'jmap',
+        configuration: { email: 'me@example.com', ...configuration },
+        credentials,
+      });
+    const refused = 'The mail server did not accept this connection.';
+
+    it('connects end to end on an allowlisted https url with the provider client', async () => {
+      const view = await attempt(svc(), { url: 'https://mail.example.com' });
+      expect(view).toMatchObject({
+        providerId: 'jmap',
+        ownerUserId: 'user-1',
+        connectionStatus: 'connected',
+      });
+      expect(created[0]).toMatchObject({
+        type: 'jmap',
+        url: 'https://mail.example.com',
+        auth: { user: 'me', pass: PASSWORD },
+      });
+      expect(created[0]).not.toHaveProperty('email');
+      expect(connectSpy).toHaveBeenCalledTimes(1);
+      expect(JSON.stringify(view)).not.toContain(PASSWORD);
+      // The saved account builds its client from the stored sign-in.
+      const account = await withTenant({ tenantId: TENANT }, async () =>
+        (await EmailAccountCollection.create({ db })).get({ id: view.id }),
+      );
+      await withTenant({ tenantId: TENANT }, async () => {
+        await (account as EmailAccount).createClient();
+      });
+      expect(created[1]).toMatchObject({
+        type: 'jmap',
+        url: 'https://mail.example.com',
+        auth: { user: 'me', pass: PASSWORD },
+      });
+    });
+
+    it('signs in with an access token as a bearer, not an empty user and password', async () => {
+      const view = await attempt(
+        svc(),
+        { url: 'https://mail.example.com' },
+        { token: 'tok-123' },
+      );
+      expect(created[0]).toMatchObject({
+        auth: { type: 'bearer', token: 'tok-123' },
+      });
+      const account = await withTenant({ tenantId: TENANT }, async () =>
+        (await EmailAccountCollection.create({ db })).get({ id: view.id }),
+      );
+      await withTenant({ tenantId: TENANT }, async () => {
+        await (account as EmailAccount).createClient();
+      });
+      expect(created[1]).toMatchObject({
+        auth: { type: 'bearer', token: 'tok-123' },
+      });
+    });
+
+    it('refuses an unlisted host, plain http, userinfo, an unlisted port, private names and a missing url, without connecting', async () => {
+      const service = svc({
+        allowedMailHosts: ['mail.example.com', '127.0.0.1', 'localhost'],
+      });
+      for (const url of [
+        'https://other.example.com',
+        'http://mail.example.com',
+        'https://user:pw@mail.example.com',
+        'https://user@mail.example.com',
+        'https://mail.example.com:8443',
+        'https://127.0.0.1',
+        'https://localhost',
+        'https://mail.example.com.evil.test',
+        'not a url',
+      ]) {
+        await expect(attempt(service, { url })).rejects.toThrow(refused);
+      }
+      expect(connectSpy).not.toHaveBeenCalled();
+      // Required field missing is refused before any network use.
+      await expect(attempt(service, {})).rejects.toThrow(/required/);
+      await expect(attempt(service, { url: '' })).rejects.toThrow(/required/);
+      expect(connectSpy).not.toHaveBeenCalled();
+    });
+
+    it('cannot hide an unlisted url behind a listed host or endpoint field', async () => {
+      const service = svc();
+      await expect(
+        attempt(service, {
+          url: 'https://evil.example.net',
+          host: 'mail.example.com',
+        }),
+      ).rejects.toThrow(/Unknown configuration field/);
+      await expect(
+        attempt(service, {
+          url: 'https://evil.example.net',
+          endpoint: 'https://mail.example.com',
+        }),
+      ).rejects.toThrow(/Unknown configuration field/);
+      expect(connectSpy).not.toHaveBeenCalled();
+    });
+
+    it('refuses everything with no allowlist, and never leaks server detail', async () => {
+      await expect(
+        attempt(svc({ allowedMailHosts: undefined }), {
+          url: 'https://mail.example.com',
+        }),
+      ).rejects.toThrow(refused);
+      connectSpy.mockRejectedValueOnce(new Error(`bad login ${PASSWORD}`));
+      const error = await attempt(svc(), {
+        url: 'https://mail.example.com',
+      }).catch((e) => e as Error);
+      expect((error as Error).message).toBe(refused);
+    });
+
+    it('stays a receive-only transport: not offered for outbound routing', async () => {
+      const { listMessagingProviders } = await import('../providers.js');
+      expect(
+        listMessagingProviders().some((provider) => provider.id === 'jmap'),
+      ).toBe(false);
+      expect(
+        listMessagingProviders({ includeUnavailable: true }).some(
+          (provider) => provider.id === 'jmap',
+        ),
+      ).toBe(true);
+    });
+  });
+
   describe('reconnection', () => {
     it('recognizes server refusals of the saved sign-in', () => {
       expect(
