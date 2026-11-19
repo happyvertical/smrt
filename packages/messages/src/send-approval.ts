@@ -281,12 +281,78 @@ function readField(source: object, name: string): unknown {
   return value === undefined ? null : value;
 }
 
+type AttachmentRowLike = {
+  id?: string | null;
+  filename: string;
+  contentType: string;
+  size: number;
+  contentId: string;
+  contentDisposition: string;
+  filePath: string;
+  sourceUrl: string;
+};
+
+/** One attachment row and its bytes, as bound into a held send. */
+function attachmentBinding(
+  row: AttachmentRowLike,
+  bytes: Uint8Array | null,
+): unknown[] {
+  let content: string | null = null;
+  if (row.filePath) content = bytes ? notificationSha256(bytes) : 'unreadable';
+  return [
+    row.id,
+    row.filename,
+    row.contentType,
+    row.size,
+    row.contentId,
+    row.contentDisposition,
+    row.filePath,
+    row.sourceUrl,
+    content,
+  ];
+}
+
+function sortBindings(bound: unknown[][]): unknown[][] {
+  return bound.sort((a, b) => String(a[0]).localeCompare(String(b[0])));
+}
+
+// The attachment rows and bytes an approval released, per message instance,
+// checked by `EmailSender` against exactly what it hands the transport.
+const approvedAttachments = new WeakMap<Message, string>();
+
+/**
+ * Called by `EmailSender` with the stored rows and the bytes it is about to
+ * transmit. For a send an approval released, refuses (throws) unless they
+ * are exactly the approved rows and bytes. A no-op for other sends.
+ */
+export function assertApprovedAttachments(
+  message: Message,
+  sent: Array<{ row: AttachmentRowLike; content: Uint8Array | null }>,
+): void {
+  const expected = approvedAttachments.get(message);
+  if (expected === undefined) return;
+  approvedAttachments.delete(message);
+  const actual = JSON.stringify(
+    sortBindings(
+      sent.map(({ row, content }) => attachmentBinding(row, content)),
+    ),
+  );
+  if (actual !== expected) {
+    throw new Error(
+      'The attachments changed after the send was approved; nothing was sent.',
+    );
+  }
+}
+
 /**
  * Hash of everything a send transmits for `message`, from the given
  * instance's fields plus the stored attachment rows. Compare it only between
  * two reads of the same message.
  */
-export async function mailSendBindingHash(message: Message): Promise<string> {
+export async function mailSendBindingHash(
+  message: Message,
+  snapshot?: { attachments?: unknown[][] },
+): Promise<string> {
   const fields = [
     'accountId',
     'fromAddress',
@@ -317,26 +383,17 @@ export async function mailSendBindingHash(message: Message): Promise<string> {
         for (const row of rows) {
           // Bind the bytes, not just the path: a file rewritten in place
           // after approval must not leave under the approval.
-          let content: string | null = null;
-          if (row.filePath) {
-            const bytes = await row.readContent();
-            content = bytes ? notificationSha256(bytes) : 'unreadable';
-          }
-          bound.push([
-            row.id,
-            row.filename,
-            row.contentType,
-            row.size,
-            row.contentId,
-            row.contentDisposition,
-            row.filePath,
-            row.sourceUrl,
-            content,
-          ]);
+          bound.push(
+            attachmentBinding(
+              row,
+              row.filePath ? await row.readContent() : null,
+            ),
+          );
         }
-        return bound.sort((a, b) => String(a[0]).localeCompare(String(b[0])));
+        return sortBindings(bound);
       })
     : [];
+  if (snapshot) snapshot.attachments = attachments;
   return notificationSha256(
     JSON.stringify({ v: 2, id: message.id ?? null, fields, attachments }),
   );
@@ -446,7 +503,10 @@ export async function approvedDraftChanged(message: Message): Promise<boolean> {
   const expected = approvedBindings.get(message);
   if (expected === undefined) return false;
   approvedBindings.delete(message);
-  return (await mailSendBindingHash(message)) !== expected;
+  const snapshot: { attachments?: unknown[][] } = {};
+  if ((await mailSendBindingHash(message, snapshot)) !== expected) return true;
+  approvedAttachments.set(message, JSON.stringify(snapshot.attachments ?? []));
+  return false;
 }
 
 function refusedResult(error: string): MessageSendResult {
@@ -825,7 +885,12 @@ export class MailSendApprovalService {
 function applyEdits(message: Message, edits: HeldSendEdits): void {
   const target = message as Message & Record<string, unknown>;
   if (edits.subject !== undefined) target.subject = edits.subject;
-  if (edits.body !== undefined) target.body = edits.body;
+  if (edits.body !== undefined) {
+    target.body = edits.body;
+    // The sender transmits textBody before body: keep them together.
+    if (edits.textBody === undefined && 'textBody' in target)
+      target.textBody = edits.body;
+  }
   if (edits.textBody !== undefined && 'textBody' in target)
     target.textBody = edits.textBody;
   if (edits.htmlBody !== undefined && 'htmlBody' in target)

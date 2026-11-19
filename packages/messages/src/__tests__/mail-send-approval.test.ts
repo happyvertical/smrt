@@ -57,6 +57,7 @@ import {
   resetMailSendApprovals,
   threadHandledBy,
 } from '../send-approval.js';
+import { EmailSender } from '../senders/EmailSender';
 import { prepareMessageParents } from './fk-fixtures.js';
 
 const ALL_MAIL_SLUGS = [
@@ -429,6 +430,17 @@ describe('agent send policy and held sends (#5141)', () => {
       expect(view).toMatchObject({ status: 'approved', consumed: true });
     });
 
+    it('sends a body-only edit as the transmitted text', async () => {
+      const draft = await draftAsAgent();
+      const id = await pendingId(draft);
+      await approvals(person(owner)).approve(id, {
+        edits: { body: 'Corrected text.' },
+      });
+      const sent = providerSend.mock.calls[0]?.[0] as Email;
+      expect(sent.textBody).toBe('Corrected text.');
+      expect(sent.body).toBe('Corrected text.');
+    });
+
     it('rejects with a reason and keeps the draft', async () => {
       const draft = await draftAsAgent();
       const id = await pendingId(draft);
@@ -632,6 +644,64 @@ describe('agent send policy and held sends (#5141)', () => {
           state: 'refused',
           reason: 'revision_mismatch',
         });
+        expect(providerSend).not.toHaveBeenCalled();
+      } finally {
+        await rm(dir, { recursive: true, force: true });
+      }
+    });
+
+    it('checks the exact attachment bytes the sender hands over', async () => {
+      const dir = await mkdtemp(join(tmpdir(), 'smrt-held-send-'));
+      const file = join(dir, 'invoice.pdf');
+      await writeFile(file, 'original bytes');
+      try {
+        const draft = await draftAsAgent();
+        await as(asAgent(), async () => {
+          const attachment = new Attachment({
+            ...options,
+            tenantId: tenantA,
+            messageId: draft.id as string,
+            filename: 'invoice.pdf',
+            filePath: file,
+          });
+          await attachment.initialize();
+          await attachment.save();
+        });
+        const id = await pendingId(draft);
+        await approveViaInbox(id);
+        // The real EmailSender over a fake transport.
+        vi.spyOn(EmailAccount.prototype, 'createSender').mockImplementation(
+          async function (this: EmailAccount) {
+            return new EmailSender(
+              { isConnected: () => true, send: providerSend } as never,
+              this,
+            ) as never;
+          },
+        );
+        // The file changes after the post-claim check, as the sender lists rows.
+        const original = Email.prototype.getAttachments;
+        vi.spyOn(Email.prototype, 'getAttachments').mockImplementation(
+          async function (this: Email) {
+            const rows = await original.call(this);
+            await writeFile(file, 'swapped at the last moment');
+            return rows;
+          },
+        );
+        const released = await releaseAs(person(owner), id);
+        const result = (
+          released as {
+            result: {
+              success: boolean;
+              error?: string;
+              outcomeUnknown?: boolean;
+            };
+          }
+        ).result;
+        expect(result.success).toBe(false);
+        expect(result.error).toMatch(
+          /attachments changed after the send was approved/,
+        );
+        expect(result.outcomeUnknown).toBeUndefined();
         expect(providerSend).not.toHaveBeenCalled();
       } finally {
         await rm(dir, { recursive: true, force: true });
