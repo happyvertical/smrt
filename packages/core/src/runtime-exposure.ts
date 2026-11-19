@@ -45,7 +45,11 @@ function state() {
 
 /** Whether this process opted into live exposure (also controls catalog cache policy). */
 export function hasRuntimeExposureGate(): boolean {
-  return !!state().gate || (globalThis.__smrtModelReadiness?.size ?? 0) > 0;
+  return (
+    !!state().gate ||
+    (globalThis.__smrtModelReadiness?.size ?? 0) > 0 ||
+    (globalThis.__smrtModelOwners?.size ?? 0) > 0
+  );
 }
 
 /** Invalidate connected tool catalogs after cookbook or host-preference changes. */
@@ -94,9 +98,16 @@ export function setRuntimeModelReadiness(
 }
 
 declare global {
-  var __smrtModelOwners:
-    | Map<string, { tenantId: string; constructor?: unknown }>
-    | undefined;
+  var __smrtModelOwners: Map<string, RuntimeModelClaim> | undefined;
+}
+
+/**
+ * An ownership claim. `registeredClass` is set only when the claim was made
+ * for a specific registration (never read from an inherited property).
+ */
+interface RuntimeModelClaim {
+  tenantId: string;
+  registeredClass: unknown;
 }
 
 /**
@@ -118,9 +129,8 @@ export function setRuntimeModelOwner(
     else
       globalThis.__smrtModelOwners.set(id, {
         tenantId,
-        ...(typeof model === 'string'
-          ? {}
-          : { constructor: model.constructor }),
+        registeredClass:
+          typeof model === 'string' ? undefined : model.constructor,
       });
   }
   notifyRuntimeExposureChanged();
@@ -144,6 +154,9 @@ export function isRuntimeModelEnabled(
   )
     return false;
   // Another tenant's customised registration is never served to this tenant.
+  // A context without a tenant (a generator built once, resolving tenancy
+  // later; a single-tenant host) is not "another tenant": it is admitted
+  // here and left to the gate, so a single-tenant host's own lists work.
   const claim = identity?.qualifiedName
     ? globalThis.__smrtModelOwners?.get(identity.qualifiedName)
     : undefined;
@@ -153,8 +166,11 @@ export function isRuntimeModelEnabled(
       : undefined;
   if (
     claim &&
+    context.tenantId != null &&
     claim.tenantId !== context.tenantId &&
-    (!claim.constructor || !registered || registered === claim.constructor)
+    (claim.registeredClass === undefined ||
+      registered === undefined ||
+      registered === claim.registeredClass)
   )
     return false;
   const gate = state().gate;

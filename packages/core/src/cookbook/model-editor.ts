@@ -339,8 +339,12 @@ function pruneStaleOwnership() {
   for (const registeredClass of [...editorClasses().keys()])
     if (!registered.has(registeredClass))
       editorClasses().delete(registeredClass);
+  // Only a claim made for a specific registration that is gone is dropped.
   for (const [id, claim] of [...(globalThis.__smrtModelOwners ?? [])])
-    if (claim.constructor && !registered.has(claim.constructor))
+    if (
+      claim.registeredClass !== undefined &&
+      !registered.has(claim.registeredClass)
+    )
       globalThis.__smrtModelOwners?.delete(id);
 }
 /** A process-local identity per database handle, part of each journal's key. */

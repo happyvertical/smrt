@@ -35,7 +35,10 @@ import { SmrtObject } from '../object.js';
 import { ObjectRegistry } from '../registry.js';
 import {
   getRuntimeModelReadiness,
+  hasRuntimeExposureGate,
+  isRuntimeModelEnabled,
   setRuntimeExposureGate,
+  setRuntimeModelOwner,
 } from '../runtime-exposure.js';
 import { runtimeListTableName } from '../runtime-list-table.js';
 import { registerRuntimeModel } from '../runtime-model.js';
@@ -1245,6 +1248,62 @@ describe('app model editor: one customised registry per process', () => {
     };
     expect((await get(OTHER_TENANT)).status).toBe(200);
     expect((await get(TENANT)).status).toBe(404);
+  });
+
+  it('serves its own customised list to a generator built without a tenant', async () => {
+    const e = await editorFor(TENANT);
+    await applier(
+      e,
+      TENANT,
+    )({
+      type: 'add_field',
+      model: MEMBER,
+      name: 'vip',
+      field: { type: 'boolean' },
+    });
+    // One generator for the host, tenancy resolved per request.
+    const handler = new APIGenerator(
+      { basePath: '/api', authMiddleware: () => async (req) => req },
+      { db },
+    ).generateHandler();
+    const response = await withTenant({ tenantId: TENANT }, () =>
+      handler(new Request('http://fixture/api/guardmembers')),
+    );
+    expect(response.status).toBe(200);
+  });
+
+  it('denies a string-form ownership claim to another tenant and counts it as an exposure gate', async () => {
+    globalThis.__smrtModelReadiness?.clear();
+    expect(hasRuntimeExposureGate()).toBe(false);
+    setRuntimeModelOwner(['@fixture/claims:Thing'], TENANT);
+    try {
+      expect(hasRuntimeExposureGate()).toBe(true);
+      // A registration entry carries its own constructor; the claim has none.
+      class Thing {}
+      const entry = {
+        qualifiedName: '@fixture/claims:Thing',
+        constructor: Thing,
+      };
+      expect(
+        isRuntimeModelEnabled(entry, {
+          surface: 'rest',
+          tenantId: OTHER_TENANT,
+        }),
+      ).toBe(false);
+      expect(
+        isRuntimeModelEnabled(entry, { surface: 'rest', tenantId: TENANT }),
+      ).toBe(true);
+      // Pruning on a new editor never drops a claim made without a class.
+      await editorFor(TENANT);
+      expect(
+        isRuntimeModelEnabled(entry, {
+          surface: 'rest',
+          tenantId: OTHER_TENANT,
+        }),
+      ).toBe(false);
+    } finally {
+      setRuntimeModelOwner(['@fixture/claims:Thing'], undefined);
+    }
   });
 
   it('treats the same application and tenant on another database as another journal', async () => {
