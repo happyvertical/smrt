@@ -336,7 +336,8 @@ export class ServicePrincipalService {
       const db = this.options.db as DatabaseInterface;
       // Unbounded raw id read: a caller's list limits must never hide one.
       const result = await db.query(
-        'SELECT id FROM users WHERE service_principal_tenant_id = ? AND principal_kind = ? ORDER BY created_at ASC, id ASC',
+        // Cast at the SQL boundary: DuckDB returns native UUIDs as objects.
+        'SELECT CAST(id AS VARCHAR) AS id FROM users WHERE service_principal_tenant_id = ? AND principal_kind = ? ORDER BY created_at ASC, id ASC',
         tenantId,
         SERVICE_PRINCIPAL_KIND,
       );

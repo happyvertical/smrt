@@ -449,6 +449,33 @@ describe('ServicePrincipalService (#5245)', () => {
       await expect(create()).rejects.toThrow('retired');
     });
 
+    it('a loaded principal can never be saved back as a person, nor un-retired', async () => {
+      const created = await create();
+      const users = await UserCollection.create({ db });
+      const loaded = await users.get({ id: created.userId }, { cache: false });
+      if (!loaded) throw new Error('missing user');
+      loaded.principalKind = null;
+      loaded.servicePrincipalTenantId = null;
+      loaded.servicePrincipalKey = null;
+      loaded.retiredAt = null;
+      await expect(loaded.save()).rejects.toThrow('never become another kind');
+      await (await service()).retireServicePrincipal({
+        tenantId,
+        userId: created.userId,
+      });
+      const retired = await users.get({ id: created.userId }, { cache: false });
+      if (!retired) throw new Error('missing user');
+      retired.retiredAt = null;
+      retired.status = UserStatus.ACTIVE;
+      await expect(retired.save()).rejects.toThrow('cannot be reactivated');
+      const stored = await db.query(
+        'SELECT principal_kind, retired_at FROM users WHERE id = ?',
+        created.userId,
+      );
+      expect(stored.rows[0]?.principal_kind).toBe('service');
+      expect(stored.rows[0]?.retired_at).toBeTruthy();
+    });
+
     it('refuses a login identifier or a person carrying service fields', async () => {
       const created = await create();
       const users = await UserCollection.create({ db });
@@ -608,6 +635,38 @@ describe('ServicePrincipalService (#5245)', () => {
         agentUser.id,
       );
     });
+  });
+
+  it('lists principals on DuckDB, whose native UUID ids are not strings', async () => {
+    const duck = await getTestDatabase({
+      type: 'duckdb',
+      url: ':memory:',
+      omitForeignKeyConstraints: true,
+    });
+    try {
+      const tenants = await TenantCollection.create({ db: duck });
+      const roles = await RoleCollection.create({ db: duck });
+      await roles.seedSystemRoles({ seedPermissions: false });
+      const duckTenantId = (
+        await tenants.create({ name: 'Duck', slug: randomUUID() })
+      ).id as string;
+      const principals = await ServicePrincipalService.create({
+        db: duck,
+        transaction: 'caller',
+      });
+      const created = await principals.createServicePrincipal({
+        tenantId: duckTenantId,
+        key: 'duck-agent',
+        roleSlug: 'member',
+      });
+      const listed = await principals.listServicePrincipals({
+        tenantId: duckTenantId,
+      });
+      expect(listed.map((record) => record.userId)).toEqual([created.userId]);
+      expect(typeof listed[0]?.userId).toBe('string');
+    } finally {
+      await duck.close?.();
+    }
   });
 
   it('every session mint in the package funnels through SessionCollection.createSession', () => {

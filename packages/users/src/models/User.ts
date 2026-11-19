@@ -257,6 +257,34 @@ export class User extends SmrtObject implements UserContract {
     if (options.retiredAt !== undefined) this.retiredAt = options.retiredAt;
   }
 
+  /**
+   * `principalKind`/`retiredAt` as last read from or written to the
+   * database (#5245). A loaded service principal can never be saved back as
+   * a person, and a retirement can never be cleared, whatever the caller
+   * does to the in-memory fields.
+   */
+  #storedPrincipalKind: UserPrincipalKind | null = null;
+  #storedRetiredAt: Date | null = null;
+
+  override async initialize(): Promise<this> {
+    await super.initialize();
+    // Collections mark a hydrated row persisted before initialize(), so this
+    // snapshots the authoritative stored values.
+    if (this.isPersisted) this.#rememberStoredPrincipal();
+    return this;
+  }
+
+  override async loadDataFromDb(data: Record<string, unknown>) {
+    const result = await super.loadDataFromDb(data);
+    this.#rememberStoredPrincipal();
+    return result;
+  }
+
+  #rememberStoredPrincipal(): void {
+    this.#storedPrincipalKind = this.principalKind ?? null;
+    this.#storedRetiredAt = this.retiredAt ?? null;
+  }
+
   /** True for a non-login service principal (#5245); never holds a session. */
   isServicePrincipal(): boolean {
     return isServicePrincipalKind(this.principalKind);
@@ -308,12 +336,25 @@ export class User extends SmrtObject implements UserContract {
 
   /** Keep the durable email key derived from the public email field. */
   override async save(options?: SmrtSaveOptions): Promise<this> {
+    if (
+      this.#storedPrincipalKind != null &&
+      this.principalKind !== this.#storedPrincipalKind
+    )
+      throw new ServicePrincipalError(
+        'A service principal can never become another kind of principal',
+      );
+    if (this.#storedRetiredAt != null && this.retiredAt == null)
+      throw new ServicePrincipalError(
+        'A retired service principal cannot be reactivated',
+      );
     this.assertServicePrincipalInvariants();
     this.email = normalizeEmail(this.email);
     this.emailKey = this.email || null;
     this.username = normalizeUsername(this.username) || null;
     this.usernameKey = this.username;
-    return super.save(options);
+    const saved = await super.save(options);
+    this.#rememberStoredPrincipal();
+    return saved;
   }
 
   /**
