@@ -322,6 +322,10 @@ async function tableExists(
 declare global {
   /** Run-time classes each app model editor registered, by journal identity. */
   var __smrtAppModelEditorClasses: Map<object, string> | undefined;
+  var __smrtAppModelEditorDatabases: WeakMap<object, string> | undefined;
+  var __smrtAppModelEditorBaselines:
+    | Map<string, Map<string, () => void>>
+    | undefined;
 }
 const editorClasses = () =>
   (globalThis.__smrtAppModelEditorClasses ??= new Map<object, string>());
@@ -347,23 +351,35 @@ function pruneStaleOwnership() {
     )
       globalThis.__smrtModelOwners?.delete(id);
 }
-/** A process-local identity per database handle, part of each journal's key. */
-const databaseIds = new WeakMap<object, number>();
-let nextDatabaseId = 1;
-const databaseId = (db: object) => {
-  let id = databaseIds.get(db);
-  if (id === undefined) {
-    id = nextDatabaseId++;
-    databaseIds.set(db, id);
+/**
+ * A stable identity for the database, part of each journal's key: its URL,
+ * so a new handle to the same database reopens the same journal; an
+ * in-memory or URL-less database is identified per handle with a random id.
+ * Both maps live on globalThis, so every loaded copy of this module agrees.
+ */
+function databaseId(db: DatabaseInterface): string {
+  const url = db.url || (db as { config?: { url?: string } }).config?.url;
+  if (url && !/^(:memory:|memory:\/\/|file::memory:)/.test(url))
+    return `url:${url}`;
+  globalThis.__smrtAppModelEditorDatabases ??= new WeakMap<object, string>();
+  const handles = globalThis.__smrtAppModelEditorDatabases;
+  let id = handles.get(db);
+  if (!id) {
+    id = `handle:${crypto.randomUUID()}`;
+    handles.set(db, id);
   }
   return id;
-};
+}
 /**
  * Registry baselines per journal and provider: the registration state before
  * the journal first replaced the provider, shared by every editor instance of
  * that journal so a reopened editor can still take its replacement out.
  */
-const journalBaselines = new Map<string, Map<string, () => void>>();
+const journalBaselines = () =>
+  (globalThis.__smrtAppModelEditorBaselines ??= new Map<
+    string,
+    Map<string, () => void>
+  >());
 
 /** Async construction replays persisted customizations and resolves pending activation BEFORE serving. */
 export async function createAppModelEditor(options: AppModelEditorOptions) {
@@ -840,8 +856,8 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
 
   /** Registry baselines taken before this journal first replaced each provider. */
   const replacements =
-    journalBaselines.get(journal) ??
-    journalBaselines.set(journal, new Map()).get(journal)!;
+    journalBaselines().get(journal) ??
+    journalBaselines().set(journal, new Map()).get(journal)!;
 
   /** Register storage declarations; affected readiness closes until release(). */
   function register(all: CookbookModels | undefined) {

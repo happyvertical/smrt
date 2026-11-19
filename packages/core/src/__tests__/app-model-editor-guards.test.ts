@@ -2,7 +2,7 @@
 
 import type { Cookbook } from '@happyvertical/smrt-types';
 import type { getDatabase } from '@happyvertical/sql';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { withTenant } from '../../../tenancy/src/context.js';
 import {
   disableTenancy,
@@ -1327,6 +1327,90 @@ describe('app model editor: one customised registry per process', () => {
     try {
       await expect(
         createAppModelEditor({
+          db: other,
+          application: 'editor-guards-slot',
+          tenantId: TENANT,
+          packageName: APP,
+          cookbook: memberBook(),
+          catalog: memberCatalog,
+          authorize: (c) => c.actor === 'owner',
+        }),
+      ).rejects.toThrow(/MODEL_EDIT_CONFLICT: this process already holds/);
+    } finally {
+      await other.close?.();
+    }
+  });
+
+  it.skipIf(engine !== 'sqlite')(
+    'reopens the same journal through a new handle to the same database',
+    async () => {
+      const file = `${process.env.TMPDIR ?? '/tmp'}/editor-guards-${crypto.randomUUID()}.sqlite`;
+      const handle = () =>
+        getTestDatabase({
+          type: 'sqlite',
+          url: file,
+          classes: [],
+          includeSystemTables: false,
+        });
+      const first = await handle();
+      await migrateSmrtSchemas({
+        db: first,
+        packageName: APP,
+        engineHint: engine,
+      });
+      const open = (on: typeof first) =>
+        createAppModelEditor({
+          db: on,
+          application: 'editor-guards-handles',
+          tenantId: TENANT,
+          packageName: APP,
+          cookbook: memberBook(),
+          catalog: memberCatalog,
+          authorize: (c) => c.actor === 'owner',
+        });
+      const e = await open(first);
+      await applier(
+        e,
+        TENANT,
+      )({
+        type: 'add_field',
+        model: MEMBER,
+        name: 'vip',
+        field: { type: 'boolean' },
+      });
+      // A reconnect: a new handle to the same database, same process.
+      const second = await handle();
+      try {
+        const reopened = await open(second);
+        expect(reopened.snapshot().revision).toBe(1);
+      } finally {
+        await second.close?.();
+        await first.close?.();
+      }
+    },
+  );
+
+  it('keeps database identities unique across loaded copies of the editor module', async () => {
+    const first = await editorFor(TENANT);
+    await applier(
+      first,
+      TENANT,
+    )({
+      type: 'add_field',
+      model: MEMBER,
+      name: 'vip',
+      field: { type: 'boolean' },
+    });
+    vi.resetModules();
+    const copy = await import('../cookbook/model-editor.js');
+    const other = await getTestDatabase({
+      type: databaseType,
+      classes: [],
+      includeSystemTables: false,
+    });
+    try {
+      await expect(
+        copy.createAppModelEditor({
           db: other,
           application: 'editor-guards-slot',
           tenantId: TENANT,
