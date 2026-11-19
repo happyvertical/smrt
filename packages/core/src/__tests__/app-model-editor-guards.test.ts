@@ -236,25 +236,58 @@ describe('app model editor: installed model names and tables', () => {
     expect(e.snapshot().revision).toBe(3);
   });
 
-  it('journals an initial cookbook as a tracked revision and never adopts a retained table on a fresh boot', async () => {
-    const withList = (name: string): Cookbook => ({
+  it('journals an initial cookbook as a tracked revision and never adopts an installed model table on a fresh boot', async () => {
+    const withList = (
+      name: string,
+      fields: Record<string, unknown> = listDefinition.fields,
+    ): Cookbook => ({
       ...book(),
       features: [`${APP}:${name}`],
       models: {
         version: 1,
         packageName: APP,
-        lists: { [name]: structuredClone(listDefinition) as never },
+        lists: {
+          [name]: { ...structuredClone(listDefinition), fields } as never,
+        },
         fields: {},
       },
     });
-    // A disabled recipe's retained table, its model not loaded.
+    // A disabled recipe's retained table, its model not loaded (lazy host).
     await loadLedger();
     await migrateSmrtSchemas({ db, packageName: APP, engineHint: engine });
     ObjectRegistry.clear();
+    const lazy = {
+      manifest: {
+        version: 1 as const,
+        modules: {
+          ledger: { specifier: 'fixture', models: [LEDGER], dependencies: [] },
+        },
+        models: {
+          [LEDGER]: {
+            module: 'ledger',
+            effective: LEDGER,
+            table: LEDGER_TABLE,
+            dependencies: [],
+          },
+        },
+        tables: { [LEDGER_TABLE]: { owners: [LEDGER], dependencies: [] } },
+      },
+      activate: async () => {},
+    };
+    await expect(
+      editorFor({ cookbook: withList(SAME_TABLE_LIST), activation: lazy }),
+    ).rejects.toThrow(
+      /MODEL_TABLE_COLLISION: guard_ledgers is the table of the installed model/,
+    );
+    // Eager host: the model is loaded.
+    await loadLedger();
     await expect(
       editorFor({ cookbook: withList(SAME_TABLE_LIST) }),
-    ).rejects.toThrow(/MODEL_TABLE_COLLISION: guard_ledgers already exists/);
+    ).rejects.toThrow(
+      /MODEL_TABLE_COLLISION: guard_ledgers is the table of the installed model/,
+    );
     expect(await e2eColumns(LEDGER_TABLE)).not.toContain('note');
+    ObjectRegistry.clear();
 
     // A free table: the initial cookbook becomes revision 1, and reopens.
     const first = await editorFor({ cookbook: withList('GuardNotes') });
@@ -268,6 +301,45 @@ describe('app model editor: installed model names and tables', () => {
     ObjectRegistry.clear();
     const again = await editorFor({ cookbook: withList('GuardNotes') });
     expect(again.snapshot().revision).toBe(1);
+  });
+
+  it('still boots a startup cookbook whose own declarations predate the name checks', async () => {
+    // Declarations that booted before this release: a list named like an
+    // installed catalog model, a reserved field name and an over-long name.
+    const startup: Cookbook = {
+      ...book(),
+      features: [`${APP}:GuardLedger`],
+      models: {
+        version: 1,
+        packageName: APP,
+        lists: {
+          GuardLedger: {
+            label: 'Ledgers',
+            icon: 'receipt',
+            displayField: 'title',
+            fields: {
+              title: { type: 'text' },
+              metrics: { type: 'text' },
+              nameOfThePersonWhoSignedOffOnTheLastFireInspectionHere: {
+                type: 'text',
+              },
+            },
+          },
+        },
+        fields: {},
+      },
+    };
+    const e = await editorFor({ cookbook: startup });
+    expect(e.snapshot().revision).toBe(1);
+    // New declarations are still checked.
+    await expect(
+      applier(e)({
+        type: 'add_field',
+        model: 'GuardLedger',
+        name: 'usage',
+        field: { type: 'text' },
+      }),
+    ).rejects.toThrow(/FIELD_NAME_RESERVED/);
   });
 });
 

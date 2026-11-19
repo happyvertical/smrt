@@ -26,6 +26,7 @@ import {
   setRuntimeModelOwner,
   setRuntimeModelReadiness,
 } from '../runtime-exposure.js';
+import { runtimeListTableName } from '../runtime-list-table.js';
 import {
   type RuntimeFieldDefinition,
   registerRuntimeModel,
@@ -1126,15 +1127,13 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
 
   /**
    * An initial cookbook that declares app models, opened with an empty
-   * journal, becomes journal revision 1: validated like an edit against the
-   * database (a retained table cannot be adopted) and the installed models,
-   * then migrated and completed as a tracked revision, so later boots treat
-   * its lists as journalled and the retire step knows their tables.
+   * journal, becomes journal revision 1, then migrated and completed as a
+   * tracked revision, so later boots treat its lists as journalled and the
+   * retire step knows their tables. Its lists may not take a table an
+   * installed model owns (manifest or registry), even one that model kept
+   * after its recipe was disabled.
    */
-  async function journalInitial(
-    target: AppModelHistoryStore,
-    db: DatabaseInterface,
-  ) {
+  async function journalInitial(target: AppModelHistoryStore) {
     const models = doc.models;
     if (
       history.length ||
@@ -1142,7 +1141,26 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
       (!Object.keys(models.lists).length && !Object.keys(models.fields).length)
     )
       return;
-    await validate(doc, undefined, db);
+    // The startup document may have booted before this release: its own
+    // declarations count as existing for the name, length and reserved-name
+    // checks. Its tables must still not belong to an installed model.
+    await validate(doc, storageModels([doc]));
+    const reserved = installed();
+    for (const name of Object.keys(models.lists)) {
+      const own = `${models.packageName}:${name}`;
+      const table = runtimeListTableName(name);
+      const owner =
+        reserved.tables.get(table) ??
+        [...ObjectRegistry.getAllClasses().values()]
+          .map((entry) => entry.qualifiedName ?? entry.name)
+          .find(
+            (id) => id !== own && ObjectRegistry.getTableName(id) === table,
+          );
+      if (owner && owner !== own)
+        throw new Error(
+          `MODEL_TABLE_COLLISION: ${table} is the table of the installed model ${owner}; the startup cookbook's list ${name} cannot take it`,
+        );
+    }
     const before = structuredClone(doc);
     delete before.models;
     const change: AppModelChange = {
@@ -1233,7 +1251,7 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
           doc = checked(
             repairLayoutLabels(history.at(-1)?.after ?? options.cookbook),
           );
-          await journalInitial(scoped, db);
+          await journalInitial(scoped);
           await validate(
             doc,
             storageModels(history.flatMap((row) => [row.before, row.after])),
@@ -1248,7 +1266,7 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
           );
         });
       } else {
-        await journalInitial(store, options.db);
+        await journalInitial(store);
         await validate(
           doc,
           storageModels(history.flatMap((row) => [row.before, row.after])),

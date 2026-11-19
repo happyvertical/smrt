@@ -262,9 +262,12 @@ app/tenant/revision primary key and app/tenant/request uniqueness. History is
 permanent. Undo appends a compensating revision for the latest not-yet-undone
 edit; it never deletes history. The persisted cookbook is authoritative over
 the startup default. A startup cookbook that declares app models, opened with an empty
-journal, is journalled as revision 1 (actor `system`, an `import`), validated
-like an edit against the database and installed models first, so a retained
-table is never adopted. Export contains portable definitions/policies, not host
+journal, is journalled as revision 1 (actor `system`, an `import`). Its own
+declarations may have booted before this release, so they count as existing
+for the name, length and reserved-name checks; its lists still may not take a
+table an installed model owns (activation manifest or registry), retained or
+not. A leftover table no installed model claims cannot be told apart from the
+list's own table of an earlier boot and is used as the list's table. Export contains portable definitions/policies, not host
 actor/history records.
 
 SQLite and PostgreSQL are supported. PostgreSQL history stores native UUID
