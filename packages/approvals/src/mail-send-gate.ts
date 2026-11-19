@@ -21,6 +21,7 @@
 import { defineApprovalKind } from './kinds.js';
 import type { ApprovalService } from './service.js';
 import {
+  ApprovalError,
   type ApprovalKind,
   type ApprovalPrincipal,
   type ApprovalPrincipalType,
@@ -179,7 +180,12 @@ export function createApprovalMailSendGate(
             (event) =>
               event.type === 'approved' &&
               event.actorType === 'human' &&
-              event.subjectRevisionHash === row.subjectRevisionHash,
+              event.subjectRevisionHash === row.subjectRevisionHash &&
+              // As the service counts: a requester's own vote only with the
+              // ledgered self-approval allowance.
+              (event.actorId !== row.requestedBy ||
+                (event.selfApproved === true &&
+                  Boolean(event.selfApprovalPermission))),
           )
           .map((event) => event.actorId),
       ),
@@ -304,6 +310,15 @@ export function createApprovalMailSendGate(
     },
 
     async decide(input) {
+      if (
+        typeof input.expectedBindingHash !== 'string' ||
+        !input.expectedBindingHash.trim()
+      ) {
+        throw new ApprovalError(
+          'APPROVAL_INVALID',
+          'A mail-send decision must name the reviewed expectedBindingHash.',
+        );
+      }
       const decider = principalOf(
         input.tenantId,
         input.decider,

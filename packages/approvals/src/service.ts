@@ -510,6 +510,18 @@ export class ApprovalService {
       principal,
       requestId,
       async (tx, request, now) => {
+        // On a revisable kind the bound revision can change under a decider
+        // (edit-then-approve), so an approval must name what was reviewed.
+        if (
+          input.decision === 'approve' &&
+          expectedHash === undefined &&
+          requireApprovalKind(request.kind).allowRevisedApproval
+        ) {
+          throw new ApprovalError(
+            'APPROVAL_INVALID',
+            `Approving a '${request.kind}' request requires expectedSubjectRevisionHash.`,
+          );
+        }
         if (principal.type !== 'human') {
           return refusal(
             'not_human',
