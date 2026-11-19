@@ -207,6 +207,35 @@ describe('changes waiting view', () => {
     expect(button('Put back: New report Orders by fulfillment')).toBeTruthy();
   });
 
+  it('keeps a removed card restorable when it was the only one left', async () => {
+    const only = changes({
+      count: 0,
+      cards: [
+        card({ id: 'c2', status: 'removed', summary: 'New report Orders' }),
+      ],
+    });
+    const back = changes();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => json(back)),
+    );
+    await render(only);
+    expect(container.textContent).toContain('Nothing waiting');
+    expect(container.textContent).toContain('Removed: New report Orders');
+    expect(button('Discard all')).toBeTruthy();
+    button('Put back: New report Orders')?.click();
+    await vi.waitFor(() =>
+      expect(calls()).toContainEqual([
+        '/api/shell/changes/cards/c2/restore',
+        'POST',
+        JSON.stringify({ generation: 3 }),
+      ]),
+    );
+    await vi.waitFor(() =>
+      expect(container.querySelectorAll('article').length).toBeGreaterThan(0),
+    );
+  });
+
   it('quick edits the name and choices, with no default control', async () => {
     vi.stubGlobal(
       'fetch',

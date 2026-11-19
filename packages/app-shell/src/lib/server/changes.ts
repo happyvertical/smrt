@@ -861,19 +861,62 @@ function undoDigestOf(batch: ChangeBatch, liveVersion: number): string {
     .digest('hex');
 }
 
+const COPY_LOST =
+  'Your changes could not be set up again after a restart. Discard them and make them again.';
+
+/**
+ * An open batch with active cards but no working copy (the process stopped
+ * mid-rebuild): rebuild the copy from the stored cards, then queue fresh checks.
+ * If that fails the batch is marked blocked in plain words; Apply stays off and
+ * Discard all still works. Call inside `serial`.
+ */
+async function recoverWorkingCopy(
+  batch: ChangeBatch,
+  owner: Principal,
+): Promise<Awaited<ReturnType<typeof getDraftSlot>>> {
+  const active = (await cardsOf(batch.id as string)).filter(isActive);
+  if (!active.length) return null;
+  try {
+    await rebuild(batch, owner);
+    batch.checkState = 'stale';
+    batch.digest = '';
+    await batch.save();
+  } catch {
+    batch.checkState = 'blocked';
+    batch.digest = '';
+    batch.checkResult = JSON.stringify({
+      blockers: [
+        {
+          code: 'replay_failed',
+          message: COPY_LOST,
+        },
+      ],
+      overwrites: null,
+    });
+    await batch.save();
+  }
+  return getDraftSlot();
+}
+
 async function stateOf(owner: Principal): Promise<ChangesState> {
   const live = await getHost();
   const batch = await syncBatch(owner);
-  if (
-    batch &&
-    batch.status === 'open' &&
-    (batch.checkState === 'stale' || batch.checkState === 'checking') &&
-    !scheduler.busy(batch.id as string)
-  ) {
-    // An adopted draft, or a restart: nothing is scheduled yet. Queue the
-    // checks (the owner sees "Checking…" and an event follows); never block here.
-    const slot = await getDraftSlot();
-    if (slot?.host && !slot.hold && slot.id === batch.draftId)
+  if (batch && batch.status === 'open') {
+    let slot = await getDraftSlot();
+    // A stop between closing the old working copy and opening its replacement
+    // leaves cards (and a stale or even "ok" result) but no copy: rebuild it
+    // from the stored cards, never touching live, and check again.
+    if (!slot && !batch.checkResult.includes(COPY_LOST))
+      slot = await recoverWorkingCopy(batch, owner);
+    if (
+      (batch.checkState === 'stale' || batch.checkState === 'checking') &&
+      !scheduler.busy(batch.id as string) &&
+      slot?.host &&
+      !slot.hold &&
+      slot.id === batch.draftId
+    )
+      // An adopted draft, or a restart: nothing is scheduled yet. Queue the
+      // checks (the owner sees "Checking…" and an event follows); never block here.
       scheduleChecks(batch, owner);
   }
   const coll = await batches();

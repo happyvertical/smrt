@@ -204,6 +204,20 @@ async function apply() {
   <p class="smrt-app-shell-changes__sr-only" role="status" aria-live="polite" data-smrt-part="label">{notice}</p>
   {#if error}<p class="smrt-app-shell__alert smrt-app-shell__alert-error" role="alert">{error}</p>{/if}
 
+{#snippet removedList()}
+  {#if removed.length}
+    <ul class="smrt-changes__removed" aria-label="Removed changes">
+      {#each removed as card (card.id)}
+        <li>
+          <span class="smrt-app-shell__muted">Removed: {card.summary}</span>
+          <Button variant="ghost" size="sm" aria-label="Put back: {card.summary}" disabled={busy} onclick={() => act(() => changesApi.restoreCard(card.id, gen()), card.id, `Put back: ${card.summary}`)}>Put back</Button>
+          {#if messages[card.id]}<span role="alert">{messages[card.id]}</span>{/if}
+        </li>
+      {/each}
+    </ul>
+  {/if}
+{/snippet}
+
   {#if !changes || changes.count === 0}
     <div class="smrt-app-shell__empty" data-smrt-part="empty">
       <p><strong>Nothing waiting</strong></p>
@@ -212,6 +226,12 @@ async function apply() {
         <Button variant="secondary" size="sm" disabled={busy} onclick={() => act(() => changesApi.restoreDiscarded({ generation: changes?.discarded?.generation }), undefined, 'Your changes are back.')}>Put them back ({plural(changes.discarded.count, 'change')})</Button>
       {/if}
     </div>
+    {#if removed.length}
+      <div class="smrt-changes__box">
+        {@render removedList()}
+        <Button variant="ghost" size="sm" disabled={busy} onclick={() => act(() => changesApi.discard(gen()), undefined, 'Changes discarded.')}>Discard all</Button>
+      </div>
+    {/if}
   {:else}
     <div class="smrt-changes__box">
     <div class="smrt-changes__root">
@@ -264,17 +284,7 @@ async function apply() {
               {/snippet}
             </ChangeCard>
       {/snippet}
-      {#if removed.length}
-        <ul class="smrt-changes__removed" aria-label="Removed changes">
-          {#each removed as card (card.id)}
-            <li>
-              <span class="smrt-app-shell__muted">Removed: {card.summary}</span>
-              <Button variant="ghost" size="sm" aria-label="Put back: {card.summary}" disabled={busy} onclick={() => act(() => changesApi.restoreCard(card.id, gen()), card.id, `Put back: ${card.summary}`)}>Put back</Button>
-              {#if messages[card.id]}<span role="alert">{messages[card.id]}</span>{/if}
-            </li>
-          {/each}
-        </ul>
-      {/if}
+      {@render removedList()}
 
       <aside class="smrt-changes__side" aria-label="What will change">
         <h2>What will change</h2>

@@ -34,9 +34,9 @@ import {
   undoOwnBatch,
   waitingCount,
 } from './changes.ts';
-import { startDraft } from './drafts.ts';
+import { discardNow, startDraft } from './drafts.ts';
 import { subscribe } from './events.ts';
-import { getHost } from './host.ts';
+import { getDraftSlot, getHost } from './host.ts';
 import { openShell, runAs, type ShellHarness } from './test-support.ts';
 
 let h: ShellHarness;
@@ -372,6 +372,25 @@ describe('discard and put back', () => {
     expect((await getHost()).frozen).toBe(true);
     expect(s.canApply).toBe(false); // checking again
     expect((await state()).canApply).toBe(true);
+  });
+});
+
+describe('a working copy lost mid-rebuild', () => {
+  it('is rebuilt from the stored cards and checked again, live untouched', async () => {
+    await asOwner(() => addField('lost1'));
+    expect((await state()).checkState).toBe('ok');
+    const slot = await getDraftSlot();
+    // the process stopped after the old copy closed, before its replacement opened
+    await discardNow(slot?.id as string, { rebuilding: true });
+    expect(await getDraftSlot()).toBeNull();
+    const liveVersion = (await getHost()).version;
+    const s = await state();
+    expect(s.count).toBe(1);
+    expect(s.checkState).toBe('ok');
+    expect(s.canApply).toBe(true);
+    expect((await getDraftSlot())?.id).toBeTruthy();
+    expect((await getHost()).version).toBe(liveVersion);
+    expect((await getHost()).frozen).toBe(true);
   });
 });
 
