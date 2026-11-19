@@ -18,6 +18,9 @@
     "./engine/worker": {
       "import": "./dist/engine/app-worker.js"
     },
+    "./engine/worker-bundled": {
+      "import": "./dist/worker-bundle/app-worker.js"
+    },
     "./manifest": "./dist/manifest.json"
   },
   "files": [
@@ -29,10 +32,11 @@
   ],
   "scripts": {
     "dev": "svelte-kit sync && vite dev",
-    "build": "tsc -p tsconfig.lib.json && svelte-kit sync && vite build && node tools/publish-manifest.mjs",
+    "build": "tsc -p tsconfig.lib.json && node tools/bundle-worker.mjs && svelte-kit sync && vite build && node tools/publish-manifest.mjs",
     "preview": "vite preview",
     "start": "node build",
     "clean": "rm -rf dist build .svelte-kit",
+    "test:bundled-worker": "SMRT_APP_SHELL_WORKER=bundle vitest run src/engine",
     "test": "svelte-kit sync && vitest run && vitest run -c vitest.dom.config.ts",
     "typecheck": "svelte-kit sync && node ../../scripts/write-source-typecheck-config.mjs tsconfig.json .svelte-kit/tsconfig.typecheck.json && tsc -p .svelte-kit/tsconfig.typecheck.json && node ../../scripts/svelte-check-workspace.mjs --config ./svelte.config.typecheck.js --tsconfig ./.svelte-kit/tsconfig.typecheck.json",
     "prepack": "node ../../scripts/prepack-package.js"
@@ -62,7 +66,8 @@
     "@happyvertical/smrt-spreadsheets": "workspace:*",
     "@happyvertical/smrt-workflows": "workspace:*",
     "@happyvertical/smrt-jobs": "workspace:*",
-    "ajv": "8.20.0"
+    "ajv": "8.20.0",
+    "libsql": "0.5.29"
   },
   "devDependencies": {
     "@happyvertical/smrt-vitest": "workspace:*",
@@ -70,6 +75,7 @@
     "@sveltejs/kit": "2.70.3",
     "@sveltejs/vite-plugin-svelte": "^7.3.0",
     "@types/node": "24.13.6",
+    "esbuild": "0.28.2",
     "svelte": "^5.57.1",
     "svelte-check": "^4.7.6",
     "typescript": "6.0.3",

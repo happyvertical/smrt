@@ -531,6 +531,9 @@ importers:
       ajv:
         specifier: 8.20.0
         version: 8.20.0
+      libsql:
+        specifier: 0.5.29
+        version: 0.5.29
       quickjs-emscripten:
         specifier: 0.31.0
         version: 0.31.0
@@ -550,6 +553,9 @@ importers:
       '@types/node':
         specifier: 24.13.2
         version: 24.13.2
+      esbuild:
+        specifier: 0.28.2
+        version: 0.28.2
       svelte:
         specifier: ^5.57.1
         version: 5.57.1

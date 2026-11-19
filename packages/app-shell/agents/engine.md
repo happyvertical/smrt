@@ -215,6 +215,27 @@ only. The CLI's use is in `packages/cli/agents/app-commands.md`.
   at 8 workers. Cost over 150 sequential creates: 16 MiB +14%, 8 MiB and 4 MiB
   about 2x; reads of 400 rows: 16 MiB +1%, 4 MiB +20%. Hence 16 for the desktop;
   a hosted profile that values memory over write latency may pass 4-8.
+- **Split worker bundle (#5213).** `tools/bundle-worker.mjs` (esbuild, part of
+  `pnpm build`, after `tsc`) writes `dist/worker-bundle/app-worker.js` + chunks.
+  Opt-in: a host passes `workerUrl` (package export
+  `@happyvertical/smrt-app-shell/engine/worker-bundled`) or sets
+  `SMRT_APP_SHELL_WORKER=bundle` (engine default and shell; a configured
+  `workerUrl` wins; refused if the bundle is not built). Unbundled stays the
+  default. Rules: NO identifier minification (smrt claims tables by class name;
+  `keepNames` also stops the bundler renaming a colliding class); `libsql`
+  (native, so a direct dependency here), DuckDB, and `quickjs-emscripten` (its
+  `.wasm` sits beside its glue code) stay external and resolve from the
+  package, so the bundle must stay inside `dist/`. The whole engine suite runs
+  on it: `pnpm test:bundled-worker`. Measured (macOS, Node 26.8.1; RSS added
+  per worker at 1 / 4 / 8 workers, host included at 1): origin/main 153 / 98 /
+  90 MiB; 16 MiB nursery 117 / 72 / 64; plus bundle 93 / 59 / 52; bundle and
+  4 MiB nursery 76 / 47 / 44. First wake (open, define, create, list): about
+  500 ms unbundled, 310 ms bundled. `NODE_COMPILE_CACHE`: bundled warm wake
+  310 -> 235 ms for +2.5 MiB per worker. Decision: set it for HOSTED
+  (short-lived replicas wake often; point it at a writable directory kept
+  across restarts, shared by the replicas of one build), NEVER for the desktop
+  (one long-lived process, the saving is one wake, the memory is paid per
+  worker). The engine does not set it; it is the process environment's.
 
 ## Calculated fields (#4916)
 

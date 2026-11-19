@@ -30,9 +30,11 @@ import { TenantCollection } from '@happyvertical/smrt-users';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import {
   AppHost,
+  bundledWorkerUrl,
   discardDraftDirectory,
   EngineError,
   type WorkerLimits,
+  wantsBundledWorker,
 } from '../../engine/index.ts';
 import { AppDraftCollection } from '../objects/AppDraft.ts';
 import { AppImportCollection } from '../objects/AppImport.ts';
@@ -233,6 +235,12 @@ export function tenantAppDirs(
 function workerUrl(): URL | string {
   const configured = requireContext().workerUrl;
   if (configured) return configured;
+  // SMRT_APP_SHELL_WORKER=bundle: the split worker bundle (#5213).
+  if (wantsBundledWorker()) {
+    const bundled = bundledWorkerUrl();
+    if (bundled) return bundled;
+    throw new EngineError('the worker bundle is not built', 'refused');
+  }
   // From source (dev, tests) the worker sits next to the engine; from a build
   // it is the package's published engine worker.
   const local = new URL('../../engine/app-worker.ts', import.meta.url);

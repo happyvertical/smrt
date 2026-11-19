@@ -273,7 +273,36 @@ interface Analysis {
   apply: (author: string) => Promise<ExecuteResult>;
 }
 
+/**
+ * The split worker bundle (`tools/bundle-worker.mjs`, #5213): next to the
+ * compiled engine, or from source (tests) under `dist/`. Absent until built.
+ */
+export function bundledWorkerUrl(): URL | null {
+  for (const f of [
+    '../worker-bundle/app-worker.js',
+    '../../dist/worker-bundle/app-worker.js',
+  ]) {
+    const u = new URL(f, import.meta.url);
+    if (existsSync(fileURLToPath(u))) return u;
+  }
+  return null;
+}
+
+/** `SMRT_APP_SHELL_WORKER=bundle` selects the bundled worker (a host's `workerUrl` wins). */
+export function wantsBundledWorker(): boolean {
+  return process.env.SMRT_APP_SHELL_WORKER === 'bundle';
+}
+
 function defaultWorkerUrl(): URL {
+  if (wantsBundledWorker()) {
+    const bundled = bundledWorkerUrl();
+    if (!bundled)
+      throw new EngineError(
+        'SMRT_APP_SHELL_WORKER=bundle but the worker bundle is not built (run the package build)',
+        'refused',
+      );
+    return bundled;
+  }
   for (const f of ['./app-worker.ts', './app-worker.js']) {
     const u = new URL(f, import.meta.url);
     if (existsSync(fileURLToPath(u))) return u;
