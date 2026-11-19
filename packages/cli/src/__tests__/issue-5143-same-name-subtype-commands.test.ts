@@ -279,3 +279,31 @@ describe('a CLI command name two models answer to', () => {
     );
   });
 });
+
+describe('a CLI command name with one enabled publisher', () => {
+  it('is served by that model when an unrelated model of the same name has the CLI disabled', async () => {
+    ObjectRegistry.clear();
+    const VideoScene = class Scene extends SmrtObject {};
+    const HistrioScene = class Scene extends VideoScene {};
+    const Clips = class Clips extends SmrtObject {};
+    ObjectRegistry.register(Clips, {
+      packageName: '@fixture/c5143-other',
+      tableName: 'other_clips',
+      cli: false,
+    });
+    ObjectRegistry.register(VideoScene, {
+      name: 'Scene',
+      packageName: '@fixture/c5143-video',
+      tableName: 'scenes',
+      tableStrategy: 'sti',
+    });
+    ObjectRegistry.register(HistrioScene, {
+      name: 'Scene',
+      packageName: '@fixture/c5143-histrio',
+      replaceParent: false,
+      collection: 'Clips',
+      cli: { include: ['list'] },
+    });
+    expect(await commands('clips')).toEqual(['clips:list']);
+  });
+});
