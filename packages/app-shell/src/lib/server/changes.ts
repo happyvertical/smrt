@@ -66,6 +66,7 @@ import { publish } from './events.ts';
 import { getDraftSlot, getHost, getShellDb } from './host.ts';
 import { assertOwner, type Principal, requireOwner, runAs } from './owner.ts';
 import { publicChangeResult } from './results.ts';
+import { createTenantQueue } from './tenant-queue.ts';
 
 const WORKING_COPY_NAME = CHANGES_WAITING_NAME;
 const DEPENDS_ON_REMOVED =
@@ -211,14 +212,8 @@ export const isMaintenanceCommand = (command: { type?: unknown }): boolean =>
 
 // ---------- plumbing ----------
 
-let tail: Promise<unknown> = Promise.resolve();
-
-/** Run changes work one at a time (the batch, its cards and the working copy move together). */
-function serial<T>(fn: () => Promise<T>): Promise<T> {
-  const run = tail.then(fn, fn);
-  tail = run.catch(() => {});
-  return run;
-}
+/** Run changes work one at a time per tenant (the batch, its cards and the working copy move together). */
+const serial = createTenantQueue();
 
 const iso = (value: unknown): string =>
   value instanceof Date ? value.toISOString() : String(value ?? '');
@@ -678,6 +673,15 @@ async function runChecksJob(
 ): Promise<void> {
   const owner = owners.get(batchId);
   if (!owner) return;
+  // In the owner's own tenant context, whatever timer or chain fired the job.
+  await runAs(owner, () => checksJob(owner, batchId, generation));
+}
+
+async function checksJob(
+  owner: Principal,
+  batchId: string,
+  generation: number,
+): Promise<void> {
   let info: AfterChecksInfo | null = null;
   await serial(async () => {
     const coll = await batches();

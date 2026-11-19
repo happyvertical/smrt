@@ -84,6 +84,24 @@ const METHOD_RETRIES = 3;
 const OWNER = { id: 'owner', roles: ['admin'] };
 const PROFILE_TYPES = '@happyvertical/smrt-profiles:ProfileType';
 
+/**
+ * The only place the engine opens app.db: the live app, every draft copy,
+ * publish rehearsal, the read-only report worker and the portable export
+ * (`portable-export.ts`) all open it through here.
+ */
+export async function openAppDatabase(dataDir: string): Promise<Handle> {
+  const db = await getDatabase({
+    type: 'sqlite',
+    url: join(dataDir, 'app.db'),
+  } as any);
+  declareRuntimeManagedDatabase(db, {
+    owner: '@happyvertical/smrt-app-shell',
+    reason:
+      "The engine builds app.db's schema from the app definition with its own versioned steps (_app_meta.version); core's migrate never runs against it.",
+  });
+  return db;
+}
+
 export interface BootResult {
   skipped?: number;
   statements: string[];
@@ -122,17 +140,7 @@ export class AppRuntime {
       return { statements: [], snapshot: null };
     }
     mkdirSync(join(this.dataDir, 'snapshots'), { recursive: true });
-    this.db = await getDatabase({
-      type: 'sqlite',
-      url: join(this.dataDir, 'app.db'),
-    } as any);
-    // The only place the engine opens app.db: the live app, every draft copy,
-    // publish rehearsal and the read-only report worker all boot through here.
-    declareRuntimeManagedDatabase(this.db, {
-      owner: '@happyvertical/smrt-app-shell',
-      reason:
-        "The engine builds app.db's schema from the app definition with its own versioned steps (_app_meta.version); core's migrate never runs against it.",
-    });
+    this.db = await openAppDatabase(this.dataDir);
     await this.register();
     for (const report of Object.values(this.def.reports ?? {}))
       await compileReport(this.def, report.spec);

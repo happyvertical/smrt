@@ -3,7 +3,9 @@ import {
   DEFAULT_OWNER_SETUP_MESSAGES,
 } from '@happyvertical/smrt-app-runtime/sveltekit';
 
+import { error } from '@sveltejs/kit';
 import { isDesktopWrapper } from '$lib/server/desktop';
+import { shellProfile } from '$lib/server/host';
 import { runtime } from '$lib/server/smrt';
 
 /**
@@ -25,9 +27,19 @@ const page = createOwnerSetupPage(runtime, {
     : DEFAULT_OWNER_SETUP_MESSAGES,
 });
 
-export const actions = page.actions;
+/** The local owner bootstrap does not exist in the cloud profile: a 404. */
+async function localOnly(): Promise<void> {
+  if ((await shellProfile()) !== 'local') error(404, 'Not found');
+}
 
-export const load = async (event: Parameters<typeof page.load>[0]) => ({
-  ...(await page.load(event)),
-  desktop,
-});
+export const actions = {
+  default: async (event: Parameters<typeof page.actions.default>[0]) => {
+    await localOnly();
+    return page.actions.default(event);
+  },
+};
+
+export const load = async (event: Parameters<typeof page.load>[0]) => {
+  await localOnly();
+  return { ...(await page.load(event)), desktop };
+};

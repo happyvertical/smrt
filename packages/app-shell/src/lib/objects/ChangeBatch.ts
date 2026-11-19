@@ -22,6 +22,7 @@ export type ChangeBatchStatus = 'open' | 'held' | 'applied' | 'discarded';
   mcp: false,
   cli: false,
   conflictColumns: ['id'],
+  tenantScoped: { mode: 'optional' },
 })
 export class ChangeBatch extends SmrtObject {
   @field({ type: 'text', required: true, requiredFor: 'tenant-scope' })

@@ -66,7 +66,11 @@ export async function isOwner(
 ): Promise<boolean> {
   if (!principal?.id || !principal.tenantId) return false;
   try {
-    return await (override ?? ownerFromDatabase)(principal);
+    // Inside the principal's own tenant: the hosted app hands out its
+    // database only within a tenant's context (see `getShellDb`).
+    return await (override ?? ((p) => runAs(p, () => ownerFromDatabase(p))))(
+      principal,
+    );
   } catch {
     return false; // fail closed
   }

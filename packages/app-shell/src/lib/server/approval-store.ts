@@ -5,21 +5,37 @@ import {
   OwnerApprovalAuthority,
   type OwnerApprovalStore,
 } from '@happyvertical/smrt-app-runtime';
+import { getCurrentTenant } from '@happyvertical/smrt-tenancy';
 import { TenantCollection } from '@happyvertical/smrt-users';
 import { type Approval, ApprovalCollection } from '../objects/Approval.ts';
 import { parseJson } from './approvals.ts';
-import { getShellDb } from './host.ts';
-import { isOwner } from './owner.ts';
+import { getShellDb, shellProfile } from './host.ts';
+import { isOwner, PolicyError } from './owner.ts';
 
-/** The local product has one tenant. Refuse ambiguous legacy ownership. */
-export async function shellApprovalAuthority() {
-  const db = await getShellDb();
+/**
+ * The tenant the approvals belong to. The desktop has one tenant (ambiguous
+ * legacy ownership is refused). The hosted app has many: the tenant of the
+ * verified request, never a lookup, so one owner's approvals are never
+ * another's.
+ */
+async function approvalTenant(db: Awaited<ReturnType<typeof getShellDb>>) {
+  if ((await shellProfile()) === 'cloud') {
+    const tenantId = getCurrentTenant()?.tenantId;
+    if (!tenantId) throw new PolicyError(401, 'sign in first');
+    return { tenantId, hosted: true };
+  }
   const tenants = await (await TenantCollection.create({ db })).list({
     limit: 2,
   });
   if (tenants.length !== 1 || !tenants[0].id)
     throw new Error('approval storage requires the single installation tenant');
-  const tenantId = tenants[0].id;
+  return { tenantId: tenants[0].id, hosted: false };
+}
+
+/** The shared authority over this deployment's approval rows. */
+export async function shellApprovalAuthority() {
+  const db = await getShellDb();
+  const { tenantId, hosted } = await approvalTenant(db);
   const collection = await ApprovalCollection.create({ db });
   const record = (row: Approval): OwnerApproval => ({
     id: row.id as string,
@@ -66,6 +82,13 @@ export async function shellApprovalAuthority() {
     async get(tenant, id) {
       if (tenant !== tenantId) return null;
       const row = await collection.get(id);
+      // Hosted: a row of another tenant is not found, even by its id.
+      if (
+        hosted &&
+        row &&
+        (row as { tenantId?: unknown }).tenantId !== tenantId
+      )
+        return null;
       return row ? record(row) : null;
     },
     async list(tenant) {
@@ -93,11 +116,14 @@ export async function shellApprovalAuthority() {
         sets.push('result = ?');
         values.push(JSON.stringify(patch?.result ?? null));
       }
+      // Raw SQL bypasses the tenant interceptor: the hosted app names the
+      // tenant itself, so a decision can only ever touch its own row.
       const changed = await db.query(
-        `UPDATE approvals SET ${sets.join(', ')} WHERE id = ? AND status = ? RETURNING id`,
+        `UPDATE approvals SET ${sets.join(', ')} WHERE id = ? AND status = ?${hosted ? ' AND tenant_id = ?' : ''} RETURNING id`,
         ...values,
         id,
         persisted(from),
+        ...(hosted ? [tenantId] : []),
       );
       return changed.rows.length === 1;
     },

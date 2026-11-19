@@ -11,7 +11,7 @@
 // start cannot race a publish or a discard.
 
 import { existsSync, realpathSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { resolve } from 'node:path';
 import {
   type AppHost,
   discardDraftDirectory,
@@ -26,18 +26,20 @@ import { reportChanges } from '../ui/reports.ts';
 import type { FieldDef } from '../ui/types.ts';
 import { publish } from './events.ts';
 import {
-  DRAFT_DIRNAME,
   type DraftSlot,
-  dataRoot,
+  getAppTenantId,
+  getDraftDir,
   getDraftSlot,
   getHost,
   getLiveStore,
   getShellDb,
+  getStorePin,
   hostFor,
   setDraftSlot,
   wireHostEvents,
 } from './host.ts';
 import type { Target } from './target.ts';
+import { createTenantQueue } from './tenant-queue.ts';
 import { DraftVersionStore } from './version-store.ts';
 
 /** What the UI and tools see of the open draft. */
@@ -74,14 +76,8 @@ export type DraftPublishResult = Omit<PublishResult, 'snapshot'> & {
   draft: string;
 };
 
-let tail: Promise<unknown> = Promise.resolve();
-
-/** Run lifecycle work one at a time. */
-function exclusive<T>(fn: () => Promise<T>): Promise<T> {
-  const run = tail.then(fn, fn);
-  tail = run.catch(() => {});
-  return run;
-}
+/** Run lifecycle work one at a time per tenant. */
+const exclusive = createTenantQueue();
 
 function clean(name: unknown): string {
   const text =
@@ -181,7 +177,9 @@ export function startDraftWith(
     // A draft forks live, so live is repaired first (it is not frozen yet).
     await live.repairLegacyImport().catch(() => 0);
     const db = await getShellDb();
-    const dir = join(await dataRoot(), DRAFT_DIRNAME);
+    const dir = await getDraftDir();
+    const tenantId = await getAppTenantId();
+    const pin = await getStorePin();
     // A leftover copy no row refers to (host.ts removes these at start): the
     // engine only removes a directory that is one of its own drafts.
     if (existsSync(dir)) discardDraftDirectory(dir);
@@ -204,7 +202,7 @@ export function startDraftWith(
         id,
         dir,
         live,
-        store: new DraftVersionStore(db, id),
+        store: new DraftVersionStore(db, id, pin),
       });
       // The draft's store moved the row's pointer: re-read it before updating.
       const fresh = (await drafts.get(id)) ?? row;
@@ -223,7 +221,7 @@ export function startDraftWith(
       }
       throw e;
     }
-    wireHostEvents(host, 'draft');
+    wireHostEvents(host, 'draft', tenantId);
     setDraftSlot({ id, name: row.name, dir, host, problem: null, hold });
     publish({ type: 'draft', status: 'started', id, name: row.name });
     return (await draftInfo()) as DraftInfo;

@@ -22,6 +22,7 @@ export type AppDraftStatus = 'starting' | 'open' | 'published' | 'discarded';
   mcp: false,
   cli: false,
   conflictColumns: ['id'],
+  tenantScoped: { mode: 'optional' },
 })
 export class AppDraft extends SmrtObject {
   @field({ type: 'text', required: true })

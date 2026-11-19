@@ -5,10 +5,10 @@ description: "A smrt app that builds and runs a person's own smrt app from defin
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-19T17:24:38Z"
+  at: "2026-11-19T20:16:33Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:445f5716a5520660b4f639192849c2f1834c83cd08ed3ef3acbf87a58e77bffa"
+source_revision: "sha256:133286f4148e9c4e20fab857f01bbb7e785a9b2a154ce031691065261294102e"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/app-shell/package.json"
@@ -17,15 +17,18 @@ sources:
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/app-shell/AGENTS.md"
     title: "@happyvertical/smrt-app-shell packages/app-shell/AGENTS.md"
   - id: "agents-2"
+    resource: "https://github.com/happyvertical/smrt/blob/main/packages/app-shell/agents/cloud-profile.md"
+    title: "@happyvertical/smrt-app-shell packages/app-shell/agents/cloud-profile.md"
+  - id: "agents-3"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/app-shell/agents/draft-ui.md"
     title: "@happyvertical/smrt-app-shell packages/app-shell/agents/draft-ui.md"
-  - id: "agents-3"
+  - id: "agents-4"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/app-shell/agents/engine.md"
     title: "@happyvertical/smrt-app-shell packages/app-shell/agents/engine.md"
-  - id: "agents-4"
+  - id: "agents-5"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/app-shell/agents/imports.md"
     title: "@happyvertical/smrt-app-shell packages/app-shell/agents/imports.md"
-  - id: "agents-5"
+  - id: "agents-6"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/app-shell/agents/shared-pieces.md"
     title: "@happyvertical/smrt-app-shell packages/app-shell/agents/shared-pieces.md"
 ---
@@ -42,6 +45,7 @@ sources:
 ## Documentation
 
 - `packages/app-shell/AGENTS.md`
+- `packages/app-shell/agents/cloud-profile.md`
 - `packages/app-shell/agents/draft-ui.md`
 - `packages/app-shell/agents/engine.md`
 - `packages/app-shell/agents/imports.md`

@@ -4,6 +4,7 @@ import {
   asSettingsOwner,
   assistantSettings,
 } from '$lib/server/agent-cli/service';
+import { shellProfile } from '$lib/server/host';
 import { principalFromLocals } from '$lib/server/owner';
 import { DEPENDS } from '$lib/ui/events';
 import { isPluginRequest } from '$lib/ui/layout';
@@ -59,8 +60,11 @@ export const load: LayoutServerLoad = async (event) => {
     onboardingComplete =
       settings?.onboarding != null ||
       Object.keys(description.models).length > 0;
+    // The welcome steps connect a local AI tool or a ChatGPT plan; the hosted
+    // app has neither, so nobody is sent there.
     if (
       settings &&
+      (await shellProfile()) === 'local' &&
       needsWelcome({
         pathname: event.url.pathname,
         modelCount: Object.keys(description.models).length,

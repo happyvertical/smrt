@@ -2,7 +2,8 @@
  * Local-to-cloud migration and cloud-to-local downgrade (#4806).
  *
  * Built on a cloud link (`smrt-cloud-link-v1`, `@happyvertical/smrt-app-runtime`)
- * and on the schemaVersion-2 logical bundle of `smrt app export`:
+ * and on the schemaVersion-2/3 logical bundle of `smrt app export` (3 adds the
+ * app shell's `userApp` section, carried whole into a per-user plan, #5193):
  *
  * - **Per-user target** (an empty cloud database owned by one account): the
  *   checked bundle is imported by the existing `importApplication` contract,
@@ -62,6 +63,7 @@ import type {
 } from '@happyvertical/smrt-core';
 import { errorCode } from './errors.js';
 import {
+  BUNDLE_SCHEMA_VERSIONS,
   canonicalValue,
   containsNonPortableRows,
   type ImportExecutor,
@@ -355,7 +357,11 @@ function requireBundle(
   tables: ManifestTable[],
 ): LogicalExportBundle {
   const bundle = value as Partial<LogicalExportBundle> | null;
-  if (bundle?.schemaVersion !== 2 || !Array.isArray(bundle.tables)) {
+  if (
+    typeof bundle?.schemaVersion !== 'number' ||
+    !BUNDLE_SCHEMA_VERSIONS.includes(bundle.schemaVersion) ||
+    !Array.isArray(bundle.tables)
+  ) {
     throw new CloudMigrationError(
       'invalid_bundle',
       'Unsupported logical export bundle.',
@@ -654,12 +660,15 @@ export function planCloudMigration(
   issues.throwIfAny('The bundle cannot be migrated to this cloud target');
 
   const migrated: LogicalExportBundle = {
-    schemaVersion: 2,
+    schemaVersion: bundle.schemaVersion,
     application: bundle.application,
     profile: bundle.profile,
     exportedAt: bundle.exportedAt,
     tables,
     assets: filterAssets(bundle.assets, assetKeysOf(tables)),
+    // The app shell's user app travels whole, so a per-user move keeps every
+    // record, version and undo point. The shared target cannot take it yet.
+    ...(bundle.userApp ? { userApp: bundle.userApp } : {}),
   };
   return Object.freeze({
     target: shared ? ('shared' as const) : ('per-user' as const),
@@ -927,6 +936,14 @@ export async function runSharedCloudMigration(
   options: SharedMigrationOptions,
 ): Promise<SharedMigrationResult> {
   const { plan, transport } = options;
+  if (plan.bundle.userApp) {
+    // Placing run-time tables in the shared multi-tenant database needs the
+    // engine's PostgreSQL profile (#5186/#5187); refuse rather than drop it.
+    throw new CloudMigrationError(
+      'plan_refused',
+      'This application has an app shell user app, which cannot be moved to the shared cloud target yet; nothing was sent.',
+    );
+  }
   const batchSize = options.batchSize ?? DEFAULT_BATCH_SIZE;
   if (!Number.isSafeInteger(batchSize) || batchSize < 1 || batchSize > 1000) {
     throw new RangeError('batchSize must be between 1 and 1000.');
@@ -1031,6 +1048,8 @@ export interface CloudMigrationVerification {
   /** Per table, columns whose values differ on the target. */
   changedColumns: Record<string, string[]>;
   assets: { missing: string[]; mismatched: string[] };
+  /** Present when the plan carries a user app: the target's copy has the same digest. */
+  userApp?: { matches: boolean };
 }
 
 /** JSON with object keys sorted, so jsonb key order never reads as a change. */
@@ -1071,7 +1090,7 @@ function comparableValue(
  */
 export function verifyCloudMigration(
   plan: CloudMigrationPlan,
-  target: Pick<LogicalExportBundle, 'tables' | 'assets'>,
+  target: Pick<LogicalExportBundle, 'tables' | 'assets' | 'userApp'>,
 ): CloudMigrationVerification {
   const manifest = new Map(plan.tables.map((table) => [table.name, table]));
   const targetRows = new Map<string, Map<string, PortableRow>>();
@@ -1127,10 +1146,14 @@ export function verifyCloudMigration(
       [...columns].sort(),
     ]),
   );
+  const userApp = plan.bundle.userApp
+    ? { matches: target.userApp?.digest === plan.bundle.userApp.digest }
+    : undefined;
   const ok =
     missing.length === 0 &&
     assetsMissing.length === 0 &&
-    assetsMismatched.length === 0;
+    assetsMismatched.length === 0 &&
+    (userApp?.matches ?? true);
   return {
     ok,
     exact: ok && Object.keys(changedColumns).length === 0,
@@ -1138,6 +1161,7 @@ export function verifyCloudMigration(
     missing,
     changedColumns,
     assets: { missing: assetsMissing, mismatched: assetsMismatched },
+    ...(userApp ? { userApp } : {}),
   };
 }
 

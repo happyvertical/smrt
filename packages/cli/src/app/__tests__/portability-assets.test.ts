@@ -374,7 +374,7 @@ describe('asset-aware runtime portability', () => {
     expect(result).toMatchObject({ assetsIncluded: true, assetCount: 1 });
     expect(lstatSync(fixture.bundlePath).mode & 0o777).toBe(0o600);
     expect(bundle).toMatchObject({
-      schemaVersion: 2,
+      schemaVersion: 3,
       application: APP_ID,
       assets: {
         schemaVersion: 1,
