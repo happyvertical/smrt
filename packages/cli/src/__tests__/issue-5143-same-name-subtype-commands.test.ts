@@ -218,3 +218,33 @@ describe('CLI commands of a replacement of a served subtype', () => {
     expect(await commands('scene')).toEqual(['scene:list', 'scene:get']);
   });
 });
+
+describe('CLI commands of a replacement of a subtype with its own collection', () => {
+  it('keep the subtype named commands next to the base commands', async () => {
+    ObjectRegistry.clear();
+    const VideoScene = class Scene extends SmrtObject {};
+    const HistrioScene = class Scene extends VideoScene {};
+    const AppScene = class Scene extends HistrioScene {};
+    ObjectRegistry.register(VideoScene, {
+      name: 'Scene',
+      packageName: '@fixture/c5143-video',
+      tableName: 'scenes',
+      tableStrategy: 'sti',
+      cli: { include: ['list', 'get'] },
+    });
+    ObjectRegistry.register(HistrioScene, {
+      name: 'Scene',
+      packageName: '@fixture/c5143-histrio',
+      replaceParent: false,
+      collection: 'histrio_scenes',
+      cli: { include: ['list'] },
+    });
+    ObjectRegistry.register(AppScene, {
+      name: 'Scene',
+      packageName: '@fixture/c5143-app',
+      replaceParent: true,
+    });
+    expect(await commands('scene')).toEqual(['scene:list', 'scene:get']);
+    expect(await commands('histrio_scenes')).toEqual(['histrio_scenes:list']);
+  });
+});

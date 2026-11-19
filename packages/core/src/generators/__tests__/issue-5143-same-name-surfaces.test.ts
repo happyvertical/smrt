@@ -203,3 +203,50 @@ describe('OpenAPI path of a parent with a declared collection', () => {
     expect(ObjectRegistry.getClass(BASE)?.collection).toBe('clips');
   });
 });
+
+describe('a replacement of a subtype that declares its own collection', () => {
+  it('keeps the subtype named surface next to the base surface', async () => {
+    const VideoScene = class Scene extends SmrtObject {
+      title = '';
+    };
+    const HistrioScene = class Scene extends VideoScene {};
+    const AppScene = class Scene extends HistrioScene {};
+    field({ type: 'text' })(VideoScene.prototype, 'title');
+    ObjectRegistry.register(VideoScene, {
+      name: 'Scene',
+      packageName: '@fixture/s5143-video',
+      tableName: 'scenes',
+      tableStrategy: 'sti',
+      api: { include: ['list', 'get'] },
+      mcp: { include: ['list', 'get'] },
+    });
+    ObjectRegistry.register(HistrioScene, {
+      name: 'Scene',
+      packageName: '@fixture/s5143-histrio',
+      replaceParent: false,
+      collection: 'histrio_scenes',
+      api: { include: ['list'] },
+      mcp: { include: ['list'] },
+    });
+    ObjectRegistry.register(AppScene, {
+      name: 'Scene',
+      packageName: '@fixture/s5143-app',
+      replaceParent: true,
+    });
+    expect(ObjectRegistry.getSurfaceName('@fixture/s5143-app:Scene')).toBe(
+      'histrio_scenes',
+    );
+    const result = await surfaces();
+    expect(result.tools).toEqual([
+      'histrio_scenes_list',
+      'scene_get',
+      'scene_list',
+    ]);
+    expect(result.paths).toEqual({
+      '/api/histrio_scenes': ['get'],
+      '/api/histrio_scenes/{id}': [],
+      '/api/scenes': ['get'],
+      '/api/scenes/{id}': ['get'],
+    });
+  });
+});

@@ -152,13 +152,12 @@ function isSameNameSubtype(
   seen.add(key);
   const choice = sameNameSubclassChoice(entry.config);
   if (choice === 'replace') {
+    // Whether or not the subtype declared a collection: the replacement
+    // carries it (its configuration starts from the subtype's), so it keeps
+    // the subtype's named surface or its service through the base.
     return (entry.replacedQualifiedNames ?? []).some((replaced) => {
       const declaration = replacedDeclarations().get(replaced);
-      return (
-        !!declaration &&
-        typeof declaration.config?.collection !== 'string' &&
-        isSameNameSubtype(replaced, declaration, seen)
-      );
+      return !!declaration && isSameNameSubtype(replaced, declaration, seen);
     });
   }
   if (choice !== 'subtype') return false;
