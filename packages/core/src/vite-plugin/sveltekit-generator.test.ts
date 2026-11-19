@@ -1567,11 +1567,13 @@ describe('SvelteKit Route Generator', () => {
       // the string '2', so the generated call decodes it. `query: string`
       // needs no decoding and is passed straight through (#2686).
       expect(searchContent).toContain('ClassRef.searchFacts(');
-      expect(searchContent).toContain('toCustomActionNumber(options.limit)');
+      expect(searchContent).toContain(
+        'toCustomActionNumber(scopedOptions.limit)',
+      );
       // `query: string` needs no decoding and is passed straight through.
-      expect(searchContent).toContain('options.query');
+      expect(searchContent).toContain('scopedOptions.query');
       expect(searchContent).not.toContain(
-        'toCustomActionNumber(options.query)',
+        'toCustomActionNumber(scopedOptions.query)',
       );
       expect(searchContent).toContain(
         "import { normalizeCustomActionFailure, normalizeTypedHttpError, reportUnexpectedHttpError, scopeTenantReadOptions, toCustomActionNumber } from '@happyvertical/smrt-core';",
@@ -1588,7 +1590,7 @@ describe('SvelteKit Route Generator', () => {
         'new URL(request.url).searchParams.entries(),',
       );
       expect(reservedContent).toContain(
-        'await ClassRef.searchReserved(options.__smrt_options, options.query)',
+        'await ClassRef.searchReserved(scopedOptions.__smrt_options, scopedOptions.query)',
       );
     });
 

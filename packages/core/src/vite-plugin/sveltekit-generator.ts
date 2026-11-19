@@ -1202,7 +1202,13 @@ function buildActionInvocationArgs(
   }
 
   return parameters.map((parameter, index) => {
-    const access = buildOptionsPropertyAccess(parameter.name);
+    // Read from the same object the single-options form receives: on a GET
+    // action that is the tenant-scoped options, so a named ownership
+    // parameter never carries the caller's value.
+    const access = buildOptionsPropertyAccess(
+      parameter.name,
+      optionsIdentifier,
+    );
     // A JSON body and a query string can only carry a `Date` as its ISO
     // string, so hydrate it here. The wire-ability gate accepts a `Date`
     // parameter precisely BECAUSE this conversion exists; drop one and the
@@ -1377,16 +1383,19 @@ function buildActionOptionsLoad(
   return lines.join('\n');
 }
 
-function buildOptionsPropertyAccess(propertyName: string): string {
+function buildOptionsPropertyAccess(
+  propertyName: string,
+  optionsIdentifier = 'options',
+): string {
   if (/^[A-Za-z_$][A-Za-z0-9_$]*$/.test(propertyName)) {
-    return `options.${propertyName}`;
+    return `${optionsIdentifier}.${propertyName}`;
   }
 
   const escapedPropertyName = propertyName
     .replaceAll('\\', '\\\\')
     .replaceAll("'", "\\'");
 
-  return `options['${escapedPropertyName}']`;
+  return `${optionsIdentifier}['${escapedPropertyName}']`;
 }
 
 function buildActionInvocationExpression(

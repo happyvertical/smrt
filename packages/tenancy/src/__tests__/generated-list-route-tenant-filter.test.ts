@@ -118,6 +118,11 @@ class EmittedRouteBulletin extends SmrtObject {
     };
   }
 
+  /** An item GET action taking the ownership field as a named parameter. */
+  async ownerNamed(organizationId?: string | null) {
+    return organizationId === undefined ? 'absent' : organizationId;
+  }
+
   /** An item GET action that lists its model with its options as the filter. */
   async peers(options: Record<string, unknown> = {}) {
     const collection = await EmittedRouteBulletinCollection.create({
@@ -139,6 +144,11 @@ class EmittedRouteBulletinCollection extends SmrtCollection<EmittedRouteBulletin
   /** Reads the ownership property directly. */
   async readOrg(options: Record<string, unknown> = {}) {
     return 'organizationId' in options ? options.organizationId : 'absent';
+  }
+
+  /** Takes the ownership field as a named parameter. */
+  async readOrgNamed(organizationId?: string | null) {
+    return organizationId === undefined ? 'absent' : organizationId;
   }
 
   /** Reads `tenantId` directly, as actions written to the old contract do. */
@@ -182,6 +192,11 @@ class EmittedRouteFlyer extends SmrtObject {
     };
   }
 
+  /** An item GET action taking the ownership field as a named parameter. */
+  async ownerNamed(organizationId?: string | null) {
+    return organizationId === undefined ? 'absent' : organizationId;
+  }
+
   /** An item GET action that lists its model with its options as the filter. */
   async peers(options: Record<string, unknown> = {}) {
     const collection = await EmittedRouteFlyerCollection.create({
@@ -202,6 +217,11 @@ class EmittedRouteFlyerCollection extends SmrtCollection<EmittedRouteFlyer> {
   /** Reads the ownership property directly. */
   async readOrg(options: Record<string, unknown> = {}) {
     return 'organizationId' in options ? options.organizationId : 'absent';
+  }
+
+  /** Takes the ownership field as a named parameter. */
+  async readOrgNamed(organizationId?: string | null) {
+    return organizationId === undefined ? 'absent' : organizationId;
   }
 
   /** Reads `tenantId` directly, as actions written to the old contract do. */
@@ -343,9 +363,9 @@ describe('emitted SvelteKit list route with the real tenant interceptor', () => 
       tenantScoped: { mode: 'optional' },
     });
     /** Manifest entries for a public model with a custom item and collection GET action. */
-    const optionsMethod = (methodName: string) => ({
+    const optionsMethod = (methodName: string, parameter = 'options') => ({
       name: methodName,
-      parameters: [{ name: 'options', type: 'any' }],
+      parameters: [{ name: parameter, type: 'any' }],
       returnType: 'Promise<any>',
       isPublic: true,
     });
@@ -357,11 +377,19 @@ describe('emitted SvelteKit list route with the real tenant interceptor', () => 
     ) => {
       const model = manifestEntry(name, collection, {
         api: {
-          include: ['list', 'get', 'summary', 'ownerSeen', 'peers'],
+          include: [
+            'list',
+            'get',
+            'summary',
+            'ownerSeen',
+            'ownerNamed',
+            'peers',
+          ],
           public: 'read',
           routes: {
             summary: { method: 'GET', path: 'summary' },
             ownerSeen: { method: 'GET', path: 'owner-seen' },
+            ownerNamed: { method: 'GET', path: 'owner-named' },
             peers: { method: 'GET', path: 'peers' },
           },
           ...extraApi,
@@ -376,6 +404,7 @@ describe('emitted SvelteKit list route with the real tenant interceptor', () => 
           isPublic: true,
         },
         ownerSeen: optionsMethod('ownerSeen'),
+        ownerNamed: optionsMethod('ownerNamed', 'organizationId'),
         peers: optionsMethod('peers'),
       } as never;
       const collectionEntry = {
@@ -389,12 +418,14 @@ describe('emitted SvelteKit list route with the real tenant interceptor', () => 
           browse: optionsMethod('browse'),
           readOrg: optionsMethod('readOrg'),
           readTenant: optionsMethod('readTenant'),
+          readOrgNamed: optionsMethod('readOrgNamed', 'organizationId'),
         },
         decoratorConfig: {
           api: {
             public: 'read',
-            include: ['browse', 'readOrg', 'readTenant'],
+            include: ['browse', 'readOrg', 'readTenant', 'readOrgNamed'],
             routes: {
+              readOrgNamed: { method: 'GET', path: 'read-org-named' },
               browse: { method: 'GET', path: 'browse' },
               readOrg: { method: 'GET', path: 'read-org' },
               readTenant: { method: 'GET', path: 'read-tenant' },
@@ -508,6 +539,8 @@ describe('emitted SvelteKit list route with the real tenant interceptor', () => 
       'emittedroutebulletins/browse',
       'emittedroutebulletins/read-org',
       'emittedroutebulletins/read-tenant',
+      'emittedroutebulletins/read-org-named',
+      'emittedroutebulletins/[id]/owner-named',
       'emittedroutebulletins/[id]/summary',
       'emittedroutebulletins/[id]/owner-seen',
       'emittedroutebulletins/[id]/peers',
@@ -516,6 +549,8 @@ describe('emitted SvelteKit list route with the real tenant interceptor', () => 
       'emittedrouteflyers/browse',
       'emittedrouteflyers/read-org',
       'emittedrouteflyers/read-tenant',
+      'emittedrouteflyers/read-org-named',
+      'emittedrouteflyers/[id]/owner-named',
       'emittedrouteflyers/[id]/summary',
       'emittedrouteflyers/[id]/owner-seen',
       'emittedrouteflyers/[id]/peers',
@@ -976,6 +1011,27 @@ describe('emitted SvelteKit list route with the real tenant interceptor', () => 
           expect(await restAction(`browse?organizationId=${THEIRS}`)).toEqual(
             globals,
           );
+        });
+
+        it('a named ownership parameter gets the scope, not the caller, on collection and item actions', async () => {
+          expect(
+            await actionResult(
+              await call(
+                `${model}/read-org-named`,
+                {},
+                `?organizationId=${THEIRS}`,
+              ),
+            ),
+          ).toBeNull();
+          expect(
+            await actionResult(
+              await call(
+                `${model}/[id]/owner-named`,
+                { id: globalId() },
+                `?organizationId=${THEIRS}`,
+              ),
+            ),
+          ).toBeNull();
         });
 
         it('an item action sees the scope, not the caller, in its options', async () => {
