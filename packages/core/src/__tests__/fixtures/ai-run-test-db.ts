@@ -138,7 +138,7 @@ export function beforeStatement(
   matches: (sql: string, params: unknown[]) => boolean,
   action: (
     exec: (sql: string, ...params: unknown[]) => Promise<unknown>,
-  ) => Promise<void> | void,
+  ) => unknown,
 ): () => void {
   let fired = false;
   const wrap = (handle: DatabaseInterface): DatabaseInterface =>
