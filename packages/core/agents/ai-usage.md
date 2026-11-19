@@ -144,7 +144,9 @@ reads the whole chain and refuses with `AiRunResumeRefusedError`:
 `not_resumable`, `ancestor_missing`, `ancestor_final`, `budget_unchanged`,
 `budget_lowered`, `above_ceiling`, `definition_changed`; a retry (`openAiRun`
 with `retryOfRunId`) adds `not_retryable` and `retry_source_pruned` (the
-failed run or its checkpoint is gone). `openAiRun` compares the locked
+failed run or its checkpoint is gone); a retry for another owner than the
+failed run's (`ownerId ?? null` compared under the source lock, before the
+checkpoint is read or `carry` runs) is `not_retryable`. `openAiRun` compares the locked
 parent's and retry source's `tenant_id` (null-safe) with `store.tenantId`
 before reading anything else: another tenant's run is treated as absent
 (`AiRunNotFoundError` for a parent, `retry_source_pruned` for a retry), and

@@ -1312,7 +1312,10 @@ in one transaction.
   from its last accepted step. The retry is a **new run**, never the failed
   run resumed in place: a durable `workflow` run of the same
   `definition_key`, with `retry_of_run_id` naming the failed run, opened like
-  any other run (its own owner, parent and budget). It inherits only the
+  any other run (its own parent and budget) for the failed run's owner: a
+  retry for another owner is refused with reason `not_retryable` before the
+  failed run's checkpoint is read (no owner on both sides matches). It
+  inherits only the
   **accepted outputs of the completed steps** in the failed run's checkpoint:
   its first checkpoint starts with them, and it starts at the step the failed
   run did not complete. The definition version must match under the same rule

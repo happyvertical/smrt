@@ -189,6 +189,31 @@ export function beforeStatement(
   };
 }
 
+/**
+ * Remove a run whole through the public retention passes: it is finished
+ * (when still running), its `finished_at` moved far into the past, then both
+ * passes run with no age limit. A run that is protected, or whose parent is
+ * still kept, stays.
+ */
+export async function pruneRunNow(
+  db: DatabaseInterface,
+  runId: string,
+): Promise<void> {
+  const { finishAiRun, pruneAiRunTrajectories, pruneAiRuns } = await import(
+    '../../system/browser'
+  );
+  const status = rowsOf(
+    await db.query('SELECT status FROM _smrt_ai_runs WHERE id = $1', runId),
+  )[0]?.status;
+  if (status === 'running') await finishAiRun(db, runId, { status: 'done' });
+  await db.query(
+    "UPDATE _smrt_ai_runs SET finished_at = '2000-01-01T00:00:00.000Z' WHERE id = $1",
+    runId,
+  );
+  await pruneAiRunTrajectories(db, { maxAgeMs: 0 });
+  await pruneAiRuns(db, { maxAgeMs: 0 });
+}
+
 /** A statement that locks (or reads) one run row by id in `_smrt_ai_runs`. */
 export function readsRunRow(runId: string) {
   return (sql: string, params: unknown[]) =>

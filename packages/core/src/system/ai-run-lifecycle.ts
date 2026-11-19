@@ -811,6 +811,16 @@ async function retryStartTx(
       'retry_source_pruned',
     );
   }
+  // A retry runs for the failed run's own owner: compared under the source
+  // lock, before its checkpoint is read or `carry` sees it. An owner
+  // omitted on either side is `null`, so an ownerless run is still retried
+  // without naming one, and a named owner never matches an ownerless run.
+  if ((failed.ownerId ?? null) !== (input.ownerId ?? null)) {
+    throw refuse(
+      `A retry of ${failedId} must run for the failed run's owner`,
+      'not_retryable',
+    );
+  }
   if (failed.status !== 'failed') {
     throw refuse(
       `AI run ${failedId} is ${failed.status}, not failed`,

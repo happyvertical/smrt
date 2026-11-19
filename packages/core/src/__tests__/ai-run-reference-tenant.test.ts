@@ -149,6 +149,7 @@ describe.each(
       type: 'workflow',
       definitionKey: 'brief',
       definitionVersion: '1',
+      ownerId: 'owner-1',
       retryOfRunId: sourceId,
     });
     expect(retry).toMatchObject({
@@ -164,6 +165,7 @@ describe.each(
       type: 'workflow',
       definitionKey: 'brief',
       definitionVersion: '1',
+      ownerId: 'owner-1',
       retryOfRunId: globalSource,
     });
     expect(globalRetry.tenantId).toBeNull();
