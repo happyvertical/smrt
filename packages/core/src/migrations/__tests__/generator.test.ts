@@ -53,7 +53,7 @@ describe('MigrationGenerator', () => {
       expect(migration.down.join('\n')).toContain('DROP TABLE');
       expect(migration.content).toContain('-- @up');
       expect(migration.content).toContain('-- @down');
-      expect(migration.checksum).toMatch(/^[a-f0-9]{64}$/);
+      expect(migration.checksum).toMatch(/^v2:[a-f0-9]{64}$/);
     });
 
     it('should generate SQL migration for column additions', () => {

@@ -2123,6 +2123,88 @@ the helper reads it as the JSON adapter. Tests: `minor-units.test.ts` (SQLite,
 DuckDB), `minor-units-postgres.optional.test.ts`, `backfill-once.test.ts`,
 `backfill-once-postgres.optional.test.ts`.
 
+### Migration checksums
+
+`migrations/checksum.ts`. `MigrationTracker` records, for a new migration, a
+checksum of the form `v2:<sha256>` (`computeQuotedTextChecksum`): the SHA-256
+of the earlier form's digest (`computeChecksum`, 64 hex characters) followed
+directly by the statements after one quote-aware scan (`normalizeSQLKeepingQuotedText`) that drops comments, collapses whitespace outside quotes, and keeps quoted
+text exactly as written, line endings included. Quoted text is `'...'` (`''`
+is a quote), `E'...'` (a backslash escapes the next character), `"..."` and
+`` `...` `` (a doubled delimiter is a quote), a bracket identifier `[...]`
+(SQLite) up to the first `]`, and a dollar-quoted body `$$...$$` or
+`$tag$...$tag$` up to the same tag (a tag of any length), so a function body
+is data too. A `[` is a bracket identifier only when it does not follow an
+identifier character, `]` or `)` directly and its text up to the first `]`
+holds no quote, `$`, comment marker or line break; otherwise it is array syntax
+(PostgreSQL, DuckDB: `ARRAY[...]`, `col[1]`, `int[]`) and is scanned as code,
+so a `]` inside a string never ends a span and a multi-line array may be laid
+out freely. Comments are `-- ...` to the end of the line and `/* ... */`. A
+block comment ends at its first `*/` on every engine and does not nest, so a
+`/*` inside one is text (SQLite's rule and the earlier digest form's rule) and
+the code after the first `*/` is always hashed as code. On PostgreSQL, which
+nests, the tail of a nested comment is therefore hashed as code, and an edit
+there reads as modified. The `v2:` digest is the SHA-256 of the earlier form's
+fixed-width digest, then the quote-aware text (no separator is needed, so no
+character in the SQL can make the input ambiguous), so it never detects less than the earlier form. Remaining
+limits, where both halves miss an edit, tracked in #5548: a bracket identifier
+containing a quote, escape-string continuation across PostgreSQL's
+adjacent-literal form, and an edit in the tail of a nested comment that holds
+a `--` marker. The
+scan reads comments and quotes together, so a comment marker inside
+quoted text is text and a quote inside a comment opens nothing. It emits
+quoted spans directly; there is no placeholder to run out of. A reused
+migration id whose statement differs inside a string, an identifier or a
+dollar body, in either direction, is a checksum mismatch.
+
+The prefix is what tells the two forms apart. A record without it was written
+by an earlier release from `computeChecksum`, which normalizes quoted text
+too, and is compared with `computeChecksum` only; a `v2:` record is compared
+with `computeQuotedTextChecksum` only (`checksumMatchesRecorded`). So the
+earlier form's blind spot (an edit to a comment marker or repeated whitespace
+inside a string) is confined to records an earlier release wrote, and no
+recorded migration reads as modified. A re-run of an earlier record (reconcile
+or force) stays in its own form: the same checksum when the statements still
+match it, and `computeChecksum` of the new statements when a forced edit
+changed them, with its `applied_checksum` following; the `v2:` form is written
+for new records only (`checksumToRecord`). A build that predates the form
+therefore keeps reading every record it knew, including one a forced edit
+rewrote. The reverse is not true: a build that predates the form
+reads a `v2:` record, which only this release or a later one writes, as
+modified (`checksum mismatch`). Sharing a database between this release and an
+older one is one-way for migrations first applied by this release. Run a build
+that reads the form (this release or later). `--force-migration <id>` on the
+older build is not a recovery: force runs the migration's `up` again, which
+changes data twice for a statement that is not idempotent (`SET balance =
+balance + 1`); use it only after checking independently that the SQL is safe to
+repeat.
+
+`MigrationGenerator` advertises the checksum the tracker will record
+(`computeQuotedTextChecksum`), so a generated migration's `checksum` equals the
+applied row's. `shortChecksum(checksum, length = 8)` drops the `v2:` prefix for
+display (`db:status` and `db:history` use it).
+
+The exported `computeChecksum` and `normalizeSQL` are unchanged. This is a
+breaking change for a consumer that verifies a record by
+`verifyChecksum(computeChecksum(up), recorded, applied)` or by comparing
+`computeChecksum(up)` with `record.checksum`: against a record this release
+writes (`v2:...`) it reports `file_modified`. Use
+`verifyRecordedChecksum(statements, recordChecksum, appliedChecksum)`, which
+takes the statements and both stored values, reads either record form, and
+reports `file_modified` and `db_modified` as `verifyChecksum` did;
+`checksumMatchesRecorded(statements, recorded)` answers only whether the
+statements match the record, and says nothing of `applied_checksum`.
+
+Tests: `checksum.test.ts` (the public call against earlier and new records,
+every quoting form in both edit directions, comments, the full private-use
+range, earlier records of every core-generated statement and saved release
+schema), `tracker.test.ts` (apply, the batch pre-check, drift, reconcile and
+force on an earlier record, a forced edit of an earlier record, generate-and-apply),
+`issue-2362-migrate-timeouts-concurrent.test.ts` (the concurrent-index retry
+of an earlier record). The source guard in `checksum.test.ts` is a tripwire
+for direct comparisons in `tracker.ts`, not proof; the behaviour tests hold
+the rule.
+
 ### Subclass conflict identities (#3456)
 
 An STI child's explicit `conflictColumns` owns a partial unique index restricted

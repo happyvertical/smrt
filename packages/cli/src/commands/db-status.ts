@@ -541,7 +541,7 @@ export const dbStatusCommand: CLICommand = {
       db = await getDatabase({ type: dbType, url: dbUrl });
 
       // 4. Import MigrationTracker
-      const { MigrationTracker } = await import(
+      const { MigrationTracker, shortChecksum } = await import(
         '@happyvertical/smrt-core/migrations'
       );
 
@@ -608,7 +608,7 @@ export const dbStatusCommand: CLICommand = {
             executionTime: m.execution_time_ms,
             status: m.status,
             isReversible: m.is_reversible,
-            checksum: m.checksum.substring(0, 8),
+            checksum: shortChecksum(m.checksum),
           })),
         },
         drift: [] as StatusDrift[],

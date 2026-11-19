@@ -19,6 +19,7 @@
 
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { MigrationDefinition } from '../../schema/types.js';
+import { computeChecksum, computeQuotedTextChecksum } from '../checksum.js';
 import { readCreateIndexStatement } from '../postgres-create-index.js';
 import { MigrationTracker } from '../tracker.js';
 
@@ -573,6 +574,125 @@ describe('PostgreSQL concurrent-index mode (issue #2362)', () => {
     expect(second.rows.get('add_table_and_index_jobs')?.status).toBe(
       'completed',
     );
+  });
+
+  it('resumes at the index phase for a record an earlier release wrote, whatever its quoted text', async () => {
+    // The earlier release recorded computeChecksum, which folds the repeated
+    // spaces of the default. The retry must still recognise the definition
+    // (and so skip the committed half), and must leave the record's checksum
+    // as it was, for a build that predates the current form.
+    const mixed = definition('add_table_and_index_jobs_legacy', [
+      'ALTER TABLE "jobs" ADD COLUMN "status" TEXT DEFAULT \'two  spaces\'',
+      'CREATE INDEX IF NOT EXISTS "jobs_status_idx" ON "jobs" ("status")',
+    ]);
+    const earlier = computeChecksum(mixed.up);
+    expect(earlier).not.toBe(computeQuotedTextChecksum(mixed.up));
+    const fake = createFakeDb();
+    fake.rows.set('add_table_and_index_jobs_legacy', {
+      id: 'seeded-legacy',
+      name: 'add_table_and_index_jobs_legacy',
+      checksum: earlier,
+      status: 'failed',
+      error_message:
+        '[smrt: concurrent-index phase 1 committed] Concurrent index build pending.',
+      attempts: 1,
+      applied_at: new Date().toISOString(),
+      is_reversible: 0,
+      batch: 1,
+    });
+
+    const results = await new MigrationTracker({ db: fake.db }).applyAll(
+      [mixed],
+      { atomic: true, postgresSafe: true, reconcile: true },
+    );
+
+    expect(results[0].success).toBe(true);
+    expect(
+      fake.sqlIn('transaction').some((sql) => sql.includes('ADD COLUMN')),
+    ).toBe(false);
+    expect(fake.sqlIn('session')).toContain(
+      'CREATE INDEX CONCURRENTLY IF NOT EXISTS "jobs_status_idx" ON "jobs" ("status")',
+    );
+    expect(fake.rows.get('add_table_and_index_jobs_legacy')).toMatchObject({
+      status: 'completed',
+      checksum: earlier,
+    });
+  });
+
+  it.each([
+    [
+      'an anonymous dollar body',
+      "DO $$ BEGIN PERFORM 'a--old'; END $$",
+      "DO $$ BEGIN PERFORM 'a--new'; END $$",
+    ],
+    [
+      'a named dollar body',
+      'DO $fn$ BEGIN PERFORM 1; -- old\n END $fn$',
+      'DO $fn$ BEGIN PERFORM 1; -- new\n END $fn$',
+    ],
+    [
+      'a string holding a bracket inside an array',
+      "UPDATE jobs SET note = (ARRAY[']', 'a  b'])[2]",
+      "UPDATE jobs SET note = (ARRAY[']', 'a b'])[2]",
+    ],
+    [
+      'a comment marker after a bracketed string in an array',
+      "UPDATE jobs SET note = (ARRAY['[draft]', 'n/a--old'])[2]",
+      "UPDATE jobs SET note = (ARRAY['[draft]', 'n/a--new'])[2]",
+    ],
+    [
+      'a string after a comment that never closes under nesting',
+      "UPDATE jobs /* a /* b */ SET note = 'old'",
+      "UPDATE jobs /* a /* b */ SET note = 'new'",
+    ],
+    [
+      'a comment holding a stray open marker, closed by a marker in a later literal',
+      "/* strip /* markers */ UPDATE notes SET kind = 'old', body = replace(body, '*/', '')",
+      "/* strip /* markers */ UPDATE notes SET kind = 'new', body = replace(body, '*/', '')",
+    ],
+    [
+      'a comment ending in a glob, with a later literal holding a close marker',
+      "UPDATE routes /* old glob: /img/* */ SET pattern = 'old*/logo.svg'",
+      "UPDATE routes /* old glob: /img/* */ SET pattern = 'new*/logo.svg'",
+    ],
+    [
+      'a nested comment tail holding an apostrophe, before a literal holding an open marker',
+      "UPDATE notes /* outer /* inner */ owner's note */ SET label = '/*old'",
+      "UPDATE notes /* outer /* inner */ owner's note */ SET label = '/*new'",
+    ],
+    [
+      'a bracket identifier holding an open marker',
+      'ALTER TABLE t RENAME COLUMN [a/*b] TO c',
+      'ALTER TABLE t RENAME COLUMN [a/*b] TO d',
+    ],
+    [
+      'a nested comment tail with an odd quote, before a literal holding an open marker',
+      "/* a /* b */ it's */ UPDATE n SET k = 'x', m = '/*', body = 'old'",
+      "/* a /* b */ it's */ UPDATE n SET k = 'x', m = '/*', body = 'new'",
+    ],
+    [
+      'an E string',
+      "UPDATE jobs SET note = E'it\\'s --old'",
+      "UPDATE jobs SET note = E'it\\'s --new'",
+    ],
+  ])('refuses a recorded migration whose %s changed, in either direction', async (_name, left, right) => {
+    for (const [recorded, edited] of [
+      [left, right],
+      [right, left],
+    ]) {
+      const fake = createFakeDb();
+      const first = await new MigrationTracker({ db: fake.db }).applyAll(
+        [definition('literal_forms', [recorded])],
+        { atomic: true, postgresSafe: true },
+      );
+      expect(first[0].success).toBe(true);
+      const again = await new MigrationTracker({ db: fake.db }).applyAll(
+        [definition('literal_forms', [edited])],
+        { atomic: true, postgresSafe: true },
+      );
+      expect(again[0].success).toBe(false);
+      expect(String(again[0].error)).toContain('checksum mismatch');
+    }
   });
 
   it('re-runs everything when the definition itself changed', async () => {

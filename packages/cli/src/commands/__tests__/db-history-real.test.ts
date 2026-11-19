@@ -140,6 +140,10 @@ describe('db:history (real SQLite rendering)', () => {
     const out = output();
     expect(out).toContain('Version: 1.0.0');
     expect(out).toContain('Checksum:');
+    // A record this release writes is `v2:<hex>`; the display drops the prefix
+    // and shows 16 hex characters.
+    expect(out).toMatch(/Checksum: [a-f0-9]{16}\.\.\./);
+    expect(out).not.toContain('Checksum: v2:');
   });
 
   it('serializes the full history as JSON', async () => {

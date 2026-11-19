@@ -21,7 +21,7 @@ import type {
   SchemaDiff,
 } from '../schema/types.js';
 import { renderIndexTarget } from '../schema/utils.js';
-import { computeChecksum } from './checksum.js';
+import { computeQuotedTextChecksum } from './checksum.js';
 import type { DatabaseEngine } from './types.js';
 
 const logger = createLogger({ level: 'info' });
@@ -202,7 +202,8 @@ export class MigrationGenerator {
     const description = options.description || `Migration: ${options.name}`;
     const format = options.format || this.format;
     const filename = `${id}.${format === 'sql' ? 'sql' : 'ts'}`;
-    const checksum = computeChecksum(upStatements);
+    // The value MigrationTracker records for a new migration.
+    const checksum = computeQuotedTextChecksum(upStatements);
 
     let content: string;
     if (format === 'sql') {

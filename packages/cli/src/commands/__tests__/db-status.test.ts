@@ -91,6 +91,7 @@ vi.mock('@happyvertical/smrt-core/migrations', async () => {
   >('@happyvertical/smrt-core/migrations');
   return {
     MigrationTracker: MigrationTrackerMock,
+    shortChecksum: actual.shortChecksum,
     decideSchemaChange: actual.decideSchemaChange,
     hasExecutableSchemaSql: actual.hasExecutableSchemaSql,
   };
