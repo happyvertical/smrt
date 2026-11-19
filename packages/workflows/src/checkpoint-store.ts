@@ -127,6 +127,21 @@ export function createRunCheckpointStore(
         return null;
       }
       const checkpoint = await readAiRunCheckpoint(options.db, runId);
+      // The checkpoint is read by run id alone, so the run is read again
+      // afterwards: it must be the same row (same tenant, owner, type and
+      // creation) before and after, else the id changed hands in between
+      // (pruned and reused) and the checkpoint is not this run's.
+      const after = await getAiRun(options.db, runId);
+      if (
+        !after ||
+        after.createdAt.getTime() !== run.createdAt.getTime() ||
+        after.startedAt.getTime() !== run.startedAt.getTime() ||
+        after.type !== run.type ||
+        after.ownerId !== run.ownerId ||
+        (after.tenantId ?? null) !== tenantId
+      ) {
+        return null;
+      }
       if (!checkpoint) return null;
       if (!isWorkflowCheckpointState(checkpoint.state)) {
         throw new TypeError(

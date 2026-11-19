@@ -986,6 +986,76 @@ describe('workflow run safety', () => {
     expect(unscoped).toEqual([]);
   });
 
+  it('never pairs a run with the checkpoint of a run that took its id', async () => {
+    const db = await workflowDb('sqlite');
+    const { model } = byStep(0);
+    const run = await driverFor(db, model).start({ ownerId: 'owner' });
+    const store = createRunCheckpointStore({ db, ownerId: 'owner' });
+    // The id is pruned and reused by another tenant while the checkpoint is
+    // read: what the store returns is this tenant's or nothing.
+    const original = db.query.bind(db);
+    (db as { query: unknown }).query = async (
+      sql: string,
+      ...params: unknown[]
+    ) => {
+      if (
+        /FROM _smrt_ai_run_checkpoints/.test(sql) &&
+        params.includes(run.id)
+      ) {
+        await original(
+          "UPDATE _smrt_ai_runs SET tenant_id = 'other-tenant', created_at = $1, started_at = $1 WHERE id = $2",
+          new Date(Date.now() + 5_000).toISOString(),
+          run.id,
+        );
+      }
+      return original(sql, ...params);
+    };
+    expect(await store.load(run.id)).toBeNull();
+    (db as { query: unknown }).query = original;
+  });
+
+  it('loads a checkpoint whose run kept its id and tenant (control)', async () => {
+    const db = await workflowDb('sqlite');
+    const { model } = byStep(0);
+    const run = await driverFor(db, model).start({ ownerId: 'owner' });
+    const store = createRunCheckpointStore({ db, ownerId: 'owner' });
+    expect((await store.load(run.id))?.run.id).toBe(run.id);
+  });
+
+  it('does not judge a retry source that took the id between its listing and its read', async () => {
+    const db = await workflowDb('sqlite');
+    const { model } = byStep(0);
+    const driver = driverFor(db, model, definitionOf());
+    const run = await driver.start({ ownerId: 'owner' });
+    // Another definition's run, of the caller's own tenant and owner, takes
+    // the id after the run was listed: it is not judged as the source, so
+    // the retry is refused by core, not reported as an unknown run.
+    const original = db.query.bind(db);
+    let reads = 0;
+    (db as { query: unknown }).query = async (
+      sql: string,
+      ...params: unknown[]
+    ) => {
+      const text = sql.replace(/\s+/g, ' ').trim();
+      if (
+        text.includes('FROM _smrt_ai_runs r WHERE r.id = $1') &&
+        params[0] === run.id &&
+        ++reads === 2
+      ) {
+        await original(
+          "UPDATE _smrt_ai_runs SET owner_id = 'stranger', definition_key = 'another', created_at = $1 WHERE id = $2",
+          new Date(Date.now() + 5_000).toISOString(),
+          run.id,
+        );
+      }
+      return original(sql, ...params);
+    };
+    await expect(driver.retry(run.id, 'stranger')).rejects.toBeInstanceOf(
+      AiRunResumeRefusedError,
+    );
+    (db as { query: unknown }).query = original;
+  });
+
   it('lets one of two concurrent checkpoint saves win (revision compare-and-swap)', async () => {
     const db = await workflowDb('sqlite');
     const { model } = byStep(0);
