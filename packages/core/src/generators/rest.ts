@@ -8,7 +8,6 @@ import { getRegistryGeneration } from '../registry/generation.js';
 import http from 'node:http';
 import { getTableVersion } from '../change-feed';
 import type { SmrtCollection, SmrtCollectionOptions } from '../collection';
-import { isTenantScopedClassResolved } from '../dispatch';
 import type { PublicJsonOptions, SmrtObject } from '../object';
 import {
   buildDefaultListOrderBy,
@@ -41,6 +40,7 @@ import {
   type SyncApplyTarget,
 } from '../sync/apply';
 import {
+  isTenantScopedModel,
   resolveAnonymousTenantReadScope,
   scopeTenantReadOptions,
 } from '../tenant-read-scope';
@@ -1745,12 +1745,10 @@ export class APIGenerator {
       ? ObjectRegistry.getConfig(objectName)
       : undefined;
     const apiConfig = config?.api;
-    // Canonical accessor covers both `@smrt({ tenantScoped })` and the
-    // manifest-merged `@TenantScoped()` decorator form; the raw config flag is
-    // a belt-and-braces fallback for registrations not yet normalized.
-    const tenantScoped = objectName
-      ? ObjectRegistry.isTenantScoped(objectName) || !!config?.tenantScoped
-      : false;
+    // The same resolution as the rest of the request path: declared config,
+    // manifest-merged tenancy, and tenancy registered at runtime for the
+    // (qualified) model. A shared cache must never see a tenant-scoped body.
+    const tenantScoped = objectName ? isTenantScopedModel(objectName) : false;
     const permissionScoped = this.hasReadPermissionFields(objectName);
     if (objectName) {
       warnIfSharedCacheNeutralized(
@@ -1896,10 +1894,7 @@ export class APIGenerator {
    */
   private readTenantDiscriminator(objectName?: string): string | undefined {
     if (!objectName) return undefined;
-    const tenantScoped =
-      ObjectRegistry.isTenantScoped(objectName) ||
-      !!ObjectRegistry.getConfig(objectName)?.tenantScoped ||
-      isTenantScopedClassResolved(objectName);
+    const tenantScoped = isTenantScopedModel(objectName);
     if (!tenantScoped) return undefined;
     // Shared with the generated SvelteKit route so both transports key the ETag
     // on the active tenant identically (cross-tenant false-304 guard).
