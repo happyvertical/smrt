@@ -158,10 +158,11 @@ activation manifest's models and tables (installed, loaded or not), and
 lists aside) before the edit applies. Admission comes first: a refused caller,
 a stale revision or a replayed request id loads nothing. Activation failure is
 `MODEL_ACTIVATION_FAILED` with nothing journalled.
-With lazy activation, the tool service's `app.undo` activates every model the
-restored cookbook covers (custom lists aside) through its `activation` before
-applying, as `recipes.enable` does; failure is `activation_failed` with nothing
-undone.
+With lazy activation, the tool service hands its `activation` to
+`editor.apply(edit, context, { activation })` for `app.undo`,
+`recipes.enable` and template apply, so the editor activates the restored
+recipes only after its own authorization, replay lookup and durable revision
+check; failure is `activation_failed` with nothing changed.
 When also using A3 lazy activation, boot the installed/provider graph first.
 Its fixed-graph `readEnabled` input excludes only custom-list identities declared
 in the validated cookbook's `models.lists`; unexpected unknown ids must still

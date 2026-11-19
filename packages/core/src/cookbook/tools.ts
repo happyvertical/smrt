@@ -706,6 +706,34 @@ export function createCookbookToolService(options: CookbookToolOptions) {
     await options.approvals.consume(context.tenantId!, record!.id);
     return record!.id;
   }
+  /**
+   * Apply through the editor with this service's coordinator: the editor
+   * activates restored recipes only after its own admission.
+   */
+  async function editorApply(
+    editor: NonNullable<
+      ReturnType<NonNullable<CookbookToolOptions['modelEditorFor']>>
+    >,
+    edit: Parameters<typeof editor.apply>[0],
+    unchanged: string,
+    context: Parameters<typeof editor.apply>[1],
+  ) {
+    try {
+      return await editor.apply(edit, context, {
+        ...(options.activation ? { activation: options.activation } : {}),
+      });
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        error.message.startsWith('MODEL_ACTIVATION_FAILED')
+      )
+        fail(
+          'activation_failed',
+          `Recipe activation failed; ${unchanged}: ${error.message.replace(/^MODEL_ACTIVATION_FAILED: /, '')}`,
+        );
+      throw error;
+    }
+  }
   async function invokeApp(
     name: AppToolName,
     args: Record<string, unknown>,
@@ -760,7 +788,6 @@ export function createCookbookToolService(options: CookbookToolOptions) {
       if (error instanceof AppToolQuestion) return read(error.result);
       throw error;
     }
-    let restored: Cookbook | undefined;
     if (name === 'app.undo') {
       const history = await editor.history();
       // An abandoned row never applied, so its `undoes` reversed nothing.
@@ -775,7 +802,6 @@ export function createCookbookToolService(options: CookbookToolOptions) {
           !undone.has(row.revision),
       );
       if (!previous) return fail('not_found', 'There is no change to undo.');
-      restored = previous.before;
       const edit = JSON.parse(previous.command) as {
         summary?: string;
         type: string;
@@ -819,29 +845,6 @@ export function createCookbookToolService(options: CookbookToolOptions) {
           'conflict',
           'Your app changed before this action could apply.',
         );
-      // Undo can bring back recipes a lazy host has not loaded: activate the
-      // restored cookbook's models first, as recipes.enable does.
-      if (options.activation && restored) {
-        const document = restored;
-        const customLists = new Set(
-          Object.keys(document.models?.lists ?? {}).map(
-            (list) => `${document.models?.packageName}:${list}`,
-          ),
-        );
-        try {
-          await options.activation.activate(
-            [...coveredModels(options.catalog, document)].filter(
-              (id) => !customLists.has(id),
-            ),
-          );
-        } catch (error) {
-          fail(
-            'activation_failed',
-            `Recipe activation failed; nothing was undone: ${error instanceof Error ? error.message : String(error)}`,
-          );
-        }
-        await assertAllowed(context, name);
-      }
       // The editor journal is the durable mutation audit; the host sink records the tool/transport identity.
       await options.audit({
         context,
@@ -850,8 +853,10 @@ export function createCookbookToolService(options: CookbookToolOptions) {
         summary: planned.summary,
       });
       await assertAllowed(context, name);
-      const receipt = await editor.apply(
+      const receipt = await editorApply(
+        editor,
         { ...planned.edit, summary: planned.summary },
+        'nothing was undone',
         {
           actor: context.userId!,
           tenantId: context.tenantId!,
@@ -1228,8 +1233,11 @@ export function createCookbookToolService(options: CookbookToolOptions) {
       }
       try {
         await assertAllowed(context, name);
+        // With an editor, activation runs inside editor.apply, after the
+        // editor's own authorization and durable revision check.
         if (
           options.activation &&
+          !options.modelEditorFor?.(context) &&
           (name === 'recipes.enable' || name === 'cookbook.apply')
         ) {
           try {
@@ -1287,8 +1295,10 @@ export function createCookbookToolService(options: CookbookToolOptions) {
             );
           await options.audit(event('requested', summary));
           await assertAllowed(context, name);
-          await editor.apply(
+          await editorApply(
+            editor,
             { type: 'import', cookbook: staged.cookbook(), summary },
+            'cookbook unchanged',
             {
               actor: context.userId!,
               tenantId: context.tenantId!,

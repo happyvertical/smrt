@@ -1365,9 +1365,9 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
   async function activateRestored(
     edit: AppModelEdit,
     context: AppModelEditContext,
+    activation = options.activation,
   ) {
-    if (!options.activation || (edit.type !== 'undo' && edit.type !== 'import'))
-      return;
+    if (!activation || (edit.type !== 'undo' && edit.type !== 'import')) return;
     if (
       context.tenantId !== options.tenantId ||
       !context.actor ||
@@ -1376,7 +1376,16 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
     )
       throw new Error('MODEL_EDIT_FORBIDDEN');
     if (await findRow(context.requestId)) return;
-    if (!ready || context.expectedRevision !== revision) return;
+    // The durable tip, not only this process's view: another process's
+    // revision means the edit is refused, so nothing is loaded for it.
+    const tip = await latestRow();
+    if (
+      !ready ||
+      context.expectedRevision !== revision ||
+      tip?.status === 'pending' ||
+      (tip?.revision ?? 0) !== revision
+    )
+      return;
     let target: Cookbook | undefined;
     if (edit.type === 'import') {
       const result = validateCookbook(edit.cookbook);
@@ -1404,7 +1413,7 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
       ),
     );
     try {
-      await options.activation.activate(
+      await activation.activate(
         [...coveredModels(options.catalog, target)].filter(
           (id) => !lists.has(id),
         ),
@@ -1419,6 +1428,11 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
   async function apply(
     edit: AppModelEdit,
     context: AppModelEditContext,
+    /**
+     * A caller's coordinator (the tool service) for `import`/`undo` when the
+     * editor has none: used only after the editor's own admission.
+     */
+    applyOptions: { activation?: Pick<ActivationCoordinator, 'activate'> } = {},
   ): Promise<AppModelEditReceipt> {
     edit = structuredClone(edit);
     context = structuredClone(context);
@@ -1829,7 +1843,11 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
       return structuredClone(won ?? receipt);
     };
     const operation = tail.then(async () => {
-      await activateRestored(edit, context);
+      await activateRestored(
+        edit,
+        context,
+        options.activation ?? applyOptions.activation,
+      );
       return withRuntimeSchemaActivation(execute);
     });
     tail = operation.then(

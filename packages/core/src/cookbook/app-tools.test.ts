@@ -1277,6 +1277,30 @@ describe('app customization tools', () => {
     expect(editor.snapshot().cookbook.recipes).not.toContain('customers');
   });
 
+  it('loads nothing for an undo the editor refuses', async () => {
+    expect(await approve('recipes.disable', { id: 'customers' })).toMatchObject(
+      { status: 'ok' },
+    );
+    const activate = vi.fn(async (_ids: Iterable<string>) => {});
+    options.activation = { activate };
+    // The tool admits the owner; the editor's own authorization refuses.
+    const refusing = editor;
+    editor = await createAppModelEditor({
+      db,
+      application: 'c6',
+      tenantId: TENANT,
+      packageName: APP,
+      cookbook: initial(),
+      catalog,
+      authorize: () => false,
+    });
+    await expect(approve('app.undo', {})).rejects.toThrow(
+      /MODEL_EDIT_FORBIDDEN/,
+    );
+    expect(activate).not.toHaveBeenCalled();
+    editor = refusing;
+  });
+
   it('asks about missing choices/currency and ambiguous field labels without journaling', async () => {
     expect(
       await write('app.addField', {
