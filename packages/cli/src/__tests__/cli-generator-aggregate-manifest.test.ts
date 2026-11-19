@@ -156,6 +156,7 @@ describe('CLIGenerator aggregate manifest preload', () => {
       filePath: '/fixture/app/customer.ts',
       extends: 'Customer',
       extendsQualified: baseKey,
+      decoratorConfig: { ...base.decoratorConfig, replaceParent: true },
       fields: { ...base.fields, favoritePose: { type: 'text' as const } },
     };
     for (const [key, entry] of [
