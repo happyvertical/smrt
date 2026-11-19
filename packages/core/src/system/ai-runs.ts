@@ -405,7 +405,10 @@ export interface AiRunReportOptions {
   type?: string;
   since?: Date;
   until?: Date;
-  /** Total only this tenant; `null` totals only global runs. */
+  /**
+   * Total only this tenant's runs; `null` only global runs. Applied as a SQL
+   * predicate of the page query; other tenants' runs are only counted.
+   */
   tenantId?: string | null;
 }
 
@@ -505,8 +508,8 @@ async function eventCounts(
  * fusion seats, own calls, tokens and cost, checks and approvals with their
  * rates (saved counts for a pruned trajectory), and median active time.
  * Reads bounded keyset pages and aggregates in memory, like
- * `reportAiUsage()`; a tenant filter selects what is totalled and counts the
- * rest in `excluded`.
+ * `reportAiUsage()`; a tenant filter is a predicate of the page query, and
+ * the runs it leaves out are counted in `excluded` with one `COUNT(*)`.
  */
 export async function reportAiRuns(
   db: DatabaseInterface,
@@ -527,6 +530,32 @@ export async function reportAiRuns(
     windowConditions.push(`created_at <= $${windowParams.length}`);
   }
   const tenantFiltered = options.tenantId !== undefined;
+  let otherTenants = 0;
+  if (tenantFiltered) {
+    // Other tenants' runs are counted, never read (served by
+    // idx_smrt_ai_runs_tenant_created for the page query).
+    const countParams = [...windowParams];
+    let other: string;
+    if (options.tenantId === null) other = 'tenant_id IS NOT NULL';
+    else {
+      countParams.push(options.tenantId);
+      other = `(tenant_id IS NULL OR tenant_id <> $${countParams.length})`;
+    }
+    otherTenants = count(
+      getRows(
+        await db.query(
+          `SELECT COUNT(*) AS n FROM _smrt_ai_runs
+            WHERE ${[...windowConditions, other].join(' AND ')}`,
+          ...countParams,
+        ),
+      )[0]?.n,
+    );
+    if (options.tenantId === null) windowConditions.push('tenant_id IS NULL');
+    else {
+      windowParams.push(options.tenantId);
+      windowConditions.push(`tenant_id = $${windowParams.length}`);
+    }
+  }
 
   const totals = emptyStats();
   const buckets = new Map<
@@ -535,7 +564,7 @@ export async function reportAiRuns(
       typeof emptyStats
     >
   >();
-  const excluded = { otherTenants: 0 };
+  const excluded = { otherTenants };
   let lastId: string | null = null;
   for (;;) {
     const params = [...windowParams];
@@ -560,11 +589,7 @@ export async function reportAiRuns(
     );
     if (page.length === 0) break;
     lastId = String(page[page.length - 1]?.id);
-    const counted = page.filter(
-      (row) =>
-        !tenantFiltered || nullableString(row.tenant_id) === options.tenantId,
-    );
-    excluded.otherTenants += page.length - counted.length;
+    const counted = page;
     const live = await eventCounts(
       db,
       counted

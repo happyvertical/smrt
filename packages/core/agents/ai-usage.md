@@ -295,7 +295,8 @@ work). `reportAiRuns(db, { type?, since?, until?, tenantId? })` groups by
 `(type, definition_key)`: runs per status, degraded, seats, own calls,
 tokens and cost, checks and approval decisions with their rates (from the
 events, or the saved counts of a pruned trajectory), p50 active time; other
-tenants counted in `excluded`. `getRunTrajectory(runId | { callId })` is the
+tenants counted in `excluded` (`tenantId` is a predicate of the page query;
+the rest is one `COUNT(*)`, never read). `getRunTrajectory(runId | { callId })` is the
 one reader for a call in a run and a call on its own. CLI: `smrt ai:usage
 --runs` (every type), `--by fusion` (fusion runs).
 
@@ -357,7 +358,14 @@ recorded when the verdict is known. Rules:
 `prompt`, `model`, `tier`, `class`, `tenant`, `fusion`, `source`, `template`
 (the `templateHash` tag, #4781). `transcripts: true` adds `transcripts` to each
 bucket and the totals: calls (distinct `entry_call_id`) with a transcript row of
-the same tenant, looked up per page by id; never content, so not audited. It reads bounded keyset pages and
+the same tenant, looked up per page by id; never content, so not audited.
+`tenantId` is a SQL predicate of the usage pages
+(`idx_smrt_ai_usage_tenant_created`), the evaluation lookups and the
+transcript lookups; `excluded` (other tenants' calls, every external-agent
+measurement in the window) is counted with two `COUNT(*)` queries, so other
+tenants' rows are never read. Evaluation labels are looked up per page for
+that page's call and run ids (`IN` lists of at most 500). It reads bounded
+keyset pages and
 aggregates in memory so the median and tag dimensions stay portable. Pages
 are keyed on `id` within the `created_at` window: correct, but on very large
 windows each page rescans the window; keyset on `(created_at, id)` is a
