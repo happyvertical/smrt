@@ -668,7 +668,7 @@ describe('data never configures a service', () => {
       await expectOwnServices(key);
     });
 
-    it('drops underscore control keys from create and update bodies', async () => {
+    it('refuses underscore control keys in create and update bodies', async () => {
       const controls = {
         _insertOnly: true,
         _adoptNaturalKey: true,
@@ -677,41 +677,61 @@ describe('data never configures a service', () => {
         _deferRuntimeInitialization: true,
         _skipAutoEmbeddings: true,
       };
-      const post = await send('POST', 'notes', {
+      const savesBefore = saved.length;
+      const refusedCreate = await send('POST', 'notes', {
         label: 'rest-controls',
         ...controls,
       });
-      expect(post.status).toBe(201);
-      const created = probe(saved.at(-1));
-      for (const key of Object.keys(controls)) {
-        expect(created.options[key]).toBeUndefined();
-      }
+      expect(refusedCreate.status).toBe(400);
+      expect((await refusedCreate.json()).error).toMatchObject({
+        code: 'VALIDATION_FIELD_NOT_WRITABLE',
+        details: { field: '_insertOnly' },
+      });
+      expect(saved.length).toBe(savesBefore);
+      expect(await rowsIn(db, notes.tableName, 'rest-controls')).toBe(0);
 
+      // Negative control: the same body without the control keys is saved.
+      const post = await send('POST', 'notes', { label: 'rest-controls' });
+      expect(post.status).toBe(201);
       const { id } = await post.json();
-      const put = await send('PUT', `notes/${id}`, {
+
+      const refusedUpdate = await send('PUT', `notes/${id}`, {
         label: 'rest-controls-updated',
         ...controls,
-        _insertOnly: true,
+      });
+      expect(refusedUpdate.status).toBe(400);
+      expect((await refusedUpdate.json()).error.code).toBe(
+        'VALIDATION_FIELD_NOT_WRITABLE',
+      );
+      expect(await rowsIn(db, notes.tableName, 'rest-controls-updated')).toBe(
+        0,
+      );
+
+      const put = await send('PUT', `notes/${id}`, {
+        label: 'rest-controls-updated',
       });
       expect(put.status).toBe(200);
       const updated = saved.at(-1) as SmrtObject;
-      // The loaded instance keeps its own state for these names; the body's
-      // values were not assigned over it.
       const state = updated as unknown as Record<string, unknown>;
       expect(state._insertOnly).not.toBe(true);
-      expect(state._adoptNaturalKey).not.toBe(true);
       expect(state._className).toBe('ServiceOptionNote');
       expect(await rowsIn(db, notes.tableName, 'rest-controls-updated')).toBe(
         1,
       );
     });
 
-    it('a model with an api.writable allowlist behaves as before', async () => {
+    it('a model with an api.writable allowlist skips service keys and refuses other keys', async () => {
+      const refused = await send('POST', 'listed', {
+        label: 'allowlisted',
+        other: 'not writable',
+      });
+      expect(refused.status).toBe(400);
+      expect((await refused.json()).error.details).toEqual({ field: 'other' });
+
       const response = await send('POST', 'listed', {
         label: 'allowlisted',
         db: `file:${otherDbPath}`,
         ai: { baseUrl: OTHER_AI_URL },
-        other: 'dropped',
       });
       expect(response.status).toBe(201);
       expect(await rowsIn(db, listed.tableName, 'allowlisted')).toBe(1);

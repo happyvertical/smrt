@@ -113,3 +113,8 @@ DDL, migration and OpenAPI digests have not moved since the recapture above.
   pass the family members (sync: the models) the manifest generates to the
   request tenancy, so a member registered elsewhere is not served through its
   base (sti case only; the plain case has no family and is unchanged).
+- Protected-field writes (#5195; the list and item routes of each model and
+  `sync/apply/+server.ts`): the emitted `applyWritablePolicy` helper is gone.
+  Create and update bodies pass `prepareWriteInput()` from core, which refuses
+  a changed protected field with `VALIDATION_FIELD_NOT_WRITABLE`; the item
+  route builds the body after loading the row. MCP sources are unchanged.

@@ -25,12 +25,7 @@ import type {
 } from '../scanner/types';
 import type { RouteFilePlan } from './generated-route-files.js';
 import { AUTO_GENERATED_ROUTE_HEADER } from './route-header.js';
-import {
-  collectRouteReadonlyFields,
-  getApiPublicAccess,
-  getApiWritableAllowlist,
-  usesPrincipalContext,
-} from './route-policy.js';
+import { getApiPublicAccess, usesPrincipalContext } from './route-policy.js';
 import { generateCollectionAccessImports } from './sveltekit-config-import.js';
 import type { SvelteKitOptions } from './sveltekit-generator.js';
 import {
@@ -65,8 +60,6 @@ interface SyncTargetSpec {
    */
   permissionCollection: string;
   ops: MutatingAction[];
-  readonlyFields: string[];
-  writableAllowlist: string[] | null;
   publicAccess: boolean | 'read';
   /** `api.principalContext`: writes need a complete principal. */
   principalContext: boolean;
@@ -184,9 +177,9 @@ export function collectSyncApplyTargets(
       permissionCollection: resolvePermissionCollection(objectDef),
       ops,
       // The same policy functions the model's CRUD routes are generated
-      // from (`route-policy.ts`), so the two routes cannot disagree.
-      readonlyFields: collectRouteReadonlyFields(objectDef),
-      writableAllowlist: getApiWritableAllowlist(apiConfig),
+      // from (`route-policy.ts`), so the two routes cannot disagree. The
+      // write policy (read-only fields, `api.writable`) is read at run time
+      // by `prepareWriteInput`, as the CRUD routes read it.
       publicAccess: getApiPublicAccess(apiConfig),
       principalContext: usesPrincipalContext(objectDef),
     };
@@ -205,8 +198,6 @@ function serializeTargets(targets: SyncTargetSpec[]): string {
       `replacedQualifiedNames: ${JSON.stringify(target.replacedQualifiedNames ?? [])}`,
       `permissionCollection: ${JSON.stringify(target.permissionCollection)}`,
       `ops: ${JSON.stringify(target.ops)}`,
-      `readonlyFields: ${JSON.stringify(target.readonlyFields)}`,
-      `writableAllowlist: ${JSON.stringify(target.writableAllowlist)}`,
       `publicAccess: ${JSON.stringify(target.publicAccess)}`,
       `principalContext: ${JSON.stringify(target.principalContext)}`,
     ];
@@ -280,13 +271,13 @@ export function generateSyncApplyRouteTemplate(
 // Contract: docs/content/architecture/sync-apply-contract.md
 
 import {
-  applySyncWritablePolicy,
+  prepareWriteInput,
   processSyncApplyBatch,
   type SyncApplyOp,
   SyncApplyRejection,
   type SyncApplyTarget,
 } from '@happyvertical/smrt-core';
-import { applyUpdateInput, assertCreateInput, assertUpdateInput, getRequestTenantContext as getCurrentTenant, isRuntimeModelEnabled, ObjectRegistry, runInRequestTenancy } from '@happyvertical/smrt-core';
+import { applyUpdateInput, assertCreateInput, assertUpdateInput, getRequestTenantContext as getCurrentTenant, isRuntimeModelEnabled, ObjectRegistry, prepareWriteInput, runInRequestTenancy } from '@happyvertical/smrt-core';
 import { error, json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 ${collectionAccessImports}
@@ -312,8 +303,6 @@ interface SyncTargetConfig {
   /** \`<collection>\` prefix of the required \`<collection>.<op>\` permission. */
   permissionCollection: string;
   ops: SyncApplyOp[];
-  readonlyFields: string[];
-  writableAllowlist: string[] | null;
   publicAccess: boolean | 'read';
   /** \`api.principalContext\`: a write needs a complete principal. */
   principalContext: boolean;
@@ -442,14 +431,11 @@ export const POST: RequestHandler = async ({ locals, request }) => {
           }
           return 'ok' as const;
         },
-        prepare: (payload: Record<string, unknown>) =>
-          applySyncWritablePolicy(payload, {
-            readonlyFields: target.readonlyFields,
-            writableAllowlist: target.writableAllowlist,
-            // A payload sets fields only, never a service of the object.
-            isServiceOptionInput: (key: string) =>
-              ObjectRegistry.isServiceOptionInput(target.registryKey, key),
-          }),
+        // The write-input rule of the CRUD routes: server-managed keys and
+        // service options are skipped, and a field the caller may not write
+        // is refused when the payload would change the stored value.
+        prepare: (payload: Record<string, unknown>, stored) =>
+          prepareWriteInput(target.registryKey, payload, stored),
       };
     },
   });
