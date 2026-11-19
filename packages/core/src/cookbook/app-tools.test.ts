@@ -1355,6 +1355,48 @@ describe('app customization tools', () => {
     expect(engine.snapshot().revision).toBe(hostRevision + 1);
   });
 
+  it('denies an approval-free template apply when permission is revoked while emptiness is checked', async () => {
+    options.catalog = {
+      ...catalog,
+      cookbooks: [
+        {
+          id: 'fixture',
+          name: 'Fixture',
+          document: { ...initial(), recipes: [] },
+        },
+      ],
+    };
+    let revoke = false;
+    options.activation = {
+      activate: async () => {
+        revoke = true;
+      },
+    };
+    options.isAppEmpty = async () => {
+      if (revoke) permission = false;
+      return true;
+    };
+    service = createCookbookToolService(options);
+    const revision = editor.snapshot().revision;
+    const trusted = { ...context, initialSetup: true };
+    const preview = await call('cookbook.apply', { id: 'fixture' }, trusted);
+    expect(preview.approvalRequired).toBe(false);
+    await expect(
+      call(
+        'cookbook.apply',
+        {
+          id: 'fixture',
+          apply: true,
+          expectedRevision: engine.snapshot().revision,
+          previewToken: preview.previewToken,
+        },
+        trusted,
+      ),
+    ).rejects.toThrow();
+    expect(editor.snapshot().revision).toBe(revision);
+    expect(editor.snapshot().cookbook.recipes).toContain('customers');
+  });
+
   it('loads nothing for an undo the editor refuses', async () => {
     expect(await approve('recipes.disable', { id: 'customers' })).toMatchObject(
       { status: 'ok' },
