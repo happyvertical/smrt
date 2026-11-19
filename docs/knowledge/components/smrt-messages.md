@@ -5,10 +5,10 @@ description: "Unified multi-channel messaging with STI-based hierarchies"
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-19T13:58:36Z"
+  at: "2026-11-19T14:01:36Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:6657ab803d25413fa59a7fc4d02e9c4355872f67483d7406cc36ab047d37b981"
+source_revision: "sha256:29c66043fdfb99ee08db3b522891c8d457b366950e97051fccb6c2fb488ef569"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/messages/package.json"
@@ -17,9 +17,12 @@ sources:
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/messages/AGENTS.md"
     title: "@happyvertical/smrt-messages packages/messages/AGENTS.md"
   - id: "agents-2"
+    resource: "https://github.com/happyvertical/smrt/blob/main/packages/messages/agents/mail-search.md"
+    title: "@happyvertical/smrt-messages packages/messages/agents/mail-search.md"
+  - id: "agents-3"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/messages/agents/notification-outbox.md"
     title: "@happyvertical/smrt-messages packages/messages/agents/notification-outbox.md"
-  - id: "agents-3"
+  - id: "agents-4"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/messages/agents/profile-recipients.md"
     title: "@happyvertical/smrt-messages packages/messages/agents/profile-recipients.md"
 ---
@@ -36,6 +39,7 @@ sources:
 ## Documentation
 
 - `packages/messages/AGENTS.md`
+- `packages/messages/agents/mail-search.md`
 - `packages/messages/agents/notification-outbox.md`
 - `packages/messages/agents/profile-recipients.md`
 
