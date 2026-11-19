@@ -9,15 +9,15 @@
  */
 
 import { isPending, runCommand } from '$lib/server/builder';
-import { guarded, json, ownerOf, targetOf } from '$lib/server/http';
+import { guarded, json, ownerOf } from '$lib/server/http';
 import { runAs } from '$lib/server/owner';
 import type { RequestHandler } from './$types';
 
 export const POST: RequestHandler = guarded(async (event) => {
   const owner = await ownerOf(event);
-  const target = targetOf(event);
+  const target = 'live';
   const out = await runAs(owner, () =>
-    runCommand({ type: 'undo' }, owner.id, target),
+    runCommand({ type: 'undo' }, owner.id, target, 'owner'),
   );
   return isPending(out) ? json(out, 202) : json(out);
 });

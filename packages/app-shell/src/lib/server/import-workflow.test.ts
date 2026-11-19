@@ -27,14 +27,14 @@ import {
 } from '../../engine/import-target.ts';
 import { AppDraftCollection } from '../objects/AppDraft.ts';
 import { AppImportCollection } from '../objects/AppImport.ts';
-import { ApprovalCollection } from '../objects/Approval.ts';
+import { applyOwnBatch } from './approvals.ts';
 import { runCommand } from './builder.ts';
+import { changesState } from './changes.ts';
 import {
   discardIfUnused,
   discardNow,
   draftInfo,
   previewDraft,
-  requestPublish,
   startDraft,
 } from './drafts.ts';
 import {
@@ -600,14 +600,16 @@ it('refuses nonowners, invalid uploads, occupied draft and simultaneous imports'
     ),
   ).rejects.toMatchObject({ status: 415 });
   await startDraft('My draft', h.owner.id);
-  await runCommand(
-    {
-      type: 'defineModel',
-      name: 'Scratch',
-      fields: { note: { type: 'text' } },
-    },
-    h.owner.id,
-    'draft',
+  await runAs(h.owner, () =>
+    runCommand(
+      {
+        type: 'defineModel',
+        name: 'Scratch',
+        fields: { note: { type: 'text' } },
+      },
+      h.owner.id,
+      'draft',
+    ),
   );
   await expect(service.start(h.owner, await request())).rejects.toMatchObject({
     status: 409,
@@ -804,20 +806,15 @@ it('refuses a workbook over the configured cell limit before starting a run', as
   ).rejects.toMatchObject({ status: 413 });
   expect(await service.current(h.owner)).toBeNull();
 });
-it('publishes imported records only through the existing owner draft approval, then removes the file', async () => {
+it('applies imported records only through the owner Apply, then removes the file', async () => {
   await service.start(h.owner, await request());
   await worker();
   await end();
   const before = await (await AppImportCollection.create({ db: h.db })).list();
   const file = join(h.dir, 'imports', `${before[0].id}.xlsx`);
-  const preview = await previewDraft();
-  const pending = await requestPublish(preview.preview.digest, h.owner.id);
+  const state = await runAs(h.owner, () => changesState());
   expect(Object.keys((await getHost()).describe().models)).toEqual([]);
-  const approval = await (await ApprovalCollection.create({ db: h.db })).get(
-    pending.approvalId,
-  );
-  expect(approval).toBeTruthy();
-  const result = await runAs(h.owner, () => approval!.decide(true));
+  const result = await runAs(h.owner, () => applyOwnBatch(state.digest));
   expect(result.status).toBe('approved');
   expect(await (await getHost()).countRows(importModelName('orders'))).toBe(2);
   expect(

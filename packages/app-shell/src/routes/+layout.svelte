@@ -5,8 +5,6 @@ import { onMount, untrack } from 'svelte';
 import { page } from '$app/state';
 import '$lib/ui/ui.css';
 import AssistantPanel from '$lib/assistant/AssistantPanel.svelte';
-import DraftBar from '$lib/components/DraftBar.svelte';
-import { showDraftBar } from '$lib/ui/draft-bar';
 import {
   ASSISTANT_OPEN_EVENT,
   assistantOpenKey,
@@ -73,16 +71,6 @@ const onboarding = $derived(
   !data.onboardingComplete || page.url.pathname === '/welcome',
 );
 const plan = $derived(planLayout({ owner: isOwner && !onboarding, plugin }));
-// Draft state lives in the header on every owner page, not per page body.
-const draftBar = $derived(
-  showDraftBar({
-    owner: data.description !== null,
-    plugin,
-    onboarding,
-    pathname: page.url.pathname,
-  }),
-);
-
 // The chat column's open/closed choice, kept per owner on this device.
 const openKey = $derived(assistantOpenKey(data.session.user?.id));
 let panelOpen = $state(true);
@@ -123,10 +111,6 @@ onMount(() => {
 });
 </script>
 
-{#snippet draftSlot()}
-  {#if data.description}<DraftBar description={data.description} reviewing={page.url.pathname === '/draft/review'} />{/if}
-{/snippet}
-
 <AppShell
   storageKey={shellStorageKey(data.session.user?.id)}
   title={data.description?.name ?? 'My app'}
@@ -153,11 +137,10 @@ onMount(() => {
         unavailableLabel: 'Voice mode is not available yet',
       }
     : false}
-  slots={draftBar ? { 'header.end': draftSlot } : {}}
   bind:panelOpen
 >
   {#snippet panel({ open })}
-    <AssistantPanel {open} owner={data.session.user} buildingInDraft={!!data.description?.draft} viewingDraft={data.description?.mode === 'draft'} />
+    <AssistantPanel {open} owner={data.session.user} buildingInDraft={false} viewingDraft={false} />
   {/snippet}
   {#key data.description?.mode}
     {@render children()}

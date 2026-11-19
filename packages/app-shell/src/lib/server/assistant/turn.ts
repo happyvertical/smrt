@@ -86,6 +86,10 @@ export const DEFAULT_LIMITS: TurnLimits = {
 /** Tools the assistant never gets, even though the owner's `/mcp` has them. */
 export const ASSISTANT_DENIED_TOOLS: ReadonlySet<string> = new Set([
   'approval_decide',
+  // History is the owner's (changes waiting): undo and clean up are theirs.
+  'app_undo',
+  'app_undoto',
+  'app_cleanup',
 ]);
 
 const TOOL_NAME = /^[A-Za-z0-9_-]{1,64}$/;
@@ -359,22 +363,13 @@ export async function runTurn(options: RunTurnOptions): Promise<TurnStop> {
       const text = cut(textOf(response), limits.toolResultChars);
       const ok = response.isError !== true;
       const structural = STRUCTURAL_TOOLS.has(call.name);
-      const copy: Target | undefined = !mode.draft
-        ? undefined
-        : structural
-          ? mode.scope.structure
-          : offered.get(call.name)?.side === 'app' ||
-              call.name === 'app_runreport'
-            ? mode.scope.records
-            : undefined;
-      if (ok && structural && mode.draft) changedIn = mode;
-      // The model is told which copy it acted on, so it can say so.
+      const copy: Target | undefined = undefined;
+      if (ok && structural) changedIn = mode;
+      // The model is told structure only waits, so it can say so.
       const where =
-        copy === 'draft'
-          ? `[This acted on the draft "${mode.draft}", not the live app.] `
-          : copy === 'live'
-            ? '[This acted on the live app.] '
-            : '';
+        ok && structural
+          ? '[This is now waiting for the owner to review and apply; the live app is unchanged.] '
+          : '';
       return {
         ok,
         summary: toolSummary(

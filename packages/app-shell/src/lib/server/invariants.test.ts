@@ -52,39 +52,101 @@ describe('approval gate invariants', () => {
     ]);
   });
 
-  it('decideApproval has exactly two callers: Approval.decide and the owner-publish path', () => {
+  it('decideApproval has exactly two callers: Approval.decide and the owner-apply path', () => {
     const approvals =
       files.find(([f]) => f === 'lib/server/approvals.ts')?.[1] ?? '';
-    // the definition plus the one call inside publishOwnDraft
+    // the definition plus the one call inside applyOwnBatch
     expect(approvals.match(/decideApproval\s*\(/g)?.length).toBe(2);
     expect(approvals).toMatch(
-      /export async function publishOwnDraft[\s\S]*await assertOwner\(\)[\s\S]*typeof expect !== 'string'[\s\S]*requestPublish\(expect, owner\.id\)[\s\S]*decideApproval\(pending\.approvalId, true, owner\.id\)/,
+      /export async function applyOwnBatch[\s\S]*await assertOwner\(\)[\s\S]*typeof expect !== 'string'[\s\S]*requestApply\(expect, owner\.id, opts\)[\s\S]*decideApproval\(pending\.approvalId, true, owner\.id\)/,
     );
   });
 
-  it('only the owner session route POST /api/shell/draft/publish uses publishOwnDraft', () => {
-    // never a tool, the assistant, /mcp, the generated REST or an agent CLI:
-    // those reach publishing only through App.publishDraft (a pending Approval)
+  it('only the owner session route POST /api/shell/changes/apply uses applyOwnBatch', () => {
+    // never a tool, the assistant, /mcp or the generated REST: none can apply
     const users = files
       .filter(
         ([f, t]) =>
           f !== 'lib/server/approvals.ts' &&
-          // a call, or an import of it (prose in comments may name it)
-          /publishOwnDraft\s*\(|\{[^}]*\bpublishOwnDraft\b[^}]*\}\s*from/.test(
-            t,
-          ),
+          /applyOwnBatch\s*\(|\{[^}]*\bapplyOwnBatch\b[^}]*\}\s*from/.test(t),
       )
       .map(([f]) => f);
-    expect(users).toEqual(['routes/api/shell/draft/publish/+server.ts']);
+    // test-support.ts is the test harness (it imports vitest); no runtime path imports it
+    expect(users.filter((f) => f !== 'lib/server/test-support.ts')).toEqual([
+      'routes/api/shell/changes/apply/+server.ts',
+    ]);
     const route = files.find(
-      ([f]) => f === 'routes/api/shell/draft/publish/+server.ts',
+      ([f]) => f === 'routes/api/shell/changes/apply/+server.ts',
     )?.[1];
     expect(route).toMatch(/await ownerOf\(event\)/);
     expect(route).toMatch(
-      /runAs\(owner, \(\) => publishOwnDraft\(body\.expect\)\)/,
+      /runAs\(owner, \(\) =>\s*applyOwnBatch\(body\.expect/,
     );
-    const app = files.find(([f]) => f === 'lib/objects/App.ts')?.[1] ?? '';
-    expect(app).toMatch(/return requestPublish\(expect, owner\.id\)/);
+  });
+
+  it('apply and undo are reachable only from their owner routes', () => {
+    // changes.ts holds requestApply / applyApproved / undoOwnBatch; the
+    // change engine (src/engine, outside this walk) holds undoBatch, which
+    // acts on live. None may appear in a tool, /mcp, the assistant or App.
+    const allowed: Record<string, string[]> = {
+      'requestApply|applyApproved': [
+        'lib/server/approvals.ts',
+        'lib/server/changes.ts',
+      ],
+      undoOwnBatch: [
+        'lib/server/changes.ts',
+        'routes/api/shell/changes/undo/+server.ts',
+      ],
+      'undoBatch|createSqliteChangeEngine|SqliteChangeEngine': [
+        'lib/server/changes.ts',
+      ],
+    };
+    for (const [names, ok] of Object.entries(allowed)) {
+      const re = new RegExp(`\\b(${names})\\b`);
+      const users = files
+        .filter(([, t]) => re.test(t.replace(/\/\/.*$|\/\*[\s\S]*?\*\//gm, '')))
+        .map(([f]) => f);
+      expect(users.sort(), names).toEqual([...ok].sort());
+    }
+    const undo = files.find(
+      ([f]) => f === 'routes/api/shell/changes/undo/+server.ts',
+    )?.[1];
+    expect(undo).toMatch(/await ownerOf\(event\)/);
+    const changes =
+      files.find(([f]) => f === 'lib/server/changes.ts')?.[1] ?? '';
+    expect(changes).not.toMatch(/approved\s*:\s*true/);
+    for (const f of [
+      'lib/server/catalog.ts',
+      'lib/server/engine-tools.ts',
+      'lib/objects/App.ts',
+      'lib/server/policy.ts',
+      'lib/server/mcp-server.ts',
+    ]) {
+      const t = files.find(([n]) => n === f)?.[1] ?? '';
+      expect(t, f).not.toMatch(/applyOwnBatch|undoOwnBatch|applyApproved/);
+    }
+    for (const [f, t] of files.filter(([f]) =>
+      f.startsWith('lib/server/assistant/'),
+    ))
+      expect(t, f).not.toMatch(
+        /applyOwnBatch|undoOwnBatch|applyApproved|requestApply/,
+      );
+  });
+
+  it('only changes.ts and approvals.ts-owned paths execute commands on a host', () => {
+    // a direct `.execute(` is a structural write: allow-listed on purpose
+    const users = files
+      .filter(
+        ([f, t]) =>
+          f.startsWith('lib/') && f.endsWith('.ts') && /\.execute\(/.test(t),
+      )
+      .map(([f]) => f)
+      .sort();
+    expect(users).toEqual([
+      'lib/server/approvals.ts',
+      'lib/server/builder.ts',
+      'lib/server/changes.ts',
+    ]);
   });
 
   it('request handlers never read an `approved` input', () => {
@@ -185,7 +247,7 @@ describe('approval gate invariants', () => {
     // and each of the routes reads the copy from the request
     for (const f of named.filter((n) => n.startsWith('routes/')))
       expect(files.find(([name]) => name === f)?.[1], f).toMatch(
-        /targetOf\(|headerTargetOf\(|requestRecordDelete/,
+        /hostFor\('live'\)|requestRecordDelete|describeCopy|historyFor|runCommand|runRest|App\./,
       );
   });
 
@@ -204,6 +266,7 @@ describe('approval gate invariants', () => {
       files.find(([f]) => f === 'lib/server/engine-tools.ts')?.[1] ?? '';
     expect(adapter).toMatch(/await assertOwner\(\)/);
     expect(adapter).toMatch(/hostFor\(scope.records\)/);
+    expect(adapter).toMatch(/structureHost\(\)/);
     expect(adapter).toMatch(/runCommand\(/);
     expect(adapter).not.toMatch(/\.execute\(|approved\s*:/);
     for (const name of [

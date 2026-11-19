@@ -27,6 +27,18 @@ export type ShellEvent =
       status: 'started' | 'published' | 'discarded' | 'unpublishable';
       id: string;
       name: string;
+    }
+  | {
+      /**
+       * Changes waiting moved (#5178): `changed` (a card came, went, was
+       * edited or put back), `applied`, `discarded` or `undone`. `count` is
+       * the active cards now; `generation` the batch's counter.
+       */
+      type: 'changes';
+      status: 'changed' | 'applied' | 'discarded' | 'undone';
+      batchId: string;
+      count: number;
+      generation: number;
     };
 
 const bus = new EventEmitter();

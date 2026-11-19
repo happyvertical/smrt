@@ -4,20 +4,13 @@
 // with no log. This handle serves those paths first, with the same owner
 // check, same-origin rule, approval gate and error handling as the
 // `/api/shell/*` routes: a risky operation answers 202
-// `{ status: 'pending_approval', approvalId, summary, preview }`. The copy an
-// operation acts on is named by `?target=live|draft` (default live: refused,
-// naming the draft, while one is open).
+// `{ status: 'pending_approval', approvalId, summary, preview }`; a structural
+// one answers 202-free `{ status: 'change_waiting', ... }` (changes.ts): it
+// never reaches the live app from here. No request names a copy any more.
 import type { Handle } from '@sveltejs/kit';
 import { App } from '../objects/App.ts';
 import { isPending } from './builder.ts';
-import {
-  errorResponse,
-  HttpError,
-  json,
-  ownerOf,
-  readJson,
-  targetOf,
-} from './http.ts';
+import { errorResponse, HttpError, json, ownerOf, readJson } from './http.ts';
 import { runAs } from './owner.ts';
 import { scopeFor, withScope } from './target.ts';
 
@@ -55,10 +48,6 @@ const OPERATIONS: Record<string, (b: Body) => Promise<unknown>> = {
   describe: () => App.describe(),
   history: () => App.history(),
   undoTo: (b) => App.undoTo(b.version as number),
-  startDraft: (b) => App.startDraft(b.name as string | undefined),
-  previewPublish: () => App.previewPublish(),
-  publishDraft: (b) => App.publishDraft(b.expect as string | undefined),
-  discardDraft: () => App.discardDraft(),
 };
 
 const PATH = /^\/api\/apps\/([A-Za-z]+)\/?$/;
@@ -76,7 +65,7 @@ export const appsRestHandle: Handle = async ({ event, resolve }) => {
     const body = text.trim() ? await readJson(event.request) : {};
     // The copy the request names (`?target=live|draft`, default live); the
     // builder methods read it from this scope.
-    const scope = scopeFor(targetOf(event));
+    const scope = scopeFor('live');
     const result = await runAs(owner, () => withScope(scope, () => run(body)));
     return isPending(result) ? json(result, 202) : json({ action: op, result });
   } catch (error) {

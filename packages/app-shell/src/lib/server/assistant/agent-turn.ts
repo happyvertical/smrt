@@ -120,14 +120,8 @@ export async function runAgentTurn(
           : toolSummary(name, text, ok);
         const mode = approvalId ? null : await assistantMode(options.principal);
         const structural = STRUCTURAL_TOOLS.has(name);
-        const copy = !mode?.draft
-          ? undefined
-          : structural
-            ? mode.scope.structure
-            : /^(app|approval)_/.test(name) && name !== 'app_runreport'
-              ? undefined
-              : mode.scope.records;
-        if (mode?.draft && structural && ok) changedIn = mode;
+        const copy: undefined = undefined;
+        if (mode && structural && ok) changedIn = mode;
         const report = reportPresentation(name, text, ok);
         return {
           summary,

@@ -17,14 +17,7 @@
  */
 
 import { hostFor } from '$lib/server/host';
-import {
-  guarded,
-  ident,
-  json,
-  ownerOf,
-  readJson,
-  targetOf,
-} from '$lib/server/http';
+import { guarded, ident, json, ownerOf, readJson } from '$lib/server/http';
 import { orderRows } from '$lib/ui/columns';
 import { FILTER_SCAN_LIMIT, matchLink } from '$lib/ui/related';
 import type { RequestHandler } from './$types';
@@ -35,7 +28,7 @@ export const GET: RequestHandler = guarded(async (event) => {
     1000,
     Math.max(1, Number(event.url.searchParams.get('limit') ?? 200) || 200),
   );
-  const host = await hostFor(targetOf(event));
+  const host = await hostFor('live');
   const model = ident(event.params.model, 'model');
   const field = event.url.searchParams.get('field');
   if (field !== null) {
@@ -61,6 +54,6 @@ export const GET: RequestHandler = guarded(async (event) => {
 export const POST: RequestHandler = guarded(async (event) => {
   await ownerOf(event);
   const data = await readJson(event.request);
-  const host = await hostFor(targetOf(event));
+  const host = await hostFor('live');
   return json(await host.create(ident(event.params.model, 'model'), data), 201);
 });

@@ -8,7 +8,6 @@ import {
   say,
   scripted,
 } from '../lib/server/assistant/test-helpers.ts';
-import { runCommand } from '../lib/server/builder.ts';
 import { getHost } from '../lib/server/host.ts';
 import { callTool } from '../lib/server/policy.ts';
 import { openShell } from '../lib/server/test-support.ts';
@@ -25,10 +24,11 @@ it('the production QA seed imports into an empty app and exercises report states
         'utf8',
       ),
     );
-    await runCommand(
+    // The seed carries records, which a waiting change does not carry to live
+    // (a working copy's records are test data): load it on live directly.
+    await (await getHost()).execute(
       { type: 'importTemplate', data: seed.data },
-      h.owner.id,
-      'live',
+      { author: h.owner.id, approved: true },
     );
     const host = await getHost();
     expect((await host.runReport('salesByCustomer')).rows).toHaveLength(3);
@@ -53,10 +53,11 @@ it('explains an unsafe seeded total consistently across the worker, page, CSV an
         'utf8',
       ),
     );
-    await runCommand(
+    // The seed carries records, which a waiting change does not carry to live
+    // (a working copy's records are test data): load it on live directly.
+    await (await getHost()).execute(
       { type: 'importTemplate', data: seed.data },
-      h.owner.id,
-      'live',
+      { author: h.owner.id, approved: true },
     );
     const host = await getHost();
     const [order] = await host.list('Order');
@@ -82,9 +83,7 @@ it('explains an unsafe seeded total consistently across the worker, page, CSV an
       request: new Request(
         'http://localhost/api/shell/reports/salesByCustomer',
       ),
-      url: new URL(
-        'http://localhost/api/shell/reports/salesByCustomer?target=live',
-      ),
+      url: new URL('http://localhost/api/shell/reports/salesByCustomer'),
       params: { name: 'salesByCustomer' },
       locals: {
         user: { id: h.owner.id },

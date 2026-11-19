@@ -2,6 +2,7 @@
 // network, no model. A stub reads its "prompt", emits the stream shapes the
 // real tools do, and for tool calls talks to a REAL `/mcp` route (the shell's
 // merged server, bearer-token auth, the one policy) over loopback HTTP.
+
 import { randomBytes } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -22,7 +23,7 @@ import { decideApproval, getApprovalView } from '../approvals.ts';
 import { getHost } from '../host.ts';
 import { runAs } from '../owner.ts';
 import { callTool } from '../policy.ts';
-import { openShell, type ShellHarness } from '../test-support.ts';
+import { applyWaiting, openShell, type ShellHarness } from '../test-support.ts';
 import { type AgentEngineDeps, runAgentTurn } from './agent-turn.ts';
 import { startTestMcp, type TestMcp } from './test-mcp.ts';
 import { createThread, viewMessages } from './threads.ts';
@@ -43,6 +44,7 @@ beforeAll(async () => {
       fields: { title: { type: 'text' } },
     }),
   );
+  await applyWaiting(h.owner);
   mcp = await startTestMcp(h.owner);
   mcpUrl = mcp.url;
 });
@@ -203,6 +205,7 @@ describe.each(['claude-code', 'codex'] as const)('%s engine', (tool) => {
         },
       },
     });
+    await applyWaiting(h.owner);
     const { events, thread } = await turn(
       tool,
       'tool app_runreport {"report":"choreCounts"}',

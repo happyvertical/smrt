@@ -15,6 +15,8 @@ import {
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { vi } from 'vitest';
 import '../objects/index.ts';
+import { applyOwnBatch } from './approvals.ts';
+import { changesState } from './changes.ts';
 import { configureShell, resetShell } from './host.ts';
 import { resetShellInference } from './inference.ts';
 import { type Principal, runAs, setOwnerCheck } from './owner.ts';
@@ -94,6 +96,17 @@ export async function openShell(): Promise<ShellHarness> {
       rmSync(dir, { recursive: true, force: true });
     },
   };
+}
+
+/**
+ * Tests that build structure through the builder get changes waiting (#5178):
+ * apply them as the owner, the way a person would, so live has the structure.
+ */
+export async function applyWaiting(owner: Principal): Promise<void> {
+  await runAs(owner, async () => {
+    const state = await changesState();
+    if (state.count) await applyOwnBatch(state.digest);
+  });
 }
 
 export { runAs };

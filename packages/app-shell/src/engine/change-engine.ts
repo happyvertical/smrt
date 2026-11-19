@@ -314,9 +314,10 @@ export class SqliteChangeEngine implements ChangeEngine {
         if (input.signal?.aborted)
           throw new EngineError('the rebuild was interrupted', 'refused');
         try {
+          // The working copy approves its own risky changes (`autoApprove`,
+          // draft hosts only), so no `approved` flag is passed here.
           const r = (await draft.execute(command, {
             author: input.author,
-            approved: true,
           })) as ChangeResult;
           applied.push({ key, version: r.version });
         } catch (e) {

@@ -9,11 +9,11 @@
  */
 
 import { historyFor } from '$lib/server/drafts';
-import { guarded, json, ownerOf, targetOf } from '$lib/server/http';
+import { guarded, json, ownerOf } from '$lib/server/http';
 import type { RequestHandler } from './$types';
 
 export const GET: RequestHandler = guarded(async (event) => {
   await ownerOf(event);
-  const target = targetOf(event);
+  const target = 'live';
   return json({ mode: target, versions: await historyFor(target) });
 });

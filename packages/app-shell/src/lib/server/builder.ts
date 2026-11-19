@@ -22,11 +22,32 @@ import {
   type PendingApproval,
   requestApproval,
 } from './approvals.ts';
-import { getDraftSlot, hostFor } from './host.ts';
+import {
+  addChangeCard,
+  isMaintenanceCommand,
+  refuseWhileChangesWait,
+  type WaitingResult,
+} from './changes.ts';
+import { hostFor } from './host.ts';
 import { type PublicExecuteResult, publicChangeResult } from './results.ts';
 import type { Target } from './target.ts';
 
-export type BuilderResult = PublicExecuteResult | PendingApproval;
+/**
+ * A structural command became a change waiting (`waiting: true`, with the
+ * engine's own result for it) instead of reaching the live app.
+ */
+export type BuilderResult =
+  | PublicExecuteResult
+  | PendingApproval
+  | (Omit<WaitingResult['result'], 'snapshot'> & {
+      status: 'change_waiting';
+      waiting: true;
+      cardId: string;
+      count: number;
+    });
+
+/** Who is asking: the assistant, another API caller, or the owner's own History routes. */
+export type CommandSource = 'assistant' | 'api' | 'owner';
 
 /** Owner-facing delete details, separate from executable model keys and record ids. */
 async function recordPreview(host: AppHost, model: string, id?: string) {
@@ -47,155 +68,187 @@ async function recordPreview(host: AppHost, model: string, id?: string) {
   };
 }
 
-/** The refusal for a structural request that names the live copy while a draft is open. */
-async function refuseLiveStructure(): Promise<never> {
-  const slot = await getDraftSlot();
-  throw new EngineError(
-    slot
-      ? `The draft "${slot.name}" is open, so the live app's structure is frozen. Make this change in the draft (target=draft), or publish or discard the draft first.`
-      : 'The live app is frozen.',
-    'refused',
-  );
-}
-
-/** Run a command for `author` on `target`. Never passes `approved` (see approvals.ts). */
+/**
+ * Run a command for `author`. Never passes `approved` (see approvals.ts).
+ *
+ * Every structural command (including loadRecords, extractModel and
+ * mergeRecords) becomes a CARD in the changes waiting (changes.ts) and never
+ * reaches live here; only Apply does. The exceptions are History's own undo,
+ * undo-to and clean up, which act on live only for the owner's History routes
+ * (`source: 'owner'`) and only while nothing waits; anyone else is refused.
+ * Read-only commands (export) run on live.
+ *
+ * KNOWN GAP (#5178, slice 6 owns it): an `importTemplate` that carries
+ * `records` waits as ONE card for the definition only; a waiting change does
+ * not carry a working copy's records to live, so the template's records are
+ * not loaded. Carrying them needs `loadRecords` cards in the same group, with
+ * the template's ids and references resolved: not a few lines, so not done here.
+ */
 export async function runCommand(
   command: Command,
   author: string,
-  target: Target,
+  _target: Target = 'live',
+  source: CommandSource = 'api',
 ): Promise<BuilderResult> {
-  const host = await hostFor(target);
-  if (target === 'live' && host.frozen && isStructuralCommand(command))
-    await refuseLiveStructure();
-  try {
-    return publicChangeResult(await host.execute(command, { author }));
-  } catch (e) {
-    if (e instanceof ApprovalRequiredError) {
-      // A known conflict is a refusal, not a decision the owner can approve.
-      if (
-        (command.type === 'undo' || command.type === 'undoTo') &&
-        typeof e.plan.preview?.refusal === 'string'
-      )
-        throw new EngineError(e.plan.preview.refusal, 'refused');
-      // Only the live host asks (the draft's autoApprove never throws this).
-      // An undo is approved for the version it was planned against: if the app
-      // moves on first, approving it must not undo something else.
-      const version = (e.plan.preview as { version?: unknown } | undefined)
-        ?.version;
-      let pinned: Command = command;
-      if (command.type === 'undo' && typeof version === 'number')
-        pinned = { type: 'undo', version };
-      else if (command.type === 'undoTo')
-        pinned = {
-          type: 'undoTo',
-          version: command.version,
-          from: host.version,
-        };
-      const description = host.describe();
-      const model =
-        'model' in command && Object.hasOwn(description.models, command.model)
-          ? description.models[command.model]
-          : undefined;
-      const field =
-        model &&
-        'field' in command &&
-        Object.hasOwn(model.fields, command.field)
-          ? model.fields[command.field]
-          : undefined;
-      const keep =
-        command.type === 'mergeRecords'
-          ? await host.get(command.model, command.keep)
-          : undefined;
-      const labelFor = (record: RecordRow | undefined) => {
-        if (!record || !model) return 'the selected record';
-        const title =
-          host.def.models['model' in command ? command.model : '']
-            ?.titleField ??
-          Object.entries(model.fields).find(
-            ([, f]) => !f.hidden && f.type === 'text',
-          )?.[0];
-        const value = title ? record[title] : undefined;
-        return value == null || String(value).trim() === ''
-          ? 'the selected record'
-          : String(value);
-      };
-      const removedLabels =
-        command.type === 'mergeRecords'
-          ? await Promise.all(
-              command.merge
-                .slice(0, 10)
-                .map(async (id) =>
-                  labelFor(
-                    (await host.get(command.model, id)) as
-                      | RecordRow
-                      | undefined,
-                  ),
-                ),
-            )
-          : [];
-      const preview = {
-        ...e.plan.preview,
-        ...(command.type === 'importTemplate'
-          ? {
-              modelLabels: Object.fromEntries(
-                Object.entries(command.data.definition.models).map(
-                  ([name, md]) => [name, md.label ?? humanize(name)],
-                ),
-              ),
-            }
-          : {}),
-        ...(model
-          ? {
-              modelLabel:
-                model.label ?? ('model' in command ? command.model : ''),
-            }
-          : {}),
-        ...(field && 'field' in command
-          ? { fieldLabel: fieldLabel(command.field, field) }
-          : {}),
-        ...(keep && model
-          ? {
-              keepLabel: labelFor(keep as RecordRow),
-              removedLabels,
-            }
-          : {}),
-        ...(command.type === 'extractModel'
-          ? {
-              intoLabel: Object.hasOwn(description.models, command.into)
-                ? (description.models[command.into].label ?? command.into)
-                : command.into,
-            }
-          : {}),
-        ...(command.type === 'setCalculation' && model
-          ? { fields: model.fields }
-          : {}),
-        ...(command.type === 'mergeRecords'
-          ? {
-              referenceLabels: Object.fromEntries(
-                Object.keys(
-                  (e.plan.preview?.references ?? {}) as Record<string, unknown>,
-                )
-                  .filter((name) => Object.hasOwn(description.models, name))
-                  .map((name) => [
-                    name,
-                    description.models[name].label ?? name,
-                  ]),
-              ),
-            }
-          : {}),
-      };
-      return requestApproval(
-        { kind: 'command', command: pinned, reviewedPreview: e.plan.preview },
+  if (isStructuralCommand(command)) {
+    if (!isMaintenanceCommand(command)) {
+      const waiting = await addChangeCard(
         {
-          ...e.plan,
-          summary: commandSummary(command, host.def, undefined, preview),
-          preview,
+          commands: [command],
+          source: source === 'assistant' ? 'assistant' : 'api',
         },
         author,
       );
+      return {
+        ...waiting.result,
+        status: 'change_waiting',
+        waiting: true,
+        cardId: waiting.cardId,
+        count: waiting.count,
+      };
     }
+    if (source !== 'owner')
+      throw new EngineError(
+        'Undoing and cleaning up history are done by the owner from History',
+        'refused',
+      );
+    await refuseWhileChangesWait();
+  }
+  const host = await hostFor('live');
+  try {
+    return publicChangeResult(await host.execute(command, { author }));
+  } catch (e) {
+    if (e instanceof ApprovalRequiredError)
+      return requestCommandApproval(host, command, e, author);
     throw e;
   }
+}
+
+/**
+ * The Approval for a command the live host refused until approved. Only
+ * History's undo and clean up reach it from `runCommand`; kept exported so a
+ * stored legacy card can be reproduced in tests.
+ */
+export async function requestCommandApproval(
+  host: AppHost,
+  command: Command,
+  e: ApprovalRequiredError,
+  author: string,
+): Promise<PendingApproval> {
+  // A known conflict is a refusal, not a decision the owner can approve.
+  if (
+    (command.type === 'undo' || command.type === 'undoTo') &&
+    typeof e.plan.preview?.refusal === 'string'
+  )
+    throw new EngineError(e.plan.preview.refusal, 'refused');
+  // Only the live host asks (only History's undo and clean up reach it here).
+  // An undo is approved for the version it was planned against: if the app
+  // moves on first, approving it must not undo something else.
+  const version = (e.plan.preview as { version?: unknown } | undefined)
+    ?.version;
+  let pinned: Command = command;
+  if (command.type === 'undo' && typeof version === 'number')
+    pinned = { type: 'undo', version };
+  else if (command.type === 'undoTo')
+    pinned = {
+      type: 'undoTo',
+      version: command.version,
+      from: host.version,
+    };
+  const description = host.describe();
+  const model =
+    'model' in command && Object.hasOwn(description.models, command.model)
+      ? description.models[command.model]
+      : undefined;
+  const field =
+    model && 'field' in command && Object.hasOwn(model.fields, command.field)
+      ? model.fields[command.field]
+      : undefined;
+  const keep =
+    command.type === 'mergeRecords'
+      ? await host.get(command.model, command.keep)
+      : undefined;
+  const labelFor = (record: RecordRow | undefined) => {
+    if (!record || !model) return 'the selected record';
+    const title =
+      host.def.models['model' in command ? command.model : '']?.titleField ??
+      Object.entries(model.fields).find(
+        ([, f]) => !f.hidden && f.type === 'text',
+      )?.[0];
+    const value = title ? record[title] : undefined;
+    return value == null || String(value).trim() === ''
+      ? 'the selected record'
+      : String(value);
+  };
+  const removedLabels =
+    command.type === 'mergeRecords'
+      ? await Promise.all(
+          command.merge
+            .slice(0, 10)
+            .map(async (id) =>
+              labelFor(
+                (await host.get(command.model, id)) as RecordRow | undefined,
+              ),
+            ),
+        )
+      : [];
+  const preview = {
+    ...e.plan.preview,
+    ...(command.type === 'importTemplate'
+      ? {
+          modelLabels: Object.fromEntries(
+            Object.entries(command.data.definition.models).map(([name, md]) => [
+              name,
+              md.label ?? humanize(name),
+            ]),
+          ),
+        }
+      : {}),
+    ...(model
+      ? {
+          modelLabel: model.label ?? ('model' in command ? command.model : ''),
+        }
+      : {}),
+    ...(field && 'field' in command
+      ? { fieldLabel: fieldLabel(command.field, field) }
+      : {}),
+    ...(keep && model
+      ? {
+          keepLabel: labelFor(keep as RecordRow),
+          removedLabels,
+        }
+      : {}),
+    ...(command.type === 'extractModel'
+      ? {
+          intoLabel: Object.hasOwn(description.models, command.into)
+            ? (description.models[command.into].label ?? command.into)
+            : command.into,
+        }
+      : {}),
+    ...(command.type === 'setCalculation' && model
+      ? { fields: model.fields }
+      : {}),
+    ...(command.type === 'mergeRecords'
+      ? {
+          referenceLabels: Object.fromEntries(
+            Object.keys(
+              (e.plan.preview?.references ?? {}) as Record<string, unknown>,
+            )
+              .filter((name) => Object.hasOwn(description.models, name))
+              .map((name) => [name, description.models[name].label ?? name]),
+          ),
+        }
+      : {}),
+  };
+  return requestApproval(
+    { kind: 'command', command: pinned, reviewedPreview: e.plan.preview },
+    {
+      ...e.plan,
+      summary: commandSummary(command, host.def, undefined, preview),
+      preview,
+    },
+    author,
+  );
 }
 
 /** Run an app tool on `target`; a risky one (`<model>_delete`) on live becomes an approval. */
