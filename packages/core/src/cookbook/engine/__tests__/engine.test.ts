@@ -1373,4 +1373,35 @@ describe('commits only what it can publish', () => {
       }),
     );
   });
+
+  it('validates layout labels as text or null, in the validator and on restore', () => {
+    const e = engine();
+    ok(e.run({ name: 'add_recipes', input: { ids: ['commerce.sales'] } }));
+    const item = e.snapshot().sections[0].items[0].id;
+    const withLabel = (label: unknown) => ({
+      ...e.cookbook(),
+      layout: { version: 1, items: { [item]: { label } } },
+    });
+    expect(validateCookbook(withLabel(5)).ok).toBe(false);
+    expect(
+      validateCookbook({
+        ...withLabel('x'),
+        layout: { version: 1, sections: { sales: { label: 7 } } },
+      }).ok,
+    ).toBe(false);
+    // null means no override and stays valid; text works.
+    expect(validateCookbook(withLabel(null)).ok).toBe(true);
+    expect(validateCookbook(withLabel('Clients')).ok).toBe(true);
+    expect(() =>
+      createCookbookEngine({
+        catalog,
+        state: {
+          version: 1,
+          revision: 3,
+          applied: null,
+          cookbook: withLabel(5),
+        },
+      } as never),
+    ).toThrow(/Invalid saved cookbook/);
+  });
 });

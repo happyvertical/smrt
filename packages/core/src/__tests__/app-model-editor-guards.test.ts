@@ -1367,6 +1367,44 @@ describe('app model editor: history reads and completion', () => {
     ).rejects.toThrow(/MODEL_EDIT_CONFLICT: revision 2 was not completed/);
     expect(() => e.snapshot()).toThrow(/MODEL_ACTIVATION_PENDING/);
   });
+
+  it('opens and undoes a journal whose stored document holds a label that is not text', async () => {
+    const e = await open();
+    await applyTo(e)({ type: 'create_list', name: 'GuardMat', list: mats });
+    // A row written before labels were validated.
+    const before = e.snapshot().cookbook;
+    const after = {
+      ...structuredClone(before),
+      layout: {
+        version: 1,
+        items: { 'editor-guards-app:guardmat': { label: 5 } },
+      },
+    } as unknown as Cookbook;
+    const store = await createAppModelHistory({
+      db,
+      application,
+      tenantId: TENANT,
+    });
+    await store.append(
+      {
+        revision: 2,
+        requestId: 'req-legacy-label',
+        actor: 'owner',
+        command: JSON.stringify({ type: 'import', cookbook: after }),
+        before,
+        after,
+        status: 'pending',
+      },
+      1,
+    );
+    await store.complete(2, 0);
+    ObjectRegistry.clear();
+    registerMember();
+    const reopened = await open();
+    expect(reopened.snapshot().revision).toBe(2);
+    await applyTo(reopened)({ type: 'undo' });
+    expect(reopened.snapshot().revision).toBe(3);
+  });
 });
 
 describe('app model editor: undo and import activate restored recipes', () => {

@@ -132,6 +132,33 @@ export interface AppModelEditReceipt extends AppModelSnapshot {
   replayed?: boolean;
 }
 
+/**
+ * Journal rows are immutable, and a layout label that is neither text nor
+ * null could never be rendered: drop it when reading a stored document, so an
+ * editor whose journal holds one still opens.
+ */
+function repairLayoutLabels(value: unknown): unknown {
+  const layout = (value as { layout?: Record<string, unknown> } | null)?.layout;
+  if (!layout || typeof layout !== 'object') return value;
+  let repaired: { layout: Record<string, unknown> } | undefined;
+  for (const key of ['sections', 'items'] as const) {
+    const entries = layout[key];
+    if (!entries || typeof entries !== 'object') continue;
+    for (const [id, entry] of Object.entries(entries)) {
+      const label = (entry as { label?: unknown } | null)?.label;
+      if (label === undefined || label === null || typeof label === 'string')
+        continue;
+      repaired ??= structuredClone(value) as {
+        layout: Record<string, unknown>;
+      };
+      delete (repaired.layout[key] as Record<string, Record<string, unknown>>)[
+        id
+      ].label;
+    }
+  }
+  return repaired ?? value;
+}
+
 function checked(value: unknown): Cookbook {
   const result = validateCookbook(value);
   if (!result.ok)
@@ -362,7 +389,9 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
     return row;
   };
   let revision = history.at(-1)?.revision ?? 0;
-  let doc = checked(history.at(-1)?.after ?? options.cookbook);
+  let doc = checked(
+    repairLayoutLabels(history.at(-1)?.after ?? options.cookbook),
+  );
   let ready = false;
   let tail = Promise.resolve();
   const listeners = new Set<(snapshot: AppModelSnapshot) => void>();
@@ -1141,7 +1170,9 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
           const scopedReader = journalReader(scoped);
           history = await (scopedReader ? scopedReader.light() : scoped.read());
           revision = history.at(-1)?.revision ?? 0;
-          doc = checked(history.at(-1)?.after ?? options.cookbook);
+          doc = checked(
+            repairLayoutLabels(history.at(-1)?.after ?? options.cookbook),
+          );
           await journalInitial(scoped, db);
           await validate(
             doc,
@@ -1518,7 +1549,9 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
               !undone.has(row.revision),
           );
           if (!previous) throw new Error('MODEL_UNDO_EMPTY');
-          next = structuredClone(previous.before);
+          next = structuredClone(
+            repairLayoutLabels(previous.before) as Cookbook,
+          );
           undoes = previous.revision;
           break;
         }
