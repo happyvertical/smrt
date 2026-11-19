@@ -30,7 +30,10 @@
  * @packageDocumentation
  */
 
-import type { SmrtClassOptions } from '@happyvertical/smrt-core';
+import {
+  isUniqueViolationError,
+  type SmrtClassOptions,
+} from '@happyvertical/smrt-core';
 import { runWithMailSystemAccess } from '../access.js';
 import { CorrespondentCollection } from '../collections/CorrespondentCollection.js';
 import { EmailCollection } from '../collections/EmailCollection.js';
@@ -353,7 +356,24 @@ export class CorrespondentService {
           continue;
         }
         if (!row) {
-          row = await rows.create({ tenantId, ownerUserId: owner, address });
+          try {
+            row = await rows.create({
+              _insertOnly: true,
+              tenantId,
+              ownerUserId: owner,
+              address,
+            });
+          } catch (error) {
+            // A concurrent refresh stored the row first: update that one.
+            if (!isUniqueViolationError(error)) throw error;
+            row = (
+              (await rows.list({
+                where: { tenantId, ownerUserId: owner, address },
+                limit: 1,
+              })) as Correspondent[]
+            )[0];
+            if (!row) throw error;
+          }
         }
         let sent = 0;
         let received = 0;

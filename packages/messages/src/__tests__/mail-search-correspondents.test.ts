@@ -30,6 +30,7 @@ import {
   resetMailAccess,
   runWithMailSystemAccess,
 } from '../access.js';
+import { CorrespondentCollection } from '../collections/CorrespondentCollection.js';
 import { EmailCollection } from '../collections/EmailCollection';
 import { Email } from '../models/Email';
 import { EmailAccount } from '../models/EmailAccount';
@@ -405,6 +406,7 @@ describe('mail search and correspondents (#5132)', () => {
         return {
           connect: async () => undefined,
           disconnect: async () => undefined,
+          getAdapter: () => 'jmap',
           getCapabilities: async () => ({ search: true }),
           search: async () => [
             {
@@ -454,6 +456,7 @@ describe('mail search and correspondents (#5132)', () => {
         return {
           connect: async () => undefined,
           disconnect: async () => undefined,
+          getAdapter: () => 'jmap',
           getCapabilities: async () => ({ search: true }),
           search: async () => [
             mk(1, { flags: ['\\Flagged'], labels: ['Work'] }),
@@ -480,6 +483,39 @@ describe('mail search and correspondents (#5132)', () => {
     expect(failed.fallbackAccounts).toEqual([
       { accountId: bad, reason: 'provider search failed' },
     ]);
+    spy.mockRestore();
+  });
+
+  it('IMAP provider search is never reported as an empty success: it uses the local index; over-limit provider hits set truncated', async () => {
+    const imap = await seedAccount(tenantA, 'imap', owner);
+    const jmap = await seedAccount(tenantA, 'jmap', owner);
+    await seedEmail(imap, { subject: 'local imap mail' });
+    const searched: string[] = [];
+    const spy = vi
+      .spyOn(EmailAccount.prototype, 'createClient')
+      .mockImplementation(async function (this: EmailAccount) {
+        const isImap = this.id === imap;
+        return {
+          connect: async () => undefined,
+          disconnect: async () => undefined,
+          getAdapter: () => (isImap ? 'imap' : 'jmap'),
+          getCapabilities: async () => ({ search: true }),
+          search: async () => {
+            searched.push(this.id as string);
+            return [1, 2, 3].map((i) => ({
+              id: `j-${i}`,
+              subject: `j${i}`,
+              from: { address: 'a@b.test' },
+              to: [],
+            }));
+          },
+        } as never;
+      });
+    const res = await search(owner).searchProvider({ limit: 2 });
+    expect(searched).toEqual([jmap]);
+    expect(res.providerAccountIds).toEqual([jmap]);
+    expect(res.fallbackAccounts.map((f) => f.accountId)).toEqual([imap]);
+    expect(res.truncated).toBe(true);
     spy.mockRestore();
   });
 
@@ -688,6 +724,31 @@ describe('mail search and correspondents (#5132)', () => {
       expect((await svc.list()).correspondents.map((c) => c.address)).toEqual([
         'stay@s.test',
       ]);
+    });
+
+    it('refresh tolerates a concurrent refresh that stored the same row first', async () => {
+      const a = await seedAccount(tenantA, 'a', owner);
+      await seedEmail(a, { fromAddress: 'zed@z.test' });
+      const original = CorrespondentCollection.prototype.create;
+      const spy = vi
+        .spyOn(CorrespondentCollection.prototype, 'create')
+        .mockImplementationOnce(async function (
+          this: CorrespondentCollection,
+          ...args: never[]
+        ) {
+          await original.apply(this, args);
+          throw Object.assign(
+            new Error('UNIQUE constraint failed: correspondents.address'),
+            { code: 'SQLITE_CONSTRAINT_UNIQUE' },
+          );
+        });
+      const svc = people(owner);
+      await svc.refresh();
+      spy.mockRestore();
+      expect((await svc.list()).correspondents.map((c) => c.address)).toEqual([
+        'zed@z.test',
+      ]);
+      expect((await svc.list()).correspondents[0].messageCount).toBe(1);
     });
 
     it('suggests for recipient autocomplete: address or name prefix, best first', async () => {

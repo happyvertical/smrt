@@ -397,12 +397,22 @@ export class MailSearchService {
                 reason = 'provider does not support search';
                 return null;
               }
+              // IMAP searches only the selected mailbox and a fresh client
+              // has none, so it answers [] for everything: never report that
+              // as a successful provider search; use the local index.
+              if (client.getAdapter() === 'imap') {
+                reason = 'provider search needs a selected mailbox';
+                return null;
+              }
               const found = await client.search(criteria);
               const emails = await EmailCollection.create({ db });
               const out: MailSearchHit[] = [];
               for (const msg of found) {
-                if (out.length >= limit) break;
                 if (!matchesFlags(msg, query)) continue;
+                if (out.length >= limit) {
+                  result.truncated = true;
+                  break;
+                }
                 const local = msg.id
                   ? ((
                       await emails.list({
