@@ -1333,6 +1333,13 @@ export function createCookbookToolService(options: CookbookToolOptions) {
                   'conflict',
                   'Your app now contains records. Preview again before applying.',
                 );
+              // The host's own state must still be what the caller approved:
+              // an update made while recipes were loading is never overwritten.
+              if (!same(options.engineFor(context)!.state(), before))
+                fail(
+                  'conflict',
+                  'The cookbook changed before this action could apply.',
+                );
             },
           );
           if (context.workflowAction)

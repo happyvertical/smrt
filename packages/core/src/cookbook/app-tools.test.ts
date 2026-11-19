@@ -1298,6 +1298,30 @@ describe('app customization tools', () => {
     expect(editor.snapshot().cookbook.recipes).not.toContain('customers');
   });
 
+  it('refuses to apply over a host cookbook that changed while recipes were activating', async () => {
+    expect(await approve('recipes.disable', { id: 'customers' })).toMatchObject(
+      { status: 'ok' },
+    );
+    // The host updates its cookbook during activation, after the tool's own
+    // comparison and before the editor journals anything.
+    options.activation = {
+      activate: async () => {
+        engine.run({ name: 'add_recipes', input: { ids: ['customers'] } });
+      },
+    };
+    const revision = editor.snapshot().revision;
+    const hostRevision = engine.snapshot().revision;
+    await expect(
+      call('recipes.enable', {
+        id: 'customers',
+        expectedRevision: hostRevision,
+      }),
+    ).rejects.toThrow(/cookbook changed before this action could apply/);
+    expect(editor.snapshot().revision).toBe(revision);
+    expect(engine.snapshot().revision).toBe(hostRevision + 1);
+    expect(await editor.history()).toHaveLength(1);
+  });
+
   it('loads nothing for an undo the editor refuses', async () => {
     expect(await approve('recipes.disable', { id: 'customers' })).toMatchObject(
       { status: 'ok' },
