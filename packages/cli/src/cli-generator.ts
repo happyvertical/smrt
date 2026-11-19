@@ -500,6 +500,37 @@ export type { ParsedArgs } from '@happyvertical/utils';
 /**
  * Generate CLI commands for smrt objects
  */
+/**
+ * The name a class's commands are published under (#5143): `undefined` for a
+ * same-named subtype its parent serves, the declared collection of a
+ * same-named subtype that has one, and the simple name otherwise.
+ */
+function surfaceNameOf(
+  key: string,
+  info: { name?: string } | undefined,
+): string | undefined {
+  if (ObjectRegistry.isServedByParent(key)) return undefined;
+  return ObjectRegistry.getSurfaceName(key) ?? info?.name ?? key;
+}
+
+/**
+ * The registry key a command's object name stands for (#5143). A command is
+ * named after its class's surface name, which for a same-named subtype is its
+ * declared collection and never a registry key, and a simple name shared by a
+ * class and its subtypes names only the class that owns the surface. Every
+ * handler reads metadata and dispatches through this key. A name no single
+ * surface answers to resolves as before.
+ */
+function registryKeyOf(objectName: string): string {
+  const keys = [...ObjectRegistry.getAllClasses()]
+    .filter(
+      ([key, info]) =>
+        surfaceNameOf(key, info)?.toLowerCase() === objectName.toLowerCase(),
+    )
+    .map(([key]) => key);
+  return keys.length === 1 ? keys[0] : objectName;
+}
+
 export class CLIGenerator {
   private config: CLIConfig;
   private context: CLIContext;
@@ -845,8 +876,9 @@ export class CLIGenerator {
     // all their commands in the static command list yet
     const registeredClasses = ObjectRegistry.getAllClasses();
     // Issue #951: Match by simple name (info.name), not the qualified map key
-    const isKnownObject = Array.from(registeredClasses.values()).some(
-      (info) => (info.name || '').toLowerCase() === firstArg.toLowerCase(),
+    const isKnownObject = Array.from(registeredClasses).some(
+      ([key, info]) =>
+        surfaceNameOf(key, info)?.toLowerCase() === firstArg.toLowerCase(),
     );
 
     if (isKnownObject) {
@@ -909,9 +941,10 @@ export class CLIGenerator {
     // Issue #951: Use simple names (info.name), not qualified map keys
     const registeredClasses = ObjectRegistry.getAllClasses();
     this.registeredObjectNames = new Set(
-      Array.from(registeredClasses.values()).map((info) =>
-        (info.name || '').toLowerCase(),
-      ),
+      Array.from(registeredClasses).flatMap(([key, info]) => {
+        const surfaceName = surfaceNameOf(key, info);
+        return surfaceName ? [surfaceName.toLowerCase()] : [];
+      }),
     );
 
     this.manifestLoaded = true;
@@ -941,8 +974,12 @@ export class CLIGenerator {
     let actualName: string | undefined;
     let matchedKey: string | undefined;
     for (const [key, info] of registeredClasses) {
-      if ((info.name || key).toLowerCase() === lowerName) {
-        actualName = info.name || key;
+      // A same-named subtype is served through its parent's commands, or by
+      // the collection it declares; it never answers for its parent's name
+      // (#5143).
+      const surfaceName = surfaceNameOf(key, info);
+      if (surfaceName?.toLowerCase() === lowerName) {
+        actualName = surfaceName;
         matchedKey = key;
         break;
       }
@@ -1094,9 +1131,9 @@ export class CLIGenerator {
     // Issue #951: Use simple name for command lookup
     const registeredClasses = ObjectRegistry.getAllClasses();
     for (const [_key, classInfo] of registeredClasses) {
-      const objectCommands = await this.getObjectCommandsLazy(
-        classInfo.name || _key,
-      );
+      const surfaceName = surfaceNameOf(_key, classInfo);
+      if (surfaceName === undefined) continue;
+      const objectCommands = await this.getObjectCommandsLazy(surfaceName);
       for (const cmd of objectCommands) {
         if (!commandNames.has(cmd.name)) {
           commandNames.add(cmd.name);
@@ -1117,6 +1154,9 @@ export class CLIGenerator {
   ): Promise<CLICommand[]> {
     const commands: CLICommand[] = [];
     const lowerName = objectName.toLowerCase();
+    // Registry metadata is read by the class's own key: a same-named subtype
+    // shares the simple name, which no longer names one class (#5143).
+    const lookupKey = _classInfo?.qualifiedName ?? objectName;
 
     // The framework's own abstract base classes (SmrtObject,
     // SmrtCollection, ...) are scaffolding, not resources — never expose an
@@ -1126,7 +1166,7 @@ export class CLIGenerator {
       return commands;
     }
 
-    const config = ObjectRegistry.getConfig(objectName);
+    const config = ObjectRegistry.getConfig(lookupKey);
     const cliConfig = config.cli;
 
     // Skip if CLI is disabled
@@ -1210,7 +1250,7 @@ export class CLIGenerator {
         'from-file': { type: 'string', description: 'create from JSON file' },
       };
 
-      const targets = ObjectRegistry.getCreateTargets(objectName, {
+      const targets = ObjectRegistry.getCreateTargets(lookupKey, {
         surface: 'cli',
         tenantId: this.context.tenantId,
       });
@@ -1264,8 +1304,8 @@ export class CLIGenerator {
 
       // Add field options
       const fields = new Map([
-        ...ObjectRegistry.getFields(objectName),
-        ...Object.entries(ObjectRegistry.getWriteThroughFields(objectName)),
+        ...ObjectRegistry.getFields(lookupKey),
+        ...Object.entries(ObjectRegistry.getWriteThroughFields(lookupKey)),
       ]);
       for (const [fieldName, field] of fields) {
         const optionName = fieldName.replace(/_/g, '-');
@@ -1310,7 +1350,7 @@ export class CLIGenerator {
     if (config.abstract) return commands;
 
     // CUSTOM METHODS - discover from manifest (including inherited methods)
-    const methods = await ObjectRegistry.getAllMethods(objectName);
+    const methods = await ObjectRegistry.getAllMethods(lookupKey);
 
     // Check if include list contains any custom method names (indicates strict mode).
     // A collection class's include list is always the complete allowlist, as
@@ -1318,7 +1358,7 @@ export class CLIGenerator {
     // verbs only, and its own methods must stay closed until it lists them.
     const hasCustomMethodsInInclude =
       included?.some((item) => !isCrudOperation(item)) ||
-      (Array.isArray(included) && ObjectRegistry.isCollectionClass(objectName));
+      (Array.isArray(included) && ObjectRegistry.isCollectionClass(lookupKey));
 
     // Every name a caller can already type for this object, taken from the
     // CRUD commands actually pushed above — their names AND their aliases,
@@ -1723,7 +1763,7 @@ export class CLIGenerator {
     objectName: string,
     objectCommands: CLICommand[],
   ): Promise<void> {
-    const classInfo = ObjectRegistry.getClass(objectName);
+    const classInfo = ObjectRegistry.getClass(registryKeyOf(objectName));
     const lowerName = objectName.toLowerCase();
 
     console.log(`\n${objectName}`);
@@ -1761,7 +1801,7 @@ export class CLIGenerator {
     }
 
     // Show fields if verbose help requested
-    const fields = ObjectRegistry.getFields(objectName);
+    const fields = ObjectRegistry.getFields(registryKeyOf(objectName));
     if (fields.size > 0) {
       console.log('Fields:');
       for (const [fieldName, field] of fields) {
@@ -1964,7 +2004,7 @@ export class CLIGenerator {
   ) => Promise<void> {
     return async (args: string[], _options: CliOptions) => {
       const objectName = args[0];
-      const fields = ObjectRegistry.getFields(objectName);
+      const fields = ObjectRegistry.getFields(registryKeyOf(objectName));
       if (fields.size === 0) {
         this.exitWithError(`Object ${objectName} not found`);
         return;
@@ -2305,7 +2345,7 @@ export class CLIGenerator {
       'updatedAt',
       'updated_at',
     ]);
-    const apiConfig = ObjectRegistry.getConfig(objectName)?.api;
+    const apiConfig = ObjectRegistry.getConfig(registryKeyOf(objectName))?.api;
     const writable =
       apiConfig &&
       typeof apiConfig === 'object' &&
@@ -2313,7 +2353,9 @@ export class CLIGenerator {
         ? ((apiConfig as { writable: string[] }).writable as string[])
         : null;
     const readonly = new Set<string>();
-    for (const [name, definition] of ObjectRegistry.getFields(objectName)) {
+    for (const [name, definition] of ObjectRegistry.getFields(
+      registryKeyOf(objectName),
+    )) {
       const meta = definition as {
         readonly?: unknown;
         _meta?: { readonly?: unknown };
@@ -2347,7 +2389,7 @@ export class CLIGenerator {
         tenantId: this.context.tenantId,
       };
       const initialTarget = ObjectRegistry.resolveCreateTarget(
-        objectName,
+        registryKeyOf(objectName),
         { createType: options.createType },
         context,
       );
@@ -2380,7 +2422,7 @@ export class CLIGenerator {
       }
 
       const target = ObjectRegistry.resolveCreateTarget(
-        objectName,
+        registryKeyOf(objectName),
         options.createType === undefined
           ? data
           : { ...data, createType: options.createType },
@@ -2441,8 +2483,10 @@ export class CLIGenerator {
       } else {
         // From command line options
         const fields = new Map([
-          ...ObjectRegistry.getFields(objectName),
-          ...Object.entries(ObjectRegistry.getWriteThroughFields(objectName)),
+          ...ObjectRegistry.getFields(registryKeyOf(objectName)),
+          ...Object.entries(
+            ObjectRegistry.getWriteThroughFields(registryKeyOf(objectName)),
+          ),
         ]);
         for (const [fieldName] of fields) {
           const optionName = fieldName.replace(/_/g, '-');
@@ -2535,7 +2579,9 @@ export class CLIGenerator {
       }
 
       // Get method metadata for parameter mapping (including inherited methods)
-      const methods = await ObjectRegistry.getAllMethods(objectName);
+      const methods = await ObjectRegistry.getAllMethods(
+        registryKeyOf(objectName),
+      );
       const methodDef: CliMethodDefinition | undefined =
         methods.get(methodName);
 
@@ -2656,7 +2702,7 @@ export class CLIGenerator {
     methodDef?: CliMethodDefinition,
   ): Promise<void> {
     try {
-      const classInfo = ObjectRegistry.getClass(objectName);
+      const classInfo = ObjectRegistry.getClass(registryKeyOf(objectName));
       if (!classInfo?.constructor) {
         const availableObjects = Array.from(
           ObjectRegistry.getAllClasses().values(),
@@ -2890,7 +2936,7 @@ export class CLIGenerator {
     objectName: string,
   ): Promise<SmrtCollection<SmrtObject>> {
     if (!this.collections.has(objectName)) {
-      const classInfo = ObjectRegistry.getClass(objectName);
+      const classInfo = ObjectRegistry.getClass(registryKeyOf(objectName));
       if (!classInfo?.collectionConstructor) {
         // Enhanced error message with troubleshooting
         const availableObjects = Array.from(
@@ -2956,7 +3002,7 @@ export class CLIGenerator {
     objectName: string,
     current: Record<string, unknown>,
   ): Promise<Record<string, unknown>> {
-    const fields = ObjectRegistry.getFields(objectName);
+    const fields = ObjectRegistry.getFields(registryKeyOf(objectName));
     const result: Record<string, unknown> = {};
 
     for (const [fieldName, field] of fields) {
