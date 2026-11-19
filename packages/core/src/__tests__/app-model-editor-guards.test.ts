@@ -465,6 +465,49 @@ describe('app model editor: installed model names and tables', () => {
     );
   });
 
+  it('a fresh boot never adopts a compatible table no journal records, and only the operator migration adopts it', async () => {
+    const startup: Cookbook = {
+      ...book(),
+      features: [`${APP}:GuardNotes`],
+      models: {
+        version: 1,
+        packageName: APP,
+        lists: { GuardNotes: structuredClone(listDefinition) as never },
+        fields: {},
+      },
+    };
+    // An application whose journal this database does not hold created a
+    // table with exactly the columns the startup list would declare.
+    await db.query(
+      engine === 'postgres'
+        ? 'CREATE TABLE guard_notes (id UUID PRIMARY KEY, title TEXT, note TEXT)'
+        : 'CREATE TABLE guard_notes (id TEXT PRIMARY KEY, title TEXT, note TEXT)',
+    );
+    const refusal = await editorFor({ cookbook: startup }).then(
+      () => undefined,
+      (error: Error) => error.message,
+    );
+    expect(refusal).toMatch(
+      /^MODEL_TABLE_COLLISION: guard_notes is already in use in this database/,
+    );
+    // The refusal journals nothing: no revision is left pending.
+    ObjectRegistry.clear();
+    const history = await createAppModelHistory({
+      db,
+      application: 'editor-guards',
+      tenantId: TENANT,
+    });
+    expect(await history.read()).toEqual([]);
+    // The operator can still adopt it explicitly.
+    ObjectRegistry.clear();
+    const adopted = await migrateAppModelStorage(
+      editorOptions({ cookbook: startup }),
+    );
+    expect((await adopted.history()).map((row) => row.status)).toEqual([
+      'applied',
+    ]);
+  });
+
   it('refuses a list whose identity is an installed catalog model even without a manifest, and a startup list taking a manifest identity', async () => {
     const own = `${APP}:GuardDesk`;
     const withDesk = {

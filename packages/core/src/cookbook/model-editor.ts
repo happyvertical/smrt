@@ -1324,6 +1324,15 @@ async function openAppModelEditor(
         throw new Error(
           `MODEL_TABLE_COLLISION: ${table} is already in use in this database; the startup cookbook's list ${name} cannot take it`,
         );
+      // A table that exists without being this journal's is never adopted by
+      // a plain boot: it may belong to an application the journals do not
+      // record. Only the operator's migrateAppModelStorage() takes it over.
+      if (!internal.migrate) {
+        if (await tableExists(db, engine, table))
+          throw new Error(
+            `MODEL_TABLE_COLLISION: ${table} is already in use in this database; the startup cookbook's list ${name} cannot take it. If the table is this application's own storage, adopt it with migrateAppModelStorage()`,
+          );
+      }
     }
     // A coherent document without the declarations: no feature, policy or
     // provider-field reference to what revision 1 adds, so undoing it
