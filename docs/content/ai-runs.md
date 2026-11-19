@@ -1429,8 +1429,11 @@ retries, and its `reason` is one typed code:
 - **Payload size.** Each event payload is capped (head and tail kept, `truncated`
   set). Full request and response text of a call is stored only when
   transcripts are enabled.
-- **Privacy.** Trajectories hold user data. The tracking supports redaction
-  before an event is stored, with the same redactor transcripts use.
+- **Privacy.** Trajectories hold user data. An event payload is redacted
+  before it is stored, on the same path transcripts use, and the host
+  redactor sees the run's tenant. When a trajectory is read, the built-in
+  redactor runs again (never the host's), and the head and tail kept from a
+  truncated payload are masked as text.
 
 ## 9. Existing data
 

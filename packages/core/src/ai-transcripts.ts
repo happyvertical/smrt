@@ -244,6 +244,22 @@ export function getTranscriptRedactor(): AiTranscriptRedactor | undefined {
 const SECRET_FIELD =
   /^(?:api[-_]?key|authorization|password|passwd|secret|client[-_]?secret|access[-_]?token|refresh[-_]?token|private[-_]?key|x[-_]api[-_]key)$/i;
 
+/**
+ * The value of every credential-named field (`"apiKey": "..."`, as
+ * {@link SECRET_FIELD} names them) masked in JSON *text* that cannot be
+ * parsed, such as the head or tail of a truncated payload: the built-in
+ * redactor's field rule, applied at string level.
+ *
+ * @internal Used by the run-event reader.
+ */
+export function maskSecretFieldsInJsonText(text: string): string {
+  return text.replace(
+    /"((?:[^"\\]|\\.)*)"(\s*:\s*)("(?:[^"\\]|\\.)*(?:"|$)|[^,}\]\s]+)/g,
+    (whole, key: string, colon: string) =>
+      SECRET_FIELD.test(key) ? `"${key}"${colon}"[REDACTED]"` : whole,
+  );
+}
+
 /** Exact values the built-in redactor masks for one call. */
 export interface AiTranscriptRedactionValues {
   /** Credentials the client carries (its API key): masked as `[REDACTED]`. */
@@ -832,7 +848,15 @@ function errorMessage(error: unknown): AiTranscriptMessage {
   };
 }
 
-async function redactPart(
+/**
+ * The one redaction path of stored AI content: the host redactor
+ * ({@link setTranscriptRedactor}) with the content's context, then the
+ * built-in redactor with the exact values to mask. Transcript parts and run
+ * event payloads both go through it.
+ *
+ * @internal
+ */
+export async function redactAiTranscriptPart(
   messages: AiTranscriptMessage[],
   context: AiTranscriptRedactionContext,
   values: AiTranscriptRedactionValues,
@@ -900,10 +924,14 @@ async function finishCapture(
     ];
     const toolEvents = [...toolEventsFrom(call.request), ...call.toolEvents];
     const [request, redactedResponse, redactedTools] = await Promise.all([
-      redactPart(call.request, { ...base, part: 'request' }, values),
-      redactPart(response, { ...base, part: 'response' }, values),
+      redactAiTranscriptPart(
+        call.request,
+        { ...base, part: 'request' },
+        values,
+      ),
+      redactAiTranscriptPart(response, { ...base, part: 'response' }, values),
       toolEvents.length > 0
-        ? redactPart(toolEvents, { ...base, part: 'tools' }, values)
+        ? redactAiTranscriptPart(toolEvents, { ...base, part: 'tools' }, values)
         : Promise.resolve([]),
     ]);
     const fitted = fitAiTranscript(

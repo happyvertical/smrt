@@ -275,9 +275,20 @@ earlier run, possibly pruned) and `handoff` (`running` until its child ends).
 A `check` or `approval` request points at the judged `call` or `handoff`
 event. A decision counts once, in the run that recorded it; a request counts
 only as requested; approval rate = approved / (approved + refused).
-Payloads are redacted (host redactor, then the transcript redactor) and
+Payloads are redacted through the transcripts' one path
+(`redactAiTranscriptPart`: an event-specific `options.redact`, then the host
+redactor with the run row's tenant, read behind the claim fence, then the
+built-in redactor) and
 capped (head and tail kept, `truncated`); `payload_ref` points at content the
-host owns, and the framework stores nothing behind it.
+host owns, and the framework stores nothing behind it. Read-time rule:
+`getRunTrajectory` runs only the built-in redactor again on stored payloads
+(credential-named fields, token shapes; the host redactor runs on the write
+path only and is never called by a read), so a payload stored by an earlier
+version is masked by today's built-in rules; a truncated payload's `head` and
+`tail` (JSON text fragments) are masked at string level
+(`maskSecretFieldsInJsonText`: credential-named field values, then token
+shapes), never returned as stored. A host's field-based policy installed
+after a payload was written does not apply to it.
 
 **The `ai-runs` task** (retention sweep, `sweepAiRuns`): reconciles `call`
 reservations older than the smallest `callTimeoutMs` on their chain plus a

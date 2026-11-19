@@ -13,9 +13,9 @@
 
 import type { DatabaseInterface } from '@happyvertical/sql';
 import {
-  type AiTranscriptMessage,
-  getTranscriptRedactor,
+  maskSecretFieldsInJsonText,
   redactAiTranscriptMessages,
+  redactAiTranscriptPart,
 } from '../ai-transcripts.js';
 import {
   AI_RUN_COLUMNS,
@@ -27,6 +27,7 @@ import {
   assertAiRunFence,
   dateOrNull,
   forUpdate,
+  getAiRun,
   getRows,
   newAiRunId,
   num,
@@ -203,7 +204,8 @@ export function capAiRunEventPayload(
 async function redactPayload(
   input: AiRunEventInput,
   runId: string,
-  redact: AiRunEventRedactor | undefined,
+  tenantId: string | null,
+  options: AppendAiRunEventOptions,
 ): Promise<unknown> {
   if (input.payload === undefined || input.payload === null) return null;
   const context = {
@@ -211,22 +213,22 @@ async function redactPayload(
     type: input.type,
     name: input.name ?? null,
   };
-  let payload = redact ? await redact(input.payload, context) : input.payload;
-  // The transcript host redactor and the built-in one (page section 8: the
-  // same redactor transcripts use).
-  let messages: AiTranscriptMessage[] = [{ role: 'event', content: payload }];
-  const host = getTranscriptRedactor();
-  if (host) {
-    messages = await host(messages, {
+  const payload = options.redact
+    ? await options.redact(input.payload, context)
+    : input.payload;
+  // The transcripts' redaction path (page section 8): the host redactor with
+  // the run's tenant, then the built-in one.
+  const messages = await redactAiTranscriptPart(
+    [{ role: 'event', content: payload }],
+    {
       part: 'tools',
       callId: input.callId ?? runId,
-      tenantId: null,
+      tenantId,
       operation: `run-event:${input.type}`,
-    });
-  }
-  messages = redactAiTranscriptMessages(messages);
-  payload = messages[0]?.content ?? null;
-  return payload;
+    },
+    {},
+  );
+  return messages[0]?.content ?? null;
 }
 
 /**
@@ -311,7 +313,24 @@ export async function appendAiRunEvent(
     throw new TypeError(`appendAiRunEvent: unknown event type ${input.type}`);
   }
   checkEventStatus(input.type, input.status ?? null);
-  const redacted = await redactPayload(input, runId, options.redact);
+  let tenantId: string | null = null;
+  if (input.payload !== undefined && input.payload !== null) {
+    // The host redactor applies the run's tenant rules, so it needs the
+    // run's tenant before anything is stored. Read behind the claim fence,
+    // like every other step of an append: a worker whose claim was taken
+    // over gets AiRunClaimLostError before the run is read or redacted.
+    tenantId = await withAiRunTransaction(
+      db,
+      async (tx) => {
+        await assertAiRunFence(tx, runId, options.fence);
+        const run = await getAiRun(tx.db, runId);
+        if (!run) throw new AiRunNotFoundError(runId);
+        return run.tenantId ?? null;
+      },
+      options,
+    );
+  }
+  const redacted = await redactPayload(input, runId, tenantId, options);
   const capped = capAiRunEventPayload(redacted, options.maxPayloadBytes);
   const id = input.id ?? newAiRunId();
   const seq = await withAiRunTransaction(
@@ -543,6 +562,39 @@ function tenantPredicate(
  * the run (and its events) can never be another tenant's, even if the id was
  * pruned and reused between statements.
  */
+/** The read-time redaction of one stored payload (built-in rules only). */
+function redactStoredPayload(payload: unknown): unknown {
+  const envelope = payload as {
+    truncated?: unknown;
+    head?: unknown;
+    tail?: unknown;
+  } | null;
+  const fragment = (value: unknown) =>
+    typeof value === 'string'
+      ? String(
+          redactAiTranscriptMessages([
+            { role: 'event', content: maskSecretFieldsInJsonText(value) },
+          ])[0]?.content ?? '',
+        )
+      : value;
+  if (
+    envelope &&
+    typeof envelope === 'object' &&
+    envelope.truncated === true &&
+    ('head' in envelope || 'tail' in envelope)
+  ) {
+    return {
+      ...envelope,
+      head: fragment(envelope.head),
+      tail: fragment(envelope.tail),
+    };
+  }
+  return (
+    redactAiTranscriptMessages([{ role: 'event', content: payload }])[0]
+      ?.content ?? null
+  );
+}
+
 async function readTrajectory(
   db: DatabaseInterface,
   target: string | { runId: string } | { callId: string },
@@ -655,6 +707,16 @@ async function readTrajectory(
       ),
     ).map(toAiRunEvent);
     if (page.length === 0) break;
+    // Stored payloads go through the built-in redactor again on read (the
+    // host redactor runs on the write path only): a payload stored under an
+    // earlier version is masked by today's built-in rules. A truncated
+    // payload's `head` and `tail` are fragments of JSON text that field
+    // rules cannot parse, so they are masked at string level (credential
+    // fields and token shapes), never returned as stored.
+    for (const event of page) {
+      if (event.payload === null || event.payload === undefined) continue;
+      event.payload = redactStoredPayload(event.payload);
+    }
     lastSeq = page[page.length - 1]?.seq ?? lastSeq;
     const callIds = [
       ...new Set(
