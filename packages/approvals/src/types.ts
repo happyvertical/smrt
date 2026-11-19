@@ -104,6 +104,8 @@ export interface ApprovalKindInput {
    * recorded yet. Default false, because the decider then approves content
    * they changed. Enable only where the decider is trusted to author the
    * subject (for example a person with send rights editing an agent's draft).
+   * Every `approve` on such a kind must pass `expectedSubjectRevisionHash`
+   * (`APPROVAL_INVALID` otherwise), since the revision can move.
    */
   allowRevisedApproval?: boolean;
   /** Package defaults. */

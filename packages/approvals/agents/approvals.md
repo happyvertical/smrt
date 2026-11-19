@@ -90,7 +90,11 @@ the requested one, so the ledger shows both. Refusals: `revision_not_allowed`
 (kind did not opt in), `revision_after_approval` (any `approved` event exists:
 earlier approvers saw other content). Any decision may pass
 `expectedSubjectRevisionHash`; a mismatch is refused `revision_mismatch`, so a
-decision never lands on content the decider did not review. Quorum counting
+decision never lands on content the decider did not review. On a kind with
+`allowRevisedApproval`, an `approve` without it throws `APPROVAL_INVALID`
+(the revision can move under a decider); the mail gate also refuses an empty
+`expectedBindingHash`, and its approver list excludes the requester's own
+votes exactly as quorum counting does. Quorum counting
 (`decide` and `consume`'s ledger check) counts only `approved` events whose
 hash equals the bound revision. No schema change.
 

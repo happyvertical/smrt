@@ -240,6 +240,25 @@ describe('mail-send approval gate (SQLite)', () => {
     });
   });
 
+  it('refuses a decision that does not name the reviewed draft', async () => {
+    const w = world();
+    const opened = await w.check();
+    if (opened.state !== 'pending') throw new Error('expected pending');
+    for (const expectedBindingHash of ['', '   ', undefined]) {
+      await expect(
+        w.gate.decide({
+          tenantId: w.tenantId,
+          approvalId: opened.approvalId,
+          decider: w.person,
+          decision: 'approve',
+          expectedBindingHash: expectedBindingHash as unknown as string,
+        }),
+      ).rejects.toMatchObject({ code: 'APPROVAL_INVALID' });
+    }
+    const view = await w.gate.get(w.tenantId, opened.approvalId, w.person);
+    expect(view).toMatchObject({ status: 'pending', approverIds: [] });
+  });
+
   it('keeps requests per tenant', async () => {
     const w = world();
     const opened = await w.check();
