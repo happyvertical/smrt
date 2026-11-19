@@ -263,7 +263,8 @@ per edit reads only the latest row and the row for its request id; other
 stores fall back to `read()`. After `complete` the editor reads its row back:
 if another process completed the revision first it installs that receipt
 through `publish` before readiness opens (staying closed if that fails) and
-serves it from `snapshot()`, and if the row is not applied it fails `MODEL_EDIT_CONFLICT` and
+serves it from `snapshot()` (a winner whose installation failed is remembered per journal, so
+reopening installs its manifest and web definitions even when its cookbook matches), and if the row is not applied it fails `MODEL_EDIT_CONFLICT` and
 stays closed instead of reporting success.
 A supplied host store must scope reads/writes to one app/tenant and preserve
 the pending/CAS contract. PostgreSQL stores must also implement
