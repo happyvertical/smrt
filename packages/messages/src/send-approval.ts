@@ -41,6 +41,7 @@ import {
   type MailPrincipal,
   resolveMailPrincipal,
   runWithMailSystemAccess,
+  withoutListBounds,
 } from './access.js';
 import { notificationSha256, withTenant } from './host.js';
 import type { Account } from './models/Account.js';
@@ -304,8 +305,10 @@ export async function mailSendBindingHash(message: Message): Promise<string> {
           './collections/AttachmentCollection.js'
         );
         const rows = await (
-          await AttachmentCollection.create(message.options as never)
-        ).list({ where: { messageId: message.id }, limit: 1000 });
+          await AttachmentCollection.create(
+            withoutListBounds(message.options) as never,
+          )
+        ).list({ where: { messageId: message.id } });
         return rows
           .map((row) => [
             row.id,
@@ -380,6 +383,27 @@ function approverVerifier(account: Account) {
   };
 }
 
+// The binding an approval released, per message instance, re-checked by
+// `Message.send()` after it claims the row and before the provider handoff.
+const approvedBindings = new WeakMap<Message, string>();
+
+/** Remember the approved binding for `message`'s next send. */
+function markApprovedBinding(message: Message, bindingHash: string): void {
+  approvedBindings.set(message, bindingHash);
+}
+
+/**
+ * Called by `Message.send()` after its claim: true when this send was
+ * released by an approval and the draft (fields or attachment rows) no longer
+ * matches it. Clears the marker either way.
+ */
+export async function approvedDraftChanged(message: Message): Promise<boolean> {
+  const expected = approvedBindings.get(message);
+  if (expected === undefined) return false;
+  approvedBindings.delete(message);
+  return (await mailSendBindingHash(message)) !== expected;
+}
+
 function refusedResult(error: string): MessageSendResult {
   return { success: false, error, sentAt: new Date() };
 }
@@ -433,7 +457,9 @@ export async function holdAgentSend(
       'The draft has unsaved changes; save it before submitting it for approval.',
     );
   }
-  const summary = `${message.subject || '(no subject)'}`.slice(0, 500);
+  // Approval rows are readable tenant-wide; never copy mail content into
+  // them. A decider reads the draft through MailSendApprovalService.get().
+  const summary = 'An agent asked to send an email.';
   const checked = await gate.check({
     tenantId,
     messageId: message.id,
@@ -442,7 +468,10 @@ export async function holdAgentSend(
     summary,
     verifyApprovers: approverVerifier(account),
   });
-  if (checked.state === 'approved') return null;
+  if (checked.state === 'approved') {
+    markApprovedBinding(message, bindingHash);
+    return null;
+  }
   if (checked.state === 'refused') {
     return refusedResult(`The send was not approved (${checked.reason}).`);
   }
@@ -538,9 +567,11 @@ export class MailSendApprovalService {
       if (!account || account.tenantId !== principal.tenantId) {
         throw new HeldSendError('not_found', 'Held send not found.', 404);
       }
-      // Only an unsent draft can be decided: edits must never rewrite a
-      // message that already left (or is leaving).
-      if (message.sendStatus !== 'draft') {
+      // Only an unsent draft (or a definitely failed send) can be decided:
+      // edits must never rewrite a message that left or may have left.
+      const retryable =
+        message.sendStatus === 'failed' && !message.isSendOutcomeUnknown();
+      if (message.sendStatus !== 'draft' && !retryable) {
         throw new HeldSendError(
           'not_a_draft',
           `The message is already ${message.sendStatus}.`,
@@ -679,7 +710,9 @@ export class MailSendApprovalService {
     });
     if (!used.ok) return { state: 'refused', approvalId, reason: used.reason };
     // The person sends: person sends are not held. `send()` claims the row
-    // against the revision just hashed, so a concurrent edit sends nothing.
+    // against the revision just hashed and re-checks the binding (attachment
+    // rows included) after the claim, so a concurrent edit sends nothing.
+    markApprovedBinding(message, bindingHash);
     const result = await message.send();
     return { state: 'sent', approvalId, result };
   }

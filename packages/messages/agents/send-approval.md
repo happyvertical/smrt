@@ -18,7 +18,7 @@ agent's send; `auto_send` lets it leave. Only the account owner, as a person,
 with tenant `messages.manage-access`, changes it
 (`MailAccessService.setAgentSendPolicy`); raising to `auto_send` needs
 `confirmAutoSend: true` (the smrt-social public-latch pattern), lowering is
-instant. A host per-rule hook (`configureMailSendApprovals({
+instant, and a change of owner resets it to null. A host per-rule hook (`configureMailSendApprovals({
 resolveAgentSendPolicy })`) may answer either way for one send; null falls
 back to the account. Non-mail accounts have no policy and are not held.
 
@@ -36,6 +36,11 @@ principal sends only from the account's own address), then
 3. calls the gate's `check`: `pending` returns `pendingApproval` and sends
    nothing; `approved` (after re-verifying that every counted approver holds
    `send` on the account now, then a single-use consume) lets the send run.
+
+After the row is claimed, a send an approval released re-hashes the draft
+(attachment rows included); a mismatch fails definitely and sends nothing.
+The approval request carries a neutral summary, never mail content: request
+and event rows are readable tenant-wide.
 
 The gate is structural; smrt-approvals' `createApprovalMailSendGate`
 implements it (kind `messages.mail.send`). smrt-messages has a dev dependency
@@ -62,7 +67,8 @@ thread). When the host runs the action inside smrt-core `withAuditContext()`,
 and `messages.triage.<action>`. Mail models are not `audit: true`: that makes
 every sync and outbox write demand a writer.
 
-Deciding needs an unsent draft (`not_a_draft` otherwise). On an unowned
+Deciding needs an unsent draft or a definitely failed send (`not_a_draft`
+otherwise; an outcome-unknown send is never re-approved). On an unowned
 (tenant-wide) account the per-account checks pass for any tenant person, the
 same authority as sending directly from it.
 

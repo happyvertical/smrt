@@ -822,6 +822,11 @@ export class MailAccessService {
       });
     }
     await this.assertTenantMember(ownerUserId);
+    // An opt-in to agent auto-send belongs to the owner who made it; a new
+    // owner starts from the default (held for approval).
+    if (account.ownerUserId !== ownerUserId && 'agentSendPolicy' in account) {
+      (account as { agentSendPolicy: unknown }).agentSendPolicy = null;
+    }
     account.ownerUserId = ownerUserId;
     account.updatedAt = new Date();
     await account.save();

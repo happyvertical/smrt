@@ -35,6 +35,7 @@ import {
   resolveMailPrincipal,
 } from '../access.js';
 import {
+  approvedDraftChanged,
   auditMailAction,
   holdAgentSend,
   stampHandledBy,
@@ -595,6 +596,8 @@ export class Message extends SmrtObject {
       }
       return held;
     }
+    // Audited before anything is claimed: an audit failure sends nothing.
+    if (actor) await auditMailAction('messages.send', this);
 
     // Get sender from account
     let sender: Awaited<ReturnType<typeof account.createSender>>;
@@ -687,10 +690,20 @@ export class Message extends SmrtObject {
       await saveSendLifecycle(this);
     }
 
+    // A send an approval released must still be the approved draft now that
+    // the row is claimed (attachment rows are not covered by the claim).
+    if (await approvedDraftChanged(this)) {
+      const changed: MessageSendResult = {
+        success: false,
+        error: 'The draft changed after it was approved; nothing was sent.',
+        sentAt: new Date(),
+      };
+      await this.finalizeSendLifecycle(changed, actor);
+      return changed;
+    }
+
     let result: MessageSendResult;
     try {
-      // Audited before it leaves: an audit failure stops the send.
-      if (actor) await auditMailAction('messages.send', this);
       await assertProtectedSenderHandoff(this, options);
       result = await sender.send(this, options);
     } catch (error) {

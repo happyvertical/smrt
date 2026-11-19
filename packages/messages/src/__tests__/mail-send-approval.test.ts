@@ -545,6 +545,87 @@ describe('agent send policy and held sends (#5141)', () => {
       expect(providerSend).toHaveBeenCalledTimes(1);
     });
 
+    it('sends nothing when an attachment row appears after the approval was consumed', async () => {
+      const draft = await draftAsAgent();
+      const id = await pendingId(draft);
+      const view = await gate.get(tenantA, id, {
+        id: owner.id,
+        kind: 'person',
+      });
+      await gate.decide({
+        tenantId: tenantA,
+        approvalId: id,
+        decider: {
+          id: owner.id,
+          kind: 'person',
+          permissions: ['messages.send'],
+        },
+        decision: 'approve',
+        expectedBindingHash: view?.bindingHash ?? '',
+      });
+      configureMailSendApprovals({
+        gate: {
+          ...gate,
+          check: async (request) => {
+            const result = await gate.check(request);
+            // Lands between the consume and the provider handoff.
+            const attachment = new Attachment({
+              ...options,
+              tenantId: tenantA,
+              messageId: draft.id as string,
+              filename: 'late.exe',
+            });
+            await attachment.initialize();
+            await attachment.save();
+            return result;
+          },
+        },
+      });
+      const result = await submitAsAgent(draft.id as string);
+      expect(result).toMatchObject({ success: false });
+      expect(result.error).toMatch(/changed after it was approved/);
+      expect(result.outcomeUnknown).toBeUndefined();
+      expect(providerSend).not.toHaveBeenCalled();
+    });
+
+    it('keeps mail content out of the tenant-readable approval rows', async () => {
+      const draft = await draftAsAgent('Confidential: layoffs');
+      const id = await pendingId(draft);
+      const { ApprovalRequestCollection, ApprovalEventCollection } =
+        await import('@happyvertical/smrt-approvals');
+      await withTenant({ tenantId: tenantA }, async () => {
+        const request = await (
+          await ApprovalRequestCollection.create(options)
+        ).get({ id });
+        expect(request?.summary).not.toMatch(/layoffs/);
+        const events = await (
+          await ApprovalEventCollection.create(options)
+        ).list({ where: { requestId: id } });
+        expect(events.map((e) => e.reason).join(' ')).not.toMatch(/layoffs/);
+      });
+    });
+
+    it('lets a person approve a resubmitted draft whose earlier send definitely failed', async () => {
+      providerSend.mockResolvedValueOnce({
+        success: false,
+        error: 'mailbox full',
+        sentAt: new Date(),
+      });
+      const draft = await draftAsAgent();
+      const first = await pendingId(draft);
+      const failed = await approvals(person(owner)).approve(first);
+      expect(failed).toMatchObject({
+        state: 'sent',
+        result: { success: false },
+      });
+      expect((await reload(draft.id as string)).sendStatus).toBe('failed');
+      const again = await pendingId(draft);
+      expect(again).not.toBe(first);
+      const sent = await approvals(person(owner)).approve(again);
+      expect(sent).toMatchObject({ state: 'sent', result: { success: true } });
+      expect(providerSend).toHaveBeenCalledTimes(2);
+    });
+
     it('keeps held sends inside their tenant', async () => {
       const draft = await draftAsAgent();
       const id = await pendingId(draft);
@@ -587,6 +668,18 @@ describe('agent send policy and held sends (#5141)', () => {
         (await submitAsAgent(next.id as string)).pendingApproval,
       ).toBeDefined();
       expect(providerSend).toHaveBeenCalledTimes(1);
+    });
+
+    it('drops an auto-send opt-in when the account changes owner', async () => {
+      await service(owner).setAgentSendPolicy(accountId, 'auto_send', {
+        confirmAutoSend: true,
+      });
+      await service(owner).setOwner(accountId, colleague.id);
+      const draft = await draftAsAgent();
+      expect(
+        (await submitAsAgent(draft.id as string)).pendingApproval,
+      ).toBeDefined();
+      expect(providerSend).not.toHaveBeenCalled();
     });
 
     it('lets the host override per rule, in both directions', async () => {
