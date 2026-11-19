@@ -7,6 +7,10 @@ import {
   disableTenancy,
   enableTenancy,
 } from '../../../tenancy/src/interceptor.js';
+import {
+  type ActivationManifest,
+  createActivationCoordinator,
+} from '../activation.js';
 import { planAppEdit } from '../cookbook/app-tool-edits.js';
 import { createCookbookEngine } from '../cookbook/engine/engine.js';
 import {
@@ -1043,5 +1047,211 @@ describe('app model editor: history reads and completion', () => {
       apply({ type: 'relabel_list', name: 'GuardMat', label: 'Mats' }),
     ).rejects.toThrow(/MODEL_EDIT_CONFLICT: revision 2 was not completed/);
     expect(() => e.snapshot()).toThrow(/MODEL_ACTIVATION_PENDING/);
+  });
+});
+
+describe('app model editor: undo and import activate restored recipes', () => {
+  const RECIPE = 'guards.members';
+  const recipeCatalog = {
+    ...memberCatalog,
+    recipes: [
+      { id: RECIPE, label: 'Members', models: [MEMBER], nav: [], requires: [] },
+    ],
+  };
+  const memberManifest: ActivationManifest = {
+    version: 1,
+    modules: {
+      members: { specifier: 'fixture', models: [MEMBER], dependencies: [] },
+    },
+    models: {
+      [MEMBER]: {
+        module: 'members',
+        effective: MEMBER,
+        table: MEMBER_TABLE,
+        dependencies: [],
+      },
+    },
+    tables: { [MEMBER_TABLE]: { owners: [MEMBER], dependencies: [] } },
+  };
+  let restore: () => void;
+  let db: Awaited<ReturnType<typeof getDatabase>>;
+  let enabled: string[];
+  beforeEach(async () => {
+    restore = snapshotObjectRegistryState();
+    ObjectRegistry.clear();
+    globalThis.__smrtModelReadiness?.clear();
+    db = await getTestDatabase({
+      type: databaseType,
+      classes: [],
+      includeSystemTables: false,
+    });
+    enableTenancy();
+    enabled = [MEMBER];
+  });
+  afterEach(async () => {
+    setRuntimeExposureGate(undefined);
+    globalThis.__smrtModelReadiness?.clear();
+    disableTenancy();
+    await db.close?.();
+    restore();
+  });
+  /** A process start: a fresh registry and coordinator that loads only enabled models. */
+  const boot = async () => {
+    ObjectRegistry.clear();
+    globalThis.__smrtModelReadiness?.clear();
+    const activation = createActivationCoordinator({
+      scope: `editor-guards-undo-${crypto.randomUUID()}`,
+      db,
+      packageName: APP,
+      manifest: memberManifest,
+      loaders: {
+        members: async () => {
+          if (!ObjectRegistry.getClass(MEMBER)) registerMember();
+        },
+      },
+      readEnabled: async () => enabled,
+    });
+    await activation.boot();
+    return activation;
+  };
+  const editorFor = (
+    activation?: AppModelEditorOptions['activation'],
+    cookbook: Cookbook = { ...book(), recipes: [RECIPE] },
+  ) =>
+    createAppModelEditor({
+      db,
+      application: 'editor-guards-undo',
+      tenantId: TENANT,
+      packageName: APP,
+      cookbook,
+      catalog: recipeCatalog,
+      authorize: (c) => c.actor === 'owner',
+      ...(activation ? { activation } : {}),
+    });
+  const applier =
+    (e: Awaited<ReturnType<typeof editorFor>>) => (value: AppModelEdit) =>
+      e.apply(value, {
+        actor: 'owner',
+        tenantId: TENANT,
+        expectedRevision: e.snapshot().revision,
+        requestId: `req-${crypto.randomUUID()}`,
+      });
+  const disable = (cookbook: Cookbook) => {
+    const staged = createCookbookEngine({ catalog: recipeCatalog, cookbook });
+    staged.run({ name: 'remove_recipes', input: { ids: [RECIPE] } });
+    return staged.cookbook();
+  };
+
+  it('undo of a recipe disable after a restart loads, migrates and opens the recipe', async () => {
+    let activation = await boot();
+    let e = await editorFor(activation);
+    await applier(e)({
+      type: 'add_field',
+      model: MEMBER,
+      name: 'vip',
+      field: { type: 'boolean' },
+    });
+    await applier(e)({
+      type: 'import',
+      cookbook: disable(e.snapshot().cookbook),
+    });
+
+    // Restart with the recipe off: the provider is not loaded.
+    enabled = [];
+    activation = await boot();
+    expect(ObjectRegistry.getClass(MEMBER)).toBeUndefined();
+    e = await editorFor(activation);
+    expect(activation.isReady(MEMBER)).toBe(false);
+
+    await applier(e)({ type: 'undo' });
+    expect(e.snapshot().cookbook.recipes).toEqual([RECIPE]);
+    expect(ObjectRegistry.getClass(MEMBER)).toBeDefined();
+    expect(activation.isReady(MEMBER)).toBe(true);
+    const fields = await ObjectRegistry.getAllFields(`${APP}:GuardMember`);
+    expect([...fields.keys()]).toContain('vip');
+    // A further undo is not blocked.
+    await applier(e)({ type: 'undo' });
+    expect(e.snapshot().cookbook.models?.fields[MEMBER]).toBeUndefined();
+  });
+
+  it('import of a cookbook that enables a recipe activates it first', async () => {
+    enabled = [];
+    const activation = await boot();
+    const e = await editorFor(activation, book());
+    await applier(e)({
+      type: 'import',
+      cookbook: { ...book(), recipes: [RECIPE] },
+    });
+    expect(activation.isReady(MEMBER)).toBe(true);
+    expect(e.snapshot().cookbook.recipes).toEqual([RECIPE]);
+  });
+  it('loads nothing for a refused, stale or replayed import or undo', async () => {
+    enabled = [];
+    const activation = await boot();
+    const calls: string[][] = [];
+    const counting = {
+      manifest: activation.manifest,
+      activate: async (ids: Iterable<string>) => {
+        calls.push([...ids]);
+        return activation.activate(ids);
+      },
+    };
+    const e = await editorFor(counting, book());
+    const enable = {
+      type: 'import',
+      cookbook: { ...book(), recipes: [RECIPE] },
+    } as const;
+    // Another actor (refused by authorize) and another tenant.
+    await expect(
+      e.apply(enable, {
+        actor: 'intruder',
+        tenantId: TENANT,
+        expectedRevision: 0,
+        requestId: 'r-1',
+      }),
+    ).rejects.toThrow(/MODEL_EDIT_FORBIDDEN/);
+    await expect(
+      e.apply(enable, {
+        actor: 'owner',
+        tenantId: '66666666-6666-4666-8666-666666666666',
+        expectedRevision: 0,
+        requestId: 'r-2',
+      }),
+    ).rejects.toThrow(/MODEL_EDIT_FORBIDDEN/);
+    // A stale revision.
+    await expect(
+      e.apply(enable, {
+        actor: 'owner',
+        tenantId: TENANT,
+        expectedRevision: 7,
+        requestId: 'r-3',
+      }),
+    ).rejects.toThrow(/MODEL_EDIT_CONFLICT/);
+    expect(calls).toEqual([]);
+    expect(ObjectRegistry.getClass(MEMBER)).toBeUndefined();
+    // The real request activates once; its retry replays without activation.
+    const context = {
+      actor: 'owner',
+      tenantId: TENANT,
+      expectedRevision: 0,
+      requestId: 'r-4',
+    };
+    await e.apply(enable, context);
+    expect(calls).toHaveLength(1);
+    expect(await e.apply(enable, context)).toMatchObject({ replayed: true });
+    expect(calls).toHaveLength(1);
+  });
+
+  it('refuses a new list on the table of an installed model whose recipe is off', async () => {
+    enabled = [];
+    const activation = await boot();
+    expect(ObjectRegistry.getClass(MEMBER)).toBeUndefined();
+    const e = await editorFor(activation, book());
+    await expect(
+      applier(e)({ type: 'create_list', name: 'GuardMembers', list: mats }),
+    ).rejects.toThrow(
+      /MODEL_TABLE_COLLISION: guard_members is the table of the installed model/,
+    );
+    expect(await e.history()).toEqual([]);
   });
 });

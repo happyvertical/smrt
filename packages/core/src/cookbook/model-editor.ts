@@ -7,7 +7,10 @@ import type {
   CookbookModels,
 } from '@happyvertical/smrt-types';
 import type { DatabaseInterface } from '@happyvertical/sql';
-import { withRuntimeSchemaActivation } from '../activation.js';
+import {
+  type ActivationCoordinator,
+  withRuntimeSchemaActivation,
+} from '../activation.js';
 import { getRuntimeManifest } from '../generators/rest.js';
 import { stableStringify } from '../knowledge-graph.js';
 import {
@@ -103,6 +106,13 @@ export interface AppModelEditorOptions {
   authorize(context: AppModelEditContext): boolean | Promise<boolean>;
   /** Publish the cookbook/manifest projection to the host's existing engine and transports. */
   publish?(snapshot: AppModelSnapshot): void | Promise<void>;
+  /**
+   * A lazy-activation host's coordinator. Its manifest names every installed
+   * model and table, loaded or not, so a new list cannot take the name or
+   * table of a model whose recipe is off; `import` and `undo` activate the
+   * models the restored cookbook covers before they apply.
+   */
+  activation?: Pick<ActivationCoordinator, 'activate' | 'manifest'>;
 }
 export interface AppModelSnapshot {
   revision: number;
@@ -383,12 +393,20 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
         ]
       : [];
 
-  /** Installed model names from the catalog, loaded or not. */
+  /** Installed models and tables, loaded or not: the catalog plus the activation manifest. */
   function installed() {
     const names = new Map<string, string>();
+    const tables = new Map<string, string>();
+    const manifest = options.activation?.manifest;
     for (const model of options.catalog.models)
       names.set(model.name.toLowerCase(), model.id);
-    return { names };
+    for (const [id, model] of Object.entries(manifest?.models ?? {})) {
+      names.set(id.split(':').at(-1)!.toLowerCase(), id);
+      if (model.table) tables.set(model.table, id);
+    }
+    for (const [table, entry] of Object.entries(manifest?.tables ?? {}))
+      if (!tables.has(table)) tables.set(table, entry.owners[0] ?? table);
+    return { names, tables };
   }
 
   /**
@@ -475,6 +493,11 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
       if (named && named !== own)
         throw new Error(
           `MODEL_NAME_COLLISION: ${name} is the name of the installed model ${named}; choose another list name`,
+        );
+      const owner = reserved.tables.get(table);
+      if (owner && owner !== own)
+        throw new Error(
+          `MODEL_TABLE_COLLISION: ${table} is the table of the installed model ${owner}; choose another list name`,
         );
       for (const existing of ObjectRegistry.getAllClasses().values())
         if (
@@ -1054,6 +1077,67 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
     release(active(storage(), doc));
   });
 
+  /**
+   * Undo and import can bring back recipes a lazy host has not loaded. With a
+   * coordinator, activate the models the restored cookbook covers first, so
+   * they are loaded, migrated and ready before the edit applies. Admission
+   * comes first: a refused caller or a stale request loads nothing, and a
+   * retry reaches its stored receipt without activation. This runs outside
+   * the activation queue the edit itself takes (the coordinator queues there).
+   */
+  async function activateRestored(
+    edit: AppModelEdit,
+    context: AppModelEditContext,
+  ) {
+    if (!options.activation || (edit.type !== 'undo' && edit.type !== 'import'))
+      return;
+    if (
+      context.tenantId !== options.tenantId ||
+      !context.actor ||
+      !context.requestId ||
+      !(await options.authorize(context))
+    )
+      throw new Error('MODEL_EDIT_FORBIDDEN');
+    if (await findRow(context.requestId)) return;
+    if (!ready || context.expectedRevision !== revision) return;
+    let target: Cookbook | undefined;
+    if (edit.type === 'import') {
+      const result = validateCookbook(edit.cookbook);
+      if (!result.ok) return; // the edit refuses it
+      target = result.cookbook;
+    } else {
+      const undone = new Set(
+        history.flatMap((row) =>
+          row.undoes === undefined ? [] : [row.undoes],
+        ),
+      );
+      target = history.findLast(
+        (row) =>
+          row.status === 'applied' &&
+          row.undoes === undefined &&
+          !undone.has(row.revision),
+      )?.before;
+    }
+    if (!target) return;
+    const models = target.models;
+    const lists = new Set(
+      Object.keys(models?.lists ?? {}).map(
+        (name) => `${models?.packageName}:${name}`,
+      ),
+    );
+    try {
+      await options.activation.activate(
+        [...coveredModels(options.catalog, target)].filter(
+          (id) => !lists.has(id),
+        ),
+      );
+    } catch (error) {
+      throw new Error(
+        `MODEL_ACTIVATION_FAILED: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
+
   async function apply(
     edit: AppModelEdit,
     context: AppModelEditContext,
@@ -1452,7 +1536,10 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
       }
       return structuredClone(won ?? receipt);
     };
-    const operation = tail.then(() => withRuntimeSchemaActivation(execute));
+    const operation = tail.then(async () => {
+      await activateRestored(edit, context);
+      return withRuntimeSchemaActivation(execute);
+    });
     tail = operation.then(
       () => {},
       () => {},

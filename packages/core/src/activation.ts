@@ -45,6 +45,12 @@ export interface ActivationCoordinator {
   /** Await BEFORE publishing/persisting cookbook enablement. Never unloads or drops on disable. */
   activate(models: Iterable<string>): Promise<void>;
   isReady(model: RuntimeExposureModel | string): boolean;
+  /**
+   * The installed graph, loaded or not. The app model editor reads its model
+   * ids and tables so a custom list never takes an installed model's name or
+   * table while that model's recipe is off.
+   */
+  readonly manifest?: ActivationManifest;
   /** AND readiness with the host's live tenant gate. Install before boot, never per request. */
   gate(exposure: RuntimeExposureGate): RuntimeExposureGate;
 }
@@ -116,6 +122,7 @@ export function createActivationCoordinator(
   const pending = new Map<string, Promise<void>>();
   let invalidGraph: Error | undefined;
   const coordinator: ActivationCoordinator = {
+    manifest: options.manifest,
     async boot() {
       await coordinator.activate(await options.readEnabled());
     },
