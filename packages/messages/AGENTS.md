@@ -287,6 +287,11 @@ Profile email uses exclusive `recipientProfileId` plus `resolveProfileRecipient`
   kept; `MailSyncResult.beforeHorizon` counts the skips. The SDK change feed
   cannot filter by date, so the server still sends the older mail and it is
   dropped here (saves rows, not transfer; a server-side horizon needs an SDK change).
+- Horizon vs cursor: `cursorHorizon` records the horizon the saved cursor was
+  built under (null = unbounded, also legacy cursors). If a run's effective
+  horizon is earlier than it, or cleared (`since: null`), the cursor is dropped
+  and the run does a full pass with prune; narrowing or an unchanged horizon
+  keeps the cursor.
 - Persisted health (#5200): `lastSyncError` is set on any failed run (also
   client-build failures and sign-in refusals, which additionally set
   `needs_reconnect`) and cleared by the next successful run; a transient failure

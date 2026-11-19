@@ -349,6 +349,16 @@ async function applyBatch(
   };
 }
 
+/** Whether `next` reaches back further than the horizon a cursor was built under. */
+function widensHorizon(
+  built: Date | null,
+  next: Date | null | undefined,
+): boolean {
+  if (!built) return false; // built unbounded: nothing was dropped
+  if (!next) return true;
+  return next.getTime() < new Date(built).getTime();
+}
+
 function resolveHorizon(
   since: MailSyncOptions['since'],
   stored: Date | null,
@@ -365,6 +375,7 @@ function resolveHorizon(
 /** Copy the fields a sync run changes (and the revision token) onto `target`. */
 function mirrorAccountState(from: EmailAccount, to: EmailAccount): void {
   to.syncCursor = from.syncCursor;
+  to.cursorHorizon = from.cursorHorizon;
   to.lastSyncAt = from.lastSyncAt;
   to.connectionStatus = from.connectionStatus;
   to.statusMessage = from.statusMessage;
@@ -380,8 +391,11 @@ function mirrorAccountState(from: EmailAccount, to: EmailAccount): void {
 async function persistCursor(
   account: EmailAccount,
   cursor: string | null,
+  horizon: Date | null = null,
 ): Promise<void> {
   account.syncCursor = cursor;
+  // The cursor now covers mail as far back as this horizon (null: everything).
+  account.cursorHorizon = horizon;
   account.updatedAt = new Date();
   await account.save();
 }
@@ -492,6 +506,15 @@ export async function syncMailChanges(
 
         await reconcileAllCounts(ctx);
 
+        // A saved cursor is past mail the horizon it was built under dropped.
+        // Widening or clearing the horizon must refetch that mail: restart
+        // with a full pass (which also prunes). Narrowing needs nothing.
+        if (
+          account.syncCursor &&
+          widensHorizon(account.cursorHorizon, ctx.horizon)
+        ) {
+          await persistCursor(account, null, ctx.horizon);
+        }
         let cursor: string | undefined = account.syncCursor || undefined;
         // A pass that starts without a cursor sees every server message, so what
         // it did not see is gone; a resumed pass cannot know and never prunes.
@@ -513,7 +536,7 @@ export async function syncMailChanges(
             result.resynced = true;
             cursor = undefined;
             seen = new Set();
-            await persistCursor(account, null);
+            await persistCursor(account, null, ctx.horizon);
             continue;
           }
 
@@ -528,7 +551,7 @@ export async function syncMailChanges(
           await refreshCounts(ctx, applied.touched);
 
           // Only now is the batch durable: the cursor may move past it.
-          await persistCursor(account, next.cursor);
+          await persistCursor(account, next.cursor, ctx.horizon ?? null);
           cursor = next.cursor;
           if (!next.hasMore) break;
           if (result.batches >= maxBatches) result.hasMore = true;

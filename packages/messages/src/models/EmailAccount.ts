@@ -76,6 +76,18 @@ export class EmailAccount extends Account {
   })
   backfillSince: Date | null = null;
   /**
+   * The backfill horizon `syncCursor` was built under (null: unbounded, also
+   * every cursor saved before horizons existed). A run whose horizon reaches
+   * further back, or is cleared, discards the cursor and runs a full pass so
+   * the older mail is fetched. Internal state.
+   */
+  @field({
+    readonly: true,
+    description:
+      'The backfill date the saved mailbox position was built under.',
+  })
+  cursorHorizon: Date | null = null;
+  /**
    * Why the last sync run failed, in plain words. Written on any failed run
    * (including sign-in refusals, which also set `needs_reconnect`) and cleared
    * by the next successful run. A transient failure never changes
@@ -101,6 +113,8 @@ export class EmailAccount extends Account {
       this.syncCursor = options.syncCursor || null;
     if (options.backfillSince !== undefined)
       this.backfillSince = options.backfillSince || null;
+    if (options.cursorHorizon !== undefined)
+      this.cursorHorizon = options.cursorHorizon || null;
     if (options.lastSyncError !== undefined)
       this.lastSyncError = options.lastSyncError || null;
     if (options.backlog !== undefined) this.backlog = options.backlog;

@@ -1021,3 +1021,87 @@ describe('EmailAccount.syncChanges: persisted sync health', () => {
     expect(account.lastSyncError).toBe('boom');
   });
 });
+
+describe('EmailAccount.syncChanges: horizon changes vs saved cursor', () => {
+  const old = new Date('2020-01-01T00:00:00Z');
+  const mid = new Date('2025-01-01T00:00:00Z');
+  const recent = new Date('2026-06-01T00:00:00Z');
+  const h1 = new Date('2026-01-01T00:00:00Z');
+  const h0 = new Date('2024-01-01T00:00:00Z');
+
+  async function built(horizon: Date | null) {
+    const account = await makeAccount(
+      horizon ? { backfillSince: horizon } : {},
+    );
+    useFeed(
+      account,
+      makeFeed([
+        batch('c1', {
+          initial: true,
+          folders: [INBOX],
+          added: [
+            msg('o', { date: old }),
+            msg('m', { date: mid }),
+            msg('r', { date: recent }),
+          ],
+        }),
+      ]),
+    );
+    await account.syncChanges();
+    const stored = await reload(account);
+    expect(stored.cursorHorizon ?? null).toEqual(horizon);
+    return stored;
+  }
+
+  async function rerun(
+    account: EmailAccount,
+    options: Record<string, unknown>,
+  ) {
+    const feed = makeFeed([
+      batch('c2', {
+        initial: true,
+        added: [
+          msg('o', { date: old }),
+          msg('m', { date: mid }),
+          msg('r', { date: recent }),
+        ],
+      }),
+    ]);
+    useFeed(account, feed);
+    await account.syncChanges(options);
+    return feed;
+  }
+
+  it('widening the horizon restarts from no cursor and fetches the older mail', async () => {
+    const account = await built(h1);
+    expect(await providerIds(account)).toEqual(['r']);
+    const stored = await reload(account);
+    stored.backfillSince = h0;
+    await stored.save();
+    const feed = await rerun(await reload(account), {});
+    expect(feed.calls[0].cursor).toBeUndefined();
+    expect(await providerIds(account)).toEqual(['m', 'r']);
+    expect((await reload(account)).cursorHorizon).toEqual(h0);
+  });
+
+  it('clearing the horizon (since: null) restarts and stores everything', async () => {
+    const account = await built(h1);
+    const feed = await rerun(account, { since: null });
+    expect(feed.calls[0].cursor).toBeUndefined();
+    expect(await providerIds(account)).toEqual(['m', 'o', 'r']);
+    expect((await reload(account)).cursorHorizon ?? null).toBeNull();
+  });
+
+  it('narrowing keeps the cursor', async () => {
+    const account = await built(h0);
+    const feed = await rerun(account, { since: h1 });
+    expect(feed.calls[0].cursor).toBe('c1');
+  });
+
+  it('an unchanged horizon keeps the cursor, and an unbounded cursor never resets', async () => {
+    const account = await built(h1);
+    expect((await rerun(account, {})).calls[0].cursor).toBe('c1');
+    const open = await built(null);
+    expect((await rerun(open, { since: h1 })).calls[0].cursor).toBe('c1');
+  });
+});

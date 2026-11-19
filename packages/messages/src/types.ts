@@ -324,6 +324,8 @@ export interface EmailAccountOptions extends AccountOptions {
   syncCursor?: string | null;
   /** Oldest mail worth storing; see `EmailAccount.backfillSince`. */
   backfillSince?: Date | null;
+  /** Horizon the saved cursor was built under. */
+  cursorHorizon?: Date | null;
   /** Last transient sync failure; see `EmailAccount.lastSyncError`. */
   lastSyncError?: string | null;
   /** More changes were waiting when the last run stopped. */
