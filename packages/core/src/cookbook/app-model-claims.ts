@@ -14,8 +14,8 @@ import { getDatabaseEngine } from '../system/compatibility.js';
 export async function journalListTables(
   db: DatabaseInterface,
   exclude?: { application: string; tenantId: string },
+  engine: string = getDatabaseEngine(db),
 ): Promise<Map<string, string>> {
-  const engine = getDatabaseEngine(db);
   const present = await db.query(
     engine === 'postgres'
       ? "SELECT 1 AS live FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = current_schema() AND c.relname = '_smrt_app_model_changes'"

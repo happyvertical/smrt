@@ -167,7 +167,13 @@ export function createActivationCoordinator(
         // Durable ownership, independent of boot order and of what this
         // process has registered: a list any app model journal declares
         // keeps its table.
-        for (const [table, list] of await journalListTables(options.db))
+        // Read through the serialized system-table executor, never the pool.
+        const journalled = await runSerializedAgainstSystemTableBootstrap(
+          options.db,
+          engine,
+          (db) => journalListTables(db, undefined, engine),
+        );
+        for (const [table, list] of journalled)
           if (tables.has(table))
             throw new Error(
               `Activation table ${table} is already used by the run-time model ${list}; it cannot also hold ${closure.models.join(', ')}`,
