@@ -74,11 +74,17 @@ registered customisations, constructing (also concurrently), snapshotting or
 editing through an editor for another journal in the same process fails
 `MODEL_EDIT_CONFLICT` instead of merging or projecting fields and lists
 between them. Reopening the same journal is allowed. The journal identity is application,
-tenant and database handle. Runtime exposure admits a registration the editor
-made (its lists and provider replacements) only for that journal's tenant, so a
+tenant and database: the database URL, so a new handle to the same database
+(a reconnect) reopens the same journal; an in-memory or URL-less database is
+identified per handle. Runtime exposure admits a registration the editor made
+(its lists and provider replacements) only for that journal's tenant, so a
 pre-opened tenant is never served another tenant's customised provider over
-REST or MCP. A replacement is taken out on disable by any editor instance of
-the journal that made it, restoring the registration it replaced.
+REST or MCP. A context without a tenant (a generator built once, tenancy
+resolved per request) is treated as single-tenant and admitted; a host serving
+several customised tenants must pass the tenant in its exposure or generator
+context. A replacement is taken out on disable by any editor instance of the
+journal that made it, restoring the registration it replaced and dropping its
+ownership; a failed edit restores ownership with the registry.
 Serve each further customised tenant from its own process.
 Rows retain the existing tenancy interceptor; install it as for normal models.
 
