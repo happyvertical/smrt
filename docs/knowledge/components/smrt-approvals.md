@@ -5,10 +5,10 @@ description: "Approval decision gate for the SMRT framework: revision-bound, sin
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-19T17:50:16Z"
+  at: "2026-11-19T17:54:42Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:c9ed3514362d9180cdbbffed2e600a75385c237e18850b624f3363f4bd55adef"
+source_revision: "sha256:128b8b1842dcaa00cdc57006156c27929bd007328f29d50b1ab8e8bd7c599fec"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/approvals/package.json"
