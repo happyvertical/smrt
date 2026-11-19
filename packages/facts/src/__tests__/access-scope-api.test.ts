@@ -51,18 +51,30 @@ describe('Fact accessScope generated write boundary (#3496)', () => {
     await db.close?.();
   });
 
-  it('REST create strips forged scope but preserves ordinary writable fields', async () => {
+  // REST refuses a write that sets or changes the read-only scope (#5195);
+  // an unchanged scope is accepted, so a fetched fact can be sent back.
+  it('REST create refuses a forged scope and accepts ordinary writable fields', async () => {
     await withTenant({ tenantId }, async () => {
-      const response = await rest(
-        new Request('http://local/api/v1/facts', {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({
-            textRefined: 'REST assertion',
-            accessScope: 'private',
+      const post = (body: Record<string, unknown>) =>
+        rest(
+          new Request('http://local/api/v1/facts', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify(body),
           }),
-        }),
-      );
+        );
+      const refused = await post({
+        textRefined: 'REST assertion',
+        accessScope: 'private',
+      });
+      expect(refused.status).toBe(400);
+      expect(
+        ((await refused.json()) as { error: { details?: unknown } }).error
+          .details,
+      ).toEqual({ field: 'accessScope' });
+      expect(await facts.get({ textRefined: 'REST assertion' })).toBeNull();
+
+      const response = await post({ textRefined: 'REST assertion' });
       expect(response.status).toBe(201);
       const created = await facts.get({ textRefined: 'REST assertion' });
       expect(created?.accessScope).toBeNull();
@@ -78,16 +90,21 @@ describe('Fact accessScope generated write boundary (#3496)', () => {
           tenantId,
           accessScope: 'private',
         });
-        const response = await rest(
-          new Request(`http://local/api/v1/facts/${existing.id}`, {
-            method,
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({
-              textRaw: 'Allowed edit',
-              accessScope: 'public',
+        const send = (accessScope: string) =>
+          rest(
+            new Request(`http://local/api/v1/facts/${existing.id}`, {
+              method,
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({ textRaw: 'Allowed edit', accessScope }),
             }),
-          }),
+          );
+        const refused = await send('public');
+        expect(refused.status).toBe(400);
+        expect((await facts.get({ id: existing.id }))?.textRaw).not.toBe(
+          'Allowed edit',
         );
+
+        const response = await send('private');
         expect(response.status).toBe(200);
         const updated = await facts.get({ id: existing.id });
         expect(updated?.textRaw).toBe('Allowed edit');
