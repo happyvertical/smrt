@@ -926,6 +926,39 @@ describe('emitted SvelteKit list route with the real tenant interceptor', () => 
         ).toBe(THEIRS);
       });
 
+      it('a super-admin bypass leaves options scoped on a model that has not opted in', async () => {
+        // The bulletin's tenancy does not allow a super-admin bypass, so the
+        // action still receives the caller's own tenant, as the interceptor
+        // would scope its reads.
+        const asSuperAdmin = <T>(read: () => Promise<T>) =>
+          withTenant({ tenantId: OURS, userId: 'admin' }, () =>
+            withSuperAdminBypass(read),
+          );
+        expect(
+          await actionResult(
+            await asSuperAdmin(() =>
+              call(
+                'emittedroutebulletins/read-org',
+                {},
+                `?organizationId=${THEIRS}`,
+              ),
+            ),
+          ),
+        ).toBe(OURS);
+        // Runtime REST goes through the same helper.
+        expect(
+          await actionResult(
+            await asSuperAdmin(() =>
+              bulletinRest(
+                new Request(
+                  `http://local/api/bulletins/readOrg?organizationId=${THEIRS}`,
+                ),
+              ),
+            ),
+          ),
+        ).toBe(OURS);
+      });
+
       it('a cached list is never reused across a tenant switch or a sign-out', async () => {
         const ours = await call('emittedrouteflyers', {}, '', signedInAs(OURS));
         expect((await titlesOf(ours)).titles).toEqual(['our flyer']);

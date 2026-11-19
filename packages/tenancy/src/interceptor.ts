@@ -922,7 +922,10 @@ export function enableTenancy(options: TenantInterceptorOptions = {}): void {
     enter: (context) =>
       enterTenantContext(context as Parameters<typeof enterTenantContext>[0]),
     current: () => getCurrentTenant(),
-    isSuperAdminBypass: () => isSuperAdminBypass(),
+    // The interceptor's own rule for a read: the bypass flag applies only to
+    // a class that opts in, and never inside a bounded hierarchy read scope.
+    isSuperAdminBypass: (className) =>
+      !getTenantHierarchyReadScope() && isSuperAdminBypassAllowed(className),
   });
 
   setTenancyEnabled(true);

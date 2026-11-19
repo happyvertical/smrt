@@ -18,8 +18,13 @@ export interface RequestTenantContextHooks {
   enter(context: RequestTenantContext): void;
   /** The active tenant context, if any. */
   current(): RequestTenantContext | undefined;
-  /** Whether the active context holds a super-admin bypass. */
-  isSuperAdminBypass(): boolean;
+  /**
+   * Whether an active super-admin bypass applies to reads of this class:
+   * the bypass flag is set, the class opts in (`allowSuperAdminBypass`), and
+   * no bounded hierarchy read scope is active — the tenancy interceptor's own
+   * rule.
+   */
+  isSuperAdminBypass(className: string): boolean;
 }
 
 declare global {
@@ -47,9 +52,14 @@ export function enterRequestTenantContext(context: RequestTenantContext): void {
   globalThis.__smrtRequestTenantContextHooks?.enter(context);
 }
 
-/** Whether the active request context holds a super-admin bypass. */
-export function isRequestSuperAdminBypass(): boolean {
+/**
+ * Whether an active super-admin bypass applies to reads of this class, as
+ * smrt-tenancy decides it for the class (`false` without tenancy).
+ */
+export function isRequestSuperAdminBypass(className: string): boolean {
   return (
-    globalThis.__smrtRequestTenantContextHooks?.isSuperAdminBypass() === true
+    globalThis.__smrtRequestTenantContextHooks?.isSuperAdminBypass(
+      className,
+    ) === true
   );
 }

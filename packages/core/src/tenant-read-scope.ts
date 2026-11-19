@@ -110,8 +110,9 @@ export function resolveAnonymousTenantReadScope(
  * ownership field under its property or column name — is removed, and the
  * scope is set under each ownership field's property name: the active
  * tenant, or `null` (rows without an owner) when none is active. Returned
- * unchanged when the class is not tenant-scoped, tenancy is off, or the
- * caller holds a super-admin bypass. Every dispatch site of a custom read
+ * unchanged when the class is not tenant-scoped, tenancy is off, or an
+ * active super-admin bypass applies to this class (the class opts in with
+ * `allowSuperAdminBypass`, as the tenancy interceptor requires). Every dispatch site of a custom read
  * action calls this, so an action reading `options.<field>` or
  * `options.tenantId` directly, or forwarding the object as a filter, sees
  * the same values everywhere.
@@ -123,7 +124,7 @@ export function scopeTenantReadOptions<T>(className: string, options: T): T {
   const fields = tenantOwnershipFields(className);
   if (fields.size === 0) return options;
   const scope = resolveDispatchTenantScope();
-  if (!scope.enforced || isRequestSuperAdminBypass()) return options;
+  if (!scope.enforced || isRequestSuperAdminBypass(className)) return options;
   if (options !== undefined && options !== null && typeof options !== 'object')
     return options;
   if (Array.isArray(options)) return options;
