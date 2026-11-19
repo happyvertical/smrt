@@ -134,7 +134,12 @@ A new list's name is checked against every installed catalog model, loaded or
 not, and its table against registered models and the tables the database
 already keeps (a disabled recipe's retained table). Lists the journal already
 holds keep their name and table, so editing or removing one never depends on
-what else is loaded.
+what else is loaded. List tables are unique across the database: a list
+whose table another journal (another application or tenant) declares, or that
+already exists, is refused with a neutral `MODEL_TABLE_COLLISION` that names
+no other tenant's list. A catalog model with exactly the list's identity is
+refused too. The activation coordinator reads the journal itself, so no recipe
+loads onto a journalled list's table, whatever the boot order.
 Optimistic revisions and request ids reject stale/racing edits and mismatched
 retries; identical committed requests replay.
 
@@ -270,7 +275,9 @@ declarations may have booted before this release, so they count as existing
 for the name, length and reserved-name checks; its lists still may not take a
 table an installed model owns (activation manifest or registry), retained or
 not. Boot does not create its tables: `migrateAppModelStorage(options)` does,
-once, as the operator step that opens such a host. Export contains portable definitions/policies, not host
+once, as the operator step that opens such a host. Its lists may not take the identity
+of an installed app model in the manifest, nor a table another journal's list
+declares (another application or tenant on this database). Export contains portable definitions/policies, not host
 actor/history records.
 
 SQLite and PostgreSQL are supported. PostgreSQL history stores native UUID

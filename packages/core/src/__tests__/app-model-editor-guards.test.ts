@@ -221,7 +221,7 @@ describe('app model editor: installed model names and tables', () => {
         list: listDefinition,
       }),
     ).rejects.toThrow(
-      /MODEL_TABLE_COLLISION: guard_ledgers already exists in the database/,
+      /MODEL_TABLE_COLLISION: guard_ledgers is already in use in this database/,
     );
     const columns = (
       await db.query(
@@ -418,6 +418,108 @@ describe('app model editor: installed model names and tables', () => {
       expect(await e2eColumns('guard_notes')).toEqual(['id', 'title']);
     },
   );
+
+  it('a fresh boot never adopts another journal list table, and the refusal names no other list', async () => {
+    const withList = (name: string): Cookbook => ({
+      ...book(),
+      features: [`${APP}:${name}`],
+      models: {
+        version: 1,
+        packageName: APP,
+        lists: { [name]: structuredClone(listDefinition) as never },
+        fields: {},
+      },
+    });
+    // Another application on this database and tenant created the list.
+    const other = await createAppModelEditor({
+      ...editorOptions(),
+      application: 'editor-guards-other-app',
+    });
+    await applier(other)({
+      type: 'create_list',
+      name: 'GuardNotes',
+      list: listDefinition,
+    });
+    // That application runs in another process: nothing of it is registered here.
+    ObjectRegistry.clear();
+    const refusal = await editorFor({ cookbook: withList('GuardNotes') }).then(
+      () => undefined,
+      (error: Error) => error.message,
+    );
+    expect(refusal).toMatch(
+      /MODEL_TABLE_COLLISION: guard_notes is already in use in this database/,
+    );
+    // An edit is refused with the same neutral wording.
+    ObjectRegistry.clear();
+    const e = await editorFor();
+    await expect(
+      applier(e)({
+        type: 'create_list',
+        name: 'GuardNotes',
+        list: listDefinition,
+      }),
+    ).rejects.toThrow(
+      /^MODEL_TABLE_COLLISION: guard_notes is already in use in this database; choose another list name$/,
+    );
+  });
+
+  it('refuses a list whose identity is an installed catalog model even without a manifest, and a startup list taking a manifest identity', async () => {
+    const own = `${APP}:GuardDesk`;
+    const withDesk = {
+      ...catalog,
+      models: [
+        ...catalog.models,
+        {
+          id: own,
+          name: 'GuardDesk',
+          packageId: 'editor-guards-app',
+          exposed: true,
+        },
+      ],
+    };
+    const e = await editorFor({ catalog: withDesk });
+    await expect(
+      applier(e)({
+        type: 'create_list',
+        name: 'GuardDesk',
+        list: listDefinition,
+      }),
+    ).rejects.toThrow(/MODEL_NAME_COLLISION: GuardDesk is the installed model/);
+    ObjectRegistry.clear();
+    const startup: Cookbook = {
+      ...book(),
+      features: [own],
+      models: {
+        version: 1,
+        packageName: APP,
+        lists: { GuardDesk: structuredClone(listDefinition) as never },
+        fields: {},
+      },
+    };
+    await expect(
+      editorFor({
+        cookbook: startup,
+        activation: {
+          manifest: {
+            version: 1,
+            modules: {
+              desk: { specifier: 'fixture', models: [own], dependencies: [] },
+            },
+            models: {
+              [own]: {
+                module: 'desk',
+                effective: own,
+                table: 'guard_desk_items',
+                dependencies: [],
+              },
+            },
+            tables: { guard_desk_items: { owners: [own], dependencies: [] } },
+          },
+          activate: async () => {},
+        },
+      }),
+    ).rejects.toThrow(/MODEL_NAME_COLLISION: GuardDesk is the installed model/);
+  });
 });
 
 const MEMBER_PKG = '@fixture/editor-guards-members';
@@ -2494,5 +2596,18 @@ describe('app model editor: undo and import activate restored recipes', () => {
     });
     await activation.activate([MEMBER]);
     expect(activation.isReady(MEMBER)).toBe(true);
+  });
+
+  it('refuses to load a recipe onto a journalled list table in a fresh process, whatever the boot order', async () => {
+    enabled = [];
+    await boot();
+    const e = await editorFor(undefined, book());
+    await applier(e)({ type: 'create_list', name: 'GuardMembers', list: mats });
+    // A fresh process: the coordinator boots before any editor registers lists.
+    enabled = [MEMBER];
+    await expect(boot()).rejects.toThrow(
+      /Activation table guard_members is already used by the run-time model/,
+    );
+    expect(ObjectRegistry.getClass(MEMBER)).toBeUndefined();
   });
 });

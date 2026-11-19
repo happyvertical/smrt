@@ -41,6 +41,7 @@ import {
   buildWebCollectionDefinition,
   selectWebCollectionEntries,
 } from '../vite-plugin/web-collections.js';
+import { journalListTables } from './app-model-claims.js';
 import { appOperationResult } from './app-tool-edits.js';
 import { canonical, coveredModels } from './engine/document.js';
 import { createCookbookEngine } from './engine/engine.js';
@@ -539,6 +540,13 @@ async function openAppModelEditor(
         ]
       : [];
 
+  /** List tables declared by other journals (applications or tenants) on this database. */
+  const claimedElsewhere = (db: DatabaseInterface) =>
+    journalListTables(db, {
+      application: options.application,
+      tenantId: options.tenantId,
+    });
+
   /** Installed models and tables, loaded or not: the catalog plus the activation manifest. */
   function installed() {
     const names = new Map<string, string>();
@@ -637,7 +645,10 @@ async function openAppModelEditor(
       // and among tables the database keeps for disabled or removed models.
       // The app package's own installed models (not loaded in a lazy host)
       // keep their identity: a list may not take it.
-      if (options.activation?.manifest?.models[own])
+      if (
+        options.activation?.manifest?.models[own] ||
+        options.catalog.models.some((model) => model.id === own)
+      )
         throw new Error(
           `MODEL_NAME_COLLISION: ${name} is the installed model ${own}; choose another list name`,
         );
@@ -659,9 +670,15 @@ async function openAppModelEditor(
           existing.qualifiedName !== own
         )
           throw new Error(`MODEL_TABLE_COLLISION: ${table}`);
-      if (live && (await tableExists(live, engine, table)))
+      // Neutral wording: the table may belong to another tenant's journal,
+      // whose list names this caller must not learn.
+      if (
+        live &&
+        ((await tableExists(live, engine, table)) ||
+          (await claimedElsewhere(live)).has(table))
+      )
         throw new Error(
-          `MODEL_TABLE_COLLISION: ${table} already exists in the database (kept for a disabled or removed model); choose another list name`,
+          `MODEL_TABLE_COLLISION: ${table} is already in use in this database; choose another list name`,
         );
     }
     const protectedNames = new Set<string>();
@@ -1266,7 +1283,10 @@ async function openAppModelEditor(
    * installed model owns (manifest or registry), even one that model kept
    * after its recipe was disabled.
    */
-  async function journalInitial(target: AppModelHistoryStore) {
+  async function journalInitial(
+    target: AppModelHistoryStore,
+    db: DatabaseInterface,
+  ) {
     const models = doc.models;
     if (
       history.length ||
@@ -1292,6 +1312,17 @@ async function openAppModelEditor(
       if (owner && owner !== own)
         throw new Error(
           `MODEL_TABLE_COLLISION: ${table} is the table of the installed model ${owner}; the startup cookbook's list ${name} cannot take it`,
+        );
+      // Its identity must not be an installed app model's, and its table
+      // must not be another journal's list table (another application or
+      // tenant on this database), whatever this process has registered.
+      if (options.activation?.manifest?.models[own])
+        throw new Error(
+          `MODEL_NAME_COLLISION: ${name} is the installed model ${own}; the startup cookbook's list cannot take it`,
+        );
+      if ((await claimedElsewhere(db)).has(table))
+        throw new Error(
+          `MODEL_TABLE_COLLISION: ${table} is already in use in this database; the startup cookbook's list ${name} cannot take it`,
         );
     }
     // A coherent document without the declarations: no feature, policy or
@@ -1413,7 +1444,7 @@ async function openAppModelEditor(
                 options.cookbook,
             ),
           );
-          await journalInitial(scoped);
+          await journalInitial(scoped, db);
           await validate(
             doc,
             storageModels(history.flatMap((row) => [row.before, row.after])),
@@ -1428,7 +1459,7 @@ async function openAppModelEditor(
           );
         });
       } else {
-        await journalInitial(store);
+        await journalInitial(store, options.db);
         await validate(
           doc,
           storageModels(history.flatMap((row) => [row.before, row.after])),

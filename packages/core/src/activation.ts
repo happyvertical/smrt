@@ -5,6 +5,7 @@ import {
   type ActivationManifest,
   activationClosure,
 } from './activation/manifest.js';
+import { journalListTables } from './cookbook/app-model-claims.js';
 import { resolveMigrationEngine } from './migrations/differ.js';
 import {
   assertMigrationAccepted,
@@ -151,13 +152,26 @@ export function createActivationCoordinator(
             entry.sourceFilePath?.startsWith('runtime-model:') === true &&
             (!entry.extends || entry.extends === 'SmrtObject') &&
             !entry.replacedQualifiedNames?.length;
-          if (!standaloneRuntime || closure.models.includes(id)) continue;
+          if (!standaloneRuntime) continue;
+          // A list holding a closure model's own identity is refused too.
+          if (closure.models.includes(id))
+            throw new Error(
+              `Activation model ${id} is already registered as a run-time list; it cannot also be loaded as an installed model`,
+            );
           const table = ObjectRegistry.getTableName(id);
           if (table && tables.has(table))
             throw new Error(
               `Activation table ${table} is already used by the run-time model ${id}; it cannot also hold ${closure.models.join(', ')}`,
             );
         }
+        // Durable ownership, independent of boot order and of what this
+        // process has registered: a list any app model journal declares
+        // keeps its table.
+        for (const [table, list] of await journalListTables(options.db))
+          if (tables.has(table))
+            throw new Error(
+              `Activation table ${table} is already used by the run-time model ${list}; it cannot also hold ${closure.models.join(', ')}`,
+            );
         const before = new Set(ObjectRegistry.getAllClasses().keys());
         const allowed = new Set([
           ...closure.models,
