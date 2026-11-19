@@ -1298,6 +1298,27 @@ describe('app model editor: provider fields across recipe disable', () => {
       ...(await ObjectRegistry.getAllFields(MEMBER)).keys(),
     ]).not.toContain('vip');
   });
+
+  it('keeps a journalled reference field of an inactive provider through disable and cold reopen', async () => {
+    const e = await editorFor();
+    await applier(e)({
+      type: 'add_field',
+      model: MEMBER,
+      name: 'referredById',
+      field: { type: 'reference', target: MEMBER },
+    });
+    await applier(e)({
+      type: 'import',
+      cookbook: withoutRecipe(e.snapshot().cookbook),
+    });
+    ObjectRegistry.clear();
+    globalThis.__smrtModelReadiness?.clear();
+    const cold = await editorFor();
+    expect(cold.snapshot().revision).toBe(2);
+    expect(cold.snapshot().cookbook.models?.fields[MEMBER]).toHaveProperty(
+      'referredById',
+    );
+  });
 });
 
 describe('app model editor: history reads and completion', () => {

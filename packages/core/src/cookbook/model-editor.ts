@@ -668,7 +668,14 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
           throw new Error(
             `FIELD_TYPE_CHANGE_REQUIRES_MIGRATION: ${entry.name}.${name}`,
           );
-        if (field.type === 'reference') {
+        // A journalled, unchanged field of a provider whose recipe is off is
+        // inactive: its reference is resolved again when the recipe returns.
+        const inactive =
+          entry.name.includes(':') &&
+          !used.has(entry.name) &&
+          !!previous &&
+          stableStringify(previous) === stableStringify(field);
+        if (field.type === 'reference' && !inactive) {
           const target = field.target!;
           if (
             target.includes(':') &&
