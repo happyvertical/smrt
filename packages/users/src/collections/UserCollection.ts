@@ -305,6 +305,8 @@ export class UserCollection extends SmrtCollection<User> {
    * Find user by email address
    */
   async findByEmail(email: string): Promise<User | null> {
+    // An empty address names no one; service principals (#5245) carry ''.
+    if (typeof email !== 'string' || email.trim() === '') return null;
     const results = await this.list({
       where: { email },
       limit: 1,

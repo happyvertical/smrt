@@ -267,7 +267,7 @@ export class User extends SmrtObject implements UserContract {
    * (`principalKind` null). Any other kind, known or not, fails closed.
    */
   canHoldSession(): boolean {
-    return this.principalKind === null || this.principalKind === undefined;
+    return this.principalKind == null;
   }
 
   /**
@@ -323,13 +323,13 @@ export class User extends SmrtObject implements UserContract {
    * again. A person row (`principalKind` null) must not carry service fields.
    */
   private assertServicePrincipalInvariants(): void {
-    if (this.principalKind !== null && !this.isServicePrincipal())
+    if (this.principalKind != null && !this.isServicePrincipal())
       throw new ServicePrincipalError('Unknown principal kind', 400);
     if (!this.isServicePrincipal()) {
       if (
-        this.servicePrincipalTenantId !== null ||
-        this.servicePrincipalKey !== null ||
-        this.retiredAt !== null
+        this.servicePrincipalTenantId != null ||
+        this.servicePrincipalKey != null ||
+        this.retiredAt != null
       )
         throw new ServicePrincipalError(
           'Only a service principal carries service principal fields',
@@ -348,7 +348,7 @@ export class User extends SmrtObject implements UserContract {
         400,
       );
     if (
-      this.retiredAt !== null &&
+      this.retiredAt != null &&
       (this.status === UserStatus.ACTIVE || this.status === UserStatus.PENDING)
     )
       throw new ServicePrincipalError(

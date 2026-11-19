@@ -30,6 +30,7 @@ import {
   assertOperationPermission,
   OperationPermissionError,
 } from '../services/OperationPermissionService.js';
+import { ServicePrincipalService } from '../services/ServicePrincipalService.js';
 import { withSessionPermissionContext } from '../services/SessionPermissionContext.js';
 import {
   type SessionContext,
@@ -132,6 +133,61 @@ describe('DeviceCredentialService (PIN on an enrolled device)', () => {
     vi.useRealTimers();
     vi.restoreAllMocks();
     if (existsSync(dbPath)) rmSync(dbPath, { force: true });
+  });
+
+  it('never sets a PIN for, or signs in, a service principal (#5245)', async () => {
+    const roles = await RoleCollection.create(options);
+    await roles.seedSystemRoles({ seedPermissions: false });
+    const principal = await (
+      await ServicePrincipalService.create({
+        db: users.db,
+        transaction: 'caller',
+      })
+    ).createServicePrincipal({
+      tenantId,
+      key: 'pin-agent',
+      roleSlug: 'member',
+    });
+    await expect(
+      service.setPin({
+        actor: adminActor(),
+        userId: principal.userId,
+        pin: '2580',
+      }),
+    ).rejects.toBeInstanceOf(DeviceCredentialForbiddenError);
+    // A credential written around setPin still never signs in: the stock
+    // refusal, not a mint error, and the attempt counts against the budget.
+    const credentials = await UsersPinCredentialCollection.create(options);
+    const planted = await credentials.findByUserId(personId);
+    if (!planted) throw new Error('missing fixture PIN');
+    await users.db.query(
+      'UPDATE users_pin_credentials SET user_id = ? WHERE id = ?',
+      principal.userId,
+      planted.id,
+    );
+    for (let attempt = 0; attempt < 3; attempt += 1)
+      await expect(
+        service.signInWithPin({
+          deviceToken,
+          userId: principal.userId,
+          pin: '2580',
+        }),
+      ).rejects.toBeInstanceOf(DeviceCredentialError);
+    await expect(
+      service.signInWithPin({
+        deviceToken,
+        userId: principal.userId,
+        pin: '2580',
+      }),
+    ).rejects.toBeInstanceOf(LoginRateLimitError);
+    expect(
+      (
+        await users.db.query(
+          'SELECT id FROM sessions WHERE user_id = ?',
+          principal.userId,
+        )
+      ).rows,
+    ).toHaveLength(0);
   });
 
   it('stores the credential in its own sensitive table, hashed with scrypt', async () => {

@@ -38,6 +38,26 @@ export interface CreateSessionOptions {
 }
 
 /**
+ * Whether `userId` names a principal that may never hold a session (#5245):
+ * any user row whose `principal_kind` is set, known kind or not. Read fresh
+ * with raw SQL on the given executor, so a caller transaction sees its own
+ * writes and no cache serves a stale answer. A missing user row is not
+ * refused here; callers that need the user already fail closed on it.
+ */
+export async function isSessionlessPrincipalUser(
+  db: { query: SessionCollection['db']['query'] },
+  userId: string,
+): Promise<boolean> {
+  if (typeof userId !== 'string' || userId === '') return false;
+  const result = await db.query(
+    'SELECT principal_kind FROM users WHERE id = ?',
+    userId,
+  );
+  const kind = result.rows?.[0]?.principal_kind;
+  return kind !== null && kind !== undefined;
+}
+
+/**
  * Collection for managing Session objects
  */
 export class SessionCollection extends SmrtCollection<Session> {
@@ -70,19 +90,10 @@ export class SessionCollection extends SmrtCollection<Session> {
 
   /**
    * Whether `userId` names a principal that may never hold a session
-   * (#5245): any user row whose `principal_kind` is set. Read fresh with raw
-   * SQL on this collection's executor (so a caller transaction sees its own
-   * writes and no cache can serve a stale answer). A missing user row is not
-   * refused here; callers that need the user already fail closed on it.
+   * (#5245); see {@link isSessionlessPrincipalUser}.
    */
   async isSessionlessPrincipal(userId: string): Promise<boolean> {
-    if (typeof userId !== 'string' || userId === '') return false;
-    const result = await this.db.query(
-      'SELECT principal_kind FROM users WHERE id = ?',
-      userId,
-    );
-    const kind = result.rows?.[0]?.principal_kind;
-    return kind !== null && kind !== undefined;
+    return isSessionlessPrincipalUser(this.db, userId);
   }
 
   /**

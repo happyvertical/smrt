@@ -52,6 +52,7 @@ import {
   PasswordPolicyError,
 } from '../services/PasswordCredentialService.js';
 import { PermissionCatalogService } from '../services/PermissionCatalogService.js';
+import { ServicePrincipalService } from '../services/ServicePrincipalService.js';
 import {
   type SessionContext,
   SessionService,
@@ -223,6 +224,30 @@ describe('PasswordCredentialService', () => {
   // -------------------------------------------------------------------------
   // The credential object
   // -------------------------------------------------------------------------
+
+  it('never sets a password for a service principal (#5245)', async () => {
+    const roles = await RoleCollection.create(options);
+    await roles.seedSystemRoles({ seedPermissions: false });
+    const principal = await (
+      await ServicePrincipalService.create({
+        db: users.db,
+        transaction: 'caller',
+      })
+    ).createServicePrincipal({
+      tenantId,
+      key: 'password-agent',
+      roleSlug: 'member',
+    });
+    await expect(
+      service.resetPassword({
+        actor: adminActor(),
+        userId: principal.userId,
+        password: PASSWORD,
+        mustChange: false,
+      }),
+    ).rejects.toBeInstanceOf(PasswordCredentialForbiddenError);
+    expect(await credentials.findByUserId(principal.userId)).toBeNull();
+  });
 
   it('stores the password in its own sensitive table as a self-describing scrypt hash', async () => {
     expect(new UsersPasswordCredential().tableName).toBe(

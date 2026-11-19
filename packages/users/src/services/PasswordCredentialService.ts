@@ -56,7 +56,10 @@ import { withSystemContext } from '@happyvertical/smrt-tenancy';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { MembershipCollection } from '../collections/MembershipCollection.js';
 import { UsersPasswordCredentialCollection } from '../collections/PasswordCredentialCollection.js';
-import { SessionCollection } from '../collections/SessionCollection.js';
+import {
+  isSessionlessPrincipalUser,
+  SessionCollection,
+} from '../collections/SessionCollection.js';
 import { UserCollection } from '../collections/UserCollection.js';
 import type { UsersPasswordCredential } from '../models/PasswordCredential.js';
 import {
@@ -1280,7 +1283,9 @@ export class PasswordCredentialService {
         : [];
     if (
       active.length === 0 ||
-      active.some((membership) => membership.tenantId !== actor.tenantId)
+      active.some((membership) => membership.tenantId !== actor.tenantId) ||
+      // A service principal (#5245) never holds a session, so no password.
+      (await isSessionlessPrincipalUser(this.memberships.db, targetUserId))
     ) {
       throw new PasswordCredentialForbiddenError();
     }

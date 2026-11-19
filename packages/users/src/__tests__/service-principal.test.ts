@@ -23,6 +23,7 @@ import { TenantCollection } from '../collections/TenantCollection.js';
 import { UserCollection } from '../collections/UserCollection.js';
 import { ServicePrincipalError } from '../models/User.js';
 import { ServicePrincipalService } from '../services/ServicePrincipalService.js';
+import { withPrincipalPermissionContext } from '../services/SessionPermissionContext.js';
 import { SessionService } from '../services/SessionService.js';
 import {
   TenantInvitationError,
@@ -245,6 +246,38 @@ describe('ServicePrincipalService (#5245)', () => {
         ).rows,
       ).toHaveLength(0);
     });
+  });
+
+  it('works from inside an unprivileged request principal (the host calling context)', async () => {
+    const ownerId = await person();
+    await withPrincipalPermissionContext(
+      { db, userId: ownerId, tenantId },
+      async (context) => {
+        expect(context.permissions).toEqual([]);
+        const created = await create();
+        const principals = await service();
+        expect(
+          await principals.isActiveServicePrincipal({
+            tenantId,
+            userId: created.userId,
+          }),
+        ).toBe(true);
+        // The owner's own session still mints; the principal's never does.
+        const sessions = await sessionService();
+        await expect(
+          sessions.createSession(ownerId, tenantId),
+        ).resolves.toBeTypeOf('string');
+        await expect(
+          sessions.createSession(created.userId, tenantId),
+        ).rejects.toBeInstanceOf(ServicePrincipalError);
+        expect(
+          await principals.retireServicePrincipal({
+            tenantId,
+            userId: created.userId,
+          }),
+        ).toMatchObject({ status: 'retired' });
+      },
+    );
   });
 
   describe('validity and tenant isolation', () => {
