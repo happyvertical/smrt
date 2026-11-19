@@ -506,6 +506,26 @@ function findSameNameParent(
 }
 
 /**
+ * Whether the nearest same-named constructor above `ctor` is unregistered.
+ * That class is `ctor`'s direct parent: it must register first, whatever
+ * registered further up (#5143).
+ */
+function nearestSameNameAncestorUnregistered(
+  ctor: typeof SmrtObject,
+  name: string,
+): boolean {
+  for (
+    let proto = Object.getPrototypeOf(ctor);
+    typeof proto === 'function' && proto !== SmrtObject;
+    proto = Object.getPrototypeOf(proto)
+  ) {
+    if ((proto as { name?: string }).name !== name) continue;
+    return !getConstructorIndex().has(proto);
+  }
+  return false;
+}
+
+/**
  * The registered same-named classes that directly extend `ctor`. With
  * `deferAcrossUnregistered`, a class reached only through an unregistered
  * intermediate constructor is left for that intermediate to claim when it
@@ -1820,14 +1840,17 @@ function registerUntracked(
   // recorded parent it has already replaced, is a re-registration.
   if (
     declaredChoice &&
-    !sameNameParent &&
     !getConstructorIndex().has(ctor) &&
-    !sameNameParentKnown(
-      ctor,
-      name,
-      isolatedManifestEntry?.extendsQualified ??
-        (ownQualifiedKey ? recordedSubtypeParent(ownQualifiedKey) : undefined),
-    )
+    (nearestSameNameAncestorUnregistered(ctor, name) ||
+      (!sameNameParent &&
+        !sameNameParentKnown(
+          ctor,
+          name,
+          isolatedManifestEntry?.extendsQualified ??
+            (ownQualifiedKey
+              ? recordedSubtypeParent(ownQualifiedKey)
+              : undefined),
+        )))
   )
     throw sameNameParentUnregistered(
       ownName,
