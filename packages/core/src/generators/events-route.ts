@@ -42,12 +42,15 @@ import {
   type ChangeFeedPage,
   ensureChangeFeedTable,
   getChangesSince,
+  getChangesSinceUnlessCancelled,
 } from '../change-feed.js';
 import {
   type ChangeFeedRequestContext,
   filterVisibleChangeFeedEntries,
+  hasChangeFeedEntryVisibilityHook,
   hasChangeFeedTableAuthorizerHook,
   isChangeFeedDenyAll,
+  isChangeFeedEntryVisible,
   resolveAuthorizedChangeFeedTables,
 } from '../change-feed-authz.js';
 import {
@@ -56,12 +59,17 @@ import {
   subscribeToChangeSignals,
   tryReserveChangeSignalSubscriberSlot,
 } from '../change-signals.js';
-import { resolveDbCacheKey } from '../collection-cache.js';
 import {
   type DispatchTenantScope,
   resolveDispatchTenantScope,
 } from '../dispatch/tenant-resolver.js';
-import { runOutsideWriteContext } from '../embedded-write-queue.js';
+import {
+  databaseReadScope,
+  holdsWriteQueue,
+  resolveFrameworkTransactionRoot,
+  runOutsideWriteContext,
+  usesPostgresDialect,
+} from '../embedded-write-queue.js';
 import {
   type ChangesAuthMiddleware,
   resolveChangesDb,
@@ -248,6 +256,20 @@ function encodeSseEvent(sig: ChangeSignal): Uint8Array {
   return encoder.encode(`id: ${sig.seq}\nevent: change\ndata: ${data}\n\n`);
 }
 
+/**
+ * SSE frame for a signal with no feed sequence: same data, no `id:` line, so
+ * the client's resume cursor (`Last-Event-ID`) is left where it was.
+ */
+function encodeSseUnsequencedEvent(sig: ChangeSignal): Uint8Array {
+  const data = JSON.stringify({
+    table: sig.table,
+    operation: sig.operation,
+    rowId: sig.rowId,
+    tenantId: sig.tenantId,
+  });
+  return encoder.encode(`event: change\ndata: ${data}\n\n`);
+}
+
 /** SSE manifest frame emitted at connection open for live contract detection. */
 function encodeSseManifestEvent(manifestHash: string): Uint8Array {
   return encoder.encode(
@@ -275,13 +297,36 @@ function encodeSseComment(text: string): Uint8Array {
 const SHORT_READ_RETRY_MS = 250;
 
 /**
- * Identical feed reads in flight, keyed by database scope, cursor and drain
- * mode. Every caught-up connection on a database sits at the same cursor, so
- * one write wakes them all onto the same read: they share its result instead
- * of each issuing it. Entries live only while the read is in flight, so no
- * connection ever receives a stale page.
+ * Most row-visibility checks one connection may have outstanding for signals
+ * that carry no feed sequence; further such signals are dropped until a
+ * check settles.
  */
-const inflightFeedReads = new Map<string, Promise<ChangeFeedPage>>();
+const MAX_PENDING_UNSEQUENCED_CHECKS = 16;
+
+/**
+ * Identical feed reads in flight, keyed by the database's read scope and then
+ * by cursor and drain mode. Every caught-up connection on a database sits at
+ * the same cursor, so one write wakes them all onto the same read: they share
+ * its result instead of each issuing it. Entries live only while the read is
+ * in flight, so no connection ever receives a stale page.
+ *
+ * The scope is the write queue's key (`databaseReadScope`): the URL for a
+ * shared database, but the handle itself for a per-connection in-memory
+ * database (`:memory:`, `file::memory:`, `memory://…`) — two such handles are
+ * different databases even when their URLs are equal, and must never share
+ * a page.
+ */
+const inflightFeedReads = new Map<
+  string | object,
+  Map<
+    string,
+    {
+      promise: Promise<ChangeFeedPage | null>;
+      /** Each sharing connection's "still open?" check. */
+      interested: Set<() => boolean>;
+    }
+  >
+>();
 
 /**
  * Read one unfiltered feed page after `since`, sharing an identical read that
@@ -289,33 +334,61 @@ const inflightFeedReads = new Map<string, Promise<ChangeFeedPage>>();
  * connection afterwards, so the shared page is never narrowed for one reader
  * at another's expense. Credential tables are refused inside
  * `getChangesSince` itself.
+ *
+ * A read queued behind a write transaction is skipped when it reaches the
+ * front if every connection that asked for it has closed meanwhile, and
+ * resolves to `null`: a client that disconnects while its read is queued
+ * leaves no database work behind it.
  */
 function readFeedPage(
   db: DatabaseInterface,
   since: number,
   drain: boolean,
-): Promise<ChangeFeedPage> {
-  let key: string;
+  stillOpen: () => boolean,
+): Promise<ChangeFeedPage | null> {
+  let scope: string | object;
   try {
-    key = `${resolveDbCacheKey(db)}\u0000${since}\u0000${drain ? 1 : 0}`;
+    scope = databaseReadScope(db);
   } catch {
-    return getChangesSince(db, { since, drain });
+    return getChangesSinceUnlessCancelled(
+      db,
+      { since, drain },
+      () => !stillOpen(),
+    );
   }
-  const pending = inflightFeedReads.get(key);
-  if (pending) return pending;
-  const read = getChangesSince(db, { since, drain });
-  inflightFeedReads.set(key, read);
+  const key = `${since}\u0000${drain ? 1 : 0}`;
+  let reads = inflightFeedReads.get(scope);
+  const pending = reads?.get(key);
+  if (pending) {
+    pending.interested.add(stillOpen);
+    return pending.promise;
+  }
+  const interested = new Set<() => boolean>([stillOpen]);
+  const promise = getChangesSinceUnlessCancelled(
+    db,
+    { since, drain },
+    () => ![...interested].some((open) => open()),
+  );
+  if (!reads) {
+    reads = new Map();
+    inflightFeedReads.set(scope, reads);
+  }
+  const entry = { promise, interested };
+  reads.set(key, entry);
   const clear = () => {
-    if (inflightFeedReads.get(key) === read) inflightFeedReads.delete(key);
+    const current = inflightFeedReads.get(scope);
+    if (current?.get(key) !== entry) return;
+    current.delete(key);
+    if (current.size === 0) inflightFeedReads.delete(scope);
   };
-  read.then(clear, clear);
-  return read;
+  promise.then(clear, clear);
+  return promise;
 }
 
 /**
  * Build the SSE body stream for an `_events` connection.
  *
- * **Delivery invariant.** Every `change` frame is read from the durable feed,
+ * **Delivery invariant.** Every `change` frame with an `id:` is read from the durable feed,
  * in sequence order, starting after the connection's own sent cursor. A live
  * signal is only a wake-up: it tells the connection that the feed has moved,
  * and the connection then reads from its cursor. So the stream never emits a
@@ -324,6 +397,10 @@ function readFeedPage(
  * resumes from (`Last-Event-ID`) always covers everything before it. Rows
  * the connection may not see still advance its cursor; they are simply not
  * framed.
+ *
+ * A signal that carries no feed sequence is framed directly, without an
+ * `id:` (see `frameUnsequenced`). An idle heartbeat also reads the feed, so a
+ * change committed without any signal is still delivered.
  *
  * A read that fails closes the stream. The client reconnects with the last id
  * it actually received and the server replays from there; staying open
@@ -360,9 +437,30 @@ function readFeedPage(
  * controller and keep the cross-replica listener refcount above 0).
  */
 export function buildChangeEventStream(
-  db: DatabaseInterface,
+  requestedDb: DatabaseInterface,
   options: ChangeEventStreamOptions,
 ): ReadableStream<Uint8Array> {
+  // A stream outlives any transaction it is built in, and must only ever see
+  // committed changes. Resolve a framework transaction's bound handle to its
+  // root once, now, while the transaction is still visible in this async
+  // context: the subscription, the head sample and every page read then use
+  // the root, whose reads wait for the transaction instead of seeing rows it
+  // may still roll back.
+  const db = resolveFrameworkTransactionRoot(requestedDb);
+  // On PostgreSQL the root is a pool, and a transaction's session settings
+  // (`SET LOCAL search_path`, role, other GUCs) are not visible to it: the
+  // root may read a different schema, or under a different authorization,
+  // than the handle the caller passed. That cannot be proven equal here, so
+  // refuse rather than serve another scope's feed.
+  if (db !== requestedDb && usesPostgresDialect(db)) {
+    options.releaseSubscriberSlot?.();
+    throw new Error(
+      '_events: a stream cannot be built from a PostgreSQL framework ' +
+        "transaction's handle, because the stream outlives the transaction " +
+        'and its session settings. Build it from the root database, outside ' +
+        'the transaction.',
+    );
+  }
   const { cursor, tenantScope, manifestHash, locals, request } = options;
   const requestContext: ChangeFeedRequestContext = { locals, request };
   const heartbeatMs = options.heartbeatMs ?? DEFAULT_EVENTS_HEARTBEAT_MS;
@@ -390,6 +488,12 @@ export function buildChangeEventStream(
   // resolved (wake-ups are then not pre-filtered; reads still are, below).
   let allowedTableSet: Set<string> | null = null;
   let denyAllTables = false;
+  /** True once the table authorization (if any) has been captured. */
+  let authorizationSettled = false;
+  /** Earliest feed sequence signalled before the starting cursor was fixed. */
+  let earliestSignalledSeq: number | null = null;
+  /** Row-visibility checks in flight for unsequenced signals. */
+  let pendingUnsequencedChecks = 0;
 
   const teardown = () => {
     if (closed) return;
@@ -482,8 +586,8 @@ export function buildChangeEventStream(
       const since = sentCursor;
       // Catch-up reads sequence staged entries first (#2649); wake-up reads
       // were triggered by an already-sequenced entry and stay SELECT-only.
-      const page = await readFeedPage(db, since, exhaustive);
-      if (closed) return;
+      const page = await readFeedPage(db, since, exhaustive, () => !closed);
+      if (closed || page === null) return;
       if (page.resyncRequired) {
         const resyncCursor =
           typeof page.resyncCursor === 'number' &&
@@ -570,19 +674,77 @@ export function buildChangeEventStream(
     (retryTimer as { unref?: () => void }).unref?.();
   };
 
-  /** A live signal is a wake-up only; the frame comes from the feed read. */
+  /**
+   * A signal that carries no feed sequence (`seq` not a positive integer) —
+   * published by a producer that writes no feed row — is framed directly,
+   * as before the ordered cursor read existed, but without an `id:` line:
+   * an id would move the client's resume cursor to a value the feed never
+   * assigned. Best-effort, like any signal: dropped when the reader is not
+   * draining, so it can never grow the buffer.
+   */
+  const frameUnsequenced = (sig: ChangeSignal) => {
+    // Nothing is framed before the connection's authorization is settled:
+    // until then the table allow-list is unknown, and an unsequenced signal
+    // has no feed read that would apply it later. Such signals are dropped
+    // (best-effort, like every signal).
+    if (!authorizationSettled) return;
+    if (!passesStaticFilters(sig)) return;
+    if (closed || !streamController || !hasCapacity()) return;
+    const enqueue = () => {
+      if (closed || !streamController || !hasCapacity()) return;
+      try {
+        streamController.enqueue(encodeSseUnsequencedEvent(sig));
+      } catch {
+        teardown();
+      }
+    };
+    if (!hasChangeFeedEntryVisibilityHook()) {
+      enqueue();
+      return;
+    }
+    // Bound the asynchronous row checks a connection can have outstanding,
+    // and drop excess signals before asking the hook, so a slow hook cannot
+    // make one connection hold an unbounded number of signals.
+    if (pendingUnsequencedChecks >= MAX_PENDING_UNSEQUENCED_CHECKS) return;
+    pendingUnsequencedChecks++;
+    void isChangeFeedEntryVisible(requestContext, sig)
+      .then((visible) => {
+        if (visible) enqueue();
+      })
+      .finally(() => {
+        pendingUnsequencedChecks--;
+      });
+  };
+
+  /**
+   * A signal that carries a feed sequence is a wake-up only; the frame comes
+   * from the ordered feed read, so its id can never overtake an unsent
+   * earlier change.
+   */
   const onSignal = (sig: ChangeSignal) => {
     if (closed) return;
+    if (!Number.isSafeInteger(sig.seq) || sig.seq <= 0) {
+      frameUnsequenced(sig);
+      return;
+    }
     // Pre-filtering is an optimisation only: a change this connection may not
     // see never needs a read of its own — the next visible wake-up's read
     // passes over it.
+    if (sentCursor === null) {
+      // Before the starting cursor is fixed: remember the earliest sequence
+      // signalled since subscribing, unfiltered, so a live-forward start
+      // position can never sit past a change signalled to this connection.
+      if (earliestSignalledSeq === null || sig.seq < earliestSignalledSeq) {
+        earliestSignalledSeq = sig.seq;
+      }
+    }
     if (!passesStaticFilters(sig)) return;
     if (sentCursor !== null && sig.seq <= sentCursor) return;
     if (sig.seq > wantedSeq) wantedSeq = sig.seq;
     schedulePump();
   };
 
-  return new ReadableStream<Uint8Array>(
+  const inner = new ReadableStream<Uint8Array>(
     {
       async start(controller) {
         streamController = controller;
@@ -597,14 +759,24 @@ export function buildChangeEventStream(
         try {
           // (b) Live-forward only: start from the feed's current head (one
           // bounds read via `denyAllTables`, no row scan).
+          // Detached from the caller's write context, like every stream read,
+          // so it waits for an open write transaction instead of seeing its
+          // uncommitted rows.
           if (startCursor == null) {
-            const head = await getChangesSince(db, {
-              since: 0,
-              denyAllTables: true,
-            });
+            const head = await runOutsideWriteContext(() =>
+              getChangesSince(db, { since: 0, denyAllTables: true }),
+            );
             startCursor = head.resyncRequired
               ? (head.resyncCursor ?? 0)
               : head.cursor;
+            // A change signalled after subscribing but already inside the
+            // sampled head is still delivered.
+            if (
+              earliestSignalledSeq !== null &&
+              earliestSignalledSeq - 1 < startCursor
+            ) {
+              startCursor = Math.max(0, earliestSignalledSeq - 1);
+            }
           }
           if (closed) return;
           // (c) Table authorization, captured once for the connection.
@@ -619,6 +791,7 @@ export function buildChangeEventStream(
             allowedTableSet = allowedTables ? new Set(allowedTables) : null;
             denyAllTables = isChangeFeedDenyAll(allowedTables);
           }
+          authorizationSettled = true;
         } catch (error) {
           // A rejected start errors the stream, and cancelling an errored
           // stream never reaches `cancel()` — tear down here or the
@@ -652,7 +825,13 @@ export function buildChangeEventStream(
               return;
             }
           }
-          if (sentCursor !== null && wantedSeq > sentCursor) schedulePump();
+          // A bounded durable read once per interval while idle: a change
+          // committed with no signal reaching this process (another replica
+          // without a notification channel, a lost notification, a write the
+          // framework did not signal) is still delivered. Exhaustive, so it
+          // also sequences staged PostgreSQL work, and shared with any
+          // identical read in flight.
+          if (sentCursor !== null && !pumping) schedulePump(true);
         }, heartbeatMs);
         // Do not keep the event loop alive solely for heartbeats.
         (heartbeat as { unref?: () => void }).unref?.();
@@ -667,6 +846,44 @@ export function buildChangeEventStream(
       },
     },
     { highWaterMark: EVENTS_STREAM_HIGH_WATER_MARK },
+  );
+
+  // The stream handed to the caller pulls from `inner` only when its reader
+  // asks for data. That is the one moment a read can be known to wait on the
+  // reader's own write transaction: every feed read waits in the database's
+  // write queue, so a reader inside a live framework write transaction on the
+  // same database, waiting for a frame, would wait for itself — and stall
+  // every writer queued behind it. That read is refused with a clear error;
+  // building the stream inside a transaction and reading it after commit is
+  // fine.
+  const innerReader = inner.getReader();
+  return new ReadableStream<Uint8Array>(
+    {
+      pull(controller) {
+        if (holdsWriteQueue(db)) {
+          const error = new Error(
+            'An _events stream cannot be read inside a framework write ' +
+              'transaction on the same database: its feed reads wait for that ' +
+              'transaction to finish. Read the stream outside the transaction.',
+          );
+          teardown();
+          void innerReader.cancel(error).catch(() => undefined);
+          controller.error(error);
+          return;
+        }
+        return innerReader.read().then(
+          ({ value, done }) => {
+            if (done) controller.close();
+            else controller.enqueue(value);
+          },
+          (error) => controller.error(error),
+        );
+      },
+      cancel(reason) {
+        return innerReader.cancel(reason);
+      },
+    },
+    { highWaterMark: 0 },
   );
 }
 
