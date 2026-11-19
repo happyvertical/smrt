@@ -39,4 +39,10 @@ describe('SseParser', () => {
     );
     expect(out).toEqual([{ type: 'text', delta: 'ok' }]);
   });
+
+  it('knows the changes block event', () => {
+    expect(new SseParser().push(frame({ type: 'changes_block' }))).toEqual([
+      { type: 'changes_block' },
+    ]);
+  });
 });

@@ -3,7 +3,12 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { decideApproval, returnedFailure } from './approvals.ts';
 import { getHost } from './host.ts';
 import { callTool } from './policy.ts';
-import { openShell, runAs, type ShellHarness } from './test-support.ts';
+import {
+  applyWaiting,
+  openShell,
+  runAs,
+  type ShellHarness,
+} from './test-support.ts';
 
 let h: ShellHarness;
 beforeAll(async () => {
@@ -36,6 +41,7 @@ describe('an approved action that comes back as an error is a failed approval', 
         fields: { title: { type: 'text' } },
       });
     });
+    await applyWaiting(h.owner);
     const host = await getHost();
     const rec = (await host.create('Chore', { title: 'gone soon' })) as {
       id: string;
@@ -53,7 +59,7 @@ describe('an approved action that comes back as an error is a failed approval', 
 });
 
 it('the real undo and decision routes preserve records and version after a later edit', async () => {
-  const { runCommand, requestRecordDelete, runAppTool, runRest } = await import(
+  const { requestRecordDelete, runAppTool, runRest } = await import(
     './builder.ts'
   );
   const { POST: undo } = await import('../../routes/api/shell/undo/+server.ts');
@@ -62,18 +68,17 @@ it('the real undo and decision routes preserve records and version after a later
   );
   const { getApprovalView } = await import('./approvals.ts');
   const host = await getHost();
-  await runCommand(
+  await host.execute(
     {
       type: 'defineModel',
       name: 'UndoContact',
       label: 'Contacts',
       fields: { name: { type: 'text' }, amount: { type: 'integer' } },
     },
-    h.owner.id,
-    'live',
+    { author: h.owner.id, approved: true },
   );
   const row = await host.create('UndoContact', { name: 'Acme', amount: 1 });
-  const load = await runCommand(
+  await host.execute(
     {
       type: 'loadRecords',
       model: 'UndoContact',
@@ -81,11 +86,8 @@ it('the real undo and decision routes preserve records and version after a later
       key: ['name'],
       rows: [{ name: 'Acme', amount: 2 }],
     },
-    h.owner.id,
-    'live',
+    { author: h.owner.id, approved: true },
   );
-  if (!('approvalId' in load)) throw new Error('expected load approval');
-  await decideApproval(load.approvalId, true, h.owner.id);
   const event = (path: string, body?: unknown, id?: string) => {
     const url = new URL(path, 'http://localhost:5173');
     return {
@@ -170,7 +172,6 @@ it('the real undo and decision routes preserve records and version after a later
 });
 
 it('refuses a known undo conflict before storage through HTTP and the assistant, and can deny legacy cards', async () => {
-  const { runCommand } = await import('./builder.ts');
   const { POST: undo } = await import('../../routes/api/shell/undo/+server.ts');
   const { POST: decide } = await import(
     '../../routes/api/shell/approvals/[id]/+server.ts'
@@ -178,21 +179,20 @@ it('refuses a known undo conflict before storage through HTTP and the assistant,
   const { pendingApprovalCount, requestApproval, getApprovalView } =
     await import('./approvals.ts');
   const host = await getHost();
-  await runCommand(
+  await host.execute(
     {
       type: 'defineModel',
       name: 'Order',
       label: 'Orders',
       fields: { name: { type: 'text' }, amount: { type: 'integer' } },
     },
-    h.owner.id,
-    'live',
+    { author: h.owner.id, approved: true },
   );
   const row = await host.create('Order', {
     name: 'QA changed order',
     amount: 1,
   });
-  const load = await runCommand(
+  await host.execute(
     {
       type: 'loadRecords',
       model: 'Order',
@@ -200,11 +200,8 @@ it('refuses a known undo conflict before storage through HTTP and the assistant,
       key: ['name'],
       rows: [{ name: 'QA changed order', amount: 2 }],
     },
-    h.owner.id,
-    'live',
+    { author: h.owner.id, approved: true },
   );
-  if (!('approvalId' in load)) throw new Error('Expected load approval');
-  await decideApproval(load.approvalId, true, h.owner.id);
   await host.update('Order', String(row.id), { amount: 3 });
   const count = await pendingApprovalCount();
   const version = host.version;
@@ -230,13 +227,10 @@ it('refuses a known undo conflict before storage through HTTP and the assistant,
   const response = await undo(event('/api/shell/undo'));
   expect(response.status).toBe(409);
   expect(await response.json()).toEqual({ error: reason, code: 'refused' });
-  const tool = await callTool(h.owner, 'app_undo', {});
-  expect(tool.isError).toBe(true);
-  expect(JSON.stringify(tool.content)).toContain(reason);
-  expect(tool).not.toHaveProperty('pending');
-  expect(JSON.stringify(tool)).not.toMatch(
-    /pending_approval|approvalId|did not start|stack/,
-  );
+  // undo is the owner's from History: the tool door refuses it outright
+  await expect(callTool(h.owner, 'app_undo', {})).resolves.toMatchObject({
+    isError: true,
+  });
   expect(await pendingApprovalCount()).toBe(count);
   expect(host.version).toBe(version);
   expect((await host.get('Order', String(row.id)))?.amount).toBe(3);

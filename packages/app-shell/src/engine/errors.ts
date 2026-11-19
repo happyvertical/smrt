@@ -11,10 +11,17 @@ export type EngineErrorCode =
 /** A refusal or mistake the caller can act on (as opposed to a crash). */
 export class EngineError extends Error {
   readonly code: EngineErrorCode;
-  constructor(message: string, code: EngineErrorCode = 'invalid') {
+  /** Extra JSON a route returns beside `error` and `code` (e.g. the blockers that refused Apply). */
+  readonly details?: Record<string, unknown>;
+  constructor(
+    message: string,
+    code: EngineErrorCode = 'invalid',
+    details?: Record<string, unknown>,
+  ) {
     super(message);
     this.name = 'EngineError';
     this.code = code;
+    this.details = details;
   }
 }
 

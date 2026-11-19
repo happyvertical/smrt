@@ -1,8 +1,8 @@
 // The approval gate. A risky builder command, app tool call or REST DELETE
 // does not run: it becomes an `Approval` row for the owner. Only
 // `decideApproval` ever passes the engine's `approved: true`; it is called by
-// `Approval.decide` and by `publishOwnDraft` (the owner's own Publish click on
-// the review page, nothing else). Nothing taken from a request body can set it.
+// `Approval.decide` and by `applyOwnBatch` (the owner's own Apply click on the
+// changes waiting, nothing else). Nothing taken from a request body can set it.
 
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { createHash } from 'node:crypto';
@@ -15,7 +15,12 @@ import {
 } from '../../engine/index.ts';
 import { type Approval, ApprovalCollection } from '../objects/Approval.ts';
 import { shellApprovalAuthority } from './approval-store.ts';
-import { discardNow, publishApproved, requestPublish } from './drafts.ts';
+import {
+  type ApplyAction,
+  applyApproved,
+  isMaintenanceCommand,
+  requestApply,
+} from './changes.ts';
 import { publish } from './events.ts';
 import { getHost, getShellDb } from './host.ts';
 import { assertOwner } from './owner.ts';
@@ -31,14 +36,16 @@ export type ApprovalAction =
   | { kind: 'tool'; name: string; args: Record<string, unknown> }
   | { kind: 'rest'; method: string; url: string; body?: string }
   | { kind: 'record-delete'; model: string; id: string }
-  /** Publish the open draft; pinned to the digest of the preview the owner reviewed. */
+  /** Apply the changes waiting; pinned to the digest the owner reviewed (changes.ts). */
+  | ApplyAction
+  /** Legacy rows only (no longer produced): publish the open draft. Readable, never run. */
   | {
       kind: 'publish-draft';
       draftId: string;
       draftName: string;
       digest: string;
     }
-  /** Discard the open draft (a tool asked; the UI discards directly). */
+  /** Legacy rows only (no longer produced): discard the open draft. Readable, never run. */
   | { kind: 'discard-draft'; draftId: string; draftName: string };
 
 /** The answer a refused-until-approved call gives instead of applying. */
@@ -289,6 +296,14 @@ function isAction(v: unknown): v is ApprovalAction {
     return typeof a.method === 'string' && typeof a.url === 'string';
   if (a.kind === 'record-delete')
     return typeof a.model === 'string' && typeof a.id === 'string';
+  if (a.kind === 'apply-batch')
+    return (
+      typeof a.batchId === 'string' &&
+      typeof a.draftId === 'string' &&
+      typeof a.digest === 'string' &&
+      typeof a.engineDigest === 'string' &&
+      Number.isInteger(a.generation)
+    );
   if (a.kind === 'publish-draft')
     return (
       typeof a.draftId === 'string' &&
@@ -329,7 +344,7 @@ export function returnedFailure(
 }
 
 /**
- * Decide an approval. CALL ONLY FROM `Approval.decide` or `publishOwnDraft`
+ * Decide an approval. CALL ONLY FROM `Approval.decide` or `applyOwnBatch`
  * (both check the owner first): this is the single place the engine's
  * `approved: true` is set.
  */
@@ -365,8 +380,8 @@ export async function decideApproval(
       // Approvals only ever run against the LIVE host: the draft host
       // approves its own risky changes (autoApprove), so none is ever asked.
       const host = await getHost();
-      if (action.kind === 'publish-draft')
-        result = await publishApproved(action, (live, draft, o) =>
+      if (action.kind === 'apply-batch')
+        result = await applyApproved(action, (live, draft, o) =>
           live.publishDraft(draft, {
             author: row.requestedBy || decidedBy,
             approved: true,
@@ -374,8 +389,25 @@ export async function decideApproval(
             draftName: o.draftName,
           }),
         );
-      else if (action.kind === 'discard-draft')
-        result = await discardNow(action.draftId);
+      else if (
+        action.kind === 'publish-draft' ||
+        action.kind === 'discard-draft'
+      )
+        // Replaced by changes waiting (#5178): old rows stay readable only.
+        throw new EngineError(
+          'this kind of approval was replaced by changes waiting; deny it and use Apply or Discard',
+          'refused',
+        );
+      else if (
+        action.kind === 'command' &&
+        !isMaintenanceCommand(action.command)
+      )
+        // A structural command only reaches live through Apply (#5178): an
+        // approval stored before that cannot bypass it.
+        throw new EngineError(
+          'structural changes are applied from the changes waiting; deny this approval and ask again',
+          'refused',
+        );
       else if (action.kind === 'command')
         result = publicChangeResult(
           await host.execute(action.command, {
@@ -444,35 +476,35 @@ export async function decideApproval(
 }
 
 /**
- * The owner's own Publish click on the review page, in one step. CALL ONLY
- * FROM `POST /api/shell/draft/publish` (the owner's same-origin session
- * route; `invariants.test.ts` keeps it there). Tools, the assistant, `/mcp`
- * and the generated `/api/apps/publishDraft` go through `App.publishDraft`,
- * which only asks (a pending Approval).
+ * The owner's own Apply click on the changes waiting, in one step. CALL ONLY
+ * FROM `POST /api/shell/changes/apply` (the owner's same-origin session
+ * route; `invariants.test.ts` keeps it there). Tools, the assistant and
+ * `/mcp` have no apply at all.
  *
- * `expect` is required: the digest of the preview the owner reviewed. The
- * publish Approval is recorded pinned to that digest (a fresh server preview
- * must match it, else 409 review again) and the same owner decides it at
- * once, so the audit row and the engine's apply-time digest check are the
- * ordinary ones. A failed apply (the draft changed in between) is a 409 too.
+ * `expect` is required: the digest the owner reviewed (`GET /changes`). The
+ * `apply-batch` Approval is recorded pinned to it (a fresh exact check must
+ * still produce that digest, else 409 review again) and the same owner
+ * decides it at once, so the audit row and the engine's apply-time digest
+ * check are the ordinary ones. A failed apply is a 409 too.
  */
-export async function publishOwnDraft(
+export async function applyOwnBatch(
   expect: unknown,
+  opts: { generation?: unknown; source?: unknown } = {},
 ): Promise<ApprovalOutcome> {
   const owner = await assertOwner();
   if (typeof expect !== 'string' || !expect)
     throw new EngineError(
-      'expect must be the digest of the preview you reviewed',
+      'expect must be the digest of the changes you reviewed',
       'invalid',
     );
-  const pending = await requestPublish(expect, owner.id);
+  const pending = await requestApply(expect, owner.id, opts);
   let outcome: ApprovalOutcome;
   try {
     outcome = await decideApproval(pending.approvalId, true, owner.id);
   } catch (e) {
     if (e instanceof Error && /^approval is already/.test(e.message))
       throw new EngineError(
-        'this publish was already decided; review the draft again',
+        'this apply was already decided; review the changes again',
         'refused',
       );
     throw e;
@@ -480,7 +512,7 @@ export async function publishOwnDraft(
   if (outcome.status !== 'approved')
     throw new EngineError(
       outcome.error ??
-        'the draft changed since it was reviewed; review it again',
+        'the changes waiting changed since they were reviewed; review them again',
       'refused',
     );
   return outcome;

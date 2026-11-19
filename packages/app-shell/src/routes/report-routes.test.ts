@@ -1,13 +1,13 @@
 import { afterAll, beforeAll, expect, it, vi } from 'vitest';
 import { runCommand } from '../lib/server/builder.ts';
-import {
-  discardNow,
-  historyFor,
-  previewDraft,
-  startDraft,
-} from '../lib/server/drafts.ts';
+import { discardChanges, previewChanges } from '../lib/server/changes.ts';
 import { hostFor } from '../lib/server/host.ts';
-import { openShell, type ShellHarness } from '../lib/server/test-support.ts';
+import {
+  applyWaiting,
+  openShell,
+  runAs,
+  type ShellHarness,
+} from '../lib/server/test-support.ts';
 import { GET, POST } from './api/shell/reports/[name]/+server.ts';
 import { GET as csv } from './api/shell/reports/[name]/csv/+server.ts';
 
@@ -22,52 +22,56 @@ const spec = {
 };
 beforeAll(async () => {
   h = await openShell();
-  await runCommand(
-    {
-      type: 'defineModel',
-      name: 'Customer',
-      fields: { name: { type: 'text' } },
-    },
-    h.owner.id,
-    'live',
-  );
-  await runCommand(
-    {
-      type: 'defineModel',
-      name: 'Order',
-      fields: {
-        customer: { type: 'reference', ref: 'Customer' },
-        amount: { type: 'money' },
+  await runAs(h.owner, async () => {
+    await runCommand(
+      {
+        type: 'defineModel',
+        name: 'Customer',
+        fields: { name: { type: 'text' } },
       },
-    },
-    h.owner.id,
-    'live',
-  );
+      h.owner.id,
+      'live',
+    );
+    await runCommand(
+      {
+        type: 'defineModel',
+        name: 'Order',
+        fields: {
+          customer: { type: 'reference', ref: 'Customer' },
+          amount: { type: 'money' },
+        },
+      },
+      h.owner.id,
+      'live',
+    );
+  });
+  await applyWaiting(h.owner);
   const host = await hostFor('live');
   const c = await host.create('Customer', { name: 'Acme, "Ltd"' });
   await host.create('Order', { customer: c.id, amount: 1250 });
-  await runCommand(
-    {
-      type: 'defineReport',
-      name: 'sales',
-      definition: { label: 'Sales', spec },
-    } as never,
-    h.owner.id,
-    'live',
+  await runAs(h.owner, () =>
+    runCommand(
+      {
+        type: 'defineReport',
+        name: 'sales',
+        definition: { label: 'Sales', spec },
+      } as never,
+      h.owner.id,
+      'live',
+    ),
   );
+  await applyWaiting(h.owner);
 });
 afterAll(async () => {
   await h.close();
 });
 function event(
   who: typeof h.owner | null,
-  target = 'live',
+  _unused = 'live',
   body?: unknown,
   name = 'sales',
 ) {
-  const url = new URL(
-    `http://localhost/api/shell/reports/${name}?target=${target}`,
-  );
+  const url = new URL(`http://localhost/api/shell/reports/${name}`);
   return {
     url,
     params: { name },
@@ -91,43 +95,30 @@ it('runs and exports display labels, money and RFC 4180 quotes', async () => {
   const response = await csv(event(h.owner));
   expect(response.headers.get('content-type')).toContain('text/csv');
   expect(await response.text()).toContain('"Acme, ""Ltd""",$12.50\r\n');
-  expect((await GET(event(h.owner, 'wrong'))).status).toBe(400);
-  expect((await GET(event(h.owner, 'draft'))).status).toBe(404);
   expect((await csv(event(h.owner, 'live', undefined, 'missing'))).status).toBe(
     404,
   );
 });
-it('renames and removes only in the draft; history and preview use plain words', async () => {
-  await runCommand(
-    { type: 'defineReport', name: 'temporary', definition: { spec } } as never,
-    h.owner.id,
-    'live',
+it('renames and removes only as changes waiting; preview uses plain words', async () => {
+  expect(
+    (await POST(event(h.owner, 'live', { action: 'rename', to: 'newSales' })))
+      .status,
+  ).toBe(200);
+  // live still has the old link until the owner applies
+  expect((await GET(event(h.owner))).status).toBe(200);
+  const { preview } = await runAs(h.owner, () => previewChanges());
+  expect(preview.versions.at(-1)?.summary).toContain(
+    'Changed the link of report Sales.',
   );
-  await runCommand({ type: 'undo' }, h.owner.id, 'live');
-  await startDraft('Reports', h.owner.id);
+  await runAs(h.owner, () => discardChanges());
   expect(
     (await POST(event(h.owner, 'live', { action: 'remove' }))).status,
-  ).toBe(409);
-  expect(
-    (await POST(event(h.owner, 'draft', { action: 'rename', to: 'newSales' })))
-      .status,
   ).toBe(200);
-  expect((await previewDraft()).preview.versions.at(-1)?.summary).toContain(
-    'Changed the link of report Sales.',
+  expect((await POST(event(h.owner, 'live', { action: 'bogus' }))).status).toBe(
+    400,
   );
-  expect((await historyFor('draft')).at(-1)?.summary).toContain(
-    'Changed the link of report Sales.',
-  );
-  expect((await GET(event(h.owner, 'live'))).status).toBe(200);
-  expect((await GET(event(h.owner, 'draft'))).status).toBe(404);
-  expect(
-    (await POST(event(h.owner, 'draft', { action: 'remove' }, 'newSales')))
-      .status,
-  ).toBe(200);
-  expect(
-    (await POST(event(h.owner, 'draft', { action: 'bogus' }))).status,
-  ).toBe(400);
-  await discardNow();
+  expect((await GET(event(h.owner))).status).toBe(200);
+  await runAs(h.owner, () => discardChanges());
 });
 
 it('redacts compiler and timeout failures for both reads and CSV', async () => {

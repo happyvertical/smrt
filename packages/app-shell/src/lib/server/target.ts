@@ -1,16 +1,13 @@
-// Which copy of the app a request is about: `live` or `draft`.
+// Which copy of the app a call is about: `live` or `draft`.
 //
-// There is NO ambient "current host". Every entry (a REST route, an MCP
-// request, an assistant tool call) reads the copy from the request itself,
-// builds a {@link CallScope} and passes it down. The default is `live`, the
-// strict side: the approval gate is on, and while a draft is open its
-// structure is frozen. Only `hostFor('draft')` can reach the draft host, and
-// only a request that said `draft` gets there.
+// Since changes waiting (#5178) NO request names a copy: records are always
+// live and structural commands become changes waiting (changes.ts). The draft
+// copy is private to changes.ts and the engine's checks and preview; a request
+// can no longer ask for it (`?target=`, `x-shell-target` and `/mcp?target=` are
+// gone). `Target`/`CallScope` remain as the internal plumbing, always `live`.
 //
-// A scope has two halves because the person may look at the live records while
-// the assistant builds in the draft: `records` is the copy for record
-// operations (app tools, app REST, reports, record routes), `structure` the
-// copy for builder operations (define, add, remove, undo, describe, history).
+// `source` says who is calling, for the card a structural command becomes:
+// the assistant's own tools, or any other API caller.
 //
 // The one piece of async-scoped state is the scope handed to the App model's
 // builder methods (they are static methods with fixed signatures that smrt
@@ -31,6 +28,14 @@ export interface CallScope {
   records: Target;
   /** Copy for builder operations: define/add/remove/undo/describe/history. */
   structure: Target;
+  /** Who is calling (the card's source); unset reads as `api`. */
+  source?: 'assistant' | 'api';
+  /**
+   * Set only for a comment turn (#5206): the ONE waiting change the turn is
+   * about. It adds the `change_revise` tool for that card and withholds the
+   * structural builder tools and record writes.
+   */
+  reviseCardId?: string;
 }
 
 export const LIVE_SCOPE: Readonly<CallScope> = Object.freeze({
@@ -43,24 +48,16 @@ export function scopeFor(target: Target): CallScope {
   return { records: target, structure: target };
 }
 
-/**
- * A request's target value: absent means `live`; anything but `live` or
- * `draft` is a 400, never a silent fallback to some other copy.
- */
-export function parseTarget(value: unknown): Target {
-  if (value === undefined || value === null || value === '') return 'live';
-  if (isTarget(value)) return value;
-  throw new EngineError("target must be 'live' or 'draft'", 'invalid');
-}
-
 /** MCP URL scope: live/draft, assistant split, or tool-free import planning. */
-export type McpScopeKey = Target | 'assistant' | 'import-plan';
+export type McpScopeKey = 'live' | 'assistant' | 'import-plan';
 
 export function mcpScopeKey(params: URLSearchParams): McpScopeKey {
   const scope = params.get('scope');
-  const target = params.get('target');
-  if (scope !== null && target !== null)
-    throw new EngineError('send either scope or target, not both', 'invalid');
+  if (params.get('target') !== null)
+    throw new EngineError(
+      'target is no longer supported: structural changes wait for the owner',
+      'invalid',
+    );
   if (scope !== null) {
     if (scope !== 'assistant' && scope !== 'import-plan')
       throw new EngineError(
@@ -69,7 +66,7 @@ export function mcpScopeKey(params: URLSearchParams): McpScopeKey {
       );
     return scope;
   }
-  return parseTarget(target);
+  return 'live';
 }
 
 const scopeStore = new AsyncLocalStorage<CallScope>();

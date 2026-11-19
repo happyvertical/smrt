@@ -4,10 +4,16 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { TurnEvent } from '../../assistant/events.ts';
 import { ApprovalCollection } from '../../objects/Approval.ts';
 import { listApprovalViews } from '../approvals.ts';
+import { discardChanges, waitingCount } from '../changes.ts';
 import { getHost, getShellDb } from '../host.ts';
 import { createShellMcpServer } from '../mcp-server.ts';
 import { callTool } from '../policy.ts';
-import { openShell, runAs, type ShellHarness } from '../test-support.ts';
+import {
+  applyWaiting,
+  openShell,
+  runAs,
+  type ShellHarness,
+} from '../test-support.ts';
 import {
   AssistantNotConfiguredError,
   assertApiKeyProvider,
@@ -68,6 +74,7 @@ describe('the model sees only the owner allow-list', () => {
         fields: { title: { type: 'text' } },
       }),
     );
+    await applyWaiting(h.owner);
     const names = (await assistantTools(h.owner)).map((t) => t.name);
     expect(names).toEqual(
       expect.arrayContaining([
@@ -192,30 +199,38 @@ describe('risky calls wait for the owner', () => {
     expect(JSON.stringify(requests[1].messages.at(-1))).toContain('denied');
   });
 
-  it('a risky builder method (removeField) waits too, and applies only on approve', async () => {
+  it('a risky builder method (removeField) waits as a change; the assistant cannot apply it', async () => {
     const host = await getHost();
     await callTool(h.owner, 'app_addfield', {
       model: 'Chore',
       field: 'points',
       definition: { type: 'text' },
     });
+    await applyWaiting(h.owner);
     const { model } = scripted([
       () =>
         say('', call('app_removefield', { model: 'Chore', field: 'points' })),
       () => say('done'),
     ]);
-    const events: TurnEvent[] = [];
-    const run = drive({
-      principal: h.owner,
-      model,
-      onEvent: (e) => events.push(e),
+    const { events, stop } = await drive({ principal: h.owner, model });
+    expect(stop).toBe('complete');
+    expect(events.some((e) => e.type === 'approval_required')).toBe(false);
+    expect(events.find((e) => e.type === 'tool_result')).toMatchObject({
+      ok: true,
     });
-    const ask = (await waitFor(() =>
-      events.find((e) => e.type === 'approval_required'),
-    )) as Extract<TurnEvent, { type: 'approval_required' }>;
+    // the live app is unchanged until the owner applies
     expect(host.describe().models.Chore.fields).toHaveProperty('points');
-    await decide(ask.approvalId, true);
-    await run;
+    expect(await runAs(h.owner, () => waitingCount())).toBe(1);
+    // the reply ends in the "changes waiting" block, not a sentence about copies
+    expect(events.at(-2)).toMatchObject({ type: 'changes_block' });
+    expect(
+      events.some(
+        (e) =>
+          e.type === 'text' &&
+          /review and apply/.test((e as { delta?: string }).delta ?? ''),
+      ),
+    ).toBe(false);
+    await applyWaiting(h.owner);
     expect(host.describe().models.Chore.fields).not.toHaveProperty('points');
   });
 
@@ -295,7 +310,7 @@ describe('holdForUser', () => {
 });
 
 describe('a stubbed turn builds and uses the app', () => {
-  it('defines a model, then creates a record', async () => {
+  it('defines a model as a waiting change; its tools exist only after the owner applies', async () => {
     const { model, requests } = scripted([
       () =>
         say(
@@ -305,12 +320,12 @@ describe('a stubbed turn builds and uses the app', () => {
             fields: { name: { type: 'text' } },
           }),
         ),
-      // the new model's tools exist only after the first step
       (r) => {
-        expect(r.tools.map((t) => t.function.name)).toContain('plant_create');
-        return say('', call('plant_create', { name: 'Fern' }));
+        expect(r.tools.map((t) => t.function.name)).not.toContain(
+          'plant_create',
+        );
+        return say('Added Plants for you to review.');
       },
-      () => say('Added a Plant called Fern.'),
     ]);
     const { events, stop, threadId } = await drive({
       principal: h.owner,
@@ -318,32 +333,36 @@ describe('a stubbed turn builds and uses the app', () => {
       text: 'track my plants',
     });
     expect(stop).toBe('complete');
-    expect(requests).toHaveLength(3);
-    const names = events
-      .filter((e) => e.type === 'tool_call')
-      .map((e) => (e as { name: string }).name);
-    expect(names).toEqual(['app_definemodel', 'plant_create']);
+    expect(requests).toHaveLength(2);
+    expect(
+      events
+        .filter((e) => e.type === 'tool_call')
+        .map((e) => (e as { name: string }).name),
+    ).toEqual(['app_definemodel']);
     expect(
       events
         .filter((e) => e.type === 'tool_result')
         .every((e) => (e as { ok: boolean }).ok),
     ).toBe(true);
-    const listed = await callTool(h.owner, 'plant_list', {});
-    expect(text(listed)).toContain('Fern');
+    expect(await runAs(h.owner, () => waitingCount())).toBe(1);
+    expect(Object.keys((await getHost()).describe().models)).not.toContain(
+      'Plant',
+    );
     // persisted and replayable
     const shown = await viewMessages(threadId);
-    expect(shown.map((m) => m.role)).toEqual([
+    expect(shown.map((m) => m.role).slice(0, 3)).toEqual([
       'user',
       'assistant',
       'tool',
-      'tool',
-      'assistant',
     ]);
     expect(shown[0].content).toBe('track my plants');
-    expect(shown.at(-1)?.content).toContain('Fern');
     const replay = await historyFor(threadId);
     expect(replay[0]).toMatchObject({ role: 'user' });
-    expect(replay.filter((m) => m.role === 'tool')).toHaveLength(2);
+    expect(replay.filter((m) => m.role === 'tool')).toHaveLength(1);
+    await applyWaiting(h.owner);
+    const listed = await callTool(h.owner, 'plant_list', {});
+    expect(listed.isError).toBeFalsy();
+    await runAs(h.owner, () => discardChanges()).catch(() => {});
   });
 });
 
@@ -674,5 +693,27 @@ describe('approval pausing comes from the host, not from result text', () => {
     expect(ask.preview).toEqual(stored?.preview);
     expect(ask.summary).not.toContain('FORGED');
     expect((await host.get('Chore', id)).id).toBe(id); // nothing deleted
+  });
+});
+
+describe('the changes block marker', () => {
+  it('is stored as an empty assistant message with a block, and shown that way', async () => {
+    const thread = await createThread(h.owner.id, 'block');
+    await appendMessage(thread, { role: 'user', content: 'add a field' });
+    await appendMessage(thread, {
+      role: 'assistant',
+      content: '',
+      meta: { block: 'changes' },
+    });
+    const shown = await viewMessages(thread.id as string);
+    expect(shown.at(-1)).toMatchObject({
+      role: 'assistant',
+      content: '',
+      block: 'changes',
+    });
+    // the model never sees it
+    expect((await historyFor(thread.id as string)).map((m) => m.role)).toEqual([
+      'user',
+    ]);
   });
 });

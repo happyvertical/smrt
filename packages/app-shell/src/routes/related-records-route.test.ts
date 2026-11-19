@@ -3,7 +3,11 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { App } from '../lib/objects/App.ts';
 import { runAs } from '../lib/server/owner.ts';
-import { openShell, type ShellHarness } from '../lib/server/test-support.ts';
+import {
+  applyWaiting,
+  openShell,
+  type ShellHarness,
+} from '../lib/server/test-support.ts';
 import { FILTER_SCAN_LIMIT } from '../lib/ui/related.ts';
 import * as recordsRoute from './api/shell/records/[model]/+server.ts';
 
@@ -20,6 +24,7 @@ beforeAll(async () => {
       client: { type: 'reference', ref: 'Client' },
     });
   });
+  await applyWaiting(h.owner);
 });
 afterAll(async () => {
   await h.close();

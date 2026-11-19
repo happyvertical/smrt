@@ -12,7 +12,6 @@ import { isPending, runRest } from '$lib/server/builder';
 import {
   guarded,
   HttpError,
-  headerTargetOf,
   json,
   MAX_BODY_BYTES,
   ownerOf,
@@ -55,7 +54,7 @@ const handle: RequestHandler = guarded(async (event) => {
   const out = await runRest(
     { method, url: appUrl(event.params.path ?? '', event.url.search), body },
     owner.id,
-    headerTargetOf(event),
+    'live',
   );
   if (isPending(out)) return json(out, 202);
   return new Response(out.body, {

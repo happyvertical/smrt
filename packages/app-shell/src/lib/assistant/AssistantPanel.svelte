@@ -1,13 +1,13 @@
 <script lang="ts">
 import { renderAssistantMarkdown } from '@happyvertical/smrt-chat/svelte';
 import { ReportResult } from '@happyvertical/smrt-reports/svelte';
-import { Badge } from '@happyvertical/smrt-ui';
 import { onDestroy, onMount, tick, untrack } from 'svelte';
 import ApprovalCard from '$lib/components/ApprovalCard.svelte';
+import { planReplyBlock, plural } from '$lib/ui/changes';
 import type { OwnerProfile } from '$lib/ui/format';
 import { ASSISTANT_STATUS_EVENT } from '$lib/ui/layout';
 import { reportCell, reportCellHref } from '$lib/ui/reports';
-import type { ApprovalView } from '$lib/ui/types';
+import type { ApprovalView, ChangesState } from '$lib/ui/types';
 import {
   AssistantRequestError,
   answerApproval,
@@ -37,15 +37,16 @@ import {
 // a toggle.
 let {
   open = true,
-  buildingInDraft = false,
-  viewingDraft = true,
   owner = null,
+  changes = null,
+  onapply,
 }: {
   open?: boolean;
-  buildingInDraft?: boolean;
-  /** The header's Live/Draft switch: the badge must not contradict it. */
-  viewingDraft?: boolean;
   owner?: OwnerProfile | null;
+  /** The ONE changes state (the layout's): the reply block reads its numbers here. */
+  changes?: ChangesState | null;
+  /** The owner's Apply click from the block; `applyNow` is which button it was. Throws a plain message to show. */
+  onapply?: (applyNow: boolean) => Promise<void>;
 } = $props();
 
 let dock = $state<DockState>(initialState);
@@ -66,6 +67,27 @@ const canSend = $derived(
     draft.trim().length > 0,
 );
 const announce = $derived(announcement(dock));
+const block = $derived(planReplyBlock(changes));
+// Only the newest block is live; earlier ones in the thread would only repeat it.
+const lastBlock = $derived(
+  dock.items.findLast((i) => i.kind === 'changes')?.id,
+);
+let applying = $state(false);
+let applyError = $state('');
+
+async function applyFromBlock() {
+  if (!onapply || !block || applying) return;
+  applying = true;
+  applyError = '';
+  try {
+    await onapply(block.applyNow);
+  } catch (error) {
+    applyError =
+      error instanceof Error ? error.message : 'Could not apply. Try again.';
+  } finally {
+    applying = false;
+  }
+}
 
 async function loadViews() {
   try {
@@ -249,7 +271,6 @@ onDestroy(() => controller?.abort());
   <header class="smrt-assistant-panel__bar">
     <div class="smrt-assistant-panel__title">
       <h2>Assistant</h2>
-      {#if buildingInDraft}<Badge variant="warning">{viewingDraft ? 'Building in draft' : 'Changes go to the draft'}</Badge>{/if}
       {#if dock.engineLabel}<p class="smrt-app-shell__muted smrt-assistant-panel__engine">Using {dock.engineLabel}</p>{/if}
     </div>
     <div class="smrt-assistant-panel__bar-actions">
@@ -293,11 +314,37 @@ onDestroy(() => controller?.abort());
           <span>{toolLabel(item.name)}{item.state === 'error' ? " didn't work" : ''}</span>
           {#if 'failures' in item && item.failures > 1}<span class="smrt-app-shell__muted">Tried {item.failures} times.</span>{/if}
           {#if item.summary}<span class="smrt-app-shell__muted smrt-assistant-panel__sum">{item.summary}</span>{/if}
-          {#if item.copy}<span class="smrt-app-shell__muted">{item.copy === 'draft' ? 'Tried in a draft. Your live app is unchanged.' : 'Changed in your live app.'}</span>{/if}
           <span class="smrt-assistant-panel__sr-only">{item.state === 'running' ? 'running' : item.state === 'ok' ? 'done' : 'did not work'}</span>
         </p>
         {#if item.report}<div class="smrt-app-shell__card"><ReportResult result={item.report.result} formatCell={reportCell} cellHref={reportCellHref} />{#if item.report.href}<a href={item.report.href}>Open report</a>{/if}</div>
         {:else if item.reportHref}<a href={item.reportHref}>Open report</a>{/if}
+      {:else if item.kind === 'changes'}
+        {#if item.id === lastBlock && block}
+          <div class="smrt-assistant-panel__block" role="group" aria-label={block.label} data-testid="changes-block">
+            <p class="smrt-assistant-panel__block-h">
+              <span class="smrt-assistant-panel__count" aria-hidden="true">{block.count}</span>
+              <span>{block.count === 1 ? 'change' : 'changes'} waiting</span>
+              {#if block.questions > 0}<span class="smrt-assistant-panel__q">{plural(block.questions, 'question')}</span>{/if}
+            </p>
+            <ul class="smrt-assistant-panel__block-list">
+              {#each block.lines as line, i (i)}<li>{line}</li>{/each}
+              {#if block.more > 0}<li class="smrt-app-shell__muted">and {block.more} more</li>{/if}
+            </ul>
+            <div class="smrt-assistant-panel__block-a">
+              {#if block.applyNow}
+                <button type="button" class="smrt-app-shell__btn smrt-app-shell__btn-primary" disabled={applying || !block.canApply} onclick={applyFromBlock}>Apply now</button>
+                <a class="smrt-app-shell__btn" href="/changes">Review</a>
+              {:else if block.lead === 'review'}
+                <a class="smrt-app-shell__btn smrt-app-shell__btn-primary" href="/changes">Review</a>
+                <button type="button" class="smrt-app-shell__btn" disabled={applying || !block.canApply} onclick={applyFromBlock}>Apply</button>
+              {:else}
+                <button type="button" class="smrt-app-shell__btn smrt-app-shell__btn-primary" disabled={applying} onclick={applyFromBlock}>Apply</button>
+                <a class="smrt-app-shell__btn" href="/changes">Review</a>
+              {/if}
+            </div>
+            {#if applyError}<p class="smrt-app-shell__alert smrt-app-shell__alert-error" role="alert">{applyError}</p>{/if}
+          </div>
+        {/if}
       {:else if item.kind === 'approval'}
         <div class="smrt-assistant-panel__card">
           <ApprovalCard
@@ -447,6 +494,32 @@ onDestroy(() => controller?.abort());
   .smrt-assistant-panel__hint {
     margin: 0;
   }
+  .smrt-assistant-panel__block {
+    display: grid;
+    gap: 0.5rem;
+    padding: 0.75rem;
+    align-self: stretch;
+  }
+  .smrt-assistant-panel__block-h {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+    margin: 0;
+  }
+  .smrt-assistant-panel__count,
+  .smrt-assistant-panel__q {
+    padding: 0 0.5rem;
+  }
+  .smrt-assistant-panel__block-list {
+    margin: 0;
+    padding-inline-start: 1.1rem;
+  }
+  .smrt-assistant-panel__block-a {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
   .smrt-assistant-panel__card :global(.smrt-app-shell__card) {
     margin: 0;
   }
@@ -508,6 +581,17 @@ onDestroy(() => controller?.abort());
   .smrt-assistant-panel__bot {
     background: var(--smrt-color-surface-container, rgb(128 128 128 / 0.1));
   }
+  .smrt-assistant-panel__block {
+    border: var(--smrt-hairline);
+    border-radius: var(--smrt-radius-md, 0.5rem);
+    background: var(--smrt-color-surface-container, rgb(128 128 128 / 0.1));
+  }
+  .smrt-assistant-panel__count,
+  .smrt-assistant-panel__q {
+    border-radius: var(--smrt-radius-full);
+    background: var(--smrt-color-primary-container, rgb(128 128 128 / 0.2));
+    color: var(--smrt-color-on-primary-container, inherit);
+  }
   .smrt-assistant-panel__chip {
     border: var(--smrt-hairline);
     border-radius: var(--smrt-radius-full);
@@ -532,6 +616,13 @@ onDestroy(() => controller?.abort());
   }
   .smrt-assistant-panel__markdown :global(th) {
     font-weight: 600;
+  }
+  .smrt-assistant-panel__block-h {
+    font-weight: 600;
+  }
+  .smrt-assistant-panel__count,
+  .smrt-assistant-panel__q {
+    font-size: 0.8125rem;
   }
 }
 </style>

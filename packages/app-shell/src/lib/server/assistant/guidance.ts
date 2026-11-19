@@ -29,14 +29,15 @@ export const assistantSystemPrompt = definePrompt({
   editable: { template: true, profile: false, model: false, params: false },
 });
 
-/** The one line that tells the model which copy it is working on right now. */
+/** The one line that tells the model where its structural changes go right now. */
 export function modeLine(mode: ModeContext): string {
-  if (!mode.draft)
-    return 'Mode: no draft is open. Changes you make to the structure go to the live app, and risky ones wait for the person to approve. If the person wants to try changes safely first, you can start a draft with app_startdraft.';
-  const head = `Mode: the draft "${mode.draft}" is open. You build only in the draft; the live app's structure is frozen. After any structural change, say plainly that you changed the draft and that the live app is unchanged.`;
-  if (mode.scope.records === 'draft')
-    return `${head} The person is looking at the DRAFT, so the records you list, create or change are the draft's test records (they are thrown away when the draft is published).`;
-  return `${head} The person is looking at the LIVE app, so the records you list, create or change are the real ones. New models and fields exist only in the draft; to try them with records the person must switch the view to Draft. To make the draft's changes live, call app_publishdraft: it waits for the person's approval and never applies by itself.`;
+  const head =
+    'Mode: structural changes you make (models, fields, reports, loads, merges) are collected as changes waiting; the owner reviews and applies them, and you cannot apply. The live app is unchanged until they do. Records you list, create or change are the real ones and take effect at once.';
+  const card = mode.scope.reviseCardId;
+  if (card)
+    return `${head} This turn is about ONE waiting change (id ${card}), which the owner commented on. If they ask for something different, replace that change with change_revise; you cannot apply it, add other changes or touch other cards. Answer in one or two plain sentences.`;
+  if (!mode.waiting) return head;
+  return `${head} ${mode.waiting} change${mode.waiting === 1 ? ' is' : 's are'} already waiting; what you describe includes them.`;
 }
 
 /** The packaged guidance text, before any layer is applied. */
