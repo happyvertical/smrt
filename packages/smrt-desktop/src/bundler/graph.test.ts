@@ -34,6 +34,7 @@ interface Spec {
   deps?: string[];
   optional?: string[];
   peer?: string[];
+  peerMeta?: Record<string, { optional?: boolean }>;
   scripts?: Record<string, string>;
   main?: string;
   nested?: Spec[];
@@ -51,6 +52,7 @@ function writeSpec(container: string, spec: Spec): void {
   if (spec.deps) record.dependencies = map(spec.deps);
   if (spec.optional) record.optionalDependencies = map(spec.optional);
   if (spec.peer) record.peerDependencies = map(spec.peer);
+  if (spec.peerMeta) record.peerDependenciesMeta = spec.peerMeta;
   if (spec.scripts) record.scripts = spec.scripts;
   if (spec.main) record.main = spec.main;
   writeFileSync(join(dir, 'package.json'), JSON.stringify(record));
@@ -122,6 +124,9 @@ describe('graph on a hoisted tree', () => {
       '{"name":"x"}',
       '{"name":"x","version":"1","dependencies":{"a":1}}',
       '{"name":"x","version":"1","dependencies":[]}',
+      '{"name":"x","version":"1","peerDependenciesMeta":[]}',
+      '{"name":"x","version":"1","peerDependenciesMeta":{"a":null}}',
+      '{"name":"x","version":"1","peerDependenciesMeta":{"a":{"optional":"true"}}}',
     ]) {
       mkdirSync(join(modules, 'bad'));
       writeFileSync(join(modules, 'bad/package.json'), body);
@@ -169,6 +174,56 @@ describe('graph on a hoisted tree', () => {
     const graph = await graphOf(['a']);
     expect(graph.missing).toEqual([{ from: 'node_modules/a', name: 'gone' }]);
     expect(() => assertNoMissingDependencies(graph)).toThrow(BundleTreeError);
+  });
+
+  it('honors optional peer overlap without hiding required dependencies', async () => {
+    install([
+      {
+        name: '@crawlee/puppeteer',
+        deps: ['idcac-playwright'],
+        peer: ['idcac-playwright'],
+        peerMeta: { 'idcac-playwright': { optional: true } },
+      },
+      {
+        name: 'required',
+        deps: ['absent'],
+        peer: ['absent'],
+        peerMeta: { absent: { optional: false } },
+      },
+      {
+        name: 'unspecified',
+        deps: ['absent'],
+        peer: ['absent'],
+        peerMeta: { absent: {} },
+      },
+      {
+        name: 'not-a-peer',
+        deps: ['absent'],
+        peerMeta: { absent: { optional: true } },
+      },
+    ]);
+    const packages = await readInstalledPackages(modules);
+    expect(
+      packages.find((pkg) => pkg.name === '@crawlee/puppeteer'),
+    ).toMatchObject({
+      peerDependenciesMeta: { 'idcac-playwright': { optional: true } },
+    });
+    const graph = buildDependencyGraph(packages, [
+      '@crawlee/puppeteer',
+      'required',
+      'not-a-peer',
+    ]);
+    expect(graph.missing).toEqual([
+      { from: 'node_modules/not-a-peer', name: 'absent' },
+      { from: 'node_modules/required', name: 'absent' },
+      { from: 'node_modules/unspecified', name: 'absent' },
+    ]);
+    install([{ name: 'idcac-playwright' }]);
+    expect(
+      (await graphOf(['@crawlee/puppeteer'])).edges(
+        'node_modules/@crawlee/puppeteer',
+      ),
+    ).toEqual(['node_modules/idcac-playwright']);
   });
 
   it('checks the retained closure without requiring dependencies of removed packages', async () => {
