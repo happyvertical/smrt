@@ -64,14 +64,13 @@ export interface ApprovalMailSendCheck {
   bindingHash: string;
   requester: ApprovalMailSendActor;
   summary: string;
-  /**
-   * Called with the counted approvers before an approval is consumed;
-   * returning false refuses the send (`approver_not_authorized`).
-   */
-  verifyApprovers(approverIds: string[]): Promise<boolean>;
 }
 
-/** Structural copy of smrt-messages' check result. */
+/**
+ * Structural copy of smrt-messages' check result. `approved` means a person
+ * approved this revision and it waits for them to release it; `check` never
+ * consumes, so the requester can never send it itself.
+ */
 export type ApprovalMailSendCheckResult =
   | { state: 'approved'; approvalId: string; approverIds: string[] }
   | { state: 'pending'; approvalId: string; created: boolean }
@@ -137,10 +136,10 @@ function principalOf(
 
 /**
  * Build the mail-send approval gate. `check` opens an idempotent request per
- * draft revision and returns `pending` until a person approves; after
- * approval it re-verifies the approvers through the caller, consumes the
- * approval (single use) and answers `approved`. `decide`, `get` and
- * `consume` serve the person who approves, edits or rejects the draft.
+ * draft revision and reports its state (`pending`, `approved`, refused); it
+ * never consumes, so an approved send leaves only when an approving person
+ * releases it through `consume`, which re-verifies the approvers through the
+ * caller first (single use). `decide` and `get` serve the deciding person.
  */
 export function createApprovalMailSendGate(
   options: ApprovalMailSendGateOptions,
@@ -269,23 +268,13 @@ export function createApprovalMailSendGate(
         switch (row.status) {
           case 'approved': {
             if (row.isConsumed() || !live) continue;
-            const used = await consumeVerified(
-              requester,
+            // Released only by an approving person (`consume`), never here.
+            const current = await view(requester, approvalId);
+            return {
+              state: 'approved',
               approvalId,
-              request.bindingHash,
-              request.verifyApprovers,
-            );
-            if (used.ok) {
-              return {
-                state: 'approved',
-                approvalId,
-                approverIds: used.view.approverIds,
-              };
-            }
-            // A concurrent twin consumed it first, or it just expired.
-            if (used.reason === 'already_consumed' || used.reason === 'expired')
-              continue;
-            return { state: 'refused', reason: used.reason, approvalId };
+              approverIds: current?.approverIds ?? [],
+            };
           }
           case 'pending':
             if (!live) continue;

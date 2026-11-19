@@ -106,10 +106,12 @@ other. Kind `messages.mail.send`, subject `@happyvertical/smrt-messages:Message`
 permission `messages.send`, `allowRevisedApproval: true`, `requestKey`
 `mail-send:<messageId>:<bindingHash>` with the mcp-gate epoch suffix. The
 requester holds no permission; a decider is `human` only when labelled
-`person` or `human`. Before any consume the gate hands the counted approvers
-of the bound revision to the caller's `verifyApprovers` (smrt-messages checks
-each still holds `send` on the account); false refuses
-`approver_not_authorized` and leaves the approval unconsumed.
+`person` or `human`. `check` only reports state and never consumes, so the
+requester can never release its own send; an approving person releases it
+through `consume`, which first hands the counted approvers of the bound
+revision to the caller's `verifyApprovers` (smrt-messages checks each still
+holds `send` on the account); false refuses `approver_not_authorized` and
+leaves the approval unconsumed.
 
 ## Out of scope here (later slices of #3716)
 

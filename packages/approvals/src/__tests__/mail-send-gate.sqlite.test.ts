@@ -46,7 +46,6 @@ describe('mail-send approval gate (SQLite)', () => {
     const messageId = randomUUID();
     const check = (
       bindingHash = 'draft-1',
-      verifyApprovers: (ids: string[]) => Promise<boolean> = async () => true,
       requester: { id: string; kind: string | null } = agent,
     ) =>
       gate.check({
@@ -54,10 +53,21 @@ describe('mail-send approval gate (SQLite)', () => {
         messageId,
         bindingHash,
         requester,
-        summary: 'Reply to Ada',
+        summary: 'An agent asked to send an email.',
+      });
+    const release = (
+      bindingHash = 'draft-1',
+      approvalId: string,
+      verifyApprovers: (ids: string[]) => Promise<boolean> = async () => true,
+    ) =>
+      gate.consume({
+        tenantId,
+        approvalId,
+        consumer: person,
+        bindingHash,
         verifyApprovers,
       });
-    return { tenantId, clock, gate, agent, person, messageId, check };
+    return { tenantId, clock, gate, agent, person, messageId, check, release };
   }
 
   it('holds an agent send until a person approves, then releases it once', async () => {
@@ -77,16 +87,28 @@ describe('mail-send approval gate (SQLite)', () => {
     });
     expect(decided.ok).toBe(true);
 
-    const seen: string[][] = [];
-    const released = await w.check('draft-1', async (ids) => {
-      seen.push(ids);
-      return true;
-    });
-    expect(released).toMatchObject({
+    // The requester sees the approval but cannot consume it.
+    const status = await w.check();
+    expect(status).toMatchObject({
       state: 'approved',
       approvalId: first.approvalId,
       approverIds: [w.person.id],
     });
+    expect(
+      await w.gate.get(w.tenantId, first.approvalId, w.agent),
+    ).toMatchObject({ consumed: false });
+
+    // The approving person releases it, after re-verification.
+    const seen: string[][] = [];
+    const released = await w.release(
+      'draft-1',
+      first.approvalId,
+      async (ids) => {
+        seen.push(ids);
+        return true;
+      },
+    );
+    expect(released).toMatchObject({ ok: true, view: { consumed: true } });
     expect(seen).toEqual([[w.person.id]]);
 
     // Single use: the same content opens a new request instead of reusing it.
@@ -157,9 +179,13 @@ describe('mail-send approval gate (SQLite)', () => {
       decision: 'approve',
       expectedBindingHash: 'draft-1',
     });
-    const refused = await w.check('draft-1', async () => false);
+    const refused = await w.release(
+      'draft-1',
+      opened.approvalId,
+      async () => false,
+    );
     expect(refused).toMatchObject({
-      state: 'refused',
+      ok: false,
       reason: 'approver_not_authorized',
     });
     const view = await w.gate.get(w.tenantId, opened.approvalId, w.agent);
