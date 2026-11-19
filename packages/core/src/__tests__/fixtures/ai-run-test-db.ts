@@ -125,3 +125,74 @@ export function recordStatements(
 export function hasTenantPredicate(sql: string): boolean {
   return /tenant_id (=|IS NULL)/.test(sql);
 }
+
+/**
+ * Run `action` once, immediately before the first statement `matches`
+ * selects, on the same handle (inside the same transaction when the
+ * statement is in one): the place a test interleaves a change, such as a run
+ * id pruned and reused by another tenant between two steps of an operation.
+ * `exec` runs a statement on that handle. Returns the restore function.
+ */
+export function beforeStatement(
+  db: DatabaseInterface,
+  matches: (sql: string, params: unknown[]) => boolean,
+  action: (
+    exec: (sql: string, ...params: unknown[]) => Promise<unknown>,
+  ) => Promise<void> | void,
+): () => void {
+  let fired = false;
+  const wrap = (handle: DatabaseInterface): DatabaseInterface =>
+    new Proxy(handle, {
+      get(target, property, receiver) {
+        const value = Reflect.get(target, property, receiver);
+        if (property === 'query' && typeof value === 'function') {
+          return async (sql: string, ...params: unknown[]) => {
+            const text = sql.replace(/\s+/g, ' ').trim();
+            if (!fired && matches(text, params)) {
+              fired = true;
+              await action((s, ...p) => value.call(target, s, ...p));
+            }
+            return value.call(target, sql, ...params);
+          };
+        }
+        return typeof value === 'function' ? value.bind(target) : value;
+      },
+    });
+  const mutable = db as unknown as {
+    query: DatabaseInterface['query'];
+    transaction?: DatabaseInterface['transaction'];
+  };
+  const originalQuery = mutable.query;
+  const originalTransaction = mutable.transaction;
+  mutable.query = (async (sql: string, ...params: unknown[]) => {
+    const text = sql.replace(/\s+/g, ' ').trim();
+    if (!fired && matches(text, params)) {
+      fired = true;
+      await action((s, ...p) => originalQuery.call(db, s, ...p));
+    }
+    return originalQuery.call(db, sql, ...params);
+  }) as DatabaseInterface['query'];
+  if (originalTransaction) {
+    mutable.transaction = ((
+      operation: (tx: DatabaseInterface) => Promise<unknown>,
+      ...rest: unknown[]
+    ) =>
+      (originalTransaction as (...args: unknown[]) => Promise<unknown>).call(
+        db,
+        (tx: DatabaseInterface) => operation(wrap(tx)),
+        ...rest,
+      )) as DatabaseInterface['transaction'];
+  }
+  return () => {
+    mutable.query = originalQuery;
+    if (originalTransaction) mutable.transaction = originalTransaction;
+  };
+}
+
+/** A statement that locks (or reads) one run row by id in `_smrt_ai_runs`. */
+export function readsRunRow(runId: string) {
+  return (sql: string, params: unknown[]) =>
+    sql.startsWith('SELECT') &&
+    sql.includes('FROM _smrt_ai_runs r WHERE r.id = $1') &&
+    params[0] === runId;
+}
