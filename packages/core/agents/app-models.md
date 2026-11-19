@@ -255,7 +255,10 @@ one locked transaction. Completion is fenced; a concurrent/stale edit gets
 app/tenant/revision primary key and app/tenant/request uniqueness. History is
 permanent. Undo appends a compensating revision for the latest not-yet-undone
 edit; it never deletes history. The persisted cookbook is authoritative over
-the startup default. Export contains portable definitions/policies, not host
+the startup default. A startup cookbook that declares app models, opened with an empty
+journal, is journalled as revision 1 (actor `system`, an `import`), validated
+like an edit against the database and installed models first, so a retained
+table is never adopted. Export contains portable definitions/policies, not host
 actor/history records.
 
 SQLite and PostgreSQL are supported. PostgreSQL history stores native UUID

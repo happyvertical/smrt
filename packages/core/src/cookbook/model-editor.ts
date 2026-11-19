@@ -1036,6 +1036,45 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
   }
 
   /**
+   * An initial cookbook that declares app models, opened with an empty
+   * journal, becomes journal revision 1: validated like an edit against the
+   * database (a retained table cannot be adopted) and the installed models,
+   * then migrated and completed as a tracked revision, so later boots treat
+   * its lists as journalled and the retire step knows their tables.
+   */
+  async function journalInitial(
+    target: AppModelHistoryStore,
+    db: DatabaseInterface,
+  ) {
+    const models = doc.models;
+    if (
+      history.length ||
+      !models ||
+      (!Object.keys(models.lists).length && !Object.keys(models.fields).length)
+    )
+      return;
+    await validate(doc, undefined, db);
+    const before = structuredClone(doc);
+    delete before.models;
+    const change: AppModelChange = {
+      revision: 1,
+      requestId: 'initial-cookbook',
+      actor: 'system',
+      command: JSON.stringify({
+        type: 'import',
+        cookbook: doc,
+        summary: 'Initial app models',
+      }),
+      before,
+      after: structuredClone(doc),
+      status: 'pending',
+    };
+    await target.append(change, 0);
+    history = [change];
+    revision = 1;
+  }
+
+  /**
    * Read-only check that every registered customised model's table holds
    * every declared column (provider upgrades included), so boot never opens a
    * model whose storage is incomplete. PostgreSQL stores identifiers over 63
@@ -1103,6 +1142,7 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
           history = await (scopedReader ? scopedReader.light() : scoped.read());
           revision = history.at(-1)?.revision ?? 0;
           doc = checked(history.at(-1)?.after ?? options.cookbook);
+          await journalInitial(scoped, db);
           await validate(
             doc,
             storageModels(history.flatMap((row) => [row.before, row.after])),
@@ -1117,6 +1157,7 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
           );
         });
       } else {
+        await journalInitial(store, options.db);
         await validate(
           doc,
           storageModels(history.flatMap((row) => [row.before, row.after])),

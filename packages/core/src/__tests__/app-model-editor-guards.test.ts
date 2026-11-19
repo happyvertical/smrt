@@ -141,6 +141,14 @@ describe('app model editor: installed model names and tables', () => {
         expectedRevision: e.snapshot().revision,
         requestId: `req-${crypto.randomUUID()}`,
       });
+  const e2eColumns = async (table: string) =>
+    (
+      await db.query(
+        engine === 'postgres'
+          ? `SELECT column_name AS name FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = '${table}'`
+          : `PRAGMA table_info(${table})`,
+      )
+    ).rows.map((row) => String(row.name));
   const tableNames = async () =>
     (
       await db.query(
@@ -225,6 +233,40 @@ describe('app model editor: installed model names and tables', () => {
     });
     await apply({ type: 'remove_list', name: SAME_TABLE_LIST });
     expect(e.snapshot().revision).toBe(3);
+  });
+
+  it('journals an initial cookbook as a tracked revision and never adopts a retained table on a fresh boot', async () => {
+    const withList = (name: string): Cookbook => ({
+      ...book(),
+      features: [`${APP}:${name}`],
+      models: {
+        version: 1,
+        packageName: APP,
+        lists: { [name]: structuredClone(listDefinition) as never },
+        fields: {},
+      },
+    });
+    // A disabled recipe's retained table, its model not loaded.
+    await loadLedger();
+    await migrateSmrtSchemas({ db, packageName: APP, engineHint: engine });
+    ObjectRegistry.clear();
+    await expect(
+      editorFor({ cookbook: withList(SAME_TABLE_LIST) }),
+    ).rejects.toThrow(/MODEL_TABLE_COLLISION: guard_ledgers already exists/);
+    expect(await e2eColumns(LEDGER_TABLE)).not.toContain('note');
+
+    // A free table: the initial cookbook becomes revision 1, and reopens.
+    const first = await editorFor({ cookbook: withList('GuardNotes') });
+    expect(
+      (await first.history()).map((row) => [
+        row.revision,
+        row.status,
+        row.actor,
+      ]),
+    ).toEqual([[1, 'applied', 'system']]);
+    ObjectRegistry.clear();
+    const again = await editorFor({ cookbook: withList('GuardNotes') });
+    expect(again.snapshot().revision).toBe(1);
   });
 });
 
