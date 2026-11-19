@@ -407,6 +407,7 @@ describe('runToolLoop', () => {
     ObjectRegistry.register(AppNote, {
       name: 'ToolLoopNote',
       packageName: '@fixture/c4-app',
+      replaceParent: true,
     });
     const effective = '@fixture/c4-app:ToolLoopNote';
     try {
@@ -3187,6 +3188,7 @@ describe('server approval policy', () => {
       });
       ObjectRegistry.register(SameNameIdentity, {
         packageName: '@fixture/safety-app',
+        replaceParent: true,
       });
       ObjectRegistry.register(PrivateSetting, {
         packageName: '@fixture/safety-app',
