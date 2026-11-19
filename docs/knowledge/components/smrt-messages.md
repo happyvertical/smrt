@@ -5,10 +5,10 @@ description: "Unified multi-channel messaging with STI-based hierarchies"
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-19T02:33:32Z"
+  at: "2026-11-19T14:06:44Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:c567cee21e773040711febd6b592642b33662e763b86839b724ac7855436b291"
+source_revision: "sha256:461d8d0aa830df1c829a4057cfadceab54626c06e7a23e09314a4c6418ffaf34"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/messages/package.json"
@@ -17,9 +17,12 @@ sources:
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/messages/AGENTS.md"
     title: "@happyvertical/smrt-messages packages/messages/AGENTS.md"
   - id: "agents-2"
+    resource: "https://github.com/happyvertical/smrt/blob/main/packages/messages/agents/mail-search.md"
+    title: "@happyvertical/smrt-messages packages/messages/agents/mail-search.md"
+  - id: "agents-3"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/messages/agents/notification-outbox.md"
     title: "@happyvertical/smrt-messages packages/messages/agents/notification-outbox.md"
-  - id: "agents-3"
+  - id: "agents-4"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/messages/agents/profile-recipients.md"
     title: "@happyvertical/smrt-messages packages/messages/agents/profile-recipients.md"
 ---
@@ -36,6 +39,7 @@ sources:
 ## Documentation
 
 - `packages/messages/AGENTS.md`
+- `packages/messages/agents/mail-search.md`
 - `packages/messages/agents/notification-outbox.md`
 - `packages/messages/agents/profile-recipients.md`
 
@@ -84,6 +88,8 @@ sources:
 - `AttachmentCollection` (collection `attachments`, extends `SmrtCollection`)
 - `Blacklist` (collection `blacklists`, extends `SmrtObject`)
 - `BlacklistCollection` (collection `blacklists`, extends `SmrtCollection`)
+- `Correspondent` (collection `correspondents`, extends `SmrtObject`)
+- `CorrespondentCollection` (collection `correspondents`, extends `SmrtCollection`)
 - `Email` (collection `messages`, extends `Message`, STI table)
 - `EmailAccount` (collection `accounts`, extends `Account`, STI table)
 - `EmailAccountCollection` (collection `accounts`, extends `AccountCollection`)

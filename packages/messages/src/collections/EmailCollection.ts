@@ -212,6 +212,26 @@ export class EmailCollection extends MessageCollection {
   }
 
   /**
+   * Rank emails by meaning (core `semanticSearchIds`), with `where` applied
+   * BEFORE ranking so a hit can never come from outside the caller's scope.
+   * Returns null when embeddings are not available (not configured, or the
+   * embedding provider failed) so callers fall back to keyword search;
+   * authorization and database failures still throw.
+   */
+  async semanticMatches(
+    query: string,
+    where: Record<string, unknown>,
+    options: { limit?: number; minSimilarity?: number } = {},
+  ): Promise<Array<{ id: string; similarity: number }> | null> {
+    const result = await this.semanticSearchIdsWithAvailability(query, {
+      limit: options.limit ?? 200,
+      minSimilarity: options.minSimilarity ?? 0.2,
+      where,
+    });
+    return result.available ? result.matches : null;
+  }
+
+  /**
    * Mark all emails in a folder as read
    */
   async markFolderRead(folderId: string): Promise<void> {
