@@ -1734,7 +1734,8 @@ definition mismatch always appends, with `confirmed_retirements` (system schema
 1.18.0; JSON, one entry per table: table, package, last owner, release, `by`
 flag or code, the differences confirmed); other rows leave it NULL. This permanent ledger has no retention/prune task.
 `readLastMigrateRecord` is SELECT-only and returns `state: 'none'` for an absent
-or empty table: the first run under this scheme, not a schema mismatch. The latest
+or empty table: no record, not a schema mismatch (the release floor then warns
+from the database's system tables, see "Release upgrade gate"). The latest
 row orders by `created_at`, then `id`. Call the writer on the caller's database
 handle while its migration lock is held; it also works without a tracker.
 
@@ -2050,8 +2051,42 @@ declaring package. A table the code simply stopped declaring, with no
 declaration, still fails as an old column that holds data.
 
 Migrate refuses a database whose last migrate record is older than the floor.
-It names the supported release and the first upgrade to run. A database without
-a record is a first run under this scheme and proceeds. To move the floor, run
+It names the supported release and the first upgrade to run.
+
+**A database without a record is checked against its system tables, with a
+warning only.** Migrate records start at 0.61.4, later than the floor, so the
+databases the floor exists for never have one. Releases stamp their
+`SMRT_SCHEMA_VERSION` in `_smrt_migrations` when they prepare system tables
+(`smrt db:migrate`, the first model use), but not when an app migrates through
+`migrateSmrtSchemas`. `oldest-supported.json` names the floor release's value
+(`systemSchema`; 1.15.0 for 0.60.17, first shipped in 0.60.16), and
+`readRecordedSystemSchema()` reads the highest stamp, SELECT-only and before
+the run prepares anything. With no record and a highest stamp below the
+floor's, `checkUnrecordedDatabaseAge()` returns a warning, and
+`migrateSmrtSchemas` (logger), `smrt db:migrate` (stderr) and
+`smrt doctor --db` ("Database release") print it; the run proceeds. No record
+and no stamp, or a stamp at or above the floor's, is silent.
+
+It is a warning because nothing in the database tells the histories apart:
+
+| History | Highest stamp | Supported? |
+|---|---|---|
+| Last prepared and migrated by 0.60.15 or earlier | below 1.15.0 | No |
+| Prepared by 0.60.15 or earlier, application tables migrated by 0.60.17 to 0.61.3 through `migrateSmrtSchemas` only | below 1.15.0 | Yes |
+| Last migrated by 0.60.16 | 1.15.0 | No |
+| Older database whose models a newer build started before its migrate | that build's | Not proven |
+
+The tracker table `_smrt_schema_migrations` has the same shape from 0.60.0 to
+0.61.3, its rows carry the app's version rather than smrt's, and the core
+system schema did not change between 0.60.16 and 0.60.17, so neither tells
+these apart. Refusing on the stamp refused a supported database (the second
+row); admitting with a warning is the chosen trade. `checkOldestSupportedRelease()`
+is unchanged and decides only from a migrate record.
+
+Each snapshot records its release's `systemSchema` (`capture` reads
+`SMRT_SCHEMA_VERSION` of the built checkout); `move-oldest` copies the new
+floor's into `oldest-supported.json`, and the gate fails when the two differ
+or the value is missing. To move the floor, run
 `node scripts/release-upgrade-gate.mjs move-oldest --to <release>
 --upgrade-first-to <release> --reason "<why old upgrade code can be removed>"`
 on one shell line. Both releases must have saved snapshots. The command appends

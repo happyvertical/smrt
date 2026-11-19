@@ -120,8 +120,16 @@ Read this before you upgrade a deployed app.
   dropped column stops; and the JSON adapter cannot rebuild. The list is in
   [`schema-paths.md`](https://github.com/happyvertical/smrt/blob/main/packages/core/agents/schema-paths.md).
 - **Migrate refuses a database older than the oldest supported release.** That
-  release is 0.60.17. The error names it and the first upgrade to run. A
-  database with no migrate record is not refused. Every release upgrades the
+  release is 0.60.17. The error names it and the first upgrade to run. Migrate
+  records start at smrt 0.61.4, so an older database has none and is not
+  refused. When such a database's system tables carry a version stamp older
+  than the one 0.60.17 writes (system schema 1.15.0), migrate prints a warning,
+  "This database has no migrate record, and its system tables were last
+  prepared by a smrt release older than 0.60.17 ...", and proceeds: if the
+  database was last used with smrt 0.60.15 or earlier, stop and upgrade it with
+  smrt 0.60.17 first. The stamp cannot prove more: an app on 0.60.17 to 0.61.3
+  that migrated through `migrateSmrtSchemas` leaves the old stamp in place, and
+  0.60.16 writes the same stamp as 0.60.17. Every release upgrades the
   previous release and the oldest supported one, and the pull request job
   `pnpm check:release-upgrade` rehearses both. The release workflow does not
   run that gate yet; the maintainer saves each release's schema with

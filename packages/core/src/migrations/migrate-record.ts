@@ -19,6 +19,7 @@ import {
   resolveRetiredTables,
 } from './build-schema.js';
 import type { PackagesSeenInput } from './migration-run-decision.js';
+import { compareReleases } from './oldest-supported.js';
 import { computeSchemaFingerprint } from './schema-fingerprint.js';
 
 export interface MigrateRecordInput {
@@ -255,6 +256,42 @@ export async function readLastMigrateRecord(
           : String(row.created_at),
     },
   };
+}
+
+/**
+ * The highest system-table schema version stamped in `_smrt_migrations`, or
+ * `null` when the database has no such table or no readable stamp.
+ * SELECT-only.
+ *
+ * Every smrt release stamps its `SMRT_SCHEMA_VERSION` here when it prepares a
+ * database, so this dates a database that predates migrate records. It can
+ * only say "at least this new": a stamp is evidence that some release at that
+ * system schema ran against the database, never that an older one did not.
+ * Read it before anything in the run prepares system tables, or the run's own
+ * stamp is what it finds.
+ */
+export async function readRecordedSystemSchema(
+  db: DatabaseInterface,
+  options: MigrateRecordOptions = {},
+): Promise<string | null> {
+  if (!(await tableExists(db, '_smrt_migrations', options.engineHint)))
+    return null;
+  let rows: Record<string, unknown>[];
+  try {
+    const result = await db.query('SELECT version FROM _smrt_migrations');
+    rows = Array.isArray(result) ? result : result.rows;
+  } catch {
+    // Unreadable is unknown, and unknown never refuses a run.
+    return null;
+  }
+  let highest: string | null = null;
+  for (const row of rows) {
+    // A stamp may carry a suffix (`1.15.0+deferred-compat`); the version leads.
+    const version = /^\d+\.\d+\.\d+/.exec(String(row.version ?? ''))?.[0];
+    if (version && (highest === null || compareReleases(version, highest) > 0))
+      highest = version;
+  }
+  return highest;
 }
 
 /**

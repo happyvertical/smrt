@@ -243,11 +243,17 @@ export async function capture({
     });
     if (result.refused || result.hasManualDrift)
       throw new Error(`Capture refused: ${describeStops(result).join('\n')}`);
-    return await introspect(db, build.release, {
+    const snapshot = await introspect(db, build.release, {
       modelTables: Object.keys(
         build.ObjectRegistry.getAllSchemasAsDefinitions(),
       ),
     });
+    // The release's system-table schema version. Migrate dates a database
+    // that has no migrate record by it, so the floor record needs it when
+    // this release becomes the oldest supported one.
+    return build.SMRT_SCHEMA_VERSION
+      ? { ...snapshot, systemSchema: build.SMRT_SCHEMA_VERSION }
+      : snapshot;
   } finally {
     await db.close();
   }
@@ -949,6 +955,20 @@ export function validateOldest(directory, compare) {
   if (snapshot.release !== record.release)
     throw new Error('Oldest supported release does not match snapshot.release');
   compare(record.release, record.release);
+  // Migrate refuses a database with no migrate record whose system tables are
+  // older than this version, so a missing or wrong value would let every such
+  // database through, or stop supported ones.
+  if (
+    typeof record.systemSchema !== 'string' ||
+    !/^\d+\.\d+\.\d+$/.test(record.systemSchema)
+  )
+    throw new Error(
+      'oldest-supported.json must name systemSchema, the system-table schema version (SMRT_SCHEMA_VERSION) of the oldest supported release',
+    );
+  if (record.systemSchema !== snapshot.systemSchema)
+    throw new Error(
+      'Oldest supported systemSchema does not match snapshot.systemSchema',
+    );
   if (record.history.length) {
     if (
       !record.upgradeFirstTo ||
@@ -1013,13 +1033,19 @@ export function moveOldest({
   const previous = validateOldest(directory, compare);
   if (compare(to, previous.release) <= 0)
     throw new Error('Oldest supported release must move forward');
+  let systemSchema;
   for (const version of [to, upgradeFirstTo]) {
     const snapshot = readJSON(
       path.join(directory, `snapshots/${version}.json`),
     );
     if (snapshot.release !== version)
       throw new Error(`Snapshot does not match ${version}`);
+    if (version === to) systemSchema = snapshot.systemSchema;
   }
+  if (typeof systemSchema !== 'string')
+    throw new Error(
+      `Snapshot ${to} does not record systemSchema. Add the SMRT_SCHEMA_VERSION of smrt ${to} to snapshots/${to}.json before moving the floor.`,
+    );
   if (
     compare(upgradeFirstTo, previous.release) < 0 ||
     compare(upgradeFirstTo, to) >= 0
@@ -1031,6 +1057,7 @@ export function moveOldest({
   const next = {
     release: to,
     snapshot: `snapshots/${to}.json`,
+    systemSchema,
     decision: `${reason.trim()} Older databases must first upgrade with smrt ${upgradeFirstTo}.`,
     upgradeFirstTo,
     recordedAt,

@@ -59,6 +59,7 @@ function oldSnapshot(value = col('text'), extra = {}) {
     release,
     engine: 'postgres',
     capturedFrom: 'migrateSmrtSchemas on an empty database',
+    systemSchema: '1.15.0',
     tables: {
       [tableName]: {
         columns: {
@@ -457,14 +458,19 @@ test('capture is stable and restore round trips catalogs and bookkeeping', async
   const first = await capture({ root, build });
   const second = await capture({ root, build });
   assert.equal(stableJSON(first), stableJSON(second));
+  // A capture names the release's system-table schema version; the catalogs
+  // themselves do not hold it.
+  assert.equal(first.systemSchema, build.SMRT_SCHEMA_VERSION);
+  assert.match(first.systemSchema, /^\d+\.\d+\.\d+$/);
   const db = await restore(first, { root });
   try {
     assert.equal(
-      stableJSON(
-        await introspect(db, first.release, {
+      stableJSON({
+        ...(await introspect(db, first.release, {
           modelTables: first.modelTables,
-        }),
-      ),
+        })),
+        systemSchema: first.systemSchema,
+      }),
       stableJSON(first),
     );
   } finally {
@@ -582,6 +588,7 @@ function records(
     stableJSON({
       release,
       snapshot: `snapshots/${release}.json`,
+      systemSchema: '1.15.0',
       decision: 'First release whose schema was saved.',
       recordedAt: '2026-11-12',
       history: [],
@@ -612,6 +619,8 @@ test('move-oldest requires first hop, reason and existing snapshots; records his
   const next = moveOldest(options);
   assert.equal(next.history[0].release, release);
   assert.match(next.decision, /smrt 0.60.18/);
+  // The new floor carries its snapshot's system-table schema version.
+  assert.equal(next.systemSchema, '1.15.0');
   assert.equal(
     validateOldest(directory, build.compareReleases).release,
     '0.60.19',
@@ -624,6 +633,51 @@ test('move-oldest requires first hop, reason and existing snapshots; records his
   assert.throws(
     () => validateOldest(directory, build.compareReleases),
     /must name the release/,
+  );
+});
+test('the floor names its system schema, and a floor move takes it from the snapshot', () => {
+  const directory = records('system-schema');
+  const file = path.join(directory, 'oldest-supported.json');
+  const record = JSON.parse(readFileSync(file));
+  for (const systemSchema of [undefined, 'latest', '1.14.0']) {
+    writeFileSync(file, stableJSON({ ...record, systemSchema }));
+    assert.throws(
+      () => validateOldest(directory, build.compareReleases),
+      /systemSchema/,
+    );
+  }
+  writeFileSync(file, stableJSON(record));
+  assert.equal(
+    validateOldest(directory, build.compareReleases).systemSchema,
+    '1.15.0',
+  );
+
+  const { systemSchema: _dropped, ...undated } = {
+    ...oldSnapshot(),
+    release: '0.60.19',
+  };
+  writeFileSync(
+    path.join(directory, 'snapshots/0.60.19.json'),
+    stableJSON(undated),
+  );
+  const move = {
+    directory,
+    upgradeFirstTo: '0.60.18',
+    reason: 'Remove the old data step.',
+    compare: build.compareReleases,
+  };
+  assert.throws(
+    () => moveOldest({ ...move, to: '0.60.19' }),
+    /Snapshot 0\.60\.19 does not record systemSchema/,
+  );
+  writeFileSync(
+    path.join(directory, 'snapshots/0.60.20.json'),
+    stableJSON({ ...oldSnapshot(), release: '0.60.20', systemSchema: '1.16.0' }),
+  );
+  assert.equal(moveOldest({ ...move, to: '0.60.20' }).systemSchema, '1.16.0');
+  assert.equal(
+    validateOldest(directory, build.compareReleases).systemSchema,
+    '1.16.0',
   );
 });
 test('oldest record validator refuses mismatched file name, release and empty decision', () => {
@@ -1045,6 +1099,7 @@ function plausible(count, version = release) {
   const modelTables = Array.from({ length: count }, (_, i) => `t${i}`);
   return {
     release: version,
+    systemSchema: '1.15.0',
     modelTables,
     tables: Object.fromEntries(modelTables.map((name) => [name, {}])),
   };

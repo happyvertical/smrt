@@ -816,14 +816,17 @@ export {
   packagesSeenInput,
   readConfirmedRetirements,
   readLastMigrateRecord,
+  readRecordedSystemSchema,
   recordSuccessfulMigrate,
   type UnloadedBuildPackage,
 } from './migrations/migrate-record.js';
 export * from './migrations/migration-run-decision.js';
 export {
   checkOldestSupportedRelease,
+  checkUnrecordedDatabaseAge,
   compareReleases,
   OLDEST_SUPPORTED_RELEASE,
+  OLDEST_SUPPORTED_SYSTEM_SCHEMA,
 } from './migrations/oldest-supported.js';
 export {
   computeManifestSchemaFingerprint,
