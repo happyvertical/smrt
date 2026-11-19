@@ -137,6 +137,22 @@ export interface DecideInput {
   decision: ApprovalDecision;
   /** Required for `reject` and `request_changes`. */
   reason?: string;
+  /**
+   * The subject revision the decider reviewed. When given, the decision is
+   * refused `revision_mismatch` unless the request is still bound to it, so a
+   * decision never lands on content the decider did not see.
+   */
+  expectedSubjectRevisionHash?: string;
+  /**
+   * Edit-then-approve (`approve` only, kinds with `allowRevisedApproval`):
+   * the decider changed the subject and approves the new revision. The
+   * request is rebound to this hash in the same guarded UPDATE, and the
+   * `approved` event records it, so the ledger shows the revision that was
+   * approved next to the one that was requested. Refused
+   * `revision_after_approval` once any approval is recorded: earlier
+   * approvers saw other content. `consume` then needs this hash.
+   */
+  revisedSubjectRevisionHash?: string;
 }
 
 /** Options for {@link ApprovalService.consume}. */
@@ -240,6 +256,8 @@ function countedApprovers(
         (event) =>
           event.type === 'approved' &&
           event.actorType === 'human' &&
+          // Only approvals of the revision the request is bound to count.
+          event.subjectRevisionHash === request.subjectRevisionHash &&
           (event.actorId !== request.requestedBy ||
             (event.selfApproved === true &&
               isPermissionSlug(event.selfApprovalPermission))),
@@ -466,6 +484,26 @@ export class ApprovalService {
         `A '${input.decision}' decision requires a reason.`,
       );
     }
+    const expectedHash =
+      input.expectedSubjectRevisionHash === undefined
+        ? undefined
+        : assertToken(
+            input.expectedSubjectRevisionHash,
+            'expectedSubjectRevisionHash',
+          );
+    const revisedHash =
+      input.revisedSubjectRevisionHash === undefined
+        ? undefined
+        : assertToken(
+            input.revisedSubjectRevisionHash,
+            'revisedSubjectRevisionHash',
+          );
+    if (revisedHash !== undefined && input.decision !== 'approve') {
+      throw new ApprovalError(
+        'APPROVAL_INVALID',
+        'Only an approve decision may carry revisedSubjectRevisionHash.',
+      );
+    }
     const tenantId = principal.tenantId;
 
     return await this.transition(
@@ -513,6 +551,29 @@ export class ApprovalService {
         if (!(request.expiresAtMs() > now.getTime())) {
           return refusal('expired', 'the request expired', request.id);
         }
+        if (
+          expectedHash !== undefined &&
+          expectedHash !== request.subjectRevisionHash
+        ) {
+          return refusal(
+            'revision_mismatch',
+            'the subject changed since the decider reviewed it',
+            request.id,
+          );
+        }
+        const revises =
+          revisedHash !== undefined &&
+          revisedHash !== request.subjectRevisionHash;
+        if (
+          revises &&
+          !requireApprovalKind(request.kind).allowRevisedApproval
+        ) {
+          return refusal(
+            'revision_not_allowed',
+            `kind '${request.kind}' does not allow approving a revised subject`,
+            request.id,
+          );
+        }
 
         const events = await this.txCollection(ApprovalEventCollection, tx);
         const decided = await events.list({
@@ -536,24 +597,38 @@ export class ApprovalService {
             where: { tenantId, requestId: request.id, type: 'approved' },
             limit: 1000,
           });
-          const voters = countedApprovers(approvals, request);
+          if (revises && approvals.length > 0) {
+            return refusal(
+              'revision_after_approval',
+              'an approval is already recorded for the requested revision',
+              request.id,
+            );
+          }
+          const voters = revises
+            ? new Set<string>()
+            : countedApprovers(approvals, request);
           voters.add(principal.id);
           const count = voters.size;
           const reached = count >= Number(request.requiredApprovals);
+          // The bound revision is part of the predicate, so a concurrent
+          // revision (or a stale read) matches nothing and retries.
           updated = await tx.query(
             `UPDATE ${REQUESTS_TABLE}
               SET approval_count = ?, status = ?, decided_at = ${reached ? '?' : 'decided_at'},
-                  version = version + 1, updated_at = ?
+                  subject_revision_hash = ?, version = version + 1, updated_at = ?
             WHERE id = ? AND tenant_id = ? AND status = 'pending'
+              AND subject_revision_hash = ?
               AND version = ? AND expires_at > ?
         RETURNING version`,
             ...[
               count,
               reached ? 'approved' : 'pending',
               ...(reached ? [nowIso] : []),
+              revises ? revisedHash : request.subjectRevisionHash,
               nowIso,
               request.id,
               tenantId,
+              request.subjectRevisionHash,
               version,
               nowIso,
             ],
@@ -585,7 +660,9 @@ export class ApprovalService {
           type: eventType,
           principal,
           reason,
-          subjectRevisionHash: request.subjectRevisionHash,
+          subjectRevisionHash: revises
+            ? (revisedHash as string)
+            : request.subjectRevisionHash,
           sequence: next,
           voteKey: principal.id,
           selfApproved,

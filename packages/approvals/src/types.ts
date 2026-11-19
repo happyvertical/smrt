@@ -98,6 +98,14 @@ export interface ApprovalKindInput {
   permission: string;
   /** Additional permission allowing a human requester to decide their own request. */
   selfApprovalPermission?: string;
+  /**
+   * Opt in to edit-then-approve: a decider may approve a revised subject
+   * revision (`DecideInput.revisedSubjectRevisionHash`) while no approval is
+   * recorded yet. Default false, because the decider then approves content
+   * they changed. Enable only where the decider is trusted to author the
+   * subject (for example a person with send rights editing an agent's draft).
+   */
+  allowRevisedApproval?: boolean;
   /** Package defaults. */
   defaults?: ApprovalKindDefaults;
 }
@@ -109,6 +117,8 @@ export interface ApprovalKind {
   readonly permission: string;
   /** Optional opt-in; supplements every normal decision permission. */
   readonly selfApprovalPermission?: string;
+  /** Whether a decider may approve a revised subject revision. */
+  readonly allowRevisedApproval: boolean;
   readonly defaults: Readonly<Required<ApprovalKindDefaults>>;
 }
 
@@ -138,8 +148,15 @@ export type ApprovalRefusalReason =
   | 'forbidden'
   /** This principal already recorded a decision on the request. */
   | 'already_decided'
-  /** `consume` was called with a different subject revision hash. */
+  /**
+   * `consume` (or a decision's `expectedSubjectRevisionHash`) named a
+   * different subject revision than the request is bound to.
+   */
   | 'revision_mismatch'
+  /** The kind does not allow approving a revised subject revision. */
+  | 'revision_not_allowed'
+  /** A revised approval after an approval was already recorded. */
+  | 'revision_after_approval'
   /** The request row says approved but its event ledger does not. */
   | 'unbacked_approval'
   /** The approval was already consumed. */

@@ -56,6 +56,18 @@ export {
   unregisterApprovalKind,
 } from './kinds.js';
 export {
+  APPROVE_MAIL_SEND_PERMISSION,
+  type ApprovalMailSendActor,
+  type ApprovalMailSendCheck,
+  type ApprovalMailSendCheckResult,
+  type ApprovalMailSendDecision,
+  type ApprovalMailSendGateOptions,
+  type ApprovalMailSendOutcome,
+  type ApprovalMailSendView,
+  createApprovalMailSendGate,
+  mailSendKind,
+} from './mail-send-gate.js';
+export {
   APPROVE_MCP_TOOL_CALL_PERMISSION,
   type ApprovalMcpGateOptions,
   type ApprovalMcpGateRequest,

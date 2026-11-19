@@ -116,6 +116,7 @@ export function defineApprovalKind(input: ApprovalKindInput): ApprovalKind {
     subject: input.subject,
     permission: input.permission,
     selfApprovalPermission: input.selfApprovalPermission,
+    allowRevisedApproval: input.allowRevisedApproval === true,
     defaults: Object.freeze({ requiredApprovals, ttlMs }),
   });
   const existing = kinds.get(kind.key);
@@ -124,6 +125,7 @@ export function defineApprovalKind(input: ApprovalKindInput): ApprovalKind {
       existing.subject === kind.subject &&
       existing.permission === kind.permission &&
       existing.selfApprovalPermission === kind.selfApprovalPermission &&
+      existing.allowRevisedApproval === kind.allowRevisedApproval &&
       existing.defaults.requiredApprovals === requiredApprovals &&
       existing.defaults.ttlMs === ttlMs
     ) {

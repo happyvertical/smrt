@@ -75,6 +75,24 @@ export const quorumKind = defineApprovalKind({
   defaults: { requiredApprovals: 2, ttlMs: 24 * HOUR },
 });
 
+/** Edit-then-approve allowed, one approver. */
+export const revisableKind = defineApprovalKind({
+  key: 'content.publish-revisable',
+  subject: SUBJECT,
+  permission: DECIDE,
+  allowRevisedApproval: true,
+  defaults: { requiredApprovals: 1, ttlMs: 24 * HOUR },
+});
+
+/** Edit-then-approve allowed, two approvers. */
+export const revisableQuorumKind = defineApprovalKind({
+  key: 'content.publish-revisable-dual',
+  subject: SUBJECT,
+  permission: DECIDE,
+  allowRevisedApproval: true,
+  defaults: { requiredApprovals: 2, ttlMs: 24 * HOUR },
+});
+
 /** A mutable clock the service reads on every transition. */
 export class TestClock {
   private ms = Date.parse('2026-10-01T12:00:00.000Z');
@@ -648,6 +666,141 @@ export function defineApprovalSuite(
       });
       expect(result.refusal?.reason).toBe('expired');
       expect(result.request?.status).toBe('pending');
+    });
+
+    it('refuses a decision on a revision the decider did not review', async () => {
+      const w = world();
+      const id = await open(w);
+      const stale = await w.service.decide(w.approverA, id, {
+        decision: 'approve',
+        expectedSubjectRevisionHash: 'rev-0',
+      });
+      expect(stale.refusal?.reason).toBe('revision_mismatch');
+      expect(await eventTypes(w, id)).toEqual(['created']);
+      const ok = await w.service.decide(w.approverA, id, {
+        decision: 'approve',
+        expectedSubjectRevisionHash: 'rev-1',
+      });
+      expect(ok.request?.status).toBe('approved');
+    });
+
+    it('edit-then-approve rebinds the request to the revised revision', async () => {
+      const w = world();
+      const id = await open(w, revisableKind);
+      const result = await w.service.decide(w.approverA, id, {
+        decision: 'approve',
+        reason: 'fixed the greeting',
+        expectedSubjectRevisionHash: 'rev-1',
+        revisedSubjectRevisionHash: 'rev-2',
+      });
+      expect(result.outcome).toBe('transitioned');
+      expect(result.request).toMatchObject({
+        status: 'approved',
+        subjectRevisionHash: 'rev-2',
+        approvalCount: 1,
+      });
+      const events = await w.service.listEvents(w.requester, id);
+      expect(
+        events.map((e) => [e.type, e.subjectRevisionHash, e.reason]),
+      ).toEqual([
+        ['created', 'rev-1', 'Publish the launch post'],
+        ['approved', 'rev-2', 'fixed the greeting'],
+      ]);
+      // The approval binds to the revised content only.
+      const old = await w.service.consume(w.requester, id, 'rev-1');
+      expect(old.refusal?.reason).toBe('revision_mismatch');
+      const used = await w.service.consume(w.requester, id, 'rev-2');
+      expect(used.outcome).toBe('transitioned');
+    });
+
+    it('refuses edit-then-approve for kinds that do not opt in, and for non-approve verdicts', async () => {
+      const w = world();
+      const id = await open(w);
+      const refused = await w.service.decide(w.approverA, id, {
+        decision: 'approve',
+        revisedSubjectRevisionHash: 'rev-2',
+      });
+      expect(refused.refusal?.reason).toBe('revision_not_allowed');
+      expect(refused.request?.subjectRevisionHash).toBe('rev-1');
+      await expect(
+        w.service.decide(w.approverA, id, {
+          decision: 'reject',
+          reason: 'no',
+          revisedSubjectRevisionHash: 'rev-2',
+        }),
+      ).rejects.toMatchObject({ code: 'APPROVAL_INVALID' });
+      // Restating the bound revision is an ordinary approval.
+      const same = await w.service.decide(w.approverA, id, {
+        decision: 'approve',
+        revisedSubjectRevisionHash: 'rev-1',
+      });
+      expect(same.request?.status).toBe('approved');
+    });
+
+    it('refuses edit-then-approve once an approval is recorded, and counts only the bound revision', async () => {
+      const w = world();
+      const id = await open(w, revisableQuorumKind);
+      const first = await w.service.decide(w.approverA, id, {
+        decision: 'approve',
+      });
+      expect(first.request?.approvalCount).toBe(1);
+      const late = await w.service.decide(w.approverB, id, {
+        decision: 'approve',
+        revisedSubjectRevisionHash: 'rev-2',
+      });
+      expect(late.refusal?.reason).toBe('revision_after_approval');
+      expect(late.request).toMatchObject({
+        status: 'pending',
+        subjectRevisionHash: 'rev-1',
+      });
+
+      // A revision before any approval resets nothing it could not count:
+      // the second approver approves the revised content.
+      const other = await open(w, revisableQuorumKind);
+      const revised = await w.service.decide(w.approverA, other, {
+        decision: 'approve',
+        revisedSubjectRevisionHash: 'rev-2',
+      });
+      expect(revised.request).toMatchObject({
+        status: 'pending',
+        approvalCount: 1,
+        subjectRevisionHash: 'rev-2',
+      });
+      const blind = await w.service.decide(w.approverB, other, {
+        decision: 'approve',
+        expectedSubjectRevisionHash: 'rev-1',
+      });
+      expect(blind.refusal?.reason).toBe('revision_mismatch');
+      const second = await w.service.decide(w.approverB, other, {
+        decision: 'approve',
+        expectedSubjectRevisionHash: 'rev-2',
+      });
+      expect(second.request).toMatchObject({
+        status: 'approved',
+        approvalCount: 2,
+      });
+      expect(
+        (await w.service.consume(w.requester, other, 'rev-2')).outcome,
+      ).toBe('transitioned');
+    });
+
+    it('still refuses agents and requesters on edit-then-approve', async () => {
+      const w = world();
+      const selfApprover = w.principal('human', [DECIDE]);
+      const id = await open(w, revisableKind, 'rev-1', selfApprover);
+      const self = await w.service.decide(selfApprover, id, {
+        decision: 'approve',
+        revisedSubjectRevisionHash: 'rev-2',
+      });
+      expect(self.refusal?.reason).toBe('self_approval');
+      const agent = await w.service.decide(w.principal('agent', [DECIDE]), id, {
+        decision: 'approve',
+        revisedSubjectRevisionHash: 'rev-2',
+      });
+      expect(agent.refusal?.reason).toBe('not_human');
+      expect(
+        (await w.service.getRequest(w.requester, id))?.subjectRevisionHash,
+      ).toBe('rev-1');
     });
 
     it('resolves the policy permission at decision time', async () => {
