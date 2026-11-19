@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.62.12
+
+### Patch Changes
+
+- ### Other Changes
+  
+  - perf: load jiti only when a TypeScript config file is loaded (#5217) (config)
+- @happyvertical/smrt-config@0.62.12
+  - @happyvertical/smrt-scanner@0.62.12
+  - @happyvertical/smrt-types@0.62.12
+
 ## 0.62.11
 
 ### Patch Changes
