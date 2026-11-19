@@ -20,6 +20,8 @@ import {
   pruneAiRuns,
   pruneAiRunTrajectories,
   recordAiEvaluation,
+  resumeAiRun,
+  stopAiRun,
   sweepAiRuns,
   waitAiRunApproval,
 } from '../system/browser';
@@ -202,9 +204,31 @@ describe.each(
     const statuses = await Promise.all(
       waiting.map(async (id) => (await getAiRun(db, id))?.status),
     );
-    // The foreign parent's status decides nothing: both children are judged
-    // alike (a foreign parent reads as a missing one).
-    expect(statuses[0]).toBe(statuses[1]);
+    // The foreign parent's status decides nothing, and a parent row that
+    // exists in another tenant is not a missing one: both children wait.
+    expect(statuses).toEqual(['waiting-approval', 'waiting-approval']);
+
+    // A durable stopped child under a foreign parent still resumes (its
+    // ancestor is not missing).
+    const stopped = await openAiRun(store('tenant-one'), {
+      type: 'workflow',
+      durable: true,
+    });
+    await stopAiRun(db, stopped.id);
+    await link(done.id, stopped.id);
+    await sweepAiRuns(db, {});
+    expect((await getAiRun(db, stopped.id))?.status).toBe('stopped');
+    expect((await resumeAiRun(db, stopped.id))?.status).toBe('running');
+
+    // A child whose parent row is truly gone is still repaired (control).
+    const orphan = await openAiRun(store('tenant-one'), {
+      type: 'workflow',
+      durable: true,
+    });
+    await waitAiRunApproval(db, orphan.id);
+    await link(crypto.randomUUID(), orphan.id);
+    await sweepAiRuns(db, {});
+    expect((await getAiRun(db, orphan.id))?.status).toBe('cancelled');
 
     // A finished child under a running (protected) foreign parent follows
     // its own retention, not the parent's protection.

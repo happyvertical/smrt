@@ -1267,7 +1267,19 @@ export async function resumeAiRun(
       // The ancestor chain must still stand (page section 7). Nothing is
       // written; the ai-runs sweep later moves the run to cancelled.
       const oldest = chain[0] as AiRunRow;
-      if (oldest.parentRunId !== null) {
+      // Missing only when the parent row is absent: a chain that ends at a
+      // parent of another tenant (a link written before parents were
+      // tenant-checked) is checked for existence only and stands.
+      if (
+        oldest.parentRunId !== null &&
+        getRows(
+          await aiRunQuery(
+            tx.db,
+            'SELECT 1 AS present FROM _smrt_ai_runs WHERE id = $1',
+            oldest.parentRunId,
+          ),
+        ).length === 0
+      ) {
         throw refuse(
           `AI run ${runId} cannot resume: its ancestor ${oldest.parentRunId} no longer exists`,
           'ancestor_missing',

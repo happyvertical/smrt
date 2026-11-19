@@ -1075,6 +1075,27 @@ export async function sweepAiRuns(
  * Candidates are read by their parent, so a deeper descendant is repaired
  * in a later round of the same sweep, once its parent has been.
  */
+/**
+ * Whether a run row with this id exists, in any tenant. An existence check
+ * only (no column of the row is read): a chain that ends at a parent of
+ * another tenant is not orphaned.
+ */
+async function aiRunRowExists(
+  tx: AiRunTx,
+  runId: string | null,
+): Promise<boolean> {
+  if (runId === null) return false;
+  return (
+    getRows(
+      await aiRunQuery(
+        tx.db,
+        'SELECT 1 AS present FROM _smrt_ai_runs WHERE id = $1',
+        runId,
+      ),
+    ).length > 0
+  );
+}
+
 async function repairOrphanedAiRuns(
   db: DatabaseInterface,
   batch: number,
@@ -1097,7 +1118,13 @@ async function repairOrphanedAiRuns(
                    OR (r.status = 'stopped'
                        AND EXISTS (SELECT 1 FROM _smrt_ai_run_checkpoints c
                                     WHERE c.run_id = r.id)))
-                  AND (p.id IS NULL
+                  -- Orphaned only when the parent row is truly absent: a
+                  -- parent of another tenant (a link written before parents
+                  -- were tenant-checked) is checked for existence only, and
+                  -- its child is left alone.
+                  AND ((p.id IS NULL
+                        AND NOT EXISTS (SELECT 1 FROM _smrt_ai_runs fp
+                                         WHERE fp.id = r.parent_run_id))
                        OR p.status IN ('cancelled', 'failed', 'done')
                        OR (p.status = 'stopped'
                            AND NOT EXISTS (SELECT 1 FROM _smrt_ai_run_checkpoints pc
@@ -1130,7 +1157,10 @@ async function repairOrphanedAiRuns(
           if (!stoppedBy && run.status !== 'running') {
             stoppedBy =
               ancestors.find(isAiRunFinal)?.id ??
-              ((chain[0] as AiRunRow).parentRunId !== null ? run.id : null);
+              ((chain[0] as AiRunRow).parentRunId !== null &&
+              !(await aiRunRowExists(tx, (chain[0] as AiRunRow).parentRunId))
+                ? run.id
+                : null);
           }
           if (!stoppedBy) return false;
           return writeAiRunStatusTx(tx, run, 'cancelled', {
