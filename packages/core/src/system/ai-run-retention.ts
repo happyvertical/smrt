@@ -163,8 +163,8 @@ export async function pruneAiRunTrajectories(
       const page = getRows(
         await aiRunQuery(
           db,
-          `SELECT r.id, r.parent_run_id, r.finished_at, p.id AS parent_id,
-                  p.trajectory_pruned AS parent_pruned
+          `SELECT r.id, r.tenant_id, r.parent_run_id, r.finished_at,
+                  p.id AS parent_id, p.trajectory_pruned AS parent_pruned
              FROM _smrt_ai_runs r
              LEFT JOIN _smrt_ai_runs p ON p.id = r.parent_run_id
                   AND (p.tenant_id = r.tenant_id
@@ -197,7 +197,10 @@ export async function pruneAiRunTrajectories(
           progressed = true;
           continue;
         }
-        const pruned = await pruneOneTrajectory(db, id, options);
+        const pruned = await pruneOneTrajectory(db, id, options, {
+          tenant: nullableTenant(row.tenant_id),
+          finishedBefore: String(params[0]),
+        });
         if (pruned) {
           done.add(id);
           progressed = true;
@@ -212,20 +215,55 @@ export async function pruneAiRunTrajectories(
   return { pruned: done.size };
 }
 
+/** A row's `tenant_id` as a value (null for the global scope). */
+function nullableTenant(value: unknown): string | null {
+  return value === null || value === undefined ? null : String(value);
+}
+
+/**
+ * The candidate a retention pass selected, rechecked under the destructive
+ * lock: the run is locked only in the tenant it was selected in and only if
+ * it still finished before the pass's bound, so a run whose id was pruned
+ * and reused (by another tenant, or freshly) since the selection is not
+ * touched.
+ */
+interface RetentionCandidate {
+  tenant: string | null;
+  finishedBefore: string;
+}
+
+function candidateClause(
+  candidate: RetentionCandidate,
+  first: number,
+): { sql: string; params: unknown[] } {
+  return candidate.tenant === null
+    ? {
+        sql: ` AND r.tenant_id IS NULL AND r.finished_at < $${first}`,
+        params: [candidate.finishedBefore],
+      }
+    : {
+        sql: ` AND r.tenant_id = $${first} AND r.finished_at < $${first + 1}`,
+        params: [candidate.tenant, candidate.finishedBefore],
+      };
+}
+
 async function pruneOneTrajectory(
   db: DatabaseInterface,
   runId: string,
   options: AiRunTxOptions,
+  candidate: RetentionCandidate,
 ): Promise<boolean> {
   return withAiRunTransaction(
     db,
     async (tx) => {
+      const recheck = candidateClause(candidate, 2);
       const rows = getRows(
         await aiRunQuery(
           tx.db,
           `SELECT r.id, r.status FROM _smrt_ai_runs r
-            WHERE r.id = $1 AND r.trajectory_pruned = 0 AND ${UNPROTECTED}${forUpdate(tx)}`,
+            WHERE r.id = $1 AND r.trajectory_pruned = 0 AND ${UNPROTECTED}${recheck.sql}${forUpdate(tx)}`,
           runId,
+          ...recheck.params,
         ),
       );
       const run = rows[0];
@@ -324,7 +362,7 @@ export async function pruneAiRuns(
       const page = getRows(
         await aiRunQuery(
           db,
-          `SELECT r.id, r.parent_run_id, p.id AS parent_id
+          `SELECT r.id, r.tenant_id, r.parent_run_id, p.id AS parent_id
              FROM _smrt_ai_runs r
              LEFT JOIN _smrt_ai_runs p ON p.id = r.parent_run_id
                   AND (p.tenant_id = r.tenant_id
@@ -352,6 +390,10 @@ export async function pruneAiRuns(
           progressed = true;
           continue;
         }
+        const recheck = candidateClause(
+          { tenant: nullableTenant(row.tenant_id), finishedBefore: cutoff },
+          2,
+        );
         const pruned = await withAiRunTransaction(
           db,
           async (tx) => {
@@ -360,8 +402,9 @@ export async function pruneAiRuns(
                 tx.db,
                 `SELECT r.id, r.tenant_id FROM _smrt_ai_runs r
                   WHERE r.id = $1 AND r.trajectory_pruned <> 0
-                    AND ${UNPROTECTED}${forUpdate(tx)}`,
+                    AND ${UNPROTECTED}${recheck.sql}${forUpdate(tx)}`,
                 id,
+                ...recheck.params,
               ),
             );
             if (!locked[0]) return false;
