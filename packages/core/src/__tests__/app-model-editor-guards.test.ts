@@ -1761,6 +1761,71 @@ describe('app model editor: one customised registry per process', () => {
     await expect(open(OTHER_TENANT)).resolves.toBeDefined();
   });
 
+  it('disabling a refreshed customisation of a pre-existing app subclass restores its original fields', async () => {
+    const base = ObjectRegistry.getClass(MEMBER)!
+      .constructor as typeof SmrtObject;
+    class AppGuardMember extends base {}
+    ObjectRegistry.register(AppGuardMember, {
+      name: 'GuardMember',
+      packageName: APP,
+    });
+    const recipe = {
+      ...memberCatalog,
+      recipes: [
+        {
+          id: 'guards.members',
+          label: 'Members',
+          models: [MEMBER],
+          nav: [],
+          requires: [],
+        },
+      ],
+    };
+    const open = (tenantId: string) =>
+      createAppModelEditor({
+        db,
+        application: 'editor-guards-slot',
+        tenantId,
+        packageName: APP,
+        cookbook: { ...book(), recipes: ['guards.members'] },
+        catalog: recipe,
+        authorize: (c) => c.actor === 'owner',
+      });
+    const fieldsOfApp = async () => [
+      ...(await ObjectRegistry.getAllFields(`${APP}:GuardMember`)).keys(),
+    ];
+    const original = await fieldsOfApp();
+    expect(original).not.toContain('vip');
+    const e = await open(TENANT);
+    // Each edit refreshes the registration over its saved baseline.
+    for (const name of ['vip', 'rank'])
+      await applier(
+        e,
+        TENANT,
+      )({
+        type: 'add_field',
+        model: MEMBER,
+        name,
+        field: { type: 'boolean' },
+      });
+    expect(await fieldsOfApp()).toContain('vip');
+    // A reopen in the same process refreshes it again.
+    const again = await open(TENANT);
+    const staged = createCookbookEngine({
+      catalog: recipe,
+      cookbook: again.snapshot().cookbook,
+    });
+    staged.run({ name: 'remove_recipes', input: { ids: ['guards.members'] } });
+    await applier(
+      again,
+      TENANT,
+    )({ type: 'import', cookbook: staged.cookbook() });
+    // The provider is off: the original subclass is back without either field.
+    expect(await fieldsOfApp()).toEqual(original);
+    await expect(open(OTHER_TENANT)).resolves.toBeDefined();
+    expect(await fieldsOfApp()).toEqual(original);
+  });
+
   it('a pre-opened editor refused by another journal activates nothing for an import', async () => {
     const calls: string[][] = [];
     const first = await createAppModelEditor({
