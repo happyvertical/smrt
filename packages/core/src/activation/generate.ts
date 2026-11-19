@@ -579,6 +579,53 @@ export function generateActivationRegistration(
     importCache.set(file, parsed.deps);
     return parsed.deps;
   }
+  /**
+   * The modules whose files evaluate when `file` is imported: every file
+   * reachable through static imports, across package entries and peers.
+   * Route serializers are never followed: they load after activation, so they
+   * order nothing. Package-boundary files that cannot be read are skipped;
+   * they are reported where their own module is resolved.
+   */
+  function visitEager(
+    file: string,
+    seen: Set<string>,
+    owners: Set<string>,
+    crossesPackage = false,
+  ): void {
+    if (seen.has(file)) return;
+    seen.add(file);
+    for (const owner of sourceOwners.get(file) ?? []) owners.add(owner);
+    let specifiers: string[];
+    try {
+      specifiers = staticImports(file);
+    } catch (error) {
+      if (crossesPackage) return;
+      throw error;
+    }
+    for (const specifier of specifiers) {
+      if (
+        specifier === '@happyvertical/smrt-core' ||
+        specifier.startsWith('@happyvertical/smrt-core/')
+      )
+        continue;
+      const pkg = specifier.startsWith('@')
+        ? specifier.split('/').slice(0, 2).join('/')
+        : specifier.split('/')[0];
+      const bare =
+        !specifier.startsWith('.') &&
+        !specifier.startsWith('$lib/') &&
+        !isAbsolute(specifier);
+      if (bare && !packageModules.has(pkg)) continue;
+      let next: string;
+      try {
+        next = resolveSource(specifier, file);
+      } catch (error) {
+        if (bare || crossesPackage) continue;
+        throw error;
+      }
+      visitEager(next, seen, owners, crossesPackage || bare);
+    }
+  }
   const byModule = <T>(map: Map<string, T>) =>
     new Map([...map].sort(([a], [b]) => byCodeUnit(a, b)));
   entries = byModule(entries);
@@ -599,10 +646,7 @@ export function generateActivationRegistration(
     const visit = (file: string) => {
       if (seen.has(file)) return;
       seen.add(file);
-      for (const owner of sourceOwners.get(file) ?? []) {
-        dependencies.add(owner);
-        imported.add(owner);
-      }
+      for (const owner of sourceOwners.get(file) ?? []) dependencies.add(owner);
       for (const specifier of staticImports(file)) {
         if (
           specifier === '@happyvertical/smrt-core' ||
@@ -615,15 +659,6 @@ export function generateActivationRegistration(
         const group = packageModules.get(pkg);
         if (group) {
           for (const peer of group) dependencies.add(peer);
-          // The entry file this specifier names is evaluated by the import.
-          try {
-            for (const owner of sourceOwners.get(
-              resolveSource(specifier, file),
-            ) ?? [])
-              imported.add(owner);
-          } catch {
-            // An unresolvable entry is reported where the module is resolved.
-          }
           // Each peer's own scan supplies its transitive module edges.
           continue;
         }
@@ -637,6 +672,7 @@ export function generateActivationRegistration(
       }
     };
     visit(modulePaths.get(id)!);
+    visitEager(modulePaths.get(id)!, new Set(), imported);
     // Route serializers are deferred too, but their model dependencies must
     // already be in the activation closure when a ready route calls them.
     for (const model of entries.get(id) ?? []) {
