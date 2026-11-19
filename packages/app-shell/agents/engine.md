@@ -177,6 +177,22 @@ is documented here; the shell's tables, approvals and UI sit on top.
   is idle and stable, then runs in the same synchronous step; it counts
   in-flight calls so a change can wait for them (needed for consistent copies).
 
+## Portable export (#5193)
+
+`portable-export.ts`: `exportUserApp({ dataDir, versions })`, `importUserApp`,
+`verifyUserApp`, `inspectUserApp`, `checkUserAppBundle`, `digestVersionHistory`.
+Not `exportTemplate`: every table of app.db (including `_archive` and archived
+tables kept for undo) travels with every stored column and row (hidden fields,
+timestamps), each table's own CREATE/INDEX statements, the current definition
+and the caller's version history (the shell passes its `app_versions`), with
+SHA-256 digests. Opened only through `openAppDatabase` (app-runtime.ts), the one
+place app.db is opened. Import builds `<dataDir>.import-<digest>` from the
+bundle, starts the engine on it, verifies counts and digests, then renames
+`app.db` into place; a matching target is `already-imported`, any other app.db
+is refused. The version history is not written: it rides in the caller's tables.
+Open drafts and waiting approvals are the caller's to refuse or drop. SQLite
+only. The CLI's use is in `packages/cli/agents/app-commands.md`.
+
 ## Lessons
 
 - A worker must not be terminated while `@happyvertical/sql`'s startup HMAC key

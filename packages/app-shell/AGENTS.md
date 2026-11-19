@@ -93,7 +93,8 @@ Shared assistant adapters and legacy approval storage: [agents/shared-pieces.md]
 - **Data layout.** `shell.db` is app-runtime's database file; the user app is
   `<data root>/user-app/` (`app.db`, `snapshots/`, archives inside app.db):
   plain files and directories inside the app-runtime data root, no symlinks, so
-  the encrypted backup seals them. `PORT` and `SMRT_DATA_DIR` are honored (the
+  the encrypted backup seals them; export, import and restore checks go through
+  the engine's `portable-export.ts` (engine.md), never a direct open. `PORT` and `SMRT_DATA_DIR` are honored (the
   desktop sidecar contract); health is `/api/_runtime/health` and the desktop
   wrapper's owner link is `/api/_runtime/owner-link` (both app-runtime handlers;
   the Tricia desktop product is `smrt-desktop/examples/tricia`).

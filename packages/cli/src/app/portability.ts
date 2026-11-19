@@ -1,5 +1,6 @@
 /**
- * Logical application export/import (schemaVersion 2 bundles).
+ * Logical application export/import (schemaVersion 2 and 3 bundles; 3 adds the
+ * optional app shell `userApp` section, #5193).
  *
  * Ported unchanged from the template's `scripts/smrt-portability.mjs`: the
  * bundle shape, non-portable table/column rules, parent-first import plan,
@@ -37,6 +38,18 @@ import {
   verifyFilesystemAssets,
   verifyPublishedFilesystemAssets,
 } from './portability-assets.js';
+import {
+  assertNoOpenUserAppDraft,
+  hasUserApp,
+  loadUserAppEngine,
+  summarizeUserApp,
+  type UserAppEngine,
+  type UserAppSection,
+  type UserAppSummary,
+  userAppDirectory,
+  userAppVersionsFromTables,
+  withoutOutstandingApprovals,
+} from './user-app-portability.js';
 
 const SAFE_IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]*$/;
 const NON_PORTABLE_TABLE_PATTERN =
@@ -68,14 +81,27 @@ export interface PlannedImportTable extends ManifestTable {
   deferredColumns: Set<string>;
 }
 
-/** A schemaVersion-2 logical bundle. */
+/**
+ * Bundle schema versions this build reads. Version 3 adds the optional
+ * `userApp` section (#5193); a version-2 bundle has none and imports as
+ * before. This build writes version 3.
+ */
+export const BUNDLE_SCHEMA_VERSIONS: readonly number[] = [2, 3];
+export const CURRENT_BUNDLE_SCHEMA_VERSION = 3;
+
+/** A schemaVersion-2 or -3 logical bundle. */
 export interface LogicalExportBundle {
-  schemaVersion: 2;
+  schemaVersion: 2 | 3;
   application: string;
   profile: string;
   exportedAt: string;
   tables: PortableTable[];
   assets: AssetBundle;
+  /**
+   * The app shell's user app (`<data root>/user-app`): definition, version
+   * history, every run-time table and `_archive` (so undo keeps working).
+   */
+  userApp?: UserAppSection;
 }
 
 /** Runtime selection the adapter needs. */
@@ -105,6 +131,8 @@ export interface PortabilityContext {
   ) => Promise<Record<string, unknown>>;
   /** Test seam: observe import phases (`assets-staged`, …). */
   onImportPhase?: (phase: string) => Promise<void> | void;
+  /** Test seam: replace the loader of the app shell engine. */
+  userAppEngine?: () => Promise<UserAppEngine>;
   /** Test seam: replace the database opener. */
   openDatabase?: (
     options: Record<string, unknown>,
@@ -326,6 +354,10 @@ export interface ExportResult {
   /** Present when the bundle was written as an encrypted snapshot. */
   encrypted?: true;
   snapshot?: Record<string, unknown>;
+  /** The app shell's user app, when the data root holds one. */
+  userApp?: UserAppSummary;
+  /** Things the owner should know (dropped approvals). */
+  notices?: string[];
 }
 
 /** Write a logical export bundle without replacing an existing file. */
@@ -334,6 +366,9 @@ export async function exportApplication(
 ): Promise<ExportResult> {
   const tables = manifestTables(context.sourceRoot);
   let bundle: LogicalExportBundle | undefined;
+  const notices: string[] = [];
+  const userAppRoot =
+    context.runtime.profile === 'local' ? context.paths?.root : undefined;
   await withDatabase(context, async (db) => {
     if (typeof db.transaction !== 'function') {
       throw new Error(
@@ -349,7 +384,7 @@ export async function exportApplication(
       const exported: Omit<LogicalExportBundle, 'assets'> & {
         assets?: AssetBundle;
       } = {
-        schemaVersion: 2,
+        schemaVersion: CURRENT_BUNDLE_SCHEMA_VERSION,
         application: context.appId,
         profile: context.runtime.profile,
         exportedAt: new Date().toISOString(),
@@ -368,6 +403,24 @@ export async function exportApplication(
               ).rows as PortableRow[]),
         });
       }
+      if (hasUserApp(userAppRoot)) {
+        // An open draft is not carried; outstanding approvals are dropped.
+        assertNoOpenUserAppDraft(exported.tables);
+        const dropped = withoutOutstandingApprovals(exported.tables);
+        exported.tables = dropped.tables;
+        if (dropped.dropped > 0) {
+          notices.push(
+            `${dropped.dropped} approval(s) still waiting were not carried; ask for them again after the move.`,
+          );
+        }
+        const engine = await (
+          context.userAppEngine ?? (() => loadUserAppEngine(context.sourceRoot))
+        )();
+        exported.userApp = await engine.exportUserApp({
+          dataDir: userAppDirectory(userAppRoot as string),
+          versions: userAppVersionsFromTables(exported.tables),
+        });
+      }
       exported.assets = collectFilesystemAssets({
         tables: exported.tables,
         sourceRoot: context.sourceRoot,
@@ -377,6 +430,12 @@ export async function exportApplication(
     })) as LogicalExportBundle;
   });
   const exportedBundle = bundle as LogicalExportBundle;
+  const userAppReport = exportedBundle.userApp
+    ? {
+        userApp: summarizeUserApp(exportedBundle.userApp),
+        ...(notices.length > 0 ? { notices } : {}),
+      }
+    : {};
   const outputPath = assertExternalArtifactPath({
     sourceRoot: context.sourceRoot,
     path:
@@ -408,6 +467,7 @@ export async function exportApplication(
         assetCount: exportedBundle.assets.entries.length,
         encrypted: true,
         snapshot,
+        ...userAppReport,
       };
     } finally {
       bytes.fill(0);
@@ -434,6 +494,7 @@ export async function exportApplication(
     tableCount: exportedBundle.tables.length,
     assetsIncluded: true,
     assetCount: exportedBundle.assets.entries.length,
+    ...userAppReport,
   };
 }
 
@@ -615,6 +676,8 @@ export interface ImportResult {
   rowCount: number;
   assetsIncluded: true;
   assetCount: number;
+  /** The user app carried by the bundle, verified in place. */
+  userApp?: UserAppSummary & { status: 'imported' | 'already-imported' };
 }
 
 /** Import a logical bundle into an empty application database. */
@@ -634,7 +697,11 @@ export async function importApplication(
       'Database-only logical export bundles are not importable; create a new asset-aware export.',
     );
   }
-  if (bundle.schemaVersion !== 2 || !Array.isArray(bundle.tables)) {
+  if (
+    typeof bundle.schemaVersion !== 'number' ||
+    !BUNDLE_SCHEMA_VERSIONS.includes(bundle.schemaVersion) ||
+    !Array.isArray(bundle.tables)
+  ) {
     throw new Error('Unsupported logical export bundle.');
   }
   if (bundle.application !== context.appId) {
@@ -665,6 +732,27 @@ export async function importApplication(
       );
     }
   }
+  const userApp = bundle.userApp;
+  const userAppDataDir = userApp
+    ? await checkUserAppImport(context, userApp, tables)
+    : null;
+  const userAppEngine = userApp
+    ? await (
+        context.userAppEngine ?? (() => loadUserAppEngine(context.sourceRoot))
+      )()
+    : null;
+  let userAppImport: ImportResult['userApp'];
+  let userAppInstalled = false;
+  /** Idempotent: installs the user app, or finds it already there. */
+  const ensureUserApp = async () => {
+    if (!userApp || !userAppEngine || !userAppDataDir) return;
+    const outcome = await userAppEngine.importUserApp({
+      dataDir: userAppDataDir,
+      bundle: userApp,
+    });
+    if (outcome.status === 'imported') userAppInstalled = true;
+    userAppImport = { ...summarizeUserApp(userApp), status: outcome.status };
+  };
   const assetRoot = context.assetRoot || context.paths?.assets || null;
   const verifiedAssets = verifyFilesystemAssets({
     assetBundle: bundle.assets,
@@ -707,12 +795,24 @@ export async function importApplication(
         targetState,
       });
       if (recovery === 'complete') {
+        await ensureUserApp();
         rowCount = totalRows();
         return;
       }
       if (recovery === 'retry') {
         targetState = await inspectImportTarget(executor, plan, exportedByName);
       }
+    }
+    if (
+      userApp &&
+      targetState === 'complete' &&
+      (await importedRowsMatchBundle(executor, plan, exportedByName))
+    ) {
+      // An earlier run committed the rows and stopped before the user app
+      // was installed (or finished): complete it without touching the rows.
+      await ensureUserApp();
+      rowCount = totalRows();
+      return;
     }
     if (targetState !== 'empty') {
       throw new Error('Import target is not empty.');
@@ -736,6 +836,8 @@ export async function importApplication(
           // A local-profile (SQLite) export holds JSON columns as JSON text.
           { jsonText: bundle.profile === 'local' },
         );
+        await ensureUserApp();
+        await context.onImportPhase?.('user-app-installed');
         await context.onImportPhase?.('database-staged');
         verifyPublishedFilesystemAssets(staged);
       });
@@ -748,6 +850,13 @@ export async function importApplication(
         plan,
         exportedByName,
       );
+      if (stateAfterFailure === 'empty' && userAppInstalled && userAppDataDir) {
+        // The rows rolled back: take the user app this run installed back out
+        // (a rerun installs it again, or finds it).
+        for (const name of ['app.db', 'app.db-wal', 'app.db-shm']) {
+          rmSync(join(userAppDataDir, name), { force: true });
+        }
+      }
       if (
         stateAfterFailure === 'complete' &&
         (committed ||
@@ -768,5 +877,40 @@ export async function importApplication(
     rowCount,
     assetsIncluded: true,
     assetCount: (bundle.assets as AssetBundle).entries.length,
+    ...(userAppImport ? { userApp: userAppImport } : {}),
   };
+}
+
+/**
+ * Checks before anything is written: the user app only lands in a local
+ * (SQLite) installation, the bundle is intact, and its version history is the
+ * one the shell's own tables carry. Returns the directory it installs into.
+ */
+async function checkUserAppImport(
+  context: PortabilityContext,
+  userApp: UserAppSection,
+  tables: PortableTable[],
+): Promise<string> {
+  const root = context.paths?.root;
+  if (context.runtime.profile !== 'local' || !root) {
+    throw new Error(
+      'The bundle carries an app shell user app, which can only be imported into a local (SQLite) installation for now.',
+    );
+  }
+  const engine = await (
+    context.userAppEngine ?? (() => loadUserAppEngine(context.sourceRoot))
+  )();
+  const problems = engine.checkUserAppBundle(userApp);
+  if (problems.length > 0) {
+    throw new Error(`The bundle's user app is not usable: ${problems[0]}.`);
+  }
+  if (
+    engine.digestVersionHistory(userAppVersionsFromTables(tables)) !==
+    userApp.versionsDigest
+  ) {
+    throw new Error(
+      "The bundle's user app version history does not match its version tables.",
+    );
+  }
+  return userAppDirectory(root);
 }

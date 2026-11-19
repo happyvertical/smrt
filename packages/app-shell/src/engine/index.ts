@@ -85,6 +85,23 @@ export {
   importModelName,
 } from './import-target.ts';
 export type { MergePreview, MergeRecordsCommand } from './merge-records.ts';
+export {
+  checkUserAppBundle,
+  digestVersionHistory,
+  type ExportUserAppOptions,
+  exportUserApp,
+  hasUserAppDatabase,
+  type ImportUserAppOptions,
+  type ImportUserAppResult,
+  importUserApp,
+  inspectUserApp,
+  PORTABLE_USER_APP_FORMAT,
+  type PortableUserApp,
+  type PortableUserAppTable,
+  type UserAppInspection,
+  type UserAppVerification,
+  verifyUserApp,
+} from './portable-export.ts';
 export type {
   DefinitionDiff,
   DraftChain,
