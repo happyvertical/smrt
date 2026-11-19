@@ -551,6 +551,7 @@ function commandOwner(objectName: string): {
 export class CLIGenerator {
   private config: CLIConfig;
   private context: CLIContext;
+  /** Collections by the registry key of the model that owns them. */
   private collections = new Map<string, SmrtCollection<SmrtObject>>();
   private commandCache: CLICommand[] | null = null;
   /** Lazy-loaded cache for object commands (key: objectName lowercase) */
@@ -2971,8 +2972,19 @@ export class CLIGenerator {
   private async getCollection(
     objectName: string,
   ): Promise<SmrtCollection<SmrtObject>> {
-    if (!this.collections.has(objectName)) {
-      const classInfo = ObjectRegistry.getClass(this.registryKeyOf(objectName));
+    // Keyed by the owning model, never by the command name: when another
+    // model comes to own the name, its handlers must not reuse the previous
+    // owner's collection (#5143).
+    const registryKey = this.registryKeyOf(objectName);
+    const classInfo = ObjectRegistry.getClass(registryKey);
+    const cached = this.collections.get(registryKey);
+    if (
+      cached &&
+      classInfo?.collectionConstructor &&
+      cached.constructor !== classInfo.collectionConstructor
+    )
+      this.collections.delete(registryKey);
+    if (!this.collections.has(registryKey)) {
       if (!classInfo?.collectionConstructor) {
         // Enhanced error message with troubleshooting
         const availableObjects = Array.from(
@@ -3024,9 +3036,9 @@ export class CLIGenerator {
       });
 
       await collection.initialize();
-      this.collections.set(objectName, collection);
+      this.collections.set(registryKey, collection);
     }
-    const collection = this.collections.get(objectName);
+    const collection = this.collections.get(registryKey);
     if (!collection) throw new Error(`Collection ${objectName} not found`);
     return collection;
   }
