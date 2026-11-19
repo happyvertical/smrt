@@ -488,8 +488,24 @@ async function openAppModelEditor(
     return row;
   };
   let revision = history.at(-1)?.revision ?? 0;
+  /**
+   * The committed document of an applied tip: the first completion's receipt
+   * when it differs from the row's after document (another process won the
+   * completion), so a reopen keeps what was reported as committed.
+   */
+  const committedDocument = async () => {
+    const tip = history.at(-1);
+    if (tip?.status !== 'applied' || tip.abandoned) return undefined;
+    const row = await findRow(tip.requestId);
+    const won = row?.receipt?.cookbook;
+    return won && stableStringify(won) !== stableStringify(tip.after)
+      ? won
+      : undefined;
+  };
+  const committed = await committedDocument();
+  const committedAt = history.at(-1)?.revision;
   let doc = checked(
-    repairLayoutLabels(history.at(-1)?.after ?? options.cookbook),
+    repairLayoutLabels(committed ?? history.at(-1)?.after ?? options.cookbook),
   );
   let ready = false;
   let tail = Promise.resolve();
@@ -1143,6 +1159,8 @@ async function openAppModelEditor(
       throw error;
     }
     adopted = winner;
+    // The winner is the committed document: the next edit starts from it.
+    doc = structuredClone(winner.cookbook);
     return winner;
   }
   function snapshot(): AppModelSnapshot {
@@ -1365,7 +1383,13 @@ async function openAppModelEditor(
           history = await (scopedReader ? scopedReader.light() : scoped.read());
           revision = history.at(-1)?.revision ?? 0;
           doc = checked(
-            repairLayoutLabels(history.at(-1)?.after ?? options.cookbook),
+            repairLayoutLabels(
+              (history.at(-1)?.revision === committedAt
+                ? committed
+                : undefined) ??
+                history.at(-1)?.after ??
+                options.cookbook,
+            ),
           );
           await journalInitial(scoped);
           await validate(

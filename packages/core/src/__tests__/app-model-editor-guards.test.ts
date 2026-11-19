@@ -2069,6 +2069,16 @@ describe('app model editor: history reads and completion', () => {
     await apply({ type: 'relabel_list', name: 'GuardMat', label: 'Mats' });
     expect(published.at(-1)?.cookbook.name).toBe('Winner');
     expect(e.snapshot().cookbook.name).toBe('Winner');
+    // The winner carries into the next edit and into a reopen.
+    await apply({
+      type: 'relabel_list',
+      name: 'GuardMat',
+      label: 'Mats again',
+    });
+    expect(e.snapshot().cookbook.name).toBe('Winner');
+    ObjectRegistry.clear();
+    registerMember();
+    expect((await open()).snapshot().cookbook.name).toBe('Winner');
   });
 
   it('stays closed when installing the winning completion fails', async () => {
@@ -2084,6 +2094,10 @@ describe('app model editor: history reads and completion', () => {
       apply({ type: 'relabel_list', name: 'GuardMat', label: 'Mats' }),
     ).rejects.toThrow(/host publication unavailable/);
     expect(() => e.snapshot()).toThrow(/MODEL_ACTIVATION_PENDING/);
+    // Reopening, the prescribed recovery, installs the winner.
+    ObjectRegistry.clear();
+    registerMember();
+    expect((await open()).snapshot().cookbook.name).toBe('Winner');
   });
 
   it('a pending boot recovery that loses its completion installs and serves the winner', async () => {
