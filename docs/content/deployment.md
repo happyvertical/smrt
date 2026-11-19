@@ -176,6 +176,8 @@ failure after commit must not repeat a completed non-idempotent mutation.
 and executes the callback before recording completion. Its default use neither
 excludes concurrent runners nor closes the commit-to-marker gap. A transaction
 bound tracker plus exclusive migration execution is needed for atomic work.
+The money minor-units rescale does not use it: its conversion and marker are
+one transaction, and its runners are serialized.
 Nontransactional operations require idempotent reconciliation/checkpoints, or an
 explicit `needs-repair` outcome after ambiguous interruption. Kubernetes Job
 completion and an in-memory step ledger do not prove exactly-once execution.

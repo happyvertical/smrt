@@ -1929,6 +1929,68 @@ allows reruns to resume index work without replaying committed DDL. Inspect
 `pg_index.indisvalid` and drop INVALID indexes before rebuild (`pg_indexes`
 alone cannot detect them). Operational commands: `packages/cli/AGENTS.md`.
 
+### The money rescale runs once (`migrations/minor-units.ts`)
+
+`rescaleMoneyColumnsToMinorUnits` (and the `migrate*MoneyToMinorUnits`
+wrappers of commerce, subscriptions, projects and support) is not safe to
+repeat: it multiplies. Reading which columns still need converting, every
+statement and its `_smrt_backfills` marker are one transaction on every
+engine (`runBackfillOnceInTransaction`, `migrations/backfill-once.ts`,
+internal to core). The transaction first claims the marker name
+(PostgreSQL: `pg_advisory_xact_lock` on it; SQLite: the write lock, taken by
+a statement that changes no row), then looks for the marker again, so a
+runner that waited returns `ran: false`. DuckDB has neither lock; run-once
+holds there through DuckDB's transaction conflict (two transactions that both
+change the same table cannot both commit, so the second runner's transaction
+fails and rolls back; the marker insert itself is `ON CONFLICT DO NOTHING`),
+and a DuckDB file is open in one process at a time. On PostgreSQL each table is locked
+(`ACCESS EXCLUSIVE`) before its column types are read, because
+`ALTER ... TYPE BIGINT USING round(col * scale)` scales whatever the column
+holds when it runs, and column types are read for the table the statements
+resolve to (`to_regclass`), never for a same-named table in another schema.
+
+On a caller's transaction handle, that transaction is the unit, and the
+conversion and the marker also run in a nested scope of it, opened with the
+handle's own `transaction()` (a savepoint on SQLite and PostgreSQL; raw
+`SAVEPOINT` SQL is refused on remote LibSQL and secure-file SQLite
+transaction handles): a failure rolls the scope back before the error is
+returned, so a caller that catches the error and commits commits nothing of
+the conversion. The work's own error is the one returned, even when SQLite
+already rolled back the whole transaction and the scope's rollback fails.
+A SQLite or PostgreSQL transaction handle without `transaction()` is refused
+before anything is written. DuckDB has no nested scope: a failure after the
+conversion has written puts the caller's transaction in DuckDB's aborted state
+(`abortJoinedDuckDbTransaction`), so it can only end by discarding the
+conversion, even when the failure never reached the engine. The abort counts
+only when the engine reports it: a rejection that did not come from DuckDB is
+retried on the handle's own connection, and an abort no path confirms is thrown
+(it must not be committed) rather than assumed. A refusal before
+any write (the preflight) leaves the caller's transaction as it was. A column
+catalog read that fails fails the whole rescale (nothing written, no marker);
+only a table the catalog reports as absent is `missing`. A handle backed by JSON export is refused before any read or write, by the
+public rescale and by the preflight: engine `json`, the JSON adapter's
+capabilities, or a DuckDB handle whose `exportTable` is not proven inert. A
+native DuckDB handle exposes `exportTable` for every write strategy; the
+rescale calls it on a table name that does not exist, and only the answer
+"write strategy is set to none" (nothing exported, nothing written) lets the
+handle through, so `manual` and `immediate` handles are refused and the
+handle of a DuckDB transaction (which has none) works. Its conversion and
+marker would otherwise live in memory while a later ordinary write exports the
+converted table to disk alone. A `json` engine hint, in any case, is refused
+the same way, including `preflight.engine` fed back as the hint. The engine is the caller's `engineHint`, then a DuckDB handle's
+own `engine` (an in-memory DuckDB transaction's URL reads as SQLite), then the
+URL.
+
+A run that fails or is killed part-way changes nothing. This matters most on
+SQLite, where a rescaled column still declares a floating-point type and only
+the marker says it was converted. `BackfillTracker.runIfPending` is unchanged:
+its callback runs before the marker with no transaction around the two, so it
+must be safe to repeat. Known limit, unchanged: the bundled DuckDB handle is
+rescaled in place like SQLite (values move, the declared type stays), because
+the helper reads it as the JSON adapter. Tests: `minor-units.test.ts` (SQLite,
+DuckDB), `minor-units-postgres.optional.test.ts`, `backfill-once.test.ts`,
+`backfill-once-postgres.optional.test.ts`.
+
 ### Subclass conflict identities (#3456)
 
 An STI child's explicit `conflictColumns` owns a partial unique index restricted
