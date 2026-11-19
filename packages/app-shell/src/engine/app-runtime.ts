@@ -31,6 +31,7 @@ import {
   convertValue,
   describeApp,
   type FieldDef,
+  type MethodDef,
   type Migration,
   type ModelDef,
   RECIPES,
@@ -74,6 +75,10 @@ import { pruneMethodSnapshots, pruneMigrationSnapshots } from './snapshots.ts';
 type Row = Record<string, unknown>;
 type Handle = any;
 const q = (s: string) => `"${s.replace(/"/g, '""')}"`;
+/** Most rows of one model a method can read; more fails the call, never truncates. */
+const METHOD_READ_LIMIT = 1000;
+/** Times a method re-runs when the data changed between its read and its write. */
+const METHOD_RETRIES = 3;
 const OWNER = { id: 'owner', roles: ['admin'] };
 const PROFILE_TYPES = '@happyvertical/smrt-profiles:ProfileType';
 
@@ -90,6 +95,7 @@ export class AppRuntime {
   private dataDir: string;
   private snapshots = 0;
   private skipped = 0;
+  private methodQueue: Promise<void> = Promise.resolve();
 
   constructor(dataDir: string, def: AppDefinition, version: number) {
     this.dataDir = dataDir;
@@ -918,9 +924,9 @@ export class AppRuntime {
     return { ...builtInFields(model, md), ...visible(md.fields) };
   }
 
-  private async collection(model: string) {
+  private async collection(model: string, db: Handle = this.db) {
     this.modelDef(model);
-    return ObjectRegistry.getCollection(this.qualified(model), { db: this.db });
+    return ObjectRegistry.getCollection(this.qualified(model), { db });
   }
 
   private plain(model: string, obj: any): Row {
@@ -996,16 +1002,16 @@ export class AppRuntime {
     return rows.map((row) => this.plain(model, row));
   }
 
-  async list(model: string, limit = 200): Promise<Row[]> {
-    const rows = await (await this.collection(model)).list({
+  async list(model: string, limit = 200, db: Handle = this.db): Promise<Row[]> {
+    const rows = await (await this.collection(model, db)).list({
       limit,
       orderBy: 'created_at DESC',
     } as any);
     return rows.map((r) => this.plain(model, r));
   }
 
-  async get(model: string, id: string): Promise<Row> {
-    const obj = await (await this.collection(model)).get(id);
+  async get(model: string, id: string, db: Handle = this.db): Promise<Row> {
+    const obj = await (await this.collection(model, db)).get(id);
     if (!obj) throw new AppError(`no ${model} ${id}`);
     return this.plain(model, obj);
   }
@@ -1016,6 +1022,7 @@ export class AppRuntime {
     data: Row,
     creating: boolean,
     refs = true,
+    db: Handle = this.db,
   ) {
     const fields = this.fieldsOf(model);
     const out: Row = {};
@@ -1031,7 +1038,7 @@ export class AppRuntime {
       if (!c.ok) throw new AppError(`${model}.${k} ${c.error}`);
       if (refs && fd.type === 'reference' && c.value !== null) {
         const target = fd.ref as string;
-        if (!(await (await this.collection(target)).get(String(c.value))))
+        if (!(await (await this.collection(target, db)).get(String(c.value))))
           throw new AppError(`${model}.${k}: no ${target} with id ${c.value}`);
       }
       out[k] = c.value;
@@ -1053,17 +1060,18 @@ export class AppRuntime {
     model: string,
     data: Row,
     opts: { id?: string; refs?: boolean } = {},
+    db: Handle = this.db,
   ): Promise<Row> {
-    const base = await this.coerce(model, data, true, opts.refs !== false);
+    const base = await this.coerce(model, data, true, opts.refs !== false, db);
     if (recipeModelFor(model, this.def.models[model]))
-      base.typeId = await this.personType();
+      base.typeId = await this.personType(db);
     if (opts.id) base.id = opts.id;
-    const obj = await (await this.collection(model))
+    const obj = await (await this.collection(model, db))
       .create(base as never)
       .catch((e) => {
         throw this.named(model, e);
       });
-    return this.get(model, String(obj.id));
+    return this.get(model, String(obj.id), db);
   }
 
   /**
@@ -1083,19 +1091,24 @@ export class AppRuntime {
     );
   }
 
-  async update(model: string, id: string, data: Row): Promise<Row> {
-    const base = await this.coerce(model, data, false);
-    const obj: any = await (await this.collection(model)).get(id);
+  async update(
+    model: string,
+    id: string,
+    data: Row,
+    db: Handle = this.db,
+  ): Promise<Row> {
+    const base = await this.coerce(model, data, false, true, db);
+    const obj: any = await (await this.collection(model, db)).get(id);
     if (!obj) throw new AppError(`no ${model} ${id}`);
     for (const [k, v] of Object.entries(base)) obj[k] = v;
     await obj.save().catch((e: unknown) => {
       throw this.named(model, e);
     });
-    return this.get(model, id);
+    return this.get(model, id, db);
   }
 
-  async remove(model: string, id: string) {
-    const obj: any = await (await this.collection(model)).get(id);
+  async remove(model: string, id: string, db: Handle = this.db) {
+    const obj: any = await (await this.collection(model, db)).get(id);
     if (!obj) throw new AppError(`no ${model} ${id}`);
     await obj.delete();
     return { deleted: id };
@@ -1145,63 +1158,126 @@ export class AppRuntime {
     for (const [p, pd] of Object.entries(md.params ?? {}))
       if (pd.required && params[p] == null)
         throw new AppError(`param ${p} is required`);
+    // One method at a time per app: the worker handles calls concurrently on
+    // one connection, so two runs would otherwise act on the same stale read.
+    return this.exclusive(() =>
+      this.runMethodLocked(model, method, id, params, md),
+    );
+  }
+
+  /** Run `work` after every earlier call has finished; a failure never blocks the next. */
+  private exclusive<T>(work: () => Promise<T>): Promise<T> {
+    const run = this.methodQueue.then(work);
+    this.methodQueue = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    return run;
+  }
+
+  /** Every model's rows, or an error when one has more than a method may read. */
+  private async methodData(db: Handle): Promise<Record<string, Row[]>> {
     const data: Record<string, Row[]> = {};
-    for (const m of Object.keys(this.def.models))
-      data[m] = await this.list(m, 1000);
-    const record = id ? await this.get(model, id) : null;
-    let out: MethodOutput;
-    try {
-      out = await runMethod(md.code, { record, params, data });
-    } catch (e) {
-      throw new AppError((e as Error).message);
+    for (const m of Object.keys(this.def.models)) {
+      const rows = await this.list(m, METHOD_READ_LIMIT + 1, db);
+      if (rows.length > METHOD_READ_LIMIT)
+        throw new AppError(
+          `${m} has more than ${METHOD_READ_LIMIT} records, more than a method can read; no method ran (reduce ${m} or run this method on fewer records)`,
+        );
+      data[m] = rows;
     }
-    let writes: Write[];
-    try {
-      writes = validateWrites(
-        out.writes,
-        Object.fromEntries(
-          Object.keys(this.def.models).map((m) => [
-            m,
-            { fields: this.fieldsOf(m) },
-          ]),
-        ),
-        SANDBOX_LIMITS.maxWrites,
-      );
-      await this.checkWrites(writes);
-    } catch (e) {
-      throw new AppError(
-        `method ${model}.${method}() proposed bad writes, none applied: ${(e as Error).message}`,
-      );
-    }
-    if (!writes.length)
-      return { result: out.result, writes: [], applied: 0, snapshot: null };
-    // Snapshot first: anything the writes do can be taken back from it.
-    const snapshot = await this.snapshot(`method-${model}.${method}`);
-    let applied = 0;
-    try {
-      for (const w of writes) {
-        if (w.op === 'create') await this.create(w.model, w.data ?? {});
-        else if (w.op === 'update')
-          await this.update(w.model, String(w.id), w.data ?? {});
-        else await this.remove(w.model, String(w.id));
-        applied++;
+    return data;
+  }
+
+  private async runMethodLocked(
+    model: string,
+    method: string,
+    id: string | null,
+    params: Row,
+    md: MethodDef,
+  ) {
+    for (let attempt = 0; ; attempt++) {
+      const data = await this.methodData(this.db);
+      const record = id ? await this.get(model, id) : null;
+      let out: MethodOutput;
+      try {
+        out = await runMethod(md.code, { record, params, data });
+      } catch (e) {
+        throw new AppError((e as Error).message);
       }
-    } catch (e) {
-      throw new AppError(
-        `method ${model}.${method}() failed after ${applied} of ${writes.length} writes (snapshot: ${snapshot}): ${(e as Error).message}`,
-      );
+      let writes: Write[];
+      try {
+        writes = validateWrites(
+          out.writes,
+          Object.fromEntries(
+            Object.keys(this.def.models).map((m) => [
+              m,
+              { fields: this.fieldsOf(m) },
+            ]),
+          ),
+          SANDBOX_LIMITS.maxWrites,
+        );
+        await this.checkWrites(writes);
+      } catch (e) {
+        throw new AppError(
+          `method ${model}.${method}() proposed bad writes, none applied: ${(e as Error).message}`,
+        );
+      }
+      if (!writes.length)
+        return { result: out.result, writes: [], applied: 0, snapshot: null };
+      // Snapshot first (VACUUM cannot run inside a transaction). It is kept
+      // for undo; a failed method no longer needs it, nothing is left behind.
+      const snapshot = await this.snapshot(`method-${model}.${method}`);
+      try {
+        // Re-read and write in ONE transaction. If anything changed since the
+        // sandbox read (an edit outside methods), run the method again on the
+        // current data. A serializable database would retry the same way.
+        const applied = await this.db.transaction(async (tx: Handle) => {
+          const now = await this.methodData(tx);
+          const nowRecord = id ? await this.get(model, id, tx) : null;
+          if (
+            JSON.stringify([now, nowRecord]) !== JSON.stringify([data, record])
+          )
+            return null;
+          await this.checkWrites(writes, tx);
+          let n = 0;
+          for (const w of writes) {
+            if (w.op === 'create')
+              await this.create(w.model, w.data ?? {}, {}, tx);
+            else if (w.op === 'update')
+              await this.update(w.model, String(w.id), w.data ?? {}, tx);
+            else await this.remove(w.model, String(w.id), tx);
+            n++;
+          }
+          return n;
+        });
+        if (applied === null) {
+          if (attempt >= METHOD_RETRIES)
+            throw new AppError(
+              `method ${model}.${method}() could not run: the data kept changing underneath it, nothing was applied; try again`,
+            );
+          continue;
+        }
+        return { result: out.result, writes, applied, snapshot };
+      } catch (e) {
+        if (e instanceof AppError && /kept changing/.test(e.message)) throw e;
+        throw new AppError(
+          `method ${model}.${method}() failed, none of its ${writes.length} writes were applied: ${(e as Error).message}`,
+        );
+      }
     }
-    return { result: out.result, writes, applied, snapshot };
   }
 
   /** Reads only: records exist, required fields are present, references resolve. */
-  private async checkWrites(writes: Write[]) {
+  private async checkWrites(writes: Write[], db: Handle = this.db) {
     for (const w of writes) {
-      if (w.op === 'create') await this.coerce(w.model, w.data ?? {}, true);
+      if (w.op === 'create')
+        await this.coerce(w.model, w.data ?? {}, true, true, db);
       else {
-        if (!(await (await this.collection(w.model)).get(String(w.id))))
+        if (!(await (await this.collection(w.model, db)).get(String(w.id))))
           throw new AppError(`no ${w.model} ${w.id}`);
-        if (w.op === 'update') await this.coerce(w.model, w.data ?? {}, false);
+        if (w.op === 'update')
+          await this.coerce(w.model, w.data ?? {}, false, true, db);
       }
     }
   }
