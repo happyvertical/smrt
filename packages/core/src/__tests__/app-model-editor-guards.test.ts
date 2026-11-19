@@ -1709,6 +1709,41 @@ describe('app model editor: undo and import activate restored recipes', () => {
       /MODEL_TABLE_COLLISION: guard_members is the table of the installed model/,
     );
     expect(await e.history()).toEqual([]);
+    // The provider was never loaded and its table never created.
+    const { rows } = await db.query(
+      engine === 'postgres'
+        ? "SELECT 1 FROM information_schema.tables WHERE table_schema = current_schema() AND table_name = 'guard_members'"
+        : "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'guard_members'",
+    );
+    expect(rows).toEqual([]);
+  });
+
+  it('refuses a list that takes the identity of an installed app model that is not loaded', async () => {
+    const own = `${APP}:GuardDesk`;
+    const e = await editorFor(
+      {
+        manifest: {
+          version: 1,
+          modules: {
+            desk: { specifier: 'fixture', models: [own], dependencies: [] },
+          },
+          models: {
+            [own]: {
+              module: 'desk',
+              effective: own,
+              table: 'guard_desk_items',
+              dependencies: [],
+            },
+          },
+          tables: { guard_desk_items: { owners: [own], dependencies: [] } },
+        },
+        activate: async () => {},
+      },
+      book(),
+    );
+    await expect(
+      applier(e)({ type: 'create_list', name: 'GuardDesk', list: mats }),
+    ).rejects.toThrow(/MODEL_NAME_COLLISION: GuardDesk is the installed model/);
   });
   it('refuses to load a recipe onto a table a standalone run-time list holds, before importing it', async () => {
     enabled = [];

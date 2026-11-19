@@ -544,6 +544,12 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
       // A new list's name and table must be free among installed models
       // whether or not their recipe is on (lazy hosts load only enabled ones),
       // and among tables the database keeps for disabled or removed models.
+      // The app package's own installed models (not loaded in a lazy host)
+      // keep their identity: a list may not take it.
+      if (options.activation?.manifest?.models[own])
+        throw new Error(
+          `MODEL_NAME_COLLISION: ${name} is the installed model ${own}; choose another list name`,
+        );
       const named = reserved.names.get(name.toLowerCase());
       if (named && named !== own)
         throw new Error(
