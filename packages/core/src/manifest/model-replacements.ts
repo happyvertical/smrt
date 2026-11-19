@@ -28,16 +28,23 @@ export const SAME_NAME_PARENT_UNREGISTERED =
  * A class that declares `replaceParent` registered before the same-named
  * class it extends. It must register after it (its constructor or its
  * manifest declaration), so what it inherits never depends on load order.
+ * `parentKey` is the qualified parent when the declaration names one;
+ * `choice` says whether the child replaces its parent or is a subtype of it.
  */
 export function sameNameParentUnregistered(
   child: string,
   parentClass: string | undefined,
+  parentKey?: string,
+  choice?: SameNameSubclassChoice,
 ): ConfigurationError {
+  const parent = parentKey ?? parentClass ?? 'the class it extends';
+  const role = choice === 'subtype' ? 'subtype' : 'replacement';
   return new ConfigurationError(
-    `${child} declares replaceParent, but the same-named class it extends${parentClass ? ` (${parentClass})` : ''} is not registered yet. ` +
-      `Register that class (its @smrt() decorator or its package manifest) before ${child}; if ${child} extends no class of its own name, remove replaceParent.`,
+    `${child} declares replaceParent, but the same-named class it extends is not registered yet: ` +
+      `register ${parent} before its ${role} ${child}, or import ${parent}'s module first. ` +
+      `Under generated activation, regenerate the activation manifest. If ${child} extends no class of its own name, remove replaceParent.`,
     SAME_NAME_PARENT_UNREGISTERED,
-    { className: child, parentClass },
+    { className: child, parentClass, ...(parentKey ? { parentKey } : {}) },
   );
 }
 
