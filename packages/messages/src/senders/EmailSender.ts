@@ -10,6 +10,7 @@ import {
 import type { Attachment, EmailClient } from '@happyvertical/email';
 import type { Email } from '../models/Email';
 import type { EmailAccount } from '../models/EmailAccount';
+import { assertApprovedAttachments } from '../send-approval.js';
 import type {
   MessageSenderInterface,
   MessageSendResult,
@@ -120,6 +121,7 @@ export class EmailSender implements MessageSenderInterface {
     options?: SendEmailOptions,
   ): Promise<Attachment[]> {
     const resolved: Attachment[] = [];
+    const handed: Parameters<typeof assertApprovedAttachments>[1] = [];
 
     // Only a message backed by a row can own attachment rows; an unsaved
     // draft sent directly through the sender has none to look up.
@@ -150,6 +152,7 @@ export class EmailSender implements MessageSenderInterface {
             '(see Attachment.readContent()).',
         );
       }
+      handed.push({ row: attachment, content });
       resolved.push({
         filename: attachment.filename,
         contentType: attachment.contentType || 'application/octet-stream',
@@ -159,6 +162,9 @@ export class EmailSender implements MessageSenderInterface {
         contentDisposition: attachment.contentDisposition,
       });
     }
+
+    // A send an approval released carries exactly the approved files.
+    assertApprovedAttachments(message, handed);
 
     for (const attachment of options?.attachments ?? []) {
       if (!attachment.filename) {

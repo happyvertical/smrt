@@ -21,6 +21,7 @@ import {
   triageMailMessages,
 } from '../mail-triage.js';
 import type {
+  AgentSendPolicy,
   EmailAccountOptions,
   MessageSenderInterface,
   ProviderType,
@@ -100,9 +101,23 @@ export class EmailAccount extends Account {
     description: 'Whether more mail was still waiting after the last check.',
   })
   backlog = false;
+  /**
+   * What happens when an agent sends from this mailbox. Null (the default)
+   * and `require_approval` hold the draft for a person's approval;
+   * `auto_send` is the owner's explicit opt-in. Person sends are unaffected.
+   * Change it through `MailAccessService.setAgentSendPolicy()` (owner only).
+   */
+  @field({
+    readonly: true,
+    description:
+      'Whether an assistant may send from this mailbox on its own, or needs a person to approve each message first.',
+  })
+  agentSendPolicy: AgentSendPolicy | null = null;
 
   constructor(options: EmailAccountOptions = {}) {
     super(options);
+    if (options.agentSendPolicy !== undefined)
+      this.agentSendPolicy = options.agentSendPolicy;
 
     if (options.email !== undefined) this.email = options.email;
     if (options.providerType !== undefined)

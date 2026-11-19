@@ -255,9 +255,19 @@ describe('mail triage access (#5131)', () => {
   it('lets a grantee with read and triage grants triage', async () => {
     await grantRow(grantee.id, ownedId, 'read');
     await grantRow(grantee.id, ownedId, 'triage');
-    const result = await triageAs(principalFor(grantee), ownedId, ownedEmailId);
+    const result = await triageAs(
+      principalFor(grantee, { kind: 'agent' }),
+      ownedId,
+      ownedEmailId,
+    );
     expect(result.updated).toEqual([ownedEmailId]);
     expect(await isRead(ownedEmailId)).toBe(true);
+    // The acting principal is recorded as "handled by" (#5141).
+    const handled = await runWithMailSystemAccess(async () => {
+      const emails = await EmailCollection.create(options);
+      return ((await emails.get({ id: ownedEmailId })) as Email).getHandledBy();
+    });
+    expect(handled).toMatchObject({ id: grantee.id, kind: 'agent' });
   });
 
   it('refuses a stranger with no grant', async () => {

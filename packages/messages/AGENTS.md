@@ -68,7 +68,13 @@ owners and call `configureMailAccess({ options, resolvePrincipal })` at startup
   on purpose (`available` means outbound transport; JMAP is receive and sync
   only), and `connectMailbox` still connects it. Policy lookups use the
   configured db handle, not a caller's transaction.
-- `Message.send()` needs the `send` scope on an owned account. Account rows are
+- `Message.send()` needs the `send` scope on an owned account. Agent sends
+  (principal `kind` other than `person`/`human`) on a mail account are held
+  for a person's approval unless the owner opted in to `auto_send`;
+  approve / edit-then-approve / reject / release (as an approving person,
+  never the agent) through `MailSendApprovalService`,
+  drafts through `MailDraftService`, "handled by" on every message. Gate,
+  binding and bypass rules: [agents/send-approval.md](agents/send-approval.md). Account rows are
   not filtered (senders, routes and the outbox read them without a principal).
 - `MailAccessService` (`grant`, `revoke`, `list`, `setOwner`) needs tenant
   `messages.manage-access` AND ownership (or delegation); an administrator
