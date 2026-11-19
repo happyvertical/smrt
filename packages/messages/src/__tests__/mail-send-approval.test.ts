@@ -983,6 +983,10 @@ describe('agent send policy and held sends (#5141)', () => {
       expect(sent.delivery.success).toBe(false);
       expect(sent.delivery.error).toMatch(/send-time attachments/);
       expect(providerSend).not.toHaveBeenCalled();
+      // Not left queued for a drain: it failed definitely.
+      const row = await reload(sent.messageId);
+      expect(row.sendStatus).toBe('failed');
+      expect(row.isSendOutcomeUnknown()).toBe(false);
     });
   });
 

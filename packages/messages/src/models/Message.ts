@@ -602,6 +602,18 @@ export class Message extends SmrtObject {
       if (toDraft) this.sendStatus = 'draft';
       if (held.pendingApproval?.created) stampHandledBy(this, actor);
       if (toDraft || held.pendingApproval?.created) await this.save();
+      // A refused send of a queued message fails definitely (nothing left),
+      // so it does not linger as `pending` for a later drain.
+      if (
+        held.pendingApproval === undefined &&
+        (this.sendStatus === 'pending' || this.sendStatus === 'scheduled') &&
+        this.isPersisted
+      ) {
+        this.sendStatus = 'failed';
+        this.sendError = held.error ?? 'Send refused';
+        this.updatedAt = new Date();
+        await saveSendLifecycle(this);
+      }
       return held;
     }
     // Audited before anything is claimed: an audit failure sends nothing.

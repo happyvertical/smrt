@@ -48,7 +48,9 @@ persona message is held even under system access, so a system drain never
 sends it around its approval. Send-time attachment bytes (for example
 `PersonaMessagingService` `attachments`) are refused on a held send: they are
 not stored, so no person could review them and nothing could bind them;
-store them as `Attachment` rows on the message instead.
+store them as `Attachment` rows on the message instead. A refused send of a
+`pending`/`scheduled` message is marked `failed` (definite), never left
+queued.
 
 After the row is claimed, a send an approval released re-hashes the draft
 (attachment rows included); a mismatch fails definitely and sends nothing.
