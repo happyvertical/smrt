@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { loadRecords } from '../lib/ui/load.ts';
 import type { Description } from '../lib/ui/types.ts';
 import { page } from '../test/app-state.ts';
+import { card, changes, noChanges } from '../test/changes-fixtures.ts';
 import {
   description as draftDescription,
   draftInfo,
@@ -547,19 +548,74 @@ it('starts the phone drawer closed despite a remembered expanded desktop sidebar
   );
 });
 
-it('puts reports below models and marks only draft-only reports new', async () => {
-  const live = { ...draftDescription('live'), reports: { sales: report } };
-  const draft = {
-    ...draftDescription('draft'),
-    reports: { sales: report, newReport: { ...report, label: 'New answer' } },
+it('puts reports below models and never marks anything new', async () => {
+  const live = {
+    ...draftDescription('live'),
+    reports: { sales: report, other: { ...report, label: 'Other answer' } },
   };
-  await render(data({ description: draft, liveDescription: live }));
+  await render(data({ description: live, liveDescription: live }));
   const group = container.querySelector('a[href="/reports"]');
   expect(group?.textContent).toContain('Reports');
-  expect(
-    container.querySelector('a[href="/reports/newReport"]')?.textContent,
-  ).toContain('new');
-  expect(
-    container.querySelector('a[href="/reports/sales"]')?.textContent,
-  ).not.toContain('new');
+  for (const name of ['sales', 'other'])
+    expect(
+      container.querySelector(`a[href="/reports/${name}"]`)?.textContent,
+    ).not.toContain('new');
+});
+
+describe('changes waiting pill', () => {
+  const pill = () => q<HTMLAnchorElement>('[data-testid="changes-pill"]');
+  const waiting = (count: number, over: Record<string, unknown> = {}) =>
+    changes({
+      cards: Array.from({ length: count }, (_, i) =>
+        card({ id: `c${i}`, position: i }),
+      ),
+      ...over,
+    });
+  it('shows nothing when nothing waits, and no Live/Draft switch ever', async () => {
+    await render(data({ changes: noChanges() }));
+    expect(pill()).toBeNull();
+    await tick();
+    expect(container.textContent).not.toMatch(/Live|Draft|draft/);
+    expect(q('[data-testid="draft-header"]')).toBeNull();
+  });
+  it('is one link to the view, with a stable sentence and both widths', async () => {
+    await render(data({ changes: waiting(3) }));
+    expect(
+      container.querySelectorAll('[data-testid="changes-pill"]'),
+    ).toHaveLength(1);
+    expect(pill()?.getAttribute('href')).toBe('/changes');
+    expect(pill()?.getAttribute('aria-label')).toBe(
+      '3 changes waiting. Review.',
+    );
+    expect(pill()?.textContent).toMatch(/3\s*changes waiting/);
+    expect(pill()?.textContent).toMatch(/waiting/);
+    expect(pill()?.getAttribute('data-state')).toBe('ready');
+  });
+  it('says one change in the singular, checking and needs a look', async () => {
+    await render(data({ changes: waiting(1) }));
+    expect(pill()?.getAttribute('aria-label')).toBe(
+      '1 change waiting. Review.',
+    );
+    unmount(component as never);
+    container.innerHTML = '';
+    await render(data({ changes: waiting(2, { checkState: 'stale' }) }));
+    expect(pill()?.getAttribute('data-state')).toBe('checking');
+    unmount(component as never);
+    container.innerHTML = '';
+    await render(
+      data({
+        changes: waiting(2, {
+          checkState: 'blocked',
+          canApply: false,
+          blockers: [{ code: 'x', message: 'm', cardId: 'c0' }],
+        }),
+      }),
+    );
+    expect(pill()?.getAttribute('data-state')).toBe('blocked');
+    expect(pill()?.getAttribute('aria-label')).toContain('Needs a look');
+  });
+  it('is hidden in a plugin view', async () => {
+    await render(data({ changes: waiting(2), embedded: true }));
+    expect(pill()).toBeNull();
+  });
 });

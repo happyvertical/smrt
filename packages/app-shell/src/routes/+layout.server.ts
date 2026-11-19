@@ -7,7 +7,7 @@ import {
 import { principalFromLocals } from '$lib/server/owner';
 import { DEPENDS } from '$lib/ui/events';
 import { isPluginRequest } from '$lib/ui/layout';
-import { loadDescription } from '$lib/ui/load';
+import { loadChanges, loadDescription } from '$lib/ui/load';
 import { needsWelcome } from '$lib/ui/onboarding-client';
 import type { LayoutServerLoad } from './$types';
 
@@ -21,6 +21,7 @@ const sessionLoad = createSessionLayoutLoad();
 
 export const load: LayoutServerLoad = async (event) => {
   event.depends(DEPENDS.shell);
+  event.depends(DEPENDS.changes);
   const { session } = sessionLoad(event);
   // As a plugin view in Claude, Codex or ChatGPT the shell has no chat of its
   // own (the host app is the chat).
@@ -29,7 +30,13 @@ export const load: LayoutServerLoad = async (event) => {
     embed: event.url.searchParams.get('embed'),
   });
   if (!session.authenticated)
-    return { session, description: null, embedded, onboardingComplete: false };
+    return {
+      session,
+      description: null,
+      changes: null,
+      embedded,
+      onboardingComplete: false,
+    };
   // Check ownership before reading the saved copy. Signed-in members have no shell.
   const liveResult = await loadDescription(event.fetch, 'live');
   // Records and the structure the owner sees are always live: changes waiting
@@ -37,6 +44,9 @@ export const load: LayoutServerLoad = async (event) => {
   const result = liveResult;
   const liveDescription = liveResult.ok ? liveResult.description : null;
   const description = result.ok ? result.description : null;
+  // The ONE source of the waiting count: the header pill, /changes and
+  // History all read it from here.
+  const changes = description ? await loadChanges(event.fetch) : null;
   // First run: an owner with an empty app who has not finished or skipped the
   // welcome steps is sent there once. An app that already has models is in
   // use, so it is never interrupted (the steps stay open from Settings).
@@ -69,6 +79,7 @@ export const load: LayoutServerLoad = async (event) => {
     session,
     description,
     liveDescription,
+    changes,
     embedded,
     onboardingComplete,
   };

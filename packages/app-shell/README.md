@@ -406,6 +406,30 @@ a restart). All routes are owner-session, same-origin; there is no ``,
   'discarded'|'undone', batchId, count, generation }` (the older `draft` event
   is still emitted for the import workflow).
 
+### Changes waiting UI (#5204)
+
+- The layout loads `GET /api/shell/changes` once (`data.changes`, depends key
+  `smrt:changes`, refreshed by the SSE `changes` event); the header pill,
+  `/changes` and History read that one count. The pill (`ChangesPill`) sits in
+  the header's end slot next to the Assistant button, links to `/changes`, reads
+  "N changes waiting" (below 480px "N waiting"), and is absent when nothing
+  waits. It shows a spinner while checking and "needs a look" when blocked.
+- `/changes`: one card per active change in workbook order, with Remove (x),
+  Quick edit (name, choice options; no default) and, on the right, what will
+  change, Apply and Discard all. Apply sends the reviewed `digest` as `expect`;
+  a 409 refreshes the state and asks the owner to review again. A successful
+  Apply toasts "Applied. Your app is live" and lands on the records. Discard is
+  instant with "Put them back". Removed cards list with Put back.
+- Seams for later slices: `ChangeCard` takes an optional `oncomment` (shows
+  Comment) and a `more` snippet (questions, comment thread); blockers arrive in
+  `state.blockers` (`cardId` marks the card).
+- History: one entry per applied batch ("Applied N changes"); only the newest,
+  not yet undone one has Undo (`POST /changes/undo` with `undoDigest`). While
+  changes wait every Undo is disabled with "Apply or discard your N waiting
+  changes first."
+- The Apply button uses a button-only shade (`--smrt-app-shell-action`, #c2470a
+  in light, 5:1 with white); the global primary token is unchanged.
+
 An open draft from before changes waiting (or an import's) is adopted as
 opaque cards: no commands, not removable or editable one by one. The assistant
 gets no undo, apply or draft tool; its turn input says changes are collected.
@@ -457,7 +481,7 @@ See [AGENTS.md](AGENTS.md) for the invariants and [agents/engine.md](agents/engi
 
 ### Draft UI (removed)
 
-The Live/Draft bar and `/draft/review` are gone (#5178): owners see changes waiting instead (see [Changes waiting](#changes-waiting-the-shell); the new UI is slice 3, #5204 and later). `agents/draft-ui.md` describes the retired bar.
+The Live/Draft bar and `/draft/review` are gone (#5178): owners see changes waiting instead (see [Changes waiting](#changes-waiting-the-shell); the UI is described under "Changes waiting UI" above). `agents/draft-ui.md` describes the retired bar.
 
 ### Engine calculated fields
 
@@ -562,10 +586,8 @@ instead. Cancel/discard removes the file.
 The same page shows each table's rows read/skipped/loaded, typed fields and
 source columns, links, choices, calculations, reports, findings with sheet/cell
 examples and totals proof. **Formulas not translated** lists source formulas
-kept as saved values; those fields do not recalculate. **Review and publish** opens the existing draft
-review; only its normal publish approval can change live data. **Discard import**
+kept as saved values; those fields do not recalculate. **Review and apply** opens the changes waiting view; only the owner's Apply can change live data. **Discard import**
 removes the draft and stored workbook. Failed proof also removes its draft.
-Use the Live/Draft switch and open a table to inspect its records before publishing.
 Models keep readable names such as `Customers` and `Orders`; plan fields become
 camelCase (`orderNo`, `unitPrice`, `qty`). Name collisions use numeric suffixes,
 with the resolved names retained in `plan.engineNames`. Hidden `workbookRow` and

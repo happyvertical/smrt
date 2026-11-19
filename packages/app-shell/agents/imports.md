@@ -106,8 +106,8 @@ Shell host event wiring formats every changed summary through the same label-bas
 formatter as History, with both the before and after definitions (including removed
 fields). Calculations show label-based expressions in import review and History.
 The totals view omits integer checksums except quantity/count/units/qty; the exact
-proof still checks every numeric column. Review points owners to the Live/Draft
-switch to inspect the imported data before publishing.
+proof still checks every numeric column. Review points owners to the changes waiting
+view (`/changes`).
 
 The engine report tool advertises a count/sum/filter example validated by
 `parseRuntimeReportSpec`, and specifies exact model/field names for ad-hoc queries.

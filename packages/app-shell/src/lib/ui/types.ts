@@ -204,7 +204,76 @@ export interface PendingApproval {
   preview: unknown;
 }
 
+/** One waiting change as `GET /api/shell/changes` sends it (README "Changes waiting"). */
+export interface ChangeCardView {
+  id: string;
+  position: number;
+  group: string;
+  source: 'assistant' | 'import' | 'api' | 'quick';
+  /** Plain words for the card's heading. */
+  summary: string;
+  status: 'active' | 'removed';
+  revision: number;
+  /** An adopted older draft's change: no commands, no Remove, no Quick edit. */
+  opaque: boolean;
+  commands: Record<string, unknown>[];
+  checks: { code: string; message: string }[];
+  /** Slice 5 (assistant review). Shown by a later change; kept as sent. */
+  questions: unknown[];
+  threadId: string;
+  messageId: string;
+  editable: boolean;
+}
+
+export interface ChangeBlocker {
+  code: string;
+  message: string;
+  cardId?: string;
+  key?: string;
+  field?: string;
+}
+
+/** `GET /api/shell/changes`: the ONE source of the waiting count. */
+export interface ChangesState {
+  batchId: string | null;
+  status: 'none' | 'open' | 'held';
+  /** Active cards: the one number the owner sees. */
+  count: number;
+  generation: number;
+  /** Apply's `expect`. */
+  digest: string;
+  checkState: 'none' | 'ok' | 'blocked' | 'stale';
+  canApply: boolean;
+  blockers: ChangeBlocker[];
+  overwrites: {
+    recordsUpdated: number;
+    recordsMerged: number;
+    archivedValues: number;
+    archivedTables: number;
+  } | null;
+  held: string | null;
+  liveVersion: number;
+  baseVersion: number;
+  cards: ChangeCardView[];
+  discarded: { batchId: string; count: number } | null;
+  lastApplied: {
+    batchId: string;
+    appliedAt: string;
+    versions: number[];
+    undone: boolean;
+    undoDigest: string;
+    count: number;
+  } | null;
+}
+
 export type ShellEvent =
+  | {
+      type: 'changes';
+      status: 'changed' | 'applied' | 'discarded' | 'undone';
+      batchId: string;
+      count: number;
+      generation: number;
+    }
   | {
       type: 'changed';
       target?: 'live' | 'draft';

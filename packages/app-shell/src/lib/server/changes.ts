@@ -37,6 +37,7 @@ import {
   ChangeCardCollection,
   type ChangeCardSource,
 } from '../objects/ChangeCard.ts';
+import { applySummary, CHANGES_WAITING_NAME } from '../ui/changes.ts';
 import { commandSummary, versionSummary } from '../ui/command-summary.ts';
 import {
   type ApprovalAction,
@@ -55,7 +56,7 @@ import { getDraftSlot, getHost, getShellDb } from './host.ts';
 import { assertOwner, type Principal } from './owner.ts';
 import { publicChangeResult } from './results.ts';
 
-const WORKING_COPY_NAME = 'Changes waiting';
+const WORKING_COPY_NAME = CHANGES_WAITING_NAME;
 const engine = createSqliteChangeEngine();
 const principalOf = (owner: Principal): ChangePrincipal => ({ id: owner.id });
 
@@ -1204,7 +1205,7 @@ export function requestApply(
       return requestApproval(
         action as ApprovalAction,
         {
-          summary: `Apply ${n} waiting change${n === 1 ? '' : 's'}`,
+          summary: applySummary(n),
           risky: true,
           preview: {
             changes: active.map((c) => c.summary),

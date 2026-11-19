@@ -112,14 +112,12 @@ it('offers only existing draft review/publish and discard after proof', async ()
   });
   await tick();
   expect(
-    document.querySelector<HTMLAnchorElement>('a[href="/draft/review"]')
+    document.querySelector<HTMLAnchorElement>('a[href="/changes"]')
       ?.textContent,
-  ).toContain('Review and publish');
+  ).toContain('Review and apply');
   expect(document.body.textContent).toContain('Discard import');
-  expect(document.body.textContent).toContain(
-    'choose Draft in the Live/Draft switch',
-  );
-  expect(document.body.textContent).toContain('publish in one step');
+  expect(document.body.textContent).not.toContain('Live/Draft');
+  expect(document.body.textContent).toContain('apply it in one step');
   expect(document.body.textContent).not.toContain('still needs your approval');
   // The previous proof sits in the sheet cards: no bullets or section headings.
   expect(document.querySelector('h3')).toBeNull();

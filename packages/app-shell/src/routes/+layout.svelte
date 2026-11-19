@@ -1,10 +1,12 @@
 <script lang="ts">
 import { AppShell } from '@happyvertical/smrt-svelte/app';
 import type { ShellNavItem } from '@happyvertical/smrt-svelte/workspace';
+import { ToastViewport } from '@happyvertical/smrt-ui';
 import { onMount, untrack } from 'svelte';
 import { page } from '$app/state';
 import '$lib/ui/ui.css';
 import AssistantPanel from '$lib/assistant/AssistantPanel.svelte';
+import ChangesPill from '$lib/components/ChangesPill.svelte';
 import {
   ASSISTANT_OPEN_EVENT,
   assistantOpenKey,
@@ -34,23 +36,7 @@ const nav: ShellNavItem[] = $derived(
         label: item.label,
         icon: item.icon,
         description: item.description,
-        children: item.children?.map((child) => ({
-          ...child,
-          badge:
-            data.description?.mode === 'draft' &&
-            !Object.hasOwn(
-              data.liveDescription?.reports ?? {},
-              child.id.slice(7),
-            )
-              ? 'new'
-              : null,
-        })),
-        badge:
-          data.description?.mode === 'draft' &&
-          item.id.startsWith('model:') &&
-          !Object.hasOwn(data.liveDescription?.models ?? {}, item.id.slice(6))
-            ? 'new'
-            : null,
+        children: item.children,
       }))
     : [],
 );
@@ -94,7 +80,7 @@ $effect(() => {
 
 // Live updates only make sense for the signed-in owner.
 $effect(() => {
-  if (isOwner) live.start(data.description?.mode ?? 'live');
+  if (isOwner) live.start();
   else live.stop();
 });
 onMount(() => {
@@ -110,6 +96,10 @@ onMount(() => {
   };
 });
 </script>
+
+{#snippet headerEnd()}
+  {#if isOwner && !plugin && !onboarding}<ChangesPill changes={data.changes} current={page.url.pathname === '/changes'} />{/if}
+{/snippet}
 
 <AppShell
   storageKey={shellStorageKey(data.session.user?.id)}
@@ -137,20 +127,20 @@ onMount(() => {
         unavailableLabel: 'Voice mode is not available yet',
       }
     : false}
+  slots={{ 'header.end': headerEnd }}
   bind:panelOpen
 >
   {#snippet panel({ open })}
-    <AssistantPanel {open} owner={data.session.user} buildingInDraft={false} viewingDraft={false} />
+    <AssistantPanel {open} owner={data.session.user} />
   {/snippet}
-  {#key data.description?.mode}
-    {@render children()}
-  {/key}
+  {@render children()}
   <!-- Screen readers hear changes made elsewhere (the assistant, another tab). -->
   <div class="smrt-app-shell-layout__sr-only" aria-live="polite" role="status" data-smrt-part="label">{live.announcement}</div>
   {#if isOwner && live.status === 'reconnecting'}
     <p class="smrt-app-shell-layout__live-note" role="status" data-smrt-part="status">Reconnecting to your app…</p>
   {/if}
 </AppShell>
+<ToastViewport />
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;

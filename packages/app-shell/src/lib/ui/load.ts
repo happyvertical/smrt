@@ -4,7 +4,13 @@
 import { error } from '@sveltejs/kit';
 import { ApiError, api } from './api.ts';
 import { referencedModels } from './columns.ts';
-import type { Description, FieldDef, RecordRow, Target } from './types.ts';
+import type {
+  ChangesState,
+  Description,
+  FieldDef,
+  RecordRow,
+  Target,
+} from './types.ts';
 
 type Fetch = typeof fetch;
 
@@ -109,4 +115,20 @@ export function needModel(description: Description, name: string) {
   if (!Object.hasOwn(description.models, name))
     error(404, `This app has no "${name}" model.`);
   return description.models[name];
+}
+
+/** The changes waiting, or null (the page still renders when they cannot be read). */
+export async function loadChanges(
+  fetchImpl: Fetch,
+): Promise<ChangesState | null> {
+  try {
+    return (
+      await api<ChangesState>('/api/shell/changes', {
+        fetch: fetchImpl,
+        target: null,
+      })
+    ).data;
+  } catch {
+    return null;
+  }
 }
