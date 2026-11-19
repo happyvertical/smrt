@@ -144,7 +144,7 @@ export async function createAppModelHistory(options: {
   };
   // Receipts and results each hold a full projection; the light column list
   // leaves them out of the editor's per-edit reads.
-  const LIGHT = `revision, request_id, actor, command, before_doc, after_doc, status, undoes, elapsed_ms, operation_json, CASE WHEN result_json LIKE '{"abandoned":%' THEN 1 ELSE 0 END AS abandoned_marker`;
+  const LIGHT = `revision, request_id, actor, command, before_doc, after_doc, status, undoes, elapsed_ms, operation_json, CASE WHEN result_json LIKE '${ABANDONED_MARKER}%' THEN 1 ELSE 0 END AS abandoned_marker`;
   const toChange = (row: Record<string, unknown>): AppModelChange => ({
     revision: toSafeInteger(row.revision, 'App model revision'),
     requestId: String(row.request_id),
@@ -196,7 +196,8 @@ export async function createAppModelHistory(options: {
         `UPDATE _smrt_app_model_changes SET status = 'applied', after_doc = before_doc, elapsed_ms = 0, receipt_json = NULL, result_json = ? WHERE application = ? AND tenant_id = ? AND revision = ? AND status = 'pending' RETURNING revision`,
         [
           JSON.stringify({
-            abandoned: {
+            abandoned: true,
+            abandonedBy: {
               actor: by.actor,
               ...(by.reason ? { reason: by.reason } : {}),
             },
@@ -299,14 +300,14 @@ export async function createAppModelHistory(options: {
   return store;
 }
 
+/**
+ * The one abandoned predicate, shared by the light read (SQL prefix) and the
+ * full read: the result abandon() writes always starts with this exact text,
+ * which no ordinary operation result produces by accident.
+ */
+const ABANDONED_MARKER = '{"abandoned":true,"abandonedBy":';
 function abandonedResult(value: unknown): boolean {
-  if (!value) return false;
-  try {
-    const parsed = JSON.parse(String(value));
-    return !!parsed && typeof parsed === 'object' && 'abandoned' in parsed;
-  } catch {
-    return false;
-  }
+  return typeof value === 'string' && value.startsWith(ABANDONED_MARKER);
 }
 
 /**

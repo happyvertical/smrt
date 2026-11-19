@@ -26,6 +26,7 @@ import {
   abandonAppModelRevision,
   createAppModelHistory,
 } from '../cookbook/model-history.js';
+import { journalReader } from '../cookbook/model-history-readers.js';
 import { fitsStorageIdentifier, storageColumns } from '../cookbook/models.js';
 import { COOKBOOK_SCHEMA_URL } from '../cookbook/validate.js';
 import { field } from '../decorators/index.js';
@@ -1274,6 +1275,7 @@ describe('app model editor: one customised registry per process', () => {
 
   it('denies a string-form ownership claim to another tenant and counts it as an exposure gate', async () => {
     globalThis.__smrtModelReadiness?.clear();
+    globalThis.__smrtModelOwners?.clear();
     expect(hasRuntimeExposureGate()).toBe(false);
     setRuntimeModelOwner(['@fixture/claims:Thing'], TENANT);
     try {
@@ -1804,6 +1806,45 @@ describe('app model editor: history reads and completion', () => {
     const reopened = await open();
     expect(reopened.snapshot().revision).toBe(2);
     expect(reopened.snapshot().cookbook.layout?.items?.[item]).toBeUndefined();
+  });
+
+  it('classifies abandoned rows by one predicate in light and full reads', async () => {
+    const store = await createAppModelHistory({
+      db,
+      application,
+      tenantId: TENANT,
+    });
+    const row = (revision: number) => ({
+      revision,
+      requestId: `req-predicate-${revision}`,
+      actor: 'owner',
+      command: JSON.stringify({ type: 'relabel_list' }),
+      before: memberBook(),
+      after: memberBook(),
+      status: 'pending' as const,
+    });
+    // Ordinary results that merely contain an `abandoned` key.
+    await store.append(row(1), 0);
+    await store.complete(1, 1, undefined, { abandoned: false, ok: true });
+    await store.append(row(2), 1);
+    await store.complete(2, 1, undefined, { ok: true, abandoned: true });
+    // An operator abandon.
+    await store.append(row(3), 2);
+    await abandonAppModelRevision({
+      db,
+      application,
+      tenantId: TENANT,
+      revision: 3,
+      actor: 'operator',
+    });
+    const full = await store.read();
+    const light = await journalReader(store)!.light();
+    for (const rows of [full, light])
+      expect(rows.map((entry) => entry.abandoned === true)).toEqual([
+        false,
+        false,
+        true,
+      ]);
   });
 });
 
