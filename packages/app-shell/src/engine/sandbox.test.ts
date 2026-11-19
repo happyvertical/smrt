@@ -1,7 +1,8 @@
 import { mkdtempSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { EMPTY_APP } from './definition.ts';
 import {
   AppHost,
   checkSyntax,
@@ -334,6 +335,80 @@ describe('sandbox through the host', () => {
   it('errors are EngineErrors the shell can show', async () => {
     await expect(host.runMethod('Chore', 'spin', id)).rejects.toBeInstanceOf(
       EngineError,
+    );
+  });
+});
+
+describe('method atomicity (#5185)', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'engine-atomic-'));
+  let rt: import('./app-runtime.ts').AppRuntime;
+  const def = {
+    ...EMPTY_APP,
+    models: {
+      Stock: {
+        label: 'Stock',
+        titleField: 'name',
+        fields: {
+          name: { type: 'text' as const },
+          qty: { type: 'integer' as const },
+        },
+        methods: {
+          take: {
+            description: 'take one',
+            code: `const s = record; if (s.qty < 1) throw new Error('sold out'); app.update('Stock', s.id, { qty: s.qty - 1 }); return s.qty;`,
+          },
+          two: {
+            description: 'two writes',
+            code: `app.update('Stock', record.id, { qty: 0 }); app.create('Stock', { name: 'extra', qty: 1 }); return 1;`,
+          },
+          readAll: {
+            description: 'reads',
+            code: `return data.Stock.length;`,
+          },
+        },
+      },
+    },
+  };
+
+  beforeAll(async () => {
+    const { AppRuntime } = await import('./app-runtime.ts');
+    rt = new AppRuntime(dir, def as never, 1);
+    await rt.boot();
+  });
+  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+
+  it('a write failing part-way leaves nothing behind', async () => {
+    const row = await rt.create('Stock', { name: 'a', qty: 5 });
+    const count = (await rt.list('Stock', 2000)).length;
+    const spy = vi.spyOn(rt, 'create').mockImplementation(async () => {
+      throw new Error('injected');
+    });
+    await expect(
+      rt.runMethod('Stock', 'two', row.id as string),
+    ).rejects.toThrow(/none of its 2 writes were applied: injected/);
+    spy.mockRestore();
+    expect((await rt.get('Stock', row.id as string)).qty).toBe(5);
+    expect((await rt.list('Stock', 2000)).length).toBe(count);
+  });
+
+  it('two concurrent decrements of the last unit do not oversell', async () => {
+    const row = await rt.create('Stock', { name: 'last', qty: 1 });
+    const results = await Promise.allSettled([
+      rt.runMethod('Stock', 'take', row.id as string),
+      rt.runMethod('Stock', 'take', row.id as string),
+    ]);
+    expect(results.map((r) => r.status).sort()).toEqual([
+      'fulfilled',
+      'rejected',
+    ]);
+    expect((await rt.get('Stock', row.id as string)).qty).toBe(0);
+  });
+
+  it('a model over the row limit fails with an error naming it', async () => {
+    for (let i = 0; i < 1001; i++)
+      await rt.create('Stock', { name: `b${i}`, qty: 1 });
+    await expect(rt.runMethod('Stock', 'readAll', null)).rejects.toThrow(
+      /Stock has more than 1000 records/,
     );
   });
 });
