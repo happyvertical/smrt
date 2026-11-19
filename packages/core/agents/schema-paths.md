@@ -1886,6 +1886,35 @@ allows reruns to resume index work without replaying committed DDL. Inspect
 `pg_index.indisvalid` and drop INVALID indexes before rebuild (`pg_indexes`
 alone cannot detect them). Operational commands: `packages/cli/AGENTS.md`.
 
+### Migration checksums
+
+`migrations/checksum.ts`. `MigrationTracker` records the SHA-256 of a
+migration's statements after comments are removed and whitespace is collapsed,
+stopping at quotes (`computeQuotedTextChecksum`,
+`normalizeSQLKeepingQuotedText`): text inside a single-quoted string or a
+double-quoted identifier is data and is hashed as written (`'a--b'`, `'x  y'`),
+with line endings folded to `\n`. A dollar-quoted body is normalized as code,
+and the quoted strings inside it are kept. So a reused migration id whose
+statement differs only inside a string is a checksum mismatch.
+
+The exported `computeChecksum` and `normalizeSQL` are unchanged: they
+normalize quoted text too, as every earlier release did, so a consumer calling
+`verifyChecksum(computeChecksum(up), recorded, applied)` against a record an
+earlier release wrote still matches. For a statement whose quoted text holds
+no comment marker and only single spaces, both forms give the same text, so
+the checksum the tracker records did not move (`checksum.test.ts` proves this
+for every statement core generates for its fixture schemas on three engines
+and for every default, constraint and index of the saved release schemas).
+For any other statement the tracker accepts either value
+(`checksumMatchesRecorded`), so no recorded migration reads as modified. The
+cost: a record written by an earlier release cannot be told from a current
+record whose quoted text needed no care, so against such a record an edit that
+only adds a comment marker or extra whitespace inside a string still matches.
+A consumer that compares stored checksums itself should use
+`checksumMatchesRecorded(statements, recorded)`, which accepts both; comparing
+`computeChecksum(up)` with a record the tracker writes now mismatches for
+statements whose quoted text holds a comment marker or repeated whitespace.
+
 ### Subclass conflict identities (#3456)
 
 An STI child's explicit `conflictColumns` owns a partial unique index restricted

@@ -8,6 +8,7 @@ import type { DatabaseInterface } from '@happyvertical/sql';
 import { getDatabase } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { MigrationDefinition } from '../../schema/types.js';
+import { computeChecksum, computeQuotedTextChecksum } from '../checksum.js';
 import { MigrationTracker } from '../tracker.js';
 
 describe('MigrationTracker', () => {
@@ -219,6 +220,64 @@ describe('MigrationTracker', () => {
 
       expect(retry.success).toBe(false);
       expect(retry.error).toContain('previously failed');
+    });
+
+    it('refuses a reused id whose statement differs only inside a quoted string', async () => {
+      await db.query('CREATE TABLE notes (id TEXT PRIMARY KEY, label TEXT)');
+      const recorded: MigrationDefinition = {
+        id: '0001_label_default',
+        description: 'Fill the label',
+        version: '1.0.0',
+        up: ["UPDATE notes SET label = 'n/a--legacy' WHERE label IS NULL"],
+        down: [],
+      };
+      expect((await tracker.apply(recorded)).success).toBe(true);
+
+      const edited = {
+        ...recorded,
+        up: ["UPDATE notes SET label = 'n/a--v2' WHERE label IS NULL"],
+      };
+      const result = await tracker.apply(edited);
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('checksum mismatch');
+      expect(await tracker.detectDrift([edited])).toEqual([
+        expect.objectContaining({
+          migration_name: '0001_label_default',
+          drift_type: 'file_modified',
+        }),
+      ]);
+    });
+
+    it('still recognises a migration an earlier release recorded, whatever its quoted text', async () => {
+      await db.query('CREATE TABLE notes (id TEXT PRIMARY KEY, label TEXT)');
+      const definition: MigrationDefinition = {
+        id: '0001_label_spacing',
+        description: 'Fill the label',
+        version: '1.0.0',
+        up: [
+          "UPDATE notes SET label = 'two  spaces -- kept' WHERE label IS NULL",
+        ],
+        down: [],
+      };
+      // The row as an earlier release wrote it: its checksum came from
+      // normalizing the quoted text as well.
+      const earlier = computeChecksum(definition.up);
+      expect(earlier).not.toBe(computeQuotedTextChecksum(definition.up));
+      await tracker.initialize();
+      await db.query(
+        `INSERT INTO _smrt_schema_migrations
+           (id, name, version, checksum, applied_checksum, status, attempts, is_reversible, batch)
+         VALUES ('earlier-row', ?, '1.0.0', ?, ?, 'completed', 1, 0, 1)`,
+        definition.id,
+        earlier,
+        earlier,
+      );
+
+      const result = await tracker.apply(definition);
+
+      expect(result).toMatchObject({ success: true, skipped: true });
+      expect(await tracker.detectDrift([definition])).toEqual([]);
     });
 
     it('should still block checksum mismatches during reconcile', async () => {

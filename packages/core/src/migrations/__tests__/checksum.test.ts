@@ -4,13 +4,22 @@
  * Tests for SHA-256 checksum computation and SQL normalization.
  */
 
+import { readdirSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { getDDLStrategy } from '../../schema/ddl/index.js';
+import type { SchemaDefinition } from '../../schema/types.js';
 import {
+  checksumMatchesRecorded,
   computeChecksum,
+  computeQuotedTextChecksum,
   normalizeSQL,
+  normalizeSQLKeepingQuotedText,
   shortChecksum,
   verifyChecksum,
 } from '../checksum.js';
+
+const CORE_ROOT = join(import.meta.dirname, '../../..');
 
 describe('checksum', () => {
   describe('normalizeSQL', () => {
@@ -182,6 +191,249 @@ describe('checksum', () => {
     it('should return valid when applied checksum matches', () => {
       const result = verifyChecksum('abc123', 'abc123', 'abc123');
       expect(result.valid).toBe(true);
+    });
+  });
+
+  describe('the public verification path', () => {
+    const statements = [
+      "UPDATE notes SET label = 'two  spaces' WHERE label IS NULL",
+    ];
+
+    it('keeps computeChecksum as every earlier release computed it', () => {
+      expect(normalizeSQL(statements)).toBe(
+        "UPDATE notes SET label = 'two spaces' WHERE label IS NULL",
+      );
+      expect(computeChecksum(statements)).not.toBe(
+        computeQuotedTextChecksum(statements),
+      );
+    });
+
+    it('verifies unchanged SQL with a literal against a record an earlier release wrote', () => {
+      const recorded = computeChecksum(statements);
+      expect(
+        verifyChecksum(computeChecksum(statements), recorded, recorded),
+      ).toEqual({ valid: true });
+      expect(checksumMatchesRecorded(statements, recorded)).toBe(true);
+    });
+
+    it('verifies a record the tracker writes now through checksumMatchesRecorded', () => {
+      const recorded = computeQuotedTextChecksum(statements);
+      expect(checksumMatchesRecorded(statements, recorded)).toBe(true);
+      expect(
+        checksumMatchesRecorded(
+          ["UPDATE notes SET label = 'two spaces' WHERE label IS NULL"],
+          recorded,
+        ),
+      ).toBe(false);
+    });
+  });
+
+  describe('quoted text', () => {
+    it.each([
+      ['a comment marker', "'n/a--legacy'", "'n/a--v2'"],
+      ['a block comment marker', "'a/*x*/b'", "'a/*y*/b'"],
+      ['a run of spaces', "'x  y'", "'x y'"],
+      ['a tab', "'x\ty'", "'x y'"],
+      ['a line break', "'x\ny'", "'x y'"],
+      ['an escaped quote before a marker', "'it''s --a'", "'it''s --b'"],
+    ])('hashes two strings that differ only by %s differently', (_name, left, right) => {
+      const one = [`UPDATE notes SET label = ${left} WHERE label IS NULL`];
+      const other = [`UPDATE notes SET label = ${right} WHERE label IS NULL`];
+      expect(normalizeSQLKeepingQuotedText(one)).toContain(left);
+      expect(normalizeSQLKeepingQuotedText(other)).toContain(right);
+      expect(computeQuotedTextChecksum(one)).not.toBe(
+        computeQuotedTextChecksum(other),
+      );
+    });
+
+    it('keeps a quoted identifier as written', () => {
+      const one = ['ALTER TABLE notes RENAME COLUMN "old  name" TO fresh'];
+      const other = ['ALTER TABLE notes RENAME COLUMN "old name" TO fresh'];
+      expect(computeQuotedTextChecksum(one)).not.toBe(
+        computeQuotedTextChecksum(other),
+      );
+    });
+
+    it('still ignores comments and layout outside quoted text', () => {
+      const compact = ["UPDATE notes SET label = 'a--b' WHERE id = 'x  y'"];
+      const spread = [
+        `-- why this runs
+         UPDATE   notes /* the table */
+            SET label = 'a--b' -- don't touch 'a--b'
+          WHERE id = 'x  y'  `,
+      ];
+      expect(normalizeSQLKeepingQuotedText(spread)).toBe(
+        normalizeSQLKeepingQuotedText(compact),
+      );
+      expect(computeQuotedTextChecksum(spread)).toBe(
+        computeQuotedTextChecksum(compact),
+      );
+    });
+
+    it('does not open a string at a quote inside a comment', () => {
+      const withApostrophe = [
+        "-- the owner's note\nSELECT   1 /* isn't data */   + 2",
+      ];
+      expect(normalizeSQLKeepingQuotedText(withApostrophe)).toBe(
+        'SELECT 1 + 2',
+      );
+    });
+
+    it('reads the same statement the same way whatever the line endings', () => {
+      const unix = ["INSERT INTO notes (body) VALUES ('first\nsecond')"];
+      const windows = ["INSERT INTO notes (body) VALUES ('first\r\nsecond')"];
+      expect(computeQuotedTextChecksum(windows)).toBe(
+        computeQuotedTextChecksum(unix),
+      );
+    });
+
+    it('normalizes a dollar-quoted body as code and keeps the strings in it', () => {
+      const one = [
+        `DO $$
+         BEGIN
+           RAISE EXCEPTION 'two  spaces';
+         END $$`,
+      ];
+      const sameLayoutChange = [
+        "DO $$ BEGIN RAISE EXCEPTION 'two  spaces'; END $$",
+      ];
+      const otherText = ["DO $$ BEGIN RAISE EXCEPTION 'two spaces'; END $$"];
+      expect(computeQuotedTextChecksum(one)).toBe(
+        computeQuotedTextChecksum(sameLayoutChange),
+      );
+      expect(computeQuotedTextChecksum(one)).not.toBe(
+        computeQuotedTextChecksum(otherText),
+      );
+    });
+
+    it('survives an unterminated quote and a statement that uses the placeholder character', () => {
+      expect(normalizeSQLKeepingQuotedText(["SELECT 'open  text"])).toBe(
+        "SELECT 'open  text",
+      );
+      const privateUse = String.fromCharCode(0xe000);
+      const sql = [`SELECT '${privateUse}0${privateUse}', 'a  b'`];
+      expect(normalizeSQLKeepingQuotedText(sql)).toBe(sql[0]);
+    });
+  });
+
+  describe('checksums recorded by earlier releases', () => {
+    /**
+     * Every statement in `statements` normalizes exactly as it did before
+     * quoted text was respected, so its recorded checksum is unchanged.
+     */
+    function expectUnchanged(statements: string[]) {
+      expect(statements.length).toBeGreaterThan(0);
+      const changed = statements.filter(
+        (sql) => normalizeSQLKeepingQuotedText([sql]) !== normalizeSQL([sql]),
+      );
+      expect(changed).toEqual([]);
+      expect(computeQuotedTextChecksum(statements)).toBe(
+        computeChecksum(statements),
+      );
+    }
+
+    it('keeps the checksum of every statement core generates for its fixture schemas', () => {
+      const manifest = JSON.parse(
+        readFileSync(
+          join(CORE_ROOT, 'src/manifest/test-manifest.json'),
+          'utf8',
+        ),
+      ) as { objects: Record<string, { schema?: SchemaDefinition }> };
+      const schemas = Object.values(manifest.objects)
+        .map((object) => object.schema)
+        .filter(
+          (schema): schema is SchemaDefinition =>
+            !!schema?.tableName && !!schema.columns,
+        );
+      expect(schemas.length).toBeGreaterThan(100);
+      for (const engine of ['sqlite', 'postgres', 'duckdb'] as const) {
+        const strategy = getDDLStrategy(engine);
+        const statements: string[] = [];
+        for (const schema of schemas) {
+          try {
+            statements.push(
+              strategy.generateCreateTable(schema),
+              ...strategy.generateIndexes(schema),
+              ...strategy.generateTriggers(schema),
+            );
+          } catch {
+            // A fixture an engine refuses to render records nothing there.
+          }
+        }
+        expectUnchanged(statements);
+      }
+    });
+
+    it('keeps the checksum of every default, constraint and index of the saved release schemas', () => {
+      const directory = join(CORE_ROOT, 'release-upgrade/snapshots');
+      const files = readdirSync(directory).filter((file) =>
+        file.endsWith('.json'),
+      );
+      expect(files.length).toBeGreaterThan(0);
+      for (const file of files) {
+        const snapshot = JSON.parse(
+          readFileSync(join(directory, file), 'utf8'),
+        ) as {
+          tables: Record<
+            string,
+            {
+              columns: Record<string, { default: string | null; type: string }>;
+              constraints: { definition: string }[];
+              indexes: { definition: string }[];
+            }
+          >;
+        };
+        const statements: string[] = [];
+        for (const [table, shape] of Object.entries(snapshot.tables)) {
+          for (const [column, { default: value, type }] of Object.entries(
+            shape.columns,
+          )) {
+            statements.push(
+              `ALTER TABLE "${table}" ADD COLUMN "${column}" ${type}${
+                value === null ? '' : ` DEFAULT ${value}`
+              }`,
+            );
+          }
+          for (const { definition } of shape.constraints) {
+            statements.push(`ALTER TABLE "${table}" ADD ${definition}`);
+          }
+          for (const { definition } of shape.indexes) {
+            statements.push(definition);
+          }
+        }
+        expectUnchanged(statements);
+      }
+    });
+
+    it('accepts the checksum an earlier release recorded for the same statements', () => {
+      const statements = [
+        "ALTER TABLE notes ALTER COLUMN label SET DEFAULT 'n/a  --  legacy'",
+      ];
+      const recordedByEarlierRelease = computeChecksum(statements);
+      expect(recordedByEarlierRelease).not.toBe(
+        computeQuotedTextChecksum(statements),
+      );
+      expect(
+        checksumMatchesRecorded(statements, recordedByEarlierRelease),
+      ).toBe(true);
+      expect(
+        checksumMatchesRecorded(
+          statements,
+          computeQuotedTextChecksum(statements),
+        ),
+      ).toBe(true);
+    });
+
+    it('refuses a record written for different quoted text', () => {
+      const recorded = computeQuotedTextChecksum([
+        "ALTER TABLE notes ALTER COLUMN label SET DEFAULT 'n/a--legacy'",
+      ]);
+      expect(
+        checksumMatchesRecorded(
+          ["ALTER TABLE notes ALTER COLUMN label SET DEFAULT 'n/a--v2'"],
+          recorded,
+        ),
+      ).toBe(false);
     });
   });
 });

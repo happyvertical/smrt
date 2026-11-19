@@ -33,7 +33,11 @@ import {
   getSystemTableDDLForEngine,
 } from '../system/schema.js';
 import { toSafeBooleanInteger, toSafeInteger } from '../utils/safe-integer.js';
-import { computeChecksum, verifyChecksum } from './checksum.js';
+import {
+  checksumMatchesRecorded,
+  computeQuotedTextChecksum,
+  verifyChecksum,
+} from './checksum.js';
 import { runRetireAwareStatement } from './retire-guard.js';
 import { SQLITE_RELAX_REBUILD_MARKER } from './sqlite-rebuild.js';
 import type {
@@ -462,10 +466,13 @@ export class MigrationTracker {
         continue;
       }
 
-      // Check checksum
-      const currentChecksum = computeChecksum(definition.up);
+      // Check checksum. A record written before normalization respected
+      // quoted text still describes the statements it was computed from.
+      const currentChecksum = computeQuotedTextChecksum(definition.up);
       const verification = verifyChecksum(
-        currentChecksum,
+        checksumMatchesRecorded(definition.up, record.checksum)
+          ? record.checksum
+          : currentChecksum,
         record.checksum,
         record.applied_checksum,
       );
@@ -497,7 +504,7 @@ export class MigrationTracker {
   ): Promise<MigrationResult> {
     await this.initialize();
     const startTime = Date.now();
-    const checksum = computeChecksum(definition.up);
+    const checksum = computeQuotedTextChecksum(definition.up);
     const force = Boolean(
       options.force || options.forceMigrations?.includes(definition.id),
     );
@@ -510,7 +517,10 @@ export class MigrationTracker {
       // Handle based on existing status
       switch (existing.status) {
         case 'completed':
-          if (!force && existing.checksum !== checksum) {
+          if (
+            !force &&
+            !checksumMatchesRecorded(definition.up, existing.checksum)
+          ) {
             return {
               success: false,
               applied: false,
@@ -640,7 +650,7 @@ export class MigrationTracker {
     const phase1AlreadyCommitted =
       deferredConcurrent &&
       existing?.status === 'failed' &&
-      existing.checksum === checksum &&
+      checksumMatchesRecorded(definition.up, existing.checksum) &&
       typeof existing.error_message === 'string' &&
       existing.error_message.startsWith(CONCURRENT_INDEX_PHASE1_MARKER);
 
@@ -1168,7 +1178,7 @@ export class MigrationTracker {
   ): Promise<MigrationResult> {
     await this.initialize();
     const startTime = Date.now();
-    const checksum = computeChecksum(definition.down);
+    const checksum = computeQuotedTextChecksum(definition.down);
 
     const record = await this.getMigration(name);
     if (!record) {
