@@ -3,6 +3,7 @@
 import type { Cookbook } from '@happyvertical/smrt-types';
 import type { getDatabase } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { withTenant } from '../../../tenancy/src/context.js';
 import {
   disableTenancy,
   enableTenancy,
@@ -31,11 +32,15 @@ import { field } from '../decorators/index.js';
 import { migrateSmrtSchemas } from '../migrations/orchestrate.js';
 import { SmrtObject } from '../object.js';
 import { ObjectRegistry } from '../registry.js';
-import { setRuntimeExposureGate } from '../runtime-exposure.js';
+import {
+  getRuntimeModelReadiness,
+  setRuntimeExposureGate,
+} from '../runtime-exposure.js';
 import { runtimeListTableName } from '../runtime-list-table.js';
 import { registerRuntimeModel } from '../runtime-model.js';
 import { snapshotObjectRegistryState } from '../test-utils.js';
 import { getTestDatabase } from '../testing/database.js';
+import { toSnakeCase } from '../utils/naming.js';
 
 const databaseType = process.env.SMRT_TEST_PGLITE === '1' ? 'pglite' : 'sqlite';
 const engine = databaseType === 'pglite' ? 'postgres' : 'sqlite';
@@ -541,6 +546,62 @@ describe('app model editor: reconciliation scope and pending revisions', () => {
       reopened.snapshot().cookbook.models?.lists.GuardMat.fields,
     ).not.toHaveProperty('colour');
   });
+
+  it('boot of an applied journal runs no DDL and keeps a model with missing storage closed until the operator migrates', async () => {
+    const e = await editorFor();
+    await applier(e)({
+      type: 'add_field',
+      model: MEMBER,
+      name: 'vip',
+      field: { type: 'boolean' },
+    });
+    // A provider upgrade adds a field; the process restarts with it.
+    ObjectRegistry.clear();
+    globalThis.__smrtModelReadiness?.clear();
+    registerMember(true);
+    await expect(editorFor()).rejects.toThrow(
+      /MODEL_MIGRATION_REQUIRED: storage does not match the app models \(missing guard_members\.loyalty_tier\)/,
+    );
+    expect(await columns(MEMBER_TABLE)).not.toContain('loyalty_tier');
+    expect(getRuntimeModelReadiness(MEMBER)).toBe(false);
+    expect(getRuntimeModelReadiness(`${APP}:GuardMember`)).toBe(false);
+
+    // The operator migration adds the column; the editor reopens and CRUD works.
+    await migrateSmrtSchemas({
+      db,
+      packageName: APP,
+      engineHint: engine,
+      tables: [MEMBER_TABLE],
+      name: 'operator_provider_upgrade',
+    });
+    const reopened = await editorFor();
+    expect(getRuntimeModelReadiness(`${APP}:GuardMember`)).toBe(true);
+    expect(reopened.snapshot().revision).toBe(1);
+    const created = await withTenant({ tenantId: TENANT }, async () => {
+      const members = await ObjectRegistry.getCollection(MEMBER, { db });
+      const row = await members.create({
+        name: 'Ada',
+        vip: true,
+        loyaltyTier: 'gold',
+      } as never);
+      return members.get((row as { id: string }).id);
+    });
+    expect(created).toMatchObject({ vip: true, loyaltyTier: 'gold' });
+  });
+
+  it('reopens with drift on a customised table that the boot no longer migrates', async () => {
+    const e = await editorFor();
+    await applier(e)({
+      type: 'add_field',
+      model: MEMBER,
+      name: 'vip',
+      field: { type: 'boolean' },
+    });
+    await driftVisits();
+    ObjectRegistry.clear();
+    registerMember();
+    expect((await editorFor()).snapshot().revision).toBe(1);
+  });
 });
 
 /** identifier('Name Of The Person Who Signed Off On The Last Fire Inspection Here'): a 66-byte column. */
@@ -664,6 +725,76 @@ describe('app model editor: storage identifier length', () => {
     const listName = (list.edit as { name: string }).name;
     expect(fitsStorageIdentifier(runtimeListTableName(listName))).toBe(true);
     await applier(e)(list.edit);
+  });
+
+  it('an editor holding an over-long declaration from before the check still opens and edits other models', async () => {
+    const e = await editorFor();
+    await applier(e)({ type: 'create_list', name: 'GuardMat', list: mats });
+    // Journal the over-long field the way an unchecked editor did.
+    const before = e.snapshot().cookbook;
+    const after = structuredClone(before);
+    after.models!.fields[MEMBER] = { [LONG_FIELD]: { type: 'text' } };
+    const store = await createAppModelHistory({
+      db,
+      application,
+      tenantId: TENANT,
+    });
+    await store.append(
+      {
+        revision: 2,
+        requestId: 'req-before-check',
+        actor: 'owner',
+        command: JSON.stringify({
+          type: 'add_field',
+          model: MEMBER,
+          name: LONG_FIELD,
+          field: { type: 'text' },
+        }),
+        before,
+        after,
+        status: 'pending',
+      },
+      1,
+    );
+    // PostgreSQL stores the column truncated to 63 bytes.
+    await db.query(
+      `ALTER TABLE ${MEMBER_TABLE} ADD COLUMN ${toSnakeCase(LONG_FIELD)} TEXT`,
+    );
+    await store.complete(2, 0);
+
+    ObjectRegistry.clear();
+    globalThis.__smrtModelReadiness?.clear();
+    registerMember();
+    const reopened = await editorFor();
+    expect(reopened.snapshot().revision).toBe(2);
+    const apply = applier(reopened);
+    await apply({ type: 'relabel_list', name: 'GuardMat', label: 'Mats' });
+    await apply({
+      type: 'add_field',
+      model: 'GuardMat',
+      name: 'colour',
+      field: { type: 'text' },
+    });
+    await apply({
+      type: 'label_field',
+      model: MEMBER,
+      name: LONG_FIELD,
+      label: 'Signed off by',
+    });
+    const addToSameModel = apply({
+      type: 'add_field',
+      model: MEMBER,
+      name: 'vip',
+      field: { type: 'boolean' },
+    });
+    if (engine === 'postgres')
+      await expect(addToSameModel).rejects.toThrow(
+        /MODEL_MIGRATION_REQUIRED: guard_members\.name_of_the_person.* cannot take new fields/,
+      );
+    else await addToSameModel;
+    expect(
+      (await reopened.history()).every((row) => row.status === 'applied'),
+    ).toBe(true);
   });
 });
 

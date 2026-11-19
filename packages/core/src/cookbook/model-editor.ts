@@ -31,6 +31,7 @@ import {
   runtimeModelEntry,
 } from '../runtime-model.js';
 import type { SmartObjectManifest } from '../scanner/types.js';
+import { inspectTableSchema } from '../schema/inspection.js';
 import { getDatabaseEngine } from '../system/compatibility.js';
 import { resolveDisplayLabelField } from '../ui-metadata.js';
 import { toSnakeCase } from '../utils/naming.js';
@@ -1011,8 +1012,77 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
     error.message += `; pending revision ${pending.revision} cannot be applied. Repair the cause and reopen, or abandon it with abandonAppModelRevision({ revision: ${pending.revision} })`;
     return error;
   };
-  /** Boot reconciles every active journalled storage declaration, as before. */
-  const bootChanges = () => changedModels(undefined, active(storage(), doc));
+  /**
+   * The storage boot reconciles: a pending revision's own changes, or an
+   * initial cookbook's declarations before anything is journalled. An applied
+   * journal runs no DDL at boot; verifyStorage() checks it instead.
+   */
+  function bootChanges(): string[] {
+    const all = active(storage(), doc);
+    const pending =
+      history.at(-1)?.status === 'pending' ? history.at(-1) : undefined;
+    if (!history.length) return changedModels(undefined, all);
+    if (!pending) return [];
+    return changedModels(
+      active(
+        storageModels([
+          ...history.slice(0, -1).flatMap((row) => [row.before, row.after]),
+          pending.before,
+        ]),
+        pending.before,
+      ),
+      all,
+    );
+  }
+
+  /**
+   * Read-only check that every registered customised model's table holds
+   * every declared column (provider upgrades included), so boot never opens a
+   * model whose storage is incomplete. PostgreSQL stores identifiers over 63
+   * bytes truncated, so the comparison truncates too.
+   */
+  const storageMismatch: string[] = [];
+  async function verifyStorage(
+    db: DatabaseInterface,
+    models: readonly string[],
+    skip: readonly string[],
+  ) {
+    const tables = tablesOf(models.filter((id) => !skip.includes(id)));
+    if (!tables.size) return;
+    const physical = (name: string) =>
+      engine === 'postgres'
+        ? new TextDecoder().decode(
+            new TextEncoder()
+              .encode(name)
+              .slice(0, MAX_STORAGE_IDENTIFIER_BYTES),
+          )
+        : name;
+    const missing: string[] = [];
+    for (const schema of Object.values(
+      ObjectRegistry.getAllSchemasAsDefinitions({ tables }),
+    )) {
+      if (!tables.has(schema.tableName)) continue;
+      const live = await inspectTableSchema(
+        db,
+        physical(schema.tableName),
+        engine,
+      );
+      const columns = new Set(
+        Object.keys(live?.columns ?? {}).map((name) => name.toLowerCase()),
+      );
+      if (!live) missing.push(schema.tableName);
+      else
+        for (const column of Object.keys(schema.columns))
+          if (!columns.has(physical(column).toLowerCase()))
+            missing.push(`${schema.tableName}.${column}`);
+    }
+    if (missing.length) {
+      storageMismatch.push(...models);
+      throw new Error(
+        `MODEL_MIGRATION_REQUIRED: storage does not match the app models (missing ${missing.join(', ')}); run the operator migration (smrt db:migrate) and reopen the editor`,
+      );
+    }
+  }
 
   await withRuntimeSchemaActivation(async () => {
     // Boots are serialized here; check again, so two editors constructed at
@@ -1038,7 +1108,13 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
             storageModels(history.flatMap((row) => [row.before, row.after])),
           );
           checkpoint();
-          await activate(doc, active(storage(), doc), bootChanges(), db, false);
+          const changed = bootChanges();
+          await activate(doc, active(storage(), doc), changed, db, false);
+          await verifyStorage(
+            db,
+            changedModels(undefined, active(storage(), doc)),
+            changed,
+          );
         });
       } else {
         await validate(
@@ -1046,12 +1122,12 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
           storageModels(history.flatMap((row) => [row.before, row.after])),
         );
         checkpoint();
-        await activate(
-          doc,
-          active(storage(), doc),
-          bootChanges(),
+        const changed = bootChanges();
+        await activate(doc, active(storage(), doc), changed, options.db, false);
+        await verifyStorage(
           options.db,
-          false,
+          changedModels(undefined, active(storage(), doc)),
+          changed,
         );
       }
     } catch (error) {
@@ -1060,6 +1136,16 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
       restore();
       for (const [id, value] of readiness)
         setRuntimeModelReadiness([id], value);
+      // Models whose storage is incomplete stay closed until the operator
+      // migration runs and the editor reopens.
+      if (storageMismatch.length)
+        setRuntimeModelReadiness(
+          storageMismatch.flatMap((id) => [
+            id,
+            `${options.packageName}:${id.split(':').at(-1)}`,
+          ]),
+          false,
+        );
       throw recoveryHint(error);
     }
     try {

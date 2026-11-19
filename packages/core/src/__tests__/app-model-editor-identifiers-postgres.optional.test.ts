@@ -21,6 +21,7 @@ import {
   type AppModelEdit,
   createAppModelEditor,
 } from '../cookbook/model-editor.js';
+import { createAppModelHistory } from '../cookbook/model-history.js';
 import { COOKBOOK_SCHEMA_URL } from '../cookbook/validate.js';
 import { field } from '../decorators/index.js';
 import { migrateSmrtSchemas } from '../migrations/orchestrate.js';
@@ -28,6 +29,7 @@ import { SmrtObject } from '../object.js';
 import { ObjectRegistry } from '../registry.js';
 import { setRuntimeExposureGate } from '../runtime-exposure.js';
 import { snapshotObjectRegistryState } from '../test-utils.js';
+import { toSnakeCase } from '../utils/naming.js';
 
 const pgUrl = process.env.SMRT_TEST_POSTGRES_URL;
 const APP = '@fixture/pg-identifier-app';
@@ -187,5 +189,71 @@ describe.skipIf(!pgUrl)('app model editor identifiers on PostgreSQL', () => {
     ObjectRegistry.clear();
     register();
     expect((await editorFor()).snapshot().revision).toBe(2);
+  });
+
+  it('an editor whose journal holds a truncated column opens, and only that table refuses new fields', async () => {
+    const e = await editorFor();
+    await applier(e)({
+      type: 'create_list',
+      name: 'PgIdentifierMat',
+      list: mats,
+    });
+    const before = e.snapshot().cookbook;
+    const after = structuredClone(before);
+    after.models!.fields[MEMBER] = { [LONG_FIELD]: { type: 'text' } };
+    const store = await createAppModelHistory({
+      db,
+      application,
+      tenantId: TENANT,
+    });
+    await store.append(
+      {
+        revision: 2,
+        requestId: 'req-before-check',
+        actor: 'owner',
+        command: JSON.stringify({
+          type: 'add_field',
+          model: MEMBER,
+          name: LONG_FIELD,
+        }),
+        before,
+        after,
+        status: 'pending',
+      },
+      1,
+    );
+    await db.query(
+      `ALTER TABLE ${TABLE} ADD COLUMN ${toSnakeCase(LONG_FIELD)} TEXT`,
+    );
+    await store.complete(2, 0);
+    expect(await columns()).toContain(toSnakeCase(LONG_FIELD).slice(0, 63));
+
+    ObjectRegistry.clear();
+    globalThis.__smrtModelReadiness?.clear();
+    register();
+    const reopened = await editorFor();
+    const apply = applier(reopened);
+    await apply({
+      type: 'add_field',
+      model: 'PgIdentifierMat',
+      name: 'colour',
+      field: { type: 'text' },
+    });
+    await expect(
+      apply({
+        type: 'add_field',
+        model: MEMBER,
+        name: 'vip',
+        field: { type: 'boolean' },
+      }),
+    ).rejects.toThrow(/MODEL_MIGRATION_REQUIRED: .*cannot take new fields/);
+    expect((await reopened.history()).map((row) => row.status)).toEqual([
+      'applied',
+      'applied',
+      'applied',
+    ]);
+    ObjectRegistry.clear();
+    register();
+    expect((await editorFor()).snapshot().revision).toBe(3);
   });
 });

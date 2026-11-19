@@ -109,9 +109,11 @@ supported engine; `MAX_STORAGE_IDENTIFIER_BYTES`), checked in bytes when an edit
 or import adds it: `INVALID_MODEL_EDIT` names the path, the derived identifier
 and its size. The app tools shorten a long label's derived name to fit and keep
 the full label for display. A declaration journalled before this check is still
-accepted; on PostgreSQL a migration of a table holding such a truncated column
-is refused up front with `MODEL_MIGRATION_REQUIRED` (instead of failing on a
-duplicate column) while edits of other models stay available.
+accepted, and an applied journal reopens without DDL (the boot's storage
+check compares truncated names); on PostgreSQL a migration of a table holding
+such a truncated column is refused up front with `MODEL_MIGRATION_REQUIRED`
+(instead of failing on a duplicate column) while edits of other models stay
+available.
 Reserved field names live in one place, `src/cookbook/reserved-names.ts`:
 JS/SQL/framework column names, every `SmrtClassOptions`/`SmrtObjectOptions`
 key (constructor input mixes options with field values) and every own instance
@@ -168,7 +170,7 @@ Every operation uses the running process:
 | Operation | Activation |
 | --- | --- |
 | Add list / field; import | Register/refresh runtime definitions, same-name replacement (STI and CTI), tracked migration of the changed models' tables, publish, release readiness |
-| Boot replay | Register/refresh every journalled definition, tracked reconciliation of every customised table, publish, release readiness |
+| Boot replay | Register/refresh every journalled definition; DDL only for a pending revision's own changes (or an initial cookbook before any journal row); read-only check that every customised table holds its declared columns, else `MODEL_MIGRATION_REQUIRED` with those models closed; publish, release readiness |
 | Field label/hide/remove | Existing policy engine, same publication protocol; migration reconciliation is normally empty |
 | List relabel/remove | Runtime presentation refresh / feature removal, same publication protocol |
 | Undo | Restore previous cookbook, keep union of historical storage fields hidden, tracked additive reconciliation, publish |
@@ -212,9 +214,13 @@ runs while models remain gated; a publication failure stays durably pending and
 reopen completes that revision. No columns/tables are dropped. Reconciliation
 selects the tables of models whose stored fields the edit adds or changes, and
 their existing physical FK closure; label, hide, remove, relabel and undo edits
-run no DDL, and drift on an unrelated table never blocks an edit. Boot still
-reconciles every customised table. Manual drift on an edited table still
-requires an operator migration. See the
+run no DDL, and drift on an unrelated table never blocks an edit. Boot of an
+applied journal runs no DDL either: provider tables stay the operator's
+`db:migrate`. Boot inspects every customised table read-only and refuses with
+`MODEL_MIGRATION_REQUIRED` (naming the missing columns, affected models kept
+closed) when a column is missing, for example after a provider upgrade or a
+database restore; run the operator migration and reopen. Manual drift on an
+edited table still requires an operator migration. See the
 [PostgreSQL scope and test matrix](postgres-parity.md).
 
 ## Durable history
