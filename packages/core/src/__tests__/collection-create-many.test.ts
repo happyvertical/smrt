@@ -358,6 +358,66 @@ for (const type of engines) {
       expect(created.isPersisted).toBe(true);
     });
 
+    // DuckDB admits one writer process and serializes writes in-process, so a
+    // loader cannot commit between the probe and the INSERT there.
+    it.skipIf(type === 'duckdb')(
+      'adopts a natural key a concurrent loader commits after the probe',
+      async () => {
+        // The race: the probe finds nothing, then another loader inserts the
+        // same natural key before this batch's INSERT. Simulated by planting the
+        // winner's row right after the batch's probe SELECT.
+        const winner = randomUUID();
+        // The winner's row looks exactly like one create() writes.
+        const template = await items.create({
+          title: 'Winner',
+          qty: 1,
+        } as never);
+        const [winnerRow] = await rows('cm_items');
+        await db.query(`DELETE FROM cm_items WHERE id = '${template.id}'`);
+        const planted: string[] = [];
+        const target = db as unknown as Record<string, any>;
+        const transaction = target.transaction.bind(target);
+        target.transaction = (
+          fn: (tx: DatabaseInterface) => unknown,
+          ...r: unknown[]
+        ) =>
+          transaction(
+            (tx: DatabaseInterface) => {
+              const raw = tx as unknown as Record<string, any>;
+              const query = raw.query.bind(raw);
+              raw.query = async (sql: string, ...args: unknown[]) => {
+                const result = await query(sql, ...args);
+                if (
+                  planted.length === 0 &&
+                  /^SELECT "id" FROM "cm_items" WHERE/.test(sql)
+                ) {
+                  planted.push(winner);
+                  await tx.insert('cm_items', [
+                    { ...winnerRow, id: winner, slug: 'raced' },
+                  ]);
+                }
+                return result;
+              };
+              return fn(tx);
+            },
+            ...r,
+          );
+        const created = await items.createMany([
+          { title: 'Loser', qty: 2, slug: 'raced' },
+          { title: 'Other', qty: 3 },
+        ] as never);
+        target.transaction = transaction;
+        expect(planted).toEqual([winner]);
+        expect(created.map((c) => c.title)).toEqual(['Loser', 'Other']);
+        const stored = await rows('cm_items');
+        expect(stored).toHaveLength(2);
+        const raced = stored.filter((r) => r.slug === 'raced');
+        expect(raced).toHaveLength(1);
+        expect(raced[0].id).toBe(winner);
+        expect(raced[0].title).toBe('Loser');
+      },
+    );
+
     it('refuses an explicit id that already exists, as create() does', async () => {
       const first = await items.create({ title: 'A' } as never);
       const batch = await items

@@ -54,7 +54,7 @@ import {
   ValidationError,
 } from './errors';
 import { GeneratedFieldError } from './generated-fields.js';
-import { buildWhere } from './host.js';
+import { buildWhere, NestedTransactionError } from './host.js';
 import type {
   InferenceCapabilityFallbackOption,
   InferenceLatency,
@@ -3349,25 +3349,57 @@ export class SmrtObject extends SmrtClass {
         );
         if (existing.rows.length > 0) return 'fallback';
       }
-      for (const rows of groups.values()) {
-        const perRow = Object.keys(rows[0]).length || 1;
-        const size = Math.max(1, Math.floor(8000 / perRow));
-        for (let at = 0; at < rows.length; at += size) {
-          await ErrorUtils.withRetry(
-            async () => {
-              try {
-                await tx.insert(first.tableName, rows.slice(at, at + size));
-              } catch (error) {
-                throw first.toTypedWriteError(
-                  error,
-                  `INSERT INTO ${first.tableName}`,
-                );
-              }
-            },
-            3,
-            500,
-          );
+      const insertRows = async (target: DatabaseInterface) => {
+        for (const rows of groups.values()) {
+          const perRow = Object.keys(rows[0]).length || 1;
+          const size = Math.max(1, Math.floor(8000 / perRow));
+          for (let at = 0; at < rows.length; at += size) {
+            await ErrorUtils.withRetry(
+              async () => {
+                try {
+                  await target.insert(
+                    first.tableName,
+                    rows.slice(at, at + size),
+                  );
+                } catch (error) {
+                  throw first.toTypedWriteError(
+                    error,
+                    `INSERT INTO ${first.tableName}`,
+                  );
+                }
+              },
+              3,
+              500,
+            );
+          }
         }
+      };
+      // A concurrent loader can commit the same natural key between the probe
+      // and this INSERT. PostgreSQL aborts the whole transaction on the
+      // violation, so the writes run in a savepoint: on a unique violation the
+      // savepoint rolls back and the per-record path adopts the winner's row
+      // exactly as create() does. Handles without savepoints keep the
+      // fail-closed error (their writers are serialized, so there is no race).
+      let entered = false;
+      try {
+        if (tx.transaction) {
+          await tx.transaction(async (savepoint) => {
+            entered = true;
+            await insertRows(savepoint);
+          });
+        } else {
+          await insertRows(tx);
+        }
+      } catch (error) {
+        if (!entered && error instanceof NestedTransactionError)
+          await insertRows(tx);
+        else if (
+          error instanceof ValidationError &&
+          error.code === 'VALIDATION_UNIQUE_CONSTRAINT' &&
+          entered
+        )
+          return 'fallback';
+        else throw error;
       }
       if (isPostgresDatabase(tx)) {
         // A concurrent ordinary delete may finish while an INSERT is blocked.
