@@ -859,7 +859,8 @@ export async function cancelAiRun(
         return null;
       }
       for (const id of await readAiRunDescendantIds(tx.db, runId)) {
-        const descendant = await lockAiRun(tx, id);
+        // Each descendant is locked in the run's tenant, as it was found.
+        const descendant = await lockAiRun(tx, id, run.tenantId ?? null);
         if (!descendant || isAiRunFinal(descendant)) continue;
         await writeAiRunStatusTx(tx, descendant, 'cancelled', {
           stopReason: 'cancelled',

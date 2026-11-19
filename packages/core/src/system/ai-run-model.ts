@@ -661,16 +661,36 @@ export function forUpdate(tx: AiRunTx): string {
   return tx.engine === 'postgres' ? ' FOR UPDATE' : '';
 }
 
-/** Lock and read one run row inside an accounting transaction. */
+/** ` AND <column> = $n` (or `IS NULL`) for a known tenant; '' for none. */
+function tenantClause(
+  tenant: string | null | undefined,
+  index: number,
+  column: string,
+): { sql: string; params: unknown[] } {
+  if (tenant === undefined) return { sql: '', params: [] };
+  return tenant === null
+    ? { sql: ` AND ${column} IS NULL`, params: [] }
+    : { sql: ` AND ${column} = $${index}`, params: [tenant] };
+}
+
+/**
+ * Lock and read one run row inside an accounting transaction. With a
+ * tenant, the tenant is a predicate of the lock itself: a row whose id was
+ * pruned and reused by another tenant between discovery and this lock is
+ * not found (and not locked).
+ */
 export async function lockAiRun(
   tx: AiRunTx,
   runId: string,
+  tenant?: string | null,
 ): Promise<AiRunRow | null> {
+  const scoped = tenantClause(tenant, 2, 'r.tenant_id');
   const rows = getRows(
     await aiRunQuery(
       tx.db,
-      `SELECT ${AI_RUN_COLUMNS} FROM _smrt_ai_runs r WHERE r.id = $1${forUpdate(tx)}`,
+      `SELECT ${AI_RUN_COLUMNS} FROM _smrt_ai_runs r WHERE r.id = $1${scoped.sql}${forUpdate(tx)}`,
       runId,
+      ...scoped.params,
     ),
   );
   return rows[0] ? toAiRunRow(rows[0]) : null;
@@ -689,10 +709,22 @@ export async function readAiRunChainIds(
   db: DatabaseInterface,
   runId: string,
 ): Promise<string[]> {
+  return (await readAiRunChain(db, runId, undefined)).ids;
+}
+
+/**
+ * {@link readAiRunChainIds} and the tenant the chain was read in. With
+ * `expectedTenant`, the run itself is looked up in that tenant too.
+ */
+async function readAiRunChain(
+  db: DatabaseInterface,
+  runId: string,
+  expectedTenant: string | null | undefined,
+): Promise<{ ids: string[]; tenant: string | null }> {
   const ids: string[] = [];
   const seen = new Set<string>();
   let current: string | null = runId;
-  let tenant: string | null | undefined;
+  let tenant: string | null | undefined = expectedTenant;
   while (current) {
     if (seen.has(current) || ids.length >= MAX_CHAIN_DEPTH) {
       throw new TypeError(`AI run ${runId} has a parent cycle or is too deep`);
@@ -725,7 +757,7 @@ export async function readAiRunChainIds(
     ids.push(current);
     current = text(rows[0].parent_run_id);
   }
-  return ids.reverse();
+  return { ids: ids.reverse(), tenant: tenant ?? null };
 }
 
 /**
@@ -788,11 +820,29 @@ export async function lockAiRunChain(
   tx: AiRunTx,
   runId: string,
 ): Promise<AiRunRow[]> {
-  const ids = await readAiRunChainIds(tx.db, runId);
-  const chain: AiRunRow[] = [];
+  return lockAiRunChainInTenant(tx, runId, undefined);
+}
+
+/**
+ * {@link lockAiRunChain} with the tenant carried from the traversal into
+ * every row lock (and, with `expectedTenant`, the run's own lookup): an id
+ * pruned and reused by another tenant between discovery and the lock is not
+ * locked; the chain keeps only the ancestors still locked in order above the
+ * run, as if the others were pruned.
+ *
+ * @internal
+ */
+export async function lockAiRunChainInTenant(
+  tx: AiRunTx,
+  runId: string,
+  expectedTenant: string | null | undefined,
+): Promise<AiRunRow[]> {
+  const { ids, tenant } = await readAiRunChain(tx.db, runId, expectedTenant);
+  let chain: AiRunRow[] = [];
   for (const id of ids) {
-    const row = await lockAiRun(tx, id);
-    if (row) chain.push(row);
+    const row = await lockAiRun(tx, id, tenant);
+    // A gap ends the chain above it: only the contiguous ancestors count.
+    chain = row ? [...chain, row] : [];
   }
   if (chain[chain.length - 1]?.id !== runId) {
     throw new AiRunNotFoundError(runId);
