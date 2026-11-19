@@ -1,5 +1,22 @@
 // The shared app engine: runs a person's own smrt app from a definition.
 export {
+  type BatchBlocker,
+  type BatchCheck,
+  type BatchCommand,
+  type BatchOverwrites,
+  type BlockerCode,
+  batchDigest,
+  type ChangeEngine,
+  type ChangeFence,
+  type ChangePrincipal,
+  createSqliteChangeEngine,
+  findChainBlockers,
+  type RebuildInput,
+  type RebuildResult,
+  SqliteChangeEngine,
+  type UndoBatchInput,
+} from './change-engine.ts';
+export {
   type Command,
   type CommandType,
   type ExecuteOptions,
