@@ -221,8 +221,18 @@ too), the context's database, its declared tenant and its run row's tenant
 must all be the client's, checked before anything is reserved or sent;
 the context is copied before the check and only the copy is used, so
 changing the caller's object afterwards cannot move a call to another run;
-the database is likewise captured at construction, never re-read from the
-caller's options. A
+the accepted copy carries the client's validated tenant (an explicit `null`
+included), so accounting never looks a context's tenant up again; the
+database is likewise captured at construction, never re-read from the
+caller's options. A context's tenant reaches every lookup of its call: the
+reservation, the claim fence (the chain is read in that tenant before the
+fence is called), a held reservation's admission, settlement, release and a
+child's stop. A held reservation (a fusion seat's share) is admitted just
+before it is sent in both modes: with `checkRunning` the chain is locked and
+must be `running`; either way the held call's own event must still be
+`reserved` in that run, else the call is refused (`AiRunNotFoundError` for a
+run that is gone, `AiRunTransitionError` for a reservation released or
+abandoned meanwhile) and nothing is sent. A
 call of a run is billed to the run row's tenant (the settlement writes the
 usage row with it and the handlers see it), never the ambient tenant.
 `openRun(input)` opens a run there (`AiRunTrackingDisabledError` while usage

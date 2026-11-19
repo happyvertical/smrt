@@ -1008,7 +1008,7 @@ export async function lockAiRunChainFenced(
   fence: AiRunClaimFence | undefined,
   expectedTenant?: string | null,
 ): Promise<AiRunRow[]> {
-  await assertAiRunFence(tx, runId, fence);
+  await assertAiRunFence(tx, runId, fence, expectedTenant);
   return lockAiRunChainInTenant(tx, runId, expectedTenant);
 }
 
@@ -1017,15 +1017,18 @@ export async function lockAiRunChainFenced(
  * accounting transaction, before any run row is locked (the job row comes
  * first in the page's lock order). Nothing to assert without a fence or a
  * durable run in the chain. Throws {@link AiRunClaimLostError} when the fence
- * reports the claim gone; rethrows any other error of the fence.
+ * reports the claim gone; rethrows any other error of the fence. With
+ * `expectedTenant`, the chain is read in that tenant (a SQL predicate), so
+ * the fence is only ever asked about a run of the caller's own chain.
  */
 export async function assertAiRunFence(
   tx: AiRunTx,
   runId: string,
   fence: AiRunClaimFence | undefined,
+  expectedTenant?: string | null,
 ): Promise<void> {
   if (!fence) return;
-  const ids = await readAiRunChainIds(tx.db, runId);
+  const { ids } = await readAiRunChain(tx.db, runId, expectedTenant);
   const durable = await nearestDurable(tx.db, ids);
   if (!durable) return;
   let held: unknown;

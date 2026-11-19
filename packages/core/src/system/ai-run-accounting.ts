@@ -33,6 +33,7 @@ import {
   type AiRunScopedTxOptions,
   type AiRunStopDetail,
   AiRunStoppedError,
+  AiRunTransitionError,
   type AiRunTx,
   type AiRunTxOptions,
   aiRunActiveTime,
@@ -379,16 +380,52 @@ export async function assertAiRunStillRunning(
   const result = await withAiRunTransaction(
     db,
     async (tx) => {
-      const chain = await lockAiRunChain(tx, runId);
+      const chain = await lockAiRunChainInTenant(
+        tx,
+        runId,
+        expectedTenantOf(options),
+      );
       const stopped = await checkAiRunChainRunning(tx, chain);
       if (stopped && options.releaseCallId) {
         await releaseInTx(tx, chain, options.releaseCallId, 'cancelled');
+      }
+      if (!stopped && options.releaseCallId) {
+        // The held call is sent only while its own event is still reserved
+        // in this run: a reservation released or abandoned meanwhile (a
+        // claim reconciliation, the sweep) is never spent.
+        const run = chain[chain.length - 1] as AiRunRow;
+        await assertAiCallReservedTx(tx, run, options.releaseCallId);
       }
       return stopped;
     },
     options,
   );
   if (result) throw result;
+}
+
+/** Throw unless the run's call event `callId` is still `reserved`. */
+async function assertAiCallReservedTx(
+  tx: AiRunTx,
+  run: AiRunRow,
+  callId: string,
+): Promise<void> {
+  const rows = getRows(
+    await aiRunQuery(
+      tx.db,
+      `SELECT reservation FROM _smrt_ai_run_events
+        WHERE run_id = $1 AND call_id = $2 AND type = 'call'`,
+      run.id,
+      callId,
+    ),
+  );
+  if (rows[0]?.reservation !== 'reserved') {
+    throw new AiRunTransitionError(
+      `AI call ${callId} of run ${run.id} is no longer reserved`,
+      run.id,
+      run.status,
+      run.status,
+    );
+  }
 }
 
 // ---------------------------------------------------------------------------

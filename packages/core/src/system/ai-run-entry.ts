@@ -43,6 +43,7 @@ import {
 import {
   type AiRunBudget,
   type AiRunRow,
+  type AiRunScopedTxOptions,
   AiRunStoppedError,
   getAiRun,
   newAiRunId,
@@ -291,7 +292,16 @@ export async function openAiEntryRun(
             : aiRunStoppedError(after ?? run);
       if (after && after.status !== 'running') await endHandoff(after.status);
       if (!parent) return own;
-      return stopAiRunForChild(parent.db, parent.runId, own);
+      return stopAiRunForChild(
+        parent.db,
+        parent.runId,
+        own,
+        parent.tenantId !== undefined
+          ? ({
+              expectedTenant: parent.tenantId ?? null,
+            } satisfies AiRunScopedTxOptions)
+          : {},
+      );
     },
   };
 }

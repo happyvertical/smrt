@@ -274,4 +274,48 @@ describe('tracked client scope', () => {
     );
     expect(rows).toEqual([{ run_id: run.id, tenant_id: null }]);
   });
+
+  it('a global client stamps tenantId null on a context that omits it', async () => {
+    const db = await memoryDb();
+    setAiUsageTenantResolver(() => 'ambient-tenant');
+    const global = createTrackedAiClient({ db, tenantId: null, ai });
+    const { run } = await global.openRun({ type: 'turn' });
+    // A context written without its tenant (an older serialized payload).
+    const bare = { runId: run.id, db };
+    const unscoped: string[] = [];
+    const restore = recordStatements(db, (sql, params) => {
+      if (
+        sql.startsWith('SELECT') &&
+        sql.includes('FROM _smrt_ai_runs') &&
+        params.includes(run.id) &&
+        !hasTenantPredicate(sql)
+      ) {
+        unscoped.push(sql);
+      }
+    });
+    const client = await global.client(prompt, { runContext: bare });
+    await client.message('hello');
+    restore();
+    // Accounting found the run in the global scope and never looked its
+    // tenant up.
+    expect(unscoped).toEqual([]);
+    expect(await getAiRun(db, run.id)).toMatchObject({
+      calls: 1,
+      tenantId: null,
+    });
+    expect(
+      rowsOf(await db.query('SELECT run_id, tenant_id FROM _smrt_ai_usage')),
+    ).toEqual([{ run_id: run.id, tenant_id: null }]);
+  });
+
+  it('refuses a context declaring another tenant (control)', async () => {
+    const db = await memoryDb();
+    const global = createTrackedAiClient({ db, tenantId: null, ai });
+    const { run } = await global.openRun({ type: 'turn' });
+    await expect(
+      global.client(prompt, {
+        runContext: { runId: run.id, db, tenantId: 'tenant-one' },
+      }),
+    ).rejects.toThrow(/another tenant or database/);
+  });
 });

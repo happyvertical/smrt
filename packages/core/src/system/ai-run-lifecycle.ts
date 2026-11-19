@@ -37,6 +37,7 @@ import {
   aiRunActiveTime,
   aiRunQuery,
   assertAiRunFence,
+  expectedTenantOf,
   foldActive,
   getRows,
   isAiRunFinal,
@@ -1118,8 +1119,11 @@ export async function stopAiRunForChild(
   return withAiRunTransaction(
     db,
     async (tx) => {
-      await assertAiRunFence(tx, runId, options.fence);
-      const run = await lockAiRun(tx, runId);
+      // In the tenant the caller's context established, when it names one:
+      // a row that left that tenant is neither fenced nor stopped.
+      const tenant = expectedTenantOf(options);
+      await assertAiRunFence(tx, runId, options.fence, tenant);
+      const run = await lockAiRun(tx, runId, tenant);
       if (!run) throw new AiRunNotFoundError(runId);
       if (run.status === 'running') {
         const own =

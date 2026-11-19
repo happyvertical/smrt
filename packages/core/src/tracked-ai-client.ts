@@ -224,6 +224,9 @@ export function createTrackedAiClient(
       ),
     );
     if (owned.length === 0) throw refuse();
+    // The accepted copy names the client's tenant, an explicit `null`
+    // included: accounting never looks a context's tenant up again.
+    checked.tenantId = tenantId;
     return checked;
   };
   return {

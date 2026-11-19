@@ -29,8 +29,13 @@ import {
   type AiRunClaimFence,
   AiRunNotFoundError,
   type AiRunScopedTxOptions,
+  type AiRunStatus,
   AiRunStoppedError,
+  AiRunTransitionError,
+  aiRunQuery,
+  expectedTenantOf,
   getAiRun,
+  getRows,
   newAiRunId,
   rememberSettlementTenant,
 } from './ai-run-model.js';
@@ -243,6 +248,60 @@ function inContextTenant(context: AiRunContext): AiRunScopedTxOptions {
 }
 
 /**
+ * Admit a held reservation just before its call is sent (page section 6.3),
+ * in the tenant the caller's context established: with `checkRunning`, the
+ * chain is locked and must still be `running` (a stopped chain releases the
+ * reservation and the stop is thrown); either way the held call's own event
+ * must still be `reserved` in this run. A run that is gone throws
+ * {@link AiRunNotFoundError}, a reservation no longer held throws
+ * {@link AiRunTransitionError}; nothing is sent.
+ */
+async function admitHeldAiCall(
+  db: DatabaseInterface,
+  runId: string,
+  callId: string,
+  options: AiRunScopedTxOptions & { checkRunning: boolean },
+): Promise<void> {
+  if (options.checkRunning) {
+    await assertAiRunStillRunning(db, runId, {
+      ...options,
+      releaseCallId: callId,
+    });
+    return;
+  }
+  const tenant = expectedTenantOf(options);
+  const rows = getRows(
+    await aiRunQuery(
+      db,
+      `SELECT r.status, e.reservation FROM _smrt_ai_runs r
+         LEFT JOIN _smrt_ai_run_events e
+           ON e.run_id = r.id AND e.call_id = $2 AND e.type = 'call'
+        WHERE r.id = $1${
+          tenant === undefined
+            ? ''
+            : tenant === null
+              ? ' AND r.tenant_id IS NULL'
+              : ' AND r.tenant_id = $3'
+        }`,
+      runId,
+      callId,
+      ...(tenant === undefined || tenant === null ? [] : [tenant]),
+    ),
+  );
+  const row = rows[0];
+  if (!row) throw new AiRunNotFoundError(runId);
+  if (row.reservation !== 'reserved') {
+    const status = String(row.status) as AiRunStatus;
+    throw new AiRunTransitionError(
+      `AI call ${callId} of run ${runId} is no longer reserved`,
+      runId,
+      status,
+      status,
+    );
+  }
+}
+
+/**
  * Write one call's usage row with its settlement; the handlers run only
  * after it commits. A settlement that fails every retry waits on the
  * database's pending list.
@@ -360,9 +419,10 @@ export async function beginAiRunCall(
   request: AiRunCallRequest,
 ): Promise<AiRunCallHandle> {
   const held = context.reservations?.take();
-  if (held?.checkRunning) {
-    await assertAiRunStillRunning(context.db, context.runId, {
-      releaseCallId: held.reservation.callId,
+  if (held) {
+    await admitHeldAiCall(context.db, context.runId, held.reservation.callId, {
+      checkRunning: Boolean(held.checkRunning),
+      ...inContextTenant(context),
     });
   }
   const callId = held?.reservation.callId ?? request.callId ?? newAiRunId();
@@ -485,7 +545,12 @@ export async function beginAiRunCall(
         }
       }
       if (error instanceof AiRunStoppedError && error.runId !== context.runId) {
-        return stopAiRunForChild(context.db, context.runId, error);
+        return stopAiRunForChild(
+          context.db,
+          context.runId,
+          error,
+          inContextTenant(context),
+        );
       }
       return error;
     },
