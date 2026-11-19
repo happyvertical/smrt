@@ -97,7 +97,8 @@ then subclass or subclass then base, and manifest then constructor
 (`registry/__tests__/issue-5143-same-name-subclass.test.ts`). A constructor
 registers after the same-named class it extends (its constructor, or a
 manifest declaration its own manifest names as its parent). Registering it
-first fails closed with `CONFIG_SAME_NAME_PARENT_UNREGISTERED` and leaves
+first fails closed with `CONFIG_SAME_NAME_PARENT_UNREGISTERED` (register the
+parent before its replacement or subtype, or import its module first) and leaves
 nothing registered: before the parent, nothing says what it inherits (tenancy,
 table, validators, exposure), so the result would depend on load order. In a
 single-table family a class whose same-named direct parent is not registered
