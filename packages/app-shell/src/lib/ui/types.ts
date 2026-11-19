@@ -233,7 +233,7 @@ export interface ChangeQuestion {
   id: string;
   text: string;
   /** `adds`: clicking it makes a new change; otherwise it just closes the question. */
-  choices: { label: string; adds: boolean }[];
+  choices: { label: string; adds: boolean; summary?: string }[];
   state: 'open' | 'answered';
   /** Index of the choice taken, once answered. */
   answered?: number;
@@ -280,7 +280,7 @@ export interface ChangesState {
   liveVersion: number;
   baseVersion: number;
   cards: ChangeCardView[];
-  discarded: { batchId: string; count: number } | null;
+  discarded: { batchId: string; count: number; generation: number } | null;
   lastApplied: {
     batchId: string;
     appliedAt: string;

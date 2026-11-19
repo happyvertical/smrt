@@ -71,7 +71,10 @@ async function send(event: SubmitEvent) {
     {#if q.state === 'open'}
       <div class="smrt-change-extras__row smrt-change-extras__choices">
         {#each q.choices as c, i (i)}
-          <Button size="sm" variant="secondary" disabled={busy} onclick={() => onanswer(q.id, i)}>{c.label}</Button>
+          <span class="smrt-change-extras__choice">
+            <Button size="sm" variant="secondary" disabled={busy} onclick={() => onanswer(q.id, i)}>{c.label}</Button>
+            {#if c.adds && c.summary}<span class="smrt-change-extras__adds" data-testid="choice-adds">Adds: {c.summary}</span>{/if}
+          </span>
         {/each}
       </div>
     {:else}
@@ -106,6 +109,12 @@ async function send(event: SubmitEvent) {
   }
   .smrt-change-extras__choices {
     justify-content: flex-start;
+  }
+  .smrt-change-extras__choice {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.35rem;
   }
   .smrt-change-extras__text {
     padding: 0.4rem 0.6rem;

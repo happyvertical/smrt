@@ -40,7 +40,11 @@ import {
 } from '../objects/ChangeCard.ts';
 import { applySummary, CHANGES_WAITING_NAME } from '../ui/changes.ts';
 import { commandSummary, versionSummary } from '../ui/command-summary.ts';
-import { type ApplyNowInput, applyNowEligible } from './apply-now.ts';
+import {
+  type ApplyNowInput,
+  applyNowEligible,
+  isAdditiveCommand,
+} from './apply-now.ts';
 import {
   type ApprovalAction,
   type PendingApproval,
@@ -90,6 +94,8 @@ export interface CardComment {
 export interface ReviewChoice {
   label: string;
   command?: Command;
+  /** Plain words for what the choice adds (shown next to the button). */
+  summary?: string;
 }
 
 export interface ReviewQuestion {
@@ -104,7 +110,7 @@ export interface ReviewQuestion {
 export interface QuestionView {
   id: string;
   text: string;
-  choices: { label: string; adds: boolean }[];
+  choices: { label: string; adds: boolean; summary?: string }[];
   state: 'open' | 'answered';
   answered?: number;
 }
@@ -161,7 +167,7 @@ export interface ChangesState {
   baseVersion: number;
   cards: ChangeCardView[];
   /** A discarded set that "Put them back" restores, or null. */
-  discarded: { batchId: string; count: number } | null;
+  discarded: { batchId: string; count: number; generation: number } | null;
   /** The last applied batch, for History's Undo. */
   lastApplied: {
     batchId: string;
@@ -833,7 +839,11 @@ function viewOf(card: ChangeCard): ChangeCardView {
     questions: questionsOf(card).map((q) => ({
       id: q.id,
       text: q.text,
-      choices: q.choices.map((c) => ({ label: c.label, adds: !!c.command })),
+      choices: q.choices.map((c) => ({
+        label: c.label,
+        adds: !!c.command,
+        ...(c.command && c.summary ? { summary: c.summary } : {}),
+      })),
       state: q.state,
       ...(q.answered !== undefined ? { answered: q.answered } : {}),
     })),
@@ -884,7 +894,12 @@ async function stateOf(owner: Principal): Promise<ChangesState> {
       const n = gone_.some((c) => c.source === 'import')
         ? 0
         : gone_.filter((c) => isActive(c) && !c.opaque).length;
-      if (n) discarded = { batchId: gone.id as string, count: n };
+      if (n)
+        discarded = {
+          batchId: gone.id as string,
+          count: n,
+          generation: Number(gone.generation),
+        };
     }
   }
   const applied = sorted.find((b) => b.status === 'applied');
@@ -1634,6 +1649,21 @@ export function cleanCardCommand(value: unknown): Command {
   return copy as unknown as Command;
 }
 
+/**
+ * A review choice's command: the same checks as a revision AND additive only
+ * (the `applyNowEligible` set). A choice sits behind a label the assistant
+ * wrote, so it may never carry a removal, merge or load.
+ */
+function cleanChoiceCommand(value: unknown): Command {
+  const command = cleanCardCommand(value);
+  if (!isAdditiveCommand((command as { type?: unknown }).type))
+    throw new EngineError(
+      'a review choice can only add something new',
+      'refused',
+    );
+  return command;
+}
+
 /** A revisable card: active, one the owner can edit, in an open (not held) batch. */
 async function openCard(
   cardId: string,
@@ -1888,10 +1918,14 @@ export function setReviewQuestions(
             continue;
           }
           try {
-            const command = cleanCardCommand(raw.command);
+            const command = cleanChoiceCommand(raw.command);
             if (!host) continue;
             await host.plan(command);
-            choices.push({ label, command });
+            choices.push({
+              label,
+              command,
+              summary: commandSummary(command, host.def, host.def),
+            });
           } catch {
             // not a change this app can take: the choice is not offered
           }
@@ -1962,6 +1996,8 @@ export function answerReviewQuestion(
         const chosen = q.choices[index];
         if (!chosen)
           throw new EngineError('that choice is not on the list', 'invalid');
+        // Stored rows may predate the additive-only rule: never trust them.
+        if (chosen.command) cleanChoiceCommand(chosen.command);
         // Claim it before the card is made, so a double click makes one card.
         q.state = 'answered';
         q.answered = index;
@@ -2124,7 +2160,24 @@ export function requestApply(
       checkGeneration(batch, opts.generation);
       const host = await workingCopy(batch, owner);
       const { check, digest, active } = await freshCheck(batch, owner, host);
-      if (digest !== expect) throw REVIEW_AGAIN();
+      if (digest !== expect) {
+        // Keep what the fresh check found, so the next state read shows the
+        // digest the owner must review and a retry with it succeeds.
+        batch.digest = digest;
+        batch.checkState = 'ok';
+        batch.checkResult = JSON.stringify({
+          blockers: [],
+          overwrites: {
+            recordsUpdated: check.overwrites.recordsUpdated,
+            recordsMerged: check.overwrites.recordsMerged,
+            archivedValues: check.overwrites.archivedValues,
+            archivedTables: check.overwrites.archivedTables,
+          },
+        });
+        await batch.save();
+        emit(batch, 'changed', active.length);
+        throw REVIEW_AGAIN();
+      }
       // "Apply now" from chat: the server decides, from the batch and the fresh
       // exact check it just ran, never from what the client says it is.
       if (opts.source === 'chat') {

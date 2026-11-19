@@ -584,7 +584,7 @@ describe('review questions', () => {
     const q = s.cards[0].questions;
     expect(q).toHaveLength(1);
     expect(q[0].choices).toEqual([
-      { label: 'Yes, add it', adds: true },
+      { label: 'Yes, add it', adds: true, summary: expect.any(String) },
       { label: 'Leave as is', adds: false },
     ]);
     // the model output made no card and changed no command
@@ -747,10 +747,8 @@ describe('review questions', () => {
     const s = await asOwner(() => changesState());
     // it is only a visible choice: no extra card, no apply, live untouched
     expect(s.count).toBe(1);
-    expect(s.cards[0].questions[0].choices[0]).toEqual({
-      label: 'Do it',
-      adds: true,
-    });
+    // a destructive command behind a harmless label is not even offered
+    expect(s.cards[0].questions).toEqual([]);
     expect(await applyRows()).toHaveLength(rowsBefore);
     expect((await getHost()).def.models).toHaveProperty('Chore');
     expect((await getHost()).frozen).toBe(true);

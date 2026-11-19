@@ -291,7 +291,9 @@ describe('changes waiting view', () => {
   });
 
   it('discards at once, then Put them back restores', async () => {
-    const gone = noChanges({ discarded: { batchId: 'b1', count: 2 } });
+    const gone = noChanges({
+      discarded: { batchId: 'b1', count: 2, generation: 4 },
+    });
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(json(gone))
@@ -309,6 +311,42 @@ describe('changes waiting view', () => {
       expect(container.querySelectorAll('article')).toHaveLength(2),
     );
     expect(fetchMock.mock.calls[1][0]).toBe('/api/shell/changes/restore');
+    // the discarded batch's own generation, never an omitted or zero one
+    expect(fetchMock.mock.calls[1][1].body).toBe(
+      JSON.stringify({ generation: 4 }),
+    );
+  });
+
+  it('shows what a review choice adds next to its button', async () => {
+    await render(
+      changes({
+        cards: [
+          card({
+            questions: [
+              {
+                id: 'q1',
+                text: 'Track a note?',
+                choices: [
+                  {
+                    label: 'Sure',
+                    adds: true,
+                    summary: 'Add field Note to Orders',
+                  },
+                  { label: 'Skip', adds: false },
+                ],
+                state: 'open',
+              },
+            ],
+          }),
+        ],
+      }),
+    );
+    const shown = [
+      ...container.querySelectorAll('[data-testid="choice-adds"]'),
+    ];
+    expect(shown.map((e) => e.textContent)).toEqual([
+      'Adds: Add field Note to Orders',
+    ]);
   });
 
   it('keeps Apply off while checking or blocked and says why', async () => {

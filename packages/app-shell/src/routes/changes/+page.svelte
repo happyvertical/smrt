@@ -209,7 +209,7 @@ async function apply() {
       <p><strong>Nothing waiting</strong></p>
       <p class="smrt-app-shell__muted" data-smrt-part="description">Your app is as you left it.</p>
       {#if changes?.discarded}
-        <Button variant="secondary" size="sm" disabled={busy} onclick={() => act(() => changesApi.restoreDiscarded(gen()), undefined, 'Your changes are back.')}>Put them back ({plural(changes.discarded.count, 'change')})</Button>
+        <Button variant="secondary" size="sm" disabled={busy} onclick={() => act(() => changesApi.restoreDiscarded({ generation: changes?.discarded?.generation }), undefined, 'Your changes are back.')}>Put them back ({plural(changes.discarded.count, 'change')})</Button>
       {/if}
     </div>
   {:else}

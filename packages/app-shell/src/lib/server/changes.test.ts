@@ -361,7 +361,13 @@ describe('discard and put back', () => {
     expect(s.count).toBe(0);
     expect(s.discarded?.count).toBe(2);
     expect((await getHost()).frozen).toBe(false);
-    s = await asOwner(() => restoreDiscardedChanges());
+    // the call the page makes: the discarded batch's own generation
+    await expect(
+      asOwner(() => restoreDiscardedChanges({ generation: 0 })),
+    ).rejects.toMatchObject({ code: 'refused' });
+    s = await asOwner(() =>
+      restoreDiscardedChanges({ generation: s.discarded?.generation }),
+    );
     expect(s.count).toBe(2);
     expect((await getHost()).frozen).toBe(true);
     expect(s.canApply).toBe(false); // checking again
@@ -618,6 +624,66 @@ describe("Can't apply yet and dependent cards", () => {
     await expect(
       runAs(h.member, () => removeDependentCards(second.id)),
     ).rejects.toThrow();
+  });
+});
+
+describe('a stale digest leaves a way forward', () => {
+  it('after a 409 changed, state shows the fresh digest and Apply with it succeeds', async () => {
+    const live = await getHost();
+    await asOwner(() =>
+      runCommand(
+        {
+          type: 'loadRecords',
+          model: 'Pet',
+          mode: 'upsert',
+          key: ['name'],
+          rows: [{ name: 'stuck-1', age: 1 }],
+        },
+        h.owner.id,
+        'live',
+        'api',
+      ),
+    );
+    const reviewed = await state();
+    await live.create('Pet', { name: 'stuck-1', age: 5 });
+    await expect(
+      asOwner(() => applyOwnBatch(reviewed.digest)),
+    ).rejects.toMatchObject({ details: { reason: 'changed' } });
+    const fresh = await asOwner(() => changesState());
+    expect(fresh.digest).not.toBe(reviewed.digest);
+    expect(fresh.overwrites?.recordsUpdated).toBe(1);
+    const out = await asOwner(() => applyOwnBatch(fresh.digest));
+    expect(out.status).toBe('approved');
+  });
+});
+
+describe('archive counts are pinned by the digest', () => {
+  it('values added to a column after review ask for a fresh look (409), never block', async () => {
+    await liveDo({
+      type: 'defineModel',
+      name: 'Gizmo',
+      fields: { name: { type: 'text' }, scratch: { type: 'text' } },
+    });
+    const live = await getHost();
+    await asOwner(() =>
+      runCommand(
+        { type: 'removeField', model: 'Gizmo', field: 'scratch' },
+        h.owner.id,
+        'live',
+        'api',
+      ),
+    );
+    const reviewed = await state();
+    expect(reviewed.overwrites?.archivedValues).toBe(0);
+    await live.create('Gizmo', { name: 'g1', scratch: 'keep me' });
+    await expect(
+      asOwner(() => applyOwnBatch(reviewed.digest)),
+    ).rejects.toMatchObject({ details: { reason: 'changed' } });
+    const fresh = await asOwner(() => changesState());
+    expect(fresh.overwrites?.archivedValues).toBe(1);
+    expect(fresh.digest).not.toBe(reviewed.digest);
+    const out = await asOwner(() => applyOwnBatch(fresh.digest));
+    expect(out.status).toBe('approved');
   });
 });
 

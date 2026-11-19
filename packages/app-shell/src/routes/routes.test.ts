@@ -3,6 +3,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { App } from '../lib/objects/App.ts';
 import { type Approval, ApprovalCollection } from '../lib/objects/Approval.ts';
+import { ChangeCardCollection } from '../lib/objects/ChangeCard.ts';
 import { applyOwnBatch, listApprovalViews } from '../lib/server/approvals.ts';
 import {
   changesState,
@@ -10,7 +11,7 @@ import {
   flushChecks,
 } from '../lib/server/changes.ts';
 import { type ShellEvent, subscribe } from '../lib/server/events.ts';
-import { getHost } from '../lib/server/host.ts';
+import { getHost, getShellDb } from '../lib/server/host.ts';
 import { runAs } from '../lib/server/owner.ts';
 import {
   applyWaiting,
@@ -21,6 +22,7 @@ import * as appRoute from './api/app/[...path]/+server.ts';
 import * as eventsRoute from './api/events/+server.ts';
 import * as approvalsRoute from './api/shell/approvals/+server.ts';
 import * as approvalRoute from './api/shell/approvals/[id]/+server.ts';
+import * as answerRoute from './api/shell/changes/questions/[id]/answer/+server.ts';
 import * as describeRoute from './api/shell/describe/+server.ts';
 import * as historyRoute from './api/shell/history/+server.ts';
 import * as recordsRoute from './api/shell/records/[model]/+server.ts';
@@ -458,4 +460,42 @@ it('keeps builder and applied-change snapshot paths server-side', async () => {
   expect(views.find((a) => a.id === applied.id)?.result).not.toHaveProperty(
     'snapshot',
   );
+});
+
+it('answering a stored destructive review choice is refused and makes no card', async () => {
+  await runAs(h.owner, () => App.defineModel('Keep', { n: { type: 'text' } }));
+  await applyWaiting(h.owner);
+  await runAs(h.owner, () => App.addField('Keep', 'extra', { type: 'text' }));
+  const waiting = await runAs(h.owner, () => changesState());
+  // bypass the storage-time filter: the row holds a destructive command
+  const cards = await ChangeCardCollection.create({ db: await getShellDb() });
+  const row = await cards.get(waiting.cards[0].id);
+  if (!row) throw new Error('card missing');
+  row.questions = JSON.stringify([
+    {
+      kind: 'question',
+      id: 'q_evil',
+      text: 'Add a note?',
+      choices: [
+        {
+          label: 'Sure',
+          command: { type: 'removeModel', model: 'Keep' },
+        },
+      ],
+      state: 'open',
+    },
+  ]);
+  await row.save();
+  const res = await answerRoute.POST(
+    event(h.owner, 'POST', '/api/shell/changes/questions/q_evil/answer', {
+      body: { choice: 0 },
+      params: { id: 'q_evil' },
+    }),
+  );
+  expect(res.status).toBe(409);
+  const after = await runAs(h.owner, () => changesState());
+  expect(after.count).toBe(1);
+  expect(after.cards).toHaveLength(waiting.cards.length);
+  expect((await getHost()).def.models).toHaveProperty('Keep');
+  await runAs(h.owner, () => discardChanges());
 });

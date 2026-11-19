@@ -302,8 +302,14 @@ function reviewDigestOf(
             : 0,
     })),
   );
+  const archives = {
+    values: num(preview.archives?.values),
+    tables: num(preview.archives?.tables),
+  };
   return createHash('sha256')
-    .update(canonical({ chain: chainDigest(liveVersion, chain), figures }))
+    .update(
+      canonical({ chain: chainDigest(liveVersion, chain), figures, archives }),
+    )
     .digest('hex');
 }
 

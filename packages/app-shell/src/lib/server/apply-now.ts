@@ -11,6 +11,11 @@ const ADDITIVE: ReadonlySet<string> = new Set([
   'defineReport',
 ]);
 
+/** True when `type` only adds something new (the set Apply now and review choices share). */
+export function isAdditiveCommand(type: unknown): boolean {
+  return typeof type === 'string' && ADDITIVE.has(type);
+}
+
 export interface ApplyNowInput {
   cards: ReadonlyArray<{
     status: string;
