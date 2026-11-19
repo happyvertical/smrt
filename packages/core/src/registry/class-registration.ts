@@ -600,6 +600,12 @@ function sameNameParentKnown(
 }
 
 /**
+ * Manifest registrations whose table is a placeholder derived from the class
+ * name: the entry named none (#5143).
+ */
+const undeclaredManifestTables = new WeakSet<RegisteredClass>();
+
+/**
  * A same-named subtype is an STI subtype of its parent, so the parent's
  * family must carry a discriminator; a plain parent is a configuration error.
  * Collections store nothing and are exempt.
@@ -619,6 +625,17 @@ function assertSameNameSubtypeStorage(
   );
   if (strategy !== 'sti')
     throw sameNameSubtypeWithoutDiscriminator(childKey, parentKey, tableName);
+  // A manifest subtype that named no table stores rows in its parent's.
+  if (
+    tableName &&
+    child.schema &&
+    child.schema.tableName !== tableName &&
+    undeclaredManifestTables.has(child)
+  ) {
+    child.schema = { ...child.schema, tableName };
+    undeclaredManifestTables.delete(child);
+    bumpRegistryGeneration();
+  }
   // Both sides: the subtype's rows go to its parent's single table.
   if (
     tableName &&
@@ -3920,6 +3937,15 @@ function registerFromManifestUntracked(
     collectionOf: objectDef.collectionOf, // #3956 manifest collection classification
     visibility, // New: Visibility control for manifest filtering
   };
+  // A manifest entry that names no table (no precomputed schema, no
+  // `tableName`) got a placeholder derived from its name; a same-named
+  // subtype's placeholder binds to its parent's table, in either order.
+  if (
+    !objectDef.collectionOf &&
+    !objectDef.schema?.tableName &&
+    !objectDef.decoratorConfig?.tableName
+  )
+    undeclaredManifestTables.add(registration);
   // A same-named subtype and its parent must be tellable apart in storage,
   // whichever of the two is registering now (#5143).
   for (const pair of subtypePairs) {

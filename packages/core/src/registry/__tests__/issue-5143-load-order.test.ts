@@ -308,3 +308,74 @@ describe('exposure a collection applies to its replacement item', () => {
     expect(await tools()).toEqual([]);
   });
 });
+
+describe('a manifest subtype that names no table', () => {
+  const parentEntry = () => ({
+    name: 'scene',
+    className: 'Scene',
+    qualifiedName: BASE as `${string}:${string}`,
+    packageName: VIDEO,
+    collection: 'scenes',
+    filePath: 'src/video/scene.ts',
+    fields: { title: { type: 'text' as const, _meta: {} } },
+    methods: {},
+    decoratorConfig: {
+      tableName: 'video_scenes',
+      tableStrategy: 'sti' as const,
+    },
+  });
+  const subtypeEntry = (tableName?: string) => ({
+    name: 'scene',
+    className: 'Scene',
+    qualifiedName: SUB as `${string}:${string}`,
+    packageName: HISTRIO,
+    collection: 'scenes',
+    filePath: 'src/histrio/scene.ts',
+    extends: 'Scene',
+    extendsQualified: BASE,
+    fields: { mood: { type: 'text' as const, _meta: {} } },
+    methods: {},
+    decoratorConfig: {
+      replaceParent: false,
+      ...(tableName ? { tableName } : {}),
+    },
+  });
+  it.each([
+    'parent-first',
+    'subtype-first',
+  ] as const)('stores rows in its custom-table STI parent (%s)', (order) => {
+    const parent = () =>
+      ObjectRegistry.registerFromManifest(BASE, parentEntry());
+    const subtype = () =>
+      ObjectRegistry.registerFromManifest(SUB, subtypeEntry());
+    if (order === 'parent-first') {
+      parent();
+      subtype();
+    } else {
+      subtype();
+      parent();
+    }
+    expect(ObjectRegistry.getClass(SUB)?.schema?.tableName).toBe(
+      'video_scenes',
+    );
+    expect(ObjectRegistry.getTableName(SUB)).toBe('video_scenes');
+    expect(ObjectRegistry.isServedByParent(SUB)).toBe(true);
+  });
+  it.each([
+    'parent-first',
+    'subtype-first',
+  ] as const)('is still refused when it names another table (%s)', (order) => {
+    const parent = () =>
+      ObjectRegistry.registerFromManifest(BASE, parentEntry());
+    const subtype = () =>
+      ObjectRegistry.registerFromManifest(SUB, subtypeEntry('histrio_scenes'));
+    const steps =
+      order === 'parent-first' ? [parent, subtype] : [subtype, parent];
+    steps[0]();
+    expect(() => steps[1]()).toThrow(
+      expect.objectContaining({
+        code: 'CONFIG_SAME_NAME_SUBTYPE_TABLE_MISMATCH',
+      }),
+    );
+  });
+});
