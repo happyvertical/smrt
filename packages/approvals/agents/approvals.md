@@ -79,6 +79,40 @@ distinct human actors; requester events count only with `selfApproved: true`
 and a valid `selfApprovalPermission` audit slug. Otherwise it refuses
 `unbacked_approval`. Quorum counting in `decide` applies the same filter.
 
+## Edit-then-approve (#5141)
+
+A kind opts in with `allowRevisedApproval: true` (default false: the decider
+would approve content they changed). `decide({ decision: 'approve',
+revisedSubjectRevisionHash })` rebinds the request to the revised hash in the
+same guarded UPDATE (`subject_revision_hash` is in the predicate and the SET),
+and the `approved` event records the revised hash; the `created` event keeps
+the requested one, so the ledger shows both. Refusals: `revision_not_allowed`
+(kind did not opt in), `revision_after_approval` (any `approved` event exists:
+earlier approvers saw other content). Any decision may pass
+`expectedSubjectRevisionHash`; a mismatch is refused `revision_mismatch`, so a
+decision never lands on content the decider did not review. On a kind with
+`allowRevisedApproval`, an `approve` without it throws `APPROVAL_INVALID`
+(the revision can move under a decider); the mail gate also refuses an empty
+`expectedBindingHash`, and its approver list excludes the requester's own
+votes exactly as quorum counting does. Quorum counting
+(`decide` and `consume`'s ledger check) counts only `approved` events whose
+hash equals the bound revision. No schema change.
+
+## Mail-send gate (#5141)
+
+`createApprovalMailSendGate({ service })` (`src/mail-send-gate.ts`) satisfies
+smrt-messages' structural `MailSendApprovalGate`; neither package imports the
+other. Kind `messages.mail.send`, subject `@happyvertical/smrt-messages:Message`,
+permission `messages.send`, `allowRevisedApproval: true`, `requestKey`
+`mail-send:<messageId>:<bindingHash>` with the mcp-gate epoch suffix. The
+requester holds no permission; a decider is `human` only when labelled
+`person` or `human`. `check` only reports state and never consumes, so the
+requester can never release its own send; an approving person releases it
+through `consume`, which first hands the counted approvers of the bound
+revision to the caller's `verifyApprovers` (smrt-messages checks each still
+holds `send` on the account); false refuses `approver_not_authorized` and
+leaves the approval unconsumed.
+
 ## Out of scope here (later slices of #3716)
 
 - Slice 2: Svelte inbox, panel, decision bar; `approvals.requests` recipe.
