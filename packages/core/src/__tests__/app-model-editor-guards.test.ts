@@ -2383,6 +2383,57 @@ describe('app model editor: history reads and completion', () => {
     expect((await open()).snapshot().cookbook.name).toBe('Winner');
   });
 
+  it('reopening after a failed winner install serves the winning web definitions even when its cookbook matches', async () => {
+    const base = await createAppModelHistory({
+      db,
+      application,
+      tenantId: TENANT,
+    });
+    const store: AppModelHistoryStore = {
+      ...base,
+      async complete(at, elapsedMs, receipt, result) {
+        // The winner differs from this process's receipt only in what it
+        // projects, never in its cookbook.
+        if (receipt && at === 2)
+          await base.complete(
+            at,
+            4242,
+            {
+              ...structuredClone(receipt),
+              elapsedMs: 4242,
+              webDefinitions: receipt.webDefinitions.map((definition) => ({
+                ...definition,
+                label: 'Winner label',
+              })),
+            },
+            result,
+          );
+        return base.complete(at, elapsedMs, receipt, result);
+      },
+    };
+    let calls = 0;
+    const e = await open(store, () => {
+      calls += 1;
+      // boot, revision 1, revision 2 local; the winner's install throws.
+      if (calls === 4) throw new Error('host publication unavailable');
+    });
+    const apply = applyTo(e);
+    await apply({ type: 'create_list', name: 'GuardMat', list: mats });
+    await expect(
+      apply({ type: 'relabel_list', name: 'GuardMat', label: 'Mats' }),
+    ).rejects.toThrow(/host publication unavailable/);
+    ObjectRegistry.clear();
+    registerMember();
+    const published: AppModelSnapshot[] = [];
+    const reopened = await open(undefined, (snapshot) => {
+      published.push(snapshot);
+    });
+    const labels = (snapshot: AppModelSnapshot) =>
+      snapshot.webDefinitions.map((definition) => definition.label);
+    expect(labels(published.at(-1)!)).toContain('Winner label');
+    expect(labels(reopened.snapshot())).toContain('Winner label');
+  });
+
   it('a pending boot recovery that loses its completion installs and serves the winner', async () => {
     let failPublish = false;
     const e = await open(undefined, () => {

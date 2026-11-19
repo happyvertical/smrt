@@ -327,7 +327,11 @@ declare global {
   var __smrtAppModelEditorBaselines:
     | Map<string, Map<string, () => void>>
     | undefined;
+  /** Journal identity -> revision whose winning completion was not installed. */
+  var __smrtAppModelEditorWinners: Map<string, number> | undefined;
 }
+const uninstalledWinners = () =>
+  (globalThis.__smrtAppModelEditorWinners ??= new Map<string, number>());
 const editorClasses = () =>
   (globalThis.__smrtAppModelEditorClasses ??= new Map<object, string>());
 /**
@@ -1190,13 +1194,25 @@ async function openAppModelEditor(
     if (!row.receipt || stableStringify(row.receipt) === stableStringify(local))
       return undefined;
     const { revision: at, cookbook, manifest, webDefinitions } = row.receipt;
-    const winner = { revision: at, cookbook, manifest, webDefinitions };
+    return installWinner({ revision: at, cookbook, manifest, webDefinitions });
+  }
+  /**
+   * Install a winning completion through the host. Until it is installed the
+   * journal remembers the revision, so reopening (the prescribed recovery)
+   * installs the winner's manifest and web definitions even when its cookbook
+   * equals this process's own.
+   */
+  async function installWinner(
+    winner: AppModelSnapshot,
+  ): Promise<AppModelSnapshot> {
+    uninstalledWinners().set(journal, winner.revision);
     try {
       await options.publish?.(structuredClone(winner));
     } catch (error) {
       ready = false;
       throw error;
     }
+    uninstalledWinners().delete(journal);
     adopted = winner;
     // The winner is the committed document: the next edit starts from it.
     doc = structuredClone(winner.cookbook);
@@ -1519,7 +1535,21 @@ async function openAppModelEditor(
       throw recoveryHint(error);
     }
     try {
-      await publish();
+      const tip = history.at(-1);
+      const won =
+        tip?.status === 'applied' &&
+        !tip.abandoned &&
+        uninstalledWinners().get(journal) === tip.revision
+          ? (await findRow(tip.requestId))?.receipt
+          : undefined;
+      if (won)
+        await installWinner({
+          revision: won.revision,
+          cookbook: won.cookbook,
+          manifest: won.manifest,
+          webDefinitions: won.webDefinitions,
+        });
+      else await publish();
     } catch (error) {
       throw recoveryHint(error);
     }
