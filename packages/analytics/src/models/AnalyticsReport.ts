@@ -225,7 +225,10 @@ export class AnalyticsReport extends SmrtObject {
     if (options.description !== undefined)
       this.description = options.description;
     if (options.dimensions !== undefined) this.dimensions = options.dimensions;
-    if (options.metrics !== undefined) this.metrics = options.metrics;
+    // Only a string is report data. A collection bound to a metrics service
+    // passes its `MetricsConfig` under the same key; that is service
+    // configuration and must never become the stored field.
+    if (typeof options.metrics === 'string') this.metrics = options.metrics;
     if (options.dateRangeStart !== undefined)
       this.dateRangeStart = options.dateRangeStart;
     if (options.dateRangeEnd !== undefined)
