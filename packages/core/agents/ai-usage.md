@@ -148,9 +148,15 @@ failed run or its checkpoint is gone). `openAiRun` compares the locked
 parent's and retry source's `tenant_id` (null-safe) with `store.tenantId`
 before reading anything else: another tenant's run is treated as absent
 (`AiRunNotFoundError` for a parent, `retry_source_pruned` for a retry), and
-refusal messages never name the other run's definition. The tenant is
-compared from one unlocked read of `tenant_id` before anything of the
-referenced run is locked or read. Every chain walk (`readAiRunChainIds`,
+refusal messages never name the other run's definition. Each referenced
+run is first looked up by id and the store's tenant (a SQL predicate)
+before anything of it is locked or read, its depth is walked in that tenant,
+and the row returned is the one inserted, read inside the open's
+transaction. `openAiRun` reads each public property of `store` and `input`
+exactly once (own fields and getters alike; `satisfies` keeps the copy
+exhaustive) and serializes tags, budget and the first checkpoint before its
+first write, so a caller-owned transaction never commits half an open.
+Every chain walk (`readAiRunChainIds`,
 hence `lockAiRunChain`, fences and charges) and every descendant walk
 (`readAiRunDescendantIds`, cancel; the sweep's non-durable subtree) stops at
 a tenant boundary, with the tenant as a predicate of each lookup (another

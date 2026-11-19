@@ -750,6 +750,21 @@ export async function readAiRunChainIds(
 }
 
 /**
+ * {@link readAiRunChainIds} with the run itself and every ancestor looked up
+ * in `tenant` (a SQL predicate): a row of another tenant is not read and
+ * ends the chain like a pruned one.
+ *
+ * @internal
+ */
+export async function readAiRunChainIdsInTenant(
+  db: DatabaseInterface,
+  runId: string,
+  tenant: string | null,
+): Promise<string[]> {
+  return (await readAiRunChain(db, runId, tenant)).ids;
+}
+
+/**
  * {@link readAiRunChainIds} and the tenant the chain was read in. With
  * `expectedTenant`, the run itself is looked up in that tenant too.
  */

@@ -38,7 +38,6 @@ import {
   aiRunQuery,
   assertAiRunFence,
   foldActive,
-  getAiRun,
   getRows,
   isAiRunFinal,
   isValidAiRunType,
@@ -48,7 +47,7 @@ import {
   normalizeAiRunBudget,
   num,
   parseJsonObject,
-  readAiRunChainIds,
+  readAiRunChainIdsInTenant,
   readAiRunDescendantIds,
   text,
   withAiRunTransaction,
@@ -555,16 +554,14 @@ export async function openAiRun(
   input: OpenAiRunInput,
   options: AiRunTxOptions = {},
 ): Promise<AiRunRow> {
-  // One snapshot of the store and the input: the tenant, database, parent
-  // and handoff validated here are the ones written, even if the caller's
+  // One snapshot of the store and the input: every public property is read
+  // exactly once, here, whether it is an own field or a getter, and the
+  // values validated below are the ones written, even if the caller's
   // objects change while this runs (a retry's `carry` callback runs in the
-  // middle).
-  const scope: AiRunStore = { ...store };
-  const req: OpenAiRunInput = {
-    ...input,
-    ...(input.handoff ? { handoff: { ...input.handoff } } : {}),
-    ...(input.tags ? { tags: { ...input.tags } } : {}),
-  };
+  // middle). A getter that throws fails the open before anything is read
+  // from or written to the database.
+  const scope = snapshotStore(store);
+  const req = snapshotInput(input);
   assertAiRunTracking(scope);
   if (typeof req.type !== 'string' || !isValidAiRunType(req.type)) {
     throw new TypeError(
@@ -582,16 +579,22 @@ export async function openAiRun(
       'not_retryable',
     );
   }
+  if (req.handoff && !req.parentRunId) {
+    throw new TypeError('openAiRun: a handoff needs parentRunId');
+  }
+  // Serialized before the transaction: a payload that cannot be written
+  // fails here, never between two writes of a caller-owned transaction.
+  const tagsJson = req.tags ? JSON.stringify(req.tags) : null;
+  const budgetJson = JSON.stringify(budget);
+  const tenantId = scope.tenantId ?? null;
 
-  await withAiRunTransaction(
+  return withAiRunTransaction(
     scope.db,
     async (tx) => {
       let initial: { state: unknown; highestStepIndex: number | null } = {
         state: req.checkpoint?.state ?? null,
         highestStepIndex: null,
       };
-      // The parent and the retried run are locked in the page's order:
-      // by depth, then id.
       const locked = new Map<string, AiRunRow | null>();
       const requested = [req.parentRunId, retryOf].filter(
         (id): id is string => typeof id === 'string' && id.length > 0,
@@ -599,50 +602,49 @@ export async function openAiRun(
       // A referenced run of another tenant (global `null` included) is
       // treated exactly as a run that is not there: the new run is written
       // under the store's tenant, so a parent or retry source must share it.
-      // The tenant is compared first, from one unlocked read of the
-      // immutable `tenant_id`: another tenant's run is never locked, and
-      // neither its ancestry nor its status, definition or checkpoint is
-      // read, so a refusal says nothing about it.
-      const tenantId = scope.tenantId ?? null;
+      // Each is first looked up in that tenant (a SQL predicate): another
+      // tenant's run is never read or locked, and neither its ancestry nor
+      // its status, definition or checkpoint is read, so a refusal says
+      // nothing about it.
       const targets: string[] = [];
       for (const id of new Set(requested)) {
-        const owner = getRows(
+        const found = getRows(
           await aiRunQuery(
             tx.db,
-            'SELECT tenant_id FROM _smrt_ai_runs WHERE id = $1',
+            `SELECT id FROM _smrt_ai_runs WHERE id = $1 AND ${
+              tenantId === null ? 'tenant_id IS NULL' : 'tenant_id = $2'
+            }`,
             id,
+            ...(tenantId === null ? [] : [tenantId]),
           ),
-        )[0];
-        if (owner && (text(owner.tenant_id) ?? null) === tenantId) {
-          targets.push(id);
-        } else {
-          locked.set(id, null);
-        }
+        );
+        if (found.length > 0) targets.push(id);
+        else locked.set(id, null);
       }
       // The parent and the retried run are locked in the page's order:
-      // by depth, then id.
+      // by depth, then id. Depth is walked in the run's tenant.
       const depths = new Map<string, number>();
       for (const id of targets) {
-        const ids = await readAiRunChainIds(tx.db, id).catch((error) => {
-          if (error instanceof AiRunNotFoundError) return [id];
-          throw error;
-        });
+        const ids = await readAiRunChainIdsInTenant(tx.db, id, tenantId).catch(
+          (error) => {
+            if (error instanceof AiRunNotFoundError) return [id];
+            throw error;
+          },
+        );
         depths.set(id, ids.length);
       }
       for (const id of targets.sort(
         (a, b) =>
           (depths.get(a) ?? 0) - (depths.get(b) ?? 0) || a.localeCompare(b),
       )) {
-        // Locked in the tenant it was read in: an id pruned and reused by
-        // another tenant since is not locked, and reads as absent.
+        // Locked in the tenant it was read in: a row that left the tenant
+        // since is not locked, and reads as absent.
         locked.set(id, await lockAiRun(tx, id, tenantId));
       }
       if (req.parentRunId) {
         const parent = locked.get(req.parentRunId);
         if (!parent) throw new AiRunNotFoundError(req.parentRunId);
         if (parent.status !== 'running') throw aiRunStoppedError(parent);
-      } else if (req.handoff) {
-        throw new TypeError('openAiRun: a handoff needs parentRunId');
       }
       if (retryOf) {
         initial = await retryStartTx(
@@ -652,6 +654,10 @@ export async function openAiRun(
           req,
         );
       }
+      // The first checkpoint is serialized before the first write too.
+      const checkpointJson = durable
+        ? envelope(initial.highestStepIndex, initial.state)
+        : null;
       const now = tx.now.toISOString();
       await aiRunQuery(
         tx.db,
@@ -666,7 +672,7 @@ export async function openAiRun(
         req.type,
         req.definitionKey ?? null,
         req.definitionVersion ?? null,
-        scope.tenantId ?? null,
+        tenantId,
         scope.className ?? null,
         req.promptKey ?? null,
         req.templateHash ?? null,
@@ -675,12 +681,12 @@ export async function openAiRun(
         retryOf,
         req.experimentId ?? null,
         req.datasetItem ?? null,
-        req.tags ? JSON.stringify(req.tags) : null,
-        JSON.stringify(budget),
+        tagsJson,
+        budgetJson,
         now,
         req.mode ?? null,
       );
-      if (durable) {
+      if (checkpointJson !== null) {
         await aiRunQuery(
           tx.db,
           `INSERT INTO _smrt_ai_run_checkpoints
@@ -689,7 +695,7 @@ export async function openAiRun(
           id,
           req.checkpoint?.lease ?? null,
           req.definitionVersion ?? null,
-          envelope(initial.highestStepIndex, initial.state),
+          checkpointJson,
         );
       }
       if (req.parentRunId && req.handoff) {
@@ -705,12 +711,88 @@ export async function openAiRun(
           status: 'running',
         });
       }
+      // The row returned is the one this transaction inserted, read before
+      // it commits and in its tenant.
+      const row = await lockAiRun(tx, id, tenantId);
+      if (!row) throw new AiRunNotFoundError(id);
+      return row;
     },
     options,
   );
-  const row = await getAiRun(scope.db, id);
-  if (!row) throw new AiRunNotFoundError(id);
-  return row;
+}
+
+/**
+ * Every key of `T`, required to be present, with its declared value type
+ * (an optional key may hold `undefined`). An object literal checked with
+ * `satisfies Snapshot<T>` names every key of `T`, so a key added to `T`
+ * later fails to compile until the snapshot copies it.
+ */
+type Snapshot<T> = { [K in keyof Required<T>]: T[K] };
+
+/** Read each public property of the store exactly once. */
+function snapshotStore(store: AiRunStore): AiRunStore {
+  return {
+    db: store.db,
+    usageTracking: store.usageTracking,
+    tenantId: store.tenantId,
+    className: store.className,
+  } satisfies Snapshot<AiRunStore>;
+}
+
+/**
+ * Read each property of the input exactly once (own fields and getters
+ * alike), copying the nested objects the open reads later. A callback keeps
+ * its receiver.
+ */
+function snapshotInput(input: OpenAiRunInput): OpenAiRunInput {
+  const tags = input.tags;
+  const checkpoint = input.checkpoint;
+  const handoff = input.handoff;
+  const retry = input.retry;
+  return {
+    id: input.id,
+    type: input.type,
+    definitionKey: input.definitionKey,
+    definitionVersion: input.definitionVersion,
+    promptKey: input.promptKey,
+    templateHash: input.templateHash,
+    ownerId: input.ownerId,
+    parentRunId: input.parentRunId,
+    experimentId: input.experimentId,
+    datasetItem: input.datasetItem,
+    tags: tags ? { ...tags } : undefined,
+    budget: input.budget,
+    durable: input.durable,
+    checkpoint: checkpoint
+      ? ({
+          state: checkpoint.state,
+          lease: checkpoint.lease,
+        } satisfies Snapshot<NonNullable<OpenAiRunInput['checkpoint']>>)
+      : undefined,
+    mode: input.mode,
+    handoff: handoff
+      ? ({
+          eventId: handoff.eventId,
+          callId: handoff.callId,
+          name: handoff.name,
+          stepIndex: handoff.stepIndex,
+          parentEventId: handoff.parentEventId,
+        } satisfies Snapshot<NonNullable<OpenAiRunInput['handoff']>>)
+      : undefined,
+    retryOfRunId: input.retryOfRunId,
+    retry: retry ? snapshotRetry(retry) : undefined,
+  } satisfies Snapshot<OpenAiRunInput>;
+}
+
+function snapshotRetry(
+  retry: NonNullable<OpenAiRunInput['retry']>,
+): NonNullable<OpenAiRunInput['retry']> {
+  const acceptsVersion = retry.acceptsVersion;
+  const carry = retry.carry;
+  return {
+    acceptsVersion: acceptsVersion?.bind(retry),
+    carry: carry?.bind(retry),
+  } satisfies Snapshot<NonNullable<OpenAiRunInput['retry']>>;
 }
 
 async function retryStartTx(

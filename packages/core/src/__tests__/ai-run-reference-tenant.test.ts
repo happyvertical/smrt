@@ -230,7 +230,7 @@ describe.each(
     expect((await getAiRun(db, own.id))?.parentRunId).toBe(parent.id);
   });
 
-  it('reads nothing of a refused reference but its tenant, and locks nothing of it', async () => {
+  it('looks a refused reference up only in its own tenant, and locks nothing of it', async () => {
     const db = await newAiRunTestDatabase(engine);
     const foreign = await openAiRun(store(db, 'tenant-two'), { type: 'turn' });
     // Every statement, on the handle and inside its transactions.
@@ -271,7 +271,9 @@ describe.each(
     ).rejects.toBeInstanceOf(AiRunNotFoundError);
     (db as { query: unknown }).query = original;
     (db as { transaction: unknown }).transaction = originalTransaction;
-    expect(seen).toEqual(['SELECT tenant_id FROM _smrt_ai_runs WHERE id = $1']);
+    expect(seen).toEqual([
+      'SELECT id FROM _smrt_ai_runs WHERE id = $1 AND tenant_id = $2',
+    ]);
   });
 
   it('stops charges and cancellation at an existing link to another tenant', async () => {
