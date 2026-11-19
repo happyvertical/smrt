@@ -17,8 +17,9 @@ invariants, and the traps that apply before editing anything live in
 Every generated or request-facing write path filters the body through its
 writable policy before `collection.create(data)` or `applyUpdateInput(item, data)`.
 
-Runtime REST, the emitted SvelteKit create and update handlers, and sync apply
-(runtime and the emitted sync route) share one rule, `prepareWriteInput(model,
+Runtime REST, the emitted SvelteKit create and update handlers, sync apply
+(runtime and the emitted sync route), the MCP servers (in-process and both
+emitted), the generated CLI and the assistant tool loop share one rule, `prepareWriteInput(model,
 data, stored?)` (`src/request-input.ts`, over `resolveWriteBody` in
 `src/write-input.ts`, #5195):
 
@@ -48,12 +49,15 @@ data, stored?)` (`src/request-input.ts`, over `resolveWriteBody` in
 - The policy of the route's model and of the stored row's own class both hold,
   so an STI row written through its base keeps both.
 
-The in-process and both emitted MCP servers (`applyWritablePolicy` in
-`mcp.ts`, `mcp-runtime-template.ts`), the CLI and the assistant tool loop
-(`applySyncWritablePolicy`) still drop protected fields silently with their
-own copies; they share the rule, not the code. A new write path should call
-`prepareWriteInput`. The collection also enforces the service-option rule on
-construction (see [object-runtime.md](object-runtime.md), "Services never come
+Every one of these paths calls `prepareWriteInput`, so a protected field sent
+back unchanged is accepted and a changed one is refused: MCP reports it as a
+tool error (code `VALIDATION_FIELD_NOT_WRITABLE`, the field in its message),
+the CLI exits with the same message, and the assistant loop returns a failed
+tool invocation. The emitted MCP servers import it from
+`@happyvertical/smrt-core`; none keeps its own copy of the policy. A new write
+path should call `prepareWriteInput`. `applySyncWritablePolicy` remains only
+for advertising the writable fields in a tool's argument schema. The
+collection also enforces the service-option rule on construction (see [object-runtime.md](object-runtime.md), "Services never come
 from data").
 
 ### An update sets declared fields and settable accessors
