@@ -1912,86 +1912,112 @@ export class AppHost extends EventEmitter {
     const allSteps = chain.versions.flatMap((r) => r.migration?.steps ?? []);
     let archives = { values: 0, tables: 0 };
     const file = join(dir, 'final', 'app.db');
-    for (let i = 0; i < chain.versions.length; i++) {
-      const rec = chain.versions[i];
-      const errs = validate(rec.definition);
-      if (errs.length)
-        throw new EngineError(
-          `"${rec.summary}" from the draft is invalid: ${errs.join('; ')}`,
-        );
-      const steps = structuredClone(rec.migration?.steps ?? []);
-      const impacts: PublishDataStep[] = [];
-      if (
-        steps.some((step) =>
-          ['loadRecords', 'extractModel', 'mergeRecords'].includes(step.op),
-        )
-      ) {
-        const before = new AppWorker(this.workerUrl, {
+    // The worker that applied the previous version: it holds exactly the
+    // definition and data the next version's previews must read, so it answers
+    // them instead of a second worker booted just for that.
+    let prev: AppWorker | null = null;
+    try {
+      for (let i = 0; i < chain.versions.length; i++) {
+        const rec = chain.versions[i];
+        const errs = validate(rec.definition);
+        if (errs.length)
+          throw new EngineError(
+            `"${rec.summary}" from the draft is invalid: ${errs.join('; ')}`,
+          );
+        const steps = structuredClone(rec.migration?.steps ?? []);
+        const impacts: PublishDataStep[] = [];
+        // Only a data step previews; any other version lets the carried worker go
+        // before the next boots on the same files.
+        let carried = prev;
+        prev = null;
+        if (
+          !steps.some((step) =>
+            ['loadRecords', 'extractModel', 'mergeRecords'].includes(step.op),
+          )
+        ) {
+          await carried?.retire();
+          carried = null;
+        }
+        if (
+          steps.some((step) =>
+            ['loadRecords', 'extractModel', 'mergeRecords'].includes(step.op),
+          )
+        ) {
+          const before =
+            carried ??
+            new AppWorker(this.workerUrl, {
+              dataDir: dir,
+              def: chain.base.definition,
+              version: chain.baseVersion,
+            });
+          carried = null;
+          try {
+            await before.ready;
+            for (const step of steps) {
+              if (step.op === 'loadRecords') {
+                const counts = await before.call<LoadPreview>(
+                  'previewLoad',
+                  step.command,
+                );
+                step.maxUpdates = counts.update;
+                impacts.push({
+                  op: step.op,
+                  model: step.command.model,
+                  mode: step.command.mode,
+                  counts: { ...counts },
+                });
+              } else if (
+                step.op === 'extractModel' ||
+                step.op === 'mergeRecords'
+              ) {
+                const counts = await before.call<ExtractPreview | MergePreview>(
+                  step.op === 'extractModel'
+                    ? 'previewExtract'
+                    : 'previewMerge',
+                  step.command,
+                );
+                impacts.push({
+                  op: step.op,
+                  model: step.command.model,
+                  counts: { ...counts },
+                });
+              }
+            }
+          } finally {
+            await before.retire();
+          }
+        }
+        dataSteps.push(impacts);
+        const w = new AppWorker(this.workerUrl, {
           dataDir: dir,
-          def: i ? chain.versions[i - 1].definition : chain.base.definition,
-          version: i ? numbers[i - 1] : chain.baseVersion,
+          def: rec.definition,
+          version: numbers[i],
+          migration: steps.length
+            ? { steps, direction: 'up', version: numbers[i] }
+            : undefined,
         });
         try {
-          await before.ready;
-          for (const step of steps) {
-            if (step.op === 'loadRecords') {
-              const counts = await before.call<LoadPreview>(
-                'previewLoad',
-                step.command,
-              );
-              step.maxUpdates = counts.update;
-              impacts.push({
-                op: step.op,
-                model: step.command.model,
-                mode: step.command.mode,
-                counts: { ...counts },
-              });
-            } else if (
-              step.op === 'extractModel' ||
-              step.op === 'mergeRecords'
-            ) {
-              const counts = await before.call<ExtractPreview | MergePreview>(
-                step.op === 'extractModel' ? 'previewExtract' : 'previewMerge',
-                step.command,
-              );
-              impacts.push({
-                op: step.op,
-                model: step.command.model,
-                counts: { ...counts },
-              });
-            }
+          boots.push(await w.ready);
+          if (i === chain.versions.length - 1) {
+            archives = await w.call(
+              'countArchives',
+              numbers,
+              archivedTables(allSteps),
+            );
+            await w.call('copyTo', file);
           }
-        } finally {
-          await before.retire();
-        }
-      }
-      dataSteps.push(impacts);
-      const w = new AppWorker(this.workerUrl, {
-        dataDir: dir,
-        def: rec.definition,
-        version: numbers[i],
-        migration: steps.length
-          ? { steps, direction: 'up', version: numbers[i] }
-          : undefined,
-      });
-      try {
-        boots.push(await w.ready);
-        if (i === chain.versions.length - 1) {
-          archives = await w.call(
-            'countArchives',
-            numbers,
-            archivedTables(allSteps),
+        } catch (e) {
+          await w.terminate().catch(() => {});
+          throw new EngineError(
+            `"${rec.summary}" from the draft does not apply to the current data, so nothing was published: ${(e as Error).message}`,
+            'migration_failed',
           );
-          await w.call('copyTo', file);
         }
-      } catch (e) {
-        await w.terminate().catch(() => {});
-        throw new EngineError(
-          `"${rec.summary}" from the draft does not apply to the current data, so nothing was published: ${(e as Error).message}`,
-          'migration_failed',
-        );
+        if (i === chain.versions.length - 1) await w.retire();
+        else prev = w;
       }
-      await w.retire();
+    } finally {
+      await prev?.retire();
     }
     return { boots, archives, file, dataSteps };
   }

@@ -138,7 +138,10 @@ is documented here; the shell's tables, approvals and UI sit on top.
   started from changed, or if a `.prepublish` file is lying around. Inside the
   queue, calls drained: copy live, replay each draft version in order (one short
   worker per version, its stored definition and steps, the number it will get in
-  live; so add-then-rename works), write the result as ONE file (`VACUUM INTO`),
+  live; so add-then-rename works; a migration runs only at worker boot, so one
+  boot per version is inherent, but the previews of a data step (`previewLoad`,
+  `previewExtract`, `previewMerge`) run on the PREVIOUS version's worker, which
+  already holds that definition and data, not on a second worker, #5222), write the result as ONE file (`VACUUM INTO`),
   copy the old data to `snapshots/<ts>-0-migrate-prepublish.db`, write
   `publish-journal.json`, retire the live worker, rename `app.db` (+ `-wal`,
   `-shm`, `-journal`; main file last) to `<name>.prepublish`, rename the new file
