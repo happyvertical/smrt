@@ -304,8 +304,10 @@ export interface APIConfig {
    * Called with the request's principal once right after it is resolved, and
    * once per `sync/apply` item after that item was authorized, with the
    * route, model and action. Returning a `Response` answers the request with
-   * it: for a sync item, items not yet applied are not applied. A throw is a
-   * 500 with no detail. Without `resolvePrincipal` it receives the fixed
+   * it. For a sync item it rejects that item only, before any of it is
+   * applied (`auth_required` for a 401, otherwise `forbidden`), and the
+   * batch goes on. A throw is a 500 with no detail (a sync item:
+   * `write_failed`). Without `resolvePrincipal` it receives the fixed
    * {@link APIContext} principal.
    */
   onRequest?: (
@@ -2613,16 +2615,10 @@ export class APIGenerator {
       return this.createErrorResponse(400, 'Invalid JSON body');
     }
 
-    // An `onRequest` answer for one item answers the whole request; items
-    // after it are not applied.
-    const batch: { answer?: Response } = {};
     const outcome = await processSyncApplyBatch(body, {
       resolveTarget: (objectSegment) =>
-        batch.answer
-          ? null
-          : this.resolveSyncApplyTarget(objectSegment, req, rawBody, batch),
+        this.resolveSyncApplyTarget(objectSegment, req, rawBody),
     });
-    if (batch.answer) return batch.answer;
     return this.createJsonResponse(outcome.body, outcome.status);
   }
 
@@ -2635,7 +2631,6 @@ export class APIGenerator {
     objectSegment: string,
     req: Request,
     rawBody: string,
-    batch: { answer?: Response },
   ): Promise<SyncApplyTarget | null> {
     const principal = this.principalOf(req);
     let collection: SmrtCollection<SmrtObject> | null = null;
@@ -2842,24 +2837,23 @@ export class APIGenerator {
           return 'auth_required';
         }
         // The per-item seam for the host (#5198, #5199), after the item
-        // was authorized. An answer stops the batch.
-        let hooked: Response | undefined;
+        // was authorized and before anything of it is applied. An answer
+        // rejects this item only (401: `auth_required`, otherwise
+        // `forbidden`); a throw rejects it as `write_failed`. The rest of
+        // the batch goes on.
+        let answer: undefined | Response;
         try {
-          const answer = await this.config.onRequest?.(principal.principal, {
+          answer = await this.config.onRequest?.(principal.principal, {
             route: 'sync/apply',
             model: resolvedName,
             action: op,
           });
-          if (answer instanceof Response) hooked = answer;
         } catch (error) {
-          hooked = this.createJsonResponse(
-            reportUnexpectedHttpError(error, req),
-            500,
-          );
+          reportUnexpectedHttpError(error, req);
+          throw new SyncApplyRejection('write_failed');
         }
-        if (hooked) {
-          batch.answer = hooked;
-          return 'forbidden';
+        if (answer instanceof Response) {
+          return answer.status === 401 ? 'auth_required' : 'forbidden';
         }
         return 'ok';
       },

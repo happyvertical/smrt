@@ -9,7 +9,8 @@
  * - A write body naming another tenant is 403 `TENANT_MISMATCH`; a query
  *   filter on the tenant is removed unless the principal is cross-tenant.
  * - The principal is resolved once per request, sync batches included.
- * - `onRequest` sees each request and each sync item, and may answer it.
+ * - `onRequest` sees each request and each sync item, and may answer it;
+ *   an answer for a sync item rejects that item only.
  * - `_changes` and `_events` read in the principal's tenant.
  * - Without `resolvePrincipal`, behaviour is unchanged.
  *
@@ -768,26 +769,93 @@ for (const type of ['sqlite', 'postgres'] as const) {
         expect(await titles()).toEqual([]);
       });
 
-      it('stops a sync batch at the item it answers', async () => {
-        let items = 0;
+      it('rejects only the sync item it answers, with its reason', async () => {
         const api = handler({
           onRequest: (_principal, info) => {
             if (info.route !== 'sync/apply' || !info.model) return;
-            items += 1;
-            if (items === 2) return new Response('slow down', { status: 429 });
+            if (info.action === 'update') {
+              return new Response('slow down', { status: 429 });
+            }
+            if (info.action === 'delete') {
+              return new Response('sign in', { status: 401 });
+            }
+          },
+        });
+        const kept = await seedNote('kept', TENANT_A);
+        const response = await send(api, 'writer', 'POST', 'sync/apply', {
+          items: [
+            {
+              itemId: 'first',
+              object: noteSegment(),
+              op: 'create',
+              id: 'f0000000-0000-4000-8000-000000000001',
+              payload: { title: 'first' },
+            },
+            {
+              itemId: 'limited',
+              object: noteSegment(),
+              op: 'update',
+              id: kept,
+              payload: { title: 'changed' },
+            },
+            {
+              itemId: 'unsigned',
+              object: noteSegment(),
+              op: 'delete',
+              id: kept,
+            },
+            {
+              itemId: 'last',
+              object: noteSegment(),
+              op: 'create',
+              id: 'f0000000-0000-4000-8000-000000000002',
+              payload: { title: 'last' },
+            },
+          ],
+        });
+        expect(response.status).toBe(200);
+        expect(((await response.json()) as Rows).results).toEqual([
+          expect.objectContaining({ itemId: 'first', status: 'applied' }),
+          expect.objectContaining({
+            itemId: 'limited',
+            status: 'rejected',
+            reason: 'forbidden',
+          }),
+          expect.objectContaining({
+            itemId: 'unsigned',
+            status: 'rejected',
+            reason: 'auth_required',
+          }),
+          expect.objectContaining({ itemId: 'last', status: 'applied' }),
+        ]);
+        expect(await titles()).toEqual(['first', 'kept', 'last']);
+      });
+
+      it('rejects a sync item whose hook throws, and applies the rest', async () => {
+        const api = handler({
+          onRequest: (_principal, info) => {
+            if (info.route === 'sync/apply' && info.model) {
+              throw new Error('meter unavailable');
+            }
           },
         });
         const response = await send(api, 'writer', 'POST', 'sync/apply', {
-          items: ['first', 'second', 'third'].map((title, i) => ({
-            itemId: title,
-            object: noteSegment(),
-            op: 'create',
-            id: `f0000000-0000-4000-8000-00000000000${i}`,
-            payload: { title },
-          })),
+          items: [
+            {
+              itemId: 'only',
+              object: noteSegment(),
+              op: 'create',
+              id: 'f0000000-0000-4000-8000-000000000003',
+              payload: { title: 'x' },
+            },
+          ],
         });
-        expect(response.status).toBe(429);
-        expect(await titles()).toEqual(['first']);
+        expect(response.status).toBe(200);
+        expect(((await response.json()) as Rows).results[0]).toMatchObject({
+          status: 'rejected',
+          reason: 'write_failed',
+        });
+        expect(await titles()).toEqual([]);
       });
     });
 

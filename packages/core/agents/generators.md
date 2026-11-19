@@ -132,8 +132,9 @@ rate limits and metering (#5198, #5199): called once right after resolution
 `_preflight`, `custom` or `unmatched`; an object route names its model and
 `list` / `get` / `count` / `create` / `update` / `delete` or the custom
 action), and once per sync item after the item was authorized. A returned
-`Response` answers the request; for a sync item the batch stops there and
-items after it are not applied (earlier ones stay applied). A throw is a 500.
+`Response` answers the request. For a sync item it rejects that item only,
+before any of it is applied (`auth_required` for a 401, else `forbidden`),
+and the batch goes on. A throw is a 500 (a sync item: `write_failed`).
 
 Without `resolvePrincipal`, the tenant is `resolveTenant`'s answer or the
 fixed `APIContext` one, and the fixed principal applies to every request
