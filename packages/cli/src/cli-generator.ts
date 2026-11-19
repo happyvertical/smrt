@@ -2985,14 +2985,12 @@ export class CLIGenerator {
   ): Promise<SmrtCollection<SmrtObject>> {
     // Keyed by the owning model, never by the command name: when another
     // model comes to own the name, its handlers must not reuse the previous
-    // owner's collection (#5143).
+    // owner's collection (#5143). A cached collection is only valid while the
+    // model still binds exactly that collection class; a removed binding
+    // drops it.
     const classInfo = ObjectRegistry.getClass(registryKey);
     const cached = this.collections.get(registryKey);
-    if (
-      cached &&
-      classInfo?.collectionConstructor &&
-      cached.constructor !== classInfo.collectionConstructor
-    )
+    if (cached && cached.constructor !== classInfo?.collectionConstructor)
       this.collections.delete(registryKey);
     if (!this.collections.has(registryKey)) {
       if (!classInfo?.collectionConstructor) {

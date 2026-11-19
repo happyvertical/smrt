@@ -454,4 +454,46 @@ describe('a generated command that outlives a registry change', () => {
     expect(written[0]).toMatchObject({ title: 'kept' });
     expect(written[0]).not.toHaveProperty('secret');
   });
+
+  it('refuses a cached collection once its model no longer binds a collection class', async () => {
+    ObjectRegistry.clear();
+    class Gadget extends SmrtObject {}
+    class Gadgets extends SmrtCollection<InstanceType<typeof Gadget>> {
+      static readonly _itemClass = Gadget;
+    }
+    const bind = (withCollection: boolean) => {
+      ObjectRegistry.register(Gadget, {
+        name: 'Gadget',
+        packageName: '@fixture/c5143-gadget',
+        cli: true,
+      });
+      if (withCollection)
+        smrt({ packageName: '@fixture/c5143-gadget' })(Gadgets);
+    };
+    bind(true);
+    const db = await getTestDatabase({
+      type: 'sqlite',
+      url: ':memory:',
+      includeSystemTables: false,
+      classes: ['@fixture/c5143-gadget:Gadget'],
+    });
+    try {
+      const internal = new CLIGenerator(
+        { prompt: false, colors: false },
+        { db },
+      ) as unknown as {
+        getObjectCommandsLazy(name: string): Promise<CLICommand[]>;
+        getCollection(name: string): Promise<SmrtCollection<SmrtObject>>;
+      };
+      await internal.getObjectCommandsLazy('gadget');
+      expect(await internal.getCollection('gadget')).toBeInstanceOf(Gadgets);
+      ObjectRegistry.clear();
+      bind(false);
+      await expect(internal.getCollection('gadget')).rejects.toThrow(
+        /no collection constructor/,
+      );
+    } finally {
+      await db.close?.();
+    }
+  });
 });
