@@ -1128,8 +1128,10 @@ describe('repeated scans and project roots', () => {
     );
     expect(declared.errors).toEqual([]);
 
-    // A source file with no package.json above it within the tree.
-    const bare = mkdtempSync(join('/dev/shm', 'smrt-proof-bare-'));
+    // A source file with no package.json of its own above it. Whether the
+    // lookup then finds none or one above the temporary directory, neither
+    // declares the fixture package, so the import is undeclared either way.
+    const bare = mkdtempSync(join(tmpdir(), 'smrt-proof-bare-'));
     roots.push(bare);
     write(bare, {
       'src/Meeting.ts': CHILD(`import { Event } from '${PROVIDER}';`),
