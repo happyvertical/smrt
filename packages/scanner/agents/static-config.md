@@ -312,3 +312,15 @@ Repair each orphan by pointing it at an existing row or setting the column to
 `NULL` (an empty string is an orphan too), then run `smrt db:migrate`. A
 `RESTRICT` constraint then also refuses deleting a referenced row; delete or
 reassign the referencing rows first.
+
+**DuckDB.** These constraints carry SMRT's default `ON UPDATE CASCADE`, which
+DuckDB cannot enforce: the rebuild that adds one fails with `FOREIGN KEY
+constraints cannot use CASCADE, SET NULL or SET DEFAULT` even with no orphan
+rows, and the migrate changes nothing. Use PostgreSQL or SQLite for these
+tables. `smrt-assets`' and `smrt-manufacturing`'s own schemas already declare
+`assets.folder_id` and `products.default_operation_id` this way, so those
+tables were never creatable on DuckDB. For a relationship the app declares
+itself (`WorkOrder.productionRunId`), either set `onUpdate: 'NO ACTION'` (or
+`'RESTRICT'`) on the `@foreignKey`, and DuckDB then adds the constraint, or
+keep it off DuckDB with `constraint: { engines: ['postgres', 'sqlite'] }`
+(relationship loading and the app-side delete rule stay on every engine).
