@@ -882,6 +882,24 @@ describe('relationship targets and report sources', () => {
     expect(message).not.toContain("'Account.name'");
   });
 
+  it.each([
+    ['name', 'write `Owner` to keep that target', "'Owner'"],
+    ['email', "'<declared class name>.email'", "'Owner.email'"],
+  ])("never offers a default import's local name as a string for `Owner.%s`", async (member, offered, never) => {
+    // The runtime reads the declared name 'Account', not 'Owner'.
+    const scanned = await scanProject({
+      'src/models/account.ts': `${CORE}\n@smrt()\nexport default class Account extends SmrtObject {\n  email = '';\n}\n`,
+      'src/models/holder.ts': holder(
+        `import Owner from './account';`,
+        `@foreignKey(Owner.${member}) ownerId = '';`,
+      ),
+    });
+
+    expect(scanned.errors).toHaveLength(1);
+    expect(scanned.errors[0].message).toContain(offered);
+    expect(scanned.errors[0].message).not.toContain(never);
+  });
+
   it('rejects a relationship target imported through a tsconfig alias', async () => {
     const scanned = await scanProject({
       'tsconfig.json': JSON.stringify({

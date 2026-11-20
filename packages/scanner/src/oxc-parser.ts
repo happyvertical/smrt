@@ -4807,13 +4807,25 @@ function extractRelationshipTarget(
       start: argument.start,
       ...(owner
         ? {
-            hint:
-              reference.slice(dot + 1) === 'name'
-                ? // A class's `name` is its name string, which the decorator
-                  // reads as the class; the string 'X.name' would instead
-                  // reference a column `name`.
-                  `\`${reference}\` is the class's name, which the decorator reads as the class \`${owner.value}\`; write \`${reference.slice(0, dot)}\` (or '${owner.value}') to keep that target.`
-                : `\`${reference}\` is a property of \`${reference.slice(0, dot)}\`, not a class reference the scan reads. To target the class, write \`${reference.slice(0, dot)}\`; to target its column \`${reference.slice(dot + 1)}\`, write the string '${owner.value}${reference.slice(dot)}'.`,
+            // A default import's local name is not the class's name (the
+            // runtime reads the declared name), so no string is offered
+            // for it: only the binding, which the scan proves.
+            hint: (() => {
+              const binding = reference.slice(0, dot);
+              const member = reference.slice(dot + 1);
+              const isDefault = owner.import?.imported === 'default';
+              if (member === 'name') {
+                // A class's `name` is its name string, which the decorator
+                // reads as the class; the string 'X.name' would instead
+                // reference a column `name`.
+                return isDefault
+                  ? `\`${reference}\` is the class's declared name, which the decorator reads as that class; write \`${binding}\` to keep that target.`
+                  : `\`${reference}\` is the class's name, which the decorator reads as the class \`${owner.value}\`; write \`${binding}\` (or '${owner.value}') to keep that target.`;
+              }
+              return isDefault
+                ? `\`${reference}\` is a property of \`${binding}\`, not a class reference the scan reads. To target the class, write \`${binding}\`; to target its column \`${member}\`, write the string '<declared class name>.${member}' (the name the class is declared with, not this import's local name).`
+                : `\`${reference}\` is a property of \`${binding}\`, not a class reference the scan reads. To target the class, write \`${binding}\`; to target its column \`${member}\`, write the string '${owner.value}.${member}'.`;
+            })(),
           }
         : {}),
     });
