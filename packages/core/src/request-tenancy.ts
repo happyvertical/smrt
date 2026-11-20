@@ -1326,10 +1326,16 @@ async function storedRowOf(
   if (stiDescendants(ObjectRegistry.getSTIBase(key) ?? key).length === 0) {
     return undefined;
   }
-  const row = (await instance.db.get(instance.tableName, { id })) as Record<
-    string,
-    unknown
-  > | null;
+  // The canonical persisted-row read, as hydration and ownership use it, so
+  // a UUID owner column compares as the tenant's id on every adapter (a raw
+  // read of native DuckDB returns `{ hugeint }`).
+  const row = await (
+    instance as unknown as {
+      getCanonicalPersistedRow(
+        filter: Record<string, unknown>,
+      ): Promise<Record<string, unknown> | null>;
+    }
+  ).getCanonicalPersistedRow({ id });
   return row ?? undefined;
 }
 
