@@ -3,7 +3,7 @@
  * was admitted under, including models the route did not resolve, with the
  * real tenant interceptor on a SQLite file.
  *
- * Rows R2.4 to R2.9 of the #5375 round-2 matrix.
+ * Rows R2.4 to R2.9 and R2.12 of the #5375 round-2 matrix.
  */
 
 import { mkdtempSync, rmSync } from 'node:fs';
@@ -114,7 +114,22 @@ class EffScopeBook extends EffScopeShelf {}
 @smrt({ api: { include: ['list', 'get'] } })
 class EffScopeAtlas extends EffScopeShelf {}
 
+// An unscoped STI base keyed on `slug` across its types, and a scoped
+// subtype: the subtype's rows are not admitted through the base.
+@smrt({ tableStrategy: 'sti', conflictColumns: ['slug'] } as never)
+class EffScopeCrate extends SmrtObject {
+  @field({ type: 'text' }) title = '';
+  @field({ type: 'text', nullable: true }) tenantId: string | null = null;
+}
+class EffScopeCrateCollection extends SmrtCollection<EffScopeCrate> {
+  static readonly _itemClass = EffScopeCrate;
+}
+@smrt({})
+@TenantScoped({ mode: 'optional' })
+class EffScopeLockedCrate extends EffScopeCrate {}
+
 const ROW = {
+  lockedOfB: 'bbbbbbbb-0000-4000-8000-0000000000b2',
   bookOfA: 'aaaaaaaa-0000-4000-8000-0000000000a1',
   bookOfB: 'bbbbbbbb-0000-4000-8000-0000000000b1',
   atlas: 'cccccccc-0000-4000-8000-0000000000c1',
@@ -137,6 +152,7 @@ describe('every collection call of a request is held to its admitted tenancy', (
   let handler: (req: Request) => Promise<Response>;
   let desks: SmrtCollection<SmrtObject>;
   let shelves: SmrtCollection<SmrtObject>;
+  let crates: SmrtCollection<SmrtObject>;
 
   const titles = async (table: string) =>
     (await db.query(`SELECT title FROM ${table} ORDER BY title`)).rows.map(
@@ -175,6 +191,8 @@ describe('every collection call of a request is held to its admitted tenancy', (
         EffScopeShelf,
         EffScopeBook,
         EffScopeAtlas,
+        EffScopeCrate,
+        EffScopeLockedCrate,
       ].map((model) => keyOf(model)),
     });
     desks = (await EffScopeDeskCollection.create({
@@ -187,6 +205,9 @@ describe('every collection call of a request is held to its admitted tenancy', (
       db,
     })) as unknown as SmrtCollection<SmrtObject>;
     shelves = (await EffScopeShelfCollection.create({
+      db,
+    })) as unknown as SmrtCollection<SmrtObject>;
+    crates = (await EffScopeCrateCollection.create({
       db,
     })) as unknown as SmrtCollection<SmrtObject>;
     enableTenancy();
@@ -221,6 +242,14 @@ describe('every collection call of a request is held to its admitted tenancy', (
       await db.query(`DELETE FROM ${logs.tableName}`);
       await db.query(`DELETE FROM ${vaults.tableName}`);
       await db.query(`DELETE FROM ${shelves.tableName}`);
+      await db.query(`DELETE FROM ${crates.tableName}`);
+      await crates.create({
+        id: ROW.lockedOfB,
+        slug: 'shared',
+        title: 'locked crate of b',
+        tenantId: TENANT_B,
+        _meta_type: keyOf(EffScopeLockedCrate),
+      } as never);
       await desks.create({ title: 'desk' } as never);
       await logs.create({ title: 'log of a', tenantId: TENANT_A } as never);
       await logs.create({ title: 'log of none' } as never);
@@ -411,6 +440,45 @@ describe('every collection call of a request is held to its admitted tenancy', (
       expect(await read({ id: ROW.atlas, '_meta_type in': [book] })).toBeNull();
       const found = await read({ id: ROW.bookOfA, '_meta_type in': [book] });
       expect(found?.id).toBe(ROW.bookOfA);
+    });
+  });
+
+  describe('a natural-key save never adopts a row of a type the request does not admit (R2.12)', () => {
+    it('a base create whose key matches an excluded subtype row writes no change to it', async () => {
+      const outcome = await inRequestScope(() =>
+        runInRequestTenancy(
+          {
+            model: keyOf(EffScopeCrate),
+            operation: 'create',
+            principal: { tenantId: TENANT_A },
+          },
+          () =>
+            crates
+              .create({
+                slug: 'shared',
+                title: 'taken over',
+                tenantId: TENANT_B,
+              } as never)
+              .then(
+                () => 'saved',
+                (cause: unknown) => cause,
+              ),
+        ),
+      );
+      expect(outcome).not.toBe('saved');
+      const rows = (
+        await db.query(
+          `SELECT id, title, tenant_id, _meta_type FROM ${crates.tableName}`,
+        )
+      ).rows.map((row) => [row.id, row.title, row.tenant_id, row._meta_type]);
+      expect(rows).toEqual([
+        [
+          ROW.lockedOfB,
+          'locked crate of b',
+          TENANT_B,
+          keyOf(EffScopeLockedCrate),
+        ],
+      ]);
     });
   });
 });

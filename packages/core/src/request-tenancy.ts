@@ -1164,6 +1164,32 @@ function assertWritable(
 }
 
 /**
+ * Refuse a natural-key save that would adopt a stored row of a type the
+ * bound request does not admit. The save's own type was admitted when it
+ * began (`beforeSave`), but a key shared across the family's types can
+ * match a row of another type, read directly from the table: that row is
+ * held to the types the request reads, like any stored row it writes.
+ *
+ * @param key - Registry key of the class being saved
+ * @param stored - The stored row the save would adopt
+ */
+export function assertAdoptableStoredRow(
+  key: string,
+  stored: Record<string, unknown>,
+): void {
+  const t = getResolvedTenancy();
+  if (!t || !inFamily(t, key)) return;
+  const type = stored._meta_type;
+  if (typeof type !== 'string' || !t.admitted?.has(type)) {
+    throw new RequestTenancyError(
+      403,
+      'TENANT_MEMBER_EXCLUDED',
+      'This route does not serve that type.',
+    );
+  }
+}
+
+/**
  * The membership predicate of a point read on the family table. A child
  * collection replaces any `_meta_type in` list with its own subtree (an
  * owned key), so the registered family members that are not admitted are
