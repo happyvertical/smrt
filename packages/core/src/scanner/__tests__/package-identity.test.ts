@@ -1318,6 +1318,42 @@ describe('a collection of a package model', () => {
     expect(crud(accounts)).toEqual([]);
     expect(crud(manifest.objects[`${APP}:Account`]).length).toBe(5);
   });
+
+  // A static `_itemClass` fixes the item before the position of the type
+  // parameter an ancestor passes on is considered.
+  it('gives a collection using the defaults of a generic ancestor the closed _itemClass it declares', async () => {
+    const root = await project({
+      providers: {},
+      app: {
+        'src/Account.ts': `${CORE}\n@smrt({ tableName: 'app_accounts' })\nexport class Account extends SmrtObject {}\n`,
+        'src/PrivateEntry.ts': `${CORE}\n@smrt({ api: false, tableName: 'private_entries' })\nexport class PrivateEntry extends SmrtObject {\n  hidden = '';\n}\n`,
+        'src/Pair.ts': `${CORE}\nimport { PrivateEntry } from './PrivateEntry';\nexport abstract class Pair<Tag = string, Row extends SmrtObject = PrivateEntry> extends SmrtCollection<Row> {\n  static readonly _itemClass = PrivateEntry;\n}\n`,
+        'src/AccountCollection.ts': `${CORE}\nimport { Pair } from './Pair';\nexport class AccountCollection extends Pair {}\n`,
+      },
+    });
+
+    const manifest = await build(root);
+    const accounts = manifest.objects[`${APP}:AccountCollection`];
+    expect(accounts?.collectionOf).toBe(`${APP}:PrivateEntry`);
+    expect(accounts?.decoratorConfig?.tableName).toBe('private_entries');
+    expect(crud(accounts)).toEqual([]);
+    expect(crud(manifest.objects[`${APP}:Account`]).length).toBe(5);
+  });
+
+  it('fails generation for a collection naming no item below an ancestor that fixes no model', async () => {
+    const root = await project({
+      providers: {},
+      app: {
+        'src/Account.ts': `${CORE}\n@smrt({ tableName: 'app_accounts' })\nexport class Account extends SmrtObject {}\n`,
+        'src/Entries.ts': `${CORE}\nexport abstract class EntryCollection extends SmrtCollection<any> {}\n`,
+        'src/AccountCollection.ts': `${CORE}\nimport { EntryCollection } from './Entries';\nexport class AccountCollection extends EntryCollection {}\n`,
+      },
+    });
+
+    await expect(build(root)).rejects.toThrow(
+      'declare the item with a static _itemClass',
+    );
+  });
 });
 
 describe('open control', () => {

@@ -228,9 +228,18 @@ replaced by that item, a subclass that passes neither a type argument nor an
 `_itemClass` records that item too (never one inferred from its own name),
 and a static `_itemClass` narrows it to the model it names
 (`EmailCollection extends MessageCollection`, `_itemClass = Email`). An
-ancestor that passes on another type parameter than its first cannot be
-followed below a class that passes a type argument: make the item type
-parameter the first one.
+ancestor's proven static `_itemClass` fixes the item whichever type
+parameter it passes on, a defaulted later one included. A collection the
+scan cannot map to one item is a scan error unless it declares its own
+static `_itemClass`: below an ancestor that passes on another type
+parameter than its first (make the item type parameter the first one), below
+an ancestor that fixes no model (`SmrtCollection<any>`, a framework class or
+no type argument, and no `_itemClass`), and below a generic ancestor when it
+passes no type argument or a type keyword (give it an explicit type
+argument). Only a generic collection passing its own type parameter on
+(`class TypedCollection<T> extends BaseCollection<T>`) leaves the item to
+its subclasses. The scan never records no item for such a collection, which
+would let generation infer one from the collection's name.
 
 **Framework base names are reserved.** A scanned class named `SmrtObject`,
 `SmrtClass`, `SmrtCollection`, `SmrtJunction`, `SmrtJunctionBase`,
@@ -401,6 +410,7 @@ now stops the build. The message names the file, class and member.
 | A relationship target, report source or collection item that is a plain class, or a stand-in for another package | Reference the model class |
 | A static `_itemClass` naming another class than `SmrtCollection<Item>` | Name the same model in both |
 | A collection below a scanned generic collection whose item is a plain class, or a stand-in beside a model of the package with its name, or that passes a type argument below an ancestor passing on another type parameter than its first | Name a model of the package; make the item type parameter the first one, or extend the framework base directly |
+| A collection with no static `_itemClass` of its own below an ancestor that maps it to no one item: one passing on another type parameter than its first, one fixing no model (a type keyword, a framework class or no type argument, and no `_itemClass`), or a generic one when the collection passes no type argument or a type keyword | Declare the item with a static `_itemClass`, or give the collection an explicit type argument naming the item model |
 | A collection over its own type parameter or a type keyword whose static `_itemClass` is not a class reference, cannot be proven like a parent, or is not a model | Make `_itemClass` name the item model class |
 | A module exporting another binding under a model's class name (`export { Other as Model }`, `export { Model } from '@other/pkg'`, a barrel re-exporting a plain class of the name) | Export each model under its own class name; rename the other class |
 | `CONFIG_UNRESOLVED_IMPORTED_PARENT`: a parent (or collection item) from another package whose manifest does not declare it under exactly that name (a model whose name differs only in case is not it), that is installed without a manifest, whose manifest records no `importPath`, that is imported from another entry than the one the manifest records, or that the package only re-exports; an `extendsQualified` that is not a qualified name; or an ancestor, at any depth of the provider chain, that a provider parent passes on from a third package installed in two different copies (the provider's and the root's, differing in path and in version or shipped manifest) | Import it by its exact name from the package that declares it, at the entry its manifest records; build that package with this version so its manifest exists; declare it as a dependency; install one copy of a duplicated package |

@@ -1681,6 +1681,82 @@ describe('collection items through an app-level generic collection', () => {
       manifest().objects[`${PACKAGE}:TypedCollection`]?.extendsTypeArg,
     ).toBeUndefined();
   });
+
+  it('takes the static _itemClass of a generic ancestor that passes a defaulted later type parameter on', async () => {
+    const { errors, manifest } = await scanProject({
+      'src/models/Account.ts': OPEN_BASE('Account'),
+      'src/models/Closed.ts': CLOSED_BASE('PrivateEntry'),
+      'src/collections/Pair.ts': `${CORE}\nimport { PrivateEntry } from '../models/Closed';\nexport abstract class Pair<Tag = string, Row extends SmrtObject = PrivateEntry> extends SmrtCollection<Row> {\n  static readonly _itemClass = PrivateEntry;\n}\n`,
+      'src/collections/AccountCollection.ts': `${CORE}\nimport { Account } from '../models/Account';\nimport { Pair } from './Pair';\nexport class AccountCollection extends Pair {}\nexport class TaggedAccounts extends Pair<string, Account> {}\n`,
+    });
+
+    expect(errors).toEqual([]);
+    const objects = manifest().objects;
+    for (const name of ['AccountCollection', 'TaggedAccounts']) {
+      expect(objects[`${PACKAGE}:${name}`]?.extendsTypeArg).toBe(
+        'PrivateEntry',
+      );
+    }
+  });
+
+  it('rejects a subclass naming no item below an ancestor that passes another type parameter than its first, unless it declares _itemClass', async () => {
+    const { errors, manifest } = await scanProject({
+      'src/models/Account.ts': OPEN_BASE('Account'),
+      'src/models/Closed.ts': CLOSED_BASE('PrivateEntry'),
+      'src/collections/Pair.ts': `${CORE}\nimport { PrivateEntry } from '../models/Closed';\nexport abstract class PairCollection<Tag = string, T extends SmrtObject = PrivateEntry> extends SmrtCollection<T> {}\n`,
+      'src/collections/AccountCollection.ts': `${CORE}\nimport { PairCollection } from './Pair';\nexport class AccountCollection extends PairCollection {}\n`,
+      'src/collections/Declared.ts': `${CORE}\nimport { PrivateEntry } from '../models/Closed';\nimport { PairCollection } from './Pair';\nexport class DeclaredEntries extends PairCollection {\n  static readonly _itemClass = PrivateEntry;\n}\n`,
+    });
+
+    expect(errors).toHaveLength(1);
+    expect(errors[0].message).toContain('AccountCollection');
+    expect(errors[0].message).toContain('static _itemClass');
+    const objects = manifest().objects;
+    expect(objects[`${PACKAGE}:AccountCollection`]?.extendsTypeArg).toBe(
+      undefined,
+    );
+    expect(objects[`${PACKAGE}:DeclaredEntries`]?.extendsTypeArg).toBe(
+      'PrivateEntry',
+    );
+  });
+
+  it('rejects a subclass naming no item below an ancestor over a type keyword with no _itemClass, unless it declares _itemClass', async () => {
+    const { errors, manifest } = await scanProject({
+      'src/models/Account.ts': OPEN_BASE('Account'),
+      'src/models/Closed.ts': CLOSED_BASE('PrivateEntry'),
+      'src/collections/Entries.ts': `${CORE}\nexport abstract class EntryCollection extends SmrtCollection<any> {}\n`,
+      'src/collections/AccountCollection.ts': `${CORE}\nimport { Account } from '../models/Account';\nimport { EntryCollection } from './Entries';\nexport class AccountCollection extends EntryCollection {}\n`,
+      'src/collections/Declared.ts': `${CORE}\nimport { PrivateEntry } from '../models/Closed';\nimport { EntryCollection } from './Entries';\nexport class DeclaredEntries extends EntryCollection {\n  static readonly _itemClass = PrivateEntry;\n}\n`,
+    });
+
+    expect(errors).toHaveLength(1);
+    expect(errors[0].message).toContain('AccountCollection');
+    expect(errors[0].message).toContain('static _itemClass');
+    const objects = manifest().objects;
+    expect(objects[`${PACKAGE}:AccountCollection`]?.extendsTypeArg).toBe(
+      undefined,
+    );
+    expect(objects[`${PACKAGE}:DeclaredEntries`]?.extendsTypeArg).toBe(
+      'PrivateEntry',
+    );
+  });
+
+  it('rejects a subclass passing no type argument or a type keyword to a generic ancestor with a defaulted item parameter', async () => {
+    const { errors } = await scanProject({
+      'src/models/Account.ts': OPEN_BASE('Account'),
+      'src/models/Closed.ts': CLOSED_BASE('PrivateEntry'),
+      'src/collections/BaseCollection.ts': `${CORE}\nimport { PrivateEntry } from '../models/Closed';\nexport abstract class BaseCollection<T extends SmrtObject = PrivateEntry> extends SmrtCollection<T> {}\n`,
+      'src/collections/AccountCollection.ts': `${CORE}\nimport { BaseCollection } from './BaseCollection';\nexport class AccountCollection extends BaseCollection {}\nexport class AnyAccounts extends BaseCollection<any> {}\n`,
+      'src/collections/Named.ts': `${CORE}\nimport { PrivateEntry } from '../models/Closed';\nimport { BaseCollection } from './BaseCollection';\nexport class NamedEntries extends BaseCollection<PrivateEntry> {}\n`,
+    });
+
+    expect(errors).toHaveLength(2);
+    const text = messages(errors);
+    expect(text).toContain('AccountCollection');
+    expect(text).toContain('AnyAccounts');
+    expect(text).toContain('explicit type argument');
+    expect(text).not.toContain('NamedEntries');
+  });
 });
 
 describe('repeated scans and project roots', () => {

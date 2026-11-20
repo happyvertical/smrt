@@ -124,6 +124,9 @@ const ITEM_COLLECTION_BASES: ReadonlySet<string> = new Set([
   'SmrtReportCollection',
 ]);
 
+/** The fix a scan error names when a collection's item maps to no model. */
+const DECLARE_ITEM_FIX = 'declare the item with a static _itemClass';
+
 /**
  * How a scanned class decides the item of the collections that extend it
  * (see `InheritanceResolver.itemShape`).
@@ -1192,9 +1195,15 @@ export class InheritanceResolver {
    *   recorded in its place; a static `_itemClass` names the item the class
    *   narrows it to (proven like a parent); a class that passes neither
    *   records the ancestor's item, which it holds at runtime.
-   * - A class with a type argument below an ancestor that passes on another
-   *   type parameter than its first: the item cannot be followed, which is a
-   *   scan error.
+   * - A class whose ancestry maps it to no single item names it with its own
+   *   static `_itemClass`, or the scan fails: below an ancestor that passes
+   *   on another type parameter than its first, below an ancestor that fixes
+   *   no model (a type keyword, a framework class or no type argument, and
+   *   no `_itemClass`), and below a generic ancestor when the class passes
+   *   no type argument or a type keyword. Only a generic class passing its
+   *   own type parameter on is left to its subclasses. A proven static
+   *   `_itemClass` an ancestor declares fixes the item before the position
+   *   of the type parameter it passes on is considered.
    *
    * `null` when no item model is named (the class's own type parameter or a
    * type keyword with no `_itemClass` naming a model), and after an error:
@@ -1225,13 +1234,34 @@ export class InheritanceResolver {
     }
     const shape = this.itemShape(parent);
     if (shape.kind === 'none') return undefined;
+    const ownItemClass = this.itemClassField(classDef)?.initializer;
     if (shape.kind === 'unmapped') {
-      if (!classDef.extendsTypeArg) return undefined;
+      // The ancestry decides no single item: only the class's own static
+      // `_itemClass` names it. Recording no item would let generation
+      // infer one from the class's name, whatever the runtime holds.
+      if (ownItemClass) return this.proveRuntimeItem(classDef);
       this.itemErrors.set(classDef, shape.reason);
       return null;
     }
     if (shape.kind === 'parameter') {
-      return this.proveOwnItem(classDef, parent.className);
+      const item = this.proveOwnItem(classDef, parent.className);
+      const head = classDef.extendsTypeArg?.split(/[.<]/)[0];
+      // A generic subclass that passes its own type parameter on names no
+      // item yet; its own subclasses do. Any other subclass must name one.
+      if (
+        item === null &&
+        !ownItemClass &&
+        !this.itemErrors.has(classDef) &&
+        !(head && classDef.typeParameters?.includes(head))
+      ) {
+        this.itemErrors.set(
+          classDef,
+          `its collection item cannot be mapped to one model: ${parent.className} (${parent.filePath}) leaves the item ` +
+            `to its type parameter, and ${classDef.className} names no model for it; give ${classDef.className} an explicit type argument ` +
+            `naming the item model, or ${DECLARE_ITEM_FIX}`,
+        );
+      }
+      return item;
     }
     // An ancestor fixes the item: the class's own type argument is not it.
     // A static `_itemClass` names the item the class narrows it to (a
@@ -1239,9 +1269,7 @@ export class InheritanceResolver {
     // class that names neither holds the ancestor's item at runtime (it
     // inherits the static `_itemClass`), so it records that item: generation
     // must never infer another item from the class's own name.
-    if (this.itemClassField(classDef)?.initializer) {
-      return this.proveRuntimeItem(classDef);
-    }
+    if (ownItemClass) return this.proveRuntimeItem(classDef);
     return shape.item;
   }
 
@@ -1249,9 +1277,11 @@ export class InheritanceResolver {
    * How a scanned class decides the item of the collections that extend it:
    * not at all (`none`: no collection over a framework item base through
    * scanned classes), by its first type parameter (`parameter`), by an item
-   * it fixes itself (`item`), or in a way the scan cannot follow
-   * (`unmapped`: another type parameter than the first is passed on, since
-   * the scan records a subclass's first type argument only).
+   * it fixes itself (`item`), or in a way that maps a subclass to no single
+   * item (`unmapped`: another type parameter than the first is passed on,
+   * since the scan records a subclass's first type argument only, or the
+   * class fixes no model); a subclass of an `unmapped` class must declare its
+   * own static `_itemClass`.
    */
   private itemShape(definition: RawClassDefinition): ItemShape {
     const cached = this.itemShapeCache.get(definition);
@@ -1279,43 +1309,73 @@ export class InheritanceResolver {
     } else {
       return { kind: 'none' };
     }
-    if (passes.kind === 'none' || passes.kind === 'unmapped') return passes;
+    if (passes.kind === 'none') return passes;
+    // A static `_itemClass` this class declares is the constructor every
+    // subclass inherits, whatever type parameters it passes on: a proven one
+    // fixes the item before parameter position decides anything.
+    const ownItemClass = this.itemClassField(definition)?.initializer;
+    if (passes.kind === 'unmapped') {
+      return ownItemClass
+        ? { kind: 'item', item: this.proveRuntimeItem(definition) }
+        : passes;
+    }
     if (passes.kind === 'parameter') {
       const argument = definition.extendsTypeArg;
       const head = argument?.split(/[.<]/)[0];
       const index = head
         ? (definition.typeParameters?.indexOf(head) ?? -1)
         : -1;
-      if (index === 0) {
-        // A static `_itemClass` this class declares is the constructor every
-        // subclass inherits, whatever type argument it passes: it fixes the
-        // item, which a subclass may only narrow with its own `_itemClass`.
-        return this.itemClassField(definition)?.initializer
-          ? { kind: 'item', item: this.proveRuntimeItem(definition) }
-          : { kind: 'parameter' };
-      }
-      if (index > 0) {
+      if (index >= 0) {
+        // The class passes one of its type parameters on. Its own static
+        // `_itemClass` fixes the item, which a subclass may only narrow with
+        // its own `_itemClass`.
+        if (ownItemClass) {
+          return this.fixedItem(definition, this.proveRuntimeItem(definition));
+        }
+        if (index === 0) return { kind: 'parameter' };
         return {
           kind: 'unmapped',
           reason:
             `its collection item cannot be followed through ${definition.className} (${definition.filePath}), which passes its type parameter ` +
             `${head} to ${link.name}, not its first; the scan reads only the first type argument of a subclass, so make the item type parameter ` +
-            `the first one of ${definition.className}, or extend ${link.name} directly`,
+            `the first one of ${definition.className}, extend ${link.name} directly, or ${DECLARE_ITEM_FIX}`,
         };
       }
     }
     if (passes.kind === 'item') {
       // An ancestor fixed the item; a static `_itemClass` narrows it.
-      return {
-        kind: 'item',
-        item: this.itemClassField(definition)?.initializer
-          ? this.proveRuntimeItem(definition)
-          : passes.item,
-      };
+      return ownItemClass
+        ? this.fixedItem(definition, this.proveRuntimeItem(definition))
+        : passes;
+    }
+    let item = this.proveItem(definition, link) ?? null;
+    if (item === null && ownItemClass && !this.itemErrors.has(definition)) {
+      item = this.proveRuntimeItem(definition);
+    }
+    return this.fixedItem(definition, item);
+  }
+
+  /**
+   * The shape of a class that fixes `item` for its subclasses. A class that
+   * fixes no model (its type argument is a type keyword, a framework class
+   * or missing, and no static `_itemClass` names a model) maps its
+   * subclasses to no single item: `unmapped`, so a subclass that declares no
+   * `_itemClass` of its own fails the scan instead of recording no item
+   * (which would let generation infer one from the subclass's name). After
+   * an error the class itself already fails the scan.
+   */
+  private fixedItem(
+    definition: RawClassDefinition,
+    item: Proof | null,
+  ): ItemShape {
+    if (item !== null || this.itemErrors.has(definition)) {
+      return { kind: 'item', item };
     }
     return {
-      kind: 'item',
-      item: this.proveItem(definition, link) ?? null,
+      kind: 'unmapped',
+      reason:
+        `its collection item cannot be mapped to one model: ${definition.className} (${definition.filePath}) names no item model ` +
+        `(no model type argument, no static _itemClass naming one); ${DECLARE_ITEM_FIX} on ${definition.className} or on this class`,
     };
   }
 
