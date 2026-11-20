@@ -27,6 +27,15 @@ import {
 } from './commands.ts';
 import { assertLoadBounds, type LoadPreview } from './data-migrations.ts';
 import {
+  assertDatabaseConfig,
+  type DatabaseConfig,
+  dialectFor,
+  type EngineDialect,
+  type HostDatabase,
+  requireSnapshots,
+  SQLITE,
+} from './db/index.ts';
+import {
   type AppDefinition,
   builtInFields,
   describeApp,
@@ -41,8 +50,6 @@ import {
   restRouteAllowed,
   type Step,
   snake,
-  sqlType,
-  storageFamily,
   tableFor,
   toolNamesFor,
   validate,
@@ -119,6 +126,13 @@ export interface HostOptions {
    * there is no setter, so it cannot be turned on later or for the live host.
    */
   autoApprove?: boolean;
+  /**
+   * The database the app runs on (see `DatabaseConfig`). Default: SQLite in
+   * `dataDir`, as the desktop does. A PostgreSQL config needs its schema; one
+   * without it refuses to open. The host owns a PGlite client it was given
+   * only in the sense of serving it to workers: closing it stays the caller's.
+   */
+  database?: DatabaseConfig;
 }
 
 export interface ForkDraftOptions {
@@ -328,6 +342,16 @@ export class AppHost extends EventEmitter {
   private store: VersionStore;
   private workerUrl: URL | string;
   private workerLimits: WorkerLimits | undefined;
+  private database: DatabaseConfig;
+  private dialect: EngineDialect;
+  private releaseDatabase?: () => Promise<void>;
+  /**
+   * What the chosen database cannot do yet, said plainly. On PostgreSQL there
+   * is no pre-change copy, so a method run or schema change has no undo point
+   * (#5187). Exposed for the shell, and for #5187, to surface to the owner;
+   * nothing in this package displays it.
+   */
+  readonly notices: string[] = [];
   private app!: AppWorker;
   private closed = false;
   #autoApprove = false;
@@ -342,9 +366,20 @@ export class AppHost extends EventEmitter {
   /** Changes are applied one at a time. Work inside the queue must not wait on it. */
   private queue: Promise<unknown> = Promise.resolve();
 
-  private constructor(dataDir: string, opts: HostOptions) {
+  private constructor(
+    dataDir: string,
+    opts: HostOptions,
+    database: HostDatabase,
+  ) {
     super();
     this.dataDir = dataDir;
+    this.database = database.config;
+    this.dialect = dialectFor(database.config);
+    this.releaseDatabase = database.release;
+    if (!this.dialect.snapshots)
+      this.notices.push(
+        'No undo point for method runs on this database: PostgreSQL has no pre-change copy yet (#5187).',
+      );
     this.store = opts.store;
     this.workerUrl = opts.workerUrl ?? defaultWorkerUrl();
     this.workerLimits = opts.workerLimits;
@@ -363,8 +398,15 @@ export class AppHost extends EventEmitter {
         );
     }
     mkdirSync(join(dataDir, 'snapshots'), { recursive: true });
-    const host = new AppHost(dataDir, opts);
-    await host.boot();
+    if (opts.database) assertDatabaseConfig(opts.database);
+    const database: HostDatabase = { config: opts.database ?? SQLITE };
+    const host = new AppHost(dataDir, opts, database);
+    try {
+      await host.boot();
+    } catch (e) {
+      await host.releaseDatabase?.();
+      throw e;
+    }
     return host;
   }
 
@@ -414,6 +456,7 @@ export class AppHost extends EventEmitter {
       version,
       migration,
       limits: this.workerLimits,
+      database: this.database,
     });
   }
 
@@ -514,7 +557,9 @@ export class AppHost extends EventEmitter {
   ): Promise<ChangeResult> {
     const errs = [
       ...validate(next),
-      ...refuseChanges(this.def, next, converting),
+      ...refuseChanges(this.def, next, converting, (t) =>
+        this.dialect.columnType(t),
+      ),
     ];
     if (errs.length) throw new EngineError(errs.join('\n'));
     const v = (await this.store.maxVersion()) + 1;
@@ -1230,7 +1275,8 @@ export class AppHost extends EventEmitter {
       type: string;
       generated: boolean;
     } | null>('columnInfo', table, snake(field));
-    if (info && storageFamily(info.type) !== storageFamily(sqlType(to.type)))
+    const { storageFamily, columnType } = this.dialect;
+    if (info && storageFamily(info.type) !== storageFamily(columnType(to.type)))
       throw new EngineError(
         'existing column has a different storage family; change its type explicitly',
       );
@@ -1245,7 +1291,11 @@ export class AppHost extends EventEmitter {
                   ? 'number'
                   : family === 'date'
                     ? 'date'
-                    : 'text',
+                    : family === 'boolean'
+                      ? 'boolean'
+                      : family === 'json'
+                        ? 'json'
+                        : 'text',
           })
         : undefined;
     return {
@@ -1804,6 +1854,11 @@ export class AppHost extends EventEmitter {
    * the draft is open; the caller freezes live structure with `setFrozen`.
    */
   forkDraft(draftDir: string, opts: ForkDraftOptions): Promise<AppHost> {
+    try {
+      requireSnapshots(this.database, 'a draft');
+    } catch (e) {
+      return Promise.reject(e);
+    }
     if (this.draft)
       return Promise.reject(
         new EngineError('a draft cannot be forked again', 'refused'),
@@ -2081,6 +2136,7 @@ export class AppHost extends EventEmitter {
    * while the copy is taken). `digest` pins the answer for `publishDraft`.
    */
   async previewPublish(draft: AppHost): Promise<PublishPreview> {
+    requireSnapshots(this.database, 'publishing a draft');
     const ctx = await this.run(async () => {
       const { chain, digest } = await this.publishInputs(draft);
       await this.drainInflight();
@@ -2168,6 +2224,11 @@ export class AppHost extends EventEmitter {
    * Live records wait (not fail) while this runs. The caller discards the draft.
    */
   publishDraft(draft: AppHost, opts: PublishOptions): Promise<PublishResult> {
+    try {
+      requireSnapshots(this.database, 'publishing a draft');
+    } catch (e) {
+      return Promise.reject(e);
+    }
     if (!opts || typeof opts.author !== 'string' || !opts.author)
       return Promise.reject(new EngineError('publish needs an author'));
     if (typeof opts.expect !== 'string' || !opts.expect)
@@ -2374,6 +2435,7 @@ export class AppHost extends EventEmitter {
         def: this.def,
         version: this.version,
         limits: this.workerLimits,
+        database: this.database,
         readOnly: true,
       });
       let timer: ReturnType<typeof setTimeout> | undefined;
@@ -2566,6 +2628,7 @@ export class AppHost extends EventEmitter {
     await this.queue;
     this.closed = true;
     await this.app.terminate();
+    await this.releaseDatabase?.();
   }
 }
 

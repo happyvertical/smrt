@@ -18,6 +18,16 @@ import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, renameSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { openAppDatabase } from './app-runtime.ts';
+import { requireSnapshots as requireSqliteHost0 } from './db/index.ts';
+import * as sqlite from './db/sqlite.ts';
+import type { DatabaseKind } from './db/types.ts';
+
+/** Export and import read and write an `app.db` file: a host on another database must not use them. */
+const requireSqliteHost = (
+  database: { kind: DatabaseKind } | undefined,
+  what: string,
+) => requireSqliteHost0(database ?? { kind: 'sqlite' }, what);
+
 import { type AppDefinition, validate } from './definition.ts';
 import { EngineError } from './errors.ts';
 import { AppHost } from './host.ts';
@@ -87,10 +97,14 @@ export interface ExportUserAppOptions {
   dataDir: string;
   /** Version history of the app, oldest first (the caller's VersionStore). */
   versions: VersionRecord[];
+  /** The database the host runs the app on; anything but SQLite is refused. */
+  database?: { kind: DatabaseKind };
 }
 
 export interface ImportUserAppOptions {
   dataDir: string;
+  /** The database the host runs the app on; anything but SQLite is refused. */
+  database?: { kind: DatabaseKind };
   bundle: PortableUserApp;
   /** Test seam: observe phases (`staged`, `verified`, `published`). */
   onPhase?: (phase: string) => void | Promise<void>;
@@ -206,12 +220,7 @@ interface TableData {
 
 /** Every real table the move carries (not the engine's meta, not virtual). */
 async function tableNames(h: Handle): Promise<string[]> {
-  const rows = (
-    await h.query(
-      `SELECT name, sql FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite\\_%' ESCAPE '\\' AND name <> ? ORDER BY name`,
-      [META_TABLE],
-    )
-  ).rows as Array<{ name: string; sql: string | null }>;
+  const rows = await sqlite.listTables(h, META_TABLE);
   const virtual = rows.find((r) => /^\s*CREATE\s+VIRTUAL/i.test(r.sql ?? ''));
   if (virtual)
     throw new EngineError(
@@ -221,40 +230,13 @@ async function tableNames(h: Handle): Promise<string[]> {
   return rows.map((r) => r.name);
 }
 
-/** Stored columns only: generated columns are recomputed by the database. */
-async function storedColumns(h: Handle, table: string): Promise<string[]> {
-  const rows = (
-    await h.query(
-      `SELECT name FROM pragma_table_xinfo(?) WHERE hidden = 0 ORDER BY cid`,
-      [table],
-    )
-  ).rows as Array<{ name: string }>;
-  return rows.map((r) => String(r.name));
-}
-
 async function readTables(h: Handle): Promise<TableData[]> {
   const out: TableData[] = [];
   for (const name of await tableNames(h)) {
-    const columns = await storedColumns(h, name);
-    const rows = (
-      await h.query(
-        `SELECT ${columns.map(q).join(', ')} FROM ${q(name)} ORDER BY rowid`,
-      )
-    ).rows as Array<Record<string, unknown>>;
-    const createSql = String(
-      (
-        await h.query(
-          `SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?`,
-          [name],
-        )
-      ).rows[0]?.sql ?? '',
-    );
-    const indexSql = (
-      await h.query(
-        `SELECT sql FROM sqlite_master WHERE type = 'index' AND tbl_name = ? AND sql IS NOT NULL ORDER BY name`,
-        [name],
-      )
-    ).rows.map((r: { sql: string }) => String(r.sql));
+    const columns = await sqlite.storedColumns(h, name);
+    const rows = await sqlite.selectAllRows(h, name, columns);
+    const createSql = await sqlite.tableCreateSql(h, name);
+    const indexSql = await sqlite.tableIndexSql(h, name);
     out.push({ name, columns, createSql, indexSql, rows });
   }
   return out;
@@ -263,12 +245,7 @@ async function readTables(h: Handle): Promise<TableData[]> {
 async function readMeta(
   h: Handle,
 ): Promise<{ version: number; definition: AppDefinition } | null> {
-  const has = (
-    await h.query(`SELECT 1 AS x FROM sqlite_master WHERE name = ?`, [
-      META_TABLE,
-    ])
-  ).rows;
-  if (!has.length) return null;
+  if (!(await sqlite.hasObject(h, META_TABLE))) return null;
   const rows = (await h.query(`SELECT key, value FROM ${META_TABLE}`))
     .rows as Array<{ key: string; value: string }>;
   const get = (k: string) => rows.find((r) => r.key === k)?.value;
@@ -317,6 +294,7 @@ export function hasUserAppDatabase(dataDir: string): boolean {
 export async function exportUserApp(
   options: ExportUserAppOptions,
 ): Promise<PortableUserApp> {
+  requireSqliteHost(options.database, 'exporting the app');
   if (!hasUserAppDatabase(options.dataDir))
     throw new EngineError('there is no user app database to export', 'refused');
   const h = await openAppDatabase(options.dataDir);
@@ -389,20 +367,20 @@ export interface UserAppInspection {
 /** Integrity and readability of the user app database in `dataDir`. */
 export async function inspectUserApp(options: {
   dataDir: string;
+  database?: { kind: DatabaseKind };
 }): Promise<UserAppInspection> {
+  requireSqliteHost(options.database, 'inspecting the app');
   if (!hasUserAppDatabase(options.dataDir))
     throw new EngineError('there is no user app database', 'refused');
   const h = await openAppDatabase(options.dataDir);
   try {
-    const check = (await h.query('PRAGMA integrity_check')).rows as Array<
-      Record<string, unknown>
-    >;
+    const check = await sqlite.integrityCheck(h);
     const integrity = check.length === 1 && Object.values(check[0])[0] === 'ok';
     if (!integrity)
       return { integrity, recorded: false, version: null, tables: 0, rows: 0 };
     const read = await readAll(h);
     // Leave no -wal/-shm beside a database a restore is about to move.
-    await h.query('PRAGMA wal_checkpoint(TRUNCATE)');
+    await sqlite.checkpoint(h);
     return {
       integrity,
       recorded:
@@ -507,7 +485,9 @@ export function checkUserAppBundle(bundle: PortableUserApp): string[] {
 export async function verifyUserApp(options: {
   dataDir: string;
   bundle: PortableUserApp;
+  database?: { kind: DatabaseKind };
 }): Promise<UserAppVerification> {
+  requireSqliteHost(options.database, 'verifying the app');
   const { bundle } = options;
   const h = await openAppDatabase(options.dataDir);
   try {
@@ -583,6 +563,7 @@ function refuse(message: string): never {
 export async function importUserApp(
   options: ImportUserAppOptions,
 ): Promise<ImportUserAppResult> {
+  requireSqliteHost(options.database, 'importing the app');
   const { dataDir, bundle } = options;
   const problems = checkUserAppBundle(bundle);
   if (problems.length)
@@ -644,7 +625,7 @@ export async function importUserApp(
 async function fill(stage: string, bundle: PortableUserApp): Promise<void> {
   const h = await openAppDatabase(stage);
   try {
-    await h.query('PRAGMA foreign_keys = OFF');
+    await sqlite.foreignKeysOff(h);
     await h.transaction(async (tx: Handle) => {
       // Opening a database makes core's own `_smrt_*` tables; the rest come
       // from the bundle's statements.
@@ -654,7 +635,7 @@ async function fill(stage: string, bundle: PortableUserApp): Promise<void> {
           await tx.query(t.createSql);
           for (const i of t.indexSql) await tx.query(i);
         }
-        const have = new Set(await storedColumns(tx, t.name));
+        const have = new Set(await sqlite.storedColumns(tx, t.name));
         for (const c of t.columns)
           if (!have.has(c))
             refuse(`Table ${t.name} does not define column ${c}.`);
@@ -667,7 +648,7 @@ async function fill(stage: string, bundle: PortableUserApp): Promise<void> {
           );
       }
     });
-    await h.query('PRAGMA wal_checkpoint(TRUNCATE)');
+    await sqlite.checkpoint(h);
   } finally {
     await h.close?.();
   }

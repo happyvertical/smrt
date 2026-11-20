@@ -1,8 +1,8 @@
 // The user app's runtime. Runs inside its own worker thread, so it has its own
 // smrt registry: built fresh from one definition, thrown away on the next.
 //
-// Migrations here are SQLite-shaped (RENAME/DROP COLUMN, VACUUM INTO,
-// pragma_table_xinfo). Postgres is future work.
+// The database comes from the host (`./db`): this file holds no SQL that names
+// one. Snapshots, copies and publish still need SQLite (#5187).
 import { existsSync, mkdirSync } from 'node:fs';
 import { isAbsolute, join } from 'node:path';
 import {
@@ -17,7 +17,6 @@ import { MCPGenerator } from '@happyvertical/smrt-core/generators/mcp';
 import { APIGenerator } from '@happyvertical/smrt-core/generators/rest';
 import { declareRuntimeManagedDatabase } from '@happyvertical/smrt-core/migrations';
 import type { RuntimeReportSpec } from '@happyvertical/smrt-reports';
-import { getDatabase } from '@happyvertical/sql';
 import {
   applyLoad,
   type LoadRecordsCommand,
@@ -25,6 +24,16 @@ import {
   prepareLoad,
   undoRows,
 } from './data-migrations.ts';
+import {
+  dialectFor,
+  type EngineDialect,
+  openDatabase,
+  requireSingleWriter,
+  requireSnapshots,
+  tableColumns,
+  type WorkerDatabaseConfig,
+} from './db/index.ts';
+import { copyDatabaseTo } from './db/sqlite.ts';
 import {
   type AppDefinition,
   builtInFields,
@@ -42,8 +51,6 @@ import {
   routeFor,
   type Step,
   snake,
-  sqlType,
-  storageFamily,
   tableFor,
   toolNamesFor,
   toRuntimeModel,
@@ -89,11 +96,11 @@ const PROFILE_TYPES = '@happyvertical/smrt-profiles:ProfileType';
  * publish rehearsal, the read-only report worker and the portable export
  * (`portable-export.ts`) all open it through here.
  */
-export async function openAppDatabase(dataDir: string): Promise<Handle> {
-  const db = await getDatabase({
-    type: 'sqlite',
-    url: join(dataDir, 'app.db'),
-  } as any);
+export async function openAppDatabase(
+  dataDir: string,
+  database: WorkerDatabaseConfig = { kind: 'sqlite' },
+): Promise<Handle> {
+  const db = await openDatabase(database, dataDir);
   declareRuntimeManagedDatabase(db, {
     owner: '@happyvertical/smrt-app-shell',
     reason:
@@ -117,7 +124,17 @@ export class AppRuntime {
   private skipped = 0;
   private methodQueue: Promise<void> = Promise.resolve();
 
-  constructor(dataDir: string, def: AppDefinition, version: number) {
+  private database: WorkerDatabaseConfig;
+  private dialect: EngineDialect;
+
+  constructor(
+    dataDir: string,
+    def: AppDefinition,
+    version: number,
+    database: WorkerDatabaseConfig = { kind: 'sqlite' },
+  ) {
+    this.database = database;
+    this.dialect = dialectFor(database);
     this.dataDir = dataDir;
     this.def = def;
     this.version = version;
@@ -140,7 +157,7 @@ export class AppRuntime {
       return { statements: [], snapshot: null };
     }
     mkdirSync(join(this.dataDir, 'snapshots'), { recursive: true });
-    this.db = await openAppDatabase(this.dataDir);
+    this.db = await openAppDatabase(this.dataDir, this.database);
     await this.register();
     for (const report of Object.values(this.def.reports ?? {}))
       await compileReport(this.def, report.spec);
@@ -158,11 +175,9 @@ export class AppRuntime {
           ? `migrate-v${migration?.version}-${migration?.direction}`
           : 'schema',
       );
-      await this.db.transaction(async (tx: Handle) =>
+      await this.tx(async (tx: Handle) =>
         withCallerOwnedDatabaseTransaction(tx, async () => {
-          await tx.query(
-            `CREATE TABLE IF NOT EXISTS _archive (id INTEGER PRIMARY KEY AUTOINCREMENT, version INTEGER NOT NULL, tbl TEXT NOT NULL, col TEXT NOT NULL, record_id TEXT NOT NULL, value TEXT, created_at TEXT NOT NULL)`,
-          );
+          await tx.query(this.dialect.archiveTableDDL);
           if (
             steps.every(
               (s) =>
@@ -246,8 +261,10 @@ export class AppRuntime {
     // A subclass plans after the shipped parent it extends.
     const out: string[] = [];
     for (const qn of qualifieds) {
-      const statements = await planRuntimeModelDDL(qn, 'sqlite', (t) =>
-        this.existingColumns(h, t),
+      const statements = await planRuntimeModelDDL(
+        qn,
+        this.dialect.ddlEngine,
+        (t) => this.existingColumns(h, t),
       );
       if (run) for (const s of statements) await h.query(s);
       out.push(...statements);
@@ -256,14 +273,23 @@ export class AppRuntime {
     return out;
   }
 
+  /**
+   * A transaction whose handle can introspect tables (`getTableSchema`), which
+   * a PostgreSQL transaction handle only offers when asked.
+   */
+  private tx<T>(fn: (tx: Handle) => Promise<T>): Promise<T> {
+    // SQLite's `transaction` takes an internal lock as its second argument:
+    // only a database that has transaction options gets any.
+    const options = this.dialect.transactionOptions;
+    return options ? this.db.transaction(fn, options) : this.db.transaction(fn);
+  }
+
   private async existingColumns(
     h: Handle,
     table: string,
   ): Promise<string[] | null> {
-    const rows = (
-      await h.query(`SELECT name FROM pragma_table_xinfo(?)`, [table])
-    ).rows;
-    return rows.length ? rows.map((r: Row) => String(r.name)) : null;
+    const columns = await tableColumns(h, table);
+    return columns.length ? columns.map((c) => c.name) : null;
   }
 
   /** A column that exists with another storage family than its field wants: refuse. */
@@ -274,7 +300,11 @@ export class AppRuntime {
       if (!have.size) continue;
       for (const [f, fd] of Object.entries(visible(md.fields))) {
         const col = have.get(snake(f));
-        if (col && storageFamily(col) !== storageFamily(sqlType(fd.type)))
+        if (
+          col &&
+          this.dialect.storageFamily(col) !==
+            this.dialect.storageFamily(this.dialect.columnType(fd.type))
+        )
           throw new AppError(
             `${table}.${snake(f)} already holds ${col} data; remove that field or change its type instead`,
           );
@@ -286,21 +316,11 @@ export class AppRuntime {
     h: Handle,
     t: string,
   ): Promise<Map<string, string>> {
-    const rows = (
-      await h.query(`SELECT name, type FROM pragma_table_xinfo(?)`, [t])
-    ).rows;
-    return new Map(rows.map((r: Row) => [String(r.name), String(r.type)]));
+    return new Map((await tableColumns(h, t)).map((c) => [c.name, c.type]));
   }
 
-  private async tableExists(h: Handle, t: string) {
-    return (
-      (
-        await h.query(
-          `SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?`,
-          [t],
-        )
-      ).rows.length > 0
-    );
+  private tableExists(h: Handle, t: string): Promise<boolean> {
+    return h.tableExists(t);
   }
 
   // ---------- migration steps ----------
@@ -392,7 +412,7 @@ export class AppRuntime {
             );
         } else if (up && step.from && !step.from.calculated)
           await exec(
-            `INSERT INTO _archive (version, tbl, col, record_id, value, created_at) SELECT ?, ?, ?, id, ${q(step.column)}, ? FROM ${q(step.table)}`,
+            `INSERT INTO _archive (version, tbl, col, record_id, value, created_at) SELECT CAST(? AS INTEGER), ?, ?, ${this.dialect.asText('id')}, ${q(step.column)}, ? FROM ${q(step.table)}`,
             [m.version, step.table, step.column, now],
           );
         if ((await this.columnTypes(tx, step.table)).has(step.column))
@@ -401,10 +421,10 @@ export class AppRuntime {
           );
         if (up && clearing) {
           await exec(
-            `ALTER TABLE ${q(step.table)} ADD COLUMN ${q(step.column)} ${sqlType((step.to ?? (step.from as FieldDef)).type)}`,
+            `ALTER TABLE ${q(step.table)} ADD COLUMN ${q(step.column)} ${this.dialect.columnType((step.to ?? (step.from as FieldDef)).type)}`,
           );
           await exec(
-            `UPDATE ${q(step.table)} SET ${q(step.column)} = (SELECT value FROM _archive a WHERE a.version = ? AND a.tbl = ? AND a.col = ? AND a.record_id = ${q(step.table)}.id)`,
+            `UPDATE ${q(step.table)} SET ${q(step.column)} = ${this.dialect.fromText(`(SELECT value FROM _archive a WHERE a.version = ? AND a.tbl = ? AND a.col = ? AND a.record_id = ${this.dialect.asText(`${q(step.table)}.id`)})`, (step.to ?? (step.from as FieldDef)).type)}`,
             [m.version, step.table, step.column],
           );
         }
@@ -415,10 +435,10 @@ export class AppRuntime {
           );
         if (!up && step.from && !step.from.calculated) {
           await exec(
-            `ALTER TABLE ${q(step.table)} ADD COLUMN ${q(step.column)} ${sqlType(step.from.type)}`,
+            `ALTER TABLE ${q(step.table)} ADD COLUMN ${q(step.column)} ${this.dialect.columnType(step.from.type)}`,
           );
           await exec(
-            `UPDATE ${q(step.table)} SET ${q(step.column)} = (SELECT value FROM _archive a WHERE a.version = ? AND a.tbl = ? AND a.col = ? AND a.record_id = ${q(step.table)}.id)`,
+            `UPDATE ${q(step.table)} SET ${q(step.column)} = ${this.dialect.fromText(`(SELECT value FROM _archive a WHERE a.version = ? AND a.tbl = ? AND a.col = ? AND a.record_id = ${this.dialect.asText(`${q(step.table)}.id`)})`, step.from.type)}`,
             [m.version, step.table, step.column],
           );
           await exec(
@@ -454,7 +474,7 @@ export class AppRuntime {
         if (up) {
           if (!(await this.columnTypes(tx, step.table)).has(step.column)) break;
           await exec(
-            `INSERT INTO _archive (version, tbl, col, record_id, value, created_at) SELECT ?, ?, ?, ${q(step.key)}, ${q(step.column)}, ? FROM ${q(step.table)} WHERE ${q(step.column)} IS NOT NULL AND ${q(step.column)} <> ''`,
+            `INSERT INTO _archive (version, tbl, col, record_id, value, created_at) SELECT CAST(? AS INTEGER), ?, ?, ${this.dialect.asText(q(step.key))}, ${q(step.column)}, ? FROM ${q(step.table)} WHERE ${this.dialect.nonEmpty(q(step.column))}`,
             [m.version, step.table, step.column, now],
           );
           await exec(
@@ -465,10 +485,10 @@ export class AppRuntime {
           // removal is still there: put the archived values back into it.
           if (!(await this.columnTypes(tx, step.table)).has(step.column))
             await exec(
-              `ALTER TABLE ${q(step.table)} ADD COLUMN ${q(step.column)} ${sqlType(step.type)}`,
+              `ALTER TABLE ${q(step.table)} ADD COLUMN ${q(step.column)} ${this.dialect.columnType(step.type)}`,
             );
           await exec(
-            `UPDATE ${q(step.table)} SET ${q(step.column)} = (SELECT value FROM _archive a WHERE a.version = ? AND a.tbl = ? AND a.col = ? AND a.record_id = ${q(step.table)}.${q(step.key)})`,
+            `UPDATE ${q(step.table)} SET ${q(step.column)} = ${this.dialect.fromText(`(SELECT value FROM _archive a WHERE a.version = ? AND a.tbl = ? AND a.col = ? AND a.record_id = ${this.dialect.asText(`${q(step.table)}.${q(step.key)}`)})`, step.type)}`,
             [m.version, step.table, step.column],
           );
           await exec(
@@ -488,7 +508,7 @@ export class AppRuntime {
         const archived = new Map<string, unknown>();
         if (up) {
           await exec(
-            `INSERT INTO _archive (version, tbl, col, record_id, value, created_at) SELECT ?, ?, ?, ${q(step.key)}, ${q(step.column)}, ? FROM ${q(step.table)} WHERE ${q(step.column)} IS NOT NULL`,
+            `INSERT INTO _archive (version, tbl, col, record_id, value, created_at) SELECT CAST(? AS INTEGER), ?, ?, ${this.dialect.asText(q(step.key))}, ${q(step.column)}, ? FROM ${q(step.table)} WHERE ${q(step.column)} IS NOT NULL`,
             [m.version, step.table, step.column, now],
           );
         } else {
@@ -501,7 +521,7 @@ export class AppRuntime {
             archived.set(String(r.record_id), r.value);
         }
         await exec(
-          `ALTER TABLE ${q(step.table)} ADD COLUMN ${q(tmp)} ${sqlType(target.type)}`,
+          `ALTER TABLE ${q(step.table)} ADD COLUMN ${q(tmp)} ${this.dialect.columnType(target.type)}`,
         );
         for (const r of rows) {
           // Going back, a row's original value wins; rows made since are converted back.
@@ -536,31 +556,26 @@ export class AppRuntime {
 
   /** What a type change would do to existing values, without changing anything. */
   async columnInfo(table: string, column: string) {
-    const row = (
-      await this.db.query(
-        'SELECT type, hidden FROM pragma_table_xinfo(?) WHERE name = ?',
-        [table, column],
-      )
-    ).rows[0];
-    return row
-      ? { type: String(row.type), generated: Number(row.hidden) > 1 }
-      : null;
+    const col = (await tableColumns(this.db, table)).find(
+      (c) => c.name === column,
+    );
+    return col ? { type: col.type, generated: col.generated } : null;
   }
 
   async previewMerge(cmd: MergeRecordsCommand) {
-    return this.db.transaction(
+    return this.tx(
       async (tx: Handle) => (await prepareMerge(this.def, tx, cmd)).preview,
     );
   }
 
   async previewExtract(cmd: ExtractModelCommand) {
-    return this.db.transaction(
+    return this.tx(
       async (tx: Handle) => (await prepareExtract(this.def, tx, cmd)).preview,
     );
   }
 
   async previewLoad(cmd: LoadRecordsCommand) {
-    return this.db.transaction(
+    return this.tx(
       async (tx: Handle) => (await prepareLoad(this.def, tx, cmd)).preview,
     );
   }
@@ -593,7 +608,7 @@ export class AppRuntime {
   async countValues(table: string, column: string) {
     if (!(await this.columnTypes(this.db, table)).has(column)) return 0;
     const r = await this.db.query(
-      `SELECT COUNT(*) AS n FROM ${q(table)} WHERE ${q(column)} IS NOT NULL AND ${q(column)} <> ''`,
+      `SELECT COUNT(*) AS n FROM ${q(table)} WHERE ${this.dialect.nonEmpty(q(column))}`,
     );
     return Number(r.rows[0].n);
   }
@@ -626,7 +641,7 @@ export class AppRuntime {
     version: number,
   ) {
     const conflict = await db.query(
-      `SELECT 1 FROM ${q(step.table)} t LEFT JOIN _archive a ON a.version = ? AND a.tbl = ? AND a.col = ? AND a.record_id = t.id WHERE t.${q(step.column)} IS NOT CAST(a.value AS ${sqlType((step.to ?? (step.from as FieldDef)).type)}) LIMIT 1`,
+      `SELECT 1 FROM ${q(step.table)} t LEFT JOIN _archive a ON a.version = ? AND a.tbl = ? AND a.col = ? AND a.record_id = ${this.dialect.asText('t.id')} WHERE ${this.dialect.isDistinct(`t.${q(step.column)}`, this.dialect.castTo('a.value', (step.to ?? (step.from as FieldDef)).type))} LIMIT 1`,
       [version, step.table, step.column],
     );
     if (conflict.rows.length)
@@ -797,15 +812,20 @@ export class AppRuntime {
     return { values, tables: tables.length };
   }
 
-  /** A consistent copy of app.db in snapshots/, made with VACUUM INTO. */
-  async snapshot(kind: string): Promise<string> {
+  /**
+   * A consistent copy of app.db in snapshots/, made with VACUUM INTO. `null`
+   * where the database has no snapshots yet (PostgreSQL, #5187): the change
+   * proceeds without an undo point.
+   */
+  async snapshot(kind: string): Promise<string | null> {
+    if (!this.dialect.snapshots) return null;
     const safe = kind.replace(/[^A-Za-z0-9._-]/g, '_').slice(0, 60);
     const file = join(
       this.dataDir,
       'snapshots',
       `${Date.now()}-${this.snapshots++}-${safe}.db`,
     );
-    await this.db.query(`VACUUM INTO '${file.replace(/'/g, "''")}'`);
+    await copyDatabaseTo(this.db, file);
     // Applied method writes can come in a stream: keep only the newest few.
     if (safe.startsWith('method-'))
       pruneMethodSnapshots(join(this.dataDir, 'snapshots'));
@@ -819,10 +839,11 @@ export class AppRuntime {
    * no change running and no call in flight.
    */
   async copyTo(path: string) {
+    requireSnapshots(this.database, 'copying the database');
     if (typeof path !== 'string' || !isAbsolute(path))
       throw new AppError('copyTo needs an absolute path');
     if (existsSync(path)) throw new AppError(`${path} already exists`);
-    await this.db.query(`VACUUM INTO '${path.replace(/'/g, "''")}'`);
+    await copyDatabaseTo(this.db, path);
     return path;
   }
 
@@ -915,7 +936,13 @@ export class AppRuntime {
     return compileReport(this.def, spec);
   }
   runReport(input: string | RuntimeReportSpec, options: ReportOptions) {
-    return runAppReport(this.def, this.db, input, options);
+    return runAppReport(
+      this.def,
+      this.db,
+      input,
+      options,
+      this.dialect.ddlEngine,
+    );
   }
 
   describe() {
@@ -981,7 +1008,11 @@ export class AppRuntime {
     const select = fields
       .map((f) => {
         const column = q(snake(f));
-        return `CASE WHEN typeof(${column}) = 'integer' AND (${column} > 9007199254740991 OR ${column} < -9007199254740991) THEN CAST(${column} AS TEXT) ELSE ${column} END AS ${q(f)}`;
+        return this.dialect.storedInteger(
+          column,
+          f,
+          ['integer', 'money'].includes(md.fields[f]?.type ?? ''),
+        );
       })
       .join(', ');
     const where = sourceRows
@@ -994,13 +1025,15 @@ export class AppRuntime {
       )
     ).rows as Row[];
     for (const row of rows)
-      for (const f of fields)
+      for (const f of fields) {
+        this.dialect.finishStoredInteger(row, f);
         if (
           ['integer', 'money'].includes(md.fields[f]?.type ?? '') &&
           typeof row[f] === 'string' &&
           /^-?\d+$/.test(row[f] as string)
         )
           row[f] = BigInt(row[f] as string);
+      }
     return rows;
   }
 
@@ -1165,6 +1198,7 @@ export class AppRuntime {
   ) {
     const md = this.modelDef(model).methods?.[method];
     if (!md) throw new AppError(`no method ${model}.${method}()`);
+    requireSingleWriter(this.database, 'running a method');
     for (const [p, pd] of Object.entries(md.params ?? {}))
       if (pd.required && params[p] == null)
         throw new AppError(`param ${p} is required`);

@@ -18,9 +18,10 @@ adds) and swaps it in once it is ready. The engine must not import SvelteKit,
   (which awaits the queue): the old `clean_up` deadlock.
 - **Migrations** (`app-runtime.ts`) run in one transaction in the new worker,
   reading through the transaction handle. Destructive ones retire the old worker
-  first and restart the old definition if the new one fails. They are
-  SQLite-shaped (`RENAME/DROP COLUMN`, `VACUUM INTO`, `pragma_table_xinfo`);
-  Postgres is future work.
+  first and restart the old definition if the new one fails. They hold no SQL
+  that names a database: column types, storage families and the few differing
+  statements come from the dialect (see "Database" below). `VACUUM INTO` and the
+  file swap of publish are SQLite only (#5187).
 - **app.db is runtime-managed.** The engine builds app.db's schema itself
   (`_app_meta.version` is its record); core's migrate never runs on it. So
   `AppRuntime.boot` declares the handle with core's
@@ -55,12 +56,82 @@ adds) and swaps it in once it is ready. The engine must not import SvelteKit,
   transaction that rolls back on any failure, so a failed method leaves
   nothing behind and the owner has nothing to recover. If the data changed
   between the read and the write (an edit outside methods) the method re-runs
-  (3 retries). The snapshot stays as a pre-write undo point. SQLite only; a
-  PostgreSQL port would use serializable isolation with the same retry.
+  (3 retries). The snapshot stays as a pre-write undo point (SQLite only: PGlite runs the
+  method without one). On a PostgreSQL SERVER the run is refused
+  (`requireSingleWriter`): the re-read check needs the one connection of an
+  embedded database, and the server port is serializable isolation with the
+  same retry, not built yet.
   `setMemoryLimit` does not bound large single allocations in this build, and the
   interrupt handler is polled only every ~10,000 operations, so the WebAssembly
   heap itself is capped (`SANDBOX_HEAP_PAGES`, 128 MB): a memory bomb stops in
   ~0.2 s instead of allocating 2 GB.
+
+## Database (#5186)
+
+The host chooses the database; the engine assumes none. `HostOptions.database`
+is a `DatabaseConfig` (`engine/db/types.ts`): `{ kind: 'sqlite' }` (the default:
+`app.db` in the data directory, as the desktop always did), `{ kind: 'postgres',
+schema, connection }` (a server; plain data, each worker opens its own
+connection) or `{ kind: 'pglite', schema, client }` (an in-process PGlite owned
+by the host thread). Everything that differs sits behind `EngineDialect`, one
+pure implementation per database (`db/sqlite-dialect.ts`,
+`db/postgres-dialect.ts`): column types (the PostgreSQL ones equal what core's
+own DDL creates; `db-dialect.test.ts` checks every field type on both),
+storage families, the `_archive` DDL, the non-empty test, text/cast forms,
+NULL-safe inequality, the safe-integer read, `ddlEngine` for core's
+`planRuntimeModelDDL`. Introspection is `tableColumns` (`getTableSchema`) and
+`tableExists` from `@happyvertical/sql`; a PostgreSQL transaction that
+introspects is opened with `{ introspection: true }` (`AppRuntime.tx`; SQLite's
+`transaction` takes an internal lock as its second argument, so it gets none).
+No SQL naming SQLite or PostgreSQL exists outside `engine/db/`
+(`sqlite.ts` also holds the portable export's reads); `db-boundary.test.ts`
+scans for it.
+
+- **PostgreSQL layout.** One schema per app, UNQUALIFIED table names, addressed
+  by a transaction-local `search_path`: `scopeDatabase` (`db/postgres.ts`)
+  wraps the handle the engine and core receive, so every statement runs after
+  `set_config('search_path', "<schema>", true)` in its transaction, with or
+  without one of its own. Fail closed: `table()` throws, sessions and schema
+  sync are absent. A config with no schema, `public`, a system schema or a
+  schema the host did not create refuses to open (`EngineError` `refused`); the
+  engine never creates a schema and never falls back to `public`. Core is
+  untouched. The role and policies of a hosted deployment are #5188/#5189.
+- **How the config reaches the worker.** `DatabaseConfig` is plain data except a
+  PGlite instance, which cannot cross threads (and two instances on one
+  storage corrupt it, yet a new worker boots while the old one still serves).
+  So the host thread keeps the one PGlite and `AppWorker` transfers one end of
+  a `MessagePort` (`db/pglite-bridge.ts`: `serveBridge` host side, a
+  PGlite-shaped `client` worker side, transactions held open on the host until
+  the worker ends them, rolled back if it dies). A server config is
+  serialised and each worker opens its own connection. The PGlite pass is not a
+  test double of the worker: it is the same worker code path.
+- **Still SQLite only** (a clear `not supported on this database yet`
+  `EngineError`, `requireSnapshots`): `copyTo`, `forkDraft`, `previewPublish`,
+  `publishDraft`; the portable export and import (`openAppDatabase(dataDir)`
+  opens SQLite; they refuse a host that reports another database). On PostgreSQL `snapshot()` returns `null`: boot and method runs
+  proceed without a pre-change copy, so there is no method undo point there
+  until #5187 (`AppHost.notices` says so on open; #5187 must restore it). Method runs on a PostgreSQL SERVER (`kind: 'postgres'`) are
+  refused (`requireSingleWriter`, see Sandbox); PGlite runs them.
+- **Tests.** `pnpm test:pglite` (`vitest.pglite.config.ts`) runs the engine
+  suite with `SMRT_APP_SHELL_DB=pglite`: each data directory gets its own
+  PGlite in schema `app` (`db/harness.ts`, injected by `pglite-setup.ts`; a
+  shipped host is always told its database, default SQLite). Files that read `app.db` with
+  `node:sqlite` or exercise snapshots, drafts or publish are excluded there
+  (the list is in the config, with the reason); they run on SQLite as before.
+  `postgres.test.ts` always runs on PGlite: two apps' schemas stay apart
+  through records, REST and tools, an app with no schema fails loudly, and no
+  member of the adapter handle reaches the database unscoped.
+  `postgres-engine.test.ts` walks migrations, loads (upsert over every field
+  type, undo, refused undo), merge, extract, methods and reports on PGlite.
+  **Coverage on PostgreSQL is partial**: 25 files, 202 tests, against 41
+  files and 383 tests on SQLite; the excluded files are listed with their
+  reason in `vitest.pglite.config.ts`. The server kind is covered through the
+  same scope code over PGlite, not against a real server. Known SDK limit:
+  `renderExpression` renders an all-NULL `secondsBetween` as `NULL - NULL`,
+  which PostgreSQL cannot type (`portable-calculations.test.ts` skips that one
+  case there). Core keys state on `db.client` and detects the adapter by its
+  `query`/`exec`: the scoped handle shows a stand-in client with those two,
+  scoped, never the real one.
 
 ## Profile subclass (core gap fixed, #4871)
 

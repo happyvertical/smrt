@@ -13,6 +13,7 @@ import {
   SandboxError,
   validateWrites,
 } from './index.ts';
+import { onPglite } from './pglite-env.ts';
 
 const input = { record: null, params: {}, data: {} };
 const run = (code: string, limits = {}) => runMethod(code, input, limits);
@@ -287,7 +288,9 @@ describe('sandbox through the host', () => {
     expect(snapshots()).toBe(snaps);
   });
 
-  it('takes a snapshot only when writes are applied, and before applying', async () => {
+  it('takes a snapshot only when writes are applied, and before applying', {
+    skip: onPglite,
+  }, async () => {
     await add('noop', `return record.points;`);
     await add(
       'bump',

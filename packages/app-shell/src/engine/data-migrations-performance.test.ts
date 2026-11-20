@@ -33,14 +33,20 @@ function executor(size: number, update = false, conflict = false) {
   }));
   if (conflict) rows[rows.length - 1].name = 'edited';
   const statements: string[] = [];
+  // Column metadata comes from the adapter's introspection, not from SQL.
+  const introspected: string[] = [];
   return {
     statements,
+    introspected,
+    async getTableSchema(table: string) {
+      introspected.push(table);
+      return null;
+    },
     async query(sql: string, params: unknown[] = []) {
       statements.push(sql);
       if (sql.includes("col = '$row'")) return { rows: originals };
       if (sql.includes("col IN ('$after', '$deleted')")) return { rows: posts };
       if (sql.startsWith('SELECT *')) return { rows };
-      if (sql.includes('pragma_table_xinfo')) return { rows: [] };
       if (sql.startsWith('DELETE FROM "u_items"')) {
         expect(params.length).toBeLessThanOrEqual(500);
       }
@@ -66,9 +72,7 @@ it.each([
 it('reads generated-column metadata once for an entire updated model', async () => {
   const db = executor(501, true);
   await undoRows(def, db, 3);
-  expect(
-    db.statements.filter((sql) => sql.includes('pragma_table_xinfo')),
-  ).toHaveLength(1);
+  expect(db.introspected).toHaveLength(1);
   expect(db.statements.filter((sql) => sql.startsWith('UPDATE'))).toHaveLength(
     501,
   );
