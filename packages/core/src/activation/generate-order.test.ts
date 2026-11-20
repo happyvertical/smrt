@@ -882,6 +882,21 @@ describe('generated activation order', () => {
       );
     });
 
+    it('names an unknown package for a candidate whose manifest entry carries no packageName', () => {
+      const OTHER = '@activation/unrelated:Customer';
+      const { files, manifest } = project([
+        { key: OTHER },
+        { key: ACOL, collectionOf: OTHER },
+      ]);
+      // Legacy input: the candidate's entry has no packageName.
+      manifest.objects[OTHER].packageName = undefined as never;
+      manifest.objects[ACOL].collectionOf = 'Customer';
+      manifest.objects[ACOL].extendsTypeArg = PROVIDER;
+      expect(() => generate(files, manifest)).toThrow(
+        `Activation cannot bind collection ${ACOL}: its declared item Customer (collectionOf) matches 1 class of that name (${OTHER}) in package <unknown package>; that class is of another package, and its generic does not name it.`,
+      );
+    });
+
     it('refuses a simple collectionOf that matches several classes of other packages, naming each candidate and package', () => {
       const ONE = '@activation/one:Customer';
       const TWO = '@activation/two:Customer';

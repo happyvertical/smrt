@@ -204,7 +204,9 @@ function unboundSimpleItem(
     ([, object]) => object.packageName === collection.packageName,
   );
   const packages = [
-    ...new Set(candidates.map(([, object]) => String(object.packageName))),
+    ...new Set(
+      candidates.map(([, object]) => object.packageName ?? '<unknown package>'),
+    ),
   ];
   const found = `matches ${candidates.length} ${candidates.length === 1 ? 'class' : 'classes'} of that name (${candidates.map(([key]) => key).join(', ')}) in ${packages.length === 1 ? 'package' : 'packages'} ${packages.join(', ')}`;
   const why =
