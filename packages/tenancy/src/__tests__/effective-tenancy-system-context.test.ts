@@ -1,8 +1,10 @@
 /**
- * Code that enters a system context inside a request acts as the system, as
- * it does outside one; a request admitted under a cross-tenant read grant
- * writes no tenant-scoped row, whatever context its code enters. Runtime
- * REST with the real tenant interceptor on a SQLite file.
+ * Code that enters a system context inside a request acts as the system, and
+ * code that enters a tenant context in a request with no tenant acts in that
+ * tenant, as each does outside a request; a request admitted under a
+ * cross-tenant read grant writes no tenant-scoped row, whatever context its
+ * code enters. Runtime REST with the real tenant interceptor on a SQLite
+ * file.
  *
  * Rows R3.1 and R3.2 of the #5375 round-3 matrix.
  */
@@ -57,12 +59,14 @@ const stampAll = async () => {
       'recordAsSystem',
       'countVaultsAsSystem',
       'stampThroughRequest',
+      'stampInTenantB',
     ],
     routes: {
       stampAsSystem: { method: 'GET', path: 'stamp-as-system' },
       recordAsSystem: { method: 'POST', path: 'record-as-system' },
       countVaultsAsSystem: { method: 'GET', path: 'count-vaults-as-system' },
       stampThroughRequest: { method: 'GET', path: 'stamp-through-request' },
+      stampInTenantB: { method: 'GET', path: 'stamp-in-tenant-b' },
     },
   },
 })
@@ -102,6 +106,10 @@ class EffSysDeskCollection extends SmrtCollection<EffSysDesk> {
       },
       stampAll,
     );
+  }
+  /** A read action whose code writes another model inside a tenant. */
+  async stampInTenantB(_options?: unknown) {
+    return withTenant({ tenantId: TENANT_B }, stampAll);
   }
 }
 
@@ -164,6 +172,7 @@ describe('a system context entered inside a request', () => {
       'recordAsSystem',
       'countVaultsAsSystem',
       'stampThroughRequest',
+      'stampInTenantB',
     ]) {
       ObjectRegistry.getMethods('EffSysDeskCollection').set(name, {
         name,
@@ -252,6 +261,17 @@ describe('a system context entered inside a request', () => {
       );
       expect(vaults.status).toBe(200);
       expect((vaults.body as { result: unknown }).result).toBe(2);
+    });
+
+    it('a request with no tenant acts in a tenant context its code entered', async () => {
+      const stamped = await restCall(
+        handler,
+        'GET',
+        action('stamp-in-tenant-b'),
+        as('reader'),
+      );
+      expect(stamped.status).toBe(200);
+      expect(await logTitles()).toEqual(['log of a', 'stamped']);
     });
 
     it("a tenant's request acts as the system from code that entered one (control)", async () => {
