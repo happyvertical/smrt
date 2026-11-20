@@ -339,15 +339,15 @@ export function buildCascadePlan(
   // `deleteSystemRows()` narrowed further to registry-unambiguous simple
   // names; tracked under #2419 alongside the other same-simple-name
   // collision gaps rather than reworked here.
-  // A class's deprecated qualified names (#3338) still identify it in rows
-  // written before it moved package, so deleting it removes those too.
+  // A class's deprecated qualified names (#3338) and the upstream names a
+  // same-name app subclass replaced still identify it in rows written before,
+  // so deleting it removes those too.
   const metaTypes: string[] = [];
   const registered = registry.getClass(className);
   const qualified = registered?.qualifiedName;
-  if (qualified) metaTypes.push(qualified);
-  for (const alias of registered?.config?.previousQualifiedNames ?? []) {
-    if (typeof alias === 'string' && !metaTypes.includes(alias)) {
-      metaTypes.push(alias);
+  if (qualified) {
+    for (const name of equivalentQualifiedNames(registry, registered)) {
+      if (!metaTypes.includes(name)) metaTypes.push(name);
     }
   }
   const simple = registered?.name ?? className;
@@ -359,6 +359,41 @@ export function buildCascadePlan(
     metaTypes,
     isEmpty: references.length === 0 && polymorphic.length === 0,
   };
+}
+
+/**
+ * Every stored qualified name of `registered`: the registry's one equivalence
+ * set (`ObjectRegistry.getEquivalentQualifiedNames`: current, previous and
+ * replaced names). A hand-built registry view without that method gets the
+ * current and declared previous names.
+ */
+function equivalentQualifiedNames(
+  registry: CascadeRegistryView,
+  registered: {
+    qualifiedName?: string;
+    config?: { previousQualifiedNames?: unknown };
+  },
+): string[] {
+  const qualified = registered.qualifiedName;
+  if (!qualified) return [];
+  const resolve = (
+    registry as Partial<
+      Pick<typeof ObjectRegistry, 'getEquivalentQualifiedNames'>
+    >
+  ).getEquivalentQualifiedNames;
+  if (typeof resolve === 'function') {
+    return resolve.call(registry, qualified);
+  }
+  const previous = registered.config?.previousQualifiedNames;
+  return [
+    qualified,
+    ...(Array.isArray(previous)
+      ? previous.filter(
+          (alias): alias is string =>
+            typeof alias === 'string' && alias !== qualified,
+        )
+      : []),
+  ];
 }
 
 /** Per-delete state shared by every level of the cascade. */
@@ -417,7 +452,11 @@ function ownerClassCandidates(
   for (const member of members) {
     names.add(member);
     const registered = registry.getClass(member);
-    if (registered?.qualifiedName) names.add(registered.qualifiedName);
+    if (registered) {
+      for (const name of equivalentQualifiedNames(registry, registered)) {
+        names.add(name);
+      }
+    }
     if (registered?.name) names.add(registered.name);
   }
   return [...names];

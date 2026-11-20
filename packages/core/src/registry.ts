@@ -2008,10 +2008,13 @@ export class ObjectRegistry {
   /**
    * Every qualified name stored data may use for the class `name` resolves
    * to: its current qualified name first, then its declared
-   * `previousQualifiedNames` (#3338). Readers that match persisted names
-   * (e.g. a polymorphic `metaType` filter) use this so rows written before
-   * and after a model move both match. A simple (unqualified) or
-   * unresolvable `name` is returned alone.
+   * `previousQualifiedNames` (#3338), then the upstream names a same-name
+   * app subclass replaced and those declarations' own previous names. This
+   * is the one equivalence set for persisted names: readers that match them
+   * (a polymorphic `metaType` filter, STI child reads, delete cascades,
+   * doctor and the qualified-name backfill) use it so rows written under any
+   * of those names match. A simple (unqualified) or unresolvable `name` is
+   * returned alone.
    */
   static getEquivalentQualifiedNames(
     name: string,
@@ -2021,12 +2024,19 @@ export class ObjectRegistry {
     const registered =
       _getClassByQualifiedName(name, options.source) ?? findReplacement(name);
     if (!registered?.qualifiedName) return [name];
-    return [
+    const names = new Set<string>([
       registered.qualifiedName,
-      ...readPreviousQualifiedNames(registered.config).filter(
-        (alias) => alias !== registered.qualifiedName,
-      ),
-    ];
+      ...readPreviousQualifiedNames(registered.config),
+    ]);
+    for (const replaced of registered.replacedQualifiedNames ?? []) {
+      names.add(replaced);
+      for (const alias of readPreviousQualifiedNames(
+        replacedDeclarations().get(replaced)?.config,
+      )) {
+        names.add(alias);
+      }
+    }
+    return [...names];
   }
 
   /**

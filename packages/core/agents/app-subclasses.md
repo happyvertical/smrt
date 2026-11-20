@@ -66,6 +66,13 @@ creation requirement or alternate migration path. An STI family's shared table
 still includes all its existing subtype columns. Existing apps without a
 same-name subclass keep their previous identities and behavior.
 
+Rows stored under the provider's qualified name before the replacement stay
+reachable: `getEquivalentQualifiedNames()` lists the replaced name after the
+app's name, and STI child reads, polymorphic `metaType` filters, delete
+cascades, `smrt doctor --db` and `smrt db:migrate-qualified-names` use that set
+([model-moves](model-moves.md)). New writes store the app's name; the backfill
+rewrites the stored provider name when run.
+
 ## Validation contract
 
 Hosted STI route selection canonicalizes the AOT provider exposure list through
