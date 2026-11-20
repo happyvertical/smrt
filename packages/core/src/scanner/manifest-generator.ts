@@ -928,7 +928,10 @@ export class ManifestGenerator {
    * package can both export `Room` at the same specifier with different
    * tables; the provider was built against its own copy, so an inherited
    * parent or foreign key resolved through the root's copy would describe a
-   * different table. Walks each confirmed provider chain once.
+   * different table. Walks each confirmed provider chain once, to its end:
+   * the walk stops only at a parent it has already checked (a shared chain,
+   * or a cycle), never at a depth, since the schema passes that follow walk
+   * the whole chain too.
    */
   private verifyProviderCopies(manifest: SmartObjectManifest): void {
     const root = this.dependencyScope?.root ?? process.cwd();
@@ -938,7 +941,9 @@ export class ManifestGenerator {
       let ref = obj.extendsQualified;
       if (!ref || !isQualifiedName(ref)) continue;
       if (parseQualifiedName(ref).packageName === ownPackage) continue;
-      for (let depth = 0; ref && isQualifiedName(ref) && depth < 32; depth++) {
+      const visited = new Set<string>();
+      while (ref && isQualifiedName(ref) && !visited.has(ref)) {
+        visited.add(ref);
         const providerPackage = parseQualifiedName(ref).packageName;
         const providerManifest = this.loadDependencyManifest(providerPackage, {
           warn: false,

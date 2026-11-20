@@ -475,6 +475,55 @@ describe('ancestors reached through a provider parent', () => {
     });
   });
 
+  // A provider chain deeper than any fixed limit: the check walks to its end,
+  // as the single-table walk that picks the table does.
+  const deepChain = (length: number) =>
+    Object.fromEntries(
+      Array.from({ length }, (_, index) => [
+        `src/Level${index}.ts`,
+        index === 0
+          ? `${CORE}\nimport { Reservation } from '${OTHER}';\n@smrt()\nexport class Level0 extends Reservation {}\n`
+          : `${CORE}\nimport { Level${index - 1} } from './Level${index - 1}';\n@smrt()\nexport class Level${index} extends Level${index - 1} {}\n`,
+      ]),
+    );
+  const RESERVATION = (table: string) => ({
+    'src/Reservation.ts': `${CORE}\n@smrt({ tableStrategy: 'sti', tableName: '${table}' })\nexport class Reservation extends SmrtObject {}\n`,
+  });
+
+  it('fails for an ancestor 40 provider levels up whose package the provider loads in another copy', async () => {
+    const root = await project({
+      providers: {
+        ...twoCopies(RESERVATION),
+        [VENDOR]: { dependencies: [OTHER], files: deepChain(40) },
+      },
+      app: {
+        'src/Session.ts': `${CORE}\nimport { Level39 } from '${VENDOR}';\n@smrt()\nexport class Session extends Level39 {}\n`,
+      },
+    });
+
+    await expect(build(root)).rejects.toMatchObject({
+      code: 'CONFIG_UNRESOLVED_IMPORTED_PARENT',
+      message: expect.stringContaining(`${VENDOR} loads ${OTHER} from`),
+    });
+  });
+
+  it('takes the single-table root 40 provider levels up when the provider and the root load one copy', async () => {
+    const root = await project({
+      providers: {
+        [OTHER]: { files: RESERVATION('rooms_v2') },
+        [VENDOR]: { dependencies: [OTHER], files: deepChain(40) },
+      },
+      app: {
+        'src/Session.ts': `${CORE}\nimport { Level39 } from '${VENDOR}';\n@smrt()\nexport class Session extends Level39 {}\n`,
+      },
+    });
+
+    const manifest = await build(root);
+    expect(manifest.objects[`${APP}:Session`]?.schema?.tableName).toBe(
+      'rooms_v2',
+    );
+  });
+
   it('accepts an inherited foreign key when the provider and the root load one copy', async () => {
     const root = await project({
       providers: {
