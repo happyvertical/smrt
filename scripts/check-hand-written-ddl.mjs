@@ -65,12 +65,16 @@ export const RUNTIME_MANAGED_SCHEMA_PATHS = Object.keys(RUNTIME_MANAGED_OPENERS)
  * The engine's per-database dialect modules: the `_archive` table the engine
  * keeps beside the app tables is the same bookkeeping `app-runtime.ts` created
  * before #5186, now spelled once per database (SQLite, PostgreSQL) under
- * `engine/db/`. The exemption moved with the statement; it did not grow.
+ * `engine/db/*-dialect.ts`. The exemption moved with the statement; it did not grow.
  */
 export const RUNTIME_MANAGED_DIALECT_PATHS = [
   [
-    'packages/app-shell/src/engine/db/',
-    "the engine's per-database statements for the runtime-managed app database",
+    'packages/app-shell/src/engine/db/sqlite-dialect.ts',
+    "the engine's SQLite statements for the runtime-managed app database",
+  ],
+  [
+    'packages/app-shell/src/engine/db/postgres-dialect.ts',
+    "the engine's PostgreSQL statements for the runtime-managed app database",
   ],
 ];
 

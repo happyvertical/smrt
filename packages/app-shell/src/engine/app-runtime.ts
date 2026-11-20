@@ -28,6 +28,7 @@ import {
   dialectFor,
   type EngineDialect,
   openDatabase,
+  requireSingleWriter,
   requireSnapshots,
   tableColumns,
   type WorkerDatabaseConfig,
@@ -640,7 +641,7 @@ export class AppRuntime {
     version: number,
   ) {
     const conflict = await db.query(
-      `SELECT 1 FROM ${q(step.table)} t LEFT JOIN _archive a ON a.version = ? AND a.tbl = ? AND a.col = ? AND a.record_id = ${this.dialect.asText('t.id')} WHERE ${this.dialect.isDistinct(`t.${q(step.column)}`, this.dialect.fromText('a.value', (step.to ?? (step.from as FieldDef)).type))} LIMIT 1`,
+      `SELECT 1 FROM ${q(step.table)} t LEFT JOIN _archive a ON a.version = ? AND a.tbl = ? AND a.col = ? AND a.record_id = ${this.dialect.asText('t.id')} WHERE ${this.dialect.isDistinct(`t.${q(step.column)}`, this.dialect.castTo('a.value', (step.to ?? (step.from as FieldDef)).type))} LIMIT 1`,
       [version, step.table, step.column],
     );
     if (conflict.rows.length)
@@ -1197,6 +1198,7 @@ export class AppRuntime {
   ) {
     const md = this.modelDef(model).methods?.[method];
     if (!md) throw new AppError(`no method ${model}.${method}()`);
+    requireSingleWriter(this.database, 'running a method');
     for (const [p, pd] of Object.entries(md.params ?? {}))
       if (pd.required && params[p] == null)
         throw new AppError(`param ${p} is required`);

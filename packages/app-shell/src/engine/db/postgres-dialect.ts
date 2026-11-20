@@ -40,6 +40,7 @@ export const postgresDialect: EngineDialect = {
   nonEmpty: (c) => `${c} IS NOT NULL AND CAST(${c} AS TEXT) <> ''`,
   asText: (e) => `CAST(${e} AS TEXT)`,
   fromText: (e, t) => `CAST(${e} AS ${COLUMN_TYPES[t]})`,
+  castTo: (e, t) => `CAST(${e} AS ${COLUMN_TYPES[t]})`,
   storedInteger: (column, alias, isInteger) => {
     const a = alias.replace(/"/g, '""');
     return isInteger

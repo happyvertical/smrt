@@ -91,8 +91,10 @@ export interface EngineDialect {
   nonEmpty(column: string): string;
   /** `expr` as TEXT (comparing an id column with the archive's TEXT keys). */
   asText(expr: string): string;
-  /** `expr` (TEXT, from the archive) converted to a column of field type `t`. */
+  /** `expr` (TEXT, from the archive) as the value to assign to a column of field type `t`. */
   fromText(expr: string, t: FieldType): string;
+  /** `CAST(expr AS <column type of t>)`, for comparing an archived value with a column. */
+  castTo(expr: string, t: FieldType): string;
   /** Select item for a stored field; an integer past 2^53 must reach JS lossless. `column` is quoted, `alias` is not. */
   storedInteger(column: string, alias: string, isInteger: boolean): string;
   /** Post-process a row selected with `storedInteger`. */

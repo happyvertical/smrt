@@ -52,6 +52,33 @@ export function scopeDatabase<T extends object>(db: T, schema: string): T {
   const raw = db as Handle;
   const apply = (h: Handle) =>
     h.query(`SELECT set_config('search_path', ?, true)`, [path]);
+  // Core keys per-connection state (shared initialisation, the runtime-managed
+  // declaration) on `db.client`, reads its class name, and tells a PostgreSQL
+  // adapter by its `query`/`exec`. The real client would run SQL on the
+  // default search_path, so the scoped handle and every transaction handle it
+  // hands out show one stand-in: the same class name and `query`/`exec` that
+  // run scoped, nothing else.
+  const token = inertClient(raw.client, (sql: string, values?: unknown[]) =>
+    scoped((tx) => (values ? tx.query(sql, values) : tx.query(sql))),
+  );
+  const guarded = new WeakMap<object, object>();
+  const guardTx = (tx: Handle): Handle => {
+    let g = guarded.get(tx);
+    if (!g) {
+      g = new Proxy(tx, {
+        get(target, prop) {
+          if (prop === 'client') return token;
+          if (prop === 'transaction')
+            return (cb: (t: Handle) => Promise<unknown>, o?: object) =>
+              target.transaction((inner: Handle) => cb(guardTx(inner)), o);
+          const value = Reflect.get(target, prop, target);
+          return typeof value === 'function' ? value.bind(target) : value;
+        },
+      });
+      guarded.set(tx, g);
+    }
+    return g;
+  };
   const scoped = <R>(
     run: (tx: Handle) => Promise<R>,
     options?: { introspection?: boolean },
@@ -71,7 +98,7 @@ export function scopeDatabase<T extends object>(db: T, schema: string): T {
   ) =>
     raw.transaction(async (tx: Handle) => {
       await apply(tx);
-      return cb(tx);
+      return cb(guardTx(tx));
     }, options);
   members.beginTransaction = async (options?: object) => {
     const h = await raw.beginTransaction(options);
@@ -81,7 +108,7 @@ export function scopeDatabase<T extends object>(db: T, schema: string): T {
       await h.rollback?.().catch(() => {});
       throw e;
     }
-    return h;
+    return guardTx(h);
   };
   members.table = () => {
     throw new EngineError(
@@ -89,22 +116,49 @@ export function scopeDatabase<T extends object>(db: T, schema: string): T {
       'refused',
     );
   };
+  if (token !== undefined) members.client = token;
   return new Proxy(raw, {
     get(target, prop, receiver) {
       if (typeof prop === 'string' && Object.hasOwn(members, prop))
         return members[prop];
       const value = Reflect.get(target, prop, receiver);
-      // Anything callable that is not listed would reach the raw handle with
-      // the default search_path: hide it, so a caller cannot use it by mistake.
-      if (typeof value === 'function' && !PASS_THROUGH.has(String(prop)))
-        return undefined;
+      // Only plain values (the adapter's `engine`, `url`, flags) and the
+      // table-free operations pass. A function or an object member
+      // (`alterTable`, `vector`, `notifications`, ...) would reach the raw
+      // handle with the default search_path: hide it, so a caller cannot use
+      // it by mistake and a future adapter member is closed by default.
+      if (typeof value === 'function')
+        return PASS_THROUGH.has(String(prop)) ? value.bind(target) : undefined;
+      if (value !== null && typeof value === 'object') return undefined;
       return value;
     },
   }) as T;
 }
 
+/** The client stand-in of `scopeDatabase`: class name, `connection` marker, scoped `query`/`exec`. */
+function inertClient(
+  client: unknown,
+  run: (sql: string, values?: unknown[]) => Promise<unknown>,
+): object | undefined {
+  if (client === null || typeof client !== 'object') return undefined;
+  const token: Record<string, unknown> = {
+    constructor: (client as { constructor: unknown }).constructor,
+    query: run,
+    exec: (sql: string) => run(sql),
+  };
+  if ('connection' in client) token.connection = true;
+  return token;
+}
+
 /** Operations that do not touch tables, so need no scope. */
-const PASS_THROUGH = new Set(['close', 'reopenOptions', 'constructor']);
+export const PASS_THROUGH = new Set(['close', 'reopenOptions']);
+export const SCOPED_MEMBERS = new Set<string>([
+  ...STATEMENTS,
+  'getTableSchema',
+  'transaction',
+  'beginTransaction',
+  'table',
+]);
 
 /** Open the database a worker was told to open, scoped to its schema. */
 export async function openPostgres(

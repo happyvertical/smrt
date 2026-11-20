@@ -390,6 +390,75 @@ describe('data flows on PostgreSQL', () => {
     expect(report.rows.find((r) => r.code === 'a')?.qty).toBe(4);
   });
 
+  it('an upsert load over date, boolean, json, integer and number fields undoes exactly; an outside edit refuses the undo', async () => {
+    await run({
+      type: 'defineModel',
+      name: 'Item',
+      fields: {
+        code: { type: 'text', required: true },
+        when: { type: 'date' },
+        done: { type: 'boolean' },
+        meta: { type: 'json' },
+        count: { type: 'integer' },
+        price: { type: 'number' },
+      },
+    });
+    for (const [code, count] of [
+      ['a', 5],
+      ['b', 6],
+    ] as const)
+      await host.create('Item', {
+        code,
+        when: '2026-01-05',
+        done: true,
+        meta: { k: [1, 2] },
+        count,
+        price: 1.5,
+      });
+    const snapshot = async () =>
+      (await host.list('Item')).sort((x, y) =>
+        String(x.code).localeCompare(String(y.code)),
+      );
+    const before = await snapshot();
+    const cmd: Command = {
+      type: 'loadRecords',
+      model: 'Item',
+      mode: 'upsert',
+      key: ['code'],
+      rows: [
+        {
+          code: 'a',
+          when: '2027-02-03',
+          done: false,
+          meta: { k: [3] },
+          count: 9,
+          price: 2.25,
+        },
+        { code: 'c', when: '2027-03-04', done: true, count: 1, price: 0.5 },
+      ],
+    };
+    expect((await host.plan(cmd)).preview).toMatchObject({
+      insert: 1,
+      update: 1,
+    });
+    await run(cmd);
+    const after = await snapshot();
+    expect(after.map((r) => r.code)).toEqual(['a', 'b', 'c']);
+    expect(after[0]).toMatchObject({ done: false, count: 9, price: 2.25 });
+    expect(after[1]).toEqual(before[1]);
+    await run({ type: 'undo' });
+    expect(await snapshot()).toEqual(before);
+
+    // The same load again; an edit outside it must refuse the undo.
+    await run(cmd);
+    const row = (await snapshot())[0];
+    await host.update('Item', String(row.id), { count: 77 });
+    await expect(run({ type: 'undo' })).rejects.toThrow(
+      /changed since the command/,
+    );
+    expect((await host.get('Item', String(row.id))).count).toBe(77);
+  });
+
   it('a very large integer reads back exactly', async () => {
     await run({
       type: 'defineModel',

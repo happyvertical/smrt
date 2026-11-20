@@ -56,8 +56,11 @@ adds) and swaps it in once it is ready. The engine must not import SvelteKit,
   transaction that rolls back on any failure, so a failed method leaves
   nothing behind and the owner has nothing to recover. If the data changed
   between the read and the write (an edit outside methods) the method re-runs
-  (3 retries). The snapshot stays as a pre-write undo point. SQLite only; a
-  PostgreSQL port would use serializable isolation with the same retry.
+  (3 retries). The snapshot stays as a pre-write undo point (SQLite only: PGlite runs the
+  method without one). On a PostgreSQL SERVER the run is refused
+  (`requireSingleWriter`): the re-read check needs the one connection of an
+  embedded database, and the server port is serializable isolation with the
+  same retry, not built yet.
   `setMemoryLimit` does not bound large single allocations in this build, and the
   interrupt handler is polled only every ~10,000 operations, so the WebAssembly
   heap itself is capped (`SANDBOX_HEAP_PAGES`, 128 MB): a memory bomb stops in
@@ -107,14 +110,27 @@ scans for it.
   `publishDraft`; the portable export and import (`openAppDatabase(dataDir)`
   opens SQLite). On PostgreSQL `snapshot()` returns `null`: boot and method runs
   proceed without a pre-change copy, so there is no method undo point there
-  until #5187.
+  until #5187. Method runs on a PostgreSQL SERVER (`kind: 'postgres'`) are
+  refused (`requireSingleWriter`, see Sandbox); PGlite runs them.
 - **Tests.** `pnpm test:pglite` (`vitest.pglite.config.ts`) runs the engine
   suite with `SMRT_APP_SHELL_DB=pglite`: each data directory gets its own
   PGlite in schema `app` (`db/harness.ts`). Files that read `app.db` with
   `node:sqlite` or exercise snapshots, drafts or publish are excluded there
   (the list is in the config, with the reason); they run on SQLite as before.
   `postgres.test.ts` always runs on PGlite: two apps' schemas stay apart
-  through records, REST and tools, and an app with no schema fails loudly.
+  through records, REST and tools, an app with no schema fails loudly, and no
+  member of the adapter handle reaches the database unscoped.
+  `postgres-engine.test.ts` walks migrations, loads (upsert over every field
+  type, undo, refused undo), merge, extract, methods and reports on PGlite.
+  **Coverage on PostgreSQL is partial**: 24 files, about 200 tests, against 41
+  files and 380 tests on SQLite; the excluded files are listed with their
+  reason in `vitest.pglite.config.ts`. The server kind is covered through the
+  same scope code over PGlite, not against a real server. Known SDK limit:
+  `renderExpression` renders an all-NULL `secondsBetween` as `NULL - NULL`,
+  which PostgreSQL cannot type (`portable-calculations.test.ts` skips that one
+  case there). Core keys state on `db.client` and detects the adapter by its
+  `query`/`exec`: the scoped handle shows a stand-in client with those two,
+  scoped, never the real one.
 
 ## Profile subclass (core gap fixed, #4871)
 

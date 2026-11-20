@@ -92,3 +92,50 @@ describe.each(['sqlite', 'postgres'] as const)('column types on %s', (kind) => {
     expect(wrong).toEqual([]);
   });
 });
+
+describe.each([
+  'sqlite',
+  'postgres',
+] as const)('archive round trip on %s', (kind) => {
+  it('removeField then undo restores date, boolean, json, integer and number values exactly', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'engine-archive-'));
+    dirs.push(dir);
+    const pg = kind === 'postgres' ? await harnessDatabase(dir) : null;
+    if (pg) released.push(() => pg.release?.());
+    const host = await AppHost.open(dir, {
+      store: new MemoryVersionStore(),
+      database: pg ? pg.config : { kind: 'sqlite' },
+    });
+    hosts.push(host);
+    const fields = {
+      when: { type: 'date' },
+      done: { type: 'boolean' },
+      meta: { type: 'json' },
+      count: { type: 'integer' },
+      price: { type: 'number' },
+      note: { type: 'text' },
+    } as const;
+    await host.execute(
+      { type: 'defineModel', name: 'Keep', fields: { ...fields } as never },
+      { author: 't' },
+    );
+    await host.create('Keep', {
+      when: '2026-01-05',
+      done: true,
+      meta: { k: [1, 2] },
+      count: 5,
+      price: 1.5,
+      note: 'n',
+    });
+    const before = (await host.list('Keep'))[0];
+    for (const field of Object.keys(fields)) {
+      await host.execute(
+        { type: 'removeField', model: 'Keep', field },
+        { author: 't', approved: true },
+      );
+    }
+    for (let i = 0; i < Object.keys(fields).length; i++)
+      await host.execute({ type: 'undo' }, { author: 't', approved: true });
+    expect((await host.list('Keep'))[0]).toEqual(before);
+  });
+});

@@ -8,7 +8,8 @@ import { getDatabase } from '@happyvertical/sql';
 import { importPGlite } from '@happyvertical/sql/pglite';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { PGliteClient } from './db/index.ts';
-import { scopeDatabase } from './db/postgres.ts';
+import { requireSingleWriter } from './db/index.ts';
+import { PASS_THROUGH, SCOPED_MEMBERS, scopeDatabase } from './db/postgres.ts';
 import { AppHost, EngineError, MemoryVersionStore } from './index.ts';
 
 type Client = PGliteClient;
@@ -132,14 +133,36 @@ describe('one schema per app (tenancy)', () => {
     ).not.toContain('app_');
   });
 
-  it('fails closed: no operation reaches the raw handle', async () => {
-    const db: any = scopeDatabase(
-      await getDatabase({ type: 'pglite', client: pg } as any),
-      'app_a',
-    );
+  it('fails closed: no member of the raw handle reaches it unscoped', async () => {
+    const raw: any = await getDatabase({ type: 'pglite', client: pg } as any);
+    const db: any = scopeDatabase(raw, 'app_a');
     expect(() => db.table('x')).toThrow(/schema-scoped/);
-    expect(db.acquireSession).toBeUndefined();
-    expect(db.syncSchema).toBeUndefined();
+    // Every member of the adapter, own or inherited: a scoped operation, a
+    // table-free one, or a plain value. Never a function or object that would
+    // run on the default search_path.
+    const keys = new Set<string>();
+    for (let o = raw; o && o !== Object.prototype; o = Object.getPrototypeOf(o))
+      for (const k of Object.getOwnPropertyNames(o)) keys.add(k);
+    expect(keys.size).toBeGreaterThan(10);
+    const open: string[] = [];
+    for (const k of keys) {
+      const v = db[k];
+      if (typeof v === 'function') {
+        if (!SCOPED_MEMBERS.has(k) && !PASS_THROUGH.has(k)) open.push(k);
+      } else if (v !== null && typeof v === 'object' && k !== 'client')
+        open.push(k);
+    }
+    expect(open).toEqual([]);
+    // Core keys state on `client` and tells the adapter by its `query`/`exec`:
+    // the stand-in has those and nothing else, and they run scoped.
+    expect(Object.keys(db.client).sort()).toEqual(
+      ['constructor', 'exec', 'query'].sort(),
+    );
+    await db.client.query('CREATE TABLE client_probe (id int)');
+    expect(await tablesIn('app_a')).toContain('client_probe');
+    expect(await tablesIn('app_b')).not.toContain('client_probe');
+    for (const k of ['acquireSession', 'syncSchema', 'alterTable', 'vector'])
+      expect(db[k], k).toBeUndefined();
   });
 });
 
@@ -183,6 +206,14 @@ describe('no schema, no start', () => {
 });
 
 describe('what needs SQLite stays SQLite (#5187)', () => {
+  it('a method run is refused on a PostgreSQL server, allowed on PGlite and SQLite', () => {
+    expect(() =>
+      requireSingleWriter({ kind: 'postgres' }, 'running a method'),
+    ).toThrow(/not supported on a PostgreSQL server/);
+    expect(() => requireSingleWriter({ kind: 'pglite' }, 'x')).not.toThrow();
+    expect(() => requireSingleWriter({ kind: 'sqlite' }, 'x')).not.toThrow();
+  });
+
   it('drafts and publish are refused with a clear error; method undo points are skipped', async () => {
     const host = await open('app_a');
     const draft = host.forkDraft(join(tmp(), 'draft'), {

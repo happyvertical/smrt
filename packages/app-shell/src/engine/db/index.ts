@@ -87,6 +87,23 @@ export function forWorker(config: DatabaseConfig): {
 }
 
 /** Refuse what exists on SQLite only (snapshots, copies, drafts, publish; #5187). */
+/**
+ * A method re-reads and writes in one transaction and re-runs if the data
+ * moved in between. That check needs the one connection of an embedded
+ * database; a server pool at default isolation would not hold it against
+ * other connections, and SERIALIZABLE with retry is not built yet (#5183).
+ */
+export function requireSingleWriter(
+  config: { kind: DatabaseKind },
+  what: string,
+) {
+  if (config.kind === 'postgres')
+    throw new EngineError(
+      `${what} is not supported on a PostgreSQL server yet (it needs serializable isolation)`,
+      'refused',
+    );
+}
+
 export function requireSnapshots(config: { kind: DatabaseKind }, what: string) {
   if (config.kind !== 'sqlite')
     throw new EngineError(

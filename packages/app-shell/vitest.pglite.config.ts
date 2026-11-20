@@ -33,9 +33,6 @@ const SQLITE_ONLY = [
   // a story whose steps depend on each other: methods snapshot to a file, and
   // the profiles step reads app.db
   'walkthrough.test.ts',
-  // a calculated column on PostgreSQL: core's generated expression for a
-  // date-only literal does not type (see agents/engine.md, Database)
-  'portable-calculations.test.ts',
 ];
 
 const baseTest = (base as { test?: { exclude?: string[] } }).test ?? {};
