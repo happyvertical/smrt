@@ -77,6 +77,44 @@ describe('field decorator options', () => {
     expect(fields.apiSecret?.sensitive).toBe(true);
   });
 
+  it('reads a string-literal computed key in a single-table child override like a plain key', () => {
+    const result = parseSource(
+      `${PREAMBLE}
+@smrt({ tableStrategy: 'sti' })
+export class OptionBase extends SmrtObject {
+  secret = '';
+}
+@smrt()
+export class OptionChild extends OptionBase {
+  @field({ sensitive: true }) override ['secret'] = '';
+}`,
+      FILE,
+    );
+    const resolver = new InheritanceResolver();
+    resolver.addClasses(result.classes);
+    const child = resolver
+      .resolveAll()
+      .find((entry) => entry.className === 'OptionChild');
+    if (!child) throw new Error('OptionChild was not resolved');
+    const definition = new ManifestAdapter().toSmartObjectDefinition(child, {
+      packageName: '@fixture/options',
+    });
+
+    expect(result.errors.filter((e) => e.severity === 'error')).toEqual([]);
+    expect(definition.fields.secret?.sensitive).toBe(true);
+  });
+
+  it('fails on a decorated field whose computed key cannot be named', () => {
+    const { errors } = scanModel(
+      `@field({ sensitive: true }) [KEY] = '';`,
+      `const KEY = 'secret' as string;\nlet other = KEY;`,
+    );
+
+    expect(errors).toHaveLength(1);
+    expect(errors[0].message).toContain('`[KEY]`');
+    expect(errors[0].message).toContain('identifier or a string literal key');
+  });
+
   it('reads values declared as same-file constants', () => {
     const { errors, fields } = scanModel(
       `

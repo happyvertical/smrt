@@ -4412,8 +4412,25 @@ function extractPropertyDefinition(
   ctx?: DecoratorConfigContext,
   className?: string,
 ): RawFieldDefinition | null {
-  // Skip computed properties
-  if (node.computed) return null;
+  // A computed key written as a string literal (`['secret']`) names the field
+  // like a plain key. Any other computed key cannot be named statically: a
+  // decorated one is a scan error (its options would be lost), an
+  // undecorated one is skipped as before.
+  if (
+    node.computed &&
+    !(node.key.type === 'Literal' && typeof node.key.value === 'string')
+  ) {
+    if (node.decorators?.length && ctx) {
+      ctx.unresolved.push({
+        expression: `[${sliceSource(node.key, sourceText) ?? '<key>'}]`,
+        start: node.start,
+        decorator: 'field decorator',
+        ...(className ? { className } : {}),
+        hint: 'A decorated field must have a name the scanner can read: write it as an identifier or a string literal key.',
+      });
+    }
+    return null;
+  }
 
   const name = getPropertyKey(node.key);
   if (!name) return null;
