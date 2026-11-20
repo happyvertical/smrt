@@ -35,6 +35,7 @@
     "clean": "rm -rf dist build .svelte-kit",
     "test:bundled-worker": "SMRT_APP_SHELL_WORKER=bundle vitest run src/engine",
     "test": "svelte-kit sync && vitest run && vitest run -c vitest.pglite.config.ts && vitest run -c vitest.dom.config.ts",
+    "test:postgres": "node ../../scripts/run-with-ci-postgres.mjs -- pnpm exec vitest run src/engine/postgres-server.test.ts",
     "test:pglite": "vitest run -c vitest.pglite.config.ts",
     "typecheck": "svelte-kit sync && node ../../scripts/write-source-typecheck-config.mjs tsconfig.json .svelte-kit/tsconfig.typecheck.json && tsc -p .svelte-kit/tsconfig.typecheck.json && node ../../scripts/svelte-check-workspace.mjs --config ./svelte.config.typecheck.js --tsconfig ./.svelte-kit/tsconfig.typecheck.json",
     "prepack": "node ../../scripts/prepack-package.js"
