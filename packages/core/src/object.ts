@@ -4681,8 +4681,19 @@ export class SmrtObject extends SmrtClass {
 
     const idConflict =
       conflictColumns.length === 1 && conflictColumns[0] === 'id';
+    // A new object whose id collides with a stored row updates that row only
+    // when both have the same owner on every ownership column (an owner the
+    // save leaves unset counts as NULL), exactly as a natural-key adoption.
+    // A different owner is refused with TenantIsolationError, never
+    // rewritten.
     if (!this._persisted && idConflict && postgres) {
       if (!(await this.insertIfAbsent(data, conflictColumns, true))) {
+        const current = await this.readNaturalKeyRow({ id: data.id });
+        if (current) {
+          this.assertSameNaturalKeyOwner(data, current, conflictColumns, {
+            id: data.id,
+          });
+        }
         throw this.trackedIdentityWriteError(data.id);
       }
       return;
@@ -4693,6 +4704,11 @@ export class SmrtObject extends SmrtClass {
         !conflictColumns.every((column) => data[column] !== undefined))
     ) {
       const current = await this.readNaturalKeyRow({ id: data.id });
+      if (current && idConflict) {
+        this.assertSameNaturalKeyOwner(data, current, conflictColumns, {
+          id: data.id,
+        });
+      }
       if (current?._sync_origin_device_id != null) {
         throw this.trackedIdentityWriteError(data.id);
       }
@@ -4934,6 +4950,8 @@ export class SmrtObject extends SmrtClass {
     // The writer's own invalid-state refusal is not a database failure.
     if (error instanceof RuntimeError && error.code === 'RUNTIME_INVALID_STATE')
       return error;
+    // An owner refusal is a tenant boundary, not a database failure.
+    if (error instanceof TenantIsolationError) return error;
     const classification = classifyDatabaseError(error);
     if (classification.kind === 'unique_violation') {
       const field = this.extractConstraintFieldFromChain(error, classification);
@@ -5184,6 +5202,20 @@ export class SmrtObject extends SmrtClass {
       ? undefined
       : ObjectRegistry.getConflictPredicate(this.getResolvedQualifiedName());
     const conflictWhere = predicate ? ` WHERE ${predicate}` : '';
+    // The id-conflict update also requires the stored row's owner to equal
+    // the save's on every ownership column the row carries (normalized as in
+    // assertSameNaturalKeyOwner); otherwise nothing is written.
+    const normalizedOwner = (reference: string) =>
+      `NULLIF(lower(trim(CAST(${reference} AS TEXT))), '')`;
+    const ownerPredicate = updateUntrackedId
+      ? [...SmrtObject.ownershipColumnsFor(this.getResolvedQualifiedName())]
+          .filter((column) => Object.hasOwn(data, column))
+          .map(
+            (column) =>
+              ` AND ${normalizedOwner(`${table}.${quote(column)}`)} IS NOT DISTINCT FROM ${normalizedOwner(`excluded.${quote(column)}`)}`,
+          )
+          .join('')
+      : '';
     const action = updateUntrackedId
       ? `DO UPDATE SET ${columns
           .filter(
@@ -5191,7 +5223,9 @@ export class SmrtObject extends SmrtClass {
               column !== quote('id') && column !== quote('created_at'),
           )
           .map((column) => `${column} = excluded.${column}`)
-          .join(', ')} WHERE ${table}."_sync_origin_device_id" IS NULL`
+          .join(
+            ', ',
+          )} WHERE ${table}."_sync_origin_device_id" IS NULL${ownerPredicate}`
       : 'DO NOTHING';
     const result = await this.db.query(
       `INSERT INTO ${table} (${columns.join(', ')}) VALUES (${placeholders}) ON CONFLICT (${conflictColumns.map(quote).join(', ')})${conflictWhere} ${action} RETURNING ${quote('id')}`,
