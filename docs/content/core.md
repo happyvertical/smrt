@@ -703,7 +703,10 @@ neither is a row with no stored type (`_meta_type` NULL): generated schemas
 declare the column `NOT NULL`, but a table created before that, or written
 outside SMRT, may hold such rows. Backfill them with the base's key
 (`UPDATE <table> SET _meta_type = '<base key>' WHERE _meta_type IS NULL`)
-before upgrading. A subtype of equal tenancy is served through its base only
+before upgrading. The same holds for a collection read inside a request of an
+STI family other than the route's (for example in a custom action): a base
+never serves rows of a subtype whose tenancy differs from its own. A subtype of
+equal tenancy is served through its base only
 where it is served on its own (switched on for the tenant, readable by the
 caller, its `api.principalContext` requirement met, on an MCP server's model
 list, and, on emitted SvelteKit routes, generated from the same manifest: a

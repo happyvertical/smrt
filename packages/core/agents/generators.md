@@ -190,7 +190,11 @@ rule of `src/request-actor.ts`. Per request (per sync item, per tool call):
    or writing another model) is held to the same actor rules under its live
    policy: a caller with no tenant reads only its rows without an owner
    (required mode refuses) and writes none; a read grant writes no
-   tenant-scoped row of any model. Code that enters a system context inside
+   tenant-scoped row of any model. A read or write of another STI family
+   that has members is restricted to that family's types of equal tenancy
+   to the model queried (resolved for the same actor; a system actor reads
+   every type), so an unrelated unscoped base never serves rows of a
+   tenant-scoped member. Code that enters a system context inside
    the request acts as the system, and code that enters a tenant context in
    a request with no tenant acts in that tenant (each call is held to the
    context active when it runs), except under a read grant, which no context

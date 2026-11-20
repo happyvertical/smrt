@@ -1187,6 +1187,28 @@ function inFamily(t: RequestTenancy, key: string): boolean {
 }
 
 /**
+ * The tenancy whose admitted types restrict an operation on `key`'s table:
+ * the bound request's when `key` is in the route's family; for an STI model
+ * of another family that has members, that family's tenancy resolved for
+ * the same actor (its members of equal tenancy to `key`), so a read through
+ * an unrelated base never serves rows of a member whose tenancy differs, as
+ * that family's own routes would not. A system actor reads every type, as
+ * it does every tenant. `undefined` when no membership applies.
+ */
+function familyTenancyOf(
+  t: RequestTenancy,
+  key: string,
+): RequestTenancy | undefined {
+  if (inFamily(t, key)) return t;
+  if (!t.enforced || t.actor.system) return undefined;
+  if (ObjectRegistry.getTableStrategy(key) !== 'sti') return undefined;
+  if (stiDescendants(key).length === 0) return undefined;
+  const other = resolveRequestTenancy({ model: key, actor: t.actor });
+  if (other.failed !== undefined) throwIfRefused(unresolved());
+  return other;
+}
+
+/**
  * Refuse an operation whose tenancy moved since admission: tenancy turned on
  * or off, or a policy of any model in `keys` the request resolved changed.
  */
@@ -1249,12 +1271,15 @@ function assertWritable(
 ): void {
   const family = inFamily(t, key);
   const member = memberFor(t, key, family);
-  if (family) {
+  const owner = familyTenancyOf(t, key);
+  if (owner) {
     const stored = storedTypeOf(instance);
     // A new row is held to the create targets when the request selects
     // them; a stored row (an update, a delete) to the types the route reads.
     const types =
-      !instance.isPersisted && t.creatable ? t.creatable : t.admitted;
+      !instance.isPersisted && owner.creatable
+        ? owner.creatable
+        : owner.admitted;
     if (
       !types?.has(key) ||
       (typeof stored === 'string' && stored && !types.has(stored))
@@ -1381,8 +1406,9 @@ function createRequestTenancyInterceptor(): CollectionInterceptor {
         throwIfRefused(read);
         if (read.kind === 'global-only') scope = read.scope;
       }
-      if (!family && !scope) return;
-      const admitted = family ? [...(t.admitted ?? [])] : undefined;
+      const owner = familyTenancyOf(t, key);
+      if (!owner && !scope) return;
+      const admitted = owner ? [...(owner.admitted ?? [])] : undefined;
       return {
         ...options,
         where: dnfOf(options.where).map((group) => [
@@ -1405,13 +1431,14 @@ function createRequestTenancyInterceptor(): CollectionInterceptor {
         throwIfRefused(read);
         if (read.kind === 'global-only') scope = read.scope;
       }
-      if (!family && !scope) return;
+      const owner = familyTenancyOf(t, key);
+      if (!owner && !scope) return;
       const base: Record<string, unknown> =
         typeof filter === 'string'
           ? resolveGetStringFilter(filter)
           : { ...filter };
       return {
-        ...(family ? familyPointFilter(t, base) : base),
+        ...(owner ? familyPointFilter(owner, base) : base),
         ...(scope ?? {}),
       };
     },
