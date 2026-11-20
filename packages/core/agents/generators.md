@@ -118,14 +118,19 @@ which has no global-only mode; its #1782 scope and the interceptor's refusal
 go through the same error mapping. That exception covers the CRUD list, get
 and count handlers, and a custom collection GET action whose arguments carry
 the read scope (`readActionReceivesTenantScope`: a single `options` parameter
-handed the scoped options, or a parameter named after an ownership property
-handed the scope value; on runtime REST without scanned metadata, a method
-whose source declares any parameter). Every other custom collection action
-reads through the collection with no scope of its own, so for a caller with no
-tenant it runs inside the gate, which refuses it. The emitted SvelteKit
-routes apply the same rule, reading the ownership property from the manifest
-(`tenantScoped.field`, else `tenantId`): such a collection-scoped (or static)
-action of a tenant-scoped model calls `requireTenantWriteContext`. A caller
+handed the scoped options, or parameters named after every ownership property
+the live registry reports, each handed its scope value). On runtime REST
+without scanned metadata the method is handed the scoped options whole, so it
+qualifies only when `declaredParameterNames` reads exactly one plain parameter
+named `options` from its source (comments and defaults are read; a
+destructured or rest parameter, or any list it cannot read, counts as
+receiving nothing). Every other custom collection action reads through the
+collection with no scope of its own, so for a caller with no tenant it runs
+inside the gate, which refuses it. The emitted SvelteKit routes apply the same
+rule: such a collection-scoped (or static) action of a tenant-scoped model
+calls `requireTenantWriteContext`; one whose parameters name the manifest's
+ownership property (`tenantScoped.field`, else `tenantId`) decides again at
+request time against the properties `scopeTenantReadOptions` sets. A caller
 with no tenant never writes a tenant-scoped row, global rows included.
 
 A caller whose resolved tenant differs from a tenant context the host already

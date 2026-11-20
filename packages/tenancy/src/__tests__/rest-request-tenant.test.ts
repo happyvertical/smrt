@@ -52,11 +52,19 @@ const ROW_GLOBAL = '99999999-0000-4000-8000-000000000009';
       'recent',
       'latest',
       'unscanned',
+      'newest',
+      'paged',
+      'annotated',
+      'filtered',
     ],
     routes: {
       recent: { method: 'GET', scope: 'collection' },
       latest: { method: 'GET', scope: 'collection' },
       unscanned: { method: 'GET', scope: 'collection' },
+      newest: { method: 'GET', scope: 'collection' },
+      paged: { method: 'GET', scope: 'collection' },
+      annotated: { method: 'GET', scope: 'collection' },
+      filtered: { method: 'GET', scope: 'collection' },
     },
   },
 })
@@ -94,7 +102,42 @@ class ScopedMemoCollection extends SmrtCollection<ScopedMemo> {
     const rows = await this.list({});
     return { titles: rows.map((row) => row.title).sort() };
   }
+
+  /** No scanned metadata; one page-size parameter with a default. */
+  async newest(limit = 10): Promise<{ titles: string[] }> {
+    const rows = await this.list({ limit: Number(limit) || 10 });
+    return { titles: rows.map((row) => row.title).sort() };
+  }
+
+  /** No scanned metadata; takes an object but keeps only its page size. */
+  async paged({ limit }: { limit?: unknown } = {}): Promise<{
+    titles: string[];
+  }> {
+    const rows = await this.list({ limit: Number(limit) || 10 });
+    return { titles: rows.map((row) => row.title).sort() };
+  }
+
+  /** No scanned metadata; reads with its options as the filter. */
+  async filtered(options: Record<string, unknown> = {}): Promise<{
+    titles: string[];
+  }> {
+    const rows = await this.list({ where: options });
+    return { titles: rows.map((row) => row.title).sort() };
+  }
 }
+
+// No scanned metadata; an empty parameter list holding only a comment (built
+// from source text so the comment survives transpilation).
+Object.defineProperty(ScopedMemoCollection.prototype, 'annotated', {
+  configurable: true,
+  writable: true,
+  value: new Function(
+    `return async function annotated(/* takes nothing: options */) {
+      const rows = await this.list({});
+      return { titles: rows.map((row) => row.title).sort() };
+    };`,
+  )(),
+});
 
 /** A natural key that omits the tenant: the shape the ownership check guards. */
 @smrt({
@@ -378,6 +421,18 @@ describe('runtime REST request tenant', () => {
     it.each([
       ['whose parameter carries no ownership', 'memos/latest?limit=50'],
       ['with no parameters and no registered metadata', 'memos/unscanned'],
+      [
+        'with a defaulted parameter and no registered metadata',
+        'memos/newest?limit=50',
+      ],
+      [
+        'with a destructured parameter and no registered metadata',
+        'memos/paged?limit=50',
+      ],
+      [
+        'with a commented empty parameter list and no registered metadata',
+        'memos/annotated',
+      ],
     ])('%s is refused for a caller with no tenant', async (_label, path) => {
       const response = await call(handler, 'GET', path, {
         as: 'user-without-tenant',
@@ -391,11 +446,41 @@ describe('runtime REST request tenant', () => {
     it.each([
       ['whose parameter carries no ownership', 'memos/latest?limit=50'],
       ['with no parameters and no registered metadata', 'memos/unscanned'],
+      [
+        'with a defaulted parameter and no registered metadata',
+        'memos/newest?limit=50',
+      ],
+      [
+        'with a destructured parameter and no registered metadata',
+        'memos/paged?limit=50',
+      ],
+      [
+        'with a commented empty parameter list and no registered metadata',
+        'memos/annotated',
+      ],
+      ['taking options and no registered metadata', 'memos/filtered'],
     ])('%s serves the caller the rows of its own tenant', async (_label, path) => {
       const response = await call(handler, 'GET', path, { as: 'user-of-a' });
       expect(response.status).toBe(200);
       expect(await response.json()).toMatchObject({
         result: { titles: ['a'] },
+      });
+    });
+  });
+
+  describe('a custom collection read taking options with no registered metadata', () => {
+    it('serves a caller with no tenant only rows without an owner', async () => {
+      const response = await call(
+        handler,
+        'GET',
+        `memos/filtered?tenantId=${TENANT_B}`,
+        {
+          as: 'user-without-tenant',
+        },
+      );
+      expect(response.status).toBe(200);
+      expect(await response.json()).toMatchObject({
+        result: { titles: ['global'] },
       });
     });
   });

@@ -3945,20 +3945,31 @@ function generateActionRouteHandler(
   // does a collection-scoped read whose arguments do not carry the scope: its
   // body reads through the collection with no tenant scope of its own
   // (runtime REST refuses the same call, by the same rule). A read handed the
-  // scoped options whole, or the scope under a parameter named after the
+  // scoped options whole, or the scope under parameters named after every
   // ownership property, is scoped through it (`scopeTenantReadOptions`), so a
   // caller with no tenant reads only rows without an owner.
   const collectionScoped = hostType === 'collection' || !!actionDef.isStatic;
+  const parameterNames = (
+    Array.isArray(actionDef.parameters) ? actionDef.parameters : []
+  ).map((parameter) => parameter.name);
   const readsScopedOptions =
     routeConfig.method === 'GET' &&
-    readActionReceivesTenantScope(
-      (Array.isArray(actionDef.parameters) ? actionDef.parameters : []).map(
-        (parameter) => parameter.name,
-      ),
-      ownershipProperties,
-    );
+    readActionReceivesTenantScope(parameterNames, ownershipProperties);
   if (tenantScoped && (mutating || (collectionScoped && !readsScopedOptions))) {
     guardLines.push('  requireTenantWriteContext(locals);');
+  } else if (
+    tenantScoped &&
+    collectionScoped &&
+    !(parameterNames.length === 1 && parameterNames[0] === 'options')
+  ) {
+    // Named ownership parameters: the manifest's ownership property is among
+    // them, but the scope is injected from the live registry, which may name
+    // more ownership properties. Decide again at request time against the
+    // properties `scopeTenantReadOptions` sets (none when tenancy is off or a
+    // super-admin bypass applies), as runtime REST does.
+    guardLines.push(
+      `  if (Object.keys(scopeTenantReadOptions(${JSON.stringify(readScopeModel)}, {})).some((property) => !${JSON.stringify(parameterNames)}.includes(property))) requireTenantWriteContext(locals);`,
+    );
   }
   const authGuardLine = guardLines.join('\n');
   // Even input-free actions need request context for failure correlation.

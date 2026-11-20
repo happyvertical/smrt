@@ -910,6 +910,43 @@ describe('emitted SvelteKit list route with the real tenant interceptor', () => 
       ).toEqual(['bulletin for everyone', 'bulletin for everyone, labelled']);
     });
 
+    describe('an ownership property the live registry adds to the manifest one', () => {
+      let dispose: (() => void) | undefined;
+      beforeAll(() => {
+        dispose = ObjectRegistry.registerOwnershipColumnSource((name) =>
+          name.split(':').pop() === 'EmittedRouteBulletin'
+            ? ['tenant_id']
+            : undefined,
+        );
+      });
+      afterAll(() => dispose?.());
+
+      it('a collection GET action naming only the manifest ownership parameter is refused to a caller with no tenant', async () => {
+        expect(
+          (
+            await call(
+              'emittedroutebulletins/read-org-named',
+              {},
+              `?organizationId=${THEIRS}`,
+            )
+          ).status,
+        ).toBe(401);
+        expect(
+          await actionResult(
+            await call('emittedroutebulletins/read-org-named', {}, '', {
+              locals: { tenantId: OURS, user: { id: 'reader' } },
+            }),
+          ),
+        ).toBe(OURS);
+      });
+
+      it('a collection GET action taking options reads rows owned through neither property', async () => {
+        expect(
+          await actionResult(await call('emittedroutebulletins/browse')),
+        ).toEqual(['bulletin for everyone']);
+      });
+    });
+
     it('an item GET action loads only rows without an owner', async () => {
       const summary = 'emittedroutebulletins/[id]/summary';
       expect((await call(summary, { id: bulletinIds.everyone })).status).toBe(
