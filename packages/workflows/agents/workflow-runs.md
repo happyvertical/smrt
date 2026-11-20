@@ -95,6 +95,10 @@ driver wiring on every job (after a restart nothing lives in a closure); its
   run and enqueues `enqueueHandlerJob({ handler, payload: { runId, definition
   }, dedupeKey: runId, maxAttempts: 1 })`. Run and job are not one
   transaction: a repeated `start` with the same key admits the job a crash lost.
+  Once retention has removed the key's run, its id stays reserved, so `start`
+  with that key throws `WorkflowRunKeyExpiredError` for any request
+  (`WorkflowRunKeyConflictError` means the run is kept and the request
+  differs).
   A pending job row with no worker stays pending until a worker runs.
 - **The handler** requires an authentic runner context and a claim
   (`claimFencing: true`), reads owner and tenant from the run row (never the

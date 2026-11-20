@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import {
   type AiRunBudget,
+  AiRunIdUsedError,
   cancelAiRun,
   createTrackedAiClient,
   finishAiRun,
@@ -61,6 +62,21 @@ export class WorkflowRunKeyConflictError extends Error {
   constructor(readonly runId: string) {
     super('This workflow key was already used with a different request');
     this.name = 'WorkflowRunKeyConflictError';
+  }
+}
+
+/**
+ * A start key whose run retention has removed. The key's run id named that
+ * run and a run id is never reused (core's run id registry), so the key
+ * cannot start again, for the same request or a changed one: nothing is
+ * left to compare them against. Start with a new key.
+ */
+export class WorkflowRunKeyExpiredError extends Error {
+  constructor(readonly runId: string) {
+    super(
+      'This workflow key named a run that retention has since removed; start with a new key',
+    );
+    this.name = 'WorkflowRunKeyExpiredError';
   }
 }
 
@@ -607,6 +623,11 @@ export function createWorkflowRunJobs<Input = unknown>(
           } catch (error) {
             const raced = await replay();
             if (raced) return raced;
+            // No run under the key's id, and the id is refused: it named a
+            // run that retention removed.
+            if (error instanceof AiRunIdUsedError) {
+              throw new WorkflowRunKeyExpiredError(id);
+            }
             throw error;
           }
           await enqueue(owner, id, started.budget);
