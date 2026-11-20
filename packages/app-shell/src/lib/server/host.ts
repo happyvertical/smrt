@@ -121,6 +121,8 @@ interface Holder {
   draftDir: string | null;
   /** Lifecycle (cloud with a policy): calls inside the app right now. */
   leases: number;
+  /** Lifecycle: hosts handed out by `getHost()` whose hand-out lease is running. */
+  handouts: number;
   /** Lifecycle: when the app was last asked for or finished a call (ms). */
   lastUsed: number;
   /** Lifecycle: the live host as handed to callers (counts their calls). */
@@ -305,6 +307,7 @@ function holderOf(key: string, tenantId: string | null): Holder {
       slotRef: null,
       draftDir: null,
       leases: 0,
+      handouts: 0,
       lastUsed: lifecycle.now(),
       leasedRef: null,
       reserved: false,
@@ -549,20 +552,36 @@ export async function getHost(): Promise<AppHost> {
     holder = await currentHolder(); // the closed holder is gone: a first open
   }
   holder.lastUsed = lifecycle.now();
-  const live = await openedHost(holder, async () => {
-    // A place first (no wake slot held while waiting for one), then the queue.
-    await makeRoom(holder);
-    try {
-      return await lifecycle.wake(() => openLive(holder));
-    } catch (e) {
-      holder.reserved = false;
-      lifecycle.changed();
-      throw e;
-    }
-  });
-  holder.lastUsed = lifecycle.now();
+  // Leased from now: nothing may close this app between its opening and the
+  // caller's first call (see `handoutMs`).
+  holder.handouts++;
+  const endHandout = () => {
+    holder.handouts--;
+    holder.lastUsed = lifecycle.now();
+    lifecycle.changed();
+  };
+  let live: AppHost;
+  try {
+    live = await openedHost(holder, async () => {
+      // A place first (no wake slot held while waiting for one), then the queue.
+      await makeRoom(holder);
+      try {
+        return await lifecycle.wake(() => openLive(holder));
+      } catch (e) {
+        holder.reserved = false;
+        lifecycle.changed();
+        throw e;
+      }
+    });
+  } catch (e) {
+    endHandout();
+    throw e;
+  }
+  // The lease lasts until the caller's first call takes over, or `handoutMs`.
+  const handed = leased(holder, live);
+  setTimeout(endHandout, lifecycle.handoutMs).unref?.();
   lifecycle.startSweeping(() => void sweepIdleHosts());
-  return leased(holder, live);
+  return handed;
 }
 
 /** The holder's host promise (one open at a time; a failed open is retried). */
@@ -748,6 +767,7 @@ function evictable(holder: Holder, minIdleMs: number): boolean {
     !!holder.hostRef &&
     !holder.evicting &&
     holder.leases === 0 &&
+    holder.handouts === 0 &&
     !holder.slotRef?.hold &&
     lifecycle.now() - holder.lastUsed >= minIdleMs
   );
@@ -824,7 +844,7 @@ export async function drainShell(
   // A wake in flight finishes, a call in flight finishes: both are work.
   while (
     [...holders.values()].some(
-      (h) => h.leases > 0 || (h.hostPromise && !h.hostRef),
+      (h) => h.leases > 0 || h.handouts > 0 || (h.hostPromise && !h.hostRef),
     ) &&
     Date.now() < deadline
   )

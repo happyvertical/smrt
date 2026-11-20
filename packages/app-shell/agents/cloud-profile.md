@@ -165,7 +165,8 @@ desktop and an unconfigured hosted process keep the raw host, never a proxy,
 never a timer, never an eviction (`host-lifecycle.test.ts`, "desktop is unchanged").
 
 - Hosts handed out by `getHost()` and held draft hosts are wrapped in a proxy
-  that counts every call as a lease until it settles. An app with a lease, or
+  that counts every call as a lease until it settles; `getHost()` also leases for
+  `handoutMs` (default 5000) so the caller's first call is never met by a closed host. An app with a lease, or
   whose draft a workflow `hold`s, is never closed; reading `def`, `openHost()`
   and the event bus (a live tab) touch nothing, so a tab does not keep a worker.
 - Eviction closes live worker, draft worker and the holder; the next request is
@@ -174,8 +175,7 @@ never a timer, never an eviction (`host-lifecycle.test.ts`, "desktop is unchange
   workers on one directory.
 - Caps: `maxOpenApps` and `memoryCeilingMb / appMemoryMb` (the smaller wins,
   at least 1). A wake over the cap closes the least recently used idle app
-  (idle at least `minIdleMs`, so a host just handed out is not closed under its
-  caller); if every open app is busy it waits up to `capacityWaitMs`, then refuses
+  (no call inside, hand-out lease over, idle at least `minIdleMs`, default 0); if every open app is busy it waits up to `capacityWaitMs`, then refuses
   (`refused`, "no room"), never cutting a call. A worker keeps the memory it grew
   to, so the ceiling is a count, not a reading of the process.
 - `maxConcurrentWakes` (default 2) queues a burst of wakes.

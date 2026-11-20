@@ -8,6 +8,7 @@
 import { types } from 'node:util';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { App } from '../objects/App.ts';
+import { ownerTenantFor } from './accounts.ts';
 import { type CloudHarness, openCloudShell } from './cloud-test-support.ts';
 import { publish, subscribe } from './events.ts';
 import {
@@ -29,10 +30,7 @@ const IDLE = 60_000;
 
 let cloud: CloudHarness | null = null;
 let local: ShellHarness | null = null;
-let ticker: ReturnType<typeof setInterval> | null = null;
 afterEach(async () => {
-  if (ticker) clearInterval(ticker);
-  ticker = null;
   await cloud?.close();
   await local?.close();
   cloud = null;
@@ -41,15 +39,11 @@ afterEach(async () => {
 
 async function twoOwners(policy: object = {}) {
   clock = 1_000_000;
-  // A policy with a minimum idle time needs time to pass between requests.
-  if ((policy as { minIdleMs?: number }).minIdleMs)
-    ticker = setInterval(() => {
-      clock += 40;
-    }, 5);
   cloud = await openCloudShell({
     lifecycle: {
       idleMs: IDLE,
       minIdleMs: 0,
+      handoutMs: 20,
       now,
       capacityWaitMs: 300,
       ...policy,
@@ -68,6 +62,7 @@ async function twoOwners(policy: object = {}) {
     });
   }
   // Both apps were opened by the set-up: put them to sleep, count from here.
+  await new Promise((r) => setTimeout(r, 80)); // the hand-outs end
   clock += IDLE * 2;
   await sweepIdleHosts();
   expect(hostMetrics().open).toBe(0);
@@ -88,6 +83,9 @@ function holdCall(host: Awaited<ReturnType<typeof getHost>>) {
   return { call: host.list('Chore'), finish };
 }
 
+/** Let the hand-out leases of hosts just fetched run out. */
+const settled = () => new Promise((r) => setTimeout(r, 60));
+
 const add = (o: CloudHarness['a'], model: string, title: string) =>
   runAs(o, async () => (await getHost()).create(model, { title }));
 const titles = (o: CloudHarness['a'], model: string) =>
@@ -103,6 +101,7 @@ describe('idle eviction and wake', () => {
     expect(hostMetrics().open).toBe(1);
 
     expect(await sweepIdleHosts()).toBe(0); // not idle yet
+    await settled();
     clock += IDLE;
     expect(await sweepIdleHosts()).toBe(1);
     expect(hostMetrics().open).toBe(0);
@@ -159,12 +158,14 @@ describe('idle eviction and wake', () => {
         hold: 'checking an import',
       });
     });
+    await settled(); // only the held draft keeps it now
     clock += IDLE * 2;
     expect(await sweepIdleHosts()).toBe(0);
     await runAs(a, async () => {
       expect((await getDraftSlot())?.hold).toBe('checking an import');
       setDraftSlot(null);
     });
+    await settled();
     clock += IDLE;
     expect(await sweepIdleHosts()).toBe(1);
   });
@@ -219,19 +220,27 @@ describe('the cap on open apps', () => {
 });
 
 describe('a burst of wakes under a cap', () => {
-  it('one wake slot, one place: the first evicts the idle app and opens, the second waits its turn', async () => {
-    const { a, b } = await twoOwners({
+  it('two sleeping apps asked for at once while a third idles in the only place', async () => {
+    // The reviewer's interleaving. Old code: the first request evicts the idle
+    // app, then counts the SECOND request's queued promise as an open app and
+    // finds no room, while the second cannot run until the first leaves the
+    // single wake slot: the first times out "no room" with no worker open.
+    const { a, b, h } = await twoOwners({
       maxOpenApps: 1,
       maxConcurrentWakes: 1,
-      capacityWaitMs: 2000,
+      capacityWaitMs: 400,
     });
-    // A is open and idle; B and a third request for A's neighbour arrive together.
-    await runAs(a, () => getHost());
-    const first = runAs(b, () => getHost());
-    const second = runAs(a, () => getHost());
-    const [one, two] = await Promise.all([first, second]);
-    expect(one.dataDir).toContain(b.tenantId);
-    expect(two.dataDir).toContain(a.tenantId);
+    const user = await h.newUser('cy@example.test');
+    const tenantId = await ownerTenantFor(h.db, { id: user.id, name: 'cy' });
+    const c = { id: user.id, tenantId };
+    await runAs(c, () => getHost()); // c idles in the only place
+    await new Promise((r) => setTimeout(r, 40)); // its hand-out ends
+    const [one, two] = await Promise.all([
+      runAs(a, () => getHost()),
+      runAs(b, () => getHost()),
+    ]);
+    expect(one.dataDir).toContain(a.tenantId);
+    expect(two.dataDir).toContain(b.tenantId);
     expect(hostMetrics().open).toBe(1);
   });
 
@@ -239,7 +248,6 @@ describe('a burst of wakes under a cap', () => {
     const { a, b } = await twoOwners({
       maxOpenApps: 1,
       maxConcurrentWakes: 1,
-      minIdleMs: 30, // a host just handed out is not closed under its caller
       capacityWaitMs: 4000,
     });
     let peak = 0;
@@ -266,6 +274,44 @@ describe('a burst of wakes under a cap', () => {
     await sweepIdleHosts();
     // Every worker any request was given is gone: none leaked.
     for (const host of seen) expect(host.appAlive).toBe(false);
+  });
+});
+
+describe('leases', () => {
+  it('a host just handed out is never closed under its caller, with no minimum idle', async () => {
+    const { a, b } = await twoOwners({ maxOpenApps: 1, minIdleMs: 0 });
+    const host = await runAs(a, () => getHost());
+    // Another app demands the only place at once; A's hand-out holds it.
+    const other = runAs(b, () => getHost());
+    await host.list('Chore'); // the caller's first call: never "the host is closed"
+    expect((await other).dataDir).toContain(b.tenantId);
+  });
+
+  it('an operation outlasting every timer keeps its app; others wait, then are refused', async () => {
+    const { a, b } = await twoOwners({
+      maxOpenApps: 1,
+      minIdleMs: 0,
+      capacityWaitMs: 150,
+    });
+    const host = await runAs(a, () => getHost());
+    const { call, finish } = holdCall(host);
+    await new Promise((r) => setTimeout(r, 60)); // hand-out long over
+    clock += IDLE * 10;
+    expect(await sweepIdleHosts()).toBe(0);
+    await expect(runAs(b, () => getHost())).rejects.toThrow(/no room/);
+    expect(host.appAlive).toBe(true);
+    finish();
+    await call;
+    expect((await runAs(b, () => getHost())).dataDir).toContain(b.tenantId);
+  });
+
+  it('a call that throws gives its lease back', async () => {
+    const { a } = await twoOwners({ minIdleMs: 0 });
+    const host = await runAs(a, () => getHost());
+    await expect(host.list('NoSuchModel')).rejects.toThrow();
+    await new Promise((r) => setTimeout(r, 40)); // hand-out over
+    clock += IDLE;
+    expect(await sweepIdleHosts()).toBe(1);
   });
 });
 

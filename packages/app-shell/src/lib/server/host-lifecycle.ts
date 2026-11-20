@@ -21,11 +21,17 @@ export interface HostLifecyclePolicy {
   /** At most this many apps waking at once; the rest queue. Default 2. */
   maxConcurrentWakes?: number;
   /**
-   * An app used less than this long ago is never evicted to make room (ms), so
-   * a host just handed to a caller is not closed before it makes its call.
-   * Default 2000.
+   * An app used less than this long ago is not evicted to make room (ms), on
+   * top of the lease rules (an app with a call inside, or just handed to a
+   * caller, is never evicted whatever this is). Default 0.
    */
   minIdleMs?: number;
+  /**
+   * A host handed out by `getHost()` is leased for this long (ms) so its
+   * caller can make the first call; the call then holds its own lease until it
+   * settles. Default 5000.
+   */
+  handoutMs?: number;
   /** How long a wake waits for room before it refuses (ms). Default 10000. */
   capacityWaitMs?: number;
   /** How often idle apps are looked for (ms). Default half of `idleMs`, at most 30000. */
@@ -57,7 +63,8 @@ export interface HostMetrics {
 const DEFAULTS = {
   appMemoryMb: 80,
   maxConcurrentWakes: 2,
-  minIdleMs: 2000,
+  minIdleMs: 0,
+  handoutMs: 5000,
   capacityWaitMs: 10_000,
 } as const;
 
@@ -90,6 +97,7 @@ export class HostLifecycle {
         'appMemoryMb',
         'maxConcurrentWakes',
         'minIdleMs',
+        'handoutMs',
         'capacityWaitMs',
         'sweepMs',
       ] as const)
@@ -131,6 +139,10 @@ export class HostLifecycle {
 
   get minIdleMs(): number {
     return this.policy?.minIdleMs ?? DEFAULTS.minIdleMs;
+  }
+
+  get handoutMs(): number {
+    return this.policy?.handoutMs ?? DEFAULTS.handoutMs;
   }
 
   get capacityWaitMs(): number {
