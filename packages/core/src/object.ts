@@ -3158,6 +3158,7 @@ export class SmrtObject extends SmrtClass {
         .map((column) => `${quote(column)} = excluded.${quote(column)}`)
         .join(', ');
       const sql = `INSERT INTO ${quote(first.tableName)} (${columns.map(quote).join(', ')}) VALUES ${tuples.join(', ')} ON CONFLICT (${conflict.map(quote).join(', ')}) DO UPDATE SET ${updates} RETURNING *`;
+      let storedRows: Array<Record<string, unknown>> = [];
       await ErrorUtils.withRetry(
         async () => {
           try {
@@ -3166,6 +3167,7 @@ export class SmrtObject extends SmrtClass {
               isEmbeddedDatabase(first.db),
               async (db) => {
                 const { rows } = await db.query(sql, ...values);
+                storedRows = rows;
                 const tracked = rows.find(
                   (row) => row._sync_origin_device_id != null,
                 );
@@ -3192,6 +3194,40 @@ export class SmrtObject extends SmrtClass {
         3,
         500,
       );
+      // A concurrent writer can commit an item's natural key between the probe
+      // and the upsert; the upsert then updated that stored row and the
+      // proposed id never existed. Correlate each returned row with its input
+      // by conflict key and adopt the stored id before completion, so hooks,
+      // interceptors and the change feed name the row that is in the table
+      // (and record an update, not a create, for a row that already existed).
+      const keyOf = (read: (column: string) => unknown) =>
+        JSON.stringify(
+          conflict.map((column) => {
+            const value = read(column);
+            return value instanceof Date
+              ? value.toISOString()
+              : String(value).toLowerCase();
+          }),
+        );
+      const storedByKey = new Map(
+        storedRows.map((row) => [keyOf((column) => row[column]), row]),
+      );
+      for (let i = 0; i < added.length; i++) {
+        const stored = storedByKey.get(
+          keyOf((column) => prepared[i].data[column]),
+        );
+        if (
+          typeof stored?.id === 'string' &&
+          stored.id.toLowerCase() !== String(added[i].id).toLowerCase()
+        ) {
+          added[i].id = stored.id;
+          const context = prepared[i].interceptorContext;
+          context.metadata = {
+            ...context.metadata,
+            [CHANGE_FEED_WAS_PERSISTED_KEY]: true,
+          };
+        }
+      }
       const completions: BulkMutationEntry[] = [];
       for (let i = 0; i < added.length; i++) {
         await added[i].completeSave(prepared[i].interceptorContext, false);
