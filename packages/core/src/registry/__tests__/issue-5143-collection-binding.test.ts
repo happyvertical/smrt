@@ -6,6 +6,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { SmrtCollection } from '../../collection';
+import { field } from '../../decorators';
 import { SmrtObject } from '../../object';
 import { ObjectRegistry, smrt } from '../../registry';
 import { snapshotObjectRegistryState } from '../../test-utils';
@@ -109,5 +110,51 @@ describe('a collection decorator declaring replaceParent: false', () => {
           | undefined
       )?.receiver?.(),
     ).toBe('provider');
+  });
+
+  it('publishes no field metadata before it is refused', () => {
+    class Clip extends SmrtObject {}
+    smrt({ packageName: PKG, tableName: 'clips' })(Clip);
+    class Clips extends SmrtCollection<Clip> {
+      static readonly _itemClass = Clip;
+    }
+    smrt({ packageName: PKG })(Clips);
+    const fieldsOf = (name: string) => [
+      ...ObjectRegistry.getFieldDecorators(name).keys(),
+    ];
+    const before = fieldsOf('Clips');
+
+    class RefusedClips extends Clips {
+      static readonly _itemClass = Clip;
+    }
+    // A standard-decorator field is queued on the class's metadata and
+    // published when the class decorator runs.
+    const metadata: Record<PropertyKey, unknown> = {};
+    field({ type: 'text' })(undefined, {
+      kind: 'field',
+      name: 'note',
+      static: false,
+      private: false,
+      access: { has: () => true, get: () => undefined, set: () => {} },
+      addInitializer: () => {},
+      metadata,
+    } as ClassFieldDecoratorContext);
+    expect(() =>
+      smrt({ packageName: PKG, name: 'Clips', replaceParent: false })(
+        RefusedClips,
+        {
+          kind: 'class',
+          name: 'RefusedClips',
+          addInitializer: () => {},
+          metadata,
+        } as ClassDecoratorContext<typeof RefusedClips>,
+      ),
+    ).toThrow(
+      expect.objectContaining({
+        code: 'CONFIG_SAME_NAME_COEXISTENCE_UNSUPPORTED',
+      }),
+    );
+    expect(fieldsOf('Clips')).toEqual(before);
+    expect(fieldsOf('RefusedClips')).toEqual([]);
   });
 });

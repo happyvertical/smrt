@@ -5259,23 +5259,24 @@ export function smrt(config: SmartObjectConfig = {}) {
     ctor: T,
     decoratorContext?: ClassDecoratorContext<T>,
   ): T => {
-    applyPendingDecoratorRegistrations(ctor, decoratorContext);
-
     // Check if this is a SmrtCollection class
     const isCollection = ctor.prototype instanceof SmrtCollection;
 
+    // `replaceParent: false` would keep a same-named subclass registered
+    // next to its parent; generation refuses it on any entry (#5143), so the
+    // decorator refuses it on a collection too, before the class's pending
+    // field registrations, the item or any collection binding change.
+    if (isCollection && config.replaceParent === false) {
+      throw sameNameCoexistenceUnsupported(
+        config.name ?? ctor.name,
+        (Object.getPrototypeOf(ctor) as { name?: string })?.name ||
+          'the class it extends',
+      );
+    }
+
+    applyPendingDecoratorRegistrations(ctor, decoratorContext);
+
     if (isCollection) {
-      // `replaceParent: false` would keep a same-named subclass registered
-      // next to its parent; generation refuses it on any entry (#5143), so the
-      // decorator refuses it on a collection too, before the item or any
-      // collection binding changes.
-      if (config.replaceParent === false) {
-        throw sameNameCoexistenceUnsupported(
-          config.name ?? ctor.name,
-          (Object.getPrototypeOf(ctor) as { name?: string })?.name ||
-            'the class it extends',
-        );
-      }
       // Handle SmrtCollection registration. `_itemClass` is the paired model
       // constructor declared statically on the collection subclass; it is read
       // through a documented `unknown` view since the decorator's generic
