@@ -49,6 +49,7 @@
  */
 
 import { isUniqueViolationError } from '../db-errors.js';
+import { isServiceOptionInput } from '../service-options.js';
 import { jsonValuesEqual } from '../utils/json-equal.js';
 
 /**
@@ -229,12 +230,19 @@ export interface SyncApplyHost {
  * same stripping rules as the generated CRUD handlers (#1540) — server-managed
  * fields, `_`-prefixed keys, `@field({ readonly: true })` fields, and (when
  * configured) intersection with the `api.writable` allowlist.
+ *
+ * A payload sets fields and nothing else, so the keys that configure a
+ * service of the object are dropped too. `policy.isServiceOptionInput` is the
+ * model-aware rule (`ObjectRegistry.isServiceOptionInput` bound to the target
+ * model), which keeps a key the model declares as a field. Without it every
+ * service option key is dropped.
  */
 export function applySyncWritablePolicy(
   data: unknown,
   policy: {
     readonlyFields?: readonly string[];
     writableAllowlist?: readonly string[] | null;
+    isServiceOptionInput?: (key: string) => boolean;
   } = {},
 ): Record<string, unknown> {
   if (!data || typeof data !== 'object') {
@@ -252,10 +260,14 @@ export function applySyncWritablePolicy(
   ]);
   const readonly = new Set(policy.readonlyFields ?? []);
   const writable = policy.writableAllowlist ?? null;
+  const reserved =
+    policy.isServiceOptionInput ??
+    ((key: string) => isServiceOptionInput(key, () => false));
 
   const result: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(data)) {
     if (key.startsWith('_')) continue;
+    if (reserved(key)) continue;
     if (serverManaged.has(key)) continue;
     if (readonly.has(key)) continue;
     if (writable && !writable.includes(key)) continue;

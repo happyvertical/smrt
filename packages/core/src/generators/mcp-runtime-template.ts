@@ -489,6 +489,8 @@ function applyWritablePolicy(objectName: string, data: any): Record<string, any>
   const result: Record<string, any> = {};
   for (const [key, value] of Object.entries(data)) {
     if (key.startsWith('_')) continue;
+    // Arguments set fields only, never a service of the object.
+    if (ObjectRegistry.isServiceOptionInput(objectName, key)) continue;
     if (serverManaged.has(key)) continue;
     if (readonly.has(key)) continue;
     if (writable && !writable.includes(key)) continue;

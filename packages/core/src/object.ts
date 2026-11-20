@@ -89,6 +89,7 @@ import {
 import { postgresRevisionCondition } from './revision-guard';
 import { detectEngine } from './schema/ddl/index';
 import { verifyPersistenceTable } from './schema/table-verifier';
+import { getRowValues, isServiceOptionKey } from './service-options';
 import { getDatabaseSyncDeviceId } from './sync-device';
 import {
   bindSyncRevision,
@@ -118,6 +119,7 @@ import {
   tableNameFromClass,
   toSnakeCase,
 } from './utils';
+import { WhereClauseError } from './where-keys';
 
 /**
  * Converts a hydration filter key to its column name, PRESERVING a leading
@@ -743,6 +745,7 @@ export class SmrtObject extends SmrtClass {
       ...link.fields,
       ...Object.keys(link.virtualFields ?? {}),
     ]);
+    const rowValues = getRowValues(this.options);
     for (const name of names) {
       if (Object.getOwnPropertyDescriptor(this, name)) continue;
       Object.defineProperty(this, name, {
@@ -753,8 +756,13 @@ export class SmrtObject extends SmrtClass {
           this._writeThroughDraft[name] = value;
         },
       });
-      if (this.options[name] !== undefined)
-        this._writeThroughDraft[name] = this.options[name];
+      // Same split as `initializePropertiesFromOptions`: on options built by
+      // a collection a service-named option is never row data.
+      const draft =
+        rowValues && isServiceOptionKey(name)
+          ? rowValues[name]
+          : this.options[name];
+      if (draft !== undefined) this._writeThroughDraft[name] = draft;
     }
   }
 
@@ -1420,11 +1428,20 @@ export class SmrtObject extends SmrtClass {
     // the static type, so there is no static member to key into.
     const writable = this as unknown as Record<string, unknown>;
 
+    // Options built by a collection keep row data and service configuration
+    // apart: an option named like a service (`metrics`, `usage`, ...) is that
+    // service's configuration and nothing else, and the value of a field with
+    // the same name arrives separately. Options passed to `new Model()`
+    // directly have no such split and are read as before.
+    const rowValues = getRowValues(options);
+
     // Apply option values to all fields
     for (const [key, field] of Object.entries(fields)) {
-      if (options[key] !== undefined) {
+      const optionValue =
+        rowValues && isServiceOptionKey(key) ? rowValues[key] : options[key];
+      if (optionValue !== undefined) {
         // Clone value to avoid aliasing (Issue #22)
-        const clonedValue = this.cloneValue(options[key]);
+        const clonedValue = this.cloneValue(optionValue);
 
         // Check if property is writable before setting (Issue #61)
         // Get descriptor from instance or entire prototype chain
@@ -2703,7 +2720,17 @@ export class SmrtObject extends SmrtClass {
     for (const [key, value] of Object.entries(
       resolved as Record<string, unknown>,
     )) {
-      columnFilter[toFilterColumnName(key)] = value;
+      const columnKey = toFilterColumnName(key);
+      // Same rule as collection reads: two keys for one column would leave
+      // whichever came last, so the filter is refused instead.
+      if (Object.hasOwn(columnFilter, columnKey)) {
+        throw new WhereClauseError(
+          `Invalid hydration filter: more than one key filters '${columnKey}'.`,
+          'INVALID_WHERE_CLAUSE',
+          { column: columnKey },
+        );
+      }
+      columnFilter[columnKey] = value;
     }
     return columnFilter;
   }

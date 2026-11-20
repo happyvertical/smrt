@@ -194,6 +194,33 @@ describe('REST tenant-scoped public read fails closed to global rows (#1782)', (
         expect(leaked).toEqual([]);
       }
     });
+
+    it.each([
+      // Two spellings of the tenant key, in both orders.
+      '?tenantId=x&tenant_id=tenant-a',
+      '?tenant_id=tenant-a&tenantId=x',
+      '?tenantId=x&TenantId=tenant-a',
+      // Spellings other than the two canonical ones, alone.
+      '?TenantId=tenant-a',
+      '?%20tenant_id=tenant-a',
+      '?tenant_id%20%3D=tenant-a',
+      '?tenant_id%5B%3D%5D=tenant-a',
+      // Operators on an aliased spelling.
+      '?TenantId%5Bin%5D=tenant-a,tenant-b',
+      '?TenantId%5Bne%5D=x',
+    ])('no spelling of the tenant filter survives beside the scope: %s', async (query) => {
+      setDispatchTenantResolver(() => undefined);
+      const res = await list(query);
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { name: string }[];
+      expect(body.map((i) => i.name)).toEqual(['global-row']);
+
+      const counted = await handler(
+        new Request(`http://local/api/v1/publictenantdoc/count${query}`),
+      );
+      expect(counted.status).toBe(200);
+      expect(((await counted.json()) as { count: number }).count).toBe(1);
+    });
   });
 
   describe('tenancy disabled (no resolver)', () => {

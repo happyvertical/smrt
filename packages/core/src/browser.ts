@@ -667,6 +667,18 @@ export {
   type SubclassExposureEscalation,
   surfaceOpensOperation,
 } from './registry/subclass-exposure';
+// How `where` keys resolve to columns, shared by the collection and by anything
+// that inspects a filter before it runs (interceptors, generated routes).
+// Request tenant context hooks (installed by smrt-tenancy, which browser
+// bundles may include).
+export {
+  type EnterRequestTenantContext,
+  enterRequestTenantContext,
+  getRequestTenantContext,
+  type RequestTenantContext,
+  type RequestTenantContextHooks,
+  setRequestTenantContextHooks,
+} from './request-tenant-context';
 // Revision compare-and-swap predicate helpers (#2620)
 export {
   POSTGRES_REVISION_GUARD_EXPRESSION,
@@ -707,6 +719,14 @@ export {
 } from './schema/system-table-shapes';
 // Schema types (for generated code from SchemaCodeGenerator)
 export type { SchemaDefinition } from './schema/types';
+// Option keys that configure services rather than describe a row, and the
+// request-body rule built on them.
+export {
+  isServiceOptionInput,
+  isServiceOptionKey,
+  SMRT_SERVICE_OPTION_KEYS,
+  type SmrtServiceOptionKey,
+} from './service-options';
 // Universal signaling system
 export * from './signals/index';
 // Idempotent sync-apply batch write contract (#1759) — shared by the runtime
@@ -778,6 +798,16 @@ export {
   parseQualifiedName,
   qualifiedNamesEqual,
 } from './utils/qualified-names';
+export {
+  applyWhereScope,
+  effectiveWhereOperator,
+  mergeOwnedWhere,
+  normalizeWhereKey,
+  type ResolvedWhereKey,
+  resolveWhereKey,
+  WhereClauseError,
+  whereColumnName,
+} from './where-keys';
 
 // Vite plugin excluded (Node.js-only)
 

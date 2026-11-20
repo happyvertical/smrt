@@ -38,6 +38,15 @@ const NODE_ONLY_GROUPS: ReadonlyArray<{
   },
   {
     reason:
+      'Tenant read scope of server read routes (runtime REST and the emitted SvelteKit routes), resolved per request from the live registry and the tenancy hooks; a browser has no tenant context to scope by',
+    names: [
+      'isTenantScopedModel',
+      'resolveAnonymousTenantReadScope',
+      'scopeTenantReadOptions',
+    ],
+  },
+  {
+    reason:
       'REST server bootstrap (node:http); belongs behind `@happyvertical/smrt-core/generators/rest`. Model packages that import startRestServer from the root are tracked by #3616',
     names: [
       'APIGenerator',

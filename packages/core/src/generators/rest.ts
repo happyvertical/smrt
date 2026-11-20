@@ -8,10 +8,6 @@ import { getRegistryGeneration } from '../registry/generation.js';
 import http from 'node:http';
 import { getTableVersion } from '../change-feed';
 import type { SmrtCollection, SmrtCollectionOptions } from '../collection';
-import {
-  isTenantScopedClassResolved,
-  resolveDispatchTenantScope,
-} from '../dispatch';
 import type { PublicJsonOptions, SmrtObject } from '../object';
 import {
   buildDefaultListOrderBy,
@@ -44,10 +40,16 @@ import {
   type SyncApplyTarget,
 } from '../sync/apply';
 import {
+  isTenantScopedModel,
+  resolveAnonymousTenantReadScope,
+  scopeTenantReadOptions,
+} from '../tenant-read-scope';
+import {
   DISPLAY_LABEL_FIELD,
   resolveDisplayLabelProjection,
 } from '../ui-metadata';
 import { computeWebManifestHash } from '../vite-plugin/web-collections';
+import { applyWhereScope } from '../where-keys';
 import { handleChangesRoute } from './changes-route';
 import {
   canonicalReadRepresentation,
@@ -678,7 +680,9 @@ export class APIGenerator {
       collection,
       objectId,
       url,
-      classInfo.name,
+      // The qualified identity, so request-time tenant scoping resolves the
+      // model the route found rather than a same-named class.
+      classInfo.qualifiedName ?? classInfo.name,
     );
   }
 
@@ -1121,6 +1125,10 @@ export class APIGenerator {
         } else {
           options = Object.fromEntries(url.searchParams.entries());
         }
+        // A read action never takes ownership from the caller: ownership keys
+        // in the query are dropped and the request's tenant scope is set under
+        // the model's ownership field(s), as every other dispatch site does.
+        options = scopeTenantReadOptions(objectName, options);
       } else {
         let rawBody = '';
         try {
@@ -1218,7 +1226,9 @@ export class APIGenerator {
    * A `@TenantScoped` model served over a public/anonymous read has no ambient
    * tenant context, so the tenancy interceptor (optional mode) passes the query
    * through UNFILTERED and returns every tenant's rows. When tenancy is enabled
-   * but no tenant is active, this returns a `{ tenantId: null }` filter so reads
+   * but no tenant is active, this returns a `{ <ownership field>: null }`
+   * filter (`resolveAnonymousTenantReadScope`, shared with the emitted
+   * SvelteKit routes) so reads
    * fail closed to NULL-tenant (global) rows only — mirroring the dispatch
    * resolver's "enforced, no active tenant → global rows only" convention
    * (`resolveDispatchTenantScope` is the core-level trust anchor tenancy fills
@@ -1235,50 +1245,24 @@ export class APIGenerator {
    */
   private resolveTenantReadScope(
     objectName?: string,
-  ): { tenantId: null } | undefined {
-    if (
-      !objectName ||
-      !(
-        ObjectRegistry.isTenantScoped(objectName) ||
-        !!ObjectRegistry.getConfig(objectName)?.tenantScoped ||
-        isTenantScopedClassResolved(objectName)
-      )
-    ) {
-      return undefined;
-    }
-    const scope = resolveDispatchTenantScope();
-    return scope.enforced && scope.tenantId === null
-      ? { tenantId: null }
-      : undefined;
+  ): Record<string, null> | undefined {
+    return objectName ? resolveAnonymousTenantReadScope(objectName) : undefined;
   }
 
   /**
    * Merge the fail-closed tenant read scope (#1782) into a query's WHERE clause.
-   * When the scope is active (global-only), any client-supplied tenant filter is
-   * dropped first so a `?tenantId=...` / `?tenant_id[ne]=...` query param can
-   * never widen the scope, then NULL-tenant is forced. Returns the original
-   * `where` untouched when the scope is inactive.
+   * When the scope is active (global-only), every client-supplied filter on the
+   * tenant column is dropped first — under any spelling of the key and with any
+   * operator (`?tenantId=`, `?tenant_id[ne]=`, `?TenantId=`) — so a query param
+   * can never widen the scope, then NULL-tenant is forced. Returns the original
+   * `where` untouched when the scope is inactive. The generated SvelteKit list
+   * route calls the same `applyWhereScope`.
    */
   private applyTenantReadScope(
     objectName: string | undefined,
     where: Record<string, string | string[]> | undefined,
   ): Record<string, unknown> | undefined {
-    const scope = this.resolveTenantReadScope(objectName);
-    if (!scope) {
-      return where;
-    }
-    const cleaned: Record<string, unknown> = {};
-    for (const [key, value] of Object.entries(where ?? {})) {
-      // A key may carry an operator suffix, e.g. "tenant_id !=" — match on the
-      // field portion so no operator variant slips a client tenant filter past.
-      const field = key.split(/\s+/)[0];
-      if (field === 'tenantId' || field === 'tenant_id') {
-        continue;
-      }
-      cleaned[key] = value;
-    }
-    cleaned.tenantId = null;
-    return cleaned;
+    return applyWhereScope(where, this.resolveTenantReadScope(objectName));
   }
 
   /**
@@ -1671,6 +1655,10 @@ export class APIGenerator {
    * Mass-assignment guard (#1540): strip framework/server-managed and
    * `@field({ readonly: true })` fields from a create/update body, and — when an
    * `@smrt({ api: { writable: [...] } })` allowlist is set — intersect with it.
+   *
+   * A body sets fields and nothing else: `_`-prefixed keys and the keys that
+   * configure a service of the object (`ObjectRegistry.isServiceOptionInput`)
+   * never reach construction or a loaded instance.
    */
   private applyWritablePolicy(
     objectName: string | undefined,
@@ -1717,6 +1705,7 @@ export class APIGenerator {
     const result: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(data)) {
       if (key.startsWith('_')) continue;
+      if (ObjectRegistry.isServiceOptionInput(objectName, key)) continue;
       if (serverManaged.has(key)) continue;
       if (readonly.has(key)) continue;
       if (writable && !writable.includes(key)) continue;
@@ -1756,12 +1745,10 @@ export class APIGenerator {
       ? ObjectRegistry.getConfig(objectName)
       : undefined;
     const apiConfig = config?.api;
-    // Canonical accessor covers both `@smrt({ tenantScoped })` and the
-    // manifest-merged `@TenantScoped()` decorator form; the raw config flag is
-    // a belt-and-braces fallback for registrations not yet normalized.
-    const tenantScoped = objectName
-      ? ObjectRegistry.isTenantScoped(objectName) || !!config?.tenantScoped
-      : false;
+    // The same resolution as the rest of the request path: declared config,
+    // manifest-merged tenancy, and tenancy registered at runtime for the
+    // (qualified) model. A shared cache must never see a tenant-scoped body.
+    const tenantScoped = objectName ? isTenantScopedModel(objectName) : false;
     const permissionScoped = this.hasReadPermissionFields(objectName);
     if (objectName) {
       warnIfSharedCacheNeutralized(
@@ -1907,10 +1894,7 @@ export class APIGenerator {
    */
   private readTenantDiscriminator(objectName?: string): string | undefined {
     if (!objectName) return undefined;
-    const tenantScoped =
-      ObjectRegistry.isTenantScoped(objectName) ||
-      !!ObjectRegistry.getConfig(objectName)?.tenantScoped ||
-      isTenantScopedClassResolved(objectName);
+    const tenantScoped = isTenantScopedModel(objectName);
     if (!tenantScoped) return undefined;
     // Shared with the generated SvelteKit route so both transports key the ETag
     // on the active tenant identically (cross-tenant false-304 guard).

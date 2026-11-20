@@ -296,7 +296,7 @@ import {
   type SyncApplyOp,
   type SyncApplyTarget,
 } from '@happyvertical/smrt-core';
-import { isRuntimeModelEnabled } from '@happyvertical/smrt-core';
+import { isRuntimeModelEnabled, ObjectRegistry } from '@happyvertical/smrt-core';
 import { json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 ${collectionAccessImports}
@@ -416,6 +416,9 @@ ${anyTenantScoped ? '  establishTenantContext(locals);\n' : ''}
           applySyncWritablePolicy(payload, {
             readonlyFields: target.readonlyFields,
             writableAllowlist: target.writableAllowlist,
+            // A payload sets fields only, never a service of the object.
+            isServiceOptionInput: (key: string) =>
+              ObjectRegistry.isServiceOptionInput(target.registryKey, key),
           }),
       };
     },
