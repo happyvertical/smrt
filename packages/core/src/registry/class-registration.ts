@@ -598,6 +598,21 @@ function sameNameParentKnown(
 }
 
 /**
+ * Whether the class `ctor` directly extends is registered (live or kept as
+ * the declaration a replacement took over) under a simple name other than
+ * `name`.
+ */
+function directParentRegisteredUnderAnotherName(
+  ctor: typeof SmrtObject,
+  name: string,
+): boolean {
+  const key = getConstructorIndex().get(Object.getPrototypeOf(ctor));
+  if (!key) return false;
+  const entry = getClasses().get(key) ?? replacedDeclarations().get(key);
+  return !!entry && entry.name !== name;
+}
+
+/**
  * Build `CollisionInputs` for the decorator-origin path (`register()`).
  * Manifest-origin inputs are built separately inside `registerFromManifest`.
  */
@@ -1776,11 +1791,16 @@ function registerUntracked(
   // it, nothing tells this registration what to inherit, so the order fails
   // closed rather than registering a model whose tenancy, table and lineage
   // depend on load order (#5143). A class already registered, or whose
-  // recorded parent it has already replaced, is a re-registration.
+  // recorded parent it has already replaced, is a re-registration. A class
+  // whose direct parent is registered under another name is not a same-named
+  // subclass under this name: a model exported under its parent's name
+  // (`export { AppCustomer as Customer }`) decorates under its local name and
+  // is checked when its generated registration supplies the public one.
   if (
     declaredChoice &&
     !sameNameParent &&
     !getConstructorIndex().has(ctor) &&
+    !directParentRegisteredUnderAnotherName(ctor, name) &&
     !sameNameParentKnown(
       ctor,
       name,
