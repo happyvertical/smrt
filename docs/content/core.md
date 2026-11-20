@@ -710,7 +710,10 @@ the segment's own type: a payload selecting another type (`createType` or
 `_meta_type`) is rejected `invalid_payload`.
 
 Validators of reads change with this release, and a validator issued before a
-registration changed any served model's tenancy never revalidates. A response
+registration changed any served model's tenancy never revalidates. A read
+through a base that serves a subtype whose reads are not public (served only
+to a signed-in caller) is never shared-cached, and its validator names the
+subtypes served, with tenancy on or off. A response
 a shared cache already holds from before a run-time registration lives until
 its own `s-maxage`.
 

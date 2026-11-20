@@ -163,8 +163,11 @@ rule of `src/request-actor.ts`. Per request (per sync item, per tool call):
    the receiver dispatched, so a collection method never borrows a same-named
    item method's, and the server never parses a method's source),
    `cachePolicy` (shared caching only when no admitted member is scoped, or,
-   with tenancy off, declares tenancy) and `etagDiscriminator` (actor scope,
-   admitted types and a fingerprint of every member policy).
+   with tenancy off, declares tenancy, and every admitted family member's
+   reads are public: a member admitted for this caller only makes the rows
+   depend on who calls) and `etagDiscriminator` (actor scope, admitted types
+   and a fingerprint of every member policy; with tenancy off, a family
+   read with members still keys on its admitted types).
 5. **Binding.** The operation runs inside `withResolvedTenancy()` (REST, sync
    items, MCP tools) or after `enterResolvedTenancy()` (an emitted handler's
    `enterTenancy(locals, operation)`), in the actor's tenant or system

@@ -35,6 +35,7 @@ import { createHash } from 'node:crypto';
 import { resolveDispatchTenantScope } from '../dispatch/tenant-resolver.js';
 import {
   type RequestTenancy,
+  servesCallerDependentRows,
   servesTenantScopedRows,
 } from '../request-tenancy';
 
@@ -158,8 +159,10 @@ export function resolveReadCacheControl(
 
 /**
  * The `Cache-Control` of a read under a request's resolved tenancy (#5375):
- * shared caching only when the model opts in and no admitted member is
- * tenant-scoped (or, with tenancy off, declares tenancy).
+ * shared caching only when the model opts in, no admitted member is
+ * tenant-scoped (or, with tenancy off, declares tenancy), and every admitted
+ * family member is publicly readable (a member admitted for this caller only
+ * makes the rows depend on who calls).
  *
  * @param apiConfig - The route model's `api` config
  * @param permissionScoped - The body varies with the caller's permissions
@@ -171,7 +174,7 @@ export function cachePolicy(
 ): string {
   return resolveReadCacheControl(apiConfig, {
     tenantScoped: servesTenantScopedRows(t),
-    permissionScoped,
+    permissionScoped: permissionScoped || servesCallerDependentRows(t),
   });
 }
 

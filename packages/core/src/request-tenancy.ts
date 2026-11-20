@@ -945,13 +945,47 @@ export function servesTenantScopedRows(t: RequestTenancy): boolean {
   return false;
 }
 
+/** Whether a model's `api` config makes its reads public. */
+function readsArePublic(key: string): boolean {
+  let api: unknown;
+  try {
+    api = ObjectRegistry.getConfig(key)?.api;
+  } catch {
+    return false;
+  }
+  const access =
+    api && typeof api === 'object'
+      ? (api as { public?: unknown }).public
+      : undefined;
+  return access === true || access === 'read';
+}
+
+/**
+ * Whether the rows a read under `t` returns depend on who calls: an admitted
+ * family member (other than the route model) whose reads are not public was
+ * admitted for this caller, and another caller may not be served it. Such a
+ * read never gets a shared-cache copy, with tenancy on or off.
+ */
+export function servesCallerDependentRows(t: RequestTenancy): boolean {
+  for (const key of t.admitted ?? []) {
+    if (key !== t.model && !readsArePublic(key)) return true;
+  }
+  return false;
+}
+
 /**
  * The tenancy part of a read validator: the actor's scope, the admitted
  * types and the policy fingerprint, so a validator issued before a
- * registration changed any member's policy never revalidates.
+ * registration changed any member's policy never revalidates. With tenancy
+ * off, a family read still keys its validator on the admitted types (which
+ * depend on the caller), and any other read keeps its plain validator.
  */
 export function etagDiscriminator(t: RequestTenancy): string | undefined {
-  if (!t.enforced) return undefined;
+  if (!t.enforced) {
+    return t.admitted && stiDescendants(t.model).length > 0
+      ? `a:${[...t.admitted].sort().join(',')}`
+      : undefined;
+  }
   const actor = t.actor.system
     ? `s:${t.actor.system}`
     : t.actor.tenantId
@@ -1415,14 +1449,15 @@ export function ensureRequestTenancyInterceptor(): void {
 // ─── Emitted-route conveniences ────────────────────────────────────────────
 
 /**
- * Whether the bound request tenancy serves tenant-scoped rows, so a read
- * must not be shared-cached (used by emitted routes after
+ * Whether the bound request tenancy serves tenant-scoped rows, or family
+ * members admitted for this caller only, so a read must not be
+ * shared-cached (used by emitted routes after
  * `enterRequestTenancy`). With nothing bound no decision was made, and the
  * answer is the private one.
  */
 export function boundTenancyCacheScoped(): boolean {
   const t = getResolvedTenancy();
-  return t ? servesTenantScopedRows(t) : true;
+  return t ? servesTenantScopedRows(t) || servesCallerDependentRows(t) : true;
 }
 
 /** The validator discriminator of the bound request tenancy. */
