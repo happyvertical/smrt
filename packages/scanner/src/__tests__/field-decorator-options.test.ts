@@ -64,6 +64,7 @@ describe('field decorator options', () => {
 
     expect(errors).toHaveLength(1);
     expect(errors[0].message).toContain('a hole in [, true, false]');
+    expect(errors[0].message).toContain('option `sensitive`');
     expect(fields.apiSecret?.sensitive).not.toBe(false);
   });
 

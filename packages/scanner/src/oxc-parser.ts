@@ -3624,8 +3624,13 @@ function resolveStaticReference(
           shared: true,
         });
       } else if (constant.unresolved.length > 0) {
+        // The constant's own diagnostics were recorded before any option
+        // used it; name the option read here (`sensitive: FLAGS[1]`).
         ctx.unresolved.push(
-          ...constant.unresolved.map((unresolved) => ({ ...unresolved })),
+          ...constant.unresolved.map((unresolved) => ({
+            ...unresolved,
+            ...(ctx.path ? { option: ctx.path } : {}),
+          })),
         );
       }
     }
