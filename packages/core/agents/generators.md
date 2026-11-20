@@ -116,12 +116,17 @@ a signed-in caller, 401 for an anonymous one (no `authMiddleware`, or
 `auth_required`. The read of a caller with no tenant stays outside the gate,
 which has no global-only mode; its #1782 scope and the interceptor's refusal
 go through the same error mapping. That exception covers the CRUD list, get
-and count handlers only: a custom collection action of a tenant-scoped model
+and count handlers, and a custom collection GET action whose arguments carry
+the read scope (`readActionReceivesTenantScope`: a single `options` parameter
+handed the scoped options, or a parameter named after an ownership property
+handed the scope value; on runtime REST without scanned metadata, a method
+whose source declares any parameter). Every other custom collection action
 reads through the collection with no scope of its own, so for a caller with no
 tenant it runs inside the gate, which refuses it. The emitted SvelteKit
-routes apply the same rule: a collection-scoped (or static) GET action of a
-tenant-scoped model calls `requireTenantWriteContext`. A caller with no tenant
-never writes a tenant-scoped row, global rows included.
+routes apply the same rule, reading the ownership property from the manifest
+(`tenantScoped.field`, else `tenantId`): such a collection-scoped (or static)
+action of a tenant-scoped model calls `requireTenantWriteContext`. A caller
+with no tenant never writes a tenant-scoped row, global rows included.
 
 A caller whose resolved tenant differs from a tenant context the host already
 entered is refused by `runTenantScopedEntryPoint` with `TenantIsolationError`;
