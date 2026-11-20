@@ -511,16 +511,62 @@ export function toAiRunRow(row: Record<string, unknown>): AiRunRow {
   };
 }
 
-/** Read one run, or `null`. */
+/**
+ * The scope a run read is held to: each field given is a SQL predicate of
+ * the read itself, so a run outside it is not read at all, only not found.
+ * `tenantId` `null` is the global scope; `ownerId` `null` is a run without
+ * an owner.
+ */
+export interface AiRunReadScope {
+  tenantId: string | null;
+  ownerId?: string | null;
+  type?: string;
+}
+
+/**
+ * ` AND r.tenant_id ...` (and owner, type) for a read scope, with its
+ * parameters numbered from `first`; '' without a scope.
+ *
+ * @internal
+ */
+export function aiRunScopeClause(
+  scope: AiRunReadScope | undefined,
+  first: number,
+): { sql: string; params: unknown[] } {
+  if (!scope) return { sql: '', params: [] };
+  const params: unknown[] = [];
+  const parts: string[] = [];
+  const add = (column: string, value: string | null) => {
+    if (value === null) {
+      parts.push(`r.${column} IS NULL`);
+    } else {
+      params.push(value);
+      parts.push(`r.${column} = $${first + params.length - 1}`);
+    }
+  };
+  add('tenant_id', scope.tenantId ?? null);
+  if (scope.ownerId !== undefined) add('owner_id', scope.ownerId);
+  if (scope.type !== undefined) add('type', scope.type);
+  return { sql: ` AND ${parts.join(' AND ')}`, params };
+}
+
+/**
+ * Read one run, or `null`. With `scope`, the run is read only within it
+ * (its tenant, and its owner and type when given), as predicates of the one
+ * read.
+ */
 export async function getAiRun(
   db: DatabaseInterface,
   runId: string,
+  scope?: AiRunReadScope,
 ): Promise<AiRunRow | null> {
+  const scoped = aiRunScopeClause(scope, 2);
   const rows = getRows(
     await aiRunQuery(
       db,
-      `SELECT ${AI_RUN_COLUMNS} FROM _smrt_ai_runs r WHERE r.id = $1`,
+      `SELECT ${AI_RUN_COLUMNS} FROM _smrt_ai_runs r WHERE r.id = $1${scoped.sql}`,
       runId,
+      ...scoped.params,
     ),
   );
   return rows[0] ? toAiRunRow(rows[0]) : null;

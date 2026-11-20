@@ -24,6 +24,7 @@ import {
   AiRunCheckpointConflictError,
   type AiRunClaimFence,
   AiRunNotFoundError,
+  type AiRunReadScope,
   AiRunResumeRefusedError,
   type AiRunRow,
   type AiRunStatus,
@@ -36,6 +37,7 @@ import {
   type AiRunTxOptions,
   aiRunActiveTime,
   aiRunQuery,
+  aiRunScopeClause,
   assertAiRunFence,
   expectedTenantOf,
   foldActive,
@@ -326,16 +328,27 @@ function toCheckpoint(row: Record<string, unknown>): AiRunCheckpoint {
   };
 }
 
-/** Read a run's checkpoint, or `null` (not durable, or pruned). */
+/**
+ * Read a run's checkpoint, or `null` (not durable, or pruned). With
+ * `scope`, the checkpoint is read joined to its run within that scope, in
+ * one statement: the checkpoint of a run outside it is never read.
+ */
 export async function readAiRunCheckpoint(
   db: DatabaseInterface,
   runId: string,
+  scope?: AiRunReadScope,
 ): Promise<AiRunCheckpoint | null> {
+  const scoped = aiRunScopeClause(scope, 2);
   const rows = getRows(
     await aiRunQuery(
       db,
-      'SELECT * FROM _smrt_ai_run_checkpoints WHERE run_id = $1',
+      scope
+        ? `SELECT c.* FROM _smrt_ai_run_checkpoints c
+             JOIN _smrt_ai_runs r ON r.id = c.run_id
+            WHERE c.run_id = $1${scoped.sql}`
+        : 'SELECT * FROM _smrt_ai_run_checkpoints WHERE run_id = $1',
       runId,
+      ...scoped.params,
     ),
   );
   return rows[0] ? toCheckpoint(rows[0]) : null;

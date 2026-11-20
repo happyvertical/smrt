@@ -38,6 +38,7 @@ export {
   AiRunError,
   type AiRunLimitStopReason,
   AiRunNotFoundError,
+  type AiRunReadScope,
   AiRunResumeRefusedError,
   type AiRunRow,
   type AiRunStatus,

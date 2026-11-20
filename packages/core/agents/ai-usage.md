@@ -341,6 +341,13 @@ the trajectory is kept, top down; the failed run's checkpoint goes with its
 row. Usage rows keep their own policy. Evaluations are never swept. Index:
 `idx_smrt_ai_runs_finished` (schema 1.19.0).
 
+**Scoped reads.** `getAiRun(db, id, scope?)` and `readAiRunCheckpoint(db, id,
+scope?)` take an `AiRunReadScope` (`{ tenantId, ownerId?, type? }`): every
+field given is a predicate of the one statement (the checkpoint is read
+joined to its run), so a run outside the scope is never read, only not
+found. Callers that authorize by tenant and owner (the workflow checkpoint
+store, its retry pre-check) read through it.
+
 **Readers.** `listAiRuns(db, { id?, type?, definitionKey?, status?,
 parentRunId?, experimentId?, tenantId?, since?, until?, limit? })` returns
 every type in the run vocabulary (a legacy `ok` / `degraded` row reads as
