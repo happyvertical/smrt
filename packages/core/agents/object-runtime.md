@@ -75,6 +75,17 @@ See [audit contract](../../../docs/content/audit-trail.md).
 - `getSlug()`: auto-generates from name → title → label → id; a candidate that
   slugifies to nothing (no ASCII letters or digits) is skipped, so the next
   candidate or finally the id supplies the slug
+- A registered field named `options` collides with the instance's service
+  options (`src/reserved-field-names.ts`): it is skipped on save, never applied
+  onto `this.options` by the constructor or row hydration, has no value in
+  `getFields()`, and is never assigned by `collection.update()` or
+  `getOrUpsert()`. `collection.update()` validates the submitted keys first, so
+  an `options` key on a model that does not declare it as an assignable field
+  (undeclared or `readonly`) is refused with `VALIDATION_UNKNOWN_FIELD` before
+  any write, like any other such key; only a declared assignable one is
+  dropped. Each model class that declares it is warned once (keyed by
+  constructor, naming the qualified model); an undeclared `options` key never
+  warns. Registration still accepts the name; rename such a field.
 - `loadRelated(fieldName)`: lazy-loads relationships (cached in `_loadedRelationships` Map). A cached single-target entry is tied to the key field's value it was loaded for: once the field names another row (or is cleared) the entry is dropped and the next `loadRelated`/`getRelated` resolves the current target, and a load whose key changes while it is in flight is discarded and the current key loaded instead (the key is rechecked after the single-table subtype read too, so a stale row never decides a `validateSubtype` refusal, and the reload goes through the same subtype and tenant checks); `isRelatedLoaded` agrees. Collection (one-to-many / many-to-many) entries carry no key.
 
 Relationship I/O resolves canonical source and target identities, not the public
