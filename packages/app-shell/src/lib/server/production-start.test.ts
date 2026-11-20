@@ -113,6 +113,7 @@ it('records the build stamp on the first start and starts again on a restart', a
       '_smrt_ai_runs',
       '_smrt_ai_run_events',
       '_smrt_ai_run_checkpoints',
+      '_smrt_ai_run_ids',
     ]),
   );
   await db.close?.();
