@@ -2951,6 +2951,7 @@ export class ObjectRegistry {
     ObjectRegistry.getDiscoveryAttemptCache().clear();
 
     for (const registered of ObjectRegistry.classes.values()) {
+      registered.inheritanceChain = undefined;
       registered.inheritedFields = undefined;
       registered.inheritedMethods = undefined;
     }

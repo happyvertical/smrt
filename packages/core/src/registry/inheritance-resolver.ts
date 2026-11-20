@@ -15,6 +15,7 @@ import {
 } from '../schema/field-inheritance';
 import { prependSmrtSystemFields } from '../system-fields';
 import { isFrameworkBaseClass } from './framework-base-classes';
+import { getRegistryGeneration } from './generation';
 import { findClass, findClassStrict } from './name-resolver';
 import {
   getInheritanceCache,
@@ -112,13 +113,36 @@ function findParentClassStrict(
   }
 }
 
+/**
+ * Registry generation at which a class's chain was computed while one of its
+ * `extends` links did not resolve. Such a chain (and the fields and methods
+ * merged from it) holds only for that generation: a parent that registers
+ * later changes the generation, and the next read derives the chain again
+ * instead of keeping the parent-less shape for the life of the process.
+ * Complete chains are not tracked here; they are dropped by the targeted
+ * invalidation on replacement.
+ */
+const partialChainGenerations = new WeakMap<RegisteredClass, number>();
+
+/** Drop inheritance state derived from a partial chain of an older generation. */
+function dropStalePartialChain(registered: RegisteredClass): void {
+  const generation = partialChainGenerations.get(registered);
+  if (generation === undefined || generation === getRegistryGeneration()) {
+    return;
+  }
+  partialChainGenerations.delete(registered);
+  registered.inheritanceChain = undefined;
+  registered.inheritedFields = undefined;
+  registered.inheritedMethods = undefined;
+}
+
 export function getInheritanceChain(
   className: string,
   pending?: RegisteredClass,
 ): string[] {
   const cache = getInheritanceCache();
 
-  // Check cache first
+  // Check cache first (it holds complete chains only)
   const cached = pending ? undefined : cache.get(className);
   if (cached) {
     return cached;
@@ -128,6 +152,14 @@ export function getInheritanceChain(
   const registered = pending ?? findClass(className);
   if (!registered) {
     return [];
+  }
+  if (!pending) dropStalePartialChain(registered);
+  if (
+    !pending &&
+    registered.inheritanceChain &&
+    partialChainGenerations.has(registered)
+  ) {
+    return registered.inheritanceChain;
   }
 
   // Check if already computed and stored
@@ -144,6 +176,7 @@ export function getInheritanceChain(
   const visited = new Set<RegisteredClass>(); // Cycle detection using object identity
   let current: RegisteredClass | undefined = registered;
   let circularDetected = false;
+  let partial = false;
   while (current) {
     // Cycle detection: use object identity to handle cases where distinct
     // classes share the same name (e.g., histrio:Performer vs smrt-video:Performer)
@@ -191,6 +224,7 @@ export function getInheritanceChain(
     // installed or the manifest is stale. We gracefully end the chain
     // here instead of mutating registry state during a read operation.
     if (!parent) {
+      partial = true;
       verboseLog(
         `[ObjectRegistry] Parent class '${current.extends}' not found ` +
           `while building inheritance chain. Ensure the parent package ` +
@@ -205,9 +239,16 @@ export function getInheritanceChain(
   // Caching a broken chain from a circular detection would cause all future
   // lookups to return incorrect inheritance data (e.g., ["VideoShot","VideoShot"]
   // instead of ["Content","VideoShot"]), breaking STI table resolution.
+  // A chain that ended at an unresolved parent holds for this registry
+  // generation only (see partialChainGenerations).
   if (!pending && !circularDetected) {
     registered.inheritanceChain = chain;
-    cache.set(className, chain);
+    if (partial) {
+      partialChainGenerations.set(registered, getRegistryGeneration());
+    } else {
+      partialChainGenerations.delete(registered);
+      cache.set(className, chain);
+    }
   }
 
   return chain;
@@ -236,6 +277,7 @@ export async function getAllFields(
   await ObjectRegistry.ensureManifestLoaded(className);
 
   // Check if class has inheritedFields cache (set during manifest loading)
+  dropStalePartialChain(registered);
   if (registered.inheritedFields) {
     return prependSmrtSystemFields(new Map(registered.inheritedFields));
   }
@@ -476,6 +518,7 @@ export async function getAllMethods(
   }
 
   // Check cache first
+  dropStalePartialChain(registered);
   if (registered.inheritedMethods) {
     return new Map(registered.inheritedMethods);
   }

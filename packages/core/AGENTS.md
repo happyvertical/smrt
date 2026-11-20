@@ -57,7 +57,10 @@ and repository rules.
   new writer of registered classes, their field/method metadata, or loaded
   manifests must go through the tracked maps or call
   `bumpRegistryGeneration()`; `issue-3047-hydration-registry-work.test.ts`
-  guards that hydration does not repeat this work per row.
+  guards that hydration does not repeat this work per row. An inheritance
+  chain read while a parent is unregistered (and the fields/methods merged
+  from it) holds for that generation only, so a late parent takes effect;
+  complete chains rely on the targeted invalidation in `class-registration.ts`.
 
 - Production DDL uses manifest generators; `getTestDatabase()` uses registry
   generators. Keep columns, indexes, FK actions, and runtime conflict targets in
