@@ -2742,20 +2742,52 @@ export class ObjectRegistry {
   ): { loaded: boolean; packageName?: string; objectsRegistered: number } {
     const packageName = manifest.packageName;
 
+    // A package registers whole or not at all. Declarations every entry can
+    // be refused for on its own are checked before anything changes (#5143);
+    // a refusal that depends on the registry rolls the package's
+    // registrations and its cache entry back below.
+    const touched = new Set<string>();
+    for (const [key, def] of Object.entries(manifest.objects)) {
+      const className = def.className || key;
+      const owner = def.packageName || packageName;
+      const ownKey = owner ? createQualifiedName(owner, className) : className;
+      if (def.decoratorConfig?.replaceParent === false)
+        throw sameNameCoexistenceUnsupported(
+          ownKey,
+          def.extendsQualified ?? def.extends ?? 'the class it extends',
+        );
+      touched.add(key).add(ownKey);
+      if (def.qualifiedName) touched.add(def.qualifiedName);
+      if (def.extendsQualified) touched.add(def.extendsQualified);
+      for (const [liveKey, entry] of ObjectRegistry.classes)
+        if (entry.name === className) touched.add(liveKey);
+    }
+
     // Seed the manifest cache so discoverManifestSync() finds entries when
     // @smrt() decorators run for classes in this package.
     const cacheKey = packageName || sourceLabel;
-    getManifestCache().set(cacheKey, manifest);
+    const cache = getManifestCache();
+    const cachedBefore = cache.get(cacheKey);
+    const restoreRegistrations =
+      ObjectRegistry.checkpointRegistrations(touched);
+    cache.set(cacheKey, manifest);
 
     // Merge manifest fields into any already-registered classes. This covers
     // the case where class modules were evaluated before the package's
     // self-register shim (e.g., a consumer imported a deep subpath that
     // bypassed the main entry).
     let objectsRegistered = 0;
-    for (const [key, def] of Object.entries(manifest.objects)) {
-      const className = def.className || key;
-      ObjectRegistry.registerFromManifest(className, def, packageName);
-      objectsRegistered++;
+    try {
+      for (const [key, def] of Object.entries(manifest.objects)) {
+        const className = def.className || key;
+        ObjectRegistry.registerFromManifest(className, def, packageName);
+        objectsRegistered++;
+      }
+    } catch (error) {
+      restoreRegistrations();
+      if (cachedBefore) cache.set(cacheKey, cachedBefore);
+      else cache.delete(cacheKey);
+      throw error;
     }
 
     // The package's declared table retirements (#5005), which migrate reads

@@ -16,6 +16,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { field } from '../../decorators';
 import { computeRuntimeWebManifestHash } from '../../generators/rest';
 import { clearManifestCache } from '../../manifest/manifest-loader';
+import { getManifestCache } from '../../manifest/store';
 import { SmrtObject } from '../../object';
 import { ObjectRegistry, smrt } from '../../registry';
 import { registerRuntimeModel } from '../../runtime-model.js';
@@ -281,6 +282,57 @@ describe('same-named subclass of another package: manifest registration', () => 
       // The parent registers again unchanged once the refused entry is gone.
       steps.base();
       expect(ObjectRegistry.getClass(BASE)?.qualifiedName).toBe(BASE);
+    });
+  });
+
+  describe('a package manifest with a refused entry after a valid one', () => {
+    const CLIP = `${HISTRIO}:Clip`;
+    const packageWith = (sub: Fixture): SmartObjectManifest => ({
+      version: '1',
+      timestamp: 0,
+      packageName: HISTRIO,
+      objects: {
+        [CLIP]: {
+          name: 'clip',
+          collection: 'clips',
+          className: 'Clip',
+          qualifiedName: CLIP as never,
+          packageName: HISTRIO,
+          filePath: 'src/models/clip.ts',
+          fields: { title: { type: 'text', _meta: {} } },
+          methods: {},
+          decoratorConfig: {},
+        } as SmartObjectDefinition,
+        [SUB]: {
+          name: 'scene',
+          collection: 'scenes',
+          ...sub,
+        } as SmartObjectDefinition,
+      },
+    });
+
+    it.each([
+      ['replaceParent: false', false, COEXISTENCE_UNSUPPORTED],
+      [
+        'no declared choice',
+        undefined,
+        expect.objectContaining({
+          code: 'CONFIG_SAME_NAME_SUBCLASS_UNDECLARED',
+        }),
+      ],
+    ] as const)('registers none of it and caches nothing (%s)', (_label, choice, refusal) => {
+      fromManifest(BASE, baseEntry(), VIDEO);
+      const before = registrySnapshot();
+      expect(() =>
+        ObjectRegistry.registerPackageManifest(packageWith(subEntry(choice))),
+      ).toThrow(refusal);
+      expect(registrySnapshot()).toEqual(before);
+      expect(ObjectRegistry.getClass(CLIP)).toBeUndefined();
+      expect(getManifestCache().has(HISTRIO)).toBe(false);
+      // The corrected package then registers whole.
+      ObjectRegistry.registerPackageManifest(packageWith(subEntry(true)));
+      expect(ObjectRegistry.getClass(CLIP)?.qualifiedName).toBe(CLIP);
+      expect(ObjectRegistry.getClass(BASE)?.qualifiedName).toBe(SUB);
     });
   });
 
