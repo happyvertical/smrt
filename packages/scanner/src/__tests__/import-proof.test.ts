@@ -343,6 +343,28 @@ describe('parents', () => {
     expect(fieldNames(model('Meeting')?.allFields)).not.toContain('openOnly');
   });
 
+  it('reports an undecorated collection whose superclass is a member of a model', async () => {
+    // `Base.Inner` holds a concrete collection; the undecorated class over it
+    // must not drop out of the manifest without a diagnostic.
+    const { errors, model } = await scanProject({
+      'src/models/Base.ts': `${CORE}\n@smrt()\nexport class Base extends SmrtObject {\n  name = '';\n}\nexport class BaseCollection extends SmrtCollection<Base> {\n  static readonly _itemClass = Base;\n}\nexport class Holder extends SmrtObject {\n  static Inner = BaseCollection;\n}\nexport class Children extends Holder['Inner'] {}\n`,
+    });
+
+    expect(model('Children')).toBeUndefined();
+    expect(errors).toHaveLength(1);
+    expect(errors[0].message).toContain("Children extends `Holder['Inner']`");
+    expect(errors[0].message).toContain('property of a value');
+  });
+
+  it('ignores an undecorated class over a member of an unrelated value', async () => {
+    const { errors } = await scanProject({
+      'src/models/Base.ts': OPEN_BASE('Base'),
+      'src/util.ts': `const widgets = { Button: class {} };\nexport class FancyButton extends widgets['Button'] {}\n`,
+    });
+
+    expect(errors).toEqual([]);
+  });
+
   it('rejects an inline mixin call as the superclass', async () => {
     const { errors } = await scanProject({
       'src/Meeting.ts': `${CORE}\nfunction Mixin<T>(base: T) { return base; }\n@smrt()\nexport class Meeting extends Mixin(SmrtObject) {}\n`,

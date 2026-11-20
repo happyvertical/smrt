@@ -308,6 +308,7 @@ export class OxcScanner {
       ...this.resolver.getResolutionErrors(),
       ...this.collectConfigErrors(resolved),
       ...this.resolver.parentResolutionErrors(resolved),
+      ...this.resolver.unreadableCandidateErrors(),
       ...this.confirmImportedReferences(resolved),
       ...this.resolver.exportNameErrors(resolved),
     ];

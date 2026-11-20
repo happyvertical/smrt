@@ -845,6 +845,54 @@ export class InheritanceResolver {
   }
 
   /**
+   * Scan errors for undecorated scanned classes whose superclass the scan
+   * cannot read, when that superclass could be a model or collection: the
+   * class has a type argument (`extends X<Item>`), or the expression names a
+   * framework base or a model of this scan (`Base['Inner']` beside a model
+   * `Base`). Such a class cannot be judged a model or not, so it is an error
+   * rather than silently left out of the manifest. An undecorated class over
+   * an unrelated expression stays outside the scan's concern.
+   */
+  unreadableCandidateErrors(): ScanError[] {
+    const modelNames = new Set(
+      this.classes
+        .filter((candidate) => this.isModelClass(candidate))
+        .map((candidate) => candidate.className),
+    );
+    const errors: ScanError[] = [];
+    for (const classDef of this.classes) {
+      if (
+        classDef.hasSmartDecorator ||
+        !classDef.extendsUnreadable ||
+        !this.isScanned(classDef) ||
+        this.isModelClass(classDef)
+      ) {
+        continue;
+      }
+      const names = (classDef.extendsClause ?? '')
+        .split(/[.[\]'"]+/)
+        .filter(Boolean);
+      const candidate =
+        classDef.extendsTypeArg !== null ||
+        names.some(
+          (name) => FRAMEWORK_BASE_CLASSES.has(name) || modelNames.has(name),
+        );
+      if (!candidate) continue;
+      const link = this.linkOf(classDef);
+      errors.push({
+        message:
+          `${classDef.className} extends \`${classDef.extendsClause ?? '<expression>'}\`, which the scan cannot accept: ` +
+          `${link?.error ?? 'the superclass is not a class reference the scan reads'}. ` +
+          'Without a readable superclass the scan cannot tell whether this class is a model or collection, so it would be missing from the manifest.',
+        filePath: classDef.filePath,
+        line: classDef.startLine,
+        severity: 'error',
+      });
+    }
+    return errors;
+  }
+
+  /**
    * Scan errors for every model `resolved` contains and each scanned ancestor
    * in its chain: a parent the import proof does not accept, an ancestor
    * that is not a model, and a collection item that is not proven. Classes
