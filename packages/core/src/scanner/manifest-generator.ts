@@ -908,9 +908,17 @@ export class ManifestGenerator {
           const confirmed = this.confirmPackageExport(
             parent,
             obj.extendsImportPath,
-            { byExportName: false },
           );
           if ('reason' in confirmed) fail(packageName, confirmed.reason);
+          // Every later pass looks the parent up by the identity the
+          // provider's manifest keys it under (its public name), not by the
+          // export name the source imports.
+          else {
+            obj.extendsQualified = this.identityOf(
+              confirmed.definition,
+              parent,
+            );
+          }
         }
       }
       const item = obj.extendsTypeArgQualified;
@@ -923,10 +931,14 @@ export class ManifestGenerator {
             ? lookupInManifest(manifest, item)
               ? { ok: true }
               : { reason: `this package declares no ${item}` }
-            : this.confirmPackageExport(item, obj.extendsTypeArgImportPath, {
-                byExportName: false,
-              })
+            : this.confirmPackageExport(item, obj.extendsTypeArgImportPath)
           : { reason: `${item} is not a qualified name` };
+        if ('definition' in confirmed) {
+          obj.extendsTypeArgQualified = this.identityOf(
+            confirmed.definition,
+            item,
+          );
+        }
         if ('reason' in confirmed) {
           throw new ConfigurationError(
             `${obj.className} (${obj.filePath}) is a collection of ${obj.extendsTypeArg}, imported from ${packageName}, ` +
@@ -1090,7 +1102,6 @@ export class ManifestGenerator {
   private confirmPackageExport(
     qualified: string,
     specifier: string | undefined,
-    options: { byExportName: boolean },
   ): { definition: SmartObjectDefinition } | { reason: string } {
     const root = this.dependencyScope?.root ?? process.cwd();
     const { packageName, className: exportName } =
@@ -1125,15 +1136,21 @@ export class ManifestGenerator {
         found.decoratorConfig?.name === exportName)
         ? found
         : undefined;
+    // A model whose public name differs from its export (`export class
+    // InvoiceRecord` with `@smrt({ name: 'Invoice' })`) is keyed by the
+    // public name; the import names the export, so it is found by that exact
+    // export name, preferring the entry the import uses.
+    const byExport = (
+      Object.values(dependency.objects) as SmartObjectDefinition[]
+    ).filter(
+      (entry) =>
+        entry.exportName === exportName &&
+        (entry.packageName ?? dependency.packageName) === packageName,
+    );
     const definition =
       exactly ??
-      (options.byExportName
-        ? (Object.values(dependency.objects).find(
-            (entry) =>
-              entry.exportName === exportName &&
-              (entry.packageName ?? dependency.packageName) === packageName,
-          ) as SmartObjectDefinition | undefined)
-        : undefined);
+      byExport.find((entry) => entry.importPath === specifier) ??
+      byExport[0];
     if (!definition) {
       return {
         reason: `the manifest of ${packageName} does not declare ${exportName}; if ${packageName} only re-exports it, import it from the package that declares it`,
@@ -1321,9 +1338,7 @@ export class ManifestGenerator {
         if (!own) unknown.push(`${where} is ${qualified}`);
         return own;
       }
-      const confirmed = this.confirmPackageExport(qualified, specifier, {
-        byExportName: true,
-      });
+      const confirmed = this.confirmPackageExport(qualified, specifier);
       if ('reason' in confirmed) {
         unknown.push(`${where} is ${qualified}: ${confirmed.reason}`);
         return undefined;

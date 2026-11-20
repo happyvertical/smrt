@@ -211,6 +211,35 @@ describe('the entry a package parent is imported from', () => {
     });
   });
 
+  // A provider model may export one name and publish another
+  // (`@smrt({ name })`); the import names the export, and the parent is the
+  // model its manifest keys under the public name.
+  it('confirms a parent and a collection item imported by an export name that differs from the public name', async () => {
+    const root = await project({
+      providers: {
+        [VENDOR]: {
+          files: {
+            'src/InvoiceRecord.ts': `${CORE}\n@smrt({ name: 'Invoice', tableStrategy: 'sti', tableName: 'vendor_invoices', api: false })\nexport class InvoiceRecord extends SmrtObject {\n  total = 0;\n}\n`,
+          },
+        },
+      },
+      app: {
+        'src/Invoice.ts': `${CORE}\n@smrt({ tableName: 'app_invoices' })\nexport class Invoice extends SmrtObject {}\n`,
+        'src/CreditNote.ts': `${CORE}\nimport { InvoiceRecord } from '${VENDOR}';\n@smrt()\nexport class CreditNote extends InvoiceRecord {\n  reason = '';\n}\n`,
+        'src/Invoices.ts': `${CORE}\nimport { InvoiceRecord } from '${VENDOR}';\nexport class VendorInvoiceCollection extends SmrtCollection<InvoiceRecord> {}\n`,
+      },
+    });
+
+    const manifest = await build(root);
+    const note = manifest.objects[`${APP}:CreditNote`];
+    expect(note?.extendsQualified).toBe(`${VENDOR}:Invoice`);
+    expect(note?.schema?.tableName).toBe('vendor_invoices');
+    expect(crud(note)).toEqual([]);
+    const collection = manifest.objects[`${APP}:VendorInvoiceCollection`];
+    expect(collection?.collectionOf).toBe(`${VENDOR}:Invoice`);
+    expect(crud(collection)).toEqual([]);
+  });
+
   it('fails for a parent whose export name matches a provider model only in another case', async () => {
     const root = await project({
       providers: {
