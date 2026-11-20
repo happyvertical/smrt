@@ -143,6 +143,7 @@ it('uses the configured root for the initial base-class inventory and generated 
         objects: {
           PluginRootBase: {
             className: 'PluginRootBase',
+            importPath: provider,
             fields: {},
             methods: {},
           },
