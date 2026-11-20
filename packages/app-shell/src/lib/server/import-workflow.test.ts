@@ -73,6 +73,10 @@ const request = async (bad = false, badCache = false) =>
     body: (await businessBytes(bad, badCache)) as BodyInit,
   });
 const pause = (ms = 10) => new Promise((resolve) => setTimeout(resolve, ms));
+// The two full-lifecycle tests below (load, exact checks, rebuilds, Apply) pass a
+// 180s timeout: a chain of engine rebuilds, seconds each on a loaded host.
+// Measured 45s at host load ~33 and 52s on a CI runner (the Apply test); the
+// Remove/Put back test hit the 60s default on CI three times. 3x headroom.
 async function until(check: () => Promise<boolean>) {
   for (let n = 0; n < 1000; n++) {
     if (await check()) return;
@@ -838,7 +842,7 @@ it('applies imported records only through the owner Apply, then removes the file
   );
   expect(existsSync(file)).toBe(false);
   expect(await getDraftSlot()).toBeNull();
-});
+}, 180_000);
 it('records the import as cards by table and keeps the review through a Remove and Put back', async () => {
   await service.start(h.owner, await request());
   await worker();
@@ -870,7 +874,7 @@ it('records the import as cards by table and keeps the review through a Remove a
     async () => (await service.current(h.owner))?.status === 'published',
   );
   expect(await (await getHost()).countRows(importModelName('orders'))).toBe(2);
-});
+}, 180_000);
 it('repairs a crash between job admission and saving the import run id with idempotent start', async () => {
   const started = await service.start(h.owner, await request());
   const row = (
