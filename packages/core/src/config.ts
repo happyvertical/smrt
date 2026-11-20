@@ -120,8 +120,16 @@ export interface GlobalSignalConfig {
   usage?: AiUsageConfig;
 
   /**
-   * Signal sanitization configuration (default: enabled with standard redactions)
-   * Set to false to disable sanitization
+   * Signal sanitization before signals reach adapters.
+   *
+   * **Off unless configured**: when omitted (or `false`), adapters receive
+   * signals unmodified, including method arguments and results. Pass `{}` to
+   * apply the standard redactions (credential-like keys such as `password`,
+   * `token`, `apiKey`; long strings truncated; error stacks shortened), or a
+   * {@link SanitizationConfig} to customise them. Redaction matches object
+   * keys, so a credential passed as a bare positional argument is not
+   * redacted. Applies to the general signal bus only; the change-feed
+   * `_events` stream never carries row payloads.
    */
   sanitization?: SanitizationConfig | false;
 

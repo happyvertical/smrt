@@ -24,7 +24,10 @@ export const TEST_SECONDS = {
   '@happyvertical/smrt-analytics': 57,
   '@happyvertical/smrt-app-mcp': 31,
   '@happyvertical/smrt-app-runtime': 546,
-  '@happyvertical/smrt-app-shell': 628,
+  // 1196 s measured (118 files, merge-group run 44699654477): it was the long
+  // pole of `test-packages (2/5)` (29.7 min against 14-16 in its neighbours)
+  // and of every PR `affected-package-tests` run it was selected in.
+  '@happyvertical/smrt-app-shell': 1200,
   '@happyvertical/smrt-assets': 49,
   '@happyvertical/smrt-bundle-gate': 82,
   '@happyvertical/smrt-chat': 392,

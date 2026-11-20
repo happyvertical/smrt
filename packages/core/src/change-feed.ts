@@ -88,11 +88,13 @@
  * ## Failure semantics
  *
  * A feed-write failure must never fail the user's write. The interceptor
- * wraps the append in a try/catch: on failure it logs a warning (deduped per
- * database) and continues. The trade-off is availability of the user's
- * write over completeness of the feed — consumers already need a
- * full-resync path for cursors older than the retention window, and the
- * same path covers a (rare) dropped feed row. PostgreSQL runs the INSERT in a
+ * wraps the append in a try/catch: on failure it logs a warning (at most once
+ * a minute per database and table, with a count of what it suppressed) and
+ * continues. The trade-off is availability of the user's write over
+ * completeness of the feed: the dropped change is not marked in the log —
+ * sequences stay contiguous and a resync is only signalled for pruned or
+ * foreign cursors — so a consumer is not told it missed it. PostgreSQL runs
+ * the INSERT in a
  * PL/pgSQL exception subtransaction and returns a caught SQLSTATE as data;
  * JavaScript only throws/logs after PostgreSQL has restored the caller's
  * transaction, so a swallowed append failure cannot surface later as 25P02.
@@ -141,6 +143,8 @@ import { type ChangeSignal, publishChangeSignal } from './change-signals.js';
 import { resolveDbCacheKey } from './collection-cache.js';
 import { resolveDispatchTenantScope } from './dispatch/tenant-resolver.js';
 import {
+  databaseReadScope,
+  deferUntilFrameworkCommit,
   isEmbeddedDatabase,
   usesPostgresDialect,
   withEmbeddedWriteQueue,
@@ -1565,6 +1569,39 @@ export async function getChangesSince(
   db: DatabaseInterface,
   options: GetChangesOptions,
 ): Promise<ChangeFeedPage> {
+  // An embedded engine runs a framework transaction on the root's own
+  // connection, so a read issued on the root while one is open would see its
+  // uncommitted feed rows — and could advance a cursor past a sequence that a
+  // rollback then frees for a different change. Every framework write
+  // transaction holds the per-database write queue for its whole duration,
+  // so reading through the same queue waits for it to commit or roll back.
+  // Re-entrant: a read made inside that transaction (or any other queue hold)
+  // runs at once and sees its own work, as before.
+  return withEmbeddedWriteQueue(db, isEmbeddedDatabase(db), () =>
+    readChangesSince(db, options),
+  );
+}
+
+/**
+ * {@link getChangesSince} for a reader that may go away while its read waits
+ * in the write queue: when the read reaches the front and `isCancelled()` is
+ * true, nothing runs and it resolves to `null`. Internal to the `_events`
+ * stream.
+ */
+export async function getChangesSinceUnlessCancelled(
+  db: DatabaseInterface,
+  options: GetChangesOptions,
+  isCancelled: () => boolean,
+): Promise<ChangeFeedPage | null> {
+  return withEmbeddedWriteQueue(db, isEmbeddedDatabase(db), () =>
+    isCancelled() ? Promise.resolve(null) : readChangesSince(db, options),
+  );
+}
+
+async function readChangesSince(
+  db: DatabaseInterface,
+  options: GetChangesOptions,
+): Promise<ChangeFeedPage> {
   const { since } = options;
   if (!Number.isFinite(since) || since < 0) {
     throw new Error(
@@ -1732,6 +1769,30 @@ export async function getChangesSince(
   params.push(limit);
 
   const rows = getQueryRows(await db.query(sql, ...params));
+
+  // The floor the pruned-gap check above compared against was read in an
+  // EARLIER statement. A retention prune that committed between that read
+  // and the page query deleted rows in (since, newFloor) that the page can no
+  // longer contain — and nothing in the page shows it, because filters
+  // legitimately hide rows too. Re-read the floor AFTER the page: a prune
+  // that committed before the page query is visible to this later statement
+  // under every isolation level the feed runs at, and a prune that committed
+  // after the page query cannot have removed anything the page missed. So a
+  // cursor this read would otherwise have advanced past deleted rows is
+  // always answered with a resync instead.
+  const recheckRows = getQueryRows(
+    await db.query(`SELECT MIN(seq) AS floor FROM ${CHANGE_FEED_TABLE}`),
+  );
+  const floorAfterPage = toSeqNumber(recheckRows[0]?.floor);
+  if (floorAfterPage === 0 || since < floorAfterPage - 1) {
+    return {
+      changes: [],
+      cursor: since,
+      resyncRequired: true,
+      resyncCursor: servedHorizon,
+    };
+  }
+
   const entries = rows.map(rowToEntry);
   // Re-check against the live set: a table declared sensitive while the query
   // was in flight is not in the NOT IN list above, and its rows must still not
@@ -2169,8 +2230,19 @@ async function deleteCounted(
 
 export const CHANGE_FEED_WAS_PERSISTED_KEY = '_smrtChangeFeedWasPersisted';
 
-/** Databases we already warned about after a failed feed append. */
-const warnedAppendFailures = new Set<string>();
+/**
+ * Append-failure logging state per `database + table`: when it last logged and
+ * how many failures it has suppressed since. A persistent failure on one table
+ * keeps reporting (at most once per {@link APPEND_FAILURE_LOG_INTERVAL_MS}),
+ * and a failure on one table never silences another's.
+ */
+const appendFailureLog = new Map<
+  string,
+  { lastLoggedAt: number; suppressed: number }
+>();
+
+/** Minimum interval between append-failure warnings for one table. */
+const APPEND_FAILURE_LOG_INTERVAL_MS = 60_000;
 
 /** Databases we already warned about after a failed signal publish (#1763). */
 const warnedSignalPublishFailures = new Set<string>();
@@ -2272,6 +2344,8 @@ async function appendForInstance(
 ): Promise<void> {
   let db: DatabaseInterface;
   let table: string;
+  let rowId: string | null;
+  let rowTenantId: string | null;
   try {
     table = instance.tableName;
     // Framework-owned tables are bookkeeping, not client-syncable data —
@@ -2287,6 +2361,10 @@ async function appendForInstance(
     // that name, closing the read path and the signal bus for it.
     if (isChangeFeedSensitiveWrite(table, instance.constructor)) return;
     db = instance.db;
+    const id = (instance as { id?: unknown }).id;
+    const tenantId = (instance as unknown as Record<string, unknown>).tenantId;
+    rowId = typeof id === 'string' && id ? id : null;
+    rowTenantId = typeof tenantId === 'string' && tenantId ? tenantId : null;
   } catch {
     // Not a fully initialized SmrtObject (e.g. plain-object doubles in
     // tests) — nothing to record.
@@ -2294,11 +2372,6 @@ async function appendForInstance(
   }
 
   try {
-    const id = (instance as { id?: unknown }).id;
-    const tenantId = (instance as unknown as Record<string, unknown>).tenantId;
-    const rowId = typeof id === 'string' && id ? id : null;
-    const rowTenantId =
-      typeof tenantId === 'string' && tenantId ? tenantId : null;
     const seq = await appendChange(db, {
       table,
       rowId,
@@ -2317,22 +2390,14 @@ async function appendForInstance(
     // Publish a coarse live signal for the SSE `_events` route (#1763). This
     // runs only after the durable feed append SUCCEEDED (same try block, so a
     // failed append never emits a signal — "no signal without a durable feed
-    // row"). Its own try/catch (distinct dedup key) keeps a signal-publish
-    // problem from failing the user's write or masking the append's own
-    // failure semantics above.
-    try {
-      publishChangeSignal(db, {
-        table,
-        operation,
-        rowId,
-        tenantId: rowTenantId,
-        seq,
-      });
-    } catch (error) {
-      warnSignalPublishFailureOnce(db, table, error);
-    }
+    // row"), and only once the write has committed (see publishWhenCommitted).
+    // publishSignals has its own try/catch, so a signal problem never fails
+    // the user's write or masks the append's failure semantics above.
+    publishWhenCommitted(db, [
+      { table, operation, rowId, tenantId: rowTenantId, seq },
+    ]);
   } catch (error) {
-    warnAppendFailureOnce(db, table, error);
+    warnAppendFailure(db, table, error);
   }
 }
 
@@ -2386,25 +2451,48 @@ export async function recordInstanceChanges(
       db,
       prepared.map(({ input }) => input),
     );
+    const signals: ChangeSignal[] = [];
     for (let index = 0; index < prepared.length; index++) {
       const seq = sequences[index];
       if (seq == null) continue;
       const input = prepared[index].input;
-      try {
-        publishChangeSignal(db, {
-          table: input.table,
-          operation: input.operation ?? 'update',
-          rowId: input.rowId ?? null,
-          tenantId: input.tenantId ?? null,
-          seq,
-        });
-      } catch (error) {
-        warnSignalPublishFailureOnce(db, input.table, error);
-      }
+      signals.push({
+        table: input.table,
+        operation: input.operation ?? 'update',
+        rowId: input.rowId ?? null,
+        tenantId: input.tenantId ?? null,
+        seq,
+      });
     }
+    publishWhenCommitted(db, signals);
   } catch (error) {
-    warnAppendFailureOnce(db, prepared[0].input.table, error);
+    warnAppendFailure(db, prepared[0].input.table, error);
   }
+}
+
+/**
+ * Publish write-path signals once their write has committed.
+ *
+ * An append made on a framework transaction's handle is sequenced inside that
+ * transaction on SQLite and DuckDB (and on PostgreSQL when it is the
+ * transaction's first statement). Published at once, its signal would
+ * announce a write a later rollback undoes, and the rollback frees the
+ * sequence for the next write — a subscriber that dedupes by sequence then
+ * drops the real change. The signals are therefore handed to the
+ * transaction and published after it commits, in order, and dropped if it
+ * rolls back. Outside a framework transaction (autocommit) they publish now.
+ * Writes inside a transaction the framework does not manage (a raw
+ * `db.transaction()`, or a caller-owned one) still publish immediately.
+ */
+function publishWhenCommitted(
+  db: DatabaseInterface,
+  signals: ChangeSignal[],
+): void {
+  if (signals.length === 0) return;
+  if (deferUntilFrameworkCommit(db, (root) => publishSignals(root, signals))) {
+    return;
+  }
+  publishSignals(db, signals);
 }
 
 /** Record a framework-owned mutation that intentionally bypasses save hooks. */
@@ -2415,21 +2503,69 @@ export async function recordInstanceChange(
   await appendForInstance(instance, operation);
 }
 
-function warnAppendFailureOnce(
+/**
+ * Log a failed feed append, at most once per {@link
+ * APPEND_FAILURE_LOG_INTERVAL_MS} per `database + table`, reporting how many
+ * failures were suppressed in between.
+ */
+function takeAppendFailureWarning(
+  db: DatabaseInterface,
+  table: string,
+): { suppressed: number } | null {
+  // One bucket per database, whichever handle failed: a framework
+  // transaction's handle resolves to its root, and a private database (a
+  // per-connection in-memory one) is keyed weakly by its root handle so its
+  // buckets go with it.
+  const scope = databaseReadScope(db);
+  const log =
+    typeof scope === 'string'
+      ? appendFailureLog
+      : privateAppendFailureLog(scope);
+  const key = typeof scope === 'string' ? `${scope}\u0000${table}` : table;
+  const now = Date.now();
+  const state = log.get(key);
+  if (state && now - state.lastLoggedAt < APPEND_FAILURE_LOG_INTERVAL_MS) {
+    state.suppressed++;
+    return null;
+  }
+  log.set(key, { lastLoggedAt: now, suppressed: 0 });
+  return { suppressed: state?.suppressed ?? 0 };
+}
+
+/** Append-failure buckets of private databases, held weakly by root handle. */
+let privateAppendFailureLogs = new WeakMap<
+  object,
+  Map<string, { lastLoggedAt: number; suppressed: number }>
+>();
+
+function privateAppendFailureLog(
+  root: object,
+): Map<string, { lastLoggedAt: number; suppressed: number }> {
+  let log = privateAppendFailureLogs.get(root);
+  if (!log) {
+    log = new Map();
+    privateAppendFailureLogs.set(root, log);
+  }
+  return log;
+}
+
+/** Log a failed feed append (rate-limited per table). */
+function warnAppendFailure(
   db: DatabaseInterface,
   table: string,
   error: unknown,
 ): void {
   try {
-    const dbKey = resolveDbCacheKey(db);
-    if (warnedAppendFailures.has(dbKey)) return;
-    warnedAppendFailures.add(dbKey);
+    const allowed = takeAppendFailureWarning(db, table);
+    if (!allowed) return;
     logger.warn(
       `Change feed: failed to append a change entry for '${table}'. The ` +
-        'write itself succeeded; the feed is missing this change (further ' +
-        'failures for this database are suppressed). Consumers recover on ' +
-        'full resync.',
-      { error: error instanceof Error ? error.message : String(error) },
+        'write itself succeeded; the feed is missing this change, and nothing ' +
+        'in the feed marks the gap.',
+      {
+        error: error instanceof Error ? error.message : String(error),
+        suppressedSinceLastWarning: allowed.suppressed,
+      },
     );
   } catch {
     // Logging must never propagate into the write path.
@@ -2479,7 +2615,8 @@ function warnSignalPublishFailureOnce(
  * Reset the append-failure and signal-publish warning dedups (test helper).
  */
 export function resetChangeFeedWarnings(): void {
-  warnedAppendFailures.clear();
+  appendFailureLog.clear();
+  privateAppendFailureLogs = new WeakMap();
   warnedSignalPublishFailures.clear();
   warnedDrainFailures.clear();
   // The append path's drain interval is process state too; a test that asserts
