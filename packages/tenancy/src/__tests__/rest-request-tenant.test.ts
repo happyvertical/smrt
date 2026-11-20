@@ -43,8 +43,21 @@ const ROW_GLOBAL = '99999999-0000-4000-8000-000000000009';
 
 @smrt({
   api: {
-    include: ['list', 'get', 'create', 'update', 'delete', 'recent'],
-    routes: { recent: { method: 'GET', scope: 'collection' } },
+    include: [
+      'list',
+      'get',
+      'create',
+      'update',
+      'delete',
+      'recent',
+      'latest',
+      'unscanned',
+    ],
+    routes: {
+      recent: { method: 'GET', scope: 'collection' },
+      latest: { method: 'GET', scope: 'collection' },
+      unscanned: { method: 'GET', scope: 'collection' },
+    },
   },
 })
 @TenantScoped({ mode: 'optional' })
@@ -66,6 +79,18 @@ class ScopedMemoCollection extends SmrtCollection<ScopedMemo> {
 
   /** A collection-scoped read with no tenant scope of its own. */
   async recent(): Promise<{ titles: string[] }> {
+    const rows = await this.list({});
+    return { titles: rows.map((row) => row.title).sort() };
+  }
+
+  /** A collection-scoped read whose one parameter carries no ownership. */
+  async latest(limit?: number): Promise<{ titles: string[] }> {
+    const rows = await this.list({ limit: Number(limit ?? 10) });
+    return { titles: rows.map((row) => row.title).sort() };
+  }
+
+  /** A collection-scoped read with no parameters and no scanned metadata. */
+  async unscanned(): Promise<{ titles: string[] }> {
     const rows = await this.list({});
     return { titles: rows.map((row) => row.title).sort() };
   }
@@ -130,6 +155,14 @@ describe('runtime REST request tenant', () => {
     ObjectRegistry.getMethods('ScopedMemo').set('recent', {
       name: 'recent',
       parameters: [],
+      returnType: 'Promise<any>',
+      isPublic: true,
+    } as never);
+    // `latest` takes a page size, not the options a scope is set in.
+    // `unscanned` has no registered metadata at all.
+    ObjectRegistry.getMethods('ScopedMemo').set('latest', {
+      name: 'latest',
+      parameters: [{ name: 'limit', type: 'number', optional: true }],
       returnType: 'Promise<any>',
       isPublic: true,
     } as never);
@@ -336,6 +369,30 @@ describe('runtime REST request tenant', () => {
       const response = await call(handler, 'GET', 'memos/recent', {
         as: 'user-of-a',
       });
+      expect(response.status).toBe(200);
+      expect(await response.json()).toMatchObject({
+        result: { titles: ['a'] },
+      });
+    });
+
+    it.each([
+      ['whose parameter carries no ownership', 'memos/latest?limit=50'],
+      ['with no parameters and no registered metadata', 'memos/unscanned'],
+    ])('%s is refused for a caller with no tenant', async (_label, path) => {
+      const response = await call(handler, 'GET', path, {
+        as: 'user-without-tenant',
+      });
+      expect(response.status).toBe(403);
+      const text = await response.text();
+      expect(text).not.toContain('"a"');
+      expect(text).not.toContain('"b"');
+    });
+
+    it.each([
+      ['whose parameter carries no ownership', 'memos/latest?limit=50'],
+      ['with no parameters and no registered metadata', 'memos/unscanned'],
+    ])('%s serves the caller the rows of its own tenant', async (_label, path) => {
+      const response = await call(handler, 'GET', path, { as: 'user-of-a' });
       expect(response.status).toBe(200);
       expect(await response.json()).toMatchObject({
         result: { titles: ['a'] },

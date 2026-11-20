@@ -109,6 +109,23 @@ export function isTenantScoped(objectDef: SmartObjectDefinition): boolean {
 }
 
 /**
+ * The ownership property a tenant-scoped model's manifest names: its
+ * `tenantScoped.field`, else `tenantId`. Empty when the model is not
+ * tenant-scoped in its manifest.
+ */
+export function manifestOwnershipProperties(
+  objectDef: SmartObjectDefinition,
+): string[] {
+  const config = objectDef.decoratorConfig?.tenantScoped;
+  if (!config) return [];
+  const field =
+    typeof config === 'object'
+      ? (config as { field?: unknown }).field
+      : undefined;
+  return [typeof field === 'string' && field.length > 0 ? field : 'tenantId'];
+}
+
+/**
  * Whether a tenant-scoped model lets a verified super-admin bypass act with
  * no tenant: `tenantScoped: { allowSuperAdminBypass: true }`.
  */

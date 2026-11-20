@@ -141,6 +141,13 @@ class EmittedRouteBulletinCollection extends SmrtCollection<EmittedRouteBulletin
     return (await this.list({})).length;
   }
 
+  /** A custom GET action whose one parameter carries no ownership. */
+  async latest(limit?: number) {
+    return (await this.list({ limit: Number(limit ?? 10) }))
+      .map((row) => row.title)
+      .sort();
+  }
+
   /** A custom GET action that reads with its options as the filter. */
   async browse(options: Record<string, unknown> = {}) {
     return (await this.list({ where: options })).map((row) => row.title).sort();
@@ -424,6 +431,12 @@ describe('emitted SvelteKit list route with the real tenant interceptor', () => 
           readOrg: optionsMethod('readOrg'),
           readTenant: optionsMethod('readTenant'),
           readOrgNamed: optionsMethod('readOrgNamed', 'organizationId'),
+          latest: {
+            name: 'latest',
+            parameters: [{ name: 'limit', type: 'number', optional: true }],
+            returnType: 'Promise<any>',
+            isPublic: true,
+          },
           countAll: {
             name: 'countAll',
             parameters: [],
@@ -440,9 +453,11 @@ describe('emitted SvelteKit list route with the real tenant interceptor', () => 
               'readTenant',
               'readOrgNamed',
               'countAll',
+              'latest',
             ],
             routes: {
               countAll: { method: 'GET', path: 'count-all' },
+              latest: { method: 'GET', path: 'latest' },
               readOrgNamed: { method: 'GET', path: 'read-org-named' },
               browse: { method: 'GET', path: 'browse' },
               readOrg: { method: 'GET', path: 'read-org' },
@@ -556,6 +571,7 @@ describe('emitted SvelteKit list route with the real tenant interceptor', () => 
     for (const path of [
       'emittedroutebulletins/browse',
       'emittedroutebulletins/count-all',
+      'emittedroutebulletins/latest',
       'emittedroutebulletins/read-org',
       'emittedroutebulletins/read-tenant',
       'emittedroutebulletins/read-org-named',
@@ -873,6 +889,19 @@ describe('emitted SvelteKit list route with the real tenant interceptor', () => 
 
     it('a collection GET action taking no options is refused to a caller with no tenant', async () => {
       expect((await call('emittedroutebulletins/count-all')).status).toBe(401);
+    });
+
+    it('a collection GET action whose parameter carries no ownership is refused to a caller with no tenant', async () => {
+      expect(
+        (await call('emittedroutebulletins/latest', {}, '?limit=50')).status,
+      ).toBe(401);
+      expect(
+        await actionResult(
+          await call('emittedroutebulletins/latest', {}, '?limit=50', {
+            locals: { tenantId: OURS, user: { id: 'reader' } },
+          }),
+        ),
+      ).toEqual(['our bulletin']);
     });
 
     it('a collection GET action taking options reads rows without an owner for a caller with no tenant', async () => {

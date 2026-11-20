@@ -61,6 +61,7 @@ import {
   isTenantScopedModel,
   resolveAnonymousTenantReadScope,
   scopeTenantReadOptions,
+  tenantReadScopeProperties,
 } from '../tenant-read-scope';
 import {
   DISPLAY_LABEL_FIELD,
@@ -83,8 +84,10 @@ import {
 } from './conditional-get';
 import {
   buildCustomActionInvocationArgs,
+  declaresNoParameters,
   declaresRuntimeRestRouteShape,
   normalizeCustomActionFailure,
+  readActionReceivesTenantScope,
   readMethodDecoratorConfig,
   resolveCustomActionMetadata,
   resolveEffectiveActionMetadata,
@@ -1541,13 +1544,23 @@ export class APIGenerator {
           })
         : [options];
 
-      // A read handed the scoped options (`scopeTenantReadOptions` above) is
-      // scoped through them. Any other action body reads through the
+      // A read whose arguments carry the scope (`scopeTenantReadOptions`
+      // above) is scoped through them: a single options parameter, a
+      // parameter named after an ownership property, or -- with no scanned
+      // metadata -- a method that declares any parameter, which is handed the
+      // scoped options whole. Any other action body reads through the
       // collection with no tenant scope of its own; `gateAction` puts it
       // inside the tenant gate.
       const receivesScopedOptions =
         routeMethod === 'GET' &&
-        !(metadata.parameters && metadata.parameters.length === 0);
+        (metadata.parameters
+          ? readActionReceivesTenantScope(
+              metadata.parameters.map((parameter) => parameter.name),
+              tenantReadScopeProperties(objectName),
+            )
+          : !declaresNoParameters(
+              isCollectionHosted ? collectionMethod : staticMethod,
+            ));
       const result = await (receivesScopedOptions
         ? invoke(invocationArgs)
         : gateAction(async () => invoke(invocationArgs)));

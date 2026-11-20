@@ -538,6 +538,44 @@ export function buildCustomActionInputSchema(
 }
 
 /**
+ * Whether a custom GET action's declared parameters carry the request's
+ * tenant read scope into the method: a single `options` parameter (handed the
+ * scoped options object), or a parameter named after one of the model's
+ * ownership properties (handed the scope value). Any other parameter list --
+ * none, or parameters that only carry the caller's input -- reaches the method
+ * without the scope, so the transports run such an action inside the tenant
+ * gate instead (refused for a caller with no tenant). Runtime REST and the
+ * emitted SvelteKit routes both decide with this rule.
+ *
+ * @param parameterNames - The action's declared parameter names, in order
+ * @param ownershipProperties - The ownership property names of the model read
+ */
+export function readActionReceivesTenantScope(
+  parameterNames: readonly string[],
+  ownershipProperties: Iterable<string>,
+): boolean {
+  if (parameterNames.length === 1 && parameterNames[0] === 'options') {
+    return true;
+  }
+  const owners = new Set(ownershipProperties);
+  return parameterNames.some((name) => owners.has(name));
+}
+
+/**
+ * Whether a function's source declares an empty parameter list. Used where no
+ * scanned parameter metadata exists: such a method is handed nothing it could
+ * read a scope from. A function whose source cannot be read this way (a native
+ * or bound function) counts as declaring none.
+ */
+export function declaresNoParameters(fn: unknown): boolean {
+  if (typeof fn !== 'function') return true;
+  if (fn.length > 0) return false;
+  const source = Function.prototype.toString.call(fn);
+  const open = source.indexOf('(');
+  return open === -1 ? false : /^\(\s*\)/.test(source.slice(open));
+}
+
+/**
  * Translate a transport object into the method's call arguments. Legacy
  * actions retain their single options-bag invocation; scanner metadata enables
  * an exact positional projection without changing legacy action behavior.

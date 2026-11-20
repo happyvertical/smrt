@@ -28,6 +28,7 @@ import {
   isCrudOperation,
   isFrameworkLifecycleMethod,
   queryStringDecoderFor,
+  readActionReceivesTenantScope,
   resolveApiMethodExposure,
   resolveCustomActionMetadata,
   resolveCustomActionNames,
@@ -75,6 +76,7 @@ import {
   getApiPublicAccess,
   getApiWritableAllowlist,
   isTenantScoped,
+  manifestOwnershipProperties,
   resolvePermissionCollection,
   usesPrincipalContext,
 } from './route-policy.js';
@@ -1245,7 +1247,11 @@ function buildActionInvocationExpression(
   ].join('\n');
 }
 
-/** Whether a GET action receives the tenant read scope in its options. */
+/**
+ * Whether a GET action's options are built through `scopeTenantReadOptions`
+ * (every GET action that declares parameters). Whether the scope then reaches
+ * the method is `readActionReceivesTenantScope`'s question.
+ */
 function receivesTenantReadOptions(
   actionDef: MethodDefinition,
   routeConfig: ResolvedApiActionRouteConfig,
@@ -3869,6 +3875,7 @@ function generateActionRouteTemplate(
             )
           : undefined,
         readScopeModelName(spec.lookupObjectDef, spec.lookupClassName),
+        manifestOwnershipProperties(spec.lookupObjectDef ?? writeGateDef),
       ),
     )
     .join('\n');
@@ -3905,6 +3912,7 @@ function generateActionRouteHandler(
   permissionAction?: string,
   collectionRegistryKey = lookupClassName,
   readScopeModel = lookupClassName,
+  ownershipProperties: readonly string[] = [],
 ): string {
   const successResponse = `  return json({
     action: '${actionName}',
@@ -3931,13 +3939,21 @@ function generateActionRouteHandler(
     );
   }
   // A mutating action on a tenant-scoped model needs a tenant too, and so
-  // does a collection-scoped read that is handed no scoped options: its body
-  // reads through the collection with no tenant scope of its own (runtime REST
-  // refuses the same call). A read that receives options is scoped through
-  // them (`scopeTenantReadOptions`), so a caller with no tenant reads only
-  // rows without an owner.
+  // does a collection-scoped read whose arguments do not carry the scope: its
+  // body reads through the collection with no tenant scope of its own
+  // (runtime REST refuses the same call, by the same rule). A read handed the
+  // scoped options whole, or the scope under a parameter named after the
+  // ownership property, is scoped through it (`scopeTenantReadOptions`), so a
+  // caller with no tenant reads only rows without an owner.
   const collectionScoped = hostType === 'collection' || !!actionDef.isStatic;
-  const readsScopedOptions = receivesTenantReadOptions(actionDef, routeConfig);
+  const readsScopedOptions =
+    routeConfig.method === 'GET' &&
+    readActionReceivesTenantScope(
+      (Array.isArray(actionDef.parameters) ? actionDef.parameters : []).map(
+        (parameter) => parameter.name,
+      ),
+      ownershipProperties,
+    );
   if (tenantScoped && (mutating || (collectionScoped && !readsScopedOptions))) {
     guardLines.push('  requireTenantWriteContext(locals);');
   }
