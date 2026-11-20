@@ -999,7 +999,7 @@ describe('workflow run safety', () => {
       ...params: unknown[]
     ) => {
       if (
-        /^\s*SELECT \* FROM _smrt_ai_run_checkpoints/.test(sql) &&
+        /FROM _smrt_ai_run_checkpoints c\b/.test(sql) &&
         params.includes(run.id)
       ) {
         await original(
@@ -1022,14 +1022,13 @@ describe('workflow run safety', () => {
     expect((await store.load(run.id))?.run.id).toBe(run.id);
   });
 
-  it('does not judge a retry source that took the id between its listing and its read', async () => {
+  it('judges a retry source with one read in its tenant, and core refuses another owner under its lock', async () => {
     const db = await workflowDb('sqlite');
     const { model } = byStep(0);
     const driver = driverFor(db, model, definitionOf());
     const run = await driver.start({ ownerId: 'owner' });
-    // Another definition's run, of the caller's own tenant and owner, takes
-    // the id after the run was listed: it is not judged as the source, so
-    // the retry is refused by core, not reported as an unknown run.
+    // The source changes owner after the workflow's pre-check (a row an
+    // older core rewrote): core compares the owner again under its lock.
     const original = db.query.bind(db);
     let reads = 0;
     (db as { query: unknown }).query = async (
@@ -1043,17 +1042,18 @@ describe('workflow run safety', () => {
         ++reads === 2
       ) {
         await original(
-          "UPDATE _smrt_ai_runs SET owner_id = 'stranger', definition_key = 'another', created_at = $1 WHERE id = $2",
-          new Date(Date.now() + 5_000).toISOString(),
+          "UPDATE _smrt_ai_runs SET owner_id = 'stranger', status = 'failed' WHERE id = $1",
           run.id,
         );
       }
       return original(sql, ...params);
     };
-    await expect(driver.retry(run.id, 'stranger')).rejects.toBeInstanceOf(
-      AiRunResumeRefusedError,
-    );
+    const refused = await driver
+      .retry(run.id, 'owner')
+      .catch((error: unknown) => error);
     (db as { query: unknown }).query = original;
+    expect(refused).toBeInstanceOf(AiRunResumeRefusedError);
+    expect((refused as AiRunResumeRefusedError).reason).toBe('not_retryable');
   });
 
   it('lets one of two concurrent checkpoint saves win (revision compare-and-swap)', async () => {

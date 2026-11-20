@@ -4,7 +4,6 @@ import {
   type AiRunClaimFence,
   type AiRunRow,
   getAiRun,
-  listAiRuns,
   readAiRunCheckpoint,
   saveAiRunCheckpoint,
 } from '@happyvertical/smrt-core';
@@ -109,39 +108,20 @@ export function createRunCheckpointStore(
     ownerId: options.ownerId,
     tenantId,
     async load(runId) {
-      // Looked up in the store's tenant first (a SQL predicate): a run of
-      // another tenant is not read, only not found.
-      const listed = await listAiRuns(options.db, {
-        id: runId,
+      // The run and its checkpoint are read within the store's tenant,
+      // owner and the workflow run type (predicates of each statement): a
+      // run outside them is never read, only not found. A run id names one
+      // run for the database's lifetime (core's run id registry), so
+      // between the two reads the run can only disappear, never become
+      // another run.
+      const scope = {
         tenantId,
-        limit: 1,
-      });
-      if (listed.length === 0) return null;
-      const run = await getAiRun(options.db, runId);
-      if (
-        !run ||
-        run.type !== WORKFLOW_RUN_TYPE ||
-        run.ownerId !== options.ownerId ||
-        (run.tenantId ?? null) !== tenantId
-      ) {
-        return null;
-      }
-      const checkpoint = await readAiRunCheckpoint(options.db, runId);
-      // The checkpoint is read by run id alone, so the run is read again
-      // afterwards: it must be the same row (same tenant, owner, type and
-      // creation) before and after, else the id changed hands in between
-      // (pruned and reused) and the checkpoint is not this run's.
-      const after = await getAiRun(options.db, runId);
-      if (
-        !after ||
-        after.createdAt.getTime() !== run.createdAt.getTime() ||
-        after.startedAt.getTime() !== run.startedAt.getTime() ||
-        after.type !== run.type ||
-        after.ownerId !== run.ownerId ||
-        (after.tenantId ?? null) !== tenantId
-      ) {
-        return null;
-      }
+        ownerId: options.ownerId,
+        type: WORKFLOW_RUN_TYPE,
+      };
+      const run = await getAiRun(options.db, runId, scope);
+      if (!run) return null;
+      const checkpoint = await readAiRunCheckpoint(options.db, runId, scope);
       if (!checkpoint) return null;
       if (!isWorkflowCheckpointState(checkpoint.state)) {
         throw new TypeError(

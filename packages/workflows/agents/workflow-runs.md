@@ -41,7 +41,12 @@ accepted outputs of completed steps; refusals are core's
 `AiRunResumeRefusedError` reasons. Core treats another tenant's run as
 absent (`retry_source_pruned`, as an unknown id); the driver itself refuses
 only its own tenant's runs of another owner or definition
-(`WorkflowRunNotFoundError`).
+(`WorkflowRunNotFoundError`), judged from one read within its tenant; core
+compares the owner again under the source lock (`not_retryable`). A retry
+`id` that ever named a run is core's `AiRunIdUsedError`. The checkpoint
+store reads a run and its checkpoint with core's scoped reads (tenant, owner
+and run type are predicates of each statement); a run id names one run for
+the database's lifetime, so between the reads it can only disappear.
 
 ## Leases and fencing
 

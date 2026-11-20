@@ -14,7 +14,6 @@ import {
   finishAiRun,
   getAiRun,
   getRunTrajectory,
-  listAiRuns,
   reconcileAiRunOnClaim,
   resumeAiRun,
   startAiRunStep,
@@ -1105,22 +1104,14 @@ export function createWorkflowRunDriver(options: WorkflowRunDriverOptions) {
       if (!failed) {
         // Not visible, or pruned: core decides which and refuses. Core treats
         // a run of another tenant as absent (`retry_source_pruned`, as for an
-        // unknown id), so only this tenant's rows are judged here: another
-        // owner's run, or another definition's, is not this caller's.
-        const listed = await listAiRuns(db, { id: runId, tenantId, limit: 1 });
-        const read = listed.length > 0 ? await getAiRun(db, runId) : null;
-        // The row read by id is the row listed in this tenant, else the id
-        // changed hands in between and it is not judged.
-        const visible =
-          read &&
-          listed[0] &&
-          read.createdAt.getTime() === listed[0].createdAt.getTime() &&
-          (read.tenantId ?? null) === tenantId
-            ? read
-            : null;
+        // unknown id), so only this tenant's rows are judged here (one read
+        // within the tenant): another owner's run, or another definition's,
+        // is not this caller's. This only names the outcome; core compares
+        // the owner again under its lock and refuses another owner's source
+        // before its checkpoint is read.
+        const visible = await getAiRun(db, runId, { tenantId });
         if (
           visible &&
-          (visible.tenantId ?? null) === tenantId &&
           (visible.type !== WORKFLOW_RUN_TYPE ||
             visible.definitionKey !== definition.key ||
             visible.ownerId !== ownerId)
