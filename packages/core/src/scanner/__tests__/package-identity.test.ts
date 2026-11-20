@@ -697,6 +697,28 @@ describe('a collection of a package model', () => {
     expect(crud(collection)).toEqual([]);
     expect(crud(manifest.objects[`${APP}:Account`]).length).toBe(5);
   });
+
+  it('takes an item named by a type-only import by identity, with a runtime alias for _itemClass', async () => {
+    const root = await project({
+      providers: {
+        [VENDOR]: {
+          files: {
+            'src/Account.ts': `${CORE}\n@smrt({ api: false, tableName: 'vendor_accounts' })\nexport class Account extends SmrtObject {\n  secret = '';\n}\n`,
+          },
+        },
+      },
+      app: {
+        'src/Account.ts': `${CORE}\n@smrt({ tableName: 'app_accounts' })\nexport class Account extends SmrtObject {}\n`,
+        'src/VendorAccounts.ts': `${CORE}\nimport type { Account } from '${VENDOR}';\nimport { Account as RuntimeAccount } from '${VENDOR}';\nexport class VendorAccountCollection extends SmrtCollection<Account> {\n  static readonly _itemClass = RuntimeAccount;\n}\n`,
+      },
+    });
+
+    const manifest = await build(root);
+    const collection = manifest.objects[`${APP}:VendorAccountCollection`];
+    expect(collection?.extendsTypeArgQualified).toBe(`${VENDOR}:Account`);
+    expect(collection?.collectionOf).toBe(`${VENDOR}:Account`);
+    expect(crud(collection)).toEqual([]);
+  });
 });
 
 describe('open control', () => {

@@ -66,6 +66,12 @@ export interface RawClassDefinition {
   extendsNames?: string[];
 
   /**
+   * The names of the class's own type parameters (`class C<T>` gives `T`).
+   * A collection's type argument naming one of them is not an item class.
+   */
+  typeParameters?: string[];
+
+  /**
    * Class references in the class decorators' config (`@report` `source`,
    * `joins.*.source`): imported ones with their import, same-file ones
    * marked `local`.
@@ -624,6 +630,13 @@ export interface FileScanResult {
 
   /** The file's value import bindings, by local name. */
   imports?: Record<string, RawImportBinding>;
+
+  /**
+   * The file's type-only import bindings (`import type { A }`, `import {
+   * type A }`), by local name. Read only for a collection's type argument,
+   * which names its item class whether or not the import is type-only.
+   */
+  typeImports?: Record<string, RawImportBinding>;
 }
 
 /** One local import binding: its module and the export it binds. */

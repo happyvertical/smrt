@@ -172,6 +172,8 @@ interface ClassDeclaration extends BaseNode {
   superTypeParameters?: TSTypeParameterInstantiation;
   // oxc-parser v0.108+ renamed superTypeParameters to superTypeArguments
   superTypeArguments?: TSTypeParameterInstantiation;
+  /** The class's own type parameters (`class C<T, U>`). */
+  typeParameters?: { params?: Array<{ name?: { name?: string } | string }> };
   body: ClassBody;
   decorators?: Decorator[];
 }
@@ -560,6 +562,7 @@ export function parseFile(filePath: string): FileScanResult {
   let reExports: RawReExport[] | undefined;
   let moduleExports: RawModuleExports | undefined;
   let imports: Record<string, ImportBinding> | undefined;
+  let typeImports: Record<string, ImportBinding> | undefined;
 
   try {
     const sourceText = readFileSync(filePath, 'utf-8');
@@ -611,6 +614,7 @@ export function parseFile(filePath: string): FileScanResult {
       reExports = extractReExports(program.body);
       moduleExports = extractModuleExports(program.body);
       imports = Object.fromEntries(ctx.importBindings ?? []);
+      typeImports = Object.fromEntries(extractTypeImportBindings(program.body));
       resolveLocalParameterAliases(classes, typeAliases);
       reportUnresolvedSpreads(ctx.unresolved, filePath, sourceText, errors);
       agentSurface = maybeExtractAgentSurface(program, sourceText, filePath);
@@ -653,6 +657,9 @@ export function parseFile(filePath: string): FileScanResult {
   }
   if (moduleExports) result2.moduleExports = moduleExports;
   if (imports && Object.keys(imports).length > 0) result2.imports = imports;
+  if (typeImports && Object.keys(typeImports).length > 0) {
+    result2.typeImports = typeImports;
+  }
   return result2;
 }
 
@@ -817,6 +824,7 @@ export function parseSource(
   let reExports: RawReExport[] | undefined;
   let moduleExports: RawModuleExports | undefined;
   let imports: Record<string, ImportBinding> | undefined;
+  let typeImports: Record<string, ImportBinding> | undefined;
 
   try {
     const result = parseSync(filename, sourceText, {
@@ -865,6 +873,7 @@ export function parseSource(
       reExports = extractReExports(program.body);
       moduleExports = extractModuleExports(program.body);
       imports = Object.fromEntries(ctx.importBindings ?? []);
+      typeImports = Object.fromEntries(extractTypeImportBindings(program.body));
       resolveLocalParameterAliases(classes, typeAliases);
       reportUnresolvedSpreads(ctx.unresolved, filename, sourceText, errors);
       agentSurface = maybeExtractAgentSurface(program, sourceText, filename);
@@ -907,6 +916,9 @@ export function parseSource(
   }
   if (moduleExports) result2.moduleExports = moduleExports;
   if (imports && Object.keys(imports).length > 0) result2.imports = imports;
+  if (typeImports && Object.keys(typeImports).length > 0) {
+    result2.typeImports = typeImports;
+  }
   return result2;
 }
 
@@ -993,6 +1005,39 @@ function extractImportBindings(body: Statement[]): Map<string, ImportBinding> {
       if (spec.type === 'ImportSpecifier') {
         if (spec.importKind === 'type' || !spec.imported?.name) continue;
         bindings.set(spec.local.name, { source, imported: spec.imported.name });
+      } else if (spec.type === 'ImportNamespaceSpecifier') {
+        bindings.set(spec.local.name, { source, imported: null });
+      } else if (spec.type === 'ImportDefaultSpecifier') {
+        bindings.set(spec.local.name, { source, imported: 'default' });
+      }
+    }
+  }
+  return bindings;
+}
+
+/**
+ * Map each local name bound by a TYPE-ONLY import (`import type { A }`,
+ * `import { type A }`, `import type A from`, `import type * as ns`) to its
+ * module specifier. A type-only binding cannot be extended, but as a
+ * collection's type argument (`SmrtCollection<A>`) it names the item class,
+ * so its identity is proven like any other reference.
+ */
+function extractTypeImportBindings(
+  body: Statement[],
+): Map<string, ImportBinding> {
+  const bindings = new Map<string, ImportBinding>();
+  for (const node of body) {
+    if (node.type !== 'ImportDeclaration') continue;
+    const source = node.source?.value;
+    if (typeof source !== 'string' || !node.specifiers) continue;
+    const wholeDeclaration = node.importKind === 'type';
+    for (const spec of node.specifiers) {
+      if (!spec.local?.name) continue;
+      if (spec.type === 'ImportSpecifier') {
+        if (!wholeDeclaration && spec.importKind !== 'type') continue;
+        if (!spec.imported?.name) continue;
+        bindings.set(spec.local.name, { source, imported: spec.imported.name });
+      } else if (!wholeDeclaration) {
       } else if (spec.type === 'ImportNamespaceSpecifier') {
         bindings.set(spec.local.name, { source, imported: null });
       } else if (spec.type === 'ImportDefaultSpecifier') {
@@ -2648,6 +2693,13 @@ function extractClassDeclaration(
     extendsUnreadable,
     extendsNames,
   } = extractExtendsClause(node, importAliases, ctx?.importBindings);
+  // The class's own type parameters: a type argument naming one of them
+  // (`class C<T> extends SmrtCollection<T>`) is no class reference.
+  const typeParameters = (node.typeParameters?.params ?? [])
+    .map((param) =>
+      typeof param.name === 'string' ? param.name : param.name?.name,
+    )
+    .filter((name): name is string => typeof name === 'string');
 
   // Extract fields and methods
   const fields: RawFieldDefinition[] = [];
@@ -2736,6 +2788,7 @@ function extractClassDeclaration(
     ...(extendsDefaultImport ? { extendsDefaultImport } : {}),
     ...(extendsUnreadable ? { extendsUnreadable } : {}),
     ...(extendsNames ? { extendsNames } : {}),
+    ...(typeParameters.length > 0 ? { typeParameters } : {}),
     decoratorConfig,
     hasSmartDecorator,
     ...(description ? { description } : {}),

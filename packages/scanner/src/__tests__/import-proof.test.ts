@@ -1129,6 +1129,61 @@ describe('collection items', () => {
     expect(collection?.extendsTypeArgImportPath).toBe(PROVIDER);
   });
 
+  it('proves an item named by a type-only import, beside a runtime alias for _itemClass', async () => {
+    const { errors, manifest } = await scanProject({
+      'src/models/Account.ts': OPEN_BASE('Account'),
+      'src/models/Accounts.ts': `${CORE}\nimport type { Account } from '${PROVIDER}';\nimport { Account as RuntimeAccount } from '${PROVIDER}';\nexport class AccountCollection extends SmrtCollection<Account> {\n  static readonly _itemClass = RuntimeAccount;\n}\n`,
+    });
+
+    expect(errors).toEqual([]);
+    const collection = manifest().objects[`${PACKAGE}:AccountCollection`];
+    expect(collection?.extendsTypeArgQualified).toBe(`${PROVIDER}:Account`);
+  });
+
+  it.each([
+    [
+      'a type-only import through a barrel',
+      {
+        'src/models/Account.ts': OPEN_BASE('Account'),
+        'src/models/index.ts': `export { Account } from './Account';\n`,
+        'src/models/Accounts.ts': `${CORE}\nimport type { Account } from './index';\nexport class AccountCollection extends SmrtCollection<Account> {}\n`,
+      },
+      're-exports `Account`',
+    ],
+    [
+      'a type-only import whose runtime _itemClass is another class',
+      {
+        'src/models/Account.ts': OPEN_BASE('Account'),
+        'src/models/Accounts.ts': `${CORE}\nimport type { Account } from '${PROVIDER}';\nimport { Account as LocalAccount } from './Account';\nexport class AccountCollection extends SmrtCollection<Account> {\n  static readonly _itemClass = LocalAccount;\n}\n`,
+      },
+      'static _itemClass',
+    ],
+    [
+      'a name neither imported, declared nor a type parameter',
+      {
+        'src/models/Account.ts': OPEN_BASE('Account'),
+        'src/models/Accounts.ts': `${CORE}\nexport class AccountCollection extends SmrtCollection<Account> {}\n`,
+      },
+      'neither declared in this file nor imported',
+    ],
+  ])('rejects a collection item named by %s', async (_label, files, reason) => {
+    const { errors } = await scanProject(files);
+
+    expect(messages(errors)).toContain(reason);
+  });
+
+  it("skips the class's own type parameter and a type keyword", async () => {
+    const { errors, manifest } = await scanProject({
+      'src/models/Account.ts': OPEN_BASE('Account'),
+      'src/models/Bases.ts': `${CORE}\nexport abstract class TypedCollection<Account extends SmrtObject> extends SmrtCollection<Account> {}\nexport class AnyCollection extends SmrtCollection<any> {}\n`,
+    });
+
+    expect(errors).toEqual([]);
+    expect(
+      manifest().objects[`${PACKAGE}:TypedCollection`]?.extendsTypeArgQualified,
+    ).toBeUndefined();
+  });
+
   it('rejects a static _itemClass that names another class than the type argument', async () => {
     const { errors } = await scanProject({
       'src/models/Account.ts': `${CORE}\n@smrt()\nexport class Account extends SmrtObject {}\n@smrt()\nexport class Ledger extends SmrtObject {}\n`,

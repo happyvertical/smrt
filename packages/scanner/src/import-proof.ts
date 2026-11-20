@@ -72,6 +72,8 @@ export interface ProofModule {
   /** Top-level classes the file declares, by name. */
   classes: Map<string, RawClassDefinition>;
   imports: Record<string, RawImportBinding>;
+  /** Type-only import bindings, read only for a collection's type argument. */
+  typeImports?: Record<string, RawImportBinding>;
   exports?: RawModuleExports;
 }
 

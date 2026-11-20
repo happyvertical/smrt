@@ -115,6 +115,22 @@ const ITEM_COLLECTION_BASES: ReadonlySet<string> = new Set([
   'SmrtReportCollection',
 ]);
 
+/** Type keywords a collection's type argument may be: no item class. */
+const TYPE_KEYWORDS: ReadonlySet<string> = new Set([
+  'any',
+  'unknown',
+  'never',
+  'object',
+  'string',
+  'number',
+  'boolean',
+  'bigint',
+  'symbol',
+  'null',
+  'undefined',
+  'void',
+]);
+
 const SOURCE_EXTENSIONS = ['.ts', '.tsx', '.mts', '.cts', '.js', '.jsx'];
 const MAX_RE_EXPORT_DEPTH = 8;
 
@@ -292,6 +308,7 @@ export class InheritanceResolver {
       reExports?: RawReExport[];
       moduleExports?: RawModuleExports;
       imports?: Record<string, RawImportBinding>;
+      typeImports?: Record<string, RawImportBinding>;
     }>,
   ): void {
     for (const file of files) {
@@ -311,6 +328,7 @@ export class InheritanceResolver {
         this.modules.set(path, {
           classes,
           imports: file.imports ?? {},
+          ...(file.typeImports ? { typeImports: file.typeImports } : {}),
           exports: file.moduleExports,
         });
       }
@@ -982,14 +1000,23 @@ export class InheritanceResolver {
       this.itemErrors.set(classDef, reason);
       return undefined;
     };
-    // A name neither imported nor declared in the file is a type parameter
-    // (`class C<T> extends SmrtCollection<T>`): no item class to prove.
-    const module = this.modules.get(normalizeFile(classDef.filePath));
-    const head = classDef.extendsTypeArg.split('.')[0];
-    if (module && !module.imports[head] && !module.classes.has(head)) {
+    // Only the class's own type parameter (`class C<T> extends
+    // SmrtCollection<T>`) and a type keyword (`SmrtCollection<any>`) name no
+    // item class. Every other name is proven, a type-only import included:
+    // generation would otherwise match it by its spelling and could take
+    // another model of that name.
+    const head = classDef.extendsTypeArg.split(/[.<]/)[0];
+    if (
+      classDef.typeParameters?.includes(head) ||
+      TYPE_KEYWORDS.has(classDef.extendsTypeArg)
+    ) {
       return undefined;
     }
-    const typeArg = this.proveClassReference(classDef, classDef.extendsTypeArg);
+    const typeArg = this.proveClassReference(
+      classDef,
+      classDef.extendsTypeArg,
+      { typeImports: true },
+    );
     if (!typeArg) {
       return fail(
         `the collection's item \`${classDef.extendsTypeArg}\` is not a class reference; write ${parentLink.name}<Item> with the item model class`,
@@ -1023,11 +1050,14 @@ export class InheritanceResolver {
 
   /**
    * A class reference written as `Name` or `ns.Name` in `classDef`'s file,
-   * proven like a parent; `undefined` when `reference` is not one.
+   * proven like a parent; `undefined` when `reference` is not one. With
+   * `typeImports`, a type-only import binds the name too (a type position,
+   * such as a collection's type argument).
    */
   proveClassReference(
     classDef: RawClassDefinition,
     reference: string,
+    options: { typeImports?: boolean } = {},
   ): Proof | undefined {
     const file = normalizeFile(classDef.filePath);
     const module = this.modules.get(file);
@@ -1036,8 +1066,11 @@ export class InheritanceResolver {
     if (!parts.every((part) => /^[A-Za-z_$][\w$]*$/.test(part))) {
       return undefined;
     }
+    const bindingOf = (name: string) =>
+      module.imports[name] ??
+      (options.typeImports ? module.typeImports?.[name] : undefined);
     if (parts.length === 1) {
-      const binding = module.imports[reference];
+      const binding = bindingOf(reference);
       if (!binding) {
         return this.prover.proveLocal(
           file,
@@ -1054,7 +1087,7 @@ export class InheritanceResolver {
       return this.prover.proveImport(file, binding.source, binding.imported);
     }
     if (parts.length === 2) {
-      const binding = module.imports[parts[0]];
+      const binding = bindingOf(parts[0]);
       if (binding && binding.imported === null) {
         return this.prover.proveImport(file, binding.source, parts[1]);
       }
