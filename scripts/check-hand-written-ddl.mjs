@@ -76,6 +76,10 @@ export const RUNTIME_MANAGED_DIALECT_PATHS = [
     'packages/app-shell/src/engine/db/postgres-dialect.ts',
     "the engine's PostgreSQL statements for the runtime-managed app database",
   ],
+  [
+    'packages/app-shell/src/engine/db/postgres-copy.ts',
+    "copies, dumps and restores the runtime-managed app database's schema (#5187): it replays the shape read from the catalog of the app's own schema into a draft, rehearsal or restore schema, and declares none",
+  ],
 ];
 
 const STATEMENT =
