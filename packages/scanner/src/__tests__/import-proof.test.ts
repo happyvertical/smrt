@@ -667,6 +667,37 @@ describe('relationship targets and report sources', () => {
     expect(scanned.errors[0].message).toContain('re-exports `Account`');
   });
 
+  it('records a target column written as a string after the class name', async () => {
+    const scanned = await scanProject({
+      'src/models/account.ts': ACCOUNT,
+      'src/models/holder.ts': holder(
+        '',
+        `@foreignKey('Account.name') ownerName = '';`,
+      ),
+    });
+
+    expect(scanned.errors).toEqual([]);
+    expect(target(scanned, 'ownerName')).toEqual({ value: 'Account.name' });
+  });
+
+  it.each([
+    ['inline', "@foreignKey(Account.name) ownerName = '';"],
+    ['thunk', "@foreignKey(() => Account.name) ownerName = '';"],
+  ])('rejects a class member as a %s target and names the string form', async (_label, decorator) => {
+    // The decorator reads `Account.name` at runtime: a property, not a class.
+    const scanned = await scanProject({
+      'src/models/account.ts': ACCOUNT,
+      'src/models/holder.ts': holder(
+        `import { Account } from './account';`,
+        decorator,
+      ),
+    });
+
+    expect(scanned.errors).toHaveLength(1);
+    expect(scanned.errors[0].message).toContain('Account.name');
+    expect(scanned.errors[0].message).toContain("'Account.name'");
+  });
+
   it('rejects a relationship target imported through a tsconfig alias', async () => {
     const scanned = await scanProject({
       'tsconfig.json': JSON.stringify({

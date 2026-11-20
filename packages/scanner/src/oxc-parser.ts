@@ -1338,6 +1338,8 @@ interface UnresolvedSpread {
   member?: string;
   /** Dotted path of the option the expression is the value of. */
   option?: string;
+  /** The fix, when the expression has a known supported spelling. */
+  hint?: string;
 }
 
 /**
@@ -2475,11 +2477,12 @@ function unresolvedToScanError(
   return {
     message:
       `Cannot statically resolve \`${spread.expression}\` while expanding a ${spread.decorator ?? '@smrt()'} config${where ? ` (${where})` : ''}. ` +
-      `Only literal keys/values and unescaped module-scope \`const\` literals ` +
-      `in the same file are supported. Inline the value, or move it into such a ` +
-      `constant and remove any mutation/alias of it — ` +
-      `an unresolved expression would drop keys from the manifest, and every ` +
-      `absent exposure key defaults to open.`,
+      (spread.hint ??
+        `Only literal keys/values and unescaped module-scope \`const\` literals ` +
+          `in the same file are supported. Inline the value, or move it into such a ` +
+          `constant and remove any mutation/alias of it — ` +
+          `an unresolved expression would drop keys from the manifest, and every ` +
+          `absent exposure key defaults to open.`),
     filePath,
     line: loc?.line,
     column: loc?.column,
@@ -4700,9 +4703,19 @@ function extractRelationshipTarget(
         ? { value: identity.value, import: identity.import }
         : { value: identity.value, local: true };
     }
+    // `Target.column` as code is a property of the class, which the runtime
+    // decorator rejects; only the string `'Target.column'` names a column.
+    const dot = reference.lastIndexOf('.');
+    const owner =
+      dot > 0 ? classIdentity(reference.slice(0, dot), ctx) : undefined;
     ctx.unresolved.push({
       expression: sliceSource(argument, sourceText) ?? reference,
       start: argument.start,
+      ...(owner
+        ? {
+            hint: `\`${reference}\` is a property of the class, not a class, and the decorator rejects it at runtime; name the class (\`${reference.slice(0, dot)}\`), or a column of it as a string ('${owner.value}${reference.slice(dot)}').`,
+          }
+        : {}),
     });
     return null;
   };
