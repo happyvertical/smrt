@@ -27,6 +27,7 @@ let component: ReturnType<typeof mount> | undefined;
 let phone = false;
 
 const OPEN_KEY = 'smrt-app-shell:assistant-open:owner-1';
+const LAYOUT_KEY = 'smrt-app-shell:layout:owner-1';
 
 function data(overrides: Record<string, unknown> = {}) {
   return {
@@ -88,7 +89,18 @@ afterEach(() => {
   container.remove();
 });
 
-async function render(layoutData = data()) {
+// Most tests exercise an owner who opened the sidebar and chat (saved
+// choices); `fresh` renders a first-run owner with nothing saved.
+async function render(layoutData = data(), { fresh = false } = {}) {
+  if (!fresh) {
+    if (localStorage.getItem(OPEN_KEY) === null)
+      localStorage.setItem(OPEN_KEY, '1');
+    if (localStorage.getItem(LAYOUT_KEY) === null)
+      localStorage.setItem(
+        LAYOUT_KEY,
+        JSON.stringify({ panels: { left: 'expanded' } }),
+      );
+  }
   component = mount(Layout, {
     target: container,
     props: {
@@ -231,13 +243,40 @@ describe('desktop layout', () => {
   });
 });
 
-const LAYOUT_KEY = 'smrt-app-shell:layout:owner-1';
 const collapseToggle = () =>
   q<HTMLButtonElement>('.smrt-admin-shell__edge-toggle--left');
 const railFooter = () => q('.smrt-admin-shell__tenant-rail-footer');
 const flush = async () => {
   for (let i = 0; i < 4; i++) await tick();
 };
+
+describe('first-run defaults', () => {
+  it('starts a fresh owner with the sidebar collapsed and the chat closed', async () => {
+    await render(data(), { fresh: true });
+    expect(q('.smrt-admin-shell')?.getAttribute('data-left-state')).toBe(
+      'collapsed',
+    );
+    expect(panel()?.getAttribute('hidden')).not.toBeNull();
+    expect(
+      railFooter()
+        ?.querySelector('button[aria-label="Assistant"]')
+        ?.getAttribute('aria-pressed'),
+    ).toBe('false');
+  });
+
+  it('lets a saved owner choice win over the closed defaults', async () => {
+    localStorage.setItem(OPEN_KEY, '1');
+    localStorage.setItem(
+      LAYOUT_KEY,
+      JSON.stringify({ panels: { left: 'expanded' } }),
+    );
+    await render(data(), { fresh: true });
+    expect(q('.smrt-admin-shell')?.getAttribute('data-left-state')).toBe(
+      'expanded',
+    );
+    expect(panel()?.getAttribute('hidden')).toBeNull();
+  });
+});
 
 describe('the sidebar collapse control', () => {
   it('is present and starts expanded', async () => {

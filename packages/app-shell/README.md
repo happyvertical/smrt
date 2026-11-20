@@ -359,7 +359,7 @@ skipped it is sent there once): **1. Connect your AI** (Use Claude Code,
 Sign in with ChatGPT, plus Advanced: the full inference setup at
 `/settings/inference`, which links back; Codex is an advanced option under
 Settings > Assistant, not on this page) and **2. How do you want to start?** (Fresh: an empty app with the
-assistant dock open; Wizard: shown, disabled, coming soon). Skippable. Finished
+assistant dock open; From a spreadsheet). Skippable. Finished
 or skipped is stored as `onboarding` in the `assistant` preference
 (`agent-cli/settings.ts`, the smrt-preferences store smrt-inference also uses;
 not a member of the `inference` payload, which the settings panel replaces whole,
