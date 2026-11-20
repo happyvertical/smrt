@@ -1302,7 +1302,13 @@ never retried, never naming the other owner), also under `withSystemContext()`;
 NULL — or an ownership column the save leaves unset — counts as an owner. A
 same-owner row is adopted by id (keeping its `created_at`, applied to the
 instance only after the write succeeds), so `DO UPDATE SET` never rewrites a
-primary key (no `ON UPDATE CASCADE` churn). Adoption needs an explicit natural
+primary key (no `ON UPDATE CASCADE` churn). The same owner rule covers a new
+object saved with an explicit id on an `['id']` conflict target: it updates the
+stored row with that id only when the owners match (the embedded path reads the
+row first; PostgreSQL's `ON CONFLICT (id) DO UPDATE` carries the owner
+comparison in its `WHERE`), and otherwise raises the same
+`TENANT_ISOLATION_VIOLATION` with the row unchanged
+(`id-conflict-owner*.test.ts`). Adoption needs an explicit natural
 key: when the match is only through a slug `getSlug()` derived from
 `name`/`title`/`label` (a human value, not an identity), the new object keeps
 its id, moves to the first free `<base>-2` … `<base>-9` (one `slug IN (…)`
