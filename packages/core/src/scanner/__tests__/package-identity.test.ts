@@ -560,6 +560,111 @@ ${extra}}
     ).toBe('ProductionRun');
   });
 
+  const PROVIDER_SCHEMA = (columns: Record<string, unknown>) => ({
+    tableName: 'production_runs',
+    columns,
+  });
+  const generateWorkOrder = (
+    related: string,
+    schema: Record<string, unknown> | undefined,
+    meta: Record<string, unknown> = {},
+  ) => {
+    const generator = new ManifestGenerator();
+    const scanResults: ScanResult[] = [
+      {
+        filePath: '/app/src',
+        objects: [
+          {
+            name: 'workorder',
+            className: 'WorkOrder',
+            collection: 'workorders',
+            filePath: '/app/src/WorkOrder.ts',
+            fields: {
+              productionRunId: {
+                type: 'foreignKey',
+                related,
+                relatedQualified: `${VENDOR}:ProductionRun`,
+                relatedImportPath: VENDOR,
+                _meta: { onDelete: 'RESTRICT', ...meta },
+              },
+            },
+            methods: {},
+            decoratorConfig: { tableName: 'work_orders' },
+            packageName: APP,
+          } as SmartObjectDefinition,
+        ],
+        errors: [],
+      },
+    ];
+    const loaded = {
+      [VENDOR]: {
+        version: '1.0.0',
+        packageName: VENDOR,
+        objects: {
+          [`${VENDOR}:ProductionRun`]: {
+            name: 'productionrun',
+            className: 'ProductionRun',
+            qualifiedName: `${VENDOR}:ProductionRun`,
+            packageName: VENDOR,
+            importPath: VENDOR,
+            collection: 'productionruns',
+            filePath: 'src/ProductionRun.ts',
+            fields: {},
+            methods: {},
+            decoratorConfig: { tableName: 'production_runs' },
+            ...(schema ? { schema } : {}),
+          },
+        },
+      },
+    } as Record<string, unknown>;
+    const internal = generator as unknown as {
+      loadDependencyManifest: (name: string) => unknown;
+    };
+    internal.loadDependencyManifest = (name: string) => loaded[name] ?? null;
+    return () =>
+      generator.generateManifest(scanResults, {
+        packageName: APP,
+        projectRoot: '/nonexistent/identity-app',
+      });
+  };
+
+  it.each([
+    [
+      'neither a primary-key column nor id, for a plain target',
+      'ProductionRun',
+      PROVIDER_SCHEMA({ code: { type: 'TEXT' } }),
+      'has no column id (its primary key, or id)',
+    ],
+    [
+      'only the snake_case form of a camelCase column the target names',
+      'ProductionRun.runCode',
+      PROVIDER_SCHEMA({
+        id: { type: 'UUID', primaryKey: true },
+        run_code: { type: 'TEXT' },
+      }),
+      "write 'ProductionRun.run_code'",
+    ],
+  ])('fails generation for a confirmed package target whose schema has %s', (_label, related, schema, reason) => {
+    expect(generateWorkOrder(related, schema)).toThrow(
+      expect.objectContaining({
+        code: 'CONFIG_UNKNOWN_RELATIONSHIP_TARGET',
+        message: expect.stringContaining(reason),
+      }),
+    );
+  });
+
+  it('generates a confirmed package target without a referenced column when the field sets constraint: false', () => {
+    const manifest = generateWorkOrder(
+      'ProductionRun',
+      PROVIDER_SCHEMA({ code: { type: 'TEXT' } }),
+      { constraint: false },
+    )();
+    const column =
+      manifest.objects[`${APP}:WorkOrder`]?.schema?.columns.production_run_id;
+    expect(column).toBeDefined();
+    expect(column?.foreignKey).toBeUndefined();
+  });
+
   it.each([
     ['no schema for the target', undefined, 'records no schema for it'],
     [

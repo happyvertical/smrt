@@ -2483,22 +2483,38 @@ export class ManifestGenerator {
         // A confirmed package target whose table or referenced column the
         // provider's manifest does not give cannot carry its constraint;
         // dropping it would ship the relationship (and its onDelete)
-        // unenforced, so generation fails instead.
+        // unenforced, and referencing a column the table lacks would fail
+        // when the DDL is applied, so generation fails instead. The column
+        // checked is the one the constraint would reference: the written
+        // one (`'Room.code'`), else the target's primary key, else `id`.
         const [, writtenTargetColumn] = field.related.split('.');
+        const effectiveTargetColumn =
+          writtenTargetColumn ||
+          (targetSchema &&
+            Object.entries(targetSchema.columns).find(
+              ([, definition]) => definition.primaryKey === true,
+            )?.[0]) ||
+          'id';
         if (
           field.relatedQualified &&
           emitConstraint &&
-          (!targetSchema ||
-            (writtenTargetColumn && !targetSchema.columns[writtenTargetColumn]))
+          (!targetSchema || !targetSchema.columns[effectiveTargetColumn])
         ) {
+          const snake = toSnakeCase(effectiveTargetColumn);
+          const suggestion =
+            targetSchema &&
+            snake !== effectiveTargetColumn &&
+            targetSchema.columns[snake]
+              ? ` (columns are snake_case: write '${field.related.split('.')[0]}.${snake}')`
+              : '';
           throw new ConfigurationError(
             `${obj.className}.${fieldName} (${obj.filePath}): @foreignKey() target ${field.relatedQualified} is confirmed, but ` +
               (targetSchema
-                ? `its schema has no column ${writtenTargetColumn}`
+                ? `its schema has no column ${effectiveTargetColumn}${writtenTargetColumn ? '' : ' (its primary key, or id)'}${suggestion}`
                 : `its package's manifest records no schema for it`) +
               `, so the foreign-key constraint (table, column, onDelete) cannot be generated. ` +
               `Rebuild ${parseQualifiedName(field.relatedQualified).packageName} with this version of SMRT so its manifest carries the schema, ` +
-              `or reference a column the target declares.`,
+              `reference a column the target declares, or set \`constraint: false\` for a relationship without a database constraint.`,
             'CONFIG_UNKNOWN_RELATIONSHIP_TARGET',
             {
               className: obj.className,
