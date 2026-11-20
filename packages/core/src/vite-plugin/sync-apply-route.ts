@@ -365,6 +365,11 @@ export const POST: RequestHandler = async ({ locals, request }) => {
         // A payload is checked against the row before replay or staleness.
         assertUpdate: (row, data) => assertUpdateInput(row, data, target.registryKey),
         assertCreate: (data) => assertCreateInput(target.registryKey, data, collection),
+        // A sync create writes the target's own type: on an STI target a
+        // payload selecting another type is rejected, never written as this one.
+        acceptsCreateType: (payload: Record<string, unknown>) =>
+          ObjectRegistry.getTableStrategy(target.registryKey) !== 'sti' ||
+          ['createType', '_meta_type'].every((selector) => payload[selector] === undefined || payload[selector] === target.registryKey),
         mutate: async (row, op, data) => {
           await collection.withAuditMutation(row as import('@happyvertical/smrt-core').SmrtObject, op === 'update' ? 'updated' : 'deleted', async (bound) => {
             if (op === 'update') {

@@ -419,7 +419,8 @@ describe('generated sync-apply route runtime: operation permissions (#3011)', ()
         // The real rule runs here over the field names a test declares
         // (none by default), standing in for the registry's field lookup.
         `import { isServiceOptionInput } from ${JSON.stringify(fileURLToPath(new URL('../service-options.ts', import.meta.url)))};`,
-        'export const ObjectRegistry = { isServiceOptionInput: (_name: string, key: string) => isServiceOptionInput(key, (field: string) => ((globalThis as any).__smrtSyncDeclaredFields ?? []).includes(field)) };',
+        // The fixture models are plain tables (no STI type selection).
+        'export const ObjectRegistry = { getTableStrategy: () => undefined, isServiceOptionInput: (_name: string, key: string) => isServiceOptionInput(key, (field: string) => ((globalThis as any).__smrtSyncDeclaredFields ?? []).includes(field)) };',
         // The route assigns an update payload through `applyUpdateInput`. The
         // fixture rows are structural, so the real rule runs with nothing
         // registered about them.

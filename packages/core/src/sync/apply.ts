@@ -238,6 +238,15 @@ export interface SyncApplyTarget {
    * the item is `rejected` / `invalid_payload` and nothing is written.
    */
   assertCreate?: (data: Record<string, unknown>) => void;
+  /**
+   * Whether a create payload's type selector (`createType`, or the
+   * `_meta_type` alias), read before the writable policy drops it, names a
+   * type this target writes. A sync create writes the target's own type, so
+   * an STI target answers `false` for any other; the item is `rejected` /
+   * `invalid_payload` and nothing is written. Without the hook the selector
+   * is dropped with the other framework keys.
+   */
+  acceptsCreateType?: (payload: Record<string, unknown>) => boolean;
   /** Registry/class name, for diagnostics. */
   objectName: string;
   /** Collection whose get/create/save/delete run the full interceptor stack. */
@@ -628,6 +637,17 @@ async function applyAuthorizedItem(
   target: SyncApplyTarget,
 ): Promise<SyncApplyItemResult> {
   const base = { itemId: item.itemId, id: item.id } as const;
+
+  // A create's type selector is read before the writable policy drops it:
+  // a payload that selects a type the target does not write is rejected
+  // rather than written as the target's own type.
+  if (
+    item.op === 'create' &&
+    target.acceptsCreateType &&
+    !target.acceptsCreateType(item.payload ?? {})
+  ) {
+    return { ...base, status: 'rejected', reason: 'invalid_payload' };
+  }
 
   // Payload passes through the host's writable policy; the row UUID comes
   // from the validated envelope `id`, never from the body — the #1540

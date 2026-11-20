@@ -99,3 +99,5 @@ DDL, migration and OpenAPI digests have not moved since the recapture above.
 - MCP request tenancy (#5375): both MCP servers (`single/index.ts`,
   `modular/handlers/index.ts`) run each tool inside the tenancy resolved for
   its model at call time.
+- Sync create type (#5375): `sync/apply/+server.ts` rejects a create whose
+  payload selects a type its STI target does not write.

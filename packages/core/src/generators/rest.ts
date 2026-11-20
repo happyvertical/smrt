@@ -16,6 +16,7 @@ import {
   familyMembersInScope,
   isFamilyRowServed,
   servedFamilyTypes,
+  syncCreateSelectsOwnType,
 } from '../create-target';
 import { resolveDispatchTenantId } from '../dispatch';
 import { ConfigurationError } from '../errors';
@@ -2244,6 +2245,8 @@ export class APIGenerator {
       assertUpdate: (row, data) => assertUpdateInput(row, data, resolvedName),
       assertCreate: (data) =>
         assertCreateInput(resolvedName, data, resolvedCollection),
+      acceptsCreateType: (payload) =>
+        syncCreateSelectsOwnType(resolvedName, payload),
       // A tenant-scoped subtype row through an unscoped base is written
       // inside the subtype's tenant gate.
       mutate: async (row, op, data) => {

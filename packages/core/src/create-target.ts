@@ -156,6 +156,28 @@ export function familyMembersInScope(
 }
 
 /**
+ * Whether a sync create payload on `model` selects no type, or `model`'s
+ * own. Only an STI model selects a type (as a CRUD create through it does);
+ * elsewhere the selector is a framework key the writable policy drops.
+ *
+ * @param model - Registry key of the sync target
+ * @param payload - The item payload before the writable policy runs
+ */
+export function syncCreateSelectsOwnType(
+  model: string,
+  payload: Record<string, unknown>,
+): boolean {
+  if (ObjectRegistry.getTableStrategy(model) !== 'sti') return true;
+  for (const selector of ['createType', '_meta_type']) {
+    const value = Object.hasOwn(payload, selector)
+      ? payload[selector]
+      : undefined;
+    if (value !== undefined && value !== model) return false;
+  }
+  return true;
+}
+
+/**
  * The registry keys of the STI descendants of `model` a create through its
  * route may select on a transport: on the server's model list (when it has
  * one) and with `create` open on `surface`. Separate from the members the

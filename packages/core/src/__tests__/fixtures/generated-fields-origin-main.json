@@ -25,7 +25,7 @@
         "source/sveltekit/src/routes/api/_events/+server.ts": "7d2cc146aa19cdf11640693976bc506fb86e26483970a82e26232dd3c7cb5040",
         "source/sveltekit/src/routes/api/compat_plain/[id]/+server.ts": "238249a0b9b989490440f491f03e021f59d8c2394f5e7ba198dd1baf7894a66f",
         "source/sveltekit/src/routes/api/compat_plain/+server.ts": "c0962103f4121460251b33cbc483471f91a1d2f114fed1cb4351ff1dd563c35f",
-        "source/sveltekit/src/routes/api/sync/apply/+server.ts": "fcf63e182ec342ab2dc0bdcb0d621acf555bbcb49be968c4d59bfb6e39e14799"
+        "source/sveltekit/src/routes/api/sync/apply/+server.ts": "bb53842b82bee3173d9cc8f4c757a057a9f1d8c6d62f0dfb0ac68555f032edff"
       }
     },
     "sti": {
@@ -56,7 +56,7 @@
         "source/sveltekit/src/routes/api/_events/+server.ts": "f0473b6d66e0e35cb1a36c3997a2aa06215f20a18ffef3a08b86637191a14927",
         "source/sveltekit/src/routes/api/compatroots/[id]/+server.ts": "7ea1ddcc53863bb0011da06ded9f8f62aa045d8a6d65977f0ea8776bac767dce",
         "source/sveltekit/src/routes/api/compatroots/+server.ts": "55e8d7f11dec44b9e223c873c466afc98b8455fb64012601ca2c39520a1e64bd",
-        "source/sveltekit/src/routes/api/sync/apply/+server.ts": "99c8ddc6855fa7ca18a417239bf37948677ee960bb858cc062061560bcb27198"
+        "source/sveltekit/src/routes/api/sync/apply/+server.ts": "8757e00ee39c0a1703827a3a4d911bab0c932a724177a59ef979cd15c37e4dd1"
       }
     }
   }

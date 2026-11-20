@@ -3,8 +3,8 @@
  * under the tenancy its target has when the batch is served, with the real
  * tenant interceptor on a SQLite file.
  *
- * Rows 14, 27, 28 and 33 of the #5375 test-design contract, and row R2.10
- * of the round-2 matrix.
+ * Rows 14, 27, 28 and 33 of the #5375 test-design contract, and rows R2.10
+ * and R2.11 of the round-2 matrix.
  */
 
 import { mkdtempSync, rmSync } from 'node:fs';
@@ -87,6 +87,7 @@ class EffSyncListedCrate extends EffSyncCrate {}
 
 const ROW = {
   listed: 'cccccccc-0000-4000-8000-0000000000c3',
+  fresh: 'dddddddd-0000-4000-8000-0000000000d4',
   memoOfA: 'aaaaaaaa-0000-4000-8000-0000000000a1',
   memoOfB: 'bbbbbbbb-0000-4000-8000-0000000000b1',
   noteOfA: 'aaaaaaaa-0000-4000-8000-0000000000a2',
@@ -356,7 +357,7 @@ describe('sync apply runs every item under its target tenancy', () => {
     expect(await titleOf(notes.tableName, ROW.noteOfA)).toBe('note of a');
   });
 
-  describe('create targets and read membership are separate (R2.10)', () => {
+  describe('create targets and read membership are separate (R2.10, R2.11)', () => {
     it('a base create selects a member whose surface opens create only', async () => {
       const answer = await restCall(handler, 'POST', segmentOf(EffSyncCrate), {
         headers: { authorization: 'Bearer user-of-a' },
@@ -393,6 +394,43 @@ describe('sync apply runs every item under its target tenancy', () => {
         reason: 'id_conflict',
       });
       expect(same.results[0]?.updatedAt).toBeUndefined();
+    });
+
+    it('a sync create naming another type is rejected and writes no row', async () => {
+      const item = {
+        itemId: 'typed-create',
+        object: segmentOf(EffSyncNote),
+        op: 'create',
+        id: ROW.fresh,
+        payload: { title: 'typed note', _meta_type: keyOf(EffSyncOwnedNote) },
+      };
+      const rest = await restSync('user-of-a', [item]);
+      expect(rest.results[0]).toMatchObject({
+        status: 'rejected',
+        reason: 'invalid_payload',
+      });
+      const emitted = await app.call('POST', 'sync/apply', {
+        locals: {
+          user: { id: 'writer' },
+          tenantId: TENANT_A,
+          permissions: [`${segmentOf(EffSyncNote)}.create`],
+        },
+        body: { items: [item] },
+      });
+      expect((emitted.body as { results: Result[] }).results[0]).toMatchObject({
+        status: 'rejected',
+        reason: 'invalid_payload',
+      });
+      expect(await titleOf(notes.tableName, ROW.fresh)).toBeUndefined();
+      // The route's own type in the selector is accepted (control).
+      const own = await restSync('user-of-a', [
+        {
+          ...item,
+          itemId: 'own-type',
+          payload: { title: 'plain note', _meta_type: keyOf(EffSyncNote) },
+        },
+      ]);
+      expect(own.results[0]?.status).toBe('applied');
     });
   });
 });
