@@ -70,6 +70,8 @@ export async function runAppReport(
   db: any,
   input: string | RuntimeReportSpec,
   options: ReportOptions = {},
+  /** The database's SQL dialect for the report's aggregate (the handle has no file URL to infer it from). */
+  adapterType?: 'sqlite' | 'postgres',
 ): Promise<AppReportResult> {
   const raw =
     typeof input === 'string'
@@ -82,6 +84,7 @@ export async function runAppReport(
   const { runRuntimeReport } = await import('@happyvertical/smrt-reports');
   const result: AppReportResult = await runRuntimeReport(compiled, {
     db,
+    ...(adapterType ? { adapterType } : {}),
     maxRows: options.maxRows ?? 1000,
   });
   const fields = {

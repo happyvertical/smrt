@@ -5,6 +5,7 @@ import {
   type ActivationManifest,
   activationClosure,
 } from './activation/manifest.js';
+import { journalListTables } from './cookbook/app-model-claims.js';
 import { resolveMigrationEngine } from './migrations/differ.js';
 import {
   assertMigrationAccepted,
@@ -45,6 +46,12 @@ export interface ActivationCoordinator {
   /** Await BEFORE publishing/persisting cookbook enablement. Never unloads or drops on disable. */
   activate(models: Iterable<string>): Promise<void>;
   isReady(model: RuntimeExposureModel | string): boolean;
+  /**
+   * The installed graph, loaded or not. The app model editor reads its model
+   * ids and tables so a custom list never takes an installed model's name or
+   * table while that model's recipe is off.
+   */
+  readonly manifest?: ActivationManifest;
   /** AND readiness with the host's live tenant gate. Install before boot, never per request. */
   gate(exposure: RuntimeExposureGate): RuntimeExposureGate;
 }
@@ -116,6 +123,7 @@ export function createActivationCoordinator(
   const pending = new Map<string, Promise<void>>();
   let invalidGraph: Error | undefined;
   const coordinator: ActivationCoordinator = {
+    manifest: options.manifest,
     async boot() {
       await coordinator.activate(await options.readEnabled());
     },
@@ -131,6 +139,45 @@ export function createActivationCoordinator(
       const work = withRuntimeSchemaActivation(async () => {
         if (closure.models.every((id) => ready.has(id))) return;
         if (invalidGraph) throw invalidGraph;
+        // A standalone run-time model (an app editor list: `runtime-model:`,
+        // extending nothing, replacing nothing) can already hold one of these
+        // tables. Refuse before importing anything, so the process keeps one
+        // class family per table. Run-time subclasses and replacements of a
+        // model share its table legitimately and are not refused (the same
+        // rule as the migrate's buildOwnedTables).
+        const tables = new Set(closure.tables);
+        for (const entry of ObjectRegistry.getAllClasses().values()) {
+          const id = entry.qualifiedName ?? entry.name;
+          const standaloneRuntime =
+            entry.sourceFilePath?.startsWith('runtime-model:') === true &&
+            (!entry.extends || entry.extends === 'SmrtObject') &&
+            !entry.replacedQualifiedNames?.length;
+          if (!standaloneRuntime) continue;
+          // A list holding a closure model's own identity is refused too.
+          if (closure.models.includes(id))
+            throw new Error(
+              `Activation model ${id} is already registered as a run-time list; it cannot also be loaded as an installed model`,
+            );
+          const table = ObjectRegistry.getTableName(id);
+          if (table && tables.has(table))
+            throw new Error(
+              `Activation table ${table} is already used by the run-time model ${id}; it cannot also hold ${closure.models.join(', ')}`,
+            );
+        }
+        // Durable ownership, independent of boot order and of what this
+        // process has registered: a list any app model journal declares
+        // keeps its table.
+        // Read through the serialized system-table executor, never the pool.
+        const journalled = await runSerializedAgainstSystemTableBootstrap(
+          options.db,
+          engine,
+          (db) => journalListTables(db, undefined, engine),
+        );
+        for (const [table, list] of journalled)
+          if (tables.has(table))
+            throw new Error(
+              `Activation table ${table} is already used by the run-time model ${list}; it cannot also hold ${closure.models.join(', ')}`,
+            );
         const before = new Set(ObjectRegistry.getAllClasses().keys());
         const allowed = new Set([
           ...closure.models,

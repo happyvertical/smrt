@@ -264,6 +264,26 @@ function checkLayout(value: unknown, diagnostics: CookbookDiagnostic[]) {
       );
     }
   }
+  // Navigation renders these labels as text; a non-string (other than null,
+  // which means no override) would fail every snapshot.
+  for (const key of ['sections', 'items'] as const) {
+    if (!isObject(value[key])) continue;
+    for (const [id, entry] of Object.entries(value[key])) {
+      if (!isObject(entry)) continue;
+      if (
+        entry.label !== undefined &&
+        entry.label !== null &&
+        typeof entry.label !== 'string'
+      ) {
+        error(
+          diagnostics,
+          'invalid_type',
+          `layout.${key}.${id}.label`,
+          `layout.${key}.${id}.label must be a string or null`,
+        );
+      }
+    }
+  }
   if (isObject(value.items)) {
     for (const [id, item] of Object.entries(value.items)) {
       if (!isObject(item) || item.icon === undefined) continue;

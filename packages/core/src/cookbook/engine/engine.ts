@@ -304,9 +304,25 @@ export function createCookbookEngine(
     for (const [listener, last] of listeners) {
       if (last === revision) continue;
       listeners.set(listener, revision);
-      listener(snapshot());
+      try {
+        listener(snapshot());
+      } catch {
+        // A subscriber cannot undo a committed revision, and every later
+        // subscriber must still receive it.
+      }
     }
   }
+
+  /**
+   * The snapshot of a candidate state, built BEFORE it is committed: a
+   * document that cannot be projected (a malformed nav label, say) is refused
+   * with the live state untouched. `withUndo` refreshes the undo list after
+   * the commit recorded its entry.
+   */
+  const candidateSnapshot = (state: PlanState, rev: number) => {
+    const snap = snapshotOf(state, rev);
+    return () => ({ ...snap, undo: [...undoIds] });
+  };
 
   function remember(
     id: string | undefined,
@@ -415,6 +431,10 @@ export function createCookbookEngine(
     const before = revision;
     const restored = clone(entry.before);
     const changed = changedBetween(current, restored);
+    const withUndo = candidateSnapshot(
+      restored,
+      changed ? revision + 1 : revision,
+    );
     current = restored;
     if (changed) revision += 1;
     undos.delete(input.undoId);
@@ -425,9 +445,8 @@ export function createCookbookEngine(
       { ok: true, state: current, summary: 'Undone.' },
       before,
       revision,
-      snapshot(),
+      withUndo(),
     );
-    notify();
     return result;
   }
 
@@ -488,9 +507,12 @@ export function createCookbookEngine(
         );
       }
       if (parsed.name === 'undo') {
-        return finish(
+        // Journal the undo before subscribers hear of it, like any command.
+        const result = finish(
           runUndo(id, parsed.input as { undoId: string; force?: boolean }),
         );
+        notify();
+        return result;
       }
       const before = current;
       const outcome = execute(
@@ -502,6 +524,10 @@ export function createCookbookEngine(
       if (!outcome.ok) return finish(withId(outcome.error));
       const revisionBefore = revision;
       const changed = changedBetween(before, outcome.state);
+      const withUndo = candidateSnapshot(
+        changed ? outcome.state : before,
+        changed ? revision + 1 : revision,
+      );
       let undoId: string | undefined;
       if (changed) {
         current = outcome.state;
@@ -515,7 +541,7 @@ export function createCookbookEngine(
           outcome,
           revisionBefore,
           revision,
-          snapshot(),
+          withUndo(),
           undoId,
         ),
       );
@@ -663,6 +689,7 @@ export function createCookbookEngine(
         );
       }
       const changed = rev !== baseRevision;
+      const withUndo = candidateSnapshot(working, rev);
       let undoId: string | undefined;
       if (changed) {
         current = working;
@@ -674,7 +701,7 @@ export function createCookbookEngine(
       const result = finish({
         ok: true,
         ...(id !== undefined ? { id } : {}),
-        snapshot: snapshot(),
+        snapshot: withUndo(),
         receipt: {
           ...(id !== undefined ? { id } : {}),
           count: results.length,

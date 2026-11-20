@@ -34,7 +34,8 @@
     "start": "node build",
     "clean": "rm -rf dist build .svelte-kit",
     "test:bundled-worker": "SMRT_APP_SHELL_WORKER=bundle vitest run src/engine",
-    "test": "svelte-kit sync && vitest run && vitest run -c vitest.dom.config.ts",
+    "test": "svelte-kit sync && vitest run && vitest run -c vitest.pglite.config.ts && vitest run -c vitest.dom.config.ts",
+    "test:pglite": "vitest run -c vitest.pglite.config.ts",
     "typecheck": "svelte-kit sync && node ../../scripts/write-source-typecheck-config.mjs tsconfig.json .svelte-kit/tsconfig.typecheck.json && tsc -p .svelte-kit/tsconfig.typecheck.json && node ../../scripts/svelte-check-workspace.mjs --config ./svelte.config.typecheck.js --tsconfig ./.svelte-kit/tsconfig.typecheck.json",
     "prepack": "node ../../scripts/prepack-package.js"
   },
@@ -66,7 +67,16 @@
     "ajv": "8.20.0",
     "libsql": "0.5.29"
   },
+  "peerDependencies": {
+    "@electric-sql/pglite": ">=0.5.0 <1"
+  },
+  "peerDependenciesMeta": {
+    "@electric-sql/pglite": {
+      "optional": true
+    }
+  },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.16",
     "@happyvertical/smrt-vitest": "workspace:*",
     "@sveltejs/adapter-node": "^5.5.7",
     "@sveltejs/kit": "2.70.3",

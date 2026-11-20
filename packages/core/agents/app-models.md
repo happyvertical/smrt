@@ -44,7 +44,15 @@ The surrounding cookbook still requires its normal schema/version/recipes/
 features/policies. New lists are enabled through qualified `features`.
 `models.fields` names the provider; registration makes its same-name app
 subclass effective, retaining the provider's table, methods, exposure and
-tenancy. An existing same-name app subclass is refreshed.
+tenancy. An existing same-name app subclass is refreshed. New `models.fields`
+declarations need their provider in the app (`MODEL_NOT_IN_APP` otherwise).
+Disabling a provider's last recipe keeps its journalled declarations, inactive:
+they are not registered (a replacement this editor added leaves the registry),
+migrated or held closed, the provider need not be
+loaded (a lazy host's restart), and enabling the recipe again restores the
+fields with their stored data. A journalled reference field among them is
+resolved again only when the recipe returns. Their app-scope policies (labels) are pruned
+with the recipe like any other policy of an uncovered model.
 
 Field types: `text`, `longText`, `integer`, `decimal`, `money` (requires
 `currency: "CAD"`), `date`, `datetime`, `boolean`, `choice` (requires
@@ -61,6 +69,23 @@ Options require `db`, `application`, `tenantId`, `packageName`, initial
 `authorize(context)`. Identity comes from host authentication. Schema
 definitions belong to the application runtime: the host must not run
 independently customized application registries in the same global registry.
+This is enforced: once one editor's journal (application + tenant) has
+registered customisations, constructing (also concurrently), snapshotting or
+editing through an editor for another journal in the same process fails
+`MODEL_EDIT_CONFLICT` instead of merging or projecting fields and lists
+between them. Reopening the same journal is allowed. The journal identity is application,
+tenant and database: the database URL, so a new handle to the same database
+(a reconnect) reopens the same journal; an in-memory or URL-less database is
+identified per handle. Runtime exposure admits a registration the editor made
+(its lists and provider replacements) only for that journal's tenant, so a
+pre-opened tenant is never served another tenant's customised provider over
+REST or MCP. A context without a tenant (a generator built once, tenancy
+resolved per request) is treated as single-tenant and admitted; a host serving
+several customised tenants must pass the tenant in its exposure or generator
+context. A replacement is taken out on disable by any editor instance of the
+journal that made it, restoring the registration it replaced and dropping its
+ownership; a failed edit restores ownership with the registry.
+Serve each further customised tenant from its own process.
 Rows retain the existing tenancy interceptor; install it as for normal models.
 
 `editor.apply(edit, { actor, tenantId, requestId, expectedRevision })` supports:
@@ -90,9 +115,37 @@ and the editor's import operation; package identity must match.
 committed publications. Receipt `elapsedMs` measures journal append through
 migration and awaited publication (completion bookkeeping excluded).
 
+Every derived table and column name, a money field's `_currency` companion
+included, must fit PostgreSQL's 63-byte identifier limit (the strictest
+supported engine; `MAX_STORAGE_IDENTIFIER_BYTES`), checked in bytes when an edit
+or import adds it: `INVALID_MODEL_EDIT` names the path, the derived identifier
+and its size. The app tools shorten a long label's derived name to fit and keep
+the full label for display. A declaration journalled before this check is still
+accepted, and an applied journal reopens without DDL (the boot's storage
+check compares truncated names); on PostgreSQL a migration of a table holding
+such a truncated column is refused up front with `MODEL_MIGRATION_REQUIRED`
+(instead of failing on a duplicate column) while edits of other models stay
+available.
+Reserved field names live in one place, `src/cookbook/reserved-names.ts`:
+JS/SQL/framework column names, every `SmrtClassOptions`/`SmrtObjectOptions`
+key (constructor input mixes options with field values) and every own instance
+property of a constructed `SmrtObject` (`options`, …). A new field, or its money
+companion, may not take one, nor a prototype member of its model; a field the
+journal already holds stays accepted. The app tools prefix a reserved label's
+derived name (`Options` → `customOptions`).
 Names use bounded ASCII camel/Pascal identifiers. Reserved JS/framework/SQL
 names, inherited fields/methods, duplicate storage names, table/model
 collisions and disabled reference targets fail before history mutation.
+A new list's name is checked against every installed catalog model, loaded or
+not, and its table against registered models and the tables the database
+already keeps (a disabled recipe's retained table). Lists the journal already
+holds keep their name and table, so editing or removing one never depends on
+what else is loaded. List tables are unique across the database: a list
+whose table another journal (another application or tenant) declares, or that
+already exists, is refused with a neutral `MODEL_TABLE_COLLISION` that names
+no other tenant's list. A catalog model with exactly the list's identity is
+refused too. The activation coordinator reads the journal itself, so no recipe
+loads onto a journalled list's table, whatever the boot order.
 Optimistic revisions and request ids reject stale/racing edits and mismatched
 retries; identical committed requests replay.
 
@@ -109,6 +162,18 @@ with the host's existing screens. The editor does not rewrite static SvelteKit
 route files or already-imported AOT web modules; such a host needs this dynamic
 binding before using the API.
 
+When also using A3 lazy activation, pass the coordinator to the editor as
+`activation`. A new list's name and table are then also checked against the
+activation manifest's models and tables (installed, loaded or not), and
+`import` and `undo` activate every model the restored cookbook covers (custom
+lists aside) before the edit applies. Admission comes first: a refused caller,
+a stale revision or a replayed request id loads nothing. Activation failure is
+`MODEL_ACTIVATION_FAILED` with nothing journalled.
+With lazy activation, the tool service hands its `activation` to
+`editor.apply(edit, context, { activation })` for `app.undo`,
+`recipes.enable` and template apply, so the editor activates the restored
+recipes only after its own authorization, replay lookup and durable revision
+check; failure is `activation_failed` with nothing changed.
 When also using A3 lazy activation, boot the installed/provider graph first.
 Its fixed-graph `readEnabled` input excludes only custom-list identities declared
 in the validated cookbook's `models.lists`; unexpected unknown ids must still
@@ -122,7 +187,8 @@ Every operation uses the running process:
 
 | Operation | Activation |
 | --- | --- |
-| Add list / field; import; boot replay | Register/refresh runtime definitions, same-name replacement (STI and CTI), tracked migration, publish, release readiness |
+| Add list / field; import | Register/refresh runtime definitions, same-name replacement (STI and CTI), tracked migration of the changed models' tables, publish, release readiness |
+| Boot replay | Register/refresh every journalled definition, no DDL ever; read-only check that every customised table holds its declared columns, else `MODEL_MIGRATION_REQUIRED` with those models closed (a pending revision completes only once its storage is in place); publish, release readiness. Repair with `migrateAppModelStorage(options)`, which reconciles every active customised table from the journal |
 | Field label/hide/remove | Existing policy engine, same publication protocol; migration reconciliation is normally empty |
 | List relabel/remove | Runtime presentation refresh / feature removal, same publication protocol |
 | Undo | Restore previous cookbook, keep union of historical storage fields hidden, tracked additive reconciliation, publish |
@@ -153,22 +219,53 @@ API-operation and cookbook gates rather than admitting a collection separately.
 | Recipe field edit with collection-first registration and implicit table | Both trusted design `app.addField` and direct `editor.apply`; provider and existing same-namespace app replacement; GET/list/PUT preserve the original row, linked name and custom value | Closed delete, foreign tenant, pending or missing readiness, disabled recipe | Existing `cookbook/app-tools.test.ts`, SQLite and prepared in-process PGlite |
 | Curated presentation and journal reopen | One effective definition; original column order followed by custom column; revision replay retains REST record/value | Hidden custom column omitted; no duplicate provider definition | Same four-case matrix; registry restored to provider state before editor reopen |
 
-SQLite appends a pending revision before registration/DDL. Its existing failure
-contract keeps affected models closed and recovers pending work on reopen.
+SQLite registers the candidate and checks the edited tables for manual drift
+before appending its pending revision, so a refused migration leaves no journal
+row and restores the registry and readiness. A failure after the append (DDL
+execution or host publication) keeps affected models closed and recovers the
+pending work on reopen.
 PostgreSQL claims the revision and migrates application columns plus the tracker
 marker in one advisory-locked transaction, using transaction-bound inspection.
 DDL failure rolls back the history insert and registry registration, restores
 readiness, and permits the same request to retry. After commit, host publication
 runs while models remain gated; a publication failure stays durably pending and
 reopen completes that revision. No columns/tables are dropped. Reconciliation
-selects edited tables and their existing physical FK closure; unrelated models
-are not migrated. Manual drift still requires an operator migration. See the
+selects the tables of models whose stored fields the edit adds or changes, and
+their existing physical FK closure; label, hide, remove, relabel and undo edits
+run no DDL, and drift on an unrelated table never blocks an edit. Boot runs no DDL at all, for an applied journal, a pending revision or a
+startup cookbook: provider tables stay the operator's `db:migrate`, and app
+storage (custom fields and lists, including one lost in a restore) is
+reconciled from the journal by `migrateAppModelStorage(options)`. Boot inspects every customised table read-only and refuses with
+`MODEL_MIGRATION_REQUIRED` (naming the missing columns, affected models kept
+closed) when a column is missing, for example after a provider upgrade or a
+database restore; run `migrateAppModelStorage` (custom storage) or `smrt db:migrate` (provider columns) and reopen. Manual drift on an
+edited table still requires an operator migration. See the
 [PostgreSQL scope and test matrix](postgres-parity.md).
 
 ## Durable history
 
 `AppModelHistoryStore` has `read()`, atomic
-`append(change, expectedRevision)` and `complete(revision, elapsedMs)`.
+`append(change, expectedRevision)`, `complete(revision, elapsedMs)` and the
+optional `abandon(revision, { actor, reason? })`.
+A pending revision that can never complete (its migration keeps failing, or
+its publication target is gone) is abandoned by an operator with
+`abandonAppModelRevision({ db, application, tenantId, revision, actor, reason? })`
+while no editor for that tenant is serving; boot names it in its error. The row
+stays for audit: it is completed with its `before` document as `after`, read
+back with `abandoned: true`, never replayed (a retry of its request id fails
+`MODEL_REVISION_ABANDONED`), never an undo target, and its `undoes` never
+counts as a reversal. An editor whose completion loses to an abandon fails
+`MODEL_EDIT_CONFLICT` and stays closed. Nothing is dropped.
+Editor reads are bounded: each stored receipt holds a full projection, so with
+a store made by `createAppModelHistory` (or a wrapper keeping its `read`) the
+editor reads the journal once at boot without receipts, keeps it in memory, and
+per edit reads only the latest row and the row for its request id; other
+stores fall back to `read()`. After `complete` the editor reads its row back:
+if another process completed the revision first it installs that receipt
+through `publish` before readiness opens (staying closed if that fails) and
+serves it from `snapshot()` (a winner whose installation failed is remembered per journal, so
+reopening installs its manifest and web definitions even when its cookbook matches), and if the row is not applied it fails `MODEL_EDIT_CONFLICT` and
+stays closed instead of reporting success.
 A supplied host store must scope reads/writes to one app/tenant and preserve
 the pending/CAS contract. PostgreSQL stores must also implement
 `transaction(work)` with a scoped store/executor, so revision CAS and DDL share
@@ -179,7 +276,20 @@ one locked transaction. Completion is fenced; a concurrent/stale edit gets
 app/tenant/revision primary key and app/tenant/request uniqueness. History is
 permanent. Undo appends a compensating revision for the latest not-yet-undone
 edit; it never deletes history. The persisted cookbook is authoritative over
-the startup default. Export contains portable definitions/policies, not host
+the startup default. A startup cookbook that declares app models, opened with an empty
+journal, is journalled as revision 1 (actor `system`, an `import`). Its own
+declarations may have booted before this release, so they count as existing
+for the name, length and reserved-name checks; its lists still may not take a
+table an installed model owns (activation manifest or registry), retained or
+not. Boot does not create its tables and never adopts an existing one: with an empty journal a plain
+`createAppModelEditor` refuses a startup cookbook that declares models before journalling anything
+(`MODEL_TABLE_COLLISION` for a list whose table exists, `MODEL_MIGRATION_REQUIRED` otherwise), so
+no revision is left pending. `migrateAppModelStorage(options)` journals it, creates its tables (or
+adopts one the operator confirms is its own storage), once, as the operator step that opens such a
+host. A pending startup revision is never offered for `abandonAppModelRevision`, which would drop the
+startup models. Its lists may not take the identity
+of an installed app model in the manifest, nor a table another journal's list
+declares (another application or tenant on this database). Export contains portable definitions/policies, not host
 actor/history records.
 
 SQLite and PostgreSQL are supported. PostgreSQL history stores native UUID

@@ -176,7 +176,10 @@ export function createController({ store, forge, grantOwner = { runId: Number(pr
     const onlyApp = (rule) => Array.isArray(rule.bypass_actors) && rule.bypass_actors.length > 0 && rule.bypass_actors.every((actor) => actor.actor_type === 'Integration' && actor.actor_id === 2315871 && actor.bypass_mode === 'always');
     const mainRules = rules.filter((rule) => applies(rule, ['refs/heads/main', '~DEFAULT_BRANCH']));
     check(mainRules.some((rule) => (!privateBypass || onlyApp(rule)) && rule.rules.some((entry) => entry.type === 'required_status_checks' && entry.parameters.required_status_checks.some((status) => status.context === CONTEXT && status.integration_id === 2315871))), 'Provision App-bound Release Admission required status before activation');
-    check(mainRules.some((rule) => rule.rules.some((entry) => entry.type === 'merge_queue' && entry.parameters.max_entries_to_build === 1 && entry.parameters.max_entries_to_merge === 1)), 'Release admission requires a one-entry merge queue');
+    // Batching (several groups, several PRs per group) is safe: admission is
+    // granted per group head only while open, close drains every granted head
+    // and revokes any untracked live grant before freezing (see revokeLiveGrants).
+    check(mainRules.some((rule) => rule.rules.some((entry) => entry.type === 'merge_queue')), 'Release admission requires a merge queue on main');
     check(rules.some((rule) => applies(rule, ['refs/heads/hv-release-admission']) && (!privateBypass || onlyApp(rule)) && ['creation', 'update', 'deletion', 'non_fast_forward'].every((type) => rule.rules.some((entry) => entry.type === type))), 'Protect admission ref against non-App creation/updates/deletion/force-push before activation');
   }
   async function assertWindow(owner, snapshotSha) {
@@ -188,6 +191,15 @@ export function createController({ store, forge, grantOwner = { runId: Number(pr
     const main = await forge.main();
     check(main.protected === true && main.commit.sha === snapshotSha, 'Main differs from frozen release source');
     return current;
+  }
+  async function revokeLiveGrants() {
+    for (const ref of await forge.groups()) {
+      check(sha(ref.object?.sha), 'Unverifiable live merge-group ref');
+      const latest = await latestAppStatus(ref.object.sha);
+      // A success here is untracked (admitted entries were all resolved). Fail
+      // closed by revoking it before main is read, so it cannot merge after freeze.
+      if (latest?.state === 'success') await forge.status(ref.object.sha, 'pending', 'Queue admission revoked; a new window must revalidate this head');
+    }
   }
   async function close(owner, { timeoutMinutes = 90, drainMinutes = 30 } = {}) {
     check(Number.isFinite(timeoutMinutes) && timeoutMinutes > 0 && Number.isFinite(drainMinutes) && drainMinutes > 0 && drainMinutes <= timeoutMinutes, 'Invalid release window');
@@ -214,6 +226,9 @@ export function createController({ store, forge, grantOwner = { runId: Number(pr
         current = await update({ type: 'observeGroup', owner, facts: { authenticated: true, repository: REPOSITORY, sha: group.sha, refExists, disposition } });
       }
       if (current.admitted.every((entry) => entry.disposition !== 'pending')) {
+        // Every tracked head has left the queue. Under batching other groups may
+        // still be building or waiting; none may carry a live green grant.
+        await revokeLiveGrants();
         const latest = await forge.main();
         current = await update({ type: 'freeze', owner, nowMs: now(), main: { authenticated: true, repository: REPOSITORY, protected: latest.protected === true, ref: 'refs/heads/main', sha: latest.commit.sha } });
         break;

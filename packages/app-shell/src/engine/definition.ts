@@ -9,6 +9,7 @@ import {
   runtimeModelEntry,
 } from '@happyvertical/smrt-core';
 import type { LoadRecordsCommand } from './data-migrations.ts';
+import { sqliteDialect } from './db/sqlite-dialect.ts';
 import type { ExtractModelCommand } from './extract-model.ts';
 import type { MergeRecordsCommand } from './merge-records.ts';
 import type { ReportDef } from './reports.ts';
@@ -294,29 +295,19 @@ export function visible(fields: Record<string, FieldDef>) {
   );
 }
 
-/** Core's run-time field type and the SQLite column type it gets. */
-const TYPE_MAP: Record<FieldType, [RuntimeFieldType, string]> = {
-  text: ['text', 'TEXT'],
-  number: ['decimal', 'REAL'],
-  integer: ['integer', 'INTEGER'],
-  boolean: ['boolean', 'INTEGER'],
-  date: ['datetime', 'DATETIME'],
-  money: ['integer', 'INTEGER'], // minor units (cents)
-  choice: ['text', 'TEXT'],
-  reference: ['text', 'TEXT'], // the referenced record's id
-  json: ['json', 'TEXT'],
+/** Core's run-time field type of each app field type. */
+const RUNTIME_TYPE: Record<FieldType, RuntimeFieldType> = {
+  text: 'text',
+  number: 'decimal',
+  integer: 'integer',
+  boolean: 'boolean',
+  date: 'datetime',
+  money: 'integer', // minor units (cents)
+  choice: 'text',
+  reference: 'text', // the referenced record's id
+  json: 'json',
 };
-export const sqlType = (t: FieldType) => TYPE_MAP[t][1];
-export const runtimeType = (t: FieldType) => TYPE_MAP[t][0];
-
-/** Storage family of a declared SQLite column type, to compare columns. */
-export function storageFamily(declared: string): string {
-  const t = declared.toUpperCase();
-  if (/DATE|TIME/.test(t)) return 'date';
-  if (/INT|BOOL/.test(t)) return 'integer';
-  if (/REAL|FLOA|DOUB|DEC|NUMERIC/.test(t)) return 'real';
-  return 'text';
-}
+export const runtimeType = (t: FieldType) => RUNTIME_TYPE[t];
 
 const isObj = (v: unknown): v is Record<string, unknown> =>
   !!v && typeof v === 'object' && !Array.isArray(v);
@@ -558,6 +549,8 @@ export function refuseChanges(
   prev: AppDefinition,
   next: AppDefinition,
   converting = new Set<string>(),
+  /** The database's column type of a field type (default: SQLite's). */
+  columnType: (t: FieldType) => string = sqliteDialect.columnType,
 ): string[] {
   const errs: string[] = [];
   for (const [m, md] of Object.entries(prev.models)) {
@@ -567,7 +560,7 @@ export function refuseChanges(
       const nf = nm.fields[f];
       if (
         nf &&
-        sqlType(nf.type) !== sqlType(fd.type) &&
+        columnType(nf.type) !== columnType(fd.type) &&
         !converting.has(`${m}.${f}`)
       )
         errs.push(

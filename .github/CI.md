@@ -507,13 +507,14 @@ Rollout status:
 4. Done. The required status list is `Required CI` and `postgres-required`
    (the latter added to the `Repository CI / required` ruleset on 2026-09-23,
    after the lane was proven green on `main`: run 35875902114).
-5. Done. The repository merge queue uses squash merges, one entry built and
-   one merged at a time, zero wait, all-green behavior, and a 180-minute check
-   timeout. The one-entry width is load-bearing: `verifyFence()` in
-   `scripts/release-admission.mjs` refuses to close or publish a
-   [release window](release-window.md) on a wider queue. A serial queue makes
-   every entry wait for the runs ahead of it, so the length of one merge-group
-   run is what to shorten.
+5. Done. The repository merge queue uses squash merges and a 180-minute check
+   timeout. Width is a throughput setting, not a release invariant: the
+   [release window](release-window.md) drains every granted group head and
+   revokes any untracked live grant before freezing, so `verifyFence()` in
+   `scripts/release-admission.mjs` only requires that a `merge_queue` rule
+   exists on main. Batching (several groups building, several PRs per group) is
+   supported; a stacked group is admitted once the group beneath it has merged
+   (reconciliation runs every 10 minutes).
 
 When merge queue mode is enabled, the main workflow skips duplicate tests and
 the standalone build. The versioned release build, exact-artifact publication,

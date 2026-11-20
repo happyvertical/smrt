@@ -9,6 +9,10 @@ import { getDatabaseEngine } from '../system/compatibility.js';
 import { toSafeInteger } from '../utils/safe-integer.js';
 import type { EngineCatalog } from './engine/types.js';
 import type { AppModelEditReceipt } from './model-editor.js';
+import {
+  journalReader,
+  registerJournalReader,
+} from './model-history-readers.js';
 
 /** Inert host binding and first-completion projection recipe; never authority. */
 export interface AppModelOperation {
@@ -25,6 +29,12 @@ export interface AppModelChange {
   before: Cookbook;
   after: Cookbook;
   status: 'pending' | 'applied';
+  /**
+   * The revision was abandoned by an operator while pending: it is completed
+   * with its `before` document as `after`, never applied, never an undo
+   * target and never counted as a reversal. Its command and actor stay.
+   */
+  abandoned?: true;
   undoes?: number;
   elapsedMs?: number;
   operation?: AppModelOperation;
@@ -41,6 +51,14 @@ export interface AppModelHistoryStore {
     elapsedMs: number,
     receipt?: AppModelEditReceipt,
     result?: Record<string, unknown>,
+  ): Promise<void>;
+  /**
+   * Abandon the pending revision `revision` (see {@link abandonAppModelRevision}).
+   * Optional for custom stores; the default store implements it.
+   */
+  abandon?(
+    revision: number,
+    by: { actor: string; reason?: string },
   ): Promise<void>;
   /** PostgreSQL revision CAS and application DDL must share this locked transaction. */
   transaction?<T>(
@@ -99,8 +117,64 @@ export async function createAppModelHistory(options: {
   const bound = (db: DatabaseInterface): AppModelHistoryStore => {
     const store = journalStore(db);
     JOURNAL_APPENDS.add(store.append);
+    registerJournalReader(store.read, {
+      async light() {
+        const { rows } = await db.query(
+          `SELECT ${LIGHT} FROM _smrt_app_model_changes WHERE application = ? AND tenant_id = ? ORDER BY revision`,
+          [application, tenantId],
+        );
+        return rows.map(toChange);
+      },
+      async latest() {
+        const { rows } = await db.query(
+          `SELECT ${LIGHT} FROM _smrt_app_model_changes WHERE application = ? AND tenant_id = ? ORDER BY revision DESC LIMIT 1`,
+          [application, tenantId],
+        );
+        return rows[0] ? toChange(rows[0]) : undefined;
+      },
+      async find(requestId) {
+        const { rows } = await db.query(
+          `SELECT * FROM _smrt_app_model_changes WHERE application = ? AND tenant_id = ? AND request_id = ?`,
+          [application, tenantId, requestId],
+        );
+        return rows[0] ? toChange(rows[0]) : undefined;
+      },
+    });
     return store;
   };
+  // Receipts and results each hold a full projection; the light column list
+  // leaves them out of the editor's per-edit reads.
+  const LIGHT = `revision, request_id, actor, command, before_doc, after_doc, status, undoes, elapsed_ms, operation_json, CASE WHEN result_json LIKE '${ABANDONED_MARKER}%' THEN 1 ELSE 0 END AS abandoned_marker`;
+  const toChange = (row: Record<string, unknown>): AppModelChange => ({
+    revision: toSafeInteger(row.revision, 'App model revision'),
+    requestId: String(row.request_id),
+    actor: String(row.actor),
+    command: String(row.command),
+    before: JSON.parse(String(row.before_doc)),
+    after: JSON.parse(String(row.after_doc)),
+    status: row.status as AppModelChange['status'],
+    ...(Number(row.abandoned_marker) === 1 || abandonedResult(row.result_json)
+      ? { abandoned: true as const }
+      : {}),
+    ...(row.operation_json
+      ? { operation: JSON.parse(String(row.operation_json)) }
+      : {}),
+    ...(row.receipt_json
+      ? { receipt: JSON.parse(String(row.receipt_json)) }
+      : {}),
+    ...(row.result_json ? { result: JSON.parse(String(row.result_json)) } : {}),
+    ...(row.undoes != null
+      ? { undoes: toSafeInteger(row.undoes, 'Undone revision') }
+      : {}),
+    ...(row.elapsed_ms != null
+      ? {
+          elapsedMs:
+            engine === 'postgres'
+              ? toSafeInteger(row.elapsed_ms, 'App model elapsed milliseconds')
+              : Number(row.elapsed_ms),
+        }
+      : {}),
+  });
   const journalStore = (db: DatabaseInterface): AppModelHistoryStore => ({
     supportsDurableOperations: true,
     async read() {
@@ -108,38 +182,35 @@ export async function createAppModelHistory(options: {
         `SELECT * FROM _smrt_app_model_changes WHERE application = ? AND tenant_id = ? ORDER BY revision`,
         [application, tenantId],
       );
-      return rows.map((row) => ({
-        revision: toSafeInteger(row.revision, 'App model revision'),
-        requestId: String(row.request_id),
-        actor: String(row.actor),
-        command: String(row.command),
-        before: JSON.parse(String(row.before_doc)),
-        after: JSON.parse(String(row.after_doc)),
-        status: row.status as AppModelChange['status'],
-        ...(row.operation_json
-          ? { operation: JSON.parse(String(row.operation_json)) }
-          : {}),
-        ...(row.receipt_json
-          ? { receipt: JSON.parse(String(row.receipt_json)) }
-          : {}),
-        ...(row.result_json
-          ? { result: JSON.parse(String(row.result_json)) }
-          : {}),
-        ...(row.undoes != null
-          ? { undoes: toSafeInteger(row.undoes, 'Undone revision') }
-          : {}),
-        ...(row.elapsed_ms != null
-          ? {
-              elapsedMs:
-                engine === 'postgres'
-                  ? toSafeInteger(
-                      row.elapsed_ms,
-                      'App model elapsed milliseconds',
-                    )
-                  : Number(row.elapsed_ms),
-            }
-          : {}),
-      }));
+      return rows.map(toChange);
+    },
+    async abandon(revision, by) {
+      if (!Number.isSafeInteger(revision) || !by.actor)
+        throw new Error(
+          'MODEL_ABANDON_INVALID: a revision and an actor are required',
+        );
+      // Completes the pending row as a no-op: its after document becomes its
+      // before document, so no later read or boot applies the abandoned edit.
+      // The journal schema allows only pending/applied; the marker is the result.
+      const { rows } = await db.query(
+        `UPDATE _smrt_app_model_changes SET status = 'applied', after_doc = before_doc, elapsed_ms = 0, receipt_json = NULL, result_json = ? WHERE application = ? AND tenant_id = ? AND revision = ? AND status = 'pending' RETURNING revision`,
+        [
+          JSON.stringify({
+            abandoned: true,
+            abandonedBy: {
+              actor: by.actor,
+              ...(by.reason ? { reason: by.reason } : {}),
+            },
+          }),
+          application,
+          tenantId,
+          revision,
+        ],
+      );
+      if (rows.length !== 1)
+        throw new Error(
+          `MODEL_ABANDON_NOT_PENDING: revision ${revision} is not a pending revision`,
+        );
     },
     async append(change, expectedRevision) {
       if (
@@ -219,7 +290,7 @@ export async function createAppModelHistory(options: {
     store.complete = (revision, elapsedMs, receipt, result) =>
       runSerializedAgainstSystemTableBootstrap(db, engine, async (tx) => {
         const scoped = bound(tx);
-        const latest = (await scoped.read()).at(-1);
+        const latest = await journalReader(scoped)!.latest();
         if (latest?.revision !== revision)
           throw new Error('MODEL_EDIT_CONFLICT: history advanced');
         if (latest.status === 'pending')
@@ -227,6 +298,42 @@ export async function createAppModelHistory(options: {
       });
   }
   return store;
+}
+
+/**
+ * The one abandoned predicate, shared by the light read (SQL prefix) and the
+ * full read: the result abandon() writes always starts with this exact text,
+ * which no ordinary operation result produces by accident.
+ */
+const ABANDONED_MARKER = '{"abandoned":true,"abandonedBy":';
+function abandonedResult(value: unknown): boolean {
+  return typeof value === 'string' && value.startsWith(ABANDONED_MARKER);
+}
+
+/**
+ * Operator recovery for a pending revision that can never apply (its
+ * migration is refused, or its publication keeps failing). Run it while no
+ * editor for this application and tenant is serving, then open the editor
+ * again: boot no longer replays the abandoned edit. Nothing is dropped; any
+ * column the failed attempt added stays unused.
+ */
+export async function abandonAppModelRevision(options: {
+  db: DatabaseInterface;
+  application: string;
+  tenantId: string;
+  revision: number;
+  actor: string;
+  reason?: string;
+}): Promise<void> {
+  const store = await createAppModelHistory(options);
+  const run = (target: AppModelHistoryStore) =>
+    target.abandon!(options.revision, {
+      actor: options.actor,
+      ...(options.reason ? { reason: options.reason } : {}),
+    });
+  await (store.transaction
+    ? store.transaction((scoped) => run(scoped))
+    : run(store));
 }
 
 /** Compatibility name retained for existing local hosts. */

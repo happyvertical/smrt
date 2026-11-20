@@ -1,6 +1,11 @@
 /** Validation of portable app model declarations. No registry, database or host dependencies. */
-import type { CookbookModels } from '@happyvertical/smrt-types';
+import type {
+  CookbookModelField,
+  CookbookModels,
+} from '@happyvertical/smrt-types';
+import { runtimeListTableName } from '../runtime-list-table.js';
 import { toSnakeCase } from '../utils/naming.js';
+import { RESERVED_IDENTIFIERS } from './reserved-names.js';
 
 export const CUSTOM_FIELD_TYPES = [
   'text',
@@ -14,11 +19,7 @@ export const CUSTOM_FIELD_TYPES = [
   'choice',
   'reference',
 ] as const;
-const RESERVED = new Set(
-  '__proto__ prototype constructor id slug context tenantId displayLabel createdAt updatedAt metaType metaData _meta_type _meta_data abstract arguments await boolean break byte case catch char class const continue debugger default delete do double else enum eval export extends false final finally float for function goto if implements import in instanceof int interface let long native new null package private protected public return short static super switch synchronized this throw throws transient true try typeof var void volatile while with yield save initialize toJSON toPublicJSON then select from to where table column group order insert update values join limit offset drop alter create index primary foreign key references'.split(
-    ' ',
-  ),
-);
+const RESERVED = new Set(RESERVED_IDENTIFIERS);
 export const CUSTOM_MODEL_NAME = '^[A-Z][A-Za-z0-9]{0,63}$';
 export const CUSTOM_FIELD_NAME = '^[a-z][A-Za-z0-9]{0,63}$';
 export const CUSTOM_PACKAGE_NAME = '^@[a-z0-9][a-z0-9-]*/[a-z0-9][a-z0-9-]*$';
@@ -34,6 +35,69 @@ export function isCustomIdentifier(
     !RESERVED.has(value)
   );
 }
+/**
+ * PostgreSQL's identifier limit in bytes, the strictest engine the app model
+ * editor supports. PostgreSQL silently truncates a longer table or column
+ * name, so a declaration over it never matches its own column again.
+ */
+export const MAX_STORAGE_IDENTIFIER_BYTES = 63;
+const byteLength = (value: string) => new TextEncoder().encode(value).length;
+
+/** The columns a custom field stores: its own and a money field's currency companion. */
+export function storageColumns(
+  name: string,
+  field?: Pick<CookbookModelField, 'type'>,
+): string[] {
+  return [
+    toSnakeCase(name),
+    ...(field?.type === 'money' ? [toSnakeCase(`${name}Currency`)] : []),
+  ];
+}
+
+/** Whether a derived table or column name fits {@link MAX_STORAGE_IDENTIFIER_BYTES}. */
+export function fitsStorageIdentifier(identifier: string): boolean {
+  return byteLength(identifier) <= MAX_STORAGE_IDENTIFIER_BYTES;
+}
+
+/**
+ * Derived table and column names over the identifier limit. Declarations
+ * already in `existing` (journal history) are skipped: they are not new, and
+ * refusing them would block every later edit of the document.
+ */
+export function storageIdentifierProblems(
+  models: CookbookModels,
+  existing?: CookbookModels,
+): Array<{ path: string; message: string }> {
+  const problems: Array<{ path: string; message: string }> = [];
+  const check = (path: string, kind: string, identifier: string) => {
+    if (!fitsStorageIdentifier(identifier))
+      problems.push({
+        path,
+        message: `stores as ${kind} "${identifier}" (${byteLength(identifier)} bytes); PostgreSQL allows ${MAX_STORAGE_IDENTIFIER_BYTES}. Choose a shorter name.`,
+      });
+  };
+  const fields = (
+    path: string,
+    declared: Record<string, CookbookModelField>,
+    known?: Record<string, CookbookModelField>,
+  ) => {
+    for (const [name, field] of Object.entries(declared)) {
+      if (known && Object.hasOwn(known, name)) continue;
+      for (const column of storageColumns(name, field))
+        check(`${path}.${name}`, 'column', column);
+    }
+  };
+  for (const [name, list] of Object.entries(models.lists)) {
+    const known = existing?.lists[name];
+    if (!known)
+      check(`models.lists.${name}`, 'table', runtimeListTableName(name));
+    fields(`models.lists.${name}.fields`, list.fields, known?.fields);
+  }
+  for (const [model, declared] of Object.entries(models.fields))
+    fields(`models.fields.${model}`, declared, existing?.fields[model]);
+  return problems;
+}
+
 const record = (v: unknown): v is Record<string, unknown> =>
   !!v && typeof v === 'object' && !Array.isArray(v);
 

@@ -177,3 +177,25 @@ test('the code that builds a declared runtime-managed database is exempt, and on
     cleanup(root);
   }
 });
+
+test('the engine dialect exemption is those two files only: DDL in any other engine file fails', () => {
+  const root = repo(
+    {
+      'packages/app-shell/src/engine/db/sqlite-dialect.ts': SQL,
+      'packages/app-shell/src/engine/db/postgres-dialect.ts': SQL,
+      'packages/app-shell/src/engine/db/sqlite.ts': SQL,
+      'packages/app-shell/src/engine/db/index.ts': SQL,
+      'packages/app-shell/src/engine/host.ts': SQL,
+    },
+    {},
+  );
+  try {
+    const out = run(root);
+    assert.equal(out.status, 1);
+    assert.doesNotMatch(out.stderr, /db\/(sqlite|postgres)-dialect\.ts/);
+    for (const f of ['db/sqlite.ts', 'db/index.ts', 'host.ts'])
+      assert.match(out.stderr, new RegExp(`engine/${f.replace('.', '\\.')}:\\d+ hand-written CREATE TABLE widgets`));
+  } finally {
+    cleanup(root);
+  }
+});

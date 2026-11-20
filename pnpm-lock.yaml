@@ -538,6 +538,9 @@ importers:
         specifier: 0.31.0
         version: 0.31.0
     devDependencies:
+      '@electric-sql/pglite':
+        specifier: ^0.5.16
+        version: 0.5.16
       '@happyvertical/smrt-vitest':
         specifier: workspace:*
         version: link:../vitest

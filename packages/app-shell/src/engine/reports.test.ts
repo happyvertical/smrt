@@ -7,6 +7,7 @@ import { reportCsv } from '@happyvertical/smrt-reports/display';
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import { reportCell } from '../lib/ui/reports.ts';
 import { AppHost, type Command, MemoryVersionStore } from './index.ts';
+import { onPglite } from './pglite-env.ts';
 
 const dir = mkdtempSync(join(tmpdir(), 'reports-4916-'));
 const store = new MemoryVersionStore();
@@ -123,7 +124,9 @@ it('refuses hidden/foreign fields and dependent mutations; rename and undo rewri
   expect(host.def.reports?.sales.spec.dimensions[0].field).toBe('day');
 });
 
-it('renames/removes/replaces with undo, survives restart and runs frozen and draft', async () => {
+it('renames/removes/replaces with undo, survives restart and runs frozen and draft', {
+  skip: onPglite,
+}, async () => {
   await run({ type: 'renameReport', from: 'sales', to: 'monthly' });
   await run({ type: 'removeReport', name: 'monthly' });
   await expect(host.runReport('monthly')).rejects.toThrow(/unknown report/);
@@ -193,7 +196,9 @@ it('keeps display label aliases distinct and rejects prototype names', async () 
   ).rejects.toThrow(/invalid report name/);
 });
 
-it('terminates a timed-out aggregate without stopping the live worker', async () => {
+it('terminates a timed-out aggregate without stopping the live worker', {
+  skip: onPglite,
+}, async () => {
   await run({
     type: 'defineModel',
     name: 'Slow',

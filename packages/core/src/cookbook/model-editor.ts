@@ -7,7 +7,10 @@ import type {
   CookbookModels,
 } from '@happyvertical/smrt-types';
 import type { DatabaseInterface } from '@happyvertical/sql';
-import { withRuntimeSchemaActivation } from '../activation.js';
+import {
+  type ActivationCoordinator,
+  withRuntimeSchemaActivation,
+} from '../activation.js';
 import { getRuntimeManifest } from '../generators/rest.js';
 import { stableStringify } from '../knowledge-graph.js';
 import {
@@ -20,14 +23,17 @@ import { ObjectRegistry } from '../registry.js';
 import {
   getRuntimeModelReadiness,
   notifyRuntimeExposureChanged,
+  setRuntimeModelOwner,
   setRuntimeModelReadiness,
 } from '../runtime-exposure.js';
+import { runtimeListTableName } from '../runtime-list-table.js';
 import {
   type RuntimeFieldDefinition,
   registerRuntimeModel,
   runtimeModelEntry,
 } from '../runtime-model.js';
 import type { SmartObjectManifest } from '../scanner/types.js';
+import { inspectTableSchema } from '../schema/inspection.js';
 import { getDatabaseEngine } from '../system/compatibility.js';
 import { resolveDisplayLabelField } from '../ui-metadata.js';
 import { toSnakeCase } from '../utils/naming.js';
@@ -35,6 +41,7 @@ import {
   buildWebCollectionDefinition,
   selectWebCollectionEntries,
 } from '../vite-plugin/web-collections.js';
+import { journalListTables } from './app-model-claims.js';
 import { appOperationResult } from './app-tool-edits.js';
 import { canonical, coveredModels } from './engine/document.js';
 import { createCookbookEngine } from './engine/engine.js';
@@ -47,12 +54,17 @@ import {
   createAppModelHistory,
   isAppModelJournalStore,
 } from './model-history.js';
+import { journalReader } from './model-history-readers.js';
 import {
   CUSTOM_MODEL_REF,
   cookbookModelCatalog,
+  fitsStorageIdentifier,
   isCustomIdentifier,
+  MAX_STORAGE_IDENTIFIER_BYTES,
+  storageIdentifierProblems,
   validateCookbookModels,
 } from './models.js';
+import { isReservedFieldName } from './reserved-names.js';
 import { validateCookbook } from './validate.js';
 
 export type AppModelEdit = (
@@ -98,6 +110,13 @@ export interface AppModelEditorOptions {
   authorize(context: AppModelEditContext): boolean | Promise<boolean>;
   /** Publish the cookbook/manifest projection to the host's existing engine and transports. */
   publish?(snapshot: AppModelSnapshot): void | Promise<void>;
+  /**
+   * A lazy-activation host's coordinator. Its manifest names every installed
+   * model and table, loaded or not, so a new list cannot take the name or
+   * table of a model whose recipe is off; `import` and `undo` activate the
+   * models the restored cookbook covers before they apply.
+   */
+  activation?: Pick<ActivationCoordinator, 'activate' | 'manifest'>;
 }
 export interface AppModelSnapshot {
   revision: number;
@@ -114,6 +133,33 @@ export interface AppModelEditReceipt extends AppModelSnapshot {
   path: 'runtime' | 'policy';
   elapsedMs: number;
   replayed?: boolean;
+}
+
+/**
+ * Journal rows are immutable, and a layout label that is neither text nor
+ * null could never be rendered: drop it when reading a stored document, so an
+ * editor whose journal holds one still opens.
+ */
+function repairLayoutLabels(value: unknown): unknown {
+  const layout = (value as { layout?: Record<string, unknown> } | null)?.layout;
+  if (!layout || typeof layout !== 'object') return value;
+  let repaired: { layout: Record<string, unknown> } | undefined;
+  for (const key of ['sections', 'items'] as const) {
+    const entries = layout[key];
+    if (!entries || typeof entries !== 'object') continue;
+    for (const [id, entry] of Object.entries(entries)) {
+      const label = (entry as { label?: unknown } | null)?.label;
+      if (label === undefined || label === null || typeof label === 'string')
+        continue;
+      repaired ??= structuredClone(value) as {
+        layout: Record<string, unknown>;
+      };
+      delete (repaired.layout[key] as Record<string, Record<string, unknown>>)[
+        id
+      ].label;
+    }
+  }
+  return repaired ?? value;
 }
 
 function checked(value: unknown): Cookbook {
@@ -208,8 +254,9 @@ function fieldValidators(fields: Record<string, RuntimeFieldDefinition>) {
 /** Keep archived storage declarations through removal/undo; never drop data as a side effect. */
 function storageModels(
   documents: readonly Cookbook[],
+  seed?: CookbookModels,
 ): CookbookModels | undefined {
-  let result: CookbookModels | undefined;
+  let result: CookbookModels | undefined = seed && structuredClone(seed);
   for (const document of documents) {
     const model = document.models;
     if (!model) continue;
@@ -238,8 +285,144 @@ function storageModels(
   return result;
 }
 
+/** Models whose stored fields `after` adds or changes relative to `before`. */
+function changedModels(
+  before: CookbookModels | undefined,
+  after: CookbookModels | undefined,
+): string[] {
+  if (!after) return [];
+  const differs = (a: unknown, b: unknown) =>
+    b === undefined || stableStringify(a) !== stableStringify(b);
+  return [
+    ...Object.entries(after.lists)
+      .filter(([name, list]) =>
+        differs(list.fields, before?.lists[name]?.fields),
+      )
+      .map(([name]) => `${after.packageName}:${name}`),
+    ...Object.entries(after.fields)
+      .filter(([model, fields]) => differs(fields, before?.fields[model]))
+      .map(([model]) => model),
+  ];
+}
+
+/** Whether a physical table exists, kept (for example) by a disabled recipe. */
+async function tableExists(
+  db: DatabaseInterface,
+  engine: string,
+  table: string,
+): Promise<boolean> {
+  const { rows } = await db.query(
+    engine === 'postgres'
+      ? "SELECT 1 AS live FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = current_schema() AND c.relname = ? AND c.relkind IN ('r', 'p')"
+      : "SELECT 1 AS live FROM sqlite_master WHERE type = 'table' AND lower(name) = lower(?)",
+    [table],
+  );
+  return rows.length > 0;
+}
+
+declare global {
+  /** Run-time classes each app model editor registered, by journal identity. */
+  var __smrtAppModelEditorClasses: Map<object, string> | undefined;
+  var __smrtAppModelEditorDatabases: WeakMap<object, string> | undefined;
+  var __smrtAppModelEditorBaselines:
+    | Map<string, Map<string, () => void>>
+    | undefined;
+  /** Journal identity -> revision whose winning completion was not installed. */
+  var __smrtAppModelEditorWinners: Map<string, number> | undefined;
+}
+const uninstalledWinners = () =>
+  (globalThis.__smrtAppModelEditorWinners ??= new Map<string, number>());
+const editorClasses = () =>
+  (globalThis.__smrtAppModelEditorClasses ??= new Map<object, string>());
+/**
+ * Snapshot the journal marks and exposure claims, so a rolled-back
+ * registration (a pre-existing app subclass keeps its constructor) does not
+ * keep claiming ownership.
+ */
+function checkpointOwnership(): () => void {
+  const marks = new Map(editorClasses());
+  const claims = new Map(globalThis.__smrtModelOwners ?? []);
+  return () => {
+    editorClasses().clear();
+    for (const [key, value] of marks) editorClasses().set(key, value);
+    globalThis.__smrtModelOwners = claims;
+    notifyRuntimeExposureChanged();
+  };
+}
+
+/**
+ * Ownership marks and exposure claims outlive the editor that made them. A
+ * class no longer registered (a reset or reloaded registry) carries no claim:
+ * drop such marks before a new editor checks or claims anything.
+ */
+function pruneStaleOwnership() {
+  const registered = new Set<unknown>(
+    [...ObjectRegistry.getAllClasses().values()].map(
+      (entry) => entry.constructor,
+    ),
+  );
+  for (const registeredClass of [...editorClasses().keys()])
+    if (!registered.has(registeredClass))
+      editorClasses().delete(registeredClass);
+  // Only a claim made for a specific registration that is gone is dropped.
+  for (const [id, claim] of [...(globalThis.__smrtModelOwners ?? [])])
+    if (
+      claim.registeredClass !== undefined &&
+      !registered.has(claim.registeredClass)
+    )
+      globalThis.__smrtModelOwners?.delete(id);
+}
+/**
+ * A stable identity for the database, part of each journal's key: its URL,
+ * so a new handle to the same database reopens the same journal; an
+ * in-memory or URL-less database is identified per handle with a random id.
+ * Both maps live on globalThis, so every loaded copy of this module agrees.
+ */
+function databaseId(db: DatabaseInterface): string {
+  const url = db.url || (db as { config?: { url?: string } }).config?.url;
+  if (url && !/^(:memory:|memory:\/\/|file::memory:)/.test(url))
+    return `url:${url}`;
+  globalThis.__smrtAppModelEditorDatabases ??= new WeakMap<object, string>();
+  const handles = globalThis.__smrtAppModelEditorDatabases;
+  let id = handles.get(db);
+  if (!id) {
+    id = `handle:${crypto.randomUUID()}`;
+    handles.set(db, id);
+  }
+  return id;
+}
+/**
+ * Registry baselines per journal and provider: the registration state before
+ * the journal first replaced the provider, shared by every editor instance of
+ * that journal so a reopened editor can still take its replacement out.
+ */
+const journalBaselines = () =>
+  (globalThis.__smrtAppModelEditorBaselines ??= new Map<
+    string,
+    Map<string, () => void>
+  >());
+
 /** Async construction replays persisted customizations and resolves pending activation BEFORE serving. */
 export async function createAppModelEditor(options: AppModelEditorOptions) {
+  return openAppModelEditor(options, {});
+}
+
+/**
+ * Operator storage repair: open the editor and reconcile every active
+ * customised table from the journal (tracked migration, refused on manual
+ * drift), the step editor boot never runs. Use it when boot refuses with
+ * MODEL_MIGRATION_REQUIRED for a missing custom column or list table, a
+ * startup cookbook's lists before their first use, or a pending revision
+ * whose DDL never ran. Returns the opened editor.
+ */
+export async function migrateAppModelStorage(options: AppModelEditorOptions) {
+  return openAppModelEditor(options, { migrate: true });
+}
+
+async function openAppModelEditor(
+  options: AppModelEditorOptions,
+  internal: { migrate?: boolean },
+) {
   if (!options.application || !options.tenantId || !options.authorize)
     throw new Error(
       'App model editor requires an application, tenant and authorizer',
@@ -256,14 +439,79 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
     throw new Error(
       'MODEL_HISTORY_JOURNAL_REQUIRED: a custom history store must append through a store createAppModelHistory made, so the app model journal (_smrt_app_model_changes) records every list and smrt db:migrate never treats a list table as undeclared',
     );
+  // The registry is process-global: two independently customised editors
+  // (another tenant's or application's journal) would merge their fields and
+  // lists into the same classes. One application registry per process.
+  // The journal identity includes the database: the same application and
+  // tenant on another database is an independent journal.
+  const journal = JSON.stringify([
+    options.application,
+    options.tenantId,
+    databaseId(options.db),
+  ]);
+  const assertSoleEditor = () => {
+    for (const entry of ObjectRegistry.getAllClasses().values()) {
+      const owner = editorClasses().get(entry.constructor);
+      if (owner !== undefined && owner !== journal)
+        throw new Error(
+          'MODEL_EDIT_CONFLICT: this process already holds app model customisations from another tenant or application journal; run one customised application registry per process',
+        );
+    }
+  };
+  pruneStaleOwnership();
+  assertSoleEditor();
   const store = options.store ?? (await createAppModelHistory(options));
   if (engine === 'postgres' && !store.transaction)
     throw new Error(
       'MODEL_HISTORY_TRANSACTION_REQUIRED: PostgreSQL history must bind revision CAS and migration DDL to one locked transaction',
     );
-  let history = await store.read();
+  // The editor never needs stored receipts in bulk: it keeps the light journal
+  // (documents, no receipts) in memory and reads single rows per edit.
+  const reader = journalReader(store);
+  let history = await (reader ? reader.light() : store.read());
+  const latestRow = async () =>
+    reader ? reader.latest() : (await store.read()).at(-1);
+  const findRow = async (requestId: string) =>
+    reader
+      ? reader.find(requestId)
+      : (await store.read()).find((row) => row.requestId === requestId);
+  /**
+   * Read back a revision this editor just completed. complete() keeps only
+   * the first completion, so another process (boot recovery elsewhere) may
+   * have won: the caller adopts the journal's receipt. A row that is not
+   * applied means this editor must not report or publish success.
+   */
+  const completedRow = async (requestId: string, at: number) => {
+    const row = await findRow(requestId);
+    // An operator abandoning the revision meanwhile also loses this completion.
+    if (row?.status !== 'applied' || row.abandoned || row.revision !== at) {
+      ready = false;
+      throw new Error(
+        `MODEL_EDIT_CONFLICT: revision ${at} was not completed as this edit; reopen the editor`,
+      );
+    }
+    return row;
+  };
   let revision = history.at(-1)?.revision ?? 0;
-  let doc = checked(history.at(-1)?.after ?? options.cookbook);
+  /**
+   * The committed document of an applied tip: the first completion's receipt
+   * when it differs from the row's after document (another process won the
+   * completion), so a reopen keeps what was reported as committed.
+   */
+  const committedDocument = async () => {
+    const tip = history.at(-1);
+    if (tip?.status !== 'applied' || tip.abandoned) return undefined;
+    const row = await findRow(tip.requestId);
+    const won = row?.receipt?.cookbook;
+    return won && stableStringify(won) !== stableStringify(tip.after)
+      ? won
+      : undefined;
+  };
+  const committed = await committedDocument();
+  const committedAt = history.at(-1)?.revision;
+  let doc = checked(
+    repairLayoutLabels(committed ?? history.at(-1)?.after ?? options.cookbook),
+  );
   let ready = false;
   let tail = Promise.resolve();
   const listeners = new Set<(snapshot: AppModelSnapshot) => void>();
@@ -273,6 +521,16 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
     ...history.flatMap((row) => [row.before, row.after]),
     doc,
   ];
+  // The union of every journalled declaration, recomputed only when the
+  // journal or document changes (not on every snapshot or edit). Read-only.
+  let storageMemo:
+    | { history: AppModelChange[]; doc: Cookbook; value?: CookbookModels }
+    | undefined;
+  const storage = () => {
+    if (storageMemo?.history !== history || storageMemo.doc !== doc)
+      storageMemo = { history, doc, value: storageModels(documents()) };
+    return storageMemo.value;
+  };
   const identities = (models?: CookbookModels) =>
     models
       ? [
@@ -286,7 +544,38 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
         ]
       : [];
 
-  async function validate(doc: Cookbook, archived?: CookbookModels) {
+  /** List tables declared by other journals (applications or tenants) on this database. */
+  const claimedElsewhere = (db: DatabaseInterface) =>
+    journalListTables(db, {
+      application: options.application,
+      tenantId: options.tenantId,
+    });
+
+  /** Installed models and tables, loaded or not: the catalog plus the activation manifest. */
+  function installed() {
+    const names = new Map<string, string>();
+    const tables = new Map<string, string>();
+    const manifest = options.activation?.manifest;
+    for (const model of options.catalog.models)
+      names.set(model.name.toLowerCase(), model.id);
+    for (const [id, model] of Object.entries(manifest?.models ?? {})) {
+      names.set(id.split(':').at(-1)!.toLowerCase(), id);
+      if (model.table) tables.set(model.table, id);
+    }
+    for (const [table, entry] of Object.entries(manifest?.tables ?? {}))
+      if (!tables.has(table)) tables.set(table, entry.owners[0] ?? table);
+    return { names, tables };
+  }
+
+  /**
+   * `live` is the database to probe for an existing table. Edits pass it;
+   * boot does not, since lists the journal already holds own their tables.
+   */
+  async function validate(
+    doc: Cookbook,
+    archived?: CookbookModels,
+    live?: DatabaseInterface,
+  ) {
     if (!doc.models) return;
     const models = doc.models;
     if (models.packageName !== options.packageName)
@@ -296,10 +585,34 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
     const errors = validateCookbookModels(models);
     if (errors.length)
       throw new Error(errors.map((e) => `${e.path}: ${e.message}`).join('; '));
+    // Derived table and column names must fit the strictest supported engine.
+    // Declarations the journal already holds are not new and stay accepted.
+    const tooLong = storageIdentifierProblems(models, archived);
+    if (tooLong.length)
+      throw new Error(
+        `INVALID_MODEL_EDIT: ${tooLong.map((e) => `${e.path} ${e.message}`).join('; ')}`,
+      );
     const used = coveredModels(options.catalog, doc);
-    for (const target of Object.keys(models.fields))
-      if (!used.has(target) || !ObjectRegistry.getClass(target))
+    for (const [target, fields] of Object.entries(models.fields)) {
+      if (used.has(target)) {
+        if (!ObjectRegistry.getClass(target))
+          throw new Error(`MODEL_NOT_IN_APP: ${target}`);
+        continue;
+      }
+      // Disabling a provider's last recipe keeps its field declarations,
+      // inactive until the recipe is enabled again. Only declarations the
+      // journal already holds may stay; a new one needs the model in the app.
+      const kept = archived?.fields[target];
+      if (
+        !kept ||
+        Object.entries(fields).some(
+          ([name, field]) =>
+            !Object.hasOwn(kept, name) ||
+            stableStringify(kept[name]) !== stableStringify(field),
+        )
+      )
         throw new Error(`MODEL_NOT_IN_APP: ${target}`);
+    }
     const names = new Set<string>();
     for (const target of Object.keys(models.fields)) {
       const name = target.split(':').at(-1)!;
@@ -307,9 +620,11 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
       names.add(name);
     }
     const tables = new Set<string>();
+    const reserved = installed();
     for (const [name, list] of Object.entries(models.lists)) {
       if (names.has(name)) throw new Error(`MODEL_NAME_COLLISION: ${name}`);
       names.add(name);
+      const own = `${models.packageName}:${name}`;
       const entry = runtimeModelEntry({
         packageName: models.packageName,
         name,
@@ -325,14 +640,50 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
       const table = entry.schema!.tableName;
       if (tables.has(table)) throw new Error(`MODEL_TABLE_COLLISION: ${table}`);
       tables.add(table);
+      // A list the journal already holds keeps its name and table, so its
+      // edits (removing it included) still apply if an installed model with
+      // the same table was loaded beside it before these checks existed.
+      if (archived?.lists[name]) continue;
+      // A new list's name and table must be free among installed models
+      // whether or not their recipe is on (lazy hosts load only enabled ones),
+      // and among tables the database keeps for disabled or removed models.
+      // The app package's own installed models (not loaded in a lazy host)
+      // keep their identity: a list may not take it.
+      if (
+        options.activation?.manifest?.models[own] ||
+        options.catalog.models.some((model) => model.id === own)
+      )
+        throw new Error(
+          `MODEL_NAME_COLLISION: ${name} is the installed model ${own}; choose another list name`,
+        );
+      const named = reserved.names.get(name.toLowerCase());
+      if (named && named !== own)
+        throw new Error(
+          `MODEL_NAME_COLLISION: ${name} is the name of the installed model ${named}; choose another list name`,
+        );
+      const owner = reserved.tables.get(table);
+      if (owner && owner !== own)
+        throw new Error(
+          `MODEL_TABLE_COLLISION: ${table} is the table of the installed model ${owner}; choose another list name`,
+        );
       for (const existing of ObjectRegistry.getAllClasses().values())
         if (
           ObjectRegistry.getTableName(
             existing.qualifiedName ?? existing.name,
           ) === table &&
-          existing.qualifiedName !== `${models.packageName}:${name}`
+          existing.qualifiedName !== own
         )
           throw new Error(`MODEL_TABLE_COLLISION: ${table}`);
+      // Neutral wording: the table may belong to another tenant's journal,
+      // whose list names this caller must not learn.
+      if (
+        live &&
+        ((await tableExists(live, engine, table)) ||
+          (await claimedElsewhere(live)).has(table))
+      )
+        throw new Error(
+          `MODEL_TABLE_COLLISION: ${table} is already in use in this database; choose another list name`,
+        );
     }
     const protectedNames = new Set<string>();
     for (
@@ -386,6 +737,19 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
       for (const [name, field] of Object.entries(entry.fields)) {
         if (!isCustomIdentifier(name) || modelProtected.has(name))
           throw new Error(`FIELD_NAME_RESERVED: ${name}`);
+        // Constructor options and instance members (`options`, `db`, `ai`, …)
+        // are not on the prototype. A new field, or its money companion, must
+        // not take one; a field the journal already holds stays accepted.
+        if (
+          !(entry.archived && Object.hasOwn(entry.archived, name)) &&
+          [name, ...(field.type === 'money' ? [`${name}Currency`] : [])].some(
+            (column) =>
+              isReservedFieldName(column) || modelProtected.has(column),
+          )
+        )
+          throw new Error(
+            `FIELD_NAME_RESERVED: ${name} is used by the object runtime; choose another field name`,
+          );
         for (const columnName of [
           name,
           ...(field.type === 'money' ? [`${name}Currency`] : []),
@@ -422,7 +786,14 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
           throw new Error(
             `FIELD_TYPE_CHANGE_REQUIRES_MIGRATION: ${entry.name}.${name}`,
           );
-        if (field.type === 'reference') {
+        // A journalled, unchanged field of a provider whose recipe is off is
+        // inactive: its reference is resolved again when the recipe returns.
+        const inactive =
+          entry.name.includes(':') &&
+          !used.has(entry.name) &&
+          !!previous &&
+          stableStringify(previous) === stableStringify(field);
+        if (field.type === 'reference' && !inactive) {
           const target = field.target!;
           if (
             target.includes(':') &&
@@ -450,7 +821,7 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
     const allowed = coveredModels(options.catalog, doc);
     const catalog = cookbookModelCatalog(options.catalog, doc.models);
     const nav = buildNav(catalog, doc).flatMap((section) => section.items);
-    const archived = storageModels(documents());
+    const archived = storage();
 
     manifest.objects = Object.fromEntries(
       Object.entries(manifest.objects).filter(
@@ -535,23 +906,112 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
     };
   }
 
-  async function activate(
-    target: Cookbook,
+  /**
+   * The storage that registers and migrates for `target`: every list, and the
+   * provider overrides whose model `target` covers. An override whose recipe
+   * is off stays declared and keeps its columns, inactive (never registered,
+   * migrated or held closed) until the recipe is enabled again.
+   */
+  function active(
     all: CookbookModels | undefined,
-    db = options.db,
-    publishNow = true,
-  ) {
-    const held = identities(all);
-    setRuntimeModelReadiness(held, false);
+    target: Cookbook,
+  ): CookbookModels | undefined {
+    if (!all) return all;
+    const used = coveredModels(options.catalog, target);
+    return {
+      ...all,
+      fields: Object.fromEntries(
+        Object.entries(all.fields).filter(([id]) => used.has(id)),
+      ),
+    };
+  }
+
+  /** Registry baselines taken before this journal first registered each list. */
+  const listBaselines =
+    journalBaselines().get(`${journal}\u0000lists`) ??
+    journalBaselines()
+      .set(`${journal}\u0000lists`, new Map())
+      .get(`${journal}\u0000lists`)!;
+  /** Registry baselines taken before this journal first replaced each provider. */
+  const replacements =
+    journalBaselines().get(journal) ??
+    journalBaselines().set(journal, new Map()).get(journal)!;
+
+  /** Register storage declarations; affected readiness closes until release(). */
+  function register(all: CookbookModels | undefined) {
+    setRuntimeModelReadiness(identities(all), false);
     ready = false;
-    if (all) {
-      // Register non-reference fields first, so mutually referencing app lists resolve through registry APIs.
-      for (const [name, list] of Object.entries(all.lists))
-        registerRuntimeModel(
-          {
-            packageName: all.packageName,
-            name,
-            fields: runtimeFields(
+    if (!all) return;
+    try {
+      registerAll(all);
+    } finally {
+      for (const id of identities(all)) {
+        if (!id.startsWith(`${options.packageName}:`)) continue;
+        const entry = ObjectRegistry.getClass(id);
+        if (entry) editorClasses().set(entry.constructor, journal);
+      }
+      // Exposure admits these registrations only for this journal's tenant.
+      setRuntimeModelOwner(
+        identities(all)
+          .filter((id) => id.startsWith(`${options.packageName}:`))
+          .flatMap((id) => {
+            const entry = ObjectRegistry.getClass(id);
+            return entry
+              ? [{ qualifiedName: id, constructor: entry.constructor }]
+              : [];
+          }),
+        options.tenantId,
+      );
+    }
+  }
+  /**
+   * Registration refresh merges fields into an existing class, so a field
+   * that left the journal (an abandoned revision, a reopen in the same
+   * process) would stay registered. Each of this journal's registrations is
+   * first returned to its baseline (the registry before the journal first
+   * registered it) and then registered afresh from the declarations.
+   */
+  function rebase(id: string, baselines: Map<string, () => void>, key = id) {
+    const current = ObjectRegistry.getClass(id);
+    const restore = baselines.get(key);
+    if (
+      current &&
+      restore &&
+      editorClasses().get(current.constructor) === journal
+    )
+      restore();
+    else if (
+      !restore ||
+      !current ||
+      editorClasses().get(current.constructor) !== journal
+    )
+      baselines.set(key, ObjectRegistry.checkpointRegistrations([key, id]));
+  }
+  function registerAll(all: CookbookModels) {
+    for (const name of Object.keys(all.lists))
+      rebase(`${all.packageName}:${name}`, listBaselines);
+    // Register non-reference fields first, so mutually referencing app lists resolve through registry APIs.
+    for (const [name, list] of Object.entries(all.lists))
+      registerRuntimeModel(
+        {
+          packageName: all.packageName,
+          name,
+          fields: runtimeFields(
+            Object.fromEntries(
+              Object.entries(list.fields).filter(
+                ([, field]) => field.type !== 'reference',
+              ),
+            ),
+            all,
+          ),
+          tenantScoped: true,
+          ui: { label: list.label, icon: list.icon },
+          display: { label: list.displayField },
+        },
+        {
+          refresh: true,
+          fieldValidators: fieldValidators(
+            runtimeFields(
               Object.fromEntries(
                 Object.entries(list.fields).filter(
                   ([, field]) => field.type !== 'reference',
@@ -559,82 +1019,123 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
               ),
               all,
             ),
-            tenantScoped: true,
-            ui: { label: list.label, icon: list.icon },
-            display: { label: list.displayField },
-          },
-          {
-            refresh: true,
-            fieldValidators: fieldValidators(
-              runtimeFields(
-                Object.fromEntries(
-                  Object.entries(list.fields).filter(
-                    ([, field]) => field.type !== 'reference',
-                  ),
-                ),
-                all,
-              ),
-            ),
-          },
-        );
-      for (const [name, list] of Object.entries(all.lists))
-        registerRuntimeModel(
-          {
-            packageName: all.packageName,
-            name,
-            fields: runtimeFields(list.fields, all),
-            tenantScoped: true,
-            ui: { label: list.label, icon: list.icon },
-            display: { label: list.displayField },
-          },
-          {
-            refresh: true,
-            fieldValidators: fieldValidators(runtimeFields(list.fields, all)),
-          },
-        );
-      for (const [model, fields] of Object.entries(all.fields))
-        registerRuntimeModel(
-          {
-            packageName: all.packageName,
-            name: model.split(':').at(-1)!,
-            extends: model,
-            replaces: true,
-            fields: runtimeFields(fields, all),
-          },
-          {
-            refresh: true,
-            fieldValidators: fieldValidators(runtimeFields(fields, all)),
-          },
-        );
-      const tables = new Set(
-        identities(all)
-          .map((id) => ObjectRegistry.getTableName(id))
-          .filter((name): name is string => !!name),
+          ),
+        },
       );
-      const pending = await getPendingSchemaStatements(db, {
-        engineHint: engine,
-        tables,
-      });
-      if (pending.hasManualDrift)
-        throw new Error(
-          `MODEL_MIGRATION_REQUIRED: ${JSON.stringify(pending.unactionableChanges)}`,
-        );
-      // A refused run applies nothing (a release stop, for example); the edit
-      // must fail rather than publish fields whose columns do not exist.
-      const migrated = await migrateSmrtSchemas({
-        db,
-        packageName: options.packageName,
-        version: String(revision),
-        name: `app_models_${revision}_${Date.now()}`,
-        engineHint: engine,
-        ...(engine === 'postgres'
-          ? { atomic: true, postgresSafe: false, useConcurrentIndexes: false }
-          : {}),
-        tables,
-        requireComplete: true,
-      });
-      assertMigrationAccepted(migrated);
+    for (const [name, list] of Object.entries(all.lists))
+      registerRuntimeModel(
+        {
+          packageName: all.packageName,
+          name,
+          fields: runtimeFields(list.fields, all),
+          tenantScoped: true,
+          ui: { label: list.label, icon: list.icon },
+          display: { label: list.displayField },
+        },
+        {
+          refresh: true,
+          fieldValidators: fieldValidators(runtimeFields(list.fields, all)),
+        },
+      );
+    for (const [model, fields] of Object.entries(all.fields)) {
+      const replacement = `${all.packageName}:${model.split(':').at(-1)}`;
+      // Remember the registry before this journal first replaces the
+      // provider (absent, or a pre-existing app subclass), so disabling the
+      // provider's recipe restores it, from any editor instance of the
+      // journal. A baseline is stale once the registry no longer holds this
+      // journal's replacement (a reset registry): take a new one.
+      rebase(replacement, replacements, model);
+      registerRuntimeModel(
+        {
+          packageName: all.packageName,
+          name: model.split(':').at(-1)!,
+          extends: model,
+          replaces: true,
+          fields: runtimeFields(fields, all),
+        },
+        {
+          refresh: true,
+          fieldValidators: fieldValidators(runtimeFields(fields, all)),
+        },
+      );
     }
+  }
+
+  /** Physical tables of the given (registered) model identities. */
+  const tablesOf = (models: readonly string[]) =>
+    new Set(
+      models
+        .map((id) => ObjectRegistry.getTableName(id))
+        .filter((name): name is string => !!name),
+    );
+
+  /**
+   * Refuse manual drift on the tables an edit migrates. Only those tables (and
+   * their FK closure) are inspected, so drift elsewhere never blocks an edit.
+   */
+  async function plan(db: DatabaseInterface, tables: Set<string>) {
+    if (!tables.size) return;
+    if (engine === 'postgres') {
+      // PostgreSQL truncates a longer identifier, so a declaration over the
+      // limit (journalled before edits were checked) never matches its own
+      // column again and every migration of its table would fail. Refuse the
+      // edit up front; the model keeps working and other models stay editable.
+      const schemas = ObjectRegistry.getAllSchemasAsDefinitions({ tables });
+      const long = Object.values(schemas).flatMap((schema) =>
+        [schema.tableName, ...Object.keys(schema.columns)]
+          .filter((name) => !fitsStorageIdentifier(name))
+          .map((name) => `${schema.tableName}.${name}`),
+      );
+      if (long.length)
+        throw new Error(
+          `MODEL_MIGRATION_REQUIRED: ${long.join(', ')} exceed PostgreSQL's ${MAX_STORAGE_IDENTIFIER_BYTES}-byte identifier limit, so this table cannot take new fields. Add the field to another list, or have an operator rename the stored column and its declaration`,
+        );
+    }
+    const pending = await getPendingSchemaStatements(db, {
+      engineHint: engine,
+      tables,
+    });
+    if (pending.hasManualDrift)
+      throw new Error(
+        `MODEL_MIGRATION_REQUIRED: ${JSON.stringify(pending.unactionableChanges)}`,
+      );
+  }
+
+  async function migrate(db: DatabaseInterface, tables: Set<string>) {
+    if (!tables.size) return;
+    // A refused run applies nothing (a release stop, for example); the edit
+    // must fail rather than publish fields whose columns do not exist.
+    const migrated = await migrateSmrtSchemas({
+      db,
+      packageName: options.packageName,
+      version: String(revision),
+      name: `app_models_${revision}_${Date.now()}`,
+      engineHint: engine,
+      ...(engine === 'postgres'
+        ? { atomic: true, postgresSafe: false, useConcurrentIndexes: false }
+        : {}),
+      tables,
+      requireComplete: true,
+    });
+    assertMigrationAccepted(migrated);
+  }
+
+  /**
+   * Register `all` and migrate only the tables of `changed` models: an edit's
+   * new lists and fields. Labels, hiding, removal and undo change no storage
+   * and run no DDL; provider tables otherwise stay the operator's migration.
+   */
+  async function activate(
+    target: Cookbook,
+    all: CookbookModels | undefined,
+    changed: readonly string[],
+    db = options.db,
+    publishNow = true,
+  ) {
+    register(all);
+    const tables = tablesOf(changed);
+    await plan(db, tables);
+    await migrate(db, tables);
     doc = structuredClone(target);
     return publishNow ? publish() : projection();
   }
@@ -653,6 +1154,23 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
   function release(all?: CookbookModels) {
     const held = identities(all);
     ready = true;
+    // A provider whose recipe is now off keeps its declarations inactive; its
+    // replacement leaves the registry so no projection shows its fields.
+    for (const [model, restore] of replacements)
+      if (!all?.fields[model]) {
+        const replacement = `${options.packageName}:${model.split(':').at(-1)}`;
+        const current = ObjectRegistry.getClass(replacement);
+        // Only a replacement this journal registered is restored.
+        if (current && editorClasses().get(current.constructor) === journal) {
+          restore();
+          setRuntimeModelOwner([replacement], undefined);
+          // A pre-existing app subclass comes back with its own constructor;
+          // it no longer belongs to this journal.
+          const restored = ObjectRegistry.getClass(replacement);
+          if (restored) editorClasses().delete(restored.constructor);
+        }
+        replacements.delete(model);
+      }
     // Deleted lists remain in storage/registry but are closed on every surface.
     const enabled = new Set(coveredModels(options.catalog, doc));
     setRuntimeModelReadiness(
@@ -663,8 +1181,48 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
     );
     notifyRuntimeExposureChanged();
   }
+  /**
+   * When another process completed a revision first, its receipt is the
+   * committed projection: installed through the host before readiness opens,
+   * and served by snapshot() for that revision.
+   */
+  let adopted: AppModelSnapshot | undefined;
+  async function adoptWinner(
+    row: AppModelChange,
+    local: AppModelEditReceipt,
+  ): Promise<AppModelSnapshot | undefined> {
+    if (!row.receipt || stableStringify(row.receipt) === stableStringify(local))
+      return undefined;
+    const { revision: at, cookbook, manifest, webDefinitions } = row.receipt;
+    return installWinner({ revision: at, cookbook, manifest, webDefinitions });
+  }
+  /**
+   * Install a winning completion through the host. Until it is installed the
+   * journal remembers the revision, so reopening (the prescribed recovery)
+   * installs the winner's manifest and web definitions even when its cookbook
+   * equals this process's own.
+   */
+  async function installWinner(
+    winner: AppModelSnapshot,
+  ): Promise<AppModelSnapshot> {
+    uninstalledWinners().set(journal, winner.revision);
+    try {
+      await options.publish?.(structuredClone(winner));
+    } catch (error) {
+      ready = false;
+      throw error;
+    }
+    uninstalledWinners().delete(journal);
+    adopted = winner;
+    // The winner is the committed document: the next edit starts from it.
+    doc = structuredClone(winner.cookbook);
+    return winner;
+  }
   function snapshot(): AppModelSnapshot {
     if (!ready) throw new Error('MODEL_ACTIVATION_PENDING');
+    // Never project another journal's registrations as this editor's own.
+    assertSoleEditor();
+    if (adopted?.revision === revision) return structuredClone(adopted);
     return projection();
   }
 
@@ -695,9 +1253,7 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
       throw new Error('MODEL_EDIT_FORBIDDEN');
     if (!store.supportsDurableOperations)
       throw new Error('MODEL_DURABLE_OPERATIONS_UNSUPPORTED');
-    const found = (await store.read()).find(
-      (row) => row.requestId === context.requestId,
-    );
+    const found = await findRow(context.requestId);
     if (!found) return null;
     if (
       found.actor !== context.actor ||
@@ -710,46 +1266,292 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
       throw new Error('MODEL_REQUEST_ID_REUSED');
     if (found.status !== 'applied')
       throw new Error('MODEL_ACTIVATION_PENDING: reopen the editor to recover');
+    if (found.abandoned)
+      throw new Error(
+        `MODEL_REVISION_ABANDONED: revision ${found.revision} was abandoned and never applied`,
+      );
     if (!found.receipt || !found.result)
       throw new Error('MODEL_RESULT_UNAVAILABLE');
     return structuredClone(found);
   }
 
+  const recoveryHint = (error: unknown) => {
+    const pending = history.at(-1);
+    if (pending?.status !== 'pending' || !(error instanceof Error))
+      return error;
+    // Abandoning the journalled startup cookbook would drop its lists for
+    // good (and orphan their rows): the only way out is to repair and rerun.
+    error.message +=
+      pending.requestId === 'initial-cookbook'
+        ? `; pending revision ${pending.revision} (the startup cookbook) cannot be applied. Repair the cause and run migrateAppModelStorage() again; do not abandon it, which would drop the startup models`
+        : `; pending revision ${pending.revision} cannot be applied. Repair the cause and reopen, or abandon it with abandonAppModelRevision({ revision: ${pending.revision} })`;
+    return error;
+  };
+  /**
+   * Boot runs no DDL: it only verifies storage. The operator's
+   * migrateAppModelStorage() (the same boot with `migrate`) reconciles every
+   * active customised table, journal-backed, so it can recreate a lost custom
+   * column or list table that db:migrate cannot see.
+   */
+  const bootChanges = (): string[] =>
+    internal.migrate ? changedModels(undefined, active(storage(), doc)) : [];
+
+  /**
+   * An initial cookbook that declares app models, opened with an empty
+   * journal, becomes journal revision 1, then migrated and completed as a
+   * tracked revision, so later boots treat its lists as journalled and the
+   * retire step knows their tables. Its lists may not take a table an
+   * installed model owns (manifest or registry), even one that model kept
+   * after its recipe was disabled.
+   */
+  async function journalInitial(
+    target: AppModelHistoryStore,
+    db: DatabaseInterface,
+  ) {
+    const models = doc.models;
+    if (
+      history.length ||
+      !models ||
+      (!Object.keys(models.lists).length && !Object.keys(models.fields).length)
+    )
+      return;
+    const missing: string[] = [];
+    // The startup document may have booted before this release: its own
+    // declarations count as existing for the name, length and reserved-name
+    // checks. Its tables must still not belong to an installed model.
+    await validate(doc, storageModels([doc]));
+    const reserved = installed();
+    for (const name of Object.keys(models.lists)) {
+      const own = `${models.packageName}:${name}`;
+      const table = runtimeListTableName(name);
+      const owner =
+        reserved.tables.get(table) ??
+        [...ObjectRegistry.getAllClasses().values()]
+          .map((entry) => entry.qualifiedName ?? entry.name)
+          .find(
+            (id) => id !== own && ObjectRegistry.getTableName(id) === table,
+          );
+      if (owner && owner !== own)
+        throw new Error(
+          `MODEL_TABLE_COLLISION: ${table} is the table of the installed model ${owner}; the startup cookbook's list ${name} cannot take it`,
+        );
+      // Its identity must not be an installed app model's, and its table
+      // must not be another journal's list table (another application or
+      // tenant on this database), whatever this process has registered.
+      if (options.activation?.manifest?.models[own])
+        throw new Error(
+          `MODEL_NAME_COLLISION: ${name} is the installed model ${own}; the startup cookbook's list cannot take it`,
+        );
+      if ((await claimedElsewhere(db)).has(table))
+        throw new Error(
+          `MODEL_TABLE_COLLISION: ${table} is already in use in this database; the startup cookbook's list ${name} cannot take it`,
+        );
+      // A table that exists without being this journal's is never adopted by
+      // a plain boot: it may belong to an application the journals do not
+      // record. Only the operator's migrateAppModelStorage() takes it over.
+      if (!internal.migrate) {
+        if (await tableExists(db, engine, table))
+          throw new Error(
+            `MODEL_TABLE_COLLISION: ${table} is already in use in this database; the startup cookbook's list ${name} cannot take it. If the table is this application's own storage, adopt it with migrateAppModelStorage()`,
+          );
+        missing.push(table);
+      }
+    }
+    // A plain boot runs no DDL, so journalling startup declarations whose
+    // storage does not exist yet would leave revision 1 pending with no way
+    // to complete it. Refuse before anything is journalled.
+    if (
+      !internal.migrate &&
+      (missing.length || Object.keys(models.fields).length)
+    )
+      throw new Error(
+        `MODEL_MIGRATION_REQUIRED: storage does not match the app models (missing ${missing.length ? missing.join(', ') : 'provider fields'}); run migrateAppModelStorage() (custom fields and lists), then reopen the editor`,
+      );
+    // A coherent document without the declarations: no feature, policy or
+    // provider-field reference to what revision 1 adds, so undoing it
+    // leaves no enabled list without a declaration.
+    const before = structuredClone(doc);
+    delete before.models;
+    const declared = new Set(
+      Object.keys(models.lists).map((name) => `${models.packageName}:${name}`),
+    );
+    const customFields = new Set(
+      Object.entries(models.fields).flatMap(([model, fields]) =>
+        Object.entries(fields).flatMap(([name, field]) =>
+          [name, ...(field.type === 'money' ? [`${name}Currency`] : [])].map(
+            (column) => `${model}\u0000${column}`,
+          ),
+        ),
+      ),
+    );
+    before.features = before.features.filter((id) => !declared.has(id));
+    before.policies = before.policies.filter(
+      (policy) =>
+        !declared.has(policy.objectRef) &&
+        !customFields.has(`${policy.objectRef}\u0000${policy.fieldName}`),
+    );
+    const change: AppModelChange = {
+      revision: 1,
+      requestId: 'initial-cookbook',
+      actor: 'system',
+      command: JSON.stringify({
+        type: 'import',
+        cookbook: doc,
+        summary: 'Initial app models',
+      }),
+      before,
+      after: structuredClone(doc),
+      status: 'pending',
+    };
+    await target.append(change, 0);
+    history = [change];
+    revision = 1;
+  }
+
+  /**
+   * Read-only check that every registered customised model's table holds
+   * every declared column (provider upgrades included), so boot never opens a
+   * model whose storage is incomplete. PostgreSQL stores identifiers over 63
+   * bytes truncated, so the comparison truncates too.
+   */
+  const storageMismatch: string[] = [];
+  async function verifyStorage(
+    db: DatabaseInterface,
+    models: readonly string[],
+    skip: readonly string[],
+  ) {
+    const tables = tablesOf(models.filter((id) => !skip.includes(id)));
+    if (!tables.size) return;
+    const physical = (name: string) =>
+      engine === 'postgres'
+        ? new TextDecoder().decode(
+            new TextEncoder()
+              .encode(name)
+              .slice(0, MAX_STORAGE_IDENTIFIER_BYTES),
+          )
+        : name;
+    const missing: string[] = [];
+    for (const schema of Object.values(
+      ObjectRegistry.getAllSchemasAsDefinitions({ tables }),
+    )) {
+      if (!tables.has(schema.tableName)) continue;
+      const live = await inspectTableSchema(
+        db,
+        physical(schema.tableName),
+        engine,
+      );
+      const columns = new Set(
+        Object.keys(live?.columns ?? {}).map((name) => name.toLowerCase()),
+      );
+      if (!live) missing.push(schema.tableName);
+      else
+        for (const column of Object.keys(schema.columns))
+          if (!columns.has(physical(column).toLowerCase()))
+            missing.push(`${schema.tableName}.${column}`);
+    }
+    if (missing.length) {
+      storageMismatch.push(...models);
+      throw new Error(
+        `MODEL_MIGRATION_REQUIRED: storage does not match the app models (missing ${missing.join(', ')}); run migrateAppModelStorage() (custom fields and lists) or smrt db:migrate (provider columns), then reopen the editor`,
+      );
+    }
+  }
+
   await withRuntimeSchemaActivation(async () => {
+    // Boots are serialized here; check again, so two editors constructed at
+    // the same time cannot both register over each other.
+    assertSoleEditor();
     const started = performance.now();
-    if (engine === 'postgres') {
-      let restore = () => {};
-      const readiness = new Map<string, boolean | undefined>();
-      try {
+    let restore = () => {};
+    const readiness = new Map<string, boolean | undefined>();
+    let restoreOwnership = () => {};
+    const checkpoint = () => {
+      restoreOwnership = checkpointOwnership();
+      const held = identities(active(storage(), doc));
+      for (const id of held) readiness.set(id, getRuntimeModelReadiness(id));
+      restore = ObjectRegistry.checkpointRegistrations(held);
+    };
+    try {
+      if (engine === 'postgres') {
         await store.transaction!(async (scoped, db) => {
-          history = await scoped.read();
+          const scopedReader = journalReader(scoped);
+          history = await (scopedReader ? scopedReader.light() : scoped.read());
           revision = history.at(-1)?.revision ?? 0;
-          doc = checked(history.at(-1)?.after ?? options.cookbook);
+          doc = checked(
+            repairLayoutLabels(
+              (history.at(-1)?.revision === committedAt
+                ? committed
+                : undefined) ??
+                history.at(-1)?.after ??
+                options.cookbook,
+            ),
+          );
+          await journalInitial(scoped, db);
           await validate(
             doc,
             storageModels(history.flatMap((row) => [row.before, row.after])),
           );
-          const held = identities(storageModels(documents()));
-          for (const id of held)
-            readiness.set(id, getRuntimeModelReadiness(id));
-          restore = ObjectRegistry.checkpointRegistrations(held);
-          await activate(doc, storageModels(documents()), db, false);
+          checkpoint();
+          const changed = bootChanges();
+          await activate(doc, active(storage(), doc), changed, db, false);
+          await verifyStorage(
+            db,
+            changedModels(undefined, active(storage(), doc)),
+            changed,
+          );
         });
-      } catch (error) {
-        // The surrounding transaction can fail while committing, after the
-        // migration callback itself succeeded. Restore that boundary too.
-        restore();
-        for (const [id, value] of readiness)
-          setRuntimeModelReadiness([id], value);
-        throw error;
+      } else {
+        await journalInitial(store, options.db);
+        await validate(
+          doc,
+          storageModels(history.flatMap((row) => [row.before, row.after])),
+        );
+        checkpoint();
+        const changed = bootChanges();
+        await activate(doc, active(storage(), doc), changed, options.db, false);
+        await verifyStorage(
+          options.db,
+          changedModels(undefined, active(storage(), doc)),
+          changed,
+        );
       }
-      await publish();
-    } else {
-      await validate(
-        doc,
-        storageModels(history.flatMap((row) => [row.before, row.after])),
-      );
-      await activate(doc, storageModels(documents()));
+    } catch (error) {
+      // The surrounding transaction can fail while committing, after the
+      // migration callback itself succeeded. Restore that boundary too.
+      restore();
+      restoreOwnership();
+      for (const [id, value] of readiness)
+        setRuntimeModelReadiness([id], value);
+      // Models whose storage is incomplete stay closed until the operator
+      // migration runs and the editor reopens.
+      if (storageMismatch.length)
+        setRuntimeModelReadiness(
+          storageMismatch.flatMap((id) => [
+            id,
+            `${options.packageName}:${id.split(':').at(-1)}`,
+          ]),
+          false,
+        );
+      throw recoveryHint(error);
+    }
+    try {
+      const tip = history.at(-1);
+      const won =
+        tip?.status === 'applied' &&
+        !tip.abandoned &&
+        uninstalledWinners().get(journal) === tip.revision
+          ? (await findRow(tip.requestId))?.receipt
+          : undefined;
+      if (won)
+        await installWinner({
+          revision: won.revision,
+          cookbook: won.cookbook,
+          manifest: won.manifest,
+          webDefinitions: won.webDefinitions,
+        });
+      else await publish();
+    } catch (error) {
+      throw recoveryHint(error);
     }
     if (history.at(-1)?.status === 'pending') {
       const pending = history.at(-1)!;
@@ -764,18 +1566,112 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
         receipt,
         appOperationResult(pending.operation, receipt),
       );
-      history = await store.read();
+      const row = await completedRow(pending.requestId, pending.revision);
+      await adoptWinner(row, receipt);
+      history = [
+        ...history.slice(0, -1),
+        {
+          ...pending,
+          status: 'applied',
+          elapsedMs: row.elapsedMs ?? receipt.elapsedMs,
+        },
+      ];
     }
-    release(storageModels(documents()));
+    release(active(storage(), doc));
   });
+
+  /**
+   * Undo and import can bring back recipes a lazy host has not loaded. With a
+   * coordinator, activate the models the restored cookbook covers first, so
+   * they are loaded, migrated and ready before the edit applies. Admission
+   * comes first: a refused caller or a stale request loads nothing, and a
+   * retry reaches its stored receipt without activation. This runs outside
+   * the activation queue the edit itself takes (the coordinator queues there).
+   */
+  async function activateRestored(
+    edit: AppModelEdit,
+    context: AppModelEditContext,
+    activation = options.activation,
+  ) {
+    if (!activation || (edit.type !== 'undo' && edit.type !== 'import')) return;
+    // Another journal's registrations refuse the edit: load nothing for it.
+    assertSoleEditor();
+    if (
+      context.tenantId !== options.tenantId ||
+      !context.actor ||
+      !context.requestId ||
+      !(await options.authorize(context))
+    )
+      throw new Error('MODEL_EDIT_FORBIDDEN');
+    if (await findRow(context.requestId)) return;
+    // The durable tip, not only this process's view: another process's
+    // revision means the edit is refused, so nothing is loaded for it.
+    const tip = await latestRow();
+    if (
+      !ready ||
+      context.expectedRevision !== revision ||
+      tip?.status === 'pending' ||
+      (tip?.revision ?? 0) !== revision
+    )
+      return;
+    let target: Cookbook | undefined;
+    if (edit.type === 'import') {
+      const result = validateCookbook(edit.cookbook);
+      if (!result.ok) return; // the edit refuses it
+      target = result.cookbook;
+    } else {
+      const undone = new Set(
+        history.flatMap((row) =>
+          row.undoes === undefined || row.abandoned ? [] : [row.undoes],
+        ),
+      );
+      target = history.findLast(
+        (row) =>
+          row.status === 'applied' &&
+          !row.abandoned &&
+          row.undoes === undefined &&
+          !undone.has(row.revision),
+      )?.before;
+    }
+    if (!target) return;
+    const models = target.models;
+    const lists = new Set(
+      Object.keys(models?.lists ?? {}).map(
+        (name) => `${models?.packageName}:${name}`,
+      ),
+    );
+    try {
+      await activation.activate(
+        [...coveredModels(options.catalog, target)].filter(
+          (id) => !lists.has(id),
+        ),
+      );
+    } catch (error) {
+      throw new Error(
+        `MODEL_ACTIVATION_FAILED: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
 
   async function apply(
     edit: AppModelEdit,
     context: AppModelEditContext,
+    /**
+     * `activation`: a caller's coordinator (the tool service) for
+     * `import`/`undo` when the editor has none, used only after the editor's
+     * own admission. `admit`: the caller's own checks, run inside the
+     * serialized edit after any activation and before anything is
+     * journalled; a throw refuses the edit.
+     */
+    applyOptions: {
+      activation?: Pick<ActivationCoordinator, 'activate'>;
+      admit?: () => void | Promise<void>;
+    } = {},
   ): Promise<AppModelEditReceipt> {
     edit = structuredClone(edit);
     context = structuredClone(context);
     const execute = async () => {
+      assertSoleEditor();
       if (
         context.tenantId !== options.tenantId ||
         !context.actor ||
@@ -788,7 +1684,7 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
         (!store.supportsDurableOperations || !context.operation.result)
       )
         throw new Error('MODEL_DURABLE_OPERATIONS_UNSUPPORTED');
-      const latest = await store.read();
+      const tip = await latestRow();
       const print = JSON.stringify(edit);
       if ('model' in edit) {
         const name = edit.model.split(':').at(-1)!;
@@ -804,13 +1700,17 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
         );
         edit = { ...edit, model: listName ?? upstream ?? edit.model };
       }
-      const replay = latest.find((row) => row.requestId === context.requestId);
+      const replay = await findRow(context.requestId);
       if (replay) {
         if (replay.command !== print || replay.actor !== context.actor)
           throw new Error('MODEL_REQUEST_ID_REUSED');
         if (replay.status === 'pending')
           throw new Error(
             'MODEL_ACTIVATION_PENDING: reopen the editor to recover',
+          );
+        if (replay.abandoned)
+          throw new Error(
+            `MODEL_REVISION_ABANDONED: revision ${replay.revision} was abandoned and never applied`,
           );
         if (context.operation) {
           const recovered = await recover(context);
@@ -828,13 +1728,17 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
           replayed: true,
         };
       }
-      if (!ready || latest.at(-1)?.status === 'pending')
+      if (!ready || tip?.status === 'pending')
         throw new Error('MODEL_ACTIVATION_PENDING');
       if (
         context.expectedRevision !== revision ||
-        (latest.at(-1)?.revision ?? 0) !== revision
+        (tip?.revision ?? 0) !== revision
       )
         throw new Error('MODEL_EDIT_CONFLICT');
+      await applyOptions.admit?.();
+      // From here the in-memory journal equals the durable one: another
+      // process's revision would have moved the tip.
+      const latest = history;
       const before = structuredClone(doc);
       let next = structuredClone(doc);
       next.models ??= {
@@ -908,7 +1812,7 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
           }
           break;
         case 'add_field': {
-          if (!isCustomIdentifier(edit.name))
+          if (!isCustomIdentifier(edit.name) || isReservedFieldName(edit.name))
             throw new Error(
               `FIELD_NAME_RESERVED: ${edit.name}; choose a descriptive name such as sortOrder, groupName, fromDate or toDate (unquoted SDK columns, sdk#1513)`,
             );
@@ -986,17 +1890,20 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
         case 'undo': {
           const undone = new Set(
             latest.flatMap((row) =>
-              row.undoes === undefined ? [] : [row.undoes],
+              row.undoes === undefined || row.abandoned ? [] : [row.undoes],
             ),
           );
           const previous = latest.findLast(
             (row) =>
               row.status === 'applied' &&
+              !row.abandoned &&
               row.undoes === undefined &&
               !undone.has(row.revision),
           );
           if (!previous) throw new Error('MODEL_UNDO_EMPTY');
-          next = structuredClone(previous.before);
+          next = structuredClone(
+            repairLayoutLabels(previous.before) as Cookbook,
+          );
           undoes = previous.revision;
           break;
         }
@@ -1004,8 +1911,17 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
           throw new Error('UNKNOWN_MODEL_EDIT');
       }
       next = checked(next);
-      const archived = storageModels(documents());
-      await validate(next, archived);
+      // Project the candidate's navigation before anything is journalled: a
+      // document it cannot render must not become a pending revision.
+      try {
+        buildNav(cookbookModelCatalog(options.catalog, next.models), next);
+      } catch (error) {
+        throw new Error(
+          `INVALID_MODEL_EDIT: the cookbook cannot be projected (${error instanceof Error ? error.message : String(error)})`,
+        );
+      }
+      const archived = storage();
+      await validate(next, archived, options.db);
       // A removed/undone field keeps its stored definition, hidden through the existing policy rail.
       for (const [model, fields] of Object.entries(archived?.fields ?? {}))
         for (const name of Object.entries(fields).flatMap(([name, field]) => [
@@ -1069,40 +1985,66 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
           ? { operation: structuredClone(context.operation) }
           : {}),
       };
+      const previous = { history, revision, doc, ready };
+      const union = storageModels([next], storage());
+      const all = active(union, next);
+      const changed = changedModels(active(archived, doc), all);
+      const held = identities(all);
+      const readiness = new Map(
+        held.map((id) => [id, getRuntimeModelReadiness(id)]),
+      );
+      let restore = () => {};
+      const restoreOwnership = checkpointOwnership();
+      const rollback = () => {
+        restore();
+        restoreOwnership();
+        ({ history, revision, doc, ready } = previous);
+        for (const [id, value] of readiness)
+          setRuntimeModelReadiness([id], value);
+      };
       if (engine === 'postgres') {
-        const previous = { history, revision, doc, ready };
-        const all = storageModels([...documents(), next]);
-        const held = identities(all);
-        const readiness = new Map(
-          held.map((id) => [id, getRuntimeModelReadiness(id)]),
-        );
-        let restore = () => {};
         try {
           await store.transaction!(async (scoped, db) => {
+            // Check new tables again under the shared lock every journal's
+            // edit takes, so two processes on different journals cannot both
+            // claim a table that was absent when they validated.
+            await validate(next, archived, db);
             // Claim before touching the registry. The lock and this CAS fence
             // every process, including two editors created at the same revision.
             await scoped.append(change, revision);
             restore = ObjectRegistry.checkpointRegistrations(held);
             history = [...latest, change];
             revision = change.revision;
-            await activate(next, all, db, false);
+            await activate(next, all, changed, db, false);
           });
         } catch (error) {
-          restore();
-          ({ history, revision, doc, ready } = previous);
-          for (const [id, value] of readiness)
-            setRuntimeModelReadiness([id], value);
+          rollback();
           throw error;
         }
-        // Schema + pending history are durable before any external publication.
-        // A callback failure stays pending and closed, and boot retries it.
-        await publish();
       } else {
-        await store.append(change, revision);
+        // Register and plan BEFORE journalling: a refused migration (manual
+        // drift on an edited table) leaves no pending revision behind.
+        let tables: Set<string>;
+        try {
+          restore = ObjectRegistry.checkpointRegistrations(held);
+          register(all);
+          tables = tablesOf(changed);
+          await plan(options.db, tables);
+          await store.append(change, revision);
+        } catch (error) {
+          rollback();
+          throw error;
+        }
         history = [...latest, change];
         revision = change.revision;
-        await activate(next, storageModels([...documents(), next]));
+        // From here a failure stays pending and closed; reopen recovers it.
+        await migrate(options.db, tables);
+        doc = structuredClone(next);
       }
+      storageMemo = { history, doc, value: union };
+      // Schema + pending history are durable before any external publication.
+      // A callback failure stays pending and closed, and boot retries it.
+      await publish();
       const elapsedMs = performance.now() - began;
       const receipt = receiptFor(projection(), edit, elapsedMs);
       await store.complete(
@@ -1111,9 +2053,23 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
         receipt,
         appOperationResult(change.operation, receipt),
       );
-      history = await store.read();
-      release(storageModels(documents()));
-      const result = snapshot();
+      const row = await completedRow(change.requestId, change.revision);
+      // A first completion elsewhere wins: install it before readiness opens,
+      // then notify and return it.
+      const winner = await adoptWinner(row, receipt);
+      const won = winner ? row.receipt : undefined;
+      history = history.map((entry) =>
+        entry.revision === change.revision
+          ? {
+              ...entry,
+              status: 'applied' as const,
+              elapsedMs: row.elapsedMs ?? elapsedMs,
+            }
+          : entry,
+      );
+      storageMemo = { history, doc, value: union };
+      release(active(storage(), doc));
+      const result: AppModelSnapshot = snapshot();
       for (const listener of listeners) {
         try {
           listener(result);
@@ -1121,12 +2077,16 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
           /* Transport subscriber cannot undo a committed revision. */
         }
       }
-      return structuredClone(
-        history.find((row) => row.revision === change.revision)?.receipt ??
-          receipt,
-      );
+      return structuredClone(won ?? receipt);
     };
-    const operation = tail.then(() => withRuntimeSchemaActivation(execute));
+    const operation = tail.then(async () => {
+      await activateRestored(
+        edit,
+        context,
+        options.activation ?? applyOptions.activation,
+      );
+      return withRuntimeSchemaActivation(execute);
+    });
     tail = operation.then(
       () => {},
       () => {},

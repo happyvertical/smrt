@@ -5,11 +5,13 @@ import {
   ObjectRegistry,
   withCallerOwnedDatabaseTransaction,
 } from '@happyvertical/smrt-core';
+import { dialectOf, tableColumns } from './db/index.ts';
 import {
   type AppDefinition,
   builtInFields,
   classNameFor,
   coerceValue,
+  type FieldDef,
   snake,
   tableFor,
   USER_PKG,
@@ -56,7 +58,7 @@ export function assertJournalBounds(rows: Row[]) {
 export async function assertStoredJournalBounds(db: any, version: number) {
   const count = (
     await db.query(
-      "SELECT SUM(CASE WHEN col = '$row' THEN 1 ELSE 0 END) AS n, SUM(length(CAST(value AS BLOB))) AS bytes FROM _archive WHERE version = ? AND col IN ('$row', '$after', '$deleted')",
+      `SELECT SUM(CASE WHEN col = '$row' THEN 1 ELSE 0 END) AS n, SUM(${dialectOf(db).byteLength('value')}) AS bytes FROM _archive WHERE version = ? AND col IN ('$row', '$after', '$deleted')`,
       [version],
     )
   ).rows[0];
@@ -107,8 +109,35 @@ export function stored(value: unknown): unknown {
         ? JSON.stringify(value)
         : value;
 }
-const same = (a: unknown, b: unknown) => (a ?? null) === (b ?? null);
+// Compared in the stored form: PostgreSQL hands back Dates, booleans and
+// parsed JSON where SQLite has text and numbers, and a journal holds JSON.
+// A server's BIGINT may arrive as digits: 5 and "5" are the same stored value.
+export const same = (a: unknown, b: unknown) => {
+  const x = stored(a) ?? null;
+  const y = stored(b) ?? null;
+  if (x === y) return true;
+  return (
+    (typeof x === 'number' && typeof y === 'string' && String(x) === y) ||
+    (typeof y === 'number' && typeof x === 'string' && String(y) === x)
+  );
+};
 const keyFor = (values: unknown[]) => JSON.stringify(values);
+/**
+ * A value in the one form existing rows and incoming rows are matched in: the
+ * stored form, with an integer or money field's digits (a server's BIGINT) as
+ * a number. Both sides of every key and lookup go through it.
+ */
+export function matchValue(fd: FieldDef | undefined, value: unknown): unknown {
+  const v = stored(value);
+  if (
+    typeof v === 'string' &&
+    (fd?.type === 'integer' || fd?.type === 'money') &&
+    /^-?\d+$/.test(v) &&
+    Number.isSafeInteger(Number(v))
+  )
+    return Number(v);
+  return v;
+}
 
 /** Stable per-command ids: later draft commands can refer to loaded rows. */
 export function replayId(seed: string, key: string): string {
@@ -174,9 +203,10 @@ export async function prepareLoad(
       lookups.set(fd.ref, await rawRows(def, db, fd.ref));
     const by = cmd.references?.[field]?.by;
     const map = new Map<string, string[]>();
+    const byField = by ? fieldsOf(def, fd.ref)[by] : undefined;
     for (const row of lookups.get(fd.ref) ?? []) {
       const value = by ? row[snake(by)] : row.id;
-      const key = keyFor([value]);
+      const key = keyFor([matchValue(byField, value)]);
       const ids = map.get(key) ?? [];
       ids.push(String(row.id));
       map.set(key, ids);
@@ -187,7 +217,9 @@ export async function prepareLoad(
     cmd.mode === 'upsert' ? await rawRows(def, db, cmd.model) : [];
   const keys = new Map<string, Row[]>();
   for (const row of existing) {
-    const key = keyFor((cmd.key ?? []).map((k) => row[snake(k)]));
+    const key = keyFor(
+      (cmd.key ?? []).map((k) => matchValue(fields[k], row[snake(k)])),
+    );
     const group = keys.get(key) ?? [];
     group.push(row);
     keys.set(key, group);
@@ -232,8 +264,16 @@ export async function prepareLoad(
           continue;
         }
         const ids =
-          referenceMaps.get(field)?.get(keyFor([stored(converted.value)])) ??
-          [];
+          referenceMaps
+            .get(field)
+            ?.get(
+              keyFor([
+                matchValue(
+                  fieldsOf(def, lookup.model)[lookup.by],
+                  converted.value,
+                ),
+              ]),
+            ) ?? [];
         if (ids.length !== 1) {
           problem(
             field,
@@ -266,7 +306,9 @@ export async function prepareLoad(
       for (const key of cmd.key ?? [])
         if (data[key] == null || data[key] === '')
           problem(key, 'key value is required');
-      const key = keyFor((cmd.key ?? []).map((k) => stored(data[k])));
+      const key = keyFor(
+        (cmd.key ?? []).map((k) => matchValue(fields[k], data[k])),
+      );
       if (seenKeys.has(key))
         problem((cmd.key ?? []).join(','), 'duplicate key in load');
       seenKeys.add(key);
@@ -310,11 +352,10 @@ export async function prepareLoad(
   }
   // Only schema metadata and affected row originals enter the exact journal budget.
   // Generated SDK values are represented by fixed-size hashes, never rehearsed.
-  const columns = (
-    await db.query('SELECT name, hidden FROM pragma_table_xinfo(?)', [
-      tableFor(cmd.model, def.models[cmd.model]),
-    ])
-  ).rows as { name: string; hidden: number }[];
+  const columns = await tableColumns(
+    db,
+    tableFor(cmd.model, def.models[cmd.model]),
+  );
   let journalBytes = 0;
   for (const write of writes) {
     journalBytes += Buffer.byteLength(JSON.stringify(write.before ?? null));
@@ -343,12 +384,12 @@ const valueHash = (value: unknown) =>
     .digest('base64');
 function loadPostimage(
   write: { before?: Row },
-  columns: { name: string; hidden: number }[],
+  columns: { name: string; generated: boolean }[],
   after?: Row,
 ): string {
   const hashes: Record<string, string> = {};
-  for (const { name, hidden } of columns) {
-    if (write.before && hidden > 1) continue;
+  for (const { name, generated } of columns) {
+    if (write.before && generated) continue;
     hashes[name] = after ? valueHash(after[name]) : '0'.repeat(44);
   }
   return JSON.stringify({ $load: 1, hashes } satisfies LoadPostimage);
@@ -511,7 +552,7 @@ export async function applyLoad(
   // The preparation arithmetic and persisted representation must agree exactly.
   const actual = (
     await db.query(
-      "SELECT SUM(length(CAST(value AS BLOB))) AS bytes FROM _archive WHERE version = ? AND col IN ('$row', '$after')",
+      `SELECT SUM(${dialectOf(db).byteLength('value')}) AS bytes FROM _archive WHERE version = ? AND col IN ('$row', '$after')`,
       [version],
     )
   ).rows[0];
@@ -730,12 +771,9 @@ export async function undoRows(
     let generated = generatedByTable.get(table);
     if (!generated) {
       generated = new Set<string>(
-        (
-          await db.query(
-            'SELECT name FROM pragma_table_xinfo(?) WHERE hidden > 1',
-            [table],
-          )
-        ).rows.map((r: Row) => String(r.name)),
+        (await tableColumns(db, table))
+          .filter((c) => c.generated)
+          .map((c) => c.name),
       );
       generatedByTable.set(table, generated);
     }

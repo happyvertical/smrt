@@ -12,7 +12,7 @@ does not authorize an agent to merge or apply live rules, permissions or flags.
 Keep the merge queue quiescent throughout bootstrap: stop new enqueues, let
 existing groups finish, and pause scheduled/manual release dispatch. Preserve
 all existing branch checks, review requirements and queue settings except the
-explicit one-entry constraint below. Do not enable the required context before
+required Release Admission context. Do not enable the required context before
 the controller code exists on `main`.
 
 1. Obtain normal review and merge the code through the existing protections.
@@ -61,9 +61,8 @@ the controller code exists on `main`.
 5. While the queue is still quiescent, add the App-bound **Release Admission**
    required status on `main` using the additive ruleset below. Preserve every
    existing required check, including **Required CI** and the repository's
-   PostgreSQL protection. Keep the queue limited to
-   `max_entries_to_build: 1` and `max_entries_to_merge: 1`; update those fields
-   in the existing queue rule without replacing its other parameters.
+   PostgreSQL protection. Leave the existing queue rule as it is; any queue
+   width is supported (see "Batched merge queues" below).
 6. Set `CI_MERGE_QUEUE_ENABLED=true` and finally
    `CI_RELEASE_WINDOW_ENABLED=true`. Run **Release Admission → `reconcile`**,
    verify a healthy `open` state and App-issued statuses on current validated
@@ -74,12 +73,12 @@ the controller code exists on `main`.
 The controller's full `verifyFence()` reads private bypass actors directly with
 the verifier credential before closing and immediately before publication
 authorization enters `publishing`. It refuses missing/inactive protections, a context without App binding,
-non-App bypass actors, missing state-ref restrictions, a queue wider than one
-entry, or an unprotected/moved `main`. `close` also requires
+non-App bypass actors, missing state-ref restrictions, a missing merge queue rule,
+or an unprotected/moved `main`. `close` also requires
 `CI_MERGE_QUEUE_ENABLED=true`. A flag alone is insufficient readiness proof.
 Qualification's `assert-window` uses only the Actions read token. It checks live
-public rule structure (App-bound context, state-ref restrictions and one-entry
-queue), protected main, exact owner/attempt/source, qualifying phase and deadline.
+public rule structure (App-bound context, state-ref restrictions and merge queue
+present), protected main, exact owner/attempt/source, qualifying phase and deadline.
 It does not claim to see private bypass actors and cannot authorize publication.
 The separate authorization job repeats full private verification after all
 qualification and sealing, before any registry write. A missing verifier token or
@@ -344,3 +343,23 @@ Keep publication paused/fenced until repaired. Do not clear admission state,
 force-update its branch or disable a served required context. Creating additional
 audit infrastructure or changing organization-wide deploy-key policy requires its
 own scoped decision; neither is implicitly authorized by this credential.
+
+## Batched merge queues
+
+Queue width does not need to be one. Grants are issued per group head only while
+the window is open and only to a head whose parent is current `main`, so a group
+stacked on a still-building group is admitted after the one beneath it merges.
+`close` stops new grants, waits for every granted head to leave the queue (merged
+or removed), then revokes any live head that still carries an untracked success
+before reading `main` for the freeze. Groups that are building or waiting stay
+pending and cannot merge until the window reopens. `assertWindow` and
+`beginPublishing` still require `main` to equal the frozen snapshot, so a merge
+that slips past the freeze fails the release closed.
+
+Throughput note: one group (up to `max_entries_to_merge` PRs) is validated and
+merged as one head, so batching still amortizes one CI run across the group. A
+group stacked on a still-queued group is not admitted until the one beneath it
+merges, because admission requires the head's parent to be current `main`; it is
+then admitted by the next 10-minute reconcile. Concurrent builds therefore pipeline
+validation but not merges, and each stacked group can wait up to one reconcile
+interval. That is a latency cost, never a safety one.

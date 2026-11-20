@@ -8,6 +8,7 @@ import { createCookbookEngine } from '../cookbook/engine/engine.js';
 import {
   type AppModelEdit,
   createAppModelEditor,
+  migrateAppModelStorage,
 } from '../cookbook/model-editor.js';
 import {
   createAppModelHistory,
@@ -830,18 +831,20 @@ describe('durable app model editor', () => {
         },
       };
       const publish = vi.fn();
-      const open = () =>
-        createAppModelEditor({
-          db,
-          application: 'fixture-app',
-          tenantId: TENANT,
-          packageName: APP,
-          cookbook: initial,
-          catalog,
-          store,
-          authorize: () => true,
-          publish,
-        });
+      const options = {
+        db,
+        application: 'fixture-app',
+        tenantId: TENANT,
+        packageName: APP,
+        cookbook: initial,
+        catalog,
+        store,
+        authorize: () => true,
+        publish,
+      };
+      // Boot runs no DDL: the operator storage migration opens a startup
+      // cookbook that declares fields.
+      const open = () => migrateAppModelStorage(options);
       setRuntimeModelReadiness([CUSTOMER], true);
       expect(getRuntimeModelReadiness(`${APP}:Customer`)).toBeUndefined();
       const begin = db.beginTransaction!.bind(db);
