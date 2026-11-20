@@ -19,7 +19,12 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { ManifestBuilder } from '../../manifest/generator.js';
-import { resolveStandardCrudActions } from '../../vite-plugin/web-collections.js';
+import { selectApiClientEntries } from '../../vite-plugin/api-client-entries.js';
+import {
+  resolveCollectionItemObject,
+  resolveCollectionItemTypeName,
+  resolveStandardCrudActions,
+} from '../../vite-plugin/web-collections.js';
 import { ManifestGenerator } from '../manifest-generator.js';
 import type { ScanResult, SmartObjectDefinition } from '../types.js';
 
@@ -949,6 +954,41 @@ describe('a collection of a package model', () => {
     expect(collection?.extendsTypeArgQualified).toBe(`${VENDOR}:Account`);
     expect(collection?.collectionOf).toBe(`${VENDOR}:Account`);
     expect(crud(collection)).toEqual([]);
+  });
+
+  it('describes a collection of a package model with that model in the generated API client', async () => {
+    const root = await project({
+      providers: {
+        [VENDOR]: {
+          files: {
+            'src/Account.ts': `${CORE}\n@smrt({ api: false, tableName: 'vendor_accounts' })\nexport class Account extends SmrtObject {\n  secret = '';\n}\n`,
+          },
+        },
+      },
+      app: {
+        'src/Account.ts': `${CORE}\n@smrt({ tableName: 'app_accounts' })\nexport class Account extends SmrtObject {\n  appOnly = '';\n}\n`,
+        'src/VendorAccounts.ts': `${CORE}\nimport { Account } from '${VENDOR}';\n@smrt({ api: { include: ['archiveAll'] } })\nexport class VendorAccountCollection extends SmrtCollection<Account> {\n  async archiveAll(): Promise<void> {}\n}\n`,
+      },
+    });
+
+    const manifest = await build(root);
+    const collection = manifest.objects[`${APP}:VendorAccountCollection`];
+    const item = resolveCollectionItemObject(manifest, collection);
+    expect(item).not.toBe(manifest.objects[`${APP}:Account`]);
+    expect(resolveCollectionItemTypeName(manifest, collection)).toBe(
+      `${VENDOR}:Account`,
+    );
+    const appEntry = selectApiClientEntries(manifest).find(
+      (entry) => entry.obj === manifest.objects[`${APP}:Account`],
+    );
+    const entry = selectApiClientEntries(manifest).find(
+      (candidate) => candidate.obj === collection,
+    );
+    expect(appEntry?.dataInterfaceName).toBeDefined();
+    expect(entry?.customMethods).toEqual([
+      expect.objectContaining({ name: 'archiveAll' }),
+    ]);
+    expect(entry?.dataInterfaceName).not.toBe(appEntry?.dataInterfaceName);
   });
 
   // A collection's own type parameter names no class, however it is

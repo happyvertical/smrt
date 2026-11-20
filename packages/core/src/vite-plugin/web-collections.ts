@@ -746,10 +746,15 @@ function resolveCollectionItemReference(
 ): CollectionItemReference | undefined {
   const ancestry = collectionAncestry(manifest, obj);
   for (const collectionClass of ancestry) {
-    if (collectionClass.extendsTypeArg) {
+    // An item the scanner traced to a package export is that package's
+    // class: look it up by its qualified identity, never by the bare name a
+    // model of this package may share.
+    const itemName =
+      collectionClass.extendsTypeArgQualified || collectionClass.extendsTypeArg;
+    if (itemName) {
       return resolveCollectionItemCandidate(
         manifest,
-        collectionClass.extendsTypeArg,
+        itemName,
         collectionClass,
       );
     }
