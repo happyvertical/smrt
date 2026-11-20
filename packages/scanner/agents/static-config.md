@@ -165,7 +165,7 @@ imports map or a bundler config, and no class is ever matched by name:
 | Form | Proof | Recorded as |
 | --- | --- | --- |
 | A class declared in the same file | the file's own declarations | its name |
-| A named or default import whose relative specifier selects a scanned file that declares the class and exports it under its own name (`export class X`, `export default class X`, `class X` + `export { X }`) | the one file on disk among every candidate TypeScript may try (extension substitution, `.ts`/`.tsx`/`.d.ts`, directory `index`, `.js`/`.jsx`, a directory `package.json` that declares an entry; a trailing slash, `./Base/`, means the directory only). Two or more existing candidates are an error, since which one loads depends on the resolution mode, and so is a module-suffix variant beside a candidate (`Base.ios.ts` beside `Base.ts`); no tsconfig is read | the declaring class's name (`import { Account as Owner }` gives `Account`) |
+| A named or default import whose relative specifier selects a scanned file that declares the class and exports it under its own name (`export class X`, `export default class X`, `class X` + `export { X }`) | the one file on disk among every candidate TypeScript may try (extension substitution, `.ts`/`.tsx`/`.d.ts`, directory `index`, `.js`/`.jsx`, a directory `package.json` that declares an entry; a trailing slash, `./Base/`, means the directory only). Two or more existing candidates are an error, since which one loads depends on the resolution mode, and so is a platform module-suffix variant beside a candidate (`Base.ios.ts` beside `Base.ts`); no tsconfig is parsed | the declaring class's name (`import { Account as Owner }` gives `Account`) |
 | A framework base exported by `@happyvertical/smrt-core` (`SmrtReport`, `SmrtReportCollection` by `@happyvertical/smrt-reports`) | the package name; inside the framework package, its own sources | framework |
 | A named import or namespace member (`ns.X`, `ns['X']`) from `@scope/pkg` or `@scope/pkg/subpath`, where `@scope/pkg` is declared in `dependencies`, `peerDependencies`, `optionalDependencies` or `devDependencies` of the nearest `package.json` above the importing file and is not that package itself | the declaration; the copy the file loads is the copy the build root loads | `extendsQualified` / `relatedQualified` / `sourceQualified` / `extendsTypeArgQualified` = `@scope/pkg:X`, plus the full specifier (`extendsImportPath`, `relatedImportPath`, `sourceImportPath`, `extendsTypeArgImportPath`) |
 
@@ -175,7 +175,8 @@ does not declare the class; a file outside the scan, a declaration file or
 JavaScript; a relative specifier more than one file could satisfy (`Base.ts`
 beside `Base/index.ts` or `Base.js`, or a directory whose `package.json`
 declares `main`, `module`, `exports`, `types`, `typings` or `browser` beside
-its `index.ts`) or that a module-suffix variant sits beside (see below); a
+its `index.ts`) or that a platform module-suffix variant sits beside (see
+below); any import in a project whose root tsconfig mentions `moduleSuffixes`; a
 non-relative specifier that is not a declared scoped package (a `paths`
 alias, a `baseUrl` import, `#imports`, an unscoped package); the package's own
 name; a package's default export; an unimported global (`SmrtObject` without
@@ -202,12 +203,21 @@ must name the class the collection's type argument names. The type argument
 is proven like any reference, a type-only import (`import type { Item }`)
 included; only the class's own type parameter (`class C<T> extends
 SmrtCollection<T>`) and a type keyword (`any`, `unknown`, ...) name no item.
+For such a collection the item is the class a static `_itemClass` names,
+proven like a parent (it must be a model), and the parameter's spelling is
+never recorded: a parameter named `Account` never selects a model named
+`Account`. With no `_itemClass` the collection records no item name.
 
-A class named like a framework base is the framework base only when the
-framework package declares it; in any other package it is an ordinary class,
-recorded with this package's `extendsQualified`, and generation reads it as a
-model (a child of a package's own `SmrtCollection` is no collection and
-inherits its parent's exposure).
+**Framework base names are reserved.** A scanned class named `SmrtObject`,
+`SmrtClass`, `SmrtCollection`, `SmrtJunction`, `SmrtJunctionBase`,
+`SmrtHierarchical`, `SmrtPolymorphicAssociation`, `SmrtReport` or
+`SmrtReportCollection` is a scan error unless the framework package that
+owns the name declares it (`@happyvertical/smrt-core`;
+`@happyvertical/smrt-reports` for the report bases), decorated or not and
+whatever it extends. Manifest readers across the framework (permission
+catalogs, CLI and consumer registration, web routes, navigation) classify an
+entry by its parent's bare name. Generation still reads a qualified parent of
+such a name from an older provider manifest as a model, not as the base.
 
 A package export is confirmed at generation against that package's manifest,
 including that the specifier is the entry the manifest records the class at
@@ -222,12 +232,21 @@ under the name, or a named re-export from another package is an error. A file
 that declares its own class of a model's name and exports it as itself is
 another class at another path and is allowed.
 
-Generation confirms a package export by its exact name: an entry whose class
-name differs only in case (`ACCOUNT` for the model `Account`) confirms
-nothing. What a confirmed provider parent passes on from a third package (an
-ancestor it extends, a foreign-key target it declares) must come from the
-copy of that package the provider loads; a nested copy under the provider
-that differs from the project root's copy fails generation.
+Generation confirms a package export by its exact name: by the model's
+qualified name, or by its exact `exportName` (a model exported as
+`InvoiceRecord` under `@smrt({ name: 'Invoice' })` is confirmed for `import {
+InvoiceRecord }` and recorded as `@scope/pkg:Invoice`, the key the provider's
+manifest uses). An entry whose name differs only in case (`ACCOUNT` for the
+model `Account`) confirms nothing. Web generation takes a collection's
+package item by `extendsTypeArgQualified`, never by the bare name a local
+model may share. What a confirmed provider parent passes on from a third
+package (each ancestor it extends, at any depth, and each `@foreignKey` it
+declares that carries a constraint) must come from the copy of that package
+the provider loads; a nested copy under the provider that differs from the
+project root's copy fails generation. Two directories with the same package
+name, version and shipped manifest (pnpm peer variants) are one copy. A
+`@oneToMany`, a `@manyToMany`, a `@foreignKey` with `constraint: false` and
+the tenant column are not checked.
 
 **Trust boundary.** Declared dependencies are trusted not to publish a
 different class under one of their models' names. The provider-side check
@@ -236,20 +255,27 @@ names exposed through `export *` or cover models that declare their own
 `packageName`. A consumer cannot detect a provider that does these
 deliberately.
 
-**No tsconfig is read.** A module-suffix variant beside a file a relative
-specifier names is an error whatever the tsconfig says: `<base>.<word>.<ext>`
-with one dotted name before a TypeScript or JavaScript extension
-(`Base.ios.ts` or `Base.native.tsx` beside `Base.ts`, `index.native.ts` in a
-directory), since a `moduleSuffixes` setting or a bundler may load it
-instead. Names that are not module variants are exempt: `.test`, `.spec`,
-`.stories`, `.d`, `.config`, `.e2e`, `.bench`, `.mock`, `.fixture`,
-`.fixtures`. Import a variant by its full name (`./Base.ios`). A directory's
+**No tsconfig is parsed.** A platform module-suffix variant beside a file a
+relative specifier names is an error: `<base>.<suffix>.<ext>` where the
+suffix, one dotted word or several, is made only of `ios`, `android`,
+`native`, `web`, `windows`, `macos`, `electron`, `node`, `browser`
+(`Base.ios.ts`, `Base.native.ios.tsx`, `Base.web.d.ts` beside `Base.ts`,
+`index.native.ts` in a directory), since a platform `moduleSuffixes` setting
+or bundler may load it instead. Every other companion file
+(`Event.types.ts`, `Event.schema.ts`, `Event.server.ts`, `Event.svelte.ts`,
+`Event.utils.ts`, `Event.test.ts`, `Event.mock.ts`, `index.types.ts`) is not
+a variant. Import a variant by its full name (`./Base.ios`). A project whose
+root directory holds a `tsconfig*.json` that mentions `moduleSuffixes` (a
+text search; the file is not parsed) fails the scan as a whole: a suffix the
+scan does not know could select another file. Import files explicitly and
+remove the option. A tsconfig that inherits `moduleSuffixes` through
+`extends` from another directory or package is not seen. A directory's
 `package.json` counts as a candidate only when it declares an entry; one that
 only marks the module format chooses nothing.
 
 When looking for the package that declares a file's dependencies, a nested
-`package.json` is skipped only when it marks the module format: `type`,
-optionally with `sideEffects`, `browser`, `main` or `module`, and nothing
+`package.json` is skipped only when it marks the module format: `type` or
+`sideEffects`, optionally with `browser`, `main` or `module`, and nothing
 else. Any other key (a name, a dependency map, `private`, scripts) makes it
 the package that decides.
 
@@ -259,8 +285,9 @@ a barrel) is an error when a binding the superclass references reaches a
 framework base, or a model or collection of the scan, by identity: the
 framework package's export (also under an alias), a class declared in the
 same file, a namespace member, or a class a relative import could load
-(followed through re-exports). The class would otherwise be left out of the
-manifest. A superclass that only shares a model's spelling is not: an
+(followed through re-exports; a directory whose `package.json` declares an
+entry may load any scanned file below it). The class would otherwise be left
+out of the manifest. A superclass that only shares a model's spelling is not: an
 unimported global (`class ReminderEvent extends Event` beside a model
 `Event`), an import from an unscoped package or an alias, a string argument
 (`makeWidget('SmrtObject')`), or a member of an unrelated value (`extends
@@ -317,7 +344,9 @@ now stops the build. The message names the file, class and member.
 | A decorator value the scanner cannot read (an imported constant, a call, a `let`, `new Date()`, a function other than a field `validate`, `Infinity`/`NaN`, a hole in an array such as `[, true]`) | Inline it, or declare it as a same-file module `const` that nothing writes to |
 | A decorated field whose computed key is not a string literal (`@field() [KEY] = ''`) | Name the field with an identifier or a string literal key (`['secret']` is read like `secret`) |
 | A decorated field named `''`, `__proto__`, `constructor` or `prototype` | Rename the field |
-| An undecorated class over a superclass the scan cannot read or accept whose binding reaches a framework base or a model by identity (`extends Mixin(SmrtObject)`, `Mixin(FrameworkObject)` over an aliased import, `Mixin(models.Base)`, a collection imported through a barrel) | Import the parent from the file that declares it and extend it by name, or decorate the class |
+| An undecorated class over a superclass the scan cannot read or accept whose binding reaches a framework base or a model by identity (`extends Mixin(SmrtObject)`, `Mixin(FrameworkObject)` over an aliased import, `Mixin(models.Base)`, a collection imported through a barrel or through a directory whose `package.json` declares an entry) | Import the parent class from the file that declares it and write `extends Parent`. Decorating the class does not help: a decorated class's parent must be provable too |
+| A class named `SmrtObject`, `SmrtClass`, `SmrtCollection`, `SmrtJunction`, `SmrtJunctionBase`, `SmrtHierarchical`, `SmrtPolymorphicAssociation`, `SmrtReport` or `SmrtReportCollection` outside the framework package that owns the name | Rename the class; the framework reserves these names |
+| A `tsconfig*.json` in the project root that mentions `moduleSuffixes` | Import platform files explicitly (`./Base.ios`) and remove the option |
 | A constant shared by a manifest static property (`uiSlots` etc.) and any other reader | Give the static property its own constant |
 | A computed namespace decorator the scanner cannot name (`@(core[key])()`), including a key copied from an object member a module statement writes | Use `@core.smrt()` / `@(core['smrt'])()`, or a same-file string constant key nothing writes |
 | Two models of one class name in a package | Rename one |
@@ -325,9 +354,10 @@ now stops the build. The message names the file, class and member.
 | ... imported through a tsconfig `paths` alias, a `baseUrl` bare import, `$lib`, `@/`, `~`, `#imports` or a bundler alias | Import it by relative path from the declaring file |
 | ... from an unscoped package, or a scoped package not declared in the nearest `package.json` | Declare the package as a dependency (SMRT packages are scoped) |
 | ... through the package's own name | Import your own classes by relative path |
-| ... from a file the scan does not read, a declaration file or JavaScript (the one file the specifier names) | Add the file to the scan include, or move the class |
+| ... from a file the scan does not read, a declaration file or JavaScript (the one file the specifier names) | For a TypeScript source file, add it to the scan include. A declaration file or JavaScript is never read, even when included: import the TypeScript source file that declares the class, or move the class into one |
 | ... through a relative specifier that more than one file on disk could satisfy (a directory `package.json` that declares an entry counts) | Make the import name exactly one file: write its extension or the directory's index file (`./models/index`), and rename the other files if they still match |
-| ... through a relative specifier beside a module-suffix variant (`Base.ios.ts` beside or instead of `Base.ts`), whatever the tsconfig says | Import the variant by its full name (`./Base.ios`), or rename the files so no variant sits beside the file you import |
+| ... through a relative specifier beside a platform module-suffix variant (`Base.ios.ts` or `Base.native.ios.ts` beside or instead of `Base.ts`) | Import the variant by its full name (`./Base.ios`), or rename the files so no variant sits beside the file you import |
+| ... through a directory whose `package.json` declares an entry, as the only candidate (no `index` file beside it) | Import the file that declares the class (`./models/base`) |
 | ... from a package of which two different copies are installed (the importing file's and the build root's) | Install one copy |
 | ... from a scoped package that a nested unnamed `package.json` with keys other than the module format (`private`, `scripts`) does not declare | Declare the dependency in that `package.json` |
 | A collection whose type argument is a type-only import the proof does not accept, a name neither imported, declared nor a type parameter, or a type-only import whose `_itemClass` names another class | Import the item model from the file or package that declares it |
@@ -337,9 +367,10 @@ now stops the build. The message names the file, class and member.
 | A model whose chain passes through a scanned class that is not a model (a plain class, or an undecorated class over another package's class) | Decorate it with `@smrt({ abstract: true })`, or extend the model directly |
 | A relationship target, report source or collection item that is a plain class, or a stand-in for another package | Reference the model class |
 | A static `_itemClass` naming another class than `SmrtCollection<Item>` | Name the same model in both |
+| A collection over its own type parameter or a type keyword whose static `_itemClass` is not a class reference, cannot be proven like a parent, or is not a model | Make `_itemClass` name the item model class |
 | A module exporting another binding under a model's class name (`export { Other as Model }`, `export { Model } from '@other/pkg'`, a barrel re-exporting a plain class of the name) | Export each model under its own class name; rename the other class |
-| `CONFIG_UNRESOLVED_IMPORTED_PARENT`: a parent (or collection item) from another package whose manifest does not declare it under exactly that name (a model whose name differs only in case is not it), that is installed without a manifest, whose manifest records no `importPath`, that is imported from another entry than the one the manifest records, or that the package only re-exports; an `extendsQualified` that is not a qualified name; or an ancestor a provider parent passes on from a third package installed in two copies (the provider's and the root's) | Import it by its exact name from the package that declares it, at the entry its manifest records; build that package with this version so its manifest exists; declare it as a dependency; install one copy of a duplicated package |
-| `CONFIG_UNKNOWN_RELATIONSHIP_TARGET`: a relationship target or report source that names no model of the package or a loadable dependency, or a package export that cannot be confirmed (as above); a confirmed package foreign-key target whose provider manifest records no schema, or not the column the constraint references (the written one, else the primary key, else `id`; a camelCase written column is named in snake_case by the message); or a foreign-key target a provider parent passes on from a package installed in two copies. A field with `constraint: false` is exempt from the schema checks | Import the model class itself from its declaring package and entry, or name a declared model; rebuild the provider with this version so its manifest carries the schema; reference a column the target declares; install one copy of a duplicated package |
+| `CONFIG_UNRESOLVED_IMPORTED_PARENT`: a parent (or collection item) from another package whose manifest does not declare it under exactly that name (a model whose name differs only in case is not it), that is installed without a manifest, whose manifest records no `importPath`, that is imported from another entry than the one the manifest records, or that the package only re-exports; an `extendsQualified` that is not a qualified name; or an ancestor, at any depth of the provider chain, that a provider parent passes on from a third package installed in two different copies (the provider's and the root's, differing in path and in version or shipped manifest) | Import it by its exact name from the package that declares it, at the entry its manifest records; build that package with this version so its manifest exists; declare it as a dependency; install one copy of a duplicated package |
+| `CONFIG_UNKNOWN_RELATIONSHIP_TARGET`: a relationship target or report source that names no model of the package or a loadable dependency, or a package export that cannot be confirmed (as above); a confirmed package foreign-key target whose provider manifest records no schema, or not the column the constraint references (the written one, else the primary key, else `id`; a camelCase written column is named in snake_case by the message); or a constrained `@foreignKey` target a provider parent passes on from a package installed in two different copies. A field with `constraint: false` is exempt from the schema and copy checks; a `@oneToMany` or `@manyToMany` from the copy check | Import the model class itself from its declaring package and entry, or name a declared model; rebuild the provider with this version so its manifest carries the schema; reference a column the target declares; install one copy of a duplicated package |
 | `CONFIG_AMBIGUOUS_RELATIONSHIP_TARGET`: a target or report source imported from another package whose simple name another class of this package, or of a dependency generation reads, also declares (an app class that extends it and shares its table excepted) | Rename one of the classes, or reference this package's class |
 | An empty `@foreignKey('')` target | Name the related model |
 | Hand-built `RawDecorator` text that is not a literal where a literal is required | Pass a string literal, or the options object where the decorator takes one |
