@@ -180,7 +180,15 @@ function declaredCollectionItem(
     ([, object]) => object.packageName === collection.packageName,
   );
   if (own.length === 1) return own[0][0];
-  return own.length === 0 && named.length === 1 ? named[0][0] : undefined;
+  // A class of another package binds only when the collection's own generic
+  // names that same class: a simple name alone cannot tell the intended
+  // provider from an unrelated package's namesake, so it is refused and a
+  // qualified `collectionOf` is requested.
+  return own.length === 0 &&
+    named.length === 1 &&
+    collection.extendsTypeArg === named[0][0]
+    ? named[0][0]
+    : undefined;
 }
 
 interface OrderEdge {

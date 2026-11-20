@@ -867,6 +867,34 @@ describe('generated activation order', () => {
       );
     });
 
+    it("refuses a simple collectionOf whose only candidate is another package's class when the generic names a different one", () => {
+      const OTHER = '@activation/unrelated:Customer';
+      const { files, manifest } = project([
+        { key: OTHER },
+        { key: ACOL, collectionOf: OTHER },
+      ]);
+      // Legacy input: the item by its simple name; the intended provider's
+      // class is not in the inventory.
+      manifest.objects[ACOL].collectionOf = 'Customer';
+      manifest.objects[ACOL].extendsTypeArg = PROVIDER;
+      expect(() => generate(files, manifest)).toThrow(
+        `Activation cannot bind collection ${ACOL}`,
+      );
+    });
+
+    it("binds a simple collectionOf to another package's only class of that name when the generic names that class", () => {
+      const OTHER = '@activation/unrelated:Customer';
+      const { files, manifest } = project([
+        { key: OTHER },
+        { key: ACOL, collectionOf: OTHER },
+      ]);
+      manifest.objects[ACOL].collectionOf = 'Customer';
+      const generated = generate(files, manifest);
+      expect(generated.source).toContain(
+        `ObjectRegistry.registerCollection("${OTHER}", Reflect`,
+      );
+    });
+
     it('registers a collection after its item when the collection is listed first', () => {
       const { files, manifest } = project([
         {
