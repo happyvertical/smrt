@@ -393,4 +393,24 @@ describe('every collection call of a request is held to its admitted tenancy', (
       );
     });
   });
+
+  describe('point reads keep the caller filter (R2.8)', () => {
+    it("a point read with a type filter returns only rows of the caller's types", async () => {
+      const read = (filter: Record<string, unknown>) =>
+        inRequestScope(() =>
+          runInRequestTenancy(
+            {
+              model: keyOf(EffScopeShelf),
+              operation: 'get',
+              principal: anonymous,
+            },
+            () => shelves.get(filter),
+          ),
+        );
+      const book = keyOf(EffScopeBook);
+      expect(await read({ id: ROW.atlas, '_meta_type in': [book] })).toBeNull();
+      const found = await read({ id: ROW.bookOfA, '_meta_type in': [book] });
+      expect(found?.id).toBe(ROW.bookOfA);
+    });
+  });
 });

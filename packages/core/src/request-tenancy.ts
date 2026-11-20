@@ -56,7 +56,11 @@ import {
 } from './request-tenant-context';
 import { SmrtError } from './smrt-error.js';
 import { type AsyncContext, createAsyncContext } from './utils/async-context';
-import { resolveWhereKey, whereColumnName } from './where-keys';
+import {
+  effectiveWhereOperator,
+  resolveWhereKey,
+  whereColumnName,
+} from './where-keys';
 
 // ─── Policy source ─────────────────────────────────────────────────────────
 
@@ -1147,12 +1151,50 @@ function familyPointFilter(
       (type) => !admitted.has(type),
     ),
   );
-  const callerOutside = base['_meta_type not in'];
-  if (Array.isArray(callerOutside)) {
-    for (const type of callerOutside) outside.add(type as string);
+  // The caller's own type conditions are kept as a conjunction: its `in`
+  // list is intersected with the admitted types (an empty intersection
+  // selects nothing: every type it names is also excluded), its `not in`
+  // list is added to the exclusions. Matched by resolved column, so any
+  // spelling of `_meta_type` counts.
+  const filter: Record<string, unknown> = {};
+  let callerIn: unknown[] | undefined;
+  for (const [key, value] of Object.entries(base)) {
+    const resolved = resolveWhereKey(key);
+    const operator = effectiveWhereOperator(
+      resolved.operator.toLowerCase(),
+      value,
+    );
+    if (resolved.column === '_meta_type' && Array.isArray(value)) {
+      if (operator === 'in') {
+        callerIn = callerIn
+          ? callerIn.filter((type) => value.includes(type))
+          : [...value];
+        continue;
+      }
+      if (operator === 'not in') {
+        for (const type of value) outside.add(type as string);
+        continue;
+      }
+    }
+    filter[key] = value;
+  }
+  let types: unknown[] = [...admitted];
+  if (callerIn) {
+    const both = callerIn.filter((type) => admitted.has(type as string));
+    if (both.length > 0) {
+      types = both;
+    } else if (callerIn.length > 0) {
+      types = callerIn;
+      for (const type of callerIn) outside.add(type as string);
+    } else {
+      // An empty caller list matches no type.
+      types = [t.family as string];
+      outside.add(t.family as string);
+    }
   }
   return {
-    '_meta_type in': [...admitted],
+    ...filter,
+    '_meta_type in': types,
     ...(outside.size > 0 ? { '_meta_type not in': [...outside] } : {}),
   };
 }
@@ -1207,8 +1249,7 @@ function createRequestTenancyInterceptor(): CollectionInterceptor {
           ? resolveGetStringFilter(filter)
           : { ...filter };
       return {
-        ...base,
-        ...(family ? familyPointFilter(t, base) : {}),
+        ...(family ? familyPointFilter(t, base) : base),
         ...(scope ?? {}),
       };
     },
