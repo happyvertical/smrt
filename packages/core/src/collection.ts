@@ -51,6 +51,7 @@ import {
   MAX_LIST_LIMIT,
   QueryBoundsError,
   QueryOrderByError,
+  UNBOUNDED_LIMIT_SQL,
 } from './query-bounds';
 import { ObjectRegistry } from './registry';
 import { getRegistryGeneration } from './registry/generation.js';
@@ -2644,10 +2645,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     }
     if (boundedOffset !== undefined) {
       if (boundedLimit === undefined) {
-        // SQLite requires LIMIT before OFFSET. SQLite uses -1 for an
-        // unlimited limit; DuckDB and PostgreSQL use the standard LIMIT ALL.
-        limitOffsetSql +=
-          this.getDatabaseEngine() === 'sqlite' ? ' LIMIT -1' : ' LIMIT ALL';
+        limitOffsetSql += UNBOUNDED_LIMIT_SQL;
       }
       limitOffsetSql += ` OFFSET $${nextParameter++}`;
       limitOffsetValues.push(boundedOffset);
@@ -3654,11 +3652,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
 
     if (boundedOffset !== undefined) {
       if (boundedLimit === undefined) {
-        // SQLite requires LIMIT before OFFSET. The largest signed 64-bit
-        // value means "no limit" on SQLite, DuckDB and PostgreSQL alike, so it
-        // needs no engine detection (an in-process PostgreSQL handle reports
-        // no engine, and PostgreSQL rejects `LIMIT -1`).
-        limitOffsetSql += ' LIMIT 9223372036854775807';
+        limitOffsetSql += UNBOUNDED_LIMIT_SQL;
       }
       limitOffsetSql += ` OFFSET $${paramIndex++}`;
       limitOffsetValues.push(boundedOffset);

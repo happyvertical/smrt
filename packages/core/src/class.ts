@@ -137,6 +137,7 @@ import {
   applyPostgresRuntimeTimeouts,
   resolveRuntimePoolDbid,
 } from './postgres-timeouts.js';
+import { UNBOUNDED_LIMIT_SQL } from './query-bounds.js';
 import { detectEngine } from './schema/ddl/index.js';
 import { SignalBus } from './signals/bus.js';
 import {
@@ -2814,9 +2815,7 @@ export class SmrtClass {
 
     if (options.offset !== undefined) {
       if (options.limit === undefined) {
-        // SQLite requires LIMIT before OFFSET. The largest signed 64-bit
-        // value means "no limit" on every supported engine.
-        sql += ' LIMIT 9223372036854775807';
+        sql += UNBOUNDED_LIMIT_SQL;
       }
       sql += ` OFFSET $${paramIndex++}`;
       params.push(options.offset);
