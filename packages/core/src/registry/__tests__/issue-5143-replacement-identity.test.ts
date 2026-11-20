@@ -104,6 +104,47 @@ describe('an eager run: every decorator before any generated registration', () =
         packageName: PROVIDER,
         tableName: 'roots',
       }),
+    // The provider's generated registration: each class with its own
+    // manifest entry, as the generated shim runs it.
+    generated: () => {
+      for (const [ctor, name, parent] of [
+        [Root, 'Root', undefined],
+        [Customer, 'Customer', ROOT],
+      ] as const) {
+        const key = `${PROVIDER}:${name}`;
+        ObjectRegistry.register(ctor, {
+          name,
+          packageName: PROVIDER,
+          tableName: 'roots',
+          _manifestKey: key,
+          _manifest: {
+            version: '1',
+            timestamp: 0,
+            packageName: PROVIDER,
+            objects: {
+              [key]: {
+                name: name.toLowerCase(),
+                collection: 'roots',
+                className: name,
+                qualifiedName: key,
+                packageName: PROVIDER,
+                filePath: `src/models/${name.toLowerCase()}.ts`,
+                ...(parent
+                  ? { extends: 'Root', extendsQualified: parent }
+                  : {}),
+                fields: { title: { type: 'text', _meta: {} } },
+                methods: {},
+                decoratorConfig: {
+                  tableName: 'roots',
+                  ...(parent ? {} : { tableStrategy: 'sti' }),
+                },
+                schema: { tableName: 'roots', ddl: '', columns: {} },
+              } as never,
+            },
+          },
+        });
+      }
+    },
   });
   const keyed = (ctor: typeof SmrtObject) =>
     ObjectRegistry.register(ctor, {
@@ -152,8 +193,7 @@ describe('an eager run: every decorator before any generated registration', () =
     // Every decorator runs first: the app class is live under `Root`.
     smrt({ replaceParent: true, packageName: APP })(AppRoot);
     // The provider's generated registration then runs before the app's.
-    provider.root();
-    provider.customer();
+    provider.generated();
     expect(ObjectRegistry.getClass(ROOT)?.constructor).toBe(Root);
     keyed(AppRoot);
     expect(ObjectRegistry.getClass(ROOT)?.constructor).toBe(Root);
@@ -178,7 +218,7 @@ describe('an eager run: every decorator before any generated registration', () =
     }
     Object.defineProperty(AppCustomer, 'name', { value: 'Customer' });
     smrt({ replaceParent: true, packageName: APP })(AppCustomer);
-    provider.root();
+    provider.generated();
     keyed(AppCustomer);
     expect(ObjectRegistry.getClass(ROOT)?.constructor).toBe(Root);
     expect(ObjectRegistry.getClass(CUSTOMER)?.constructor).toBe(AppCustomer);
