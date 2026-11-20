@@ -705,7 +705,14 @@ outside SMRT, may hold such rows. Backfill them with the base's key
 (`UPDATE <table> SET _meta_type = '<base key>' WHERE _meta_type IS NULL`)
 before upgrading. The same holds for a collection read inside a request of an
 STI family other than the route's (for example in a custom action): a base
-never serves rows of a subtype whose tenancy differs from its own. A subtype of
+never serves rows of a subtype whose tenancy differs from its own. Writes
+inside a request follow the row's type, not only the class written through: a
+save or delete whose stored row, or whose instance `_meta_type`, names a type
+with other tenancy than that class is refused with `403
+TENANT_MEMBER_EXCLUDED`, and so is one whose stored row belongs to another
+tenant than the request's, whatever owner the instance carries (a new row
+taking the id of such a row is refused as a taken id). Write those rows
+through their own model, or from a system context. A subtype of
 equal tenancy is served through its base only
 where it is served on its own (switched on for the tenant, readable by the
 caller, its `api.principalContext` requirement met, on an MCP server's model

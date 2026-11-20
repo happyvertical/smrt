@@ -194,7 +194,16 @@ rule of `src/request-actor.ts`. Per request (per sync item, per tool call):
    that has members is restricted to that family's types of equal tenancy
    to the model queried (resolved for the same actor; a system actor reads
    every type), so an unrelated unscoped base never serves rows of a
-   tenant-scoped member. Code that enters a system context inside
+   tenant-scoped member. Every save and delete of an STI model (any family)
+   is also decided under the policy of the row's stored type (read by id
+   where the family has members) and of the instance's `_meta_type`: that
+   type's write gate applies, a type whose policy differs from the class
+   written through is refused, and so is a stored owner other than the
+   acting tenant under the class's policy (`TENANT_MEMBER_EXCLUDED`; a new row taking the
+   id of such a row gets the insert's unique-constraint error, so a hidden
+   row reads as a taken id), because the owner is stamped and checked under
+   the class's policy only. A system actor writes every type. Code that
+   enters a system context inside
    the request acts as the system, and code that enters a tenant context in
    a request with no tenant acts in that tenant (each call is held to the
    context active when it runs), except under a read grant, which no context

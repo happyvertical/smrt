@@ -42,6 +42,7 @@
  */
 
 import { resolveDispatchTenantScope } from './dispatch/tenant-resolver.js';
+import { ValidationError } from './errors';
 import { resolveReadCacheControl } from './generators/read-cache-control.js';
 import {
   type CollectionInterceptor,
@@ -1285,31 +1286,174 @@ function dnfOf(where: ListOptions['where']): Record<string, unknown>[][] {
   return [[where ?? {}]];
 }
 
-function storedTypeOf(instance: SmrtObject): unknown {
+/** The discriminator set on an instance (`_meta_type`). */
+function instanceTypeOf(instance: SmrtObject): unknown {
   return (instance as unknown as Record<string, unknown>)._meta_type;
 }
 
-function assertWritable(
+/**
+ * The registry key a stored or instance discriminator names, read for a
+ * write of `key`: `key` for its own type (registry key, qualified name, or
+ * the simple name a legacy row may carry), the strict key of another
+ * registered type, or `undefined` for a type this process cannot resolve
+ * (a NULL discriminator included).
+ */
+function rowTypeKey(key: string, type: unknown): string | undefined {
+  if (typeof type !== 'string' || type === '') return undefined;
+  if (type === key) return key;
+  const own = ObjectRegistry.getClass(key);
+  if (type === own?.qualifiedName || type === own?.name) return key;
+  return resolveStrictModelKey(type);
+}
+
+/**
+ * The stored row a write of `key` would change or delete, read by the
+ * instance's id. Looked up in an enforced request for an STI table whose
+ * family has members, where the row an id names can be of a type whose
+ * tenancy differs from the class written through, or of another owner than
+ * the instance carries. `undefined` when not looked up or when no row has
+ * that id.
+ */
+async function storedRowOf(
   t: RequestTenancy,
   key: string,
   instance: SmrtObject,
+): Promise<Record<string, unknown> | undefined> {
+  if (!t.enforced || t.actor.system === 'write') return undefined;
+  const id = (instance as unknown as { id?: unknown }).id;
+  if (typeof id !== 'string' || id === '') return undefined;
+  if (ObjectRegistry.getTableStrategy(key) !== 'sti') return undefined;
+  if (stiDescendants(ObjectRegistry.getSTIBase(key) ?? key).length === 0) {
+    return undefined;
+  }
+  const row = (await instance.db.get(instance.tableName, { id })) as Record<
+    string,
+    unknown
+  > | null;
+  return row ?? undefined;
+}
+
+/**
+ * Hold a write of `key` to the policy of a row type it touches (the stored
+ * row's, or the one set on the instance): the type's own write gate, and,
+ * when its tenancy differs from `key`'s, a refusal. A save stamps and
+ * checks the owner under `key`'s policy, so a row of a type with another
+ * policy is written only through a model of that policy. A system actor
+ * writes every type.
+ */
+function assertRowTypeWritable(
+  t: RequestTenancy,
+  key: string,
+  member: MemberTenancy,
+  type: unknown,
 ): void {
+  if (t.actor.system === 'write') return;
+  const typeKey = rowTypeKey(key, type);
+  if (typeKey === key) return;
+  if (typeKey === undefined) {
+    throw new RequestTenancyError(
+      403,
+      'TENANT_MEMBER_EXCLUDED',
+      'The tenancy of that row type could not be resolved.',
+    );
+  }
+  const typed = memberFor(t, typeKey, inFamily(t, typeKey));
+  if (!typed) return;
+  throwIfRefused(writeGate(t, typed));
+  if (typed.signature !== member.signature) {
+    throw new RequestTenancyError(
+      403,
+      'TENANT_MEMBER_EXCLUDED',
+      'A row of that type is written only through a model of its tenancy.',
+    );
+  }
+}
+
+/** Refusals that mean this request may not write a row type. */
+const ROW_TYPE_REFUSALS = new Set([
+  'TENANT_MEMBER_EXCLUDED',
+  'TENANT_WRITE_REFUSED',
+  'TENANT_CONTEXT_REQUIRED',
+]);
+
+/**
+ * Whether the stored row's owner lets the acting tenant write it under
+ * `member`'s policy: every ownership column is empty or names the tenant
+ * the call acts in. The tenant interceptor checks the owner the instance
+ * carries; this checks the one stored, so an instance that names a row by
+ * id without its owner does not reach another tenant's row.
+ */
+function storedOwnerWritable(
+  t: RequestTenancy,
+  member: MemberTenancy,
+  row: Record<string, unknown>,
+): boolean {
+  if (!member.scoped || t.actor.system === 'write') return true;
+  if (bypassApplies(t, member)) return true;
+  const tenant = getRequestTenantContext()?.tenantId ?? t.actor.tenantId;
+  for (const field of member.fields) {
+    const owner = row[whereColumnName(field)];
+    if (owner === null || owner === undefined) continue;
+    if (typeof tenant !== 'string' || String(owner) !== tenant) return false;
+  }
+  return true;
+}
+
+/**
+ * Whether a write of `key` may change the stored row its id names: within
+ * the route's own family, a row of a type the route reads; a type that
+ * passes {@link assertRowTypeWritable}; and an owner the acting tenant may
+ * write. A policy that changed or could not be resolved still refuses as
+ * such.
+ */
+function storedRowWritable(
+  t: RequestTenancy,
+  key: string,
+  member: MemberTenancy | undefined,
+  row: Record<string, unknown>,
+): boolean {
+  const type = row._meta_type;
+  if (inFamily(t, key)) {
+    const typeKey = rowTypeKey(key, type);
+    if (typeKey === undefined || !t.admitted?.has(typeKey)) return false;
+  }
+  if (!member) return true;
+  try {
+    assertRowTypeWritable(t, key, member, type);
+    return storedOwnerWritable(t, member, row);
+  } catch (error) {
+    if (
+      error instanceof RequestTenancyError &&
+      ROW_TYPE_REFUSALS.has(error.code)
+    ) {
+      return false;
+    }
+    throw error;
+  }
+}
+
+async function assertWritable(
+  t: RequestTenancy,
+  key: string,
+  instance: SmrtObject,
+  operation: 'save' | 'delete',
+): Promise<void> {
   const family = inFamily(t, key);
   const member = memberFor(t, key, family);
-  // Only the route's own family restricts writes; a write to another family
-  // is decided by the tenant interceptor and the member's live policy.
-  const owner = family ? t : undefined;
-  if (owner) {
-    const stored = storedTypeOf(instance);
+  const typed = instanceTypeOf(instance);
+  // The route's own family restricts writes to its admitted types; a write
+  // to another family is decided by the policies below and the tenant
+  // interceptor.
+  if (family) {
     // A new row is held to the create targets when the request selects
     // them; a stored row (an update, a delete) to the types the route reads.
     const types =
-      !instance.isPersisted && owner.creatable
-        ? owner.creatable
-        : owner.admitted;
+      !instance.isPersisted && t.creatable ? t.creatable : t.admitted;
     if (
       !types?.has(key) ||
-      (typeof stored === 'string' && stored && !types.has(stored))
+      (typeof typed === 'string' &&
+        typed &&
+        !types.has(rowTypeKey(key, typed) ?? typed))
     ) {
       throw new RequestTenancyError(
         403,
@@ -1319,6 +1463,29 @@ function assertWritable(
     }
   }
   if (member) throwIfRefused(writeGate(t, member));
+  // Every write and delete is decided under the policy of the type the row
+  // is stored as and of the type set on the instance, not only of the
+  // class it is written through, and against the owner stored.
+  const stored = await storedRowOf(t, key, instance);
+  if (stored && !storedRowWritable(t, key, member, stored)) {
+    if (operation === 'save' && !instance.isPersisted) {
+      // A new row cannot take the id of a stored row this write may not
+      // change: answered as the insert would be, whatever that row's type
+      // or owner.
+      throw ValidationError.uniqueConstraint(
+        'id',
+        (instance as unknown as { id?: unknown }).id,
+      );
+    }
+    throw new RequestTenancyError(
+      403,
+      'TENANT_MEMBER_EXCLUDED',
+      'This request may not change that row.',
+    );
+  }
+  if (member && typeof typed === 'string' && typed) {
+    assertRowTypeWritable(t, key, member, typed);
+  }
 }
 
 /**
@@ -1470,16 +1637,26 @@ function createRequestTenancyInterceptor(): CollectionInterceptor {
       };
     },
 
-    beforeSave(instance, context) {
+    async beforeSave(instance, context) {
       const t = actingAtCall();
       if (!t) return;
-      assertWritable(t, identityOf(context.className, context), instance);
+      await assertWritable(
+        t,
+        identityOf(context.className, context),
+        instance,
+        'save',
+      );
     },
 
-    beforeDelete(instance, context) {
+    async beforeDelete(instance, context) {
       const t = actingAtCall();
       if (!t) return;
-      assertWritable(t, identityOf(context.className, context), instance);
+      await assertWritable(
+        t,
+        identityOf(context.className, context),
+        instance,
+        'delete',
+      );
     },
   };
 }
