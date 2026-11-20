@@ -369,6 +369,29 @@ describe('parents', () => {
     expect(errors[0].message).toContain('re-exports `BaseCollection`');
   });
 
+  it('reports an undecorated collection over a directory whose package.json alone selects the declaring file', async () => {
+    const { errors, model } = await scanProject({
+      'src/models/package.json': JSON.stringify({ main: './base.ts' }),
+      'src/models/base.ts': `${CORE}\n@smrt()\nexport class Base extends SmrtObject {\n  name = '';\n}\nexport class BaseCollection extends SmrtCollection<Base> {\n  static readonly _itemClass = Base;\n}\n`,
+      'src/Children.ts': `import { BaseCollection } from './models/';\nexport class Children extends BaseCollection {}\n`,
+    });
+
+    expect(model('Children')).toBeUndefined();
+    expect(errors).toHaveLength(1);
+    expect(errors[0].message).toContain('Children extends `BaseCollection`');
+    expect(errors[0].message).toContain('declares the entry it loads');
+  });
+
+  it('ignores an undecorated class over a directory whose package.json selects no candidate', async () => {
+    const { errors } = await scanProject({
+      'src/vendor/package.json': JSON.stringify({ main: './widget.ts' }),
+      'src/vendor/widget.ts': `export class Widget {}\n`,
+      'src/Gadget.ts': `import { Widget } from './vendor/';\nexport class Gadget extends Widget {}\n`,
+    });
+
+    expect(errors).toEqual([]);
+  });
+
   it('reports an undecorated class whose superclass is a call over a framework base', async () => {
     const { errors, model } = await scanProject({
       'src/models/Mixed.ts': `${CORE}\nfunction Mixin<T>(base: T) { return base; }\nexport class Mixed extends Mixin(SmrtObject) {\n  name = '';\n}\n`,

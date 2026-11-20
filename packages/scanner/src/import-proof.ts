@@ -34,7 +34,13 @@ import {
   realpathSync,
   statSync,
 } from 'node:fs';
-import { basename, dirname, join, resolve as resolvePath } from 'node:path';
+import {
+  basename,
+  dirname,
+  join,
+  resolve as resolvePath,
+  sep,
+} from 'node:path';
 import type {
   RawClassDefinition,
   RawImportBinding,
@@ -485,14 +491,27 @@ export class ImportProver {
   /**
    * Every file a relative specifier could load in some resolution mode or
    * configuration: the existing candidates and the module-suffix variants
-   * beside them (never a package.json). Used to judge whether a reference
-   * the proof refused would have reached a class of the scan.
+   * beside them. A directory package.json that declares an entry stands for
+   * every scanned file below its directory, since its entry (`main`,
+   * `exports`, ...) may select any of them. Used to judge whether a
+   * reference the proof refused would have reached a class of the scan.
    */
   possibleFiles(fromFile: string, specifier: string): string[] {
     const { existing, variants } = this.candidatesOf(fromFile, specifier);
-    return [...existing, ...variants]
-      .filter((file) => basename(file) !== 'package.json')
-      .map((file) => resolvePath(file));
+    const files = new Set<string>();
+    for (const file of [...existing, ...variants]) {
+      if (basename(file) !== 'package.json') {
+        files.add(resolvePath(file));
+        continue;
+      }
+      const directory = `${resolvePath(dirname(file))}${sep}`;
+      for (const scanned of this.modules.keys()) {
+        if (resolvePath(scanned).startsWith(directory)) {
+          files.add(resolvePath(scanned));
+        }
+      }
+    }
+    return [...files];
   }
 
   /**
