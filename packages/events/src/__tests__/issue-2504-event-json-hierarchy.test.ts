@@ -5,7 +5,8 @@ import { SmrtCollection, smrt } from '@happyvertical/smrt-core';
 import { getTestDatabase } from '@happyvertical/smrt-core/testing';
 import { getDatabase } from '@happyvertical/sql';
 import { afterEach, describe, expect, it } from 'vitest';
-import { Event, EventCollection } from '../index.js';
+import { EventCollection } from '../collections/EventCollection.js';
+import { Event } from '../models/Event.js';
 
 @smrt()
 class Issue2504Meeting extends Event {}
