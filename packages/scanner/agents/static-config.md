@@ -208,13 +208,15 @@ import (`import type { Item }`) included; only the class's own type
 parameter (`class C<T> extends SmrtCollection<T>`), a type keyword (`any`,
 `unknown`, ...), a framework class (`SmrtCollection<SmrtObject>`, known by
 identity, so also under an alias import) and a missing type argument name no
-item. For such a collection the item is the class a static `_itemClass`
+item; a type argument the scan cannot read (`InstanceType<typeof X>`, a
+union) counts as missing. For such a collection the item is the class a static `_itemClass`
 names, proven like a parent (it must be a model; a framework class there
 proves no item), and the argument's spelling is never recorded: a parameter
 or alias named `Account` never selects a model named `Account`. A collection
-that proves no item this way is a scan error, unless it is `abstract` (over
-the framework base) or passes its own type parameter on; those record no
-item name and leave it to their subclasses.
+that proves no item this way is a scan error, unless it is declared with the
+TypeScript `abstract` keyword (over the framework base;
+`@smrt({ abstract: true })` alone does not exempt it) or passes its own type
+parameter on; those record no item name and leave it to their subclasses.
 
 The framework collection bases whose type argument is the item are
 `SmrtCollection`, `SmrtReportCollection` and the junction bases
@@ -240,8 +242,9 @@ below an ancestor that fixes an item): below an ancestor that passes on another 
 parameter than its first (make the item type parameter the first one), below
 an ancestor that fixes no model (`SmrtCollection<any>`, a framework class or
 no type argument, and no `_itemClass`), and below a generic ancestor when it
-passes no type argument, a type keyword or a framework class (give it an
-explicit type argument naming the item model). Only a generic collection passing its own type parameter on
+passes no type argument, a type keyword, a framework class or a type
+argument the scan cannot read (give it an explicit type argument naming the
+item model). Only a generic collection passing its own type parameter on
 (`class TypedCollection<T> extends BaseCollection<T>`) leaves the item to
 its subclasses. The scan never records no item for such a collection, which
 would let generation infer one from the collection's name.
@@ -415,9 +418,9 @@ now stops the build. The message names the file, class and member.
 | A relationship target, report source or collection item that is a plain class, or a stand-in for another package | Reference the model class |
 | A static `_itemClass` naming another class than `SmrtCollection<Item>` | Name the same model in both |
 | A collection below a scanned generic collection whose item is a plain class, or a stand-in beside a model of the package with its name, or that passes a type argument below an ancestor passing on another type parameter than its first | Name a model of the package; make the item type parameter the first one, or extend the framework base directly |
-| A collection with no static `_itemClass` of its own below an ancestor that maps it to no one item: one passing on another type parameter than its first, one fixing no model (a type keyword, a framework class or no type argument, and no `_itemClass`), or a generic one when the collection passes no type argument or a type keyword | Declare the item with a static `_itemClass`, or give the collection an explicit type argument naming the item model |
+| A collection with no static `_itemClass` of its own below an ancestor that maps it to no one item: one passing on another type parameter than its first, one fixing no model (a type keyword, a framework class or no type argument, and no `_itemClass`), or a generic one when the collection passes no type argument, a type keyword, a framework class (`class Notes extends BaseCollection<SmrtObject> {}`) or a type argument the scan cannot read (`InstanceType<typeof X>` counts as missing) | Declare the item with a static `_itemClass` naming a model; below a generic ancestor, an explicit type argument naming the item model also does |
 | A collection over its own type parameter or a type keyword whose static `_itemClass` is not a class reference, cannot be proven like a parent, or is not a model | Make `_itemClass` name the item model class |
-| A concrete collection directly over a framework collection base whose type argument names no model (a type keyword, a framework class, also under an alias, or none) and that declares no static `_itemClass` naming a model; a collection below a scanned collection ancestor whose own static `_itemClass` names a framework class | Write `SmrtCollection<Item>` with the item model class, or declare the item with a static `_itemClass` (an abstract base, or one passing its own type parameter on, may leave it to its subclasses) |
+| A concrete collection directly over a framework collection base whose type argument names no model (a type keyword, a framework class, also under an alias, one the scan cannot read, or none) and that declares no static `_itemClass` naming a model; a collection below a scanned collection ancestor whose own static `_itemClass` names a framework class | Write `SmrtCollection<Item>` with the item model class, or declare the item with a static `_itemClass` (a base declared with the TypeScript `abstract` keyword, or one passing its own type parameter on, may leave it to its subclasses; `@smrt({ abstract: true })` alone does not) |
 | A module exporting another binding under a model's class name (`export { Other as Model }`, `export { Model } from '@other/pkg'`, a barrel re-exporting a plain class of the name) | Export each model under its own class name; rename the other class |
 | `CONFIG_UNRESOLVED_IMPORTED_PARENT`: a parent (or collection item) from another package whose manifest does not declare it under exactly that name (a model whose name differs only in case is not it), that is installed without a manifest, whose manifest records no `importPath`, that is imported from another entry than the one the manifest records, or that the package only re-exports; an `extendsQualified` that is not a qualified name; or an ancestor, at any depth of the provider chain, that a provider parent passes on from a third package installed in two different copies (the provider's and the root's, differing in path and in version or shipped manifest) | Import it by its exact name from the package that declares it, at the entry its manifest records; build that package with this version so its manifest exists; declare it as a dependency; install one copy of a duplicated package |
 | `CONFIG_UNKNOWN_RELATIONSHIP_TARGET`: a relationship target or report source that names no model of the package or a loadable dependency, or a package export that cannot be confirmed (as above); a confirmed package foreign-key target whose provider manifest records no schema, or not the column the constraint references (the written one, else the primary key, else `id`; a camelCase written column is named in snake_case by the message); or a constrained `@foreignKey` target a provider parent passes on from a package installed in two different copies. A field with `constraint: false` is exempt from the schema and copy checks; a `@oneToMany` or `@manyToMany` from the copy check | Import the model class itself from its declaring package and entry, or name a declared model; rebuild the provider with this version so its manifest carries the schema; reference a column the target declares; install one copy of a duplicated package |
