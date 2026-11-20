@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-vault-relay",
-  "version": "0.63.0",
+  "version": "0.64.0",
   "description": "Blind snapshot relay: device-signed, per-account encrypted blob store gated by backup.vault",
   "type": "module",
   "author": "HappyVertical",
