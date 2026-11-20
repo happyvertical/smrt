@@ -77,6 +77,22 @@ export const SLOTS = {
     expect(errors.every((e) => e.severity === 'error')).toBe(true);
   });
 
+  it('reads the slots around a hole in a slot list, which holds no slot', () => {
+    // A hole is `undefined` at its index: no slot and no `selects` is lost
+    // there, and slots are keyed by id, not by position.
+    const file = write(
+      'src/ui.ts',
+      `export const SLOT_LIST = {
+  slots: [, { id: 'customer-select', label: 'Customer', selects: '@example/sales:Customer' }],
+};`,
+    );
+    const { selectors, errors } = parseUiSelectorsFile(file);
+    expect(errors).toEqual([]);
+    expect(selectors.map((selector) => selector.slotId)).toEqual([
+      'customer-select',
+    ]);
+  });
+
   it('rejects two selectors for one model', () => {
     const a = write(
       'src/ui.ts',
