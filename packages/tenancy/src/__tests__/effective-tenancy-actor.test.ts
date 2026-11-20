@@ -11,6 +11,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   field,
+  GlobalInterceptors,
   ObjectRegistry,
   SmrtCollection,
   SmrtObject,
@@ -20,7 +21,7 @@ import { APIGenerator } from '@happyvertical/smrt-core/generators/rest';
 import { getTestDatabase } from '@happyvertical/smrt-core/testing';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { withSystemContext } from '../context.js';
+import { getCurrentTenant, withSystemContext, withTenant } from '../context.js';
 import { disableTenancy, enableTenancy } from '../interceptor.js';
 import {
   registerTenantScopedClass,
@@ -34,6 +35,7 @@ import {
   segmentOf,
   TENANT_A,
   TENANT_B,
+  titlesOf,
 } from './helpers/effective-tenancy-harness.js';
 
 // Tenancy registered at run time.
@@ -217,6 +219,118 @@ describe('the request actor is settled once and runs the operation', () => {
       expect(asked.length).toBeGreaterThan(0);
       for (const req of asked) expect(returned).toContain(req);
       expect(new Set(asked).size).toBe(asked.length);
+    });
+  });
+
+  describe('a cross-tenant grant inside a host-entered tenant (R2.2)', () => {
+    const SESSIONS: Record<string, Record<string, unknown>> = {
+      operator: { allowCrossTenant: true },
+      'operator-of-b': { tenantId: TENANT_B, allowCrossTenant: true },
+    };
+    const makeHandler = () =>
+      new APIGenerator(
+        {
+          basePath: '/api',
+          authMiddleware: () => async (req: Request) => req,
+          resolveTenant: (req: Request) => ({
+            ...SESSIONS[
+              (req.headers.get('authorization') ?? '').replace('Bearer ', '')
+            ],
+            authenticated: true,
+          }),
+        },
+        { db },
+      ).generateHandler();
+
+    it('a grant keeps the tenant context the host entered', async () => {
+      const handler = makeHandler();
+      const listed = await withTenant({ tenantId: TENANT_A }, () =>
+        restCall(handler, 'GET', segmentOf(EffActorMemo), {
+          headers: { authorization: 'Bearer operator' },
+        }),
+      );
+      expect(listed.status).toBe(200);
+      expect(titlesOf(listed.body)).toEqual(['memo of a']);
+      const written = await withTenant({ tenantId: TENANT_A }, () =>
+        restCall(handler, 'PUT', `${segmentOf(EffActorMemo)}/${ROW.memoOfB}`, {
+          headers: { authorization: 'Bearer operator' },
+          body: { title: 'changed by the operator' },
+        }),
+      );
+      expect(written.status).not.toBe(200);
+      expect(await titleOf(memos.tableName, ROW.memoOfB)).toBe('memo of b');
+    });
+
+    it('a granted principal naming another tenant than the host-entered one is refused', async () => {
+      const handler = makeHandler();
+      const listed = await withTenant({ tenantId: TENANT_A }, () =>
+        restCall(handler, 'GET', segmentOf(EffActorMemo), {
+          headers: { authorization: 'Bearer operator-of-b' },
+        }),
+      );
+      expect(listed.status).toBe(403);
+    });
+
+    it('a grant with no host-entered tenant still reads every tenant (control)', async () => {
+      const listed = await restCall(
+        makeHandler(),
+        'GET',
+        segmentOf(EffActorMemo),
+        { headers: { authorization: 'Bearer operator' } },
+      );
+      expect(titlesOf(listed.body)).toEqual([
+        'memo of a',
+        'memo of b',
+        'memo of none',
+      ]);
+    });
+  });
+
+  describe('emitted sync with a complete principal (R2.3)', () => {
+    it('an item runs with the permission snapshot of the principal it was admitted with', async () => {
+      const seen: Array<string[] | undefined> = [];
+      GlobalInterceptors.register({
+        name: 'eff-actor-permission-probe',
+        beforeSave() {
+          const permissions = getCurrentTenant()?.permissions;
+          seen.push(permissions ? [...permissions].sort() : undefined);
+        },
+      });
+      try {
+        const granted = `${segmentOf(EffActorLedger)}.update`;
+        const answer = await withTenant(
+          {
+            tenantId: TENANT_A,
+            userId: 'writer',
+            permissions: new Set([granted, 'everything.admin']),
+          },
+          () =>
+            app.call('POST', 'sync/apply', {
+              locals: {
+                user: { id: 'writer' },
+                tenantId: TENANT_A,
+                permissions: [granted],
+              },
+              body: {
+                items: [
+                  {
+                    itemId: 'ledger-1',
+                    object: segmentOf(EffActorLedger),
+                    op: 'update',
+                    id: ROW.ledgerOfA,
+                    payload: { title: 'changed by a' },
+                  },
+                ],
+              },
+            }),
+        );
+        expect((answer.body as { results: Result[] }).results[0]?.status).toBe(
+          'applied',
+        );
+        expect(seen).toEqual([[granted]]);
+      } finally {
+        GlobalInterceptors.unregister('eff-actor-permission-probe');
+      }
     });
   });
 });

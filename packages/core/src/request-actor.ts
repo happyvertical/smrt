@@ -11,7 +11,8 @@
  *    `user`, `session` and `tenantContext`.
  * 3. An active tenant context must agree with 1 or 2 (a different tenant, or
  *    a different user, is refused with 403). Without either, the active
- *    context is the actor.
+ *    context is the actor. A cross-tenant grant does not widen an active
+ *    tenant context: the request stays in that tenant.
  * 4. A system actor comes only from an active system context, or from a
  *    cross-tenant grant, and then for this operation only: a grant on a read
  *    is a read grant and never authorizes a write.
@@ -207,9 +208,10 @@ export function resolveRequestActor(input: RequestActorInput): RequestActor {
     }
   }
 
-  // Rule 3: an active tenant context must agree with the principal.
+  // Rule 3: an active tenant context must agree with the principal, grant
+  // or no grant.
   if (activeTenant) {
-    if (tenantId && tenantId !== activeTenant && !grant) {
+    if (tenantId && tenantId !== activeTenant) {
       throw new RequestTenantConflictError(
         'Tenant context does not match authenticated principal',
       );
@@ -224,11 +226,12 @@ export function resolveRequestActor(input: RequestActorInput): RequestActor {
         'Tenant context does not match authenticated principal',
       );
     }
-    if (!grant) {
-      tenantId = activeTenant;
-      userId ??= activeUser;
-      permissions ??= active?.permissions;
-    }
+    // The tenant context the host entered is kept: a cross-tenant grant
+    // never widens a request the host has already scoped to one tenant.
+    grant = false;
+    tenantId = activeTenant;
+    userId ??= activeUser;
+    permissions ??= active?.permissions;
   }
 
   const systemContext = source?.systemContextActive() === true;
@@ -402,7 +405,9 @@ export async function runInRequestTenancy<T>(
 ): Promise<T> {
   const t = resolveTenancyForRequest(input);
   decide(t, input);
-  return withResolvedTenancy(t, () => fn(t));
+  return withResolvedTenancy(t, () => fn(t), {
+    refreshPrincipal: input.requirePrincipal === true,
+  });
 }
 
 /**

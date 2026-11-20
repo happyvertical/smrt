@@ -981,15 +981,18 @@ export function enableTenancy(options: TenantInterceptorOptions = {}): void {
     systemContextActive: () => isSystemContext(),
     superAdminBypassActive: () => isSuperAdminBypass(),
     hierarchyReadCollections: () => getTenantHierarchyReadScope()?.collections,
+    // Extra fields of a context core refreshes (its database, metadata) are
+    // kept; tenant, user and permissions are core's.
     runInContext: (context, fn) =>
       context === 'system'
         ? withSystemContext(fn)
         : withTenant(
             {
+              ...(context as unknown as Record<string, unknown>),
               tenantId: context.tenantId,
               ...(context.userId ? { userId: context.userId } : {}),
               permissions: new Set(context.permissions ?? []),
-            },
+            } as Parameters<typeof withTenant>[0],
             fn,
           ),
   });

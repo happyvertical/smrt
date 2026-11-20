@@ -832,10 +832,15 @@ function assertBindable(t: RequestTenancy): void {
  * Run an operation inside the resolved tenancy: in the actor's tenant or
  * system context, with the decision bound for the collection interceptor.
  * Nested calls bind their own (for example one per sync item).
+ *
+ * @param options.refreshPrincipal - The actor is a complete principal: an
+ *   active context of the same tenant runs with the actor's permission
+ *   snapshot, never a broader one it already carried
  */
 export async function withResolvedTenancy<T>(
   t: RequestTenancy,
   fn: () => Promise<T>,
+  options: { refreshPrincipal?: boolean } = {},
 ): Promise<T> {
   assertBindable(t);
   const bound = () => scopeContext().run(t, fn);
@@ -845,19 +850,31 @@ export async function withResolvedTenancy<T>(
   if (t.actor.system && !source.systemContextActive()) {
     return source.runInContext('system', bound);
   }
-  if (
-    !t.actor.system &&
-    t.actor.tenantId &&
-    getRequestTenantContext()?.tenantId !== t.actor.tenantId
-  ) {
-    return source.runInContext(
-      {
-        tenantId: t.actor.tenantId,
-        ...(t.actor.userId ? { userId: t.actor.userId } : {}),
-        ...(t.actor.permissions ? { permissions: t.actor.permissions } : {}),
-      },
-      bound,
-    );
+  const active = getRequestTenantContext();
+  if (!t.actor.system && t.actor.tenantId) {
+    if (active?.tenantId !== t.actor.tenantId) {
+      return source.runInContext(
+        {
+          tenantId: t.actor.tenantId,
+          ...(t.actor.userId ? { userId: t.actor.userId } : {}),
+          ...(t.actor.permissions ? { permissions: t.actor.permissions } : {}),
+        },
+        bound,
+      );
+    }
+    if (options.refreshPrincipal && t.actor.permissions) {
+      // Keep the rest of the active context (its database, metadata), with
+      // the authority the request was admitted with.
+      return source.runInContext(
+        {
+          ...(active as Record<string, unknown>),
+          tenantId: t.actor.tenantId,
+          ...(t.actor.userId ? { userId: t.actor.userId } : {}),
+          permissions: t.actor.permissions,
+        } as RequestTenancyContext,
+        bound,
+      );
+    }
   }
   return bound();
 }
