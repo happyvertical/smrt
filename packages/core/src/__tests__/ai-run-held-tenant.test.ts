@@ -161,6 +161,36 @@ describe.each(aiRunTestEngines)('held calls and fences on %s', (engine) => {
     });
   });
 
+  it('releases nothing for a worker whose claim is gone', async () => {
+    const db = await newAiRunTestDatabase(engine);
+    const root = await openAiRun(store(db), {
+      type: 'workflow',
+      durable: true,
+    });
+    const fusion = await openAiRun(store(db), {
+      type: 'fusion',
+      parentRunId: root.id,
+    });
+    const held = await reserveAiCall(db, fusion.id, { inputTokens: 5 });
+    await expect(
+      releaseAiCall(
+        db,
+        { runId: fusion.id, callId: held.callId, status: 'cancelled' },
+        { fence: async () => false },
+      ),
+    ).rejects.toBeInstanceOf(AiRunClaimLostError);
+    expect(await getAiRun(db, fusion.id)).toMatchObject({ reservedCalls: 1 });
+    // A live claim releases it (control).
+    expect(
+      await releaseAiCall(
+        db,
+        { runId: fusion.id, callId: held.callId, status: 'cancelled' },
+        { fence: async () => true },
+      ),
+    ).toBe(true);
+    expect(await getAiRun(db, fusion.id)).toMatchObject({ reservedCalls: 0 });
+  });
+
   it('sends a held reservation that is still reserved (control)', async () => {
     const db = await newAiRunTestDatabase(engine);
     const run = await openAiRun(store(db), { type: 'fusion' });

@@ -741,9 +741,12 @@ export async function releaseAiCall(
   return withAiRunTransaction(
     db,
     async (tx) => {
-      const chain = await lockAiRunChainInTenant(
+      // With `options.fence`, the claim fence is asserted before the chain
+      // is locked: a worker whose claim was taken over releases nothing.
+      const chain = await lockAiRunChainFenced(
         tx,
         input.runId,
+        options.fence,
         expectedTenantOf(options),
       );
       return releaseInTx(tx, chain, input.callId, input.status);

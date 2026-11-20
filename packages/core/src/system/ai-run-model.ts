@@ -661,8 +661,9 @@ export interface AiRunTxOptions {
    * the run row is locked or its status read: a worker whose claim was taken
    * over gets {@link AiRunClaimLostError} and changes nothing. Reservations,
    * step starts and checkpoint saves take it as their own `fence`, and
-   * `assertAiRunStillRunning` asserts it before the chain is locked; the
-   * other calls taking these options (patches, retention) ignore it.
+   * `assertAiRunStillRunning` and `releaseAiCall` assert it before the chain
+   * is locked; the other calls taking these options (patches, retention)
+   * ignore it.
    */
   fence?: AiRunClaimFence;
 }

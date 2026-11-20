@@ -296,7 +296,11 @@ fusion tier does not run untracked (`AiRunTrackingDisabledError` from
 `openRun`). Every seat and the judge reserve together, all or none
 (`stop_detail.requested` is the sum over all of them); a seat's first call
 takes its share, the judge checks its chain is still `running` first, and
-shares never taken are released at the end. Inside a run (the entry call
+shares never taken are released at the end. The parent's claim fence is
+read once and asserted by the reservation, every seat's admission and the
+run's close and stop (each release and the finish in their own
+transactions): a worker whose claim was taken over releases, finishes and
+stops nothing (`AiRunClaimLostError`). Inside a run (the entry call
 carries a `runContext`), the fusion is a child run and the parent gets a
 `handoff` event (`child_run_id`, `call_id` = the entry call, no reservation),
 written with the child's row and ended `done`, `stopped`, `cancelled` or
