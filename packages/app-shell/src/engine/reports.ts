@@ -1,9 +1,6 @@
-import {
-  compileRuntimeReportSpec,
-  parseRuntimeReportSpec,
-  type RuntimeReportResult,
-  type RuntimeReportSpec,
-  runRuntimeReport,
+import type {
+  RuntimeReportResult,
+  RuntimeReportSpec,
 } from '@happyvertical/smrt-reports';
 import {
   type AppDefinition,
@@ -55,7 +52,12 @@ export function reportSources(def: AppDefinition) {
     label: md.label ?? model,
   }));
 }
-export function compileReport(def: AppDefinition, input: unknown) {
+// The reports package (about 3 MiB of a worker's heap) loads on first use: a
+// worker that never defines or runs a report never imports it (#5214).
+export async function compileReport(def: AppDefinition, input: unknown) {
+  const { compileRuntimeReportSpec, parseRuntimeReportSpec } = await import(
+    '@happyvertical/smrt-reports'
+  );
   return compileRuntimeReportSpec(parseRuntimeReportSpec(input), {
     sources: reportSources(def),
     tenantId: null,
@@ -77,6 +79,7 @@ export async function runAppReport(
       : input;
   if (!raw) throw new Error('unknown report');
   const compiled = await compileReport(def, raw);
+  const { runRuntimeReport } = await import('@happyvertical/smrt-reports');
   const result: AppReportResult = await runRuntimeReport(compiled, {
     db,
     maxRows: options.maxRows ?? 1000,
