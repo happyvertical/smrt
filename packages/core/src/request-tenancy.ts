@@ -42,7 +42,7 @@
  */
 
 import { resolveDispatchTenantScope } from './dispatch/tenant-resolver.js';
-import { resolveReadCacheControl } from './generators/conditional-get.js';
+import { resolveReadCacheControl } from './generators/read-cache-control.js';
 import {
   type CollectionInterceptor,
   GlobalInterceptors,
@@ -946,9 +946,8 @@ export function servesTenantScopedRows(t: RequestTenancy): boolean {
   return false;
 }
 
-// Lives here, not in generators/conditional-get.ts: the Vite plugin imports
-// that module, and it must not pull this one (registry, interceptors) into its
-// graph.
+// Lives here, not in generators/: the Vite plugin imports the generators, and
+// it must not pull this module (registry, interceptors) into its graph.
 /**
  * The `Cache-Control` of a read under a request's resolved tenancy (#5375):
  * shared caching only when the model opts in, no admitted member is
