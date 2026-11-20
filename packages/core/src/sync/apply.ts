@@ -285,6 +285,16 @@ const SYNC_APPLY_REJECTION_REASONS: readonly string[] = [
   'write_failed',
 ] satisfies readonly SyncApplyRejectionReason[];
 
+/** Codes of the request tenancy refusals (`request-tenancy.ts`, #5375). */
+const REQUEST_TENANCY_CODES: ReadonlySet<string> = new Set([
+  'TENANT_CONTEXT_REQUIRED',
+  'TENANT_CONTEXT_CONFLICT',
+  'TENANT_MEMBER_EXCLUDED',
+  'TENANT_POLICY_CHANGED',
+  'TENANT_POLICY_UNRESOLVED',
+  'TENANT_WRITE_REFUSED',
+]);
+
 function rejectionReasonOf(error: unknown): SyncApplyRejectionReason {
   const marked =
     error && typeof error === 'object'
@@ -304,6 +314,16 @@ function rejectionReasonOf(error: unknown): SyncApplyRejectionReason {
     (error as { code?: unknown }).code === 'TENANT_ISOLATION_VIOLATION'
   ) {
     return 'forbidden';
+  }
+  // A request tenancy refusal (#5375): no tenant (401 for an anonymous
+  // caller), a write under a read grant, a policy that changed while the
+  // item was applied, a type the route does not serve.
+  const { code, status } =
+    error && typeof error === 'object'
+      ? (error as { code?: unknown; status?: unknown })
+      : { code: undefined, status: undefined };
+  if (typeof code === 'string' && REQUEST_TENANCY_CODES.has(code)) {
+    return status === 401 ? 'auth_required' : 'forbidden';
   }
   // A payload key the object does not accept is the client's error.
   return isWriteInputError(error) ? 'invalid_payload' : 'write_failed';

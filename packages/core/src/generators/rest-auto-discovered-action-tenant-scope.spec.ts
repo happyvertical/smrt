@@ -9,12 +9,14 @@
  */
 
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import {
+  installTestTenancySource,
+  removeTestTenancySource,
+  setTestRuntimeTenancy,
+} from '../__tests__/fixtures/test-tenancy-source';
 import { SmrtCollection } from '../collection';
 import { field } from '../decorators';
-import {
-  setDispatchTenantResolver,
-  setTenantScopedClassResolver,
-} from '../dispatch';
+import { setDispatchTenantResolver } from '../dispatch';
 import { SmrtObject } from '../object';
 import { ObjectRegistry } from '../registry';
 import { getTestDatabase } from '../testing/database';
@@ -51,6 +53,7 @@ describe('auto-discovered REST read actions receive the tenant scope', () => {
   let qualified: string;
 
   beforeAll(async () => {
+    installTestTenancySource();
     ObjectRegistry.registerCollection(
       'DiscoveredScopeDoc',
       DiscoveredScopeDocCollection,
@@ -63,6 +66,16 @@ describe('auto-discovered REST read actions receive the tenant scope', () => {
     const info = ObjectRegistry.getClass('DiscoveredScopeDoc');
     qualified = info?.qualifiedName ?? 'DiscoveredScopeDoc';
     expect(qualified).toBe('@fixture/discovered-scope:DiscoveredScopeDoc');
+    // The scanned manifest says `peek` takes an options bag: a read that
+    // receives the scope (#5375; an unscanned one is refused to a caller
+    // with no tenant).
+    ObjectRegistry.getMethods(qualified).set('peek', {
+      name: 'peek',
+      parameters: [{ name: 'options', type: 'any', optional: true }],
+      returnType: 'any',
+      isPublic: true,
+      isStatic: true,
+    } as never);
     // No `registerCollection` on the generator: the route is auto-discovered.
     handler = new APIGenerator(
       { basePath: '/api/v1' },
@@ -71,12 +84,13 @@ describe('auto-discovered REST read actions receive the tenant scope', () => {
   });
 
   afterAll(async () => {
+    removeTestTenancySource();
     await db?.close?.();
   });
 
   afterEach(() => {
     setDispatchTenantResolver(undefined);
-    setTenantScopedClassResolver(undefined);
+    setTestRuntimeTenancy(undefined);
   });
 
   const peek = async (query: string) => {
@@ -92,20 +106,20 @@ describe('auto-discovered REST read actions receive the tenant scope', () => {
 
   it('is registered under a qualified name the simple name does not scope', () => {
     expect(qualified).not.toBe('DiscoveredScopeDoc');
-    setTenantScopedClassResolver((name) => name === qualified);
+    setTestRuntimeTenancy((name) => name === qualified);
     expect(ObjectRegistry.isTenantScoped('DiscoveredScopeDoc')).toBe(false);
   });
 
   it('replaces a caller-sent tenant with the no-tenant scope when no tenant is active', async () => {
     setDispatchTenantResolver(() => undefined);
-    setTenantScopedClassResolver((name) => name === qualified);
+    setTestRuntimeTenancy((name) => name === qualified);
     const { received } = await peek('?tenantId=tenant-a&tenant_id=tenant-b');
     expect(received).toEqual({ tenantId: null });
   });
 
   it('sets the active tenant over a caller-sent one', async () => {
     setDispatchTenantResolver(() => 'tenant-a');
-    setTenantScopedClassResolver((name) => name === qualified);
+    setTestRuntimeTenancy((name) => name === qualified);
     const { received } = await peek('?tenantId=tenant-b');
     expect(received).toEqual({ tenantId: 'tenant-a' });
   });
