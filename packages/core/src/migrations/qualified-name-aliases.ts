@@ -29,8 +29,7 @@ import {
   IMPLICIT_TENANT_COLUMN,
   IMPLICIT_TENANT_FIELD,
 } from '../schema/conflict-target.js';
-import { detectEngine } from '../schema/ddl/index.js';
-import { tableExists } from '../system/compatibility.js';
+import { getDatabaseEngine, tableExists } from '../system/compatibility.js';
 import { toSnakeCase } from '../utils/naming.js';
 import { BackfillTracker } from './backfill-tracker.js';
 
@@ -247,14 +246,9 @@ function rowsOf(result: unknown): Record<string, unknown>[] {
 }
 
 function resolveEngine(db: DatabaseInterface, engineHint?: string): string {
-  const withConfig = db as DatabaseInterface & {
-    config?: { url?: string; type?: string };
-    type?: string;
-  };
-  return detectEngine(
-    db.url || withConfig.config?.url || '',
-    engineHint || withConfig.type || withConfig.config?.type,
-  );
+  // The shared detection also recognises an in-process PostgreSQL handle
+  // whose URL names no engine, which must get PostgreSQL syntax.
+  return getDatabaseEngine(db, engineHint);
 }
 
 async function countTarget(
