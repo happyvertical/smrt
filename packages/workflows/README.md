@@ -98,8 +98,11 @@ const mine = workflows.forOwner(ownerId, tenantId);
 const run = await mine.start({ key: 'request-1', input: { room: 'kitchen' } });
 ```
 
-- `start` is idempotent per key and request (the same key with another
-  request throws `WorkflowRunKeyConflictError`); `get`, `stop`, `cancel`,
+- `start` is idempotent per key and request while the key's run is kept (the
+  same key with another request throws `WorkflowRunKeyConflictError`). Once
+  retention has removed the key's run, the key is spent: `start` with it
+  throws `WorkflowRunKeyExpiredError` for any request, because a run id is
+  never reused; start again with a new key. `get`, `stop`, `cancel`,
   `resume`, `decide`, `continueAfterApproval` and `retry` follow the driver's.
   A stopped run resumes by admitting a new job; a run that waits for approval
   holds no job, and `decide` admits one.

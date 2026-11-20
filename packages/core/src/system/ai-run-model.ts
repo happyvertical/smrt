@@ -10,6 +10,7 @@
  */
 
 import type { DatabaseInterface } from '@happyvertical/sql';
+import { classifyDatabaseError, isUniqueViolationError } from '../db-errors.js';
 import {
   isEmbeddedDatabase,
   isKnownDatabaseTransaction,
@@ -345,6 +346,22 @@ export class AiRunClaimLostError extends AiRunError {
   }
 }
 
+/**
+ * A run was opened (or recorded) with an id that already named a run on
+ * this database, live or pruned, in any tenant: a run id names one run for
+ * the lifetime of the database (docs/content/ai-runs.md section 8, "Run
+ * identity"). Final: never retried.
+ */
+export class AiRunIdUsedError extends AiRunError {
+  readonly runId: string;
+  constructor(runId: string) {
+    super(`AI run id ${runId} is already used`, 'AI_RUN_ID_USED', 'runtime', {
+      runId,
+    });
+    this.runId = runId;
+  }
+}
+
 /** A checkpoint save that read an older revision. */
 export class AiRunCheckpointConflictError extends AiRunError {
   constructor(runId: string, expected: number) {
@@ -511,16 +528,62 @@ export function toAiRunRow(row: Record<string, unknown>): AiRunRow {
   };
 }
 
-/** Read one run, or `null`. */
+/**
+ * The scope a run read is held to: each field given is a SQL predicate of
+ * the read itself, so a run outside it is not read at all, only not found.
+ * `tenantId` `null` is the global scope; `ownerId` `null` is a run without
+ * an owner.
+ */
+export interface AiRunReadScope {
+  tenantId: string | null;
+  ownerId?: string | null;
+  type?: string;
+}
+
+/**
+ * ` AND r.tenant_id ...` (and owner, type) for a read scope, with its
+ * parameters numbered from `first`; '' without a scope.
+ *
+ * @internal
+ */
+export function aiRunScopeClause(
+  scope: AiRunReadScope | undefined,
+  first: number,
+): { sql: string; params: unknown[] } {
+  if (!scope) return { sql: '', params: [] };
+  const params: unknown[] = [];
+  const parts: string[] = [];
+  const add = (column: string, value: string | null) => {
+    if (value === null) {
+      parts.push(`r.${column} IS NULL`);
+    } else {
+      params.push(value);
+      parts.push(`r.${column} = $${first + params.length - 1}`);
+    }
+  };
+  add('tenant_id', scope.tenantId ?? null);
+  if (scope.ownerId !== undefined) add('owner_id', scope.ownerId);
+  if (scope.type !== undefined) add('type', scope.type);
+  return { sql: ` AND ${parts.join(' AND ')}`, params };
+}
+
+/**
+ * Read one run, or `null`. With `scope`, the run is read only within it
+ * (its tenant, and its owner and type when given), as predicates of the one
+ * read.
+ */
 export async function getAiRun(
   db: DatabaseInterface,
   runId: string,
+  scope?: AiRunReadScope,
 ): Promise<AiRunRow | null> {
+  const scoped = aiRunScopeClause(scope, 2);
   const rows = getRows(
     await aiRunQuery(
       db,
-      `SELECT ${AI_RUN_COLUMNS} FROM _smrt_ai_runs r WHERE r.id = $1`,
+      `SELECT ${AI_RUN_COLUMNS} FROM _smrt_ai_runs r WHERE r.id = $1${scoped.sql}`,
       runId,
+      ...scoped.params,
     ),
   );
   return rows[0] ? toAiRunRow(rows[0]) : null;
@@ -597,8 +660,10 @@ export interface AiRunTxOptions {
    * parent) and `appendAiRunEvent` assert it inside their transaction, before
    * the run row is locked or its status read: a worker whose claim was taken
    * over gets {@link AiRunClaimLostError} and changes nothing. Reservations,
-   * step starts and checkpoint saves take it as their own `fence`; the other
-   * calls taking these options (patches, retention) ignore it.
+   * step starts and checkpoint saves take it as their own `fence`, and
+   * `assertAiRunStillRunning` and `releaseAiCall` assert it before the chain
+   * is locked; the other calls taking these options (patches, retention)
+   * ignore it.
    */
   fence?: AiRunClaimFence;
 }
@@ -661,16 +726,73 @@ export function forUpdate(tx: AiRunTx): string {
   return tx.engine === 'postgres' ? ' FOR UPDATE' : '';
 }
 
-/** Lock and read one run row inside an accounting transaction. */
+/**
+ * The tenant an accounting operation established for its run, carried into
+ * the final statements and row locks (`undefined`: none established). Not
+ * part of the package surface: `system/browser.ts` lists this module's
+ * exports by name.
+ *
+ * @internal
+ */
+export interface AiRunScopedTxOptions extends AiRunTxOptions {
+  expectedTenant?: string | null;
+}
+
+/** @internal The expected tenant an options object carries, if any. */
+export function expectedTenantOf(
+  options: AiRunTxOptions | undefined,
+): string | null | undefined {
+  return (options as AiRunScopedTxOptions | undefined)?.expectedTenant;
+}
+
+const settlementTenants = new WeakMap<object, string | null>();
+
+/**
+ * @internal Remember the tenant a settlement's run was established in, for
+ * a settlement that is queued and written later.
+ */
+export function rememberSettlementTenant(
+  input: object,
+  tenant: string | null,
+): void {
+  settlementTenants.set(input, tenant);
+}
+
+/** @internal The tenant remembered for a queued settlement, if any. */
+export function settlementTenantOf(input: object): string | null | undefined {
+  return settlementTenants.get(input);
+}
+
+/** ` AND <column> = $n` (or `IS NULL`) for a known tenant; '' for none. */
+function tenantClause(
+  tenant: string | null | undefined,
+  index: number,
+  column: string,
+): { sql: string; params: unknown[] } {
+  if (tenant === undefined) return { sql: '', params: [] };
+  return tenant === null
+    ? { sql: ` AND ${column} IS NULL`, params: [] }
+    : { sql: ` AND ${column} = $${index}`, params: [tenant] };
+}
+
+/**
+ * Lock and read one run row inside an accounting transaction. With a
+ * tenant, the tenant is a predicate of the lock itself: a row whose id was
+ * pruned and reused by another tenant between discovery and this lock is
+ * not found (and not locked).
+ */
 export async function lockAiRun(
   tx: AiRunTx,
   runId: string,
+  tenant?: string | null,
 ): Promise<AiRunRow | null> {
+  const scoped = tenantClause(tenant, 2, 'r.tenant_id');
   const rows = getRows(
     await aiRunQuery(
       tx.db,
-      `SELECT ${AI_RUN_COLUMNS} FROM _smrt_ai_runs r WHERE r.id = $1${forUpdate(tx)}`,
+      `SELECT ${AI_RUN_COLUMNS} FROM _smrt_ai_runs r WHERE r.id = $1${scoped.sql}${forUpdate(tx)}`,
       runId,
+      ...scoped.params,
     ),
   );
   return rows[0] ? toAiRunRow(rows[0]) : null;
@@ -680,36 +802,79 @@ const MAX_CHAIN_DEPTH = 64;
 
 /**
  * The run's ancestor ids, root first, ending with the run itself. Read
- * without locks: `parent_run_id` never changes after a run is created.
+ * without locks: `parent_run_id` and `tenant_id` never change after a run is
+ * created. The chain stays in the run's tenant: an ancestor of another
+ * tenant (a link written before parents were tenant-checked) ends it, like
+ * a pruned one, so no charge, stop or lock ever crosses a tenant.
  */
 export async function readAiRunChainIds(
   db: DatabaseInterface,
   runId: string,
 ): Promise<string[]> {
+  return (await readAiRunChain(db, runId, undefined)).ids;
+}
+
+/**
+ * {@link readAiRunChainIds} with the run itself and every ancestor looked up
+ * in `tenant` (a SQL predicate): a row of another tenant is not read and
+ * ends the chain like a pruned one.
+ *
+ * @internal
+ */
+export async function readAiRunChainIdsInTenant(
+  db: DatabaseInterface,
+  runId: string,
+  tenant: string | null,
+): Promise<string[]> {
+  return (await readAiRunChain(db, runId, tenant)).ids;
+}
+
+/**
+ * {@link readAiRunChainIds} and the tenant the chain was read in. With
+ * `expectedTenant`, the run itself is looked up in that tenant too.
+ */
+async function readAiRunChain(
+  db: DatabaseInterface,
+  runId: string,
+  expectedTenant: string | null | undefined,
+): Promise<{ ids: string[]; tenant: string | null }> {
   const ids: string[] = [];
   const seen = new Set<string>();
   let current: string | null = runId;
+  let tenant: string | null | undefined = expectedTenant;
   while (current) {
     if (seen.has(current) || ids.length >= MAX_CHAIN_DEPTH) {
       throw new TypeError(`AI run ${runId} has a parent cycle or is too deep`);
     }
     seen.add(current);
+    // Each ancestor is looked up in the run's tenant (a SQL predicate): one
+    // of another tenant is not read at all and ends the chain like a pruned
+    // one.
+    const scoped =
+      tenant === undefined
+        ? ''
+        : tenant === null
+          ? ' AND tenant_id IS NULL'
+          : ' AND tenant_id = $2';
     const rows = getRows(
       await aiRunQuery(
         db,
-        'SELECT id, parent_run_id FROM _smrt_ai_runs WHERE id = $1',
+        `SELECT id, tenant_id, parent_run_id FROM _smrt_ai_runs WHERE id = $1${scoped}`,
         current,
+        ...(tenant === undefined || tenant === null ? [] : [tenant]),
       ),
     );
     if (!rows[0]) {
       if (current === runId) throw new AiRunNotFoundError(runId);
-      // A pruned ancestor: the chain ends at the oldest one still kept.
+      // A pruned ancestor (or one of another tenant): the chain ends at the
+      // oldest one still kept.
       break;
     }
+    if (tenant === undefined) tenant = text(rows[0].tenant_id) ?? null;
     ids.push(current);
     current = text(rows[0].parent_run_id);
   }
-  return ids.reverse();
+  return { ids: ids.reverse(), tenant: tenant ?? null };
 }
 
 /**
@@ -724,6 +889,17 @@ export async function readAiRunDescendantIds(
   const out: string[] = [];
   const seen = new Set<string>([runId]);
   let level = [runId];
+  // Only the run's own tenant: a child of another tenant (a link written
+  // before parents were tenant-checked) and everything under it are not
+  // this run's to cancel.
+  const root = getRows(
+    await aiRunQuery(
+      db,
+      'SELECT tenant_id FROM _smrt_ai_runs WHERE id = $1',
+      runId,
+    ),
+  )[0];
+  const tenant = root ? (text(root.tenant_id) ?? null) : null;
   for (let depth = 0; level.length > 0; depth++) {
     if (depth >= MAX_CHAIN_DEPTH) {
       throw new TypeError(`AI run ${runId} has a subtree that is too deep`);
@@ -733,8 +909,11 @@ export async function readAiRunDescendantIds(
       for (const row of getRows(
         await aiRunQuery(
           db,
-          'SELECT id FROM _smrt_ai_runs WHERE parent_run_id = $1',
+          `SELECT id FROM _smrt_ai_runs WHERE parent_run_id = $1 AND ${
+            tenant === null ? 'tenant_id IS NULL' : 'tenant_id = $2'
+          }`,
           parent,
+          ...(tenant === null ? [] : [tenant]),
         ),
       )) {
         const id = String(row.id);
@@ -758,11 +937,29 @@ export async function lockAiRunChain(
   tx: AiRunTx,
   runId: string,
 ): Promise<AiRunRow[]> {
-  const ids = await readAiRunChainIds(tx.db, runId);
-  const chain: AiRunRow[] = [];
+  return lockAiRunChainInTenant(tx, runId, undefined);
+}
+
+/**
+ * {@link lockAiRunChain} with the tenant carried from the traversal into
+ * every row lock (and, with `expectedTenant`, the run's own lookup): an id
+ * pruned and reused by another tenant between discovery and the lock is not
+ * locked; the chain keeps only the ancestors still locked in order above the
+ * run, as if the others were pruned.
+ *
+ * @internal
+ */
+export async function lockAiRunChainInTenant(
+  tx: AiRunTx,
+  runId: string,
+  expectedTenant: string | null | undefined,
+): Promise<AiRunRow[]> {
+  const { ids, tenant } = await readAiRunChain(tx.db, runId, expectedTenant);
+  let chain: AiRunRow[] = [];
   for (const id of ids) {
-    const row = await lockAiRun(tx, id);
-    if (row) chain.push(row);
+    const row = await lockAiRun(tx, id, tenant);
+    // A gap ends the chain above it: only the contiguous ancestors count.
+    chain = row ? [...chain, row] : [];
   }
   if (chain[chain.length - 1]?.id !== runId) {
     throw new AiRunNotFoundError(runId);
@@ -874,9 +1071,10 @@ export async function lockAiRunChainFenced(
   tx: AiRunTx,
   runId: string,
   fence: AiRunClaimFence | undefined,
+  expectedTenant?: string | null,
 ): Promise<AiRunRow[]> {
-  await assertAiRunFence(tx, runId, fence);
-  return lockAiRunChain(tx, runId);
+  await assertAiRunFence(tx, runId, fence, expectedTenant);
+  return lockAiRunChainInTenant(tx, runId, expectedTenant);
 }
 
 /**
@@ -884,15 +1082,18 @@ export async function lockAiRunChainFenced(
  * accounting transaction, before any run row is locked (the job row comes
  * first in the page's lock order). Nothing to assert without a fence or a
  * durable run in the chain. Throws {@link AiRunClaimLostError} when the fence
- * reports the claim gone; rethrows any other error of the fence.
+ * reports the claim gone; rethrows any other error of the fence. With
+ * `expectedTenant`, the chain is read in that tenant (a SQL predicate), so
+ * the fence is only ever asked about a run of the caller's own chain.
  */
 export async function assertAiRunFence(
   tx: AiRunTx,
   runId: string,
   fence: AiRunClaimFence | undefined,
+  expectedTenant?: string | null,
 ): Promise<void> {
   if (!fence) return;
-  const ids = await readAiRunChainIds(tx.db, runId);
+  const { ids } = await readAiRunChain(tx.db, runId, expectedTenant);
   const durable = await nearestDurable(tx.db, ids);
   if (!durable) return;
   let held: unknown;
@@ -908,6 +1109,131 @@ export async function assertAiRunFence(
     throw error;
   }
   if (held === false) throw new AiRunClaimLostError(durable);
+}
+
+// ---------------------------------------------------------------------------
+// Run identity (docs/content/ai-runs.md section 8, "Run identity")
+// ---------------------------------------------------------------------------
+
+/**
+ * The hex SHA-256 of a run id's exact UTF-8 bytes: what `_smrt_ai_run_ids`
+ * keeps, so the registry never holds a caller's free text after the run's
+ * own retention removed it.
+ *
+ * @internal
+ */
+export async function aiRunIdDigest(runId: string): Promise<string> {
+  const bytes = new Uint8Array(
+    await crypto.subtle.digest('SHA-256', new TextEncoder().encode(runId)),
+  );
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+/**
+ * Throw a `TypeError` unless `runId` can name a run: a non-empty,
+ * well-formed string (no lone surrogate, which UTF-8 cannot hold and would
+ * digest like U+FFFD) without U+0000 (PostgreSQL text cannot store it).
+ * Any other string is an exact id: case, whitespace and Unicode forms are
+ * distinct ids on every engine.
+ *
+ * @internal
+ */
+export function assertAiRunId(runId: unknown, fn: string): string {
+  if (
+    typeof runId !== 'string' ||
+    runId.length === 0 ||
+    runId.includes(String.fromCharCode(0)) ||
+    !(runId as unknown as { isWellFormed(): boolean }).isWellFormed()
+  ) {
+    throw new TypeError(
+      `${fn}: a run id must be a non-empty, well-formed string without NUL`,
+    );
+  }
+  return runId;
+}
+
+function isMissingTable(error: unknown): boolean {
+  if (classifyDatabaseError(error).kind === 'undefined_object') return true;
+  const message =
+    error instanceof Error
+      ? `${error.message} ${String(error.cause ?? '')}`
+      : String(error);
+  return /does not exist|no such table/i.test(message);
+}
+
+/**
+ * Insert one run row; the only way a run row is written. Inside the
+ * caller's accounting transaction, the run id's digest is reserved in
+ * `_smrt_ai_run_ids` first, so once this transaction commits no later
+ * insert of the same id succeeds, in any tenant, after any prune, from any
+ * process. An id already reserved, or still naming a run row (one an older
+ * core wrote without reserving it), throws {@link AiRunIdUsedError} before
+ * anything is written; a concurrent opener that commits the same id first
+ * makes the insert's unique key fail, which throws the same. A rollback
+ * removes the reservation with the row, so an id that never committed stays
+ * free. Without the registry table (a schema older than 1.20.0) it throws a
+ * `TypeError` before any write and creates nothing.
+ *
+ * @internal
+ */
+export async function insertAiRunRowTx(
+  tx: AiRunTx,
+  row: { id: string } & Record<string, unknown>,
+): Promise<void> {
+  const id = assertAiRunId(row.id, 'insertAiRunRowTx');
+  const digest = await aiRunIdDigest(id);
+  let reserved: Record<string, unknown>[];
+  try {
+    reserved = getRows(
+      await aiRunQuery(
+        tx.db,
+        'SELECT 1 AS used FROM _smrt_ai_run_ids WHERE id_digest = $1',
+        digest,
+      ),
+    );
+  } catch (error) {
+    if (isMissingTable(error)) {
+      throw new TypeError(
+        'AI runs need the run id registry (_smrt_ai_run_ids, system schema 1.20.0): run the system-table bootstrap before opening a run',
+      );
+    }
+    throw error;
+  }
+  if (reserved.length > 0) throw new AiRunIdUsedError(id);
+  const live = getRows(
+    await aiRunQuery(
+      tx.db,
+      'SELECT 1 AS used FROM _smrt_ai_runs WHERE id = $1',
+      id,
+    ),
+  );
+  if (live.length > 0) throw new AiRunIdUsedError(id);
+  const unique = async (statement: () => Promise<unknown>) => {
+    try {
+      await statement();
+    } catch (error) {
+      if (isUniqueViolationError(error)) throw new AiRunIdUsedError(id);
+      throw error;
+    }
+  };
+  await unique(() =>
+    aiRunQuery(
+      tx.db,
+      'INSERT INTO _smrt_ai_run_ids (id_digest, created_at) VALUES ($1, $2)',
+      digest,
+      tx.now.toISOString(),
+    ),
+  );
+  const columns = Object.keys(row);
+  await unique(() =>
+    aiRunQuery(
+      tx.db,
+      `INSERT INTO _smrt_ai_runs (${columns.join(', ')}) VALUES (${columns
+        .map((_, i) => `$${i + 1}`)
+        .join(', ')})`,
+      ...columns.map((column) => row[column]),
+    ),
+  );
 }
 
 export function newAiRunId(): string {

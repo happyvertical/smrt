@@ -6,6 +6,7 @@ import {
   createTrackedAiClient,
   getAiRun,
   getRunTrajectory,
+  openAiRun,
   transitionAiRun,
 } from '@happyvertical/smrt-core';
 import {
@@ -404,6 +405,51 @@ it.each([
   expect(
     await (await hostFor('draft')).countRows(importModelName('orders')),
   ).toBe(2);
+});
+it('recovers a saved retry id that names another tenant run without reading that run', async () => {
+  answer = () => {
+    throw new Error('test engine unavailable');
+  };
+  const first = await service.start(h.owner, await request());
+  await worker();
+  await end();
+  for (const runner of runners) await runner.stop();
+  const foreign = await openAiRun(
+    { db: h.db, usageTracking: true, tenantId: randomUUID() },
+    { type: 'workflow' },
+  );
+  const [row] = await (await AppImportCollection.create({ db: h.db })).list();
+  row.detail = JSON.stringify({
+    ...JSON.parse(row.detail),
+    retry: { from: first.id, id: foreign.id },
+  });
+  await row.save();
+  service.dispose();
+  service = install();
+  const unscoped: string[] = [];
+  const original = h.db.query.bind(h.db);
+  (h.db as { query: unknown }).query = (sql: string, ...params: unknown[]) => {
+    const text = sql.replace(/\s+/g, ' ').trim();
+    if (
+      params.includes(foreign.id) &&
+      /FROM _smrt_ai_run/.test(text) &&
+      !/tenant_id (=|IS NULL)/.test(text) &&
+      !/^SELECT 1 AS used FROM/.test(text)
+    ) {
+      unscoped.push(text);
+    }
+    return original(sql, ...params);
+  };
+  try {
+    await service.recover().catch(() => undefined);
+  } finally {
+    (h.db as { query: unknown }).query = original;
+  }
+  expect(unscoped).toEqual([]);
+  expect(await getAiRun(h.db, foreign.id)).toMatchObject({
+    status: 'running',
+    retryOfRunId: null,
+  });
 });
 it.each([
   'max_tokens',

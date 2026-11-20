@@ -28,9 +28,18 @@ import {
   AiCallLimitError,
   type AiRunClaimFence,
   AiRunNotFoundError,
+  type AiRunScopedTxOptions,
+  type AiRunStatus,
   AiRunStoppedError,
+  AiRunTransitionError,
+  aiRunQuery,
+  assertAiRunFence,
+  expectedTenantOf,
   getAiRun,
+  getRows,
   newAiRunId,
+  rememberSettlementTenant,
+  withAiRunTransaction,
 } from './ai-run-model.js';
 
 const logger = createLogger({ level: 'info' });
@@ -229,6 +238,130 @@ function isAbort(error: unknown): boolean {
 }
 
 /**
+ * The accounting options that carry the context's tenant into the run's
+ * final lookups and locks (empty when the context names none): a run whose
+ * id was pruned and reused by another tenant after the context was made is
+ * never reserved, settled or released.
+ */
+function inContextTenant(context: AiRunContext): AiRunScopedTxOptions {
+  return context.tenantId !== undefined
+    ? { expectedTenant: context.tenantId ?? null }
+    : {};
+}
+
+/**
+ * A plain copy of a context with each of its properties read exactly once
+ * by ordinary property access (an accessor included), so a getter cannot
+ * answer one step of a call differently from the next.
+ */
+function readAiRunContextOnce(context: AiRunContext): AiRunContext {
+  const {
+    runId,
+    db,
+    tenantId,
+    fence,
+    reservations,
+    stepIndex,
+    stepName,
+    stepInstanceId,
+    attempt,
+  } = context;
+  return {
+    runId,
+    db,
+    ...(tenantId !== undefined ? { tenantId } : {}),
+    ...(fence ? { fence } : {}),
+    ...(reservations ? { reservations } : {}),
+    ...(stepIndex !== undefined ? { stepIndex } : {}),
+    ...(stepName !== undefined ? { stepName } : {}),
+    ...(stepInstanceId !== undefined ? { stepInstanceId } : {}),
+    ...(attempt !== undefined ? { attempt } : {}),
+  };
+}
+
+/**
+ * Admit a held reservation just before its call is sent (page section 6.3),
+ * in the tenant the caller's context established: with `checkRunning`, the
+ * chain is locked and must still be `running` (a stopped chain releases the
+ * reservation and the stop is thrown); either way the held call's own event
+ * must still be `reserved` in this run. With a claim fence, both modes
+ * assert it first: a worker whose claim was taken over gets
+ * {@link AiRunClaimLostError}. A run that is gone throws
+ * {@link AiRunNotFoundError}, a reservation no longer held throws
+ * {@link AiRunTransitionError}; nothing is sent.
+ */
+async function admitHeldAiCall(
+  db: DatabaseInterface,
+  runId: string,
+  callId: string,
+  options: AiRunScopedTxOptions & { checkRunning: boolean },
+): Promise<void> {
+  if (options.checkRunning) {
+    // The claim fence is asserted first, inside the same transaction.
+    await assertAiRunStillRunning(db, runId, {
+      ...options,
+      releaseCallId: callId,
+    });
+    return;
+  }
+  const tenant = expectedTenantOf(options);
+  if (options.fence) {
+    // A worker that lost its claim never spends a reservation it took
+    // before: the fence is asserted, then the reservation read, in one
+    // transaction (the job row first, as in every accounting write).
+    const fence = options.fence;
+    await withAiRunTransaction(
+      db,
+      async (tx) => {
+        await assertAiRunFence(tx, runId, fence, tenant);
+        await readHeldReservation(tx.db, runId, callId, tenant);
+      },
+      options,
+    );
+    return;
+  }
+  await readHeldReservation(db, runId, callId, tenant);
+}
+
+/** Throw unless the held call's event is still `reserved` in its run. */
+async function readHeldReservation(
+  db: DatabaseInterface,
+  runId: string,
+  callId: string,
+  tenant: string | null | undefined,
+): Promise<void> {
+  const rows = getRows(
+    await aiRunQuery(
+      db,
+      `SELECT r.status, e.reservation FROM _smrt_ai_runs r
+         LEFT JOIN _smrt_ai_run_events e
+           ON e.run_id = r.id AND e.call_id = $2 AND e.type = 'call'
+        WHERE r.id = $1${
+          tenant === undefined
+            ? ''
+            : tenant === null
+              ? ' AND r.tenant_id IS NULL'
+              : ' AND r.tenant_id = $3'
+        }`,
+      runId,
+      callId,
+      ...(tenant === undefined || tenant === null ? [] : [tenant]),
+    ),
+  );
+  const row = rows[0];
+  if (!row) throw new AiRunNotFoundError(runId);
+  if (row.reservation !== 'reserved') {
+    const status = String(row.status) as AiRunStatus;
+    throw new AiRunTransitionError(
+      `AI call ${callId} of run ${runId} is no longer reserved`,
+      runId,
+      status,
+      status,
+    );
+  }
+}
+
+/**
  * Write one call's usage row with its settlement; the handlers run only
  * after it commits. A settlement that fails every retry waits on the
  * database's pending list.
@@ -243,12 +376,22 @@ async function settleTaggedCall(
 ): Promise<void> {
   const tagged: SmrtAiUsageEvent = {
     ...event,
+    // A call of a run is billed to the run's tenant (the settlement writes
+    // the row with the run row's own), and the handlers see the same.
+    ...(context.tenantId !== undefined
+      ? { tenantId: context.tenantId ?? null }
+      : {}),
     tags: { ...(event.tags ?? {}), ...usageTags },
   };
   const input = { runId: context.runId, callId, usage: tagged, status };
   const after = afterSettle ? () => afterSettle(tagged) : undefined;
+  // The run is settled in the tenant its context names, also when the
+  // settlement is queued and written later.
+  if (context.tenantId !== undefined) {
+    rememberSettlementTenant(input, context.tenantId ?? null);
+  }
   try {
-    await settleAiCall(context.db, input);
+    await settleAiCall(context.db, input, inContextTenant(context));
   } catch (error) {
     logger.warn(
       `[smrt] AI run ${context.runId} settlement of call ${callId} failed; kept pending: ${
@@ -332,13 +475,18 @@ export interface AiRunCallHandle {
  * settlement that fails every retry waits on the database's pending list.
  */
 export async function beginAiRunCall(
-  context: AiRunContext,
+  passed: AiRunContext,
   request: AiRunCallRequest,
 ): Promise<AiRunCallHandle> {
+  // Each property is read once: the fence, tenant and run that admit the
+  // call are the ones every later step uses.
+  const context = readAiRunContextOnce(passed);
   const held = context.reservations?.take();
-  if (held?.checkRunning) {
-    await assertAiRunStillRunning(context.db, context.runId, {
-      releaseCallId: held.reservation.callId,
+  if (held) {
+    await admitHeldAiCall(context.db, context.runId, held.reservation.callId, {
+      checkRunning: Boolean(held.checkRunning),
+      ...(context.fence ? { fence: context.fence } : {}),
+      ...inContextTenant(context),
     });
   }
   const callId = held?.reservation.callId ?? request.callId ?? newAiRunId();
@@ -370,7 +518,10 @@ export async function beginAiRunCall(
           name: request.name ?? context.stepName ?? null,
           parentEventId: request.parentEventId ?? null,
         },
-        context.fence ? { fence: context.fence } : {},
+        {
+          ...(context.fence ? { fence: context.fence } : {}),
+          ...inContextTenant(context),
+        },
       );
 
   const slot: { event?: SmrtAiUsageEvent; ended?: true } = {};
@@ -436,11 +587,11 @@ export async function beginAiRunCall(
         // It reported usage before it ended: charged, with how it ended.
         await settle(slot.event, status);
       } else {
-        await releaseAiCall(context.db, {
-          runId: context.runId,
-          callId,
-          status,
-        }).catch((releaseError) => {
+        await releaseAiCall(
+          context.db,
+          { runId: context.runId, callId, status },
+          inContextTenant(context),
+        ).catch((releaseError) => {
           logger.warn(
             `[smrt] AI run ${context.runId} could not release call ${callId}: ${
               releaseError instanceof Error
@@ -458,7 +609,12 @@ export async function beginAiRunCall(
         }
       }
       if (error instanceof AiRunStoppedError && error.runId !== context.runId) {
-        return stopAiRunForChild(context.db, context.runId, error);
+        return stopAiRunForChild(
+          context.db,
+          context.runId,
+          error,
+          inContextTenant(context),
+        );
       }
       return error;
     },

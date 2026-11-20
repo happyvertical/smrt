@@ -1,0 +1,181 @@
+/**
+ * `reportAiUsage()` and `reportAiRuns()` read only the rows they total: the
+ * tenant filter is a predicate of every query that reads rows, and the rest
+ * of the window is only counted in SQL (`excluded`), with the same numbers
+ * as before. Real SQLite and DuckDB (PGlite in its lane).
+ */
+
+import type { DatabaseInterface } from '@happyvertical/sql';
+import { afterEach, describe, expect, it } from 'vitest';
+import { insertAiUsageRow } from '../adapters/ai-usage';
+import {
+  openAiRun,
+  recordAiEvaluation,
+  reportAiRuns,
+  reportAiUsage,
+} from '../system/browser';
+import {
+  aiRunTestEngines,
+  closeAiRunTestDatabases,
+  newAiRunTestDatabase,
+  usageEvent,
+} from './fixtures/ai-run-test-db';
+
+afterEach(async () => {
+  await closeAiRunTestDatabases();
+});
+
+async function usage(
+  db: DatabaseInterface,
+  id: string,
+  tenantId: string | null,
+  at: Date,
+  tags: Record<string, string> = {},
+): Promise<void> {
+  await insertAiUsageRow(
+    db,
+    {
+      ...usageEvent(10, 0.01, { promptKey: 'scope.prompt', ...tags }),
+      tenantId,
+      timestamp: at,
+    },
+    { id },
+  );
+}
+
+/** Every SQL text and parameter list the database is asked to run. */
+function recordQueries(db: DatabaseInterface): {
+  queries: Array<{ sql: string; params: unknown[] }>;
+  stop(): void;
+} {
+  const queries: Array<{ sql: string; params: unknown[] }> = [];
+  const original = db.query.bind(db);
+  (db as { query: unknown }).query = (sql: string, ...params: unknown[]) => {
+    queries.push({ sql, params });
+    return original(sql, ...params);
+  };
+  return {
+    queries,
+    stop: () => {
+      (db as { query: unknown }).query = original;
+    },
+  };
+}
+
+describe.each(aiRunTestEngines)('usage report scope on %s', (engine) => {
+  it('totals one tenant from that tenant rows only, counting the others in SQL', async () => {
+    const db = await newAiRunTestDatabase(engine);
+    const now = new Date();
+    await usage(db, 'scope-own-1', 'tenant-one', now);
+    await usage(db, 'scope-own-2', 'tenant-one', now);
+    await usage(db, 'scope-other-1', 'tenant-two', now);
+    await usage(db, 'scope-other-2', 'tenant-two', now);
+    await usage(db, 'scope-global', null, now);
+    await recordAiEvaluation(db, {
+      callId: 'scope-own-1',
+      label: 'accepted',
+      evaluator: 'human',
+    });
+    await recordAiEvaluation(db, {
+      callId: 'scope-other-1',
+      label: 'rejected',
+      evaluator: 'human',
+    });
+
+    const recorder = recordQueries(db);
+    const report = await reportAiUsage(db, {
+      by: ['prompt'],
+      tenantId: 'tenant-one',
+      transcripts: true,
+    });
+    recorder.stop();
+
+    expect(report.totals.calls).toBe(2);
+    expect(report.totals.evaluations).toEqual({ accepted: 1 });
+    expect(report.excluded).toEqual({ otherTenants: 3, externalAgent: 0 });
+    // Every query that reads usage rows, evaluations or transcripts carries
+    // the tenant as a predicate; only the exclusion counts span the window.
+    const reads = recorder.queries.filter(
+      (query) =>
+        /FROM _smrt_ai_(usage|evaluations|transcripts)/.test(query.sql) &&
+        !/SELECT COUNT\(\*\)/.test(query.sql),
+    );
+    expect(reads.length).toBeGreaterThan(0);
+    for (const query of reads) {
+      expect(query.sql).toMatch(/tenant_id = \$\d+/);
+      expect(query.params).toContain('tenant-one');
+    }
+
+    // The global scope reads global rows only.
+    const global = await reportAiUsage(db, { tenantId: null });
+    expect(global.totals.calls).toBe(1);
+    expect(global.excluded.otherTenants).toBe(4);
+
+    // Without a tenant (an operator report) every tenant is totalled.
+    const all = await reportAiUsage(db, { by: ['tenant'] });
+    expect(all.totals.calls).toBe(5);
+    expect(all.totals.evaluations).toEqual({ accepted: 1, rejected: 1 });
+  });
+
+  it('counts a run label once per tenant even when another tenant reuses the run id', async () => {
+    const db = await newAiRunTestDatabase(engine);
+    const now = new Date();
+    const run = await openAiRun(
+      { db, usageTracking: true, tenantId: 'tenant-one' },
+      { type: 'turn' },
+    );
+    await usage(db, 'scope-run-1', 'tenant-one', now, { runId: run.id });
+    await usage(db, 'scope-run-2', 'tenant-one', now, { runId: run.id });
+    await usage(db, 'scope-run-3', 'tenant-two', now, { runId: run.id });
+    await recordAiEvaluation(db, {
+      runId: run.id,
+      label: 'accepted',
+      evaluator: 'human',
+    });
+    const one = await reportAiUsage(db, { tenantId: 'tenant-one' });
+    expect(one.totals.calls).toBe(2);
+    expect(one.totals.evaluations).toEqual({ accepted: 1 });
+    const two = await reportAiUsage(db, { tenantId: 'tenant-two' });
+    expect(two.totals.calls).toBe(1);
+    expect(two.totals.evaluations).toEqual({});
+  });
+
+  it('classifies an external-agent id prefix the same way with and without a tenant filter', async () => {
+    const db = await newAiRunTestDatabase(engine);
+    const now = new Date();
+    await usage(db, 'external-agent:canonical', 'tenant-one', now);
+    await usage(db, 'EXTERNAL-AGENT:mixed', 'tenant-one', now);
+    await db.query(
+      "UPDATE _smrt_ai_usage SET operation = 'external-agent' WHERE id IN ('external-agent:canonical', 'EXTERNAL-AGENT:mixed')",
+    );
+    const all = await reportAiUsage(db, {});
+    const one = await reportAiUsage(db, { tenantId: 'tenant-one' });
+    expect(all.totals.calls).toBe(1);
+    expect(all.excluded.externalAgent).toBe(1);
+    expect(one.totals.calls).toBe(all.totals.calls);
+    expect(one.excluded.externalAgent).toBe(all.excluded.externalAgent);
+  });
+
+  it('reads one tenant runs only in the run report', async () => {
+    const db = await newAiRunTestDatabase(engine);
+    for (const tenantId of ['tenant-one', 'tenant-two', 'tenant-two', null]) {
+      await openAiRun({ db, usageTracking: true, tenantId }, { type: 'turn' });
+    }
+    const recorder = recordQueries(db);
+    const one = await reportAiRuns(db, { tenantId: 'tenant-one' });
+    recorder.stop();
+    expect(one.totals.runs).toBe(1);
+    expect(one.excluded).toEqual({ otherTenants: 3 });
+    const runReads = recorder.queries.filter(
+      (query) =>
+        /FROM _smrt_ai_runs/.test(query.sql) &&
+        !/SELECT COUNT\(\*\)/.test(query.sql),
+    );
+    expect(runReads.length).toBeGreaterThan(0);
+    for (const query of runReads) {
+      expect(query.sql).toMatch(/tenant_id = \$\d+/);
+    }
+    expect((await reportAiRuns(db, { tenantId: null })).totals.runs).toBe(1);
+    expect((await reportAiRuns(db)).totals.runs).toBe(4);
+  });
+});

@@ -339,5 +339,61 @@ describe('calls of a run through smrt-inference (#5005)', () => {
         Math.ceil((first.text.length + first.instructions.length) / 4) + 4096,
       );
     });
+
+    it('neither releases the skipped seat nor finishes the fusion when the claim is taken over before it closes', async () => {
+      let claimHeld = true;
+      const gate = decisions('done');
+      const { instance } = note(
+        GATED,
+        {},
+        {
+          decisions: {
+            ...gate,
+            // The claim is taken over while the gate decides.
+            decide: async (...args: unknown[]) => {
+              claimHeld = false;
+              return (gate.decide as (...a: unknown[]) => unknown)(...args);
+            },
+          },
+        },
+      );
+      await instance.initialize();
+      const parent = await openAiRun(
+        { db, usageTracking: true },
+        { type: 'workflow', durable: true },
+      );
+      const error = await instance
+        .do('Review this contract', {
+          tier: 'best',
+          runContext: { runId: parent.id, db, fence: async () => claimHeld },
+        } as never)
+        .catch((caught: unknown) => caught);
+      expect((error as { code?: unknown }).code).toBe('AI_RUN_CLAIM_LOST');
+      const [run] = rows(
+        await db.query(`SELECT id FROM _smrt_ai_runs WHERE type = 'fusion'`),
+      );
+      const runId = String(run?.id);
+      // The stale worker finished nothing and released nothing: the skipped
+      // reviewer's share is still reserved for the new claim holder.
+      expect(await getAiRun(db, runId)).toMatchObject({
+        status: 'running',
+        reservedCalls: 1,
+      });
+      expect(await getAiRun(db, parent.id)).toMatchObject({
+        status: 'running',
+      });
+      const events = rows(
+        await db.query(
+          `SELECT name, reservation FROM _smrt_ai_run_events
+            WHERE run_id = $1 AND type = 'call' ORDER BY seq`,
+          runId,
+        ),
+      );
+      expect(events.map((event) => [event.name, event.reservation])).toEqual([
+        ['drafter', 'settled'],
+        ['reviewer', 'reserved'],
+        ['gate', 'settled'],
+      ]);
+    });
   });
 });

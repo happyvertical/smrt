@@ -105,7 +105,9 @@ Reading the picture:
   (see [section 6](#6-budgets-and-how-they-are-accounted)).
 - `parent_run_id` points **up**, from a child run to the run that started it.
   `retry_of_run_id` points **back**, from a retry to the failed run it picks
-  up from.
+  up from. Both stay inside one tenant: opening a run whose parent or retry
+  source belongs to another tenant (or to the global scope, when the new run
+  is a tenant's, and the reverse) fails as if that run did not exist.
 - **Events** are the ordered record of what happened. `seq` is append order,
   not causal order; `parent_event_id` carries cause.
 - A **checkpoint** exists only for a durable run and holds what resuming needs.
@@ -716,9 +718,11 @@ allowance is its own output limit, else its prompt's `expectedOutputTokens`,
 else `D`; its `E` is its prompt plus the panel seats' reserved output
 allowances, because the panel's answers are its input. The judge is later
 sent under that reservation and does not reserve again; just before it is
-sent the fusion checks, in a short transaction, that it and its chain are
+sent the fusion checks, in a short transaction, that its worker still holds
+its claim (section 6.4) and that it and its chain are
 still `running`, and if not it releases the judge's reservation and stops with
-the reason it found. If the judge is never sent (every panelist failed), its
+the reason it found (a worker that lost its claim changes nothing and sends
+nothing). If the judge is never sent (every panelist failed), its
 reservation is released. A judge whose real input turns out larger than its
 `E` is charged in full when it settles, like any overshoot (below).
 
@@ -1048,7 +1052,9 @@ rebuilt automatically, and resuming never recomputes them.
 `checkAiRunTotals(runId)` compares a run's own totals with its usage
 rows. It can do so only while every `settled`, `settled_late` and `unreserved`
 call event of the run still has its usage row; otherwise it reports the run as
-unverifiable, never as wrong.
+unverifiable, never as wrong. It reads the run's stored totals and those
+usage rows in one statement, so a settlement or a prune that commits while it
+runs is seen whole or not at all; a run that is gone is not found.
 
 `repairAiRunTotals(runId)` is an explicit operator action. It
 refuses an unverifiable run. Otherwise it recomputes the run's own totals from
@@ -1310,7 +1316,10 @@ in one transaction.
   from its last accepted step. The retry is a **new run**, never the failed
   run resumed in place: a durable `workflow` run of the same
   `definition_key`, with `retry_of_run_id` naming the failed run, opened like
-  any other run (its own owner, parent and budget). It inherits only the
+  any other run (its own parent and budget) for the failed run's owner: a
+  retry for another owner is refused with reason `not_retryable` before the
+  failed run's checkpoint is read (no owner on both sides matches). It
+  inherits only the
   **accepted outputs of the completed steps** in the failed run's checkpoint:
   its first checkpoint starts with them, and it starts at the step the failed
   run did not complete. The definition version must match under the same rule
@@ -1427,8 +1436,50 @@ retries, and its `reason` is one typed code:
 - **Payload size.** Each event payload is capped (head and tail kept, `truncated`
   set). Full request and response text of a call is stored only when
   transcripts are enabled.
-- **Privacy.** Trajectories hold user data. The tracking supports redaction
-  before an event is stored, with the same redactor transcripts use.
+- **Privacy.** Trajectories hold user data. An event payload is redacted
+  before it is stored, on the same path transcripts use, and the host
+  redactor sees the run's tenant. When a trajectory is read, the built-in
+  redactor runs again (never the host's), and the head and tail kept from a
+  truncated payload are masked as text.
+
+### Run identity
+
+A run id names at most one run for the lifetime of the database. Once a run
+with id X has been opened, no later open of X succeeds, in any tenant, after
+any prune. A run can disappear, but its id never comes back as a different
+run, so whatever still holds the id (a bound tracked client, a held
+reservation, a queued job, a late usage callback, a surviving child's
+`parent_run_id`, another run's `retry_of_run_id`) finds that run or nothing.
+
+- **The registry.** `_smrt_ai_run_ids` (schema 1.20.0) keeps the hex SHA-256
+  of each run id's UTF-8 bytes, never the id itself, with no tenant column.
+  Every run row is written through one helper that reserves the digest in
+  the same transaction, before the row; a rollback frees it again. Retention
+  never deletes from it. The row prune reserves the id of a row before it
+  deletes it, which also covers a run an older core opened without
+  reserving it.
+- **Refusal.** Opening (or the deprecated `recordAiRun`) with an id that is
+  reserved, or that still names a run row, throws the final
+  `AiRunIdUsedError` (`AI_RUN_ID_USED`) before anything is written. Of two
+  concurrent openers of one id, exactly one succeeds. A caller-chosen id
+  must be a non-empty, well-formed string without NUL (`TypeError`
+  otherwise); case, whitespace and Unicode forms are distinct ids.
+- **Disclosure.** A refusal tells the caller that the id was used, by
+  someone, at some time, even after every row of that run has expired. Live
+  ids already disclosed that through the primary key. A caller that chooses
+  ids should use unguessable ones (`crypto.randomUUID()`), never ids derived
+  from user data.
+- **Upgrade.** Upgrading to 1.20.0 reserves every id that still exists or is
+  still referenced by a run, event, checkpoint, usage row, evaluation or
+  transcript. An id pruned earlier with no trace left cannot be recovered.
+  The guarantee starts at the upgrade: reuse that happened before it is not
+  repaired. `smrt doctor --db` reports referenced ids with neither a run row
+  nor a registry row, and runs created before their own parent (a parent id
+  reused before the upgrade).
+- **Cutover.** Before upgrading, drain the processes on an older core that
+  open runs or sweep retention, and do not run an older core against an
+  upgraded database: an older core opens and prunes without the registry.
+  The registry is never compacted, and a restore must keep it.
 
 ## 9. Existing data
 

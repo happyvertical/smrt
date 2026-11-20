@@ -43,9 +43,12 @@ import {
 import {
   type AiRunBudget,
   type AiRunRow,
+  type AiRunScopedTxOptions,
   AiRunStoppedError,
+  assertAiRunFence,
   getAiRun,
   newAiRunId,
+  withAiRunTransaction,
 } from './ai-run-model.js';
 
 /** Input of {@link openAiEntryRun}. */
@@ -133,6 +136,9 @@ export async function openAiEntryRun(
   input: OpenAiEntryRunInput,
 ): Promise<AiEntryRun> {
   const parent = input.parent ?? null;
+  // The parent's claim fence, read once: the reservation, every seat's
+  // admission and the run's own cleanup and finish all assert this one.
+  const fence = parent?.fence;
   const entryCallId = input.entryCallId ?? newAiRunId();
   const handoffEventId = parent ? newAiRunId() : null;
   const runStore: AiRunStore = parent
@@ -163,19 +169,36 @@ export async function openAiEntryRun(
     runId: run.id,
     db,
     tenantId: run.tenantId,
-    ...(parent?.fence ? { fence: parent.fence } : {}),
+    ...(fence ? { fence } : {}),
   };
   const held = new Map<string, AiRunHeldReservation>();
   let ended = false;
+  // Cleanup and finish assert the claim fence in their own transactions: a
+  // worker that lost its claim releases, records and finishes nothing (the
+  // held reservations are the new claim holder's to reconcile).
+  const fenced: AiRunScopedTxOptions = {
+    ...(fence ? { fence } : {}),
+    expectedTenant: run.tenantId,
+  };
+  const assertClaim = async () => {
+    if (!fence) return;
+    await withAiRunTransaction(db, (tx) =>
+      assertAiRunFence(tx, run.id, fence, run.tenantId),
+    );
+  };
 
   const releaseUnused = async () => {
     for (const [name, share] of held) {
+      await releaseAiCall(
+        db,
+        {
+          runId: run.id,
+          callId: share.reservation.callId,
+          status: 'cancelled',
+        },
+        fenced,
+      );
       held.delete(name);
-      await releaseAiCall(db, {
-        runId: run.id,
-        callId: share.reservation.callId,
-        status: 'cancelled',
-      });
     }
   };
   const endHandoff = async (status: AiRunRow['status']) => {
@@ -244,7 +267,7 @@ export async function openAiEntryRun(
         db,
         run.id,
         prepared,
-        parent?.fence ? { fence: parent.fence } : {},
+        fence ? { fence } : {},
       );
       for (const [i, reservation] of reservations.entries()) {
         const request = requests[i] as AiEntryRunCallRequest;
@@ -256,6 +279,7 @@ export async function openAiEntryRun(
     },
     async close(outcome) {
       if (ended) return getAiRun(db, run.id);
+      await assertClaim();
       ended = true;
       await releaseUnused();
       await updateAiRun(db, run.id, {
@@ -271,6 +295,7 @@ export async function openAiEntryRun(
         outcome.status === 'done'
           ? { status: 'done', degraded: Boolean(outcome.degraded) }
           : { status: 'failed', stopReason: 'error' },
+        fence ? { fence } : {},
       );
       // Whatever it ended as (a stop by an ancestor may have won).
       const after = await getAiRun(db, run.id);
@@ -279,6 +304,7 @@ export async function openAiEntryRun(
     },
     async stop(error) {
       if (!ended) {
+        await assertClaim();
         ended = true;
         await releaseUnused();
       }
@@ -291,7 +317,13 @@ export async function openAiEntryRun(
             : aiRunStoppedError(after ?? run);
       if (after && after.status !== 'running') await endHandoff(after.status);
       if (!parent) return own;
-      return stopAiRunForChild(parent.db, parent.runId, own);
+      const scoped: AiRunScopedTxOptions = {
+        ...(parent.tenantId !== undefined
+          ? { expectedTenant: parent.tenantId ?? null }
+          : {}),
+        ...(fence ? { fence } : {}),
+      };
+      return stopAiRunForChild(parent.db, parent.runId, own, scoped);
     },
   };
 }

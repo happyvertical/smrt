@@ -24,6 +24,7 @@ import {
   AiRunCheckpointConflictError,
   type AiRunClaimFence,
   AiRunNotFoundError,
+  type AiRunReadScope,
   AiRunResumeRefusedError,
   type AiRunRow,
   type AiRunStatus,
@@ -36,10 +37,13 @@ import {
   type AiRunTxOptions,
   aiRunActiveTime,
   aiRunQuery,
+  aiRunScopeClause,
   assertAiRunFence,
+  assertAiRunId,
+  expectedTenantOf,
   foldActive,
-  getAiRun,
   getRows,
+  insertAiRunRowTx,
   isAiRunFinal,
   isValidAiRunType,
   lockAiRun,
@@ -48,7 +52,7 @@ import {
   normalizeAiRunBudget,
   num,
   parseJsonObject,
-  readAiRunChainIds,
+  readAiRunChainIdsInTenant,
   readAiRunDescendantIds,
   text,
   withAiRunTransaction,
@@ -326,16 +330,27 @@ function toCheckpoint(row: Record<string, unknown>): AiRunCheckpoint {
   };
 }
 
-/** Read a run's checkpoint, or `null` (not durable, or pruned). */
+/**
+ * Read a run's checkpoint, or `null` (not durable, or pruned). With
+ * `scope`, the checkpoint is read joined to its run within that scope, in
+ * one statement: the checkpoint of a run outside it is never read.
+ */
 export async function readAiRunCheckpoint(
   db: DatabaseInterface,
   runId: string,
+  scope?: AiRunReadScope,
 ): Promise<AiRunCheckpoint | null> {
+  const scoped = aiRunScopeClause(scope, 2);
   const rows = getRows(
     await aiRunQuery(
       db,
-      'SELECT * FROM _smrt_ai_run_checkpoints WHERE run_id = $1',
+      scope
+        ? `SELECT c.* FROM _smrt_ai_run_checkpoints c
+             JOIN _smrt_ai_runs r ON r.id = c.run_id
+            WHERE c.run_id = $1${scoped.sql}`
+        : 'SELECT * FROM _smrt_ai_run_checkpoints WHERE run_id = $1',
       runId,
+      ...scoped.params,
     ),
   );
   return rows[0] ? toCheckpoint(rows[0]) : null;
@@ -555,125 +570,244 @@ export async function openAiRun(
   input: OpenAiRunInput,
   options: AiRunTxOptions = {},
 ): Promise<AiRunRow> {
-  assertAiRunTracking(store);
-  if (typeof input.type !== 'string' || !isValidAiRunType(input.type)) {
+  // One snapshot of the store and the input: every public property is read
+  // exactly once, here, whether it is an own field or a getter, and the
+  // values validated below are the ones written, even if the caller's
+  // objects change while this runs (a retry's `carry` callback runs in the
+  // middle). A getter that throws fails the open before anything is read
+  // from or written to the database.
+  const scope = snapshotStore(store);
+  const req = snapshotInput(input);
+  assertAiRunTracking(scope);
+  if (typeof req.type !== 'string' || !isValidAiRunType(req.type)) {
     throw new TypeError(
-      `openAiRun: type must be fusion, turn, workflow or @scope/pkg:type, got ${String(input.type)}`,
+      `openAiRun: type must be fusion, turn, workflow or @scope/pkg:type, got ${String(req.type)}`,
     );
   }
-  const budget = normalizeAiRunBudget(input.budget, 'openAiRun: budget');
-  const id = input.id ?? newAiRunId();
-  const retryOf = input.retryOfRunId ?? null;
-  const durable = Boolean(input.durable) || retryOf !== null;
-  if (retryOf && input.type !== 'workflow') {
+  const budget = normalizeAiRunBudget(req.budget, 'openAiRun: budget');
+  // A caller-chosen id is checked before anything is read or written; it
+  // must never have named a run (insertAiRunRowTx, page section 8).
+  const id =
+    req.id === undefined ? newAiRunId() : assertAiRunId(req.id, 'openAiRun');
+  const retryOf = req.retryOfRunId ?? null;
+  const durable = Boolean(req.durable) || retryOf !== null;
+  if (retryOf && req.type !== 'workflow') {
     throw new AiRunResumeRefusedError(
       'Only a workflow run is retried',
       retryOf,
       'not_retryable',
     );
   }
+  if (req.handoff && !req.parentRunId) {
+    throw new TypeError('openAiRun: a handoff needs parentRunId');
+  }
+  // Serialized before the transaction: a payload that cannot be written
+  // fails here, never between two writes of a caller-owned transaction.
+  const tagsJson = req.tags ? JSON.stringify(req.tags) : null;
+  const budgetJson = JSON.stringify(budget);
+  const tenantId = scope.tenantId ?? null;
 
-  await withAiRunTransaction(
-    store.db,
+  return withAiRunTransaction(
+    scope.db,
     async (tx) => {
       let initial: { state: unknown; highestStepIndex: number | null } = {
-        state: input.checkpoint?.state ?? null,
+        state: req.checkpoint?.state ?? null,
         highestStepIndex: null,
       };
-      // The parent and the retried run are locked in the page's order:
-      // by depth, then id.
       const locked = new Map<string, AiRunRow | null>();
-      const targets = [input.parentRunId, retryOf].filter(
+      const requested = [req.parentRunId, retryOf].filter(
         (id): id is string => typeof id === 'string' && id.length > 0,
       );
+      // A referenced run of another tenant (global `null` included) is
+      // treated exactly as a run that is not there: the new run is written
+      // under the store's tenant, so a parent or retry source must share it.
+      // Each is first looked up in that tenant (a SQL predicate): another
+      // tenant's run is never read or locked, and neither its ancestry nor
+      // its status, definition or checkpoint is read, so a refusal says
+      // nothing about it.
+      const targets: string[] = [];
+      for (const id of new Set(requested)) {
+        const found = getRows(
+          await aiRunQuery(
+            tx.db,
+            `SELECT id FROM _smrt_ai_runs WHERE id = $1 AND ${
+              tenantId === null ? 'tenant_id IS NULL' : 'tenant_id = $2'
+            }`,
+            id,
+            ...(tenantId === null ? [] : [tenantId]),
+          ),
+        );
+        if (found.length > 0) targets.push(id);
+        else locked.set(id, null);
+      }
+      // The parent and the retried run are locked in the page's order:
+      // by depth, then id. Depth is walked in the run's tenant.
       const depths = new Map<string, number>();
       for (const id of targets) {
-        const ids = await readAiRunChainIds(tx.db, id).catch((error) => {
-          if (error instanceof AiRunNotFoundError) return [id];
-          throw error;
-        });
+        const ids = await readAiRunChainIdsInTenant(tx.db, id, tenantId).catch(
+          (error) => {
+            if (error instanceof AiRunNotFoundError) return [id];
+            throw error;
+          },
+        );
         depths.set(id, ids.length);
       }
-      for (const id of [...new Set(targets)].sort(
+      for (const id of targets.sort(
         (a, b) =>
           (depths.get(a) ?? 0) - (depths.get(b) ?? 0) || a.localeCompare(b),
       )) {
-        locked.set(id, await lockAiRun(tx, id));
+        // Locked in the tenant it was read in: a row that left the tenant
+        // since is not locked, and reads as absent.
+        locked.set(id, await lockAiRun(tx, id, tenantId));
       }
-      if (input.parentRunId) {
-        const parent = locked.get(input.parentRunId);
-        if (!parent) throw new AiRunNotFoundError(input.parentRunId);
+      if (req.parentRunId) {
+        const parent = locked.get(req.parentRunId);
+        if (!parent) throw new AiRunNotFoundError(req.parentRunId);
         if (parent.status !== 'running') throw aiRunStoppedError(parent);
-      } else if (input.handoff) {
-        throw new TypeError('openAiRun: a handoff needs parentRunId');
       }
       if (retryOf) {
         initial = await retryStartTx(
           tx,
           locked.get(retryOf) ?? null,
           retryOf,
-          input,
+          req,
         );
       }
+      // The first checkpoint is serialized before the first write too.
+      const checkpointJson = durable
+        ? envelope(initial.highestStepIndex, initial.state)
+        : null;
       const now = tx.now.toISOString();
-      await aiRunQuery(
-        tx.db,
-        `INSERT INTO _smrt_ai_runs
-           (id, type, definition_key, definition_version, tenant_id,
-            class_name, prompt_key, template_hash, owner_id, parent_run_id,
-            retry_of_run_id, experiment_id, dataset_item, tags, status,
-            budget, active_since, started_at, created_at, mode)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14,
-                 'running', $15, $16, $16, $16, $17)`,
+      // The id's digest is reserved in this transaction, before the row.
+      await insertAiRunRowTx(tx, {
         id,
-        input.type,
-        input.definitionKey ?? null,
-        input.definitionVersion ?? null,
-        store.tenantId ?? null,
-        store.className ?? null,
-        input.promptKey ?? null,
-        input.templateHash ?? null,
-        input.ownerId ?? null,
-        input.parentRunId ?? null,
-        retryOf,
-        input.experimentId ?? null,
-        input.datasetItem ?? null,
-        input.tags ? JSON.stringify(input.tags) : null,
-        JSON.stringify(budget),
-        now,
-        input.mode ?? null,
-      );
-      if (durable) {
+        type: req.type,
+        definition_key: req.definitionKey ?? null,
+        definition_version: req.definitionVersion ?? null,
+        tenant_id: tenantId,
+        class_name: scope.className ?? null,
+        prompt_key: req.promptKey ?? null,
+        template_hash: req.templateHash ?? null,
+        owner_id: req.ownerId ?? null,
+        parent_run_id: req.parentRunId ?? null,
+        retry_of_run_id: retryOf,
+        experiment_id: req.experimentId ?? null,
+        dataset_item: req.datasetItem ?? null,
+        tags: tagsJson,
+        status: 'running',
+        budget: budgetJson,
+        active_since: now,
+        started_at: now,
+        created_at: now,
+        mode: req.mode ?? null,
+      });
+      if (checkpointJson !== null) {
         await aiRunQuery(
           tx.db,
           `INSERT INTO _smrt_ai_run_checkpoints
              (run_id, revision, lease, last_seq, definition_version, state)
            VALUES ($1, 0, $2, 0, $3, $4)`,
           id,
-          input.checkpoint?.lease ?? null,
-          input.definitionVersion ?? null,
-          envelope(initial.highestStepIndex, initial.state),
+          req.checkpoint?.lease ?? null,
+          req.definitionVersion ?? null,
+          checkpointJson,
         );
       }
-      if (input.parentRunId && input.handoff) {
+      if (req.parentRunId && req.handoff) {
         // The parent's row is locked above, as every write of its events.
-        await insertAiRunEventTx(tx, input.parentRunId, {
-          id: input.handoff.eventId ?? newAiRunId(),
+        await insertAiRunEventTx(tx, req.parentRunId, {
+          id: req.handoff.eventId ?? newAiRunId(),
           type: 'handoff',
           childRunId: id,
-          callId: input.handoff.callId ?? null,
-          name: input.handoff.name ?? null,
-          stepIndex: input.handoff.stepIndex ?? null,
-          parentEventId: input.handoff.parentEventId ?? null,
+          callId: req.handoff.callId ?? null,
+          name: req.handoff.name ?? null,
+          stepIndex: req.handoff.stepIndex ?? null,
+          parentEventId: req.handoff.parentEventId ?? null,
           status: 'running',
         });
       }
+      // The row returned is the one this transaction inserted, read before
+      // it commits and in its tenant.
+      const row = await lockAiRun(tx, id, tenantId);
+      if (!row) throw new AiRunNotFoundError(id);
+      return row;
     },
     options,
   );
-  const row = await getAiRun(store.db, id);
-  if (!row) throw new AiRunNotFoundError(id);
-  return row;
+}
+
+/**
+ * Every key of `T`, required to be present, with its declared value type
+ * (an optional key may hold `undefined`). An object literal checked with
+ * `satisfies Snapshot<T>` names every key of `T`, so a key added to `T`
+ * later fails to compile until the snapshot copies it.
+ */
+type Snapshot<T> = { [K in keyof Required<T>]: T[K] };
+
+/** Read each public property of the store exactly once. */
+function snapshotStore(store: AiRunStore): AiRunStore {
+  return {
+    db: store.db,
+    usageTracking: store.usageTracking,
+    tenantId: store.tenantId,
+    className: store.className,
+  } satisfies Snapshot<AiRunStore>;
+}
+
+/**
+ * Read each property of the input exactly once (own fields and getters
+ * alike), copying the nested objects the open reads later. A callback keeps
+ * its receiver.
+ */
+function snapshotInput(input: OpenAiRunInput): OpenAiRunInput {
+  const tags = input.tags;
+  const checkpoint = input.checkpoint;
+  const handoff = input.handoff;
+  const retry = input.retry;
+  return {
+    id: input.id,
+    type: input.type,
+    definitionKey: input.definitionKey,
+    definitionVersion: input.definitionVersion,
+    promptKey: input.promptKey,
+    templateHash: input.templateHash,
+    ownerId: input.ownerId,
+    parentRunId: input.parentRunId,
+    experimentId: input.experimentId,
+    datasetItem: input.datasetItem,
+    tags: tags ? { ...tags } : undefined,
+    budget: input.budget,
+    durable: input.durable,
+    checkpoint: checkpoint
+      ? ({
+          state: checkpoint.state,
+          lease: checkpoint.lease,
+        } satisfies Snapshot<NonNullable<OpenAiRunInput['checkpoint']>>)
+      : undefined,
+    mode: input.mode,
+    handoff: handoff
+      ? ({
+          eventId: handoff.eventId,
+          callId: handoff.callId,
+          name: handoff.name,
+          stepIndex: handoff.stepIndex,
+          parentEventId: handoff.parentEventId,
+        } satisfies Snapshot<NonNullable<OpenAiRunInput['handoff']>>)
+      : undefined,
+    retryOfRunId: input.retryOfRunId,
+    retry: retry ? snapshotRetry(retry) : undefined,
+  } satisfies Snapshot<OpenAiRunInput>;
+}
+
+function snapshotRetry(
+  retry: NonNullable<OpenAiRunInput['retry']>,
+): NonNullable<OpenAiRunInput['retry']> {
+  const acceptsVersion = retry.acceptsVersion;
+  const carry = retry.carry;
+  return {
+    acceptsVersion: acceptsVersion?.bind(retry),
+    carry: carry?.bind(retry),
+  } satisfies Snapshot<NonNullable<OpenAiRunInput['retry']>>;
 }
 
 async function retryStartTx(
@@ -692,6 +826,16 @@ async function retryStartTx(
       'retry_source_pruned',
     );
   }
+  // A retry runs for the failed run's own owner: compared under the source
+  // lock, before its checkpoint is read or `carry` sees it. An owner
+  // omitted on either side is `null`, so an ownerless run is still retried
+  // without naming one, and a named owner never matches an ownerless run.
+  if ((failed.ownerId ?? null) !== (input.ownerId ?? null)) {
+    throw refuse(
+      `A retry of ${failedId} must run for the failed run's owner`,
+      'not_retryable',
+    );
+  }
   if (failed.status !== 'failed') {
     throw refuse(
       `AI run ${failedId} is ${failed.status}, not failed`,
@@ -703,7 +847,7 @@ async function retryStartTx(
   }
   if ((input.definitionKey ?? null) !== failed.definitionKey) {
     throw refuse(
-      `A retry of ${failedId} must run definition ${String(failed.definitionKey)}`,
+      `A retry of ${failedId} must run the failed run's definition`,
       'not_retryable',
     );
   }
@@ -833,7 +977,8 @@ export async function cancelAiRun(
         return null;
       }
       for (const id of await readAiRunDescendantIds(tx.db, runId)) {
-        const descendant = await lockAiRun(tx, id);
+        // Each descendant is locked in the run's tenant, as it was found.
+        const descendant = await lockAiRun(tx, id, run.tenantId ?? null);
         if (!descendant || isAiRunFinal(descendant)) continue;
         await writeAiRunStatusTx(tx, descendant, 'cancelled', {
           stopReason: 'cancelled',
@@ -988,8 +1133,11 @@ export async function stopAiRunForChild(
   return withAiRunTransaction(
     db,
     async (tx) => {
-      await assertAiRunFence(tx, runId, options.fence);
-      const run = await lockAiRun(tx, runId);
+      // In the tenant the caller's context established, when it names one:
+      // a row that left that tenant is neither fenced nor stopped.
+      const tenant = expectedTenantOf(options);
+      await assertAiRunFence(tx, runId, options.fence, tenant);
+      const run = await lockAiRun(tx, runId, tenant);
       if (!run) throw new AiRunNotFoundError(runId);
       if (run.status === 'running') {
         const own =
@@ -1241,7 +1389,19 @@ export async function resumeAiRun(
       // The ancestor chain must still stand (page section 7). Nothing is
       // written; the ai-runs sweep later moves the run to cancelled.
       const oldest = chain[0] as AiRunRow;
-      if (oldest.parentRunId !== null) {
+      // Missing only when the parent row is absent: a chain that ends at a
+      // parent of another tenant (a link written before parents were
+      // tenant-checked) is checked for existence only and stands.
+      if (
+        oldest.parentRunId !== null &&
+        getRows(
+          await aiRunQuery(
+            tx.db,
+            'SELECT 1 AS present FROM _smrt_ai_runs WHERE id = $1',
+            oldest.parentRunId,
+          ),
+        ).length === 0
+      ) {
         throw refuse(
           `AI run ${runId} cannot resume: its ancestor ${oldest.parentRunId} no longer exists`,
           'ancestor_missing',
