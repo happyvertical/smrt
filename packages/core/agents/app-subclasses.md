@@ -87,7 +87,9 @@ while an ancestor is fails with the existing `CONFIG_STI_UNREGISTERED_PARENT`
 imports its parent's, so the parent's decorator runs first. A run-time model
 (`registerRuntimeModel`) keeps its own explicit option, `replaces`; without it
 the model coexists with the parent it names, and the parent may register
-again.
+again. A registration checkpoint (`ObjectRegistry.checkpointRegistrations`)
+restores that coexistence only for the names it covers, so a run-time model
+registered after the checkpoint keeps it when the checkpoint restores.
 
 ## Migrating
 

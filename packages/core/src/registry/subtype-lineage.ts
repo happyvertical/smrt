@@ -79,10 +79,11 @@ export function checkpointSubtypeLineage(
 }
 
 /**
- * The one capture of subtype lineage: `names` limits parents and retained
- * declarations to those identities; without it the whole lineage is replaced.
- * The run-time coexistence set is always restored whole and by value, since
- * `clearSubtypeLineage()` empties the live set in place.
+ * The one capture of subtype lineage: `names` limits parents, retained
+ * declarations and run-time coexistence membership to those identities, so a
+ * named restore leaves every other key as it is at restore time; without
+ * `names` the whole lineage is replaced. Everything is saved by value, since
+ * `clearSubtypeLineage()` empties the live collections in place.
  */
 function captureSubtypeLineage(names?: ReadonlySet<string>): () => void {
   const links = names
@@ -93,14 +94,21 @@ function captureSubtypeLineage(names?: ReadonlySet<string>): () => void {
         [...names].map((name) => [name, replacedDeclarations().get(name)]),
       )
     : new Map<string, RegisteredClass | undefined>(replacedDeclarations());
-  const coexisting = new Set(runtimeCoexistingModels());
+  const coexisting = new Map(
+    [...(names ?? runtimeCoexistingModels())].map((name) => [
+      name,
+      runtimeCoexistingModels().has(name),
+    ]),
+  );
   return () => {
-    runtimeCoexistingModels().clear();
-    for (const name of coexisting) runtimeCoexistingModels().add(name);
     if (!names) {
       parents().clear();
       replacedDeclarations().clear();
+      runtimeCoexistingModels().clear();
     }
+    for (const [name, member] of coexisting)
+      if (member) runtimeCoexistingModels().add(name);
+      else runtimeCoexistingModels().delete(name);
     for (const [name, parent] of links)
       if (parent) parents().set(name, parent);
       else parents().delete(name);
