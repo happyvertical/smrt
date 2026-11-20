@@ -197,6 +197,11 @@ export function isInferenceAbort(error: unknown): boolean {
  * failure (a caller abort, a programming error, invalid input the SDK did
  * not map). Unclassified errors end the walk and are rethrown.
  */
+/** Core's claim loss: the worker's job claim was taken over. */
+export function isAiRunClaimLoss(error: unknown): boolean {
+  return (error as { code?: unknown } | null)?.code === 'AI_RUN_CLAIM_LOST';
+}
+
 /**
  * Whether an error is a run's stop reaching a call (#5005): core's
  * `AiRunStoppedError` (`AI_RUN_STOPPED`, the run stopped, was cancelled or
@@ -205,11 +210,6 @@ export function isInferenceAbort(error: unknown): boolean {
  * no fallback is tried and no failure row is recorded; it reaches the
  * caller as a stop.
  */
-/** Core's claim loss: the worker's job claim was taken over. */
-export function isAiRunClaimLoss(error: unknown): boolean {
-  return (error as { code?: unknown } | null)?.code === 'AI_RUN_CLAIM_LOST';
-}
-
 export function isAiRunInterruption(error: unknown): boolean {
   const code = (error as { code?: unknown } | null)?.code;
   return code === 'AI_RUN_STOPPED' || code === 'AI_RUN_CLAIM_LOST';
