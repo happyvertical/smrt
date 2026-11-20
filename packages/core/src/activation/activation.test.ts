@@ -257,9 +257,26 @@ describe('activation closure order', () => {
     );
     const cyclic = graph();
     cyclic.models['z:Base'].parent = 'b:Child';
+    cyclic.models['z:Base'].dependencies = ['b:Child'];
     expect(() => activationClosure(cyclic, ['b:Child'])).toThrow(
       /Activation order is impossible/,
     );
+  });
+
+  it('rejects a persisted parent that is not among the model dependencies, before any module is ordered', () => {
+    const stale = graph();
+    stale.modules.u = { specifier: 'u', models: ['u:Other'], dependencies: [] };
+    stale.models['u:Other'] = {
+      module: 'u',
+      effective: 'u:Other',
+      dependencies: [],
+    };
+    // Only `parent` changed, between two valid model ids.
+    stale.models['b:Child'].parent = 'u:Other';
+    expect(() => activationClosure(stale, ['b:Child'])).toThrow(
+      /Invalid activation parent for b:Child: u:Other is not among its dependencies/,
+    );
+    expect(activationClosure(graph(), ['b:Child']).modules).not.toContain('u');
   });
 
   it('rejects an after edge naming an unknown module and orders by after edges', () => {
@@ -555,6 +572,26 @@ describe(`${engine} lazy activation`, () => {
       createActivationCoordinator({ ...options, loaders: {} }),
     ).toThrow(/Missing activation loader/);
     expect(loaders[HOST]).not.toHaveBeenCalled();
+  });
+
+  it('refuses a model whose persisted parent changed to an unrelated model before any loader or migration', async () => {
+    const { options, graph, loaders } = fixture();
+    graph.models[STUDENT].parent = UNUSED;
+    await expect(
+      (async () =>
+        createActivationCoordinator({
+          ...options,
+          scope: `${options.scope}-stale`,
+          alwaysOn: [],
+        }).activate([STUDENT]))(),
+    ).rejects.toThrow(
+      new RegExp(
+        `Invalid activation parent for ${STUDENT}: ${UNUSED} is not among its dependencies`,
+      ),
+    );
+    for (const loader of Object.values(loaders))
+      expect(loader).not.toHaveBeenCalled();
+    expect(await applicationTables()).toEqual([]);
   });
 
   it('keeps a failed persisted-state read closed and recovers on the next boot', async () => {

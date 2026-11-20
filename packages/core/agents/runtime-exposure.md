@@ -125,7 +125,8 @@ or cycle-forming declaration fails generation naming the object and field), sort
 the manifest's objects by key, and persists `models[].parent` (the parent's
 manifest key). `activationClosure()` returns `modules` in parent-first order with a
 code-unit tie-break, from those parents, whatever order models are requested or
-listed; a graph without `parent` loads in sorted order. A cycle made only of plain
+listed; a graph without `parent` loads in sorted order. A `parent` that is not
+among the model's own `dependencies` is refused before any loader runs. A cycle made only of plain
 subclass edges falls back to the edges the registry enforces (same-named
 replacement pairs, competing collection bindings); a cycle among those, or a
 module that imports the module of a same-named child while hosting that child's
