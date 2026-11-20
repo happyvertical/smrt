@@ -875,12 +875,11 @@ export class InheritanceResolver {
         ...(classDef.extendsClause ?? '').split(/[.[\]'"]+/),
         ...(classDef.extendsNames ?? []),
       ].filter(Boolean);
-      const candidate =
-        (classDef.extendsUnreadable !== undefined &&
-          classDef.extendsTypeArg !== null) ||
-        names.some(
-          (name) => FRAMEWORK_BASE_CLASSES.has(name) || modelNames.has(name),
-        );
+      // Only what the superclass names counts; a type argument alone
+      // (`utilities.Widget<T>`) does not make a helper a candidate.
+      const candidate = names.some(
+        (name) => FRAMEWORK_BASE_CLASSES.has(name) || modelNames.has(name),
+      );
       if (!candidate) continue;
       errors.push({
         message:

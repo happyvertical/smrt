@@ -380,6 +380,15 @@ describe('parents', () => {
     expect(errors[0].message).toContain('CallExpression');
   });
 
+  it('ignores an undecorated helper over a generic member of an unrelated value', async () => {
+    const { errors } = await scanProject({
+      'src/models/Base.ts': OPEN_BASE('Base'),
+      'src/util.ts': `const utilities = { Widget: class<T> { value?: T; } };\nexport class Helper extends utilities.Widget<string> {}\n`,
+    });
+
+    expect(errors).toEqual([]);
+  });
+
   it('ignores an undecorated class over a member of an unrelated value', async () => {
     const { errors } = await scanProject({
       'src/models/Base.ts': OPEN_BASE('Base'),
