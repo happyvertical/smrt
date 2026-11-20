@@ -164,6 +164,26 @@ describe.each(engines)('workflow run identity on %s', (engine) => {
     });
   });
 
+  it.each([
+    'start',
+    'retry',
+  ])('refuses an empty caller id on %s before anything is written', async (entry) => {
+    const db = await workflowDb(engine);
+    const { model } = scriptedModel((_call, n) => ({ output: { value: n } }));
+    const driver = driverFor(db, model, definitionOf(failingSteps));
+    const failed = await driver.start({ ownerId: 'owner', input: { n: 1 } });
+    expect((await driver.run(failed.id, 'owner')).status).toBe('failed');
+    const before = await db.query('SELECT id FROM _smrt_ai_runs');
+    for (const id of ['', 42 as unknown as string]) {
+      const attempt =
+        entry === 'start'
+          ? driver.start({ ownerId: 'owner', id, input: { n: 2 } })
+          : driver.retry(failed.id, 'owner', { id });
+      await expect(attempt).rejects.toBeInstanceOf(TypeError);
+    }
+    expect(await db.query('SELECT id FROM _smrt_ai_runs')).toEqual(before);
+  });
+
   it('a pruned failed run is retry_source_pruned', async () => {
     const db = await workflowDb(engine);
     const { model } = scriptedModel((_call, n) => ({ output: { value: n } }));

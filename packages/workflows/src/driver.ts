@@ -430,7 +430,10 @@ export function createWorkflowRunDriver(options: WorkflowRunDriverOptions) {
     async start(input: StartWorkflowRun): Promise<WorkflowRunState> {
       if (!input.ownerId) throw new Error('Workflow runs require an owner');
       const { run } = await ai.openRun({
-        ...(input.id ? { id: input.id } : {}),
+        // Any id the caller passed goes to core, which refuses a malformed
+        // one (an empty string included) before writing: an explicit id is
+        // never replaced by a generated one.
+        ...(input.id !== undefined ? { id: input.id } : {}),
         type: WORKFLOW_RUN_TYPE,
         definitionKey: definition.key,
         definitionVersion: definition.version,
@@ -1133,7 +1136,7 @@ export function createWorkflowRunDriver(options: WorkflowRunDriverOptions) {
       };
       const { run } = await ai
         .openRun({
-          ...(retryOptions.id ? { id: retryOptions.id } : {}),
+          ...(retryOptions.id !== undefined ? { id: retryOptions.id } : {}),
           type: WORKFLOW_RUN_TYPE,
           definitionKey: definition.key,
           definitionVersion: definition.version,

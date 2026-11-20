@@ -45,7 +45,10 @@ reads only the caller's own workflow runs (tenant, owner and type are
 predicates of the statement) and refuses another definition's; another
 owner's run is never read by the driver, core refuses it under the source
 lock (`not_retryable`) and the driver reports that as not found. A retry
-`id` that ever named a run is core's `AiRunIdUsedError`. The checkpoint
+`id` that ever named a run is core's `AiRunIdUsedError`. `start` and `retry`
+pass any `id` the caller gives to core, so a malformed one (an empty string
+included) is core's `TypeError` before anything is written, never replaced
+by a generated id. The checkpoint
 store reads a run and its checkpoint with core's scoped reads (tenant, owner
 and run type are predicates of each statement); a run id names one run for
 the database's lifetime, so between the reads it can only disappear.
