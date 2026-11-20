@@ -145,7 +145,9 @@ and static dependency closure. Splitting a provider into independently activatab
 units requires genuinely independent published modules; a per-model callback
 cannot undo a barrel's registration side effects. App source modules retain
 individual loaders. An app model also activates its declared collection module;
-collection receivers bind to the effective replacement identity, with existing
+collection receivers bind to their item's key and its effective replacement
+identity (a simple item name resolves in the collection's own package, replaced or
+not), with existing
 HTTP CLI action metadata retained. Route serializers are deferred until the gated handler calls
 them, with their static model dependencies included in the activation graph.
 Every required reference must be in the build manifest;

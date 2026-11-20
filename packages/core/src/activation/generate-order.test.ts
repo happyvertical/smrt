@@ -1040,6 +1040,49 @@ assert.equal(collection.who(), 'app');`,
     });
   });
 
+  it.each([
+    ['by simple name', true],
+    ['by qualified key', false],
+  ])('binds a provider collection that names its item %s to the effective replacement', (_label, simple) => {
+    const { files, manifest } = project([
+      { key: ITEM, parent: PROVIDER, replace: true },
+      { key: PROVIDER },
+      { key: PCOL, collectionOf: PROVIDER },
+    ]);
+    if (simple) {
+      // Legacy input: the generic names the item by its simple name only.
+      delete manifest.objects[PCOL].collectionOf;
+      manifest.objects[PCOL].extendsTypeArg = 'Customer';
+    }
+    files.write(
+      'node_modules/@activation/customer/index.js',
+      `import { SmrtObject, SmrtCollection } from '@happyvertical/smrt-core';
+export class Customer extends SmrtObject {}
+export class Customers extends SmrtCollection { static _itemClass = Customer; who() { return 'provider'; } }
+`,
+    );
+    const generated = generate(files, manifest);
+    expect(
+      generated.manifest.modules['@activation/customer'].collections,
+    ).toEqual([PCOL]);
+    // Looked up by either key first, the effective item serves the receiver.
+    for (const keys of [
+      [PROVIDER, ITEM],
+      [ITEM, PROVIDER],
+    ]) {
+      const run = runNode(
+        files,
+        generated,
+        `await coordinator(['${PROVIDER}']).boot();
+for (const key of ${JSON.stringify(keys)}) {
+  const collection = await ObjectRegistry.getCollection(key, { db });
+  assert.equal(collection.who?.(), 'provider', key);
+}`,
+      );
+      expect(run.status, run.output).toBe(0);
+    }
+  });
+
   it('keeps the effective constructor, tenancy and exposure of a tenant-scoped provider and its replacement, next to a differently named subclass, in both listing orders', () => {
     const VIP = '@activation/sub:VipCustomer';
     for (const listing of ['replacement first', 'provider first']) {
