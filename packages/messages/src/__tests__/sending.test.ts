@@ -565,3 +565,19 @@ describe('provider subclass reply/forward drafts keep their routing', () => {
     expect(r.personaId).toBeNull();
   });
 });
+
+describe('HTML-only inbound mail', () => {
+  it('forward and reply quote a plain-text rendering, never the html', () => {
+    const original = new Email({
+      fromAddress: 'alice@example.com',
+      subject: 'Html only',
+      htmlBody: '<style>p{}</style><p>Hello <b>there</b> &amp; welcome</p>',
+    });
+    const forward = original.createForward() as Email;
+    expect(forward.body).toContain('Hello there & welcome');
+    expect(forward.htmlBody).toBe('');
+    const reply = original.createReply() as Email;
+    expect(reply.body).toContain('> Hello there & welcome');
+    expect(reply.htmlBody).toBe('');
+  });
+});

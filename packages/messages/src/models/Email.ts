@@ -420,13 +420,34 @@ export class Email extends Message {
       ? `${this.fromName} <${this.fromAddress}>`
       : this.fromAddress;
 
-    const bodyText = this.textBody || this.body || '';
+    const bodyText = this.plainBody();
     const quotedLines = bodyText
       .split('\n')
       .map((line) => `> ${line}`)
       .join('\n');
 
     return `\n\nOn ${dateStr}, ${from} wrote:\n${quotedLines}`;
+  }
+
+  /**
+   * Plain text of this email for quoting. HTML-only mail (no text alternative)
+   * is converted, because the HTML itself is never carried into a draft.
+   */
+  private plainBody(): string {
+    const text = this.textBody || this.body;
+    if (text) return text;
+    return (this.htmlBody || '')
+      .replace(/<(script|style)[\s\S]*?<\/\1>/gi, '')
+      .replace(/<br\s*\/?>|<\/(p|div|li|tr|h[1-6])>/gi, '\n')
+      .replace(/<[^>]+>/g, '')
+      .replace(/&nbsp;/g, ' ')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'")
+      .replace(/&amp;/g, '&')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
   }
 
   /**
@@ -442,7 +463,7 @@ export class Email extends Message {
       .map((r) => (r.name ? `${r.name} <${r.address}>` : r.address))
       .join(', ');
 
-    const bodyText = this.textBody || this.body || '';
+    const bodyText = this.plainBody();
 
     return [
       '',
