@@ -33,11 +33,13 @@ import {
   AiRunStoppedError,
   AiRunTransitionError,
   aiRunQuery,
+  assertAiRunFence,
   expectedTenantOf,
   getAiRun,
   getRows,
   newAiRunId,
   rememberSettlementTenant,
+  withAiRunTransaction,
 } from './ai-run-model.js';
 
 const logger = createLogger({ level: 'info' });
@@ -252,7 +254,9 @@ function inContextTenant(context: AiRunContext): AiRunScopedTxOptions {
  * in the tenant the caller's context established: with `checkRunning`, the
  * chain is locked and must still be `running` (a stopped chain releases the
  * reservation and the stop is thrown); either way the held call's own event
- * must still be `reserved` in this run. A run that is gone throws
+ * must still be `reserved` in this run. With a claim fence, both modes
+ * assert it first: a worker whose claim was taken over gets
+ * {@link AiRunClaimLostError}. A run that is gone throws
  * {@link AiRunNotFoundError}, a reservation no longer held throws
  * {@link AiRunTransitionError}; nothing is sent.
  */
@@ -263,6 +267,7 @@ async function admitHeldAiCall(
   options: AiRunScopedTxOptions & { checkRunning: boolean },
 ): Promise<void> {
   if (options.checkRunning) {
+    // The claim fence is asserted first, inside the same transaction.
     await assertAiRunStillRunning(db, runId, {
       ...options,
       releaseCallId: callId,
@@ -270,6 +275,31 @@ async function admitHeldAiCall(
     return;
   }
   const tenant = expectedTenantOf(options);
+  if (options.fence) {
+    // A worker that lost its claim never spends a reservation it took
+    // before: the fence is asserted, then the reservation read, in one
+    // transaction (the job row first, as in every accounting write).
+    const fence = options.fence;
+    await withAiRunTransaction(
+      db,
+      async (tx) => {
+        await assertAiRunFence(tx, runId, fence, tenant);
+        await readHeldReservation(tx.db, runId, callId, tenant);
+      },
+      options,
+    );
+    return;
+  }
+  await readHeldReservation(db, runId, callId, tenant);
+}
+
+/** Throw unless the held call's event is still `reserved` in its run. */
+async function readHeldReservation(
+  db: DatabaseInterface,
+  runId: string,
+  callId: string,
+  tenant: string | null | undefined,
+): Promise<void> {
   const rows = getRows(
     await aiRunQuery(
       db,
@@ -422,6 +452,7 @@ export async function beginAiRunCall(
   if (held) {
     await admitHeldAiCall(context.db, context.runId, held.reservation.callId, {
       checkRunning: Boolean(held.checkRunning),
+      ...(context.fence ? { fence: context.fence } : {}),
       ...inContextTenant(context),
     });
   }

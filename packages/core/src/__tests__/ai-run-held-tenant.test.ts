@@ -10,6 +10,7 @@
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  AiRunClaimLostError,
   type AiRunContext,
   AiRunNotFoundError,
   AiRunStoppedError,
@@ -70,6 +71,55 @@ describe.each(aiRunTestEngines)('held calls and fences on %s', (engine) => {
       calls: 0,
       reservedCalls: 0,
     });
+  });
+
+  it.each([
+    true,
+    false,
+  ])('refuses a held reservation of a worker whose claim is gone before send (checkRunning %s)', async (checkRunning) => {
+    const db = await newAiRunTestDatabase(engine);
+    const root = await openAiRun(store(db), {
+      type: 'workflow',
+      durable: true,
+    });
+    const fusion = await openAiRun(store(db), {
+      type: 'fusion',
+      parentRunId: root.id,
+    });
+    const held = await reserveAiCall(db, fusion.id, { inputTokens: 5 });
+    const asked: string[] = [];
+    // The claim was taken over after the seat was reserved; the event is
+    // still reserved and the run still running.
+    const fence = vi.fn(async (_tx: unknown, durableRunId: string) => {
+      asked.push(durableRunId);
+      return false;
+    });
+    const send = vi.fn(async () => 'sent');
+    const context: AiRunContext = {
+      runId: fusion.id,
+      db,
+      tenantId: 'tenant-one',
+      fence,
+      reservations: { take: () => ({ reservation: held, checkRunning }) },
+    };
+    await expect(
+      runAiRunCall(context, { fallbackUsage }, send),
+    ).rejects.toBeInstanceOf(AiRunClaimLostError);
+    expect(send).not.toHaveBeenCalled();
+    expect(asked).toContain(root.id);
+    expect(await getAiRun(db, fusion.id)).toMatchObject({
+      status: 'running',
+      calls: 0,
+      reservedCalls: 1,
+    });
+
+    // The same held reservation under a live claim is sent (control).
+    const live: AiRunContext = {
+      ...context,
+      fence: async () => true,
+    };
+    expect(await runAiRunCall(live, { fallbackUsage }, send)).toBe('sent');
+    expect(send).toHaveBeenCalledTimes(1);
   });
 
   it('sends a held reservation that is still reserved (control)', async () => {

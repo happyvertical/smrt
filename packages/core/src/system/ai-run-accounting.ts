@@ -371,7 +371,10 @@ export async function reserveAiCall(
  * The check a fusion makes just before sending its judge under the
  * reservation it already holds (page section 6.3): its chain must still be
  * `running`. When it is not, the judge's reservation is released and the
- * fusion run takes the stop it found; the error is thrown.
+ * fusion run takes the stop it found; the error is thrown. With
+ * `options.fence`, the claim fence is asserted first, before the chain is
+ * locked: a worker whose claim was taken over gets
+ * {@link AiRunClaimLostError} and changes nothing.
  */
 export async function assertAiRunStillRunning(
   db: DatabaseInterface,
@@ -381,9 +384,10 @@ export async function assertAiRunStillRunning(
   const result = await withAiRunTransaction(
     db,
     async (tx) => {
-      const chain = await lockAiRunChainInTenant(
+      const chain = await lockAiRunChainFenced(
         tx,
         runId,
+        options.fence,
         expectedTenantOf(options),
       );
       const stopped = await checkAiRunChainRunning(tx, chain);

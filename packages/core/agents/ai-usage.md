@@ -254,7 +254,9 @@ caller's options. A context's tenant reaches every lookup of its call: the
 reservation, the claim fence (the chain is read in that tenant before the
 fence is called), a held reservation's admission, settlement, release and a
 child's stop. A held reservation (a fusion seat's share) is admitted just
-before it is sent in both modes: with `checkRunning` the chain is locked and
+before it is sent in both modes: a context's claim fence is asserted first,
+in the same transaction (`AiRunClaimLostError` for a worker whose claim was
+taken over); with `checkRunning` the chain is locked and
 must be `running`; either way the held call's own event must still be
 `reserved` in that run, else the call is refused (`AiRunNotFoundError` for a
 run that is gone, `AiRunTransitionError` for a reservation released or

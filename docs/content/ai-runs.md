@@ -718,9 +718,11 @@ allowance is its own output limit, else its prompt's `expectedOutputTokens`,
 else `D`; its `E` is its prompt plus the panel seats' reserved output
 allowances, because the panel's answers are its input. The judge is later
 sent under that reservation and does not reserve again; just before it is
-sent the fusion checks, in a short transaction, that it and its chain are
+sent the fusion checks, in a short transaction, that its worker still holds
+its claim (section 6.4) and that it and its chain are
 still `running`, and if not it releases the judge's reservation and stops with
-the reason it found. If the judge is never sent (every panelist failed), its
+the reason it found (a worker that lost its claim changes nothing and sends
+nothing). If the judge is never sent (every panelist failed), its
 reservation is released. A judge whose real input turns out larger than its
 `E` is charged in full when it settles, like any overshoot (below).
 
