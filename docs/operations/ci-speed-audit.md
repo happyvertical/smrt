@@ -130,19 +130,21 @@ Test timeouts: `ingestion` `proposals.part1.test.ts` timed out at the 30 s
 three are the same branch failing twice, which looks like a regression rather
 than load; the ingestion one passes on every other run in the window.
 
-### Batched Release "failures" are by design
+### Batched Release failures: admission guard vs batched queue (fixed by #5380)
 
 3 of 8 Batched Release runs ended `failure`. Two of them (44694204870,
-44696012400), including the 07:20 UTC scheduled run, fail in
+44696012400), including the 07:20 UTC scheduled run, failed in
 `Reserve Release Snapshot` with `Release admission requires a one-entry merge
-queue` (`scripts/release-admission.mjs`, line 179, `check(... merge_queue ...
-max_entries_to_build === 1 && max_entries_to_merge === 1 ...)`). That is the
-admission guard refusing to open a release window while the merge queue is
-configured for more than one entry. It is working as written and was not
-changed. The third (44696916801) is different: its `Publish / Deploy
-Documentation` job failed with `Multiple artifacts named "github-pages" were
-unexpectedly found for this workflow run` after a manual re-dispatch, a
-duplicate-artifact condition worth a separate look.
+queue`: `scripts/release-admission.mjs` required `max_entries_to_build === 1`
+and `max_entries_to_merge === 1`, while the main ruleset's merge queue batches
+several entries. That was a real misconfiguration between the guard and the
+queue, not intended behaviour. #5380 (merged 2026-11-20) lets admission run on
+a batched queue: it now only requires a merge queue on main, and `close`
+revokes any untracked live grant before freezing the snapshot. Re-check the
+next scheduled runs to confirm. The third (44696916801) is different: its
+`Publish / Deploy Documentation` job failed with `Multiple artifacts named
+"github-pages" were unexpectedly found for this workflow run` after a manual
+re-dispatch, a duplicate-artifact condition worth a separate look.
 
 14 `Release Admission` runs also ended `failure`, all in the `reconcile` job
 with `Admission reconciliation incomplete (1 heads): Stale PR validation head`.
