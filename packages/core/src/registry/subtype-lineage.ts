@@ -124,6 +124,32 @@ export function recordSubtypeParent(
 export function recordedSubtypeParent(name: string): string | undefined {
   return parents().get(name);
 }
+/**
+ * The tenancy a class that declares none of its own carries from its
+ * recorded same-named parents (#5143): the nearest parent declaration's own
+ * `tenantScoped` configuration, read from the parent as declared (retained
+ * when a replacement took its key), never from the replacement the parent's
+ * key resolves to. Its ownership field, mode and requirement are therefore
+ * exactly its parent chain's, in every load order and whether or not it
+ * declares a collection of its own.
+ */
+export function sameNameParentTenancy(
+  key: string,
+): RegisteredClass['tenantScopedConfig'] | undefined {
+  const visited = new Set<string>([key]);
+  for (
+    let parent = parents().get(key);
+    parent && !visited.has(parent);
+    parent = parents().get(parent)
+  ) {
+    visited.add(parent);
+    const declaration =
+      replacedDeclarations().get(parent) ?? getClasses().get(parent);
+    if (declaration?.tenantScopedConfig) return declaration.tenantScopedConfig;
+  }
+  return undefined;
+}
+
 export function isSubtypeOf(child: string, ancestor: string): boolean {
   const visited = new Set<string>();
   for (

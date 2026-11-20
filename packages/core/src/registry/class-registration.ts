@@ -506,6 +506,36 @@ function findSameNameParent(
 }
 
 /**
+ * The retained declaration of a same-named parent that a replacement has
+ * already replaced: found by prototype identity, or by the declared or
+ * recorded parent key.
+ */
+function findRetainedSameNameParent(
+  ctor: typeof SmrtObject,
+  name: string,
+  ownKey: string | undefined,
+  declaredParentKey: string | undefined,
+): [string, RegisteredClass] | undefined {
+  for (
+    let proto = Object.getPrototypeOf(ctor);
+    typeof proto === 'function' && proto !== SmrtObject;
+    proto = Object.getPrototypeOf(proto)
+  ) {
+    const key = getConstructorIndex().get(proto);
+    const entry = key ? replacedDeclarations().get(key) : undefined;
+    if (key && entry?.name === name && entry.constructor === proto)
+      return [key, entry];
+  }
+  const declared =
+    declaredParentKey ?? (ownKey ? recordedSubtypeParent(ownKey) : undefined);
+  if (!declared || declared === ownKey) return undefined;
+  const entry = replacedDeclarations().get(declared);
+  return entry && entry.name === name && entry.constructor !== ctor
+    ? [declared, entry]
+    : undefined;
+}
+
+/**
  * The registered same-named classes that directly extend `ctor`. With
  * `deferAcrossUnregistered`, a class reached only through an unregistered
  * intermediate constructor is left for that intermediate to claim when it
@@ -1783,12 +1813,24 @@ function registerUntracked(
       promotedRuntimeConfig?.replaceParent,
   });
   const deferAcrossUnregistered = joinsStiFamily(ctor, config);
-  const sameNameParent = findSameNameParent(
-    ctor,
-    name,
-    ownQualifiedKey,
-    isolatedManifestEntry?.extendsQualified,
-  );
+  // A subtype of a parent that a replacement already took the key of extends
+  // the parent as declared (retained), exactly as when it registers before
+  // that replacement: the same table, storage checks, lineage and tenancy.
+  const sameNameParent =
+    findSameNameParent(
+      ctor,
+      name,
+      ownQualifiedKey,
+      isolatedManifestEntry?.extendsQualified,
+    ) ??
+    (declaredChoice === 'subtype'
+      ? findRetainedSameNameParent(
+          ctor,
+          name,
+          ownQualifiedKey,
+          isolatedManifestEntry?.extendsQualified,
+        )
+      : undefined);
   const sameNameChildren = findSameNameChildren(
     ctor,
     name,

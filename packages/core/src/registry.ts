@@ -113,6 +113,7 @@ import {
   findReplacement,
   generatedSurfaceName,
   replacedDeclarations,
+  sameNameParentTenancy,
   servedThroughParent,
 } from './registry/subtype-lineage';
 import {
@@ -4748,7 +4749,14 @@ export class ObjectRegistry {
   ): RegisteredClass['tenantScopedConfig'] | undefined {
     ObjectRegistry.assertTenantScopedRegistrationValid(className);
     const registered = ObjectRegistry.findClass(className);
-    return registered?.tenantScopedConfig;
+    if (!registered || registered.tenantScopedConfig)
+      return registered?.tenantScopedConfig;
+    // A same-named subclass that declares no tenancy carries its parent
+    // chain's declared tenancy, not that of the replacement its parent's key
+    // resolves to, so no read of it omits or misapplies the ownership filter.
+    return registered.qualifiedName
+      ? sameNameParentTenancy(registered.qualifiedName)
+      : undefined;
   }
 
   /**

@@ -1039,6 +1039,60 @@ console.log(JSON.stringify({
     });
   });
 
+  it.each([
+    ['served through its parent', undefined],
+    ['with a collection of its own', 'tenant_scenes'],
+  ])('scopes a same-named subtype %s by its parent chain, not by a sibling replacement', (_label, collection) => {
+    const SUB = '@activation/sub:Customer';
+    // No replacement, then one whose module registers before the subtype's
+    // and one whose module registers after it.
+    for (const replacement of [
+      undefined,
+      '@aaa/app:Customer',
+      '@zzz/app:Customer',
+    ]) {
+      const { files, manifest } = project([
+        ...(replacement
+          ? [{ key: replacement, parent: PROVIDER, replace: true }]
+          : []),
+        { key: SUB, parent: PROVIDER, replace: false },
+        { key: PROVIDER, sti: true },
+      ]);
+      manifest.objects[PROVIDER].decoratorConfig = {
+        ...manifest.objects[PROVIDER].decoratorConfig,
+        tenantScoped: { mode: 'required', field: 'organizationId' },
+      };
+      if (replacement)
+        manifest.objects[replacement].decoratorConfig = {
+          ...manifest.objects[replacement].decoratorConfig,
+          tenantScoped: { mode: 'optional', field: 'accountId' },
+        };
+      if (collection)
+        manifest.objects[SUB].decoratorConfig = {
+          ...manifest.objects[SUB].decoratorConfig,
+          collection,
+        };
+      const run = runNode(
+        files,
+        generate(files, manifest),
+        `import { resolveAnonymousTenantReadScope } from '@happyvertical/smrt-core';
+await coordinator(['${PROVIDER}', '${SUB}']).boot();
+globalThis.__smrtDispatchTenantResolver = () => null;
+console.log(JSON.stringify({
+  config: ObjectRegistry.getTenantScopedConfig('${SUB}'),
+  scoped: ObjectRegistry.isTenantScoped('${SUB}'),
+  scope: resolveAnonymousTenantReadScope('${SUB}'),
+}));`,
+      );
+      expect(run.status, run.output).toBe(0);
+      expect(JSON.parse(run.output.trim())).toMatchObject({
+        config: { mode: 'required', field: 'organizationId' },
+        scoped: true,
+        scope: { organizationId: null },
+      });
+    }
+  });
+
   it('denies a disabled tenant through the coordinator gate on the generated registration', () => {
     const { files, manifest } = project([
       { key: ITEM, parent: PROVIDER, replace: true },
