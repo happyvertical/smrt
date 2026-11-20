@@ -107,6 +107,7 @@ import {
   type RuntimeRegistrationOverride,
   registerRuntimeOverride,
 } from './registry/runtime-overrides';
+import { assertTenancyAdmitted } from './registry/same-name-tenancy';
 import {
   checkpointSubtypeLineage,
   clearSubtypeLineage,
@@ -1539,6 +1540,9 @@ export class ObjectRegistry {
     name: string,
     policy: RuntimeRegistrationOverride,
   ): void {
+    // A same-named subtype's family takes no tenancy, an override's included.
+    if (policy && typeof policy === 'object' && 'tenancy' in policy)
+      assertTenancyAdmitted(name, [name]);
     registerRuntimeOverride(name, policy);
   }
 
@@ -4819,6 +4823,12 @@ export class ObjectRegistry {
       ) {
         return;
       }
+      // Either decorator order: a same-named subtype's family takes no
+      // tenancy, from the subtype or any other member (#5143).
+      assertTenancyAdmitted(registered.qualifiedName ?? registered.name, [
+        registered.qualifiedName,
+        registered.name,
+      ]);
       registered.tenantScopedConfig = { ...config };
       applyRuntimeOverrides();
       registered.tenantScopedConfigSource = 'tenant-decorator';

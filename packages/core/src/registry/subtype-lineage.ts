@@ -124,6 +124,10 @@ export function recordSubtypeParent(
 export function recordedSubtypeParent(name: string): string | undefined {
   return parents().get(name);
 }
+/** Every recorded `[child, same-named parent]` pair. */
+export function recordedSubtypeParents(): ReadonlyMap<string, string> {
+  return parents();
+}
 /**
  * The tenancy a class that declares none of its own carries from its
  * recorded same-named parents (#5143): the nearest parent declaration's own

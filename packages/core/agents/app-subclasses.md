@@ -96,11 +96,26 @@ collection returns its own.
   the class the route selected, so a public parent never opens its subtype's
   route. `authMiddleware` receives that registry key in place of the simple
   name only when another registered class shares the name.
-- A subtype that declares no `tenantScoped` of its own carries its parent
-  chain's declared tenancy (mode, ownership field, requirement):
-  `ObjectRegistry.getTenantScopedConfig()` reads the parent as declared, never
-  a replacement that took the parent's key, in either load order and with or
-  without its own `collection`.
+- A same-named subtype is supported only in a family that declares no
+  tenancy. Its family is the subtype, its same-named parents, every ancestor
+  of those (by declared `extends` and by constructor), and the replacement
+  that took any of their keys. Tenancy on any member refuses the subtype with
+  `CONFIG_SAME_NAME_TENANCY_UNSUPPORTED`, naming the subtype and the member
+  that declares it: `tenantScoped` of any value but `false` (an unknown
+  `mode` included), a tenant field, `@TenantScoped()` in either decorator
+  order, a manifest `decoratorConfig.tenantScoped`, or a run-time tenancy
+  override. Conversely, tenancy arriving on a member of a family that already
+  has a registered same-named subtype (a replacement that declares it, a late
+  parent or ancestor manifest, `@TenantScoped()`, `registerOverride()`) is
+  refused before the registry changes. Constructor and manifest registration
+  (either arrival order, including a parent kept only as the declaration a
+  replacement took over) and manifest and activation generation
+  (`assertSameNameSubclassChoices()`) apply the rule. Give the subclass a
+  class name of its own (a differently named subclass inherits its parent's
+  tenancy through smrt-tenancy's chain walk) or declare `replaceParent: true`
+  (`registry/__tests__/issue-5143-same-name-tenancy-unsupported.test.ts`,
+  `activation/generate-order.test.ts`, smrt-tenancy
+  `same-name-subtype-tenancy.test.ts`).
 
 Manifest declarations arrive in either order and give one registry: base
 then subclass or subclass then base, and manifest then constructor
@@ -124,7 +139,8 @@ again.
 Every same-named cross-package subclass needs the option. To keep what a class
 did before this rule, declare `replaceParent: true`: such a class always
 replaced its parent. Choose `replaceParent: false` only where the parent is an
-STI model and the two are meant to be different record types.
+STI model, the two are meant to be different record types, and no member of
+the family declares tenancy.
 
 `scripts/codemod-same-name-subclass.mjs` (dependency-free; copy it into an
 application to run it there) lists the classes, and with `--write` adds

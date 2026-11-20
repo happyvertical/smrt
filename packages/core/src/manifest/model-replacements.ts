@@ -63,6 +63,45 @@ export function sameNameSubtypeTableMismatch(
   );
 }
 
+export const SAME_NAME_TENANCY_UNSUPPORTED =
+  'CONFIG_SAME_NAME_TENANCY_UNSUPPORTED';
+
+/**
+ * Whether a `tenantScoped` value declares tenancy. Only an absent value or
+ * `false` declares none: `true`, any options object and any other value,
+ * including one with an unknown `mode`, count as tenancy.
+ */
+export function declaresTenancy(value: unknown): boolean {
+  return value !== undefined && value !== null && value !== false;
+}
+
+/**
+ * A same-named subtype (`replaceParent: false`) in a family that carries
+ * tenancy (#5143). A same-named subtype shares its parent's table and simple
+ * name, and is supported only in a family where no member declares tenancy:
+ * not the subtype, its parent, the parent's replacement, any ancestor, nor a
+ * run-time override. `tenancyOwner` is the declaration that carries it (the
+ * subtype itself when it declares tenancy of its own).
+ */
+export function sameNameTenancyUnsupported(
+  subtype: string,
+  parent: string,
+  tenancyOwner: string,
+): ConfigurationError {
+  const carrier =
+    tenancyOwner === subtype
+      ? `${subtype} declares tenancy itself`
+      : `its family declares tenancy on ${tenancyOwner}`;
+  return new ConfigurationError(
+    `${subtype} declares replaceParent: false as a subtype of ${parent}, but ${carrier}: ` +
+      `a same-named subtype is supported only in a family that declares no tenancy. ` +
+      `Give ${subtype} a class name of its own (a differently named subclass inherits its parent's tenancy), ` +
+      `or declare replaceParent: true to replace ${parent}.`,
+    SAME_NAME_TENANCY_UNSUPPORTED,
+    { className: subtype, parentName: parent, tenancyOwner },
+  );
+}
+
 /**
  * The one reading of the declared choice. Manifest generation, both
  * registration paths and lineage reconciliation all decide replacement
@@ -149,6 +188,50 @@ function simpleNameOf(key: string): string {
 
 function tableOf(object: SmartObjectDefinition): string | undefined {
   return object.schema?.tableName ?? object.decoratorConfig?.tableName;
+}
+
+/** Whether a manifest entry declares tenancy: `tenantScoped`, or a tenant field. */
+export function objectDeclaresTenancy(object: SmartObjectDefinition): boolean {
+  if (declaresTenancy(object.decoratorConfig?.tenantScoped)) return true;
+  return Object.values(object.fields ?? {}).some(
+    (field) =>
+      (field as { __tenancy?: { isTenantIdField?: unknown } }).__tenancy
+        ?.isTenantIdField === true ||
+      field._meta?.__tenancy?.isTenantIdField === true,
+  );
+}
+
+/**
+ * The key of the first entry that declares tenancy in the family of the
+ * same-named subtype `subtypeKey`, as far as this manifest tells (#5143): the
+ * subtype, each ancestor along its declared parents, and every replacement of
+ * any of them. `undefined` when none does.
+ */
+function manifestFamilyTenancyOwner(
+  manifest: SmartObjectManifest,
+  pairs: readonly SameNamePair[],
+  subtypeKey: string,
+): string | undefined {
+  const seen = new Set<string>();
+  const pending = [subtypeKey];
+  for (let key = pending.pop(); key !== undefined; key = pending.pop()) {
+    if (seen.has(key)) continue;
+    seen.add(key);
+    for (const pair of pairs)
+      if (pair.choice === 'replace' && pair.parentKey === key)
+        pending.push(pair.key);
+    const entry = manifest.objects[key];
+    if (!entry) continue;
+    if (objectDeclaresTenancy(entry)) return key;
+    const parent = entry.extendsQualified ?? entry.extends;
+    if (parent)
+      pending.push(
+        parent.includes(':') || !entry.packageName
+          ? parent
+          : `${entry.packageName}:${parent}`,
+      );
+  }
+  return undefined;
 }
 
 /**
@@ -267,21 +350,28 @@ function sameNamePairs(manifest: SmartObjectManifest): SameNamePair[] {
 export function assertSameNameSubclassChoices(
   manifest: SmartObjectManifest,
 ): void {
-  for (const { key, child, parentKey, choice } of sameNamePairs(manifest)) {
+  const pairs = sameNamePairs(manifest);
+  for (const { key, child, parentKey, choice } of pairs) {
     const name = child.qualifiedName ?? key;
     if (!choice) {
       requireSameNameSubclassChoice(name, parentKey, child.decoratorConfig);
       continue;
     }
+    if (choice === 'subtype' && !child.collectionOf) {
+      const tenancyOwner = manifestFamilyTenancyOwner(manifest, pairs, key);
+      if (tenancyOwner)
+        throw sameNameTenancyUnsupported(
+          name,
+          parentKey,
+          tenancyOwner === key ? name : tenancyOwner,
+        );
+    }
     const parent = manifest.objects[parentKey];
     if (!parent) continue;
     const parentTable = tableOf(parent);
     if (choice === 'subtype') {
-      if (
-        !child.collectionOf &&
-        !parent.collectionOf &&
-        familyHasDiscriminator(manifest, parentKey) === false
-      ) {
+      if (child.collectionOf || parent.collectionOf) continue;
+      if (familyHasDiscriminator(manifest, parentKey) === false) {
         throw sameNameSubtypeWithoutDiscriminator(name, parentKey, parentTable);
       }
       continue;

@@ -1111,7 +1111,7 @@ for (const key of ${JSON.stringify(keys)}) {
     }
   });
 
-  it('keeps the effective constructor, discriminator, tenancy and exposure of a restricted provider in both sibling orders', () => {
+  it('keeps the effective constructor, discriminator and exposure of a restricted provider in both sibling orders', () => {
     const SUB = '@activation/sub:Customer';
     const seen: string[] = [];
     for (const keysFirst of ['replacement', 'subtype']) {
@@ -1120,9 +1120,9 @@ for (const key of ${JSON.stringify(keys)}) {
         { key: SUB, parent: PROVIDER, replace: false },
         { key: PROVIDER, sti: true },
       ]);
+      // A same-named subtype is supported only in a family without tenancy.
       manifest.objects[PROVIDER].decoratorConfig = {
         ...manifest.objects[PROVIDER].decoratorConfig,
-        tenantScoped: { mode: 'required' },
         api: { exclude: ['delete'] },
       };
       const keys = [ITEM, SUB, PROVIDER];
@@ -1153,7 +1153,6 @@ console.log(JSON.stringify({
     expect(JSON.parse(seen[0])).toMatchObject({
       effective: ITEM,
       effectiveName: 'Customer',
-      tenant: 'required',
       api: { exclude: ['delete'] },
       sub: SUB,
     });
@@ -1162,7 +1161,7 @@ console.log(JSON.stringify({
   it.each([
     ['served through its parent', undefined],
     ['with a collection of its own', 'tenant_scenes'],
-  ])('scopes a same-named subtype %s by its parent chain, not by a sibling replacement', (_label, collection) => {
+  ])('boots a same-named subtype %s in a family without tenancy, its rows listed through the family root', (_label, collection) => {
     const SUB = '@activation/sub:Customer';
     // No replacement, then one whose module registers before the subtype's
     // and one whose module registers after it.
@@ -1178,15 +1177,8 @@ console.log(JSON.stringify({
         { key: SUB, parent: PROVIDER, replace: false },
         { key: PROVIDER, sti: true },
       ]);
-      manifest.objects[PROVIDER].decoratorConfig = {
-        ...manifest.objects[PROVIDER].decoratorConfig,
-        tenantScoped: { mode: 'required', field: 'organizationId' },
-      };
-      if (replacement)
-        manifest.objects[replacement].decoratorConfig = {
-          ...manifest.objects[replacement].decoratorConfig,
-          tenantScoped: { mode: 'optional', field: 'accountId' },
-        };
+      for (const object of Object.values(manifest.objects))
+        object.schema!.columns._meta_type = { type: 'TEXT' };
       if (collection)
         manifest.objects[SUB].decoratorConfig = {
           ...manifest.objects[SUB].decoratorConfig,
@@ -1195,22 +1187,98 @@ console.log(JSON.stringify({
       const run = runNode(
         files,
         generate(files, manifest),
-        `import { resolveAnonymousTenantReadScope } from '@happyvertical/smrt-core';
-await coordinator(['${PROVIDER}', '${SUB}']).boot();
-globalThis.__smrtDispatchTenantResolver = () => null;
+        `await coordinator(['${PROVIDER}', '${SUB}']).boot();
+await db.query("INSERT INTO fixture_customer (id, slug, context, title, _meta_type) VALUES ('00000000-0000-4000-8000-00000000000b', 'sub-row', '', 'sub-row', '${SUB}')");
+const root = await ObjectRegistry.getCollection('${PROVIDER}', { db });
 console.log(JSON.stringify({
-  config: ObjectRegistry.getTenantScopedConfig('${SUB}'),
+  sub: ObjectRegistry.getClass('${SUB}')?.qualifiedName,
+  tenancy: ['${PROVIDER}', '${SUB}'].map((key) => ObjectRegistry.getTenantScopedConfig(key) ?? null),
   scoped: ObjectRegistry.isTenantScoped('${SUB}'),
-  scope: resolveAnonymousTenantReadScope('${SUB}'),
+  rows: (await root.list({})).map((row) => row.title),
 }));`,
       );
       expect(run.status, run.output).toBe(0);
-      expect(JSON.parse(run.output.trim())).toMatchObject({
-        config: { mode: 'required', field: 'organizationId' },
-        scoped: true,
-        scope: { organizationId: null },
+      expect(JSON.parse(run.output.trim())).toEqual({
+        sub: SUB,
+        tenancy: [null, null],
+        scoped: false,
+        rows: ['sub-row'],
       });
     }
+  });
+
+  describe.each([
+    ['its parent', { parent: { mode: 'required', field: 'organizationId' } }],
+    ['the replacement in effect', { replacement: { field: 'accountId' } }],
+    [
+      'its parent and a replacement on another ownership field',
+      {
+        parent: { mode: 'required', field: 'organizationId' },
+        replacement: { mode: 'optional', field: 'accountId' },
+      },
+    ],
+    ['the subtype itself', { subtype: { field: 'organizationId' } }],
+    ['its parent, with an unknown mode', { parent: { mode: 'sometimes' } }],
+    ['a differently named ancestor', { ancestor: { mode: 'optional' } }],
+  ] as const)('a same-named subtype whose family declares tenancy on %s', (_label, placement: {
+    parent?: object;
+    replacement?: object;
+    subtype?: object;
+    ancestor?: object;
+  }) => {
+    const SUB = '@activation/sub:Customer';
+    const REPLACEMENT = '@aaa/app:Customer';
+    const ANCESTOR = '@activation/records:Record';
+    const scoped = () => {
+      const { files, manifest } = project([
+        { key: ANCESTOR, sti: true, table: 'fixture_customer' },
+        { key: REPLACEMENT, parent: PROVIDER, replace: true },
+        { key: SUB, parent: PROVIDER, replace: false },
+        { key: PROVIDER, parent: ANCESTOR, sti: true },
+      ]);
+      const declare = (key: string, tenantScoped: object | undefined) => {
+        if (tenantScoped)
+          manifest.objects[key].decoratorConfig = {
+            ...manifest.objects[key].decoratorConfig,
+            tenantScoped: tenantScoped as never,
+          };
+      };
+      declare(PROVIDER, placement.parent);
+      declare(REPLACEMENT, placement.replacement);
+      declare(SUB, placement.subtype);
+      declare(ANCESTOR, placement.ancestor);
+      return { files, manifest };
+    };
+    const refusal =
+      /@activation\/sub:Customer declares replaceParent: false as a subtype of @activation\/customer:Customer, but .*a same-named subtype is supported only in a family that declares no tenancy/;
+
+    it('is refused at generation', () => {
+      const { files, manifest } = scoped();
+      expect(() => generate(files, manifest)).toThrow(refusal);
+    });
+
+    it('is refused by the registry in a fresh process, leaving the family as it was', () => {
+      const { files, manifest } = scoped();
+      const declared = manifest.objects[SUB].decoratorConfig;
+      // Generate without the subtype, then register it at run time.
+      delete manifest.objects[SUB];
+      const run = runNode(
+        files,
+        generate(files, manifest),
+        `import { Customer as Subtype } from '@activation/sub';
+await coordinator(['${PROVIDER}']).boot();
+const effective = ObjectRegistry.getClass('${PROVIDER}').qualifiedName;
+let error;
+try {
+  ObjectRegistry.register(Subtype, { ...${JSON.stringify(declared)}, name: 'Customer', packageName: '@activation/sub', tableName: 'fixture_customer' });
+} catch (caught) { error = caught; }
+assert.equal(error?.code, 'CONFIG_SAME_NAME_TENANCY_UNSUPPORTED', String(error));
+assert.match(String(error?.message), ${refusal.toString()});
+assert.equal(ObjectRegistry.getAllClasses().has('${SUB}'), false);
+assert.equal(ObjectRegistry.getClass('${PROVIDER}').qualifiedName, effective);`,
+      );
+      expect(run.status, run.output).toBe(0);
+    });
   });
 
   it('denies a disabled tenant through the coordinator gate on the generated registration', () => {

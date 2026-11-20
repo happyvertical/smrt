@@ -29,6 +29,8 @@ import {
   readProjectManifestSync,
 } from '../manifest/manifest-loader.js';
 import {
+  declaresTenancy,
+  objectDeclaresTenancy,
   requireSameNameSubclassChoice,
   type SameNameSubclassChoice,
   sameNameParentUnregistered,
@@ -37,6 +39,7 @@ import {
   sameNameSubclassUndeclared,
   sameNameSubtypeTableMismatch,
   sameNameSubtypeWithoutDiscriminator,
+  sameNameTenancyUnsupported,
 } from '../manifest/model-replacements.js';
 import {
   cloneManifestSchemaColumns,
@@ -98,6 +101,11 @@ import {
   applyRuntimeOverrides,
   transferRuntimeOverride,
 } from './runtime-overrides';
+import {
+  assertSameNameSubtypeUntenanted,
+  assertTenancyAdmitted,
+  carriesTenancy,
+} from './same-name-tenancy';
 import {
   getClasses,
   getCollections,
@@ -1542,6 +1550,17 @@ function registerUntracked(
     existingKey: string,
     existing: RegisteredClass,
   ): string {
+    // A re-registration that brings tenancy to a same-named subtype's family
+    // is refused before the entry changes (#5143).
+    if (
+      declaresTenancy(config.tenantScoped) ||
+      getConstructorTenantScopedDeclarations().get(ctor)
+    )
+      assertTenancyAdmitted(existing.qualifiedName ?? existingKey, [
+        existingKey,
+        existing.qualifiedName,
+        name,
+      ]);
     if (existing.generatedFields)
       ObjectRegistry.validateGeneratedRegistration({
         ...existing,
@@ -2732,6 +2751,31 @@ function registerUntracked(
       registration,
     );
   }
+  // A same-named subtype is supported only in a family that declares no
+  // tenancy, whichever of the two registers first and whichever member
+  // brings the tenancy (#5143). Refused before anything is recorded.
+  if (carriesTenancy(registrationKey, registration))
+    assertTenancyAdmitted(registrationKey, [
+      registrationKey,
+      registration.qualifiedName,
+      name,
+      sameName.choice === 'replace' ? sameNameParent?.[0] : undefined,
+    ]);
+  if (sameNameSubtypeParent)
+    assertSameNameSubtypeUntenanted(
+      registrationKey,
+      registration,
+      sameNameSubtypeParent[0],
+      sameNameSubtypeParent[1],
+    );
+  for (const [childKey, child] of sameNameChildren)
+    if (sameName.choiceOf(childKey, child) === 'subtype')
+      assertSameNameSubtypeUntenanted(
+        childKey,
+        child,
+        registrationKey,
+        registration,
+      );
   if (sameNameParent) recordSubtypeParent(registrationKey, sameNameParent[0]);
   // A subclass registered before this class could only record its parent by
   // simple name, which is its own: name the parent now, so both load orders
@@ -3295,6 +3339,16 @@ function mergeManifestIntoExistingRegistration(
   packageName?: string,
 ): void {
   const manifestConfig = objectDef.decoratorConfig || {};
+  // Tenancy this manifest brings to a same-named subtype's family is refused
+  // before the entry changes (#5143).
+  if (
+    existing.tenantScopedConfigSource !== 'explicit' &&
+    objectDeclaresTenancy(objectDef)
+  )
+    assertTenancyAdmitted(existing.qualifiedName ?? existing.name, [
+      existing.qualifiedName,
+      existing.name,
+    ]);
   const runtimeTenantScopedDeclaration =
     getConstructorTenantScopedDeclarations().get(existing.constructor);
   if (
@@ -3631,6 +3685,41 @@ function registerFromManifestUntracked(
           value: simpleClassName,
         }),
       ));
+  // A same-named subtype is supported only in a family that declares no
+  // tenancy (#5143), in either arrival order: refuse a subtype that declares
+  // tenancy or joins a family that does, and tenancy this entry brings to a
+  // registered subtype's family, before anything is recorded.
+  const sameNameManifestParent =
+    manifestParent?.includes(':') &&
+    manifestParent !== registrationKey &&
+    manifestParent.slice(manifestParent.lastIndexOf(':') + 1) ===
+      simpleClassName
+      ? manifestParent
+      : undefined;
+  const incomingTenancy = objectDeclaresTenancy(objectDef);
+  if (
+    ownChoice === 'subtype' &&
+    sameNameManifestParent &&
+    !objectDef.collectionOf
+  ) {
+    if (incomingTenancy)
+      throw sameNameTenancyUnsupported(
+        registrationKey,
+        sameNameManifestParent,
+        registrationKey,
+      );
+    assertSameNameSubtypeUntenanted(
+      registrationKey,
+      undefined,
+      sameNameManifestParent,
+    );
+  }
+  if (incomingTenancy)
+    assertTenancyAdmitted(registrationKey, [
+      registrationKey,
+      simpleClassName,
+      ownChoice === 'replace' ? sameNameManifestParent : undefined,
+    ]);
   // A run-time subclass keeps its same-named parent registered next to it, so
   // the lineage that lets a descendant replace its parent is not recorded.
   if (!runtimeOptions?.extendsRegistered || runtimeOptions.replaceParent) {
@@ -3993,6 +4082,12 @@ function registerFromManifestUntracked(
   // A same-named subtype and its parent must be tellable apart in storage,
   // whichever of the two is registering now (#5143).
   for (const pair of subtypePairs) {
+    assertSameNameSubtypeUntenanted(
+      pair.childKey,
+      pair.child ?? registration,
+      pair.parentKey,
+      pair.parent ?? registration,
+    );
     assertSameNameSubtypeStorage(
       pair.childKey,
       pair.child ?? registration,
