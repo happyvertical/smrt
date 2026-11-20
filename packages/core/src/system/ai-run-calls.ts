@@ -250,6 +250,36 @@ function inContextTenant(context: AiRunContext): AiRunScopedTxOptions {
 }
 
 /**
+ * A plain copy of a context with each of its properties read exactly once
+ * by ordinary property access (an accessor included), so a getter cannot
+ * answer one step of a call differently from the next.
+ */
+function readAiRunContextOnce(context: AiRunContext): AiRunContext {
+  const {
+    runId,
+    db,
+    tenantId,
+    fence,
+    reservations,
+    stepIndex,
+    stepName,
+    stepInstanceId,
+    attempt,
+  } = context;
+  return {
+    runId,
+    db,
+    ...(tenantId !== undefined ? { tenantId } : {}),
+    ...(fence ? { fence } : {}),
+    ...(reservations ? { reservations } : {}),
+    ...(stepIndex !== undefined ? { stepIndex } : {}),
+    ...(stepName !== undefined ? { stepName } : {}),
+    ...(stepInstanceId !== undefined ? { stepInstanceId } : {}),
+    ...(attempt !== undefined ? { attempt } : {}),
+  };
+}
+
+/**
  * Admit a held reservation just before its call is sent (page section 6.3),
  * in the tenant the caller's context established: with `checkRunning`, the
  * chain is locked and must still be `running` (a stopped chain releases the
@@ -445,9 +475,12 @@ export interface AiRunCallHandle {
  * settlement that fails every retry waits on the database's pending list.
  */
 export async function beginAiRunCall(
-  context: AiRunContext,
+  passed: AiRunContext,
   request: AiRunCallRequest,
 ): Promise<AiRunCallHandle> {
+  // Each property is read once: the fence, tenant and run that admit the
+  // call are the ones every later step uses.
+  const context = readAiRunContextOnce(passed);
   const held = context.reservations?.take();
   if (held) {
     await admitHeldAiCall(context.db, context.runId, held.reservation.callId, {

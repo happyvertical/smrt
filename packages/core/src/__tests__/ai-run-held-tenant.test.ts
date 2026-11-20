@@ -122,6 +122,45 @@ describe.each(aiRunTestEngines)('held calls and fences on %s', (engine) => {
     expect(send).toHaveBeenCalledTimes(1);
   });
 
+  it.each([
+    true,
+    false,
+  ])('reads a context fence once, so a held call is never admitted without it (checkRunning %s)', async (checkRunning) => {
+    const db = await newAiRunTestDatabase(engine);
+    const root = await openAiRun(store(db), {
+      type: 'workflow',
+      durable: true,
+    });
+    const fusion = await openAiRun(store(db), {
+      type: 'fusion',
+      parentRunId: root.id,
+    });
+    const held = await reserveAiCall(db, fusion.id, { inputTokens: 5 });
+    const lost = vi.fn(async () => false);
+    let reads = 0;
+    // A context whose fence is there on the first read only.
+    const context = {
+      runId: fusion.id,
+      db,
+      tenantId: 'tenant-one',
+      reservations: { take: () => ({ reservation: held, checkRunning }) },
+      get fence() {
+        reads += 1;
+        return reads === 1 ? lost : undefined;
+      },
+    } as AiRunContext;
+    const send = vi.fn(async () => 'sent');
+    await expect(
+      runAiRunCall(context, { fallbackUsage }, send),
+    ).rejects.toBeInstanceOf(AiRunClaimLostError);
+    expect(lost).toHaveBeenCalled();
+    expect(send).not.toHaveBeenCalled();
+    expect(await getAiRun(db, fusion.id)).toMatchObject({
+      calls: 0,
+      reservedCalls: 1,
+    });
+  });
+
   it('sends a held reservation that is still reserved (control)', async () => {
     const db = await newAiRunTestDatabase(engine);
     const run = await openAiRun(store(db), { type: 'fusion' });
