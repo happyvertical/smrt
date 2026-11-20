@@ -493,6 +493,17 @@ function findSameNameParent(
   ) {
     const found = byConstructor.get(proto);
     if (found) return found;
+    // A registered class of another simple name in between is the direct
+    // parent: a replacement replaces exactly one model, the one whose name it
+    // registers under, never a same-named ancestor above that class (a model
+    // exported as `Customer` that extends `Customer` extends `Root` replaces
+    // `Customer` when it registers under that name, not `Root`).
+    const between = getConstructorIndex().get(proto);
+    const betweenEntry =
+      between === undefined
+        ? undefined
+        : (getClasses().get(between) ?? replacedDeclarations().get(between));
+    if (betweenEntry && betweenEntry.name !== name) return undefined;
   }
   const declared =
     declaredParentKey ?? (ownKey ? recordedSubtypeParent(ownKey) : undefined);
