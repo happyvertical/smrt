@@ -389,11 +389,57 @@ export const DEFAULT_CHANGES_LIMIT = 500;
 export const MAX_CHANGES_LIMIT = 5_000;
 
 /**
- * Maximum append attempts under sequence contention. Conflicts only occur
- * with concurrent writers on MVCC engines and resolve as soon as the
- * blocking transaction commits, so a small bound is ample.
+ * Retry budget for a lost sequence race (#5271).
+ *
+ * A conflict on `MAX(seq) + 1` is retried until this much time has passed
+ * since the first attempt, and at least {@link MIN_APPEND_ATTEMPTS} times. On
+ * READ COMMITTED PostgreSQL with the v6 helpers installed the head lock means
+ * the retry should never run; it remains for a database still holding older
+ * helper bodies mid-rollout and keeps one retry policy across engines. The
+ * deadline is checked only between attempts: a single attempt can wait for
+ * the head lock for as long as `lock_timeout` / `statement_timeout` allow.
  */
-const MAX_APPEND_ATTEMPTS = 20;
+const APPEND_RETRY_BUDGET_MS = 2_000;
+
+/** Attempt floor under {@link APPEND_RETRY_BUDGET_MS} (the former hard cap). */
+const MIN_APPEND_ATTEMPTS = 20;
+
+/** Monotonic milliseconds, for retry deadlines that ignore wall-clock jumps. */
+function monotonicNow(): number {
+  return performance.now();
+}
+
+/**
+ * Whether a retry loop may try again after `attempts` conflicts that have
+ * spent `spentMs` of the budget.
+ */
+function retryBudgetRemains(attempts: number, spentMs: number): boolean {
+  return attempts < MIN_APPEND_ATTEMPTS || spentMs < APPEND_RETRY_BUDGET_MS;
+}
+
+/**
+ * The error thrown when sequence contention outlasts the retry budget.
+ *
+ * It keeps the database's `code`, carries the last database error as its
+ * `cause`, and repeats that error's message, because the append-failure
+ * warning logs only `message`.
+ */
+function retryBudgetExhausted(
+  operation: string,
+  lastError: unknown,
+  attempts: number,
+): Error {
+  const detail =
+    lastError instanceof Error ? lastError.message : String(lastError);
+  const error = new Error(
+    `${operation} could not allocate a change-feed sequence within the ` +
+      `${APPEND_RETRY_BUDGET_MS}ms retry budget (${attempts} attempts): ${detail}`,
+    { cause: lastError },
+  ) as Error & { code?: string };
+  const code = (lastError as { code?: unknown } | null)?.code;
+  if (typeof code === 'string') error.code = code;
+  return error;
+}
 
 /**
  * Jittered pause before an append (or a settling drain) re-contends for the
@@ -402,10 +448,10 @@ const MAX_APPEND_ATTEMPTS = 20;
  * Retrying a lost `MAX(seq)+1` race immediately lets a writer in a tight loop
  * win every round: the loser re-reads the head just as the winner commits its
  * next row, and on a contended host one writer was starved for all
- * {@link MAX_APPEND_ATTEMPTS}. A random delay, growing to a small cap,
- * desynchronizes the writers. Worst case across every retry stays well under
- * a second, and inside a caller transaction the append helper has already
- * rolled its own subtransaction back, so the pause holds no feed locks.
+ * of its attempts. A random delay, growing to a small cap,
+ * desynchronizes the writers. Each pause is at most 40 ms, and inside a
+ * caller transaction the append helper has already rolled its own
+ * subtransaction back, so the pause holds no feed locks.
  */
 function waitBeforeAppendRetry(attempt: number): Promise<void> {
   const ceilingMs = Math.min(2 ** attempt, 40);
@@ -417,7 +463,9 @@ function waitBeforeAppendRetry(attempt: number): Promise<void> {
 /**
  * Maximum bounded drain batches one {@link drainChangeFeed} call sequences.
  * A cap rather than "until empty" so a pathological writer cannot make one
- * reader drain forever; the remainder is picked up by the next drain.
+ * reader drain forever; the remainder is picked up by the next drain. Only
+ * successful batches count against it: a pass lost to a sequence conflict
+ * spends the retry budget instead (#5271).
  */
 const MAX_DRAIN_PASSES = 50;
 
@@ -850,8 +898,9 @@ export async function ensureChangeFeedTable(
  * (`COALESCE(MAX(seq), 0) + 1`) and retried on primary-key conflict, which
  * keeps committed sequences contiguous and makes commit order equal
  * sequence order — the property the cursor guarantee rests on (see the
- * module docs). Throws after {@link MAX_APPEND_ATTEMPTS} consecutive
- * conflicts or on any non-conflict database error; the framework's
+ * module docs). Throws once conflicts outlast the retry budget
+ * ({@link APPEND_RETRY_BUDGET_MS}, at least {@link MIN_APPEND_ATTEMPTS}
+ * attempts) or on any non-conflict database error; the framework's
  * interceptor catches and logs instead of failing the user's write.
  *
  * **Returns `null` for a staged append** (PostgreSQL, #2649): an append issued
@@ -951,7 +1000,8 @@ export async function appendChange(
     publishSignals(db, drainedSignals);
   };
 
-  for (let attempt = 1; attempt <= MAX_APPEND_ATTEMPTS; attempt++) {
+  const startedAt = monotonicNow();
+  for (let attempt = 1; ; attempt++) {
     try {
       // The append is a root-connection write; on embedded engines it goes
       // through the per-database write queue so it can never overlap a
@@ -997,21 +1047,21 @@ export async function appendChange(
       }
       return seq;
     } catch (error) {
-      if (!isUniqueViolation(error) || attempt === MAX_APPEND_ATTEMPTS) {
+      if (!isUniqueViolation(error)) {
         // Nothing was proven about the drain; hold its signals for a settling
         // drain rather than dropping or publishing them.
         queueDeferredSignals(db, drainedSignals);
         throw error;
+      }
+      if (!retryBudgetRemains(attempt, monotonicNow() - startedAt)) {
+        queueDeferredSignals(db, drainedSignals);
+        throw retryBudgetExhausted('appendChange', error, attempt);
       }
       // Sequence head contention: another append won the value. Re-running
       // recomputes MAX(seq) against the now-committed head.
       await waitBeforeAppendRetry(attempt);
     }
   }
-
-  // Unreachable: the loop returns a seq or throws on the final attempt. Present
-  // so the function satisfies its `Promise<number | null>` contract structurally.
-  throw new Error('appendChange exhausted retries without allocating a seq');
 }
 
 /**
@@ -1104,7 +1154,8 @@ export async function appendChanges(
     if (sequenced) publishSignals(db, drainedSignals);
     else queueDeferredSignals(db, drainedSignals);
   };
-  for (let attempt = 1; attempt <= MAX_APPEND_ATTEMPTS; attempt++) {
+  const startedAt = monotonicNow();
+  for (let attempt = 1; ; attempt++) {
     try {
       const rows = getQueryRows(
         await withEmbeddedWriteQueue(db, isEmbeddedDatabase(db), () =>
@@ -1162,16 +1213,17 @@ export async function appendChanges(
       settleDrainedSignals(true);
       return result;
     } catch (error) {
-      if (!isUniqueViolation(error) || attempt === MAX_APPEND_ATTEMPTS) {
+      if (!isUniqueViolation(error)) {
         queueDeferredSignals(db, drainedSignals);
         throw error;
+      }
+      if (!retryBudgetRemains(attempt, monotonicNow() - startedAt)) {
+        queueDeferredSignals(db, drainedSignals);
+        throw retryBudgetExhausted('appendChanges', error, attempt);
       }
       await waitBeforeAppendRetry(attempt);
     }
   }
-  throw new Error(
-    'appendChanges exhausted retries without allocating a sequence',
-  );
 }
 
 /**
@@ -1255,7 +1307,15 @@ async function drainChangeFeedDetailed(
   // Each call sequences one bounded batch; loop so a large backlog is not left
   // behind, with a hard iteration cap so a persistent failure cannot spin.
   const maxPasses = Math.max(1, options.maxPasses ?? MAX_DRAIN_PASSES);
-  for (let pass = 0; pass < maxPasses; pass++) {
+  // A pass lost to a sequence conflict does not count as a pass: it spends
+  // the retry budget instead (#5271). Only conflicting passes and their
+  // pauses are charged to that budget, so time spent on successful passes
+  // (their statements and signal settlement) never shortens it. The write
+  // path (`settle: false`) never retries, so it stays exactly one statement.
+  let conflictMs = 0;
+  let conflicts = 0;
+  for (let pass = 0; pass < maxPasses; ) {
+    const passStartedAt = monotonicNow();
     // The live sensitive set rides with every drain (#2982): the helper drops
     // their staged rows before allocating a sequence, so the feed never
     // records them — including entries an older replica staged. It travels as
@@ -1275,20 +1335,25 @@ async function drainChangeFeedDetailed(
         String(failure.error_message || 'PostgreSQL change-feed drain failed'),
       ) as Error & { code: string };
       error.code = String(failure.error_code);
-      // A concurrent autocommit append can win the head between this drain's
-      // MAX(seq) read and its insert. The whole batch rolled back, so the
-      // staged rows are still there — recompute and try again. Like the
-      // appender's own conflict retry, a settling drain pauses first so a
-      // tight-loop appender cannot win every pass (#3062); the write-path
-      // drain (`settle: false`, one pass) never pauses.
+      // An appender running older helper bodies (no head lock, mid-rollout)
+      // can win the head between this drain's MAX(seq) read and its insert.
+      // The whole batch rolled back, so the staged rows are still there —
+      // recompute and try again. Like the appender's own conflict retry, a
+      // settling drain pauses first so a tight-loop appender cannot win every
+      // pass (#3062); the write-path drain never retries.
       if (isUniqueViolation(error)) {
-        if (settle && pass + 1 < maxPasses) {
-          await waitBeforeAppendRetry(pass + 1);
-        }
+        conflicts += 1;
+        if (!settle) break;
+        conflictMs += monotonicNow() - passStartedAt;
+        if (!retryBudgetRemains(conflicts, conflictMs)) break;
+        const pauseStartedAt = monotonicNow();
+        await waitBeforeAppendRetry(conflicts);
+        conflictMs += monotonicNow() - pauseStartedAt;
         continue;
       }
       throw error;
     }
+    pass += 1;
     const sequenced = rows.filter((row) => row.drained_seq != null);
     drained += sequenced.length;
     for (const row of sequenced) {
