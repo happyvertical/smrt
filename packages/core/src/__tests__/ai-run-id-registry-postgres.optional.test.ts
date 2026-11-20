@@ -9,6 +9,7 @@
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { getDatabase } from '@happyvertical/sql';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { aiRunIdDigest, getRows } from '../system/ai-run-model';
 import {
   AiRunIdUsedError,
   AiRunNotFoundError,
@@ -96,10 +97,29 @@ describe.skipIf(!pgUrl)('run identity on PostgreSQL', () => {
         id,
         '2000-01-01T00:00:00.000Z',
       );
-      const [, opened] = await Promise.allSettled([
+      const [pruned, opened] = await Promise.allSettled([
         pruneAiRuns(db, { maxAgeMs: 0, tenantId: 't1' }),
         openAiRun(store('t2'), { id, type: 'turn' }),
       ]);
+      // The prune itself succeeded and removed this row, keeping its digest:
+      // the refusals below are the registry's, not a row the prune left.
+      expect(pruned.status).toBe('fulfilled');
+      expect(
+        (pruned as PromiseFulfilledResult<{ pruned: number }>).value.pruned,
+      ).toBeGreaterThanOrEqual(1);
+      expect(
+        getRows(
+          await db.query('SELECT id FROM _smrt_ai_runs WHERE id = $1', id),
+        ),
+      ).toEqual([]);
+      expect(
+        getRows(
+          await db.query(
+            'SELECT id_digest FROM _smrt_ai_run_ids WHERE id_digest = $1',
+            await aiRunIdDigest(id),
+          ),
+        ),
+      ).toHaveLength(1);
       expect(opened.status).toBe('rejected');
       expect((opened as PromiseRejectedResult).reason).toBeInstanceOf(
         AiRunIdUsedError,
