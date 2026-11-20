@@ -513,9 +513,6 @@ describe('parents', () => {
   // satisfy it: which of several TypeScript loads depends on the resolution
   // mode. The other file of each pair is named `OpenEvent`, since two models
   // named `Event` in one scan collide.
-  const SUFFIXES = JSON.stringify({
-    compilerOptions: { moduleSuffixes: ['.ios', ''] },
-  });
   const OPEN_OTHER = OPEN_BASE('Event').replace(
     'class Event',
     'class OpenEvent',
@@ -538,33 +535,6 @@ describe('parents', () => {
         }),
         'src/models/Base.js': 'export class Event {}\n',
         'src/models/Base/index.ts': OPEN_BASE('Event'),
-      },
-    ],
-    [
-      'two module suffixes of one extension',
-      './Base',
-      {
-        'tsconfig.json': SUFFIXES,
-        'src/models/Base.ios.ts': CLOSED_BASE('Event'),
-        'src/models/Base.ts': OPEN_OTHER,
-      },
-    ],
-    [
-      'a suffixed file of another extension',
-      './Base',
-      {
-        'tsconfig.json': SUFFIXES,
-        'src/models/Base.ts': CLOSED_BASE('Event'),
-        'src/models/Base.ios.tsx': OPEN_OTHER,
-      },
-    ],
-    [
-      'two suffixed files behind an explicit .js extension',
-      './Base.js',
-      {
-        'tsconfig.json': SUFFIXES,
-        'src/models/Base.ios.ts': CLOSED_BASE('Event'),
-        'src/models/Base.ts': OPEN_OTHER,
       },
     ],
   ])('rejects a specifier that could name %s', async (_label, specifier, files) => {
@@ -607,12 +577,100 @@ describe('parents', () => {
     expect(fieldNames(model('Meeting')?.allFields)).not.toContain('openOnly');
   });
 
-  it('reads moduleSuffixes from a tsconfig that starts with a byte order mark', async () => {
-    // Read correctly, `./Base` could name Base.ios.ts (outside the scan) and
-    // Base.ts: an error, never the open Base.ts alone.
+  // A module-suffix variant (`Base.ios.ts`) beside a file the specifier names
+  // is a file a tsconfig `moduleSuffixes` or a bundler may load instead. The
+  // scan reads no tsconfig, so a variant on disk is an error with or without
+  // one, including before a generated config exists or when the config comes
+  // from a package the scan cannot read.
+  it.each([
+    [
+      'a variant of the same extension',
+      './Base',
+      {
+        'src/models/Base.ios.ts': CLOSED_BASE('Event'),
+        'src/models/Base.ts': OPEN_OTHER,
+      },
+    ],
+    [
+      'a variant of another extension',
+      './Base',
+      {
+        'src/models/Base.ts': CLOSED_BASE('Event'),
+        'src/models/Base.ios.tsx': OPEN_OTHER,
+      },
+    ],
+    [
+      'a variant behind an explicit .js extension',
+      './Base.js',
+      {
+        'src/models/Base.ios.ts': CLOSED_BASE('Event'),
+        'src/models/Base.ts': OPEN_OTHER,
+      },
+    ],
+    [
+      'only a variant',
+      './Base',
+      { 'src/models/Base.ios.ts': CLOSED_BASE('Event') },
+    ],
+    [
+      'a variant of a directory index',
+      './Base/',
+      {
+        'src/models/Base/index.native.ts': CLOSED_BASE('Event'),
+        'src/models/Base/index.ts': OPEN_OTHER,
+      },
+    ],
+    [
+      'a variant while a tsconfig that sets no suffixes extends a missing generated config',
+      './Base',
+      {
+        'tsconfig.json': JSON.stringify({
+          extends: './.svelte-kit/tsconfig.json',
+        }),
+        'src/models/Base.ios.ts': CLOSED_BASE('Event'),
+        'src/models/Base.ts': OPEN_OTHER,
+      },
+    ],
+    [
+      'a variant while the tsconfig comes from a config package',
+      './Base',
+      {
+        'tsconfig.json': JSON.stringify({ extends: '@fixture/tsconfig' }),
+        'node_modules/@fixture/tsconfig/package.json': JSON.stringify({
+          name: '@fixture/tsconfig',
+          main: 'index.js',
+          tsconfig: 'base.json',
+        }),
+        'node_modules/@fixture/tsconfig/index.js': 'module.exports = {};\n',
+        'node_modules/@fixture/tsconfig/base.json': JSON.stringify({
+          compilerOptions: { moduleSuffixes: ['.ios', ''] },
+        }),
+        'src/models/Base.ios.ts': CLOSED_BASE('Event'),
+        'src/models/Base.ts': OPEN_OTHER,
+      },
+    ],
+  ])('rejects a specifier beside %s', async (_label, specifier, files) => {
     const root = newRoot();
     write(root, {
-      'tsconfig.json': `﻿${SUFFIXES}`,
+      ...files,
+      'src/models/Meeting.ts': CHILD(`import { Event } from '${specifier}';`),
+    });
+    const scanner = new OxcScanner({
+      cwd: root,
+      include: ['src/**/*.ts', 'src/**/*.tsx'],
+    });
+    const { errors, model } = await scanAt(root, scanner);
+
+    expect(errors).toHaveLength(1);
+    expect(errors[0].filePath).toContain('Meeting.ts');
+    expect(errors[0].message).toContain('could also name');
+    expect(errors[0].message).toContain('module-suffix variant');
+    expect(fieldNames(model('Meeting')?.allFields)).toEqual(['room']);
+  });
+
+  it('rejects a specifier beside a variant the scan does not read', async () => {
+    const root = newRoot();
+    write(root, {
       'src/models/Base.ios.ts': CLOSED_BASE('Event'),
       'src/models/Base.ts': OPEN_BASE('Event'),
       'src/models/Meeting.ts': CHILD(`import { Event } from './Base';`),
@@ -625,53 +683,31 @@ describe('parents', () => {
     const { errors, model } = await scanAt(root, scanner);
 
     expect(errors).toHaveLength(1);
-    expect(errors[0].message).toContain('could name more than one file');
+    expect(errors[0].message).toContain('could also name');
     expect(fieldNames(model('Meeting')?.allFields)).not.toContain('openOnly');
   });
 
-  it.each([
-    [
-      'cannot be parsed',
-      {
-        'tsconfig.json':
-          '{ "compilerOptions": { "moduleSuffixes": [".ios", ""] ',
-      },
-      'could not be parsed',
-    ],
-    [
-      'extends past the depth limit',
-      Object.fromEntries([
-        ['tsconfig.json', JSON.stringify({ extends: './c1.json' })],
-        ...Array.from({ length: 10 }, (_, i) => [
-          `c${i + 1}.json`,
-          JSON.stringify(
-            i < 9
-              ? { extends: `./c${i + 2}.json` }
-              : { compilerOptions: { moduleSuffixes: ['.ios', ''] } },
-          ),
-        ]),
-      ]),
-      'levels of tsconfig `extends`',
-    ],
-    [
-      'sets moduleSuffixes to something other than strings',
-      {
-        'tsconfig.json': JSON.stringify({
-          compilerOptions: { moduleSuffixes: '.ios' },
-        }),
-      },
-      'is not a list of strings',
-    ],
-  ])('fails the scan when the tsconfig %s, instead of assuming no suffixes', async (_label, config, reason) => {
+  it('accepts a file beside test, story, config and fixture files, and reads no tsconfig', async () => {
     const { errors, model } = await scanProject({
-      ...config,
-      'src/models/Base.ts': OPEN_BASE('Event'),
+      // Unparseable: the scan never reads it.
+      'tsconfig.json': '{ "compilerOptions": { "moduleSuffixes": [".ios", ""] ',
+      'src/models/Base.ts': CLOSED_BASE('Event'),
+      'src/models/Base.test.ts': `export const tested = true;\n`,
+      'src/models/Base.spec.ts': `export const specified = true;\n`,
+      'src/models/Base.stories.tsx': `export const story = {};\n`,
+      'src/models/Base.config.ts': `export const config = {};\n`,
+      'src/models/Base.mock.ts': `export const mock = {};\n`,
+      'src/models/Base.fixtures.ts': `export const fixtures = [];\n`,
+      'src/models/Base.e2e.ts': `export const e2e = true;\n`,
+      'src/models/Base.bench.ts': `export const bench = true;\n`,
       'src/models/Meeting.ts': CHILD(`import { Event } from './Base';`),
     });
 
-    expect(errors).toHaveLength(1);
-    expect(errors[0].message).toContain(reason);
-    expect(fieldNames(model('Meeting')?.allFields)).not.toContain('openOnly');
+    expect(errors).toEqual([]);
+    expect(fieldNames(model('Meeting')?.allFields)).toEqual([
+      'closedOnly',
+      'room',
+    ]);
   });
 
   it('reads a trailing slash as the directory, not a sibling file', async () => {
@@ -688,11 +724,11 @@ describe('parents', () => {
     ]);
   });
 
-  it('accepts the one suffixed file a specifier can name', async () => {
+  it('accepts a variant imported by its full name', async () => {
     const { errors, model } = await scanProject({
-      'tsconfig.json': SUFFIXES,
       'src/models/Base.ios.ts': CLOSED_BASE('Event'),
-      'src/models/Meeting.ts': CHILD(`import { Event } from './Base';`),
+      'src/models/Base.ts': OPEN_OTHER,
+      'src/models/Meeting.ts': CHILD(`import { Event } from './Base.ios';`),
     });
 
     expect(errors).toEqual([]);

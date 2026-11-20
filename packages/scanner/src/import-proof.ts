@@ -8,7 +8,8 @@
  *
  * - **same file**: a class declared in the importing file;
  * - **relative**: a named or default import whose relative specifier can
- *   name exactly one file on disk (of every candidate TypeScript may try), a
+ *   name exactly one file on disk (of every candidate TypeScript may try,
+ *   with no module-suffix variant such as `Base.ios.ts` beside it), a
  *   scanned file that declares the class itself and exports it under its
  *   own name;
  * - **framework**: a framework base exported by the framework package
@@ -21,12 +22,18 @@
  *   full specifier is the entry the package declares the class at.
  *
  * Nothing is resolved through an alias, a barrel, a re-export, `baseUrl`, an
- * imports map or a bundler config: each is an error naming its fix.
+ * imports map or a bundler config: each is an error naming its fix. No
+ * tsconfig is read, so no compiler option changes which file is accepted.
  */
 
-import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs';
-import { createRequire } from 'node:module';
-import { dirname, join, resolve as resolvePath } from 'node:path';
+import {
+  existsSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  statSync,
+} from 'node:fs';
+import { basename, dirname, join, resolve as resolvePath } from 'node:path';
 import type {
   RawClassDefinition,
   RawImportBinding,
@@ -116,50 +123,28 @@ function isFile(path: string): boolean {
   }
 }
 
-/** JSON with comments and trailing commas, as TypeScript reads tsconfig. */
-function parseConfigText(source: string): Record<string, unknown> | null {
-  // A UTF-8 byte order mark is valid at the start of a tsconfig.
-  const text = source.startsWith('﻿') ? source.slice(1) : source;
-  let out = '';
-  let inString = false;
-  for (let index = 0; index < text.length; index++) {
-    const char = text[index];
-    const next = text[index + 1];
-    if (inString) {
-      out += char;
-      if (char === '\\') {
-        out += next ?? '';
-        index++;
-      } else if (char === '"') {
-        inString = false;
-      }
-      continue;
-    }
-    if (char === '"') {
-      inString = true;
-      out += char;
-    } else if (char === '/' && next === '/') {
-      while (index < text.length && text[index] !== '\n') index++;
-      out += '\n';
-    } else if (char === '/' && next === '*') {
-      index += 2;
-      while (
-        index < text.length &&
-        !(text[index] === '*' && text[index + 1] === '/')
-      )
-        index++;
-      index++;
-    } else {
-      out += char;
-    }
-  }
-  try {
-    const parsed = JSON.parse(out.replace(/,(\s*[}\]])/g, '$1'));
-    return parsed && typeof parsed === 'object' ? parsed : null;
-  } catch {
-    return null;
-  }
-}
+/**
+ * Dotted names that mark a file beside `Base.ts` as something other than a
+ * variant of that module (`Base.test.ts`, `Base.d.ts`, ...). Any other single
+ * dotted name before a TypeScript or JavaScript extension (`Base.ios.ts`,
+ * `Base.native.tsx`) is a variant that a tsconfig `moduleSuffixes` or a
+ * bundler may load for `./Base` instead.
+ */
+const NON_MODULE_VARIANTS: ReadonlySet<string> = new Set([
+  'test',
+  'spec',
+  'stories',
+  'd',
+  'config',
+  'e2e',
+  'bench',
+  'mock',
+  'fixture',
+  'fixtures',
+]);
+
+/** What follows `Base.` in a variant: one dotted name, then a TS/JS extension. */
+const VARIANT_REST = /^([A-Za-z0-9_-]+)\.(?:d\.)?[mc]?[jt]sx?$/;
 
 /**
  * Keys of a package.json that only marks the module format of the files
@@ -177,12 +162,13 @@ const MODULE_FORMAT_KEYS: ReadonlySet<string> = new Set([
 
 /**
  * Proves references for one scan run. Everything read from disk
- * (`package.json`, `tsconfig.json`, installed packages) is cached for the
- * run only, so a second scan sees edits made between the two.
+ * (`package.json`, directory listings, installed packages) is cached for the
+ * run only, so a second scan sees edits made between the two. No tsconfig is
+ * read: the file a relative import names is decided by the files on disk.
  */
 export class ImportProver {
   private readonly packages = new Map<string, PackageInfo | null>();
-  private readonly suffixes = new Map<string, string[] | { reason: string }>();
+  private readonly directories = new Map<string, readonly string[]>();
   private readonly installed = new Map<string, string | null>();
 
   constructor(
@@ -384,27 +370,26 @@ export class ImportProver {
 
   /**
    * The one file a relative specifier can name: every candidate TypeScript
-   * may try (extensions, directory `index`, the project's `moduleSuffixes`,
-   * a trailing slash meaning the directory) must leave exactly one file on
-   * disk, or the import is an error. That file must be one the scan reads;
-   * a file outside the scan is an error, never a reason to take another.
+   * may try (extensions, directory `index`, a trailing slash meaning the
+   * directory) must leave exactly one file on disk, or the import is an
+   * error. A module-suffix variant beside a candidate (`Base.ios.ts` beside
+   * `Base.ts`, see {@link NON_MODULE_VARIANTS}) is an error too, whatever the
+   * project's tsconfig says: the scan reads no tsconfig, and a variant is a
+   * file a `moduleSuffixes` setting or a bundler may load instead. The file
+   * must be one the scan reads; a file outside the scan is an error, never a
+   * reason to take another.
    */
   selectFile(
     fromFile: string,
     specifier: string,
   ): { file: string } | { reason: string } {
     const base = resolvePath(dirname(fromFile), specifier);
-    const suffixes = this.moduleSuffixes(fromFile);
-    if ('reason' in suffixes) return suffixes;
     const candidates: string[] = [];
-    // TypeScript tries each extension in turn and, within one extension,
-    // each module suffix (`Base.ios.ts`, `Base.ts`, `Base.ios.tsx`, ...).
+    const stems = new Set<string>();
     const add = (stem: string, extensions: readonly string[]) => {
-      for (const extension of extensions) {
-        for (const suffix of suffixes) {
-          candidates.push(`${stem}${suffix}${extension}`);
-        }
-      }
+      stems.add(stem);
+      for (const extension of extensions)
+        candidates.push(`${stem}${extension}`);
     };
     const written = /(\.d)?\.([mc]?)([tj])s(x?)$/.exec(base);
     // A trailing slash (`./Base/`) asks for the directory only.
@@ -444,9 +429,17 @@ export class ImportProver {
     }
     // Which candidate TypeScript takes depends on the resolution mode
     // (`bundler` checks `Base.js` before `Base/index.ts`, a trailing slash
-    // skips files, ...). Rather than mirror every mode, a specifier is
-    // accepted only when exactly one candidate exists on disk.
+    // skips files, ...) and on the project's `moduleSuffixes`. Rather than
+    // mirror every mode and read every config, a specifier is accepted only
+    // when exactly one candidate exists on disk and no variant sits beside
+    // one.
     const existing = [...new Set(candidates.filter(isFile))];
+    const variants = [...stems].flatMap((stem) => this.variantFiles(stem));
+    if (variants.length > 0) {
+      return {
+        reason: `'${specifier}' could also name ${variants.join(', ')}: a file with a module-suffix variant name (\`.ios\`, \`.native\`, ...) is loaded instead when a tsconfig \`moduleSuffixes\` or a bundler selects it, and the scan reads neither; import the variant by its full name (\`./${basename(variants[0]).replace(/\.(?:d\.)?[mc]?[jt]sx?$/, '')}\`), or rename the files so that no variant sits beside the file you import`,
+      };
+    }
     if (existing.length > 1) {
       return {
         reason: `'${specifier}' could name more than one file (${existing.join(', ')}), and which one is loaded depends on the module resolution mode; make the import name exactly one file (write its extension, or the directory's index file, and rename the other files if they still match)`,
@@ -463,35 +456,39 @@ export class ImportProver {
   }
 
   /**
-   * `compilerOptions.moduleSuffixes` of the nearest `tsconfig.json` above
-   * `file` (following `extends`), `['']` when none sets it, or why the
-   * configuration could not be read: a suffix list the scan cannot read is
-   * never taken as absent, since it decides which file an import names.
+   * Files beside `stem` whose name is `<stem name>.<word>.<extension>`, a
+   * single dotted name before a TypeScript or JavaScript extension that is
+   * not one of {@link NON_MODULE_VARIANTS}: the files a `moduleSuffixes`
+   * setting or a bundler may load for the stem instead.
    */
-  private moduleSuffixes(file: string): string[] | { reason: string } {
-    let dir = dirname(file);
-    for (;;) {
-      const cached = this.suffixes.get(dir);
-      if (cached) return cached;
-      const config = join(dir, 'tsconfig.json');
-      if (isFile(config)) {
-        const found = readModuleSuffixes(config, 0);
-        const suffixes =
-          found && 'reason' in found
-            ? found
-            : found && found.length > 0
-              ? found
-              : [''];
-        this.suffixes.set(dirname(file), suffixes);
-        return suffixes;
-      }
-      const parent = dirname(dir);
-      if (parent === dir) {
-        this.suffixes.set(dirname(file), ['']);
-        return [''];
-      }
-      dir = parent;
+  private variantFiles(stem: string): string[] {
+    const directory = dirname(stem);
+    const prefix = `${basename(stem)}.`;
+    return this.entriesOf(directory)
+      .filter((entry) => {
+        if (!entry.startsWith(prefix)) return false;
+        const word = VARIANT_REST.exec(entry.slice(prefix.length))?.[1];
+        return (
+          word !== undefined &&
+          !NON_MODULE_VARIANTS.has(word.toLowerCase()) &&
+          isFile(join(directory, entry))
+        );
+      })
+      .map((entry) => join(directory, entry));
+  }
+
+  /** The names in `directory`, sorted; none when it cannot be listed. */
+  private entriesOf(directory: string): readonly string[] {
+    const cached = this.directories.get(directory);
+    if (cached) return cached;
+    let entries: string[] = [];
+    try {
+      entries = readdirSync(directory).sort();
+    } catch {
+      // A directory that does not exist has no variants.
     }
+    this.directories.set(directory, entries);
+    return entries;
   }
 
   /**
@@ -534,75 +531,4 @@ export class ImportProver {
     this.installed.set(key, found);
     return found;
   }
-}
-
-const MAX_EXTENDS_DEPTH = 8;
-
-/**
- * `moduleSuffixes` set by `file` or the configs it extends; `null` when none
- * sets it; `{ reason }` when a config cannot be read (malformed JSON, an
- * `extends` chain deeper than the limit, a suffix list that is not strings).
- */
-function readModuleSuffixes(
-  file: string,
-  depth: number,
-): string[] | null | { reason: string } {
-  if (depth > MAX_EXTENDS_DEPTH) {
-    return {
-      reason: `${file} is reached through more than ${MAX_EXTENDS_DEPTH} levels of tsconfig \`extends\`, so the scan cannot read its \`moduleSuffixes\`; shorten the chain`,
-    };
-  }
-  if (!isFile(file)) return null;
-  const config = parseConfigText(readFileSync(file, 'utf8'));
-  if (!config) {
-    return {
-      reason: `${file} could not be parsed, so the scan cannot read its \`moduleSuffixes\` (which decide the file an import names); fix the JSON`,
-    };
-  }
-  const options = (config.compilerOptions ?? {}) as Record<string, unknown>;
-  if (options.moduleSuffixes !== undefined) {
-    const suffixes = options.moduleSuffixes;
-    if (
-      !Array.isArray(suffixes) ||
-      suffixes.some((suffix) => typeof suffix !== 'string')
-    ) {
-      return {
-        reason: `\`compilerOptions.moduleSuffixes\` in ${file} is not a list of strings; fix it`,
-      };
-    }
-    return suffixes as string[];
-  }
-  const parents = Array.isArray(config.extends)
-    ? config.extends
-    : config.extends
-      ? [config.extends]
-      : [];
-  // A later entry of an `extends` array overrides an earlier one.
-  for (const parent of [...parents].reverse()) {
-    if (typeof parent !== 'string') continue;
-    const target = resolveExtends(file, parent);
-    const inherited = target ? readModuleSuffixes(target, depth + 1) : null;
-    if (inherited) return inherited;
-  }
-  return null;
-}
-
-function resolveExtends(from: string, parent: string): string | undefined {
-  if (isRelative(parent)) {
-    const target = resolvePath(dirname(from), parent);
-    return isFile(target) ? target : `${target}.json`;
-  }
-  const require = createRequire(from);
-  for (const candidate of [
-    parent,
-    `${parent}.json`,
-    `${parent}/tsconfig.json`,
-  ]) {
-    try {
-      return require.resolve(candidate);
-    } catch {
-      // try the next form
-    }
-  }
-  return undefined;
 }
