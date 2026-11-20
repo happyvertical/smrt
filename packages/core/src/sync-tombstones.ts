@@ -215,7 +215,24 @@ export async function nullSyncReference(
   didUpdate: (count: number) => void,
 ): Promise<void> {
   if (isJsonAdapterHandle(db)) {
-    const result = await db.update(tableName, filter, { [column]: null });
+    // Same invariant as the SQL path below: clearing the reference is a write,
+    // so `updated_at` strictly advances on every affected row and a copy loaded
+    // before the cascade conflicts on save. One timestamp later than every
+    // matched row's current value keeps this a single update. A failed read
+    // (a table this database never created) leaves the update below to report
+    // it exactly as before.
+    const matched = (await db
+      .list(tableName, filter)
+      .catch(() => [])) as Array<{ updated_at?: unknown }>;
+    let next = Date.now();
+    for (const row of matched) {
+      const current = new Date(String(row.updated_at ?? '')).getTime();
+      if (Number.isFinite(current) && current >= next) next = current + 1;
+    }
+    const result = await db.update(tableName, filter, {
+      [column]: null,
+      updated_at: new Date(next).toISOString(),
+    });
     didUpdate(result.affected);
     return;
   }
