@@ -196,6 +196,7 @@ export class ImportProver {
           unknown
         >;
         const names = new Set<string>();
+        let declaresDependencies = false;
         for (const key of [
           'dependencies',
           'peerDependencies',
@@ -204,14 +205,24 @@ export class ImportProver {
         ]) {
           const map = json[key];
           if (map && typeof map === 'object') {
+            declaresDependencies = true;
             for (const name of Object.keys(map)) names.add(name);
           }
         }
-        info = {
-          dir,
-          name: typeof json.name === 'string' ? json.name : undefined,
-          dependencies: names,
-        };
+        // A package.json with neither a name nor dependencies (a nested
+        // `{ "type": "module" }` marker, as in `dist/esm/`) does not declare
+        // a package; the one above it does.
+        info =
+          typeof json.name !== 'string' && !declaresDependencies
+            ? (() => {
+                const parent = dirname(dir);
+                return parent === dir ? null : this.packageAt(parent);
+              })()
+            : {
+                dir,
+                name: typeof json.name === 'string' ? json.name : undefined,
+                dependencies: names,
+              };
       } catch {
         info = { dir, dependencies: new Set() };
       }

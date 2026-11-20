@@ -1112,6 +1112,19 @@ describe('repeated scans and project roots', () => {
     expect(second.errors).toEqual([]);
   });
 
+  it('looks past a nested package.json that only marks the module type', async () => {
+    // The dist/esm layout: `{ "type": "module" }` declares no package, so
+    // the package.json above it still decides which packages are declared.
+    const root = newRoot();
+    write(root, {
+      'src/esm/package.json': JSON.stringify({ type: 'module' }),
+      'src/esm/Meeting.ts': CHILD(`import { Event } from '${PROVIDER}';`),
+    });
+    const { errors } = await scanAt(root);
+
+    expect(errors).toEqual([]);
+  });
+
   it('without projectRoot, the nearest package.json decides; none makes a package parent an error', async () => {
     const root = mkdtempSync(join(tmpdir(), 'smrt-proof-loose-'));
     roots.push(root);
