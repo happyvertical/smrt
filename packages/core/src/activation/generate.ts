@@ -244,10 +244,22 @@ function activationPlan(manifest: SmartObjectManifest) {
       // to the generic or a naming convention would install this collection
       // as the receiver of a different model.
       itemId = declaredCollectionItem(manifest, collection);
-      if (!itemId)
+      if (!itemId) {
+        const foreign = collection.collectionOf.includes(':')
+          ? []
+          : Object.entries(manifest.objects)
+              .filter(
+                ([, object]) => object.className === collection.collectionOf,
+              )
+              .map(([key]) => key);
+        if (foreign.length > 0)
+          throw new Error(
+            `Activation cannot bind collection ${id}: its declared item ${collection.collectionOf} (collectionOf) matches only ${foreign.join(', ')} of another package, which its generic does not name. Declare collectionOf as the qualified key of the model it serves.`,
+          );
         throw new Error(
           `Activation cannot bind collection ${id}: its declared item ${collection.collectionOf} (collectionOf) is not in the manifest. Regenerate the manifest, or include the package that declares ${collection.collectionOf}.`,
         );
+      }
     } else {
       const declared = collection.extendsTypeArg;
       const item = resolveCollectionItemObject(manifest, collection);

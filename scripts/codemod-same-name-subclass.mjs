@@ -155,6 +155,7 @@ function optionKeys(source, map, open, close) {
     } else if (depth === 2 && (previous === '{' || previous === ',') && c === '.' && source.startsWith('...', i)) {
       // A spread can carry any option: the literal does not decide on its own.
       keys.dynamic = true;
+      keys.lastSpread = i;
     }
     previous = c;
   }
@@ -384,7 +385,8 @@ export function codemodSource(source, choice, filePath) {
     // Options that are not one object literal (a conditional, a variable, a
     // spread) cannot be decided from the text: reported, never edited, and
     // counted as still needing the option.
-    if (!literal || (keys.dynamic && !keys.has('replaceParent'))) {
+    // A spread after the key can override it; one before it cannot.
+    if (!literal || (keys.dynamic && (!keys.has('replaceParent') || keys.lastSpread > keys.get('replaceParent')))) {
       findings.push({ ...finding, status: 'unsupported-options' });
       continue;
     }

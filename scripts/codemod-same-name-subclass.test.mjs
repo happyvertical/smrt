@@ -189,6 +189,16 @@ test('treats shorthand as declared and options that are not one object literal a
       assert.equal(result.source, source, options);
     }
   }
+  // A spread after the key can override it; one before it cannot.
+  for (const [options, status] of [
+    ['{ replaceParent: true, ...options }', 'unsupported-options'],
+    ['{ ...options, replaceParent: true }', 'declared'],
+  ]) {
+    const source = `${header}\n@smrt(${options})\nexport class Customer extends CustomerBase {}\n`;
+    const result = codemodSource(source, true);
+    assert.equal(result.findings[0].status, status, options);
+    assert.equal(result.source, source, options);
+  }
   const root = mkdtempSync(join(tmpdir(), 'codemod-5143-undecidable-'));
   const errors = console.error;
   const logs = console.log;

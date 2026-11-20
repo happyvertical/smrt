@@ -878,7 +878,7 @@ describe('generated activation order', () => {
       manifest.objects[ACOL].collectionOf = 'Customer';
       manifest.objects[ACOL].extendsTypeArg = PROVIDER;
       expect(() => generate(files, manifest)).toThrow(
-        `Activation cannot bind collection ${ACOL}`,
+        `Activation cannot bind collection ${ACOL}: its declared item Customer (collectionOf) matches only ${OTHER} of another package`,
       );
     });
 
