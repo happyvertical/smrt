@@ -899,6 +899,9 @@ export class Message extends SmrtObject {
     // send state, handled-by, ...); createReply/createForward then set back
     // only what reply/forward semantics define. Only connection and tenant
     // context survive.
+    // `personaId` is dropped on purpose: a reply is authored by the replying
+    // principal, so it falls under that principal's hold rules, not the
+    // persona the inbound message happened to be addressed through.
     // `metadata` and `correlationId` stay: the protected-notification
     // handoff keys its provenance on them, so a derived draft of a protected
     // notification must keep failing closed. Neither is sent as mail content.

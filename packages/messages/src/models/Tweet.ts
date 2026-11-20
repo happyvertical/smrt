@@ -44,6 +44,31 @@ export class Tweet extends Message {
   }
 
   /**
+   * Tweet fields are not registered columns, so the base draft reset does not
+   * clear them; a reply or forward is a new tweet with no counts or media.
+   */
+  private resetTweetState(draft: Tweet, isReply: boolean): Tweet {
+    draft.tweetId = '';
+    draft.retweetCount = 0;
+    draft.likeCount = 0;
+    draft.replyCount = 0;
+    draft.isRetweet = false;
+    draft.isReply = isReply;
+    draft.mediaUrls = '';
+    draft.hashtags = '';
+    draft.mentions = '';
+    return draft;
+  }
+
+  override createReply(options?: { replyAll?: boolean }): Tweet {
+    return this.resetTweetState(super.createReply(options) as Tweet, true);
+  }
+
+  override createForward(): Tweet {
+    return this.resetTweetState(super.createForward() as Tweet, false);
+  }
+
+  /**
    * Get media URLs as parsed array
    */
   getMediaUrls(): string[] {

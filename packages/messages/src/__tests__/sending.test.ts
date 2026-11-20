@@ -515,3 +515,53 @@ describe('reply and forward drafts reset inbound-only state', () => {
     expect(stored.messageId).toBe('');
   });
 });
+
+describe('provider subclass reply/forward drafts keep their routing', () => {
+  it('SlackMessage reply stays in channel and starts/continues the thread', async () => {
+    const { SlackMessage } = await import('../models/SlackMessage');
+    const top = new SlackMessage({
+      channelId: 'C123',
+      channelName: 'ops',
+      slackTs: '1700000000.000100',
+      fromAddress: 'u1',
+      body: 'hello',
+    });
+    const r1 = top.createReply() as InstanceType<typeof SlackMessage>;
+    expect(r1.channelId).toBe('C123');
+    expect(r1.slackThreadTs).toBe('1700000000.000100');
+
+    const inThread = new SlackMessage({
+      channelId: 'C123',
+      slackTs: '1700000000.000200',
+      slackThreadTs: '1700000000.000100',
+      reactions: '[{"name":"x","count":1}]',
+      body: 'x',
+    });
+    const r2 = inThread.createReply() as InstanceType<typeof SlackMessage>;
+    expect(r2.channelId).toBe('C123');
+    expect(r2.slackThreadTs).toBe('1700000000.000100');
+    expect(r2.slackTs).toBe('');
+    expect(r2.reactions).toBe('');
+
+    const fwd = inThread.createForward() as InstanceType<typeof SlackMessage>;
+    expect(fwd.channelId).toBe('C123');
+    expect(fwd.slackThreadTs).toBe('');
+  });
+
+  it('Tweet reply is a fresh reply tweet; personaId is not inherited', async () => {
+    const { Tweet } = await import('../models/Tweet');
+    const t = new Tweet({
+      tweetId: '99',
+      likeCount: 5,
+      mediaUrls: '["u"]',
+      personaId: 'persona-1',
+      body: 'hi',
+    });
+    const r = t.createReply() as InstanceType<typeof Tweet>;
+    expect(r.tweetId).toBe('');
+    expect(r.likeCount).toBe(0);
+    expect(r.mediaUrls).toBe('');
+    expect(r.isReply).toBe(true);
+    expect(r.personaId).toBeNull();
+  });
+});
