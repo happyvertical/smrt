@@ -1,7 +1,9 @@
 /** Registry fixture isolation, without a test-runner runtime dependency. */
 import { snapshotRegisteredRetiredTables } from '../migrations/retired-tables.js';
 import { snapshotGeneratedClassState } from '../registry/generated-state.js';
+import { snapshotRuntimeOverrides } from '../registry/runtime-overrides.js';
 import { getLegacyFieldDecorators } from '../registry/shared-state.js';
+import { snapshotSubtypeLineage } from '../registry/subtype-lineage.js';
 import { ObjectRegistry } from '../registry.js';
 
 /**
@@ -62,6 +64,10 @@ function getRegistryForTests(): RegistryTestSurface {
 export function snapshotObjectRegistryState(): () => void {
   const restoreGenerated = snapshotGeneratedClassState();
   const restoreRetired = snapshotRegisteredRetiredTables();
+  // clear() also drops replacement lineage and consumer policies; without them
+  // a replaced parent resolves to its replacement and its chain loops.
+  const restoreLineage = snapshotSubtypeLineage();
+  const restoreOverrides = snapshotRuntimeOverrides();
   const legacyFields = new Map(
     Array.from(getLegacyFieldDecorators(), ([key, fields]) => [
       key,
@@ -86,6 +92,8 @@ export function snapshotObjectRegistryState(): () => void {
 
   return () => {
     registry.clear();
+    restoreLineage();
+    restoreOverrides();
     for (const [key, value] of legacyFields) {
       getLegacyFieldDecorators().set(key, new Map(value));
     }

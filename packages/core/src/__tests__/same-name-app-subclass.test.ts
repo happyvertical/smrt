@@ -809,6 +809,28 @@ describe('same-name app subclass', () => {
     );
   });
 
+  it('keeps replacement lineage and runtime overrides across a registry snapshot restore', () => {
+    runtime(up, app);
+    ObjectRegistry.registerOverride(`${APP}:Profile`, { mcp: false });
+    const restoreSnapshot = snapshotObjectRegistryState();
+    restoreSnapshot();
+    expect(ObjectRegistry.getRuntimeOverride(`${APP}:Profile`)).toEqual({
+      mcp: false,
+    });
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    expect(ObjectRegistry.getInheritanceChain(`${UP}:Person`)).toEqual([
+      `${UP}:Profile`,
+      `${UP}:Person`,
+    ]);
+    expect(ObjectRegistry.getInheritanceChain(`${APP}:Profile`)).toEqual([
+      `${UP}:Profile`,
+      `${APP}:Profile`,
+    ]);
+    expect(warn).not.toHaveBeenCalledWith(
+      expect.stringContaining('Circular inheritance detected'),
+    );
+  });
+
   it('keeps the provider cookbook identity when gating an app replacement', async () => {
     db = await getTestDatabase({
       type: databaseType,

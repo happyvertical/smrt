@@ -31,6 +31,14 @@ export function clearRuntimeOverrides(): void {
   policies().clear();
 }
 
+/** Test registry snapshots restore policies that ObjectRegistry.clear() drops. */
+export function snapshotRuntimeOverrides(): () => void {
+  const saved = new Map(policies());
+  return () => {
+    globalThis.__smrtRuntimeOverrides = new Map(saved);
+  };
+}
+
 export function getRuntimeOverride(name: string): Policy | undefined {
   return policies().get(name);
 }
