@@ -26,6 +26,7 @@ import {
   collectSyncApplyTargets,
   generateSyncApplyRoute as generateSyncApplyRouteInto,
   generateSyncApplyRouteTemplate,
+  syncModelScope,
 } from './sync-apply-route';
 
 /** Plan, check and commit the route as the generator does; true if written. */
@@ -241,6 +242,54 @@ describe('generateSyncApplyRouteTemplate', () => {
       ACCESS_IMPORTS,
     );
     expect(withoutTenants).toContain('runInRequestTenancy(');
+  });
+
+  it('limits family members served through a base to the models the manifest generates', () => {
+    const base = {
+      qualifiedName: '@fixture/app:Revision',
+      className: 'Revision',
+      packageName: '@fixture/app',
+      collection: 'revisions',
+      fields: {},
+      methods: {},
+      decoratorConfig: { tableStrategy: 'sti', api: { include: ['update'] } },
+    };
+    const child = {
+      qualifiedName: '@fixture/app:DraftRevision',
+      className: 'DraftRevision',
+      packageName: '@fixture/app',
+      collection: 'revisions',
+      extends: 'Revision',
+      extendsQualified: '@fixture/app:Revision',
+      fields: {},
+      methods: {},
+      decoratorConfig: { api: { include: ['update'] } },
+    };
+    const family = manifestWith({
+      '@fixture/app:Revision': base,
+      '@fixture/app:DraftRevision': child,
+      Product: productDef,
+    });
+    const scope = syncModelScope(family);
+    expect(scope).toEqual([
+      '@fixture/app:DraftRevision',
+      '@fixture/app:Revision',
+      'Product',
+    ]);
+    const scoped = generateSyncApplyRouteTemplate(
+      collectSyncApplyTargets(family),
+      ACCESS_IMPORTS,
+      scope,
+    );
+    expect(scoped).toContain(
+      `const SYNC_MODEL_SCOPE: ReadonlySet<string> = new Set(${JSON.stringify(scope)});`,
+    );
+    expect(scoped).toContain('modelScope: SYNC_MODEL_SCOPE');
+    // A manifest without a family carries no model list (unchanged source).
+    expect(syncModelScope(manifestWith({ Product: productDef }))).toBe(
+      undefined,
+    );
+    expect(content).not.toContain('SYNC_MODEL_SCOPE');
   });
 });
 

@@ -125,7 +125,12 @@ rule of `src/request-actor.ts`. Per request (per sync item, per tool call):
    for the operation (`servedFamilyTypes`: surface, server model list,
    per-request admission); on the emitted routes and both MCP surfaces a
    member is admitted only when it is on the server's model list (an MCP
-   server's models), switched on for the actor's tenant, and readable by the
+   server's models; an emitted CRUD or action route's family members the
+   manifest generates, `TENANCY_MODEL_SCOPE`; the emitted sync route's
+   models, `SYNC_MODEL_SCOPE`, when the manifest declares a family), switched
+   on for the actor's tenant, its own complete-principal requirement met
+   (`api.principalContext`: tenant, user and permissions in `locals`, on the
+   API surface), and readable by the
    caller (`api.public`, or a caller the transport signed in: a signed-in
    principal in `locals`, an MCP context with a user; a tenant context the
    host entered does not count). An MCP point read uses the

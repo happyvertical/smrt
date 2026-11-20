@@ -278,7 +278,17 @@ describe('an STI route serves a member only under an equal tenancy', () => {
     ).generateHandler();
     app = await emitApp(
       'effective-tenancy-sti-family',
-      [EffNote, EffOwnedNote, EffMemo, EffInheritedMemo],
+      // Every model of the app: a base serves only family members its
+      // routes were generated for.
+      [
+        EffNote,
+        EffOwnedNote,
+        EffLateNote,
+        EffMidNote,
+        EffDeepNote,
+        EffMemo,
+        EffInheritedMemo,
+      ],
       collections,
       Object.fromEntries([collectionEntryFor(EffNote, { countEvery: [] })]),
     );

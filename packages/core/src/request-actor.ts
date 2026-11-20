@@ -335,20 +335,49 @@ function principalSignedIn(input: RequestTenancyEntryInput): boolean {
 }
 
 /**
+ * Whether the request carries a complete principal (tenant, user and
+ * permissions) of its own, as `api.principalContext` requires: the settled
+ * principal's, or the trusted `locals`'.
+ */
+function principalComplete(input: RequestTenancyEntryInput): boolean {
+  if (input.principal) {
+    return (
+      !!nonEmpty(input.principal.tenantId) &&
+      !!nonEmpty(input.principal.userId) &&
+      input.principal.permissions !== undefined
+    );
+  }
+  const fromLocals = principalFromLocals(input.locals);
+  return (
+    !!fromLocals.tenantId && !!fromLocals.userId && !!fromLocals.permissions
+  );
+}
+
+/** What a caller brings to a family member's own access rules. */
+interface MemberCaller {
+  actor: RequestActor;
+  locals: unknown;
+  /** The transport signed the caller in. */
+  signedIn: boolean;
+  /** The caller carries a complete principal of its own. */
+  completePrincipal: boolean;
+}
+
+/**
  * Whether a family member of the route model is served to this caller
  * through the base, as it would be on its own route: switched on for the
- * request's tenant (the runtime exposure gate), and readable by the caller
- * (its `api.public`, or a caller the transport signed in). The base's own
- * gate admitted the request; a member's access rules are its own.
+ * request's tenant (the runtime exposure gate), its complete-principal
+ * requirement met (`api.principalContext`), and readable by the caller (its
+ * `api.public`, or a caller the transport signed in). The base's own gate
+ * admitted the request; a member's access rules are its own.
  */
 function memberServedToCaller(
   key: string,
   surface: 'api' | 'mcp',
   mutating: boolean,
-  actor: RequestActor,
-  locals: unknown,
-  signedIn: boolean,
+  caller: MemberCaller,
 ): boolean {
+  const { actor, locals } = caller;
   const exposure = ObjectRegistry.getExposureModel(key) ?? key;
   if (
     !isRuntimeModelEnabled(exposure, {
@@ -360,14 +389,22 @@ function memberServedToCaller(
     return false;
   }
   const api = ObjectRegistry.getConfig(key).api;
-  const publicAccess =
+  const config =
     api && typeof api === 'object'
-      ? (api as { public?: unknown }).public
+      ? (api as { public?: unknown; principalContext?: unknown })
       : undefined;
+  if (
+    surface === 'api' &&
+    config?.principalContext === true &&
+    !caller.completePrincipal
+  ) {
+    return false;
+  }
+  const publicAccess = config?.public;
   if (publicAccess === true || (publicAccess === 'read' && !mutating)) {
     return true;
   }
-  return signedIn;
+  return caller.signedIn;
 }
 
 function servedMembers(
@@ -439,22 +476,19 @@ export function resolveTenancyForRequest(
   });
   const key = resolveStrictModelKey(input.model) ?? input.model;
   const surface = input.surface ?? 'api';
-  const signedIn = principalSignedIn(input);
+  const caller: MemberCaller = {
+    actor,
+    locals: input.locals,
+    signedIn: principalSignedIn(input),
+    completePrincipal: principalComplete(input),
+  };
   const served = servedMembers(
     key,
     input.operation,
     mutating,
     surface,
     input.modelScope,
-    (member) =>
-      memberServedToCaller(
-        member,
-        surface,
-        mutating,
-        actor,
-        input.locals,
-        signedIn,
-      ),
+    (member) => memberServedToCaller(member, surface, mutating, caller),
   );
   return resolveRequestTenancy({
     model: key,

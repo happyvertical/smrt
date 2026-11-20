@@ -108,3 +108,8 @@ DDL, migration and OpenAPI digests have not moved since the recapture above.
 - MCP tenancy at call time (#5375): both MCP servers (`single/index.ts`,
   `modular/handlers/index.ts`) turn the installed tenancy layer on when a
   tool's model is tenant-scoped at call time.
+- Emitted family members (#5375): the list and item routes of an STI model
+  with members, and `sync/apply/+server.ts` of a manifest with an STI family,
+  pass the family members (sync: the models) the manifest generates to the
+  request tenancy, so a member registered elsewhere is not served through its
+  base (sti case only; the plain case has no family and is unchanged).

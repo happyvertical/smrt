@@ -208,4 +208,31 @@ describe('what a base serves depends on who calls', () => {
       expect(signedIn).toContain('private book');
     });
   });
+
+  describe('emitted members (R3.5)', () => {
+    it('a base serves no member its routes were not generated for, and a member that needs a complete principal only to one', async () => {
+      const signedIn = await app.call('GET', shelf(), {
+        locals: { user: { id: 'reader' } },
+      });
+      expect(titlesOf(signedIn.body)).toEqual([
+        'open book',
+        'private book',
+        'shelf',
+      ]);
+
+      const complete = await app.call('GET', shelf(), {
+        locals: {
+          user: { id: 'reader' },
+          tenantId: TENANT_A,
+          permissions: [],
+        },
+      });
+      expect(titlesOf(complete.body)).toEqual([
+        'ledger book',
+        'open book',
+        'private book',
+        'shelf',
+      ]);
+    });
+  });
 });

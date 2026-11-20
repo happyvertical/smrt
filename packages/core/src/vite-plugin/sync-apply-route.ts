@@ -216,13 +216,60 @@ function serializeTargets(targets: SyncTargetSpec[]): string {
 }
 
 /**
+ * The registry keys of the models a manifest generates, when it declares an
+ * STI family with members: a sync item through a family base serves only
+ * those members (#5375), never one registered elsewhere. `undefined` when no
+ * family has members, so the route then carries no model list.
+ */
+export function syncModelScope(
+  manifest: SmartObjectManifest,
+): string[] | undefined {
+  const models = orderedManifestObjectEntries(manifest).filter(
+    ([, objectDef]) => !isCollectionManifestClass(manifest, objectDef),
+  );
+  const hasStiAncestor = (objectDef: SmartObjectDefinition): boolean => {
+    const seen = new Set<string>();
+    let child = objectDef;
+    let parentName = child.extendsQualified || child.extends;
+    while (parentName && !seen.has(parentName)) {
+      seen.add(parentName);
+      const parent = findManifestObjectByName(manifest, parentName, child);
+      if (!parent) return false;
+      if (parent.decoratorConfig?.tableStrategy === 'sti') return true;
+      child = parent;
+      parentName = parent.extendsQualified || parent.extends;
+    }
+    return false;
+  };
+  if (!models.some(([, objectDef]) => hasStiAncestor(objectDef))) {
+    return undefined;
+  }
+  return models
+    .map(
+      ([key, objectDef]) =>
+        objectDef.qualifiedName ??
+        (objectDef.packageName
+          ? `${objectDef.packageName}:${objectDef.className}`
+          : objectDef.className || key),
+    )
+    .sort(compareText);
+}
+
+/**
  * Render the generated `+server.ts` content for the sync-apply route.
  * Exported for tests.
+ *
+ * @param modelScope - Registry keys of the models the manifest generates
+ *   ({@link syncModelScope}), when it declares an STI family with members
  */
 export function generateSyncApplyRouteTemplate(
   targets: SyncTargetSpec[],
   collectionAccessImports: string,
+  modelScope?: readonly string[],
 ): string {
+  const scopeConstant = modelScope
+    ? `\n// The models this manifest generates: a sync item through an STI base\n// serves only these members of its family.\nconst SYNC_MODEL_SCOPE: ReadonlySet<string> = new Set(${JSON.stringify(modelScope)});\n`
+    : '';
   return `${AUTO_GENERATED_ROUTE_HEADER}
 // DO NOT EDIT - changes will be overwritten
 //
@@ -273,7 +320,7 @@ interface SyncTargetConfig {
 // One entry per syncable model, keyed by the collection route segment its
 // generated CRUD routes use.
 const SYNC_TARGETS: Record<string, SyncTargetConfig> = ${serializeTargets(targets)};
-
+${scopeConstant}
 function readRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object'
     ? (value as Record<string, unknown>)
@@ -358,7 +405,7 @@ export const POST: RequestHandler = async ({ locals, request }) => {
             throw new SyncApplyRejection('unknown_object');
           }
           return runInRequestTenancy(
-            { model: target.registryKey, operation: op, locals, requirePrincipal: target.principalContext },
+            { model: target.registryKey, operation: op, locals, requirePrincipal: target.principalContext${modelScope ? ', modelScope: SYNC_MODEL_SCOPE' : ''} },
             () => apply(),
           );
         },
@@ -438,6 +485,7 @@ export function generateSyncApplyRoute(
       generateCollectionAccessImports(projectRoot, routeDir, options, [
         'getCollection',
       ]),
+      syncModelScope(manifest),
     ),
     label: 'sync/apply',
     policy: 'yield',

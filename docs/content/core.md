@@ -705,7 +705,10 @@ outside SMRT, may hold such rows. Backfill them with the base's key
 (`UPDATE <table> SET _meta_type = '<base key>' WHERE _meta_type IS NULL`)
 before upgrading. A subtype of equal tenancy is served through its base only
 where it is served on its own (switched on for the tenant, readable by the
-caller, on an MCP server's model list). A sync create on an STI segment writes
+caller, its `api.principalContext` requirement met, on an MCP server's model
+list, and, on emitted SvelteKit routes, generated from the same manifest: a
+subtype registered at run time outside the manifest is not served through a
+generated base route; regenerate the routes with it in the manifest). A sync create on an STI segment writes
 the segment's own type: a payload selecting another type (`createType` or
 `_meta_type`) is rejected `invalid_payload`.
 

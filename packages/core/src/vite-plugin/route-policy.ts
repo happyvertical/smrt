@@ -180,11 +180,18 @@ export function usesPrincipalContext(
  *   (tenant, user and permissions; `api.principalContext`)
  * @param model - The model's registry key, as the route's other policy
  *   lookups use it
+ * @param familyScope - Registry keys of the model's STI family members this
+ *   manifest generated routes for, when the model has a family: a member
+ *   registered elsewhere is not served through the route
  */
 export function generateTenantContextHelper(
   requirePrincipal: boolean,
   model: string,
+  familyScope?: readonly string[],
 ): string {
+  const scope = familyScope
+    ? `\nconst TENANCY_MODEL_SCOPE: ReadonlySet<string> = new Set(${JSON.stringify([...familyScope].sort())});\n`
+    : '';
   return `
 import {
   enterRequestTenancy,
@@ -193,7 +200,7 @@ import {
 } from '@happyvertical/smrt-core';
 
 const TENANCY_MODEL = ${JSON.stringify(model)};
-
+${scope}
 function enterTenancy(
   locals: unknown,
   operation: 'list' | 'get' | 'create' | 'update' | 'delete' | 'action',
@@ -208,7 +215,7 @@ function enterTenancy(
       model: TENANCY_MODEL,
       locals,
       operation,
-      requirePrincipal: ${requirePrincipal},
+      requirePrincipal: ${requirePrincipal},${familyScope ? '\n      modelScope: TENANCY_MODEL_SCOPE,' : ''}
       ...(action ? { action } : {}),
     });
   } catch (cause) {
