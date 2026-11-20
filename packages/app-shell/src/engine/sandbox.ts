@@ -304,7 +304,10 @@ export function validateWrites(
         if (!Object.hasOwn(fields, k))
           throw new SandboxError(`${at}: ${w.model} has no field '${k}'`);
         const c = coerceValue(fields[k], v);
-        if (!c.ok) throw new SandboxError(`${at}: ${w.model}.${k} ${c.error}`);
+        if (!c.ok)
+          throw new SandboxError(
+            `${at}: ${w.model}.${k} ${c.error}${w.id ? ` (record ${String(w.id)})` : ''}`,
+          );
         data[k] = v;
       }
       clean.data = data;

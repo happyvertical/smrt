@@ -135,6 +135,11 @@ scans for it.
   BIGINT as digits; PGlite returns numbers). It creates and drops its own
   schemas; run it locally with `pnpm test:postgres` and
   `CI_POSTGRES_BASE_URL` pointing at a server you started.
+  Whole numbers (integer, money) outside +/-9007199254740991 cannot be read
+  back exactly, so they are refused at write time (`coerceValue`: create,
+  update, record loads, field conversion, method writes) and, for a value that
+  got in some other way, on read (`AppRuntime.unsafeRead`: the error names the
+  app, model, field and record ids). Never rounded.
   Core keys state on `db.client` and detects the adapter by its
   `query`/`exec`: the scoped handle shows a stand-in client with those two,
   scoped, never the real one.

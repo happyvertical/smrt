@@ -808,7 +808,15 @@ export function coerceValue(fd: FieldDef, v: unknown): Coerced {
             ? Number(v)
             : Number.NaN;
       if (!Number.isFinite(n)) return bad('a number');
-      return { ok: true, value: fd.type === 'number' ? n : Math.round(n) };
+      if (fd.type === 'number') return { ok: true, value: n };
+      // Whole numbers are stored exactly but read back as JavaScript numbers,
+      // so one outside the safe range is refused now, not on the next read.
+      const whole = Math.round(n);
+      if (!Number.isSafeInteger(whole))
+        return bad(
+          `a whole number between -${Number.MAX_SAFE_INTEGER} and ${Number.MAX_SAFE_INTEGER} (received ${String(v)})`,
+        );
+      return { ok: true, value: whole };
     }
     case 'boolean':
       if (v === true || v === 'true' || v === 1)

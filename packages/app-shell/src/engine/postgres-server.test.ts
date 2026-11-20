@@ -304,7 +304,7 @@ describe.each(backends)('app engine on PostgreSQL (%s)', (backend) => {
       expect(held.target).toBe(row?.id);
     });
 
-    it('a safe integer reads as a number; one past 2^53 is refused, never rounded', async () => {
+    it('a safe integer reads as a number; one past 2^53 is refused on read, naming the app, model, field and record', async () => {
       const schema = await newSchema('big');
       const host = await open(schema);
       await run(host, {
@@ -318,9 +318,6 @@ describe.each(backends)('app engine on PostgreSQL (%s)', (backend) => {
         `UPDATE "${schema}".u_bigs SET n = 9007199254740993 WHERE id = ?`,
         [huge.id],
       );
-      expect((await host.get('Big', String(small.id))).n).toBe(42);
-      // The server holds the exact value; the engine refuses to hand back a
-      // JavaScript number it cannot represent, rather than a rounded one.
       expect(
         (
           await rows(
@@ -329,10 +326,109 @@ describe.each(backends)('app engine on PostgreSQL (%s)', (backend) => {
           )
         )[0].n,
       ).toBe('9007199254740993');
-      await expect(host.get('Big', String(huge.id))).rejects.toThrow(
-        /safe integer/,
-      );
+      expect((await host.get('Big', String(small.id))).n).toBe(42);
+      for (const read of [
+        () => host.get('Big', String(huge.id)),
+        () => host.list('Big'),
+      ]) {
+        const err = await read().then(
+          () => null,
+          (e) => e,
+        );
+        expect(err).toBeInstanceOf(EngineError);
+        expect(String(err.message)).toContain('App "My app"');
+        expect(String(err.message)).toContain('Big.n');
+        expect(String(err.message)).toContain(String(huge.id));
+        expect(String(err.message)).toContain('9007199254740993');
+      }
     });
+
+    it('a write past 2^53 is refused at write time (create, update, load), nothing lands', async () => {
+      const host = await open(await newSchema('bigw'));
+      await run(host, {
+        type: 'defineModel',
+        name: 'Big',
+        fields: {
+          n: { type: 'integer' },
+          m: { type: 'money' },
+          t: { type: 'text' },
+        },
+      });
+      const row = await host.create('Big', { n: 1, t: 'keep' });
+      const refused = async (p: Promise<unknown>, what: RegExp) => {
+        const err = await p.then(
+          () => null,
+          (e) => e,
+        );
+        expect(err, String(what)).not.toBeNull();
+        expect(String(err.message)).toMatch(what);
+      };
+      await refused(
+        host.create('Big', { n: '9007199254740993' }),
+        /App "My app": Big\.n must be a whole number between/,
+      );
+      await refused(
+        host.create('Big', { m: 2 ** 60 }),
+        /Big\.m must be a whole/,
+      );
+      await refused(
+        host.update('Big', String(row.id), { n: '9007199254740993' }),
+        new RegExp(`Big\\.n must be a whole number.*record ${row.id}`),
+      );
+      const load: Command = {
+        type: 'loadRecords',
+        model: 'Big',
+        mode: 'insert',
+        rows: [{ n: '9007199254740993', t: 'L' }],
+      };
+      const plan = await host.plan(load).then(
+        (p) => p,
+        (e) => e,
+      );
+      if (plan instanceof Error)
+        expect(plan.message).toMatch(/whole number|safe integer/);
+      else expect(plan.preview).toMatchObject({ insert: 0, rejected: 1 });
+      await run(host, load).then(
+        () => undefined,
+        (e) => expect(String(e.message)).toMatch(/whole number|safe integer/),
+      );
+      // The app still reads: the poisoned values never reached the table.
+      const all = await host.list('Big');
+      expect(all).toHaveLength(1);
+      expect(all[0].n).toBe(1);
+    });
+
+    // A method run is refused on a database SERVER (single writer), so its
+    // write-time refusal is checked on the PGlite twin.
+    it.skipIf(backend !== 'pglite')(
+      'a method write past 2^53 fails when it runs, naming the record',
+      async () => {
+        const host = await open(await newSchema('bigm'));
+        await run(host, {
+          type: 'defineModel',
+          name: 'Big',
+          fields: { n: { type: 'integer' } },
+        });
+        const row = await host.create('Big', { n: 1 });
+        await run(host, {
+          type: 'addMethod',
+          model: 'Big',
+          name: 'blow',
+          method: {
+            description: 'writes too much',
+            code: `app.update('Big', record.id, { n: 9007199254740993n.toString() }); return 'ok';`,
+          },
+        });
+        const err = await host.runMethod('Big', 'blow', String(row.id)).then(
+          () => null,
+          (e) => e,
+        );
+        expect(err).not.toBeNull();
+        expect(String(err.message)).toMatch(/Big\.n must be a whole number/);
+        expect(String(err.message)).toContain(String(row.id));
+        expect((await host.get('Big', String(row.id))).n).toBe(1);
+      },
+    );
   });
 
   describe('archive round trip per field type', () => {
