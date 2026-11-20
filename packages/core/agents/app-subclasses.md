@@ -9,7 +9,7 @@ replaces that parent, and says so in its own `@smrt()` options:
   `CONFIG_SAME_NAME_COEXISTENCE_UNSUPPORTED`, naming both classes. Give the
   subclass a different class name (a differently named subclass is an
   ordinary subclass), or declare `replaceParent: true`. Coexistence is
-  tracked under #5143.
+  tracked under #5382.
 
 Saying neither is `CONFIG_SAME_NAME_SUBCLASS_UNDECLARED`. Both refusals are
 raised when the manifest is generated (`assertSameNameSubclassChoices()`, run
