@@ -121,6 +121,25 @@ describe('provider export names', () => {
     expect(errors).toEqual([]);
   });
 
+  it.each([
+    [
+      'the mixed module first',
+      `export * from './mixed';\nexport * from './Event';\n`,
+    ],
+    ['the model first', `export * from './Event';\nexport * from './mixed';\n`],
+  ])('accepts a re-export reached directly and through a module that also re-exports a package, %s', async (_label, all) => {
+    // `mixed` re-exports the model and a package whose names the scan
+    // cannot see; the direct path still decides, in either order.
+    const errors = await scanPackage({
+      'src/models/Event.ts': EVENT,
+      'src/models/mixed.ts': `export * from './Event';\nexport * from '@fixture/other';\n`,
+      'src/models/all.ts': all,
+      'src/index.ts': `export { Event } from './models/all';\n`,
+    });
+
+    expect(errors).toEqual([]);
+  });
+
   it('resolves through an export * cycle without overflowing, to the one real export', async () => {
     const errors = await scanPackage({
       'src/models/Event.ts': EVENT,

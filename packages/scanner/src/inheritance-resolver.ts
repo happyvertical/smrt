@@ -1174,11 +1174,11 @@ export class InheritanceResolver {
   }
 
   /**
-   * The class `file` exports as `name`, the way ES modules resolve it: one
-   * set of (module, name) pairs being resolved is shared by the whole
-   * lookup, so a pair met again (a cycle, or the second path of a diamond)
-   * contributes nothing, and `export *` paths that reach the same
-   * declaration agree. Two different declarations stay ambiguous.
+   * The class `file` exports as `name`, following re-exports. `resolving`
+   * holds the (module, name) pairs on the current path only, so a cycle
+   * ends while every other path is still followed whatever the order:
+   * `export *` paths that reach the same declaration are one binding, and
+   * two different declarations stay ambiguous.
    */
   private followNamed(
     file: string,
@@ -1190,6 +1190,19 @@ export class InheritanceResolver {
     const key = `${file}\u0000${name}`;
     if (resolving.has(key)) return `${file} is already being resolved`;
     resolving.add(key);
+    try {
+      return this.followNamedOnPath(file, name, depth, resolving);
+    } finally {
+      resolving.delete(key);
+    }
+  }
+
+  private followNamedOnPath(
+    file: string,
+    name: string,
+    depth: number,
+    resolving: Set<string>,
+  ): RawClassDefinition | string {
     const module = this.modules.get(file);
     if (!module) return `${file} is not part of the scan`;
     const entry = module.exports?.named[name];
