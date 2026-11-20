@@ -1697,6 +1697,24 @@ function registerUntracked(
         getConstructorIndex().delete(targetEntry.constructor);
       }
     } else {
+      // A live replacement keeps the table of every same-named class it
+      // replaced (#5143): a re-registration that would move it elsewhere is
+      // refused before the entry changes.
+      const proposedPackage =
+        explicitPackageName || constructorEntry.packageName;
+      const proposedTable = resolveTableName(ctor, name, {
+        ...constructorEntry.config,
+        ...config,
+        ...(proposedPackage ? { packageName: proposedPackage } : {}),
+      });
+      for (const replacedKey of constructorEntry.replacedQualifiedNames ?? []) {
+        assertReplacementSharesTable(
+          constructorKey,
+          replacedKey,
+          proposedTable,
+          replacedDeclarations().get(replacedKey)?.schema?.tableName,
+        );
+      }
       upsertExistingEntry(constructorKey, constructorEntry);
       return;
     }
