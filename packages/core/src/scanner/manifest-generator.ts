@@ -1134,7 +1134,17 @@ export class ManifestGenerator {
           ownPackage,
         );
         if (declared) {
-          field.related = declared.className;
+          // The class is the declaring one; a referenced column written
+          // after it (`'Room.code'`) stays, so the constraint keeps it.
+          const written =
+            typeof field.related === 'string'
+              ? field.related.slice(field.related.lastIndexOf(':') + 1)
+              : '';
+          const dot = written.indexOf('.');
+          field.related =
+            dot >= 0
+              ? `${declared.className}${written.slice(dot)}`
+              : declared.className;
           // The declaring class's identity, which an export name may differ from.
           field.relatedQualified = this.identityOf(
             declared,

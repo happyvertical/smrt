@@ -542,6 +542,35 @@ ${extra}}
     );
   });
 
+  it('keeps the referenced column of a target a provider parent names with a column', async () => {
+    const root = await project({
+      providers: {
+        [VENDOR]: {
+          files: {
+            'src/Room.ts': `import { SmrtObject, smrt, field } from '@happyvertical/smrt-core';\n@smrt({ tableName: 'vendor_rooms' })\nexport class Room extends SmrtObject {\n  @field({ unique: true }) code = 0;\n}\n`,
+            'src/Booking.ts': `${CORE}\n@smrt({ tableStrategy: 'sti', tableName: 'vendor_bookings' })\nexport class Booking extends SmrtObject {\n  @foreignKey('Room.code') roomCode = 0;\n}\n`,
+          },
+        },
+      },
+      app: {
+        'src/Session.ts': `${CORE}\nimport { Booking } from '${VENDOR}';\n@smrt()\nexport class Session extends Booking {\n  topic = '';\n}\n`,
+      },
+    });
+
+    const manifest = await build(root);
+    const session = manifest.objects[`${APP}:Session`];
+    expect(session?.fields.roomCode?.relatedQualified).toBe(`${VENDOR}:Room`);
+    expect(session?.fields.roomCode?.related).toBe('Room.code');
+    // Migrations render `REFERENCES vendor_rooms (code)` from this.
+    const column = session?.schema?.columns.room_code;
+    expect(column?.foreignKey).toMatchObject({
+      table: 'vendor_rooms',
+      column: 'code',
+    });
+    // The child column keeps the referenced column's type, not the key's.
+    expect(column?.type).toBe('INTEGER');
+  });
+
   it('fails for a target a provider parent contributes when an app model shares its name', async () => {
     const root = await project({
       providers: {
