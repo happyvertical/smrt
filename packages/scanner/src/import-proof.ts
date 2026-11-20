@@ -7,9 +7,10 @@
  * collection's item go through it. Only these forms are accepted:
  *
  * - **same file**: a class declared in the importing file;
- * - **relative**: a named or default import whose relative specifier selects
- *   (by TypeScript's candidate order, on disk) a scanned file that declares
- *   the class itself and exports it under its own name;
+ * - **relative**: a named or default import whose relative specifier can
+ *   name exactly one file on disk (of every candidate TypeScript may try), a
+ *   scanned file that declares the class itself and exports it under its
+ *   own name;
  * - **framework**: a framework base exported by the framework package
  *   (`@happyvertical/smrt-core`, or `@happyvertical/smrt-reports` for the
  *   report bases);
@@ -349,11 +350,11 @@ export class ImportProver {
   }
 
   /**
-   * The file a relative specifier selects, the way TypeScript selects it:
-   * each candidate in its order (with the project's `moduleSuffixes`), the
-   * first that exists on disk decides. A later candidate is never used, so a
-   * file outside the scan that TypeScript would load is an error, not a
-   * reason to take another file the scan does read.
+   * The one file a relative specifier can name: every candidate TypeScript
+   * may try (extensions, directory `index`, the project's `moduleSuffixes`,
+   * a trailing slash meaning the directory) must leave exactly one file on
+   * disk, or the import is an error. That file must be one the scan reads;
+   * a file outside the scan is an error, never a reason to take another.
    */
   selectFile(
     fromFile: string,
@@ -372,7 +373,16 @@ export class ImportProver {
       }
     };
     const written = /(\.d)?\.([mc]?)([tj])s(x?)$/.exec(base);
-    if (written) {
+    // A trailing slash (`./Base/`) asks for the directory only.
+    const directoryOnly = /[\\/]$/.test(specifier);
+    if (directoryOnly) {
+      if (isFile(join(base, 'package.json'))) {
+        return {
+          reason: `'${specifier}' names a directory with its own package.json; import the file that declares the class`,
+        };
+      }
+      add(join(base, 'index'), ['.ts', '.tsx', '.d.ts', '.js', '.jsx']);
+    } else if (written) {
       // An explicit extension: TypeScript strips it and tries the
       // extensions that may stand behind it, in this order.
       const stem = base.slice(0, -written[0].length);
@@ -398,7 +408,17 @@ export class ImportProver {
       add(base, ['.js', '.jsx']);
       add(join(base, 'index'), ['.js', '.jsx']);
     }
-    const selected = candidates.find(isFile);
+    // Which candidate TypeScript takes depends on the resolution mode
+    // (`bundler` checks `Base.js` before `Base/index.ts`, a trailing slash
+    // skips files, ...). Rather than mirror every mode, a specifier is
+    // accepted only when exactly one candidate exists on disk.
+    const existing = [...new Set(candidates.filter(isFile))];
+    if (existing.length > 1) {
+      return {
+        reason: `'${specifier}' could name more than one file (${existing.join(', ')}), and which one is loaded depends on the module resolution mode; make the import name exactly one file (write its extension, or the directory's index file, and rename the other files if they still match)`,
+      };
+    }
+    const selected = existing[0];
     if (!selected) return { reason: `'${specifier}' names no file` };
     if (/\.d\.[mc]?ts$/.test(selected) || /\.[mc]?jsx?$/.test(selected)) {
       return {

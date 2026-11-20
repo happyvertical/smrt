@@ -165,14 +165,15 @@ imports map or a bundler config, and no class is ever matched by name:
 | Form | Proof | Recorded as |
 | --- | --- | --- |
 | A class declared in the same file | the file's own declarations | its name |
-| A named or default import whose relative specifier selects a scanned file that declares the class and exports it under its own name (`export class X`, `export default class X`, `class X` + `export { X }`) | the file TypeScript selects: its candidate order (extension substitution, `.ts`/`.tsx`/`.d.ts`, directory `index`, then `.js`/`.jsx`; within each extension every entry of the project's `moduleSuffixes`, so `['.ios', '']` tries `Base.ios.ts`, `Base.ts`, `Base.ios.tsx`, `Base.tsx`, ...), first file on disk | the declaring class's name (`import { Account as Owner }` gives `Account`) |
+| A named or default import whose relative specifier selects a scanned file that declares the class and exports it under its own name (`export class X`, `export default class X`, `class X` + `export { X }`) | the one file on disk among every candidate TypeScript may try (extension substitution, `.ts`/`.tsx`/`.d.ts`, directory `index`, `.js`/`.jsx`, each with the project's `moduleSuffixes`; a trailing slash, `./Base/`, means the directory only). Two or more existing candidates are an error, since which one loads depends on the resolution mode | the declaring class's name (`import { Account as Owner }` gives `Account`) |
 | A framework base exported by `@happyvertical/smrt-core` (`SmrtReport`, `SmrtReportCollection` by `@happyvertical/smrt-reports`) | the package name; inside the framework package, its own sources | framework |
 | A named import or namespace member (`ns.X`, `ns['X']`) from `@scope/pkg` or `@scope/pkg/subpath`, where `@scope/pkg` is declared in `dependencies`, `peerDependencies`, `optionalDependencies` or `devDependencies` of the nearest `package.json` above the importing file and is not that package itself | the declaration; the copy the file loads is the copy the build root loads | `extendsQualified` / `relatedQualified` / `sourceQualified` / `extendsTypeArgQualified` = `@scope/pkg:X`, plus the full specifier (`extendsImportPath`, `relatedImportPath`, `sourceImportPath`, `extendsTypeArgImportPath`) |
 
 Everything else is a scan error whose message names the fix: a relative file
 that re-exports, passes on an import, renames (`export { Other as X }`) or
 does not declare the class; a file outside the scan, a declaration file or
-JavaScript (the first candidate on disk decides, never a later one); a
+JavaScript; a relative specifier more than one file could satisfy (`Base.ts`
+beside `Base/index.ts` or `Base.js`, `Base.ios.ts` beside `Base.ts`); a
 non-relative specifier that is not a declared scoped package (a `paths`
 alias, a `baseUrl` import, `#imports`, an unscoped package); the package's own
 name; a package's default export; an unimported global (`SmrtObject` without
@@ -266,7 +267,8 @@ now stops the build. The message names the file, class and member.
 | ... imported through a tsconfig `paths` alias, a `baseUrl` bare import, `$lib`, `@/`, `~`, `#imports` or a bundler alias | Import it by relative path from the declaring file |
 | ... from an unscoped package, or a scoped package not declared in the nearest `package.json` | Declare the package as a dependency (SMRT packages are scoped) |
 | ... through the package's own name | Import your own classes by relative path |
-| ... from a file the scan does not read, a declaration file or JavaScript (TypeScript's first candidate on disk) | Add the file to the scan include, or move the class |
+| ... from a file the scan does not read, a declaration file or JavaScript (the one file the specifier names) | Add the file to the scan include, or move the class |
+| ... through a relative specifier that more than one file on disk could satisfy | Make the import name exactly one file: write its extension or the directory's index file, and rename the other files if they still match |
 | ... from a package of which two different copies are installed (the importing file's and the build root's) | Install one copy |
 | A default import from a package, or an unimported global named like a framework base | Import the class by its name (`import { SmrtObject } from '@happyvertical/smrt-core'`) |
 | A superclass written as anything but `X` or `ns.X` (`X as T`, `X!`, `X satisfies T`, `Mixin(X)`, `Base.Inner`, `Base['Inner']`) | Write `extends X`, importing the parent class by its name |

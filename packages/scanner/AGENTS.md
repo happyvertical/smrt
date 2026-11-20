@@ -266,7 +266,7 @@ place, `toKnowledgeAgentSurface` in `vite-plugin/index.ts`.
 - `src/inheritance-resolver.ts` — `InheritanceResolver`: cross-file inheritance
   merging, the model rule, collection items, the provider export-name check.
 - `src/import-proof.ts` — `ImportProver`: the accepted reference forms, the
-  TypeScript file-candidate order, the nearest `package.json`.
+  one-file-on-disk rule for relative specifiers, the nearest `package.json`.
 - `src/manifest-adapter.ts` — `ManifestAdapter`: raw → manifest conversion and
   field-type inference.
 - `src/verify-completeness.ts` — `verifyManifestCompleteness` publish guard.
