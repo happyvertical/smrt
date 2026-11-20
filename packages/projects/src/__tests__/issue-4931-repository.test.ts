@@ -19,7 +19,9 @@ for (const replaced of [false, true]) {
     let expectedPR: typeof PullRequest;
     beforeAll(async () => {
       restore = snapshotObjectRegistryState();
-      const app = replaced ? await import('./issue-4931-app.fixture.js') : null;
+      const app = replaced
+        ? (await import('./issue-4931-app.fixture.js')).appModels
+        : null;
       expectedIssue = app?.Issue ?? Issue;
       expectedPR = app?.PullRequest ?? PullRequest;
     });
