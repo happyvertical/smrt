@@ -99,6 +99,7 @@ import {
   ensureTenantScopedField,
   isBundledOutputPath,
   isSameSourcePath,
+  validateManifestEntry,
 } from './registry/class-registration';
 import {
   applyRuntimeOverrides,
@@ -2742,34 +2743,32 @@ export class ObjectRegistry {
   ): { loaded: boolean; packageName?: string; objectsRegistered: number } {
     const packageName = manifest.packageName;
 
-    // A package registers whole or not at all. Declarations every entry can
-    // be refused for on its own are checked before anything changes (#5143);
-    // a refusal that depends on the registry rolls the package's
-    // registrations and its cache entry back below.
-    const touched = new Set<string>();
-    for (const [key, def] of Object.entries(manifest.objects)) {
-      const className = def.className || key;
-      const owner = def.packageName || packageName;
-      const ownKey = owner ? createQualifiedName(owner, className) : className;
-      if (def.decoratorConfig?.replaceParent === false)
-        throw sameNameCoexistenceUnsupported(
-          ownKey,
-          def.extendsQualified ?? def.extends ?? 'the class it extends',
-        );
-      touched.add(key).add(ownKey);
-      if (def.qualifiedName) touched.add(def.qualifiedName);
-      if (def.extendsQualified) touched.add(def.extendsQualified);
-      for (const [liveKey, entry] of ObjectRegistry.classes)
-        if (entry.name === className) touched.add(liveKey);
-    }
+    // A package registers whole or not at all (#5143): every entry (declared
+    // choices, same-name coexistence, replacement tables) and the package's
+    // table retirements are checked against the registry before the first
+    // entry registers or the manifest cache changes, so a refused package
+    // changes nothing. What only registering can show (a sibling an earlier
+    // entry discovers, a relation between two entries of the package) still
+    // throws part-way; the cache entry is then not kept.
+    for (const [key, def] of Object.entries(manifest.objects))
+      validateManifestEntry(def.className || key, def, packageName);
+    if (packageName)
+      readManifestRetiredTables(
+        { packageName, retiredTables: manifest.retiredTables },
+        {
+          source: sourceLabel,
+          outside: 'refuse',
+          ...(Array.isArray(manifest.smrtDependencies)
+            ? { consumed: manifest.smrtDependencies }
+            : {}),
+        },
+      );
 
     // Seed the manifest cache so discoverManifestSync() finds entries when
     // @smrt() decorators run for classes in this package.
     const cacheKey = packageName || sourceLabel;
     const cache = getManifestCache();
     const cachedBefore = cache.get(cacheKey);
-    const restoreRegistrations =
-      ObjectRegistry.checkpointRegistrations(touched);
     cache.set(cacheKey, manifest);
 
     // Merge manifest fields into any already-registered classes. This covers
@@ -2784,7 +2783,6 @@ export class ObjectRegistry {
         objectsRegistered++;
       }
     } catch (error) {
-      restoreRegistrations();
       if (cachedBefore) cache.set(cacheKey, cachedBefore);
       else cache.delete(cacheKey);
       throw error;

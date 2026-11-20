@@ -998,6 +998,149 @@ function assertReplacementSharesTable(
   );
 }
 
+/** The refusal a manifest collision's `throw` decision stands for. */
+function manifestCollisionRefusal(
+  scenario: string,
+  registrationKey: string,
+  existingKey: string,
+): Error {
+  if (scenario === 'same-name-subclass-undeclared')
+    return sameNameSubclassUndeclared(registrationKey, existingKey);
+  if (scenario === 'same-name-parent-of-undeclared')
+    return sameNameSubclassUndeclared(existingKey, registrationKey);
+  if (scenario === 'same-name-subclass-coexists')
+    return sameNameCoexistenceUnsupported(registrationKey, existingKey);
+  if (scenario === 'same-name-parent-of-coexisting')
+    return sameNameCoexistenceUnsupported(existingKey, registrationKey);
+  // Any other manifest collision defaults to skip, never throw: this is
+  // unreachable for them. Guard against future drift.
+  return new Error(
+    `decideCollisionPolicy returned 'throw' for manifest origin (scenario: ${scenario}). This is a bug.`,
+  );
+}
+
+/**
+ * Registered classes of the entry's simple name that its declared choice
+ * decides (#5143): the canonical-name match, and every class of that name it
+ * directly extends or that directly extends it, found whether or not the
+ * simple name is ambiguous and in either load order.
+ */
+function manifestCollisionCandidates(
+  registrationKey: string,
+  simpleClassName: string,
+  manifestParent: string | undefined,
+  existingCanonical: string | undefined,
+): Set<string> {
+  const candidates = new Set<string>();
+  if (existingCanonical) candidates.add(existingCanonical);
+  for (const [key, entry] of getClasses()) {
+    if (key === registrationKey || entry.name !== simpleClassName) continue;
+    // A run-time model without `replaces` coexists by its own definition.
+    if (runtimeCoexistingModels().has(key)) continue;
+    if (
+      manifestParent === key ||
+      entry.extends === registrationKey ||
+      recordedSubtypeParent(key) === registrationKey ||
+      replacesAncestor(key, registrationKey)
+    ) {
+      candidates.add(key);
+    }
+  }
+  return candidates;
+}
+
+/**
+ * Check a package manifest entry against the registry without changing it:
+ * throws what registering the entry would throw for a declared choice, a
+ * refused coexistence or a replacement on another table. A package manifest
+ * validates every entry with this before it registers any (#5143), so a
+ * refused package leaves the registry as it was. Relations between two
+ * entries of one package, and a sibling an earlier entry would discover, are
+ * only visible while registering.
+ */
+export function validateManifestEntry(
+  name: string,
+  objectDef: SmartObjectDefinition,
+  manifestPackageName?: string,
+): void {
+  const packageName = objectDef.packageName || manifestPackageName;
+  const simpleClassName = objectDef.className || name;
+  const registrationKey = (
+    packageName
+      ? createQualifiedName(packageName, simpleClassName)
+      : objectDef.qualifiedName || name
+  ) as string;
+  const manifestParent = objectDef.extendsQualified ?? objectDef.extends;
+  if (objectDef.decoratorConfig?.replaceParent === false)
+    throw sameNameCoexistenceUnsupported(
+      registrationKey,
+      manifestParent ?? 'the class it extends',
+    );
+  if (
+    findReplacement(registrationKey) &&
+    replacedDeclarations().has(registrationKey)
+  )
+    return;
+  const ownChoice = sameNameSubclassChoice(objectDef.decoratorConfig);
+  const incomingTableName = objectDef.collectionOf
+    ? undefined
+    : (objectDef.schema?.tableName ??
+      objectDef.decoratorConfig?.tableName ??
+      tableNameFromClass(
+        Object.defineProperty(() => undefined, 'name', {
+          value: simpleClassName,
+        }),
+      ));
+  const replaced = new Set<string>();
+  for (const existingKey of manifestCollisionCandidates(
+    registrationKey,
+    simpleClassName,
+    manifestParent,
+    getCanonicalClassName(simpleClassName),
+  )) {
+    // An earlier candidate's replacement removes this one when registering.
+    if (replaced.has(existingKey)) continue;
+    const existing = getClasses().get(existingKey);
+    if (!existing) continue;
+    const decision = decideCollisionPolicy(
+      buildManifestCollisionInputs({
+        name,
+        objectDef,
+        packageName,
+        existing,
+        existingKey,
+        registrationKey,
+        matchKind: 'canonical-name',
+        newDeclaredChoice: ownChoice,
+      }),
+    );
+    if (decision.policy === 'throw')
+      throw manifestCollisionRefusal(
+        decision.scenario,
+        registrationKey,
+        existingKey,
+      );
+    if (decision.policy === 'retain-as-replaced')
+      assertReplacementSharesTable(
+        existingKey,
+        registrationKey,
+        storageTableOf(existing),
+        incomingTableName,
+      );
+    if (decision.policy === 'replace') {
+      assertReplacementSharesTable(
+        registrationKey,
+        existingKey,
+        incomingTableName,
+        storageTableOf(existing),
+      );
+      replaced.add(existingKey);
+    }
+    if (decision.policy === 'skip' || decision.policy === 'merge-manifest')
+      return;
+  }
+}
+
 /**
  * Execute the collision policy for `registerFromManifest()`. Returns
  * `'return'` when the policy fully resolves the collision (caller should
@@ -1104,34 +1247,10 @@ function applyManifestCollisionPolicy(args: {
       // policy). Treat defensively as return-no-op.
       return 'return';
     case 'throw':
-      if (decision.scenario === 'same-name-subclass-undeclared') {
-        throw sameNameSubclassUndeclared(
-          args.registrationKey,
-          args.existingKey,
-        );
-      }
-      if (decision.scenario === 'same-name-parent-of-undeclared') {
-        throw sameNameSubclassUndeclared(
-          args.existingKey,
-          args.registrationKey,
-        );
-      }
-      if (decision.scenario === 'same-name-subclass-coexists') {
-        throw sameNameCoexistenceUnsupported(
-          args.registrationKey,
-          args.existingKey,
-        );
-      }
-      if (decision.scenario === 'same-name-parent-of-coexisting') {
-        throw sameNameCoexistenceUnsupported(
-          args.existingKey,
-          args.registrationKey,
-        );
-      }
-      // Any other manifest collision defaults to skip, never throw — this
-      // branch is unreachable for them. Guard against future drift.
-      throw new Error(
-        `decideCollisionPolicy returned 'throw' for manifest origin (scenario: ${decision.scenario}). This is a bug.`,
+      throw manifestCollisionRefusal(
+        decision.scenario,
+        args.registrationKey,
+        args.existingKey,
       );
   }
 }
@@ -3620,23 +3739,16 @@ function registerFromManifestUntracked(
     runtimeOptions?.extendsRegistered !== undefined &&
     existingCanonical === runtimeOptions.extendsRegistered &&
     existingCanonical !== registrationKey;
-  const candidates = new Set<string>();
-  if (existingCanonical && !sharesParentName) candidates.add(existingCanonical);
-  if (!runtimeOptions?.extendsRegistered) {
-    for (const [key, entry] of getClasses()) {
-      if (key === registrationKey || entry.name !== simpleClassName) continue;
-      // A run-time model without `replaces` coexists by its own definition.
-      if (runtimeCoexistingModels().has(key)) continue;
-      if (
-        manifestParent === key ||
-        entry.extends === registrationKey ||
-        recordedSubtypeParent(key) === registrationKey ||
-        replacesAncestor(key, registrationKey)
-      ) {
-        candidates.add(key);
-      }
-    }
-  }
+  const candidates = runtimeOptions?.extendsRegistered
+    ? new Set<string>(
+        existingCanonical && !sharesParentName ? [existingCanonical] : [],
+      )
+    : manifestCollisionCandidates(
+        registrationKey,
+        simpleClassName,
+        manifestParent,
+        existingCanonical,
+      );
   for (const existingKey of candidates) {
     if (replacedBy) break;
     // An earlier candidate's replacement may have removed this one.
