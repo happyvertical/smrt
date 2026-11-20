@@ -1441,12 +1441,17 @@ describe('repeated scans and project roots', () => {
     expect(second.errors).toEqual([]);
   });
 
-  it('looks past a nested package.json that only marks the module type', async () => {
-    // The dist/esm layout: `{ "type": "module" }` declares no package, so
-    // the package.json above it still decides which packages are declared.
+  it.each([
+    [{ type: 'module' }],
+    [{ sideEffects: false }],
+    [{ type: 'module', sideEffects: ['*.css'] }],
+  ])('looks past a nested package.json that only marks the module format: %j', async (marker) => {
+    // The dist/esm layout: `{ "type": "module" }` or `{ "sideEffects":
+    // false }` declares no package, so the package.json above it still
+    // decides which packages are declared.
     const root = newRoot();
     write(root, {
-      'src/esm/package.json': JSON.stringify({ type: 'module' }),
+      'src/esm/package.json': JSON.stringify(marker),
       'src/esm/Meeting.ts': CHILD(`import { Event } from '${PROVIDER}';`),
     });
     const { errors } = await scanAt(root);

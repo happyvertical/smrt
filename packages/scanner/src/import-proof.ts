@@ -224,9 +224,10 @@ function declaresDirectoryEntry(manifest: string): boolean {
 
 /**
  * Keys of a package.json that only marks the module format of the files
- * below it (`dist/esm/package.json` with `{ "type": "module" }`). Such a file
- * declares no package; any other key (a name, dependencies, scripts,
- * `private`) makes it the package that decides.
+ * below it (`dist/esm/package.json` with `{ "type": "module" }`, or
+ * `{ "sideEffects": false }`). A file with `type` or `sideEffects` and no
+ * other key than these declares no package; any other key (a name,
+ * dependencies, scripts, `private`) makes it the package that decides.
  */
 const MODULE_FORMAT_KEYS: ReadonlySet<string> = new Set([
   'type',
@@ -292,7 +293,7 @@ export class ImportProver {
         // unnamed private project never inherits its parent's dependencies.
         const keys = Object.keys(json);
         const formatMarker =
-          keys.includes('type') &&
+          (keys.includes('type') || keys.includes('sideEffects')) &&
           keys.every((key) => MODULE_FORMAT_KEYS.has(key));
         info =
           formatMarker && !declaresDependencies
