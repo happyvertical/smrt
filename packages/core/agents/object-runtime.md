@@ -75,7 +75,7 @@ See [audit contract](../../../docs/content/audit-trail.md).
 - `getSlug()`: auto-generates from name → title → label → id; a candidate that
   slugifies to nothing (no ASCII letters or digits) is skipped, so the next
   candidate or finally the id supplies the slug
-- `loadRelated(fieldName)`: lazy-loads relationships (cached in `_loadedRelationships` Map)
+- `loadRelated(fieldName)`: lazy-loads relationships (cached in `_loadedRelationships` Map). A cached single-target entry is tied to the key field's value it was loaded for: once the field names another row (or is cleared) the entry is dropped and the next `loadRelated`/`getRelated` resolves the current target, and a load whose key changes while it is in flight is discarded and the current key loaded instead (the key is rechecked after the single-table subtype read too, so a stale row never decides a `validateSubtype` refusal, and the reload goes through the same subtype and tenant checks); `isRelatedLoaded` agrees. Collection (one-to-many / many-to-many) entries carry no key.
 
 Relationship I/O resolves canonical source and target identities, not the public
 display names. `relationship-loader.ts` owns target manifest hydration and inverse
