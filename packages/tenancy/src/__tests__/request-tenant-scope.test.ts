@@ -145,7 +145,12 @@ describe('request-time tenant scope with tenancy enabled', () => {
     ObjectRegistry.registerFromManifest(
       childName,
       {
-        ...(manifestEntry('ScopeNotice', {}, {}, 'ScopeNotice') as object),
+        ...(manifestEntry(
+          'ScopeNotice',
+          {},
+          { replaceParent: false },
+          'ScopeNotice',
+        ) as object),
         qualifiedName: childName,
         packageName: OTHER_PKG,
         extendsQualified: parentName,
