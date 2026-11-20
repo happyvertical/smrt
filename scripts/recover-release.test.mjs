@@ -301,7 +301,7 @@ function qualifyingAuthorization(f) {
   f.responses.get(`actions/runs/${owner.runId}/attempts/${owner.runAttempt}`).status = 'in_progress';
   const bypass_actors = [{ actor_id: 2315871, actor_type: 'Integration', bypass_mode: 'always' }];
   const rules = [
-    { id: 10, target: 'branch', enforcement: 'active', bypass_actors, conditions: { ref_name: { include: ['refs/heads/main'], exclude: [] } }, rules: [{ type: 'required_status_checks', parameters: { required_status_checks: [{ context: 'Release Admission', integration_id: 2315871 }] } }, { type: 'merge_queue', parameters: { max_entries_to_build: 1, max_entries_to_merge: 1 } }] },
+    { id: 10, target: 'branch', enforcement: 'active', bypass_actors, conditions: { ref_name: { include: ['refs/heads/main'], exclude: [] } }, rules: [{ type: 'required_status_checks', parameters: { required_status_checks: [{ context: 'Release Admission', integration_id: 2315871 }] } }, { type: 'merge_queue', parameters: { max_entries_to_build: 3, max_entries_to_merge: 5 } }] },
     { id: 11, target: 'branch', enforcement: 'active', bypass_actors, conditions: { ref_name: { include: ['refs/heads/hv-release-admission'], exclude: [] } }, rules: ['creation', 'update', 'deletion', 'non_fast_forward'].map(type => ({ type })) },
   ];
   for (const r of rules) { const redacted = structuredClone(r); delete redacted.bypass_actors; f.responses.set(`rulesets/${r.id}`, redacted); }
