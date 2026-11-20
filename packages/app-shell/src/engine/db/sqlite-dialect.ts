@@ -41,5 +41,4 @@ export const sqliteDialect: EngineDialect = {
   byteLength: (e) => `length(CAST(${e} AS BLOB))`,
   isDistinct: (a, b) => `${a} IS NOT ${b}`,
   transactionOptions: undefined,
-  snapshots: true,
 };

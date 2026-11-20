@@ -105,6 +105,4 @@ export interface EngineDialect {
   isDistinct(a: string, b: string): string;
   /** Options for a transaction that must introspect tables (none on SQLite). */
   readonly transactionOptions: { introspection: true } | undefined;
-  /** Whether snapshots, copies and publish are implemented (#5187). */
-  readonly snapshots: boolean;
 }

@@ -6,7 +6,7 @@ import { MessageChannel, type MessagePort } from 'node:worker_threads';
 import { EngineError } from '../errors.ts';
 import { serveBridge } from './pglite-bridge.ts';
 import { postgresDialect } from './postgres-dialect.ts';
-import { assertAppSchema } from './schema-name.ts';
+import { assertAppSchema, sidePrefix } from './schema-name.ts';
 import { sqliteDialect } from './sqlite-dialect.ts';
 import type {
   DatabaseConfig,
@@ -102,13 +102,61 @@ export function requireSingleWriter(
     );
 }
 
-/** Refuse what exists on SQLite only (snapshots, copies, drafts, publish, portable export; #5187). */
-export function requireSnapshots(config: { kind: DatabaseKind }, what: string) {
+/** Refuse what is built on the SQLite file (the portable export has its own issue). */
+export function requireSqlite(config: { kind: DatabaseKind }, what: string) {
   if (config.kind !== 'sqlite')
     throw new EngineError(
-      `${what} is not supported on this database yet (it needs SQLite; PostgreSQL is #5187)`,
+      `${what} is not supported on this database yet (it needs SQLite)`,
       'refused',
     );
+}
+
+/** File name suffix of a standalone copy: a SQLite file, or a PostgreSQL dump. */
+export const copySuffix = (config: { kind: DatabaseKind }) =>
+  config.kind === 'sqlite' ? 'db' : 'pgdump';
+
+/**
+ * A consistent, standalone, restore-only copy of the app's database at `file`:
+ * `VACUUM INTO` on SQLite, a dump of the app's schema on PostgreSQL (no live
+ * tables added). `db` is the app's own handle.
+ */
+export async function copyAppDatabase(
+  db: any,
+  config: WorkerDatabaseConfig,
+  file: string,
+): Promise<void> {
+  if (config.kind === 'sqlite')
+    return (await import('./sqlite.ts')).copyDatabaseTo(db, file);
+  await (await import('./postgres-copy.ts')).dumpSchema(
+    db,
+    config.schema,
+    file,
+  );
+}
+
+/**
+ * Run the host's schema work (copy, swap, drop a schema) on a connection of
+ * its own. Loaded on use: a SQLite host never reaches the database drivers.
+ */
+export async function withSchemaAdmin<T>(
+  config: DatabaseConfig,
+  work: (db: import('./postgres-copy.ts').SqlDatabase) => Promise<T>,
+): Promise<T> {
+  if (config.kind === 'sqlite')
+    throw new EngineError('schema operations need PostgreSQL', 'refused');
+  const { openAdmin } = await import('./postgres.ts');
+  const admin = await openAdmin(config);
+  try {
+    return await work(admin.db);
+  } finally {
+    await admin.close();
+  }
+}
+
+/** A schema name for a copy of `base` (draft, rehearsal, aside, restore), new on each call. */
+export function sideSchemaName(base: string, tag: 'd' | 'r' | 'o' | 'n') {
+  const id = Math.random().toString(36).slice(2, 10).padEnd(8, '0');
+  return assertAppSchema(`${sidePrefix(base)}${tag}${id}`);
 }
 
 /** A column as `@happyvertical/sql` reports it. */

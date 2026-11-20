@@ -63,10 +63,16 @@ export {
   USER_PKG,
   validate,
 } from './definition.ts';
-export {
-  type DraftMarker,
-  removeDraftDirectory as discardDraftDirectory,
-} from './draft.ts';
+export type { DraftMarker } from './draft.ts';
+
+import { removeDraftDirectory as removeDraftDirectoryOf } from './draft.ts';
+
+/**
+ * Delete a draft directory no host holds (SQLite). A PostgreSQL draft is
+ * refused: its schema would be stranded; use `discardOrphanDraft`.
+ */
+export const discardDraftDirectory = (dir: string): void =>
+  removeDraftDirectoryOf(dir);
 export {
   AppError,
   ApprovalRequiredError,
@@ -81,6 +87,7 @@ export {
   bundledWorkerUrl,
   type ChangeResult,
   type CleanUpResult,
+  discardOrphanDraft,
   type ExecuteResult,
   type ForkDraftOptions,
   type HostOptions,

@@ -3,15 +3,16 @@
 // file someone else put there.
 import { readdirSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
+import { EngineError } from './errors.ts';
 
 /** How many `method-*` snapshots stay (each applied method write takes one). */
 export const METHOD_SNAPSHOTS_KEPT = 20;
 
 export type SnapshotKind = 'method' | 'migrate' | 'schema';
 
-/** `<epoch ms>-<counter>-<kind...>.db`, as `AppRuntime.snapshot` names them. */
+/** `<epoch ms>-<counter>-<kind...>.db` (SQLite) or `.pgdump` (PostgreSQL), as `AppRuntime.snapshot` names them. */
 const NAME =
-  /^(\d{1,16})-(\d{1,9})-(method-|migrate-|schema)[A-Za-z0-9._-]*\.db$/;
+  /^(\d{1,16})-(\d{1,9})-(method-|migrate-|schema)[A-Za-z0-9._-]*\.(?:db|pgdump)$/;
 
 interface Found {
   name: string;
@@ -69,4 +70,15 @@ export function pruneMigrationSnapshots(dir: string, beforeMs: number): number {
     dir,
     ours(dir).filter((f) => f.kind !== 'method' && f.at < beforeMs),
   );
+}
+
+/**
+ * The path of the snapshot `name` in `dir`, if it is one of the engine's own:
+ * a plain file whose name matches the engine's pattern, never a path.
+ */
+export function resolveSnapshot(dir: string, name: string): string {
+  const found = ours(dir).find((f) => f.name === name);
+  if (!found)
+    throw new EngineError(`${name} is not a snapshot of this app`, 'not_found');
+  return join(dir, found.name);
 }

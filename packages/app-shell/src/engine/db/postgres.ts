@@ -13,7 +13,7 @@ import { getDatabase } from '@happyvertical/sql';
 import { EngineError } from '../errors.ts';
 import { createBridgeClient } from './pglite-bridge.ts';
 import { assertAppSchema } from './schema-name.ts';
-import type { WorkerDatabaseConfig } from './types.ts';
+import type { DatabaseConfig, WorkerDatabaseConfig } from './types.ts';
 
 type Handle = any;
 
@@ -184,4 +184,46 @@ export async function openPostgres(
     );
   }
   return scopeDatabase(raw, schema);
+}
+
+/**
+ * A connection for the host's own schema work (copy, swap, drop): outside any
+ * app schema, so it can name two schemas in one transaction. The host thread
+ * opens one briefly; an app worker never does. A PGlite is the host's own
+ * instance and stays open.
+ */
+export async function openAdmin(
+  config: Extract<DatabaseConfig, { kind: 'postgres' | 'pglite' }>,
+) {
+  if (config.kind === 'postgres') {
+    const raw: Handle = await getDatabase({
+      type: 'postgres',
+      ...config.connection,
+      max: 1,
+      // A pool of its own: the shared per-process cache would hand back (and
+      // closing would end) a connection another operation is using.
+      cache: false,
+    } as any);
+    return { db: raw, close: () => raw.close?.() };
+  }
+  const client = config.client;
+  // PGlite's own client takes numbered parameters; the helpers use `?`.
+  const numbered = (sql: string) => {
+    let n = 0;
+    return sql.replace(/\?/g, () => `$${++n}`);
+  };
+  const wrap = (c: {
+    query(sql: string, params?: unknown[]): Promise<any>;
+  }) => ({
+    query: (sql: string, params?: unknown[]) =>
+      params?.length ? c.query(numbered(sql), params) : c.query(sql),
+  });
+  return {
+    db: {
+      ...wrap(client),
+      transaction: <T>(cb: (tx: any) => Promise<T>) =>
+        client.transaction((tx) => cb(wrap(tx))),
+    },
+    close: async () => {},
+  };
 }

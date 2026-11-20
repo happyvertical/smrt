@@ -18,7 +18,7 @@ import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, renameSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { openAppDatabase } from './app-runtime.ts';
-import { requireSnapshots as requireSqliteHost0 } from './db/index.ts';
+import { requireSqlite as requireSqliteHost0 } from './db/index.ts';
 import * as sqlite from './db/sqlite.ts';
 import type { DatabaseKind } from './db/types.ts';
 

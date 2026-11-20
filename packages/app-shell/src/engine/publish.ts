@@ -7,6 +7,8 @@
 //   3. the journal is written, the live worker is retired
 //   4. live's app.db (+ -wal/-shm/-journal) is renamed to `<name>.prepublish`,
 //      the rehearsed file is renamed to app.db        <- the crash window
+//      (PostgreSQL: the rehearsal is a schema; one transaction renames live
+//      to an aside schema and the rehearsal to live; the journal names them)
 //   5. the new worker starts, the versions are written to the store
 //   6. the journal and the `.prepublish` files are removed
 // Before step 4 nothing of live has changed; after a failure in 4 or 5 the
@@ -185,6 +187,11 @@ export interface PublishJournal {
   /** The prepublish snapshot (a retained copy of the old data). */
   snapshot: string;
   startedAt: string;
+  /**
+   * PostgreSQL: the schemas of the swap. `staging` holds the rehearsed result
+   * until one transaction renames live to `aside` and `staging` to live.
+   */
+  pg?: { schema: string; staging: string; aside: string };
 }
 
 export function readJournal(dataDir: string): PublishJournal | null {

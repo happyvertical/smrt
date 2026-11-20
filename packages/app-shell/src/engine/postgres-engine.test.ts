@@ -4,7 +4,7 @@
 // is their PostgreSQL counterpart for the engine paths that differ: column
 // conversion, rename, drop with archive, table archive, undo, clean up,
 // calculated columns, record loads, merge, extract, methods and reports.
-import { mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -358,7 +358,7 @@ describe('data flows on PostgreSQL', () => {
     ]);
   });
 
-  it('methods run atomically (no snapshot on PostgreSQL yet) and reports aggregate', async () => {
+  it('methods run atomically with an undo point (a dump file) and reports aggregate', async () => {
     await run({
       type: 'addMethod',
       model: 'Sale',
@@ -371,7 +371,14 @@ describe('data flows on PostgreSQL', () => {
     const sale = (await host.list('Sale')).find((s) => s.code === 'a');
     const out = await host.runMethod('Sale', 'bump', String(sale?.id));
     expect(out.result).toBe('ok');
-    expect(out.snapshot).toBeNull();
+    // The pre-write undo point is a dump file, not a table in the database.
+    expect(String(out.snapshot)).toMatch(/-method-Sale\.bump\.pgdump$/);
+    expect(existsSync(String(out.snapshot))).toBe(true);
+    expect(
+      await raw(
+        `SELECT 1 FROM pg_namespace WHERE nspname <> 'app' AND nspname LIKE 'app%'`,
+      ),
+    ).toEqual([]);
     expect((await host.get('Sale', String(sale?.id))).qty).toBe(4);
 
     await run({
