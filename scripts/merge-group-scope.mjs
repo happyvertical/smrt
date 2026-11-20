@@ -49,14 +49,19 @@ export function scopeFromGit(options) {
 
 function main() {
   const options = {};
-  for (let index = 2; index < process.argv.length; index += 2) {
-    const key = process.argv[index];
-    if (!['--base', '--head'].includes(key) || !process.argv[index + 1] || options[key]) {
-      throw new Error('Usage: merge-group-scope.mjs --base <sha> --head <sha>');
+  let scope;
+  try {
+    for (let index = 2; index < process.argv.length; index += 2) {
+      const key = process.argv[index];
+      if (!['--base', '--head'].includes(key) || !process.argv[index + 1] || options[key]) {
+        throw new Error('Usage: merge-group-scope.mjs --base <sha> --head <sha>');
+      }
+      options[key] = process.argv[index + 1];
     }
-    options[key] = process.argv[index + 1];
+    scope = scopeFromGit({ base: options['--base'], head: options['--head'] });
+  } catch (cause) {
+    scope = { mode: 'full', postgres: 'all', reasons: [cause.message] };
   }
-  const scope = scopeFromGit({ base: options['--base'], head: options['--head'] });
   const postgres = scope.postgres === 'all' ? 'all' : JSON.stringify(scope.postgres);
   const lines = [`mode=${scope.mode}`, `postgres=${postgres}`];
   console.error(`merge-group scope: ${lines.join(' ')}`);

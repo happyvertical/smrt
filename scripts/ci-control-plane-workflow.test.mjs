@@ -137,3 +137,9 @@ test('merge groups select affected or full validation from the impact plan, and 
   assert.match(postgres, /merge-group PostgreSQL scope produced no selection/);
   assert.match(postgres, /POSTGRES_AFFECTED: \$\{\{ needs\.scope\.outputs\.affected \}\}/);
 });
+
+test('affected knowledge freshness keeps the release upgrade gate (#5364)', () => {
+  const suite = readFileSync(new URL('../.github/workflows/test-suite.yml', import.meta.url), 'utf8');
+  const affected = suite.match(/^  affected-knowledge:\n[\s\S]*?(?=^  [a-z][a-z0-9-]*:\n)/m)?.[0] ?? '';
+  assert.match(affected, /run: pnpm check:release-upgrade$/m);
+});

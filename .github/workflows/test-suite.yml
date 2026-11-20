@@ -433,6 +433,10 @@ jobs:
       - name: Check Node-loadable model package roots
         run: pnpm check:node-roots
 
+      # Part of the full-mode Knowledge Freshness job; every merge group runs it.
+      - name: Check release upgrade gate
+        run: pnpm check:release-upgrade
+
   workbench-browser:
     name: Workbench Consumer and Browser
     # This lane builds its own fixture and does not consume package-test output.
