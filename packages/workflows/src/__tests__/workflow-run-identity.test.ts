@@ -184,6 +184,35 @@ describe.each(engines)('workflow run identity on %s', (engine) => {
     expect(await db.query('SELECT id FROM _smrt_ai_runs')).toEqual(before);
   });
 
+  it.each([
+    'start',
+    'retry',
+  ])('reads a caller id once on %s: an id that is empty on the first read is refused', async (entry) => {
+    const db = await workflowDb(engine);
+    const { model } = scriptedModel((_call, n) => ({ output: { value: n } }));
+    const driver = driverFor(db, model, definitionOf(failingSteps));
+    const failed = await driver.start({ ownerId: 'owner', input: { n: 1 } });
+    expect((await driver.run(failed.id, 'owner')).status).toBe('failed');
+    const before = await db.query('SELECT id FROM _smrt_ai_runs');
+    let reads = 0;
+    // Empty on the first read, absent on any later one.
+    const shifting = {
+      ownerId: 'owner',
+      input: { n: 2 },
+      get id() {
+        reads += 1;
+        return reads === 1 ? '' : undefined;
+      },
+    } as { ownerId: string; input: { n: number }; id?: string };
+    const attempt =
+      entry === 'start'
+        ? driver.start(shifting)
+        : driver.retry(failed.id, 'owner', shifting);
+    await expect(attempt).rejects.toBeInstanceOf(TypeError);
+    expect(reads).toBe(1);
+    expect(await db.query('SELECT id FROM _smrt_ai_runs')).toEqual(before);
+  });
+
   it('a pruned failed run is retry_source_pruned', async () => {
     const db = await workflowDb(engine);
     const { model } = scriptedModel((_call, n) => ({ output: { value: n } }));

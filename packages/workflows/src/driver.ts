@@ -429,11 +429,13 @@ export function createWorkflowRunDriver(options: WorkflowRunDriverOptions) {
      */
     async start(input: StartWorkflowRun): Promise<WorkflowRunState> {
       if (!input.ownerId) throw new Error('Workflow runs require an owner');
+      // Read once: the id checked for presence is the id opened.
+      const id = input.id;
       const { run } = await ai.openRun({
         // Any id the caller passed goes to core, which refuses a malformed
         // one (an empty string included) before writing: an explicit id is
         // never replaced by a generated one.
-        ...(input.id !== undefined ? { id: input.id } : {}),
+        ...(id !== undefined ? { id } : {}),
         type: WORKFLOW_RUN_TYPE,
         definitionKey: definition.key,
         definitionVersion: definition.version,
@@ -1099,6 +1101,8 @@ export function createWorkflowRunDriver(options: WorkflowRunDriverOptions) {
       ownerId: string,
       retryOptions: { id?: string; budget?: AiRunBudget } = {},
     ): Promise<WorkflowRunState> {
+      // Read once: the id checked for presence is the id opened.
+      const id = retryOptions.id;
       const store = storeFor(ownerId);
       const failed = await store.load(runId);
       if (failed && failed.run.definitionKey !== definition.key) {
@@ -1136,7 +1140,7 @@ export function createWorkflowRunDriver(options: WorkflowRunDriverOptions) {
       };
       const { run } = await ai
         .openRun({
-          ...(retryOptions.id !== undefined ? { id: retryOptions.id } : {}),
+          ...(id !== undefined ? { id } : {}),
           type: WORKFLOW_RUN_TYPE,
           definitionKey: definition.key,
           definitionVersion: definition.version,
