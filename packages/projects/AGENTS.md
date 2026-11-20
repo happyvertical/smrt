@@ -37,6 +37,10 @@ their collections, and `ServiceEvidenceService` are owned by
 on the unchanged `service_time_entries` / snapshot tables. Do not reintroduce
 a projects subclass: a third same-named class on the table breaks the
 single-table-family resolution (see `packages/timesheets/AGENTS.md`).
+As a parent, relationship target, report source or collection item, import
+them from `@happyvertical/smrt-timesheets`: manifest generation confirms a
+package model only against the package (and entry) that declares it, so the
+re-export here fails there.
 `caseId` / `specialistId` exist only on smrt-support's subtype;
 `SubscriptionServiceCommercialResolver` reads them duck-typed when a support
 entry is priced. It prices client work through `smrt-subscriptions` (#1925);
