@@ -55,6 +55,28 @@ describe('field decorator options', () => {
     expect(fields.rank._meta?.unique).toBe(true);
   });
 
+  it('keeps array element indices and fails on a hole before the element read', () => {
+    // At runtime FLAGS[1] is `true`; dropping the hole would read `false`.
+    const { errors, fields } = scanModel(
+      `@field({ sensitive: FLAGS[1] }) apiSecret = '';`,
+      'const FLAGS = [, true, false] as const;',
+    );
+
+    expect(errors).toHaveLength(1);
+    expect(errors[0].message).toContain('a hole in [, true, false]');
+    expect(fields.apiSecret?.sensitive).not.toBe(false);
+  });
+
+  it('reads an element of a same-file array constant by its index', () => {
+    const { errors, fields } = scanModel(
+      `@field({ sensitive: FLAGS[1] }) apiSecret = '';`,
+      'const FLAGS = [false, true, false] as const;',
+    );
+
+    expect(errors).toHaveLength(0);
+    expect(fields.apiSecret?.sensitive).toBe(true);
+  });
+
   it('reads values declared as same-file constants', () => {
     const { errors, fields } = scanModel(
       `

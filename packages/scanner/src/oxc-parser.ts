@@ -3689,7 +3689,17 @@ function extractValueOf(
     case 'ArrayExpression': {
       const elements: unknown[] = [];
       for (const el of node.elements) {
-        if (el === null || typeof el !== 'object' || !('type' in el)) continue;
+        if (el === null || typeof el !== 'object' || !('type' in el)) {
+          // A hole (`[, true]`) is `undefined` at its index at runtime;
+          // skipping it would shift every later element. It is unreadable.
+          elements.push(undefined);
+          ctx?.unresolved.push({
+            expression: `a hole in ${sliceSource(node, sourceText) ?? 'an array'}`,
+            start: node.start,
+            ...(ctx.path ? { option: ctx.path } : {}),
+          });
+          continue;
+        }
         if (el.type === 'SpreadElement') {
           // `include: [...BASE_ACTIONS, 'archive']` must not vanish silently:
           // a dropped element changes an include/exclude allowlist. Resolve a
@@ -3709,7 +3719,8 @@ function extractValueOf(
           continue;
         }
         const value = extractValue(el, sourceText, ctx);
-        if (value !== UNRESOLVED) elements.push(value);
+        // An unreadable element is reported; its slot keeps later indices.
+        elements.push(value === UNRESOLVED ? undefined : value);
       }
       return elements;
     }
