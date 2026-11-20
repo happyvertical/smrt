@@ -159,7 +159,7 @@ function handleInput() {
     display: inline-flex;
     align-items: center;
     gap: 0.5rem;
-    min-height: 44px;
+    min-height: 2.75rem;
     cursor: pointer;
     align-self: flex-start;
   }
@@ -170,7 +170,7 @@ function handleInput() {
   }
   @media (pointer: coarse) {
     .smrt-password-input__toggle {
-      min-height: 48px;
+      min-height: 3rem;
     }
   }
 }
