@@ -31,8 +31,11 @@
 ## Fix it here; do not work around it, do not file it away
 
 Broken pin, hook, gate, stale generated file, or conflicting package rule: **fix
-it in the current branch** as its own `Drive-by fixes` commit; no workarounds
-(`--no-verify`, shims). Rules: [agents/fix-it-here.md](agents/fix-it-here.md).
+it in the current branch** as its own `Drive-by fixes` commit. No workarounds
+(shims, `--no-verify`, disabled gates, substitute toolchains); a validation
+command that cannot run as documented is the bug. Drive-bys within the kernel's
+ten-line envelope are mandatory; beyond it, an issue must name why the work cannot
+ship here. Full rules: [agents/fix-it-here.md](agents/fix-it-here.md).
 
 pnpm/TypeScript monorepo: `@smrt()` objects generate persistence, REST, CLI, MCP,
 and AI operations. Read the package's `AGENTS.md`; see [CONTEXT-MAP.md](CONTEXT-MAP.md).
@@ -69,7 +72,9 @@ and AI operations. Read the package's `AGENTS.md`; see [CONTEXT-MAP.md](CONTEXT-
   application schema. Use migrations and `smrt doctor --db` / `db:status --parity`.
   Existing int4 deployments need the maintenance-window `db:migrate-int8` flow;
   parity treats int4/int8 as equivalent (CLI guidance).
-- Never author changesets.
+- Release automation generates changesets; never author them. Dependency
+  overrides target the advisory range; ignored GHSAs also need an
+  `audit-policy.json` record (`pnpm audit:policy`).
 
 ## Documentation and skills
 
