@@ -1723,6 +1723,11 @@ the component is uniformly UUID and the planner emits nothing.
   not run. Only the explicitly deleted object runs its lifecycle. RESTRICT
   checks precede mutations; the parent DELETE and cascades share one transaction
   where supported, so deeper refusals roll back.
+- A CASCADE child select locks the selected rows on PostgreSQL
+  (`ORDER BY id FOR UPDATE`), and the child DELETE keeps the parent predicate
+  (`id IN (...) AND <fk> IN (<parents>)`): a child moved to another parent
+  concurrently is never deleted by the old parent's cascade
+  (`cascade-child-moved*.test.ts`).
 - Derived `_smrt_embeddings` / `_smrt_contexts` cleanup matches IDs AND
   `ownerClassCandidates()` (qualified and simple STI member names), never IDs
   alone: unrelated text-ID classes can collide. Cleanup failures are logged,

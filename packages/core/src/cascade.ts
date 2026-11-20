@@ -554,6 +554,15 @@ async function tolerateMissingSystemTable<T>(
   }
 }
 
+/**
+ * Ids of the rows in `tableName` whose `column` references one of `ids`.
+ *
+ * On PostgreSQL the rows are locked (`FOR UPDATE`, in id order) until the
+ * delete commits: a concurrent writer cannot move a selected child to another
+ * parent between this select and its delete, and a move already in flight is
+ * waited for and re-checked against the parent predicate. SQLite serializes
+ * writers, so it needs no row lock.
+ */
 async function selectIds(
   db: DatabaseInterface,
   tableName: string,
@@ -562,10 +571,16 @@ async function selectIds(
 ): Promise<string[]> {
   const found: string[] = [];
   for (const batch of chunkArray(ids, IN_LIST_CHUNK_SIZE)) {
-    const dialect = usesPostgresDialect(db) ? 'postgres' : 'sqlite';
-    const where = buildWhere(idPredicate(column, batch), 1, dialect);
+    const postgres = usesPostgresDialect(db);
+    const where = buildWhere(
+      idPredicate(column, batch),
+      1,
+      postgres ? 'postgres' : 'sqlite',
+    );
     const table = `"${tableName.replaceAll('"', '""')}"`;
-    const sql = `SELECT CAST("id" AS VARCHAR) AS "id" FROM ${table} ${where.sql}`;
+    const sql =
+      `SELECT CAST("id" AS VARCHAR) AS "id" FROM ${table} ${where.sql}` +
+      (postgres ? ' ORDER BY "id" FOR UPDATE' : '');
     const rows = await tolerateMissingTable(
       () => db.query(sql, ...where.values).then((result) => result.rows),
       [] as Record<string, unknown>[],
@@ -579,21 +594,38 @@ async function selectIds(
   return found;
 }
 
+/**
+ * Delete the selected child rows that still reference one of `parentIds`
+ * through `column`. Keeping the parent predicate on the delete means a child
+ * that no longer belongs to a deleted parent is never removed by its cascade.
+ */
 async function deleteByIds(
   db: DatabaseInterface,
   identity: SyncRowIdentity,
   ids: string[],
+  column: string,
+  parentIds: string[],
 ): Promise<void> {
   const { tableName } = identity;
-  for (const batch of chunkArray(ids, IN_LIST_CHUNK_SIZE)) {
-    await tolerateMissingTable(
-      () =>
-        deleteSyncRows(db, identity, idPredicate('id', batch), (affected) =>
-          recordCascadeWrite(db, { affected }),
-        ),
-      undefined,
-      { table: tableName, action: 'CASCADE delete' },
-    );
+  for (const parents of chunkArray(parentIds, IN_LIST_CHUNK_SIZE)) {
+    for (const batch of chunkArray(ids, IN_LIST_CHUNK_SIZE)) {
+      await tolerateMissingTable(
+        () =>
+          deleteSyncRows(
+            db,
+            identity,
+            column === 'id'
+              ? idPredicate('id', batch)
+              : {
+                  ...idPredicate('id', batch),
+                  ...idPredicate(column, parents),
+                },
+            (affected) => recordCascadeWrite(db, { affected }),
+          ),
+        undefined,
+        { table: tableName, action: 'CASCADE delete' },
+      );
+    }
   }
 }
 
@@ -768,6 +800,8 @@ async function resolveReferences(
         sti: ctx.registry.getTableStrategy(reference.className) === 'sti',
       },
       childIds,
+      reference.column,
+      pending,
     );
     ctx.affectedTables.add(reference.tableName);
     ctx.affectedTableClasses.set(
