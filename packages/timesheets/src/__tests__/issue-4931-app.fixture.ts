@@ -11,32 +11,43 @@ import {
   TimecardReopening as SmrtTimecardReopening,
 } from '../rollup/models.js';
 
-export const AttendanceBreak: typeof SmrtAttendanceBreak = class AttendanceBreak extends SmrtAttendanceBreak {};
+const AttendanceBreak: typeof SmrtAttendanceBreak = class AttendanceBreak extends SmrtAttendanceBreak {};
 smrt({ replaceParent: true, packageName: '@local/issue4931-timesheets' })(
   AttendanceBreak,
 );
 
-export const AttendanceSegment: typeof SmrtAttendanceSegment = class AttendanceSegment extends SmrtAttendanceSegment {};
+const AttendanceSegment: typeof SmrtAttendanceSegment = class AttendanceSegment extends SmrtAttendanceSegment {};
 smrt({ replaceParent: true, packageName: '@local/issue4931-timesheets' })(
   AttendanceSegment,
 );
 
-export const AttendanceCorrection: typeof SmrtAttendanceCorrection = class AttendanceCorrection extends SmrtAttendanceCorrection {};
+const AttendanceCorrection: typeof SmrtAttendanceCorrection = class AttendanceCorrection extends SmrtAttendanceCorrection {};
 smrt({ replaceParent: true, packageName: '@local/issue4931-timesheets' })(
   AttendanceCorrection,
 );
 
-export const PeriodTimecard: typeof SmrtPeriodTimecard = class PeriodTimecard extends SmrtPeriodTimecard {};
+const PeriodTimecard: typeof SmrtPeriodTimecard = class PeriodTimecard extends SmrtPeriodTimecard {};
 smrt({ replaceParent: true, packageName: '@local/issue4931-timesheets' })(
   PeriodTimecard,
 );
 
-export const TimecardAdjustment: typeof SmrtTimecardAdjustment = class TimecardAdjustment extends SmrtTimecardAdjustment {};
+const TimecardAdjustment: typeof SmrtTimecardAdjustment = class TimecardAdjustment extends SmrtTimecardAdjustment {};
 smrt({ replaceParent: true, packageName: '@local/issue4931-timesheets' })(
   TimecardAdjustment,
 );
 
-export const TimecardReopening: typeof SmrtTimecardReopening = class TimecardReopening extends SmrtTimecardReopening {};
+const TimecardReopening: typeof SmrtTimecardReopening = class TimecardReopening extends SmrtTimecardReopening {};
 smrt({ replaceParent: true, packageName: '@local/issue4931-timesheets' })(
   TimecardReopening,
 );
+
+// One object, not a named export per class: an export under a model's name
+// must be that model, and these replacements are other classes of that name.
+export const appModels = {
+  AttendanceBreak,
+  AttendanceSegment,
+  AttendanceCorrection,
+  PeriodTimecard,
+  TimecardAdjustment,
+  TimecardReopening,
+};

@@ -54,7 +54,8 @@ for (const replaced of [false, true]) {
       restore = snapshotObjectRegistryState();
       // Bootstrap the original package schema before registering the app.
       db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
-      if (replaced) expected = await import('./issue-4931-app.fixture.js');
+      if (replaced)
+        expected = (await import('./issue-4931-app.fixture.js')).appModels;
     });
     afterAll(async () => {
       await db?.close?.();
