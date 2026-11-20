@@ -62,29 +62,45 @@ export function clearSubtypeLineage(): void {
   runtimeCoexistingModels().clear();
 }
 
-/** Test registry snapshots restore lineage that ObjectRegistry.clear() drops. */
+/**
+ * Test registry snapshots restore the whole lineage, including the run-time
+ * coexistence set, that ObjectRegistry.clear() drops; nothing recorded after
+ * the snapshot survives its restore.
+ */
 export function snapshotSubtypeLineage(): () => void {
-  const links = new Map(parents());
-  const declarations = new Map(replacedDeclarations());
-  return () => {
-    globalThis.__smrtSubtypeParents = new Map(links);
-    globalThis.__smrtReplacedDeclarations = new Map(declarations);
-  };
+  return captureSubtypeLineage();
 }
 
 /** Roll back only the edited identities, retaining unrelated registrations. */
 export function checkpointSubtypeLineage(
   names: ReadonlySet<string>,
 ): () => void {
-  const links = new Map([...names].map((name) => [name, parents().get(name)]));
-  const declarations = new Map(
-    [...names].map((name) => [name, replacedDeclarations().get(name)]),
-  );
-  // By value: `clearSubtypeLineage()` empties the live set in place.
+  return captureSubtypeLineage(names);
+}
+
+/**
+ * The one capture of subtype lineage: `names` limits parents and retained
+ * declarations to those identities; without it the whole lineage is replaced.
+ * The run-time coexistence set is always restored whole and by value, since
+ * `clearSubtypeLineage()` empties the live set in place.
+ */
+function captureSubtypeLineage(names?: ReadonlySet<string>): () => void {
+  const links = names
+    ? new Map([...names].map((name) => [name, parents().get(name)]))
+    : new Map<string, string | undefined>(parents());
+  const declarations = names
+    ? new Map(
+        [...names].map((name) => [name, replacedDeclarations().get(name)]),
+      )
+    : new Map<string, RegisteredClass | undefined>(replacedDeclarations());
   const coexisting = new Set(runtimeCoexistingModels());
   return () => {
     runtimeCoexistingModels().clear();
     for (const name of coexisting) runtimeCoexistingModels().add(name);
+    if (!names) {
+      parents().clear();
+      replacedDeclarations().clear();
+    }
     for (const [name, parent] of links)
       if (parent) parents().set(name, parent);
       else parents().delete(name);
