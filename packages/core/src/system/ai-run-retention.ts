@@ -191,15 +191,19 @@ export async function pruneAiRunTrajectories(
         if (!parentGone) continue;
         const finished = new Date(String(row.finished_at)).getTime();
         const expired = finished < new Date(cutoff).getTime();
-        if (!expired && isAiRunTrajectorySampled(id, sampleRate)) continue;
+        const sampled = isAiRunTrajectorySampled(id, sampleRate);
+        if (!expired && sampled) continue;
         if (retention.dryRun) {
           done.add(id);
           progressed = true;
           continue;
         }
+        // Rechecked under the lock with the bound that selected it: a run in
+        // the sample keeps its trajectory until the cutoff, one outside the
+        // sample loses it once it is finished.
         const pruned = await pruneOneTrajectory(db, id, options, {
           tenant: nullableTenant(row.tenant_id),
-          finishedBefore: String(params[0]),
+          finishedBefore: sampled ? cutoff : now.toISOString(),
         });
         if (pruned) {
           done.add(id);

@@ -326,7 +326,9 @@ a run that is gone is `AiRunNotFoundError`.
 **Retention** (page section 8). A finished, unprotected run keeps its
 trajectory `aiRuns.trajectoryMaxAgeDays` (30) after `finished_at`; with
 `trajectorySampleRate` below 1, a run outside the sample (decided from its
-id) loses it once finished. Pruning saves the check and approval counts on
+id) loses it once finished. The destructive recheck under the run lock uses
+the bound that selected the run: the cutoff for a run in the sample, `now`
+for one outside it. Pruning saves the check and approval counts on
 the row and sets `trajectory_pruned` in the same transaction as the events
 are deleted, and deletes the checkpoint unless the run `failed`. Protected:
 `running`, `waiting-approval`, durable `stopped`, `experiment_id` set,
