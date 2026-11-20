@@ -232,7 +232,7 @@ export async function nullSyncReference(
   const result = await db.query(
     `UPDATE ${quote(tableName)}
         SET ${quote(column)} = NULL,
-            updated_at = CASE WHEN ${tracked} THEN ${nextTimestamp} ELSE updated_at END,
+            updated_at = ${nextTimestamp},
             _sync_origin_device_id = CASE WHEN ${tracked} THEN COALESCE(${parameter(2)}, _sync_origin_device_id) ELSE NULL END,
             _sync_revision = CASE WHEN ${tracked} THEN _sync_revision + 1 ELSE _sync_revision END
       ${sql} RETURNING _sync_origin_device_id, _sync_revision`,
