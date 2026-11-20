@@ -29,7 +29,10 @@ const IDLE = 60_000;
 
 let cloud: CloudHarness | null = null;
 let local: ShellHarness | null = null;
+let ticker: ReturnType<typeof setInterval> | null = null;
 afterEach(async () => {
+  if (ticker) clearInterval(ticker);
+  ticker = null;
   await cloud?.close();
   await local?.close();
   cloud = null;
@@ -38,6 +41,11 @@ afterEach(async () => {
 
 async function twoOwners(policy: object = {}) {
   clock = 1_000_000;
+  // A policy with a minimum idle time needs time to pass between requests.
+  if ((policy as { minIdleMs?: number }).minIdleMs)
+    ticker = setInterval(() => {
+      clock += 40;
+    }, 5);
   cloud = await openCloudShell({
     lifecycle: {
       idleMs: IDLE,
@@ -207,6 +215,57 @@ describe('the cap on open apps', () => {
     setTimeout(finish, 100);
     await busy;
     expect((await woken).dataDir).toContain(b.tenantId);
+  });
+});
+
+describe('a burst of wakes under a cap', () => {
+  it('one wake slot, one place: the first evicts the idle app and opens, the second waits its turn', async () => {
+    const { a, b } = await twoOwners({
+      maxOpenApps: 1,
+      maxConcurrentWakes: 1,
+      capacityWaitMs: 2000,
+    });
+    // A is open and idle; B and a third request for A's neighbour arrive together.
+    await runAs(a, () => getHost());
+    const first = runAs(b, () => getHost());
+    const second = runAs(a, () => getHost());
+    const [one, two] = await Promise.all([first, second]);
+    expect(one.dataDir).toContain(b.tenantId);
+    expect(two.dataDir).toContain(a.tenantId);
+    expect(hostMetrics().open).toBe(1);
+  });
+
+  it('never exceeds the cap and leaks no worker with more requests than places', async () => {
+    const { a, b } = await twoOwners({
+      maxOpenApps: 1,
+      maxConcurrentWakes: 1,
+      minIdleMs: 30, // a host just handed out is not closed under its caller
+      capacityWaitMs: 4000,
+    });
+    let peak = 0;
+    const watch = setInterval(() => {
+      peak = Math.max(peak, hostMetrics().open);
+    }, 1);
+    const seen = new Set<Awaited<ReturnType<typeof getHost>>>();
+    const results = await Promise.allSettled(
+      Array.from({ length: 8 }, (_, i) =>
+        runAs(i % 2 ? a : b, async () => {
+          const host = await getHost();
+          seen.add(host);
+          await host.list(i % 2 ? 'Chore' : 'Invoice');
+        }),
+      ),
+    );
+    clearInterval(watch);
+    for (const r of results)
+      if (r.status === 'rejected')
+        expect(String(r.reason)).toMatch(/no room|try again/); // retryable only
+    expect(results.some((r) => r.status === 'fulfilled')).toBe(true);
+    expect(peak).toBeLessThanOrEqual(1);
+    clock += IDLE * 2;
+    await sweepIdleHosts();
+    // Every worker any request was given is gone: none leaked.
+    for (const host of seen) expect(host.appAlive).toBe(false);
   });
 });
 

@@ -125,6 +125,12 @@ interface Holder {
   lastUsed: number;
   /** Lifecycle: the live host as handed to callers (counts their calls). */
   leasedRef: AppHost | null;
+  /**
+   * Lifecycle: this app holds one of the places under the cap. Taken
+   * atomically in `makeRoom`, before the wake queue; a request that is merely
+   * waiting for a place or a wake slot holds none.
+   */
+  reserved: boolean;
   /** Lifecycle: set while the app is being closed; a wake waits for it. */
   evicting: Promise<void> | null;
 }
@@ -301,6 +307,7 @@ function holderOf(key: string, tenantId: string | null): Holder {
       leases: 0,
       lastUsed: lifecycle.now(),
       leasedRef: null,
+      reserved: false,
       evicting: null,
     };
     holders.set(key, holder);
@@ -542,12 +549,17 @@ export async function getHost(): Promise<AppHost> {
     holder = await currentHolder(); // the closed holder is gone: a first open
   }
   holder.lastUsed = lifecycle.now();
-  const live = await openedHost(holder, () =>
-    lifecycle.wake(async () => {
-      await makeRoom(holder);
-      return openLive(holder);
-    }),
-  );
+  const live = await openedHost(holder, async () => {
+    // A place first (no wake slot held while waiting for one), then the queue.
+    await makeRoom(holder);
+    try {
+      return await lifecycle.wake(() => openLive(holder));
+    } catch (e) {
+      holder.reserved = false;
+      lifecycle.changed();
+      throw e;
+    }
+  });
   holder.lastUsed = lifecycle.now();
   lifecycle.startSweeping(() => void sweepIdleHosts());
   return leased(holder, live);
@@ -725,7 +737,8 @@ function release(holder: Holder): void {
 
 function openCount(except?: Holder): number {
   let n = 0;
-  for (const h of holders.values()) if (h !== except && h.hostPromise) n++;
+  for (const h of holders.values())
+    if (h !== except && (h.reserved || h.hostRef)) n++;
   return n;
 }
 
@@ -756,10 +769,13 @@ function evict(holder: Holder, why: 'idle' | 'capacity'): Promise<void> {
   return done;
 }
 
-/** Before a wake: make room under the cap by closing the app used longest ago. */
+/** Before a wake: take a place under the cap (reserved atomically), closing the app used longest ago if none is free. */
 async function makeRoom(waking: Holder): Promise<void> {
   const cap = lifecycle.maxOpen;
-  if (cap === null) return;
+  if (cap === null) {
+    waking.reserved = true;
+    return;
+  }
   const deadline = Date.now() + lifecycle.capacityWaitMs;
   while (openCount(waking) >= cap) {
     if (lifecycle.draining)
@@ -781,6 +797,8 @@ async function makeRoom(waking: Holder): Promise<void> {
       );
     await lifecycle.waitForChange(Math.min(Math.max(left, 1), 100));
   }
+  // The check above and this line run in one step: the place is ours.
+  waking.reserved = true;
 }
 
 /** Close every app nobody has used for `idleMs`. Runs on a timer; callable. */
