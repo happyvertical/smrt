@@ -2813,6 +2813,11 @@ export class SmrtClass {
     }
 
     if (options.offset !== undefined) {
+      if (options.limit === undefined) {
+        // SQLite requires LIMIT before OFFSET. The largest signed 64-bit
+        // value means "no limit" on every supported engine.
+        sql += ' LIMIT 9223372036854775807';
+      }
       sql += ` OFFSET $${paramIndex++}`;
       params.push(options.offset);
     }

@@ -3653,6 +3653,13 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     }
 
     if (boundedOffset !== undefined) {
+      if (boundedLimit === undefined) {
+        // SQLite requires LIMIT before OFFSET. The largest signed 64-bit
+        // value means "no limit" on SQLite, DuckDB and PostgreSQL alike, so it
+        // needs no engine detection (an in-process PostgreSQL handle reports
+        // no engine, and PostgreSQL rejects `LIMIT -1`).
+        limitOffsetSql += ' LIMIT 9223372036854775807';
+      }
       limitOffsetSql += ` OFFSET $${paramIndex++}`;
       limitOffsetValues.push(boundedOffset);
     }

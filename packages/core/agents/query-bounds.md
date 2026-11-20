@@ -16,7 +16,9 @@ are **clamped** to `MAX_LIST_LIMIT` (1000) rather than rejected, and an explicit
   junction, hierarchy and `listByIds()` callers all expect every matching row, so
   a framework-wide default would truncate correct queries. Applications opt in
   per collection with `defaultListLimit` / `maxListLimit` (validated at
-  construction). The generated surfaces enforce the ceiling on their own
+  construction). An `offset` without a `limit` emits `LIMIT 9223372036854775807`
+  before `OFFSET` (SQLite rejects a bare `OFFSET`; the constant means "no limit"
+  on every engine and needs no engine detection). The generated surfaces enforce the ceiling on their own
   untrusted input regardless.
 - `orderBy` runs the same rail as `where` (#1540) and `select` (#1902): terms are
   checked against the field whitelist and refused for `@field({ sensitive: true })`
