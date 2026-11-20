@@ -60,9 +60,14 @@ only when all of these hold:
 - its path is a listed prefix or lies under one at a segment boundary, with no `.`/`..`
   segments or encoded slashes or dots.
 
-Query and fragment are kept. Anything else is ignored. The intent's data is cleared once it is
-used, and a launch replayed from Recents is ignored, so a spent one-time link is never reopened.
-Without `links`, nothing changes.
+Query and fragment are kept. Anything else is ignored.
+
+Each link opens once. When its page has loaded, the plugin remembers the link's SHA-256 (never
+the link itself, at most 16, in the app's private preferences) and never loads that link again.
+That covers Android rebuilding an activity killed in the background from the intent that first
+started it, which Capacitor hands to plugins again. A link that failed to load, for example
+offline, can be tapped again. A launch replayed from Recents is ignored too. Without `links`,
+nothing changes.
 
 The plugin only routes the link. The shell still declares the Android App Link: an
 `autoVerify` intent filter for those paths in its `AndroidManifest.xml`, and
