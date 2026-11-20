@@ -42,7 +42,13 @@ See [audit contract](../../../docs/content/audit-trail.md).
   a junction ineligible for batching, preserving its virtual per-row save path.
   Junction batches write new rows in one statement. Known collisions take
   the per-row path. A late untracked collision updates the existing row in
-  place, while a tracked collision rolls back all additions. Callers still
+  place: the instance adopts the stored id before completion, so hooks,
+  interceptors and the change feed see that row and an `update`, never a
+  phantom id. The stored row is matched by conflict key exactly as the database
+  stores it (case-sensitive text, integers; only a native UUID's letter case is
+  folded), and only when every input matches one returned row; a group whose
+  conflict key holds another type (a date, a boolean, a decimal) takes the
+  per-row path before anything is written. A tracked collision rolls back all additions. Callers still
   own the transaction for an atomic remove-and-add replacement.
 - `SmrtCollection.createMany(inputs)` is the bulk create: all-or-nothing, in
   input order, joined to the caller's transaction. An eligible batch (the
