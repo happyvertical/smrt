@@ -149,3 +149,25 @@ test('binds a call-form registration to the declaration in its own block, and le
   assert.equal(result.source, ambiguous);
   assert.equal(result.findings[0].status, 'ambiguous');
 });
+
+test('reads options as code: a comment, a string value or a nested object naming replaceParent does not declare it', () => {
+  for (const options of [
+    "{\n  // replaceParent: true is added below\n  api: true,\n}",
+    "{ /* replaceParent: true */ api: true }",
+    "{ description: 'replaceParent: true', api: true }",
+    "{ api: { replaceParent: true } }",
+  ]) {
+    const source = `${header}\n@smrt(${options})\nexport class Customer extends CustomerBase {}\n`;
+    const result = codemodSource(source, true);
+    assert.equal(result.findings[0].status, 'missing', options);
+    assert.match(result.source, /replaceParent: true,/, options);
+    assert.equal(codemodSource(result.source, true).findings[0].status, 'declared', options);
+  }
+  // A comment naming another public name does not rename the class.
+  const commented = `${header}\n@smrt({ /* name: 'Other' */ api: true })\nexport class Customer extends CustomerBase {}\n`;
+  assert.equal(codemodSource(commented, true).findings[0].status, 'missing');
+  for (const declared of ["{ 'replaceParent': true }", '{ api: true, replaceParent: true }']) {
+    const source = `${header}\n@smrt(${declared})\nexport class Customer extends CustomerBase {}\n`;
+    assert.equal(codemodSource(source, true).findings[0].status, 'declared', declared);
+  }
+});

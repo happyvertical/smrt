@@ -117,6 +117,42 @@ function followRelative(fromFile, specifier, name, depth = 0) {
   return undefined;
 }
 
+/**
+ * The properties an options object literal passed in the call parentheses
+ * `open`..`close` declares at its top level, read as code: each key (bare or
+ * quoted) mapped to where its value starts. A key inside a comment, a string
+ * value or a nested object does not count.
+ */
+function optionKeys(source, map, open, close) {
+  const keys = new Map();
+  let depth = 0;
+  let previous = '';
+  for (let i = open; i < close; i++) {
+    const c = source[i];
+    if (map.inText(i)) {
+      // A quoted key: a string that starts a top-level property.
+      if (depth === 2 && (c === "'" || c === '"') && !map.inText(i - 1) && (previous === '{' || previous === ',')) {
+        let end = i + 1;
+        while (end < close && map.inText(end) && source[end] !== c) end += source[end] === '\\' ? 2 : 1;
+        const colon = /^\s*:/.exec(source.slice(end + 1, close));
+        if (colon) keys.set(source.slice(i + 1, end), end + 1 + colon[0].length);
+        previous = c;
+        i = end;
+      }
+      continue;
+    }
+    if (/\s/.test(c)) continue;
+    if ('{[('.includes(c)) depth++;
+    else if ('}])'.includes(c)) depth--;
+    else if (depth === 2 && (previous === '{' || previous === ',') && /[A-Za-z_$]/.test(c)) {
+      const key = /^([A-Za-z_$][\w$]*)\s*:/.exec(source.slice(i, close));
+      if (key) keys.set(key[1], i + key[0].length);
+    }
+    previous = c;
+  }
+  return keys;
+}
+
 /** Whether a module declares `name` itself. */
 function declaresLocally(source, name) {
   return new RegExp(`(?:class|function|const|let|var)\\s+${name}\\b`).test(source);
@@ -301,13 +337,15 @@ export function codemodSource(source, choice, filePath) {
     const call = () => callRegistration(source, binding, smrtAliases, map, start);
     const found = expression ? call() : (decoratorBefore(source, start, smrtAliases, map) ?? call());
     const registration = found?.ambiguous ? undefined : found;
-    const options = registration ? source.slice(registration.open, registration.end + 1) : '';
-    const declaredName = options.match(/\bname:\s*['"]([\w$]+)['"]/)?.[1];
+    const keys = registration ? optionKeys(source, map, registration.open, registration.end) : new Map();
+    const declaredName = keys.has('name')
+      ? /^\s*['"]([\w$]+)['"]/.exec(source.slice(keys.get('name'), registration.end))?.[1]
+      : undefined;
     const publicName = declaredName ?? exported.get(binding) ?? name;
     if (imported.original !== publicName) continue;
     const line = source.slice(0, start).split('\n').length;
     const finding = { name: publicName, parent: `${imported.from}:${imported.original}`, line };
-    if (/\breplaceParent\s*:/.test(options)) {
+    if (keys.has('replaceParent')) {
       findings.push({ ...finding, status: 'declared' });
       continue;
     }
