@@ -37,6 +37,7 @@ import { APIGenerator, createRestServer } from '../generators/rest.js';
 import { generateOpenAPISpec } from '../generators/swagger.js';
 import { SmrtObject } from '../object.js';
 import { ObjectRegistry, smrt } from '../registry.js';
+import { setRuntimeExposureGate } from '../runtime-exposure.js';
 import { snapshotObjectRegistryState } from '../test-utils.js';
 import { getTestDatabase } from '../testing/database.js';
 import {
@@ -294,6 +295,103 @@ describe('STI rows through a base route on runtime REST', () => {
           ]);
         },
       );
+    });
+  });
+
+  describe('a read through a public base', () => {
+    const titlesOf = async (response: Response) =>
+      ((await response.json()) as Array<{ title: string }>)
+        .map((row) => row.title)
+        .sort();
+
+    it('serves an anonymous caller none of a private subtype rows', async () => {
+      const handler = new APIGenerator(
+        { basePath: '/api' },
+        { db },
+      ).generateHandler();
+      expect(await titlesOf(await call(handler, 'GET', segment()))).toEqual([
+        'base',
+        'readonly',
+      ]);
+      expect(
+        await (await call(handler, 'GET', `${segment()}/count`)).json(),
+      ).toEqual({ count: 2 });
+      expect(
+        (await call(handler, 'GET', `${segment()}/${ids.private}`)).status,
+      ).toBe(404);
+      expect(
+        (await call(handler, 'GET', `${segment()}/${ids.readonly}`)).status,
+      ).toBe(200);
+    });
+
+    it('serves none of the rows of a subtype the auth middleware refuses', async () => {
+      const handler = new APIGenerator(
+        {
+          basePath: '/api',
+          authMiddleware: (model) => async (req) =>
+            model === key('RowPolicyPrivateDoc')
+              ? new Response('forbidden', { status: 403 })
+              : req,
+        },
+        { db },
+      ).generateHandler();
+      expect(await titlesOf(await call(handler, 'GET', segment()))).toEqual([
+        'base',
+        'readonly',
+      ]);
+      expect(
+        (await call(handler, 'GET', `${segment()}/${ids.private}`)).status,
+      ).toBe(404);
+    });
+
+    describe('with a subtype switched off for the request', () => {
+      beforeEach(() => {
+        setRuntimeExposureGate({
+          isEnabled: (model) =>
+            model.qualifiedName !== key('RowPolicyPrivateDoc'),
+        });
+      });
+      afterEach(() => {
+        setRuntimeExposureGate(undefined);
+      });
+
+      it('serves none of its rows and writes none of them', async () => {
+        const handler = new APIGenerator(
+          { basePath: '/api', authMiddleware: () => async (req) => req },
+          { db },
+        ).generateHandler();
+        expect(await titlesOf(await call(handler, 'GET', segment()))).toEqual([
+          'base',
+          'readonly',
+        ]);
+        expect(
+          await (await call(handler, 'GET', `${segment()}/count`)).json(),
+        ).toEqual({ count: 2 });
+        const path = `${segment()}/${ids.private}`;
+        expect((await call(handler, 'GET', path)).status).toBe(404);
+        expect(
+          (await call(handler, 'PUT', path, { title: 'changed' })).status,
+        ).toBe(404);
+        expect((await call(handler, 'DELETE', path)).status).toBe(404);
+        const synced = (await (
+          await call(handler, 'POST', 'sync/apply', {
+            items: [
+              {
+                itemId: 'item-1',
+                object: segment(),
+                op: 'update',
+                id: ids.private,
+                payload: { title: 'synced' },
+              },
+            ],
+          })
+        ).json()) as { results: unknown[] };
+        expect(synced.results[0]).toMatchObject({
+          status: 'rejected',
+          reason: 'not_found',
+        });
+        expect(await rows()).toContain('private:n');
+      });
     });
   });
 

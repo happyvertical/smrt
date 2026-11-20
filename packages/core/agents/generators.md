@@ -213,7 +213,14 @@ of the subtypes it was given that open the read on `api`
 not read is `404` / `not_found`. An update or delete through the base of a
 row whose own model is a subtype needs that subtype's action (`405` /
 `op_not_allowed`) and authorization: its `authMiddleware` decision under its
-own name, or its `api.public` without middleware. A plain `new APIGenerator()` spans the whole registry,
+own name, or its `api.public` without middleware. Every REST server also
+admits each subtype per request (`settleFamilyAdmission`): its rows are read
+through the base only when it is switched on for the request's tenant and, for
+a read, the caller may read the subtype itself (its `authMiddleware` decision
+under its own name, or its `api.public` without middleware); a write to a
+subtype row checks the subtype's exposure too (`404` / `not_found`). Reads of
+an STI base under an `authMiddleware` vary by caller, so they are cached and
+validated like reads with permission-gated fields. A plain `new APIGenerator()` spans the whole registry,
 which may hold models the host never serves, so it does not refuse at
 construction. Tests: `src/__tests__/rest-model-identity.test.ts`.
 

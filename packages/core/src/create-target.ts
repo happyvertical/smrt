@@ -90,12 +90,15 @@ export type FamilyRowOperation = 'list' | 'get' | 'update' | 'delete';
  * @param surface - The transport's surface config key
  * @param operation - The operation performed on the rows
  * @param served - Registry keys of the models a server was given, if any
+ * @param admits - The request's own admission of a member (the caller may
+ *   read it, it is switched on for the request's tenant), if any
  */
 export function servedFamilyTypes(
   model: string,
   surface: CreateSurface,
   operation: FamilyRowOperation,
   served?: ReadonlySet<string>,
+  admits?: (key: string) => boolean,
 ): string[] | undefined {
   if (ObjectRegistry.getTableStrategy(model) !== 'sti') return undefined;
   const members = ObjectRegistry.getDescendants(model);
@@ -105,6 +108,7 @@ export function servedFamilyTypes(
     const info = ObjectRegistry.getClass(member);
     const key = info ? info.qualifiedName || info.name : member;
     if (served && !served.has(key)) continue;
+    if (admits && !admits(key)) continue;
     if (
       !surfaceOpensOperation(
         surface,
@@ -129,8 +133,9 @@ export function isFamilyRowServed(
   surface: CreateSurface,
   operation: FamilyRowOperation,
   served?: ReadonlySet<string>,
+  admits?: (key: string) => boolean,
 ): boolean {
   if (rowModel === model) return true;
-  const allowed = servedFamilyTypes(model, surface, operation, served);
+  const allowed = servedFamilyTypes(model, surface, operation, served, admits);
   return !allowed || allowed.includes(rowModel);
 }

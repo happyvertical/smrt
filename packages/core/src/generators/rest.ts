@@ -453,6 +453,15 @@ export class APIGenerator {
     Request,
     ResolvedRequestTenant
   >();
+  /**
+   * Per-request admission of STI family members read through a base: the
+   * caller may read the member and it is switched on for the request's
+   * tenant. See `settleFamilyAdmission()`.
+   */
+  private readonly familyAdmission = new WeakMap<
+    Request,
+    (key: string) => boolean
+  >();
   private segmentIndex:
     | { generation: number; entries: Map<string, CollectionSegmentEntry> }
     | undefined;
@@ -854,6 +863,7 @@ export class APIGenerator {
         ? await this.requestTenant(req)
         : undefined;
       const read = req.method === 'GET' || req.method === 'HEAD';
+      if (objectName) await this.settleFamilyAdmission(req, objectName);
       // A read by a caller with no tenant runs outside the gate only for the
       // CRUD read handlers, which scope it to global rows themselves. A
       // custom action has no such scope, so it runs inside the gate, which
@@ -962,9 +972,24 @@ export class APIGenerator {
     req: Request,
     rowModel: string,
     action: 'create' | 'update' | 'delete',
+    admitted: Request = req,
   ): Promise<Response | undefined> {
     if (!this.isApiActionEnabled(rowModel, action)) {
       return this.createErrorResponse(405, 'Method not allowed');
+    }
+    // The subtype is switched on for the tenant the request acts for.
+    const tenant = await this.requestTenant(admitted);
+    if (
+      !isRuntimeModelEnabled(
+        ObjectRegistry.getExposureModel(rowModel) ?? rowModel,
+        {
+          surface: 'rest',
+          tenantId: tenant.effectiveTenantId ?? undefined,
+          request: admitted,
+        },
+      )
+    ) {
+      return this.createErrorResponse(404, 'Not found');
     }
     if (this.config.authMiddleware) {
       const decision = await this.config.authMiddleware(
@@ -986,6 +1011,7 @@ export class APIGenerator {
   private familyReadScope(
     objectName: string | undefined,
     operation: FamilyRowOperation,
+    req?: Request,
   ): Record<string, unknown> | undefined {
     if (!objectName) return undefined;
     const types = servedFamilyTypes(
@@ -993,8 +1019,71 @@ export class APIGenerator {
       'api',
       operation,
       this.modelScope,
+      req ? this.familyAdmission.get(req) : undefined,
     );
     return types ? { '_meta_type in': types } : undefined;
+  }
+
+  /**
+   * Which STI subtypes of `objectName` this admitted request may reach rows
+   * of through the base: each subtype must be switched on for the request's
+   * tenant (the runtime exposure gate), and a read needs the caller to be
+   * allowed to read the subtype itself -- its `authMiddleware` decision under
+   * its own name, or its `api.public` when no middleware is configured. A
+   * write's row is authorized under its own model by `authorizeRowModel`.
+   * Settled once per request, before any read is scoped.
+   */
+  private async settleFamilyAdmission(
+    req: Request,
+    objectName: string,
+  ): Promise<void> {
+    if (this.familyAdmission.has(req)) return;
+    if (ObjectRegistry.getTableStrategy(objectName) !== 'sti') return;
+    const members = ObjectRegistry.getDescendants(objectName);
+    if (members.length === 0) return;
+    const read = req.method === 'GET' || req.method === 'HEAD';
+    const tenant = await this.requestTenant(req);
+    const admitted = new Set<string>();
+    for (const member of members) {
+      const info = ObjectRegistry.getClass(member);
+      const key = info ? info.qualifiedName || info.name : member;
+      if (
+        !isRuntimeModelEnabled(ObjectRegistry.getExposureModel(key) ?? key, {
+          surface: 'rest',
+          tenantId: tenant.effectiveTenantId ?? undefined,
+          request: req,
+        })
+      ) {
+        continue;
+      }
+      if (read) {
+        if (this.config.authMiddleware) {
+          const decision = await this.config.authMiddleware(
+            key,
+            req.method.toLowerCase(),
+          )(req);
+          if (decision instanceof Response) continue;
+        } else if (!this.isRoutePublic(key, req.method)) {
+          continue;
+        }
+      }
+      admitted.add(key);
+    }
+    this.familyAdmission.set(req, (key) => admitted.has(key));
+  }
+
+  /**
+   * Whether the rows a read through `objectName` serves depend on who asks:
+   * an STI base with subtypes, read under an auth middleware, admits each
+   * subtype by the caller's own authorization.
+   */
+  private hasCallerDependentFamily(objectName: string | undefined): boolean {
+    return (
+      !!objectName &&
+      !!this.config.authMiddleware &&
+      ObjectRegistry.getTableStrategy(objectName) === 'sti' &&
+      ObjectRegistry.getDescendants(objectName).length > 0
+    );
   }
 
   /**
@@ -1672,7 +1761,7 @@ export class APIGenerator {
       where,
       this.resolveTenantReadScope(objectName, req),
     );
-    const family = this.familyReadScope(objectName, operation);
+    const family = this.familyReadScope(objectName, operation, req);
     return family ? { ...(scoped ?? {}), ...family } : scoped;
   }
 
@@ -1685,7 +1774,7 @@ export class APIGenerator {
   ): string | Record<string, unknown> {
     const scope = {
       ...(this.resolveTenantReadScope(objectName, req) ?? {}),
-      ...(this.familyReadScope(objectName, operation) ?? {}),
+      ...(this.familyReadScope(objectName, operation, req) ?? {}),
     };
     return Object.keys(scope).length > 0 ? { id, ...scope } : id;
   }
@@ -1707,7 +1796,11 @@ export class APIGenerator {
         ObjectRegistry.getConfig(objectName).display?.label,
       )
     );
-    if (this.hasReadPermissionFields(objectName) || displayLabel) {
+    if (
+      this.hasReadPermissionFields(objectName) ||
+      this.hasCallerDependentFamily(objectName) ||
+      displayLabel
+    ) {
       // Caller-specific fields and linked names can change without a parent
       // table write. Validate the actual public body in both cases.
       const filter = this.pointReadFilter(objectName, id, req, 'get');
@@ -1829,6 +1922,7 @@ export class APIGenerator {
 
     if (
       this.hasReadPermissionFields(objectName) ||
+      this.hasCallerDependentFamily(objectName) ||
       (objectName &&
         typeof ObjectRegistry.getConfig(objectName).display?.label === 'object')
     ) {
@@ -1920,6 +2014,7 @@ export class APIGenerator {
           }),
           target.collectionName,
           'create',
+          req,
         );
         if (refusal) return refusal;
         const info = ObjectRegistry.getClass(targetName);
@@ -1981,6 +2076,7 @@ export class APIGenerator {
         }),
         rowModel,
         'update',
+        req,
       );
       if (refusal) return refusal;
     }
@@ -2148,10 +2244,15 @@ export class APIGenerator {
           }),
           rowModel,
           op,
+          admitted,
         );
         if (refusal) {
           throw new SyncApplyRejection(
-            refusal.status === 401 ? 'auth_required' : 'forbidden',
+            refusal.status === 401
+              ? 'auth_required'
+              : refusal.status === 404
+                ? 'not_found'
+                : 'forbidden',
           );
         }
       },
@@ -2316,7 +2417,9 @@ export class APIGenerator {
     // manifest-merged tenancy, and tenancy registered at runtime for the
     // (qualified) model. A shared cache must never see a tenant-scoped body.
     const tenantScoped = objectName ? isTenantScopedModel(objectName) : false;
-    const permissionScoped = this.hasReadPermissionFields(objectName);
+    const permissionScoped =
+      this.hasReadPermissionFields(objectName) ||
+      this.hasCallerDependentFamily(objectName);
     if (objectName) {
       warnIfSharedCacheNeutralized(
         objectName,
