@@ -13,6 +13,21 @@ afterAll(() => {
 });
 
 describe.skipIf(!bundle)('bundled worker (#5213)', () => {
+  it('is found from a host build that inlines the engine, via the package URL', () => {
+    // An adapter-node server inlines the engine into build/server/chunks/...,
+    // where import.meta.url no longer sits next to the package's dist/.
+    const inlined = new URL(
+      '../../build/server/chunks/chunks/App2.js',
+      import.meta.url,
+    );
+    expect(bundledWorkerUrl(inlined)).toBeNull();
+    const published = new URL(
+      '../../dist/engine/app-worker.js',
+      import.meta.url,
+    );
+    expect(bundledWorkerUrl(published)?.href).toBe(bundle?.href);
+  });
+
   it('serves an app, keeping model names (no identifier mangling)', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'engine-bundle-'));
     dirs.push(dir);
