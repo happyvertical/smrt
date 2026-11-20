@@ -31,13 +31,17 @@ afterEach(() => {
   }
 });
 
-function project(model: string) {
+function project(model: string, dependencies: string[] = []) {
   const root = mkdtempSync(join(tmpdir(), 'smrt-scan-cli-'));
   roots.push(root);
   mkdirSync(join(root, 'src/models'), { recursive: true });
   writeFileSync(
     join(root, 'package.json'),
-    JSON.stringify({ name: '@fixture/scan-cli', version: '0.0.0' }),
+    JSON.stringify({
+      name: '@fixture/scan-cli',
+      version: '0.0.0',
+      dependencies: Object.fromEntries(dependencies.map((d) => [d, '*'])),
+    }),
   );
   writeFileSync(join(root, 'src/models/CliScanWidget.ts'), model);
   return root;
@@ -186,6 +190,41 @@ describe('smrt-scan refuses what it cannot confirm', () => {
     expect(result.stderr).toContain('CliScanWidget extends Helper');
     expect(result.stderr).toContain('not a model');
     expect(result.stderr).not.toContain("another package's export");
+  });
+
+  it("refuses a collection whose item is another package's export", () => {
+    const root = project(READABLE, ['@fixture/accounts']);
+    writeFileSync(
+      join(root, 'src/models/CliScanAccounts.ts'),
+      `import { SmrtCollection } from '@happyvertical/smrt-core';\nimport { Account } from '@fixture/accounts';\nexport class CliScanAccounts extends SmrtCollection<Account> {\n  static readonly _itemClass = Account;\n}\n`,
+    );
+    const output = join(root, 'manifest.json');
+    writeFileSync(output, previous);
+
+    const result = smrtScan([root, '-o', output]);
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(
+      "CliScanAccounts is a collection of @fixture/accounts:Account, another package's export",
+    );
+    expect(result.stderr).toContain('No manifest written');
+    expect(readFileSync(output, 'utf8')).toBe(previous);
+    expect(result.stdout.trim()).toBe('');
+  });
+
+  it('writes a collection whose item the scan declares', () => {
+    const root = project(READABLE);
+    writeFileSync(
+      join(root, 'src/models/CliScanWidgets.ts'),
+      `import { SmrtCollection } from '@happyvertical/smrt-core';\nimport { CliScanWidget } from './CliScanWidget';\nexport class CliScanWidgets extends SmrtCollection<CliScanWidget> {\n  static readonly _itemClass = CliScanWidget;\n}\n`,
+    );
+    const output = join(root, 'manifest.json');
+
+    const result = smrtScan([root, '-o', output]);
+
+    expect(result.stderr).not.toContain('Cannot confirm');
+    expect(result.status).toBe(0);
+    expect(existsSync(output)).toBe(true);
   });
 
   it('writes a manifest whose targets the scan declares', () => {

@@ -278,7 +278,7 @@ async function main(): Promise<void> {
 }
 
 /**
- * Parents, relationship targets and report sources in `manifest` that the
+ * Parents, collection items, relationship targets and report sources in `manifest` that the
  * scan alone cannot confirm: another package's export (its manifest is not
  * read here), or a name no class of this manifest has.
  */
@@ -290,6 +290,7 @@ function unconfirmedIdentities(manifest: {
       className: string;
       packageName?: string;
       extendsQualified?: string;
+      extendsTypeArgQualified?: string;
       fields?: Record<
         string,
         { type?: string; related?: string; relatedQualified?: string }
@@ -335,6 +336,15 @@ function unconfirmedIdentities(manifest: {
     if (obj.extendsQualified && parentProblem) {
       problems.push(
         `${obj.className} extends ${obj.extendsQualified}, ${parentProblem}`,
+      );
+    }
+    // A collection's item traced to a package is checked like a parent.
+    const itemProblem = obj.extendsTypeArgQualified
+      ? unconfirmed(obj.extendsTypeArgQualified)
+      : undefined;
+    if (obj.extendsTypeArgQualified && itemProblem) {
+      problems.push(
+        `${obj.className} is a collection of ${obj.extendsTypeArgQualified}, ${itemProblem}`,
       );
     }
     for (const [name, field] of Object.entries(obj.fields ?? {})) {
