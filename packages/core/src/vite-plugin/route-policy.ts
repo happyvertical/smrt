@@ -154,176 +154,68 @@ export function usesPrincipalContext(
 }
 
 /**
- * Emit the tenant-context establishment and write gate helpers for
- * `@TenantScoped` objects (#1540 facet 2; #1782). Generated
- * handlers call `establishTenantContext(locals)` after the auth guard so every
- * query runs inside the tenant context derived from the authenticated
- * principal — engaging the `@TenantScoped` interceptors that auto-filter by
- * tenant.
+ * Emit the request tenancy helper of a generated route (#5375).
  *
- * `establishTenantContext` reads the canonical `locals.tenantId` set by the
- * smrt-users auth hook (with `user`/`session`/`tenantContext` fallbacks). An
- * upstream context must identify the same tenant/user; conflicting authority
- * fails closed.
+ * Every generated handler calls `enterTenancy(locals, operation)` after the
+ * auth guard. It asks core, at request time, for the tenancy the model has
+ * now, whatever this manifest declared:
  *
- * When no context could be established, an `optional`-mode query would fall
- * through the interceptor UNFILTERED (the interceptor only hard-fails
- * `required` mode). So for a tenant-scoped model:
+ * - the actor, from the canonical `locals.tenantId` the smrt-users auth hook
+ *   sets (with `user` / `session` / `tenantContext` fallbacks), or the tenant
+ *   context the host entered; a disagreeing context is refused with 403;
+ * - the model's policy and the policy of every STI member the route serves;
+ * - the decision for the operation: a read by a caller with no tenant is
+ *   refused for a required-mode model and held to rows without an owner for
+ *   an optional one; a write needs a tenant (or an explicit system context, or
+ *   a bypass the model opts into); a custom read with no scope argument is
+ *   refused to a caller with no tenant;
+ * - the actor's tenant context and the bound decision, which every
+ *   collection call in the handler (custom action bodies included) is held to.
  *
- * - every generated read calls core's `resolveAnonymousTenantReadScope()`
- *   (or `scopeTenantReadOptions()` for custom GET actions), resolved at
- *   request time from the live registry, which restricts reads to rows
- *   without an owner when tenancy is on and no tenant is active (#1782);
- * - write handlers call `requireTenantWriteContext(locals)`, which refuses the
- *   request (403, or 401 for an anonymous caller) when tenancy is enabled and
- *   no tenant context is active, unless the principal is explicitly
- *   cross-tenant. A caller with no tenant never writes a tenant-scoped row,
- *   global rows included.
+ * A refusal becomes `error(401 | 403)`. The manifest's `tenantScoped` flag
+ * selects nothing here: a model whose tenancy is registered at run time is
+ * served like one that declares it.
  *
- * @param requirePrincipal - Whether a complete principal (tenant, user and
- *   permissions) is required. `'per-target'` emits
- *   `establishTenantContext(locals, requirePrincipal)` for a route that serves
- *   several models and decides per call (the sync-apply route).
- * @param tenantScoped - Whether to emit the write gate (and the tenancy
- *   imports it needs)
- * @param fromCore - A route whose manifest declares neither tenancy nor
- *   principal context: it reaches the tenant context through core's request
- *   hooks (which smrt-tenancy installs when tenancy is enabled) and enters it
- *   only when the model is tenant-scoped at request time. Such a route has no
- *   write gate: it is emitted only for models that are not tenant-scoped in
- *   their manifest.
- * @param superAdminBypass - Whether a verified super-admin bypass admits a
- *   write with no tenant: the model's own `allowSuperAdminBypass` (the
- *   tenancy interceptor lifts its filter only for models that opt in).
- *   `'per-target'` emits `hasTenantWriteContext(locals, allowSuperAdminBypass)`
- *   for a route that serves several models.
+ * @param requirePrincipal - The model requires a complete principal
+ *   (tenant, user and permissions; `api.principalContext`)
+ * @param model - The model's registry key, as the route's other policy
+ *   lookups use it
  */
 export function generateTenantContextHelper(
-  requirePrincipal: boolean | 'per-target',
-  tenantScoped: boolean,
-  fromCore = false,
-  superAdminBypass: boolean | 'per-target' = false,
+  requirePrincipal: boolean,
+  model: string,
 ): string {
-  const perTarget = requirePrincipal === 'per-target';
-  const principalCondition = `typeof tenantId !== 'string' || !tenantId ||
-    typeof userId !== 'string' || !userId ||
-    !permissions`;
-  const principalGuard = perTarget
-    ? `  if (
-    requirePrincipal && (
-    ${principalCondition})
-  ) {
-    throw error(403, 'Authenticated principal context is incomplete');
-  }
-`
-    : requirePrincipal
-      ? `  if (
-    ${principalCondition}
-  ) {
-    throw error(403, 'Authenticated principal context is incomplete');
-  }
-`
-      : '';
-  const fullContext = perTarget
-    ? '{ tenantId, userId: userId as string, permissions }'
-    : '{ tenantId, userId, permissions }';
-  const contextArgument = perTarget
-    ? `requirePrincipal ? ${fullContext} : { tenantId }`
-    : requirePrincipal
-      ? fullContext
-      : '{ tenantId }';
-  const strictUserMismatch = 'active.userId !== userId';
-  const lenientUserMismatch =
-    "typeof userId === 'string' && userId && active.userId && active.userId !== userId";
-  const activeUserMismatch = perTarget
-    ? `requirePrincipal ? ${strictUserMismatch} : ${lenientUserMismatch}`
-    : requirePrincipal
-      ? strictUserMismatch
-      : lenientUserMismatch;
-  const refreshActive = perTarget
-    ? '    if (requirePrincipal) enterTenantContext({ ...active, tenantId: tenantId as string, userId: userId as string, permissions });\n'
-    : requirePrincipal
-      ? '    enterTenantContext({ ...active, tenantId, userId, permissions });\n'
-      : '';
-  const tenancyImport = [
-    'enterTenantContext',
-    'getCurrentTenant',
-    ...(tenantScoped ? ['hasTenantContext'] : []),
-    ...(tenantScoped ? ['isSystemContext', 'isTenancyEnabled'] : []),
-  ].join(', ');
-  const writeGate = tenantScoped
-    ? `
-// Writes need a tenant. With tenancy enabled and no tenant context, an
-// optional-mode write would run with no tenant predicate at all, so it is
-// refused unless the principal is explicitly cross-tenant (a system context,
-// or a verified super-admin bypass). Global rows are no exception.
-function hasTenantWriteContext(locals: unknown${superAdminBypass === 'per-target' ? ', allowSuperAdminBypass: boolean' : ''}): boolean {
-  if (!isTenancyEnabled() || hasTenantContext() || isSystemContext()) {
-    return true;
-  }
-  // A super-admin bypass admits only a model that opts in with
-  // \`allowSuperAdminBypass\`: for every other model the tenancy interceptor
-  // keeps filtering, and with no tenant it would filter nothing at all.
-  if (!${superAdminBypass === 'per-target' ? 'allowSuperAdminBypass' : String(superAdminBypass)}) return false;
-  const l =
-    locals && typeof locals === 'object'
-      ? (locals as Record<string, unknown>)
-      : {};
-  const tenantContext =
-    l.tenantContext && typeof l.tenantContext === 'object'
-      ? (l.tenantContext as Record<string, unknown>)
-      : {};
-  return tenantContext.superAdminBypass === true;
-}
-
-function requireTenantWriteContext(locals: unknown${superAdminBypass === 'per-target' ? ', allowSuperAdminBypass: boolean' : ''}): void {
-  if (hasTenantWriteContext(locals${superAdminBypass === 'per-target' ? ', allowSuperAdminBypass' : ''})) return;
-  throw error(
-    hasAuthenticatedPrincipal(locals) ? 403 : 401,
-    'Tenant context required',
-  );
-}
-`
-    : '';
-  const importLine = fromCore
-    ? "import { enterRequestTenantContext as enterTenantContext, getRequestTenantContext as getCurrentTenant, isTenantScopedModel } from '@happyvertical/smrt-core';"
-    : `import { ${tenancyImport} } from '@happyvertical/smrt-tenancy';`;
   return `
-${importLine}
+import {
+  enterRequestTenancy,
+  getRequestTenantContext as getCurrentTenant,
+  normalizeTypedHttpError as tenancyRefusalOf,
+} from '@happyvertical/smrt-core';
 
-function establishTenantContext(locals: unknown${perTarget ? ', requirePrincipal: boolean' : ''}): void {
-  if (!locals || typeof locals !== 'object') return;
-  const l = locals as Record<string, unknown>;
-  const user = l.user as Record<string, unknown> | undefined;
-  const session = l.session as Record<string, unknown> | undefined;
-  const tenantContext = l.tenantContext as Record<string, unknown> | undefined;
-  const tenantId = l.tenantId ?? user?.tenantId ?? session?.tenantId ?? tenantContext?.tenantId;
-  const userId = l.userId ?? user?.id ?? user?.userId ?? session?.userId ?? tenantContext?.userId;
-  const rawPermissions =
-    l.permissions ?? l.permissionSet ?? l.smrtPermissions ?? tenantContext?.permissions;
-  const permissions =
-    rawPermissions instanceof Set && [...rawPermissions].every((value) => typeof value === 'string')
-      ? rawPermissions
-      : Array.isArray(rawPermissions) && rawPermissions.every((value) => typeof value === 'string')
-        ? new Set(rawPermissions)
-        : undefined;
-${principalGuard}
-  const active = getCurrentTenant();
-  if (active) {
-    if (
-      (typeof tenantId === 'string' && tenantId && active.tenantId !== tenantId) ||
-      (${activeUserMismatch})
-    ) {
-      throw error(403, 'Tenant context does not match authenticated principal');
-    }
-${refreshActive}    return;
-  }
-  if (typeof tenantId === 'string' && tenantId) {
-    enterTenantContext(
-      ${contextArgument},
-    );
+const TENANCY_MODEL = ${JSON.stringify(model)};
+
+function enterTenancy(
+  locals: unknown,
+  operation: 'list' | 'get' | 'create' | 'update' | 'delete' | 'action',
+  action?: {
+    mutating: boolean;
+    parameters?: readonly string[];
+    itemScoped?: boolean;
+  },
+) {
+  try {
+    return enterRequestTenancy({
+      model: TENANCY_MODEL,
+      locals,
+      operation,
+      requirePrincipal: ${requirePrincipal},
+      ...(action ? { action } : {}),
+    });
+  } catch (cause) {
+    const failure = tenancyRefusalOf(cause);
+    if (failure) throw error(failure.status, failure.message);
+    throw cause;
   }
 }
-${writeGate}
 `;
 }

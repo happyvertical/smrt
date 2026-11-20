@@ -1581,10 +1581,11 @@ describe('SvelteKit Route Generator', () => {
         /Object\.fromEntries\([\s\S]*\),\n\s*\) as ActionArgs\[0\];/,
       );
       expect(content).toContain("ObjectRegistry.getClass('Document')");
-      // A GET action taking options receives the tenant read scope resolved
-      // at request time (nothing for a model that is not tenant-scoped).
+      // A GET action taking options receives the scope of the request's
+      // tenancy, resolved at request time (nothing for a model that is not
+      // tenant-scoped).
       expect(content).toContain(
-        'const scopedOptions = scopeTenantReadOptions("@test/sveltekit:Document", options);',
+        'const scopedOptions = scopeActionOptions(tenancy, options);',
       );
       expect(content).toContain('await ClassRef.browseFacts(scopedOptions)');
       expect(content).not.toContain('params.id');
@@ -1612,7 +1613,7 @@ describe('SvelteKit Route Generator', () => {
         'toCustomActionNumber(scopedOptions.query)',
       );
       expect(searchContent).toContain(
-        "import { normalizeCustomActionFailure, normalizeTypedHttpError, reportUnexpectedHttpError, scopeTenantReadOptions, toCustomActionNumber } from '@happyvertical/smrt-core';",
+        "import { normalizeCustomActionFailure, normalizeTypedHttpError, reportUnexpectedHttpError, scopeActionOptions, toCustomActionNumber } from '@happyvertical/smrt-core';",
       );
 
       const reservedRoute = vi
@@ -1834,8 +1835,8 @@ describe('SvelteKit Route Generator', () => {
       const content = restoreRoute?.[1] as string;
 
       expect(content).toContain('type ActionArgs = Parameters<');
-      expect(content).toContain("from '@happyvertical/smrt-tenancy'");
-      expect(content).toContain('establishTenantContext(locals);');
+      expect(content).not.toContain('@happyvertical/smrt-tenancy');
+      expect(content).toContain("enterTenancy(locals, 'action', {");
       expect(content).toContain('const rawBody = await request.text();');
       expect(content).toContain(
         "const body: unknown = rawBody.trim() === '' ? undefined : JSON.parse(rawBody);",

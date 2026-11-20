@@ -98,7 +98,6 @@ describe('collectSyncApplyTargets', () => {
       readonlyFields: ['sku'],
       writableAllowlist: null,
       publicAccess: false,
-      tenantScoped: false,
     });
     const report = targets.find((t) => t.segment === 'reports');
     expect(report).toMatchObject({
@@ -106,8 +105,11 @@ describe('collectSyncApplyTargets', () => {
       ops: ['create'],
       writableAllowlist: ['title'],
       publicAccess: true,
-      tenantScoped: true,
     });
+    // Tenancy is resolved per item at request time (#5375), never from the
+    // manifest.
+    expect(product).not.toHaveProperty('tenantScoped');
+    expect(report).not.toHaveProperty('tenantScoped');
   });
 
   it('skips api-disabled objects, collection classes, and read-only APIs', () => {
@@ -224,25 +226,21 @@ describe('generateSyncApplyRouteTemplate', () => {
     expect(content).toContain("'auth_required'");
   });
 
-  it('establishes tenant context for a target tenant-scoped in its manifest or at runtime', () => {
-    // Per item, with that target's own principal requirement.
+  it('runs every item inside the request tenancy its target has at request time', () => {
+    // Per item, with that target's own principal requirement (#5375).
+    expect(content).toContain('runInRequestTenancy(');
     expect(content).toContain(
-      'establishTenantContext(locals, target.principalContext);',
+      'operation: op, locals, requirePrincipal: target.principalContext',
     );
-    expect(content).toContain(
-      'hasTenantWriteContext(locals, target.allowSuperAdminBypass)',
-    );
-    expect(content).toContain("from '@happyvertical/smrt-tenancy'");
-
-    // Without a tenant-scoped model in the manifest, the core request
-    // context is entered for a model whose tenancy is registered at runtime.
+    // The manifest's tenancy flag selects nothing: the same route source is
+    // emitted with or without tenant-scoped models.
+    expect(content).not.toContain('@happyvertical/smrt-tenancy');
+    expect(content).not.toContain('tenantScoped:');
     const withoutTenants = generateSyncApplyRouteTemplate(
       collectSyncApplyTargets(manifestWith({ Product: productDef })),
       ACCESS_IMPORTS,
     );
-    expect(withoutTenants).toContain('isTenantScopedModel(target.registryKey)');
-    expect(withoutTenants).not.toContain('hasTenantWriteContext');
-    expect(withoutTenants).not.toContain('@happyvertical/smrt-tenancy');
+    expect(withoutTenants).toContain('runInRequestTenancy(');
   });
 });
 
@@ -341,6 +339,7 @@ describe('generated sync-apply route runtime: operation permissions (#3011)', ()
     delete (globalThis as Record<string, unknown>).__smrtSyncStoredRow;
     delete (globalThis as Record<string, unknown>).__smrtSyncTenantContext;
     delete (globalThis as Record<string, unknown>).__smrtSyncSystemContext;
+    delete (globalThis as Record<string, unknown>).__smrtSyncTenantPolicies;
   });
 
   async function importRoute(
@@ -349,6 +348,20 @@ describe('generated sync-apply route runtime: operation permissions (#3011)', ()
     POST: (event: { locals: unknown; request: Request }) => Promise<Response>;
   }> {
     const targets = collectSyncApplyTargets(manifestWith(objects));
+    // Each model's tenancy at request time (#5375), from its manifest entry.
+    (globalThis as Record<string, unknown>).__smrtSyncTenantPolicies =
+      Object.fromEntries(
+        Object.entries(objects)
+          .filter(
+            ([, object]) =>
+              !!(object.decoratorConfig as { tenantScoped?: unknown })
+                ?.tenantScoped,
+          )
+          .map(([key, object]) => [
+            key,
+            (object.decoratorConfig as { tenantScoped?: unknown }).tenantScoped,
+          ]),
+      );
     const routePath = join(projectRoot, 'route.ts');
     writeFileSync(
       routePath,
@@ -415,11 +428,41 @@ describe('generated sync-apply route runtime: operation permissions (#3011)', ()
         'export const assertUpdateInput = (row: object, data: Record<string, unknown>) => { resolveUpdateInput(row, data, STRUCTURAL_UPDATE_RULES); };',
         // The fixture models are structural; nothing is registered to check create input against.
         'export const assertCreateInput = () => {};',
-        // Request-time tenancy: a model is tenant-scoped at runtime only when
-        // a test says so; the request tenant context is the tenancy shim's.
-        'export const isTenantScopedModel = (name: string) => ((globalThis as any).__smrtSyncRuntimeTenantModels ?? []).includes(name);',
+        // Request tenancy (#5375): core's actor rule and write gate over the
+        // tenancy shim's context, for the tenancy each model has at request
+        // time (from its manifest entry, or a run-time registration a test
+        // declares). The real rule runs in smrt-tenancy's effective-tenancy
+        // suites.
         'export const getRequestTenantContext = () => (globalThis as any).__smrtSyncTenantContext;',
         'export const enterRequestTenantContext = (context: unknown) => { (globalThis as any).__smrtSyncTenantContext = context; };',
+        'export async function runInRequestTenancy(input: any, fn: (t: unknown) => Promise<unknown>) {',
+        '  const state = globalThis as any;',
+        '  const refuse = (status: number) => { throw Object.assign(new Error(status === 401 ? "auth" : "forbidden"), { status, code: "TENANT_CONTEXT_REQUIRED" }); };',
+        "  const record = (value: unknown) => (value && typeof value === 'object' ? value : undefined) as any;",
+        "  const text = (value: unknown) => (typeof value === 'string' && value ? value : undefined);",
+        '  const l = record(input.locals) ?? {};',
+        '  const user = record(l.user); const session = record(l.session); const context = record(l.tenantContext);',
+        '  const tenantId = text(l.tenantId ?? user?.tenantId ?? session?.tenantId ?? context?.tenantId);',
+        '  const userId = text(l.userId ?? user?.id ?? user?.userId ?? session?.userId ?? context?.userId);',
+        '  const raw = l.permissions ?? l.permissionSet ?? l.smrtPermissions ?? context?.permissions;',
+        "  const permissions = raw instanceof Set ? raw : Array.isArray(raw) && raw.every((v: unknown) => typeof v === 'string') ? new Set(raw) : undefined;",
+        '  const authenticated = !!user || !!session || l.smrtAuth === true;',
+        '  if (input.requirePrincipal && (!tenantId || !userId || !permissions)) refuse(403);',
+        '  const active = state.__smrtSyncTenantContext;',
+        '  let actorTenant = tenantId;',
+        '  if (active) {',
+        '    const userMismatch = input.requirePrincipal ? active.userId !== userId : !!userId && !!active.userId && active.userId !== userId;',
+        '    if ((tenantId && active.tenantId !== tenantId) || userMismatch) refuse(403);',
+        '    actorTenant = active.tenantId;',
+        '    if (input.requirePrincipal) state.__smrtSyncTenantContext = { ...active, tenantId, userId, permissions };',
+        '  }',
+        '  const policy = state.__smrtSyncTenantPolicies?.[input.model] ?? ((state.__smrtSyncRuntimeTenantModels ?? []).includes(input.model) ? { mode: "optional" } : undefined);',
+        '  const system = state.__smrtSyncSystemContext === true;',
+        '  const bypass = context?.superAdminBypass === true && policy?.allowSuperAdminBypass === true;',
+        '  if (policy && !system && !actorTenant && !bypass) refuse(authenticated ? 403 : 401);',
+        '  if (!active && actorTenant && (policy || input.requirePrincipal)) state.__smrtSyncTenantContext = input.requirePrincipal ? { tenantId, userId, permissions } : { tenantId };',
+        '  return fn({ model: input.model });',
+        '}',
       ].join('\n'),
     );
     const outFile = join(projectRoot, 'route.mjs');

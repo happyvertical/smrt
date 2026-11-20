@@ -591,22 +591,24 @@ export function generateConditionalGetRouteHelper(
   // the base-table version representation cannot see, so keep the v1 body-hash
   // ETag (query-first but correct). See useBodyHash.
   const useBodyHash = options.useBodyHash || options.permissionScoped === true;
-  // Request-time tenancy: with a model name, the emitted helper asks core
-  // whether the model is tenant-scoped now and switches to the tenant-scoped
-  // (private) policy and the tenant ETag discriminator when it is.
+  // Request-time tenancy (#5375): with a model name, the emitted helper reads
+  // the tenancy the handler resolved (`enterTenancy`) and switches to the
+  // private policy when any row the read may return is tenant-scoped, and
+  // keys the validator on the actor's scope, the admitted types and the
+  // policy fingerprint, so a validator issued before a registration changed
+  // a member's policy never revalidates.
   const liveModel = options.readScopeModel;
   const tenantCacheControl = resolveReadCacheControl(apiConfig, {
     ...options,
     tenantScoped: true,
   });
   const liveImport = liveModel
-    ? `import { isTenantScopedModel as isTenantScopedForCache } from '@happyvertical/smrt-core';
-const READ_SCOPE_MODEL = ${JSON.stringify(liveModel)};
+    ? `import { boundTenancyCacheScoped as tenancyCacheScoped, boundTenancyEtagDiscriminator as tenancyEtagDiscriminator } from '@happyvertical/smrt-core';
 const TENANT_READ_CACHE_CONTROL = '${tenantCacheControl}';
 `
     : '';
   const baseCacheControl = liveModel
-    ? '(isTenantScopedForCache(READ_SCOPE_MODEL) ? TENANT_READ_CACHE_CONTROL : READ_CACHE_CONTROL)'
+    ? '(tenancyCacheScoped() ? TENANT_READ_CACHE_CONTROL : READ_CACHE_CONTROL)'
     : 'READ_CACHE_CONTROL';
   const cacheControlExpression = options.runtimeExposure
     ? `runtimeExposureGateActive() ? 'private, no-store' : ${baseCacheControl}`
@@ -667,10 +669,10 @@ function conditionalJson(request: Request, payload: unknown): Response {
     'getTableVersion',
     'ifNoneMatchHasConcreteMatch',
     'ifNoneMatchSatisfied',
-    ...(tenantScoped || liveModel ? ['resolveTenantEtagDiscriminator'] : []),
+    ...(tenantScoped && !liveModel ? ['resolveTenantEtagDiscriminator'] : []),
   ].join(',\n  ');
   const representationExtra = liveModel
-    ? 'isTenantScopedForCache(READ_SCOPE_MODEL) ? resolveTenantEtagDiscriminator() : undefined'
+    ? 'tenancyEtagDiscriminator()'
     : tenantScoped
       ? 'resolveTenantEtagDiscriminator()'
       : 'undefined';

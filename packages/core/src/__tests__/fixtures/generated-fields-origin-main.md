@@ -92,3 +92,7 @@ DDL, migration and OpenAPI digests have not moved since the recapture above.
   `sync/apply/+server.ts` read the request's tenant for the runtime exposure
   gate from `locals`, else from the tenant context already active for the
   request.
+- Request tenancy (#5375): the list and item routes of each model and
+  `sync/apply/+server.ts` resolve the request's tenancy through core
+  (`enterRequestTenancy`) for every model, with no generation-time tenancy
+  switch, and read the cache policy and validator from the bound tenancy.
