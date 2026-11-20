@@ -93,9 +93,21 @@ schema by identity (`qualifiedTargetSchema`), so the constraint keeps the
 provider's table, key column and declared `onDelete` (adding it to a deployed
 database: [upgrading](../../scanner/agents/static-config.md#upgrading-foreign-keys-to-another-packages-model),
 which lists the orphan-row check per constraint). A confirmed target whose
-provider manifest records no schema, or no column the target names, throws
-`CONFIG_UNKNOWN_RELATIONSHIP_TARGET` rather than drop the constraint (unless
-the field sets `constraint: false`). Every other target must
+provider manifest records no schema, or not the column the constraint would
+reference (the written one, else the primary-key column, else `id`), throws
+`CONFIG_UNKNOWN_RELATIONSHIP_TARGET` rather than drop the constraint or emit
+one the database refuses (unless the field sets `constraint: false`).
+`confirmPackageExport` accepts only an entry declared under exactly the
+imported name (class, export or public name); `lookupInManifest` matches a
+class name exactly first, and in another case only when no other class
+shares it. `verifyProviderCopies` walks each confirmed provider chain: an
+ancestor or foreign-key target the provider passes on from a third package
+must come from the copy of that package the provider loads, or generation
+throws (`CONFIG_UNRESOLVED_IMPORTED_PARENT` / `CONFIG_UNKNOWN_RELATIONSHIP_TARGET`).
+A class directly extends a framework collection base only by identity (the
+bare name, no `extendsQualified`): a package's own class named
+`SmrtCollection` is a model, and its children inherit its exposure.
+Every other target must
 name a class of the manifest or a loadable dependency, or generation throws
 `CONFIG_UNKNOWN_RELATIONSHIP_TARGET` (`assertKnownTargets`; `@crossPackageRef`
 is checked at save time). Generating without a parent would give a
