@@ -1806,8 +1806,11 @@ async function saveEntries(
   card: ChangeCard,
   entries: { questions?: ReviewQuestion[]; comments?: CardComment[] },
 ): Promise<void> {
-  card.questions = JSON.stringify(entries.questions ?? questionsOf(card));
-  card.comments = JSON.stringify(entries.comments ?? commentsOf(card));
+  // Compute both before assigning either: legacy comments are read out of `questions`.
+  const questions = entries.questions ?? questionsOf(card);
+  const comments = entries.comments ?? commentsOf(card);
+  card.questions = JSON.stringify(questions);
+  card.comments = JSON.stringify(comments);
   await card.save();
 }
 

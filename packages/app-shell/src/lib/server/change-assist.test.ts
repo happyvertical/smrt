@@ -44,6 +44,7 @@ import {
   flushChecks,
   reviseChangeCard,
   setAfterChecks,
+  setReviewQuestions,
 } from './changes.ts';
 import { setChatGPTConnection } from './chatgpt.ts';
 import { getHost, getShellDb } from './host.ts';
@@ -535,6 +536,37 @@ describe('comment-to-revise', () => {
     expect(
       JSON.parse(row.comments).map((c: { text: string }) => c.text),
     ).toEqual(['older comment', 'new comment']);
+  });
+
+  it('a question-only write keeps v0.62.14 comments that still sit in questions', async () => {
+    const { cardId } = await addField('legacyquestion');
+    const db = await getShellDb();
+    const legacy = {
+      kind: 'comment',
+      role: 'owner',
+      text: 'keep me',
+      at: new Date(0).toISOString(),
+      state: 'done',
+    };
+    await db.query(
+      'UPDATE change_cards SET questions = ?, comments = ? WHERE id = ?',
+      JSON.stringify([legacy]),
+      '[]',
+      cardId,
+    );
+    const s = await state();
+    await asOwner(() =>
+      setReviewQuestions(s.batchId as string, s.generation, [
+        { cardId, text: 'Sure?', choices: [{ label: 'Yes' }] },
+      ]),
+    );
+    const view = (await state()).cards.find((c) => c.id === cardId);
+    expect(view?.comments).toEqual([legacy]);
+    expect(view?.questions).toHaveLength(1);
+    const row = (
+      await db.query('SELECT questions FROM change_cards WHERE id = ?', cardId)
+    ).rows[0] as { questions: string };
+    expect(row.questions).not.toContain('keep me');
   });
 
   it('refuses a comment without a connected assistant, or without text, before anything is recorded', async () => {
