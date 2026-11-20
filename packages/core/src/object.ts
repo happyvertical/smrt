@@ -96,6 +96,10 @@ import {
   resolveOneToManyInverse,
   resolveRelationshipTargetName,
 } from './relationship-loader';
+import {
+  isReservedInstanceField,
+  warnReservedInstanceField,
+} from './reserved-field-names';
 import { postgresRevisionCondition } from './revision-guard';
 import { detectEngine } from './schema/ddl/index';
 import { verifyPersistenceTable } from './schema/table-verifier';
@@ -1531,6 +1535,9 @@ export class SmrtObject extends SmrtClass {
 
     // Apply option values to all fields
     for (const [key, field] of Object.entries(fields)) {
+      // `options` holds the instance's service options; a field of that name
+      // is never applied onto it.
+      if (isReservedInstanceField(key)) continue;
       const optionValue =
         rowValues && isServiceOptionKey(key) ? rowValues[key] : options[key];
       if (optionValue !== undefined) {
@@ -1814,6 +1821,12 @@ export class SmrtObject extends SmrtClass {
 
     for (const field in fields) {
       if (Object.hasOwn(fields, field)) {
+        // `options` is the instance's service options, never row data: a
+        // stored column of that name must not replace them.
+        if (isReservedInstanceField(field)) {
+          skippedCount++;
+          continue;
+        }
         // Check if property is writable before setting (Issue #63)
         // Get descriptor from instance or entire prototype chain
         let descriptor = Object.getOwnPropertyDescriptor(this, field);
@@ -2119,8 +2132,16 @@ export class SmrtObject extends SmrtClass {
     }
 
     // Add current instance values to the fields
-    // Use getPropertyValue to unwrap Field instances
+    // Use getPropertyValue to unwrap Field instances. A field named `options`
+    // has no value here: that property is the instance's service options.
     for (const key in fields) {
+      if (isReservedInstanceField(key)) {
+        warnReservedInstanceField(
+          this.constructor,
+          this.getResolvedQualifiedName(),
+        );
+        continue;
+      }
       fields[key].value = this.getPropertyValue(key);
     }
 
@@ -2266,6 +2287,11 @@ export class SmrtObject extends SmrtClass {
     // All schema fields are in the manifest from AST scanning
     // Dynamic properties added at runtime are intentionally excluded (not part of schema)
     for (const key of registeredFields.keys()) {
+      if (isReservedInstanceField(key))
+        warnReservedInstanceField(
+          this.constructor,
+          this.getResolvedQualifiedName(),
+        );
       // Skip private properties, methods, and already-handled core fields
       if (
         key.startsWith('_') ||
