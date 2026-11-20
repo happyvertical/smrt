@@ -2,6 +2,7 @@
 // on it is in worker-handle.ts. Messages are plain JSON-safe values.
 
 import { isMainThread, parentPort, workerData } from 'node:worker_threads';
+import type { WorkerDatabaseConfig } from './db/types.ts';
 import type { AppDefinition, Migration } from './definition.ts';
 import type { WorkerCall, WorkerReply } from './worker-protocol.ts';
 import { WORKER_OPS } from './worker-protocol.ts';
@@ -23,16 +24,18 @@ const settleStartupJobs = async () => {
 if (!isMainThread && workerData?.appWorker) {
   const { AppRuntime } = await import('./app-runtime.ts');
   const { AppError } = await import('./errors.ts');
-  const { dataDir, def, version, migration, readOnly, validateOnly } =
+  const { dataDir, def, version, migration, readOnly, validateOnly, database } =
     workerData as {
       dataDir: string;
+      /** Where the app's data lives; chosen by the host (default SQLite). */
+      database?: WorkerDatabaseConfig;
       def: AppDefinition;
       version: number;
       migration?: Migration;
       readOnly?: boolean;
       validateOnly?: boolean;
     };
-  const rt = new AppRuntime(dataDir, def, version);
+  const rt = new AppRuntime(dataDir, def, version, database);
   const port = parentPort as NonNullable<typeof parentPort>;
   let ok = false;
   try {

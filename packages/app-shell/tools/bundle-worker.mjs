@@ -51,6 +51,9 @@ const result = await build({
     '@duckdb/*',
     'duckdb',
     'libsql',
+    // PGlite (the engine suite's PostgreSQL pass) loads its WebAssembly
+    // files next to itself, like QuickJS above.
+    '@electric-sql/pglite',
     'pg-native',
     'better-sqlite3',
     'bufferutil',

@@ -1,6 +1,7 @@
 // The host's handle on one app runtime thread.
 
 import { Worker } from 'node:worker_threads';
+import { type DatabaseConfig, forWorker } from './db/index.ts';
 import type { AppDefinition, Migration } from './definition.ts';
 import { EngineError, WorkerCrashedError } from './errors.ts';
 import type { BootInfo, WorkerOp, WorkerReply } from './worker-protocol.ts';
@@ -81,14 +82,21 @@ export class AppWorker {
       readOnly?: boolean;
       validateOnly?: boolean;
       limits?: WorkerLimits;
+      /** The host's database choice; default SQLite in `dataDir`. */
+      database?: DatabaseConfig;
     },
   ) {
     this.version = init.version;
-    const { limits, ...data } = init;
+    const { limits, database, ...data } = init;
+    // A PGlite instance cannot cross into the thread: the worker gets one end
+    // of a port, this thread serves the other (db/pglite-bridge.ts).
+    const db = forWorker(database ?? { kind: 'sqlite' });
     this.worker = new Worker(workerUrl, {
-      workerData: { appWorker: true, ...data },
+      workerData: { appWorker: true, ...data, database: db.config },
+      transferList: db.transfer,
       resourceLimits: resourceLimitsFor(limits),
     });
+    this.worker.once('exit', db.dispose);
     const die = (e: Error) => {
       this.dead ??= e;
       for (const p of this.pending.values()) p.reject(this.dead);

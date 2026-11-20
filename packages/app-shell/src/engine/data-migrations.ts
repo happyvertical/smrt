@@ -5,6 +5,7 @@ import {
   ObjectRegistry,
   withCallerOwnedDatabaseTransaction,
 } from '@happyvertical/smrt-core';
+import { dialectOf, tableColumns } from './db/index.ts';
 import {
   type AppDefinition,
   builtInFields,
@@ -56,7 +57,7 @@ export function assertJournalBounds(rows: Row[]) {
 export async function assertStoredJournalBounds(db: any, version: number) {
   const count = (
     await db.query(
-      "SELECT SUM(CASE WHEN col = '$row' THEN 1 ELSE 0 END) AS n, SUM(length(CAST(value AS BLOB))) AS bytes FROM _archive WHERE version = ? AND col IN ('$row', '$after', '$deleted')",
+      `SELECT SUM(CASE WHEN col = '$row' THEN 1 ELSE 0 END) AS n, SUM(${dialectOf(db).byteLength('value')}) AS bytes FROM _archive WHERE version = ? AND col IN ('$row', '$after', '$deleted')`,
       [version],
     )
   ).rows[0];
@@ -107,7 +108,10 @@ export function stored(value: unknown): unknown {
         ? JSON.stringify(value)
         : value;
 }
-const same = (a: unknown, b: unknown) => (a ?? null) === (b ?? null);
+// Compared in the stored form: PostgreSQL hands back Dates, booleans and
+// parsed JSON where SQLite has text and numbers, and a journal holds JSON.
+const same = (a: unknown, b: unknown) =>
+  (stored(a) ?? null) === (stored(b) ?? null);
 const keyFor = (values: unknown[]) => JSON.stringify(values);
 
 /** Stable per-command ids: later draft commands can refer to loaded rows. */
@@ -310,11 +314,10 @@ export async function prepareLoad(
   }
   // Only schema metadata and affected row originals enter the exact journal budget.
   // Generated SDK values are represented by fixed-size hashes, never rehearsed.
-  const columns = (
-    await db.query('SELECT name, hidden FROM pragma_table_xinfo(?)', [
-      tableFor(cmd.model, def.models[cmd.model]),
-    ])
-  ).rows as { name: string; hidden: number }[];
+  const columns = await tableColumns(
+    db,
+    tableFor(cmd.model, def.models[cmd.model]),
+  );
   let journalBytes = 0;
   for (const write of writes) {
     journalBytes += Buffer.byteLength(JSON.stringify(write.before ?? null));
@@ -343,12 +346,12 @@ const valueHash = (value: unknown) =>
     .digest('base64');
 function loadPostimage(
   write: { before?: Row },
-  columns: { name: string; hidden: number }[],
+  columns: { name: string; generated: boolean }[],
   after?: Row,
 ): string {
   const hashes: Record<string, string> = {};
-  for (const { name, hidden } of columns) {
-    if (write.before && hidden > 1) continue;
+  for (const { name, generated } of columns) {
+    if (write.before && generated) continue;
     hashes[name] = after ? valueHash(after[name]) : '0'.repeat(44);
   }
   return JSON.stringify({ $load: 1, hashes } satisfies LoadPostimage);
@@ -511,7 +514,7 @@ export async function applyLoad(
   // The preparation arithmetic and persisted representation must agree exactly.
   const actual = (
     await db.query(
-      "SELECT SUM(length(CAST(value AS BLOB))) AS bytes FROM _archive WHERE version = ? AND col IN ('$row', '$after')",
+      `SELECT SUM(${dialectOf(db).byteLength('value')}) AS bytes FROM _archive WHERE version = ? AND col IN ('$row', '$after')`,
       [version],
     )
   ).rows[0];
@@ -730,12 +733,9 @@ export async function undoRows(
     let generated = generatedByTable.get(table);
     if (!generated) {
       generated = new Set<string>(
-        (
-          await db.query(
-            'SELECT name FROM pragma_table_xinfo(?) WHERE hidden > 1',
-            [table],
-          )
-        ).rows.map((r: Row) => String(r.name)),
+        (await tableColumns(db, table))
+          .filter((c) => c.generated)
+          .map((c) => c.name),
       );
       generatedByTable.set(table, generated);
     }
