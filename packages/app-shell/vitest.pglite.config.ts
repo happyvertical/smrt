@@ -18,6 +18,7 @@ const SQLITE_ONLY = [
   'publish.test.ts',
   'change-engine.test.ts',
   'import-target.test.ts',
+  'import-hours-rate.test.ts',
   'report-bucket-import.test.ts',
   // read or arrange app.db with node:sqlite (SQLite triggers, pragma, SELECT *)
   'bounded-load-journal.test.ts',
