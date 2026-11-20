@@ -405,6 +405,24 @@ describe('same-name app subclass', () => {
     );
   });
 
+  it('refuses at generation a replacement of an installed STI model that names a table of its own', async () => {
+    ws.write(
+      'app/src/models.ts',
+      `import { smrt } from '@happyvertical/smrt-core';
+import { Profile as ProfileBase } from '${UP}';
+@smrt({ replaceParent: true, tableName: 'a2_app_profiles' })
+export class Profile extends ProfileBase { badge = ''; }
+`,
+    );
+    await expect(scan(ws.path('app'), APP, [UP])).rejects.toMatchObject({
+      code: 'CONFIG_SAME_NAME_REPLACEMENT_TABLE_MISMATCH',
+      details: expect.objectContaining({
+        childTable: 'a2_app_profiles',
+        parentTable: 'a2_profiles',
+      }),
+    });
+  });
+
   it('keeps provider cookbook defaults and hidden fields on generated app STI creates', async () => {
     runtime(up, app);
     db = await getTestDatabase({

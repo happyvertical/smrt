@@ -21,7 +21,10 @@ import {
   loadExternalManifestSync,
   lookupInManifest,
 } from '../manifest/manifest-loader.js';
-import { annotateModelReplacements } from '../manifest/model-replacements';
+import {
+  annotateModelReplacements,
+  sameNameReplacementTableMismatch,
+} from '../manifest/model-replacements';
 import { selectObjectDeclarations } from '../manifest/object-declarations.js';
 import { readRetiredTablesFromPackageJson } from '../migrations/retired-tables.js';
 import { tryComputeManifestSchemaFingerprint } from '../migrations/schema-fingerprint.js';
@@ -2447,16 +2450,30 @@ export class ManifestGenerator {
       // class's own decorator before anything is inherited, and it is never
       // inherited: a same-named subclass of a replacement declares its own,
       // and a subtype keeps only the collection it declares (#5143).
-      const replacementParent =
+      const declaresReplacement =
         directParent?.className === obj.className &&
-        obj.decoratorConfig.replaceParent === true &&
-        (!obj.decoratorConfig.tableName ||
-          obj.decoratorConfig.tableName ===
-            (directParent.schema?.tableName ??
-              directParent.decoratorConfig.tableName ??
-              this.classNameToTableName(directParent.className)))
-          ? directParent
-          : undefined;
+        obj.decoratorConfig.replaceParent === true;
+      const replacedTable = declaresReplacement
+        ? (directParent.schema?.tableName ??
+          directParent.decoratorConfig.tableName ??
+          this.classNameToTableName(directParent.className))
+        : undefined;
+      // A replacement shares its parent's table. An authored table that
+      // differs is refused here, before the STI pass below rewrites it to the
+      // family's base table and hides the conflict from the later check.
+      if (
+        declaresReplacement &&
+        obj.decoratorConfig.tableName &&
+        obj.decoratorConfig.tableName !== replacedTable
+      ) {
+        throw sameNameReplacementTableMismatch(
+          obj.qualifiedName ?? obj.className,
+          directParent.qualifiedName ?? directParent.className,
+          obj.decoratorConfig.tableName,
+          replacedTable,
+        );
+      }
+      const replacementParent = declaresReplacement ? directParent : undefined;
 
       logger.debug(
         `[manifest-generator] Merging inherited fields for ${obj.className} from ${obj.extends}`,
