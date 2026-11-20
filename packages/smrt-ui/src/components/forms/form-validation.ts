@@ -201,6 +201,16 @@ export function validateBeforeSubmit(
     const button = target.closest<HTMLElement>('[aria-disabled="true"]');
     if (button && submitButtons().includes(button)) block(event);
   };
+  // Reveal on mousedown, not only click: revealing the reasons inserts text
+  // that shifts the layout, and a button that moves between mousedown and
+  // mouseup never receives its click. Cancelling mousedown also keeps focus in
+  // place so the blur does not shift the button first.
+  const onMouseDown = (event: Event) => {
+    const target = event.target;
+    if (!(target instanceof Element)) return;
+    const button = target.closest<HTMLElement>('[aria-disabled="true"]');
+    if (button && submitButtons().includes(button)) block(event);
+  };
   const onSubmit = (event: Event) => {
     block(event);
   };
@@ -215,6 +225,7 @@ export function validateBeforeSubmit(
   form.addEventListener('focusout', onTouch);
   form.addEventListener('input', onInput);
   form.addEventListener('change', onTouch);
+  form.addEventListener('mousedown', onMouseDown, true);
   form.addEventListener('click', onClick, true);
   form.addEventListener('submit', onSubmit, true);
   form.addEventListener('reset', onReset);
@@ -225,6 +236,7 @@ export function validateBeforeSubmit(
       form.removeEventListener('focusout', onTouch);
       form.removeEventListener('input', onInput);
       form.removeEventListener('change', onTouch);
+      form.removeEventListener('mousedown', onMouseDown, true);
       form.removeEventListener('click', onClick, true);
       form.removeEventListener('submit', onSubmit, true);
       form.removeEventListener('reset', onReset);

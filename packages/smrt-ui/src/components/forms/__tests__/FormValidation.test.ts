@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/svelte';
+import { fireEvent, render, screen } from '@testing-library/svelte';
 import userEvent from '@testing-library/user-event';
 import { createRawSnippet, tick } from 'svelte';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -130,5 +130,43 @@ describe('Form validate', () => {
     const form = document.querySelector('form') as HTMLFormElement;
     expect(form.noValidate).toBe(false);
     expect(form.querySelector('button')).not.toHaveAttribute('aria-disabled');
+  });
+});
+
+describe('blocked attempt on an aria-disabled submit button', () => {
+  it('reveals every invalid field (including untouched) and focuses the first', async () => {
+    document.body.innerHTML = '';
+    const { container } = render(PasswordInput, {
+      props: { name: 'password', confirm: true, required: true },
+    });
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.innerHTML =
+      '<input id="dn" name="displayName" required /><button type="submit">Add</button>';
+    form.append(container.firstElementChild as Element);
+    document.body.append(form);
+    const handle = validateBeforeSubmit(form);
+    const submit = vi.fn();
+    form.addEventListener('submit', submit);
+    const pw = form.querySelector('input[name="password"]') as HTMLInputElement;
+    const confirm = screen.getByLabelText(
+      'Confirm password',
+    ) as HTMLInputElement;
+    await userEvent.type(pw, 'secret1');
+    await userEvent.type(confirm, 'secret2');
+    const button = screen.getByRole('button', { name: 'Add' });
+    expect(button).toHaveAttribute('aria-disabled', 'true');
+    // Reasons must appear on mousedown alone: revealing shifts the layout, so
+    // a real button can lose its click (seen in Chrome).
+    fireEvent.mouseDown(button);
+    expect(form.querySelector('#dn')).toHaveAttribute('aria-invalid', 'true');
+    await userEvent.click(button);
+    const dn = form.querySelector('#dn') as HTMLInputElement;
+    expect(submit).not.toHaveBeenCalled();
+    expect(dn).toHaveAttribute('aria-invalid', 'true');
+    expect(dn.getAttribute('aria-describedby')).toBeTruthy();
+    expect(confirm).toHaveAttribute('aria-invalid', 'true');
+    expect(document.activeElement).toBe(dn);
+    handle.destroy();
   });
 });
