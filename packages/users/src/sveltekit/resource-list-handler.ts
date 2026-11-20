@@ -30,6 +30,7 @@ import '../__smrt-register__.js';
 
 import {
   createClassNamePredicate,
+  isSmrtCollectionExtendsName,
   ObjectRegistry,
   resolveCustomActionMetadata,
   resolveEffectiveActionMetadata,
@@ -708,7 +709,10 @@ function isCollectionClass(def: SynthesizedDefinition): boolean {
   if (ObjectRegistry.isCollectionClass(def.qualifiedName ?? def.className))
     return true;
   if (def.extends === 'SmrtCollection') return true;
-  if (def.extendsTypeArg) return true;
+  // A type argument alone is no marker (`Ledger extends RecordBase<Currency>`).
+  if (def.extendsTypeArg && isSmrtCollectionExtendsName(def.extends)) {
+    return true;
+  }
   return ctorChainContains(def.constructor, 'SmrtCollection');
 }
 

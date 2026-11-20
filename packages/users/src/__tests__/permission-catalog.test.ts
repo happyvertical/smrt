@@ -487,6 +487,129 @@ describe('PermissionCatalogService', () => {
     }
   });
 
+  it('binds a collection custom action to its confirmed item of another package, not a namesake of its own package', () => {
+    const restoreBaseline = snapshotObjectRegistryState();
+    const appPackage = '@catalog/app-item-identity';
+    const vendorPackage = '@vendor/item-identity';
+    const model = (packageName: string, tableName: string) => ({
+      className: 'Account',
+      collection: tableName,
+      decoratorConfig: { api: true, collection: tableName, tableName },
+      fields: {},
+      methods: {},
+      qualifiedName: `${packageName}:Account`,
+    });
+    const collection = {
+      className: 'VendorAccounts',
+      collection: 'vendor_accounts_table',
+      decoratorConfig: {
+        api: { include: ['restoreAll'] },
+        operationPermissions: {
+          restoreAll: { action: 'create', databaseActions: ['UPDATE'] },
+        },
+      },
+      extends: 'SmrtCollection',
+      extendsTypeArg: 'Account',
+      extendsTypeArgQualified: `${vendorPackage}:Account`,
+      fields: {},
+      methods: { restoreAll: { isPublic: true, name: 'restoreAll' } },
+      qualifiedName: `${appPackage}:VendorAccounts`,
+    };
+    const manifestDir = mkdtempSync(join(tmpdir(), 'catalog-item-identity-'));
+    try {
+      const packages = {
+        [vendorPackage]: { Account: model(vendorPackage, 'vendor_accounts') },
+        [appPackage]: {
+          Account: model(appPackage, 'app_accounts'),
+          VendorAccounts: collection,
+        },
+      };
+      for (const [packageName, objects] of Object.entries(packages)) {
+        const manifestPath = join(
+          manifestDir,
+          `${packageName.replace(/\W/g, '_')}.json`,
+        );
+        writeFileSync(manifestPath, JSON.stringify({ objects, packageName }));
+        loadManifestFromPathSync(manifestPath);
+        for (const [name, entry] of Object.entries(objects)) {
+          ObjectRegistry.registerFromManifest(
+            `${packageName}:${name}`,
+            entry as never,
+            packageName,
+          );
+        }
+      }
+
+      const create = PermissionCatalogService.create()
+        .getCatalog()
+        .permissions.filter(
+          (permission) => permission.slug === 'vendor_accounts.create',
+        );
+      const tables = create.flatMap((permission) =>
+        (permission.postgres?.bindings ?? []).map(
+          (binding) => binding.tableName,
+        ),
+      );
+      expect(tables).toEqual(['vendor_accounts']);
+      expect(tables).not.toContain('app_accounts');
+    } finally {
+      restoreBaseline();
+      rmSync(manifestDir, { force: true, recursive: true });
+    }
+  });
+
+  it('catalogs an ordinary generic model as a model, with its CRUD permissions', () => {
+    const restoreBaseline = snapshotObjectRegistryState();
+    const packageName = '@catalog/generic-model';
+    const objects = {
+      RecordBase: {
+        className: 'RecordBase',
+        collection: 'record_bases',
+        decoratorConfig: { api: false },
+        extends: 'SmrtObject',
+        fields: {},
+        methods: {},
+        qualifiedName: `${packageName}:RecordBase`,
+      },
+      Ledger: {
+        className: 'Ledger',
+        collection: 'generic_ledgers',
+        decoratorConfig: {
+          api: true,
+          collection: 'generic_ledgers',
+          tableName: 'generic_ledgers',
+        },
+        extends: 'RecordBase',
+        extendsTypeArg: 'Currency',
+        fields: {},
+        methods: {},
+        qualifiedName: `${packageName}:Ledger`,
+      },
+    };
+    const manifestDir = mkdtempSync(join(tmpdir(), 'catalog-generic-model-'));
+    const manifestPath = join(manifestDir, 'manifest.json');
+    writeFileSync(manifestPath, JSON.stringify({ objects, packageName }));
+    try {
+      loadManifestFromPathSync(manifestPath);
+      for (const [name, entry] of Object.entries(objects)) {
+        ObjectRegistry.registerFromManifest(
+          `${packageName}:${name}`,
+          entry as never,
+          packageName,
+        );
+      }
+
+      const slugs = PermissionCatalogService.create()
+        .getCatalog()
+        .permissions.map((permission) => permission.slug);
+      expect(slugs).toContain('generic_ledgers.read');
+      expect(slugs).toContain('generic_ledgers.create');
+    } finally {
+      restoreBaseline();
+      rmSync(manifestDir, { force: true, recursive: true });
+    }
+  });
+
   it('should derive CRUD and exposed custom permissions from the manifest', () => {
     const catalog = PermissionCatalogService.create().getCatalog();
     const matchingSlugs = catalog.permissions

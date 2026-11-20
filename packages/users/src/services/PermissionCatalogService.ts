@@ -7,6 +7,7 @@ import { getPackageConfig } from '@happyvertical/smrt-config';
 import {
   findManifestEntryByQualifiedName,
   inheritedCollectionSurface,
+  isSmrtCollectionExtendsName,
   ObjectRegistry,
   resolveOperationPermissionAlias,
   type SmartObjectDefinition,
@@ -450,7 +451,9 @@ function resolveCollectionItemRegistration(
 ): RegisteredCatalogClass | undefined {
   const ancestry = collectCatalogAncestry(registered, manifestEntry);
   for (const { entry, registered: ancestor } of ancestry) {
-    const typeArg = entry.extendsTypeArg;
+    // A confirmed item of another package is named by its qualified
+    // identity; its bare name could be an unrelated class of this package.
+    const typeArg = entry.extendsTypeArgQualified || entry.extendsTypeArg;
     if (typeof typeArg === 'string' && typeArg.length > 0) {
       return findCatalogClass(typeArg, ancestor.qualifiedName);
     }
@@ -566,9 +569,16 @@ function addAliasDatabaseBindings(
 }
 
 function isCollectionManifestEntry(objectDef?: SmartObjectDefinition): boolean {
+  // A type argument alone is no marker: an ordinary generic model
+  // (`Ledger extends RecordBase<Currency>`) has one. The collection ancestry
+  // walk reaches a collection through its generic parents.
   return (
     objectDef?.extends === 'SmrtCollection' ||
-    objectDef?.extendsTypeArg !== undefined
+    (typeof objectDef?.collectionOf === 'string' && !!objectDef.collectionOf) ||
+    (!!objectDef?.extendsTypeArg &&
+      isSmrtCollectionExtendsName(
+        objectDef.extendsQualified || objectDef.extends,
+      ))
   );
 }
 
