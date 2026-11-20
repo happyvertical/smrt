@@ -49,6 +49,16 @@ export function clearSubtypeLineage(): void {
   replacedDeclarations().clear();
 }
 
+/** Test registry snapshots restore lineage that ObjectRegistry.clear() drops. */
+export function snapshotSubtypeLineage(): () => void {
+  const links = new Map(parents());
+  const declarations = new Map(replacedDeclarations());
+  return () => {
+    globalThis.__smrtSubtypeParents = new Map(links);
+    globalThis.__smrtReplacedDeclarations = new Map(declarations);
+  };
+}
+
 /** Roll back only the edited identities, retaining unrelated registrations. */
 export function checkpointSubtypeLineage(
   names: ReadonlySet<string>,

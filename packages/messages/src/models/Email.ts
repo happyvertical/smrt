@@ -9,6 +9,7 @@
 // runs, whichever chunk the library build places it in (#3098).
 import '../__smrt-register__.js';
 import { field, ObjectRegistry, smrt } from '@happyvertical/smrt-core';
+import { htmlToText } from '../html-to-text.js';
 import type { MailTriageAction, MailTriageResult } from '../mail-triage.js';
 import type {
   EmailOptions,
@@ -322,6 +323,18 @@ export class Email extends Message {
       // RFC 822 threading
       inReplyTo: this.messageId,
 
+      // Nothing of the inbound message's own content or identity carries
+      // over: the reply is plain text, with no hidden recipients, no copied
+      // Message-ID, headers, attachments, or provider/server state.
+      messageId: '',
+      providerMessageId: '',
+      htmlBody: '',
+      bccAddresses: '[]',
+      ccAddresses: '[]',
+      headers: '',
+      rawMessage: '',
+      hasAttachments: false,
+
       // To: original sender
       toAddresses: JSON.stringify([
         { address: this.fromAddress, name: this.fromName },
@@ -379,7 +392,13 @@ export class Email extends Message {
       fromName: '',
       body: forwardBody,
       textBody: forwardBody,
-      hasAttachments: this.hasAttachments,
+      // Attachment rows are not copied, so the draft has none.
+      hasAttachments: false,
+      messageId: '',
+      providerMessageId: '',
+      htmlBody: '',
+      headers: '',
+      rawMessage: '',
       inReplyToMessageId: '',
       inReplyTo: '',
       sendStatus: 'draft',
@@ -402,13 +421,23 @@ export class Email extends Message {
       ? `${this.fromName} <${this.fromAddress}>`
       : this.fromAddress;
 
-    const bodyText = this.textBody || this.body || '';
+    const bodyText = this.plainBody();
     const quotedLines = bodyText
       .split('\n')
       .map((line) => `> ${line}`)
       .join('\n');
 
     return `\n\nOn ${dateStr}, ${from} wrote:\n${quotedLines}`;
+  }
+
+  /**
+   * Plain text of this email for quoting. HTML-only mail (no text alternative)
+   * is converted, because the HTML itself is never carried into a draft.
+   */
+  private plainBody(): string {
+    const text = this.textBody || this.body;
+    if (text) return text;
+    return htmlToText(this.htmlBody || '');
   }
 
   /**
@@ -424,7 +453,7 @@ export class Email extends Message {
       .map((r) => (r.name ? `${r.name} <${r.address}>` : r.address))
       .join(', ');
 
-    const bodyText = this.textBody || this.body || '';
+    const bodyText = this.plainBody();
 
     return [
       '',

@@ -1,16 +1,30 @@
 // The user app's definition: plain, versioned JSON. The engine turns it into
 // run-time smrt models (core's `registerRuntimeModel`) and table changes.
+
+import { workerData } from 'node:worker_threads';
 import {
   type GeneratedExpression,
   type RuntimeFieldType,
   type RuntimeModelDefinition,
   runtimeModelEntry,
 } from '@happyvertical/smrt-core';
-import { parseRuntimeReportSpec } from '@happyvertical/smrt-reports';
 import type { LoadRecordsCommand } from './data-migrations.ts';
 import type { ExtractModelCommand } from './extract-model.ts';
 import type { MergeRecordsCommand } from './merge-records.ts';
 import type { ReportDef } from './reports.ts';
+
+/**
+ * Checks a report spec for `validate`. The app worker never validates a
+ * definition (the host does, before it starts one), so there it does NOT
+ * import the reports package, about 3 MiB of heap that only report paths
+ * need (#5214). Everywhere else it is loaded with this module, as before.
+ */
+const parseRuntimeReportSpec: typeof import('@happyvertical/smrt-reports').parseRuntimeReportSpec =
+  workerData?.appWorker
+    ? () => {
+        throw new Error('report specs are checked on the host');
+      }
+    : (await import('@happyvertical/smrt-reports')).parseRuntimeReportSpec;
 
 export const USER_PKG = '@local/app';
 export const FORMAT = 1;

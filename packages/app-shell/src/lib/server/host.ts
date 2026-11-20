@@ -30,8 +30,11 @@ import { TenantCollection } from '@happyvertical/smrt-users';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import {
   AppHost,
+  bundledWorkerUrl,
   discardDraftDirectory,
   EngineError,
+  type WorkerLimits,
+  wantsBundledWorker,
 } from '../../engine/index.ts';
 import { AppDraftCollection } from '../objects/AppDraft.ts';
 import { AppImportCollection } from '../objects/AppImport.ts';
@@ -76,6 +79,8 @@ export interface ShellContext {
   secretMasterKey?: () => Promise<string | null>;
   /** Override the app worker entry (tests; defaults to the engine's own). */
   workerUrl?: URL | string;
+  /** V8 limits of each app worker thread (engine default when absent). */
+  workerLimits?: WorkerLimits;
   /**
    * The app-runtime profile. Absent means `local` (the desktop, and every
    * test that does not choose). A function that throws or rejects leaves the
@@ -230,6 +235,16 @@ export function tenantAppDirs(
 function workerUrl(): URL | string {
   const configured = requireContext().workerUrl;
   if (configured) return configured;
+  // SMRT_APP_SHELL_WORKER=bundle: the split worker bundle (#5213).
+  if (wantsBundledWorker()) {
+    const bundled =
+      bundledWorkerUrl() ??
+      bundledWorkerUrl(
+        import.meta.resolve('@happyvertical/smrt-app-shell/engine/worker'),
+      );
+    if (bundled) return bundled;
+    throw new EngineError('the worker bundle is not built', 'refused');
+  }
   // From source (dev, tests) the worker sits next to the engine; from a build
   // it is the package's published engine worker.
   const local = new URL('../../engine/app-worker.ts', import.meta.url);
@@ -322,6 +337,7 @@ export function openDraftHost(
   return AppHost.open(dir, {
     store: new DraftVersionStore(db, id, pin),
     workerUrl: workerUrl(),
+    workerLimits: requireContext().workerLimits,
     autoApprove: true,
   });
 }
@@ -464,6 +480,7 @@ export async function getHost(): Promise<AppHost> {
     const host = await AppHost.open(dirs.live, {
       store,
       workerUrl: workerUrl(),
+      workerLimits: requireContext().workerLimits,
     });
     wireHostEvents(host, 'live', holder.tenantId);
     try {

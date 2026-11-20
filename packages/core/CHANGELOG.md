@@ -1,5 +1,33 @@
 # @happyvertical/smrt-core
 
+## 0.63.0
+
+### Minor Changes
+
+- ### Breaking Changes
+  
+  - one meaning per where key and per create input key (#5307) (core)
+  
+  ### Features
+  
+  - cloud tier wave 1: atomic methods, cloud accounts, app portability (#5218) (app-shell)
+  
+  ### Bug Fixes
+  
+  - reset inbound content and identity on reply and forward drafts (#5329) (messages)
+  - restore subtype lineage and runtime overrides in registry test snapshots (#5335) (core)
+  - make the DATETIME to TIMESTAMP script run, all or nothing (#5289) (core)
+  
+  ### Other Changes
+  
+  - perf: worker memory: nursery cap, bundle, lazy reports (#5212) (#5318) (app-shell)
+
+### Patch Changes
+
+- @happyvertical/smrt-config@0.63.0
+  - @happyvertical/smrt-scanner@0.63.0
+  - @happyvertical/smrt-types@0.63.0
+
 ## 0.62.14
 
 ### Patch Changes
