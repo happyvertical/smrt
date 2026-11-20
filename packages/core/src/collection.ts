@@ -54,6 +54,10 @@ import {
 } from './query-bounds';
 import { ObjectRegistry } from './registry';
 import { getRegistryGeneration } from './registry/generation.js';
+import {
+  rememberTableNameDerivation,
+  tableNameDerivationIsStale,
+} from './registry/partial-chain';
 import { assertRuntimeTableBindings } from './registry/table-mappings.js';
 import type { SmrtObjectConstructor } from './registry/types';
 import {
@@ -4859,6 +4863,11 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    * Gets the database table name for this collection
    */
   get tableName() {
+    // A name derived from a chain whose parent was not yet registered is
+    // derived again once the registry has changed.
+    if (this._tableName && tableNameDerivationIsStale(this)) {
+      this._tableName = undefined as unknown as string;
+    }
     assertRuntimeTableBindings({
       qualifiedName: this.getResolvedItemQualifiedName(),
       tableName: this._tableName,
@@ -4899,6 +4908,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
         const ownSchema = ObjectRegistry.getSchema(qualifiedName);
         this._tableName = ownSchema?.tableName || fallbackTableName;
       }
+      rememberTableNameDerivation(this, ObjectRegistry.getClass(qualifiedName));
     }
     return this._tableName;
   }

@@ -89,6 +89,10 @@ import {
 } from './native-duckdb';
 import { getBoxedPrimitiveKind, isRawJSON } from './plain-json';
 import { ObjectRegistry } from './registry';
+import {
+  rememberTableNameDerivation,
+  tableNameDerivationIsStale,
+} from './registry/partial-chain';
 import { assertRuntimeTableBindings } from './registry/table-mappings.js';
 import type { RegisteredField, SmrtObjectConstructor } from './registry/types';
 import { isBatchSafeValidator } from './registry/validator';
@@ -2032,6 +2036,11 @@ export class SmrtObject extends SmrtClass {
    * Gets the database table name for this object
    */
   get tableName() {
+    // A name derived from a chain whose parent was not yet registered is
+    // derived again once the registry has changed.
+    if (this._tableName && tableNameDerivationIsStale(this)) {
+      this._tableName = undefined as unknown as string;
+    }
     assertRuntimeTableBindings({
       qualifiedName: this.getResolvedQualifiedName(),
       tableName: this._tableName,
@@ -2071,6 +2080,7 @@ export class SmrtObject extends SmrtClass {
         this._tableName =
           ownSchema?.tableName || tableNameFromClass(this.constructor);
       }
+      rememberTableNameDerivation(this, ObjectRegistry.getClass(qualifiedName));
     }
     return this._tableName;
   }
