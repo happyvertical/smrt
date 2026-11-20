@@ -459,6 +459,59 @@ describe('data flows on PostgreSQL', () => {
     expect((await host.get('Item', String(row.id))).count).toBe(77);
   });
 
+  it.each([
+    ['integer', { type: 'integer' }, 5, 9],
+    ['money', { type: 'money' }, 1250, 99],
+    ['boolean', { type: 'boolean' }, true, false],
+  ] as const)('an upsert keyed on a %s field updates the existing row, and a reference lookup by it resolves', async (kind, def, first, second) => {
+    const model = `K${kind}`;
+    await run({
+      type: 'defineModel',
+      name: model,
+      fields: { k: def as never, note: { type: 'text' } },
+    });
+    await host.create(model, { k: first, note: 'old' });
+    const cmd: Command = {
+      type: 'loadRecords',
+      model,
+      mode: 'upsert',
+      key: ['k'],
+      rows: [
+        { k: first, note: 'new' },
+        { k: second, note: 'added' },
+      ],
+    };
+    expect((await host.plan(cmd)).preview).toMatchObject({
+      insert: 1,
+      update: 1,
+    });
+    await run(cmd);
+    const rows = await host.list(model);
+    expect(rows).toHaveLength(2);
+    expect(rows.find((r) => r.k === first)?.note).toBe('new');
+
+    const holder = `H${kind}`;
+    await run({
+      type: 'defineModel',
+      name: holder,
+      fields: {
+        label: { type: 'text' },
+        target: { type: 'reference', ref: model },
+      },
+    });
+    const load: Command = {
+      type: 'loadRecords',
+      model: holder,
+      mode: 'insert',
+      rows: [{ label: 'x', target: first }],
+      references: { target: { model, by: 'k' } },
+    };
+    expect((await host.plan(load)).preview).toMatchObject({
+      insert: 1,
+      rejected: 0,
+    });
+  });
+
   it('a very large integer reads back exactly', async () => {
     await run({
       type: 'defineModel',

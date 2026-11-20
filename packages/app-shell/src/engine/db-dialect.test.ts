@@ -134,36 +134,61 @@ describe.each([
     );
     for (const [i, v] of values.entries())
       await host.create('Keep', { label: `r${i}`, value: v });
-    const raw = async (): Promise<unknown[]> => {
-      if (pg && pg.config.kind === 'pglite') {
-        const c = pg.config.client;
-        return c.transaction(async (tx) => {
-          await tx.query(`SELECT set_config('search_path', 'app', true)`);
-          return (
-            await tx.query(
-              `SELECT label, CAST("value" AS TEXT) AS v FROM u_keeps ORDER BY label`,
-            )
-          ).rows;
-        });
+    await host.create('Keep', { label: 'rnull', value: null });
+    const scoped = async <T>(
+      fn: (tx: any) => Promise<T>,
+    ): Promise<T | undefined> => {
+      if (!(pg && pg.config.kind === 'pglite')) return undefined;
+      return pg.config.client.transaction(async (tx) => {
+        await tx.query(`SELECT set_config('search_path', 'app', true)`);
+        return fn(tx);
+      });
+    };
+    // Above 2^53, where the type allows it, written raw (JS numbers cannot).
+    if (type === 'integer' || type === 'money') {
+      const sql = `UPDATE u_keeps SET "value" = 9007199254740993 WHERE label = 'r0'`;
+      if (pg) await scoped((tx) => tx.query(sql));
+      else {
+        const db = new DatabaseSync(join(dir, 'app.db'));
+        db.exec(sql);
+        db.close();
       }
+    }
+    const query = async (sql: string): Promise<any[]> => {
+      if (pg)
+        return ((await scoped(async (tx) => (await tx.query(sql)).rows)) ??
+          []) as any[];
       const db = new DatabaseSync(join(dir, 'app.db'), { readOnly: true });
       try {
-        return db
-          .prepare(
-            `SELECT label, typeof("value") AS t, quote("value") AS v FROM u_keeps ORDER BY label`,
-          )
-          .all();
+        return db.prepare(sql).all() as any[];
       } finally {
         db.close();
       }
     };
+    // The column's declared type, and every raw value with its storage type.
+    const columns = () =>
+      query(
+        pg
+          ? `SELECT column_name AS name, data_type AS type FROM information_schema.columns WHERE table_schema = 'app' AND table_name = 'u_keeps' AND column_name = 'value'`
+          : `SELECT name, type FROM pragma_table_info('u_keeps') WHERE name = 'value'`,
+      );
+    const raw = () =>
+      query(
+        pg
+          ? `SELECT label, pg_typeof("value")::text AS t, CAST("value" AS TEXT) AS v FROM u_keeps ORDER BY label`
+          : `SELECT label, typeof("value") AS t, quote("value") AS v FROM u_keeps ORDER BY label`,
+      );
+    const declared = await columns();
     const before = await raw();
-    expect(before).toHaveLength(values.length);
+    expect(declared).toHaveLength(1);
+    expect(before).toHaveLength(values.length + 1);
     await host.execute(
       { type: 'removeField', model: 'Keep', field: 'value' },
       { author: 't', approved: true },
     );
+    expect(await columns(), 'column gone after removeField').toEqual([]);
     await host.execute({ type: 'undo' }, { author: 't', approved: true });
+    expect(await columns(), 'same column type after undo').toEqual(declared);
     expect(await raw(), type).toEqual(before);
   });
 });

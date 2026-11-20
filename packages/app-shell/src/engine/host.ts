@@ -348,7 +348,8 @@ export class AppHost extends EventEmitter {
   /**
    * What the chosen database cannot do yet, said plainly. On PostgreSQL there
    * is no pre-change copy, so a method run or schema change has no undo point
-   * (#5187); the shell shows this to the owner.
+   * (#5187). Exposed for the shell, and for #5187, to surface to the owner;
+   * nothing in this package displays it.
    */
   readonly notices: string[] = [];
   private app!: AppWorker;
