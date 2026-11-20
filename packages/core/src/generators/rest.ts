@@ -90,6 +90,7 @@ import {
 } from './conditional-get';
 import {
   buildCustomActionInvocationArgs,
+  customActionParameterInputName,
   declaresRuntimeRestRouteShape,
   normalizeCustomActionFailure,
   readActionReceivesTenantScope,
@@ -1678,15 +1679,31 @@ export class APIGenerator {
       // verbatim, so an opaque body (an array, or any non-record payload an
       // existing action already accepts) still arrives unchanged rather than
       // being silently normalized away.
+      const actionInput: Record<string, unknown> = {
+        ...(options && typeof options === 'object' && !Array.isArray(options)
+          ? (options as Record<string, unknown>)
+          : {}),
+        options,
+      };
+      if (routeMethod === 'GET' && metadata.parameters) {
+        // A parameter named after an ownership property is handed the scope
+        // value set above, never a caller value: flat transports read a
+        // parameter under its transport name (`id` as `actionId`), which the
+        // scoping step does not know about, so the scoped value is written
+        // under that name too. The properties are the ones the scope set;
+        // none when tenancy is off or a super-admin bypass applies.
+        const scopedProperties = new Set(
+          Object.keys(scopeTenantReadOptions(objectName, {})),
+        );
+        for (const parameter of metadata.parameters) {
+          if (!scopedProperties.has(parameter.name)) continue;
+          actionInput[
+            customActionParameterInputName(metadata, parameter.name)
+          ] = actionInput[parameter.name];
+        }
+      }
       const invocationArgs = metadata.parameters
-        ? buildCustomActionInvocationArgs(metadata, {
-            ...(options &&
-            typeof options === 'object' &&
-            !Array.isArray(options)
-              ? (options as Record<string, unknown>)
-              : {}),
-            options,
-          })
+        ? buildCustomActionInvocationArgs(metadata, actionInput)
         : [options];
 
       // A read whose scanned parameters carry the scope

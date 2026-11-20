@@ -119,7 +119,9 @@ go through the same error mapping. That exception covers the CRUD list, get
 and count handlers, and a custom collection GET action whose arguments carry
 the read scope (`readActionReceivesTenantScope`: a single `options` parameter
 handed the scoped options, or parameters named after every ownership property
-the live registry reports, each handed its scope value). The parameter names
+the live registry reports, each handed its scope value; no caller value under
+the parameter's transport name, such as `actionId` for `id`, reaches an
+ownership parameter). The parameter names
 come from scanned metadata only: an action with none (runtime REST serving a
 class without a manifest entry for the method) never qualifies, whatever its
 source declares, and the server never parses a method's source to decide.

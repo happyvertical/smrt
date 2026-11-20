@@ -166,6 +166,27 @@ fromSource('lineCr', '// page size\rlimit,\noptions');
 fromSource('lineSeparator', '// page size limit,\noptions');
 fromSource('paragraphSeparator', '// page size limit,\noptions');
 
+/** A model whose own id is its owner: its ownership property is `id`. */
+@smrt({
+  api: {
+    include: ['list', 'get', 'ownerOf'],
+    routes: { ownerOf: { method: 'GET', scope: 'collection' } },
+  },
+})
+@TenantScoped({ mode: 'optional', field: 'id' })
+class ScopedWorkspace extends SmrtObject {
+  @field({ type: 'text' })
+  title = '';
+}
+class ScopedWorkspaceCollection extends SmrtCollection<ScopedWorkspace> {
+  static readonly _itemClass = ScopedWorkspace;
+
+  /** Takes the ownership property as a named parameter. */
+  async ownerOf(id?: string | null, label?: string) {
+    return { id: id === undefined ? 'absent' : id, label: label ?? null };
+  }
+}
+
 /** A natural key that omits the tenant: the shape the ownership check guards. */
 @smrt({
   api: { include: ['list', 'get', 'create'] },
@@ -202,10 +223,12 @@ describe('runtime REST request tenant', () => {
   let db: DatabaseInterface;
   let memos: ScopedMemoCollection;
   let legacy: ScopedLegacyMemoCollection;
+  let workspaces: ScopedWorkspaceCollection;
   const serve = (config: APIConfig) => {
     const api = new APIGenerator({ basePath: '/api', ...config });
     api.registerCollection('memos', memos as never);
     api.registerCollection('legacymemos', legacy as never);
+    api.registerCollection('workspaces', workspaces as never);
     return api.generateHandler();
   };
   let handler: (req: Request) => Promise<Response>;
@@ -236,14 +259,30 @@ describe('runtime REST request tenant', () => {
       returnType: 'Promise<any>',
       isPublic: true,
     } as never);
+    ObjectRegistry.registerCollection(
+      'ScopedWorkspace',
+      ScopedWorkspaceCollection as never,
+    );
+    // `ownerOf` names the ownership property `id`, which flat transports
+    // expose as `actionId`.
+    ObjectRegistry.getMethods('ScopedWorkspace').set('ownerOf', {
+      name: 'ownerOf',
+      parameters: [
+        { name: 'id', type: 'string', optional: true },
+        { name: 'label', type: 'string', optional: true },
+      ],
+      returnType: 'Promise<any>',
+      isPublic: true,
+    } as never);
     dir = mkdtempSync(join(tmpdir(), 'smrt-request-tenant-'));
     db = await getTestDatabase({
       type: 'sqlite',
       url: join(dir, 'app.db'),
-      classes: ['ScopedMemo', 'ScopedLegacyMemo'],
+      classes: ['ScopedMemo', 'ScopedLegacyMemo', 'ScopedWorkspace'],
     });
     memos = await ScopedMemoCollection.create({ db });
     legacy = await ScopedLegacyMemoCollection.create({ db });
+    workspaces = await ScopedWorkspaceCollection.create({ db });
     enableTenancy();
     handler = serve({
       authMiddleware: () => async (req) =>
@@ -554,6 +593,38 @@ describe('runtime REST request tenant', () => {
       expect(await response.json()).toMatchObject({
         result: { titles: served },
       });
+    });
+  });
+
+  describe('a custom collection read naming an ownership property called id', () => {
+    const ownerOf = async (query: string, as: string) => {
+      const response = await call(
+        handler,
+        'GET',
+        `workspaces/ownerOf${query}`,
+        {
+          as,
+        },
+      );
+      expect(response.status).toBe(200);
+      return ((await response.json()) as { result: unknown }).result;
+    };
+
+    it.each([
+      ['its transport name', `?actionId=${TENANT_B}&label=kept`],
+      ['its property name', `?id=${TENANT_B}&label=kept`],
+      ['both names', `?id=${TENANT_B}&actionId=${TENANT_B}&label=kept`],
+    ])('takes the scope, not the caller value under %s, for a caller with no tenant', async (_label, query) => {
+      expect(await ownerOf(query, 'user-without-tenant')).toEqual({
+        id: null,
+        label: 'kept',
+      });
+    });
+
+    it('takes the caller tenant, not the caller value, for a caller with a tenant', async () => {
+      expect(
+        await ownerOf(`?actionId=${TENANT_B}&label=kept`, 'user-of-a'),
+      ).toEqual({ id: TENANT_A, label: 'kept' });
     });
   });
 
