@@ -46,6 +46,7 @@ import {
 } from '@happyvertical/smrt-core';
 import {
   classifyInferenceFailure,
+  isAiRunClaimLoss,
   isAiRunInterruption,
   isInferenceAbort,
 } from './classify.js';
@@ -1074,6 +1075,12 @@ class FusionRun {
         if (this.handle) await this.handle.reserve(await this.shares(input));
         text = await this.interpret(input);
       } catch (error) {
+        if (isAiRunClaimLoss(error)) {
+          // This worker no longer holds the run's claim: it changes
+          // nothing, releases nothing and stops nothing. The reservations
+          // it held are the new claim holder's to reconcile.
+          throw error;
+        }
         if (this.handle && isAiRunInterruption(error)) {
           // A stop reaches the caller as a stop, never a failed fusion.
           throw await this.handle.stop(error);

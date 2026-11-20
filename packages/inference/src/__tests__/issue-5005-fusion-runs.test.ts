@@ -300,6 +300,48 @@ describe('fusion runs opened at the start (#5005)', () => {
     );
   });
 
+  it('leaves a held reservation and the fusion run alone when its worker loses the claim mid-fusion', async () => {
+    const { instance, calls } = await note();
+    const parent = await openAiRun(
+      { db, usageTracking: true },
+      { type: 'workflow', durable: true, budget: { maxTokens: 100_000 } },
+    );
+    const client = await instance.client();
+    const error = await client
+      .message('Review', {
+        runContext: {
+          runId: parent.id,
+          db,
+          // The claim is taken over once the first seat has been sent.
+          fence: async () => calls.length === 0,
+        },
+      } as never)
+      .catch((caught: unknown) => caught);
+    expect((error as { code?: unknown }).code).toBe('AI_RUN_CLAIM_LOST');
+    expect(error).not.toBeInstanceOf(AiRunStoppedError);
+    // Not every seat was sent: the stale worker sent nothing after the loss.
+    expect(calls.length).toBeLessThan(3);
+    const [child] = rows(
+      await db.query(`SELECT id FROM _smrt_ai_runs WHERE type = 'fusion'`),
+    );
+    const fusionId = String(child?.id);
+    // The stale worker neither stopped the fusion nor its parent, and the
+    // unsent seats' reservations are still held for the new claim holder.
+    expect(await getAiRun(db, fusionId)).toMatchObject({ status: 'running' });
+    expect(await getAiRun(db, parent.id)).toMatchObject({ status: 'running' });
+    const reserved = rows(
+      await db.query(
+        `SELECT call_id FROM _smrt_ai_run_events
+          WHERE run_id = $1 AND type = 'call' AND reservation = 'reserved'`,
+        fusionId,
+      ),
+    );
+    expect(reserved.length).toBe(3 - calls.length);
+    expect((await getAiRun(db, fusionId))?.reservedCalls).toBe(
+      3 - calls.length,
+    );
+  });
+
   it('does not run a fusion while usage persistence is off', async () => {
     const { instance, calls } = await note({ persist: false });
     await expect(

@@ -205,6 +205,11 @@ export function isInferenceAbort(error: unknown): boolean {
  * no fallback is tried and no failure row is recorded; it reaches the
  * caller as a stop.
  */
+/** Core's claim loss: the worker's job claim was taken over. */
+export function isAiRunClaimLoss(error: unknown): boolean {
+  return (error as { code?: unknown } | null)?.code === 'AI_RUN_CLAIM_LOST';
+}
+
 export function isAiRunInterruption(error: unknown): boolean {
   const code = (error as { code?: unknown } | null)?.code;
   return code === 'AI_RUN_STOPPED' || code === 'AI_RUN_CLAIM_LOST';
