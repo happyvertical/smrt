@@ -48,6 +48,8 @@ jobs:
         id: filter
         uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4
         with:
+          # Empty on pull requests, which diff against the default branch.
+          base: ${{ github.event.merge_group.base_sha }}
           filters: |
             # Core and config own the browser entry evaluated in this lane (#2838).
             workbench:
@@ -66,7 +68,9 @@ jobs:
 
   build:
     name: Build
-    if: inputs.mode == 'full'
+    # Also seeds the cache for the merge-group-only gates below when a merge
+    # group runs in affected mode (#5364).
+    if: inputs.mode == 'full' || github.event_name == 'merge_group'
     # Linux CI uses the explicit hosted runner; runner selection cannot be
     # redirected through a repository variable. See CI.md, "Runner selection".
     runs-on: ubuntu-latest
@@ -255,7 +259,7 @@ jobs:
 
       - name: Run affected typecheck closure
         env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          BASE_SHA: ${{ github.event.merge_group.base_sha || github.event.pull_request.base.sha }}
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NODE_ENV: test
         run: |
@@ -343,7 +347,7 @@ jobs:
       # the per-shard log's count of selected packages.
       - name: Run affected package tests (shard ${{ matrix.shard }})
         env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          BASE_SHA: ${{ github.event.merge_group.base_sha || github.event.pull_request.base.sha }}
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NODE_ENV: test
           VITEST_MAX_WORKERS: '2'
@@ -385,7 +389,7 @@ jobs:
       - name: Detect selected core test task
         id: scope
         env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          BASE_SHA: ${{ github.event.merge_group.base_sha || github.event.pull_request.base.sha }}
         run: |
           set -euo pipefail
           core=$(pnpm turbo run test --filter="...[$BASE_SHA]" --dry=json |
@@ -704,7 +708,9 @@ jobs:
   coverage-gate:
     name: Coverage Gate
     needs: build
-    # Full-mode only (#2214 item 8). This used to run in both lanes, and in
+    # Full-mode and merge-group only (#2214 item 8, #5364). A merge group in
+    # affected mode still runs it, with `build` seeding the cache. This used to
+    # run in both lanes, and in pull-request
     # affected mode the seed `build` job is skipped, so it paid a cold full
     # build before it could measure anything — 26-45 min against 4-5 min on a
     # warm cache. The merge group re-ran it in full immediately afterwards, so
@@ -713,7 +719,7 @@ jobs:
     # correct for the merge_group synthetic head, so the gate keeps its full
     # meaning here. Authors keep the local pre-check:
     #   node scripts/check-coverage.mjs --packages <list>
-    if: inputs.mode == 'full'
+    if: inputs.mode == 'full' || github.event_name == 'merge_group'
     runs-on: ubuntu-latest
     timeout-minutes: 90
 
@@ -835,7 +841,8 @@ jobs:
   test-integration:
     name: Test Integration
     needs: build
-    if: inputs.mode == 'full'
+    # Cross-package and cheap, so every merge group runs it, affected or not.
+    if: inputs.mode == 'full' || github.event_name == 'merge_group'
     runs-on: ubuntu-latest
     timeout-minutes: 90
 

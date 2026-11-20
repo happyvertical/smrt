@@ -165,3 +165,20 @@ test('duplicate workspace config and unresolved local dependencies fail broad', 
   after.manifests['packages/ui/package.json'].dependencies = { unexpected: 'link:../other' };
   assert.equal(run(before, after, ['packages/ui/src/index.ts']).full, true);
 });
+
+test('docs/knowledge selects its known test readers; other unowned inputs stay full (#5364)', () => {
+  const tree = snapshot({
+    'packages/cli': { name: '@happyvertical/smrt-cli' },
+    'packages/dev': { name: '@happyvertical/smrt-dev-mcp' },
+    'packages/other': {},
+  });
+  tree.files.push('docs/knowledge/components/x.md', 'docs/content/y.md');
+  const plan = run(tree, tree, ['docs/knowledge/components/x.md']);
+  assert.equal(plan.full, false);
+  assert.deepEqual(selected(plan), ['@happyvertical/smrt-cli', '@happyvertical/smrt-dev-mcp']);
+  assert.equal(run(tree, tree, ['docs/content/y.md']).full, true);
+  // A reader missing from the graph must not silently shrink the selection.
+  const missing = snapshot({ 'packages/other': {} });
+  missing.files.push('docs/knowledge/components/x.md');
+  assert.equal(run(missing, missing, ['docs/knowledge/components/x.md']).full, true);
+});

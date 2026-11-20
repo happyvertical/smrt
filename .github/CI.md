@@ -370,8 +370,23 @@ reversal lever.
   suite's parallel shape without silently changing coverage. The core and
   package matrices run concurrently. Every PR also runs affected knowledge
   freshness: it has no paths filter, because the merge group always runs the
-  check and a PR that skipped it was ejected there (#5045). The complete suite
-  runs for `merge_group`.
+  check and a PR that skipped it was ejected there (#5045).
+- Merge groups (#5364): `validation-scope` runs `scripts/merge-group-scope.mjs`,
+  which wraps `scripts/ci-impact.mjs` against `merge_group.base_sha`. The
+  suite runs `affected` (Turbo `...[base_sha]`, the PR shape) only when that
+  plan is not full; any global or unowned input (root config, lockfile,
+  `scripts/`, workflows, `docs/content`), any change to `core`, `scanner` or
+  `vitest`, an unreadable base, or any failure to decide selects `full`.
+  `docs/knowledge/**` selects `smrt-cli` and `smrt-dev-mcp`, the only package
+  tests that read it. Coverage Gate, Test Integration, the seed build, Publish
+  Dry Run, knowledge freshness and the control-plane regression run in every
+  merge group in both shapes. PostgreSQL suites follow the same plan: the scope
+  job passes the affected list to `postgres-test-shard.mjs`
+  (`POSTGRES_AFFECTED`), `all` when full, and an empty list skips the shards
+  while `postgres-required` still reports. The base is sound only because the
+  queue uses `ALLGREEN` grouping: an entry merges only when every earlier
+  entry did, so the diff against the base is exactly what the group adds. Do
+  not switch the queue to `HEADGREEN` without reverting this.
 
 All four test matrices — `affected-core-tests`, `affected-package-tests`,
 `test-core`, and `test-packages` — set `max-parallel` to their shard count;

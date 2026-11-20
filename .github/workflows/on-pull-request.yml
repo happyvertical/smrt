@@ -521,8 +521,50 @@ jobs:
       - name: Run control-plane regressions that need built core
         run: pnpm test:ci-scripts:built-core
 
+  # Chooses the validation shape of the test suite (#5364). Pull requests keep
+  # their existing choice. A merge group is `affected` only when
+  # scripts/ci-impact.mjs finds nothing global, shared or unreadable in the
+  # diff against merge_group.base_sha; otherwise, and on any failure to decide,
+  # it is `full`. The `if` is the canonical trusted-base admission expression.
+  validation-scope:
+    name: Select Validation Scope
+    if: >-
+      github.event_name == 'merge_group' ||
+      (github.event_name == 'pull_request' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      contains(fromJSON('["opened","synchronize","reopened"]'), github.event.action))
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      mode: ${{ steps.decide.outputs.mode }}
+    steps:
+      - name: Checkout merge group
+        if: github.event_name == 'merge_group'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          filter: blob:none
+      - name: Decide validation mode
+        id: decide
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          QUEUE_ENABLED: ${{ vars.CI_MERGE_QUEUE_ENABLED }}
+          BASE_SHA: ${{ github.event.merge_group.base_sha }}
+          HEAD_SHA: ${{ github.event.merge_group.head_sha }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = merge_group ]; then
+            node scripts/merge-group-scope.mjs --base "$BASE_SHA" --head "$HEAD_SHA"
+          elif [ "$QUEUE_ENABLED" = true ]; then
+            echo "mode=affected" >> "$GITHUB_OUTPUT"
+          else
+            echo "mode=full" >> "$GITHUB_OUTPUT"
+          fi
+
   test:
     name: Validate Changes
+    needs: validation-scope
     if: >-
       github.event_name == 'merge_group' ||
       (github.event_name == 'pull_request' &&
@@ -530,7 +572,7 @@ jobs:
       contains(fromJSON('["opened","synchronize","reopened"]'), github.event.action))
     uses: ./.github/workflows/test-suite.yml
     with:
-      mode: ${{ github.event_name == 'merge_group' && 'full' || (vars.CI_MERGE_QUEUE_ENABLED == 'true' && 'affected' || 'full') }}
+      mode: ${{ needs.validation-scope.outputs.mode || 'full' }}
       checkout_ref: ${{ github.event.pull_request.head.sha || github.sha }}
     permissions:
       contents: read

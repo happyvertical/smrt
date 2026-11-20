@@ -22,6 +22,12 @@ const HARNESS_ROOTS = new Set([
   'packages/scanner',
   'packages/vitest',
 ]);
+// Unowned trees whose only package-test readers are known. Everything else
+// unowned stays a full fallback. Knowledge freshness and the root script tests
+// run in every lane regardless, so they need no entry here (#5364).
+const UNOWNED_READERS = [
+  ['docs/knowledge/', ['@happyvertical/smrt-cli', '@happyvertical/smrt-dev-mcp']],
+];
 const SUITES = ['test', 'test:postgres'];
 const packageManifest = /^packages\/[^/]+\/package\.json$|^packages\/smrt-(?:playground|workbench)\/host\/package\.json$/;
 const object = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -137,7 +143,12 @@ export function planImpact({ base, head, baseSnapshot, headSnapshot, changes, er
         }
         const owner = owners.find((pkg) => path.startsWith(`${pkg.root}/`));
         if (!owner) {
-          fallback(`Global or unowned input: ${path}`);
+          const readers = UNOWNED_READERS.find(([prefix]) => path.startsWith(prefix))?.[1];
+          if (readers && readers.every((name) => after.has(name))) {
+            for (const name of readers) select(name, `Changed input read by tests: ${path}`);
+          } else {
+            fallback(`Global or unowned input: ${path}`);
+          }
           continue;
         }
         const relative = path.slice(owner.root.length + 1);
