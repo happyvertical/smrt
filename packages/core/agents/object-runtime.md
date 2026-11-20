@@ -77,6 +77,10 @@ See [audit contract](../../../docs/content/audit-trail.md).
 - `getSlug()`: auto-generates from name → title → label → id; a candidate that
   slugifies to nothing (no ASCII letters or digits) is skipped, so the next
   candidate or finally the id supplies the slug
+- A registered field named `options` collides with the instance's service
+  options: it is skipped on save (with a one-time warning per class) and is
+  never applied onto `this.options` by the constructor or by row hydration.
+  Registration still accepts the name; rename such a field.
 - `loadRelated(fieldName)`: lazy-loads relationships (cached in `_loadedRelationships` Map). A cached single-target entry is tied to the key field's value when it was cached: once the field names another row (or is cleared) the entry is dropped and the next `loadRelated`/`getRelated` resolves the current target; `isRelatedLoaded` agrees
 
 Relationship I/O resolves canonical source and target identities, not the public

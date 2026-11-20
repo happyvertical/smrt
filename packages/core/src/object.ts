@@ -636,6 +636,21 @@ export interface AiOperationOptions extends AITextCompletionOptions {
 /** See {@link AiOperationOptions.toolUse}. */
 export type AiToolUse = 'required' | 'optional';
 
+const optionsFieldWarned = new Set<string>();
+
+/**
+ * A registered field named `options` is skipped on save and load (the name
+ * belongs to the instance's service options). Say so once per class instead of
+ * dropping its value without a trace.
+ */
+function warnOptionsFieldNotPersisted(className: string): void {
+  if (optionsFieldWarned.has(className)) return;
+  optionsFieldWarned.add(className);
+  logger.warn(
+    `${className} declares a field named "options". That name is reserved for the instance's service options, so the field is neither saved nor loaded. Rename the field.`,
+  );
+}
+
 /**
  * The key field's value when each relationship was cached, per instance. Kept
  * outside the instance so it adds no own member to every model.
@@ -1443,6 +1458,9 @@ export class SmrtObject extends SmrtClass {
 
     // Apply option values to all fields
     for (const [key, field] of Object.entries(fields)) {
+      // `options` holds the instance's service options; a field of that name
+      // is never applied onto it.
+      if (key === 'options') continue;
       const optionValue =
         rowValues && isServiceOptionKey(key) ? rowValues[key] : options[key];
       if (optionValue !== undefined) {
@@ -1726,6 +1744,12 @@ export class SmrtObject extends SmrtClass {
 
     for (const field in fields) {
       if (Object.hasOwn(fields, field)) {
+        // `options` is the instance's service options, never row data: a
+        // stored column of that name must not replace them.
+        if (field === 'options') {
+          skippedCount++;
+          continue;
+        }
         // Check if property is writable before setting (Issue #63)
         // Get descriptor from instance or entire prototype chain
         let descriptor = Object.getOwnPropertyDescriptor(this, field);
@@ -2178,6 +2202,8 @@ export class SmrtObject extends SmrtClass {
     // All schema fields are in the manifest from AST scanning
     // Dynamic properties added at runtime are intentionally excluded (not part of schema)
     for (const key of registeredFields.keys()) {
+      if (key === 'options')
+        warnOptionsFieldNotPersisted(this.constructor.name);
       // Skip private properties, methods, and already-handled core fields
       if (
         key.startsWith('_') ||
