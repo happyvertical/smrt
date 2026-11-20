@@ -83,7 +83,11 @@ final class AppLinkPolicy {
         }
         // Any "." or ".." segment is refused outright, not resolved.
         String path = rawPath;
-        if (!path.equals(uri.normalize().getRawPath()) || path.contains("/../") || path.endsWith("/..")
+        String normalized = uri.normalize().getRawPath();
+        if (normalized == null || normalized.isEmpty()) {
+            normalized = "/";
+        }
+        if (!path.equals(normalized) || path.contains("/../") || path.endsWith("/..")
                 || path.contains("/./") || path.endsWith("/.")) {
             return null;
         }

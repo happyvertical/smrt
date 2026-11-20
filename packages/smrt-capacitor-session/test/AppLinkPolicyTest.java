@@ -42,6 +42,10 @@ public final class AppLinkPolicyTest {
         check(AppLinkPolicy.accept(link, null, links) == null, "no server.url: nothing loads");
         check(AppLinkPolicy.accept("http://localhost:5173/sign-in/email/complete#proof=x", "http://localhost:5173", links) != null, "a local http server.url works the same way");
         check(AppLinkPolicy.accept(link, server, Arrays.asList("sign-in", "/a?b", null)) == null, "unusable prefixes are skipped");
+        List<String> root = Collections.singletonList("/");
+        check(AppLinkPolicy.accept("https://hearthed.org#proof=abc", server, root) != null, "a root link with an empty path is the root path");
+        check(AppLinkPolicy.accept("https://hearthed.org/#proof=abc", server, root) != null, "a root link with a slash is the root path");
+        check(AppLinkPolicy.accept("https://hearthed.org/a/../b", server, root) == null, "a traversal is refused under a root prefix too");
         System.out.println("AppLinkPolicyTest: ok");
     }
 }
