@@ -1179,10 +1179,14 @@ export class InheritanceResolver {
    *   passes its first type parameter on to it (`class BaseCollection<T>
    *   extends SmrtCollection<T>`): the class's own type argument names the
    *   item, and a static `_itemClass` must name the same class.
-   * - A scanned collection ancestor fixes the item itself: that item, which
-   *   the class's own type argument never replaces.
-   * - An ancestor passes on another type parameter than its first: the item
-   *   cannot be followed, which is a scan error.
+   * - A scanned collection ancestor fixes the item itself: a type argument
+   *   the class passes is then not the item, so the ancestor's item is
+   *   recorded in its place; a static `_itemClass` names the item the class
+   *   narrows it to (proven like a parent); a class that passes neither
+   *   keeps what the scan read.
+   * - A class with a type argument below an ancestor that passes on another
+   *   type parameter than its first: the item cannot be followed, which is a
+   *   scan error.
    *
    * `null` when no item model is named (the class's own type parameter or a
    * type keyword with no `_itemClass` naming a model), and after an error:
@@ -1214,6 +1218,7 @@ export class InheritanceResolver {
     const shape = this.itemShape(parent);
     if (shape.kind === 'none') return undefined;
     if (shape.kind === 'unmapped') {
+      if (!classDef.extendsTypeArg) return undefined;
       this.itemErrors.set(classDef, shape.reason);
       return null;
     }
@@ -1221,19 +1226,13 @@ export class InheritanceResolver {
       return this.proveOwnItem(classDef, parent.className);
     }
     // An ancestor fixes the item: the class's own type argument is not it.
-    if (shape.item === null) return this.proveRuntimeItem(classDef);
-    const itemField = this.itemClassField(classDef);
-    if (itemField?.initializer) {
-      const runtime = this.proveClassReference(classDef, itemField.initializer);
-      if (!runtime || !sameProof(runtime, shape.item)) {
-        this.itemErrors.set(
-          classDef,
-          `its static _itemClass (${itemField.initializer}) is not the item its collection ancestor ${parent.className} names; make both name the same model`,
-        );
-        return null;
-      }
+    // A static `_itemClass` names the item the class narrows it to (a
+    // subclass collection of a model's subclass), proven like a parent. A
+    // class that names neither keeps what the scan read: nothing.
+    if (this.itemClassField(classDef)?.initializer) {
+      return this.proveRuntimeItem(classDef);
     }
-    return shape.item;
+    return classDef.extendsTypeArg ? shape.item : undefined;
   }
 
   /**
@@ -1287,6 +1286,15 @@ export class InheritanceResolver {
             `the first one of ${definition.className}, or extend ${link.name} directly`,
         };
       }
+    }
+    if (passes.kind === 'item') {
+      // An ancestor fixed the item; a static `_itemClass` narrows it.
+      return {
+        kind: 'item',
+        item: this.itemClassField(definition)?.initializer
+          ? this.proveRuntimeItem(definition)
+          : passes.item,
+      };
     }
     return {
       kind: 'item',

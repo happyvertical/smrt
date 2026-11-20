@@ -1452,16 +1452,32 @@ describe('collection items through an app-level generic collection', () => {
     );
   });
 
-  it('rejects a static _itemClass that names another class than the item an ancestor fixes', async () => {
-    const { errors } = await scanProject({
+  it('takes the model a static _itemClass narrows an ancestor item to, and leaves a class naming no item alone', async () => {
+    const { errors, manifest } = await scanProject({
       'src/models/Account.ts': OPEN_BASE('Account'),
-      'src/models/Closed.ts': CLOSED_BASE('ClosedEntry'),
+      'src/models/Closed.ts': `${CLOSED_BASE('ClosedEntry')}\n@smrt()\nexport class SpecialEntry extends ClosedEntry {}\n`,
       'src/collections/Entries.ts': `${CORE}\nimport { ClosedEntry } from '../models/Closed';\nexport abstract class EntryCollection extends SmrtCollection<ClosedEntry> {}\n`,
-      'src/collections/Wrong.ts': `${CORE}\nimport { Account } from '../models/Account';\nimport { EntryCollection } from './Entries';\nexport class WrongEntries extends EntryCollection {\n  static readonly _itemClass = Account;\n}\n`,
+      'src/collections/Special.ts': `${CORE}\nimport { SpecialEntry } from '../models/Closed';\nimport { EntryCollection } from './Entries';\nexport class SpecialEntries extends EntryCollection {\n  static readonly _itemClass = SpecialEntry;\n}\nexport class PlainEntries extends EntryCollection {}\n`,
+    });
+
+    expect(errors).toEqual([]);
+    const objects = manifest().objects;
+    expect(objects[`${PACKAGE}:SpecialEntries`]?.extendsTypeArg).toBe(
+      'SpecialEntry',
+    );
+    expect(objects[`${PACKAGE}:PlainEntries`]?.extendsTypeArg).toBeUndefined();
+  });
+
+  it('rejects a static _itemClass that is not a model, below an ancestor that fixes the item', async () => {
+    const { errors } = await scanProject({
+      'src/models/Closed.ts': CLOSED_BASE('ClosedEntry'),
+      'src/helpers/Plain.ts': 'export class Plain {}\n',
+      'src/collections/Entries.ts': `${CORE}\nimport { ClosedEntry } from '../models/Closed';\nexport abstract class EntryCollection extends SmrtCollection<ClosedEntry> {}\n`,
+      'src/collections/Wrong.ts': `${CORE}\nimport { Plain } from '../helpers/Plain';\nimport { EntryCollection } from './Entries';\nexport class WrongEntries extends EntryCollection {\n  static readonly _itemClass = Plain;\n}\n`,
     });
 
     expect(messages(errors)).toContain('static _itemClass');
-    expect(messages(errors)).toContain('EntryCollection');
+    expect(messages(errors)).toContain('not a model');
   });
 
   it('rejects a collection item that is a stand-in for another package, by type argument and by _itemClass', async () => {
