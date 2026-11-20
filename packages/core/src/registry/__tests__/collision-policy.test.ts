@@ -283,10 +283,10 @@ describe('decideCollisionPolicy', () => {
           baseline({
             ...differentPackages,
             newExtendsExisting: true,
-            newDeclaredChoice: 'replace',
+            newDeclaredChoice: 'subtype',
           }),
         ).scenario,
-      ).toBe('same-name-subclass-replaces-parent');
+      ).toBe('same-name-subclass-coexists');
     });
 
     it('an unknown package on either side is still a true collision', () => {
@@ -352,6 +352,18 @@ describe('decideCollisionPolicy', () => {
       expect(result.scenario).toBe('same-name-subclass-replaces-parent');
     });
 
+    it.each(origins)('same-name-subclass-coexists → throw (%s)', (origin) => {
+      const result = decideCollisionPolicy(
+        baseline({
+          origin,
+          newExtendsExisting: true,
+          newDeclaredChoice: 'subtype',
+        }),
+      );
+      expect(result.policy).toBe('throw');
+      expect(result.scenario).toBe('same-name-subclass-coexists');
+    });
+
     it.each(origins)('same-name-subclass-undeclared → throw (%s)', (origin) => {
       const result = decideCollisionPolicy(
         baseline({ origin, newExtendsExisting: true }),
@@ -372,6 +384,20 @@ describe('decideCollisionPolicy', () => {
       );
       expect(result.policy).toBe('retain-as-replaced');
       expect(result.scenario).toBe('same-name-parent-of-replacement');
+    });
+
+    it.each(
+      origins,
+    )('same-name-parent-of-coexisting → throw (%s)', (origin) => {
+      const result = decideCollisionPolicy(
+        baseline({
+          origin,
+          existingExtendsNew: true,
+          existingDeclaredChoice: 'subtype',
+        }),
+      );
+      expect(result.policy).toBe('throw');
+      expect(result.scenario).toBe('same-name-parent-of-coexisting');
     });
 
     it.each(
@@ -397,6 +423,11 @@ describe('decideCollisionPolicy', () => {
           baseline({ ...stub, newDeclaredChoice: 'replace' }),
         ).scenario,
       ).toBe('same-name-subclass-replaces-parent');
+      expect(
+        decideCollisionPolicy(
+          baseline({ ...stub, newDeclaredChoice: 'subtype' }),
+        ).scenario,
+      ).toBe('same-name-subclass-coexists');
       expect(decideCollisionPolicy(baseline(stub)).policy).toBe('throw');
     });
 
@@ -439,13 +470,15 @@ describe('decideCollisionPolicy', () => {
       'declaresDifferentTable',
       'existingPackageStampsConstructors',
     ] as const satisfies ReadonlyArray<keyof CollisionInputs>;
-    const choices = [undefined, 'replace'] as const;
+    const choices = [undefined, 'replace', 'subtype'] as const;
     const byNewChoice = {
       replace: ['replace', 'same-name-subclass-replaces-parent'],
+      subtype: ['throw', 'same-name-subclass-coexists'],
       undeclared: ['throw', 'same-name-subclass-undeclared'],
     } as const;
     const byExistingChoice = {
       replace: ['retain-as-replaced', 'same-name-parent-of-replacement'],
+      subtype: ['throw', 'same-name-parent-of-coexisting'],
       undeclared: ['throw', 'same-name-parent-of-undeclared'],
     } as const;
 

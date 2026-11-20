@@ -110,7 +110,8 @@ A class that extends the moved class under the same simple name declares
 alias follows the replacement. `getClassByQualifiedName(old)`,
 `resolveType(old)` and association hydration resolve to the replacing class,
 and the replaced class's own current name resolves to it too. The replacement
-must not redeclare the alias (two claimants collide).
+must not redeclare the alias (two claimants collide). `replaceParent: false` is
+refused, so no same-named class registers next to the alias's owner.
 
 Whether `smrt doctor --db` and `db:migrate-qualified-names` count and rewrite
 towards a replacement, rather than the class that declares the alias, is

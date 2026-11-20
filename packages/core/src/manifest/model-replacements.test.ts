@@ -124,6 +124,24 @@ describe('effective manifest identities', () => {
       expect(() => annotateModelReplacements(source)).toThrow(/replaceParent/);
     }
   });
+  it('refuses replaceParent: false on any table, with or without its parent in the manifest', () => {
+    for (const table of ['customers', 'other_customers']) {
+      const coexisting = model('@fixture/app', '@fixture/base', table, false);
+      for (const source of [
+        manifest(model('@fixture/base'), coexisting),
+        manifest(coexisting),
+      ]) {
+        expect(() => annotateModelReplacements(source)).toThrow(
+          expect.objectContaining({
+            code: 'CONFIG_SAME_NAME_COEXISTENCE_UNSUPPORTED',
+            message: expect.stringMatching(
+              /^@fixture\/app:Customer declares replaceParent: false, but a same-named subclass cannot be registered next to its parent @fixture\/base:Customer: give @fixture\/app:Customer a different class name, or declare replaceParent: true/,
+            ),
+          }),
+        );
+      }
+    }
+  });
   it('refuses a replacement on another table than its parent', () => {
     const otherTable = manifest(
       model('@fixture/base'),

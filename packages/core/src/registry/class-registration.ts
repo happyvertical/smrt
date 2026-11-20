@@ -30,6 +30,7 @@ import {
 } from '../manifest/manifest-loader.js';
 import {
   type SameNameSubclassChoice,
+  sameNameCoexistenceUnsupported,
   sameNameParentUnregistered,
   sameNameReplacementTableMismatch,
   sameNameSubclassChoice,
@@ -753,6 +754,18 @@ function applyRegisterCollisionPolicy(args: {
           args.sameName.ownName,
         );
       }
+      if (decision.scenario === 'same-name-subclass-coexists') {
+        throw sameNameCoexistenceUnsupported(
+          args.sameName.ownName,
+          args.existingKey,
+        );
+      }
+      if (decision.scenario === 'same-name-parent-of-coexisting') {
+        throw sameNameCoexistenceUnsupported(
+          args.existingKey,
+          args.sameName.ownName,
+        );
+      }
       const matchSuffix =
         args.matchKind === 'case-insensitive'
           ? ` (case-insensitive match with "${args.existingKey}")`
@@ -1073,6 +1086,18 @@ function applyManifestCollisionPolicy(args: {
       }
       if (decision.scenario === 'same-name-parent-of-undeclared') {
         throw sameNameSubclassUndeclared(
+          args.existingKey,
+          args.registrationKey,
+        );
+      }
+      if (decision.scenario === 'same-name-subclass-coexists') {
+        throw sameNameCoexistenceUnsupported(
+          args.registrationKey,
+          args.existingKey,
+        );
+      }
+      if (decision.scenario === 'same-name-parent-of-coexisting') {
+        throw sameNameCoexistenceUnsupported(
           args.existingKey,
           args.registrationKey,
         );
@@ -1422,6 +1447,25 @@ function registerUntracked(
         'CONFIG_TENANT_MANIFEST_CONFLICT',
       );
     }
+  }
+
+  // A same-named subclass replaces its parent or takes a class name of its
+  // own (#5143). `replaceParent: false` would keep it registered next to its
+  // parent; it is refused here, before a re-registration, promotion or
+  // collision can change the registry, whichever of the two loads first.
+  if (
+    config.replaceParent === false ||
+    (config.replaceParent === undefined &&
+      isolatedManifestEntry?.decoratorConfig?.replaceParent === false)
+  ) {
+    throw sameNameCoexistenceUnsupported(
+      explicitPackageName
+        ? createQualifiedName(explicitPackageName, name)
+        : name,
+      isolatedManifestEntry?.extendsQualified ??
+        (Object.getPrototypeOf(ctor) as { name?: string })?.name ??
+        'the class it extends',
+    );
   }
 
   function upsertExistingEntry(
@@ -1781,6 +1825,8 @@ function registerUntracked(
   for (const [key, existing] of sameNameChildren) {
     const choice = sameName.choiceOf(key, existing);
     if (!choice) throw sameNameSubclassUndeclared(key, ownName);
+    if (choice === 'subtype')
+      throw sameNameCoexistenceUnsupported(key, ownName);
     assertReplacementSharesTable(
       key,
       ownName,
@@ -3438,6 +3484,18 @@ function registerFromManifestUntracked(
     ? createQualifiedName(packageName, simpleClassName)
     : objectDef.qualifiedName;
   const registrationKey = (qualifiedNameEarly || name) as string;
+  // A same-named subclass replaces its parent or takes a class name of its
+  // own (#5143): an entry that declares `replaceParent: false` is refused
+  // before anything is recorded, in either arrival order. A run-time model
+  // states replacement through its own `replaces` option instead.
+  if (
+    !runtimeOptions?.extendsRegistered &&
+    objectDef.decoratorConfig?.replaceParent === false
+  )
+    throw sameNameCoexistenceUnsupported(
+      registrationKey,
+      objectDef.extendsQualified ?? objectDef.extends ?? 'the class it extends',
+    );
   const effectiveReplacement = findReplacement(registrationKey);
   if (
     effectiveReplacement &&

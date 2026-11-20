@@ -936,7 +936,18 @@ describe('generated activation order', () => {
       expect(snapshot()).toEqual(before);
     });
 
-    it('refuses a same-named subclass without replaceParent in both public generators and leaves published outputs byte-identical', async () => {
+    it.each([
+      [
+        'without replaceParent',
+        undefined,
+        /CONFIG_SAME_NAME_SUBCLASS_UNDECLARED|without declaring replaceParent/,
+      ],
+      [
+        'that declares replaceParent: false',
+        false,
+        /declares replaceParent: false, but a same-named subclass cannot be registered next to its parent/,
+      ],
+    ] as const)('refuses a same-named subclass %s in both public generators and leaves published outputs byte-identical', async (_label, choice, refusal) => {
       const { files, manifest } = project([
         { key: APP, parent: PROVIDER, replace: true },
         { key: PROVIDER },
@@ -966,8 +977,10 @@ describe('generated activation order', () => {
         return out;
       };
       const before = snapshot();
-      delete manifest.objects[APP].decoratorConfig.replaceParent;
-      const undeclared = /replaceParent/;
+      if (choice === undefined)
+        delete manifest.objects[APP].decoratorConfig.replaceParent;
+      else manifest.objects[APP].decoratorConfig.replaceParent = choice;
+      const undeclared = refusal;
       expect(() => generate(files, manifest)).toThrow(undeclared);
       expect(() =>
         buildActivationManifest(manifest, {

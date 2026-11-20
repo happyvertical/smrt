@@ -98,6 +98,25 @@ export class Scene extends LibScene { badge = ''; }
     );
   });
 
+  it('refuses an app class that declares replaceParent: false, naming both classes', async () => {
+    ws.write(
+      'app/src/models.ts',
+      `import { smrt } from '@happyvertical/smrt-core';
+import { Scene as VideoScene } from '${VIDEO}';
+@smrt({ replaceParent: false })
+export class Scene extends VideoScene { badge = ''; }
+`,
+    );
+    await expect(scan(ws.path('app'), APP, [VIDEO])).rejects.toMatchObject({
+      code: 'CONFIG_SAME_NAME_COEXISTENCE_UNSUPPORTED',
+      message: expect.stringMatching(
+        new RegExp(
+          `^${APP}:Scene declares replaceParent: false, but a same-named subclass cannot be registered next to its parent ${VIDEO}:Scene: give ${APP}:Scene a different class name, or declare replaceParent: true`,
+        ),
+      ),
+    });
+  });
+
   it("gives a declared replacement its parent's table and replaces the parent", async () => {
     ws.write(
       'app/src/models.ts',
