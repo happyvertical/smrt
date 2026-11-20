@@ -475,6 +475,38 @@ describe('ancestors reached through a provider parent', () => {
     });
   });
 
+  // Only a constrained foreign key names the target's table in this table's
+  // DDL; a one-to-many or an unconstrained key keeps no reference to it.
+  it.each([
+    ['one-to-many', `@oneToMany(Room) rooms = [];`],
+    [
+      'foreign key without a constraint',
+      `@foreignKey(Room, { constraint: false }) roomId = '';`,
+    ],
+  ])('accepts an inherited %s whose target package the provider loads in another copy', async (_label, field) => {
+    const root = await project({
+      providers: {
+        ...twoCopies((table) => ({
+          'src/Room.ts': `${CORE}\n@smrt({ tableName: '${table}' })\nexport class Room extends SmrtObject {}\n`,
+        })),
+        [VENDOR]: {
+          dependencies: [OTHER],
+          files: {
+            'src/Booking.ts': `${CORE.replace('report }', 'report, oneToMany }')}\nimport { Room } from '${OTHER}';\n@smrt({ tableStrategy: 'sti', tableName: 'vendor_bookings' })\nexport class Booking extends SmrtObject {\n  ${field}\n}\n`,
+          },
+        },
+      },
+      app: {
+        'src/Session.ts': `${CORE}\nimport { Booking } from '${VENDOR}';\n@smrt()\nexport class Session extends Booking {\n  topic = '';\n}\n`,
+      },
+    });
+
+    const manifest = await build(root);
+    const session = manifest.objects[`${APP}:Session`];
+    expect(session?.schema?.tableName).toBe('vendor_bookings');
+    expect(session?.schema?.ddl).not.toContain('rooms_v');
+  });
+
   // A provider chain deeper than any fixed limit: the check walks to its end,
   // as the single-table walk that picks the table does.
   const deepChain = (length: number) =>

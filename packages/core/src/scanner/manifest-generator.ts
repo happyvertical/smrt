@@ -959,7 +959,16 @@ export class ManifestGenerator {
         for (const [fieldName, field] of Object.entries(
           ancestor.fields ?? {},
         )) {
+          // Only a relationship that puts a constraint on this table names
+          // the target's table in the DDL: a `@foreignKey` whose
+          // `constraint` is not false. A `@oneToMany` or `@manyToMany` keeps
+          // no key of the target here, and a foreign key without a
+          // constraint (or the tenant column) references no table; the same
+          // rule decides the constraint in the schema pass.
           if (
+            field.type !== 'foreignKey' ||
+            field._meta?.constraint === false ||
+            field._meta?.__tenancy?.isTenantIdField === true ||
             !field.relatedQualified ||
             !isQualifiedName(field.relatedQualified)
           ) {
