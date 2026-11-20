@@ -162,6 +162,20 @@ function parseConfigText(source: string): Record<string, unknown> | null {
 }
 
 /**
+ * Keys of a package.json that only marks the module format of the files
+ * below it (`dist/esm/package.json` with `{ "type": "module" }`). Such a file
+ * declares no package; any other key (a name, dependencies, scripts,
+ * `private`) makes it the package that decides.
+ */
+const MODULE_FORMAT_KEYS: ReadonlySet<string> = new Set([
+  'type',
+  'sideEffects',
+  'browser',
+  'main',
+  'module',
+]);
+
+/**
  * Proves references for one scan run. Everything read from disk
  * (`package.json`, `tsconfig.json`, installed packages) is cached for the
  * run only, so a second scan sees edits made between the two.
@@ -209,11 +223,17 @@ export class ImportProver {
             for (const name of Object.keys(map)) names.add(name);
           }
         }
-        // A package.json with neither a name nor dependencies (a nested
-        // `{ "type": "module" }` marker, as in `dist/esm/`) does not declare
-        // a package; the one above it does.
+        // A package.json that only marks the module format (a nested
+        // `{ "type": "module" }`, as in `dist/esm/`) does not declare a
+        // package; the one above it does. Any other key (a name, a
+        // dependency map, `private`, scripts) makes this file decide, so an
+        // unnamed private project never inherits its parent's dependencies.
+        const keys = Object.keys(json);
+        const formatMarker =
+          keys.includes('type') &&
+          keys.every((key) => MODULE_FORMAT_KEYS.has(key));
         info =
-          typeof json.name !== 'string' && !declaresDependencies
+          formatMarker && !declaresDependencies
             ? (() => {
                 const parent = dirname(dir);
                 return parent === dir ? null : this.packageAt(parent);

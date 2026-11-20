@@ -1125,6 +1125,24 @@ describe('repeated scans and project roots', () => {
     expect(errors).toEqual([]);
   });
 
+  it('stops at an unnamed private project below a root that declares the package', async () => {
+    // Only a module-format marker is looked past: a nested private app with
+    // scripts is its own project, and declares no dependency on the provider.
+    const root = newRoot();
+    write(root, {
+      'src/app/package.json': JSON.stringify({
+        private: true,
+        scripts: { dev: 'vite' },
+      }),
+      'src/app/Meeting.ts': CHILD(`import { Event } from '${PROVIDER}';`),
+    });
+    const { errors } = await scanAt(root);
+
+    expect(errors).toHaveLength(1);
+    expect(errors[0].message).toContain(`${PROVIDER} is not declared in`);
+    expect(errors[0].message).toContain(join('src', 'app', 'package.json'));
+  });
+
   it('without projectRoot, the nearest package.json decides; none makes a package parent an error', async () => {
     const root = mkdtempSync(join(tmpdir(), 'smrt-proof-loose-'));
     roots.push(root);
