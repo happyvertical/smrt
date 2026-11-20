@@ -281,6 +281,45 @@ describe('STI rows through a base route on runtime REST', () => {
       expect(await rows()).toEqual(['base:', 'private:n', 'readonly:n']);
     });
 
+    it('answers a sync create on a subtype row it does not serve as an id conflict', async () => {
+      await serve([RowPolicyDoc], db, async (port) => {
+        const create = async (id: string, payload: Record<string, unknown>) =>
+          (
+            (await (
+              await fetch(`http://127.0.0.1:${port}/api/sync/apply`, {
+                method: 'POST',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify({
+                  items: [
+                    {
+                      itemId: 'item-1',
+                      object: segment(),
+                      op: 'create',
+                      id,
+                      payload,
+                    },
+                  ],
+                }),
+              })
+            ).json()) as { results: Array<Record<string, unknown>> }
+          ).results[0];
+        const unserved = await create(ids.private, { title: 'private' });
+        expect(unserved).toMatchObject({
+          status: 'rejected',
+          reason: 'id_conflict',
+        });
+        expect(unserved).not.toHaveProperty('updatedAt');
+        // A served row's replay checks the payload before it is compared.
+        expect(
+          await create(ids.base, { title: 'base', notAField: 'y' }),
+        ).toMatchObject({ status: 'rejected', reason: 'invalid_payload' });
+        expect(await create(ids.base, { title: 'base' })).toMatchObject({
+          status: 'applied',
+        });
+      });
+      expect(await rows()).toEqual(['base:', 'private:n', 'readonly:n']);
+    });
+
     it('finds a served row by its slug', async () => {
       await serve([RowPolicyDoc], db, async (port) => {
         const response = await fetch(

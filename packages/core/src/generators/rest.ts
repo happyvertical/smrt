@@ -2254,7 +2254,19 @@ export class APIGenerator {
     let admitted = req;
     return {
       objectName: resolvedName,
-      collection: resolvedCollection,
+      // The row an item names is looked up as this route reads it: a row of
+      // a subtype the route does not serve is not found (an update or delete
+      // is `not_found`; a create collides opaquely as `id_conflict`).
+      collection: {
+        get: (id: string) => {
+          const family = this.familyReadScope(resolvedName, 'get');
+          return resolvedCollection.get(
+            family ? { ...resolveGetStringFilter(id), ...family } : id,
+          );
+        },
+        create: (options: Record<string, unknown>) =>
+          resolvedCollection.create(options),
+      },
       // Every sync item is a write: it runs inside the tenant gate, like the
       // CRUD route it mirrors. A refusal rejects the item.
       run: async (_op, apply) => {

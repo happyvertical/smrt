@@ -226,7 +226,9 @@ nothing), and a restricted point read resolves the segment as
 `collection.get()` does, so a slug still finds its row. An update, delete or
 sync write of a row whose own model is tenant-scoped, through a base that is
 not, runs in that model's tenant gate with the request's tenant
-(`runInRowTenantGate`), as a create already did. A plain `new APIGenerator()` spans the whole registry,
+(`runInRowTenantGate`), as a create already did. A sync item looks its row up
+under the same served-types restriction: a create naming a row of a subtype
+the route does not serve collides as `id_conflict`. A plain `new APIGenerator()` spans the whole registry,
 which may hold models the host never serves, so it does not refuse at
 construction. Tests: `src/__tests__/rest-model-identity.test.ts`.
 

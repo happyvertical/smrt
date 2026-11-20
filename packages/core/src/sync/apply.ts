@@ -621,6 +621,10 @@ async function applyAuthorizedItem(
 
   switch (item.op) {
     case 'create': {
+      // The payload is checked before anything is answered about an existing
+      // row: a key the model does not accept rejects the item, never reports
+      // a replay or a conflict.
+      target.assertCreate?.(data);
       if (row) {
         if (payloadMatchesRow(data, row)) {
           // Idempotent replay of an already-applied create.
@@ -640,7 +644,6 @@ async function applyAuthorizedItem(
         };
       }
 
-      target.assertCreate?.(data);
       try {
         // Strict insert (`_insertOnly`): row identity is the envelope UUID
         // alone. Without it, `create()` saves new objects with natural-key

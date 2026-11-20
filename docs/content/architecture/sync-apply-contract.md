@@ -108,13 +108,13 @@ HTTP 200
 | `conflict` | `create_conflict` | A create targeted an existing row whose content differs from the payload. The create was **skipped** (server state wins). |
 | `rejected` | `invalid_item` | Malformed envelope (missing/invalid `itemId`, `op`, `object`, or unparseable `baseUpdatedAt`). |
 | `rejected` | `invalid_id` | The row id is not a well-formed UUID. |
-| `rejected` | `invalid_payload` | `payload` missing or not an object on create/update, or an update payload names a key that is not a declared field or a settable accessor of the model. |
+| `rejected` | `invalid_payload` | `payload` missing or not an object on create/update, or a create or update payload names a key that is not a declared field or a settable accessor of the model. Checked before a replay or a conflict is reported. |
 | `rejected` | `unknown_object` | No model matches the `object` segment. |
 | `rejected` | `op_not_allowed` | The model's API config does not expose this op. |
 | `rejected` | `auth_required` | No authenticated principal (and the model is not `public: true`), or the auth middleware answered 401. Also an anonymous write to a tenant-scoped model with no tenant. |
 | `rejected` | `forbidden` | The auth middleware refused with a non-401 status, or (generated SvelteKit route) the principal lacks the `<collection>.<op>` permission. Also a signed-in caller with no tenant writing a tenant-scoped model, a tenant that does not match the active context, or an incomplete principal for an `api.principalContext` model. |
 | `rejected` | `not_found` | Update target does not exist — or is not visible in the caller's tenant. |
-| `rejected` | `id_conflict` | A create collides with an existing row: its id belongs to a row the caller cannot see (e.g. another tenant's), a natural-key unique constraint (e.g. slug) matches a different row, or a concurrent writer won the race. Sync creates are strict inserts — the existing row is never adopted or overwritten. |
+| `rejected` | `id_conflict` | A create collides with an existing row: its id belongs to a row the caller cannot see (e.g. another tenant's, or a row of an STI subtype the route does not serve), a natural-key unique constraint (e.g. slug) matches a different row, or a concurrent writer won the race. Sync creates are strict inserts — the existing row is never adopted or overwritten. |
 | `rejected` | `write_failed` | Unexpected error applying this item; the batch continued. Safe to retry. |
 
 ## Ordering
@@ -164,6 +164,13 @@ Guarantees, precisely:
   an `applied` no-op and state is unchanged. Coalescing clients never emit
   either shape; treat `applied` and `create_conflict` on a create replay both
   as "the row exists — mark the item synced".
+- **Rejections precede replay detection.** A create whose payload names a key
+  that is not a declared field or settable accessor is `invalid_payload`
+  even when its row already exists, and a create naming a row the route does
+  not serve (an STI subtype outside it) is `id_conflict`, never `applied` or
+  `create_conflict`. Both are terminal: a client must not read them as "the
+  row exists". Before this contract, such a replay could answer `applied` or
+  `create_conflict`.
 
 ## Conflict policy v1 (server-authoritative LWW)
 
