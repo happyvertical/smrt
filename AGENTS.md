@@ -42,10 +42,15 @@ and AI operations. Read the package's `AGENTS.md`; see [CONTEXT-MAP.md](CONTEXT-
 
 ## Validation
 
-`pnpm install`, `pnpm build`, then [agents/validation.md](agents/validation.md).
+Use Node/pnpm versions from `package.json`; `pnpm install`, `pnpm build`. Package
+checks first, then root: `pnpm test`, `pnpm typecheck`, `pnpm lint`,
+`pnpm format-check`, `pnpm knowledge:check --strict --format markdown`,
+`pnpm audit:policy`, `pnpm check:new-surface` (full `surface-ledger.json` entry
+per new surface), `pnpm check:node-roots` (built model roots load under plain
+Node, #4219; allow-list in root `package.json`).
 [TESTING_STANDARD.md](TESTING_STANDARD.md) defines package release gates.
 
-Lint/format, Vitest, Oxc, `svelte-check` gotchas: [root-gotchas](agents/root-gotchas.md).
+Lint/format, Vitest, Oxc, `svelte-check` gotchas: [agents/root-gotchas.md](agents/root-gotchas.md).
 
 ## Cross-package invariants
 
@@ -69,7 +74,9 @@ Lint/format, Vitest, Oxc, `svelte-check` gotchas: [root-gotchas](agents/root-got
   application schema. Use migrations and `smrt doctor --db` / `db:status --parity`.
   Existing int4 deployments need the maintenance-window `db:migrate-int8` flow;
   parity treats int4/int8 as equivalent (CLI guidance).
-- Never author changesets (generated); audit policy: see Validation.
+- Release automation generates changesets; never author them. Dependency
+  overrides target the advisory range; ignored GHSAs also need an
+  `audit-policy.json` record (`pnpm audit:policy`).
 
 ## Documentation and skills
 
