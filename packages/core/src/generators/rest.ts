@@ -17,6 +17,7 @@ import {
 } from '../create-target';
 import { resolveDispatchTenantId } from '../dispatch';
 import { ConfigurationError } from '../errors';
+import { resolveGetStringFilter } from '../interceptors';
 import type { PublicJsonOptions, SmrtObject } from '../object';
 import { publicSerializerOf } from '../public-json';
 import { assertQueryAccess } from '../query-access';
@@ -68,7 +69,11 @@ import {
   resolveDisplayLabelProjection,
 } from '../ui-metadata';
 import { computeWebManifestHash } from '../vite-plugin/web-collections';
-import { applyWhereScope } from '../where-keys';
+import {
+  applyWhereScope,
+  mergeOwnedWhere,
+  normalizeWhereKey,
+} from '../where-keys';
 import { handleChangesRoute } from './changes-route';
 import {
   canonicalReadRepresentation,
@@ -1762,7 +1767,26 @@ export class APIGenerator {
       this.resolveTenantReadScope(objectName, req),
     );
     const family = this.familyReadScope(objectName, operation, req);
-    return family ? { ...(scoped ?? {}), ...family } : scoped;
+    if (!family) return scoped;
+    // The served types narrow a caller's own type filter, never replace it:
+    // an `in` list on the type column keeps only the types both name (an
+    // empty list serves nothing); any other type predicate is ANDed.
+    let served = family['_meta_type in'] as string[];
+    const requested: string[] = [];
+    for (const [key, value] of Object.entries(scoped ?? {})) {
+      if (normalizeWhereKey(key, value) !== '_meta_type in') continue;
+      const named = (Array.isArray(value) ? value : [value]).map(String);
+      requested.push(...named);
+      served = served.filter((type) => named.includes(type));
+    }
+    // No served type is requested: the caller's own list stays and the
+    // owned predicate excludes exactly it, so nothing matches.
+    return mergeOwnedWhere(
+      scoped,
+      served.length > 0
+        ? { '_meta_type in': served }
+        : { '_meta_type not in': requested },
+    );
   }
 
   /** A point-read filter for `id`: tenant scope and served row types. */
@@ -1776,7 +1800,11 @@ export class APIGenerator {
       ...(this.resolveTenantReadScope(objectName, req) ?? {}),
       ...(this.familyReadScope(objectName, operation, req) ?? {}),
     };
-    return Object.keys(scope).length > 0 ? { id, ...scope } : id;
+    // The id resolves as `collection.get(id)` would resolve it (a UUID, else
+    // the slug in the default context), then takes the scope.
+    return Object.keys(scope).length > 0
+      ? { ...resolveGetStringFilter(id), ...scope }
+      : id;
   }
 
   /**

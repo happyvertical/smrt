@@ -152,6 +152,7 @@ describe('STI rows through a base route on runtime REST', () => {
     ] as const) {
       const created = await docs.create({
         title: label,
+        slug: `${label}-doc`,
         ...(model === 'RowPolicyDoc' ? {} : { note: 'n' }),
         _meta_type: key(model),
       } as never);
@@ -278,6 +279,54 @@ describe('STI rows through a base route on runtime REST', () => {
         });
       });
       expect(await rows()).toEqual(['base:', 'private:n', 'readonly:n']);
+    });
+
+    it('finds a served row by its slug', async () => {
+      await serve([RowPolicyDoc], db, async (port) => {
+        const response = await fetch(
+          `http://127.0.0.1:${port}/api/${segment()}/base-doc`,
+        );
+        expect(response.status).toBe(200);
+        expect(((await response.json()) as { title: string }).title).toBe(
+          'base',
+        );
+        expect(
+          (await fetch(`http://127.0.0.1:${port}/api/${segment()}/private-doc`))
+            .status,
+        ).toBe(404);
+      });
+    });
+
+    it('keeps a type filter of the caller within the served types', async () => {
+      await serve([RowPolicyDoc, RowPolicyReadOnlyDoc], db, async (port) => {
+        const url = (path: string, types: string[]) =>
+          `http://127.0.0.1:${port}/api/${path}?_meta_type[in]=${types
+            .map(encodeURIComponent)
+            .join(',')}`;
+        const titles = async (types: string[]) =>
+          (
+            (await (await fetch(url(segment(), types))).json()) as Array<{
+              title: string;
+            }>
+          )
+            .map((row) => row.title)
+            .sort();
+        const count = async (types: string[]) =>
+          (
+            (await (await fetch(url(`${segment()}/count`, types))).json()) as {
+              count: number;
+            }
+          ).count;
+        expect(await titles([key('RowPolicyReadOnlyDoc')])).toEqual([
+          'readonly',
+        ]);
+        expect(await count([key('RowPolicyReadOnlyDoc')])).toBe(1);
+        expect(await titles([key('RowPolicyPrivateDoc')])).toEqual([]);
+        expect(await count([key('RowPolicyPrivateDoc')])).toBe(0);
+        expect(
+          await titles([key('RowPolicyDoc'), key('RowPolicyPrivateDoc')]),
+        ).toEqual(['base']);
+      });
     });
 
     it('serves the subtype rows of the subtypes it was given', async () => {
