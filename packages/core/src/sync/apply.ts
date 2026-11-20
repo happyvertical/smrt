@@ -215,16 +215,16 @@ export interface SyncApplyTarget {
    */
   run?: <T>(op: SyncApplyOp, apply: () => Promise<T>) => Promise<T>;
   /**
-   * Host check on the stored row an update or delete targets, before anything
-   * about it is answered (replay, staleness, the write). A host whose route
-   * does not serve that row (an STI subtype the server does not serve, or
-   * whose own policy refuses the operation) throws
-   * {@link SyncApplyRejection}.
+   * Host check on the stored row an item names, before anything about it is
+   * answered (replay, staleness, the write). A host whose route does not
+   * serve that row (an STI subtype the server does not serve, or whose own
+   * policy refuses the operation) throws {@link SyncApplyRejection}. For a
+   * create (`op: 'create'`) the row is an existing row the create's id names:
+   * a host whose caller may not read that row's type throws
+   * `SyncApplyRejection('id_conflict')`, the answer a hidden row gets, so a
+   * replay discloses nothing about it.
    */
-  admitRow?: (
-    row: SyncApplyRowLike,
-    op: 'update' | 'delete',
-  ) => Promise<void> | void;
+  admitRow?: (row: SyncApplyRowLike, op: SyncApplyOp) => Promise<void> | void;
   /**
    * Refuse an update payload the row does not accept, without changing the
    * row: a key that is not a declared field or settable accessor throws
@@ -666,6 +666,9 @@ async function applyAuthorizedItem(
       // a replay or a conflict.
       target.assertCreate?.(data);
       if (row) {
+        // The caller must be allowed to read the existing row's type before
+        // a replay or a conflict (with its timestamp) is answered about it.
+        await target.admitRow?.(row, 'create');
         if (payloadMatchesRow(data, row)) {
           // Idempotent replay of an already-applied create.
           return {

@@ -167,9 +167,11 @@ Guarantees, precisely:
 - **Rejections precede replay detection.** A create whose payload names a key
   that is not a declared field or settable accessor is `invalid_payload`
   even when its row already exists, and a create naming a row the route does
-  not serve (an STI subtype outside it) is `id_conflict`, never `applied` or
-  `create_conflict`. Both are terminal: a client must not read them as "the
-  row exists". Before this contract, such a replay could answer `applied` or
+  not serve (an STI subtype outside it), or a row of a subtype the caller
+  may not read (the host's read gate for that subtype refuses it, checked
+  with `SyncApplyTarget.admitRow(row, 'create')`), is `id_conflict`, never
+  `applied` or `create_conflict`. Both are terminal: a client must not read
+  them as "the row exists". Before this contract, such a replay could answer `applied` or
   `create_conflict`.
 
 ## Conflict policy v1 (server-authoritative LWW)

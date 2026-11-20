@@ -1108,6 +1108,50 @@ export class APIGenerator {
   }
 
   /**
+   * Whether the caller of an admitted request may read rows of `rowModel`, a
+   * member of `objectName`'s family, as a read through the base would admit
+   * it: served on the route for `get`, switched on for the request's tenant,
+   * and allowed by the member's own read gate (its `authMiddleware` decision
+   * for a GET under its own name, or its `api.public` without middleware).
+   *
+   * @param admitted - The request the auth middleware admitted
+   */
+  private async mayReadRowModel(
+    admitted: Request,
+    objectName: string,
+    rowModel: string,
+  ): Promise<boolean> {
+    if (
+      !isFamilyRowServed(objectName, rowModel, 'api', 'get', this.modelScope)
+    ) {
+      return false;
+    }
+    const tenant = await this.requestTenant(admitted);
+    if (
+      !isRuntimeModelEnabled(
+        ObjectRegistry.getExposureModel(rowModel) ?? rowModel,
+        {
+          surface: 'rest',
+          tenantId: tenant.effectiveTenantId ?? undefined,
+          request: admitted,
+        },
+      )
+    ) {
+      return false;
+    }
+    if (this.config.authMiddleware) {
+      const decision = await this.config.authMiddleware(
+        rowModel,
+        'get',
+      )(
+        new Request(admitted.url, { method: 'GET', headers: admitted.headers }),
+      );
+      return !(decision instanceof Response);
+    }
+    return this.isRoutePublic(rowModel, 'GET');
+  }
+
+  /**
    * Whether the rows a read through `objectName` serves depend on who asks:
    * an STI base with subtypes, read under an auth middleware, admits each
    * subtype by the caller's own authorization.
@@ -2212,6 +2256,16 @@ export class APIGenerator {
       admitRow: async (row, op) => {
         const rowModel = modelOfInstance(row);
         if (!rowModel || rowModel === resolvedName) return;
+        if (op === 'create') {
+          // A create's id names an existing row: a replay or a conflict is
+          // answered only to a caller that may read that row's own type
+          // (served through the route, and admitted by its own read gate),
+          // else it gets a hidden row's opaque `id_conflict`.
+          if (!(await this.mayReadRowModel(admitted, resolvedName, rowModel))) {
+            throw new SyncApplyRejection('id_conflict');
+          }
+          return;
+        }
         // A row the route does not read is not found; a row it reads but
         // whose own model refuses the operation is refused below.
         if (
