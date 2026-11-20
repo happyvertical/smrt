@@ -3,7 +3,7 @@
  * was admitted under, including models the route did not resolve, with the
  * real tenant interceptor on a SQLite file.
  *
- * Row R2.9 of the #5375 round-2 matrix (more rows follow).
+ * Rows R2.4 to R2.9 of the #5375 round-2 matrix.
  */
 
 import { mkdtempSync, rmSync } from 'node:fs';
@@ -16,6 +16,7 @@ import {
   SmrtCollection,
   SmrtObject,
   smrt,
+  TenantPolicyChangedError,
 } from '@happyvertical/smrt-core';
 import { APIGenerator } from '@happyvertical/smrt-core/generators/rest';
 import { getTestDatabase } from '@happyvertical/smrt-core/testing';
@@ -31,6 +32,8 @@ import {
 import {
   inRequestScope,
   keyOf,
+  restCall,
+  segmentOf,
   TENANT_A,
   TENANT_B,
 } from './helpers/effective-tenancy-harness.js';
@@ -123,6 +126,9 @@ const SESSIONS: Record<string, Record<string, unknown>> = {
 };
 const tokenOf = (req: Request) =>
   (req.headers.get('authorization') ?? '').replace('Bearer ', '');
+const as = (token: string) => ({
+  headers: { authorization: `Bearer ${token}` },
+});
 const anonymous = { authenticated: false } as const;
 
 describe('every collection call of a request is held to its admitted tenancy', () => {
@@ -131,6 +137,11 @@ describe('every collection call of a request is held to its admitted tenancy', (
   let handler: (req: Request) => Promise<Response>;
   let desks: SmrtCollection<SmrtObject>;
   let shelves: SmrtCollection<SmrtObject>;
+
+  const titles = async (table: string) =>
+    (await db.query(`SELECT title FROM ${table} ORDER BY title`)).rows.map(
+      (row) => String(row.title),
+    );
 
   beforeAll(async () => {
     ObjectRegistry.registerCollection(
@@ -233,6 +244,98 @@ describe('every collection call of a request is held to its admitted tenancy', (
         title: 'atlas',
         _meta_type: keyOf(EffScopeAtlas),
       } as never);
+    });
+  });
+
+  describe('models the route did not resolve (R2.4, R2.5)', () => {
+    it('a cross-tenant read grant writes no row of another tenant-scoped model', async () => {
+      const logs = reached.logs as SmrtCollection<SmrtObject>;
+      const answer = await restCall(
+        handler,
+        'GET',
+        `${segmentOf(EffScopeDesk)}/stamp-logs`,
+        as('operator'),
+      );
+      expect(answer.status).toBe(403);
+      expect(await titles(logs.tableName)).toEqual([
+        'log of a',
+        'log of b',
+        'log of none',
+      ]);
+    });
+
+    it('a read with no tenant sees only rows without an owner of another optional-mode model and none of a required-mode one', async () => {
+      const logs = await restCall(
+        handler,
+        'GET',
+        `${segmentOf(EffScopeDesk)}/count-logs`,
+      );
+      expect(logs.status).toBe(200);
+      expect((logs.body as { result: unknown }).result).toBe(1);
+      const vaults = await restCall(
+        handler,
+        'GET',
+        `${segmentOf(EffScopeDesk)}/count-vaults`,
+      );
+      expect(vaults.status).toBe(401);
+      // A tenant's read of the other model is its own tenant's rows (control).
+      const ours = await restCall(
+        handler,
+        'GET',
+        `${segmentOf(EffScopeDesk)}/count-logs`,
+        as('user-of-a'),
+      );
+      expect((ours.body as { result: unknown }).result).toBe(1);
+    });
+  });
+
+  describe('policy drift during a family read (R2.6, R2.7)', () => {
+    it('a subtype whose tenancy changes during a base read refuses the read', async () => {
+      const book = keyOf(EffScopeBook);
+      try {
+        const outcome = await inRequestScope(() =>
+          runInRequestTenancy(
+            {
+              model: keyOf(EffScopeShelf),
+              operation: 'list',
+              principal: anonymous,
+            },
+            async () => {
+              const before = (await shelves.list({})).length;
+              registerTenantScopedClass(book, { mode: 'optional' });
+              return { before, after: shelves.list({}) };
+            },
+          ),
+        );
+        expect(outcome.before).toBe(4);
+        await expect(outcome.after).rejects.toBeInstanceOf(
+          TenantPolicyChangedError,
+        );
+      } finally {
+        unregisterTenantScopedClass(book);
+      }
+    });
+
+    it('a request admitted while tenancy was off refuses once tenancy is turned on', async () => {
+      const desk = keyOf(EffScopeDesk);
+      disableTenancy();
+      try {
+        const read = await inRequestScope(() =>
+          runInRequestTenancy(
+            { model: desk, operation: 'list', principal: anonymous },
+            async () => {
+              enableTenancy();
+              return desks.list({}).then(
+                (rows) => rows.length,
+                (cause: unknown) => cause,
+              );
+            },
+          ),
+        );
+        expect(read).toBeInstanceOf(TenantPolicyChangedError);
+      } finally {
+        enableTenancy();
+      }
     });
   });
 

@@ -1050,18 +1050,44 @@ function inFamily(t: RequestTenancy, key: string): boolean {
   );
 }
 
-/** The bound member for `key`, refusing a policy that changed since. */
-function checkedMember(
+/**
+ * Refuse an operation whose tenancy moved since admission: tenancy turned on
+ * or off, or a policy of any model in `keys` the request resolved changed.
+ */
+function assertFresh(t: RequestTenancy, keys: Iterable<string>): void {
+  if (tenancyEnforced() !== t.enforced) throw new TenantPolicyChangedError();
+  if (!t.enforced) return;
+  for (const key of keys) {
+    const bound = t.members.get(key);
+    if (!bound) continue;
+    if (isFailedMember(bound)) throwIfRefused(unresolved());
+    if (memberTenancyOf(key).signature !== bound.signature) {
+      throw new TenantPolicyChangedError();
+    }
+  }
+}
+
+/**
+ * The policy an operation on `key` is held to inside a bound request: the
+ * bound member when the request resolved one (refusing a change since
+ * admission, of that member or of any admitted type the operation reads on
+ * the family table), else the class's live policy, so a model the route did
+ * not resolve is held to the same actor rules (a caller with no tenant reads
+ * only rows without an owner and writes none; a read grant writes none).
+ * `undefined` when tenancy is off.
+ */
+function memberFor(
   t: RequestTenancy,
   key: string,
+  family: boolean,
 ): MemberTenancy | undefined {
+  assertFresh(t, family ? [key, ...(t.admitted ?? [])] : [key]);
+  if (!t.enforced) return undefined;
   const bound = t.members.get(key);
-  if (!bound) return undefined;
-  if (isFailedMember(bound)) throwIfRefused(unresolved());
-  if (memberTenancyOf(key).signature !== bound.signature) {
-    throw new TenantPolicyChangedError();
-  }
-  return bound;
+  if (bound) return bound;
+  const live = memberTenancyOf(key);
+  if (isFailedMember(live)) throwIfRefused(unresolved());
+  return live;
 }
 
 function dnfOf(where: ListOptions['where']): Record<string, unknown>[][] {
@@ -1085,8 +1111,9 @@ function assertWritable(
   key: string,
   instance: SmrtObject,
 ): void {
-  const member = t.enforced ? checkedMember(t, key) : undefined;
-  if (inFamily(t, key)) {
+  const family = inFamily(t, key);
+  const member = memberFor(t, key, family);
+  if (family) {
     const stored = storedTypeOf(instance);
     if (
       !t.admitted?.has(key) ||
@@ -1142,8 +1169,8 @@ function createRequestTenancyInterceptor(): CollectionInterceptor {
       const t = getResolvedTenancy();
       if (!t) return;
       const key = identityOf(className, context);
-      const member = t.enforced ? checkedMember(t, key) : undefined;
       const family = inFamily(t, key);
+      const member = memberFor(t, key, family);
       let scope: Record<string, null> | undefined;
       if (member) {
         const read = readScope(t, member);
@@ -1166,8 +1193,8 @@ function createRequestTenancyInterceptor(): CollectionInterceptor {
       const t = getResolvedTenancy();
       if (!t) return;
       const key = identityOf(className, context);
-      const member = t.enforced ? checkedMember(t, key) : undefined;
       const family = inFamily(t, key);
+      const member = memberFor(t, key, family);
       let scope: Record<string, null> | undefined;
       if (member) {
         const read = readScope(t, member);
