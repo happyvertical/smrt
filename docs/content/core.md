@@ -666,9 +666,10 @@ collection GET action of a tenant-scoped model whose arguments carry the read
 scope (a single `options` parameter, or parameters named after every
 ownership field) reads global rows only; every other custom collection action
 (a GET with no parameters or only other parameters, and every mutating action)
-is refused. A method the server has no scanned parameter metadata for carries
-the scope only when its source declares exactly one plain parameter named
-`options`. A refusal because a row belongs to another tenant is a plain
+is refused. A method the server has no scanned parameter metadata for never
+carries the scope, whatever its source declares, so a caller with no tenant
+is refused it; generate the manifest so the method's parameters are scanned.
+A refusal because a row belongs to another tenant is a plain
 `403 permission_denied`.
 
 

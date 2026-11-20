@@ -3,7 +3,6 @@ import type { CustomActionMetadata } from './custom-action.js';
 import {
   buildCustomActionInputSchema,
   buildCustomActionInvocationArgs,
-  declaredParameterNames,
   isFrameworkLifecycleMethod,
   normalizeCustomActionFailure,
   readActionReceivesTenantScope,
@@ -417,96 +416,5 @@ describe('custom read action scope reception', () => {
     expect(readActionReceivesTenantScope(['limit'], ['tenantId'])).toBe(false);
     expect(readActionReceivesTenantScope(['options', 'limit'], [])).toBe(false);
     expect(readActionReceivesTenantScope(['tenantId'], [])).toBe(false);
-  });
-});
-
-describe('declared parameter names of a method without scanned metadata', () => {
-  class Host {
-    plain(options: unknown) {
-      return options;
-    }
-    defaulted(limit = 10) {
-      return limit;
-    }
-    withDefaultCall(limit = Math.max(1, 2), options = { a: [1, ')'] }) {
-      return [limit, options];
-    }
-    destructured({ limit }: { limit?: number } = {}) {
-      return limit;
-    }
-    rest(...args: unknown[]) {
-      return args;
-    }
-    async asyncMethod(options: unknown) {
-      return options;
-    }
-    *generator(options: unknown) {
-      yield options;
-    }
-    static staticMethod(options: unknown) {
-      return options;
-    }
-  }
-
-  // Built from source text so the comments reach `Function#toString`.
-  const fromSource = (source: string) =>
-    new Function(`return (${source});`)() as unknown;
-
-  it('reads plain parameter names, with defaults and comments', () => {
-    const proto = Host.prototype;
-    expect(declaredParameterNames(proto.plain)).toEqual(['options']);
-    expect(declaredParameterNames(proto.defaulted)).toEqual(['limit']);
-    expect(declaredParameterNames(proto.withDefaultCall)).toEqual([
-      'limit',
-      'options',
-    ]);
-    expect(
-      declaredParameterNames(
-        fromSource('class { m(/* nothing: options */) {} }.prototype.m'),
-      ),
-    ).toEqual([]);
-    expect(
-      declaredParameterNames(
-        fromSource('class { m(// options\n) {} }.prototype.m'),
-      ),
-    ).toEqual([]);
-    expect(
-      declaredParameterNames(
-        fromSource("function (/* a */ limit = '(', // b, c\n) {}"),
-      ),
-    ).toEqual(['limit']);
-    expect(declaredParameterNames(proto.asyncMethod)).toEqual(['options']);
-    expect(declaredParameterNames(proto.generator)).toEqual(['options']);
-    expect(declaredParameterNames(Host.staticMethod)).toEqual(['options']);
-    expect(
-      declaredParameterNames(
-        fromSource('async function named(/* a */ options /* b */) {}'),
-      ),
-    ).toEqual(['options']);
-    expect(declaredParameterNames((options: unknown) => options)).toEqual([
-      'options',
-    ]);
-  });
-
-  it('gives no names for a parameter list it cannot read as plain names', () => {
-    const proto = Host.prototype;
-    expect(declaredParameterNames(proto.destructured)).toBeUndefined();
-    expect(declaredParameterNames(proto.rest)).toBeUndefined();
-    expect(declaredParameterNames(fromSource('options => options'))).toBe(
-      undefined,
-    );
-    expect(
-      declaredParameterNames(
-        fromSource('class { ["m("](options) {} }.prototype["m("]'),
-      ),
-    ).toBeUndefined();
-    expect(
-      declaredParameterNames(fromSource('function (limit = `a`) {}')),
-    ).toBeUndefined();
-    expect(declaredParameterNames(undefined)).toBeUndefined();
-    expect(declaredParameterNames({})).toBeUndefined();
-    // A native or bound function shows no parameters.
-    expect(declaredParameterNames(proto.plain.bind(null))).toEqual([]);
-    expect(declaredParameterNames(Math.max)).toEqual([]);
   });
 });

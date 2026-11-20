@@ -90,7 +90,6 @@ import {
 } from './conditional-get';
 import {
   buildCustomActionInvocationArgs,
-  declaredParameterNames,
   declaresRuntimeRestRouteShape,
   normalizeCustomActionFailure,
   readActionReceivesTenantScope,
@@ -1690,27 +1689,22 @@ export class APIGenerator {
           })
         : [options];
 
-      // A read whose arguments carry the scope (`scopeTenantReadOptions`
-      // above) is scoped through them: a single options parameter, or
-      // parameters named after every ownership property. With no scanned
-      // metadata the method is handed the scoped options whole as its first
-      // argument, so only a source that declares exactly one plain parameter
-      // named `options` receives it (a parameter named after an ownership
-      // property would be handed the whole options object, not its value);
-      // a list that cannot be read counts as receiving nothing. Any other
-      // action body reads through the collection with no tenant scope of its
-      // own; `gateAction` puts it inside the tenant gate.
-      const declaredNames = metadata.parameters
-        ? metadata.parameters.map((parameter) => parameter.name)
-        : declaredParameterNames(
-            isCollectionHosted ? collectionMethod : staticMethod,
-          );
+      // A read whose scanned parameters carry the scope
+      // (`scopeTenantReadOptions` above) is scoped through them: a single
+      // options parameter, or parameters named after every ownership property.
+      // Without scanned parameter metadata the server cannot know what the
+      // scoped options reach, and it never infers that from the method's
+      // source, so such a read counts as receiving nothing. Any action body
+      // that does not receive the scope reads through the collection with no
+      // tenant scope of its own; `gateAction` puts it inside the tenant gate,
+      // which refuses a caller with no tenant and changes nothing for a caller
+      // with a tenant or an explicitly cross-tenant one.
       const receivesScopedOptions =
         routeMethod === 'GET' &&
-        declaredNames !== undefined &&
+        metadata.parameters !== undefined &&
         readActionReceivesTenantScope(
-          declaredNames,
-          metadata.parameters ? tenantReadScopeProperties(objectName) : [],
+          metadata.parameters.map((parameter) => parameter.name),
+          tenantReadScopeProperties(objectName),
         );
       const result = await (receivesScopedOptions
         ? invoke(invocationArgs)

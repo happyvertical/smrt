@@ -119,12 +119,11 @@ go through the same error mapping. That exception covers the CRUD list, get
 and count handlers, and a custom collection GET action whose arguments carry
 the read scope (`readActionReceivesTenantScope`: a single `options` parameter
 handed the scoped options, or parameters named after every ownership property
-the live registry reports, each handed its scope value). On runtime REST
-without scanned metadata the method is handed the scoped options whole, so it
-qualifies only when `declaredParameterNames` reads exactly one plain parameter
-named `options` from its source (comments and defaults are read; a
-destructured or rest parameter, or any list it cannot read, counts as
-receiving nothing). Every other custom collection action reads through the
+the live registry reports, each handed its scope value). The parameter names
+come from scanned metadata only: an action with none (runtime REST serving a
+class without a manifest entry for the method) never qualifies, whatever its
+source declares, and the server never parses a method's source to decide.
+Every other custom collection action reads through the
 collection with no scope of its own, so for a caller with no tenant it runs
 inside the gate, which refuses it. The emitted SvelteKit routes apply the same
 rule: such a collection-scoped (or static) action of a tenant-scoped model

@@ -600,7 +600,17 @@ describe('emitted SvelteKit list route with the real tenant interceptor', () => 
       );
     }
 
-    // The runtime REST transport over the same collection, anonymous.
+    // The runtime REST transport over the same collection, anonymous. It
+    // reads the scanned parameters of the collection GET actions from the
+    // live registry, as an application that loaded its manifest does.
+    for (const model of ['EmittedRouteBulletin', 'EmittedRouteFlyer']) {
+      for (const methodName of ['browse', 'readOrg', 'readTenant']) {
+        ObjectRegistry.getMethods(model).set(
+          methodName,
+          optionsMethod(methodName) as never,
+        );
+      }
+    }
     const rest = new APIGenerator({ basePath: '/api' }, { db });
     rest.registerCollection('bulletins', bulletins as never);
     rest.registerCollection('flyers', flyers as never);

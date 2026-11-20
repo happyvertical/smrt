@@ -56,6 +56,10 @@ const ROW_GLOBAL = '99999999-0000-4000-8000-000000000009';
       'paged',
       'annotated',
       'filtered',
+      'windowed',
+      'lineCr',
+      'lineSeparator',
+      'paragraphSeparator',
     ],
     routes: {
       recent: { method: 'GET', scope: 'collection' },
@@ -65,6 +69,10 @@ const ROW_GLOBAL = '99999999-0000-4000-8000-000000000009';
       paged: { method: 'GET', scope: 'collection' },
       annotated: { method: 'GET', scope: 'collection' },
       filtered: { method: 'GET', scope: 'collection' },
+      windowed: { method: 'GET', scope: 'collection' },
+      lineCr: { method: 'GET', scope: 'collection' },
+      lineSeparator: { method: 'GET', scope: 'collection' },
+      paragraphSeparator: { method: 'GET', scope: 'collection' },
     },
   },
 })
@@ -124,20 +132,39 @@ class ScopedMemoCollection extends SmrtCollection<ScopedMemo> {
     const rows = await this.list({ where: options });
     return { titles: rows.map((row) => row.title).sort() };
   }
+
+  /** No scanned metadata; a destructured, defaulted page and its options. */
+  async windowed(
+    { limit }: { limit?: unknown } = {},
+    options: Record<string, unknown> = {},
+  ): Promise<{ titles: string[] }> {
+    const rows = await this.list({
+      where: options,
+      limit: Number(limit) || 10,
+    });
+    return { titles: rows.map((row) => row.title).sort() };
+  }
 }
 
-// No scanned metadata; an empty parameter list holding only a comment (built
-// from source text so the comment survives transpilation).
-Object.defineProperty(ScopedMemoCollection.prototype, 'annotated', {
-  configurable: true,
-  writable: true,
-  value: new Function(
-    `return async function annotated(/* takes nothing: options */) {
-      const rows = await this.list({});
-      return { titles: rows.map((row) => row.title).sort() };
-    };`,
-  )(),
-});
+// No scanned metadata, built from source text so the comments survive
+// transpilation: an empty parameter list holding only a comment, and a page
+// size followed by options where a line comment ends at each of the other
+// ECMAScript line terminators.
+const fromSource = (name: string, parameters: string) =>
+  Object.defineProperty(ScopedMemoCollection.prototype, name, {
+    configurable: true,
+    writable: true,
+    value: new Function(
+      `return async function ${name}(${parameters}) {
+        const rows = await this.list({ where: arguments[1] ?? {} });
+        return { titles: rows.map((row) => row.title).sort() };
+      };`,
+    )(),
+  });
+fromSource('annotated', '/* takes nothing: options */');
+fromSource('lineCr', '// page size\rlimit,\noptions');
+fromSource('lineSeparator', '// page size limit,\noptions');
+fromSource('paragraphSeparator', '// page size limit,\noptions');
 
 /** A natural key that omits the tenant: the shape the ownership check guards. */
 @smrt({
@@ -468,19 +495,64 @@ describe('runtime REST request tenant', () => {
     });
   });
 
-  describe('a custom collection read taking options with no registered metadata', () => {
-    it('serves a caller with no tenant only rows without an owner', async () => {
-      const response = await call(
-        handler,
-        'GET',
-        `memos/filtered?tenantId=${TENANT_B}`,
-        {
-          as: 'user-without-tenant',
-        },
-      );
+  describe('a custom collection read with no registered metadata', () => {
+    // The server does not read a method's source: without scanned parameters
+    // it cannot tell what the scoped options reach, so whatever the method
+    // declares, a caller with no tenant is refused.
+    const EVERY_ROW = ['a', 'b', 'global'];
+    // [label, path, what an explicitly cross-tenant caller is served]. An
+    // action filtering by its options is handed the scoped options, as before.
+    const UNSCANNED: Array<[string, string, string[]]> = [
+      ['declaring no parameters', 'memos/unscanned', EVERY_ROW],
+      ['taking options', `memos/filtered?tenantId=${TENANT_B}`, ['global']],
+      [
+        'taking a destructured, defaulted page and options',
+        'memos/windowed?limit=50',
+        EVERY_ROW,
+      ],
+      [
+        'whose line comment ends at a carriage return',
+        'memos/lineCr',
+        EVERY_ROW,
+      ],
+      ['whose line comment ends at U+2028', 'memos/lineSeparator', EVERY_ROW],
+      [
+        'whose line comment ends at U+2029',
+        'memos/paragraphSeparator',
+        EVERY_ROW,
+      ],
+    ];
+
+    it.each(
+      UNSCANNED,
+    )('%s is refused for a caller with no tenant', async (_label, path) => {
+      const response = await call(handler, 'GET', path, {
+        as: 'user-without-tenant',
+      });
+      expect(response.status).toBe(403);
+      const text = await response.text();
+      expect(text).not.toContain('"a"');
+      expect(text).not.toContain('"b"');
+      expect(text).not.toContain('"global"');
+    });
+
+    it.each(
+      UNSCANNED,
+    )('%s serves the caller the rows of its own tenant', async (_label, path) => {
+      const response = await call(handler, 'GET', path, { as: 'user-of-a' });
       expect(response.status).toBe(200);
       expect(await response.json()).toMatchObject({
-        result: { titles: ['global'] },
+        result: { titles: ['a'] },
+      });
+    });
+
+    it.each(
+      UNSCANNED,
+    )('%s still serves an explicitly cross-tenant caller', async (_label, path, served) => {
+      const response = await call(handler, 'GET', path, { as: 'operator' });
+      expect(response.status).toBe(200);
+      expect(await response.json()).toMatchObject({
+        result: { titles: served },
       });
     });
   });

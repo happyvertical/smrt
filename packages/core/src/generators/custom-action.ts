@@ -547,9 +547,11 @@ export function buildCustomActionInputSchema(
  * whole scope, so the transports run such an action inside the tenant gate
  * instead (refused for a caller with no tenant). Runtime REST and the emitted
  * SvelteKit routes both decide with this rule, against the ownership
- * properties the live registry reports at request time.
+ * properties the live registry reports at request time. The names come from
+ * scanned parameter metadata only; a method without it does not receive the
+ * scope, and its source is never read to guess its parameters.
  *
- * @param parameterNames - The action's declared parameter names, in order
+ * @param parameterNames - The action's scanned parameter names, in order
  * @param ownershipProperties - The ownership property names of the model read
  */
 export function readActionReceivesTenantScope(
@@ -563,118 +565,6 @@ export function readActionReceivesTenantScope(
   return (
     owners.length > 0 && owners.every((name) => parameterNames.includes(name))
   );
-}
-
-const PARAMETER_NAME = /^[\p{ID_Start}$_][\p{ID_Continue}$\u200c\u200d]*$/u;
-const PARAMETER_WITH_DEFAULT =
-  /^([\p{ID_Start}$_][\p{ID_Continue}$\u200c\u200d]*)\s*=[\s\S]*$/u;
-
-/**
- * The parameter names a function's source declares, for a method with no
- * scanned parameter metadata. Each parameter must be a plain name, with or
- * without a default value; comments are ignored. `undefined` when the list
- * cannot be read that way (a destructured or rest parameter, a template
- * literal or a `/` in the list, an arrow function without parentheses, a
- * computed method name) -- a caller deciding scope from the result must treat
- * that as receiving nothing. A native or bound function shows an empty list.
- */
-export function declaredParameterNames(fn: unknown): string[] | undefined {
-  if (typeof fn !== 'function') return undefined;
-  let source: string;
-  try {
-    source = Function.prototype.toString.call(fn);
-  } catch {
-    return undefined;
-  }
-  let index = 0;
-  // Head: keywords, the name and `*`, up to the opening parenthesis.
-  for (; index < source.length; index += 1) {
-    const char = source[index];
-    if (char === '(') break;
-    if (char === '/' && source[index + 1] === '*') {
-      const end = source.indexOf('*/', index + 2);
-      if (end === -1) return undefined;
-      index = end + 1;
-      continue;
-    }
-    if (char === '/' && source[index + 1] === '/') {
-      const end = source.indexOf('\n', index + 2);
-      if (end === -1) return undefined;
-      index = end;
-      continue;
-    }
-    if (!/[\p{ID_Continue}$\s*#\u200c\u200d]/u.test(char)) return undefined;
-  }
-  if (index >= source.length) return undefined;
-  const segments: string[] = [];
-  let current = '';
-  let depth = 0;
-  for (index += 1; index < source.length; index += 1) {
-    const char = source[index];
-    const next = source[index + 1];
-    if (char === '/' && next === '*') {
-      const end = source.indexOf('*/', index + 2);
-      if (end === -1) return undefined;
-      current += ' ';
-      index = end + 1;
-      continue;
-    }
-    if (char === '/' && next === '/') {
-      const end = source.indexOf('\n', index + 2);
-      if (end === -1) return undefined;
-      current += ' ';
-      index = end;
-      continue;
-    }
-    // A regular expression or a template literal is not worth telling apart
-    // from division or interpolation here: the list counts as unreadable.
-    if (char === '/' || char === '`') return undefined;
-    if (char === "'" || char === '"') {
-      let end = index + 1;
-      while (end < source.length && source[end] !== char) {
-        if (source[end] === '\\') end += 1;
-        if (source[end] === '\n') return undefined;
-        end += 1;
-      }
-      if (end >= source.length) return undefined;
-      current += source.slice(index, end + 1);
-      index = end;
-      continue;
-    }
-    if (char === '(' || char === '[' || char === '{') depth += 1;
-    if (char === ')' || char === ']' || char === '}') {
-      if (depth === 0) {
-        if (char !== ')') return undefined;
-        segments.push(current);
-        return parameterNamesOf(segments);
-      }
-      depth -= 1;
-    }
-    if (char === ',' && depth === 0) {
-      segments.push(current);
-      current = '';
-      continue;
-    }
-    current += char;
-  }
-  return undefined;
-}
-
-function parameterNamesOf(segments: string[]): string[] | undefined {
-  const trimmed = segments.map((segment) => segment.trim());
-  // `()` and a trailing comma leave one empty last segment.
-  if (trimmed.length > 0 && trimmed[trimmed.length - 1] === '') trimmed.pop();
-  const names: string[] = [];
-  for (const segment of trimmed) {
-    if (PARAMETER_NAME.test(segment)) {
-      names.push(segment);
-      continue;
-    }
-    const defaulted = PARAMETER_WITH_DEFAULT.exec(segment);
-    if (!defaulted?.[1]) return undefined;
-    names.push(defaulted[1]);
-  }
-  return names;
 }
 
 /**
