@@ -227,18 +227,19 @@ function effectiveConfig(
 ): TenantScopedConfig | undefined {
   const bound = boundMemberTenancy(tenancyIdentity);
   if (!bound) return getTenantScopedConfig(tenancyIdentity);
-  if (bound.failed) {
+  if (bound.state === 'unscoped') return undefined;
+  // A failed lookup, or a scoped policy missing its mode or field, is never
+  // read as "not scoped".
+  if (bound.state !== 'scoped' || !bound.mode || !bound.field) {
     throw new TenantIsolationError(
       `The tenancy of ${tenancyIdentity} could not be resolved`,
     );
   }
-  if (!bound.scoped || !bound.mode || !bound.field) return undefined;
   return {
     mode: bound.mode,
     field: bound.field,
     autoFilter: true,
-    autoPopulate:
-      getTenantScopedConfig(tenancyIdentity)?.autoPopulate !== false,
+    autoPopulate: bound.autoPopulate,
     allowSuperAdminBypass: bound.allowSuperAdminBypass,
   };
 }
@@ -254,13 +255,15 @@ function tenantPolicyOf(key: string): TenantPolicyLookup {
             mode: config.mode,
             field: config.field,
             allowSuperAdminBypass: config.allowSuperAdminBypass === true,
+            autoPopulate: config.autoPopulate !== false,
           },
         }
       : { kind: 'absent' };
   } catch (error) {
     return {
       kind: 'failed',
-      reason: error instanceof Error ? error.message : 'policy lookup failed',
+      reason:
+        (error instanceof Error ? error.message : '') || 'policy lookup failed',
     };
   }
 }

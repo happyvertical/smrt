@@ -51,6 +51,16 @@ function defineTwin(packageName: string) {
 const TwinLeft = defineTwin('@resolver-fixture/left');
 const TwinRight = defineTwin('@resolver-fixture/right');
 
+// Declares its tenancy: a resolved policy may be stricter, never looser.
+@smrt({
+  tenantScoped: { mode: 'optional', field: 'tenantId' },
+} as never)
+class ResolverDeclared extends SmrtObject {
+  @field({ type: 'text' }) title = '';
+  @field({ type: 'text', nullable: true }) tenantId: string | null = null;
+  @field({ type: 'text', nullable: true }) organizationId: string | null = null;
+}
+
 const keyOf = (ctor: Function) => {
   const info = ObjectRegistry.getClassByConstructor(ctor as never);
   if (!info) throw new Error('fixture not registered');
@@ -91,7 +101,7 @@ describe('request tenancy resolution', () => {
     db = await getTestDatabase({
       type: 'sqlite',
       url: ':memory:',
-      classes: [keyOf(ResolverLedger)],
+      classes: [keyOf(ResolverLedger), keyOf(ResolverDeclared)],
     });
     const ledgers = await ResolverLedgerCollection.create({ db });
     await ledgers.create({ title: 'ours', tenantId: 'tenant-a' } as never);
@@ -185,6 +195,90 @@ describe('request tenancy resolution', () => {
       actor: anonymous(),
     });
     expect(readScope(unsourced)).toMatchObject({ kind: 'refuse' });
+  });
+
+  it('a policy lookup that fails without a reason, or answers no usable policy, refuses', () => {
+    installTenancy();
+    const key = keyOf(ResolverLedger);
+    const refused = () => {
+      const t = resolveRequestTenancy({ model: key, actor: anonymous() });
+      expect(t.route.state).toBe('failed');
+      expect(t.failed).toBeTruthy();
+      expect(readScope(t)).toMatchObject({ kind: 'refuse', status: 403 });
+      expect(writeGate(t)).toMatchObject({ kind: 'refuse', status: 403 });
+    };
+    policies.set(key, { kind: 'failed', reason: '' });
+    refused();
+    policies.set(key, {
+      kind: 'resolved',
+      policy: { mode: 'optional', field: '', allowSuperAdminBypass: false },
+    });
+    refused();
+    policies.set(key, { kind: 'unknown' } as never);
+    refused();
+    // A provider that throws an error with no message.
+    setTenantPolicySource({
+      policyOf: () => {
+        throw new Error('');
+      },
+      systemContextActive: () => false,
+      superAdminBypassActive: () => false,
+      hierarchyReadCollections: () => undefined,
+      runInContext: (_context, fn) => fn(),
+    });
+    refused();
+  });
+
+  it('a resolved policy looser than or off the declared tenancy refuses; a stricter one resolves', () => {
+    installTenancy();
+    const key = keyOf(ResolverDeclared);
+    const resolve = (policy: Record<string, unknown>) => {
+      policies.set(key, {
+        kind: 'resolved',
+        policy: {
+          mode: 'optional',
+          field: 'tenantId',
+          allowSuperAdminBypass: false,
+          ...policy,
+        } as never,
+      });
+      return resolveRequestTenancy({ model: key, actor: anonymous() });
+    };
+    for (const conflicting of [
+      { field: 'organizationId' },
+      { allowSuperAdminBypass: true },
+    ]) {
+      const t = resolve(conflicting);
+      expect(t.route.state).toBe('failed');
+      expect(readScope(t)).toMatchObject({ kind: 'refuse', status: 403 });
+    }
+    expect(resolve({}).route.state).toBe('scoped');
+    const stricter = resolve({ mode: 'required' });
+    expect(stricter.route).toMatchObject({ state: 'scoped', mode: 'required' });
+  });
+
+  it('the resolved tenancy of a request cannot be changed after resolution', () => {
+    installTenancy();
+    policies.set(keyOf(ResolverLedger), {
+      kind: 'resolved',
+      policy: {
+        mode: 'optional',
+        field: 'tenantId',
+        allowSuperAdminBypass: false,
+      },
+    });
+    const t = resolveRequestTenancy({
+      model: keyOf(ResolverLedger),
+      actor: anonymous(),
+    });
+    const members = t.members as Map<string, unknown>;
+    expect(() => members.set('Other', t.route)).toThrow(TypeError);
+    expect(() => members.delete(keyOf(ResolverLedger))).toThrow(TypeError);
+    expect(() => members.clear()).toThrow(TypeError);
+    expect(members.size).toBe(1);
+    expect(Object.isFrozen(t.route)).toBe(true);
+    expect(Object.isFrozen(t.actor)).toBe(true);
+    expect(t.route.autoPopulate).toBe(true);
   });
 
   it('a route that requires a complete principal refuses one without a tenant, user or permissions', () => {

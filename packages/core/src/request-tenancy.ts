@@ -66,6 +66,8 @@ export interface TenantPolicyConfig {
   /** Property that records a row's owner. */
   field: string;
   allowSuperAdminBypass: boolean;
+  /** A save in a tenant context stamps the row's owner (default `true`). */
+  autoPopulate?: boolean;
 }
 
 /**
@@ -191,6 +193,11 @@ export interface RequestActor {
 /** The tenancy of one model a request touches. */
 export interface MemberTenancy {
   readonly key: string;
+  /**
+   * Not scoped, scoped under a resolved policy, or a lookup that failed
+   * (every decision on a failed member refuses).
+   */
+  readonly state: 'unscoped' | 'scoped' | 'failed';
   readonly scoped: boolean;
   readonly mode: 'required' | 'optional' | null;
   /** The tenancy field (the property that records a row's owner). */
@@ -198,6 +205,8 @@ export interface MemberTenancy {
   /** Every ownership property, the tenancy field first. */
   readonly fields: readonly string[];
   readonly allowSuperAdminBypass: boolean;
+  /** A save in a tenant context stamps the owner (bound with the policy). */
+  readonly autoPopulate: boolean;
   /**
    * Allowed by an active bounded hierarchy read scope (true when none). Part
    * of STI admission (a member must match the route model here too), not of
@@ -206,8 +215,13 @@ export interface MemberTenancy {
   readonly hierarchyAllowed: boolean;
   /** Equality of two members' policies is equality of signatures. */
   readonly signature: string;
-  /** Why the policy could not be resolved; the member then refuses. */
+  /** Why the policy could not be resolved (set when `state` is `failed`). */
   readonly failed?: string;
+}
+
+/** The member's policy could not be resolved: every decision refuses. */
+export function isFailedMember(member: MemberTenancy): boolean {
+  return member.state === 'failed';
 }
 
 function tenancyEnforced(): boolean {
@@ -243,21 +257,80 @@ function ownershipProperties(key: string, field: string): string[] {
   return [...byColumn.values()];
 }
 
+const FAILED_REASON = 'policy lookup failed';
+
+/** A failure's reason, never empty (an empty reason still fails). */
+function reasonOf(error: unknown): string {
+  const message = error instanceof Error ? error.message : '';
+  return message || FAILED_REASON;
+}
+
 function failedMember(key: string, reason: string): MemberTenancy {
+  const why = reason || FAILED_REASON;
   return Object.freeze({
     key,
+    state: 'failed',
     scoped: true,
     mode: null,
     field: null,
     fields: Object.freeze([]),
     allowSuperAdminBypass: false,
+    autoPopulate: false,
     hierarchyAllowed: false,
-    signature: `failed:${reason}`,
-    failed: reason,
+    signature: `failed:${why}`,
+    failed: why,
   });
 }
 
 const UNSCOPED_SIGNATURE = JSON.stringify([false]);
+
+function unscopedMember(key: string): MemberTenancy {
+  return Object.freeze({
+    key,
+    state: 'unscoped',
+    scoped: false,
+    mode: null,
+    field: null,
+    fields: Object.freeze([]),
+    allowSuperAdminBypass: false,
+    autoPopulate: false,
+    hierarchyAllowed: true,
+    signature: UNSCOPED_SIGNATURE,
+  });
+}
+
+/**
+ * Why a resolved policy disagrees with the registry's declared tenancy, or
+ * `undefined` when it agrees. A resolved policy may be stricter than the
+ * declaration (required where it says optional, as a runtime override sets;
+ * no bypass where it allows one), never looser or on another field.
+ */
+function declarationConflict(
+  key: string,
+  policy: TenantPolicyConfig,
+): string | undefined {
+  const declared = ObjectRegistry.getTenantScopedConfig(key);
+  if (!declared) return undefined;
+  if (
+    whereColumnName(declared.field ?? 'tenantId') !==
+    whereColumnName(policy.field)
+  ) {
+    return 'resolved tenancy field differs from the declared one';
+  }
+  if (
+    (declared.mode ?? 'required') === 'required' &&
+    policy.mode !== 'required'
+  ) {
+    return 'resolved tenancy mode is looser than the declared one';
+  }
+  if (
+    declared.allowSuperAdminBypass !== true &&
+    policy.allowSuperAdminBypass === true
+  ) {
+    return 'resolved tenancy allows a bypass the declaration does not';
+  }
+  return undefined;
+}
 
 /**
  * The live tenancy of one class by strict registry key, merged from the
@@ -268,70 +341,64 @@ const UNSCOPED_SIGNATURE = JSON.stringify([false]);
  * @param key - Registry key (qualified when the class has one)
  */
 export function memberTenancyOf(key: string): MemberTenancy {
-  if (!tenancyEnforced()) {
-    return Object.freeze({
-      key,
-      scoped: false,
-      mode: null,
-      field: null,
-      fields: Object.freeze([]),
-      allowSuperAdminBypass: false,
-      hierarchyAllowed: true,
-      signature: UNSCOPED_SIGNATURE,
-    });
-  }
+  if (!tenancyEnforced()) return unscopedMember(key);
   const source = getTenantPolicySource();
   if (!source) return failedMember(key, 'no tenancy policy source');
   let lookup: TenantPolicyLookup;
   let declared: boolean;
+  let conflict: string | undefined;
   try {
     lookup = source.policyOf(key);
     declared =
       ObjectRegistry.isTenantScoped(key) ||
       !!ObjectRegistry.getConfig(key)?.tenantScoped;
+    if (lookup?.kind === 'resolved') {
+      conflict = declarationConflict(key, lookup.policy);
+    }
   } catch (error) {
-    return failedMember(
-      key,
-      error instanceof Error ? error.message : 'policy lookup failed',
-    );
+    return failedMember(key, reasonOf(error));
   }
-  if (lookup.kind === 'failed') return failedMember(key, lookup.reason);
-  if (lookup.kind === 'absent') {
+  if (lookup?.kind === 'absent') {
     if (declared) {
       return failedMember(key, 'declared tenancy the policy source omits');
     }
-    return Object.freeze({
-      key,
-      scoped: false,
-      mode: null,
-      field: null,
-      fields: Object.freeze([]),
-      allowSuperAdminBypass: false,
-      hierarchyAllowed: true,
-      signature: UNSCOPED_SIGNATURE,
-    });
+    return unscopedMember(key);
   }
+  if (lookup?.kind !== 'resolved') {
+    // `failed`, or an answer that is none of the three.
+    return failedMember(
+      key,
+      lookup?.kind === 'failed' ? lookup.reason : FAILED_REASON,
+    );
+  }
+  if (conflict) return failedMember(key, conflict);
   const { policy } = lookup;
+  if (
+    (policy.mode !== 'required' && policy.mode !== 'optional') ||
+    typeof policy.field !== 'string' ||
+    policy.field === ''
+  ) {
+    return failedMember(key, 'resolved tenancy policy is incomplete');
+  }
   let fields: string[];
   let hierarchy: readonly string[] | undefined;
   try {
     fields = ownershipProperties(key, policy.field);
     hierarchy = source.hierarchyReadCollections();
   } catch (error) {
-    return failedMember(
-      key,
-      error instanceof Error ? error.message : 'policy lookup failed',
-    );
+    return failedMember(key, reasonOf(error));
   }
   const hierarchyAllowed = !hierarchy || hierarchy.includes(key);
   const columns = fields.map((property) => whereColumnName(property)).sort();
   return Object.freeze({
     key,
+    state: 'scoped',
     scoped: true,
     mode: policy.mode,
     field: policy.field,
     fields: Object.freeze(fields),
     allowSuperAdminBypass: policy.allowSuperAdminBypass === true,
+    autoPopulate: policy.autoPopulate !== false,
     hierarchyAllowed,
     signature: JSON.stringify([
       true,
@@ -414,6 +481,45 @@ function stiDescendants(model: string): string[] {
     .filter((member) => ObjectRegistry.getTableStrategy(member) === 'sti');
 }
 
+/**
+ * A map no caller can change after resolution: the bound decision is read
+ * by every collection call of the request, so it never moves under it.
+ */
+class FrozenMap<K, V> extends Map<K, V> {
+  constructor(entries: Iterable<readonly [K, V]>) {
+    super();
+    for (const [key, value] of entries) super.set(key, value);
+    Object.freeze(this);
+  }
+  override set(): this {
+    throw new TypeError('The resolved request tenancy is read-only');
+  }
+  override delete(): boolean {
+    throw new TypeError('The resolved request tenancy is read-only');
+  }
+  override clear(): void {
+    throw new TypeError('The resolved request tenancy is read-only');
+  }
+}
+
+/** A set no caller can change after resolution (see {@link FrozenMap}). */
+class FrozenSet<T> extends Set<T> {
+  constructor(values: Iterable<T>) {
+    super();
+    for (const value of values) super.add(value);
+    Object.freeze(this);
+  }
+  override add(): this {
+    throw new TypeError('The resolved request tenancy is read-only');
+  }
+  override delete(): boolean {
+    throw new TypeError('The resolved request tenancy is read-only');
+  }
+  override clear(): void {
+    throw new TypeError('The resolved request tenancy is read-only');
+  }
+}
+
 function fingerprintOf(members: Iterable<MemberTenancy>): string {
   const parts = [...members]
     .map((member) => `${member.key}=${member.signature}`)
@@ -442,7 +548,7 @@ export function resolveRequestTenancy(
       enforced,
       actor,
       route,
-      members: new Map([[input.model, route]]),
+      members: new FrozenMap([[input.model, route]]),
       family: null,
       admitted: null,
       excluded: Object.freeze([]),
@@ -456,9 +562,9 @@ export function resolveRequestTenancy(
       enforced,
       actor,
       route,
-      members: new Map([[input.model, route]]),
+      members: new FrozenMap([[input.model, route]]),
       family: null,
-      admitted: new Set<string>(),
+      admitted: new FrozenSet<string>([]),
       excluded: Object.freeze([]),
       fingerprint: fingerprintOf([route]),
       failed: route.failed,
@@ -482,7 +588,7 @@ export function resolveRequestTenancy(
       const member = memberTenancyOf(key);
       members.set(key, member);
       if (
-        !member.failed &&
+        !isFailedMember(member) &&
         member.signature === route.signature &&
         member.hierarchyAllowed === route.hierarchyAllowed
       ) {
@@ -498,12 +604,12 @@ export function resolveRequestTenancy(
     enforced,
     actor,
     route,
-    members,
+    members: new FrozenMap(members),
     family,
-    admitted,
+    admitted: admitted ? new FrozenSet(admitted) : null,
     excluded: Object.freeze(excluded),
     fingerprint: fingerprintOf(members.values()),
-    ...(route.failed ? { failed: route.failed } : {}),
+    ...(isFailedMember(route) ? { failed: route.failed } : {}),
   });
 }
 
@@ -557,7 +663,7 @@ export function listMixedTenancyFamilies(): MixedTenancyFamily[] {
     const owner = memberTenancyOf(registryKey);
     const excluded = stiDescendants(registryKey).filter((member) => {
       const policy = memberTenancyOf(member);
-      return !!policy.failed || policy.signature !== owner.signature;
+      return isFailedMember(policy) || policy.signature !== owner.signature;
     });
     if (excluded.length > 0) {
       families.push({ family: registryKey, excluded: excluded.sort() });
@@ -625,7 +731,7 @@ export function readScope(
   t: RequestTenancy,
   member: MemberTenancy = t.route,
 ): ReadDecision {
-  if (t.failed || member.failed) return unresolved();
+  if (t.failed !== undefined || isFailedMember(member)) return unresolved();
   if (!t.enforced || !member.scoped) return { kind: 'open' };
   if (t.actor.system) return { kind: 'all' };
   if (bypassApplies(t, member)) return { kind: 'all' };
@@ -649,7 +755,7 @@ export function writeGate(
   t: RequestTenancy,
   member: MemberTenancy = t.route,
 ): TenancyRefusal | undefined {
-  if (t.failed || member.failed) return unresolved();
+  if (t.failed !== undefined || isFailedMember(member)) return unresolved();
   if (!t.enforced || !member.scoped) return undefined;
   if (t.actor.system === 'write') return undefined;
   if (t.actor.system === 'read') {
@@ -756,7 +862,7 @@ function declaresTenancy(key: string): boolean {
  * scoped, or, with tenancy off, any member that declares tenancy.
  */
 export function servesTenantScopedRows(t: RequestTenancy): boolean {
-  if (t.failed) return true;
+  if (t.failed !== undefined) return true;
   if (!t.enforced) {
     // Tenancy is off, so nothing is filtered, but a model that declares
     // tenancy never gets a shared-cache copy: one issued now would outlive
@@ -951,7 +1057,7 @@ function checkedMember(
 ): MemberTenancy | undefined {
   const bound = t.members.get(key);
   if (!bound) return undefined;
-  if (bound.failed) throwIfRefused(unresolved());
+  if (isFailedMember(bound)) throwIfRefused(unresolved());
   if (memberTenancyOf(key).signature !== bound.signature) {
     throw new TenantPolicyChangedError();
   }
