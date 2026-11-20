@@ -318,6 +318,21 @@ instances and never use this path to overwrite a loaded revision.
 - `@smrt({ abstract: true })` makes a registered STI type readable but prevents saving an instance with its own discriminator. A base collection can still create a concrete descendant by passing that descendant's `_meta_type`. Generated surfaces expose only `list` and `get` for abstract models, including when custom actions were explicitly included.
 - Set `validateSubtype: true` on a foreign key or cross-package reference targeting an STI child when it must reject sibling rows. Save checks through the child's collection, and `loadRelated()` rejects a stored sibling row. The physical FK targets the shared root table, so the collection's discriminator and tenant read scope provide the subtype check. Saves fail when the subtype target cannot be loaded, even if ordinary cross-package validation is disabled.
 
+## Late parents
+
+An inheritance chain read while a parent is unregistered (or whose `extends`
+resolved to the class itself) is partial. `registry/partial-chain.ts` marks it
+on the registration under a registered symbol, so every loaded copy of core
+sees the mark and none caches it as complete. A partial chain holds for one
+registry generation. Every `register()` / `registerFromManifest()` ends by
+re-deriving partial chains, and re-merging `inheritedFields` already derived
+from them, so synchronous readers (`restFieldReadPermissions()`, query access,
+request input, generators) see a parent as soon as it registers. A table name
+an object or collection derived from a partial chain is derived again after the
+registry changes. A parent that never registers costs one chain walk per
+partial class per registration. Complete chains rely on the targeted
+invalidation in `class-registration.ts`.
+
 ## Same-named subclass replaces its parent (#4921)
 
 This is rule 3 of the [data shape rules](data-shape-rules.md): an app hardens a
