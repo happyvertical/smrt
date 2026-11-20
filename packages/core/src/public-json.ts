@@ -61,7 +61,13 @@ export function toPublicJSONValue(
  * Serialise a result that may hold models anywhere inside it: every object
  * with a public serialiser is replaced by its public projection, and arrays
  * and plain objects are walked. Other instances (a `Date`, a `Map`) and
- * primitives pass through. Cycle-safe.
+ * primitives pass through.
+ *
+ * A container reached more than once (two properties naming one envelope)
+ * is projected once and that projection reused, never returned as the
+ * original: the original still holds the models, which `JSON.stringify`
+ * would write with their ordinary `toJSON()`. A reference back into a
+ * container still being projected (a cycle) becomes `null`.
  *
  * For values a transport returns to a caller — a custom action's result, an
  * envelope a custom serialiser built — whose nested models would otherwise be
@@ -70,23 +76,29 @@ export function toPublicJSONValue(
 export function toPublicResultValue(
   value: unknown,
   options?: PublicJsonOptions,
-  seen: WeakSet<object> = new WeakSet(),
+  projected: WeakMap<object, unknown> = new WeakMap(),
 ): unknown {
   if (value === null || typeof value !== 'object') return value;
   const serialize = publicSerializerOf(value);
   if (serialize) return serialize(options);
-  if (seen.has(value)) return value;
+  if (projected.has(value)) return projected.get(value);
   if (Array.isArray(value)) {
-    seen.add(value);
-    return value.map((entry) => toPublicResultValue(entry, options, seen));
+    projected.set(value, null);
+    const out = value.map((entry) =>
+      toPublicResultValue(entry, options, projected),
+    );
+    projected.set(value, out);
+    return out;
   }
   const prototype = Object.getPrototypeOf(value);
   if (prototype !== Object.prototype && prototype !== null) return value;
-  seen.add(value);
-  return Object.fromEntries(
+  projected.set(value, null);
+  const out = Object.fromEntries(
     Object.entries(value).map(([key, entry]) => [
       key,
-      toPublicResultValue(entry, options, seen),
+      toPublicResultValue(entry, options, projected),
     ]),
   );
+  projected.set(value, out);
+  return out;
 }

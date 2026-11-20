@@ -18,7 +18,7 @@ import { invokeManifestTool, type ManifestTool } from './tool-loop.js';
   packageName: '@happyvertical/smrt-chat',
   collection: 'nested_result_accounts',
   tableName: 'nested_result_accounts',
-  api: { include: ['list', 'get', 'peers'] },
+  api: { include: ['list', 'get', 'peers', 'shared'] },
 })
 class NestedResultAccount extends SmrtObject {
   @field({ type: 'text' })
@@ -34,6 +34,12 @@ class NestedResultAccount extends SmrtObject {
   async peers(): Promise<unknown> {
     return { self: this, list: [this], nested: { deeper: [{ item: this }] } };
   }
+
+  /** A custom action whose result names one envelope twice. */
+  async shared(): Promise<unknown> {
+    const envelope = { list: [this] };
+    return { first: envelope, second: envelope };
+  }
 }
 
 const key = '@happyvertical/smrt-chat:NestedResultAccount';
@@ -43,6 +49,12 @@ const tool: ManifestTool = {
   action: 'peers',
   className: 'NestedResultAccount',
   qualifiedName: key,
+};
+
+const sharedTool: ManifestTool = {
+  ...tool,
+  slug: 'nested_result_accounts.shared',
+  action: 'shared',
 };
 
 describe('assistant nested results', () => {
@@ -66,7 +78,7 @@ describe('assistant nested results', () => {
     restore();
   });
 
-  const invoke = (permissions: string[]) =>
+  const invoke = (permissions: string[], target: ManifestTool = tool) =>
     invokeManifestTool(
       {
         context: { database: db, tenantId: 'tenant-a' },
@@ -74,7 +86,7 @@ describe('assistant nested results', () => {
         assertToolAllowed: vi.fn(),
         assertOperation: vi.fn(),
       } as unknown as Parameters<typeof invokeManifestTool>[0],
-      tool,
+      target,
       { id },
     );
 
@@ -89,5 +101,16 @@ describe('assistant nested results', () => {
     const text = JSON.stringify(await invoke(['accounts.billing']));
     expect(text).toContain('BILL-42');
     expect(text).not.toContain('sk-live-secret');
+  });
+
+  it('projects a model reached twice through one shared envelope', async () => {
+    const result = (await invoke([], sharedTool)) as {
+      first: { list: Array<{ name: string }> };
+      second: { list: Array<{ name: string }> };
+    };
+    const text = JSON.stringify(result);
+    expect(text).not.toContain('sk-live-secret');
+    expect(text).not.toContain('BILL-42');
+    expect(result.second.list[0]?.name).toBe('acme');
   });
 });
