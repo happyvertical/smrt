@@ -17,6 +17,7 @@ import {
   findManifestObjectByName,
   isCollectionManifestClass,
   resolveCollectionItemObject,
+  resolveCollectionItemTypeName,
 } from '../vite-plugin/web-collections.js';
 
 import {
@@ -199,12 +200,20 @@ function activationPlan(manifest: SmartObjectManifest) {
     // index omits a replaced declaration, so prefer the key over name lookup.
     const declared = collection.collectionOf ?? collection.extendsTypeArg;
     const item = resolveCollectionItemObject(manifest, collection);
-    const itemId =
+    let itemId =
       typeof declared === 'string' && manifest.objects[declared]
         ? declared
         : item
           ? keys.get(item)
           : undefined;
+    // A simple item name names a class of the collection's own package. The
+    // public index omits that class once it is replaced, so resolve the name
+    // against the raw inventory: the collection still binds to its item and,
+    // through it, to the effective replacement.
+    if (!itemId) {
+      const named = resolveCollectionItemTypeName(manifest, collection);
+      if (named && manifest.objects[named]) itemId = named;
+    }
     if (!itemId || collections.has(itemId)) continue;
     itemOf.set(id, itemId);
     for (const model of new Set([itemId, effectiveOf(itemId)]))
@@ -751,10 +760,21 @@ export function generateActivationRegistration(
       if (isCollectionManifestClass(manifest, object)) {
         const itemId = plan.itemOf.get(id);
         const effective = itemId ? graph.models[itemId]?.effective : undefined;
+        // Bind the item's own key as well as its effective replacement's: a
+        // collection that registers before the replacement does is otherwise
+        // reachable only once the replacement exists, and a lookup by the
+        // item's key in between would install a default collection.
+        const bindings = [
+          ...new Set(
+            [itemId !== effective ? itemId : undefined, effective].filter(
+              (key): key is string => !!key && !!graph.models[key],
+            ),
+          ),
+        ];
         return `${options.collectionMetadata?.includes(id) ? `ObjectRegistry.registerPackageManifest({ ...declarations, packageName: ${JSON.stringify(object.packageName)}, objects: { [${JSON.stringify(id)}]: declarations.objects[${JSON.stringify(id)}] } });` : ''}
 if (Reflect.get(provider, String(${JSON.stringify(name)}))) {
   ObjectRegistry.registerCollection(${JSON.stringify(id)}, Reflect.get(provider, String(${JSON.stringify(name)})));
-  ${effective ? `ObjectRegistry.registerCollection(${JSON.stringify(effective)}, Reflect.get(provider, String(${JSON.stringify(name)})));` : ''}
+  ${bindings.map((key) => `ObjectRegistry.registerCollection(${JSON.stringify(key)}, Reflect.get(provider, String(${JSON.stringify(name)})));`).join('\n  ')}
 }`;
       }
       return `{
