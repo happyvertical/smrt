@@ -199,8 +199,9 @@ that extends another package's class, or over a plain class, is an error
 suggesting `@smrt({ abstract: true })`. A relationship target, report source
 or collection item that proves to a scanned class must be a model too (a
 same-file target is checked the same way), and a reference to a stand-in for
-another package (`@smrt({ packageName })`) is an error, a collection's item
-included. A static `_itemClass` must name the class the collection's type
+another package (`@smrt({ packageName })`) is an error; for a collection's
+item that holds only when a model of the package shares the stand-in's name,
+since the manifest keys both under one name. A static `_itemClass` must name the class the collection's type
 argument names. The type argument is proven like any reference, a type-only
 import (`import type { Item }`) included; only the class's own type
 parameter (`class C<T> extends SmrtCollection<T>`) and a type keyword (`any`,
@@ -389,7 +390,7 @@ now stops the build. The message names the file, class and member.
 | A model whose chain passes through a scanned class that is not a model (a plain class, or an undecorated class over another package's class) | Decorate it with `@smrt({ abstract: true })`, or extend the model directly |
 | A relationship target, report source or collection item that is a plain class, or a stand-in for another package | Reference the model class |
 | A static `_itemClass` naming another class than `SmrtCollection<Item>` | Name the same model in both |
-| A collection below a scanned generic collection whose item is a plain class or a stand-in, or that passes a type argument below an ancestor passing on another type parameter than its first | Name a model of the package; make the item type parameter the first one, or extend the framework base directly |
+| A collection below a scanned generic collection whose item is a plain class, or a stand-in beside a model of the package with its name, or that passes a type argument below an ancestor passing on another type parameter than its first | Name a model of the package; make the item type parameter the first one, or extend the framework base directly |
 | A collection over its own type parameter or a type keyword whose static `_itemClass` is not a class reference, cannot be proven like a parent, or is not a model | Make `_itemClass` name the item model class |
 | A module exporting another binding under a model's class name (`export { Other as Model }`, `export { Model } from '@other/pkg'`, a barrel re-exporting a plain class of the name) | Export each model under its own class name; rename the other class |
 | `CONFIG_UNRESOLVED_IMPORTED_PARENT`: a parent (or collection item) from another package whose manifest does not declare it under exactly that name (a model whose name differs only in case is not it), that is installed without a manifest, whose manifest records no `importPath`, that is imported from another entry than the one the manifest records, or that the package only re-exports; an `extendsQualified` that is not a qualified name; or an ancestor, at any depth of the provider chain, that a provider parent passes on from a third package installed in two different copies (the provider's and the root's, differing in path and in version or shipped manifest) | Import it by its exact name from the package that declares it, at the entry its manifest records; build that package with this version so its manifest exists; declare it as a dependency; install one copy of a duplicated package |

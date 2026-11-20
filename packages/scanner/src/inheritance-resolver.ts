@@ -1417,7 +1417,19 @@ export class InheritanceResolver {
     if (!this.isModelClass(proof.definition)) {
       return `${label} ${proof.definition.className} (${proof.definition.filePath}) is not a model; decorate it with @smrt(), or name the model class`;
     }
-    return this.standInError(proof.definition, classDef.filePath);
+    // A stand-in item is an error only beside a class of this package with
+    // its name: the manifest keys both under one name and keeps the own
+    // class, so the item generation looks up would be that class.
+    const standIn = this.standInError(proof.definition, classDef.filePath);
+    if (!standIn) return undefined;
+    const namesake = this.classes.some(
+      (other) =>
+        other !== proof.definition &&
+        other.className === proof.definition.className &&
+        this.isScanned(other) &&
+        this.standInError(other, classDef.filePath) === undefined,
+    );
+    return namesake ? standIn : undefined;
   }
 
   /**

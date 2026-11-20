@@ -1571,6 +1571,14 @@ describe('collection items through an app-level generic collection', () => {
     expect(text).toContain('stand-in');
   });
 
+  it('accepts a stand-in item that no model of the package shares a name with', async () => {
+    const { errors } = await scanProject({
+      'src/fixtures/Account.ts': `${CORE}\n@smrt({ packageName: '@fixture/other', api: false })\nexport class Account extends SmrtObject {}\nexport class Accounts extends SmrtCollection<Account> {\n  static readonly _itemClass = Account;\n}\n`,
+    });
+
+    expect(errors).toEqual([]);
+  });
+
   it('records no item for a generic subclass that passes its own type parameter on', async () => {
     const { errors, manifest } = await scanProject({
       'src/models/Account.ts': OPEN_BASE('Account'),
