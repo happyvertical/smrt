@@ -31,26 +31,21 @@
 ## Fix it here; do not work around it, do not file it away
 
 Broken pin, hook, gate, stale generated file, or conflicting package rule: **fix
-it in the current branch** as its own `Drive-by fixes` commit. No workarounds
-(shims, `--no-verify`, disabled gates, substitute toolchains); a validation
-command that cannot run as documented is the bug. Drive-bys within the kernel's
-ten-line envelope are mandatory; beyond it, an issue must name why the work cannot
-ship here. Full rules: [agents/fix-it-here.md](agents/fix-it-here.md).
+it in the current branch** as its own `Drive-by fixes` commit; no workarounds
+(`--no-verify`, shims). Rules: [agents/fix-it-here.md](agents/fix-it-here.md).
 
 pnpm/TypeScript monorepo: `@smrt()` objects generate persistence, REST, CLI, MCP,
 and AI operations. Read the package's `AGENTS.md`; see [CONTEXT-MAP.md](CONTEXT-MAP.md).
 
 ## Validation
 
-Use Node/pnpm versions from `package.json`; `pnpm install`, `pnpm build`. Package
-checks first, then root: `pnpm test`, `pnpm typecheck`, `pnpm lint`,
-`pnpm format-check`, `pnpm knowledge:check --strict --format markdown`,
-`pnpm audit:policy`, `pnpm check:new-surface` (full `surface-ledger.json` entry
-per new surface), `pnpm check:node-roots` (built model roots load under plain
-Node, #4219; allow-list in root `package.json`).
+`pnpm install`, `pnpm build`; package checks first, then root: `pnpm test`,
+`pnpm typecheck`, `pnpm lint`, `pnpm format-check`,
+`pnpm knowledge:check --strict --format markdown`, `pnpm audit:policy`,
+`pnpm check:new-surface`, `pnpm check:node-roots`, and CI's standards checks
+(`pnpm check:standards`, `check:no-smrt-peers`, `check:package-dag`,
+`check:agents-chain`). Details, versions, gotchas: [agents/validation.md](agents/validation.md).
 [TESTING_STANDARD.md](TESTING_STANDARD.md) defines package release gates.
-
-Lint/format, Vitest, Oxc, `svelte-check` gotchas: [agents/root-gotchas.md](agents/root-gotchas.md).
 
 ## Cross-package invariants
 
@@ -74,9 +69,7 @@ Lint/format, Vitest, Oxc, `svelte-check` gotchas: [agents/root-gotchas.md](agent
   application schema. Use migrations and `smrt doctor --db` / `db:status --parity`.
   Existing int4 deployments need the maintenance-window `db:migrate-int8` flow;
   parity treats int4/int8 as equivalent (CLI guidance).
-- Release automation generates changesets; never author them. Dependency
-  overrides target the advisory range; ignored GHSAs also need an
-  `audit-policy.json` record (`pnpm audit:policy`).
+- Never author changesets.
 
 ## Documentation and skills
 
