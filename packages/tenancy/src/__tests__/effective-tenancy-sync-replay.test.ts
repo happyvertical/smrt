@@ -153,4 +153,36 @@ describe('runtime REST sync creates', () => {
       expect(reader[0]?.status).toBe('applied');
     });
   });
+
+  describe('type selector (R3.8)', () => {
+    it("a create naming its target's own type in createType is applied", async () => {
+      const results = await sync('reader', [
+        {
+          itemId: 'own-type',
+          object: segmentOf(EffReplayCrate),
+          op: 'create',
+          id: ROW.fresh,
+          payload: { title: 'new crate', createType: keyOf(EffReplayCrate) },
+        },
+      ]);
+      expect(results[0]?.status).toBe('applied');
+      const stored = (
+        await db.query(
+          `SELECT title, _meta_type FROM ${crates.tableName} WHERE id = '${ROW.fresh}'`,
+        )
+      ).rows.map((row) => [row.title, row._meta_type]);
+      expect(stored).toEqual([['new crate', keyOf(EffReplayCrate)]]);
+      // A replay of the same create is idempotent.
+      const again = await sync('reader', [
+        {
+          itemId: 'own-type',
+          object: segmentOf(EffReplayCrate),
+          op: 'create',
+          id: ROW.fresh,
+          payload: { title: 'new crate', createType: keyOf(EffReplayCrate) },
+        },
+      ]);
+      expect(again[0]?.status).toBe('applied');
+    });
+  });
 });

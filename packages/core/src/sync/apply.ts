@@ -610,6 +610,24 @@ function isUniqueConstraintError(error: unknown): boolean {
   return isUniqueViolationError(error);
 }
 
+/**
+ * A create payload without the type selectors (`createType`, `_meta_type`)
+ * that name the target's own type, the only value a target that accepted
+ * the payload's selector can carry. Any other value is left in place.
+ */
+function withoutOwnTypeSelector(
+  payload: Record<string, unknown>,
+  ownType: string,
+): Record<string, unknown> {
+  const rest = { ...payload };
+  for (const selector of ['createType', '_meta_type']) {
+    if (Object.hasOwn(rest, selector) && rest[selector] === ownType) {
+      delete rest[selector];
+    }
+  }
+  return rest;
+}
+
 async function applyValidatedItem(
   item: SyncApplyItem,
   target: SyncApplyTarget,
@@ -651,8 +669,17 @@ async function applyAuthorizedItem(
 
   // Payload passes through the host's writable policy; the row UUID comes
   // from the validated envelope `id`, never from the body — the #1540
-  // mass-assignment guard stays intact on this path too.
-  const data = item.op === 'delete' ? {} : target.prepare(item.payload ?? {});
+  // mass-assignment guard stays intact on this path too. A type selector the
+  // target accepted names its own type: it is consumed here, so field
+  // validation and replay comparison never see it as a field.
+  const data =
+    item.op === 'delete'
+      ? {}
+      : target.prepare(
+          item.op === 'create' && target.acceptsCreateType
+            ? withoutOwnTypeSelector(item.payload ?? {}, target.objectName)
+            : (item.payload ?? {}),
+        );
 
   // Tenant isolation: collection.get runs the interceptor stack, so rows
   // outside the caller's tenant are simply not visible here.

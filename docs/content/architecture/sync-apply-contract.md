@@ -261,8 +261,10 @@ interceptors guard sync exactly like CRUD:
   (`createType`, or the `_meta_type` alias) is read before the writable
   policy drops it; on an STI target, one naming any other type rejects the
   item `invalid_payload` and writes nothing (hosts implement
-  `SyncApplyTarget.acceptsCreateType`). A target that is not STI drops the
-  selector with the other framework keys.
+  `SyncApplyTarget.acceptsCreateType`). A selector naming the target's own
+  type is consumed before field validation and replay comparison, so it is
+  applied like a create that names no type. A target that is not STI drops
+  the selector with the other framework keys.
 - A write needs a tenant. With tenancy enabled, an item for a tenant-scoped
   model from a caller with no tenant is rejected (`forbidden`, or
   `auth_required` for an anonymous caller), global rows included, unless the
