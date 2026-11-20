@@ -29,6 +29,7 @@ import './registry.ts';
 import '../objects/index.ts';
 import { installChangeFeedPolicy } from './change-feed.ts';
 import { configureShell, type ShellProfile } from './host.ts';
+import { lifecycleFromEnv } from './host-lifecycle.ts';
 import { installShellInference } from './inference.ts';
 import { prepareShellSchema } from './schema.ts';
 
@@ -77,6 +78,8 @@ configureShell({
       : (await runtime.localRuntime()).paths.root,
   // Local: the vault-held key. Cloud: `SMRT_SECRET_MASTER_KEY` only (null).
   secretMasterKey: () => runtime.secretMasterKey(),
+  // Hosted only (the desktop ignores it): how many apps this process keeps.
+  lifecycle: lifecycleFromEnv(),
 });
 
 // Keys saved in Settings and stored tier bindings apply to every inference

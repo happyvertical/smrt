@@ -42,6 +42,11 @@ import { ChangeBatchCollection } from '../objects/ChangeBatch.ts';
 import { ChangeCardCollection } from '../objects/ChangeCard.ts';
 import { versionSummary } from '../ui/command-summary.ts';
 import { publish, setTenantScopedEvents } from './events.ts';
+import {
+  HostLifecycle,
+  type HostLifecyclePolicy,
+  type HostMetrics,
+} from './host-lifecycle.ts';
 import { PolicyError } from './owner.ts';
 import type { Target } from './target.ts';
 import { DraftVersionStore, ShellVersionStore } from './version-store.ts';
@@ -82,6 +87,13 @@ export interface ShellContext {
   /** V8 limits of each app worker thread (engine default when absent). */
   workerLimits?: WorkerLimits;
   /**
+   * How many apps one process keeps open (#5192): idle eviction, a cap on
+   * open apps, a cap on concurrent wakes. Honoured by the `cloud` profile only;
+   * absent (the desktop, every test that does not choose) the host is opened
+   * once and kept, exactly as before.
+   */
+  lifecycle?: HostLifecyclePolicy;
+  /**
    * The app-runtime profile. Absent means `local` (the desktop, and every
    * test that does not choose). A function that throws or rejects leaves the
    * shell unusable: it never falls back to `local`.
@@ -107,16 +119,26 @@ interface Holder {
   slotRef: DraftSlot | null;
   /** Where the draft copy goes (known once the live host is open). */
   draftDir: string | null;
+  /** Lifecycle (cloud with a policy): calls inside the app right now. */
+  leases: number;
+  /** Lifecycle: when the app was last asked for or finished a call (ms). */
+  lastUsed: number;
+  /** Lifecycle: the live host as handed to callers (counts their calls). */
+  leasedRef: AppHost | null;
+  /** Lifecycle: set while the app is being closed; a wake waits for it. */
+  evicting: Promise<void> | null;
 }
 
 let context: ShellContext | null = null;
 let syncDb: DatabaseInterface | null = null;
 let profileCache: ShellProfile | null = null;
 const holders = new Map<string, Holder>();
+const lifecycle = new HostLifecycle();
 
 export function configureShell(next: ShellContext): void {
   context = next;
   profileCache = null;
+  lifecycle.configure(next.lifecycle);
 }
 
 function requireContext(): ShellContext {
@@ -276,6 +298,10 @@ function holderOf(key: string, tenantId: string | null): Holder {
       storeRef: null,
       slotRef: null,
       draftDir: null,
+      leases: 0,
+      lastUsed: lifecycle.now(),
+      leasedRef: null,
+      evicting: null,
     };
     holders.set(key, holder);
   }
@@ -406,8 +432,9 @@ async function adoptDraft(
     return;
   }
   try {
-    slot.host = await openDraftHost(db, slot.id, dir, holder.pin);
-    wireHostEvents(slot.host, 'draft', holder.tenantId);
+    const draft = await openDraftHost(db, slot.id, dir, holder.pin);
+    wireHostEvents(draft, 'draft', holder.tenantId);
+    slot.host = lifecycleOn() ? leased(holder, draft) : draft;
   } catch (e) {
     slot.problem = `the draft cannot be opened: ${e instanceof Error ? e.message : String(e)}`;
   }
@@ -468,38 +495,70 @@ async function freezeForWaitingChanges(
   }
 }
 
+/** Open one holder's live host: the app, its draft, the freeze. */
+async function openLive(holder: Holder): Promise<AppHost> {
+  const db = await getShellDb();
+  holder.pin ??= await soleTenantId(db);
+  const store = new ShellVersionStore(db, holder.pin);
+  const dirs = await directoriesFor(holder, store);
+  mkdirSync(dirs.live, { recursive: true, mode: 0o700 });
+  const host = await AppHost.open(dirs.live, {
+    store,
+    workerUrl: workerUrl(),
+    workerLimits: requireContext().workerLimits,
+  });
+  wireHostEvents(host, 'live', holder.tenantId);
+  try {
+    await adoptDraft(holder, db, host, dirs.draft);
+    await freezeForWaitingChanges(db, host);
+  } catch (e) {
+    // Never serve live thawed when we could not tell whether a draft is
+    // open: fail the open; the next call retries.
+    holder.slotRef = null;
+    await host.close().catch(() => {});
+    throw e;
+  }
+  // Tables imported before workbook bookkeeping stopped being required.
+  await host.repairLegacyImport().catch(() => 0);
+  holder.draftDir = dirs.draft;
+  holder.storeRef = store;
+  holder.hostRef = host;
+  return host;
+}
+
 /** The LIVE host of the request's app, opened on first use. It is never the draft. */
 export async function getHost(): Promise<AppHost> {
-  const holder = await currentHolder();
-  holder.hostPromise ??= (async () => {
-    const db = await getShellDb();
-    holder.pin ??= await soleTenantId(db);
-    const store = new ShellVersionStore(db, holder.pin);
-    const dirs = await directoriesFor(holder, store);
-    mkdirSync(dirs.live, { recursive: true, mode: 0o700 });
-    const host = await AppHost.open(dirs.live, {
-      store,
-      workerUrl: workerUrl(),
-      workerLimits: requireContext().workerLimits,
-    });
-    wireHostEvents(host, 'live', holder.tenantId);
-    try {
-      await adoptDraft(holder, db, host, dirs.draft);
-      await freezeForWaitingChanges(db, host);
-    } catch (e) {
-      // Never serve live thawed when we could not tell whether a draft is
-      // open: fail the open; the next call retries.
-      holder.slotRef = null;
-      await host.close().catch(() => {});
-      throw e;
-    }
-    // Tables imported before workbook bookkeeping stopped being required.
-    await host.repairLegacyImport().catch(() => 0);
-    holder.draftDir = dirs.draft;
-    holder.storeRef = store;
-    holder.hostRef = host;
-    return host;
-  })();
+  let holder = await currentHolder();
+  if (!lifecycleOn()) return openedHost(holder, () => openLive(holder));
+  // Hosted with a lifecycle policy: the app may be asleep, or going to sleep.
+  for (;;) {
+    if (lifecycle.draining)
+      throw new EngineError(
+        'this server is draining; try again in a moment',
+        'refused',
+      );
+    if (!holder.evicting) break;
+    await holder.evicting.catch(() => {});
+    holder = await currentHolder(); // the closed holder is gone: a first open
+  }
+  holder.lastUsed = lifecycle.now();
+  const live = await openedHost(holder, () =>
+    lifecycle.wake(async () => {
+      await makeRoom(holder);
+      return openLive(holder);
+    }),
+  );
+  holder.lastUsed = lifecycle.now();
+  lifecycle.startSweeping(() => void sweepIdleHosts());
+  return leased(holder, live);
+}
+
+/** The holder's host promise (one open at a time; a failed open is retried). */
+function openedHost(
+  holder: Holder,
+  open: () => Promise<AppHost>,
+): Promise<AppHost> {
+  holder.hostPromise ??= open();
   const pending = holder.hostPromise;
   pending.catch(() => {
     if (holder.hostPromise === pending) holder.hostPromise = null; // retry
@@ -549,7 +608,9 @@ export async function getDraftSlot(): Promise<DraftSlot | null> {
 
 /** drafts.ts only: record the draft that just opened, or null once it is gone. */
 export function setDraftSlot(slot: DraftSlot | null): void {
-  currentHolderSync().slotRef = slot;
+  const holder = currentHolderSync();
+  if (slot?.host && lifecycleOn()) slot.host = leased(holder, slot.host);
+  holder.slotRef = slot;
 }
 
 /**
@@ -575,6 +636,7 @@ export async function hostFor(target: Target): Promise<AppHost> {
 }
 
 export async function closeHost(): Promise<void> {
+  lifecycle.stopSweeping();
   const all = [...holders.values()];
   holders.clear();
   for (const holder of all) {
@@ -591,5 +653,171 @@ export async function resetShell(): Promise<void> {
   context = null;
   syncDb = null;
   profileCache = null;
+  lifecycle.configure(undefined);
   setTenantScopedEvents(false);
+}
+
+// ---------- worker lifecycle for many apps (#5192) ----------
+//
+// Only when the `cloud` profile is configured with a `lifecycle` policy. The
+// desktop never takes these paths: its host is the raw one, opened once.
+//
+// An evicted app is closed completely (live worker, draft worker, the holder
+// itself) and the next request opens it from disk exactly as a first open does:
+// nothing of the old holder survives into the new one, and holders are keyed
+// by tenant, so no app ever reuses another's state. An app is closed only with
+// no call inside it, so nothing in flight is cut and every finished write is
+// already committed by the worker.
+
+function lifecycleOn(): boolean {
+  return lifecycle.configured && profileCache === 'cloud';
+}
+
+const proxies = new WeakMap<object, AppHost>();
+const proxied = new WeakSet<object>();
+
+/**
+ * A host as handed to callers: every call counts as inside the app until it
+ * settles, which is what keeps the app awake. Reading `def` or listening for
+ * events counts as nothing.
+ */
+function leased(holder: Holder, host: AppHost): AppHost {
+  if (proxied.has(host)) return host;
+  const known = proxies.get(host);
+  if (known) return known;
+  const proxy: AppHost = new Proxy(host, {
+    get(target, prop) {
+      const value = Reflect.get(target, prop, target);
+      if (typeof value !== 'function') return value;
+      return (...args: unknown[]) => {
+        holder.leases++;
+        let result: unknown;
+        try {
+          result = value.apply(target, args);
+        } catch (e) {
+          release(holder);
+          throw e;
+        }
+        if (result === target) {
+          release(holder);
+          return proxy;
+        }
+        if (
+          result &&
+          typeof (result as PromiseLike<unknown>).then === 'function'
+        )
+          return Promise.resolve(result).finally(() => release(holder));
+        release(holder);
+        return result;
+      };
+    },
+  });
+  proxies.set(host, proxy);
+  proxied.add(proxy);
+  return proxy;
+}
+
+function release(holder: Holder): void {
+  holder.leases--;
+  holder.lastUsed = lifecycle.now();
+  lifecycle.changed();
+}
+
+function openCount(except?: Holder): number {
+  let n = 0;
+  for (const h of holders.values()) if (h !== except && h.hostPromise) n++;
+  return n;
+}
+
+/** May this app be closed now: open, no call inside, no workflow holding its draft. */
+function evictable(holder: Holder, minIdleMs: number): boolean {
+  return (
+    !!holder.hostRef &&
+    !holder.evicting &&
+    holder.leases === 0 &&
+    !holder.slotRef?.hold &&
+    lifecycle.now() - holder.lastUsed >= minIdleMs
+  );
+}
+
+/** Close one app and forget its holder. */
+function evict(holder: Holder, why: 'idle' | 'capacity'): Promise<void> {
+  const done = (async () => {
+    const slotHost = holder.slotRef?.host ?? null;
+    const live = holder.hostRef;
+    // Out of reach first: a request now waits for this close, then opens fresh.
+    await slotHost?.close().catch(() => {});
+    await live?.close().catch(() => {});
+    if (holders.get(holder.key) === holder) holders.delete(holder.key);
+    lifecycle.evictions[why]++;
+  })();
+  holder.evicting = done;
+  void done.finally(() => lifecycle.changed());
+  return done;
+}
+
+/** Before a wake: make room under the cap by closing the app used longest ago. */
+async function makeRoom(waking: Holder): Promise<void> {
+  const cap = lifecycle.maxOpen;
+  if (cap === null) return;
+  const deadline = Date.now() + lifecycle.capacityWaitMs;
+  while (openCount(waking) >= cap) {
+    if (lifecycle.draining)
+      throw new EngineError('this server is draining', 'refused');
+    const closing = [...holders.values()].filter((h) => h.evicting);
+    const victim = [...holders.values()]
+      .filter((h) => h !== waking && evictable(h, lifecycle.minIdleMs))
+      .sort((a, b) => a.lastUsed - b.lastUsed)[0];
+    if (victim) {
+      await evict(victim, 'capacity').catch(() => {});
+      continue;
+    }
+    // Everything open is busy, held or too recent: wait for one to free up.
+    const left = deadline - Date.now();
+    if (left <= 0 && !closing.length)
+      throw new EngineError(
+        'this server has no room for another app right now; try again',
+        'refused',
+      );
+    await lifecycle.waitForChange(Math.min(Math.max(left, 1), 100));
+  }
+}
+
+/** Close every app nobody has used for `idleMs`. Runs on a timer; callable. */
+export async function sweepIdleHosts(): Promise<number> {
+  const idleMs = lifecycle.idleMs;
+  if (!lifecycleOn() || idleMs === null) return 0;
+  const idle = [...holders.values()].filter((h) => evictable(h, idleMs));
+  await Promise.all(idle.map((h) => evict(h, 'idle').catch(() => {})));
+  return idle.length;
+}
+
+/**
+ * Stop taking new apps, let the calls inside the open ones finish (up to
+ * `timeoutMs`), then close them all. For recycling the process: a request
+ * that arrives meanwhile is refused to be retried elsewhere.
+ */
+export async function drainShell(
+  timeoutMs = 30_000,
+): Promise<{ closed: number; busy: number }> {
+  lifecycle.draining = true;
+  lifecycle.stopSweeping();
+  const deadline = Date.now() + timeoutMs;
+  // A wake in flight finishes, a call in flight finishes: both are work.
+  while (
+    [...holders.values()].some(
+      (h) => h.leases > 0 || (h.hostPromise && !h.hostRef),
+    ) &&
+    Date.now() < deadline
+  )
+    await lifecycle.waitForChange(50);
+  const left = [...holders.values()].filter((h) => h.leases > 0).length;
+  const closed = holders.size;
+  await closeHost();
+  return { closed, busy: left };
+}
+
+/** What this process holds: open apps, wakes, evictions, wake time, memory. */
+export function hostMetrics(): HostMetrics {
+  return lifecycle.metrics(openCount());
 }
