@@ -679,6 +679,23 @@ export {
   type SubclassExposureEscalation,
   surfaceOpensOperation,
 } from './registry/subclass-exposure';
+// Request tenancy (#5375): the one resolver and decision set every request
+// path uses, the actor rule, and the policy source smrt-tenancy installs.
+export {
+  enterRequestTenancy,
+  type LocalsPrincipal,
+  principalFromLocals,
+  type RequestActorInput,
+  type RequestTenancyEntryInput,
+  type RequestTenancyOperation,
+  RequestTenantConflictError,
+  resolveRequestActor,
+  resolveTenancyForRequest,
+  runInRequestTenancy,
+  runToolInRequestTenancy,
+  type SettledRequestPrincipal,
+  tenancyReadScope,
+} from './request-actor';
 // What an update body may set on a loaded object: declared fields and
 // settable accessors. Every request-facing update path assigns through
 // `applyUpdateInput`.
@@ -688,6 +705,43 @@ export {
   assertUpdateInput,
   updateInputRulesFor,
 } from './request-input';
+export {
+  boundMemberTenancy,
+  boundTenancyCacheScoped,
+  boundTenancyEtagDiscriminator,
+  type CustomActionShape,
+  customActionScope,
+  ensureRequestTenancyInterceptor,
+  enterResolvedTenancy,
+  etagDiscriminator,
+  getResolvedTenancy,
+  getTenantPolicySource,
+  listMixedTenancyFamilies,
+  type MemberTenancy,
+  type MixedTenancyFamily,
+  memberTenancyOf,
+  type ReadDecision,
+  type RequestActor,
+  type RequestTenancy,
+  type RequestTenancyContext,
+  RequestTenancyError,
+  type ResolveRequestTenancyInput,
+  readScope,
+  resolveRequestTenancy,
+  resolveStrictModelKey,
+  scopeActionOptions,
+  scopedOptionProperties,
+  servesTenantScopedRows,
+  setTenantPolicySource,
+  type TenancyRefusal,
+  TenantPolicyChangedError,
+  type TenantPolicyConfig,
+  type TenantPolicyLookup,
+  type TenantPolicySource,
+  throwIfRefused,
+  withResolvedTenancy,
+  writeGate,
+} from './request-tenancy';
 // The tenant scope request-facing reads add when no interceptor narrows them,
 // and the request tenant context hooks smrt-tenancy installs.
 export {

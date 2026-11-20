@@ -696,6 +696,18 @@ export {
   assertUpdateInput,
   updateInputRulesFor,
 } from './request-input';
+// The request tenancy policy source and bound member policy smrt-tenancy's
+// interceptor reads (#5375); the resolver and decisions stay server-only.
+export {
+  boundMemberTenancy,
+  getTenantPolicySource,
+  type MemberTenancy,
+  type RequestTenancyContext,
+  setTenantPolicySource,
+  type TenantPolicyConfig,
+  type TenantPolicyLookup,
+  type TenantPolicySource,
+} from './request-tenancy';
 // How `where` keys resolve to columns, shared by the collection and by anything
 // that inspects a filter before it runs (interceptors, generated routes).
 // Request tenant context hooks (installed by smrt-tenancy, which browser

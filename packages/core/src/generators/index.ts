@@ -5,6 +5,7 @@
 // Conditional GET for generated read routes (#1757 v1 body-hash, #1765 v2
 // per-table change-feed version source)
 export {
+  cachePolicy,
   canonicalReadRepresentation,
   computeBodyEtag,
   computeTableVersionEtag,
