@@ -990,6 +990,51 @@ describe('smrtConsumer registration generation', () => {
     expect(output).not.toMatch(/from ["']@test\/pkg["']/);
   });
 
+  it('registers an ordinary generic model and not a collection of a generic collection', async () => {
+    const entry = (className: string, extra: Record<string, unknown>) => ({
+      className,
+      exportName: className,
+      collection: `${className.toLowerCase()}s`,
+      fields: {},
+      methods: {},
+      decoratorConfig: {},
+      ...extra,
+    });
+    writeFileSync(
+      join(tmpDir, 'node_modules', '@test', 'pkg', 'dist', 'manifest.json'),
+      JSON.stringify({
+        packageName: '@test/pkg',
+        objects: {
+          RecordBase: entry('RecordBase', { extends: 'SmrtObject' }),
+          Ledger: entry('Ledger', {
+            extends: 'RecordBase',
+            extendsTypeArg: 'Currency',
+          }),
+          BaseCollection: entry('BaseCollection', {
+            extends: 'SmrtCollection',
+          }),
+          VendorAccounts: entry('VendorAccounts', {
+            extends: 'BaseCollection',
+            extendsTypeArg: 'Account',
+          }),
+        },
+      }),
+    );
+    const plugin = smrtConsumer({
+      packages: ['@test/pkg'],
+      generateTypes: false,
+      projectRoot: tmpDir,
+      disableScanning: true,
+    });
+
+    await buildStart(plugin, {} as any);
+
+    const content = readFileSync(join(tmpDir, '.smrt', 'register.js'), 'utf-8');
+    expect(content).toContain('ObjectRegistry.register(__smrt_consumer_1, {');
+    expect(content).toContain('name: "Ledger"');
+    expect(content).not.toContain('name: "VendorAccounts"');
+  });
+
   it('should write explicit package names into .smrt/register.js', async () => {
     const plugin = smrtConsumer({
       packages: ['@test/pkg'],

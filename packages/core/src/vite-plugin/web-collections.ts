@@ -49,6 +49,7 @@ import {
   isReplacedModel,
   modelReplacements,
 } from '../manifest/model-replacements';
+import { hasCollectionMarker } from '../registry/collection-bases.js';
 import { isFrameworkBaseClass } from '../registry/framework-base-classes.js';
 import { readFieldEnum } from '../registry/manifest-field-merge.js';
 import type { ApiHttpMethod } from '../registry/types.js';
@@ -78,12 +79,7 @@ export interface ResolvedApiActionRouteConfig {
  * so generating routes for both would cause file collisions.
  */
 function isCollectionClass(objectDef: SmartObjectDefinition): boolean {
-  // A qualified parent is a package's own class named `SmrtCollection`, not
-  // the framework base.
-  return (
-    (!objectDef.extendsQualified && objectDef.extends === 'SmrtCollection') ||
-    !!objectDef.extendsTypeArg
-  );
+  return hasCollectionMarker(objectDef);
 }
 
 function normalizeApiHttpMethod(method?: string): ApiHttpMethod {
@@ -665,15 +661,7 @@ export function isCollectionManifestClass(
   obj: SmartObjectDefinition,
   seen: Set<string> = new Set(),
 ): boolean {
-  // Truthy check (not `!== undefined`) mirrors the scanner's own
-  // manifest-generator: a scanner that emits `extendsTypeArg: null` for a
-  // non-generic base must not be misread as a collection.
-  if (
-    (!obj.extendsQualified && obj.extends === 'SmrtCollection') ||
-    obj.extendsTypeArg
-  ) {
-    return true;
-  }
+  if (hasCollectionMarker(obj)) return true;
   const parentName = obj.extendsQualified || obj.extends;
   if (!parentName || seen.has(parentName)) return false;
   seen.add(parentName);

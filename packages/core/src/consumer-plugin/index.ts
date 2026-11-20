@@ -40,6 +40,7 @@ import {
 } from '../migrations/retired-tables.js';
 import { tryComputeManifestSchemaFingerprint } from '../migrations/schema-fingerprint.js';
 import { generateDeclarations } from '../prebuild/index.js';
+import { hasCollectionMarker } from '../registry/collection-bases.js';
 import type {
   SmartObjectDefinition,
   SmartObjectManifest,
@@ -2274,10 +2275,7 @@ async function generateRegistrationFile(
       return cached;
     }
 
-    if (
-      (!def?.extendsQualified && def?.extends === 'SmrtCollection') ||
-      def?.extendsTypeArg !== undefined
-    ) {
+    if (hasCollectionMarker(def)) {
       collectionClassMemo.set(def, true);
       return true;
     }

@@ -32,6 +32,7 @@
  */
 
 import { join } from 'node:path';
+import { hasCollectionMarker } from '../registry/collection-bases.js';
 import type {
   SmartObjectDefinition,
   SmartObjectManifest,
@@ -47,10 +48,7 @@ import type { SvelteKitOptions } from './sveltekit-generator.js';
  * never anchor routes themselves.
  */
 function isCollectionDefinition(objectDef: SmartObjectDefinition): boolean {
-  return (
-    (!objectDef.extendsQualified && objectDef.extends === 'SmrtCollection') ||
-    !!objectDef.extendsTypeArg
-  );
+  return hasCollectionMarker(objectDef);
 }
 
 /**

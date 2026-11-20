@@ -62,6 +62,7 @@ import {
   resolveCustomActionMetadata,
   resolveEffectiveActionMetadata,
 } from './generators/custom-action.js';
+import { hasCollectionMarker } from './registry/collection-bases.js';
 import { isFrameworkBaseClass } from './registry/framework-base-classes.js';
 import type {
   SmartObjectDefinition,
@@ -649,14 +650,7 @@ function isSurfaceCollectionClass(
   object: SmartObjectDefinition,
   seen: Set<string> = new Set(),
 ): boolean {
-  // Truthy check (not `!== undefined`) mirrors the scanner: a non-generic
-  // base emitting `extendsTypeArg: null` must not be misread as a collection.
-  if (
-    (!object.extendsQualified && object.extends === 'SmrtCollection') ||
-    object.extendsTypeArg
-  ) {
-    return true;
-  }
+  if (hasCollectionMarker(object)) return true;
   const parentName = object.extendsQualified || object.extends;
   if (!parentName || seen.has(parentName)) return false;
   seen.add(parentName);

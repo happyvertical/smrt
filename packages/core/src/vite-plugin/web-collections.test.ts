@@ -23,6 +23,7 @@ import {
   buildWebToolDescriptors,
   computeWebManifestHash,
   isCollectionManifestClass,
+  resolveApiActionSet,
   resolveCollectionItemObject,
   resolveCollectionItemTypeName,
   selectWebCollectionEntries,
@@ -167,6 +168,90 @@ describe('collection item ancestry', () => {
     expect(isCollectionManifestClass(legacyManifest, child)).toBe(true);
     expect(resolveCollectionItemTypeName(legacyManifest, child)).toBe('Doc');
     expect(resolveCollectionItemObject(legacyManifest, child)).toBe(realItem);
+  });
+});
+
+describe('collection classification by framework ancestry', () => {
+  const recordBase = obj({
+    className: 'RecordBase',
+    collection: 'recordbases',
+    extends: 'SmrtObject',
+    qualifiedName: '@z/pkg:RecordBase',
+  });
+  const ledger = obj({
+    className: 'Ledger',
+    collection: 'ledgers',
+    extends: 'RecordBase',
+    extendsTypeArg: 'Currency',
+    qualifiedName: '@z/pkg:Ledger',
+  });
+  const baseCollection = obj({
+    className: 'BaseCollection',
+    collection: 'bases',
+    extends: 'SmrtCollection',
+    qualifiedName: '@z/pkg:BaseCollection',
+  });
+  const vendorAccounts = obj({
+    className: 'VendorAccounts',
+    collection: 'accounts',
+    extends: 'BaseCollection',
+    extendsTypeArg: 'Account',
+    qualifiedName: '@z/pkg:VendorAccounts',
+  });
+
+  it('treats an ordinary generic model as a model with its CRUD routes', () => {
+    const m = manifest(recordBase, ledger);
+
+    expect(isCollectionManifestClass(m, ledger)).toBe(false);
+    expect(resolveApiActionSet(ledger, m).size).toBeGreaterThan(0);
+    expect(
+      selectWebCollectionEntries(m).map(({ obj: entry }) => entry.className),
+    ).toContain('Ledger');
+  });
+
+  it('treats a collection of an app-level generic collection as a collection', () => {
+    const m = manifest(baseCollection, vendorAccounts);
+
+    expect(isCollectionManifestClass(m, vendorAccounts)).toBe(true);
+    expect(isCollectionManifestClass(m, baseCollection)).toBe(true);
+    expect(resolveApiActionSet(vendorAccounts, m).size).toBe(0);
+  });
+
+  it('treats an entry generation marked a collection of a model as one', () => {
+    const marked = obj({
+      className: 'Marked',
+      collection: 'marked',
+      extends: 'UnknownParent',
+      collectionOf: '@z/pkg:Account',
+      qualifiedName: '@z/pkg:Marked',
+    });
+
+    expect(isCollectionManifestClass(manifest(marked), marked)).toBe(true);
+  });
+
+  it('keeps a framework collection base with a type argument a collection', () => {
+    const report = obj({
+      className: 'Sales',
+      collection: 'sales',
+      extends: 'SmrtReportCollection',
+      extendsTypeArg: 'SalesReport',
+      qualifiedName: '@z/pkg:Sales',
+    });
+
+    expect(isCollectionManifestClass(manifest(report), report)).toBe(true);
+  });
+
+  it('does not take another package class named like the base for a collection', () => {
+    const own = obj({
+      className: 'Child',
+      collection: 'children',
+      extends: 'SmrtCollection',
+      extendsQualified: '@other/pkg:SmrtCollection',
+      extendsTypeArg: 'Thing',
+      qualifiedName: '@z/pkg:Child',
+    });
+
+    expect(isCollectionManifestClass(manifest(own), own)).toBe(false);
   });
 });
 
