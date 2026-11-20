@@ -39,10 +39,12 @@ reconciler to `resumeAiRun`; a budget stop needs the stopping limit raised.
 `retry` opens a new run with `retry_of_run_id`, carrying the failed run's
 accepted outputs of completed steps; refusals are core's
 `AiRunResumeRefusedError` reasons. Core treats another tenant's run as
-absent (`retry_source_pruned`, as an unknown id); the driver itself refuses
-only its own tenant's runs of another owner or definition
-(`WorkflowRunNotFoundError`), judged from one read within its tenant; core
-compares the owner again under the source lock (`not_retryable`). A retry
+absent (`retry_source_pruned`, as an unknown id). Its own tenant's runs of
+another owner, type or definition are `WorkflowRunNotFoundError`: the driver
+reads only the caller's own workflow runs (tenant, owner and type are
+predicates of the statement) and refuses another definition's; another
+owner's run is never read by the driver, core refuses it under the source
+lock (`not_retryable`) and the driver reports that as not found. A retry
 `id` that ever named a run is core's `AiRunIdUsedError`. The checkpoint
 store reads a run and its checkpoint with core's scoped reads (tenant, owner
 and run type are predicates of each statement); a run id names one run for

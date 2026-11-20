@@ -16,7 +16,7 @@ import {
 } from '@happyvertical/smrt-core';
 import { clearPromptCache, PromptRegistry } from '@happyvertical/smrt-prompts';
 import type { DatabaseInterface } from '@happyvertical/sql';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   createRunCheckpointStore,
   WorkflowRunNotFoundError,
@@ -32,6 +32,26 @@ import {
   twoSteps,
   workflowDb,
 } from './harness.js';
+
+/** Every `getAiRun` call with its read scope, the driver's included. */
+const { readScopes } = vi.hoisted(() => ({
+  readScopes: [] as { runId: unknown; scope: unknown }[],
+}));
+vi.mock('@happyvertical/smrt-core', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('@happyvertical/smrt-core')>();
+  return {
+    ...actual,
+    getAiRun: (db: unknown, runId: unknown, scope?: unknown) => {
+      readScopes.push({ runId, scope });
+      return (actual.getAiRun as (...args: unknown[]) => unknown)(
+        db,
+        runId,
+        scope,
+      );
+    },
+  };
+});
 
 const engines: Engine[] = ['sqlite', 'duckdb'];
 
@@ -100,35 +120,48 @@ describe.each(engines)('workflow run identity on %s', (engine) => {
     const failed = await driver.start({ ownerId: 'owner-q', input: { n: 1 } });
     expect((await driver.run(failed.id, 'owner-q')).status).toBe('failed');
     const before = await db.query('SELECT id FROM _smrt_ai_runs');
+    const checkpoint = await readAiRunCheckpoint(db, failed.id);
+    // The workflow reads only the caller's own runs; core refuses the other
+    // owner's source under its lock and the refusal is reported as not
+    // found. Nothing is opened or carried.
+    readScopes.length = 0;
     await expect(driver.retry(failed.id, 'owner-p')).rejects.toBeInstanceOf(
       WorkflowRunNotFoundError,
     );
-    // With the workflow's own pre-check finding nothing, core refuses the
-    // other owner's source under its lock and nothing is carried.
-    const original = db.query.bind(db);
-    let hidden = false;
-    (db as { query: unknown }).query = (sql: string, ...params: unknown[]) => {
-      const text = sql.replace(/\s+/g, ' ').trim();
-      // The first unowned read of the source is the workflow's pre-check.
-      if (
-        !hidden &&
-        text.includes('FROM _smrt_ai_runs r WHERE r.id = $1') &&
-        params[0] === failed.id &&
-        !/owner_id = \$/.test(text)
-      ) {
-        hidden = true;
-        return Promise.resolve([]);
-      }
-      return original(sql, ...params);
-    };
-    const refused = await driver
-      .retry(failed.id, 'owner-p')
-      .catch((error: unknown) => error);
-    (db as { query: unknown }).query = original;
-    expect(hidden).toBe(true);
-    expect(refused).toBeInstanceOf(AiRunResumeRefusedError);
-    expect((refused as AiRunResumeRefusedError).reason).toBe('not_retryable');
+    const sourceReads = readScopes.filter(({ runId }) => runId === failed.id);
+    expect(sourceReads.length).toBeGreaterThan(0);
+    for (const { scope } of sourceReads) {
+      expect(scope).toMatchObject({ ownerId: 'owner-p', type: 'workflow' });
+    }
     expect(await db.query('SELECT id FROM _smrt_ai_runs')).toEqual(before);
+    expect(await readAiRunCheckpoint(db, failed.id)).toEqual(checkpoint);
+  });
+
+  it("reports another owner's run as not found without reading its row when its checkpoint is gone", async () => {
+    const db = await workflowDb(engine);
+    const { model } = scriptedModel((_call, n) => ({ output: { value: n } }));
+    const driver = driverFor(db, model, definitionOf(failingSteps));
+    const failed = await driver.start({ ownerId: 'owner-q', input: { n: 1 } });
+    expect((await driver.run(failed.id, 'owner-q')).status).toBe('failed');
+    // The checkpoint is pruned, so the owner-scoped checkpoint load misses
+    // for the run's own owner too: the fallback read is what is judged.
+    await db.query(
+      'DELETE FROM _smrt_ai_run_checkpoints WHERE run_id = $1',
+      failed.id,
+    );
+    readScopes.length = 0;
+    await expect(driver.retry(failed.id, 'owner-p')).rejects.toBeInstanceOf(
+      WorkflowRunNotFoundError,
+    );
+    const sourceReads = readScopes.filter(({ runId }) => runId === failed.id);
+    expect(sourceReads.length).toBeGreaterThan(0);
+    for (const { scope } of sourceReads) {
+      expect(scope).toMatchObject({ ownerId: 'owner-p', type: 'workflow' });
+    }
+    // The run's own owner is told the source is pruned (control).
+    await expect(driver.retry(failed.id, 'owner-q')).rejects.toMatchObject({
+      reason: 'retry_source_pruned',
+    });
   });
 
   it('a pruned failed run is retry_source_pruned', async () => {
