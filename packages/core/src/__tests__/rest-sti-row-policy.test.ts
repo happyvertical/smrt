@@ -106,6 +106,9 @@ async function serve(
   objects: Array<typeof SmrtObject>,
   db: DatabaseInterface,
   run: (port: number) => Promise<void>,
+  authMiddleware: NonNullable<
+    Parameters<typeof createRestServer>[2]
+  >['authMiddleware'] = () => async (req) => req,
 ): Promise<void> {
   const { server } = quietly(() =>
     createRestServer(
@@ -114,7 +117,7 @@ async function serve(
       {
         port: 0,
         basePath: '/api',
-        authMiddleware: () => async (req) => req,
+        authMiddleware,
       },
     ),
   ) as { server: Server };
@@ -279,6 +282,51 @@ describe('STI rows through a base route on runtime REST', () => {
         });
       });
       expect(await rows()).toEqual(['base:', 'private:n', 'readonly:n']);
+    });
+
+    it('asks its auth middleware and exposure gate about no model it does not serve', async () => {
+      const asked: string[] = [];
+      const exposed: string[] = [];
+      setRuntimeExposureGate({
+        isEnabled: (model) => {
+          exposed.push(String(model.qualifiedName));
+          return true;
+        },
+      });
+      try {
+        await serve(
+          [RowPolicyDoc],
+          db,
+          async (port) => {
+            const url = (path: string) =>
+              `http://127.0.0.1:${port}/api/${path}`;
+            const listed = await fetch(url(segment()));
+            expect(listed.status).toBe(200);
+            expect(
+              ((await listed.json()) as Array<{ title: string }>).map(
+                (row) => row.title,
+              ),
+            ).toEqual(['base']);
+            expect((await fetch(url(`${segment()}/${ids.base}`))).status).toBe(
+              200,
+            );
+          },
+          (model) => async (req) => {
+            asked.push(model);
+            if (model !== key('RowPolicyDoc')) {
+              throw new Error(`no policy configured for ${model}`);
+            }
+            return req;
+          },
+        );
+      } finally {
+        setRuntimeExposureGate(undefined);
+      }
+      expect(asked.length).toBeGreaterThan(0);
+      for (const subtype of ['RowPolicyPrivateDoc', 'RowPolicyReadOnlyDoc']) {
+        expect(asked).not.toContain(key(subtype));
+        expect(exposed).not.toContain(key(subtype));
+      }
     });
 
     it('answers a sync create on a subtype row it does not serve as an id conflict', async () => {

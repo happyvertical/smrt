@@ -124,6 +124,38 @@ export function servedFamilyTypes(
 }
 
 /**
+ * The registry keys of the STI descendants of `model` a transport could
+ * serve rows of through `model`'s route for at least one of `operations`: on
+ * the server's model list (when it has one) and with the operation open on
+ * `surface`. A transport asks its host about these members only (exposure,
+ * authorization), never about a member it could not serve anyway.
+ */
+export function familyMembersInScope(
+  model: string,
+  surface: CreateSurface,
+  operations: readonly FamilyRowOperation[],
+  served?: ReadonlySet<string>,
+): string[] {
+  if (ObjectRegistry.getTableStrategy(model) !== 'sti') return [];
+  const keys: string[] = [];
+  for (const member of ObjectRegistry.getDescendants(model)) {
+    const info = ObjectRegistry.getClass(member);
+    const key = info ? info.qualifiedName || info.name : member;
+    if (served && !served.has(key)) continue;
+    const config = ObjectRegistry.getConfig(key)[surface];
+    if (
+      !operations.some((operation) =>
+        surfaceOpensOperation(surface, config, operation),
+      )
+    ) {
+      continue;
+    }
+    keys.push(key);
+  }
+  return keys;
+}
+
+/**
  * Whether a row of type `rowModel` is served through `model`'s route for
  * `operation`: `model` itself, or a member {@link servedFamilyTypes} admits.
  */

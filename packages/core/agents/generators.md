@@ -233,7 +233,10 @@ own name, or its `api.public` without middleware. Every REST server also
 admits each subtype per request (`settleFamilyAdmission`): its rows are read
 through the base only when it is switched on for the request's tenant and, for
 a read, the caller may read the subtype itself (its `authMiddleware` decision
-under its own name, or its `api.public` without middleware); a write to a
+under its own name, or its `api.public` without middleware). Only subtypes the
+server could serve are put to the exposure gate and middleware
+(`familyMembersInScope`: on its model list, with a read or row operation open
+on `api`), so a host needs no policy for a model it does not serve; a write to a
 subtype row checks the subtype's exposure too (`404` / `not_found`). Reads of
 an STI base under an `authMiddleware` vary by caller, so they are cached and
 validated like reads with permission-gated fields. The restriction narrows a

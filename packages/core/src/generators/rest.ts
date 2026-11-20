@@ -12,6 +12,7 @@ import {
   assertCreateTargetSurface,
   CreateTargetError,
   type FamilyRowOperation,
+  familyMembersInScope,
   isFamilyRowServed,
   servedFamilyTypes,
 } from '../create-target';
@@ -1060,14 +1061,21 @@ export class APIGenerator {
   ): Promise<void> {
     if (this.familyAdmission.has(req)) return;
     if (ObjectRegistry.getTableStrategy(objectName) !== 'sti') return;
-    const members = ObjectRegistry.getDescendants(objectName);
-    if (members.length === 0) return;
+    if (ObjectRegistry.getDescendants(objectName).length === 0) return;
     const read = req.method === 'GET' || req.method === 'HEAD';
+    // Only members this server could serve for the request are put to the
+    // host's exposure gate and middleware: a subtype outside its model list,
+    // or one that opens none of the operations, is never served, and a host
+    // need not have a policy for it.
+    const members = familyMembersInScope(
+      objectName,
+      'api',
+      read ? ['list', 'get'] : ['get', 'update', 'delete'],
+      this.modelScope,
+    );
     const tenant = await this.requestTenant(req);
     const admitted = new Set<string>();
-    for (const member of members) {
-      const info = ObjectRegistry.getClass(member);
-      const key = info ? info.qualifiedName || info.name : member;
+    for (const key of members) {
       if (
         !isRuntimeModelEnabled(ObjectRegistry.getExposureModel(key) ?? key, {
           surface: 'rest',
