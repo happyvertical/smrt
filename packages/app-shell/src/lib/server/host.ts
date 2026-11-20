@@ -237,7 +237,11 @@ function workerUrl(): URL | string {
   if (configured) return configured;
   // SMRT_APP_SHELL_WORKER=bundle: the split worker bundle (#5213).
   if (wantsBundledWorker()) {
-    const bundled = bundledWorkerUrl();
+    const bundled =
+      bundledWorkerUrl() ??
+      bundledWorkerUrl(
+        import.meta.resolve('@happyvertical/smrt-app-shell/engine/worker'),
+      );
     if (bundled) return bundled;
     throw new EngineError('the worker bundle is not built', 'refused');
   }

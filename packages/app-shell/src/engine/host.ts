@@ -276,13 +276,17 @@ interface Analysis {
 /**
  * The split worker bundle (`tools/bundle-worker.mjs`, #5213): next to the
  * compiled engine, or from source (tests) under `dist/`. Absent until built.
+ * A host whose engine copy is inlined in its own build passes `near`, the
+ * published `engine/worker` URL, to find the package's `dist/`.
  */
-export function bundledWorkerUrl(): URL | null {
+export function bundledWorkerUrl(
+  near: URL | string = import.meta.url,
+): URL | null {
   for (const f of [
     '../worker-bundle/app-worker.js',
     '../../dist/worker-bundle/app-worker.js',
   ]) {
-    const u = new URL(f, import.meta.url);
+    const u = new URL(f, near);
     if (existsSync(fileURLToPath(u))) return u;
   }
   return null;

@@ -3,8 +3,8 @@
 // and keeps their source text on its heap; the bundle loads the same code from
 // far fewer, and a worker is about half the resident size (see
 // agents/engine.md, "Worker footprint"). Opt-in: the unbundled worker is the
-// default, a host selects this one with `workerUrl` (package export
-// `./engine/worker-bundled`) or SMRT_APP_SHELL_WORKER=bundle.
+// default, a host selects this one with `workerUrl` (`bundledWorkerUrl()`) or
+// SMRT_APP_SHELL_WORKER=bundle.
 //
 // Rules this file must keep:
 // - NEVER minify identifiers. smrt claims tables by class name

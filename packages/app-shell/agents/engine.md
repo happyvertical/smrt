@@ -223,8 +223,7 @@ ratios, not Linux targets; at 1 worker the host's own share is included), at
   pass 4-8. A bundled worker's heap is smaller, so the cap barely moves it.
 - **Split worker bundle (#5213).** `tools/bundle-worker.mjs` (esbuild, part of
   `pnpm build`, after `tsc`) writes `dist/worker-bundle/app-worker.js` + chunks.
-  Opt-in: a host passes `workerUrl` (package export
-  `@happyvertical/smrt-app-shell/engine/worker-bundled`) or sets
+  Opt-in: a host passes `workerUrl` (`bundledWorkerUrl()` finds it) or sets
   `SMRT_APP_SHELL_WORKER=bundle` (engine default and shell; a configured
   `workerUrl` wins; refused if the bundle is not built). Unbundled stays the
   default. Rules: NO identifier minification (smrt claims tables by class name;

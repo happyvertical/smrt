@@ -18,9 +18,6 @@
     "./engine/worker": {
       "import": "./dist/engine/app-worker.js"
     },
-    "./engine/worker-bundled": {
-      "import": "./dist/worker-bundle/app-worker.js"
-    },
     "./manifest": "./dist/manifest.json"
   },
   "files": [
