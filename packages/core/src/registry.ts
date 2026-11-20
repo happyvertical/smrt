@@ -67,6 +67,7 @@ import type { ValidationError } from './errors';
 import { ConfigurationError } from './errors';
 import { discoverInstalledSmrtPackages } from './host.js';
 import { getPackageName } from './manifest/manifest-loader.js';
+import { sameNameCoexistenceUnsupported } from './manifest/model-replacements.js';
 import { getDefaultCompositeSource } from './manifest/sources/composite.js';
 import { ExplicitPathsManifestSource } from './manifest/sources/explicit-paths.js';
 import {
@@ -5232,6 +5233,17 @@ export function smrt(config: SmartObjectConfig = {}) {
     const isCollection = ctor.prototype instanceof SmrtCollection;
 
     if (isCollection) {
+      // `replaceParent: false` would keep a same-named subclass registered
+      // next to its parent; generation refuses it on any entry (#5143), so the
+      // decorator refuses it on a collection too, before the item or any
+      // collection binding changes.
+      if (config.replaceParent === false) {
+        throw sameNameCoexistenceUnsupported(
+          config.name ?? ctor.name,
+          (Object.getPrototypeOf(ctor) as { name?: string })?.name ||
+            'the class it extends',
+        );
+      }
       // Handle SmrtCollection registration. `_itemClass` is the paired model
       // constructor declared statically on the collection subclass; it is read
       // through a documented `unknown` view since the decorator's generic
