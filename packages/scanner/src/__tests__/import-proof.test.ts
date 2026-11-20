@@ -1444,3 +1444,59 @@ describe('repeated scans and project roots', () => {
     expect(undeclared.errors[0].message).toContain('not declared');
   });
 });
+
+// Manifest readers across the framework classify an entry by its parent's
+// bare name (`extends === 'SmrtCollection'`), so a class of another package
+// carrying a framework base's name is a scan error, decorated or not.
+describe('framework base names', () => {
+  it.each([
+    [
+      'an undecorated generic SmrtCollection and a model extending it',
+      {
+        'src/SmrtCollection.ts': `${CORE}\nexport class SmrtCollection<T> extends SmrtObject {\n  item?: T;\n}\n`,
+        'src/Ledger.ts': `${CORE.replace('SmrtCollection, ', '')}\nimport { SmrtCollection } from './SmrtCollection';\n@smrt()\nexport class Ledger extends SmrtCollection<string> {}\n`,
+      },
+      'SmrtCollection',
+    ],
+    [
+      'a decorated model named SmrtObject',
+      {
+        'src/SmrtObject.ts': `import { smrt } from '@happyvertical/smrt-core';\n@smrt()\nexport class SmrtObject {\n  title = '';\n}\n`,
+      },
+      'SmrtObject',
+    ],
+    [
+      'a plain class named SmrtReport that extends nothing',
+      { 'src/SmrtReport.ts': 'export class SmrtReport {}\n' },
+      'SmrtReport',
+    ],
+  ])('fails the scan for %s', async (_label, files, name) => {
+    const { errors } = await scanProject(files);
+    const reserved = errors.filter((error) =>
+      error.message.includes('the framework reserves this class name'),
+    );
+
+    expect(reserved).toHaveLength(1);
+    expect(reserved[0].message).toContain(`${name} is the name of`);
+    expect(reserved[0].message).toContain('rename it');
+    expect(reserved[0].filePath).toContain(`${name}.ts`);
+  });
+
+  it('accepts the framework package declaring its own base, and a name that only starts like one', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'smrt-proof-framework-'));
+    roots.push(root);
+    write(root, {
+      'package.json': JSON.stringify({
+        name: '@happyvertical/smrt-reports',
+        version: '0.0.0',
+        dependencies: { '@happyvertical/smrt-core': '*' },
+      }),
+      'src/report.ts': `${CORE}\n@smrt({ api: false })\nexport class SmrtReport extends SmrtObject {\n  title = '';\n}\n`,
+      'src/view.ts': `${CORE}\n@smrt()\nexport class SmrtCollectionView extends SmrtObject {\n  label = '';\n}\n`,
+    });
+    const { errors, model } = await scanAt(root);
+
+    expect(errors).toEqual([]);
+    expect(model('SmrtCollectionView')).toBeDefined();
+  });
+});

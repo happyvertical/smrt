@@ -299,27 +299,25 @@ export class RestrictedBase extends SmrtObject {
     expect(crud(child).length).toBe(5);
   });
 
-  it('inherits exposure from a confirmed provider model named SmrtReport', async () => {
-    const root = await project({
-      providers: {
-        [VENDOR]: {
-          files: {
-            'src/SmrtReport.ts': `${CORE}\n@smrt({ api: false })\nexport class SmrtReport extends SmrtObject {\n  hidden = '';\n}\n`,
+  // Code that reads a manifest classifies an entry by its parent's bare
+  // name, so a class of another package named like a framework base is a
+  // scan error rather than a model that could be read as that base.
+  it('fails the provider build for a provider model named SmrtReport', async () => {
+    await expect(
+      project({
+        providers: {
+          [VENDOR]: {
+            files: {
+              'src/SmrtReport.ts': `${CORE}\n@smrt({ api: false })\nexport class SmrtReport extends SmrtObject {\n  hidden = '';\n}\n`,
+            },
           },
         },
-      },
-      app: {
-        'src/Summary.ts': `${CORE}\nimport { SmrtReport } from '${VENDOR}';\n@smrt()\nexport class Summary extends SmrtReport {}\n`,
-      },
-    });
-
-    const manifest = await build(root);
-    const child = manifest.objects[`${APP}:Summary`];
-    expect(child?.extendsQualified).toBe(`${VENDOR}:SmrtReport`);
-    expect(crud(child)).toEqual([]);
+        app: {},
+      }),
+    ).rejects.toThrow('the framework reserves this class name');
   });
 
-  it('inherits exposure from a local model named like a framework base', async () => {
+  it('fails generation for a local model named like a framework base', async () => {
     const root = await project({
       providers: {},
       app: {
@@ -328,26 +326,23 @@ export class RestrictedBase extends SmrtObject {
       },
     });
 
-    const manifest = await build(root);
-    const child = manifest.objects[`${APP}:Summary`];
-    expect(child?.extendsQualified).toBe(`${APP}:SmrtReport`);
-    expect(crud(child)).toEqual([]);
+    await expect(build(root)).rejects.toThrow(
+      'the framework reserves this class name',
+    );
   });
 
-  it('inherits exposure from a local model named SmrtCollection, which is no collection', async () => {
+  it('fails generation for an undecorated generic local class named SmrtCollection', async () => {
     const root = await project({
       providers: {},
       app: {
-        'src/SmrtCollection.ts': `import { SmrtObject, smrt } from '@happyvertical/smrt-core';\n@smrt({ api: false, tableName: 'closed_ledgers' })\nexport class SmrtCollection extends SmrtObject {\n  hidden = '';\n}\n`,
-        'src/Ledger.ts': `import { smrt } from '@happyvertical/smrt-core';\nimport { SmrtCollection } from './SmrtCollection';\n@smrt()\nexport class Ledger extends SmrtCollection {}\n`,
+        'src/SmrtCollection.ts': `import { SmrtObject } from '@happyvertical/smrt-core';\nexport class SmrtCollection<T> extends SmrtObject {\n  item?: T;\n}\n`,
+        'src/Ledger.ts': `import { smrt } from '@happyvertical/smrt-core';\nimport { SmrtCollection } from './SmrtCollection';\n@smrt()\nexport class Ledger extends SmrtCollection<string> {}\n`,
       },
     });
 
-    const manifest = await build(root);
-    const child = manifest.objects[`${APP}:Ledger`];
-    expect(child?.extendsQualified).toBe(`${APP}:SmrtCollection`);
-    expect(child?.collectionOf).toBeUndefined();
-    expect(crud(child)).toEqual([]);
+    await expect(build(root)).rejects.toThrow(
+      'the framework reserves this class name',
+    );
   });
 
   it('throws for an extendsQualified that is not a qualified name', () => {

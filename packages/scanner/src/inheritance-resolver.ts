@@ -866,6 +866,37 @@ export class InheritanceResolver {
   }
 
   /**
+   * A scan error for each scanned class named like a framework base
+   * ({@link FRAMEWORK_BASE_CLASSES}) that the framework package declaring
+   * that base does not declare itself, decorated or not, whatever it
+   * extends. Code across the framework (permission catalogs, route and CLI
+   * generators, navigation) classifies a manifest entry by its parent's
+   * bare name, so a class of another package carrying a base's name would be
+   * read as that base. The name is reserved instead.
+   */
+  reservedNameErrors(): ScanError[] {
+    const errors: ScanError[] = [];
+    for (const classDef of this.classes) {
+      if (
+        !FRAMEWORK_BASE_CLASSES.has(classDef.className) ||
+        !this.isScanned(classDef) ||
+        this.isFrameworkDeclaration(classDef)
+      ) {
+        continue;
+      }
+      errors.push({
+        message:
+          `${classDef.className} is the name of a framework base class of ${frameworkPackageOf(classDef.className)}: ` +
+          'rename it; the framework reserves this class name, and code that reads a manifest takes a parent of this name for the framework base.',
+        filePath: classDef.filePath,
+        line: classDef.startLine,
+        severity: 'error',
+      });
+    }
+    return errors;
+  }
+
+  /**
    * A scan error for each `tsconfig*.json` in the project root that
    * mentions `moduleSuffixes` (a plain text search; no tsconfig is parsed).
    * The scan accepts a relative import by the files on disk and knows only
