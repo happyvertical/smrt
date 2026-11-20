@@ -93,7 +93,7 @@ export class AppWorker {
         new RuntimeReportError(
           r.reportError.code,
           r.reportError.path,
-          'Report could not run',
+          r.reportError.reason ?? 'Report could not run',
         ),
       );
     else p.reject(new AppCallError(r.error, r.user));

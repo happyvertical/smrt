@@ -74,7 +74,19 @@ if (!isMainThread && workerData?.appWorker) {
           error: (e as Error).message,
           user: e instanceof AppError,
           ...(op === 'runReport' && e instanceof RuntimeReportError
-            ? { reportError: { code: e.code, path: e.path } }
+            ? {
+                reportError: {
+                  code: e.code,
+                  path: e.path,
+                  ...(e.code === 'invalid_spec'
+                    ? {
+                        reason: e.message.startsWith(`${e.path}: `)
+                          ? e.message.slice(e.path.length + 2)
+                          : e.message,
+                      }
+                    : {}),
+                },
+              }
             : {}),
         };
       }

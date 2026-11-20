@@ -3,7 +3,7 @@ import {
   RuntimeReportError,
 } from '@happyvertical/smrt-reports';
 import { expect, it } from 'vitest';
-import { reportFailure } from './report-display.ts';
+import { reportFailure, reportFailureForOwner } from './report-display.ts';
 
 it('uses the typed report code, never message text, to classify invalid results', () => {
   const changed =
@@ -74,4 +74,30 @@ it('returns the parser path and reason for an invalid sort, with a plain-languag
       ),
     ).message,
   ).toMatch(/^The report definition is invalid at spec: bad SELECT\./);
+});
+
+it('gives the owner a fixed plain sentence for each invalid part of a report (#5172)', () => {
+  const owner = (path: string) =>
+    reportFailureForOwner(
+      reportFailure(new RuntimeReportError('invalid_spec', path, 'must be x'))
+        .message,
+    );
+  expect(owner('spec.filters[0].op')).toBe(
+    'A filter in that report used a comparison the app cannot do, so nothing was run.',
+  );
+  expect(owner('spec.filters[1].value')).toBe(
+    'A filter in that report was not valid, so nothing was run.',
+  );
+  expect(owner('spec.sort[0].by')).toBe(
+    'The sorting in that report was not valid, so nothing was run.',
+  );
+  expect(owner('spec.title')).toBe(
+    'That report was not set up correctly, so nothing was run.',
+  );
+  for (const path of ['spec.filters[0].op', 'spec.sort[0].by'])
+    expect(owner(path)).not.toMatch(/[[\]{}]|spec\./);
+  // Messages that are already plain pass through unchanged.
+  expect(reportFailureForOwner('This report took too long.')).toBe(
+    'This report took too long.',
+  );
 });

@@ -151,3 +151,19 @@ describe('plain failure reasons for the owner', () => {
     );
   });
 });
+
+it('shows the plain reason for a rejected report filter, live and after a reload (#5172)', () => {
+  const summary =
+    'A filter in that report used a comparison the app cannot do, so nothing was run.';
+  const failure = {
+    kind: 'report_failure',
+    summary,
+    error:
+      'The report definition is invalid at spec.filters[0].op: must be one of: eq, ne. Correct that part and run the report again.',
+  };
+  expect(toolSummary('app_runreport', failure, false)).toBe(summary);
+  expect(shownSummary('app_runreport', summary, false)).toBe(summary);
+  expect(toolSummary('app_runreport', failure, false)).not.toMatch(
+    /Could not complete/,
+  );
+});
