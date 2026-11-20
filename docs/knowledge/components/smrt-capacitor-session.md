@@ -5,10 +5,10 @@ description: "Capacitor Android plugin that keeps a WebView cookie session durab
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-18T19:51:32Z"
+  at: "2026-11-20T04:10:01Z"
 audience: "internal"
 evidence_level: "manifest-described"
-source_revision: "sha256:fc8f11e5bbab49c53345de182afc749beb52177ad22065e2b11d35a37a595f75"
+source_revision: "sha256:24d1552be649f0778c4c5f6c9ade21085535291acdf51abe464cc95a6ebf5763"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/smrt-capacitor-session/package.json"

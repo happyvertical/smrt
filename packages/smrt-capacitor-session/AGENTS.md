@@ -18,7 +18,10 @@ native-bearer stack, which has no WebView.
   `checkCookies()` when a fetch, XHR or beacon completes, so a fetch-set sign-in cookie is
   flushed within one bridge hop instead of up to `POLL_MS` later (#5160).
 - `.../CookieFlushPolicy.java`: the pure change detector, tested without Android.
-- `test/CookieFlushPolicyTest.java`: plain-Java test run by `pnpm test` (needs a JDK;
+- `.../AppLinkPolicy.java`: the pure allow check for opt-in VIEW link routing
+  (`plugins.SmrtSession.links`, #5361). Only a `server.url`-origin http(s) link whose path is
+  listed is loaded into the WebView (`handleOnNewIntent`); `test/AppLinkPolicyTest.java` covers it.
+- `test/CookieFlushPolicyTest.java`, `test/AppLinkPolicyTest.java`: plain-Java tests run by `pnpm test` (needs a JDK;
   skipped locally without one, a failure under `CI`). `pnpm test` also runs the watch
   script against fakes in a Node vm.
 - `scripts/validate-plugin.mjs`: structural validation, also the `build` and `typecheck` step.
@@ -31,4 +34,7 @@ native-bearer stack, which has no WebView.
   most `POLL_MS` after any other cookie change. Cookies of other origins
   are flushed on pause/stop, not polled.
 - No credential, token or cookie value is read, stored or logged; the snapshot string stays in memory.
+- Link routing is off unless the shell lists path prefixes. The activity is exported, so the
+  allow check is the security boundary: same origin as `server.url`, listed path only, no
+  traversal. A used link's intent data is cleared, and a launch from Recents is ignored.
 - The Gradle compile happens in the consuming app (`cap sync`, assemble), against its Capacitor.

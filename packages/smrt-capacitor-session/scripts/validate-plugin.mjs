@@ -4,7 +4,7 @@
  *
  * Default: structural checks, no JDK or Android SDK needed. `--test` also runs
  * the page watch script (res/raw/smrt_session_watch.js) against fakes in a Node
- * vm (#5160), and compiles CookieFlushPolicy with javac and runs its plain-Java
+ * vm (#5160), and compiles CookieFlushPolicy and AppLinkPolicy (#5361) with javac and runs their plain-Java
  * test; with no JDK that step is skipped locally and fails when CI is set. The Gradle compile
  * against Capacitor happens in the consuming app's `cap sync` + assemble.
  */
@@ -38,11 +38,17 @@ const SPEC = [
       'onPageLoaded',
       // Bridge.Builder replaces the listener list after load(); attach later (#5160).
       'handler.post(this::attachPageListener)',
+      // Opt-in VIEW link routing into the WebView (#5361).
+      'handleOnNewIntent',
+      'AppLinkPolicy.accept',
+      'FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY',
     ],
   },
   { path: WATCH, mustContain: ['PerformanceObserver', 'checkCookies'] },
   { path: `${JAVA}/CookieFlushPolicy.java`, mustContain: ['shouldFlush'] },
   { path: 'test/CookieFlushPolicyTest.java' },
+  { path: `${JAVA}/AppLinkPolicy.java`, mustContain: ['static String accept'] },
+  { path: 'test/AppLinkPolicyTest.java' },
   {
     path: 'package.json',
     mustContain: ['"@happyvertical/smrt-capacitor-session"', '"android/src/main/"', '"src": "android"', '"@capacitor/core"'],
@@ -137,8 +143,20 @@ if (process.argv.includes('--test')) {
     console.warn('validate-plugin: no JDK on PATH; policy test skipped (fails under CI)');
   } else {
     try {
-      execFileSync('javac', ['-d', out, join(PKG, JAVA, 'CookieFlushPolicy.java'), join(PKG, 'test/CookieFlushPolicyTest.java')], { stdio: 'inherit' });
-    execFileSync('java', ['-cp', out, 'com.happyvertical.smrt.capacitor.session.CookieFlushPolicyTest'], { stdio: 'inherit' });
+      execFileSync(
+        'javac',
+        [
+          '-d',
+          out,
+          join(PKG, JAVA, 'CookieFlushPolicy.java'),
+          join(PKG, JAVA, 'AppLinkPolicy.java'),
+          join(PKG, 'test/CookieFlushPolicyTest.java'),
+          join(PKG, 'test/AppLinkPolicyTest.java'),
+        ],
+        { stdio: 'inherit' },
+      );
+      for (const test of ['CookieFlushPolicyTest', 'AppLinkPolicyTest'])
+        execFileSync('java', ['-cp', out, `com.happyvertical.smrt.capacitor.session.${test}`], { stdio: 'inherit' });
     } catch (error) {
       console.error(`validate-plugin: policy test failed: ${error.message}`);
       process.exit(1);

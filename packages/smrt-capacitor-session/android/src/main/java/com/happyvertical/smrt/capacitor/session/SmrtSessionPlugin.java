@@ -1,5 +1,6 @@
 package com.happyvertical.smrt.capacitor.session;
 
+import android.content.Intent;
 import android.os.Handler;
 import android.os.Looper;
 import android.webkit.CookieManager;
@@ -9,6 +10,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
 import com.getcapacitor.Logger;
@@ -42,6 +44,14 @@ import com.getcapacitor.annotation.CapacitorPlugin;
  * bridge hop of its response. It registers itself when the app runs `cap sync`;
  * the web app needs no call. `flush()` is exposed for a page that wants a
  * deterministic flush right after it sets a cookie.
+ *
+ * <p>Opt-in link routing (#5361): when {@code plugins.SmrtSession.links} lists
+ * path prefixes, a VIEW link that reaches the activity (an Android App Link the
+ * host declares, such as an emailed sign-in link) is loaded into this WebView
+ * when its origin is {@code server.url}'s and its path is listed, so the sign-in
+ * completes in the app's own cookie jar instead of a browser. See
+ * {@link AppLinkPolicy}. A launch replayed from Recents is ignored so a spent
+ * one-time link is never reopened.
  */
 @CapacitorPlugin(name = "SmrtSession")
 public class SmrtSessionPlugin extends Plugin {
@@ -82,6 +92,29 @@ public class SmrtSessionPlugin extends Plugin {
         // Not added here: Bridge.Builder replaces the listener list after plugins load.
         handler.post(this::attachPageListener);
         startPolling();
+    }
+
+    @Override
+    protected void handleOnNewIntent(Intent intent) {
+        // BridgeActivity also passes the launch intent here once the bridge exists.
+        if (intent == null || !Intent.ACTION_VIEW.equals(intent.getAction())
+                || (intent.getFlags() & Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) != 0
+                || intent.getData() == null || getBridge() == null) {
+            return;
+        }
+        String[] links = getConfig().getArray("links");
+        String serverUrl = getBridge().getConfig() == null ? null : getBridge().getConfig().getServerUrl();
+        String url = AppLinkPolicy.accept(
+            intent.getData().toString(), serverUrl, links == null ? null : Arrays.asList(links));
+        if (url == null) {
+            return;
+        }
+        // Consume it: an activity recreated with this intent must not replay a one-time link.
+        intent.setData(null);
+        WebView webView = getBridge().getWebView();
+        if (webView != null) {
+            webView.post(() -> webView.loadUrl(url));
+        }
     }
 
     @Override
