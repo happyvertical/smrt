@@ -312,7 +312,9 @@ function readRecord(value: unknown): Record<string, unknown> {
 }
 
 // The tenant the request acts for, from the same \`locals\` sources the
-// tenant helper enters (\`tenantId\`, \`user\`, \`session\`, \`tenantContext\`).
+// tenant helper enters (\`tenantId\`, \`user\`, \`session\`, \`tenantContext\`),
+// else the tenant context active for the request (entered by the host, or by
+// the tenant helper for this item).
 function requestTenantOf(locals: unknown): string | undefined {
   const l = readRecord(locals);
   const tenant =
@@ -320,7 +322,9 @@ function requestTenantOf(locals: unknown): string | undefined {
     readRecord(l.user).tenantId ??
     readRecord(l.session).tenantId ??
     readRecord(l.tenantContext).tenantId;
-  return typeof tenant === 'string' && tenant ? tenant : undefined;
+  if (typeof tenant === 'string' && tenant) return tenant;
+  const active = readRecord(getCurrentTenant()).tenantId;
+  return typeof active === 'string' && active ? active : undefined;
 }
 
 function hasGrantedPermission(value: unknown, permission: string): boolean {

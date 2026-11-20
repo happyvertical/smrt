@@ -154,7 +154,8 @@ interceptor lifts its filter only for those; the sync route checks it per
 target). Every emitted route authenticates before the runtime exposure gate,
 and reads the request's tenant for it from the same `locals` sources the
 tenant helper enters (`tenantId`, `user.tenantId`, `session.tenantId`,
-`tenantContext.tenantId`); the emitted sync route checks exposure per item in
+`tenantContext.tenantId`), else from the tenant context already active for the
+request (a host may enter it itself); the emitted sync route checks exposure per item in
 `run`, after the item's authorization.
 
 The emitted sync-apply route and the CRUD routes are generated from one set

@@ -6,6 +6,8 @@
  *   whose tenancy is registered at runtime, as the generated CRUD routes do,
  *   in an app whose manifest also declares tenant-scoped models: another
  *   tenant's row is never changed.
+ * - The runtime exposure gate of emitted routes reads the tenant a host
+ *   entered for the request when `locals` names none.
  *
  * The routes are generated into this package's ignored `.smrt/` folder and
  * imported through Vitest, sharing one core and one tenancy instance with the
@@ -24,11 +26,12 @@ import {
   SmrtObject,
   smrt,
 } from '@happyvertical/smrt-core';
+import { setRuntimeExposureGate } from '@happyvertical/smrt-core/runtime-exposure';
 import { getTestDatabase } from '@happyvertical/smrt-core/testing';
 import { generateSvelteKitRoutes } from '@happyvertical/smrt-core/vite-plugin';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
-import { withSystemContext } from '../context.js';
+import { withSystemContext, withTenant } from '../context.js';
 import { TenantScoped, tenantId } from '../decorators.js';
 import { disableTenancy, enableTenancy } from '../interceptor.js';
 import {
@@ -270,5 +273,65 @@ describe('emitted routes and the request tenant', () => {
     const stored = await withSystemContext(() => memos.get(THEIR_ROW));
     expect(stored?.title).toBe('theirs');
     expect(body.results[0]?.status).toBe('rejected');
+  });
+
+  describe('a model switched off for the tenant the host entered', () => {
+    const run = <T>(fn: () => Promise<T>) =>
+      withTenant({ tenantId: THEIRS }, fn);
+
+    beforeAll(() => {
+      setRuntimeExposureGate({
+        isEnabled: (model, context) =>
+          !String(model.qualifiedName ?? '').endsWith('EmittedTenantLedger') ||
+          context.tenantId !== THEIRS,
+      });
+    });
+    afterAll(() => {
+      setRuntimeExposureGate(undefined);
+    });
+
+    const locals = {
+      user: { id: 'writer' },
+      permissions: ['emittedtenantledgers.create'],
+    };
+
+    it('is not served by its emitted route', async () => {
+      expect(
+        (await run(() => call('emittedtenantledgers', 'GET', locals))).status,
+      ).toBe(404);
+    });
+
+    it('is unknown to the emitted sync route', async () => {
+      const response = await run(() =>
+        call('sync/apply', 'POST', locals, {
+          items: [
+            {
+              itemId: 'item-1',
+              object: 'emittedtenantledgers',
+              op: 'create',
+              id: 'cccccccc-0000-4000-8000-0000000000c1',
+              payload: { title: 'created' },
+            },
+          ],
+        }),
+      );
+      const body = (await response.json()) as {
+        results: Array<{ status: string; reason?: string }>;
+      };
+      expect(body.results[0]).toMatchObject({
+        status: 'rejected',
+        reason: 'unknown_object',
+      });
+    });
+
+    it('is served to the tenant it is switched on for', async () => {
+      expect(
+        (
+          await withTenant({ tenantId: OURS }, () =>
+            call('emittedtenantledgers', 'GET', locals),
+          )
+        ).status,
+      ).toBe(200);
+    });
   });
 });

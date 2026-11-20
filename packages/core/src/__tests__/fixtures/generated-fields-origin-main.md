@@ -83,3 +83,7 @@ DDL, migration and OpenAPI digests have not moved since the recapture above.
   base selects only subtypes open on the transport).
 - Sync tenant (#5164): `sync/apply/+server.ts` enters the caller's tenant for
   a model whose tenancy is registered at runtime, as the CRUD routes do.
+- Ambient request tenant (#5164): the list and item routes of each model and
+  `sync/apply/+server.ts` read the request's tenant for the runtime exposure
+  gate from `locals`, else from the tenant context already active for the
+  request.

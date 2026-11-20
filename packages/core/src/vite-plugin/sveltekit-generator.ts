@@ -679,12 +679,15 @@ function hasAuthenticatedPrincipal(locals: unknown): boolean {
 }
 
 // The tenant the request acts for, from the same \`locals\` sources the tenant
-// helper enters (\`tenantId\`, \`user\`, \`session\`, \`tenantContext\`).
+// helper enters (\`tenantId\`, \`user\`, \`session\`, \`tenantContext\`), else
+// the tenant context the host already entered for the request.
 function requestTenantOf(locals: unknown): string | undefined {
   const l = locals && typeof locals === 'object' ? locals as Record<string, unknown> : {};
   const record = (value: unknown) => value && typeof value === 'object' ? value as Record<string, unknown> : {};
   const tenant = l.tenantId ?? record(l.user).tenantId ?? record(l.session).tenantId ?? record(l.tenantContext).tenantId;
-  return typeof tenant === 'string' && tenant ? tenant : undefined;
+  if (typeof tenant === 'string' && tenant) return tenant;
+  const active = (getCurrentTenant() as { tenantId?: unknown } | undefined)?.tenantId;
+  return typeof active === 'string' && active ? active : undefined;
 }
 
 // Authentication first, then the runtime exposure gate for the request's
