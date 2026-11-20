@@ -375,10 +375,10 @@ reversal lever.
   which wraps `scripts/ci-impact.mjs` against `merge_group.base_sha`. The
   suite runs `affected` (Turbo `...[base_sha]`, the PR shape) only when that
   plan is not full; any global or unowned input (root config, lockfile,
-  `scripts/`, workflows, `docs/content`), any change to `core`, `scanner` or
+  `scripts/`, workflows, `docs/content`, `docs/knowledge`), any change to `core`, `scanner` or
   `vitest`, an unreadable base, or any failure to decide selects `full`.
-  `docs/knowledge/**` selects `smrt-cli` and `smrt-dev-mcp`, the only package
-  tests that read it. Coverage Gate, Test Integration, the seed build, Publish
+  Turbo task-level edges (`pkg#task` dependsOn in `turbo.json`) count as
+  dependencies. Coverage Gate, Test Integration, the seed build, Publish
   Dry Run, knowledge freshness and the control-plane regression run in every
   merge group in both shapes. PostgreSQL suites follow the same plan: the scope
   job passes the affected list to `postgres-test-shard.mjs`
