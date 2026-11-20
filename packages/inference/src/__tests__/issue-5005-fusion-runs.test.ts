@@ -8,6 +8,7 @@
  * the parent as a stop; and a fusion does not run untracked.
  */
 import {
+  AiRunClaimLostError,
   AiRunStoppedError,
   AiRunTrackingDisabledError,
   checkAiRunTotals,
@@ -67,8 +68,10 @@ function rows(result: unknown): Array<Record<string, unknown>> {
 
 describe('fusion runs opened at the start (#5005)', () => {
   let db: Awaited<ReturnType<typeof getTestDatabase>>;
+  let failWith: (model: string) => Error | undefined = () => undefined;
 
   beforeEach(async () => {
+    failWith = () => undefined;
     config.reset();
     setInferenceResolver(undefined);
     registerInference({ executor: { sleep: async () => {} } });
@@ -102,6 +105,8 @@ describe('fusion runs opened at the start (#5005)', () => {
       embed: () => {},
       message: async (_text: string, options: Record<string, unknown>) => {
         const model = String(options.model ?? 'configured');
+        const failure = failWith(model);
+        if (failure) throw failure;
         if (calls.length === 0) {
           seenAtFirstCall.push(
             ...rows(
@@ -298,6 +303,97 @@ describe('fusion runs opened at the start (#5005)', () => {
     expect(rows(await db.query('SELECT id FROM _smrt_ai_usage'))).toHaveLength(
       0,
     );
+  });
+
+  it('leaves a held reservation and the fusion run alone when its worker loses the claim mid-fusion', async () => {
+    const { instance, calls } = await note();
+    const parent = await openAiRun(
+      { db, usageTracking: true },
+      { type: 'workflow', durable: true, budget: { maxTokens: 100_000 } },
+    );
+    const client = await instance.client();
+    const error = await client
+      .message('Review', {
+        runContext: {
+          runId: parent.id,
+          db,
+          // The claim is taken over once the first seat has been sent.
+          fence: async () => calls.length === 0,
+        },
+      } as never)
+      .catch((caught: unknown) => caught);
+    expect((error as { code?: unknown }).code).toBe('AI_RUN_CLAIM_LOST');
+    expect(error).not.toBeInstanceOf(AiRunStoppedError);
+    // Not every seat was sent: the stale worker sent nothing after the loss.
+    expect(calls.length).toBeLessThan(3);
+    const [child] = rows(
+      await db.query(`SELECT id FROM _smrt_ai_runs WHERE type = 'fusion'`),
+    );
+    const fusionId = String(child?.id);
+    // The stale worker neither stopped the fusion nor its parent, and the
+    // unsent seats' reservations are still held for the new claim holder.
+    expect(await getAiRun(db, fusionId)).toMatchObject({ status: 'running' });
+    expect(await getAiRun(db, parent.id)).toMatchObject({ status: 'running' });
+    const reserved = rows(
+      await db.query(
+        `SELECT call_id FROM _smrt_ai_run_events
+          WHERE run_id = $1 AND type = 'call' AND reservation = 'reserved'`,
+        fusionId,
+      ),
+    );
+    expect(reserved.length).toBe(3 - calls.length);
+    expect((await getAiRun(db, fusionId))?.reservedCalls).toBe(
+      3 - calls.length,
+    );
+  });
+
+  it.each([
+    [
+      'the first seat aborts and the second loses the claim',
+      'cheap-m',
+      'great-m',
+    ],
+    [
+      'the first seat loses the claim and the second aborts',
+      'great-m',
+      'cheap-m',
+    ],
+  ])('reports a lost claim over another seat failure in a pair: %s', async (_case, abortModel, lostModel) => {
+    const { instance } = await note();
+    const parent = await openAiRun(
+      { db, usageTracking: true },
+      { type: 'workflow', durable: true, budget: { maxTokens: 100_000 } },
+    );
+    // A seat's provider call fails with the error this returns for its model.
+    failWith = (model) => {
+      if (model === abortModel) {
+        return Object.assign(new Error('aborted'), { name: 'AbortError' });
+      }
+      if (model === lostModel) return new AiRunClaimLostError(parent.id);
+      return undefined;
+    };
+    const client = await instance.client();
+    const error = await client
+      .message('Review', {
+        runContext: { runId: parent.id, db, fence: async () => true },
+      } as never)
+      .catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(AiRunClaimLostError);
+    const [child] = rows(
+      await db.query(`SELECT id FROM _smrt_ai_runs WHERE type = 'fusion'`),
+    );
+    const fusionId = String(child?.id);
+    // Not recorded, closed or finished by the stale worker: the judge's
+    // share is still reserved.
+    expect(await getAiRun(db, fusionId)).toMatchObject({ status: 'running' });
+    const judge = rows(
+      await db.query(
+        `SELECT reservation FROM _smrt_ai_run_events
+          WHERE run_id = $1 AND type = 'call' AND name = 'synthesis'`,
+        fusionId,
+      ),
+    );
+    expect(judge).toEqual([{ reservation: 'reserved' }]);
   });
 
   it('does not run a fusion while usage persistence is off', async () => {

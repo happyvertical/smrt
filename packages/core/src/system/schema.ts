@@ -516,6 +516,24 @@ CREATE TABLE IF NOT EXISTS _smrt_ai_run_checkpoints (
 `;
 
 /**
+ * The AI run id registry (schema 1.20.0): one row per run id ever opened on
+ * this database, so an id names at most one run for the database's lifetime
+ * (docs/content/ai-runs.md section 8, "Run identity"). `id_digest` is the hex
+ * SHA-256 of the id's UTF-8 bytes, never the id itself, and there is no
+ * tenant column: uniqueness is global and nothing about a tenant outlives
+ * the run's own retention. Written in the opener's transaction with the run
+ * row and by the row prune before it deletes a row; never deleted. The
+ * primary key is inline because DuckDB honours `ON CONFLICT` only against an
+ * inline constraint.
+ */
+export const CREATE_SMRT_AI_RUN_IDS_TABLE = `
+CREATE TABLE IF NOT EXISTS _smrt_ai_run_ids (
+  id_digest TEXT PRIMARY KEY,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+`;
+
+/**
  * Opt-in AI call transcripts (#4780).
  *
  * Readable content of one AI call: the request messages, the response and
@@ -1501,6 +1519,7 @@ export const ALL_SYSTEM_TABLES = [
   CREATE_SMRT_AI_RUNS_TABLE,
   CREATE_SMRT_AI_RUN_EVENTS_TABLE,
   CREATE_SMRT_AI_RUN_CHECKPOINTS_TABLE,
+  CREATE_SMRT_AI_RUN_IDS_TABLE,
   CREATE_SMRT_AI_TRANSCRIPTS_TABLE,
   CREATE_SMRT_CHANGES_TABLE,
   CREATE_SMRT_SYNC_TOMBSTONES_TABLE,
@@ -1698,7 +1717,11 @@ function toPostgresTenantUuid(ddl: string): string {
 // retirements a run dropped over a confirmed definition mismatch (#5005).
 // 1.19.0 adds `idx_smrt_ai_runs_finished`, the `finished_at` index behind
 // AI run trajectory and row retention (#5005, `system/ai-run-retention.ts`).
-export const SMRT_SCHEMA_VERSION = '1.19.0';
+// 1.20.0 adds `_smrt_ai_run_ids`, the run id registry (digests of every run
+// id ever opened); the bootstrap fills it from the ids still present or
+// referenced after its DDL replay and before this stamp
+// (`system/ai-run-ids.ts`).
+export const SMRT_SCHEMA_VERSION = '1.20.0';
 
 /**
  * Canonical form of the system DDL that {@link SMRT_SCHEMA_DDL_CHECKSUMS} covers.
@@ -1761,4 +1784,6 @@ export const SMRT_SCHEMA_DDL_CHECKSUMS: Readonly<Record<string, string>> =
       'e510d65450decb8f539675719600f57cae46764a1e3a5fa45d27ca5dea345df6',
     '1.19.0':
       'b9ea16aaf8c5d3232245395dbd6374c0878594f3e2e443f1ae58e64c726acca1',
+    '1.20.0':
+      'c507de3133c44e3350196c1a30ad821c3faf96b79392d885d3465a6d57dfc4f8',
   });

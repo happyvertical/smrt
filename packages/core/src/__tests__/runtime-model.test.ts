@@ -177,7 +177,7 @@ describe('#4871 run-time models', () => {
     const tables = async (db: Db) =>
       (
         await db.query(
-          `SELECT type, name FROM sqlite_master WHERE name NOT LIKE 'sqlite_%' ORDER BY type, name`,
+          `SELECT type, name FROM sqlite_master WHERE name NOT LIKE 'sqlite\\_%' ESCAPE '\\' ORDER BY type, name`,
         )
       ).rows.map((r: any) => `${r.type}:${r.name}`);
 

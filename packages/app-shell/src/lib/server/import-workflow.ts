@@ -959,7 +959,16 @@ export function createShellImportService(options: ShellImportOptions) {
     const pending = details(row).retry;
     if (!pending) return;
     try {
-      const existing = await getAiRun(db, pending.id);
+      // Read through the owner's own workflow kit (tenant, owner and
+      // definition scoped): a saved id naming a run of anyone else is never
+      // read, only not found, and the retry under it is then refused by
+      // core because the id is used.
+      const existing = await mine(owner)
+        .get(pending.id)
+        .catch((error) => {
+          if (error instanceof WorkflowRunNotFoundError) return null;
+          throw error;
+        });
       if (!existing) {
         await mine(owner).retry(pending.from, {
           id: pending.id,

@@ -106,6 +106,7 @@ describe('getSystemTableShapes', () => {
       '_smrt_ai_evaluations',
       '_smrt_ai_run_checkpoints',
       '_smrt_ai_run_events',
+      '_smrt_ai_run_ids',
       '_smrt_ai_runs',
       '_smrt_ai_transcripts',
       '_smrt_ai_usage',

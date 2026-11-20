@@ -33,3 +33,13 @@ wrap core's `compareAiPromptRuns()` / `listAiPromptTemplateHistory()` the
 same way, but always need `--tenant` (`global`) or `--all-tenants`.
 `--transcripts N` reads each side's N worst-labelled transcripts through the
 audited `listAiTranscripts()` and prints them side by side.
+
+## `doctor --db`: the AI run id registry
+
+`src/commands/doctor-ai-run-ids.ts` wraps core's `checkAiRunIdRegistry()`
+(schema 1.20.0; [AI runs](../../../docs/content/ai-runs.md) section 8, "Run
+identity"). It counts referenced run ids with neither a run row nor a
+registry row, and runs created before their own parent. Read-only. A
+non-zero count is a warning (an older core opened or pruned runs without the
+registry, or an id was reused before the upgrade); a failed check is an
+issue, never a pass.

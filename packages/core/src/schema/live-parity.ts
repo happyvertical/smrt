@@ -50,6 +50,7 @@ import {
 } from './column-data-probes.js';
 import { detectEngine, getDDLStrategy } from './ddl/index.js';
 import type { DatabaseEngine } from './ddl/types.js';
+import { sqliteUserObjectName } from './sqlite-internal-names.js';
 import { getSystemTableShapes } from './system-table-shapes.js';
 import type { ColumnDefinition, SchemaDefinition } from './types.js';
 
@@ -1382,7 +1383,7 @@ async function listLiveTables(
   const sql =
     engine === 'postgres'
       ? `SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'`
-      : `SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'`;
+      : `SELECT name FROM sqlite_master WHERE type='table' AND ${sqliteUserObjectName()}`;
 
   try {
     const result = await db.query(sql);

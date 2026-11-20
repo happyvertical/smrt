@@ -910,6 +910,152 @@ describe('workflow run safety', () => {
     );
   });
 
+  it('retries only a failed run of its own tenant; another tenant run reads as unknown', async () => {
+    const db = await workflowDb('sqlite');
+    const { model } = byStep(0);
+    const steps: WorkflowStep[] = [
+      twoSteps[0] as WorkflowStep,
+      { ...(twoSteps[1] as WorkflowStep), check: () => ({ failure: 'No.' }) },
+    ];
+    const driver = driverFor(db, model, definitionOf(steps));
+    const failed = await driver.start({ ownerId: 'owner', input: { n: 1 } });
+    expect((await driver.run(failed.id, 'owner')).status).toBe('failed');
+    const otherTenant = driverFor(
+      db,
+      model,
+      definitionOf(steps),
+      {},
+      crypto.randomUUID(),
+    );
+    const before = rowsOf(await db.query('SELECT id FROM _smrt_ai_runs'));
+    const foreign = await otherTenant
+      .retry(failed.id, 'owner')
+      .catch((error) => error);
+    const unknown = await otherTenant
+      .retry(crypto.randomUUID(), 'owner')
+      .catch((error) => error);
+    expect(foreign).toBeInstanceOf(AiRunResumeRefusedError);
+    expect(foreign.reason).toBe('retry_source_pruned');
+    expect(foreign.constructor).toBe(unknown.constructor);
+    expect(foreign.reason).toBe(unknown.reason);
+    expect(rowsOf(await db.query('SELECT id FROM _smrt_ai_runs'))).toEqual(
+      before,
+    );
+    // The owning tenant still retries it.
+    expect((await driver.retry(failed.id, 'owner')).retryOfRunId).toBe(
+      failed.id,
+    );
+  });
+
+  it('looks a retried run up in its own tenant before reading it', async () => {
+    const db = await workflowDb('sqlite');
+    const { model } = byStep(0);
+    const steps: WorkflowStep[] = [
+      twoSteps[0] as WorkflowStep,
+      { ...(twoSteps[1] as WorkflowStep), check: () => ({ failure: 'No.' }) },
+    ];
+    const driver = driverFor(db, model, definitionOf(steps));
+    const failed = await driver.start({ ownerId: 'owner', input: { n: 1 } });
+    expect((await driver.run(failed.id, 'owner')).status).toBe('failed');
+    const otherTenant = driverFor(
+      db,
+      model,
+      definitionOf(steps),
+      {},
+      crypto.randomUUID(),
+    );
+    // Every statement naming the other tenant's run carries the tenant as a
+    // predicate, except core's single read of its tenant before refusing.
+    const unscoped: string[] = [];
+    const original = db.query.bind(db);
+    (db as { query: unknown }).query = (sql: string, ...params: unknown[]) => {
+      const text = sql.replace(/\s+/g, ' ').trim();
+      if (
+        params.includes(failed.id) &&
+        !/tenant_id (=|IS NULL)/.test(text) &&
+        text !== 'SELECT tenant_id FROM _smrt_ai_runs WHERE id = $1'
+      ) {
+        unscoped.push(text);
+      }
+      return original(sql, ...params);
+    };
+    await expect(otherTenant.retry(failed.id, 'owner')).rejects.toBeInstanceOf(
+      AiRunResumeRefusedError,
+    );
+    (db as { query: unknown }).query = original;
+    expect(unscoped).toEqual([]);
+  });
+
+  it('never pairs a run with the checkpoint of a run that took its id', async () => {
+    const db = await workflowDb('sqlite');
+    const { model } = byStep(0);
+    const run = await driverFor(db, model).start({ ownerId: 'owner' });
+    const store = createRunCheckpointStore({ db, ownerId: 'owner' });
+    // The id is pruned and reused by another tenant while the checkpoint is
+    // read: what the store returns is this tenant's or nothing.
+    const original = db.query.bind(db);
+    (db as { query: unknown }).query = async (
+      sql: string,
+      ...params: unknown[]
+    ) => {
+      if (
+        /FROM _smrt_ai_run_checkpoints c\b/.test(sql) &&
+        params.includes(run.id)
+      ) {
+        await original(
+          "UPDATE _smrt_ai_runs SET tenant_id = 'other-tenant', created_at = $1, started_at = $1 WHERE id = $2",
+          new Date(Date.now() + 5_000).toISOString(),
+          run.id,
+        );
+      }
+      return original(sql, ...params);
+    };
+    expect(await store.load(run.id)).toBeNull();
+    (db as { query: unknown }).query = original;
+  });
+
+  it('loads a checkpoint whose run kept its id and tenant (control)', async () => {
+    const db = await workflowDb('sqlite');
+    const { model } = byStep(0);
+    const run = await driverFor(db, model).start({ ownerId: 'owner' });
+    const store = createRunCheckpointStore({ db, ownerId: 'owner' });
+    expect((await store.load(run.id))?.run.id).toBe(run.id);
+  });
+
+  it('judges a retry source with one read in its tenant, and core refuses another owner under its lock', async () => {
+    const db = await workflowDb('sqlite');
+    const { model } = byStep(0);
+    const driver = driverFor(db, model, definitionOf());
+    const run = await driver.start({ ownerId: 'owner' });
+    // The source changes owner after the workflow's pre-check (a row an
+    // older core rewrote): core compares the owner again under its lock.
+    const original = db.query.bind(db);
+    let reads = 0;
+    (db as { query: unknown }).query = async (
+      sql: string,
+      ...params: unknown[]
+    ) => {
+      const text = sql.replace(/\s+/g, ' ').trim();
+      if (
+        text.includes('FROM _smrt_ai_runs r WHERE r.id = $1') &&
+        params[0] === run.id &&
+        ++reads === 2
+      ) {
+        await original(
+          "UPDATE _smrt_ai_runs SET owner_id = 'stranger', status = 'failed' WHERE id = $1",
+          run.id,
+        );
+      }
+      return original(sql, ...params);
+    };
+    const refused = await driver
+      .retry(run.id, 'owner')
+      .catch((error: unknown) => error);
+    (db as { query: unknown }).query = original;
+    expect(refused).toBeInstanceOf(AiRunResumeRefusedError);
+    expect((refused as AiRunResumeRefusedError).reason).toBe('not_retryable');
+  });
+
   it('lets one of two concurrent checkpoint saves win (revision compare-and-swap)', async () => {
     const db = await workflowDb('sqlite');
     const { model } = byStep(0);

@@ -19,9 +19,13 @@
  *     integer range once multiplied by the scale. Run it against a production
  *     snapshot and
  *     read the summary before converting anything.
- *  2. {@link rescaleMoneyColumnsToMinorUnits} — the conversion itself, guarded
- *     by a {@link BackfillTracker} marker so re-running it can never multiply a
- *     table by 100 twice.
+ *  2. {@link rescaleMoneyColumnsToMinorUnits} — the conversion itself. The
+ *     check of what still needs converting, every statement, and the
+ *     {@link BackfillTracker} marker that says it is done are one transaction,
+ *     so re-running it can never multiply a table by 100 twice: a run that
+ *     fails or is killed part-way leaves every column and the marker as they
+ *     were, and a second runner waits for the first and then finds the work
+ *     done.
  *
  * Per-engine behaviour:
  *
@@ -38,12 +42,11 @@
  * pretending the column type moved.
  */
 
-import { createLogger } from '@happyvertical/logger';
+import { isJsonAdapterHandle } from '../native-duckdb.js';
 import { detectEngine } from '../schema/ddl/index.js';
+import { runBackfillOnceInTransaction } from './backfill-once.js';
 import { BackfillTracker } from './backfill-tracker.js';
 import type { DatabaseInterface } from './types.js';
-
-const logger = createLogger({ level: 'info' });
 
 /** Hydrated integers must remain exactly representable in JavaScript. */
 const MIN_SAFE_INTEGER = -Number.MAX_SAFE_INTEGER;
@@ -215,9 +218,74 @@ function resolveDatabaseUrl(db: DatabaseInterface): string {
 }
 
 function resolveEngine(db: DatabaseInterface, engineHint?: string): string {
-  return typeof (db as { exportTable?: unknown }).exportTable === 'function'
-    ? 'json'
-    : detectEngine(resolveDatabaseUrl(db), engineHint);
+  if (typeof (db as { exportTable?: unknown }).exportTable === 'function')
+    return 'json';
+  // A DuckDB handle (a transaction one too) names its engine; its URL
+  // (`:memory:`) alone reads as SQLite.
+  const own = (db as { engine?: unknown }).engine;
+  return detectEngine(
+    resolveDatabaseUrl(db),
+    engineHint ?? (own === 'duckdb' ? 'duckdb' : undefined),
+  );
+}
+
+/**
+ * Does `exportTable` prove the handle never exports a table by itself?
+ *
+ * A native DuckDB handle exposes `exportTable` whatever its write strategy is.
+ * With the default strategy (`none`) it refuses before touching anything and
+ * says so; with `manual` or `immediate` it tries to export the table and fails
+ * on one that does not exist (nothing is written). Only the first answer proves
+ * the handle has no JSON export in play: any other outcome is treated as
+ * export-backed.
+ */
+async function exportNeverRuns(db: DatabaseInterface): Promise<boolean> {
+  try {
+    await (
+      db as unknown as { exportTable(table: string): Promise<void> }
+    ).exportTable('smrt_export_probe_missing_table');
+  } catch (error) {
+    const context = (error as { context?: { writeStrategy?: unknown } })
+      ?.context;
+    return context?.writeStrategy === 'none';
+  }
+  return false;
+}
+
+/**
+ * Refuse a handle backed by JSON-file export (the JSON adapter, a transaction
+ * scope reporting the `json` engine, or a DuckDB handle whose write strategy
+ * exports tables) before anything is read or written.
+ *
+ * Such a handle keeps its tables in an in-memory DuckDB database and exports a
+ * table to disk from its own `insert`/`update`/`delete`. A raw conversion and
+ * its marker change memory only, so a later ordinary write would persist one
+ * table without the marker, and a rerun after a restart would convert it
+ * again. Run the rescale on a SQLite, PostgreSQL or DuckDB handle without JSON
+ * export (a native DuckDB handle with write strategy `none`, or the handle of a
+ * DuckDB transaction). A `json` engine hint is refused the same way, so
+ * `preflight.engine` read back from a JSON-backed root and fed in as the hint
+ * is refused too. The hint is trimmed and lowercased first.
+ */
+async function refuseJsonBackedHandle(
+  db: DatabaseInterface,
+  engineHint?: string,
+): Promise<void> {
+  const own = (db as { engine?: unknown }).engine;
+  const exports =
+    typeof (db as { exportTable?: unknown }).exportTable === 'function';
+  if (
+    String(engineHint ?? '')
+      .trim()
+      .toLowerCase() === 'json' ||
+    own === 'json' ||
+    isJsonAdapterHandle(db) ||
+    (exports && !(await exportNeverRuns(db)))
+  ) {
+    throw new Error(
+      'Money minor-units rescale does not support a handle backed by JSON export: its converted values and marker would not be persisted together. Run it on a SQLite, PostgreSQL or DuckDB handle without JSON export.',
+    );
+  }
 }
 
 /**
@@ -257,7 +325,9 @@ function isIntegerType(declaredType: string): boolean {
  * not, so it uses `PRAGMA table_xinfo`. Returns an empty map when the table does
  * not exist, which the caller reports as `missing` rather than an error — a
  * package's migration lists its own tables, and a deployment may legitimately
- * not have created all of them yet.
+ * not have created all of them yet. A catalog read that fails is not a missing
+ * table: the error propagates, so a conversion never skips a table it could not
+ * inspect and still records its marker.
  */
 async function readColumnTypes(
   db: DatabaseInterface,
@@ -265,34 +335,50 @@ async function readColumnTypes(
   table: string,
 ): Promise<Map<string, string>> {
   const types = new Map<string, string>();
-  try {
-    if (engine === 'postgres' || engine === 'duckdb') {
-      const result = await db.query(
-        'SELECT column_name, data_type FROM information_schema.columns WHERE table_name = ?',
-        table,
-      );
-      for (const row of result.rows as {
-        column_name?: string;
-        data_type?: string;
-      }[]) {
-        if (row.column_name) types.set(row.column_name, row.data_type ?? '');
-      }
-      return types;
+  if (engine === 'postgres' || engine === 'duckdb') {
+    // One table, not every table of that name: `information_schema.columns`
+    // spans every schema, and a same-named table elsewhere (a copy, another
+    // tenant's schema) must not decide whether this one still needs
+    // converting. On PostgreSQL it is the table the conversion statements
+    // themselves resolve the unqualified name to.
+    const result =
+      engine === 'postgres'
+        ? await db.query(
+            `SELECT column_name, data_type
+                 FROM information_schema.columns
+                WHERE table_name = ?
+                  AND table_schema = (
+                    SELECT n.nspname
+                      FROM pg_catalog.pg_class c
+                      JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+                     WHERE c.oid = to_regclass(?))`,
+            table,
+            quoteIdentifier(table),
+          )
+        : await db.query(
+            `SELECT column_name, data_type
+                 FROM information_schema.columns
+                WHERE table_name = ?
+                  AND table_schema = current_schema()
+                  AND table_catalog = current_database()`,
+            table,
+          );
+    for (const row of result.rows as {
+      column_name?: string;
+      data_type?: string;
+    }[]) {
+      if (row.column_name) types.set(row.column_name, row.data_type ?? '');
     }
-    // SQLite. `PRAGMA table_xinfo` (not `table_info`, which omits generated
-    // columns) does not accept a bound parameter, and the identifier has
-    // already been validated by `quoteIdentifier`.
-    const result = await db.query(
-      `PRAGMA table_xinfo(${quoteIdentifier(table)})`,
-    );
-    for (const row of result.rows as { name?: string; type?: string }[]) {
-      if (row.name) types.set(row.name, row.type ?? '');
-    }
-  } catch (error) {
-    logger.debug(
-      `[minor-units] Could not introspect ${table}; treating its columns as missing`,
-      { error: error instanceof Error ? error.message : String(error) },
-    );
+    return types;
+  }
+  // SQLite. `PRAGMA table_xinfo` (not `table_info`, which omits generated
+  // columns) does not accept a bound parameter, and the identifier has
+  // already been validated by `quoteIdentifier`.
+  const result = await db.query(
+    `PRAGMA table_xinfo(${quoteIdentifier(table)})`,
+  );
+  for (const row of result.rows as { name?: string; type?: string }[]) {
+    if (row.name) types.set(row.name, row.type ?? '');
   }
   return types;
 }
@@ -470,12 +556,12 @@ export async function preflightMinorUnitsRescale(
       `Money minor-units rescale: scale must be a positive integer (got ${scale}).`,
     );
   }
+  await refuseJsonBackedHandle(db, options.engineHint);
   const engine = resolveEngine(db, options.engineHint);
   const maxProblemRows = options.maxProblemRows ?? 20;
 
-  // Validate every identifier up front. Introspection swallows errors so an
-  // absent table reads as `missing`, and a malformed name must not disappear
-  // down that same path — it is a bug in the caller's migration module.
+  // Validate every identifier up front. A malformed name is a bug in the
+  // caller's migration module and must fail here, before any catalog read.
   for (const target of targets) {
     quoteIdentifier(target.table);
     for (const column of target.columns) quoteIdentifier(column);
@@ -548,11 +634,22 @@ export async function preflightMinorUnitsRescale(
 /**
  * Convert floating-point major-unit money columns to integer minor units.
  *
- * Idempotent: the run is wrapped in a {@link BackfillTracker} marker, so a
- * second call is a no-op even on SQLite where the column type cannot record
- * that the conversion already happened.
+ * **One unit, at most once.** Deciding what still needs converting, every
+ * conversion statement and the {@link BackfillTracker} marker run in one
+ * transaction on every engine (PostgreSQL, SQLite and DuckDB all roll DDL
+ * back). A failure anywhere, or a killed process, leaves every column and the
+ * marker as they were, so the next call starts from the beginning. This
+ * matters most on SQLite, where a rescaled column still declares a
+ * floating-point type and only the marker says it was converted.
  *
- * @param db - Root database handle (must support `query`).
+ * **One runner at a time.** Inside its transaction it claims the marker,
+ * looks for it again, and on PostgreSQL locks each table before reading its
+ * column types, so what it converts is what it just read. A runner that
+ * waited finds the marker and returns `ran: false`.
+ *
+ * @param db - Root database handle. A transaction handle is accepted: the
+ *   caller's transaction is then the unit, and a failure leaves none of the
+ *   conversion in it.
  * @param targets - Tables and money columns owned by the calling package.
  * @param options - Marker name, scale, and whether to convert despite
  *   information-losing rows.
@@ -564,23 +661,66 @@ export async function rescaleMoneyColumnsToMinorUnits(
   targets: MoneyColumnTarget[],
   options: MinorUnitsRescaleOptions,
 ): Promise<MinorUnitsRescaleResult> {
+  await refuseJsonBackedHandle(db, options.engineHint);
   const scale = options.scale ?? DEFAULT_SCALE;
   const engine = resolveEngine(db, options.engineHint);
   const tracker = new BackfillTracker({ db });
+  const alreadyApplied = async (): Promise<MinorUnitsRescaleResult> => ({
+    ran: false,
+    engine,
+    scale,
+    preflight: await preflightMinorUnitsRescale(db, targets, options),
+    rescaledColumns: [],
+    statements: [],
+    declaredTypeChangePending: [],
+  });
 
-  if (await tracker.isApplied(options.backfillName)) {
-    return {
-      ran: false,
+  if (await tracker.isApplied(options.backfillName)) return alreadyApplied();
+
+  const outcome = await runBackfillOnceInTransaction(
+    db,
+    options.backfillName,
+    (unit) => rescaleInTransaction(unit, engine, scale, targets, options),
+    {
+      description:
+        `Money columns rescaled from major units to integer minor units ` +
+        `(scale ${scale}).`,
+      packageName: options.packageName,
       engine,
-      scale,
-      preflight: await preflightMinorUnitsRescale(db, targets, options),
-      rescaledColumns: [],
-      statements: [],
-      declaredTypeChangePending: [],
-    };
+    },
+  );
+  return outcome.ran ? outcome.result : alreadyApplied();
+}
+
+/**
+ * The conversion, on the handle of the transaction that also records the
+ * marker. Every read and write goes through `unit`.
+ */
+async function rescaleInTransaction(
+  unit: DatabaseInterface,
+  engine: string,
+  scale: number,
+  targets: MoneyColumnTarget[],
+  options: MinorUnitsRescaleOptions,
+): Promise<MinorUnitsRescaleResult> {
+  if (engine === 'postgres') {
+    // `ALTER ... TYPE BIGINT USING round(col * scale)` scales whatever the
+    // column holds when it runs, a float or an integer another session just
+    // converted. Lock each table before reading its types, so nothing can
+    // change a column between the read that calls it floating-point and the
+    // statement that scales it.
+    for (const target of targets) {
+      const table = quoteIdentifier(target.table);
+      const exists = await unit.query(
+        'SELECT to_regclass(?) IS NOT NULL AS present',
+        table,
+      );
+      if (exists.rows[0]?.present === true)
+        await unit.query(`LOCK TABLE ${table} IN ACCESS EXCLUSIVE MODE`);
+    }
   }
 
-  const preflight = await preflightMinorUnitsRescale(db, targets, options);
+  const preflight = await preflightMinorUnitsRescale(unit, targets, options);
   if (!preflight.ok && !options.force) {
     throw new MinorUnitsPreflightError(preflight);
   }
@@ -599,7 +739,7 @@ export async function rescaleMoneyColumnsToMinorUnits(
       report.column,
       scale,
     )) {
-      await db.query(sql);
+      await unit.query(sql);
       statements.push(sql);
     }
     if (!altersColumnType) {
@@ -610,13 +750,6 @@ export async function rescaleMoneyColumnsToMinorUnits(
     }
     rescaledColumns.push({ table: report.table, column: report.column });
   }
-
-  await tracker.recordApplied(options.backfillName, {
-    description:
-      `Money columns rescaled from major units to integer minor units ` +
-      `(scale ${scale}).`,
-    packageName: options.packageName,
-  });
 
   return {
     ran: true,
