@@ -576,18 +576,20 @@ export class InheritanceResolver {
               : {}),
           }
         : {}),
-      ...(item?.kind === 'class'
-        ? { extendsTypeArg: item.definition.className }
-        : item?.kind === 'package'
-          ? {
-              extendsTypeArg: item.exportName,
-              extendsTypeArgPackage: {
-                packageName: item.packageName,
-                exportName: item.exportName,
-                specifier: item.specifier,
-              },
-            }
-          : {}),
+      ...(item === null
+        ? { extendsTypeArg: null }
+        : item?.kind === 'class'
+          ? { extendsTypeArg: item.definition.className }
+          : item?.kind === 'package'
+            ? {
+                extendsTypeArg: item.exportName,
+                extendsTypeArgPackage: {
+                  packageName: item.packageName,
+                  exportName: item.exportName,
+                  specifier: item.specifier,
+                },
+              }
+            : {}),
       inheritanceChain: chain.map((link) => link.name),
       stiBase,
       effectiveTableStrategy,
@@ -1145,12 +1147,14 @@ export class InheritanceResolver {
    * The item class of a collection whose direct parent is a framework
    * collection base (`SmrtCollection<Item>`), proven like a parent; a proof
    * that fails is recorded for {@link parentResolutionErrors}. A static
-   * `_itemClass` must name the same class.
+   * `_itemClass` must name the same class. `null` when the type argument is
+   * the class's own type parameter or a type keyword and no `_itemClass`
+   * names a model: the collection records no item name at all.
    */
   private proveItem(
     classDef: RawClassDefinition,
     parentLink: ParentLink | null,
-  ): Proof | undefined {
+  ): Proof | null | undefined {
     if (
       !classDef.extendsTypeArg ||
       !parentLink?.framework ||
@@ -1163,17 +1167,40 @@ export class InheritanceResolver {
       this.itemErrors.set(classDef, reason);
       return undefined;
     };
+    const itemField = classDef.fields.find(
+      (field) => field.isStatic && field.name === '_itemClass',
+    );
     // Only the class's own type parameter (`class C<T> extends
     // SmrtCollection<T>`) and a type keyword (`SmrtCollection<any>`) name no
-    // item class. Every other name is proven, a type-only import included:
-    // generation would otherwise match it by its spelling and could take
-    // another model of that name.
+    // item class. Their spelling must never reach generation, which would
+    // match it by name (a parameter called `Account` would take a model
+    // called `Account`): the item is then the class a static `_itemClass`
+    // names, proven like a parent, or none at all. Every other name is
+    // proven, a type-only import included.
     const head = classDef.extendsTypeArg.split(/[.<]/)[0];
     if (
       classDef.typeParameters?.includes(head) ||
       TYPE_KEYWORDS.has(classDef.extendsTypeArg)
     ) {
-      return undefined;
+      if (!itemField?.initializer) return null;
+      const runtime = this.proveClassReference(classDef, itemField.initializer);
+      if (!runtime) {
+        return fail(
+          `its static _itemClass (${itemField.initializer}) is not a class reference; name the item model class`,
+        );
+      }
+      if (runtime.kind === 'error') {
+        return fail(
+          `its static _itemClass (${itemField.initializer}) cannot be accepted: ${runtime.reason}`,
+        );
+      }
+      if (runtime.kind === 'framework') return null;
+      if (runtime.kind === 'class' && !this.isModelClass(runtime.definition)) {
+        return fail(
+          `its static _itemClass ${runtime.definition.className} (${runtime.definition.filePath}) is not a model; decorate it with @smrt(), or name the model class`,
+        );
+      }
+      return runtime;
     }
     const typeArg = this.proveClassReference(
       classDef,
@@ -1197,9 +1224,6 @@ export class InheritanceResolver {
         `the collection's item ${typeArg.definition.className} (${typeArg.definition.filePath}) is not a model; decorate it with @smrt(), or name the model class`,
       );
     }
-    const itemField = classDef.fields.find(
-      (field) => field.isStatic && field.name === '_itemClass',
-    );
     if (itemField?.initializer) {
       const runtime = this.proveClassReference(classDef, itemField.initializer);
       if (!runtime || !sameProof(runtime, typeArg)) {

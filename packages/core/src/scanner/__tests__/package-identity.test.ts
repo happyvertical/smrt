@@ -950,6 +950,44 @@ describe('a collection of a package model', () => {
     expect(collection?.collectionOf).toBe(`${VENDOR}:Account`);
     expect(crud(collection)).toEqual([]);
   });
+
+  // A collection's own type parameter names no class, however it is
+  // spelled: the item is the class `_itemClass` names, never an app model
+  // that shares the parameter's name.
+  it('takes the _itemClass model, not an app model named like its type parameter', async () => {
+    const root = await project({
+      providers: {
+        [VENDOR]: {
+          files: {
+            'src/Account.ts': `${CORE}\n@smrt({ api: false, tableName: 'vendor_accounts' })\nexport class Account extends SmrtObject {\n  secret = '';\n}\n`,
+          },
+        },
+      },
+      app: {
+        'src/Account.ts': `${CORE}\n@smrt({ tableName: 'app_accounts' })\nexport class Account extends SmrtObject {}\n`,
+        'src/Closed.ts': `${CORE}\n@smrt({ api: false, tableName: 'closed_entries' })\nexport class ClosedEntry extends SmrtObject {\n  hidden = '';\n}\n`,
+        'src/Ledger.ts': `${CORE}\nimport { ClosedEntry } from './Closed';\nexport class Ledger<Account extends ClosedEntry> extends SmrtCollection<Account> {\n  static readonly _itemClass = ClosedEntry;\n}\n`,
+        'src/VendorLedger.ts': `${CORE}\nimport { Account as VendorAccount } from '${VENDOR}';\nexport class VendorLedger<Account extends VendorAccount> extends SmrtCollection<Account> {\n  static readonly _itemClass = VendorAccount;\n}\n`,
+        'src/Journal.ts': `${CORE}\nexport class Journal<Account extends SmrtObject> extends SmrtCollection<Account> {}\n`,
+      },
+    });
+
+    const manifest = await build(root);
+    const ledger = manifest.objects[`${APP}:Ledger`];
+    expect(ledger?.extendsTypeArg).toBe('ClosedEntry');
+    expect(ledger?.collectionOf).toBe(`${APP}:ClosedEntry`);
+    expect(crud(ledger)).toEqual([]);
+
+    const vendorLedger = manifest.objects[`${APP}:VendorLedger`];
+    expect(vendorLedger?.extendsTypeArgQualified).toBe(`${VENDOR}:Account`);
+    expect(vendorLedger?.collectionOf).toBe(`${VENDOR}:Account`);
+    expect(crud(vendorLedger)).toEqual([]);
+
+    const journal = manifest.objects[`${APP}:Journal`];
+    expect(journal?.extendsTypeArg).toBeUndefined();
+    expect(journal?.collectionOf).not.toBe(`${APP}:Account`);
+    expect(crud(manifest.objects[`${APP}:Account`]).length).toBe(5);
+  });
 });
 
 describe('open control', () => {

@@ -1314,9 +1314,46 @@ describe('collection items', () => {
     });
 
     expect(errors).toEqual([]);
+    const typed = manifest().objects[`${PACKAGE}:TypedCollection`];
+    expect(typed?.extendsTypeArgQualified).toBeUndefined();
+    // The parameter's spelling never reaches generation's name lookup.
+    expect(typed?.extendsTypeArg).toBeUndefined();
     expect(
-      manifest().objects[`${PACKAGE}:TypedCollection`]?.extendsTypeArgQualified,
+      manifest().objects[`${PACKAGE}:AnyCollection`]?.extendsTypeArg,
     ).toBeUndefined();
+  });
+
+  it('takes the item of a type-parameter collection from its static _itemClass', async () => {
+    const { errors, manifest } = await scanProject({
+      'src/models/Account.ts': OPEN_BASE('Account'),
+      'src/models/Ledger.ts': `${CORE}\nimport { Account as VendorAccount } from '${PROVIDER}';\nexport class Ledger<Account extends VendorAccount> extends SmrtCollection<Account> {\n  static readonly _itemClass = VendorAccount;\n}\n`,
+    });
+
+    expect(errors).toEqual([]);
+    const ledger = manifest().objects[`${PACKAGE}:Ledger`];
+    expect(ledger?.extendsTypeArg).toBe('Account');
+    expect(ledger?.extendsTypeArgQualified).toBe(`${PROVIDER}:Account`);
+  });
+
+  it.each([
+    [
+      'a plain class',
+      `export class Plain {}\nexport class Ledger<Account> extends SmrtCollection<any> {\n  static readonly _itemClass = Plain;\n}\n`,
+      'is not a model',
+    ],
+    [
+      'an expression',
+      `export class Ledger<Account> extends SmrtCollection<Account> {\n  static readonly _itemClass = pick();\n}\n`,
+      'is not a class reference',
+    ],
+  ])('rejects a type-parameter collection whose static _itemClass is %s', async (_label, source, reason) => {
+    const { errors } = await scanProject({
+      'src/models/Account.ts': OPEN_BASE('Account'),
+      'src/models/Ledger.ts': `${CORE}\nconst pick = () => null;\n${source}`,
+    });
+
+    expect(messages(errors)).toContain(`static _itemClass`);
+    expect(messages(errors)).toContain(reason);
   });
 
   it('rejects a static _itemClass that names another class than the type argument', async () => {
