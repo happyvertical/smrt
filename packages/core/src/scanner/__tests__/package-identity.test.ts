@@ -1354,6 +1354,24 @@ describe('a collection of a package model', () => {
       'declare the item with a static _itemClass',
     );
   });
+
+  // The runtime holds the constructor the ancestor's `_itemClass` names; a
+  // type argument naming another model never reaches it.
+  it('records the open _itemClass a generic ancestor declares for a subclass passing a closed model', async () => {
+    const root = await project({
+      providers: {},
+      app: {
+        'src/Account.ts': `${CORE}\n@smrt({ tableName: 'app_accounts' })\nexport class Account extends SmrtObject {}\n@smrt({ api: false })\nexport class PrivateAccount extends Account {\n  hidden = '';\n}\n`,
+        'src/AccountBase.ts': `${CORE}\nimport { Account } from './Account';\nexport abstract class AccountBase<T extends SmrtObject> extends SmrtCollection<T> {\n  static readonly _itemClass = Account;\n}\n`,
+        'src/PrivateAccounts.ts': `${CORE}\nimport { PrivateAccount } from './Account';\nimport { AccountBase } from './AccountBase';\nexport class PrivateAccounts extends AccountBase<PrivateAccount> {}\n`,
+      },
+    });
+
+    const manifest = await build(root);
+    const accounts = manifest.objects[`${APP}:PrivateAccounts`];
+    expect(accounts?.collectionOf).toBe(`${APP}:Account`);
+    expect(crud(accounts).length).toBe(5);
+  });
 });
 
 describe('open control', () => {

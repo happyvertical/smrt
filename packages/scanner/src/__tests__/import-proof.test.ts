@@ -1757,6 +1757,19 @@ describe('collection items through an app-level generic collection', () => {
     expect(text).toContain('explicit type argument');
     expect(text).not.toContain('NamedEntries');
   });
+
+  it("records the open model a generic ancestor's _itemClass fixes for a subclass passing a closed model, which the runtime replaces", async () => {
+    const { errors, manifest } = await scanProject({
+      'src/models/Account.ts': `${OPEN_BASE('Account')}\n@smrt({ api: false })\nexport class PrivateAccount extends Account {}\n`,
+      'src/collections/AccountBase.ts': `${CORE}\nimport { Account } from '../models/Account';\nexport abstract class AccountBase<T extends SmrtObject> extends SmrtCollection<T> {\n  static readonly _itemClass = Account;\n}\n`,
+      'src/collections/PrivateAccounts.ts': `${CORE}\nimport { PrivateAccount } from '../models/Account';\nimport { AccountBase } from './AccountBase';\nexport class PrivateAccounts extends AccountBase<PrivateAccount> {}\n`,
+    });
+
+    expect(errors).toEqual([]);
+    expect(
+      manifest().objects[`${PACKAGE}:PrivateAccounts`]?.extendsTypeArg,
+    ).toBe('Account');
+  });
 });
 
 describe('repeated scans and project roots', () => {
