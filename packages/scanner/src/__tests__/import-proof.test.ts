@@ -849,8 +849,11 @@ describe('parents', () => {
       'tsconfig.app.json',
       '{ "compilerOptions": { "moduleSuffixes": [".native.ios", "" ',
     ],
-  ])('fails the scan when %s in the project root mentions moduleSuffixes', async (name, text) => {
+  ])('fails the scan when %s, which the project config extends, mentions moduleSuffixes', async (name, text) => {
     const { errors, model } = await scanProject({
+      ...(name === 'tsconfig.json'
+        ? {}
+        : { 'tsconfig.json': '{ "extends": "./tsconfig.app" }' }),
       [name]: text,
       'src/models/Base.ts': CLOSED_BASE('Event'),
       'src/models/Base.mock.ts': OPEN_OTHER,
@@ -866,6 +869,79 @@ describe('parents', () => {
       'import files explicitly (`./Base.ios`) or remove the option',
     );
     expect(model('Meeting')).toBeDefined();
+  });
+
+  it.each([
+    [
+      'a commented-out option in tsconfig.json',
+      {
+        'tsconfig.json':
+          '{\n  // "moduleSuffixes": [".ios", ""],\n  /* "moduleSuffixes": [] */\n  "compilerOptions": { "strict": true, },\n}\n',
+      },
+    ],
+    [
+      'an unused sibling config',
+      {
+        'tsconfig.json': '{ "compilerOptions": { "strict": true } }',
+        'tsconfig.test.json':
+          '{ "compilerOptions": { "moduleSuffixes": [".mock", ""] } }',
+      },
+    ],
+    [
+      'a commented-out option in an extended config',
+      {
+        'tsconfig.json': '{ "extends": "./tsconfig.base.json" }',
+        'tsconfig.base.json':
+          '{ "compilerOptions": { /* "moduleSuffixes": [".mock", ""] */ } }',
+      },
+    ],
+    [
+      'a config package nothing reads',
+      { 'tsconfig.json': '{ "extends": "@fixture/tsconfig" }' },
+    ],
+  ])('scans a project with %s, which sets no module suffixes', async (_label, configs) => {
+    const { errors, model } = await scanProject({
+      ...configs,
+      'src/models/Base.ts': CLOSED_BASE('Event'),
+      'src/models/Meeting.ts': CHILD(`import { Event } from './Base';`),
+    });
+
+    expect(errors).toEqual([]);
+    expect(model('Meeting')).toBeDefined();
+  });
+
+  it.each([
+    [
+      'a config the project config extends through an array',
+      {
+        'tsconfig.json':
+          '{ "extends": ["./tsconfig.a.json", "./configs/tsconfig.b"] }',
+        'tsconfig.a.json': '{}',
+        'configs/tsconfig.b.json': '{ "extends": "../tsconfig.c.json" }',
+        'tsconfig.c.json': '{ "compilerOptions": { "moduleSuffixes": [""] } }',
+      },
+      'tsconfig.c.json',
+    ],
+    [
+      'a project reference',
+      {
+        'tsconfig.json':
+          '{ "files": [], "references": [{ "path": "./tsconfig.app.json" }] }',
+        'tsconfig.app.json':
+          '{ "compilerOptions": { "moduleSuffixes": [""] } }',
+      },
+      'tsconfig.app.json',
+    ],
+  ])('fails the scan for %s that sets moduleSuffixes', async (_label, configs, file) => {
+    const { errors } = await scanProject({
+      ...configs,
+      'src/models/Base.ts': CLOSED_BASE('Event'),
+      'src/models/Meeting.ts': CHILD(`import { Event } from './Base';`),
+    });
+
+    expect(errors).toHaveLength(1);
+    expect(errors[0].filePath).toContain(file);
+    expect(errors[0].message).toContain('moduleSuffixes is unsupported');
   });
 
   it('reads a trailing slash as the directory, not a sibling file', async () => {

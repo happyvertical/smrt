@@ -166,32 +166,96 @@ function isModuleSuffix(suffix: string): boolean {
     .every((word) => MODULE_SUFFIX_WORDS.has(word.toLowerCase()));
 }
 
+/** `text` with its `//` and block comments removed; strings are kept whole. */
+function stripJsonComments(text: string): string {
+  let out = '';
+  let index = 0;
+  while (index < text.length) {
+    const char = text[index];
+    if (char === '"') {
+      let end = index + 1;
+      while (end < text.length && text[end] !== '"') {
+        end += text[end] === '\\' ? 2 : 1;
+      }
+      out += text.slice(index, end + 1);
+      index = end + 1;
+    } else if (char === '/' && text[index + 1] === '/') {
+      while (index < text.length && text[index] !== '\n') index++;
+    } else if (char === '/' && text[index + 1] === '*') {
+      const end = text.indexOf('*/', index + 2);
+      index = end === -1 ? text.length : end + 2;
+    } else {
+      out += char;
+      index++;
+    }
+  }
+  return out;
+}
+
+/** The string literals of the JSON value text `value` (a string or an array). */
+function stringLiterals(value: string): string[] {
+  return [...value.matchAll(/"((?:[^"\\]|\\.)*)"/g)].map((match) => match[1]);
+}
+
 /**
- * The `tsconfig*.json` files directly in `projectRoot` whose text mentions
- * `moduleSuffixes`. The scan does not read tsconfig structure; a project
- * that may configure module suffixes is refused, so a suffix the scan does
- * not know (`.mock`, a compound one) can never select another file than
- * the one the scan accepts. Unreadable directories and files mention
- * nothing.
+ * The relative tsconfig files a config names: its `extends` entries that are
+ * plain relative paths, and its project `references`. A package name in
+ * `extends` is not read.
+ */
+function namedConfigs(text: string, dir: string): string[] {
+  const named: string[] = [];
+  const consider = (path: string, candidates: string[]) => {
+    if (!path.startsWith('.')) return;
+    const file = candidates
+      .map((c) => resolvePath(dir, c))
+      .find((c) => isFile(c));
+    if (file) named.push(file);
+  };
+  for (const match of text.matchAll(
+    /"extends"\s*:\s*(\[[^\]]*\]|"(?:[^"\\]|\\.)*")/g,
+  )) {
+    for (const path of stringLiterals(match[1])) {
+      consider(path, [path, `${path}.json`]);
+    }
+  }
+  for (const match of text.matchAll(/"references"\s*:\s*\[([^\]]*)\]/g)) {
+    for (const entry of match[1].matchAll(
+      /"path"\s*:\s*"((?:[^"\\]|\\.)*)"/g,
+    )) {
+      const path = entry[1];
+      consider(path, [path, join(path, 'tsconfig.json')]);
+    }
+  }
+  return named;
+}
+
+/**
+ * The tsconfig files the scan's project uses whose active text mentions
+ * `moduleSuffixes`: `tsconfig.json` in `projectRoot`, and the files it names
+ * in `extends` or `references` as plain relative paths, to any depth. A
+ * comment is not read, and a sibling config nothing names is not used. The
+ * scan does not parse tsconfig structure; a project that may configure
+ * module suffixes is refused, so a suffix the scan does not know (`.mock`, a
+ * compound one) can never select another file than the one the scan
+ * accepts. Unreadable files mention nothing.
  */
 export function moduleSuffixesConfigs(projectRoot: string): string[] {
-  let entries: string[] = [];
-  try {
-    entries = readdirSync(projectRoot).sort();
-  } catch {
-    return [];
+  const found: string[] = [];
+  const seen = new Set<string>();
+  const queue = [join(projectRoot, 'tsconfig.json')];
+  for (let file = queue.shift(); file !== undefined; file = queue.shift()) {
+    if (seen.has(file) || !isFile(file)) continue;
+    seen.add(file);
+    let text: string;
+    try {
+      text = stripJsonComments(readFileSync(file, 'utf8'));
+    } catch {
+      continue;
+    }
+    if (text.includes('moduleSuffixes')) found.push(file);
+    queue.push(...namedConfigs(text, dirname(file)));
   }
-  return entries
-    .filter((entry) => /^tsconfig.*\.json$/i.test(entry))
-    .map((entry) => join(projectRoot, entry))
-    .filter((file) => {
-      if (!isFile(file)) return false;
-      try {
-        return readFileSync(file, 'utf8').includes('moduleSuffixes');
-      } catch {
-        return false;
-      }
-    });
+  return found.sort();
 }
 
 /**
