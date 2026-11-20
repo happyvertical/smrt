@@ -96,7 +96,7 @@ describe.each(aiRunTestEngines)('held calls and fences on %s', (engine) => {
       durable: true,
     });
     const child = await openAiRun(store(db), { type: 'turn' });
-    const fence = vi.fn(async () => true);
+    const fence = vi.fn(async (_tx: unknown, _durableRunId: string) => true);
     // The id changed hands (a link written by an older core): it is now
     // another tenant's run under that tenant's durable parent.
     await db.query(

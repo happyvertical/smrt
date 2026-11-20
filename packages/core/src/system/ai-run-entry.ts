@@ -292,16 +292,11 @@ export async function openAiEntryRun(
             : aiRunStoppedError(after ?? run);
       if (after && after.status !== 'running') await endHandoff(after.status);
       if (!parent) return own;
-      return stopAiRunForChild(
-        parent.db,
-        parent.runId,
-        own,
+      const scoped: AiRunScopedTxOptions =
         parent.tenantId !== undefined
-          ? ({
-              expectedTenant: parent.tenantId ?? null,
-            } satisfies AiRunScopedTxOptions)
-          : {},
-      );
+          ? { expectedTenant: parent.tenantId ?? null }
+          : {};
+      return stopAiRunForChild(parent.db, parent.runId, own, scoped);
     },
   };
 }
