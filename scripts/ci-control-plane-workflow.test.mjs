@@ -101,3 +101,45 @@ test('Required CI rejects a failed, cancelled, skipped or absent control-plane r
     );
   }
 });
+
+test('merge groups select affected or full validation from the impact plan, and keep the merge-group-only gates (#5364)', () => {
+  const admission = (source) =>
+    source.match(/^    if: >-\n([\s\S]*?)(?=^    \S)/m)?.[1];
+  const scope = job('validation-scope');
+  const suite = readFileSync(
+    new URL('../.github/workflows/test-suite.yml', import.meta.url),
+    'utf8',
+  );
+  const postgres = readFileSync(
+    new URL('../.github/workflows/postgres-tests.yml', import.meta.url),
+    'utf8',
+  );
+  assert.equal(admission(scope), admission(job('test')));
+  assert.match(job('test'), /^    needs: validation-scope$/m);
+  // Never a literal `full`/`affected` for merge groups; an empty output is full.
+  assert.match(job('test'), /mode: \$\{\{ needs\.validation-scope\.outputs\.mode \|\| 'full' \}\}/);
+  assert.match(scope, /node scripts\/merge-group-scope\.mjs --base "\$BASE_SHA" --head "\$HEAD_SHA"/);
+  assert.match(scope, /fetch-depth: 0/);
+  const job2 = (name) =>
+    suite.match(new RegExp(`^  ${name}:\\n[\\s\\S]*?(?=^  [a-z][a-z0-9-]*:\\n|(?![\\s\\S]))`, 'm'))?.[0] ?? '';
+  for (const name of ['build', 'coverage-gate', 'test-integration']) {
+    assert.match(
+      job2(name),
+      /^    if: inputs\.mode == 'full' \|\| github\.event_name == 'merge_group'$/m,
+      `${name} must run in every merge group`,
+    );
+  }
+  // Every Turbo selection reads the merge-group base, not only the PR base.
+  const bases = suite.match(/BASE_SHA: \$\{\{ github\.event\.merge_group\.base_sha \|\| github\.event\.pull_request\.base\.sha \}\}/g);
+  assert.equal(bases?.length, 3);
+  // PostgreSQL: scope failure or empty selection of a non-empty plan cannot pass silently.
+  assert.match(postgres, /node scripts\/merge-group-scope\.mjs/);
+  assert.match(postgres, /merge-group PostgreSQL scope produced no selection/);
+  assert.match(postgres, /POSTGRES_AFFECTED: \$\{\{ needs\.scope\.outputs\.affected \}\}/);
+});
+
+test('affected knowledge freshness keeps the release upgrade gate (#5364)', () => {
+  const suite = readFileSync(new URL('../.github/workflows/test-suite.yml', import.meta.url), 'utf8');
+  const affected = suite.match(/^  affected-knowledge:\n[\s\S]*?(?=^  [a-z][a-z0-9-]*:\n)/m)?.[0] ?? '';
+  assert.match(affected, /run: pnpm check:release-upgrade$/m);
+});

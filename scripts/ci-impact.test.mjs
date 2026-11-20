@@ -4,7 +4,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { metadataOnly, parseChanges, planFromGit, planImpact } from './ci-impact.mjs';
+import { metadataOnly, parseChanges, planFromGit, planImpact, turboTaskEdges } from './ci-impact.mjs';
 
 const base = 'a'.repeat(40);
 const head = 'b'.repeat(40);
@@ -127,6 +127,7 @@ test('Git adapter uses exact trees, sees deletion, and fails broad on missing hi
     git('config', 'user.name', 'Test');
     git('config', 'user.email', 'test@example.invalid');
     writeFileSync(join(cwd, 'pnpm-workspace.yaml'), workspaceConfig);
+    writeFileSync(join(cwd, 'turbo.json'), '{"tasks":{}}');
     for (const [path, manifest] of Object.entries(graph().manifests)) {
       mkdirSync(join(cwd, path, '..'), { recursive: true });
       writeFileSync(join(cwd, path), JSON.stringify(manifest));
@@ -164,4 +165,19 @@ test('duplicate workspace config and unresolved local dependencies fail broad', 
   const after = graph();
   after.manifests['packages/ui/package.json'].dependencies = { unexpected: 'link:../other' };
   assert.equal(run(before, after, ['packages/ui/src/index.ts']).full, true);
+});
+
+test('turbo task-level edges select consumers the manifests do not declare (#5364)', () => {
+  assert.deepEqual(turboTaskEdges({ tasks: { build: { dependsOn: ['x#build'] }, 'a#test:postgres': { dependsOn: ['b#build', '^build', 'c#build'] } } }), [['a', 'b'], ['a', 'c']]);
+  const tree = snapshot({ 'packages/vitest-like': { name: 'a' }, 'packages/commerce': { name: 'b' } });
+  tree.turboEdges = [['a', 'b']];
+  const plan = run(tree, tree, ['packages/commerce/src/index.ts']);
+  assert.deepEqual(selected(plan), ['a', 'b']);
+  assert.deepEqual(selected(plan, 'test:postgres'), ['a', 'b']);
+});
+
+test('docs/knowledge and other unowned inputs select full', () => {
+  const tree = snapshot({ 'packages/other': {} });
+  tree.files.push('docs/knowledge/components/x.md');
+  assert.equal(run(tree, tree, ['docs/knowledge/components/x.md']).full, true);
 });

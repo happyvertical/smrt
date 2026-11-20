@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /**
- * Partition every registered PostgreSQL suite; this never scopes suites away.
+ * Partition every registered PostgreSQL suite; it scopes suites away only when
+ * the caller passes an explicit affected list (merge groups, #5364).
  *
  * Usage: postgres-test-shard.mjs <ingestion|remaining>[:<i>/<n>]
  *
@@ -31,7 +32,7 @@ export function parsePostgresShard(shard) {
   return { group: match[1], index, count };
 }
 
-export function selectPostgresShard(manifests, shard) {
+export function selectPostgresShard(manifests, shard, only) {
   const { group, index, count } = parsePostgresShard(shard);
   if (!Array.isArray(manifests) || manifests.length === 0) {
     throw new Error('PostgreSQL discovery returned no workspace manifests');
@@ -65,6 +66,17 @@ export function selectPostgresShard(manifests, shard) {
   // Only the one-package ingestion group can hand Vitest a file slice: Turbo
   // passes these arguments to every selected package's script.
   const vitestArgs = group === 'ingestion' && count > 1 ? [`--shard=${index}/${count}`] : [];
+  // Merge groups restrict to the affected packages (#5364). Shards are still
+  // computed from the whole registry, so the grouping never shifts; a name
+  // that is not registered selects nothing rather than widening the run.
+  if (only !== undefined) {
+    if (!Array.isArray(only) || !only.every((name) => typeof name === 'string')) {
+      throw new Error('Affected PostgreSQL package list must be an array of names');
+    }
+    const affected = new Set(only);
+    const restricted = selected.filter((name) => affected.has(name));
+    return { registered, selected: restricted, vitestArgs: restricted.length > 0 ? vitestArgs : [] };
+  }
   return { registered, selected, vitestArgs };
 }
 
@@ -82,7 +94,10 @@ async function main() {
   if (process.argv.length !== 3) throw new Error('Usage: postgres-test-shard.mjs <ingestion|remaining>[:<i>/<n>]');
   const shard = process.argv[2];
   const root = fileURLToPath(new URL('../', import.meta.url));
-  const { registered, selected, vitestArgs } = selectPostgresShard(await readPostgresManifests(root), shard);
+  // POSTGRES_AFFECTED: a JSON array of package names (merge groups), or unset/`all`.
+  const affected = process.env.POSTGRES_AFFECTED;
+  const only = affected === undefined || affected === '' || affected === 'all' ? undefined : JSON.parse(affected);
+  const { registered, selected, vitestArgs } = selectPostgresShard(await readPostgresManifests(root), shard, only);
   console.error(`PostgreSQL shard ${shard}: ${selected.length} of ${registered.length} registered suite(s)`);
   const filters = selected.map((name) => `--filter=${name}`);
   process.stdout.write([...filters, ...(vitestArgs.length > 0 ? ['--', ...vitestArgs] : [])].join(' '));

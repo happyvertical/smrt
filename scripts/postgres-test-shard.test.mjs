@@ -94,3 +94,15 @@ test('current registered suites run exactly once, including Turbo dependency exp
   assert.equal(new Set(executed).size, executed.length, 'No PostgreSQL suite may run twice');
   assert.deepEqual(executed.sort(), all);
 });
+
+test('an affected list restricts each shard without moving the grouping (#5364)', () => {
+  const manifests = [suite(INGESTION), ...['a', 'b', 'c', 'd', 'e'].map(suite)];
+  const full = selectPostgresShard(manifests, 'remaining:1/3');
+  const only = [full.selected[0], 'unregistered'];
+  assert.deepEqual(selectPostgresShard(manifests, 'remaining:1/3', only).selected, [full.selected[0]]);
+  assert.deepEqual(selectPostgresShard(manifests, 'remaining:1/3', []).selected, []);
+  assert.deepEqual(selectPostgresShard(manifests, 'ingestion:2/2', [INGESTION]).vitestArgs, ['--shard=2/2']);
+  assert.deepEqual(selectPostgresShard(manifests, 'ingestion:2/2', ['a']).vitestArgs, []);
+  assert.throws(() => selectPostgresShard(manifests, 'remaining', 'a'), /array of names/);
+  assert.deepEqual(selectPostgresShard(manifests, 'remaining:1/3', undefined), full);
+});
