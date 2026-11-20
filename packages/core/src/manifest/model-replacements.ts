@@ -88,7 +88,7 @@ export function sameNameCoexistenceUnsupported(
     `${child} declares replaceParent: false, but a same-named subclass cannot be registered next to its parent ${parent}: ` +
       `give ${child} a different class name, or declare replaceParent: true to make it replace ${parent}. ` +
       `If ${child} extends no class of its own name, remove replaceParent. ` +
-      `Coexistence of a same-named subclass is tracked under #5143.`,
+      `Coexistence of a same-named subclass is tracked under #5382.`,
     SAME_NAME_COEXISTENCE_UNSUPPORTED,
     { className: child, parentName: parent },
   );
