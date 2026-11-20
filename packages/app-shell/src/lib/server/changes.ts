@@ -797,22 +797,29 @@ export const runChecksFor = (batchId: string, generation: number) =>
 
 // ---------- state ----------
 
-type Entry = ReviewQuestion | CardComment;
 const MAX_REVISING_MS = 10 * 60_000;
 
-/** The `questions` column holds two kinds of entry: review questions and the comment thread. */
-function entriesOf(card: ChangeCard): Entry[] {
-  return readArray<Entry>(card.questions).filter(
-    (e): e is Entry =>
-      !!e &&
-      typeof e === 'object' &&
-      ((e as Entry).kind === 'question' || (e as Entry).kind === 'comment'),
-  );
-}
+/** Review questions live in `questions`; the comment thread in `comments`. */
 const questionsOf = (card: ChangeCard): ReviewQuestion[] =>
-  entriesOf(card).filter((e): e is ReviewQuestion => e.kind === 'question');
-const commentsOf = (card: ChangeCard): CardComment[] =>
-  entriesOf(card).filter((e): e is CardComment => e.kind === 'comment');
+  readArray<ReviewQuestion>(card.questions).filter(
+    (e): e is ReviewQuestion =>
+      !!e && typeof e === 'object' && e.kind === 'question',
+  );
+/**
+ * Comments of v0.62.14 were kept inside `questions` (kind `comment`): read
+ * those too, oldest first. The next write stores them in `comments` only.
+ */
+const commentsOf = (card: ChangeCard): CardComment[] => {
+  const legacy = readArray<CardComment>(card.questions).filter(
+    (e): e is CardComment =>
+      !!e && typeof e === 'object' && e.kind === 'comment',
+  );
+  const own = readArray<CardComment>(card.comments).filter(
+    (e): e is CardComment =>
+      !!e && typeof e === 'object' && e.kind === 'comment',
+  );
+  return [...legacy, ...own];
+};
 const isRevising = (comments: CardComment[]): boolean => {
   const last = [...comments].reverse().find((c) => c.role === 'owner');
   return (
@@ -1794,8 +1801,13 @@ export function reviseChangeCard(
   })();
 }
 
-async function saveEntries(card: ChangeCard, entries: Entry[]): Promise<void> {
-  card.questions = JSON.stringify(entries);
+/** Store both lists; this is also where a legacy comment leaves `questions`. */
+async function saveEntries(
+  card: ChangeCard,
+  entries: { questions?: ReviewQuestion[]; comments?: CardComment[] },
+): Promise<void> {
+  card.questions = JSON.stringify(entries.questions ?? questionsOf(card));
+  card.comments = JSON.stringify(entries.comments ?? commentsOf(card));
   await card.save();
 }
 
@@ -1831,8 +1843,8 @@ export function beginCardComment(
     if (!clean) throw new EngineError('write what to change', 'invalid');
     return serial(async () => {
       const { batch, card } = await openCard(cardId, owner);
-      const entries = entriesOf(card);
-      if (isRevising(commentsOf(card)))
+      const entries = commentsOf(card);
+      if (isRevising(entries))
         throw new EngineError(
           'the assistant is already working on this change',
           'refused',
@@ -1844,7 +1856,7 @@ export function beginCardComment(
         at: new Date().toISOString(),
         state: 'revising',
       });
-      await saveEntries(card, entries.slice(-MAX_COMMENTS));
+      await saveEntries(card, { comments: entries.slice(-MAX_COMMENTS) });
       emit(
         batch,
         'changed',
@@ -1873,10 +1885,8 @@ export function endCardComment(
         ? (await cardsOf(batch.id as string)).find((c) => c.id === cardId)
         : undefined;
       if (!batch || !card) return;
-      const entries = entriesOf(card).map((e) =>
-        e.kind === 'comment' && e.state === 'revising'
-          ? { ...e, state: 'done' as const }
-          : e,
+      const entries = commentsOf(card).map((e) =>
+        e.state === 'revising' ? { ...e, state: 'done' as const } : e,
       );
       const changed = Number(card.revision) !== done.revisionBefore;
       entries.push({
@@ -1891,7 +1901,7 @@ export function endCardComment(
         state: 'done',
       });
       if (done.threadId) card.threadId = done.threadId;
-      await saveEntries(card, entries.slice(-MAX_COMMENTS));
+      await saveEntries(card, { comments: entries.slice(-MAX_COMMENTS) });
       emit(
         batch,
         'changed',
@@ -1990,14 +2000,12 @@ export function setReviewQuestions(
       }
       let changed = false;
       for (const card of active) {
-        const before = entriesOf(card);
-        const keep = before.filter(
-          (e) => e.kind === 'comment' || e.state === 'answered',
-        );
+        const before = questionsOf(card);
+        const keep = before.filter((e) => e.state === 'answered');
         const next = [...keep, ...(byCard.get(card.id as string) ?? [])];
         // Open questions carry fresh ids, so any change shows in the text.
         if (JSON.stringify(next) === JSON.stringify(before)) continue;
-        await saveEntries(card, next);
+        await saveEntries(card, { questions: next });
         changed = true;
       }
       if (changed) emit(batch, 'changed', active.length);
@@ -2029,11 +2037,8 @@ export function answerReviewQuestion(
         throw new EngineError('there are no changes waiting', 'not_found');
       checkGeneration(batch, opts.generation);
       for (const card of (await cardsOf(batch.id as string)).filter(isActive)) {
-        const entries = entriesOf(card);
-        const q = entries.find(
-          (e): e is ReviewQuestion =>
-            e.kind === 'question' && e.id === questionId,
-        );
+        const entries = questionsOf(card);
+        const q = entries.find((e) => e.id === questionId);
         if (!q) continue;
         if (q.state !== 'open')
           throw new EngineError(
@@ -2048,7 +2053,7 @@ export function answerReviewQuestion(
         // Claim it before the card is made, so a double click makes one card.
         q.state = 'answered';
         q.answered = index;
-        await saveEntries(card, entries);
+        await saveEntries(card, { questions: entries });
         return { cardId: card.id as string, command: chosen.command };
       }
       throw new EngineError('that question is not waiting', 'not_found');
@@ -2065,15 +2070,12 @@ export function answerReviewQuestion(
               )
             : undefined;
           if (!card) return;
-          const entries = entriesOf(card);
-          const q = entries.find(
-            (x): x is ReviewQuestion =>
-              x.kind === 'question' && x.id === questionId,
-          );
+          const entries = questionsOf(card);
+          const q = entries.find((x) => x.id === questionId);
           if (q) {
             q.state = 'open';
             delete q.answered;
-            await saveEntries(card, entries);
+            await saveEntries(card, { questions: entries });
           }
         });
         throw e;

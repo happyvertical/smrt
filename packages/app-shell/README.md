@@ -504,9 +504,13 @@ gets no undo, apply or draft tool; its turn input says changes are collected.
   working copy's `plan` accepts, else the choice is dropped. Results are
   discarded when the batch generation moved on; the review is skipped (exact
   checks unaffected) when no assistant is connected; it runs on the owner's API
-  or ChatGPT engine as one tracked call, billed like other assistant use (the
-  local agent CLI engines are skipped). Stored in `ChangeCard.questions`
-  (alongside the comment thread; commands stay server-side). Answered
+  or ChatGPT engine as one tracked call, and on the local agent CLI engines
+  (`claude-code`, `codex`) as one parentless tool-free tracked turn through the
+  same no-tools MCP scope workbook planning uses (`createToollessCliDriver`),
+  billed like other assistant use on whatever engine is connected. Stored in
+  `ChangeCard.questions` (commands stay server-side); the comment thread has
+  its own `ChangeCard.comments` column (v0.62.14 kept comments inside
+  `questions`; those rows are still read and move on the next write). Answered
   questions are kept so they are not asked again. `POST
   /changes/questions/:id/answer {choice, generation?}` takes only a choice
   INDEX: a choice with a command becomes a NEW card (source `api`, so never
