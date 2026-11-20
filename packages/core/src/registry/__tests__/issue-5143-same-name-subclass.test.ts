@@ -418,6 +418,31 @@ describe('same-named subclass of another package: constructor registration', () 
     expect(ObjectRegistry.getClass(SUB)?.config.replaceParent).toBe(true);
   });
 
+  it('refuses a re-registration that moves a replacement off its parent table, keeping the shared table', () => {
+    const fixture = constructors(true);
+    fixture.registrations.base();
+    fixture.registrations.sub();
+    const before = registrySnapshot();
+    expect(() =>
+      ObjectRegistry.register(fixture.HistrioScene, {
+        name: 'Scene',
+        packageName: HISTRIO,
+        tableName: 'histrio_scenes',
+        replaceParent: true,
+      }),
+    ).toThrow(
+      expect.objectContaining({
+        code: 'CONFIG_SAME_NAME_REPLACEMENT_TABLE_MISMATCH',
+      }),
+    );
+    expect(registrySnapshot()).toEqual(before);
+    expect(ObjectRegistry.getClass(BASE)?.schema?.tableName).toBe('scenes');
+    expect(ObjectRegistry.getClass(SUB)?.schema?.tableName).toBe('scenes');
+    // The same table, restated, is still an ordinary re-registration.
+    fixture.registrations.sub();
+    expect(registrySnapshot()).toEqual(before);
+  });
+
   it.each(
     CTOR_ORDERS.map((order) => [order.join(' → '), order] as const),
   )('replaceParent: true replaces the parent and keeps its declaration (%s)', (_label, order) => {
