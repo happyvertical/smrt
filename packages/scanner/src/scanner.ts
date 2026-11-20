@@ -391,6 +391,11 @@ export class OxcScanner {
             reason: `${proof.definition.className} (${proof.definition.filePath}) is not a model; decorate it with @smrt(), or reference the model class`,
           };
         }
+        const standIn = this.resolver.standInError(
+          proof.definition,
+          owner.filePath,
+        );
+        if (standIn) return { kind: 'error' as const, reason: standIn };
       }
       return proof;
     };

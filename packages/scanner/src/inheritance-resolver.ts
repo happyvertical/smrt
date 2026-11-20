@@ -785,10 +785,12 @@ export class InheritanceResolver {
           framework: true,
         };
       }
+      const standIn = this.standInError(proof.definition, classDef.filePath);
       return {
         name: proof.definition.className,
         definition: proof.definition,
         framework: false,
+        ...(standIn ? { error: standIn } : {}),
       };
     }
     if (proof.kind === 'framework') {
@@ -814,6 +816,24 @@ export class InheritanceResolver {
       };
     }
     return { name, definition: null, framework: false, error: proof.reason };
+  }
+
+  /**
+   * Why a reference from `fromFile` to `target` cannot be recorded when the
+   * target declares another package (`@smrt({ packageName })`, a stand-in for
+   * that package's class): the manifest keys classes by the scanned package,
+   * where this package's own class of that name takes the entry, so the
+   * reference would bind a different class. `undefined` otherwise.
+   */
+  standInError(
+    target: RawClassDefinition,
+    fromFile: string,
+  ): string | undefined {
+    const declared = declaredPackageName(target);
+    if (!declared) return undefined;
+    const own = this.prover.packageOf(normalizeFile(fromFile))?.name;
+    if (!own || declared === own) return undefined;
+    return `${target.className} (${target.filePath}) declares @smrt({ packageName: '${declared}' }), a stand-in for that package's class, and the manifest of ${own} cannot record a reference to it; reference a model of ${own}, or import ${declared}'s class from that package`;
   }
 
   /**

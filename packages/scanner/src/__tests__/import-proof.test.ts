@@ -693,6 +693,20 @@ describe('relationship targets and report sources', () => {
     expect(scanned.errors[0].message).toContain('@report() source');
     expect(scanned.errors[0].message).toContain('is not a model');
   });
+
+  it('rejects a reference to a stand-in for another package', async () => {
+    const scanned = await scanProject({
+      'src/models/Account.ts': ACCOUNT,
+      'src/fixtures/Account.ts': `${CORE}\n@smrt({ packageName: '@fixture/other' })\nexport class Account extends SmrtObject {\n  standInOnly = '';\n}\n`,
+      'src/models/holder.ts': holder(
+        `import { Account } from '../fixtures/Account';`,
+        `@foreignKey(Account) ownerId = '';`,
+      ),
+    });
+
+    expect(scanned.errors).toHaveLength(1);
+    expect(scanned.errors[0].message).toContain('stand-in');
+  });
 });
 
 describe('collection items', () => {
