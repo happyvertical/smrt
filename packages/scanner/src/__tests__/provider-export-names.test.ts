@@ -108,6 +108,45 @@ describe('provider export names', () => {
     expect(errors).toEqual([]);
   });
 
+  it('accepts a named re-export that reaches the model through two export * paths', async () => {
+    // models/index -> a, b; a and b both `export *` the model's file.
+    const errors = await scanPackage({
+      'src/models/Event.ts': EVENT,
+      'src/models/a.ts': `export * from './Event';\n`,
+      'src/models/b.ts': `export * from './Event';\n`,
+      'src/models/index.ts': `export * from './a';\nexport * from './b';\n`,
+      'src/index.ts': `export { Event } from './models';\n`,
+    });
+
+    expect(errors).toEqual([]);
+  });
+
+  it('resolves through an export * cycle without overflowing, to the one real export', async () => {
+    const errors = await scanPackage({
+      'src/models/Event.ts': EVENT,
+      'src/models/a.ts': `export * from './b';\nexport * from './Event';\n`,
+      'src/models/b.ts': `export * from './a';\n`,
+      'src/index.ts': `export { Event } from './models/b';\n`,
+    });
+
+    expect(errors).toEqual([]);
+  });
+
+  it('rejects a named re-export that two export * paths reach as different classes', async () => {
+    const errors = await scanPackage({
+      'src/models/Event.ts': EVENT,
+      'src/legacy/Event.ts': `export class Event {\n  helperOnly = '';\n}\n`,
+      'src/all.ts': `export * from './models/Event';\nexport * from './legacy/Event';\n`,
+      'src/index.ts': `export { Event } from './all';\n`,
+    });
+
+    expect(errors).toHaveLength(1);
+    expect(errors[0].filePath).toContain(join('src', 'index.ts'));
+    expect(errors[0].message).toContain(
+      'exports no single class named `Event`',
+    );
+  });
+
   it('applies to an app scan: a file renaming a class to a model of the app', async () => {
     const errors = await scanPackage({
       'src/models/Event.ts': EVENT,

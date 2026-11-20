@@ -1100,6 +1100,7 @@ export class InheritanceResolver {
     exported: string,
     entry: { local: string } | { from: string; imported: string | null },
     depth: number,
+    resolving: Set<string> = new Set(),
   ): RawClassDefinition | string {
     if (depth > 16) return 'the re-export chain is too deep';
     const module = this.modules.get(file);
@@ -1114,7 +1115,7 @@ export class InheritanceResolver {
       }
       const selected = this.prover.selectFile(file, source);
       if ('reason' in selected) return selected.reason;
-      return this.followNamed(selected.file, imported, depth + 1);
+      return this.followNamed(selected.file, imported, depth + 1, resolving);
     };
     if ('from' in entry) return viaModule(entry.from, entry.imported);
     const declared = module.classes.get(entry.local);
@@ -1124,26 +1125,43 @@ export class InheritanceResolver {
     return `\`${entry.local}\` of ${file} is not a class`;
   }
 
+  /**
+   * The class `file` exports as `name`, the way ES modules resolve it: one
+   * set of (module, name) pairs being resolved is shared by the whole
+   * lookup, so a pair met again (a cycle, or the second path of a diamond)
+   * contributes nothing, and `export *` paths that reach the same
+   * declaration agree. Two different declarations stay ambiguous.
+   */
   private followNamed(
     file: string,
     name: string,
     depth: number,
+    resolving: Set<string> = new Set(),
   ): RawClassDefinition | string {
+    if (depth > 16) return 'the re-export chain is too deep';
+    const key = `${file}\u0000${name}`;
+    if (resolving.has(key)) return `${file} is already being resolved`;
+    resolving.add(key);
     const module = this.modules.get(file);
     if (!module) return `${file} is not part of the scan`;
     const entry = module.exports?.named[name];
-    if (entry) return this.followExport(file, name, entry, depth);
-    const found: RawClassDefinition[] = [];
+    if (entry) return this.followExport(file, name, entry, depth, resolving);
+    const found = new Set<RawClassDefinition>();
     for (const source of module.exports?.star ?? []) {
       if (!source.startsWith('.')) {
         return `${file} re-exports the package '${source}' with export *`;
       }
       const selected = this.prover.selectFile(file, source);
       if ('reason' in selected) continue;
-      const result = this.followNamed(selected.file, name, depth + 1);
-      if (typeof result !== 'string') found.push(result);
+      const result = this.followNamed(
+        selected.file,
+        name,
+        depth + 1,
+        resolving,
+      );
+      if (typeof result !== 'string') found.add(result);
     }
-    if (found.length === 1) return found[0];
+    if (found.size === 1) return [...found][0];
     return `${file} exports no single class named \`${name}\``;
   }
 
