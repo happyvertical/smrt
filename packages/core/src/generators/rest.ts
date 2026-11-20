@@ -45,6 +45,7 @@ import {
   modelOfInstance,
 } from '../request-input';
 import {
+  cachePolicy,
   customActionScope,
   etagDiscriminator,
   type RequestTenancy,
@@ -82,7 +83,6 @@ import { computeWebManifestHash } from '../vite-plugin/web-collections';
 import { applyWhereScope } from '../where-keys';
 import { handleChangesRoute } from './changes-route';
 import {
-  cachePolicy,
   canonicalReadRepresentation,
   computeTableVersionEtag,
   conditionalJsonResponse,

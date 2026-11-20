@@ -710,6 +710,7 @@ export {
   boundTenancyCacheScoped,
   boundTenancyEtagDiscriminator,
   type CustomActionShape,
+  cachePolicy,
   customActionScope,
   ensureRequestTenancyInterceptor,
   enterResolvedTenancy,
