@@ -846,12 +846,13 @@ export class InheritanceResolver {
 
   /**
    * Scan errors for undecorated scanned classes whose superclass the scan
-   * cannot read, when that superclass could be a model or collection: the
-   * class has a type argument (`extends X<Item>`), or the expression names a
-   * framework base or a model of this scan (`Base['Inner']` beside a model
-   * `Base`). Such a class cannot be judged a model or not, so it is an error
-   * rather than silently left out of the manifest. An undecorated class over
-   * an unrelated expression stays outside the scan's concern.
+   * cannot read or cannot accept (an expression, a call such as
+   * `Mixin(SmrtObject)`, an import through a barrel), when that superclass
+   * names a framework base or a model or collection of this scan
+   * (`Base['Inner']` beside a model `Base`). Such a class cannot be judged a
+   * model or not, so it is an error rather than silently left out of the
+   * manifest. A class whose superclass names neither (a helper over
+   * `utilities.Widget<T>`) stays outside the scan's concern.
    */
   unreadableCandidateErrors(): ScanError[] {
     const modelNames = new Set(
@@ -863,22 +864,24 @@ export class InheritanceResolver {
     for (const classDef of this.classes) {
       if (
         classDef.hasSmartDecorator ||
-        !classDef.extendsUnreadable ||
         !this.isScanned(classDef) ||
         this.isModelClass(classDef)
       ) {
         continue;
       }
-      const names = (classDef.extendsClause ?? '')
-        .split(/[.[\]'"]+/)
-        .filter(Boolean);
+      const link = this.linkOf(classDef);
+      if (!classDef.extendsUnreadable && !link?.error) continue;
+      const names = [
+        ...(classDef.extendsClause ?? '').split(/[.[\]'"]+/),
+        ...(classDef.extendsNames ?? []),
+      ].filter(Boolean);
       const candidate =
-        classDef.extendsTypeArg !== null ||
+        (classDef.extendsUnreadable !== undefined &&
+          classDef.extendsTypeArg !== null) ||
         names.some(
           (name) => FRAMEWORK_BASE_CLASSES.has(name) || modelNames.has(name),
         );
       if (!candidate) continue;
-      const link = this.linkOf(classDef);
       errors.push({
         message:
           `${classDef.className} extends \`${classDef.extendsClause ?? '<expression>'}\`, which the scan cannot accept: ` +

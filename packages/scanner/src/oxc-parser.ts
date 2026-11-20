@@ -2646,6 +2646,7 @@ function extractClassDeclaration(
     extendsSource,
     extendsDefaultImport,
     extendsUnreadable,
+    extendsNames,
   } = extractExtendsClause(node, importAliases, ctx?.importBindings);
 
   // Extract fields and methods
@@ -2734,6 +2735,7 @@ function extractClassDeclaration(
     ...(extendsSource ? { extendsSource } : {}),
     ...(extendsDefaultImport ? { extendsDefaultImport } : {}),
     ...(extendsUnreadable ? { extendsUnreadable } : {}),
+    ...(extendsNames ? { extendsNames } : {}),
     decoratorConfig,
     hasSmartDecorator,
     ...(description ? { description } : {}),
@@ -3996,6 +3998,7 @@ function extractExtendsClause(
   extendsSource?: string;
   extendsDefaultImport?: boolean;
   extendsUnreadable?: string;
+  extendsNames?: string[];
 } {
   if (!node.superClass) {
     return { extendsClause: null, extendsTypeArg: null };
@@ -4011,6 +4014,7 @@ function extractExtendsClause(
   // binding it wraps, so whether the class reaches the manifest at all (an
   // undecorated collection) is still decided, and the error still reported.
   let extendsUnreadable: string | undefined;
+  let extendsNames: string[] | undefined;
   let superClass: Expression | null = node.superClass;
   for (let depth = 0; superClass && depth < 8; depth++) {
     const type = (superClass as unknown as { type: string }).type;
@@ -4082,8 +4086,10 @@ function extractExtendsClause(
     }
   } else if (superClass) {
     // A call (`Mixin(Base)`), a conditional, a class expression: no binding
-    // the scan can name.
+    // the scan can name. The names it mentions are kept so the scan can tell
+    // whether the class could be a model (`Mixin(SmrtObject)`).
     extendsUnreadable ??= (superClass as unknown as { type: string }).type;
+    extendsNames = expressionNames(superClass);
   }
 
   // Resolve import aliases (e.g., import { Performer as PerformerBase }).
@@ -4114,7 +4120,63 @@ function extractExtendsClause(
     ...(extendsSource ? { extendsSource } : {}),
     ...(extendsDefaultImport ? { extendsDefaultImport } : {}),
     ...(extendsUnreadable ? { extendsUnreadable } : {}),
+    ...(extendsNames?.length ? { extendsNames } : {}),
   };
+}
+
+/**
+ * Identifier names an expression mentions (callees, arguments, member
+ * paths, conditional branches), a few levels deep. Used only to judge
+ * whether an unreadable superclass could make a class a model.
+ */
+function expressionNames(node: unknown, depth = 0): string[] {
+  if (!node || typeof node !== 'object' || depth > 6) return [];
+  const value = node as Record<string, unknown> & { type?: string };
+  switch (value.type) {
+    case 'Identifier':
+      return typeof value.name === 'string' ? [value.name] : [];
+    case 'Literal':
+      return typeof value.value === 'string' ? [value.value] : [];
+    case 'CallExpression':
+    case 'NewExpression':
+      return [
+        ...expressionNames(value.callee, depth + 1),
+        ...((value.arguments as unknown[]) ?? []).flatMap((arg) =>
+          expressionNames(arg, depth + 1),
+        ),
+      ];
+    case 'MemberExpression':
+      return [
+        ...expressionNames(value.object, depth + 1),
+        ...expressionNames(value.property, depth + 1),
+      ];
+    case 'ConditionalExpression':
+      return [
+        ...expressionNames(value.consequent, depth + 1),
+        ...expressionNames(value.alternate, depth + 1),
+      ];
+    case 'LogicalExpression':
+    case 'SequenceExpression':
+    case 'ParenthesizedExpression':
+    case 'TSAsExpression':
+    case 'TSSatisfiesExpression':
+    case 'TSNonNullExpression':
+    case 'TSTypeAssertion':
+    case 'SpreadElement':
+      return [
+        ...expressionNames(value.left, depth + 1),
+        ...expressionNames(value.right, depth + 1),
+        ...expressionNames(value.expression, depth + 1),
+        ...expressionNames(value.argument, depth + 1),
+        ...((value.expressions as unknown[]) ?? []).flatMap((part) =>
+          expressionNames(part, depth + 1),
+        ),
+      ];
+    case 'ClassExpression':
+      return expressionNames(value.superClass, depth + 1);
+    default:
+      return [];
+  }
 }
 
 /**

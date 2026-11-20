@@ -356,6 +356,30 @@ describe('parents', () => {
     expect(errors[0].message).toContain('property of a value');
   });
 
+  it('reports an undecorated collection over a scanned collection imported through a barrel', async () => {
+    const { errors, model } = await scanProject({
+      'src/models/Base.ts': `${CORE}\n@smrt()\nexport class Base extends SmrtObject {\n  name = '';\n}\nexport class BaseCollection extends SmrtCollection<Base> {\n  static readonly _itemClass = Base;\n}\n`,
+      'src/models/index.ts': `export { BaseCollection } from './Base';\n`,
+      'src/Children.ts': `import { BaseCollection } from './models/index';\nexport class Children extends BaseCollection {}\n`,
+    });
+
+    expect(model('Children')).toBeUndefined();
+    expect(errors).toHaveLength(1);
+    expect(errors[0].message).toContain('Children extends `BaseCollection`');
+    expect(errors[0].message).toContain('re-exports `BaseCollection`');
+  });
+
+  it('reports an undecorated class whose superclass is a call over a framework base', async () => {
+    const { errors, model } = await scanProject({
+      'src/models/Mixed.ts': `${CORE}\nfunction Mixin<T>(base: T) { return base; }\nexport class Mixed extends Mixin(SmrtObject) {\n  name = '';\n}\n`,
+    });
+
+    expect(model('Mixed')).toBeUndefined();
+    expect(errors).toHaveLength(1);
+    expect(errors[0].message).toContain('Mixed extends');
+    expect(errors[0].message).toContain('CallExpression');
+  });
+
   it('ignores an undecorated class over a member of an unrelated value', async () => {
     const { errors } = await scanProject({
       'src/models/Base.ts': OPEN_BASE('Base'),

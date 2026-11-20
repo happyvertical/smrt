@@ -58,6 +58,14 @@ export interface RawClassDefinition {
   extendsUnreadable?: string;
 
   /**
+   * For a superclass written as a call, conditional or other expression the
+   * scan does not read: the identifier names it mentions (`Mixin(SmrtObject)`
+   * gives `Mixin`, `SmrtObject`). Used only to decide whether the class could
+   * be a model, so an unreadable superclass of one is reported.
+   */
+  extendsNames?: string[];
+
+  /**
    * Class references in the class decorators' config (`@report` `source`,
    * `joins.*.source`): imported ones with their import, same-file ones
    * marked `local`.
