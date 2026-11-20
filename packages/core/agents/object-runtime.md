@@ -72,7 +72,9 @@ See [audit contract](../../../docs/content/audit-trail.md).
   keeps its original ID and creation time. An unloaded write to a tracked
   match fails without committing.
 - `save()` error contract (#2366): unique/PK violation → `ValidationError` `VALIDATION_UNIQUE_CONSTRAINT`, NOT NULL → `VALIDATION_REQUIRED_FIELD`, both on the first attempt on every adapter; any other database failure → `DatabaseError` with the driver error on `cause`
-- `getSlug()`: auto-generates from name → title → label → id
+- `getSlug()`: auto-generates from name → title → label → id; a candidate that
+  slugifies to nothing (no ASCII letters or digits) is skipped, so the next
+  candidate or finally the id supplies the slug
 - `loadRelated(fieldName)`: lazy-loads relationships (cached in `_loadedRelationships` Map)
 
 Relationship I/O resolves canonical source and target identities, not the public
