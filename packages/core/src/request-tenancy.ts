@@ -1217,7 +1217,8 @@ function inFamily(t: RequestTenancy, key: string): boolean {
  * the same actor (its members of equal tenancy to `key`), so a read through
  * an unrelated base never serves rows of a member whose tenancy differs, as
  * that family's own routes would not. A system actor reads every type, as
- * it does every tenant. `undefined` when no membership applies.
+ * it does every tenant. `undefined` when no membership applies. Reads only:
+ * a write to another family is not restricted by membership.
  */
 function familyTenancyOf(
   t: RequestTenancy,
@@ -1295,7 +1296,9 @@ function assertWritable(
 ): void {
   const family = inFamily(t, key);
   const member = memberFor(t, key, family);
-  const owner = familyTenancyOf(t, key);
+  // Only the route's own family restricts writes; a write to another family
+  // is decided by the tenant interceptor and the member's live policy.
+  const owner = family ? t : undefined;
   if (owner) {
     const stored = storedTypeOf(instance);
     // A new row is held to the create targets when the request selects

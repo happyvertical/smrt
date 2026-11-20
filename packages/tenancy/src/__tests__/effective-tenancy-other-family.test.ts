@@ -44,8 +44,10 @@ const ROW = {
 // An unscoped model whose read actions read another STI family.
 @smrt({
   api: {
-    include: ['list', 'crateTitles', 'crateById'],
+    include: ['list', 'crateTitles', 'crateById', 'makeCrate', 'retypeCrate'],
     routes: {
+      retypeCrate: { method: 'GET', path: 'retype-crate' },
+      makeCrate: { method: 'GET', path: 'make-crate' },
       crateTitles: { method: 'GET', path: 'crate-titles' },
       crateById: { method: 'GET', path: 'crate-by-id' },
     },
@@ -62,6 +64,23 @@ class EffOtherDeskCollection extends SmrtCollection<EffOtherDesk> {
     return rows
       .map((row) => (row as unknown as { title: string }).title)
       .sort();
+  }
+  /** Writes a row of the tenant-scoped subtype through the base. */
+  async makeCrate(_options?: unknown) {
+    const row = await (reached.crates as SmrtCollection<SmrtObject>).create({
+      title: 'made crate',
+      _meta_type: keyOf(EffOtherLockedCrate),
+    } as never);
+    return (row as unknown as { tenantId: string | null }).tenantId;
+  }
+  /** Saves a base-class row typed as the tenant-scoped subtype. */
+  async retypeCrate(_options?: unknown) {
+    const crates = reached.crates as SmrtCollection<SmrtObject>;
+    const row = await crates.create({ title: 'retyped crate' } as never);
+    (row as unknown as { _meta_type: string })._meta_type =
+      keyOf(EffOtherLockedCrate);
+    await row.save();
+    return 'retyped';
   }
   /** Each crate's title by id, or null where it is not served. */
   async crateById(_options?: unknown) {
@@ -91,6 +110,7 @@ class EffOtherLockedCrate extends EffOtherCrate {
 
 const SESSIONS: Record<string, Record<string, unknown>> = {
   'user-of-a': { tenantId: TENANT_A },
+  operator: { allowCrossTenant: true },
 };
 const tokenOf = (req: Request) =>
   (req.headers.get('authorization') ?? '').replace('Bearer ', '');
@@ -115,7 +135,12 @@ describe('a read of another STI family is held to that family', () => {
     );
     ObjectRegistry.register(EffOtherDeskCollection as never, {});
     ObjectRegistry.getMethods('EffOtherDeskCollection').clear();
-    for (const name of ['crateTitles', 'crateById']) {
+    for (const name of [
+      'crateTitles',
+      'crateById',
+      'makeCrate',
+      'retypeCrate',
+    ]) {
       ObjectRegistry.getMethods('EffOtherDeskCollection').set(name, {
         name,
         parameters: [{ name: 'options', type: 'any', optional: true }],
@@ -197,5 +222,27 @@ describe('a read of another STI family is held to that family', () => {
   it("a tenant's read through the base serves no row of the subtype either", async () => {
     const listed = await action('crate-titles', 'user-of-a');
     expect((listed.body as { result: unknown }).result).toEqual(['crate']);
+  });
+
+  it("a tenant's write of the subtype through the base is stamped with its tenant", async () => {
+    const made = await action('make-crate', 'user-of-a');
+    expect(made.status).toBe(200);
+    expect((made.body as { result: unknown }).result).toBe(TENANT_A);
+  });
+
+  it('a request admitted under a read grant writes no row of the subtype through the base', async () => {
+    const made = await action('make-crate', 'operator');
+    expect(made.status).toBe(403);
+    const rows = await withSystemContext(() =>
+      (reached.crates as SmrtCollection<SmrtObject>).list({
+        where: { title: 'made crate' },
+      }),
+    );
+    expect(rows).toHaveLength(0);
+  });
+
+  it("a tenant's save of a base row typed as the subtype is decided by the interceptors, not refused as another family", async () => {
+    const saved = await action('retype-crate', 'user-of-a');
+    expect(saved.status).toBe(200);
   });
 });
