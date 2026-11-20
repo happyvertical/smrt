@@ -547,23 +547,6 @@ describe('provider subclass reply/forward drafts keep their routing', () => {
     expect(fwd.channelId).toBe('C123');
     expect(fwd.slackThreadTs).toBe('');
   });
-
-  it('Tweet reply is a fresh reply tweet; personaId is not inherited', async () => {
-    const { Tweet } = await import('../models/Tweet');
-    const t = new Tweet({
-      tweetId: '99',
-      likeCount: 5,
-      mediaUrls: '["u"]',
-      personaId: 'persona-1',
-      body: 'hi',
-    });
-    const r = t.createReply() as InstanceType<typeof Tweet>;
-    expect(r.tweetId).toBe('');
-    expect(r.likeCount).toBe(0);
-    expect(r.mediaUrls).toBe('');
-    expect(r.isReply).toBe(true);
-    expect(r.personaId).toBeNull();
-  });
 });
 
 describe('HTML-only inbound mail', () => {

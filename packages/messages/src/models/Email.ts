@@ -9,6 +9,7 @@
 // runs, whichever chunk the library build places it in (#3098).
 import '../__smrt-register__.js';
 import { field, ObjectRegistry, smrt } from '@happyvertical/smrt-core';
+import { htmlToText } from '../html-to-text.js';
 import type { MailTriageAction, MailTriageResult } from '../mail-triage.js';
 import type {
   EmailOptions,
@@ -436,18 +437,7 @@ export class Email extends Message {
   private plainBody(): string {
     const text = this.textBody || this.body;
     if (text) return text;
-    return (this.htmlBody || '')
-      .replace(/<(script|style)[\s\S]*?<\/\1>/gi, '')
-      .replace(/<br\s*\/?>|<\/(p|div|li|tr|h[1-6])>/gi, '\n')
-      .replace(/<[^>]+>/g, '')
-      .replace(/&nbsp;/g, ' ')
-      .replace(/&lt;/g, '<')
-      .replace(/&gt;/g, '>')
-      .replace(/&quot;/g, '"')
-      .replace(/&#39;/g, "'")
-      .replace(/&amp;/g, '&')
-      .replace(/\n{3,}/g, '\n\n')
-      .trim();
+    return htmlToText(this.htmlBody || '');
   }
 
   /**
