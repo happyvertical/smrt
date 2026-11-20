@@ -61,9 +61,8 @@ the controller code exists on `main`.
 5. While the queue is still quiescent, add the App-bound **Release Admission**
    required status on `main` using the additive ruleset below. Preserve every
    existing required check, including **Required CI** and the repository's
-   PostgreSQL protection. Keep the queue limited to
-   `max_entries_to_build: 1` and `max_entries_to_merge: 1`; update those fields
-   in the existing queue rule without replacing its other parameters.
+   PostgreSQL protection. Leave the existing queue rule as it is; any queue
+   width is supported (see "Batched merge queues" below).
 6. Set `CI_MERGE_QUEUE_ENABLED=true` and finally
    `CI_RELEASE_WINDOW_ENABLED=true`. Run **Release Admission → `reconcile`**,
    verify a healthy `open` state and App-issued statuses on current validated
@@ -356,3 +355,11 @@ before reading `main` for the freeze. Groups that are building or waiting stay
 pending and cannot merge until the window reopens. `assertWindow` and
 `beginPublishing` still require `main` to equal the frozen snapshot, so a merge
 that slips past the freeze fails the release closed.
+
+Throughput note: one group (up to `max_entries_to_merge` PRs) is validated and
+merged as one head, so batching still amortizes one CI run across the group. A
+group stacked on a still-queued group is not admitted until the one beneath it
+merges, because admission requires the head's parent to be current `main`; it is
+then admitted by the next 10-minute reconcile. Concurrent builds therefore pipeline
+validation but not merges, and each stacked group can wait up to one reconcile
+interval. That is a latency cost, never a safety one.
