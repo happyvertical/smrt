@@ -35,6 +35,7 @@ export {
   type WorkflowRunJobs,
   type WorkflowRunJobsOptions,
   WorkflowRunKeyConflictError,
+  WorkflowRunKeyExpiredError,
   type WorkflowRunOwner,
 } from './jobs.js';
 export {

@@ -25,6 +25,8 @@ export interface DraftMarker {
   createdAt: string;
   /** PostgreSQL: the schema holding the draft's data (a SQLite draft has none). */
   schema?: string;
+  /** PostgreSQL: the live app's schema this draft was made from (owner of the draft's schema). */
+  liveSchema?: string;
 }
 
 /** A path as the file system sees it; the plain resolved path while it does not exist. */
@@ -72,6 +74,7 @@ export function writeDraftMarker(
   liveDir: string,
   baseVersion: number,
   schema?: string,
+  liveSchema?: string,
 ): DraftMarker {
   const marker: DraftMarker = {
     kind: 'smrt-app-draft',
@@ -79,7 +82,7 @@ export function writeDraftMarker(
     liveDir: realDir(liveDir),
     baseVersion,
     createdAt: new Date().toISOString(),
-    ...(schema ? { schema } : {}),
+    ...(schema ? { schema, liveSchema } : {}),
   };
   writeFileSync(join(dataDir, DRAFT_MARKER_FILE), JSON.stringify(marker), {
     flag: 'wx',

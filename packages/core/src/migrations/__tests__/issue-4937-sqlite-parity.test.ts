@@ -395,7 +395,7 @@ describe('#4937 SQLite change kinds apply by table rebuild', () => {
       return {
         master: (
           await db.query(
-            "SELECT type, name, sql FROM sqlite_master WHERE name NOT LIKE 'sqlite_%' AND name NOT LIKE '_smrt_%' ORDER BY name",
+            "SELECT type, name, sql FROM sqlite_master WHERE name NOT LIKE 'sqlite\\_%' ESCAPE '\\' AND name NOT LIKE '\\_smrt\\_%' ESCAPE '\\' ORDER BY name",
           )
         ).rows,
         rows: (await db.query('SELECT rowid, * FROM items ORDER BY rowid'))

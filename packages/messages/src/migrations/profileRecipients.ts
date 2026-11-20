@@ -300,7 +300,7 @@ export async function planNotificationProfileRecipients(
     // The core planner owns live-DDL preservation and rowid/index/trigger copying.
     const incoming = (
       await db.query(
-        "SELECT name, sql FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name<>?",
+        "SELECT name, sql FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite\\_%' ESCAPE '\\' AND name<>?",
         table,
       )
     ).rows;

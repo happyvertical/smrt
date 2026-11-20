@@ -2,11 +2,12 @@
 // asks this module (never a database) for its dialect, its worker-side handle
 // and the few operations that exist on one database only.
 
+import { randomBytes } from 'node:crypto';
 import { MessageChannel, type MessagePort } from 'node:worker_threads';
 import { EngineError } from '../errors.ts';
 import { serveBridge } from './pglite-bridge.ts';
 import { postgresDialect } from './postgres-dialect.ts';
-import { assertAppSchema, sidePrefix } from './schema-name.ts';
+import { assertAppSchema, assertSchemaName, sideName } from './schema-name.ts';
 import { sqliteDialect } from './sqlite-dialect.ts';
 import type {
   DatabaseConfig,
@@ -85,23 +86,6 @@ export function forWorker(config: DatabaseConfig): {
   };
 }
 
-/**
- * A method re-reads and writes in one transaction and re-runs if the data
- * moved in between. That check needs the one connection of an embedded
- * database; a server pool at default isolation would not hold it against
- * other connections, and SERIALIZABLE with retry is not built yet (#5183).
- */
-export function requireSingleWriter(
-  config: { kind: DatabaseKind },
-  what: string,
-) {
-  if (config.kind === 'postgres')
-    throw new EngineError(
-      `${what} is not supported on a PostgreSQL server yet (it needs serializable isolation)`,
-      'refused',
-    );
-}
-
 /** Refuse what is built on the SQLite file (the portable export has its own issue). */
 export function requireSqlite(config: { kind: DatabaseKind }, what: string) {
   if (config.kind !== 'sqlite')
@@ -155,8 +139,7 @@ export async function withSchemaAdmin<T>(
 
 /** A schema name for a copy of `base` (draft, rehearsal, aside, restore), new on each call. */
 export function sideSchemaName(base: string, tag: 'd' | 'r' | 'o' | 'n') {
-  const id = Math.random().toString(36).slice(2, 10).padEnd(8, '0');
-  return assertAppSchema(`${sidePrefix(base)}${tag}${id}`);
+  return assertSchemaName(sideName(base, tag, randomBytes(4).toString('hex')));
 }
 
 /** A column as `@happyvertical/sql` reports it. */

@@ -15,6 +15,7 @@ import {
   readdirSync,
   readFileSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -25,11 +26,17 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import type { DatabaseConfig, PGliteClient } from './db/index.ts';
 import { withSchemaAdmin } from './db/index.ts';
 import {
+  dropSchema,
   dumpSchema,
   forkSchema,
   restoreDump,
   swapSchemas,
 } from './db/postgres-copy.ts';
+import {
+  assertAppSchema,
+  sideName,
+  sideOwnerComment,
+} from './db/schema-name.ts';
 import {
   AppHost,
   ApprovalRequiredError,
@@ -777,7 +784,10 @@ describe.each(
 
   describe('start-up after a publish was interrupted', () => {
     /** Live app with data, then the state a crash right after the swap leaves: the new data live, the old one aside, a journal. */
-    const crashedAfterSwap = async (label: string) => {
+    const crashedAfterSwap = async (
+      label: string,
+      where: 'swapped' | 'swap-back-done' | 'aside-dropped' = 'swapped',
+    ) => {
       const schema = await newSchema(label);
       const dir = tmp();
       const store = new MemoryVersionStore();
@@ -793,15 +803,31 @@ describe.each(
       await first.create('Chore', { title: 'old data' });
       const version = first.version;
       await first.close();
-      const staging = `${schema}__rstage123`;
-      const aside = `${schema}__oaside123`;
+      const staging = sideName(schema, 'r', 'stage123');
+      const aside = sideName(schema, 'o', 'aside123');
       schemas.push(staging, aside);
       await withSchemaAdmin(config(schema), async (db) => {
-        await forkSchema(db, schema, staging);
+        await forkSchema(db, schema, staging, schema);
         await db.transaction((tx: any) =>
           tx.query(`UPDATE "${staging}".u_chores SET title = 'new data'`),
         );
-        await swapSchemas(db, { live: schema, next: staging, aside });
+        await swapSchemas(db, {
+          live: schema,
+          next: staging,
+          aside,
+          owner: schema,
+        });
+        // Where the process died: right after the swap, or part-way through
+        // the recovery of it (swap-back done; or the old data already gone).
+        if (where === 'swap-back-done')
+          await swapSchemas(db, {
+            live: schema,
+            next: aside,
+            aside: staging,
+            owner: schema,
+          });
+        if (where === 'aside-dropped')
+          await dropSchema(db, aside, 5000, schema);
       });
       writeJournal(dir, {
         format: 1,
@@ -814,24 +840,9 @@ describe.each(
       });
       return { schema, dir, store, version, aside, staging };
     };
-
-    it('rolls back: the store never reached the new version, so the old schema returns', async () => {
-      const c = await crashedAfterSwap('crash_back');
-      const host = await AppHost.open(c.dir, {
-        store: c.store,
-        database: config(c.schema),
-      });
-      hosts.push(host);
-      expect(host.recovery).toBe('rolled-back');
-      expect((await host.list('Chore')).map((r) => r.title)).toEqual([
-        'old data',
-      ]);
-      expect(await sideSchemas(c.schema)).toEqual([]);
-      expect(existsSync(join(c.dir, JOURNAL_FILE))).toBe(false);
-    });
-
-    it('rolls forward: the store reached the new version, so the old data is removed', async () => {
-      const c = await crashedAfterSwap('crash_fwd');
+    const publishedInStore = async (
+      c: Awaited<ReturnType<typeof crashedAfterSwap>>,
+    ) => {
       await c.store.append({
         version: c.version + 1,
         parent: c.version,
@@ -842,23 +853,101 @@ describe.each(
         createdAt: new Date().toISOString(),
       });
       await c.store.setCurrent(c.version + 1);
+    };
+    const reopen = async (c: Awaited<ReturnType<typeof crashedAfterSwap>>) => {
       const host = await AppHost.open(c.dir, {
         store: c.store,
         database: config(c.schema),
       });
       hosts.push(host);
-      expect(host.recovery).toBe('rolled-forward');
+      return host;
+    };
+    /** One consistent state: the version the store says, and the data that version had. */
+    const consistent = async (
+      host: AppHost,
+      c: Awaited<ReturnType<typeof crashedAfterSwap>>,
+      newer: boolean,
+    ) => {
+      expect(host.version).toBe(c.version + (newer ? 1 : 0));
+      expect(await c.store.current()).toBe(host.version);
       expect((await host.list('Chore')).map((r) => r.title)).toEqual([
-        'new data',
+        newer ? 'new data' : 'old data',
       ]);
       expect(await sideSchemas(c.schema)).toEqual([]);
+      expect(existsSync(join(c.dir, JOURNAL_FILE))).toBe(false);
+      expect(await tablesIn(c.schema)).toContain('u_chores');
+    };
+
+    it('window (i): died after the swap, before the store write: the old version and old schema come back', async () => {
+      const c = await crashedAfterSwap('crash_back');
+      const host = await reopen(c);
+      expect(host.recovery).toBe('rolled-back');
+      await consistent(host, c, false);
+    });
+
+    it('window (ii): died after the store write, before the journal was cleared: the new version stays, the old data goes', async () => {
+      const c = await crashedAfterSwap('crash_fwd');
+      await publishedInStore(c);
+      const host = await reopen(c);
+      expect(host.recovery).toBe('rolled-forward');
+      await consistent(host, c, true);
+    });
+
+    it('window (iii): died during the swap-back: the recovery finishes it, and a second recovery changes nothing', async () => {
+      const c = await crashedAfterSwap('crash_swapback', 'swap-back-done');
+      const first = await reopen(c);
+      await consistent(first, c, false);
+      // The recovery itself was interrupted before it cleared the journal:
+      // run it again over the same state.
+      await first.close();
+      hosts.splice(hosts.indexOf(first), 1);
+      writeJournal(c.dir, {
+        format: 1,
+        oldVersion: c.version,
+        finalVersion: c.version + 1,
+        rehearsal: join(c.dir, 'publish-rehearsal-x'),
+        snapshot: join(c.dir, 'snapshots', 'x'),
+        startedAt: new Date().toISOString(),
+        pg: { schema: c.schema, staging: c.staging, aside: c.aside },
+      });
+      await consistent(await reopen(c), c, false);
+    });
+
+    it('a roll-forward interrupted after the old data was dropped finishes, and runs again harmlessly', async () => {
+      const c = await crashedAfterSwap('crash_fwd2', 'aside-dropped');
+      await publishedInStore(c);
+      const first = await reopen(c);
+      await consistent(first, c, true);
+      await first.close();
+      hosts.splice(hosts.indexOf(first), 1);
+      writeJournal(c.dir, {
+        format: 1,
+        oldVersion: c.version,
+        finalVersion: c.version + 1,
+        rehearsal: join(c.dir, 'publish-rehearsal-x'),
+        snapshot: join(c.dir, 'snapshots', 'x'),
+        startedAt: new Date().toISOString(),
+        pg: { schema: c.schema, staging: c.staging, aside: c.aside },
+      });
+      await consistent(await reopen(c), c, true);
     });
 
     it("sweeps rehearsal, aside and restore schemas a crash left, and keeps the app's drafts", async () => {
       const live = await seeded('sweep');
       const { draft } = await fork(live);
-      const strays = ['r', 'o', 'n'].map((t) => `${live.schema}__${t}abcd1234`);
-      for (const n of strays) await admin.query(`CREATE SCHEMA "${n}"`);
+      const strays = (['r', 'o', 'n'] as const).map((t) =>
+        sideName(live.schema, t, 'abcd1234'),
+      );
+      for (const n of strays) {
+        await admin.query(`CREATE SCHEMA "${n}"`);
+        await admin.query(
+          `COMMENT ON SCHEMA "${n}" IS '${sideOwnerComment(live.schema)}'`,
+        );
+      }
+      // Right name, nobody's comment: could be anyone's, so it stays.
+      const unclaimed = sideName(live.schema, 'r', 'ffff0000');
+      await admin.query(`CREATE SCHEMA "${unclaimed}"`);
+      schemas.push(unclaimed);
       const dir = live.dir;
       await live.host.close();
       hosts.splice(hosts.indexOf(live.host), 1);
@@ -867,9 +956,9 @@ describe.each(
         database: config(live.schema),
       });
       hosts.push(again);
-      expect(await sideSchemas(live.schema)).toEqual([
-        String(draft.draft?.schema),
-      ]);
+      expect((await sideSchemas(live.schema)).sort()).toEqual(
+        [String(draft.draft?.schema), unclaimed].sort(),
+      );
     });
 
     it('a journal for another schema is refused, not guessed at', async () => {
@@ -961,32 +1050,26 @@ describe.each(
       expect(await titles(live.host)).toEqual(['Bins', 'Dishes', 'Garage']);
     });
 
-    it.skipIf(backend !== 'pglite')(
-      'a method run leaves a pre-write undo point that restores',
-      async () => {
-        const live = await seeded('method');
-        await run(live.host, {
-          type: 'addMethod',
-          model: 'Chore',
-          name: 'wipe',
-          method: {
-            description: 'rename every chore',
-            code: `for (const c of data.Chore) app.update('Chore', c.id, { title: 'wiped' }); return 'ok';`,
-          },
-        });
-        const out = await live.host.runMethod('Chore', 'wipe', null);
-        expect(out.applied).toBe(3);
-        const snapshot = String(out.snapshot);
-        expect(snapshot).toMatch(/-method-Chore\.wipe\.pgdump$/);
-        expect(await titles(live.host)).toEqual(['wiped', 'wiped', 'wiped']);
-        await live.host.restoreSnapshot(
-          snapshot.split('/').pop() as string,
-          OK,
-        );
-        expect(await titles(live.host)).toEqual(['Bins', 'Dishes', 'Garage']);
-        expect(live.host.notices).toEqual([]);
-      },
-    );
+    it('a method run leaves a pre-write undo point that restores', async () => {
+      const live = await seeded('method');
+      await run(live.host, {
+        type: 'addMethod',
+        model: 'Chore',
+        name: 'wipe',
+        method: {
+          description: 'rename every chore',
+          code: `for (const c of data.Chore) app.update('Chore', c.id, { title: 'wiped' }); return 'ok';`,
+        },
+      });
+      const out = await live.host.runMethod('Chore', 'wipe', null);
+      expect(out.applied).toBe(3);
+      const snapshot = String(out.snapshot);
+      expect(snapshot).toMatch(/-method-Chore\.wipe\.pgdump$/);
+      expect(await titles(live.host)).toEqual(['wiped', 'wiped', 'wiped']);
+      await live.host.restoreSnapshot(snapshot.split('/').pop() as string, OK);
+      expect(await titles(live.host)).toEqual(['Bins', 'Dishes', 'Garage']);
+      expect(live.host.notices).toEqual([]);
+    });
 
     it('snapshots of methods are kept to the newest twenty', async () => {
       const dir = tmp();
@@ -1119,6 +1202,289 @@ describe.each(
         await live.host.publishDraft(draft, { ...OK, expect: again.digest });
         expect(live.host.version).toBe(base + 1);
       },
+    );
+  });
+  // ---------- names and ownership of copies ----------
+
+  describe('a copy belongs to exactly one app', () => {
+    const longName = (len: number, tail: string) =>
+      `app_dr_len_${'x'.repeat(len - 11 - tail.length)}${tail}`;
+
+    it.each([
+      51, 52, 53, 62, 63,
+    ])('an app schema of %i characters forks, reopens, discards and publishes', async (len) => {
+      const schema = longName(len, Math.random().toString(36).slice(2, 7));
+      expect(schema).toHaveLength(len);
+      await admin.query(`CREATE SCHEMA "${schema}"`);
+      schemas.push(schema);
+      const live = await open(schema);
+      await run(live.host, {
+        type: 'defineModel',
+        name: 'Chore',
+        fields: { title: { type: 'text' } },
+      });
+      await live.host.create('Chore', { title: 'one' });
+      const { draft, store } = await fork(live);
+      const side = String(draft.draft?.schema);
+      expect(Buffer.byteLength(side)).toBeLessThanOrEqual(63);
+      // The draft's schema is one the engine itself accepts again.
+      const dir = draft.dataDir;
+      await draft.close();
+      hosts.splice(hosts.indexOf(draft), 1);
+      const again = await AppHost.open(dir, {
+        store,
+        autoApprove: true,
+        database: config(schema),
+      });
+      hosts.push(again);
+      await run(again, {
+        type: 'addField',
+        model: 'Chore',
+        field: 'done',
+        definition: { type: 'boolean' },
+      });
+      live.host.setFrozen(true);
+      const preview = await live.host.previewPublish(again);
+      await live.host.publishDraft(again, { ...OK, expect: preview.digest });
+      // Restart recovery on that name, then discard the draft.
+      await live.host.close();
+      hosts.splice(hosts.indexOf(live.host), 1);
+      const restarted = await AppHost.open(live.dir, {
+        store: live.store,
+        database: config(schema),
+      });
+      hosts.push(restarted);
+      expect(await titles(restarted)).toEqual(['one']);
+      await again.discard();
+      hosts.splice(hosts.indexOf(again), 1);
+      expect(
+        (
+          await rows(
+            `SELECT count(*)::int AS n FROM pg_namespace WHERE nspname LIKE '%\\_\\_d%' AND obj_description(oid, 'pg_namespace') = ?`,
+            [sideOwnerComment(schema)],
+          )
+        )[0].n,
+      ).toBe(0);
+    });
+
+    it("two apps sharing their first 52 characters get different copies and never drop each other's", async () => {
+      const prefix = `app_dr_share_${'y'.repeat(39)}`;
+      expect(prefix).toHaveLength(52);
+      const a = `${prefix}aaa`;
+      const b = `${prefix}bbb`;
+      for (const n of [a, b]) {
+        await admin.query(`CREATE SCHEMA "${n}"`);
+        schemas.push(n);
+      }
+      const A = await open(a, { swapLockTimeoutMs: 2000 });
+      const B = await open(b, { swapLockTimeoutMs: 2000 });
+      for (const h of [A, B]) {
+        await run(h.host, {
+          type: 'defineModel',
+          name: 'Chore',
+          fields: { title: { type: 'text' } },
+        });
+        await h.host.create('Chore', { title: 'x' });
+      }
+      // Fork both at once.
+      const [fa, fb] = await Promise.all([
+        fork(A),
+        (async () => {
+          const store = new MemoryVersionStore();
+          const draft = await B.host.forkDraft(draftDirOf(B.dir), { store });
+          hosts.push(draft);
+          return { draft, store };
+        })(),
+      ]);
+      expect(fa.draft.draft?.schema).not.toBe(fb.draft.draft?.schema);
+      expect(sideName(a, 'd', 'aaaaaaaa')).not.toBe(
+        sideName(b, 'd', 'aaaaaaaa'),
+      );
+      for (const [h, f] of [
+        [A, fa],
+        [B, fb],
+      ] as const)
+        await run(f.draft, {
+          type: 'addField',
+          model: 'Chore',
+          field: 'done',
+          definition: { type: 'boolean' },
+        });
+      A.host.setFrozen(true);
+      B.host.setFrozen(true);
+      const [pa, pb] = await Promise.all([
+        A.host.previewPublish(fa.draft),
+        B.host.previewPublish(fb.draft),
+      ]);
+      // A publishes while B's publish fails and rolls back, at the same time.
+      const [ra, rb] = await Promise.allSettled([
+        A.host.publishDraft(fa.draft, { ...OK, expect: pa.digest }),
+        B.host.publishDraft(fb.draft, {
+          ...OK,
+          expect: pb.digest,
+          onStage: (st) => {
+            if (st === 'swapped') throw new Error('injected');
+          },
+        }),
+      ]);
+      expect(ra.status).toBe('fulfilled');
+      expect(rb.status).toBe('rejected');
+      const cols = async (schema: string) =>
+        (
+          await rows(
+            `SELECT column_name FROM information_schema.columns WHERE table_schema = ? AND table_name = 'u_chores'`,
+            [schema],
+          )
+        ).map((r) => r.column_name);
+      expect(await cols(a)).toContain('done');
+      expect(await cols(b)).not.toContain('done');
+      expect(await titles(B.host)).toEqual(['x']);
+      // Each still has exactly its own draft, and nothing else.
+      const owned = async (base: string) =>
+        (
+          await rows(
+            `SELECT nspname FROM pg_namespace WHERE obj_description(oid, 'pg_namespace') = ? ORDER BY 1`,
+            [sideOwnerComment(base)],
+          )
+        ).map((r) => r.nspname);
+      expect(await owned(a)).toEqual([String(fa.draft.draft?.schema)]);
+      expect(await owned(b)).toEqual([String(fb.draft.draft?.schema)]);
+      // A's start-up sweep, with a look-alike of A's name that B owns, leaves both.
+      const lookalike = sideName(a, 'r', 'cafe0000');
+      await admin.query(`CREATE SCHEMA "${lookalike}"`);
+      await admin.query(
+        `COMMENT ON SCHEMA "${lookalike}" IS '${sideOwnerComment(b)}'`,
+      );
+      schemas.push(lookalike);
+      await A.host.close();
+      hosts.splice(hosts.indexOf(A.host), 1);
+      hosts.push(
+        await AppHost.open(A.dir, { store: A.store, database: config(a) }),
+      );
+      expect(await owned(b)).toEqual(
+        [lookalike, String(fb.draft.draft?.schema)].sort(),
+      );
+      expect(await owned(a)).toEqual([String(fa.draft.draft?.schema)]);
+    });
+
+    it("refuses an app schema named like a copy, and a drop of a copy that is not the caller's", async () => {
+      const looks = sideName('some_app', 'r', 'abcd1234');
+      expect(() => assertAppSchema(looks)).toThrow(/looks like a draft/);
+      await expect(
+        AppHost.open(tmp(), {
+          store: new MemoryVersionStore(),
+          database: config(looks),
+        }),
+      ).rejects.toThrow(/looks like/);
+      const other = await newSchema('own_other');
+      const mine = await newSchema('own_mine');
+      const planted = sideName(mine, 'r', 'abcd1234');
+      await admin.query(`CREATE SCHEMA "${planted}"`);
+      await admin.query(
+        `COMMENT ON SCHEMA "${planted}" IS '${sideOwnerComment(other)}'`,
+      );
+      schemas.push(planted);
+      await expect(
+        withSchemaAdmin(config(mine), (db) =>
+          dropSchema(db, planted, 1000, mine),
+        ),
+      ).rejects.toThrow(/not a copy made for/);
+      expect(
+        await rows(`SELECT 1 FROM pg_namespace WHERE nspname = ?`, [planted]),
+      ).toHaveLength(1);
+    });
+  });
+
+  // ---------- privileges are the source's, exactly ----------
+
+  describe('a copy carries exactly the source privileges', () => {
+    /** Effective ACL of everything in a schema, by object, as text (owner and grantor included). */
+    const privileges = async (schema: string) => {
+      const acl = (kind: string, owner: string, acl: string) =>
+        `coalesce((SELECT string_agg(CASE WHEN x.grantee = 0 THEN 'PUBLIC' ELSE pg_get_userbyid(x.grantee) END || ':' || x.privilege_type || ':' || x.is_grantable, ',' ORDER BY x.grantee, x.privilege_type) FROM aclexplode(coalesce(${acl}, acldefault('${kind}', ${owner}))) x), '')`;
+      return rows(
+        `SELECT 'function' AS k, p.proname || '(' || pg_get_function_identity_arguments(p.oid) || ')' AS n, pg_get_userbyid(p.proowner) AS o, ${acl('f', 'p.proowner', 'p.proacl')} AS a FROM pg_proc p WHERE p.pronamespace = to_regnamespace(?1)
+         UNION ALL SELECT 'table', c.relname, pg_get_userbyid(c.relowner), ${acl('r', 'c.relowner', 'c.relacl')} FROM pg_class c WHERE c.relnamespace = to_regnamespace(?1) AND c.relkind = 'r'
+         UNION ALL SELECT 'sequence', c.relname, pg_get_userbyid(c.relowner), ${acl('s', 'c.relowner', 'c.relacl')} FROM pg_class c WHERE c.relnamespace = to_regnamespace(?1) AND c.relkind = 'S'
+         UNION ALL SELECT 'schema', 'self', pg_get_userbyid(n.nspowner), ${acl('n', 'n.nspowner', 'n.nspacl')} FROM pg_namespace n WHERE n.oid = to_regnamespace(?1)
+         UNION ALL SELECT 'default', d.defaclobjtype::text, pg_get_userbyid(d.defaclrole), coalesce(d.defaclacl::text, '') FROM pg_default_acl d WHERE d.defaclnamespace = to_regnamespace(?1)
+         ORDER BY 1, 2`.replace(/\?1/g, '?'),
+        [schema, schema, schema, schema, schema],
+      );
+    };
+    const fixture = async () => {
+      const src = await newSchema('priv');
+      const role = `smrt_p_${Math.random().toString(36).slice(2, 8)}`;
+      roles.push(role);
+      await superuser.query(`CREATE ROLE "${role}" NOLOGIN`);
+      const me = (await rows(`SELECT current_user AS u`))[0].u as string;
+      await superuser.query(`GRANT "${role}" TO "${me}"`);
+      for (const q of [
+        // Default privileges first, so objects created next pick them up.
+        `ALTER DEFAULT PRIVILEGES FOR ROLE "${me}" IN SCHEMA "${src}" GRANT SELECT ON TABLES TO "${role}"`,
+        `ALTER DEFAULT PRIVILEGES FOR ROLE "${me}" IN SCHEMA "${src}" GRANT USAGE ON SEQUENCES TO PUBLIC`,
+        `CREATE TABLE "${src}".t (id serial PRIMARY KEY, v text)`,
+        `CREATE TABLE "${src}".open_t (id int)`,
+        `CREATE FUNCTION "${src}".secret() RETURNS int LANGUAGE sql AS 'SELECT 1'`,
+        `REVOKE ALL ON FUNCTION "${src}".secret() FROM PUBLIC`,
+        `CREATE FUNCTION "${src}".shared(a int) RETURNS int LANGUAGE sql AS 'SELECT a'`,
+        `GRANT EXECUTE ON FUNCTION "${src}".shared(int) TO "${role}"`,
+        `CREATE FUNCTION "${src}".plain() RETURNS int LANGUAGE sql AS 'SELECT 3'`,
+        `GRANT INSERT, UPDATE ON "${src}".t TO "${role}" WITH GRANT OPTION`,
+        `GRANT SELECT ON "${src}".open_t TO PUBLIC`,
+        `REVOKE ALL ON "${src}".t_id_seq FROM PUBLIC`,
+        `GRANT USAGE ON SCHEMA "${src}" TO PUBLIC`,
+        `GRANT CREATE ON SCHEMA "${src}" TO "${role}"`,
+        `ALTER TABLE "${src}".open_t OWNER TO "${role}"`,
+      ])
+        await admin.query(q);
+      return { src, role };
+    };
+    const verify = async (src: string, dst: string, role: string) => {
+      const a = await privileges(src);
+      const b = await privileges(dst);
+      expect(b).toEqual(a);
+      // Spot checks: the revoked function is not executable by PUBLIC in the copy.
+      const secret = b.find((r) => r.n === 'secret()');
+      expect(secret?.a).not.toContain('PUBLIC');
+      expect(
+        b.find((r) => r.k === 'function' && r.n === 'shared(a integer)')?.a,
+      ).toContain(`${role}:EXECUTE`);
+      expect(b.find((r) => r.k === 'default')).toBeTruthy();
+      expect(b.find((r) => r.k === 'sequence')?.a).not.toContain('PUBLIC');
+    };
+
+    it('a fork', async () => {
+      const { src, role } = await fixture();
+      const dst = sideName(src, 'r', 'cafe0001');
+      schemas.push(dst);
+      await withSchemaAdmin(config(src), (db) => forkSchema(db, src, dst, src));
+      await verify(src, dst, role);
+    });
+
+    it('a dump restored into a new schema', async () => {
+      const { src, role } = await fixture();
+      const file = join(tmp(), 'p.pgdump');
+      await withSchemaAdmin(config(src), (db) => dumpSchema(db, src, file));
+      expect(statSync(file).mode & 0o777).toBe(0o600);
+      const dst = sideName(src, 'n', 'cafe0002');
+      schemas.push(dst);
+      await withSchemaAdmin(config(src), (db) =>
+        restoreDump(db, file, dst, src),
+      );
+      await verify(src, dst, role);
+    });
+  });
+
+  it('a snapshot that is a SQLite database file is refused, not parsed', async () => {
+    const live = await seeded('dbfile');
+    const name = `${Date.now()}-0-method-x.db`;
+    writeFileSync(join(live.dir, 'snapshots', name), 'SQLite format 3');
+    await expect(live.host.restoreSnapshot(name, OK)).rejects.toBeInstanceOf(
+      EngineError,
+    );
+    await expect(live.host.restoreSnapshot(name, OK)).rejects.toThrow(
+      /SQLite database file/,
     );
   });
 });

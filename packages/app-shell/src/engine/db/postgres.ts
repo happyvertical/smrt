@@ -12,7 +12,7 @@
 import { getDatabase } from '@happyvertical/sql';
 import { EngineError } from '../errors.ts';
 import { createBridgeClient } from './pglite-bridge.ts';
-import { assertAppSchema } from './schema-name.ts';
+import { assertSchemaName } from './schema-name.ts';
 import type { DatabaseConfig, WorkerDatabaseConfig } from './types.ts';
 
 type Handle = any;
@@ -48,7 +48,7 @@ const STATEMENTS = [
  * sessions, schema sync) is absent or throws, never an unscoped path.
  */
 export function scopeDatabase<T extends object>(db: T, schema: string): T {
-  const path = `"${assertAppSchema(schema)}"`;
+  const path = `"${assertSchemaName(schema)}"`;
   const raw = db as Handle;
   const apply = (h: Handle) =>
     h.query(`SELECT set_config('search_path', ?, true)`, [path]);
@@ -163,7 +163,7 @@ export const SCOPED_MEMBERS = new Set<string>([
 export async function openPostgres(
   config: Extract<WorkerDatabaseConfig, { kind: 'postgres' | 'pglite' }>,
 ) {
-  const schema = assertAppSchema(config.schema);
+  const schema = assertSchemaName(config.schema);
   const raw: Handle =
     config.kind === 'postgres'
       ? await getDatabase({ type: 'postgres', ...config.connection } as any)

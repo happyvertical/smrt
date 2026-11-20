@@ -18,9 +18,13 @@ import type { MigrationDefinition } from '../../schema/types.js';
 import {
   buildConcurrentIndexPlan,
   extractCreatedIndexName,
+  extractCreatedIndexTable,
   parsePostgresTimeoutMs,
   planPostgresStatements,
 } from '../tracker.js';
+
+/** The marker on the two statements that close a generated unique-index swap. */
+const SWAP = '/* smrt:unique-index-swap */ ';
 
 function definition(id: string, up: string[]): MigrationDefinition {
   return { id, description: id, version: '1.0.0', up, down: [] };
@@ -240,6 +244,39 @@ describe('buildConcurrentIndexPlan', () => {
   });
 });
 
+describe('extractCreatedIndexTable', () => {
+  // The lexical cases are in postgres-create-index.test.ts; this is the
+  // reference the tracker hands to to_regclass().
+  it.each([
+    ['CREATE INDEX idx ON jobs (status)', '"jobs"'],
+    [
+      'CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS "idx" ON app."Jobs" ("status")',
+      '"app"."Jobs"',
+    ],
+    ['CREATE INDEX idx ON App . /* c */ Jobs (status)', '"app"."jobs"'],
+    [
+      'CREATE INDEX idx ON appusing /* comment */ . jobs (status)',
+      '"appusing"."jobs"',
+    ],
+    [
+      'CREATE INDEX idx ON -- note\r app.jobs (\n lower(status))',
+      '"app"."jobs"',
+    ],
+    ['CREATE INDEX ON jobs (status)', '"jobs"'],
+  ])('reads the table of %s', (sql, expected) => {
+    expect(extractCreatedIndexTable(sql)).toBe(expected);
+  });
+
+  it.each([
+    'CREATE INDEX idx ON db.app.jobs (status)',
+    'CREATE INDEX idx ON app /* unterminated (status)',
+    'DROP INDEX CONCURRENTLY "idx"',
+    'ALTER TABLE t ADD COLUMN a TEXT',
+  ])('returns null for %s', (sql) => {
+    expect(extractCreatedIndexTable(sql)).toBeNull();
+  });
+});
+
 describe('extractCreatedIndexName', () => {
   it.each([
     ['CREATE INDEX idx_plain ON t (a)', 'idx_plain'],
@@ -310,8 +347,8 @@ describe('--postgres-safe unique recreate is build-then-swap', () => {
     expect(regular).toEqual([]);
     expect(concurrent).toEqual([
       'CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS "t_slug_context_idx_smrt_swap" ON "t" ("tenant_id", "slug", "context")',
-      'DROP INDEX CONCURRENTLY IF EXISTS "t_slug_context_idx"',
-      'ALTER INDEX IF EXISTS "t_slug_context_idx_smrt_swap" RENAME TO "t_slug_context_idx"',
+      `${SWAP}DROP INDEX CONCURRENTLY IF EXISTS "t_slug_context_idx"`,
+      `${SWAP}ALTER INDEX IF EXISTS "t_slug_context_idx_smrt_swap" RENAME TO "t_slug_context_idx"`,
       'CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS "t_slug_context_idx" ON "t" ("tenant_id", "slug", "context")',
     ]);
   });
@@ -330,8 +367,8 @@ describe('--postgres-safe unique recreate is build-then-swap', () => {
     );
     expect(plan.get('drop_index_t_slug_context_idx')?.concurrent).toEqual([
       'CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS "t_slug_context_idx_smrt_swap" ON "t" ("slug", "context")',
-      'DROP INDEX CONCURRENTLY IF EXISTS "t_slug_context_idx"',
-      'ALTER INDEX IF EXISTS "t_slug_context_idx_smrt_swap" RENAME TO "t_slug_context_idx"',
+      `${SWAP}DROP INDEX CONCURRENTLY IF EXISTS "t_slug_context_idx"`,
+      `${SWAP}ALTER INDEX IF EXISTS "t_slug_context_idx_smrt_swap" RENAME TO "t_slug_context_idx"`,
     ]);
     expect(plan.get('add_index_t_slug_context_idx')?.concurrent).toEqual([
       'CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS "t_slug_context_idx" ON "t" ("slug", "context")',
@@ -367,6 +404,64 @@ describe('--postgres-safe unique recreate is build-then-swap', () => {
   });
 });
 
+describe('index statements are routed and paired on lexer tokens', () => {
+  it('routes a create with a comment inside its keywords to the concurrent phase', () => {
+    const { concurrent, regular } = planPostgresStatements(
+      [
+        'CREATE /* rollout */ UNIQUE INDEX IF NOT EXISTS "t_a_idx" ON "t" ("a")',
+      ],
+      true,
+    );
+    expect(regular).toEqual([]);
+    expect(concurrent).toEqual([
+      'CREATE /* rollout */ UNIQUE INDEX CONCURRENTLY IF NOT EXISTS "t_a_idx" ON "t" ("a")',
+    ]);
+  });
+
+  it('keeps an already-concurrent create with a comment out of the transaction in atomic mode too', () => {
+    expect(
+      planPostgresStatements(
+        ['CREATE /* c */ INDEX CONCURRENTLY "t_a_idx" ON "t" ("a")'],
+        false,
+      ).concurrent,
+    ).toEqual(['CREATE /* c */ INDEX CONCURRENTLY "t_a_idx" ON "t" ("a")']);
+  });
+
+  it('pairs a drop with a create that has a leading comment', () => {
+    expect(
+      planPostgresStatements(
+        [
+          'DROP INDEX IF EXISTS "t_a_idx"',
+          '/* rollout */ CREATE UNIQUE INDEX IF NOT EXISTS "t_a_idx" ON "t" ("a")',
+        ],
+        true,
+      ).concurrent,
+    ).toEqual([
+      '/* rollout */ CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS "t_a_idx_smrt_swap" ON "t" ("a")',
+      `${SWAP}DROP INDEX CONCURRENTLY IF EXISTS "t_a_idx"`,
+      `${SWAP}ALTER INDEX IF EXISTS "t_a_idx_smrt_swap" RENAME TO "t_a_idx"`,
+      '/* rollout */ CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS "t_a_idx" ON "t" ("a")',
+    ]);
+  });
+
+  it('folds a bare mixed-case name before pairing and quoting the swap', () => {
+    expect(
+      planPostgresStatements(
+        [
+          'DROP INDEX IF EXISTS Jobs_Idx',
+          'CREATE UNIQUE INDEX IF NOT EXISTS Jobs_Idx ON jobs (a)',
+        ],
+        true,
+      ).concurrent,
+    ).toEqual([
+      'CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS "jobs_idx_smrt_swap" ON jobs (a)',
+      `${SWAP}DROP INDEX CONCURRENTLY IF EXISTS "jobs_idx"`,
+      `${SWAP}ALTER INDEX IF EXISTS "jobs_idx_smrt_swap" RENAME TO "jobs_idx"`,
+      'CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS Jobs_Idx ON jobs (a)',
+    ]);
+  });
+});
+
 describe('--postgres-safe foreign-key validation leaves the transaction', () => {
   it('runs VALIDATE CONSTRAINT and the swap after it outside the batch, in order', () => {
     const { concurrent, regular } = planPostgresStatements(
@@ -395,5 +490,87 @@ describe('--postgres-safe foreign-key validation leaves the transaction', () => 
         false,
       ).regular,
     ).toEqual(['ALTER TABLE "c" VALIDATE CONSTRAINT "fk"']);
+  });
+});
+
+describe('--postgres-safe refuses index DDL it cannot check, before anything runs', () => {
+  it.each([
+    'CREATE INDEX U&"jobs_idx" ON jobs (status)',
+    'CREATE UNIQUE INDEX U&"jobs_idx" ON jobs (status)',
+    'DROP INDEX U&"jobs_idx"',
+  ])('refuses %s instead of routing it into the transaction', (sql) => {
+    expect(() => planPostgresStatements([sql], true)).toThrow(
+      /could not be read with certainty.*refused under --postgres-safe before anything ran/,
+    );
+  });
+
+  it('refuses an already-concurrent statement it cannot read in atomic mode too', () => {
+    expect(() =>
+      planPostgresStatements(['DROP INDEX CONCURRENTLY U&"jobs_idx"'], false),
+    ).toThrow(/could not be read with certainty/);
+  });
+
+  it('refuses an unreadable index statement deferred after a foreign-key validation', () => {
+    expect(() =>
+      planPostgresStatements(
+        [
+          'ALTER TABLE "c" VALIDATE CONSTRAINT "fk_smrt_new"',
+          'CREATE INDEX U&"c_p_idx" ON "c" ("p")',
+        ],
+        true,
+      ),
+    ).toThrow(/could not be read with certainty/);
+  });
+
+  it('keeps a plain unreadable index statement in the transaction when nothing is rewritten', () => {
+    expect(
+      planPostgresStatements(['CREATE INDEX U&"jobs_idx" ON jobs (a)'], false),
+    ).toEqual({
+      concurrent: [],
+      regular: ['CREATE INDEX U&"jobs_idx" ON jobs (a)'],
+    });
+  });
+
+  it('refuses the migration when a create after a drop of its name cannot be read, so the drop never runs', () => {
+    expect(() =>
+      planPostgresStatements(
+        [
+          'DROP INDEX "jobs_status_idx"',
+          'CREATE UNIQUE INDEX IF NOT EXISTS "jobs_status_idx" ON U&"jobs" ("status")',
+        ],
+        true,
+      ),
+    ).toThrow(/could not be read with certainty/);
+  });
+
+  it("refuses the batch when the unreadable create is in the differ's second definition", () => {
+    expect(() =>
+      buildConcurrentIndexPlan(
+        [
+          definition('drop_index_jobs_status_idx', [
+            'DROP INDEX IF EXISTS "jobs_status_idx"',
+          ]),
+          definition('add_index_jobs_status_idx', [
+            'CREATE UNIQUE INDEX IF NOT EXISTS "jobs_status_idx" ON U&"jobs" ("status")',
+          ]),
+        ],
+        true,
+      ),
+    ).toThrow(/could not be read with certainty/);
+  });
+
+  it.each([
+    ['CREATE INDEX ON jobs (status)', true],
+    ['CREATE UNIQUE INDEX CONCURRENTLY ON jobs (status)', false],
+  ])('refuses the unnamed concurrent index %s', (sql, rewrite) => {
+    expect(() => planPostgresStatements([sql], rewrite)).toThrow(
+      /names no index.*name the index/,
+    );
+  });
+
+  it('keeps an unnamed index in the transaction in atomic mode', () => {
+    expect(
+      planPostgresStatements(['CREATE INDEX ON jobs (status)'], false).regular,
+    ).toEqual(['CREATE INDEX ON jobs (status)']);
   });
 });

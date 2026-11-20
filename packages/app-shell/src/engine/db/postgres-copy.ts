@@ -25,7 +25,11 @@ import {
 } from 'node:fs';
 import { dirname } from 'node:path';
 import { EngineError } from '../errors.ts';
-import { assertAppSchema, isSideSchema, sidePrefix } from './schema-name.ts';
+import {
+  assertSchemaName,
+  isSideSchema,
+  sideOwnerComment,
+} from './schema-name.ts';
 
 /** A transaction (or a connection) that runs one statement at a time. */
 export interface SqlRunner {
@@ -57,8 +61,24 @@ interface Acl {
   priv: string;
   grant: boolean;
 }
-const aclSql = (acls: Acl[] | null, on: string, columns?: string): string[] => {
+/**
+ * The statements that give a new object exactly the source's privileges. A
+ * source with an explicit ACL (`has`) is reset first: a new function is
+ * executable by PUBLIC until revoked, so granting only what the source lists
+ * would widen a function whose PUBLIC execute was revoked. A source with no
+ * explicit ACL keeps the new object's default, which is the source's too.
+ */
+const aclSql = (
+  acls: Acl[] | null,
+  on: string,
+  columns?: string,
+  has = true,
+): string[] => {
   const out: string[] = [];
+  if (has && acls !== null)
+    out.push(
+      `REVOKE ALL${columns ? ` (${columns})` : ''} ON ${on} FROM PUBLIC`,
+    );
   for (const a of acls ?? [])
     out.push(
       `GRANT ${a.priv}${columns ? ` (${columns})` : ''} ON ${on} TO ${
@@ -101,7 +121,7 @@ export async function describeSchema(
     await tx.query(
       `SELECT pg_get_userbyid(nspowner) AS owner, current_user AS me, nspacl IS NOT NULL AS hasacl,
         (SELECT coalesce(json_agg(json_build_object('grantee', CASE WHEN x.grantee = 0 THEN 'PUBLIC' ELSE pg_get_userbyid(x.grantee) END, 'priv', x.privilege_type, 'grant', x.is_grantable)), '[]'::json)
-           FROM aclexplode(nspacl) x WHERE x.grantee <> nspowner) AS acl
+           FROM aclexplode(nspacl) x WHERE x.grantee <> nspowner) AS acl, nspacl IS NOT NULL AS has
        FROM pg_namespace WHERE nspname = ${S}`,
     ),
   )[0];
@@ -144,7 +164,7 @@ export async function describeSchema(
       `SELECT c.oid::int8::text AS oid, c.relname AS name, c.relkind AS kind, pg_get_userbyid(c.relowner) AS owner,
         obj_description(c.oid, 'pg_class') AS comment, c.relrowsecurity AS rls, c.relforcerowsecurity AS frls,
         (SELECT coalesce(json_agg(json_build_object('grantee', CASE WHEN x.grantee = 0 THEN 'PUBLIC' ELSE pg_get_userbyid(x.grantee) END, 'priv', x.privilege_type, 'grant', x.is_grantable)), '[]'::json)
-           FROM aclexplode(c.relacl) x WHERE x.grantee <> c.relowner) AS acl
+           FROM aclexplode(c.relacl) x WHERE x.grantee <> c.relowner) AS acl, c.relacl IS NOT NULL AS has
        FROM pg_class c WHERE c.relnamespace = ${ns} AND c.relkind IN ('r','S') ORDER BY c.relname`,
     ),
   );
@@ -176,7 +196,7 @@ export async function describeSchema(
         CASE WHEN a.attcollation <> 0 AND a.attcollation <> t.typcollation THEN cn.nspname END AS collns,
         col_description(c.oid, a.attnum) AS comment,
         (SELECT coalesce(json_agg(json_build_object('grantee', CASE WHEN x.grantee = 0 THEN 'PUBLIC' ELSE pg_get_userbyid(x.grantee) END, 'priv', x.privilege_type, 'grant', x.is_grantable)), '[]'::json)
-           FROM aclexplode(a.attacl) x WHERE x.grantee <> c.relowner) AS acl
+           FROM aclexplode(a.attacl) x WHERE x.grantee <> c.relowner) AS acl, a.attacl IS NOT NULL AS has
        FROM pg_class c JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum > 0 AND NOT a.attisdropped
        JOIN pg_type t ON t.oid = a.atttypid
        LEFT JOIN pg_attrdef d ON d.adrelid = c.oid AND d.adnum = a.attnum
@@ -193,7 +213,9 @@ export async function describeSchema(
   const setvals: string[] = [];
 
   before.push(`CREATE SCHEMA ${TARGET}`);
-  grants.push(...aclSql(asJson(found.acl), `SCHEMA ${TARGET}`));
+  grants.push(
+    ...aclSql(asJson(found.acl), `SCHEMA ${TARGET}`, undefined, found.has),
+  );
 
   // Sequences a column default or an owner refers to, before the tables.
   for (const s of sequences) {
@@ -249,17 +271,36 @@ export async function describeSchema(
           `COMMENT ON COLUMN ${TARGET}.${qi(t.name)}.${qi(c.name)} IS ${lit(c.comment)}`,
         );
       grants.push(
-        ...aclSql(asJson(c.acl), `TABLE ${TARGET}.${qi(t.name)}`, qi(c.name)),
+        ...aclSql(
+          asJson(c.acl),
+          `TABLE ${TARGET}.${qi(t.name)}`,
+          qi(c.name),
+          c.has,
+        ),
       );
     }
-    grants.push(...aclSql(asJson(t.acl), `TABLE ${TARGET}.${qi(t.name)}`));
+    grants.push(
+      ...aclSql(
+        asJson(t.acl),
+        `TABLE ${TARGET}.${qi(t.name)}`,
+        undefined,
+        t.has,
+      ),
+    );
     if (t.owner !== me)
       owners.push(
         `ALTER TABLE ${TARGET}.${qi(t.name)} OWNER TO ${qi(t.owner)}`,
       );
   }
   for (const s of relations.filter((r) => r.kind === 'S')) {
-    grants.push(...aclSql(asJson(s.acl), `SEQUENCE ${TARGET}.${qi(s.name)}`));
+    grants.push(
+      ...aclSql(
+        asJson(s.acl),
+        `SEQUENCE ${TARGET}.${qi(s.name)}`,
+        undefined,
+        s.has,
+      ),
+    );
     const meta = sequences.find((q) => q.name === s.name);
     // A sequence a column owns changes hands with its table.
     if (s.owner !== me && !meta?.dep)
@@ -309,7 +350,7 @@ export async function describeSchema(
       `SELECT pg_get_functiondef(p.oid) AS def, quote_ident(n.nspname) AS qns, p.proname AS name,
         pg_get_function_identity_arguments(p.oid) AS args, pg_get_userbyid(p.proowner) AS owner,
         (SELECT coalesce(json_agg(json_build_object('grantee', CASE WHEN x.grantee = 0 THEN 'PUBLIC' ELSE pg_get_userbyid(x.grantee) END, 'priv', x.privilege_type, 'grant', x.is_grantable)), '[]'::json)
-           FROM aclexplode(p.proacl) x WHERE x.grantee <> p.proowner) AS acl
+           FROM aclexplode(p.proacl) x WHERE x.grantee <> p.proowner) AS acl, p.proacl IS NOT NULL AS has
        FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
        WHERE p.pronamespace = ${ns} AND p.prokind = 'f' ORDER BY p.proname, p.oid`,
     ),
@@ -325,7 +366,9 @@ export async function describeSchema(
     after.push(
       `CREATE OR REPLACE FUNCTION ${TARGET}.${String(f.def).slice(head.length)}`,
     );
-    grants.push(...aclSql(asJson(f.acl), `FUNCTION ${signature}`));
+    grants.push(
+      ...aclSql(asJson(f.acl), `FUNCTION ${signature}`, undefined, f.has),
+    );
     if (f.owner !== me)
       owners.push(`ALTER FUNCTION ${signature} OWNER TO ${qi(f.owner)}`);
   }
@@ -371,14 +414,14 @@ export async function describeSchema(
       `SELECT pg_get_userbyid(d.defaclrole) AS role, d.defaclobjtype AS kind,
         (SELECT coalesce(json_agg(json_build_object('grantee', CASE WHEN x.grantee = 0 THEN 'PUBLIC' ELSE pg_get_userbyid(x.grantee) END, 'priv', x.privilege_type, 'grant', x.is_grantable)), '[]'::json)
            FROM aclexplode(d.defaclacl) x) AS acl
-       FROM pg_default_acl d WHERE d.defaclnamespace = ${ns} AND d.defaclobjtype IN ('r','S')`,
+       FROM pg_default_acl d WHERE d.defaclnamespace = ${ns} AND d.defaclobjtype IN ('r','S','f')`,
     ),
   );
   const defaultGrants: string[] = [];
   for (const d of defaults)
     for (const a of asJson<Acl[]>(d.acl))
       defaultGrants.push(
-        `ALTER DEFAULT PRIVILEGES FOR ROLE ${qi(d.role)} IN SCHEMA ${TARGET} GRANT ${a.priv} ON ${d.kind === 'S' ? 'SEQUENCES' : 'TABLES'} TO ${a.grantee === 'PUBLIC' ? 'PUBLIC' : qi(a.grantee)}${a.grant ? ' WITH GRANT OPTION' : ''}`,
+        `ALTER DEFAULT PRIVILEGES FOR ROLE ${qi(d.role)} IN SCHEMA ${TARGET} GRANT ${a.priv} ON ${d.kind === 'S' ? 'SEQUENCES' : d.kind === 'f' ? 'FUNCTIONS' : 'TABLES'} TO ${a.grantee === 'PUBLIC' ? 'PUBLIC' : qi(a.grantee)}${a.grant ? ' WITH GRANT OPTION' : ''}`,
       );
 
   if (found.owner !== me)
@@ -406,8 +449,34 @@ const columnList = (cols: Array<{ name: string }>) =>
  * fails the read instead for a role the policies would filter, and a role
  * that owns or bypasses them reads everything.
  */
-const readAllRows = (tx: SqlRunner) =>
-  tx.query(`SELECT set_config('row_security', 'off', true)`);
+const readAllRows = async (tx: SqlRunner) => {
+  await tx.query(`SELECT set_config('row_security', 'off', true)`);
+  // Values travel as text: read and written in one fixed format whatever the
+  // session's own settings are.
+  await tx.query(`SELECT set_config('datestyle', 'ISO, MDY', true)`);
+  await tx.query(`SELECT set_config('intervalstyle', 'postgres', true)`);
+  await tx.query(`SELECT set_config('bytea_output', 'hex', true)`);
+};
+
+/** Mark `schema` as a copy that belongs to the app whose FULL schema name is `owner`. */
+const claim = (tx: SqlRunner, schema: string, owner: string) =>
+  tx.query(
+    `COMMENT ON SCHEMA ${qi(schema)} IS ${lit(sideOwnerComment(owner))}`,
+  );
+
+/** Refuse unless `schema` is a copy that belongs to `owner` (its comment says so). */
+async function assertClaimed(tx: SqlRunner, schema: string, owner: string) {
+  const found = asRows(
+    await tx.query(
+      `SELECT obj_description(to_regnamespace(${lit(schema)}), 'pg_namespace') AS owner`,
+    ),
+  )[0];
+  if (found?.owner !== sideOwnerComment(owner))
+    throw new EngineError(
+      `${schema} is not a copy made for ${owner}; not touching it`,
+      'refused',
+    );
+}
 
 /** The side schemas of `base` (`sideSchemaName`'s), of the given tags. */
 export async function listSideSchemas(
@@ -418,13 +487,17 @@ export async function listSideSchemas(
   const found = await db.transaction(async (tx: SqlRunner) =>
     asRows(
       await tx.query(
-        `SELECT nspname FROM pg_namespace WHERE nspname LIKE ${lit(`${sidePrefix(base).replace(/[\\_%]/g, '\\$&')}%`)}`,
+        `SELECT nspname, obj_description(oid, 'pg_namespace') AS owner FROM pg_namespace WHERE nspname ~ '__[dron][a-z0-9]{16}$'`,
       ),
     ),
   );
   return found
-    .map((r) => String(r.nspname))
-    .filter((n) => isSideSchema(n, base, tags));
+    .filter(
+      (r) =>
+        isSideSchema(String(r.nspname), base, tags) &&
+        r.owner === sideOwnerComment(base),
+    )
+    .map((r) => String(r.nspname));
 }
 
 /** True when `schema` exists. */
@@ -447,9 +520,10 @@ export async function forkSchema(
   db: SqlDatabase,
   source: string,
   target: string,
+  owner?: string,
 ): Promise<void> {
-  assertAppSchema(source);
-  assertAppSchema(target);
+  assertSchemaName(source);
+  assertSchemaName(target);
   await db.transaction(async (tx: SqlRunner) => {
     if (await schemaExists(tx, target))
       throw new EngineError(`schema ${target} already exists`, 'refused');
@@ -464,6 +538,7 @@ export async function forkSchema(
       );
     }
     await run(tx, plan.after, target);
+    if (owner) await claim(tx, target, owner);
   });
 }
 
@@ -472,12 +547,15 @@ export async function dropSchema(
   db: SqlDatabase,
   schema: string,
   lockTimeoutMs = DEFAULT_LOCK_TIMEOUT_MS,
+  owner?: string,
 ) {
-  assertAppSchema(schema);
+  assertSchemaName(schema);
   await db.transaction(async (tx: SqlRunner) => {
     await tx.query(
       `SELECT set_config('lock_timeout', ${lit(`${Math.floor(lockTimeoutMs)}ms`)}, true)`,
     );
+    if (owner && (await schemaExists(tx, schema)))
+      await assertClaimed(tx, schema, owner);
     await tx.query(`DROP SCHEMA IF EXISTS ${qi(schema)} CASCADE`);
   });
 }
@@ -491,11 +569,11 @@ export async function dropSchema(
  */
 export async function swapSchemas(
   db: SqlDatabase,
-  names: { live: string; next: string; aside: string },
+  names: { live: string; next: string; aside: string; owner: string },
   lockTimeoutMs = DEFAULT_LOCK_TIMEOUT_MS,
 ) {
-  const { live, next, aside } = names;
-  for (const n of [live, next, aside]) assertAppSchema(n);
+  const { live, next, aside, owner } = names;
+  for (const n of [live, next, aside]) assertSchemaName(n);
   await db.transaction(async (tx: SqlRunner) => {
     await tx.query(
       `SELECT set_config('lock_timeout', ${lit(`${Math.floor(lockTimeoutMs)}ms`)}, true)`,
@@ -507,6 +585,7 @@ export async function swapSchemas(
       );
     if (await schemaExists(tx, aside))
       throw new EngineError(`schema ${aside} already exists`, 'refused');
+    await assertClaimed(tx, next, owner);
     for (const schema of [live, next]) {
       const tables = asRows(
         await tx.query(
@@ -520,6 +599,8 @@ export async function swapSchemas(
     }
     await tx.query(`ALTER SCHEMA ${qi(live)} RENAME TO ${qi(aside)}`);
     await tx.query(`ALTER SCHEMA ${qi(next)} RENAME TO ${qi(live)}`);
+    await claim(tx, aside, owner);
+    await tx.query(`COMMENT ON SCHEMA ${qi(live)} IS NULL`);
   });
 }
 
@@ -559,9 +640,9 @@ export async function dumpSchema(
   source: string,
   file: string,
 ): Promise<{ version: number | null }> {
-  assertAppSchema(source);
+  assertSchemaName(source);
   mkdirSync(dirname(file), { recursive: true });
-  const fd = openSync(file, 'wx');
+  const fd = openSync(file, 'wx', 0o600);
   let ok = false;
   const put = (line: DumpLine) => writeSync(fd, `${JSON.stringify(line)}\n`);
   try {
@@ -683,12 +764,14 @@ export async function restoreDump(
   db: SqlDatabase,
   file: string,
   target: string,
+  owner?: string,
 ): Promise<DumpHeader> {
-  assertAppSchema(target);
+  assertSchemaName(target);
   const header = readDumpHeader(file);
   await db.transaction(async (tx: SqlRunner) => {
     if (await schemaExists(tx, target))
       throw new EngineError(`schema ${target} already exists`, 'refused');
+    await readAllRows(tx);
     await tx.query(
       `SELECT set_config('search_path', ${lit(qi(target))}, true)`,
     );
@@ -734,6 +817,7 @@ export async function restoreDump(
         }
       }
     }
+    if (owner) await claim(tx, target, owner);
   });
   return header;
 }

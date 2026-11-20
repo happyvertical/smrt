@@ -579,6 +579,19 @@ How each engine gets there:
   lost the change while the migrate succeeded (rv4,
   `issue-4937-overlapping-rebuilds.test.ts`). Rebuilds that cannot be combined
   stop the whole migration before anything runs.
+- **Combined DuckDB rebuilds read every table once.** When two rebuilds of
+  one migration read the same table and it changed between the readings (a
+  column added and filled by another connection), combining them would build
+  the earlier definition and check it against the later catalog; planning
+  stops with `TableChangedSincePlanError` instead, and a rerun plans from one
+  reading.
+- **The DuckDB rebuild checks its tables before it starts.** Its first
+  statements (`planGuardStatements`) compare the live `duckdb_tables()` and
+  `duckdb_indexes()` text of every table of the group with the text read when
+  the rebuild was planned, and raise on a difference, for the reason given
+  under "A SQLite type change is a table rebuild": a column or index added
+  after planning is not in the plan and would be dropped with the table. The
+  tracker reports it as `TableChangedSincePlanError`.
 - **The DuckDB rebuild checks itself** before its staging tables are dropped:
   for every table of the group it compares the columns, indexes, foreign keys
   and row count with what the plan meant to build, and fails the transaction
@@ -932,7 +945,48 @@ statement list SQLite's own docs prescribe: stage a new table under
 "requires table recreation" placeholder, so `db:migrate` applies it inside the
 normal atomic batch instead of exiting 1 forever.
 
-Four properties of that module are load-bearing; keep them if you touch it:
+These properties of that module are load-bearing; keep them if you touch it:
+
+- **The plan starts by checking that the table is still the one it was planned
+  from.** The staging DDL, the copy list and the replayed indexes and triggers
+  are all read at diff time, and SQLite holds nothing between planning and
+  applying. A column, index or trigger another connection adds in that window
+  is in none of them: it was not copied and went with the dropped table, with
+  everything written to it, while the migrate reported success. So the first
+  statements of every plan (`sqliteUnchangedTableGuardStatements`) compare the
+  live `sqlite_master` text of the table and of each of its indexes and
+  triggers with what was planned, inside the rebuild's transaction, and fail
+  it on any difference. The failure is a CHECK on a temporary table whose
+  constraint name is the reason
+  (`smrt table rebuild refused: the table changed after the migration was
+  planned`), so it holds for the tracker, the CLI and a caller that runs the
+  statements itself. `MigrationTracker` reports it as
+  `TableChangedSincePlanError` (`rebuild-plan-guard.ts`; internal, not
+  exported); nothing was changed, and a rerun plans from the table as it now
+  is. The plan's foreign-key guard asks the live catalog too
+  (`sqliteReferencedTableGuardStatements`): it fails where foreign keys are on
+  and any table references the target when the rebuild runs, so a child with
+  `ON DELETE CASCADE` created after planning (or given its key by an earlier
+  statement of the batch) cannot lose rows to a caller that runs the plan with
+  foreign keys on. The tracker turns them off, so the guard passes there; a
+  stale referencing set is no stop, since nothing cascades. Every rebuild plan
+  runs the same live check again right before its `DROP TABLE`, after the
+  staging table exists: a plan that adds a self-reference makes the staging
+  table a child of the table it is about to drop. That pre-drop check is in
+  every plan, the public `buildSqliteRebuildStatements` included (the messages
+  maintenance uses it). The guard at the start, and the plan guard above, come
+  from the differ's planner only, so a caller building its own plan holds the
+  database for the whole of its read-plan-apply. Both checks read each table's
+  keys in `main`, where the table was listed (`pragma_foreign_key_list(name,
+  'main')`), so a temporary table of the same name cannot answer for a real
+  child, and read the setting from `main.pragma_foreign_keys`; a missing
+  answer counts as "on" (`CHECK ("safe" = 1)` would accept NULL).
+  `rebuild-plan-guard.test.ts` covers both engines. Catalog reads skip
+  SQLite's reserved `sqlite_` names by a literal prefix
+  (`sqliteUserObjectName`, `schema/sqlite-internal-names.ts`): in `LIKE`, `_`
+  matches any character, so `NOT LIKE 'sqlite_%'` also hid user objects such
+  as `sqliteX_unique` from the rebuild's capture and its guard, and the
+  rebuild dropped them.
 
 - **The target shape comes from the live `sqlite_master` DDL**, retyping only
   the drifted columns. It is not regenerated from the manifest, so the rebuild
@@ -1882,9 +1936,185 @@ before any DDL. `postgresSafe: true` commits non-index DDL atomically, then runs
 indexes CONCURRENTLY on `db.acquireSession()` so settings and DDL share a
 connection. This mode is not atomic. Unfinished indexes are `failed`, not
 `running`; `[smrt: concurrent-index phase 1 committed]` in `error_message`
-allows reruns to resume index work without replaying committed DDL. Inspect
+allows reruns to resume index work without replaying committed DDL. Known
+limit: the statements deferred to the concurrent phase (a foreign-key
+`VALIDATE CONSTRAINT` and every statement after it) commit as they run, and a
+retry runs all of them again. One that committed before the failure and
+cannot run twice (`ADD COLUMN` without `IF NOT EXISTS`, a plain `DROP INDEX`
+or rename) makes every retry fail loudly ("already exists" or "does not
+exist") and the row stays `failed`. To recover, check which deferred
+statements committed, revert them by hand (for example drop the column the
+failed attempt added, while it holds no data), then rerun. Inspect
 `pg_index.indisvalid` and drop INVALID indexes before rebuild (`pg_indexes`
 alone cannot detect them). Operational commands: `packages/cli/AGENTS.md`.
+
+**The repair drops one exact index.** Before a pending `CREATE INDEX`, the
+tracker drops the INVALID index an interrupted `CREATE INDEX CONCURRENTLY`
+left under that name, and only that one: the index in the schema of the table
+the pending statement indexes. It resolves the statement's table on the pinned
+session (`to_regclass`, so exactly as the create will), and the drop is
+schema-qualified. An index of the same name in another schema is never
+touched, healthy or not, whatever the search path makes an unqualified name
+mean. The index must also be on that table (`pg_index.indrelid` is the
+statement's resolved target).
+
+**Index statements are read by a lexer, never guessed or matched by
+regular expressions** (`migrations/postgres-create-index.ts`, internal). Its
+whitespace is PostgreSQL's (space, tab, LF, CR, VT, FF): any other character,
+U+00A0 included, belongs to a bare identifier, as it does for the server. `--`
+comments end at LF or CR; `/* */` comments nest; single-quoted, `E''`,
+`B''`/`X''` and dollar-quoted strings and double-quoted identifiers are read
+whole. Names are stored as PostgreSQL stores them: unquoted names folded to
+lower case (ASCII), every name truncated to 63 bytes. `CREATE INDEX ON t (…)`
+is an unnamed index. `U&"…"`, a three-part name, or any token it does not
+expect makes a statement unreadable; a statement whose leading `CREATE
+[UNIQUE] INDEX` or `DROP INDEX` was read before the unreadable token (say a
+`U&"…"` index name) is still index DDL, never routed as anything else. A
+partial index's predicate runs from its first token to the end of its last
+(no string trimming). The statement planner routes index DDL by
+these tokens (so `CREATE /* … */ UNIQUE INDEX` is index DDL), inserts
+`CONCURRENTLY` after the `INDEX` token, and the unique-index swap pairs a drop
+and a create by their stored names and writes the swap under those names.
+
+**Under `--postgres-safe`, index DDL that cannot be checked is refused before
+anything runs.** The planner (`planPostgresStatements`, and so
+`buildConcurrentIndexPlan` for an atomic batch) throws, with nothing run, for
+index DDL it cannot read that would leave the transaction, and for any
+`CREATE INDEX` bound for the concurrent phase that is unreadable or unnamed (a
+retry could not find an unnamed index an interrupted run built, and would
+build another). Only definitions that will run are planned and checked: an
+atomic `applyAll` skips a definition already recorded `completed` with its
+checksum, so its statements neither are refused nor refuse the batch. Then,
+before the concurrent phase runs any statement, every
+pending create's expressions and predicate are explained against its table,
+in order across the batch's migrations; a failure refuses the phase (the
+migration fails retryable, the others are not attempted), so a refusal never
+follows a drop that already committed. The one exception is a create preceded
+in the phase by statements that may make what it names (a column added after
+a deferred foreign-key validation) and by no drop of its own index name: it is
+checked again where it runs. A drop of another index does not remove the
+exception. A non-atomic `postgresSafe` `applyAll`, whose definitions commit
+one by one, plans and checks the whole batch the same way before any
+definition runs (in run order: each definition's transactional statements,
+then its concurrent ones); a refusal rejects `applyAll` with nothing run and
+nothing recorded.
+
+**Each pending `CREATE INDEX` is checked before and after it runs.** Before:
+the statement must be readable, and its key expressions and predicate must be
+explainable against its table (`EXPLAIN (VERBOSE, COSTS OFF)`); otherwise
+nothing runs and the migration fails retryable. A valid index of the name
+already on the table is the resumed case: when it is the index the statement
+describes the create is not replayed (a plain `CREATE INDEX` would fail with
+"already exists"), otherwise the run stops. After: the index of the name must
+be on the statement's table, valid, and the index the statement describes.
+"Describes" is read from the catalog without creating anything (no `TEMP`
+privilege needed, as `postgres-permissions.md` asks): the index's own
+`pg_get_indexdef` is read with the same reader and compared on uniqueness,
+access method, `NULLS NOT DISTINCT`, included columns, and each key's column
+or expression (both normalized by `EXPLAIN` against the table), ordering, and
+collation and operator class; the predicate is compared through `EXPLAIN`
+too. A key written as an expression that PostgreSQL stores as a plain column
+(`((status))`, `((status COLLATE "C"))`, a cast that changes nothing) is
+compared as that column, and must carry the expression's own collation
+(`pg_collation_for` over a row of typed NULLs; no table row is read), or none
+(OID 0) for a type without collations such as integer, boolean, timestamp or
+uuid (its type is read first: `pg_collation_for` raises on such a value). A
+collation or operator class the statement names is resolved on the session as
+the create resolves it (`to_regcollation`; `pg_opclass` for the access method,
+by schema or `pg_opclass_is_visible`) and compared by OID with `indcollation`
+/ `indclass`: a same-named object in another schema is not it. One the
+statement does not name must be the default (`pg_get_indexdef` prints none).
+Predicates are explained as an output column (`SELECT (<predicate>) FROM ONLY
+<table>`), not as a `WHERE`: row-level security adds its policies to the
+scan's filter, and a policy that hides every row from the migrating role turns
+every `WHERE` plan into the same constant-false plan, while the output column
+still shows the predicate. So the check works for a role subject to forced
+row-level security (as `PostgresPermissionPolicies` tables are), without
+`row_security = off` (which would make every such check fail). An unreadable
+catalog, an index of the name on another table, an INVALID index, or a
+different index (say, not unique, or another collation) fails the run, which
+stays retryable. Known limit: `EXPLAIN` shows that a larger key expression
+holds a `COLLATE` (`lower(status COLLATE "x")`) but not which collation;
+only a key's top-level collation is compared by OID.
+
+**A unique-index swap closes in its table's schema.** The planner marks the
+drop and rename it generates for a swap with a leading
+`/* smrt:unique-index-swap */` comment, and only marked statements right after
+their temporary build are closed this way; an authored create, drop and rename
+of the same shape run as written, where PostgreSQL resolves them. The drop and
+rename that end a build-then-swap (`swapUniqueIndexRecreates`) run as
+`DROP INDEX CONCURRENTLY IF EXISTS "<schema>"."<name>"` and
+`ALTER INDEX IF EXISTS "<schema>"."<temporary>" RENAME TO …`, with the schema
+of the table the temporary index was built on, resolved on the session. The
+old name is dropped only when it is on that table; held by another table it
+stops the run.
+Tests: `postgres-create-index.test.ts`,
+`issue-2362-migrate-timeouts-concurrent.test.ts` and, on a real server with
+two schemas on the search path,
+`concurrent-index-recovery-postgres.optional.test.ts`; on PGlite
+(`pnpm test:pglite`), `concurrent-index-check-pglite.test.ts`.
+
+### The money rescale runs once (`migrations/minor-units.ts`)
+
+`rescaleMoneyColumnsToMinorUnits` (and the `migrate*MoneyToMinorUnits`
+wrappers of commerce, subscriptions, projects and support) is not safe to
+repeat: it multiplies. Reading which columns still need converting, every
+statement and its `_smrt_backfills` marker are one transaction on every
+engine (`runBackfillOnceInTransaction`, `migrations/backfill-once.ts`,
+internal to core). The transaction first claims the marker name
+(PostgreSQL: `pg_advisory_xact_lock` on it; SQLite: the write lock, taken by
+a statement that changes no row), then looks for the marker again, so a
+runner that waited returns `ran: false`. DuckDB has neither lock; run-once
+holds there through DuckDB's transaction conflict (two transactions that both
+change the same table cannot both commit, so the second runner's transaction
+fails and rolls back; the marker insert itself is `ON CONFLICT DO NOTHING`),
+and a DuckDB file is open in one process at a time. On PostgreSQL each table is locked
+(`ACCESS EXCLUSIVE`) before its column types are read, because
+`ALTER ... TYPE BIGINT USING round(col * scale)` scales whatever the column
+holds when it runs, and column types are read for the table the statements
+resolve to (`to_regclass`), never for a same-named table in another schema.
+
+On a caller's transaction handle, that transaction is the unit, and the
+conversion and the marker also run in a nested scope of it, opened with the
+handle's own `transaction()` (a savepoint on SQLite and PostgreSQL; raw
+`SAVEPOINT` SQL is refused on remote LibSQL and secure-file SQLite
+transaction handles): a failure rolls the scope back before the error is
+returned, so a caller that catches the error and commits commits nothing of
+the conversion. The work's own error is the one returned, even when SQLite
+already rolled back the whole transaction and the scope's rollback fails.
+A SQLite or PostgreSQL transaction handle without `transaction()` is refused
+before anything is written. DuckDB has no nested scope: a failure after the
+conversion has written puts the caller's transaction in DuckDB's aborted state
+(`abortJoinedDuckDbTransaction`), so it can only end by discarding the
+conversion, even when the failure never reached the engine. The abort counts
+only when the engine reports it: a rejection that did not come from DuckDB is
+retried on the handle's own connection, and an abort no path confirms is thrown
+(it must not be committed) rather than assumed. A refusal before
+any write (the preflight) leaves the caller's transaction as it was. A column
+catalog read that fails fails the whole rescale (nothing written, no marker);
+only a table the catalog reports as absent is `missing`. A handle backed by JSON export is refused before any read or write, by the
+public rescale and by the preflight: engine `json`, the JSON adapter's
+capabilities, or a DuckDB handle whose `exportTable` is not proven inert. A
+native DuckDB handle exposes `exportTable` for every write strategy; the
+rescale calls it on a table name that does not exist, and only the answer
+"write strategy is set to none" (nothing exported, nothing written) lets the
+handle through, so `manual` and `immediate` handles are refused and the
+handle of a DuckDB transaction (which has none) works. Its conversion and
+marker would otherwise live in memory while a later ordinary write exports the
+converted table to disk alone. A `json` engine hint, in any case, is refused
+the same way, including `preflight.engine` fed back as the hint. The engine is the caller's `engineHint`, then a DuckDB handle's
+own `engine` (an in-memory DuckDB transaction's URL reads as SQLite), then the
+URL.
+
+A run that fails or is killed part-way changes nothing. This matters most on
+SQLite, where a rescaled column still declares a floating-point type and only
+the marker says it was converted. `BackfillTracker.runIfPending` is unchanged:
+its callback runs before the marker with no transaction around the two, so it
+must be safe to repeat. Known limit, unchanged: the bundled DuckDB handle is
+rescaled in place like SQLite (values move, the declared type stays), because
+the helper reads it as the JSON adapter. Tests: `minor-units.test.ts` (SQLite,
+DuckDB), `minor-units-postgres.optional.test.ts`, `backfill-once.test.ts`,
+`backfill-once-postgres.optional.test.ts`.
 
 ### Subclass conflict identities (#3456)
 

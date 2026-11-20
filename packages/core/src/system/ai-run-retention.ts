@@ -30,6 +30,7 @@
 import type { DatabaseInterface } from '@happyvertical/sql';
 import {
   type AiRunTxOptions,
+  aiRunIdDigest,
   aiRunQuery,
   forUpdate,
   getRows,
@@ -163,10 +164,12 @@ export async function pruneAiRunTrajectories(
       const page = getRows(
         await aiRunQuery(
           db,
-          `SELECT r.id, r.parent_run_id, r.finished_at, p.id AS parent_id,
-                  p.trajectory_pruned AS parent_pruned
+          `SELECT r.id, r.tenant_id, r.parent_run_id, r.finished_at,
+                  p.id AS parent_id, p.trajectory_pruned AS parent_pruned
              FROM _smrt_ai_runs r
              LEFT JOIN _smrt_ai_runs p ON p.id = r.parent_run_id
+                  AND (p.tenant_id = r.tenant_id
+                       OR (p.tenant_id IS NULL AND r.tenant_id IS NULL))
             WHERE ${where}
             ORDER BY r.id LIMIT $${params.length}`,
           ...params,
@@ -189,13 +192,20 @@ export async function pruneAiRunTrajectories(
         if (!parentGone) continue;
         const finished = new Date(String(row.finished_at)).getTime();
         const expired = finished < new Date(cutoff).getTime();
-        if (!expired && isAiRunTrajectorySampled(id, sampleRate)) continue;
+        const sampled = isAiRunTrajectorySampled(id, sampleRate);
+        if (!expired && sampled) continue;
         if (retention.dryRun) {
           done.add(id);
           progressed = true;
           continue;
         }
-        const pruned = await pruneOneTrajectory(db, id, options);
+        // Rechecked under the lock with the bound that selected it: a run in
+        // the sample keeps its trajectory until the cutoff, one outside the
+        // sample loses it once it is finished.
+        const pruned = await pruneOneTrajectory(db, id, options, {
+          tenant: nullableTenant(row.tenant_id),
+          finishedBefore: sampled ? cutoff : now.toISOString(),
+        });
         if (pruned) {
           done.add(id);
           progressed = true;
@@ -210,20 +220,55 @@ export async function pruneAiRunTrajectories(
   return { pruned: done.size };
 }
 
+/** A row's `tenant_id` as a value (null for the global scope). */
+function nullableTenant(value: unknown): string | null {
+  return value === null || value === undefined ? null : String(value);
+}
+
+/**
+ * The candidate a retention pass selected, rechecked under the destructive
+ * lock: the run is locked only in the tenant it was selected in and only if
+ * it still finished before the pass's bound, so a run whose id was pruned
+ * and reused (by another tenant, or freshly) since the selection is not
+ * touched.
+ */
+interface RetentionCandidate {
+  tenant: string | null;
+  finishedBefore: string;
+}
+
+function candidateClause(
+  candidate: RetentionCandidate,
+  first: number,
+): { sql: string; params: unknown[] } {
+  return candidate.tenant === null
+    ? {
+        sql: ` AND r.tenant_id IS NULL AND r.finished_at < $${first}`,
+        params: [candidate.finishedBefore],
+      }
+    : {
+        sql: ` AND r.tenant_id = $${first} AND r.finished_at < $${first + 1}`,
+        params: [candidate.tenant, candidate.finishedBefore],
+      };
+}
+
 async function pruneOneTrajectory(
   db: DatabaseInterface,
   runId: string,
   options: AiRunTxOptions,
+  candidate: RetentionCandidate,
 ): Promise<boolean> {
   return withAiRunTransaction(
     db,
     async (tx) => {
+      const recheck = candidateClause(candidate, 2);
       const rows = getRows(
         await aiRunQuery(
           tx.db,
           `SELECT r.id, r.status FROM _smrt_ai_runs r
-            WHERE r.id = $1 AND r.trajectory_pruned = 0 AND ${UNPROTECTED}${forUpdate(tx)}`,
+            WHERE r.id = $1 AND r.trajectory_pruned = 0 AND ${UNPROTECTED}${recheck.sql}${forUpdate(tx)}`,
           runId,
+          ...recheck.params,
         ),
       );
       const run = rows[0];
@@ -322,9 +367,11 @@ export async function pruneAiRuns(
       const page = getRows(
         await aiRunQuery(
           db,
-          `SELECT r.id, r.parent_run_id, p.id AS parent_id
+          `SELECT r.id, r.tenant_id, r.parent_run_id, p.id AS parent_id
              FROM _smrt_ai_runs r
              LEFT JOIN _smrt_ai_runs p ON p.id = r.parent_run_id
+                  AND (p.tenant_id = r.tenant_id
+                       OR (p.tenant_id IS NULL AND r.tenant_id IS NULL))
             WHERE ${where}
             ORDER BY r.id LIMIT $${params.length}`,
           ...params,
@@ -348,19 +395,41 @@ export async function pruneAiRuns(
           progressed = true;
           continue;
         }
+        const recheck = candidateClause(
+          { tenant: nullableTenant(row.tenant_id), finishedBefore: cutoff },
+          2,
+        );
+        const digest = await aiRunIdDigest(id);
         const pruned = await withAiRunTransaction(
           db,
           async (tx) => {
+            // The id stays reserved after its row goes (page section 8,
+            // "Run identity"): a run an older core opened without reserving
+            // it is reserved here, before its row is locked (an open takes
+            // the registry key before the run row too, so no lock cycle),
+            // and an open racing this prune waits on the key and is refused.
+            await aiRunQuery(
+              tx.db,
+              `INSERT INTO _smrt_ai_run_ids (id_digest, created_at)
+               VALUES ($1, $2) ON CONFLICT (id_digest) DO NOTHING`,
+              digest,
+              tx.now.toISOString(),
+            );
             const locked = getRows(
               await aiRunQuery(
                 tx.db,
-                `SELECT r.id FROM _smrt_ai_runs r
+                `SELECT r.id, r.tenant_id FROM _smrt_ai_runs r
                   WHERE r.id = $1 AND r.trajectory_pruned <> 0
-                    AND ${UNPROTECTED}${forUpdate(tx)}`,
+                    AND ${UNPROTECTED}${recheck.sql}${forUpdate(tx)}`,
                 id,
+                ...recheck.params,
               ),
             );
             if (!locked[0]) return false;
+            const tenantId =
+              locked[0].tenant_id === null || locked[0].tenant_id === undefined
+                ? null
+                : String(locked[0].tenant_id);
             for (const table of [
               '_smrt_ai_run_events',
               '_smrt_ai_run_checkpoints',
@@ -371,10 +440,16 @@ export async function pruneAiRuns(
                 id,
               );
             }
+            // Only the run's own tenant's usage rows go with it: `run_id`
+            // is not a foreign key, and a row of another tenant naming
+            // this id is never this run's to delete.
             await aiRunQuery(
               tx.db,
-              'DELETE FROM _smrt_ai_usage WHERE run_id = $1',
+              tenantId === null
+                ? 'DELETE FROM _smrt_ai_usage WHERE run_id = $1 AND tenant_id IS NULL'
+                : 'DELETE FROM _smrt_ai_usage WHERE run_id = $1 AND tenant_id = $2',
               id,
+              ...(tenantId === null ? [] : [tenantId]),
             );
             await aiRunQuery(
               tx.db,

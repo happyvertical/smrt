@@ -57,10 +57,13 @@ adds) and swaps it in once it is ready. The engine must not import SvelteKit,
   nothing behind and the owner has nothing to recover. If the data changed
   between the read and the write (an edit outside methods) the method re-runs
   (3 retries). The snapshot stays as a pre-write undo point (a `.db` file on SQLite, a
-  `.pgdump` file on PostgreSQL; `AppHost.restoreSnapshot` puts a dump back). On a PostgreSQL SERVER the run is refused
-  (`requireSingleWriter`): the re-read check needs the one connection of an
-  embedded database, and the server port is serializable isolation with the
-  same retry, not built yet.
+  `.pgdump` file on PostgreSQL; `AppHost.restoreSnapshot` puts a dump back). On a PostgreSQL SERVER the
+  write transaction first takes `SHARE ROW EXCLUSIVE` on every model table
+  (`dialect.writeLock`, sorted, so other connections' writes wait until it
+  ends) and only then re-reads and compares; embedded databases have the one
+  connection already. A write that holds another table's row lock while
+  waiting on ours can deadlock: the server aborts one, the method reports
+  "none applied" and can be run again.
   `setMemoryLimit` does not bound large single allocations in this build, and the
   interrupt handler is polled only every ~10,000 operations, so the WebAssembly
   heap itself is capped (`SANDBOX_HEAP_PAGES`, 128 MB): a memory bomb stops in
@@ -108,8 +111,7 @@ scans for it.
 - **Still SQLite only** (a clear `not supported on this database yet`
   `EngineError`, `requireSqlite`): the portable export and import
   (`openAppDatabase(dataDir)` opens SQLite; they refuse a host that reports
-  another database). Method runs on a PostgreSQL SERVER (`kind: 'postgres'`) are
-  refused (`requireSingleWriter`, see Sandbox); PGlite runs them.
+  another database).
 
 ## PostgreSQL copies, snapshots and publish (#5187)
 
@@ -130,16 +132,27 @@ for the one operation on the host thread; a PGlite uses the host's client).
   `INSERT ... SELECT`) loses foreign keys, policies, ownership and grants,
   leaves serial defaults on the source's sequences, does not advance
   identity sequences and fails on generated columns (#5184); each of those is
-  an explicit statement, tested by catalog comparison in
+  an explicit statement. Privileges are exact: an object whose source has an
+  explicit ACL is reset (`REVOKE ALL ... FROM PUBLIC`) before the captured
+  grants, because a recreated function is PUBLIC-executable by default; tables,
+  columns, sequences, functions, the schema and default privileges are
+  compared by effective ACL. Values travel as text under a fixed `DateStyle`,
+  `IntervalStyle` and `bytea_output`; dumps are mode 0600. Tested by catalog comparison in
   `postgres-drafts.test.ts`. A schema holding what a copy does not carry
   (views, procedures, types, triggers, inheritance, rules) is refused, never
   copied partly. Copies read with `row_security` off: a role a policy would
   filter fails loudly instead of losing rows, so run them as the owner or a
   role that bypasses the policies.
-- **Fork** (a draft, a publish rehearsal): a live schema beside the app's,
-  `<schema>__<d|r|o|n><8 chars>` (`sideSchemaName`), in one transaction (a
+- **Names and ownership.** A copy is `<first 44 of the app's schema>__<d|r|o|n>
+  <8 hex of sha256(full schema)><8 random>` (`sideName`, at most 63 bytes); an
+  app's own schema may not look like one (`assertAppSchema`). The name is only
+  a filter: each copy carries `COMMENT ON SCHEMA 'smrt-side:<FULL app schema>'`
+  (set in the creating transaction, moved to the aside by the swap), and
+  `dropSchema` / `swapSchemas` / the sweep verify it before touching anything,
+  so two apps sharing a prefix never drop each other's copies.
+- **Fork** (a draft, a publish rehearsal): a live schema beside the app's, in one transaction (a
   failure leaves none). `forkDraft` writes the name in the draft marker
-  (`schema`); `AppHost.open` on that directory takes the live app's database
+  (`schema`, `liveSchema`); `AppHost.open` on that directory takes the live app's database
   config and uses the marker's schema. `discard` drops it (a failure keeps
   the marker, so it can be retried); `discardOrphanDraft(dir, database)` does
   the same for a directory no host holds.

@@ -38,6 +38,10 @@ import {
 } from '../schema/sql-identifiers.js';
 import type { SchemaChange, SQLDataType } from '../schema/types.js';
 import {
+  rebuildPlanStaleMessage,
+  TableChangedSincePlanError,
+} from './rebuild-plan-guard.js';
+import {
   parseCreateTableBody,
   readColumnDefinitionName,
   rewriteSqliteCreateTable,
@@ -83,6 +87,12 @@ export interface TableInfo {
   createSql: string;
   columns: string[];
   indexes: Array<{ name: string; sql: string; columns: string[] }>;
+  /**
+   * `duckdb_tables().sql` and each `duckdb_indexes().sql` exactly as the
+   * catalog gave them when the table was read. The rebuild compares the live
+   * catalog with these before it touches the table ({@link planGuardStatements}).
+   */
+  catalog?: { tableSql: string; indexSql: string[] };
 }
 
 const statementsOf = (change: SchemaChange): string[] =>
@@ -124,12 +134,13 @@ async function readTable(
   const columns = (
     await db.query(`PRAGMA table_info(${quoteIdentifier(name)})`)
   ).rows.map((row) => String((row as { name?: unknown }).name));
-  const indexes = (
+  const indexRows = (
     await db.query(
       `SELECT index_name, sql FROM duckdb_indexes() WHERE ${where} AND sql IS NOT NULL`,
       name,
     )
-  ).rows.flatMap((row) => {
+  ).rows;
+  const indexes = indexRows.flatMap((row) => {
     const { index_name: indexName, sql } = row as {
       index_name?: unknown;
       sql?: unknown;
@@ -146,7 +157,19 @@ async function readTable(
       },
     ];
   });
-  return { name, createSql: createSql.replace(/;\s*$/, ''), columns, indexes };
+  return {
+    name,
+    createSql: createSql.replace(/;\s*$/, ''),
+    columns,
+    indexes,
+    catalog: {
+      tableSql: createSql,
+      indexSql: indexRows.flatMap((row) => {
+        const sql = (row as { sql?: unknown }).sql;
+        return typeof sql === 'string' ? [sql] : [];
+      }),
+    },
+  };
 }
 
 /** One live foreign key: the child table, its key columns, the parent table. */
@@ -276,6 +299,8 @@ const stagingName = (name: string) =>
   quoteIdentifier(`${DUCKDB_REBUILD_TABLE_PREFIX}${name}`);
 /** The temporary table the rebuild check writes its findings to. */
 const CHECK_TABLE = quoteIdentifier('_smrt_check_rebuild');
+/** The temporary table the plan guard writes its findings to. */
+const PLAN_GUARD_TABLE = quoteIdentifier('_smrt_rebuild_plan_guard');
 const INDEX_NAME =
   /^\s*CREATE\s+(?:UNIQUE\s+)?INDEX\s+(?:IF\s+NOT\s+EXISTS\s+)?("(?:[^"]|"")+"|[^\s(]+)\s+ON\s+("(?:[^"]|"")+"|[^\s(]+)/i;
 const readIndexName = (
@@ -355,6 +380,41 @@ function checkStatements(
 }
 
 /**
+ * Statements that stop a rebuild when a table of its group is no longer the
+ * one it was planned from (see `rebuild-plan-guard.ts`).
+ *
+ * The rebuild creates every table of the group again from the definition read
+ * at planning time and replays the indexes read then. A column or index
+ * another connection added since is in neither and would go with the dropped
+ * table. Before anything else in the transaction, the live `duckdb_tables()`
+ * and `duckdb_indexes()` text of each table is compared with the planned
+ * text; any difference raises and rolls the transaction back. The findings go
+ * through a temporary table, as in {@link checkStatements} and for the same
+ * reason.
+ */
+function planGuardStatements(tables: TableInfo[]): string[] {
+  const where = (table: string) =>
+    `database_name = current_database() AND schema_name = current_schema() AND table_name = ${quoteStringLiteral(table)}`;
+  const problems: string[] = [];
+  for (const info of tables) {
+    if (!info.catalog) continue;
+    const changed = [
+      `(SELECT sql FROM duckdb_tables() WHERE ${where(info.name)}) IS DISTINCT FROM ${quoteStringLiteral(info.catalog.tableSql)}`,
+      `list_sort(coalesce((SELECT list(sql) FROM duckdb_indexes() WHERE ${where(info.name)} AND sql IS NOT NULL), []::VARCHAR[])) IS DISTINCT FROM list_sort(${literalList(info.catalog.indexSql)})`,
+    ].join(' OR ');
+    problems.push(
+      `SELECT CASE WHEN ${changed} THEN ${quoteStringLiteral(rebuildPlanStaleMessage(info.name))} END AS problem`,
+    );
+  }
+  if (problems.length === 0) return [];
+  return [
+    `CREATE TEMP TABLE ${PLAN_GUARD_TABLE} AS SELECT problem FROM (${problems.join(' UNION ALL ')}) WHERE problem IS NOT NULL`,
+    `SELECT error(CAST(list(problem) AS VARCHAR)) FROM temp.${PLAN_GUARD_TABLE} HAVING count(*) > 0`,
+    `DROP TABLE temp.${PLAN_GUARD_TABLE}`,
+  ];
+}
+
+/**
  * The statements of one rebuild of a group of tables: copy every table, drop
  * them, create each in its final shape (a table without changes from its live
  * definition), copy each table's rows once, replay the indexes, check the
@@ -405,7 +465,8 @@ function buildGroupRebuild(
       };
   }
 
-  const statements: string[] = [];
+  // First of all: every table must still be the one this plan was built from.
+  const statements: string[] = planGuardStatements(tables);
   for (const name of dropOrder)
     statements.push(
       `CREATE TABLE ${stagingName(name)} AS SELECT * FROM ${quoteIdentifier(name)}`,
@@ -846,6 +907,17 @@ export async function planDuckDbTableChanges(
   };
 }
 
+/** Whether two readings of one table describe the same table. */
+function sameTableReading(left: TableInfo, right: TableInfo): boolean {
+  return (
+    left.createSql === right.createSql &&
+    left.columns.join('\u0000') === right.columns.join('\u0000') &&
+    JSON.stringify(left.indexes) === JSON.stringify(right.indexes) &&
+    JSON.stringify(left.catalog ?? null) ===
+      JSON.stringify(right.catalog ?? null)
+  );
+}
+
 /**
  * Combine the DuckDB rebuilds of one migration into one plan per connected
  * group of tables (#4937).
@@ -903,7 +975,17 @@ export function combineDuckDbRebuilds(
     const rebuilt = set.plans.map((plan) => plan.rebuild.table);
     const infos = new Map<string, TableInfo>();
     for (const plan of set.plans)
-      for (const info of plan.tables) infos.set(info.name, info);
+      for (const info of plan.tables) {
+        // Two plans read this table at different moments. If it changed in
+        // between (another connection added a column, an index), the earlier
+        // plan's definition and copy list and the later catalog snapshot
+        // disagree, and combining them would build the old shape and check
+        // it against the new one. Stop; a rerun plans from one reading.
+        const earlier = infos.get(info.name);
+        if (earlier && !sameTableReading(earlier, info))
+          throw new TableChangedSincePlanError(info.name);
+        infos.set(info.name, info);
+      }
     const unread = set.tables.find((name) => !infos.has(name));
     const carriers = set.plans
       .map((plan) => plan.carrier)

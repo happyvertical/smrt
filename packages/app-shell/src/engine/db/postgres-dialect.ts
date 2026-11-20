@@ -62,4 +62,6 @@ export const postgresDialect: EngineDialect = {
   byteLength: (e) => `octet_length(${e})`,
   isDistinct: (a, b) => `${a} IS DISTINCT FROM ${b}`,
   transactionOptions: { introspection: true },
+  writeLock: (table) =>
+    `LOCK TABLE "${table.replace(/"/g, '""')}" IN SHARE ROW EXCLUSIVE MODE`,
 };

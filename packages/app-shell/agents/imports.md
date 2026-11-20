@@ -41,7 +41,10 @@ spreadsheet package's 250,000; `/settings/import` saves an integer in
   bytes are private `imports/<id>.xlsx` (directory 0700, files 0600). Cleanup
   runs on workbook/app failure, cancellation, discard and publish, and reconciles
   missed draft events after restart. Engine failures retain input for explicit
-  retry (a new run; attempt key saved before admission). A paused run retains
+  retry (a new run; attempt key saved before admission). Recovery reads the
+  saved attempt only through the owner's workflow kit (tenant, owner and
+  definition scoped), never by bare run id; an attempt id that names anyone
+  else's run is refused by core as used. A paused run retains
   input for resume. Polling exposes typed failure reasons and bounded timestamped
   stage history; internal origins and admission keys never enter that projection.
 - The draft id is saved before `startDraft` forks. The workflow owns a durable

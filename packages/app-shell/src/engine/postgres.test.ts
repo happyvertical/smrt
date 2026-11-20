@@ -8,7 +8,6 @@ import { getDatabase } from '@happyvertical/sql';
 import { importPGlite } from '@happyvertical/sql/pglite';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { PGliteClient } from './db/index.ts';
-import { requireSingleWriter } from './db/index.ts';
 import { PASS_THROUGH, SCOPED_MEMBERS, scopeDatabase } from './db/postgres.ts';
 import { AppHost, EngineError, MemoryVersionStore } from './index.ts';
 import {
@@ -243,13 +242,5 @@ describe('what needs SQLite stays SQLite', () => {
     await expect(
       verifyUserApp({ dataDir: tmp(), bundle: {} as never, database }),
     ).rejects.toThrow(/not supported on this database yet/);
-  });
-
-  it('a method run is refused on a PostgreSQL server, allowed on PGlite and SQLite', () => {
-    expect(() =>
-      requireSingleWriter({ kind: 'postgres' }, 'running a method'),
-    ).toThrow(/not supported on a PostgreSQL server/);
-    expect(() => requireSingleWriter({ kind: 'pglite' }, 'x')).not.toThrow();
-    expect(() => requireSingleWriter({ kind: 'sqlite' }, 'x')).not.toThrow();
   });
 });
