@@ -68,14 +68,19 @@ async function project(options: {
       dependencies?: string[];
       /** Edit the generated manifest before it is installed. */
       edit?: (manifest: Record<string, unknown>) => void;
+      /** Package name, when the key only labels a second installed copy. */
+      name?: string;
+      /** Install directory below the root (default `node_modules/<name>`). */
+      at?: string;
     }
   >;
   app: Record<string, string>;
 }) {
   const root = realpathSync(mkdtempSync(join(tmpdir(), 'smrt-identity-')));
   roots.push(root);
-  for (const [name, provider] of Object.entries(options.providers)) {
-    const dir = join(root, 'node_modules', name);
+  for (const [key, provider] of Object.entries(options.providers)) {
+    const name = provider.name ?? key;
+    const dir = join(root, provider.at ?? join('node_modules', name));
     write(dir, {
       'package.json': JSON.stringify({
         name,
@@ -104,7 +109,9 @@ async function project(options: {
       name: APP,
       version: '0.0.0',
       dependencies: Object.fromEntries(
-        Object.keys(options.providers).map((d) => [d, '*']),
+        Object.entries(options.providers)
+          .filter(([, provider]) => !provider.at)
+          .map(([key, provider]) => [provider.name ?? key, '*']),
       ),
     }),
     ...options.app,
@@ -406,6 +413,93 @@ describe('ancestors reached through a provider parent', () => {
     expect(Object.keys(leaf?.fields ?? {})).not.toContain('appOnly');
     expect(leaf?.schema?.ddl).toContain('vendor_roots');
     expect(leaf?.schema?.ddl).not.toContain('app_roots');
+  });
+
+  // The provider was built against its own copy of a third package (v1,
+  // nested under it); the app root installs another version (v2) that
+  // exports the same class at the same specifier with another table.
+  const twoCopies = (other: (table: string) => Record<string, string>) => ({
+    'other-v1': {
+      name: OTHER,
+      at: join('node_modules', VENDOR, 'node_modules', OTHER),
+      files: other('rooms_v1'),
+    },
+    'other-v2': { name: OTHER, files: other('rooms_v2') },
+  });
+
+  it('fails for an inherited foreign key whose target package the provider loads in another copy', async () => {
+    const root = await project({
+      providers: {
+        ...twoCopies((table) => ({
+          'src/Room.ts': `${CORE}\n@smrt({ tableName: '${table}' })\nexport class Room extends SmrtObject {}\n`,
+        })),
+        [VENDOR]: {
+          dependencies: [OTHER],
+          files: {
+            'src/Booking.ts': `${CORE}\nimport { Room } from '${OTHER}';\n@smrt({ tableStrategy: 'sti', tableName: 'vendor_bookings' })\nexport class Booking extends SmrtObject {\n  @foreignKey(Room) roomId = '';\n}\n`,
+          },
+        },
+      },
+      app: {
+        'src/Session.ts': `${CORE}\nimport { Booking } from '${VENDOR}';\n@smrt()\nexport class Session extends Booking {\n  topic = '';\n}\n`,
+      },
+    });
+
+    await expect(build(root)).rejects.toMatchObject({
+      code: 'CONFIG_UNKNOWN_RELATIONSHIP_TARGET',
+      message: expect.stringContaining(`${VENDOR} loads ${OTHER} from`),
+    });
+  });
+
+  it('fails for an inherited ancestor whose package the provider loads in another copy', async () => {
+    const root = await project({
+      providers: {
+        ...twoCopies((table) => ({
+          'src/Reservation.ts': `${CORE}\n@smrt({ tableStrategy: 'sti', tableName: '${table}' })\nexport class Reservation extends SmrtObject {}\n`,
+        })),
+        [VENDOR]: {
+          dependencies: [OTHER],
+          files: {
+            'src/Booking.ts': `${CORE}\nimport { Reservation } from '${OTHER}';\n@smrt()\nexport class Booking extends Reservation {}\n`,
+          },
+        },
+      },
+      app: {
+        'src/Session.ts': `${CORE}\nimport { Booking } from '${VENDOR}';\n@smrt()\nexport class Session extends Booking {}\n`,
+      },
+    });
+
+    await expect(build(root)).rejects.toMatchObject({
+      code: 'CONFIG_UNRESOLVED_IMPORTED_PARENT',
+      message: expect.stringContaining(`${VENDOR} loads ${OTHER} from`),
+    });
+  });
+
+  it('accepts an inherited foreign key when the provider and the root load one copy', async () => {
+    const root = await project({
+      providers: {
+        [OTHER]: {
+          files: {
+            'src/Room.ts': `${CORE}\n@smrt({ tableName: 'rooms_v2' })\nexport class Room extends SmrtObject {}\n`,
+          },
+        },
+        [VENDOR]: {
+          dependencies: [OTHER],
+          files: {
+            'src/Booking.ts': `${CORE}\nimport { Room } from '${OTHER}';\n@smrt({ tableStrategy: 'sti', tableName: 'vendor_bookings' })\nexport class Booking extends SmrtObject {\n  @foreignKey(Room) roomId = '';\n}\n`,
+          },
+        },
+      },
+      app: {
+        'src/Session.ts': `${CORE}\nimport { Booking } from '${VENDOR}';\n@smrt()\nexport class Session extends Booking {\n  topic = '';\n}\n`,
+      },
+    });
+
+    const manifest = await build(root);
+    const session = manifest.objects[`${APP}:Session`];
+    expect(session?.schema?.columns.room_id?.foreignKey?.table).toBe(
+      'rooms_v2',
+    );
   });
 });
 

@@ -8,7 +8,9 @@ import { writeThroughFields } from '../write-through.js';
  */
 
 import { createHash } from 'node:crypto';
+import { existsSync, realpathSync } from 'node:fs';
 import { createRequire } from 'node:module';
+import { dirname, join } from 'node:path';
 import { createLogger } from '@happyvertical/logger';
 import { ConfigurationError } from '../errors.js';
 import {
@@ -257,6 +259,30 @@ const FRAMEWORK_METHOD_BASE_NAMES = new Set([
   'SmrtClass',
   'SmrtCollection',
 ]);
+
+/**
+ * The real directory of the installed package `packageName` that code in
+ * `fromDir` loads: the nearest `node_modules/<packageName>` above it, the
+ * way Node looks it up. `undefined` when none is installed there.
+ */
+function installedPackageDir(
+  packageName: string,
+  fromDir: string,
+): string | undefined {
+  for (let current = fromDir; ; ) {
+    const candidate = join(current, 'node_modules', packageName);
+    if (existsSync(join(candidate, 'package.json'))) {
+      try {
+        return realpathSync(candidate);
+      } catch {
+        return candidate;
+      }
+    }
+    const parent = dirname(current);
+    if (parent === current) return undefined;
+    current = parent;
+  }
+}
 
 /**
  * Whether `obj` directly extends the framework's `SmrtCollection`, by
@@ -638,6 +664,10 @@ export class ManifestGenerator {
     // Keep only import-derived parent qualifications the parent's package
     // confirms (#4145), before any pass walks `extendsQualified`.
     this.verifyImportedParents(manifest);
+    // What a confirmed provider parent passes on (its ancestors in other
+    // packages, its relationship targets in other packages) must come from
+    // the copy of that package the provider itself loads.
+    this.verifyProviderCopies(manifest);
 
     // Report cache rows are safe to scope by tenant even when a report is
     // global: optional mode keeps tenant-less rows readable outside a tenant
@@ -888,6 +918,119 @@ export class ManifestGenerator {
         }
       }
     }
+  }
+
+  /**
+   * Fail generation when a confirmed provider parent passes on a class of a
+   * THIRD package (an ancestor it extends, or a relationship target it
+   * declares) and the copy of that package generation reads from the
+   * project root is not the copy the provider loads. Two versions of one
+   * package can both export `Room` at the same specifier with different
+   * tables; the provider was built against its own copy, so an inherited
+   * parent or foreign key resolved through the root's copy would describe a
+   * different table. Walks each confirmed provider chain once.
+   */
+  private verifyProviderCopies(manifest: SmartObjectManifest): void {
+    const root = this.dependencyScope?.root ?? process.cwd();
+    const seen = new Set<SmartObjectDefinition>();
+    for (const obj of Object.values(manifest.objects)) {
+      const ownPackage = obj.packageName ?? manifest.packageName;
+      let ref = obj.extendsQualified;
+      if (!ref || !isQualifiedName(ref)) continue;
+      if (parseQualifiedName(ref).packageName === ownPackage) continue;
+      for (let depth = 0; ref && isQualifiedName(ref) && depth < 32; depth++) {
+        const providerPackage = parseQualifiedName(ref).packageName;
+        const providerManifest = this.loadDependencyManifest(providerPackage, {
+          warn: false,
+        });
+        const ancestor = providerManifest
+          ? (lookupInManifest(providerManifest, ref) as
+              | SmartObjectDefinition
+              | undefined)
+          : undefined;
+        if (!ancestor || seen.has(ancestor)) break;
+        seen.add(ancestor);
+        const owner = ancestor.packageName ?? providerPackage;
+        for (const [fieldName, field] of Object.entries(
+          ancestor.fields ?? {},
+        )) {
+          if (
+            !field.relatedQualified ||
+            !isQualifiedName(field.relatedQualified)
+          ) {
+            continue;
+          }
+          const target = parseQualifiedName(field.relatedQualified).packageName;
+          const conflict = this.providerCopyConflict(owner, target);
+          if (conflict) {
+            throw new ConfigurationError(
+              `${obj.className} (${obj.filePath}) inherits ${ancestor.className}.${fieldName} from ${owner}, which targets ` +
+                `${field.relatedQualified}, but ${conflict}. The relationship would reference a table of another version of ` +
+                `${target}. Install one copy of ${target} (dedupe the dependency) so the provider and this build read the same package.`,
+              'CONFIG_UNKNOWN_RELATIONSHIP_TARGET',
+              {
+                className: obj.className,
+                field: fieldName,
+                target: field.relatedQualified,
+                resolutionRoot: root,
+              },
+            );
+          }
+        }
+        const next = this.parentRef(ancestor, manifest);
+        if (!next || !isQualifiedName(next)) break;
+        const nextPackage = parseQualifiedName(next).packageName;
+        const conflict = this.providerCopyConflict(owner, nextPackage);
+        if (conflict) {
+          throw new ConfigurationError(
+            `${obj.className} (${obj.filePath}) inherits from ${ancestor.className} of ${owner}, which extends ${next}, ` +
+              `but ${conflict}. Its table, fields and surface limits would come from another version of ${nextPackage}. ` +
+              `Install one copy of ${nextPackage} (dedupe the dependency) so the provider and this build read the same package.`,
+            'CONFIG_UNRESOLVED_IMPORTED_PARENT',
+            {
+              className: obj.className,
+              parent: next,
+              parentPackage: nextPackage,
+              resolutionRoot: root,
+            },
+          );
+        }
+        ref = next;
+      }
+    }
+  }
+
+  /**
+   * Why the manifest of `target` that generation reads is not the copy of
+   * `target` that `owner` loads, or `undefined` when they are the same
+   * installed package (or either cannot be found, or `owner` is `target`).
+   */
+  private providerCopyConflict(
+    owner: string,
+    target: string,
+  ): string | undefined {
+    const scope = this.dependencyScope;
+    if (!scope || owner === target) return undefined;
+    scope.locations ??= discoverSmrtPackageLocations({ baseDir: scope.root });
+    const ownerDir =
+      scope.locations[owner]?.packageDir ??
+      installedPackageDir(owner, scope.root);
+    if (!ownerDir) return undefined;
+    const fromOwner = installedPackageDir(target, ownerDir);
+    const read =
+      scope.locations[target]?.packageDir ??
+      installedPackageDir(target, scope.root);
+    if (!fromOwner || !read) return undefined;
+    const real = (path: string) => {
+      try {
+        return realpathSync(path);
+      } catch {
+        return path;
+      }
+    };
+    return real(fromOwner) === real(read)
+      ? undefined
+      : `${owner} loads ${target} from ${real(fromOwner)}, while generation reads the manifest of ${real(read)}`;
   }
 
   /**
