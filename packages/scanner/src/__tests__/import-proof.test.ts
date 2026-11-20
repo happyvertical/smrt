@@ -932,6 +932,27 @@ describe('parents', () => {
       },
       'tsconfig.app.json',
     ],
+    // A reference path is relative to the config with or without `./`.
+    [
+      'a project reference to a root sibling written without a leading dot',
+      {
+        'tsconfig.json':
+          '{ "files": [], "references": [{ "path": "tsconfig.app.json" }] }',
+        'tsconfig.app.json':
+          '{ "compilerOptions": { "moduleSuffixes": [".mock", ""] } }',
+      },
+      'tsconfig.app.json',
+    ],
+    [
+      'a project reference to a directory written without a leading dot',
+      {
+        'tsconfig.json':
+          '{ "files": [], "references": [{ "path": "packages/app" }] }',
+        'packages/app/tsconfig.json':
+          '{ "compilerOptions": { "moduleSuffixes": [".mock", ""] } }',
+      },
+      'packages/app/tsconfig.json',
+    ],
   ])('fails the scan for %s that sets moduleSuffixes', async (_label, configs, file) => {
     const { errors } = await scanProject({
       ...configs,

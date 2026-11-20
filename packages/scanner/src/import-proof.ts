@@ -198,14 +198,15 @@ function stringLiterals(value: string): string[] {
 }
 
 /**
- * The relative tsconfig files a config names: its `extends` entries that are
- * plain relative paths, and its project `references`. A package name in
- * `extends` is not read.
+ * The tsconfig files a config names: its `extends` entries that are plain
+ * relative paths, and its project `references`. A `references` path is
+ * always a file or directory path relative to the config, written with or
+ * without a leading `./` (`"tsconfig.app.json"`, `"packages/app"`); a bare
+ * name in `extends` is a config package, which is not read.
  */
 function namedConfigs(text: string, dir: string): string[] {
   const named: string[] = [];
-  const consider = (path: string, candidates: string[]) => {
-    if (!path.startsWith('.')) return;
+  const consider = (candidates: string[]) => {
     const file = candidates
       .map((c) => resolvePath(dir, c))
       .find((c) => isFile(c));
@@ -215,7 +216,7 @@ function namedConfigs(text: string, dir: string): string[] {
     /"extends"\s*:\s*(\[[^\]]*\]|"(?:[^"\\]|\\.)*")/g,
   )) {
     for (const path of stringLiterals(match[1])) {
-      consider(path, [path, `${path}.json`]);
+      if (path.startsWith('.')) consider([path, `${path}.json`]);
     }
   }
   for (const match of text.matchAll(/"references"\s*:\s*\[([^\]]*)\]/g)) {
@@ -223,7 +224,7 @@ function namedConfigs(text: string, dir: string): string[] {
       /"path"\s*:\s*"((?:[^"\\]|\\.)*)"/g,
     )) {
       const path = entry[1];
-      consider(path, [path, join(path, 'tsconfig.json')]);
+      consider([path, join(path, 'tsconfig.json')]);
     }
   }
   return named;
