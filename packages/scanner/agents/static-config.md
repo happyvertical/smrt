@@ -201,7 +201,8 @@ or collection item that proves to a scanned class must be a model too (a
 same-file target is checked the same way), and a reference to a stand-in for
 another package (`@smrt({ packageName })`) is an error; for a collection's
 item that holds only when a model of the package shares the stand-in's name,
-since the manifest keys both under one name. A static `_itemClass` must name the class the collection's type
+since the manifest keys both under one name (a plain helper class of that
+name never reaches the manifest and does not count). A static `_itemClass` must name the class the collection's type
 argument names. The type argument is proven like any reference, a type-only
 import (`import type { Item }`) included; only the class's own type
 parameter (`class C<T> extends SmrtCollection<T>`) and a type keyword (`any`,
@@ -211,15 +212,22 @@ parameter's spelling is never recorded: a parameter named `Account` never
 selects a model named `Account`. With no `_itemClass` the collection records
 no item name.
 
+The framework collection bases whose type argument is the item are
+`SmrtCollection`, `SmrtReportCollection` and the junction bases
+`SmrtJunction` and `SmrtJunctionBase` (a junction's row model is its item).
 The item is followed through scanned collection ancestors to the framework
 base. A collection over an app-level generic collection (`class
 BaseCollection<T> extends SmrtCollection<T>`, `class VendorAccounts extends
 BaseCollection<Account>`) names its item by its own type argument, proven the
 same way and recorded with its package identity. An ancestor that fixes the
-item itself (`class EntryCollection<Tag> extends SmrtCollection<Closed>`)
-decides it: a type argument the subclass passes for another parameter is
-replaced by that item, and a static `_itemClass` narrows it to the model it
-names (`EmailCollection extends MessageCollection`, `_itemClass = Email`). An
+item itself, by a type argument (`class EntryCollection<Tag> extends
+SmrtCollection<Closed>`) or by a static `_itemClass` it declares (which every
+subclass inherits, even below a generic `class AccountBase<T> extends
+SmrtCollection<T>`), decides it: a type argument the subclass passes is
+replaced by that item, a subclass that passes neither a type argument nor an
+`_itemClass` records that item too (never one inferred from its own name),
+and a static `_itemClass` narrows it to the model it names
+(`EmailCollection extends MessageCollection`, `_itemClass = Email`). An
 ancestor that passes on another type parameter than its first cannot be
 followed below a class that passes a type argument: make the item type
 parameter the first one.
@@ -284,11 +292,13 @@ or bundler may load it instead. Every other companion file
 `Event.utils.ts`, `Event.test.ts`, `Event.mock.ts`, `index.types.ts`) is not
 a variant. Import a variant by its full name (`./Base.ios`). A project whose
 `tsconfig.json` in the root directory, or a config it names (an `extends`
-entry or a `references` path written as a relative path, to any depth),
+entry written as a relative path, or any `references` path, which is
+relative to the config with or without a leading `./`, to any depth),
 mentions `moduleSuffixes` in its active text (`//` and block comments are
 removed first; the file is not parsed) fails the scan as a whole: a suffix
-the scan does not know could select another file. Import files explicitly
-and remove the option. A commented-out option, a sibling `tsconfig*.json`
+the scan does not know could select another file. Remove the option (the
+scan refuses the config before it reads an import) and import platform
+files explicitly. A commented-out option, a sibling `tsconfig*.json`
 nothing names, and a config package named in `extends` are not read. The
 root directory is the directory the scan starts from: a config outside it
 (`tsconfig.json` one level above when running `smrt-scan src/`) is not read.
@@ -369,7 +379,7 @@ now stops the build. The message names the file, class and member.
 | A decorated field named `''`, `__proto__`, `constructor` or `prototype` | Rename the field |
 | An undecorated class over a superclass the scan cannot read or accept whose binding reaches a framework base or a model by identity (`extends Mixin(SmrtObject)`, `Mixin(FrameworkObject)` over an aliased import, `Mixin(models.Base)`, a collection imported through a barrel or through a directory whose `package.json` declares an entry) | Import the parent class from the file that declares it and write `extends Parent`. Decorating the class does not help: a decorated class's parent must be provable too |
 | A class named `SmrtObject`, `SmrtClass`, `SmrtCollection`, `SmrtJunction`, `SmrtJunctionBase`, `SmrtHierarchical`, `SmrtPolymorphicAssociation`, `SmrtReport` or `SmrtReportCollection` outside the framework package that owns the name, or published under one by its `@smrt({ name })` option or export name | Rename the class or its public name; the framework reserves these names |
-| `moduleSuffixes` in the active text of the project root's `tsconfig.json` or of a config it extends or references by a relative path | Import platform files explicitly (`./Base.ios`) and remove the option |
+| `moduleSuffixes` in the active text of the project root's `tsconfig.json`, of a config it extends by a relative path, or of a config it references (with or without a leading `./`) | Remove the option and import platform files explicitly (`./Base.ios`) |
 | A constant shared by a manifest static property (`uiSlots` etc.) and any other reader | Give the static property its own constant |
 | A computed namespace decorator the scanner cannot name (`@(core[key])()`), including a key copied from an object member a module statement writes | Use `@core.smrt()` / `@(core['smrt'])()`, or a same-file string constant key nothing writes |
 | Two models of one class name in a package | Rename one |
@@ -383,7 +393,7 @@ now stops the build. The message names the file, class and member.
 | ... through a directory whose `package.json` declares an entry, as the only candidate (no `index` file beside it) | Import the file that declares the class (`./models/base`) |
 | ... from a package of which two different copies are installed (the importing file's and the build root's) | Install one copy |
 | ... from a scoped package that a nested unnamed `package.json` with keys other than the module format (`private`, `scripts`) does not declare | Declare the dependency in that `package.json` |
-| A collection whose type argument is a type-only import the proof does not accept, a name neither imported, declared nor a type parameter, or a type-only import whose `_itemClass` names another class | Import the item model from the file or package that declares it |
+| A collection (a junction collection included) whose type argument is a type-only import the proof does not accept, a name neither imported, declared nor a type parameter, or a type-only import whose `_itemClass` names another class | Import the item model from the file or package that declares it |
 | A default import from a package, or an unimported global named like a framework base | Import the class by its name (`import { SmrtObject } from '@happyvertical/smrt-core'`) |
 | A superclass written as anything but `X` or `ns.X` (`X as T`, `X!`, `X satisfies T`, `Mixin(X)`, `Base.Inner`, `Base['Inner']`) | Write `extends X`, importing the parent class by its name |
 | A relationship target written as a class member (`@foreignKey(Target.column)`, `() => Target.column`) | Name the class, or the column as a string: `@foreignKey('Target.column')`; for `Target.name`, write `Target` |

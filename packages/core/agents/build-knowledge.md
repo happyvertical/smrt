@@ -116,7 +116,8 @@ bare name, no `extendsQualified`): a qualified parent named `SmrtCollection`
 base names) is a model, and its children inherit its exposure. Generation
 refuses an entry published under a framework base name
 (`CONFIG_RESERVED_CLASS_NAME`). The route, web, consumer, knowledge and
-permission-catalog readers classify a manifest entry as a collection by the
+permission-catalog readers, and `smrt generate-register` (by the same rule
+over the public `isSmrtCollectionExtendsName`), classify a manifest entry as a collection by the
 same identity (`hasCollectionMarker` in `registry/collection-bases.ts`):
 `SmrtCollection` as the bare parent, another framework collection base with
 a type argument, or a recorded `collectionOf`, reached through the manifest
