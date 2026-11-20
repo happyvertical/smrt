@@ -96,11 +96,6 @@ collection returns its own.
   the class the route selected, so a public parent never opens its subtype's
   route. `authMiddleware` receives that registry key in place of the simple
   name only when another registered class shares the name.
-- A subtype that declares no `tenantScoped` of its own carries its parent
-  chain's declared tenancy (mode, ownership field, requirement):
-  `ObjectRegistry.getTenantScopedConfig()` reads the parent as declared, never
-  a replacement that took the parent's key, in either load order and with or
-  without its own `collection`.
 
 Manifest declarations arrive in either order and give one registry: base
 then subclass or subclass then base, and manifest then constructor
@@ -118,6 +113,25 @@ imports its parent's, so the parent's decorator runs first. A run-time model
 (`registerRuntimeModel`) keeps its own explicit option, `replaces`; without it
 the model coexists with the parent it names, and the parent may register
 again.
+
+## One tenancy policy per shared table
+
+A replacement and a same-named subtype share their parent's table, and that
+table has one ownership column and one tenancy floor. A `tenantScoped`
+declaration on either may add tenancy to an unscoped table or raise
+`optional` to `required` on the same field. It may not name another
+ownership field, drop tenancy (`tenantScoped: false`), or weaken `required`
+to `optional`: registration (constructor and manifest) and manifest or
+activation generation refuse it with `CONFIG_SAME_NAME_TENANCY_CONFLICT`,
+naming both declarations. A subtype's declaration is held to the replacement
+in effect. A class that declares nothing inherits, so every member of the
+family (parent key, replacement, subtype, differently named subclasses
+through smrt-tenancy's chain walk) resolves the same ownership field and
+mode: the effective policy of the parent's key. A same-named subtype with no
+tenancy of its own reports it from `ObjectRegistry.getTenantScopedConfig()`
+in either load order, with or without its own `collection`
+(`registry/__tests__/issue-5143-shared-table-tenancy.test.ts`,
+`activation/generate-order.test.ts`).
 
 ## Migrating
 

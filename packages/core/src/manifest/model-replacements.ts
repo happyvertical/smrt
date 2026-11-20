@@ -63,6 +63,73 @@ export function sameNameSubtypeTableMismatch(
   );
 }
 
+export const SAME_NAME_TENANCY_CONFLICT = 'CONFIG_SAME_NAME_TENANCY_CONFLICT';
+
+interface TenancyShape {
+  mode: 'required' | 'optional';
+  field: string;
+}
+
+/** The ownership field and mode a `tenantScoped` declaration resolves to. */
+function tenancyShape(value: unknown): TenancyShape | undefined {
+  if (!value) return undefined;
+  const options =
+    typeof value === 'object'
+      ? (value as { mode?: unknown; field?: unknown })
+      : {};
+  return {
+    mode: options.mode === 'optional' ? 'optional' : 'required',
+    field:
+      typeof options.field === 'string' && options.field
+        ? options.field
+        : 'tenantId',
+  };
+}
+
+const describeTenancy = (shape: TenancyShape | undefined) =>
+  shape ? `{ field: '${shape.field}', mode: '${shape.mode}' }` : 'no tenancy';
+
+/**
+ * A same-named class shares its parent's table, and one table has one
+ * ownership column and one tenancy floor (#5143): every member of the family
+ * (parent, replacement, subtype, other subclasses) resolves the same policy.
+ * A class that declares no tenancy inherits it. A declaration may add
+ * tenancy to an unscoped table or require it more strictly; it may not change
+ * the ownership field, drop tenancy, or weaken `required` to `optional`.
+ * Returns the refusal, or `undefined` when the declaration is compatible.
+ */
+export function sharedTableTenancyConflict(
+  child: string,
+  parent: string,
+  childDeclared: unknown,
+  parentPolicy: unknown,
+  choice: SameNameSubclassChoice,
+): ConfigurationError | undefined {
+  if (childDeclared === undefined || childDeclared === null) return undefined;
+  const parentShape = tenancyShape(parentPolicy);
+  if (!parentShape) return undefined;
+  const childShape = tenancyShape(childDeclared);
+  if (
+    childShape &&
+    childShape.field === parentShape.field &&
+    !(parentShape.mode === 'required' && childShape.mode === 'optional')
+  )
+    return undefined;
+  const role = choice === 'replace' ? 'a replacement' : 'a subtype';
+  return new ConfigurationError(
+    `${child} declares tenantScoped ${describeTenancy(childShape)}, but shares its table with ${parent}, which declares ${describeTenancy(parentShape)}: ` +
+      `${role} may add tenancy requirements but cannot change the ownership field or weaken the mode of the table it shares with ${parent}. ` +
+      `Declare field '${parentShape.field}' with mode '${parentShape.mode}'${parentShape.mode === 'optional' ? " or 'required'" : ''}, or remove tenantScoped from ${child} to inherit it.`,
+    SAME_NAME_TENANCY_CONFLICT,
+    {
+      className: child,
+      parentName: parent,
+      childTenancy: childShape,
+      parentTenancy: parentShape,
+    },
+  );
+}
+
 /**
  * The one reading of the declared choice. Manifest generation, both
  * registration paths and lineage reconciliation all decide replacement
@@ -276,6 +343,29 @@ export function assertSameNameSubclassChoices(
     const parent = manifest.objects[parentKey];
     if (!parent) continue;
     const parentTable = tableOf(parent);
+    // Collections store nothing; a replacement on another table is refused below.
+    if (
+      !child.collectionOf &&
+      !parent.collectionOf &&
+      (choice === 'subtype' || tableOf(child) === parentTable)
+    ) {
+      // A subtype is held to the table's effective policy: its parent's
+      // replacement, when one declares tenancy, else the parent's own.
+      const declared = child.decoratorConfig?.tenantScoped;
+      const replacement =
+        choice === 'subtype' && declared !== undefined
+          ? manifest.objects[modelReplacements(manifest).get(parentKey) ?? '']
+          : undefined;
+      const conflict = sharedTableTenancyConflict(
+        name,
+        parentKey,
+        declared,
+        replacement?.decoratorConfig?.tenantScoped ??
+          parent.decoratorConfig?.tenantScoped,
+        choice,
+      );
+      if (conflict) throw conflict;
+    }
     if (choice === 'subtype') {
       if (
         !child.collectionOf &&

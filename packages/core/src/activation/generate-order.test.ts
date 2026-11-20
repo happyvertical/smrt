@@ -1162,10 +1162,11 @@ console.log(JSON.stringify({
   it.each([
     ['served through its parent', undefined],
     ['with a collection of its own', 'tenant_scenes'],
-  ])('scopes a same-named subtype %s by its parent chain, not by a sibling replacement', (_label, collection) => {
+  ])('scopes a same-named subtype %s by its family policy, the same as its parent and a compatible replacement', (_label, collection) => {
     const SUB = '@activation/sub:Customer';
-    // No replacement, then one whose module registers before the subtype's
-    // and one whose module registers after it.
+    // No replacement, then a stricter one (same field, `required` over the
+    // parent's `optional`) whose module registers before the subtype's, and
+    // one whose module registers after it.
     for (const replacement of [
       undefined,
       '@aaa/app:Customer',
@@ -1180,13 +1181,18 @@ console.log(JSON.stringify({
       ]);
       manifest.objects[PROVIDER].decoratorConfig = {
         ...manifest.objects[PROVIDER].decoratorConfig,
-        tenantScoped: { mode: 'required', field: 'organizationId' },
+        tenantScoped: { mode: 'optional', field: 'organizationId' },
       };
       if (replacement)
         manifest.objects[replacement].decoratorConfig = {
           ...manifest.objects[replacement].decoratorConfig,
-          tenantScoped: { mode: 'optional', field: 'accountId' },
+          tenantScoped: { mode: 'required', field: 'organizationId' },
         };
+      for (const object of Object.values(manifest.objects)) {
+        object.fields.organizationId = { type: 'text' };
+        object.schema!.columns.organization_id = { type: 'TEXT' };
+        object.schema!.columns._meta_type = { type: 'TEXT' };
+      }
       if (collection)
         manifest.objects[SUB].decoratorConfig = {
           ...manifest.objects[SUB].decoratorConfig,
@@ -1195,22 +1201,101 @@ console.log(JSON.stringify({
       const run = runNode(
         files,
         generate(files, manifest),
-        `import { resolveAnonymousTenantReadScope } from '@happyvertical/smrt-core';
+        `import { resolveAnonymousTenantReadScope, scopeTenantReadOptions } from '@happyvertical/smrt-core';
 await coordinator(['${PROVIDER}', '${SUB}']).boot();
+const policy = (key) => { const c = ObjectRegistry.getTenantScopedConfig(key); return c && { field: c.field, mode: c.mode }; };
+// Tenant A saved a row of the subtype into the shared table.
+await db.query("INSERT INTO fixture_customer (id, slug, context, title, organization_id, _meta_type) VALUES ('00000000-0000-4000-8000-00000000000a', 'tenant-a-sub', '', 'tenant-a-sub', 'A', '${SUB}')");
+const root = await ObjectRegistry.getCollection('${PROVIDER}', { db });
+const titles = async (where) => (await root.list({ where })).map((row) => row.title);
 globalThis.__smrtDispatchTenantResolver = () => null;
+const anonymous = { root: resolveAnonymousTenantReadScope('${PROVIDER}'), sub: resolveAnonymousTenantReadScope('${SUB}') };
+const anonymousRows = await titles(anonymous.root);
+globalThis.__smrtDispatchTenantResolver = () => 'A';
+const tenantWhere = scopeTenantReadOptions('${PROVIDER}', {});
+const tenantRows = await titles(tenantWhere);
 console.log(JSON.stringify({
-  config: ObjectRegistry.getTenantScopedConfig('${SUB}'),
+  sub: policy('${SUB}'),
+  root: policy('${PROVIDER}'),
   scoped: ObjectRegistry.isTenantScoped('${SUB}'),
-  scope: resolveAnonymousTenantReadScope('${SUB}'),
+  anonymous,
+  anonymousRows,
+  tenantWhere,
+  tenantRows,
 }));`,
       );
       expect(run.status, run.output).toBe(0);
-      expect(JSON.parse(run.output.trim())).toMatchObject({
-        config: { mode: 'required', field: 'organizationId' },
+      const seen = JSON.parse(run.output.trim());
+      const effective = replacement ? 'required' : 'optional';
+      expect(seen).toEqual({
+        sub: { field: 'organizationId', mode: effective },
+        root: { field: 'organizationId', mode: effective },
         scoped: true,
-        scope: { organizationId: null },
+        anonymous: {
+          root: { organizationId: null },
+          sub: { organizationId: null },
+        },
+        // Another tenant's subtype row is never served anonymously...
+        anonymousRows: [],
+        tenantWhere: { organizationId: 'A' },
+        // ...and the owning tenant sees it through the family root.
+        tenantRows: ['tenant-a-sub'],
       });
     }
+  });
+
+  describe.each([
+    ['another ownership field', { mode: 'required', field: 'accountId' }],
+    ['a weaker mode', { mode: 'optional', field: 'organizationId' }],
+    ['no tenancy', false],
+  ] as const)('a replacement that declares %s for the shared table', (_label, tenantScoped) => {
+    const REPLACEMENT = '@aaa/app:Customer';
+    const SUB = '@activation/sub:Customer';
+    const conflicting = () => {
+      const { files, manifest } = project([
+        { key: REPLACEMENT, parent: PROVIDER, replace: true },
+        { key: SUB, parent: PROVIDER, replace: false },
+        { key: PROVIDER, sti: true },
+      ]);
+      manifest.objects[PROVIDER].decoratorConfig = {
+        ...manifest.objects[PROVIDER].decoratorConfig,
+        tenantScoped: { mode: 'required', field: 'organizationId' },
+      };
+      manifest.objects[REPLACEMENT].decoratorConfig = {
+        ...manifest.objects[REPLACEMENT].decoratorConfig,
+        tenantScoped,
+      };
+      return { files, manifest };
+    };
+    const refusal =
+      /@aaa\/app:Customer declares tenantScoped .* shares its table with @activation\/customer:Customer.*a replacement may add tenancy requirements but cannot change the ownership field or weaken the mode/;
+
+    it('is refused at generation, naming both declarations', () => {
+      const { files, manifest } = conflicting();
+      expect(() => generate(files, manifest)).toThrow(refusal);
+    });
+
+    it('is refused by the registry in a fresh process, leaving the parent effective', () => {
+      const { files, manifest } = conflicting();
+      const declared = manifest.objects[REPLACEMENT].decoratorConfig;
+      // Generate without the replacement, then register it at run time.
+      delete manifest.objects[REPLACEMENT];
+      const run = runNode(
+        files,
+        generate(files, manifest),
+        `import { Customer as Replacement } from '@aaa/app';
+await coordinator(['${PROVIDER}', '${SUB}']).boot();
+let error;
+try {
+  ObjectRegistry.register(Replacement, { ...${JSON.stringify(declared)}, name: 'Customer', packageName: '@aaa/app', tableName: 'fixture_customer' });
+} catch (caught) { error = caught; }
+assert.equal(error?.code, 'CONFIG_SAME_NAME_TENANCY_CONFLICT', String(error));
+assert.match(String(error?.message), ${refusal.toString()});
+assert.equal(ObjectRegistry.getClass('${PROVIDER}').qualifiedName, '${PROVIDER}');
+assert.equal(ObjectRegistry.getTenantScopedConfig('${SUB}').field, 'organizationId');`,
+      );
+      expect(run.status, run.output).toBe(0);
+    });
   });
 
   it('denies a disabled tenant through the coordinator gate on the generated registration', () => {

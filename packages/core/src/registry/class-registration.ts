@@ -37,6 +37,7 @@ import {
   sameNameSubclassUndeclared,
   sameNameSubtypeTableMismatch,
   sameNameSubtypeWithoutDiscriminator,
+  sharedTableTenancyConflict,
 } from '../manifest/model-replacements.js';
 import {
   cloneManifestSchemaColumns,
@@ -96,6 +97,7 @@ import {
 import { assertQualifiedNameAliasesAvailable } from './qualified-name-aliases';
 import {
   applyRuntimeOverrides,
+  getRuntimeOverride,
   transferRuntimeOverride,
 } from './runtime-overrides';
 import {
@@ -503,6 +505,24 @@ function findSameNameParent(
   return entry && entry.name === name && entry.constructor !== ctor
     ? [declared, entry]
     : undefined;
+}
+
+/**
+ * The tenancy policy a same-named child of `key` is held to on the shared
+ * table (#5143): the effective policy of the parent's key. A run-time
+ * override's `required` floor is left out of the mode comparison: the
+ * override itself carries to the child and keeps that floor.
+ */
+function sharedTableTenancyPolicy(
+  key: string,
+  entry: RegisteredClass,
+): RegisteredClass['tenantScopedConfig'] | undefined {
+  const effective = findClass(key) ?? entry;
+  const config = effective.tenantScopedConfig;
+  const overridden =
+    getRuntimeOverride(key)?.tenancy ||
+    getRuntimeOverride(effective.qualifiedName ?? key)?.tenancy;
+  return config && overridden ? { ...config, mode: 'optional' } : config;
 }
 
 /**
@@ -1881,6 +1901,23 @@ function registerUntracked(
     const [key, existing] = sameNameParent;
     if (!sameName.choice) throw sameNameSubclassUndeclared(ownName, key);
     const incomingTable = sharedTableWith(existing);
+    // One shared table, one tenancy policy (#5143): refuse a declaration that
+    // changes the ownership field or weakens the mode the family resolves.
+    if (
+      !existing.collectionOf &&
+      (sameName.choice === 'subtype' ||
+        incomingTable === existing.schema?.tableName)
+    ) {
+      const conflict = sharedTableTenancyConflict(
+        ownName,
+        key,
+        config.tenantScoped ??
+          isolatedManifestEntry?.decoratorConfig?.tenantScoped,
+        sharedTableTenancyPolicy(key, existing),
+        sameName.choice,
+      );
+      if (conflict) throw conflict;
+    }
     if (sameName.choice === 'subtype') {
       sameNameSubtypeParent = sameNameParent;
       // A same-named subtype is an STI subtype: with no table of its own
@@ -3631,6 +3668,30 @@ function registerFromManifestUntracked(
           value: simpleClassName,
         }),
       ));
+  // One shared table, one tenancy policy (#5143), as for constructors.
+  const manifestParentEntry =
+    ownChoice && manifestParent?.includes(':')
+      ? (getClasses().get(manifestParent) ??
+        replacedDeclarations().get(manifestParent))
+      : undefined;
+  if (
+    ownChoice &&
+    manifestParentEntry &&
+    manifestParentEntry.name === simpleClassName &&
+    !manifestParentEntry.collectionOf &&
+    !objectDef.collectionOf &&
+    (ownChoice === 'subtype' ||
+      incomingTableName === manifestParentEntry.schema?.tableName)
+  ) {
+    const conflict = sharedTableTenancyConflict(
+      registrationKey,
+      manifestParent as string,
+      objectDef.decoratorConfig?.tenantScoped,
+      sharedTableTenancyPolicy(manifestParent as string, manifestParentEntry),
+      ownChoice,
+    );
+    if (conflict) throw conflict;
+  }
   // A run-time subclass keeps its same-named parent registered next to it, so
   // the lineage that lets a descendant replace its parent is not recorded.
   if (!runtimeOptions?.extendsRegistered || runtimeOptions.replaceParent) {

@@ -126,12 +126,13 @@ export function recordedSubtypeParent(name: string): string | undefined {
 }
 /**
  * The tenancy a class that declares none of its own carries from its
- * recorded same-named parents (#5143): the nearest parent declaration's own
- * `tenantScoped` configuration, read from the parent as declared (retained
- * when a replacement took its key), never from the replacement the parent's
- * key resolves to. Its ownership field, mode and requirement are therefore
- * exactly its parent chain's, in every load order and whether or not it
- * declares a collection of its own.
+ * recorded same-named parents (#5143): the effective policy of the nearest
+ * parent that has one, that is the parent's replacement when a replacement
+ * took its key (registration only admits a replacement whose tenancy keeps
+ * the shared table's ownership field and mode floor), else the parent as
+ * declared. Every member of a family that shares one table therefore
+ * resolves the same ownership field, in every load order and whether or not
+ * it declares a collection of its own.
  */
 export function sameNameParentTenancy(
   key: string,
@@ -143,9 +144,11 @@ export function sameNameParentTenancy(
     parent = parents().get(parent)
   ) {
     visited.add(parent);
-    const declaration =
-      replacedDeclarations().get(parent) ?? getClasses().get(parent);
-    if (declaration?.tenantScopedConfig) return declaration.tenantScopedConfig;
+    const effective = getClasses().get(parent) ?? findReplacement(parent);
+    const config =
+      effective?.tenantScopedConfig ??
+      replacedDeclarations().get(parent)?.tenantScopedConfig;
+    if (config) return config;
   }
   return undefined;
 }

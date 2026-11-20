@@ -4751,9 +4751,10 @@ export class ObjectRegistry {
     const registered = ObjectRegistry.findClass(className);
     if (!registered || registered.tenantScopedConfig)
       return registered?.tenantScopedConfig;
-    // A same-named subclass that declares no tenancy carries its parent
-    // chain's declared tenancy, not that of the replacement its parent's key
-    // resolves to, so no read of it omits or misapplies the ownership filter.
+    // A same-named subclass that declares no tenancy carries the effective
+    // tenancy of its parent's key (its replacement's, which registration holds
+    // to the shared table's ownership field and mode floor), so every member
+    // of the family filters on the same ownership column.
     return registered.qualifiedName
       ? sameNameParentTenancy(registered.qualifiedName)
       : undefined;
