@@ -124,7 +124,9 @@ the parameter's transport name, such as `actionId` for `id`, reaches an
 ownership parameter). The parameter names
 come from scanned metadata only: an action with none (runtime REST serving a
 class without a manifest entry for the method) never qualifies, whatever its
-source declares, and the server never parses a method's source to decide.
+source declares, and the server never parses a method's source to decide. The
+metadata is that of the receiver dispatched: a collection method reads the
+collection class's own entry, never a same-named item method's.
 Every other custom collection action reads through the
 collection with no scope of its own, so for a caller with no tenant it runs
 inside the gate, which refuses it. The emitted SvelteKit routes apply the same

@@ -60,6 +60,7 @@ const ROW_GLOBAL = '99999999-0000-4000-8000-000000000009';
       'lineCr',
       'lineSeparator',
       'paragraphSeparator',
+      'shadowed',
     ],
     routes: {
       recent: { method: 'GET', scope: 'collection' },
@@ -73,6 +74,7 @@ const ROW_GLOBAL = '99999999-0000-4000-8000-000000000009';
       lineCr: { method: 'GET', scope: 'collection' },
       lineSeparator: { method: 'GET', scope: 'collection' },
       paragraphSeparator: { method: 'GET', scope: 'collection' },
+      shadowed: { method: 'GET', scope: 'collection' },
     },
   },
 })
@@ -122,6 +124,12 @@ class ScopedMemoCollection extends SmrtCollection<ScopedMemo> {
     titles: string[];
   }> {
     const rows = await this.list({ limit: Number(limit) || 10 });
+    return { titles: rows.map((row) => row.title).sort() };
+  }
+
+  /** No scanned metadata, and a name a scanned item static method shares. */
+  async shadowed(): Promise<{ titles: string[] }> {
+    const rows = await this.list({});
     return { titles: rows.map((row) => row.title).sort() };
   }
 
@@ -243,17 +251,35 @@ describe('runtime REST request tenant', () => {
       'ScopedLegacyMemo',
       ScopedLegacyMemoCollection as never,
     );
-    // The scanned manifest says `recent` takes no options, so nothing hands it
+    // A loaded manifest records a collection-hosted action's parameters under
+    // the collection class, which is registered for them.
+    ObjectRegistry.register(ScopedMemoCollection as never, {});
+    ObjectRegistry.register(ScopedWorkspaceCollection as never, {});
+    // Registration introspects the prototype; keep only what a manifest names.
+    ObjectRegistry.getMethods('ScopedMemoCollection').clear();
+    ObjectRegistry.getMethods('ScopedWorkspaceCollection').clear();
+    // The scanned manifest (under the collection class that hosts it) says
+    // `recent` takes no options, so nothing hands it
     // a tenant scope.
-    ObjectRegistry.getMethods('ScopedMemo').set('recent', {
+    ObjectRegistry.getMethods('ScopedMemoCollection').set('recent', {
       name: 'recent',
       parameters: [],
       returnType: 'Promise<any>',
       isPublic: true,
     } as never);
+    // A scanned static method on the ITEM class that takes options. The
+    // collection method of the same name has no scanned metadata, and it is
+    // the one a request reaches.
+    ObjectRegistry.getMethods('ScopedMemo').set('shadowed', {
+      name: 'shadowed',
+      parameters: [{ name: 'options', type: 'object', optional: true }],
+      returnType: 'Promise<any>',
+      isPublic: true,
+      isStatic: true,
+    } as never);
     // `latest` takes a page size, not the options a scope is set in.
     // `unscanned` has no registered metadata at all.
-    ObjectRegistry.getMethods('ScopedMemo').set('latest', {
+    ObjectRegistry.getMethods('ScopedMemoCollection').set('latest', {
       name: 'latest',
       parameters: [{ name: 'limit', type: 'number', optional: true }],
       returnType: 'Promise<any>',
@@ -265,7 +291,7 @@ describe('runtime REST request tenant', () => {
     );
     // `ownerOf` names the ownership property `id`, which flat transports
     // expose as `actionId`.
-    ObjectRegistry.getMethods('ScopedWorkspace').set('ownerOf', {
+    ObjectRegistry.getMethods('ScopedWorkspaceCollection').set('ownerOf', {
       name: 'ownerOf',
       parameters: [
         { name: 'id', type: 'string', optional: true },
@@ -592,6 +618,29 @@ describe('runtime REST request tenant', () => {
       expect(response.status).toBe(200);
       expect(await response.json()).toMatchObject({
         result: { titles: served },
+      });
+    });
+  });
+
+  describe('a collection method sharing its name with a scanned item static method', () => {
+    it('is not admitted by the item method signature for a caller with no tenant', async () => {
+      const response = await call(handler, 'GET', 'memos/shadowed', {
+        as: 'user-without-tenant',
+      });
+      expect(response.status).toBe(403);
+      const text = await response.text();
+      expect(text).not.toContain('"a"');
+      expect(text).not.toContain('"b"');
+      expect(text).not.toContain('"global"');
+    });
+
+    it('serves a caller with a tenant its own rows', async () => {
+      const response = await call(handler, 'GET', 'memos/shadowed', {
+        as: 'user-of-a',
+      });
+      expect(response.status).toBe(200);
+      expect(await response.json()).toMatchObject({
+        result: { titles: ['a'] },
       });
     });
   });

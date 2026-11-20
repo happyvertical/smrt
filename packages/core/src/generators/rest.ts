@@ -1450,6 +1450,29 @@ export class APIGenerator {
   }
 
   /**
+   * The method view for an action dispatched on the collection instance: the
+   * collection class's own scanned entry, else only the `@method()` config of
+   * the resolved view with every item-derived signature field dropped.
+   */
+  private collectionReceiverMethod(
+    collection: SmrtCollection<SmrtObject>,
+    methodName: string,
+    resolved: MethodDefinition | undefined,
+  ): MethodDefinition | undefined {
+    const scanned = ObjectRegistry.getMethods(collection.constructor.name)?.get(
+      methodName,
+    );
+    if (scanned) {
+      return scanned.decoratorConfig || !resolved?.decoratorConfig
+        ? scanned
+        : { ...scanned, decoratorConfig: resolved.decoratorConfig };
+    }
+    return resolved?.decoratorConfig
+      ? ({ decoratorConfig: resolved.decoratorConfig } as MethodDefinition)
+      : undefined;
+  }
+
+  /**
    * Refuse a request that matched a DECLARED action's own path and verb but
    * whose action is withheld — or return `null` to let it fall through.
    *
@@ -1601,10 +1624,17 @@ export class APIGenerator {
         continue;
       }
 
+      // Parameter metadata belongs to the receiver that is dispatched. A
+      // collection method reads its own scanned entry; a same-named item
+      // method's signature is never used for it, so a collection method with
+      // no scanned entry counts as unscanned.
+      const dispatchedMethod = isCollectionHosted
+        ? this.collectionReceiverMethod(collection, actionName, declaredMethod)
+        : declaredMethod;
       const metadata = resolveCustomActionMetadata({
         actionName,
         apiConfig,
-        ...(declaredMethod ? { method: declaredMethod } : {}),
+        ...(dispatchedMethod ? { method: dispatchedMethod } : {}),
         // A collection instance method is collection-hosted even when it is
         // not static; a static on the item class already defaults the same
         // way. Either receiver makes this route collection-targeted.
