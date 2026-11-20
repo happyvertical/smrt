@@ -7,7 +7,7 @@ import type { EngineDialect } from './types.ts';
 
 // Match the column types core's own PostgreSQL DDL creates (BIGINT, BOOLEAN,
 // JSONB, TIMESTAMPTZ, DOUBLE PRECISION), so an engine ADD COLUMN and core's
-// planned DDL agree. `db-types.test.ts` compares them per field type.
+// planned DDL agree. `db-dialect.test.ts` compares them per field type.
 const COLUMN_TYPES: Record<FieldType, string> = {
   text: 'TEXT',
   number: 'DOUBLE PRECISION',
@@ -47,15 +47,17 @@ export const postgresDialect: EngineDialect = {
       ? `${column} AS "${a}", CAST(${column} AS TEXT) AS "${a}${TEXT_ALIAS}"`
       : `${column} AS "${a}"`;
   },
-  // A BIGINT may be past 2^53: the exact digits travel as text beside it.
+  // A BIGINT may come back as a string (the server pool has no BIGINT parser)
+  // or as a number; decide from the exact digits: a safe integer is a number,
+  // anything larger stays the text (the engine's contract for unsafe values).
   finishStoredInteger(row, alias) {
     const key = alias + TEXT_ALIAS;
     if (!(key in row)) return;
     const text = row[key];
     delete row[key];
-    const v = row[alias];
-    if (text != null && !(typeof v === 'number' && Number.isSafeInteger(v)))
-      row[alias] = text;
+    if (text == null) return;
+    const n = Number(text);
+    row[alias] = Number.isSafeInteger(n) ? n : String(text);
   },
   byteLength: (e) => `octet_length(${e})`,
   isDistinct: (a, b) => `${a} IS DISTINCT FROM ${b}`,

@@ -12,7 +12,6 @@ import type {
   DatabaseConfig,
   DatabaseKind,
   EngineDialect,
-  HostDatabase,
   WorkerDatabaseConfig,
 } from './types.ts';
 
@@ -86,7 +85,6 @@ export function forWorker(config: DatabaseConfig): {
   };
 }
 
-/** Refuse what exists on SQLite only (snapshots, copies, drafts, publish; #5187). */
 /**
  * A method re-reads and writes in one transaction and re-runs if the data
  * moved in between. That check needs the one connection of an embedded
@@ -104,23 +102,13 @@ export function requireSingleWriter(
     );
 }
 
+/** Refuse what exists on SQLite only (snapshots, copies, drafts, publish, portable export; #5187). */
 export function requireSnapshots(config: { kind: DatabaseKind }, what: string) {
   if (config.kind !== 'sqlite')
     throw new EngineError(
       `${what} is not supported on this database yet (it needs SQLite; PostgreSQL is #5187)`,
       'refused',
     );
-}
-
-/**
- * The database a host uses when it was not told one: SQLite in the data
- * directory, the desktop's. `SMRT_APP_SHELL_DB=pglite` (the engine suite's
- * PostgreSQL pass, `pnpm test:pglite`) gives each data directory its own
- * PGlite in schema `app` instead.
- */
-export async function defaultDatabase(dataDir: string): Promise<HostDatabase> {
-  if (process.env.SMRT_APP_SHELL_DB !== 'pglite') return { config: SQLITE };
-  return (await import('./harness.ts')).harnessDatabase(dataDir);
 }
 
 /** A column as `@happyvertical/sql` reports it. */

@@ -6,7 +6,7 @@
 // Files excluded here need something only SQLite has. They keep running on
 // SQLite (the default config); `src/engine/postgres-engine.test.ts` is the
 // PostgreSQL counterpart for the engine paths they cover. Single tests that
-// need it skip themselves with `it.skipIf(onPglite)` (pglite-env.ts). Bringing
+// need it skip themselves with `{ skip: onPglite }` (pglite-env.ts). Bringing
 // the excluded files across needs a dual-database SQL helper for their raw
 // assertions, and drafts and publish on PostgreSQL (#5187).
 import { defineConfig } from 'vitest/config';
@@ -35,13 +35,17 @@ const SQLITE_ONLY = [
   'walkthrough.test.ts',
 ];
 
-const baseTest = (base as { test?: { exclude?: string[] } }).test ?? {};
+const baseTest = (base as { test?: { exclude?: string[]; setupFiles?: string[] } }).test ?? {};
 
 export default defineConfig({
   ...base,
   test: {
     ...baseTest,
     env: { SMRT_APP_SHELL_DB: 'pglite' },
+    setupFiles: [
+      ...((baseTest as { setupFiles?: string[] }).setupFiles ?? []),
+      'src/engine/pglite-setup.ts',
+    ],
     include: ['src/engine/**/*.test.ts'],
     exclude: [
       ...(baseTest.exclude ?? []),

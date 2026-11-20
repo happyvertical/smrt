@@ -110,8 +110,16 @@ export function stored(value: unknown): unknown {
 }
 // Compared in the stored form: PostgreSQL hands back Dates, booleans and
 // parsed JSON where SQLite has text and numbers, and a journal holds JSON.
-const same = (a: unknown, b: unknown) =>
-  (stored(a) ?? null) === (stored(b) ?? null);
+// A server's BIGINT may arrive as digits: 5 and "5" are the same stored value.
+export const same = (a: unknown, b: unknown) => {
+  const x = stored(a) ?? null;
+  const y = stored(b) ?? null;
+  if (x === y) return true;
+  return (
+    (typeof x === 'number' && typeof y === 'string' && String(x) === y) ||
+    (typeof y === 'number' && typeof x === 'string' && String(y) === x)
+  );
+};
 const keyFor = (values: unknown[]) => JSON.stringify(values);
 
 /** Stable per-command ids: later draft commands can refer to loaded rows. */

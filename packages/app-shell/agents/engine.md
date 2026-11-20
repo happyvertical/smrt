@@ -108,13 +108,14 @@ scans for it.
 - **Still SQLite only** (a clear `not supported on this database yet`
   `EngineError`, `requireSnapshots`): `copyTo`, `forkDraft`, `previewPublish`,
   `publishDraft`; the portable export and import (`openAppDatabase(dataDir)`
-  opens SQLite). On PostgreSQL `snapshot()` returns `null`: boot and method runs
+  opens SQLite; they refuse a host that reports another database). On PostgreSQL `snapshot()` returns `null`: boot and method runs
   proceed without a pre-change copy, so there is no method undo point there
-  until #5187. Method runs on a PostgreSQL SERVER (`kind: 'postgres'`) are
+  until #5187 (`AppHost.notices` says so on open; #5187 must restore it). Method runs on a PostgreSQL SERVER (`kind: 'postgres'`) are
   refused (`requireSingleWriter`, see Sandbox); PGlite runs them.
 - **Tests.** `pnpm test:pglite` (`vitest.pglite.config.ts`) runs the engine
   suite with `SMRT_APP_SHELL_DB=pglite`: each data directory gets its own
-  PGlite in schema `app` (`db/harness.ts`). Files that read `app.db` with
+  PGlite in schema `app` (`db/harness.ts`, injected by `pglite-setup.ts`; a
+  shipped host is always told its database, default SQLite). Files that read `app.db` with
   `node:sqlite` or exercise snapshots, drafts or publish are excluded there
   (the list is in the config, with the reason); they run on SQLite as before.
   `postgres.test.ts` always runs on PGlite: two apps' schemas stay apart
@@ -122,8 +123,8 @@ scans for it.
   member of the adapter handle reaches the database unscoped.
   `postgres-engine.test.ts` walks migrations, loads (upsert over every field
   type, undo, refused undo), merge, extract, methods and reports on PGlite.
-  **Coverage on PostgreSQL is partial**: 24 files, about 200 tests, against 41
-  files and 380 tests on SQLite; the excluded files are listed with their
+  **Coverage on PostgreSQL is partial**: 25 files, 202 tests, against 41
+  files and 383 tests on SQLite; the excluded files are listed with their
   reason in `vitest.pglite.config.ts`. The server kind is covered through the
   same scope code over PGlite, not against a real server. Known SDK limit:
   `renderExpression` renders an all-NULL `secondsBetween` as `NULL - NULL`,

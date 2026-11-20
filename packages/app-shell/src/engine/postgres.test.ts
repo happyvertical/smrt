@@ -11,6 +11,12 @@ import type { PGliteClient } from './db/index.ts';
 import { requireSingleWriter } from './db/index.ts';
 import { PASS_THROUGH, SCOPED_MEMBERS, scopeDatabase } from './db/postgres.ts';
 import { AppHost, EngineError, MemoryVersionStore } from './index.ts';
+import {
+  exportUserApp,
+  importUserApp,
+  inspectUserApp,
+  verifyUserApp,
+} from './portable-export.ts';
 
 type Client = PGliteClient;
 let pg: Client;
@@ -161,7 +167,13 @@ describe('one schema per app (tenancy)', () => {
     await db.client.query('CREATE TABLE client_probe (id int)');
     expect(await tablesIn('app_a')).toContain('client_probe');
     expect(await tablesIn('app_b')).not.toContain('client_probe');
-    for (const k of ['acquireSession', 'syncSchema', 'alterTable', 'vector'])
+    for (const k of [
+      'acquireSession',
+      'syncSchema',
+      'alterTable',
+      'vector',
+      'reopenOptions',
+    ])
       expect(db[k], k).toBeUndefined();
   });
 });
@@ -206,6 +218,33 @@ describe('no schema, no start', () => {
 });
 
 describe('what needs SQLite stays SQLite (#5187)', () => {
+  it('opening an app on PostgreSQL says there is no undo point; SQLite says nothing', async () => {
+    const host = await open('app_a');
+    expect(host.notices.join(' ')).toMatch(/No undo point/);
+    const lite = await AppHost.open(tmp(), {
+      store: new MemoryVersionStore(),
+      database: { kind: 'sqlite' },
+    });
+    hosts.push(lite);
+    expect(lite.notices).toEqual([]);
+  });
+
+  it('portable export and import refuse a PostgreSQL host', async () => {
+    const database = { kind: 'pglite' as const };
+    await expect(
+      exportUserApp({ dataDir: tmp(), versions: [], database }),
+    ).rejects.toThrow(/not supported on this database yet/);
+    await expect(
+      importUserApp({ dataDir: tmp(), bundle: {} as never, database }),
+    ).rejects.toThrow(/not supported on this database yet/);
+    await expect(inspectUserApp({ dataDir: tmp(), database })).rejects.toThrow(
+      /not supported on this database yet/,
+    );
+    await expect(
+      verifyUserApp({ dataDir: tmp(), bundle: {} as never, database }),
+    ).rejects.toThrow(/not supported on this database yet/);
+  });
+
   it('a method run is refused on a PostgreSQL server, allowed on PGlite and SQLite', () => {
     expect(() =>
       requireSingleWriter({ kind: 'postgres' }, 'running a method'),

@@ -18,7 +18,18 @@ import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, renameSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { openAppDatabase } from './app-runtime.ts';
+import {
+  type DatabaseKind,
+  requireSnapshots as requireSqliteHost0,
+} from './db/index.ts';
 import * as sqlite from './db/sqlite.ts';
+
+/** Export and import read and write an `app.db` file: a host on another database must not use them. */
+const requireSqliteHost = (
+  database: { kind: DatabaseKind } | undefined,
+  what: string,
+) => requireSqliteHost0(database ?? { kind: 'sqlite' }, what);
+
 import { type AppDefinition, validate } from './definition.ts';
 import { EngineError } from './errors.ts';
 import { AppHost } from './host.ts';
@@ -88,10 +99,14 @@ export interface ExportUserAppOptions {
   dataDir: string;
   /** Version history of the app, oldest first (the caller's VersionStore). */
   versions: VersionRecord[];
+  /** The database the host runs the app on; anything but SQLite is refused. */
+  database?: { kind: DatabaseKind };
 }
 
 export interface ImportUserAppOptions {
   dataDir: string;
+  /** The database the host runs the app on; anything but SQLite is refused. */
+  database?: { kind: DatabaseKind };
   bundle: PortableUserApp;
   /** Test seam: observe phases (`staged`, `verified`, `published`). */
   onPhase?: (phase: string) => void | Promise<void>;
@@ -281,6 +296,7 @@ export function hasUserAppDatabase(dataDir: string): boolean {
 export async function exportUserApp(
   options: ExportUserAppOptions,
 ): Promise<PortableUserApp> {
+  requireSqliteHost(options.database, 'exporting the app');
   if (!hasUserAppDatabase(options.dataDir))
     throw new EngineError('there is no user app database to export', 'refused');
   const h = await openAppDatabase(options.dataDir);
@@ -353,7 +369,9 @@ export interface UserAppInspection {
 /** Integrity and readability of the user app database in `dataDir`. */
 export async function inspectUserApp(options: {
   dataDir: string;
+  database?: { kind: DatabaseKind };
 }): Promise<UserAppInspection> {
+  requireSqliteHost(options.database, 'inspecting the app');
   if (!hasUserAppDatabase(options.dataDir))
     throw new EngineError('there is no user app database', 'refused');
   const h = await openAppDatabase(options.dataDir);
@@ -469,7 +487,9 @@ export function checkUserAppBundle(bundle: PortableUserApp): string[] {
 export async function verifyUserApp(options: {
   dataDir: string;
   bundle: PortableUserApp;
+  database?: { kind: DatabaseKind };
 }): Promise<UserAppVerification> {
+  requireSqliteHost(options.database, 'verifying the app');
   const { bundle } = options;
   const h = await openAppDatabase(options.dataDir);
   try {
@@ -545,6 +565,7 @@ function refuse(message: string): never {
 export async function importUserApp(
   options: ImportUserAppOptions,
 ): Promise<ImportUserAppResult> {
+  requireSqliteHost(options.database, 'importing the app');
   const { dataDir, bundle } = options;
   const problems = checkUserAppBundle(bundle);
   if (problems.length)

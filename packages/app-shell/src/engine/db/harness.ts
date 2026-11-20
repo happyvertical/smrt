@@ -3,6 +3,7 @@
 // starts, as a real host's provisioning would. Loaded only when
 // `SMRT_APP_SHELL_DB=pglite` is set.
 
+import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { importPGlite } from '@happyvertical/sql/pglite';
 import type { HostDatabase, PGliteClient } from './types.ts';
@@ -20,6 +21,7 @@ export async function harnessDatabase(
 ): Promise<HostDatabase> {
   let entry = open.get(dir);
   if (!entry) {
+    mkdirSync(dir, { recursive: true });
     const { PGlite } = await importPGlite();
     entry = {
       client: (await PGlite.create(join(dir, 'pglite'))) as PGliteClient,

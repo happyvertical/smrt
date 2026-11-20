@@ -150,7 +150,7 @@ function inertClient(
 }
 
 /** Operations that do not touch tables, so need no scope. */
-export const PASS_THROUGH = new Set(['close', 'reopenOptions']);
+export const PASS_THROUGH = new Set(['close']);
 export const SCOPED_MEMBERS = new Set<string>([
   ...STATEMENTS,
   'getTableSchema',

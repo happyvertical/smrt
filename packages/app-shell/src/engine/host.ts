@@ -29,11 +29,11 @@ import { assertLoadBounds, type LoadPreview } from './data-migrations.ts';
 import {
   assertDatabaseConfig,
   type DatabaseConfig,
-  defaultDatabase,
   dialectFor,
   type EngineDialect,
   type HostDatabase,
   requireSnapshots,
+  SQLITE,
 } from './db/index.ts';
 import {
   type AppDefinition,
@@ -345,6 +345,12 @@ export class AppHost extends EventEmitter {
   private database: DatabaseConfig;
   private dialect: EngineDialect;
   private releaseDatabase?: () => Promise<void>;
+  /**
+   * What the chosen database cannot do yet, said plainly. On PostgreSQL there
+   * is no pre-change copy, so a method run or schema change has no undo point
+   * (#5187); the shell shows this to the owner.
+   */
+  readonly notices: string[] = [];
   private app!: AppWorker;
   private closed = false;
   #autoApprove = false;
@@ -369,6 +375,10 @@ export class AppHost extends EventEmitter {
     this.database = database.config;
     this.dialect = dialectFor(database.config);
     this.releaseDatabase = database.release;
+    if (!this.dialect.snapshots)
+      this.notices.push(
+        'No undo point for method runs on this database: PostgreSQL has no pre-change copy yet (#5187).',
+      );
     this.store = opts.store;
     this.workerUrl = opts.workerUrl ?? defaultWorkerUrl();
     this.workerLimits = opts.workerLimits;
@@ -388,9 +398,7 @@ export class AppHost extends EventEmitter {
     }
     mkdirSync(join(dataDir, 'snapshots'), { recursive: true });
     if (opts.database) assertDatabaseConfig(opts.database);
-    const database: HostDatabase = opts.database
-      ? { config: opts.database }
-      : await defaultDatabase(dataDir);
+    const database: HostDatabase = { config: opts.database ?? SQLITE };
     const host = new AppHost(dataDir, opts, database);
     try {
       await host.boot();
