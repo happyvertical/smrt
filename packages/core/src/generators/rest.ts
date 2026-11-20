@@ -7,7 +7,7 @@ import { getRegistryGeneration } from '../registry/generation.js';
 
 import http from 'node:http';
 import { getTableVersion } from '../change-feed';
-import type { SmrtCollection, SmrtCollectionOptions } from '../collection';
+import type { SmrtCollection } from '../collection';
 import {
   assertCreateTargetSurface,
   CreateTargetError,
