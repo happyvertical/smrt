@@ -1164,6 +1164,34 @@ export class APIGenerator {
   }
 
   /**
+   * Run a write on a row of an STI subtype inside the subtype's tenant gate
+   * when the subtype is tenant-scoped and the route's base is not: the base
+   * route ran outside any gate, so without this the tenancy interceptor would
+   * see no tenant for the subtype row.
+   */
+  private async runInRowTenantGate<T>(
+    objectName: string | undefined,
+    rowModel: string | undefined,
+    req: Request,
+    operation: () => Promise<T>,
+  ): Promise<T> {
+    if (
+      !rowModel ||
+      rowModel === objectName ||
+      !this.isTenantScopedModel(rowModel) ||
+      this.isTenantScopedModel(objectName)
+    ) {
+      return operation();
+    }
+    return this.runInTenantGate(
+      rowModel,
+      await this.requestTenant(req),
+      false,
+      operation,
+    );
+  }
+
+  /**
    * Whether a model is tenant-scoped, across both registration forms (#1782):
    * the `@smrt({ tenantScoped })` config / manifest-merged form, and the
    * standalone `@TenantScoped()` decorator through the tenancy-filled
@@ -2110,10 +2138,12 @@ export class APIGenerator {
     }
 
     // The body sets declared fields and settable accessors, nothing else.
-    await collection.withAuditMutation(object, 'updated', async (bound) => {
-      applyUpdateInput(bound, data, objectName);
-      await bound.save();
-    });
+    await this.runInRowTenantGate(objectName, rowModel, req, () =>
+      collection.withAuditMutation(object, 'updated', async (bound) => {
+        applyUpdateInput(bound, data, objectName);
+        await bound.save();
+      }),
+    );
 
     return this.createJsonResponse(this.toPublicData(object));
   }
@@ -2140,7 +2170,9 @@ export class APIGenerator {
       if (refusal) return refusal;
     }
 
-    await collection.delete(id);
+    await this.runInRowTenantGate(objectName, rowModel, req, () =>
+      collection.delete(id),
+    );
     return new Response(null, { status: 204 });
   }
 
@@ -2287,20 +2319,28 @@ export class APIGenerator {
       assertUpdate: (row, data) => assertUpdateInput(row, data, resolvedName),
       assertCreate: (data) =>
         assertCreateInput(resolvedName, data, resolvedCollection),
+      // A tenant-scoped subtype row through an unscoped base is written
+      // inside the subtype's tenant gate.
       mutate: async (row, op, data) => {
-        await resolvedCollection.withAuditMutation(
-          row as SmrtObject,
-          op === 'update' ? 'updated' : 'deleted',
-          async (bound) => {
-            if (op === 'update') {
-              applyUpdateInput(bound, data, resolvedName);
-              await bound.save();
-            } else {
-              await bound.delete({
-                expectedUpdatedAt: bound.updated_at ?? undefined,
-              });
-            }
-          },
+        await this.runInRowTenantGate(
+          resolvedName,
+          modelOfInstance(row),
+          admitted,
+          () =>
+            resolvedCollection.withAuditMutation(
+              row as SmrtObject,
+              op === 'update' ? 'updated' : 'deleted',
+              async (bound) => {
+                if (op === 'update') {
+                  applyUpdateInput(bound, data, resolvedName);
+                  await bound.save();
+                } else {
+                  await bound.delete({
+                    expectedUpdatedAt: bound.updated_at ?? undefined,
+                  });
+                }
+              },
+            ),
         );
       },
       isOpAllowed: (op: SyncApplyOp) =>

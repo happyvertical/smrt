@@ -223,7 +223,10 @@ an STI base under an `authMiddleware` vary by caller, so they are cached and
 validated like reads with permission-gated fields. The restriction narrows a
 caller's own `_meta_type` `in` filter to the types both name (none left serves
 nothing), and a restricted point read resolves the segment as
-`collection.get()` does, so a slug still finds its row. A plain `new APIGenerator()` spans the whole registry,
+`collection.get()` does, so a slug still finds its row. An update, delete or
+sync write of a row whose own model is tenant-scoped, through a base that is
+not, runs in that model's tenant gate with the request's tenant
+(`runInRowTenantGate`), as a create already did. A plain `new APIGenerator()` spans the whole registry,
 which may hold models the host never serves, so it does not refuse at
 construction. Tests: `src/__tests__/rest-model-identity.test.ts`.
 
