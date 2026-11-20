@@ -1170,7 +1170,9 @@ describe('mail account access (#5129)', () => {
     });
   });
 
-  describe('trusted notification outbox', () => {
+  // These run full outbox dispatches; under a loaded host they exceed the
+  // 5 s default, so they carry an explicit budget.
+  describe('trusted notification outbox', { timeout: 30_000 }, () => {
     it('sends from an owned account with no mail principal (ordinary sends stay gated, see send scope)', async () => {
       const recipient = grantee.id;
       const outbox = new NotificationOutboxService({

@@ -294,11 +294,33 @@ writes only `src/manifest/test-manifest.json` (`outputMode: 'explicit'`; its
 Turbo outputs exclude `.smrt/`). Disabling knowledge in a production build
 removes a previous local knowledge artifact, so consumers cannot mistake it for
 current enabled output.
+Installed-package discovery (`manifest/discover-smrt-packages.ts`) caches its
+answer in `.smrt/discovery-cache.json`, keyed on the nearest lockfile at or
+above the project (a workspace app has none of its own), the project's
+`package.json`, each selected manifest, and a stat signature (mtime, ctime,
+size, device and inode) of the manifest candidates of every installed
+directory of a dependency that had no manifest yet, together with where that
+name resolves now (a repointed workspace link invalidates it); selected
+providers' manifests and package.json use the same full stat marker, so building
+a linked workspace package invalidates the cache in this process and the
+next. A discovery that throws is never cached. Repeat calls in one process
+reuse the answer while a stat-only fingerprint of those inputs holds, without
+re-reading or re-hashing the lockfile (module-private, no new export).
 `new ManifestBuilder(projectRoot)` keeps discovery, package identity, and output
 at that explicit root, including installed providers and external base classes;
 omitting the argument retains the current-working-directory
 behavior. Both manifest writers retain declared package dependencies when merging
-their local and consumed-object projections.
+their local and consumed-object projections. A consumed package's entry carried
+forward from the previous `.smrt/manifest.json` is kept only while its provider
+is installed (nearest `node_modules` at or above the project), its installed
+manifest declares it, and the installed version is the one it records
+(`retainInstalledCarriedEntries`, `manifest/installed-package-manifest.ts`,
+#5035). When the consumer's write has just aggregated a provider, that
+provider's declarations decide alone, including an empty set and an
+executable-only (`static-manifest.js`) provider whose manifest the JSON check
+cannot read; that module is imported at its current file revision, so a
+provider rebuilt in place between two builds in one process is re-read; otherwise a model removed from a consumed package stays in the file
+schema commands read.
 
 Test manifests carry `artifactPurpose: 'test'` and are valid only as the active
 test manifest of the run that registered them. Every other reader refuses them
@@ -364,6 +386,46 @@ remain skipped, ancestor-hoisted installs resolve normally, and handwritten
 `+server.ts`/`+server.js` ownership and explicit disablement remain unchanged.
 Do not change a package's export map to accommodate a mismatched detector.
 
+Dev-server rescans (`smrtPlugin` `watch`/`hmr`): Vite's watcher reports
+absolute paths, so `shouldRescan` matches the project-relative POSIX path
+against `include`/`exclude` (an absolute pattern under the root is made
+relative). It ignores the plugin's own outputs (`+server.*` under `routesDir`,
+`smrt-register.ts`, `virtual-modules.d.ts`, the knowledge route
+(`knowledgeRoutePath` as the last generation resolved it, outside `routesDir`;
+the watcher never evaluates the project config itself), any file starting with the route
+header), or each regeneration would trigger the next. After a rescan, change,
+add and unlink alike invalidate every loaded virtual module by its resolved
+`\0smrt:*` id in each Vite environment's module graph and send that
+environment's hot channel a full reload; `server.reloadModule` cannot be used
+because it skips modules without a file. `watcher-dev-server.test.ts` drives a
+real Vite dev server; a handler test with a relative path cannot see either
+defect. Rescans are serialized: one runs and at most one waits; events that
+arrive meanwhile join the waiting one, which scans the latest sources once the
+running one finishes, so an older scan never publishes over a newer one.
+
+Route generation validates every object's routes
+(`assertSvelteKitObjectRoutesValid`, `vite-plugin/generated-route-preflight.ts`:
+the generator's own claim pass per object) before `generateSvelteKitRoutes()`
+sweeps the route tree, on the producer's direct path and the coordinator path
+alike, so a duplicate or mixed-host custom route fails with the previous
+routes still on disk. It checks only what rendering already enforced: two
+claims on one handler file (`Conflicting SvelteKit route`, within an object or
+across objects) stay a hosted-consumer (`rejectRouteCollisions`) rule, so a
+producer-only app still generates STI siblings that share a collection, a
+static action whose path is `[id]` beside CRUD, or a `sync` collection with an
+`apply` action beside the sync-apply route, exactly as before.
+
+The generated API client (`generateClientModule`, behind both
+`@happyvertical/smrt-virt-client` and `@smrt/client`) sends every
+caller-supplied path value (an item `id`, a named route parameter) as exactly
+one `encodeURIComponent` segment (`__smrtPathSegment`). An empty, `.` or `..`
+value cannot be one segment, and an item id holding a lone UTF-16 surrogate
+cannot be encoded, so its request promise rejects (nothing is sent) instead of
+the request resolving onto another route or the call throwing. An unencodable
+named route parameter still throws its `URIError` synchronously. Fetchers stay plain functions returning
+that promise; a missing named route parameter still throws synchronously.
+Static collection and route segments are emitted as JSON string literals.
+
 
 `src/vite-preset/` (`@happyvertical/smrt-core/vite`, `smrt()`) composes the Oxc
 decorator block, `smrtConsumer`, then `smrtPlugin` with the template path
@@ -399,7 +461,10 @@ preset fills that allowlist: with `smrt.cookbook.json` present it is the models
 of the cookbook's recipes plus `features`, minus models the cookbook `exposure`
 turns off for `api` or a recipe's `options[model].exposure.api === false`
 (`vite-preset/cookbook-exposure.ts`; recipe `{ exclude }` narrowing is not
-applied by the build yet). `smrt({ expose })` replaces the derived list. No
+applied by the build yet). Each consumed package's manifest is read from the
+nearest `node_modules` at or above the project, as the consumer plugin does,
+so hoisted and workspace installs host too; a package without a readable JSON
+manifest is named in a warning rather than silently hosting nothing. `smrt({ expose })` replaces the derived list. No
 cookbook and no `expose` keeps `svelteKit: true` (nothing hosted). The producer's
 `@happyvertical/smrt-virt-web` still covers only the app's own models; read
 package models from `@smrt/web`. `smrt({ objectsDir })` is passed to the hosting

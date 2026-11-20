@@ -19,9 +19,14 @@ import {
 } from '../generation-snapshot.js';
 import { buildDomainKnowledgeManifest } from '../knowledge.js';
 import { resolveFileKnowledgeConfig } from '../knowledge-config.js';
+import {
+  findInstalledPackageJson,
+  legacyStaticManifestPath,
+  packageManifestCandidates,
+  retainInstalledCarriedEntries,
+} from '../manifest/installed-package-manifest.js';
 import { annotateModelReplacements } from '../manifest/model-replacements';
 import { selectObjectDeclarations } from '../manifest/object-declarations.js';
-import { manifestExportCandidates } from '../manifest/package-manifest-exports.js';
 import { isTestArtifactManifest } from '../manifest/test-artifacts.js';
 import {
   BUILD_SCHEMA_MODULE,
@@ -87,6 +92,9 @@ export {
   aliasHostedCollections,
   separateHostedStiCollections,
 } from './hosted-sti-collections.js';
+// Kept on this entry for its existing importers; implemented beside the
+// manifest readers that share it.
+export { findInstalledPackageJson };
 
 /**
  * Loosely-typed view of an object definition as carried by an external
@@ -160,28 +168,6 @@ function packageNameFromImportPath(importPath: string): string {
   return importPath.startsWith('@')
     ? parts.slice(0, 2).join('/')
     : (parts[0] ?? importPath);
-}
-
-/** Resolve installed package metadata through the actual host/workspace links. */
-export function findInstalledPackageJson(
-  packageName: string,
-  searchFrom: string,
-): string | undefined {
-  let currentDir = fs.existsSync(searchFrom)
-    ? fs.realpathSync(searchFrom)
-    : path.resolve(searchFrom);
-  while (true) {
-    const candidate = path.join(
-      currentDir,
-      'node_modules',
-      packageName,
-      'package.json',
-    );
-    if (fs.existsSync(candidate)) return fs.realpathSync(candidate);
-    const parentDir = path.dirname(currentDir);
-    if (parentDir === currentDir) return undefined;
-    currentDir = parentDir;
-  }
 }
 
 function sameInstalledPackage(
@@ -842,7 +828,7 @@ export function smrtConsumer(
    * `@smrt/web` definitions and the registration agree on the endpoint.
    */
   function withHostedStiCollections(manifest: ConsumerManifest) {
-    return consumerSvelteKit
+    const hosted = consumerSvelteKit
       ? separateHostedStiCollections(
           manifest,
           consumerSvelteKit.objects,
@@ -850,6 +836,11 @@ export function smrtConsumer(
             consumerObjectRef(key, def as unknown as ConsumerObjectDefinition),
         )
       : manifest;
+    const providers = aggregatedProviders.get(manifest);
+    if (providers && hosted !== manifest) {
+      aggregatedProviders.set(hosted, providers);
+    }
+    return hosted;
   }
 
   async function aggregateHosted(
@@ -1512,29 +1503,45 @@ async function discoverSmrtPackages(projectRoot: string): Promise<string[]> {
 }
 
 /**
- * Manifest locations probed for a consumed package, in preference order.
- *
- * The package's own `package.json#exports` map comes first: it is the
- * published contract for where the manifest lives, and a package whose build
- * emits outside this framework's conventional layout (for example
- * `"./manifest.json": "./dist/lib/manifest.json"`) is otherwise skipped
- * entirely (issue #2923). The conventional paths remain as a fallback for
- * packages that ship a manifest without exporting a subpath for it.
+ * Entries of the existing `.smrt/manifest.json` that this write keeps beside
+ * the fresh aggregation. The local project's entries belong to `smrtPlugin()`
+ * and are kept as written. Another package's entry the aggregation did not
+ * produce is carried only while it still describes what is installed: its
+ * provider is installed, declares it, and has its recorded version (#5035).
  */
-function legacyStaticManifestPath(packageDir: string): string {
-  return path.join(packageDir, 'dist', 'manifest', 'static-manifest.js');
-}
-
-function packageManifestCandidates(
-  packageDir: string,
-  packageJson?: ConsumerPackageJson,
-): string[] {
-  return [
-    ...manifestExportCandidates(packageDir, packageJson),
-    legacyStaticManifestPath(packageDir),
-    path.join(packageDir, 'dist', 'manifest.json'),
-    path.join(packageDir, 'manifest.json'),
-  ];
+function carriedExistingObjects(
+  existing: ConsumerManifest['objects'],
+  localPackageName: string | undefined,
+  aggregated: ConsumerManifest['objects'],
+  authoritativeProviders: ReadonlySet<string>,
+  projectRoot: string,
+): ConsumerManifest['objects'] {
+  const kept: ConsumerManifest['objects'] = {};
+  const carried: ConsumerManifest['objects'] = {};
+  for (const [key, entry] of Object.entries(existing ?? {})) {
+    if (Object.hasOwn(aggregated, key)) continue;
+    const { packageName: owner, providerPackageName } = (entry ?? {}) as {
+      packageName?: unknown;
+      providerPackageName?: unknown;
+    };
+    if (typeof owner !== 'string' || !owner || owner === localPackageName) {
+      kept[key] = entry;
+      continue;
+    }
+    // This build aggregated the entry's provider and it did not produce the
+    // entry: the provider's declarations (even an empty set) are the answer,
+    // whatever kind of manifest it ships.
+    const provider =
+      typeof providerPackageName === 'string' && providerPackageName
+        ? providerPackageName
+        : owner;
+    if (authoritativeProviders.has(provider)) continue;
+    carried[key] = entry;
+  }
+  return {
+    ...kept,
+    ...retainInstalledCarriedEntries(carried, projectRoot).retained,
+  };
 }
 
 /**
@@ -1659,7 +1666,9 @@ async function aggregateTypeManifests(
           let manifest: Partial<ConsumerManifest> | undefined;
           try {
             if (manifestPath.endsWith('.js')) {
-              const manifestModule = await import(manifestPath);
+              const manifestModule = await import(
+                executableManifestUrl(manifestPath)
+              );
               manifest =
                 manifestModule.staticManifest || manifestModule.default;
             } else {
@@ -1809,8 +1818,35 @@ async function aggregateTypeManifests(
   );
   if (consumedRetired.length > 0)
     aggregatedManifest.retiredTables = consumedRetired;
+  aggregatedProviders.set(
+    aggregatedManifest,
+    new Set(packages.filter((name) => !unresolvedPackages.includes(name))),
+  );
   return aggregatedManifest;
 }
+
+/**
+ * Module URL of an executable manifest at its current revision. Node caches a
+ * module per URL for the life of the process, so a provider rebuilt in place
+ * between two aggregations would otherwise answer with its old declarations
+ * (and a deleted model would be written back). The query names the file's
+ * mtime, ctime, size and inode, so an unchanged file reuses one module.
+ */
+function executableManifestUrl(manifestPath: string): string {
+  const stats = fs.statSync(manifestPath);
+  const revision = [stats.mtimeMs, stats.ctimeMs, stats.size, stats.ino].join(
+    '-',
+  );
+  return `${pathToFileURL(manifestPath).href}?smrt-manifest=${revision}`;
+}
+
+/**
+ * The providers whose manifest an aggregation actually loaded, by the
+ * aggregated manifest object (kept beside it rather than written into it).
+ * Their declarations are authoritative when the aggregated manifest is
+ * saved over the previous file.
+ */
+const aggregatedProviders = new WeakMap<object, ReadonlySet<string>>();
 
 /**
  * Determine import path from package.json
@@ -1908,7 +1944,16 @@ async function saveAggregatedManifest(
             ...(existing.packageName
               ? { packageName: existing.packageName }
               : {}),
-            objects: { ...existing.objects, ...manifest.objects },
+            objects: {
+              ...carriedExistingObjects(
+                existing.objects as ConsumerManifest['objects'],
+                existing.packageName,
+                manifest.objects,
+                aggregatedProviders.get(manifest) ?? new Set(),
+                projectRoot,
+              ),
+              ...manifest.objects,
+            },
           };
           // Rebuilt from the current dependencies each time (#5005): only the
           // local package's own entries (written by smrtPlugin) stay from the
