@@ -4178,9 +4178,13 @@ function extractExtendsClause(
 }
 
 /**
- * Identifier names an expression mentions (callees, arguments, member
- * paths, conditional branches), a few levels deep. Used only to judge
- * whether an unreadable superclass could make a class a model.
+ * The value references an expression makes (callees, arguments, conditional
+ * branches), a few levels deep, as local binding names: `Name`, or
+ * `name.Member` for a statically named member of an identifier (which the
+ * resolver reads as a namespace member when `name` is a namespace import,
+ * else as `name` itself). A string literal is a value, not a reference.
+ * Used only to judge, by the identity of these bindings, whether an
+ * unreadable superclass could make a class a model.
  */
 function expressionNames(node: unknown, depth = 0): string[] {
   if (!node || typeof node !== 'object' || depth > 6) return [];
@@ -4188,8 +4192,6 @@ function expressionNames(node: unknown, depth = 0): string[] {
   switch (value.type) {
     case 'Identifier':
       return typeof value.name === 'string' ? [value.name] : [];
-    case 'Literal':
-      return typeof value.value === 'string' ? [value.value] : [];
     case 'CallExpression':
     case 'NewExpression':
       return [
@@ -4198,11 +4200,38 @@ function expressionNames(node: unknown, depth = 0): string[] {
           expressionNames(arg, depth + 1),
         ),
       ];
-    case 'MemberExpression':
+    case 'MemberExpression': {
+      const object = value.object as
+        | (Record<string, unknown> & { type?: string })
+        | undefined;
+      const property = value.property as
+        | (Record<string, unknown> & { type?: string })
+        | undefined;
+      const memberName =
+        !value.computed && property?.type === 'Identifier'
+          ? property.name
+          : value.computed &&
+              property?.type === 'Literal' &&
+              typeof property.value === 'string'
+            ? property.value
+            : undefined;
+      if (object?.type === 'Identifier' && typeof object.name === 'string') {
+        return [
+          typeof memberName === 'string'
+            ? `${object.name}.${memberName}`
+            : object.name,
+          ...(value.computed && memberName === undefined
+            ? expressionNames(property, depth + 1)
+            : []),
+        ];
+      }
       return [
-        ...expressionNames(value.object, depth + 1),
-        ...expressionNames(value.property, depth + 1),
+        ...expressionNames(object, depth + 1),
+        ...(value.computed && memberName === undefined
+          ? expressionNames(property, depth + 1)
+          : []),
       ];
+    }
     case 'ConditionalExpression':
       return [
         ...expressionNames(value.consequent, depth + 1),

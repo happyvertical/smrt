@@ -107,7 +107,8 @@ export function scopedPackageOf(specifier: string): string | undefined {
   )?.[1];
 }
 
-function isRelative(specifier: string): boolean {
+/** Whether `specifier` is a relative or absolute path, not a package name. */
+export function isRelative(specifier: string): boolean {
   return (
     specifier === '.' ||
     specifier === '..' ||
@@ -415,6 +416,54 @@ export class ImportProver {
     fromFile: string,
     specifier: string,
   ): { file: string } | { reason: string } {
+    const { existing, variants } = this.candidatesOf(fromFile, specifier);
+    if (variants.length > 0) {
+      return {
+        reason: `'${specifier}' could also name ${variants.join(', ')}: a file with a module-suffix variant name (\`.ios\`, \`.native\`, ...) is loaded instead when a tsconfig \`moduleSuffixes\` or a bundler selects it, and the scan reads neither; import the variant by its full name (\`./${basename(variants[0]).replace(/\.(?:d\.)?[mc]?[jt]sx?$/, '')}\`), or rename the files so that no variant sits beside the file you import`,
+      };
+    }
+    if (existing.length > 1) {
+      return {
+        reason: `'${specifier}' could name more than one file (${existing.join(', ')}), and which one is loaded depends on the module resolution mode; make the import name exactly one file (write its extension, or the directory's index file, and rename the other files if they still match)`,
+      };
+    }
+    const selected = existing[0];
+    if (!selected) return { reason: `'${specifier}' names no file` };
+    if (basename(selected) === 'package.json') {
+      return {
+        reason: `'${specifier}' names a directory whose package.json declares the entry it loads (${selected}); import the file that declares the class (\`${specifier.replace(/[\\/]+$/, '')}/index\`, or the class's own file)`,
+      };
+    }
+    if (/\.d\.[mc]?ts$/.test(selected) || /\.[mc]?jsx?$/.test(selected)) {
+      return {
+        reason: `'${specifier}' selects ${selected}, which is not TypeScript source the scan reads; import the source file that declares the class`,
+      };
+    }
+    return { file: resolvePath(selected) };
+  }
+
+  /**
+   * Every file a relative specifier could load in some resolution mode or
+   * configuration: the existing candidates and the module-suffix variants
+   * beside them (never a package.json). Used to judge whether a reference
+   * the proof refused would have reached a class of the scan.
+   */
+  possibleFiles(fromFile: string, specifier: string): string[] {
+    const { existing, variants } = this.candidatesOf(fromFile, specifier);
+    return [...existing, ...variants]
+      .filter((file) => basename(file) !== 'package.json')
+      .map((file) => resolvePath(file));
+  }
+
+  /**
+   * The candidates of a relative specifier that exist on disk (a directory
+   * package.json that declares an entry included), and the module-suffix
+   * variants beside the stems it tries.
+   */
+  private candidatesOf(
+    fromFile: string,
+    specifier: string,
+  ): { existing: string[]; variants: string[] } {
     const base = resolvePath(dirname(fromFile), specifier);
     const candidates: string[] = [];
     const stems = new Set<string>();
@@ -466,29 +515,7 @@ export class ImportProver {
     // one.
     const existing = [...new Set(candidates.filter(isFile))];
     const variants = [...stems].flatMap((stem) => this.variantFiles(stem));
-    if (variants.length > 0) {
-      return {
-        reason: `'${specifier}' could also name ${variants.join(', ')}: a file with a module-suffix variant name (\`.ios\`, \`.native\`, ...) is loaded instead when a tsconfig \`moduleSuffixes\` or a bundler selects it, and the scan reads neither; import the variant by its full name (\`./${basename(variants[0]).replace(/\.(?:d\.)?[mc]?[jt]sx?$/, '')}\`), or rename the files so that no variant sits beside the file you import`,
-      };
-    }
-    if (existing.length > 1) {
-      return {
-        reason: `'${specifier}' could name more than one file (${existing.join(', ')}), and which one is loaded depends on the module resolution mode; make the import name exactly one file (write its extension, or the directory's index file, and rename the other files if they still match)`,
-      };
-    }
-    const selected = existing[0];
-    if (!selected) return { reason: `'${specifier}' names no file` };
-    if (basename(selected) === 'package.json') {
-      return {
-        reason: `'${specifier}' names a directory whose package.json declares the entry it loads (${selected}); import the file that declares the class (\`${specifier.replace(/[\\/]+$/, '')}/index\`, or the class's own file)`,
-      };
-    }
-    if (/\.d\.[mc]?ts$/.test(selected) || /\.[mc]?jsx?$/.test(selected)) {
-      return {
-        reason: `'${specifier}' selects ${selected}, which is not TypeScript source the scan reads; import the source file that declares the class`,
-      };
-    }
-    return { file: resolvePath(selected) };
+    return { existing, variants };
   }
 
   /**

@@ -59,9 +59,11 @@ export interface RawClassDefinition {
 
   /**
    * For a superclass written as a call, conditional or other expression the
-   * scan does not read: the identifier names it mentions (`Mixin(SmrtObject)`
-   * gives `Mixin`, `SmrtObject`). Used only to decide whether the class could
-   * be a model, so an unreadable superclass of one is reported.
+   * scan does not read: the value references it makes, as local binding
+   * names (`Mixin(SmrtObject)` gives `Mixin`, `SmrtObject`; a statically
+   * named member gives `ns.Member`; a string literal gives nothing). Used
+   * only to decide, by what those bindings are, whether the class could be a
+   * model, so an unreadable superclass of one is reported.
    */
   extendsNames?: string[];
 

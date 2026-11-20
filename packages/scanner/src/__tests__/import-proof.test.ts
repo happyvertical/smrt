@@ -380,6 +380,75 @@ describe('parents', () => {
     expect(errors[0].message).toContain('CallExpression');
   });
 
+  it.each([
+    [
+      'a mixin over an aliased framework import',
+      {
+        'src/models/Mixed.ts': `import { SmrtObject as FrameworkObject } from '@happyvertical/smrt-core';\nfunction Mixin<T>(base: T) { return base; }\nexport class Mixed extends Mixin(FrameworkObject) {\n  name = '';\n}\n`,
+      },
+      'Mixed extends',
+    ],
+    [
+      'a mixin over a namespace member that is a model',
+      {
+        'src/models/Base.ts': OPEN_BASE('Base'),
+        'src/models/Mixed.ts': `import * as models from './Base';\nfunction Mixin<T>(base: T) { return base; }\nexport class Mixed extends Mixin(models.Base) {}\n`,
+      },
+      'Mixed extends',
+    ],
+  ])('reports an undecorated class over %s', async (_label, files, reason) => {
+    const { errors, model } = await scanProject(files);
+
+    expect(model('Mixed')).toBeUndefined();
+    expect(errors).toHaveLength(1);
+    expect(errors[0].message).toContain(reason);
+    expect(errors[0].message).toContain('CallExpression');
+  });
+
+  // A helper whose superclass only shares a model's spelling is no model
+  // candidate: what decides is the binding the superclass references.
+  it.each([
+    [
+      'an unimported global named like a model',
+      {
+        'src/models/Event.ts': OPEN_BASE('Event'),
+        'src/reminders.ts': `export class ReminderEvent extends Event {}\n`,
+      },
+    ],
+    [
+      'the global Image beside a model named Image',
+      {
+        'src/models/Image.ts': OPEN_BASE('Image'),
+        'src/thumbs.ts': `export class Thumb extends Image {}\n`,
+      },
+    ],
+    [
+      'an unscoped package import named like a model',
+      {
+        'src/models/Invoice.ts': OPEN_BASE('Invoice'),
+        'src/pdf.ts': `import { Invoice } from 'pdf-invoice-lib';\nexport class PdfInvoice extends Invoice {}\n`,
+      },
+    ],
+    [
+      'an alias import named like a model',
+      {
+        'src/models/Invoice.ts': OPEN_BASE('Invoice'),
+        'src/pdf.ts': `import { Invoice } from '$lib/pdf/Invoice';\nexport class PdfInvoice extends Invoice {}\n`,
+      },
+    ],
+    [
+      'a factory call with a string label naming a framework base',
+      {
+        'src/models/Base.ts': OPEN_BASE('Base'),
+        'src/widgets.ts': `function makeWidget(label: string) { return class { label = label; }; }\nexport class Helper extends makeWidget('SmrtObject') {}\nexport class Other extends makeWidget('Base') {}\n`,
+      },
+    ],
+  ])('ignores an undecorated helper over %s', async (_label, files) => {
+    const { errors } = await scanProject(files);
+
+    expect(errors).toEqual([]);
+  });
+
   it('ignores an undecorated helper over a generic member of an unrelated value', async () => {
     const { errors } = await scanProject({
       'src/models/Base.ts': OPEN_BASE('Base'),

@@ -11,8 +11,10 @@ import {
   frameworkPackageOf,
   ImportProver,
   isFrameworkExport,
+  isRelative,
   type Proof,
   type ProofModule,
+  scopedPackageOf,
 } from './import-proof.js';
 import type {
   ExternalManifest,
@@ -865,19 +867,19 @@ export class InheritanceResolver {
   /**
    * Scan errors for undecorated scanned classes whose superclass the scan
    * cannot read or cannot accept (an expression, a call such as
-   * `Mixin(SmrtObject)`, an import through a barrel), when that superclass
-   * names a framework base or a model or collection of this scan
-   * (`Base['Inner']` beside a model `Base`). Such a class cannot be judged a
+   * `Mixin(SmrtObject)`, an import through a barrel), when a binding that
+   * superclass references reaches a framework base or a model or collection
+   * of this scan BY IDENTITY: the framework package's export (aliased or
+   * not), a class declared in the same file, or a class a relative import
+   * could load, followed through re-exports. Such a class cannot be judged a
    * model or not, so it is an error rather than silently left out of the
-   * manifest. A class whose superclass names neither (a helper over
-   * `utilities.Widget<T>`) stays outside the scan's concern.
+   * manifest. A superclass that only shares a model's spelling (an
+   * unimported global such as `Event` or `Image`, an import from an
+   * unscoped package or an alias, a string argument) stays outside the
+   * scan's concern, as does a helper over an unrelated value
+   * (`utilities.Widget<T>`).
    */
   unreadableCandidateErrors(): ScanError[] {
-    const modelNames = new Set(
-      this.classes
-        .filter((candidate) => this.isModelClass(candidate))
-        .map((candidate) => candidate.className),
-    );
     const errors: ScanError[] = [];
     for (const classDef of this.classes) {
       if (
@@ -889,16 +891,7 @@ export class InheritanceResolver {
       }
       const link = this.linkOf(classDef);
       if (!classDef.extendsUnreadable && !link?.error) continue;
-      const names = [
-        ...(classDef.extendsClause ?? '').split(/[.[\]'"]+/),
-        ...(classDef.extendsNames ?? []),
-      ].filter(Boolean);
-      // Only what the superclass names counts; a type argument alone
-      // (`utilities.Widget<T>`) does not make a helper a candidate.
-      const candidate = names.some(
-        (name) => FRAMEWORK_BASE_CLASSES.has(name) || modelNames.has(name),
-      );
-      if (!candidate) continue;
+      if (!this.superclassReachesCandidate(classDef)) continue;
       errors.push({
         message:
           `${classDef.className} extends \`${classDef.extendsClause ?? '<expression>'}\`, which the scan cannot accept: ` +
@@ -910,6 +903,126 @@ export class InheritanceResolver {
       });
     }
     return errors;
+  }
+
+  /**
+   * Whether a binding `classDef`'s superclass references reaches a framework
+   * base, or a model or collection of the scan, by identity (see
+   * {@link unreadableCandidateErrors}).
+   */
+  private superclassReachesCandidate(classDef: RawClassDefinition): boolean {
+    const file = normalizeFile(classDef.filePath);
+    // A call or other expression: each value reference it makes (`Mixin`,
+    // `FrameworkObject`, `models.Base`).
+    if (classDef.extendsNames?.length) {
+      return classDef.extendsNames.some((name) => {
+        const [head, member] = name.split('.');
+        return this.bindingReaches(file, head, member);
+      });
+    }
+    const clause = classDef.extendsClause;
+    if (!clause) return false;
+    // A member of a value (`Base.Inner`, `Holder['Inner']`): the object it
+    // is read from.
+    if (classDef.extendsUnreadable === 'MemberExpression') {
+      return this.bindingReaches(file, clause.split(/[.[]/)[0]);
+    }
+    // A binding written readably (possibly inside a TypeScript wrapper):
+    // what its import or declaration would reach.
+    return classDef.extendsSource
+      ? this.exportReaches(
+          file,
+          classDef.extendsSource,
+          classDef.extendsDefaultImport ? 'default' : clause,
+          0,
+        )
+      : this.bindingReaches(file, clause);
+  }
+
+  /**
+   * Whether the local name `local` of `file` (or its member `member`, for a
+   * namespace import) reaches a candidate: a same-file class that is one, or
+   * an import that reaches one. An unimported, undeclared name (a global) is
+   * never one.
+   */
+  private bindingReaches(
+    file: string,
+    local: string,
+    member?: string,
+  ): boolean {
+    const module = this.modules.get(file);
+    if (!module) return false;
+    const binding = module.imports[local];
+    if (binding) {
+      if (binding.imported === null) {
+        return member !== undefined
+          ? this.exportReaches(file, binding.source, member, 0)
+          : false;
+      }
+      return this.exportReaches(file, binding.source, binding.imported, 0);
+    }
+    const declared = module.classes.get(local);
+    return declared !== undefined && this.isCandidateTarget(declared);
+  }
+
+  /**
+   * Whether the export `imported` of the module `specifier` names (from
+   * `fromFile`) reaches a candidate. The framework package's export of a
+   * framework base is one; a relative specifier is followed into every file
+   * it could load and through that file's re-exports (a barrel, `export *`,
+   * an import passed on), so a reference the proof refuses is still judged
+   * by what it would reach. Another package's export, an unscoped package
+   * or an alias reaches no class of this scan.
+   */
+  private exportReaches(
+    fromFile: string,
+    specifier: string,
+    imported: string,
+    depth: number,
+  ): boolean {
+    if (depth > MAX_RE_EXPORT_DEPTH) return false;
+    if (!isRelative(specifier)) {
+      const packageName = scopedPackageOf(specifier);
+      return (
+        packageName !== undefined &&
+        isFrameworkExport(packageName, imported, FRAMEWORK_BASE_CLASSES)
+      );
+    }
+    if (
+      FRAMEWORK_BASE_CLASSES.has(imported) &&
+      this.prover.packageOf(fromFile)?.name === frameworkPackageOf(imported)
+    ) {
+      return true;
+    }
+    return this.prover.possibleFiles(fromFile, specifier).some((file) => {
+      const module = this.modules.get(normalizeFile(file));
+      if (!module) return false;
+      const entry = module.exports?.named[imported];
+      if (entry && 'from' in entry) {
+        return entry.imported !== null
+          ? this.exportReaches(file, entry.from, entry.imported, depth + 1)
+          : false;
+      }
+      if (entry) {
+        const declared = module.classes.get(entry.local);
+        if (declared) return this.isCandidateTarget(declared);
+        const passed = module.imports[entry.local];
+        return passed?.imported
+          ? this.exportReaches(file, passed.source, passed.imported, depth + 1)
+          : false;
+      }
+      if (imported === 'default') return false;
+      return (module.exports?.star ?? []).some((source) =>
+        this.exportReaches(file, source, imported, depth + 1),
+      );
+    });
+  }
+
+  /** A model or collection of the scan, or a framework base's declaration. */
+  private isCandidateTarget(definition: RawClassDefinition): boolean {
+    return (
+      this.isFrameworkDeclaration(definition) || this.isModelClass(definition)
+    );
   }
 
   /**
