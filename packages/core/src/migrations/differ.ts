@@ -1350,6 +1350,14 @@ export class SchemaComparer {
     const schema = unquoteIndexColumns(
       await inspectTableSchema(this.db, tableName, this.engine),
     );
+    if (schema && this.engine === 'sqlite') {
+      // @happyvertical/sql >= 0.116 lists generated and hidden SQLite columns.
+      // The SQLite generated-column probe (probeSqliteColumns) owns them, as
+      // it did when the adapter omitted them, so keep the ordinary list.
+      for (const [name, column] of Object.entries(schema.columns)) {
+        if (column.generated || column.hidden) delete schema.columns[name];
+      }
+    }
     if (
       schema &&
       this.engine === 'duckdb' &&
