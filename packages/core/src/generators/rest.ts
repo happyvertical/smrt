@@ -1012,6 +1012,13 @@ export class APIGenerator {
    * The `where` restriction that keeps a read through `objectName` to the
    * row types served on this route ({@link servedFamilyTypes}), or
    * `undefined` when every type is served.
+   *
+   * It names the served types (`_meta_type in`) and also the family members
+   * left out (`_meta_type not in`). The collection of a route model that is
+   * itself an STI subtype with subtypes of its own sets its whole subtree as
+   * its own `_meta_type in` predicate, which replaces any other list under
+   * that key; the exclusion survives it, so the two restrictions hold
+   * together.
    */
   private familyReadScope(
     objectName: string | undefined,
@@ -1026,7 +1033,16 @@ export class APIGenerator {
       this.modelScope,
       req ? this.familyAdmission.get(req) : undefined,
     );
-    return types ? { '_meta_type in': types } : undefined;
+    if (!types) return undefined;
+    const excluded = ObjectRegistry.getDescendants(objectName)
+      .map((member) => {
+        const info = ObjectRegistry.getClass(member);
+        return info ? info.qualifiedName || info.name : member;
+      })
+      .filter((key) => !types.includes(key));
+    return excluded.length > 0
+      ? { '_meta_type in': types, '_meta_type not in': excluded }
+      : { '_meta_type in': types };
   }
 
   /**
@@ -1803,23 +1819,31 @@ export class APIGenerator {
     if (!family) return scoped;
     // The served types narrow a caller's own type filter, never replace it:
     // an `in` list on the type column keeps only the types both name (an
-    // empty list serves nothing); any other type predicate is ANDed.
+    // empty list serves nothing), a caller's `not in` list joins the
+    // exclusion, and any other type predicate is ANDed.
     let served = family['_meta_type in'] as string[];
+    const excluded = new Set(
+      (family['_meta_type not in'] as string[] | undefined) ?? [],
+    );
     const requested: string[] = [];
     for (const [key, value] of Object.entries(scoped ?? {})) {
-      if (normalizeWhereKey(key, value) !== '_meta_type in') continue;
+      const normalized = normalizeWhereKey(key, value);
       const named = (Array.isArray(value) ? value : [value]).map(String);
+      if (normalized === '_meta_type not in') {
+        for (const type of named) excluded.add(type);
+        continue;
+      }
+      if (normalized !== '_meta_type in') continue;
       requested.push(...named);
       served = served.filter((type) => named.includes(type));
     }
     // No served type is requested: the caller's own list stays and the
     // owned predicate excludes exactly it, so nothing matches.
-    return mergeOwnedWhere(
-      scoped,
-      served.length > 0
-        ? { '_meta_type in': served }
-        : { '_meta_type not in': requested },
-    );
+    if (served.length === 0) for (const type of requested) excluded.add(type);
+    return mergeOwnedWhere(scoped, {
+      ...(served.length > 0 ? { '_meta_type in': served } : {}),
+      ...(excluded.size > 0 ? { '_meta_type not in': [...excluded] } : {}),
+    });
   }
 
   /** A point-read filter for `id`: tenant scope and served row types. */

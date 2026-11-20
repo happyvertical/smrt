@@ -238,7 +238,12 @@ subtype row checks the subtype's exposure too (`404` / `not_found`). Reads of
 an STI base under an `authMiddleware` vary by caller, so they are cached and
 validated like reads with permission-gated fields. The restriction narrows a
 caller's own `_meta_type` `in` filter to the types both name (none left serves
-nothing), and a restricted point read resolves the segment as
+nothing). The restriction also names the left-out members as
+`_meta_type not in` (a caller's own `not in` list joins it): the collection of
+a route model that is itself a subtype with subtypes of its own replaces any
+`_meta_type in` list with its subtree, and the exclusion keeps the two in
+force together (`src/__tests__/rest-sti-intermediate-route.test.ts`). A
+restricted point read resolves the segment as
 `collection.get()` does, so a slug still finds its row. An update, delete or
 sync write of a row whose own model is tenant-scoped, through a base that is
 not, runs in that model's tenant gate with the request's tenant
