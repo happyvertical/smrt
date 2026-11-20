@@ -19,7 +19,12 @@ vi.mock('@happyvertical/ai', async (importOriginal) => {
 
 import { setAiUsageTenantResolver } from '../adapters/ai-usage-recorder.js';
 import { config } from '../config.js';
-import { AiRunNotFoundError, getAiRun } from '../system/browser';
+import {
+  AiRunNotFoundError,
+  AiRunStoppedError,
+  finishAiRun,
+  getAiRun,
+} from '../system/browser';
 import { createTrackedAiClient } from '../tracked-ai-client.js';
 import {
   hasTenantPredicate,
@@ -257,6 +262,40 @@ describe('tracked client scope', () => {
         ),
       ),
     ).toEqual([]);
+  });
+
+  it('takes a per-call run context an options object exposes through a prototype accessor, read once', async () => {
+    const db = await memoryDb();
+    const one = createTrackedAiClient({ db, tenantId: 'tenant-one', ai });
+    const own = await one.openRun({ type: 'turn' });
+    const stopped = await one.openRun({ type: 'turn' });
+    await finishAiRun(db, stopped.run.id, { status: 'done' });
+    const client = await one.client(prompt);
+    let reads = 0;
+    class CallOptions {
+      readonly temperature = 0.2;
+      constructor(private readonly context: unknown) {}
+      get runContext() {
+        reads += 1;
+        return this.context;
+      }
+    }
+
+    await client.message('hello', new CallOptions(own.context) as never);
+    expect(reads).toBe(1);
+    expect(sent).toHaveLength(1);
+    expect(sent[0]?.temperature).toBe(0.2);
+    expect(await getAiRun(db, own.run.id)).toMatchObject({
+      calls: 1,
+      tokens: 12,
+    });
+
+    // A finished run's context is refused before anything is sent.
+    await expect(
+      client.message('hello', new CallOptions(stopped.context) as never),
+    ).rejects.toBeInstanceOf(AiRunStoppedError);
+    expect(sent).toHaveLength(1);
+    expect(await getAiRun(db, stopped.run.id)).toMatchObject({ calls: 0 });
   });
 
   it('keeps the database it was built on when the caller changes its options', async () => {

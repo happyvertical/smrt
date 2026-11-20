@@ -276,9 +276,25 @@ export function createTrackedAiClient(
           // The call's options are read once, into a plain copy, before
           // anything is checked: the run context that is checked is the
           // one forwarded, and a context the caller passed is never
-          // forwarded itself, only its checked copy.
-          const snapshot = (raw: unknown): Record<string, unknown> =>
-            raw !== null && typeof raw === 'object' ? { ...raw } : {};
+          // forwarded itself, only its checked copy. `runContext` is read
+          // once by ordinary property access (an accessor on the options'
+          // prototype included); the other own enumerable keys are copied
+          // without reading it again.
+          const snapshot = (raw: unknown): Record<string, unknown> => {
+            if (raw === null || typeof raw !== 'object') return {};
+            const source = raw as Record<PropertyKey, unknown>;
+            const copy: Record<PropertyKey, unknown> = {};
+            for (const key of Reflect.ownKeys(source)) {
+              if (key === 'runContext') continue;
+              if (!Object.prototype.propertyIsEnumerable.call(source, key)) {
+                continue;
+              }
+              copy[key] = source[key];
+            }
+            const passed = source.runContext;
+            if (passed !== undefined) copy.runContext = passed;
+            return copy as Record<string, unknown>;
+          };
           const send = (
             input: unknown,
             options: Record<string, unknown>,
