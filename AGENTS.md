@@ -42,15 +42,13 @@ and AI operations. Read the package's `AGENTS.md`; see [CONTEXT-MAP.md](CONTEXT-
 
 ## Validation
 
-Use Node/pnpm versions from `package.json`; `pnpm install`, `pnpm build`. Package
-checks first, then root: `pnpm test`, `pnpm typecheck`, `pnpm lint`,
-`pnpm format-check`, `pnpm knowledge:check --strict --format markdown`,
-`pnpm audit:policy`, `pnpm check:new-surface` (full `surface-ledger.json` entry
-per new surface), `pnpm check:node-roots` (built model roots load under plain
-Node, #4219; allow-list in root `package.json`).
+`pnpm install`, `pnpm build`; package checks first, then root: `pnpm test`,
+`pnpm typecheck`, `pnpm lint`, `pnpm format-check`,
+`pnpm knowledge:check --strict --format markdown`, `pnpm audit:policy`,
+`pnpm check:new-surface`, `pnpm check:node-roots`, and CI's standards checks
+(`pnpm check:standards`, `check:no-smrt-peers`, `check:package-dag`,
+`check:agents-chain`). Details, versions, gotchas: [agents/validation.md](agents/validation.md).
 [TESTING_STANDARD.md](TESTING_STANDARD.md) defines package release gates.
-
-Lint/format, Vitest, Oxc, `svelte-check` gotchas: [agents/root-gotchas.md](agents/root-gotchas.md).
 
 ## Cross-package invariants
 
