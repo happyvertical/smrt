@@ -63,20 +63,19 @@ export function scopeDatabase<T extends object>(db: T, schema: string): T {
   );
   const guarded = new WeakMap<object, object>();
   const guardTx = (tx: Handle): Handle => {
-    let g = guarded.get(tx);
-    if (!g) {
-      g = new Proxy(tx, {
-        get(target, prop) {
-          if (prop === 'client') return token;
-          if (prop === 'transaction')
-            return (cb: (t: Handle) => Promise<unknown>, o?: object) =>
-              target.transaction((inner: Handle) => cb(guardTx(inner)), o);
-          const value = Reflect.get(target, prop, target);
-          return typeof value === 'function' ? value.bind(target) : value;
-        },
-      });
-      guarded.set(tx, g);
-    }
+    const cached = guarded.get(tx);
+    if (cached) return cached;
+    const g: Handle = new Proxy(tx, {
+      get(target, prop) {
+        if (prop === 'client') return token;
+        if (prop === 'transaction')
+          return (cb: (t: Handle) => Promise<unknown>, o?: object) =>
+            target.transaction((inner: Handle) => cb(guardTx(inner)), o);
+        const value = Reflect.get(target, prop, target);
+        return typeof value === 'function' ? value.bind(target) : value;
+      },
+    });
+    guarded.set(tx, g);
     return g;
   };
   const scoped = <R>(
