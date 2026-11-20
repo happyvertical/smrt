@@ -77,7 +77,7 @@ See [audit contract](../../../docs/content/audit-trail.md).
 - `getSlug()`: auto-generates from name → title → label → id; a candidate that
   slugifies to nothing (no ASCII letters or digits) is skipped, so the next
   candidate or finally the id supplies the slug
-- `loadRelated(fieldName)`: lazy-loads relationships (cached in `_loadedRelationships` Map)
+- `loadRelated(fieldName)`: lazy-loads relationships (cached in `_loadedRelationships` Map). A cached single-target entry is tied to the key field's value when it was cached: once the field names another row (or is cleared) the entry is dropped and the next `loadRelated`/`getRelated` resolves the current target; `isRelatedLoaded` agrees
 
 Relationship I/O resolves canonical source and target identities, not the public
 display names. `relationship-loader.ts` owns target manifest hydration and inverse

@@ -636,6 +636,12 @@ export interface AiOperationOptions extends AITextCompletionOptions {
 /** See {@link AiOperationOptions.toolUse}. */
 export type AiToolUse = 'required' | 'optional';
 
+/**
+ * The key field's value when each relationship was cached, per instance. Kept
+ * outside the instance so it adds no own member to every model.
+ */
+const relationshipCacheKeys = new WeakMap<SmrtObject, Map<string, unknown>>();
+
 /** Tag value recorded when `is()` / `evaluate()` ask for a text verdict. */
 const JSON_TEXT_FALLBACK = 'json→text';
 /** Tag value recorded when optional tools are dropped. */
@@ -6738,7 +6744,37 @@ export class SmrtObject extends SmrtClass {
    * ```
    */
   public isRelatedLoaded(fieldName: string): boolean {
-    return this._loadedRelationships.has(fieldName);
+    return this.hasCurrentRelationship(fieldName);
+  }
+
+  /**
+   * Whether a cached relationship still matches this object. A cached target
+   * belongs to the key value the field held when it was cached: once the field
+   * names a different row, the entry is dropped so the next load resolves the
+   * current one.
+   */
+  private hasCurrentRelationship(fieldName: string): boolean {
+    if (!this._loadedRelationships.has(fieldName)) return false;
+    const keys = relationshipCacheKeys.get(this);
+    if (
+      keys?.has(fieldName) &&
+      keys.get(fieldName) !== this[fieldName as keyof this]
+    ) {
+      this._loadedRelationships.delete(fieldName);
+      keys.delete(fieldName);
+      return false;
+    }
+    return true;
+  }
+
+  private cacheRelationship(fieldName: string, value: unknown): void {
+    this._loadedRelationships.set(fieldName, value);
+    let keys = relationshipCacheKeys.get(this);
+    if (!keys) {
+      keys = new Map();
+      relationshipCacheKeys.set(this, keys);
+    }
+    keys.set(fieldName, this[fieldName as keyof this]);
   }
 
   /**
@@ -6759,7 +6795,7 @@ export class SmrtObject extends SmrtClass {
    *   `null`), stored verbatim
    */
   public _setLoadedRelationship(fieldName: string, value: unknown): void {
-    this._loadedRelationships.set(fieldName, value);
+    this.cacheRelationship(fieldName, value);
   }
 
   /**
@@ -6809,7 +6845,7 @@ export class SmrtObject extends SmrtClass {
     // biome-ignore lint/suspicious/noExplicitAny: returns a polymorphic related object whose concrete subclass only the CALLER knows (e.g. `metafield.validateValue(...)`); `any` lets callers use the concrete API without a cast. S4 #1579.
   ): Promise<any> {
     // Check if already loaded
-    if (this._loadedRelationships.has(fieldName)) {
+    if (this.hasCurrentRelationship(fieldName)) {
       const cached = this._loadedRelationships.get(fieldName);
       // Re-validate cached targets: a cache populated by an eager `include`
       // load (or a prior allowCrossTenant load) must not leak cross-tenant data
@@ -6845,7 +6881,7 @@ export class SmrtObject extends SmrtClass {
     const foreignKeyValue = this[fieldName as keyof this];
     if (!foreignKeyValue) {
       // No related object (foreign key is null)
-      this._loadedRelationships.set(fieldName, null);
+      this.cacheRelationship(fieldName, null);
       return null;
     }
 
@@ -6918,7 +6954,7 @@ export class SmrtObject extends SmrtClass {
     // its defaults/options can look like authoritative related data. Cache the
     // miss just as we do for an empty foreign key so repeat reads remain null.
     if (!relatedInstance.isPersisted) {
-      this._loadedRelationships.set(fieldName, null);
+      this.cacheRelationship(fieldName, null);
       return null;
     }
 
@@ -6931,7 +6967,7 @@ export class SmrtObject extends SmrtClass {
     );
 
     // Cache the loaded object
-    this._loadedRelationships.set(fieldName, relatedInstance);
+    this.cacheRelationship(fieldName, relatedInstance);
     return relatedInstance;
   }
 
@@ -7024,7 +7060,7 @@ export class SmrtObject extends SmrtClass {
     // biome-ignore lint/suspicious/noExplicitAny: polymorphic related objects whose concrete type is caller-known (see loadRelated). S4 #1579.
   ): Promise<any[]> {
     // Check if already loaded
-    if (this._loadedRelationships.has(fieldName)) {
+    if (this.hasCurrentRelationship(fieldName)) {
       const cached = this._loadedRelationships.get(fieldName);
       // Re-validate cached targets: a cache populated by an eager `include`
       // load (or a prior allowCrossTenant load) must not leak cross-tenant data
@@ -7228,7 +7264,7 @@ export class SmrtObject extends SmrtClass {
     opts?: LoadRelatedOptions,
     // biome-ignore lint/suspicious/noExplicitAny: polymorphic related object(s) whose concrete type is caller-known (see loadRelated). S4 #1579.
   ): Promise<any> {
-    if (this._loadedRelationships.has(fieldName)) {
+    if (this.hasCurrentRelationship(fieldName)) {
       const cached = this._loadedRelationships.get(fieldName);
       // Re-validate cached targets so an eager `include` load cannot leak
       // cross-tenant data through this convenience accessor (Issue #1321).
