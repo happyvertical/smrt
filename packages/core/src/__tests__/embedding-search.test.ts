@@ -16,6 +16,7 @@ import { SmrtCollection } from '../collection';
 import { EmbeddingProvider } from '../embeddings/provider';
 import { SmrtObject } from '../object';
 import { ObjectRegistry, smrt } from '../registry';
+import { WhereClauseError } from '../where-keys';
 
 // Create embeddings that cluster similar content together
 // This simulates how real embeddings work - similar text = similar vectors
@@ -294,6 +295,165 @@ describe('Semantic Search', () => {
 
       const results = await collection.semanticSearch('test query');
       expect(results).toEqual([]);
+    });
+  });
+
+  describe('where key resolution on embedding reads', () => {
+    // `category` and `Category` resolve to the same column.
+    const twoKeysForOneColumn = { category: 'tech', Category: 'sports' };
+
+    it('refuses two keys for one column and operator on every read that takes a where', async () => {
+      await seedDocuments();
+      const vector = createSemanticEmbeddings('software and AI');
+
+      await expect(
+        collection.semanticSearch('software and AI', {
+          where: twoKeysForOneColumn,
+        }),
+      ).rejects.toThrow(WhereClauseError);
+      await expect(
+        collection.findSimilarToEmbedding(vector, {
+          where: twoKeysForOneColumn,
+        }),
+      ).rejects.toThrow(WhereClauseError);
+      await expect(
+        collection.semanticSearchIds('software and AI', {
+          where: twoKeysForOneColumn,
+        }),
+      ).rejects.toThrow(WhereClauseError);
+      await expect(
+        collection.findSimilarIdsToEmbedding(vector, {
+          where: twoKeysForOneColumn,
+        }),
+      ).rejects.toThrow(WhereClauseError);
+    });
+
+    it('refuses that filter with the same error whether or not ranking finds candidates', async () => {
+      const vector = createSemanticEmbeddings('software and AI');
+      const refusal = async (
+        read: () => Promise<unknown>,
+      ): Promise<WhereClauseError> => {
+        const caught = await read().then(
+          () => undefined,
+          (error: unknown) => error,
+        );
+        expect(caught).toBeInstanceOf(WhereClauseError);
+        return caught as WhereClauseError;
+      };
+      const reads = (options: { minSimilarity?: number } = {}) => [
+        () =>
+          collection.semanticSearch('software and AI', {
+            ...options,
+            where: twoKeysForOneColumn,
+          }),
+        () =>
+          collection.findSimilarToEmbedding(vector, {
+            ...options,
+            where: twoKeysForOneColumn,
+          }),
+        () =>
+          collection.semanticSearchIds('software and AI', {
+            ...options,
+            where: twoKeysForOneColumn,
+          }),
+        () =>
+          collection.findSimilarIdsToEmbedding(vector, {
+            ...options,
+            where: twoKeysForOneColumn,
+          }),
+      ];
+
+      // No stored vectors: the ranking is empty.
+      const empty: WhereClauseError[] = [];
+      for (const read of reads()) empty.push(await refusal(read));
+      await seedDocuments();
+      // Stored vectors, but no score reaches the threshold.
+      const unscored: WhereClauseError[] = [];
+      for (const read of reads({ minSimilarity: 1 })) {
+        unscored.push(await refusal(read));
+      }
+      // Stored vectors that rank.
+      const populated: WhereClauseError[] = [];
+      for (const read of reads()) populated.push(await refusal(read));
+
+      for (const errors of [empty, unscored]) {
+        expect(errors.map((error) => [error.code, error.message])).toEqual(
+          populated.map((error) => [error.code, error.message]),
+        );
+      }
+      expect(populated[0].code).toBe('INVALID_WHERE_CLAUSE');
+    });
+
+    it('narrows the ranking by a caller id filter in either spelling', async () => {
+      const vector = createSemanticEmbeddings('software and AI');
+      const spellings = (ids: string[]) => [{ id: ids }, { 'id in': ids }];
+
+      // Empty ranking: nothing to return, whatever the spelling.
+      for (const where of spellings(['missing-a', 'missing-b'])) {
+        expect(
+          await collection.semanticSearch('software and AI', { where }),
+        ).toEqual([]);
+        expect(
+          await collection.findSimilarToEmbedding(vector, { where }),
+        ).toEqual([]);
+      }
+
+      const docs = await seedDocuments();
+      const sports = docs
+        .filter((doc) => doc.category === 'sports')
+        .map((doc) => String(doc.id));
+      // The best match for this query is a tech article, so `limit: 1` ranks
+      // no sports article: the caller filter must narrow that ranking, not
+      // replace it.
+      for (const where of spellings(sports)) {
+        expect(
+          await collection.semanticSearch('software and AI', {
+            where,
+            limit: 1,
+          }),
+        ).toEqual([]);
+        expect(
+          await collection.findSimilarToEmbedding(vector, { where, limit: 1 }),
+        ).toEqual([]);
+      }
+      // Without a limit the ranking holds them, and the filter keeps them only.
+      for (const where of spellings(sports)) {
+        const found = await collection.semanticSearch('software and AI', {
+          where,
+          limit: 10,
+        });
+        expect(found.map((doc) => String(doc.id)).sort()).toEqual(
+          [...sports].sort(),
+        );
+        const similar = await collection.findSimilarToEmbedding(vector, {
+          where,
+          limit: 10,
+        });
+        expect(similar.map((doc) => String(doc.id)).sort()).toEqual(
+          [...sports].sort(),
+        );
+      }
+    });
+
+    it('serves one condition per column in either spelling', async () => {
+      await seedDocuments();
+      const vector = createSemanticEmbeddings('software and AI');
+
+      for (const where of [{ category: 'tech' }, { Category: 'tech' }]) {
+        const hydrated = await collection.semanticSearch('software and AI', {
+          where,
+        });
+        expect(hydrated.length).toBeGreaterThan(0);
+        expect(hydrated.every((doc) => doc.category === 'tech')).toBe(true);
+
+        const ids = await collection.findSimilarIdsToEmbedding(vector, {
+          where,
+          limit: 10,
+        });
+        expect(ids.map((match) => match.id).sort()).toEqual(
+          hydrated.map((doc) => String(doc.id)).sort(),
+        );
+      }
     });
   });
 

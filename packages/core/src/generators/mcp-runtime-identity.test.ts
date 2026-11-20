@@ -104,6 +104,7 @@ export { hasRuntimeExposureGate, isRuntimeModelEnabled, subscribeRuntimeExposure
   },
   getConfig(name) { record('config', name); return {}; },
   getFields(name) { record('fields', name); return new Map(); },
+  isServiceOptionInput(name) { record('service-option-input', name); return false; },
   getClass(name) { record('class', name); return { constructor: { ping() { return { ok: true }; } } }; },
 };
 export function normalizeCustomActionFailure() { return undefined; }
@@ -266,6 +267,8 @@ console.log(JSON.stringify({ resolved, results, serializerFailure }));
     );
     expect(resolved).toContain(`collection:${PICK_B}`);
     expect(resolved).toContain(`config:${PICK_B}`);
+    // Create and update ask the scoped class which argument keys are fields.
+    expect(resolved).toContain(`service-option-input:${PICK_B}`);
     expect(resolved).toContain(`audit-updated:${PICK_B}`);
     expect(resolved).toContain(`delete:${PICK_B}`);
     expect(serializerFailure).toMatchObject({

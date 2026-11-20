@@ -90,7 +90,7 @@ import {
 } from './reports.ts';
 import { checkSyntax } from './sandbox.ts';
 import type { VersionRecord, VersionStore } from './store.ts';
-import { AppCallError, AppWorker } from './worker-handle.ts';
+import { AppCallError, AppWorker, type WorkerLimits } from './worker-handle.ts';
 import type { BootInfo, WorkerOp } from './worker-protocol.ts';
 
 type Row = Record<string, unknown>;
@@ -100,6 +100,11 @@ export interface HostOptions {
   store: VersionStore;
   /** The worker entry. Defaults to `./app-worker.ts` or `.js` next to this module. */
   workerUrl?: URL | string;
+  /**
+   * V8 memory limits of each app worker thread. Default: a 16 MiB young
+   * generation and a 512 MiB old generation (see `DEFAULT_WORKER_LIMITS`).
+   */
+  workerLimits?: WorkerLimits;
   /**
    * Start frozen: every structural command is refused (see
    * {@link AppHost.setFrozen}). Records, reports, the app's own tools and REST
@@ -268,7 +273,40 @@ interface Analysis {
   apply: (author: string) => Promise<ExecuteResult>;
 }
 
+/**
+ * The split worker bundle (`tools/bundle-worker.mjs`, #5213): next to the
+ * compiled engine or in the source tree (tests). Absent until built.
+ * It is the package's `worker-bundle/`, outside `dist/`: never published.
+ * A host whose engine copy is inlined in its own build passes `near`, the
+ * published `engine/worker` URL, to find the package's `dist/`.
+ */
+export function bundledWorkerUrl(
+  near: URL | string = import.meta.url,
+): URL | null {
+  for (const f of [
+    '../../worker-bundle/app-worker.js', // dist/engine/ and src/engine/ alike
+  ]) {
+    const u = new URL(f, near);
+    if (existsSync(fileURLToPath(u))) return u;
+  }
+  return null;
+}
+
+/** `SMRT_APP_SHELL_WORKER=bundle` selects the bundled worker (a host's `workerUrl` wins). */
+export function wantsBundledWorker(): boolean {
+  return process.env.SMRT_APP_SHELL_WORKER === 'bundle';
+}
+
 function defaultWorkerUrl(): URL {
+  if (wantsBundledWorker()) {
+    const bundled = bundledWorkerUrl();
+    if (!bundled)
+      throw new EngineError(
+        'SMRT_APP_SHELL_WORKER=bundle but the worker bundle is not built (run the package build)',
+        'refused',
+      );
+    return bundled;
+  }
   for (const f of ['./app-worker.ts', './app-worker.js']) {
     const u = new URL(f, import.meta.url);
     if (existsSync(fileURLToPath(u))) return u;
@@ -289,6 +327,7 @@ export class AppHost extends EventEmitter {
   lastSwapMs = 0;
   private store: VersionStore;
   private workerUrl: URL | string;
+  private workerLimits: WorkerLimits | undefined;
   private app!: AppWorker;
   private closed = false;
   #autoApprove = false;
@@ -308,6 +347,7 @@ export class AppHost extends EventEmitter {
     this.dataDir = dataDir;
     this.store = opts.store;
     this.workerUrl = opts.workerUrl ?? defaultWorkerUrl();
+    this.workerLimits = opts.workerLimits;
     this.frozenNow = opts.frozen === true;
     this.#autoApprove = opts.autoApprove === true;
     this.draft = readDraftMarker(dataDir);
@@ -373,6 +413,7 @@ export class AppHost extends EventEmitter {
       def,
       version,
       migration,
+      limits: this.workerLimits,
     });
   }
 
@@ -1631,6 +1672,7 @@ export class AppHost extends EventEmitter {
         dataDir: this.dataDir,
         def,
         version: this.version,
+        limits: this.workerLimits,
         validateOnly: true,
       });
       try {
@@ -1790,6 +1832,7 @@ export class AppHost extends EventEmitter {
         return await AppHost.open(dir, {
           store: opts.store,
           workerUrl: this.workerUrl,
+          workerLimits: this.workerLimits,
           autoApprove: true,
         });
       } catch (e) {
@@ -1949,6 +1992,7 @@ export class AppHost extends EventEmitter {
               dataDir: dir,
               def: chain.base.definition,
               version: chain.baseVersion,
+              limits: this.workerLimits,
             });
           carried = null;
           try {
@@ -1992,6 +2036,7 @@ export class AppHost extends EventEmitter {
           dataDir: dir,
           def: rec.definition,
           version: numbers[i],
+          limits: this.workerLimits,
           migration: steps.length
             ? { steps, direction: 'up', version: numbers[i] }
             : undefined,
@@ -2328,6 +2373,7 @@ export class AppHost extends EventEmitter {
         dataDir: this.dataDir,
         def: this.def,
         version: this.version,
+        limits: this.workerLimits,
         readOnly: true,
       });
       let timer: ReturnType<typeof setTimeout> | undefined;

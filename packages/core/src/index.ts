@@ -654,6 +654,16 @@ export {
   type SubclassExposureEscalation,
   surfaceOpensOperation,
 } from './registry/subclass-exposure';
+// The tenant scope request-facing reads add when no interceptor narrows them,
+// and the request tenant context hooks smrt-tenancy installs.
+export {
+  type EnterRequestTenantContext,
+  enterRequestTenantContext,
+  getRequestTenantContext,
+  type RequestTenantContext,
+  type RequestTenantContextHooks,
+  setRequestTenantContextHooks,
+} from './request-tenant-context';
 // Revision compare-and-swap predicate helpers (#2620)
 export {
   POSTGRES_REVISION_GUARD_EXPRESSION,
@@ -697,6 +707,14 @@ export {
 } from './schema/system-table-shapes';
 // Schema types (for generated code from SchemaCodeGenerator)
 export type { SchemaDefinition } from './schema/types';
+// Option keys that configure services rather than describe a row, and the
+// request-body rule built on them.
+export {
+  isServiceOptionInput,
+  isServiceOptionKey,
+  SMRT_SERVICE_OPTION_KEYS,
+  type SmrtServiceOptionKey,
+} from './service-options';
 // Universal signaling system
 export * from './signals/index';
 export {
@@ -722,6 +740,11 @@ export type {
 } from './system/types';
 // Table existence verification cache (for test setup reset)
 export { resetVerifiedTables } from './table-cache';
+export {
+  isTenantScopedModel,
+  resolveAnonymousTenantReadScope,
+  scopeTenantReadOptions,
+} from './tenant-read-scope';
 // Testing utilities (for test setup only)
 export {
   getTestDatabase,
@@ -780,6 +803,18 @@ export {
   parseQualifiedName,
   qualifiedNamesEqual,
 } from './utils/qualified-names';
+// How `where` keys resolve to columns, shared by the collection and by anything
+// that inspects a filter before it runs (interceptors, generated routes).
+export {
+  applyWhereScope,
+  effectiveWhereOperator,
+  mergeOwnedWhere,
+  normalizeWhereKey,
+  type ResolvedWhereKey,
+  resolveWhereKey,
+  WhereClauseError,
+  whereColumnName,
+} from './where-keys';
 // Preserve the synchronous build API without importing the Vite/scanner graph
 // into every Node runtime. Node >=26 supports synchronous require(ESM).
 export const smrtPlugin: typeof import('./vite-plugin/index').smrtPlugin = (

@@ -205,6 +205,60 @@ only. The CLI's use is in `packages/cli/agents/app-commands.md`.
   small QuickJS stack limit keeps its error first, and a host-level failure
   discards the WASM module instance.
 
+## Worker footprint (#5183)
+
+Resident size added per app worker (RSS from `ps`, macOS, Node 26.8.1, SQLite;
+ratios, not Linux targets; at 1 worker the host's own share is included), at
+1 / 4 / 8 workers: origin/main 153 / 98 / 90 MiB; with items below, unbundled
+114 / 68 / 59 (-34% at 8); bundled 81 / 50 / 45 (-50%).
+
+- **Young generation cap (#5212).** `AppWorker` passes `resourceLimits` from
+  `HostOptions.workerLimits` (`{ youngMb, oldMb }`; shell:
+  `ShellContext.workerLimits`), default `DEFAULT_WORKER_LIMITS` = 16 MiB young,
+  512 MiB old; `youngMb: null` restores V8's own (about 48 MiB committed).
+  Cost (150 sequential creates, then 30 lists of 400 rows, best of 3 runs,
+  median of 7 processes): 16 MiB writes +14%, reads +1%; 8 MiB writes about 2x;
+  4 MiB writes about 2x, reads +20% (and 85 vs 153 MiB at 1 worker). Hence 16
+  for the desktop; a hosted profile that values memory over write latency may
+  pass 4-8. A bundled worker's heap is smaller, so the cap barely moves it.
+- **Split worker bundle (#5213).** `tools/bundle-worker.mjs` (esbuild, part of
+  `pnpm build`, after `tsc`) writes `worker-bundle/app-worker.js` + chunks (package root, gitignored).
+  Opt-in: a host passes `workerUrl` (`bundledWorkerUrl()` finds it) or sets
+  `SMRT_APP_SHELL_WORKER=bundle` (engine default and shell; a configured
+  `workerUrl` wins; refused if the bundle is not built). Unbundled stays the
+  default. The 22 MiB output sits outside `dist/` so it is not in the published
+  tarball (a local registry refused it with 413); a host builds it from the
+  repo with the package build (`pnpm --filter @happyvertical/smrt-app-shell build`,
+  or `node tools/bundle-worker.mjs` after `tsc -p tsconfig.lib.json`).
+  `worker-bundle.test.ts` rebuilds it, opens a host in bundle mode, writes and
+  reads, and checks the worker thread loaded only bundle files. Rules: NO identifier minification (smrt claims tables by class name;
+  `keepNames` also stops the bundler renaming a colliding class); `libsql`
+  (native, so a direct dependency here), DuckDB, and `quickjs-emscripten` (its
+  `.wasm` sits beside its glue code) stay external and resolve from the
+  package, so the bundle must stay inside the package. The whole engine suite runs
+  on it: `pnpm test:bundled-worker`. First wake (open, define, create, list):
+  about 390 ms unbundled, 237 ms bundled. `NODE_COMPILE_CACHE`: bundled warm
+  wake 237 -> 195 ms for +2-5 MiB per worker. Decision: set it for HOSTED
+  (replicas wake often; point it at a writable directory kept across restarts,
+  shared by the replicas of one build), NEVER for the desktop (one long-lived
+  process, the saving is one wake, the memory is paid per worker). The engine
+  does not set it; it is the process environment's.
+- **Reports load on report paths only (#5214).** The app worker imports
+  `@happyvertical/smrt-reports` only to compile a definition's reports at boot
+  (an app with none never does), run one, or classify a `runReport` error
+  (`reports.ts`, `app-worker.ts`, `worker-handle.ts` import it on demand).
+  `definition.ts` loads it for `validate` everywhere except the app worker
+  (`workerData.appWorker`), which never validates. `worker-loads.test.ts` runs a
+  worker under a module-load recorder (`test-support/load-recorder.mjs`) and
+  fails if reads and writes load it. Measured about -10 MiB per worker at 8
+  (more than the 3 MiB of source it holds, via what it pulls in); a worker
+  serving a first report takes about the same (195 vs 200 ms: the report read
+  worker pays the import it used to pay at start). Other rare paths (bulk
+  load, extract, merge, sandbox, publish) were measured and left alone: the
+  worker loads 13 engine modules of 143 KiB in all, of which those four are
+  about 50 KiB of source; publish, import and portable export are not in the
+  worker's graph. The remaining weight is core's 290 modules (3.9 MB).
+
 ## Calculated fields (#4916)
 
 `FieldDef.calculated` uses core's `GeneratedExpression` (SQL SDK operand data).
