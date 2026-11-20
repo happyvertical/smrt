@@ -29,7 +29,7 @@ import { createMigrationDefinition } from '../migrations/generator';
 import { collectStatementsFromDiff } from '../migrations/orchestrate';
 import { MigrationTracker } from '../migrations/tracker';
 import { SmrtObject } from '../object';
-import { ObjectRegistry } from '../registry';
+import { ObjectRegistry, smrt } from '../registry';
 import { createConsumerWorkspace } from '../registry/__tests__/helpers/consumer-workspace';
 import {
   createCookbookRuntimeExposure,
@@ -162,8 +162,9 @@ function runtime(up: SmartObjectManifest, app?: SmartObjectManifest) {
   class AppBase extends Base {
     extra = '';
   }
-  // Native decorators execute before generated isolated registrations.
-  ObjectRegistry.register(AppCustomer, { packageName: APP });
+  // The model's own `@smrt({ replaceParent: true })` runs under its local
+  // class name before the generated registration supplies the public name.
+  smrt({ replaceParent: true })(AppCustomer);
   register(AppCustomer, app, 'Customer');
   register(AppProfile, app, 'Profile');
   register(AppBase, app, 'Base');
