@@ -1,5 +1,8 @@
 package com.happyvertical.smrt.capacitor.session;
 
+import android.content.Context;
+import android.content.Intent;
+import android.content.SharedPreferences;
 import android.os.Handler;
 import android.os.Looper;
 import android.webkit.CookieManager;
@@ -9,6 +12,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
 import com.getcapacitor.Logger;
@@ -42,6 +46,16 @@ import com.getcapacitor.annotation.CapacitorPlugin;
  * bridge hop of its response. It registers itself when the app runs `cap sync`;
  * the web app needs no call. `flush()` is exposed for a page that wants a
  * deterministic flush right after it sets a cookie.
+ *
+ * <p>Opt-in link routing (#5361): when {@code plugins.SmrtSession.links} lists
+ * path prefixes, a VIEW link that reaches the activity (an Android App Link the
+ * host declares, such as an emailed sign-in link) is loaded into this WebView
+ * when its origin is {@code server.url}'s and its path is listed, so the sign-in
+ * completes in the app's own cookie jar instead of a browser. See
+ * {@link AppLinkPolicy}. A link is opened once: when its page has loaded, its
+ * SHA-256 is remembered ({@link SpentLinks}) and the same link is never loaded
+ * again, including when Android rebuilds a killed activity from the intent that
+ * first started it. A launch replayed from Recents is ignored as well.
  */
 @CapacitorPlugin(name = "SmrtSession")
 public class SmrtSessionPlugin extends Plugin {
@@ -52,11 +66,21 @@ public class SmrtSessionPlugin extends Plugin {
     private final CookieFlushPolicy policy = new CookieFlushPolicy();
     private boolean polling = false;
     private String watchScript;
+    /** Link loaded but not yet seen to load: its digest and the page it opens. */
+    private String pendingDigest;
+    private String pendingPage;
+
+    static final String LINKS_PREFS = "smrt_session_links";
+    static final String SPENT_KEY = "spent";
 
     /** Checks the jar and installs the fetch-completion observer on every page load. */
     private final WebViewListener pageListener = new WebViewListener() {
         @Override
         public void onPageLoaded(WebView webView) {
+            String url = webView.getUrl();
+            if (pendingDigest != null && url != null && SpentLinks.page(url).equals(pendingPage)) {
+                markSpent(pendingDigest);
+            }
             flushIfChanged();
             if (watchScript != null) {
                 webView.evaluateJavascript(watchScript, null);
@@ -82,6 +106,59 @@ public class SmrtSessionPlugin extends Plugin {
         // Not added here: Bridge.Builder replaces the listener list after plugins load.
         handler.post(this::attachPageListener);
         startPolling();
+    }
+
+    @Override
+    protected void handleOnNewIntent(Intent intent) {
+        // BridgeActivity also passes the launch intent here once the bridge exists.
+        if (intent == null || !Intent.ACTION_VIEW.equals(intent.getAction())
+                || (intent.getFlags() & Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) != 0
+                || intent.getData() == null || getBridge() == null) {
+            return;
+        }
+        String[] links = getConfig().getArray("links");
+        String serverUrl = getBridge().getConfig() == null ? null : getBridge().getConfig().getServerUrl();
+        String url = AppLinkPolicy.accept(
+            intent.getData().toString(), serverUrl, links == null ? null : Arrays.asList(links));
+        if (url == null) {
+            return;
+        }
+        // Clear the in-process copy; the system keeps the original, hence SpentLinks.
+        intent.setData(null);
+        String digest = SpentLinks.digest(url);
+        if (SpentLinks.seen(spentLinks(), digest)) {
+            return;
+        }
+        WebView webView = getBridge().getWebView();
+        if (webView == null) {
+            return;
+        }
+        String current = webView.getUrl();
+        if (current != null && SpentLinks.page(current).equals(SpentLinks.page(url))) {
+            // Same page: only the fragment changes and no page load follows.
+            markSpent(digest);
+        } else {
+            pendingDigest = digest;
+            pendingPage = SpentLinks.page(url);
+        }
+        webView.post(() -> webView.loadUrl(url));
+    }
+
+    private SharedPreferences linkPrefs() {
+        return getContext().getSharedPreferences(LINKS_PREFS, Context.MODE_PRIVATE);
+    }
+
+    private String spentLinks() {
+        return linkPrefs().getString(SPENT_KEY, "");
+    }
+
+    private void markSpent(String digest) {
+        // commit(), not apply(): the process may be killed right after the page loads.
+        linkPrefs().edit().putString(SPENT_KEY, SpentLinks.remember(spentLinks(), digest)).commit();
+        if (digest.equals(pendingDigest)) {
+            pendingDigest = null;
+            pendingPage = null;
+        }
     }
 
     @Override
