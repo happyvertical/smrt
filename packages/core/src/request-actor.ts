@@ -420,9 +420,11 @@ export function resolveTenancyForRequest(
     model: key,
     ...(served ? { served: served.filter((member) => member !== key) } : {}),
     // A create reads the members the route reads (its replay lookup) and may
-    // select a create target of equal tenancy, a separate set.
+    // select a create target of equal tenancy, a separate set: the targets
+    // its surface offers (an MCP tool's `createType`), whatever the server's
+    // model list, which limits only what is read through the base.
     ...(input.operation === 'create'
-      ? { creatable: familyCreateTargets(key, surface, input.modelScope) }
+      ? { creatable: familyCreateTargets(key, surface) }
       : {}),
     actor,
   });

@@ -124,8 +124,9 @@ rule of `src/request-actor.ts`. Per request (per sync item, per tool call):
    server's models), switched on for the actor's tenant, and readable by the
    caller (`api.public`, or a signed-in caller). An MCP point read uses the
    members open for `get`, a list those open for `list`. `creatable` is the
-   members a create may select (`familyCreateTargets`: `create` open, server
-   model list), a separate set that is never read.
+   members a create may select (`familyCreateTargets`: `create` open; on
+   runtime REST also its model list, while an MCP server's model list limits
+   only what is read through a base), a separate set that is never read.
 3. **STI membership.** A served member is admitted only when its policy
    *equals* the route model's (scoped, mode, ownership columns,
    `allowSuperAdminBypass`, bounded-hierarchy allowance). Every read, count,
