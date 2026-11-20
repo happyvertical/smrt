@@ -74,12 +74,52 @@ function decodeEntities(text: string): string {
   });
 }
 
+export const HTML_TO_TEXT_TRUNCATED = '[\u2026truncated]';
+
+/** Length-preserving ASCII-only lowercase (String#toLowerCase can change length). */
+function asciiLower(text: string): string {
+  return text.replace(/[A-Z]/g, (c) =>
+    String.fromCharCode(c.charCodeAt(0) | 32),
+  );
+}
+
+/** Bidi/format characters and C0/C1 controls (except \n and \t). */
+function isUnsafe(code: number): boolean {
+  return (
+    (code <= 0x1f && code !== 0x0a && code !== 0x09) ||
+    (code >= 0x7f && code <= 0x9f) ||
+    (code >= 0x200b && code <= 0x200f) ||
+    code === 0x2028 ||
+    code === 0x2029 ||
+    (code >= 0x202a && code <= 0x202e) ||
+    (code >= 0x2066 && code <= 0x2069) ||
+    code === 0xfeff
+  );
+}
+
+function stripUnsafe(text: string): string {
+  let out = '';
+  let start = 0;
+  for (let i = 0; i < text.length; i++) {
+    if (isUnsafe(text.charCodeAt(i))) {
+      out += text.slice(start, i);
+      start = i + 1;
+    }
+  }
+  return start === 0 ? text : out + text.slice(start);
+}
+
 export function htmlToText(html: string): string {
-  const input =
-    html.length > HTML_TO_TEXT_MAX_INPUT
-      ? html.slice(0, HTML_TO_TEXT_MAX_INPUT)
-      : html;
-  const lower = input.toLowerCase();
+  let input = html;
+  let truncated = false;
+  if (input.length > HTML_TO_TEXT_MAX_INPUT) {
+    let cut = HTML_TO_TEXT_MAX_INPUT;
+    const last = input.charCodeAt(cut - 1);
+    if (last >= 0xd800 && last <= 0xdbff) cut -= 1; // do not split a pair
+    input = input.slice(0, cut);
+    truncated = true;
+  }
+  const lower = asciiLower(input);
   const out: string[] = [];
   let i = 0;
   const n = input.length;
@@ -90,6 +130,13 @@ export function htmlToText(html: string): string {
       break;
     }
     if (lt > i) out.push(input.slice(i, lt));
+    const next = lower[lt + 1];
+    if (next === undefined || !/[a-z/!?]/.test(next)) {
+      // A bare `<` (e.g. "a < b") is literal text, not a tag.
+      out.push('<');
+      i = lt + 1;
+      continue;
+    }
     if (input.startsWith('<!--', lt)) {
       const end = input.indexOf('-->', lt + 4);
       i = end === -1 ? n : end + 3;
@@ -112,7 +159,7 @@ export function htmlToText(html: string): string {
       let from = i;
       let found = -1;
       while (from < n) {
-        const c = lower.indexOf('</' + name, from);
+        const c = lower.indexOf(`</${name}`, from);
         if (c === -1) break;
         const after = lower[c + 2 + name.length];
         if (after === undefined || !/[a-z0-9]/.test(after)) {
@@ -131,8 +178,22 @@ export function htmlToText(html: string): string {
     }
     if (BLOCK.has(name)) out.push('\n');
   }
-  return decodeEntities(out.join(''))
-    .replace(/[ \t]+\n/g, '\n')
-    .replace(/\n{3,}/g, '\n\n')
-    .trim();
+  const lines = stripUnsafe(decodeEntities(out.join('')))
+
+    .split('\n')
+    .map((l) => l.trimEnd());
+  // Collapse runs of blank lines to at most one, linearly.
+  const kept: string[] = [];
+  let blanks = 0;
+  for (const line of lines) {
+    if (line === '') {
+      blanks++;
+      if (blanks > 1) continue;
+    } else {
+      blanks = 0;
+    }
+    kept.push(line);
+  }
+  const text = kept.join('\n').trim();
+  return truncated ? `${text}\n${HTML_TO_TEXT_TRUNCATED}` : text;
 }
