@@ -324,11 +324,22 @@ export interface RequestTenancyEntryInput {
 }
 
 /**
+ * Whether the transport authenticated a principal: the settled principal's
+ * own answer, or a signed-in principal in `locals`. A tenant context the
+ * host entered names a tenant, not a signed-in caller, so it does not count.
+ */
+function principalSignedIn(input: RequestTenancyEntryInput): boolean {
+  return input.principal
+    ? input.principal.authenticated !== false
+    : principalFromLocals(input.locals).authenticated;
+}
+
+/**
  * Whether a family member of the route model is served to this caller
  * through the base, as it would be on its own route: switched on for the
  * request's tenant (the runtime exposure gate), and readable by the caller
- * (its `api.public`, or a signed-in caller). The base's own gate admitted
- * the request; a member's access rules are its own.
+ * (its `api.public`, or a caller the transport signed in). The base's own
+ * gate admitted the request; a member's access rules are its own.
  */
 function memberServedToCaller(
   key: string,
@@ -336,6 +347,7 @@ function memberServedToCaller(
   mutating: boolean,
   actor: RequestActor,
   locals: unknown,
+  signedIn: boolean,
 ): boolean {
   const exposure = ObjectRegistry.getExposureModel(key) ?? key;
   if (
@@ -355,7 +367,7 @@ function memberServedToCaller(
   if (publicAccess === true || (publicAccess === 'read' && !mutating)) {
     return true;
   }
-  return actor.authenticated;
+  return signedIn;
 }
 
 function servedMembers(
@@ -427,6 +439,7 @@ export function resolveTenancyForRequest(
   });
   const key = resolveStrictModelKey(input.model) ?? input.model;
   const surface = input.surface ?? 'api';
+  const signedIn = principalSignedIn(input);
   const served = servedMembers(
     key,
     input.operation,
@@ -434,7 +447,14 @@ export function resolveTenancyForRequest(
     surface,
     input.modelScope,
     (member) =>
-      memberServedToCaller(member, surface, mutating, actor, input.locals),
+      memberServedToCaller(
+        member,
+        surface,
+        mutating,
+        actor,
+        input.locals,
+        signedIn,
+      ),
   );
   return resolveRequestTenancy({
     model: key,

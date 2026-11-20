@@ -20,16 +20,18 @@ import {
   SmrtObject,
   smrt,
 } from '@happyvertical/smrt-core';
+import { MCPGenerator } from '@happyvertical/smrt-core/generators/mcp';
 import { getTestDatabase } from '@happyvertical/smrt-core/testing';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { withSystemContext } from '../context.js';
+import { withSystemContext, withTenant } from '../context.js';
 import { disableTenancy, enableTenancy } from '../interceptor.js';
 import {
   type EmittedApp,
   emitApp,
   keyOf,
   segmentOf,
+  TENANT_A,
   titlesOf,
 } from './helpers/effective-tenancy-harness.js';
 
@@ -60,6 +62,10 @@ class EffAccessLedgerBook extends EffAccessShelf {}
 /** Registered and readable, but no route was generated for it. */
 @smrt({ api: { include: ['list', 'get'], public: 'read' } })
 class EffAccessUnroutedBook extends EffAccessShelf {}
+
+type ToolResult = { isError?: boolean; content?: Array<{ text: string }> };
+const textOf = (result: ToolResult) =>
+  (result.content ?? []).map((part) => part.text).join('\n');
 
 describe('what a base serves depends on who calls', () => {
   let dir: string;
@@ -162,6 +168,44 @@ describe('what a base serves depends on who calls', () => {
       } finally {
         enableTenancy();
       }
+    });
+  });
+
+  describe('signed in (R3.4)', () => {
+    it('a tenant the host entered does not make an anonymous caller signed in on emitted routes', async () => {
+      const answer = await withTenant({ tenantId: TENANT_A }, () =>
+        app.call('GET', shelf()),
+      );
+      expect(answer.status).toBe(200);
+      expect(titlesOf(answer.body)).toContain('open book');
+      expect(titlesOf(answer.body)).not.toContain('private book');
+    });
+
+    it('a tenant the host entered does not make an MCP caller without a user signed in', async () => {
+      const tool = `${EffAccessShelf.name.toLowerCase()}_list`;
+      const listed = textOf(
+        await withTenant({ tenantId: TENANT_A }, () =>
+          new MCPGenerator({}, { db }).handleToolCall({
+            method: 'tools/call',
+            params: { name: tool, arguments: {} },
+          } as never),
+        ),
+      );
+      expect(listed).toContain('open book');
+      expect(listed).not.toContain('private book');
+      // A caller with a user is signed in (control).
+      const signedIn = textOf(
+        await withTenant({ tenantId: TENANT_A }, () =>
+          new MCPGenerator({}, {
+            db,
+            user: { id: 'reader' },
+          } as never).handleToolCall({
+            method: 'tools/call',
+            params: { name: tool, arguments: {} },
+          } as never),
+        ),
+      );
+      expect(signedIn).toContain('private book');
     });
   });
 });

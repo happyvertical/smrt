@@ -126,7 +126,9 @@ rule of `src/request-actor.ts`. Per request (per sync item, per tool call):
    per-request admission); on the emitted routes and both MCP surfaces a
    member is admitted only when it is on the server's model list (an MCP
    server's models), switched on for the actor's tenant, and readable by the
-   caller (`api.public`, or a signed-in caller). An MCP point read uses the
+   caller (`api.public`, or a caller the transport signed in: a signed-in
+   principal in `locals`, an MCP context with a user; a tenant context the
+   host entered does not count). An MCP point read uses the
    members open for `get`, a list those open for `list`. `creatable` is the
    members a create may select (`familyCreateTargets`: `create` open; on
    runtime REST also its model list, while an MCP server's model list limits
