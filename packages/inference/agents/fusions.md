@@ -81,7 +81,8 @@ await contract.do('Summarize this contract', { tier: 'best' }); // unchanged cal
   reservation or an ancestor's stop (`AI_RUN_STOPPED`, `isAiRunInterruption`)
   is never a dead seat or a fallback: `handle.stop()` turns it into the
   caller's stop. A lost claim (`AI_RUN_CLAIM_LOST`) is thrown unchanged
-  before any of that: the stale worker stops, releases and records nothing,
+  before any of that, and wins over any other seat's failure in a pair
+  whatever the seat order: the stale worker stops, releases and records nothing,
   and the held reservations stay for the new claim holder to reconcile.
   Every seat's usage row carries `runId`, `fusionKey`, `seat`
   and the seat's prompt tags; the gate's decision call does not carry

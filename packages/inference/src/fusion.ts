@@ -776,7 +776,14 @@ class FusionRun {
         this.runSeat(0, input, false),
         this.runSeat(1, input, false),
       ]);
-      const rejected = settled.find((entry) => entry.status === 'rejected');
+      // A lost claim wins over any other seat's failure, whatever the seat
+      // order: the stale worker must not record or close the fusion.
+      const rejections = settled.filter(
+        (entry): entry is PromiseRejectedResult => entry.status === 'rejected',
+      );
+      const rejected =
+        rejections.find((entry) => isAiRunClaimLoss(entry.reason)) ??
+        rejections[0];
       if (rejected) throw rejected.reason;
       const [first, second] = settled.map(
         (entry) => (entry as PromiseFulfilledResult<FusionSeatResult>).value,
