@@ -72,6 +72,17 @@ export function activationClosure(
     if (!model) throw new Error(`Unknown activation model: ${id}`);
     if (model.parent !== undefined && typeof model.parent !== 'string')
       throw new Error(`Invalid activation parent for ${id}`);
+    // Generation always lists a model's parent among its dependencies. A
+    // parent outside them is not the class this model extends (a stale or
+    // hand-edited graph), so nothing is imported or migrated for it.
+    if (
+      model.parent !== undefined &&
+      graph.models[model.parent] &&
+      !model.dependencies.includes(model.parent)
+    )
+      throw new Error(
+        `Invalid activation parent for ${id}: ${model.parent} is not among its dependencies (${model.dependencies.join(', ') || 'none'}), so it is not the class ${id} extends. Regenerate the activation manifest.`,
+      );
     models.add(id);
     if (model.parent !== undefined) visitModel(model.parent);
     visitModule(model.module);
