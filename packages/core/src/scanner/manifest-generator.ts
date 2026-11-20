@@ -8,7 +8,7 @@ import { writeThroughFields } from '../write-through.js';
  */
 
 import { createHash } from 'node:crypto';
-import { existsSync, realpathSync } from 'node:fs';
+import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { createLogger } from '@happyvertical/logger';
@@ -281,6 +281,33 @@ function installedPackageDir(
     const parent = dirname(current);
     if (parent === current) return undefined;
     current = parent;
+  }
+}
+
+/**
+ * What makes two installed directories of a package the same package: its
+ * name, its version and the content of the manifest it ships (the first of
+ * `dist/manifest.json`, `.smrt/manifest.json` that exists, or none).
+ * `undefined` when the directory's package.json cannot be read or names no
+ * version, so the copies are taken to differ.
+ */
+function installedCopyIdentity(packageDir: string): string | undefined {
+  try {
+    const json = JSON.parse(
+      readFileSync(join(packageDir, 'package.json'), 'utf8'),
+    ) as { name?: unknown; version?: unknown };
+    if (typeof json.name !== 'string' || typeof json.version !== 'string') {
+      return undefined;
+    }
+    const manifest = ['dist/manifest.json', '.smrt/manifest.json']
+      .map((path) => join(packageDir, path))
+      .find((path) => existsSync(path));
+    const digest = manifest
+      ? createHash('sha256').update(readFileSync(manifest)).digest('hex')
+      : 'none';
+    return `${json.name}@${json.version}#${digest}`;
+  } catch {
+    return undefined;
   }
 }
 
@@ -1042,9 +1069,13 @@ export class ManifestGenerator {
         return path;
       }
     };
-    return real(fromOwner) === real(read)
-      ? undefined
-      : `${owner} loads ${target} from ${real(fromOwner)}, while generation reads the manifest of ${real(read)}`;
+    if (real(fromOwner) === real(read)) return undefined;
+    // pnpm installs one version of a package in several store directories
+    // when its peers resolve differently; those copies are one package.
+    const ownerCopy = installedCopyIdentity(real(fromOwner));
+    const readCopy = installedCopyIdentity(real(read));
+    if (ownerCopy && readCopy && ownerCopy === readCopy) return undefined;
+    return `${owner} loads ${target} from ${real(fromOwner)}, while generation reads the manifest of ${real(read)}`;
   }
 
   /**

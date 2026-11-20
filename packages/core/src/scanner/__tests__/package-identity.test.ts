@@ -475,6 +475,50 @@ describe('ancestors reached through a provider parent', () => {
     });
   });
 
+  // pnpm installs one version of a package in two store directories when its
+  // peers resolve differently: same name, version and manifest, two paths.
+  it('accepts an inherited foreign key whose target package is installed twice as the same version and manifest', async () => {
+    let shipped: Record<string, unknown> | undefined;
+    const room = {
+      'src/Room.ts': `${CORE}\n@smrt({ tableName: 'rooms' })\nexport class Room extends SmrtObject {}\n`,
+    };
+    const root = await project({
+      providers: {
+        'other-peer-a': {
+          name: OTHER,
+          at: join('node_modules', VENDOR, 'node_modules', OTHER),
+          files: room,
+          edit: (manifest) => {
+            shipped = structuredClone(manifest);
+          },
+        },
+        'other-peer-b': {
+          name: OTHER,
+          files: room,
+          edit: (manifest) => {
+            for (const key of Object.keys(manifest)) delete manifest[key];
+            Object.assign(manifest, structuredClone(shipped));
+          },
+        },
+        [VENDOR]: {
+          dependencies: [OTHER],
+          files: {
+            'src/Booking.ts': `${CORE}\nimport { Room } from '${OTHER}';\n@smrt({ tableStrategy: 'sti', tableName: 'vendor_bookings' })\nexport class Booking extends SmrtObject {\n  @foreignKey(Room) roomId = '';\n}\n`,
+          },
+        },
+      },
+      app: {
+        'src/Session.ts': `${CORE}\nimport { Booking } from '${VENDOR}';\n@smrt()\nexport class Session extends Booking {}\n`,
+      },
+    });
+
+    const manifest = await build(root);
+    expect(
+      manifest.objects[`${APP}:Session`]?.schema?.columns.room_id?.foreignKey
+        ?.table,
+    ).toBe('rooms');
+  });
+
   // Only a constrained foreign key names the target's table in this table's
   // DDL; a one-to-many or an unconstrained key keeps no reference to it.
   it.each([
