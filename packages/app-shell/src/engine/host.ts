@@ -47,7 +47,7 @@ import {
   schemaExists,
   swapSchemas,
 } from './db/postgres-copy.ts';
-import { assertAppSchema, isSideSchema } from './db/schema-name.ts';
+import { assertSchemaName, isSideSchema } from './db/schema-name.ts';
 import {
   type AppDefinition,
   builtInFields,
@@ -439,12 +439,16 @@ export class AppHost extends EventEmitter {
           "this draft lives on PostgreSQL; open it with the live app's database config",
           'refused',
         );
-      if (!isSideSchema(marker.schema, undefined, 'd'))
+      if (
+        !marker.liveSchema ||
+        marker.liveSchema !== config.schema ||
+        !isSideSchema(marker.schema, marker.liveSchema, 'd')
+      )
         throw new EngineError(
-          `the draft marker in ${dataDir} names ${marker.schema}, which is not a draft schema; not trusting it`,
+          `the draft marker in ${dataDir} names ${marker.schema}, which is not a draft schema of ${config.schema}; not trusting it`,
           'refused',
         );
-      config = { ...config, schema: assertAppSchema(marker.schema) };
+      config = { ...config, schema: assertSchemaName(marker.schema) };
     } else if (marker && config.kind !== 'sqlite')
       throw new EngineError(
         'this draft is a SQLite copy; it cannot open on PostgreSQL',
@@ -1870,7 +1874,7 @@ export class AppHost extends EventEmitter {
   /** A live copy of the app's schema (rows, keys, sequences, policies, ownership, grants). */
   private forkSchemaTo(target: string) {
     return withSchemaAdmin(this.database, (db) =>
-      forkSchema(db, schemaOf(this.database), target),
+      forkSchema(db, schemaOf(this.database), target, this.ownerBase()),
     );
   }
 
@@ -1879,7 +1883,7 @@ export class AppHost extends EventEmitter {
     return withSchemaAdmin(this.database, (db) =>
       swapSchemas(
         db,
-        { live: schemaOf(this.database), next, aside },
+        { live: schemaOf(this.database), next, aside, owner: this.ownerBase() },
         this.lockTimeoutMs,
       ),
     );
@@ -1894,14 +1898,24 @@ export class AppHost extends EventEmitter {
     }
   }
 
+  /** The full schema name of the app the copies of this host belong to. */
+  private ownerBase() {
+    return schemaOf(this.database);
+  }
+
   private dropSideSchemaOrThrow(schema: string) {
-    if (!isSideSchema(schema))
+    // A draft drops its own schema, which its LIVE app owns.
+    const owner =
+      this.draft?.schema === schema && this.draft.liveSchema
+        ? this.draft.liveSchema
+        : this.ownerBase();
+    if (!isSideSchema(schema, owner))
       throw new EngineError(
         `${schema} is not a side schema; only a draft, rehearsal, aside or restore schema is dropped here`,
         'refused',
       );
     return withSchemaAdmin(this.database, (db) =>
-      dropSchema(db, schema, this.lockTimeoutMs),
+      dropSchema(db, schema, this.lockTimeoutMs, owner),
     );
   }
 
@@ -1910,7 +1924,7 @@ export class AppHost extends EventEmitter {
     const base = schemaOf(this.database);
     await withSchemaAdmin(this.database, async (db) => {
       for (const n of await listSideSchemas(db, base, 'ron'))
-        await dropSchema(db, n, this.lockTimeoutMs);
+        await dropSchema(db, n, this.lockTimeoutMs, base);
     });
   }
 
@@ -1936,7 +1950,8 @@ export class AppHost extends EventEmitter {
     await withSchemaAdmin(this.database, async (db) => {
       const has = (n: string) => db.transaction((tx) => schemaExists(tx, n));
       const drop = async (n: string) => {
-        if (await has(n)) await dropSchema(db, n, this.lockTimeoutMs);
+        if (await has(n))
+          await dropSchema(db, n, this.lockTimeoutMs, pg.schema);
       };
       if (current === j.finalVersion) {
         await drop(pg.aside);
@@ -1945,7 +1960,12 @@ export class AppHost extends EventEmitter {
         if (await has(pg.aside))
           await swapSchemas(
             db,
-            { live: pg.schema, next: pg.aside, aside: pg.staging },
+            {
+              live: pg.schema,
+              next: pg.aside,
+              aside: pg.staging,
+              owner: pg.schema,
+            },
             this.lockTimeoutMs,
           );
         await drop(pg.staging);
@@ -1985,6 +2005,11 @@ export class AppHost extends EventEmitter {
           'refused',
         );
       const file = resolveSnapshot(join(this.dataDir, 'snapshots'), name);
+      if (!file.endsWith('.pgdump'))
+        throw new EngineError(
+          `${name} is a SQLite database file, not a PostgreSQL dump; it cannot be restored here`,
+          'refused',
+        );
       const header = readDumpHeader(file);
       const schema = schemaOf(this.database);
       if (header.schema !== schema)
@@ -2016,7 +2041,7 @@ export class AppHost extends EventEmitter {
       );
       try {
         await withSchemaAdmin(this.database, (db) =>
-          restoreDump(db, file, side),
+          restoreDump(db, file, side, this.ownerBase()),
         );
         let swapped = false;
         try {
@@ -2127,10 +2152,11 @@ export class AppHost extends EventEmitter {
       const schema = this.onServer
         ? sideSchemaName(schemaOf(this.database), 'd')
         : undefined;
+      const liveSchema = schema ? schemaOf(this.database) : undefined;
       try {
         if (schema) await this.forkSchemaTo(schema);
         else await this.callApp('copyTo', join(dir, 'app.db'));
-        writeDraftMarker(dir, this.dataDir, base.version, schema);
+        writeDraftMarker(dir, this.dataDir, base.version, schema, liveSchema);
         await opts.store.append(structuredClone(base));
         await opts.store.setCurrent(base.version);
         return await AppHost.open(dir, {
@@ -2966,14 +2992,18 @@ export async function discardOrphanDraft(
         "this draft lives on PostgreSQL; pass the live app's database config",
         'refused',
       );
-    if (!isSideSchema(marker.schema, undefined, 'd'))
+    if (
+      !marker.liveSchema ||
+      marker.liveSchema !== database.schema ||
+      !isSideSchema(marker.schema, marker.liveSchema, 'd')
+    )
       throw new EngineError(
-        `the draft marker in ${dataDir} names ${marker.schema}, which is not a draft schema; not dropping it`,
+        `the draft marker in ${dataDir} names ${marker.schema}, which is not a draft schema of ${database.schema}; not dropping it`,
         'refused',
       );
-    const schema = assertAppSchema(marker.schema);
+    const schema = assertSchemaName(marker.schema);
     await withSchemaAdmin({ ...database, schema }, (db) =>
-      dropSchema(db, schema),
+      dropSchema(db, schema, undefined, marker.liveSchema),
     );
   }
   removeDraftDirectory(dataDir, true);

@@ -30,7 +30,6 @@ import {
   dialectFor,
   type EngineDialect,
   openDatabase,
-  requireSingleWriter,
   tableColumns,
   type WorkerDatabaseConfig,
 } from './db/index.ts';
@@ -1251,7 +1250,6 @@ export class AppRuntime {
   ) {
     const md = this.modelDef(model).methods?.[method];
     if (!md) throw new AppError(`no method ${model}.${method}()`);
-    requireSingleWriter(this.database, 'running a method');
     for (const [p, pd] of Object.entries(md.params ?? {}))
       if (pd.required && params[p] == null)
         throw new AppError(`param ${p} is required`);
@@ -1336,6 +1334,18 @@ export class AppRuntime {
           this.db,
           isEmbeddedDatabase(this.db),
           async (tx: Handle) => {
+            // A server has other connections: hold their writes off until this
+            // transaction ends, so the re-read below stays true (the embedded
+            // databases have the one connection already).
+            if (this.database.kind === 'postgres')
+              for (const table of [
+                ...new Set(
+                  Object.entries(this.def.models).map(([m, md]) =>
+                    tableFor(m, md),
+                  ),
+                ),
+              ].sort())
+                await tx.query(this.dialect.writeLock(table));
             const now = await this.methodData(tx);
             const nowRecord = id ? await this.get(model, id, tx) : null;
             if (
