@@ -228,7 +228,10 @@ ratios, not Linux targets; at 1 worker the host's own share is included), at
   `workerUrl` wins; refused if the bundle is not built). Unbundled stays the
   default. The 22 MiB output sits outside `dist/` so it is not in the published
   tarball (a local registry refused it with 413); a host builds it from the
-  repo with the package build. Rules: NO identifier minification (smrt claims tables by class name;
+  repo with the package build (`pnpm --filter @happyvertical/smrt-app-shell build`,
+  or `node tools/bundle-worker.mjs` after `tsc -p tsconfig.lib.json`).
+  `worker-bundle.test.ts` rebuilds it, opens a host in bundle mode, writes and
+  reads, and checks the worker thread loaded only bundle files. Rules: NO identifier minification (smrt claims tables by class name;
   `keepNames` also stops the bundler renaming a colliding class); `libsql`
   (native, so a direct dependency here), DuckDB, and `quickjs-emscripten` (its
   `.wasm` sits beside its glue code) stay external and resolve from the
