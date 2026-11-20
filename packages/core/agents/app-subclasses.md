@@ -96,7 +96,9 @@ collection returns its own.
   of an auto-discovered route (CRUD and `sync/apply`) by the registry key of
   the class the route selected, so a public parent never opens its subtype's
   route. `authMiddleware` receives that registry key in place of the simple
-  name only when another registered class shares the name.
+  name whenever `findClassesByName()` returns more than one class: a
+  same-named subtype, and equally two same-named classes of unrelated
+  packages (for example two packages' `Account`).
 - A same-named subtype is supported only in a family that declares no
   tenancy. Its family is the subtype, its same-named parents, every ancestor
   of those (by declared `extends` and by constructor), and the replacement
