@@ -19,11 +19,13 @@
 
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { MigrationDefinition } from '../../schema/types.js';
+import { readCreateIndexStatement } from '../postgres-create-index.js';
 import { MigrationTracker } from '../tracker.js';
 
 interface RecordedQuery {
   channel: 'pool' | 'transaction' | 'session';
   sql: string;
+  params?: unknown[];
 }
 
 interface FakeDbOptions {
@@ -32,6 +34,20 @@ interface FakeDbOptions {
   withSession?: boolean;
   /** Index names reported as INVALID by `pg_index.indisvalid = false`. */
   invalidIndexes?: string[];
+  /** Schema that holds those INVALID indexes. Default `public`. */
+  invalidIndexSchema?: string;
+  /** Schema every table of a pending statement resolves to. Default `public`. */
+  tableSchema?: string | null;
+  /** Whether the index a CREATE INDEX names is valid on its table afterwards. */
+  builtIndexValid?: boolean;
+  /** No index of the name on the statement's table afterwards. */
+  builtIndexMissing?: boolean;
+  /** Indexes already on the table before the run: name -> its CREATE INDEX. */
+  existingIndexes?: Record<string, string>;
+  /** The index of the name differs from the statement (e.g. not unique). */
+  builtIndexDiffers?: boolean;
+  /** An EXPLAIN whose SQL contains this fragment fails (an unknown column). */
+  explainFailsOn?: string;
   /** SQL fragments that should throw when executed. */
   failOn?: Array<{ match: string; message: string }>;
 }
@@ -55,6 +71,10 @@ function createFakeDb(options: FakeDbOptions = {}): FakeDb {
   const queries: RecordedQuery[] = [];
   const rows = new Map<string, Record<string, unknown>>();
   const invalidIndexes = options.invalidIndexes ?? [];
+  /** Index name -> the CREATE INDEX that built it (or that it already had). */
+  const built = new Map<string, string>(
+    Object.entries(options.existingIndexes ?? {}),
+  );
   const state = { sessionsOpened: 0, sessionsReleased: 0 };
 
   function maybeFail(sql: string): void {
@@ -69,11 +89,54 @@ function createFakeDb(options: FakeDbOptions = {}): FakeDb {
     sql: string,
     params: unknown[],
   ): { rows: Record<string, unknown>[]; rowCount: number } {
-    queries.push({ channel, sql });
+    queries.push({ channel, sql, params });
+
+    // The checks around a CREATE INDEX: the index of the name on its table,
+    // and its definition, as the statements this fake has run built them.
+    if (sql.includes('AS definition')) {
+      const create = built.get(String(params[0]));
+      if (!create) return { rows: [], rowCount: 0 };
+      const definition = options.builtIndexDiffers
+        ? /UNIQUE/i.test(create)
+          ? create.replace(/UNIQUE\s+/i, '')
+          : create.replace(/CREATE\s+/i, 'CREATE UNIQUE ')
+        : create;
+      return {
+        rows: [{ definition, predicate: null, collations: [], opclasses: [] }],
+        rowCount: 1,
+      };
+    }
+    if (sql.startsWith('EXPLAIN')) {
+      if (options.explainFailsOn && sql.includes(options.explainFailsOn))
+        throw new Error('column does not exist');
+      return { rows: [{ 'QUERY PLAN': sql }], rowCount: 1 };
+    }
+    if (sql.includes('index_oid')) {
+      const name = String(params[0]);
+      return options.builtIndexMissing || !built.has(name)
+        ? { rows: [], rowCount: 0 }
+        : {
+            rows: [
+              { index_oid: name, is_valid: options.builtIndexValid ?? true },
+            ],
+            rowCount: 1,
+          };
+    }
+
+    if (sql.includes('to_regclass')) {
+      const schema =
+        options.tableSchema === undefined ? 'public' : options.tableSchema;
+      return schema === null
+        ? { rows: [], rowCount: 0 }
+        : { rows: [{ schema_name: schema }], rowCount: 1 };
+    }
 
     if (sql.includes('pg_index')) {
       return {
-        rows: invalidIndexes.map((index_name) => ({ index_name })),
+        rows: invalidIndexes.map((index_name) => ({
+          index_name,
+          schema_name: options.invalidIndexSchema ?? 'public',
+        })),
         rowCount: invalidIndexes.length,
       };
     }
@@ -85,6 +148,15 @@ function createFakeDb(options: FakeDbOptions = {}): FakeDb {
     if (sql.includes('SELECT * FROM _smrt_schema_migrations WHERE name = ?')) {
       const row = rows.get(String(params[0]));
       return row ? { rows: [row], rowCount: 1 } : { rows: [], rowCount: 0 };
+    }
+
+    if (
+      sql.includes("FROM _smrt_schema_migrations WHERE status = 'completed'")
+    ) {
+      const completed = [...rows.values()].filter(
+        (row) => row.status === 'completed',
+      );
+      return { rows: completed, rowCount: completed.length };
     }
 
     if (sql.startsWith('INSERT INTO _smrt_schema_migrations')) {
@@ -135,6 +207,9 @@ function createFakeDb(options: FakeDbOptions = {}): FakeDb {
     }
 
     maybeFail(sql);
+    const created = readCreateIndexStatement(sql);
+    if (created.kind === 'create-index' && created.statement.name)
+      built.set(created.statement.name, sql);
     return { rows: [], rowCount: 0 };
   }
 
@@ -606,7 +681,7 @@ describe('INVALID index detection and rebuild (issue #2362)', () => {
 
     const sessionSql = fake.sqlIn('session');
     const dropAt = sessionSql.indexOf(
-      'DROP INDEX CONCURRENTLY IF EXISTS "jobs_status_idx"',
+      'DROP INDEX CONCURRENTLY IF EXISTS "public"."jobs_status_idx"',
     );
     const createAt = sessionSql.findIndex((sql) =>
       sql.includes('CREATE INDEX CONCURRENTLY'),
@@ -615,21 +690,124 @@ describe('INVALID index detection and rebuild (issue #2362)', () => {
     expect(createAt).toBeGreaterThan(dropAt);
   });
 
-  it('scopes the catalog read to the session search path', async () => {
-    // Migration DDL names indexes unqualified, and so does the repair drop.
-    // Scanning every schema would let an unrelated invalid index of the same
-    // name in another schema trigger a drop that resolves to a different
-    // object.
+  it("resolves the pending statement's table on the session and drops the index in that schema only", async () => {
+    // Several schemas may each hold an index of this name. The index a create
+    // collides with is the one in its table's schema, so the drop names it.
+    const fake = createFakeDb({
+      invalidIndexes: ['jobs_status_idx'],
+      invalidIndexSchema: 'tenant_a',
+      tableSchema: 'tenant_a',
+    });
+    const tracker = new MigrationTracker({ db: fake.db });
+
+    await tracker.applyAll([addIndex], { atomic: true, postgresSafe: true });
+
+    const sessionSql = fake.sqlIn('session');
+    expect(sessionSql.some((sql) => sql.includes('to_regclass'))).toBe(true);
+    expect(sessionSql.filter((sql) => sql.startsWith('DROP INDEX'))).toEqual([
+      'DROP INDEX CONCURRENTLY IF EXISTS "tenant_a"."jobs_status_idx"',
+    ]);
+  });
+
+  it('never drops an index of the same name in another schema', async () => {
+    // The INVALID index is in a schema the pending statement's table is not
+    // in. An unqualified drop would resolve by search path and could remove a
+    // healthy index of that name; no drop is issued at all.
+    const fake = createFakeDb({
+      invalidIndexes: ['jobs_status_idx'],
+      invalidIndexSchema: 'tenant_b',
+      tableSchema: 'tenant_a',
+    });
+    const tracker = new MigrationTracker({ db: fake.db });
+
+    const results = await tracker.applyAll([addIndex], {
+      atomic: true,
+      postgresSafe: true,
+    });
+
+    expect(results[0].success).toBe(true);
+    const sessionSql = fake.sqlIn('session');
+    expect(sessionSql.some((sql) => sql.startsWith('DROP INDEX'))).toBe(false);
+    expect(
+      sessionSql.some((sql) => sql.includes('CREATE INDEX CONCURRENTLY')),
+    ).toBe(true);
+  });
+
+  it("does not repair when the pending statement's table cannot be resolved", async () => {
+    const fake = createFakeDb({
+      invalidIndexes: ['jobs_status_idx'],
+      tableSchema: null,
+    });
+    const tracker = new MigrationTracker({ db: fake.db });
+
+    await tracker.applyAll([addIndex], { atomic: true, postgresSafe: true });
+
+    expect(
+      fake.sqlIn('session').some((sql) => sql.startsWith('DROP INDEX')),
+    ).toBe(false);
+  });
+
+  it('does not repair, and does not record success, when the statement names its table in a form it cannot read whole', async () => {
+    // A three-part name: refused before anything runs (nothing dropped,
+    // nothing built, nothing recorded), so the migration stays retryable.
+    const fake = createFakeDb({ invalidIndexes: ['jobs_status_idx'] });
+    const tracker = new MigrationTracker({ db: fake.db });
+    const unreadable: MigrationDefinition = {
+      ...addIndex,
+      up: [
+        'CREATE INDEX CONCURRENTLY IF NOT EXISTS "jobs_status_idx" ON db.app.jobs ("status")',
+      ],
+    };
+
+    await expect(
+      tracker.applyAll([unreadable], { atomic: true, postgresSafe: true }),
+    ).rejects.toThrow('could not be read with certainty');
+
+    expect(fake.sqlIn('session')).toEqual([]);
+  });
+
+  it('does not record success when the index is not valid on its table after the create', async () => {
+    const fake = createFakeDb({ builtIndexValid: false });
+    const tracker = new MigrationTracker({ db: fake.db });
+
+    const [result] = await tracker.applyAll([addIndex], {
+      atomic: true,
+      postgresSafe: true,
+    });
+
+    expect(result.success).toBe(false);
+    expect(String(result.error)).toContain(
+      'jobs_status_idx on "jobs" is INVALID',
+    );
+  });
+
+  it('matches the INVALID index to the pending statement by its table, not by name alone', async () => {
     const fake = createFakeDb({ invalidIndexes: ['jobs_status_idx'] });
     const tracker = new MigrationTracker({ db: fake.db });
 
     await tracker.applyAll([addIndex], { atomic: true, postgresSafe: true });
 
-    const catalogRead = fake.queries.find((entry) =>
-      entry.sql.includes('pg_index'),
-    );
-    expect(catalogRead?.sql).toContain('current_schemas(false)');
-    expect(catalogRead?.sql).not.toContain("NOT IN ('pg_catalog'");
+    const lookup = fake
+      .sqlIn('session')
+      .find((sql) => sql.includes('to_regclass'));
+    expect(lookup).toMatch(/indrelid\s*=\s*to_regclass\(\?\)/);
+    expect(lookup).toMatch(/indisvalid\s*=\s*false/);
+  });
+
+  it('asks the catalog about a table only when an INVALID index has the pending name', async () => {
+    const fake = createFakeDb({ invalidIndexes: ['some_other_idx'] });
+    const tracker = new MigrationTracker({ db: fake.db });
+
+    await tracker.applyAll([addIndex], { atomic: true, postgresSafe: true });
+
+    expect(
+      fake
+        .sqlIn('session')
+        .some(
+          (sql) =>
+            sql.includes('to_regclass') && sql.includes('indisvalid = false'),
+        ),
+    ).toBe(false);
   });
 
   it('leaves healthy indexes alone', async () => {
@@ -643,7 +821,7 @@ describe('INVALID index detection and rebuild (issue #2362)', () => {
     ).toBe(false);
   });
 
-  it('continues when the catalog read is not permitted', async () => {
+  it('keeps the migration retryable when the catalog cannot be read to confirm the index', async () => {
     const fake = createFakeDb();
     const original = fake.db.acquireSession;
     fake.db.acquireSession = async () => {
@@ -664,6 +842,283 @@ describe('INVALID index detection and rebuild (issue #2362)', () => {
       postgresSafe: true,
     });
 
-    expect(results[0].success).toBe(true);
+    // The repair degrades without the catalog; the confirmation cannot.
+    expect(results[0].success).toBe(false);
+    expect(String(results[0].error)).toContain('could not be confirmed');
+  });
+
+  it('does not record success when an index of the name on the same table is not the one described', async () => {
+    const fake = createFakeDb({ builtIndexDiffers: true });
+    const tracker = new MigrationTracker({ db: fake.db });
+
+    const [result] = await tracker.applyAll([addIndex], {
+      atomic: true,
+      postgresSafe: true,
+    });
+
+    expect(result.success).toBe(false);
+    expect(String(result.error)).toContain(
+      'is not the index its statement describes',
+    );
+    // Nothing was created to compare: the catalog is read.
+    expect(
+      fake.sqlIn('session').some((sql) => /CREATE\s+TEMP/i.test(sql)),
+    ).toBe(false);
+  });
+
+  it('does not record success when no index of the name is on the statement table', async () => {
+    const fake = createFakeDb({ builtIndexMissing: true });
+    const tracker = new MigrationTracker({ db: fake.db });
+
+    const [result] = await tracker.applyAll([addIndex], {
+      atomic: true,
+      postgresSafe: true,
+    });
+
+    expect(result.success).toBe(false);
+    expect(String(result.error)).toContain('does not exist');
+  });
+
+  it.each([
+    [
+      'a leading comment',
+      '/* nightly */ CREATE INDEX IF NOT EXISTS "jobs_status_idx" ON "jobs" ("status")',
+      'jobs_status_idx',
+    ],
+    [
+      'an unquoted mixed-case name',
+      'CREATE INDEX IF NOT EXISTS Jobs_Status_Idx ON jobs (status)',
+      'jobs_status_idx',
+    ],
+  ])('confirms the index of a statement with %s under the name PostgreSQL stores', async (_label, sql, stored) => {
+    const fake = createFakeDb();
+    const tracker = new MigrationTracker({ db: fake.db });
+
+    const [result] = await tracker.applyAll(
+      [definition('add_index_variant', [sql])],
+      { atomic: true, postgresSafe: true },
+    );
+
+    expect(result.success).toBe(true);
+    const lookup = fake.queries.filter(
+      (query) => query.channel === 'session' && query.sql.includes('index_oid'),
+    );
+    // Looked up before the create (not yet there) and after it.
+    expect(lookup).toHaveLength(2);
+    expect(lookup.map((query) => query.params?.[0])).toEqual([stored, stored]);
+  });
+
+  it('does not replay a plain CREATE INDEX whose index an earlier run already built as described', async () => {
+    // The earlier run built the index, then failed before recording it.
+    const fake = createFakeDb({
+      existingIndexes: {
+        jobs_status_idx:
+          'CREATE INDEX jobs_status_idx ON public.jobs USING btree (status)',
+      },
+    });
+    const tracker = new MigrationTracker({ db: fake.db });
+
+    const [result] = await tracker.applyAll(
+      [
+        definition('add_index_plain', [
+          'CREATE INDEX "jobs_status_idx" ON "jobs" ("status")',
+        ]),
+      ],
+      { atomic: true, postgresSafe: true },
+    );
+
+    expect(result.success).toBe(true);
+    expect(
+      fake
+        .sqlIn('session')
+        .some((sql) => /^CREATE INDEX CONCURRENTLY/.test(sql)),
+    ).toBe(false);
+  });
+
+  it('refuses a statement it cannot read before running anything', async () => {
+    const fake = createFakeDb();
+    const tracker = new MigrationTracker({ db: fake.db });
+
+    await expect(
+      tracker.applyAll(
+        [
+          addColumn,
+          definition('add_index_unicode', [
+            'CREATE INDEX IF NOT EXISTS "jobs_status_idx" ON U&"jobs" ("status")',
+          ]),
+        ],
+        { atomic: true, postgresSafe: true },
+      ),
+    ).rejects.toThrow('refused under --postgres-safe before anything ran');
+
+    expect(fake.sqlIn('transaction')).toEqual([]);
+    expect(fake.sqlIn('session')).toEqual([]);
+  });
+
+  it.each([
+    'CREATE INDEX U&"jobs\\0061idx" ON jobs (status)',
+    'DROP INDEX U&"jobs\\0061idx"',
+  ])('refuses %s, whose index name it cannot read, before running anything', async (sql) => {
+    const fake = createFakeDb();
+    const tracker = new MigrationTracker({ db: fake.db });
+
+    await expect(
+      tracker.applyAll([definition('unicode_index_name', [sql])], {
+        atomic: true,
+        postgresSafe: true,
+      }),
+    ).rejects.toThrow('could not be read with certainty');
+    expect(fake.queries.some((query) => query.sql.includes('jobs'))).toBe(
+      false,
+    );
+  });
+
+  it('refuses an unnamed index before running anything: a retry would build another', async () => {
+    const fake = createFakeDb();
+    const tracker = new MigrationTracker({ db: fake.db });
+
+    await expect(
+      tracker.applyAll(
+        [definition('add_unnamed_index', ['CREATE INDEX ON jobs (status)'])],
+        { atomic: true, postgresSafe: true },
+      ),
+    ).rejects.toThrow('names no index');
+    expect(
+      fake.queries.some((query) => query.sql.includes('CREATE INDEX')),
+    ).toBe(false);
+  });
+
+  describe('a batch that repeats a migration already recorded as applied', () => {
+    const appliedUnnamed = definition('applied_unnamed_index', [
+      'CREATE INDEX ON jobs (status)',
+    ]);
+    const pending = definition('add_jobs_run_at_idx', [
+      'CREATE INDEX IF NOT EXISTS "jobs_run_at_idx" ON "jobs" ("run_at")',
+    ]);
+    const recordApplied = async (fake: FakeDb) => {
+      // Recorded `completed` by an atomic run without --postgres-safe, which
+      // keeps an unnamed create in the transaction.
+      const [first] = await new MigrationTracker({ db: fake.db }).applyAll(
+        [appliedUnnamed],
+        { atomic: true },
+      );
+      expect(first.success).toBe(true);
+      expect(fake.rows.get(appliedUnnamed.id)?.status).toBe('completed');
+    };
+
+    it('skips the applied migration without checking its statements, and applies the pending one', async () => {
+      const fake = createFakeDb();
+      await recordApplied(fake);
+
+      const results = await new MigrationTracker({ db: fake.db }).applyAll(
+        [appliedUnnamed, pending],
+        { atomic: true, postgresSafe: true },
+      );
+
+      expect(
+        results.map((result) => [result.name, result.success, result.skipped]),
+      ).toEqual([
+        [appliedUnnamed.id, true, true],
+        [pending.id, true, false],
+      ]);
+      expect(fake.sqlIn('session')).toContain(
+        'CREATE INDEX CONCURRENTLY IF NOT EXISTS "jobs_run_at_idx" ON "jobs" ("run_at")',
+      );
+    });
+
+    it('still refuses the applied migration when it is forced to run again', async () => {
+      const fake = createFakeDb();
+      await recordApplied(fake);
+
+      await expect(
+        new MigrationTracker({ db: fake.db }).applyAll(
+          [appliedUnnamed, pending],
+          {
+            atomic: true,
+            postgresSafe: true,
+            forceMigrations: [appliedUnnamed.id],
+          },
+        ),
+      ).rejects.toThrow('names no index');
+      expect(
+        fake.sqlIn('session').some((sql) => sql.includes('jobs_run_at_idx')),
+      ).toBe(false);
+    });
+  });
+
+  it('checks a create before an earlier drop of its name runs, and drops nothing when the create cannot be checked', async () => {
+    const fake = createFakeDb({
+      existingIndexes: {
+        jobs_status_idx:
+          'CREATE INDEX jobs_status_idx ON public.jobs USING btree (status)',
+      },
+      explainFailsOn: 'no_such_column',
+    });
+    const tracker = new MigrationTracker({ db: fake.db });
+
+    const [result] = await tracker.applyAll(
+      [
+        definition('recreate_jobs_status_idx', [
+          'DROP INDEX "jobs_status_idx"',
+          'CREATE INDEX "jobs_status_idx" ON "jobs" ((lower(no_such_column)))',
+        ]),
+      ],
+      { atomic: true, postgresSafe: true },
+    );
+
+    expect(result.success).toBe(false);
+    expect(String(result.error)).toContain(
+      'refused under --postgres-safe before the concurrent index phase ran anything',
+    );
+    expect(fake.sqlIn('session').some((sql) => /DROP INDEX/.test(sql))).toBe(
+      false,
+    );
+  });
+
+  it("marks every pending migration not attempted when a later migration's create cannot be checked", async () => {
+    const fake = createFakeDb({ explainFailsOn: 'no_such_column' });
+    const tracker = new MigrationTracker({ db: fake.db });
+
+    const results = await tracker.applyAll(
+      [
+        definition('drop_jobs_status_idx', ['DROP INDEX "jobs_status_idx"']),
+        definition('add_jobs_status_idx', [
+          'CREATE INDEX "jobs_status_idx" ON "jobs" ((lower(no_such_column)))',
+        ]),
+      ],
+      { atomic: true, postgresSafe: true },
+    );
+
+    expect(results.map((result) => result.success)).toEqual([false, false]);
+    expect(String(results[0].error)).toContain('Not attempted');
+    expect(String(results[1].error)).toContain('cannot be checked');
+    expect(fake.sqlIn('session').some((sql) => /DROP INDEX/.test(sql))).toBe(
+      false,
+    );
+  });
+
+  it('runs an authored drop and rename after a create as written, not as a generated swap', async () => {
+    const fake = createFakeDb();
+    const tracker = new MigrationTracker({ db: fake.db });
+
+    const [result] = await tracker.applyAll(
+      [
+        definition('authored_swap', [
+          'ALTER TABLE "c" VALIDATE CONSTRAINT "fk"',
+          'CREATE UNIQUE INDEX "jobs_tmp" ON "b"."jobs" ("status")',
+          'DROP INDEX "jobs_old"',
+          'ALTER INDEX "jobs_tmp" RENAME TO "jobs_old"',
+        ]),
+      ],
+      { atomic: true, postgresSafe: true },
+    );
+
+    expect(result.success).toBe(true);
+    const sessionSql = fake.sqlIn('session');
+    expect(sessionSql).toContain('DROP INDEX CONCURRENTLY "jobs_old"');
+    expect(sessionSql).toContain('ALTER INDEX "jobs_tmp" RENAME TO "jobs_old"');
+    expect(sessionSql.some((sql) => sql.includes('"public"."jobs_old"'))).toBe(
+      false,
+    );
   });
 });

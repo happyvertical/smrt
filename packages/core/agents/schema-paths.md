@@ -1936,9 +1936,123 @@ before any DDL. `postgresSafe: true` commits non-index DDL atomically, then runs
 indexes CONCURRENTLY on `db.acquireSession()` so settings and DDL share a
 connection. This mode is not atomic. Unfinished indexes are `failed`, not
 `running`; `[smrt: concurrent-index phase 1 committed]` in `error_message`
-allows reruns to resume index work without replaying committed DDL. Inspect
+allows reruns to resume index work without replaying committed DDL. Known
+limit: the statements deferred to the concurrent phase (a foreign-key
+`VALIDATE CONSTRAINT` and every statement after it) commit as they run, and a
+retry runs all of them again. One that committed before the failure and
+cannot run twice (`ADD COLUMN` without `IF NOT EXISTS`, a plain `DROP INDEX`
+or rename) makes every retry fail loudly ("already exists" or "does not
+exist") and the row stays `failed`. To recover, check which deferred
+statements committed, revert them by hand (for example drop the column the
+failed attempt added, while it holds no data), then rerun. Inspect
 `pg_index.indisvalid` and drop INVALID indexes before rebuild (`pg_indexes`
 alone cannot detect them). Operational commands: `packages/cli/AGENTS.md`.
+
+**The repair drops one exact index.** Before a pending `CREATE INDEX`, the
+tracker drops the INVALID index an interrupted `CREATE INDEX CONCURRENTLY`
+left under that name, and only that one: the index in the schema of the table
+the pending statement indexes. It resolves the statement's table on the pinned
+session (`to_regclass`, so exactly as the create will), and the drop is
+schema-qualified. An index of the same name in another schema is never
+touched, healthy or not, whatever the search path makes an unqualified name
+mean. The index must also be on that table (`pg_index.indrelid` is the
+statement's resolved target).
+
+**Index statements are read by a lexer, never guessed or matched by
+regular expressions** (`migrations/postgres-create-index.ts`, internal). Its
+whitespace is PostgreSQL's (space, tab, LF, CR, VT, FF): any other character,
+U+00A0 included, belongs to a bare identifier, as it does for the server. `--`
+comments end at LF or CR; `/* */` comments nest; single-quoted, `E''`,
+`B''`/`X''` and dollar-quoted strings and double-quoted identifiers are read
+whole. Names are stored as PostgreSQL stores them: unquoted names folded to
+lower case (ASCII), every name truncated to 63 bytes. `CREATE INDEX ON t (…)`
+is an unnamed index. `U&"…"`, a three-part name, or any token it does not
+expect makes a statement unreadable; a statement whose leading `CREATE
+[UNIQUE] INDEX` or `DROP INDEX` was read before the unreadable token (say a
+`U&"…"` index name) is still index DDL, never routed as anything else. A
+partial index's predicate runs from its first token to the end of its last
+(no string trimming). The statement planner routes index DDL by
+these tokens (so `CREATE /* … */ UNIQUE INDEX` is index DDL), inserts
+`CONCURRENTLY` after the `INDEX` token, and the unique-index swap pairs a drop
+and a create by their stored names and writes the swap under those names.
+
+**Under `--postgres-safe`, index DDL that cannot be checked is refused before
+anything runs.** The planner (`planPostgresStatements`, and so
+`buildConcurrentIndexPlan` for an atomic batch) throws, with nothing run, for
+index DDL it cannot read that would leave the transaction, and for any
+`CREATE INDEX` bound for the concurrent phase that is unreadable or unnamed (a
+retry could not find an unnamed index an interrupted run built, and would
+build another). Only definitions that will run are planned and checked: an
+atomic `applyAll` skips a definition already recorded `completed` with its
+checksum, so its statements neither are refused nor refuse the batch. Then,
+before the concurrent phase runs any statement, every
+pending create's expressions and predicate are explained against its table,
+in order across the batch's migrations; a failure refuses the phase (the
+migration fails retryable, the others are not attempted), so a refusal never
+follows a drop that already committed. The one exception is a create preceded
+in the phase by statements that may make what it names (a column added after
+a deferred foreign-key validation) and by no drop of its own index name: it is
+checked again where it runs. A drop of another index does not remove the
+exception. A non-atomic `postgresSafe` `applyAll`, whose definitions commit
+one by one, plans and checks the whole batch the same way before any
+definition runs (in run order: each definition's transactional statements,
+then its concurrent ones); a refusal rejects `applyAll` with nothing run and
+nothing recorded.
+
+**Each pending `CREATE INDEX` is checked before and after it runs.** Before:
+the statement must be readable, and its key expressions and predicate must be
+explainable against its table (`EXPLAIN (VERBOSE, COSTS OFF)`); otherwise
+nothing runs and the migration fails retryable. A valid index of the name
+already on the table is the resumed case: when it is the index the statement
+describes the create is not replayed (a plain `CREATE INDEX` would fail with
+"already exists"), otherwise the run stops. After: the index of the name must
+be on the statement's table, valid, and the index the statement describes.
+"Describes" is read from the catalog without creating anything (no `TEMP`
+privilege needed, as `postgres-permissions.md` asks): the index's own
+`pg_get_indexdef` is read with the same reader and compared on uniqueness,
+access method, `NULLS NOT DISTINCT`, included columns, and each key's column
+or expression (both normalized by `EXPLAIN` against the table), ordering, and
+collation and operator class; the predicate is compared through `EXPLAIN`
+too. A key written as an expression that PostgreSQL stores as a plain column
+(`((status))`, `((status COLLATE "C"))`, a cast that changes nothing) is
+compared as that column, and must carry the expression's own collation
+(`pg_collation_for` over a row of typed NULLs; no table row is read), or none
+(OID 0) for a type without collations such as integer, boolean, timestamp or
+uuid (its type is read first: `pg_collation_for` raises on such a value). A
+collation or operator class the statement names is resolved on the session as
+the create resolves it (`to_regcollation`; `pg_opclass` for the access method,
+by schema or `pg_opclass_is_visible`) and compared by OID with `indcollation`
+/ `indclass`: a same-named object in another schema is not it. One the
+statement does not name must be the default (`pg_get_indexdef` prints none).
+Predicates are explained as an output column (`SELECT (<predicate>) FROM ONLY
+<table>`), not as a `WHERE`: row-level security adds its policies to the
+scan's filter, and a policy that hides every row from the migrating role turns
+every `WHERE` plan into the same constant-false plan, while the output column
+still shows the predicate. So the check works for a role subject to forced
+row-level security (as `PostgresPermissionPolicies` tables are), without
+`row_security = off` (which would make every such check fail). An unreadable
+catalog, an index of the name on another table, an INVALID index, or a
+different index (say, not unique, or another collation) fails the run, which
+stays retryable. Known limit: `EXPLAIN` shows that a larger key expression
+holds a `COLLATE` (`lower(status COLLATE "x")`) but not which collation;
+only a key's top-level collation is compared by OID.
+
+**A unique-index swap closes in its table's schema.** The planner marks the
+drop and rename it generates for a swap with a leading
+`/* smrt:unique-index-swap */` comment, and only marked statements right after
+their temporary build are closed this way; an authored create, drop and rename
+of the same shape run as written, where PostgreSQL resolves them. The drop and
+rename that end a build-then-swap (`swapUniqueIndexRecreates`) run as
+`DROP INDEX CONCURRENTLY IF EXISTS "<schema>"."<name>"` and
+`ALTER INDEX IF EXISTS "<schema>"."<temporary>" RENAME TO …`, with the schema
+of the table the temporary index was built on, resolved on the session. The
+old name is dropped only when it is on that table; held by another table it
+stops the run.
+Tests: `postgres-create-index.test.ts`,
+`issue-2362-migrate-timeouts-concurrent.test.ts` and, on a real server with
+two schemas on the search path,
+`concurrent-index-recovery-postgres.optional.test.ts`; on PGlite
+(`pnpm test:pglite`), `concurrent-index-check-pglite.test.ts`.
 
 ### The money rescale runs once (`migrations/minor-units.ts`)
 
