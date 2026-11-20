@@ -185,6 +185,8 @@ are not prerequisites for unrelated user-package work.
   credential generation AFTER the mint (`stillValid`); keep that ordering.
   Operation guards deny outside a session's ceiling; `loadPersonSession`
   re-checks device enrollment.
+- Tenant switching stamps `Membership.lastSelectedAt` (best effort); `lastActiveTenantFor()`
+  reads it fail-closed (#5358).
 - Tenant switching verifies active membership before writing and rotates the
   session ID for non-null targets, revoking the old session. Persist the returned
   `SwitchTenantResult.sessionId`; `switchSessionTenant()` updates the cookie and

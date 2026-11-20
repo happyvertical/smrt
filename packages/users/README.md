@@ -1818,7 +1818,8 @@ authority and effective dates, and no posting or balance is copied here.
 | `createSessionHandler` | SvelteKit handle hook that populates `event.locals`, and can also enter tenancy context and Postgres RLS request transactions |
 | `createSessionCookie` | Set session cookie after login |
 | `destroySessionCookie` | Clear session cookie on logout |
-| `switchSessionTenant` | Change tenant context for current session |
+| `switchSessionTenant` | Change tenant context for current session; also records it as the user's last tenant |
+| `lastActiveTenantFor` | Tenant the user last switched into, or `null` unless they still hold an active membership in an active tenant (usable while tenantless) |
 | `beginOidcLogin`, `completeOidcLogin` | Low-level SvelteKit helpers for custom OIDC login routes |
 | `createOidcLoginHandler`, `createOidcCallbackHandler` | Ready-to-use SvelteKit route handlers for OIDC login and callback |
 | `getOidcClientRegistration` | Redirect URL and landing (login start) URL to register with the IdP for an OIDC client |
@@ -2057,3 +2058,29 @@ rows. Generated collection action writes still require the **item model's**
 collection permission (for example `items.submit`, even if the route is
 `/api/operations/submit`), and domain actions retain their tenant checks. See
 [collection action resources](../core/agents/generators.md#explicit-collection-action-resources).
+
+
+## Resuming the last tenant (#5358)
+
+A successful switch into a tenant (`switchSessionTenant()` or
+`SessionService.switchTenant()`) stamps `Membership.lastSelectedAt`, so the
+choice holds across devices and sign-ins. At sign-in, a person who belongs to
+several tenants can skip the workspace picker:
+
+```typescript
+import {
+  lastActiveTenantFor,
+  switchSessionTenant,
+} from '@happyvertical/smrt-users/sveltekit';
+
+const last = await lastActiveTenantFor(userId, { db });
+if (last) await switchSessionTenant(event, last, { db }); // normal checks still run
+```
+
+`SessionService.lastActiveTenantFor(userId)` is the service form. It returns the
+most recently selected tenant id only while that membership is ACTIVE and the
+tenant is ACTIVE; otherwise `null` (an older tenant is never substituted).
+It grants nothing, works while the session is tenantless, and is per user.
+Clearing the session's tenant (`switchTenant(id, null)`) does not forget it.
+Opt-in: apps that never call it see no behaviour change. The new nullable
+`lastSelectedAt` column on `memberships` needs the usual `smrt db:migrate`.
