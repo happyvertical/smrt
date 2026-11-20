@@ -3,7 +3,8 @@
  * under the tenancy its target has when the batch is served, with the real
  * tenant interceptor on a SQLite file.
  *
- * Rows 14, 27, 28 and 33 of the #5375 test-design contract.
+ * Rows 14, 27, 28 and 33 of the #5375 test-design contract, and row R2.10
+ * of the round-2 matrix.
  */
 
 import { mkdtempSync, rmSync } from 'node:fs';
@@ -64,7 +65,28 @@ class EffSyncOwnedNote extends EffSyncNote {
   @tenantId({ nullable: true }) tenantId: string | null = null;
 }
 
+// An unscoped STI base and a member of the same tenancy whose surface opens
+// create only: it is a create target of the base, and its rows are never
+// read through it.
+@smrt({
+  tableStrategy: 'sti',
+  api: { include: ['list', 'get', 'create', 'update', 'delete'] },
+})
+class EffSyncCrate extends SmrtObject {
+  @field({ type: 'text' }) title = '';
+}
+class EffSyncCrateCollection extends SmrtCollection<EffSyncCrate> {
+  static readonly _itemClass = EffSyncCrate;
+}
+@smrt({ api: { include: ['create'] } })
+class EffSyncSealedCrate extends EffSyncCrate {}
+// Listed and created, never read by id: a point read through the base
+// (a sync lookup) does not serve it.
+@smrt({ api: { include: ['list', 'create'] } })
+class EffSyncListedCrate extends EffSyncCrate {}
+
 const ROW = {
+  listed: 'cccccccc-0000-4000-8000-0000000000c3',
   memoOfA: 'aaaaaaaa-0000-4000-8000-0000000000a1',
   memoOfB: 'bbbbbbbb-0000-4000-8000-0000000000b1',
   noteOfA: 'aaaaaaaa-0000-4000-8000-0000000000a2',
@@ -94,6 +116,7 @@ describe('sync apply runs every item under its target tenancy', () => {
   let app: EmittedApp;
   let memos: SmrtCollection<SmrtObject>;
   let notes: SmrtCollection<SmrtObject>;
+  let crates: SmrtCollection<SmrtObject>;
   const collections = new Map<string, unknown>();
 
   const restSync = async (token: string, items: unknown[]) => {
@@ -120,18 +143,30 @@ describe('sync apply runs every item under its target tenancy', () => {
       'EffSyncNote',
       EffSyncNoteCollection as never,
     );
+    ObjectRegistry.registerCollection(
+      'EffSyncCrate',
+      EffSyncCrateCollection as never,
+    );
     dir = mkdtempSync(join(tmpdir(), 'smrt-effective-sync-'));
     db = await getTestDatabase({
       type: 'sqlite',
       url: join(dir, 'app.db'),
-      classes: [EffSyncMemo, EffSyncNote, EffSyncOwnedNote].map((model) =>
-        keyOf(model),
-      ),
+      classes: [
+        EffSyncMemo,
+        EffSyncNote,
+        EffSyncOwnedNote,
+        EffSyncCrate,
+        EffSyncSealedCrate,
+        EffSyncListedCrate,
+      ].map((model) => keyOf(model)),
     });
     memos = (await EffSyncMemoCollection.create({
       db,
     })) as unknown as SmrtCollection<SmrtObject>;
     notes = (await EffSyncNoteCollection.create({
+      db,
+    })) as unknown as SmrtCollection<SmrtObject>;
+    crates = (await EffSyncCrateCollection.create({
       db,
     })) as unknown as SmrtCollection<SmrtObject>;
     for (const [model, store] of [
@@ -182,6 +217,12 @@ describe('sync apply runs every item under its target tenancy', () => {
     await withSystemContext(async () => {
       await db.query(`DELETE FROM ${memos.tableName}`);
       await db.query(`DELETE FROM ${notes.tableName}`);
+      await db.query(`DELETE FROM ${crates.tableName}`);
+      await crates.create({
+        id: ROW.listed,
+        title: 'listed crate',
+        _meta_type: keyOf(EffSyncListedCrate),
+      } as never);
       await memos.create({
         id: ROW.memoOfA,
         title: 'memo of a',
@@ -313,5 +354,45 @@ describe('sync apply runs every item under its target tenancy', () => {
       reason: 'not_found',
     });
     expect(await titleOf(notes.tableName, ROW.noteOfA)).toBe('note of a');
+  });
+
+  describe('create targets and read membership are separate (R2.10)', () => {
+    it('a base create selects a member whose surface opens create only', async () => {
+      const answer = await restCall(handler, 'POST', segmentOf(EffSyncCrate), {
+        headers: { authorization: 'Bearer user-of-a' },
+        body: {
+          title: 'new sealed crate',
+          _meta_type: keyOf(EffSyncSealedCrate),
+        },
+      });
+      expect(answer.status).toBe(201);
+      const stored = (
+        await db.query(
+          `SELECT _meta_type FROM ${crates.tableName} WHERE title = 'new sealed crate'`,
+        )
+      ).rows.map((row) => row._meta_type);
+      expect(stored).toEqual([keyOf(EffSyncSealedCrate)]);
+    });
+
+    it('a replayed create naming a row the route does not read answers the same conflict for any payload', async () => {
+      const replay = (payload: Record<string, unknown>) =>
+        restSync('user-of-a', [
+          {
+            itemId: 'replay-listed',
+            object: segmentOf(EffSyncCrate),
+            op: 'create',
+            id: ROW.listed,
+            payload,
+          },
+        ]);
+      const same = await replay({ title: 'listed crate' });
+      const different = await replay({ title: 'something else' });
+      expect(same.results[0]).toEqual(different.results[0]);
+      expect(same.results[0]).toMatchObject({
+        status: 'rejected',
+        reason: 'id_conflict',
+      });
+      expect(same.results[0]?.updatedAt).toBeUndefined();
+    });
   });
 });

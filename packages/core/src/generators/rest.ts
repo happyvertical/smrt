@@ -12,8 +12,8 @@ import {
   assertCreateTargetSurface,
   CreateTargetError,
   type FamilyRowOperation,
+  familyCreateTargets,
   familyMembersInScope,
-  isCreateOpenOnSurface,
   isFamilyRowServed,
   servedFamilyTypes,
 } from '../create-target';
@@ -931,30 +931,21 @@ export class APIGenerator {
     const admits = this.familyAdmission.get(req)?.get(objectName);
     const servedFor = (op: FamilyRowOperation) =>
       servedFamilyTypes(objectName, 'api', op, this.modelScope, admits);
-    let served: string[] | undefined;
-    if (operation === 'POST') {
-      // A create may select a member whose surface opens create; reads in a
-      // POST action see the members the route reads.
-      const readable = servedFor('get');
-      served = familyMembersInScope(
-        objectName,
-        'api',
-        ['list', 'get', 'update', 'delete'],
-        this.modelScope,
-      ).filter(
-        (member) =>
-          (readable?.includes(member) ?? true) ||
-          isCreateOpenOnSurface(member, 'api'),
-      );
-    } else {
-      // An update or delete finds its row among the members the route reads;
-      // the row's own model then decides the write (405 when it does not
-      // enable it, else its authorization), as on the sync path.
-      served = servedFor(operation === 'list' ? 'list' : 'get');
-    }
+    // Reads find rows among the members the route reads: an update or delete
+    // finds its row there, and its own model then decides the write (405
+    // when it does not enable it, else its authorization), as on the sync
+    // path; a POST (a create, a sync create's replay lookup, a POST action)
+    // reads the same set. The members a create may select are a separate
+    // set, never read through the route.
+    const served = servedFor(operation === 'list' ? 'list' : 'get');
     const tenancy = resolveRequestTenancy({
       model: objectName,
       ...(served ? { served: served.filter((key) => key !== objectName) } : {}),
+      ...(operation === 'POST'
+        ? {
+            creatable: familyCreateTargets(objectName, 'api', this.modelScope),
+          }
+        : {}),
       actor,
     });
     return tenancy;

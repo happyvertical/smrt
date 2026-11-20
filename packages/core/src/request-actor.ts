@@ -22,8 +22,7 @@
 
 import {
   type FamilyRowOperation,
-  familyMembersInScope,
-  isCreateOpenOnSurface,
+  familyCreateTargets,
   servedFamilyTypes,
 } from './create-target';
 import { resolveDispatchTenantId } from './dispatch/tenant-resolver.js';
@@ -299,22 +298,11 @@ function servedMembers(
 ): string[] | undefined {
   const served = (op: FamilyRowOperation) =>
     servedFamilyTypes(model, surface, op);
-  if (operation === 'create') {
-    const readable = served('get');
-    return familyMembersInScope(model, surface, [
-      'list',
-      'get',
-      'update',
-      'delete',
-    ]).filter(
-      (member) =>
-        (readable?.includes(member) ?? true) ||
-        isCreateOpenOnSurface(member, surface),
-    );
-  }
   const op: FamilyRowOperation =
-    operation === 'list' || operation === 'get'
-      ? operation
+    operation === 'list' || operation === 'get' || operation === 'create'
+      ? operation === 'create'
+        ? 'get'
+        : operation
       : operation === 'delete'
         ? 'delete'
         : operation === 'action'
@@ -364,15 +352,16 @@ export function resolveTenancyForRequest(
     ...(input.requirePrincipal ? { requirePrincipal: true } : {}),
   });
   const key = resolveStrictModelKey(input.model) ?? input.model;
-  const served = servedMembers(
-    key,
-    input.operation,
-    mutating,
-    input.surface ?? 'api',
-  );
+  const surface = input.surface ?? 'api';
+  const served = servedMembers(key, input.operation, mutating, surface);
   return resolveRequestTenancy({
     model: key,
     ...(served ? { served: served.filter((member) => member !== key) } : {}),
+    // A create reads the members the route reads (its replay lookup) and may
+    // select a create target of equal tenancy, a separate set.
+    ...(input.operation === 'create'
+      ? { creatable: familyCreateTargets(key, surface) }
+      : {}),
     actor,
   });
 }

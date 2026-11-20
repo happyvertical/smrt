@@ -455,6 +455,13 @@ export interface RequestTenancy {
    * model is not STI.
    */
   readonly admitted: ReadonlySet<string> | null;
+  /**
+   * The types a create in this request may write on the family table: the
+   * route model and its create targets of equal tenancy. `null` when the
+   * request selects no create target (a new row is then held to
+   * `admitted`). Reads and writes of stored rows always use `admitted`.
+   */
+  readonly creatable: ReadonlySet<string> | null;
   /** Served members left out because their tenancy differs. */
   readonly excluded: readonly string[];
   /** A digest of every member policy and the registry generation. */
@@ -473,6 +480,12 @@ export interface ResolveRequestTenancyInput {
    * when omitted.
    */
   served?: readonly string[];
+  /**
+   * Registry keys of the STI members a create through the route may select
+   * (surface and server model list), when the request creates. Admitted as
+   * create targets on the same equal-tenancy rule, and never read.
+   */
+  creatable?: readonly string[];
   actor: RequestActor;
 }
 
@@ -555,6 +568,7 @@ export function resolveRequestTenancy(
       members: new FrozenMap([[input.model, route]]),
       family: null,
       admitted: null,
+      creatable: null,
       excluded: Object.freeze([]),
       fingerprint: fingerprintOf([route]),
     });
@@ -569,6 +583,7 @@ export function resolveRequestTenancy(
       members: new FrozenMap([[input.model, route]]),
       family: null,
       admitted: new FrozenSet<string>([]),
+      creatable: null,
       excluded: Object.freeze([]),
       fingerprint: fingerprintOf([route]),
       failed: route.failed,
@@ -578,6 +593,7 @@ export function resolveRequestTenancy(
   const members = new Map<string, MemberTenancy>([[model, route]]);
   const sti = ObjectRegistry.getTableStrategy(model) === 'sti';
   let admitted: Set<string> | null = null;
+  let creatable: Set<string> | null = null;
   const excluded: string[] = [];
   let family: string | null = null;
   if (sti) {
@@ -587,18 +603,27 @@ export function resolveRequestTenancy(
     const served = input.served
       ? input.served.filter((key) => descendants.has(key))
       : [...descendants];
-    for (const key of served) {
-      if (members.has(key)) continue;
-      const member = memberTenancyOf(key);
-      members.set(key, member);
-      if (
+    const equalToRoute = (key: string): boolean => {
+      let member = members.get(key);
+      if (!member) {
+        member = memberTenancyOf(key);
+        members.set(key, member);
+      }
+      const equal =
         !isFailedMember(member) &&
         member.signature === route.signature &&
-        member.hierarchyAllowed === route.hierarchyAllowed
-      ) {
-        admitted.add(key);
-      } else {
-        excluded.push(key);
+        member.hierarchyAllowed === route.hierarchyAllowed;
+      if (!equal && !excluded.includes(key)) excluded.push(key);
+      return equal;
+    };
+    for (const key of served) {
+      if (key !== model && equalToRoute(key)) admitted.add(key);
+    }
+    if (input.creatable) {
+      creatable = new Set([model]);
+      for (const key of input.creatable) {
+        if (key === model || !descendants.has(key)) continue;
+        if (equalToRoute(key)) creatable.add(key);
       }
     }
     if (excluded.length > 0 && family) noteMixedFamily(family, model, excluded);
@@ -611,6 +636,7 @@ export function resolveRequestTenancy(
     members: new FrozenMap(members),
     family,
     admitted: admitted ? new FrozenSet(admitted) : null,
+    creatable: creatable ? new FrozenSet(creatable) : null,
     excluded: Object.freeze(excluded),
     fingerprint: fingerprintOf(members.values()),
     ...(isFailedMember(route) ? { failed: route.failed } : {}),
@@ -1119,9 +1145,13 @@ function assertWritable(
   const member = memberFor(t, key, family);
   if (family) {
     const stored = storedTypeOf(instance);
+    // A new row is held to the create targets when the request selects
+    // them; a stored row (an update, a delete) to the types the route reads.
+    const types =
+      !instance.isPersisted && t.creatable ? t.creatable : t.admitted;
     if (
-      !t.admitted?.has(key) ||
-      (typeof stored === 'string' && stored && !t.admitted.has(stored))
+      !types?.has(key) ||
+      (typeof stored === 'string' && stored && !types.has(stored))
     ) {
       throw new RequestTenancyError(
         403,
