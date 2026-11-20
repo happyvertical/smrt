@@ -45,7 +45,11 @@ function state() {
 
 /** Whether this process opted into live exposure (also controls catalog cache policy). */
 export function hasRuntimeExposureGate(): boolean {
-  return !!state().gate || (globalThis.__smrtModelReadiness?.size ?? 0) > 0;
+  return (
+    !!state().gate ||
+    (globalThis.__smrtModelReadiness?.size ?? 0) > 0 ||
+    (globalThis.__smrtModelOwners?.size ?? 0) > 0
+  );
 }
 
 /** Invalidate connected tool catalogs after cookbook or host-preference changes. */
@@ -93,6 +97,45 @@ export function setRuntimeModelReadiness(
   notifyRuntimeExposureChanged();
 }
 
+declare global {
+  var __smrtModelOwners: Map<string, RuntimeModelClaim> | undefined;
+}
+
+/**
+ * An ownership claim. `registeredClass` is set only when the claim was made
+ * for a specific registration (never read from an inherited property).
+ */
+interface RuntimeModelClaim {
+  tenantId: string;
+  registeredClass: unknown;
+}
+
+/**
+ * The tenant whose app model journal registered a run-time model (an editor
+ * list or provider replacement). The registry is process-global, so exposure
+ * admits such a model only for that tenant. Passing the registered class
+ * scopes the claim to that registration: once the registry holds another
+ * class under the identity (a reset registry), the claim no longer applies.
+ * undefined clears the owner.
+ */
+export function setRuntimeModelOwner(
+  models: Iterable<string | { qualifiedName: string; constructor: unknown }>,
+  tenantId: string | undefined,
+): void {
+  globalThis.__smrtModelOwners ??= new Map();
+  for (const model of models) {
+    const id = typeof model === 'string' ? model : model.qualifiedName;
+    if (tenantId === undefined) globalThis.__smrtModelOwners.delete(id);
+    else
+      globalThis.__smrtModelOwners.set(id, {
+        tenantId,
+        registeredClass:
+          typeof model === 'string' ? undefined : model.constructor,
+      });
+  }
+  notifyRuntimeExposureChanged();
+}
+
 /** Explicit editor readiness; undefined means this model is not managed by an editor. */
 export function getRuntimeModelReadiness(model: string): boolean | undefined {
   return globalThis.__smrtModelReadiness?.get(model);
@@ -108,6 +151,26 @@ export function isRuntimeModelEnabled(
     [identity?.qualifiedName, ...(identity?.replacedQualifiedNames ?? [])].some(
       (id) => id && getRuntimeModelReadiness(id) === false,
     )
+  )
+    return false;
+  // Another tenant's customised registration is never served to this tenant.
+  // A context without a tenant (a generator built once, resolving tenancy
+  // later; a single-tenant host) is not "another tenant": it is admitted
+  // here and left to the gate, so a single-tenant host's own lists work.
+  const claim = identity?.qualifiedName
+    ? globalThis.__smrtModelOwners?.get(identity.qualifiedName)
+    : undefined;
+  const registered =
+    identity && Object.hasOwn(identity, 'constructor')
+      ? (identity as { constructor?: unknown }).constructor
+      : undefined;
+  if (
+    claim &&
+    context.tenantId != null &&
+    claim.tenantId !== context.tenantId &&
+    (claim.registeredClass === undefined ||
+      registered === undefined ||
+      registered === claim.registeredClass)
   )
     return false;
   const gate = state().gate;

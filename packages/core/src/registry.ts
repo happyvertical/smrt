@@ -864,28 +864,25 @@ export class ObjectRegistry {
     for (const [key, entry] of ObjectRegistry.classes)
       if (entry.replacedQualifiedNames?.some((id) => keys.has(id)))
         keys.add(key);
+    const copyEntry = (entry: RegisteredClass): RegisteredClass => ({
+      ...entry,
+      fields: new GeneratedFieldMap(entry.fields),
+      methods: new Map(entry.methods),
+      config: { ...entry.config },
+      replacedQualifiedNames: entry.replacedQualifiedNames
+        ? [...entry.replacedQualifiedNames]
+        : undefined,
+    });
     const saved = new Map(
       [...keys].map((key) => {
         const entry = ObjectRegistry.classes.get(key);
-        return [
-          key,
-          entry
-            ? {
-                ...entry,
-                fields: new GeneratedFieldMap(entry.fields),
-                methods: new Map(entry.methods),
-                config: { ...entry.config },
-                replacedQualifiedNames: entry.replacedQualifiedNames
-                  ? [...entry.replacedQualifiedNames]
-                  : undefined,
-              }
-            : undefined,
-        ] as const;
+        return [key, entry ? copyEntry(entry) : undefined] as const;
       }),
     );
     const restoreLineage = checkpointSubtypeLineage(keys);
     const restorePolicies = checkpointRuntimeOverrides(keys);
     return () => {
+      const installedCopies = new Map<string, RegisteredClass>();
       for (const [key, entry] of saved) {
         const current = ObjectRegistry.classes.get(key);
         if (current) forgetGeneratedClass(current);
@@ -894,9 +891,14 @@ export class ObjectRegistry {
             current.constructor as SmrtObjectConstructor,
           );
         if (entry) {
-          ObjectRegistry.classes.set(key, entry);
+          // A fresh copy on every restore: the registry mutates its entries
+          // in place (field refresh), and the saved baseline must stay what
+          // it was when checkpointed so a later restore is not contaminated.
+          const installed = copyEntry(entry);
+          installedCopies.set(key, installed);
+          ObjectRegistry.classes.set(key, installed);
           getConstructorIndex().set(
-            entry.constructor as SmrtObjectConstructor,
+            installed.constructor as SmrtObjectConstructor,
             key,
           );
         } else ObjectRegistry.classes.delete(key);
@@ -906,10 +908,8 @@ export class ObjectRegistry {
       applyRuntimeOverrides();
       ObjectRegistry.collectionCache.clear();
       ObjectRegistry.invalidateAllInheritanceCaches();
-      for (const entry of saved.values()) {
-        if (entry)
-          recordGeneratedClass(entry, entry.generatedFields?.declaredFields);
-      }
+      for (const entry of installedCopies.values())
+        recordGeneratedClass(entry, entry.generatedFields?.declaredFields);
     };
   }
   /** Invalidation token for consumers caching generated definitions. */

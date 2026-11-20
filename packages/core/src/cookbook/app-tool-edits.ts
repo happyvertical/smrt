@@ -2,13 +2,20 @@
 import { createHash } from 'node:crypto';
 import type { CookbookModelField } from '@happyvertical/smrt-types';
 import { ObjectRegistry } from '../registry.js';
+import { runtimeListTableName } from '../runtime-list-table.js';
 import { pluralize, toSnakeCase } from '../utils/naming.js';
 import { coveredModels } from './engine/document.js';
 import { buildNav, humanize, modelParts, navItemId } from './engine/nav.js';
 import type { AppToolName } from './index.js';
 import type { AppModelEdit, AppModelSnapshot } from './model-editor.js';
 import type { AppModelOperation } from './model-history.js';
-import { cookbookModelCatalog, isCustomIdentifier } from './models.js';
+import {
+  cookbookModelCatalog,
+  fitsStorageIdentifier,
+  isCustomIdentifier,
+  storageColumns,
+} from './models.js';
+import { isReservedFieldName } from './reserved-names.js';
 import type { CookbookToolOptions, CookbookToolResult } from './tools.js';
 
 /** Clarification and collisions are data the assistant/client can render without parsing prose. */
@@ -153,8 +160,13 @@ function resolveField(list: AppList, reference: string) {
     );
   return fields[0];
 }
-/** Safe internal names are derived, never requested from the person. The editor remains the authority. */
-function identifier(label: string, model = false): string {
+/**
+ * Safe internal names are derived, never requested from the person. The editor
+ * remains the authority. A long label keeps its full text as the display label;
+ * the derived name is shortened so its table or columns (a money field's
+ * currency companion included) fit every supported engine's identifier limit.
+ */
+function identifier(label: string, model = false, money = false): string {
   const words =
     label
       .normalize('NFKD')
@@ -168,8 +180,18 @@ function identifier(label: string, model = false): string {
     name = `${model ? 'List' : 'Field'}${name || createHash('sha256').update(label).digest('hex').slice(0, 10)}`;
   if (!model) name = name[0].toLowerCase() + name.slice(1);
   name = name.slice(0, 56);
-  if (!isCustomIdentifier(name as unknown, model))
+  if (
+    !isCustomIdentifier(name as unknown, model) ||
+    (!model && isReservedFieldName(name))
+  )
     name = `${model ? 'Custom' : 'custom'}${name[0].toUpperCase()}${name.slice(1)}`;
+  const fits = (value: string) =>
+    model
+      ? fitsStorageIdentifier(runtimeListTableName(value))
+      : storageColumns(value, { type: money ? 'money' : 'text' }).every(
+          fitsStorageIdentifier,
+        );
+  while (name.length > 1 && !fits(name)) name = name.slice(0, -1);
   return name;
 }
 /** Names from the existing Shell section icon picker; core never imports Svelte components. */
@@ -261,6 +283,13 @@ export function planAppEdit(
       [...ObjectRegistry.getAllClasses().values()].some(
         (entry) => entry.name.toLowerCase() === listName.toLowerCase(),
       ) ||
+      // Installed models count whether or not their recipe is on.
+      catalog.models.some(
+        (model) =>
+          model.name.toLowerCase() === listName.toLowerCase() &&
+          model.id !==
+            `${snapshot.cookbook.models?.packageName ?? ''}:${listName}`,
+      ) ||
       snapshot.cookbook.models?.lists[listName]
     )
       question(
@@ -272,7 +301,7 @@ export function planAppEdit(
     const seen: AppList['fields'] = [];
     for (const input of args.fields as Record<string, unknown>[]) {
       const fieldLabel = String(input.label).trim();
-      const fieldName = identifier(fieldLabel);
+      const fieldName = identifier(fieldLabel, false, input.kind === 'money');
       checkCollision(fieldName, fieldLabel, seen, input.kind === 'money');
       fields[fieldName] = fieldFrom(input);
       labels[fieldName] = fieldLabel;
@@ -339,7 +368,7 @@ export function planAppEdit(
   }
   if (name === 'app.addField') {
     const label = String(args.label).trim();
-    const fieldName = identifier(label);
+    const fieldName = identifier(label, false, args.kind === 'money');
     checkCollision(fieldName, label, list.fields, args.kind === 'money');
     return {
       edit: {
