@@ -5,10 +5,10 @@ description: "A smrt app that builds and runs a person's own smrt app from defin
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-20T07:37:22Z"
+  at: "2026-11-20T16:57:35Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:3b660998c382759c44f5bbbefd8b5cee05dd210c94869719125e8598ea0c00e2"
+source_revision: "sha256:56e075ca451f9e08bc44348e3c653c489fb7419fbfbd0c87e092f6e09401577b"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/app-shell/package.json"

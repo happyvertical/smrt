@@ -125,11 +125,22 @@ scans for it.
   type, undo, refused undo), merge, extract, methods and reports on PGlite.
   **Coverage on PostgreSQL is partial**: 25 files, 202 tests, against 41
   files and 383 tests on SQLite; the excluded files are listed with their
-  reason in `vitest.pglite.config.ts`. The server kind is covered through the
-  same scope code over PGlite, not against a real server. Known SDK limit:
-  `renderExpression` renders an all-NULL `secondsBetween` as `NULL - NULL`,
-  which PostgreSQL cannot type (`portable-calculations.test.ts` skips that one
-  case there). Core keys state on `db.client` and detects the adapter by its
+  reason in `vitest.pglite.config.ts`.
+  `postgres-server.test.ts` is the registered `test:postgres` suite (the
+  "Registered PostgreSQL Suites" lane, `scripts/run-with-ci-postgres.mjs`):
+  open, write, migrate and restart a user app, two apps' isolation, integer,
+  money and boolean keys in a data load, and the archive round trip per field
+  type (removeField and removeModel, then undo). It always runs on PGlite and
+  also on a real server when `SMRT_TEST_POSTGRES_URL` is set (a server returns
+  BIGINT as digits; PGlite returns numbers). It creates and drops its own
+  schemas; run it locally with `pnpm test:postgres` and
+  `CI_POSTGRES_BASE_URL` pointing at a server you started.
+  Whole numbers (integer, money) outside +/-9007199254740991 cannot be read
+  back exactly, so they are refused at write time (`coerceValue`: create,
+  update, record loads, field conversion, method writes) and, for a value that
+  got in some other way, on read (`AppRuntime.unsafeRead`: the error names the
+  app, model, field and record ids). Never rounded.
+  Core keys state on `db.client` and detects the adapter by its
   `query`/`exec`: the scoped handle shows a stand-in client with those two,
   scoped, never the real one.
 

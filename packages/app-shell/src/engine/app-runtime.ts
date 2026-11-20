@@ -1041,22 +1041,69 @@ export class AppRuntime {
   async listByIds(model: string, ids: string[]): Promise<Row[]> {
     if (ids.length > 1000 || ids.some((id) => typeof id !== 'string'))
       throw new AppError('Invalid record ids.');
-    const rows = await (await this.collection(model)).listByIds(ids);
+    const rows = await (await this.collection(model))
+      .listByIds(ids)
+      .catch((e: unknown) => this.unsafeRead(model, e, this.db));
     return rows.map((row) => this.plain(model, row));
   }
 
   async list(model: string, limit = 200, db: Handle = this.db): Promise<Row[]> {
-    const rows = await (await this.collection(model, db)).list({
-      limit,
-      orderBy: 'created_at DESC',
-    } as any);
+    const rows = await (await this.collection(model, db))
+      .list({
+        limit,
+        orderBy: 'created_at DESC',
+      } as any)
+      .catch((e: unknown) => this.unsafeRead(model, e, db));
     return rows.map((r) => this.plain(model, r));
   }
 
   async get(model: string, id: string, db: Handle = this.db): Promise<Row> {
-    const obj = await (await this.collection(model, db)).get(id);
+    const obj = await (await this.collection(model, db))
+      .get(id)
+      .catch((e: unknown) => this.unsafeRead(model, e, db));
     if (!obj) throw new AppError(`no ${model} ${id}`);
     return this.plain(model, obj);
+  }
+
+  /**
+   * Core refuses to hydrate an integer past the safe range with a message that
+   * names only the field's type. Say which app, model, field and records hold
+   * it (found by a read-only scan) so the owner can fix them. Any other error
+   * is rethrown as it came.
+   */
+  private async unsafeRead(
+    model: string,
+    error: unknown,
+    db: Handle,
+  ): Promise<never> {
+    if (
+      !(error instanceof RangeError) ||
+      !/must be a JavaScript safe integer/.test(error.message)
+    )
+      throw error;
+    const md = this.modelDef(model);
+    const found: string[] = [];
+    try {
+      for (const [f, fd] of Object.entries(this.fieldsOf(model))) {
+        if (fd.type !== 'integer' && fd.type !== 'money') continue;
+        const col = q(snake(f));
+        const hit = (
+          await db.query(
+            `SELECT id, CAST(${col} AS TEXT) AS v FROM ${q(tableFor(model, md))} WHERE ${col} > ${Number.MAX_SAFE_INTEGER} OR ${col} < -${Number.MAX_SAFE_INTEGER} ORDER BY id LIMIT 3`,
+          )
+        ).rows as Array<{ id: unknown; v: unknown }>;
+        for (const r of hit)
+          found.push(
+            `${model}.${f} of record ${String(r.id)} is ${String(r.v)}`,
+          );
+      }
+    } catch {
+      throw error;
+    }
+    if (!found.length) throw error;
+    throw new AppError(
+      `App "${this.def.name}": ${found.join('; ')}, outside the whole-number range of ${Number.MAX_SAFE_INTEGER} that can be read back exactly. Correct or delete the value.`,
+    );
   }
 
   /** Check and convert `data` for a write. `refs: false` skips target lookups (imports). */
@@ -1066,6 +1113,7 @@ export class AppRuntime {
     creating: boolean,
     refs = true,
     db: Handle = this.db,
+    recordId?: string,
   ) {
     const fields = this.fieldsOf(model);
     const out: Row = {};
@@ -1078,7 +1126,14 @@ export class AppRuntime {
       if (fd.calculated)
         throw new AppError(`${model}.${k} is read-only (calculated)`);
       const c = coerceValue(fd, v);
-      if (!c.ok) throw new AppError(`${model}.${k} ${c.error}`);
+      if (!c.ok) {
+        // An unsafe whole number names the app and the record, as a read does.
+        const where = c.error.includes('whole number between')
+          ? `App "${this.def.name}": `
+          : '';
+        const row = where && recordId ? ` (record ${recordId})` : '';
+        throw new AppError(`${where}${model}.${k} ${c.error}${row}`);
+      }
       if (refs && fd.type === 'reference' && c.value !== null) {
         const target = fd.ref as string;
         if (!(await (await this.collection(target, db)).get(String(c.value))))
@@ -1140,7 +1195,7 @@ export class AppRuntime {
     data: Row,
     db: Handle = this.db,
   ): Promise<Row> {
-    const base = await this.coerce(model, data, false, true, db);
+    const base = await this.coerce(model, data, false, true, db, id);
     const obj: any = await (await this.collection(model, db)).get(id);
     if (!obj) throw new AppError(`no ${model} ${id}`);
     for (const [k, v] of Object.entries(base)) obj[k] = v;
@@ -1329,7 +1384,14 @@ export class AppRuntime {
         if (!(await (await this.collection(w.model, db)).get(String(w.id))))
           throw new AppError(`no ${w.model} ${w.id}`);
         if (w.op === 'update')
-          await this.coerce(w.model, w.data ?? {}, false, true, db);
+          await this.coerce(
+            w.model,
+            w.data ?? {},
+            false,
+            true,
+            db,
+            String(w.id),
+          );
       }
     }
   }
