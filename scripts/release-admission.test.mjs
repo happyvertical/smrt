@@ -17,7 +17,7 @@ const bypass_actors = [{ actor_id: 2315871, actor_type: 'Integration', bypass_mo
 const rules = [
   { id: 1, enforcement: 'active', target: 'branch', conditions: { ref_name: { include: ['~DEFAULT_BRANCH'], exclude: [] } }, bypass_actors, rules: [
     { type: 'required_status_checks', parameters: { required_status_checks: [{ context: CONTEXT, integration_id: 2315871 }] } },
-    { type: 'merge_queue', parameters: { max_entries_to_build: 1, max_entries_to_merge: 1 } },
+    { type: 'merge_queue', parameters: { max_entries_to_build: 3, max_entries_to_merge: 5, min_entries_to_merge_wait_minutes: 5, grouping_strategy: 'ALLGREEN' } },
   ] },
   { id: 2, enforcement: 'active', target: 'branch', conditions: { ref_name: { include: ['refs/heads/hv-release-admission'], exclude: [] } }, bypass_actors, rules: ['creation', 'update', 'deletion', 'non_fast_forward'].map((type) => ({ type })) },
 ];
@@ -831,4 +831,50 @@ test('verifier refuses owner tokens, expanded installations, wrong repository ID
     } });
     await assert.rejects(forge.privateRules()); assert.equal(calls, 1);
   }
+});
+
+test('batched queue settings pass the fence; a missing merge queue rule blocks close', async () => {
+  const f = fixture(); f.refs = [];
+  await f.controller.verifyFence();
+  f.responses.get('rulesets/1').rules = f.responses.get('rulesets/1').rules.filter((rule) => rule.type !== 'merge_queue');
+  await assert.rejects(f.controller.close(owner), /requires a merge queue/);
+  assert.equal(f.state.phase, 'open');
+});
+
+test('close revokes an untracked live green head before freezing under batching', async () => {
+  const f = fixture(); f.refs = [];
+  const live = 'd'.repeat(40);
+  const stacked = 'e'.repeat(40);
+  f.refs = [
+    { ref: 'refs/heads/gh-readonly-queue/main/pr-2', object: { sha: live } },
+    { ref: 'refs/heads/gh-readonly-queue/main/pr-3', object: { sha: stacked } },
+  ];
+  const app = { id: 7, context: CONTEXT, state: 'success', description: 'Validated admission grant x', creator: { id: 244849939, login: 'have-release-bot[bot]', type: 'Bot' }, url: `https://api.github.com/repos/${REPOSITORY}/statuses/${live}` };
+  const posted = [];
+  const list = f.forge.list;
+  f.forge.list = async (path) => path === `commits/${live}/statuses` ? [app] : path === `commits/${stacked}/statuses` ? [] : list(path);
+  f.forge.status = async (head, state) => { posted.push([head, state]); app.state = state; return {}; };
+  const current = await f.controller.close(owner);
+  assert.equal(current.phase, 'qualifying');
+  assert.equal(current.snapshotSha, snapshot);
+  assert.deepEqual(posted, [[live, 'pending']]);
+});
+
+test('failed revocation of a live green head blocks the freeze', async () => {
+  const f = fixture(); const live = 'd'.repeat(40);
+  f.refs = [{ ref: 'refs/heads/gh-readonly-queue/main/pr-2', object: { sha: live } }];
+  const app = { id: 7, context: CONTEXT, state: 'success', creator: { id: 244849939, login: 'have-release-bot[bot]', type: 'Bot' }, url: `https://api.github.com/repos/${REPOSITORY}/statuses/${live}` };
+  const list = f.forge.list;
+  f.forge.list = async (path) => path === `commits/${live}/statuses` ? [app] : list(path);
+  f.forge.status = async () => { throw new Error('status write failed'); };
+  await assert.rejects(f.controller.close(owner), /status write failed/);
+  assert.equal(f.state.phase, 'draining');
+  assert.equal(f.state.snapshotSha, null);
+});
+
+test('stacked group whose parent is not main is not admitted', async () => {
+  const f = fixture();
+  f.responses.set(`git/commits/${group}`, { sha: group, parents: [{ sha: 'f'.repeat(40) }] });
+  await assert.rejects(f.controller.admit(20), /Stale/);
+  assert.deepEqual(f.state.admitted, []);
 });
