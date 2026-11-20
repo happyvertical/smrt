@@ -17,7 +17,11 @@ const PACKAGE = '@fixture/mcp-static-collection';
 const KEY = `${PACKAGE}:PortfolioResource`;
 const called = vi.fn();
 
-class PortfolioResource extends SmrtCollection<SmrtObject> {
+// Generic: a collection hosting statics only, with no item of its own; it
+// leaves the item to a subclass, so the scan records none for it.
+class PortfolioResource<
+  T extends SmrtObject = SmrtObject,
+> extends SmrtCollection<T> {
   async initialize() {
     return this;
   }

@@ -338,19 +338,24 @@ const AmbiguousDocB = smrt({
   },
 );
 
-@smrt()
-class AmbiguousDocACollection extends SmrtCollection<
-  InstanceType<typeof AmbiguousDocA>
-> {
-  static readonly _itemClass = AmbiguousDocA;
-}
+// Decorated by call, like the models they hold: the two same-named models
+// stay out of the scanned manifest (one class per name), so their
+// collections, whose items the scan cannot prove, stay out too.
+const AmbiguousDocACollection = smrt()(
+  class AmbiguousDocACollection extends SmrtCollection<
+    InstanceType<typeof AmbiguousDocA>
+  > {
+    static readonly _itemClass = AmbiguousDocA;
+  },
+);
 
-@smrt()
-class AmbiguousDocBCollection extends SmrtCollection<
-  InstanceType<typeof AmbiguousDocB>
-> {
-  static readonly _itemClass = AmbiguousDocB;
-}
+const AmbiguousDocBCollection = smrt()(
+  class AmbiguousDocBCollection extends SmrtCollection<
+    InstanceType<typeof AmbiguousDocB>
+  > {
+    static readonly _itemClass = AmbiguousDocB;
+  },
+);
 
 /** Junction row naming B specifically, via its fully-qualified name. */
 @smrt({
