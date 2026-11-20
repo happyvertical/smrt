@@ -1,5 +1,5 @@
 // Bundle the engine worker (`dist/engine/app-worker.js`) into a few split files
-// under `dist/worker-bundle/` (#5213). A worker thread loads about 500 modules
+// under `worker-bundle/` (#5213). A worker thread loads about 500 modules
 // and keeps their source text on its heap; the bundle loads the same code from
 // far fewer, and a worker is about half the resident size (see
 // agents/engine.md, "Worker footprint"). Opt-in: the unbundled worker is the
@@ -24,7 +24,9 @@ import { build } from 'esbuild';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const entry = join(root, 'dist/engine/app-worker.js');
-const outdir = join(root, 'dist/worker-bundle');
+// Outside `dist/` on purpose: the package `files` list publishes `dist/`, and
+// this output (22 MiB) is built by the host that wants it, not shipped.
+const outdir = join(root, 'worker-bundle');
 
 rmSync(outdir, { recursive: true, force: true });
 const result = await build({
@@ -64,5 +66,5 @@ const result = await build({
 const outputs = Object.entries(result.metafile.outputs);
 const bytes = outputs.reduce((n, [, o]) => n + o.bytes, 0);
 console.log(
-  `[bundle-worker] ${outputs.length} files, ${(bytes / 1048576).toFixed(1)} MiB -> dist/worker-bundle/app-worker.js`,
+  `[bundle-worker] ${outputs.length} files, ${(bytes / 1048576).toFixed(1)} MiB -> worker-bundle/app-worker.js`,
 );

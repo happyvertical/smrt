@@ -1,5 +1,6 @@
 build
 dist
+worker-bundle
 .svelte-kit
 .smrt/
 

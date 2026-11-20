@@ -222,11 +222,13 @@ ratios, not Linux targets; at 1 worker the host's own share is included), at
   for the desktop; a hosted profile that values memory over write latency may
   pass 4-8. A bundled worker's heap is smaller, so the cap barely moves it.
 - **Split worker bundle (#5213).** `tools/bundle-worker.mjs` (esbuild, part of
-  `pnpm build`, after `tsc`) writes `dist/worker-bundle/app-worker.js` + chunks.
+  `pnpm build`, after `tsc`) writes `worker-bundle/app-worker.js` + chunks (package root, gitignored).
   Opt-in: a host passes `workerUrl` (`bundledWorkerUrl()` finds it) or sets
   `SMRT_APP_SHELL_WORKER=bundle` (engine default and shell; a configured
   `workerUrl` wins; refused if the bundle is not built). Unbundled stays the
-  default. Rules: NO identifier minification (smrt claims tables by class name;
+  default. The 22 MiB output sits outside `dist/` so it is not in the published
+  tarball (a local registry refused it with 413); a host builds it from the
+  repo with the package build. Rules: NO identifier minification (smrt claims tables by class name;
   `keepNames` also stops the bundler renaming a colliding class); `libsql`
   (native, so a direct dependency here), DuckDB, and `quickjs-emscripten` (its
   `.wasm` sits beside its glue code) stay external and resolve from the
