@@ -19,7 +19,7 @@ vi.mock('@happyvertical/ai', async (importOriginal) => {
 
 import { setAiUsageTenantResolver } from '../adapters/ai-usage-recorder.js';
 import { config } from '../config.js';
-import { AiRunNotFoundError, getAiRun, openAiRun } from '../system/browser';
+import { AiRunNotFoundError, getAiRun } from '../system/browser';
 import { createTrackedAiClient } from '../tracked-ai-client.js';
 import {
   hasTenantPredicate,
@@ -242,12 +242,13 @@ describe('tracked client scope', () => {
     const one = createTrackedAiClient({ db, tenantId: 'tenant-one', ai });
     const { run, context } = await one.openRun({ type: 'turn' });
     const client = await one.client(prompt, { runContext: context });
-    // The run is pruned and tenant-two opens one under the same id.
+    // The id now names a run of tenant-two (a link an older core wrote
+    // without the run id registry, which refuses this reopen through
+    // openAiRun).
     await db.query('DELETE FROM _smrt_ai_run_events WHERE run_id = $1', run.id);
-    await db.query('DELETE FROM _smrt_ai_runs WHERE id = $1', run.id);
-    await openAiRun(
-      { db, usageTracking: true, tenantId: 'tenant-two' },
-      { id: run.id, type: 'turn' },
+    await db.query(
+      "UPDATE _smrt_ai_runs SET tenant_id = 'tenant-two' WHERE id = $1",
+      run.id,
     );
     await expect(client.message('hello')).rejects.toBeInstanceOf(
       AiRunNotFoundError,

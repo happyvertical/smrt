@@ -19,6 +19,11 @@
 
 import type { DatabaseInterface } from '@happyvertical/sql';
 import type { InferenceRunStatus } from '../inference.js';
+import {
+  assertAiRunId,
+  insertAiRunRowTx,
+  withAiRunTransaction,
+} from './ai-run-model.js';
 
 function getRows(result: unknown): Record<string, unknown>[] {
   if (Array.isArray(result)) return result as Record<string, unknown>[];
@@ -92,7 +97,7 @@ export async function recordAiRun(
   db: DatabaseInterface,
   input: AiRunInput,
 ): Promise<void> {
-  const id = requireText(input.id, 'id');
+  const id = assertAiRunId(requireText(input.id, 'id'), 'recordAiRun');
   const fusionKey = requireText(input.fusionKey, 'fusionKey');
   const mode = requireText(input.mode, 'mode');
   if (!AI_RUN_STATUSES.includes(input.status)) {
@@ -104,29 +109,29 @@ export async function recordAiRun(
   const degradedSeats = requireCount(input.degradedSeats, 'degradedSeats');
   const duration = Math.max(0, Math.round(Number(input.duration) || 0));
   const createdAt = input.createdAt ?? new Date();
-  await db.query(
-    `INSERT INTO _smrt_ai_runs
-      (id, type, definition_key, mode, tenant_id, class_name, prompt_key, seats,
-       degraded_seats, status, degraded, stop_reason, duration, details,
-       started_at, finished_at, created_at)
-     VALUES ($1, 'fusion', $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13,
-             $14, $15, $16)`,
-    id,
-    fusionKey,
-    mode,
-    input.tenantId ?? null,
-    input.className ?? null,
-    input.promptKey ?? null,
-    seats,
-    degradedSeats,
-    input.status === 'failed' ? 'failed' : 'done',
-    input.status === 'degraded' ? 1 : 0,
-    input.status === 'failed' ? 'error' : null,
-    duration,
-    JSON.stringify(input.details ?? {}),
-    new Date(createdAt.getTime() - duration).toISOString(),
-    createdAt.toISOString(),
-    createdAt.toISOString(),
+  const details = JSON.stringify(input.details ?? {});
+  // Through the one run-row writer, in its own transaction: the id's digest
+  // is reserved with the row, so a used id is refused (AiRunIdUsedError).
+  await withAiRunTransaction(db, (tx) =>
+    insertAiRunRowTx(tx, {
+      id,
+      type: 'fusion',
+      definition_key: fusionKey,
+      mode,
+      tenant_id: input.tenantId ?? null,
+      class_name: input.className ?? null,
+      prompt_key: input.promptKey ?? null,
+      seats,
+      degraded_seats: degradedSeats,
+      status: input.status === 'failed' ? 'failed' : 'done',
+      degraded: input.status === 'degraded' ? 1 : 0,
+      stop_reason: input.status === 'failed' ? 'error' : null,
+      duration,
+      details,
+      started_at: new Date(createdAt.getTime() - duration).toISOString(),
+      finished_at: createdAt.toISOString(),
+      created_at: createdAt.toISOString(),
+    }),
   );
 }
 

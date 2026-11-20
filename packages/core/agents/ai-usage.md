@@ -122,8 +122,34 @@ approval counts, `retain`, `trajectory_pruned`), `_smrt_ai_run_events`
 (`(run_id, seq)` unique inline; `call` events carry the reservation state and
 amounts as typed columns), `_smrt_ai_run_checkpoints` (durable runs only: a
 checkpoint row is what makes a run durable; `revision` is compare-and-swap),
-`_smrt_ai_evaluations`. No foreign keys between them: retention deletes in
-its own order and an evaluation may outlive its target.
+`_smrt_ai_evaluations`, `_smrt_ai_run_ids` (1.20.0: the hex SHA-256 of every
+run id ever opened, no tenant column, never deleted). No foreign keys
+between them: retention deletes in its own order and an evaluation may
+outlive its target.
+
+**Run identity** (`ai-run-model.ts` `insertAiRunRowTx`, `ai-run-ids.ts`). A
+run id names at most one run for the lifetime of the database. Every run
+row is written through `insertAiRunRowTx` (`openAiRun`, the deprecated
+`recordAiRun`; `ai-run-insert-sites.test.ts` fails on any other `INSERT INTO
+_smrt_ai_runs`), which in the caller's transaction refuses an id whose
+digest is reserved or whose run row still exists, then reserves the digest
+before the row; a unique violation from a concurrent opener that committed
+first is the same final `AiRunIdUsedError` (`AI_RUN_ID_USED`), never
+retried. A caller-chosen id must be a non-empty, well-formed string without
+NUL (`TypeError`, before any read). Without the registry table an open fails
+with a `TypeError` before any write and creates nothing. `pruneAiRuns`
+reserves the id before it locks and deletes the row (the open's lock order:
+registry key, then run row). The 1.20.0 bootstrap backfills the digest of
+every id still present or referenced (runs, events, checkpoints, usage,
+evaluations, transcripts) after its compatibility step and DDL replay and
+before its stamp, in keyset pages (SQL `sha256` on PostgreSQL and DuckDB,
+TypeScript on SQLite). The guarantee holds from cutover: reuse before the
+upgrade is not repaired; `checkAiRunIdRegistry(db)` (`smrt doctor --db`)
+counts referenced ids with neither row and children created before their
+parent. Deploy: drain older-core openers and sweepers first, never run an
+older core against a 1.20.0 database, keep the registry through restores. A
+refusal discloses that an id was used, even after expiry; callers choose
+unguessable ids.
 
 **Opening needs tracking.** `openAiRun(store, input)` throws
 `AiRunTrackingDisabledError` while `store.usageTracking` is off
@@ -372,7 +398,10 @@ created_at` and `started_at = created_at - duration`), moved stored `ok` /
 `degraded` to `done` (with `degraded`) and `failed` to `failed` / `error` in
 one guarded UPDATE, and added events, checkpoints and evaluations; later
 1.17.0 work added `stop_detail`, `retry_of_run_id` and double-precision cost
-columns; 1.19.0 adds `idx_smrt_ai_runs_finished`. On PostgreSQL a table with
+columns; 1.19.0 adds `idx_smrt_ai_runs_finished`; 1.20.0 adds
+`_smrt_ai_run_ids` and its backfill (`backfillAiRunIdRegistry`, from
+`bootstrapSystemTables`, not from a compatibility pass, so it sees the
+replayed DDL). On PostgreSQL a table with
 legacy timezone-naive timestamps is left alone and the bootstrap fails closed
 until the audited timestamp migration has run.
 

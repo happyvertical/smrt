@@ -39,9 +39,11 @@ import {
   aiRunQuery,
   aiRunScopeClause,
   assertAiRunFence,
+  assertAiRunId,
   expectedTenantOf,
   foldActive,
   getRows,
+  insertAiRunRowTx,
   isAiRunFinal,
   isValidAiRunType,
   lockAiRun,
@@ -583,7 +585,10 @@ export async function openAiRun(
     );
   }
   const budget = normalizeAiRunBudget(req.budget, 'openAiRun: budget');
-  const id = req.id ?? newAiRunId();
+  // A caller-chosen id is checked before anything is read or written; it
+  // must never have named a run (insertAiRunRowTx, page section 8).
+  const id =
+    req.id === undefined ? newAiRunId() : assertAiRunId(req.id, 'openAiRun');
   const retryOf = req.retryOfRunId ?? null;
   const durable = Boolean(req.durable) || retryOf !== null;
   if (retryOf && req.type !== 'workflow') {
@@ -673,33 +678,29 @@ export async function openAiRun(
         ? envelope(initial.highestStepIndex, initial.state)
         : null;
       const now = tx.now.toISOString();
-      await aiRunQuery(
-        tx.db,
-        `INSERT INTO _smrt_ai_runs
-           (id, type, definition_key, definition_version, tenant_id,
-            class_name, prompt_key, template_hash, owner_id, parent_run_id,
-            retry_of_run_id, experiment_id, dataset_item, tags, status,
-            budget, active_since, started_at, created_at, mode)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14,
-                 'running', $15, $16, $16, $16, $17)`,
+      // The id's digest is reserved in this transaction, before the row.
+      await insertAiRunRowTx(tx, {
         id,
-        req.type,
-        req.definitionKey ?? null,
-        req.definitionVersion ?? null,
-        tenantId,
-        scope.className ?? null,
-        req.promptKey ?? null,
-        req.templateHash ?? null,
-        req.ownerId ?? null,
-        req.parentRunId ?? null,
-        retryOf,
-        req.experimentId ?? null,
-        req.datasetItem ?? null,
-        tagsJson,
-        budgetJson,
-        now,
-        req.mode ?? null,
-      );
+        type: req.type,
+        definition_key: req.definitionKey ?? null,
+        definition_version: req.definitionVersion ?? null,
+        tenant_id: tenantId,
+        class_name: scope.className ?? null,
+        prompt_key: req.promptKey ?? null,
+        template_hash: req.templateHash ?? null,
+        owner_id: req.ownerId ?? null,
+        parent_run_id: req.parentRunId ?? null,
+        retry_of_run_id: retryOf,
+        experiment_id: req.experimentId ?? null,
+        dataset_item: req.datasetItem ?? null,
+        tags: tagsJson,
+        status: 'running',
+        budget: budgetJson,
+        active_since: now,
+        started_at: now,
+        created_at: now,
+        mode: req.mode ?? null,
+      });
       if (checkpointJson !== null) {
         await aiRunQuery(
           tx.db,

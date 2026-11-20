@@ -3081,6 +3081,16 @@
   },
   {
     "kind": "system-table",
+    "name": "_smrt_ai_run_ids",
+    "issue": 5005,
+    "nearest": [
+      "_smrt_ai_runs",
+      "_smrt_run_once_claims"
+    ],
+    "reason": "Run ids must stay reserved after retention deletes the run row, so the registry cannot live in _smrt_ai_runs (stub rows would make every reader filter them) and has no tenant column; _smrt_run_once_claims keys by actor and tenant scope, not a global digest."
+  },
+  {
+    "kind": "system-table",
     "name": "_smrt_ai_runs",
     "grandfathered": true
   },

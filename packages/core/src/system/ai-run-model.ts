@@ -10,6 +10,7 @@
  */
 
 import type { DatabaseInterface } from '@happyvertical/sql';
+import { classifyDatabaseError, isUniqueViolationError } from '../db-errors.js';
 import {
   isEmbeddedDatabase,
   isKnownDatabaseTransaction,
@@ -342,6 +343,22 @@ export class AiRunClaimLostError extends AiRunError {
       { runId },
       cause,
     );
+  }
+}
+
+/**
+ * A run was opened (or recorded) with an id that already named a run on
+ * this database, live or pruned, in any tenant: a run id names one run for
+ * the lifetime of the database (docs/content/ai-runs.md section 8, "Run
+ * identity"). Final: never retried.
+ */
+export class AiRunIdUsedError extends AiRunError {
+  readonly runId: string;
+  constructor(runId: string) {
+    super(`AI run id ${runId} is already used`, 'AI_RUN_ID_USED', 'runtime', {
+      runId,
+    });
+    this.runId = runId;
   }
 }
 
@@ -1090,6 +1107,131 @@ export async function assertAiRunFence(
     throw error;
   }
   if (held === false) throw new AiRunClaimLostError(durable);
+}
+
+// ---------------------------------------------------------------------------
+// Run identity (docs/content/ai-runs.md section 8, "Run identity")
+// ---------------------------------------------------------------------------
+
+/**
+ * The hex SHA-256 of a run id's exact UTF-8 bytes: what `_smrt_ai_run_ids`
+ * keeps, so the registry never holds a caller's free text after the run's
+ * own retention removed it.
+ *
+ * @internal
+ */
+export async function aiRunIdDigest(runId: string): Promise<string> {
+  const bytes = new Uint8Array(
+    await crypto.subtle.digest('SHA-256', new TextEncoder().encode(runId)),
+  );
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+/**
+ * Throw a `TypeError` unless `runId` can name a run: a non-empty,
+ * well-formed string (no lone surrogate, which UTF-8 cannot hold and would
+ * digest like U+FFFD) without U+0000 (PostgreSQL text cannot store it).
+ * Any other string is an exact id: case, whitespace and Unicode forms are
+ * distinct ids on every engine.
+ *
+ * @internal
+ */
+export function assertAiRunId(runId: unknown, fn: string): string {
+  if (
+    typeof runId !== 'string' ||
+    runId.length === 0 ||
+    runId.includes(String.fromCharCode(0)) ||
+    !(runId as unknown as { isWellFormed(): boolean }).isWellFormed()
+  ) {
+    throw new TypeError(
+      `${fn}: a run id must be a non-empty, well-formed string without NUL`,
+    );
+  }
+  return runId;
+}
+
+function isMissingTable(error: unknown): boolean {
+  if (classifyDatabaseError(error).kind === 'undefined_object') return true;
+  const message =
+    error instanceof Error
+      ? `${error.message} ${String(error.cause ?? '')}`
+      : String(error);
+  return /does not exist|no such table/i.test(message);
+}
+
+/**
+ * Insert one run row; the only way a run row is written. Inside the
+ * caller's accounting transaction, the run id's digest is reserved in
+ * `_smrt_ai_run_ids` first, so once this transaction commits no later
+ * insert of the same id succeeds, in any tenant, after any prune, from any
+ * process. An id already reserved, or still naming a run row (one an older
+ * core wrote without reserving it), throws {@link AiRunIdUsedError} before
+ * anything is written; a concurrent opener that commits the same id first
+ * makes the insert's unique key fail, which throws the same. A rollback
+ * removes the reservation with the row, so an id that never committed stays
+ * free. Without the registry table (a schema older than 1.20.0) it throws a
+ * `TypeError` before any write and creates nothing.
+ *
+ * @internal
+ */
+export async function insertAiRunRowTx(
+  tx: AiRunTx,
+  row: { id: string } & Record<string, unknown>,
+): Promise<void> {
+  const id = assertAiRunId(row.id, 'insertAiRunRowTx');
+  const digest = await aiRunIdDigest(id);
+  let reserved: Record<string, unknown>[];
+  try {
+    reserved = getRows(
+      await aiRunQuery(
+        tx.db,
+        'SELECT 1 AS used FROM _smrt_ai_run_ids WHERE id_digest = $1',
+        digest,
+      ),
+    );
+  } catch (error) {
+    if (isMissingTable(error)) {
+      throw new TypeError(
+        'AI runs need the run id registry (_smrt_ai_run_ids, system schema 1.20.0): run the system-table bootstrap before opening a run',
+      );
+    }
+    throw error;
+  }
+  if (reserved.length > 0) throw new AiRunIdUsedError(id);
+  const live = getRows(
+    await aiRunQuery(
+      tx.db,
+      'SELECT 1 AS used FROM _smrt_ai_runs WHERE id = $1',
+      id,
+    ),
+  );
+  if (live.length > 0) throw new AiRunIdUsedError(id);
+  const unique = async (statement: () => Promise<unknown>) => {
+    try {
+      await statement();
+    } catch (error) {
+      if (isUniqueViolationError(error)) throw new AiRunIdUsedError(id);
+      throw error;
+    }
+  };
+  await unique(() =>
+    aiRunQuery(
+      tx.db,
+      'INSERT INTO _smrt_ai_run_ids (id_digest, created_at) VALUES ($1, $2)',
+      digest,
+      tx.now.toISOString(),
+    ),
+  );
+  const columns = Object.keys(row);
+  await unique(() =>
+    aiRunQuery(
+      tx.db,
+      `INSERT INTO _smrt_ai_runs (${columns.join(', ')}) VALUES (${columns
+        .map((_, i) => `$${i + 1}`)
+        .join(', ')})`,
+      ...columns.map((column) => row[column]),
+    ),
+  );
 }
 
 export function newAiRunId(): string {

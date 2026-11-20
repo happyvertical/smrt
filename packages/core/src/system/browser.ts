@@ -20,6 +20,10 @@ export * from './ai-run-accounting.js';
 export * from './ai-run-calls.js';
 export * from './ai-run-entry.js';
 export * from './ai-run-events.js';
+export {
+  type AiRunIdRegistryCheck,
+  checkAiRunIdRegistry,
+} from './ai-run-ids.js';
 export * from './ai-run-lifecycle.js';
 export {
   AI_RUN_FINAL_STATUSES,
@@ -36,6 +40,7 @@ export {
   AiRunClaimLostError,
   type AiRunEngine,
   AiRunError,
+  AiRunIdUsedError,
   type AiRunLimitStopReason,
   AiRunNotFoundError,
   type AiRunReadScope,

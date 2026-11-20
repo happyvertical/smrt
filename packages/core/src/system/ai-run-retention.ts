@@ -30,6 +30,7 @@
 import type { DatabaseInterface } from '@happyvertical/sql';
 import {
   type AiRunTxOptions,
+  aiRunIdDigest,
   aiRunQuery,
   forUpdate,
   getRows,
@@ -398,9 +399,22 @@ export async function pruneAiRuns(
           { tenant: nullableTenant(row.tenant_id), finishedBefore: cutoff },
           2,
         );
+        const digest = await aiRunIdDigest(id);
         const pruned = await withAiRunTransaction(
           db,
           async (tx) => {
+            // The id stays reserved after its row goes (page section 8,
+            // "Run identity"): a run an older core opened without reserving
+            // it is reserved here, before its row is locked (an open takes
+            // the registry key before the run row too, so no lock cycle),
+            // and an open racing this prune waits on the key and is refused.
+            await aiRunQuery(
+              tx.db,
+              `INSERT INTO _smrt_ai_run_ids (id_digest, created_at)
+               VALUES ($1, $2) ON CONFLICT (id_digest) DO NOTHING`,
+              digest,
+              tx.now.toISOString(),
+            );
             const locked = getRows(
               await aiRunQuery(
                 tx.db,

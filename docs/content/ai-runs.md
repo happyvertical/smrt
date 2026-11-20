@@ -1440,6 +1440,45 @@ retries, and its `reason` is one typed code:
   redactor runs again (never the host's), and the head and tail kept from a
   truncated payload are masked as text.
 
+### Run identity
+
+A run id names at most one run for the lifetime of the database. Once a run
+with id X has been opened, no later open of X succeeds, in any tenant, after
+any prune. A run can disappear, but its id never comes back as a different
+run, so whatever still holds the id (a bound tracked client, a held
+reservation, a queued job, a late usage callback, a surviving child's
+`parent_run_id`, another run's `retry_of_run_id`) finds that run or nothing.
+
+- **The registry.** `_smrt_ai_run_ids` (schema 1.20.0) keeps the hex SHA-256
+  of each run id's UTF-8 bytes, never the id itself, with no tenant column.
+  Every run row is written through one helper that reserves the digest in
+  the same transaction, before the row; a rollback frees it again. Retention
+  never deletes from it. The row prune reserves the id of a row before it
+  deletes it, which also covers a run an older core opened without
+  reserving it.
+- **Refusal.** Opening (or the deprecated `recordAiRun`) with an id that is
+  reserved, or that still names a run row, throws the final
+  `AiRunIdUsedError` (`AI_RUN_ID_USED`) before anything is written. Of two
+  concurrent openers of one id, exactly one succeeds. A caller-chosen id
+  must be a non-empty, well-formed string without NUL (`TypeError`
+  otherwise); case, whitespace and Unicode forms are distinct ids.
+- **Disclosure.** A refusal tells the caller that the id was used, by
+  someone, at some time, even after every row of that run has expired. Live
+  ids already disclosed that through the primary key. A caller that chooses
+  ids should use unguessable ones (`crypto.randomUUID()`), never ids derived
+  from user data.
+- **Upgrade.** Upgrading to 1.20.0 reserves every id that still exists or is
+  still referenced by a run, event, checkpoint, usage row, evaluation or
+  transcript. An id pruned earlier with no trace left cannot be recovered.
+  The guarantee starts at the upgrade: reuse that happened before it is not
+  repaired. `smrt doctor --db` reports referenced ids with neither a run row
+  nor a registry row, and runs created before their own parent (a parent id
+  reused before the upgrade).
+- **Cutover.** Before upgrading, drain the processes on an older core that
+  open runs or sweep retention, and do not run an older core against an
+  upgraded database: an older core opens and prunes without the registry.
+  The registry is never compacted, and a restore must keep it.
+
 ## 9. Existing data
 
 Every change here upgrades an existing SQLite, DuckDB or PostgreSQL database
