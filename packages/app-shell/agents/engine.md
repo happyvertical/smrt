@@ -207,14 +207,20 @@ only. The CLI's use is in `packages/cli/agents/app-commands.md`.
 
 ## Worker footprint (#5183)
 
+Resident size added per app worker (RSS from `ps`, macOS, Node 26.8.1, SQLite;
+ratios, not Linux targets; at 1 worker the host's own share is included), at
+1 / 4 / 8 workers: origin/main 153 / 98 / 90 MiB; with items below, unbundled
+114 / 68 / 59 (-34% at 8); bundled 81 / 50 / 45 (-50%).
+
 - **Young generation cap (#5212).** `AppWorker` passes `resourceLimits` from
-  `HostOptions.workerLimits` (`{ youngMb, oldMb }`; shell: `ShellContext.workerLimits`),
-  default `DEFAULT_WORKER_LIMITS` = 16 MiB young, 512 MiB old; `youngMb: null`
-  restores V8's own (about 48 MiB committed). Measured on macOS (Node 26.8.1,
-  SQLite; RSS per added worker): unset 88, 16 MiB 61 (-31%), 8 MiB 54, 4 MiB 48
-  at 8 workers. Cost over 150 sequential creates: 16 MiB +14%, 8 MiB and 4 MiB
-  about 2x; reads of 400 rows: 16 MiB +1%, 4 MiB +20%. Hence 16 for the desktop;
-  a hosted profile that values memory over write latency may pass 4-8.
+  `HostOptions.workerLimits` (`{ youngMb, oldMb }`; shell:
+  `ShellContext.workerLimits`), default `DEFAULT_WORKER_LIMITS` = 16 MiB young,
+  512 MiB old; `youngMb: null` restores V8's own (about 48 MiB committed).
+  Cost (150 sequential creates, then 30 lists of 400 rows, best of 3 runs,
+  median of 7 processes): 16 MiB writes +14%, reads +1%; 8 MiB writes about 2x;
+  4 MiB writes about 2x, reads +20% (and 85 vs 153 MiB at 1 worker). Hence 16
+  for the desktop; a hosted profile that values memory over write latency may
+  pass 4-8. A bundled worker's heap is smaller, so the cap barely moves it.
 - **Split worker bundle (#5213).** `tools/bundle-worker.mjs` (esbuild, part of
   `pnpm build`, after `tsc`) writes `dist/worker-bundle/app-worker.js` + chunks.
   Opt-in: a host passes `workerUrl` (package export
@@ -226,16 +232,28 @@ only. The CLI's use is in `packages/cli/agents/app-commands.md`.
   (native, so a direct dependency here), DuckDB, and `quickjs-emscripten` (its
   `.wasm` sits beside its glue code) stay external and resolve from the
   package, so the bundle must stay inside `dist/`. The whole engine suite runs
-  on it: `pnpm test:bundled-worker`. Measured (macOS, Node 26.8.1; RSS added
-  per worker at 1 / 4 / 8 workers, host included at 1): origin/main 153 / 98 /
-  90 MiB; 16 MiB nursery 117 / 72 / 64; plus bundle 93 / 59 / 52; bundle and
-  4 MiB nursery 76 / 47 / 44. First wake (open, define, create, list): about
-  500 ms unbundled, 310 ms bundled. `NODE_COMPILE_CACHE`: bundled warm wake
-  310 -> 235 ms for +2.5 MiB per worker. Decision: set it for HOSTED
-  (short-lived replicas wake often; point it at a writable directory kept
-  across restarts, shared by the replicas of one build), NEVER for the desktop
-  (one long-lived process, the saving is one wake, the memory is paid per
-  worker). The engine does not set it; it is the process environment's.
+  on it: `pnpm test:bundled-worker`. First wake (open, define, create, list):
+  about 390 ms unbundled, 237 ms bundled. `NODE_COMPILE_CACHE`: bundled warm
+  wake 237 -> 195 ms for +2-5 MiB per worker. Decision: set it for HOSTED
+  (replicas wake often; point it at a writable directory kept across restarts,
+  shared by the replicas of one build), NEVER for the desktop (one long-lived
+  process, the saving is one wake, the memory is paid per worker). The engine
+  does not set it; it is the process environment's.
+- **Reports load on report paths only (#5214).** The app worker imports
+  `@happyvertical/smrt-reports` only to compile a definition's reports at boot
+  (an app with none never does), run one, or classify a `runReport` error
+  (`reports.ts`, `app-worker.ts`, `worker-handle.ts` import it on demand).
+  `definition.ts` loads it for `validate` everywhere except the app worker
+  (`workerData.appWorker`), which never validates. `worker-loads.test.ts` runs a
+  worker under a module-load recorder (`test-support/load-recorder.mjs`) and
+  fails if reads and writes load it. Measured about -10 MiB per worker at 8
+  (more than the 3 MiB of source it holds, via what it pulls in); a worker
+  serving a first report takes about the same (195 vs 200 ms: the report read
+  worker pays the import it used to pay at start). Other rare paths (bulk
+  load, extract, merge, sandbox, publish) were measured and left alone: the
+  worker loads 13 engine modules of 143 KiB in all, of which those four are
+  about 50 KiB of source; publish, import and portable export are not in the
+  worker's graph. The remaining weight is core's 290 modules (3.9 MB).
 
 ## Calculated fields (#4916)
 

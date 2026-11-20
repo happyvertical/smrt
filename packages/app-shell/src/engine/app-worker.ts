@@ -2,7 +2,6 @@
 // on it is in worker-handle.ts. Messages are plain JSON-safe values.
 
 import { isMainThread, parentPort, workerData } from 'node:worker_threads';
-import { RuntimeReportError } from '@happyvertical/smrt-reports';
 import type { AppDefinition, Migration } from './definition.ts';
 import type { WorkerCall, WorkerReply } from './worker-protocol.ts';
 import { WORKER_OPS } from './worker-protocol.ts';
@@ -68,12 +67,18 @@ if (!isMainThread && workerData?.appWorker) {
           )[op](...args),
         };
       } catch (e) {
+        // Only a report run can fail with a report error, and by then the
+        // package is loaded; any other op must not load it to find out.
+        const RuntimeReportError =
+          op === 'runReport'
+            ? (await import('@happyvertical/smrt-reports')).RuntimeReportError
+            : null;
         reply = {
           id,
           ok: false,
           error: (e as Error).message,
           user: e instanceof AppError,
-          ...(op === 'runReport' && e instanceof RuntimeReportError
+          ...(RuntimeReportError && e instanceof RuntimeReportError
             ? { reportError: { code: e.code, path: e.path } }
             : {}),
         };
