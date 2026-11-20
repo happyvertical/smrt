@@ -113,7 +113,16 @@ name, version and shipped manifest are one copy), or generation throws
 A class directly extends a framework collection base only by identity (the
 bare name, no `extendsQualified`): a qualified parent named `SmrtCollection`
 (from a provider manifest built before the scanner reserved the framework
-base names) is a model, and its children inherit its exposure.
+base names) is a model, and its children inherit its exposure. Generation
+refuses an entry published under a framework base name
+(`CONFIG_RESERVED_CLASS_NAME`). The route, web, consumer, knowledge and
+permission-catalog readers classify a manifest entry as a collection by the
+same identity (`hasCollectionMarker` in `registry/collection-bases.ts`):
+`SmrtCollection` as the bare parent, another framework collection base with
+a type argument, or a recorded `collectionOf`, reached through the manifest
+ancestry; a type argument beside any other parent (`Ledger extends
+RecordBase<Currency>`) marks no collection. The permission catalog reads a
+confirmed item through `extendsTypeArgQualified` before the bare name.
 Every other target must
 name a class of the manifest or a loadable dependency, or generation throws
 `CONFIG_UNKNOWN_RELATIONSHIP_TARGET` (`assertKnownTargets`; `@crossPackageRef`

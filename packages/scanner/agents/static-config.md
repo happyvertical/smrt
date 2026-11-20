@@ -176,7 +176,8 @@ JavaScript; a relative specifier more than one file could satisfy (`Base.ts`
 beside `Base/index.ts` or `Base.js`, or a directory whose `package.json`
 declares `main`, `module`, `exports`, `types`, `typings` or `browser` beside
 its `index.ts`) or that a platform module-suffix variant sits beside (see
-below); any import in a project whose root tsconfig mentions `moduleSuffixes`; a
+below); any import in a project whose tsconfig files mention `moduleSuffixes`
+(see below); a
 non-relative specifier that is not a declared scoped package (a `paths`
 alias, a `baseUrl` import, `#imports`, an unscoped package); the package's own
 name; a package's default export; an unimported global (`SmrtObject` without
@@ -198,15 +199,29 @@ that extends another package's class, or over a plain class, is an error
 suggesting `@smrt({ abstract: true })`. A relationship target, report source
 or collection item that proves to a scanned class must be a model too (a
 same-file target is checked the same way), and a reference to a stand-in for
-another package (`@smrt({ packageName })`) is an error. A static `_itemClass`
-must name the class the collection's type argument names. The type argument
-is proven like any reference, a type-only import (`import type { Item }`)
-included; only the class's own type parameter (`class C<T> extends
-SmrtCollection<T>`) and a type keyword (`any`, `unknown`, ...) name no item.
-For such a collection the item is the class a static `_itemClass` names,
-proven like a parent (it must be a model), and the parameter's spelling is
-never recorded: a parameter named `Account` never selects a model named
-`Account`. With no `_itemClass` the collection records no item name.
+another package (`@smrt({ packageName })`) is an error, a collection's item
+included. A static `_itemClass` must name the class the collection's type
+argument names. The type argument is proven like any reference, a type-only
+import (`import type { Item }`) included; only the class's own type
+parameter (`class C<T> extends SmrtCollection<T>`) and a type keyword (`any`,
+`unknown`, ...) name no item. For such a collection the item is the class a
+static `_itemClass` names, proven like a parent (it must be a model), and the
+parameter's spelling is never recorded: a parameter named `Account` never
+selects a model named `Account`. With no `_itemClass` the collection records
+no item name.
+
+The item is followed through scanned collection ancestors to the framework
+base. A collection over an app-level generic collection (`class
+BaseCollection<T> extends SmrtCollection<T>`, `class VendorAccounts extends
+BaseCollection<Account>`) names its item by its own type argument, proven the
+same way and recorded with its package identity. An ancestor that fixes the
+item itself (`class EntryCollection<Tag> extends SmrtCollection<Closed>`)
+decides it: a type argument the subclass passes for another parameter is
+replaced by that item, and a static `_itemClass` narrows it to the model it
+names (`EmailCollection extends MessageCollection`, `_itemClass = Email`). An
+ancestor that passes on another type parameter than its first cannot be
+followed below a class that passes a type argument: make the item type
+parameter the first one.
 
 **Framework base names are reserved.** A scanned class named `SmrtObject`,
 `SmrtClass`, `SmrtCollection`, `SmrtJunction`, `SmrtJunctionBase`,
@@ -214,7 +229,9 @@ never recorded: a parameter named `Account` never selects a model named
 `SmrtReportCollection` is a scan error unless the framework package that
 owns the name declares it (`@happyvertical/smrt-core`;
 `@happyvertical/smrt-reports` for the report bases), decorated or not and
-whatever it extends. Manifest readers across the framework (permission
+whatever it extends; so is a class published under such a name by its
+`@smrt({ name })` option or its export name, and generation refuses an entry
+renamed to one (`CONFIG_RESERVED_CLASS_NAME`). Manifest readers across the framework (permission
 catalogs, CLI and consumer registration, web routes, navigation) classify an
 entry by its parent's bare name. Generation still reads a qualified parent of
 such a name from an older provider manifest as a model, not as the base.
@@ -265,11 +282,16 @@ or bundler may load it instead. Every other companion file
 (`Event.types.ts`, `Event.schema.ts`, `Event.server.ts`, `Event.svelte.ts`,
 `Event.utils.ts`, `Event.test.ts`, `Event.mock.ts`, `index.types.ts`) is not
 a variant. Import a variant by its full name (`./Base.ios`). A project whose
-root directory holds a `tsconfig*.json` that mentions `moduleSuffixes` (a
-text search; the file is not parsed) fails the scan as a whole: a suffix the
-scan does not know could select another file. Import files explicitly and
-remove the option. A tsconfig that inherits `moduleSuffixes` through
-`extends` from another directory or package is not seen. A directory's
+`tsconfig.json` in the root directory, or a config it names (an `extends`
+entry or a `references` path written as a relative path, to any depth),
+mentions `moduleSuffixes` in its active text (`//` and block comments are
+removed first; the file is not parsed) fails the scan as a whole: a suffix
+the scan does not know could select another file. Import files explicitly
+and remove the option. A commented-out option, a sibling `tsconfig*.json`
+nothing names, and a config package named in `extends` are not read. The
+root directory is the directory the scan starts from: a config outside it
+(`tsconfig.json` one level above when running `smrt-scan src/`) is not read.
+A directory's
 `package.json` counts as a candidate only when it declares an entry; one that
 only marks the module format chooses nothing.
 
@@ -345,8 +367,8 @@ now stops the build. The message names the file, class and member.
 | A decorated field whose computed key is not a string literal (`@field() [KEY] = ''`) | Name the field with an identifier or a string literal key (`['secret']` is read like `secret`) |
 | A decorated field named `''`, `__proto__`, `constructor` or `prototype` | Rename the field |
 | An undecorated class over a superclass the scan cannot read or accept whose binding reaches a framework base or a model by identity (`extends Mixin(SmrtObject)`, `Mixin(FrameworkObject)` over an aliased import, `Mixin(models.Base)`, a collection imported through a barrel or through a directory whose `package.json` declares an entry) | Import the parent class from the file that declares it and write `extends Parent`. Decorating the class does not help: a decorated class's parent must be provable too |
-| A class named `SmrtObject`, `SmrtClass`, `SmrtCollection`, `SmrtJunction`, `SmrtJunctionBase`, `SmrtHierarchical`, `SmrtPolymorphicAssociation`, `SmrtReport` or `SmrtReportCollection` outside the framework package that owns the name | Rename the class; the framework reserves these names |
-| A `tsconfig*.json` in the project root that mentions `moduleSuffixes` | Import platform files explicitly (`./Base.ios`) and remove the option |
+| A class named `SmrtObject`, `SmrtClass`, `SmrtCollection`, `SmrtJunction`, `SmrtJunctionBase`, `SmrtHierarchical`, `SmrtPolymorphicAssociation`, `SmrtReport` or `SmrtReportCollection` outside the framework package that owns the name, or published under one by its `@smrt({ name })` option or export name | Rename the class or its public name; the framework reserves these names |
+| `moduleSuffixes` in the active text of the project root's `tsconfig.json` or of a config it extends or references by a relative path | Import platform files explicitly (`./Base.ios`) and remove the option |
 | A constant shared by a manifest static property (`uiSlots` etc.) and any other reader | Give the static property its own constant |
 | A computed namespace decorator the scanner cannot name (`@(core[key])()`), including a key copied from an object member a module statement writes | Use `@core.smrt()` / `@(core['smrt'])()`, or a same-file string constant key nothing writes |
 | Two models of one class name in a package | Rename one |
@@ -367,6 +389,7 @@ now stops the build. The message names the file, class and member.
 | A model whose chain passes through a scanned class that is not a model (a plain class, or an undecorated class over another package's class) | Decorate it with `@smrt({ abstract: true })`, or extend the model directly |
 | A relationship target, report source or collection item that is a plain class, or a stand-in for another package | Reference the model class |
 | A static `_itemClass` naming another class than `SmrtCollection<Item>` | Name the same model in both |
+| A collection below a scanned generic collection whose item is a plain class or a stand-in, or that passes a type argument below an ancestor passing on another type parameter than its first | Name a model of the package; make the item type parameter the first one, or extend the framework base directly |
 | A collection over its own type parameter or a type keyword whose static `_itemClass` is not a class reference, cannot be proven like a parent, or is not a model | Make `_itemClass` name the item model class |
 | A module exporting another binding under a model's class name (`export { Other as Model }`, `export { Model } from '@other/pkg'`, a barrel re-exporting a plain class of the name) | Export each model under its own class name; rename the other class |
 | `CONFIG_UNRESOLVED_IMPORTED_PARENT`: a parent (or collection item) from another package whose manifest does not declare it under exactly that name (a model whose name differs only in case is not it), that is installed without a manifest, whose manifest records no `importPath`, that is imported from another entry than the one the manifest records, or that the package only re-exports; an `extendsQualified` that is not a qualified name; or an ancestor, at any depth of the provider chain, that a provider parent passes on from a third package installed in two different copies (the provider's and the root's, differing in path and in version or shipped manifest) | Import it by its exact name from the package that declares it, at the entry its manifest records; build that package with this version so its manifest exists; declare it as a dependency; install one copy of a duplicated package |
