@@ -110,6 +110,21 @@ describe('manifest-loader coverage', () => {
       const hit = lookupInManifest(collide, 'thing');
       expect(hit?.fields.extra).toBeDefined();
     });
+
+    it('matches the exact case first and another case only when unique', () => {
+      const cased = makeManifest('@acme/pkg', {
+        First: { className: 'Account', fields: { model: { type: 'text' } } },
+        Second: { className: 'ACCOUNT', fields: { helper: { type: 'text' } } },
+      });
+      expect(lookupInManifest(cased, 'Account')?.fields.model).toBeDefined();
+      expect(lookupInManifest(cased, 'ACCOUNT')?.fields.helper).toBeDefined();
+      expect(
+        lookupInManifest(cased, '@acme/pkg:ACCOUNT')?.fields.helper,
+      ).toBeDefined();
+      // Two classes share the name in another case: neither stands in.
+      expect(lookupInManifest(cased, 'account')).toBeUndefined();
+      expect(lookupInManifest(cased, '@acme/pkg:AcCount')).toBeUndefined();
+    });
   });
 
   describe('findManifestEntryByQualifiedName', () => {

@@ -924,10 +924,21 @@ export class ManifestGenerator {
           : `${packageName} resolves to no package there`,
       };
     }
+    // A JavaScript export name is exact: an entry found under another case
+    // (`ACCOUNT` for the model `Account`) is a different binding, maybe a
+    // plain helper the manifest does not list, so it confirms nothing.
+    const found = lookupInManifest(dependency, qualified) as
+      | SmartObjectDefinition
+      | undefined;
+    const exactly =
+      found &&
+      (found.className === exportName ||
+        found.exportName === exportName ||
+        found.decoratorConfig?.name === exportName)
+        ? found
+        : undefined;
     const definition =
-      (lookupInManifest(dependency, qualified) as
-        | SmartObjectDefinition
-        | undefined) ??
+      exactly ??
       (options.byExportName
         ? (Object.values(dependency.objects).find(
             (entry) =>

@@ -199,6 +199,27 @@ describe('the entry a package parent is imported from', () => {
     });
   });
 
+  it('fails for a parent whose export name matches a provider model only in another case', async () => {
+    const root = await project({
+      providers: {
+        [VENDOR]: {
+          files: {
+            'src/Account.ts': `${CORE}\n@smrt({ tableStrategy: 'sti', tableName: 'vendor_accounts', api: false })\nexport class Account extends SmrtObject {\n  secret = '';\n}\n`,
+            'src/helpers.ts': `export class ACCOUNT {\n  label = '';\n}\n`,
+          },
+        },
+      },
+      app: {
+        'src/Child.ts': `${CORE}\nimport { ACCOUNT } from '${VENDOR}';\n@smrt()\nexport class Child extends ACCOUNT {}\n`,
+      },
+    });
+
+    await expect(build(root)).rejects.toMatchObject({
+      code: 'CONFIG_UNRESOLVED_IMPORTED_PARENT',
+      message: expect.stringContaining('does not declare ACCOUNT'),
+    });
+  });
+
   it('fails for a class imported from a package that only re-exports it, naming the declaring package', async () => {
     const root = await project({
       providers: {

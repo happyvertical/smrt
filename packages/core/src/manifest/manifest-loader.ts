@@ -279,6 +279,49 @@ function getClassNameIndex(
   return index;
 }
 
+/** Per manifest: lowercase class name -> the distinct exact class names. */
+const caseVariantsCache = new WeakMap<
+  SmartObjectManifest,
+  Map<string, Set<string>>
+>();
+
+/**
+ * The entry for class name `name`: an exact match first; a match that
+ * differs only in case only when it is the one class of that name in any
+ * case. Two classes whose names differ only in case (`Account` and
+ * `ACCOUNT`) are different JavaScript bindings, so neither stands in for
+ * the other.
+ */
+function lookupByClassName(
+  manifest: SmartObjectManifest,
+  name: string,
+): SmartObjectDefinition | undefined {
+  let variants = caseVariantsCache.get(manifest);
+  if (!variants) {
+    variants = new Map();
+    for (const [key, entry] of Object.entries(manifest.objects)) {
+      const exact = entry.className || key;
+      const lower = exact.toLowerCase();
+      const set = variants.get(lower) ?? new Set<string>();
+      set.add(exact);
+      variants.set(lower, set);
+    }
+    caseVariantsCache.set(manifest, variants);
+  }
+  const lower = name.toLowerCase();
+  const names = variants.get(lower);
+  if (!names) return undefined;
+  if (names.size === 1) return getClassNameIndex(manifest).get(lower);
+  if (!names.has(name)) return undefined;
+  const exact = Object.entries(manifest.objects)
+    .filter(([key, entry]) => (entry.className || key) === name)
+    .map(([, entry]) => entry);
+  // Issue #950 among same-named entries: a child that extends its namesake wins.
+  return (
+    exact.find((entry) => entry.extends?.split(':').at(-1) === name) ?? exact[0]
+  );
+}
+
 /**
  * Test-environment detection with optional DEBUG_TEST_ENV logging.
  *
@@ -1289,17 +1332,15 @@ export function lookupInManifest(
     return manifest.objects[nameOrQualified];
   }
 
-  // 2. Get the className index for O(1) lookups (instead of O(n) iteration)
-  // This is the key optimization for issue #729
-  const classNameIndex = getClassNameIndex(manifest);
-
-  // 3. If input is a qualified name, extract className and use index. The
-  // package half of a qualified name is identity, not decoration: a simple-
-  // name hit that belongs to a DIFFERENT package is a different class (both
-  // smrt-ledgers and smrt-messages declare `Account`, #3098), so it is a miss.
+  // 2-3. If input is a qualified name, extract className and use the index
+  // (#729). The package half of a qualified name is identity, not
+  // decoration: a simple-name hit that belongs to a DIFFERENT package is a
+  // different class (both smrt-ledgers and smrt-messages declare `Account`,
+  // #3098), so it is a miss. The class name matches exactly, or in another
+  // case only when no other class shares it in any case.
   if (isQualifiedName(nameOrQualified)) {
     const { className, packageName } = parseQualifiedName(nameOrQualified);
-    const entry = classNameIndex.get(className.toLowerCase());
+    const entry = lookupByClassName(manifest, className);
     const entryPackage = entry?.packageName ?? manifest.packageName;
     return entryPackage && entryPackage !== packageName ? undefined : entry;
   }
@@ -1315,8 +1356,9 @@ export function lookupInManifest(
     }
   }
 
-  // 5. Use index for O(1) className lookup (instead of O(n) iteration)
-  return classNameIndex.get(nameOrQualified.toLowerCase());
+  // 5. Use index for O(1) className lookup (instead of O(n) iteration), by
+  // the same exact-first rule.
+  return lookupByClassName(manifest, nameOrQualified);
 }
 
 /**
