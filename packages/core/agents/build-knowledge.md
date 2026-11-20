@@ -82,14 +82,17 @@ every relationship target (`relatedQualified` + `relatedImportPath`) and report
 source (`sourceQualified` + `sourceImportPath`) the same way, inherited fields
 included: a field a provider parent contributes that names one of the
 provider's own models is given that identity. `related` / `source` become the
-declaring class. Because schema generation, `known()` and the runtime look a
+declaring class; a column written after the class name (`'Room.code'`) stays,
+so the constraint references that column. Because schema generation, `known()` and the runtime look a
 target up by simple name, a confirmed target whose simple name another class
 of this manifest, or of a dependency manifest those lookups read
 (`parentPackages`), also declares throws `CONFIG_AMBIGUOUS_RELATIONSHIP_TARGET`;
 an app class that extends the target and shares its table (a #4921
 replacement) is exempt. Foreign-key reconciliation takes a confirmed target's
 schema by identity (`qualifiedTargetSchema`), so the constraint keeps the
-provider's table, key column and declared `onDelete`. Every other target must
+provider's table, key column and declared `onDelete` (adding it to a deployed
+database: [upgrading](../../scanner/agents/static-config.md#upgrading-foreign-keys-to-another-packages-model),
+which lists the orphan-row check per constraint). Every other target must
 name a class of the manifest or a loadable dependency, or generation throws
 `CONFIG_UNKNOWN_RELATIONSHIP_TARGET` (`assertKnownTargets`; `@crossPackageRef`
 is checked at save time). Generating without a parent would give a

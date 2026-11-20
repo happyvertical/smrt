@@ -165,7 +165,7 @@ imports map or a bundler config, and no class is ever matched by name:
 | Form | Proof | Recorded as |
 | --- | --- | --- |
 | A class declared in the same file | the file's own declarations | its name |
-| A named or default import whose relative specifier selects a scanned file that declares the class and exports it under its own name (`export class X`, `export default class X`, `class X` + `export { X }`) | the file TypeScript selects: its candidate order (extension substitution, `.ts`/`.tsx`/`.d.ts`, directory `index`, then `.js`/`.jsx`, each with the project's `moduleSuffixes`), first file on disk | the declaring class's name (`import { Account as Owner }` gives `Account`) |
+| A named or default import whose relative specifier selects a scanned file that declares the class and exports it under its own name (`export class X`, `export default class X`, `class X` + `export { X }`) | the file TypeScript selects: its candidate order (extension substitution, `.ts`/`.tsx`/`.d.ts`, directory `index`, then `.js`/`.jsx`; within each extension every entry of the project's `moduleSuffixes`, so `['.ios', '']` tries `Base.ios.ts`, `Base.ts`, `Base.ios.tsx`, `Base.tsx`, ...), first file on disk | the declaring class's name (`import { Account as Owner }` gives `Account`) |
 | A framework base exported by `@happyvertical/smrt-core` (`SmrtReport`, `SmrtReportCollection` by `@happyvertical/smrt-reports`) | the package name; inside the framework package, its own sources | framework |
 | A named import or namespace member (`ns.X`, `ns['X']`) from `@scope/pkg` or `@scope/pkg/subpath`, where `@scope/pkg` is declared in `dependencies`, `peerDependencies`, `optionalDependencies` or `devDependencies` of the nearest `package.json` above the importing file and is not that package itself | the declaration; the copy the file loads is the copy the build root loads | `extendsQualified` / `relatedQualified` / `sourceQualified` / `extendsTypeArgQualified` = `@scope/pkg:X`, plus the full specifier (`extendsImportPath`, `relatedImportPath`, `sourceImportPath`, `extendsTypeArgImportPath`) |
 
@@ -177,9 +177,13 @@ non-relative specifier that is not a declared scoped package (a `paths`
 alias, a `baseUrl` import, `#imports`, an unscoped package); the package's own
 name; a package's default export; an unimported global (`SmrtObject` without
 its import is not the framework base); two installed copies of a package; a
-superclass written as anything but `X` / `ns.X` (`X as T`, `X!`, a call: a
+superclass written as anything but `X` / `ns.X` (`X as T`, `X!`, a call, a
+member of a class or other value such as `Base.Inner` or `Base['Inner']`: a
 TypeScript wrapper is looked through so an undecorated collection still
-reaches the manifest, and is then reported).
+reaches the manifest, and is then reported). A relationship target written as
+a class member in code (`Target.column`, `() => Target.column`) is an error
+too: the runtime decorator receives the property, not a class. A column is
+named with the string form `'Target.column'`.
 
 A model's chain must be made of models: an undecorated scanned class counts as
 one only when its own chain reaches a framework base (or a configured base)
@@ -200,7 +204,10 @@ including that the specifier is the entry the manifest records the class at
 (`importPath`); see [build-knowledge.md](../../core/agents/build-knowledge.md).
 On the provider side, every scan checks its own exports: an export named like
 one of the scan's models must be that model's own declaration, followed
-through the scan's relative re-exports. A rename, another class re-exported
+through the scan's relative re-exports the way ES modules resolve them: `export
+*` paths that reach the same declaration agree, a cycle of `export *` ends, and
+two paths reaching different classes leave the name ambiguous, which is an
+error. A rename, another class re-exported
 under the name, or a named re-export from another package is an error. A file
 that declares its own class of a model's name and exports it as itself is
 another class at another path and is allowed.
@@ -260,7 +267,8 @@ now stops the build. The message names the file, class and member.
 | ... from a file the scan does not read, a declaration file or JavaScript (TypeScript's first candidate on disk) | Add the file to the scan include, or move the class |
 | ... from a package of which two different copies are installed (the importing file's and the build root's) | Install one copy |
 | A default import from a package, or an unimported global named like a framework base | Import the class by its name (`import { SmrtObject } from '@happyvertical/smrt-core'`) |
-| A superclass written as anything but `X` or `ns.X` (`X as T`, `X!`, `X satisfies T`, `Mixin(X)`) | Write `extends X` |
+| A superclass written as anything but `X` or `ns.X` (`X as T`, `X!`, `X satisfies T`, `Mixin(X)`, `Base.Inner`, `Base['Inner']`) | Write `extends X`, importing the parent class by its name |
+| A relationship target written as a class member (`@foreignKey(Target.column)`, `() => Target.column`) | Name the class, or the column as a string: `@foreignKey('Target.column')` |
 | A model whose chain passes through a scanned class that is not a model (a plain class, or an undecorated class over another package's class) | Decorate it with `@smrt({ abstract: true })`, or extend the model directly |
 | A relationship target, report source or collection item that is a plain class, or a stand-in for another package | Reference the model class |
 | A static `_itemClass` naming another class than `SmrtCollection<Item>` | Name the same model in both |
@@ -270,4 +278,33 @@ now stops the build. The message names the file, class and member.
 | `CONFIG_AMBIGUOUS_RELATIONSHIP_TARGET`: a target or report source imported from another package whose simple name another class of this package, or of a dependency generation reads, also declares (an app class that extends it and shares its table excepted) | Rename one of the classes, or reference this package's class |
 | An empty `@foreignKey('')` target | Name the related model |
 | Hand-built `RawDecorator` text that is not a literal where a literal is required | Pass a string literal, or the options object where the decorator takes one |
-| `smrt-scan` with a target or parent from another package (a name qualified with another package included), or a target no scanned class declares | Build with `ManifestBuilder` or the Vite plugin, which read dependency manifests |
+| `smrt-scan` with a target, parent or collection item from another package (a name qualified with another package included), or a target no scanned class declares | Build with `ManifestBuilder` or the Vite plugin, which read dependency manifests |
+
+## Upgrading: foreign keys to another package's model
+
+A foreign key to another package's model, and one a child inherits from a
+provider's single-table class, now keeps its constraint (the provider's
+table, the referenced column, the declared `onDelete`); before, generation
+dropped it. A target written with a column (`'Room.code'`) keeps that column
+and the child column takes its type. The schema version and fingerprint of
+the affected models change, so a deployed database needs a migrate.
+
+`smrt db:migrate` adds each missing constraint once per physical table, even
+when several classes share that table. On PostgreSQL `ADD CONSTRAINT` checks
+every existing row (`db:migrate`'s orphan probe stops before it and prints a
+repair), and on SQLite and DuckDB the table is rebuilt with the constraint, so
+**adding a constraint to a table that has orphan rows fails**. Find and repair
+orphans first (`smrt db:orphans` counts them for every foreign key), then
+migrate. The constraints this release adds in this repository and its known
+consumers, with a check for each (each should return no rows):
+
+| Table and column | References | Who | Orphan check |
+| --- | --- | --- | --- |
+| `assets.folder_id` | `folders.id`, `NO ACTION` | `smrt-images` `Image`, the `smrt-video` asset classes (the `smrt-assets` schema of the shared `assets` table already declares it) | `SELECT a.id, a.folder_id FROM assets a LEFT JOIN folders f ON f.id = a.folder_id WHERE a.folder_id IS NOT NULL AND f.id IS NULL;` |
+| `work_orders.production_run_id` | `manufacturing_production_runs.id`, `RESTRICT` | apps/office `WorkOrder` | `SELECT w.id, w.production_run_id FROM work_orders w LEFT JOIN manufacturing_production_runs r ON r.id = w.production_run_id WHERE w.production_run_id IS NOT NULL AND r.id IS NULL;` |
+| `products.default_operation_id` | `manufacturing_operations.id`, `RESTRICT` | apps/office `ShopAssembly` (single-table child of `smrt-manufacturing`'s `Assembly`, whose schema already declares it) | `SELECT p.id, p.default_operation_id FROM products p LEFT JOIN manufacturing_operations o ON o.id = p.default_operation_id WHERE p.default_operation_id IS NOT NULL AND o.id IS NULL;` |
+
+Repair each orphan by pointing it at an existing row or setting the column to
+`NULL` (an empty string is an orphan too), then run `smrt db:migrate`. A
+`RESTRICT` constraint then also refuses deleting a referenced row; delete or
+reassign the referencing rows first.
