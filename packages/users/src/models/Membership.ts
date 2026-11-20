@@ -21,6 +21,7 @@ export interface MembershipOptions extends SmrtObjectOptions {
   tenantId?: string;
   roleId?: string;
   status?: MembershipStatus;
+  lastSelectedAt?: Date | string | number | null;
 }
 
 /**
@@ -87,12 +88,32 @@ export class Membership extends SmrtObject implements MembershipContract {
   })
   status: MembershipStatus = MembershipStatus.ACTIVE;
 
+  /**
+   * When the user last switched a session into this tenant (#5358). Server-side
+   * "resume where you left off" hint read by
+   * `SessionService.lastActiveTenantFor()`. It is a hint only and never grants
+   * access: the active-membership check still runs on every switch.
+   */
+  @field({
+    description:
+      'When this person last switched into this organization, used to resume it at sign-in.',
+    type: 'datetime',
+    nullable: true,
+  })
+  lastSelectedAt: Date | null = null;
+
   constructor(options: MembershipOptions = {}) {
     super(options);
     if (options.userId !== undefined) this.userId = options.userId;
     if (options.tenantId !== undefined) this.tenantId = options.tenantId;
     if (options.roleId !== undefined) this.roleId = options.roleId;
     if (options.status !== undefined) this.status = options.status;
+    if (options.lastSelectedAt != null) {
+      this.lastSelectedAt =
+        options.lastSelectedAt instanceof Date
+          ? options.lastSelectedAt
+          : new Date(options.lastSelectedAt);
+    }
   }
 
   /**

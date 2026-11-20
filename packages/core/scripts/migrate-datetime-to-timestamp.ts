@@ -39,6 +39,7 @@
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
+import { pathToFileURL } from 'node:url';
 
 interface MigrationOptions {
   databasePath: string;
@@ -535,7 +536,10 @@ Examples:
 }
 
 // Run if called directly
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (
+  process.argv[1] &&
+  import.meta.url === pathToFileURL(process.argv[1]).href
+) {
   main();
 }
 

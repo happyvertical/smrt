@@ -7,6 +7,7 @@
  * Run with: npm run generate:mcp
  */
 
+import { pathToFileURL } from 'node:url';
 import { MCPGenerator } from '@happyvertical/smrt-core/generators/mcp';
 
 /**
@@ -57,7 +58,10 @@ async function generateMCPServer() {
 }
 
 // Run if executed directly
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (
+  process.argv[1] &&
+  import.meta.url === pathToFileURL(process.argv[1]).href
+) {
   generateMCPServer().catch((error) => {
     console.error('❌ MCP server generation failed:', error);
     process.exit(1);

@@ -210,7 +210,7 @@ describe('generated client lists only operations the generated routes serve (#32
     const runtimeClient = generateClientModule(manifest);
     expect(runtimeClient).not.toContain('/smrtobjects');
     expect(runtimeClient).not.toContain('/smrtcollections');
-    expect(runtimeClient).toContain("'/orders/findOverdue'");
+    expect(runtimeClient).toContain('"/orders/findOverdue"');
 
     // Every client operation has the route file the route generator writes
     // from the same manifest.

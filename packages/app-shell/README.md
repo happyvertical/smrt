@@ -54,9 +54,12 @@ node build                          # start the server with the same exports
 smrt app open                       # opens the one-time /setup?token=... link; create the owner there
 ```
 
-`node build` alone never prints a setup link: the shell passes no
-`onBootstrapInvitation`, so the link comes from `smrt app setup` (it is saved in
-the app's state folder, not the data folder). If the link is lost, stop the
+`node build` alone never prints a setup link, but a first start on a fresh data
+folder (no owner yet) now saves the one-time link itself, so `smrt app start`
+then `smrt app open` lands on Create owner without `smrt app setup` (the server
+writes it to the app's state folder, 0600, only when none is saved or the saved
+one is older than the token's 10-minute life (a running server checks every minute and renews an expired, unclaimed link); the token is never logged and the claim removes it). The link is not
+in the data folder. If the link is lost, stop the
 server and run `smrt app recover` for a new one. Setup is loopback only and
 single use. Health: `GET /api/_runtime/health`.
 
@@ -356,7 +359,7 @@ skipped it is sent there once): **1. Connect your AI** (Use Claude Code,
 Sign in with ChatGPT, plus Advanced: the full inference setup at
 `/settings/inference`, which links back; Codex is an advanced option under
 Settings > Assistant, not on this page) and **2. How do you want to start?** (Fresh: an empty app with the
-assistant dock open; Wizard: shown, disabled, coming soon). Skippable. Finished
+assistant dock open; From a spreadsheet). Skippable. Finished
 or skipped is stored as `onboarding` in the `assistant` preference
 (`agent-cli/settings.ts`, the smrt-preferences store smrt-inference also uses;
 not a member of the `inference` payload, which the settings panel replaces whole,
@@ -504,9 +507,13 @@ gets no undo, apply or draft tool; its turn input says changes are collected.
   working copy's `plan` accepts, else the choice is dropped. Results are
   discarded when the batch generation moved on; the review is skipped (exact
   checks unaffected) when no assistant is connected; it runs on the owner's API
-  or ChatGPT engine as one tracked call, billed like other assistant use (the
-  local agent CLI engines are skipped). Stored in `ChangeCard.questions`
-  (alongside the comment thread; commands stay server-side). Answered
+  or ChatGPT engine as one tracked call, and on the local agent CLI engines
+  (`claude-code`, `codex`) as one parentless tool-free tracked turn through the
+  same no-tools MCP scope workbook planning uses (`createToollessCliDriver`),
+  billed like other assistant use on whatever engine is connected. Stored in
+  `ChangeCard.questions` (commands stay server-side); the comment thread has
+  its own `ChangeCard.comments` column (v0.62.14 kept comments inside
+  `questions`; those rows are still read and move on the next write). Answered
   questions are kept so they are not asked again. `POST
   /changes/questions/:id/answer {choice, generation?}` takes only a choice
   INDEX: a choice with a command becomes a NEW card (source `api`, so never

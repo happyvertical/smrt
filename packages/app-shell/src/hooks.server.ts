@@ -9,10 +9,18 @@ import { sequence } from '@sveltejs/kit/hooks';
 import { appsRestHandle } from '$lib/server/apps-rest';
 import { installChangeReview } from '$lib/server/change-review';
 import { shellImports } from '$lib/server/import-runtime';
+import {
+  ensureOwnerHandoff,
+  keepOwnerHandoffFresh,
+} from '$lib/server/owner-handoff';
 import { runtime } from '$lib/server/smrt';
 
 export const init = async () => {
   await runtime.ready();
+  // First start: leave the one-time owner link for `smrt app open` (#5165).
+  // Also renew a link an earlier boot or `smrt app setup` saved, while no owner has claimed it.
+  await ensureOwnerHandoff(runtime);
+  keepOwnerHandoffFresh(runtime);
   // The assistant's review of the changes waiting runs after the exact checks.
   installChangeReview();
   await shellImports().catch(() => {

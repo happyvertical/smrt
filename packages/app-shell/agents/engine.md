@@ -374,6 +374,13 @@ resolved in one query per target model, using titleField or first visible text.
 The server catalog's engine-tools adapter calls the same owner check and builder
 path; app_runreport names the records target, builder commands the structure target.
 
+Assistant `app_runreport` spells filter comparisons the grammar's way before
+parsing (`!=`, `<>`, `neq`, `not_equal` become `ne`; the advertised op list comes
+from `RUNTIME_REPORT_FILTER_OPS`). A rejected spec keeps its parser reason across
+the worker boundary (`reportError.reason`, `invalid_spec` only) so the model can
+correct it; the catalog's `report_failure.summary` is the owner's fixed plain
+sentence (`reportFailureForOwner`), `error` the model-facing detail (#5172).
+
 ## Atomic bulk loads (#4916)
 
 `loadRecords { model, rows, mode: 'insert'|'upsert', key?, references? }`

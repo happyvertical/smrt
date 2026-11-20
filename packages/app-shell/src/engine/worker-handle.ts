@@ -141,10 +141,16 @@ export class AppWorker {
     if (r.ok) p.resolve(r.value);
     else if (r.reportError) {
       // Loaded on the first report error only (#5214).
-      const { code, path } = r.reportError;
+      const { code, path, reason } = r.reportError;
       import('@happyvertical/smrt-reports').then(
         ({ RuntimeReportError }) =>
-          p.reject(new RuntimeReportError(code, path, 'Report could not run')),
+          p.reject(
+            new RuntimeReportError(
+              code,
+              path,
+              reason ?? 'Report could not run',
+            ),
+          ),
         (e) => p.reject(e as Error),
       );
     } else p.reject(new AppCallError(r.error, r.user));

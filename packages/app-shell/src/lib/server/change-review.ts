@@ -12,7 +12,19 @@
 //    owner's act (`answerReviewQuestion`) and makes a NEW card the owner still
 //    reviews and applies. Nothing in this file can apply, approve or undo, and
 //    questions never block Apply (`invariants.test.ts` pins both).
-// Skipped without a connected assistant (the exact checks still ran).
+// Skipped only without a connected assistant (the exact checks still ran).
+// It runs on whatever engine the owner connected, billed like other assistant
+// use: the API and ChatGPT engines as one tracked model call, the local agent
+// CLIs (`claude-code`, `codex`) as one parentless tool-free tracked turn whose
+// only MCP endpoint has no tools (`createToollessCliDriver`).
+import { readOriginFile } from '@happyvertical/smrt-app-runtime';
+import {
+  type AssistantTurnDriver,
+  runAssistantTurn,
+} from '@happyvertical/smrt-chat';
+import { createTrackedAiClient } from '@happyvertical/smrt-core';
+import { engineTierModel } from '@happyvertical/smrt-inference/server';
+import { definePrompt, resolvePrompt } from '@happyvertical/smrt-prompts';
 import type { AssistantEngineId } from '../assistant/events.ts';
 import { cliStatus } from './agent-cli/service.ts';
 import type { AssistantConfigOptions } from './assistant/config.ts';
@@ -30,7 +42,8 @@ import {
   setAfterChecks,
   setReviewQuestions,
 } from './changes.ts';
-import { getHost } from './host.ts';
+import { dataRoot, getHost, getShellDb } from './host.ts';
+import { createToollessCliDriver } from './import-assistant.ts';
 import { type Principal, runAs } from './owner.ts';
 
 /** Returns the model's raw text, or null when no assistant can review (skip). */
@@ -170,13 +183,112 @@ export async function reviewBatch(
 }
 
 /**
- * The production runner: the owner's connected API or ChatGPT engine, one
- * tool-free tracked call (billed like other assistant use). The local agent CLI
- * engines are skipped: they need an MCP endpoint to run at all.
+ * The review's registered prompt. The instructions travel as a variable so the
+ * JSON braces are not read as placeholders, and nothing is editable: an app or
+ * tenant override cannot loosen the data/instruction boundary.
+ */
+export const changeReviewPrompt = definePrompt({
+  key: 'app-shell.change-review',
+  ai: { profile: 'good' },
+  template: '{instructions}',
+  editable: { template: false, profile: false, model: false, params: false },
+});
+
+export interface CliReviewOptions {
+  /** Tests: a scripted external driver; production uses the shared tool-free CLI adapter. */
+  driver?: AssistantTurnDriver;
+  origin?: () => Promise<string | undefined>;
+  /** Tests: the CLI's detected status; production asks the real tool. */
+  cliStatus?: typeof cliStatus;
+}
+
+/**
+ * One parentless, tool-free turn on a local agent CLI engine. No workflow run,
+ * no tools, no approvals; the CLI reaches only the no-tools MCP scope. The turn
+ * is tracked (usage rows) like any assistant call.
+ */
+async function reviewOnCli(
+  engine: 'claude-code' | 'codex',
+  input: {
+    owner: Principal;
+    system: string;
+    user: string;
+    signal: AbortSignal;
+  },
+  options: CliReviewOptions,
+): Promise<string> {
+  const db = await getShellDb();
+  const prompt = await resolvePrompt(changeReviewPrompt.key, {
+    db,
+    tenantId: input.owner.tenantId,
+    variables: { instructions: input.system },
+  });
+  const model = engineTierModel({ engine, tier: 'good' });
+  const tracked = createTrackedAiClient({
+    db,
+    tenantId: input.owner.tenantId,
+    className: 'AppShellChangeReview',
+    transcript: false,
+    label: { provider: engine, ...(model ? { model } : {}) },
+  });
+  const driver =
+    options.driver ??
+    createToollessCliDriver({
+      tool: engine,
+      root: await dataRoot(),
+      origin:
+        options.origin ??
+        (async () => {
+          const { runtime } = await import('./smrt.ts');
+          return (await readOriginFile(runtime.applicationStateRoot()))?.origin;
+        }),
+      holder: 'change-review',
+      label: 'Changes review',
+    });
+  let failure: unknown;
+  const turn = runAssistantTurn({
+    turnDriver: driver,
+    principal: {
+      runAsUserId: input.owner.id,
+      tenantId: input.owner.tenantId,
+      allowedTools: [],
+    },
+    selection: { engine, tier: 'good', ...(model ? { model } : {}) },
+    signal: input.signal,
+    maxTokens: 1500,
+    tracking: { tracked, prompt },
+    db,
+    systemPrompt: prompt.text,
+    userMessage: input.user,
+    tools: [],
+    extraTools: [],
+    clientTools: [],
+    maxSteps: 1,
+    toolChoice: 'none',
+    onError: (error) => {
+      failure = error;
+    },
+  });
+  let result: Awaited<ReturnType<typeof turn.next>>;
+  do {
+    result = await turn.next();
+  } while (!result.done);
+  if (failure) throw failure;
+  input.signal.throwIfAborted();
+  if (!['stop', 'no_tools'].includes(result.value.stoppedReason))
+    throw new Error('The review turn did not finish.');
+  return result.value.content;
+}
+
+/**
+ * The production runner: the owner's connected engine, one tool-free tracked
+ * call (billed like other assistant use). Null (skip) only when no assistant
+ * is connected or the call fails.
  */
 export function productionReviewRunner(
   options: AssistantConfigOptions & {
     modelFactory?: AssistantModelFactory;
+    cli?: CliReviewOptions;
   } = {},
 ): ReviewRunner {
   const factory = options.modelFactory ?? createAiModelFactory(options);
@@ -184,12 +296,18 @@ export function productionReviewRunner(
     let engine: AssistantEngineId;
     try {
       engine = await assistantEngine(owner);
-      if (cliTool(engine)) return null;
       const status = await statusFor(engine, owner, {
         config: options,
-        cliStatus,
+        cliStatus: options.cli?.cliStatus ?? cliStatus,
       });
       if (!status.configured) return null;
+      const cli = cliTool(engine);
+      if (cli === 'claude-code' || cli === 'codex')
+        return await reviewOnCli(
+          cli,
+          { owner, system, user, signal },
+          options.cli ?? {},
+        );
       const model = await factory({ principal: owner, engine });
       const reply = await model.complete({
         messages: [

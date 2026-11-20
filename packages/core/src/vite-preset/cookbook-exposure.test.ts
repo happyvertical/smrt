@@ -11,7 +11,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { getDatabase } from '@happyvertical/sql';
 import { createServer, type Plugin } from 'vite';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { resolveCookbookHostedObjects } from './cookbook-exposure.js';
 import { smrt } from './index.js';
 
@@ -163,6 +163,39 @@ describe('cookbook-driven hosting of consumed package models (#3749)', () => {
         ref('Ledger'),
         ref('Order'),
       ]);
+    });
+
+    it('finds a consumed package installed in an ancestor node_modules', () => {
+      // A workspace app: the package is hoisted to the workspace root.
+      writeCookbook();
+      const app = join(root, 'apps', 'web');
+      mkdirSync(app, { recursive: true });
+      writeFileSync(
+        join(app, 'smrt.cookbook.json'),
+        readFileSync(join(root, 'smrt.cookbook.json'), 'utf-8'),
+      );
+      expect(resolveCookbookHostedObjects(app, [PKG])).toEqual([
+        ref('Invoice'),
+        ref('Ledger'),
+        ref('Order'),
+      ]);
+    });
+
+    it('warns naming a consumed package with no readable manifest', () => {
+      writeCookbook();
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      try {
+        expect(
+          resolveCookbookHostedObjects(root, [PKG, '@test/not-installed']),
+        ).toEqual([ref('Invoice'), ref('Ledger'), ref('Order')]);
+        expect(
+          warn.mock.calls.some((call) =>
+            call.some((arg) => String(arg).includes('@test/not-installed')),
+          ),
+        ).toBe(true);
+      } finally {
+        warn.mockRestore();
+      }
     });
 
     it('fails loudly on an invalid cookbook', () => {

@@ -7,7 +7,15 @@ export { smrtAssetUrlCompatibility } from './asset-url-compatibility.js';
 
 import { existsSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
-import { dirname, join, resolve } from 'node:path';
+import {
+  basename,
+  dirname,
+  isAbsolute,
+  join,
+  relative,
+  resolve,
+  sep,
+} from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type {
   DomainKnowledgeAgentSurface,
@@ -17,6 +25,7 @@ import type {
 import { mergeRetiredTables } from '../migrations/retired-tables.js';
 import { tryComputeManifestSchemaFingerprint } from '../migrations/schema-fingerprint.js';
 import type {
+  SmrtDevModule,
   SmrtDevServer,
   SmrtResolvedConfig,
   SmrtVitePlugin,
@@ -43,6 +52,7 @@ import {
   assertPackageRelativeFilePaths,
   relativizeManifestFilePaths,
 } from '../manifest/file-paths.js';
+import { retainInstalledCarriedEntries } from '../manifest/installed-package-manifest.js';
 import {
   createObjectDeclarationIndex,
   selectObjectDeclarations,
@@ -72,15 +82,18 @@ import {
   GENERATED_CLIENT_CRUD_METHODS,
   generateClientModule,
 } from './generated-client.js';
+import { assertSvelteKitObjectRoutesValid } from './generated-route-preflight.js';
 import {
   assertNoHostToolNameCollisions,
   type HostToolNameDeclaration,
 } from './host-tool-names.js';
 import { importBuildAwareModule } from './import-build-aware.js';
 import { injectPackageStamps, packageStampText } from './package-stamp.js';
+import { AUTO_GENERATED_ROUTE_HEADER } from './route-header.js';
 import {
   findCliApiCoherenceViolations,
   generateSvelteKitRoutes,
+  knowledgeRoutePath,
   validateCliIncludeAgainstApi,
 } from './sveltekit-generator.js';
 import { injectSvelteKitRegistration } from './sveltekit-register-injection.js';
@@ -277,6 +290,125 @@ const VIRTUAL_MODULES = {
   '@happyvertical/smrt-virt-ui': 'smrt:ui',
   '@happyvertical/smrt-virt-web': 'smrt:web',
 };
+
+/**
+ * Ids under which Vite's module graph records the virtual modules: the
+ * resolved id `resolveId` returns, which carries the `\0` prefix.
+ */
+const RESOLVED_VIRTUAL_MODULE_IDS = [
+  ...Object.values(VIRTUAL_MODULES),
+  'smrt:index-html',
+].map((id) => `\0${id}`);
+
+type WatchEventKind = 'change' | 'add' | 'unlink';
+
+const WATCH_EVENT_LABELS: Record<
+  WatchEventKind,
+  { cause: string; failure: string }
+> = {
+  change: { cause: 'change in', failure: 'change in' },
+  add: { cause: 'new file', failure: 'adding' },
+  unlink: { cause: 'removed file', failure: 'removing' },
+};
+
+function toPosixPath(path: string): string {
+  return sep === '/' ? path : path.split(sep).join('/');
+}
+
+function isInsideDirectory(directory: string, file: string): boolean {
+  const relativePath = relative(directory, file);
+  return (
+    relativePath !== '' &&
+    relativePath !== '..' &&
+    !relativePath.startsWith(`..${sep}`) &&
+    !isAbsolute(relativePath)
+  );
+}
+
+/** A watched file as the project-relative POSIX path the include globs use. */
+function toProjectGlobPath(projectRoot: string, absoluteFile: string): string {
+  return toPosixPath(relative(projectRoot, absoluteFile));
+}
+
+/**
+ * An include/exclude glob in the same project-relative form. A pattern
+ * written as an absolute path under the project root is made relative, and a
+ * leading `./` is dropped, so both spellings match what the scanner scans.
+ */
+function toProjectGlobPattern(projectRoot: string, pattern: string): string {
+  const slashed = pattern.replaceAll('\\', '/');
+  const root = toPosixPath(projectRoot).replace(/\/+$/, '');
+  if (slashed === root) return '.';
+  if (slashed.startsWith(`${root}/`)) return slashed.slice(root.length + 1);
+  return slashed.replace(/^(?:\.\/)+/, '');
+}
+
+/**
+ * Module-graph operations the watcher uses, narrowed privately from the Vite
+ * dev server at run time. The exported `SmrtDevServer` hook type stays as
+ * published; these members are only read when Vite provides them.
+ */
+interface DevModuleGraph {
+  getModuleById(id: string): SmrtDevModule | undefined;
+  invalidateModule?(
+    module: SmrtDevModule,
+    seen?: Set<SmrtDevModule>,
+    timestamp?: number,
+    isHmr?: boolean,
+  ): void;
+}
+
+/** A hot channel that can tell its clients (browser or module runner) to reload. */
+interface DevHotChannel {
+  send(payload: { type: 'full-reload'; path?: string }): void;
+}
+
+/** The parts of a Vite dev server the virtual-module invalidation reads. */
+interface InvalidatingDevServer {
+  environments?: Record<
+    string,
+    { moduleGraph?: DevModuleGraph; hot?: DevHotChannel }
+  >;
+  moduleGraph: DevModuleGraph;
+  ws?: DevHotChannel;
+}
+
+/**
+ * Drop every loaded SMRT virtual module so its next import is generated from
+ * the current manifest. Each Vite 6+ environment (client and SSR) keeps its
+ * own graph; its hot channel then tells the browser or module runner to
+ * reload. `reloadModule` cannot be used: it skips modules without a file,
+ * which every virtual module is.
+ */
+function invalidateVirtualModules(server: SmrtDevServer): void {
+  const devServer = server as unknown as InvalidatingDevServer;
+  const timestamp = Date.now();
+  const invalidateIn = (graph: DevModuleGraph | undefined): boolean => {
+    let invalidated = false;
+    for (const id of RESOLVED_VIRTUAL_MODULE_IDS) {
+      const module = graph?.getModuleById(id);
+      if (!module) continue;
+      graph?.invalidateModule?.(module, new Set(), timestamp, true);
+      invalidated = true;
+    }
+    return invalidated;
+  };
+
+  const environments = Object.values(devServer.environments ?? {}).filter(
+    (environment) => environment.moduleGraph,
+  );
+  if (environments.length > 0) {
+    for (const environment of environments) {
+      if (invalidateIn(environment.moduleGraph)) {
+        environment.hot?.send({ type: 'full-reload', path: '*' });
+      }
+    }
+    return;
+  }
+  if (invalidateIn(devServer.moduleGraph)) {
+    devServer.ws?.send({ type: 'full-reload', path: '*' });
+  }
+}
 
 /**
  * Project a scanner agent surface into the knowledge-artifact shape (#2591).
@@ -610,10 +742,10 @@ function readManifestDependencies(
  *
  * The local scan is authoritative for the objects it owns — a deleted local
  * object must disappear from the file — so only entries owned by another
- * package are carried forward, and a local entry wins any key collision. As
- * with the consumer plugin's merge, `.smrt/` is a build cache: dropping a
- * package from `smrtConsumer()` leaves its stale entries until the directory
- * is removed and the project rebuilt.
+ * package are carried forward, and a local entry wins any key collision. A
+ * carried entry is dropped once its provider is no longer installed, no
+ * longer declares it, or is installed at another version than it records
+ * (#5035).
  *
  * `smrtDependencies` is merged the same way and for the same reason. The
  * consumer writer owns that list too — `aggregateTypeManifests()` seeds it
@@ -660,12 +792,19 @@ function mergeExternalManifestEntries(
     localPackageNames.add(existing.packageName);
   }
 
-  const preserved: SmartObjectManifest['objects'] = {};
+  const carried: SmartObjectManifest['objects'] = {};
   for (const [name, entry] of Object.entries(existing.objects)) {
     if (!isLocallyOwnedManifestEntry(entry, localPackageNames)) {
-      preserved[name] = entry;
+      carried[name] = entry;
     }
   }
+  // A carried entry survives only while its provider is installed, declares
+  // it and has its recorded version: otherwise a model removed from a
+  // consumed package would stay in the file schema commands read (#5035).
+  const preserved = retainInstalledCarriedEntries(
+    carried,
+    dirname(dirname(manifestPath)),
+  ).retained;
 
   const scannedDependencies = new Set(readManifestDependencies(manifest));
   const mergedDependencies = new Set([
@@ -819,6 +958,10 @@ export function smrtPlugin(
    */
   let agentSurface: DomainKnowledgeAgentSurface | undefined;
   let activeManifestScan: Promise<SmartObjectManifest> | undefined;
+  /** The last watcher rescan scheduled, running or waiting. */
+  let watchedRescanTail: Promise<void> = Promise.resolve();
+  /** The watcher rescan that has not started yet, if any. */
+  let queuedWatchedRescan: Promise<void> | undefined;
   let activeBuildStart: Promise<void> | undefined;
   let pluginMode: 'server' | 'client' = 'server';
   let projectRoot: string = process.cwd();
@@ -830,6 +973,8 @@ export function smrtPlugin(
   let routeLifecycleConfig: object | undefined;
   let routeExpectedOwners: Array<'producer' | 'consumer'> = ['producer'];
   let workerRegistrationBuilt = false;
+  /** Knowledge handler path of the last route generation (watcher guard). */
+  let generatedKnowledgeRoute: string | undefined;
 
   async function generateConfiguredSvelteKitRoutes(
     rootDir: string,
@@ -848,6 +993,9 @@ export function smrtPlugin(
       resourcesRoute: svelteKit.resourcesRoute,
       knowledge: await resolveKnowledgeConfig(rootDir, currentManifest),
     };
+    generatedKnowledgeRoute = resolve(
+      knowledgeRoutePath(rootDir, routeOptions),
+    );
     if (routeLifecycleConfig) {
       await contributeSvelteKitRoutes(
         routeLifecycleConfig,
@@ -862,6 +1010,13 @@ export function smrtPlugin(
       );
       return;
     }
+    // Validate every object's routes before generation sweeps the route tree.
+    assertSvelteKitObjectRoutesValid(
+      rootDir,
+      currentManifest,
+      currentManifest,
+      routeOptions,
+    );
     await generateSvelteKitRoutes(rootDir, currentManifest, routeOptions);
   }
 
@@ -1364,94 +1519,13 @@ export function smrtPlugin(
 
       // Set up file watching in all modes when enabled
       if (watch && hmr && !generationSnapshot) {
-        // Watch for file changes
-        const watcher = devServer.watcher;
-
         // Guard each watcher handler: scanAndGenerateManifest re-throws on a
         // mid-edit scan error, and an unhandled rejection in a watcher callback
         // can crash the dev server. Log and keep the previous manifest (#1378).
-        watcher.on('change', async (file) => {
-          try {
-            if (await shouldRescan(file)) {
-              console.log(`[smrt] Rescanning due to change in ${file}`);
-              manifest = await scanAndGenerateManifest(projectRoot);
-
-              // Write local manifest for CLI discovery (Issue #963)
-              if (manifest) {
-                await writeLocalManifest(manifest, projectRoot);
-                warnCliApiCoherenceViolations(manifest);
-              }
-
-              // Generate SvelteKit routes if enabled
-              if (svelteKit.enabled && manifest && server) {
-                await generateConfiguredSvelteKitRoutes(projectRoot, manifest);
-              }
-
-              // Invalidate virtual modules
-              Object.values(VIRTUAL_MODULES).forEach((id) => {
-                const module = server?.moduleGraph.getModuleById(id);
-                if (module) {
-                  server?.reloadModule(module);
-                }
-              });
-            }
-          } catch (error) {
-            console.error(
-              `[smrt] Failed to rescan after change in ${file}:`,
-              error,
-            );
-          }
-        });
-
-        watcher.on('add', async (file) => {
-          try {
-            if (await shouldRescan(file)) {
-              console.log(`[smrt] Rescanning due to new file ${file}`);
-              manifest = await scanAndGenerateManifest(projectRoot);
-
-              // Write local manifest for CLI discovery (Issue #963)
-              if (manifest) {
-                await writeLocalManifest(manifest, projectRoot);
-                warnCliApiCoherenceViolations(manifest);
-              }
-
-              // Generate SvelteKit routes if enabled
-              if (svelteKit.enabled && manifest && server) {
-                await generateConfiguredSvelteKitRoutes(projectRoot, manifest);
-              }
-            }
-          } catch (error) {
-            console.error(
-              `[smrt] Failed to rescan after adding ${file}:`,
-              error,
-            );
-          }
-        });
-
-        watcher.on('unlink', async (file) => {
-          try {
-            if (await shouldRescan(file)) {
-              console.log(`[smrt] Rescanning due to removed file ${file}`);
-              manifest = await scanAndGenerateManifest(projectRoot);
-
-              // Write local manifest for CLI discovery (Issue #963)
-              if (manifest) {
-                await writeLocalManifest(manifest, projectRoot);
-                warnCliApiCoherenceViolations(manifest);
-              }
-
-              // Generate SvelteKit routes if enabled
-              if (svelteKit.enabled && manifest && server) {
-                await generateConfiguredSvelteKitRoutes(projectRoot, manifest);
-              }
-            }
-          } catch (error) {
-            console.error(
-              `[smrt] Failed to rescan after removing ${file}:`,
-              error,
-            );
-          }
-        });
+        // The handler resolves once the rescan it triggered has finished.
+        for (const kind of ['change', 'add', 'unlink'] as const) {
+          devServer.watcher.on(kind, (file) => handleWatchEvent(kind, file));
+        }
       }
     },
 
@@ -1904,6 +1978,74 @@ export function smrtPlugin(
     }
   }
 
+  /**
+   * Handle one dev-server watcher event. Vite's watcher reports absolute
+   * paths; the include/exclude globs are project-relative, so matching works
+   * on the path relative to the project root.
+   */
+  async function handleWatchEvent(
+    kind: WatchEventKind,
+    file: string,
+  ): Promise<void> {
+    const labels = WATCH_EVENT_LABELS[kind];
+    try {
+      if (!(await shouldRescan(file))) return;
+      console.log(`[smrt] Rescanning due to ${labels.cause} ${file}`);
+      await scheduleWatchedRescan();
+    } catch (error) {
+      console.error(
+        `[smrt] Failed to rescan after ${labels.failure} ${file}:`,
+        error,
+      );
+    }
+  }
+
+  /**
+   * Run watcher rescans one at a time. At most one rescan runs and one waits:
+   * events that arrive while a rescan waits join it, and events that arrive
+   * while one runs queue the waiting one, which starts after the running one
+   * finishes and so scans the latest sources. An older scan can therefore
+   * never finish after a newer one and overwrite its manifest or routes.
+   * The returned promise settles when the rescan that covers the event does.
+   */
+  function scheduleWatchedRescan(): Promise<void> {
+    if (queuedWatchedRescan) return queuedWatchedRescan;
+    const queued = watchedRescanTail
+      .catch(() => {})
+      .then(() => {
+        queuedWatchedRescan = undefined;
+        return rescanAfterWatchEvent();
+      });
+    queuedWatchedRescan = queued;
+    watchedRescanTail = queued;
+    return queued;
+  }
+
+  /**
+   * Rescan, publish the manifest, regenerate routes, and drop every loaded
+   * virtual module so the next import is generated from the new manifest.
+   * A scan failure throws before anything is replaced, so the previous
+   * manifest stays in place (#1378).
+   */
+  async function rescanAfterWatchEvent(): Promise<void> {
+    // The initial build owns the manifest until it has published it.
+    await activeBuildStart?.catch(() => {});
+    const next = await scanAndGenerateManifest(projectRoot);
+    manifest = next;
+    try {
+      // Write local manifest for CLI discovery (Issue #963)
+      await writeLocalManifest(next, projectRoot);
+      warnCliApiCoherenceViolations(next);
+
+      // Generate SvelteKit routes if enabled
+      if (svelteKit.enabled && server) {
+        await generateConfiguredSvelteKitRoutes(projectRoot, next);
+      }
+    } finally {
+      if (server) invalidateVirtualModules(server);
+    }
+  }
+
   async function shouldRescan(file: string): Promise<boolean> {
     // Only rescan in server mode
     if (pluginMode === 'client') {
@@ -1911,15 +2053,64 @@ export function smrtPlugin(
     }
 
     try {
-      // Conditionally import minimatch
       const { minimatch } = await import('minimatch');
+      const absoluteFile = resolve(projectRoot, file);
+      if (isGeneratedDevOutput(absoluteFile)) return false;
+      const projectPath = toProjectGlobPath(projectRoot, absoluteFile);
+      const matches = (pattern: string) =>
+        minimatch(projectPath, toProjectGlobPattern(projectRoot, pattern), {
+          dot: true,
+        });
 
-      const isIncluded = include.some((pattern) => minimatch(file, pattern));
-      const isExcluded = exclude.some((pattern) => minimatch(file, pattern));
-
-      return isIncluded && !isExcluded;
+      return include.some(matches) && !exclude.some(matches);
     } catch (error) {
       console.warn('[smrt] Error checking file patterns:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Files the plugin itself writes during a rescan. They can sit under the
+   * include globs (`src/**`), and rescanning on them would loop: every
+   * regeneration rewrites them.
+   */
+  function isGeneratedDevOutput(absoluteFile: string): boolean {
+    const typesFile = resolve(
+      projectRoot,
+      typeDeclarationsPath,
+      'virtual-modules.d.ts',
+    );
+    if (absoluteFile === typesFile) return true;
+    if (!svelteKit.enabled) return false;
+    const configDir = resolve(
+      projectRoot,
+      svelteKit.configPath || 'src/lib/server',
+    );
+    if (absoluteFile === join(configDir, 'smrt-register.ts')) return true;
+    const routesRoot = resolve(
+      projectRoot,
+      svelteKit.routesDir || 'src/routes/api',
+    );
+    const name = basename(absoluteFile);
+    if (
+      (name === '+server.ts' || name === '+server.js') &&
+      isInsideDirectory(routesRoot, absoluteFile)
+    ) {
+      return true;
+    }
+    // The knowledge route sits outside routesDir (`/__smrt/knowledge` by
+    // default). Generation clears it before rewriting it, and the unlink of a
+    // file that is gone cannot be recognised by its header. Its path is the
+    // one the last generation used: resolving the knowledge config here would
+    // evaluate the project's config file on every watcher event.
+    if (generatedKnowledgeRoute && absoluteFile === generatedKnowledgeRoute) {
+      return true;
+    }
+    try {
+      return readFileSync(absoluteFile, 'utf-8').startsWith(
+        AUTO_GENERATED_ROUTE_HEADER,
+      );
+    } catch {
       return false;
     }
   }

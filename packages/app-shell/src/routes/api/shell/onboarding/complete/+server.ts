@@ -1,6 +1,6 @@
 /**
  * `POST /api/shell/onboarding/complete` { start: 'fresh' } -> { onboarding }.
- * 409 until the assistant is ready; `wizard` is 400 (coming soon). Owner only.
+ * 409 until the assistant is ready; any other `start` is 400. Owner only.
  */
 import { onboardingRoutes } from '$lib/server/onboarding';
 import type { RequestHandler } from './$types';

@@ -1,5 +1,6 @@
 import { existsSync, lstatSync, readdirSync, readFileSync, realpathSync } from 'node:fs';
 import { relative, resolve, sep } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import Ajv2020 from 'ajv/dist/2020.js';
 
 export const PLUGIN_SCHEMA_ID =
@@ -128,7 +129,10 @@ function assertContained(root, candidate, label) {
   }
 }
 
-if (process.argv[1] === new URL(import.meta.url).pathname) {
+if (
+  process.argv[1] &&
+  import.meta.url === pathToFileURL(process.argv[1]).href
+) {
   validateAgentPlugin(resolve(process.argv[2] ?? '.'));
   console.log('Agent Plugins 1.0.0 configuration validated offline');
 }

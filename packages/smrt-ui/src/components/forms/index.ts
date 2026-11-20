@@ -140,6 +140,10 @@ export {
 // Form retry (#3291): also published Svelte-free at `@happyvertical/smrt-ui/form-retry`.
 export * from './form-retry/index.js';
 export {
+  type FormValidationHandle,
+  validateBeforeSubmit,
+} from './form-validation.js';
+export {
   canCaptureHandsFree,
   type HandsFreeCapture,
   type HandsFreeCaptureFactory,
@@ -176,6 +180,7 @@ export {
   textToMinorUnits,
   validateEntry as validateKeypadEntry,
 } from './numeric-keypad-logic.js';
+export { default as PasswordInput } from './PasswordInput.svelte';
 export { default as ProvinceSelect } from './ProvinceSelect.svelte';
 export { default as Radio } from './Radio.svelte';
 export { default as RadioGroup } from './RadioGroup.svelte';

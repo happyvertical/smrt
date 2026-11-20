@@ -121,6 +121,15 @@ check events keep only code/path/message. A refused plan is distinct from an
 unavailable engine and retries the retained upload without a settings detour.
 Unrepresentable formulas map as plain cached-value columns; review lists them
 under “Formulas not translated”. A proposed translation still must pass proof.
+Whole results (#5168): the engine types a product with a decimal operand
+(Hours × Rate) as decimal, which an integer/money column refuses, so
+`createEngineImportTarget` stores `floor(x + 0.5)` (the proof's own rounding;
+`round(x, 0)` is not doubled) and a plain `=A*B` imports as planned. A calculation
+that cannot be built or fails proof falls back to its saved values (`savedValueFallback`:
+the field becomes a plain column on its `cachedColumn`, listed under “Formulas not
+translated”) and the load repeats; only when no calculation is left to fall back
+is the import discarded, with a message naming the failing finding or calculation.
+Regression: `src/engine/import-hours-rate.test.ts`.
 
 Shell host event wiring formats every changed summary through the same label-based
 formatter as History, with both the before and after definitions (including removed

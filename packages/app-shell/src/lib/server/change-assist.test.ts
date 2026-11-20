@@ -38,11 +38,13 @@ import {
 import {
   type AfterChecksInfo,
   answerReviewQuestion,
+  beginCardComment,
   changesState,
   discardChanges,
   flushChecks,
   reviseChangeCard,
   setAfterChecks,
+  setReviewQuestions,
 } from './changes.ts';
 import { setChatGPTConnection } from './chatgpt.ts';
 import { getHost, getShellDb } from './host.ts';
@@ -504,6 +506,69 @@ describe('comment-to-revise', () => {
     ).toContain('could not');
   });
 
+  it('comments live in their own column; a v0.62.14 row that kept them in questions is still read and moves on the next write', async () => {
+    const { cardId } = await addField('legacycomment');
+    const db = await getShellDb();
+    const legacy = {
+      kind: 'comment',
+      role: 'owner',
+      text: 'older comment',
+      at: new Date(0).toISOString(),
+      state: 'done',
+    };
+    await db.query(
+      'UPDATE change_cards SET questions = ?, comments = ? WHERE id = ?',
+      JSON.stringify([legacy]),
+      '[]',
+      cardId,
+    );
+    expect(
+      (await state()).cards.find((c) => c.id === cardId)?.comments,
+    ).toEqual([legacy]);
+    await asOwner(() => beginCardComment(cardId, 'new comment'));
+    const row = (
+      await db.query(
+        'SELECT questions, comments FROM change_cards WHERE id = ?',
+        cardId,
+      )
+    ).rows[0] as { questions: string; comments: string };
+    expect(JSON.parse(row.questions)).toEqual([]);
+    expect(
+      JSON.parse(row.comments).map((c: { text: string }) => c.text),
+    ).toEqual(['older comment', 'new comment']);
+  });
+
+  it('a question-only write keeps v0.62.14 comments that still sit in questions', async () => {
+    const { cardId } = await addField('legacyquestion');
+    const db = await getShellDb();
+    const legacy = {
+      kind: 'comment',
+      role: 'owner',
+      text: 'keep me',
+      at: new Date(0).toISOString(),
+      state: 'done',
+    };
+    await db.query(
+      'UPDATE change_cards SET questions = ?, comments = ? WHERE id = ?',
+      JSON.stringify([legacy]),
+      '[]',
+      cardId,
+    );
+    const s = await state();
+    await asOwner(() =>
+      setReviewQuestions(s.batchId as string, s.generation, [
+        { cardId, text: 'Sure?', choices: [{ label: 'Yes' }] },
+      ]),
+    );
+    const view = (await state()).cards.find((c) => c.id === cardId);
+    expect(view?.comments).toEqual([legacy]);
+    expect(view?.questions).toHaveLength(1);
+    const row = (
+      await db.query('SELECT questions FROM change_cards WHERE id = ?', cardId)
+    ).rows[0] as { questions: string };
+    expect(row.questions).not.toContain('keep me');
+  });
+
   it('refuses a comment without a connected assistant, or without text, before anything is recorded', async () => {
     const { cardId } = await addField('noai');
     const routes = mountAssistantRoutes({
@@ -666,6 +731,90 @@ describe('review questions', () => {
       });
       expect(await run(input())).toBeNull();
       expect(built).toBe(0);
+    });
+
+    describe.each([
+      'claude-code',
+      'codex',
+    ] as const)('on the %s CLI engine', (engine) => {
+      const status = (ready: boolean) => async () =>
+        ({
+          tool: engine,
+          label: engine,
+          installed: ready,
+          signedIn: ready,
+          installUrl: 'https://example.test',
+          ready,
+        }) as never;
+
+      it('runs ONE parentless tool-free tracked turn through the no-tools driver', async () => {
+        await asSettingsOwner(h.owner, () =>
+          assistantSettings().write({ engine }),
+        );
+        const seen: { tools: number; allowed: string[]; user: string }[] = [];
+        let built = 0;
+        const run = productionReviewRunner({
+          modelFactory: async () => {
+            built++;
+            return scripted([() => say('{}')]).model;
+          },
+          cli: {
+            cliStatus: status(true),
+            driver: {
+              async run(context, callbacks) {
+                seen.push({
+                  tools: context.tools.length + context.extraTools.length,
+                  allowed: [...(context.principal.allowedTools ?? [])],
+                  user: context.userMessage,
+                });
+                callbacks.done({
+                  text: '{"questions":[]}',
+                  execution: {
+                    engine,
+                    toolCalls: 0,
+                    durationMs: 1,
+                    tokens: 10,
+                    inputTokens: 5,
+                    outputTokens: 5,
+                  },
+                });
+              },
+            },
+          },
+        });
+        expect(await run(input())).toBe('{"questions":[]}');
+        expect(built).toBe(0); // not the API/ChatGPT model path
+        expect(seen).toEqual([{ tools: 0, allowed: [], user: 'u' }]);
+        // billed like other assistant use: one tracked turn run, no parent
+        const rows = (
+          await (
+            await getShellDb()
+          ).query(
+            'SELECT provider FROM _smrt_ai_usage WHERE provider = ?',
+            engine,
+          )
+        ).rows;
+        expect(rows.length).toBeGreaterThanOrEqual(1);
+      });
+
+      it('is skipped (null) only when that CLI is not connected', async () => {
+        await asSettingsOwner(h.owner, () =>
+          assistantSettings().write({ engine }),
+        );
+        let ran = 0;
+        const run = productionReviewRunner({
+          cli: {
+            cliStatus: status(false),
+            driver: {
+              async run() {
+                ran++;
+              },
+            },
+          },
+        });
+        expect(await run(input())).toBeNull();
+        expect(ran).toBe(0);
+      });
     });
 
     it('makes ONE tool-free call on the connected engine and returns its text', async () => {

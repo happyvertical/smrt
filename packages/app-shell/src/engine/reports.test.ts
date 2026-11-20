@@ -337,3 +337,29 @@ it('retains money/date dimension formats and the compiler bucket metadata', asyn
   expect(result.columns.find((c) => c.id === 'day')?.format).toBe('date');
   expect(result.columns.find((c) => c.id === 'month')?.format).toBeUndefined();
 });
+
+it('fills every column of a top-N count by a linked record, with a cell for each header (#5172)', async () => {
+  const result = await host.runReport(
+    spec({
+      title: 'Top customers',
+      dimensions: [{ field: 'customer', as: 'customer' }],
+      measures: [
+        { fn: 'count', as: 'order_count' },
+        { fn: 'sum', field: 'total', as: 'revenue' },
+      ],
+      sort: [{ by: 'order_count', direction: 'desc' }],
+      limit: 1,
+    }),
+  );
+  expect(result.columns.map((c) => c.id)).toEqual([
+    'customer',
+    'order_count',
+    'revenue',
+  ]);
+  for (const row of result.rows)
+    for (const column of result.columns) {
+      expect(Object.hasOwn(row, column.id)).toBe(true);
+      expect(reportCell(row[column.id], column, row)).not.toBe('');
+    }
+  expect(result.rows[0].order_count).toBe(3);
+});

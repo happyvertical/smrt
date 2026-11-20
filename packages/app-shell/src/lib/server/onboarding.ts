@@ -15,7 +15,7 @@ import { mountConnectAiRoutes } from '@happyvertical/smrt-svelte/connect-ai/serv
 //   POST /api/shell/onboarding/chatgpt    { action: 'start' | 'sign-out' |
 //                                         'model', model? }
 //        start -> { result: 'login_started', opened, authorizationUrl? }
-//   POST /api/shell/onboarding/complete   { start: 'fresh' | 'wizard' }
+//   POST /api/shell/onboarding/complete   { start: 'fresh' }
 //   POST /api/shell/onboarding/skip       -> { onboarding: 'skipped' }
 //
 // Sign in with ChatGPT (a preview for open source apps) opens OpenAI's own page:
@@ -287,8 +287,6 @@ export function mountOnboardingRoutes(
     complete: guarded(async (event) => {
       const owner = await ownerOf(event);
       const body = await readJson(event.request);
-      if (body.start === 'wizard')
-        throw new HttpError(400, 'The project wizard is coming soon.');
       if (body.start !== 'fresh') throw new HttpError(400, 'unknown start');
       const settings = await asSettingsOwner(owner, () =>
         assistantSettings().read(),

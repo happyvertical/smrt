@@ -23,6 +23,7 @@ import { ENGINE_TOOLS, isEngineTool, runEngineTool } from './engine-tools.ts';
 import { getShellDb, hostFor, shellDbSync } from './host.ts';
 import { HttpError } from './http.ts';
 import { runAs } from './owner.ts';
+import { reportFailureForOwner } from './report-display.ts';
 import {
   type CallScope,
   LIVE_SCOPE,
@@ -338,7 +339,7 @@ async function dispatchInner(
             // Both assistant engines retain it as an error, not a report result.
             const value = {
               kind: 'report_failure',
-              summary: error.message,
+              summary: reportFailureForOwner(error.message),
               error: error.message,
             };
             return {

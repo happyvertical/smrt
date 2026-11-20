@@ -46,6 +46,63 @@ export interface ImportAssistantOptions {
   driver?: AssistantTurnDriver;
 }
 
+/**
+ * A local agent CLI driver for ONE tool-free turn: the only MCP endpoint it is
+ * offered is `/mcp?scope=import-plan`, which has no tools (every call denied),
+ * under a one-use `assistant.use` token. Shared by workbook planning and the
+ * changes-waiting review; neither can reach any tool, approval or apply.
+ */
+export function createToollessCliDriver(input: {
+  tool: 'claude-code' | 'codex';
+  root: string;
+  origin: () => Promise<string | undefined>;
+  agent?: AgentEngineDeps;
+  /** Prefix of the per-attempt token holder (at most 80 characters in all). */
+  holder: string;
+  label: string;
+}): AssistantTurnDriver {
+  return createAgentCliTurnDriver({
+    tool: input.tool,
+    async bind() {
+      const origin = await input.origin();
+      if (!origin) throw new Error('The local app origin is unavailable');
+      const agent = input.agent ?? productionAgent();
+      // A distinct holder per attempt: a late old worker cannot revoke
+      // the new attempt's token. The only MCP endpoint offered has NO tools.
+      const deps = input.agent
+        ? agent
+        : {
+            ...agent,
+            credentials: tokenCredentials(
+              async () => {
+                const { runtime } = await import('./smrt.ts');
+                return (await runtime.localRuntime()).mcpTokens;
+              },
+              {
+                // One UUID already isolates this attempt from every other worker.
+                holder: `${input.holder}-${crypto.randomUUID()}`,
+                scopes: ['assistant.use'],
+                label: input.label,
+              },
+            ),
+            stateDir: async () => join(input.root, 'agent-cli'),
+          };
+      return {
+        mcpUrl: new URL('/mcp?scope=import-plan', origin).href,
+        deps,
+        outputSchema: undefined,
+        // The caller validates the JSON itself. Native schema modes must not
+        // replace the plain JSON response.
+        allowTool: () => false,
+        approvals: {
+          subscribe: () => () => {},
+          get: async () => null,
+        },
+      };
+    },
+  });
+}
+
 /** Host binding only: no model loop, accounting, tool execution or persistence here. */
 export function createImportAssistant(
   options: ImportAssistantOptions & {
@@ -134,47 +191,13 @@ export function createImportAssistant(
       const turnDriver =
         engine === 'claude-code' || engine === 'codex'
           ? (options.driver ??
-            createAgentCliTurnDriver({
+            createToollessCliDriver({
               tool: engine,
-              async bind() {
-                const origin = (await options.origin?.()) ?? input.origin;
-                if (!origin)
-                  throw new Error('The local app origin is unavailable');
-                const agent = options.agent ?? productionAgent();
-                // A distinct holder per attempt: a late old worker cannot revoke
-                // the new attempt's token. The only MCP endpoint offered has NO tools.
-                const deps = options.agent
-                  ? agent
-                  : {
-                      ...agent,
-                      credentials: tokenCredentials(
-                        async () => {
-                          const { runtime } = await import('./smrt.ts');
-                          return (await runtime.localRuntime()).mcpTokens;
-                        },
-                        {
-                          // Token holders accept at most 80 characters. One UUID
-                          // already isolates this attempt from every other worker.
-                          holder: `import-plan-${crypto.randomUUID()}`,
-                          scopes: ['assistant.use'],
-                          label: 'Workbook planning',
-                        },
-                      ),
-                      stateDir: async () => join(options.root, 'agent-cli'),
-                    };
-                return {
-                  mcpUrl: new URL('/mcp?scope=import-plan', origin).href,
-                  deps,
-                  outputSchema: undefined,
-                  // ImportPlan schema is validated by the workflow. In particular,
-                  // native schema modes must not replace the plain JSON response.
-                  allowTool: () => false,
-                  approvals: {
-                    subscribe: () => () => {},
-                    get: async () => null,
-                  },
-                };
-              },
+              root: options.root,
+              origin: async () => (await options.origin?.()) ?? input.origin,
+              agent: options.agent,
+              holder: 'import-plan',
+              label: 'Workbook planning',
             }))
           : undefined;
       return runWorkflowStepTurn({

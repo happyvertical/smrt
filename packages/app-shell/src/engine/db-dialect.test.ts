@@ -93,11 +93,28 @@ describe.each(['sqlite', 'postgres'] as const)('column types on %s', (kind) => {
   });
 });
 
+// Per field type, through the real engine path (removeField, then undo), with
+// the stored column read RAW before and after (SQLite: typeof + quote(); PostgreSQL:
+// the value cast to text), not through hydration. `date` is the one date/time
+// field type: it is DATETIME on SQLite (ISO text) and TIMESTAMPTZ on PostgreSQL,
+// so one case holds a date-only value and one a full UTC timestamp.
+const ROUND_TRIP: Array<[string, Record<string, unknown>, unknown[]]> = [
+  ['date', { type: 'date' }, ['2026-01-05', '2026-11-20T12:34:56.000Z']],
+  ['boolean', { type: 'boolean' }, [true, false]],
+  ['integer', { type: 'integer' }, [5, -7]],
+  ['number', { type: 'number' }, [1.5, 0.1]],
+  ['money', { type: 'money' }, [12345, 1]],
+  ['json', { type: 'json' }, [{ k: [1, 2], s: 'x' }, { a: null }]],
+  ['text', { type: 'text' }, ['n', ' padded ']],
+];
+
 describe.each([
   'sqlite',
   'postgres',
 ] as const)('archive round trip on %s', (kind) => {
-  it('removeField then undo restores date, boolean, json, integer and number values exactly', async () => {
+  it.each(
+    ROUND_TRIP,
+  )('removeField then undo restores %s values byte-identically', async (type, def, values) => {
     const dir = mkdtempSync(join(tmpdir(), 'engine-archive-'));
     dirs.push(dir);
     const pg = kind === 'postgres' ? await harnessDatabase(dir) : null;
@@ -107,35 +124,46 @@ describe.each([
       database: pg ? pg.config : { kind: 'sqlite' },
     });
     hosts.push(host);
-    const fields = {
-      when: { type: 'date' },
-      done: { type: 'boolean' },
-      meta: { type: 'json' },
-      count: { type: 'integer' },
-      price: { type: 'number' },
-      note: { type: 'text' },
-    } as const;
     await host.execute(
-      { type: 'defineModel', name: 'Keep', fields: { ...fields } as never },
+      {
+        type: 'defineModel',
+        name: 'Keep',
+        fields: { label: { type: 'text' }, value: def } as never,
+      },
       { author: 't' },
     );
-    await host.create('Keep', {
-      when: '2026-01-05',
-      done: true,
-      meta: { k: [1, 2] },
-      count: 5,
-      price: 1.5,
-      note: 'n',
-    });
-    const before = (await host.list('Keep'))[0];
-    for (const field of Object.keys(fields)) {
-      await host.execute(
-        { type: 'removeField', model: 'Keep', field },
-        { author: 't', approved: true },
-      );
-    }
-    for (let i = 0; i < Object.keys(fields).length; i++)
-      await host.execute({ type: 'undo' }, { author: 't', approved: true });
-    expect((await host.list('Keep'))[0]).toEqual(before);
+    for (const [i, v] of values.entries())
+      await host.create('Keep', { label: `r${i}`, value: v });
+    const raw = async (): Promise<unknown[]> => {
+      if (pg && pg.config.kind === 'pglite') {
+        const c = pg.config.client;
+        return c.transaction(async (tx) => {
+          await tx.query(`SELECT set_config('search_path', 'app', true)`);
+          return (
+            await tx.query(
+              `SELECT label, CAST("value" AS TEXT) AS v FROM u_keeps ORDER BY label`,
+            )
+          ).rows;
+        });
+      }
+      const db = new DatabaseSync(join(dir, 'app.db'), { readOnly: true });
+      try {
+        return db
+          .prepare(
+            `SELECT label, typeof("value") AS t, quote("value") AS v FROM u_keeps ORDER BY label`,
+          )
+          .all();
+      } finally {
+        db.close();
+      }
+    };
+    const before = await raw();
+    expect(before).toHaveLength(values.length);
+    await host.execute(
+      { type: 'removeField', model: 'Keep', field: 'value' },
+      { author: 't', approved: true },
+    );
+    await host.execute({ type: 'undo' }, { author: 't', approved: true });
+    expect(await raw(), type).toEqual(before);
   });
 });

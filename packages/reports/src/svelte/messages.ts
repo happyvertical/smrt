@@ -67,7 +67,7 @@ export const M = defineMessages({
   'reports.author': 'Author',
   'reports.last_run': 'Last run: {time}',
   'reports.never_run': 'No recent run',
-  'reports.truncated': 'Showing a bounded sample; more rows are available.',
+  'reports.truncated': 'Showing only the first rows; there are more.',
   'reports.yes': 'Yes',
   'reports.no': 'No',
   'reports.select_report': 'Report',

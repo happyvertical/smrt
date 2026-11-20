@@ -2339,6 +2339,12 @@ function buildLayoutStyle(shell: ModuleShellState): string {
     min-width: 0;
     padding-block-start: var(--smrt-spacing-2);
     overflow: visible;
+    /* One column on one centre line: mic, chat and account icons (inline
+    wrappers of different widths) must not sit on their own baselines. */
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--smrt-spacing-1);
   }
   .smrt-admin-shell__edge--right[data-state='expanded']
   .smrt-admin-shell__rail {

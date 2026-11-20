@@ -58,6 +58,50 @@ function expression(node: unknown, fields: Record<string, string>): unknown {
 }
 
 /**
+ * Money and integer columns hold whole numbers, but a product with a decimal
+ * operand (Hours x Rate) types as decimal. Store the nearest whole minor unit
+ * (floor(x + 0.5), the proof's own Math.round) so a plain `=A*B` imports
+ * without the plan naming any rounding. The proof still compares the result
+ * with the workbook's saved value, so a wrong rounding is never silent.
+ */
+function wholeResult(
+  calculated: GeneratedExpression,
+  field: FieldDef,
+  fields: Record<string, FieldDef>,
+): GeneratedExpression {
+  if (field.type !== 'integer' && field.type !== 'money') return calculated;
+  const probe = {
+    ...EMPTY_APP,
+    models: {
+      Probe: {
+        fields: {
+          ...Object.fromEntries(
+            Object.entries(fields).filter(
+              ([, fd]) => !fd.calculated && fd.type !== 'reference',
+            ),
+          ),
+          probe: { ...field, calculated },
+        },
+      },
+    },
+  };
+  if (!validate(probe).some((e) => e.includes('decimal is incompatible')))
+    return calculated;
+  const node = calculated as unknown as {
+    op?: string;
+    value?: unknown;
+    digits?: { value?: unknown };
+  };
+  // round(x, 0) is the same operation; do not round twice.
+  const inner =
+    node.op === 'round' && node.digits?.value === 0 ? node.value : calculated;
+  return {
+    op: 'floor',
+    value: { op: 'add', left: inner, right: { value: 0.5 } },
+  } as unknown as GeneratedExpression;
+}
+
+/**
  * Where an import's engine commands go. The shell hands one in so every
  * command also becomes part of the changes waiting (a card per table); the
  * engine stays free of shell code. `table` is the plan key the command belongs
@@ -160,10 +204,17 @@ export function createEngineImportTarget(
             ...(f.reference ? { ref: modelName(f.reference.table) } : {}),
             ...(f.calculated !== undefined
               ? {
-                  calculated: expression(
-                    f.calculated,
-                    names.tables[t.key].fields,
-                  ) as GeneratedExpression,
+                  calculated: wholeResult(
+                    expression(
+                      f.calculated,
+                      names.tables[t.key].fields,
+                    ) as GeneratedExpression,
+                    {
+                      type: f.type,
+                      ...(f.money ? { money: { ...f.money } } : {}),
+                    } as FieldDef,
+                    fields,
+                  ),
                 }
               : {}),
           };

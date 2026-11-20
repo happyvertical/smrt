@@ -66,6 +66,32 @@ pnpm add @happyvertical/smrt-ui
 - `FormActionBar` (`/forms`) groups a form's actions (primary last). On phones
   it is fixed to the bottom, carries `data-form-action-bar` so AdminShell hides
   its phone bottom bar, and hides while `:root[data-keyboard-open]`.
+- `PasswordInput` (`/forms`) is a password field with a "Show password"
+  checkbox (never submitted; 44px, 48px under a coarse pointer) and an optional
+  `confirm` field. A mismatch sets the confirm field's custom validity to
+  "Passwords do not match" (`mismatchMessage`); the confirm field has no `name`
+  unless you pass `confirmName`, so it is not posted under the password's name.
+- `validateBeforeSubmit` (`/forms`; also `<Form validate>`) validates before
+  submit without taking over the POST (no `fetch`; a valid submit is untouched).
+  Each invalid field shows its reason (browser `validationMessage` or the
+  custom one) next to it with `aria-invalid` and `aria-describedby`, once
+  touched or after a submit attempt. Submit buttons carry
+  `aria-disabled="true"` while the form is invalid; a click or Enter is blocked,
+  reveals every reason and focuses the first invalid field. `novalidate` is set
+  only once attached, so without JavaScript native validation applies. Opt out a
+  field with `data-smrt-skip-validation`.
+
+  ```svelte
+  <script>
+    import { PasswordInput, validateBeforeSubmit } from '@happyvertical/smrt-ui/forms';
+  </script>
+  <form method="POST" action="?/register" use:validateBeforeSubmit>
+    <input name="email" type="email" required />
+    <PasswordInput name="password" confirm required minlength={8} />
+    <button type="submit">Create account</button>
+  </form>
+  ```
+
 - `swipeDismiss` / `swipeDismisses` (`/feedback`) are the touch action and pure
   decision behind swipe-to-close.
 - `Dictation` / `DictationButton` / `DictationStatus` (`/forms`) let people
