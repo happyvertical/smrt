@@ -462,12 +462,12 @@ export class APIGenerator {
    */
   private readonly familyAdmission = new WeakMap<
     Request,
-    (key: string) => boolean
+    Map<string, (key: string) => boolean>
   >();
   private segmentIndex:
     | { generation: number; entries: Map<string, CollectionSegmentEntry> }
     | undefined;
-  /** The tenancy each admitted request resolved; see `resolveTenancy()`. */
+  /** The tenancy each admitted CRUD request resolved; see `tenancyOf()`. */
   private readonly requestTenancies = new WeakMap<Request, RequestTenancy>();
 
   constructor(config: APIConfig = {}, context: APIContext = {}) {
@@ -875,12 +875,13 @@ export class APIGenerator {
         );
       }
       const read = req.method === 'GET' || req.method === 'HEAD';
-      await this.settleFamilyAdmission(req, objectName);
+      await this.settleFamilyAdmission(req, objectName, read);
       const tenancy = await this.resolveTenancy(
         req,
         objectName,
         read ? (objectId && objectId !== 'count' ? 'get' : 'list') : req.method,
       );
+      this.requestTenancies.set(req, tenancy);
       authenticated = tenancy.actor.authenticated;
       return await withResolvedTenancy(tenancy, () =>
         this.routeCrudOperation(req, collection, objectId, url, objectName),
@@ -902,11 +903,13 @@ export class APIGenerator {
   }
 
   /**
-   * Resolve the tenancy of a request on `objectName` (#5375): the actor from
-   * the request's settled tenant, the STI members this route serves for the
-   * operation, and the policy of each. Resolved once per request and kept
-   * for the handlers' decisions.
+   * Resolve the tenancy of an operation on `objectName` (#5375): the actor
+   * from the tenant the host settled for the admitted request (asked once
+   * per request object, see `requestTenant()`), the STI members this route
+   * serves for the operation, and the policy of each.
    *
+   * @param req - The request the auth middleware returned: never a copy, so
+   *   the host's answer is the one it gave for that request
    * @param operation - The family operation of a read, or the HTTP method of
    *   a write (`POST`, `PUT`, `PATCH`, `DELETE`)
    */
@@ -915,8 +918,6 @@ export class APIGenerator {
     objectName: string,
     operation: FamilyRowOperation | string,
   ): Promise<RequestTenancy> {
-    const settled = this.requestTenancies.get(req);
-    if (settled && settled.model === objectName) return settled;
     const tenant = await this.requestTenant(req);
     const write = operation !== 'list' && operation !== 'get';
     const actor = resolveRequestActor({
@@ -927,7 +928,7 @@ export class APIGenerator {
       },
       operation: write ? 'write' : 'read',
     });
-    const admits = this.familyAdmission.get(req);
+    const admits = this.familyAdmission.get(req)?.get(objectName);
     const servedFor = (op: FamilyRowOperation) =>
       servedFamilyTypes(objectName, 'api', op, this.modelScope, admits);
     let served: string[] | undefined;
@@ -956,7 +957,6 @@ export class APIGenerator {
       ...(served ? { served: served.filter((key) => key !== objectName) } : {}),
       actor,
     });
-    this.requestTenancies.set(req, tenancy);
     return tenancy;
   }
 
@@ -1061,16 +1061,17 @@ export class APIGenerator {
    * allowed to read the subtype itself -- its `authMiddleware` decision under
    * its own name, or its `api.public` when no middleware is configured. A
    * write's row is authorized under its own model by `authorizeRowModel`.
-   * Settled once per request, before any read is scoped.
+   * Settled once per admitted request and route model, before any read is
+   * scoped (a sync batch's items share the request but not the model).
    */
   private async settleFamilyAdmission(
     req: Request,
     objectName: string,
+    read: boolean,
   ): Promise<void> {
-    if (this.familyAdmission.has(req)) return;
+    if (this.familyAdmission.get(req)?.has(objectName)) return;
     if (ObjectRegistry.getTableStrategy(objectName) !== 'sti') return;
     if (ObjectRegistry.getDescendants(objectName).length === 0) return;
-    const read = req.method === 'GET' || req.method === 'HEAD';
     // Only members this server could serve for the request are put to the
     // host's exposure gate and middleware: a subtype outside its model list,
     // or one that opens none of the operations, is never served, and a host
@@ -1106,7 +1107,12 @@ export class APIGenerator {
       }
       admitted.add(key);
     }
-    this.familyAdmission.set(req, (key) => admitted.has(key));
+    let byModel = this.familyAdmission.get(req);
+    if (!byModel) {
+      byModel = new Map();
+      this.familyAdmission.set(req, byModel);
+    }
+    byModel.set(objectName, (key) => admitted.has(key));
   }
 
   /**
@@ -2181,12 +2187,12 @@ export class APIGenerator {
         }
         let authenticated = requestTenant.authenticated;
         try {
+          // The actor is the one the host settled for the request its
+          // middleware admitted (the exposure gate above read the same
+          // answer); the item's operation is passed on its own.
+          await this.settleFamilyAdmission(admitted, resolvedName, false);
           const tenancy = await this.resolveTenancy(
-            new Request(admitted.url, {
-              method:
-                op === 'create' ? 'POST' : op === 'update' ? 'PUT' : 'DELETE',
-              headers: admitted.headers,
-            }),
+            admitted,
             resolvedName,
             op === 'create' ? 'POST' : op === 'update' ? 'PUT' : 'DELETE',
           );
