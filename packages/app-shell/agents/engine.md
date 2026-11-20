@@ -235,7 +235,7 @@ ratios, not Linux targets; at 1 worker the host's own share is included), at
   `keepNames` also stops the bundler renaming a colliding class); `libsql`
   (native, so a direct dependency here), DuckDB, and `quickjs-emscripten` (its
   `.wasm` sits beside its glue code) stay external and resolve from the
-  package, so the bundle must stay inside `dist/`. The whole engine suite runs
+  package, so the bundle must stay inside the package. The whole engine suite runs
   on it: `pnpm test:bundled-worker`. First wake (open, define, create, list):
   about 390 ms unbundled, 237 ms bundled. `NODE_COMPILE_CACHE`: bundled warm
   wake 237 -> 195 ms for +2-5 MiB per worker. Decision: set it for HOSTED
