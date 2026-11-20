@@ -648,6 +648,13 @@ export interface AiOperationOptions extends AITextCompletionOptions {
 /** See {@link AiOperationOptions.toolUse}. */
 export type AiToolUse = 'required' | 'optional';
 
+/** Text-cast result columns a grouped junction upsert returns for correlation. */
+const STORED_ID_ALIAS = '_smrt_stored_id';
+const STORED_KEY_ALIAS = '_smrt_stored_key_';
+/** A UUID in any letter case (a native UUID column returns it lower-case). */
+const UUID_TEXT =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 /** Tag value recorded when `is()` / `evaluate()` ask for a text verdict. */
 const JSON_TEXT_FALLBACK = 'json→text';
 /** Tag value recorded when optional tools are dropped. */
@@ -3087,6 +3094,15 @@ export class SmrtObject extends SmrtClass {
     const ownershipUncovered = [...ownershipColumns].some(
       (column) => columns.includes(column) && !conflict.includes(column),
     );
+    // After the upsert each stored row is matched to its input by conflict
+    // key, compared as the database's own text form of the value. That is
+    // exact only for text and integer keys; any other key type (a date, a
+    // boolean, a decimal, JSON) takes the per-item path before anything is
+    // written, instead of risking a wrong or missed match.
+    const textCorrelatable = (value: unknown) =>
+      typeof value === 'string' ||
+      typeof value === 'bigint' ||
+      (typeof value === 'number' && Number.isSafeInteger(value));
     if (
       ownershipUncovered ||
       columns.length * added.length > 900 ||
@@ -3095,7 +3111,8 @@ export class SmrtObject extends SmrtClass {
           entry.writePlan.type !== 'upsert' ||
           JSON.stringify(Object.keys(entry.data)) !== JSON.stringify(columns) ||
           JSON.stringify(entry.conflictColumns) !== JSON.stringify(conflict) ||
-          conflict.some((key) => entry.data[key] == null)
+          conflict.some((key) => entry.data[key] == null) ||
+          conflict.some((key) => !textCorrelatable(entry.data[key]))
         )
           return true;
         const identity = JSON.stringify(conflict.map((key) => entry.data[key]));
@@ -3277,7 +3294,14 @@ export class SmrtObject extends SmrtClass {
         )
         .map((column) => `${quote(column)} = excluded.${quote(column)}`)
         .join(', ');
-      const sql = `INSERT INTO ${quote(first.tableName)} (${columns.map(quote).join(', ')}) VALUES ${tuples.join(', ')} ON CONFLICT (${conflict.map(quote).join(', ')}) DO UPDATE SET ${updates} RETURNING *`;
+      const sql = `INSERT INTO ${quote(first.tableName)} (${columns.map(quote).join(', ')}) VALUES ${tuples.join(', ')} ON CONFLICT (${conflict.map(quote).join(', ')}) DO UPDATE SET ${updates} RETURNING *, ${[
+        `CAST(${quote('id')} AS VARCHAR) AS ${quote(STORED_ID_ALIAS)}`,
+        ...conflict.map(
+          (column, index) =>
+            `CAST(${quote(column)} AS VARCHAR) AS ${quote(`${STORED_KEY_ALIAS}${index}`)}`,
+        ),
+      ].join(', ')}`;
+      let storedRows: Array<Record<string, unknown>> = [];
       await ErrorUtils.withRetry(
         async () => {
           try {
@@ -3286,6 +3310,7 @@ export class SmrtObject extends SmrtClass {
               isEmbeddedDatabase(first.db),
               async (db) => {
                 const { rows } = await db.query(sql, ...values);
+                storedRows = rows;
                 const tracked = rows.find(
                   (row) => row._sync_origin_device_id != null,
                 );
@@ -3296,8 +3321,9 @@ export class SmrtObject extends SmrtClass {
                     'smrt: tracked junction conflict aborted the caller transaction',
                   );
                 }
+                const trackedId = tracked[STORED_ID_ALIAS];
                 throw first.trackedIdentityWriteError(
-                  typeof tracked.id === 'string' ? tracked.id : undefined,
+                  typeof trackedId === 'string' ? trackedId : undefined,
                 );
               },
               duck,
@@ -3312,6 +3338,62 @@ export class SmrtObject extends SmrtClass {
         3,
         500,
       );
+      // A concurrent writer can commit an item's natural key between the probe
+      // and the upsert; the upsert then updated that stored row and the
+      // proposed id never existed. Correlate each returned row with its input
+      // by conflict key and adopt the stored id before completion, so hooks,
+      // interceptors and the change feed name the row that is in the table
+      // (and record an update, not a create, for a row that already existed).
+      // Keys compare exactly as the database stores them (case-sensitive text,
+      // integers in their text form); the only folding is a UUID's letter case
+      // on engines with a native UUID type, which returns it canonical. Ids
+      // and keys are read from text casts in the statement, so a native
+      // DuckDB UUID is a string here too. Nothing is adopted unless every
+      // input matches exactly one returned row and no two inputs share one.
+      const foldsUuidCase = engine === 'postgres' || engine === 'duckdb';
+      const keyText = (value: unknown) => {
+        const text = String(value);
+        return foldsUuidCase && UUID_TEXT.test(text)
+          ? text.toLowerCase()
+          : text;
+      };
+      const storedByKey = new Map<string, Record<string, unknown> | null>();
+      for (const row of storedRows) {
+        const key = JSON.stringify(
+          conflict.map((_, index) =>
+            keyText(row[`${STORED_KEY_ALIAS}${index}`]),
+          ),
+        );
+        // A key returned twice cannot name one row: mark it unusable.
+        storedByKey.set(key, storedByKey.has(key) ? null : row);
+      }
+      const matches = prepared.map(({ data }) =>
+        storedByKey.get(
+          JSON.stringify(conflict.map((column) => keyText(data[column]))),
+        ),
+      );
+      const oneToOne =
+        storedRows.length === added.length &&
+        matches.every(
+          (row) => row != null && typeof row[STORED_ID_ALIAS] === 'string',
+        ) &&
+        new Set(matches).size === matches.length;
+      for (let i = 0; oneToOne && i < added.length; i++) {
+        const storedId = matches[i]?.[STORED_ID_ALIAS] as string;
+        if (
+          first.normalizeSyncRowId(storedId) !==
+          first.normalizeSyncRowId(String(added[i].id))
+        ) {
+          added[i].id = storedId;
+          const context = prepared[i].interceptorContext;
+          // The upsert wrote the stored row, not the id prepareSave bound.
+          rebindChangeFeedWriteRowId(context, storedId);
+          context.metadata = {
+            ...context.metadata,
+            [CHANGE_FEED_WAS_PERSISTED_KEY]: true,
+          };
+        }
+      }
       const completions: BulkMutationEntry[] = [];
       for (let i = 0; i < added.length; i++) {
         await added[i].completeSave(prepared[i].interceptorContext, false);
