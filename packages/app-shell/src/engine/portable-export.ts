@@ -18,11 +18,9 @@ import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, renameSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { openAppDatabase } from './app-runtime.ts';
-import {
-  type DatabaseKind,
-  requireSnapshots as requireSqliteHost0,
-} from './db/index.ts';
+import { requireSnapshots as requireSqliteHost0 } from './db/index.ts';
 import * as sqlite from './db/sqlite.ts';
+import type { DatabaseKind } from './db/types.ts';
 
 /** Export and import read and write an `app.db` file: a host on another database must not use them. */
 const requireSqliteHost = (
