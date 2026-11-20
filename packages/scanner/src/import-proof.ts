@@ -362,51 +362,41 @@ export class ImportProver {
     const base = resolvePath(dirname(fromFile), specifier);
     const suffixes = this.moduleSuffixes(fromFile);
     const candidates: string[] = [];
-    const jsExtension = /\.(m|c)?jsx?$/.exec(base);
-    if (/\.d\.[mc]?ts$/.test(base) || /\.[mc]?tsx?$/.test(base)) {
-      candidates.push(base);
-    } else if (jsExtension) {
-      const stem = base.slice(0, -jsExtension[0].length);
-      const replacements =
-        jsExtension[1] === 'm'
-          ? ['.mts', '.d.mts']
-          : jsExtension[1] === 'c'
-            ? ['.cts', '.d.cts']
-            : jsExtension[0] === '.jsx'
-              ? ['.tsx', '.d.ts']
-              : ['.ts', '.tsx', '.d.ts'];
-      for (const suffix of suffixes) {
-        for (const extension of replacements) {
+    // TypeScript tries each extension in turn and, within one extension,
+    // each module suffix (`Base.ios.ts`, `Base.ts`, `Base.ios.tsx`, ...).
+    const add = (stem: string, extensions: readonly string[]) => {
+      for (const extension of extensions) {
+        for (const suffix of suffixes) {
           candidates.push(`${stem}${suffix}${extension}`);
         }
       }
-      candidates.push(base);
+    };
+    const written = /(\.d)?\.([mc]?)([tj])s(x?)$/.exec(base);
+    if (written) {
+      // An explicit extension: TypeScript strips it and tries the
+      // extensions that may stand behind it, in this order.
+      const stem = base.slice(0, -written[0].length);
+      const [, , flavour, , jsx] = written;
+      add(
+        stem,
+        flavour === 'm'
+          ? ['.mts', '.d.mts', '.mjs']
+          : flavour === 'c'
+            ? ['.cts', '.d.cts', '.cjs']
+            : jsx
+              ? ['.tsx', '.ts', '.d.ts', '.jsx', '.js']
+              : ['.ts', '.tsx', '.d.ts', '.js', '.jsx'],
+      );
     } else {
-      for (const suffix of suffixes) {
-        for (const extension of ['.ts', '.tsx', '.d.ts']) {
-          candidates.push(`${base}${suffix}${extension}`);
-        }
-      }
+      add(base, ['.ts', '.tsx', '.d.ts']);
       if (isFile(join(base, 'package.json'))) {
         return {
           reason: `'${specifier}' names a directory with its own package.json; import the file that declares the class`,
         };
       }
-      for (const suffix of suffixes) {
-        for (const extension of ['.ts', '.tsx', '.d.ts']) {
-          candidates.push(join(base, `index${suffix}${extension}`));
-        }
-      }
-      for (const suffix of suffixes) {
-        for (const extension of ['.js', '.jsx']) {
-          candidates.push(`${base}${suffix}${extension}`);
-        }
-      }
-      for (const suffix of suffixes) {
-        for (const extension of ['.js', '.jsx']) {
-          candidates.push(join(base, `index${suffix}${extension}`));
-        }
-      }
+      add(join(base, 'index'), ['.ts', '.tsx', '.d.ts']);
+      add(base, ['.js', '.jsx']);
+      add(join(base, 'index'), ['.js', '.jsx']);
     }
     const selected = candidates.find(isFile);
     if (!selected) return { reason: `'${specifier}' names no file` };

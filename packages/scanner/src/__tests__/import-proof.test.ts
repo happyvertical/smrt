@@ -474,6 +474,80 @@ describe('parents', () => {
     ]);
   });
 
+  it('tries every module suffix within one extension before the next extension', async () => {
+    // TypeScript's order for `./Base` with ['.ios', '']: Base.ios.ts,
+    // Base.ts, Base.ios.tsx, Base.tsx, ... so `Base.ts` decides.
+    const root = newRoot();
+    write(root, {
+      'tsconfig.json': JSON.stringify({
+        compilerOptions: { moduleSuffixes: ['.ios', ''] },
+      }),
+      'src/models/Base.ts': CLOSED_BASE('Event'),
+      // Another name: two models named `Event` in one scan collide.
+      'src/models/Base.ios.tsx': OPEN_BASE('Event').replace(
+        'class Event',
+        'class OpenEvent',
+      ),
+      'src/models/Meeting.ts': CHILD(`import { Event } from './Base';`),
+    });
+    const scanner = new OxcScanner({
+      cwd: root,
+      include: ['src/**/*.ts', 'src/**/*.tsx'],
+    });
+    const { errors, model } = await scanAt(root, scanner);
+
+    expect(errors).toEqual([]);
+    expect(fieldNames(model('Meeting')?.allFields)).toEqual([
+      'closedOnly',
+      'room',
+    ]);
+  });
+
+  it('fails when the suffixed file TypeScript selects is outside the scan', async () => {
+    const root = newRoot();
+    write(root, {
+      'tsconfig.json': JSON.stringify({
+        compilerOptions: { moduleSuffixes: ['.ios', ''] },
+      }),
+      'src/models/Base.ts': CLOSED_BASE('Event'),
+      'src/models/Base.ios.tsx': OPEN_BASE('Event'),
+      'src/models/Meeting.ts': CHILD(`import { Event } from './Base';`),
+    });
+    const scanner = new OxcScanner({
+      cwd: root,
+      include: ['src/**/*.ts', 'src/**/*.tsx'],
+      exclude: ['src/models/Base.ts'],
+    });
+    const { errors, model } = await scanAt(root, scanner);
+
+    expect(errors).toHaveLength(1);
+    expect(errors[0].message).toContain(join('src/models/Base.ts'));
+    expect(errors[0].message).toContain('add the file to the scan include');
+    expect(fieldNames(model('Meeting')?.allFields)).not.toContain('openOnly');
+  });
+
+  it('applies module suffixes to an explicit .js extension in the same order', async () => {
+    const root = newRoot();
+    write(root, {
+      'tsconfig.json': JSON.stringify({
+        compilerOptions: { moduleSuffixes: ['.ios', ''] },
+      }),
+      'src/models/Base.ts': OPEN_BASE('Event').replace(
+        'class Event',
+        'class OpenEvent',
+      ),
+      'src/models/Base.ios.ts': CLOSED_BASE('Event'),
+      'src/models/Meeting.ts': CHILD(`import { Event } from './Base.js';`),
+    });
+    const { errors, model } = await scanAt(root);
+
+    expect(errors).toEqual([]);
+    expect(fieldNames(model('Meeting')?.allFields)).toEqual([
+      'closedOnly',
+      'room',
+    ]);
+  });
+
   it('rejects a relative file that exports another class under the imported name', async () => {
     const { errors, model } = await scanProject({
       'src/models/Event.ts': `${CORE}\n@smrt({ tableStrategy: 'sti', api: false })\nclass Event extends SmrtObject {\n  closedOnly = '';\n}\n@smrt()\nclass OpenEvent extends SmrtObject {\n  openOnly = '';\n}\nexport { OpenEvent as Event };\nexport const keep = Event;\n`,
