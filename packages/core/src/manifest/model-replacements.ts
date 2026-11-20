@@ -8,12 +8,17 @@ import type {
  * What a class that extends a same-named class from another package says it
  * is (#5143), as `replaceParent` in its own `@smrt()` options (the manifest
  * carries it in `decoratorConfig`): `'replace'` for `replaceParent: true`, a
- * replacement of that parent. Anything else declares no replacement.
+ * replacement of that parent; `'subtype'` for `replaceParent: false`, a
+ * subclass that would stay registered next to its parent. Only replacement is
+ * supported: `'subtype'` is refused wherever it is read
+ * (`CONFIG_SAME_NAME_COEXISTENCE_UNSUPPORTED`).
  */
-export type SameNameSubclassChoice = 'replace';
+export type SameNameSubclassChoice = 'replace' | 'subtype';
 
 export const SAME_NAME_SUBCLASS_UNDECLARED =
   'CONFIG_SAME_NAME_SUBCLASS_UNDECLARED';
+export const SAME_NAME_COEXISTENCE_UNSUPPORTED =
+  'CONFIG_SAME_NAME_COEXISTENCE_UNSUPPORTED';
 export const SAME_NAME_REPLACEMENT_TABLE_MISMATCH =
   'CONFIG_SAME_NAME_REPLACEMENT_TABLE_MISMATCH';
 export const SAME_NAME_PARENT_UNREGISTERED =
@@ -50,6 +55,7 @@ export function sameNameSubclassChoice(
   config: { replaceParent?: unknown } | null | undefined,
 ): SameNameSubclassChoice | undefined {
   if (config?.replaceParent === true) return 'replace';
+  if (config?.replaceParent === false) return 'subtype';
   return undefined;
 }
 
@@ -68,14 +74,38 @@ export function sameNameSubclassUndeclared(
   );
 }
 
-/** The declared choice, or the error for a class that has to declare one. */
+/**
+ * A same-named subclass that declares `replaceParent: false`: it would stay
+ * registered next to its parent under the parent's simple name and table.
+ * That coexistence is not supported (#5143); the subclass either replaces its
+ * parent or takes a class name of its own.
+ */
+export function sameNameCoexistenceUnsupported(
+  child: string,
+  parent: string,
+): ConfigurationError {
+  return new ConfigurationError(
+    `${child} declares replaceParent: false, but a same-named subclass cannot be registered next to its parent ${parent}: ` +
+      `give ${child} a different class name, or declare replaceParent: true to make it replace ${parent}. ` +
+      `If ${child} extends no class of its own name, remove replaceParent. ` +
+      `Coexistence of a same-named subclass is tracked under #5143.`,
+    SAME_NAME_COEXISTENCE_UNSUPPORTED,
+    { className: child, parentName: parent },
+  );
+}
+
+/**
+ * The declared choice of a class that has to declare one: `'replace'`, or
+ * the error for a class that declares nothing or declares coexistence.
+ */
 export function requireSameNameSubclassChoice(
   child: string,
   parent: string,
   config: { replaceParent?: unknown } | null | undefined,
-): SameNameSubclassChoice {
+): 'replace' {
   const choice = sameNameSubclassChoice(config);
   if (!choice) throw sameNameSubclassUndeclared(child, parent);
+  if (choice === 'subtype') throw sameNameCoexistenceUnsupported(child, parent);
   return choice;
 }
 
@@ -148,7 +178,8 @@ function sameNamePairs(manifest: SmartObjectManifest): SameNamePair[] {
  * build reports such a class whether or not the manifest also carries its
  * parent, and nothing is published for it.
  *
- * - no `replaceParent: true`: `CONFIG_SAME_NAME_SUBCLASS_UNDECLARED`;
+ * - no `replaceParent`: `CONFIG_SAME_NAME_SUBCLASS_UNDECLARED`;
+ * - `replaceParent: false`, on any entry: `CONFIG_SAME_NAME_COEXISTENCE_UNSUPPORTED`;
  * - `replaceParent: true` on another table than the parent's:
  *   `CONFIG_SAME_NAME_REPLACEMENT_TABLE_MISMATCH`.
  *
@@ -159,6 +190,15 @@ function sameNamePairs(manifest: SmartObjectManifest): SameNamePair[] {
 export function assertSameNameSubclassChoices(
   manifest: SmartObjectManifest,
 ): void {
+  // Registration refuses `replaceParent: false` on any class, so generation
+  // refuses it on any entry too: nothing is published that cannot boot.
+  for (const [key, object] of Object.entries(manifest.objects)) {
+    if (object.decoratorConfig?.replaceParent === false)
+      throw sameNameCoexistenceUnsupported(
+        object.qualifiedName ?? key,
+        object.extendsQualified ?? object.extends ?? 'the class it extends',
+      );
+  }
   for (const { key, child, parentKey } of sameNamePairs(manifest)) {
     const name = child.qualifiedName ?? key;
     requireSameNameSubclassChoice(name, parentKey, child.decoratorConfig);
@@ -180,8 +220,9 @@ export function assertSameNameSubclassChoices(
 /**
  * Parent → effective replacement, from each subclass's declared
  * `replaceParent: true` on its parent's table. A name match alone never
- * replaces: a same-named subclass that declares anything else (refused at
- * build by `assertSameNameSubclassChoices`) is not a replacement.
+ * replaces: a same-named subclass that declares `replaceParent: false`, or
+ * nothing (both refused at build by `assertSameNameSubclassChoices`), is not
+ * a replacement.
  */
 export function modelReplacements(
   manifest: SmartObjectManifest,

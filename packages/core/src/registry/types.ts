@@ -353,6 +353,11 @@ export interface SmartObjectConfig {
    *   class's qualified name, on the parent's table; the parent's qualified
    *   name and its `previousQualifiedNames` resolve to this class, and the
    *   parent's declaration is kept for ancestry only.
+   * - `false` would keep this class registered next to its same-named
+   *   parent. That coexistence is not supported:
+   *   `CONFIG_SAME_NAME_COEXISTENCE_UNSUPPORTED` when the manifest is
+   *   generated and when the class registers. Give the class a different
+   *   name instead.
    *
    * Omitting it on such a class is `CONFIG_SAME_NAME_SUBCLASS_UNDECLARED`
    * when the manifest is generated and when the class registers. The option

@@ -1,9 +1,11 @@
 /**
  * #5143: a class that extends a class of the same simple name from another
  * package replaces that parent only by declaring `replaceParent: true` in its
- * own `@smrt()` options. Declaring nothing is refused. Nothing else decides:
- * not which package is the app, not which registered first, not whether the
- * class arrived as a manifest entry or a constructor.
+ * own `@smrt()` options. Declaring nothing is refused, and so is
+ * `replaceParent: false` (a same-named subclass registered next to its
+ * parent). Nothing else decides: not which package is the app, not which
+ * registered first, not whether the class arrived as a manifest entry or a
+ * constructor.
  *
  * Fixture names follow the issue: `@fixture/video:Scene` (the base),
  * `@fixture/histrio:Scene` (the same-named subclass) and
@@ -151,6 +153,24 @@ function describeRegistry() {
   };
 }
 
+const COEXISTENCE_UNSUPPORTED = expect.objectContaining({
+  code: 'CONFIG_SAME_NAME_COEXISTENCE_UNSUPPORTED',
+  message: expect.stringContaining(
+    `${SUB} declares replaceParent: false, but a same-named subclass cannot be registered next to its parent`,
+  ),
+});
+
+/** What a refused registration must leave exactly as it was. */
+function registrySnapshot() {
+  return {
+    keys: [...ObjectRegistry.getAllClasses().keys()].sort(),
+    base: ObjectRegistry.getClass(BASE)?.qualifiedName ?? null,
+    baseCtor: ObjectRegistry.getClass(BASE)?.constructor ?? null,
+    sub: ObjectRegistry.getClass(SUB)?.qualifiedName ?? null,
+    aliases: [...ObjectRegistry.getQualifiedNameAliases()],
+  };
+}
+
 const REPLACED_REGISTRY = {
   keys: [SUB, SHOT].sort(),
   base: SUB,
@@ -232,6 +252,64 @@ describe('same-named subclass of another package: manifest registration', () => 
   describe.each([
     'app',
     'library',
+  ] as const)('replaceParent: false declared by the %s package', (declarer) => {
+    // A library's self-registration also seeds its manifest for STI sibling
+    // loading, so once refused, later registrations of the same table family
+    // keep failing closed with the same error; its refusal is checked with
+    // the subclass arriving last.
+    it.each(
+      ORDERS.filter(
+        (order) => declarer === 'app' || order.at(-1) === 'sub',
+      ).map((order) => [order.join(' → '), order] as const),
+    )('is refused whatever arrives first, leaving the registry as it was (%s)', (_label, order) => {
+      const steps = manifestSteps(subEntry(false), declarer);
+      for (const step of order) {
+        if (step !== 'sub') {
+          steps[step]();
+          continue;
+        }
+        const before = registrySnapshot();
+        expect(() => steps.sub()).toThrow(COEXISTENCE_UNSUPPORTED);
+        expect(registrySnapshot()).toEqual(before);
+      }
+      expect(registrySnapshot()).toMatchObject({
+        keys: [BASE, SHOT].sort(),
+        base: BASE,
+        sub: null,
+        aliases: [[OLD, BASE]],
+      });
+      // The parent registers again unchanged once the refused entry is gone.
+      steps.base();
+      expect(ObjectRegistry.getClass(BASE)?.qualifiedName).toBe(BASE);
+    });
+  });
+
+  it('refuses replaceParent: false next to a parent kept only as the declaration a replacement took over', () => {
+    const APP = '@fixture/app:Scene';
+    const app: Fixture = {
+      ...subEntry(true),
+      qualifiedName: APP as never,
+      packageName: '@fixture/app',
+      filePath: 'src/models/app-scene.ts',
+    };
+    // The replacement arrives first; the parent's entry is then retained as
+    // the declaration it replaced (retain-as-replaced).
+    fromManifest(APP, app, '@fixture/app');
+    fromManifest(BASE, baseEntry(), VIDEO);
+    expect(ObjectRegistry.getClass(BASE)?.qualifiedName).toBe(APP);
+    const before = registrySnapshot();
+    expect(() => fromManifest(SUB, subEntry(false), HISTRIO)).toThrow(
+      COEXISTENCE_UNSUPPORTED,
+    );
+    expect(registrySnapshot()).toEqual(before);
+    expect(ObjectRegistry.getClass(APP)?.replacedQualifiedNames).toEqual([
+      BASE,
+    ]);
+  });
+
+  describe.each([
+    'app',
+    'library',
   ] as const)('replaceParent: true declared by the %s package', (declarer) => {
     it.each(
       ORDERS.map((order) => [order.join(' → '), order] as const),
@@ -279,6 +357,66 @@ describe('same-named subclass of another package: constructor registration', () 
     ['base', 'sub', 'shot'],
     ['shot', 'base', 'sub'],
   ] as const;
+
+  it.each(
+    [...CTOR_ORDERS, ['sub', 'base', 'shot'] as const].map(
+      (order) => [order.join(' → '), order] as const,
+    ),
+  )('refuses replaceParent: false before or after its parent, leaving the registry as it was (%s)', (_label, order) => {
+    const fixture = constructors(false);
+    for (const step of order) {
+      if (step !== 'sub') {
+        fixture.registrations[step]();
+        continue;
+      }
+      const before = registrySnapshot();
+      expect(() => fixture.registrations.sub()).toThrow(
+        COEXISTENCE_UNSUPPORTED,
+      );
+      expect(registrySnapshot()).toEqual(before);
+    }
+    expect(
+      ObjectRegistry.getClassByConstructor(fixture.HistrioScene),
+    ).toBeUndefined();
+    expect(ObjectRegistry.getClass(BASE)?.constructor).toBe(fixture.VideoScene);
+  });
+
+  it('refuses replaceParent: false through the decorator, before and after its parent', () => {
+    const early = constructors(false);
+    expect(() =>
+      smrt({ name: 'Scene', packageName: HISTRIO, replaceParent: false })(
+        early.HistrioScene,
+      ),
+    ).toThrow(COEXISTENCE_UNSUPPORTED);
+    expect([...ObjectRegistry.getAllClasses().keys()]).toEqual([]);
+    const fixture = constructors(false);
+    fixture.registrations.base();
+    const before = registrySnapshot();
+    expect(() =>
+      smrt({ name: 'Scene', packageName: HISTRIO, replaceParent: false })(
+        fixture.HistrioScene,
+      ),
+    ).toThrow(COEXISTENCE_UNSUPPORTED);
+    expect(registrySnapshot()).toEqual(before);
+  });
+
+  it('refuses a re-registration that turns a replacement into replaceParent: false, keeping the replacement', () => {
+    const fixture = constructors(true);
+    fixture.registrations.base();
+    fixture.registrations.sub();
+    const before = registrySnapshot();
+    expect(before.base).toBe(SUB);
+    expect(() =>
+      ObjectRegistry.register(fixture.HistrioScene, {
+        name: 'Scene',
+        packageName: HISTRIO,
+        tableName: 'scenes',
+        replaceParent: false,
+      }),
+    ).toThrow(COEXISTENCE_UNSUPPORTED);
+    expect(registrySnapshot()).toEqual(before);
+    expect(ObjectRegistry.getClass(SUB)?.config.replaceParent).toBe(true);
+  });
 
   it.each(
     CTOR_ORDERS.map((order) => [order.join(' → '), order] as const),

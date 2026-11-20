@@ -304,7 +304,7 @@ smrt class by overriding fields on a subclass, and the name decides the reach.
 An app class that extends a smrt class, declares the SAME simple name and
 declares `replaceParent: true` takes over the registry entry
 (`same-name-subclass-replaces-parent`, `registry/collision-policy.ts`;
-an undeclared same-named subclass is refused, see
+`replaceParent: false` and an undeclared same-named subclass are refused, see
 [app-subclasses.md](app-subclasses.md)) and
 records the old key in `replacedQualifiedNames`. smrt's own collections follow
 it: `create()` and non-STI hydration build the app's class (`get()`/`list()` on

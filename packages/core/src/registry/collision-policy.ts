@@ -120,8 +120,9 @@ export interface CollisionInputs {
   /**
    * What the NEW class declares about a same-named parent (`replaceParent`
    * in its own `@smrt()` options or manifest `decoratorConfig`, read through
-   * `sameNameSubclassChoice`): `'replace'`, or `undefined` when it declares
-   * nothing. Only meaningful with `newExtendsExisting` (#5143).
+   * `sameNameSubclassChoice`): `'replace'`, `'subtype'` (refused: a
+   * same-named subclass cannot coexist with its parent), or `undefined` when
+   * it declares nothing. Only meaningful with `newExtendsExisting` (#5143).
    */
   readonly newDeclaredChoice: SameNameSubclassChoice | undefined;
 
@@ -276,6 +277,17 @@ const ROWS: readonly Row[] = [
   },
 
   {
+    scenario: 'same-name-subclass-coexists',
+    match: (i) =>
+      i.newExtendsExisting &&
+      !i.existingExtendsNew &&
+      i.newDeclaredChoice === 'subtype',
+    policy: 'throw',
+    reason: () =>
+      'New class extends the same-named existing class and declares replaceParent: false; a same-named subclass cannot be registered next to its parent.',
+  },
+
+  {
     scenario: 'same-name-subclass-undeclared',
     match: (i) => i.newExtendsExisting && !i.existingExtendsNew,
     policy: 'throw',
@@ -292,6 +304,17 @@ const ROWS: readonly Row[] = [
     policy: 'retain-as-replaced',
     reason: () =>
       'Existing entry extends the incoming same-named class and declares replaceParent: true; the incoming parent is kept as a replaced declaration.',
+  },
+
+  {
+    scenario: 'same-name-parent-of-coexisting',
+    match: (i) =>
+      i.existingExtendsNew &&
+      !i.newExtendsExisting &&
+      i.existingDeclaredChoice === 'subtype',
+    policy: 'throw',
+    reason: () =>
+      'Existing entry extends the incoming same-named class and declares replaceParent: false; a same-named subclass cannot be registered next to its parent.',
   },
 
   {

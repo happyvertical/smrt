@@ -4,13 +4,23 @@ A class that extends a class of the same simple name from another package
 replaces that parent, and says so in its own `@smrt()` options:
 
 - `replaceParent: true`: it **replaces** the parent. One model remains.
+- `replaceParent: false` would keep it registered **next to** its parent
+  under the shared simple name and table. That coexistence is not supported:
+  `CONFIG_SAME_NAME_COEXISTENCE_UNSUPPORTED`, naming both classes. Give the
+  subclass a different class name (a differently named subclass is an
+  ordinary subclass), or declare `replaceParent: true`. Coexistence is
+  tracked under #5143.
 
-Not declaring it is `CONFIG_SAME_NAME_SUBCLASS_UNDECLARED`, raised when the
-manifest is generated (`assertSameNameSubclassChoices()`, run by
-`annotateModelReplacements()` and by generated activation before it resolves
-any module, so `pnpm build`, activation generation and the SvelteKit dry run
-fail before publishing anything) and again when the class registers. A class
-meant to stay a separate model takes a class name of its own.
+Saying neither is `CONFIG_SAME_NAME_SUBCLASS_UNDECLARED`. Both refusals are
+raised when the manifest is generated (`assertSameNameSubclassChoices()`, run
+by `annotateModelReplacements()` and by generated activation before it
+resolves any module, so `pnpm build`, activation generation and the SvelteKit
+dry run fail before publishing anything) and again when the class registers:
+constructor registration refuses `replaceParent: false` before a
+re-registration, promotion or collision changes the registry, and manifest
+registration refuses the entry before anything is recorded, in either arrival
+order. Generation and manifest registration refuse `replaceParent: false` on
+any entry, so nothing generated can fail at boot for it.
 `modelReplacements()` itself never throws: it also reads run-time manifests
 projected from the registry, where a run-time model states replacement
 through `replaces`. The option is the only input: no path infers replacement
@@ -173,7 +183,7 @@ and runs in-process SQLite. No network server or external service is used.
 | --- | --- | --- | --- | --- |
 | Scan same-name subclass | Direct name and matching export alias inherit table and columns | Empty body has identical columns; alias scanner rejects type and remote exports | App build / scanner | Manifest identity / integration |
 | Register replacements | Runtime constructors and either manifest arrival order select app identity | Provider-only app unchanged; existing sibling and different-table tests remain | Single process / registry | Qualified lookup and ancestry / integration |
-| Declared choice (#5143) | Replace by an app or a library, in every arrival order; rows hydrate as the replacement | Missing choice is refused at generation, activation and registration, registry and published outputs unchanged | Manifest, constructor and mixed, every order / registry + SQLite; fresh-process generated activation | `issue-5143-same-name-subclass.test.ts`, `collision-policy.test.ts` (every input combination), `activation/generate-order.test.ts` / integration + unit |
+| Declared choice (#5143) | Replace by an app or a library, in every arrival order; rows hydrate as the replacement | Missing choice and `replaceParent: false` are refused at generation, activation and registration, registry and published outputs unchanged | Manifest, constructor and mixed, every order / registry + SQLite; fresh-process generated activation | `issue-5143-same-name-subclass.test.ts`, `collision-policy.test.ts` (every input combination), `activation/generate-order.test.ts` / integration + unit |
 | SQLite custom field | Manifest differ emits ALTER on provider table; REST create/get/list/update/delete round-trip field | Repeated migration emits nothing; deleted record returns 404 | Public fixture / one SQLite handle | REST DTO and normal migration DDL / integration |
 | Relationship loading | Invoice resolves app Customer and custom field | Missing/deleted target behavior remains covered by existing relationship suite | Fixture relationship / same SQLite handle | Qualified target / integration |
 | STI and CTI | Provider children retain bases; STI root lists provider child; CTI tables round-trip | CTI child retains its separate table and declared columns | App and provider / same SQLite handle | Ancestry, discriminator and schema / integration |
