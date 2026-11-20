@@ -2275,7 +2275,7 @@ async function generateRegistrationFile(
     }
 
     if (
-      def?.extends === 'SmrtCollection' ||
+      (!def?.extendsQualified && def?.extends === 'SmrtCollection') ||
       def?.extendsTypeArg !== undefined
     ) {
       collectionClassMemo.set(def, true);

@@ -651,7 +651,10 @@ function isSurfaceCollectionClass(
 ): boolean {
   // Truthy check (not `!== undefined`) mirrors the scanner: a non-generic
   // base emitting `extendsTypeArg: null` must not be misread as a collection.
-  if (object.extends === 'SmrtCollection' || object.extendsTypeArg) {
+  if (
+    (!object.extendsQualified && object.extends === 'SmrtCollection') ||
+    object.extendsTypeArg
+  ) {
     return true;
   }
   const parentName = object.extendsQualified || object.extends;

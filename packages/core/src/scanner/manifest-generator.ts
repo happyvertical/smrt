@@ -259,6 +259,27 @@ const FRAMEWORK_METHOD_BASE_NAMES = new Set([
 ]);
 
 /**
+ * Whether `obj` directly extends the framework's `SmrtCollection`, by
+ * identity: the bare name with no qualified parent. A class of a package
+ * named `SmrtCollection` (the scanner records it with that package's
+ * `extendsQualified`) is a model like any other, and its subclasses inherit
+ * its exposure.
+ */
+function extendsFrameworkCollection(obj: SmartObjectDefinition): boolean {
+  return !obj.extendsQualified && obj.extends === 'SmrtCollection';
+}
+
+/**
+ * Whether `obj` directly extends one of the framework's collection bases
+ * (`SmrtCollection`, `SmrtJunction`, `SmrtJunctionBase`,
+ * `SmrtReportCollection`), by identity as in
+ * {@link extendsFrameworkCollection}.
+ */
+function extendsFrameworkCollectionBase(obj: SmartObjectDefinition): boolean {
+  return !obj.extendsQualified && isSmrtCollectionExtendsName(obj.extends);
+}
+
+/**
  * Deterministic string comparator (#2749). Manifest object iteration order
  * follows scan/discovery order, which is not stable across runs, so any
  * emitted artifact keyed off `Object.entries(manifest.objects)` needs a
@@ -661,7 +682,7 @@ export class ManifestGenerator {
     for (const objectDef of Object.values(manifest.objects)) {
       const config = objectDef.decoratorConfig;
       const isCollection =
-        objectDef.extends === 'SmrtCollection' ||
+        extendsFrameworkCollection(objectDef) ||
         this.extendsCollection(objectDef, objectsByName, manifest);
       let collectionItem: SmartObjectDefinition | undefined;
       if (isCollection) {
@@ -3370,7 +3391,7 @@ export class ManifestGenerator {
     for (const obj of Object.values(manifest.objects)) {
       // Check if this is a collection class (extends SmrtCollection)
       const isCollection =
-        obj.extends === 'SmrtCollection' ||
+        extendsFrameworkCollection(obj) ||
         this.extendsCollection(obj, objectsByName, manifest);
       // Junction and report collections inherit their model's exposure too,
       // but keep their own storage naming (that predates this pass).
@@ -3693,7 +3714,7 @@ export class ManifestGenerator {
     const findings: Parameters<typeof formatCollectionWriteEscalations>[0] = [];
     for (const obj of Object.values(manifest.objects)) {
       if (
-        obj.extends !== 'SmrtCollection' &&
+        !extendsFrameworkCollection(obj) &&
         !this.extendsCollection(obj, objectsByName, manifest) &&
         !this.extendsAnyCollectionBase(obj, objectsByName, manifest)
       ) {
@@ -3734,7 +3755,7 @@ export class ManifestGenerator {
     let current: SmartObjectDefinition | undefined = obj;
     const visited = new Set<SmartObjectDefinition>();
     while (current?.extends) {
-      if (isSmrtCollectionExtendsName(current.extends)) return true;
+      if (extendsFrameworkCollectionBase(current)) return true;
       if (visited.has(current)) return false;
       visited.add(current);
       current = this.namedParent(current, objectsByName, manifest);
@@ -3762,7 +3783,7 @@ export class ManifestGenerator {
       if (visited.has(current)) break;
       visited.add(current);
 
-      if (current.extends === 'SmrtCollection') return true;
+      if (extendsFrameworkCollection(current)) return true;
 
       current = this.namedParent(current, objectsByName, manifest);
     }
@@ -4351,7 +4372,7 @@ ${fields}
       .filter(Boolean)
       .join('/');
     const isCollectionClass =
-      obj.extends === 'SmrtCollection' || !!obj.extendsTypeArg;
+      extendsFrameworkCollection(obj) || !!obj.extendsTypeArg;
 
     const defaultScope =
       isCollectionClass || actionDef.isStatic ? 'collection' : 'item';
@@ -4378,7 +4399,7 @@ ${fields}
     const include =
       (typeof config === 'object' && config?.include) || undefined;
     const isCollectionClass =
-      obj.extends === 'SmrtCollection' || !!obj.extendsTypeArg;
+      extendsFrameworkCollection(obj) || !!obj.extendsTypeArg;
     const isModelClassName = createManifestClassNamePredicate(manifest);
 
     const endpoints: string[] = [];
@@ -4683,7 +4704,7 @@ ${fields}
    */
   private isCollectionAccessClass(obj: SmartObjectDefinition): boolean {
     return (
-      obj.extends === 'SmrtCollection' ||
+      extendsFrameworkCollection(obj) ||
       !!obj.extendsTypeArg ||
       obj.className.endsWith('Collection')
     );

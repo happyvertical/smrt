@@ -47,7 +47,10 @@ import type { SvelteKitOptions } from './sveltekit-generator.js';
  * never anchor routes themselves.
  */
 function isCollectionDefinition(objectDef: SmartObjectDefinition): boolean {
-  return objectDef.extends === 'SmrtCollection' || !!objectDef.extendsTypeArg;
+  return (
+    (!objectDef.extendsQualified && objectDef.extends === 'SmrtCollection') ||
+    !!objectDef.extendsTypeArg
+  );
 }
 
 /**

@@ -61,10 +61,25 @@ export function isSmrtCollectionExtendsName(
   if (!extendsName) {
     return false;
   }
+  // A qualified name is the framework base only when the framework package
+  // declares it: another package's class named `SmrtCollection` (an app's
+  // `@app/pkg:SmrtCollection`) is a model, not a collection base.
   return SMRT_COLLECTION_BASE_NAMES.some(
-    (base) => extendsName === base || extendsName.endsWith(`:${base}`),
+    (base) =>
+      extendsName === base ||
+      extendsName === `${FRAMEWORK_COLLECTION_PACKAGES[base]}:${base}`,
   );
 }
+
+/** The framework package that declares each collection base. */
+const FRAMEWORK_COLLECTION_PACKAGES: Readonly<
+  Record<(typeof SMRT_COLLECTION_BASE_NAMES)[number], string>
+> = {
+  SmrtCollection: '@happyvertical/smrt-core',
+  SmrtJunction: '@happyvertical/smrt-core',
+  SmrtJunctionBase: '@happyvertical/smrt-core',
+  SmrtReportCollection: '@happyvertical/smrt-reports',
+};
 
 export function resolveRelatedRegistration(
   className: string,

@@ -78,7 +78,12 @@ export interface ResolvedApiActionRouteConfig {
  * so generating routes for both would cause file collisions.
  */
 function isCollectionClass(objectDef: SmartObjectDefinition): boolean {
-  return objectDef.extends === 'SmrtCollection' || !!objectDef.extendsTypeArg;
+  // A qualified parent is a package's own class named `SmrtCollection`, not
+  // the framework base.
+  return (
+    (!objectDef.extendsQualified && objectDef.extends === 'SmrtCollection') ||
+    !!objectDef.extendsTypeArg
+  );
 }
 
 function normalizeApiHttpMethod(method?: string): ApiHttpMethod {
@@ -663,7 +668,10 @@ export function isCollectionManifestClass(
   // Truthy check (not `!== undefined`) mirrors the scanner's own
   // manifest-generator: a scanner that emits `extendsTypeArg: null` for a
   // non-generic base must not be misread as a collection.
-  if (obj.extends === 'SmrtCollection' || obj.extendsTypeArg) {
+  if (
+    (!obj.extendsQualified && obj.extends === 'SmrtCollection') ||
+    obj.extendsTypeArg
+  ) {
     return true;
   }
   const parentName = obj.extendsQualified || obj.extends;

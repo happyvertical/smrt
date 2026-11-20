@@ -306,6 +306,22 @@ export class RestrictedBase extends SmrtObject {
     expect(crud(child)).toEqual([]);
   });
 
+  it('inherits exposure from a local model named SmrtCollection, which is no collection', async () => {
+    const root = await project({
+      providers: {},
+      app: {
+        'src/SmrtCollection.ts': `import { SmrtObject, smrt } from '@happyvertical/smrt-core';\n@smrt({ api: false, tableName: 'closed_ledgers' })\nexport class SmrtCollection extends SmrtObject {\n  hidden = '';\n}\n`,
+        'src/Ledger.ts': `import { smrt } from '@happyvertical/smrt-core';\nimport { SmrtCollection } from './SmrtCollection';\n@smrt()\nexport class Ledger extends SmrtCollection {}\n`,
+      },
+    });
+
+    const manifest = await build(root);
+    const child = manifest.objects[`${APP}:Ledger`];
+    expect(child?.extendsQualified).toBe(`${APP}:SmrtCollection`);
+    expect(child?.collectionOf).toBeUndefined();
+    expect(crud(child)).toEqual([]);
+  });
+
   it('throws for an extendsQualified that is not a qualified name', () => {
     const scanResults: ScanResult[] = [
       {

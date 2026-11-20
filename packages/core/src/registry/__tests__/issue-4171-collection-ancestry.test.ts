@@ -3,7 +3,10 @@ import { SmrtCollection } from '../../collection.js';
 import { SmrtObject } from '../../object.js';
 import { ObjectRegistry } from '../../registry.js';
 import { snapshotObjectRegistryState } from '../../test-utils.js';
-import { isCollectionRegistration } from '../collection-resolution.js';
+import {
+  isCollectionRegistration,
+  isSmrtCollectionExtendsName,
+} from '../collection-resolution.js';
 import type { RegisteredClass } from '../types.js';
 
 const lookup = { findClass: () => undefined, getInheritanceChain: () => [] };
@@ -82,5 +85,28 @@ describe('#4171 undecorated collection ancestry', () => {
         getInheritanceChain: () => ['DomainCollection'],
       }),
     ).toBe(true);
+  });
+
+  it('takes a qualified collection base only from the framework package', () => {
+    expect(isSmrtCollectionExtendsName('SmrtCollection')).toBe(true);
+    expect(
+      isSmrtCollectionExtendsName('@happyvertical/smrt-core:SmrtCollection'),
+    ).toBe(true);
+    expect(
+      isSmrtCollectionExtendsName(
+        '@happyvertical/smrt-reports:SmrtReportCollection',
+      ),
+    ).toBe(true);
+    // A package's own class named like the base is a model.
+    expect(isSmrtCollectionExtendsName('@fixture/app:SmrtCollection')).toBe(
+      false,
+    );
+    expect(
+      isCollectionRegistration(
+        'Ledger',
+        registration(undefined, '@fixture/app:SmrtCollection'),
+        lookup,
+      ),
+    ).toBe(false);
   });
 });
