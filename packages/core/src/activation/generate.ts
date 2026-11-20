@@ -4,7 +4,10 @@ import { createRequire } from 'node:module';
 import { extname, isAbsolute, relative, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { resolve as resolveImport } from 'import-meta-resolve';
-import { modelReplacements } from '../manifest/model-replacements.js';
+import {
+  assertSameNameSubclassChoices,
+  modelReplacements,
+} from '../manifest/model-replacements.js';
 import { isFrameworkBaseClass } from '../registry/framework-base-classes.js';
 import type {
   SmartObjectDefinition,
@@ -165,6 +168,9 @@ interface OrderEdge {
  */
 function activationPlan(manifest: SmartObjectManifest) {
   const resolved = resolveParents(manifest);
+  // The registry refuses an undeclared or impossible same-named subclass at
+  // boot; refuse it here first, so no artifact is published that cannot boot.
+  assertSameNameSubclassChoices(manifest);
   const replacements = modelReplacements(manifest);
   const keys = new Map(
     Object.entries(manifest.objects).map(([id, object]) => [object, id]),
