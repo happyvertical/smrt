@@ -129,7 +129,9 @@ listed; a graph without `parent` loads in sorted order. A cycle made only of pla
 subclass edges falls back to the edges the registry enforces (same-named
 replacement/subtype pairs, competing collection bindings); a cycle among those, or a
 module that imports the module of a same-named child while hosting that child's
-parent, fails generation. Collections register after their item and its effective
+parent, fails generation. Only that direct import is ordered at generation; a
+same-named child reached through a helper, barrel, alias or subpath still fails
+closed at boot with the parent-first refusal. Collections register after their item and its effective
 replacement; of two collections bound to one effective item the one of the more
 derived item registers last and serves it. Those cross-module edges are persisted
 as optional `modules[].after`. SvelteKit generation validates before it clears
