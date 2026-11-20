@@ -4004,6 +4004,35 @@ export default testManifest;
           }
         }
         console.log();
+
+        // The AI run id registry (schema 1.20.0): run ids an older core
+        // left unreserved, and parent links that predate a reuse.
+        console.log('🪪  AI Run Id Registry\n');
+        const { runAiRunIdRegistryCheck, formatAiRunIdRegistryCheck } =
+          await import('./doctor-ai-run-ids.js');
+        const runIds = await runAiRunIdRegistryCheck();
+        if (!runIds.check) {
+          check(
+            'AI run id registry',
+            false,
+            runIds.error ?? 'Could not check the AI run id registry',
+          );
+        } else {
+          for (const line of formatAiRunIdRegistryCheck(runIds.check)) {
+            console.log(line);
+          }
+          if (
+            runIds.check.unregisteredIds > 0 ||
+            runIds.check.childrenOlderThanParent > 0
+          ) {
+            warnings.push(
+              `AI run ids: ${runIds.check.unregisteredIds} unreserved, ${runIds.check.childrenOlderThanParent} parent link(s) older than their parent`,
+            );
+          } else {
+            passed.push('AI run id registry');
+          }
+        }
+        console.log();
       }
 
       // ========== Inference Bindings (opt-in, #4752) ==========
