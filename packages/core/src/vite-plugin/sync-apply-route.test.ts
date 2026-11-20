@@ -210,7 +210,7 @@ describe('generateSyncApplyRouteTemplate', () => {
     expect(content).toContain("'auth_required'");
   });
 
-  it('establishes tenant context only when a target is tenant-scoped', () => {
+  it('establishes tenant context for a target tenant-scoped in its manifest or at runtime', () => {
     // Per item, with that target's own principal requirement.
     expect(content).toContain(
       'establishTenantContext(locals, target.principalContext);',
@@ -220,11 +220,14 @@ describe('generateSyncApplyRouteTemplate', () => {
     );
     expect(content).toContain("from '@happyvertical/smrt-tenancy'");
 
+    // Without a tenant-scoped model in the manifest, the core request
+    // context is entered for a model whose tenancy is registered at runtime.
     const withoutTenants = generateSyncApplyRouteTemplate(
       collectSyncApplyTargets(manifestWith({ Product: productDef })),
       ACCESS_IMPORTS,
     );
-    expect(withoutTenants).not.toContain('establishTenantContext');
+    expect(withoutTenants).toContain('isTenantScopedModel(target.registryKey)');
+    expect(withoutTenants).not.toContain('hasTenantWriteContext');
     expect(withoutTenants).not.toContain('@happyvertical/smrt-tenancy');
   });
 });
@@ -398,6 +401,11 @@ describe('generated sync-apply route runtime: operation permissions (#3011)', ()
         'export const assertUpdateInput = (row: object, data: Record<string, unknown>) => { resolveUpdateInput(row, data, STRUCTURAL_UPDATE_RULES); };',
         // The fixture models are structural; nothing is registered to check create input against.
         'export const assertCreateInput = () => {};',
+        // Request-time tenancy: a model is tenant-scoped at runtime only when
+        // a test says so; the request tenant context is the tenancy shim's.
+        'export const isTenantScopedModel = (name: string) => ((globalThis as any).__smrtSyncRuntimeTenantModels ?? []).includes(name);',
+        'export const getRequestTenantContext = () => (globalThis as any).__smrtSyncTenantContext;',
+        'export const enterRequestTenantContext = (context: unknown) => { (globalThis as any).__smrtSyncTenantContext = context; };',
       ].join('\n'),
     );
     const outFile = join(projectRoot, 'route.mjs');

@@ -240,14 +240,15 @@ export function generateSyncApplyRouteTemplate(
   // The tenant and principal helper of the generated CRUD routes, emitted by
   // the same generator function. One route serves many models here, so the
   // principal requirement is passed per item instead of baked in.
-  const tenantHelper = needsTenantContext
-    ? generateTenantContextHelper(
-        'per-target',
-        anyTenantScoped,
-        false,
-        'per-target',
-      )
-    : '';
+  // Without a tenant-scoped model in the manifest the core request-context
+  // form is emitted: a model whose tenancy is registered at runtime still
+  // runs in the caller's tenant.
+  const tenantHelper = generateTenantContextHelper(
+    'per-target',
+    anyTenantScoped,
+    !needsTenantContext,
+    'per-target',
+  );
 
   return `${AUTO_GENERATED_ROUTE_HEADER}
 // DO NOT EDIT - changes will be overwritten
@@ -263,8 +264,8 @@ import {
   SyncApplyRejection,
   type SyncApplyTarget,
 } from '@happyvertical/smrt-core';
-import { applyUpdateInput, assertCreateInput, assertUpdateInput, isRuntimeModelEnabled, ObjectRegistry } from '@happyvertical/smrt-core';
-import { ${needsTenantContext ? 'error, ' : ''}json } from '@sveltejs/kit';
+import { applyUpdateInput, assertCreateInput, assertUpdateInput, isRuntimeModelEnabled, ${needsTenantContext ? 'isTenantScopedModel, ' : ''}ObjectRegistry } from '@happyvertical/smrt-core';
+import { error, json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 ${collectionAccessImports}
 
@@ -405,12 +406,11 @@ export const POST: RequestHandler = async ({ locals, request }) => {
               return 'forbidden' as const;
             }
           }
-${
-  needsTenantContext
-    ? `          // The same order as the generated CRUD route: after auth and the
-          // operation permission, enter the principal's tenant, then require
-          // one for a tenant-scoped model.
-          if (target.tenantScoped || target.principalContext) {
+          // The same order as the generated CRUD route: after auth and the
+          // operation permission, enter the principal's tenant (also for a
+          // model whose tenancy is registered at runtime), then require one
+          // for a tenant-scoped model.
+          if (target.tenantScoped || target.principalContext || isTenantScopedModel(target.registryKey)) {
             try {
               establishTenantContext(locals, target.principalContext);
             } catch {
@@ -424,9 +424,7 @@ ${
 `
     : ''
 }          }
-`
-    : ''
-}          return 'ok' as const;
+          return 'ok' as const;
         },
         prepare: (payload: Record<string, unknown>) =>
           applySyncWritablePolicy(payload, {

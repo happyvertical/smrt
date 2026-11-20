@@ -163,7 +163,12 @@ of policy functions (`vite-plugin/route-policy.ts`): the read-only field list
 writable allowlist, public access, the permission collection, and the tenant
 and principal helper (`generateTenantContextHelper`). The sync route takes the
 principal requirement per item (`api.principalContext` of the target) and
-rejects the item as `forbidden` when the CRUD helper would have thrown.
+rejects the item as `forbidden` when the CRUD helper would have thrown. Like
+the CRUD routes, it enters the caller's tenant for a target that is
+tenant-scoped at request time (`isTenantScopedModel`) even when its manifest
+declares no tenancy; a manifest without tenant-scoped models emits the core
+request-context form of the helper. The generated write gate for a model whose
+tenancy exists only at runtime is not emitted (#5345).
 
 Tests: `packages/tenancy/src/__tests__/rest-write-tenant-gate.test.ts` (real
 tenancy), `src/vite-plugin/sveltekit-generator.runtime.test.ts` and

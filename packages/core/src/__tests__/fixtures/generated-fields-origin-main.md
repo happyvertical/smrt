@@ -81,3 +81,5 @@ DDL, migration and OpenAPI digests have not moved since the recapture above.
   rules (an update assigns declared fields only, a list filter names readable
   fields, a write to a tenant-scoped model needs a tenant, a create through a
   base selects only subtypes open on the transport).
+- Sync tenant (#5164): `sync/apply/+server.ts` enters the caller's tenant for
+  a model whose tenancy is registered at runtime, as the CRUD routes do.
