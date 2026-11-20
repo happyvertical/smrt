@@ -145,7 +145,7 @@ export async function createSqliteReferenceTarget(
 
     async describe(): Promise<TargetStructure> {
       const tables = await db.query(
-        "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite\\_%' ESCAPE '\\' ORDER BY name",
       );
       const out: TargetStructure['tables'] = [];
       for (const row of tables.rows) {

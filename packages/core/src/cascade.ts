@@ -1044,16 +1044,43 @@ export async function runInOwningCascadeTransaction<T>(
  *
  * A failing statement is the engine's own mechanism: after it, DuckDB rejects
  * every statement with "Current transaction is aborted" until the transaction
- * ends, and ending it discards its writes. The statement is expected to throw;
- * its error is not the one the caller needs, so it is dropped.
+ * ends, and ending it discards its writes. The statement is expected to throw,
+ * and its error is not the one the caller needs, so it is dropped when the
+ * engine reported it. A rejection that did not come from the engine (an
+ * adapter that stopped forwarding queries) proves nothing about the
+ * transaction, so the statement is repeated on the handle's own connection;
+ * when neither attempt is confirmed by the engine this throws, so the caller
+ * never believes a transaction that may still commit has been poisoned.
  */
 export async function abortJoinedDuckDbTransaction(
   db: DatabaseInterface,
   message = CASCADE_ABORTED_CALLER_TRANSACTION,
 ): Promise<void> {
+  const statement = `SELECT error('${message.replaceAll("'", "''")}')`;
+  const confirmed = (error: unknown): boolean => {
+    const text = error instanceof Error ? error.message : String(error);
+    return text.includes(message) || /transaction is aborted/i.test(text);
+  };
+  let unconfirmed: unknown;
   try {
-    await db.query(`SELECT error('${message.replaceAll("'", "''")}')`);
-  } catch {
-    // Expected: this statement exists to fail.
+    await db.query(statement);
+    unconfirmed = new Error('the abort statement did not fail');
+  } catch (error) {
+    if (confirmed(error)) return;
+    unconfirmed = error;
   }
+  const client = (
+    db as { client?: { run?: (sql: string) => Promise<unknown> } }
+  ).client;
+  if (typeof client?.run === 'function') {
+    try {
+      await client.run(statement);
+    } catch (error) {
+      if (confirmed(error)) return;
+    }
+  }
+  throw new Error(
+    'Could not confirm that the joined DuckDB transaction was aborted; it must not be committed',
+    { cause: unconfirmed },
+  );
 }

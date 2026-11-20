@@ -18,7 +18,10 @@
  * nothing to apply.
  *
  * SQLite and DuckDB are single-writer files whose engines already serialize
- * schema changes, so the lock is a no-op there.
+ * schema changes, so the lock is a no-op there. That serializes the writes,
+ * not a plan read before them: a table rebuild therefore checks, inside its
+ * own transaction, that the table is still the one it was planned from
+ * (`rebuild-plan-guard.ts`).
  */
 
 import { detectEngine } from '../schema/ddl/index.js';

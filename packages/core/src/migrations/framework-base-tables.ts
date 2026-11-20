@@ -58,6 +58,7 @@ import type { DatabaseInterface } from '@happyvertical/sql';
 import { detectEngine } from '../schema/ddl/index.js';
 import type { DatabaseEngine } from '../schema/ddl/types.js';
 import { quoteIdentifier } from '../schema/sql-identifiers.js';
+import { sqliteUserObjectName } from '../schema/sqlite-internal-names.js';
 import { toSafeInteger } from '../utils/safe-integer.js';
 
 /**
@@ -287,7 +288,7 @@ async function getExistingTableNames(
       : // SQLite and DuckDB both expose the SQLite-compatible `sqlite_master`
         // catalog (differ.ts's `getExistingTables()` verified this against a
         // live DuckDB build; see that comment for detail).
-        `SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'`;
+        `SELECT name FROM sqlite_master WHERE type='table' AND ${sqliteUserObjectName()}`;
 
   const result = await db.query(query);
   const rows = result.rows as { name?: string; table_name?: string }[];

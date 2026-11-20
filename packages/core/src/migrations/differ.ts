@@ -53,6 +53,7 @@ import {
 } from '../schema/foreign-key-policy.js';
 import { shortenIdentifier } from '../schema/index-utils.js';
 import { inspectTableSchema } from '../schema/inspection.js';
+import { sqliteUserObjectName } from '../schema/sqlite-internal-names.js';
 import { STI_CHECK_PREFIX } from '../schema/sti-hardening.js';
 import {
   isEmptyTextOnlyProbe,
@@ -110,7 +111,6 @@ import {
   sqliteBackfillPlaceholderSql,
   sqliteRebuildPlaceholderSql,
 } from './sqlite-rebuild.js';
-
 import type { DatabaseInterface, SqlTableSchemaInfo } from './types.js';
 
 const logger = createLogger({ level: 'info' });
@@ -6614,7 +6614,7 @@ export class SchemaComparer {
       const result = await this.db.query(
         `SELECT name, sql FROM sqlite_master WHERE type = 'index' AND tbl_name = ${this.quoteLiteral(
           tableName,
-        )} AND name NOT LIKE 'sqlite_%'`,
+        )} AND ${sqliteUserObjectName()}`,
       );
       for (const row of result.rows as {
         name?: string;
@@ -6647,7 +6647,7 @@ export class SchemaComparer {
       // introspection query covers both engines. Verified against a live DuckDB
       // v1.4.3 (json mode): `SELECT name FROM sqlite_master WHERE type='table'`
       // returns user tables with the expected `name` column (#1579).
-      query = `SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'`;
+      query = `SELECT name FROM sqlite_master WHERE type='table' AND ${sqliteUserObjectName()}`;
     }
 
     const result = await this.db.query(query);

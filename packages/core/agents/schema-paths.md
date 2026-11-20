@@ -579,6 +579,19 @@ How each engine gets there:
   lost the change while the migrate succeeded (rv4,
   `issue-4937-overlapping-rebuilds.test.ts`). Rebuilds that cannot be combined
   stop the whole migration before anything runs.
+- **Combined DuckDB rebuilds read every table once.** When two rebuilds of
+  one migration read the same table and it changed between the readings (a
+  column added and filled by another connection), combining them would build
+  the earlier definition and check it against the later catalog; planning
+  stops with `TableChangedSincePlanError` instead, and a rerun plans from one
+  reading.
+- **The DuckDB rebuild checks its tables before it starts.** Its first
+  statements (`planGuardStatements`) compare the live `duckdb_tables()` and
+  `duckdb_indexes()` text of every table of the group with the text read when
+  the rebuild was planned, and raise on a difference, for the reason given
+  under "A SQLite type change is a table rebuild": a column or index added
+  after planning is not in the plan and would be dropped with the table. The
+  tracker reports it as `TableChangedSincePlanError`.
 - **The DuckDB rebuild checks itself** before its staging tables are dropped:
   for every table of the group it compares the columns, indexes, foreign keys
   and row count with what the plan meant to build, and fails the transaction
@@ -932,7 +945,48 @@ statement list SQLite's own docs prescribe: stage a new table under
 "requires table recreation" placeholder, so `db:migrate` applies it inside the
 normal atomic batch instead of exiting 1 forever.
 
-Four properties of that module are load-bearing; keep them if you touch it:
+These properties of that module are load-bearing; keep them if you touch it:
+
+- **The plan starts by checking that the table is still the one it was planned
+  from.** The staging DDL, the copy list and the replayed indexes and triggers
+  are all read at diff time, and SQLite holds nothing between planning and
+  applying. A column, index or trigger another connection adds in that window
+  is in none of them: it was not copied and went with the dropped table, with
+  everything written to it, while the migrate reported success. So the first
+  statements of every plan (`sqliteUnchangedTableGuardStatements`) compare the
+  live `sqlite_master` text of the table and of each of its indexes and
+  triggers with what was planned, inside the rebuild's transaction, and fail
+  it on any difference. The failure is a CHECK on a temporary table whose
+  constraint name is the reason
+  (`smrt table rebuild refused: the table changed after the migration was
+  planned`), so it holds for the tracker, the CLI and a caller that runs the
+  statements itself. `MigrationTracker` reports it as
+  `TableChangedSincePlanError` (`rebuild-plan-guard.ts`; internal, not
+  exported); nothing was changed, and a rerun plans from the table as it now
+  is. The plan's foreign-key guard asks the live catalog too
+  (`sqliteReferencedTableGuardStatements`): it fails where foreign keys are on
+  and any table references the target when the rebuild runs, so a child with
+  `ON DELETE CASCADE` created after planning (or given its key by an earlier
+  statement of the batch) cannot lose rows to a caller that runs the plan with
+  foreign keys on. The tracker turns them off, so the guard passes there; a
+  stale referencing set is no stop, since nothing cascades. Every rebuild plan
+  runs the same live check again right before its `DROP TABLE`, after the
+  staging table exists: a plan that adds a self-reference makes the staging
+  table a child of the table it is about to drop. That pre-drop check is in
+  every plan, the public `buildSqliteRebuildStatements` included (the messages
+  maintenance uses it). The guard at the start, and the plan guard above, come
+  from the differ's planner only, so a caller building its own plan holds the
+  database for the whole of its read-plan-apply. Both checks read each table's
+  keys in `main`, where the table was listed (`pragma_foreign_key_list(name,
+  'main')`), so a temporary table of the same name cannot answer for a real
+  child, and read the setting from `main.pragma_foreign_keys`; a missing
+  answer counts as "on" (`CHECK ("safe" = 1)` would accept NULL).
+  `rebuild-plan-guard.test.ts` covers both engines. Catalog reads skip
+  SQLite's reserved `sqlite_` names by a literal prefix
+  (`sqliteUserObjectName`, `schema/sqlite-internal-names.ts`): in `LIKE`, `_`
+  matches any character, so `NOT LIKE 'sqlite_%'` also hid user objects such
+  as `sqliteX_unique` from the rebuild's capture and its guard, and the
+  rebuild dropped them.
 
 - **The target shape comes from the live `sqlite_master` DDL**, retyping only
   the drifted columns. It is not regenerated from the manifest, so the rebuild
@@ -1885,6 +1939,68 @@ connection. This mode is not atomic. Unfinished indexes are `failed`, not
 allows reruns to resume index work without replaying committed DDL. Inspect
 `pg_index.indisvalid` and drop INVALID indexes before rebuild (`pg_indexes`
 alone cannot detect them). Operational commands: `packages/cli/AGENTS.md`.
+
+### The money rescale runs once (`migrations/minor-units.ts`)
+
+`rescaleMoneyColumnsToMinorUnits` (and the `migrate*MoneyToMinorUnits`
+wrappers of commerce, subscriptions, projects and support) is not safe to
+repeat: it multiplies. Reading which columns still need converting, every
+statement and its `_smrt_backfills` marker are one transaction on every
+engine (`runBackfillOnceInTransaction`, `migrations/backfill-once.ts`,
+internal to core). The transaction first claims the marker name
+(PostgreSQL: `pg_advisory_xact_lock` on it; SQLite: the write lock, taken by
+a statement that changes no row), then looks for the marker again, so a
+runner that waited returns `ran: false`. DuckDB has neither lock; run-once
+holds there through DuckDB's transaction conflict (two transactions that both
+change the same table cannot both commit, so the second runner's transaction
+fails and rolls back; the marker insert itself is `ON CONFLICT DO NOTHING`),
+and a DuckDB file is open in one process at a time. On PostgreSQL each table is locked
+(`ACCESS EXCLUSIVE`) before its column types are read, because
+`ALTER ... TYPE BIGINT USING round(col * scale)` scales whatever the column
+holds when it runs, and column types are read for the table the statements
+resolve to (`to_regclass`), never for a same-named table in another schema.
+
+On a caller's transaction handle, that transaction is the unit, and the
+conversion and the marker also run in a nested scope of it, opened with the
+handle's own `transaction()` (a savepoint on SQLite and PostgreSQL; raw
+`SAVEPOINT` SQL is refused on remote LibSQL and secure-file SQLite
+transaction handles): a failure rolls the scope back before the error is
+returned, so a caller that catches the error and commits commits nothing of
+the conversion. The work's own error is the one returned, even when SQLite
+already rolled back the whole transaction and the scope's rollback fails.
+A SQLite or PostgreSQL transaction handle without `transaction()` is refused
+before anything is written. DuckDB has no nested scope: a failure after the
+conversion has written puts the caller's transaction in DuckDB's aborted state
+(`abortJoinedDuckDbTransaction`), so it can only end by discarding the
+conversion, even when the failure never reached the engine. The abort counts
+only when the engine reports it: a rejection that did not come from DuckDB is
+retried on the handle's own connection, and an abort no path confirms is thrown
+(it must not be committed) rather than assumed. A refusal before
+any write (the preflight) leaves the caller's transaction as it was. A column
+catalog read that fails fails the whole rescale (nothing written, no marker);
+only a table the catalog reports as absent is `missing`. A handle backed by JSON export is refused before any read or write, by the
+public rescale and by the preflight: engine `json`, the JSON adapter's
+capabilities, or a DuckDB handle whose `exportTable` is not proven inert. A
+native DuckDB handle exposes `exportTable` for every write strategy; the
+rescale calls it on a table name that does not exist, and only the answer
+"write strategy is set to none" (nothing exported, nothing written) lets the
+handle through, so `manual` and `immediate` handles are refused and the
+handle of a DuckDB transaction (which has none) works. Its conversion and
+marker would otherwise live in memory while a later ordinary write exports the
+converted table to disk alone. A `json` engine hint, in any case, is refused
+the same way, including `preflight.engine` fed back as the hint. The engine is the caller's `engineHint`, then a DuckDB handle's
+own `engine` (an in-memory DuckDB transaction's URL reads as SQLite), then the
+URL.
+
+A run that fails or is killed part-way changes nothing. This matters most on
+SQLite, where a rescaled column still declares a floating-point type and only
+the marker says it was converted. `BackfillTracker.runIfPending` is unchanged:
+its callback runs before the marker with no transaction around the two, so it
+must be safe to repeat. Known limit, unchanged: the bundled DuckDB handle is
+rescaled in place like SQLite (values move, the declared type stays), because
+the helper reads it as the JSON adapter. Tests: `minor-units.test.ts` (SQLite,
+DuckDB), `minor-units-postgres.optional.test.ts`, `backfill-once.test.ts`,
+`backfill-once-postgres.optional.test.ts`.
 
 ### Subclass conflict identities (#3456)
 
