@@ -1398,6 +1398,101 @@ describe('collection items', () => {
   });
 });
 
+describe('collection items through an app-level generic collection', () => {
+  const GENERIC_BASE = `${CORE}\nexport abstract class BaseCollection<T extends SmrtObject> extends SmrtCollection<T> {}\n`;
+
+  it('proves the item named through one or two generic collection ancestors by identity', async () => {
+    const { errors, manifest } = await scanProject({
+      'src/models/Account.ts': OPEN_BASE('Account'),
+      'src/collections/BaseCollection.ts': GENERIC_BASE,
+      'src/collections/MidCollection.ts': `${CORE}\nimport { BaseCollection } from './BaseCollection';\nexport abstract class MidCollection<Item extends SmrtObject> extends BaseCollection<Item> {}\n`,
+      'src/collections/VendorAccounts.ts': `${CORE}\nimport { Account } from '${PROVIDER}';\nimport { BaseCollection } from './BaseCollection';\nexport class VendorAccounts extends BaseCollection<Account> {\n  static readonly _itemClass = Account;\n}\n`,
+      'src/collections/DeepAccounts.ts': `${CORE}\nimport type { Account } from '${PROVIDER}';\nimport { MidCollection } from './MidCollection';\nexport class DeepAccounts extends MidCollection<Account> {}\n`,
+    });
+
+    expect(errors).toEqual([]);
+    const objects = manifest().objects;
+    for (const name of ['VendorAccounts', 'DeepAccounts']) {
+      expect(objects[`${PACKAGE}:${name}`]?.extendsTypeArgQualified).toBe(
+        `${PROVIDER}:Account`,
+      );
+    }
+    // The generic ancestors name no item at all.
+    expect(
+      objects[`${PACKAGE}:BaseCollection`]?.extendsTypeArg,
+    ).toBeUndefined();
+    expect(objects[`${PACKAGE}:MidCollection`]?.extendsTypeArg).toBeUndefined();
+  });
+
+  it('takes the item an ancestor fixes, not the type argument the subclass passes', async () => {
+    const { errors, manifest } = await scanProject({
+      'src/models/Account.ts': OPEN_BASE('Account'),
+      'src/models/Closed.ts': CLOSED_BASE('ClosedEntry'),
+      'src/collections/Entries.ts': `${CORE}\nimport { ClosedEntry } from '../models/Closed';\nexport abstract class EntryCollection<Tag> extends SmrtCollection<ClosedEntry> {}\n`,
+      'src/collections/Tagged.ts': `${CORE}\nimport { Account } from '../models/Account';\nimport { EntryCollection } from './Entries';\nexport class TaggedEntries extends EntryCollection<Account> {}\n`,
+    });
+
+    expect(errors).toEqual([]);
+    const tagged = manifest().objects[`${PACKAGE}:TaggedEntries`];
+    expect(tagged?.extendsTypeArg).toBe('ClosedEntry');
+  });
+
+  it('rejects a subclass whose generic ancestor passes another type parameter than its first, and records no item', async () => {
+    const { errors, manifest } = await scanProject({
+      'src/models/Account.ts': OPEN_BASE('Account'),
+      'src/collections/Pair.ts': `${CORE}\nexport abstract class PairCollection<Tag, T extends SmrtObject> extends SmrtCollection<T> {}\n`,
+      'src/collections/Accounts.ts': `${CORE}\nimport { Account } from '../models/Account';\nimport { PairCollection } from './Pair';\nexport class Accounts extends PairCollection<string, Account> {}\n`,
+    });
+
+    expect(errors).toHaveLength(1);
+    expect(errors[0].message).toContain('Accounts');
+    expect(errors[0].message).toContain('not its first');
+    expect(manifest().objects[`${PACKAGE}:Accounts`]?.extendsTypeArg).toBe(
+      undefined,
+    );
+  });
+
+  it('rejects a static _itemClass that names another class than the item an ancestor fixes', async () => {
+    const { errors } = await scanProject({
+      'src/models/Account.ts': OPEN_BASE('Account'),
+      'src/models/Closed.ts': CLOSED_BASE('ClosedEntry'),
+      'src/collections/Entries.ts': `${CORE}\nimport { ClosedEntry } from '../models/Closed';\nexport abstract class EntryCollection extends SmrtCollection<ClosedEntry> {}\n`,
+      'src/collections/Wrong.ts': `${CORE}\nimport { Account } from '../models/Account';\nimport { EntryCollection } from './Entries';\nexport class WrongEntries extends EntryCollection {\n  static readonly _itemClass = Account;\n}\n`,
+    });
+
+    expect(messages(errors)).toContain('static _itemClass');
+    expect(messages(errors)).toContain('EntryCollection');
+  });
+
+  it('rejects a collection item that is a stand-in for another package, by type argument and by _itemClass', async () => {
+    const { errors } = await scanProject({
+      'src/models/Account.ts': OPEN_BASE('Account'),
+      'src/fixtures/Account.ts': `${CORE}\n@smrt({ packageName: '@fixture/other', api: false })\nexport class Account extends SmrtObject {\n  standInOnly = '';\n}\n`,
+      'src/collections/BaseCollection.ts': GENERIC_BASE,
+      'src/collections/ByArgument.ts': `${CORE}\nimport { Account } from '../fixtures/Account';\nimport { BaseCollection } from './BaseCollection';\nexport class ByArgument extends BaseCollection<Account> {}\n`,
+      'src/collections/ByField.ts': `${CORE}\nimport { Account } from '../fixtures/Account';\nexport class ByField<T> extends SmrtCollection<T> {\n  static readonly _itemClass = Account;\n}\n`,
+    });
+
+    const text = messages(errors);
+    expect(text).toContain('ByArgument');
+    expect(text).toContain('ByField');
+    expect(text).toContain('stand-in');
+  });
+
+  it('records no item for a generic subclass that passes its own type parameter on', async () => {
+    const { errors, manifest } = await scanProject({
+      'src/models/Account.ts': OPEN_BASE('Account'),
+      'src/collections/BaseCollection.ts': GENERIC_BASE,
+      'src/collections/Typed.ts': `${CORE}\nimport { BaseCollection } from './BaseCollection';\nexport abstract class TypedCollection<Account extends SmrtObject> extends BaseCollection<Account> {}\n`,
+    });
+
+    expect(errors).toEqual([]);
+    expect(
+      manifest().objects[`${PACKAGE}:TypedCollection`]?.extendsTypeArg,
+    ).toBeUndefined();
+  });
+});
+
 describe('repeated scans and project roots', () => {
   it('a second scan in one process sees the barrel replaced by a direct import', async () => {
     const root = newRoot();

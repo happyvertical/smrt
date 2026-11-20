@@ -118,6 +118,16 @@ const ITEM_COLLECTION_BASES: ReadonlySet<string> = new Set([
   'SmrtReportCollection',
 ]);
 
+/**
+ * How a scanned class decides the item of the collections that extend it
+ * (see `InheritanceResolver.itemShape`).
+ */
+type ItemShape =
+  | { kind: 'none' }
+  | { kind: 'parameter' }
+  | { kind: 'item'; item: Proof | null }
+  | { kind: 'unmapped'; reason: string };
+
 /** Type keywords a collection's type argument may be: no item class. */
 const TYPE_KEYWORDS: ReadonlySet<string> = new Set([
   'any',
@@ -267,6 +277,9 @@ export class InheritanceResolver {
   /** Item-class errors of collections, by collection, from {@link resolve}. */
   private itemErrors: Map<RawClassDefinition, string> = new Map();
 
+  /** How each scanned class decides its subclasses' item, from {@link itemShape}. */
+  private itemShapeCache: Map<RawClassDefinition, ItemShape> = new Map();
+
   /**
    * Register raw class definitions from a scan pass.
    *
@@ -377,6 +390,7 @@ export class InheritanceResolver {
     this.chainCache.clear();
     this.linkCache.clear();
     this.itemErrors.clear();
+    this.itemShapeCache.clear();
     this.prover = new ImportProver(
       this.modules,
       this.projectRoot,
@@ -1144,95 +1158,246 @@ export class InheritanceResolver {
   }
 
   /**
-   * The item class of a collection whose direct parent is a framework
-   * collection base (`SmrtCollection<Item>`), proven like a parent; a proof
-   * that fails is recorded for {@link parentResolutionErrors}. A static
-   * `_itemClass` must name the same class. `null` when the type argument is
-   * the class's own type parameter or a type keyword and no `_itemClass`
-   * names a model: the collection records no item name at all.
+   * The item class of a collection, proven like a parent; a proof that fails
+   * is recorded for {@link parentResolutionErrors}. The item is followed
+   * from the class up through its scanned collection ancestry to the
+   * framework collection base (`SmrtCollection<Item>`):
+   *
+   * - The direct parent is the framework base, or a scanned collection that
+   *   passes its first type parameter on to it (`class BaseCollection<T>
+   *   extends SmrtCollection<T>`): the class's own type argument names the
+   *   item, and a static `_itemClass` must name the same class.
+   * - A scanned collection ancestor fixes the item itself: that item, which
+   *   the class's own type argument never replaces.
+   * - An ancestor passes on another type parameter than its first: the item
+   *   cannot be followed, which is a scan error.
+   *
+   * `null` when no item model is named (the class's own type parameter or a
+   * type keyword with no `_itemClass` naming a model), and after an error:
+   * the collection then records no item name at all, so generation never
+   * looks an unproven name up. `undefined` when the class is no collection
+   * over a scanned ancestry (its parent is another package's class, or not a
+   * collection), which leaves the scanned type argument as it was.
    */
   private proveItem(
     classDef: RawClassDefinition,
     parentLink: ParentLink | null,
   ): Proof | null | undefined {
-    if (
-      !classDef.extendsTypeArg ||
-      !parentLink?.framework ||
-      !ITEM_COLLECTION_BASES.has(parentLink.name) ||
-      !this.isScanned(classDef)
-    ) {
+    if (!this.isScanned(classDef) || !parentLink || parentLink.error) {
       return undefined;
     }
+    if (parentLink.framework) {
+      if (
+        !classDef.extendsTypeArg ||
+        !ITEM_COLLECTION_BASES.has(parentLink.name)
+      ) {
+        return undefined;
+      }
+      return this.proveOwnItem(classDef, parentLink.name);
+    }
+    const parent = parentLink.definition;
+    if (!parent || parentLink.package || !this.isScanned(parent)) {
+      return undefined;
+    }
+    const shape = this.itemShape(parent);
+    if (shape.kind === 'none') return undefined;
+    if (shape.kind === 'unmapped') {
+      this.itemErrors.set(classDef, shape.reason);
+      return null;
+    }
+    if (shape.kind === 'parameter') {
+      return this.proveOwnItem(classDef, parent.className);
+    }
+    // An ancestor fixes the item: the class's own type argument is not it.
+    if (shape.item === null) return this.proveRuntimeItem(classDef);
+    const itemField = this.itemClassField(classDef);
+    if (itemField?.initializer) {
+      const runtime = this.proveClassReference(classDef, itemField.initializer);
+      if (!runtime || !sameProof(runtime, shape.item)) {
+        this.itemErrors.set(
+          classDef,
+          `its static _itemClass (${itemField.initializer}) is not the item its collection ancestor ${parent.className} names; make both name the same model`,
+        );
+        return null;
+      }
+    }
+    return shape.item;
+  }
+
+  /**
+   * How a scanned class decides the item of the collections that extend it:
+   * not at all (`none`: no collection over a framework item base through
+   * scanned classes), by its first type parameter (`parameter`), by an item
+   * it fixes itself (`item`), or in a way the scan cannot follow
+   * (`unmapped`: another type parameter than the first is passed on, since
+   * the scan records a subclass's first type argument only).
+   */
+  private itemShape(definition: RawClassDefinition): ItemShape {
+    const cached = this.itemShapeCache.get(definition);
+    if (cached) return cached;
+    // A cyclic chain decides nothing.
+    this.itemShapeCache.set(definition, { kind: 'none' });
+    const shape = this.computeItemShape(definition);
+    this.itemShapeCache.set(definition, shape);
+    return shape;
+  }
+
+  private computeItemShape(definition: RawClassDefinition): ItemShape {
+    const link = this.linkOf(definition);
+    if (!link || link.error) return { kind: 'none' };
+    let passes: ItemShape;
+    if (link.framework) {
+      if (!ITEM_COLLECTION_BASES.has(link.name)) return { kind: 'none' };
+      passes = { kind: 'parameter' };
+    } else if (
+      link.definition &&
+      !link.package &&
+      this.isScanned(link.definition)
+    ) {
+      passes = this.itemShape(link.definition);
+    } else {
+      return { kind: 'none' };
+    }
+    if (passes.kind === 'none' || passes.kind === 'unmapped') return passes;
+    if (passes.kind === 'parameter') {
+      const argument = definition.extendsTypeArg;
+      const head = argument?.split(/[.<]/)[0];
+      const index = head
+        ? (definition.typeParameters?.indexOf(head) ?? -1)
+        : -1;
+      if (index === 0) return { kind: 'parameter' };
+      if (index > 0) {
+        return {
+          kind: 'unmapped',
+          reason:
+            `its collection item cannot be followed through ${definition.className} (${definition.filePath}), which passes its type parameter ` +
+            `${head} to ${link.name}, not its first; the scan reads only the first type argument of a subclass, so make the item type parameter ` +
+            `the first one of ${definition.className}, or extend ${link.name} directly`,
+        };
+      }
+    }
+    return {
+      kind: 'item',
+      item: this.proveItem(definition, link) ?? null,
+    };
+  }
+
+  /** The static `_itemClass` field a class declares itself, if any. */
+  private itemClassField(classDef: RawClassDefinition) {
+    return classDef.fields.find(
+      (field) => field.isStatic && field.name === '_itemClass',
+    );
+  }
+
+  /**
+   * The item a collection's own type argument names, for a collection whose
+   * parent passes that argument on to a framework collection base
+   * (`baseName`: the parent the fix names).
+   */
+  private proveOwnItem(
+    classDef: RawClassDefinition,
+    baseName: string,
+  ): Proof | null | undefined {
     const fail = (reason: string): undefined => {
       this.itemErrors.set(classDef, reason);
       return undefined;
     };
-    const itemField = classDef.fields.find(
-      (field) => field.isStatic && field.name === '_itemClass',
-    );
+    const argument = classDef.extendsTypeArg;
     // Only the class's own type parameter (`class C<T> extends
-    // SmrtCollection<T>`) and a type keyword (`SmrtCollection<any>`) name no
-    // item class. Their spelling must never reach generation, which would
-    // match it by name (a parameter called `Account` would take a model
-    // called `Account`): the item is then the class a static `_itemClass`
-    // names, proven like a parent, or none at all. Every other name is
-    // proven, a type-only import included.
-    const head = classDef.extendsTypeArg.split(/[.<]/)[0];
+    // SmrtCollection<T>`), a type keyword (`SmrtCollection<any>`) and a
+    // missing argument name no item class. Their spelling must never reach
+    // generation, which would match it by name (a parameter called
+    // `Account` would take a model called `Account`): the item is then the
+    // class a static `_itemClass` names, proven like a parent, or none at
+    // all. Every other name is proven, a type-only import included.
     if (
-      classDef.typeParameters?.includes(head) ||
-      TYPE_KEYWORDS.has(classDef.extendsTypeArg)
+      !argument ||
+      classDef.typeParameters?.includes(argument.split(/[.<]/)[0]) ||
+      TYPE_KEYWORDS.has(argument)
     ) {
-      if (!itemField?.initializer) return null;
-      const runtime = this.proveClassReference(classDef, itemField.initializer);
-      if (!runtime) {
-        return fail(
-          `its static _itemClass (${itemField.initializer}) is not a class reference; name the item model class`,
-        );
-      }
-      if (runtime.kind === 'error') {
-        return fail(
-          `its static _itemClass (${itemField.initializer}) cannot be accepted: ${runtime.reason}`,
-        );
-      }
-      if (runtime.kind === 'framework') return null;
-      if (runtime.kind === 'class' && !this.isModelClass(runtime.definition)) {
-        return fail(
-          `its static _itemClass ${runtime.definition.className} (${runtime.definition.filePath}) is not a model; decorate it with @smrt(), or name the model class`,
-        );
-      }
-      return runtime;
+      return this.proveRuntimeItem(classDef);
     }
-    const typeArg = this.proveClassReference(
-      classDef,
-      classDef.extendsTypeArg,
-      { typeImports: true },
-    );
+    const typeArg = this.proveClassReference(classDef, argument, {
+      typeImports: true,
+    });
     if (!typeArg) {
       return fail(
-        `the collection's item \`${classDef.extendsTypeArg}\` is not a class reference; write ${parentLink.name}<Item> with the item model class`,
+        `the collection's item \`${argument}\` is not a class reference; write ${baseName}<Item> with the item model class`,
       );
     }
     if (typeArg.kind === 'error') {
       return fail(
-        `the collection's item \`${classDef.extendsTypeArg}\` cannot be accepted: ${typeArg.reason}`,
+        `the collection's item \`${argument}\` cannot be accepted: ${typeArg.reason}`,
       );
     }
     // A collection over a framework base itself names no item model.
     if (typeArg.kind === 'framework') return undefined;
-    if (typeArg.kind === 'class' && !this.isModelClass(typeArg.definition)) {
-      return fail(
-        `the collection's item ${typeArg.definition.className} (${typeArg.definition.filePath}) is not a model; decorate it with @smrt(), or name the model class`,
-      );
-    }
+    const itemError = this.itemDefinitionError(
+      classDef,
+      typeArg,
+      `the collection's item`,
+    );
+    if (itemError) return fail(itemError);
+    const itemField = this.itemClassField(classDef);
     if (itemField?.initializer) {
       const runtime = this.proveClassReference(classDef, itemField.initializer);
       if (!runtime || !sameProof(runtime, typeArg)) {
         return fail(
-          `its static _itemClass (${itemField.initializer}) is not the class its type argument names (${classDef.extendsTypeArg}); make both name the same model`,
+          `its static _itemClass (${itemField.initializer}) is not the class its type argument names (${argument}); make both name the same model`,
         );
       }
     }
     return typeArg;
+  }
+
+  /**
+   * The item a collection's static `_itemClass` names, for a collection
+   * whose type argument names no class; `null` when it declares none.
+   */
+  private proveRuntimeItem(classDef: RawClassDefinition): Proof | null {
+    const fail = (reason: string): null => {
+      this.itemErrors.set(classDef, reason);
+      return null;
+    };
+    const itemField = this.itemClassField(classDef);
+    if (!itemField?.initializer) return null;
+    const runtime = this.proveClassReference(classDef, itemField.initializer);
+    if (!runtime) {
+      return fail(
+        `its static _itemClass (${itemField.initializer}) is not a class reference; name the item model class`,
+      );
+    }
+    if (runtime.kind === 'error') {
+      return fail(
+        `its static _itemClass (${itemField.initializer}) cannot be accepted: ${runtime.reason}`,
+      );
+    }
+    if (runtime.kind === 'framework') return null;
+    const itemError = this.itemDefinitionError(
+      classDef,
+      runtime,
+      'its static _itemClass',
+    );
+    return itemError ? fail(itemError) : runtime;
+  }
+
+  /**
+   * Why a scanned class proven as a collection's item cannot be it: it is
+   * not a model, or it is a stand-in for another package's class (as for a
+   * parent or a relationship, see {@link standInError}). `undefined` for a
+   * package export, which generation confirms against that package's
+   * manifest.
+   */
+  private itemDefinitionError(
+    classDef: RawClassDefinition,
+    proof: Proof,
+    label: string,
+  ): string | undefined {
+    if (proof.kind !== 'class') return undefined;
+    if (!this.isModelClass(proof.definition)) {
+      return `${label} ${proof.definition.className} (${proof.definition.filePath}) is not a model; decorate it with @smrt(), or name the model class`;
+    }
+    return this.standInError(proof.definition, classDef.filePath);
   }
 
   /**
