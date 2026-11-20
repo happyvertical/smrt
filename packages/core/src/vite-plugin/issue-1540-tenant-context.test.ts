@@ -129,7 +129,15 @@ describe('Issue #1540 (facet 2): tenant-context establishment', () => {
 
     const collectionRoute = findRouteContent('plaindocs/+server.ts');
     expect(collectionRoute).not.toContain('@happyvertical/smrt-tenancy');
-    expect(collectionRoute).not.toContain('establishTenantContext');
+    // Tenancy can be registered at runtime: the route enters the caller's
+    // tenant through core's request hooks, and only when the model is
+    // tenant-scoped at request time.
+    expect(collectionRoute).toContain(
+      'if (isTenantScopedModel("@test/tenant-context:PlainDoc")) establishTenantContext(locals);',
+    );
+    expect(collectionRoute).toContain(
+      "import { enterRequestTenantContext as enterTenantContext, getRequestTenantContext as getCurrentTenant, isTenantScopedModel } from '@happyvertical/smrt-core';",
+    );
     // Auth guard is still present (every route is fail-closed).
     expect(collectionRoute).toContain('requireRouteAuth(locals,');
   });

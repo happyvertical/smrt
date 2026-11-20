@@ -1545,7 +1545,12 @@ describe('SvelteKit Route Generator', () => {
         /Object\.fromEntries\([\s\S]*\),\n\s*\) as ActionArgs\[0\];/,
       );
       expect(content).toContain("ObjectRegistry.getClass('Document')");
-      expect(content).toContain('await ClassRef.browseFacts(options)');
+      // A GET action taking options receives the tenant read scope resolved
+      // at request time (nothing for a model that is not tenant-scoped).
+      expect(content).toContain(
+        'const scopedOptions = scopeTenantReadOptions("@test/sveltekit:Document", options);',
+      );
+      expect(content).toContain('await ClassRef.browseFacts(scopedOptions)');
       expect(content).not.toContain('params.id');
 
       const searchFactsRoute = vi
@@ -1562,14 +1567,16 @@ describe('SvelteKit Route Generator', () => {
       // the string '2', so the generated call decodes it. `query: string`
       // needs no decoding and is passed straight through (#2686).
       expect(searchContent).toContain('ClassRef.searchFacts(');
-      expect(searchContent).toContain('toCustomActionNumber(options.limit)');
+      expect(searchContent).toContain(
+        'toCustomActionNumber(scopedOptions.limit)',
+      );
       // `query: string` needs no decoding and is passed straight through.
-      expect(searchContent).toContain('options.query');
+      expect(searchContent).toContain('scopedOptions.query');
       expect(searchContent).not.toContain(
-        'toCustomActionNumber(options.query)',
+        'toCustomActionNumber(scopedOptions.query)',
       );
       expect(searchContent).toContain(
-        "import { normalizeCustomActionFailure, normalizeTypedHttpError, reportUnexpectedHttpError, toCustomActionNumber } from '@happyvertical/smrt-core';",
+        "import { normalizeCustomActionFailure, normalizeTypedHttpError, reportUnexpectedHttpError, scopeTenantReadOptions, toCustomActionNumber } from '@happyvertical/smrt-core';",
       );
 
       const reservedRoute = vi
@@ -1583,7 +1590,7 @@ describe('SvelteKit Route Generator', () => {
         'new URL(request.url).searchParams.entries(),',
       );
       expect(reservedContent).toContain(
-        'await ClassRef.searchReserved(options.__smrt_options, options.query)',
+        'await ClassRef.searchReserved(scopedOptions.__smrt_options, scopedOptions.query)',
       );
     });
 
@@ -1726,7 +1733,7 @@ describe('SvelteKit Route Generator', () => {
       );
       expect(content).toContain('...pathParams,');
       expect(content).toContain(
-        'await item.evaluateReviewProfileAction(options)',
+        'await item.evaluateReviewProfileAction(scopedOptions)',
       );
     });
 
@@ -1872,7 +1879,8 @@ describe('SvelteKit Route Generator', () => {
 
       expect(content).toContain('export const GET: RequestHandler');
       expect(content).toContain('export const PUT: RequestHandler');
-      expect(content).toContain('await item.getFactsState(options)');
+      // GET item actions receive the request's tenant read scope.
+      expect(content).toContain('await item.getFactsState(scopedOptions)');
       expect(content).toContain('await item.syncFacts(options)');
     });
 
@@ -1930,7 +1938,7 @@ describe('SvelteKit Route Generator', () => {
         );
       expect(browseFactsRoute).toBeDefined();
       const content = browseFactsRoute?.[1] as string;
-      expect(content).toContain('await item.browseFacts(options)');
+      expect(content).toContain('await item.browseFacts(scopedOptions)');
 
       // The route stays exactly where the receiver puts it — under `[id]`, on
       // the instance. What changed in #2686 is that the contradiction is no
@@ -3329,7 +3337,7 @@ describe('SvelteKit Route Generator', () => {
         "const orderBy = url.searchParams.get('orderBy') || LIST_ORDER_BY;",
       );
       expect(collectionContent).toContain(
-        'const count = await collection.count({ where });',
+        'const count = await collection.count({ where }).catch(rejectListWhere);',
       );
       expect(collectionContent).not.toContain(
         "Number(url.searchParams.get('limit')) || 50",

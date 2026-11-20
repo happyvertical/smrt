@@ -231,6 +231,24 @@ const isQuality = await doc.isHighQuality();
 const summary = await doc.generateSummary();
 ```
 
+The values passed to `create()` and `createMany()` describe the row. The new
+object's services (its database, AI client and the other service options:
+`db`, `persistence`, `fs`, `ai`, `decisions`, `inference`, `usage`, `logging`,
+`metrics`, `pubsub`, `sanitization`, `signals`) always come from the collection
+and from configuration, never from those values. To create through another
+database handle or AI client, bind a collection to it:
+
+```typescript
+await db.transaction(async (tx) => {
+  const documents = await DocumentCollection.create({ db: tx });
+  await documents.create({ title: 'Written in the transaction' });
+});
+```
+
+Control keys such as `id`, `_meta_type` and `_insertOnly` keep their meaning in
+create data. The generated REST, MCP and SvelteKit write routes apply the same
+rule to request bodies, which set fields only.
+
 ## AI-Powered Methods
 
 SMRT objects include built-in AI operations that enable intelligent content analysis and transformation. These methods leverage the configured AI provider to perform natural language tasks.
@@ -1064,6 +1082,14 @@ const total = await collection.count({
   where: { 'price >': 50 }
 });
 ```
+
+A key may be written in camelCase or snake_case (`categoryId` and `category_id`
+name the same column), but a column gets one condition per operator. A `where`
+in which two keys resolve to the same column and operator, such as
+`{ categoryId: 'a', category_id: 'b' }`, is rejected with a `WhereClauseError`
+(`INVALID_WHERE_CLAUSE`, HTTP 400 on generated routes) instead of keeping
+whichever key came last. Different operators on one column, as with the two
+`price` conditions above, are combined with AND.
 
 #### Query bounds
 

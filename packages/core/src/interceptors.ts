@@ -157,6 +157,14 @@ export interface CollectionInterceptor {
 
   /**
    * Called before list() operations
+   *
+   * `options.where` holds the caller's keys as written, before the collection
+   * resolves them to columns: `ownerId`, `owner_id` and `ownerId =` are three
+   * keys for one column. To decide whether a column is already filtered,
+   * compare `resolveWhereKey(key).column`, never the literal key. A predicate
+   * added here cannot be replaced by another spelling: the collection refuses
+   * a record whose keys resolve to the same column and operator.
+   *
    * @param className - Name of the class being listed
    * @param options - List options (where, orderBy, limit, select, etc.)
    * @param context - Operation context
@@ -183,6 +191,10 @@ export interface CollectionInterceptor {
 
   /**
    * Called before get() operations
+   *
+   * An object filter holds caller keys as written; see {@link beforeList} for
+   * how to compare them.
+   *
    * @param className - Name of the class
    * @param filter - ID, slug, or filter object
    * @param context - Operation context

@@ -1769,6 +1769,11 @@ export class MCPGenerator {
    * Mass-assignment guard (#1540): strip framework/server-managed and
    * `@field({ readonly: true })` fields from a create/update body, and — when an
    * `@smrt({ api: { writable: [...] } })` allowlist is set — intersect with it.
+   *
+   * Tool arguments set fields and nothing else: `_`-prefixed keys and the keys
+   * that configure a service of the object
+   * (`ObjectRegistry.isServiceOptionInput`) never reach construction or a
+   * loaded instance.
    */
   private applyWritablePolicy(
     objectName: string | undefined,
@@ -1811,6 +1816,7 @@ export class MCPGenerator {
     const result: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(data)) {
       if (key.startsWith('_')) continue;
+      if (ObjectRegistry.isServiceOptionInput(objectName, key)) continue;
       if (serverManaged.has(key)) continue;
       if (readonly.has(key)) continue;
       if (writable && !writable.includes(key)) continue;
@@ -3012,6 +3018,8 @@ function applyWritablePolicy(objectName: string, data: any): Record<string, any>
   const result: Record<string, any> = {};
   for (const [key, value] of Object.entries(data as Record<string, any>)) {
     if (key.startsWith('_')) continue;
+    // Arguments set fields only, never a service of the object.
+    if (ObjectRegistry.isServiceOptionInput(objectName, key)) continue;
     if (serverManaged.has(key)) continue;
     if (readonly.has(key)) continue;
     if (writable && !writable.includes(key)) continue;
