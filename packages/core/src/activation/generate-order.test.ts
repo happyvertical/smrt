@@ -907,6 +907,55 @@ describe('generated activation order', () => {
       await generateSvelteKitRoutes(files.root, manifest, options);
       expect(snapshot()).toEqual(before);
     });
+
+    it('refuses a same-named subclass without replaceParent in both public generators and leaves published outputs byte-identical', async () => {
+      const { files, manifest } = project([
+        { key: APP, parent: PROVIDER, replace: true },
+        { key: PROVIDER },
+      ]);
+      files.write('src/lib/server/smrt.ts', 'export const options = {};');
+      const options = {
+        enabled: true,
+        lazyActivation: true,
+        routesDir: 'src/routes/api',
+        objectsDir: 'src/lib/objects',
+        changesRoute: { enabled: false },
+        eventsRoute: { enabled: false },
+        resourcesRoute: { enabled: false },
+      };
+      await generateSvelteKitRoutes(files.root, manifest, options);
+      const snapshot = () => {
+        const out: Record<string, string> = {};
+        const walk = (dir: string) => {
+          for (const name of readdirSync(dir)) {
+            const path = join(dir, name);
+            if (name === 'node_modules') continue;
+            if (statSync(path).isDirectory()) walk(path);
+            else out[path] = readFileSync(path, 'utf8');
+          }
+        };
+        walk(files.root);
+        return out;
+      };
+      const before = snapshot();
+      delete manifest.objects[APP].decoratorConfig.replaceParent;
+      const undeclared = /replaceParent/;
+      expect(() => generate(files, manifest)).toThrow(undeclared);
+      expect(() =>
+        buildActivationManifest(manifest, {
+          '@activation/customer': {
+            specifier: '@activation/customer',
+            models: [PROVIDER],
+            dependencies: [],
+          },
+          app: { specifier: 'app', models: [APP], dependencies: [] },
+        }),
+      ).toThrow(undeclared);
+      await expect(
+        generateSvelteKitRoutes(files.root, manifest, options),
+      ).rejects.toThrow(undeclared);
+      expect(snapshot()).toEqual(before);
+    });
   });
 });
 
