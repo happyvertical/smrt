@@ -129,7 +129,9 @@ when the caller handles a structured/boolean denial.
 
 Generated SvelteKit write routes (POST/PUT/PATCH/DELETE CRUD and mutating
 custom actions) enforce the same `collection.action` slug (custom actions use
-`collection.<method>`; actions hosted on a collection class use the item collection, which the catalog now emits) after authentication: the slug must be in the request's
+`collection.<method>`; actions hosted on a collection class use the item collection, which the catalog now emits; only an item the manifest records
+for the collection takes its `operationPermissions` alias and SQL bindings, while an item inferred from the collection's name catalogs plain
+`<collection>.<method>` slugs with no binding) after authentication: the slug must be in the request's
 session permission snapshot (`locals.permissions`/`permissionSet`/
 `smrtPermissions` or `locals.tenantContext.permissions`), otherwise 403. Only
 `locals.tenantContext.superAdminBypass` skips it; `api.public: true` stays open.

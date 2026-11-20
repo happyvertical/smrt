@@ -260,10 +260,13 @@ export function deriveOperationPermissionSlug(
   const actions = new Set<string>();
   for (const registered of new Set(ObjectRegistry.getAllClasses().values())) {
     const entry = manifestEntryFor(registered);
-    const owner =
-      entry && isCollectionClass(registered, entry)
-        ? resolveCollectionItemRegistration(registered, entry)
-        : registered;
+    // A collection's alias speaks for its recorded item only; a
+    // name-inferred item may not be the class the collection holds.
+    let owner: RegisteredCatalogClass | undefined = registered;
+    if (entry && isCollectionClass(registered, entry)) {
+      const resolvedItem = resolveCollectionItemRegistration(registered, entry);
+      owner = resolvedItem?.recorded ? resolvedItem.item : undefined;
+    }
     if (
       !owner ||
       resolveCatalogCollectionName(owner, manifestEntryFor(owner)) !==
@@ -445,17 +448,26 @@ function isCollectionClass(
   );
 }
 
+/**
+ * A collection's item: the one its manifest ancestry records (`recorded`),
+ * or, for a manifest that records none, a class named after the collection
+ * (`AccountCollection` -> `Account`). A name-inferred item may be another
+ * class than the one the collection holds at runtime, so it only names the
+ * permission slugs it catalogs: it never decides an operation's permission
+ * alias or receives the collection's SQL bindings.
+ */
 function resolveCollectionItemRegistration(
   registered: RegisteredCatalogClass,
   manifestEntry: SmartObjectDefinition,
-): RegisteredCatalogClass | undefined {
+): { item: RegisteredCatalogClass; recorded: boolean } | undefined {
   const ancestry = collectCatalogAncestry(registered, manifestEntry);
   for (const { entry, registered: ancestor } of ancestry) {
     // A confirmed item of another package is named by its qualified
     // identity; its bare name could be an unrelated class of this package.
     const typeArg = entry.extendsTypeArgQualified || entry.extendsTypeArg;
     if (typeof typeArg === 'string' && typeArg.length > 0) {
-      return findCatalogClass(typeArg, ancestor.qualifiedName);
+      const item = findCatalogClass(typeArg, ancestor.qualifiedName);
+      return item ? { item, recorded: true } : undefined;
     }
   }
   for (const { registered: ancestor } of ancestry) {
@@ -464,7 +476,7 @@ function resolveCollectionItemRegistration(
       ancestor.name.slice(0, -'Collection'.length),
       ancestor.qualifiedName,
     );
-    if (item) return item;
+    if (item) return { item, recorded: false };
   }
   return undefined;
 }
@@ -475,8 +487,9 @@ function getCollectionClassActionDefinitions(
   standardActions: readonly string[],
 ): PermissionDefinition[] {
   if (!manifestEntry) return [];
-  const item = resolveCollectionItemRegistration(registered, manifestEntry);
-  if (!item) return [];
+  const resolved = resolveCollectionItemRegistration(registered, manifestEntry);
+  if (!resolved) return [];
+  const { item, recorded } = resolved;
   const itemEntry = item.qualifiedName
     ? findManifestEntryByQualifiedName(item.qualifiedName)
     : undefined;
@@ -494,7 +507,11 @@ function getCollectionClassActionDefinitions(
   return getPublicCustomMethodNames(methodEntries, standardActions)
     .filter((methodName) => isOperationEnabled(catalogApi, methodName))
     .map((methodName) => {
-      const alias = resolveOperationPermissionAlias(objectConfig, methodName);
+      // Only a recorded item takes the collection's alias (its action and
+      // SQL bindings): a name-inferred one may not be the class it holds.
+      const alias = recorded
+        ? resolveOperationPermissionAlias(objectConfig, methodName)
+        : undefined;
       const action = alias?.action ?? methodName;
       const definition: PermissionDefinition = {
         className: item.name,

@@ -558,6 +558,71 @@ describe('PermissionCatalogService', () => {
     }
   });
 
+  it('gives no permission alias or SQL binding to an item inferred from a collection name', () => {
+    const restoreBaseline = snapshotObjectRegistryState();
+    const packageName = '@catalog/inferred-item';
+    const objects = {
+      Account: {
+        className: 'Account',
+        collection: 'inferred_accounts',
+        decoratorConfig: {
+          api: true,
+          collection: 'inferred_accounts',
+          tableName: 'inferred_accounts',
+        },
+        fields: {},
+        methods: {},
+        qualifiedName: `${packageName}:Account`,
+      },
+      // A manifest recording no item for the collection: its name alone
+      // points at `Account`, which may not be the class it holds.
+      AccountCollection: {
+        className: 'AccountCollection',
+        collection: 'account_collections',
+        decoratorConfig: {
+          api: { include: ['restoreAll'] },
+          operationPermissions: {
+            restoreAll: { action: 'create', databaseActions: ['UPDATE'] },
+          },
+        },
+        extends: 'SmrtCollection',
+        fields: {},
+        methods: { restoreAll: { isPublic: true, name: 'restoreAll' } },
+        qualifiedName: `${packageName}:AccountCollection`,
+      },
+    };
+    const manifestDir = mkdtempSync(join(tmpdir(), 'catalog-inferred-item-'));
+    const manifestPath = join(manifestDir, 'manifest.json');
+    writeFileSync(manifestPath, JSON.stringify({ objects, packageName }));
+    try {
+      loadManifestFromPathSync(manifestPath);
+      for (const [name, entry] of Object.entries(objects)) {
+        ObjectRegistry.registerFromManifest(
+          `${packageName}:${name}`,
+          entry as never,
+          packageName,
+        );
+      }
+
+      const permissions =
+        PermissionCatalogService.create().getCatalog().permissions;
+      const bound = permissions.flatMap((permission) =>
+        (permission.postgres?.bindings ?? []).filter(
+          (binding) =>
+            binding.tableName === 'inferred_accounts' &&
+            binding.action === 'UPDATE',
+        ),
+      );
+      expect(bound).toEqual([]);
+      expect(
+        deriveOperationPermissionSlug('inferred_accounts', 'restoreAll'),
+      ).toBe('inferred_accounts.restoreAll');
+    } finally {
+      restoreBaseline();
+      rmSync(manifestDir, { force: true, recursive: true });
+    }
+  });
+
   it('catalogs an ordinary generic model as a model, with its CRUD permissions', () => {
     const restoreBaseline = snapshotObjectRegistryState();
     const packageName = '@catalog/generic-model';
