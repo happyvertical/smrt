@@ -1546,6 +1546,24 @@ describe('collection items through an app-level generic collection', () => {
     );
   });
 
+  it('takes the _itemClass a generic ancestor declares over the type argument a subclass passes for its parameter', async () => {
+    const { errors, manifest } = await scanProject({
+      'src/models/Account.ts': `${OPEN_BASE('Account')}\n@smrt({ api: false })\nexport class PrivateAccount extends Account {}\n@smrt({ api: false })\nexport class AuditedAccount extends PrivateAccount {}\n`,
+      'src/collections/AccountBase.ts': `${CORE}\nimport { PrivateAccount } from '../models/Account';\nexport abstract class AccountBase<T extends SmrtObject> extends SmrtCollection<T> {\n  static readonly _itemClass = PrivateAccount;\n}\n`,
+      'src/collections/Accounts.ts': `${CORE}\nimport { Account, AuditedAccount } from '../models/Account';\nimport { AccountBase } from './AccountBase';\nexport class OpenAccounts extends AccountBase<Account> {}\nexport class AuditedAccounts extends AccountBase<AuditedAccount> {\n  static readonly _itemClass = AuditedAccount;\n}\n`,
+    });
+
+    expect(errors).toEqual([]);
+    const objects = manifest().objects;
+    expect(objects[`${PACKAGE}:OpenAccounts`]?.extendsTypeArg).toBe(
+      'PrivateAccount',
+    );
+    // A subclass still narrows the inherited item with its own _itemClass.
+    expect(objects[`${PACKAGE}:AuditedAccounts`]?.extendsTypeArg).toBe(
+      'AuditedAccount',
+    );
+  });
+
   it('records the item an ancestor fixes for a subclass named after another model, with neither type argument nor _itemClass', async () => {
     const { errors, manifest } = await scanProject({
       'src/models/Account.ts': OPEN_BASE('Account'),

@@ -1179,7 +1179,9 @@ export class InheritanceResolver {
    *   passes its first type parameter on to it (`class BaseCollection<T>
    *   extends SmrtCollection<T>`): the class's own type argument names the
    *   item, and a static `_itemClass` must name the same class.
-   * - A scanned collection ancestor fixes the item itself: a type argument
+   * - A scanned collection ancestor fixes the item itself, by its type
+   *   argument or by a static `_itemClass` it declares (which every subclass
+   *   inherits, even one that passes the ancestor's type parameter on): a type argument
    *   the class passes is then not the item, so the ancestor's item is
    *   recorded in its place; a static `_itemClass` names the item the class
    *   narrows it to (proven like a parent); a class that passes neither
@@ -1278,7 +1280,14 @@ export class InheritanceResolver {
       const index = head
         ? (definition.typeParameters?.indexOf(head) ?? -1)
         : -1;
-      if (index === 0) return { kind: 'parameter' };
+      if (index === 0) {
+        // A static `_itemClass` this class declares is the constructor every
+        // subclass inherits, whatever type argument it passes: it fixes the
+        // item, which a subclass may only narrow with its own `_itemClass`.
+        return this.itemClassField(definition)?.initializer
+          ? { kind: 'item', item: this.proveRuntimeItem(definition) }
+          : { kind: 'parameter' };
+      }
       if (index > 0) {
         return {
           kind: 'unmapped',

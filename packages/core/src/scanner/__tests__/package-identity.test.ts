@@ -1272,6 +1272,25 @@ describe('a collection of a package model', () => {
     expect(crud(accounts)).toEqual([]);
     expect(crud(manifest.objects[`${APP}:Account`]).length).toBe(5);
   });
+
+  // A generic ancestor's static `_itemClass` is the constructor a subclass
+  // inherits, whatever it passes for the ancestor's type parameter.
+  it('takes the closed _itemClass a generic ancestor declares, not the open model a subclass passes for its parameter', async () => {
+    const root = await project({
+      providers: {},
+      app: {
+        'src/Account.ts': `${CORE}\n@smrt({ tableName: 'app_accounts' })\nexport class Account extends SmrtObject {}\n@smrt({ api: false })\nexport class PrivateAccount extends Account {\n  hidden = '';\n}\n`,
+        'src/AccountBase.ts': `${CORE}\nimport { PrivateAccount } from './Account';\nexport abstract class AccountBase<T extends SmrtObject> extends SmrtCollection<T> {\n  static readonly _itemClass = PrivateAccount;\n}\n`,
+        'src/OpenAccounts.ts': `${CORE}\nimport { Account } from './Account';\nimport { AccountBase } from './AccountBase';\nexport class OpenAccounts extends AccountBase<Account> {}\n`,
+      },
+    });
+
+    const manifest = await build(root);
+    const accounts = manifest.objects[`${APP}:OpenAccounts`];
+    expect(accounts?.collectionOf).toBe(`${APP}:PrivateAccount`);
+    expect(crud(accounts)).toEqual([]);
+    expect(crud(manifest.objects[`${APP}:Account`]).length).toBe(5);
+  });
 });
 
 describe('open control', () => {
