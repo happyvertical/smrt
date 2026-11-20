@@ -91,6 +91,11 @@ collection returns its own.
   route, tools and commands of its own under that name (never under the
   parent's). `sameNameSubtypes(manifest)` lists the pairs. Manifest generation
   never copies a parent's `collection` or `replaceParent` into the subclass.
+- The run-time REST router reads exposure, `api.public` and enabled actions
+  of an auto-discovered route (CRUD and `sync/apply`) by the registry key of
+  the class the route selected, so a public parent never opens its subtype's
+  route. `authMiddleware` receives that registry key in place of the simple
+  name only when another registered class shares the name.
 - A subtype that declares no `tenantScoped` of its own carries its parent
   chain's declared tenancy (mode, ownership field, requirement):
   `ObjectRegistry.getTenantScopedConfig()` reads the parent as declared, never

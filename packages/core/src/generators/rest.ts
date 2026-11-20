@@ -655,10 +655,13 @@ export class APIGenerator {
     ) {
       return this.createErrorResponse(404, 'Not found');
     }
+    // Policy is read from the exact class the route selected (its registry
+    // key), never from the simple name, which a same-named class shares.
+    const registryKey = classInfo.qualifiedName ?? classInfo.name;
     // Apply auth middleware if configured
     if (this.config.authMiddleware) {
       const authCheck = this.config.authMiddleware(
-        classInfo.name,
+        this.middlewareObjectName(classInfo),
         req.method.toLowerCase(),
       );
       const authResult = await authCheck(req);
@@ -667,7 +670,7 @@ export class APIGenerator {
       }
       // Auth passed, use the potentially modified request
       req = authResult;
-    } else if (!this.isRoutePublic(classInfo.name, req.method)) {
+    } else if (!this.isRoutePublic(registryKey, req.method)) {
       // Fail-closed (#1540): see registered-collection branch above.
       return this.createErrorResponse(401, 'Authentication required');
     }
@@ -682,8 +685,22 @@ export class APIGenerator {
       url,
       // The qualified identity, so request-time tenant scoping resolves the
       // model the route found rather than a same-named class.
-      classInfo.qualifiedName ?? classInfo.name,
+      registryKey,
     );
+  }
+
+  /**
+   * The object name handed to `authMiddleware` for an auto-discovered class:
+   * its simple name, as before, unless another registered class shares that
+   * name (a same-named subtype next to its parent); then its registry key, so
+   * the middleware cannot mistake one class for the other.
+   */
+  private middlewareObjectName(info: RegisteredClass): string {
+    const simple = info.name;
+    const key = info.qualifiedName;
+    if (!key) return simple;
+    if (!simple) return key;
+    return ObjectRegistry.findClassesByName(simple).length > 1 ? key : simple;
   }
 
   /**
@@ -1550,11 +1567,13 @@ export class APIGenerator {
   ): Promise<SyncApplyTarget | null> {
     let collection: SmrtCollection<SmrtObject> | null = null;
     let objectName: string | null = null;
+    let middlewareName: string | null = null;
 
     const registered = this.collections.get(objectSegment);
     if (registered) {
       collection = registered;
       objectName = this.getCollectionObjectName(registered) || objectSegment;
+      middlewareName = objectName;
     } else {
       // Same canonical-`collection` match as the CRUD path so a client and the
       // batch contract resolve identical segments (#1794).
@@ -1568,7 +1587,9 @@ export class APIGenerator {
         })
       ) {
         collection = await this.getCollection(info);
-        objectName = info.name;
+        // The exact class's registry key, as on the CRUD route.
+        objectName = info.qualifiedName ?? info.name;
+        middlewareName = this.middlewareObjectName(info);
       }
     }
 
@@ -1585,6 +1606,7 @@ export class APIGenerator {
     }
 
     const resolvedName = objectName;
+    const resolvedMiddlewareName = middlewareName ?? objectName;
     const resolvedCollection = collection;
     return {
       objectName: resolvedName,
@@ -1611,7 +1633,10 @@ export class APIGenerator {
         if (this.config.authMiddleware) {
           const verb =
             op === 'create' ? 'post' : op === 'update' ? 'put' : 'delete';
-          const authCheck = this.config.authMiddleware(resolvedName, verb);
+          const authCheck = this.config.authMiddleware(
+            resolvedMiddlewareName,
+            verb,
+          );
           // Fresh Request per invocation: the batch handler already consumed
           // the original body, and middleware may read it (body-based auth,
           // request signing) exactly as it can on CRUD routes.
