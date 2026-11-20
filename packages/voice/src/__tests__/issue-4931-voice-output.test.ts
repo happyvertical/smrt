@@ -9,7 +9,7 @@ for (const replaced of [false, true]) {
     beforeAll(async () => {
       restore = snapshotObjectRegistryState();
       expected = replaced
-        ? (await import('./issue-4931-app.fixture.js')).VoiceOutput
+        ? (await import('./issue-4931-app.fixture.js')).appModels.VoiceOutput
         : VoiceOutput;
     });
     afterAll(() => restore());
