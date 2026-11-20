@@ -205,6 +205,60 @@ describe('tracked client scope', () => {
     expect(await getAiRun(db, foreign.run.id)).toMatchObject({ calls: 0 });
   });
 
+  it('reads a per-call run context once, so the context checked is the context used', async () => {
+    const db = await memoryDb();
+    const one = createTrackedAiClient({ db, tenantId: 'tenant-one', ai });
+    const two = createTrackedAiClient({ db, tenantId: 'tenant-two', ai });
+    const own = await one.openRun({ type: 'turn' });
+    const foreign = await two.openRun({ type: 'turn' });
+    const client = await one.client(prompt);
+    // Options whose run context answers differently on each read.
+    const shifting = (answers: unknown[]) => {
+      let reads = 0;
+      return {
+        get runContext() {
+          const answer = answers[Math.min(reads, answers.length - 1)];
+          reads += 1;
+          return answer;
+        },
+      };
+    };
+
+    await client.message(
+      'hello',
+      shifting([undefined, foreign.context]) as never,
+    );
+    await client.message(
+      'hello',
+      shifting([own.context, foreign.context]) as never,
+    );
+    const stream = (
+      client as unknown as {
+        stream(input: string, options: unknown): AsyncIterable<unknown>;
+      }
+    ).stream('hello', shifting([undefined, foreign.context]));
+    for await (const _chunk of stream) {
+      // drain
+    }
+
+    expect(sent).toHaveLength(3);
+    expect(sent[0]?.runContext).toBeUndefined();
+    expect(sent[2]?.runContext).toBeUndefined();
+    expect(await getAiRun(db, own.run.id)).toMatchObject({ calls: 1 });
+    expect(await getAiRun(db, foreign.run.id)).toMatchObject({
+      calls: 0,
+      reservedCalls: 0,
+    });
+    expect(
+      rowsOf(
+        await db.query(
+          'SELECT id FROM _smrt_ai_usage WHERE run_id = $1',
+          foreign.run.id,
+        ),
+      ),
+    ).toEqual([]);
+  });
+
   it('keeps the database it was built on when the caller changes its options', async () => {
     const db = await memoryDb();
     const replacement = await memoryDb();

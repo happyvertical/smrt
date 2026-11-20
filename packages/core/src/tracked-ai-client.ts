@@ -202,10 +202,16 @@ export function createTrackedAiClient(
    * run.
    */
   const inScope = async (runContext: unknown): Promise<AiRunContext> => {
-    if (!isAiRunContext(runContext)) {
+    // Each property is read once, into a plain copy, and only the copy is
+    // checked: a getter cannot answer the check and the use differently.
+    const copy: unknown =
+      runContext !== null && typeof runContext === 'object'
+        ? { ...runContext }
+        : runContext;
+    if (!isAiRunContext(copy)) {
       throw new TypeError('client: runContext is not an AI run context');
     }
-    const checked: AiRunContext = { ...runContext };
+    const checked: AiRunContext = copy;
     const refuse = () =>
       new TypeError('client: the run belongs to another tenant or database');
     if (checked.db !== db || (checked.tenantId ?? null) !== tenantId) {
@@ -267,21 +273,29 @@ export function createTrackedAiClient(
             return value;
           }
           if (!TRACKED_METHODS.has(property)) return value.bind(target);
+          // The call's options are read once, into a plain copy, before
+          // anything is checked: the run context that is checked is the
+          // one forwarded, and a context the caller passed is never
+          // forwarded itself, only its checked copy.
+          const snapshot = (raw: unknown): Record<string, unknown> =>
+            raw !== null && typeof raw === 'object' ? { ...raw } : {};
           const send = (
             input: unknown,
-            raw: Record<string, unknown> | undefined,
+            options: Record<string, unknown>,
             rest: unknown[],
             context: AiRunContext | undefined = runContext,
-          ) =>
-            value.call(
+          ) => {
+            const { runContext: _passed, ...forwarded } = options;
+            return value.call(
               target,
               input,
               {
-                ...(raw ?? {}),
+                ...forwarded,
                 usageTags: {
                   ...tags,
-                  ...((raw?.usageTags as Record<string, string> | undefined) ??
-                    {}),
+                  ...((forwarded.usageTags as
+                    | Record<string, string>
+                    | undefined) ?? {}),
                   // The prompt's key is not the call's to change.
                   promptKey: prompt.promptKey,
                 },
@@ -289,40 +303,37 @@ export function createTrackedAiClient(
               },
               ...rest,
             );
+          };
           // A context bound at `client()` was checked there; one passed on
           // the call is checked before anything is reserved or sent.
-          const perCall = (raw?: Record<string, unknown>) =>
-            !runContext && raw?.runContext !== undefined;
+          const perCall = (options: Record<string, unknown>) =>
+            !runContext && options.runContext !== undefined;
           if (property === 'stream') {
-            return (
-              input: unknown,
-              raw?: Record<string, unknown>,
-              ...rest: unknown[]
-            ) => {
-              if (!perCall(raw)) return send(input, raw, rest);
+            return (input: unknown, raw?: unknown, ...rest: unknown[]) => {
+              const options = snapshot(raw);
+              if (!perCall(options)) return send(input, options, rest);
               // Copied now: the stream body runs at its first read.
-              const passed = isAiRunContext(raw?.runContext)
-                ? { ...raw.runContext }
-                : raw?.runContext;
+              const passed =
+                options.runContext !== null &&
+                typeof options.runContext === 'object'
+                  ? { ...options.runContext }
+                  : options.runContext;
               return (async function* () {
                 const context = await inScope(passed);
                 yield* send(
                   input,
-                  raw,
+                  options,
                   rest,
                   context,
                 ) as AsyncIterable<unknown>;
               })();
             };
           }
-          return async (
-            input: unknown,
-            raw?: Record<string, unknown>,
-            ...rest: unknown[]
-          ) => {
-            if (!perCall(raw)) return send(input, raw, rest);
-            const context = await inScope(raw?.runContext);
-            return send(input, raw, rest, context);
+          return async (input: unknown, raw?: unknown, ...rest: unknown[]) => {
+            const options = snapshot(raw);
+            if (!perCall(options)) return send(input, options, rest);
+            const context = await inScope(options.runContext);
+            return send(input, options, rest, context);
           };
         },
       }) as AIClient;
