@@ -7,7 +7,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { SmrtCollection } from '../../collection';
 import { SmrtObject } from '../../object';
-import { ObjectRegistry } from '../../registry';
+import { ObjectRegistry, smrt } from '../../registry';
 import { snapshotObjectRegistryState } from '../../test-utils';
 
 const PKG = '@fixture/cb5143';
@@ -64,5 +64,50 @@ describe('a qualified collection binding', () => {
       ?.collectionConstructor as { archiveAll?: () => string } | undefined;
     expect(receiver).toBe(ClipCollection);
     expect(receiver?.archiveAll?.()).toBe('archived');
+  });
+});
+
+describe('a collection decorator declaring replaceParent: false', () => {
+  it('is refused, leaving the item and the bound receiver as they were', () => {
+    class Clip extends SmrtObject {}
+    smrt({ packageName: PKG, tableName: 'clips' })(Clip);
+    class Clips extends SmrtCollection<Clip> {
+      static readonly _itemClass = Clip;
+      static receiver() {
+        return 'provider';
+      }
+    }
+    smrt({ packageName: PKG })(Clips);
+    const before = {
+      keys: [...ObjectRegistry.getAllClasses().keys()],
+      item: ObjectRegistry.getClass(ITEM)?.config,
+      bound: ObjectRegistry.getClass(ITEM)?.collectionConstructor,
+    };
+    expect(before.bound).toBe(Clips);
+
+    class RefusedClips extends Clips {
+      static override receiver() {
+        return 'refused';
+      }
+    }
+    expect(() =>
+      smrt({ packageName: PKG, replaceParent: false })(RefusedClips),
+    ).toThrow(
+      expect.objectContaining({
+        code: 'CONFIG_SAME_NAME_COEXISTENCE_UNSUPPORTED',
+      }),
+    );
+    expect({
+      keys: [...ObjectRegistry.getAllClasses().keys()],
+      item: ObjectRegistry.getClass(ITEM)?.config,
+      bound: ObjectRegistry.getClass(ITEM)?.collectionConstructor,
+    }).toEqual(before);
+    expect(
+      (
+        ObjectRegistry.getClass(ITEM)?.collectionConstructor as
+          | { receiver?: () => string }
+          | undefined
+      )?.receiver?.(),
+    ).toBe('provider');
   });
 });
