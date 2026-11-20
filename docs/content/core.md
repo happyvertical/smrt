@@ -650,9 +650,11 @@ const generator = new APIGenerator({
 
 - `{ tenantId }` runs the operation inside that tenant.
 - `{ allowCrossTenant: true }` runs it across tenants, for this request's
-  operation only: on a GET it reads every tenant and cannot write (a custom
-  read action that saves is refused). Only for a principal that is explicitly
-  cross-tenant.
+  operation only: on a GET it reads every tenant and writes no tenant-scoped
+  row of any model (a custom read action that saves one is refused). Inside a
+  tenant context the host entered, the grant does not widen it: the request
+  stays in that tenant, and a principal naming another tenant is refused. Only
+  for a principal that is explicitly cross-tenant.
 - Neither: a read of an optional-mode model serves rows without an owner
   only, a required-mode read is refused, and every write (create, update,
   delete, mutating custom action, sync item) is refused with
@@ -670,9 +672,11 @@ tenant (a switched-off model answers `404` only to an admitted caller), then
 the operation inside the request's tenancy. For a caller with no tenant, a
 custom collection GET action of a tenant-scoped model whose arguments carry
 the read scope (a single `options` parameter, or parameters named after every
-ownership field) runs, and every collection read inside it sees rows without
-an owner only, whatever it does with its options; every other custom
-collection action is refused. A method the server has no scanned parameter
+ownership field) runs, and every collection read inside it, of its own model
+or of any other tenant-scoped model, sees rows without an owner only (a
+required-mode model refuses it), whatever it does with its options; every
+other custom collection action is refused. Raw `query()` inside an action is
+governed by the raw-query policy, not by this rule. A method the server has no scanned parameter
 metadata for never carries the scope; generate the manifest so the method's
 parameters are scanned. A refusal because a row belongs to another tenant is a
 plain `403 permission_denied`; a model whose tenancy cannot be resolved, or
@@ -686,7 +690,16 @@ reads answer 404, a base create selecting it is refused, and sync items for it
 on a shared segment are rejected (`not_found`). Give such a subtype its own
 `collection` (route and sync segment), or align its tenancy. The runtime warns
 once per family and `smrt doctor` lists the families the manifest declares. A
-row whose stored type is not registered in the process is never served.
+row whose stored type is not registered in the process is never served, and
+neither is a row with no stored type (`_meta_type` NULL): generated schemas
+declare the column `NOT NULL`, but a table created before that, or written
+outside SMRT, may hold such rows. Backfill them with the base's key
+(`UPDATE <table> SET _meta_type = '<base key>' WHERE _meta_type IS NULL`)
+before upgrading. A subtype of equal tenancy is served through its base only
+where it is served on its own (switched on for the tenant, readable by the
+caller, on an MCP server's model list). A sync create on an STI segment writes
+the segment's own type: a payload selecting another type (`createType` or
+`_meta_type`) is rejected `invalid_payload`.
 
 Validators of reads change with this release, and a validator issued before a
 registration changed any served model's tenancy never revalidates. A response

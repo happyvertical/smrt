@@ -92,24 +92,40 @@ rule of `src/request-actor.ts`. Per request (per sync item, per tool call):
 1. **Actor.** `resolveRequestActor()`: the principal the transport settled
    (REST `APIConfig.resolveTenant(req)`, an MCP context or
    `SMRT_MCP_TENANT_ID`), else trusted `locals` (`tenantId`, then `user`,
-   `session`, `tenantContext`). An active tenant context must agree (a
-   different tenant or user is `RequestTenantConflictError`, rendered as the
-   plain `permission_denied` 403); without a principal tenant, the active
-   context is the actor. A system actor comes from an active system context,
-   or from `allowCrossTenant`, and then for this operation only: on GET/HEAD
-   (MCP `list`/`get`) it is a read grant and never writes. The bypass needs
-   the tenancy super-admin flag. The settled principal of #5195 replaces the
+   `session`, `tenantContext`). An active tenant context must agree, grant or
+   no grant (a different tenant or user is `RequestTenantConflictError`,
+   rendered as the plain `permission_denied` 403); without a principal
+   tenant, the active context is the actor, and a cross-tenant grant does not
+   widen it (the request stays in that tenant). A system actor comes from an
+   active system context, or from `allowCrossTenant` outside a host-entered
+   tenant context, and then for this operation only: on GET/HEAD (MCP
+   `list`/`get`) it is a read grant and never writes. The bypass needs the
+   tenancy super-admin flag. A complete principal (`api.principalContext`)
+   runs with its own permission snapshot even inside an active context of the
+   same tenant. Runtime REST asks `resolveTenant` once per request object the
+   middleware returned; a sync item uses that answer and its own operation,
+   never a request copy. The settled principal of #5195 replaces the
    transport answer when it lands.
 2. **Policy.** `resolveRequestTenancy({ model, served, actor })` resolves the
    model by strict identity (`resolveStrictModelKey`: an exact qualified key,
    or a simple name exactly one class owns; never the first match) and reads
    each policy from the `TenantPolicySource` smrt-tenancy installs
-   (`policyOf(key)`: absent, resolved or failed). A failed lookup, a source
-   that omits tenancy the registry declares, an unknown or ambiguous model, or
-   enabled tenancy with no source makes every decision refuse (403
-   `TENANT_POLICY_UNRESOLVED`). `served` is the STI members the route serves
+   (`policyOf(key)`: absent, resolved or failed). A member records its
+   `state` (`unscoped`, `scoped`, `failed`); a failed lookup (with or without
+   a reason, or a throwing source), a policy with no usable mode or field, a
+   source that omits tenancy the registry declares, a resolved policy looser
+   than the declaration or on another field (a stricter one, such as a
+   runtime override to `required`, resolves), an unknown or ambiguous model,
+   or enabled tenancy with no source makes every decision refuse (403
+   `TENANT_POLICY_UNRESOLVED`). `served` is the STI members the route reads
    for the operation (`servedFamilyTypes`: surface, server model list,
-   per-request admission).
+   per-request admission); on the emitted routes and both MCP surfaces a
+   member is admitted only when it is on the server's model list (an MCP
+   server's models), switched on for the actor's tenant, and readable by the
+   caller (`api.public`, or a signed-in caller). An MCP point read uses the
+   members open for `get`, a list those open for `list`. `creatable` is the
+   members a create may select (`familyCreateTargets`: `create` open, server
+   model list), a separate set that is never read.
 3. **STI membership.** A served member is admitted only when its policy
    *equals* the route model's (scoped, mode, ownership columns,
    `allowSuperAdminBypass`, bounded-hierarchy allowance). Every read, count,
@@ -117,7 +133,11 @@ rule of `src/request-actor.ts`. Per request (per sync item, per tool call):
    `_meta_type in admitted` (positive: a stored type that is not registered,
    or not admitted, never matches; a point read also names the registered
    members left out, since a child collection replaces any type list with its
-   own subtree). A member left out is simply absent from lists and counts, a
+   own subtree, and keeps the caller's own `_meta_type in` / `not in` as a
+   conjunction: an empty intersection selects nothing). A new row is held to
+   the create targets, a stored row to the admitted types, and a natural-key
+   save never adopts a stored row of a type the request does not admit (403
+   `TENANT_MEMBER_EXCLUDED`). A member left out is simply absent from lists and counts, a
    point read answers 404, a base-route create that selects it is refused
    (403 `TENANT_MEMBER_EXCLUDED`), and a sync item naming its row is
    `not_found` (update) / an opaque `id_conflict` (create). Runtime REST
@@ -149,8 +169,19 @@ rule of `src/request-actor.ts`. Per request (per sync item, per tool call):
    rows-without-an-owner scope for a caller with no tenant, the write gate,
    and a policy-changed check: a member whose live policy no longer matches
    the bound one refuses with `TenantPolicyChangedError` (403
-   `TENANT_POLICY_CHANGED`, never adopted). smrt-tenancy's interceptor reads
-   the bound policy for every member (`boundMemberTenancy`).
+   `TENANT_POLICY_CHANGED`, never adopted). A family operation rechecks every
+   admitted type it reads, and tenancy turned on or off since admission
+   refuses too. A model the request did not resolve (a custom action reading
+   or writing another model) is held to the same actor rules under its live
+   policy: a caller with no tenant reads only its rows without an owner
+   (required mode refuses) and writes none; a read grant writes no
+   tenant-scoped row of any model. Raw `query()` stays under the raw-query
+   policy, not this decision. The resolved members and admitted types are
+   read-only, and owner stamping (`autoPopulate`) is bound with the policy.
+   smrt-tenancy's interceptor reads the bound policy for every member
+   (`boundMemberTenancy`). An emitted MCP server turns the installed tenancy
+   layer on when a tool's model (or an STI member) is tenant-scoped at call
+   time, a registration after generation included.
 
 The manifest's `tenantScoped` flag selects nothing on a request path: emitted
 routes are generated with the same core calls for every model, so tenancy
@@ -159,13 +190,18 @@ like declared tenancy. A refusal is a typed error with `status`
 (`RequestTenancyError`), rendered by `normalizeTypedHttpError` on REST and the
 emitted routes, as a tool error on MCP, and as `auth_required` / `forbidden`
 on a sync item. A validator issued before a registration changed any member's
-policy never revalidates; a shared-cache copy issued before a run-time
-registration lives until its own `s-maxage`.
+policy never revalidates, the body-hash validators included (they hash the
+discriminator with the body), and the discriminator covers an active bounded
+hierarchy read scope (`TenantPolicySource.hierarchyReadScopeKey`). Not
+covered: a registration landing during the asynchronous table-version lookup
+of the zero-query path can still revalidate once. A shared-cache copy issued
+before a run-time registration lives until its own `s-maxage`.
 
 | Caller | Read | Write (create, update, delete, mutating action, sync item) |
 |---|---|---|
 | Has a tenant | That tenant (interceptor filter) | That tenant |
-| `allowCrossTenant` on a read | Every tenant | Refused (403 `TENANT_WRITE_REFUSED`) |
+| `allowCrossTenant` on a read | Every tenant | Refused (403 `TENANT_WRITE_REFUSED`), for every tenant-scoped model the request touches |
+| `allowCrossTenant` inside a host-entered tenant context | That tenant | That tenant |
 | `allowCrossTenant` on a write / system context | Every tenant | Every tenant |
 | Neither, optional mode | Rows without an owner | Refused (401/403) |
 | Neither, required mode | Refused (401/403) | Refused |

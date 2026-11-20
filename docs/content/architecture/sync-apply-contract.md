@@ -253,7 +253,14 @@ interceptors guard sync exactly like CRUD:
   `not_found`, a create naming such a row collides as an opaque
   `id_conflict` whatever the payload, and a delete of it is the idempotent
   no-op of a missing row (`applied`, row untouched). Give such a subtype its
-  own segment, or align its tenancy.
+  own segment, or align its tenancy. A create's replay lookup reads only the
+  types the segment reads; the types a create may write are a separate set.
+- A sync create writes its target's own type. The payload's type selector
+  (`createType`, or the `_meta_type` alias) is read before the writable
+  policy drops it; on an STI target, one naming any other type rejects the
+  item `invalid_payload` and writes nothing (hosts implement
+  `SyncApplyTarget.acceptsCreateType`). A target that is not STI drops the
+  selector with the other framework keys.
 - A write needs a tenant. With tenancy enabled, an item for a tenant-scoped
   model from a caller with no tenant is rejected (`forbidden`, or
   `auth_required` for an anonymous caller), global rows included, unless the
