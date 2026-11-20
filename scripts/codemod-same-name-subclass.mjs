@@ -147,10 +147,41 @@ function optionKeys(source, map, open, close) {
     else if (depth === 2 && (previous === '{' || previous === ',') && /[A-Za-z_$]/.test(c)) {
       const key = /^([A-Za-z_$][\w$]*)\s*:/.exec(source.slice(i, close));
       if (key) keys.set(key[1], i + key[0].length);
+      // Shorthand (`{ replaceParent }`) declares the option with a variable.
+      else {
+        const shorthand = /^([A-Za-z_$][\w$]*)\s*(?=[,}])/.exec(source.slice(i, close));
+        if (shorthand) keys.set(shorthand[1], i + shorthand[0].length);
+      }
+    } else if (depth === 2 && (previous === '{' || previous === ',') && c === '.' && source.startsWith('...', i)) {
+      // A spread can carry any option: the literal does not decide on its own.
+      keys.dynamic = true;
     }
     previous = c;
   }
   return keys;
+}
+
+/**
+ * Whether the call parentheses `open`..`close` hold exactly one object
+ * literal (or nothing): the only options expression whose keys can be read
+ * from the text. A conditional, a variable or a call is not one.
+ */
+function isOptionsLiteral(source, map, open, close) {
+  const body = source.slice(open + 1, close);
+  if (body.trim() === '') return true;
+  const lead = /^(?:\s|\/\/[^\n]*|\/\*[\s\S]*?\*\/)*/.exec(body)[0].length;
+  const brace = open + 1 + lead;
+  if (source[brace] !== '{' || map.inText(brace)) return false;
+  let depth = 0;
+  for (let i = brace; i < close; i++) {
+    if (map.inText(i)) continue;
+    if ('{[('.includes(source[i])) depth++;
+    else if ('}])'.includes(source[i]) && --depth === 0) {
+      const rest = source.slice(i + 1, close).replace(/\/\*[\s\S]*?\*\/|\/\/[^\n]*/g, '');
+      return /^\s*,?\s*$/.test(rest);
+    }
+  }
+  return false;
 }
 
 /** Whether a module declares `name` itself. */
@@ -337,7 +368,8 @@ export function codemodSource(source, choice, filePath) {
     const call = () => callRegistration(source, binding, smrtAliases, map, start);
     const found = expression ? call() : (decoratorBefore(source, start, smrtAliases, map) ?? call());
     const registration = found?.ambiguous ? undefined : found;
-    const keys = registration ? optionKeys(source, map, registration.open, registration.end) : new Map();
+    const literal = registration ? isOptionsLiteral(source, map, registration.open, registration.end) : true;
+    const keys = registration && literal ? optionKeys(source, map, registration.open, registration.end) : new Map();
     const declaredName = keys.has('name')
       ? /^\s*['"]([\w$]+)['"]/.exec(source.slice(keys.get('name'), registration.end))?.[1]
       : undefined;
@@ -345,12 +377,19 @@ export function codemodSource(source, choice, filePath) {
     if (imported.original !== publicName) continue;
     const line = source.slice(0, start).split('\n').length;
     const finding = { name: publicName, parent: `${imported.from}:${imported.original}`, line };
-    if (keys.has('replaceParent')) {
-      findings.push({ ...finding, status: 'declared' });
-      continue;
-    }
     if (!registration) {
       findings.push({ ...finding, status: found?.ambiguous ? 'ambiguous' : 'no-registration' });
+      continue;
+    }
+    // Options that are not one object literal (a conditional, a variable, a
+    // spread) cannot be decided from the text: reported, never edited, and
+    // counted as still needing the option.
+    if (!literal || (keys.dynamic && !keys.has('replaceParent'))) {
+      findings.push({ ...finding, status: 'unsupported-options' });
+      continue;
+    }
+    if (keys.has('replaceParent')) {
+      findings.push({ ...finding, status: 'declared' });
       continue;
     }
     findings.push({ ...finding, status: 'missing' });

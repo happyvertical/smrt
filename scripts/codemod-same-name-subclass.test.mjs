@@ -171,3 +171,40 @@ test('reads options as code: a comment, a string value or a nested object naming
     assert.equal(codemodSource(source, true).findings[0].status, 'declared', declared);
   }
 });
+
+test('treats shorthand as declared and options that are not one object literal as undecidable, exiting non-zero', () => {
+  // Shorthand names the option: nothing to add, so --write leaves one key.
+  for (const options of ['{ replaceParent }', '{ api: true, replaceParent, mcp: true }']) {
+    const source = `${header}\n@smrt(${options})\nexport class Customer extends CustomerBase {}\n`;
+    const result = codemodSource(source, true);
+    assert.equal(result.findings[0].status, 'declared', options);
+    assert.equal(result.source, source, options);
+  }
+  // A conditional, a variable, a call or a spread decides nothing from the text.
+  for (const options of ['flag ? { replaceParent: true } : {}', 'options', 'build({ replaceParent: true })', '{ ...base }', '{ ...base, api: true }']) {
+    const source = `${header}\n@smrt(${options})\nexport class Customer extends CustomerBase {}\n`;
+    for (const choice of [undefined, true]) {
+      const result = codemodSource(source, choice);
+      assert.equal(result.findings[0].status, 'unsupported-options', options);
+      assert.equal(result.source, source, options);
+    }
+  }
+  const root = mkdtempSync(join(tmpdir(), 'codemod-5143-undecidable-'));
+  const errors = console.error;
+  const logs = console.log;
+  console.error = () => {};
+  console.log = () => {};
+  try {
+    mkdirSync(join(root, 'src'));
+    writeFileSync(
+      join(root, 'src', 'models.ts'),
+      `${header}\n@smrt(flag ? { replaceParent: true } : {})\nexport class Customer extends CustomerBase {}\n`,
+    );
+    assert.equal(main([join(root, 'src')]), 1);
+    assert.equal(main(['--write', join(root, 'src')]), 1);
+  } finally {
+    console.error = errors;
+    console.log = logs;
+    rmSync(root, { recursive: true, force: true });
+  }
+});
