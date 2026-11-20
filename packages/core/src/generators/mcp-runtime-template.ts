@@ -405,6 +405,9 @@ const DEBUG = ${debug};
 const TOOLS = ${toolsCode};
 const TOOL_LIST_CACHE_HINT = ${JSON.stringify(toolListCacheHint)};
 const TOOL_TARGETS: Record<string, { objectName: string; action: string; registryKey?: string }> = ${JSON.stringify(toolTargets)};
+// The models this server serves: a family member outside them is not served
+// through its base's tools.
+const SERVED_MODELS: ReadonlySet<string> = new Set(Object.values(TOOL_TARGETS).map((target) => target.registryKey || target.objectName));
 function runtimeToolEnabled(name: string): boolean {
   if (!hasRuntimeExposureGate()) return true;
   const target = TOOL_TARGETS[name];
@@ -906,7 +909,7 @@ ${switchCases}
         const toolModel = toolTarget?.registryKey || toolTarget?.objectName;
         const result = toolModel
           ? await runToolInRequestTenancy(
-              { model: toolModel, action: toolTarget.action, principal: { tenantId: MCP_TENANT_ID, allowCrossTenant: MCP_ALLOW_CROSS_TENANT, userId: process.env.SMRT_MCP_USER_ID, authenticated: true } },
+              { model: toolModel, action: toolTarget.action, principal: { tenantId: MCP_TENANT_ID, allowCrossTenant: MCP_ALLOW_CROSS_TENANT, userId: process.env.SMRT_MCP_USER_ID, authenticated: true }, modelScope: SERVED_MODELS },
               runToolBody,
             )
           : await runToolBody();

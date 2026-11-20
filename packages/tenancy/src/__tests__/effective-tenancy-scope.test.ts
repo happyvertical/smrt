@@ -145,6 +145,8 @@ const as = (token: string) => ({
   headers: { authorization: `Bearer ${token}` },
 });
 const anonymous = { authenticated: false } as const;
+/** Signed in with no tenant: the shelf's members are readable to it. */
+const reader = { authenticated: true } as const;
 
 describe('every collection call of a request is held to its admitted tenancy', () => {
   let dir: string;
@@ -327,7 +329,7 @@ describe('every collection call of a request is held to its admitted tenancy', (
             {
               model: keyOf(EffScopeShelf),
               operation: 'list',
-              principal: anonymous,
+              principal: reader,
             },
             async () => {
               const before = (await shelves.list({})).length;
@@ -408,7 +410,7 @@ describe('every collection call of a request is held to its admitted tenancy', (
           {
             model: keyOf(EffScopeShelf),
             operation: 'list',
-            principal: anonymous,
+            principal: reader,
           },
           async (t) => {
             const admitted = t.admitted as Set<string>;
@@ -431,7 +433,7 @@ describe('every collection call of a request is held to its admitted tenancy', (
             {
               model: keyOf(EffScopeShelf),
               operation: 'get',
-              principal: anonymous,
+              principal: reader,
             },
             () => shelves.get(filter),
           ),

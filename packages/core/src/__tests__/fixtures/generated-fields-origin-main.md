@@ -101,3 +101,7 @@ DDL, migration and OpenAPI digests have not moved since the recapture above.
   its model at call time.
 - Sync create type (#5375): `sync/apply/+server.ts` rejects a create whose
   payload selects a type its STI target does not write.
+- MCP served models (#5375): both MCP servers (`single/index.ts`,
+  `modular/handlers/index.ts`) pass the models they serve to each tool's
+  request tenancy, so a family member outside them is not served through its
+  base.

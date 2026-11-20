@@ -27,6 +27,7 @@ import {
 } from './create-target';
 import { resolveDispatchTenantId } from './dispatch/tenant-resolver.js';
 import { readActionReceivesTenantScope } from './generators/custom-action';
+import { ObjectRegistry } from './registry';
 import {
   customActionScope,
   enterResolvedTenancy,
@@ -42,6 +43,7 @@ import {
   writeGate,
 } from './request-tenancy';
 import { getRequestTenantContext } from './request-tenant-context';
+import { isRuntimeModelEnabled } from './runtime-exposure';
 import { SmrtError } from './smrt-error.js';
 
 /** A principal a transport settled for the request. */
@@ -279,6 +281,17 @@ export interface RequestTenancyEntryInput {
   /** The surface whose per-model config decides served STI members. */
   surface?: 'api' | 'mcp';
   /**
+   * Registry keys of the models the server serves (an MCP server's model
+   * list); a family member outside it is not served through its base.
+   */
+  modelScope?: ReadonlySet<string>;
+  /**
+   * A read on this surface needs a tenant, an explicit grant or a system
+   * context even where an optional-mode model would serve rows without an
+   * owner (MCP has no read scope of its own to hand such a caller).
+   */
+  tenantRequiredForReads?: boolean;
+  /**
    * For a custom action: whether it may write, its scanned parameters, and
    * whether it acts on one row the route looks up under the read scope (an
    * item action), which counts as receiving the scope.
@@ -290,14 +303,51 @@ export interface RequestTenancyEntryInput {
   };
 }
 
+/**
+ * Whether a family member of the route model is served to this caller
+ * through the base, as it would be on its own route: switched on for the
+ * request's tenant (the runtime exposure gate), and readable by the caller
+ * (its `api.public`, or a signed-in caller). The base's own gate admitted
+ * the request; a member's access rules are its own.
+ */
+function memberServedToCaller(
+  key: string,
+  surface: 'api' | 'mcp',
+  mutating: boolean,
+  actor: RequestActor,
+  locals: unknown,
+): boolean {
+  const exposure = ObjectRegistry.getExposureModel(key) ?? key;
+  if (
+    !isRuntimeModelEnabled(exposure, {
+      surface: surface === 'mcp' ? 'mcp' : 'rest',
+      ...(locals !== undefined ? { locals } : {}),
+      ...(actor.tenantId ? { tenantId: actor.tenantId } : {}),
+    })
+  ) {
+    return false;
+  }
+  const api = ObjectRegistry.getConfig(key).api;
+  const publicAccess =
+    api && typeof api === 'object'
+      ? (api as { public?: unknown }).public
+      : undefined;
+  if (publicAccess === true || (publicAccess === 'read' && !mutating)) {
+    return true;
+  }
+  return actor.authenticated;
+}
+
 function servedMembers(
   model: string,
   operation: RequestTenancyOperation,
   mutating: boolean,
   surface: 'api' | 'mcp',
+  modelScope: ReadonlySet<string> | undefined,
+  admits: (key: string) => boolean,
 ): string[] | undefined {
   const served = (op: FamilyRowOperation) =>
-    servedFamilyTypes(model, surface, op);
+    servedFamilyTypes(model, surface, op, modelScope, admits);
   const op: FamilyRowOperation =
     operation === 'list' || operation === 'get' || operation === 'create'
       ? operation === 'create'
@@ -317,7 +367,11 @@ function decide(t: RequestTenancy, input: RequestTenancyEntryInput): void {
   switch (input.operation) {
     case 'list':
     case 'get':
-      throwIfRefused(readScope(t));
+      throwIfRefused(
+        input.tenantRequiredForReads
+          ? customActionScope(t, { mutating: false, receivesScope: false })
+          : readScope(t),
+      );
       return;
     case 'action': {
       const parameters = input.action?.parameters;
@@ -353,14 +407,22 @@ export function resolveTenancyForRequest(
   });
   const key = resolveStrictModelKey(input.model) ?? input.model;
   const surface = input.surface ?? 'api';
-  const served = servedMembers(key, input.operation, mutating, surface);
+  const served = servedMembers(
+    key,
+    input.operation,
+    mutating,
+    surface,
+    input.modelScope,
+    (member) =>
+      memberServedToCaller(member, surface, mutating, actor, input.locals),
+  );
   return resolveRequestTenancy({
     model: key,
     ...(served ? { served: served.filter((member) => member !== key) } : {}),
     // A create reads the members the route reads (its replay lookup) and may
     // select a create target of equal tenancy, a separate set.
     ...(input.operation === 'create'
-      ? { creatable: familyCreateTargets(key, surface) }
+      ? { creatable: familyCreateTargets(key, surface, input.modelScope) }
       : {}),
     actor,
   });
@@ -426,10 +488,17 @@ export function runToolInRequestTenancy<T>(
     model: string;
     action: string;
     principal: SettledRequestPrincipal;
+    /**
+     * Registry keys of the models the server serves; a family member
+     * outside them is not served through its base.
+     */
+    modelScope?: ReadonlySet<string>;
   },
   fn: () => Promise<T>,
 ): Promise<T> {
-  const write =
+  const crud =
+    input.action === 'list' ||
+    input.action === 'get' ||
     input.action === 'create' ||
     input.action === 'update' ||
     input.action === 'delete';
@@ -438,14 +507,14 @@ export function runToolInRequestTenancy<T>(
       model: input.model,
       surface: 'mcp',
       principal: input.principal,
-      ...(write
-        ? { operation: input.action as 'create' | 'update' | 'delete' }
-        : {
-            operation: 'action' as const,
-            action: {
-              mutating: input.action !== 'list' && input.action !== 'get',
-            },
-          }),
+      tenantRequiredForReads: true,
+      ...(input.modelScope ? { modelScope: input.modelScope } : {}),
+      // A CRUD tool keeps its own operation (a point read is served the
+      // members open for `get`, a list those open for `list`); any other
+      // tool is a custom action that may write.
+      ...(crud
+        ? { operation: input.action as RequestTenancyOperation }
+        : { operation: 'action' as const, action: { mutating: true } }),
     },
     () => fn(),
   );
