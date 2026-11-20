@@ -2693,29 +2693,41 @@ export class SmrtObject extends SmrtClass {
       // These are subclass-declared fields, not members of the base type, so
       // read them through an indexable view of `this`.
       const self = this as unknown as Record<string, unknown>;
-      let sourceField: string | null = null;
-
-      if (self.name) {
-        sourceField = String(self.name);
-      } else if (self.title) {
-        sourceField = String(self.title);
-      } else if (self.label) {
-        sourceField = String(self.label);
-      } else if (this.id) {
-        // Final fallback: use ID
-        sourceField = String(this.id);
-      }
-
-      if (sourceField) {
-        // Generate slug from source field
-        this.slug = sourceField
+      const slugify = (value: string) =>
+        value
           .toLowerCase()
           .replace(/[^a-z0-9]+/g, '-')
           .replace(/(^-|-$)/g, '');
+
+      // A candidate whose slug is empty (no ASCII letters or digits) is
+      // skipped so the next candidate, and finally the id, supplies the slug.
+      // Each property is read only when every earlier candidate failed, so a
+      // lower-priority getter is never evaluated while a higher one succeeds.
+      let derived: string | null = null;
+      let source: string | null = null;
+      for (const key of ['name', 'title', 'label'] as const) {
+        const candidate = self[key];
+        if (!candidate) continue;
+        const slug = slugify(String(candidate));
+        if (slug) {
+          derived = slug;
+          source = String(candidate);
+          break;
+        }
+      }
+
+      if (derived) {
+        this.slug = derived;
         // Only a human value can collide with a different record; an
-        // id-derived slug is as unique as the id.
-        this._derivedSlug = sourceField === String(this.id) ? null : this.slug;
+        // id-derived slug is as unique as the id (a source equal to the id
+        // counts as id-derived, as it always has).
+        this._derivedSlug = source === String(this.id) ? null : derived;
         this._derivedSlugBase = this._derivedSlug;
+      } else if (this.id) {
+        // Final fallback: use ID
+        this.slug = slugify(String(this.id)) || String(this.id);
+        this._derivedSlug = null;
+        this._derivedSlugBase = null;
       }
     }
 
