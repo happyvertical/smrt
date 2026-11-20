@@ -330,16 +330,20 @@ describe.skipIf(!pgUrl)(
       await db.query(
         `UPDATE "${existing}" SET title = 'different' WHERE id = 'b'`,
       );
+      // The repair drops the INVALID index by its schema-qualified name, in
+      // the schema of the table it belongs to (#5261).
+      const tableSchema = String(
+        (
+          await db.query(
+            'SELECT n.nspname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE c.oid = to_regclass($1)',
+            [`"${existing}"`],
+          )
+        ).rows[0]?.nspname,
+      );
       const second = await run();
       expect(process.exitCode ?? 0, second).toBe(0);
-      expect(
-        sent.some((sql) =>
-          new RegExp(
-            `DROP\\s+INDEX\\s+CONCURRENTLY\\s+IF\\s+EXISTS\\s+"?${uniqueIndex}"?`,
-            'i',
-          ).test(sql),
-        ),
-      ).toBe(true);
+      const repair = `DROP INDEX CONCURRENTLY IF EXISTS "${tableSchema}"."${uniqueIndex}"`;
+      expect(sent, second).toContain(repair);
       for (const name of [uniqueIndex, plainIndex, createdIndex]) {
         expect(await indexState(name)).toEqual([
           { indisvalid: true, indisready: true },

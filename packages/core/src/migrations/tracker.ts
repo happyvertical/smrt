@@ -34,6 +34,13 @@ import {
 } from '../system/schema.js';
 import { toSafeBooleanInteger, toSafeInteger } from '../utils/safe-integer.js';
 import { computeChecksum, verifyChecksum } from './checksum.js';
+import {
+  type CreateIndexStatement,
+  classifyIndexStatement,
+  type IndexStatementKind,
+  quotePostgresIdentifier,
+  readCreateIndexStatement,
+} from './postgres-create-index.js';
 import { asTableChangedSincePlan } from './rebuild-plan-guard.js';
 import { runRetireAwareStatement } from './retire-guard.js';
 import { SQLITE_RELAX_REBUILD_MARKER } from './sqlite-rebuild.js';
@@ -117,9 +124,6 @@ class AtomicMigrationRollback extends Error {
   }
 }
 
-const CONCURRENT_INDEX_STATEMENT_RE =
-  /(?:(?:CREATE\s+(?:UNIQUE\s+)?INDEX|DROP\s+INDEX)\s+CONCURRENTLY|REINDEX(?:\s*\([^)]*\))?\s+(?:INDEX|TABLE|SCHEMA|DATABASE|SYSTEM)\s+CONCURRENTLY)/i;
-
 /**
  * Matches the leading clause of a `CREATE [UNIQUE] INDEX` statement and
  * captures the index name, whether it is written bare or double-quoted, and
@@ -132,12 +136,116 @@ const CONCURRENT_INDEX_STATEMENT_RE =
 const CREATE_INDEX_NAME_RE =
   /^\s*CREATE\s+(?:UNIQUE\s+)?INDEX\s+(?:CONCURRENTLY\s+)?(?:IF\s+NOT\s+EXISTS\s+)?(?:"((?:[^"]|"")+)"|([A-Za-z_][\w$]*))/i;
 
+/**
+ * Whether a statement, read by the PostgreSQL lexer, is index DDL that runs
+ * `CONCURRENTLY` (and so cannot run inside a transaction).
+ */
+function isConcurrentIndexStatement(kind: IndexStatementKind): boolean {
+  if (kind.kind === 'unreadable')
+    return kind.index !== null && kind.concurrently;
+  return (
+    (kind.kind === 'create-index' ||
+      kind.kind === 'drop-index' ||
+      kind.kind === 'reindex') &&
+    kind.concurrently
+  );
+}
+
+/**
+ * Prefix of the two statements that close a unique-index swap
+ * ({@link swapUniqueIndexRecreates}). Only statements the planner generated
+ * carry it, so only those are closed in the schema of the swap's table;
+ * authored DDL of the same shape runs as written and PostgreSQL resolves it.
+ */
+const UNIQUE_INDEX_SWAP_MARKER = '/* smrt:unique-index-swap */';
+
+/**
+ * A refusal of index DDL before any statement runs: of the batch (the
+ * planner), or of the concurrent index phase (its preflight).
+ */
+function refuseIndexStatement(
+  why: string,
+  sql: string,
+  before = 'anything ran',
+): Error {
+  return new Error(
+    `${why}, so it was refused under --postgres-safe before ${before}; the migration stays retryable. Statement: ${sql}`,
+  );
+}
+
+/**
+ * Every `CREATE INDEX` bound for the concurrent phase must be one the tracker
+ * can check before and after it runs: read with certainty, and named (a
+ * retry finds a named index; an unnamed one would be built again). Checked
+ * on the whole planned list before anything runs, so a refusal can never
+ * follow a drop that already committed.
+ */
+function assertConcurrentCreatesCheckable(statements: string[]): void {
+  for (const sql of statements) {
+    if (classifyIndexStatement(sql).kind !== 'create-index') continue;
+    const reading = readCreateIndexStatement(sql);
+    if (reading.kind !== 'create-index')
+      throw refuseIndexStatement(
+        `The CREATE INDEX statement could not be read with certainty (${reading.kind === 'unreadable' ? reading.reason : 'not a CREATE INDEX'})`,
+        sql,
+      );
+    if (reading.statement.name === null)
+      throw refuseIndexStatement(
+        'The CREATE INDEX statement names no index, and a retry could not find the index an interrupted run built (it would build another); name the index',
+        sql,
+      );
+  }
+}
+
+/**
+ * Whether {@link MigrationTracker.apply} skips `definition` without running
+ * it: recorded `completed` with this checksum, neither forced nor reconciled.
+ */
+function skipsAsApplied(
+  definition: MigrationDefinition,
+  existing: SchemaMigrationRecord | null,
+  checksum: string,
+  options: ApplyMigrationsOptions,
+): boolean {
+  if (existing?.status !== 'completed' || existing.checksum !== checksum)
+    return false;
+  const force = Boolean(
+    options.force || options.forceMigrations?.includes(definition.id),
+  );
+  return !force && !options.reconcile;
+}
+
+/**
+ * A `CREATE INDEX` whose expressions or predicate could not be checked
+ * before the concurrent phase ran anything. Carries the migration it
+ * belongs to.
+ */
+class ConcurrentIndexRefusal extends Error {
+  constructor(
+    readonly migrationName: string,
+    message: string,
+    options?: { cause?: unknown },
+  ) {
+    super(message, options);
+  }
+}
+
+/** `sql` with ` CONCURRENTLY` after its `INDEX` keyword, when it has none. */
+function withConcurrently(sql: string, kind: IndexStatementKind): string {
+  if (
+    (kind.kind !== 'create-index' && kind.kind !== 'drop-index') ||
+    kind.concurrently
+  )
+    return sql;
+  return `${sql.slice(0, kind.insertConcurrentlyAt)} CONCURRENTLY${sql.slice(kind.insertConcurrentlyAt)}`;
+}
+
 function findConcurrentIndexStatement(
   definitions: MigrationDefinition[],
 ): { migrationName: string; statement: string } | null {
   for (const definition of definitions) {
     const statement = definition.up.find((sql) =>
-      CONCURRENT_INDEX_STATEMENT_RE.test(sql),
+      isConcurrentIndexStatement(classifyIndexStatement(sql)),
     );
 
     if (statement) {
@@ -168,6 +276,20 @@ export function extractCreatedIndexName(sql: string): string | null {
 
   // Group 1 is the quoted form (with `""` escapes), group 2 the bare form.
   return match[1] !== undefined ? match[1].replace(/""/g, '"') : match[2];
+}
+
+/**
+ * The table a `CREATE [UNIQUE] INDEX … ON <table>` statement indexes, as a
+ * reference the server resolves exactly as the statement does (each part
+ * folded, truncated and quoted as PostgreSQL stores it): `"jobs"`,
+ * `"app"."jobs"`. See `postgres-create-index.ts` for how it is read.
+ *
+ * Returns `null` when the statement is not a CREATE INDEX or cannot be read
+ * with certainty: a caller must then not act on the table at all.
+ */
+export function extractCreatedIndexTable(sql: string): string | null {
+  const reading = readCreateIndexStatement(sql);
+  return reading.kind === 'create-index' ? reading.statement.relationSql : null;
 }
 
 /**
@@ -403,6 +525,115 @@ export class MigrationTracker {
   }
 
   /**
+   * Run a check that refuses before anything runs over the batch's
+   * definitions. When it refuses, only the definitions {@link apply} would
+   * run (not skip as already applied) are checked again, so a definition
+   * that will not run neither is refused nor refuses the batch. A batch the
+   * check accepts reads nothing.
+   */
+  private async checkDefinitionsToRun<T>(
+    definitions: MigrationDefinition[],
+    options: ApplyMigrationsOptions,
+    check: (definitions: MigrationDefinition[]) => T | Promise<T>,
+  ): Promise<T> {
+    try {
+      return await check(definitions);
+    } catch (refusal) {
+      const toRun = await this.definitionsToRun(definitions, options);
+      if (toRun.length === definitions.length) throw refusal;
+      return await check(toRun);
+    }
+  }
+
+  /**
+   * The batch-wide check of a non-atomic `postgresSafe` batch, before any of
+   * its definitions runs. Each definition commits on its own there, so a
+   * create refused while a later definition runs would follow an earlier
+   * definition's drop that already committed. Every definition is planned
+   * (an unreadable or unnamed concurrent create throws), and every pending
+   * create is checked against its table in run order (each definition's
+   * transactional statements, then its concurrent ones) with the same
+   * exception as the atomic concurrent phase. A refusal rejects the batch
+   * with nothing run and nothing recorded.
+   */
+  private async preflightSequentialBatch(
+    definitions: MigrationDefinition[],
+  ): Promise<void> {
+    const lists: Array<{
+      migrationName: string;
+      statements: string[];
+      runsFirst?: boolean;
+    }> = [];
+    for (const definition of definitions) {
+      const { concurrent, regular } = planPostgresStatements(
+        definition.up,
+        !!this.options.useConcurrentIndexes,
+      );
+      lists.push(
+        { migrationName: definition.id, statements: regular, runsFirst: true },
+        { migrationName: definition.id, statements: concurrent },
+      );
+    }
+    if (!lists.some((list) => !list.runsFirst && list.statements.length > 0))
+      return;
+    const session = await this.acquireMigrationSession();
+    try {
+      await session.query(
+        `SET lock_timeout = '${formatPostgresTimeout(this.options.lockTimeout)}'`,
+      );
+      await session.query(
+        `SET statement_timeout = '${formatPostgresTimeout(this.options.statementTimeout)}'`,
+      );
+      await this.preflightConcurrentCreates(
+        session,
+        lists,
+        'any migration of the batch ran',
+      );
+    } catch (error) {
+      if (error instanceof ConcurrentIndexRefusal)
+        throw new Error(`Migration ${error.migrationName}: ${error.message}`, {
+          cause: error,
+        });
+      throw error;
+    } finally {
+      await session.release();
+    }
+  }
+
+  /**
+   * The definitions {@link apply} would run rather than skip as applied,
+   * read without creating the tracking table. History that cannot be read
+   * (no tracking table yet) shows nothing applied, so every definition runs.
+   */
+  private async definitionsToRun(
+    definitions: MigrationDefinition[],
+    options: ApplyMigrationsOptions,
+  ): Promise<MigrationDefinition[]> {
+    let rows: MigrationRow[];
+    try {
+      rows = (
+        await this.db.query(
+          `SELECT * FROM _smrt_schema_migrations WHERE status = 'completed'`,
+        )
+      ).rows as MigrationRow[];
+    } catch {
+      return definitions;
+    }
+    const records = new Map(
+      rows.map((row) => [row.name, hydrateMigrationRow(row)]),
+    );
+    return definitions.filter(
+      (definition) =>
+        !skipsAsApplied(
+          definition,
+          records.get(definition.id) ?? null,
+          computeChecksum(definition.up),
+          options,
+        ),
+    );
+  }
+
+  /**
    * Get a single migration record by name
    */
   async getMigration(name: string): Promise<SchemaMigrationRecord | null> {
@@ -523,7 +754,7 @@ export class MigrationTracker {
             };
           }
 
-          if (!force && !options.reconcile) {
+          if (skipsAsApplied(definition, existing, checksum, options)) {
             // Already applied, skip
             return {
               success: true,
@@ -781,10 +1012,12 @@ export class MigrationTracker {
 
       const isPostgres = this.dbEngine === 'postgres';
       const concurrentIndexMode = isPostgres && Boolean(options.postgresSafe);
+      // Only the definitions that will run are planned and checked: one
+      // already recorded `completed` with this checksum is skipped, so its
+      // statements must neither be refused nor refuse the batch.
       const plan = concurrentIndexMode
-        ? buildConcurrentIndexPlan(
-            definitions,
-            this.options.useConcurrentIndexes,
+        ? await this.checkDefinitionsToRun(definitions, options, (toRun) =>
+            buildConcurrentIndexPlan(toRun, this.options.useConcurrentIndexes),
           )
         : null;
 
@@ -792,12 +1025,14 @@ export class MigrationTracker {
       // PostgreSQL rejects it inside a transaction block. Fail before opening
       // the transaction so the error names the offending migration.
       if (isPostgres && !concurrentIndexMode) {
-        const concurrentStatement = findConcurrentIndexStatement(definitions);
-        if (concurrentStatement) {
-          throw new Error(
-            `Atomic migration batch cannot include CONCURRENTLY index DDL in ${concurrentStatement.migrationName}; PostgreSQL forbids CONCURRENTLY inside a transaction. Re-run with PostgreSQL concurrent-index mode (smrt db:migrate --postgres-safe) to build those indexes outside the batch.`,
-          );
-        }
+        await this.checkDefinitionsToRun(definitions, options, (toRun) => {
+          const concurrentStatement = findConcurrentIndexStatement(toRun);
+          if (concurrentStatement) {
+            throw new Error(
+              `Atomic migration batch cannot include CONCURRENTLY index DDL in ${concurrentStatement.migrationName}; PostgreSQL forbids CONCURRENTLY inside a transaction. Re-run with PostgreSQL concurrent-index mode (smrt db:migrate --postgres-safe) to build those indexes outside the batch.`,
+            );
+          }
+        });
       }
 
       const deferred = plan && plan.size > 0 ? plan : null;
@@ -896,6 +1131,18 @@ export class MigrationTracker {
       }
     }
 
+    // Each definition commits on its own here, so the whole batch is checked
+    // before any of it runs (a definition skipped as applied is not).
+    if (
+      this.dbEngine === 'postgres' &&
+      options.postgresSafe &&
+      !options.dryRun
+    ) {
+      await this.checkDefinitionsToRun(definitions, options, (toRun) =>
+        this.preflightSequentialBatch(toRun),
+      );
+    }
+
     const results: MigrationResult[] = [];
     this.currentBatch = await this.getNextBatch();
 
@@ -942,8 +1189,26 @@ export class MigrationTracker {
         `SET statement_timeout = '${formatPostgresTimeout(this.options.statementTimeout)}'`,
       );
 
-      const invalidIndexes = await this.readInvalidIndexNames(session);
-      let stoppedBy: string | null = null;
+      // Check every pending create before any statement of the phase runs:
+      // a refusal must never follow a drop that already committed.
+      let refusal: ConcurrentIndexRefusal | null = null;
+      try {
+        await this.preflightConcurrentCreates(
+          session,
+          results.flatMap((result) => {
+            const statements = plan.get(result.name)?.concurrent ?? [];
+            return result.skipped || statements.length === 0
+              ? []
+              : [{ migrationName: result.name, statements }];
+          }),
+        );
+      } catch (error) {
+        if (!(error instanceof ConcurrentIndexRefusal)) throw error;
+        refusal = error;
+      }
+
+      const invalidIndexes = await this.readInvalidIndexes(session);
+      let stoppedBy: string | null = refusal?.migrationName ?? null;
 
       for (let index = 0; index < results.length; index++) {
         const result = results[index];
@@ -959,9 +1224,24 @@ export class MigrationTracker {
           continue;
         }
 
+        if (refusal && result.name === refusal.migrationName) {
+          await this.recordConcurrentIndexFailure(result.name, refusal.message);
+          results[index] = {
+            ...result,
+            success: false,
+            applied: false,
+            skipped: false,
+            error: refusal,
+          };
+          options.onProgress?.(results[index]);
+          continue;
+        }
+
         if (stoppedBy) {
           const error = new Error(
-            `Not attempted: concurrent index phase stopped after ${stoppedBy} failed`,
+            refusal
+              ? `Not attempted: the concurrent index phase ran nothing because ${stoppedBy} was refused before it ran`
+              : `Not attempted: concurrent index phase stopped after ${stoppedBy} failed`,
           );
           await this.recordConcurrentIndexFailure(result.name, error.message);
           results[index] = {
@@ -978,23 +1258,11 @@ export class MigrationTracker {
         const startedAt = Date.now();
 
         try {
-          for (const sql of split.concurrent) {
-            const indexName = extractCreatedIndexName(sql);
-            if (indexName && invalidIndexes.has(indexName)) {
-              // An INVALID index is not usable by the planner and blocks the
-              // name, but `CREATE INDEX … IF NOT EXISTS` treats it as present.
-              // Drop it so the create below actually rebuilds it.
-              logger.warn(
-                `Rebuilding INVALID PostgreSQL index ${indexName} left by a previous failed CREATE INDEX CONCURRENTLY`,
-              );
-              await session.query(
-                `DROP INDEX CONCURRENTLY IF EXISTS ${quoteIndexName(indexName)}`,
-              );
-              invalidIndexes.delete(indexName);
-            }
-
-            await session.query(sql);
-          }
+          await this.runConcurrentIndexStatements(
+            session,
+            split.concurrent,
+            invalidIndexes,
+          );
 
           // Floor at 1ms: older callers read `execution_time_ms === 0` as
           // "nothing ran"; `applied: true` is the authoritative signal.
@@ -1068,47 +1336,44 @@ export class MigrationTracker {
   }
 
   /**
-   * Read the names of INVALID indexes that an unqualified index name in this
-   * session would actually resolve to.
+   * Read every INVALID index, as `index name -> schemas that hold one`.
    *
    * `pg_indexes` (what the SQL adapter's introspection reads) lists an
    * INVALID index exactly like a healthy one, so the schema differ believes a
    * failed `CREATE INDEX CONCURRENTLY` succeeded. `pg_index.indisvalid` is the
    * authoritative flag.
    *
-   * Scoped to `current_schemas(false)` — the session's search path — because
-   * migration DDL names indexes unqualified, and so does the
-   * `DROP INDEX CONCURRENTLY IF EXISTS "<name>"` repair. Scanning every schema
-   * would let an unrelated invalid index of the same name in another schema
-   * trigger a drop that then resolves to a *different* object. Where the same
-   * name appears in several search-path schemas, the earliest on the path wins
-   * — the same rule PostgreSQL uses to resolve the name.
+   * The name alone never decides a repair: several schemas may each hold an
+   * index of one name, healthy in one and INVALID in another.
+   * {@link dropInvalidIndexBeforeCreate} matches the schema too.
    *
    * A role without catalog access degrades to "no known invalid indexes"
    * rather than aborting the migration.
    */
-  private async readInvalidIndexNames(
+  private async readInvalidIndexes(
     session: MigrationSession,
-  ): Promise<Set<string>> {
-    const names = new Set<string>();
+  ): Promise<Map<string, Set<string>>> {
+    const invalid = new Map<string, Set<string>>();
 
     try {
       const result = await session.query(
-        `SELECT DISTINCT ON (c.relname) c.relname AS index_name
+        `SELECT n.nspname AS schema_name, c.relname AS index_name
            FROM pg_index i
            JOIN pg_class c ON c.oid = i.indexrelid
            JOIN pg_namespace n ON n.oid = c.relnamespace
-          WHERE i.indisvalid = false
-            AND n.nspname = ANY (current_schemas(false))
-          ORDER BY c.relname,
-                   array_position(current_schemas(false), n.nspname::text)`,
+          WHERE i.indisvalid = false`,
       );
 
       for (const row of result.rows) {
-        const name = (row as { index_name?: unknown }).index_name;
-        if (typeof name === 'string') {
-          names.add(name);
-        }
+        const { index_name: name, schema_name: schema } = row as {
+          index_name?: unknown;
+          schema_name?: unknown;
+        };
+        if (typeof name !== 'string') continue;
+        const schemas = invalid.get(name) ?? new Set<string>();
+        // A catalog that reports no schema cannot name the index to drop.
+        if (typeof schema === 'string') schemas.add(schema);
+        invalid.set(name, schemas);
       }
     } catch (error) {
       logger.warn(
@@ -1118,7 +1383,485 @@ export class MigrationTracker {
       );
     }
 
-    return names;
+    return invalid;
+  }
+
+  /**
+   * Run one migration's concurrent index statements on the pinned session:
+   * the interrupted-build repair before each `CREATE INDEX`, the check after
+   * it, and the two closing statements of a unique-index swap
+   * ({@link swapUniqueIndexRecreates}) in the schema of the table the swap
+   * builds on.
+   */
+  private async runConcurrentIndexStatements(
+    session: MigrationSession,
+    statements: string[],
+    invalidIndexes: Map<string, Set<string>>,
+  ): Promise<void> {
+    for (let index = 0; index < statements.length; index++) {
+      const sql = statements[index];
+      const swap = readSwapClose(statements, index);
+      if (swap) {
+        await this.closeUniqueIndexSwap(session, swap);
+        index += 1;
+        continue;
+      }
+      const kind = classifyIndexStatement(sql);
+      if (kind.kind === 'unreadable' && kind.index !== null)
+        throw refuseIndexStatement(
+          `The index statement could not be read with certainty (${kind.reason})`,
+          sql,
+        );
+      if (kind.kind !== 'create-index') {
+        await session.query(sql);
+        continue;
+      }
+      await this.runCreateIndex(session, sql, invalidIndexes);
+    }
+  }
+
+  /**
+   * One pending `CREATE INDEX`, checked before and after it runs.
+   *
+   * Before: the statement must be read with certainty and its expressions and
+   * predicate must be explainable against its table, or nothing runs. The
+   * INVALID index an interrupted build left under the name on this table is
+   * dropped. A valid index of the name already on the table is the resumed
+   * case (an earlier run built it, then failed before recording): when it is
+   * the index the statement describes, the create is not replayed (a plain
+   * `CREATE INDEX` would fail with "already exists"); when it is another
+   * index, the run stops. After: the index of the name must be on the table,
+   * valid, and the index the statement describes. Any doubt fails the run,
+   * which stays retryable. An unnamed index is refused (the planner refuses
+   * it first): a retry could not find what an earlier attempt built.
+   */
+  private async runCreateIndex(
+    session: MigrationSession,
+    sql: string,
+    invalidIndexes: Map<string, Set<string>>,
+  ): Promise<void> {
+    const reading = readCreateIndexStatement(sql);
+    if (reading.kind !== 'create-index')
+      throw new Error(
+        `The CREATE INDEX statement could not be read with certainty (${reading.kind === 'unreadable' ? reading.reason : 'not a CREATE INDEX'}), so it was not run; the migration stays retryable. Statement: ${sql}`,
+      );
+    const statement = reading.statement;
+    if (statement.name === null)
+      throw refuseIndexStatement(
+        'The CREATE INDEX statement names no index, and a retry could not find the index an interrupted run built (it would build another); name the index',
+        sql,
+      );
+    const failure = (why: string) =>
+      new Error(
+        `PostgreSQL index ${statement.name} on ${statement.relationSql} ${why}. Repair or drop that index, then rerun the migration.`,
+      );
+    try {
+      await this.explainStatementParts(session, statement);
+    } catch (error) {
+      throw new Error(
+        `The CREATE INDEX statement's expressions or predicate cannot be checked against ${statement.relationSql} (${error instanceof Error ? error.message : String(error)}), so it was not run; the migration stays retryable. Statement: ${sql}`,
+        { cause: error },
+      );
+    }
+    await this.dropInvalidIndexBeforeCreate(session, statement, invalidIndexes);
+
+    const before = await this.findNamedIndex(session, statement, failure);
+    if (before?.valid) {
+      if (!(await this.matchesOrFails(session, statement, before.oid, failure)))
+        throw failure(
+          'already exists and is not the index its statement describes (uniqueness, columns, collation, operator class or predicate differ)',
+        );
+      logger.info(
+        `PostgreSQL index ${statement.name} on ${statement.relationSql} is already built as described; not running its CREATE INDEX again`,
+      );
+      return;
+    }
+
+    await session.query(sql);
+
+    const after = await this.findNamedIndex(session, statement, failure);
+    if (!after)
+      throw failure(
+        'does not exist after its CREATE INDEX: an index of the same name on another table holds the name',
+      );
+    if (!after.valid)
+      throw failure(
+        'is INVALID after its CREATE INDEX (an interrupted build holds the name)',
+      );
+    if (!(await this.matchesOrFails(session, statement, after.oid, failure)))
+      throw failure(
+        'is not the index its statement describes after its CREATE INDEX (uniqueness, columns, collation, operator class or predicate differ)',
+      );
+  }
+
+  /** The index of the statement's name on its table, or `null`. */
+  private async findNamedIndex(
+    session: MigrationSession,
+    statement: CreateIndexStatement,
+    failure: (why: string) => Error,
+  ): Promise<{ oid: unknown; valid: boolean } | null> {
+    try {
+      const result = await session.query(
+        `SELECT i.indexrelid AS index_oid, i.indisvalid AS is_valid
+           FROM pg_index i
+           JOIN pg_class c ON c.oid = i.indexrelid
+          WHERE c.relname = ?
+            AND i.indrelid = to_regclass(?)`,
+        statement.name,
+        statement.relationSql,
+      );
+      const row = result.rows[0];
+      return row ? { oid: row.index_oid, valid: isTrue(row.is_valid) } : null;
+    } catch (error) {
+      throw failure(
+        `could not be confirmed (the catalog read failed: ${error instanceof Error ? error.message : String(error)})`,
+      );
+    }
+  }
+
+  private async matchesOrFails(
+    session: MigrationSession,
+    statement: CreateIndexStatement,
+    oid: unknown,
+    failure: (why: string) => Error,
+  ): Promise<boolean> {
+    try {
+      return await this.indexMatchesStatement(session, statement, oid);
+    } catch (error) {
+      throw failure(
+        `could not be compared with its statement (${error instanceof Error ? error.message : String(error)})`,
+      );
+    }
+  }
+
+  /**
+   * PostgreSQL's own normalized form of the statement's expressions and
+   * predicate, from `EXPLAIN` against its table: nothing is created or run.
+   */
+  private async explainStatementParts(
+    session: MigrationSession,
+    statement: CreateIndexStatement,
+  ): Promise<{ expressions: Map<number, string>; predicate: string | null }> {
+    const expressions = new Map<number, string>();
+    for (const [position, key] of statement.keys.entries())
+      if (key.expression !== null)
+        expressions.set(
+          position,
+          await explainExpression(
+            session,
+            key.expression,
+            statement.relationSql,
+          ),
+        );
+    const predicate =
+      statement.predicate === null
+        ? null
+        : await explainPredicate(
+            session,
+            statement.predicate,
+            statement.relationSql,
+          );
+    return { expressions, predicate };
+  }
+
+  /**
+   * Before the concurrent phase runs anything, check every `CREATE INDEX` in
+   * it (in order, across migrations): its expressions and predicate must be
+   * explainable against its table. A create that fails this is refused
+   * before any statement of the phase runs, so a refusal can never follow a
+   * drop that already committed. The one exception is a create preceded
+   * by statements that may make what it names (an `ALTER TABLE … ADD
+   * COLUMN` deferred after a foreign-key validation) and by no drop of its
+   * own index name: it is checked again where it runs, before it runs. A
+   * drop of another index has no bearing on it; a drop of its own name
+   * would leave the table without that index if the create were then
+   * refused, so that create must be checkable here.
+   *
+   * A list marked `runsFirst` holds a definition's transactional statements
+   * of a non-atomic batch, which run before its concurrent ones: they are
+   * not checked here, but their drops and other statements count as above.
+   */
+  private async preflightConcurrentCreates(
+    session: MigrationSession,
+    lists: Array<{
+      migrationName: string;
+      statements: string[];
+      runsFirst?: boolean;
+    }>,
+    before = 'the concurrent index phase ran anything',
+  ): Promise<void> {
+    let sawOther = false;
+    // Index names dropped earlier in the phase, as the server stores them
+    // (last part of each name: a qualified drop is matched conservatively).
+    const dropped = new Set<string>();
+    for (const { migrationName, statements, runsFirst } of lists) {
+      for (const sql of statements) {
+        const kind = classifyIndexStatement(sql);
+        if (kind.kind === 'drop-index') {
+          for (const parts of kind.names) dropped.add(parts[parts.length - 1]);
+          continue;
+        }
+        if (kind.kind !== 'create-index') {
+          if (kind.kind === 'other' || kind.kind === 'unreadable')
+            sawOther = true;
+          continue;
+        }
+        if (runsFirst) continue;
+        const reading = readCreateIndexStatement(sql);
+        if (reading.kind !== 'create-index' || reading.statement.name === null)
+          throw new ConcurrentIndexRefusal(
+            migrationName,
+            refuseIndexStatement(
+              'The CREATE INDEX statement could not be read with certainty or names no index',
+              sql,
+              before,
+            ).message,
+          );
+        try {
+          await this.explainStatementParts(session, reading.statement);
+        } catch (error) {
+          if (sawOther && !dropped.has(reading.statement.name)) continue;
+          throw new ConcurrentIndexRefusal(
+            migrationName,
+            refuseIndexStatement(
+              `The CREATE INDEX statement's expressions or predicate cannot be checked against ${reading.statement.relationSql} (${error instanceof Error ? error.message : String(error)})`,
+              sql,
+              before,
+            ).message,
+            { cause: error },
+          );
+        }
+      }
+    }
+  }
+
+  /**
+   * Whether the index `oid` is the index `statement` describes, read from the
+   * catalog without creating anything: uniqueness, access method, `NULLS NOT
+   * DISTINCT`, each key (column, or expression compared through `EXPLAIN`)
+   * with its collation, operator class and ordering, the included columns,
+   * and the predicate (through `EXPLAIN`). The index's own definition
+   * (`pg_get_indexdef`) is read with the same reader as the statement.
+   *
+   * - A key the statement writes as an expression that PostgreSQL stored as
+   *   a plain column (`((status))`, `((status COLLATE "C"))`, a cast that
+   *   changes nothing) is compared as that column, through `EXPLAIN`.
+   * - A collation or operator class the statement names is resolved on this
+   *   session, as the create resolved it (search path, access method), and
+   *   compared by OID with `indcollation` / `indclass`: a same-named object
+   *   in another schema is not it. A statement that names none must find
+   *   none printed by `pg_get_indexdef` (the default), except that a key
+   *   stored as a column from an expression must carry the expression's own
+   *   collation.
+   */
+  private async indexMatchesStatement(
+    session: MigrationSession,
+    statement: CreateIndexStatement,
+    oid: unknown,
+  ): Promise<boolean> {
+    const row = (
+      await session.query(
+        `SELECT pg_get_indexdef(i.indexrelid) AS definition,
+                pg_get_expr(i.indpred, i.indrelid) AS predicate,
+                ARRAY(SELECT k.oid::text
+                        FROM unnest(i.indcollation::oid[]) WITH ORDINALITY AS k(oid, at)
+                       ORDER BY k.at) AS collation_oids,
+                ARRAY(SELECT k.oid::text
+                        FROM unnest(i.indclass::oid[]) WITH ORDINALITY AS k(oid, at)
+                       ORDER BY k.at) AS opclass_oids
+           FROM pg_index i
+          WHERE i.indexrelid = ?`,
+        oid,
+      )
+    ).rows[0];
+    if (!row) return false;
+    const existing = readCreateIndexStatement(String(row.definition ?? ''));
+    if (existing.kind !== 'create-index') return false;
+    const built = existing.statement;
+    if (
+      built.unique !== statement.unique ||
+      built.method !== statement.method ||
+      built.nullsNotDistinct !== statement.nullsNotDistinct ||
+      built.keys.length !== statement.keys.length ||
+      built.include.join('\u0000') !== statement.include.join('\u0000')
+    )
+      return false;
+    const collations = ((row.collation_oids as unknown[] | null) ?? []).map(
+      String,
+    );
+    const opclasses = ((row.opclass_oids as unknown[] | null) ?? []).map(
+      String,
+    );
+    const mine = await this.explainStatementParts(session, statement);
+    for (const [position, key] of statement.keys.entries()) {
+      const other = built.keys[position];
+      if (
+        key.descending !== other.descending ||
+        key.nullsFirst !== other.nullsFirst
+      )
+        return false;
+      const columnFromExpression =
+        key.expression !== null && other.column !== null;
+      if (key.column !== null) {
+        if (other.column !== key.column) return false;
+      } else {
+        const theirs = await explainExpression(
+          session,
+          other.column !== null
+            ? quotePostgresIdentifier(other.column)
+            : (other.expression as string),
+          statement.relationSql,
+        );
+        if (theirs !== mine.expressions.get(position)) return false;
+      }
+      if (key.collation !== null) {
+        if (
+          (await resolveCollationOid(session, key.collation)) !==
+          collations[position]
+        )
+          return false;
+      } else if (columnFromExpression) {
+        if (
+          (await expressionCollationOid(
+            session,
+            key.expression as string,
+            statement,
+          )) !== collations[position]
+        )
+          return false;
+      } else if (other.collation !== null) return false;
+      if (key.opclass !== null) {
+        if (
+          (await resolveOpclassOid(session, statement.method, key.opclass)) !==
+          opclasses[position]
+        )
+          return false;
+      } else if (other.opclass !== null) return false;
+    }
+    if ((row.predicate === null) !== (statement.predicate === null))
+      return false;
+    if (row.predicate !== null) {
+      const theirs = await explainPredicate(
+        session,
+        String(row.predicate),
+        statement.relationSql,
+      );
+      if (theirs !== mine.predicate) return false;
+    }
+    return true;
+  }
+
+  /**
+   * The drop and rename that close a unique-index swap, run in the schema of
+   * the table the temporary index was built on. Unqualified, the drop would
+   * resolve the old name by the search path and could remove another
+   * schema's index; the rename would do the same with the temporary name.
+   * The old index is dropped only when it is on that table; one of that name
+   * on another table stops the run (the rename could not take the name).
+   */
+  private async closeUniqueIndexSwap(
+    session: MigrationSession,
+    swap: { name: string; temporary: string; relationSql: string },
+  ): Promise<void> {
+    let schema: unknown;
+    let holder: unknown;
+    try {
+      const resolved = await session.query(
+        `SELECT n.nspname AS schema_name,
+                (SELECT i.indrelid = t.oid
+                   FROM pg_class c
+                   JOIN pg_index i ON i.indexrelid = c.oid
+                  WHERE c.relnamespace = t.relnamespace AND c.relname = ?) AS on_table
+           FROM pg_class t
+           JOIN pg_namespace n ON n.oid = t.relnamespace
+          WHERE t.oid = to_regclass(?)`,
+        swap.name,
+        swap.relationSql,
+      );
+      schema = resolved.rows[0]?.schema_name;
+      holder = resolved.rows[0]?.on_table;
+    } catch (error) {
+      throw new Error(
+        `Could not resolve the table of the unique-index swap for ${swap.name}; nothing was dropped. Rerun the migration: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+        { cause: error },
+      );
+    }
+    if (typeof schema !== 'string')
+      throw new Error(
+        `The table of the unique-index swap for ${swap.name} (${swap.relationSql}) does not resolve; nothing was dropped. Rerun the migration.`,
+      );
+    if (holder !== null && holder !== undefined && !isTrue(holder))
+      throw new Error(
+        `The index name ${swap.name} in schema ${schema} belongs to another table, so the unique-index swap on ${swap.relationSql} cannot take it; nothing was dropped. Rename or drop that index, then rerun the migration.`,
+      );
+    const qualify = (name: string) =>
+      `${quotePostgresIdentifier(schema as string)}.${quotePostgresIdentifier(name)}`;
+    await session.query(
+      `DROP INDEX CONCURRENTLY IF EXISTS ${qualify(swap.name)}`,
+    );
+    await session.query(
+      `ALTER INDEX IF EXISTS ${qualify(swap.temporary)} RENAME TO ${quotePostgresIdentifier(swap.name)}`,
+    );
+  }
+
+  /**
+   * Before a pending `CREATE INDEX`, drop the INVALID index an earlier failed
+   * `CREATE INDEX CONCURRENTLY` left under the same name, so the create
+   * rebuilds it: an INVALID index is not usable by the planner and blocks the
+   * name, but `CREATE INDEX … IF NOT EXISTS` treats it as present.
+   *
+   * The index dropped is exactly the one the create would collide with: the
+   * INVALID index of the name (as PostgreSQL stores it) whose table is the
+   * statement's own target, resolved on this session as the create will
+   * resolve it, dropped by its schema-qualified name. A statement that cannot
+   * be read with certainty, or whose table cannot be resolved, is not
+   * repaired (the check after the create then keeps the migration retryable).
+   */
+  private async dropInvalidIndexBeforeCreate(
+    session: MigrationSession,
+    statement: CreateIndexStatement,
+    invalidIndexes: Map<string, Set<string>>,
+  ): Promise<void> {
+    const { name: indexName, relationSql: table } = statement;
+    const schemas = indexName ? invalidIndexes.get(indexName) : undefined;
+    if (!indexName || !schemas || schemas.size === 0) return;
+
+    let schema: unknown;
+    try {
+      // The INVALID index of that name whose table is the statement's own
+      // target (`indrelid`), resolved as the create will resolve it. An index
+      // of the name on any other table, in any schema, is not it.
+      const resolved = await session.query(
+        `SELECT n.nspname AS schema_name
+           FROM pg_index i
+           JOIN pg_class c ON c.oid = i.indexrelid
+           JOIN pg_namespace n ON n.oid = c.relnamespace
+          WHERE i.indisvalid = false
+            AND c.relname = ?
+            AND i.indrelid = to_regclass(?)`,
+        indexName,
+        table,
+      );
+      schema = resolved.rows[0]?.schema_name;
+    } catch (error) {
+      logger.warn(
+        `Could not resolve the table of pending index ${indexName}; skipping INVALID index repair: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      return;
+    }
+    if (typeof schema !== 'string' || !schemas.has(schema)) return;
+
+    logger.warn(
+      `Rebuilding INVALID PostgreSQL index ${schema}.${indexName} left by a previous failed CREATE INDEX CONCURRENTLY`,
+    );
+    await session.query(
+      `DROP INDEX CONCURRENTLY IF EXISTS ${quoteIndexName(schema)}.${quoteIndexName(indexName)}`,
+    );
+    schemas.delete(schema);
   }
 
   private async recordConcurrentIndexSuccess(
@@ -1467,22 +2210,16 @@ export class MigrationTracker {
         `SET statement_timeout = '${formatPostgresTimeout(this.options.statementTimeout)}'`,
       );
 
-      const invalidIndexes = await this.readInvalidIndexNames(session);
+      await this.preflightConcurrentCreates(session, [
+        { migrationName: '', statements: finalConcurrent },
+      ]);
+      const invalidIndexes = await this.readInvalidIndexes(session);
 
-      for (const sql of finalConcurrent) {
-        const indexName = extractCreatedIndexName(sql);
-        if (indexName && invalidIndexes.has(indexName)) {
-          logger.warn(
-            `Rebuilding INVALID PostgreSQL index ${indexName} left by a previous failed CREATE INDEX CONCURRENTLY`,
-          );
-          await session.query(
-            `DROP INDEX CONCURRENTLY IF EXISTS ${quoteIndexName(indexName)}`,
-          );
-          invalidIndexes.delete(indexName);
-        }
-
-        await session.query(sql);
-      }
+      await this.runConcurrentIndexStatements(
+        session,
+        finalConcurrent,
+        invalidIndexes,
+      );
     } finally {
       await session.release();
     }
@@ -1536,17 +2273,6 @@ export function buildConcurrentIndexPlan(
 
 const VALIDATE_CONSTRAINT_RE = /\bVALIDATE\s+CONSTRAINT\b/i;
 
-const DROP_INDEX_CONCURRENTLY_RE =
-  /^\s*DROP\s+INDEX\s+CONCURRENTLY\s+(?:IF\s+EXISTS\s+)?(?:"((?:[^"]|"")+)"|([A-Za-z_][\w$]*))\s*;?\s*$/i;
-
-const CREATE_UNIQUE_INDEX_CONCURRENTLY_IF_NOT_EXISTS_RE =
-  /^(\s*CREATE\s+UNIQUE\s+INDEX\s+CONCURRENTLY\s+IF\s+NOT\s+EXISTS\s+)(?:"((?:[^"]|"")+)"|([A-Za-z_][\w$]*))/i;
-
-function unquoteIndexName(quoted?: string, bare?: string): string | null {
-  if (quoted !== undefined) return quoted.replace(/""/g, '"');
-  return bare ?? null;
-}
-
 /**
  * Keep a unique index in place while `--postgres-safe` recreates it.
  *
@@ -1570,23 +2296,28 @@ export function swapUniqueIndexRecreates(lists: string[][]): string[][] {
   for (let li = 0; li < result.length; li++) {
     const list = result[li] ?? [];
     for (let si = 0; si < list.length; si++) {
-      const drop = DROP_INDEX_CONCURRENTLY_RE.exec(list[si] ?? '');
-      if (!drop) continue;
-      const name = unquoteIndexName(drop[1], drop[2]);
-      if (!name) continue;
+      // Read by the PostgreSQL lexer: comments, quoting and case are what the
+      // server sees, and names are compared and written as it stores them.
+      const drop = classifyIndexStatement(list[si] ?? '');
+      if (
+        drop.kind !== 'drop-index' ||
+        !drop.concurrently ||
+        drop.names.length !== 1 ||
+        drop.names[0].length !== 1
+      )
+        continue;
+      const name = drop.names[0][0];
       const create = findLaterUniqueCreate(result, li, si, name);
       if (!create) continue;
       const temporary = shortenIdentifier(`${name}_smrt_swap`);
-      const buildTemporary = create.replace(
-        CREATE_UNIQUE_INDEX_CONCURRENTLY_IF_NOT_EXISTS_RE,
-        (_match, head: string) => `${head}${quoteIndexName(temporary)}`,
-      );
+      const span = create.statement.nameSpan as { start: number; end: number };
+      const buildTemporary = `${create.sql.slice(0, span.start)}${quoteIndexName(temporary)}${create.sql.slice(span.end)}`;
       list.splice(
         si,
         1,
         buildTemporary,
-        `DROP INDEX CONCURRENTLY IF EXISTS ${quoteIndexName(name)}`,
-        `ALTER INDEX IF EXISTS ${quoteIndexName(temporary)} RENAME TO ${quoteIndexName(name)}`,
+        `${UNIQUE_INDEX_SWAP_MARKER} DROP INDEX CONCURRENTLY IF EXISTS ${quoteIndexName(name)}`,
+        `${UNIQUE_INDEX_SWAP_MARKER} ALTER INDEX IF EXISTS ${quoteIndexName(temporary)} RENAME TO ${quoteIndexName(name)}`,
       );
       si += 2;
     }
@@ -1599,21 +2330,30 @@ function findLaterUniqueCreate(
   fromList: number,
   fromStatement: number,
   name: string,
-): string | null {
+): { sql: string; statement: CreateIndexStatement } | null {
   for (let li = fromList; li < lists.length; li++) {
     const list = lists[li] ?? [];
     const start = li === fromList ? fromStatement + 1 : 0;
     for (let si = start; si < list.length; si++) {
       const sql = list[si] ?? '';
-      const match = CREATE_UNIQUE_INDEX_CONCURRENTLY_IF_NOT_EXISTS_RE.exec(sql);
-      if (match && unquoteIndexName(match[2], match[3]) === name) return sql;
-      const created = extractCreatedIndexName(sql);
-      // Any other create/drop of the same name first ends the search.
-      if (created === name) return null;
-      const dropped = DROP_INDEX_CONCURRENTLY_RE.exec(sql);
-      if (dropped && unquoteIndexName(dropped[1], dropped[2]) === name) {
-        return null;
+      const kind = classifyIndexStatement(sql);
+      if (kind.kind === 'create-index') {
+        const reading = readCreateIndexStatement(sql);
+        // An unreadable create of any name ends the search: it is not paired.
+        if (reading.kind !== 'create-index') return null;
+        const create = reading.statement;
+        if (create.name !== name) continue;
+        return create.unique && create.concurrently && create.ifNotExists
+          ? { sql, statement: create }
+          : null;
       }
+      if (kind.kind === 'unreadable') return null;
+      // Any other drop of the same name first ends the search.
+      if (
+        kind.kind === 'drop-index' &&
+        kind.names.some((parts) => parts[parts.length - 1] === name)
+      )
+        return null;
     }
   }
   return null;
@@ -1648,8 +2388,6 @@ export function planPostgresStatements(
   useConcurrentIndexes: boolean,
   options: { swapUniqueRecreates?: boolean } = {},
 ): { concurrent: string[]; regular: string[] } {
-  const concurrentRegex = CONCURRENT_INDEX_STATEMENT_RE;
-
   const concurrent: string[] = [];
   const regular: string[] = [];
   // Once a VALIDATE CONSTRAINT leaves the transaction, every later statement
@@ -1665,17 +2403,21 @@ export function planPostgresStatements(
     ) {
       deferRest = true;
     }
-    if (deferRest && !sql.trimStart().startsWith(NULL_EQUAL_INDEX_MARKER)) {
-      concurrent.push(
-        /DROP\s+INDEX\s+(?!CONCURRENTLY)/i.test(sql)
-          ? sql.replace(/DROP\s+INDEX\s+/i, 'DROP INDEX CONCURRENTLY ')
-          : /CREATE\s+(UNIQUE\s+)?INDEX\s+(?!CONCURRENTLY)/i.test(sql)
-            ? sql.replace(
-                /CREATE\s+(UNIQUE\s+)?INDEX\s+/i,
-                'CREATE $1INDEX CONCURRENTLY ',
-              )
-            : sql,
+    const kind = classifyIndexStatement(sql);
+    // Index DDL whose leading keywords are read but whose rest is not: it
+    // would run outside the concurrent phase's checks (or not concurrently
+    // at all), so it is refused before anything runs.
+    if (
+      kind.kind === 'unreadable' &&
+      kind.index !== null &&
+      (deferRest || useConcurrentIndexes || kind.concurrently)
+    )
+      throw refuseIndexStatement(
+        `The index statement could not be read with certainty (${kind.reason})`,
+        sql,
       );
+    if (deferRest && !sql.trimStart().startsWith(NULL_EQUAL_INDEX_MARKER)) {
+      concurrent.push(withConcurrently(sql, kind));
       continue;
     }
     if (sql.trimStart().startsWith(NULL_EQUAL_INDEX_MARKER)) {
@@ -1687,30 +2429,21 @@ export function planPostgresStatements(
       regular.push(sql);
       continue;
     }
-    if (concurrentRegex.test(sql)) {
+    if (isConcurrentIndexStatement(kind)) {
       concurrent.push(sql);
       continue;
     }
-    if (useConcurrentIndexes) {
-      if (/CREATE\s+(UNIQUE\s+)?INDEX\s+(?!CONCURRENTLY)/i.test(sql)) {
-        concurrent.push(
-          sql.replace(
-            /CREATE\s+(UNIQUE\s+)?INDEX\s+/i,
-            'CREATE $1INDEX CONCURRENTLY ',
-          ),
-        );
-        continue;
-      }
-      if (/DROP\s+INDEX\s+(?!CONCURRENTLY)/i.test(sql)) {
-        concurrent.push(
-          sql.replace(/DROP\s+INDEX\s+/i, 'DROP INDEX CONCURRENTLY '),
-        );
-        continue;
-      }
+    if (
+      useConcurrentIndexes &&
+      (kind.kind === 'create-index' || kind.kind === 'drop-index')
+    ) {
+      concurrent.push(withConcurrently(sql, kind));
+      continue;
     }
     regular.push(sql);
   }
 
+  assertConcurrentCreatesCheckable(concurrent);
   if (options.swapUniqueRecreates === false) {
     return { concurrent, regular };
   }
@@ -1718,4 +2451,162 @@ export function planPostgresStatements(
     concurrent: swapUniqueIndexRecreates([concurrent])[0] ?? concurrent,
     regular,
   };
+}
+
+/** `EXPLAIN` output: PostgreSQL's normalized form of a statement. */
+async function explainText(
+  session: MigrationSession,
+  query: string,
+): Promise<string> {
+  const result = await session.query(`EXPLAIN (VERBOSE, COSTS OFF) ${query}`);
+  return result.rows
+    .map((row) => String(Object.values(row as Record<string, unknown>)[0]))
+    .join('\n');
+}
+
+/** An index expression as PostgreSQL normalizes it, against its table. */
+function explainExpression(
+  session: MigrationSession,
+  expression: string,
+  relationSql: string,
+): Promise<string> {
+  return explainText(session, `SELECT ${expression} FROM ONLY ${relationSql}`);
+}
+
+/**
+ * An index predicate as PostgreSQL normalizes it, against its table. It is
+ * explained as an output column, not as a `WHERE` clause: row-level security
+ * adds its policies to the scan's filter, and a policy that hides every row
+ * makes any two `WHERE` plans the same constant-false plan, while the output
+ * column still shows the predicate.
+ */
+function explainPredicate(
+  session: MigrationSession,
+  predicate: string,
+  relationSql: string,
+): Promise<string> {
+  return explainText(session, `SELECT (${predicate}) FROM ONLY ${relationSql}`);
+}
+
+/** The OID (as text) of the collation `parts` names, resolved on the session. */
+async function resolveCollationOid(
+  session: MigrationSession,
+  parts: string[],
+): Promise<string | null> {
+  const result = await session.query(
+    'SELECT to_regcollation(?)::oid::text AS collation_oid',
+    parts.map(quotePostgresIdentifier).join('.'),
+  );
+  const value = result.rows[0]?.collation_oid;
+  return value === null || value === undefined ? null : String(value);
+}
+
+/**
+ * The OID (as text) of the collation an index expression carries, as the
+ * create derives it, evaluated over one row of NULLs typed as the table's
+ * columns (no table row is read, so row-level security does not apply).
+ * Used only for an expression PostgreSQL stored as a plain column, which
+ * has no function to evaluate. A value of a type without collations
+ * (integer, boolean, timestamp, uuid) carries OID 0, as `indcollation`
+ * records it; its type is read first because `pg_collation_for` raises on
+ * such a value instead of returning NULL.
+ */
+async function expressionCollationOid(
+  session: MigrationSession,
+  expression: string,
+  statement: CreateIndexStatement,
+): Promise<string | null> {
+  const alias = quotePostgresIdentifier(
+    statement.relation[statement.relation.length - 1] ?? '',
+  );
+  const rows = `FROM (SELECT (NULL::${statement.relationSql}).*) AS ${alias}`;
+  const typed = await session.query(
+    `SELECT (SELECT t.typcollation <> 0 FROM pg_type t WHERE t.oid = pg_typeof(${expression})::oid) AS collatable ${rows}`,
+  );
+  const collatable = typed.rows[0]?.collatable;
+  if ([false, 'f', 'false', 0].includes(collatable as never)) return '0';
+  // A type that could not be read is never taken as "no collation".
+  if (!isTrue(collatable)) return null;
+  const result = await session.query(
+    `SELECT coalesce(to_regcollation(pg_collation_for(${expression}))::oid, 0)::text AS collation_oid ${rows}`,
+  );
+  const value = result.rows[0]?.collation_oid;
+  return value === null || value === undefined ? null : String(value);
+}
+
+/**
+ * The OID (as text) of the operator class `parts` names for access method
+ * `method`, resolved as the create resolves it: the named schema, or the
+ * first one on the search path that has it.
+ */
+async function resolveOpclassOid(
+  session: MigrationSession,
+  method: string,
+  parts: string[],
+): Promise<string | null> {
+  const result =
+    parts.length === 2
+      ? await session.query(
+          `SELECT oc.oid::text AS opclass_oid
+             FROM pg_opclass oc
+             JOIN pg_am am ON am.oid = oc.opcmethod
+             JOIN pg_namespace n ON n.oid = oc.opcnamespace
+            WHERE am.amname = ? AND n.nspname = ? AND oc.opcname = ?`,
+          method,
+          parts[0],
+          parts[1],
+        )
+      : await session.query(
+          `SELECT oc.oid::text AS opclass_oid
+             FROM pg_opclass oc
+             JOIN pg_am am ON am.oid = oc.opcmethod
+            WHERE am.amname = ? AND oc.opcname = ?
+              AND pg_opclass_is_visible(oc.oid)`,
+          method,
+          parts[0],
+        );
+  const value = result.rows[0]?.opclass_oid;
+  return value === null || value === undefined ? null : String(value);
+}
+
+/**
+ * The two statements {@link swapUniqueIndexRecreates} closes a swap with, at
+ * `index` (both carry its marker), and the temporary index's table, read
+ * from the statement that built it right before them; `null` when `index`
+ * is not such a pair.
+ */
+function readSwapClose(
+  statements: string[],
+  index: number,
+): { name: string; temporary: string; relationSql: string } | null {
+  const generated = (sql: string | undefined) =>
+    sql?.trimStart().startsWith(UNIQUE_INDEX_SWAP_MARKER) ?? false;
+  // Only the planner's own swap is closed in its table's schema; an authored
+  // drop and rename of the same shape run as written.
+  if (!generated(statements[index]) || !generated(statements[index + 1]))
+    return null;
+  const drop = classifyIndexStatement(statements[index] ?? '');
+  const rename = classifyIndexStatement(statements[index + 1] ?? '');
+  if (
+    drop.kind !== 'drop-index' ||
+    !drop.concurrently ||
+    drop.names.length !== 1 ||
+    drop.names[0].length !== 1 ||
+    rename.kind !== 'alter-index-rename' ||
+    rename.from.length !== 1
+  )
+    return null;
+  const name = drop.names[0][0];
+  const temporary = rename.from[0];
+  if (rename.to !== name) return null;
+  // The planner writes the temporary build right before the two.
+  const reading = readCreateIndexStatement(statements[index - 1] ?? '');
+  if (reading.kind === 'create-index' && reading.statement.name === temporary)
+    return { name, temporary, relationSql: reading.statement.relationSql };
+  return null;
+}
+
+/** A boolean as the PostgreSQL driver may return it. */
+function isTrue(value: unknown): boolean {
+  return value === true || value === 't' || value === 'true' || value === 1;
 }
