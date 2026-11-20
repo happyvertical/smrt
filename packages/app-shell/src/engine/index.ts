@@ -78,6 +78,7 @@ export type { ExtractModelCommand, ExtractPreview } from './extract-model.ts';
 export { formulaWords } from './formula.ts';
 export {
   AppHost,
+  bundledWorkerUrl,
   type ChangeResult,
   type CleanUpResult,
   type ExecuteResult,
@@ -92,6 +93,7 @@ export {
   type RestResult,
   type ToolResult,
   type VersionSummary,
+  wantsBundledWorker,
 } from './host.ts';
 export type { ImportNames, RetainedImportPlan } from './import-names.ts';
 export {
@@ -151,3 +153,7 @@ export {
   ENGINE_TOOLS,
   isEngineTool,
 } from './tool-definitions.ts';
+export {
+  DEFAULT_WORKER_LIMITS,
+  type WorkerLimits,
+} from './worker-handle.ts';
