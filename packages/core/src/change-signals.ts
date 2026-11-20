@@ -54,11 +54,18 @@
  *   the older hazard where a pre-commit signal could describe a write a later
  *   rollback undid, and where the rolled-back seq was reused by the next
  *   append. The cost is latency: live subscribers see a transaction-wrapped
- *   write one drain after it commits, and on engines without staging
- *   (SQLite, DuckDB) the pre-commit caveat still applies. The autocommit
- *   default path — save()/delete() as independent statements — is exact and
- *   unchanged. Clients reconcile via cursor catch-up either way, so
- *   convergence holds.
+ *   write one drain after it commits. On engines without staging (SQLite,
+ *   DuckDB) a write on a framework transaction's handle hands its signal to
+ *   the transaction (`deferUntilFrameworkCommit`), which publishes it after
+ *   commit and drops it on rollback. A transaction the framework does not
+ *   manage (raw `db.transaction()`, a caller-owned scope) still signals
+ *   before commit. The autocommit default path — save()/delete() as
+ *   independent statements — is exact and unchanged.
+ * - **Open delivery edges** (see `agents/change-signals.md`): a nested
+ *   savepoint rolled back after a write through an outer handle still
+ *   signals at the outer commit; disconnected streams' reads stay queued
+ *   behind a long embedded transaction; a late notification can lower a
+ *   live-forward start into retained history.
  *
  * @see https://github.com/happyvertical/smrt/issues/1763
  * @packageDocumentation
@@ -72,6 +79,8 @@ import {
   PROCESS_ID,
   resolveDbCacheKey,
 } from './collection-cache.js';
+import { databaseReadScope } from './embedded-write-queue.js';
+import { isPerConnectionMemoryUrl } from './utils/database-url.js';
 import { toSafeInteger } from './utils/safe-integer.js';
 
 const logger = createLogger({ level: 'info' });
@@ -115,11 +124,79 @@ export type ChangeSignalListener = (signal: ChangeSignal) => void;
 export const CHANGE_SIGNAL_CHANNEL = 'smrt_change_signals';
 
 /**
- * dbKey → local listeners. Keyed via `resolveDbCacheKey` so `:memory:` and
- * URL-less handles are scoped per instance (never cross-deliver between two
- * independent in-memory databases).
+ * A local subscription: its listener and the feed identities it was
+ * registered under.
  */
-const localListeners = new Map<string, Set<ChangeSignalListener>>();
+interface LocalSubscription {
+  listener: ChangeSignalListener;
+  /** {@link feedIdentity} of each database the listener was registered on. */
+  identities: Set<string | object>;
+}
+
+/**
+ * dbKey → listener → local subscription. Keyed via {@link signalScopeKey} so
+ * `:memory:`, every other per-connection in-memory URL and URL-less handles
+ * are scoped per instance (never cross-deliver between two independent
+ * in-memory databases). A listener is registered at most once per scope:
+ * registering it again adds only its feed identity, so one signal invokes it
+ * once, it holds one subscriber slot, and any of its unsubscribe functions
+ * removes it.
+ */
+const localListeners = new Map<
+  string,
+  Map<ChangeSignalListener, LocalSubscription>
+>();
+
+/** Per-instance scope keys for private in-memory databases. */
+const privateScopeKeys = new WeakMap<object, string>();
+
+/**
+ * The signal scope of a database: `resolveDbCacheKey` (its URL — `db.url`, or
+ * `db.config.url` for a handle exposing only that — shared by every handle
+ * and replica of that database), except for a per-connection in-memory
+ * database (`:memory:`, `file::memory:`, `memory://…`), which is private to
+ * its handle even when another handle has the same URL — so a signal
+ * published on one such database never reaches another's subscribers. The
+ * same rule as the write queue and the `_events` feed-read scope.
+ */
+function signalScopeKey(db: DatabaseInterface): string {
+  const withConfig = db as { url?: unknown; config?: { url?: unknown } };
+  const url = withConfig.url || withConfig.config?.url;
+  if (typeof url === 'string' && url && isPerConnectionMemoryUrl(url)) {
+    let key = privateScopeKeys.get(db);
+    if (!key) {
+      key = `smrt-private-db:${crypto.randomUUID()}`;
+      privateScopeKeys.set(db, key);
+    }
+    return key;
+  }
+  return resolveDbCacheKey(db);
+}
+
+/**
+ * The feed a handle is proven to read, as `_events` page sharing uses it
+ * (`databaseReadScope`): the URL of a shared embedded database, otherwise the
+ * handle itself — every PostgreSQL handle (two pools on one URL can see
+ * different schemas), a private in-memory database, a handle without a URL.
+ * An identity that cannot be determined is a fresh object, which matches
+ * nothing.
+ */
+function feedIdentity(db: DatabaseInterface): string | object {
+  try {
+    return databaseReadScope(db);
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * Whether a signal carries no feed sequence. Such a signal has no feed row a
+ * subscriber could re-read under its own scope, so it is the signal itself
+ * that `_events` frames.
+ */
+function isUnsequenced(signal: ChangeSignal): boolean {
+  return !Number.isSafeInteger(signal.seq) || signal.seq <= 0;
+}
 
 /**
  * dbKey -> pending subscriber slots claimed by `_events` before a stream has
@@ -148,6 +225,9 @@ const warnedNoNotifications = new Set<string>();
  * when the adapter has no notification capability). Returns an unsubscribe
  * function that removes the listener and, when the scope's last subscriber
  * leaves, retracts the cross-replica listener so its refcount reaches 0.
+ * Registering the same `listener` again for the same scope does not add a
+ * second registration: it is invoked once per signal, counts as one
+ * subscriber, and any of its unsubscribe functions removes it.
  *
  * Delivery is synchronous: `listener` is invoked from the write path (or the
  * cross-replica loop) inside a per-listener try/catch, so it must not assume
@@ -158,14 +238,21 @@ export function subscribeToChangeSignals(
   db: DatabaseInterface,
   listener: ChangeSignalListener,
 ): () => void {
-  const dbKey = resolveDbCacheKey(db);
-
-  let set = localListeners.get(dbKey);
-  if (!set) {
-    set = new Set();
-    localListeners.set(dbKey, set);
+  const dbKey = signalScopeKey(db);
+  let subscriptions = localListeners.get(dbKey);
+  if (!subscriptions) {
+    subscriptions = new Map();
+    localListeners.set(dbKey, subscriptions);
   }
-  set.add(listener);
+  const existing = subscriptions.get(listener);
+  if (existing) {
+    existing.identities.add(feedIdentity(db));
+  } else {
+    subscriptions.set(listener, {
+      listener,
+      identities: new Set([feedIdentity(db)]),
+    });
+  }
 
   // Lazily start the cross-replica listener on first interest for this scope.
   ensureChangeSignalListener(db);
@@ -204,7 +291,7 @@ export function tryReserveChangeSignalSubscriberSlot(
     return () => {};
   }
 
-  const dbKey = resolveDbCacheKey(db);
+  const dbKey = signalScopeKey(db);
   if (changeSignalSubscriberCountForKey(dbKey) >= maxSubscribers) {
     return null;
   }
@@ -240,8 +327,8 @@ export function publishChangeSignal(
   // that forward it to their SSE clients. Those peers leak on their own
   // account; this build must not be what feeds them.
   if (isChangeFeedSensitiveTable(signal.table)) return;
-  const dbKey = resolveDbCacheKey(db);
-  deliverLocally(dbKey, signal);
+  const dbKey = signalScopeKey(db);
+  deliverLocally(dbKey, signal, feedIdentity(db));
   // Fire-and-forget: broadcast failures are swallowed inside broadcast.
   void broadcastChangeSignal(db, signal);
 }
@@ -251,19 +338,39 @@ export function publishChangeSignal(
  * wrapped in its own try/catch so one throwing listener (a closed SSE
  * controller) never blocks the rest. Locally-published and peer-received
  * signals both flow through here — the single delivery path.
+ *
+ * A sequenced signal is a wake-up: a subscriber re-reads its own feed, so it
+ * reaches every subscriber of the scope. An unsequenced signal is delivered
+ * only to subscribers whose feed identity is the publisher's (`origin`). A
+ * peer-received signal (`origin` undefined) names no schema or handle, so an
+ * unsequenced one reaches only subscribers whose identity is the shared URL
+ * itself — never a PostgreSQL handle, whose URL can serve several schemas.
  */
-function deliverLocally(dbKey: string, signal: ChangeSignal): void {
+function deliverLocally(
+  dbKey: string,
+  signal: ChangeSignal,
+  origin?: string | object,
+): void {
   // The SSE frame names `{table, operation, rowId}`, and for a credential
   // table the rowId IS the credential (#2937). Every delivery — locally
   // published and peer-received alike — passes through here, so this is the
   // one place that also covers a peer replica still running a build whose
   // write path had no such guard.
   if (isChangeFeedSensitiveTable(signal.table)) return;
-  const set = localListeners.get(dbKey);
-  if (!set || set.size === 0) return;
+  const subscriptions = localListeners.get(dbKey);
+  if (!subscriptions || subscriptions.size === 0) return;
   // Snapshot so a listener that unsubscribes during delivery can't mutate the
-  // set mid-iteration.
-  for (const listener of [...set]) {
+  // map mid-iteration.
+  const unsequenced = isUnsequenced(signal);
+  for (const { listener, identities } of [...subscriptions.values()]) {
+    if (
+      unsequenced &&
+      !(origin === undefined
+        ? [...identities].some((identity) => typeof identity === 'string')
+        : identities.has(origin))
+    ) {
+      continue;
+    }
     try {
       listener(signal);
     } catch (error) {
@@ -287,7 +394,7 @@ export async function broadcastChangeSignal(
   signal: ChangeSignal,
 ): Promise<void> {
   const notifications = getNotifications(db);
-  const dbKey = resolveDbCacheKey(db);
+  const dbKey = signalScopeKey(db);
   if (!notifications) {
     warnOnceNoNotifications(dbKey);
     return;
@@ -313,7 +420,7 @@ export async function broadcastChangeSignal(
  * `source` id (echo-avoidance): the local fan-out already delivered them.
  */
 function ensureChangeSignalListener(db: DatabaseInterface): void {
-  const dbKey = resolveDbCacheKey(db);
+  const dbKey = signalScopeKey(db);
   if (crossReplicaListeners.has(dbKey)) return;
 
   const notifications = getNotifications(db);
@@ -411,7 +518,7 @@ export function resetChangeSignals(): void {
  * disconnects.
  */
 export function changeSignalSubscriberCount(db: DatabaseInterface): number {
-  return changeSignalSubscriberCountForKey(resolveDbCacheKey(db));
+  return changeSignalSubscriberCountForKey(signalScopeKey(db));
 }
 
 function changeSignalSubscriberCountForKey(dbKey: string): number {

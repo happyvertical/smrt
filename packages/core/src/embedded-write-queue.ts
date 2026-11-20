@@ -44,9 +44,164 @@ import { isPerConnectionMemoryUrl } from './utils/database-url.js';
 const urlQueues = new Map<string, Promise<unknown>>();
 const handleQueues = new WeakMap<object, Promise<unknown>>();
 const remoteLibSqlHandles = new WeakSet<object>();
-const activeQueueKeys = createAsyncContext<ReadonlySet<string | object>>();
+/**
+ * The queue holds the caller's async context descends from, each with a flag
+ * that clears when the hold ends. Re-entry into a held queue — and every
+ * "does the caller hold this queue" check — requires a live hold: async
+ * context is inherited by callbacks scheduled during a hold that run after it
+ * ended, and the flag tells such a callback the hold is gone.
+ */
+interface QueueHold {
+  readonly key: string | object;
+  live: boolean;
+}
+const activeHolds = createAsyncContext<readonly QueueHold[]>();
 const frameworkTransactions =
   createAsyncContext<ReadonlySet<DatabaseInterface>>();
+
+/**
+ * Work to run once a framework transaction has committed, one frame per
+ * active transaction (innermost last). See {@link deferUntilFrameworkCommit}.
+ */
+interface CommitFrame {
+  /** The transaction's bound handle. */
+  readonly handle: DatabaseInterface;
+  /** The root database the outermost transaction was opened on. */
+  readonly root: DatabaseInterface;
+  readonly callbacks: Array<(root: DatabaseInterface) => void>;
+  /**
+   * Whether the root's own connection runs this transaction (local SQLite and
+   * DuckDB), so a write through the root handle inside the callback is part
+   * of it.
+   */
+  readonly rootSharesTransaction: boolean;
+  /** Cleared when the transaction settles; a stale frame takes no work. */
+  active: boolean;
+}
+const commitFrames = createAsyncContext<readonly CommitFrame[]>();
+
+/**
+ * Run `callback` after the framework transaction that `db` is bound to has
+ * committed, and never if it rolls back. `db` is the transaction's bound
+ * handle, or — on local SQLite and DuckDB, whose root connection runs the
+ * transaction — the root itself while the transaction holds its queue. The callback receives the root
+ * database the transaction was opened on — the handle other parties key
+ * their subscriptions by, since a transaction's bound handle can carry a
+ * different identity. Returns false — and does nothing —
+ * when `db` is not the handle of an active framework transaction in this
+ * async context; the caller then runs the work itself.
+ *
+ * Exists for side effects that announce a write to other parties, such as
+ * the change feed's live signals: announced before commit, a write a later
+ * rollback undoes is still announced, and on engines that allocate the feed
+ * sequence inside the transaction a rollback frees that sequence for the next
+ * write — so a client that dedupes by sequence drops the real change. A nested
+ * framework transaction on the same handle hands its callbacks to the
+ * enclosing one, so they wait for the outermost commit. Hosts without async
+ * context propagation (a browser) cannot see the frame and run the work
+ * immediately, as before.
+ */
+export function deferUntilFrameworkCommit(
+  db: DatabaseInterface,
+  callback: (root: DatabaseInterface) => void,
+): boolean {
+  const frames = commitFrames.getStore();
+  if (!frames) return false;
+  for (let index = frames.length - 1; index >= 0; index--) {
+    const frame = frames[index];
+    if (!frame.active) continue;
+    // The bound handle, or — where the root's connection runs the
+    // transaction — the root itself, written through while the transaction
+    // still holds its queue (a root-bound object saved inside the callback).
+    if (
+      frame.handle === db ||
+      (frame.rootSharesTransaction && frame.root === db && holdsWriteQueue(db))
+    ) {
+      frame.callbacks.push(callback);
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * The root database behind `db`: the database the outermost framework
+ * transaction was opened on when `db` is the handle of an active framework
+ * transaction in this async context, otherwise `db` itself.
+ */
+export function resolveFrameworkTransactionRoot(
+  db: DatabaseInterface,
+): DatabaseInterface {
+  const frames = commitFrames.getStore();
+  if (frames) {
+    for (let index = frames.length - 1; index >= 0; index--) {
+      if (frames[index].handle === db) return frames[index].root;
+    }
+  }
+  return db;
+}
+
+function runCommitCallbacks(
+  callbacks: Array<(root: DatabaseInterface) => void>,
+  root: DatabaseInterface,
+): void {
+  for (const callback of callbacks) {
+    try {
+      callback(root);
+    } catch {
+      // A post-commit announcement must never fail the committed write.
+    }
+  }
+}
+
+/**
+ * Run `operation` with none of the caller's write-queue holds, framework
+ * transactions or commit frames in its async context.
+ *
+ * For long-lived background work that is merely *started* from inside a
+ * hold — such as an `_events` stream woken by a signal a commit callback
+ * published. Without this, every later await of that work would inherit the
+ * hold and treat itself as re-entrant, so its reads would no longer wait for
+ * transactions that open afterwards.
+ */
+export function runOutsideWriteContext<T>(operation: () => T): T {
+  return activeHolds.run([], () =>
+    frameworkTransactions.run(new Set(), () => commitFrames.run([], operation)),
+  );
+}
+
+/**
+ * The scope two feed reads must share to see the same database: the database
+ * URL for an embedded database, or the handle itself for a per-connection
+ * in-memory database, a handle without a URL, or any PostgreSQL handle. A
+ * framework transaction's handle resolves to its root.
+ */
+export function databaseReadScope(db: DatabaseInterface): string | object {
+  const root = resolveFrameworkTransactionRoot(db);
+  // A PostgreSQL URL does not fix what a handle sees: two pools on one URL
+  // can run different sessions (`search_path`, role). Only the same handle is
+  // proven to read the same feed.
+  if (usesPostgresDialect(root)) return root;
+  return queueKey(root);
+}
+
+/**
+ * Whether the caller's async context holds the write queue for `db` — it is
+ * running inside a framework write transaction or another queue hold on that
+ * database. Work that must wait for the queue (a detached feed read) and is
+ * awaited from here can never complete.
+ */
+export function holdsWriteQueue(db: DatabaseInterface): boolean {
+  return (
+    hasLiveHold(queueKey(db)) ||
+    hasLiveHold(queueKey(resolveFrameworkTransactionRoot(db)))
+  );
+}
+
+function hasLiveHold(key: string | object): boolean {
+  const holds = activeHolds.getStore();
+  return holds?.some((hold) => hold.live && hold.key === key) === true;
+}
 
 /** Whether this exact handle belongs to a currently active framework transaction. */
 export function isFrameworkTransactionHandle(db: DatabaseInterface): boolean {
@@ -154,16 +309,28 @@ export async function withEmbeddedWriteQueue<T>(
   // and queueing the nested write behind its own parent would deadlock, so it
   // runs unqueued there; its only database is PGlite, which serializes
   // statements itself.
-  if (!serialize || !activeQueueKeys.propagatesAcrossAwait) return operation();
+  if (!serialize || !activeHolds.propagatesAcrossAwait) return operation();
 
   const key = queueKey(db);
-  const active = activeQueueKeys.getStore();
-  if (active?.has(key)) return operation();
+  // Re-entry needs a hold that is still live: async context is inherited by
+  // callbacks scheduled during a hold that run after it ended, and treating
+  // such a callback as re-entrant would let it run unqueued inside the next
+  // transaction on the database (and read its uncommitted rows).
+  if (hasLiveHold(key)) return operation();
   const previous =
     (typeof key === 'string' ? urlQueues.get(key) : handleQueues.get(key)) ??
     Promise.resolve();
-  const run = () =>
-    activeQueueKeys.run(new Set([...(active ?? []), key]), operation);
+  const run = async () => {
+    const hold: QueueHold = { key, live: true };
+    try {
+      return await activeHolds.run(
+        [...(activeHolds.getStore() ?? []), hold],
+        operation,
+      );
+    } finally {
+      hold.live = false;
+    }
+  };
   const next = previous.then(run, run);
   // The stored tail must never reject, or one failed write would poison the
   // queue for every later writer.
@@ -197,28 +364,64 @@ export async function withEmbeddedWriteTransaction<T>(
   }
   // The transaction handle carries no adapter markers: identify the root.
   noteNativeDuckDbHandle(db);
+  // Frames of the framework transactions enclosing this call. When `db` is
+  // one of their handles, this transaction is nested inside it and commits
+  // only with it.
+  const outerFrames = commitFrames.getStore() ?? [];
+  let enclosing: CommitFrame | undefined;
+  for (const candidate of outerFrames) {
+    if (candidate.handle === db) enclosing = candidate;
+  }
   return withEmbeddedWriteQueue(db, serialize, async () => {
     let entered = false;
+    let frame: CommitFrame | null = null;
+    let boundHold: QueueHold | null = null;
+    const endFrame = () => {
+      if (frame) (frame as CommitFrame).active = false;
+      if (boundHold) (boundHold as QueueHold).live = false;
+    };
     try {
-      return await transaction((bound) => {
+      const result = await transaction((bound) => {
         entered = true;
         inheritDatabaseSyncDeviceId(db, bound);
         if (isEmbeddedDatabase(db) && !usesEmbeddedRevisionFallback(db)) {
           remoteLibSqlHandles.add(bound);
         }
-        return frameworkTransactions.run(
-          new Set([...(frameworkTransactions.getStore() ?? []), bound]),
-          () => {
-            if (!serialize) return operation(bound);
-            const active = activeQueueKeys.getStore();
-            return activeQueueKeys.run(
-              new Set([...(active ?? []), queueKey(bound)]),
-              () => operation(bound),
-            );
-          },
+        const root = enclosing?.root ?? db;
+        frame = {
+          handle: bound,
+          root,
+          callbacks: [],
+          rootSharesTransaction:
+            serialize && usesEmbeddedRevisionFallback(root),
+          active: true,
+        };
+        const frames = [...outerFrames, frame];
+        return commitFrames.run(frames, () =>
+          frameworkTransactions.run(
+            new Set([...(frameworkTransactions.getStore() ?? []), bound]),
+            () => {
+              if (!serialize) return operation(bound);
+              // The bound handle is a re-entrant alias of the root's hold, live
+              // for exactly as long as the transaction.
+              boundHold = { key: queueKey(bound), live: true };
+              return activeHolds.run(
+                [...(activeHolds.getStore() ?? []), boundHold],
+                () => operation(bound),
+              );
+            },
+          ),
         );
       });
+      endFrame();
+      const committed = (frame as CommitFrame | null)?.callbacks ?? [];
+      if (committed.length > 0) {
+        if (enclosing) enclosing.callbacks.push(...committed);
+        else runCommitCallbacks(committed, db);
+      }
+      return result;
     } catch (error) {
+      endFrame();
       // The SDK explicitly refuses no-savepoint nesting before invoking the
       // callback or touching the enclosing transaction. A helper that needs
       // the caller's atomic scope can use that existing handle directly. Never

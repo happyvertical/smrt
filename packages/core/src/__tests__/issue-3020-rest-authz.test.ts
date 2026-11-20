@@ -280,9 +280,15 @@ describe('change-feed authorization seam (issue #3020, REST transport)', () => {
         rowId: OTHER_ROW_ID,
         operation: 'create',
       });
+      await appendChange(db, {
+        table: NOTES_TABLE,
+        rowId: 'n1',
+        operation: 'create',
+      });
       // A framework write appends durably (above) and publishes a live
       // signal alongside it; publish directly here to drive the route's live
-      // (non-catch-up) path exactly as that write would.
+      // (non-catch-up) path exactly as that write would. The stream frames
+      // what it then reads from the feed, so each signal has a row behind it.
       publishChangeSignal(db, {
         table: PUNCHES_TABLE,
         operation: 'create',
@@ -320,6 +326,11 @@ describe('change-feed authorization seam (issue #3020, REST transport)', () => {
         { authMiddleware: passThroughAuth, db },
       );
       await flushAsync();
+      await appendChange(db, {
+        table: PUNCHES_TABLE,
+        rowId: OTHER_ROW_ID,
+        operation: 'create',
+      });
       publishChangeSignal(db, {
         table: PUNCHES_TABLE,
         operation: 'create',
@@ -339,6 +350,11 @@ describe('change-feed authorization seam (issue #3020, REST transport)', () => {
         { authMiddleware: passThroughAuth, db },
       );
       await flushAsync();
+      await appendChange(db, {
+        table: PUNCHES_TABLE,
+        rowId: OTHER_ROW_ID,
+        operation: 'create',
+      });
       publishChangeSignal(db, {
         table: PUNCHES_TABLE,
         operation: 'create',
