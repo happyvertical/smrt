@@ -3082,7 +3082,7 @@
   {
     "kind": "system-table",
     "name": "_smrt_ai_run_ids",
-    "issue": 5005,
+    "issue": 5351,
     "nearest": [
       "_smrt_ai_runs",
       "_smrt_run_once_claims"
