@@ -12,6 +12,7 @@ import {
   ImportProver,
   isFrameworkExport,
   isRelative,
+  moduleSuffixesConfigs,
   type Proof,
   type ProofModule,
   scopedPackageOf,
@@ -862,6 +863,24 @@ export class InheritanceResolver {
     const own = this.prover.packageOf(normalizeFile(fromFile))?.name;
     if (!own || declared === own) return undefined;
     return `${target.className} (${target.filePath}) declares @smrt({ packageName: '${declared}' }), a stand-in for that package's class, and the manifest of ${own} cannot record a reference to it; reference a model of ${own}, or import ${declared}'s class from that package`;
+  }
+
+  /**
+   * A scan error for each `tsconfig*.json` in the project root that
+   * mentions `moduleSuffixes` (a plain text search; no tsconfig is parsed).
+   * The scan accepts a relative import by the files on disk and knows only
+   * the platform suffix words; a configured suffix list could load another
+   * file, so the scan fails closed rather than guess which.
+   */
+  moduleSuffixesErrors(): ScanError[] {
+    if (!this.projectRoot) return [];
+    return moduleSuffixesConfigs(this.projectRoot).map((file) => ({
+      message:
+        `${file} mentions \`moduleSuffixes\`: moduleSuffixes is unsupported by the scanner, because it can make a relative import load ` +
+        'another file than the one the scan reads; import files explicitly (`./Base.ios`) or remove the option.',
+      filePath: file,
+      severity: 'error' as const,
+    }));
   }
 
   /**

@@ -305,6 +305,7 @@ export class OxcScanner {
     // scan errors every caller already fails closed on. resolve() may run
     // more than once; never report the same error twice.
     const resolutionErrors = [
+      ...this.resolver.moduleSuffixesErrors(),
       ...this.resolver.getResolutionErrors(),
       ...this.collectConfigErrors(resolved),
       ...this.resolver.parentResolutionErrors(resolved),

@@ -682,6 +682,22 @@ describe('parents', () => {
       { 'src/models/Base.ios.ts': CLOSED_BASE('Event') },
     ],
     [
+      'a compound platform variant',
+      './Base',
+      {
+        'src/models/Base.native.ios.ts': CLOSED_BASE('Event'),
+        'src/models/Base.ts': OPEN_OTHER,
+      },
+    ],
+    [
+      'a platform variant of a declaration file',
+      './Base',
+      {
+        'src/models/Base.web.d.ts': 'export declare class Event {}\n',
+        'src/models/Base.ts': OPEN_OTHER,
+      },
+    ],
+    [
       'a variant of a directory index',
       './Base/',
       {
@@ -756,10 +772,10 @@ describe('parents', () => {
     expect(fieldNames(model('Meeting')?.allFields)).not.toContain('openOnly');
   });
 
-  it('accepts a file beside test, story, config and fixture files, and reads no tsconfig', async () => {
+  it('accepts a file beside companion files that are not platform variants, and parses no tsconfig', async () => {
     const { errors, model } = await scanProject({
-      // Unparseable: the scan never reads it.
-      'tsconfig.json': '{ "compilerOptions": { "moduleSuffixes": [".ios", ""] ',
+      // Unparseable: the scan never parses it.
+      'tsconfig.json': '{ "compilerOptions": { "strict": true ',
       'src/models/Base.ts': CLOSED_BASE('Event'),
       'src/models/Base.test.ts': `export const tested = true;\n`,
       'src/models/Base.spec.ts': `export const specified = true;\n`,
@@ -769,6 +785,13 @@ describe('parents', () => {
       'src/models/Base.fixtures.ts': `export const fixtures = [];\n`,
       'src/models/Base.e2e.ts': `export const e2e = true;\n`,
       'src/models/Base.bench.ts': `export const bench = true;\n`,
+      'src/models/Base.types.ts': `export type EventKind = 'a' | 'b';\n`,
+      'src/models/Base.schema.ts': `export const eventSchema = {};\n`,
+      'src/models/Base.server.ts': `export const load = () => ({});\n`,
+      'src/models/Base.svelte.ts': `export const state = { open: false };\n`,
+      'src/models/Base.utils.ts': `export const format = () => '';\n`,
+      'src/models/Base.constants.ts': `export const LIMIT = 3;\n`,
+      'src/models/Base.native.test.ts': `export const nativeTested = true;\n`,
       'src/models/Meeting.ts': CHILD(`import { Event } from './Base';`),
     });
 
@@ -777,6 +800,49 @@ describe('parents', () => {
       'closedOnly',
       'room',
     ]);
+  });
+
+  it('accepts a directory import beside an index companion file', async () => {
+    const { errors, model } = await scanProject({
+      'src/models/index.ts': CLOSED_BASE('Event'),
+      'src/models/index.types.ts': `export type EventKind = 'a';\n`,
+      'src/Meeting.ts': CHILD(`import { Event } from './models/';`),
+    });
+
+    expect(errors).toEqual([]);
+    expect(fieldNames(model('Meeting')?.allFields)).toEqual([
+      'closedOnly',
+      'room',
+    ]);
+  });
+
+  it.each([
+    [
+      'tsconfig.json',
+      '{ "compilerOptions": { "moduleSuffixes": [".mock", ""] } }',
+    ],
+    // Not parsed: a mention in any form, even in unreadable JSON, fails.
+    [
+      'tsconfig.app.json',
+      '{ "compilerOptions": { "moduleSuffixes": [".native.ios", "" ',
+    ],
+  ])('fails the scan when %s in the project root mentions moduleSuffixes', async (name, text) => {
+    const { errors, model } = await scanProject({
+      [name]: text,
+      'src/models/Base.ts': CLOSED_BASE('Event'),
+      'src/models/Base.mock.ts': OPEN_OTHER,
+      'src/models/Meeting.ts': CHILD(`import { Event } from './Base';`),
+    });
+
+    expect(errors).toHaveLength(1);
+    expect(errors[0].filePath).toContain(name);
+    expect(errors[0].message).toContain(
+      'moduleSuffixes is unsupported by the scanner',
+    );
+    expect(errors[0].message).toContain(
+      'import files explicitly (`./Base.ios`) or remove the option',
+    );
+    expect(model('Meeting')).toBeDefined();
   });
 
   it('reads a trailing slash as the directory, not a sibling file', async () => {

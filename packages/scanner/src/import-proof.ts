@@ -9,7 +9,8 @@
  * - **same file**: a class declared in the importing file;
  * - **relative**: a named or default import whose relative specifier can
  *   name exactly one file on disk (of every candidate TypeScript may try,
- *   with no module-suffix variant such as `Base.ios.ts` beside it), a
+ *   with no platform module-suffix variant such as `Base.ios.ts` beside
+ *   it, in a project whose tsconfig does not mention `moduleSuffixes`), a
  *   scanned file that declares the class itself and exports it under its
  *   own name;
  * - **framework**: a framework base exported by the framework package
@@ -127,27 +128,65 @@ function isFile(path: string): boolean {
 }
 
 /**
- * Dotted names that mark a file beside `Base.ts` as something other than a
- * variant of that module (`Base.test.ts`, `Base.d.ts`, ...). Any other single
- * dotted name before a TypeScript or JavaScript extension (`Base.ios.ts`,
- * `Base.native.tsx`) is a variant that a tsconfig `moduleSuffixes` or a
- * bundler may load for `./Base` instead.
+ * Platform words that a module-suffix setting (a tsconfig `moduleSuffixes`,
+ * or a React Native / Electron / web bundler's platform extensions) appends
+ * to a module name. A file beside `Base.ts` is a variant of `./Base` only
+ * when everything between `Base.` and its extension is made of these words
+ * (`Base.ios.ts`, `Base.native.ios.tsx`, `Base.web.d.ts`). Any other dotted
+ * name (`Base.types.ts`, `Base.schema.ts`, `Base.svelte.ts`, `Base.test.ts`,
+ * `Base.mock.ts`) is an ordinary companion file. A project that configures
+ * other suffixes is refused as a whole (see {@link moduleSuffixesConfigs}).
  */
-const NON_MODULE_VARIANTS: ReadonlySet<string> = new Set([
-  'test',
-  'spec',
-  'stories',
-  'd',
-  'config',
-  'e2e',
-  'bench',
-  'mock',
-  'fixture',
-  'fixtures',
+export const MODULE_SUFFIX_WORDS: ReadonlySet<string> = new Set([
+  'ios',
+  'android',
+  'native',
+  'web',
+  'windows',
+  'macos',
+  'electron',
+  'node',
+  'browser',
 ]);
 
-/** What follows `Base.` in a variant: one dotted name, then a TS/JS extension. */
-const VARIANT_REST = /^([A-Za-z0-9_-]+)\.(?:d\.)?[mc]?[jt]sx?$/;
+/** What follows `Base.` in a variant: dotted words, then a TS/JS extension. */
+const VARIANT_REST =
+  /^([A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*?)\.(?:d\.)?[mc]?[jt]sx?$/;
+
+/** Whether `suffix` (`ios`, `native.ios`) is made only of platform words. */
+function isModuleSuffix(suffix: string): boolean {
+  return suffix
+    .split('.')
+    .every((word) => MODULE_SUFFIX_WORDS.has(word.toLowerCase()));
+}
+
+/**
+ * The `tsconfig*.json` files directly in `projectRoot` whose text mentions
+ * `moduleSuffixes`. The scan does not read tsconfig structure; a project
+ * that may configure module suffixes is refused, so a suffix the scan does
+ * not know (`.mock`, a compound one) can never select another file than
+ * the one the scan accepts. Unreadable directories and files mention
+ * nothing.
+ */
+export function moduleSuffixesConfigs(projectRoot: string): string[] {
+  let entries: string[] = [];
+  try {
+    entries = readdirSync(projectRoot).sort();
+  } catch {
+    return [];
+  }
+  return entries
+    .filter((entry) => /^tsconfig.*\.json$/i.test(entry))
+    .map((entry) => join(projectRoot, entry))
+    .filter((file) => {
+      if (!isFile(file)) return false;
+      try {
+        return readFileSync(file, 'utf8').includes('moduleSuffixes');
+      } catch {
+        return false;
+      }
+    });
+}
 
 /**
  * Fields of a directory's package.json that choose the file a directory
@@ -403,10 +442,11 @@ export class ImportProver {
    * The one file a relative specifier can name: every candidate TypeScript
    * may try (extensions, directory `index`, a trailing slash meaning the
    * directory) must leave exactly one file on disk, or the import is an
-   * error. A module-suffix variant beside a candidate (`Base.ios.ts` beside
-   * `Base.ts`, see {@link NON_MODULE_VARIANTS}) is an error too, whatever the
-   * project's tsconfig says: the scan reads no tsconfig, and a variant is a
-   * file a `moduleSuffixes` setting or a bundler may load instead. A
+   * error. A platform module-suffix variant beside a candidate (`Base.ios.ts`
+   * beside `Base.ts`, see {@link MODULE_SUFFIX_WORDS}) is an error too: the
+   * scan reads no tsconfig, and a variant is a file a `moduleSuffixes`
+   * setting or a bundler may load instead (a project whose tsconfig mentions
+   * `moduleSuffixes` fails the scan as a whole). A
    * directory's package.json is a candidate only when it declares an entry
    * (see {@link DIRECTORY_ENTRY_FIELDS}). The file must be one the scan
    * reads; a file outside the scan is an error, never a reason to take
@@ -419,7 +459,7 @@ export class ImportProver {
     const { existing, variants } = this.candidatesOf(fromFile, specifier);
     if (variants.length > 0) {
       return {
-        reason: `'${specifier}' could also name ${variants.join(', ')}: a file with a module-suffix variant name (\`.ios\`, \`.native\`, ...) is loaded instead when a tsconfig \`moduleSuffixes\` or a bundler selects it, and the scan reads neither; import the variant by its full name (\`./${basename(variants[0]).replace(/\.(?:d\.)?[mc]?[jt]sx?$/, '')}\`), or rename the files so that no variant sits beside the file you import`,
+        reason: `'${specifier}' could also name ${variants.join(', ')}: a platform module-suffix variant (\`.ios\`, \`.native\`, \`.web\`, ...) is loaded instead when a tsconfig \`moduleSuffixes\` or a bundler selects it, and the scan reads neither; import the variant by its full name (\`./${basename(variants[0]).replace(/\.(?:d\.)?[mc]?[jt]sx?$/, '')}\`), or rename the files so that no variant sits beside the file you import`,
       };
     }
     if (existing.length > 1) {
@@ -519,10 +559,10 @@ export class ImportProver {
   }
 
   /**
-   * Files beside `stem` whose name is `<stem name>.<word>.<extension>`, a
-   * single dotted name before a TypeScript or JavaScript extension that is
-   * not one of {@link NON_MODULE_VARIANTS}: the files a `moduleSuffixes`
-   * setting or a bundler may load for the stem instead.
+   * Files beside `stem` whose name is `<stem name>.<suffix>.<extension>`,
+   * where the suffix is made only of {@link MODULE_SUFFIX_WORDS} (one word
+   * or several, `native.ios`): the files a platform module-suffix setting
+   * or bundler may load for the stem instead.
    */
   private variantFiles(stem: string): string[] {
     const directory = dirname(stem);
@@ -530,10 +570,10 @@ export class ImportProver {
     return this.entriesOf(directory)
       .filter((entry) => {
         if (!entry.startsWith(prefix)) return false;
-        const word = VARIANT_REST.exec(entry.slice(prefix.length))?.[1];
+        const suffix = VARIANT_REST.exec(entry.slice(prefix.length))?.[1];
         return (
-          word !== undefined &&
-          !NON_MODULE_VARIANTS.has(word.toLowerCase()) &&
+          suffix !== undefined &&
+          isModuleSuffix(suffix) &&
           isFile(join(directory, entry))
         );
       })
