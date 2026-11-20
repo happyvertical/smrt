@@ -501,6 +501,10 @@ ${extra}}
             fields: {},
             methods: {},
             decoratorConfig: { tableName: 'production_runs' },
+            schema: {
+              tableName: 'production_runs',
+              columns: { id: { type: 'UUID', primaryKey: true } },
+            },
           },
         },
       },
@@ -517,6 +521,83 @@ ${extra}}
     expect(
       manifest.objects[`${APP}:WorkOrder`]?.fields.productionRunId?.related,
     ).toBe('ProductionRun');
+  });
+
+  it.each([
+    ['no schema for the target', undefined, 'records no schema for it'],
+    [
+      'no column the target names',
+      {
+        tableName: 'production_runs',
+        columns: { id: { type: 'UUID', primaryKey: true } },
+      },
+      'has no column code',
+    ],
+  ])('fails generation for a confirmed package target whose manifest gives %s, keeping no unenforced constraint', (_label, schema, reason) => {
+    const generator = new ManifestGenerator();
+    const scanResults: ScanResult[] = [
+      {
+        filePath: '/app/src',
+        objects: [
+          {
+            name: 'workorder',
+            className: 'WorkOrder',
+            collection: 'workorders',
+            filePath: '/app/src/WorkOrder.ts',
+            fields: {
+              productionRunId: {
+                type: 'foreignKey',
+                related: schema ? 'ProductionRun.code' : 'ProductionRun',
+                relatedQualified: `${VENDOR}:ProductionRun`,
+                relatedImportPath: VENDOR,
+                _meta: { onDelete: 'RESTRICT' },
+              },
+            },
+            methods: {},
+            decoratorConfig: { tableName: 'work_orders' },
+            packageName: APP,
+          } as SmartObjectDefinition,
+        ],
+        errors: [],
+      },
+    ];
+    const loaded = {
+      [VENDOR]: {
+        version: '1.0.0',
+        packageName: VENDOR,
+        objects: {
+          [`${VENDOR}:ProductionRun`]: {
+            name: 'productionrun',
+            className: 'ProductionRun',
+            qualifiedName: `${VENDOR}:ProductionRun`,
+            packageName: VENDOR,
+            importPath: VENDOR,
+            collection: 'productionruns',
+            filePath: 'src/ProductionRun.ts',
+            fields: {},
+            methods: {},
+            decoratorConfig: { tableName: 'production_runs' },
+            ...(schema ? { schema } : {}),
+          },
+        },
+      },
+    } as Record<string, unknown>;
+    const internal = generator as unknown as {
+      loadDependencyManifest: (name: string) => unknown;
+    };
+    internal.loadDependencyManifest = (name: string) => loaded[name] ?? null;
+
+    expect(() =>
+      generator.generateManifest(scanResults, {
+        packageName: APP,
+        projectRoot: '/nonexistent/identity-app',
+      }),
+    ).toThrow(
+      expect.objectContaining({
+        code: 'CONFIG_UNKNOWN_RELATIONSHIP_TARGET',
+        message: expect.stringContaining(reason),
+      }),
+    );
   });
 
   it('references the provider table for a target a provider parent contributes', async () => {

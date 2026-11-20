@@ -142,6 +142,15 @@ function project(options: {
               tableName: 'parent_events',
               api: { include: ['list', 'get'] },
             },
+            // A built provider's manifest carries its schema; a foreign key
+            // to the class takes its table and key column from it.
+            schema: {
+              tableName: 'parent_events',
+              columns: {
+                id: { type: 'UUID', primaryKey: true },
+                starts_at: { type: 'TIMESTAMP' },
+              },
+            },
           },
         },
       }),

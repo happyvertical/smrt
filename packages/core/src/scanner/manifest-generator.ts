@@ -2448,6 +2448,33 @@ export class ManifestGenerator {
               schemaByTable,
               obj.packageName,
             );
+        // A confirmed package target whose table or referenced column the
+        // provider's manifest does not give cannot carry its constraint;
+        // dropping it would ship the relationship (and its onDelete)
+        // unenforced, so generation fails instead.
+        const [, writtenTargetColumn] = field.related.split('.');
+        if (
+          field.relatedQualified &&
+          emitConstraint &&
+          (!targetSchema ||
+            (writtenTargetColumn && !targetSchema.columns[writtenTargetColumn]))
+        ) {
+          throw new ConfigurationError(
+            `${obj.className}.${fieldName} (${obj.filePath}): @foreignKey() target ${field.relatedQualified} is confirmed, but ` +
+              (targetSchema
+                ? `its schema has no column ${writtenTargetColumn}`
+                : `its package's manifest records no schema for it`) +
+              `, so the foreign-key constraint (table, column, onDelete) cannot be generated. ` +
+              `Rebuild ${parseQualifiedName(field.relatedQualified).packageName} with this version of SMRT so its manifest carries the schema, ` +
+              `or reference a column the target declares.`,
+            'CONFIG_UNKNOWN_RELATIONSHIP_TARGET',
+            {
+              className: obj.className,
+              field: fieldName,
+              target: field.relatedQualified,
+            },
+          );
+        }
         if (!targetSchema) {
           for (const sourceSchema of sourceSchemas) {
             const sourceColumn = sourceSchema.columns[columnName];
