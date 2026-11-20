@@ -13,7 +13,10 @@ import { getDatabase } from '@happyvertical/sql';
 import { afterEach, describe, expect, it } from 'vitest';
 import { ensureSystemTables } from '../system/bootstrap';
 import { checkAiRunIdRegistry, openAiRun } from '../system/browser';
-import { SMRT_SCHEMA_VERSION } from '../system/schema';
+import {
+  getSystemTableDDLForEngine,
+  SMRT_SCHEMA_VERSION,
+} from '../system/schema';
 import { getTestDatabase } from '../testing/database';
 import {
   LEGACY_AI_RUN_DDL,
@@ -163,7 +166,14 @@ describe.each(engines)('run id registry upgrade on %s', (engine) => {
 
   it('reserves the ids of a 1.16.0 database, including labels that became evaluations', async () => {
     const db = await newDatabase(engine);
-    for (const ddl of LEGACY_AI_RUN_DDL) await db.query(ddl);
+    for (const ddl of LEGACY_AI_RUN_DDL) {
+      await db.query(
+        getSystemTableDDLForEngine(
+          ddl,
+          engine === 'pglite' ? 'postgres' : engine,
+        ),
+      );
+    }
     await seedLegacyAiRunRows(db);
     await ensureSystemTables(db, hint(engine));
     const digests = await registered(db);
