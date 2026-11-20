@@ -47,9 +47,11 @@ class CollisionAgentConfig extends SmrtObject {
  */
 const OtherRouteNote = class extends SmrtObject {};
 Object.defineProperty(OtherRouteNote, 'name', { value: 'CollisionRouteNote' });
-class OtherRouteNoteCollection extends SmrtCollection<SmrtObject> {
+// A class expression like its item: a collection the scanner sees must name an
+// item it can prove, and this one exists only at runtime.
+const OtherRouteNoteCollection = class extends SmrtCollection<SmrtObject> {
   static readonly _itemClass = OtherRouteNote;
-}
+};
 const OTHER_NOTE = '@fixture/other3490:CollisionRouteNote';
 
 let db: Awaited<ReturnType<typeof getTestDatabase>>;
