@@ -725,6 +725,14 @@ export class InheritanceResolver {
     if (!classDef.extendsUnreadable || !this.isScanned(classDef)) return link;
     // The binding a TypeScript wrapper holds still decides whether the class
     // is a model; the wrapper itself is an error for one.
+    if (classDef.extendsUnreadable === 'MemberExpression') {
+      return {
+        name: classDef.extendsClause ?? '<expression>',
+        definition: null,
+        framework: false,
+        error: `the superclass \`${classDef.extendsClause}\` is a property of a value, which the scan does not read as a class reference; import the parent class and extend it by name (a package namespace member, \`ns.Class\` of \`import * as ns\`, is also read)`,
+      };
+    }
     return {
       ...(link ?? { name: '<expression>', definition: null, framework: false }),
       error: `the superclass is written as an expression (${classDef.extendsUnreadable}) the scan does not read as a class reference; write \`extends ${classDef.extendsClause ?? 'Parent'}\` with the parent class itself`,

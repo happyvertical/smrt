@@ -321,6 +321,28 @@ describe('parents', () => {
     expect(errors[0].message).toContain('write `extends Event`');
   });
 
+  it.each([
+    ['string-literal member', "Base['Inner']", "Base['Inner']"],
+    ['dotted member', 'Base.Inner', 'Base.Inner'],
+  ])('rejects a %s of an imported class as the superclass', async (_label, superClass, shown) => {
+    // `Base` is an open model; its static property holds the closed one.
+    const { errors, model } = await scanProject({
+      'src/models/Inner.ts': CLOSED_BASE('Inner'),
+      'src/models/Base.ts': `${CORE}\nimport { Inner } from './Inner';\n@smrt()\nexport class Base extends SmrtObject {\n  static Inner = Inner;\n  openOnly = '';\n}\n`,
+      'src/Meeting.ts': CHILD(
+        `import { Base } from './models/Base';`,
+        superClass,
+      ),
+    });
+
+    expect(errors).toHaveLength(1);
+    expect(errors[0].filePath).toContain('Meeting.ts');
+    expect(errors[0].message).toContain(
+      `\`${shown}\` is a property of a value`,
+    );
+    expect(fieldNames(model('Meeting')?.allFields)).not.toContain('openOnly');
+  });
+
   it('rejects an inline mixin call as the superclass', async () => {
     const { errors } = await scanProject({
       'src/Meeting.ts': `${CORE}\nfunction Mixin<T>(base: T) { return base; }\n@smrt()\nexport class Meeting extends Mixin(SmrtObject) {}\n`,

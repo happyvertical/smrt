@@ -4042,8 +4042,25 @@ function extractExtendsClause(
       extendsClause = memberName;
       extendsSource = namespace.source;
     } else {
-      // Handle Namespace.Class
-      extendsClause = getMemberExpressionString(member);
+      // Any other member (`Base.inner`, `Base['inner']`, `a.b.C`) is a
+      // property of a value, not a binding the scan can prove: record the
+      // whole path and mark it unreadable, never its object alone.
+      const parts: string[] = [];
+      let current: Expression = member;
+      while (current.type === 'MemberExpression') {
+        const property = current.property;
+        parts.unshift(
+          !current.computed && property.type === 'Identifier'
+            ? property.name
+            : property.type === 'Literal' && typeof property.value === 'string'
+              ? `['${property.value}']`
+              : '[…]',
+        );
+        current = current.object;
+      }
+      parts.unshift(current.type === 'Identifier' ? current.name : '…');
+      extendsClause = parts.join('.').replace(/\.\[/g, '[');
+      extendsUnreadable ??= 'MemberExpression';
     }
   } else if (superClass) {
     // A call (`Mixin(Base)`), a conditional, a class expression: no binding
