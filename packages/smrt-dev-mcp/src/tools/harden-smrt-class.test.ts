@@ -232,6 +232,14 @@ describe('harden-smrt-class output is a subclass the build accepts', () => {
       write: true,
       overrides: [{ name: 'phone', type: 'text', required: true }],
     });
+    // An app imports a package's class only from a package it declares.
+    writeFileSync(
+      join(dir, 'package.json'),
+      JSON.stringify({
+        name: '@test4936/app',
+        dependencies: { '@test4936/crm': '*' },
+      }),
+    );
     const scanner = new OxcScanner({
       cwd: dir,
       include: ['src/**/*.ts'],
