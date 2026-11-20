@@ -39,16 +39,16 @@ afterEach(async () => {
 
 async function twoOwners(policy: object = {}) {
   clock = 1_000_000;
-  cloud = await openCloudShell({
-    lifecycle: {
-      idleMs: IDLE,
-      minIdleMs: 0,
-      handoutMs: 20,
-      now,
-      capacityWaitMs: 300,
-      ...policy,
-    },
-  });
+  // Read live by the registry, so a test may change it once the set-up is done.
+  const live = {
+    idleMs: IDLE,
+    minIdleMs: 0,
+    handoutMs: 20,
+    now,
+    capacityWaitMs: 300,
+    ...policy,
+  };
+  cloud = await openCloudShell({ lifecycle: live });
   const { a, b } = cloud;
   for (const [owner, model] of [
     [a, 'Chore'],
@@ -66,7 +66,7 @@ async function twoOwners(policy: object = {}) {
   clock += IDLE * 2;
   await sweepIdleHosts();
   expect(hostMetrics().open).toBe(0);
-  return { a, b, h: cloud, m0: hostMetrics() };
+  return { a, b, h: cloud, m0: hostMetrics(), live };
 }
 
 /** A call that stays inside the app until `finish()` is called. */
@@ -81,6 +81,27 @@ function holdCall(host: Awaited<ReturnType<typeof getHost>>) {
     return real(...args);
   });
   return { call: host.list('Chore'), finish };
+}
+
+/**
+ * Settle a request that the capacity wait must refuse. The wait runs on the
+ * lifecycle's clock, so the refusal is driven here, not waited out in real time.
+ */
+async function refusal(request: Promise<unknown>): Promise<string> {
+  let outcome: string | null = null;
+  void request.then(
+    () => {
+      outcome = 'resolved';
+    },
+    (e) => {
+      outcome = String(e);
+    },
+  );
+  while (outcome === null) {
+    clock += 60_000;
+    await new Promise((r) => setTimeout(r, 2));
+  }
+  return outcome;
 }
 
 /** Let the hand-out leases of hosts just fetched run out. */
@@ -200,7 +221,7 @@ describe('the cap on open apps', () => {
     const { a, b } = await twoOwners({ maxOpenApps: 1 });
     const host = await runAs(a, () => getHost());
     const { call: busy, finish } = holdCall(host); // inside the app now
-    await expect(runAs(b, () => getHost())).rejects.toThrow(/no room/);
+    expect(await refusal(runAs(b, () => getHost()))).toMatch(/no room/);
     finish();
     await busy; // the busy call was not cut
     expect(host.appAlive).toBe(true);
@@ -279,26 +300,26 @@ describe('a burst of wakes under a cap', () => {
 
 describe('leases', () => {
   it('a host just handed out is never closed under its caller, with no minimum idle', async () => {
-    const { a, b } = await twoOwners({ maxOpenApps: 1, minIdleMs: 0 });
+    // The hand-out outlives the test: only the lease can be what protects it.
+    const { a, b, live } = await twoOwners({ maxOpenApps: 1, minIdleMs: 0 });
+    live.handoutMs = 600_000;
     const host = await runAs(a, () => getHost());
-    // Another app demands the only place at once; A's hand-out holds it.
-    const other = runAs(b, () => getHost());
-    await host.list('Chore'); // the caller's first call: never "the host is closed"
-    expect((await other).dataDir).toContain(b.tenantId);
+    clock += IDLE * 10;
+    expect(await sweepIdleHosts()).toBe(0); // idle for ever, yet handed out
+    // Another app demands the only place: refused, never taken from the caller.
+    expect(await refusal(runAs(b, () => getHost()))).toMatch(/no room/);
+    expect(host.appAlive).toBe(true);
+    expect(await host.list('Chore')).toEqual([]); // the first call still works
   });
 
   it('an operation outlasting every timer keeps its app; others wait, then are refused', async () => {
-    const { a, b } = await twoOwners({
-      maxOpenApps: 1,
-      minIdleMs: 0,
-      capacityWaitMs: 150,
-    });
+    const { a, b } = await twoOwners({ maxOpenApps: 1, minIdleMs: 0 });
     const host = await runAs(a, () => getHost());
     const { call, finish } = holdCall(host);
     await new Promise((r) => setTimeout(r, 60)); // hand-out long over
     clock += IDLE * 10;
     expect(await sweepIdleHosts()).toBe(0);
-    await expect(runAs(b, () => getHost())).rejects.toThrow(/no room/);
+    expect(await refusal(runAs(b, () => getHost()))).toMatch(/no room/);
     expect(host.appAlive).toBe(true);
     finish();
     await call;
@@ -312,6 +333,35 @@ describe('leases', () => {
     await new Promise((r) => setTimeout(r, 40)); // hand-out over
     clock += IDLE;
     expect(await sweepIdleHosts()).toBe(1);
+  });
+
+  it('a call that throws at once, or aborts while inside, gives its lease back', async () => {
+    const { a } = await twoOwners({ minIdleMs: 0 });
+    const host = await runAs(a, () => getHost());
+    await new Promise((r) => setTimeout(r, 40)); // hand-out over
+    clock += IDLE;
+    vi.spyOn(host, 'list').mockImplementationOnce(() => {
+      throw new Error('synchronous');
+    });
+    expect(() => host.list('Chore')).toThrow('synchronous');
+    // An abort that lands while the call is inside the app.
+    const abort = new AbortController();
+    let aborted: () => void = () => {};
+    const inside = new Promise<void>((r) => {
+      aborted = r;
+    });
+    vi.spyOn(host, 'list').mockImplementationOnce(async () => {
+      await inside;
+      abort.signal.throwIfAborted();
+      return [];
+    });
+    const call = host.list('Chore');
+    expect(await sweepIdleHosts()).toBe(0); // inside: protected
+    abort.abort();
+    aborted();
+    await expect(call).rejects.toThrow();
+    clock += IDLE;
+    expect(await sweepIdleHosts()).toBe(1); // lease returned: evictable
   });
 });
 

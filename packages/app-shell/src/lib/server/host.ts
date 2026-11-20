@@ -796,7 +796,8 @@ async function makeRoom(waking: Holder): Promise<void> {
     waking.reserved = true;
     return;
   }
-  const deadline = Date.now() + lifecycle.capacityWaitMs;
+  // On the lifecycle's clock, so a test drives the refusal instead of waiting it out.
+  const deadline = lifecycle.now() + lifecycle.capacityWaitMs;
   while (openCount(waking) >= cap) {
     if (lifecycle.draining)
       throw new EngineError('this server is draining', 'refused');
@@ -809,7 +810,7 @@ async function makeRoom(waking: Holder): Promise<void> {
       continue;
     }
     // Everything open is busy, held or too recent: wait for one to free up.
-    const left = deadline - Date.now();
+    const left = deadline - lifecycle.now();
     if (left <= 0 && !closing.length)
       throw new EngineError(
         'this server has no room for another app right now; try again',
