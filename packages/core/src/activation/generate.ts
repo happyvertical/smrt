@@ -160,6 +160,29 @@ function resolveParents(manifest: SmartObjectManifest) {
   return resolved;
 }
 
+/**
+ * The manifest key a collection's explicit `collectionOf` names: that key
+ * exactly; for a simple class name, the class of the collection's own package
+ * first, else the only class of that name. Never the generic or a naming
+ * convention, and never a replaced declaration's replacement.
+ */
+function declaredCollectionItem(
+  manifest: SmartObjectManifest,
+  collection: SmartObjectDefinition,
+): string | undefined {
+  const declared = collection.collectionOf as string;
+  if (manifest.objects[declared]) return declared;
+  if (declared.includes(':')) return undefined;
+  const named = Object.entries(manifest.objects).filter(
+    ([, object]) => object.className === declared,
+  );
+  const own = named.filter(
+    ([, object]) => object.packageName === collection.packageName,
+  );
+  if (own.length === 1) return own[0][0];
+  return own.length === 0 && named.length === 1 ? named[0][0] : undefined;
+}
+
 interface OrderEdge {
   from: string;
   to: string;
@@ -204,21 +227,36 @@ function activationPlan(manifest: SmartObjectManifest) {
     const collection = manifest.objects[id];
     // A qualified item declaration names its manifest key exactly; the public
     // index omits a replaced declaration, so prefer the key over name lookup.
-    const declared = collection.collectionOf ?? collection.extendsTypeArg;
-    const item = resolveCollectionItemObject(manifest, collection);
-    let itemId =
-      typeof declared === 'string' && manifest.objects[declared]
-        ? declared
-        : item
-          ? keys.get(item)
-          : undefined;
-    // A simple item name names a class of the collection's own package. The
-    // public index omits that class once it is replaced, so resolve the name
-    // against the raw inventory: the collection still binds to its item and,
-    // through it, to the effective replacement.
-    if (!itemId) {
-      const named = resolveCollectionItemTypeName(manifest, collection);
-      if (named && manifest.objects[named]) itemId = named;
+    let itemId: string | undefined;
+    if (
+      typeof collection.collectionOf === 'string' &&
+      collection.collectionOf
+    ) {
+      // An explicit item declaration binds that item or nothing: falling back
+      // to the generic or a naming convention would install this collection
+      // as the receiver of a different model.
+      itemId = declaredCollectionItem(manifest, collection);
+      if (!itemId)
+        throw new Error(
+          `Activation cannot bind collection ${id}: its declared item ${collection.collectionOf} (collectionOf) is not in the manifest. Regenerate the manifest, or include the package that declares ${collection.collectionOf}.`,
+        );
+    } else {
+      const declared = collection.extendsTypeArg;
+      const item = resolveCollectionItemObject(manifest, collection);
+      itemId =
+        typeof declared === 'string' && manifest.objects[declared]
+          ? declared
+          : item
+            ? keys.get(item)
+            : undefined;
+      // A simple item name names a class of the collection's own package. The
+      // public index omits that class once it is replaced, so resolve the
+      // name against the raw inventory: the collection still binds to its
+      // item and, through it, to the effective replacement.
+      if (!itemId) {
+        const named = resolveCollectionItemTypeName(manifest, collection);
+        if (named && manifest.objects[named]) itemId = named;
+      }
     }
     if (!itemId || collections.has(itemId)) continue;
     itemOf.set(id, itemId);

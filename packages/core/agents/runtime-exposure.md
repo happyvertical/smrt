@@ -134,7 +134,10 @@ parent, fails generation. Only that direct import is ordered at generation; a
 same-named child reached through a helper, barrel, alias or subpath still fails
 closed at boot with the parent-first refusal. Collections register after their item and its effective
 replacement; of two collections bound to one effective item the one of the more
-derived item registers last and serves it. Those cross-module edges are persisted
+derived item registers last and serves it. A collection's explicit `collectionOf`
+binds that item only (a simple name resolves in the collection's own package
+first); one that names no manifest entry fails generation rather than falling
+back to the generic or a naming convention. Those cross-module edges are persisted
 as optional `modules[].after`. SvelteKit generation validates before it clears
 previously generated routes. Regenerate the activation manifest to gain the order.
 

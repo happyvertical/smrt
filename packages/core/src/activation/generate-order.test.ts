@@ -838,6 +838,35 @@ describe('generated activation order', () => {
       { key: ACOL, collectionOf: ITEM },
     ];
 
+    it('refuses an explicit collectionOf that names no manifest entry, even when its generic resolves', () => {
+      const { files, manifest } = project([
+        { key: ITEM },
+        { key: ACOL, collectionOf: ITEM },
+      ]);
+      manifest.objects[ACOL].collectionOf = `${HOST}:Missing`;
+      expect(() => generate(files, manifest)).toThrow(
+        `Activation cannot bind collection ${ACOL}: its declared item ${HOST}:Missing (collectionOf) is not in the manifest`,
+      );
+    });
+
+    it("resolves a simple collectionOf to the collection's own package before another package's class", () => {
+      const { files, manifest } = project([
+        { key: PROVIDER },
+        { key: ITEM },
+        { key: ACOL, collectionOf: PROVIDER },
+      ]);
+      // Legacy input: the item named by its simple name, the generic naming
+      // the other package's class.
+      manifest.objects[ACOL].collectionOf = 'Customer';
+      const generated = generate(files, manifest);
+      expect(generated.source).toContain(
+        `ObjectRegistry.registerCollection("${ITEM}", Reflect`,
+      );
+      expect(generated.source).not.toContain(
+        `ObjectRegistry.registerCollection("${PROVIDER}", Reflect`,
+      );
+    });
+
     it('registers a collection after its item when the collection is listed first', () => {
       const { files, manifest } = project([
         {
