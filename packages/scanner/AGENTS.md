@@ -11,10 +11,14 @@ executes the source.
   then resolves inheritance in one call.
 - `InheritanceResolver` — resolves class inheritance chains across files
   (`addClasses()` → `resolveAll()`), merging inherited fields/config into each
-  `@smrt()` subclass.
+  `@smrt()` subclass. Classes are keyed by file and name; two models of one
+  name are a scan error.
 - `ManifestAdapter` — converts resolved classes into the SMRT manifest shape
   (`toManifest()`); owns field-type inference (the `0` vs `0.0` integer/decimal
   heuristic, decorator interpretation, union/alias resolution).
+- Decorator config is read statically and fails closed. Forms, constants,
+  relationship targets, same-name classes:
+  [agents/static-config.md](agents/static-config.md).
 - Enum values (#3598): a field typed as a TS `enum` / `const enum` or a
   string/number literal union (through aliases, imports within the scanned
   project, `| null`, and unions that nest an alias) emits `enum: [...]` on its
@@ -37,8 +41,10 @@ executes the source.
   carries the parser's `bodyStart` offset; core's library build inserts its
   package stamp there and never rescans source text (#3490). A class whose
   parent is a named, aliased, or namespace value import carries
-  `extendsSource`; `ManifestAdapter` turns a scoped package other than its own
-  into `extendsQualified` (#4145). Never infer it from relative paths or names.
+  `extendsSource`; `OxcScanner.resolve()` proves it (`src/import-proof.ts`,
+  [static-config.md](agents/static-config.md#import-proof)) and
+  `ManifestAdapter` records a declared package's export as `extendsQualified`
+  plus `extendsImportPath` (#4145). Never infer it from relative paths or names.
 - `extractSmrtImports` — pull SMRT-related imports from a parsed file.
 - `lintNumericPrecision(classes, sourceText?)` — flags persisted `number` fields
   whose declared precision contradicts their name (#2361), returning a `kind`
@@ -258,7 +264,9 @@ place, `toKnowledgeAgentSurface` in `vite-plugin/index.ts`.
   (`scan` / `scanAndResolve`).
 - `src/discovery.ts` — shared bounded glob policy for every scanner entry point.
 - `src/inheritance-resolver.ts` — `InheritanceResolver`: cross-file inheritance
-  merging.
+  merging, the model rule, collection items, the provider export-name check.
+- `src/import-proof.ts` — `ImportProver`: the accepted reference forms, the
+  TypeScript file-candidate order, the nearest `package.json`.
 - `src/manifest-adapter.ts` — `ManifestAdapter`: raw → manifest conversion and
   field-type inference.
 - `src/verify-completeness.ts` — `verifyManifestCompleteness` publish guard.
@@ -275,7 +283,7 @@ place, `toKnowledgeAgentSurface` in `vite-plugin/index.ts`.
 
 ## Gotchas
 
-- **Syntactic only**: the scanner parses, it does not type-check or execute.
+- **Syntactic only**: the scanner parses, it never type-checks or executes.
   Type aliases are resolved heuristically (bounded depth), not via the TS type
   system.
 - **Build-time consumers**: `smrtVitestPlugin()` and the build's vite-plugin run
@@ -291,26 +299,16 @@ place, `toKnowledgeAgentSurface` in `vite-plugin/index.ts`.
   are gated by `lintNumericPrecision` rather than left to review (#2361).
 - **`RawFieldDefinition.line` is `0`**: the OXC AST nodes reaching this package
   carry no `loc`. Pass the source text to a consumer that needs a real line.
-- **Static property capture**: captures `uiSlots` and `adminRoutes` for agent
-  manifest generation.
-- **`@smrt()` config spreads resolve only against unescaped same-file `const`s** (issue
-  #2100). `@smrt({ ...INTERNAL_SURFACE })` works when `INTERNAL_SURFACE` is a
-  module-scope `const` object literal in the same file (`as const` and
-  `export const` included); a constant may spread an earlier constant. Anything
-  else — an imported constant, a `let`, a function call, a computed non-literal
-  key, shorthand or non-literal value, mutation/alias/escape, or a spread inside
-  an include array — is reported as a `severity: 'error'` scan diagnostic,
-  never silently dropped. `const` prevents rebinding but not property mutation,
-  and object spread is shallow, so only binding-aware spread references whose
-  shared nested values remain safe through the decorator use are trusted.
-  Silence would be unsafe: a dropped spread can remove `api`/`mcp`/`cli`, and an
-  ABSENT surface key means default-open full CRUD, so a quiet drop turns a
-  deliberate lockdown into a published surface.
-  A constant whose own initializer holds an unresolvable spread
-  (`const CFG = { ...IMPORTED }`) is tracked as **tainted**: it still resolves,
-  but its taint replays into the diagnostics of every decorator that spreads
-  it, transitively through constant chains. Without that the silent drop simply
-  moves one level up. An unused tainted constant reports nothing.
+- **Decorator config is read in full or the scan fails**
+  ([agents/static-config.md](agents/static-config.md)). `@smrt`,
+  `@TenantScoped`, `@report`, `@method`, field decorator options and the
+  manifest static properties (`uiSlots`, `adminRoutes`, `signalSubscriptions`,
+  `createEntries`) resolve literals, same-file module `const`s (not mutated or
+  aliased), same-file enum members and constant folding. Anything else — an
+  import, a call, a `let` — is a `severity: 'error'` diagnostic naming file,
+  class and option; the key is absent, never a placeholder. Silence would be
+  unsafe: an absent surface key is default-open CRUD and an absent `sensitive`
+  flag is public.
 - **A non-static `defineIntent`/`definePlaybook` warns, it does not fail the
   build** — unlike an unresolved `@smrt()` spread, which errors. The asymmetry
   is deliberate: a dropped decorator spread reopens an exposure surface, while a
@@ -331,18 +329,12 @@ place, `toKnowledgeAgentSurface` in `vite-plugin/index.ts`.
   parameters only: `ManifestAdapter.inferFromAnnotation` gives an `object`
   FIELD a `{}` column default, so naming it in `extractTypeName` would change
   DDL. Same-module aliases: `resolvedType` (#4327).
-- **`@method()` config is read with `requireLiteralValues`**, like `@smrt()`: an
-  unresolvable value is a scan error, because a dropped `expose: false` restores
-  the routing the author was withholding. `decoratorConfig` is `undefined` for
-  an undecorated method and `{}` for a bare `@method()`; the two differ.
-- **Relationship targets are resolved, not copied**: `@foreignKey`,
-  `@oneToMany` and `@manyToMany` arguments arrive as raw source text.
-  `'Target'`/`Target` pass through and a forward-reference thunk
-  (`() => Target`, including the dotted `() => Target.column` form) is unwrapped
-  to its target, matching the runtime decorator, which resolves the thunk by
-  invoking it. Any other expression (a call, a computed reference) yields
-  `related: undefined` — writing the raw source through produced a garbage FK
-  table name and, once FK columns are indexed, a garbage index (#2379).
+- **`@method()`**: `decoratorConfig` is `undefined` for an undecorated method
+  and `{}` for a bare `@method()`; the two differ.
+- **Relationship targets are resolved, not copied**: `'Target'`, `Target` and
+  a `() => Target` thunk (inline, dotted, or a same-file constant) all yield
+  the class name, as the runtime decorator does (#2379). An argument that
+  names no class is a scan error, not `related: undefined`.
 
 
 ## Filesystem knowledge

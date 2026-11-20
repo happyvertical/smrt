@@ -114,8 +114,9 @@ and repository rules.
   runtime verification checks table existence and the last migrate fingerprint.
 - `release:snapshot` writes the snapshot's owners overlay; after a base merge or rebase that changes a snapshot run `pnpm release-upgrade:refresh-owners` (needs npm). The gate fails on a missing or stale overlay. Details: [agents/schema-paths.md](agents/schema-paths.md).
 - Collection connections wait for locks: [agents/sqlite-lock-wait.md](agents/sqlite-lock-wait.md).
-- Manifest generation fails closed on scanner errors, including unresolved
-  decorator spreads. Never emit partial, default-open registration.
+- Manifest generation fails closed on scan errors (unreadable decorator
+  config, same-named models) and on an unresolvable imported parent. Never
+  emit partial, default-open registration.
 - Generated registration repairs bundled class identity using the exact imported
   constructor, explicit package, and isolated one-object manifest. Never infer
   ownership from paths, simple names, or table names; packages can share names.
