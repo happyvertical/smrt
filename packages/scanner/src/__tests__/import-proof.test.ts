@@ -574,6 +574,73 @@ describe('parents', () => {
     expect(fieldNames(model('Meeting')?.allFields)).not.toContain('openOnly');
   });
 
+  it('reads moduleSuffixes from a tsconfig that starts with a byte order mark', async () => {
+    // Read correctly, `./Base` could name Base.ios.ts (outside the scan) and
+    // Base.ts: an error, never the open Base.ts alone.
+    const root = newRoot();
+    write(root, {
+      'tsconfig.json': `﻿${SUFFIXES}`,
+      'src/models/Base.ios.ts': CLOSED_BASE('Event'),
+      'src/models/Base.ts': OPEN_BASE('Event'),
+      'src/models/Meeting.ts': CHILD(`import { Event } from './Base';`),
+    });
+    const scanner = new OxcScanner({
+      cwd: root,
+      include: ['src/**/*.ts'],
+      exclude: ['src/models/Base.ios.ts'],
+    });
+    const { errors, model } = await scanAt(root, scanner);
+
+    expect(errors).toHaveLength(1);
+    expect(errors[0].message).toContain('could name more than one file');
+    expect(fieldNames(model('Meeting')?.allFields)).not.toContain('openOnly');
+  });
+
+  it.each([
+    [
+      'cannot be parsed',
+      {
+        'tsconfig.json':
+          '{ "compilerOptions": { "moduleSuffixes": [".ios", ""] ',
+      },
+      'could not be parsed',
+    ],
+    [
+      'extends past the depth limit',
+      Object.fromEntries([
+        ['tsconfig.json', JSON.stringify({ extends: './c1.json' })],
+        ...Array.from({ length: 10 }, (_, i) => [
+          `c${i + 1}.json`,
+          JSON.stringify(
+            i < 9
+              ? { extends: `./c${i + 2}.json` }
+              : { compilerOptions: { moduleSuffixes: ['.ios', ''] } },
+          ),
+        ]),
+      ]),
+      'levels of tsconfig `extends`',
+    ],
+    [
+      'sets moduleSuffixes to something other than strings',
+      {
+        'tsconfig.json': JSON.stringify({
+          compilerOptions: { moduleSuffixes: '.ios' },
+        }),
+      },
+      'is not a list of strings',
+    ],
+  ])('fails the scan when the tsconfig %s, instead of assuming no suffixes', async (_label, config, reason) => {
+    const { errors, model } = await scanProject({
+      ...config,
+      'src/models/Base.ts': OPEN_BASE('Event'),
+      'src/models/Meeting.ts': CHILD(`import { Event } from './Base';`),
+    });
+
+    expect(errors).toHaveLength(1);
+    expect(errors[0].message).toContain(reason);
+    expect(fieldNames(model('Meeting')?.allFields)).not.toContain('openOnly');
+  });
+
   it('reads a trailing slash as the directory, not a sibling file', async () => {
     const { errors, model } = await scanProject({
       'src/models/Base.ts': OPEN_OTHER,

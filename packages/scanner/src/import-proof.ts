@@ -117,7 +117,9 @@ function isFile(path: string): boolean {
 }
 
 /** JSON with comments and trailing commas, as TypeScript reads tsconfig. */
-function parseConfigText(text: string): Record<string, unknown> | null {
+function parseConfigText(source: string): Record<string, unknown> | null {
+  // A UTF-8 byte order mark is valid at the start of a tsconfig.
+  const text = source.startsWith('﻿') ? source.slice(1) : source;
   let out = '';
   let inString = false;
   for (let index = 0; index < text.length; index++) {
@@ -166,7 +168,7 @@ function parseConfigText(text: string): Record<string, unknown> | null {
  */
 export class ImportProver {
   private readonly packages = new Map<string, PackageInfo | null>();
-  private readonly suffixes = new Map<string, string[]>();
+  private readonly suffixes = new Map<string, string[] | { reason: string }>();
   private readonly installed = new Map<string, string | null>();
 
   constructor(
@@ -362,6 +364,7 @@ export class ImportProver {
   ): { file: string } | { reason: string } {
     const base = resolvePath(dirname(fromFile), specifier);
     const suffixes = this.moduleSuffixes(fromFile);
+    if ('reason' in suffixes) return suffixes;
     const candidates: string[] = [];
     // TypeScript tries each extension in turn and, within one extension,
     // each module suffix (`Base.ios.ts`, `Base.ts`, `Base.ios.tsx`, ...).
@@ -430,17 +433,24 @@ export class ImportProver {
 
   /**
    * `compilerOptions.moduleSuffixes` of the nearest `tsconfig.json` above
-   * `file` (following `extends`), else `['']`.
+   * `file` (following `extends`), `['']` when none sets it, or why the
+   * configuration could not be read: a suffix list the scan cannot read is
+   * never taken as absent, since it decides which file an import names.
    */
-  private moduleSuffixes(file: string): string[] {
+  private moduleSuffixes(file: string): string[] | { reason: string } {
     let dir = dirname(file);
     for (;;) {
       const cached = this.suffixes.get(dir);
       if (cached) return cached;
       const config = join(dir, 'tsconfig.json');
       if (isFile(config)) {
-        const found = readModuleSuffixes(config, 0) ?? [''];
-        const suffixes = found.length > 0 ? found : [''];
+        const found = readModuleSuffixes(config, 0);
+        const suffixes =
+          found && 'reason' in found
+            ? found
+            : found && found.length > 0
+              ? found
+              : [''];
         this.suffixes.set(dirname(file), suffixes);
         return suffixes;
       }
@@ -497,15 +507,39 @@ export class ImportProver {
 
 const MAX_EXTENDS_DEPTH = 8;
 
-function readModuleSuffixes(file: string, depth: number): string[] | null {
-  if (depth > MAX_EXTENDS_DEPTH || !isFile(file)) return null;
+/**
+ * `moduleSuffixes` set by `file` or the configs it extends; `null` when none
+ * sets it; `{ reason }` when a config cannot be read (malformed JSON, an
+ * `extends` chain deeper than the limit, a suffix list that is not strings).
+ */
+function readModuleSuffixes(
+  file: string,
+  depth: number,
+): string[] | null | { reason: string } {
+  if (depth > MAX_EXTENDS_DEPTH) {
+    return {
+      reason: `${file} is reached through more than ${MAX_EXTENDS_DEPTH} levels of tsconfig \`extends\`, so the scan cannot read its \`moduleSuffixes\`; shorten the chain`,
+    };
+  }
+  if (!isFile(file)) return null;
   const config = parseConfigText(readFileSync(file, 'utf8'));
-  if (!config) return null;
+  if (!config) {
+    return {
+      reason: `${file} could not be parsed, so the scan cannot read its \`moduleSuffixes\` (which decide the file an import names); fix the JSON`,
+    };
+  }
   const options = (config.compilerOptions ?? {}) as Record<string, unknown>;
-  if (Array.isArray(options.moduleSuffixes)) {
-    return options.moduleSuffixes.filter(
-      (suffix): suffix is string => typeof suffix === 'string',
-    );
+  if (options.moduleSuffixes !== undefined) {
+    const suffixes = options.moduleSuffixes;
+    if (
+      !Array.isArray(suffixes) ||
+      suffixes.some((suffix) => typeof suffix !== 'string')
+    ) {
+      return {
+        reason: `\`compilerOptions.moduleSuffixes\` in ${file} is not a list of strings; fix it`,
+      };
+    }
+    return suffixes as string[];
   }
   const parents = Array.isArray(config.extends)
     ? config.extends
