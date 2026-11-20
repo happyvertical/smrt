@@ -75,9 +75,19 @@ const AuditInheritAppPerformer = runtimeOnlySubclass(
 );
 type AuditInheritAppPerformer = InstanceType<typeof AuditInheritAppPerformer>;
 
-class AuditInheritAppPerformerCollection extends SmrtCollection<AuditInheritAppPerformer> {
-  static readonly _itemClass = AuditInheritAppPerformer;
-}
+/**
+ * Its collection is runtime-only too: a collection the scanner sees must name
+ * an item it can prove, and this item has no manifest entry by design.
+ */
+const AuditInheritAppPerformerCollection = runtimeOnlySubclass(
+  ['AuditInherit', 'AppPerformerCollection'],
+  class extends SmrtCollection<AuditInheritAppPerformer> {
+    static readonly _itemClass = AuditInheritAppPerformer;
+  },
+);
+type AuditInheritAppPerformerCollection = InstanceType<
+  typeof AuditInheritAppPerformerCollection
+>;
 
 /** A parent with no tenant field: its child must still be reported. */
 @smrt({ tableStrategy: 'sti', tableName: 'audit_inherit_untenanted' })
