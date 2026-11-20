@@ -91,6 +91,11 @@ collection returns its own.
   route, tools and commands of its own under that name (never under the
   parent's). `sameNameSubtypes(manifest)` lists the pairs. Manifest generation
   never copies a parent's `collection` or `replaceParent` into the subclass.
+- A subtype that declares no `tenantScoped` of its own carries its parent
+  chain's declared tenancy (mode, ownership field, requirement):
+  `ObjectRegistry.getTenantScopedConfig()` reads the parent as declared, never
+  a replacement that took the parent's key, in either load order and with or
+  without its own `collection`.
 
 Manifest declarations arrive in either order and give one registry: base
 then subclass or subclass then base, and manifest then constructor
