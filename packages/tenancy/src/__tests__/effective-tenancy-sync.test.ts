@@ -1,0 +1,317 @@
+/**
+ * Both sync apply paths (runtime REST and the emitted route) run every item
+ * under the tenancy its target has when the batch is served, with the real
+ * tenant interceptor on a SQLite file.
+ *
+ * Rows 14, 27, 28 and 33 of the #5375 test-design contract.
+ */
+
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import {
+  field,
+  ObjectRegistry,
+  SmrtCollection,
+  SmrtObject,
+  smrt,
+} from '@happyvertical/smrt-core';
+import { APIGenerator } from '@happyvertical/smrt-core/generators/rest';
+import { getTestDatabase } from '@happyvertical/smrt-core/testing';
+import type { DatabaseInterface } from '@happyvertical/sql';
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { withSystemContext, withTenant } from '../context.js';
+import { TenantScoped, tenantId } from '../decorators.js';
+import { disableTenancy, enableTenancy } from '../interceptor.js';
+import {
+  registerTenantScopedClass,
+  unregisterTenantScopedClass,
+} from '../registry.js';
+import {
+  type EmittedApp,
+  emitApp,
+  keyOf,
+  restCall,
+  segmentOf,
+  TENANT_A,
+  TENANT_B,
+} from './helpers/effective-tenancy-harness.js';
+
+// Tenancy registered at run time.
+@smrt({ api: { include: ['list', 'get', 'create', 'update', 'delete'] } })
+class EffSyncMemo extends SmrtObject {
+  @field({ type: 'text' }) title = '';
+  @field({ type: 'text', nullable: true }) tenantId: string | null = null;
+}
+class EffSyncMemoCollection extends SmrtCollection<EffSyncMemo> {
+  static readonly _itemClass = EffSyncMemo;
+}
+
+// An unscoped STI base and a scoped member sharing its sync segment.
+@smrt({
+  tableStrategy: 'sti',
+  api: { include: ['list', 'get', 'create', 'update', 'delete'] },
+})
+class EffSyncNote extends SmrtObject {
+  @field({ type: 'text' }) title = '';
+}
+class EffSyncNoteCollection extends SmrtCollection<EffSyncNote> {
+  static readonly _itemClass = EffSyncNote;
+}
+@smrt({ api: { include: ['list', 'get', 'create', 'update', 'delete'] } })
+@TenantScoped({ mode: 'optional' })
+class EffSyncOwnedNote extends EffSyncNote {
+  @tenantId({ nullable: true }) tenantId: string | null = null;
+}
+
+const ROW = {
+  memoOfA: 'aaaaaaaa-0000-4000-8000-0000000000a1',
+  memoOfB: 'bbbbbbbb-0000-4000-8000-0000000000b1',
+  noteOfA: 'aaaaaaaa-0000-4000-8000-0000000000a2',
+  noteOfB: 'bbbbbbbb-0000-4000-8000-0000000000b2',
+};
+
+const SESSIONS: Record<string, { tenantId?: string }> = {
+  'user-of-a': { tenantId: TENANT_A },
+  'user-of-b': { tenantId: TENANT_B },
+  'reader-none': {},
+};
+const tokenOf = (req: Request) =>
+  (req.headers.get('authorization') ?? '').replace('Bearer ', '');
+
+type Result = {
+  itemId: string;
+  id: string;
+  status: string;
+  reason?: string;
+  updatedAt?: string;
+};
+
+describe('sync apply runs every item under its target tenancy', () => {
+  let dir: string;
+  let db: DatabaseInterface;
+  let handler: (req: Request) => Promise<Response>;
+  let app: EmittedApp;
+  let memos: SmrtCollection<SmrtObject>;
+  let notes: SmrtCollection<SmrtObject>;
+  const collections = new Map<string, unknown>();
+
+  const restSync = async (token: string, items: unknown[]) => {
+    const answer = await restCall(handler, 'POST', 'sync/apply', {
+      headers: { authorization: `Bearer ${token}` },
+      body: { items },
+    });
+    return {
+      status: answer.status,
+      results: ((answer.body as { results?: Result[] })?.results ??
+        []) as Result[],
+    };
+  };
+  const titleOf = async (table: string, id: string) =>
+    (await db.query(`SELECT title FROM ${table} WHERE id = '${id}'`)).rows[0]
+      ?.title;
+
+  beforeAll(async () => {
+    ObjectRegistry.registerCollection(
+      'EffSyncMemo',
+      EffSyncMemoCollection as never,
+    );
+    ObjectRegistry.registerCollection(
+      'EffSyncNote',
+      EffSyncNoteCollection as never,
+    );
+    dir = mkdtempSync(join(tmpdir(), 'smrt-effective-sync-'));
+    db = await getTestDatabase({
+      type: 'sqlite',
+      url: join(dir, 'app.db'),
+      classes: [EffSyncMemo, EffSyncNote, EffSyncOwnedNote].map((model) =>
+        keyOf(model),
+      ),
+    });
+    memos = (await EffSyncMemoCollection.create({
+      db,
+    })) as unknown as SmrtCollection<SmrtObject>;
+    notes = (await EffSyncNoteCollection.create({
+      db,
+    })) as unknown as SmrtCollection<SmrtObject>;
+    for (const [model, store] of [
+      [EffSyncMemo, memos],
+      [EffSyncNote, notes],
+    ] as const) {
+      collections.set(keyOf(model), store);
+      collections.set(model.name, store);
+    }
+    collections.set(
+      keyOf(EffSyncOwnedNote),
+      await ObjectRegistry.getCollection(keyOf(EffSyncOwnedNote), {
+        db,
+      } as never),
+    );
+    enableTenancy();
+    handler = new APIGenerator(
+      {
+        basePath: '/api',
+        authMiddleware: () => async (req: Request) =>
+          SESSIONS[tokenOf(req)]
+            ? req
+            : new Response('unauthorized', { status: 401 }),
+        resolveTenant: (req: Request) => ({
+          ...SESSIONS[tokenOf(req)],
+          authenticated: true,
+        }),
+      },
+      { db },
+    ).generateHandler();
+    app = await emitApp(
+      'effective-tenancy-sync',
+      [EffSyncMemo, EffSyncNote, EffSyncOwnedNote],
+      collections,
+    );
+    registerTenantScopedClass(keyOf(EffSyncMemo), { mode: 'optional' });
+  }, 120_000);
+
+  afterAll(async () => {
+    unregisterTenantScopedClass(keyOf(EffSyncMemo));
+    disableTenancy();
+    app?.dispose();
+    await db?.close?.();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  beforeEach(async () => {
+    await withSystemContext(async () => {
+      await db.query(`DELETE FROM ${memos.tableName}`);
+      await db.query(`DELETE FROM ${notes.tableName}`);
+      await memos.create({
+        id: ROW.memoOfA,
+        title: 'memo of a',
+        tenantId: TENANT_A,
+      } as never);
+      await memos.create({
+        id: ROW.memoOfB,
+        title: 'memo of b',
+        tenantId: TENANT_B,
+      } as never);
+      await notes.create({
+        id: ROW.noteOfA,
+        title: 'note of a',
+        tenantId: TENANT_A,
+        _meta_type: keyOf(EffSyncOwnedNote),
+      } as never);
+      await notes.create({
+        id: ROW.noteOfB,
+        title: 'note of b',
+        tenantId: TENANT_B,
+        _meta_type: keyOf(EffSyncOwnedNote),
+      } as never);
+    });
+  });
+
+  it('a principal that disagrees with the active tenant is refused', async () => {
+    const item = {
+      itemId: 'disagree-1',
+      object: segmentOf(EffSyncMemo),
+      op: 'update',
+      id: ROW.memoOfA,
+      payload: { title: 'changed by b' },
+    };
+    const rest = await withTenant({ tenantId: TENANT_A }, () =>
+      restSync('user-of-b', [item]),
+    );
+    expect(rest.results[0]?.status ?? 'refused').not.toBe('applied');
+    const emitted = await withTenant({ tenantId: TENANT_A }, () =>
+      app.call('POST', 'sync/apply', {
+        locals: {
+          user: { id: 'writer' },
+          tenantId: TENANT_B,
+          permissions: [`${segmentOf(EffSyncMemo)}.update`],
+        },
+        body: { items: [item] },
+      }),
+    );
+    // The emitted route decides per item: the item is refused.
+    expect((emitted.body as { results: Result[] }).results[0]).toMatchObject({
+      status: 'rejected',
+      reason: 'forbidden',
+    });
+    expect(await titleOf(memos.tableName, ROW.memoOfA)).toBe('memo of a');
+  });
+
+  it('a host-entered tenant is the request tenant', async () => {
+    const answer = await withTenant({ tenantId: TENANT_A }, () =>
+      app.call('POST', 'sync/apply', {
+        locals: {
+          user: { id: 'writer' },
+          permissions: [`${segmentOf(EffSyncMemo)}.update`],
+        },
+        body: {
+          items: [
+            {
+              itemId: 'ours-1',
+              object: segmentOf(EffSyncMemo),
+              op: 'update',
+              id: ROW.memoOfA,
+              payload: { title: 'changed by a' },
+            },
+            {
+              itemId: 'theirs-1',
+              object: segmentOf(EffSyncMemo),
+              op: 'update',
+              id: ROW.memoOfB,
+              payload: { title: 'changed by a' },
+            },
+          ],
+        },
+      }),
+    );
+    const results = (answer.body as { results: Result[] }).results;
+    expect(results[0]?.status).toBe('applied');
+    expect(results[1]?.status).toBe('rejected');
+    expect(await titleOf(memos.tableName, ROW.memoOfA)).toBe('changed by a');
+    expect(await titleOf(memos.tableName, ROW.memoOfB)).toBe('memo of b');
+  });
+
+  it('a replayed create naming a hidden row answers the same conflict for any payload', async () => {
+    const replay = (payload: Record<string, unknown>) =>
+      restSync('user-of-a', [
+        {
+          itemId: 'replay-1',
+          object: segmentOf(EffSyncNote),
+          op: 'create',
+          id: ROW.noteOfA,
+          payload,
+        },
+      ]);
+    const same = await replay({ title: 'note of a' });
+    const different = await replay({ title: 'something else' });
+    expect(same.results[0]).toEqual(different.results[0]);
+    expect(same.results[0]).toMatchObject({
+      status: 'rejected',
+      reason: 'id_conflict',
+    });
+    expect(same.results[0]?.updatedAt).toBeUndefined();
+  });
+
+  it('queued items for a subtype the shared segment no longer serves get the documented rejection', async () => {
+    const queued = await restSync('user-of-a', [
+      {
+        itemId: 'queued-update',
+        object: segmentOf(EffSyncNote),
+        op: 'update',
+        id: ROW.noteOfA,
+        payload: { title: 'changed through the base' },
+      },
+      {
+        itemId: 'queued-delete',
+        object: segmentOf(EffSyncNote),
+        op: 'delete',
+        id: ROW.noteOfA,
+      },
+    ]);
+    expect(queued.results[0]).toMatchObject({
+      status: 'rejected',
+      reason: 'not_found',
+    });
+    expect(await titleOf(notes.tableName, ROW.noteOfA)).toBe('note of a');
+  });
+});
