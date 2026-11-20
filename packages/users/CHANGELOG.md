@@ -1,5 +1,21 @@
 # @happyvertical/smrt-users
 
+## 0.64.0
+
+### Minor Changes
+
+- cde1c08: Remember the tenant a user last switched into (`Membership.lastSelectedAt`) and expose `SessionService.lastActiveTenantFor()` / `lastActiveTenantFor()` from `/sveltekit` so sign-in can resume it (#5358). Adds a nullable column; run `smrt db:migrate`.
+
+### Patch Changes
+
+- @happyvertical/smrt-config@0.64.0
+  - @happyvertical/smrt-core@0.64.0
+  - @happyvertical/smrt-profiles@0.64.0
+  - @happyvertical/smrt-mobile-contract@0.64.0
+  - @happyvertical/smrt-ui@0.64.0
+  - @happyvertical/smrt-tenancy@0.64.0
+  - @happyvertical/smrt-types@0.64.0
+
 ## 0.63.0
 
 ### Patch Changes
