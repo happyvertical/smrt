@@ -71,7 +71,8 @@ collection returns its own.
 
 - The parent's family must be single-table inheritance: a same-named subtype
   is an STI subtype, on its parent's table (a subtype that names another table
-  is `CONFIG_SAME_NAME_SUBTYPE_TABLE_MISMATCH`). A plain parent has no discriminator, so the pair is
+  is `CONFIG_SAME_NAME_SUBTYPE_TABLE_MISMATCH`, at registration and at
+  manifest and activation generation). A plain parent has no discriminator, so the pair is
   refused with `CONFIG_SAME_NAME_SUBTYPE_WITHOUT_DISCRIMINATOR` whatever table
   the subclass names: declare `replaceParent: true`, or rename the subclass
   to make it a separate model. Collections store nothing and are exempt.

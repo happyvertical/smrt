@@ -169,6 +169,38 @@ describe('effective manifest identities', () => {
       }),
     );
   });
+  it('refuses a subtype that declares another table than its single-table parent, as registration does', () => {
+    const base = model('@fixture/base');
+    base.decoratorConfig = { ...base.decoratorConfig, tableStrategy: 'sti' };
+    const elsewhere = manifest(
+      base,
+      model('@fixture/library', '@fixture/base', 'other_customers', false),
+    );
+    expect(() => assertSameNameSubclassChoices(elsewhere)).toThrow(
+      expect.objectContaining({
+        code: 'CONFIG_SAME_NAME_SUBTYPE_TABLE_MISMATCH',
+        details: {
+          className: '@fixture/library:Customer',
+          parentName: '@fixture/base:Customer',
+          childTable: 'other_customers',
+          parentTable: 'customers',
+        },
+      }),
+    );
+    // On the parent's table, or naming none, it is accepted.
+    const shared = model(
+      '@fixture/library',
+      '@fixture/base',
+      'customers',
+      false,
+    );
+    const unnamed = model('@fixture/library', '@fixture/base', 'x', false);
+    delete unnamed.decoratorConfig.tableName;
+    for (const subtype of [shared, unnamed])
+      expect(() =>
+        assertSameNameSubclassChoices(manifest(base, subtype)),
+      ).not.toThrow();
+  });
   it('treats a framework base as the family root, so a subtype of a plain SmrtObject parent fails the build', () => {
     for (const root of ['SmrtObject', '@happyvertical/smrt-core:SmrtObject']) {
       const plain = { ...model('@fixture/base'), extends: 'SmrtObject' };

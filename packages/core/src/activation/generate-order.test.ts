@@ -984,6 +984,58 @@ describe('generated activation order', () => {
       ).rejects.toThrow(undeclared);
       expect(snapshot()).toEqual(before);
     });
+
+    it('refuses a same-named subtype that declares another table than its parent in both public generators and leaves published outputs byte-identical', async () => {
+      const { files, manifest } = project([
+        { key: APP, parent: PROVIDER, replace: false },
+        { key: PROVIDER, sti: true },
+      ]);
+      files.write('src/lib/server/smrt.ts', 'export const options = {};');
+      const options = {
+        enabled: true,
+        lazyActivation: true,
+        routesDir: 'src/routes/api',
+        objectsDir: 'src/lib/objects',
+        changesRoute: { enabled: false },
+        eventsRoute: { enabled: false },
+        resourcesRoute: { enabled: false },
+      };
+      await generateSvelteKitRoutes(files.root, manifest, options);
+      const snapshot = () => {
+        const out: Record<string, string> = {};
+        const walk = (dir: string) => {
+          for (const name of readdirSync(dir)) {
+            const path = join(dir, name);
+            if (name === 'node_modules') continue;
+            if (statSync(path).isDirectory()) walk(path);
+            else out[path] = readFileSync(path, 'utf8');
+          }
+        };
+        walk(files.root);
+        return out;
+      };
+      const before = snapshot();
+      const subtype = manifest.objects[APP];
+      subtype.decoratorConfig.tableName = 'fixture_elsewhere';
+      if (subtype.schema) subtype.schema.tableName = 'fixture_elsewhere';
+      const mismatch =
+        /declares replaceParent: false, but stores rows in "fixture_elsewhere" while its single-table parent @activation\/customer:Customer uses "fixture_customer"/;
+      expect(() => generate(files, manifest)).toThrow(mismatch);
+      expect(() =>
+        buildActivationManifest(manifest, {
+          '@activation/customer': {
+            specifier: '@activation/customer',
+            models: [PROVIDER],
+            dependencies: [],
+          },
+          app: { specifier: 'app', models: [APP], dependencies: [] },
+        }),
+      ).toThrow(mismatch);
+      await expect(
+        generateSvelteKitRoutes(files.root, manifest, options),
+      ).rejects.toThrow(mismatch);
+      expect(snapshot()).toEqual(before);
+    });
   });
 });
 

@@ -374,6 +374,16 @@ export function assertSameNameSubclassChoices(
       if (familyHasDiscriminator(manifest, parentKey) === false) {
         throw sameNameSubtypeWithoutDiscriminator(name, parentKey, parentTable);
       }
+      // Registration binds a subtype that names no table to its parent's and
+      // refuses one that names another (#5143); refuse that one here too.
+      const childTable = tableOf(child);
+      if (parentTable && childTable && childTable !== parentTable)
+        throw sameNameSubtypeTableMismatch(
+          name,
+          parentKey,
+          childTable,
+          parentTable,
+        );
       continue;
     }
     const childTable = tableOf(child);
