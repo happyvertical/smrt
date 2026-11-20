@@ -1372,6 +1372,48 @@ describe('a collection of a package model', () => {
     expect(accounts?.collectionOf).toBe(`${APP}:Account`);
     expect(crud(accounts).length).toBe(5);
   });
+
+  // A framework class names no item: the runtime holds the constructor the
+  // static `_itemClass` names, never a model inferred from the class name.
+  it.each([
+    ['directly', '', 'SmrtCollection<SmrtObject>'],
+    [
+      'below a generic ancestor, under an alias',
+      `import { SmrtObject as PublicNote } from '@happyvertical/smrt-core';\nimport { BaseCollection } from './BaseCollection';\n`,
+      'BaseCollection<PublicNote>',
+    ],
+  ])('gives a collection naming a framework class %s the closed _itemClass it declares', async (_label, imports, parent) => {
+    const root = await project({
+      providers: {},
+      app: {
+        'src/PublicNote.ts': `${CORE}\n@smrt({ tableName: 'public_notes' })\nexport class PublicNote extends SmrtObject {}\n`,
+        'src/PrivateNote.ts': `${CORE}\n@smrt({ api: false, tableName: 'private_notes' })\nexport class PrivateNote extends SmrtObject {\n  hidden = '';\n}\n`,
+        'src/BaseCollection.ts': `${CORE}\nexport abstract class BaseCollection<T extends SmrtObject> extends SmrtCollection<T> {}\n`,
+        'src/PublicNoteCollection.ts': `${CORE}\n${imports}import { PrivateNote } from './PrivateNote';\nexport class PublicNoteCollection extends ${parent} {\n  static readonly _itemClass = PrivateNote;\n}\n`,
+      },
+    });
+
+    const manifest = await build(root);
+    const notes = manifest.objects[`${APP}:PublicNoteCollection`];
+    expect(notes?.collectionOf).toBe(`${APP}:PrivateNote`);
+    expect(notes?.decoratorConfig?.tableName).toBe('private_notes');
+    expect(crud(notes)).toEqual([]);
+    expect(crud(manifest.objects[`${APP}:PublicNote`]).length).toBe(5);
+  });
+
+  it('fails generation for a concrete collection over a type keyword with no _itemClass', async () => {
+    const root = await project({
+      providers: {},
+      app: {
+        'src/Account.ts': `${CORE}\n@smrt({ tableName: 'app_accounts' })\nexport class Account extends SmrtObject {}\n`,
+        'src/AccountCollection.ts': `${CORE}\nexport class AccountCollection extends SmrtCollection<any> {}\n`,
+      },
+    });
+
+    await expect(build(root)).rejects.toThrow(
+      'declare the item with a static _itemClass',
+    );
+  });
 });
 
 describe('open control', () => {

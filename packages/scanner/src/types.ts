@@ -74,6 +74,12 @@ export interface RawClassDefinition {
   typeParameters?: string[];
 
   /**
+   * Whether the class is declared `abstract`: an abstract collection over a
+   * framework base may leave its item to the subclasses that extend it.
+   */
+  isAbstract?: boolean;
+
+  /**
    * Class references in the class decorators' config (`@report` `source`,
    * `joins.*.source`): imported ones with their import, same-file ones
    * marked `local`.

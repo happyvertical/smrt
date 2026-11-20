@@ -528,7 +528,7 @@ describe('parents', () => {
 
   it('takes a base exported by the framework package as the framework', async () => {
     const { errors, model, manifest } = await scanProject({
-      'src/reports/Tally.ts': `import { SmrtReportCollection } from '@happyvertical/smrt-reports';\nexport class TallyCollection extends SmrtReportCollection {}\n`,
+      'src/reports/Tally.ts': `import { SmrtReportCollection } from '@happyvertical/smrt-reports';\nexport abstract class TallyCollection extends SmrtReportCollection {}\n`,
       'src/models/Event.ts': OPEN_BASE('Event'),
     });
 
@@ -1430,7 +1430,7 @@ describe('collection items', () => {
   it("skips the class's own type parameter and a type keyword", async () => {
     const { errors, manifest } = await scanProject({
       'src/models/Account.ts': OPEN_BASE('Account'),
-      'src/models/Bases.ts': `${CORE}\nexport abstract class TypedCollection<Account extends SmrtObject> extends SmrtCollection<Account> {}\nexport class AnyCollection extends SmrtCollection<any> {}\n`,
+      'src/models/Bases.ts': `${CORE}\nexport abstract class TypedCollection<Account extends SmrtObject> extends SmrtCollection<Account> {}\nexport abstract class AnyCollection extends SmrtCollection<any> {}\n`,
     });
 
     expect(errors).toEqual([]);
@@ -1769,6 +1769,115 @@ describe('collection items through an app-level generic collection', () => {
     expect(
       manifest().objects[`${PACKAGE}:PrivateAccounts`]?.extendsTypeArg,
     ).toBe('Account');
+  });
+});
+
+describe('collection items over a framework class or no model', () => {
+  const NOTES = {
+    'src/models/PublicNote.ts': OPEN_BASE('PublicNote'),
+    'src/models/PrivateNote.ts': CLOSED_BASE('PrivateNote'),
+    'src/collections/BaseCollection.ts': `${CORE}\nexport abstract class BaseCollection<T extends SmrtObject> extends SmrtCollection<T> {}\n`,
+  };
+  const ALIAS = `import { SmrtObject as PublicNote } from '@happyvertical/smrt-core';`;
+  const PRIVATE = `import { PrivateNote } from '../models/PrivateNote';`;
+  const BASE = `import { BaseCollection } from './BaseCollection';`;
+  const ITEM = `{\n  static readonly _itemClass = PrivateNote;\n}`;
+
+  it.each([
+    [
+      'directly',
+      `${PRIVATE}\nexport class PublicNoteCollection extends SmrtCollection<SmrtObject> ${ITEM}\n`,
+    ],
+    [
+      'directly, under an alias',
+      `${ALIAS}\n${PRIVATE}\nexport class PublicNoteCollection extends SmrtCollection<PublicNote> ${ITEM}\n`,
+    ],
+    [
+      'below a generic ancestor',
+      `${PRIVATE}\n${BASE}\nexport class PublicNoteCollection extends BaseCollection<SmrtObject> ${ITEM}\n`,
+    ],
+    [
+      'below a generic ancestor, under an alias',
+      `${ALIAS}\n${PRIVATE}\n${BASE}\nexport class PublicNoteCollection extends BaseCollection<PublicNote> ${ITEM}\n`,
+    ],
+  ])('takes the static _itemClass of a collection naming a framework class %s', async (_label, source) => {
+    const { errors, manifest } = await scanProject({
+      ...NOTES,
+      'src/collections/Notes.ts': `${CORE}\n${source}`,
+    });
+
+    expect(errors).toEqual([]);
+    const notes = manifest().objects[`${PACKAGE}:PublicNoteCollection`];
+    expect(notes?.extendsTypeArg).toBe('PrivateNote');
+    expect(notes?.extendsTypeArgQualified).toBeUndefined();
+  });
+
+  it.each([
+    ['a type keyword', 'extends SmrtCollection<any> {}'],
+    ['a framework class', 'extends SmrtCollection<SmrtObject> {}'],
+    ['no type argument', 'extends SmrtCollection {}'],
+    [
+      'a framework _itemClass',
+      'extends SmrtCollection<any> {\n  static readonly _itemClass = SmrtObject;\n}',
+    ],
+    [
+      'a generic ancestor over a framework class',
+      `extends BaseCollection<SmrtObject> {}`,
+    ],
+  ])('rejects a concrete collection whose item is %s with no model _itemClass', async (_label, clause) => {
+    const { errors, manifest } = await scanProject({
+      ...NOTES,
+      'src/collections/Notes.ts': `${CORE}\n${BASE}\nexport class PublicNoteCollection ${clause}\n`,
+    });
+
+    expect(errors).toHaveLength(1);
+    expect(errors[0].message).toContain('PublicNoteCollection');
+    expect(errors[0].message).toContain('static _itemClass');
+    expect(
+      manifest().objects[`${PACKAGE}:PublicNoteCollection`]?.extendsTypeArg,
+    ).toBeUndefined();
+  });
+
+  it('leaves the item of an abstract collection over a framework base, or of one passing its own type parameter on, to its subclasses', async () => {
+    const { errors, manifest } = await scanProject({
+      ...NOTES,
+      'src/collections/Notes.ts': `${CORE}\n${PRIVATE}\nexport abstract class AnyNotes extends SmrtCollection<any> {}\nexport abstract class FrameworkNotes extends SmrtCollection<SmrtObject> {}\nexport class TypedNotes<T extends SmrtObject> extends SmrtCollection<T> {}\nexport class PublicNoteCollection extends AnyNotes ${ITEM}\n`,
+    });
+
+    expect(errors).toEqual([]);
+    const objects = manifest().objects;
+    for (const name of ['AnyNotes', 'FrameworkNotes', 'TypedNotes']) {
+      expect(objects[`${PACKAGE}:${name}`]?.extendsTypeArg).toBeUndefined();
+    }
+    expect(objects[`${PACKAGE}:PublicNoteCollection`]?.extendsTypeArg).toBe(
+      'PrivateNote',
+    );
+  });
+
+  it.each([
+    [
+      'an ancestor fixing no model',
+      `export abstract class Fixed extends SmrtCollection<any> {}`,
+    ],
+    [
+      'an ancestor fixing a model',
+      `export abstract class Fixed extends SmrtCollection<PrivateNote> {}`,
+    ],
+    [
+      'an ancestor passing a later type parameter on',
+      `export abstract class Fixed<Tag = string, Row extends SmrtObject = PrivateNote> extends SmrtCollection<Row> {}`,
+    ],
+  ])('rejects a framework class as the static _itemClass below %s', async (_label, ancestor) => {
+    const { errors, manifest } = await scanProject({
+      ...NOTES,
+      'src/collections/Notes.ts': `${CORE}\n${PRIVATE}\n${ancestor}\nexport class PublicNoteCollection extends Fixed {\n  static readonly _itemClass = SmrtObject;\n}\n`,
+    });
+
+    expect(errors).toHaveLength(1);
+    expect(errors[0].message).toContain('PublicNoteCollection');
+    expect(
+      manifest().objects[`${PACKAGE}:PublicNoteCollection`]?.extendsTypeArg,
+    ).toBeUndefined();
   });
 });
 

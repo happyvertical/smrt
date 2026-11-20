@@ -174,6 +174,8 @@ interface ClassDeclaration extends BaseNode {
   superTypeArguments?: TSTypeParameterInstantiation;
   /** The class's own type parameters (`class C<T, U>`). */
   typeParameters?: { params?: Array<{ name?: { name?: string } | string }> };
+  /** `abstract class C` */
+  abstract?: boolean;
   body: ClassBody;
   decorators?: Decorator[];
 }
@@ -2789,6 +2791,7 @@ function extractClassDeclaration(
     ...(extendsUnreadable ? { extendsUnreadable } : {}),
     ...(extendsNames ? { extendsNames } : {}),
     ...(typeParameters.length > 0 ? { typeParameters } : {}),
+    ...(node.abstract === true ? { isAbstract: true } : {}),
     decoratorConfig,
     hasSmartDecorator,
     ...(description ? { description } : {}),

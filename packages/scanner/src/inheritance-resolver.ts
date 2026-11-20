@@ -1187,7 +1187,11 @@ export class InheritanceResolver {
    * - The direct parent is the framework base, or a scanned collection that
    *   passes its first type parameter on to it (`class BaseCollection<T>
    *   extends SmrtCollection<T>`): the class's own type argument names the
-   *   item, and a static `_itemClass` must name the same class.
+   *   item, and a static `_itemClass` must name the same class. A type
+   *   argument naming no model (a type keyword, a framework class by
+   *   identity, none at all) leaves the item to a static `_itemClass`; a
+   *   collection proving none fails the scan, unless it is abstract (over
+   *   the framework base) or passes its own type parameter on.
    * - A scanned collection ancestor fixes the item itself, by its type
    *   argument or by a static `_itemClass` it declares (which every subclass
    *   inherits, even one that passes the ancestor's type parameter on): a type argument
@@ -1203,12 +1207,14 @@ export class InheritanceResolver {
    *   no type argument or a type keyword. Only a generic class passing its
    *   own type parameter on is left to its subclasses. A proven static
    *   `_itemClass` an ancestor declares fixes the item before the position
-   *   of the type parameter it passes on is considered.
+   *   of the type parameter it passes on is considered. A static
+   *   `_itemClass` naming a framework class proves no item.
    *
-   * `null` when no item model is named (the class's own type parameter or a
-   * type keyword with no `_itemClass` naming a model), and after an error:
-   * the collection then records no item name at all, so generation never
-   * looks an unproven name up. `undefined` when the class is no collection
+   * `null` when no item model is named, which only an abstract collection
+   * over the framework base or a class passing its own type parameter on
+   * may leave to its subclasses, and after an error: the collection then
+   * records no item name at all, so generation never looks an unproven name
+   * up. `undefined` when the class is no collection
    * over a scanned ancestry (its parent is another package's class, or not a
    * collection), which leaves the scanned type argument as it was.
    */
@@ -1220,13 +1226,26 @@ export class InheritanceResolver {
       return undefined;
     }
     if (parentLink.framework) {
+      if (!ITEM_COLLECTION_BASES.has(parentLink.name)) return undefined;
+      const item = this.proveOwnItem(classDef, parentLink.name);
+      // A type argument naming no model (a type keyword, a framework class,
+      // none at all) leaves the item to a static `_itemClass`. A concrete
+      // collection that proves none would record no item, and generation
+      // would infer one from its name; only an abstract class, or a generic
+      // one passing its own type parameter on, leaves it to its subclasses.
       if (
-        !classDef.extendsTypeArg ||
-        !ITEM_COLLECTION_BASES.has(parentLink.name)
+        item === null &&
+        !this.itemErrors.has(classDef) &&
+        !classDef.isAbstract &&
+        !this.passesOwnTypeParameter(classDef)
       ) {
-        return undefined;
+        this.itemErrors.set(
+          classDef,
+          `its collection item cannot be mapped to one model: its type argument names no item model and no static _itemClass ` +
+            `names one; write ${parentLink.name}<Item> with the item model class, or ${DECLARE_ITEM_FIX}`,
+        );
       }
-      return this.proveOwnItem(classDef, parentLink.name);
+      return item;
     }
     const parent = parentLink.definition;
     if (!parent || parentLink.package || !this.isScanned(parent)) {
@@ -1237,22 +1256,24 @@ export class InheritanceResolver {
     const ownItemClass = this.itemClassField(classDef)?.initializer;
     if (shape.kind === 'unmapped') {
       // The ancestry decides no single item: only the class's own static
-      // `_itemClass` names it. Recording no item would let generation
-      // infer one from the class's name, whatever the runtime holds.
-      if (ownItemClass) return this.proveRuntimeItem(classDef);
-      this.itemErrors.set(classDef, shape.reason);
-      return null;
+      // `_itemClass` naming a model names it. Recording no item would let
+      // generation infer one from the class's name, whatever the runtime
+      // holds; an `_itemClass` naming a framework class proves none.
+      const item = ownItemClass ? this.proveRuntimeItem(classDef) : null;
+      if (item === null && !this.itemErrors.has(classDef)) {
+        this.itemErrors.set(classDef, shape.reason);
+      }
+      return item;
     }
     if (shape.kind === 'parameter') {
       const item = this.proveOwnItem(classDef, parent.className);
-      const head = classDef.extendsTypeArg?.split(/[.<]/)[0];
       // A generic subclass that passes its own type parameter on names no
-      // item yet; its own subclasses do. Any other subclass must name one.
+      // item yet; its own subclasses do. Any other subclass must name one
+      // (a static `_itemClass` naming a framework class names none).
       if (
         item === null &&
-        !ownItemClass &&
         !this.itemErrors.has(classDef) &&
-        !(head && classDef.typeParameters?.includes(head))
+        !this.passesOwnTypeParameter(classDef)
       ) {
         this.itemErrors.set(
           classDef,
@@ -1269,8 +1290,26 @@ export class InheritanceResolver {
     // class that names neither holds the ancestor's item at runtime (it
     // inherits the static `_itemClass`), so it records that item: generation
     // must never infer another item from the class's own name.
-    if (ownItemClass) return this.proveRuntimeItem(classDef);
+    if (ownItemClass) {
+      const item = this.proveRuntimeItem(classDef);
+      if (item === null && !this.itemErrors.has(classDef)) {
+        this.itemErrors.set(
+          classDef,
+          `its static _itemClass (${ownItemClass}) names no item model; name the item model class`,
+        );
+      }
+      return item;
+    }
     return shape.item;
+  }
+
+  /**
+   * Whether the class passes one of its own type parameters on as its type
+   * argument (`class C<T> extends Base<T>`): it then names no item itself.
+   */
+  private passesOwnTypeParameter(classDef: RawClassDefinition): boolean {
+    const head = classDef.extendsTypeArg?.split(/[.<]/)[0];
+    return !!head && !!classDef.typeParameters?.includes(head);
   }
 
   /**
@@ -1316,7 +1355,7 @@ export class InheritanceResolver {
     const ownItemClass = this.itemClassField(definition)?.initializer;
     if (passes.kind === 'unmapped') {
       return ownItemClass
-        ? { kind: 'item', item: this.proveRuntimeItem(definition) }
+        ? this.fixedItem(definition, this.proveRuntimeItem(definition))
         : passes;
     }
     if (passes.kind === 'parameter') {
@@ -1401,12 +1440,14 @@ export class InheritanceResolver {
     };
     const argument = classDef.extendsTypeArg;
     // Only the class's own type parameter (`class C<T> extends
-    // SmrtCollection<T>`), a type keyword (`SmrtCollection<any>`) and a
-    // missing argument name no item class. Their spelling must never reach
-    // generation, which would match it by name (a parameter called
-    // `Account` would take a model called `Account`): the item is then the
-    // class a static `_itemClass` names, proven like a parent, or none at
-    // all. Every other name is proven, a type-only import included.
+    // SmrtCollection<T>`), a type keyword (`SmrtCollection<any>`), a
+    // framework class (`SmrtCollection<SmrtObject>`, known by identity, so
+    // also under an alias import) and a missing argument name no item class.
+    // Their spelling must never reach generation, which would match it by
+    // name (a parameter called `Account` would take a model called
+    // `Account`): the item is then the class a static `_itemClass` names,
+    // proven like a parent, or none at all. Every other name is proven, a
+    // type-only import included.
     if (
       !argument ||
       classDef.typeParameters?.includes(argument.split(/[.<]/)[0]) ||
@@ -1427,8 +1468,9 @@ export class InheritanceResolver {
         `the collection's item \`${argument}\` cannot be accepted: ${typeArg.reason}`,
       );
     }
-    // A collection over a framework base itself names no item model.
-    if (typeArg.kind === 'framework') return undefined;
+    // A collection over a framework class names no item model: like a type
+    // keyword, the item is the class its static `_itemClass` names.
+    if (typeArg.kind === 'framework') return this.proveRuntimeItem(classDef);
     const itemError = this.itemDefinitionError(
       classDef,
       typeArg,
@@ -1449,7 +1491,9 @@ export class InheritanceResolver {
 
   /**
    * The item a collection's static `_itemClass` names, for a collection
-   * whose type argument names no class; `null` when it declares none.
+   * whose type argument names no class; `null` when it declares none or
+   * names a framework class, which proves no item (the callers then treat
+   * the collection as naming no item).
    */
   private proveRuntimeItem(classDef: RawClassDefinition): Proof | null {
     const fail = (reason: string): null => {
