@@ -215,6 +215,30 @@ under the name, or a named re-export from another package is an error. A file
 that declares its own class of a model's name and exports it as itself is
 another class at another path and is allowed.
 
+**Trust boundary.** Declared dependencies are trusted not to publish a
+different class under one of their models' names. The provider-side check
+covers named exports in the provider's own scan only; it does not enumerate
+names exposed through `export *`, compare export names case-insensitively,
+cover models that declare their own `packageName`, or compare the installed
+copy of a package a provider was built against with the copy the consumer
+loads for inherited edges. A consumer cannot detect a provider that does
+these deliberately.
+
+`moduleSuffixes` come from the nearest `tsconfig.json` and the configs it
+`extends` (a leading byte order mark is accepted). A config the scan cannot
+read (malformed JSON, an `extends` chain deeper than 8, a `moduleSuffixes`
+value that is not a list of strings) is a scan error for a relative import,
+never "no suffixes". A `package.json` with neither a name nor dependency
+fields (a nested `{ "type": "module" }` marker) is skipped when looking for
+the package that declares a file's dependencies.
+
+An undecorated scanned class whose superclass the scan cannot read or cannot
+accept (an expression, a call such as `Mixin(SmrtObject)`, an import through
+a barrel) is an error when that superclass names a framework base or a model
+or collection of the scan, since the class would otherwise be left out of
+the manifest. A helper whose superclass names neither (`extends
+utilities.Widget<T>`) is not.
+
 Only references of models, and of the ancestors whose fields reach a model,
 are proven and reported. A class registered without its module (a hand-built
 definition) keeps the older name-based parent lookup. A scanner run twice
@@ -259,7 +283,10 @@ now stops the build. The message names the file, class and member.
 
 | Failure | Fix |
 | --- | --- |
-| A decorator value the scanner cannot read (an imported constant, a call, a `let`, `new Date()`, a function other than a field `validate`, `Infinity`/`NaN`) | Inline it, or declare it as a same-file module `const` that nothing writes to |
+| A decorator value the scanner cannot read (an imported constant, a call, a `let`, `new Date()`, a function other than a field `validate`, `Infinity`/`NaN`, a hole in an array such as `[, true]`) | Inline it, or declare it as a same-file module `const` that nothing writes to |
+| A decorated field whose computed key is not a string literal (`@field() [KEY] = ''`) | Name the field with an identifier or a string literal key (`['secret']` is read like `secret`) |
+| A `tsconfig.json` (or a config it `extends`) the scan cannot read, when a relative import needs its `moduleSuffixes` | Fix the JSON, shorten the `extends` chain, or make `moduleSuffixes` a list of strings |
+| An undecorated class over a superclass the scan cannot read or accept that names a framework base or a model (`extends Mixin(SmrtObject)`, a collection imported through a barrel) | Import the parent from the file that declares it and extend it by name, or decorate the class |
 | A constant shared by a manifest static property (`uiSlots` etc.) and any other reader | Give the static property its own constant |
 | A computed namespace decorator the scanner cannot name (`@(core[key])()`), including a key copied from an object member a module statement writes | Use `@core.smrt()` / `@(core['smrt'])()`, or a same-file string constant key nothing writes |
 | Two models of one class name in a package | Rename one |
@@ -278,7 +305,7 @@ now stops the build. The message names the file, class and member.
 | A static `_itemClass` naming another class than `SmrtCollection<Item>` | Name the same model in both |
 | A module exporting another binding under a model's class name (`export { Other as Model }`, `export { Model } from '@other/pkg'`, a barrel re-exporting a plain class of the name) | Export each model under its own class name; rename the other class |
 | `CONFIG_UNRESOLVED_IMPORTED_PARENT`: a parent (or collection item) from another package whose manifest does not declare it, that is installed without a manifest, whose manifest records no `importPath`, that is imported from another entry than the one the manifest records, or that the package only re-exports; or an `extendsQualified` that is not a qualified name | Import it from the package that declares it, at the entry its manifest records; build that package with this version so its manifest exists; declare it as a dependency |
-| `CONFIG_UNKNOWN_RELATIONSHIP_TARGET`: a relationship target or report source that names no model of the package or a loadable dependency, or a package export that cannot be confirmed (as above) | Import the model class itself from its declaring package and entry, or name a declared model |
+| `CONFIG_UNKNOWN_RELATIONSHIP_TARGET`: a relationship target or report source that names no model of the package or a loadable dependency, or a package export that cannot be confirmed (as above); or a confirmed package foreign-key target whose provider manifest records no schema, or no column the target names | Import the model class itself from its declaring package and entry, or name a declared model; rebuild the provider with this version so its manifest carries the schema |
 | `CONFIG_AMBIGUOUS_RELATIONSHIP_TARGET`: a target or report source imported from another package whose simple name another class of this package, or of a dependency generation reads, also declares (an app class that extends it and shares its table excepted) | Rename one of the classes, or reference this package's class |
 | An empty `@foreignKey('')` target | Name the related model |
 | Hand-built `RawDecorator` text that is not a literal where a literal is required | Pass a string literal, or the options object where the decorator takes one |

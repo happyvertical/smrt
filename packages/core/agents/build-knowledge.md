@@ -92,7 +92,10 @@ replacement) is exempt. Foreign-key reconciliation takes a confirmed target's
 schema by identity (`qualifiedTargetSchema`), so the constraint keeps the
 provider's table, key column and declared `onDelete` (adding it to a deployed
 database: [upgrading](../../scanner/agents/static-config.md#upgrading-foreign-keys-to-another-packages-model),
-which lists the orphan-row check per constraint). Every other target must
+which lists the orphan-row check per constraint). A confirmed target whose
+provider manifest records no schema, or no column the target names, throws
+`CONFIG_UNKNOWN_RELATIONSHIP_TARGET` rather than drop the constraint (unless
+the field sets `constraint: false`). Every other target must
 name a class of the manifest or a loadable dependency, or generation throws
 `CONFIG_UNKNOWN_RELATIONSHIP_TARGET` (`assertKnownTargets`; `@crossPackageRef`
 is checked at save time). Generating without a parent would give a
