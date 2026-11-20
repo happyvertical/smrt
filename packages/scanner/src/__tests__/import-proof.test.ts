@@ -1464,6 +1464,31 @@ describe('collection items', () => {
     expect(messages(errors)).toContain('static _itemClass');
   });
 
+  it('records the row model of a junction collection imported from a declared package by its identity', async () => {
+    const JUNCTIONS = `import { SmrtJunction, SmrtJunctionBase } from '@happyvertical/smrt-core';`;
+    const { errors, manifest } = await scanProject({
+      'src/models/Account.ts': OPEN_BASE('Account'),
+      'src/models/Links.ts': `${JUNCTIONS}\nimport { Account } from '${PROVIDER}';\nexport class AccountLinks extends SmrtJunction<Account> {}\nexport class AccountPairs extends SmrtJunctionBase<Account> {}\n`,
+    });
+
+    expect(errors).toEqual([]);
+    const objects = manifest().objects;
+    for (const name of ['AccountLinks', 'AccountPairs']) {
+      expect(objects[`${PACKAGE}:${name}`]?.extendsTypeArgQualified).toBe(
+        `${PROVIDER}:Account`,
+      );
+    }
+  });
+
+  it('rejects a junction collection whose row is a plain class', async () => {
+    const { errors } = await scanProject({
+      'src/models/Link.ts': `export class Link {}\n`,
+      'src/models/Links.ts': `import { SmrtJunction } from '@happyvertical/smrt-core';\nimport { Link } from './Link';\nexport class LinkCollection extends SmrtJunction<Link> {}\n`,
+    });
+
+    expect(messages(errors)).toContain('is not a model');
+  });
+
   it('rejects an item that is a plain class', async () => {
     const { errors } = await scanProject({
       'src/models/Account.ts': `export class Account {}\n`,

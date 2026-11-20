@@ -112,9 +112,15 @@ interface ParentLink {
   error?: string;
 }
 
-/** Framework bases whose type argument is the collection's item class. */
+/**
+ * Framework bases whose type argument is the collection's item class: every
+ * collection base of `SMRT_COLLECTION_BASE_NAMES` in core (the junction bases
+ * pass their row model on to `SmrtCollection`).
+ */
 const ITEM_COLLECTION_BASES: ReadonlySet<string> = new Set([
   'SmrtCollection',
+  'SmrtJunction',
+  'SmrtJunctionBase',
   'SmrtReportCollection',
 ]);
 

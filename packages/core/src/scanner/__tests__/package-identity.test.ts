@@ -1252,6 +1252,33 @@ describe('a collection of a package model', () => {
     expect(crud(manifest.objects[`${APP}:Account`]).length).toBe(5);
   });
 
+  // A junction collection's row model is its item like any collection's.
+  it('takes the provider row model of a junction collection by identity, not the app model that shares its name', async () => {
+    const JUNCTIONS = `import { SmrtJunction, SmrtJunctionBase } from '@happyvertical/smrt-core';`;
+    const root = await project({
+      providers: {
+        [VENDOR]: {
+          files: {
+            'src/Account.ts': `${CORE}\n@smrt({ api: false, tableName: 'vendor_accounts' })\nexport class Account extends SmrtObject {\n  secret = '';\n}\n`,
+          },
+        },
+      },
+      app: {
+        'src/Account.ts': `${CORE}\n@smrt({ tableName: 'app_accounts' })\nexport class Account extends SmrtObject {}\n`,
+        'src/AccountLinks.ts': `${JUNCTIONS}\nimport { Account } from '${VENDOR}';\nexport class AccountLinks extends SmrtJunction<Account> {}\nexport class AccountPairs extends SmrtJunctionBase<Account> {}\n`,
+      },
+    });
+
+    const manifest = await build(root);
+    for (const name of ['AccountLinks', 'AccountPairs']) {
+      const links = manifest.objects[`${APP}:${name}`];
+      expect(links?.extendsTypeArgQualified).toBe(`${VENDOR}:Account`);
+      expect(links?.collectionOf).toBe(`${VENDOR}:Account`);
+      expect(crud(links)).toEqual([]);
+    }
+    expect(crud(manifest.objects[`${APP}:Account`]).length).toBe(5);
+  });
+
   // A subclass that names no item holds the item its ancestor fixes (it
   // inherits the static `_itemClass`), never a model its own name suggests.
   it('gives a collection named after an open model the closed item its ancestor fixes', async () => {
