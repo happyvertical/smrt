@@ -54,9 +54,12 @@ node build                          # start the server with the same exports
 smrt app open                       # opens the one-time /setup?token=... link; create the owner there
 ```
 
-`node build` alone never prints a setup link: the shell passes no
-`onBootstrapInvitation`, so the link comes from `smrt app setup` (it is saved in
-the app's state folder, not the data folder). If the link is lost, stop the
+`node build` alone never prints a setup link, but a first start on a fresh data
+folder (no owner yet) now saves the one-time link itself, so `smrt app start`
+then `smrt app open` lands on Create owner without `smrt app setup` (the server
+writes it to the app's state folder, 0600, only when none is saved or the saved
+one is older than the token's 10-minute life (a running server checks every minute and renews an expired, unclaimed link); the token is never logged and the claim removes it). The link is not
+in the data folder. If the link is lost, stop the
 server and run `smrt app recover` for a new one. Setup is loopback only and
 single use. Health: `GET /api/_runtime/health`.
 
