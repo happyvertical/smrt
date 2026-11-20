@@ -724,6 +724,49 @@ describe('parents', () => {
     ]);
   });
 
+  it.each([
+    './models/',
+    './models',
+  ])('accepts %s when the directory package.json only marks the module format', async (specifier) => {
+    const { errors, model } = await scanProject({
+      'src/models/package.json': JSON.stringify({ type: 'module' }),
+      'src/models/index.ts': CLOSED_BASE('Event'),
+      'src/Meeting.ts': CHILD(`import { Event } from '${specifier}';`),
+    });
+
+    expect(errors).toEqual([]);
+    expect(fieldNames(model('Meeting')?.allFields)).toEqual([
+      'closedOnly',
+      'room',
+    ]);
+  });
+
+  it.each([
+    [
+      'beside the index it could also load',
+      { main: './index.js' },
+      true,
+      'could name more than one file',
+    ],
+    [
+      'as the only candidate',
+      { exports: { '.': './lib/event.js' } },
+      false,
+      'declares the entry it loads',
+    ],
+  ])('rejects a directory whose package.json declares an entry %s', async (_label, manifest, withIndex, reason) => {
+    const { errors, model } = await scanProject({
+      'src/models/package.json': JSON.stringify(manifest),
+      ...(withIndex ? { 'src/models/index.ts': OPEN_BASE('Event') } : {}),
+      'src/Meeting.ts': CHILD(`import { Event } from './models/';`),
+    });
+
+    expect(errors).toHaveLength(1);
+    expect(errors[0].message).toContain(reason);
+    expect(errors[0].message).toContain(join('src', 'models', 'package.json'));
+    expect(fieldNames(model('Meeting')?.allFields)).toEqual(['room']);
+  });
+
   it('accepts a variant imported by its full name', async () => {
     const { errors, model } = await scanProject({
       'src/models/Base.ios.ts': CLOSED_BASE('Event'),

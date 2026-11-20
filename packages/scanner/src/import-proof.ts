@@ -147,6 +147,34 @@ const NON_MODULE_VARIANTS: ReadonlySet<string> = new Set([
 const VARIANT_REST = /^([A-Za-z0-9_-]+)\.(?:d\.)?[mc]?[jt]sx?$/;
 
 /**
+ * Fields of a directory's package.json that choose the file a directory
+ * import loads, for TypeScript or a bundler.
+ */
+const DIRECTORY_ENTRY_FIELDS = [
+  'main',
+  'module',
+  'exports',
+  'types',
+  'typings',
+  'browser',
+] as const;
+
+/**
+ * Whether the package.json at `manifest` exists and declares the entry its
+ * directory loads (or cannot be read, so it might).
+ */
+function declaresDirectoryEntry(manifest: string): boolean {
+  if (!isFile(manifest)) return false;
+  try {
+    const json = JSON.parse(readFileSync(manifest, 'utf8')) as unknown;
+    if (!json || typeof json !== 'object' || Array.isArray(json)) return true;
+    return DIRECTORY_ENTRY_FIELDS.some((field) => Object.hasOwn(json, field));
+  } catch {
+    return true;
+  }
+}
+
+/**
  * Keys of a package.json that only marks the module format of the files
  * below it (`dist/esm/package.json` with `{ "type": "module" }`). Such a file
  * declares no package; any other key (a name, dependencies, scripts,
@@ -375,9 +403,11 @@ export class ImportProver {
    * error. A module-suffix variant beside a candidate (`Base.ios.ts` beside
    * `Base.ts`, see {@link NON_MODULE_VARIANTS}) is an error too, whatever the
    * project's tsconfig says: the scan reads no tsconfig, and a variant is a
-   * file a `moduleSuffixes` setting or a bundler may load instead. The file
-   * must be one the scan reads; a file outside the scan is an error, never a
-   * reason to take another.
+   * file a `moduleSuffixes` setting or a bundler may load instead. A
+   * directory's package.json is a candidate only when it declares an entry
+   * (see {@link DIRECTORY_ENTRY_FIELDS}). The file must be one the scan
+   * reads; a file outside the scan is an error, never a reason to take
+   * another.
    */
   selectFile(
     fromFile: string,
@@ -391,15 +421,18 @@ export class ImportProver {
       for (const extension of extensions)
         candidates.push(`${stem}${extension}`);
     };
+    // A directory's package.json that declares an entry decides what the
+    // directory loads, so it is one more candidate; one that only marks the
+    // module format (`{ "type": "module" }`) chooses nothing.
+    const directoryEntry = (directory: string) => {
+      const manifest = join(directory, 'package.json');
+      if (declaresDirectoryEntry(manifest)) candidates.push(manifest);
+    };
     const written = /(\.d)?\.([mc]?)([tj])s(x?)$/.exec(base);
     // A trailing slash (`./Base/`) asks for the directory only.
     const directoryOnly = /[\\/]$/.test(specifier);
     if (directoryOnly) {
-      if (isFile(join(base, 'package.json'))) {
-        return {
-          reason: `'${specifier}' names a directory with its own package.json; import the file that declares the class`,
-        };
-      }
+      directoryEntry(base);
       add(join(base, 'index'), ['.ts', '.tsx', '.d.ts', '.js', '.jsx']);
     } else if (written) {
       // An explicit extension: TypeScript strips it and tries the
@@ -418,11 +451,7 @@ export class ImportProver {
       );
     } else {
       add(base, ['.ts', '.tsx', '.d.ts']);
-      if (isFile(join(base, 'package.json'))) {
-        return {
-          reason: `'${specifier}' names a directory with its own package.json; import the file that declares the class`,
-        };
-      }
+      directoryEntry(base);
       add(join(base, 'index'), ['.ts', '.tsx', '.d.ts']);
       add(base, ['.js', '.jsx']);
       add(join(base, 'index'), ['.js', '.jsx']);
@@ -447,6 +476,11 @@ export class ImportProver {
     }
     const selected = existing[0];
     if (!selected) return { reason: `'${specifier}' names no file` };
+    if (basename(selected) === 'package.json') {
+      return {
+        reason: `'${specifier}' names a directory whose package.json declares the entry it loads (${selected}); import the file that declares the class (\`${specifier.replace(/[\\/]+$/, '')}/index\`, or the class's own file)`,
+      };
+    }
     if (/\.d\.[mc]?ts$/.test(selected) || /\.[mc]?jsx?$/.test(selected)) {
       return {
         reason: `'${specifier}' selects ${selected}, which is not TypeScript source the scan reads; import the source file that declares the class`,
