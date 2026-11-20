@@ -26,6 +26,24 @@ function fixture() {
     .spyOn(ObjectRegistry, 'getCollection')
     .mockResolvedValue({ getStiChildMetaType: () => undefined } as never);
   const db = {
+    // What the SQLite adapter's `getTableSchema` reports (the engine reads
+    // column metadata through it, not through SQL of its own).
+    getTableSchema: async (table: string) => {
+      const rows = sqlite
+        .prepare('SELECT name, type, hidden FROM pragma_table_xinfo(?)')
+        .all(table) as { name: string; type: string; hidden: number }[];
+      return rows.length
+        ? {
+            tableName: table,
+            columns: Object.fromEntries(
+              rows.map((r) => [
+                r.name,
+                { type: r.type, generated: r.hidden > 1 },
+              ]),
+            ),
+          }
+        : null;
+    },
     query: async (
       sql: string,
       params: import('node:sqlite').SQLInputValue[] = [],
