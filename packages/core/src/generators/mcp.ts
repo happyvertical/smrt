@@ -3034,6 +3034,33 @@ const TOOL_TARGETS: Record<string, { objectName: string; action: string; registr
 // The models this server serves: a family member outside them is not served
 // through its base's tools.
 const SERVED_MODELS: ReadonlySet<string> = new Set(Object.values(TOOL_TARGETS).map((target) => target.registryKey || target.objectName));
+
+// Tenancy is decided when a tool is called, not when this server was
+// generated (#5375): when the application installed smrt-tenancy and the
+// tool's model (or a member of its STI family) is tenant-scoped now, a
+// registration made after generation included, the tenancy layer is turned
+// on before the tool runs.
+type ToolTenancyLayer = {
+  enableTenancy(): void;
+  isTenancyEnabled(): boolean;
+  isTenantScopedClass(name: string): boolean;
+};
+let toolTenancyLayer: ToolTenancyLayer | null | undefined;
+async function ensureToolTenancy(model: string): Promise<void> {
+  if (toolTenancyLayer === undefined) {
+    try {
+      const specifier = '@happyvertical/smrt-tenancy';
+      toolTenancyLayer = (await import(/* @vite-ignore */ specifier)) as ToolTenancyLayer;
+    } catch {
+      toolTenancyLayer = null;
+    }
+  }
+  const layer = toolTenancyLayer;
+  if (!layer || layer.isTenancyEnabled()) return;
+  if ([model, ...ObjectRegistry.getDescendants(model)].some((name) => layer.isTenantScopedClass(name))) {
+    layer.enableTenancy();
+  }
+}
 export function runtimeToolEnabled(name: string): boolean {
   if (!hasRuntimeExposureGate()) return true;
   const target = TOOL_TARGETS[name];
@@ -3202,6 +3229,7 @@ ${switchCases}
     // The request tenancy of the tool's model, resolved per call (#5375).
     const toolTarget = TOOL_TARGETS[name];
     const toolModel = toolTarget?.registryKey || toolTarget?.objectName;
+    if (toolModel) await ensureToolTenancy(toolModel);
     const result = toolModel
       ? await runToolInRequestTenancy(
           { model: toolModel, action: toolTarget.action, principal: { tenantId: MCP_TENANT_ID, allowCrossTenant: MCP_ALLOW_CROSS_TENANT, userId: process.env.SMRT_MCP_USER_ID, authenticated: true }, modelScope: SERVED_MODELS },

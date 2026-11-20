@@ -105,3 +105,6 @@ DDL, migration and OpenAPI digests have not moved since the recapture above.
   `modular/handlers/index.ts`) pass the models they serve to each tool's
   request tenancy, so a family member outside them is not served through its
   base.
+- MCP tenancy at call time (#5375): both MCP servers (`single/index.ts`,
+  `modular/handlers/index.ts`) turn the installed tenancy layer on when a
+  tool's model is tenant-scoped at call time.
