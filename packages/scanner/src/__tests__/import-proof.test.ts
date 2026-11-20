@@ -866,7 +866,7 @@ describe('parents', () => {
       'moduleSuffixes is unsupported by the scanner',
     );
     expect(errors[0].message).toContain(
-      'import files explicitly (`./Base.ios`) or remove the option',
+      'remove the option and import platform files explicitly (`./Base.ios`)',
     );
     expect(model('Meeting')).toBeDefined();
   });

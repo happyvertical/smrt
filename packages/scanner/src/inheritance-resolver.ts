@@ -931,8 +931,8 @@ export class InheritanceResolver {
   }
 
   /**
-   * A scan error for each `tsconfig*.json` in the project root that
-   * mentions `moduleSuffixes` (a plain text search; no tsconfig is parsed).
+   * A scan error for each tsconfig file the project uses (see
+   * `moduleSuffixesConfigs`) whose active text mentions `moduleSuffixes`.
    * The scan accepts a relative import by the files on disk and knows only
    * the platform suffix words; a configured suffix list could load another
    * file, so the scan fails closed rather than guess which.
@@ -942,7 +942,7 @@ export class InheritanceResolver {
     return moduleSuffixesConfigs(this.projectRoot).map((file) => ({
       message:
         `${file} mentions \`moduleSuffixes\`: moduleSuffixes is unsupported by the scanner, because it can make a relative import load ` +
-        'another file than the one the scan reads; import files explicitly (`./Base.ios`) or remove the option.',
+        'another file than the one the scan reads; remove the option and import platform files explicitly (`./Base.ios`).',
       filePath: file,
       severity: 'error' as const,
     }));
