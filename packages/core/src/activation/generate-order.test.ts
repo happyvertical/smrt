@@ -878,7 +878,39 @@ describe('generated activation order', () => {
       manifest.objects[ACOL].collectionOf = 'Customer';
       manifest.objects[ACOL].extendsTypeArg = PROVIDER;
       expect(() => generate(files, manifest)).toThrow(
-        `Activation cannot bind collection ${ACOL}: its declared item Customer (collectionOf) matches only ${OTHER} of another package`,
+        `Activation cannot bind collection ${ACOL}: its declared item Customer (collectionOf) matches 1 class of that name (${OTHER}) in package @activation/unrelated; that class is of another package, and its generic does not name it.`,
+      );
+    });
+
+    it('refuses a simple collectionOf that matches several classes of other packages, naming each candidate and package', () => {
+      const ONE = '@activation/one:Customer';
+      const TWO = '@activation/two:Customer';
+      const { files, manifest } = project([
+        { key: ONE },
+        { key: TWO },
+        { key: ACOL, collectionOf: ONE },
+      ]);
+      manifest.objects[ACOL].collectionOf = 'Customer';
+      expect(() => generate(files, manifest)).toThrow(
+        `Activation cannot bind collection ${ACOL}: its declared item Customer (collectionOf) matches 2 classes of that name (${ONE}, ${TWO}) in packages @activation/one, @activation/two; none is in its own package, and a simple name cannot choose between them.`,
+      );
+    });
+
+    it("refuses a simple collectionOf that matches two classes of the collection's own package, without blaming another package", () => {
+      const { files, manifest } = project([
+        { key: ITEM },
+        { key: ACOL, collectionOf: ITEM },
+      ]);
+      const ALIAS = `${HOST}:CustomerAlias`;
+      // A second key for a class of that simple name (legacy input that
+      // carries no qualifiedName).
+      manifest.objects[ALIAS] = {
+        ...manifest.objects[ITEM],
+        qualifiedName: undefined,
+      };
+      manifest.objects[ACOL].collectionOf = 'Customer';
+      expect(() => generate(files, manifest)).toThrow(
+        `Activation cannot bind collection ${ACOL}: its declared item Customer (collectionOf) matches 2 classes of that name (${ITEM}, ${ALIAS}) in package ${HOST}; 2 of them are in its own package ${HOST}, so the simple name is ambiguous.`,
       );
     });
 

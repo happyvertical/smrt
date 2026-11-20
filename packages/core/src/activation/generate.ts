@@ -191,6 +191,31 @@ function declaredCollectionItem(
     : undefined;
 }
 
+/**
+ * Why a simple `collectionOf` with same-named candidates bound none of them:
+ * several in the collection's own package, several of other packages, or one
+ * of another package that the collection's generic does not name.
+ */
+function unboundSimpleItem(
+  collection: SmartObjectDefinition,
+  candidates: [string, SmartObjectDefinition][],
+): string {
+  const own = candidates.filter(
+    ([, object]) => object.packageName === collection.packageName,
+  );
+  const packages = [
+    ...new Set(candidates.map(([, object]) => String(object.packageName))),
+  ];
+  const found = `matches ${candidates.length} ${candidates.length === 1 ? 'class' : 'classes'} of that name (${candidates.map(([key]) => key).join(', ')}) in ${packages.length === 1 ? 'package' : 'packages'} ${packages.join(', ')}`;
+  const why =
+    own.length > 1
+      ? `${own.length} of them are in its own package ${collection.packageName}, so the simple name is ambiguous.`
+      : candidates.length > 1
+        ? 'none is in its own package, and a simple name cannot choose between them.'
+        : 'that class is of another package, and its generic does not name it.';
+  return `its declared item ${collection.collectionOf} (collectionOf) ${found}; ${why}`;
+}
+
 interface OrderEdge {
   from: string;
   to: string;
@@ -245,16 +270,14 @@ function activationPlan(manifest: SmartObjectManifest) {
       // as the receiver of a different model.
       itemId = declaredCollectionItem(manifest, collection);
       if (!itemId) {
-        const foreign = collection.collectionOf.includes(':')
+        const candidates = collection.collectionOf.includes(':')
           ? []
-          : Object.entries(manifest.objects)
-              .filter(
-                ([, object]) => object.className === collection.collectionOf,
-              )
-              .map(([key]) => key);
-        if (foreign.length > 0)
+          : Object.entries(manifest.objects).filter(
+              ([, object]) => object.className === collection.collectionOf,
+            );
+        if (candidates.length > 0)
           throw new Error(
-            `Activation cannot bind collection ${id}: its declared item ${collection.collectionOf} (collectionOf) matches only ${foreign.join(', ')} of another package, which its generic does not name. Declare collectionOf as the qualified key of the model it serves.`,
+            `Activation cannot bind collection ${id}: ${unboundSimpleItem(collection, candidates)} Declare collectionOf as the qualified key of the model it serves.`,
           );
         throw new Error(
           `Activation cannot bind collection ${id}: its declared item ${collection.collectionOf} (collectionOf) is not in the manifest. Regenerate the manifest, or include the package that declares ${collection.collectionOf}.`,
