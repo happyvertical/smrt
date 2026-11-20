@@ -80,10 +80,17 @@
  *
  * Contention note: appends serialize on the head of the log. Each append is
  * one small INSERT (issued from the write path *after* the user's row was
- * written), so the serialization window is one statement; conflicts resolve
- * with a bounded retry loop and are impossible on single-writer engines
- * (SQLite). PostgreSQL invokes that INSERT through the framework-owned
- * `_smrt_append_change` function so failure isolation remains one statement.
+ * written), so the serialization window is one statement. On PostgreSQL every
+ * allocator takes the feed's transaction-scoped head lock before reading
+ * `MAX(seq)` (#5271): READ COMMITTED appenders wait their turn and then
+ * succeed instead of losing a primary-key race and retrying, and the drain
+ * only tries the lock so a reader never waits on the head. A
+ * REPEATABLE READ / SERIALIZABLE transaction stages instead, since its fixed
+ * snapshot could read a stale `MAX(seq)`. Conflicts that remain (older helper
+ * bodies mid-rollout) resolve with a time-budgeted retry loop; they are
+ * impossible on single-writer engines (SQLite). PostgreSQL invokes that INSERT
+ * through the framework-owned `_smrt_append_change` function so failure
+ * isolation remains one statement.
  *
  * ## Failure semantics
  *
@@ -904,12 +911,16 @@ export async function ensureChangeFeedTable(
  * interceptor catches and logs instead of failing the user's write.
  *
  * **Returns `null` for a staged append** (PostgreSQL, #2649): an append issued
- * inside a caller-managed transaction is written to `_smrt_changes_pending`
+ * inside a caller-managed transaction that has already written, or on a
+ * REPEATABLE READ / SERIALIZABLE transaction (#5271), is written to
+ * `_smrt_changes_pending`
  * and receives its sequence from the next {@link drainChangeFeed} after that
  * transaction commits, so no sequence exists to return yet. The entry is
  * durable and ordered — it simply is not numbered at this instant. Callers
  * that need the sequence (an SSE event id, say) must treat `null` as "not
- * available yet", never as a failure: a failure still throws.
+ * available yet", never as a failure: a failure still throws. Such an append
+ * also throws, with the database's `42P01`, when `_smrt_changes_pending` is
+ * missing: it is never allocated directly instead.
  *
  * **PostgreSQL transaction safety (#2026).** The INSERT runs inside the
  * framework-owned `_smrt_append_change` PL/pgSQL function. Its exception
@@ -1247,7 +1258,12 @@ export async function appendChanges(
  * Call it explicitly from a scheduled job when a deployment writes *only*
  * through transactions and reads the feed from a connection that cannot write
  * (a read replica or a read-only role), because neither self-draining path is
- * then available.
+ * then available. A drain on a REPEATABLE READ or SERIALIZABLE transaction
+ * allocates nothing (#5271), so a deployment whose default isolation is not
+ * READ COMMITTED must run this on a READ COMMITTED connection, or staged
+ * entries never become visible. When the head of the log is busy, or another
+ * session holds a `SHARE` lock on `_smrt_changes`, the drain returns without
+ * waiting and a later one sequences the rows.
  *
  * Best-effort by the feed's failure policy: a drain that cannot run leaves the
  * staged entries in place for the next attempt and never throws into the
