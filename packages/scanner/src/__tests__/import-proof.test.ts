@@ -703,10 +703,11 @@ describe('relationship targets and report sources', () => {
   });
 
   it.each([
-    ['inline', "@foreignKey(Account.name) ownerName = '';"],
-    ['thunk', "@foreignKey(() => Account.name) ownerName = '';"],
-  ])('rejects a class member as a %s target and names the string form', async (_label, decorator) => {
-    // The decorator reads `Account.name` at runtime: a property, not a class.
+    ['inline', "@foreignKey(Account.email) ownerEmail = '';"],
+    ['thunk', "@foreignKey(() => Account.email) ownerEmail = '';"],
+  ])('rejects a class member as a %s target and names both supported spellings', async (_label, decorator) => {
+    // `Account.email` is an instance field: undefined on the class, which
+    // the runtime decorator rejects.
     const scanned = await scanProject({
       'src/models/account.ts': ACCOUNT,
       'src/models/holder.ts': holder(
@@ -716,8 +717,31 @@ describe('relationship targets and report sources', () => {
     });
 
     expect(scanned.errors).toHaveLength(1);
-    expect(scanned.errors[0].message).toContain('Account.name');
-    expect(scanned.errors[0].message).toContain("'Account.name'");
+    const { message } = scanned.errors[0];
+    expect(message).toContain('`Account.email` is a property of `Account`');
+    expect(message).toContain('To target the class, write `Account`');
+    expect(message).toContain("write the string 'Account.email'");
+  });
+
+  it.each([
+    ['inline', "@foreignKey(Account.name) ownerId = '';"],
+    ['thunk', "@foreignKey(() => Account.name) ownerId = '';"],
+  ])("points a %s `Target.name` target at the class it names at runtime, not at a 'name' column", async (_label, decorator) => {
+    // `Account.name` is the string 'Account', which the decorator reads as
+    // the class; 'Account.name' would reference the column `name`.
+    const scanned = await scanProject({
+      'src/models/account.ts': ACCOUNT,
+      'src/models/holder.ts': holder(
+        `import { Account } from './account';`,
+        decorator,
+      ),
+    });
+
+    expect(scanned.errors).toHaveLength(1);
+    const { message } = scanned.errors[0];
+    expect(message).toContain('reads as the class `Account`');
+    expect(message).toContain("write `Account` (or 'Account')");
+    expect(message).not.toContain("'Account.name'");
   });
 
   it('rejects a relationship target imported through a tsconfig alias', async () => {

@@ -1650,7 +1650,11 @@ function thunkTarget(node: Expression): string | undefined {
   return returned ? classReferenceName(returned) : undefined;
 }
 
-/** `Target` or the dotted `Target.column` / `ns.Target` form, else `undefined`. */
+/**
+ * `Target`, `ns.Target`, or a member path such as `Target.column` (which
+ * `classIdentity` then refuses unless `ns` is a namespace import), else
+ * `undefined`.
+ */
 function classReferenceName(node: Expression): string | undefined {
   const expression = unwrapTypeAssertion(node);
   if (expression?.type === 'Identifier') return expression.name;
@@ -4713,7 +4717,13 @@ function extractRelationshipTarget(
       start: argument.start,
       ...(owner
         ? {
-            hint: `\`${reference}\` is a property of the class, not a class, and the decorator rejects it at runtime; name the class (\`${reference.slice(0, dot)}\`), or a column of it as a string ('${owner.value}${reference.slice(dot)}').`,
+            hint:
+              reference.slice(dot + 1) === 'name'
+                ? // A class's `name` is its name string, which the decorator
+                  // reads as the class; the string 'X.name' would instead
+                  // reference a column `name`.
+                  `\`${reference}\` is the class's name, which the decorator reads as the class \`${owner.value}\`; write \`${reference.slice(0, dot)}\` (or '${owner.value}') to keep that target.`
+                : `\`${reference}\` is a property of \`${reference.slice(0, dot)}\`, not a class reference the scan reads. To target the class, write \`${reference.slice(0, dot)}\`; to target its column \`${reference.slice(dot + 1)}\`, write the string '${owner.value}${reference.slice(dot)}'.`,
           }
         : {}),
     });

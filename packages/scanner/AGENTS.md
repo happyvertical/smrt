@@ -332,9 +332,11 @@ place, `toKnowledgeAgentSurface` in `vite-plugin/index.ts`.
 - **`@method()`**: `decoratorConfig` is `undefined` for an undecorated method
   and `{}` for a bare `@method()`; the two differ.
 - **Relationship targets are resolved, not copied**: `'Target'`, `Target` and
-  a `() => Target` thunk (inline, dotted, or a same-file constant) all yield
-  the class name, as the runtime decorator does (#2379). An argument that
-  names no class is a scan error, not `related: undefined`.
+  a `() => Target` thunk (inline, a namespace member `ns.Target`, or a
+  same-file constant) all yield the class name, as the runtime decorator does
+  (#2379). A column is named only by the string `'Target.column'`; a class
+  member in code (`Target.column`, `() => Target.column`) is a scan error. An
+  argument that names no class is a scan error, not `related: undefined`.
 
 
 ## Filesystem knowledge

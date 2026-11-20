@@ -183,7 +183,9 @@ TypeScript wrapper is looked through so an undecorated collection still
 reaches the manifest, and is then reported). A relationship target written as
 a class member in code (`Target.column`, `() => Target.column`) is an error
 too: the runtime decorator receives the property, not a class. A column is
-named with the string form `'Target.column'`.
+named with the string form `'Target.column'`. `Target.name` is the exception
+at runtime (the class's name string, read as the class), so its fix is
+`Target` or `'Target'`, never `'Target.name'`, which names a `name` column.
 
 A model's chain must be made of models: an undecorated scanned class counts as
 one only when its own chain reaches a framework base (or a configured base)
@@ -268,7 +270,7 @@ now stops the build. The message names the file, class and member.
 | ... from a package of which two different copies are installed (the importing file's and the build root's) | Install one copy |
 | A default import from a package, or an unimported global named like a framework base | Import the class by its name (`import { SmrtObject } from '@happyvertical/smrt-core'`) |
 | A superclass written as anything but `X` or `ns.X` (`X as T`, `X!`, `X satisfies T`, `Mixin(X)`, `Base.Inner`, `Base['Inner']`) | Write `extends X`, importing the parent class by its name |
-| A relationship target written as a class member (`@foreignKey(Target.column)`, `() => Target.column`) | Name the class, or the column as a string: `@foreignKey('Target.column')` |
+| A relationship target written as a class member (`@foreignKey(Target.column)`, `() => Target.column`) | Name the class, or the column as a string: `@foreignKey('Target.column')`; for `Target.name`, write `Target` |
 | A model whose chain passes through a scanned class that is not a model (a plain class, or an undecorated class over another package's class) | Decorate it with `@smrt({ abstract: true })`, or extend the model directly |
 | A relationship target, report source or collection item that is a plain class, or a stand-in for another package | Reference the model class |
 | A static `_itemClass` naming another class than `SmrtCollection<Item>` | Name the same model in both |
