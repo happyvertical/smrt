@@ -40,7 +40,12 @@ export type WorkerReply =
       ok: false;
       error: string;
       user: boolean;
-      reportError?: { code: RuntimeReportErrorCode; path: string };
+      reportError?: {
+        code: RuntimeReportErrorCode;
+        path: string;
+        /** Parser reason only: fixed grammar text, never SQL or a path. */
+        reason?: string;
+      };
     };
 
 export interface BootInfo {

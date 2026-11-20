@@ -72,6 +72,14 @@ export class ChangeCard extends SmrtObject {
   @field({ type: 'text' })
   questions: string = '[]';
 
+  /**
+   * The owner's comments on this card and the assistant's answers, JSON array
+   * text. Comments shipped inside `questions` (kind `comment`) in v0.62.14;
+   * `changes.ts` still reads those and moves them here on the next write.
+   */
+  @field({ type: 'text' })
+  comments: string = '[]';
+
   @field({ type: 'text' })
   threadId: string = '';
 

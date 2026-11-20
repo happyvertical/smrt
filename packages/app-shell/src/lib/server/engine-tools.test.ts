@@ -1,5 +1,6 @@
 import { parseRuntimeReportSpec } from '@happyvertical/smrt-reports';
 import { afterAll, beforeAll, expect, it } from 'vitest';
+import { ENGINE_TOOLS } from '../../engine/tool-definitions.ts';
 import { discardChanges, waitingCount } from './changes.ts';
 import { historyFor } from './drafts.ts';
 import { getHost } from './host.ts';
@@ -190,4 +191,63 @@ it.each([
   expect(host.version).toBe(version);
   expect(host.def).toEqual(definition);
   expect(await runAs(h.owner, () => waitingCount())).toBe(0);
+});
+
+it('runs a not-equal report however the filter is spelled, and explains a bad comparison in plain words (#5172)', async () => {
+  await callTool(h.owner, 'app_definemodel', {
+    name: 'Order',
+    fields: { status: { type: 'text' }, qty: { type: 'integer' } },
+  });
+  await applyWaiting(h.owner);
+  const host = await getHost();
+  for (const status of ['Open', 'Open', 'Cancelled', null])
+    await host.create('Order', { status, qty: 1 });
+  const count = async (filter: Record<string, unknown>) => {
+    const out = await callTool(h.owner, 'app_runreport', {
+      report: {
+        title: 'Orders',
+        source: 'Order',
+        measures: [{ fn: 'count', as: 'order_count' }],
+        filters: [filter],
+      },
+    });
+    if (out.isError) throw new Error(JSON.stringify(out.structuredContent));
+    return (out.structuredContent as { rows: { order_count: number }[] })
+      .rows[0].order_count;
+  };
+  const viaGrammar = await count({
+    field: 'status',
+    op: 'ne',
+    value: 'Cancelled',
+  });
+  for (const op of ['!=', '<>', 'neq', 'not_equal', 'notEqual', ' NE '])
+    expect(await count({ field: 'status', op, value: 'Cancelled' })).toBe(
+      viaGrammar,
+    );
+  expect(viaGrammar).toBeGreaterThanOrEqual(2);
+  const advertised = JSON.stringify(
+    ENGINE_TOOLS.find((t) => t.name === 'app_runreport'),
+  );
+  expect(advertised).toContain('eq, ne, gt');
+  const failed = await callTool(h.owner, 'app_runreport', {
+    report: {
+      title: 'Orders',
+      source: 'Order',
+      measures: [{ fn: 'count', as: 'order_count' }],
+      filters: [{ field: 'status', op: 'sounds-like', value: 'Open' }],
+    },
+  });
+  const value = failed.structuredContent as {
+    summary: string;
+    error: string;
+  };
+  expect(failed.isError).toBe(true);
+  // The model gets the path and the real reason so it can correct itself ...
+  expect(value.error).toContain('spec.filters[0].op');
+  expect(value.error).toContain('eq, ne');
+  expect(value.error).not.toContain('Report could not run');
+  // ... the owner gets one plain sentence the chip will actually show.
+  expect(value.summary).toBe(
+    'A filter in that report used a comparison the app cannot do, so nothing was run.',
+  );
 });

@@ -94,7 +94,7 @@ const onboarding = $derived(
 const plan = $derived(planLayout({ owner: isOwner && !onboarding, plugin }));
 // The chat column's open/closed choice, kept per owner on this device.
 const openKey = $derived(assistantOpenKey(data.session.user?.id));
-let panelOpen = $state(true);
+let panelOpen = $state(false);
 let remembered = $state(false);
 $effect(() => {
   const key = openKey;
@@ -148,7 +148,7 @@ onMount(() => {
   accountMenu={{ items: accountItems, theme: true }}
   colorSchemeToggle={false}
   edgeToggles={{ left: true }}
-  config={{ left: { initial: 'expanded' } }}
+  config={{ left: { initial: 'collapsed' } }}
   sidebarFooterDivider={false}
   phoneTabBar
   chrome={!page.route.id?.startsWith('/setup')}

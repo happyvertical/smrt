@@ -439,17 +439,17 @@ it.each([
 it.each([
   'api',
   'codex',
-] as const)('discards a draft whose calculated result fails proof (%s)', async (engine) => {
+] as const)('keeps the saved values of a calculation that fails proof (%s)', async (engine) => {
   testEngine = engine;
   await service.start(h.owner, await request(false, true));
   await worker();
   const current = await end();
-  expect(current.state).toBe('failed');
-  expect(current.findings?.some((f) => f.code === 'calculated-mismatch')).toBe(
-    true,
-  );
-  expect(await getDraftSlot()).toBeNull();
-  expect(Object.keys((await getHost()).describe().models)).toEqual([]);
+  // The 99 saved against 12.5 x 2 is not the product: the column keeps its
+  // saved values for review instead of discarding the whole import (#5168).
+  expect(current.state).toBe('done');
+  expect(current.untranslatedFormulas?.length).toBeGreaterThan(0);
+  expect(await getDraftSlot()).not.toBeNull();
+  await service.action(h.owner, 'discard');
 });
 it('holds edits and publishing during a partial load; a repeated check discards its prior draft', async () => {
   const original = (await import('../../engine/host.ts')).AppHost.prototype

@@ -31,16 +31,16 @@ describe('the chat column choice', () => {
     expect(shellStorageKey(null)).toBe('smrt-app-shell');
   });
 
-  it('is open until the owner closes it', () => {
+  it('is closed until the owner opens it', () => {
     const store = memory();
     const key = assistantOpenKey('a');
-    expect(readAssistantOpen(store, key)).toBe(true);
-    writeAssistantOpen(store, key, false);
-    expect(store.map.get(key)).toBe('0');
     expect(readAssistantOpen(store, key)).toBe(false);
-    expect(readAssistantOpen(store, assistantOpenKey('b'))).toBe(true);
     writeAssistantOpen(store, key, true);
+    expect(store.map.get(key)).toBe('1');
     expect(readAssistantOpen(store, key)).toBe(true);
+    expect(readAssistantOpen(store, assistantOpenKey('b'))).toBe(false);
+    writeAssistantOpen(store, key, false);
+    expect(readAssistantOpen(store, key)).toBe(false);
   });
 
   it('survives missing or throwing storage', () => {
@@ -52,9 +52,9 @@ describe('the chat column choice', () => {
         throw new Error('blocked');
       },
     };
-    expect(readAssistantOpen(broken, 'k')).toBe(true);
+    expect(readAssistantOpen(broken, 'k')).toBe(false);
     expect(() => writeAssistantOpen(broken, 'k', false)).not.toThrow();
-    expect(readAssistantOpen(null, 'k')).toBe(true);
+    expect(readAssistantOpen(null, 'k')).toBe(false);
   });
 });
 

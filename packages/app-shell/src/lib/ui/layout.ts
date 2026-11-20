@@ -31,15 +31,15 @@ export function shellStorageKey(ownerId?: string | null): string {
 type ReadableStorage = Pick<Storage, 'getItem'>;
 type WritableStorage = Pick<Storage, 'setItem'>;
 
-/** The remembered choice; the chat column is open until the owner closes it. */
+/** The remembered choice; the chat column is closed until the owner opens it. */
 export function readAssistantOpen(
   storage: ReadableStorage | null | undefined,
   key: string,
 ): boolean {
   try {
-    return storage?.getItem(key) !== '0';
+    return storage?.getItem(key) === '1';
   } catch {
-    return true;
+    return false;
   }
 }
 
