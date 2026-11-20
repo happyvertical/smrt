@@ -96,3 +96,6 @@ DDL, migration and OpenAPI digests have not moved since the recapture above.
   `sync/apply/+server.ts` resolve the request's tenancy through core
   (`enterRequestTenancy`) for every model, with no generation-time tenancy
   switch, and read the cache policy and validator from the bound tenancy.
+- MCP request tenancy (#5375): both MCP servers (`single/index.ts`,
+  `modular/handlers/index.ts`) run each tool inside the tenancy resolved for
+  its model at call time.

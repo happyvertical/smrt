@@ -393,7 +393,8 @@ import { applyUpdateInput, assertCreateInput, assertCreateTargetSurface, assertQ
 import { COOKBOOK_TOOL_NAMES, getCookbookToolService } from '@happyvertical/smrt-core/cookbook/tools';
 import { loadConfig } from '@happyvertical/smrt-config';
 ${hasTaskActions ? "import { McpTaskStore, TaskRunner } from '@happyvertical/smrt-jobs';\n" : ''}
-${hasTenantScoped ? "import { enableTenancy, runTenantScopedEntryPoint } from '@happyvertical/smrt-tenancy';\n" : ''}
+import { runToolInRequestTenancy } from '@happyvertical/smrt-core';
+${hasTenantScoped ? "import { enableTenancy } from '@happyvertical/smrt-tenancy';\n" : ''}
 // Server configuration
 const SERVER_NAME = ${JSON.stringify(name)};
 const SERVER_VERSION = ${JSON.stringify(version)};
@@ -415,19 +416,16 @@ function runtimeToolEnabled(name: string): boolean {
 
 const CUSTOM_ACTIONS = ${JSON.stringify(customActions)};
 const TASK_ACTIONS = ${JSON.stringify(taskActions)};
-${
-  hasTenantScoped
-    ? `
-// Fail-closed tenant context (#1554): tenant-scoped objects must run inside a
-// tenant. This stdio server has no auth principal, so the tenant is taken from
-// the environment; without it (and with tenancy enabled) tenant-scoped tools
-// throw rather than reading across all tenants.
-const TENANT_SCOPED = new Set(${JSON.stringify(tenantScopedSet)});
+
+// Fail-closed tenant context (#1554, #5375): every tool runs inside the
+// request tenancy its model has when it is called, decided per call, so a
+// model whose tenancy is registered after this server was generated is gated
+// too. This stdio server has no auth principal: the tenant is taken from the
+// environment; without it a tool on a tenant-scoped model is refused rather
+// than reading across all tenants.
 const MCP_TENANT_ID = process.env.SMRT_MCP_TENANT_ID || undefined;
 const MCP_ALLOW_CROSS_TENANT = process.env.SMRT_MCP_ALLOW_CROSS_TENANT === 'true';
-`
-    : ''
-}
+
 const PUBLIC_JSON_OPTIONS = {
   permissions: (process.env.SMRT_MCP_PERMISSIONS || '')
     .split(',')
@@ -902,21 +900,16 @@ ${switchCases}
               throw new Error(\`Unknown tool: \${toolName}\`);
           }
         };
-${
-  hasTenantScoped
-    ? `
-        // Fail-closed tenant context for tenant-scoped tools (#1554).
-        const toolObject = TOOL_TARGETS[toolName]?.objectName;
-        const result =
-          toolObject && TENANT_SCOPED.has(toolObject.toLowerCase())
-            ? await runTenantScopedEntryPoint(
-                { tenantScoped: true, tenantId: MCP_TENANT_ID, allowCrossTenant: MCP_ALLOW_CROSS_TENANT, surface: 'MCP' },
-                runToolBody,
-              )
-            : await runToolBody();`
-    : `
-        const result = await runToolBody();`
-}
+
+        // The request tenancy of the tool's model, resolved per call (#5375).
+        const toolTarget = TOOL_TARGETS[toolName];
+        const toolModel = toolTarget?.registryKey || toolTarget?.objectName;
+        const result = toolModel
+          ? await runToolInRequestTenancy(
+              { model: toolModel, action: toolTarget.action, principal: { tenantId: MCP_TENANT_ID, allowCrossTenant: MCP_ALLOW_CROSS_TENANT, userId: process.env.SMRT_MCP_USER_ID, authenticated: true } },
+              runToolBody,
+            )
+          : await runToolBody();
 
         if (DEBUG) {
           console.error(\`[MCP] Tool executed successfully: \${toolName}\`);
