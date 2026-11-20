@@ -130,6 +130,6 @@ describe.each(engines)('junction late collision on %s', (engine) => {
       await getChangesSince(db, { since: startCursor })
     ).changes.filter((change) => change.table === 'junction_late_links');
     expect(feed.map((change) => change.operation)).toEqual(['create']);
-    expect(feed[0].rowId.toLowerCase()).toBe(stored[0].toLowerCase());
+    expect(feed[0].rowId?.toLowerCase()).toBe(stored[0].toLowerCase());
   });
 });
