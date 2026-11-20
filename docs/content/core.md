@@ -651,15 +651,23 @@ const generator = new APIGenerator({
 - `{ tenantId }` runs the operation inside that tenant.
 - `{ allowCrossTenant: true }` runs it across tenants, for this request's
   operation only: on a GET it reads every tenant and writes no tenant-scoped
-  row of any model (a custom read action that saves one is refused). Inside a
+  row of any model (a custom read action that saves one is refused, from a
+  `withSystemContext()` block or a nested request scope too). Inside a
   tenant context the host entered, the grant does not widen it: the request
-  stays in that tenant, and a principal naming another tenant is refused. Only
-  for a principal that is explicitly cross-tenant.
+  stays in that tenant, and a principal naming another tenant is refused; a
+  GET with that grant still writes no tenant-scoped row. Only for a principal
+  that is explicitly cross-tenant.
 - Neither: a read of an optional-mode model serves rows without an owner
   only, a required-mode read is refused, and every write (create, update,
   delete, mutating custom action, sync item) is refused with
   `403 TENANT_CONTEXT_REQUIRED` (`401` for an anonymous caller), rows without
   an owner included. Write global rows from a system context.
+
+Code that enters a system context inside a request (`withSystemContext()`)
+acts as the system, and code that enters a tenant context in a request with
+no tenant acts in that tenant, as each does outside a request, except in a
+request admitted under a cross-tenant read grant, which writes no
+tenant-scoped row whatever context its code enters.
 
 Take the tenant from the principal your authentication verified, never from
 request input. A server that serves one tenant can set `APIContext.tenantId`

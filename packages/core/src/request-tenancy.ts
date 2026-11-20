@@ -25,6 +25,9 @@
  * - a read by a caller with no tenant of an optional-mode member sees only
  *   rows without an owner; a write by such a caller is refused, and so is a
  *   write under a cross-tenant read grant;
+ * - code that enters a system context inside the request acts as the system
+ *   (and code that enters a tenant context in a request with no tenant acts
+ *   in that tenant), except under a read grant, which no context lifts;
  * - a member whose tenancy changed after the request was admitted refuses
  *   the operation ({@link TenantPolicyChangedError}, 403) instead of adopting
  *   the new policy.
@@ -192,6 +195,13 @@ export interface RequestActor {
    * cross-tenant grant for this operation. A read grant never writes.
    */
   readonly system: 'read' | 'write' | null;
+  /**
+   * The request was admitted under a cross-tenant read grant (a nested
+   * resolution inherits it): no tenant-scoped row is written anywhere in
+   * the request, whatever tenant or system context its code enters, and
+   * even where a host-entered tenant context kept the request in one tenant.
+   */
+  readonly readGrant: boolean;
   /** The super-admin bypass flag is set for this request. */
   readonly bypass: boolean;
   /** Decides 401 (anonymous) or 403 for a refusal. */
@@ -802,7 +812,8 @@ export function readScope(
  * Whether a write to `member` (the route model by default) may run: a
  * tenant actor (the interceptor checks ownership), a system actor with a
  * write grant, or a bypass on a member that opts in. A caller with no
- * tenant never writes a tenant-scoped row, rows without an owner included.
+ * tenant never writes a tenant-scoped row, rows without an owner included,
+ * and neither does a request admitted under a read grant.
  *
  * @returns The refusal, or `undefined`
  */
@@ -812,14 +823,14 @@ export function writeGate(
 ): TenancyRefusal | undefined {
   if (t.failed !== undefined || isFailedMember(member)) return unresolved();
   if (!t.enforced || !member.scoped) return undefined;
-  if (t.actor.system === 'write') return undefined;
-  if (t.actor.system === 'read') {
+  if (t.actor.readGrant || t.actor.system === 'read') {
     return refusal(
       403,
       'TENANT_WRITE_REFUSED',
       'A cross-tenant read grant does not authorize a write.',
     );
   }
+  if (t.actor.system === 'write') return undefined;
   if (t.actor.tenantId) return undefined;
   if (bypassApplies(t, member)) return undefined;
   return contextRequired(t.actor);
@@ -1098,6 +1109,41 @@ function identityOf(className: string, context: InterceptorContext): string {
   return context.qualifiedClassName ?? className;
 }
 
+/**
+ * The bound tenancy as one collection call acts under it. Code that enters a
+ * system context inside the request acts as the system, and code that enters
+ * a tenant context in a request with no tenant acts in that tenant, as each
+ * does outside a request. A request admitted under a read grant (or already
+ * acting as the system or a tenant) keeps its admitted actor: no context its
+ * code enters lifts the read grant's write refusal. Membership and the bound
+ * policies are the request's either way.
+ */
+function actingTenancy(t: RequestTenancy): RequestTenancy {
+  if (!t.enforced || t.actor.readGrant || t.actor.system) return t;
+  const source = getTenantPolicySource();
+  if (!source) return t;
+  let actor: RequestActor | undefined;
+  if (source.systemContextActive()) {
+    actor = { ...t.actor, tenantId: null, system: 'write', bypass: false };
+  } else if (!t.actor.tenantId) {
+    const entered = getRequestTenantContext()?.tenantId;
+    if (typeof entered === 'string' && entered.length > 0) {
+      actor = {
+        ...t.actor,
+        tenantId: entered,
+        bypass: source.superAdminBypassActive() === true,
+      };
+    }
+  }
+  return actor ? Object.freeze({ ...t, actor: Object.freeze(actor) }) : t;
+}
+
+/** The bound tenancy as the current collection call acts under it. */
+function actingAtCall(): RequestTenancy | undefined {
+  const t = getResolvedTenancy();
+  return t ? actingTenancy(t) : undefined;
+}
+
 function inFamily(t: RequestTenancy, key: string): boolean {
   if (!t.admitted || !t.family) return false;
   return (
@@ -1290,7 +1336,7 @@ function createRequestTenancyInterceptor(): CollectionInterceptor {
     bulkMutation: { compatible: () => true },
 
     beforeList(className, options, context) {
-      const t = getResolvedTenancy();
+      const t = actingAtCall();
       if (!t) return;
       const key = identityOf(className, context);
       const family = inFamily(t, key);
@@ -1314,7 +1360,7 @@ function createRequestTenancyInterceptor(): CollectionInterceptor {
     },
 
     beforeGet(className, filter, context) {
-      const t = getResolvedTenancy();
+      const t = actingAtCall();
       if (!t) return;
       const key = identityOf(className, context);
       const family = inFamily(t, key);
@@ -1337,13 +1383,13 @@ function createRequestTenancyInterceptor(): CollectionInterceptor {
     },
 
     beforeSave(instance, context) {
-      const t = getResolvedTenancy();
+      const t = actingAtCall();
       if (!t) return;
       assertWritable(t, identityOf(context.className, context), instance);
     },
 
     beforeDelete(instance, context) {
-      const t = getResolvedTenancy();
+      const t = actingAtCall();
       if (!t) return;
       assertWritable(t, identityOf(context.className, context), instance);
     },

@@ -99,7 +99,11 @@ rule of `src/request-actor.ts`. Per request (per sync item, per tool call):
    widen it (the request stays in that tenant). A system actor comes from an
    active system context, or from `allowCrossTenant` outside a host-entered
    tenant context, and then for this operation only: on GET/HEAD (MCP
-   `list`/`get`) it is a read grant and never writes. The bypass needs the
+   `list`/`get`) it is a read grant and never writes. The actor records the
+   read grant (`readGrant`) even where a host-entered tenant kept the request
+   in one tenant, and a nested resolution (`runInRequestTenancy` inside the
+   request) inherits it, so such a request writes no tenant-scoped row
+   whatever context its code enters. The bypass needs the
    tenancy super-admin flag. A complete principal (`api.principalContext`)
    runs with its own permission snapshot even inside an active context of the
    same tenant. Runtime REST asks `resolveTenant` once per request object the
@@ -176,7 +180,11 @@ rule of `src/request-actor.ts`. Per request (per sync item, per tool call):
    or writing another model) is held to the same actor rules under its live
    policy: a caller with no tenant reads only its rows without an owner
    (required mode refuses) and writes none; a read grant writes no
-   tenant-scoped row of any model. Raw `query()` stays under the raw-query
+   tenant-scoped row of any model. Code that enters a system context inside
+   the request acts as the system, and code that enters a tenant context in
+   a request with no tenant acts in that tenant (each call is held to the
+   context active when it runs), except under a read grant, which no context
+   lifts. Raw `query()` stays under the raw-query
    policy, not this decision. The resolved members and admitted types are
    read-only, and owner stamping (`autoPopulate`) is bound with the policy.
    smrt-tenancy's interceptor reads the bound policy for every member

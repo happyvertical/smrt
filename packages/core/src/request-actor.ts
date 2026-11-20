@@ -15,7 +15,12 @@
  *    tenant context: the request stays in that tenant.
  * 4. A system actor comes only from an active system context, or from a
  *    cross-tenant grant, and then for this operation only: a grant on a read
- *    is a read grant and never authorizes a write.
+ *    is a read grant and never authorizes a write. A request admitted under
+ *    a read grant (`readGrant`, kept when a host-entered tenant narrows the
+ *    request and inherited by a nested resolution) writes no tenant-scoped
+ *    row anywhere, a system context inside it included; in any other request,
+ *    code that enters a system context acts as the system (and code that
+ *    enters a tenant context in a request with no tenant acts in it).
  * 5. The super-admin bypass only with the tenancy super-admin flag.
  * 6. Otherwise no tenant.
  */
@@ -31,6 +36,7 @@ import { ObjectRegistry } from './registry';
 import {
   customActionScope,
   enterResolvedTenancy,
+  getResolvedTenancy,
   getTenantPolicySource,
   type RequestActor,
   type RequestTenancy,
@@ -209,6 +215,14 @@ export function resolveRequestActor(input: RequestActorInput): RequestActor {
     }
   }
 
+  // A read grant is recorded before the host-entered tenant below can drop
+  // the grant, and a nested resolution inherits the outer request's: a
+  // request admitted under a read grant writes no tenant-scoped row,
+  // whatever context its code enters later.
+  const readGrant =
+    getResolvedTenancy()?.actor.readGrant === true ||
+    (grant && input.operation === 'read');
+
   // Rule 3: an active tenant context must agree with the principal, grant
   // or no grant.
   if (activeTenant) {
@@ -236,10 +250,15 @@ export function resolveRequestActor(input: RequestActorInput): RequestActor {
   }
 
   const systemContext = source?.systemContextActive() === true;
-  const system: RequestActor['system'] = systemContext
-    ? 'write'
-    : grant
-      ? input.operation
+  // Under a read grant, a system context (the grant's own, or one its code
+  // entered) is read authority only.
+  const system: RequestActor['system'] =
+    systemContext || grant
+      ? readGrant
+        ? 'read'
+        : systemContext
+          ? 'write'
+          : input.operation
       : null;
   const bypass =
     !system &&
@@ -251,6 +270,7 @@ export function resolveRequestActor(input: RequestActorInput): RequestActor {
     userId,
     permissions,
     system,
+    readGrant,
     bypass,
     authenticated: authenticated || !!activeTenant,
   });
