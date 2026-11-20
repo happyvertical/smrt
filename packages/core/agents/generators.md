@@ -83,107 +83,101 @@ Tests: `src/__tests__/update-input-fields.test.ts` executes all seven
 transports; `packages/cli/src/__tests__/cli-writable-policy.test.ts`;
 `packages/chat/src/tool-loop.test.ts`.
 
-### Tenant-scoped models: every operation runs in a tenant
+### Request tenancy: one resolver for every request path (#5375)
 
-The runtime REST server runs every operation on a tenant-scoped model through
-`runWithTenantGate` (`generators/tenant-gate.ts`), the gate the in-process MCP
-generator uses. The tenant comes from the host per request:
-`APIConfig.resolveTenant(req)` returns `{ tenantId?, allowCrossTenant?,
-authenticated? }` and is called once per request, after `authMiddleware`
-admitted it, with the request the middleware returned. Without it the fixed
-`APIContext.tenantId` / `allowCrossTenant` apply. That one answer is what the
-runtime exposure gate (`isRuntimeModelEnabled`), STI create targets and the
-tenant gate all read; the exposure gate therefore runs after authentication
-(a disabled model answers 404 to an admitted request). When the answer names
-no tenant, the tenant context the host already entered (`withTenant`) is the
-one exposure and create targets read, the one persistence runs in. Sync items
-resolve it per item, after the item's authorization. An explicitly
-cross-tenant caller's reads carry no global-rows scope (it reads every
-tenant's rows) and have an ETag representation of their own.
+Runtime REST, the emitted SvelteKit routes, both sync apply paths and both MCP
+surfaces decide tenancy in one place, `src/request-tenancy.ts`, with the actor
+rule of `src/request-actor.ts`. Per request (per sync item, per tool call):
 
-| Caller | Read | Write (create, update, delete, custom action, sync item) |
+1. **Actor.** `resolveRequestActor()`: the principal the transport settled
+   (REST `APIConfig.resolveTenant(req)`, an MCP context or
+   `SMRT_MCP_TENANT_ID`), else trusted `locals` (`tenantId`, then `user`,
+   `session`, `tenantContext`). An active tenant context must agree (a
+   different tenant or user is `RequestTenantConflictError`, rendered as the
+   plain `permission_denied` 403); without a principal tenant, the active
+   context is the actor. A system actor comes from an active system context,
+   or from `allowCrossTenant`, and then for this operation only: on GET/HEAD
+   (MCP `list`/`get`) it is a read grant and never writes. The bypass needs
+   the tenancy super-admin flag. The settled principal of #5195 replaces the
+   transport answer when it lands.
+2. **Policy.** `resolveRequestTenancy({ model, served, actor })` resolves the
+   model by strict identity (`resolveStrictModelKey`: an exact qualified key,
+   or a simple name exactly one class owns; never the first match) and reads
+   each policy from the `TenantPolicySource` smrt-tenancy installs
+   (`policyOf(key)`: absent, resolved or failed). A failed lookup, a source
+   that omits tenancy the registry declares, an unknown or ambiguous model, or
+   enabled tenancy with no source makes every decision refuse (403
+   `TENANT_POLICY_UNRESOLVED`). `served` is the STI members the route serves
+   for the operation (`servedFamilyTypes`: surface, server model list,
+   per-request admission).
+3. **STI membership.** A served member is admitted only when its policy
+   *equals* the route model's (scoped, mode, ownership columns,
+   `allowSuperAdminBypass`, bounded-hierarchy allowance). Every read, count,
+   point read, write and sync item on the family table is restricted to
+   `_meta_type in admitted` (positive: a stored type that is not registered,
+   or not admitted, never matches; a point read also names the registered
+   members left out, since a child collection replaces any type list with its
+   own subtree). A member left out is simply absent from lists and counts, a
+   point read answers 404, a base-route create that selects it is refused
+   (403 `TENANT_MEMBER_EXCLUDED`), and a sync item naming its row is
+   `not_found` (update) / an opaque `id_conflict` (create). Runtime REST
+   finds the row of an update or delete among the members the route reads;
+   the row's own model then decides the write (405 when it does not enable
+   it, else its authorization), as the sync path does.
+   The runtime warns once per family (`SMRT_MIXED_TENANCY_FAMILY`); `smrt
+   doctor` lists the families the manifest declares.
+4. **Decisions** (pure, on the frozen result): `readScope` (`open`,
+   `context`, `all`, `global-only` = `{ <ownership field>: null }`, or a
+   refusal: required mode with no tenant is 401/403), `writeGate` (a tenant,
+   a system actor with a write grant, or a bypass the member opts into; a
+   caller with no tenant never writes a tenant-scoped row, rows without an
+   owner included), `customActionScope` (a mutating action needs the write
+   gate; a read by a caller with no tenant runs only when its scanned
+   parameters carry the scope: one `options` parameter, or parameters named
+   after every ownership property; the names come from the scanned entry of
+   the receiver dispatched, so a collection method never borrows a same-named
+   item method's, and the server never parses a method's source),
+   `cachePolicy` (shared caching only when no admitted member is scoped, or,
+   with tenancy off, declares tenancy) and `etagDiscriminator` (actor scope,
+   admitted types and a fingerprint of every member policy).
+5. **Binding.** The operation runs inside `withResolvedTenancy()` (REST, sync
+   items, MCP tools) or after `enterResolvedTenancy()` (an emitted handler's
+   `enterTenancy(locals, operation)`), in the actor's tenant or system
+   context. The `smrt-request-tenancy` collection interceptor (priority 110,
+   installed on first bind) holds every collection call of the request,
+   custom action bodies included, to the bound decision: membership, the
+   rows-without-an-owner scope for a caller with no tenant, the write gate,
+   and a policy-changed check: a member whose live policy no longer matches
+   the bound one refuses with `TenantPolicyChangedError` (403
+   `TENANT_POLICY_CHANGED`, never adopted). smrt-tenancy's interceptor reads
+   the bound policy for every member (`boundMemberTenancy`).
+
+The manifest's `tenantScoped` flag selects nothing on a request path: emitted
+routes are generated with the same core calls for every model, so tenancy
+registered at run time (or after an MCP server was generated) is enforced
+like declared tenancy. A refusal is a typed error with `status`
+(`RequestTenancyError`), rendered by `normalizeTypedHttpError` on REST and the
+emitted routes, as a tool error on MCP, and as `auth_required` / `forbidden`
+on a sync item. A validator issued before a registration changed any member's
+policy never revalidates; a shared-cache copy issued before a run-time
+registration lives until its own `s-maxage`.
+
+| Caller | Read | Write (create, update, delete, mutating action, sync item) |
 |---|---|---|
-| Has a tenant | Inside that tenant | Inside that tenant |
-| `allowCrossTenant` | System context | System context |
-| Neither, optional-mode model | Global rows only (#1782) | Refused |
-| Neither, required-mode model | Refused | Refused |
-| A context the host already entered | Kept | Kept |
-| A tenant other than the context the host entered | Refused (403) | Refused (403) |
+| Has a tenant | That tenant (interceptor filter) | That tenant |
+| `allowCrossTenant` on a read | Every tenant | Refused (403 `TENANT_WRITE_REFUSED`) |
+| `allowCrossTenant` on a write / system context | Every tenant | Every tenant |
+| Neither, optional mode | Rows without an owner | Refused (401/403) |
+| Neither, required mode | Refused (401/403) | Refused |
+| A tenant other than the active context | Refused (403) | Refused (403) |
 
-A refusal is `{ error: { code: 'TENANT_CONTEXT_REQUIRED', status } }`: 403 for
-a signed-in caller, 401 for an anonymous one (no `authMiddleware`, or
-`authenticated: false`); a sync item is `rejected` with `forbidden` /
-`auth_required`. The read of a caller with no tenant stays outside the gate,
-which has no global-only mode; its #1782 scope and the interceptor's refusal
-go through the same error mapping. On runtime REST that exception covers the
-CRUD list, get and count handlers only: every custom collection action of a
-tenant-scoped model, GET included, runs inside the gate, so a caller with no
-tenant is refused it whatever the method's signature or scanned metadata (the
-decision reads no method metadata). A caller with a tenant, or an explicitly
-cross-tenant one, is served as before: a GET action's options carry the
-request's read scope, and a parameter named after an ownership property is
-handed its scope value, never a caller value under the parameter's transport
-name (such as `actionId` for `id`). The emitted SvelteKit routes still serve a
-caller with no tenant a custom collection GET action whose arguments carry the
-read scope (`readActionReceivesTenantScope`: a single `options` parameter, or
-parameters named after every ownership property the live registry reports);
-any other collection-scoped (or static) action of a tenant-scoped model calls
-`requireTenantWriteContext`, and one whose parameters name the manifest's
-ownership property (`tenantScoped.field`, else `tenantId`) decides again at
-request time against the properties `scopeTenantReadOptions` sets. A caller
-with no tenant never writes a tenant-scoped row, global rows included.
+The CLI is outside this contract (it runs with the operator's credentials;
+tracker issue per #5375 D2).
 
-A caller whose resolved tenant differs from a tenant context the host already
-entered is refused by `runTenantScopedEntryPoint` with `TenantIsolationError`;
-a host that names no tenant per request keeps its ambient context. Every
-`TENANT_ISOLATION_VIOLATION` (that refusal, the save-time natural-key
-ownership check, a filter outside the caller's tenant) is answered as a plain
-permission denial that names no tenant: `normalizeTypedHttpError` renders 403
-`{ code: 'permission_denied', message: 'Permission denied.' }` on runtime REST
-and the emitted SvelteKit routes, the MCP servers report the same code and
-text, and sync apply rejects the item `forbidden` (not the retryable
-`write_failed`). An isolation error that carries its own `publicMessage`
-(a package's typed refusal written for the caller) keeps its code and text.
-`TENANT_CONTEXT_REQUIRED` with no status of its own renders as 403 with the
-same code, so the emitted routes answer a required-mode read without a tenant
-with 403, not 500; their point lookups (GET, and the lookup before PUT and
-DELETE) go through `rejectRouteRead`, the list route through
-`rejectListQuery`.
-Tests: `packages/tenancy/src/__tests__/rest-request-tenant.test.ts`,
-`src/__tests__/tenant-isolation-refusal.test.ts`,
-`src/__tests__/rest-request-scope.test.ts` (exposure gate per tenant).
-
-The emitted SvelteKit routes read the tenant from `locals`
-(`establishTenantContext`) and then, for a mutating handler of a tenant-scoped
-model (create, update, delete, mutating custom action), call
-`requireTenantWriteContext(locals)`: with tenancy enabled and no tenant
-context it throws 403 (401 for an anonymous caller) unless a system context is
-active, or `locals.tenantContext.superAdminBypass === true` on a model that
-opts in with `tenantScoped: { allowSuperAdminBypass: true }` (the tenancy
-interceptor lifts its filter only for those; the sync route checks it per
-target). Every emitted route authenticates before the runtime exposure gate,
-and reads the request's tenant for it from the same `locals` sources the
-tenant helper enters (`tenantId`, `user.tenantId`, `session.tenantId`,
-`tenantContext.tenantId`), else from the tenant context already active for the
-request (a host may enter it itself); the emitted sync route checks exposure per item in
-`run`, after the item's authorization.
-
-The emitted sync-apply route and the CRUD routes are generated from one set
-of policy functions (`vite-plugin/route-policy.ts`): the read-only field list
-(`collectRouteReadonlyFields`: read-only, calculated and `displayLabel`), the
-writable allowlist, public access, the permission collection, and the tenant
-and principal helper (`generateTenantContextHelper`). The sync route takes the
-principal requirement per item (`api.principalContext` of the target) and
-rejects the item as `forbidden` when the CRUD helper would have thrown. Like
-the CRUD routes, it enters the caller's tenant for a target that is
-tenant-scoped at request time (`isTenantScopedModel`) even when its manifest
-declares no tenancy; a manifest without tenant-scoped models emits the core
-request-context form of the helper. The generated write gate for a model whose
-tenancy exists only at runtime is not emitted (#5345).
-
-Tests: `packages/tenancy/src/__tests__/rest-write-tenant-gate.test.ts` (real
-tenancy), `src/vite-plugin/sveltekit-generator.runtime.test.ts` and
-`src/vite-plugin/sync-apply-route.test.ts` (emitted handlers, executed).
+Tests: `packages/tenancy/src/__tests__/effective-tenancy-*.test.ts` (real
+tenancy, every transport), `src/__tests__/request-tenancy.test.ts`,
+`src/__tests__/sti-family-tenancy.pglite.test.ts`,
+`packages/cli/src/__tests__/doctor-sti-tenancy.test.ts`.
 
 ### Tool identifiers are non-empty strings
 
@@ -239,20 +233,10 @@ server could serve are put to the exposure gate and middleware
 on `api`), so a host needs no policy for a model it does not serve; a write to a
 subtype row checks the subtype's exposure too (`404` / `not_found`). Reads of
 an STI base under an `authMiddleware` vary by caller, so they are cached and
-validated like reads with permission-gated fields. The restriction narrows a
-caller's own `_meta_type` `in` filter to the types both name (none left serves
-nothing). The restriction also names the left-out members as
-`_meta_type not in` (a caller's own `not in` list joins it): the collection of
-a route model that is itself a subtype with subtypes of its own replaces any
-`_meta_type in` list with its subtree, and the exclusion keeps the two in
-force together (`src/__tests__/rest-sti-intermediate-route.test.ts`). A
-restricted point read resolves the segment as
-`collection.get()` does, so a slug still finds its row. An update, delete or
-sync write of a row whose own model is tenant-scoped, through a base that is
-not, runs in that model's tenant gate with the request's tenant
-(`runInRowTenantGate`), as a create already did. A sync item looks its row up
-under the same served-types restriction: a create naming a row of a subtype
-the route does not serve collides as `id_conflict`. A plain `new APIGenerator()` spans the whole registry,
+validated like reads with permission-gated fields. Membership is enforced by the bound request tenancy (above): a caller's own
+`_meta_type` filter is intersected with the admitted types (none left serves
+nothing), and a restricted point read resolves the segment as
+`collection.get()` does, so a slug still finds its row. A plain `new APIGenerator()` spans the whole registry,
 which may hold models the host never serves, so it does not refuse at
 construction. Tests: `src/__tests__/rest-model-identity.test.ts`.
 
