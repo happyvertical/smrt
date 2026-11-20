@@ -1183,7 +1183,7 @@ export class InheritanceResolver {
    *   the class passes is then not the item, so the ancestor's item is
    *   recorded in its place; a static `_itemClass` names the item the class
    *   narrows it to (proven like a parent); a class that passes neither
-   *   keeps what the scan read.
+   *   records the ancestor's item, which it holds at runtime.
    * - A class with a type argument below an ancestor that passes on another
    *   type parameter than its first: the item cannot be followed, which is a
    *   scan error.
@@ -1228,11 +1228,13 @@ export class InheritanceResolver {
     // An ancestor fixes the item: the class's own type argument is not it.
     // A static `_itemClass` names the item the class narrows it to (a
     // subclass collection of a model's subclass), proven like a parent. A
-    // class that names neither keeps what the scan read: nothing.
+    // class that names neither holds the ancestor's item at runtime (it
+    // inherits the static `_itemClass`), so it records that item: generation
+    // must never infer another item from the class's own name.
     if (this.itemClassField(classDef)?.initializer) {
       return this.proveRuntimeItem(classDef);
     }
-    return classDef.extendsTypeArg ? shape.item : undefined;
+    return shape.item;
   }
 
   /**

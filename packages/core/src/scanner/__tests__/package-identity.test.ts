@@ -1251,6 +1251,27 @@ describe('a collection of a package model', () => {
     expect(crud(vendorAccounts)).toEqual([]);
     expect(crud(manifest.objects[`${APP}:Account`]).length).toBe(5);
   });
+
+  // A subclass that names no item holds the item its ancestor fixes (it
+  // inherits the static `_itemClass`), never a model its own name suggests.
+  it('gives a collection named after an open model the closed item its ancestor fixes', async () => {
+    const root = await project({
+      providers: {},
+      app: {
+        'src/Account.ts': `${CORE}\n@smrt({ tableName: 'app_accounts' })\nexport class Account extends SmrtObject {}\n`,
+        'src/PrivateEntry.ts': `${CORE}\n@smrt({ api: false, tableName: 'private_entries' })\nexport class PrivateEntry extends SmrtObject {\n  hidden = '';\n}\n`,
+        'src/ClosedEntries.ts': `${CORE}\nimport { PrivateEntry } from './PrivateEntry';\nexport abstract class ClosedEntries extends SmrtCollection<PrivateEntry> {\n  static readonly _itemClass = PrivateEntry;\n}\n`,
+        'src/AccountCollection.ts': `${CORE}\nimport { ClosedEntries } from './ClosedEntries';\nexport class AccountCollection extends ClosedEntries {}\n`,
+      },
+    });
+
+    const manifest = await build(root);
+    const accounts = manifest.objects[`${APP}:AccountCollection`];
+    expect(accounts?.collectionOf).toBe(`${APP}:PrivateEntry`);
+    expect(accounts?.decoratorConfig?.tableName).toBe('private_entries');
+    expect(crud(accounts)).toEqual([]);
+    expect(crud(manifest.objects[`${APP}:Account`]).length).toBe(5);
+  });
 });
 
 describe('open control', () => {

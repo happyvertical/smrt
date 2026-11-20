@@ -1528,7 +1528,7 @@ describe('collection items through an app-level generic collection', () => {
     );
   });
 
-  it('takes the model a static _itemClass narrows an ancestor item to, and leaves a class naming no item alone', async () => {
+  it("takes the model a static _itemClass narrows an ancestor item to, and gives a class naming no item the ancestor's item", async () => {
     const { errors, manifest } = await scanProject({
       'src/models/Account.ts': OPEN_BASE('Account'),
       'src/models/Closed.ts': `${CLOSED_BASE('ClosedEntry')}\n@smrt()\nexport class SpecialEntry extends ClosedEntry {}\n`,
@@ -1541,7 +1541,23 @@ describe('collection items through an app-level generic collection', () => {
     expect(objects[`${PACKAGE}:SpecialEntries`]?.extendsTypeArg).toBe(
       'SpecialEntry',
     );
-    expect(objects[`${PACKAGE}:PlainEntries`]?.extendsTypeArg).toBeUndefined();
+    expect(objects[`${PACKAGE}:PlainEntries`]?.extendsTypeArg).toBe(
+      'ClosedEntry',
+    );
+  });
+
+  it('records the item an ancestor fixes for a subclass named after another model, with neither type argument nor _itemClass', async () => {
+    const { errors, manifest } = await scanProject({
+      'src/models/Account.ts': OPEN_BASE('Account'),
+      'src/models/Closed.ts': CLOSED_BASE('PrivateEntry'),
+      'src/collections/ClosedEntries.ts': `${CORE}\nimport { PrivateEntry } from '../models/Closed';\nexport abstract class ClosedEntries extends SmrtCollection<PrivateEntry> {\n  static readonly _itemClass = PrivateEntry;\n}\n`,
+      'src/collections/AccountCollection.ts': `${CORE}\nimport { ClosedEntries } from './ClosedEntries';\nexport class AccountCollection extends ClosedEntries {}\n`,
+    });
+
+    expect(errors).toEqual([]);
+    expect(
+      manifest().objects[`${PACKAGE}:AccountCollection`]?.extendsTypeArg,
+    ).toBe('PrivateEntry');
   });
 
   it('rejects a static _itemClass that is not a model, below an ancestor that fixes the item', async () => {
