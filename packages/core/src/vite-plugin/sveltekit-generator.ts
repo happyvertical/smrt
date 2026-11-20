@@ -3944,7 +3944,8 @@ function generateActionRouteHandler(
   // A mutating action on a tenant-scoped model needs a tenant too, and so
   // does a collection-scoped read whose arguments do not carry the scope: its
   // body reads through the collection with no tenant scope of its own
-  // (runtime REST refuses the same call, by the same rule). A read handed the
+  // (runtime REST refuses it too, as it refuses a caller with no tenant every
+  // custom collection action of a tenant-scoped model). A read handed the
   // scoped options whole, or the scope under parameters named after every
   // ownership property, is scoped through it (`scopeTenantReadOptions`), so a
   // caller with no tenant reads only rows without an owner.
@@ -3966,7 +3967,7 @@ function generateActionRouteHandler(
     // them, but the scope is injected from the live registry, which may name
     // more ownership properties. Decide again at request time against the
     // properties `scopeTenantReadOptions` sets (none when tenancy is off or a
-    // super-admin bypass applies), as runtime REST does.
+    // super-admin bypass applies).
     guardLines.push(
       `  if (Object.keys(scopeTenantReadOptions(${JSON.stringify(readScopeModel)}, {})).some((property) => !${JSON.stringify(parameterNames)}.includes(property))) requireTenantWriteContext(locals);`,
     );

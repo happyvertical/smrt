@@ -115,23 +115,20 @@ a signed-in caller, 401 for an anonymous one (no `authMiddleware`, or
 `authenticated: false`); a sync item is `rejected` with `forbidden` /
 `auth_required`. The read of a caller with no tenant stays outside the gate,
 which has no global-only mode; its #1782 scope and the interceptor's refusal
-go through the same error mapping. That exception covers the CRUD list, get
-and count handlers, and a custom collection GET action whose arguments carry
-the read scope (`readActionReceivesTenantScope`: a single `options` parameter
-handed the scoped options, or parameters named after every ownership property
-the live registry reports, each handed its scope value; no caller value under
-the parameter's transport name, such as `actionId` for `id`, reaches an
-ownership parameter). The parameter names
-come from scanned metadata only: an action with none (runtime REST serving a
-class without a manifest entry for the method) never qualifies, whatever its
-source declares, and the server never parses a method's source to decide. The
-metadata is that of the receiver dispatched: a collection method reads the
-collection class's own entry, never a same-named item method's.
-Every other custom collection action reads through the
-collection with no scope of its own, so for a caller with no tenant it runs
-inside the gate, which refuses it. The emitted SvelteKit routes apply the same
-rule: such a collection-scoped (or static) action of a tenant-scoped model
-calls `requireTenantWriteContext`; one whose parameters name the manifest's
+go through the same error mapping. On runtime REST that exception covers the
+CRUD list, get and count handlers only: every custom collection action of a
+tenant-scoped model, GET included, runs inside the gate, so a caller with no
+tenant is refused it whatever the method's signature or scanned metadata (the
+decision reads no method metadata). A caller with a tenant, or an explicitly
+cross-tenant one, is served as before: a GET action's options carry the
+request's read scope, and a parameter named after an ownership property is
+handed its scope value, never a caller value under the parameter's transport
+name (such as `actionId` for `id`). The emitted SvelteKit routes still serve a
+caller with no tenant a custom collection GET action whose arguments carry the
+read scope (`readActionReceivesTenantScope`: a single `options` parameter, or
+parameters named after every ownership property the live registry reports);
+any other collection-scoped (or static) action of a tenant-scoped model calls
+`requireTenantWriteContext`, and one whose parameters name the manifest's
 ownership property (`tenantScoped.field`, else `tenantId`) decides again at
 request time against the properties `scopeTenantReadOptions` sets. A caller
 with no tenant never writes a tenant-scoped row, global rows included.

@@ -87,16 +87,6 @@ function tenantOwnershipFields(className: string): Map<string, string> {
 }
 
 /**
- * The property names under which {@link scopeTenantReadOptions} sets the
- * scope for a class; empty when it is not tenant-scoped.
- *
- * @param className - Simple or qualified class name
- */
-export function tenantReadScopeProperties(className: string): string[] {
-  return [...tenantOwnershipFields(className).keys()];
-}
-
-/**
  * The scope of a read with no active tenant: `{ <ownership field>: null }`
  * for every ownership field, so only rows without an owner are served.
  *

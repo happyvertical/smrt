@@ -661,14 +661,11 @@ neither (naming a different tenant than that context is refused with 403).
 A request reaches a model in this order: authentication (`authMiddleware`, or
 the model's `api.public`), then the runtime exposure gate for the request's
 tenant (a switched-off model answers `404` only to an admitted caller), then
-the operation inside the tenant gate. For a caller with no tenant, a custom
-collection GET action of a tenant-scoped model whose arguments carry the read
-scope (a single `options` parameter, or parameters named after every
-ownership field) reads global rows only; every other custom collection action
-(a GET with no parameters or only other parameters, and every mutating action)
-is refused. A method the server has no scanned parameter metadata for never
-carries the scope, whatever its source declares, so a caller with no tenant
-is refused it; generate the manifest so the method's parameters are scanned.
+the operation inside the tenant gate. A caller with no tenant is refused
+every custom collection action of a tenant-scoped model, GET actions
+included, whatever the method's parameters; the CRUD list, get and count
+reads are the ones that serve it global rows. A caller with a tenant, or an
+explicitly cross-tenant one, is served custom actions as before.
 A refusal because a row belongs to another tenant is a plain
 `403 permission_denied`.
 

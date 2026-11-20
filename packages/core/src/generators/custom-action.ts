@@ -544,12 +544,13 @@ export function buildCustomActionInputSchema(
  * ownership properties (each handed its scope value). Any other parameter list
  * -- none, parameters that only carry the caller's input, or parameters naming
  * only some of the ownership properties -- reaches the method without the
- * whole scope, so the transports run such an action inside the tenant gate
- * instead (refused for a caller with no tenant). Runtime REST and the emitted
- * SvelteKit routes both decide with this rule, against the ownership
- * properties the live registry reports at request time. The names come from
- * scanned parameter metadata only; a method without it does not receive the
- * scope, and its source is never read to guess its parameters.
+ * whole scope, so the emitted SvelteKit routes run such an action inside the
+ * tenant gate instead (refused for a caller with no tenant), deciding against
+ * the ownership properties the live registry reports at request time. Runtime
+ * REST does not use this rule: it refuses a caller with no tenant every custom
+ * collection action of a tenant-scoped model. The names come from scanned
+ * parameter metadata only; a method without it does not receive the scope,
+ * and its source is never read to guess its parameters.
  *
  * @param parameterNames - The action's scanned parameter names, in order
  * @param ownershipProperties - The ownership property names of the model read

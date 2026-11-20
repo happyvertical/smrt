@@ -61,8 +61,16 @@ const ROW_GLOBAL = '99999999-0000-4000-8000-000000000009';
       'lineSeparator',
       'paragraphSeparator',
       'shadowed',
+      'browse',
+      'inherited',
+      'itemStatic',
+      'guarded',
     ],
     routes: {
+      browse: { method: 'GET', scope: 'collection' },
+      inherited: { method: 'GET', scope: 'collection' },
+      itemStatic: { method: 'GET', scope: 'collection' },
+      guarded: { method: 'GET', scope: 'collection' },
       recent: { method: 'GET', scope: 'collection' },
       latest: { method: 'GET', scope: 'collection' },
       unscanned: { method: 'GET', scope: 'collection' },
@@ -91,9 +99,62 @@ class ScopedMemo extends SmrtObject {
     if (options.title !== undefined) this.title = options.title;
     if (options.tenantId !== undefined) this.tenantId = options.tenantId;
   }
+
+  /** An instance method whose name the static below shares. */
+  async itemStatic(_options: Record<string, unknown> = {}) {
+    return { titles: [] as string[] };
+  }
+
+  /** A static read with no tenant scope of its own; the one a request reaches. */
+  static async itemStatic(): Promise<{ titles: string[] }> {
+    const rows = (await liveMemos?.list({})) ?? [];
+    return { titles: rows.map((row) => row.title).sort() };
+  }
+
+  /** An exposed static whose name a withheld collection method shares. */
+  static async guarded(): Promise<{ titles: string[] }> {
+    return { titles: [] };
+  }
 }
-class ScopedMemoCollection extends SmrtCollection<ScopedMemo> {
+
+/** Collection methods a subclass inherits. */
+class ScopedMemoCollectionBase extends SmrtCollection<ScopedMemo> {
+  /** A read with no tenant scope of its own, inherited by the subclass. */
+  async inherited(): Promise<{ titles: string[] }> {
+    const rows = await this.list({});
+    return { titles: rows.map((row) => row.title).sort() };
+  }
+}
+
+let guardedCalls = 0;
+let liveMemos: ScopedMemoCollection | undefined;
+
+class ScopedMemoCollection extends ScopedMemoCollectionBase {
   static readonly _itemClass = ScopedMemo;
+
+  /** A static of the same name as the inherited instance method. */
+  static async inherited(
+    _options: Record<string, unknown> = {},
+  ): Promise<{ titles: string[] }> {
+    return { titles: [] };
+  }
+
+  /** Withheld by its own declaration; ignores its options. */
+  async guarded(
+    _options: Record<string, unknown> = {},
+  ): Promise<{ titles: string[] }> {
+    guardedCalls += 1;
+    const rows = await this.list({});
+    return { titles: rows.map((row) => row.title).sort() };
+  }
+
+  /** Scanned as taking options; reads with them as the filter. */
+  async browse(options: Record<string, unknown> = {}): Promise<{
+    titles: string[];
+  }> {
+    const rows = await this.list({ where: options });
+    return { titles: rows.map((row) => row.title).sort() };
+  }
 
   /** A collection-scoped read with no tenant scope of its own. */
   async recent(): Promise<{ titles: string[] }> {
@@ -195,6 +256,49 @@ class ScopedWorkspaceCollection extends SmrtCollection<ScopedWorkspace> {
   }
 }
 
+/** A model whose collection class shares its simple name with another's. */
+@smrt({
+  api: {
+    include: ['list', 'tally'],
+    routes: { tally: { method: 'GET', scope: 'collection' } },
+  },
+})
+@TenantScoped({ mode: 'optional' })
+class ScopedTally extends SmrtObject {
+  @field({ type: 'text' })
+  title = '';
+
+  @tenantId({ nullable: true })
+  tenantId: string | null = null;
+
+  constructor(options: any = {}) {
+    super(options);
+    if (options.title !== undefined) this.title = options.title;
+    if (options.tenantId !== undefined) this.tenantId = options.tenantId;
+  }
+}
+const TallyCollection = (() => {
+  class SharedNameCollection extends SmrtCollection<ScopedTally> {
+    static readonly _itemClass = ScopedTally;
+
+    /** A read with no tenant scope of its own. */
+    async tally(): Promise<{ titles: string[] }> {
+      const rows = await this.list({});
+      return { titles: rows.map((row) => row.title).sort() };
+    }
+  }
+  return SharedNameCollection;
+})();
+/** Another package's collection class of the same simple name. */
+const OtherPackageCollection = (() => {
+  class SharedNameCollection extends SmrtCollection<ScopedTally> {
+    async tally(options: Record<string, unknown> = {}) {
+      return options;
+    }
+  }
+  return SharedNameCollection;
+})();
+
 /** A natural key that omits the tenant: the shape the ownership check guards. */
 @smrt({
   api: { include: ['list', 'get', 'create'] },
@@ -232,11 +336,13 @@ describe('runtime REST request tenant', () => {
   let memos: ScopedMemoCollection;
   let legacy: ScopedLegacyMemoCollection;
   let workspaces: ScopedWorkspaceCollection;
+  let tallies: InstanceType<typeof TallyCollection>;
   const serve = (config: APIConfig) => {
     const api = new APIGenerator({ basePath: '/api', ...config });
     api.registerCollection('memos', memos as never);
     api.registerCollection('legacymemos', legacy as never);
     api.registerCollection('workspaces', workspaces as never);
+    api.registerCollection('tallies', tallies as never);
     return api.generateHandler();
   };
   let handler: (req: Request) => Promise<Response>;
@@ -277,6 +383,83 @@ describe('runtime REST request tenant', () => {
       isPublic: true,
       isStatic: true,
     } as never);
+    // `browse` is scanned as taking the options a scope is set in.
+    ObjectRegistry.getMethods('ScopedMemoCollection').set('browse', {
+      name: 'browse',
+      parameters: [{ name: 'options', type: 'object', optional: true }],
+      returnType: 'Promise<any>',
+      isPublic: true,
+    } as never);
+    // The scanned `inherited` is the collection class's STATIC method taking
+    // options; a request reaches the inherited instance method.
+    ObjectRegistry.getMethods('ScopedMemoCollection').set('inherited', {
+      name: 'inherited',
+      parameters: [{ name: 'options', type: 'object', optional: true }],
+      returnType: 'Promise<any>',
+      isPublic: true,
+      isStatic: true,
+    } as never);
+    // The scanned `itemStatic` is the item's INSTANCE method taking options;
+    // a request reaches the static method of the same name.
+    ObjectRegistry.getMethods('ScopedMemo').set('itemStatic', {
+      name: 'itemStatic',
+      parameters: [{ name: 'options', type: 'object', optional: true }],
+      returnType: 'Promise<any>',
+      isPublic: true,
+      isStatic: false,
+    } as never);
+    // `guarded`: an exposed item static taking nothing, and a collection
+    // method taking options that its own declaration withholds.
+    ObjectRegistry.getMethods('ScopedMemo').set('guarded', {
+      name: 'guarded',
+      parameters: [],
+      returnType: 'Promise<any>',
+      isPublic: true,
+      isStatic: true,
+    } as never);
+    ObjectRegistry.getMethods('ScopedMemoCollection').set('guarded', {
+      name: 'guarded',
+      parameters: [{ name: 'options', type: 'object', optional: true }],
+      returnType: 'Promise<any>',
+      isPublic: true,
+      decoratorConfig: { expose: false },
+    } as never);
+    // Two collection classes named `SharedNameCollection` in two packages:
+    // the other package's one, registered first, takes options; the one the
+    // `tallies` route serves takes nothing, as the item's entry records.
+    ObjectRegistry.register(OtherPackageCollection as never, {
+      packageName: '@fixture/other-package',
+    });
+    ObjectRegistry.register(TallyCollection as never, {
+      packageName: '@fixture/tally-package',
+    });
+    for (const pkg of ['@fixture/other-package', '@fixture/tally-package']) {
+      ObjectRegistry.getMethods(`${pkg}:SharedNameCollection`).clear();
+    }
+    ObjectRegistry.getMethods(
+      '@fixture/other-package:SharedNameCollection',
+    ).set('tally', {
+      name: 'tally',
+      parameters: [{ name: 'options', type: 'object', optional: true }],
+      returnType: 'Promise<any>',
+      isPublic: true,
+    } as never);
+    ObjectRegistry.getMethods(
+      '@fixture/tally-package:SharedNameCollection',
+    ).set('tally', {
+      name: 'tally',
+      parameters: [],
+      returnType: 'Promise<any>',
+      isPublic: true,
+    } as never);
+    ObjectRegistry.getMethods('ScopedTally').set('tally', {
+      name: 'tally',
+      parameters: [],
+      returnType: 'Promise<any>',
+      isPublic: true,
+      isStatic: true,
+    } as never);
+    ObjectRegistry.registerCollection('ScopedTally', TallyCollection as never);
     // `latest` takes a page size, not the options a scope is set in.
     // `unscanned` has no registered metadata at all.
     ObjectRegistry.getMethods('ScopedMemoCollection').set('latest', {
@@ -304,11 +487,20 @@ describe('runtime REST request tenant', () => {
     db = await getTestDatabase({
       type: 'sqlite',
       url: join(dir, 'app.db'),
-      classes: ['ScopedMemo', 'ScopedLegacyMemo', 'ScopedWorkspace'],
+      classes: [
+        'ScopedMemo',
+        'ScopedLegacyMemo',
+        'ScopedWorkspace',
+        'ScopedTally',
+      ],
     });
     memos = await ScopedMemoCollection.create({ db });
+    liveMemos = memos;
     legacy = await ScopedLegacyMemoCollection.create({ db });
     workspaces = await ScopedWorkspaceCollection.create({ db });
+    tallies = (await TallyCollection.create({ db })) as InstanceType<
+      typeof TallyCollection
+    >;
     enableTenancy();
     handler = serve({
       authMiddleware: () => async (req) =>
@@ -347,7 +539,12 @@ describe('runtime REST request tenant', () => {
         tenantId: TENANT_B,
       } as never);
       await memos.create({ id: ROW_GLOBAL, title: 'global' } as never);
+      await db.query(`DELETE FROM ${tallies.tableName}`);
+      await tallies.create({ title: 'a', tenantId: TENANT_A } as never);
+      await tallies.create({ title: 'b', tenantId: TENANT_B } as never);
+      await tallies.create({ title: 'global' } as never);
     });
+    guardedCalls = 0;
   });
 
   afterAll(async () => {
@@ -622,9 +819,61 @@ describe('runtime REST request tenant', () => {
     });
   });
 
-  describe('a collection method sharing its name with a scanned item static method', () => {
-    it('is not admitted by the item method signature for a caller with no tenant', async () => {
-      const response = await call(handler, 'GET', 'memos/shadowed', {
+  describe('a custom collection read of a tenant-scoped model, whatever its signature', () => {
+    // Whether a caller with no tenant may run a custom collection read does
+    // not depend on which method signature the server finds for the action.
+    const SIGNATURES: Array<[string, string]> = [
+      ['scanned as taking options', 'memos/browse'],
+      ['sharing its name with a scanned item static method', 'memos/shadowed'],
+      [
+        'inherited by a collection declaring a static method of its name',
+        'memos/inherited',
+      ],
+      [
+        'hosted as an item static sharing its name with a scanned item instance method',
+        'memos/itemStatic',
+      ],
+      [
+        'on a collection class sharing its simple name with another package',
+        'tallies/tally',
+      ],
+    ];
+
+    it.each(
+      SIGNATURES,
+    )('%s is refused for a caller with no tenant', async (_label, path) => {
+      const response = await call(handler, 'GET', path, {
+        as: 'user-without-tenant',
+      });
+      expect(response.status).toBe(403);
+      expect(await response.json()).toMatchObject({
+        error: { code: 'TENANT_CONTEXT_REQUIRED', status: 403 },
+      });
+    });
+
+    it.each(
+      SIGNATURES,
+    )('%s serves a caller with a tenant its own rows', async (_label, path) => {
+      const response = await call(handler, 'GET', path, { as: 'user-of-a' });
+      expect(response.status).toBe(200);
+      expect(await response.json()).toMatchObject({
+        result: { titles: ['a'] },
+      });
+    });
+
+    it.each([
+      ['memos/inherited'],
+      ['tallies/tally'],
+    ])('%s still serves an explicitly cross-tenant caller', async (path) => {
+      const response = await call(handler, 'GET', path, { as: 'operator' });
+      expect(response.status).toBe(200);
+      expect(await response.json()).toMatchObject({
+        result: { titles: ['a', 'b', 'global'] },
+      });
+    });
+
+    it('withheld on the collection and exposed on the item is never run for a caller with no tenant', async () => {
+      const response = await call(handler, 'GET', 'memos/guarded', {
         as: 'user-without-tenant',
       });
       expect(response.status).toBe(403);
@@ -632,48 +881,49 @@ describe('runtime REST request tenant', () => {
       expect(text).not.toContain('"a"');
       expect(text).not.toContain('"b"');
       expect(text).not.toContain('"global"');
+      expect(guardedCalls).toBe(0);
     });
 
-    it('serves a caller with a tenant its own rows', async () => {
-      const response = await call(handler, 'GET', 'memos/shadowed', {
+    it('withheld on the collection and exposed on the item serves a caller with a tenant no other tenant rows', async () => {
+      const response = await call(handler, 'GET', 'memos/guarded', {
         as: 'user-of-a',
       });
-      expect(response.status).toBe(200);
-      expect(await response.json()).toMatchObject({
-        result: { titles: ['a'] },
-      });
+      const text = await response.text();
+      expect(text).not.toContain('"b"');
+      expect(text).not.toContain('"global"');
     });
   });
 
   describe('a custom collection read naming an ownership property called id', () => {
-    const ownerOf = async (query: string, as: string) => {
+    it('is refused for a caller with no tenant', async () => {
       const response = await call(
         handler,
         'GET',
-        `workspaces/ownerOf${query}`,
-        {
-          as,
-        },
+        `workspaces/ownerOf?actionId=${TENANT_B}&label=kept`,
+        { as: 'user-without-tenant' },
       );
-      expect(response.status).toBe(200);
-      return ((await response.json()) as { result: unknown }).result;
-    };
+      expect(response.status).toBe(403);
+      expect(await response.text()).not.toContain(TENANT_B);
+    });
 
     it.each([
       ['its transport name', `?actionId=${TENANT_B}&label=kept`],
       ['its property name', `?id=${TENANT_B}&label=kept`],
       ['both names', `?id=${TENANT_B}&actionId=${TENANT_B}&label=kept`],
-    ])('takes the scope, not the caller value under %s, for a caller with no tenant', async (_label, query) => {
-      expect(await ownerOf(query, 'user-without-tenant')).toEqual({
-        id: null,
+    ])('takes the caller tenant, not the caller value under %s, for a caller with a tenant', async (_label, query) => {
+      const response = await call(
+        handler,
+        'GET',
+        `workspaces/ownerOf${query}`,
+        {
+          as: 'user-of-a',
+        },
+      );
+      expect(response.status).toBe(200);
+      expect(((await response.json()) as { result: unknown }).result).toEqual({
+        id: TENANT_A,
         label: 'kept',
       });
-    });
-
-    it('takes the caller tenant, not the caller value, for a caller with a tenant', async () => {
-      expect(
-        await ownerOf(`?actionId=${TENANT_B}&label=kept`, 'user-of-a'),
-      ).toEqual({ id: TENANT_A, label: 'kept' });
     });
   });
 

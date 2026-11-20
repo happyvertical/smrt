@@ -63,7 +63,6 @@ import {
   isTenantScopedModel,
   resolveAnonymousTenantReadScope,
   scopeTenantReadOptions,
-  tenantReadScopeProperties,
 } from '../tenant-read-scope';
 import {
   DISPLAY_LABEL_FIELD,
@@ -93,7 +92,6 @@ import {
   customActionParameterInputName,
   declaresRuntimeRestRouteShape,
   normalizeCustomActionFailure,
-  readActionReceivesTenantScope,
   readMethodDecoratorConfig,
   resolveCustomActionMetadata,
   resolveEffectiveActionMetadata,
@@ -1450,29 +1448,6 @@ export class APIGenerator {
   }
 
   /**
-   * The method view for an action dispatched on the collection instance: the
-   * collection class's own scanned entry, else only the `@method()` config of
-   * the resolved view with every item-derived signature field dropped.
-   */
-  private collectionReceiverMethod(
-    collection: SmrtCollection<SmrtObject>,
-    methodName: string,
-    resolved: MethodDefinition | undefined,
-  ): MethodDefinition | undefined {
-    const scanned = ObjectRegistry.getMethods(collection.constructor.name)?.get(
-      methodName,
-    );
-    if (scanned) {
-      return scanned.decoratorConfig || !resolved?.decoratorConfig
-        ? scanned
-        : { ...scanned, decoratorConfig: resolved.decoratorConfig };
-    }
-    return resolved?.decoratorConfig
-      ? ({ decoratorConfig: resolved.decoratorConfig } as MethodDefinition)
-      : undefined;
-  }
-
-  /**
    * Refuse a request that matched a DECLARED action's own path and verb but
    * whose action is withheld — or return `null` to let it fall through.
    *
@@ -1624,17 +1599,10 @@ export class APIGenerator {
         continue;
       }
 
-      // Parameter metadata belongs to the receiver that is dispatched. A
-      // collection method reads its own scanned entry; a same-named item
-      // method's signature is never used for it, so a collection method with
-      // no scanned entry counts as unscanned.
-      const dispatchedMethod = isCollectionHosted
-        ? this.collectionReceiverMethod(collection, actionName, declaredMethod)
-        : declaredMethod;
       const metadata = resolveCustomActionMetadata({
         actionName,
         apiConfig,
-        ...(dispatchedMethod ? { method: dispatchedMethod } : {}),
+        ...(declaredMethod ? { method: declaredMethod } : {}),
         // A collection instance method is collection-hosted even when it is
         // not static; a static on the item class already defaults the same
         // way. Either receiver makes this route collection-targeted.
@@ -1736,26 +1704,13 @@ export class APIGenerator {
         ? buildCustomActionInvocationArgs(metadata, actionInput)
         : [options];
 
-      // A read whose scanned parameters carry the scope
-      // (`scopeTenantReadOptions` above) is scoped through them: a single
-      // options parameter, or parameters named after every ownership property.
-      // Without scanned parameter metadata the server cannot know what the
-      // scoped options reach, and it never infers that from the method's
-      // source, so such a read counts as receiving nothing. Any action body
-      // that does not receive the scope reads through the collection with no
-      // tenant scope of its own; `gateAction` puts it inside the tenant gate,
-      // which refuses a caller with no tenant and changes nothing for a caller
-      // with a tenant or an explicitly cross-tenant one.
-      const receivesScopedOptions =
-        routeMethod === 'GET' &&
-        metadata.parameters !== undefined &&
-        readActionReceivesTenantScope(
-          metadata.parameters.map((parameter) => parameter.name),
-          tenantReadScopeProperties(objectName),
-        );
-      const result = await (receivesScopedOptions
-        ? invoke(invocationArgs)
-        : gateAction(async () => invoke(invocationArgs)));
+      // A custom collection action runs inside `gateAction`, which refuses a
+      // caller with no tenant on a tenant-scoped model and changes nothing
+      // for a caller with a tenant or an explicitly cross-tenant one. The
+      // decision never depends on the method's signature: the scoped options
+      // above are what a tenant-bearing caller's read receives, not a reason
+      // to admit a caller with no tenant.
+      const result = await gateAction(async () => invoke(invocationArgs));
 
       const failure = normalizeCustomActionFailure(result);
       if (failure) {

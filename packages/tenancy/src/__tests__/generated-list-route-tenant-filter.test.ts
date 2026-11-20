@@ -600,24 +600,8 @@ describe('emitted SvelteKit list route with the real tenant interceptor', () => 
       );
     }
 
-    // The runtime REST transport over the same collection, anonymous. It
-    // reads the scanned parameters of the collection GET actions from the
-    // live registry, as an application that loaded its manifest does.
-    // A loaded manifest records a collection-hosted action's parameters under
-    // the collection class, which is registered for them.
-    for (const collectionClass of [
-      EmittedRouteBulletinCollection,
-      EmittedRouteFlyerCollection,
-    ]) {
-      ObjectRegistry.register(collectionClass as never, {});
-      ObjectRegistry.getMethods(collectionClass.name).clear();
-      for (const methodName of ['browse', 'readOrg', 'readTenant']) {
-        ObjectRegistry.getMethods(collectionClass.name).set(
-          methodName,
-          optionsMethod(methodName) as never,
-        );
-      }
-    }
+    // The runtime REST transport over the same collection. It names no
+    // tenant per request: a caller acts in the tenant context it entered.
     const rest = new APIGenerator({ basePath: '/api' }, { db });
     rest.registerCollection('bulletins', bulletins as never);
     rest.registerCollection('flyers', flyers as never);
@@ -1127,25 +1111,31 @@ describe('emitted SvelteKit list route with the real tenant interceptor', () => 
           rest: 'bulletins',
           globalId: () => bulletinIds.everyone,
           globals: ['bulletin for everyone', 'bulletin for everyone, labelled'],
+          ours: ['our bulletin'],
         },
         {
           model: 'emittedrouteflyers',
           rest: 'flyers',
           globalId: () => flyerIds.everyone,
           globals: ['flyer for everyone'],
+          ours: ['our flyer'],
         },
       ])('custom GET action options of $model never take ownership from the caller', ({
         model,
         rest,
         globalId,
         globals,
+        ours,
       }) => {
-        const restAction = async (path: string) => {
-          const response = await bulletinRest(
-            new Request(`http://local/api/${rest}/${path}`),
+        // Runtime REST refuses a caller with no tenant every custom
+        // collection read of a tenant-scoped model; a caller in a tenant
+        // context gets that tenant as the scope.
+        const restRequest = (path: string) =>
+          bulletinRest(new Request(`http://local/api/${rest}/${path}`));
+        const restActionInOurs = async (path: string) =>
+          actionResult(
+            await withTenant({ tenantId: OURS }, () => restRequest(path)),
           );
-          return actionResult(response);
-        };
 
         it('a collection action reading the ownership property gets the scope', async () => {
           for (const query of [
@@ -1155,7 +1145,8 @@ describe('emitted SvelteKit list route with the real tenant interceptor', () => 
             expect(
               await actionResult(await call(`${model}/read-org`, {}, query)),
             ).toBeNull();
-            expect(await restAction(`readOrg${query}`)).toBeNull();
+            expect((await restRequest(`readOrg${query}`)).status).toBe(401);
+            expect(await restActionInOurs(`readOrg${query}`)).toBe(OURS);
           }
         });
 
@@ -1165,7 +1156,10 @@ describe('emitted SvelteKit list route with the real tenant interceptor', () => 
               await call(`${model}/read-tenant`, {}, `?tenantId=${THEIRS}`),
             ),
           ).toBe('absent');
-          expect(await restAction(`readTenant?tenantId=${THEIRS}`)).toBe(
+          expect(
+            (await restRequest(`readTenant?tenantId=${THEIRS}`)).status,
+          ).toBe(401);
+          expect(await restActionInOurs(`readTenant?tenantId=${THEIRS}`)).toBe(
             'absent',
           );
         });
@@ -1176,9 +1170,12 @@ describe('emitted SvelteKit list route with the real tenant interceptor', () => 
               await call(`${model}/browse`, {}, `?organizationId=${THEIRS}`),
             ),
           ).toEqual(globals);
-          expect(await restAction(`browse?organizationId=${THEIRS}`)).toEqual(
-            globals,
-          );
+          const refused = await restRequest(`browse?organizationId=${THEIRS}`);
+          expect(refused.status).toBe(401);
+          expect(await refused.text()).not.toContain('for everyone');
+          expect(
+            await restActionInOurs(`browse?organizationId=${THEIRS}`),
+          ).toEqual(ours);
         });
 
         it('a named ownership parameter gets the scope, not the caller, on collection and item actions', async () => {
