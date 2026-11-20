@@ -107,6 +107,12 @@ export interface TenantPolicySource {
    * A bypass never applies inside such a scope.
    */
   hierarchyReadCollections(): readonly string[] | undefined;
+  /**
+   * A canonical key of the active bounded hierarchy read scope (its
+   * collections, allowed tenants and whether rows without an owner are
+   * included), when one is active: part of a read's validator.
+   */
+  hierarchyReadScopeKey?(): string | undefined;
   /** Run `fn` inside a tenant context, or a system context. */
   runInContext<T>(
     context: RequestTenancyContext | 'system',
@@ -466,6 +472,11 @@ export interface RequestTenancy {
   readonly excluded: readonly string[];
   /** A digest of every member policy and the registry generation. */
   readonly fingerprint: string;
+  /**
+   * The bounded hierarchy read scope active at resolution (its key), or
+   * `null`: the rows a read returns depend on it.
+   */
+  readonly hierarchy: string | null;
   /** Why resolution failed; every decision then refuses. */
   readonly failed?: string;
 }
@@ -544,6 +555,17 @@ function fingerprintOf(members: Iterable<MemberTenancy>): string {
   return `${getRegistryGeneration()}|${parts.join(';')}`;
 }
 
+/** The key of the active bounded hierarchy read scope, when tenancy is on. */
+function hierarchyKeyOf(enforced: boolean): string | null {
+  if (!enforced) return null;
+  try {
+    return getTenantPolicySource()?.hierarchyReadScopeKey?.() ?? null;
+  } catch {
+    // A key that cannot be read keys nothing reusable.
+    return `unreadable:${Date.now()}:${Math.random()}`;
+  }
+}
+
 /**
  * Resolve the tenancy of one request: the route model's policy, the policy
  * of every STI member it serves, the admitted types, and the frozen actor.
@@ -571,6 +593,7 @@ export function resolveRequestTenancy(
       creatable: null,
       excluded: Object.freeze([]),
       fingerprint: fingerprintOf([route]),
+      hierarchy: null,
     });
   }
   if (!model) {
@@ -586,6 +609,7 @@ export function resolveRequestTenancy(
       creatable: null,
       excluded: Object.freeze([]),
       fingerprint: fingerprintOf([route]),
+      hierarchy: hierarchyKeyOf(enforced),
       failed: route.failed,
     });
   }
@@ -639,6 +663,7 @@ export function resolveRequestTenancy(
     creatable: creatable ? new FrozenSet(creatable) : null,
     excluded: Object.freeze(excluded),
     fingerprint: fingerprintOf(members.values()),
+    hierarchy: hierarchyKeyOf(enforced),
     ...(isFailedMember(route) ? { failed: route.failed } : {}),
   });
 }
@@ -922,7 +947,8 @@ export function etagDiscriminator(t: RequestTenancy): string | undefined {
       ? `t:${t.actor.tenantId}${t.actor.bypass ? ':bypass' : ''}`
       : 't:global';
   const admitted = t.admitted ? [...t.admitted].sort().join(',') : '';
-  return `${actor}|${admitted}|${t.fingerprint}`;
+  const hierarchy = t.hierarchy === null ? '' : `|h:${t.hierarchy}`;
+  return `${actor}|${admitted}|${t.fingerprint}${hierarchy}`;
 }
 
 /**

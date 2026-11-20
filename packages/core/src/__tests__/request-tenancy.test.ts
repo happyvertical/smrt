@@ -19,6 +19,7 @@ import {
   resolveRequestActor,
 } from '../request-actor.js';
 import {
+  etagDiscriminator,
   RequestTenancyError,
   readScope,
   resolveRequestTenancy,
@@ -279,6 +280,42 @@ describe('request tenancy resolution', () => {
     expect(Object.isFrozen(t.route)).toBe(true);
     expect(Object.isFrozen(t.actor)).toBe(true);
     expect(t.route.autoPopulate).toBe(true);
+  });
+
+  it('the validator discriminator changes with the bounded hierarchy read scope', () => {
+    let hierarchy: string | undefined;
+    setDispatchTenantResolver(() => undefined);
+    setTenantPolicySource({
+      policyOf: (key) => policies.get(key) ?? { kind: 'absent' },
+      systemContextActive: () => false,
+      superAdminBypassActive: () => false,
+      hierarchyReadCollections: () => undefined,
+      hierarchyReadScopeKey: () => hierarchy,
+      runInContext: (_context, fn) => fn(),
+    });
+    policies.set(keyOf(ResolverLedger), {
+      kind: 'resolved',
+      policy: {
+        mode: 'optional',
+        field: 'tenantId',
+        allowSuperAdminBypass: false,
+      },
+    });
+    const discriminator = () =>
+      etagDiscriminator(
+        resolveRequestTenancy({
+          model: keyOf(ResolverLedger),
+          actor: anonymous(),
+        }),
+      );
+    const none = discriminator();
+    hierarchy = JSON.stringify([['ledger'], ['tenant-a'], false]);
+    const narrow = discriminator();
+    hierarchy = JSON.stringify([['ledger'], ['tenant-a', 'tenant-b'], true]);
+    const wide = discriminator();
+    expect(new Set([none, narrow, wide]).size).toBe(3);
+    hierarchy = JSON.stringify([['ledger'], ['tenant-a'], false]);
+    expect(discriminator()).toBe(narrow);
   });
 
   it('a route that requires a complete principal refuses one without a tenant, user or permissions', () => {

@@ -984,6 +984,16 @@ export function enableTenancy(options: TenantInterceptorOptions = {}): void {
     systemContextActive: () => isSystemContext(),
     superAdminBypassActive: () => isSuperAdminBypass(),
     hierarchyReadCollections: () => getTenantHierarchyReadScope()?.collections,
+    hierarchyReadScopeKey: () => {
+      const scope = getTenantHierarchyReadScope();
+      return scope
+        ? JSON.stringify([
+            [...scope.collections].sort(),
+            [...scope.tenantIds].sort(),
+            scope.includeGlobal === true,
+          ])
+        : undefined;
+    },
     // Extra fields of a context core refreshes (its database, metadata) are
     // kept; tenant, user and permissions are core's.
     runInContext: (context, fn) =>

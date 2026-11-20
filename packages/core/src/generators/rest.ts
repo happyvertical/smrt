@@ -1794,6 +1794,7 @@ export class APIGenerator {
         req,
         this.toPublicData(object),
         cacheControl,
+        objectName ? etagDiscriminator(this.tenancyOf(req)) : undefined,
       );
     }
 
@@ -1906,7 +1907,12 @@ export class APIGenerator {
     ) {
       // Hash the public payload: permissions and linked-table writes can
       // change it without advancing the parent table version.
-      return conditionalJsonResponse(req, await buildPayload(), cacheControl);
+      return conditionalJsonResponse(
+        req,
+        await buildPayload(),
+        cacheControl,
+        objectName ? etagDiscriminator(this.tenancyOf(req)) : undefined,
+      );
     }
 
     // ETag v2 (#1765): resolve the policy + table-version ETag first, then

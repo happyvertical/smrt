@@ -47,9 +47,15 @@ export const PRIVATE_READ_CACHE_CONTROL = 'private, no-cache';
  * SHA-256 of the exact JSON text, base64url-encoded and quoted per RFC 9110.
  * Deterministic for a given body, so any change to the underlying data (which
  * changes the serialized JSON) changes the ETag.
+ *
+ * @param discriminator - The request tenancy the body was read under
+ *   (`etagDiscriminator`): a change of tenancy changes the ETag even when the
+ *   body is the same. Omitted, the ETag is the body's hash alone.
  */
-export function computeBodyEtag(body: string): string {
-  return `"${createHash('sha256').update(body).digest('base64url')}"`;
+export function computeBodyEtag(body: string, discriminator?: string): string {
+  const hash = createHash('sha256');
+  if (discriminator !== undefined) hash.update(`${discriminator}\u0000`);
+  return `"${hash.update(body).digest('base64url')}"`;
 }
 
 /**
@@ -264,9 +270,10 @@ export function conditionalJsonResponse(
   request: Request,
   payload: unknown,
   cacheControl: string,
+  discriminator?: string,
 ): Response {
   const body = JSON.stringify(payload);
-  const etag = computeBodyEtag(body);
+  const etag = computeBodyEtag(body, discriminator);
 
   if (ifNoneMatchSatisfied(request.headers.get('if-none-match'), etag)) {
     return new Response(null, {
@@ -624,8 +631,12 @@ import { createHash } from 'node:crypto';
 ${options.runtimeExposure ? "import { hasRuntimeExposureGate as runtimeExposureGateActive } from '@happyvertical/smrt-core';" : ''}
 const READ_CACHE_CONTROL = '${cacheControl}';
 ${liveImport}
-function bodyEtag(body: string): string {
-  return \`"\${createHash('sha256').update(body).digest('base64url')}"\`;
+function bodyEtag(body: string, discriminator?: string): string {
+  // The request tenancy the body was read under keys the ETag too, so a
+  // tenancy change revalidates nothing even when the body is the same.
+  const hash = createHash('sha256');
+  if (discriminator !== undefined) hash.update(\`\${discriminator}\\u0000\`);
+  return \`"\${hash.update(body).digest('base64url')}"\`;
 }
 
 function ifNoneMatchSatisfied(header: string | null, etag: string): boolean {
@@ -640,7 +651,7 @@ function ifNoneMatchSatisfied(header: string | null, etag: string): boolean {
 
 function conditionalJson(request: Request, payload: unknown): Response {
   const body = JSON.stringify(payload);
-  const etag = bodyEtag(body);
+  const etag = bodyEtag(body, ${liveModel ? 'tenancyEtagDiscriminator()' : 'undefined'});
   if (ifNoneMatchSatisfied(request.headers.get('if-none-match'), etag)) {
     return new Response(null, {
       status: 304,
