@@ -115,6 +115,23 @@ export class OptionChild extends OptionBase {
     expect(errors[0].message).toContain('identifier or a string literal key');
   });
 
+  it.each([
+    ["['']", "''"],
+    ["['__proto__']", "'__proto__'"],
+  ])('fails on a decorated field named %s instead of dropping it', (key, expression) => {
+    // An undecorated member of that name carries no options; it is skipped
+    // as before.
+    const { errors, fields } = scanModel(
+      `@field({ sensitive: true }) ${key} = '';\nplain = '';\nstatic ${key} = '';`,
+    );
+
+    expect(errors).toHaveLength(1);
+    expect(errors[0].message).toContain(expression);
+    expect(errors[0].message).toContain('OptionAccount');
+    expect(errors[0].message).toContain('non-empty name');
+    expect(fields.plain).toBeDefined();
+  });
+
   it('reads values declared as same-file constants', () => {
     const { errors, fields } = scanModel(
       `

@@ -4577,12 +4577,24 @@ function extractPropertyDefinition(
   }
 
   const name = getPropertyKey(node.key);
-  if (!name) return null;
   // Reject prototype-polluting field names before they become manifest map keys
   // (a field literally named `__proto__`/`constructor`/`prototype`). The
   // type-alias/enum/object-literal extractors already gate on this; field
-  // definitions must too (review #1559).
-  if (!isSafeObjectKey(name)) return null;
+  // definitions must too (review #1559). A decorated field the manifest
+  // cannot carry under its name (none, empty, or one of those) is a scan
+  // error: dropping it would drop its options with it.
+  if (!name || !isSafeObjectKey(name)) {
+    if (node.decorators?.length && ctx) {
+      ctx.unresolved.push({
+        expression: sliceSource(node.key, sourceText) ?? '<key>',
+        start: node.start,
+        decorator: 'field decorator',
+        ...(className ? { className } : {}),
+        hint: 'A decorated field must have a non-empty name other than `__proto__`, `constructor` or `prototype`: rename the field.',
+      });
+    }
+    return null;
+  }
 
   // Get type annotation
   const typeAnnotation = node.typeAnnotation
