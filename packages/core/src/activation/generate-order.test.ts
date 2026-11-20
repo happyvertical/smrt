@@ -655,6 +655,34 @@ describe('generated activation order', () => {
       );
     });
 
+    it.each([
+      '@happyvertical/smrt-core::SmrtObject',
+      '@happyvertical/smrt-core:x:SmrtObject',
+      ':SmrtObject',
+      '@happyvertical/smrt-core:',
+      '@happyvertical/smrt-core: SmrtObject',
+      '@activation/customer::Customer',
+    ])('rejects a malformed qualified extends %j without extendsQualified, naming the object and extends', (value) => {
+      const { files, manifest } = project([
+        { key: `${HOST}:Child`, parent: PROVIDER },
+        { key: PROVIDER },
+      ]);
+      delete manifest.objects[`${HOST}:Child`].extendsQualified;
+      manifest.objects[`${HOST}:Child`].extends = value;
+      expect(() => generate(files, manifest)).toThrow(
+        new RegExp(`${HOST}:Child declares an invalid extends`),
+      );
+    });
+
+    it('accepts a well-formed qualified framework extends without extendsQualified as no parent', () => {
+      const { files, manifest } = project([{ key: `${HOST}:Child` }]);
+      manifest.objects[`${HOST}:Child`].extends =
+        '@happyvertical/smrt-core:SmrtObject';
+      expect(
+        generate(files, manifest).manifest.models[`${HOST}:Child`].parent,
+      ).toBe(undefined);
+    });
+
     it('rejects a blank extends even when extendsQualified is valid', () => {
       const { files, manifest } = project([
         { key: `${HOST}:Child`, parent: PROVIDER },

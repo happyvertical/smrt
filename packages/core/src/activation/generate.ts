@@ -99,6 +99,12 @@ function resolveParents(manifest: SmartObjectManifest) {
       throw new Error(
         `${id} declares an invalid extendsQualified: ${JSON.stringify(qualified)} is not a package-qualified class name`,
       );
+    // A qualified `extends` is held to the same form before anything below
+    // reads a package or class out of it (a framework base included).
+    if (extendsName?.includes(':') && !QUALIFIED.test(extendsName))
+      throw new Error(
+        `${id} declares an invalid extends: ${JSON.stringify(extendsName)} is not a package-qualified class name`,
+      );
     if (
       extendsName?.includes(':') &&
       qualified !== undefined &&
