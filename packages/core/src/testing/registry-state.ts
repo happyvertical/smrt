@@ -64,8 +64,9 @@ function getRegistryForTests(): RegistryTestSurface {
 export function snapshotObjectRegistryState(): () => void {
   const restoreGenerated = snapshotGeneratedClassState();
   const restoreRetired = snapshotRegisteredRetiredTables();
-  // clear() also drops replacement lineage and consumer policies; without them
-  // a replaced parent resolves to its replacement and its chain loops.
+  // clear() also drops replacement lineage, the run-time coexistence set and
+  // consumer policies; without them a replaced parent resolves to its
+  // replacement and its chain loops.
   const restoreLineage = snapshotSubtypeLineage();
   const restoreOverrides = snapshotRuntimeOverrides();
   const legacyFields = new Map(
