@@ -57,11 +57,14 @@ const ListOnlyCollisionRestFixture = (() => {
   return CollisionRestFixture;
 })();
 
-class CollisionRestFixtureCollection extends SmrtCollection<
-  InstanceType<typeof ListOnlyCollisionRestFixture>
-> {
-  static readonly _itemClass = ListOnlyCollisionRestFixture;
-}
+// Built at runtime like its item: a collection the scanner sees must name an
+// item it can prove, and these same-name fixtures are scoped to their IIFEs.
+const CollisionRestFixtureCollection = (() =>
+  class CollisionRestFixtureCollection extends SmrtCollection<
+    InstanceType<typeof ListOnlyCollisionRestFixture>
+  > {
+    static readonly _itemClass = ListOnlyCollisionRestFixture;
+  })();
 
 // Generated REST routes are fail-closed (#1540). These tests exercise CRUD
 // verb exposure, not auth, so they simulate an authenticated gateway with a
