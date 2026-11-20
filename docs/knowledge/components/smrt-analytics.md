@@ -5,10 +5,10 @@ description: "Analytics integration models for SMRT framework"
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-17T21:17:44Z"
+  at: "2026-11-20T16:07:44Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:2a5d43d02ab7c8fb5d86757d6e9559bf7ac6b4d955c0e5bcba3a188318636194"
+source_revision: "sha256:d515e72beae35064cbac3649f5d7df71c79fc2756639b3c28782b8f21ae1e404"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/analytics/package.json"
@@ -30,7 +30,7 @@ sources:
 
 - Directory: `packages/analytics`
 - Private: no
-- Object source: `domain-artifact`
+- Object source: `manifest`
 - Evidence level: `source-inspected`
 
 ## Documentation
@@ -77,11 +77,36 @@ sources:
 
 ## MCP tools
 
-- `analyticsdatastream_get`: get on `@happyvertical/smrt-analytics:AnalyticsDataStream`
-- `analyticsdatastream_list`: list on `@happyvertical/smrt-analytics:AnalyticsDataStream`
-- `analyticsevent_get`: get on `@happyvertical/smrt-analytics:AnalyticsEvent`
-- `analyticsevent_list`: list on `@happyvertical/smrt-analytics:AnalyticsEvent`
-- `analyticsproperty_get`: get on `@happyvertical/smrt-analytics:AnalyticsProperty`
-- `analyticsproperty_list`: list on `@happyvertical/smrt-analytics:AnalyticsProperty`
-- `analyticsreport_get`: get on `@happyvertical/smrt-analytics:AnalyticsReport`
-- `analyticsreport_list`: list on `@happyvertical/smrt-analytics:AnalyticsReport`
+- `analyze_analyticsreports`: analyze on `@happyvertical/smrt-analytics:AnalyticsReport`
+- `create_analyticsdatastreams`: create on `@happyvertical/smrt-analytics:AnalyticsDataStreamCollection`
+- `create_analyticsevents`: create on `@happyvertical/smrt-analytics:AnalyticsEventCollection`
+- `create_analyticsproperties`: create on `@happyvertical/smrt-analytics:AnalyticsPropertyCollection`
+- `create_analyticsreports`: create on `@happyvertical/smrt-analytics:AnalyticsReportCollection`
+- `delete_analyticsdatastreams`: delete on `@happyvertical/smrt-analytics:AnalyticsDataStreamCollection`
+- `delete_analyticsevents`: delete on `@happyvertical/smrt-analytics:AnalyticsEventCollection`
+- `delete_analyticsproperties`: delete on `@happyvertical/smrt-analytics:AnalyticsPropertyCollection`
+- `delete_analyticsreports`: delete on `@happyvertical/smrt-analytics:AnalyticsReportCollection`
+- `get_analyticsdatastreams`: get on `@happyvertical/smrt-analytics:AnalyticsDataStream`
+- `get_analyticsdatastreams`: get on `@happyvertical/smrt-analytics:AnalyticsDataStreamCollection`
+- `get_analyticsevents`: get on `@happyvertical/smrt-analytics:AnalyticsEvent`
+- `get_analyticsevents`: get on `@happyvertical/smrt-analytics:AnalyticsEventCollection`
+- `get_analyticsproperties`: get on `@happyvertical/smrt-analytics:AnalyticsProperty`
+- `get_analyticsproperties`: get on `@happyvertical/smrt-analytics:AnalyticsPropertyCollection`
+- `get_analyticsreports`: get on `@happyvertical/smrt-analytics:AnalyticsReport`
+- `get_analyticsreports`: get on `@happyvertical/smrt-analytics:AnalyticsReportCollection`
+- `list_analyticsdatastreams`: list on `@happyvertical/smrt-analytics:AnalyticsDataStream`
+- `list_analyticsdatastreams`: list on `@happyvertical/smrt-analytics:AnalyticsDataStreamCollection`
+- `list_analyticsevents`: list on `@happyvertical/smrt-analytics:AnalyticsEvent`
+- `list_analyticsevents`: list on `@happyvertical/smrt-analytics:AnalyticsEventCollection`
+- `list_analyticsproperties`: list on `@happyvertical/smrt-analytics:AnalyticsProperty`
+- `list_analyticsproperties`: list on `@happyvertical/smrt-analytics:AnalyticsPropertyCollection`
+- `list_analyticsreports`: list on `@happyvertical/smrt-analytics:AnalyticsReport`
+- `list_analyticsreports`: list on `@happyvertical/smrt-analytics:AnalyticsReportCollection`
+- `runReport_analyticsproperties`: runReport on `@happyvertical/smrt-analytics:AnalyticsProperty`
+- `run_analyticsreports`: run on `@happyvertical/smrt-analytics:AnalyticsReport`
+- `sync_analyticsproperties`: sync on `@happyvertical/smrt-analytics:AnalyticsProperty`
+- `track_analyticsevents`: track on `@happyvertical/smrt-analytics:AnalyticsEvent`
+- `update_analyticsdatastreams`: update on `@happyvertical/smrt-analytics:AnalyticsDataStreamCollection`
+- `update_analyticsevents`: update on `@happyvertical/smrt-analytics:AnalyticsEventCollection`
+- `update_analyticsproperties`: update on `@happyvertical/smrt-analytics:AnalyticsPropertyCollection`
+- `update_analyticsreports`: update on `@happyvertical/smrt-analytics:AnalyticsReportCollection`
