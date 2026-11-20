@@ -253,6 +253,7 @@ import {
 } from './schema/conflict-target.js';
 import type { DatabaseEngine } from './schema/ddl/types.js';
 import type { ColumnDefinition, SchemaDefinition } from './schema/types.js';
+import { isServiceOptionInput } from './service-options';
 import { classnameToTablename, toSnakeCase } from './utils';
 import { LRUCache } from './utils/lru-cache';
 import {
@@ -3174,6 +3175,41 @@ export class ObjectRegistry {
     if (registered?.generatedFields?.error)
       throw registered.generatedFields.error;
     return registered ? registered.fields : new Map();
+  }
+
+  /**
+   * Whether a registered class, or one of its ancestors, declares a field
+   * with this name.
+   */
+  static declaresField(name: string, fieldName: string): boolean {
+    const registered = ObjectRegistry.findClass(name);
+    if (!registered) return false;
+    if (registered.fields.has(fieldName)) return true;
+    return ObjectRegistry.getInheritanceChain(
+      registered.qualifiedName ?? registered.name,
+    ).some(
+      (ancestor) =>
+        ObjectRegistry.findClass(ancestor)?.fields.has(fieldName) === true,
+    );
+  }
+
+  /**
+   * Whether a key of a create or update request body must be dropped before
+   * it reaches a model of this class.
+   *
+   * True for a service option key (`SMRT_SERVICE_OPTION_KEYS`) the class does
+   * not declare as a field, and always for `options`. Every generated and
+   * request-facing write path applies it, so a request body can set fields
+   * and nothing else: not the database, the AI client or any other service of
+   * the object it creates or updates. An unknown or missing class declares no
+   * fields, so all of those keys are dropped.
+   */
+  static isServiceOptionInput(name: string | undefined, key: string): boolean {
+    return isServiceOptionInput(
+      key,
+      (fieldName) =>
+        name !== undefined && ObjectRegistry.declaresField(name, fieldName),
+    );
   }
 
   /**

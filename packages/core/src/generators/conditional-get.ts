@@ -504,6 +504,14 @@ export interface ConditionalGetRouteHelperOptions
    * Ignored on the v1 body-hash path, whose ETag already covers the whole body.
    */
   manifestHash?: string;
+  /**
+   * Registry name of the model the route reads. When given, the emitted helper
+   * decides at request time — from the live registry, so tenancy registered
+   * after generation counts — whether the model is tenant-scoped: if it is,
+   * the ETag is keyed on the active tenant and reads are private, whatever
+   * the manifest said at generation.
+   */
+  readScopeModel?: string;
 }
 
 /**
@@ -560,6 +568,26 @@ export function generateConditionalGetRouteHelper(
   // the base-table version representation cannot see, so keep the v1 body-hash
   // ETag (query-first but correct). See useBodyHash.
   const useBodyHash = options.useBodyHash || options.permissionScoped === true;
+  // Request-time tenancy: with a model name, the emitted helper asks core
+  // whether the model is tenant-scoped now and switches to the tenant-scoped
+  // (private) policy and the tenant ETag discriminator when it is.
+  const liveModel = options.readScopeModel;
+  const tenantCacheControl = resolveReadCacheControl(apiConfig, {
+    ...options,
+    tenantScoped: true,
+  });
+  const liveImport = liveModel
+    ? `import { isTenantScopedModel as isTenantScopedForCache } from '@happyvertical/smrt-core';
+const READ_SCOPE_MODEL = ${JSON.stringify(liveModel)};
+const TENANT_READ_CACHE_CONTROL = '${tenantCacheControl}';
+`
+    : '';
+  const baseCacheControl = liveModel
+    ? '(isTenantScopedForCache(READ_SCOPE_MODEL) ? TENANT_READ_CACHE_CONTROL : READ_CACHE_CONTROL)'
+    : 'READ_CACHE_CONTROL';
+  const cacheControlExpression = options.runtimeExposure
+    ? `runtimeExposureGateActive() ? 'private, no-store' : ${baseCacheControl}`
+    : baseCacheControl;
   if (useBodyHash) {
     return `
 // Conditional GET (#1757 v1): a strong body-hash ETag over the serialized
@@ -570,7 +598,7 @@ import { createHash } from 'node:crypto';
 
 ${options.runtimeExposure ? "import { hasRuntimeExposureGate as runtimeExposureGateActive } from '@happyvertical/smrt-core';" : ''}
 const READ_CACHE_CONTROL = '${cacheControl}';
-
+${liveImport}
 function bodyEtag(body: string): string {
   return \`"\${createHash('sha256').update(body).digest('base64url')}"\`;
 }
@@ -591,13 +619,13 @@ function conditionalJson(request: Request, payload: unknown): Response {
   if (ifNoneMatchSatisfied(request.headers.get('if-none-match'), etag)) {
     return new Response(null, {
       status: 304,
-      headers: { 'cache-control': ${options.runtimeExposure ? "runtimeExposureGateActive() ? 'private, no-store' : READ_CACHE_CONTROL" : 'READ_CACHE_CONTROL'}, etag },
+      headers: { 'cache-control': ${cacheControlExpression}, etag },
     });
   }
   return new Response(body, {
     status: 200,
     headers: {
-      'cache-control': ${options.runtimeExposure ? "runtimeExposureGateActive() ? 'private, no-store' : READ_CACHE_CONTROL" : 'READ_CACHE_CONTROL'},
+      'cache-control': ${cacheControlExpression},
       'content-type': 'application/json',
       etag,
     },
@@ -616,11 +644,13 @@ function conditionalJson(request: Request, payload: unknown): Response {
     'getTableVersion',
     'ifNoneMatchHasConcreteMatch',
     'ifNoneMatchSatisfied',
-    ...(tenantScoped ? ['resolveTenantEtagDiscriminator'] : []),
+    ...(tenantScoped || liveModel ? ['resolveTenantEtagDiscriminator'] : []),
   ].join(',\n  ');
-  const representationExtra = tenantScoped
-    ? 'resolveTenantEtagDiscriminator()'
-    : 'undefined';
+  const representationExtra = liveModel
+    ? 'isTenantScopedForCache(READ_SCOPE_MODEL) ? resolveTenantEtagDiscriminator() : undefined'
+    : tenantScoped
+      ? 'resolveTenantEtagDiscriminator()'
+      : 'undefined';
 
   // The build-time web-collection shape digest (#1764) salts the ETag so a
   // shape-only deploy (no table write) busts every read validator — the
@@ -649,7 +679,7 @@ import {
 
 ${options.runtimeExposure ? "import { hasRuntimeExposureGate as runtimeExposureGateActive } from '@happyvertical/smrt-core';" : ''}
 const READ_CACHE_CONTROL = '${cacheControl}';
-${manifestHashConstant}
+${liveImport}${manifestHashConstant}
 async function conditionalVersionedRead(
   request: Request,
   db: Parameters<typeof getTableVersion>[0],
@@ -665,7 +695,7 @@ async function conditionalVersionedRead(
   const notModified = () =>
     new Response(null, {
       status: 304,
-      headers: { 'cache-control': ${options.runtimeExposure ? "runtimeExposureGateActive() ? 'private, no-store' : READ_CACHE_CONTROL" : 'READ_CACHE_CONTROL'}, etag },
+      headers: { 'cache-control': ${cacheControlExpression}, etag },
     });
   if (ifNoneMatchHasConcreteMatch(ifNoneMatch, etag)) {
     return notModified();
@@ -678,7 +708,7 @@ async function conditionalVersionedRead(
   return new Response(JSON.stringify(payload), {
     status: 200,
     headers: {
-      'cache-control': ${options.runtimeExposure ? "runtimeExposureGateActive() ? 'private, no-store' : READ_CACHE_CONTROL" : 'READ_CACHE_CONTROL'},
+      'cache-control': ${cacheControlExpression},
       'content-type': 'application/json',
       etag,
     },

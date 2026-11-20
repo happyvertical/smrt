@@ -225,6 +225,83 @@ describe.skipIf(skipTests)(
       expect(reports[0].name).toBe('Test Report');
     });
 
+    it('stores and reloads the metrics field as report data', async () => {
+      const metrics = JSON.stringify([
+        { name: 'activeUsers' },
+        { name: 'sessions' },
+      ]);
+      const report = await collection.create({
+        propertyId: fixtureId('prop-123'),
+        name: 'Metrics Report',
+        metrics,
+      });
+      expect(report.metrics).toBe(metrics);
+
+      const [listed] = await collection.list({
+        where: { name: 'Metrics Report' },
+      });
+      expect(listed.metrics).toBe(metrics);
+      expect(listed.getMetrics()).toEqual([
+        { name: 'activeUsers' },
+        { name: 'sessions' },
+      ]);
+      const fetched = await collection.get(String(report.id));
+      expect(fetched?.getMetrics()).toHaveLength(2);
+
+      // The field shares its name with the framework's `metrics` option. The
+      // value is row data only; the option of that name stays unset.
+      expect(report.options.metrics).toBeUndefined();
+      expect(listed.options.metrics).toBeUndefined();
+
+      listed.setMetrics([{ name: 'bounceRate' }]);
+      await listed.save();
+      const saved = await collection.get(String(report.id));
+      expect(saved?.getMetrics()).toEqual([{ name: 'bounceRate' }]);
+    });
+
+    it('keeps a bound metrics service out of the metrics field', async () => {
+      // A collection bound to the metrics service gives every report it
+      // builds that `MetricsConfig`; it must never become the report's
+      // `metrics` field, which defaults to '[]'.
+      const metricsService = { enabled: true };
+      const bound = await AnalyticsReportCollection.create({
+        db: collection.db,
+        metrics: metricsService,
+      } as never);
+      const explicit = JSON.stringify([{ name: 'sessions' }]);
+
+      const defaulted = await bound.create({
+        propertyId: fixtureId('prop-123'),
+        name: 'Bound Default',
+      });
+      const given = await bound.create({
+        propertyId: fixtureId('prop-123'),
+        name: 'Bound Explicit',
+        metrics: explicit,
+      });
+      expect(defaulted.metrics).toBe('[]');
+      expect(given.metrics).toBe(explicit);
+
+      for (const [name, expected] of [
+        ['Bound Default', '[]'],
+        ['Bound Explicit', explicit],
+      ] as const) {
+        const [listed] = await bound.list({ where: { name } });
+        expect([name, listed.metrics]).toEqual([name, expected]);
+        const fetched = await bound.get(String(listed.id));
+        expect([name, fetched?.metrics]).toEqual([name, expected]);
+        // The service still reaches the report as its option.
+        expect(listed.options.metrics).toBe(metricsService);
+      }
+      const stored = await collection.db.query(
+        `SELECT name, metrics FROM ${collection.tableName} WHERE name LIKE 'Bound %' ORDER BY name`,
+      );
+      expect(stored.rows).toEqual([
+        { name: 'Bound Default', metrics: '[]' },
+        { name: 'Bound Explicit', metrics: explicit },
+      ]);
+    });
+
     it('should find reports by property', async () => {
       const report1 = await collection.create({
         propertyId: fixtureId('prop-1'),
