@@ -147,7 +147,9 @@ describe.each(
     for (const label of ['a', 'b', 'c']) {
       const holder = await holders.create({ label });
       await holder.save();
-      await (await notes.create({ holderId: holder.id, sequence: 1 })).save();
+      await (
+        await notes.create({ holderId: String(holder.id), sequence: 1 })
+      ).save();
     }
   });
 
