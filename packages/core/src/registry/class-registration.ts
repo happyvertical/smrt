@@ -555,6 +555,9 @@ function findSameNameChildren(
       if (proto === ctor) return true;
       // A registered same-named class in between is the direct parent.
       if (constructors.has(proto)) return false;
+      // So is a registered class of another simple name: a replacement is
+      // recognised through its direct parent only, in either direction.
+      if (getConstructorIndex().has(proto)) return false;
       if (deferAcrossUnregistered && !getConstructorIndex().has(proto))
         return false;
     }

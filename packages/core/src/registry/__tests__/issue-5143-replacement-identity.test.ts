@@ -85,3 +85,102 @@ describe('a model exported under the name of a class that extends a same-named a
     );
   });
 });
+
+describe('an eager run: every decorator before any generated registration', () => {
+  const providerRegistrations = (
+    Root: typeof SmrtObject,
+    Customer: typeof SmrtObject,
+  ) => ({
+    root: () =>
+      ObjectRegistry.register(Root, {
+        name: 'Root',
+        packageName: PROVIDER,
+        tableName: 'roots',
+        tableStrategy: 'sti',
+      }),
+    customer: () =>
+      ObjectRegistry.register(Customer, {
+        name: 'Customer',
+        packageName: PROVIDER,
+        tableName: 'roots',
+      }),
+  });
+  const keyed = (ctor: typeof SmrtObject) =>
+    ObjectRegistry.register(ctor, {
+      name: 'Customer',
+      packageName: APP,
+      replaceParent: true,
+      tableName: 'roots',
+      _manifestKey: `${APP}:Customer`,
+      _manifest: {
+        version: '1',
+        timestamp: 0,
+        packageName: APP,
+        objects: {
+          [`${APP}:Customer`]: {
+            name: 'customer',
+            collection: 'customers',
+            className: 'Customer',
+            qualifiedName: `${APP}:Customer`,
+            packageName: APP,
+            filePath: 'src/models/customer.ts',
+            extends: 'Customer',
+            extendsQualified: CUSTOMER,
+            fields: { title: { type: 'text', _meta: {} } },
+            methods: {},
+            decoratorConfig: { replaceParent: true, tableName: 'roots' },
+            schema: { tableName: 'roots', ddl: '', columns: {} },
+          } as never,
+        },
+      },
+    });
+
+  it("keeps the provider's Root when its registration runs again before the app class promotes", () => {
+    class Root extends SmrtObject {
+      title = '';
+    }
+    class Customer extends Root {
+      tier = '';
+    }
+    const provider = providerRegistrations(Root, Customer);
+    provider.root();
+    provider.customer();
+    class AppRoot extends Customer {
+      extra = '';
+    }
+    Object.defineProperty(AppRoot, 'name', { value: 'Root' });
+    // Every decorator runs first: the app class is live under `Root`.
+    smrt({ replaceParent: true, packageName: APP })(AppRoot);
+    // The provider's generated registration then runs before the app's.
+    provider.root();
+    provider.customer();
+    expect(ObjectRegistry.getClass(ROOT)?.constructor).toBe(Root);
+    keyed(AppRoot);
+    expect(ObjectRegistry.getClass(ROOT)?.constructor).toBe(Root);
+    expect(ObjectRegistry.getClass(CUSTOMER)?.constructor).toBe(AppRoot);
+    expect(ObjectRegistry.getClass(`${APP}:Customer`)?.constructor).toBe(
+      AppRoot,
+    );
+  });
+
+  it('still replaces a parent through its direct subclass of the same name (control)', () => {
+    class Root extends SmrtObject {
+      title = '';
+    }
+    class Customer extends Root {
+      tier = '';
+    }
+    const provider = providerRegistrations(Root, Customer);
+    provider.root();
+    provider.customer();
+    class AppCustomer extends Customer {
+      extra = '';
+    }
+    Object.defineProperty(AppCustomer, 'name', { value: 'Customer' });
+    smrt({ replaceParent: true, packageName: APP })(AppCustomer);
+    provider.root();
+    keyed(AppCustomer);
+    expect(ObjectRegistry.getClass(ROOT)?.constructor).toBe(Root);
+    expect(ObjectRegistry.getClass(CUSTOMER)?.constructor).toBe(AppCustomer);
+  });
+});
