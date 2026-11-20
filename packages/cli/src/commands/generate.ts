@@ -5,7 +5,10 @@
  * Includes generate-types, generate-mcp, generate-routes, and generate-register commands.
  */
 
-import { ObjectRegistry } from '@happyvertical/smrt-core';
+import {
+  isSmrtCollectionExtendsName,
+  ObjectRegistry,
+} from '@happyvertical/smrt-core';
 import { MCPGenerator } from '@happyvertical/smrt-core/generators';
 import { generateDeclarationsFromCLI } from '@happyvertical/smrt-core/prebuild';
 import type {
@@ -65,7 +68,27 @@ interface ManifestObjectDef {
   extends?: string;
   extendsQualified?: string;
   extendsTypeArg?: unknown;
+  collectionOf?: unknown;
   [key: string]: unknown;
+}
+
+/**
+ * Whether a manifest entry marks itself a collection without walking its
+ * ancestry, by the rule of core's `hasCollectionMarker`
+ * (`registry/collection-bases.ts`), which generation and the consumer plugin
+ * use: it extends the framework's `SmrtCollection` by identity, extends
+ * another framework collection base with a type argument, or records the
+ * model it manages (`collectionOf`). A type argument next to another parent
+ * is no marker: an ordinary generic model (`Ledger extends
+ * RecordBase<Currency>`) has one. An entry of an older manifest with a type
+ * argument and no recorded parent is a collection.
+ */
+function hasCollectionMarker(def: ManifestObjectDef): boolean {
+  if (typeof def.collectionOf === 'string' && def.collectionOf) return true;
+  if (!def.extendsQualified && def.extends === 'SmrtCollection') return true;
+  if (!def.extendsTypeArg) return false;
+  if (!def.extends && !def.extendsQualified) return true;
+  return isSmrtCollectionExtendsName(def.extendsQualified || def.extends);
 }
 
 /**
@@ -483,10 +506,9 @@ export const generateCommands: Record<string, CLICommand> = {
               return cached;
             }
 
-            if (
-              def?.extends === 'SmrtCollection' ||
-              def?.extendsTypeArg !== undefined
-            ) {
+            // A collection of an app-level generic collection reaches the
+            // marker through its ancestry below.
+            if (hasCollectionMarker(def)) {
               collectionClassMemo.set(def, true);
               return true;
             }

@@ -16,10 +16,17 @@ vi.mock('../../discovery/index.js', () => ({
   loadManifestFile: vi.fn(),
 }));
 
-// Mock smrt-core imports used at module level
-vi.mock('@happyvertical/smrt-core', () => ({
-  ObjectRegistry: { register: vi.fn(), registerCollection: vi.fn() },
-}));
+// Mock smrt-core imports used at module level; the collection-base check is
+// the real one.
+vi.mock('@happyvertical/smrt-core', async () => {
+  const actual = await vi.importActual<
+    typeof import('@happyvertical/smrt-core')
+  >('@happyvertical/smrt-core');
+  return {
+    ObjectRegistry: { register: vi.fn(), registerCollection: vi.fn() },
+    isSmrtCollectionExtendsName: actual.isSmrtCollectionExtendsName,
+  };
+});
 vi.mock('@happyvertical/smrt-core/generators', () => ({
   MCPGenerator: class {},
 }));
@@ -224,6 +231,68 @@ describe('generate-register', () => {
     expect(console.log).toHaveBeenCalledWith(
       '   - @happyvertical/pkg (1 registered object, 1 imported entry)',
     );
+  });
+
+  // The manifest of the consumer plugin's test of the same rule (core
+  // consumer-plugin/index.test.ts), plus junction and `collectionOf` entries.
+  it('imports and registers an ordinary generic model, and skips a collection of a generic collection', async () => {
+    mockedAutoDiscover.mockResolvedValue({
+      discovered: [
+        {
+          path: '/fake/pkg/manifest.json',
+          source: 'package',
+          packageName: '@test/pkg',
+        },
+      ],
+    } as any);
+    const entry = (className: string, extra: Record<string, unknown>) => ({
+      className,
+      exportName: className,
+      packageName: '@test/pkg',
+      qualifiedName: `@test/pkg:${className}`,
+      collection: `${className.toLowerCase()}s`,
+      visibility: 'public',
+      ...extra,
+    });
+    mockedLoadManifest.mockResolvedValue({
+      packageName: '@test/pkg',
+      objects: {
+        RecordBase: entry('RecordBase', { extends: 'SmrtObject' }),
+        Ledger: entry('Ledger', {
+          extends: 'RecordBase',
+          extendsTypeArg: 'Currency',
+        }),
+        BaseCollection: entry('BaseCollection', { extends: 'SmrtCollection' }),
+        VendorAccounts: entry('VendorAccounts', {
+          extends: 'BaseCollection',
+          extendsTypeArg: 'Account',
+        }),
+        LedgerLinks: entry('LedgerLinks', {
+          extends: 'SmrtJunction',
+          extendsTypeArg: 'Ledger',
+        }),
+        MarkedEntries: entry('MarkedEntries', {
+          extends: 'EntryBase',
+          collectionOf: '@test/pkg:Ledger',
+        }),
+      },
+    });
+
+    await handler([], { 'output-path': outputPath });
+
+    const content = await readFile(outputPath, 'utf-8');
+    expect(content).toContain("import { Ledger } from '@test/pkg';");
+    expect(content).toContain(
+      'ObjectRegistry.register(Ledger, { name: "Ledger", packageName: "@test/pkg" });',
+    );
+    for (const collection of [
+      'BaseCollection',
+      'VendorAccounts',
+      'LedgerLinks',
+      'MarkedEntries',
+    ]) {
+      expect(content).not.toContain(collection);
+    }
   });
 
   it('does not import a scanned collection class the package root hides (#4066)', async () => {
