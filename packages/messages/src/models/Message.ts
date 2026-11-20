@@ -21,6 +21,7 @@ import {
   crossPackageRef,
   field,
   foreignKey,
+  ObjectRegistry,
   SmrtObject,
   smrt,
   usesEmbeddedRevisionFallback,
@@ -100,6 +101,60 @@ async function saveSendLifecycle(message: Message): Promise<void> {
     lifecycleSaves.delete(message);
   }
 }
+
+const DRAFT_CARRIED_FIELDS = new Set(['tenantId', 'metadata', 'correlationId']);
+
+/**
+ * Stored fields declared by Message and Email. A derived reply/forward draft
+ * starts without any of them; the registry adds subclass fields at runtime.
+ */
+const DRAFT_RESET_FIELDS = [
+  'accountId',
+  'personaId',
+  'endpointId',
+  'correlationId',
+  'threadId',
+  'subject',
+  'body',
+  'fromAddress',
+  'fromName',
+  'toAddresses',
+  'date',
+  'isRead',
+  'isFlagged',
+  'hasAttachments',
+  'size',
+  'metadata',
+  'sendStatus',
+  'sentAt',
+  'sendError',
+  'retryCount',
+  'maxRetries',
+  'scheduledSendAt',
+  'inReplyToMessageId',
+  'handledById',
+  'handledByKind',
+  'handledAt',
+  'createdAt',
+  'updatedAt',
+  'messageId',
+  'inReplyTo',
+  'providerMessageId',
+  'ccAddresses',
+  'bccAddresses',
+  'replyToAddress',
+  'replyToName',
+  'textBody',
+  'htmlBody',
+  'folderId',
+  'folderPath',
+  'labels',
+  'flags',
+  'isAnswered',
+  'isDraft',
+  'rawMessage',
+  'headers',
+];
 
 @TenantScoped({ mode: 'optional' })
 @smrt({
@@ -839,7 +894,33 @@ export class Message extends SmrtObject {
     delete rest.slug;
     delete rest.context;
     delete rest._skipLoad;
+    // `this.options` of a hydrated row carries every stored column. A derived
+    // draft must not inherit any of them (htmlBody, bcc, messageId, headers,
+    // send state, handled-by, ...); createReply/createForward then set back
+    // only what reply/forward semantics define. Only connection and tenant
+    // context survive.
+    // `metadata` and `correlationId` stay: the protected-notification
+    // handoff keys its provenance on them, so a derived draft of a protected
+    // notification must keep failing closed. Neither is sent as mail content.
+    for (const name of this.draftFieldNames()) {
+      if (!DRAFT_CARRIED_FIELDS.has(name)) delete rest[name];
+    }
     return rest;
+  }
+
+  /** Every stored field name of this message's class, including subclasses. */
+  private draftFieldNames(): string[] {
+    const names = new Set<string>(DRAFT_RESET_FIELDS);
+    try {
+      for (const key of ObjectRegistry.getFields(
+        this.getResolvedQualifiedName(),
+      ).keys()) {
+        names.add(key);
+      }
+    } catch {
+      // The static list above still covers every field this package declares.
+    }
+    return [...names];
   }
 
   /**
@@ -887,7 +968,8 @@ export class Message extends SmrtObject {
       fromAddress: '',
       fromName: '',
       body: this.buildQuotedBody(),
-      hasAttachments: this.hasAttachments,
+      // Attachment rows are not copied, so the draft has none.
+      hasAttachments: false,
       inReplyToMessageId: '',
       sendStatus: 'draft',
       isRead: true,

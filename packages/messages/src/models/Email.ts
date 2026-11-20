@@ -322,6 +322,18 @@ export class Email extends Message {
       // RFC 822 threading
       inReplyTo: this.messageId,
 
+      // Nothing of the inbound message's own content or identity carries
+      // over: the reply is plain text, with no hidden recipients, no copied
+      // Message-ID, headers, attachments, or provider/server state.
+      messageId: '',
+      providerMessageId: '',
+      htmlBody: '',
+      bccAddresses: '[]',
+      ccAddresses: '[]',
+      headers: '',
+      rawMessage: '',
+      hasAttachments: false,
+
       // To: original sender
       toAddresses: JSON.stringify([
         { address: this.fromAddress, name: this.fromName },
@@ -379,7 +391,13 @@ export class Email extends Message {
       fromName: '',
       body: forwardBody,
       textBody: forwardBody,
-      hasAttachments: this.hasAttachments,
+      // Attachment rows are not copied, so the draft has none.
+      hasAttachments: false,
+      messageId: '',
+      providerMessageId: '',
+      htmlBody: '',
+      headers: '',
+      rawMessage: '',
       inReplyToMessageId: '',
       inReplyTo: '',
       sendStatus: 'draft',

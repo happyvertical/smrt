@@ -162,7 +162,7 @@ describe('Message.createForward', () => {
 
     expect(forward.subject).toBe('Fwd: Important');
     expect(forward.sendStatus).toBe('draft');
-    expect(forward.hasAttachments).toBe(true);
+    expect(forward.hasAttachments).toBe(false);
     expect(forward.threadId).toBe('');
     expect(forward.inReplyToMessageId).toBe('');
     expect(forward.getToAddresses()).toEqual([]);
@@ -250,7 +250,7 @@ describe('Email.createForward', () => {
     expect(forward.body).toContain('Alice');
     expect(forward.body).toContain('Important doc');
     expect(forward.body).toContain('Please see attached');
-    expect(forward.hasAttachments).toBe(true);
+    expect(forward.hasAttachments).toBe(false);
     expect(forward.isDraft).toBe(true);
   });
 });
@@ -385,5 +385,133 @@ describe('reply/forward persistence (does not overwrite original)', () => {
 
     const all = await emails.list({});
     expect(all.length).toBe(2);
+  });
+});
+
+// ============================================================================
+// Reply/forward drafts never inherit the inbound message's content or identity
+// ============================================================================
+
+describe('reply and forward drafts reset inbound-only state', () => {
+  let db: DatabaseInterface;
+
+  beforeEach(async () => {
+    db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
+    await prepareMessageParents(db, ['acct-1']);
+  });
+
+  afterEach(async () => {
+    if (db && typeof db.close === 'function') {
+      await db.close();
+    }
+  });
+
+  async function hydratedInbound(): Promise<Email> {
+    const inbound = new Email({
+      accountId: 'acct-1',
+      subject: 'Quote request',
+      body: 'plain original',
+      textBody: 'plain original',
+      htmlBody: '<p>third-party <b>html</b> secret</p>',
+      fromAddress: 'alice@example.com',
+      fromName: 'Alice',
+      toAddresses: JSON.stringify([
+        { address: 'me@example.com', name: 'Me' },
+        { address: 'bob@example.com', name: 'Bob' },
+      ]),
+      ccAddresses: JSON.stringify([
+        { address: 'carol@example.com', name: 'Carol' },
+      ]),
+      bccAddresses: JSON.stringify([
+        { address: 'hidden@example.com', name: 'Hidden' },
+      ]),
+      messageId: '<orig-1@example.com>',
+      providerMessageId: 'provider-orig-1',
+      headers: JSON.stringify({ 'x-origin': 'inbound', references: '<r0@x>' }),
+      rawMessage: 'RAW MIME',
+      hasAttachments: true,
+      size: 4242,
+      sendStatus: 'sent',
+      sentAt: new Date('2025-01-15T10:00:00Z'),
+      date: new Date('2025-01-15T10:00:00Z'),
+      db,
+    });
+    await inbound.initialize();
+    await inbound.save();
+    const emails = await (EmailCollection as any).create({ db });
+    const hydrated = await emails.get({ id: inbound.id });
+    expect(hydrated.htmlBody).toContain('secret');
+    return hydrated as Email;
+  }
+
+  function expectClean(draft: Email, originalId: string) {
+    expect(draft.htmlBody).toBe('');
+    expect(draft.getBccAddresses()).toEqual([]);
+    expect(draft.messageId).toBe('');
+    expect(draft.providerMessageId).toBe('');
+    expect(draft.rawMessage).toBe('');
+    expect(draft.hasAttachments).toBe(false);
+    expect(draft.size).toBe(0);
+    expect(draft.sentAt).toBeNull();
+    expect(draft.sendStatus).toBe('draft');
+    expect(draft.isDraft).toBe(true);
+    expect(draft.fromAddress).toBe('');
+    expect(draft.id).not.toBe(originalId);
+    expect(draft.getHeaders()['x-origin']).toBeUndefined();
+    expect(draft.body).not.toContain('secret');
+    expect(draft.accountId).toBe('acct-1');
+  }
+
+  it('reply: plain text only, no cc/bcc, threaded', async () => {
+    const original = await hydratedInbound();
+    const reply = original.createReply() as Email;
+    expectClean(reply, original.id as string);
+    expect(reply.getCcAddresses()).toEqual([]);
+    expect(reply.getToAddresses().map((a) => a.address)).toEqual([
+      'alice@example.com',
+    ]);
+    expect(reply.subject).toBe('Re: Quote request');
+    expect(reply.inReplyTo).toBe('<orig-1@example.com>');
+    expect(reply.inReplyToMessageId).toBe(original.id);
+    expect(reply.getHeaders().references).toBe('<r0@x> <orig-1@example.com>');
+    expect(reply.body).toContain('> plain original');
+  });
+
+  it('reply-all: cc is the other To/Cc recipients, still no bcc or html', async () => {
+    const original = await hydratedInbound();
+    const reply = original.createReply({ replyAll: true }) as Email;
+    expectClean(reply, original.id as string);
+    expect(
+      reply
+        .getCcAddresses()
+        .map((a) => a.address)
+        .sort(),
+    ).toEqual(['bob@example.com', 'carol@example.com', 'me@example.com']);
+  });
+
+  it('forward: no html, recipients, bcc, ids, attachments or threading', async () => {
+    const original = await hydratedInbound();
+    const forward = original.createForward() as Email;
+    expectClean(forward, original.id as string);
+    expect(forward.getToAddresses()).toEqual([]);
+    expect(forward.getCcAddresses()).toEqual([]);
+    expect(forward.subject).toBe('Fwd: Quote request');
+    expect(forward.inReplyTo).toBe('');
+    expect(forward.inReplyToMessageId).toBe('');
+    expect(forward.threadId).toBe('');
+  });
+
+  it('a saved and reloaded reply carries none of the inbound html or bcc', async () => {
+    const original = await hydratedInbound();
+    const reply = original.createReply() as Email;
+    await reply.initialize();
+    await reply.save();
+    const emails = await (EmailCollection as any).create({ db });
+    const stored = await emails.get({ id: reply.id });
+    expect(stored.htmlBody).toBe('');
+    expect(stored.bccAddresses === '' || stored.bccAddresses === '[]').toBe(
+      true,
+    );
+    expect(stored.messageId).toBe('');
   });
 });
