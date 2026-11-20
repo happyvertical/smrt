@@ -893,16 +893,28 @@ export class InheritanceResolver {
   reservedNameErrors(): ScanError[] {
     const errors: ScanError[] = [];
     for (const classDef of this.classes) {
-      if (
-        !FRAMEWORK_BASE_CLASSES.has(classDef.className) ||
-        !this.isScanned(classDef) ||
-        this.isFrameworkDeclaration(classDef)
-      ) {
+      if (!this.isScanned(classDef) || this.isFrameworkDeclaration(classDef)) {
         continue;
       }
+      // The name a model is published under is its declared `name` option, or
+      // its export name when that is its parent's; generation renames the
+      // entry to it, so a reserved public name reads as the framework base
+      // exactly as a reserved class name does.
+      const declared = classDef.decoratorConfig?.name;
+      const exported = classDef.exportName;
+      const reserved = [
+        classDef.className,
+        typeof declared === 'string' ? declared : undefined,
+        exported && exported !== classDef.className ? exported : undefined,
+      ].find((name) => name !== undefined && FRAMEWORK_BASE_CLASSES.has(name));
+      if (reserved === undefined) continue;
+      const how =
+        reserved === classDef.className
+          ? 'the name of'
+          : `published under the public name ${reserved} (its \`name\` option or its export name), which is the name of`;
       errors.push({
         message:
-          `${classDef.className} is the name of a framework base class of ${frameworkPackageOf(classDef.className)}: ` +
+          `${classDef.className} is ${how} a framework base class of ${frameworkPackageOf(reserved)}: ` +
           'rename it; the framework reserves this class name, and code that reads a manifest takes a parent of this name for the framework base.',
         filePath: classDef.filePath,
         line: classDef.startLine,

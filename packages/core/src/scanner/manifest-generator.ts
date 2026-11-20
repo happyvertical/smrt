@@ -44,6 +44,7 @@ import {
   inheritCollectionExposure,
 } from '../registry/collection-exposure.js';
 import { isSmrtCollectionExtendsName } from '../registry/collection-resolution.js';
+import { isFrameworkBaseClassName } from '../registry/framework-base-classes.js';
 import { VERBOSE_ENABLED } from '../registry/shared-state.js';
 import {
   findStaleWidenings,
@@ -629,6 +630,19 @@ export class ManifestGenerator {
         obj.decoratorConfig.name ??
         (obj.exportName === parentName ? obj.exportName : undefined);
       if (!publicName || publicName === obj.className) continue;
+      // Readers classify an entry by its parent's bare name, so a model
+      // published under a framework base's name would read as that base
+      // (its children would skip exposure inheritance). The scanner refuses
+      // such a name in the scanned package; this covers a manifest built
+      // before it did.
+      if (isFrameworkBaseClassName(publicName)) {
+        throw new ConfigurationError(
+          `${obj.className} (${obj.filePath}) is published under the public name ${publicName}, the name of a framework base class; ` +
+            'rename it: the framework reserves this class name.',
+          'CONFIG_RESERVED_CLASS_NAME',
+          { className: obj.className, publicName },
+        );
+      }
       const packageName = obj.packageName ?? options?.packageName;
       if (!packageName) throw new Error(`Missing package for ${key}`);
       const nextKey = createQualifiedName(packageName, publicName);

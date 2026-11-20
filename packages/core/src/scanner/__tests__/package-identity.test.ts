@@ -379,6 +379,48 @@ export class RestrictedBase extends SmrtObject {
     );
   });
 
+  it('fails generation for a local model published under a framework base name by its name option', async () => {
+    const root = await project({
+      providers: {},
+      app: {
+        'src/InternalBase.ts': `${CORE}\n@smrt({ name: 'SmrtClass', api: false })\nexport class InternalBase extends SmrtObject {\n  hidden = '';\n}\n`,
+        'src/Child.ts': `${CORE}\nimport { InternalBase } from './InternalBase';\n@smrt()\nexport class Child extends InternalBase {}\n`,
+      },
+    });
+
+    await expect(build(root)).rejects.toThrow(
+      'the framework reserves this class name',
+    );
+  });
+
+  it('fails generation for a manifest entry renamed to a framework base name', () => {
+    const scanResults: ScanResult[] = [
+      {
+        filePath: '/app/src',
+        objects: [
+          {
+            name: 'internalbase',
+            className: 'InternalBase',
+            collection: 'internalbases',
+            filePath: '/app/src/InternalBase.ts',
+            fields: {},
+            methods: {},
+            decoratorConfig: { name: 'SmrtClass' },
+            packageName: APP,
+          } as SmartObjectDefinition,
+        ],
+        errors: [],
+      },
+    ];
+
+    expect(() =>
+      new ManifestGenerator().generateManifest(scanResults, {
+        packageName: APP,
+        projectRoot: '/nonexistent/identity-app',
+      }),
+    ).toThrow(expect.objectContaining({ code: 'CONFIG_RESERVED_CLASS_NAME' }));
+  });
+
   it('throws for an extendsQualified that is not a qualified name', () => {
     const scanResults: ScanResult[] = [
       {
@@ -1180,6 +1222,33 @@ describe('a collection of a package model', () => {
     const journal = manifest.objects[`${APP}:Journal`];
     expect(journal?.extendsTypeArg).toBeUndefined();
     expect(journal?.collectionOf).not.toBe(`${APP}:Account`);
+    expect(crud(manifest.objects[`${APP}:Account`]).length).toBe(5);
+  });
+
+  // The item is followed through the app's own generic collection to the
+  // framework base: the type argument is a provider model, never the app
+  // model that shares its name.
+  it('takes a provider item named through an app-level generic collection by identity', async () => {
+    const root = await project({
+      providers: {
+        [VENDOR]: {
+          files: {
+            'src/Account.ts': `${CORE}\n@smrt({ api: false, tableName: 'vendor_accounts' })\nexport class Account extends SmrtObject {\n  secret = '';\n}\n`,
+          },
+        },
+      },
+      app: {
+        'src/Account.ts': `${CORE}\n@smrt({ tableName: 'app_accounts' })\nexport class Account extends SmrtObject {}\n`,
+        'src/BaseCollection.ts': `${CORE}\nexport abstract class BaseCollection<T extends SmrtObject> extends SmrtCollection<T> {}\n`,
+        'src/VendorAccounts.ts': `${CORE}\nimport { Account } from '${VENDOR}';\nimport { BaseCollection } from './BaseCollection';\nexport class VendorAccounts extends BaseCollection<Account> {\n  static readonly _itemClass = Account;\n}\n`,
+      },
+    });
+
+    const manifest = await build(root);
+    const vendorAccounts = manifest.objects[`${APP}:VendorAccounts`];
+    expect(vendorAccounts?.extendsTypeArgQualified).toBe(`${VENDOR}:Account`);
+    expect(vendorAccounts?.collectionOf).toBe(`${VENDOR}:Account`);
+    expect(crud(vendorAccounts)).toEqual([]);
     expect(crud(manifest.objects[`${APP}:Account`]).length).toBe(5);
   });
 });

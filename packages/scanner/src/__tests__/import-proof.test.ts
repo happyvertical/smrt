@@ -1642,6 +1642,22 @@ describe('framework base names', () => {
     expect(reserved[0].filePath).toContain(`${name}.ts`);
   });
 
+  it('fails the scan for a model published under a framework base name by its name option', async () => {
+    const { errors } = await scanProject({
+      'src/InternalBase.ts': `${CORE}\n@smrt({ name: 'SmrtClass', api: false })\nexport class InternalBase extends SmrtObject {}\n`,
+      'src/Fine.ts': `${CORE}\n@smrt({ name: 'Renamed' })\nexport class Fine extends SmrtObject {}\n`,
+    });
+    const reserved = errors.filter((error) =>
+      error.message.includes('the framework reserves this class name'),
+    );
+
+    expect(reserved).toHaveLength(1);
+    expect(reserved[0].message).toContain(
+      'InternalBase is published under the public name SmrtClass',
+    );
+    expect(reserved[0].filePath).toContain('InternalBase.ts');
+  });
+
   it('accepts the framework package declaring its own base, and a name that only starts like one', async () => {
     const root = mkdtempSync(join(tmpdir(), 'smrt-proof-framework-'));
     roots.push(root);

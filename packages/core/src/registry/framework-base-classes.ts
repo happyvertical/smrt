@@ -84,6 +84,11 @@ const FRAMEWORK_BASE_CLASS_PACKAGES: ReadonlyMap<string, string> = new Map([
   ['SmrtReportCollection', '@happyvertical/smrt-reports'],
 ]);
 
+/** True when `className` is the name of one of the framework's own bases. */
+export function isFrameworkBaseClassName(className: string): boolean {
+  return FRAMEWORK_BASE_CLASS_PACKAGES.has(className);
+}
+
 /**
  * True when `className`/`packageName` identify one of the framework's own
  * abstract base classes rather than a genuine resource.
