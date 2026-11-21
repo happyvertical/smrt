@@ -132,10 +132,13 @@ a type argument, or a recorded `collectionOf`, reached through the manifest
 ancestry; a type argument beside any other parent (`Ledger extends
 RecordBase<Currency>`) marks no collection. The permission catalog reads a
 confirmed item through `extendsTypeArgQualified` before the bare name.
-Every other target must
-name a class of the manifest or a loadable dependency, or generation throws
+A target written as a qualified name (`'@pkg:Class'`) must name, by its
+exact class name, a class of the manifest or of that package's loadable
+manifest, and a bare name a local model (above), or generation throws
 `CONFIG_UNKNOWN_RELATIONSHIP_TARGET` (`assertKnownTargets`; `@crossPackageRef`
-is checked at save time). Generating without a parent would give a
+is checked at save time). A written qualified target keeps the base schema
+generation: a class of the manifest gets its constraint, another package's
+class none. Generating without a parent would give a
 single-table child its own table and skip the fields and surface limits it
 inherits. Build the parent package first and declare it as a dependency.
 
