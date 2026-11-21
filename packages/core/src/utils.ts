@@ -75,7 +75,8 @@ export function keysToCamelCase(
  * Checks if a field name indicates a date field based on naming conventions
  *
  * Recognizes common date field patterns like '_at', '_date', and 'date'.
- * Used for automatic type inference during schema generation.
+ * Hydration uses it only for keys with no field definition; a declared
+ * field's type always wins.
  *
  * @param key - Field name to check
  * @returns Boolean indicating if the field is likely a date field
@@ -376,9 +377,45 @@ export function sanitizeMetaData(
  * @param fields - Optional field definitions to determine types (from fieldsFromClass)
  * @returns Object with properly typed values and camelCase property names for JavaScript
  */
+/**
+ * Framework timestamp columns: always TIMESTAMP system columns, so their
+ * values hydrate as Dates even when a model also declares a `createdAt` /
+ * `updatedAt` alias with another type (a stale manifest may still say text).
+ */
+const FRAMEWORK_TIMESTAMP_COLUMNS: ReadonlySet<string> = new Set([
+  'created_at',
+  'updated_at',
+]);
+
+/**
+ * The type that decides whether a string value hydrates as a Date (#5505):
+ * - no definition, or a type the registry guessed for a decorator that
+ *   stated none (`_meta.__typeInferred`): `undefined`, so the column-name
+ *   pattern applies as it always has;
+ * - an STI `meta` field: its underlying type (`Meta<Date>` is `datetime`), or
+ *   `undefined` when none was recorded;
+ * - anything else: the declared type.
+ */
+function dateHydrationType(
+  fieldDef: { type?: string; _meta?: unknown } | undefined,
+): string | undefined {
+  if (!fieldDef) return undefined;
+  const meta = (fieldDef._meta ?? undefined) as
+    | { __typeInferred?: unknown; underlyingType?: unknown }
+    | undefined;
+  if (meta?.__typeInferred === true) return undefined;
+  const type = fieldDef.type?.toLowerCase();
+  if (type === 'meta') {
+    return typeof meta?.underlyingType === 'string'
+      ? meta.underlyingType.toLowerCase()
+      : undefined;
+  }
+  return type;
+}
+
 export function formatDataJs<
   T extends Record<string, unknown> = Record<string, unknown>,
->(data: T, fields?: Record<string, { type?: string }>): T {
+>(data: T, fields?: Record<string, { type?: string; _meta?: unknown }>): T {
   const normalizedData: Record<string, unknown> = {};
 
   if (globalThis.process?.env?.DEBUG_STI) {
@@ -470,8 +507,16 @@ export function formatDataJs<
     if (value instanceof Date) {
       normalizedData[outputKey] = value;
     } else if (typeof value === 'string') {
-      // Use field definitions if available, otherwise fall back to name patterns
-      const isDate = fieldType === 'datetime' || isDateField(key);
+      // A declared field keeps its declared type: only `datetime` (or a
+      // `Meta<Date>` field) parses to a Date, and a declared text field stays
+      // a string whatever its column is called. The column-name pattern
+      // applies only where the type is unknown (see dateHydrationType), and
+      // the framework timestamp columns are always Dates (#5505).
+      const hydrationType = dateHydrationType(fieldDef);
+      const isDate =
+        FRAMEWORK_TIMESTAMP_COLUMNS.has(key) ||
+        hydrationType === 'datetime' ||
+        (hydrationType === undefined && isDateField(key));
 
       if (isDate) {
         const parsedDate = value.trim() ? new Date(value) : null;

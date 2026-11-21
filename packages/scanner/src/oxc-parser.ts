@@ -587,6 +587,7 @@ export function parseFile(filePath: string): FileScanResult {
         unresolved: [],
         importAliases,
         importBindings: extractImportBindings(program.body),
+        bindsDate: moduleBindsDate(program.body),
       };
       for (const node of program.body) {
         const extracted = extractClassFromNode(
@@ -831,6 +832,7 @@ export function parseSource(
         unresolved: [],
         importAliases,
         importBindings: extractImportBindings(program.body),
+        bindsDate: moduleBindsDate(program.body),
       };
       for (const node of program.body) {
         const extracted = extractClassFromNode(
@@ -954,6 +956,69 @@ interface ImportBinding {
  * module specifier. Default imports are left out (the exported class name is
  * unknown) and so are type-only imports (they cannot be extended).
  */
+/**
+ * Whether the module binds its own `Date` at module scope (an import, a
+ * `const`/`let`/`var` including destructuring, a function, class, enum or
+ * `import Date = …`), so `new Date(...)` in a field initializer may not be
+ * the global constructor. Type-only imports bind nothing at run time.
+ */
+function moduleBindsDate(body: Statement[]): boolean {
+  type Loose = { type?: string; [key: string]: unknown };
+  const patternBindsDate = (pattern: unknown): boolean => {
+    const node = pattern as Loose | null | undefined;
+    if (!node || typeof node !== 'object') return false;
+    switch (node.type) {
+      case 'Identifier':
+        return node.name === 'Date';
+      case 'ObjectPattern':
+        return ((node.properties as Loose[]) ?? []).some((prop) =>
+          patternBindsDate(prop.type === 'RestElement' ? prop : prop.value),
+        );
+      case 'ArrayPattern':
+        return ((node.elements as unknown[]) ?? []).some(patternBindsDate);
+      case 'RestElement':
+        return patternBindsDate(node.argument);
+      case 'AssignmentPattern':
+        return patternBindsDate(node.left);
+      default:
+        return false;
+    }
+  };
+  const declarationBindsDate = (decl: unknown): boolean => {
+    const node = decl as Loose | null | undefined;
+    if (!node || typeof node !== 'object') return false;
+    if (node.type === 'VariableDeclaration')
+      return ((node.declarations as Loose[]) ?? []).some((d) =>
+        patternBindsDate(d.id),
+      );
+    if (
+      node.type === 'FunctionDeclaration' ||
+      node.type === 'ClassDeclaration' ||
+      node.type === 'TSEnumDeclaration' ||
+      node.type === 'TSImportEqualsDeclaration'
+    )
+      return (node.id as Loose | null)?.name === 'Date';
+    return false;
+  };
+  for (const statement of body as unknown as Loose[]) {
+    if (statement.type === 'ImportDeclaration') {
+      if (statement.importKind === 'type') continue;
+      for (const spec of (statement.specifiers as Loose[]) ?? []) {
+        if (spec.importKind === 'type') continue;
+        if ((spec.local as Loose | undefined)?.name === 'Date') return true;
+      }
+    } else if (
+      statement.type === 'ExportNamedDeclaration' ||
+      statement.type === 'ExportDefaultDeclaration'
+    ) {
+      if (declarationBindsDate(statement.declaration)) return true;
+    } else if (declarationBindsDate(statement)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 function extractImportBindings(body: Statement[]): Map<string, ImportBinding> {
   const bindings = new Map<string, ImportBinding>();
   for (const node of body) {
@@ -1341,6 +1406,11 @@ interface DecoratorConfigContext {
    * exports its parent (#4145).
    */
   importBindings?: Map<string, ImportBinding>;
+  /**
+   * The module binds its own `Date`, so `new Date(...)` is not known to be
+   * the global constructor (#5505).
+   */
+  bindsDate?: boolean;
 }
 
 /**
@@ -1968,7 +2038,11 @@ function extractClassDeclaration(
 
   for (const member of node.body.body) {
     if (member.type === 'PropertyDefinition') {
-      const field = extractPropertyDefinition(member, sourceText);
+      const field = extractPropertyDefinition(
+        member,
+        sourceText,
+        ctx?.bindsDate ?? false,
+      );
       if (field) {
         fields.push(field);
       } else {
@@ -2802,6 +2876,7 @@ function extractLiteralComputedField(
 function extractPropertyDefinition(
   node: PropertyDefinition,
   sourceText: string,
+  moduleBindsDate = false,
 ): RawFieldDefinition | null {
   // Skip computed properties
   if (node.computed) return null;
@@ -2912,6 +2987,15 @@ function extractPropertyDefinition(
     accessibility: node.accessibility || 'public',
     line: node.loc?.start.line || 0,
     ...(node.declare ? { declare: true } : {}),
+    // The initializer is one `new Date(...)` of the global constructor, read
+    // from the AST (comments and arguments cannot confuse it), and the module
+    // does not bind its own `Date` (#5505).
+    ...(!moduleBindsDate &&
+    node.value?.type === 'NewExpression' &&
+    node.value.callee.type === 'Identifier' &&
+    node.value.callee.name === 'Date'
+      ? { initializerIsDate: true }
+      : {}),
   };
 }
 

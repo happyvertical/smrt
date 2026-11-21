@@ -4,6 +4,7 @@ import {
   maskSampleValue,
   renderJsonbColumnConversion,
   renderTimestamptzColumnConversion,
+  renderTimestamptzRecheckSql,
 } from './text-cast-probe.js';
 
 describe('empty text as NULL conversions (#3226)', () => {
@@ -11,6 +12,7 @@ describe('empty text as NULL conversions (#3226)', () => {
     expect(
       renderTimestamptzColumnConversion('contents', 'published_at'),
     ).toEqual([
+      renderTimestamptzRecheckSql('contents', 'published_at'),
       'ALTER TABLE "contents" ALTER COLUMN "published_at" TYPE timestamptz USING "published_at"::timestamptz',
     ]);
     expect(
@@ -18,6 +20,9 @@ describe('empty text as NULL conversions (#3226)', () => {
         emptyTextAsNull: true,
       }),
     ).toEqual([
+      renderTimestamptzRecheckSql('contents', 'published_at', {
+        emptyTextAsNull: true,
+      }),
       `ALTER TABLE "contents" ALTER COLUMN "published_at" TYPE timestamptz USING (CASE WHEN btrim("published_at"::text, E' \\t\\n\\r') = '' THEN NULL ELSE "published_at"::text END)::timestamptz`,
     ]);
     expect(

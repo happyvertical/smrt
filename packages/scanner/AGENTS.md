@@ -289,6 +289,14 @@ place, `toKnowledgeAgentSurface` in `vite-plugin/index.ts`.
   unwrapped from their `UnaryExpression` before the check. The rule is silent
   and SQLite's affinity masks the consequence, so money- and rate-shaped fields
   are gated by `lintNumericPrecision` rather than left to review (#2361).
+- **`= new Date(...)` is `datetime`** (#5505): an unannotated field whose
+  initializer is exactly one `new Date(...)` of the global constructor
+  (classified from the OXC `NewExpression`; not when the module binds its own
+  `Date`, recorded as `RawFieldDefinition.initializerIsDate`) infers `datetime`
+  (column TIMESTAMP, hydrated as `Date`); `new Date().toISOString()` and other
+  derived values stay `text`, and `@field({ type })` still wins. Runtime
+  hydration no longer turns a declared text field into a `Date` because its
+  column ends in `_at`/`_date` (core `utils.ts` `formatDataJs`).
 - **Reserved field names** (#5504): `reserved-field-names.ts`, exported from
   `./types`, is the one rule for model field names; `toSmartObjectDefinition`
   throws for a public field of a class with object-model ancestry

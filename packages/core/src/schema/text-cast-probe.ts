@@ -486,9 +486,69 @@ interface ColumnConversionOptions {
 }
 
 /**
+ * The statement that rechecks a `text` (or legacy `json`) column right before
+ * its conversion to `timestamptz`, in the conversion's own transaction: it
+ * takes the table's ACCESS EXCLUSIVE lock first (the lock the `ALTER` takes
+ * anyway, so no writer can add a row between the check and the cast) and
+ * stops the migration when a value would not convert faithfully: a special
+ * date/time word (`now`, `infinity`, …), empty text without the
+ * `emptyTextAsNull` opt-in, and, unless `allowNaive` (the operator confirmed
+ * legacy UTC wall-clock values), text without an explicit UTC offset. A plan
+ * is built from a probe; this keeps a value written after planning from being
+ * cast under the migrating session's time zone.
+ */
+export function renderTimestamptzRecheckSql(
+  tableName: string,
+  columnName: string,
+  options: {
+    allowNaive?: boolean;
+    emptyTextAsNull?: boolean;
+    json?: boolean;
+  } = {},
+): string {
+  const table = quoteIdentifier(tableName);
+  const column = quoteIdentifier(columnName);
+  // A legacy json column holds JSON text: `null` is the JSON null and a
+  // string value is quoted, as the legacy cast reads it.
+  const value = options.json
+    ? `trim(both '"' from NULLIF(${column}::text, 'null'))`
+    : `${column}::text`;
+  const special = [...TIMESTAMPTZ_SPECIAL_VALUES]
+    .map((word) => `'${word}'`)
+    .join(',');
+  const empty = renderEmptyTextPredicate('candidate.value');
+  const unsafe = [
+    `(NOT ${empty} AND lower(trim(candidate.value)) = ANY (ARRAY[${special}]))`,
+    ...(options.emptyTextAsNull ? [] : [empty]),
+    ...(options.allowNaive
+      ? []
+      : [
+          `(NOT ${empty} AND trim(candidate.value) !~* '${TIMESTAMPTZ_EXPLICIT_OFFSET_SQL_PATTERN}')`,
+        ]),
+  ].join(' OR ');
+  const message = `Cannot convert ${tableName}.${columnName} to TIMESTAMPTZ: a value is empty, a special date/time word${
+    options.allowNaive ? '' : ' or has no explicit UTC offset'
+  } (written after this migration was planned?); rerun smrt db:migrate to re-plan`;
+  const body =
+    `BEGIN LOCK TABLE ${table} IN ACCESS EXCLUSIVE MODE; ` +
+    `IF EXISTS (SELECT 1 FROM (SELECT ${value} AS value FROM ${table}) AS candidate ` +
+    `WHERE candidate.value IS NOT NULL AND (${unsafe})) ` +
+    `THEN RAISE EXCEPTION '%', ${quoteSqlLiteral(message)}; END IF; END`;
+  let tag = 'smrt_recheck';
+  while (body.includes(`$${tag}$`)) tag = `${tag}_`;
+  return `DO $${tag}$ ${body} $${tag}$`;
+}
+
+function quoteSqlLiteral(value: string): string {
+  return `'${value.replace(/'/g, "''")}'`;
+}
+
+/**
  * Render the one-time PostgreSQL conversion of a legacy `text` column to
  * native `timestamptz`, once {@link probeCastSafety} has confirmed every
- * non-null value casts safely.
+ * non-null value casts safely. The `ALTER` follows
+ * {@link renderTimestamptzRecheckSql}, which repeats that check under the
+ * table lock in the same transaction.
  */
 export function renderTimestamptzColumnConversion(
   tableName: string,
@@ -499,6 +559,11 @@ export function renderTimestamptzColumnConversion(
   const column = quoteIdentifier(columnName);
   const hasManifestDefault = options.manifestDefaultValue !== undefined;
   const statements: string[] = [];
+  statements.push(
+    renderTimestamptzRecheckSql(tableName, columnName, {
+      emptyTextAsNull: options.emptyTextAsNull === true,
+    }),
+  );
   if (options.hasLiveDefault || hasManifestDefault) {
     statements.push(`ALTER TABLE ${table} ALTER COLUMN ${column} DROP DEFAULT`);
   }

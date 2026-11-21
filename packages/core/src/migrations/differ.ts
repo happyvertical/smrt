@@ -63,6 +63,7 @@ import {
   renderEmptyTextPredicate,
   renderJsonbColumnConversion,
   renderTimestamptzColumnConversion,
+  renderTimestamptzRecheckSql,
   type ShapeProbeResult,
 } from '../schema/text-cast-probe.js';
 import type {
@@ -4575,12 +4576,23 @@ export class SchemaComparer {
               this.engine === 'postgres' &&
               this.normalizeType(colDef.type) === 'INTEGER' &&
               normalizedActual === 'TEXT';
+            // #5505: the legacy-timezone TEXT/JSON -> TIMESTAMPTZ cast
+            // stores empty text as NULL only under the same opt-in;
+            // timezone consent is not empty-text consent.
+            const timestampEmptyTextToNull =
+              convertEmptyText &&
+              this.engine === 'postgres' &&
+              this.normalizeType(colDef.type) === 'TIMESTAMP' &&
+              (normalizedActual === 'TEXT' || normalizedActual === 'JSON');
             const generatedSQL = this.generateTypeUpgradeSQL(
               tableName,
               colName,
               colDef,
               dbCol.type,
-              { emptyTextAsNull: integerEmptyTextToNull },
+              {
+                emptyTextAsNull:
+                  integerEmptyTextToNull || timestampEmptyTextToNull,
+              },
             );
             changes.push({
               type: 'type_upgrade',
@@ -4595,7 +4607,7 @@ export class SchemaComparer {
               ...(generatedSQL.statements
                 ? { sqlStatements: generatedSQL.statements }
                 : {}),
-              ...(integerEmptyTextToNull
+              ...(integerEmptyTextToNull || timestampEmptyTextToNull
                 ? {
                     note: 'empty-text value(s), if any, become NULL (--empty-text-as-null)',
                   }
@@ -6877,6 +6889,7 @@ export class SchemaComparer {
               ? this.generatePostgresTimestampPreflightSQL(tableName, colName)
               : null;
         const clauses: string[] = [];
+        let timestampRecheckSQL: string | null = null;
 
         if (colDef.defaultValue !== undefined) {
           clauses.push(`ALTER COLUMN ${quotedCol} DROP DEFAULT`);
@@ -6919,7 +6932,26 @@ export class SchemaComparer {
           manifestNormalized === 'TIMESTAMP' &&
           (dbNormalized === 'TEXT' || dbNormalized === 'JSON')
         ) {
-          typeClause += ` USING NULLIF(NULLIF(trim(both '"' from ${quotedCol}::text), ''), 'null')::timestamptz`;
+          // Legacy UTC wall-clock confirmation covers naive values only.
+          // Empty text becomes NULL only under --empty-text-as-null; a JSON
+          // null is NULL; the recheck stops the migration on anything else
+          // that would not convert faithfully (#5505).
+          const legacyValue =
+            dbNormalized === 'JSON'
+              ? `trim(both '"' from NULLIF(${quotedCol}::text, 'null'))`
+              : `${quotedCol}::text`;
+          typeClause += options.emptyTextAsNull
+            ? ` USING (CASE WHEN ${renderEmptyTextPredicate(legacyValue)} THEN NULL ELSE ${legacyValue} END)::timestamptz`
+            : ` USING (${legacyValue})::timestamptz`;
+          timestampRecheckSQL = renderTimestamptzRecheckSql(
+            tableName,
+            colName,
+            {
+              allowNaive: true,
+              emptyTextAsNull: options.emptyTextAsNull === true,
+              json: dbNormalized === 'JSON',
+            },
+          );
         } else if (
           manifestNormalized === 'TIMESTAMP' &&
           dbNormalized === 'TIMESTAMP' &&
@@ -6947,9 +6979,12 @@ export class SchemaComparer {
         }
 
         const alterSql = `ALTER TABLE ${quotedTable} ${clauses.join(', ')}`;
+        const leading = [preflightSQL, timestampRecheckSQL].filter(
+          (statement): statement is string => statement !== null,
+        );
 
-        return preflightSQL
-          ? { sql: alterSql, statements: [preflightSQL, alterSql] }
+        return leading.length > 0
+          ? { sql: alterSql, statements: [...leading, alterSql] }
           : { sql: alterSql };
       }
 

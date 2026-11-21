@@ -49,7 +49,10 @@
  * a non-numeric TEXT value to REAL/INTEGER silently yields `0`, and casting an
  * ISO timestamp string to SQLite's NUMERIC-affinity `DATETIME` silently yields
  * the leading year. Affinity conversion leaves values it cannot convert
- * untouched instead of destroying them.
+ * untouched instead of destroying them. It does convert numeric-looking text
+ * (`'0001'` becomes `1` in a NUMERIC-affinity `DATETIME` column), so a
+ * date/time retype checks after the copy that every value and storage class
+ * survived and refuses otherwise (#5505).
  *
  * ## When the rebuild refuses
  *
@@ -96,6 +99,47 @@ export const SQLITE_RELAX_REBUILD_MARKER = 'PRAGMA foreign_keys = OFF';
 /** Why the guard below refuses; it is the name of the constraint that fails. */
 const SQLITE_REBUILD_GUARD_REASON =
   'smrt table rebuild refused: foreign keys are on, so DROP TABLE would delete rows of child tables. Run it through MigrationTracker (smrt db:migrate), which turns foreign keys off outside its transaction';
+
+/** Why the copy guard below refuses; the name of the constraint that fails. */
+const SQLITE_REBUILD_VALUE_GUARD_REASON =
+  'smrt table rebuild refused: copying into the new date/time column would change a stored value or its storage class (for example text 0001 becoming the integer 1). Repair those values, then rerun smrt db:migrate';
+
+/**
+ * #5505: a retyped column with a date/time declared type has NUMERIC
+ * affinity, so the copy turns numeric-looking text (`'0001'`, `'1e3'`) into a
+ * number and loses its spelling. After the copy, before anything is dropped,
+ * these statements refuse to continue unless every such column of the staging
+ * table holds the same values with the same storage classes as the original.
+ * A changed (type, value) pair of the original cannot reappear in the copy
+ * (affinity never turns a number into text), so a set difference finds every
+ * change.
+ */
+function sqliteRetypedValueGuardStatements(
+  tableName: string,
+  stagingTable: string,
+  guardedColumns: readonly string[],
+): string[] {
+  if (guardedColumns.length === 0) return [];
+  const guard = quoteIdentifier('_smrt_rebuild_value_guard');
+  const found = quoteIdentifier('_smrt_rebuild_value_found');
+  const source = `main.${quoteIdentifier(tableName)}`;
+  const staging = `main.${quoteIdentifier(stagingTable)}`;
+  const changed = guardedColumns
+    .map((name) => {
+      const column = quoteIdentifier(name);
+      return `EXISTS (SELECT typeof(${column}), ${column} FROM ${source} EXCEPT SELECT typeof(${column}), ${column} FROM ${staging})`;
+    })
+    .join(' OR ');
+  return [
+    `DROP TABLE IF EXISTS temp.${found}`,
+    `CREATE TEMP TABLE ${found} AS SELECT CASE WHEN ${changed} THEN 0 ELSE 1 END AS "safe"`,
+    `DROP TABLE IF EXISTS temp.${guard}`,
+    `CREATE TEMP TABLE ${guard} ("safe" INTEGER CONSTRAINT ${quoteIdentifier(SQLITE_REBUILD_VALUE_GUARD_REASON)} CHECK ("safe" = 1))`,
+    `INSERT INTO temp.${guard} ("safe") SELECT "safe" FROM temp.${found}`,
+    `DROP TABLE temp.${guard}`,
+    `DROP TABLE temp.${found}`,
+  ];
+}
 
 /**
  * The statements that make a rebuild of a referenced table refuse to run where
@@ -1038,6 +1082,19 @@ function buildPlannedSqliteRebuildStatements(
     `DROP TABLE IF EXISTS ${quotedStaging}`,
     createStaging,
     `INSERT INTO ${quotedStaging} (${targetList}) SELECT ${sourceList} FROM ${quotedTable}`,
+    // #5505: a date/time retype must not change what the rows hold.
+    ...sqliteRetypedValueGuardStatements(
+      tableName,
+      stagingTable,
+      [...columnTypes]
+        .filter(
+          ([name, type]) =>
+            /DATE|TIME/i.test(type) &&
+            columns.includes(name) &&
+            !tightenColumns.has(name),
+        )
+        .map(([name]) => name),
+    ),
     // Again right before the drop: the staging table itself references the
     // target when the new definition adds a key onto the table, and with
     // foreign keys on the drop would cascade into the staged rows.

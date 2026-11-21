@@ -10,6 +10,28 @@ Cascade reuse of a no-savepoint transaction requires an active framework-owned
 transaction handle; raw caller transactions retain the ordinary delete limitation.
 See [audit contract](../../../docs/content/audit-trail.md).
 
+**Date hydration follows the declared type (#5505).** `formatDataJs` parses a
+string into a `Date` for a `datetime` field, an STI `Meta<Date>` field
+(`_meta.underlyingType`), the framework `created_at`/`updated_at` columns,
+and, where the type is unknown (no field definition, a `meta` field without
+an underlying type, or a decorator-only field whose decorator stated no type,
+`_meta.__typeInferred`), a column ending in `_at`/`_date` or named `date`. A
+declared text field stays a string whatever its column is called, so a
+load-then-save no longer rewrites it. The scanner infers `datetime` from an
+unannotated `= new Date(...)` of the global constructor (read from the AST;
+a module binding named `Date` does not count), so such fields keep hydrating
+as `Date`; their column becomes TIMESTAMP (TEXT before), which `db:migrate`
+converges: a table rebuild on SQLite (refused if a value would change), a
+probed and rechecked `timestamptz` cast on PostgreSQL that stops on empty
+text (`--empty-text-as-null`) or naive wall-clock text
+(`--postgres-timestamp-legacy-timezone=UTC`), and on DuckDB `ALTER COLUMN
+TYPE` or `type.rebuild-unavailable` (see cli `agents/type-drift.md`).
+Hydration reads the manifest a package ships: rebuild the manifests of
+separately built model packages with the new scanner before migrating, and
+annotate `: Date` (or declare `datetime`) on Date fields initialised through
+an alias (`const Clock = Date; at = new Clock()`) or a conditional, which
+still infer `text`.
+
 **Reserved field names (#5504).** A model field may not take an own
 `SmrtObject` instance member (`options`, `_db`, …), a `SmrtObject`/`SmrtClass`
 prototype member (`db`, `ai`, `fs`, `save`, `toJSON`, `tableName`, …) or an

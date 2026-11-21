@@ -22,8 +22,29 @@ a no-op once converged. This is independent of
 `postgresTimestampMigration.legacyTimezone`
 (`--postgres-timestamp-legacy-timezone=UTC`), which
 stays reserved for ambiguous naive wall-clock strings the probe does not
-accept. SQLite has no distinct storage for `text` vs `timestamptz`, so this
-stays advisory-only there.
+accept; it does not imply `--empty-text-as-null` (empty text, and literal
+`null` text, still stop the run without that opt-in; a JSON `null` in a
+legacy json column is NULL). Every PostgreSQL `timestamptz` conversion runs a
+recheck first, in its own transaction under the table's ACCESS EXCLUSIVE
+lock, and stops (`P0001`, "Cannot convert …") when a value written after
+planning would not convert faithfully; rerun `db:migrate` to re-plan (#5505).
+
+On SQLite a manifest `TIMESTAMP` over a live `TEXT` column is a
+`type_upgrade` that rebuilds the table (`DATETIME`) and keeps every value as
+stored, including empty text. The `DATETIME` column has NUMERIC affinity, so
+the rebuild checks after its copy that every value keeps its value and
+storage class and refuses otherwise (numeric-looking text such as `0001`
+would become the integer `1`): repair those values, then rerun (#5505).
+
+On DuckDB the change is `ALTER COLUMN TYPE`, which fails on unparseable
+values. When the column is indexed and the table references itself, the
+change needs a table rebuild that DuckDB cannot copy into, so it is reported
+as `type.rebuild-unavailable` and nothing runs. Convert it by hand in one
+transaction: create the new table with the TIMESTAMP column and the same
+keys (self-reference included), insert the rows parents-first so every
+reference resolves, drop the old table (tables that reference it need the
+same treatment), rename the new one, recreate its indexes, then confirm with
+`smrt db:status --parity`.
 
 ### Empty text (#3226)
 

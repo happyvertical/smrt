@@ -3439,7 +3439,7 @@
       "collectionExportName": "UserNotificationCollectionCollection",
       "schema": {
         "tableName": "user_notifications",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"user_notifications\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID NOT NULL,\n  \"recipient_user_id\" UUID NOT NULL,\n  \"kind\" TEXT NOT NULL,\n  \"title\" TEXT NOT NULL,\n  \"body\" TEXT,\n  \"href\" TEXT,\n  \"severity\" TEXT DEFAULT 'info',\n  \"source_ref\" TEXT NOT NULL,\n  \"occurred_at\" TEXT,\n  \"read_at\" TIMESTAMP,\n  \"dismissed_at\" TIMESTAMP\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"user_notifications\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID NOT NULL,\n  \"recipient_user_id\" UUID NOT NULL,\n  \"kind\" TEXT NOT NULL,\n  \"title\" TEXT NOT NULL,\n  \"body\" TEXT,\n  \"href\" TEXT,\n  \"severity\" TEXT DEFAULT 'info',\n  \"source_ref\" TEXT NOT NULL,\n  \"occurred_at\" TIMESTAMP,\n  \"read_at\" TIMESTAMP,\n  \"dismissed_at\" TIMESTAMP\n);",
         "columns": {
           "id": {
             "type": "UUID",
@@ -3510,7 +3510,7 @@
             "unique": false
           },
           "occurred_at": {
-            "type": "TEXT",
+            "type": "TIMESTAMP",
             "notNull": false,
             "unique": false
           },
@@ -10440,7 +10440,7 @@
           }
         },
         "occurredAt": {
-          "type": "text",
+          "type": "datetime",
           "required": false
         },
         "readAt": {
@@ -10504,7 +10504,7 @@
       ],
       "schema": {
         "tableName": "user_notifications",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"user_notifications\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID NOT NULL,\n  \"recipient_user_id\" UUID NOT NULL,\n  \"kind\" TEXT NOT NULL,\n  \"title\" TEXT NOT NULL,\n  \"body\" TEXT,\n  \"href\" TEXT,\n  \"severity\" TEXT DEFAULT 'info',\n  \"source_ref\" TEXT NOT NULL,\n  \"occurred_at\" TEXT,\n  \"read_at\" TIMESTAMP,\n  \"dismissed_at\" TIMESTAMP\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"user_notifications\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID NOT NULL,\n  \"recipient_user_id\" UUID NOT NULL,\n  \"kind\" TEXT NOT NULL,\n  \"title\" TEXT NOT NULL,\n  \"body\" TEXT,\n  \"href\" TEXT,\n  \"severity\" TEXT DEFAULT 'info',\n  \"source_ref\" TEXT NOT NULL,\n  \"occurred_at\" TIMESTAMP,\n  \"read_at\" TIMESTAMP,\n  \"dismissed_at\" TIMESTAMP\n);",
         "columns": {
           "id": {
             "type": "UUID",
@@ -10575,7 +10575,7 @@
             "unique": false
           },
           "occurred_at": {
-            "type": "TEXT",
+            "type": "TIMESTAMP",
             "notNull": false,
             "unique": false
           },

@@ -1085,6 +1085,20 @@ export class ManifestAdapter {
       };
     }
 
+    // 3.65. Infer datetime from a `new Date(...)` initializer without a type
+    // annotation (`recordedAt = new Date()`). The value is a Date at run time,
+    // so the column and the hydrated value are datetime; a later
+    // `@field({ type })` still wins in convertField (#5505). The parser
+    // classifies the initializer from the AST: one `new Date(...)` of the
+    // global constructor, not a module binding of the same name.
+    if (field.initializerIsDate === true) {
+      return {
+        type: 'datetime',
+        required: false,
+        source: 'heuristic',
+      };
+    }
+
     // 3.7. Infer from a boolean `@field({ default })` when nothing else names
     // a type (`@field({ default: false }) archived;`). Compiled-runtime
     // registration without a manifest reads only the decorator options, and

@@ -828,8 +828,9 @@ describe('SchemaComparer engine-specific SQL generation', () => {
     const typeUpgrades = diff.changes.filter((c) => c.type === 'type_upgrade');
     expect(typeUpgrades).toHaveLength(1);
     expect(typeUpgrades[0].sql).toContain('TYPE TIMESTAMPTZ');
+    // A JSON null is NULL; empty text needs --empty-text-as-null (#5505).
     expect(typeUpgrades[0].sql).toContain(
-      `USING NULLIF(NULLIF(trim(both '"' from "created_at"::text), ''), 'null')::timestamptz`,
+      `USING (trim(both '"' from NULLIF("created_at"::text, 'null')))::timestamptz`,
     );
   });
 
@@ -932,6 +933,7 @@ describe('SchemaComparer engine-specific SQL generation', () => {
         type: 'type_upgrade',
         sqlStatements: [
           expect.stringContaining("current_setting('TimeZone')"),
+          expect.stringContaining('IN ACCESS EXCLUSIVE MODE'),
           expect.stringContaining('::timestamptz'),
         ],
       }),
@@ -2843,7 +2845,7 @@ describe('SchemaComparer text -> timestamptz convergence (#2771)', () => {
     expect(typeUpgrades[0].advisory?.message).not.toContain(
       'not-a-timestamp-value',
     );
-    expect(typeUpgrades[0].advisory?.suggestedSql?.[0]).toContain(
+    expect(typeUpgrades[0].advisory?.suggestedSql?.at(-1)).toContain(
       '::timestamptz',
     );
     expect(diff.changes.filter((c) => c.type === 'type_mismatch')).toEqual([]);

@@ -2456,6 +2456,10 @@ function registerUntracked(
             undefined,
             decoratorOptions,
           ),
+          // The decorator stated no type and there is no manifest entry, so
+          // the type below is a guess; hydration then keeps the column-name
+          // date rule for this field (#5505).
+          ...(opts.type ? {} : { __typeInferred: true }),
         };
         const newField: RegisteredField = {
           type: opts.type || inferDecoratorOnlyFieldType(opts),

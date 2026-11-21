@@ -188,6 +188,12 @@ export interface RawFieldDefinition {
 
   /** Whether the field is a type-only `declare` field (emits nothing at runtime) */
   declare?: boolean;
+
+  /**
+   * Whether the initializer is exactly one `new Date(...)` of the global
+   * `Date` constructor (the module does not bind its own `Date`).
+   */
+  initializerIsDate?: boolean;
 }
 
 /**
