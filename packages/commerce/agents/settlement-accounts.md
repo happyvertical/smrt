@@ -36,6 +36,11 @@ accounts are the `arAccountId` / `revenueAccountId` of `recognizeRevenue`.
   ledger") because the journal was always ledger-less; it now takes the cash
   account's ledger and refuses a `ledgerId` that does not own it. Ledger-less
   accounts (`ledgerId: ''`) keep posting to a ledger-less journal.
+- `recognizeRevenue` (and the cancellation reversal) post into the same ledger:
+  the journal takes the ledger shared by its posting accounts, and a mix of
+  ledgers (or of ledger-scoped and ledger-less accounts) is refused with a clear
+  error. Point tax components' `liabilityAccountId` at Sales Tax Payable (2200)
+  so the per-line tax accounts come from the same chart.
 - Scope: this chart settles incoming payments (cash and receivables) and gives
   `recognizeRevenue` its receivables, revenue and sales-tax accounts. It does not
   yet back `BillingRuntime.ledger`: the billing tax journal and `postOnce`

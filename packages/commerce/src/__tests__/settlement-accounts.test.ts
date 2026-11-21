@@ -14,12 +14,17 @@ import {
 } from '@happyvertical/smrt-tenancy';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { CustomerCollection } from '../collections/CustomerCollection.js';
+import { InvoiceCollection } from '../collections/InvoiceCollection.js';
+import { InvoiceLineItemCollection } from '../collections/InvoiceLineItemCollection.js';
 import { PaymentCollection } from '../collections/PaymentCollection.js';
+import { TaxCodeCollection } from '../collections/TaxCodeCollection.js';
 import {
+  ensureCommerceTenant,
   ensureTenantSettlementAccounts,
   SETTLEMENT_ACCOUNTS,
 } from '../index.js';
-import { PaymentMethod, PaymentStatus } from '../types/index.js';
+import { InvoiceStatus, PaymentMethod, PaymentStatus } from '../types/index.js';
 
 const databaseType = process.env.SMRT_TEST_PGLITE === '1' ? 'pglite' : 'sqlite';
 const TENANT = '11111111-1111-4111-8111-111111111111';
@@ -229,4 +234,62 @@ describe('ensureTenantSettlementAccounts', () => {
       expect(payment.status).toBe(PaymentStatus.PENDING);
     });
   });
+
+  // Invoice money writes use a SQLite-only call under PGlite; the Postgres
+  // invoice-posting suite is separate (invoice-posting-postgres.optional).
+  it.skipIf(databaseType === 'pglite')(
+    'gives recognizeRevenue the same chart: the revenue journal posts into the settlement ledger',
+    async () => {
+      const seeded = await ensureTenantSettlementAccounts(db, TENANT, {
+        currency: 'CAD',
+      });
+      await ensureCommerceTenant(db, TENANT);
+      const journal = await withTenant({ tenantId: TENANT }, async () => {
+        const exempt = await (
+          await TaxCodeCollection.create({ db })
+        ).findByCode('exempt', TENANT);
+        const customer = await (await CustomerCollection.create({ db })).create(
+          {
+            defaultTaxCodeId: exempt!.id,
+          },
+        );
+        const invoices = await InvoiceCollection.create({ db });
+        const created = await invoices.create({
+          customerId: customer.id,
+          invoiceNumber: 'SETTLE-1',
+          currency: 'CAD',
+        });
+        await (await InvoiceLineItemCollection.create({ db })).create({
+          invoiceId: created.id,
+          description: 'Line',
+          quantity: 1,
+          unitPrice: 300,
+          taxMode: 'override',
+          taxCodeId: exempt!.id,
+        });
+        const invoice = await invoices.get(
+          { id: created.id },
+          { cache: false },
+        );
+        invoice!.status = InvoiceStatus.SENT;
+        invoice!.sentAt = new Date('2026-11-20T12:00:00.000Z');
+        await invoice!.save();
+        return invoice!.recognizeRevenue({
+          arAccountId: seeded.receivablesAccountId,
+          revenueAccountId: seeded.revenueAccountId,
+          taxAccountId: seeded.salesTaxPayableAccountId,
+          bookCurrency: 'CAD',
+        });
+      });
+      expect(journal.ledgerId).toBe(seeded.ledgerId);
+      const entries = await withTenant({ tenantId: TENANT }, () =>
+        journal.getEntries(),
+      );
+      const byAccount = Object.fromEntries(
+        entries.map((e) => [e.accountId, [e.debit, e.credit]]),
+      );
+      expect(byAccount[seeded.receivablesAccountId]).toEqual([300, 0]);
+      expect(byAccount[seeded.revenueAccountId]).toEqual([0, 300]);
+    },
+  );
 });
