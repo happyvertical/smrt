@@ -2833,15 +2833,23 @@ export class ManifestGenerator {
         // local model `localBareTarget` finds, the rule `assertKnownTargets`
         // fails the build by; no other name lookup. Only a direct caller of
         // the public `generateSchemas()` keeps the legacy lookup by name.
+        // A written qualified name (`'@pkg:Class'`, optionally `.column`) is an
+        // identity, looked up as one.
+        const writtenQualified =
+          !field.relatedQualified && isQualifiedName(field.related)
+            ? `${parseQualifiedName(field.related).packageName}:${parseQualifiedName(field.related).className.split('.')[0]}`
+            : undefined;
         const bareModel =
-          mode === 'generation' && !field.relatedQualified
+          mode === 'generation' && !field.relatedQualified && !writtenQualified
             ? this.localBareTarget(manifest, obj, field.related).definition
             : undefined;
         const targetSchema = field.relatedQualified
           ? this.qualifiedTargetSchema(field.relatedQualified, manifest)
           : mode === 'generation'
-            ? bareModel &&
-              schemaByTable.get(this.getObjectTableName(bareModel) ?? '')
+            ? writtenQualified
+              ? this.qualifiedTargetSchema(writtenQualified, manifest)
+              : bareModel &&
+                schemaByTable.get(this.getObjectTableName(bareModel) ?? '')
             : this.findForeignKeyTargetSchema(
                 field.related,
                 manifest,
