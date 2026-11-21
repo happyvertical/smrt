@@ -8,36 +8,50 @@ import { Payment as BasePayment } from '../models/Payment.js';
 import { PaymentAllocation as BasePaymentAllocation } from '../models/PaymentAllocation.js';
 import { Payout as BasePayout } from '../models/Payout.js';
 import { PurchasePriceObservation as BasePurchasePriceObservation } from '../models/PurchasePriceObservation.js';
-@smrt({ packageName: '@local/issue4931-commerce', tableName: 'payouts' })
+@smrt({
+  replaceParent: true,
+  packageName: '@local/issue4931-commerce',
+  tableName: 'payouts',
+})
 export class Payout extends BasePayout {}
 @smrt({
+  replaceParent: true,
   packageName: '@local/issue4931-commerce',
   tableName: 'invoice_line_items',
 })
 export class InvoiceLineItem extends BaseInvoiceLineItem {}
-@smrt({ packageName: '@local/issue4931-commerce', tableName: 'payments' })
+@smrt({
+  replaceParent: true,
+  packageName: '@local/issue4931-commerce',
+  tableName: 'payments',
+})
 export class Payment extends BasePayment {}
 @smrt({
+  replaceParent: true,
   packageName: '@local/issue4931-commerce',
   tableName: 'payment_allocations',
 })
 export class PaymentAllocation extends BasePaymentAllocation {}
 @smrt({
+  replaceParent: true,
   packageName: '@local/issue4931-commerce',
   tableName: 'historical_customer_funds',
 })
 export class HistoricalCustomerFunds extends BaseHistoricalCustomerFunds {}
 @smrt({
+  replaceParent: true,
   packageName: '@local/issue4931-commerce',
   tableName: 'historical_customer_funds_allocations',
 })
 export class HistoricalCustomerFundsAllocation extends BaseHistoricalCustomerFundsAllocation {}
 @smrt({
+  replaceParent: true,
   packageName: '@local/issue4931-commerce',
   tableName: 'historical_sales_lines',
 })
 export class HistoricalSalesLine extends BaseHistoricalSalesLine {}
 @smrt({
+  replaceParent: true,
   packageName: '@local/issue4931-commerce',
   tableName: 'purchase_price_observations',
 })

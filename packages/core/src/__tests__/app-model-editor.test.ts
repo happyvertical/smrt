@@ -741,6 +741,7 @@ describe('durable app model editor', () => {
     ObjectRegistry.register(AppCustomer, {
       name: 'Customer',
       packageName: APP,
+      replaceParent: true,
     });
     const e = await editor();
     await edit(e, {
@@ -762,6 +763,63 @@ describe('durable app model editor', () => {
         'upstream behavior',
       );
     });
+  });
+
+  it('keeps a coexisting run-time model registered between two edits of another model', async () => {
+    class Scene extends SmrtObject {}
+    const provider = {
+      name: 'Scene',
+      packageName: '@fixture/a4-scene-provider',
+      tableName: 'a4_scenes',
+    };
+    ObjectRegistry.register(Scene, provider);
+    const e = await editor();
+    await edit(e, {
+      type: 'add_field',
+      model: CUSTOMER,
+      name: 'firstNote',
+      field: { type: 'text' },
+    });
+    registerRuntimeModel({
+      name: 'Scene',
+      packageName: '@fixture/a4-scene-app',
+      extends: '@fixture/a4-scene-provider:Scene',
+      fields: { nickname: { type: 'text' } },
+    });
+    await edit(e, {
+      type: 'add_field',
+      model: CUSTOMER,
+      name: 'secondNote',
+      field: { type: 'text' },
+    });
+    // The provider registers again, from its manifest and its constructor.
+    expect(() =>
+      ObjectRegistry.registerFromManifest(
+        '@fixture/a4-scene-provider:Scene',
+        {
+          name: 'scene',
+          collection: 'a4_scenes',
+          className: 'Scene',
+          qualifiedName: '@fixture/a4-scene-provider:Scene' as never,
+          packageName: provider.packageName,
+          filePath: 'src/models/scene.ts',
+          fields: {},
+          methods: {},
+          decoratorConfig: { tableName: provider.tableName },
+        },
+        provider.packageName,
+      ),
+    ).not.toThrow();
+    expect(() => ObjectRegistry.register(Scene, provider)).not.toThrow();
+    expect(
+      ObjectRegistry.getClass('@fixture/a4-scene-provider:Scene')?.constructor,
+    ).toBe(Scene);
+    expect(
+      ObjectRegistry.getClass('@fixture/a4-scene-app:Scene'),
+    ).toBeDefined();
+    expect(ObjectRegistry.getClass(CUSTOMER)?.qualifiedName).toBe(
+      `${APP}:Customer`,
+    );
   });
 
   it('fences concurrent editors before the losing edit can change registry or storage', async () => {

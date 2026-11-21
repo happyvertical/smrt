@@ -9,7 +9,7 @@
 import { field, SmrtCollection, smrt } from '@happyvertical/smrt-core';
 import { Attachment as MessagesAttachment } from '@happyvertical/smrt-messages';
 
-@smrt()
+@smrt({ replaceParent: true })
 export class Attachment extends MessagesAttachment {
   @field({ required: true }) override filename: string = '';
   @field() virusScanned: boolean = false;

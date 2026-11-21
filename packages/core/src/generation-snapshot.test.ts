@@ -86,7 +86,7 @@ describe('verified generation snapshots', () => {
       packageName: '@fixture/app',
       filePath: join(projectRoot, 'src/LocalThing.ts'),
       extendsQualified: '@fixture/dependency:ExternalThing',
-      decoratorConfig: { tableName: 'things' },
+      decoratorConfig: { tableName: 'things', replaceParent: true },
     };
     const options = writeArtifact(
       serializeSmrtGenerationSnapshot(replaced, provenance, {

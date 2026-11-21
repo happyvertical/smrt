@@ -5,6 +5,7 @@ import { Comment as SmrtComment } from '../models/Comment.js';
 export function registerAppModels(): { Comment: typeof SmrtComment } {
   class Comment extends SmrtComment {}
   smrt({
+    replaceParent: true,
     packageName: '@local/issue-4931-comments',
     tableName: 'record_comments',
   })(Comment);
