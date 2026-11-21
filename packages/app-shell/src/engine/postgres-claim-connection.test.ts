@@ -12,9 +12,10 @@
 //    after a COMMIT the server refuses. A dropped session frees it, and the
 //    pool then reconnects silently on a NEW session that does not hold it.
 //
-// Part of the registered `test:postgres` suite: fact 1 runs on an in-process
-// PGlite too; fact 2 needs two server sessions, so it runs only when
-// `SMRT_TEST_POSTGRES_URL` is set (CI's "Registered PostgreSQL Suites" lane).
+// Part of the registered `test:postgres` suite. Both run on an in-process
+// PGlite too; what needs a second session (who else can take the lock, a
+// terminated session) runs only when `SMRT_TEST_POSTGRES_URL` is set (CI's
+// "Registered PostgreSQL Suites" lane).
 import { getDatabase } from '@happyvertical/sql';
 import { importPGlite } from '@happyvertical/sql/pglite';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -144,111 +145,124 @@ describe.each(backends)('the claim connection (%s)', (backend) => {
     expect(await meta('fence')).toEqual(['1']);
   });
 
-  // Two sessions are needed to see who holds a lock; PGlite is one.
-  it.runIf(backend === 'postgres')(
-    'fact 2: the session advisory lock outlives every transaction on its connection, and only its session',
-    async () => {
-      const key = `app_claim_${suffix()}`;
-      const other = await claimConnection(serverUrl as string);
-      const pidOf = async (h: Handle) =>
-        Number((await h.query(`SELECT pg_backend_pid() AS pid`)).rows[0].pid);
-      // Who holds the app lock of `key`, as another session sees it.
-      const holders = async () =>
-        (
-          await other.query(
-            `SELECT pid FROM pg_locks WHERE locktype = 'advisory' AND granted AND objsubid = 2 AND classid::bigint = (hashtext('smrt-app-shell')::bigint & 4294967295) AND objid::bigint = (hashtext(?)::bigint & 4294967295)`,
-            [key],
-          )
-        ).rows.map((r) => Number(r.pid));
-      // The in-transaction proof the design adds: this session holds it.
-      const holdsIt = async (h: Handle) => {
-        const v = (
-          await h.query(
-            `SELECT EXISTS (SELECT 1 FROM pg_locks WHERE locktype = 'advisory' AND granted AND objsubid = 2 AND pid = pg_backend_pid() AND classid::bigint = (hashtext('smrt-app-shell')::bigint & 4294967295) AND objid::bigint = (hashtext(?)::bigint & 4294967295)) AS held`,
-            [key],
-          )
-        ).rows[0].held;
-        return v === true || v === 't';
+  // The in-transaction proof the design adds runs on both: PGlite is one
+  // session, so there it shows only that the session keeps the lock across its
+  // own transactions. Who ELSE can take it needs a second session: server only.
+  it('fact 2: the session advisory lock outlives every transaction on its connection', async () => {
+    const key = `app_claim_${suffix()}`;
+    const server = backend === 'postgres';
+    const other = server ? await claimConnection(serverUrl as string) : null;
+    const pidOf = async (h: Handle) =>
+      Number((await h.query(`SELECT pg_backend_pid() AS pid`)).rows[0].pid);
+    const lockMatch = `locktype = 'advisory' AND granted AND objsubid = 2 AND classid::bigint = (hashtext('smrt-app-shell')::bigint & 4294967295) AND objid::bigint = (hashtext(?)::bigint & 4294967295)`;
+    // This session holds it: the check each claim transaction would start with.
+    const holdsIt = async (h: Handle) => {
+      const v = (
+        await h.query(
+          `SELECT EXISTS (SELECT 1 FROM pg_locks WHERE ${lockMatch} AND pid = pg_backend_pid()) AS held`,
+          [key],
+        )
+      ).rows[0].held;
+      return v === true || v === 't';
+    };
+    // Who holds it, as another session sees it (server only).
+    const holders = async () =>
+      (
+        await (other as Handle).query(
+          `SELECT pid FROM pg_locks WHERE ${lockMatch}`,
+          [key],
+        )
+      ).rows.map((r) => Number(r.pid));
+    const refusedToOther = async () => {
+      const got = await tryAppLock(other as Handle, key);
+      if (got) await releaseAppLock(other as Handle, key);
+      return !got;
+    };
+    try {
+      expect(await tryAppLock(claim, key)).toBe(true);
+      const pid = await pidOf(claim);
+      const seenFromOutside = async () => {
+        if (!server) return;
+        expect(await holders()).toEqual([pid]);
+        expect(await refusedToOther()).toBe(true);
       };
-      const refusedToOther = async () => {
-        const got = await tryAppLock(other, key);
-        if (got) await releaseAppLock(other, key);
-        return !got;
-      };
-      try {
-        expect(await tryAppLock(claim, key)).toBe(true);
-        const pid = await pidOf(claim);
-        const stillHeld = async () => {
-          expect(await holders()).toEqual([pid]);
-          expect(await refusedToOther()).toBe(true);
-        };
-        await stillHeld();
-
-        // Inside a transaction: on the same session, which the proof sees.
-        await claim.transaction(async (tx) => {
-          expect(await pidOf(tx)).toBe(pid);
-          expect(await holdsIt(tx)).toBe(true);
-          await tx.query(`UPDATE ${table} SET v = v + 1 WHERE id = 'a'`);
-          await stillHeld();
-        });
-        // After COMMIT.
-        await stillHeld();
+      const stillHeld = async () => {
         expect(await holdsIt(claim)).toBe(true);
+        expect(await pidOf(claim)).toBe(pid);
+        await seenFromOutside();
+      };
+      await stillHeld();
 
-        // After ROLLBACK.
+      // Inside a transaction: on the same session, which the proof sees.
+      await claim.transaction(async (tx) => {
+        expect(await pidOf(tx)).toBe(pid);
+        expect(await holdsIt(tx)).toBe(true);
+        await tx.query(`UPDATE ${table} SET v = v + 1 WHERE id = 'a'`);
+        await seenFromOutside();
+      });
+      // After COMMIT.
+      await stillHeld();
+
+      // After ROLLBACK.
+      await expect(
+        claim.transaction(async (tx) => {
+          await tx.query(`UPDATE ${table} SET v = v + 1 WHERE id = 'a'`);
+          throw new Error('roll back');
+        }),
+      ).rejects.toThrow('roll back');
+      await stillHeld();
+
+      // After a failed statement (the transaction aborts).
+      await expect(
+        claim.transaction(async (tx) => {
+          await tx.query(`SELECT 1 / 0 AS boom`);
+        }),
+      ).rejects.toThrow();
+      await stillHeld();
+
+      // After a COMMIT the server refuses (a deferred unique check): the
+      // transaction is gone, the session and its lock are not.
+      const deferred = `probe_deferred_${suffix()}`;
+      await shell.query(
+        `CREATE TABLE ${deferred} (id INTEGER, CONSTRAINT ${deferred}_u UNIQUE (id) DEFERRABLE INITIALLY DEFERRED)`,
+      );
+      try {
         await expect(
           claim.transaction(async (tx) => {
-            await tx.query(`UPDATE ${table} SET v = v + 1 WHERE id = 'a'`);
-            throw new Error('roll back');
-          }),
-        ).rejects.toThrow('roll back');
-        await stillHeld();
-
-        // After a failed statement (the transaction aborts).
-        await expect(
-          claim.transaction(async (tx) => {
-            await tx.query(`SELECT 1 / 0 AS boom`);
+            await tx.query(`INSERT INTO ${deferred} (id) VALUES (1), (1)`);
           }),
         ).rejects.toThrow();
         await stillHeld();
-
-        // After a COMMIT the server refuses (a deferred unique check): the
-        // transaction is gone, the session and its lock are not.
-        const deferred = `probe_deferred_${suffix()}`;
-        await shell.query(
-          `CREATE TABLE ${deferred} (id INTEGER, CONSTRAINT ${deferred}_u UNIQUE (id) DEFERRABLE INITIALLY DEFERRED)`,
-        );
-        try {
-          await expect(
-            claim.transaction(async (tx) => {
-              await tx.query(`INSERT INTO ${deferred} (id) VALUES (1), (1)`);
-            }),
-          ).rejects.toThrow();
-          await stillHeld();
-          expect(await pidOf(claim)).toBe(pid);
-          expect(
-            (await shell.query(`SELECT count(*)::int AS n FROM ${deferred}`))
-              .rows[0].n,
-          ).toBe(0);
-        } finally {
-          await shell.query(`DROP TABLE IF EXISTS ${deferred}`);
-        }
-
-        // The session ends: the lock is free, and the pool reconnects on a
-        // new session that does NOT hold it. Only the in-transaction proof
-        // tells the two apart; a commit on the pool alone proves nothing.
-        await other.query(`SELECT pg_terminate_backend(?)`, [pid]);
-        let fresh: number | null = null;
-        for (let i = 0; i < 5 && fresh === null; i++)
-          fresh = await pidOf(claim).catch(() => null);
-        expect(fresh).not.toBeNull();
-        expect(fresh).not.toBe(pid);
-        expect(await holders()).toEqual([]);
-        expect(await claim.transaction(async (tx) => holdsIt(tx))).toBe(false);
+        expect(
+          Number(
+            (await shell.query(`SELECT count(*) AS n FROM ${deferred}`)).rows[0]
+              .n,
+          ),
+        ).toBe(0);
       } finally {
-        await releaseAppLock(claim, key).catch(() => {});
-        await other.close?.().catch(() => {});
+        await shell.query(`DROP TABLE IF EXISTS ${deferred}`);
       }
-    },
-  );
+
+      if (!server) return;
+      // The session ends: the lock is freed, and the pool reconnects on a new
+      // session that does NOT hold it. Only the in-transaction proof tells the
+      // two apart; a commit on the pool alone proves nothing.
+      await (other as Handle).query(`SELECT pg_terminate_backend(?)`, [pid]);
+      let freed = false;
+      for (let i = 0; i < 50 && !freed; i++) {
+        freed = (await holders()).length === 0;
+        if (!freed) await new Promise((r) => setTimeout(r, 100));
+      }
+      expect(freed).toBe(true);
+      let fresh: number | null = null;
+      for (let i = 0; i < 5 && fresh === null; i++)
+        fresh = await pidOf(claim).catch(() => null);
+      expect(fresh).not.toBeNull();
+      expect(fresh).not.toBe(pid);
+      expect(await claim.transaction(async (tx) => holdsIt(tx))).toBe(false);
+    } finally {
+      await releaseAppLock(claim, key).catch(() => {});
+      await other?.close?.().catch(() => {});
+    }
+  });
 });

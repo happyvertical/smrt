@@ -298,9 +298,10 @@ for the one operation on the host thread; a PGlite uses the host's client).
   `postgres-claim-connection.test.ts` (registered too) checks what #5470 rests
   on, on a connection opened like `claimApp`'s: it reaches the shell's tables
   unqualified as the same role and writes them and an app schema in one
-  transaction (PGlite and server); and (server only) the session advisory lock
-  survives a transaction, COMMIT, ROLLBACK and a refused COMMIT on it, while a
-  dropped session frees it and the pool reconnects on a session without it.
+  transaction; the session advisory lock survives a transaction, COMMIT,
+  ROLLBACK and a refused COMMIT on it (both on PGlite too); and (server only)
+  no other session can take it meanwhile, while a dropped session frees it and
+  the pool reconnects on a session without it.
   Whole numbers (integer, money) outside +/-9007199254740991 cannot be read
   back exactly, so they are refused at write time (`coerceValue`: create,
   update, record loads, field conversion, method writes) and, for a value that
