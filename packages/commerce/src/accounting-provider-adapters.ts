@@ -12,16 +12,18 @@
  * @packageDocumentation
  */
 
+import { prepareQuickBooksPaymentRequest } from '@happyvertical/accounting';
 import {
   type AccountingCustomerCandidate,
   type AccountingCustomerDirectory,
   AccountingMappingError,
 } from './accounting-mapping.js';
-import type {
-  AccountingInvoiceEvidence,
-  AccountingInvoiceReader,
-  AccountingPaymentPort,
-  AccountingPaymentRequest,
+import {
+  type AccountingInvoiceEvidence,
+  type AccountingInvoiceReader,
+  AccountingPaymentNotSentError,
+  type AccountingPaymentPort,
+  type AccountingPaymentRequest,
 } from './accounting-payment-sync.js';
 import { minorToMajorUnits } from './billing/units.js';
 
@@ -89,42 +91,54 @@ export function paymentPortFromProvider(provider: {
 }): AccountingPaymentPort {
   const payments =
     provider.payments as Partial<QuickBooksPaymentCreateOperation>;
+  const input = (request: AccountingPaymentRequest) => ({
+    customerRef: request.customerExternalId,
+    depositToAccountRef: request.depositAccountRef,
+    paidOn: request.paidAt.toISOString().slice(0, 10),
+    currency: request.currency,
+    amount: minorToMajorUnits(request.amountMinor, request.currency),
+    applications: request.applications.map((application) => ({
+      invoiceRef: application.invoiceExternalId,
+      amount: minorToMajorUnits(application.amountMinor, request.currency),
+    })),
+    ...(request.transactionId
+      ? {
+          reference: request.transactionId.slice(0, PAYMENT_REFERENCE_MAX),
+        }
+      : {}),
+  });
   return {
+    // The SDK's descriptor is the SHA-256 of the exact mapped payload; commerce
+    // persists it so `create` receives what it verifies (it performs no I/O).
+    prepare(request: AccountingPaymentRequest) {
+      try {
+        return {
+          payloadHash: prepareQuickBooksPaymentRequest(input(request), {
+            requestId: request.requestId,
+            realmId: request.realmId,
+            environment: request.environment,
+          }).payloadHash,
+        };
+      } catch {
+        // The SDK's message can quote payload values; keep the cause out.
+        throw new AccountingPaymentNotSentError(
+          'INVALID_PROVIDER_REQUEST',
+          'The payment cannot be formed into a valid provider request',
+        );
+      }
+    },
     async create(request: AccountingPaymentRequest) {
       if (typeof payments?.create !== 'function')
-        throw new Error(
+        throw new AccountingPaymentNotSentError(
+          'PROVIDER_UNSUPPORTED',
           'The QuickBooks provider does not support payment creation.',
         );
-      const result = await payments.create(
-        {
-          customerRef: request.customerExternalId,
-          depositToAccountRef: request.depositAccountRef,
-          paidOn: request.paidAt.toISOString().slice(0, 10),
-          currency: request.currency,
-          amount: minorToMajorUnits(request.amountMinor, request.currency),
-          applications: request.applications.map((application) => ({
-            invoiceRef: application.invoiceExternalId,
-            amount: minorToMajorUnits(
-              application.amountMinor,
-              request.currency,
-            ),
-          })),
-          ...(request.transactionId
-            ? {
-                reference: request.transactionId.slice(
-                  0,
-                  PAYMENT_REFERENCE_MAX,
-                ),
-              }
-            : {}),
-        },
-        {
-          requestId: request.requestId,
-          realmId: request.realmId,
-          environment: request.environment,
-          payloadHash: request.payloadHash,
-        },
-      );
+      const result = await payments.create(input(request), {
+        requestId: request.requestId,
+        realmId: request.realmId,
+        environment: request.environment,
+        payloadHash: request.payloadHash,
+      });
       return { externalId: result.externalId, syncedAt: new Date() };
     },
   };

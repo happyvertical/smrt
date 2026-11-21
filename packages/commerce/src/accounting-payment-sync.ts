@@ -111,9 +111,35 @@ export interface AccountingPaymentRequest {
  * provider definitely refused; any other failure leaves the outcome unknown.
  */
 export interface AccountingPaymentPort {
+  /**
+   * The provider's own identity for these facts, derived before anything is
+   * persisted or sent. QuickBooks requires `payloadHash` to be the SHA-256 of
+   * the exact mapped payload, which only the provider can compute; commerce
+   * persists what this returns. Throw when the facts cannot form a valid
+   * provider request: nothing was sent, so the row becomes a retryable
+   * `rejected` with a stable code. Must perform no I/O.
+   */
+  prepare?(request: AccountingPaymentRequest): {
+    readonly payloadHash: string;
+  };
   create(
     request: AccountingPaymentRequest,
   ): Promise<{ readonly externalId: string; readonly syncedAt: Date }>;
+}
+
+/** Throw from a port when a failure happened before anything reached the provider. */
+export class AccountingPaymentNotSentError extends Error {
+  readonly outcome = 'rejected' as const;
+  readonly reason: string;
+  /** Same as `reason`, so batch items report it. */
+  readonly code: string;
+
+  constructor(reason: string, message: string) {
+    super(message);
+    this.name = 'AccountingPaymentNotSentError';
+    this.reason = reason;
+    this.code = reason;
+  }
 }
 
 /**
@@ -283,6 +309,14 @@ async function loadPaymentRequest(
   };
 }
 
+/**
+ * The request id a row is pinned to, or ''. Rows written before the column
+ * existed hold NULL, and a row released as absent by an earlier reconcile has no
+ * pin yet: both read correctly here, so no backfill migration is needed.
+ */
+const PINNED_REQUEST_ID_SQL = `COALESCE(NULLIF(pinned_request_id, ''),
+  CASE WHEN last_error = 'ABSENT_AT_PROVIDER' THEN request_id END, '')`;
+
 /** Claim the push: create the row, or take over a `rejected` one atomically. */
 async function claim(
   input: SyncPaymentToAccountingInput,
@@ -333,9 +367,11 @@ async function claim(
     );
   const taken = await input.db.query(
     `UPDATE accounting_payment_syncs
-        SET status = 'in_flight', attempt_id = ?, request_id = ?, payload_hash = ?,
+        SET pinned_request_id = ${PINNED_REQUEST_ID_SQL},
+            status = 'in_flight', attempt_id = ?, request_id = ?, payload_hash = ?,
             request_json = ?, started_at = ?, last_error = ''
       WHERE id = ? AND tenant_id = ? AND status = 'rejected' AND attempt_id = ?
+        AND ${PINNED_REQUEST_ID_SQL} IN ('', ?)
       RETURNING id`,
     attemptId,
     request.requestId,
@@ -345,9 +381,30 @@ async function claim(
     row.id,
     input.tenantId,
     row.attemptId,
+    request.requestId,
   );
-  if (taken.rows.length !== 1)
+  if (taken.rows.length !== 1) {
+    // A push released because the provider never received it keeps its request
+    // id: the provider dedups on it, so a slow original that lands later cannot
+    // become a second payment. Changed facts mean a new id, which a person
+    // decides. (Read in SQL: a cached row could predate the release.)
+    const pinned = await input.db.query(
+      `SELECT ${PINNED_REQUEST_ID_SQL} AS pinned_request_id
+         FROM accounting_payment_syncs WHERE id = ? AND tenant_id = ?`,
+      row.id,
+      input.tenantId,
+    );
+    const pin = String(
+      (pinned.rows[0] as { pinned_request_id?: string } | undefined)
+        ?.pinned_request_id ?? '',
+    );
+    if (pin && pin !== request.requestId)
+      refuse(
+        'RECONCILIATION_REQUIRED',
+        'The payment facts changed after its push was released; reconcile it',
+      );
     refuse('SYNC_IN_PROGRESS', 'Another process is pushing this payment');
+  }
   return { kind: 'claimed', attemptId };
 }
 
@@ -396,7 +453,25 @@ export async function syncPaymentToAccounting(
     provider: input.provider,
     scope,
   });
-  const request = await loadPaymentRequest(input, scope);
+  let request = await loadPaymentRequest(input, scope);
+  // The provider derives the persisted identity (see AccountingPaymentPort.prepare).
+  let notSent: AccountingPaymentNotSentError | null = null;
+  if (input.payments.prepare) {
+    try {
+      request = {
+        ...request,
+        payloadHash: input.payments.prepare(request).payloadHash,
+      };
+    } catch (error) {
+      notSent =
+        error instanceof AccountingPaymentNotSentError
+          ? error
+          : new AccountingPaymentNotSentError(
+              'INVALID_PROVIDER_REQUEST',
+              'The payment cannot be formed into a valid provider request',
+            );
+    }
+  }
   const claimed = await claim(input, scope, request);
   if (claimed.kind === 'done')
     return {
@@ -404,6 +479,15 @@ export async function syncPaymentToAccounting(
       externalId: claimed.row.externalId,
       requestId: claimed.row.requestId,
     };
+  if (notSent) {
+    // Nothing was sent: a known, retryable rejection, with its cause kept.
+    const failure = notSent;
+    await settle(input, scope, claimed.attemptId, (row) => {
+      row.status = 'rejected';
+      row.lastError = failure.reason;
+    });
+    throw failure;
+  }
   let result: { externalId: string; syncedAt: Date };
   try {
     result = await input.payments.create(request);
@@ -418,7 +502,9 @@ export async function syncPaymentToAccounting(
       row.lastError = rejected
         ? isReauthRequired(error)
           ? 'REAUTH_REQUIRED'
-          : 'REJECTED'
+          : error instanceof AccountingPaymentNotSentError
+            ? error.reason
+            : 'REJECTED'
         : 'UNKNOWN_OUTCOME';
     });
     throw error;
@@ -518,7 +604,8 @@ export async function reconcileAccountingPaymentSync(
   } else {
     applied = await input.db.query(
       `UPDATE accounting_payment_syncs
-          SET status = 'rejected', last_error = 'ABSENT_AT_PROVIDER'
+          SET status = 'rejected', last_error = 'ABSENT_AT_PROVIDER',
+              pinned_request_id = request_id
         WHERE id = ? AND tenant_id = ? AND status = ? AND request_id = ?
           AND attempt_id = ?
         RETURNING id`,
@@ -540,6 +627,105 @@ export async function reconcileAccountingPaymentSync(
     environment: scope.environment,
     paymentId: input.paymentId,
   })) as AccountingPaymentSync;
+}
+
+/** Input of {@link resolveUnknownPaymentSync}. */
+export interface ResolveUnknownPaymentSyncInput {
+  readonly db: DatabaseInterface;
+  /** Must be the active tenant. */
+  readonly tenantId: string;
+  readonly paymentId: string;
+  /** Reads the provider's invoices with their linked transactions. */
+  readonly reader: AccountingInvoiceReader;
+}
+
+/** What {@link resolveUnknownPaymentSync} concluded. */
+export type ResolveUnknownPaymentSyncResult =
+  | { readonly status: 'not_unknown' }
+  /** The provider holds no payment against the applied invoices: retryable. */
+  | { readonly status: 'retryable'; readonly row: AccountingPaymentSync }
+  /** The provider has a payment on an applied invoice; only a person can tell whose. */
+  | { readonly status: 'ambiguous'; readonly providerPaymentIds: string[] }
+  /** The provider read was partial or for another company or invoice: nothing is proven. */
+  | { readonly status: 'inconclusive' };
+
+/**
+ * Recover a payment push stuck as `unknown` without hand-written SQL. It asks
+ * the provider, through the invoice reader, whether any payment is recorded
+ * against the invoices the push applied to. None means the push never landed,
+ * so the row is released for a normal retry (the same `requestid` keeps it
+ * idempotent even if the provider is slower than the read); any payment leaves
+ * the row `unknown`, because a provider payment cannot be attributed to this
+ * push from the document alone. A failed read throws and changes nothing.
+ * Run it inside the tenant context.
+ */
+export async function resolveUnknownPaymentSync(
+  input: ResolveUnknownPaymentSyncInput,
+): Promise<ResolveUnknownPaymentSyncResult> {
+  principal(input.tenantId);
+  const scope = await getAccountingMappingScope(input, input.tenantId);
+  const collection = await AccountingPaymentSyncCollection.create({
+    db: input.db,
+  });
+  const row = await collection.findForPayment({
+    tenantId: input.tenantId,
+    realmId: scope.realmId,
+    environment: scope.environment,
+    paymentId: input.paymentId,
+  });
+  if (!row || row.status !== 'unknown') return { status: 'not_unknown' };
+  let applications: { invoiceExternalId: string }[] = [];
+  try {
+    applications = JSON.parse(row.requestJson).applications ?? [];
+  } catch {
+    refuse('INVALID_INPUT', 'The stored payment request cannot be read');
+  }
+  if (applications.length === 0)
+    refuse('INVALID_INPUT', 'The stored payment request has no invoices');
+  const found: string[] = [];
+  for (const application of applications) {
+    const evidence = await input.reader.readInvoice(
+      application.invoiceExternalId,
+    );
+    // Absence is proven only by a complete read of this company's invoice.
+    if (
+      evidence.complete !== true ||
+      evidence.realmId !== scope.realmId ||
+      evidence.environment !== scope.environment ||
+      evidence.tenantId !== input.tenantId ||
+      evidence.externalId !== application.invoiceExternalId
+    )
+      return { status: 'inconclusive' };
+    for (const transaction of evidence.transactions)
+      if (transaction.kind === 'payment') found.push(transaction.id);
+  }
+  // Payments this tenant already synced are not evidence about this push.
+  const known = new Set<string>();
+  if (found.length > 0) {
+    const synced = await input.db.query(
+      `SELECT external_id FROM accounting_payment_syncs
+        WHERE tenant_id = ? AND realm_id = ? AND environment = ?
+          AND status = 'synced' AND external_id IN (${found.map(() => '?').join(', ')})`,
+      input.tenantId,
+      scope.realmId,
+      scope.environment,
+      ...found,
+    );
+    for (const r of synced.rows as { external_id: string }[])
+      known.add(String(r.external_id));
+  }
+  const unattributed = found.filter((id) => !known.has(id));
+  if (unattributed.length > 0)
+    return { status: 'ambiguous', providerPaymentIds: unattributed };
+  const resolved = await reconcileAccountingPaymentSync({
+    db: input.db,
+    tenantId: input.tenantId,
+    paymentId: input.paymentId,
+    requestId: row.requestId,
+    attemptId: row.attemptId,
+    outcome: { status: 'absent' },
+  });
+  return { status: 'retryable', row: resolved };
 }
 
 // ---------------------------------------------------------------------------
