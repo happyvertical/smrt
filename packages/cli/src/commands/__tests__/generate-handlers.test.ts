@@ -244,9 +244,114 @@ describe('generate-* handlers', () => {
       });
       mocks.generateSvelteKitRoutes.mockRejectedValue(new Error('route fail'));
 
-      await expect(
-        requireCommandHandler(generateCommands['generate-routes'])([], {}),
-      ).rejects.toThrow(/Failed to generate routes: route fail/);
+      const error = await requireCommandHandler(
+        generateCommands['generate-routes'],
+      )([], {}).then(
+        () => undefined,
+        (caught: unknown) => caught as Error & { code?: string },
+      );
+      expect(error?.message).toMatch(/Failed to generate routes: route fail/);
+      expect(error?.code).toBeUndefined();
+    });
+
+    describe('with the real route generator', () => {
+      let projectRoot: string;
+      const APPLICATION_HANDLER =
+        "export const GET = () => new Response('application handler');\n";
+
+      beforeEach(async () => {
+        const { mkdtempSync, writeFileSync } = await import('node:fs');
+        const { tmpdir } = await import('node:os');
+        const { join } = await import('node:path');
+        projectRoot = mkdtempSync(join(tmpdir(), 'smrt-cli-route-ownership-'));
+        writeFileSync(
+          join(projectRoot, 'package.json'),
+          JSON.stringify({ name: '@app/x', type: 'module' }),
+        );
+        vi.spyOn(process, 'cwd').mockReturnValue(projectRoot);
+        const actual = await vi.importActual<
+          typeof import('@happyvertical/smrt-core/vite-plugin')
+        >('@happyvertical/smrt-core/vite-plugin');
+        mocks.generateSvelteKitRoutes.mockImplementation(
+          actual.generateSvelteKitRoutes,
+        );
+        mocks.autoDiscoverAndLoad.mockResolvedValue({
+          discovered: [{ path: 'm.json', packageName: '@app/x' }],
+          totalObjects: 1,
+        });
+        mocks.loadManifestFile.mockResolvedValue({
+          objects: {
+            '@app/x:Widget': {
+              className: 'Widget',
+              qualifiedName: '@app/x:Widget',
+              collection: 'widgets',
+              packageName: '@app/x',
+              filePath: join(projectRoot, 'src/lib/objects/Widget.ts'),
+              fields: {},
+              methods: {},
+              decoratorConfig: { api: true },
+            },
+          },
+        });
+      });
+
+      afterEach(async () => {
+        vi.mocked(process.cwd).mockRestore();
+        const { rmSync } = await import('node:fs');
+        rmSync(projectRoot, { recursive: true, force: true });
+      });
+
+      it('smrt generate keeps the ownership error identity', async () => {
+        const { readFileSync, writeFileSync } = await import('node:fs');
+        const { join } = await import('node:path');
+        const handler = requireCommandHandler(
+          generateCommands['generate-routes'],
+        );
+        await handler([], {});
+        const route = join(projectRoot, 'src/routes/api/widgets/+server.ts');
+        writeFileSync(route, APPLICATION_HANDLER);
+
+        const error = await handler([], {}).then(
+          () => undefined,
+          (caught: unknown) => caught as Error & { code?: string },
+        );
+
+        expect(error?.message.startsWith('Failed to generate routes:')).toBe(
+          true,
+        );
+        expect(error?.message).toContain(route);
+        expect(error?.code).toBe('SMRT_ROUTE_OWNERSHIP_CONFLICT');
+        expect(error?.cause).toMatchObject({
+          name: 'ApplicationRouteConflictError',
+          code: 'SMRT_ROUTE_OWNERSHIP_CONFLICT',
+          phase: 'preflight',
+        });
+        expect(readFileSync(route, 'utf8')).toBe(APPLICATION_HANDLER);
+      });
+
+      it.each([
+        '+server.js',
+        '+server.js/.',
+      ])('a config file name with the route-file prefix is rejected before anything changes (%s)', async (configFile) => {
+        const { existsSync } = await import('node:fs');
+        const { join } = await import('node:path');
+        const handler = requireCommandHandler(
+          generateCommands['generate-routes'],
+        );
+
+        await expect(
+          handler([], {
+            'config-path': 'src/routes/api/widgets',
+            'config-file': configFile,
+          }),
+        ).rejects.toThrow(/configFileName '.*' is reserved/);
+        expect(existsSync(join(projectRoot, 'src'))).toBe(false);
+
+        await handler([], { 'config-file': 'smrt.ts' });
+        expect(existsSync(join(projectRoot, 'src/lib/server/smrt.ts'))).toBe(
+          true,
+        );
+      });
     });
   });
 });
