@@ -428,6 +428,15 @@ export class AppHost extends EventEmitter {
   }
 
   static async open(dataDir: string, opts: HostOptions): Promise<AppHost> {
+    // 0 turns lock_timeout off (a dump or swap would wait forever); a fraction
+    // floors to 0 and a negative or NaN makes the server refuse the setting.
+    // Refuse before anything is opened or claimed.
+    const lockMs = opts.swapLockTimeoutMs;
+    if (lockMs !== undefined && (!Number.isInteger(lockMs) || lockMs < 1))
+      throw new EngineError(
+        'swapLockTimeoutMs must be a whole number of ms, 1 or more',
+        'refused',
+      );
     if (opts.autoApprove) {
       const marker = readDraftMarker(dataDir);
       if (!marker || sameDir(marker.liveDir, dataDir))
@@ -539,6 +548,7 @@ export class AppHost extends EventEmitter {
       migration,
       limits: this.workerLimits,
       database: this.database,
+      lockTimeoutMs: this.lockTimeoutMs,
     });
   }
 
@@ -2431,6 +2441,7 @@ export class AppHost extends EventEmitter {
               version: chain.baseVersion,
               limits: this.workerLimits,
               database: place.database,
+              lockTimeoutMs: this.lockTimeoutMs,
             });
           carried = null;
           try {
@@ -2476,6 +2487,7 @@ export class AppHost extends EventEmitter {
           version: numbers[i],
           limits: this.workerLimits,
           database: place.database,
+          lockTimeoutMs: this.lockTimeoutMs,
           migration: steps.length
             ? { steps, direction: 'up', version: numbers[i] }
             : undefined,
@@ -2890,6 +2902,7 @@ export class AppHost extends EventEmitter {
         version: this.version,
         limits: this.workerLimits,
         database: this.database,
+        lockTimeoutMs: this.lockTimeoutMs,
         readOnly: true,
       });
       let timer: ReturnType<typeof setTimeout> | undefined;
