@@ -1,8 +1,8 @@
 /**
  * The deferred phase of a `--postgres-safe` migration under other runs and
  * failed cleanup (#5325), against a real PostgreSQL server (PGlite): a stale
- * read of a record never takes it over; runs that share one handle do not
- * interleave their session state; a record another run took over stops the
+ * read of a record never takes it over; runs that share one handle take
+ * turns for their whole run; a record another run took over stops the
  * batch; cleanup that did not take effect is reported; and no deferred
  * statement runs while the tracking table's schema is unknown.
  *
@@ -174,6 +174,97 @@ describe.skipIf(process.env.SMRT_TEST_PGLITE !== '1')(
         expect(errorOf(retry)).toContain('changed by another run');
         expect(await counts()).toEqual(['a:0']);
         expect(await indexValid('child_tag_idx')).toEqual([]);
+      });
+    });
+
+    describe('runs that share one handle', () => {
+      beforeEach(async () => {
+        await fixDuplicates();
+        await db.query('CREATE SCHEMA app_ns');
+        await db.query('CREATE SCHEMA other_ns');
+        for (const schema of ['app_ns', 'other_ns'])
+          await db.query(`CREATE TABLE ${schema}.items (id INT, v INT)`);
+      });
+
+      it('never run another run between the deferred statements of one', async () => {
+        const log: string[] = [];
+        /** The handle as one run sees it, every statement logged. */
+        const logged = (
+          label: string,
+          before: (sql: string) => Promise<void> = async () => {},
+        ): DatabaseInterface => {
+          const wrap = (inner: DatabaseInterface): DatabaseInterface['query'] =>
+            (async (sql: string, ...vars: unknown[]) => {
+              log.push(`${label}: ${sql}`);
+              await before(sql);
+              return inner.query(sql, ...vars);
+            }) as DatabaseInterface['query'];
+          return {
+            ...db,
+            query: wrap(db),
+            transaction: (async (
+              callback: (tx: DatabaseInterface) => Promise<unknown>,
+            ) =>
+              db.transaction?.((tx) =>
+                callback({ ...tx, query: wrap(tx) } as DatabaseInterface),
+              )) as DatabaseInterface['transaction'],
+          };
+        };
+        /** What run B sent between two statements of run A. */
+        const between = (first: string, second: string) => {
+          const from = log.findIndex((entry) => entry.includes(first));
+          const to = log.findIndex((entry) => entry.includes(second));
+          expect(from).toBeGreaterThanOrEqual(0);
+          expect(to).toBeGreaterThan(from);
+          return log.slice(from + 1, to).filter((e) => e.startsWith('B'));
+        };
+
+        for (const direct of [false, true]) {
+          log.length = 0;
+          const suffix = direct ? 'direct' : 'batch';
+          // Run A stops between two of its deferred statements for a moment.
+          let paused = () => {};
+          const atPause = new Promise<void>((resolve) => {
+            paused = resolve;
+          });
+          const aDb = logged('A', async (sql) => {
+            if (sql.includes(`items_a_${suffix} ON`)) {
+              paused();
+              await new Promise((resolve) => setTimeout(resolve, 300));
+            }
+          });
+          const runA = migrate(
+            [
+              definition(`shared_a_${suffix}`, [
+                `ALTER TABLE app_ns.items ADD CONSTRAINT items_${suffix}_check CHECK (v >= 0) NOT VALID`,
+                `ALTER TABLE app_ns.items VALIDATE CONSTRAINT items_${suffix}_check`,
+                `CREATE INDEX IF NOT EXISTS items_a_${suffix} ON app_ns.items (v)`,
+                `CREATE INDEX IF NOT EXISTS items_a2_${suffix} ON app_ns.items (id)`,
+              ]),
+            ],
+            {},
+            aDb,
+          );
+          await atPause;
+          const bDefinition = definition(`shared_b_${suffix}`, [
+            `ALTER TABLE other_ns.items ADD COLUMN note_${suffix} TEXT`,
+            `CREATE INDEX IF NOT EXISTS items_b_${suffix} ON other_ns.items (id)`,
+          ]);
+          const runB = direct
+            ? tracker(logged('B'))
+                .apply(bDefinition, { postgresSafe: true })
+                .then((result) => [result])
+            : migrate([bDefinition], {}, logged('B'));
+
+          const [[a], [b]] = await Promise.all([runA, runB]);
+
+          expect(a?.success, errorOf(a)).toBe(true);
+          expect(b?.success, errorOf(b)).toBe(true);
+          expect(
+            between(`items_a_${suffix} ON`, `items_a2_${suffix} ON`),
+            suffix,
+          ).toEqual([]);
+        }
       });
     });
   },

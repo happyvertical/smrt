@@ -5,6 +5,7 @@
  * and providing idempotent migration application.
  */
 
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { randomUUID } from 'node:crypto';
 import { hostname } from 'node:os';
 import { createLogger } from '@happyvertical/logger';
@@ -386,6 +387,12 @@ type PlannedSplit = { regular: string[]; concurrent: string[] };
  * state — on a pooled adapter a top-level `db.query` may land on a different
  * connection, so the SET would silently not apply to the DDL (issue #2362).
  */
+/** The last queued turn per shared connection. */
+const sharedHandleRuns = new WeakMap<object, Promise<void>>();
+
+/** The shared connections whose turn the current async context holds. */
+const heldTurns = new AsyncLocalStorage<ReadonlySet<object>>();
+
 /** Whether this run may run a migration's deferred statements now. */
 type DeferredClaim = 'ok' | 'held' | 'done' | 'changed';
 
@@ -834,13 +841,15 @@ export class MigrationTracker {
     definition: MigrationDefinition,
     options: ApplyMigrationsOptions = {},
   ): Promise<MigrationResult> {
-    return this.applyOne(definition, options, {
-      plan: this.concurrentIndexPlan,
-      routing: this.concurrentIndexRouting,
-      rows: this.deferredRows,
-      table: this.deferredTable,
-      guard: true,
-    });
+    const run = () =>
+      this.applyOne(definition, options, {
+        plan: this.concurrentIndexPlan,
+        routing: this.concurrentIndexRouting,
+        rows: this.deferredRows,
+        table: this.deferredTable,
+        guard: true,
+      });
+    return this.takesTurns(options) ? this.onSharedHandle(run) : run();
   }
 
   private async applyOne(
@@ -1259,6 +1268,17 @@ export class MigrationTracker {
   async applyAll(
     definitions: MigrationDefinition[],
     options: ApplyMigrationsOptions = {},
+  ): Promise<MigrationResult[]> {
+    // One turn for the whole run on a shared handle: its record reads, phase
+    // 1, the batch check, phase 2 and the cleanup.
+    return this.takesTurns(options)
+      ? this.onSharedHandle(() => this.applyAllInTurn(definitions, options))
+      : this.applyAllInTurn(definitions, options);
+  }
+
+  private async applyAllInTurn(
+    definitions: MigrationDefinition[],
+    options: ApplyMigrationsOptions,
   ): Promise<MigrationResult[]> {
     if (this.dbEngine === 'postgres' && options.postgresSafe && options.atomic)
       assertDistinctMigrationIds(definitions);
@@ -1781,6 +1801,45 @@ export class MigrationTracker {
       );
     } catch {
       // A lost connection released it already.
+    }
+  }
+
+  /**
+   * Whether a run sets session state on a migration session that is the
+   * shared handle itself (PostgreSQL without `acquireSession`: PGlite).
+   */
+  private takesTurns(options: ApplyMigrationsOptions): boolean {
+    return (
+      this.dbEngine === 'postgres' &&
+      Boolean(options.postgresSafe) &&
+      !options.dryRun &&
+      typeof this.db.acquireSession !== 'function'
+    );
+  }
+
+  /**
+   * Run `work` alone on the shared handle: runs over one handle (keyed by
+   * its connection) wait for each other's whole run, so one run's session
+   * state or statements never land between another's. A run already holding
+   * the turn (a batch's own `apply()` calls) does not take it again.
+   */
+  private async onSharedHandle<T>(work: () => Promise<T>): Promise<T> {
+    const key = sharedHandleKey(this.db);
+    const held = heldTurns.getStore();
+    if (held?.has(key)) return work();
+    const previous = sharedHandleRuns.get(key) ?? Promise.resolve();
+    let done = () => {};
+    const mine = new Promise<void>((resolve) => {
+      done = resolve;
+    });
+    const tail = previous.then(() => mine);
+    sharedHandleRuns.set(key, tail);
+    await previous;
+    try {
+      return await heldTurns.run(new Set([...(held ?? []), key]), work);
+    } finally {
+      done();
+      if (sharedHandleRuns.get(key) === tail) sharedHandleRuns.delete(key);
     }
   }
 
@@ -2737,6 +2796,16 @@ export class MigrationTracker {
       await session.release();
     }
   }
+}
+
+/**
+ * The connection a handle's turns are keyed by: its `client` (wrappers that
+ * spread a top-level handle keep it) when that is an object, otherwise the
+ * handle itself.
+ */
+function sharedHandleKey(db: DatabaseInterface): object {
+  const client = (db as { client?: unknown }).client;
+  return typeof client === 'object' && client !== null ? client : db;
 }
 
 /**
