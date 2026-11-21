@@ -90,6 +90,10 @@ function workspace() {
     filePath: files.path('src/lib/objects/customer.js'),
     extends: 'Customer',
     extendsQualified: '@activation/customer:Customer',
+    decoratorConfig: {
+      ...objects['@activation/customer:Customer'].decoratorConfig,
+      replaceParent: true,
+    },
     schema: {
       ...objects['@activation/customer:Customer'].schema!,
       columns: {
@@ -508,11 +512,17 @@ export class ${name} extends SmrtObject { constructor(options?: { metrics?: stri
       'src/lib/server/serialize.js',
       "import '@activation/unused';\nexport const item = (value) => value;",
     );
-    manifest.objects['@activation/customer:Customer'].decoratorConfig.api = {
-      serializers: {
-        item: { importPath: '$lib/server/serialize.js', exportName: 'item' },
-      },
-    };
+    // The provider declares the serializer; its empty same-name replacement
+    // carries the provider's configuration.
+    for (const id of [
+      '@activation/customer:Customer',
+      '@activation/app:Customer',
+    ])
+      manifest.objects[id].decoratorConfig.api = {
+        serializers: {
+          item: { importPath: '$lib/server/serialize.js', exportName: 'item' },
+        },
+      };
     const generated = generateActivationRegistration(manifest, {
       projectRoot: files.root,
       outputDir: files.path('.smrt'),
@@ -543,7 +553,7 @@ export class ${name} extends SmrtObject { constructor(options?: { metrics?: stri
     const { files } = workspace();
     files.write(
       'src/lib/objects/customer.ts',
-      "import { smrt } from '@happyvertical/smrt-core';\nimport { Customer as Base } from '@activation/customer';\n@smrt()\nexport class Customer extends Base {}\n",
+      "import { smrt } from '@happyvertical/smrt-core';\nimport { Customer as Base } from '@activation/customer';\n@smrt({ replaceParent: true })\nexport class Customer extends Base {}\n",
     );
     const plugins = await smrt({
       projectRoot: files.root,

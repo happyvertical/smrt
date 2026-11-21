@@ -137,6 +137,17 @@ export async function withSchemaAdmin<T>(
   }
 }
 
+/**
+ * Claim the app's database for this host (PostgreSQL server only; see
+ * `claimApp`). Resolves to the release to run when the host closes.
+ */
+export async function claimAppDatabase(
+  config: DatabaseConfig,
+): Promise<(() => Promise<void>) | undefined> {
+  if (config.kind !== 'postgres') return undefined;
+  return (await import('./postgres.ts')).claimApp(config);
+}
+
 /** A schema name for a copy of `base` (draft, rehearsal, aside, restore), new on each call. */
 export function sideSchemaName(base: string, tag: 'd' | 'r' | 'o' | 'n') {
   return assertSchemaName(sideName(base, tag, randomBytes(4).toString('hex')));

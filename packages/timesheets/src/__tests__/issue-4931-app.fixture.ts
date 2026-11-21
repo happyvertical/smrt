@@ -12,19 +12,31 @@ import {
 } from '../rollup/models.js';
 
 export const AttendanceBreak: typeof SmrtAttendanceBreak = class AttendanceBreak extends SmrtAttendanceBreak {};
-smrt({ packageName: '@local/issue4931-timesheets' })(AttendanceBreak);
+smrt({ replaceParent: true, packageName: '@local/issue4931-timesheets' })(
+  AttendanceBreak,
+);
 
 export const AttendanceSegment: typeof SmrtAttendanceSegment = class AttendanceSegment extends SmrtAttendanceSegment {};
-smrt({ packageName: '@local/issue4931-timesheets' })(AttendanceSegment);
+smrt({ replaceParent: true, packageName: '@local/issue4931-timesheets' })(
+  AttendanceSegment,
+);
 
 export const AttendanceCorrection: typeof SmrtAttendanceCorrection = class AttendanceCorrection extends SmrtAttendanceCorrection {};
-smrt({ packageName: '@local/issue4931-timesheets' })(AttendanceCorrection);
+smrt({ replaceParent: true, packageName: '@local/issue4931-timesheets' })(
+  AttendanceCorrection,
+);
 
 export const PeriodTimecard: typeof SmrtPeriodTimecard = class PeriodTimecard extends SmrtPeriodTimecard {};
-smrt({ packageName: '@local/issue4931-timesheets' })(PeriodTimecard);
+smrt({ replaceParent: true, packageName: '@local/issue4931-timesheets' })(
+  PeriodTimecard,
+);
 
 export const TimecardAdjustment: typeof SmrtTimecardAdjustment = class TimecardAdjustment extends SmrtTimecardAdjustment {};
-smrt({ packageName: '@local/issue4931-timesheets' })(TimecardAdjustment);
+smrt({ replaceParent: true, packageName: '@local/issue4931-timesheets' })(
+  TimecardAdjustment,
+);
 
 export const TimecardReopening: typeof SmrtTimecardReopening = class TimecardReopening extends SmrtTimecardReopening {};
-smrt({ packageName: '@local/issue4931-timesheets' })(TimecardReopening);
+smrt({ replaceParent: true, packageName: '@local/issue4931-timesheets' })(
+  TimecardReopening,
+);

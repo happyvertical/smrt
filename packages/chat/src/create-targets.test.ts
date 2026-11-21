@@ -73,6 +73,7 @@ for (const replace of [false, true]) {
         const Parent = CreateTargetRoot;
         ObjectRegistry.register(class CreateTargetRoot extends Parent {}, {
           packageName: '@fixture/create-app',
+          replaceParent: true,
         });
       }
       db = await getTestDatabase({ classes: [root, child, gated, foreign] });

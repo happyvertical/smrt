@@ -70,6 +70,8 @@ function appManifest(): SmartObjectManifest {
   delete entry.schema;
   entry.decoratorConfig = {
     ...(base.decoratorConfig as Record<string, unknown>),
+    // The application's subclass replaces the package model (#5143).
+    replaceParent: true,
     tenantScoped: { mode: 'required' },
     sensitive: true,
     api: CLOSED,

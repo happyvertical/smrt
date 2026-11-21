@@ -22,7 +22,15 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { getDatabase } from '@happyvertical/sql';
 import { importPGlite } from '@happyvertical/sql/pglite';
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest';
 import type { DatabaseConfig, PGliteClient } from './db/index.ts';
 import { withSchemaAdmin } from './db/index.ts';
 import {
@@ -577,6 +585,144 @@ describe.each(
     });
   });
 
+  // ---------- a copy is one point in time ----------
+
+  describe('a fork and a dump lock every table before the first read', () => {
+    /**
+     * The scoped handle cannot ask for REPEATABLE READ, so one point in time
+     * comes from locking each table IN SHARE MODE before any read (writers
+     * wait; readers do not). A single PGlite connection cannot interleave a
+     * writer, so this records the statements each helper sends and checks the
+     * lock comes first, in sorted order; the real-server test below holds an
+     * open writer and checks the copy waits for it and then gives up.
+     */
+    const recorded = (db: any, log: string[], failOn?: RegExp) => ({
+      transaction: <T>(cb: (tx: any) => Promise<T>) =>
+        db.transaction((tx: any) =>
+          cb({
+            query: (sql: string, params?: unknown[]) => {
+              log.push(sql);
+              if (failOn?.test(sql))
+                return Promise.reject(new Error('lock timeout (injected)'));
+              // An explicit `undefined` would bind one parameter on a server.
+              return params === undefined
+                ? tx.query(sql)
+                : tx.query(sql, params);
+            },
+          }),
+        ),
+    });
+    const isRead = (sql: string) =>
+      /^\s*(INSERT INTO .* SELECT |DECLARE |SELECT value FROM )/.test(sql);
+    const checkOrder = (log: string[], schema: string, tables: string[]) => {
+      const locks = log.filter((q) => q.startsWith('LOCK TABLE'));
+      expect(locks).toEqual(
+        [...tables]
+          .sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))
+          .map((t) => `LOCK TABLE "${schema}"."${t}" IN SHARE MODE`),
+      );
+      const firstRead = log.findIndex(isRead);
+      const lastLock = log
+        .map((q) => q.startsWith('LOCK TABLE'))
+        .lastIndexOf(true);
+      expect(firstRead).toBeGreaterThan(lastLock);
+      const timeout = log.findIndex((q) => q.includes("'lock_timeout'"));
+      expect(timeout).toBeGreaterThanOrEqual(0);
+      expect(timeout).toBeLessThan(log.findIndex((q) => q.startsWith('LOCK')));
+    };
+
+    it('forkSchema: lock timeout set, then every table locked in sorted order, then the first read', async () => {
+      const live = await seeded('lockfork');
+      const dst = sideName(live.schema, 'r', 'lockfork1');
+      schemas.push(dst);
+      const tables = (await tablesIn(live.schema)).filter((t) => t);
+      const log: string[] = [];
+      await withSchemaAdmin(config(live.schema), (db) =>
+        forkSchema(recorded(db, log), live.schema, dst, live.schema, 1234),
+      );
+      expect(log.some((q) => q.includes("'1234ms'"))).toBe(true);
+      checkOrder(log, live.schema, tables);
+      expect((await tablesIn(dst)).sort()).toEqual([...tables].sort());
+    });
+
+    it('dumpSchema: lock timeout set, then every table locked in sorted order, then the first read', async () => {
+      const live = await seeded('lockdump');
+      const file = join(live.dir, 'snapshots', `${Date.now()}-0-lock.pgdump`);
+      const tables = await tablesIn(live.schema);
+      const log: string[] = [];
+      await withSchemaAdmin(config(live.schema), (db) =>
+        dumpSchema(recorded(db, log), live.schema, file),
+      );
+      checkOrder(log, live.schema, tables);
+      expect(existsSync(file)).toBe(true);
+    });
+
+    it('a lock that cannot be taken fails the fork and the dump, and leaves nothing behind', async () => {
+      const live = await seeded('lockfail');
+      const dst = sideName(live.schema, 'r', 'lockfail1');
+      schemas.push(dst);
+      await expect(
+        withSchemaAdmin(config(live.schema), (db) =>
+          forkSchema(
+            recorded(db, [], /^LOCK TABLE/),
+            live.schema,
+            dst,
+            live.schema,
+          ),
+        ),
+      ).rejects.toThrow(/lock timeout/);
+      expect(await tablesIn(dst)).toEqual([]);
+      const file = join(live.dir, 'snapshots', `${Date.now()}-1-lock.pgdump`);
+      await expect(
+        withSchemaAdmin(config(live.schema), (db) =>
+          dumpSchema(recorded(db, [], /^LOCK TABLE/), live.schema, file),
+        ),
+      ).rejects.toThrow(/lock timeout/);
+      expect(existsSync(file)).toBe(false);
+      // The connection and the app are fine: a plain copy still works.
+      await withSchemaAdmin(config(live.schema), (db) =>
+        dumpSchema(db, live.schema, file),
+      );
+      expect(existsSync(file)).toBe(true);
+    });
+
+    it.skipIf(backend !== 'postgres')(
+      'on a server an open writer holds the copy back until its lock timeout, and the copy works once the writer is done',
+      async () => {
+        const live = await seeded('lockwriter');
+        const dst = sideName(live.schema, 'r', 'lockwr001');
+        schemas.push(dst);
+        const writer = (await getDatabase({
+          type: 'postgres',
+          url: serverUrl,
+          max: 1,
+          cache: false,
+        } as any)) as any;
+        raws.push(writer);
+        const tx = await writer.beginTransaction();
+        try {
+          await tx.query(
+            `UPDATE "${live.schema}".u_chores SET points = points + 1`,
+          );
+          const t0 = Date.now();
+          await expect(
+            withSchemaAdmin(config(live.schema), (db) =>
+              forkSchema(db, live.schema, dst, live.schema, 300),
+            ),
+          ).rejects.toThrow(/lock timeout/i);
+          expect(Date.now() - t0).toBeGreaterThanOrEqual(250);
+          expect(await tablesIn(dst)).toEqual([]);
+        } finally {
+          await tx.rollback();
+        }
+        await withSchemaAdmin(config(live.schema), (db) =>
+          forkSchema(db, live.schema, dst, live.schema, 300),
+        );
+        expect(await tablesIn(dst)).toContain('u_chores');
+      },
+    );
+  });
+
   // ---------- publish ----------
 
   describe('publish', () => {
@@ -674,6 +820,55 @@ describe.each(
           )
         )[0].n,
       ).toBe(2); // live and the (undiscarded) draft
+    });
+
+    it('an aside that cannot be dropped after the store write is journaled as committed; the owner edits; the next start keeps both', async () => {
+      const live = await seeded('dropfail');
+      const { draft } = await fork(live);
+      await edit(draft);
+      live.host.setFrozen(true);
+      const preview = await live.host.previewPublish(draft);
+      // The old data's schema cannot be dropped (say, a lock_timeout).
+      const drop = vi
+        .spyOn(live.host as any, 'dropSideSchemaOrThrow')
+        .mockRejectedValueOnce(new Error('lock timeout'));
+      const result = await live.host.publishDraft(draft, {
+        ...OK,
+        expect: preview.digest,
+      });
+      expect(drop).toHaveBeenCalledTimes(1);
+      drop.mockRestore();
+      const journal = JSON.parse(
+        readFileSync(join(live.dir, JOURNAL_FILE), 'utf8'),
+      );
+      expect(journal.committed).toBe(true);
+      expect(await sideSchemas(live.schema)).toContain(journal.pg.aside);
+      // The owner edits after the publish: the store passes the journal's final version.
+      live.host.setFrozen(false);
+      await run(live.host, {
+        type: 'defineModel',
+        name: 'Later',
+        fields: { note: { type: 'text' } },
+      });
+      expect(live.host.version).toBeGreaterThan(result.version);
+      const version = live.host.version;
+      await draft.discard();
+      await live.host.close();
+      hosts.splice(hosts.indexOf(live.host), 1);
+      const again = await AppHost.open(live.dir, {
+        store: live.store,
+        database: config(live.schema),
+      });
+      hosts.push(again);
+      expect(again.version).toBe(version);
+      expect(await titles(again)).toEqual(['Bins', 'Dishes', 'Garage']);
+      expect(Object.keys(again.def.models)).toContain('Later');
+      // The published data (`points` renamed to `score`, values carried over), not the old.
+      expect(
+        (await again.list('Chore')).map((r) => Number(r.score)).sort(),
+      ).toEqual([3, 5, 8]);
+      expect(await sideSchemas(live.schema)).toEqual([]);
+      expect(existsSync(join(live.dir, JOURNAL_FILE))).toBe(false);
     });
 
     const STAGES: PublishStage[] = [
@@ -891,6 +1086,39 @@ describe.each(
       const host = await reopen(c);
       expect(host.recovery).toBe('rolled-forward');
       await consistent(host, c, true);
+    });
+
+    it('window (ii-b): the store write was journaled as committed, then the owner edited: the next start does not roll the publish back', async () => {
+      const c = await crashedAfterSwap('crash_fwd_edit');
+      await publishedInStore(c);
+      // The owner's next edit: the store is now PAST the published version.
+      await c.store.append({
+        version: c.version + 2,
+        parent: c.version + 1,
+        author: 'owner',
+        summary: 'edited after the publish',
+        definition: (await c.store.get(c.version))?.definition as any,
+        migration: null,
+        createdAt: new Date().toISOString(),
+      });
+      await c.store.setCurrent(c.version + 2);
+      writeJournal(c.dir, {
+        format: 1,
+        oldVersion: c.version,
+        finalVersion: c.version + 1,
+        rehearsal: join(c.dir, 'publish-rehearsal-x'),
+        snapshot: join(c.dir, 'snapshots', 'x'),
+        startedAt: new Date().toISOString(),
+        committed: true,
+        pg: { schema: c.schema, staging: c.staging, aside: c.aside },
+      });
+      const host = await reopen(c);
+      expect(host.version).toBe(c.version + 2);
+      expect((await host.list('Chore')).map((r) => r.title)).toEqual([
+        'new data',
+      ]);
+      expect(await sideSchemas(c.schema)).toEqual([]);
+      expect(existsSync(join(c.dir, JOURNAL_FILE))).toBe(false);
     });
 
     it('window (iii): died during the swap-back: the recovery finishes it, and a second recovery changes nothing', async () => {

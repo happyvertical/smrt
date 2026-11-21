@@ -12,8 +12,9 @@
  * SOLUTION:
  * - Added resolveManifestCollision() that uses string-based extends field
  *   comparison to detect STI parent/child relationships
- * - Child-wins: manifest child replaces parent with same name
- * - Parent after child: silently skips (correct behavior)
+ * - A manifest child that declares `replaceParent: true` replaces its
+ *   same-named parent (#5143: the declaration, not the name, decides)
+ * - Parent after such a child: kept for ancestry only, in either order
  * - Same source file: silently skips (re-export, not a collision)
  * - True collision: logs warning, keeps first
  *
@@ -82,7 +83,7 @@ describe('Issue #950: Manifest STI Collision Handling', () => {
           sport: { type: 'text', _meta: {} },
         },
         methods: {},
-        decoratorConfig: {},
+        decoratorConfig: { replaceParent: true },
         extends: 'TestEvent',
         filePath: '/packages/sports/src/models/Event.ts',
       };
@@ -126,7 +127,7 @@ describe('Issue #950: Manifest STI Collision Handling', () => {
           extra: { type: 'text', _meta: {} },
         },
         methods: {},
-        decoratorConfig: {},
+        decoratorConfig: { replaceParent: true },
         extends: 'TestBase',
         filePath: '/packages/agent/src/models/Base.ts',
       };
@@ -157,7 +158,7 @@ describe('Issue #950: Manifest STI Collision Handling', () => {
           extra: { type: 'text', _meta: {} },
         },
         methods: {},
-        decoratorConfig: {},
+        decoratorConfig: { replaceParent: true },
         extends: 'TestChild',
         filePath: '/packages/agent/src/models/Child.ts',
       };
@@ -236,7 +237,7 @@ describe('Issue #950: Manifest STI Collision Handling', () => {
       // auto-load. Pre-fix, `existingExtendsNew` returned false and the
       // parent would register a duplicate entry. With the fix, the
       // child's qualified `extends` matches the parent's registrationKey
-      // → `manifest-sti-parent-skip` → skip.
+      // → `same-name-parent-of-replacement` → kept for ancestry only.
       registerManifestFixture('StiQualifiedParent', parentDef, '@test/events');
 
       // Only one parent entry exists; not duplicated.
@@ -321,7 +322,7 @@ describe('Issue #950: Manifest STI Collision Handling', () => {
           venue: { type: 'text', _meta: {} },
         },
         methods: {},
-        decoratorConfig: {},
+        decoratorConfig: { replaceParent: true },
         extends: 'testevent', // lowercase extends reference
         filePath: '/packages/conferences/src/Event.ts',
       };

@@ -24,7 +24,7 @@ import { inspectTableSchema } from '../schema/inspection.js';
 import { snapshotObjectRegistryState } from '../test-utils.js';
 import { getTestDatabase } from '../testing/database.js';
 import { buildActivationManifest } from './generate.js';
-import { activationClosure } from './manifest.js';
+import { type ActivationManifest, activationClosure } from './manifest.js';
 
 const HOST = '@activation/host:Host';
 const CUSTOMER = '@activation/customers:Customer';
@@ -96,6 +96,7 @@ function fixture() {
     foreignKey: { table: 'activation_profiles', column: 'id' },
   };
   const app = define(APP, 'activation_customers', CUSTOMER);
+  app.decoratorConfig.replaceParent = true;
   app.fields = { ...customer.fields, preferredPose: { type: 'text' } };
   app.schema!.columns = {
     ...customer.schema!.columns,
@@ -188,7 +189,137 @@ async function applicationTables() {
   return rows.map((row) => row.name);
 }
 
+describe('activation closure order', () => {
+  const graph = (): ActivationManifest => ({
+    version: 1,
+    modules: {
+      a: { specifier: 'a', models: ['a:Child'], dependencies: [] },
+      b: { specifier: 'b', models: ['b:Child'], dependencies: [] },
+      z: { specifier: 'z', models: ['z:Base'], dependencies: [] },
+    },
+    models: {
+      'a:Child': {
+        module: 'a',
+        effective: 'a:Child',
+        parent: 'z:Base',
+        dependencies: ['z:Base'],
+      },
+      'b:Child': {
+        module: 'b',
+        effective: 'b:Child',
+        parent: 'a:Child',
+        dependencies: ['a:Child'],
+      },
+      'z:Base': { module: 'z', effective: 'z:Base', dependencies: [] },
+    },
+    tables: {},
+  });
+
+  it('loads the parent module before the child when only the child is requested', () => {
+    expect(activationClosure(graph(), ['b:Child']).modules).toEqual([
+      'z',
+      'a',
+      'b',
+    ]);
+  });
+
+  it('ignores the order in which models are requested', () => {
+    for (const request of [
+      ['b:Child', 'z:Base'],
+      ['z:Base', 'b:Child'],
+      ['a:Child', 'z:Base', 'b:Child'],
+    ])
+      expect(activationClosure(graph(), request).modules).toEqual([
+        'z',
+        'a',
+        'b',
+      ]);
+  });
+
+  it('loads a graph without parents in sorted order', () => {
+    const legacy = graph();
+    for (const model of Object.values(legacy.models)) delete model.parent;
+    expect(
+      activationClosure(legacy, Object.keys(legacy.models)).modules,
+    ).toEqual(['a', 'b', 'z']);
+  });
+
+  it('rejects a parent that is unknown, not a string or part of a cycle', () => {
+    const unknown = graph();
+    unknown.models['a:Child'].parent = 'gone:Gone';
+    expect(() => activationClosure(unknown, ['a:Child'])).toThrow(
+      /Unknown activation model: gone:Gone/,
+    );
+    const invalid = graph();
+    (invalid.models['a:Child'] as { parent?: unknown }).parent = 7;
+    expect(() => activationClosure(invalid, ['a:Child'])).toThrow(
+      /Invalid activation parent for a:Child/,
+    );
+    const cyclic = graph();
+    cyclic.models['z:Base'].parent = 'b:Child';
+    cyclic.models['z:Base'].dependencies = ['b:Child'];
+    expect(() => activationClosure(cyclic, ['b:Child'])).toThrow(
+      /Activation order is impossible/,
+    );
+  });
+
+  it('rejects a persisted parent that is not among the model dependencies, before any module is ordered', () => {
+    const stale = graph();
+    stale.modules.u = { specifier: 'u', models: ['u:Other'], dependencies: [] };
+    stale.models['u:Other'] = {
+      module: 'u',
+      effective: 'u:Other',
+      dependencies: [],
+    };
+    // Only `parent` changed, between two valid model ids.
+    stale.models['b:Child'].parent = 'u:Other';
+    expect(() => activationClosure(stale, ['b:Child'])).toThrow(
+      /Invalid activation parent for b:Child: u:Other is not among its dependencies/,
+    );
+    expect(activationClosure(graph(), ['b:Child']).modules).not.toContain('u');
+  });
+
+  it('rejects an after edge naming an unknown module and orders by after edges', () => {
+    const edge = graph();
+    edge.modules.a.after = ['nowhere'];
+    expect(() => activationClosure(edge, ['a:Child'])).toThrow(
+      /Unknown activation module: nowhere/,
+    );
+    const ordered = graph();
+    ordered.modules.z.after = ['b'];
+    // The plain-subclass edges would cycle with it, so only enforced edges apply.
+    const { modules } = activationClosure(ordered, ['b:Child']);
+    expect(modules.indexOf('b')).toBeLessThan(modules.indexOf('z'));
+    const cyclic = graph();
+    cyclic.modules.a.after = ['b'];
+    cyclic.modules.b.after = ['a'];
+    expect(() => activationClosure(cyclic, ['b:Child'])).toThrow(
+      /Activation order is impossible: modules (a and b|b and a)/,
+    );
+  });
+
+  it('falls back to enforced edges when only plain subclass edges form a cycle', () => {
+    const plain = graph();
+    plain.modules.z.models.push('z:Sub');
+    plain.models['z:Sub'] = {
+      module: 'z',
+      effective: 'z:Sub',
+      parent: 'a:Child',
+      dependencies: ['a:Child'],
+    };
+    expect(() => activationClosure(plain, ['z:Sub'])).not.toThrow();
+    expect(activationClosure(plain, ['z:Sub']).modules).toEqual(['a', 'z']);
+  });
+});
+
 describe(`${engine} lazy activation`, () => {
+  it('runs the parent module loader before its replacement when only the replacement is enabled', async () => {
+    const { coordinator, loaders } = fixture();
+    await coordinator.activate([APP]);
+    const first = (id: string) => loaders[id].mock.invocationCallOrder[0];
+    expect(first(CUSTOMER)).toBeLessThan(first(APP));
+  });
+
   it('boots only the persisted union plus always-on, without registering the disabled superset', async () => {
     const { coordinator, enabled } = fixture();
     enabled.get('b')?.add(UNUSED);
@@ -441,6 +572,26 @@ describe(`${engine} lazy activation`, () => {
       createActivationCoordinator({ ...options, loaders: {} }),
     ).toThrow(/Missing activation loader/);
     expect(loaders[HOST]).not.toHaveBeenCalled();
+  });
+
+  it('refuses a model whose persisted parent changed to an unrelated model before any loader or migration', async () => {
+    const { options, graph, loaders } = fixture();
+    graph.models[STUDENT].parent = UNUSED;
+    await expect(
+      (async () =>
+        createActivationCoordinator({
+          ...options,
+          scope: `${options.scope}-stale`,
+          alwaysOn: [],
+        }).activate([STUDENT]))(),
+    ).rejects.toThrow(
+      new RegExp(
+        `Invalid activation parent for ${STUDENT}: ${UNUSED} is not among its dependencies`,
+      ),
+    );
+    for (const loader of Object.values(loaders))
+      expect(loader).not.toHaveBeenCalled();
+    expect(await applicationTables()).toEqual([]);
   });
 
   it('keeps a failed persisted-state read closed and recovers on the next boot', async () => {

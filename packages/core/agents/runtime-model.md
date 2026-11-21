@@ -41,8 +41,8 @@ and method surfaces of a decorated class.
 `extends: '@pkg:Class'` registers a class that extends the real constructor
 (inherited fields, methods and `_meta_type` lookup work) and may share the
 parent's simple name (`@local/app:Profile` extends
-`@happyvertical/smrt-profiles:Profile`) without the STI child-wins rule
-replacing the parent. `findClass('Profile')` is then ambiguous: use qualified
+`@happyvertical/smrt-profiles:Profile`) without replacing the parent (the
+run-time counterpart of a decorated class's `replaceParent` is `replaces`). `findClass('Profile')` is then ambiguous: use qualified
 names.
 
 Answers to the open checks of #4869, each with a test in

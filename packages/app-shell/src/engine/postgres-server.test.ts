@@ -196,6 +196,39 @@ describe.each(backends)('app engine on PostgreSQL (%s)', (backend) => {
     ).toEqual([]);
   });
 
+  // A server holds real locks between sessions; PGlite is one process's own instance.
+  it.skipIf(backend !== 'postgres')(
+    'one live host per app: a second host on the same schema is refused until the first closes',
+    async () => {
+      const schema = await newSchema('claim');
+      const first = await open(schema);
+      await run(first, {
+        type: 'defineModel',
+        name: 'Chore',
+        fields: { title: { type: 'text' } },
+      });
+      await first.create('Chore', { title: 'kept' });
+      const dir = dirOf.get(schema) as string;
+      const err = await AppHost.open(dir, {
+        store: stores.get(schema) as MemoryVersionStore,
+        database: config(schema),
+      }).then(
+        (h) => {
+          hosts.push(h);
+          return null;
+        },
+        (e) => e,
+      );
+      expect(err).toBeInstanceOf(EngineError);
+      expect(String(err?.message)).toMatch(/another host already runs/);
+      // The refused host touched nothing: the first still serves.
+      expect((await first.list('Chore')).map((r) => r.title)).toEqual(['kept']);
+      await closeHost(first);
+      const again = await open(schema);
+      expect((await again.list('Chore')).map((r) => r.title)).toEqual(['kept']);
+    },
+  );
+
   it('two apps with the same model name never see each other', async () => {
     const a = await open(await newSchema('iso_a'));
     const b = await open(await newSchema('iso_b'));

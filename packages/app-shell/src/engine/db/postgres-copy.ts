@@ -458,6 +458,36 @@ const readAllRows = async (tx: SqlRunner) => {
   await tx.query(`SELECT set_config('bytea_output', 'hex', true)`);
 };
 
+/**
+ * Make a copy of `source` ONE point in time. The transaction cannot ask for a
+ * REPEATABLE READ snapshot (the scoped handle fixes its isolation level), so
+ * each table read would otherwise see its own READ COMMITTED snapshot and a
+ * concurrent writer could leave a parent and its child from different moments:
+ * a fork whose foreign keys fail, or an undo point that cannot be restored.
+ * Instead every table is locked IN SHARE MODE (reads continue, writers wait)
+ * BEFORE the first read, in one fixed order (sorted by name in the C collation)
+ * so two copies cannot deadlock each other, waiting at most `lockTimeoutMs`
+ * per table: a writer that will not let go surfaces as a lock-timeout error
+ * (the transaction rolls back, the connection is released, nothing is left).
+ * A role needs UPDATE, DELETE or TRUNCATE on a table to take this lock.
+ */
+export async function lockForCopy(
+  tx: SqlRunner,
+  source: string,
+  lockTimeoutMs = DEFAULT_LOCK_TIMEOUT_MS,
+) {
+  await tx.query(
+    `SELECT set_config('lock_timeout', ${lit(`${Math.floor(lockTimeoutMs)}ms`)}, true)`,
+  );
+  const tables = asRows(
+    await tx.query(
+      `SELECT c.relname AS name FROM pg_class c WHERE c.relnamespace = to_regnamespace(${lit(source)}) AND c.relkind IN ('r', 'p') ORDER BY c.relname COLLATE "C"`,
+    ),
+  );
+  for (const t of tables)
+    await tx.query(`LOCK TABLE ${qi(source)}.${qi(t.name)} IN SHARE MODE`);
+}
+
 /** Mark `schema` as a copy that belongs to the app whose FULL schema name is `owner`. */
 const claim = (tx: SqlRunner, schema: string, owner: string) =>
   tx.query(
@@ -500,6 +530,30 @@ export async function listSideSchemas(
     .map((r) => String(r.nspname));
 }
 
+/** The namespace half of an app's advisory lock key (the other half is the app's schema). */
+const APP_LOCK_NAMESPACE = 'smrt-app-shell';
+const appLockKey = (schema: string) =>
+  `hashtext(${lit(APP_LOCK_NAMESPACE)}), hashtext(${lit(schema)})`;
+
+/**
+ * Take the session-level advisory lock that says "this process hosts app
+ * `schema`" (#5187). It is held by the session that took it until that
+ * session ends, so the caller keeps one connection open for the host's life.
+ * False when another session already holds it: a second host for the same app
+ * would sweep and recover over the first one's live side schemas.
+ */
+export async function tryAppLock(db: SqlRunner, schema: string) {
+  assertSchemaName(schema);
+  const got = asRows(
+    await db.query(`SELECT pg_try_advisory_lock(${appLockKey(schema)}) AS got`),
+  )[0]?.got;
+  return got === true || got === 't' || got === 'true';
+}
+
+/** Give the lock back early (closing the session does the same). */
+export const releaseAppLock = (db: SqlRunner, schema: string) =>
+  db.query(`SELECT pg_advisory_unlock(${appLockKey(schema)})`);
+
 /** True when `schema` exists. */
 export async function schemaExists(tx: SqlRunner, schema: string) {
   return (
@@ -521,12 +575,14 @@ export async function forkSchema(
   source: string,
   target: string,
   owner?: string,
+  lockTimeoutMs = DEFAULT_LOCK_TIMEOUT_MS,
 ): Promise<void> {
   assertSchemaName(source);
   assertSchemaName(target);
   await db.transaction(async (tx: SqlRunner) => {
     if (await schemaExists(tx, target))
       throw new EngineError(`schema ${target} already exists`, 'refused');
+    await lockForCopy(tx, source, lockTimeoutMs);
     await readAllRows(tx);
     const plan = await describeSchema(tx, source);
     await run(tx, plan.before, target);
@@ -639,6 +695,7 @@ export async function dumpSchema(
   db: SqlDatabase,
   source: string,
   file: string,
+  lockTimeoutMs = DEFAULT_LOCK_TIMEOUT_MS,
 ): Promise<{ version: number | null }> {
   assertSchemaName(source);
   mkdirSync(dirname(file), { recursive: true });
@@ -647,6 +704,7 @@ export async function dumpSchema(
   const put = (line: DumpLine) => writeSync(fd, `${JSON.stringify(line)}\n`);
   try {
     const version = await db.transaction(async (tx: SqlRunner) => {
+      await lockForCopy(tx, source, lockTimeoutMs);
       await readAllRows(tx);
       const plan = await describeSchema(tx, source);
       const meta = asRows(

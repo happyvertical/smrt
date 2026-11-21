@@ -150,6 +150,27 @@ for the one operation on the host thread; a PGlite uses the host's client).
   (set in the creating transaction, moved to the aside by the swap), and
   `dropSchema` / `swapSchemas` / the sweep verify it before touching anything,
   so two apps sharing a prefix never drop each other's copies.
+- **One point in time.** The scoped handle cannot set REPEATABLE READ, so a
+  fork (`forkSchema`) and a dump (`dumpSchema`) first `lockForCopy`: every table
+  `LOCK TABLE ... IN SHARE MODE`, sorted by name (C collation), BEFORE the first
+  read (readers continue, writers wait), so no parent/child skew can reach a
+  draft or an undo point. The wait is `swapLockTimeoutMs` for a fork (default 5
+  s for a dump); a writer that holds on surfaces as a lock-timeout error, the
+  transaction rolls back and the connection is released. The role needs UPDATE,
+  DELETE or TRUNCATE on each table. Tested by statement recording (PGlite is
+  one connection) plus a held-open writer on a real server.
+- **One live host per app (PostgreSQL server).** Start-up recovery
+  (`reconcilePgPublish`, which runs FIRST while the journal still says what was
+  going on) and then the sweep drop the app's `r`/`o`/`n` schemas, which a second host's
+  publish or restore would be using. So a live `AppHost.open` first claims the
+  app (`claimApp`): `pg_try_advisory_lock(hashtext('smrt-app-shell'),
+  hashtext(<app schema>))` on a connection of its own (`max: 1`, never
+  idle-closed, never shared), held until `close()` or process end (a dropped
+  connection frees it server-side), and refuses with "another host already runs
+  the app" when it is taken, before touching anything. A draft host is claimed by
+  its live host; PGlite and SQLite claim nothing. Tested by `app-lock.test.ts`
+  (modelled lock semantics and statement recording) and, on a real server, by
+  `postgres-server.test.ts`.
 - **Fork** (a draft, a publish rehearsal): a live schema beside the app's, in one transaction (a
   failure leaves none). `forkDraft` writes the name in the draft marker
   (`schema`, `liveSchema`); `AppHost.open` on that directory takes the live app's database
@@ -171,10 +192,14 @@ for the one operation on the host thread; a PGlite uses the host's client).
   aside, the rehearsal to live. The definition version lives in the schema's
   `_app_meta`, so it swaps with the data. A session still using the old tables
   makes the swap fail and change nothing; the worker is retired first, and
-  the aside is dropped only after the store has the versions. The journal
+  the aside is dropped only after the store has the versions, and only after
+  the journal is rewritten with `committed: true` (so a failed drop plus the
+  owner's next edit cannot make the next start read "store past the published
+  version" as "publish did not happen"). The journal
   carries `pg: { schema, staging, aside }`: at start `reconcilePgPublish`
-  swaps the aside back (store behind) or drops it (store at the published
-  version), before the app opens. A failure after the swap (respawn, store)
+  swaps the aside back (journal not committed and store behind) or drops it
+  (journal committed, or store at the published version), before the app
+  opens. A failure after the swap (respawn, store)
   swaps back. Leftover side schemas of a crash before the journal are named
   `<schema>__<tag>...` and safe to drop. The unfinished part: the version
   store (the shell's tables) is a different database from the app's, so a
@@ -316,8 +341,10 @@ stages, refusals, digest and version numbering.
   it a failure mid-append leaves unreachable orphan versions. The queue is held
   until then, so nothing writes to the new file before the commit.
 - **Boot reconcile** (`reconcilePublish`, every `AppHost.open`, before the app
-  starts; result in `host.recovery`): a journal whose `finalVersion` is the
-  store's current only needs its leftovers removed; any other journal is ROLLED
+  starts; result in `host.recovery`): a journal marked `committed` (rewritten
+  once the store has the versions, before the aside goes) or whose
+  `finalVersion` is the store's current only needs its leftovers removed; any
+  other journal is ROLLED
   BACK (asides restored, the new file removed), not forward: nothing could have
   written to the new file, and the draft stays open to publish again. An
   unreadable journal refuses to start rather than guess. Stray

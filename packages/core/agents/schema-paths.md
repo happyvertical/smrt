@@ -733,7 +733,14 @@ carrying its `packageName`. A malformed declaration fails the build naming the
 table. Every way in checks each entry again (`parseCarriedRetiredTable`,
 `readManifestRetiredTables`) and keeps the entry's own `packageName`:
 
-- `ObjectRegistry.registerPackageManifest()` registers a manifest's entries:
+- `ObjectRegistry.registerPackageManifest()` validates every entry (declared
+  same-name choices, coexistence, replacement tables) and the package's
+  retirements against the registry before it registers the first or caches the
+  manifest, so a refused package changes nothing. A refusal only registering can
+  show (a sibling an earlier entry discovers, a relation between two entries of
+  the package) throws part-way and leaves the manifest uncached; there is no
+  rollback of the entries already registered.
+  It registers a manifest's entries:
   its own package's, and, for a package built as an app (app-shell, whose
   `dist/manifest.json` merges its dependencies'), those of the packages in its
   `smrtDependencies`. An entry of any other package is refused, never
