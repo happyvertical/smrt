@@ -111,6 +111,7 @@ export async function copyAppDatabase(
     db,
     config.schema,
     file,
+    config.lockTimeoutMs,
   );
 }
 

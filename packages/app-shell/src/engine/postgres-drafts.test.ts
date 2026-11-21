@@ -20,6 +20,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { parseRuntimeReportSpec } from '@happyvertical/smrt-reports';
 import { getDatabase } from '@happyvertical/sql';
 import { importPGlite } from '@happyvertical/sql/pglite';
 import {
@@ -32,7 +33,7 @@ import {
   vi,
 } from 'vitest';
 import type { DatabaseConfig, PGliteClient } from './db/index.ts';
-import { withSchemaAdmin } from './db/index.ts';
+import { copyAppDatabase, withSchemaAdmin } from './db/index.ts';
 import { scopeDatabase } from './db/postgres.ts';
 import {
   acquireOwnership,
@@ -59,6 +60,23 @@ import {
   StaleFenceError,
 } from './index.ts';
 import { JOURNAL_FILE, writeJournal } from './publish.ts';
+
+// Record the options of every worker thread the host starts (still real ones).
+const spawned = (): any[] => {
+  const g = globalThis as any;
+  g.__spawnedWorkers ??= [];
+  return g.__spawnedWorkers;
+};
+vi.mock('node:worker_threads', async (orig) => {
+  const actual = await orig<typeof import('node:worker_threads')>();
+  class RecordingWorker extends actual.Worker {
+    constructor(url: URL | string, options?: any) {
+      super(url, options);
+      spawned().push(options);
+    }
+  }
+  return { ...actual, Worker: RecordingWorker };
+});
 
 const serverUrl = process.env.SMRT_TEST_POSTGRES_URL;
 const adminUrl = process.env.SMRT_TEST_POSTGRES_ADMIN_URL ?? serverUrl;
@@ -661,6 +679,87 @@ describe.each(
       );
       checkOrder(log, live.schema, tables);
       expect(existsSync(file)).toBe(true);
+    });
+
+    it('copyAppDatabase dumps with the lock timeout the worker config carries', async () => {
+      const live = await seeded('lockcfg');
+      const file = join(live.dir, 'snapshots', `${Date.now()}-0-cfg.pgdump`);
+      const log: string[] = [];
+      await withSchemaAdmin(config(live.schema), (db) =>
+        copyAppDatabase(
+          recorded(db, log),
+          {
+            kind: 'pglite',
+            schema: live.schema,
+            port: undefined as never,
+            lockTimeoutMs: 1234,
+          },
+          file,
+        ),
+      );
+      expect(log.some((q) => q.includes("'lock_timeout', '1234ms'"))).toBe(
+        true,
+      );
+      expect(existsSync(file)).toBe(true);
+    });
+
+    it.each([
+      0,
+      -5,
+      0.5,
+      Number.NaN,
+      Number.POSITIVE_INFINITY,
+    ])('AppHost.open refuses swapLockTimeoutMs %s before opening anything', async (bad) => {
+      const schema = await newSchema('badlock');
+      await expect(
+        AppHost.open(tmp(), {
+          store: new MemoryVersionStore(),
+          database: config(schema),
+          swapLockTimeoutMs: bad,
+        }),
+      ).rejects.toThrow(/swapLockTimeoutMs must be a whole number/);
+    });
+
+    it('every worker the host starts on the server carries the host lock timeout', async () => {
+      const start = spawned().length;
+      const live = await seeded('lockplumb', { swapLockTimeoutMs: 4321 });
+      const carried = (from: number) => {
+        const got = spawned().slice(from);
+        for (const o of got) {
+          expect(o.workerData.database.kind).not.toBe('sqlite');
+          expect(o.workerData.database.lockTimeoutMs).toBe(4321);
+        }
+        return got;
+      };
+      // Boot (spawn).
+      expect(carried(start).length).toBeGreaterThan(0);
+      // Report worker.
+      let mark = spawned().length;
+      await live.host.runReport(
+        parseRuntimeReportSpec({
+          version: 1,
+          title: 'n',
+          source: 'Chore',
+          dimensions: [{ field: 'title', as: 'title' }],
+          measures: [{ fn: 'sum', field: 'points', as: 'total' }],
+        }),
+      );
+      const report = carried(mark);
+      expect(report.some((o) => o.workerData.readOnly)).toBe(true);
+      // Publish rehearsal with a data step: the carried "before" worker and the new one.
+      const { draft } = await fork(live);
+      await run(draft, {
+        type: 'loadRecords',
+        model: 'Chore',
+        mode: 'insert',
+        rows: [{ title: 'Loaded', points: 1 }],
+      });
+      live.host.setFrozen(true);
+      mark = spawned().length;
+      await live.host.previewPublish(draft);
+      const rehearsal = carried(mark);
+      const versions = new Set(rehearsal.map((o) => o.workerData.version));
+      expect(versions.size).toBeGreaterThanOrEqual(2);
     });
 
     it('a lock that cannot be taken fails the fork and the dump, and leaves nothing behind', async () => {
