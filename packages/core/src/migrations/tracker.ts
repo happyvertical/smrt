@@ -393,6 +393,12 @@ const sharedHandleRuns = new WeakMap<object, Promise<void>>();
 /** The shared connections whose turn the current async context holds. */
 const heldTurns = new AsyncLocalStorage<ReadonlySet<object>>();
 
+/**
+ * Shared connections a run could not put back as it was handed them: no
+ * later run starts on one (the caller reopens the handle).
+ */
+const unusableHandles = new WeakSet<object>();
+
 /** Whether this run may run a migration's deferred statements now. */
 type DeferredClaim = 'ok' | 'held' | 'done' | 'changed';
 
@@ -1533,7 +1539,8 @@ export class MigrationTracker {
     const table = resolvedTable ?? '_smrt_schema_migrations';
     const session = await this.acquireMigrationSession();
     let baseline: SessionBaseline | null = null;
-    let restored = true;
+    // Cleanup that did not take effect: never passed over in silence.
+    const uncleaned: string[] = [];
 
     try {
       baseline = await captureSessionBaseline(session);
@@ -1615,7 +1622,8 @@ export class MigrationTracker {
 
         try {
           await assertSessionUnchanged(session, handedOver);
-          if (row) claim = await this.claimDeferredRow(session, table, row);
+          if (row)
+            claim = await this.claimDeferredRow(session, table, row, uncleaned);
           if (claim === 'ok')
             await this.runConcurrentIndexStatements(
               session,
@@ -1710,7 +1718,7 @@ export class MigrationTracker {
           }
         } finally {
           if (claim === 'ok' && row)
-            await this.releaseDeferredRow(session, row);
+            await this.releaseDeferredRow(session, row, uncleaned);
         }
 
         options.onProgress?.(results[index]);
@@ -1719,21 +1727,25 @@ export class MigrationTracker {
       try {
         if (baseline) await restoreSessionBaseline(session, baseline);
       } catch {
-        restored = false;
+        uncleaned.push('the session settings it was handed');
       } finally {
         await session.release();
       }
     }
-    if (!restored) {
+    if (uncleaned.length > 0) {
+      const message = `The migration session could not be put back as it was handed over (${uncleaned.join('; ')}); the migration records were written.`;
       // A pooled session's connection is discarded on release; a shared
-      // handle (PGlite) goes back to the caller as it is, so it fails closed.
-      if (typeof this.db.acquireSession !== 'function')
+      // handle (PGlite) goes back to the caller as it is, so the caller must
+      // know.
+      if (typeof this.db.acquireSession !== 'function') {
+        // Before the turn passes on: a run queued on this connection must
+        // not start from the state this run left.
+        unusableHandles.add(sharedHandleKey(this.db));
         throw new Error(
-          'The migration session could not be put back as it was handed over; the migration records were written. Close and reopen the database handle before using it again.',
+          `${message} Close and reopen the database handle before using it again.`,
         );
-      logger.warn(
-        'Could not restore the migration session before releasing it; its connection is discarded.',
-      );
+      }
+      logger.error(message);
     }
     return results;
   }
@@ -1747,6 +1759,7 @@ export class MigrationTracker {
     session: MigrationSession,
     table: string,
     row: DeferredRow,
+    uncleaned: string[],
   ): Promise<DeferredClaim> {
     const locked = await session.query(
       'SELECT pg_try_advisory_lock(hashtextextended(?, 0)) AS locked',
@@ -1785,25 +1798,38 @@ export class MigrationTracker {
         else row.notStarted = false;
       }
     } catch (error) {
-      await this.releaseDeferredRow(session, row);
+      await this.releaseDeferredRow(session, row, uncleaned);
       throw error;
     }
-    if (claim !== 'ok') await this.releaseDeferredRow(session, row);
+    if (claim !== 'ok') await this.releaseDeferredRow(session, row, uncleaned);
     return claim;
   }
 
+  /**
+   * Release one row's advisory lock, checking that it was released; one that
+   * was not (the unlock failed or found no lock held) is added to
+   * `uncleaned`.
+   */
   private async releaseDeferredRow(
     session: MigrationSession,
     row: DeferredRow,
+    uncleaned: string[],
   ): Promise<void> {
+    let released = false;
     try {
-      await session.query(
-        'SELECT pg_advisory_unlock(hashtextextended(?, 0))',
-        deferredLockKey(row.id),
+      released = isTrue(
+        (
+          await session.query(
+            'SELECT pg_advisory_unlock(hashtextextended(?, 0)) AS unlocked',
+            deferredLockKey(row.id),
+          )
+        ).rows[0]?.unlocked,
       );
     } catch {
-      // A lost connection released it already.
+      released = false;
     }
+    if (!released)
+      uncleaned.push(`the advisory lock of migration row ${row.id}`);
   }
 
   /**
@@ -1823,7 +1849,9 @@ export class MigrationTracker {
    * Run `work` alone on the shared handle: runs over one handle (keyed by
    * its connection) wait for each other's whole run, so one run's session
    * state or statements never land between another's. A run already holding
-   * the turn (a batch's own `apply()` calls) does not take it again.
+   * the turn (a batch's own `apply()` calls) does not take it again. A run
+   * that could not put the handle back marks it unusable before the turn
+   * passes on, and every later run on it is refused.
    */
   private async onSharedHandle<T>(work: () => Promise<T>): Promise<T> {
     const key = sharedHandleKey(this.db);
@@ -1838,6 +1866,10 @@ export class MigrationTracker {
     sharedHandleRuns.set(key, tail);
     await previous;
     try {
+      if (unusableHandles.has(key))
+        throw new Error(
+          'An earlier migration run could not put this database handle back as it was handed over; nothing was run. Close and reopen the database handle before migrating again.',
+        );
       return await heldTurns.run(new Set([...(held ?? []), key]), work);
     } finally {
       done();

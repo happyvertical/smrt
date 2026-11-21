@@ -299,5 +299,81 @@ describe.skipIf(process.env.SMRT_TEST_PGLITE !== '1')(
         expect(await indexValid('child_pid_idx')).toEqual([]);
       });
     });
+
+    describe('cleanup that does not take effect', () => {
+      it('is reported when a row lock could not be released on a shared handle', async () => {
+        await fixDuplicates();
+        const stuck: DatabaseInterface = {
+          ...db,
+          query: (async (sql: string, ...vars: unknown[]) =>
+            /pg_advisory_unlock/.test(sql)
+              ? { rows: [{ unlocked: false }], rowCount: 1 }
+              : db.query(sql, ...vars)) as DatabaseInterface['query'],
+        };
+
+        await expect(
+          migrate(
+            [
+              definition('cleanup_lock', [
+                'CREATE INDEX IF NOT EXISTS child_n_idx ON child (n)',
+              ]),
+            ],
+            {},
+            stuck,
+          ),
+        ).rejects.toThrow(/could not be put back/);
+        // The record itself was written.
+        expect((await row('cleanup_lock'))?.status).toBe('completed');
+        await db.query('SELECT pg_advisory_unlock_all()');
+      });
+
+      it('refuses every later run on a shared handle that could not be put back', async () => {
+        await fixDuplicates();
+        let paused = () => {};
+        const atPause = new Promise<void>((resolve) => {
+          paused = resolve;
+        });
+        const failing: DatabaseInterface = {
+          ...db,
+          query: (async (sql: string, ...vars: unknown[]) => {
+            if (sql.startsWith('RESET lock_timeout'))
+              throw new Error('connection lost');
+            if (sql.includes('CONCURRENTLY IF NOT EXISTS child_n_idx')) {
+              paused();
+              await new Promise((resolve) => setTimeout(resolve, 200));
+            }
+            return db.query(sql, ...vars);
+          }) as DatabaseInterface['query'],
+        };
+
+        const first = migrate(
+          [
+            definition('unusable_first', [
+              'CREATE INDEX IF NOT EXISTS child_n_idx ON child (n)',
+            ]),
+          ],
+          {},
+          failing,
+        );
+        await atPause;
+        const queued = migrate([
+          definition('unusable_queued', [
+            'CREATE INDEX IF NOT EXISTS child_pid_idx ON child (pid)',
+          ]),
+        ]);
+
+        await expect(first).rejects.toThrow(/Close and reopen/);
+        await expect(queued).rejects.toThrow(/earlier migration run/);
+        expect(await indexValid('child_pid_idx')).toEqual([]);
+        expect(await row('unusable_queued')).toBeUndefined();
+        await expect(
+          migrate([
+            definition('unusable_later', [
+              'CREATE INDEX IF NOT EXISTS child_tag_idx ON child (tag)',
+            ]),
+          ]),
+        ).rejects.toThrow(/earlier migration run/);
+      });
+    });
   },
 );
