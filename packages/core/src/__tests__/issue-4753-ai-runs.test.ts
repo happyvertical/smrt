@@ -159,7 +159,8 @@ describe('_smrt_ai_runs (#4753)', () => {
     const scoped = await reportAiRuns(db, { tenantId: 't2' });
     expect(scoped.tenantId).toBe('t2');
     expect(scoped.totals.runs).toBe(1);
-    expect(scoped.excluded).toEqual({ otherTenants: 2 });
+    // Other tenants' runs are not read, so they are not counted either.
+    expect(scoped.excluded).toEqual({ otherTenants: 0 });
   });
 
   it('rejects malformed runs', async () => {

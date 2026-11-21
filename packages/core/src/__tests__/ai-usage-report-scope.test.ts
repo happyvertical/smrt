@@ -1,8 +1,8 @@
 /**
- * `reportAiUsage()` and `reportAiRuns()` read only the rows they total: the
- * tenant filter is a predicate of every query that reads rows, and the rest
- * of the window is only counted in SQL (`excluded`), with the same numbers
- * as before. Real SQLite and DuckDB (PGlite in its lane).
+ * `reportAiUsage()` and `reportAiRuns()` read only what they report: the
+ * tenant filter is a predicate of every query (other tenants' rows are never
+ * read or counted), and a usage report without `since` covers the last 30
+ * days. Real SQLite and DuckDB (PGlite in its lane).
  */
 
 import type { DatabaseInterface } from '@happyvertical/sql';
@@ -65,7 +65,7 @@ function recordQueries(db: DatabaseInterface): {
 }
 
 describe.each(aiRunTestEngines)('usage report scope on %s', (engine) => {
-  it('totals one tenant from that tenant rows only, counting the others in SQL', async () => {
+  it('totals one tenant from that tenant rows only, with no count of the others', async () => {
     const db = await newAiRunTestDatabase(engine);
     const now = new Date();
     await usage(db, 'scope-own-1', 'tenant-one', now);
@@ -94,13 +94,11 @@ describe.each(aiRunTestEngines)('usage report scope on %s', (engine) => {
 
     expect(report.totals.calls).toBe(2);
     expect(report.totals.evaluations).toEqual({ accepted: 1 });
-    expect(report.excluded).toEqual({ otherTenants: 3, externalAgent: 0 });
-    // Every query that reads usage rows, evaluations or transcripts carries
-    // the tenant as a predicate; only the exclusion counts span the window.
-    const reads = recorder.queries.filter(
-      (query) =>
-        /FROM _smrt_ai_(usage|evaluations|transcripts)/.test(query.sql) &&
-        !/SELECT COUNT\(\*\)/.test(query.sql),
+    expect(report.excluded).toEqual({ otherTenants: 0, externalAgent: 0 });
+    // Every query that reads usage, evaluations or transcripts carries the
+    // tenant as a predicate.
+    const reads = recorder.queries.filter((query) =>
+      /FROM _smrt_ai_(usage|evaluations|transcripts)/.test(query.sql),
     );
     expect(reads.length).toBeGreaterThan(0);
     for (const query of reads) {
@@ -111,7 +109,7 @@ describe.each(aiRunTestEngines)('usage report scope on %s', (engine) => {
     // The global scope reads global rows only.
     const global = await reportAiUsage(db, { tenantId: null });
     expect(global.totals.calls).toBe(1);
-    expect(global.excluded.otherTenants).toBe(4);
+    expect(global.excluded.otherTenants).toBe(0);
 
     // Without a tenant (an operator report) every tenant is totalled.
     const all = await reportAiUsage(db, { by: ['tenant'] });
@@ -204,11 +202,9 @@ describe.each(aiRunTestEngines)('usage report scope on %s', (engine) => {
     const one = await reportAiRuns(db, { tenantId: 'tenant-one' });
     recorder.stop();
     expect(one.totals.runs).toBe(1);
-    expect(one.excluded).toEqual({ otherTenants: 3 });
-    const runReads = recorder.queries.filter(
-      (query) =>
-        /FROM _smrt_ai_runs/.test(query.sql) &&
-        !/SELECT COUNT\(\*\)/.test(query.sql),
+    expect(one.excluded).toEqual({ otherTenants: 0 });
+    const runReads = recorder.queries.filter((query) =>
+      /FROM _smrt_ai_runs/.test(query.sql),
     );
     expect(runReads.length).toBeGreaterThan(0);
     for (const query of runReads) {

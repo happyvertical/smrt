@@ -618,9 +618,8 @@ export interface AiUsageReportOptions {
   since?: Date;
   until?: Date;
   /**
-   * Total only this tenant's rows; `null` only global rows. Applied as a
-   * SQL predicate of the page queries; other tenants' rows are only counted
-   * (`excluded.otherTenants`), never read.
+   * Read and total only this tenant's rows; `null` only global rows. The
+   * filter is a SQL predicate: rows of other tenants are never read.
    */
   tenantId?: string | null;
   /**
@@ -684,9 +683,15 @@ export interface AiUsageReport {
   unattributedCalls: number;
   /** Rows in the window that were not totalled, and why. */
   excluded: {
-    /** Rows of another tenant (or of a tenant, under `tenantId: null`). */
+    /**
+     * @deprecated Always 0. The tenant filter is applied in SQL, so rows of
+     * other tenants are neither read nor counted.
+     */
     otherTenants: number;
-    /** External-agent measurements, which have their own summary contract. */
+    /**
+     * External-agent measurements in the window (of the filtered tenant),
+     * which have their own summary contract.
+     */
     externalAgent: number;
   };
 }
@@ -952,41 +957,9 @@ export async function reportAiUsage(
   const pageConditions = [...windowConditions];
   const pageParams = [...windowParams];
   if (tenantFiltered) {
-    // The tenant filter is a predicate of the page queries (served by
-    // idx_smrt_ai_usage_tenant_created): another tenant's rows are never
-    // read. What the report has always said about the rest of the window
-    // (other tenants' calls, every external-agent measurement) is counted
-    // in SQL instead.
-    // The same test as the page loop's (`operation` and a case-sensitive
-    // id prefix): LIKE is case-insensitive on SQLite, so a prefix compare.
-    const prefix = `${EXTERNAL_AGENT_USAGE_OPERATION}:`;
-    const external = `operation = '${EXTERNAL_AGENT_USAGE_OPERATION}' AND substr(id, 1, ${prefix.length}) = '${prefix}'`;
-    const countParams = [...windowParams];
-    let otherTenant: string;
-    if (options.tenantId === null) otherTenant = 'tenant_id IS NOT NULL';
-    else {
-      countParams.push(options.tenantId);
-      otherTenant = `(tenant_id IS NULL OR tenant_id <> $${countParams.length})`;
-    }
-    const where = (extra: string) => [...windowConditions, extra].join(' AND ');
-    const count = (rows: Record<string, unknown>[]) => Number(rows[0]?.n ?? 0);
-    excluded.externalAgent = count(
-      getRows(
-        await db.query(
-          `SELECT COUNT(*) AS n FROM _smrt_ai_usage WHERE ${where(external)}`,
-          ...windowParams,
-        ),
-      ),
-    );
-    excluded.otherTenants = count(
-      getRows(
-        await db.query(
-          `SELECT COUNT(*) AS n FROM _smrt_ai_usage
-            WHERE ${where(`NOT (${external}) AND ${otherTenant}`)}`,
-          ...countParams,
-        ),
-      ),
-    );
+    // The tenant filter is a predicate of every query (served by
+    // idx_smrt_ai_usage_tenant_created): another tenant's rows are neither
+    // read nor counted, so a tenant's report says nothing about them.
     if (options.tenantId === null) pageConditions.push('tenant_id IS NULL');
     else {
       pageParams.push(options.tenantId);
@@ -1046,8 +1019,7 @@ export async function reportAiUsage(
         row.operation === EXTERNAL_AGENT_USAGE_OPERATION &&
         id.startsWith(`${EXTERNAL_AGENT_USAGE_OPERATION}:`)
       ) {
-        // Counted in SQL above when a tenant filter applies.
-        if (!tenantFiltered) excluded.externalAgent++;
+        excluded.externalAgent++;
         continue;
       }
       const tags = parseTags(row.tags);

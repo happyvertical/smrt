@@ -584,7 +584,7 @@ describe('reportAiUsage', () => {
     expect(byKey.null).toMatchObject({ calls: 1, p50DurationMs: 200 });
   });
 
-  it('totals one tenant and reports the rest as excluded, not dropped silently', async () => {
+  it('totals one tenant and never reads or counts the other tenants', async () => {
     const report = await reportAiUsage(db, {
       by: ['model', 'tier'],
       tenantId: 'tenant-a',
@@ -593,7 +593,7 @@ describe('reportAiUsage', () => {
 
     expect(report.tenantId).toBe('tenant-a');
     expect(report.totals.calls).toBe(3);
-    expect(report.excluded).toEqual({ otherTenants: 1, externalAgent: 1 });
+    expect(report.excluded).toEqual({ otherTenants: 0, externalAgent: 1 });
     // A run label counts once in the totals even though the run has two rows.
     expect(report.totals.evaluations).toEqual({ accepted: 1, edited: 1 });
 
