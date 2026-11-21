@@ -880,9 +880,11 @@ export class ManifestGenerator {
     );
 
     // Last, after the specific checks above have reported what they know:
-    // every relationship target and report source names a class this
-    // manifest or a dependency's declares. A target recorded under a binding
-    // or alias name would point the relationship at no model, or another.
+    // every relationship target, and every report source written as a
+    // qualified name, names a class this manifest or a dependency's declares
+    // (a report source written as a bare name is left as written). A target
+    // recorded under a binding or alias name would point the relationship at
+    // no model, or another.
     this.assertKnownTargets(manifest);
   }
 
@@ -1201,10 +1203,11 @@ export class ManifestGenerator {
 
   /**
    * Fail generation when a relationship target (`@foreignKey`,
-   * `@oneToMany`, `@manyToMany`) or a report source (`@report({ source,
-   * joins })`) names no class of this manifest or of a dependency whose
-   * manifest generation can load. `@crossPackageRef` names its package and
-   * is checked at save time instead.
+   * `@oneToMany`, `@manyToMany`), or a report source (`@report({ source,
+   * joins })`) written as a qualified name, names no class of this manifest
+   * or of a dependency whose manifest generation can load. A report source
+   * written as a bare name is left as written and not checked here.
+   * `@crossPackageRef` names its package and is checked at save time instead.
    */
   private assertKnownTargets(manifest: SmartObjectManifest): void {
     // A written qualified target (`'@pkg:Class'`, optionally `.column`) names
