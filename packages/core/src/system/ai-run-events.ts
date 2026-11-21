@@ -567,12 +567,6 @@ function tenantPredicate(
     : { sql: `${column} = $${index}`, params: [tenant] };
 }
 
-/**
- * {@link getRunTrajectory}, with the run read in `tenant` when one is given:
- * the tenant is a predicate of the run's lookup and of every event page, so
- * the run (and its events) can never be another tenant's, even if the id was
- * pruned and reused between statements.
- */
 /** The read-time redaction of one stored payload (built-in rules only). */
 function redactStoredPayload(payload: unknown): unknown {
   const envelope = payload as {
@@ -606,6 +600,12 @@ function redactStoredPayload(payload: unknown): unknown {
   );
 }
 
+/**
+ * {@link getRunTrajectory}, with the run read in `tenant` when one is given:
+ * the tenant is a predicate of the run's lookup and of every event page, so
+ * the run (and its events) can never be another tenant's, even if the id was
+ * pruned and reused between statements.
+ */
 async function readTrajectory(
   db: DatabaseInterface,
   target: string | { runId: string } | { callId: string },
