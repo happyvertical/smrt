@@ -286,6 +286,13 @@ export {
   releaseInvoiceRetention,
 } from './invoice-retention.js';
 export {
+  type PostInvoiceRevenueResult,
+  type PostPendingInvoiceRevenueOptions,
+  type PostPendingInvoiceRevenueResult,
+  postInvoiceRevenueToSettlementChart,
+  postPendingInvoiceRevenue,
+} from './invoice-revenue-sweep.js';
+export {
   bindInvoiceLineSource,
   type InvoiceSourceBindingHandler,
   registerInvoiceSourceBinding,
