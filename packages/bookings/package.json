@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-bookings",
-  "version": "0.66.0",
+  "version": "0.66.1",
   "description": "Operator-managed service reservations for SMRT",
   "type": "module",
   "author": "HappyVertical",
