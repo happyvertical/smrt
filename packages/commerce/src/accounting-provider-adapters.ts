@@ -119,10 +119,11 @@ export function paymentPortFromProvider(provider: {
             environment: request.environment,
           }).payloadHash,
         };
-      } catch (error) {
+      } catch {
+        // The SDK's message can quote payload values; keep the cause out.
         throw new AccountingPaymentNotSentError(
           'INVALID_PROVIDER_REQUEST',
-          (error as Error)?.message ?? 'Invalid provider request',
+          'The payment cannot be formed into a valid provider request',
         );
       }
     },

@@ -42,9 +42,14 @@ becomes a retryable `rejected` whose `lastError` is that stable code
 the `AccountingInvoiceReader`; none with a provider payment means the push never
 landed, so it applies `reconcileAccountingPaymentSync` `absent` and returns
 `retryable` (the next `syncPending` pushes it, with the same `requestid`); any
-provider payment returns `ambiguous` with their ids and leaves the row `unknown`
-for a person (a provider payment cannot be attributed to this push from the
-document). A failed read throws and changes nothing.
+provider payment (other than ones this tenant already synced) returns
+`ambiguous` with their ids and leaves the row `unknown` for a person (a provider
+payment cannot be attributed to this push from the document). Absence is proven
+only by a complete read of this company's invoice: a partial read or one for
+another realm, tenant or invoice returns `inconclusive`. A failed read throws
+and changes nothing. A released push keeps its request id so the provider's
+dedup still covers a slow original; if the facts changed since, the retry throws
+`RECONCILIATION_REQUIRED` and sends nothing.
 
 The local `Payment` row is not edited; `AccountingPaymentSync.externalId` is the
 provider id. Payments cannot be un-applied by this module: if allocations change

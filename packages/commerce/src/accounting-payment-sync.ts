@@ -357,6 +357,17 @@ async function claim(
       'RECONCILIATION_REQUIRED',
       'The prior payment push outcome is unknown and must be reconciled',
     );
+  // A push released because the provider never received it keeps its request
+  // id: the provider dedups on it, so a slow original that lands later cannot
+  // become a second payment. Changed facts mean a new id, which a person decides.
+  if (
+    row.lastError === 'ABSENT_AT_PROVIDER' &&
+    row.requestId !== request.requestId
+  )
+    refuse(
+      'RECONCILIATION_REQUIRED',
+      'The payment facts changed after its push was released; reconcile it',
+    );
   const taken = await input.db.query(
     `UPDATE accounting_payment_syncs
         SET status = 'in_flight', attempt_id = ?, request_id = ?, payload_hash = ?,
@@ -437,7 +448,7 @@ export async function syncPaymentToAccounting(
           ? error
           : new AccountingPaymentNotSentError(
               'INVALID_PROVIDER_REQUEST',
-              (error as Error)?.message ?? 'Invalid provider request',
+              'The payment cannot be formed into a valid provider request',
             );
     }
   }
@@ -613,7 +624,9 @@ export type ResolveUnknownPaymentSyncResult =
   /** The provider holds no payment against the applied invoices: retryable. */
   | { readonly status: 'retryable'; readonly row: AccountingPaymentSync }
   /** The provider has a payment on an applied invoice; only a person can tell whose. */
-  | { readonly status: 'ambiguous'; readonly providerPaymentIds: string[] };
+  | { readonly status: 'ambiguous'; readonly providerPaymentIds: string[] }
+  /** The provider read was partial or for another company or invoice: nothing is proven. */
+  | { readonly status: 'inconclusive' };
 
 /**
  * Recover a payment push stuck as `unknown` without hand-written SQL. It asks
@@ -653,11 +666,36 @@ export async function resolveUnknownPaymentSync(
     const evidence = await input.reader.readInvoice(
       application.invoiceExternalId,
     );
+    // Absence is proven only by a complete read of this company's invoice.
+    if (
+      evidence.complete !== true ||
+      evidence.realmId !== scope.realmId ||
+      evidence.environment !== scope.environment ||
+      evidence.tenantId !== input.tenantId ||
+      evidence.externalId !== application.invoiceExternalId
+    )
+      return { status: 'inconclusive' };
     for (const transaction of evidence.transactions)
       if (transaction.kind === 'payment') found.push(transaction.id);
   }
-  if (found.length > 0)
-    return { status: 'ambiguous', providerPaymentIds: found };
+  // Payments this tenant already synced are not evidence about this push.
+  const known = new Set<string>();
+  if (found.length > 0) {
+    const synced = await input.db.query(
+      `SELECT external_id FROM accounting_payment_syncs
+        WHERE tenant_id = ? AND realm_id = ? AND environment = ?
+          AND status = 'synced' AND external_id IN (${found.map(() => '?').join(', ')})`,
+      input.tenantId,
+      scope.realmId,
+      scope.environment,
+      ...found,
+    );
+    for (const r of synced.rows as { external_id: string }[])
+      known.add(String(r.external_id));
+  }
+  const unattributed = found.filter((id) => !known.has(id));
+  if (unattributed.length > 0)
+    return { status: 'ambiguous', providerPaymentIds: unattributed };
   const resolved = await reconcileAccountingPaymentSync({
     db: input.db,
     tenantId: input.tenantId,

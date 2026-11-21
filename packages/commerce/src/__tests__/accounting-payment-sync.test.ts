@@ -1026,6 +1026,102 @@ describe('payment sync and readback (#5139)', () => {
       expect(await rowOf(paymentId)).toMatchObject({ status: 'unknown' });
     });
 
+    it('proves nothing from a partial read or another company', async () => {
+      const { paymentId } = await unknownPush();
+      for (const over of [
+        { complete: false },
+        { realmId: 'realm-other' },
+        { externalId: 'qb-inv-other' },
+      ]) {
+        const reader = readerOf([]);
+        const base = reader.readInvoice;
+        reader.readInvoice = vi.fn(async () => ({
+          ...(await base()),
+          ...over,
+        })) as never;
+        expect(
+          await inTenant(() =>
+            resolveUnknownPaymentSync({
+              db,
+              tenantId: TENANT,
+              paymentId,
+              reader,
+            }),
+          ),
+        ).toEqual({ status: 'inconclusive' });
+        expect(await rowOf(paymentId)).toMatchObject({ status: 'unknown' });
+      }
+    });
+
+    it('does not count a payment this tenant already synced as evidence', async () => {
+      const s = await seed();
+      const other = await paidPayment(s, 1);
+      await run(
+        other,
+        port(async () => ({ externalId: 'p-earlier', syncedAt: new Date() }))
+          .impl,
+      );
+      const paymentId = await paidPayment(s, s.invoice.totalAmount - 1);
+      await expect(
+        run(
+          paymentId,
+          port(async () => {
+            throw new Error('socket hang up');
+          }).impl,
+        ),
+      ).rejects.toThrow('socket hang up');
+      const resolved = await inTenant(() =>
+        resolveUnknownPaymentSync({
+          db,
+          tenantId: TENANT,
+          paymentId,
+          reader: readerOf([
+            { id: 'p-earlier', kind: 'payment', amountMinor: 1 },
+          ]),
+        }),
+      );
+      expect(resolved.status).toBe('retryable');
+    });
+
+    it('keeps the request id across a release, and refuses a retry whose facts changed', async () => {
+      const { s, paymentId } = await unknownPush();
+      const before = await rowOf(paymentId);
+      await inTenant(() =>
+        resolveUnknownPaymentSync({
+          db,
+          tenantId: TENANT,
+          paymentId,
+          reader: readerOf([]),
+        }),
+      );
+      // Unchanged facts: same request id, pushed once.
+      const same = port();
+      await run(paymentId, same.impl);
+      expect(same.calls[0]?.requestId).toBe(before?.requestId);
+
+      // Changed facts after a release: a different request id is never sent.
+      const t = await unknownPush();
+      await inTenant(() =>
+        resolveUnknownPaymentSync({
+          db,
+          tenantId: TENANT,
+          paymentId: t.paymentId,
+          reader: readerOf([]),
+        }),
+      );
+      await setAccountingMapping({ db }, t.s.scope, {
+        kind: 'deposit_account',
+        localId: 'default',
+        externalId: 'qb-other-clearing',
+      });
+      const changed = port();
+      await expect(run(t.paymentId, changed.impl)).rejects.toMatchObject({
+        code: 'RECONCILIATION_REQUIRED',
+      });
+      expect(changed.calls).toHaveLength(0);
+      void s;
+    });
+
     it('changes nothing when the provider cannot be read', async () => {
       const { paymentId } = await unknownPush();
       await expect(
