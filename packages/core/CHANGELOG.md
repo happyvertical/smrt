@@ -1,5 +1,26 @@
 # @happyvertical/smrt-core
 
+## 0.66.0
+
+### Minor Changes
+
+- ### Breaking Changes
+  
+  - record change-feed entries under the row's real tenant field (#5359) (core)
+  - request paths enforce per-field write, filter and tenant checks (#5414) (core)
+  - serialize PostgreSQL change-feed sequence allocation (#5411) (core)
+  
+  ### Features
+  
+  - worker lifecycle for many apps in one process (#5192) (#5398) (app-shell)
+  - draft fork, undo snapshot and publish on PostgreSQL (#5187) (#5397) (app-shell)
+
+### Patch Changes
+
+- @happyvertical/smrt-config@0.66.0
+  - @happyvertical/smrt-scanner@0.66.0
+  - @happyvertical/smrt-types@0.66.0
+
 ## 0.65.0
 
 ### Minor Changes
