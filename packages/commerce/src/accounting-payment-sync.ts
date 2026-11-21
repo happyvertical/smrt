@@ -309,6 +309,14 @@ async function loadPaymentRequest(
   };
 }
 
+/**
+ * The request id a row is pinned to, or ''. Rows written before the column
+ * existed hold NULL, and a row released as absent by an earlier reconcile has no
+ * pin yet: both read correctly here, so no backfill migration is needed.
+ */
+const PINNED_REQUEST_ID_SQL = `COALESCE(NULLIF(pinned_request_id, ''),
+  CASE WHEN last_error = 'ABSENT_AT_PROVIDER' THEN request_id END, '')`;
+
 /** Claim the push: create the row, or take over a `rejected` one atomically. */
 async function claim(
   input: SyncPaymentToAccountingInput,
@@ -362,7 +370,7 @@ async function claim(
         SET status = 'in_flight', attempt_id = ?, request_id = ?, payload_hash = ?,
             request_json = ?, started_at = ?, last_error = ''
       WHERE id = ? AND tenant_id = ? AND status = 'rejected' AND attempt_id = ?
-        AND (pinned_request_id = '' OR pinned_request_id = ?)
+        AND ${PINNED_REQUEST_ID_SQL} IN ('', ?)
       RETURNING id`,
     attemptId,
     request.requestId,
@@ -380,8 +388,8 @@ async function claim(
     // become a second payment. Changed facts mean a new id, which a person
     // decides. (Read in SQL: a cached row could predate the release.)
     const pinned = await input.db.query(
-      `SELECT pinned_request_id FROM accounting_payment_syncs
-        WHERE id = ? AND tenant_id = ?`,
+      `SELECT ${PINNED_REQUEST_ID_SQL} AS pinned_request_id
+         FROM accounting_payment_syncs WHERE id = ? AND tenant_id = ?`,
       row.id,
       input.tenantId,
     );

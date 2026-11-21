@@ -1153,6 +1153,37 @@ describe('payment sync and readback (#5139)', () => {
       expect(changed.calls).toHaveLength(0);
     });
 
+    it('retries a rejected row from before the pin existed (NULL), and pins one released by an earlier reconcile', async () => {
+      const a = await unknownPush();
+      await inTenant(() =>
+        resolveUnknownPaymentSync({
+          db,
+          tenantId: TENANT,
+          paymentId: a.paymentId,
+          reader: readerOf([]),
+        }),
+      );
+      // Written before the column existed: NULL, but released as absent.
+      await db.query(
+        'UPDATE accounting_payment_syncs SET pinned_request_id = NULL',
+      );
+      await setAccountingMapping({ db }, a.s.scope, {
+        kind: 'deposit_account',
+        localId: 'default',
+        externalId: 'qb-other-clearing',
+      });
+      await expect(run(a.paymentId, port().impl)).rejects.toMatchObject({
+        code: 'RECONCILIATION_REQUIRED',
+      });
+      // A plain rejection with a NULL pin is still retryable.
+      await db.query(
+        "UPDATE accounting_payment_syncs SET pinned_request_id = NULL, last_error = 'REJECTED'",
+      );
+      expect(await run(a.paymentId, port().impl)).toMatchObject({
+        status: 'synced',
+      });
+    });
+
     it('changes nothing when the provider cannot be read', async () => {
       const { paymentId } = await unknownPush();
       await expect(
