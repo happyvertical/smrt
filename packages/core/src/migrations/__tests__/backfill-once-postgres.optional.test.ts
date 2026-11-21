@@ -9,6 +9,7 @@
 import { randomUUID } from 'node:crypto';
 import { type DatabaseInterface, getDatabase } from '@happyvertical/sql';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { dropScratchDatabase } from '../../__tests__/fixtures/postgres-scratch-database.js';
 import { runBackfillOnceInTransaction } from '../backfill-once.js';
 import { BackfillTracker } from '../backfill-tracker.js';
 
@@ -61,9 +62,7 @@ describe.skipIf(!pgUrl)(
     afterAll(async () => {
       await first?.close?.();
       await second?.close?.();
-      await admin?.query(
-        `DROP DATABASE IF EXISTS ${databaseName} WITH (FORCE)`,
-      );
+      await dropScratchDatabase(admin, databaseName);
       await admin?.close?.();
     });
 

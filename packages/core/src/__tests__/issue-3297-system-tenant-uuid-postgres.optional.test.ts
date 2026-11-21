@@ -27,6 +27,7 @@ import {
   POSTGRES_CHANGE_FEED_HELPER_COMPAT_MARKER,
   POSTGRES_CHANGE_FEED_HELPER_MARKER,
 } from '../system/schema';
+import { dropScratchDatabase } from './fixtures/postgres-scratch-database';
 
 const pgUrl = process.env.SMRT_TEST_POSTGRES_URL;
 
@@ -125,9 +126,7 @@ describe.skipIf(!pgUrl)(
     afterAll(async () => {
       await (db as { close?: () => Promise<void> } | undefined)?.close?.();
       if (databaseName) {
-        await admin?.query(
-          `DROP DATABASE IF EXISTS ${databaseName} WITH (FORCE)`,
-        );
+        await dropScratchDatabase(admin, databaseName);
       }
       await (admin as { close?: () => Promise<void> } | undefined)?.close?.();
     });

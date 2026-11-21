@@ -24,6 +24,7 @@ import {
   expect,
   it,
 } from 'vitest';
+import { dropScratchDatabase } from '../../__tests__/fixtures/postgres-scratch-database.js';
 import { field } from '../../decorators/index.js';
 import { SmrtObject } from '../../object.js';
 import { ObjectRegistry } from '../../registry.js';
@@ -178,10 +179,7 @@ describe.skipIf(!pgUrl)('retire step on real PostgreSQL (#5005)', () => {
   afterEach(() => restore?.());
   afterAll(async () => {
     for (const handle of handles) await handle.close?.();
-    if (databaseName)
-      await admin?.query(
-        `DROP DATABASE IF EXISTS ${databaseName} WITH (FORCE)`,
-      );
+    if (databaseName) await dropScratchDatabase(admin, databaseName);
     await admin?.close?.();
   });
 
