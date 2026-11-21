@@ -1497,7 +1497,7 @@ export class ManifestGenerator {
       found.set(identity, {
         identity,
         label: `${identity} (${candidate.filePath})`,
-        importHint: `import { ${candidate.className} } from the file that declares it (${candidate.filePath})`,
+        importHint: `import { ${candidate.exportName ?? candidate.className} } from the file that declares it (${candidate.filePath})`,
         definition: candidate,
       });
     }
@@ -1511,10 +1511,12 @@ export class ManifestGenerator {
           candidate.qualifiedName ??
           createQualifiedName(packageName, candidate.className);
         if (found.has(identity)) continue;
+        // The entry and export name the provider's manifest records are the
+        // import its consumers are confirmed against.
         found.set(identity, {
           identity,
           label: `${identity} (dependency ${packageName})`,
-          importHint: `import { ${candidate.className} } from '${packageName}'`,
+          importHint: `import { ${candidate.exportName ?? candidate.className} } from '${candidate.importPath ?? packageName}'`,
           definition: candidate,
         });
       }

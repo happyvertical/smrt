@@ -862,6 +862,31 @@ ${extra}}
     expect(column(cased)).toEqual(column(exact));
   });
 
+  it('names the recorded entry and export name in the import that pins an ambiguous bare-name target', async () => {
+    const root = await project({
+      providers: {
+        [VENDOR]: twoRuns[VENDOR],
+        [OTHER]: {
+          ...twoRuns[OTHER],
+          edit: (manifest) => {
+            const objects = manifest.objects as Record<
+              string,
+              Record<string, unknown>
+            >;
+            const run = objects[`${OTHER}:ProductionRun`];
+            run.importPath = `${OTHER}/runs`;
+            run.exportName = 'OtherRun';
+          },
+        },
+      },
+      app: { 'src/WorkOrder.ts': bareOrder('ProductionRun') },
+    });
+
+    const message = await build(root).catch((error: Error) => error.message);
+    expect(message).toContain(`import { OtherRun } from '${OTHER}/runs'`);
+    expect(message).toContain(`import { ProductionRun } from '${VENDOR}'`);
+  });
+
   it('fails a bare-name target spelled in another case that models of two dependencies share', async () => {
     const root = await project({
       providers: twoRuns,
