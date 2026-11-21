@@ -30,6 +30,7 @@ import { ObjectRegistry } from '../registry.js';
 import { setRuntimeExposureGate } from '../runtime-exposure.js';
 import { snapshotObjectRegistryState } from '../test-utils.js';
 import { toSnakeCase } from '../utils/naming.js';
+import { dropScratchDatabase } from './fixtures/postgres-scratch-database.js';
 
 const pgUrl = process.env.SMRT_TEST_POSTGRES_URL;
 const APP = '@fixture/pg-identifier-app';
@@ -97,7 +98,7 @@ describe.skipIf(!pgUrl)('app model editor identifiers on PostgreSQL', () => {
   });
   afterAll(async () => {
     const admin = await getDatabase({ type: 'postgres', url: pgUrl });
-    await admin.query(`DROP DATABASE IF EXISTS ${database} WITH (FORCE)`);
+    await dropScratchDatabase(admin, database);
     await admin.close?.();
   });
   beforeEach(async () => {

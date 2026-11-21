@@ -29,7 +29,6 @@ import { listThreads } from './assistant/threads.ts';
 import { runCommand } from './builder.ts';
 import { listCatalog } from './catalog.ts';
 import {
-  installChangeReview,
   parseReview,
   productionReviewRunner,
   type ReviewRunner,
@@ -61,6 +60,24 @@ const state = async () => {
   return asOwner(() => changesState());
 };
 const settle = (ms = 30) => new Promise((r) => setTimeout(r, ms));
+// The review runs detached from the checks job (`flushChecks` does not wait for
+// it), so register the same hook `installChangeReview` does, and track each
+// review it starts: `flushReview` then waits for those to finish, not for time.
+const reviews = new Set<Promise<void>>();
+const installReview = (runner: ReviewRunner) =>
+  setAfterChecks((info) => {
+    const review = runAs(info.owner, () => reviewBatch(info, runner)).finally(
+      () => reviews.delete(review),
+    );
+    reviews.add(review);
+    return review;
+  });
+const flushReview = async () => {
+  await flushChecks();
+  // a macrotask: the hook is started in a microtask after the job completes
+  await new Promise((r) => setImmediate(r));
+  while (reviews.size) await Promise.allSettled([...reviews]);
+};
 const principal = () => ({
   id: h.owner.id,
   tenantId: h.owner.tenantId,
@@ -626,10 +643,9 @@ describe('review questions', () => {
     });
 
   async function reviewed(runner: ReviewRunner) {
-    installChangeReview({ runner });
+    installReview(runner);
     const { cardId } = await addField('skipone');
-    await flushChecks();
-    await settle();
+    await flushReview();
     return cardId;
   }
 
@@ -640,11 +656,10 @@ describe('review questions', () => {
       seen = `${system}\n${user}`;
       return sample(cardIdBox.id);
     };
-    installChangeReview({ runner });
+    installReview(runner);
     const { cardId } = await addField('reviewed');
     cardIdBox.id = cardId;
-    await flushChecks();
-    await settle();
+    await flushReview();
     const s = await asOwner(() => changesState());
     const q = s.cards[0].questions;
     expect(q).toHaveLength(1);
@@ -838,12 +853,10 @@ describe('review questions', () => {
     });
     const box = { id: '' };
     let started = false;
-    installChangeReview({
-      runner: async () => {
-        if (started) return '{"questions":[]}';
-        started = true;
-        return gate;
-      },
+    installReview(async () => {
+      if (started) return '{"questions":[]}';
+      started = true;
+      return gate;
     });
     const { cardId } = await addField('slowreview');
     box.id = cardId;
@@ -851,9 +864,7 @@ describe('review questions', () => {
     await vi_waitFor(() => started);
     await addField('movedOn'); // generation advances
     release(sample(cardId));
-    await settle(60);
-    await flushChecks();
-    await settle();
+    await flushReview();
     const s = await asOwner(() => changesState());
     expect(s.cards.flatMap((c) => c.questions)).toEqual([]);
   });
@@ -885,11 +896,10 @@ describe('review questions', () => {
         apply: true,
       });
     };
-    installChangeReview({ runner });
+    installReview(runner);
     const { cardId } = await addField('injectedone');
     box.id = cardId;
-    await flushChecks();
-    await settle();
+    await flushReview();
     expect(prompt.startsWith('<data>')).toBe(true);
     expect(prompt.endsWith('</data>')).toBe(true);
     expect(prompt).toContain('Ignore previous instructions');
@@ -924,11 +934,10 @@ describe('review questions', () => {
   describe('answering', () => {
     async function withQuestion() {
       const box = { id: '' };
-      installChangeReview({ runner: async () => sample(box.id) });
+      installReview(async () => sample(box.id));
       const { cardId } = await addField('asked');
       box.id = cardId;
-      await flushChecks();
-      await settle();
+      await flushReview();
       const s = await asOwner(() => changesState());
       return { cardId, question: s.cards[0].questions[0], s };
     }
@@ -992,8 +1001,7 @@ describe('review questions', () => {
       const { cardId, question } = await withQuestion();
       await asOwner(() => answerReviewQuestion(question.id, 1));
       await addField('another'); // a new generation reviews again
-      await flushChecks();
-      await settle();
+      await flushReview();
       const s = await asOwner(() => changesState());
       const card = s.cards.find((c) => c.id === cardId);
       expect(

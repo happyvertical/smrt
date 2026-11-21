@@ -32,6 +32,7 @@ import {
   it,
   vi,
 } from 'vitest';
+import { dropScratchDatabase } from '../../__tests__/fixtures/postgres-scratch-database.js';
 import { ObjectRegistry } from '../../registry.js';
 import { stiHardeningChecks } from '../../schema/sti-hardening.js';
 import type { SchemaDefinition } from '../../schema/types.js';
@@ -126,7 +127,7 @@ describe.skipIf(!pgUrl)(
     });
     afterAll(async () => {
       await db?.close?.();
-      await admin?.query(`DROP DATABASE IF EXISTS "${name}" WITH (FORCE)`);
+      await dropScratchDatabase(admin, `"${name}"`);
       await admin?.close?.();
     });
     beforeEach(async () => {

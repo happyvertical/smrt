@@ -13,6 +13,7 @@
 import { randomUUID } from 'node:crypto';
 import { type DatabaseInterface, getDatabase } from '@happyvertical/sql';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { dropScratchDatabase } from '../../__tests__/fixtures/postgres-scratch-database.js';
 import type { MigrationDefinition } from '../../schema/types.js';
 import { MigrationTracker } from '../tracker.js';
 
@@ -125,8 +126,7 @@ describe.skipIf(!pgUrl)(
 
     afterAll(async () => {
       for (const handle of handles) await handle.close?.();
-      for (const name of databases)
-        await admin?.query(`DROP DATABASE IF EXISTS ${name} WITH (FORCE)`);
+      for (const name of databases) await dropScratchDatabase(admin, name);
       for (const role of roles)
         await admin?.query(`DROP ROLE IF EXISTS ${role}`);
       await admin?.close?.();

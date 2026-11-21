@@ -14,6 +14,7 @@ import {
   type PostgresPermissionContract,
   planPostgresPermissions,
 } from '../postgres-permissions.js';
+import { dropScratchDatabase } from './fixtures/postgres-scratch-database.js';
 
 // This suite plays the cluster administrator: it creates LOGIN roles and a
 // database per case, reads catalog ACLs, and probes parameter authority. It
@@ -101,8 +102,7 @@ pgDescribe('PostgreSQL permission contract (#2701)', () => {
   });
   afterEach(async () => {
     await db?.close?.();
-    if (database)
-      await admin.query(`DROP DATABASE IF EXISTS ${q(database)} WITH (FORCE)`);
+    if (database) await dropScratchDatabase(admin, q(database));
     for (const role of [owner, runtime, monitor])
       if (role) await admin.query(`DROP ROLE IF EXISTS ${q(role)}`);
     await admin?.close?.();

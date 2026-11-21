@@ -563,7 +563,8 @@ describe('checks pipeline', () => {
     try {
       await asOwner(() => addField('hook1'));
       await flushChecks(); // no runAs here: the job carries its own owner
-      await new Promise((r) => setTimeout(r, 5));
+      // the hook starts in a microtask after the job: one macrotask, not a delay
+      await new Promise((r) => setImmediate(r));
       expect(calls).toHaveLength(1);
       expect(calls[0]).toMatchObject({ ok: true });
       current = [await calls[0].isCurrent()];

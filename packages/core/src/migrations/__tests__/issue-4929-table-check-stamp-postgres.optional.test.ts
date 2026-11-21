@@ -19,6 +19,7 @@ import {
   it,
   vi,
 } from 'vitest';
+import { dropScratchDatabase } from '../../__tests__/fixtures/postgres-scratch-database.js';
 import { ObjectRegistry } from '../../registry.js';
 import { ManifestGenerator } from '../../scanner/manifest-generator.js';
 import type {
@@ -126,9 +127,7 @@ describe.skipIf(!pgUrl)(
       restore?.();
       for (const handle of handles) await handle.close?.();
       if (databaseName) {
-        await admin?.query(
-          `DROP DATABASE IF EXISTS ${databaseName} WITH (FORCE)`,
-        );
+        await dropScratchDatabase(admin, databaseName);
       }
       await admin?.close?.();
       if (dir) rmSync(dir, { recursive: true, force: true });

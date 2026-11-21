@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -15,7 +15,7 @@ const write = (path, content) => {
   writeFileSync(path, typeof content === 'string' ? content : `${JSON.stringify(content)}\n`);
 };
 
-function fixture(t, { built = [], failure = false, signal = false, metadataOnly = [], missingArtifact, corrupt } = {}) {
+function fixture(t, { built = [], failure = false, signal = false, metadataOnly = [], missingArtifact, corrupt, sources = {} } = {}) {
   const root = mkdtempSync(join(tmpdir(), 'products-prepare-'));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   write(join(root, 'package.json'), { private: true });
@@ -38,6 +38,19 @@ function fixture(t, { built = [], failure = false, signal = false, metadataOnly 
         write(join(root, 'packages/core/dist/vite-plugin/index.js'), '');
       }
     }
+  }
+  // sources: { <dir>: 'newer' | 'older' } writes a src file whose mtime is set
+  // relative to the built outputs (built one hour ago).
+  for (const [directory, age] of Object.entries(sources)) {
+    const outputTime = new Date(Date.now() - 3_600_000);
+    for (const file of ['dist/index.js', 'dist/index.d.ts', 'dist/vite-plugin.js', 'dist/vite-plugin.d.ts', 'dist/vite-plugin/index.js']) {
+      if (!existsSync(join(root, 'packages', directory, file))) continue;
+      utimesSync(join(root, 'packages', directory, file), outputTime, outputTime);
+    }
+    const source = join(root, 'packages', directory, 'src/nested/index.ts');
+    write(source, 'export {};');
+    const sourceTime = new Date(outputTime.getTime() + (age === 'newer' ? 60_000 : -60_000));
+    utimesSync(source, sourceTime, sourceTime);
   }
   for (const directory of metadataOnly) {
     write(join(root, 'packages', directory, 'dist/manifest.json'), '{}');
@@ -120,6 +133,24 @@ test('normal pnpm install builds when production workspace outputs exist, withou
   const result = install(root);
   assert.equal(result.status, 0, result.output);
   assert.match(result.output, /fixture real build invoked/);
+  assert.equal(existsSync(join(dir, products.main)), true);
+});
+
+test('normal pnpm install defers when a dependency output is older than its sources', (t) => {
+  const { root, dir } = fixture(t, { built: ['core', 'assets'], sources: { core: 'older', assets: 'newer' } });
+  const result = install(root);
+  assert.equal(result.status, 0, result.output);
+  assert.match(result.output, /Deferring products build; workspace build outputs older than their sources: @happyvertical\/smrt-assets\./);
+  assert.doesNotMatch(result.output, /fixture real build invoked/);
+  assert.equal(existsSync(join(dir, products.main)), false);
+});
+
+test('normal pnpm install builds when dependency outputs are newer than their sources', (t) => {
+  const { root, dir } = fixture(t, { built: ['core', 'assets'], sources: { core: 'older', assets: 'older' } });
+  const result = install(root);
+  assert.equal(result.status, 0, result.output);
+  assert.match(result.output, /fixture real build invoked/);
+  assert.doesNotMatch(result.output, /Deferring products build/);
   assert.equal(existsSync(join(dir, products.main)), true);
 });
 
