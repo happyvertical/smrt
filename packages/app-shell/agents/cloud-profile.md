@@ -182,15 +182,23 @@ never a timer, never an eviction (`host-lifecycle.test.ts`, "desktop is unchange
   (`refused`, "no room"), never cutting a call. A worker keeps the memory it grew
   to, so the ceiling is a count, not a reading of the process.
 - `maxConcurrentWakes` (default 2) queues a burst of wakes.
-- Connection budget (#5464): each live or draft worker on a server PostgreSQL
-  holds a pool (`connection.max`, 2 in the cloud config). `maxAppConnections`
-  caps the total across the process; unset, it is `maxOpenApps` apps x 2 workers
-  x pool size, and with no cap at all there is no budget. A worker over the
-  budget is refused at once (`refused`, "no database connections left"), never
-  queued; the connections return on `close`, `discard`, `discardIfEmpty` and a
-  failed open (`withConnections` in `host.ts`). SQLite and PGlite hold no pool and
-  are not counted. A budget below `maxOpenApps` x pool refuses rather than
-  evicts. `hostMetrics()` reports `connections` and `maxConnections`.
+- Connection budget (#5464): `WorkerLimits.connections`, set by `host.ts` on
+  every host it opens. EVERY worker on a server PostgreSQL reserves its pool in
+  `AppWorker`'s constructor and returns it when the thread exits, so a swap's new
+  worker, a report worker and a publish rehearsal are counted while they live;
+  the pool is created at exactly the size reserved (`connection.max`, else
+  `POOL_SIZE` = 2, set explicitly, never the adapter default). A host also reserves
+  `HOST_OVERHEAD` (live 2: ownership claim + one admin connection in flight; draft
+  1), returned on `close`, a successful `discardIfEmpty`, and a failed open
+  (`withConnections`). `maxAppConnections` caps the total held by the process;
+  unset, it is `maxOpenApps` x `APP_ALLOWANCE` (live + draft + one transient
+  worker pool, plus both overheads), and with no cap at all there is no budget.
+  A refusal is immediate (`ConnectionBudgetError`, `refused`), never queued, so a
+  swap or report that finds no room fails and can be retried. Transient admin
+  connections beyond the one in `HOST_OVERHEAD` and the shell's own pool are not
+  counted. SQLite and PGlite are not counted. A budget below the derived one
+  refuses rather than evicts. `hostMetrics()` reports `connections` and
+  `maxConnections`.
 - `drainShell(timeoutMs)`: refuse new apps, wait for calls, close all; for
   recycling a process. `hostMetrics()`: open, queued wakes, wakes, failed wakes,
   evictions by cause, wake times, cap, RSS.
@@ -242,9 +250,11 @@ a tenant could make the server call an internal address.
 
 ## What an owner is told when a database fails (#5464)
 
-A driver error can name the database host or user. An owner sees only our own
-messages (`PolicyError`, `HttpError`, `EngineError`); anything else becomes a
-fixed sentence and the detail (message only, never a stack, body or definition)
+A driver error can name the database host or user, and the engine wraps worker
+text in an `EngineError`. An owner sees only our own messages (`PolicyError`,
+`HttpError`, an `EngineError` that is not `untrusted`); the engine marks text it
+received from a worker (boot failures, non-user call errors, a crashed thread)
+`untrusted` (`EngineError.untrusted`). Everything else becomes a fixed sentence and the detail (message only, never a stack, body or definition)
 goes to the server log. `errorResponse` did this already; `ownerMessage()`
 (`owner-errors.ts`) is the same rule for a draft that cannot open
 (`DraftSlot.problem`), a failed approval, and an assistant tool failure. A new

@@ -2176,7 +2176,7 @@ export class AppHost extends EventEmitter {
       if (e instanceof AppCallError) {
         if (e.stale) throw new StaleFenceError(e.message);
         if (e.user) throw new EngineError(e.message, 'invalid');
-        throw new EngineError(e.message, 'refused');
+        throw EngineError.untrusted(e.message, 'refused');
       }
       throw e;
     }

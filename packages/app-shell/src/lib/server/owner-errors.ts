@@ -2,7 +2,7 @@
 // written for them (`PolicyError`, `HttpError`, `EngineError`); anything else
 // is a driver or runtime error whose text can name the database host or user,
 // so it stays in the server log and the owner gets a fixed sentence.
-import { EngineError } from '../../engine/errors.ts';
+import { EngineError, exposableMessage } from '../../engine/errors.ts';
 import { HttpError } from './http.ts';
 import { PolicyError } from './owner.ts';
 
@@ -14,11 +14,8 @@ export function ownerMessage(
   error: unknown,
   fallback: string = GENERIC_OWNER_ERROR,
 ): string {
-  if (
-    error instanceof PolicyError ||
-    error instanceof HttpError ||
-    error instanceof EngineError
-  )
+  if (error instanceof EngineError) return exposableMessage(error);
+  if (error instanceof PolicyError || error instanceof HttpError)
     return error.message;
   // biome-ignore lint/suspicious/noConsole: message only, never a stack or body
   console.error(

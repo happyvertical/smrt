@@ -45,6 +45,8 @@ import { ChangeCardCollection } from '../objects/ChangeCard.ts';
 import { versionSummary } from '../ui/command-summary.ts';
 import { publish, setTenantScopedEvents } from './events.ts';
 import {
+  ConnectionBudgetError,
+  HOST_OVERHEAD,
   HostLifecycle,
   type HostLifecyclePolicy,
   type HostMetrics,
@@ -400,24 +402,32 @@ export function wireHostEvents(
   );
 }
 
-/** The pool size a worker gets when the config does not say (the driver's own default). */
-const DEFAULT_POOL = 10;
+/**
+ * The worker limits with the connection budget: every worker that opens a
+ * pool reserves it (`AppWorker`, #5464). Only a hosted process with a
+ * lifecycle policy counts; nothing else changes.
+ */
+function budgetedLimits(): WorkerLimits | undefined {
+  const limits = requireContext().workerLimits;
+  return lifecycleOn()
+    ? { ...limits, connections: lifecycle.workerBudget }
+    : limits;
+}
 
 /**
- * Open one worker's host against the process-wide connection budget (#5464).
- * Only a server PostgreSQL holds a pool; SQLite and the in-process PGlite are
- * not counted, and nothing is counted without a lifecycle policy. A refusal is
- * immediate. The connections come back when the host is closed or discarded,
- * on every path (`close`, `discard`, `discardIfEmpty`), and when the open fails.
+ * Reserve what a host holds beside its workers' pools (`HOST_OVERHEAD`: the
+ * claim and an admin connection) while it is open. Refused at once when the
+ * budget has no room; returned on `close`, `discardIfEmpty` that succeeds, and a
+ * failed open (`discard` closes). Server PostgreSQL only.
+ * @internal exported for tests
  */
-async function withConnections(
+export async function withConnections(
   database: DatabaseConfig | null,
+  kind: keyof typeof HOST_OVERHEAD,
   open: () => Promise<AppHost>,
 ): Promise<AppHost> {
   if (database?.kind !== 'postgres' || !lifecycleOn()) return open();
-  const release = lifecycle.takeConnections(
-    database.connection.max ?? DEFAULT_POOL,
-  );
+  const release = lifecycle.takeConnections(HOST_OVERHEAD[kind]);
   let host: AppHost;
   try {
     host = await open();
@@ -446,7 +456,7 @@ async function withConnections(
 export async function withDraftConnections(
   open: () => Promise<AppHost>,
 ): Promise<AppHost> {
-  return withConnections((await currentHolder()).database, open);
+  return withConnections((await currentHolder()).database, 'draft', open);
 }
 
 /**
@@ -461,11 +471,11 @@ export function openDraftHost(
   pin: string | null = null,
   database: DatabaseConfig | null = null,
 ): Promise<AppHost> {
-  return withConnections(database, () =>
+  return withConnections(database, 'draft', () =>
     AppHost.open(dir, {
       store: new DraftVersionStore(db, id, pin),
       workerUrl: workerUrl(),
-      workerLimits: requireContext().workerLimits,
+      workerLimits: budgetedLimits(),
       autoApprove: true,
       // A draft on PostgreSQL reopens with the LIVE app's config; its own
       // schema comes from the marker in `dir`.
@@ -549,7 +559,7 @@ async function adoptDraft(
     // fixed sentence, the server log the detail (message only, never a stack).
     // Our own budget refusal is safe and says what to do.
     slot.problem =
-      e instanceof EngineError && e.code === 'refused'
+      e instanceof ConnectionBudgetError
         ? `the draft cannot be opened: ${e.message}`
         : 'the draft cannot be opened right now; try again, or discard it to carry on';
     // biome-ignore lint/suspicious/noConsole: message only, never a stack or body
@@ -660,11 +670,11 @@ async function openLive(holder: Holder): Promise<AppHost> {
   const dirs = await directoriesFor(holder, store);
   mkdirSync(dirs.live, { recursive: true, mode: 0o700 });
   const database = await liveDatabase(holder, store, dirs.live);
-  const host = await withConnections(database, () =>
+  const host = await withConnections(database, 'live', () =>
     AppHost.open(dirs.live, {
       store,
       workerUrl: workerUrl(),
-      workerLimits: requireContext().workerLimits,
+      workerLimits: budgetedLimits(),
       ...(database ? { database } : {}),
     }),
   );

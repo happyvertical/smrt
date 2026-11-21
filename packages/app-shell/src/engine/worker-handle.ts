@@ -45,6 +45,22 @@ export interface WorkerLimits {
    * SQLite (the desktop) has no equivalent and ignores it.
    */
   statementTimeoutMs?: number;
+  /**
+   * PostgreSQL only: a process-wide budget of connections (#5464). Every
+   * worker that opens a pool reserves its size here before the thread starts
+   * (a refusal throws at once) and returns it when the thread exits, so a
+   * swap, a report worker or a rehearsal is counted for as long as it lives.
+   * The pool is created at exactly the size reserved.
+   */
+  connections?: ConnectionBudget;
+}
+
+/** What {@link WorkerLimits.connections} asks of the host. */
+export interface ConnectionBudget {
+  /** The pool size for a worker whose config names none. */
+  poolSize: number;
+  /** Reserve `n` connections (throws when none are left); returns the release. */
+  take(n: number): () => void;
 }
 
 /**
@@ -110,17 +126,41 @@ export class AppWorker {
     const { limits, database, ...data } = init;
     // A PGlite instance cannot cross into the thread: the worker gets one end
     // of a port, this thread serves the other (db/pglite-bridge.ts).
-    const db = forWorker(database ?? { kind: 'sqlite' });
+    let release = () => {};
+    let sized = database;
+    if (database?.kind === 'postgres' && limits?.connections) {
+      const pool = database.connection.max ?? limits.connections.poolSize;
+      release = limits.connections.take(pool);
+      sized = {
+        ...database,
+        connection: { ...database.connection, max: pool },
+      };
+    }
+    let db: ReturnType<typeof forWorker>;
+    try {
+      db = forWorker(sized ?? { kind: 'sqlite' });
+    } catch (e) {
+      release();
+      throw e;
+    }
     const config: WorkerDatabaseConfig =
       db.config.kind !== 'sqlite' && limits?.statementTimeoutMs !== undefined
         ? { ...db.config, statementTimeoutMs: limits.statementTimeoutMs }
         : db.config;
-    this.worker = new Worker(workerUrl, {
-      workerData: { appWorker: true, ...data, database: config },
-      transferList: db.transfer,
-      resourceLimits: resourceLimitsFor(limits),
+    try {
+      this.worker = new Worker(workerUrl, {
+        workerData: { appWorker: true, ...data, database: config },
+        transferList: db.transfer,
+        resourceLimits: resourceLimitsFor(limits),
+      });
+    } catch (e) {
+      release();
+      throw e;
+    }
+    this.worker.once('exit', () => {
+      release();
+      db.dispose();
     });
-    this.worker.once('exit', db.dispose);
     const die = (e: Error) => {
       this.dead ??= e;
       for (const p of this.pending.values()) p.reject(this.dead);
@@ -139,18 +179,22 @@ export class AppWorker {
         ) => {
           if (m.ready) resolve(m);
           else if (m.stale) reject(new StaleFenceError(m.error ?? 'stale'));
+          else if (m.user)
+            reject(
+              new EngineError(m.error ?? 'the app did not start', 'refused'),
+            );
           else
             reject(
-              new EngineError(
+              EngineError.untrusted(
                 m.error ?? 'the app did not start',
-                m.user ? 'refused' : 'migration_failed',
+                'migration_failed',
               ),
             );
           this.worker.on('message', (r: WorkerReply) => this.settle(r));
         },
       );
       this.worker.once('error', (e) => {
-        die(new WorkerCrashedError(`the app stopped: ${e.message}`));
+        die(new WorkerCrashedError(`the app stopped: ${e.message}`, true));
         reject(e);
       });
       this.worker.once('exit', () => {
