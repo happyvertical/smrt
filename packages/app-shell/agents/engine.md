@@ -384,19 +384,58 @@ stages, refusals, digest and version numbering.
 
 ## Portable export (#5193)
 
-`portable-export.ts`: `exportUserApp({ dataDir, versions })`, `importUserApp`,
-`verifyUserApp`, `inspectUserApp`, `checkUserAppBundle`, `digestVersionHistory`.
-Not `exportTemplate`: every table of app.db (including `_archive` and archived
-tables kept for undo) travels with every stored column and row (hidden fields,
-timestamps), each table's own CREATE/INDEX statements, the current definition
-and the caller's version history (the shell passes its `app_versions`), with
-SHA-256 digests. Opened only through `openAppDatabase` (app-runtime.ts), the one
-place app.db is opened. Import builds `<dataDir>.import-<digest>` from the
-bundle, starts the engine on it, verifies counts and digests, then renames
-`app.db` into place; a matching target is `already-imported`, any other app.db
-is refused. The version history is not written: it rides in the caller's tables.
-Open drafts and waiting approvals are the caller's to refuse or drop. SQLite
-only. The CLI's use is in `packages/cli/agents/app-commands.md`.
+`portable-export.ts`: `exportUserApp({ dataDir, versions, database? })`,
+`importUserApp`, `verifyUserApp`, `inspectUserApp`, `checkUserAppBundle`,
+`digestVersionHistory`. Not `exportTemplate`: every table of the app's database
+(including `_archive`, the `_smrt_*` tables and tables archived for undo) travels
+with every stored column and row (hidden fields, timestamps), the current
+definition and the caller's version history (the shell passes its
+`app_versions`), with SHA-256 digests. SQLite (`<dataDir>/app.db`, opened only
+through `openAppDatabase`) and PostgreSQL (`database`: the host's own
+`DatabaseConfig`, so the schema comes from the host, never from a bundle) share
+one bundle (`format: 2`), so a desktop app moves to a hosted one and back.
+
+- **Values, never SQL.** A bundle holds typed column descriptors
+  (`family`: integer, real, boolean, date, json, bytes, text) and values; table
+  and column names must be plain identifiers; nothing of a bundle is executed.
+  The target's tables come from the definition (the engine starts on the empty
+  target at the bundle's version, as on any start); a column the engine does not
+  build (a hidden field keeps its column and data) and a table the definition no
+  longer names (archived for undo) are added from the descriptors with the
+  database's own types. Values are read as the database's text and cast back to
+  the target column's own type. SQL per database lives in `db/sqlite-portable.ts`
+  and `db/postgres-portable.ts` behind `PortableDb` (`db/portable.ts`).
+- **Digests do not depend on the database.** A boolean is 0/1, a date is its UTC
+  instant, JSON is key-sorted, bytes are base64; an integer past 2^53 is REFUSED
+  at export (a server pool returns BIGINT as digits and a digest over a rounded
+  value would call different rows equal). The SQLite export and the PostgreSQL
+  export of the same app have the same `digest`. Indexes and constraints of an
+  archived table are not carried (only its columns and rows), nor are PostgreSQL
+  draft side schemas.
+- **Import is idempotent and resumable.** SQLite: builds `<dataDir>.import-<digest>`,
+  starts the engine on it, fills it, verifies counts and digests, then renames
+  `app.db` into place. PostgreSQL: the engine builds the empty tables in the
+  host's schema (which the host provisioned, empty or holding only the empty
+  tables of an interrupted import), then ONE transaction (holding the app claim)
+  inserts every row, advances the `_archive` identity and verifies counts and
+  digests BEFORE it commits; a crash leaves nothing to clean up and a rerun fills
+  it. A target that matches is `already-imported`; any other data is refused,
+  never overwritten.
+- **Approvals and drafts in a move.** Not carried: the caller (the CLI) refuses an
+  export while changes wait (a working copy open, or a batch with an active card)
+  and drops approvals still waiting (`pending`/`accepted`/`executing`), reporting
+  the count; decided approvals stay as history. The version history is not
+  written by import: it rides in the caller's own tables, and the engine reads it
+  from the store when the app starts.
+- **Hosted placement.** `importUserApp({ database })` installs into the schema the
+  host chose for ONE tenant's app.
+  Receiving a bundle over the network and mapping it to a tenant needs the
+  caller hand-off (#5188), so it is not wired here. The CLI's use is in
+  `packages/cli/agents/app-commands.md`.
+- Tests: `portable-export.test.ts` (SQLite) and
+  `portable-export-postgres.test.ts` (registered `test:postgres` suite: SQLite to
+  PostgreSQL and back with undo, idempotence, interrupted import, tenant
+  schema, 2^53 refusal; PGlite always, a server when `SMRT_TEST_POSTGRES_URL`).
 
 ## Lessons
 

@@ -39,13 +39,16 @@ export interface UserAppVersionRecord {
 /** The bundle's `userApp` section (the engine's `PortableUserApp`). */
 export interface UserAppSection {
   format: number;
+  /** Which database the section was read from (`sqlite` or `postgres`). */
+  source?: string;
   definition: unknown;
   version: number;
   versions: UserAppVersionRecord[];
   versionsDigest: string;
   tables: Array<{
     name: string;
-    columns: string[];
+    /** The engine's typed column descriptors; the CLI only carries them. */
+    columns: unknown[];
     rows: Array<Record<string, unknown>>;
     digest: string;
   }>;

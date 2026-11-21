@@ -23,6 +23,7 @@ export default defineConfig({
       // from `pnpm test:postgres` (vitest.postgres.config.ts), once.
       'src/engine/postgres-server.test.ts',
       'src/engine/postgres-drafts.test.ts',
+      'src/engine/portable-export-postgres.test.ts',
     ],
     setupFiles: [smrtVitestSetupPath],
     testTimeout: 60000,
