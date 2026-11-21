@@ -16,15 +16,19 @@ export async function journalListTables(
   exclude?: { application: string; tenantId: string },
   engine: string = getDatabaseEngine(db),
 ): Promise<Map<string, string>> {
+  // smrt keeps its system tables in `public` (schema-paths.md). Read the
+  // journal there whatever `search_path` puts first, so a claim committed in
+  // `public` is never missed.
+  const postgres = engine === 'postgres';
   const present = await db.query(
-    engine === 'postgres'
-      ? "SELECT 1 AS live FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = current_schema() AND c.relname = '_smrt_app_model_changes'"
+    postgres
+      ? "SELECT 1 AS live FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'public' AND c.relname = '_smrt_app_model_changes'"
       : "SELECT 1 AS live FROM sqlite_master WHERE type = 'table' AND name = '_smrt_app_model_changes'",
   );
   const tables = new Map<string, string>();
   if (!present.rows.length) return tables;
   const { rows } = await db.query(
-    'SELECT application, tenant_id, before_doc, after_doc FROM _smrt_app_model_changes',
+    `SELECT application, tenant_id, before_doc, after_doc FROM ${postgres ? 'public.' : ''}_smrt_app_model_changes`,
   );
   for (const row of rows) {
     if (
