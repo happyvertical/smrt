@@ -1207,26 +1207,20 @@ export class ManifestGenerator {
    * is checked at save time instead.
    */
   private assertKnownTargets(manifest: SmartObjectManifest): void {
+    // A written qualified target (`'@pkg:Class'`, optionally `.column`) names
+    // a class of this manifest or of its package's manifest, by its exact
+    // class name: a class whose name differs only in letter case is not it.
     const known = (target: string): boolean => {
-      // A target may name a column of its class (`'Author.email'`); the class
-      // is the part before the first dot of the class name.
-      const name = isQualifiedName(target)
-        ? `${parseQualifiedName(target).packageName}:${parseQualifiedName(target).className.split('.')[0]}`
-        : target.split('.')[0];
-      if (lookupInManifest(manifest, name)) return true;
-      if (isQualifiedName(name)) {
-        const dependency = this.loadDependencyManifest(
-          parseQualifiedName(name).packageName,
-          { warn: false },
-        );
-        return Boolean(dependency && lookupInManifest(dependency, name));
-      }
-      return this.parentPackages(manifest).some((packageName) => {
-        const dependency = this.loadDependencyManifest(packageName, {
-          warn: false,
-        });
-        return Boolean(dependency && lookupInManifest(dependency, name));
-      });
+      const { packageName, className: written } = parseQualifiedName(target);
+      const className = written.split('.')[0];
+      const name = `${packageName}:${className}`;
+      const exact = (from: SmartObjectManifest | undefined) =>
+        lookupInManifest(from ?? ({ objects: {} } as SmartObjectManifest), name)
+          ?.className === className;
+      if (exact(manifest)) return true;
+      return exact(
+        this.loadDependencyManifest(packageName, { warn: false }) ?? undefined,
+      );
     };
     // A target the scanner traced to a package export (`@pkg:Export`) was
     // confirmed by identity in `confirmPackageTargets`. A bare name must name
@@ -1333,7 +1327,8 @@ export class ManifestGenerator {
     if (unknown.length > 0) {
       throw new ConfigurationError(
         `A relationship target or report source written as a bare name must name a model class of this package ` +
-          `by its exact name, and a qualified one a model this package or one of its SMRT dependencies declares; ` +
+          `by its exact name, and a qualified one a model this package or one of its SMRT dependencies declares, ` +
+          `also by its exact name; ` +
           `these name none:\n  ${unknown.join('\n  ')}\n` +
           `Write the model's exact name. To reference another package's model, use a qualified @crossPackageRef, ` +
           `or import its class from the package that declares it (built, and a dependency of this package) and pass it.`,
@@ -2831,25 +2826,24 @@ export class ManifestGenerator {
         // here (and the constraint dropped) or be a local namesake's table.
         // In the generation passes a bare name takes its table from the one
         // local model `localBareTarget` finds, the rule `assertKnownTargets`
-        // fails the build by; no other name lookup. Only a direct caller of
-        // the public `generateSchemas()` keeps the legacy lookup by name.
-        // A written qualified name (`'@pkg:Class'`, optionally `.column`) is an
-        // identity, looked up as one.
-        const writtenQualified =
-          !field.relatedQualified && isQualifiedName(field.related)
-            ? `${parseQualifiedName(field.related).packageName}:${parseQualifiedName(field.related).className.split('.')[0]}`
-            : undefined;
+        // fails the build by; no other name lookup. A direct caller of the
+        // public `generateSchemas()` keeps the legacy lookup for bare names.
+        // A written qualified name (`'@pkg:Class'`) keeps the base lookup
+        // (`findForeignKeyTargetSchema`, exact qualified name in this
+        // manifest): a class of this manifest gets its constraint, another
+        // package's class none. Cross-package constraints are declared with
+        // `@crossPackageRef` or an imported class.
         const bareModel =
-          mode === 'generation' && !field.relatedQualified && !writtenQualified
+          mode === 'generation' &&
+          !field.relatedQualified &&
+          !isQualifiedName(field.related)
             ? this.localBareTarget(manifest, obj, field.related).definition
             : undefined;
         const targetSchema = field.relatedQualified
           ? this.qualifiedTargetSchema(field.relatedQualified, manifest)
-          : mode === 'generation'
-            ? writtenQualified
-              ? this.qualifiedTargetSchema(writtenQualified, manifest)
-              : bareModel &&
-                schemaByTable.get(this.getObjectTableName(bareModel) ?? '')
+          : mode === 'generation' && !isQualifiedName(field.related)
+            ? bareModel &&
+              schemaByTable.get(this.getObjectTableName(bareModel) ?? '')
             : this.findForeignKeyTargetSchema(
                 field.related,
                 manifest,

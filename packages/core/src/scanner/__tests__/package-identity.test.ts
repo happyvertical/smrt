@@ -989,6 +989,50 @@ ${extra}}
     expect(message).toContain(`${OTHER}:ProductionRun`);
   });
 
+  // A written qualified name keeps the base generation: a class of the
+  // manifest being built gets its constraint, another package's class none
+  // (a cross-package constraint is an imported class or @crossPackageRef).
+  it('generates no constraint for a written qualified target in a dependency, as the base does', async () => {
+    const root = await project({
+      providers: { [VENDOR]: twoRuns[VENDOR] },
+      app: { 'src/WorkOrder.ts': bareOrder(`${VENDOR}:ProductionRun`) },
+    });
+
+    const manifest = await build(root);
+    const column =
+      manifest.objects[`${APP}:WorkOrder`]?.schema?.columns.production_run_id;
+    expect(column).toBeDefined();
+    expect(column?.foreignKey).toBeUndefined();
+  });
+
+  it('references the local table for a written qualified target of the manifest being built, as the base does', async () => {
+    const root = await project({
+      providers: { [VENDOR]: twoRuns[VENDOR] },
+      app: {
+        'src/ProductionRun.ts': `${CORE}\n@smrt({ tableName: 'app_runs' })\nexport class ProductionRun extends SmrtObject {}\n`,
+        'src/WorkOrder.ts': bareOrder(`${APP}:ProductionRun`),
+      },
+    });
+
+    const manifest = await build(root);
+    expect(
+      manifest.objects[`${APP}:WorkOrder`]?.schema?.columns.production_run_id
+        ?.foreignKey?.table,
+    ).toBe('app_runs');
+  });
+
+  it('fails a written qualified target whose class name differs only in letter case', async () => {
+    const root = await project({
+      providers: { [VENDOR]: twoRuns[VENDOR] },
+      app: { 'src/WorkOrder.ts': bareOrder(`${VENDOR}:productionrun`) },
+    });
+
+    await expect(build(root)).rejects.toMatchObject({
+      code: 'CONFIG_UNKNOWN_RELATIONSHIP_TARGET',
+      message: expect.stringContaining(`${VENDOR}:productionrun`),
+    });
+  });
+
   it('accepts a package target that an app replacement shares its table with', async () => {
     const root = await project({
       providers: { [VENDOR]: { files: { 'src/ProductionRun.ts': RUN } } },
