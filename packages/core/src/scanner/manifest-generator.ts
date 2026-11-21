@@ -178,14 +178,13 @@ const UNIVERSAL_OBJECT_FIELDS = [
   'updated_at',
 ];
 
-/** The one model a bare-name relationship target or report source names. */
-interface BareTarget {
+/** A model a refused bare-name target is reported against (`modelsNamed`). */
+interface NamedModel {
   identity: string;
   definition: SmartObjectDefinition;
   /** Declared in the manifest being generated, not in a dependency's. */
   local: boolean;
   label: string;
-  importHint: string;
 }
 
 /**
@@ -390,21 +389,6 @@ function inferVisibility(
 }
 
 export class ManifestGenerator {
-  /**
-   * The model each bare-name relationship field resolved to in this run
-   * (`resolveBareTargets`), keyed by the field definition.
-   */
-  private readonly bareTargets = new WeakMap<object, BareTarget | null>();
-
-  /**
-   * What `resolveBareTargets` could not resolve in this run, reported by
-   * `assertKnownTargets` after the passes' more specific checks.
-   */
-  private bareTargetErrors: { unknown: string[]; ambiguous: string[] } = {
-    unknown: [],
-    ambiguous: [],
-  };
-
   /**
    * Generate manifest from scan results
    *
@@ -756,10 +740,9 @@ export class ManifestGenerator {
     // Confirm every relationship target and report source the scanner traced
     // to another package's export, once inherited fields (a provider
     // parent's included) are in place and before any schema is built from
-    // them, by identity and entry; then resolve every target written as a
-    // bare name to its one model, which schema generation reads as is.
+    // them, by identity and entry. A target written as a bare name names a
+    // model of this manifest only (`localBareTarget`).
     this.confirmPackageTargets(manifest);
-    this.resolveBareTargets(manifest);
 
     // A model subclass may narrow its parent's generated surface but not
     // widen it. Before the abstract pass below, which synthesizes write
@@ -862,8 +845,10 @@ export class ManifestGenerator {
     this.applyRetiredTables(manifest, options);
 
     // Fifth pass: Generate schemas for each object (build-time schema generation)
-    // This pre-computes DDL, indexes, and columns for efficient external package consumption
-    this.generateSchemas(manifest);
+    // This pre-computes DDL, indexes, and columns for efficient external package consumption.
+    // A bare-name foreign key takes its table only from `localBareTarget`, the
+    // rule `assertKnownTargets` enforces.
+    this.buildSchemas(manifest, 'generation');
     Object.assign(manifest, annotateModelReplacements(manifest));
     this.assertTenantScopedSchemaContract(manifest);
 
@@ -1244,12 +1229,45 @@ export class ManifestGenerator {
       });
     };
     // A target the scanner traced to a package export (`@pkg:Export`) was
-    // confirmed by identity in `confirmPackageTargets`, and a bare name was
-    // resolved to one model by `resolveBareTargets`, whose failures are
-    // reported here; what is checked here is a missing target and a written
-    // qualified name.
-    const unknown: string[] = [...this.bareTargetErrors.unknown];
-    const ambiguous = this.bareTargetErrors.ambiguous;
+    // confirmed by identity in `confirmPackageTargets`. A bare name must name
+    // a model of this manifest by its exact name (`localBareTarget`, the rule
+    // schema generation takes the foreign key's table from).
+    const unknown: string[] = [];
+    const ambiguous: string[] = [];
+    const bare = (
+      where: string,
+      target: string,
+      owner: SmartObjectDefinition,
+    ): void => {
+      const found = this.localBareTarget(manifest, owner, target);
+      if (found.definition) return;
+      if (found.localExact.length > 1) {
+        ambiguous.push(
+          `${where} names "${target}", which matches ${found.localExact
+            .map(
+              (candidate) =>
+                `${candidate.qualifiedName ?? candidate.className} (${candidate.filePath})`,
+            )
+            .join(', ')}; import the one you mean and pass the class`,
+        );
+        return;
+      }
+      const className = target.split('.')[0];
+      const candidates = [
+        ...this.modelsNamed(manifest, className, 'exact')
+          .filter((candidate) => !candidate.local)
+          .map((candidate) => `${candidate.label}, another package's model`),
+        ...this.modelsNamed(manifest, className, 'other-case').map(
+          (candidate) =>
+            `${candidate.label}, which differs only in letter case`,
+        ),
+      ];
+      unknown.push(
+        candidates.length > 0
+          ? `${where} names "${target}", which no model of this package declares by that exact name; it matches ${candidates.join('; ')}`
+          : `${where} targets "${target}"`,
+      );
+    };
     for (const obj of Object.values(manifest.objects)) {
       for (const [fieldName, field] of Object.entries(obj.fields ?? {})) {
         if (
@@ -1263,8 +1281,12 @@ export class ManifestGenerator {
         if (field.relatedQualified) continue;
         if (typeof field.related !== 'string' || field.related.trim() === '') {
           unknown.push(`${where} names no target`);
-        } else if (isQualifiedName(field.related) && !known(field.related)) {
-          unknown.push(`${where} targets "${field.related}"`);
+        } else if (isQualifiedName(field.related)) {
+          if (!known(field.related)) {
+            unknown.push(`${where} targets "${field.related}"`);
+          }
+        } else {
+          bare(where, field.related, obj);
         }
       }
       const report = obj.decoratorConfig?.report as
@@ -1293,19 +1315,28 @@ export class ManifestGenerator {
         if (typeof holder.sourceQualified === 'string') continue;
         const source = holder.source;
         if (typeof source !== 'string' || source === '') continue;
-        if (isQualifiedName(source) && !known(source)) {
-          unknown.push(
-            `${obj.className} (${obj.filePath}): @report() ${path} is "${source}"`,
+        if (isQualifiedName(source)) {
+          if (!known(source)) {
+            unknown.push(
+              `${obj.className} (${obj.filePath}): @report() ${path} is "${source}"`,
+            );
+          }
+        } else {
+          bare(
+            `${obj.className} (${obj.filePath}): @report() ${path}`,
+            source,
+            obj,
           );
         }
       }
     }
     if (unknown.length > 0) {
       throw new ConfigurationError(
-        `Relationship and report targets must name a model class this package or one of its SMRT ` +
-          `dependencies declares, by its exact name; these name none:\n  ${unknown.join('\n  ')}\n` +
-          `Import the model class by its own name (or write its exact name as a string), and make sure the ` +
-          `package that declares it is built and is a dependency of this package.`,
+        `A relationship target or report source written as a bare name must name a model class of this package ` +
+          `by its exact name, and a qualified one a model this package or one of its SMRT dependencies declares; ` +
+          `these name none:\n  ${unknown.join('\n  ')}\n` +
+          `Write the model's exact name. To reference another package's model, use a qualified @crossPackageRef, ` +
+          `or import its class from the package that declares it (built, and a dependency of this package) and pass it.`,
         'CONFIG_UNKNOWN_RELATIONSHIP_TARGET',
         { targets: unknown },
       );
@@ -1313,7 +1344,7 @@ export class ManifestGenerator {
     if (ambiguous.length > 0) {
       throw new ConfigurationError(
         `A relationship target or report source written as a bare name is looked up by that name, so it must ` +
-          `match exactly one model this package or a package it reads declares; these match more than one:\n  ` +
+          `match exactly one model of this manifest; these match more than one:\n  ` +
           `${ambiguous.join('\n  ')}\n` +
           `Pass the imported class instead of its name: an imported class is resolved to its one declaration.`,
         'CONFIG_AMBIGUOUS_RELATIONSHIP_TARGET',
@@ -1323,126 +1354,37 @@ export class ManifestGenerator {
   }
 
   /**
-   * Resolve every relationship target and report source written as a bare
-   * class name, once, before schema generation, and record the one model it
-   * names for each field (`bareTargets`). Schema generation takes a recorded
-   * field's table from that model and never looks the name up again.
-   *
-   * The name is matched exactly: the referring class's own package's model
-   * of that name, else the single model of that name this manifest or a
-   * package it reads declares (an app class that replaces another of them,
-   * #4921, is the same table). More than one fails with
-   * `CONFIG_AMBIGUOUS_RELATIONSHIP_TARGET`. A model whose name differs only in
-   * letter case is never taken for it: with no exact match, such a model makes
-   * the error name it, and the target fails with
-   * `CONFIG_UNKNOWN_RELATIONSHIP_TARGET`.
+   * The model a relationship target or report source written as a bare class
+   * name names: a model of the manifest being generated whose class name is
+   * exactly that name, the referring class's own package's first, else the
+   * only one. `localExact` lists the exact matches when there is no single
+   * one. A dependency's model and a model whose name differs only in letter
+   * case are never it. `assertKnownTargets` fails generation for a bare name
+   * this finds no model for, and schema generation takes a bare foreign key's
+   * table from what this finds and from nothing else.
    */
-  private resolveBareTargets(manifest: SmartObjectManifest): void {
-    const unknown: string[] = [];
-    const ambiguous: string[] = [];
-    const resolve = (
-      where: string,
-      target: string,
-      owner: SmartObjectDefinition,
-    ): BareTarget | undefined => {
-      const className = target.split('.')[0];
-      const ownPackage = owner.packageName ?? manifest.packageName;
-      const own = Object.values(manifest.objects).find(
-        (candidate) =>
-          candidate.className === className &&
-          (candidate.packageName ?? manifest.packageName) === ownPackage,
-      );
-      if (own) {
-        const identity =
-          own.qualifiedName ??
-          (ownPackage ? createQualifiedName(ownPackage, className) : className);
-        return {
-          identity,
-          definition: own,
-          local: true,
-          label: `${identity} (${own.filePath})`,
-          importHint: '',
-        };
-      }
-      const exact = this.modelsNamed(manifest, className, 'exact');
-      if (exact.length === 1) return exact[0];
-      if (exact.length > 1) {
-        ambiguous.push(
-          `${where} names "${target}", which matches ${exact.map((candidate) => candidate.label).join(', ')}; ` +
-            `import the one you mean and pass the class, e.g. ${exact
-              .map(
-                (candidate) =>
-                  `${candidate.importHint} for ${candidate.identity}`,
-              )
-              .join(', or ')}`,
-        );
-        return undefined;
-      }
-      const cased = this.modelsNamed(manifest, className, 'other-case');
-      unknown.push(
-        cased.length > 0
-          ? `${where} names "${target}", which no model declares; ${cased.map((candidate) => candidate.label).join(', ')} ` +
-              `${cased.length === 1 ? 'differs' : 'differ'} from it only in letter case, and a name is matched exactly`
-          : `${where} targets "${target}"`,
-      );
-      return undefined;
+  private localBareTarget(
+    manifest: SmartObjectManifest,
+    owner: SmartObjectDefinition,
+    target: string,
+  ): {
+    definition?: SmartObjectDefinition;
+    localExact: SmartObjectDefinition[];
+  } {
+    const className = target.split('.')[0];
+    const ownPackage = owner.packageName ?? manifest.packageName;
+    const localExact = Object.values(manifest.objects).filter(
+      (candidate) => candidate.className === className,
+    );
+    const own = localExact.find(
+      (candidate) =>
+        (candidate.packageName ?? manifest.packageName) === ownPackage,
+    );
+    if (own) return { definition: own, localExact };
+    return {
+      definition: localExact.length === 1 ? localExact[0] : undefined,
+      localExact,
     };
-    for (const obj of Object.values(manifest.objects)) {
-      for (const [fieldName, field] of Object.entries(obj.fields ?? {})) {
-        if (
-          (field.type !== 'foreignKey' &&
-            field.type !== 'oneToMany' &&
-            field.type !== 'manyToMany') ||
-          field.relatedQualified ||
-          typeof field.related !== 'string' ||
-          field.related.trim() === '' ||
-          isQualifiedName(field.related)
-        ) {
-          continue;
-        }
-        const resolved = resolve(
-          `${obj.className}.${fieldName} (${obj.filePath}): @${field.type}()`,
-          field.related,
-          obj,
-        );
-        // A target that did not resolve is recorded as such: its column gets
-        // no constraint by any other lookup, and the build fails at the end.
-        this.bareTargets.set(field, resolved ?? null);
-      }
-      const report = obj.decoratorConfig?.report as
-        | {
-            source?: unknown;
-            sourceQualified?: unknown;
-            joins?: Record<
-              string,
-              { source?: unknown; sourceQualified?: unknown }
-            >;
-          }
-        | undefined;
-      const sources: Array<
-        [string, { source?: unknown; sourceQualified?: unknown } | undefined]
-      > = [
-        ['source', report],
-        ...Object.entries(report?.joins ?? {}).map(
-          ([join, entry]): [string, typeof entry] => [
-            `joins.${join}.source`,
-            entry,
-          ],
-        ),
-      ];
-      for (const [path, holder] of sources) {
-        if (!holder || typeof holder.sourceQualified === 'string') continue;
-        const source = holder.source;
-        if (typeof source !== 'string' || source === '') continue;
-        if (isQualifiedName(source)) continue;
-        resolve(
-          `${obj.className} (${obj.filePath}): @report() ${path}`,
-          source,
-          obj,
-        );
-      }
-    }
-    this.bareTargetErrors = { unknown, ambiguous };
   }
 
   /**
@@ -1567,23 +1509,24 @@ export class ManifestGenerator {
   }
 
   /**
-   * The distinct models a bare name can reach: this manifest's and those of
-   * every package it reads (`parentPackages`), named exactly `className`
-   * (`exact`), or named like it in another letter case only (`other-case`,
-   * reported, never resolved to). An app class that replaces another of them
-   * (#4921: it extends that class and shares its table) is the same table, so
-   * it is not a second candidate.
+   * The distinct models a refused bare name is reported against: this
+   * manifest's and those of every package it reads (`parentPackages`), named
+   * exactly `className` (`exact`), or named like it in another letter case
+   * only (`other-case`). None of them is ever resolved to (`localBareTarget`
+   * resolves). An app class that replaces another of them (#4921: it extends
+   * that class and shares its table) is the same table, so it is not a second
+   * candidate.
    */
   private modelsNamed(
     manifest: SmartObjectManifest,
     className: string,
     match: 'exact' | 'other-case',
-  ): BareTarget[] {
+  ): NamedModel[] {
     const tableOf = (definition: SmartObjectDefinition) =>
       definition.schema?.tableName ??
       definition.decoratorConfig?.tableName ??
       this.classNameToTableName(definition.className);
-    const found = new Map<string, BareTarget>();
+    const found = new Map<string, NamedModel>();
     const lower = className.toLowerCase();
     const named = (from: SmartObjectManifest) =>
       Object.values(from.objects).filter((candidate) =>
@@ -1601,7 +1544,6 @@ export class ManifestGenerator {
       found.set(identity, {
         identity,
         label: `${identity} (${candidate.filePath})`,
-        importHint: `import { ${candidate.exportName ?? candidate.className} } from the file that declares it (${candidate.filePath})`,
         definition: candidate,
         local: true,
       });
@@ -1620,8 +1562,7 @@ export class ManifestGenerator {
         // import its consumers are confirmed against.
         found.set(identity, {
           identity,
-          label: `${identity} (dependency ${packageName})`,
-          importHint: `import { ${candidate.exportName ?? candidate.className} } from '${candidate.importPath ?? packageName}'`,
+          label: `${identity} (dependency ${packageName}; import { ${candidate.exportName ?? candidate.className} } from '${candidate.importPath ?? packageName}')`,
           definition: candidate,
           local: false,
         });
@@ -2544,10 +2485,24 @@ export class ManifestGenerator {
    * and external packages to ensure complete schemas are generated.
    *
    * This method is public to allow external callers (like OXC scanner) to use it.
+   * A direct call keeps the legacy lookup of a bare-name foreign key target by
+   * name; the generation passes use the stricter local rule (`buildSchemas`).
    *
    * @param manifest - The manifest to process in-place
    */
   generateSchemas(manifest: SmartObjectManifest): void {
+    this.buildSchemas(manifest, 'direct');
+  }
+
+  /**
+   * `generateSchemas()`, where `generation` (the generation passes) takes a
+   * bare-name foreign key's table only from `localBareTarget`, and `direct`
+   * (a public caller) keeps the legacy lookup by name.
+   */
+  private buildSchemas(
+    manifest: SmartObjectManifest,
+    mode: 'generation' | 'direct',
+  ): void {
     const generator = new SchemaGenerator();
 
     // Create aggregated manifest that includes external package objects
@@ -2660,7 +2615,7 @@ export class ManifestGenerator {
       }
     }
 
-    this.resolveSamePackageForeignKeyColumnTypes(manifest, generator);
+    this.resolveSamePackageForeignKeyColumnTypes(manifest, generator, mode);
 
     // Preserve collection metadata, but take persistence identity from the item
     // model only after every model schema (including FK repair) is complete.
@@ -2819,6 +2774,7 @@ export class ManifestGenerator {
   private resolveSamePackageForeignKeyColumnTypes(
     manifest: SmartObjectManifest,
     generator: SchemaGeneratorLike,
+    mode: 'generation' | 'direct',
   ): void {
     // One representative schema per table for target-id lookups, plus EVERY
     // schema that describes a table: each class of an STI hierarchy carries a
@@ -2873,25 +2829,19 @@ export class ManifestGenerator {
         // table, by identity: its manifest's schema gives the table, the key
         // column and its type. Looked up by simple name it would be missing
         // here (and the constraint dropped) or be a local namesake's table.
-        // A bare name resolved before schema generation (`bareTargets`) is
-        // that one model, by identity: no lookup by name here. Only a field
-        // this run did not resolve (a caller of `generateSchemas()` outside
-        // the generation passes) keeps the legacy name lookup.
-        const bare = this.bareTargets.get(field);
-        // The resolved model's table: this manifest's schema of that table
-        // (a single-table child carries its provider root's), else the
-        // provider's own schema, by identity.
-        const bareSchema = (target: BareTarget) =>
-          schemaByTable.get(this.getObjectTableName(target.definition) ?? '') ??
-          (target.local
-            ? undefined
-            : this.qualifiedTargetSchema(target.identity, manifest));
+        // In the generation passes a bare name takes its table from the one
+        // local model `localBareTarget` finds, the rule `assertKnownTargets`
+        // fails the build by; no other name lookup. Only a direct caller of
+        // the public `generateSchemas()` keeps the legacy lookup by name.
+        const bareModel =
+          mode === 'generation' && !field.relatedQualified
+            ? this.localBareTarget(manifest, obj, field.related).definition
+            : undefined;
         const targetSchema = field.relatedQualified
           ? this.qualifiedTargetSchema(field.relatedQualified, manifest)
-          : bare !== undefined
-            ? bare
-              ? bareSchema(bare)
-              : undefined
+          : mode === 'generation'
+            ? bareModel &&
+              schemaByTable.get(this.getObjectTableName(bareModel) ?? '')
             : this.findForeignKeyTargetSchema(
                 field.related,
                 manifest,

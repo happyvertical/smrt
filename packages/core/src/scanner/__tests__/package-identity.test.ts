@@ -774,7 +774,9 @@ ${extra}}
     ).toBe('production_runs');
   });
 
-  it('fails a bare-name target that models of two dependencies share, listing both and the imports that qualify it', async () => {
+  // A bare name names a model of the package being built, by its exact name;
+  // another package's model is referenced by import or @crossPackageRef.
+  it('fails a bare-name target that only dependencies declare, naming them and the qualified reference to use', async () => {
     const root = await project({
       providers: twoRuns,
       app: {
@@ -784,16 +786,17 @@ ${extra}}
 
     const failure = build(root);
     await expect(failure).rejects.toMatchObject({
-      code: 'CONFIG_AMBIGUOUS_RELATIONSHIP_TARGET',
+      code: 'CONFIG_UNKNOWN_RELATIONSHIP_TARGET',
     });
     const message = await failure.catch((error: Error) => error.message);
     expect(message).toContain(`${VENDOR}:ProductionRun`);
     expect(message).toContain(`${OTHER}:ProductionRun`);
     expect(message).toContain(`import { ProductionRun } from '${VENDOR}'`);
     expect(message).toContain(`import { ProductionRun } from '${OTHER}'`);
+    expect(message).toContain('@crossPackageRef');
   });
 
-  it('fails a bare-name report source that models of two dependencies share', async () => {
+  it('fails a bare-name report source that only dependencies declare', async () => {
     const root = await project({
       providers: twoRuns,
       app: {
@@ -802,7 +805,7 @@ ${extra}}
     });
 
     await expect(build(root)).rejects.toMatchObject({
-      code: 'CONFIG_AMBIGUOUS_RELATIONSHIP_TARGET',
+      code: 'CONFIG_UNKNOWN_RELATIONSHIP_TARGET',
       message: expect.stringContaining(`${OTHER}:ProductionRun`),
     });
   });
@@ -823,7 +826,7 @@ ${extra}}
     ).toBe('app_runs');
   });
 
-  it('accepts a bare-name target that one dependency alone declares', async () => {
+  it('fails a bare-name target that one dependency alone declares, naming it and the qualified reference to use', async () => {
     const root = await project({
       providers: { [VENDOR]: twoRuns[VENDOR] },
       app: {
@@ -831,11 +834,22 @@ ${extra}}
       },
     });
 
+    const failure = build(root);
+    await expect(failure).rejects.toMatchObject({
+      code: 'CONFIG_UNKNOWN_RELATIONSHIP_TARGET',
+    });
+    const message = await failure.catch((error: Error) => error.message);
+    expect(message).toContain(`${VENDOR}:ProductionRun`);
+    expect(message).toContain('@crossPackageRef');
+  });
+
+  it('references the provider table for the same target imported from the one dependency', async () => {
+    const root = await project({
+      providers: { [VENDOR]: twoRuns[VENDOR] },
+      app: { 'src/WorkOrder.ts': order() },
+    });
+
     const manifest = await build(root);
-    expect(
-      manifest.objects[`${APP}:WorkOrder`]?.fields.productionRunId?.related,
-    ).toBe('ProductionRun');
-    // The constraint references the one model the name resolved to.
     expect(
       manifest.objects[`${APP}:WorkOrder`]?.schema?.columns.production_run_id
         ?.foreignKey?.table,
@@ -907,11 +921,13 @@ ${extra}}
 
     const failure = build(root);
     await expect(failure).rejects.toMatchObject({
-      code: 'CONFIG_AMBIGUOUS_RELATIONSHIP_TARGET',
+      code: 'CONFIG_UNKNOWN_RELATIONSHIP_TARGET',
     });
     const message = await failure.catch((error: Error) => error.message);
     expect(message).toContain(`${VENDOR}:OauthClient`);
     expect(message).toContain(`${OTHER}:OauthClient`);
+    expect(message).toContain(`${APP}:OAuthClient`);
+    expect(message).toContain('@crossPackageRef');
   });
 
   it('fails a spelling no model declares exactly, naming every model it matches only in letter case', async () => {
@@ -933,7 +949,7 @@ ${extra}}
     expect(message).toContain(`${OTHER}:OauthClient`);
   });
 
-  it('names the recorded entry and export name in the import that pins an ambiguous bare-name target', async () => {
+  it('names the recorded entry and export name of a dependency model a refused bare-name target matches', async () => {
     const root = await project({
       providers: {
         [VENDOR]: twoRuns[VENDOR],

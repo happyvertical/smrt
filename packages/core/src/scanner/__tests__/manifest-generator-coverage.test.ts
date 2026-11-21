@@ -1306,6 +1306,18 @@ describe('ManifestGenerator coverage', () => {
         [`${EXT_PKG}:Event`]: {
           className: 'Event',
           qualifiedName: `${EXT_PKG}:Event`,
+          // A provider built by this version records its package and the
+          // entry each model is exported from, so the self-reference its
+          // child inherits is qualified to the provider's own Event.
+          packageName: EXT_PKG,
+          importPath: EXT_PKG,
+          schema: {
+            tableName: 'events',
+            ddl: '',
+            indexes: [],
+            version: 'test',
+            columns: { id: { type: 'UUID', primaryKey: true } },
+          },
           extends: 'SmrtHierarchical',
           collection: 'events',
           fields: {
