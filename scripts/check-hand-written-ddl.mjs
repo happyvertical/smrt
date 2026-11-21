@@ -80,6 +80,14 @@ export const RUNTIME_MANAGED_DIALECT_PATHS = [
     'packages/app-shell/src/engine/db/postgres-copy.ts',
     "copies, dumps and restores the runtime-managed app database's schema (#5187): it replays the shape read from the catalog of the app's own schema into a draft, rehearsal or restore schema, and declares none",
   ],
+  [
+    'packages/app-shell/src/engine/db/sqlite-portable.ts',
+    "installs a portable export (#5193) into the runtime-managed app database: a table the definition no longer names (archived for undo) and a hidden field's column come back from the typed column descriptors of the bundle, with the database's own types; it declares no shape of its own",
+  ],
+  [
+    'packages/app-shell/src/engine/db/postgres-portable.ts',
+    "installs a portable export (#5193) into the runtime-managed app schema: a table the definition no longer names (archived for undo) and a hidden field's column come back from the typed column descriptors of the bundle, with the database's own types; it declares no shape of its own",
+  ],
 ];
 
 const STATEMENT =

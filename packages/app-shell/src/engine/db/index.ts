@@ -87,15 +87,6 @@ export function forWorker(config: DatabaseConfig): {
   };
 }
 
-/** Refuse what is built on the SQLite file (the portable export has its own issue). */
-export function requireSqlite(config: { kind: DatabaseKind }, what: string) {
-  if (config.kind !== 'sqlite')
-    throw new EngineError(
-      `${what} is not supported on this database yet (it needs SQLite)`,
-      'refused',
-    );
-}
-
 /** File name suffix of a standalone copy: a SQLite file, or a PostgreSQL dump. */
 export const copySuffix = (config: { kind: DatabaseKind }) =>
   config.kind === 'sqlite' ? 'db' : 'pgdump';
