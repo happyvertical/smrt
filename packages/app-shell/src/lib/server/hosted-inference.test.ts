@@ -310,6 +310,13 @@ describe('the assistant in cloud', () => {
     await expect(
       resolveAssistantOptions(h.a, { ...config, resolver: hostedResolver() }),
     ).rejects.toMatchObject({ code: 'AI_UNAVAILABLE' });
+    const status = await assistantStatus(h.a, {
+      ...config,
+      resolver: hostedResolver(),
+    });
+    expect((status as { message: string }).message).toMatch(
+      /could not be checked.*own API key/s,
+    );
   });
 
   it('a tenant that is not entitled gets the plan message,', async () => {

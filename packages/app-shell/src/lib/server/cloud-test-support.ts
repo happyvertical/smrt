@@ -42,7 +42,7 @@ export async function openCloudShell(
     type: 'sqlite',
     url: join(dir, 'shell.db'),
   } as never);
-  await prepareShellSchema(db);
+  await prepareShellSchema(db, { hosted: true });
   const users = await UserCollection.create({ db });
   const newUser = async (email: string) => {
     const user = await users.create({ email, username: email.split('@')[0] });

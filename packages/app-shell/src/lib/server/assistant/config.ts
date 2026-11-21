@@ -407,7 +407,11 @@ function unavailableMessage(error: {
       resets ? `It resets ${resets.slice(0, 10)}. ` : ''
     }You can add your own API key in Settings to keep going.`;
   }
-  if (policy === 'subscription' || policy === 'no-tenant')
+  if (
+    policy === 'subscription' ||
+    policy === 'no-tenant' ||
+    policy === 'gate-error'
+  )
     return `${base} Upgrade your plan, or add your own API key in Settings.`;
   return base;
 }
