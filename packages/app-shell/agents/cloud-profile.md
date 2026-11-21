@@ -163,7 +163,7 @@ with the real tenancy interceptor; PostgreSQL, the deployed runtime's startup
 `host-lifecycle.ts` (policy, counters, wake gate) and the registry in `host.ts`.
 Engaged ONLY when the profile is `cloud` AND `ShellContext.lifecycle` is set (the
 runtime reads `SMRT_APP_SHELL_IDLE_MS`, `_MAX_OPEN_APPS`, `_MEMORY_CEILING_MB`,
-`_APP_MEMORY_MB`, `_MAX_CONCURRENT_WAKES`; none set = no policy). Otherwise the
+`_APP_MEMORY_MB`, `_MAX_CONCURRENT_WAKES`, `_MAX_APP_CONNECTIONS`; none set = no policy). Otherwise the
 desktop and an unconfigured hosted process keep the raw host, never a proxy,
 never a timer, never an eviction (`host-lifecycle.test.ts`, "desktop is unchanged").
 
@@ -182,6 +182,15 @@ never a timer, never an eviction (`host-lifecycle.test.ts`, "desktop is unchange
   (`refused`, "no room"), never cutting a call. A worker keeps the memory it grew
   to, so the ceiling is a count, not a reading of the process.
 - `maxConcurrentWakes` (default 2) queues a burst of wakes.
+- Connection budget (#5464): each live or draft worker on a server PostgreSQL
+  holds a pool (`connection.max`, 2 in the cloud config). `maxAppConnections`
+  caps the total across the process; unset, it is `maxOpenApps` apps x 2 workers
+  x pool size, and with no cap at all there is no budget. A worker over the
+  budget is refused at once (`refused`, "no database connections left"), never
+  queued; the connections return on `close`, `discard`, `discardIfEmpty` and a
+  failed open (`withConnections` in `host.ts`). SQLite and PGlite hold no pool and
+  are not counted. A budget below `maxOpenApps` x pool refuses rather than
+  evicts. `hostMetrics()` reports `connections` and `maxConnections`.
 - `drainShell(timeoutMs)`: refuse new apps, wait for calls, close all; for
   recycling a process. `hostMetrics()`: open, queued wakes, wakes, failed wakes,
   evictions by cause, wake times, cap, RSS.
@@ -230,3 +239,13 @@ profile only a provider's own public https endpoint may hold one. `saveKey` refu
 custom `baseUrl` or a non-https origin, and the assistant refuses a resolved target
 whose endpoint is not the provider's own (`assertPublicProviderEndpoint`). Without that,
 a tenant could make the server call an internal address.
+
+## What an owner is told when a database fails (#5464)
+
+A driver error can name the database host or user. An owner sees only our own
+messages (`PolicyError`, `HttpError`, `EngineError`); anything else becomes a
+fixed sentence and the detail (message only, never a stack, body or definition)
+goes to the server log. `errorResponse` did this already; `ownerMessage()`
+(`owner-errors.ts`) is the same rule for a draft that cannot open
+(`DraftSlot.problem`), a failed approval, and an assistant tool failure. A new
+owner-facing catch uses it, not `error.message`.

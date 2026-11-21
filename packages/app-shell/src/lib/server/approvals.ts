@@ -24,6 +24,7 @@ import {
 import { publish } from './events.ts';
 import { getHost, getShellDb } from './host.ts';
 import { assertOwner } from './owner.ts';
+import { ownerMessage } from './owner-errors.ts';
 import { publicChangeResult } from './results.ts';
 
 /** What an approval runs once the owner says yes. */
@@ -448,7 +449,7 @@ export async function decideApproval(
         result = pending;
         error =
           'The affected record counts increased. Review the new approval before applying this change.';
-      } else error = e instanceof Error ? e.message : String(e);
+      } else error = ownerMessage(e);
     }
     row.status = error === undefined ? 'approved' : 'failed';
     await authority.complete(

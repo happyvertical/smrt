@@ -400,6 +400,55 @@ export function wireHostEvents(
   );
 }
 
+/** The pool size a worker gets when the config does not say (the driver's own default). */
+const DEFAULT_POOL = 10;
+
+/**
+ * Open one worker's host against the process-wide connection budget (#5464).
+ * Only a server PostgreSQL holds a pool; SQLite and the in-process PGlite are
+ * not counted, and nothing is counted without a lifecycle policy. A refusal is
+ * immediate. The connections come back when the host is closed or discarded,
+ * on every path (`close`, `discard`, `discardIfEmpty`), and when the open fails.
+ */
+async function withConnections(
+  database: DatabaseConfig | null,
+  open: () => Promise<AppHost>,
+): Promise<AppHost> {
+  if (database?.kind !== 'postgres' || !lifecycleOn()) return open();
+  const release = lifecycle.takeConnections(
+    database.connection.max ?? DEFAULT_POOL,
+  );
+  let host: AppHost;
+  try {
+    host = await open();
+  } catch (e) {
+    release();
+    throw e;
+  }
+  const close = host.close.bind(host);
+  host.close = async () => {
+    try {
+      await close();
+    } finally {
+      release();
+    }
+  };
+  const discardIfEmpty = host.discardIfEmpty.bind(host);
+  host.discardIfEmpty = async () => {
+    const gone = await discardIfEmpty();
+    if (gone) release();
+    return gone;
+  };
+  return host;
+}
+
+/** drafts.ts: open a draft worker for the current app under the connection budget. */
+export async function withDraftConnections(
+  open: () => Promise<AppHost>,
+): Promise<AppHost> {
+  return withConnections((await currentHolder()).database, open);
+}
+
 /**
  * Open a draft's host. `autoApprove` (risky changes need no approval) is the
  * draft's alone: the engine refuses it unless `dir` holds its draft marker, so
@@ -412,15 +461,17 @@ export function openDraftHost(
   pin: string | null = null,
   database: DatabaseConfig | null = null,
 ): Promise<AppHost> {
-  return AppHost.open(dir, {
-    store: new DraftVersionStore(db, id, pin),
-    workerUrl: workerUrl(),
-    workerLimits: requireContext().workerLimits,
-    autoApprove: true,
-    // A draft on PostgreSQL reopens with the LIVE app's config; its own
-    // schema comes from the marker in `dir`.
-    ...(database ? { database } : {}),
-  });
+  return withConnections(database, () =>
+    AppHost.open(dir, {
+      store: new DraftVersionStore(db, id, pin),
+      workerUrl: workerUrl(),
+      workerLimits: requireContext().workerLimits,
+      autoApprove: true,
+      // A draft on PostgreSQL reopens with the LIVE app's config; its own
+      // schema comes from the marker in `dir`.
+      ...(database ? { database } : {}),
+    }),
+  );
 }
 
 /**
@@ -494,7 +545,18 @@ async function adoptDraft(
     wireHostEvents(draft, 'draft', holder.tenantId);
     slot.host = lifecycleOn() ? leased(holder, draft) : draft;
   } catch (e) {
-    slot.problem = `the draft cannot be opened: ${e instanceof Error ? e.message : String(e)}`;
+    // The driver's text can name the database host or user: the owner gets a
+    // fixed sentence, the server log the detail (message only, never a stack).
+    // Our own budget refusal is safe and says what to do.
+    slot.problem =
+      e instanceof EngineError && e.code === 'refused'
+        ? `the draft cannot be opened: ${e.message}`
+        : 'the draft cannot be opened right now; try again, or discard it to carry on';
+    // biome-ignore lint/suspicious/noConsole: message only, never a stack or body
+    console.error(
+      'draft could not be opened:',
+      e instanceof Error ? e.message : 'unknown error',
+    );
   }
 }
 
@@ -598,12 +660,14 @@ async function openLive(holder: Holder): Promise<AppHost> {
   const dirs = await directoriesFor(holder, store);
   mkdirSync(dirs.live, { recursive: true, mode: 0o700 });
   const database = await liveDatabase(holder, store, dirs.live);
-  const host = await AppHost.open(dirs.live, {
-    store,
-    workerUrl: workerUrl(),
-    workerLimits: requireContext().workerLimits,
-    ...(database ? { database } : {}),
-  });
+  const host = await withConnections(database, () =>
+    AppHost.open(dirs.live, {
+      store,
+      workerUrl: workerUrl(),
+      workerLimits: requireContext().workerLimits,
+      ...(database ? { database } : {}),
+    }),
+  );
   wireHostEvents(host, 'live', holder.tenantId);
   try {
     await adoptDraft(holder, db, host, dirs.draft, database);

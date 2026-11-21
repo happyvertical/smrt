@@ -4,6 +4,8 @@
 // Nothing here runs unless the `cloud` profile is configured with a policy:
 // the desktop keeps its one host open for as long as the process lives.
 
+import { EngineError } from '../../engine/errors.ts';
+
 /** What a hosted process does about the apps it holds. Every field is optional. */
 export interface HostLifecyclePolicy {
   /** Close an app that nobody has used for this long (ms). Default: never. */
@@ -16,6 +18,13 @@ export interface HostLifecyclePolicy {
    * of the process: with `maxOpenApps` the smaller of the two wins.
    */
   memoryCeilingMb?: number;
+  /**
+   * At most this many PostgreSQL connections held by all app workers together
+   * (#5464). Default with `maxOpenApps`: that many apps, each with a live and a
+   * draft worker at full pool size; without it, no budget. Never applies to
+   * SQLite apps.
+   */
+  maxAppConnections?: number;
   /** What one open app is budgeted at (MiB). Default 80. */
   appMemoryMb?: number;
   /** At most this many apps waking at once; the rest queue. Default 2. */
@@ -55,6 +64,9 @@ export interface HostMetrics {
   totalWakeMs: number;
   /** The cap in force, or null for none. */
   maxOpen: number | null;
+  /** PostgreSQL connections held by app workers now, and the budget (null: none). */
+  connections: number;
+  maxConnections: number | null;
   draining: boolean;
   /** The process's resident memory (bytes). */
   rssBytes: number;
@@ -76,6 +88,8 @@ function positive(name: string, v: number | undefined) {
 export class HostLifecycle {
   private policy: HostLifecyclePolicy | null = null;
   private slots = 0;
+  // An object, so a release after `reset()` settles the old count, not the new.
+  private conns = { used: 0 };
   private gateWaiters: (() => void)[] = [];
   private changeWaiters: (() => void)[] = [];
   private timer: ReturnType<typeof setInterval> | null = null;
@@ -93,6 +107,7 @@ export class HostLifecycle {
       for (const k of [
         'idleMs',
         'maxOpenApps',
+        'maxAppConnections',
         'memoryCeilingMb',
         'appMemoryMb',
         'maxConcurrentWakes',
@@ -123,6 +138,44 @@ export class HostLifecycle {
     this.totalWakeMs = 0;
     this.slots = 0;
     this.gateWaiters = [];
+    this.conns = { used: 0 };
+  }
+
+  /**
+   * Take `n` connections of the process-wide budget for one worker's pool, or
+   * refuse at once (never wait: a hang here would hold a request). Returns the
+   * release, which is safe to call more than once. With no policy, or no
+   * budget in force, nothing is limited. The message names no server.
+   */
+  takeConnections(n: number): () => void {
+    const c = this.conns;
+    const limit = this.connectionBudget(n);
+    if (limit !== null && c.used + n > limit)
+      throw new EngineError(
+        'this server has no database connections left for another app right now; try again',
+        'refused',
+      );
+    c.used += n;
+    let done = false;
+    return () => {
+      if (done) return;
+      done = true;
+      c.used = Math.max(0, c.used - n);
+    };
+  }
+
+  /** The budget in connections; `perWorker` is the pool size being asked for. */
+  private connectionBudget(perWorker: number): number | null {
+    const p = this.policy;
+    if (!p) return null;
+    if (p.maxAppConnections !== undefined)
+      return Math.floor(p.maxAppConnections);
+    const apps = this.maxOpen;
+    return apps === null ? null : apps * 2 * perWorker;
+  }
+
+  get connectionsInUse(): number {
+    return this.conns.used;
   }
 
   get configured(): boolean {
@@ -239,6 +292,8 @@ export class HostLifecycle {
       maxWakeMs: this.maxWakeMs,
       totalWakeMs: this.totalWakeMs,
       maxOpen: this.maxOpen,
+      connections: this.conns.used,
+      maxConnections: this.policy?.maxAppConnections ?? null,
       draining: this.draining,
       rssBytes: process.memoryUsage.rss(),
     };
@@ -248,6 +303,7 @@ export class HostLifecycle {
 const ENV_FIELDS = {
   SMRT_APP_SHELL_IDLE_MS: 'idleMs',
   SMRT_APP_SHELL_MAX_OPEN_APPS: 'maxOpenApps',
+  SMRT_APP_SHELL_MAX_APP_CONNECTIONS: 'maxAppConnections',
   SMRT_APP_SHELL_MEMORY_CEILING_MB: 'memoryCeilingMb',
   SMRT_APP_SHELL_APP_MEMORY_MB: 'appMemoryMb',
   SMRT_APP_SHELL_MAX_CONCURRENT_WAKES: 'maxConcurrentWakes',
