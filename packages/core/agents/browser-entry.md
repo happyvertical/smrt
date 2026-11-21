@@ -21,7 +21,8 @@ the installed relative-import closure and real SHA-256 execution with normal and
 
 The browser test also runs a separate Chromium fixture against the SDK's real
 PGlite adapter, checking that a model delete clears both tracked and untracked
-`SET NULL` references, and advances only the tracked revision. It exercises
+`SET NULL` references, advances `updated_at` on both, and advances only the
+tracked sync revision. It exercises
 both the `memory://` and `idb://` data directories. Its pinned PGlite peer is
 installed from an isolated lockfile so the workspace's browser graph guards
 keep their original dependency graph. The fixture serves the peer's published
