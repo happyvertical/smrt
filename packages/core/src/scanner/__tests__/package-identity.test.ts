@@ -835,31 +835,102 @@ ${extra}}
     expect(
       manifest.objects[`${APP}:WorkOrder`]?.fields.productionRunId?.related,
     ).toBe('ProductionRun');
+    // The constraint references the one model the name resolved to.
+    expect(
+      manifest.objects[`${APP}:WorkOrder`]?.schema?.columns.production_run_id
+        ?.foreignKey?.table,
+    ).toBe('production_runs');
   });
 
-  // A bare name is matched as a class name lookup matches it: the exact
-  // spelling, or another case of it when the manifest holds only that one.
+  // A bare name is matched exactly; a model named like it in another letter
+  // case is never taken for it.
   const bareOrder = (name: string) =>
     `${CORE}\n@smrt()\nexport class WorkOrder extends SmrtObject {\n  @foreignKey('${name}') productionRunId = '';\n}\n`;
 
-  it('generates a bare-name target spelled in another case like its exact spelling when one dependency declares it', async () => {
-    const exact = await build(
-      await project({
-        providers: { [VENDOR]: twoRuns[VENDOR] },
-        app: { 'src/WorkOrder.ts': bareOrder('ProductionRun') },
-      }),
-    );
-    const cased = await build(
-      await project({
-        providers: { [VENDOR]: twoRuns[VENDOR] },
-        app: { 'src/WorkOrder.ts': bareOrder('productionrun') },
-      }),
-    );
+  it('fails a bare-name target that one dependency declares only in another letter case, naming that model', async () => {
+    const root = await project({
+      providers: { [VENDOR]: twoRuns[VENDOR] },
+      app: { 'src/WorkOrder.ts': bareOrder('productionrun') },
+    });
 
-    const column = (manifest: typeof exact) =>
-      manifest.objects[`${APP}:WorkOrder`]?.schema?.columns.production_run_id;
-    expect(column(cased)).toBeDefined();
-    expect(column(cased)).toEqual(column(exact));
+    const failure = build(root);
+    await expect(failure).rejects.toMatchObject({
+      code: 'CONFIG_UNKNOWN_RELATIONSHIP_TARGET',
+    });
+    const message = await failure.catch((error: Error) => error.message);
+    expect(message).toContain(`${VENDOR}:ProductionRun`);
+    expect(message).toContain('only in letter case');
+  });
+
+  // Round-10 trigger: a local class and two dependencies' classes whose names
+  // differ only in letter case.
+  const clients = {
+    [VENDOR]: {
+      files: {
+        'src/OauthClient.ts': `${CORE}\n@smrt({ tableName: 'vendor_clients' })\nexport class OauthClient extends SmrtObject {}\n`,
+      },
+    },
+    [OTHER]: {
+      files: {
+        'src/OauthClient.ts': `${CORE}\n@smrt({ tableName: 'other_clients' })\nexport class OauthClient extends SmrtObject {}\n`,
+      },
+    },
+  };
+  const localClient = `${CORE}\n@smrt({ tableName: 'app_clients' })\nexport class OAuthClient extends SmrtObject {}\n`;
+  const grant = (name: string) =>
+    `${CORE}\n@smrt()\nexport class Grant extends SmrtObject {\n  @foreignKey('${name}') clientId = '';\n}\n`;
+
+  it('references the local table for the exact local spelling beside dependency models named in another case', async () => {
+    const root = await project({
+      providers: clients,
+      app: {
+        'src/OAuthClient.ts': localClient,
+        'src/Grant.ts': grant('OAuthClient'),
+      },
+    });
+
+    const manifest = await build(root);
+    expect(
+      manifest.objects[`${APP}:Grant`]?.schema?.columns.client_id?.foreignKey
+        ?.table,
+    ).toBe('app_clients');
+  });
+
+  it('fails the dependency spelling that two dependencies declare beside a local model named in another case', async () => {
+    const root = await project({
+      providers: clients,
+      app: {
+        'src/OAuthClient.ts': localClient,
+        'src/Grant.ts': grant('OauthClient'),
+      },
+    });
+
+    const failure = build(root);
+    await expect(failure).rejects.toMatchObject({
+      code: 'CONFIG_AMBIGUOUS_RELATIONSHIP_TARGET',
+    });
+    const message = await failure.catch((error: Error) => error.message);
+    expect(message).toContain(`${VENDOR}:OauthClient`);
+    expect(message).toContain(`${OTHER}:OauthClient`);
+  });
+
+  it('fails a spelling no model declares exactly, naming every model it matches only in letter case', async () => {
+    const root = await project({
+      providers: clients,
+      app: {
+        'src/OAuthClient.ts': localClient,
+        'src/Grant.ts': grant('oauthclient'),
+      },
+    });
+
+    const failure = build(root);
+    await expect(failure).rejects.toMatchObject({
+      code: 'CONFIG_UNKNOWN_RELATIONSHIP_TARGET',
+    });
+    const message = await failure.catch((error: Error) => error.message);
+    expect(message).toContain(`${APP}:OAuthClient`);
+    expect(message).toContain(`${VENDOR}:OauthClient`);
+    expect(message).toContain(`${OTHER}:OauthClient`);
   });
 
   it('names the recorded entry and export name in the import that pins an ambiguous bare-name target', async () => {
@@ -887,7 +958,7 @@ ${extra}}
     expect(message).toContain(`import { ProductionRun } from '${VENDOR}'`);
   });
 
-  it('fails a bare-name target spelled in another case that models of two dependencies share', async () => {
+  it('fails a bare-name target that two dependencies declare only in another letter case, naming both', async () => {
     const root = await project({
       providers: twoRuns,
       app: { 'src/WorkOrder.ts': bareOrder('productionrun') },
@@ -895,7 +966,7 @@ ${extra}}
 
     const failure = build(root);
     await expect(failure).rejects.toMatchObject({
-      code: 'CONFIG_AMBIGUOUS_RELATIONSHIP_TARGET',
+      code: 'CONFIG_UNKNOWN_RELATIONSHIP_TARGET',
     });
     const message = await failure.catch((error: Error) => error.message);
     expect(message).toContain(`${VENDOR}:ProductionRun`);

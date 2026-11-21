@@ -286,51 +286,16 @@ const caseVariantsCache = new WeakMap<
 >();
 
 /**
- * The class name `name` matches in `manifest`: the one spelling of it in
- * any case when the manifest holds only one, else `name` itself when the
- * manifest declares it exactly; `undefined` when it matches none. Two
- * classes whose names differ only in case (`Account` and `ACCOUNT`) are
- * different JavaScript bindings, so neither stands in for the other. Every
- * check that asks whether a name exists, and which models it names, must use
- * this one rule.
- */
-export function matchClassNameSpelling(
-  manifest: SmartObjectManifest,
-  name: string,
-): string | undefined {
-  const names = caseVariantsOf(manifest).get(name.toLowerCase());
-  if (!names) return undefined;
-  if (names.size === 1) return [...names][0];
-  return names.has(name) ? name : undefined;
-}
-
-/**
  * The entry for class name `name`: an exact match first; a match that
  * differs only in case only when it is the one class of that name in any
- * case (`matchClassNameSpelling`).
+ * case. Two classes whose names differ only in case (`Account` and
+ * `ACCOUNT`) are different JavaScript bindings, so neither stands in for
+ * the other.
  */
 function lookupByClassName(
   manifest: SmartObjectManifest,
   name: string,
 ): SmartObjectDefinition | undefined {
-  const spelling = matchClassNameSpelling(manifest, name);
-  if (spelling === undefined) return undefined;
-  if (caseVariantsOf(manifest).get(name.toLowerCase())?.size === 1) {
-    return getClassNameIndex(manifest).get(name.toLowerCase());
-  }
-  const exact = Object.entries(manifest.objects)
-    .filter(([key, entry]) => (entry.className || key) === spelling)
-    .map(([, entry]) => entry);
-  // Issue #950 among same-named entries: a child that extends its namesake wins.
-  return (
-    exact.find((entry) => entry.extends?.split(':').at(-1) === spelling) ??
-    exact[0]
-  );
-}
-
-function caseVariantsOf(
-  manifest: SmartObjectManifest,
-): Map<string, Set<string>> {
   let variants = caseVariantsCache.get(manifest);
   if (!variants) {
     variants = new Map();
@@ -343,7 +308,18 @@ function caseVariantsOf(
     }
     caseVariantsCache.set(manifest, variants);
   }
-  return variants;
+  const lower = name.toLowerCase();
+  const names = variants.get(lower);
+  if (!names) return undefined;
+  if (names.size === 1) return getClassNameIndex(manifest).get(lower);
+  if (!names.has(name)) return undefined;
+  const exact = Object.entries(manifest.objects)
+    .filter(([key, entry]) => (entry.className || key) === name)
+    .map(([, entry]) => entry);
+  // Issue #950 among same-named entries: a child that extends its namesake wins.
+  return (
+    exact.find((entry) => entry.extends?.split(':').at(-1) === name) ?? exact[0]
+  );
 }
 
 /**
