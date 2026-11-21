@@ -631,6 +631,14 @@ export class ManifestGenerator {
 
     // An app may keep its source constructor name while exporting the upstream name.
     const publicNames = new Map<string, string>();
+    // Every local model by the class name its source declares, before any is
+    // published under another name: a reference written as a class name is
+    // rewritten through `publicNames` below, so no model may be published
+    // under another model's source class name.
+    const sourceNames = new Map<string, SmartObjectDefinition>();
+    for (const obj of Object.values(manifest.objects)) {
+      if (!sourceNames.has(obj.className)) sourceNames.set(obj.className, obj);
+    }
     for (const [key, obj] of Object.entries(manifest.objects)) {
       const parentName = (obj.extendsQualified ?? obj.extends)
         ?.split(':')
@@ -650,6 +658,20 @@ export class ManifestGenerator {
             'rename it: the framework reserves this class name.',
           'CONFIG_RESERVED_CLASS_NAME',
           { className: obj.className, publicName },
+        );
+      }
+      const namesake = sourceNames.get(publicName);
+      if (namesake && namesake !== obj) {
+        throw new ConfigurationError(
+          `${obj.className} (${obj.filePath}) is published under the public name ${publicName}, the class name of ` +
+            `${namesake.className} (${namesake.filePath}); a reference to ${publicName} would name either model. ` +
+            'Give one of the two models another public or class name.',
+          'CONFIG_PUBLIC_NAME_COLLISION',
+          {
+            className: obj.className,
+            publicName,
+            namesake: namesake.className,
+          },
         );
       }
       const packageName = obj.packageName ?? options?.packageName;

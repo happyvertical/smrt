@@ -817,6 +817,46 @@ ${extra}}
     expect(report?.joins?.customer?.source).toBe('Customer');
   });
 
+  const INVOICE = `${CORE}\n@smrt({ name: 'Invoice' })\nexport class InvoiceRecord extends SmrtObject {\n  customerId = '';\n  total = 0;\n}\n`;
+
+  it("fails a model published under another model's class name, naming both", async () => {
+    const root = await project({
+      providers: {},
+      app: {
+        'src/Invoice.ts': INVOICE,
+        'src/Historical.ts': `${CORE}\n@smrt({ name: 'InvoiceRecord' })\nexport class HistoricalRecord extends SmrtObject {\n  total = 0;\n}\n`,
+        'src/Revenue.ts': `${CORE}\n@report({ source: 'InvoiceRecord' })\nexport class Revenue extends SmrtObject {\n  total = 0;\n}\n`,
+      },
+    });
+
+    const failure = build(root);
+    await expect(failure).rejects.toMatchObject({
+      code: 'CONFIG_PUBLIC_NAME_COLLISION',
+    });
+    const message = await failure.catch((error: Error) => error.message);
+    expect(message).toContain('HistoricalRecord');
+    expect(message).toContain('InvoiceRecord');
+  });
+
+  it('builds a report whose string source and join name a renamed model by its class name', async () => {
+    const root = await project({
+      providers: {},
+      app: {
+        'src/Invoice.ts': INVOICE,
+        'src/Revenue.ts': `${CORE}\n@report({ source: 'InvoiceRecord', joins: { again: { source: 'InvoiceRecord', on: 'customerId' } } })\nexport class Revenue extends SmrtObject {\n  total = 0;\n}\n`,
+      },
+    });
+
+    const manifest = await build(root);
+    const report = manifest.objects[`${APP}:Revenue`]?.decoratorConfig
+      .report as {
+      source?: string;
+      joins?: Record<string, { source?: string }>;
+    };
+    expect(report?.source).toBe('Invoice');
+    expect(report?.joins?.again?.source).toBe('Invoice');
+  });
+
   it('fails a bare-name report source that only dependencies declare', async () => {
     const root = await project({
       providers: twoRuns,
