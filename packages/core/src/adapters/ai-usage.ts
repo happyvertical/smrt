@@ -191,51 +191,80 @@ export async function routeAiRunCallUsage(
   return false;
 }
 
+/**
+ * The tags that make a usage row a call of a run: its run and its step.
+ * Only a tracked call's settlement writes them (`aiRunCallTags`).
+ */
+const RUN_MEMBERSHIP_TAGS = [
+  'runId',
+  'stepIndex',
+  'stepName',
+  'stepInstanceId',
+  'attempt',
+] as const;
+
 /** Row ids minted for events whose `aiCallId` tag was not core's. */
 const mintedRowIds = new WeakMap<object, string>();
-let warnedForeignCallId = false;
+const warnedTags = new Set<string>();
+
+function warnOnce(tag: string): void {
+  if (warnedTags.has(tag)) return;
+  warnedTags.add(tag);
+  logger.warn(
+    `[smrt] The "${tag}" usage tag is written by core's tracked calls only; a usage event carrying it from elsewhere is recorded without it`,
+  );
+}
 
 /**
- * The row id of an event the persistence handler writes. The `aiCallId` tag
- * is the primary key of a tracked call's row and only core mints it: it is
- * kept as the row id for the event a settlement wrote and for any event
- * naming a tracked call core minted (a call of a run of the event's tenant
- * on this database, by its route or its persisted `call` event: another
- * pipeline seeing the same call, such as a recorder the host attached to
- * its own client, converges on one row). Any other event carrying the tag (a caller's
- * or binding's `usageTags`, a copied invocation's) gets its own id, without
- * the tag, so a reused value can never make another call's row be skipped
- * by `ON CONFLICT (id) DO NOTHING`. The same event object saved again keeps
- * the id it got the first time (a retried save writes one row).
+ * The row an event the persistence handler writes, and its id. A tracked
+ * call's event (the settled event, or one naming a tracked call core
+ * minted in the event's tenant on this database, by its route or its
+ * persisted `call` event, such as a recorder the host attached to its own
+ * client) is
+ * written as it is: `aiCallId` is its row id and its run tags place it in
+ * its run. Any other event is a call on its own: a caller's or binding's
+ * `aiCallId` is not its id (it gets a fresh one, so a reused value can
+ * never make another call's row be skipped by `ON CONFLICT (id) DO
+ * NOTHING`), and its `runId` and step tags do not make it a call of a run.
+ * Those tags are dropped (warned once each). The same event object saved
+ * again keeps the id it got the first time (a retried save writes one row).
  */
 async function rowIdentity(
   event: SmrtAiUsageEvent,
   db: DatabaseInterface,
 ): Promise<{
   event: SmrtAiUsageEvent;
-  id?: string;
+  overrides: AiUsageRowOverrides;
 }> {
   const callId = event.tags?.[AI_OWN_CALL_ID_TAG];
-  if (callId === undefined || !event.tags) return { event };
   if (
     settledRunEvents.has(event) ||
-    (lateUsageHooks && (await lateUsageHooks.isTrackedCall(event, db)))
+    (callId !== undefined &&
+      lateUsageHooks &&
+      (await lateUsageHooks.isTrackedCall(event, db)))
   ) {
-    return { event };
+    return { event, overrides: {} };
   }
-  if (!warnedForeignCallId) {
-    warnedForeignCallId = true;
-    logger.warn(
-      `[smrt] The "${AI_OWN_CALL_ID_TAG}" usage tag is core's tracked-call id; a usage event carrying a value core did not mint is recorded under its own id, without the tag`,
-    );
+  if (!event.tags) return { event, overrides: { runId: null } };
+  const tags = { ...event.tags };
+  for (const tag of [AI_OWN_CALL_ID_TAG, ...RUN_MEMBERSHIP_TAGS]) {
+    if (tag in tags) {
+      delete tags[tag];
+      warnOnce(tag);
+    }
   }
-  const { [AI_OWN_CALL_ID_TAG]: _foreign, ...tags } = event.tags;
-  let id = mintedRowIds.get(event);
-  if (!id) {
-    id = crypto.randomUUID();
-    mintedRowIds.set(event, id);
+  let id: string | undefined;
+  if (callId !== undefined) {
+    id = mintedRowIds.get(event);
+    if (!id) {
+      id = crypto.randomUUID();
+      mintedRowIds.set(event, id);
+    }
   }
-  return { event: { ...event, tags }, id };
+  return {
+    event: { ...event, tags },
+    overrides: { runId: null, ...(id ? { id } : {}) },
+  };
 }
 
 /** A lifted tag value: a non-empty string, else NULL. */
@@ -350,8 +379,8 @@ export class AiUsagePersistenceHandler implements AiUsageHandler {
       ) {
         return;
       }
-      const { event: row, id } = await rowIdentity(event, this.db);
-      await insertAiUsageRow(this.db, row, id ? { id } : {});
+      const { event: row, overrides } = await rowIdentity(event, this.db);
+      await insertAiUsageRow(this.db, row, overrides);
     } catch (error) {
       throw new Error(
         `Failed to persist AI usage event for ${event.provider}:${event.model}: ${

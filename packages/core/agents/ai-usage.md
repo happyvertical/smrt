@@ -32,12 +32,11 @@ present and `persist` is on, plus `usage.handlers`; instances also keep an
   `withAiUsage()` on a config that already carries a sink inherits its explicit
   attribution unless its own options set one. Instance clients record even when
   the caller's callback throws (the error still propagates).
-- User (#4760): `setAiUsageUserResolver()` is the ambient-user slot. When
-  registered (the hosted gate registers the principal's user), every row
-  whose event and attribution carry no `userId` tag gets the resolver's
-  user as `userId` (`AI_USAGE_USER_TAG`); an explicit tag wins and a
-  throwing resolver attributes nothing. Per-user hosted spend caps meter
-  that tag.
+- User (#4760): a row's `userId` (`AI_USAGE_USER_TAG`) comes only from
+  trusted sources: the sink attribution's tag (host code that built the
+  sink), else `setAiUsageUserResolver()`'s user (the hosted gate registers
+  the principal's). A per-call `usageTags.userId` is dropped, and a throwing
+  resolver attributes nothing. Per-user hosted spend caps meter that tag.
 - Tenant: explicit `tenantId` (a string; `null` = global, skip ambient) →
   instance `tenantId` (non-empty) → ambient tenant from
   `setAiUsageTenantResolver()` → none. smrt-tenancy registers `getTenantId()`
@@ -64,7 +63,7 @@ row's own `id` is its call id and is written to `call_id` too (#5005).
 | `promptKey` | `prompt_key` | `resolvePrompt()` via `promptMessageOptions()` (smrt-prompts) |
 | `tierRequested` | `tier_requested` | inference tier path (#4750) |
 | `tierResolved` | `tier_resolved` | inference tier path (#4750); fallback (#4752) |
-| `runId` | `run_id` | multi-call runs, e.g. fusions (#4753) |
+| `runId` | `run_id` | a tracked call's settlement only (#4753, #5005); on any other event the persistence handler drops it and its step tags |
 | `callId` | `entry_call_id` | transcript wrapper, while transcripts are enabled (#4780); the entry call's id, shared by the calls of a chain or fusion. A row without the tag is its own entry call |
 | `templateHash` | `template_hash` | prompt version (smrt-prompts, #5005) |
 
@@ -224,7 +223,8 @@ retried save never makes a second row. The `aiCallId` tag is core's: in
 and for an event naming a call id this process minted (a host recorder on
 its own client converges on the same row); any other event carrying it is
 written under its own id without the tag (warned once), and the same event
-object saved twice still writes one row. `entry_call_id` is the entry call's id
+object saved twice still writes one row. Such an event's `runId` and step
+tags are dropped too, so a caller's tags never place a row in a run. `entry_call_id` is the entry call's id
 (the `callId` tag), shared by every call of an alias chain or fusion. A
 transcript joins on `_smrt_ai_usage.entry_call_id = _smrt_ai_transcripts.call_id`.
 

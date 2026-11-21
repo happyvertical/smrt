@@ -12,7 +12,10 @@
 
 import { type DatabaseInterface, getDatabase } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { AiUsagePersistenceHandler } from '../adapters/ai-usage';
+import {
+  AiUsagePersistenceHandler,
+  insertAiUsageRow,
+} from '../adapters/ai-usage';
 import { SmrtClass } from '../class';
 import {
   AI_USAGE_COST_BASIS,
@@ -53,31 +56,40 @@ interface UsageSeed {
   createdAt?: string;
 }
 
-/** Insert through the real handler so the lift itself is under test. */
+/**
+ * Insert one row the way a tracked call's settlement does
+ * (`insertAiUsageRow` with the run named explicitly: a `runId` tag on an
+ * untracked event no longer places a row in a run).
+ */
 async function persist(seed: UsageSeed): Promise<void> {
-  const handler = new AiUsagePersistenceHandler(db);
-  await handler.handle({
-    provider: seed.provider ?? 'openai',
-    model: seed.model ?? 'gpt-4o',
-    operation: seed.operation ?? 'chat',
-    usage:
-      seed.promptTokens === null
-        ? undefined
-        : {
-            promptTokens: seed.promptTokens ?? 10,
-            completionTokens: seed.completionTokens ?? 5,
-            totalTokens:
-              (seed.promptTokens ?? 10) + (seed.completionTokens ?? 5),
-          },
-    duration: seed.duration ?? 100,
-    timestamp: new Date(seed.createdAt ?? '2026-11-01T00:00:00.000Z'),
-    tags: (seed.tags ?? undefined) as Record<string, string> | undefined,
-    className: seed.className ?? 'Doc',
-    tenantId: seed.tenantId ?? null,
-    estimatedCost:
-      seed.estimatedCost === null ? undefined : (seed.estimatedCost ?? 0.01),
-  });
-  // The handler assigns its own UUID; rename it so tests can target rows.
+  const runId =
+    typeof seed.tags?.runId === 'string' ? (seed.tags.runId as string) : null;
+  await insertAiUsageRow(
+    db,
+    {
+      provider: seed.provider ?? 'openai',
+      model: seed.model ?? 'gpt-4o',
+      operation: seed.operation ?? 'chat',
+      usage:
+        seed.promptTokens === null
+          ? undefined
+          : {
+              promptTokens: seed.promptTokens ?? 10,
+              completionTokens: seed.completionTokens ?? 5,
+              totalTokens:
+                (seed.promptTokens ?? 10) + (seed.completionTokens ?? 5),
+            },
+      duration: seed.duration ?? 100,
+      timestamp: new Date(seed.createdAt ?? '2026-11-01T00:00:00.000Z'),
+      tags: (seed.tags ?? undefined) as Record<string, string> | undefined,
+      className: seed.className ?? 'Doc',
+      tenantId: seed.tenantId ?? null,
+      estimatedCost:
+        seed.estimatedCost === null ? undefined : (seed.estimatedCost ?? 0.01),
+    },
+    { runId },
+  );
+  // The row gets its own UUID; rename it so tests can target rows.
   const rows = (
     await db.query(
       'SELECT id FROM _smrt_ai_usage WHERE id NOT LIKE $1 ORDER BY created_at DESC',
@@ -95,7 +107,7 @@ async function persist(seed: UsageSeed): Promise<void> {
 }
 
 describe('AiUsagePersistenceHandler tag lift (#4751)', () => {
-  it('copies the four tags into their columns and keeps the full tag map', async () => {
+  it('copies the tags into their columns and keeps the full tag map', async () => {
     await persist({
       id: 'seed-1',
       tags: {
@@ -179,9 +191,11 @@ describe('AiUsagePersistenceHandler tag lift (#4751)', () => {
     expect(records).toHaveLength(1);
     expect(records[0]).toMatchObject({
       promptKey: 'pipeline.key',
-      runId: 'run-p',
-      tags: { promptKey: 'pipeline.key', runId: 'run-p' },
+      tags: { promptKey: 'pipeline.key' },
     });
+    // A caller's runId tag does not make an untracked call a call of a run.
+    expect(records[0]?.runId ?? null).toBeNull();
+    expect(records[0]?.tags).not.toHaveProperty('runId');
     expect(records[0]?.tierRequested).toBeUndefined();
   });
 });
@@ -214,14 +228,18 @@ describe('existing DuckDB install (#4751)', () => {
         ]),
       );
 
-      await new AiUsagePersistenceHandler(duck).handle({
-        provider: 'openai',
-        model: 'gpt-4o',
-        operation: 'chat',
-        duration: 4,
-        timestamp: new Date(),
-        tags: { promptKey: 'duck.key', runId: 'duck-run' },
-      });
+      await insertAiUsageRow(
+        duck,
+        {
+          provider: 'openai',
+          model: 'gpt-4o',
+          operation: 'chat',
+          duration: 4,
+          timestamp: new Date(),
+          tags: { promptKey: 'duck.key', runId: 'duck-run' },
+        },
+        { runId: 'duck-run' },
+      );
       const report = await reportAiUsage(duck, { by: ['prompt'] });
       expect(report.buckets.map((b) => b.key.prompt)).toEqual(['duck.key']);
       await recordAiEvaluation(duck, {

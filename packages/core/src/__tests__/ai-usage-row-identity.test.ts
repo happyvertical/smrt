@@ -9,7 +9,7 @@
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createAiUsageRecorder } from '../adapters/ai-usage-recorder';
-import { getAiRun } from '../system/browser';
+import { getAiRun, getRunTrajectory, openAiRun } from '../system/browser';
 import { createTrackedAiClient } from '../tracked-ai-client';
 import {
   closeAiRunTestDatabases,
@@ -87,5 +87,35 @@ describe('usage row identity', () => {
       { id: sentCallId, run_id: run.id, total_tokens: 12 },
     ]);
     expect(await getAiRun(db, run.id)).toMatchObject({ calls: 1, tokens: 12 });
+  });
+
+  it('never lets caller tags place an untracked call in a run or meter it to a user', async () => {
+    const db: DatabaseInterface = await newAiRunTestDatabase('sqlite');
+    const run = await openAiRun(
+      { db, usageTracking: true, tenantId: 'tenant-one' },
+      { type: 'turn' },
+    );
+    const record = createAiUsageRecorder({ db, tenantId: 'tenant-one' });
+    await record(
+      rawEvent({
+        promptKey: 'ids.prompt',
+        runId: run.id,
+        stepInstanceId: 'step-x',
+        userId: 'someone-else',
+      }),
+    );
+    const [row] = rowsOf(
+      await db.query(
+        'SELECT id, run_id, step_instance_id, tags FROM _smrt_ai_usage',
+      ),
+    );
+    expect(row).toMatchObject({ run_id: null, step_instance_id: null });
+    const tags = JSON.parse(String(row?.tags));
+    expect(tags).not.toHaveProperty('runId');
+    expect(tags).not.toHaveProperty('userId');
+    expect(tags.promptKey).toBe('ids.prompt');
+    const trajectory = await getRunTrajectory(db, { callId: String(row?.id) });
+    expect(trajectory?.run).toBeNull();
+    expect(await getAiRun(db, run.id)).toMatchObject({ calls: 0 });
   });
 });

@@ -11,7 +11,7 @@
 
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, describe, expect, it } from 'vitest';
-import { createAiUsageRecorder } from '../adapters/ai-usage-recorder';
+import { insertAiUsageRow } from '../adapters/ai-usage';
 import {
   finishAiRun,
   getAiRun,
@@ -39,14 +39,28 @@ afterEach(async () => {
   await closeAiRunTestDatabases();
 });
 
-const rawEvent = (tags: Record<string, string>) => ({
-  provider: 'openai',
-  model: 'gpt-4o',
-  operation: 'message',
-  usage: { promptTokens: 3, completionTokens: 2, totalTokens: 5 },
-  duration: 1,
-  tags,
-});
+/** A usage row of `tenantId` naming `runId` (written as a settlement does). */
+async function linked(
+  db: DatabaseInterface,
+  tenantId: string,
+  runId: string,
+  promptKey: string,
+): Promise<void> {
+  await insertAiUsageRow(
+    db,
+    {
+      provider: 'openai',
+      model: 'gpt-4o',
+      operation: 'message',
+      usage: { promptTokens: 3, completionTokens: 2, totalTokens: 5 },
+      duration: 1,
+      timestamp: new Date(),
+      tenantId,
+      tags: { promptKey },
+    },
+    { runId },
+  );
+}
 
 describe.each(
   aiRunTestEngines,
@@ -63,10 +77,8 @@ describe.each(
       new Date(NOW.getTime() - 200 * DAY).toISOString(),
       run.id,
     );
-    const own = createAiUsageRecorder({ db, tenantId: 'tenant-one' });
-    const other = createAiUsageRecorder({ db, tenantId: 'tenant-two' });
-    await own(rawEvent({ runId: run.id, promptKey: 'tags.own' }));
-    await other(rawEvent({ runId: run.id, promptKey: 'tags.other' }));
+    await linked(db, 'tenant-one', run.id, 'tags.own');
+    await linked(db, 'tenant-two', run.id, 'tags.other');
 
     await pruneAiRunTrajectories(db, { maxAgeMs: 30 * DAY, now: NOW });
     expect(await pruneAiRuns(db, { maxAgeMs: 90 * DAY, now: NOW })).toEqual({
@@ -87,10 +99,8 @@ describe.each(
       { db, usageTracking: true, tenantId: 'tenant-one' },
       { type: 'turn' },
     );
-    const other = createAiUsageRecorder({ db, tenantId: 'tenant-two' });
-    await other(rawEvent({ runId: run.id, promptKey: 'tags.other' }));
-    const own = createAiUsageRecorder({ db, tenantId: 'tenant-one' });
-    await own(rawEvent({ runId: run.id, promptKey: 'tags.own' }));
+    await linked(db, 'tenant-two', run.id, 'tags.other');
+    await linked(db, 'tenant-one', run.id, 'tags.own');
     const ids = Object.fromEntries(
       rowsOf(await db.query('SELECT id, prompt_key FROM _smrt_ai_usage')).map(
         (row) => [String(row.prompt_key), String(row.id)],
@@ -117,8 +127,7 @@ describe.each(
       { db, usageTracking: true, tenantId: 'tenant-one' },
       { type: 'turn' },
     );
-    const other = createAiUsageRecorder({ db, tenantId: 'tenant-two' });
-    await other(rawEvent({ runId: run.id, promptKey: 'tags.other' }));
+    await linked(db, 'tenant-two', run.id, 'tags.other');
     const [row] = rowsOf(await db.query('SELECT id FROM _smrt_ai_usage'));
     const seen: string[] = [];
     const original = db.query.bind(db);
@@ -160,8 +169,21 @@ describe.each(
 
   it('returns a call on its own with its own tenant evaluations only', async () => {
     const db = await newAiRunTestDatabase(engine);
-    const own = createAiUsageRecorder({ db, tenantId: 'tenant-one' });
-    await own(rawEvent({ aiCallId: 'reused-call', promptKey: 'tags.one' }));
+    const row = (tenantId: string, promptKey: string) =>
+      insertAiUsageRow(
+        db,
+        {
+          provider: 'openai',
+          model: 'gpt-4o',
+          operation: 'message',
+          duration: 1,
+          timestamp: new Date(),
+          tenantId,
+          tags: { promptKey },
+        },
+        { id: 'reused-call', runId: null },
+      );
+    await row('tenant-one', 'tags.one');
     await recordAiEvaluation(db, {
       callId: 'reused-call',
       label: 'tenant-one-label',
@@ -169,8 +191,7 @@ describe.each(
     });
     // The row is pruned; another tenant's row later takes the same id.
     await db.query("DELETE FROM _smrt_ai_usage WHERE id = 'reused-call'");
-    const other = createAiUsageRecorder({ db, tenantId: 'tenant-two' });
-    await other(rawEvent({ aiCallId: 'reused-call', promptKey: 'tags.two' }));
+    await row('tenant-two', 'tags.two');
     const trajectory = await getRunTrajectory(db, { callId: 'reused-call' });
     expect(trajectory?.entries[0]?.usage?.promptKey).toBe('tags.two');
     expect(trajectory?.entries[0]?.evaluations).toEqual([]);

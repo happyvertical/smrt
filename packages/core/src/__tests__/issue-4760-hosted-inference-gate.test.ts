@@ -461,19 +461,28 @@ describe('#4760 hosted inference gate seam', () => {
     }
   });
 
-  it('tags usage rows with the ambient user unless one is given', () => {
+  it('takes the metered user from the sink attribution or the ambient principal, never a per-call tag', () => {
     setAiUsageUserResolver(() => 'user-1');
-    const event = (tags?: Record<string, string>) =>
+    const event = (
+      tags?: Record<string, string>,
+      attribution?: Record<string, string>,
+    ) =>
       normalizeAiUsageEvent(
         { provider: 'openai', model: 'm', operation: 'chat', tags },
         undefined,
+        attribution ? { tags: attribution } : {},
       );
     expect(event()?.tags).toEqual({ userId: 'user-1' });
-    expect(event({ userId: 'explicit' })?.tags).toEqual({ userId: 'explicit' });
+    expect(event({ userId: 'explicit' })?.tags).toEqual({ userId: 'user-1' });
+    expect(event({ userId: 'explicit' }, { userId: 'host' })?.tags).toEqual({
+      userId: 'host',
+    });
     setAiUsageUserResolver(() => {
       throw new Error('no context');
     });
     expect(event()?.tags).toBeUndefined();
+    // With no trusted user, a per-call tag still names nobody.
+    expect(event({ userId: 'explicit', a: 'b' })?.tags).toEqual({ a: 'b' });
     setAiUsageUserResolver(undefined);
     expect(event({ a: 'b' })?.tags).toEqual({ a: 'b' });
   });
