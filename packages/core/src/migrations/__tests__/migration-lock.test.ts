@@ -58,7 +58,7 @@ describe('session run on a pool handle', () => {
       expect(lock.kind).toBe('session');
       expect(lock.db).not.toBe(pg.db);
       await lock.db.query('SELECT 1 AS work');
-      await lock.db.transaction(async (tx) => tx.query('SELECT 2 AS work'));
+      await lock.db.transaction!(async (tx) => tx.query('SELECT 2 AS work'));
       return 'done';
     });
     expect(result).toBe('done');
@@ -307,10 +307,21 @@ describe('session run on a pool handle', () => {
     expect(modern.log.map((s) => s.sql)).toContain(
       'SET idle_session_timeout = 0',
     );
+    // A destroyed session's backend notices the closed connection within a
+    // second, before the key is first tried.
+    const sqls = modern.log.map((s) => s.sql);
+    const check = sqls.indexOf("SET client_connection_check_interval = '1s'");
+    expect(check).toBeGreaterThan(-1);
+    expect(check).toBeLessThan(
+      sqls.findIndex((sql) => /pg_try_advisory_lock/.test(sql)),
+    );
     const legacy = createPgDouble({ serverVersion: 130012 });
     await withMigrationLock(legacy.db, async () => {});
     expect(legacy.log.map((s) => s.sql)).not.toContain(
       'SET idle_session_timeout = 0',
+    );
+    expect(legacy.log.map((s) => s.sql).join('\n')).not.toContain(
+      'client_connection_check_interval',
     );
   });
 
@@ -480,7 +491,7 @@ describe('a caller transaction', () => {
   it('runs a transaction of a live run at any isolation, and refuses a pool transaction at repeatable read', async () => {
     const pg = createPgDouble({ isolation: 'repeatable read' });
     await withMigrationLock(pg.db, async (lock) => {
-      await lock.db.transaction(async (tx) => {
+      await lock.db.transaction!(async (tx) => {
         const inner = await acquireMigrationLock(tx);
         expect(inner.held).toBe(true);
       });
@@ -504,7 +515,7 @@ describe('reuse, overlap and lifetime', () => {
         async (inner) => expect(inner).toBe(lock),
         { onWait },
       );
-      await lock.db.transaction((tx) =>
+      await lock.db.transaction!((tx) =>
         withMigrationLock(tx, async (inner) => expect(inner.held).toBe(true), {
           onWait,
         }),
@@ -532,7 +543,7 @@ describe('reuse, overlap and lifetime', () => {
         db: lock.db,
         packageName: '@lock/app',
       });
-      const viaTransaction = lock.db.transaction((tx) =>
+      const viaTransaction = lock.db.transaction!((tx) =>
         migrateSmrtSchemas({ db: tx, packageName: '@lock/app' }),
       );
       await expect(second).rejects.toBeInstanceOf(MigrationRunOverlapError);
@@ -651,20 +662,20 @@ describe('reuse, overlap and lifetime', () => {
     vi.resetModules();
     (process as { getBuiltinModule?: unknown }).getBuiltinModule = undefined;
     let lockModule: typeof import('../migration-lock.js');
-    let contextModule: typeof import('../../utils/async-context.js');
     try {
       lockModule = await import('../migration-lock.js');
-      contextModule = await import('../../utils/async-context.js');
     } finally {
       (process as { getBuiltinModule?: unknown }).getBuiltinModule = original;
     }
-    expect(contextModule.createAsyncContext().propagatesAcrossAwait).toBe(
-      false,
-    );
     const pg = createPgDouble();
     const order: string[] = [];
     let independent: Promise<unknown> | undefined;
     await lockModule.withMigrationLock(pg.db, async (lock) => {
+      // No holder scope reaches here without async context: guards cannot
+      // refuse, and correctness must not depend on them.
+      expect(() =>
+        lockModule.refuseInsideMigrationLockHolder('activation-inside-holder'),
+      ).not.toThrow();
       await lockModule.withMigrationLock(lock.db, async () => {
         order.push('nested');
       });

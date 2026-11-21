@@ -35,6 +35,10 @@ import {
 import { toSafeBooleanInteger, toSafeInteger } from '../utils/safe-integer.js';
 import { computeChecksum, verifyChecksum } from './checksum.js';
 import {
+  borrowMigrationRunSession,
+  isServerPostgresHandle,
+} from './migration-lock.js';
+import {
   type CreateIndexStatement,
   classifyIndexStatement,
   type IndexStatementKind,
@@ -52,23 +56,6 @@ import type {
 } from './types.js';
 
 const logger = createLogger({ level: 'info' });
-
-/** No migrate run lends its session yet. */
-function borrowMigrationRunSession(
-  _db: DatabaseInterface,
-): MigrationSession | undefined {
-  return undefined;
-}
-
-/** A server PostgreSQL handle: its own `engine` decides, else URL or hint. */
-function isServerPostgresHandle(
-  db: DatabaseInterface,
-  engineHint?: string,
-): boolean {
-  const engine = (db as { engine?: unknown }).engine;
-  if (typeof engine === 'string') return engine === 'postgres';
-  return getDatabaseEngine(db, engineHint) === 'postgres';
-}
 
 /**
  * Row type for _smrt_schema_migrations table

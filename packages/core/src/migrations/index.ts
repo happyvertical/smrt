@@ -129,6 +129,7 @@ export {
   packagesSeenInput,
   readConfirmedRetirements,
   readLastMigrateRecord,
+  recordMigrateConfirmation,
   recordSuccessfulMigrate,
   type UnloadedBuildPackage,
 } from './migrate-record.js';
@@ -138,10 +139,18 @@ export {
   acquireMigrationLock,
   DEFAULT_MIGRATION_LOCK_WAIT_TIMEOUT_MS,
   MIGRATION_ADVISORY_LOCK_KEYS,
+  MIGRATION_LOCK_MINIMUM_SQL_VERSION,
   type MigrationLock,
+  MigrationLockBusyError,
+  MigrationLockIsolationError,
   MigrationLockLostError,
+  MigrationLockOrderError,
+  type MigrationLockOrderReason,
   MigrationLockTimeoutError,
+  type MigrationLockTimeoutPhase,
   MigrationLockUnsupportedError,
+  MigrationRunOverlapError,
+  withMigrationLock,
 } from './migration-lock.js';
 export * from './migration-run-decision.js';
 // Money major-units → integer minor-units rescale (#2401)

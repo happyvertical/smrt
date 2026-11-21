@@ -42,6 +42,7 @@ import {
   recordMigrateConfirmation,
   recordSuccessfulMigrate,
 } from './migrate-record.js';
+import { type MigrationLock, runMigrationOperation } from './migration-lock.js';
 import {
   decideMigrationRun,
   formatMigrationRefusal,
@@ -131,6 +132,13 @@ export interface MigrateSmrtSchemasOptions {
    * back to the tracker's default (60000ms) when omitted.
    */
   statementTimeout?: number;
+  /**
+   * How long to wait, in milliseconds, for the migration lock on a
+   * PostgreSQL database before giving up with `MigrationLockTimeoutError`,
+   * counted from the call. `0` waits indefinitely. Default 15 minutes
+   * (`DEFAULT_MIGRATION_LOCK_WAIT_TIMEOUT_MS`), as for `smrt db:migrate`.
+   */
+  migrationLockTimeout?: number;
   /**
    * Explicit engine hint forwarded to `detectEngine`, `SchemaComparer`, and
    * `MigrationTracker`. Useful when `db.url` doesn't unambiguously identify
@@ -476,6 +484,27 @@ export function unusedRetireConfirmations(
 export async function migrateSmrtSchemas(
   options: MigrateSmrtSchemasOptions,
 ): Promise<MigrateSmrtSchemasResult> {
+  // One run at a time per PostgreSQL database, from the first schema read to
+  // the migrate record, on the connection that holds the lock: a run that
+  // waited plans against what the run before it left. Synchronous up to the
+  // operation mark, so a second operation on the same backend is refused
+  // before it plans.
+  return runMigrationOperation(
+    options.db,
+    {
+      engineHint: options.engineHint,
+      ...(options.migrationLockTimeout === undefined
+        ? {}
+        : { timeoutMs: options.migrationLockTimeout }),
+    },
+    (db, lock) => migrateSmrtSchemasLocked({ ...options, db }, lock),
+  );
+}
+
+async function migrateSmrtSchemasLocked(
+  options: MigrateSmrtSchemasOptions,
+  lock: MigrationLock,
+): Promise<MigrateSmrtSchemasResult> {
   const pending = await getPendingSchemaStatements(options.db, {
     engineHint: options.engineHint,
     postgresTimestampMigration: options.postgresTimestampMigration,
@@ -561,6 +590,7 @@ export async function migrateSmrtSchemas(
   }
   if (!pending.hasChanges || pending.statements.length === 0) {
     if (recordInput && !pending.hasManualDrift) {
+      await lock.assertHeld();
       await recordSuccessfulMigrate(options.db, {
         input: recordInput,
         engineHint: options.engineHint,
@@ -610,6 +640,9 @@ export async function migrateSmrtSchemas(
       ? recordInput
       : undefined;
   if (confirmInput) await ensureSystemTables(options.db, options.engineHint);
+  // The lock's connection can end while the run plans; stop rather than
+  // apply (on a session run the batch would fail on that connection anyway).
+  await lock.assertHeld();
   const results = await tracker.applyAll([migration], {
     // Always one atomic batch (#4927). `options.atomic` is kept for callers
     // that already pass `true`; it cannot turn atomic apply off.
@@ -681,6 +714,7 @@ export async function migrateSmrtSchemas(
 
   if (recordInput && !pending.hasManualDrift) {
     // The confirmations are already on the ledger (written in the batch).
+    await lock.assertHeld();
     await recordSuccessfulMigrate(options.db, {
       input: recordInput,
       engineHint: options.engineHint,

@@ -1589,8 +1589,8 @@ The batched PostgreSQL index read includes `pg_index.indisvalid`; an INVALID
 index cannot satisfy a declaration by name or signature and is planned again.
 A stop still refuses that mode before any writes. The CLI also defers tracker
 bootstrap and system timestamp conversion until after the decision. Its lock
-uses session advisory locks on PostgreSQL and writes no table rows; other
-engines need no lock. Removed `--apply-unblocked` fails before connecting.
+is the migration lock (below); the whole run executes on `lock.db`, the
+connection that holds it; other engines need no lock. Removed `--apply-unblocked` fails before connecting.
 See [CLI contract](../../cli/agents/db-migrate-all-or-nothing.md).
 
 The FK-orphan advisory branch in `compareForeignKeys()` (`migrations/
@@ -1790,14 +1790,22 @@ A successful whole-schema migrate,
 including an already-current database, records the core release, the build's
 packages and fingerprint (below). Failed, stopped, and dry runs never stamp
 it. Identical release/packages/fingerprint skip the insert; changed values append
-and preserve history. A run that dropped a retired table over a confirmed
-definition mismatch always appends, with `confirmed_retirements` (system schema
-1.18.0; JSON, one entry per table: table, package, last owner, release, `by`
-flag or code, the differences confirmed); other rows leave it NULL. This permanent ledger has no retention/prune task.
+and preserve history. A run that drops a retired table over a confirmed
+definition mismatch, or makes a column calculated on request, writes a
+confirmation row in the batch transaction that performs the change
+(`recordMigrateConfirmation` as `beforeCommit`, #5435), with
+`confirmed_retirements` (system schema 1.18.0; JSON, one entry per table:
+table, package, last owner, release, `by` flag or code, the differences
+confirmed) and `recomputes`. That row repeats the last record's packages and
+fingerprint (none: this run's packages and an empty fingerprint), so readers
+see the database migrated exactly as far as before; completion then appends
+the declarations row without confirmations. So a confirmation is on the
+ledger if and only if its change committed, once. Other rows leave both NULL.
+This permanent ledger has no retention/prune task.
 `readLastMigrateRecord` is SELECT-only and returns `state: 'none'` for an absent
 or empty table: the first run under this scheme, not a schema mismatch. The latest
-row orders by `created_at`, then `id`. Call the writer on the caller's database
-handle while its migration lock is held; it also works without a tracker.
+row orders by `created_at`, then `id`. Call the writer on `lock.db` while the
+migration lock is held; it also works without a tracker.
 
 ### The build's schema (rv1)
 
@@ -1954,6 +1962,86 @@ statements committed, revert them by hand (for example drop the column the
 failed attempt added, while it holds no data), then rerun. Inspect
 `pg_index.indisvalid` and drop INVALID indexes before rebuild (`pg_indexes`
 alone cannot detect them). Operational commands: `packages/cli/AGENTS.md`.
+Index-phase tracking rows are written on the phase's own session (a pool of
+one finishes); when a session the tracker pinned from its pool is lost, the
+`failed` row is written through the pool so the rerun retries. On a handle
+that cannot pin a session (a PostgreSQL transaction) the tracker takes the
+atomic, non-concurrent path: indexes build in the transaction and an explicit
+`CONCURRENTLY` is refused before anything runs. `applyAll({ atomic: true,
+beforeCommit })` runs `beforeCommit(tx)` in the batch transaction after every
+definition succeeded; refused without `atomic`.
+
+### The migration lock (#3634, #5435)
+
+`migrations/migration-lock.ts`. One advisory lock (`hashtext('smrt'),
+hashtext('db:migrate')`, unchanged so old-release `db:migrate` and every
+current path exclude each other) is held by every migrate run on a server
+PostgreSQL database from its first schema read to its migrate record:
+`smrt db:migrate`, `migrateSmrtSchemas` on any handle, lazy activation, the
+app model editor (boot and edit), `withMigrationLock` and
+`acquireMigrationLock`. **Run the work on `lock.db`.**
+
+- **Handle classes**, first match wins: a live run's `lock.db` (that run's
+  lock, no statement); a pool handle with the adapter's connection-affinity
+  claim `pool` (session run); a claim `transaction` (transaction rules);
+  anything else, including a `session` database that is not a live run, a
+  wrapper, spread copy or proxy, `MigrationLockUnsupportedError` before any
+  statement. The claim is `Symbol.for('@happyvertical/sql/connection-affinity')`
+  with `{ kind, handle }`, accepted only when `handle === db`; it needs
+  `@happyvertical/sql` `MIGRATION_LOCK_MINIMUM_SQL_VERSION` (0.117.0) in the
+  copy that created the handle. Engine: the handle's own `engine` decides
+  (`postgres` is a server; `pglite` and the rest take no lock), else URL/hint.
+  SQLite, DuckDB, JSON and PGlite: `held: false`, `lock.db === db`, no guard.
+- **Session run.** Checkout, then one identity statement (pid, postmaster
+  start, version; on 14+ `SET idle_session_timeout = 0` and
+  `client_connection_check_interval = '1s'`, so a session destroyed on the
+  deadline path frees the lock within about a second even mid-statement;
+  before 14 the lock is freed only when that statement ends), then
+  `pg_try_advisory_lock` and sleep until acquired (holding no transaction or
+  snapshot, so a waiter can never be the old snapshot a holder's
+  `CREATE INDEX CONCURRENTLY` waits for; a blocking `pg_advisory_xact_lock`
+  waiter deadlocks it with 40P01), then a proof (held, same pid). The work
+  runs on `session.database()`: the writer is the lock's backend, so when it
+  ends the run's next statement fails and the server rolls back. One
+  connection per run; a pool of one works. Planning is serial on that
+  connection (compare "Diagnostics are latency-bound" above). Release is
+  bounded (5 s, then `destroy()`); after it `lock.db` rejects every call.
+- **Caller transactions**: at most three statements, never waiting. A
+  transaction of a live run (same backend) proceeds at any isolation.
+  Otherwise `REPEATABLE READ`/`SERIALIZABLE` is `MigrationLockIsolationError`
+  (transaction usable), a held key elsewhere is `MigrationLockBusyError`
+  (`retryable`; roll back, retry), else `pg_try_advisory_xact_lock` plus proof.
+  The lock lasts to the caller's COMMIT/ROLLBACK; `release()` is a no-op.
+- **One deadline** (`timeoutMs`, `migrationLockTimeout`; default 15 min; `0`
+  none) from the public entry point over queues, set-up, checkout, attempts
+  and sleeps, on a monotonic clock. On expiry the call rejects
+  (`MigrationLockTimeoutError.phase`: `queue`, `setup`, `checkout`, `lock`;
+  `heldByThisProcess`) and destroys the session without sending anything.
+  Slices are clamped to at least 1 ms.
+- **Backends registry**: lock-owning backends keyed `<postmaster start>:<pid>`.
+  A second `migrateSmrtSchemas` on a backend already running one, through any
+  handle, is `MigrationRunOverlapError` before it plans.
+- **Lock order**: editor tail, activation queue, migration lock, bootstrap
+  lock, backfill claim, table/row locks. From inside a holder (session-run
+  work, a borrowed `withMigrationLock(tx, ...)` callback, a migrate on a
+  caller transaction), `activate()`, `createAppModelEditor()`,
+  `migrateAppModelStorage()`, the editor's apply and
+  `withRuntimeSchemaActivation()` throw `MigrationLockOrderError` before
+  joining any queue, and a migrate on the same database's pool handle is
+  `reentry`. Async context only refuses; it grants nothing, so a host without
+  it ends these orderings at the deadline. Code between
+  `acquireMigrationLock` and `release` has no scope.
+- **Activation and the editor** are session runs: activation holds the lock
+  from the journal ownership check (`journalListTables`, which reads
+  `public._smrt_app_model_changes` whatever `search_path` says) through the
+  loaders to its migration, so the check is authoritative and a loader must
+  not need a connection from a pool of one. The editor runs the default
+  store's revision transaction on `lock.db`; a store with its own
+  `transaction` is called as it is. `createAppModelHistory(...).transaction`,
+  `store.complete` and `abandonAppModelRevision` are unchanged and never wait
+  for a run.
+- **Recovery after an interrupted index build**: the rerun drops the INVALID
+  index the lost run left and rebuilds it (above).
 
 **The repair drops one exact index.** Before a pending `CREATE INDEX`, the
 tracker drops the INVALID index an interrupted `CREATE INDEX CONCURRENTLY`
