@@ -615,6 +615,7 @@ export class MigrationTracker {
       return;
     const session = await this.acquireMigrationSession();
     let baseline: SessionBaseline | null = null;
+    let failure: unknown = null;
     try {
       baseline = await captureSessionBaseline(session);
       await this.applySessionTimeouts(session);
@@ -624,16 +625,32 @@ export class MigrationTracker {
         'any migration of the batch ran',
       );
     } catch (error) {
-      if (error instanceof ConcurrentIndexRefusal)
-        throw new Error(`Migration ${error.migrationName}: ${error.message}`, {
-          cause: error,
-        });
-      throw error;
-    } finally {
-      // The tracker's timeouts do not outlive the check on the session.
+      failure =
+        error instanceof ConcurrentIndexRefusal
+          ? new Error(`Migration ${error.migrationName}: ${error.message}`, {
+              cause: error,
+            })
+          : error;
+    }
+    // The tracker's timeouts do not outlive the check on the session. The
+    // session is released whatever the restore does, and a failed restore
+    // never takes the place of the check's own refusal.
+    let restoreFailure: unknown = null;
+    try {
       if (baseline) await restoreSessionBaseline(session, baseline);
+    } catch (error) {
+      restoreFailure = error;
+    } finally {
       await session.release();
     }
+    if (failure) {
+      if (restoreFailure)
+        logger.error(
+          'Could not restore the migration session settings after the batch check failed',
+        );
+      throw failure;
+    }
+    if (restoreFailure) throw restoreFailure;
   }
 
   /**

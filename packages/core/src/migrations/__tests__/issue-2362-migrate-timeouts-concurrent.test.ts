@@ -1230,4 +1230,36 @@ describe('the deferred phase holds its locks and cleans up (#5325)', () => {
     expect(fake.queries[takeover]?.channel).toBe('transaction');
     expect(takeover).toBe(lock + 1);
   });
+
+  it('releases the batch check session when putting it back fails', async () => {
+    const fake = createFakeDb({
+      failOn: [{ match: 'RESET ROLE', message: 'connection lost' }],
+    });
+
+    await new MigrationTracker({ db: fake.db })
+      .applyAll([addIndex], { postgresSafe: true })
+      .catch(() => undefined);
+
+    expect(fake.sessionsOpened).toBeGreaterThan(0);
+    expect(fake.sessionsReleased).toBe(fake.sessionsOpened);
+  });
+
+  it("keeps the batch check's refusal when putting the session back also fails", async () => {
+    const fake = createFakeDb({
+      explainFailsOn: 'no_such_column',
+      failOn: [{ match: 'RESET ROLE', message: 'connection lost' }],
+    });
+
+    const run = new MigrationTracker({ db: fake.db }).applyAll(
+      [
+        definition('add_jobs_status_idx', [
+          'CREATE INDEX "jobs_status_idx" ON "jobs" ((lower(no_such_column)))',
+        ]),
+      ],
+      { postgresSafe: true },
+    );
+
+    await expect(run).rejects.toThrow(/cannot be checked/);
+    expect(fake.sessionsReleased).toBe(fake.sessionsOpened);
+  });
 });
