@@ -97,3 +97,38 @@ export function subscribe(
   bus.on('event', on);
   return () => bus.off('event', on);
 }
+
+let streamsClosing = false;
+const streamClosers = new Set<() => void>();
+
+/**
+ * Long-lived response streams (the SSE route) register how to end themselves.
+ * Returns the unregister function. Not for in-process subscribers (`subscribe`):
+ * they keep receiving events while the process shuts down.
+ */
+export function onStreamsClosed(close: () => void): () => void {
+  streamClosers.add(close);
+  return () => streamClosers.delete(close);
+}
+
+/** True once shutdown began: a new stream is refused (the client retries after a restart). */
+export function streamsClosed(): boolean {
+  return streamsClosing;
+}
+
+/**
+ * First step of shutdown (#5494): end every open stream and refuse new ones. An
+ * idle browser tab's EventSource would otherwise hold `server.close()` open
+ * until the deadline.
+ */
+export function closeAllStreams(): void {
+  streamsClosing = true;
+  for (const close of [...streamClosers]) {
+    try {
+      close();
+    } catch {
+      // a stream already gone
+    }
+  }
+  streamClosers.clear();
+}

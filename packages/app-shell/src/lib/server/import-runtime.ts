@@ -2,14 +2,13 @@
 
 import { readOriginFile } from '@happyvertical/smrt-app-runtime';
 import type { TaskRunner } from '@happyvertical/smrt-jobs';
-import { closeHost, requireLocalProfile } from './host.ts';
+import { requireLocalProfile } from './host.ts';
 import { createShellImportService } from './import-workflow.ts';
 import { runtime } from './smrt.ts';
 
 let pending: Promise<ReturnType<typeof createShellImportService>> | undefined;
 let runner: TaskRunner | undefined;
 let service: ReturnType<typeof createShellImportService> | undefined;
-let hooked = false;
 export function shellImports() {
   pending ??= (async () => {
     // Workbook import runs on the embedded job runner of the desktop's local
@@ -37,12 +36,6 @@ export function shellImports() {
       await runner.start();
       await next.recover();
       service = next;
-      if (!hooked) {
-        hooked = true;
-        process.on('sveltekit:shutdown' as never, () => {
-          void stopShellImports().then(closeHost);
-        });
-      }
       return next;
     } catch (error) {
       await runner?.stop();
@@ -55,7 +48,15 @@ export function shellImports() {
   });
   return pending;
 }
+/**
+ * Stop the import runner and wait for the jobs it is running (`TaskRunner.stop`
+ * waits for active jobs). Called by the shutdown sequence (`installShutdown`
+ * `stopWork`), after the listener stopped and before the apps close, so an
+ * import in flight finishes against an open host.
+ */
 export async function stopShellImports() {
+  // A start still in progress settles first, so its runner is the one stopped.
+  await pending?.catch(() => {});
   await runner?.stop();
   runner = undefined;
   service?.dispose();

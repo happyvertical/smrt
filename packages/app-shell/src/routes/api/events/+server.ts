@@ -7,11 +7,18 @@
  * A `: ping` comment is sent every 25 s. The first message is `event: ready`.
  */
 
-import { subscribe } from '$lib/server/events';
+import { onStreamsClosed, streamsClosed, subscribe } from '$lib/server/events';
 import { errorResponse, ownerOf } from '$lib/server/http';
 import type { RequestHandler } from './$types';
 
 export const GET: RequestHandler = async (event) => {
+  // Shutting down: no new stream; the client reconnects after the restart.
+  if (streamsClosed()) {
+    return new Response(null, {
+      status: 503,
+      headers: { 'retry-after': '5', connection: 'close' },
+    });
+  }
   let tenantId: string;
   try {
     tenantId = (await ownerOf(event)).tenantId;
@@ -29,6 +36,12 @@ export const GET: RequestHandler = async (event) => {
           cleanup();
         }
       };
+      // Shutdown began while the owner check ran: end at once, or this stream
+      // would hold the listener open to the deadline.
+      if (streamsClosed()) {
+        controller.close();
+        return;
+      }
       send('event: ready\ndata: {}\n\n');
       // Only this owner's tenant's events (the hosted app shares one bus).
       const off = subscribe(
@@ -36,9 +49,17 @@ export const GET: RequestHandler = async (event) => {
         tenantId,
       );
       const ping = setInterval(() => send(': ping\n\n'), 25_000);
+      // Shutdown ends the stream (the listener cannot close while it is open).
+      const offClose = onStreamsClosed(() => {
+        cleanup();
+        try {
+          controller.close();
+        } catch {}
+      });
       cleanup = () => {
         clearInterval(ping);
         off();
+        offClose();
       };
       event.request.signal.addEventListener('abort', () => {
         cleanup();
