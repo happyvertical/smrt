@@ -1910,14 +1910,25 @@ function taintUnsafeModuleConstantReferences(
       inConstant?: string;
     }>
   >();
-  const taint = (node: Record<string, unknown>): void => {
+  const taint = (
+    node: Record<string, unknown>,
+    renamed?: { local?: string; imported?: string },
+  ): void => {
     const name = node.name as string;
     if (tainted.has(name)) return;
     tainted.add(name);
-    const unresolved = {
+    const unresolved: UnresolvedSpread = {
       expression: sliceSource(node as unknown as BaseNode, sourceText) ?? name,
       start:
         typeof node.start === 'number' ? (node.start as number) : undefined,
+      ...(renamed?.local
+        ? {
+            hint:
+              `\`${name}\` is passed to \`@${renamed.local}()\`, a decorator imported under another name, which ` +
+              `is not read as a read-only SMRT decorator. Import the decorator under its own name ` +
+              `(\`${renamed.imported}\`), or write the options inline.`,
+          }
+        : {}),
     };
     const constant = constants.get(name);
     constant?.unsafeReferences.push(unresolved);
@@ -1950,11 +1961,15 @@ function taintUnsafeModuleConstantReferences(
       !shadowed.has(node.name) &&
       !isTypeOnlyReference(node, ancestors)
     ) {
-      const via: { name?: boolean; staticInitializer?: boolean } = {};
+      const via: {
+        name?: boolean;
+        staticInitializer?: boolean;
+        renamed?: { local?: string; imported?: string };
+      } = {};
       if (
         !isSafeModuleConstantReference(node, ancestors, constants, imports, via)
       ) {
-        taint(node);
+        taint(node, via.renamed);
       } else if (!via.name) {
         const references = safeReferences.get(node.name) ?? [];
         references.push({
@@ -2302,20 +2317,37 @@ function hasNestedReferenceValue(value: unknown): boolean {
  * an arbitrary function the constant would escape into. `parent` is the
  * node's direct ancestor.
  *
- * The decorator is named by its local identifier, as the base scanner names
- * it here and as the field reader names a field decorator: a call through a
- * renamed import (`import { field as formField } from 'other-lib'`) is not
- * trusted as a read-only SMRT call, so a constant passed to it escapes.
+ * The decorator is named by its local identifier. A callee bound by a renamed
+ * import (`import { normalize as field }`, `import { field as formField }`,
+ * `import { smrt as model }`) is never trusted as a read-only SMRT call,
+ * whatever either name is, so a constant passed to it escapes, as the base
+ * scanner treats it; `renamed` receives the import so the diagnostic can
+ * name the fix. A callee imported or declared under its own name keeps the
+ * name rule.
  */
 function isReadDecoratorCall(
   node: Record<string, unknown>,
   parent: Record<string, unknown> | undefined,
+  importAliases?: Map<string, string>,
+  renamed?: { local?: string; imported?: string },
 ): boolean {
   if (
     node.type !== 'CallExpression' ||
     parent?.type !== 'Decorator' ||
     parent.expression !== node
   ) {
+    return false;
+  }
+  const callee = node.callee as Record<string, unknown> | undefined;
+  if (
+    callee?.type === 'Identifier' &&
+    typeof callee.name === 'string' &&
+    importAliases?.has(callee.name)
+  ) {
+    if (renamed) {
+      renamed.local = callee.name;
+      renamed.imported = importAliases.get(callee.name);
+    }
     return false;
   }
   const name = resolveDecoratorName(parent as unknown as Decorator);
@@ -2326,18 +2358,23 @@ function isSafeModuleConstantReference(
   identifier: Record<string, unknown>,
   ancestors: Array<Record<string, unknown>>,
   constants: Map<string, ModuleConstant>,
-  // Decorator calls are named by their local identifier (`isReadDecoratorCall`),
-  // so the import tables are not consulted here.
-  _imports: {
+  // The import-alias table marks a decorator callee bound by a renamed
+  // import, which is never a read-only SMRT call (`isReadDecoratorCall`).
+  imports: {
     importAliases?: Map<string, string>;
     importBindings?: Map<string, ImportBinding>;
   } = {},
   /**
    * Set to how the occurrence was judged safe: `name` when it is not a
    * reference at all (a declaration, a property key), `staticInitializer`
-   * when a manifest static property holds it.
+   * when a manifest static property holds it; `renamed` when it was judged
+   * unsafe because a decorator under a renamed import receives it.
    */
-  via: { name?: boolean; staticInitializer?: boolean } = {},
+  via: {
+    name?: boolean;
+    staticInitializer?: boolean;
+    renamed?: { local?: string; imported?: string };
+  } = {},
 ): boolean {
   let child = identifier;
   // Set once the walk passes a position that READS the constant as a value
@@ -2410,9 +2447,17 @@ function isSafeModuleConstantReference(
       // A spread copies only the top level, so nested values stay shared with
       // whatever receives the copy. A decorator this scanner reads does not
       // mutate its config; anything else might.
-      return ancestors.some((ancestor, at) =>
-        isReadDecoratorCall(ancestor, ancestors[at - 1]),
+      const renamed: { local?: string; imported?: string } = {};
+      const read = ancestors.some((ancestor, at) =>
+        isReadDecoratorCall(
+          ancestor,
+          ancestors[at - 1],
+          imports.importAliases,
+          renamed,
+        ),
       );
+      if (!read && renamed.local) via.renamed = renamed;
+      return read;
     }
 
     // The constant itself, or one of its members, is read as a value. Keep
@@ -2440,7 +2485,15 @@ function isSafeModuleConstantReference(
       Array.isArray(parent.arguments) &&
       parent.arguments.includes(child)
     ) {
-      return isReadDecoratorCall(parent, ancestors[index - 1]);
+      const renamed: { local?: string; imported?: string } = {};
+      const read = isReadDecoratorCall(
+        parent,
+        ancestors[index - 1],
+        imports.importAliases,
+        renamed,
+      );
+      if (!read && renamed.local) via.renamed = renamed;
+      return read;
     }
 
     // The initializer of a static property the scanner reads into the

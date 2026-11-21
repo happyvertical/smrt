@@ -10,6 +10,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { ManifestAdapter } from '../manifest-adapter.js';
+import { parseSource } from '../oxc-parser.js';
 import { OxcScanner } from '../scanner.js';
 
 const PACKAGE = '@fixture/decorator-source';
@@ -117,5 +118,39 @@ describe('decorator source recognition, as the base scanner reads it', () => {
     );
     expect(errors).toEqual([]);
     expect(sensitive).toBe(true);
+  });
+});
+
+describe('a shared options constant, as the base scanner reads it', () => {
+  const CORE = "import { SmrtObject, smrt } from '@happyvertical/smrt-core';";
+  const parse = (source: string) => {
+    const result = parseSource(source, '/fixture/Account.ts');
+    return {
+      errors: result.errors.length,
+      config: result.classes[0]?.decoratorConfig,
+    };
+  };
+
+  it('flags a nested constant handed to a function imported under an SMRT field decorator name', () => {
+    const { errors } = parse(
+      `${CORE}\nimport { normalize as field } from 'forms-lib';\nconst POLICY = { api: { include: ['list', 'delete'] } };\n@smrt({ ...POLICY })\nexport class Account extends SmrtObject {\n  @field(POLICY)\n  label: string = '';\n}\n`,
+    );
+    expect(errors).toBeGreaterThan(0);
+  });
+
+  it('reads a spread literal given to the model decorator under a renamed import', () => {
+    const { errors, config } = parse(
+      `import { SmrtObject, smrt as model } from '@happyvertical/smrt-core';\nconst OPTIONS = { api: false };\n@model({ ...OPTIONS })\nexport class Account extends SmrtObject {}\n`,
+    );
+    expect(errors).toBe(0);
+    expect(config).toEqual({ api: false });
+  });
+
+  it('reads a flat constant spread into the model decorator after another decorator received it', () => {
+    const { errors, config } = parse(
+      `${CORE}\nimport { field as formField } from 'forms-lib';\nconst POLICY = { api: true };\n@smrt({ ...POLICY })\nexport class Account extends SmrtObject {\n  @formField(POLICY)\n  label: string = '';\n}\n`,
+    );
+    expect(errors).toBe(0);
+    expect(config).toEqual({ api: true });
   });
 });
