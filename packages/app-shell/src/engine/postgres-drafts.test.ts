@@ -32,7 +32,7 @@ import {
   vi,
 } from 'vitest';
 import type { DatabaseConfig, PGliteClient } from './db/index.ts';
-import { withSchemaAdmin } from './db/index.ts';
+import { copyAppDatabase, withSchemaAdmin } from './db/index.ts';
 import { scopeDatabase } from './db/postgres.ts';
 import {
   acquireOwnership,
@@ -657,6 +657,28 @@ describe.each(
         dumpSchema(recorded(db, log), live.schema, file),
       );
       checkOrder(log, live.schema, tables);
+      expect(existsSync(file)).toBe(true);
+    });
+
+    it('copyAppDatabase dumps with the lock timeout the worker config carries', async () => {
+      const live = await seeded('lockcfg');
+      const file = join(live.dir, 'snapshots', `${Date.now()}-0-cfg.pgdump`);
+      const log: string[] = [];
+      await withSchemaAdmin(config(live.schema), (db) =>
+        copyAppDatabase(
+          recorded(db, log),
+          {
+            kind: 'pglite',
+            schema: live.schema,
+            port: undefined as never,
+            lockTimeoutMs: 1234,
+          },
+          file,
+        ),
+      );
+      expect(log.some((q) => q.includes("'lock_timeout', '1234ms'"))).toBe(
+        true,
+      );
       expect(existsSync(file)).toBe(true);
     });
 

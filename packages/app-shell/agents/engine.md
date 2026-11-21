@@ -110,6 +110,12 @@ scans for it.
   the desktop is unchanged. PGlite cannot cancel a statement either; only the
   real-server lane (`postgres-server.test.ts`) proves the cancel, and
   `postgres.test.ts` proves where and how it is set (a recording connection).
+- **Dump lock timeout (#5415).** The host passes its lock timeout
+  (`swapLockTimeoutMs`) to every worker it spawns on a server database as
+  `WorkerDatabaseConfig.lockTimeoutMs` (set in `AppWorker`, next to
+  `statementTimeoutMs`); `copyAppDatabase` hands it to `dumpSchema`, so a
+  snapshot, undo point or `copyTo` waits at most that long per table lock and
+  then fails with a lock-timeout error instead of using the default.
 - **How the config reaches the worker.** `DatabaseConfig` is plain data except a
   PGlite instance, which cannot cross threads (and two instances on one
   storage corrupt it, yet a new worker boots while the old one still serves).

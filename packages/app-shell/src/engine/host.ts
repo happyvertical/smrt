@@ -539,6 +539,7 @@ export class AppHost extends EventEmitter {
       migration,
       limits: this.workerLimits,
       database: this.database,
+      lockTimeoutMs: this.lockTimeoutMs,
     });
   }
 
@@ -2431,6 +2432,7 @@ export class AppHost extends EventEmitter {
               version: chain.baseVersion,
               limits: this.workerLimits,
               database: place.database,
+              lockTimeoutMs: this.lockTimeoutMs,
             });
           carried = null;
           try {
@@ -2476,6 +2478,7 @@ export class AppHost extends EventEmitter {
           version: numbers[i],
           limits: this.workerLimits,
           database: place.database,
+          lockTimeoutMs: this.lockTimeoutMs,
           migration: steps.length
             ? { steps, direction: 'up', version: numbers[i] }
             : undefined,
@@ -2890,6 +2893,7 @@ export class AppHost extends EventEmitter {
         version: this.version,
         limits: this.workerLimits,
         database: this.database,
+        lockTimeoutMs: this.lockTimeoutMs,
         readOnly: true,
       });
       let timer: ReturnType<typeof setTimeout> | undefined;
