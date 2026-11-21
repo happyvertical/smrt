@@ -9,6 +9,8 @@ SvelteKit or `src/lib`). README has the route and JSON contracts.
 
 Cloud profile (tenant scoping, accounts, what must not exist there): [cloud profile](agents/cloud-profile.md).
 
+Per-tenant storage metering (`storage.bytes` gauge, one read, request-count seam for #5195): [storage metering](agents/storage-metering.md).
+
 Workbook workflow ownership, upload limits, proof and recovery: [imports](agents/imports.md).
 
 Shared assistant adapters and legacy approval storage: [agents/shared-pieces.md](agents/shared-pieces.md).
