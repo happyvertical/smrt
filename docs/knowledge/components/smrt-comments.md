@@ -5,7 +5,7 @@ description: "Record comments and mention hooks for SMRT applications"
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-21T06:43:22Z"
+  at: "2026-11-21T20:54:40Z"
 audience: "internal"
 evidence_level: "source-inspected"
 source_revision: "sha256:3518712c923918258b48c6a0018d568afbafd6a9470c7d93c2c0ad88743bf3b3"

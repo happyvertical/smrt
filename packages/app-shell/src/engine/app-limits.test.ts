@@ -5,7 +5,12 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
-import { AppCaps, type AppLimits, assertAppLimits } from './app-limits.ts';
+import {
+  AppCaps,
+  type AppLimits,
+  appLimitCap,
+  assertAppLimits,
+} from './app-limits.ts';
 import { harnessDatabase } from './db/harness.ts';
 import { AppHost, MemoryVersionStore } from './index.ts';
 
@@ -218,7 +223,107 @@ describe.each(['sqlite', 'postgres'] as const)('app caps on %s', (kind) => {
   });
 });
 
+describe.each([
+  'sqlite',
+  'postgres',
+] as const)('app caps, concurrency and edge routes on %s', (kind) => {
+  it('parallel creates with one slot left admit exactly one (engine, REST and tool)', async () => {
+    const { host, run } = await open(kind, { maxRows: 3 });
+    await run({
+      type: 'defineModel',
+      name: 'A',
+      fields: { t: { type: 'text' } },
+    });
+    await host.create('A', { t: 'seed1' });
+    await host.create('A', { t: 'seed2' });
+    const mixed = await Promise.allSettled([
+      host.create('A', { t: 'p1' }),
+      host.rest({
+        method: 'POST',
+        url: '/api/as',
+        body: JSON.stringify({ t: 'p2' }),
+      }),
+      host.callAppTool('a_create', { t: 'p3' }),
+      host.create('A', { t: 'p4' }),
+      host.rest({
+        method: 'POST',
+        url: '/api/as',
+        body: JSON.stringify({ t: 'p5' }),
+      }),
+    ]);
+    expect(mixed.length).toBe(5);
+    expect(await host.list('A')).toHaveLength(3);
+  });
+
+  it('parallel engine creates admit exactly the free slots', async () => {
+    const { host, run } = await open(kind, { maxRowsPerModel: 4 });
+    await run({
+      type: 'defineModel',
+      name: 'A',
+      fields: { t: { type: 'text' } },
+    });
+    const out = await Promise.allSettled(
+      Array.from({ length: 10 }, (_, i) => host.create('A', { t: `${i}` })),
+    );
+    expect(out.filter((o) => o.status === 'fulfilled')).toHaveLength(4);
+    expect(await host.list('A')).toHaveLength(4);
+  });
+
+  it('a POST with an extra path segment is held to the cap too', async () => {
+    const { host, run } = await open(kind, { maxRows: 1 });
+    await run({
+      type: 'defineModel',
+      name: 'A',
+      fields: { t: { type: 'text' } },
+    });
+    await host.create('A', { t: 'x' });
+    const r = await host.rest({
+      method: 'POST',
+      url: '/api/as/anything',
+      body: JSON.stringify({ t: 'y' }),
+    });
+    expect(r.status).toBe(403);
+    expect(JSON.parse(r.body).code).toBe('app_limit');
+    expect(await host.list('A')).toHaveLength(1);
+  });
+
+  it('a method that deletes in one model and creates in another passes at the total cap', async () => {
+    const { host, run } = await open(kind, { maxRows: 2 });
+    await run({
+      type: 'defineModel',
+      name: 'A',
+      fields: { t: { type: 'text' } },
+    });
+    await run({
+      type: 'defineModel',
+      name: 'B',
+      fields: { t: { type: 'text' } },
+    });
+    await run({
+      type: 'addMethod',
+      model: 'A',
+      name: 'swap',
+      method: {
+        description: 'move',
+        code: `app.delete('A', record.id); app.create('B', { t: 'n' }); return 1;`,
+      },
+    });
+    const first = await host.create('A', { t: '1' });
+    await host.create('A', { t: '2' });
+    const out = await host.runMethod('A', 'swap', String(first.id));
+    expect(out.applied).toBe(2);
+    expect(await host.list('B')).toHaveLength(1);
+  });
+});
+
 describe('limits object and period window', () => {
+  it('names the cap from a message that crossed the worker boundary', () => {
+    expect(
+      appLimitCap('app limit reached (maxRows): this app holds 1 record'),
+    ).toBe('maxRows');
+    expect(appLimitCap('no such record')).toBeUndefined();
+  });
+
   it('refuses malformed limits', () => {
     expect(() => assertAppLimits({ maxRows: -1 })).toThrow(/maxRows/);
     expect(() => assertAppLimits({ maxMethodRuns: 3 })).toThrow(

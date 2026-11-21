@@ -5,7 +5,7 @@ description: "Social media account management for multi-platform publishing in t
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-21T06:43:22Z"
+  at: "2026-11-21T20:54:40Z"
 audience: "internal"
 evidence_level: "source-inspected"
 source_revision: "sha256:20f45496945676b6e75b0a13b9a665e252bf0d0f59126b40e33165fc84585b68"

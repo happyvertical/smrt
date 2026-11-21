@@ -6,6 +6,10 @@ const mocks = vi.hoisted(() => ({
   profile: vi.fn(),
   handoff: vi.fn(),
   fresh: vi.fn(),
+  gate: vi.fn(),
+}));
+vi.mock('$lib/server/hosted-inference', () => ({
+  installHostedInferenceGate: mocks.gate,
 }));
 vi.mock('$lib/server/host', () => ({ shellProfile: mocks.profile }));
 vi.mock('$lib/server/owner-handoff', () => ({
@@ -62,4 +66,12 @@ it('still starts the owner link and imports on the local profile', async () => {
   expect(mocks.handoff).toHaveBeenCalledOnce();
   expect(mocks.fresh).toHaveBeenCalledOnce();
   expect(mocks.imports).toHaveBeenCalledOnce();
+});
+it('registers the hosted inference gate at startup and does not start without it', async () => {
+  mocks.profile.mockResolvedValue('cloud');
+  await expect(init()).resolves.toBeUndefined();
+  expect(mocks.gate).toHaveBeenCalledOnce();
+  mocks.gate.mockRejectedValueOnce(new Error('no kill switch table'));
+  await expect(init()).rejects.toThrow('no kill switch table');
+  expect(mocks.handoff).not.toHaveBeenCalled();
 });

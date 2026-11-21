@@ -92,6 +92,7 @@ export interface CapModel {
 export class AppCaps {
   readonly limits: AppLimits;
   private cache: Map<string, number> | null = null;
+  private tail: Promise<void> = Promise.resolve();
   private windowStart = 0;
   private runs = 0;
 
@@ -144,11 +145,34 @@ export class AppCaps {
       this.cache.set(t, Math.max(0, (this.cache.get(t) ?? 0) - 1));
   }
 
-  /** Refuse when adding `add` (records per model) would pass a row cap. */
+  /**
+   * Run `fn` alone among the capped writes of this app. The check and the
+   * write of a create are one unit: without it two concurrent creates with one
+   * slot left would both pass the check before either inserts. A plain promise
+   * chain (never re-entered: holders call only unlocked helpers), taken only
+   * when a row cap is set. A failed `fn` never blocks the next one.
+   */
+  withWriteLock<T>(fn: () => Promise<T>): Promise<T> {
+    if (!this.rowsCapped) return fn();
+    const run = this.tail.then(fn, fn);
+    this.tail = run.then(
+      () => {},
+      () => {},
+    );
+    return run;
+  }
+
+  /**
+   * Refuse when applying `add` (SIGNED records per model: creates minus
+   * deletes) would pass a row cap. The total cap is on the net change, so a
+   * method that deletes one row and creates another at the cap is allowed; a
+   * per-model cap is on that model's own growth. Call it under
+   * `withWriteLock`, with the write in the same locked section.
+   */
   async checkAdd(add: Record<string, number>, h: unknown, fresh = false) {
     if (!this.rowsCapped) return;
-    const adding = Object.values(add).reduce((a, b) => a + b, 0);
-    if (adding <= 0) return;
+    const net = Object.values(add).reduce((a, b) => a + b, 0);
+    if (net <= 0 && !Object.values(add).some((k) => k > 0)) return;
     const counts = await this.counts(h, fresh);
     const models = this.models();
     const total = [...counts.values()].reduce((a, b) => a + b, 0);
@@ -166,13 +190,13 @@ export class AppCaps {
             `${m?.label ?? model} holds ${records(have)} of the ${n(maxRowsPerModel)} allowed per model; adding ${n(k)} would pass the limit`,
           );
       }
-    if (maxRows !== undefined && total + adding > maxRows)
+    if (maxRows !== undefined && net > 0 && total + net > maxRows)
       throw new AppLimitError(
         'maxRows',
         maxRows,
         total,
-        adding,
-        `this app holds ${records(total)} of the ${n(maxRows)} allowed; adding ${n(adding)} would pass the limit`,
+        net,
+        `this app holds ${records(total)} of the ${n(maxRows)} allowed; adding ${n(net)} would pass the limit`,
       );
   }
 
@@ -246,4 +270,17 @@ export class AppCaps {
         `this app has ${n(prior)} of the ${n(maxModels)} models allowed; adding ${n(count - prior)} would pass the limit`,
       );
   }
+}
+
+/**
+ * The cap an `AppLimitError` message names, for a caller that only has the
+ * message (it is all that crosses the worker boundary). Undefined for any
+ * other message.
+ */
+export function appLimitCap(message: string): AppLimitName | undefined {
+  const m =
+    /^app limit reached \((maxModels|maxRows|maxRowsPerModel|maxMethodRuns)\)/.exec(
+      message,
+    );
+  return m ? (m[1] as AppLimitName) : undefined;
 }

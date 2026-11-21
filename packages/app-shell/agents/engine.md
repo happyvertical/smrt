@@ -570,11 +570,24 @@ it from the plan in a later slice (after #5194), this file only enforces.
 
 Refusals are `AppLimitError` (an `AppError`): `app limit reached (maxRows):
 this app holds 3 records of the 3 allowed; adding 1 would pass the limit`.
-Over a worker boundary only the message crosses, so match the
-`app limit reached (<cap>)` prefix. A REST POST answers 403
-`{error, code: 'app_limit', cap, limit, current, requested}`; a boot or
+Only the message crosses the worker boundary (`WorkerReply` has no typed
+field and `worker-handle.ts` builds `AppCallError(message, user)`), so a
+caller uses `appLimitCap(message)` (`app-limits.ts`), the one parser of the
+`app limit reached (<cap>)` prefix, never its own regex. A REST POST answers
+403 `{error, code: 'app_limit', cap, limit, current, requested}`; a boot or
 migration refusal is an `EngineError` `refused`. A method that would add rows
 over the cap is refused with the limit message, not "failed, none applied".
+
+Concurrency: with a row cap set, every capped write (engine create, REST POST
+under a model route, `<model>_create` tool, `importRecords`, a method's
+transaction) runs inside `AppCaps.withWriteLock`, a promise chain per worker,
+so a check and its write are one unit and two creates with one slot left
+cannot both pass. Holders never take the lock again (their inner creates are
+`capChecked`), so it cannot deadlock; without a row cap it is a no-op.
+Every POST under `/api/<route>` or `/api/<route>/<segment>` is treated as a
+create (core's handler may route the second form to `handleCreate`). A
+method's total check is on the SIGNED net change (creates minus deletes);
+each model's own cap is on that model's growth.
 
 Counting is the same `COUNT(*)` on SQLite and PostgreSQL, one per model table,
 cached; the engine's own single create/remove moves the cache, a REST/tool
@@ -583,7 +596,8 @@ never a scan per write. Migration steps are counted before and after inside
 their transaction, so a refusal rolls the step back. Not enforced: storage
 bytes (the cloud profile meters storage separately), requests per period and
 the 429 rate limit (core hooks, #5195), and the owner notice. The method-run
-window lives in the worker, so a worker restart (a publish) renews it.
+window lives in the worker, so it starts again on every worker start: each
+publish, restart and structural change renews the period.
 
 ## Lessons
 
