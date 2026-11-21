@@ -1446,10 +1446,13 @@ export class InheritanceResolver {
     // Their spelling must never reach generation, which would match it by
     // name (a parameter called `Account` would take a model called
     // `Account`): the item is then the class a static `_itemClass` names,
-    // proven like a parent, or none at all. Every other name is proven, a
+    // proven like a parent, or none at all. A union (`Entry | SpecialEntry`)
+    // names no one class and counts as an argument the scan cannot read, so
+    // its item is the static `_itemClass` too. Every other name is proven, a
     // type-only import included.
     if (
       !argument ||
+      argument.includes('|') ||
       classDef.typeParameters?.includes(argument.split(/[.<]/)[0]) ||
       TYPE_KEYWORDS.has(argument)
     ) {

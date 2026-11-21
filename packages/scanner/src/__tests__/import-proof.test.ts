@@ -1443,6 +1443,31 @@ describe('collection items', () => {
     ).toBeUndefined();
   });
 
+  // A union names no one class: like an argument the scan cannot read, its
+  // item is the class the static `_itemClass` names.
+  const ENTRIES = `${CORE}\n@smrt()\nexport class Entry extends SmrtObject {\n  title = '';\n}\n@smrt()\nexport class SpecialEntry extends Entry {}\n`;
+
+  it('takes the item of a collection over a union from its static _itemClass', async () => {
+    const { errors, manifest } = await scanProject({
+      'src/models/Entry.ts': `${ENTRIES}export class EntryCollection extends SmrtCollection<Entry | SpecialEntry> {\n  static readonly _itemClass = Entry;\n}\n`,
+    });
+
+    expect(errors).toEqual([]);
+    expect(
+      manifest().objects[`${PACKAGE}:EntryCollection`]?.extendsTypeArg,
+    ).toBe('Entry');
+  });
+
+  it('fails a collection over a union with no static _itemClass', async () => {
+    const { errors } = await scanProject({
+      'src/models/Entry.ts': `${ENTRIES}export class EntryCollection extends SmrtCollection<Entry | SpecialEntry> {}\n`,
+    });
+
+    expect(errors.map((error) => error.message).join('\n')).toContain(
+      'EntryCollection',
+    );
+  });
+
   it('takes the item of a type-parameter collection from its static _itemClass', async () => {
     const { errors, manifest } = await scanProject({
       'src/models/Account.ts': OPEN_BASE('Account'),
