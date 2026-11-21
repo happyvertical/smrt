@@ -604,7 +604,10 @@ describe.each(
               log.push(sql);
               if (failOn?.test(sql))
                 return Promise.reject(new Error('lock timeout (injected)'));
-              return tx.query(sql, params);
+              // An explicit `undefined` would bind one parameter on a server.
+              return params === undefined
+                ? tx.query(sql)
+                : tx.query(sql, params);
             },
           }),
         ),
