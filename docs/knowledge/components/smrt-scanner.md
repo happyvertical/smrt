@@ -5,10 +5,10 @@ description: "High-performance TypeScript scanner using OXC for SMRT manifest ge
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-21T10:21:32Z"
+  at: "2026-11-21T10:27:10Z"
 audience: "internal"
 evidence_level: "manifest-described"
-source_revision: "sha256:03d019c589e023f122f6d38764fd00ec8ea4385b805e18967c47f991477279fd"
+source_revision: "sha256:d05e5faad8f25ad67d74332c0a6291cfa8a27cd893e8d1d38b25b26ac18a9b96"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/scanner/package.json"
