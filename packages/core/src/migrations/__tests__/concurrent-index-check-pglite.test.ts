@@ -409,10 +409,10 @@ describe.skipIf(process.env.SMRT_TEST_PGLITE !== '1')(
         expect(await indexes()).toEqual(['jobs_owner_idx']);
       });
 
-      it('replays the deferred column change on a retry after the index build failed, and fails loudly', async () => {
-        // Known limit: deferred statements commit as they run and a retry
-        // runs them all again, so a column the earlier attempt added makes
-        // the retry fail; the record stays failed and retryable.
+      it('refuses to replay the deferred column change on a retry after the index build failed', async () => {
+        // Deferred statements commit as they run and nothing records how far
+        // the earlier attempt got, so a retry does not run a column change
+        // again (#5325); the record stays failed and names the statement.
         const run = () =>
           new MigrationTracker({ db, engineHint: 'postgres' }).applyAll(
             [
@@ -443,7 +443,8 @@ describe.skipIf(process.env.SMRT_TEST_PGLITE !== '1')(
 
         await db.query('DELETE FROM jobs WHERE id = 2');
         const [retry] = await run();
-        expect(String(retry.error)).toContain('already exists');
+        expect(String(retry.error)).toContain('(table change)');
+        expect(String(retry.error)).toContain('Nothing was run');
         const after = await record();
         expect(after.status).toBe('failed');
         expect(after.error_message).toMatch(

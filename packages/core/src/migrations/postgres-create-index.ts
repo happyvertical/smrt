@@ -673,15 +673,26 @@ export function readCreateIndexStatement(sql: string): CreateIndexReading {
 
 /**
  * Every token of `sql` as `kind` and stored value (strings and numbers have
- * none), or the reason it cannot be read. For tests of the lexer.
+ * none), or the reason it cannot be read. With `literals`, a plain `'…'`
+ * string also carries its text as `literal` (other string forms carry none).
  */
 export function readPostgresTokens(
   sql: string,
-): Array<{ kind: Token['kind']; value?: string }> | { unreadable: string } {
+  options: { literals?: boolean } = {},
+):
+  | Array<{ kind: Token['kind']; value?: string; literal?: string }>
+  | { unreadable: string } {
   try {
     return [...tokens(sql)].map((token) =>
       token.kind === 'string' || token.kind === 'number'
-        ? { kind: token.kind }
+        ? options.literals && sql[token.start] === "'"
+          ? {
+              kind: token.kind,
+              literal: sql
+                .slice(token.start + 1, token.end - 1)
+                .replaceAll("''", "'"),
+            }
+          : { kind: token.kind }
         : { kind: token.kind, value: token.value },
     );
   } catch (error) {

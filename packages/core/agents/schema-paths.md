@@ -1942,18 +1942,58 @@ contributors disagree on a shared index has no stamp (generation warns).
 before any DDL. `postgresSafe: true` commits non-index DDL atomically, then runs
 indexes CONCURRENTLY on `db.acquireSession()` so settings and DDL share a
 connection. This mode is not atomic. Unfinished indexes are `failed`, not
-`running`; `[smrt: concurrent-index phase 1 committed]` in `error_message`
-allows reruns to resume index work without replaying committed DDL. Known
-limit: the statements deferred to the concurrent phase (a foreign-key
-`VALIDATE CONSTRAINT` and every statement after it) commit as they run, and a
-retry runs all of them again. One that committed before the failure and
-cannot run twice (`ADD COLUMN` without `IF NOT EXISTS`, a plain `DROP INDEX`
-or rename) makes every retry fail loudly ("already exists" or "does not
-exist") and the row stays `failed`. To recover, check which deferred
-statements committed, revert them by hand (for example drop the column the
-failed attempt added, while it holds no data), then rerun. Inspect
-`pg_index.indisvalid` and drop INVALID indexes before rebuild (`pg_indexes`
-alone cannot detect them). Operational commands: `packages/cli/AGENTS.md`.
+`running`; `[smrt: concurrent-index phase 1 committed] [smrt: plan
+sha256:<digest>]` in `error_message` allows reruns to resume index work
+without replaying committed DDL. Inspect `pg_index.indisvalid` and drop
+INVALID indexes before rebuild (`pg_indexes` alone cannot detect them).
+Operational commands: `packages/cli/AGENTS.md`.
+
+**Retrying the deferred phase (#5325).** The statements deferred to the
+concurrent phase (a foreign-key `VALIDATE CONSTRAINT` and every statement
+after it, and the index builds) commit as they run, and nothing records how
+far an attempt got. Before any statement of a retry runs, `apply()` checks a
+`failed` row that carries the phase-1 marker and this checksum:
+
+- **Same plan.** The digest is sha256 over the migration id, checksum,
+  phase-1 statements and deferred statements as planned. A retry under
+  another plan is refused: `--postgres-safe` off,
+  `migrations.postgres.useConcurrently` / `useConcurrentIndexes` changed, or a
+  batch whose unique-index swap pairing differs. A marker without a digest
+  (written by an older smrt) is accepted only when this run routes index DDL
+  concurrently.
+- **Only harmless statements run again.** Every deferred statement must be
+  index DDL the lexer reads (create, drop, `REINDEX`, `ALTER INDEX … RENAME`,
+  the swap closes), one `ALTER TABLE … VALIDATE CONSTRAINT`, or one plain
+  `SET` / `RESET`. Anything else (a data change, another `ALTER TABLE`
+  form such as the foreign-key replacement's `DROP` / `RENAME CONSTRAINT`, a
+  temporary object, a string holding several statements) refuses the retry.
+  The message names the migration, the statement ordinal and a closed kind
+  (`data change`, `table change`, `other`), never the statement text.
+- **Recovery.** Check which deferred statements took effect and revert them
+  by hand; `--force-migration <id>` then retries that migration without the
+  check and runs every deferred statement again. The batch-wide `--force`
+  never lifts the check. Index statements still replay as before; their
+  target is not bound to the earlier attempt (planned follow-up).
+
+The concurrent phase captures the pinned session's own settings
+(`pg_settings` with `source = 'session'`), session user and role before its
+first statement, restores them before each migration's deferred statements
+and before its status write, and again before releasing the session. A
+deferred `SET search_path` or `SET ROLE` applies to the statements after it
+in that migration only. Each migration's deferred statements run under
+`pg_try_advisory_lock(hashtextextended('smrt:migration-deferred:<row id>',
+0))` on the pinned session; when another run holds it, nothing runs and the
+record is not written. Under the lock the row is read again, and phase-2
+status writes target the schema-qualified tracking table by row id, attempt
+number and `status = 'failed'`, so a late failure never overwrites
+`completed`. On PostgreSQL the `running` update of a retry also matches the
+status and attempt number it read.
+
+**Upgrade.** A retry that earlier replayed its deferred statements may now be
+refused: lists with data changes or other `ALTER TABLE` forms, retries in
+another mode, and retries under the batch-wide `--force`. Follow the message;
+callers that relied on the old replay pass `forceMigrations: [id]`
+(`--force-migration <id>`) after checking the database by hand.
 
 **The repair drops one exact index.** Before a pending `CREATE INDEX`, the
 tracker drops the INVALID index an interrupted `CREATE INDEX CONCURRENTLY`

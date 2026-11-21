@@ -123,6 +123,30 @@ function createFakeDb(options: FakeDbOptions = {}): FakeDb {
           };
     }
 
+    // The concurrent phase's own bookkeeping (#5325): the schema of the
+    // tracking table, the session it was handed, and the row's lock.
+    if (sql.includes("to_regclass('_smrt_schema_migrations')")) {
+      return { rows: [{ schema_name: 'public' }], rowCount: 1 };
+    }
+    if (sql.includes('FROM pg_settings')) {
+      return { rows: [], rowCount: 0 };
+    }
+    if (sql.includes('session_user AS session_name')) {
+      return {
+        rows: [{ session_name: 'migrator', role_name: 'none' }],
+        rowCount: 1,
+      };
+    }
+    if (sql.includes('pg_try_advisory_lock')) {
+      return { rows: [{ locked: true }], rowCount: 1 };
+    }
+    if (sql.includes('SELECT status, attempts, error_message FROM')) {
+      const row = [...rows.values()].find(
+        (candidate) => candidate.id === params[0],
+      );
+      return row ? { rows: [row], rowCount: 1 } : { rows: [], rowCount: 0 };
+    }
+
     if (sql.includes('to_regclass')) {
       const schema =
         options.tableSchema === undefined ? 'public' : options.tableSchema;
@@ -175,31 +199,46 @@ function createFakeDb(options: FakeDbOptions = {}): FakeDb {
       return { rows: [], rowCount: 1 };
     }
 
-    if (sql.includes('UPDATE _smrt_schema_migrations')) {
-      // Status writes address the row either by `name` (concurrent phase) or
-      // by `id` (in-batch writes); the selector is always the last parameter.
-      const selector = String(params[params.length - 1]);
-      const row = sql.includes('WHERE name = ?')
-        ? rows.get(selector)
-        : [...rows.values()].find((candidate) => candidate.id === selector);
+    if (/UPDATE (public\.)?_smrt_schema_migrations/.test(sql)) {
+      // Status writes address the row by `id`, the first WHERE parameter;
+      // fenced writes also match the status and attempt number they expect.
+      const [set, where = ''] = sql.split('WHERE');
+      const setCount = (set.match(/\?/g) ?? []).length;
+      const [selector, ...fence] = params.slice(setCount);
+      const row = [...rows.values()].find(
+        (candidate) => candidate.id === selector,
+      );
+      const expected = where.includes('status = ?')
+        ? { status: fence[0], attempts: fence[1] }
+        : where.includes("status = 'failed'")
+          ? { status: 'failed', attempts: fence[0] }
+          : null;
+      const matches =
+        row !== undefined &&
+        (expected === null ||
+          (row.status === expected.status &&
+            Number(row.attempts ?? 0) === Number(expected.attempts)));
 
-      if (row) {
-        if (sql.includes("status = 'completed'")) {
+      if (row && matches) {
+        if (set.includes("status = 'completed'")) {
           row.status = 'completed';
           row.error_message = null;
-        } else if (sql.includes("status = 'failed'")) {
+        } else if (set.includes("status = 'failed'")) {
           row.status = 'failed';
-        } else if (sql.includes("status = 'running'")) {
+        } else if (set.includes("status = 'running'")) {
           row.status = 'running';
+          row.attempts = params[1];
         }
 
         // In every tracker statement that binds `error_message`, it is the
-        // last SET placeholder — i.e. the parameter before the selector.
-        if (sql.includes('error_message = ?')) {
-          row.error_message = params[params.length - 2];
+        // last SET placeholder.
+        if (set.includes('error_message = ?')) {
+          row.error_message = params[setCount - 1];
         }
       }
-      return { rows: [], rowCount: 1 };
+      return matches && sql.includes('RETURNING id')
+        ? { rows: [{ id: selector }], rowCount: 1 }
+        : { rows: [], rowCount: matches ? 1 : 0 };
     }
 
     if (sql.startsWith('SELECT')) {
@@ -411,8 +450,13 @@ describe('PostgreSQL concurrent-index mode (issue #2362)', () => {
     await tracker.applyAll([addIndex], { atomic: true, postgresSafe: true });
 
     const sessionSql = fake.sqlIn('session');
-    expect(sessionSql[0]).toBe(`SET lock_timeout = '1234ms'`);
-    expect(sessionSql[1]).toBe(`SET statement_timeout = '5678ms'`);
+    // After the session's own settings are read (#5325), before any DDL.
+    const bound = sessionSql.indexOf(`SET lock_timeout = '1234ms'`);
+    expect(bound).toBeGreaterThan(-1);
+    expect(sessionSql[bound + 1]).toBe(`SET statement_timeout = '5678ms'`);
+    expect(sessionSql.slice(0, bound).every((sql) => !/INDEX/.test(sql))).toBe(
+      true,
+    );
     expect(fake.sessionsOpened).toBe(1);
     expect(fake.sessionsReleased).toBe(1);
   });
