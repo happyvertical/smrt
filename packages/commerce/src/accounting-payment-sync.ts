@@ -367,7 +367,8 @@ async function claim(
     );
   const taken = await input.db.query(
     `UPDATE accounting_payment_syncs
-        SET status = 'in_flight', attempt_id = ?, request_id = ?, payload_hash = ?,
+        SET pinned_request_id = ${PINNED_REQUEST_ID_SQL},
+            status = 'in_flight', attempt_id = ?, request_id = ?, payload_hash = ?,
             request_json = ?, started_at = ?, last_error = ''
       WHERE id = ? AND tenant_id = ? AND status = 'rejected' AND attempt_id = ?
         AND ${PINNED_REQUEST_ID_SQL} IN ('', ?)

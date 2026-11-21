@@ -1175,6 +1175,29 @@ describe('payment sync and readback (#5139)', () => {
       await expect(run(a.paymentId, port().impl)).rejects.toMatchObject({
         code: 'RECONCILIATION_REQUIRED',
       });
+      // Released while NULL, retried with the same facts and rejected: the pin
+      // survives the retry clearing last_error.
+      await setAccountingMapping({ db }, a.s.scope, {
+        kind: 'deposit_account',
+        localId: 'default',
+        externalId: 'qb-clearing',
+      });
+      await expect(
+        run(
+          a.paymentId,
+          port(async () => {
+            throw Object.assign(new Error('x'), { outcome: 'rejected' });
+          }).impl,
+        ),
+      ).rejects.toThrow('x');
+      await setAccountingMapping({ db }, a.s.scope, {
+        kind: 'deposit_account',
+        localId: 'default',
+        externalId: 'qb-other-clearing',
+      });
+      await expect(run(a.paymentId, port().impl)).rejects.toMatchObject({
+        code: 'RECONCILIATION_REQUIRED',
+      });
       // A plain rejection with a NULL pin is still retryable.
       await db.query(
         "UPDATE accounting_payment_syncs SET pinned_request_id = NULL, last_error = 'REJECTED'",
