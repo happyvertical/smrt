@@ -2045,15 +2045,28 @@ deferred statement first defined is reset to empty rather than undefined.
 Each migration's deferred statements run under
 `pg_try_advisory_lock(hashtextextended('smrt:migration-deferred:<row id>',
 0))` on the pinned session, and a retry's `running` update first takes
-`pg_try_advisory_xact_lock` on the same key; when another run holds it,
-nothing runs and the record is not written. On PGlite the lock is re-entrant
-on the shared connection, so there only the record fences below apply. Under
-the lock the row is read again; phase-2 status writes target the
+`pg_try_advisory_xact_lock` on the same key in the same transaction as the
+update (the batch's own inside an atomic batch, one of its own otherwise), so
+the lock is held through the update; when another run holds it, nothing runs
+and the record is not written. On PGlite the lock is re-entrant on the shared
+connection, so there only the record fences below apply, and runs over one
+handle without `acquireSession` take turns: one run's baseline capture,
+deferred statements and restore never interleave with another's. Under the
+lock the row is read again; phase-2 status writes target the
 schema-qualified tracking table by row id, attempt number and
 `status = 'failed'`, so a late failure never overwrites `completed`, and a
-success write that matches no row is reported as taken over, not applied. On
-PostgreSQL the `running` update of a retry also matches the status and
-attempt number it read.
+success write that matches no row is reported as taken over, not applied, and
+stops the batch like any other failure. On PostgreSQL the `running` update of
+a retry also matches the status, attempt number and `error_message` it read,
+so a retry checked against a record that said no deferred statement had run
+takes nothing over once another run has started them. When the schema
+holding the tracking table cannot be resolved, no deferred statement runs:
+each migration is reported not attempted and keeps the record phase 1 wrote.
+Cleanup is checked: a row lock whose unlock reports nothing released, or a
+session baseline that could not be restored, is reported; on a shared handle
+(PGlite) the run fails with that report after writing its records, since the
+handle goes back to the caller as it is, and on a pooled session (discarded on
+release) it is logged.
 
 **Upgrade.** This changes atomic `postgresSafe` batches; non-atomic runs and
 a direct `apply()` behave as before (a marked record they meet is refused as
