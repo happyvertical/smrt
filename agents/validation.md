@@ -12,6 +12,9 @@ Run package checks first, then the root gates:
   `@smrt()` model needs a full `surface-ledger.json` entry.
 - `pnpm check:node-roots`: built model roots load under plain Node (#4219);
   the allow-list is in root `package.json`.
+- `pnpm check:redaction-ledgers`: the redaction rules ledgers of core and
+  smrt-config only gain rows, with higher versions, against `origin/main` (or
+  `$BASE_SHA`); CI runs it in "CI Control Plane Regression" (#5352).
 
 CI's "Check Monorepo Standards" job also runs `scripts/check-*.mjs` that the
 gates above do not cover. Locally: `pnpm check:standards`,
