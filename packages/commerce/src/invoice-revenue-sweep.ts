@@ -125,12 +125,12 @@ export async function postPendingInvoiceRevenue(
     // `ar_journal_id` and the collection filter cannot match both.
     const statuses = POSTABLE_STATUSES.map(() => '?').join(', ');
     const { rows } = await db.query(
-      `SELECT id FROM invoices
-        WHERE tenant_id = ? AND kind = 'invoice'
-          AND (ar_journal_id IS NULL OR ar_journal_id = '')
+      `SELECT CAST(id AS TEXT) AS id FROM invoices
+        WHERE CAST(tenant_id AS TEXT) = ? AND kind = 'invoice'
+          AND COALESCE(CAST(ar_journal_id AS TEXT), '') = ''
           AND status IN (${statuses})
-          ${after ? 'AND id > ?' : ''}
-        ORDER BY id ASC LIMIT ?`,
+          ${after ? 'AND CAST(id AS TEXT) > ?' : ''}
+        ORDER BY CAST(id AS TEXT) ASC LIMIT ?`,
       tenantId,
       ...POSTABLE_STATUSES,
       ...(after ? [after] : []),
