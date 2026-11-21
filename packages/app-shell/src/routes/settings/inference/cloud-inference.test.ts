@@ -221,8 +221,16 @@ describe('cloud: settings authority is the tenant’s own', () => {
       runAs(who, () =>
         resolveInference({ tier: 'good', tenantId: who.tenantId }),
       ).then((r) => JSON.stringify(r.target));
+    // The usage report's default window starts 30 days before each load,
+    // so its start is the one field that moves between two loads.
+    const pageFor = async (who: typeof h.a) => {
+      const page = (await loadAs(who)) as { usage?: { since?: unknown } };
+      return JSON.stringify(
+        page.usage ? { ...page, usage: { ...page.usage, since: null } } : page,
+      );
+    };
     const bobBefore = await resolveFor(h.b);
-    const bobPage = JSON.stringify(await loadAs(h.b));
+    const bobPage = await pageFor(h.b);
     expect(
       await post('saveTier', h.a, {
         tier: 'good',
@@ -234,7 +242,7 @@ describe('cloud: settings authority is the tenant’s own', () => {
     const ann = (await loadAs(h.a)).tiers.find((t) => t.tier === 'good');
     expect(JSON.stringify(ann?.tenantTarget)).toContain('gpt-4.1');
     expect(await resolveFor(h.b)).toBe(bobBefore);
-    expect(JSON.stringify(await loadAs(h.b))).toBe(bobPage);
+    expect(await pageFor(h.b)).toBe(bobPage);
     expect(
       (await loadAs(h.b)).tiers.find((t) => t.tier === 'good')?.tenantTarget,
     ).toBeNull();
