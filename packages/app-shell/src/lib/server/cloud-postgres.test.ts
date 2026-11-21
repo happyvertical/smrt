@@ -3,12 +3,13 @@
 // SQLite file. The shell's own database is the SQLite of the harness; the apps'
 // server is an in-process PGlite (the engine's PostgreSQL twin). A real server
 // is the CI lane's (`pnpm test:postgres`); see cloud-profile.md.
-import { existsSync } from 'node:fs';
+import { existsSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { importPGlite } from '@happyvertical/sql/pglite';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { DatabaseConfig, PGliteClient } from '../../engine/db/index.ts';
 import { App } from '../objects/App.ts';
+import { ownerTenantFor } from './accounts.ts';
 import { applyOwnBatch } from './approvals.ts';
 import {
   addChangeCard,
@@ -17,10 +18,15 @@ import {
   flushChecks,
   waitingCount,
 } from './changes.ts';
-import { type CloudHarness, openCloudShell } from './cloud-test-support.ts';
+import {
+  CLOUD_MASTER_KEY,
+  type CloudHarness,
+  openCloudShell,
+} from './cloud-test-support.ts';
 import {
   appSchemaName,
   closeHost,
+  configureShell,
   getDraftSlot,
   getHost,
   safeId,
@@ -171,5 +177,48 @@ describe('two owners on PostgreSQL', () => {
     await runAs(h.b, () => discardChanges());
     expect((await schemas()).filter((s) => s.includes('__d'))).toHaveLength(0);
     expect(await runAs(h.b, () => getDraftSlot())).toBeNull();
+  });
+});
+
+describe('an app that already lives in SQLite', () => {
+  it('refuses to open on PostgreSQL and leaves the file alone', async () => {
+    const user = await h.newUser('cy@example.test');
+    const tenantId = await ownerTenantFor(h.db, { id: user.id, name: 'cy' });
+    const cy = { id: user.id, tenantId };
+    // Created while no PostgreSQL server is configured: a SQLite app.
+    await closeHost();
+    configureShell({
+      profile: async () => 'cloud' as const,
+      db: async () => h.db,
+      dataRoot: async () => h.dir,
+      secretMasterKey: async () => CLOUD_MASTER_KEY,
+    });
+    const dir = (await runAs(cy, () => getHost())).dataDir;
+    const file = join(dir, 'app.db');
+    expect(existsSync(file)).toBe(true);
+    const before = statSync(file).mtimeMs;
+    await closeHost();
+    const created = provisioned.length;
+    configureShell({
+      profile: async () => 'cloud' as const,
+      db: async () => h.db,
+      dataRoot: async () => h.dir,
+      secretMasterKey: async () => CLOUD_MASTER_KEY,
+      appDatabase: {
+        config: (schema): DatabaseConfig => ({
+          kind: 'pglite',
+          schema,
+          client: pg,
+        }),
+        provision: async (schema) => {
+          provisioned.push(schema);
+          await pg.exec(`CREATE SCHEMA IF NOT EXISTS "${schema}"`);
+        },
+      },
+    });
+    await expect(runAs(cy, () => getHost())).rejects.toThrow(/SQLite file/);
+    expect(provisioned.length).toBe(created);
+    expect(existsSync(file)).toBe(true);
+    expect(statSync(file).mtimeMs).toBe(before);
   });
 });

@@ -536,9 +536,19 @@ async function directoriesFor(
 async function liveDatabase(
   holder: Holder,
   store: ShellVersionStore,
+  liveDir: string,
 ): Promise<DatabaseConfig | null> {
   const provider = requireContext().appDatabase;
   if (!provider || holder.tenantId === null) return null;
+  // An app that already lives in a SQLite file is never opened on a new, empty
+  // PostgreSQL schema: its rows would seem to vanish and new writes would
+  // diverge from the file. Fail closed until an explicit migration (#5193)
+  // moves it. A PostgreSQL app keeps no app.db.
+  if (existsSync(join(liveDir, 'app.db')))
+    throw new EngineError(
+      'this app still lives in a SQLite file; an explicit migration to PostgreSQL is required before it can open',
+      'refused',
+    );
   const app = await store.appRow();
   const schema = appSchemaName(holder.tenantId, app.id as string);
   await provider.provision(schema);
@@ -587,7 +597,7 @@ async function openLive(holder: Holder): Promise<AppHost> {
   const store = new ShellVersionStore(db, holder.pin);
   const dirs = await directoriesFor(holder, store);
   mkdirSync(dirs.live, { recursive: true, mode: 0o700 });
-  const database = await liveDatabase(holder, store);
+  const database = await liveDatabase(holder, store, dirs.live);
   const host = await AppHost.open(dirs.live, {
     store,
     workerUrl: workerUrl(),
