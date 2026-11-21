@@ -164,11 +164,14 @@ rule of `src/request-actor.ts`. Per request (per sync item, per tool call):
    a system actor with a write grant, or a bypass the member opts into; a
    caller with no tenant never writes a tenant-scoped row, rows without an
    owner included), `customActionScope` (a mutating action needs the write
-   gate; a read by a caller with no tenant runs only when its scanned
-   parameters carry the scope: one `options` parameter, or parameters named
-   after every ownership property; the names come from the scanned entry of
-   the receiver dispatched, so a collection method never borrows a same-named
-   item method's, and the server never parses a method's source),
+   gate; on the emitted routes a read by a caller with no tenant runs only
+   when its scanned parameters carry the scope: one `options` parameter, or
+   parameters named after every ownership property, and a method's source is
+   never parsed; runtime REST hands no custom collection action the scope, so
+   it refuses a caller with no tenant every custom collection action of a
+   tenant-scoped model, GET actions included, whatever the method's
+   parameters, and serves it rows without an owner through the CRUD list, get
+   and count only),
    `cachePolicy` (shared caching only when no admitted member is scoped, or,
    with tenancy off, declares tenancy, and every admitted family member's
    reads are public: a member admitted for this caller only makes the rows

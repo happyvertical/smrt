@@ -677,18 +677,17 @@ neither (naming a different tenant than that context is refused with 403).
 A request reaches a model in this order: authentication (`authMiddleware`, or
 the model's `api.public`), then the runtime exposure gate for the request's
 tenant (a switched-off model answers `404` only to an admitted caller), then
-the operation inside the request's tenancy. For a caller with no tenant, a
-custom collection GET action of a tenant-scoped model whose arguments carry
-the read scope (a single `options` parameter, or parameters named after every
-ownership field) runs, and every collection read inside it, of its own model
-or of any other tenant-scoped model, sees rows without an owner only (a
-required-mode model refuses it), whatever it does with its options; every
-other custom collection action is refused. Raw `query()` inside an action is
-governed by the raw-query policy, not by this rule. A method the server has no scanned parameter
-metadata for never carries the scope; generate the manifest so the method's
-parameters are scanned. A refusal because a row belongs to another tenant is a
-plain `403 permission_denied`; a model whose tenancy cannot be resolved, or
-changed while the request was served, is refused with 403.
+the operation inside the request's tenancy. A caller with no tenant is
+refused every custom collection action of a tenant-scoped model, GET actions
+included, whatever the method's parameters; the CRUD list, get and count
+reads are the ones that serve it global rows. A caller with a tenant, or an
+explicitly cross-tenant one, is served custom actions, and every collection
+call inside them, of its own model or of any other tenant-scoped model, is
+held to the request's tenancy. Raw `query()` inside an action is governed by
+the raw-query policy, not by this rule. A refusal because a row belongs to
+another tenant is a plain `403 permission_denied`; a model whose tenancy
+cannot be resolved, or changed while the request was served, is refused with
+403.
 
 **STI families.** A route to an STI model serves rows of a subtype only when
 the subtype's tenancy equals the route model's (scoped or not, mode, ownership
