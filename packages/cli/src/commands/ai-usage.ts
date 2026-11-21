@@ -9,7 +9,9 @@
  *
  * A filter selects what is totalled, never what is accounted for: calls
  * without a prompt key print as unattributed, and rows a `--tenant` filter
- * leaves out are counted under "excluded" rather than vanishing.
+ * leaves out are counted under "excluded" rather than vanishing. Without
+ * `--since` the report covers core's default window (the last 30 days), and
+ * prints it.
  *
  * `--by fusion` also totals fusion runs from `_smrt_ai_runs` (#4753), and
  * `--runs` totals runs of every type (#5005), through `reportAiRuns()`:
@@ -332,7 +334,8 @@ export const aiUsageCommand: CLICommand = {
     },
     since: {
       type: 'string',
-      description: 'Window start: ISO date or relative (24h, 7d, 2w)',
+      description:
+        'Window start: ISO date or relative (24h, 7d, 2w); default: 30 days before the end',
     },
     until: {
       type: 'string',
@@ -409,10 +412,13 @@ export const aiUsageCommand: CLICommand = {
         ...(options.tenant ? { tenantId: options.tenant } : {}),
       };
       const report = await reportAiUsage(db, { by, ...filters });
+      // Runs are totalled over the window the usage report used, so both
+      // tables describe the same period.
+      const runWindow = { ...filters, since: report.since ?? since };
       const runs = options.runs
-        ? await reportAiRuns(db, filters)
+        ? await reportAiRuns(db, runWindow)
         : by.includes('fusion')
-          ? await reportAiRuns(db, { ...filters, type: 'fusion' })
+          ? await reportAiRuns(db, { ...runWindow, type: 'fusion' })
           : undefined;
       const transcripts = transcriptRead
         ? worstLabelledTranscripts(
@@ -448,7 +454,7 @@ export const aiUsageCommand: CLICommand = {
       console.log('\n📊 AI usage\n');
       console.log(`Database: ${formatDatabaseDisplayUrl(dbType, dbUrl)}`);
       console.log(
-        `Window:   ${since ? since.toISOString() : 'all time'} → ${
+        `Window:   ${report.since ? report.since.toISOString() : 'all time'} → ${
           until ? until.toISOString() : 'now'
         }${options.tenant ? `  (tenant ${options.tenant})` : ''}\n`,
       );

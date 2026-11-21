@@ -608,7 +608,11 @@ describe('reportAiUsage', () => {
   });
 
   it('groups by fusion and class, and rejects unknown dimensions', async () => {
-    const report = await reportAiUsage(db, { by: ['fusion', 'class'] });
+    // The whole history, the 2026-10-01 row included.
+    const report = await reportAiUsage(db, {
+      by: ['fusion', 'class'],
+      since: new Date(0),
+    });
     const fusion = report.buckets.find((b) => b.key.fusion === 'pair.review');
     expect(fusion).toMatchObject({ calls: 1, key: { class: 'Doc' } });
     expect(report.totals.calls).toBe(5);
@@ -619,7 +623,10 @@ describe('reportAiUsage', () => {
   });
 
   it('groups by binding source from the source tag (#4756)', async () => {
-    const report = await reportAiUsage(db, { by: ['source'] });
+    const report = await reportAiUsage(db, {
+      by: ['source'],
+      since: new Date(0),
+    });
     expect(report.buckets.find((b) => b.key.source === 'byo')).toMatchObject({
       calls: 1,
     });

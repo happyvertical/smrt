@@ -486,7 +486,9 @@ recorded when the verdict is known. Rules:
 (the `templateHash` tag, #4781). `transcripts: true` adds `transcripts` to each
 bucket and the totals: calls (distinct `entry_call_id`) with a transcript row of
 the same tenant, looked up per page by id; never content, so not audited.
-`tenantId` is a SQL predicate of the usage pages
+`since` defaults to 30 days before `until` (or now) and the report's `since`
+is the start it used, so no caller reads the whole history by accident (the
+inference settings page passes none). `tenantId` is a SQL predicate of the usage pages
 (`idx_smrt_ai_usage_tenant_created`), the evaluation lookups and the
 transcript lookups; `excluded` (other tenants' calls, every external-agent
 measurement in the window) is counted with two `COUNT(*)` queries, so other

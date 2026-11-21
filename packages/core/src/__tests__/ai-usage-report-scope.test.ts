@@ -25,6 +25,8 @@ afterEach(async () => {
   await closeAiRunTestDatabases();
 });
 
+const DAY = 86_400_000;
+
 async function usage(
   db: DatabaseInterface,
   id: string,
@@ -154,6 +156,43 @@ describe.each(aiRunTestEngines)('usage report scope on %s', (engine) => {
     expect(all.excluded.externalAgent).toBe(1);
     expect(one.totals.calls).toBe(all.totals.calls);
     expect(one.excluded.externalAgent).toBe(all.excluded.externalAgent);
+  });
+
+  it('covers the last 30 days without since, and the whole history when asked', async () => {
+    const db = await newAiRunTestDatabase(engine);
+    const now = new Date();
+    await usage(
+      db,
+      'scope-recent',
+      'tenant-one',
+      new Date(now.getTime() - DAY),
+    );
+    await usage(
+      db,
+      'scope-old',
+      'tenant-one',
+      new Date(now.getTime() - 45 * DAY),
+    );
+
+    const report = await reportAiUsage(db, { tenantId: 'tenant-one' });
+    expect(report.totals.calls).toBe(1);
+    expect(report.since).toBeInstanceOf(Date);
+    const start = (report.since as Date).getTime();
+    expect(start).toBeGreaterThan(now.getTime() - 30 * DAY - 60_000);
+    expect(start).toBeLessThanOrEqual(Date.now() - 30 * DAY + 60_000);
+
+    // The default window ends at `until` when one is given.
+    const until = new Date(now.getTime() - 40 * DAY);
+    const earlier = await reportAiUsage(db, { tenantId: 'tenant-one', until });
+    expect(earlier.totals.calls).toBe(1);
+    expect(earlier.since?.getTime()).toBe(until.getTime() - 30 * DAY);
+
+    const whole = await reportAiUsage(db, {
+      tenantId: 'tenant-one',
+      since: new Date(0),
+    });
+    expect(whole.totals.calls).toBe(2);
+    expect(whole.since?.getTime()).toBe(0);
   });
 
   it('reads one tenant runs only in the run report', async () => {
