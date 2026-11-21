@@ -28,7 +28,11 @@ import { createSmrtSvelteKitRuntime } from '@happyvertical/smrt-app-runtime/svel
 import './registry.ts';
 import '../objects/index.ts';
 import { installChangeFeedPolicy } from './change-feed.ts';
-import { configureShell, type ShellProfile } from './host.ts';
+import {
+  configureShell,
+  type ShellContext,
+  type ShellProfile,
+} from './host.ts';
 import { lifecycleFromEnv } from './host-lifecycle.ts';
 import { installShellInference } from './inference.ts';
 import { prepareShellSchema } from './schema.ts';
@@ -66,6 +70,33 @@ function cloudDataRoot(): string {
   return root;
 }
 
+/**
+ * Cloud: every tenant's app data on the deployment's PostgreSQL, one schema per
+ * app (`host.ts` names it from the tenant and app ids and asks this to create
+ * it). The server is `DATABASE_URL`, the one the shell's own tables use. Absent
+ * (no URL), the apps stay SQLite files under the data root.
+ */
+function cloudAppDatabase(): ShellContext['appDatabase'] {
+  const url = process.env.DATABASE_URL;
+  if (!url) return undefined;
+  return {
+    config: (schema) => ({
+      kind: 'postgres',
+      schema,
+      connection: { url, max: 2 },
+    }),
+    provision: async (schema) => {
+      // The name is derived from two ids (`appSchemaName`); refuse anything else
+      // before it is put in a statement.
+      if (!/^app_[0-9a-f]{32}$/.test(schema))
+        throw new Error('not an app schema name');
+      await (await runtime.deployedRuntime()).db.query(
+        `CREATE SCHEMA IF NOT EXISTS "${schema}"`,
+      );
+    },
+  };
+}
+
 configureShell({
   profile: profileOfRuntime,
   db: async () =>
@@ -80,6 +111,8 @@ configureShell({
   secretMasterKey: () => runtime.secretMasterKey(),
   // Hosted only (the desktop ignores it): how many apps this process keeps.
   lifecycle: lifecycleFromEnv(),
+  // Cloud only (a local owner's app is a file in the data root).
+  appDatabase: cloudAppDatabase(),
 });
 
 // Keys saved in Settings and stored tier bindings apply to every inference
