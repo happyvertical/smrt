@@ -357,22 +357,12 @@ async function claim(
       'RECONCILIATION_REQUIRED',
       'The prior payment push outcome is unknown and must be reconciled',
     );
-  // A push released because the provider never received it keeps its request
-  // id: the provider dedups on it, so a slow original that lands later cannot
-  // become a second payment. Changed facts mean a new id, which a person decides.
-  if (
-    row.lastError === 'ABSENT_AT_PROVIDER' &&
-    row.requestId !== request.requestId
-  )
-    refuse(
-      'RECONCILIATION_REQUIRED',
-      'The payment facts changed after its push was released; reconcile it',
-    );
   const taken = await input.db.query(
     `UPDATE accounting_payment_syncs
         SET status = 'in_flight', attempt_id = ?, request_id = ?, payload_hash = ?,
             request_json = ?, started_at = ?, last_error = ''
       WHERE id = ? AND tenant_id = ? AND status = 'rejected' AND attempt_id = ?
+        AND (pinned_request_id = '' OR pinned_request_id = ?)
       RETURNING id`,
     attemptId,
     request.requestId,
@@ -382,9 +372,30 @@ async function claim(
     row.id,
     input.tenantId,
     row.attemptId,
+    request.requestId,
   );
-  if (taken.rows.length !== 1)
+  if (taken.rows.length !== 1) {
+    // A push released because the provider never received it keeps its request
+    // id: the provider dedups on it, so a slow original that lands later cannot
+    // become a second payment. Changed facts mean a new id, which a person
+    // decides. (Read in SQL: a cached row could predate the release.)
+    const pinned = await input.db.query(
+      `SELECT pinned_request_id FROM accounting_payment_syncs
+        WHERE id = ? AND tenant_id = ?`,
+      row.id,
+      input.tenantId,
+    );
+    const pin = String(
+      (pinned.rows[0] as { pinned_request_id?: string } | undefined)
+        ?.pinned_request_id ?? '',
+    );
+    if (pin && pin !== request.requestId)
+      refuse(
+        'RECONCILIATION_REQUIRED',
+        'The payment facts changed after its push was released; reconcile it',
+      );
     refuse('SYNC_IN_PROGRESS', 'Another process is pushing this payment');
+  }
   return { kind: 'claimed', attemptId };
 }
 
@@ -584,7 +595,8 @@ export async function reconcileAccountingPaymentSync(
   } else {
     applied = await input.db.query(
       `UPDATE accounting_payment_syncs
-          SET status = 'rejected', last_error = 'ABSENT_AT_PROVIDER'
+          SET status = 'rejected', last_error = 'ABSENT_AT_PROVIDER',
+              pinned_request_id = request_id
         WHERE id = ? AND tenant_id = ? AND status = ? AND request_id = ?
           AND attempt_id = ?
         RETURNING id`,

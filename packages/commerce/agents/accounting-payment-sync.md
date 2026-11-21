@@ -47,9 +47,11 @@ provider payment (other than ones this tenant already synced) returns
 payment cannot be attributed to this push from the document). Absence is proven
 only by a complete read of this company's invoice: a partial read or one for
 another realm, tenant or invoice returns `inconclusive`. A failed read throws
-and changes nothing. A released push keeps its request id so the provider's
-dedup still covers a slow original; if the facts changed since, the retry throws
-`RECONCILIATION_REQUIRED` and sends nothing.
+and changes nothing. A released push keeps its request id for good
+(`pinnedRequestId`, set by the release and never cleared, enforced in the
+atomic takeover) so the provider's dedup still covers a slow original; if the
+facts changed since, every later retry throws `RECONCILIATION_REQUIRED` and
+sends nothing.
 
 The local `Payment` row is not edited; `AccountingPaymentSync.externalId` is the
 provider id. Payments cannot be un-applied by this module: if allocations change

@@ -1122,6 +1122,37 @@ describe('payment sync and readback (#5139)', () => {
       void s;
     });
 
+    it('keeps the request id pinned through later rejections', async () => {
+      const { s, paymentId } = await unknownPush();
+      await inTenant(() =>
+        resolveUnknownPaymentSync({
+          db,
+          tenantId: TENANT,
+          paymentId,
+          reader: readerOf([]),
+        }),
+      );
+      // The retry is rejected (e.g. a dead grant), which clears the release marker.
+      const dead = port(async () => {
+        throw Object.assign(new Error('x'), { outcome: 'rejected' });
+      });
+      await expect(run(paymentId, dead.impl)).rejects.toThrow('x');
+      expect(await rowOf(paymentId)).toMatchObject({
+        status: 'rejected',
+        lastError: 'REJECTED',
+      });
+      await setAccountingMapping({ db }, s.scope, {
+        kind: 'deposit_account',
+        localId: 'default',
+        externalId: 'qb-other-clearing',
+      });
+      const changed = port();
+      await expect(run(paymentId, changed.impl)).rejects.toMatchObject({
+        code: 'RECONCILIATION_REQUIRED',
+      });
+      expect(changed.calls).toHaveLength(0);
+    });
+
     it('changes nothing when the provider cannot be read', async () => {
       const { paymentId } = await unknownPush();
       await expect(

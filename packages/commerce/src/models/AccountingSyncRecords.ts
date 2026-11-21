@@ -124,6 +124,13 @@ export class AccountingPaymentSync extends SmrtObject {
   /** Short error code of the last failure (never provider text). */
   lastError: string = '';
 
+  /**
+   * Request id of a push that was `unknown` and then released as absent at the
+   * provider. Never cleared: every later attempt must reuse it, because the
+   * provider dedups on it and the original may still land late.
+   */
+  pinnedRequestId: string = '';
+
   /** Refuses writes outside the commands and any change of key. */
   override async save(options?: SmrtSaveOptions): Promise<this> {
     if (!writing.has(this))
