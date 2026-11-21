@@ -1,6 +1,7 @@
-// The generated `_changes` / `_events` routes serve any signed-in principal
-// unless a table authorizer is registered. The shell has one person; make
-// that explicit: only the owner reads the change feed.
+// Without a registered table authorizer, the generated `_changes` / `_events`
+// routes serve every signed-in principal the tables of the models a list
+// route would serve. The shell has one person: only the owner reads the
+// change feed, and this authorizer replaces that default.
 import {
   ObjectRegistry,
   setChangeFeedAuthorizer,
