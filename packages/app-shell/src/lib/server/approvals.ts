@@ -24,6 +24,7 @@ import {
 import { publish } from './events.ts';
 import { getHost, getShellDb } from './host.ts';
 import { assertOwner } from './owner.ts';
+import { ownerResult, ownerText } from './owner-text.ts';
 import { publicChangeResult } from './results.ts';
 
 /** What an approval runs once the owner says yes. */
@@ -333,7 +334,10 @@ export function returnedFailure(
     const first = Array.isArray(r.content)
       ? (r.content[0] as { text?: string } | undefined)
       : undefined;
-    return first?.text?.slice(0, 500) || 'the tool reported an error';
+    return (
+      (first?.text ? ownerText(first.text, 'approval') : '').slice(0, 500) ||
+      'the tool reported an error'
+    );
   }
   if (kind === 'rest' && typeof r?.status === 'number') {
     if (r.status < 200 || r.status > 299) {
@@ -431,6 +435,9 @@ export async function decideApproval(
         );
       // The host reports some failures by returning them (a tool's isError,
       // a non-2xx REST response) instead of throwing: they did not apply.
+      // Every content item and structuredContent of an error result is
+      // owner-safe before it is stored as `pending` or shown (#5464).
+      result = ownerResult(result, 'approval');
       if (error === undefined) error = returnedFailure(action.kind, result);
     } catch (e) {
       if (e instanceof ApprovalRequiredError && action.kind === 'command') {
@@ -448,7 +455,11 @@ export async function decideApproval(
         result = pending;
         error =
           'The affected record counts increased. Review the new approval before applying this change.';
-      } else error = e instanceof Error ? e.message : String(e);
+      } else
+        error = ownerText(
+          e instanceof Error ? e.message : String(e),
+          'approval',
+        );
     }
     row.status = error === undefined ? 'approved' : 'failed';
     await authority.complete(
