@@ -83,12 +83,16 @@ source (`sourceQualified` + `sourceImportPath`) the same way, inherited fields
 included: a field a provider parent contributes that names one of the
 provider's own models is given that identity. `related` / `source` become the
 declaring class; a column written after the class name (`'Room.code'`) stays,
-so the constraint references that column. Because schema generation, `known()` and the runtime look a
-target up by simple name, a confirmed target whose simple name another class
-of this manifest, or of a dependency manifest those lookups read
-(`parentPackages`), also declares throws `CONFIG_AMBIGUOUS_RELATIONSHIP_TARGET`;
-an app class that extends the target and shares its table (a #4921
-replacement) is exempt. Foreign-key reconciliation takes a confirmed target's
+so the constraint references that column. A confirmed target is pinned to one
+declaration, so another class of its simple name (smrt-ledgers and
+smrt-messages both declare `Account`) does not make it ambiguous. A target or
+report source written as a bare name resolves to the referring class's own
+package's model of that name; without one, `assertKnownTargets` throws
+`CONFIG_AMBIGUOUS_RELATIONSHIP_TARGET` when it matches more than one model of
+this manifest or of a manifest it reads (`parentPackages`), listing the
+candidates and the import that pins each; an
+app class that extends a candidate and shares its table (a #4921 replacement)
+is not a second candidate. Foreign-key reconciliation takes a confirmed target's
 schema by identity (`qualifiedTargetSchema`), so the constraint keeps the
 provider's table, key column and declared `onDelete` (adding it to a deployed
 database: [upgrading](../../scanner/agents/static-config.md#upgrading-foreign-keys-to-another-packages-model),

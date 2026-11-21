@@ -1218,8 +1218,38 @@ export class ManifestGenerator {
       });
     };
     // A target the scanner traced to a package export (`@pkg:Export`) was
-    // confirmed by identity in `confirmPackageTargets`.
+    // confirmed by identity in `confirmPackageTargets`. A bare name resolves
+    // to the referring class's own package's model of that name, as schema
+    // generation resolves it (`findForeignKeyTargetSchema`); without one it
+    // must match exactly one model this manifest or a package it reads has.
     const unknown: string[] = [];
+    const ambiguous: string[] = [];
+    const unique = (
+      where: string,
+      target: string,
+      owner: SmartObjectDefinition,
+    ): void => {
+      if (isQualifiedName(target)) return;
+      const className = target.split('.')[0];
+      const ownPackage = owner.packageName ?? manifest.packageName;
+      const ownModel = Object.values(manifest.objects).some(
+        (candidate) =>
+          candidate.className === className &&
+          (candidate.packageName ?? manifest.packageName) === ownPackage,
+      );
+      if (ownModel) return;
+      const candidates = this.modelsNamed(manifest, className);
+      if (candidates.length < 2) return;
+      ambiguous.push(
+        `${where} names "${target}", which matches ${candidates.map((candidate) => candidate.label).join(', ')}; ` +
+          `import the one you mean and pass the class, e.g. ${candidates
+            .map(
+              (candidate) =>
+                `import { ${className} } from ${candidate.importFrom} for ${candidate.identity}`,
+            )
+            .join(', or ')}`,
+      );
+    };
     for (const obj of Object.values(manifest.objects)) {
       for (const [fieldName, field] of Object.entries(obj.fields ?? {})) {
         if (
@@ -1235,6 +1265,8 @@ export class ManifestGenerator {
           unknown.push(`${where} names no target`);
         } else if (!known(field.related)) {
           unknown.push(`${where} targets "${field.related}"`);
+        } else {
+          unique(where, field.related, obj);
         }
       }
       const report = obj.decoratorConfig?.report as
@@ -1262,9 +1294,16 @@ export class ManifestGenerator {
         if (!holder) continue;
         if (typeof holder.sourceQualified === 'string') continue;
         const source = holder.source;
-        if (typeof source === 'string' && source !== '' && !known(source)) {
+        if (typeof source !== 'string' || source === '') continue;
+        if (!known(source)) {
           unknown.push(
             `${obj.className} (${obj.filePath}): @report() ${path} is "${source}"`,
+          );
+        } else {
+          unique(
+            `${obj.className} (${obj.filePath}): @report() ${path}`,
+            source,
+            obj,
           );
         }
       }
@@ -1279,6 +1318,16 @@ export class ManifestGenerator {
         { targets: unknown },
       );
     }
+    if (ambiguous.length > 0) {
+      throw new ConfigurationError(
+        `A relationship target or report source written as a bare name is looked up by that name, so it must ` +
+          `match exactly one model this package or a package it reads declares; these match more than one:\n  ` +
+          `${ambiguous.join('\n  ')}\n` +
+          `Pass the imported class instead of its name: an imported class is resolved to its one declaration.`,
+        'CONFIG_AMBIGUOUS_RELATIONSHIP_TARGET',
+        { targets: ambiguous },
+      );
+    }
   }
 
   /**
@@ -1287,54 +1336,16 @@ export class ManifestGenerator {
    * inherited fields included, and record the declaring class as the simple
    * target. Runs after inheritance and before schema generation.
    *
-   * A confirmed target must also be unambiguous by its simple name: schema
-   * generation, `known()` and the runtime look targets up by it, so a
-   * different class of that name in this manifest, or in a dependency
-   * manifest those lookups read, would take the relationship. That fails with
-   * `CONFIG_AMBIGUOUS_RELATIONSHIP_TARGET`, except for an app class that
-   * replaces the target (#4921: same name, it extends the target, shares its
-   * table), which is the same table either way.
+   * A confirmed target is pinned to one declaration: schema generation takes
+   * its table by identity (`qualifiedTargetSchema`) and the runtime resolves
+   * it by constructor and qualified name, so another package's model of the
+   * same simple name (smrt-ledgers and smrt-messages both declare `Account`)
+   * does not make it ambiguous. Only a target written as a bare name can be;
+   * `assertKnownTargets` refuses that.
    */
   private confirmPackageTargets(manifest: SmartObjectManifest): void {
     const root = this.dependencyScope?.root ?? process.cwd();
     const unknown: string[] = [];
-    const ambiguous: string[] = [];
-    const tableOf = (definition: SmartObjectDefinition) =>
-      definition.schema?.tableName ??
-      definition.decoratorConfig?.tableName ??
-      this.classNameToTableName(definition.className);
-    const readPackages = this.parentPackages(manifest);
-    const namesakes = (
-      qualified: string,
-      definition: SmartObjectDefinition,
-    ): string[] => {
-      const identity = `${parseQualifiedName(qualified).packageName}:${definition.className}`;
-      const replaces = (candidate: SmartObjectDefinition) =>
-        candidate.extendsQualified === identity &&
-        tableOf(candidate) === tableOf(definition);
-      const found: string[] = [];
-      for (const candidate of Object.values(manifest.objects)) {
-        if (candidate.className !== definition.className) continue;
-        if (replaces(candidate)) continue;
-        found.push(
-          `${candidate.qualifiedName ?? candidate.className} (${candidate.filePath})`,
-        );
-      }
-      for (const packageName of readPackages) {
-        if (packageName === parseQualifiedName(qualified).packageName) continue;
-        const dependency = this.loadDependencyManifest(packageName, {
-          warn: false,
-        });
-        for (const candidate of Object.values(dependency?.objects ?? {})) {
-          if (candidate.className !== definition.className) continue;
-          if (replaces(candidate as SmartObjectDefinition)) continue;
-          found.push(
-            `${candidate.qualifiedName ?? `${packageName}:${candidate.className}`} (dependency ${packageName})`,
-          );
-        }
-      }
-      return found;
-    };
     const confirm = (
       where: string,
       qualified: string,
@@ -1356,12 +1367,6 @@ export class ManifestGenerator {
       if ('reason' in confirmed) {
         unknown.push(`${where} is ${qualified}: ${confirmed.reason}`);
         return undefined;
-      }
-      const others = namesakes(qualified, confirmed.definition);
-      if (others.length > 0) {
-        ambiguous.push(
-          `${where} is ${qualified}, but ${others.join(', ')} ${others.length === 1 ? 'shares' : 'share'} its name ${confirmed.definition.className}`,
-        );
       }
       return confirmed.definition;
     };
@@ -1444,15 +1449,79 @@ export class ManifestGenerator {
         { targets: unknown },
       );
     }
-    if (ambiguous.length > 0) {
-      throw new ConfigurationError(
-        `A relationship target or report source imported from another package must be the only class of its ` +
-          `name that generation and the runtime can see, because both look targets up by that name:\n  ${ambiguous.join('\n  ')}\n` +
-          `Rename one of the classes, or reference the class of this package instead.`,
-        'CONFIG_AMBIGUOUS_RELATIONSHIP_TARGET',
-        { targets: ambiguous },
-      );
+  }
+
+  /**
+   * The distinct models named `className` that a bare-name lookup can reach:
+   * this manifest's and those of every package it reads (`parentPackages`).
+   * An app class that replaces another of them (#4921: it extends that class
+   * and shares its table) is the same table, so it is not a second candidate.
+   */
+  private modelsNamed(
+    manifest: SmartObjectManifest,
+    className: string,
+  ): Array<{ identity: string; label: string; importFrom: string }> {
+    const tableOf = (definition: SmartObjectDefinition) =>
+      definition.schema?.tableName ??
+      definition.decoratorConfig?.tableName ??
+      this.classNameToTableName(definition.className);
+    const found = new Map<
+      string,
+      {
+        identity: string;
+        label: string;
+        importFrom: string;
+        definition: SmartObjectDefinition;
+      }
+    >();
+    for (const candidate of Object.values(manifest.objects)) {
+      if (candidate.className !== className) continue;
+      const identity =
+        candidate.qualifiedName ??
+        (manifest.packageName
+          ? createQualifiedName(manifest.packageName, className)
+          : className);
+      found.set(identity, {
+        identity,
+        label: `${identity} (${candidate.filePath})`,
+        importFrom: `the file that declares it (${candidate.filePath})`,
+        definition: candidate,
+      });
     }
+    for (const packageName of this.parentPackages(manifest)) {
+      const dependency = this.loadDependencyManifest(packageName, {
+        warn: false,
+      });
+      for (const candidate of Object.values(dependency?.objects ?? {})) {
+        if (candidate.className !== className) continue;
+        const identity =
+          candidate.qualifiedName ??
+          createQualifiedName(packageName, className);
+        if (found.has(identity)) continue;
+        found.set(identity, {
+          identity,
+          label: `${identity} (dependency ${packageName})`,
+          importFrom: `'${packageName}'`,
+          definition: candidate as SmartObjectDefinition,
+        });
+      }
+    }
+    const all = [...found.values()];
+    return all
+      .filter(
+        (candidate) =>
+          !all.some(
+            (other) =>
+              other !== candidate &&
+              candidate.definition.extendsQualified === other.identity &&
+              tableOf(candidate.definition) === tableOf(other.definition),
+          ),
+      )
+      .map(({ identity, label, importFrom }) => ({
+        identity,
+        label,
+        importFrom,
+      }));
   }
 
   /** The qualified identity of `definition`, declared in `qualified`'s package. */

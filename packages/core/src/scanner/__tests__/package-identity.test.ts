@@ -730,7 +730,7 @@ ${extra}}
     });
   });
 
-  it('fails a package target that a local model’s name shadows, before any DDL', async () => {
+  it('references the provider table for an imported package target beside a local model of its name', async () => {
     const root = await project({
       providers: { [VENDOR]: { files: { 'src/ProductionRun.ts': RUN } } },
       app: {
@@ -739,32 +739,102 @@ ${extra}}
       },
     });
 
-    await expect(build(root)).rejects.toMatchObject({
-      code: 'CONFIG_AMBIGUOUS_RELATIONSHIP_TARGET',
-      message: expect.stringContaining(`${APP}:ProductionRun`),
-    });
+    const manifest = await build(root);
+    const field = manifest.objects[`${APP}:WorkOrder`]?.fields.productionRunId;
+    expect(field?.relatedQualified).toBe(`${VENDOR}:ProductionRun`);
+    expect(
+      manifest.objects[`${APP}:WorkOrder`]?.schema?.columns.production_run_id
+        ?.foreignKey?.table,
+    ).toBe('production_runs');
   });
 
-  it('fails a package target that another dependency also declares', async () => {
-    const root = await project({
-      providers: {
-        [VENDOR]: { files: { 'src/ProductionRun.ts': RUN } },
-        [OTHER]: {
-          files: {
-            'src/ProductionRun.ts': RUN.replace(
-              'production_runs',
-              'other_runs',
-            ),
-          },
-        },
+  // Two installed packages with a model of one name (smrt-ledgers and
+  // smrt-messages both declare `Account`): an imported class is one declaration.
+  const twoRuns = {
+    [VENDOR]: { files: { 'src/ProductionRun.ts': RUN } },
+    [OTHER]: {
+      files: {
+        'src/ProductionRun.ts': RUN.replace('production_runs', 'other_runs'),
       },
+    },
+  };
+
+  it('references the imported provider table when another dependency declares a model of its name', async () => {
+    const root = await project({
+      providers: twoRuns,
       app: { 'src/WorkOrder.ts': order() },
     });
 
+    const manifest = await build(root);
+    const field = manifest.objects[`${APP}:WorkOrder`]?.fields.productionRunId;
+    expect(field?.relatedQualified).toBe(`${VENDOR}:ProductionRun`);
+    expect(
+      manifest.objects[`${APP}:WorkOrder`]?.schema?.columns.production_run_id
+        ?.foreignKey?.table,
+    ).toBe('production_runs');
+  });
+
+  it('fails a bare-name target that models of two dependencies share, listing both and the imports that qualify it', async () => {
+    const root = await project({
+      providers: twoRuns,
+      app: {
+        'src/WorkOrder.ts': `${CORE}\n@smrt()\nexport class WorkOrder extends SmrtObject {\n  @foreignKey('ProductionRun') productionRunId = '';\n}\n`,
+      },
+    });
+
+    const failure = build(root);
+    await expect(failure).rejects.toMatchObject({
+      code: 'CONFIG_AMBIGUOUS_RELATIONSHIP_TARGET',
+    });
+    const message = await failure.catch((error: Error) => error.message);
+    expect(message).toContain(`${VENDOR}:ProductionRun`);
+    expect(message).toContain(`${OTHER}:ProductionRun`);
+    expect(message).toContain(`import { ProductionRun } from '${VENDOR}'`);
+    expect(message).toContain(`import { ProductionRun } from '${OTHER}'`);
+  });
+
+  it('fails a bare-name report source that models of two dependencies share', async () => {
+    const root = await project({
+      providers: twoRuns,
+      app: {
+        'src/RunReport.ts': `${CORE}\n@report({ source: 'ProductionRun' })\nexport class RunReport extends SmrtObject {\n  total = 0;\n}\n`,
+      },
+    });
+
     await expect(build(root)).rejects.toMatchObject({
       code: 'CONFIG_AMBIGUOUS_RELATIONSHIP_TARGET',
-      message: expect.stringContaining(OTHER),
+      message: expect.stringContaining(`${OTHER}:ProductionRun`),
     });
+  });
+
+  it('takes the own-package model for a bare-name target that two dependencies also declare', async () => {
+    const root = await project({
+      providers: twoRuns,
+      app: {
+        'src/ProductionRun.ts': `${CORE}\n@smrt({ tableName: 'app_runs' })\nexport class ProductionRun extends SmrtObject {}\n`,
+        'src/WorkOrder.ts': `${CORE}\n@smrt()\nexport class WorkOrder extends SmrtObject {\n  @foreignKey('ProductionRun') productionRunId = '';\n}\n`,
+      },
+    });
+
+    const manifest = await build(root);
+    expect(
+      manifest.objects[`${APP}:WorkOrder`]?.schema?.columns.production_run_id
+        ?.foreignKey?.table,
+    ).toBe('app_runs');
+  });
+
+  it('accepts a bare-name target that one dependency alone declares', async () => {
+    const root = await project({
+      providers: { [VENDOR]: twoRuns[VENDOR] },
+      app: {
+        'src/WorkOrder.ts': `${CORE}\n@smrt()\nexport class WorkOrder extends SmrtObject {\n  @foreignKey('ProductionRun') productionRunId = '';\n}\n`,
+      },
+    });
+
+    const manifest = await build(root);
+    expect(
+      manifest.objects[`${APP}:WorkOrder`]?.fields.productionRunId?.related,
+    ).toBe('ProductionRun');
   });
 
   it('accepts a package target that an app replacement shares its table with', async () => {
@@ -1084,7 +1154,7 @@ ${extra}}
     expect(column?.type).toBe('INTEGER');
   });
 
-  it('fails for a target a provider parent contributes when an app model shares its name', async () => {
+  it('references the provider table for a target a provider parent contributes beside an app model of its name', async () => {
     const root = await project({
       providers: {
         [VENDOR]: {
@@ -1100,9 +1170,11 @@ ${extra}}
       },
     });
 
-    await expect(build(root)).rejects.toMatchObject({
-      code: 'CONFIG_AMBIGUOUS_RELATIONSHIP_TARGET',
-    });
+    const manifest = await build(root);
+    expect(
+      manifest.objects[`${APP}:Session`]?.schema?.columns.room_id?.foreignKey
+        ?.table,
+    ).toBe('vendor_rooms');
   });
 });
 
