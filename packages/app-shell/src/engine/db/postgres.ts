@@ -12,6 +12,7 @@
 import { getDatabase } from '@happyvertical/sql';
 import { EngineError } from '../errors.ts';
 import { createBridgeClient } from './pglite-bridge.ts';
+import { releaseAppLock, tryAppLock } from './postgres-copy.ts';
 import { assertSchemaName } from './schema-name.ts';
 import type { DatabaseConfig, WorkerDatabaseConfig } from './types.ts';
 
@@ -225,5 +226,42 @@ export async function openAdmin(
         client.transaction((tx) => cb(wrap(tx))),
     },
     close: async () => {},
+  };
+}
+
+/**
+ * Claim an app on a PostgreSQL SERVER for this host (#5187): one host process
+ * per app, because a host's start-up recovery and sweep drop the app's side
+ * schemas, which a second host's publish or draft would be using. A session
+ * advisory lock on a connection of its own (never pooled with anything else,
+ * never idle-closed) is held until the returned release runs or the process
+ * ends; a connection the network drops frees the lock server-side. Refuses
+ * with an `EngineError` when another host holds it. PGlite is one process's
+ * own instance: nothing to claim there.
+ */
+export async function claimApp(
+  config: DatabaseConfig,
+): Promise<(() => Promise<void>) | undefined> {
+  if (config.kind !== 'postgres') return undefined;
+  const raw: Handle = await getDatabase({
+    type: 'postgres',
+    ...config.connection,
+    max: 1,
+    idleTimeoutMillis: 0,
+    cache: false,
+  } as any);
+  try {
+    if (!(await tryAppLock(raw, config.schema)))
+      throw new EngineError(
+        `another host already runs the app in schema ${config.schema}; one host per app. Stop it, or point this host at its own schema.`,
+        'refused',
+      );
+  } catch (e) {
+    await raw.close?.().catch(() => {});
+    throw e;
+  }
+  return async () => {
+    await releaseAppLock(raw, config.schema).catch(() => {});
+    await raw.close?.().catch(() => {});
   };
 }

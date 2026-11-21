@@ -530,6 +530,30 @@ export async function listSideSchemas(
     .map((r) => String(r.nspname));
 }
 
+/** The namespace half of an app's advisory lock key (the other half is the app's schema). */
+const APP_LOCK_NAMESPACE = 'smrt-app-shell';
+const appLockKey = (schema: string) =>
+  `hashtext(${lit(APP_LOCK_NAMESPACE)}), hashtext(${lit(schema)})`;
+
+/**
+ * Take the session-level advisory lock that says "this process hosts app
+ * `schema`" (#5187). It is held by the session that took it until that
+ * session ends, so the caller keeps one connection open for the host's life.
+ * False when another session already holds it: a second host for the same app
+ * would sweep and recover over the first one's live side schemas.
+ */
+export async function tryAppLock(db: SqlRunner, schema: string) {
+  assertSchemaName(schema);
+  const got = asRows(
+    await db.query(`SELECT pg_try_advisory_lock(${appLockKey(schema)}) AS got`),
+  )[0]?.got;
+  return got === true || got === 't' || got === 'true';
+}
+
+/** Give the lock back early (closing the session does the same). */
+export const releaseAppLock = (db: SqlRunner, schema: string) =>
+  db.query(`SELECT pg_advisory_unlock(${appLockKey(schema)})`);
+
 /** True when `schema` exists. */
 export async function schemaExists(tx: SqlRunner, schema: string) {
   return (

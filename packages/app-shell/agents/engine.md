@@ -159,6 +159,18 @@ for the one operation on the host thread; a PGlite uses the host's client).
   transaction rolls back and the connection is released. The role needs UPDATE,
   DELETE or TRUNCATE on each table. Tested by statement recording (PGlite is
   one connection) plus a held-open writer on a real server.
+- **One live host per app (PostgreSQL server).** Start-up recovery
+  (`reconcilePgPublish`, which runs FIRST while the journal still says what was
+  going on) and then the sweep drop the app's `r`/`o`/`n` schemas, which a second host's
+  publish or restore would be using. So a live `AppHost.open` first claims the
+  app (`claimApp`): `pg_try_advisory_lock(hashtext('smrt-app-shell'),
+  hashtext(<app schema>))` on a connection of its own (`max: 1`, never
+  idle-closed, never shared), held until `close()` or process end (a dropped
+  connection frees it server-side), and refuses with "another host already runs
+  the app" when it is taken, before touching anything. A draft host is claimed by
+  its live host; PGlite and SQLite claim nothing. Tested by `app-lock.test.ts`
+  (modelled lock semantics and statement recording) and, on a real server, by
+  `postgres-server.test.ts`.
 - **Fork** (a draft, a publish rehearsal): a live schema beside the app's, in one transaction (a
   failure leaves none). `forkDraft` writes the name in the draft marker
   (`schema`, `liveSchema`); `AppHost.open` on that directory takes the live app's database

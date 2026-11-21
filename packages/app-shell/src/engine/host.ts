@@ -28,6 +28,7 @@ import {
 import { assertLoadBounds, type LoadPreview } from './data-migrations.ts';
 import {
   assertDatabaseConfig,
+  claimAppDatabase,
   copySuffix,
   type DatabaseConfig,
   dialectFor,
@@ -454,15 +455,20 @@ export class AppHost extends EventEmitter {
         'this draft is a SQLite copy; it cannot open on PostgreSQL',
         'refused',
       );
-    const database: HostDatabase = { config };
-    const host = new AppHost(dataDir, opts, database);
+    // A live host owns its app's side schemas (start-up recovery and the sweep
+    // drop them): claim the app before anything is touched, so a second host
+    // on the same schema refuses instead of dropping the first one's copies.
+    // A draft lives in a schema of its own and is claimed by its live host.
+    const release = marker ? undefined : await claimAppDatabase(config);
+    const database: HostDatabase = { config, release };
     try {
+      const host = new AppHost(dataDir, opts, database);
       await host.boot();
+      return host;
     } catch (e) {
-      await host.releaseDatabase?.();
+      await release?.();
       throw e;
     }
-    return host;
   }
 
   private async boot() {
