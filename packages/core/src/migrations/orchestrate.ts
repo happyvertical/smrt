@@ -18,6 +18,7 @@ import { getDDLStrategy } from '../schema/ddl/index.js';
 import type { DatabaseEngine } from '../schema/ddl/types.js';
 import { planForeignKeyCreation } from '../schema/foreign-key-planner.js';
 import type { MigrationResult, SchemaChange } from '../schema/types.js';
+import { ensureSystemTables } from '../system/bootstrap.js';
 import { resolveBuildSchema, resolveRetiredTables } from './build-schema.js';
 import { decideSchemaChange, isCommentOnlySql } from './change-kinds.js';
 import {
@@ -38,6 +39,7 @@ import {
   confirmedRetirementsOf,
   packagesSeenInput,
   readLastMigrateRecord,
+  recordMigrateConfirmation,
   recordSuccessfulMigrate,
 } from './migrate-record.js';
 import {
@@ -600,12 +602,32 @@ export async function migrateSmrtSchemas(
     },
   );
 
+  // A confirmed destructive change commits its ledger row in the batch that
+  // performs it, so a run that ends before its record still leaves exactly
+  // that confirmation on the ledger (#5435).
+  const confirmInput =
+    recomputed.length > 0 || confirmedRetirements.length > 0
+      ? recordInput
+      : undefined;
+  if (confirmInput) await ensureSystemTables(options.db, options.engineHint);
   const results = await tracker.applyAll([migration], {
     // Always one atomic batch (#4927). `options.atomic` is kept for callers
     // that already pass `true`; it cannot turn atomic apply off.
     atomic: true,
     postgresSafe: options.postgresSafe ?? true,
     reconcile: options.reconcile ?? true,
+    ...(confirmInput
+      ? {
+          beforeCommit: async (tx: DatabaseInterface) => {
+            await recordMigrateConfirmation(tx, {
+              engineHint: options.engineHint,
+              input: confirmInput,
+              recomputes: recomputed,
+              confirmedRetirements,
+            });
+          },
+        }
+      : {}),
   });
 
   const failed = results.find((result) => !result.success);
@@ -658,11 +680,10 @@ export async function migrateSmrtSchemas(
   }
 
   if (recordInput && !pending.hasManualDrift) {
+    // The confirmations are already on the ledger (written in the batch).
     await recordSuccessfulMigrate(options.db, {
       input: recordInput,
       engineHint: options.engineHint,
-      recomputes: recomputed,
-      confirmedRetirements,
     });
   }
 

@@ -11,6 +11,7 @@ import type {
 import {
   ensureSystemTables,
   runSerializedAgainstSystemTableBootstrap,
+  SYSTEM_TABLE_BOOTSTRAP_LOCK_SQL,
 } from '../system/bootstrap.js';
 import { getDatabaseEngine, tableExists } from '../system/compatibility.js';
 import {
@@ -333,6 +334,64 @@ export async function recordSuccessfulMigrate(
       );
     },
   );
+}
+
+/**
+ * Write a run's confirmed destructive changes (recomputes, retirements over a
+ * definition mismatch) on the ledger inside the transaction that performs
+ * them, so the confirmation is on the append-only ledger if and only if the
+ * change committed (#5435). Pass it as the batch's `beforeCommit`.
+ *
+ * The row repeats the last record's packages and fingerprint, so every
+ * reader (the startup guard, the package check) still sees the database as
+ * migrated exactly as far as before; with no last record, this run's
+ * packages and an empty fingerprint. Completion
+ * ({@link recordSuccessfulMigrate}, without confirmations) then appends the
+ * declarations row. The ledger table must already exist
+ * (`ensureSystemTables` before the batch).
+ *
+ * @returns whether a row was written (false with nothing to confirm).
+ */
+export async function recordMigrateConfirmation(
+  tx: DatabaseInterface,
+  options: MigrateRecordOptions & {
+    input: MigrateRecordInput;
+    recomputes?: readonly ConfirmedRecompute[];
+    confirmedRetirements?: readonly ConfirmedRetirement[];
+  },
+): Promise<boolean> {
+  const recomputes = options.recomputes ?? [];
+  const confirmed = options.confirmedRetirements ?? [];
+  if (!recomputes.length && !confirmed.length) return false;
+  // The same serialization the record's read-then-insert uses, taken after
+  // the batch's DDL and held to its commit.
+  if (getDatabaseEngine(tx, options.engineHint) === 'postgres')
+    await tx.query(SYSTEM_TABLE_BOOTSTRAP_LOCK_SQL);
+  const previous = await readLastMigrateRecord(tx, options);
+  const packages =
+    previous.state === 'recorded'
+      ? previous.record.packages
+      : [...new Set(options.input.packages)].sort();
+  const fingerprint =
+    previous.state === 'recorded' ? previous.record.fingerprint : '';
+  const previousTime =
+    previous.state === 'recorded' ? Date.parse(previous.record.createdAt) : 0;
+  const createdAt = new Date(
+    Math.max(Date.now(), previousTime + 1),
+  ).toISOString();
+  const id = crypto.randomUUID();
+  const serializedPackages = JSON.stringify(packages);
+  const serializedRecomputes = recomputes.length
+    ? JSON.stringify(recomputes)
+    : null;
+  const confirmedRetirements = confirmed.length
+    ? JSON.stringify(confirmed)
+    : null;
+  await tx.execute`
+      INSERT INTO _smrt_migrate_runs (id, release, packages, fingerprint, recomputes, created_at, confirmed_retirements)
+      VALUES (${id}, ${options.input.release}, ${serializedPackages}, ${fingerprint}, ${serializedRecomputes}, ${createdAt}, ${confirmedRetirements})
+    `;
+  return true;
 }
 
 /**

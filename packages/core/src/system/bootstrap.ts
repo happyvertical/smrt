@@ -15,7 +15,8 @@ import {
 } from './compatibility.js';
 import { getSystemTableDDL, SMRT_SCHEMA_VERSION } from './schema.js';
 
-const SYSTEM_TABLE_BOOTSTRAP_LOCK_SQL =
+/** @internal Also taken by the migrate ledger's in-batch confirmation row. */
+export const SYSTEM_TABLE_BOOTSTRAP_LOCK_SQL =
   "SELECT pg_advisory_xact_lock(hashtext('smrt'), hashtext('system-tables'))";
 
 /**

@@ -212,14 +212,23 @@ describe.each(ENGINES)('ordinary to calculated on %s', (engine) => {
       { id: 'a', qty: 3, v: 6 },
       { id: 'b', qty: 4, v: 8 },
     ]);
+    // The confirmation row is written in the batch that recalculated; the
+    // declarations row after it carries none (#5435).
     const recorded = (
+      await db.query(
+        'SELECT recomputes FROM _smrt_migrate_runs WHERE recomputes IS NOT NULL ORDER BY created_at, id',
+      )
+    ).rows;
+    expect(recorded).toHaveLength(1);
+    expect(JSON.parse(String(recorded[0].recomputes))).toEqual([
+      { table: 'items', column: 'v', rows: 1 },
+    ]);
+    const latest = (
       await db.query(
         'SELECT recomputes FROM _smrt_migrate_runs ORDER BY created_at DESC, id DESC LIMIT 1',
       )
     ).rows[0];
-    expect(JSON.parse(String(recorded.recomputes))).toEqual([
-      { table: 'items', column: 'v', rows: 1 },
-    ]);
+    expect(latest.recomputes).toBeNull();
   });
 
   it('refuses the conversion in a table-limited run, even when nothing differs', async () => {
