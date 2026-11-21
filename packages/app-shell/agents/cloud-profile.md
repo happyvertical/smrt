@@ -199,7 +199,10 @@ never a timer, never an eviction (`host-lifecycle.test.ts`, "desktop is unchange
   swap or report that finds no room fails and can be retried. A swap that
   stops the old worker first (migration, restore, publish) keeps its pool's
   share across the gap (`retireApp`), so nothing can take it and the
-  replacement or the rollback is never refused. Transient admin
+  replacement or the rollback is never refused. The handed-over reservation stays the
+  host's until the replacement is ready (a thread that dies first does not
+  release it). A refusal while a wake adopts its draft fails the wake for a retry; it
+  is never stored as a draft problem. Transient admin
   connections beyond the one in `HOST_OVERHEAD` and the shell's own pool are not
   counted. SQLite and PGlite are not counted. A budget below the derived one
   refuses rather than evicts. `hostMetrics()` reports `connections` and

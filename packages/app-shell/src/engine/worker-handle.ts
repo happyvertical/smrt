@@ -104,11 +104,23 @@ export class AppWorker {
   private dead: Error | null = null;
   /** The connections this worker's pool holds in the host's budget; returned when its thread exits. */
   private budget: (() => void) | null = null;
+  /** A handed-over reservation is the host's until `ready` settles: a thread that dies first leaves it parked. */
+  private adopting = false;
+  private exited = false;
   private pending = new Map<
     number,
     { resolve: (v: unknown) => void; reject: (e: Error) => void }
   >();
   readonly ready: Promise<BootInfo>;
+
+  /** The host is done with a worker that may have died before it was ready: return what it still holds. */
+  settleBudget() {
+    this.adopting = false;
+    if (!this.exited) return;
+    const r = this.budget;
+    this.budget = null;
+    r?.();
+  }
 
   /**
    * Hand the pool's reserved connections to the caller, so the thread's exit
@@ -158,6 +170,7 @@ export class AppWorker {
       const pool = database.connection.max ?? limits.connections.poolSize;
       release = reservation ?? limits.connections.take(pool);
       this.budget = release;
+      this.adopting = !!reservation;
       sized = {
         ...database,
         connection: { ...database.connection, max: pool },
@@ -191,9 +204,14 @@ export class AppWorker {
       throw e;
     }
     this.worker.once('exit', () => {
-      const r = this.budget;
-      this.budget = null;
-      r?.();
+      this.exited = true;
+      // Died before it was ready: the host takes the reservation back
+      // (`surrenderBudget`) for the rollback, or `settleBudget` returns it.
+      if (!this.adopting) {
+        const r = this.budget;
+        this.budget = null;
+        r?.();
+      }
       db.dispose();
     });
     const die = (e: Error) => {
@@ -233,6 +251,12 @@ export class AppWorker {
         reject(new WorkerCrashedError('the app stopped before it was ready'));
       });
     });
+    this.ready.then(
+      () => {
+        this.adopting = false;
+      },
+      () => {},
+    );
     // A rejected `ready` nobody awaited (a worker that died later) is not an error.
     this.ready.catch(() => {});
   }

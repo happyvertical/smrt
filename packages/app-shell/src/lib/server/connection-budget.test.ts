@@ -344,38 +344,57 @@ describe('no connections left during a publish check', () => {
   });
 });
 
+type Inner = {
+  database: DatabaseConfig;
+  app: AppWorker;
+  def: Record<string, unknown>;
+  version: number;
+  workerUrl: string;
+  swap(d: unknown, v: number, m?: unknown): Promise<unknown>;
+};
+
+async function stubHost(budget = 2) {
+  const dir = mkdtempSync(join(tmpdir(), 'budget-swap-'));
+  const stub = join(dir, 'stub.mjs');
+  writeFileSync(
+    stub,
+    `import { parentPort, workerData as w } from 'node:worker_threads';
+     if (w.def && w.def.die) process.exit(1); // gone before it is ready
+     parentPort.on('message', () => {});
+     parentPort.postMessage({ ready: true });`,
+  );
+  const l = new HostLifecycle();
+  l.configure({ maxAppConnections: budget });
+  const host = await AppHost.open(join(dir, 'live'), {
+    store: new MemoryVersionStore(),
+    workerUrl: stub,
+    workerLimits: { connections: l.workerBudget },
+  });
+  // Make the host a server PostgreSQL one (the stub never connects anywhere).
+  const inner = host as unknown as Inner;
+  inner.database = {
+    kind: 'postgres',
+    schema: 'app_x',
+    connection: { url: NOWHERE, max: 2 },
+  };
+  await host.restartApp();
+  expect(l.connectionsInUse).toBe(2);
+  return {
+    l,
+    host,
+    inner,
+    done: async () => {
+      await host.close();
+      rmSync(dir, { recursive: true, force: true });
+    },
+  };
+}
+
+const MIGRATION = { steps: [{}], direction: 'up', version: 1 };
+
 describe('a migrating swap holds its pool across the retire', () => {
   it('cannot be left without an app by another taking the freed connections', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'budget-swap-'));
-    const stub = join(dir, 'stub.mjs');
-    writeFileSync(
-      stub,
-      `import { parentPort } from 'node:worker_threads';
-       parentPort.on('message', () => {});
-       parentPort.postMessage({ ready: true });`,
-    );
-    const l = new HostLifecycle();
-    l.configure({ maxAppConnections: 2 });
-    const host = await AppHost.open(join(dir, 'live'), {
-      store: new MemoryVersionStore(),
-      workerUrl: stub,
-      workerLimits: { connections: l.workerBudget },
-    });
-    // Make the host a server PostgreSQL one (the stub never connects anywhere).
-    const inner = host as unknown as {
-      database: DatabaseConfig;
-      app: AppWorker;
-      def: unknown;
-      version: number;
-      swap(d: unknown, v: number, m: unknown): Promise<unknown>;
-    };
-    inner.database = {
-      kind: 'postgres',
-      schema: 'app_x',
-      connection: { url: NOWHERE, max: 2 },
-    };
-    await host.restartApp();
-    expect(l.connectionsInUse).toBe(2);
+    const { l, host, inner, done } = await stubHost();
     // Another app, report or rehearsal asks for connections the moment the
     // old worker is gone.
     let stolen = false;
@@ -389,13 +408,50 @@ describe('a migrating swap holds its pool across the retire', () => {
         /* the budget is still held: nothing to take */
       }
     };
-    const migration = { steps: [{}], direction: 'up', version: 1 };
-    await inner.swap(inner.def, inner.version, migration).catch(() => {});
+    await inner.swap(inner.def, inner.version, MIGRATION).catch(() => {});
     expect(stolen).toBe(false);
     expect(host.appAlive).toBe(true);
     expect(l.connectionsInUse).toBe(2);
-    await host.close();
+    await done();
     expect(l.connectionsInUse).toBe(0);
-    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('keeps it when the replacement dies before it is ready, for the rollback', async () => {
+    const { l, host, inner, done } = await stubHost();
+    let stolen = false;
+    const terminate = AppWorker.prototype.terminate;
+    const spy = vi
+      .spyOn(AppWorker.prototype, 'terminate')
+      .mockImplementation(async function (this: AppWorker) {
+        const r = await terminate.call(this);
+        try {
+          l.takeConnections(2); // another app, once the dead one is cleared
+          stolen = true;
+        } catch {
+          /* still held */
+        }
+        return r;
+      });
+    const err = await inner
+      .swap({ ...inner.def, die: true }, inner.version + 1, MIGRATION)
+      .catch((e) => e);
+    spy.mockRestore();
+    expect(err).toBeInstanceOf(Error);
+    expect(stolen).toBe(false);
+    expect(host.appAlive).toBe(true); // the old app is back
+    expect(l.connectionsInUse).toBe(2);
+    await done();
+    expect(l.connectionsInUse).toBe(0);
+  });
+
+  it('surfaces a worker that cannot start as itself, not as a failed change', async () => {
+    const { host, inner, done } = await stubHost(4); // room for a second pool
+    inner.workerUrl = 'not-a-path.mjs'; // refused synchronously by the thread API
+    const err = await inner.swap(inner.def, inner.version).catch((e) => e);
+    expect(err).toBeInstanceOf(Error);
+    expect(String(err.message)).not.toMatch(/did not start with this change/);
+    expect(host.appAlive).toBe(true); // the running app was never touched
+    inner.workerUrl = (host as unknown as { workerUrl: string }).workerUrl;
+    await done();
   });
 });

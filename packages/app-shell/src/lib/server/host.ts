@@ -30,6 +30,7 @@ import { getCurrentTenant } from '@happyvertical/smrt-tenancy';
 import { TenantCollection } from '@happyvertical/smrt-users';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import type { DatabaseConfig } from '../../engine/db/index.ts';
+import { CapacityError } from '../../engine/errors.ts';
 import {
   AppHost,
   bundledWorkerUrl,
@@ -554,6 +555,9 @@ async function adoptDraft(
     wireHostEvents(draft, 'draft', holder.tenantId);
     slot.host = lifecycleOn() ? leased(holder, draft) : draft;
   } catch (e) {
+    // No connections left is the server's state, never a verdict on the
+    // draft: refuse the open (openLive closes live), so a retry can adopt it.
+    if (e instanceof CapacityError) throw e;
     slot.problem = `the draft cannot be opened: ${e instanceof Error ? e.message : String(e)}`;
   }
 }

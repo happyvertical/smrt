@@ -694,12 +694,15 @@ export class AppHost extends EventEmitter {
         }
         if (migrating) {
           this.app = this.spawn(this.def, this.version);
-          await this.app.ready.catch(() => {}); // surfaced later by the dead worker
+          await this.app.ready.catch(() => {});
+          this.app.settleBudget();
         }
       } finally {
         this.releaseSpare();
       }
-      if (e instanceof CapacityError) throw e;
+      // A throw before any worker existed (no connections left, a thread that
+      // could not start) is not a failed change: surface it unchanged.
+      if (!next || e instanceof CapacityError) throw e;
       if (
         e instanceof EngineError &&
         (e.code === 'refused' || e.code === 'stale_fence')
@@ -2414,6 +2417,7 @@ export class AppHost extends EventEmitter {
             if (there) await this.swapSchemasIn(aside, side, !swapped, same);
             this.app = this.spawn(this.def, this.version);
             await this.app.ready.catch(() => {});
+            this.app.settleBudget();
           } finally {
             this.releaseSpare();
           }
@@ -3180,7 +3184,8 @@ export class AppHost extends EventEmitter {
       removeRehearsal(this.dataDir, s.dir);
       if (s.retired) {
         this.app = this.spawn(this.def, this.version);
-        await this.app.ready.catch(() => {}); // restartApp() can retry
+        await this.app.ready.catch(() => {});
+        this.app.settleBudget();
       }
     } catch (e2) {
       // A lost claim changes nothing more, whatever state the swap left: the
