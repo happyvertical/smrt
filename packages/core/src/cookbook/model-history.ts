@@ -85,6 +85,31 @@ export function isAppModelJournalStore(store: AppModelHistoryStore): boolean {
   );
 }
 
+/**
+ * A store's revision transaction bound to the handle it is given: the body
+ * of the default store's `transaction`, so the editor can run it on the
+ * migration lock's connection (`lock.db`) instead of the pool.
+ */
+type RevisionTransaction = <T>(
+  db: DatabaseInterface,
+  work: (store: AppModelHistoryStore, db: DatabaseInterface) => Promise<T>,
+) => Promise<T>;
+const REVISION_TRANSACTIONS = new WeakMap<object, RevisionTransaction>();
+
+/**
+ * The revision transaction behind `store.transaction` when it is the one
+ * {@link createAppModelHistory} installed (recognised by identity, as
+ * `append` is for the journal); `undefined` for a store with a transaction
+ * of its own. Internal: not re-exported.
+ */
+export function revisionTransactionOf(
+  store: AppModelHistoryStore,
+): RevisionTransaction | undefined {
+  return store.transaction
+    ? REVISION_TRANSACTIONS.get(store.transaction)
+    : undefined;
+}
+
 export async function createAppModelHistory(options: {
   db: DatabaseInterface;
   application: string;
@@ -283,10 +308,12 @@ export async function createAppModelHistory(options: {
   });
   const store = bound(db);
   if (engine === 'postgres') {
-    store.transaction = (work) =>
-      runSerializedAgainstSystemTableBootstrap(db, engine, (tx) =>
+    const revisionTransaction: RevisionTransaction = (handle, work) =>
+      runSerializedAgainstSystemTableBootstrap(handle, engine, (tx) =>
         work(bound(tx), tx),
       );
+    store.transaction = (work) => revisionTransaction(db, work);
+    REVISION_TRANSACTIONS.set(store.transaction, revisionTransaction);
     store.complete = (revision, elapsedMs, receipt, result) =>
       runSerializedAgainstSystemTableBootstrap(db, engine, async (tx) => {
         const scoped = bound(tx);

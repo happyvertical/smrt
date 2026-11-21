@@ -49,9 +49,12 @@ No pooled/root handle is borrowed to inspect uncommitted DDL. SchemaComparer
 uses this fallback; table/predicate catalogs retain their public-schema scope.
 
 Activation imports and validates its declared closure in the existing process
-queue. PostgreSQL then uses `runSerializedAgainstSystemTableBootstrap` for a
-bounded transaction advisory lock. The **fresh diff**, ordinary transactional
-DDL and MigrationTracker completion marker use that same connection. Readiness
+queue. On PostgreSQL it is a migrate run: it takes the migration lock on one
+pinned connection (`lock.db`, `schema-paths.md` "The migration lock") before
+the journal ownership check and holds it through the loaders, then uses
+`runSerializedAgainstSystemTableBootstrap` on `lock.db` for the bounded
+transaction advisory lock. The **fresh diff**, ordinary transactional DDL and
+MigrationTracker completion marker use that same connection. Readiness
 opens after commit. Independent coordinators re-diff committed tables and do not
 reapply DDL. Failed DDL rolls back the application subset and its marker; retry
 reuses loaded modules. Runtime record initialization still checks tables only.

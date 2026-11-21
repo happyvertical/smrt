@@ -9,10 +9,19 @@ import type {
 import type { DatabaseInterface } from '@happyvertical/sql';
 import {
   type ActivationCoordinator,
-  withRuntimeSchemaActivation,
+  enqueueRuntimeSchemaActivation,
 } from '../activation.js';
 import { getRuntimeManifest } from '../generators/rest.js';
 import { stableStringify } from '../knowledge-graph.js';
+import {
+  joinQueueWithDeadline,
+  type MigrationLockDeadline,
+  MigrationLockTimeoutError,
+  raceMigrationLockDeadline,
+  refuseInsideMigrationLockHolder,
+  startMigrationLockDeadline,
+  withMigrationLock,
+} from '../migrations/migration-lock.js';
 import {
   assertMigrationAccepted,
   getPendingSchemaStatements,
@@ -53,6 +62,7 @@ import {
   type AppModelOperation,
   createAppModelHistory,
   isAppModelJournalStore,
+  revisionTransactionOf,
 } from './model-history.js';
 import { journalReader } from './model-history-readers.js';
 import {
@@ -117,6 +127,13 @@ export interface AppModelEditorOptions {
    * models the restored cookbook covers before they apply.
    */
   activation?: Pick<ActivationCoordinator, 'activate' | 'manifest'>;
+  /**
+   * PostgreSQL: how long opening the editor, or one edit, waits in its
+   * queues, for history set-up and for the migration lock, in milliseconds
+   * counted from the call; then `MigrationLockTimeoutError`. `0` waits
+   * indefinitely. Default 15 minutes.
+   */
+  migrationLockTimeout?: number;
 }
 export interface AppModelSnapshot {
   revision: number;
@@ -404,6 +421,8 @@ const journalBaselines = () =>
 
 /** Async construction replays persisted customizations and resolves pending activation BEFORE serving. */
 export async function createAppModelEditor(options: AppModelEditorOptions) {
+  // The editor's queues come before the migration lock in the lock order.
+  refuseInsideMigrationLockHolder('editor-inside-holder');
   return openAppModelEditor(options, {});
 }
 
@@ -416,6 +435,7 @@ export async function createAppModelEditor(options: AppModelEditorOptions) {
  * whose DDL never ran. Returns the opened editor.
  */
 export async function migrateAppModelStorage(options: AppModelEditorOptions) {
+  refuseInsideMigrationLockHolder('editor-inside-holder');
   return openAppModelEditor(options, { migrate: true });
 }
 
@@ -460,15 +480,55 @@ async function openAppModelEditor(
   };
   pruneStaleOwnership();
   assertSoleEditor();
-  const store = options.store ?? (await createAppModelHistory(options));
+  // One deadline for opening the editor, from here through history set-up,
+  // the activation queue and the migration lock of its boot revision.
+  const bootDeadline = startMigrationLockDeadline(options.migrationLockTimeout);
+  const newDeadline = () =>
+    startMigrationLockDeadline(options.migrationLockTimeout);
+  /** A pre-lock step raced against the deadline; a late answer is dropped. */
+  const setup = <T>(deadline: MigrationLockDeadline, step: Promise<T>) =>
+    raceMigrationLockDeadline(
+      deadline,
+      step,
+      () =>
+        new MigrationLockTimeoutError(deadline.now() - deadline.startedAt, {
+          phase: 'setup',
+        }),
+    );
+  const store =
+    options.store ??
+    (await setup(bootDeadline, createAppModelHistory(options)));
   if (engine === 'postgres' && !store.transaction)
     throw new Error(
       'MODEL_HISTORY_TRANSACTION_REQUIRED: PostgreSQL history must bind revision CAS and migration DDL to one locked transaction',
     );
+  const revisionTransaction = revisionTransactionOf(store);
+  /**
+   * The store's locked revision transaction (PostgreSQL), as a migrate run:
+   * the migration lock is acquired on a pinned connection first, holding no
+   * transaction while it waits, and the revision transaction (bootstrap lock,
+   * revision CAS, the edit's migration) runs on that same connection. A
+   * store with a transaction of its own is called as it is; its inner
+   * migration then follows the caller-transaction rules.
+   */
+  const lockedRevision = <T>(
+    work: (scoped: AppModelHistoryStore, db: DatabaseInterface) => Promise<T>,
+    deadline: MigrationLockDeadline,
+  ): Promise<T> =>
+    revisionTransaction
+      ? withMigrationLock(
+          options.db,
+          (lock) => revisionTransaction(lock.db, work),
+          { engineHint: engine, deadline },
+        )
+      : store.transaction!(work);
   // The editor never needs stored receipts in bulk: it keeps the light journal
   // (documents, no receipts) in memory and reads single rows per edit.
   const reader = journalReader(store);
-  let history = await (reader ? reader.light() : store.read());
+  let history = await setup(
+    bootDeadline,
+    reader ? reader.light() : store.read(),
+  );
   const latestRow = async () =>
     reader ? reader.latest() : (await store.read()).at(-1);
   const findRow = async (requestId: string) =>
@@ -507,7 +567,7 @@ async function openAppModelEditor(
       ? won
       : undefined;
   };
-  const committed = await committedDocument();
+  const committed = await setup(bootDeadline, committedDocument());
   const committedAt = history.at(-1)?.revision;
   let doc = checked(
     repairLayoutLabels(committed ?? history.at(-1)?.after ?? options.cookbook),
@@ -1457,7 +1517,7 @@ async function openAppModelEditor(
     }
   }
 
-  await withRuntimeSchemaActivation(async () => {
+  await enqueueRuntimeSchemaActivation(async () => {
     // Boots are serialized here; check again, so two editors constructed at
     // the same time cannot both register over each other.
     assertSoleEditor();
@@ -1473,7 +1533,7 @@ async function openAppModelEditor(
     };
     try {
       if (engine === 'postgres') {
-        await store.transaction!(async (scoped, db) => {
+        await lockedRevision(async (scoped, db) => {
           const scopedReader = journalReader(scoped);
           history = await (scopedReader ? scopedReader.light() : scoped.read());
           revision = history.at(-1)?.revision ?? 0;
@@ -1499,7 +1559,7 @@ async function openAppModelEditor(
             changedModels(undefined, active(storage(), doc)),
             changed,
           );
-        });
+        }, bootDeadline);
       } else {
         await journalInitial(store, options.db);
         await validate(
@@ -1578,7 +1638,7 @@ async function openAppModelEditor(
       ];
     }
     release(active(storage(), doc));
-  });
+  }, bootDeadline);
 
   /**
    * Undo and import can bring back recipes a lazy host has not loaded. With a
@@ -1591,7 +1651,8 @@ async function openAppModelEditor(
   async function activateRestored(
     edit: AppModelEdit,
     context: AppModelEditContext,
-    activation = options.activation,
+    activation: Pick<ActivationCoordinator, 'activate'> | undefined,
+    deadline: MigrationLockDeadline,
   ) {
     if (!activation || (edit.type !== 'undo' && edit.type !== 'import')) return;
     // Another journal's registrations refuse the edit: load nothing for it.
@@ -1645,6 +1706,8 @@ async function openAppModelEditor(
         [...coveredModels(options.catalog, target)].filter(
           (id) => !lists.has(id),
         ),
+        // The edit's deadline, carried rather than restarted.
+        { migrationLockDeadline: deadline },
       );
     } catch (error) {
       throw new Error(
@@ -1653,7 +1716,11 @@ async function openAppModelEditor(
     }
   }
 
-  async function apply(
+  type ApplyOptions = {
+    activation?: Pick<ActivationCoordinator, 'activate'>;
+    admit?: () => void | Promise<void>;
+  };
+  function apply(
     edit: AppModelEdit,
     context: AppModelEditContext,
     /**
@@ -1663,10 +1730,19 @@ async function openAppModelEditor(
      * serialized edit after any activation and before anything is
      * journalled; a throw refuses the edit.
      */
-    applyOptions: {
-      activation?: Pick<ActivationCoordinator, 'activate'>;
-      admit?: () => void | Promise<void>;
-    } = {},
+    applyOptions: ApplyOptions = {},
+  ): Promise<AppModelEditReceipt> {
+    // Before the edit joins any queue: the edit queue comes before the
+    // migration lock in the lock order, so a holder must not wait in it.
+    refuseInsideMigrationLockHolder('editor-inside-holder');
+    return applyQueued(edit, context, applyOptions, newDeadline());
+  }
+
+  async function applyQueued(
+    edit: AppModelEdit,
+    context: AppModelEditContext,
+    applyOptions: ApplyOptions,
+    deadline: MigrationLockDeadline,
   ): Promise<AppModelEditReceipt> {
     edit = structuredClone(edit);
     context = structuredClone(context);
@@ -2004,7 +2080,7 @@ async function openAppModelEditor(
       };
       if (engine === 'postgres') {
         try {
-          await store.transaction!(async (scoped, db) => {
+          await lockedRevision(async (scoped, db) => {
             // Check new tables again under the shared lock every journal's
             // edit takes, so two processes on different journals cannot both
             // claim a table that was absent when they validated.
@@ -2016,7 +2092,7 @@ async function openAppModelEditor(
             history = [...latest, change];
             revision = change.revision;
             await activate(next, all, changed, db, false);
-          });
+          }, deadline);
         } catch (error) {
           rollback();
           throw error;
@@ -2079,19 +2155,26 @@ async function openAppModelEditor(
       }
       return structuredClone(won ?? receipt);
     };
-    const operation = tail.then(async () => {
-      await activateRestored(
-        edit,
-        context,
-        options.activation ?? applyOptions.activation,
-      );
-      return withRuntimeSchemaActivation(execute);
-    });
+    // The edit's deadline covers the edit queue, the activation queue, any
+    // restored activation and the migration lock.
+    const { operation, result } = joinQueueWithDeadline(
+      tail,
+      async () => {
+        await activateRestored(
+          edit,
+          context,
+          options.activation ?? applyOptions.activation,
+          deadline,
+        );
+        return enqueueRuntimeSchemaActivation(execute, deadline);
+      },
+      deadline,
+    );
     tail = operation.then(
       () => {},
       () => {},
     );
-    return operation;
+    return result;
   }
   return {
     /** Server transports reuse the exact editor database, including in-memory SQLite. */
