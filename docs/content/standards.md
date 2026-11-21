@@ -27,6 +27,7 @@ The companion document `docs/PROJECT_REQUIREMENTS.md` defines requirements for S
 11. [Forbidden artifacts](#11-forbidden-artifacts)
     - [New-surface ledger](#new-surface-ledger)
     - [Core root export snapshot](#core-root-export-snapshot)
+    - [Served-surface snapshot](#served-surface-snapshot)
 12. [Appendix A: audit snapshot](#appendix-a-audit-snapshot)
 13. [Appendix B: rationale for changes](#appendix-b-rationale-for-changes)
 
@@ -868,6 +869,95 @@ the snapshot; the check prints each name added, removed, retyped or moved.
   against the base.
 - `turbo.json` keys core's `typecheck` on `api/**` and on the script, so a
   snapshot or script edit invalidates the cached result.
+
+## Served-surface snapshot
+
+`served-surface/<package>.txt` (package name without its scope) records what
+each package with a built manifest serves: per model or collection, the REST
+resource `path`, CRUD verbs and actions (each with `verb`, `scope`, `route`,
+`auth` and the `permission` slug a handler requires) and `crudPermission`, the
+collection whose `<collection>.<verb>` the create, update and delete handlers
+require (recorded whenever one is served and the resource is not
+`public: true`), the MCP tools (operations, and each emitted tool name with
+the operation it runs) and the CLI commands (operations, and each command name
+and alias a user types with the operation it runs). Two packages whose names
+differ only in scope would share a file, which fails the run.
+`pnpm check:served-surface` recomputes it and
+fails with a classified list (WIDEN, NARROW, NEW, GONE, CHANGED) when it
+differs; `pnpm surface:served` rewrites it. Commit the regenerated files with
+the change that moved them and paste the printed "Served-surface changes"
+block into the pull request. Review of that block is advisory: ruleset `main`
+does not require code-owner review today.
+
+- **Computation.** `scripts/lib/served-surface.mjs` runs one child process per
+  package P (`served-surface-worker.mjs`). It registers P's manifest and its
+  transitive `smrtDependencies` closure with
+  `ObjectRegistry.registerPackageManifest` and fails on any registration from
+  outside that closure. Operations come from the transports themselves: the
+  tools `MCPGenerator.generateTools()` emits, the commands
+  `CLIGenerator.listCommands({ builtIns: false })` lists
+  (`@happyvertical/smrt-cli/generator`; the built-ins' imports would register
+  other packages' models),
+  `exposedCrudVerbs`, and the resolvers the route emitter calls
+  (`resolveApiCustomActions`, which serves no action on a collection over an
+  abstract item, and `resolveApiActionRouteConfig`, which applies
+  `api.routes[name].path`). A route's `auth` is `open` when `api.public` is
+  `true`, or `'read'` and the verb is GET; a non-GET action requires
+  `<permission collection>.<action or its operationPermissions alias>` (the
+  item's collection for a collection's action) unless the resource is
+  `public: true`. The cross-check spec runs the emitted permission guard with
+  principals holding that slug and another one.
+- **Nothing is skipped silently.** A key with no registration, a dependency
+  with no manifest, an MCP tool with no model identity (other than a cookbook
+  tool), a CLI command that is neither an attributed object command nor a
+  utility or built-in command, a tool or command attributed to an owner no
+  inventoried registration is, and a resolver that throws each fail the run.
+- **Served set and resolution set.** P's file lists only P's keys. Its
+  dependencies resolve ancestry, items and replacements. A dependency key
+  that one of P's classes replaces (`replaceParent`) appears as a `shadow`
+  line with the operations it has under P, derived from the manifests, so
+  there is no list of pairs to maintain. Two packages replacing the same key
+  are each shown, and the run prints the pair.
+- **Also listed:** `internal` and the junction flags from the scan-time
+  stamps, `unmarkedDependency` (a dependency manifest without the
+  exposure-rule marker), `ambiguous` (an entry whose junction item could not
+  be traced, or whose ancestry ends at an unresolved parent:
+  `junctionAncestryUnresolved`), and `masked` (one of P's keys whose `<name>:`
+  CLI prefix resolves to another closure class with the same simple name, by
+  `CLIGenerator.resolveCommandRegistrationKey`, even one serving no command,
+  and which).
+- **Not modelled:** the REST tenant-context guard, runtime replacements and
+  overrides, compositions of two or more dependents, and models registered
+  only at run time.
+- **Freshness.** Locally the command runs `turbo build` first, so the manifests
+  match the sources by the same input-keyed hash as every build output.
+  `--no-build` is refused unless `CI=true`. In CI the two Knowledge Freshness
+  jobs run it right after `pnpm run build`, and the full job adds
+  `--loader-parity`: each built root (except the `check:node-roots`
+  allow-list) is imported the way a consumer imports it (Node resolves the
+  package name with its real conditions; no resolvable entry is an error),
+  and owner and served operations must not move for P's keys, for any key the
+  import registers that no manifest declares, or for any dependency key. The
+  import may register no model of a package outside P's closure (or without a
+  package identity).
+  A build input turbo does not hash is a turbo configuration defect for every
+  artifact, not a gap of this gate.
+- **Known loader-parity divergences.** `served-surface/loader-parity-known.json`
+  lists the divergences present when the gate landed, each with its cause,
+  tracking issue and `difference`: only what one side serves and the other
+  does not, per surface (the check prints it), so a change both sides make
+  alike (a new method served either way, a core-wide rename) leaves the pin
+  as it is. A divergence not on the list fails, and so does a listed one whose
+  difference moved; the message names what moved. A reviewed move is
+  re-pinned with `pnpm check:served-surface --loader-parity --repin`, which
+  rewrites the difference of listed ids only and never adds one. A listed key
+  that no longer diverges, or that no parity run checks, fails, so the fix
+  deletes its entry. The file persists, as `{"divergences": {}}` when nothing
+  diverges: a missing file fails. The pull-request Lint job runs
+  `node scripts/check-served-surface.mjs --against <base sha>`, which fails an
+  id the base does not hold or a base file it cannot read, and prints every
+  re-pin since the base as a required review item (a workflow warning on
+  GitHub Actions).
 
 ---
 

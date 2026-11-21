@@ -360,6 +360,11 @@ describe('junction stamps', () => {
     expect(obj(manifest, 'MysteryLinks').junction).toBeUndefined();
     expect(obj(manifest, 'Tag').internal).toBeUndefined();
     expect(warnings().join('\n')).toMatch(/INTERNAL_MODEL_UNRESOLVED_ANCESTRY/);
+    // Recorded on the entry, distinct from an untraceable item.
+    expect(obj(manifest, 'MysteryLinks').junctionAncestryUnresolved).toBe(true);
+    expect(
+      obj(manifest, 'MysteryLinks').junctionItemUnresolved,
+    ).toBeUndefined();
   });
 });
 

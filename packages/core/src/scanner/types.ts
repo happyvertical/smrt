@@ -634,6 +634,13 @@ export interface SmartObjectDefinition {
   /** The junction item reference could not be traced to a model. */
   junctionItemUnresolved?: true;
   /**
+   * The entry names an item but its ancestry ends at a parent that is
+   * neither resolvable nor a framework base
+   * (`INTERNAL_MODEL_UNRESOLVED_ANCESTRY`): whether it is a junction
+   * collection is unknown.
+   */
+  junctionAncestryUnresolved?: true;
+  /**
    * Generated surfaces whose value comes from the internal-model default,
    * on this model or an ancestor. Written once defaults are baked; carried
    * by the registry when present.

@@ -50,6 +50,8 @@
     "check:package-dag": "node scripts/check-package-dag.mjs",
     "check:new-surface": "node scripts/check-new-surface.mjs",
     "api:snapshot": "node scripts/check-export-snapshot.mjs --write",
+    "check:served-surface": "node scripts/check-served-surface.mjs",
+    "surface:served": "node scripts/check-served-surface.mjs --write",
     "surface:ledger": "node scripts/generate-surface-ledger.mjs",
     "check:mcp-config": "node scripts/check-mcp-config.mjs",
     "check:mcp-protocol-hygiene": "node scripts/check-mcp-protocol-hygiene.mjs",

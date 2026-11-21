@@ -622,6 +622,25 @@ registers later; it bumps the registry generation whenever it changes a
 registration. The pending item set is registry state: `ObjectRegistry.clear()`
 empties it and test registry snapshots restore it.
 
+## Served-surface snapshot
+
+`served-surface/<package>.txt` records what each built package serves on
+REST, MCP and CLI; `pnpm check:served-surface` fails on any difference and
+`pnpm surface:served` rewrites it (contract: the "Served-surface snapshot"
+section of `docs/content/standards.md`). It reads `MCPGenerator.generateTools()`,
+`CLIGenerator.listCommands()`, `exposedCrudVerbs` and the resolvers the route
+emitter calls (`resolveApiCustomActions`, `resolveApiActionRouteConfig`,
+`resolvePermissionCollection`, `resolveOperationPermissionAlias`), so a change
+to any of them, or to a manifest, that moves a served operation, its address
+(route, tool or command name, and what each address runs) or its permission
+slug (action slugs and the CRUD write `crudPermission`) shows there. Regenerate
+it in the same commit. The REST record is pinned against the emitted SvelteKit
+handlers, including their permission guard run against principals, by
+`vite-plugin/__tests__/served-surface-crosscheck.spec.ts`.
+`junctionAncestryUnresolved` on a manifest entry (ancestry ending at an
+unresolved parent, `INTERNAL_MODEL_UNRESOLVED_ANCESTRY`) is listed there as
+`ambiguous`.
+
 ## Explicit collection action resources
 
 A typed `SmrtCollection<Model>` may declare `@smrt({ collection: 'operations',

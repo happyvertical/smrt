@@ -2467,6 +2467,9 @@ export class ManifestGenerator {
       const ancestry = this.junctionAncestry(obj, manifest, objectsByName);
       if (ancestry === 'unresolved') {
         if (obj.itemBindings?.length || obj.extendsTypeArg) {
+          // Recorded, not only logged: whether this is a junction collection
+          // is unknown, so the served-surface inventory lists it as ambiguous.
+          obj.junctionAncestryUnresolved = true;
           logger.warn(
             `INTERNAL_MODEL_UNRESOLVED_ANCESTRY: ${obj.className} names an item but its ancestry ends at an unresolved parent; it is not classified as a junction collection. Add the parent's package to smrtDependencies, or pin the model's exposure explicitly.`,
           );
