@@ -1520,14 +1520,24 @@ setChangeFeedTenantFieldResolver((ctor) => {
     }
     fields = ObjectRegistry.getFields(key);
   }
+  // `tenant_id` is in every class's ownership set; it is *explicit* only when
+  // a source names it (a runtime registration, the declared tenant column or
+  // a `@tenantId` field). A write with no instance must not read an explicit
+  // owner it cannot return as the implicit "no owner" fallback.
+  const explicit = new Set<string>(
+    ObjectRegistry.getRuntimeOwnershipColumns(key),
+  );
+  const declaredTenant = ObjectRegistry.getTenantColumn(key);
+  if (declaredTenant) explicit.add(declaredTenant);
+  if (declared) explicit.add(declared);
   for (const [name, field] of fields) {
     const column = toSnakeCase(name);
     if (
-      (field.__tenancy?.isTenantIdField ||
-        field._meta?.__tenancy?.isTenantIdField) &&
-      !columns.includes(column)
+      field.__tenancy?.isTenantIdField ||
+      field._meta?.__tenancy?.isTenantIdField
     ) {
-      columns.push(column);
+      explicit.add(column);
+      if (!columns.includes(column)) columns.push(column);
     }
   }
   const fieldNames = [...fields.keys()];
@@ -1541,6 +1551,7 @@ setChangeFeedTenantFieldResolver((ctor) => {
         fieldName ??
         column.replace(/_([a-z0-9])/g, (_, char: string) => char.toUpperCase()),
       stored: fieldName !== undefined,
+      explicit: column !== 'tenant_id' || explicit.has(column),
     };
   });
 });

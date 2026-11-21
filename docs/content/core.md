@@ -1101,6 +1101,38 @@ listed in `conflictColumns` defaults to `CASCADE` and any other reference to
 `NO ACTION`. A declared action always wins, including on a `conflictColumns`
 column, and the build-time manifest carries it.
 
+`delete()` applies `CASCADE` and `SET NULL` in the application as well, with
+set-based statements, so the cascaded rows' own hooks and interceptors do not
+run. The change feed still records them: a `delete` entry for every removed
+row and an `update` entry for every nulled row, under that row's own tenant,
+in the same transaction as the delete. The dependent tables' versions
+therefore advance, so conditional GETs and `_changes` / `_events` consumers
+see the change. To identify those rows the cascade returns each row's `id`
+and its ownership columns from the same statement, but only columns the table
+has and the database role can read (`SELECT`, including column-level grants).
+The cascade itself runs the same way whatever the role can read; a row whose
+id or owner it cannot read is left out of the feed and a warning is logged.
+Grant the role `SELECT` on `id` and the ownership columns of referencing
+tables if their cascaded changes should reach the feed.
+
+When a cascaded row belongs to a single-table-inheritance hierarchy, the
+cascade follows the references declared against the row's own subtype as
+well as those declared against the base class. Rows referencing only a
+subtype are therefore removed or nulled with it, and a subtype reference
+that resolves to `RESTRICT` or `NO ACTION` refuses the delete while rows still
+point at it. Before this, such references were not followed: where the
+database did not enforce them, a delete succeeded and left those rows behind.
+
+On PostgreSQL the cascade first locks the rows it is about to delete
+(`SELECT … FOR UPDATE`, in id order), so another connection cannot add a new
+reference to them while the cascade runs and have the database remove or null
+it unseen. Row locks need `UPDATE` privilege on at least one column of the
+table; a role without it deletes as before, without the lock, and a warning
+is logged. Because the parent row is now locked before its children, a
+transaction that holds a child row and then adds a reference to the parent
+can deadlock with a concurrent cascade (PostgreSQL reports `40P01` and rolls
+one back); retry it.
+
 When you change the action of an existing relationship, `db:migrate` on
 PostgreSQL replaces the constraint in the same transaction: it drops it, adds
 it back `NOT VALID` with the new action, and validates it. It does this only

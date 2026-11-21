@@ -14,9 +14,21 @@
  * make it *unlike* a model-layer delete:
  *
  * - Cascaded rows are removed with set-based statements. Their `beforeDelete` /
- *   `afterDelete` hooks and interceptors do **not** run, and no change-feed
- *   event is written for them. Tracked descendants get durable sync tombstones.
- *   Only the object `delete()` was called on runs the full lifecycle.
+ *   `afterDelete` hooks and interceptors do **not** run. Tracked descendants
+ *   get durable sync tombstones. Only the object `delete()` was called on runs
+ *   the full lifecycle.
+ * - Every row the cascade removes gets a change-feed `delete` entry and every
+ *   row a SET NULL reference updates gets an `update` entry, so dependent
+ *   tables' versions advance and feed consumers see the change. The ids and
+ *   ownership columns come from the cascade statements' own `RETURNING`, each
+ *   entry is recorded under that row's own owner (never the parent's), and the
+ *   entries are appended on the cascade's transaction handle once every level
+ *   has run, so they commit or roll back with it (see
+ *   `recordCascadeChanges()` in `change-feed.ts`). What a statement returns
+ *   is decided from the catalog first, so the DELETE / UPDATE itself is never
+ *   changed by a column the table lacks or the role cannot read; on
+ *   PostgreSQL each level's rows are locked `FOR UPDATE` before their
+ *   references are scanned.
  * - Every delete runs inside a single transaction when the adapter exposes
  *   one, including cleanup of framework-owned context and embedding rows, so
  *   a partial cascade cannot survive a failure. A `metaType` column can point
@@ -67,6 +79,13 @@
 
 import { createLogger } from '@happyvertical/logger';
 import type { DatabaseInterface } from '@happyvertical/sql';
+import { type CascadeChange, recordCascadeChanges } from './change-feed.js';
+import {
+  type ChangeFeedOwnerPlan,
+  changeFeedOwnerPlanForClass,
+  changeFeedPlanStoredColumns,
+  resolveChangeFeedTenantIdFromReturnedRow,
+} from './change-feed-tenant.js';
 import { classifyDatabaseError } from './db-errors.js';
 import {
   isEmbeddedDatabase,
@@ -76,7 +95,10 @@ import {
 } from './embedded-write-queue.js';
 import { ConfigurationError, DatabaseError } from './errors.js';
 import { buildWhere } from './host.js';
-import { isKnownNativeDuckDbHandle } from './native-duckdb.js';
+import {
+  isJsonAdapterHandle,
+  isKnownNativeDuckDbHandle,
+} from './native-duckdb.js';
 // Type-only: erased at runtime, so it cannot re-enter the
 // `registry → object → cascade` import cycle.
 import type { ObjectRegistry } from './registry.js';
@@ -86,6 +108,7 @@ import {
 } from './schema/foreign-key-policy.js';
 import type { ForeignKeyAction } from './schema/types.js';
 import {
+  type DeletedRowOwners,
   deleteSyncRows,
   nullSyncReference,
   type SyncRowIdentity,
@@ -179,7 +202,11 @@ export type CascadeRegistryView = Pick<
   | 'getDescendants'
   | 'getOwnershipTenantColumn'
   | 'getTableStrategy'
->;
+> &
+  // Optional: resolves a subtype's inherited fields before its change-feed
+  // ownership snapshot. Without it a subtype whose own declarations omit the
+  // inherited owner column is unresolved, and its cascaded rows record nothing.
+  Partial<Pick<typeof ObjectRegistry, 'getAllFields'>>;
 
 /**
  * Normalize a declared `onDelete` value.
@@ -377,6 +404,329 @@ interface CascadeContext {
    * called on.
    */
   affectedTableClasses: Map<string, string>;
+  /**
+   * One final change per physical table and row (`table\0id`), recorded in
+   * the feed after the last level. A row two statements touch keeps one
+   * entry: `delete` wins over `update`, and an owner that was unresolved, or
+   * that two statements disagree on, stays unresolved.
+   */
+  feed: Map<string, CascadeChange>;
+  /** Ownership snapshot per class name, taken before its first statement. */
+  classOwners: Map<string, CascadeClassOwner>;
+  /** Feed projection per referencing table and class. */
+  projections: Map<string, CascadeFeedProjection>;
+  /**
+   * The rows the caller deletes itself. Every cascade statement on their
+   * table excludes them in SQL (`id NOT IN`, compared by the engine with the
+   * column's own identity rules), so a self-reference never nulls, removes or
+   * records them: the caller's own delete records each once, under the owner
+   * its stored row has.
+   */
+  target: { tableName: string; ids: string[] };
+  /** Tables whose changed rows the statement could not identify for the feed. */
+  unrecorded: Set<string>;
+  /** PostgreSQL: whether the role may lock rows of each table `FOR UPDATE`. */
+  lockable: Map<string, boolean>;
+}
+
+/** One class's change-feed ownership snapshot for one cascade. */
+interface CascadeClassOwner {
+  ctor: unknown;
+  plan: ChangeFeedOwnerPlan;
+  /** Stored ownership columns; `undefined` when the lookup failed. */
+  stored: readonly string[] | undefined;
+}
+
+/**
+ * What a cascade statement on one referencing table returns for the feed,
+ * decided before the statement runs.
+ */
+interface CascadeFeedProjection {
+  className: string;
+  /** Rows are resolved per concrete class from their discriminator. */
+  sti: boolean;
+  /** Ownership columns present in the table and readable by the role. */
+  ownerColumns: string[];
+  /** `id` is present and readable (always true for a DELETE, which needed it before). */
+  idReadable: boolean;
+  /** `_meta_type` is present and readable (STI only). */
+  metaTypeReadable: boolean;
+  /**
+   * Ownership snapshots of every class whose rows the table can hold, by
+   * name. A simple or legacy name two different classes share maps to
+   * `null` (ambiguous): a row carrying it is unresolved.
+   */
+  members: Map<string, CascadeClassOwner | null>;
+}
+
+/**
+ * Key of one physical row: the table and the id exactly as the statement
+ * returned it (as text). Native UUID columns already return their canonical
+ * form; text ids are never folded, so two distinct text ids stay two rows.
+ */
+function rowKey(table: string, id: string): string {
+  return `${table}\u0000${id}`;
+}
+
+/**
+ * The SQL filter that keeps a cascade statement on `table` away from the
+ * caller's own target rows (empty for any other table).
+ */
+function excludeTargets(
+  ctx: CascadeContext,
+  table: string,
+): Record<string, unknown> {
+  return table === ctx.target.tableName && ctx.target.ids.length > 0
+    ? { 'id not in': ctx.target.ids }
+    : {};
+}
+
+/**
+ * Snapshot `className`'s ownership fields once per cascade, after resolving
+ * its inherited fields, so the columns a statement returns and the fields its
+ * rows are resolved against come from the same snapshot.
+ */
+async function classOwnerFor(
+  ctx: CascadeContext,
+  className: string,
+): Promise<CascadeClassOwner> {
+  const cached = ctx.classOwners.get(className);
+  if (cached) return cached;
+  try {
+    await ctx.registry.getAllFields?.(className);
+  } catch {
+    // Left unresolved: the ownership lookup then reports the class as such.
+  }
+  const ctor = ctx.registry.getClass(className)?.constructor;
+  const plan = changeFeedOwnerPlanForClass(ctor);
+  const owner: CascadeClassOwner = {
+    ctor,
+    plan,
+    stored: changeFeedPlanStoredColumns(plan),
+  };
+  ctx.classOwners.set(className, owner);
+  return owner;
+}
+
+/**
+ * The subset of `candidates` that `tableName` has and the role can read,
+ * from the catalog, before any statement uses them. A column a statement
+ * cannot return must never be added to its `RETURNING`: it would make the
+ * cascade's own DELETE or UPDATE fail (or, through the missing-table
+ * tolerance, skip it) where it used to run. The probes cannot fail on a
+ * missing table, so they never abort a PostgreSQL or DuckDB transaction. An
+ * adapter with no catalog (the JSON adapter) reads rows instead, and a
+ * missing key there is unresolved.
+ */
+async function readableColumns(
+  db: DatabaseInterface,
+  tableName: string,
+  candidates: readonly string[],
+): Promise<Set<string>> {
+  const wanted = [...new Set(candidates)];
+  if (wanted.length === 0 || isJsonAdapterHandle(db)) return new Set(wanted);
+  const found = new Set<string>();
+  // A failed lock statement leaves a PostgreSQL transaction aborted, so its
+  // own error is the one to report — swallowing it would only surface later
+  // as an unexplained "current transaction is aborted" (25P02).
+  let lockError: unknown;
+  try {
+    if (usesPostgresDialect(db)) {
+      const probe = async () => {
+        const result = await db.query(
+          `SELECT attribute.attname AS column_name,
+                  has_column_privilege(attribute.attrelid, attribute.attnum, 'SELECT') AS readable
+             FROM pg_attribute AS attribute
+            WHERE attribute.attrelid = to_regclass(format('%I', $1::text))
+              AND attribute.attnum > 0
+              AND NOT attribute.attisdropped
+              AND attribute.attname = ANY (string_to_array($2::text, chr(31)))`,
+          tableName,
+          wanted.join('\u001f'),
+        );
+        found.clear();
+        for (const row of result.rows) {
+          if (row.readable === true) found.add(String(row.column_name));
+        }
+      };
+      await probe();
+      if (found.size > 0) {
+        // Hold the table's ACCESS SHARE lock for the rest of the transaction
+        // before the final read of its columns: a concurrent ALTER TABLE
+        // (ACCESS EXCLUSIVE) can then not drop a projected column between
+        // this probe and the cascade statement that returns it. The read
+        // needs only a column the role can already SELECT.
+        try {
+          await db.query(
+            `SELECT 1 FROM "${tableName.replaceAll('"', '""')}" WHERE false`,
+          );
+        } catch (error) {
+          lockError = error;
+          throw error;
+        }
+        await probe();
+      }
+    } else if (isKnownNativeDuckDbHandle(db)) {
+      const result = await db.query(
+        'SELECT column_name FROM information_schema.columns WHERE table_name = ? AND table_schema = current_schema()',
+        tableName,
+      );
+      for (const row of result.rows) found.add(String(row.column_name));
+    } else {
+      const result = await db.query(
+        'SELECT name FROM pragma_table_info(?)',
+        tableName,
+      );
+      for (const row of result.rows) found.add(String(row.name));
+    }
+  } catch (error) {
+    if (lockError !== undefined) throw error;
+    // Unknown: nothing beyond what the statement already needed is returned.
+    return new Set();
+  }
+  return new Set(wanted.filter((column) => found.has(column)));
+}
+
+/**
+ * Decide, once per referencing table and class, which columns the cascade
+ * statement returns for the feed. For an STI table every class sharing it is
+ * snapshotted, so each returned row is resolved against its own concrete
+ * class rather than the class that declared the reference.
+ */
+async function feedProjectionFor(
+  ctx: CascadeContext,
+  className: string,
+  tableName: string,
+  sti: boolean,
+): Promise<CascadeFeedProjection> {
+  const key = `${tableName}\u0000${className}`;
+  const cached = ctx.projections.get(key);
+  if (cached) return cached;
+  const names = new Set<string>([className]);
+  if (sti) {
+    const base = ctx.registry.getSTIBase(className) ?? className;
+    names.add(base);
+    for (const descendant of ctx.registry.getDescendants(base)) {
+      names.add(descendant);
+    }
+  }
+  const members = new Map<string, CascadeClassOwner | null>();
+  const needed = new Set<string>();
+  for (const name of names) {
+    const owner = await classOwnerFor(ctx, name);
+    const registered = ctx.registry.getClass(name);
+    const aliases = new Set(
+      [name, registered?.qualifiedName, registered?.name].filter(
+        (alias): alias is string => Boolean(alias),
+      ),
+    );
+    for (const alias of aliases) {
+      if (!members.has(alias)) {
+        members.set(alias, owner);
+        continue;
+      }
+      // The same class reached under another of its names is not ambiguous;
+      // two different classes sharing a name are.
+      const existing = members.get(alias);
+      if (existing && existing.ctor !== owner.ctor) members.set(alias, null);
+    }
+    for (const column of owner.stored ?? []) needed.add(column);
+  }
+  const available = await readableColumns(ctx.db, tableName, [
+    ...needed,
+    'id',
+    ...(sti ? ['_meta_type'] : []),
+  ]);
+  const projection: CascadeFeedProjection = {
+    className,
+    sti,
+    ownerColumns: [...needed].filter((column) => available.has(column)),
+    idReadable: available.has('id'),
+    metaTypeReadable: sti && available.has('_meta_type'),
+    members,
+  };
+  ctx.projections.set(key, projection);
+  return projection;
+}
+
+/**
+ * The owner of one returned row: resolved against its concrete class (from
+ * the discriminator on an STI table), from the columns the statement
+ * returned. `rewrittenColumn` is a column the statement itself set (a SET
+ * NULL): when it is one of the row class's ownership columns, the returned
+ * value is not the owner the row had, so the row is unresolved.
+ */
+function returnedRowOwner(
+  ctx: CascadeContext,
+  projection: CascadeFeedProjection,
+  row: DeletedRowOwners[number],
+  rewrittenColumn?: string,
+): { tenantId: string | null | undefined; ctor: unknown } {
+  let owner: CascadeClassOwner | null | undefined;
+  if (projection.sti) {
+    const metaType = row.metaType;
+    if (metaType) {
+      owner = projection.members.get(metaType);
+      if (owner === undefined) {
+        const qualifiedName = ctx.registry.getClass(metaType)?.qualifiedName;
+        owner = qualifiedName
+          ? projection.members.get(qualifiedName)
+          : undefined;
+      }
+    }
+  } else {
+    owner = projection.members.get(projection.className);
+  }
+  if (!owner) return { tenantId: undefined, ctor: undefined };
+  if (
+    rewrittenColumn !== undefined &&
+    (owner.stored === undefined || owner.stored.includes(rewrittenColumn))
+  ) {
+    return { tenantId: undefined, ctor: owner.ctor };
+  }
+  try {
+    return {
+      tenantId: resolveChangeFeedTenantIdFromReturnedRow(
+        owner.plan,
+        row.columns,
+      ),
+      ctor: owner.ctor,
+    };
+  } catch {
+    return { tenantId: undefined, ctor: owner.ctor };
+  }
+}
+
+/** Queue (or merge) one feed entry per row a cascade statement returned. */
+function queueFeedRows(
+  ctx: CascadeContext,
+  table: string,
+  operation: CascadeChange['operation'],
+  projection: CascadeFeedProjection,
+  rows: DeletedRowOwners | undefined,
+  rewrittenColumn?: string,
+): void {
+  for (const row of rows ?? []) {
+    if (!row.id) continue;
+    const key = rowKey(table, row.id);
+    const { tenantId, ctor } = returnedRowOwner(
+      ctx,
+      projection,
+      row,
+      rewrittenColumn,
+    );
+    const existing = ctx.feed.get(key);
+    if (!existing) {
+      ctx.feed.set(key, { table, rowId: row.id, operation, tenantId, ctor });
+      continue;
+    }
+    existing.operation =
+      existing.operation === 'delete' || operation === 'delete'
+        ? 'delete'
+        : 'update';
+    if (existing.tenantId !== tenantId) existing.tenantId = undefined;
+    existing.ctor ??= ctor;
+  }
 }
 
 /** Resolve a registry-recorded class name to its qualified form, when known. */
@@ -554,18 +904,29 @@ async function tolerateMissingSystemTable<T>(
   }
 }
 
-async function selectIds(
+/**
+ * The rows of `tableName` whose `column` references one of `ids` (minus
+ * `exclude`), with their STI discriminator when `withMetaType` is set, so an
+ * STI table's rows can be expanded per concrete class.
+ */
+async function selectChildren(
   db: DatabaseInterface,
   tableName: string,
   column: string,
   ids: string[],
-): Promise<string[]> {
-  const found: string[] = [];
+  exclude: Record<string, unknown>,
+  withMetaType: boolean,
+): Promise<Array<{ id: string; metaType?: string }>> {
+  const found: Array<{ id: string; metaType?: string }> = [];
   for (const batch of chunkArray(ids, IN_LIST_CHUNK_SIZE)) {
     const dialect = usesPostgresDialect(db) ? 'postgres' : 'sqlite';
-    const where = buildWhere(idPredicate(column, batch), 1, dialect);
+    const where = buildWhere(
+      { ...idPredicate(column, batch), ...exclude },
+      1,
+      dialect,
+    );
     const table = `"${tableName.replaceAll('"', '""')}"`;
-    const sql = `SELECT CAST("id" AS VARCHAR) AS "id" FROM ${table} ${where.sql}`;
+    const sql = `SELECT CAST("id" AS VARCHAR) AS "id"${withMetaType ? ', "_meta_type"' : ''} FROM ${table} ${where.sql}`;
     const rows = await tolerateMissingTable(
       () => db.query(sql, ...where.values).then((result) => result.rows),
       [] as Record<string, unknown>[],
@@ -573,20 +934,48 @@ async function selectIds(
     );
     for (const row of rows) {
       const id = row?.id;
-      if (typeof id === 'string' && id.length > 0) found.push(id);
+      if (typeof id !== 'string' || id.length === 0) continue;
+      found.push(
+        withMetaType && typeof row._meta_type === 'string'
+          ? { id, metaType: row._meta_type }
+          : { id },
+      );
     }
   }
   return found;
+}
+
+/**
+ * Group an STI table's selected rows by concrete class, so each group is
+ * expanded with the references that point at that class (a subtype can be
+ * referenced where its base is not). A discriminator the registry does not
+ * know stays with the class that declared the reference.
+ */
+function groupByConcreteClass(
+  ctx: CascadeContext,
+  className: string,
+  rows: Array<{ id: string; metaType?: string }>,
+): Map<string, string[]> {
+  const groups = new Map<string, string[]>();
+  for (const { id, metaType } of rows) {
+    const concrete =
+      (metaType && ctx.registry.getClass(metaType)?.qualifiedName) || className;
+    const group = groups.get(concrete);
+    if (group) group.push(id);
+    else groups.set(concrete, [id]);
+  }
+  return groups;
 }
 
 async function deleteByIds(
   db: DatabaseInterface,
   identity: SyncRowIdentity,
   ids: string[],
-): Promise<void> {
+): Promise<DeletedRowOwners> {
   const { tableName } = identity;
+  const removed: DeletedRowOwners = [];
   for (const batch of chunkArray(ids, IN_LIST_CHUNK_SIZE)) {
-    await tolerateMissingTable(
+    const result = await tolerateMissingTable(
       () =>
         deleteSyncRows(db, identity, idPredicate('id', batch), (affected) =>
           recordCascadeWrite(db, { affected }),
@@ -594,7 +983,9 @@ async function deleteByIds(
       undefined,
       { table: tableName, action: 'CASCADE delete' },
     );
+    if (result?.owners) removed.push(...result.owners);
   }
+  return removed;
 }
 
 /**
@@ -648,6 +1039,60 @@ async function deleteSystemRows(
   }
 }
 
+/** Tables already warned about a skipped row lock (once per process). */
+const unlockedTablesWarned = new Set<string>();
+
+/**
+ * Lock `ids` of `tableName` `FOR UPDATE` (PostgreSQL) so no new reference to
+ * them can commit while the cascade runs.
+ *
+ * `FOR UPDATE` is the only row lock that conflicts with the `FOR KEY SHARE`
+ * a referencing INSERT or UPDATE takes on its target; every row-locking
+ * clause needs `UPDATE` privilege on at least one column, which a cascade
+ * never needed before. The privilege is read from the catalog first (a probe
+ * that cannot fail); a role without it skips the lock with a warning and
+ * keeps the delete it always had (the concurrent-reference window then
+ * remains for that role). Ids are sorted before chunking and each chunk is
+ * locked `ORDER BY id`, so two cascades over overlapping ids take their row
+ * locks in the same order and do not deadlock each other.
+ */
+async function lockReferencedRows(
+  ctx: CascadeContext,
+  tableName: string,
+  ids: string[],
+): Promise<void> {
+  let lockable = ctx.lockable.get(tableName);
+  if (lockable === undefined) {
+    const result = await ctx.db.query(
+      `SELECT COALESCE(has_any_column_privilege(to_regclass(format('%I', $1::text)), 'UPDATE'), false) AS lockable`,
+      tableName,
+    );
+    lockable = result.rows[0]?.lockable === true;
+    ctx.lockable.set(tableName, lockable);
+    if (!lockable && !unlockedTablesWarned.has(tableName)) {
+      // Once per table per process: the condition is a standing grant.
+      unlockedTablesWarned.add(tableName);
+      logger.warn(
+        `Cascade delete on '${tableName}' did not lock the rows it deletes: ` +
+          'the database role has no UPDATE privilege on that table, which ' +
+          'SELECT … FOR UPDATE requires. A reference another connection adds ' +
+          'while the cascade runs can be removed or nulled by the database ' +
+          'without a change-feed entry. Grant UPDATE on one column to close it.',
+      );
+    }
+  }
+  if (!lockable) return;
+  const table = `"${tableName.replaceAll('"', '""')}"`;
+  const sorted = [...ids].sort();
+  for (const batch of chunkArray(sorted, IN_LIST_CHUNK_SIZE)) {
+    const where = buildWhere(idPredicate('id', batch), 1, 'postgres');
+    await ctx.db.query(
+      `SELECT 1 FROM ${table} ${where.sql} ORDER BY "id" FOR UPDATE`,
+      ...where.values,
+    );
+  }
+}
+
 /**
  * Resolve every reference pointing at `ids` of `className`, recursively.
  *
@@ -681,6 +1126,16 @@ async function resolveReferences(
 
   const plan = buildCascadePlan(ctx.registry, className);
 
+  // PostgreSQL READ COMMITTED: another connection could insert a referencing
+  // row after the scans below and before this level's rows are deleted; the
+  // database's own ON DELETE action would then remove or null it without the
+  // cascade seeing it, and the feed would miss it. Locking these rows FOR
+  // UPDATE first blocks new references to them (a referencing insert takes
+  // FOR KEY SHARE on its target) until the cascade's transaction ends.
+  if (plan.references.length > 0 && usesPostgresDialect(ctx.db)) {
+    await lockReferencedRows(ctx, tableName, pending);
+  }
+
   // SQL NO ACTION is immediate on every supported SMRT migration path, so the
   // app-side belt preflights it exactly like RESTRICT before any mutation.
   for (const reference of plan.references) {
@@ -713,18 +1168,48 @@ async function resolveReferences(
 
   for (const reference of plan.references) {
     if (reference.action === 'SET NULL') {
+      const projection = await feedProjectionFor(
+        ctx,
+        reference.className,
+        reference.tableName,
+        ctx.registry.getTableStrategy(reference.className) === 'sti',
+      );
       for (const batch of chunkArray(pending, IN_LIST_CHUNK_SIZE)) {
-        await tolerateMissingTable(
+        const result = await tolerateMissingTable(
           () =>
             nullSyncReference(
               ctx.db,
               reference.tableName,
               reference.column,
-              idPredicate(reference.column, batch),
+              // A self-referencing SET NULL leaves the caller's own target
+              // rows alone: clearing a target's owner column first would leave
+              // its own DELETE nothing to attribute its tombstone to.
+              {
+                ...idPredicate(reference.column, batch),
+                ...excludeTargets(ctx, reference.tableName),
+              },
               (affected) => recordCascadeWrite(ctx.db, { affected }),
+              // Only columns proven present and readable; without a readable
+              // `id` the statement is exactly the one issued before #5444.
+              {
+                id: projection.idReadable,
+                ownerColumns: projection.ownerColumns,
+                metaType: projection.metaTypeReadable,
+              },
             ),
           undefined,
           { table: reference.tableName, action: 'SET NULL' },
+        );
+        if (!projection.idReadable && (result?.affected ?? 0) > 0) {
+          ctx.unrecorded.add(reference.tableName);
+        }
+        queueFeedRows(
+          ctx,
+          reference.tableName,
+          'update',
+          projection,
+          result?.rows,
+          reference.column,
         );
       }
       ctx.affectedTables.add(reference.tableName);
@@ -737,27 +1222,47 @@ async function resolveReferences(
 
     if (reference.action !== 'CASCADE') continue;
 
-    const childIds = await selectIds(
+    // The rows the caller deletes itself (a self-reference) stay with the
+    // caller: removing them here would leave its own DELETE nothing to
+    // remove and record them twice. The engine compares the ids.
+    const sti = ctx.registry.getTableStrategy(reference.className) === 'sti';
+    const children = await selectChildren(
       ctx.db,
       reference.tableName,
       reference.column,
       pending,
+      excludeTargets(ctx, reference.tableName),
+      sti,
     );
-    if (childIds.length === 0) continue;
+    if (children.length === 0) continue;
+    const childIds = children.map(({ id }) => id);
 
-    await resolveReferences(
-      ctx,
-      reference.className,
-      reference.tableName,
-      childIds,
-      depth + 1,
-    );
+    // An STI child is expanded as its concrete class: a subtype can carry
+    // incoming references its base does not.
+    const groups = sti
+      ? groupByConcreteClass(ctx, reference.className, children)
+      : new Map([[reference.className, childIds]]);
+    for (const [childClass, groupIds] of groups) {
+      await resolveReferences(
+        ctx,
+        childClass,
+        reference.tableName,
+        groupIds,
+        depth + 1,
+      );
+    }
     await deleteSystemRows(
       ctx.db,
       childIds,
       ownerClassCandidates(ctx.registry, reference.className),
     );
-    await deleteByIds(
+    const projection = await feedProjectionFor(
+      ctx,
+      reference.className,
+      reference.tableName,
+      sti,
+    );
+    const removed = await deleteByIds(
       ctx.db,
       {
         tableName: reference.tableName,
@@ -765,10 +1270,13 @@ async function resolveReferences(
         tenantColumn: ctx.registry.getOwnershipTenantColumn(
           reference.className,
         ),
-        sti: ctx.registry.getTableStrategy(reference.className) === 'sti',
+        sti,
+        ownerColumns: projection.ownerColumns,
+        returnRows: true,
       },
       childIds,
     );
+    queueFeedRows(ctx, reference.tableName, 'delete', projection, removed);
     ctx.affectedTables.add(reference.tableName);
     ctx.affectedTableClasses.set(
       reference.tableName,
@@ -780,9 +1288,21 @@ async function resolveReferences(
     // A caught missing-table DELETE still aborts PostgreSQL's transaction.
     // Optional/abstract association tables must be checked before mutation.
     if (!(await ctx.db.tableExists(association.tableName))) continue;
+    const associationSti =
+      ctx.registry.getTableStrategy(association.className) === 'sti';
+    const projection = await feedProjectionFor(
+      ctx,
+      association.className,
+      association.tableName,
+      associationSti,
+    );
     for (const batch of chunkArray(pending, IN_LIST_CHUNK_SIZE)) {
+      // An association row that points at itself and is the caller's own
+      // target stays with the caller's DELETE (recorded once, under its
+      // stored owner).
       const where: Record<string, unknown> = {
         ...idPredicate('meta_id', batch),
+        ...excludeTargets(ctx, association.tableName),
       };
       if (plan.metaTypes.length === 1) {
         where.meta_type = plan.metaTypes[0];
@@ -799,8 +1319,9 @@ async function resolveReferences(
               tenantColumn: ctx.registry.getOwnershipTenantColumn(
                 association.className,
               ),
-              sti:
-                ctx.registry.getTableStrategy(association.className) === 'sti',
+              sti: associationSti,
+              ownerColumns: projection.ownerColumns,
+              returnRows: true,
             },
             where,
             (affected) => recordCascadeWrite(ctx.db, { affected }),
@@ -810,6 +1331,13 @@ async function resolveReferences(
           table: association.tableName,
           action: 'polymorphic association cleanup',
         },
+      );
+      queueFeedRows(
+        ctx,
+        association.tableName,
+        'delete',
+        projection,
+        result?.owners,
       );
       if ((result?.affected ?? 0) > 0) {
         ctx.affectedTables.add(association.tableName);
@@ -852,6 +1380,12 @@ export async function cascadeReferencesTo(
     visited: new Set(),
     affectedTables: new Set(),
     affectedTableClasses: new Map(),
+    feed: new Map(),
+    classOwners: new Map(),
+    projections: new Map(),
+    target: { tableName: target.tableName, ids: [...target.ids] },
+    unrecorded: new Set(),
+    lockable: new Map(),
   };
   await resolveReferences(
     ctx,
@@ -865,6 +1399,10 @@ export async function cascadeReferencesTo(
     target.ids,
     ownerClassCandidates(registry, target.className),
   );
+  // Every level ran without a refusal, so the cascade's rows are final for
+  // this transaction. Appended on its handle, the entries commit or roll back
+  // with it; a failed append is warned and never fails the delete.
+  await recordCascadeChanges(db, [...ctx.feed.values()], ctx.unrecorded);
   return {
     affectedTables: ctx.affectedTables,
     affectedTableClasses: ctx.affectedTableClasses,

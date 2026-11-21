@@ -1719,8 +1719,11 @@ the component is uniformly UUID and the planner emits nothing.
   association class participates, since its runtime target can be any class;
   `CascadePlan.isEmpty` requires no such class anywhere and no typed references.
   Only an empty plan skips the transaction.
-- Cascades are set-based: child hooks/interceptors and change-feed tombstones do
-  not run. Only the explicitly deleted object runs its lifecycle. RESTRICT
+- Cascades are set-based: child hooks/interceptors do not run. Only the
+  explicitly deleted object runs its lifecycle. Every removed row still gets a
+  change-feed `delete` entry and every SET NULL row an `update` entry, each
+  under its own returned owner, appended on the cascade's transaction handle
+  (#5444; see [change-feed.md](change-feed.md)). RESTRICT
   checks precede mutations; the parent DELETE and cascades share one transaction
   where supported, so deeper refusals roll back.
 - Derived `_smrt_embeddings` / `_smrt_contexts` cleanup matches IDs AND
