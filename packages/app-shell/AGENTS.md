@@ -9,6 +9,8 @@ SvelteKit or `src/lib`). README has the route and JSON contracts.
 
 Cloud profile (tenant scoping, accounts, what must not exist there): [cloud profile](agents/cloud-profile.md).
 
+Hosted inference (gate at startup, entitlement, caps): [hosted inference](agents/hosted-inference.md).
+
 Workbook workflow ownership, upload limits, proof and recovery: [imports](agents/imports.md).
 
 Shared assistant adapters and legacy approval storage: [agents/shared-pieces.md](agents/shared-pieces.md).
