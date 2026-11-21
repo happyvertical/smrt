@@ -18,7 +18,7 @@
     "docs:agents": "smrt docs:agents"
   },
   "devDependencies": {
-    "@happyvertical/smrt-cli": "^0.66.0"
+    "@happyvertical/smrt-cli": "^0.66.1"
   },
   "dependencies": {}
 }

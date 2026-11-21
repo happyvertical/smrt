@@ -1,5 +1,16 @@
 # @happyvertical/smrt-core
 
+## 0.66.1
+
+### Patch Changes
+
+- ### Bug Fixes
+  
+  - make payment pushes reach QuickBooks and recoverable (#5420) (#5421) (commerce)
+- @happyvertical/smrt-config@0.66.1
+  - @happyvertical/smrt-scanner@0.66.1
+  - @happyvertical/smrt-types@0.66.1
+
 ## 0.66.0
 
 ### Minor Changes
