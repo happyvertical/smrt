@@ -200,6 +200,68 @@ describe.each(['sqlite', 'postgres'] as const)('app caps on %s', (kind) => {
     expect(await host.list('A')).toHaveLength(2);
   });
 
+  it('a definition change (worker swap) does not renew the method-run period', async () => {
+    const { host, run } = await open(kind, {
+      maxMethodRuns: 1,
+      methodRunPeriodMs: 3_600_000,
+    });
+    await run({
+      type: 'defineModel',
+      name: 'A',
+      fields: { t: { type: 'text' } },
+    });
+    await run({
+      type: 'addMethod',
+      model: 'A',
+      name: 'noop',
+      method: { description: 'noop', code: 'return 1;' },
+    });
+    await host.runMethod('A', 'noop');
+    await run({
+      type: 'defineModel',
+      name: 'B',
+      fields: { t: { type: 'text' } },
+    });
+    await expect(host.runMethod('A', 'noop')).rejects.toThrow(
+      /app limit reached \(maxMethodRuns\)/,
+    );
+  });
+
+  it('a draft has its own method-run window, which its own swaps do not renew', async () => {
+    const { host, run, dir } = await open(kind, {
+      maxMethodRuns: 1,
+      methodRunPeriodMs: 3_600_000,
+    });
+    await run({
+      type: 'defineModel',
+      name: 'A',
+      fields: { t: { type: 'text' } },
+    });
+    await run({
+      type: 'addMethod',
+      model: 'A',
+      name: 'noop',
+      method: { description: 'noop', code: 'return 1;' },
+    });
+    await host.runMethod('A', 'noop');
+    const draft = await host.forkDraft(`${dir}-draft`, {
+      store: new MemoryVersionStore(),
+    });
+    hosts.push(draft);
+    await draft.runMethod('A', 'noop'); // its own allowance, not live's used one
+    await draft.execute(
+      {
+        type: 'defineModel',
+        name: 'B',
+        fields: { t: { type: 'text' } },
+      },
+      { author: 't', approved: true },
+    );
+    await expect(draft.runMethod('A', 'noop')).rejects.toThrow(
+      /app limit reached \(maxMethodRuns\)/,
+    );
+  });
+
   it('a method adding rows over the row cap is refused as a limit, none applied', async () => {
     const { host, run } = await open(kind, { maxRows: 1 });
     await run({

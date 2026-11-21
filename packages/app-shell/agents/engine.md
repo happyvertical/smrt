@@ -613,8 +613,9 @@ model) is exempt from the caps: it restores what the app already held.
 Not enforced: storage
 bytes (the cloud profile meters storage separately), requests per period and
 the 429 rate limit (core hooks, #5195). The method-run
-window lives in the worker, so it starts again on every worker start: each
-publish, restart and structural change renews the period.
+window lives in the host (`AppLimits.methodRunState`, shared memory each host makes
+for itself, a draft's own), so a swap, publish or structural change does not
+renew the period; a process restart does.
 
 ## Lessons
 
