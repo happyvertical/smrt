@@ -11,7 +11,7 @@ import {
   it,
   vi,
 } from 'vitest';
-import { decideApproval } from './approvals.ts';
+import { decideApproval, getApprovalView } from './approvals.ts';
 import { call, drive, say, scripted } from './assistant/test-helpers.ts';
 import { shellMcpServer } from './catalog.ts';
 import { getHost } from './host.ts';
@@ -110,6 +110,11 @@ describe('ownerText', () => {
     expect(leaksHost('xdb.internal.example.org')).toBe(false);
     expect(leaksHost('SSL is on; svc_app owns it; at 12:30:45')).toBe(false);
     expect(leaksHost('version 1.2.3 of 300.1.1.1')).toBe(false);
+    expect(leaksHost('build 1.2.3.400 done')).toBe(false);
+    expect(leaksHost('Foo:: bar and ::')).toBe(false);
+    // the deliberate blunt rule: a valid dotted quad is hidden even as a version
+    expect(leaksHost('needs version 1.2.3.4')).toBe(true);
+    expect(leaksHost('loopback ::1')).toBe(true);
   });
 });
 
@@ -221,13 +226,18 @@ describe('every exit', () => {
       const pending = await callTool(h.owner, 'chore_delete', { id: rec.id });
       const body = JSON.parse((pending.content as { text: string }[])[0].text);
       const id = (body.result ?? body).approvalId as string;
-      await appReturns(raw);
+      const two = errored(raw);
+      two.content.push({ type: 'text', text: `second: ${raw}` });
+      vi.spyOn(host, 'callAppTool').mockResolvedValue(two as never);
       const outcome = (await decideApproval(id, true, h.owner.id)) as {
         status: string;
         error?: string;
       };
       expect(outcome.status).toBe('failed');
       clean(outcome.error ?? '');
+      // What the owner reads back later: every stored content item too.
+      const view = await getApprovalView(id);
+      clean(JSON.stringify(view?.result));
     });
     it('approval stored text when the host throws', async () => {
       const host = await getHost();

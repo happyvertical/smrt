@@ -257,3 +257,10 @@ covered: `dispatchTool` (app and shell tool results, and so the assistant and
 text, and the `/mcp` JSON-RPC errors (`tools/list`, scope and authorization,
 calls). Not covered: any other route, SSE, logs of other layers, the worker
 protocol and database handles. That is #5498.
+
+The check is deliberately blunt for the interim: a validation message that
+echoes a literal IP, or a version that is a valid dotted quad such as `1.2.3.4`,
+is also replaced, and a short configured host name (for example `db`) hides any
+message containing that whole word. A stored approval failure is scrubbed in
+every content item and `structuredContent`, so reading the approval back shows
+the same generic text.

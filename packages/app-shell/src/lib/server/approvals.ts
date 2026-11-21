@@ -24,7 +24,7 @@ import {
 import { publish } from './events.ts';
 import { getHost, getShellDb } from './host.ts';
 import { assertOwner } from './owner.ts';
-import { ownerText } from './owner-text.ts';
+import { ownerResult, ownerText } from './owner-text.ts';
 import { publicChangeResult } from './results.ts';
 
 /** What an approval runs once the owner says yes. */
@@ -435,6 +435,9 @@ export async function decideApproval(
         );
       // The host reports some failures by returning them (a tool's isError,
       // a non-2xx REST response) instead of throwing: they did not apply.
+      // Every content item and structuredContent of an error result is
+      // owner-safe before it is stored as `pending` or shown (#5464).
+      result = ownerResult(result, 'approval');
       if (error === undefined) error = returnedFailure(action.kind, result);
     } catch (e) {
       if (e instanceof ApprovalRequiredError && action.kind === 'command') {

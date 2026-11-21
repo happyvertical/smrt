@@ -17,7 +17,7 @@ const DB_UNAVAILABLE =
   'The request could not be completed: the database is unavailable, try again.';
 
 const IPV4 =
-  /(?<![\w.])(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)(?![\w])/;
+  /(?<![\w.])(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)(?!\w|\.\d)/;
 const IPV6_CANDIDATE = /(?<![\w:])[0-9a-f:.]*:[0-9a-f:.]*(?![\w:])/gi;
 
 /** Host names the shell's database is configured with (never user or db names). */
@@ -48,7 +48,7 @@ function hasIp(text: string): boolean {
   for (const m of text.matchAll(IPV6_CANDIDATE)) {
     const token = m[0].replace(/\.+$/, '');
     // A bare `12:30` or `a:b` is not an address; isIP decides.
-    if (token.includes(':') && isIP(token) === 6) return true;
+    if (/[0-9a-f]/i.test(token) && isIP(token) === 6) return true;
   }
   return false;
 }
@@ -144,9 +144,8 @@ export function ownerError(error: unknown, where = 'tool error'): unknown {
   if (!(error instanceof Error)) return error;
   const replaced = generic(error.message);
   if (replaced === undefined) return error;
-  log(where, error.message);
+  log(where, error.stack ?? error.message);
   error.message = replaced;
-  if (error.stack) error.stack = `${error.name}: ${replaced}`;
   return error;
 }
 
