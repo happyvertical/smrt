@@ -26,7 +26,7 @@ export {
   type PromptOverrideWriteRequest,
 } from './prompt-override-service.js';
 export { definePrompt, PromptRegistry } from './prompt-registry.js';
-export { resolvePrompt } from './prompt-resolver.js';
+export { resolvePrompt, withPromptOverrides } from './prompt-resolver.js';
 export {
   type ListPromptSettingsOptions,
   PromptFieldNotEditableError,

@@ -797,6 +797,10 @@ export {
 } from './tracked-ai-client';
 // Presentation metadata helpers (#3599): widget hints, display label, selector lookup
 export * from './ui-metadata.js';
+export {
+  type AsyncContext,
+  createAsyncContext,
+} from './utils/async-context.js';
 // IN-list chunking contract for loaders that build IN lists from data-sized
 // arrays (#2367); exported so owning packages chunk at the same bound (#3047).
 export { chunkArray, IN_LIST_CHUNK_SIZE } from './utils/chunk';

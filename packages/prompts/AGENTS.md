@@ -18,9 +18,35 @@ SMRT prompt registry and tenant-aware prompt override package. Code defines defa
 2. File/config override — `getPackageConfig<PromptPackageConfig>('prompts', defaults)`
 3. App-level stored override — `PromptOverride` row with `tenantId = null`
 4. Tenant-level stored override — `PromptOverride` row with current tenant
-5. Runtime override — passed to `resolvePrompt({ overrides })`
+5. Ambient scoped override (#5065) — `withPromptOverrides({ [key]: layer }, fn)`
+6. Runtime override — passed to `resolvePrompt(key, { override })`
 
 Each layer can override any subset of fields (template, profile, model, params). Inheritance is field-by-field.
+
+## Scoped ambient override (#5065)
+
+`withPromptOverrides(overrides, fn)` (`prompt-resolver.ts`, store in
+`scoped-overrides.ts`) runs `fn` so every `resolvePrompt()` inside it, with no
+`override` argument, applies `overrides[key]` as a layer between stored tenant
+overrides and the explicit `options.override` (which wins field by field). It is
+what lets a prompt arena run a draft through the app's real method. Facts:
+
+- Applied in `resolvePrompt()` after `loadPromptBase()`, so a draft never
+  reaches the prompt cache; a template from it is tagged `promptLayer:
+  'runtime'` with the draft's `templateHash`.
+- Backed by core's `createAsyncContext()` (public from core), stored on
+  `Symbol.for('smrt.prompts.scopedOverrides')` on `globalThis` so duplicated
+  module instances share it. Nested scopes: inner wins per key (whole layer),
+  outer keys stay visible.
+- Host opt-in, default off: `allowScopedOverrides: true` in the `prompts`
+  package config; otherwise opening a scope throws. It also throws when the
+  runtime's async context does not propagate across `await` (browsers), since
+  a no-op would run and record the live template as the draft. Authorization
+  stays with the host.
+- `allowedProfileNames`, `allowedModels` and effort validation apply exactly as
+  to `options.override` (effort is validated when the scope opens).
+- It follows `await` in the same async tree only. Work enqueued as a job runs
+  outside the scope and resolves the live template.
 
 ## Conventions
 
