@@ -49,6 +49,7 @@
     "check:direct-model-construction": "node scripts/check-direct-model-construction.mjs",
     "check:package-dag": "node scripts/check-package-dag.mjs",
     "check:new-surface": "node scripts/check-new-surface.mjs",
+    "api:snapshot": "node scripts/check-export-snapshot.mjs --write",
     "surface:ledger": "node scripts/generate-surface-ledger.mjs",
     "check:mcp-config": "node scripts/check-mcp-config.mjs",
     "check:mcp-protocol-hygiene": "node scripts/check-mcp-protocol-hygiene.mjs",

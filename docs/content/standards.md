@@ -26,6 +26,7 @@ The companion document `docs/PROJECT_REQUIREMENTS.md` defines requirements for S
 10. [Templates](#10-templates)
 11. [Forbidden artifacts](#11-forbidden-artifacts)
     - [New-surface ledger](#new-surface-ledger)
+    - [Core root export snapshot](#core-root-export-snapshot)
 12. [Appendix A: audit snapshot](#appendix-a-audit-snapshot)
 13. [Appendix B: rationale for changes](#appendix-b-rationale-for-changes)
 
@@ -824,6 +825,49 @@ grandfathered entries. Search first with
 and `rg <noun> surface-ledger.json`. Removing an item means deleting its entry.
 The `model` scan is shared with `check-direct-model-construction.mjs`
 (`scripts/smrt-model-scan.mjs`).
+
+## Core root export snapshot
+
+`packages/core/api/index.exports.json` and `browser.exports.json` list every
+name the `@happyvertical/smrt-core` root entries (`src/index.ts`,
+`src/browser.ts`) export, one row per name with its `kind` (`value` or `type`)
+and declaring module (a core path, or the package name for a name declared in
+another package). `scripts/check-export-snapshot.mjs` computes the lists with
+the TypeScript checker, following every `export *` and alias, and runs as the
+last step of core's `typecheck` script, so both typecheck jobs enforce it.
+After a reviewed change to the root surface, run `pnpm api:snapshot` and commit
+the snapshot; the check prints each name added, removed, retyped or moved.
+
+- The loaded TypeScript must equal the repository's pin: the exact
+  `devDependencies.typescript` of the root `package.json`, followed into the
+  `pnpm-workspace.yaml` catalog when it is `catalog:` or `catalog:<name>`.
+  A mismatch is refused with a message naming both versions; after a
+  TypeScript bump, run `pnpm api:snapshot` and commit the snapshots.
+- The program uses `packages/core/tsconfig.typecheck.json`, whose source paths
+  resolve workspace packages to `src`. A resolution into a
+  `packages/<pkg>/dist/` declaration fails, so the result does not depend on
+  build state.
+- Any compiler diagnostic in an entry or in a module reached through an export
+  chain fails the run before anything is written (an ambiguous star is TS2308,
+  a missing module TS2307). Every export declaration of every reached module
+  is followed whatever names it yields, into dependency declaration files too,
+  and an `export ... from` that does not resolve anywhere on that chain fails.
+- A name is a `type` when any hop of its alias chain is type-only
+  (`export type { X }`, `export type *`), even when it names a class.
+- A namespace re-export (`export * as ns from`, or `import * as ns` then
+  `export { ns }`) fails: the module's later exports would become public as
+  `ns.X` with no snapshot change. Export the names explicitly.
+- `export *` lines in the two entries are a ratchet:
+  `packages/core/api/export-star-allowlist.json` (entry plus module specifier)
+  may only shrink. A new star line fails; list the names explicitly instead.
+  `pnpm api:snapshot` drops entries for removed lines and never adds one, and
+  refuses to run when the allowlist is missing (restore it from git; only a
+  package's first snapshot uses `pnpm api:snapshot --init`). The Lint job runs
+  `node scripts/check-export-snapshot.mjs --against <base sha>` on pull
+  requests, so an edit that adds a star and its allowlist entry together fails
+  against the base.
+- `turbo.json` keys core's `typecheck` on `api/**` and on the script, so a
+  snapshot or script edit invalidates the cached result.
 
 ---
 

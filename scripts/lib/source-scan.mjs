@@ -153,6 +153,24 @@ export function* walk(dir) {
   }
 }
 
+/**
+ * Text of `path` at git `ref` in `root`; `null` only when a successful tree
+ * lookup of `ref` shows the path absent. Any other git failure (an
+ * unresolvable ref, an unreadable tree or blob) throws, so a ratchet that
+ * compares against the base never mistakes a read failure for a new file.
+ */
+export function requiredFileAtRef(root, ref, path) {
+  const git = (args) =>
+    execFileSync('git', args, {
+      cwd: root,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+  const listing = git(['ls-tree', '-z', '--full-tree', `${ref}^{tree}`, '--', path]);
+  if (listing === '') return null;
+  return git(['cat-file', 'blob', `${ref}:${path}`]);
+}
+
 /** Text of `path` at git `ref` in `root`, or `null` when it does not exist there. */
 export function fileAtRef(root, ref, path) {
   try {

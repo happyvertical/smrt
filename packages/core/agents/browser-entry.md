@@ -14,6 +14,15 @@ it:
   `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` to use another Chromium. CI runs it in
   the workbench browser job.
 
+Both root entries have a committed export list in `packages/core/api/`
+(`index.exports.json`, `browser.exports.json`), checked by core's `typecheck`
+through `scripts/check-export-snapshot.mjs`. A name that reaches or leaves
+either entry, including through a barrel behind `export *`, fails the check
+until the snapshot is regenerated with `pnpm api:snapshot` and committed. New
+`export *` lines in `index.ts` or `browser.ts` fail; the allowlist
+`api/export-star-allowlist.json` only shrinks. Details: the "Core root export
+snapshot" section of `docs/content/standards.md`.
+
 `@noble/hashes`, `import-meta-resolve` and `minimatch` remain external runtime dependencies in the preserve-modules
 package build. Bundling it under `dist/node_modules` leaves dangling imports
 when npm excludes that directory from tarballs. The packed MCP consumer tests

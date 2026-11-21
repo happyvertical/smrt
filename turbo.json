@@ -8,6 +8,7 @@
     "tsconfig*.json",
     "vite.config.base.ts",
     "scripts/declarations*.ts",
+    "scripts/check-export-snapshot.mjs",
     "scripts/prune-svelte-package-artifacts.js",
     "scripts/run-with-env.mjs",
     "scripts/package-test-artifacts.mjs",
@@ -215,6 +216,7 @@
       "inputs": [
         "src/**",
         "test/**",
+        "api/**",
         "**/*.ts",
         "tsconfig*.json",
         "svelte.config*.{js,mjs,cjs}",

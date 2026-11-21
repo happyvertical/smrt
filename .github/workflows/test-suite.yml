@@ -235,6 +235,17 @@ jobs:
           git fetch --no-tags --depth=1 origin "$BASE_SHA"
           node scripts/check-hand-written-ddl.mjs --against "$BASE_SHA"
 
+      # #5476: the core root `export *` allowlist only shrinks. The typecheck
+      # gate reads it from the same tree as the entry, so an edit that adds a
+      # star and its allowlist entry together is caught against the base.
+      - name: Check export-star allowlist did not grow
+        if: github.event.pull_request.base.sha != ''
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          git fetch --no-tags --depth=1 origin "$BASE_SHA"
+          node scripts/check-export-snapshot.mjs --against "$BASE_SHA"
+
   affected-typecheck:
     name: Affected Typecheck
     needs: affected-scope
