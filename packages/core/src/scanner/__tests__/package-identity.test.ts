@@ -841,7 +841,7 @@ ${extra}}
     const root = await project({
       providers: { [VENDOR]: { files: { 'src/ProductionRun.ts': RUN } } },
       app: {
-        'src/ProductionRun.ts': `${CORE}\nimport { ProductionRun as BaseRun } from '${VENDOR}';\n@smrt({ tableName: 'production_runs' })\nexport class ProductionRun extends BaseRun {\n  appNote = '';\n}\n`,
+        'src/ProductionRun.ts': `${CORE}\nimport { ProductionRun as BaseRun } from '${VENDOR}';\n@smrt({ replaceParent: true, tableName: 'production_runs' })\nexport class ProductionRun extends BaseRun {\n  appNote = '';\n}\n`,
         'src/WorkOrder.ts': order(),
       },
     });
