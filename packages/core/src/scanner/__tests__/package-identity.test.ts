@@ -797,29 +797,49 @@ ${extra}}
     expect(message).toContain('@crossPackageRef');
   });
 
-  it('takes a report source and join source given as the constructor of a model published under another name', async () => {
+  // A report source or join source written as a bare name (including the
+  // class name a local constructor is recorded under) is generated as the
+  // base generates it: left as written, never rekeyed, never refused here.
+  const INVOICE = `${CORE}\n@smrt({ name: 'Invoice' })\nexport class InvoiceRecord extends SmrtObject {\n  customerId = '';\n  total = 0;\n}\n`;
+  type ReportConfig = {
+    source?: string;
+    joins?: Record<string, { source?: string }>;
+  };
+  const reportOf = (
+    manifest: { objects: Record<string, unknown> },
+    key: string,
+  ) =>
+    (manifest.objects[key] as SmartObjectDefinition | undefined)
+      ?.decoratorConfig?.report as ReportConfig | undefined;
+
+  it('base report: builds a report on a renamed model given as a constructor, its source as written', async () => {
     const root = await project({
       providers: {},
       app: {
-        'src/Invoice.ts': `${CORE}\n@smrt({ name: 'Invoice' })\nexport class InvoiceRecord extends SmrtObject {\n  customerId = '';\n  total = 0;\n}\n`,
-        'src/Customer.ts': `${CORE}\n@smrt({ name: 'Customer' })\nexport class CustomerRecord extends SmrtObject {\n  region = '';\n}\n`,
-        'src/Revenue.ts': `${CORE}\nimport { InvoiceRecord } from './Invoice';\nimport { CustomerRecord } from './Customer';\n@report({ source: InvoiceRecord, joins: { customer: { source: CustomerRecord, on: 'customerId' } } })\nexport class Revenue extends SmrtObject {\n  total = 0;\n}\n`,
+        'src/Invoice.ts': INVOICE,
+        'src/Revenue.ts': `${CORE}\nimport { InvoiceRecord } from './Invoice';\n@report({ source: InvoiceRecord })\nexport class Revenue extends SmrtObject {\n  total = 0;\n}\n`,
       },
     });
 
     const manifest = await build(root);
-    const report = manifest.objects[`${APP}:Revenue`]?.decoratorConfig
-      .report as {
-      source?: string;
-      joins?: Record<string, { source?: string }>;
-    };
-    expect(report?.source).toBe('Invoice');
-    expect(report?.joins?.customer?.source).toBe('Customer');
+    expect(reportOf(manifest, `${APP}:Revenue`)?.source).toBe('InvoiceRecord');
   });
 
-  const INVOICE = `${CORE}\n@smrt({ name: 'Invoice' })\nexport class InvoiceRecord extends SmrtObject {\n  customerId = '';\n  total = 0;\n}\n`;
+  it('base report: builds a report on a renamed model given as a string, its source and join as written', async () => {
+    const root = await project({
+      providers: {},
+      app: {
+        'src/Invoice.ts': INVOICE,
+        'src/Revenue.ts': `${CORE}\n@report({ source: 'InvoiceRecord', joins: { again: { source: 'InvoiceRecord', on: 'customerId' } } })\nexport class Revenue extends SmrtObject {\n  total = 0;\n}\n`,
+      },
+    });
 
-  it("fails a model published under another model's class name, naming both", async () => {
+    const report = reportOf(await build(root), `${APP}:Revenue`);
+    expect(report?.source).toBe('InvoiceRecord');
+    expect(report?.joins?.again?.source).toBe('InvoiceRecord');
+  });
+
+  it("base report: refuses a model published under another model's class name with the base key collision", async () => {
     const root = await project({
       providers: {},
       app: {
@@ -829,46 +849,76 @@ ${extra}}
       },
     });
 
-    const failure = build(root);
-    await expect(failure).rejects.toMatchObject({
-      code: 'CONFIG_PUBLIC_NAME_COLLISION',
-    });
-    const message = await failure.catch((error: Error) => error.message);
-    expect(message).toContain('HistoricalRecord');
-    expect(message).toContain('InvoiceRecord');
+    // The base rename pass refuses a public key another entry still holds.
+    await expect(build(root)).rejects.toThrow(
+      /Class name collision for public model .*:InvoiceRecord/,
+    );
   });
 
-  it('builds a report whose string source and join name a renamed model by its class name', async () => {
-    const root = await project({
-      providers: {},
-      app: {
-        'src/Invoice.ts': INVOICE,
-        'src/Revenue.ts': `${CORE}\n@report({ source: 'InvoiceRecord', joins: { again: { source: 'InvoiceRecord', on: 'customerId' } } })\nexport class Revenue extends SmrtObject {\n  total = 0;\n}\n`,
+  // Two packages in one manifest, as an app scanning several workspace
+  // packages under its own name generates them.
+  const multi = (
+    objects: Array<{
+      className: string;
+      packageName: string;
+      decoratorConfig?: Record<string, unknown>;
+    }>,
+  ) =>
+    new ManifestGenerator().generateManifest([
+      {
+        filePath: '/fixture',
+        errors: [],
+        objects: objects.map(({ className, packageName, decoratorConfig }) => ({
+          name: className.toLowerCase(),
+          className,
+          collection: `${className.toLowerCase()}s`,
+          filePath: `/fixture/${packageName}/${className}.ts`,
+          fields: {
+            total: {
+              type: 'integer',
+              _meta: { __report: { kind: 'aggregate', fn: 'count' } },
+            },
+          },
+          methods: {},
+          decoratorConfig: decoratorConfig ?? {},
+          packageName,
+          extends: 'SmrtObject',
+        })),
       },
-    });
+    ] as unknown as ScanResult[]);
 
-    const manifest = await build(root);
-    const report = manifest.objects[`${APP}:Revenue`]?.decoratorConfig
-      .report as {
-      source?: string;
-      joins?: Record<string, { source?: string }>;
-    };
-    expect(report?.source).toBe('Invoice');
-    expect(report?.joins?.again?.source).toBe('Invoice');
+  it("base report: keeps another package's report source when one package publishes a namesake under another name", () => {
+    const manifest = multi([
+      {
+        className: 'Record',
+        packageName: '@fixture/pkg-a',
+        decoratorConfig: { name: 'Invoice' },
+      },
+      { className: 'Record', packageName: '@fixture/pkg-b' },
+      {
+        className: 'RecordReport',
+        packageName: '@fixture/pkg-b',
+        decoratorConfig: { report: { source: 'Record' } },
+      },
+    ]);
+    expect(reportOf(manifest, '@fixture/pkg-b:RecordReport')?.source).toBe(
+      'Record',
+    );
   });
 
-  it('fails a bare-name report source that only dependencies declare', async () => {
-    const root = await project({
-      providers: twoRuns,
-      app: {
-        'src/RunReport.ts': `${CORE}\n@report({ source: 'ProductionRun' })\nexport class RunReport extends SmrtObject {\n  total = 0;\n}\n`,
+  it("base report: builds a model published under the class name of another package's model", () => {
+    const manifest = multi([
+      {
+        className: 'InvoiceRecord',
+        packageName: '@fixture/pkg-a',
+        decoratorConfig: { name: 'Invoice' },
       },
-    });
-
-    await expect(build(root)).rejects.toMatchObject({
-      code: 'CONFIG_UNKNOWN_RELATIONSHIP_TARGET',
-      message: expect.stringContaining(`${OTHER}:ProductionRun`),
-    });
+      { className: 'Invoice', packageName: '@fixture/pkg-b' },
+    ]);
+    expect(Object.keys(manifest.objects).sort()).toEqual([
+      '@fixture/pkg-a:Invoice',
+      '@fixture/pkg-b:Invoice',
+    ]);
   });
 
   it('takes the own-package model for a bare-name target that two dependencies also declare', async () => {

@@ -631,14 +631,6 @@ export class ManifestGenerator {
 
     // An app may keep its source constructor name while exporting the upstream name.
     const publicNames = new Map<string, string>();
-    // Every local model by the class name its source declares, before any is
-    // published under another name: a reference written as a class name is
-    // rewritten through `publicNames` below, so no model may be published
-    // under another model's source class name.
-    const sourceNames = new Map<string, SmartObjectDefinition>();
-    for (const obj of Object.values(manifest.objects)) {
-      if (!sourceNames.has(obj.className)) sourceNames.set(obj.className, obj);
-    }
     for (const [key, obj] of Object.entries(manifest.objects)) {
       const parentName = (obj.extendsQualified ?? obj.extends)
         ?.split(':')
@@ -658,20 +650,6 @@ export class ManifestGenerator {
             'rename it: the framework reserves this class name.',
           'CONFIG_RESERVED_CLASS_NAME',
           { className: obj.className, publicName },
-        );
-      }
-      const namesake = sourceNames.get(publicName);
-      if (namesake && namesake !== obj) {
-        throw new ConfigurationError(
-          `${obj.className} (${obj.filePath}) is published under the public name ${publicName}, the class name of ` +
-            `${namesake.className} (${namesake.filePath}); a reference to ${publicName} would name either model. ` +
-            'Give one of the two models another public or class name.',
-          'CONFIG_PUBLIC_NAME_COLLISION',
-          {
-            className: obj.className,
-            publicName,
-            namesake: namesake.className,
-          },
         );
       }
       const packageName = obj.packageName ?? options?.packageName;
@@ -706,24 +684,6 @@ export class ManifestGenerator {
       for (const field of Object.values(obj.fields)) {
         if (field.related && publicNames.has(field.related))
           field.related = publicNames.get(field.related);
-      }
-      // A report source or join source naming a local model by its source
-      // class name follows it to its public name too; one imported from
-      // another package (`sourceQualified`) is an identity and stays.
-      const report = obj.decoratorConfig?.report as
-        | (Record<string, unknown> & {
-            joins?: Record<string, Record<string, unknown>>;
-          })
-        | undefined;
-      for (const holder of [report, ...Object.values(report?.joins ?? {})]) {
-        if (
-          holder &&
-          typeof holder.source === 'string' &&
-          typeof holder.sourceQualified !== 'string' &&
-          publicNames.has(holder.source)
-        ) {
-          holder.source = publicNames.get(holder.source);
-        }
       }
     }
 
@@ -1358,26 +1318,22 @@ export class ManifestGenerator {
         if (typeof holder.sourceQualified === 'string') continue;
         const source = holder.source;
         if (typeof source !== 'string' || source === '') continue;
-        if (isQualifiedName(source)) {
-          if (!known(source)) {
-            unknown.push(
-              `${obj.className} (${obj.filePath}): @report() ${path} is "${source}"`,
-            );
-          }
-        } else {
-          bare(
-            `${obj.className} (${obj.filePath}): @report() ${path}`,
-            source,
-            obj,
+        // A report source written as a bare name is handled as the base
+        // handles it: left as written and not checked here. One imported from
+        // another package carries `sourceQualified` (confirmed by identity in
+        // `confirmPackageTargets`); a written qualified name must name a model.
+        if (isQualifiedName(source) && !known(source)) {
+          unknown.push(
+            `${obj.className} (${obj.filePath}): @report() ${path} is "${source}"`,
           );
         }
       }
     }
     if (unknown.length > 0) {
       throw new ConfigurationError(
-        `A relationship target or report source written as a bare name must name a model class of this package ` +
-          `by its exact name, and a qualified one a model this package or one of its SMRT dependencies declares, ` +
-          `also by its exact name; ` +
+        `A relationship target written as a bare name must name a model class of this package by its exact name, ` +
+          `and a relationship target or report source written as a qualified name a model this package or one of ` +
+          `its SMRT dependencies declares, also by its exact name; ` +
           `these name none:\n  ${unknown.join('\n  ')}\n` +
           `Write the model's exact name. To reference another package's model, use a qualified @crossPackageRef, ` +
           `or import its class from the package that declares it (built, and a dependency of this package) and pass it.`,
@@ -1387,7 +1343,7 @@ export class ManifestGenerator {
     }
     if (ambiguous.length > 0) {
       throw new ConfigurationError(
-        `A relationship target or report source written as a bare name is looked up by that name, so it must ` +
+        `A relationship target written as a bare name is looked up by that name, so it must ` +
           `match exactly one model of this manifest; these match more than one:\n  ` +
           `${ambiguous.join('\n  ')}\n` +
           `Pass the imported class instead of its name: an imported class is resolved to its one declaration.`,
@@ -1398,8 +1354,9 @@ export class ManifestGenerator {
   }
 
   /**
-   * The model a relationship target or report source written as a bare class
-   * name names: a model of the manifest being generated whose class name is
+   * The model a relationship target written as a bare class name names (a
+   * report source written as a bare name is left as written and not checked,
+   * as the base does): a model of the manifest being generated whose class name is
    * exactly that name, the referring class's own package's first, else the
    * only one. `localExact` lists the exact matches when there is no single
    * one. A dependency's model and a model whose name differs only in letter
