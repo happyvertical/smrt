@@ -5,10 +5,10 @@ description: "Production-ready multi-tenancy framework for SMRT with automatic t
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-21T10:47:34Z"
+  at: "2026-11-21T12:09:17Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:06fd604495743768b3e0d01158dcfb341e92d54b7e32dc88985fc59ff3fbc192"
+source_revision: "sha256:331ecf8a80e77022d810394a86d2ca9ce42a744e25977e119c53b40044949547"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/tenancy/package.json"
@@ -24,7 +24,7 @@ sources:
 
 - Directory: `packages/tenancy`
 - Private: no
-- Object source: `scanner`
+- Object source: `domain-artifact`
 - Evidence level: `source-inspected`
 
 ## Documentation
@@ -59,3 +59,4 @@ sources:
 ## Models
 
 - `BillingRelationship` (collection `billingrelationships`, extends `SmrtObject`)
+- `BillingRelationshipCollection` (collection `billingrelationships`, extends `SmrtCollection`)

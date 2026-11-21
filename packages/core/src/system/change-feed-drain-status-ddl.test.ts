@@ -34,17 +34,25 @@ const MARKERS = [
   'smrt-change-feed-helpers:v4',
 ];
 const STATUS = CREATE_POSTGRES_CHANGE_FEED_DRAIN_STATUS_FUNCTION;
-const NO_WORK = "EXCEPTION WHEN SQLSTATE 'SMR01' THEN";
+const NO_WORK = /EXCEPTION\s+WHEN SQLSTATE 'SMR01' THEN/;
 
 /** The locking block: from its BEGIN to its no-work handler. */
 function lockingBlock(): { start: number; end: number; text: string } {
-  const end = STATUS.indexOf(NO_WORK);
-  const start = STATUS.lastIndexOf(
-    'BEGIN',
-    STATUS.indexOf('SELECT 1 FROM _smrt_changes_pending LIMIT 1'),
-  );
+  const end = STATUS.search(NO_WORK);
+  const start = STATUS.indexOf('<<smrt_drain_pass>>');
   return { start, end, text: STATUS.slice(start, end) };
 }
+
+/** The statements of the locking block that can wait for a lock. */
+const BLOCKING_STEPS = [
+  'IF NOT EXISTS (SELECT 1 FROM _smrt_changes_pending LIMIT 1)',
+  "PERFORM pg_advisory_xact_lock(\n            hashtext('smrt'),",
+  'LOCK TABLE _smrt_changes_pending IN ROW EXCLUSIVE MODE;',
+  "PERFORM pg_advisory_xact_lock(hashtext('smrt-change-feed-head')",
+  'DELETE FROM _smrt_changes_pending AS sensitive',
+];
+const BUDGET_STEP =
+  "PERFORM set_config('lock_timeout', GREATEST(1, floor(v_remaining_ms))::BIGINT::TEXT || 'ms', true);";
 
 describe('change-feed status drain bodies (#5402)', () => {
   it('bumps the helper marker to v7 and stamps v7 to v4 into all five helper bodies', () => {
@@ -171,5 +179,92 @@ describe('change-feed status drain bodies (#5402)', () => {
         /could not be made equal to _smrt_drain_changes\(integer,text\[\]\)/,
       );
     }
+  });
+});
+
+describe('change-feed waiting drain bodies (#5403)', () => {
+  it('applies the remaining budget right before every blocking step of a waiting pass', () => {
+    const block = lockingBlock();
+    for (const step of BLOCKING_STEPS) {
+      const at = STATUS.indexOf(step, block.start);
+      expect(at, step).toBeGreaterThan(block.start);
+      expect(at, step).toBeLessThan(block.end);
+      const budget = STATUS.lastIndexOf(BUDGET_STEP, at);
+      expect(budget, step).toBeGreaterThan(block.start);
+      // No other statement sits between the budget step and the blocking one.
+      const between = STATUS.slice(budget + BUDGET_STEP.length, at);
+      expect(
+        between
+          .replace(/--[^\n]*/g, '')
+          .replace(/\s+/g, ' ')
+          .trim(),
+        step,
+      ).toMatch(/^(END IF;)?( END IF;)?$/);
+    }
+  });
+
+  it('never sets lock_timeout to zero and ends a spent budget as timeout before waiting', () => {
+    expect(STATUS).not.toMatch(/set_config\('lock_timeout',\s*'0/);
+    const budgets = STATUS.split(BUDGET_STEP).length - 1;
+    expect(budgets).toBe(BLOCKING_STEPS.length);
+    expect(STATUS).toMatch(
+      /IF v_remaining_ms < 1 THEN\s+v_status := 'timeout';\s+RAISE EXCEPTION USING ERRCODE = 'SMR01';\s+END IF;\s+PERFORM set_config\('lock_timeout', GREATEST\(1,/,
+    );
+  });
+
+  it('caps the budget below the session statement_timeout', () => {
+    expect(STATUS).toContain("WHERE name = 'statement_timeout'");
+    expect(STATUS).toMatch(
+      /v_statement_timeout_ms\s+- EXTRACT\(EPOCH FROM clock_timestamp\(\) - statement_timestamp\(\)\) \* 1000\s+- GREATEST\(v_statement_timeout_ms \/ 10, 50\)/,
+    );
+  });
+
+  it('refuses a firstStatement call that is not its transaction’s first statement, before any lock', () => {
+    const guard = STATUS.indexOf(
+      "p_options->'firstStatement' = 'true'::JSONB\n      AND statement_timestamp() <> transaction_timestamp()",
+    );
+    expect(guard).toBeGreaterThan(0);
+    expect(guard).toBeLessThan(lockingBlock().start);
+  });
+
+  it('takes a column-grant role’s feed-table lock before the head with a 1 ms limit, holding nothing on refusal', () => {
+    const columnGrant = STATUS.indexOf(
+      "IF NOT has_table_privilege('_smrt_changes', 'INSERT, UPDATE, DELETE, TRUNCATE') THEN",
+    );
+    const zeroRow = STATUS.indexOf(
+      'INSERT INTO _smrt_changes (seq) SELECT NULL::BIGINT WHERE false;',
+    );
+    const waitHead = STATUS.indexOf(
+      "PERFORM pg_advisory_xact_lock(hashtext('smrt-change-feed-head')",
+    );
+    const tryHead = STATUS.indexOf(
+      "pg_try_advisory_xact_lock(hashtext('smrt-change-feed-head')",
+    );
+    expect(columnGrant).toBeGreaterThan(0);
+    expect(zeroRow).toBeGreaterThan(columnGrant);
+    expect(STATUS.slice(columnGrant, zeroRow)).toContain(
+      "PERFORM set_config('lock_timeout', '1ms', true);",
+    );
+    expect(zeroRow).toBeLessThan(waitHead);
+    expect(zeroRow).toBeLessThan(tryHead);
+    expect(STATUS.slice(zeroRow, waitHead)).toMatch(
+      /EXCEPTION WHEN lock_not_available THEN\s+v_status := 'relation_busy';/,
+    );
+  });
+
+  it('restores lock_timeout before sequencing and reports a lock timeout as timeout only before it', () => {
+    const restore = STATUS.lastIndexOf(
+      "PERFORM set_config('lock_timeout', v_lock_timeout, true);",
+      STATUS.indexOf('RETURN QUERY'),
+    );
+    const sequencing = STATUS.indexOf('v_sequencing := true;');
+    expect(restore).toBeGreaterThan(0);
+    expect(sequencing).toBeGreaterThan(restore);
+    expect(STATUS.indexOf('RETURN QUERY', sequencing)).toBeGreaterThan(
+      sequencing,
+    );
+    expect(STATUS).toMatch(
+      /WHEN lock_not_available THEN\s+IF v_sequencing THEN\s+RAISE;\s+END IF;\s+v_status := 'timeout';/,
+    );
   });
 });

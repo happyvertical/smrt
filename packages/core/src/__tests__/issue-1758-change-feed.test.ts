@@ -741,10 +741,12 @@ describe('change feed spine (issue #1758)', () => {
             rows: [
               {
                 created_at_type: 'timestamp with time zone',
-                batch_function_name: '_smrt_append_changes',
-                drain_function_name: '_smrt_drain_changes',
-                compat_drain_function_name: '_smrt_drain_changes',
-                function_name: '_smrt_append_change',
+                // Every helper identity reports the current body (#5402).
+                append_version: 7,
+                batch_version: 7,
+                drain_version: 7,
+                compat_drain_version: 7,
+                status_drain_version: 7,
                 pending_table_name: '_smrt_changes_pending',
                 table_name: '_smrt_changes',
               },

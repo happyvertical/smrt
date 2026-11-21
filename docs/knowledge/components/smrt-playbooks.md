@@ -5,10 +5,10 @@ description: "Layered playbook registry, app/tenant overrides, and plan resoluti
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-21T10:47:34Z"
+  at: "2026-11-21T12:09:17Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:b67d2d8fe69b781f9de58fc0b068190944194eaec991cff72c51f19aa8f22b10"
+source_revision: "sha256:b774deb60a56b08fdae353257d9ca920cc04773ca9b53f580199cd0e6a8f184d"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/playbooks/package.json"
@@ -24,7 +24,7 @@ sources:
 
 - Directory: `packages/playbooks`
 - Private: no
-- Object source: `scanner`
+- Object source: `domain-artifact`
 - Evidence level: `source-inspected`
 
 ## Documentation
@@ -52,3 +52,4 @@ sources:
 ## Models
 
 - `PlaybookOverride` (collection `playbookoverrides`, extends `SmrtObject`)
+- `PlaybookOverrideCollection` (collection `playbookoverrides`, extends `SmrtCollection`)
