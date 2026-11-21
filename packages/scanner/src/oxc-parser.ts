@@ -3237,10 +3237,17 @@ function resolveDecoratorName(
   if (callee.type === 'Identifier') {
     return importAliases?.get(callee.name) ?? callee.name;
   }
+  // A namespace member names an SMRT decorator only when the namespace is
+  // imported from an SMRT package: another library's `@forms.field()` is
+  // that library's decorator, and its options are not SMRT field options.
+  const namespace =
+    callee.type === 'MemberExpression' && callee.object.type === 'Identifier'
+      ? importBindings?.get(callee.object.name)
+      : undefined;
   if (
     callee.type === 'MemberExpression' &&
-    callee.object.type === 'Identifier' &&
-    importBindings?.get(callee.object.name)?.imported === null
+    namespace?.imported === null &&
+    namespace.source.startsWith('@happyvertical/smrt-')
   ) {
     // `ns.field` and `ns['field']` name the same export.
     if (!callee.computed && callee.property.type === 'Identifier') {

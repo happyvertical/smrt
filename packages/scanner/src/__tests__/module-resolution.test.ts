@@ -310,3 +310,17 @@ describe('class decorators reached through a computed namespace member', () => {
     expect(model('Vault')?.decoratorConfig).toMatchObject({ api: false });
   });
 });
+
+describe('field decorators reached through a namespace', () => {
+  it("keeps an SMRT field's options when another library's namespace decorator of the same name follows", async () => {
+    const { errors, manifest } = await scanProject({
+      'src/models/Account.ts': `import { SmrtObject, smrt, field } from '@happyvertical/smrt-core';\nimport * as forms from '@fixture/not-framework';\n@smrt()\nexport class Account extends SmrtObject {\n  @field({ sensitive: true })\n  @forms.field({ sensitive: false })\n  apiSecret: string = '';\n}\n`,
+    });
+
+    expect(errors).toEqual([]);
+    const account = Object.values(manifest().objects).find(
+      (entry) => entry.className === 'Account',
+    );
+    expect(account?.fields.apiSecret?.sensitive).toBe(true);
+  });
+});
