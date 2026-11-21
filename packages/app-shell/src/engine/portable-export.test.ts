@@ -73,8 +73,9 @@ describe('portable user app', () => {
 
     const chore = bundle.tables.find((t) => t.name.includes('chore'));
     expect(chore?.rows).toHaveLength(2);
-    expect(chore?.columns).toContain('secret');
-    expect(chore?.columns).toContain('created_at');
+    const names = chore?.columns.map((c) => c.name);
+    expect(names).toContain('secret');
+    expect(names).toContain('created_at');
     expect(bundle.tables.some((t) => t.name === '_archive')).toBe(true);
     expect(bundle.versions.length).toBeGreaterThanOrEqual(4);
     expect(checkUserAppBundle(viaJson(bundle))).toEqual([]);
@@ -179,7 +180,7 @@ describe('portable user app', () => {
     );
   });
 
-  it('does not call a target with the same rows but other table definitions the same app', async () => {
+  it('does not call a target with the same rows but other columns the same app', async () => {
     const { host, store, dataDir } = await build();
     const bundle = viaJson(await exportOf(store, dataDir)) as PortableUserApp;
     await host.close();
@@ -189,40 +190,41 @@ describe('portable user app', () => {
       (await verifyUserApp({ dataDir: target, bundle })).schemaMatches,
     ).toBe(true);
     const other = viaJson(bundle) as PortableUserApp;
-    other.tables[0].indexSql = [];
-    other.tables[0].createSql = `${other.tables[0].createSql} `;
-    other.schemaDigest = 'different';
+    const chore = other.tables.find((t) => t.name.includes('chore'))!;
+    chore.columns = chore.columns.filter((c) => c.name !== 'secret');
     const result = await verifyUserApp({ dataDir: target, bundle: other });
     expect(result.schemaMatches).toBe(false);
     expect(result.ok).toBe(false);
   });
 
-  it('refuses table definitions that were changed or are not one statement', async () => {
+  it('refuses names and values that are not plain data (a bundle is untrusted)', async () => {
     const { host, store, dataDir } = await build();
     const bundle = viaJson(await exportOf(store, dataDir)) as PortableUserApp;
     await host.close();
     const chore = (b: PortableUserApp) =>
-      b.tables.find((t) => t.name.includes('chore'));
+      b.tables.find((t) => t.name.includes('chore'))!;
 
-    const injected = viaJson(bundle) as PortableUserApp;
-    chore(injected)!.createSql += '; DROP TABLE _archive';
-    expect(checkUserAppBundle(injected).join(' ')).toMatch(/not usable/);
+    const table = viaJson(bundle) as PortableUserApp;
+    chore(table).name = 'x"; DROP TABLE _archive; --';
+    expect(checkUserAppBundle(table).join(' ')).toMatch(/not usable/);
 
-    const renamed = viaJson(bundle) as PortableUserApp;
-    chore(renamed)!.createSql = chore(renamed)!.createSql.replace(
-      /CREATE TABLE "?\w+"?/i,
-      'CREATE TABLE other',
-    );
-    expect(checkUserAppBundle(renamed).join(' ')).toMatch(/not usable/);
+    const column = viaJson(bundle) as PortableUserApp;
+    chore(column).columns[0].name = 'id) VALUES (1); --';
+    expect(checkUserAppBundle(column).join(' ')).toMatch(/not usable/);
 
-    const edited = viaJson(bundle) as PortableUserApp;
-    chore(edited)!.createSql = chore(edited)!.createSql.replace(
-      /\)\s*$/,
-      ', extra TEXT)',
-    );
-    expect(checkUserAppBundle(edited).join(' ')).toMatch(/definitions/);
+    const family = viaJson(bundle) as PortableUserApp;
+    (chore(family).columns[0] as { family: string }).family = 'sql';
+    expect(checkUserAppBundle(family).join(' ')).toMatch(/not usable/);
+
+    const value = viaJson(bundle) as PortableUserApp;
+    (chore(value).rows[0] as Record<string, unknown>).title = { $sql: 'x' };
+    expect(checkUserAppBundle(value).join(' ')).toMatch(/not usable/);
+
+    const big = viaJson(bundle) as PortableUserApp;
+    (chore(big).rows[0] as Record<string, unknown>)._sync_revision = 2 ** 60;
+    expect(checkUserAppBundle(big).join(' ')).toMatch(/not usable|2\^53/);
     await expect(
-      importUserApp({ dataDir: dir(), bundle: edited }),
+      importUserApp({ dataDir: dir(), bundle: table }),
     ).rejects.toThrow(/not usable/);
   });
 

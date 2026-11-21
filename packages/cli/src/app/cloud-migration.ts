@@ -937,11 +937,13 @@ export async function runSharedCloudMigration(
 ): Promise<SharedMigrationResult> {
   const { plan, transport } = options;
   if (plan.bundle.userApp) {
-    // Placing run-time tables in the shared multi-tenant database needs the
-    // engine's PostgreSQL profile (#5186/#5187); refuse rather than drop it.
+    // The engine installs a user app into a hosted PostgreSQL schema
+    // (`importUserApp({ database })`, #5193), but the shared sync/apply stream
+    // has no receiver for run-time tables, and one per tenant needs the
+    // hosted caller's identity (#5188). Refuse rather than drop it.
     throw new CloudMigrationError(
       'plan_refused',
-      'This application has an app shell user app, which cannot be moved to the shared cloud target yet; nothing was sent.',
+      'This application has an app shell user app, which the shared cloud target has no receiver for yet; nothing was sent.',
     );
   }
   const batchSize = options.batchSize ?? DEFAULT_BATCH_SIZE;

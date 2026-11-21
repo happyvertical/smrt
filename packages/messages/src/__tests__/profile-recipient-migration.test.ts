@@ -87,6 +87,48 @@ describe('profile recipient legacy SQLite maintenance', () => {
       1,
     );
   });
+  it('refuses while a child references the table under another spelling, and keeps the child row', async () => {
+    // SQLite resolves REFERENCES case-insensitively: this is a real child.
+    await db.query(
+      'CREATE TABLE delivery_events(id TEXT PRIMARY KEY, delivery_id TEXT REFERENCES NOTIFICATION_DELIVERIES(id) ON DELETE CASCADE)',
+    );
+    await db.insert('delivery_events', { id: 'event', delivery_id: row.id });
+    const before = await snapshot();
+
+    await expect(
+      migrateNotificationProfileRecipients(db, 'sqlite'),
+    ).rejects.toThrow('inbound-FK-safe');
+    expect(await snapshot()).toEqual(before);
+    expect((await db.query('SELECT * FROM delivery_events')).rows).toEqual([
+      { id: 'event', delivery_id: row.id },
+    ]);
+  });
+
+  it('refuses while a real child exists, even with a temporary table of its name shadowing it', async () => {
+    await db.query(
+      'CREATE TABLE delivery_events(id TEXT PRIMARY KEY, delivery_id TEXT REFERENCES notification_deliveries(id) ON DELETE CASCADE)',
+    );
+    await db.insert('delivery_events', { id: 'event', delivery_id: row.id });
+    await db.query('CREATE TEMP TABLE delivery_events(id TEXT)');
+
+    await expect(
+      migrateNotificationProfileRecipients(db, 'sqlite'),
+    ).rejects.toThrow('inbound-FK-safe');
+    expect((await db.query('SELECT * FROM main.delivery_events')).rows).toEqual(
+      [{ id: 'event', delivery_id: row.id }],
+    );
+  });
+
+  it('refuses a table that references itself', async () => {
+    await db.query('DROP TABLE notification_deliveries');
+    await db.query(
+      'CREATE TABLE notification_deliveries(id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL, recipient_user_id TEXT NOT NULL REFERENCES users(id), channel TEXT NOT NULL, source_ref TEXT NOT NULL, kind TEXT NOT NULL, required_dispatch_policy TEXT, recipient_address TEXT NOT NULL, status TEXT, attempts INTEGER, message_id TEXT, provider_message_id TEXT, retry_of TEXT REFERENCES notification_deliveries(id) ON DELETE CASCADE)',
+    );
+    await expect(
+      planNotificationProfileRecipients(db, 'sqlite'),
+    ).rejects.toThrow('inbound-FK-safe');
+  });
+
   it('rolls back a midway DDL failure to the exact old schema, indexes and history, then retries', async () => {
     const before = await snapshot();
     const wrapped = new Proxy(db, {
