@@ -25,7 +25,9 @@
       "types": "./dist/lib/server/shutdown.d.ts",
       "import": "./dist/lib/server/shutdown.js"
     },
-    "./start": "./build/index.js",
+    "./start": {
+      "import": "./build/index.js"
+    },
     "./manifest": "./dist/manifest.json"
   },
   "files": [
