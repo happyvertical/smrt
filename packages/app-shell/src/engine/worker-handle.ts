@@ -7,16 +7,19 @@ import {
   type WorkerDatabaseConfig,
 } from './db/index.ts';
 import type { AppDefinition, Migration } from './definition.ts';
-import { EngineError, WorkerCrashedError } from './errors.ts';
+import { EngineError, StaleFenceError, WorkerCrashedError } from './errors.ts';
 import type { BootInfo, WorkerOp, WorkerReply } from './worker-protocol.ts';
 
 /** The app answered with an error (as opposed to the thread dying). */
 export class AppCallError extends Error {
   readonly user: boolean;
-  constructor(message: string, user: boolean) {
+  /** The call was refused by the ownership fence (#5190); nothing was written. */
+  readonly stale: boolean;
+  constructor(message: string, user: boolean, stale = false) {
     super(message);
     this.name = 'AppCallError';
     this.user = user;
+    this.stale = stale;
   }
 }
 
@@ -126,8 +129,16 @@ export class AppWorker {
     this.ready = new Promise((resolve, reject) => {
       this.worker.once(
         'message',
-        (m: BootInfo & { ready: boolean; error?: string; user?: boolean }) => {
+        (
+          m: BootInfo & {
+            ready: boolean;
+            error?: string;
+            user?: boolean;
+            stale?: boolean;
+          },
+        ) => {
           if (m.ready) resolve(m);
+          else if (m.stale) reject(new StaleFenceError(m.error ?? 'stale'));
           else
             reject(
               new EngineError(
@@ -174,7 +185,7 @@ export class AppWorker {
           ),
         (e) => p.reject(e as Error),
       );
-    } else p.reject(new AppCallError(r.error, r.user));
+    } else p.reject(new AppCallError(r.error, r.user, r.stale === true));
   }
 
   call<T = unknown>(op: WorkerOp, ...args: unknown[]): Promise<T> {

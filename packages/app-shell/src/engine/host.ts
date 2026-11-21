@@ -27,6 +27,7 @@ import {
 } from './commands.ts';
 import { assertLoadBounds, type LoadPreview } from './data-migrations.ts';
 import {
+  acquireAppOwnership,
   assertDatabaseConfig,
   claimAppDatabase,
   copySuffix,
@@ -45,6 +46,7 @@ import {
   listSideSchemas,
   readDumpHeader,
   restoreDump,
+  revokeSchema,
   schemaExists,
   swapSchemas,
 } from './db/postgres-copy.ts';
@@ -81,7 +83,11 @@ import {
   sameDir,
   writeDraftMarker,
 } from './draft.ts';
-import { ApprovalRequiredError, EngineError } from './errors.ts';
+import {
+  ApprovalRequiredError,
+  EngineError,
+  StaleFenceError,
+} from './errors.ts';
 import type { ExtractPreview } from './extract-model.ts';
 import { WORKBOOK_LOOKUP, WORKBOOK_ROW } from './import-bookkeeping.ts';
 import type { MergePreview } from './merge-records.ts';
@@ -474,6 +480,12 @@ export class AppHost extends EventEmitter {
   }
 
   private async boot() {
+    // PostgreSQL: take ownership first (#5190). Advancing the generation
+    // fences every worker of an earlier host, so nothing of theirs can commit
+    // while this start-up recovers, sweeps and opens the app.
+    const fence = await acquireAppOwnership(this.database, this.lockTimeoutMs);
+    if (fence !== undefined)
+      this.database = { ...this.database, fence } as DatabaseConfig;
     let cur = await this.store.current();
     // Finish or undo a publish a crash interrupted, before the app opens. On
     // PostgreSQL the schemas are put right first, while the journal still
@@ -571,7 +583,11 @@ export class AppHost extends EventEmitter {
         this.app = this.spawn(this.def, this.version);
         await this.app.ready.catch(() => {}); // surfaced later by the dead worker
       }
-      if (e instanceof EngineError && e.code === 'refused') throw e;
+      if (
+        e instanceof EngineError &&
+        (e.code === 'refused' || e.code === 'stale_fence')
+      )
+        throw e;
       throw new EngineError(
         `the app did not start with this change, so it was not applied: ${(e as Error).message}`,
         'migration_failed',
@@ -1892,15 +1908,50 @@ export class AppHost extends EventEmitter {
     );
   }
 
-  /** Replace the live schema by `next` (the live one goes to `aside`) in one transaction. */
-  private swapSchemasIn(next: string, aside: string) {
-    return withSchemaAdmin(this.database, (db) =>
+  /**
+   * The ownership generation this host holds (#5190); `undefined` on SQLite,
+   * which keeps its writer lease instead. Every worker it starts carries it.
+   */
+  get fence(): number | undefined {
+    return this.database.kind === 'sqlite' ? undefined : this.database.fence;
+  }
+
+  /**
+   * Replace the live schema by `next` (the live one goes to `aside`) in one
+   * transaction, which also advances the ownership generation: this host
+   * adopts the new one for the workers it starts next, and every worker that
+   * still holds the old one is fenced out. `trust` skips the ownership check
+   * (undoing this host's own swap, whose reply may have been lost); a forward
+   * swap checks it, so a host that lost ownership changes nothing.
+   */
+  private async swapSchemasIn(next: string, aside: string, trust = false) {
+    const { fence } = await withSchemaAdmin(this.database, (db) =>
       swapSchemas(
         db,
-        { live: schemaOf(this.database), next, aside, owner: this.ownerBase() },
+        {
+          live: schemaOf(this.database),
+          next,
+          aside,
+          owner: this.ownerBase(),
+          expectFence: trust ? undefined : this.fence,
+        },
         this.lockTimeoutMs,
       ),
     );
+    if (fence !== null)
+      this.database = { ...this.database, fence } as DatabaseConfig;
+  }
+
+  /**
+   * Drop a schema the swap moved aside: its privileges go first (a session
+   * that still holds a plan on it fails instead of writing to data nobody
+   * reads), then the schema. A failure leaves the aside for the next start.
+   */
+  private async dropAsideSchemaOrThrow(aside: string) {
+    await withSchemaAdmin(this.database, (db) =>
+      revokeSchema(db, aside, this.ownerBase()),
+    );
+    await this.dropSideSchemaOrThrow(aside);
   }
 
   /** Drop a side schema; a failure is left for the next start's cleanup unless `strict`. */
@@ -1973,17 +2024,24 @@ export class AppHost extends EventEmitter {
         await drop(pg.aside);
         await drop(pg.staging);
       } else {
-        if (await has(pg.aside))
-          await swapSchemas(
+        if (await has(pg.aside)) {
+          const swapped = await swapSchemas(
             db,
             {
               live: pg.schema,
               next: pg.aside,
               aside: pg.staging,
               owner: pg.schema,
+              expectFence: this.fence,
             },
             this.lockTimeoutMs,
           );
+          if (swapped.fence !== null)
+            this.database = {
+              ...this.database,
+              fence: swapped.fence,
+            } as DatabaseConfig;
+        }
         await drop(pg.staging);
       }
     });
@@ -2068,12 +2126,12 @@ export class AppHost extends EventEmitter {
           await this.app.ready;
         } catch (e) {
           await this.app.terminate().catch(() => {});
-          if (swapped) await this.swapSchemasIn(aside, side);
+          if (swapped) await this.swapSchemasIn(aside, side, true);
           this.app = this.spawn(this.def, this.version);
           await this.app.ready.catch(() => {});
           throw e;
         }
-        await this.dropSideSchema(aside);
+        await this.dropAsideSchemaOrThrow(aside).catch(() => {});
       } finally {
         await this.dropSideSchema(side);
       }
@@ -2093,6 +2151,7 @@ export class AppHost extends EventEmitter {
       return await this.app.call<T>(op, ...args);
     } catch (e) {
       if (e instanceof AppCallError) {
+        if (e.stale) throw new StaleFenceError(e.message);
         if (e.user) throw new EngineError(e.message, 'invalid');
         throw new EngineError(e.message, 'refused');
       }
@@ -2714,7 +2773,7 @@ export class AppHost extends EventEmitter {
       try {
         // PostgreSQL: the old data's schema goes; if that fails the journal
         // stays, and the next start removes it (the journal says published).
-        if (pg) await this.dropSideSchemaOrThrow(pg.aside);
+        if (pg) await this.dropAsideSchemaOrThrow(pg.aside);
         dropAside(this.dataDir);
         removeJournal(this.dataDir);
         removeRehearsal(this.dataDir, dir);
@@ -2763,7 +2822,7 @@ export class AppHost extends EventEmitter {
             db.transaction((tx) => schemaExists(tx, s.pg?.aside ?? '')),
           ))
         )
-          await this.swapSchemasIn(s.pg.aside, s.pg.staging);
+          await this.swapSchemasIn(s.pg.aside, s.pg.staging, true);
         await this.dropSideSchemaOrThrow(s.pg.staging);
       }
       if (s.journaled) removeJournal(this.dataDir);

@@ -182,6 +182,37 @@ for the one operation on the host thread; a PGlite uses the host's client).
   its live host; PGlite and SQLite claim nothing. Tested by `app-lock.test.ts`
   (modelled lock semantics and statement recording) and, on a real server, by
   `postgres-server.test.ts`.
+- **Ownership fencing (#5190).** Each PostgreSQL/PGlite app has an ownership
+  generation stored in its own schema: `_app_meta` key `fence` (created at 1 by
+  the first host; copied by forks and dumps, so it swaps with the data). A host
+  takes ownership at start by advancing it (`acquireOwnership`, first thing in
+  `boot`, before recovery and the sweep) and holds the number
+  (`AppHost.fence`); every worker it starts (`WorkerDatabaseConfig.fence`)
+  carries it. `scopeDatabase` reads the row `FOR SHARE` as the first statement
+  of EVERY transaction (reads and writes, boot DDL included) and throws
+  `StaleFenceError` (`EngineError` code `stale_fence`, HTTP 409, details
+  `{ schema, expected, actual }`) unless it matches. The share lock lasts to
+  commit and `swapSchemas` locks every table exclusively first, so a
+  transaction either finishes before a swap or fails after it: no commit
+  straddles one, and a session still pointed at the renamed old schema reads a
+  different number. `swapSchemas` (publish, restore, start-up recovery) checks
+  `expectFence` under those locks (a host that lost ownership changes nothing)
+  and, in the same transaction as the rename, writes the new live data's
+  generation (old + 1); the host adopts it for the workers it starts next. A
+  swap that undoes this host's own swap (abort, failed restore) passes no
+  expectation. After the swap commits, the aside's table, sequence and schema
+  privileges are revoked from PUBLIC and the connected role in a transaction of
+  its own (`revokeSchema`) before it is dropped, so a stale plan fails with
+  permission denied; the revoke runs only on a schema that will never be
+  swapped back. The error crosses the worker boundary as a `stale` flag on the
+  reply (`AppCallError.stale`, the boot message), and the host rethrows it as
+  `StaleFenceError`; a caller must reopen the app, never retry the call.
+  Two hosts on one app: on a server the advisory claim refuses the second; where
+  nothing claims (PGlite) the later opener owns and the earlier one's every
+  call fails stale. The version store (the shell's own database) is not
+  covered by the fence. SQLite keeps its writer lease and has no generation
+  (`fence` is `undefined`). Tested in `postgres-drafts.test.ts` ("ownership
+  fencing").
 - **Fork** (a draft, a publish rehearsal): a live schema beside the app's, in one transaction (a
   failure leaves none). `forkDraft` writes the name in the draft marker
   (`schema`, `liveSchema`); `AppHost.open` on that directory takes the live app's database

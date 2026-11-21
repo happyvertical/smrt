@@ -23,7 +23,7 @@ const settleStartupJobs = async () => {
 
 if (!isMainThread && workerData?.appWorker) {
   const { AppRuntime } = await import('./app-runtime.ts');
-  const { AppError } = await import('./errors.ts');
+  const { AppError, isStaleFence } = await import('./errors.ts');
   const { dataDir, def, version, migration, readOnly, validateOnly, database } =
     workerData as {
       dataDir: string;
@@ -54,6 +54,7 @@ if (!isMainThread && workerData?.appWorker) {
       ready: false,
       error: (e as Error).message,
       user: migration?.direction === 'down' && e instanceof AppError,
+      stale: isStaleFence(e),
     });
   }
   if (ok)
@@ -81,6 +82,7 @@ if (!isMainThread && workerData?.appWorker) {
           ok: false,
           error: (e as Error).message,
           user: e instanceof AppError,
+          ...(isStaleFence(e) ? { stale: true } : {}),
           ...(RuntimeReportError && e instanceof RuntimeReportError
             ? {
                 reportError: {

@@ -33,6 +33,7 @@ import {
 } from 'vitest';
 import type { DatabaseConfig, PGliteClient } from './db/index.ts';
 import { withSchemaAdmin } from './db/index.ts';
+import { scopeDatabase } from './db/postgres.ts';
 import {
   dropSchema,
   dumpSchema,
@@ -54,6 +55,7 @@ import {
   EngineError,
   MemoryVersionStore,
   type PublishStage,
+  StaleFenceError,
 } from './index.ts';
 import { JOURNAL_FILE, writeJournal } from './publish.ts';
 
@@ -1750,6 +1752,141 @@ describe.each(
         restoreDump(db, file, dst, src),
       );
       await verify(src, dst, role);
+    });
+  });
+
+  // ---------- ownership fencing (#5190) ----------
+
+  describe('ownership fencing', () => {
+    const fenceIn = async (schema: string) =>
+      Number(
+        (
+          await rows(
+            `SELECT value FROM "${schema}"._app_meta WHERE key = 'fence'`,
+          )
+        )[0].value,
+      );
+    const pointsOf = async (schema: string) =>
+      (
+        await rows(`SELECT points FROM "${schema}".u_chores ORDER BY title`)
+      ).map((r) => Number(r.points));
+    /** A worker's view of the app: a scoped handle that holds `fence`. */
+    const handle = (schema: string, fence?: number) =>
+      scopeDatabase(admin as any, schema, { fence }) as any;
+    const setPoints = (h: any, n: number) =>
+      h.transaction((tx: any) => tx.query(`UPDATE u_chores SET points = ${n}`));
+
+    it('a host holds the stored generation, and workers on it can write', async () => {
+      const live = await seeded('fence_basic');
+      expect(live.host.fence).toBe(await fenceIn(live.schema));
+      await setPoints(handle(live.schema, live.host.fence), 7);
+      expect(await pointsOf(live.schema)).toEqual([7, 7, 7]);
+    });
+
+    it('a worker paused before a publish and resumed after cannot commit', async () => {
+      const live = await seeded('fence_publish');
+      const before = live.host.fence as number;
+      const stale = handle(live.schema, before); // the paused worker
+      const { draft } = await fork(live);
+      await run(draft, {
+        type: 'addField',
+        model: 'Chore',
+        field: 'done',
+        definition: { type: 'boolean' },
+      });
+      live.host.setFrozen(true);
+      const preview = await live.host.previewPublish(draft);
+      await live.host.publishDraft(draft, { ...OK, expect: preview.digest });
+      expect(live.host.fence).toBe(before + 1);
+      expect(await fenceIn(live.schema)).toBe(before + 1);
+      const err = await setPoints(stale, 99).catch((e: any) => e);
+      expect(err).toBeInstanceOf(StaleFenceError);
+      expect(err.code).toBe('stale_fence');
+      expect(await pointsOf(live.schema)).toEqual([3, 5, 8]); // nothing committed
+      // The host's own workers carry the new generation.
+      await setPoints(handle(live.schema, live.host.fence), 1);
+      expect(await pointsOf(live.schema)).toEqual([1, 1, 1]);
+    });
+
+    it('control: a handle with no fence is not stopped, so the fence is what stops the stale one', async () => {
+      const live = await seeded('fence_control');
+      await setPoints(handle(live.schema), 42);
+      expect(await pointsOf(live.schema)).toEqual([42, 42, 42]);
+    });
+
+    it('a restore advances the generation and fences the workers of the old data', async () => {
+      const live = await seeded('fence_restore');
+      const file = join(
+        live.dir,
+        'snapshots',
+        `${Date.now()}-0-method-test.pgdump`,
+      );
+      await withSchemaAdmin(config(live.schema), (db) =>
+        dumpSchema(db, live.schema, file),
+      );
+      const before = live.host.fence as number;
+      const stale = handle(live.schema, before);
+      await live.host.restoreSnapshot(file.split('/').pop() as string, OK);
+      expect(live.host.fence).toBe(before + 1);
+      expect(await fenceIn(live.schema)).toBe(before + 1);
+      await expect(setPoints(stale, 99)).rejects.toBeInstanceOf(
+        StaleFenceError,
+      );
+      expect(await pointsOf(live.schema)).toEqual([3, 5, 8]);
+      await live.host.create('Chore', { title: 'After', points: 1 });
+    });
+
+    it('two hosts opening the same app: exactly one can write', async () => {
+      const a = await seeded('fence_two');
+      if (backend === 'postgres') {
+        // A real server: the claim refuses the second host outright.
+        await expect(
+          AppHost.open(tmp(), {
+            store: a.store,
+            database: config(a.schema),
+          }),
+        ).rejects.toThrow(/another host already runs/);
+        await a.host.create('Chore', { title: 'A', points: 1 });
+        return;
+      }
+      // PGlite has no session lock to claim: the generation alone decides.
+      const b = await AppHost.open(tmp(), {
+        store: a.store,
+        database: config(a.schema),
+      });
+      hosts.push(b);
+      expect(b.fence).toBe((a.host.fence as number) + 1);
+      const err = await a.host
+        .create('Chore', { title: 'A', points: 1 })
+        .catch((e) => e);
+      expect(err).toBeInstanceOf(EngineError);
+      expect(err.code).toBe('stale_fence');
+      await b.create('Chore', { title: 'B', points: 2 });
+      expect(await titles(b)).toEqual(['Bins', 'Dishes', 'Garage', 'B'].sort());
+    });
+
+    it('a swap by a host that lost ownership changes nothing', async () => {
+      const live = await seeded('fence_swap');
+      const held = live.host.fence as number;
+      const next = sideName(live.schema, 'r', 'cafe0a01');
+      const aside = sideName(live.schema, 'o', 'cafe0a02');
+      schemas.push(next, aside);
+      await withSchemaAdmin(config(live.schema), (db) =>
+        forkSchema(db, live.schema, next, live.schema),
+      );
+      const names = { live: live.schema, next, aside, owner: live.schema };
+      await expect(
+        withSchemaAdmin(config(live.schema), (db) =>
+          swapSchemas(db, { ...names, expectFence: held - 1 }),
+        ),
+      ).rejects.toBeInstanceOf(StaleFenceError);
+      expect(await fenceIn(live.schema)).toBe(held);
+      expect(await tablesIn(aside)).toEqual([]); // no swap happened
+      const done = await withSchemaAdmin(config(live.schema), (db) =>
+        swapSchemas(db, { ...names, expectFence: held }),
+      );
+      expect(done.fence).toBe(held + 1);
+      expect(await fenceIn(live.schema)).toBe(held + 1);
     });
   });
 

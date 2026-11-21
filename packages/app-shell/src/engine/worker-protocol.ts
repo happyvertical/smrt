@@ -40,6 +40,8 @@ export type WorkerReply =
       ok: false;
       error: string;
       user: boolean;
+      /** Refused by the ownership fence (#5190). */
+      stale?: boolean;
       reportError?: {
         code: RuntimeReportErrorCode;
         path: string;
