@@ -10,7 +10,7 @@
 // without a transaction of its own.
 
 import { getDatabase } from '@happyvertical/sql';
-import { EngineError } from '../errors.ts';
+import { EngineError, StaleFenceError } from '../errors.ts';
 import { createBridgeClient } from './pglite-bridge.ts';
 import { releaseAppLock, tryAppLock } from './postgres-copy.ts';
 import { assertSchemaName } from './schema-name.ts';
@@ -53,24 +53,50 @@ const STATEMENTS = [
  * statement of the operation that runs longer, the transaction rolls back and
  * the connection goes back to its pool exactly as it was, so the limit never
  * reaches another app's use of that connection.
+ *
+ * With `fence` (#5190), the same first step also reads the schema's ownership
+ * generation (`_app_meta`, key `fence`) `FOR SHARE` and refuses with a
+ * `StaleFenceError` unless it equals `fence`. The share lock is held to the
+ * end of the transaction, so a publish or restore (which locks every table of
+ * the schema exclusively before it moves the generation) either waits for this
+ * transaction to finish or runs first and this one fails: no commit can
+ * straddle the swap. A session still pointed at the renamed old schema is NOT
+ * caught by this (the new number is written only into the new live schema):
+ * retiring workers at the swap and revoking the aside's privileges before it
+ * is dropped cover it; a cached plan on an old table could write into the
+ * aside until that revoke.
  */
 export function scopeDatabase<T extends object>(
   db: T,
   schema: string,
-  options: { statementTimeoutMs?: number } = {},
+  options: { statementTimeoutMs?: number; fence?: number } = {},
 ): T {
   const path = `"${assertSchemaName(schema)}"`;
   const timeout = options.statementTimeoutMs;
   if (timeout !== undefined && (!Number.isInteger(timeout) || timeout < 1))
     throw new RangeError('statementTimeoutMs must be a whole ms, 1 or more');
   const raw = db as Handle;
-  const apply = (h: Handle) =>
-    timeout === undefined
+  const fence = options.fence;
+  if (fence !== undefined && (!Number.isSafeInteger(fence) || fence < 1))
+    throw new RangeError('fence must be a whole number, 1 or more');
+  const apply = async (h: Handle) => {
+    await (timeout === undefined
       ? h.query(`SELECT set_config('search_path', ?, true)`, [path])
       : h.query(
           `SELECT set_config('search_path', ?, true), set_config('statement_timeout', ?, true)`,
           [path, `${timeout}ms`],
-        );
+        ));
+    if (fence === undefined) return;
+    const found = (
+      await h.query(`SELECT value FROM _app_meta WHERE key = 'fence' FOR SHARE`)
+    ).rows;
+    const actual = found.length ? Number(found[0].value) : null;
+    if (actual !== fence)
+      throw new StaleFenceError(
+        `this host no longer owns the app in schema ${schema} (it holds generation ${fence}, the database is at ${actual ?? 'none'}); another host opened it or a publish or restore replaced its data. Reopen the app; nothing was written.`,
+        { schema, expected: fence, actual },
+      );
+  };
   // Core keys per-connection state (shared initialisation, the runtime-managed
   // declaration) on `db.client`, reads its class name, and tells a PostgreSQL
   // adapter by its `query`/`exec`. The real client would run SQL on the
@@ -204,6 +230,7 @@ export async function openPostgres(
   }
   return scopeDatabase(raw, schema, {
     statementTimeoutMs: config.statementTimeoutMs,
+    fence: config.fence,
   });
 }
 

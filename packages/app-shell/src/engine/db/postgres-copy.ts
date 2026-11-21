@@ -24,7 +24,7 @@ import {
   writeSync,
 } from 'node:fs';
 import { dirname } from 'node:path';
-import { EngineError } from '../errors.ts';
+import { EngineError, StaleFenceError } from '../errors.ts';
 import {
   assertSchemaName,
   isSideSchema,
@@ -554,6 +554,100 @@ export async function tryAppLock(db: SqlRunner, schema: string) {
 export const releaseAppLock = (db: SqlRunner, schema: string) =>
   db.query(`SELECT pg_advisory_unlock(${appLockKey(schema)})`);
 
+/** The key of the ownership generation in an app's `_app_meta` (#5190). */
+const FENCE_KEY = 'fence';
+
+/**
+ * Take ownership of `schema`: advance its generation by one, creating it (at 1)
+ * the first time. Every worker of an earlier owner then fails its next
+ * transaction with a stale-fence error (`scopeDatabase`). Returns the new
+ * generation; the caller holds it and hands it to its workers.
+ */
+export async function acquireOwnership(
+  db: SqlDatabase,
+  schema: string,
+  lockTimeoutMs = DEFAULT_LOCK_TIMEOUT_MS,
+): Promise<number> {
+  assertSchemaName(schema);
+  return db.transaction(async (tx: SqlRunner) => {
+    await tx.query(
+      `SELECT set_config('lock_timeout', ${lit(`${Math.floor(lockTimeoutMs)}ms`)}, true)`,
+    );
+    if (!(await schemaExists(tx, schema)))
+      throw new EngineError(
+        `schema ${schema} does not exist; the host creates an app's schema before it starts`,
+        'refused',
+      );
+    await tx.query(
+      `CREATE TABLE IF NOT EXISTS ${qi(schema)}._app_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)`,
+    );
+    const got = asRows(
+      await tx.query(
+        `INSERT INTO ${qi(schema)}._app_meta AS m (key, value) VALUES (${lit(FENCE_KEY)}, '1') ON CONFLICT (key) DO UPDATE SET value = (m.value::bigint + 1)::text RETURNING value`,
+      ),
+    )[0];
+    return Number(got.value);
+  });
+}
+
+/** Exclusive lock on the fence's table: waits for every transaction that checked it (they hold it shared). */
+async function lockFence(tx: SqlRunner, schema: string) {
+  const has = asRows(
+    await tx.query(
+      `SELECT to_regclass(${lit(`${qi(schema)}._app_meta`)}) IS NOT NULL AS has`,
+    ),
+  )[0];
+  if (has?.has)
+    await tx.query(
+      `LOCK TABLE ${qi(schema)}._app_meta IN ACCESS EXCLUSIVE MODE`,
+    );
+}
+
+/** The generation stored in `schema`, or null when it has none (an app no host owns yet). */
+async function readFence(
+  tx: SqlRunner,
+  schema: string,
+): Promise<number | null> {
+  const has = asRows(
+    await tx.query(
+      `SELECT to_regclass(${lit(`${qi(schema)}._app_meta`)}) IS NOT NULL AS has`,
+    ),
+  )[0];
+  if (!has?.has) return null;
+  const row = asRows(
+    await tx.query(
+      `SELECT value FROM ${qi(schema)}._app_meta WHERE key = ${lit(FENCE_KEY)}`,
+    ),
+  )[0];
+  return row ? Number(row.value) : null;
+}
+
+/**
+ * Take every privilege on the tables and sequences of `schema` away from
+ * PUBLIC and the connected role, in a transaction of its own. Run on a swapped-out
+ * (aside) schema before it is dropped: a session that still holds a plan on
+ * the old tables then fails with permission denied instead of writing to data
+ * nobody reads. Only for a schema that will not be swapped back.
+ */
+export async function revokeSchema(
+  db: SqlDatabase,
+  schema: string,
+  owner: string,
+) {
+  assertSchemaName(schema);
+  await db.transaction(async (tx: SqlRunner) => {
+    if (!(await schemaExists(tx, schema))) return;
+    await assertClaimed(tx, schema, owner);
+    for (const kind of ['TABLES', 'SEQUENCES'])
+      await tx.query(
+        `REVOKE ALL ON ALL ${kind} IN SCHEMA ${qi(schema)} FROM PUBLIC, CURRENT_USER`,
+      );
+    await tx.query(
+      `REVOKE ALL ON SCHEMA ${qi(schema)} FROM PUBLIC, CURRENT_USER`,
+    );
+  });
+}
+
 /** True when `schema` exists. */
 export async function schemaExists(tx: SqlRunner, schema: string) {
   return (
@@ -604,6 +698,12 @@ export async function dropSchema(
   schema: string,
   lockTimeoutMs = DEFAULT_LOCK_TIMEOUT_MS,
   owner?: string,
+  /**
+   * The ownership generation the caller holds on `schema` (a draft's own
+   * schema). Checked under an exclusive lock on its `_app_meta`, in the same
+   * transaction as the drop: a caller that lost ownership drops nothing.
+   */
+  expectFence?: number,
 ) {
   assertSchemaName(schema);
   await db.transaction(async (tx: SqlRunner) => {
@@ -612,6 +712,15 @@ export async function dropSchema(
     );
     if (owner && (await schemaExists(tx, schema)))
       await assertClaimed(tx, schema, owner);
+    if (expectFence !== undefined && (await schemaExists(tx, schema))) {
+      await lockFence(tx, schema);
+      const held = await readFence(tx, schema);
+      if (held !== expectFence)
+        throw new StaleFenceError(
+          `this host no longer owns ${schema} (it holds generation ${expectFence}, the database is at ${held ?? 'none'}); nothing was dropped`,
+          { schema, expected: expectFence, actual: held },
+        );
+    }
     await tx.query(`DROP SCHEMA IF EXISTS ${qi(schema)} CASCADE`);
   });
 }
@@ -625,12 +734,24 @@ export async function dropSchema(
  */
 export async function swapSchemas(
   db: SqlDatabase,
-  names: { live: string; next: string; aside: string; owner: string },
+  names: {
+    live: string;
+    next: string;
+    aside: string;
+    owner: string;
+    /**
+     * The ownership generation the caller holds. Checked under the table
+     * locks: a caller that is no longer the owner changes nothing and gets a
+     * `StaleFenceError`. Omit only for a caller with no generation (SQLite
+     * never reaches here).
+     */
+    expectFence?: number;
+  },
   lockTimeoutMs = DEFAULT_LOCK_TIMEOUT_MS,
-) {
+): Promise<{ fence: number | null }> {
   const { live, next, aside, owner } = names;
   for (const n of [live, next, aside]) assertSchemaName(n);
-  await db.transaction(async (tx: SqlRunner) => {
+  return db.transaction(async (tx: SqlRunner) => {
     await tx.query(
       `SELECT set_config('lock_timeout', ${lit(`${Math.floor(lockTimeoutMs)}ms`)}, true)`,
     );
@@ -653,10 +774,30 @@ export async function swapSchemas(
           `LOCK TABLE ${qi(schema)}.${qi(t.name)} IN ACCESS EXCLUSIVE MODE`,
         );
     }
+    // Under the locks nothing can move the generation: this is the owner's
+    // last chance to find out it is not the owner any more.
+    const held = await readFence(tx, live);
+    const expected = names.expectFence;
+    if (expected !== undefined && held !== expected)
+      throw new StaleFenceError(
+        `this host no longer owns the app in schema ${live} (it holds generation ${expected}, the database is at ${held ?? 'none'}); the swap changed nothing`,
+        { schema: live, expected, actual: held },
+      );
     await tx.query(`ALTER SCHEMA ${qi(live)} RENAME TO ${qi(aside)}`);
     await tx.query(`ALTER SCHEMA ${qi(next)} RENAME TO ${qi(live)}`);
     await claim(tx, aside, owner);
     await tx.query(`COMMENT ON SCHEMA ${qi(live)} IS NULL`);
+    // The new live data is a new generation, in the same transaction as the
+    // rename: every worker of the old one now reads a different number.
+    if (held === null) return { fence: null };
+    const fence = held + 1;
+    await tx.query(
+      `CREATE TABLE IF NOT EXISTS ${qi(live)}._app_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)`,
+    );
+    await tx.query(
+      `INSERT INTO ${qi(live)}._app_meta (key, value) VALUES (${lit(FENCE_KEY)}, ${lit(String(fence))}) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
+    );
+    return { fence };
   });
 }
 

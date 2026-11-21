@@ -90,6 +90,7 @@ const ENGINE_STATUS: Record<string, number> = {
   approval_required: 409,
   migration_failed: 409,
   worker_crashed: 503,
+  stale_fence: 409,
 };
 
 /** Turn a thrown error into a response that carries no stack or internals. */

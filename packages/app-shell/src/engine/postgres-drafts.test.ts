@@ -33,7 +33,9 @@ import {
 } from 'vitest';
 import type { DatabaseConfig, PGliteClient } from './db/index.ts';
 import { withSchemaAdmin } from './db/index.ts';
+import { scopeDatabase } from './db/postgres.ts';
 import {
+  acquireOwnership,
   dropSchema,
   dumpSchema,
   forkSchema,
@@ -54,6 +56,7 @@ import {
   EngineError,
   MemoryVersionStore,
   type PublishStage,
+  StaleFenceError,
 } from './index.ts';
 import { JOURNAL_FILE, writeJournal } from './publish.ts';
 
@@ -1750,6 +1753,256 @@ describe.each(
         restoreDump(db, file, dst, src),
       );
       await verify(src, dst, role);
+    });
+  });
+
+  // ---------- ownership fencing (#5190) ----------
+
+  describe('ownership fencing', () => {
+    const fenceIn = async (schema: string) =>
+      Number(
+        (
+          await rows(
+            `SELECT value FROM "${schema}"._app_meta WHERE key = 'fence'`,
+          )
+        )[0].value,
+      );
+    const pointsOf = async (schema: string) =>
+      (
+        await rows(`SELECT points FROM "${schema}".u_chores ORDER BY title`)
+      ).map((r) => Number(r.points));
+    /** A worker's view of the app: a scoped handle that holds `fence`. */
+    const handle = (schema: string, fence?: number) =>
+      scopeDatabase(admin as any, schema, { fence }) as any;
+    const setPoints = (h: any, n: number) =>
+      h.transaction((tx: any) => tx.query(`UPDATE u_chores SET points = ${n}`));
+
+    it('a host holds the stored generation, and workers on it can write', async () => {
+      const live = await seeded('fence_basic');
+      expect(live.host.fence).toBe(await fenceIn(live.schema));
+      await setPoints(handle(live.schema, live.host.fence), 7);
+      expect(await pointsOf(live.schema)).toEqual([7, 7, 7]);
+    });
+
+    it('a worker paused before a publish and resumed after cannot commit', async () => {
+      const live = await seeded('fence_publish');
+      const before = live.host.fence as number;
+      const stale = handle(live.schema, before); // the paused worker
+      const { draft } = await fork(live);
+      await run(draft, {
+        type: 'addField',
+        model: 'Chore',
+        field: 'done',
+        definition: { type: 'boolean' },
+      });
+      live.host.setFrozen(true);
+      const preview = await live.host.previewPublish(draft);
+      await live.host.publishDraft(draft, { ...OK, expect: preview.digest });
+      expect(live.host.fence).toBe(before + 1);
+      expect(await fenceIn(live.schema)).toBe(before + 1);
+      const err = await setPoints(stale, 99).catch((e: any) => e);
+      expect(err).toBeInstanceOf(StaleFenceError);
+      expect(err.code).toBe('stale_fence');
+      expect(await pointsOf(live.schema)).toEqual([3, 5, 8]); // nothing committed
+      // The host's own workers carry the new generation.
+      await setPoints(handle(live.schema, live.host.fence), 1);
+      expect(await pointsOf(live.schema)).toEqual([1, 1, 1]);
+    });
+
+    it('control: a handle with no fence is not stopped, so the fence is what stops the stale one', async () => {
+      const live = await seeded('fence_control');
+      await setPoints(handle(live.schema), 42);
+      expect(await pointsOf(live.schema)).toEqual([42, 42, 42]);
+    });
+
+    it('a restore advances the generation and fences the workers of the old data', async () => {
+      const live = await seeded('fence_restore');
+      const file = join(
+        live.dir,
+        'snapshots',
+        `${Date.now()}-0-method-test.pgdump`,
+      );
+      await withSchemaAdmin(config(live.schema), (db) =>
+        dumpSchema(db, live.schema, file),
+      );
+      const before = live.host.fence as number;
+      const stale = handle(live.schema, before);
+      await live.host.restoreSnapshot(file.split('/').pop() as string, OK);
+      expect(live.host.fence).toBe(before + 1);
+      expect(await fenceIn(live.schema)).toBe(before + 1);
+      await expect(setPoints(stale, 99)).rejects.toBeInstanceOf(
+        StaleFenceError,
+      );
+      expect(await pointsOf(live.schema)).toEqual([3, 5, 8]);
+      await live.host.create('Chore', { title: 'After', points: 1 });
+    });
+
+    it('two hosts opening the same app: exactly one can write', async () => {
+      const a = await seeded('fence_two');
+      if (backend === 'postgres') {
+        // A real server: the claim refuses the second host outright.
+        await expect(
+          AppHost.open(tmp(), {
+            store: a.store,
+            database: config(a.schema),
+          }),
+        ).rejects.toThrow(/another host already runs/);
+        await a.host.create('Chore', { title: 'A', points: 1 });
+        return;
+      }
+      // PGlite has no session lock to claim: the generation alone decides.
+      const b = await AppHost.open(tmp(), {
+        store: a.store,
+        database: config(a.schema),
+      });
+      hosts.push(b);
+      expect(b.fence).toBe((a.host.fence as number) + 1);
+      const err = await a.host
+        .create('Chore', { title: 'A', points: 1 })
+        .catch((e) => e);
+      expect(err).toBeInstanceOf(EngineError);
+      expect(err.code).toBe('stale_fence');
+      await b.create('Chore', { title: 'B', points: 2 });
+      expect(await titles(b)).toEqual(['Bins', 'Dishes', 'Garage', 'B'].sort());
+    });
+
+    it('a publish rollback by a host that lost ownership after the swap changes nothing', async () => {
+      const live = await seeded('fence_abort');
+      const { draft } = await fork(live);
+      await run(draft, {
+        type: 'addField',
+        model: 'Chore',
+        field: 'done',
+        definition: { type: 'boolean' },
+      });
+      live.host.setFrozen(true);
+      const preview = await live.host.previewPublish(draft);
+      const before = live.host.fence as number;
+      await expect(
+        live.host.publishDraft(draft, {
+          ...OK,
+          expect: preview.digest,
+          onStage: async (stage) => {
+            if (stage !== 'swapped') return;
+            // Another host takes ownership (the first thing its start does,
+            // before its sweep), then this publish fails.
+            await withSchemaAdmin(config(live.schema), (db) =>
+              acquireOwnership(db, live.schema),
+            );
+            throw new Error('boom after the swap');
+          },
+        }),
+      ).rejects.toThrow(/boom after the swap|putting the old data back failed/);
+      // The newer owner's generation is untouched: the rollback did not swap.
+      expect(await fenceIn(live.schema)).toBe(before + 2);
+    });
+
+    /** Make the next forward swap commit but lose its reply: the host never adopts the new generation. */
+    const loseNextSwapReply = (host: AppHost) => {
+      const h = host as any;
+      const orig = h.swapSchemasIn.bind(h);
+      let first = true;
+      h.swapSchemasIn = async (...args: unknown[]) => {
+        if (!first) return orig(...args);
+        first = false;
+        const before = h.database;
+        await orig(...args);
+        h.database = before;
+        throw new Error('reply lost');
+      };
+    };
+
+    it('a publish whose swap committed but whose reply was lost rolls back and keeps ownership', async () => {
+      const live = await seeded('fence_lost');
+      const { draft } = await fork(live);
+      await run(draft, {
+        type: 'addField',
+        model: 'Chore',
+        field: 'done',
+        definition: { type: 'boolean' },
+      });
+      live.host.setFrozen(true);
+      const preview = await live.host.previewPublish(draft);
+      const base = live.host.version;
+      const before = live.host.fence as number;
+      loseNextSwapReply(live.host);
+      const err = await live.host
+        .publishDraft(draft, { ...OK, expect: preview.digest })
+        .catch((e: any) => e);
+      expect(String(err.message)).toMatch(/reply lost/);
+      // The rollback itself succeeded: it is not the "put back failed" error.
+      expect(String(err.message)).not.toMatch(
+        /putting the old data back failed/,
+      );
+      expect(live.host.version).toBe(base);
+      expect(await live.store.current()).toBe(base);
+      expect(await fenceIn(live.schema)).toBe(before + 2);
+      expect(live.host.fence).toBe(before + 2);
+      live.host.setFrozen(false);
+      await live.host.create('Chore', { title: 'Still ours', points: 1 });
+      expect(await sideSchemas(live.schema)).toHaveLength(1); // the draft's
+    });
+
+    it('a restore whose swap committed but whose reply was lost rolls back and keeps ownership', async () => {
+      const live = await seeded('fence_lost_restore');
+      const file = join(
+        live.dir,
+        'snapshots',
+        `${Date.now()}-0-method-test.pgdump`,
+      );
+      await withSchemaAdmin(config(live.schema), (db) =>
+        dumpSchema(db, live.schema, file),
+      );
+      await live.host.create('Chore', { title: 'After', points: 1 });
+      const before = live.host.fence as number;
+      loseNextSwapReply(live.host);
+      await expect(
+        live.host.restoreSnapshot(file.split('/').pop() as string, OK),
+      ).rejects.toThrow(/reply lost/);
+      expect(await titles(live.host)).toContain('After'); // rolled back
+      expect(await fenceIn(live.schema)).toBe(before + 2);
+      expect(live.host.fence).toBe(before + 2);
+      await live.host.create('Chore', { title: 'Next', points: 2 });
+    });
+
+    it("a draft host that lost ownership cannot discard the new owner's draft", async () => {
+      const live = await seeded('fence_discard');
+      const { draft, store } = await fork(live);
+      const before = draft.fence as number;
+      const other = await AppHost.open(draft.dataDir, {
+        store,
+        database: config(live.schema),
+      });
+      hosts.push(other);
+      expect(other.fence).toBe(before + 1);
+      const err = await draft.discard().catch((e: any) => e);
+      expect(err).toBeInstanceOf(StaleFenceError);
+      expect(await sideSchemas(live.schema)).toHaveLength(1); // still there
+      expect(await titles(other)).toEqual(['Bins', 'Dishes', 'Garage']);
+    });
+
+    it('a swap by a host that lost ownership changes nothing', async () => {
+      const live = await seeded('fence_swap');
+      const held = live.host.fence as number;
+      const next = sideName(live.schema, 'r', 'cafe0a01');
+      const aside = sideName(live.schema, 'o', 'cafe0a02');
+      schemas.push(next, aside);
+      await withSchemaAdmin(config(live.schema), (db) =>
+        forkSchema(db, live.schema, next, live.schema),
+      );
+      const names = { live: live.schema, next, aside, owner: live.schema };
+      await expect(
+        withSchemaAdmin(config(live.schema), (db) =>
+          swapSchemas(db, { ...names, expectFence: held - 1 }),
+        ),
+      ).rejects.toBeInstanceOf(StaleFenceError);
+      expect(await fenceIn(live.schema)).toBe(held);
+      expect(await tablesIn(aside)).toEqual([]); // no swap happened
+      const done = await withSchemaAdmin(config(live.schema), (db) =>
+        swapSchemas(db, { ...names, expectFence: held }),
+      );
+      expect(done.fence).toBe(held + 1);
+      expect(await fenceIn(live.schema)).toBe(held + 1);
     });
   });
 

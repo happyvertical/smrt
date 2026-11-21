@@ -80,6 +80,7 @@ export function forWorker(config: DatabaseConfig): {
       kind: 'pglite',
       schema: config.schema,
       port: port2,
+      ...(config.fence === undefined ? {} : { fence: config.fence }),
     },
     transfer: [port2],
     dispose: stop,
@@ -137,6 +138,22 @@ export async function claimAppDatabase(
 ): Promise<(() => Promise<void>) | undefined> {
   if (config.kind !== 'postgres') return undefined;
   return (await import('./postgres.ts')).claimApp(config);
+}
+
+/**
+ * Take ownership of the app's schema for this host: advance its generation
+ * (#5190). PostgreSQL and PGlite only; SQLite keeps its writer lease and has no
+ * generation. Resolves to the generation to hold, or `undefined` for SQLite.
+ */
+export async function acquireAppOwnership(
+  config: DatabaseConfig,
+  lockTimeoutMs?: number,
+): Promise<number | undefined> {
+  if (config.kind === 'sqlite') return undefined;
+  const { acquireOwnership } = await import('./postgres-copy.ts');
+  return withSchemaAdmin(config, (db) =>
+    acquireOwnership(db, config.schema, lockTimeoutMs),
+  );
 }
 
 /** A schema name for a copy of `base` (draft, rehearsal, aside, restore), new on each call. */

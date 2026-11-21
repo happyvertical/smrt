@@ -42,6 +42,8 @@ export type DatabaseConfig =
       kind: 'postgres';
       schema: string;
       connection: PostgresConnection;
+      /** Ownership generation this host holds (#5190); set by the host, not the caller. */
+      fence?: number;
     }
   | {
       /**
@@ -53,6 +55,8 @@ export type DatabaseConfig =
       kind: 'pglite';
       schema: string;
       client: PGliteClient;
+      /** Ownership generation this host holds (#5190); set by the host, not the caller. */
+      fence?: number;
     };
 
 /** What reaches a worker thread: the config with the instance replaced by a port. */
@@ -64,12 +68,15 @@ export type WorkerDatabaseConfig =
       connection: PostgresConnection;
       /** Cancel any one statement running longer (ms); from `WorkerLimits`. */
       statementTimeoutMs?: number;
+      /** Every transaction checks the schema's ownership generation equals this (#5190). */
+      fence?: number;
     }
   | {
       kind: 'pglite';
       schema: string;
       port: MessagePort;
       statementTimeoutMs?: number;
+      fence?: number;
     };
 
 /** A database the host made for the engine and must close with the host. */

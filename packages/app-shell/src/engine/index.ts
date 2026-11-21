@@ -78,6 +78,7 @@ export {
   ApprovalRequiredError,
   EngineError,
   type EngineErrorCode,
+  StaleFenceError,
   WorkerCrashedError,
 } from './errors.ts';
 export type { ExtractModelCommand, ExtractPreview } from './extract-model.ts';
