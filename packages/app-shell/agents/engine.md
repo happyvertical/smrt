@@ -215,16 +215,12 @@ for the one operation on the host thread; a PGlite uses the host's client).
   `StaleFenceError`; a caller must reopen the app, never retry the call.
   Two hosts on one app: on a server the advisory claim refuses the second; where
   nothing claims (PGlite) the later opener owns and the earlier one's every
-  call fails stale. The version store (the shell's own database, a different
-  one from the app's) is written only while the generation is held
-  (`holdOwnership`: the fence row read `FOR SHARE` in a transaction that lasts
-  through the store write, for publish, every definition change and undo). A
-  new owner's start advances the row first thing, which waits for that
-  transaction: either it advanced first and the stale host's write fails, or
-  the write finishes first and the new owner's recovery reads the store with
-  the version in it. There is no gap between the check and the write. SQLite
-  keeps its writer lease and has no generation (`fence` is `undefined`). Tested
-  in `postgres-drafts.test.ts` ("ownership fencing").
+  call fails stale. Not covered yet (smrt#5470): the version-store write and
+  the claim re-check are unfenced, so a host that lost ownership between its
+  swap and its store write can still record a version (hosted PostgreSQL only;
+  the desktop has one process per data directory and keeps its writer lease,
+  with no generation: `fence` is `undefined`). Tested in
+  `postgres-drafts.test.ts` ("ownership fencing").
 - **Fork** (a draft, a publish rehearsal): a live schema beside the app's, in one transaction (a
   failure leaves none). `forkDraft` writes the name in the draft marker
   (`schema`, `liveSchema`); `AppHost.open` on that directory takes the live app's database

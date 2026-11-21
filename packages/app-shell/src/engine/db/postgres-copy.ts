@@ -603,42 +603,6 @@ async function lockFence(tx: SqlRunner, schema: string) {
     );
 }
 
-/**
- * Run `work` while holding the app's generation: the fence row is read
- * `FOR SHARE` (so another host's start, which advances it, waits until this
- * transaction ends) and compared with `expect`; `work` runs, and the
- * transaction ends after it. For a write to something outside the app's
- * database (the version store) that must not happen after ownership moved:
- * either the other host advanced first and this fails, or this finishes first
- * and the other host starts after it. No gap between the check and the write.
- */
-export async function holdOwnership<T>(
-  db: SqlDatabase,
-  schema: string,
-  expect: number,
-  work: () => Promise<T>,
-  lockTimeoutMs = DEFAULT_LOCK_TIMEOUT_MS,
-): Promise<T> {
-  assertSchemaName(schema);
-  return db.transaction(async (tx: SqlRunner) => {
-    await tx.query(
-      `SELECT set_config('lock_timeout', ${lit(`${Math.floor(lockTimeoutMs)}ms`)}, true)`,
-    );
-    const row = asRows(
-      await tx.query(
-        `SELECT value FROM ${qi(schema)}._app_meta WHERE key = ${lit(FENCE_KEY)} FOR SHARE`,
-      ),
-    )[0];
-    const held = row ? Number(row.value) : null;
-    if (held !== expect)
-      throw new StaleFenceError(
-        `this host no longer owns the app in schema ${schema} (it holds generation ${expect}, the database is at ${held ?? 'none'}); nothing was recorded`,
-        { schema, expected: expect, actual: held },
-      );
-    return work();
-  });
-}
-
 /** The generation stored in `schema`, or null when it has none (an app no host owns yet). */
 async function readFence(
   tx: SqlRunner,

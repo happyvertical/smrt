@@ -1960,37 +1960,6 @@ describe.each(
       await live.host.create('Chore', { title: 'Next', points: 2 });
     });
 
-    it('a publish that lost ownership after its swap does not record the version', async () => {
-      const live = await seeded('fence_store');
-      const { draft } = await fork(live);
-      await run(draft, {
-        type: 'addField',
-        model: 'Chore',
-        field: 'done',
-        definition: { type: 'boolean' },
-      });
-      live.host.setFrozen(true);
-      const preview = await live.host.previewPublish(draft);
-      const base = live.host.version;
-      const before = live.host.fence as number;
-      await expect(
-        live.host.publishDraft(draft, {
-          ...OK,
-          expect: preview.digest,
-          onStage: async (stage) => {
-            if (stage !== 'respawned') return;
-            // Another host starts (its first act is to advance the generation).
-            await withSchemaAdmin(config(live.schema), (db) =>
-              acquireOwnership(db, live.schema),
-            );
-          },
-        }),
-      ).rejects.toThrow(/no longer owns|stale fence|putting the old data back/);
-      expect(await live.store.current()).toBe(base); // nothing recorded
-      expect(await live.store.maxVersion()).toBe(base);
-      expect(await fenceIn(live.schema)).toBe(before + 2);
-    });
-
     it("a draft host that lost ownership cannot discard the new owner's draft", async () => {
       const live = await seeded('fence_discard');
       const { draft, store } = await fork(live);

@@ -43,7 +43,6 @@ import {
   DEFAULT_LOCK_TIMEOUT_MS,
   dropSchema,
   forkSchema,
-  holdOwnership,
   listSideSchemas,
   readDumpHeader,
   restoreDump,
@@ -605,26 +604,6 @@ export class AppHost extends EventEmitter {
    * Swap to `next`, then persist. If persisting fails the app is put back
    * where the store still says it is.
    */
-  /**
-   * Run a write to the version store (a different database from the app's)
-   * while this host's generation is held, so a host that lost ownership cannot
-   * record a version after the new owner started (its recovery would then read
-   * a store that disagrees with the data). SQLite: no generation, just runs.
-   */
-  private underOwnership<T>(work: () => Promise<T>): Promise<T> {
-    const fence = this.fence;
-    if (fence === undefined) return work();
-    return withSchemaAdmin(this.database, (db) =>
-      holdOwnership(
-        db,
-        schemaOf(this.database),
-        fence,
-        work,
-        this.lockTimeoutMs,
-      ),
-    );
-  }
-
   private async transition(
     next: AppDefinition,
     nextVersion: number,
@@ -633,7 +612,7 @@ export class AppHost extends EventEmitter {
   ) {
     const swapped = await this.swap(next, nextVersion, migration);
     try {
-      await this.underOwnership(persist);
+      await persist();
     } catch (e) {
       const back: Migration | undefined = migration?.steps.length
         ? {
@@ -2771,21 +2750,19 @@ export class AppHost extends EventEmitter {
       await next.ready;
       await stage('respawned');
       const stamp = now();
-      await this.underOwnership(() =>
-        this.persistVersions(
-          chain.versions.map((rec, i) => ({
-            version: numbers[i],
-            parent: i === 0 ? oldVersion : numbers[i - 1],
-            author: rec.author,
-            summary: `${tag}${rec.summary}`,
-            definition: structuredClone(rec.definition),
-            migration: rec.migration?.steps.length
-              ? { steps: structuredClone(rec.migration.steps) }
-              : null,
-            createdAt: stamp,
-          })),
-          finalNumber,
-        ),
+      await this.persistVersions(
+        chain.versions.map((rec, i) => ({
+          version: numbers[i],
+          parent: i === 0 ? oldVersion : numbers[i - 1],
+          author: rec.author,
+          summary: `${tag}${rec.summary}`,
+          definition: structuredClone(rec.definition),
+          migration: rec.migration?.steps.length
+            ? { steps: structuredClone(rec.migration.steps) }
+            : null,
+          createdAt: stamp,
+        })),
+        finalNumber,
       );
     } catch (e) {
       await this.abortPublish(
