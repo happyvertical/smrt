@@ -26,6 +26,14 @@ export class EngineError extends Error {
   }
 }
 
+/** The budget of database connections has no room: retry later. Never a verdict on the caller's data. */
+export class CapacityError extends EngineError {
+  constructor(message: string) {
+    super(message, 'refused');
+    this.name = 'CapacityError';
+  }
+}
+
 /**
  * A risky command or tool call was made without `approved: true`. The shell's
  * approval model sets that only after the owner decided in its own UI.

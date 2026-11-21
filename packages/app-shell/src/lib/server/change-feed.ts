@@ -7,7 +7,7 @@ import {
 } from '@happyvertical/smrt-core';
 import { shellProfile } from './host.ts';
 import { isOwner, principalFromLocals } from './owner.ts';
-import { TENANT_SCOPED_TABLES } from './schema.ts';
+import { hostedOnlyTables, TENANT_SCOPED_TABLES } from './schema.ts';
 
 export async function authorizeChangeFeedForOwner(request: {
   locals: unknown;
@@ -22,9 +22,11 @@ export async function authorizeChangeFeedForOwner(request: {
   const hosted = (await shellProfile()) === 'cloud';
   const all = hosted
     ? [...TENANT_SCOPED_TABLES]
-    : Object.values(ObjectRegistry.getAllSchemasAsDefinitions()).map(
-        (s) => s.tableName,
-      );
+    : // The desktop has none of the hosted-only tables (plans, subscriptions,
+      // feature overrides): never offer them.
+      Object.values(ObjectRegistry.getAllSchemasAsDefinitions())
+        .map((s) => s.tableName)
+        .filter((t) => !hostedOnlyTables().has(t));
   return request.tables ? all.filter((t) => request.tables?.includes(t)) : all;
 }
 

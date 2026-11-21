@@ -36,6 +36,12 @@ export const GET: RequestHandler = async (event) => {
           cleanup();
         }
       };
+      // Shutdown began while the owner check ran: end at once, or this stream
+      // would hold the listener open to the deadline.
+      if (streamsClosed()) {
+        controller.close();
+        return;
+      }
       send('event: ready\ndata: {}\n\n');
       // Only this owner's tenant's events (the hosted app shares one bus).
       const off = subscribe(

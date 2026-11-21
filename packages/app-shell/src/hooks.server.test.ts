@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   closeStreams: vi.fn(),
   stopImports: vi.fn(),
   drain: vi.fn(),
+  gate: vi.fn(),
   env: { dev: false, building: false },
 }));
 vi.mock('$app/environment', () => mocks.env);
@@ -17,6 +18,9 @@ vi.mock('$lib/server/shutdown', () => ({ installShutdown: mocks.install }));
 vi.mock('$lib/server/host', () => ({
   shellProfile: mocks.profile,
   drainShell: mocks.drain,
+}));
+vi.mock('$lib/server/hosted-inference', () => ({
+  installHostedInferenceGate: mocks.gate,
 }));
 vi.mock('$lib/server/owner-handoff', () => ({
   ensureOwnerHandoff: mocks.handoff,
@@ -94,4 +98,12 @@ it('installs the SIGTERM/SIGINT drain once the runtime is ready, not under vite 
   mocks.env.building = true;
   await init();
   expect(mocks.install).not.toHaveBeenCalled();
+});
+it('registers the hosted inference gate at startup and does not start without it', async () => {
+  mocks.profile.mockResolvedValue('cloud');
+  await expect(init()).resolves.toBeUndefined();
+  expect(mocks.gate).toHaveBeenCalledOnce();
+  mocks.gate.mockRejectedValueOnce(new Error('no kill switch table'));
+  await expect(init()).rejects.toThrow('no kill switch table');
+  expect(mocks.handoff).not.toHaveBeenCalled();
 });

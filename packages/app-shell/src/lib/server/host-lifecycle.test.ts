@@ -7,6 +7,7 @@
 // what it grew to, see agents/engine.md), or handing apps to another process.
 import { types } from 'node:util';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { AppHost } from '../../engine/index.ts';
 import { App } from '../objects/App.ts';
 import { ownerTenantFor } from './accounts.ts';
 import { type CloudHarness, openCloudShell } from './cloud-test-support.ts';
@@ -22,7 +23,11 @@ import {
   sweepIdleHosts,
   withAppLease,
 } from './host.ts';
-import { HostLifecycle, lifecycleFromEnv } from './host-lifecycle.ts';
+import {
+  ConnectionBudgetError,
+  HostLifecycle,
+  lifecycleFromEnv,
+} from './host-lifecycle.ts';
 import { runAs } from './owner.ts';
 import { applyWaiting, openShell, type ShellHarness } from './test-support.ts';
 
@@ -563,5 +568,40 @@ describe('the desktop is unchanged', () => {
     expect(types.isProxy(open)).toBe(false);
     expect(await sweepIdleHosts()).toBe(0);
     expect(await runAs(cloud.a, () => getHost())).toBe(open);
+  });
+});
+
+describe('a wake that finds no connections for its draft (#5464)', () => {
+  it('is refused and retried, never stored as a draft problem', async () => {
+    const { a } = await twoOwners();
+    await runAs(a, () =>
+      startDraftWith(
+        async ({ dir, store, live }) => live.forkDraft(dir, { store }),
+        'kept',
+        a.id,
+      ),
+    );
+    await settled();
+    clock += IDLE * 2;
+    await sweepIdleHosts();
+    expect(hostMetrics().open).toBe(0);
+    const open = AppHost.open.bind(AppHost);
+    const spy = vi
+      .spyOn(AppHost, 'open')
+      .mockImplementation((dir, opts) =>
+        opts.autoApprove
+          ? Promise.reject(new ConnectionBudgetError())
+          : open(dir, opts),
+      );
+    await expect(runAs(a, () => getHost())).rejects.toThrow(/try again/);
+    spy.mockRestore();
+    await settled();
+    // Capacity is back: the same draft opens, with no problem left behind.
+    const slot = await runAs(a, async () => {
+      await getHost();
+      return getDraftSlot();
+    });
+    expect(slot?.problem).toBeNull();
+    expect(slot?.host?.appAlive).toBe(true);
   });
 });

@@ -27,6 +27,7 @@ export default defineConfig({
       'src/engine/postgres-claim-connection.test.ts',
       'src/engine/store-in-swap.test.ts',
       'src/lib/server/storage-metering-postgres.test.ts',
+      'src/lib/server/hosted-inference-postgres.test.ts',
     ],
     setupFiles: [smrtVitestSetupPath],
     testTimeout: 60000,

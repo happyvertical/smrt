@@ -12,6 +12,7 @@ import { appsRestHandle } from '$lib/server/apps-rest';
 import { installChangeReview } from '$lib/server/change-review';
 import { closeAllStreams } from '$lib/server/events';
 import { drainShell, shellProfile } from '$lib/server/host';
+import { installHostedInferenceGate } from '$lib/server/hosted-inference';
 import { shellImports, stopShellImports } from '$lib/server/import-runtime';
 import {
   ensureOwnerHandoff,
@@ -33,6 +34,11 @@ export const init = async () => {
     });
   // The assistant's review of the changes waiting runs after the exact checks.
   installChangeReview();
+  // Hosted: the hosted inference gate is registered, or the server does not
+  // start (#5194). The desktop never registers one.
+  await installHostedInferenceGate({
+    db: async () => (await runtime.deployedRuntime()).db,
+  });
   // The hosted app has no owner link to hand off and no embedded job runner
   // for workbook imports (both are the desktop's): neither starts there.
   if ((await shellProfile()) === 'cloud') return;
