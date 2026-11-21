@@ -159,6 +159,7 @@ import {
   databaseReadScope,
   deferUntilFrameworkCommit,
   isEmbeddedDatabase,
+  isKnownDatabaseTransaction,
   usesPostgresDialect,
   withEmbeddedWriteQueue,
 } from './embedded-write-queue.js';
@@ -179,6 +180,8 @@ import {
   POSTGRES_CHANGE_FEED_DRAIN_BATCH,
   POSTGRES_CHANGE_FEED_DRAIN_FUNCTION_IDENTITY,
   POSTGRES_CHANGE_FEED_DRAIN_FUNCTION_NAME,
+  POSTGRES_CHANGE_FEED_DRAIN_STATUS_FUNCTION_IDENTITY,
+  POSTGRES_CHANGE_FEED_HELPER_FLOOR_MARKER,
   POSTGRES_CHANGE_FEED_HELPER_MARKER,
   POSTGRES_CHANGE_FEED_PENDING_TABLE,
   REPLACE_POSTGRES_CHANGE_FEED_APPEND_FUNCTION,
@@ -629,6 +632,72 @@ function getEngine(
   return engine;
 }
 
+type RootShape = {
+  transaction?: unknown;
+  beginTransaction?: unknown;
+  close?: unknown;
+  commit?: unknown;
+  rollback?: unknown;
+  client?: unknown;
+};
+
+/**
+ * Whether `db` is a PostgreSQL root handle (#5402): it can open transactions
+ * of its own (`transaction()`, `beginTransaction()`) and be closed, and it is
+ * not itself a transaction. The SDK's transaction scopes lack
+ * `beginTransaction`/`close`, manual transaction handles carry
+ * `commit`/`rollback` (the in-transaction shape bootstrap also refuses), and
+ * framework or caller-registered transaction handles are known by identity.
+ * Keyed by the handle object, never by URL: two pools on one URL can run
+ * different sessions.
+ */
+function isVerifiedRoot(db: DatabaseInterface): boolean {
+  if (getEngine(db) !== 'postgres') return false;
+  const shape = db as unknown as RootShape;
+  if (
+    typeof shape.transaction !== 'function' ||
+    typeof shape.beginTransaction !== 'function' ||
+    typeof shape.close !== 'function'
+  ) {
+    return false;
+  }
+  if (
+    typeof shape.commit === 'function' ||
+    typeof shape.rollback === 'function'
+  ) {
+    return false;
+  }
+  return !isKnownDatabaseTransaction(db);
+}
+
+/**
+ * Whether the root's own client says it is inside a transaction block. PGlite
+ * runs every root statement on its one session, so a caller can open a
+ * transaction there with `db.query('BEGIN')`; its client reports that. A pool
+ * client has no such state (each root statement takes any idle connection).
+ * A client whose report throws is treated as inside a transaction.
+ */
+function rootClientInTransaction(db: DatabaseInterface): boolean {
+  const client = (db as unknown as RootShape).client as
+    | { isInTransaction?: () => unknown }
+    | undefined;
+  if (typeof client?.isInTransaction !== 'function') return false;
+  try {
+    return client.isInTransaction() !== false;
+  } catch {
+    return true;
+  }
+}
+
+/**
+ * A verified root whose next statement runs as its own transaction: the
+ * only kind of handle on which the feed issues anything a caller did not ask
+ * for (helper DDL, background drains, the status drain's direct call).
+ */
+function isAutocommitRoot(db: DatabaseInterface): boolean {
+  return isVerifiedRoot(db) && !rootClientInTransaction(db);
+}
+
 /**
  * Positional placeholder factory: Postgres uses `$n`, SQLite/DuckDB use `?`.
  */
@@ -712,56 +781,73 @@ const ensuredHandles = new WeakSet<object>();
  * `pg_proc.prosrc` makes the probe version-aware, so bumping the marker is all
  * a future helper change needs to reach existing databases.
  */
-function currentHelperProbe(identity: string): string {
+function helperVersionProbe(identity: string): string {
   return `(
-    SELECT p.oid
+    SELECT CASE
+      WHEN p.prosrc LIKE '%${POSTGRES_CHANGE_FEED_HELPER_MARKER}%' THEN 7
+      WHEN p.prosrc LIKE '%${POSTGRES_CHANGE_FEED_HELPER_FLOOR_MARKER}%' THEN 6
+      ELSE 0
+    END
     FROM pg_proc AS p
     WHERE p.oid = to_regprocedure('${identity}')
-      AND p.prosrc LIKE '%${POSTGRES_CHANGE_FEED_HELPER_MARKER}%'
   )`;
 }
 
-async function postgresChangeFeedHelpersCurrent(
-  db: DatabaseInterface,
-): Promise<boolean> {
-  const rows = getQueryRows(
-    await db.query(
-      `SELECT
-         ${currentHelperProbe(POSTGRES_CHANGE_FEED_APPEND_FUNCTION_IDENTITY)} AS function_name,
-         ${currentHelperProbe(POSTGRES_CHANGE_FEED_APPEND_BATCH_FUNCTION_IDENTITY)} AS batch_function_name,
-         ${currentHelperProbe(POSTGRES_CHANGE_FEED_DRAIN_FUNCTION_IDENTITY)} AS drain_function_name,
-         ${currentHelperProbe(POSTGRES_CHANGE_FEED_COMPAT_DRAIN_FUNCTION_IDENTITY)} AS compat_drain_function_name,
-         to_regclass('${POSTGRES_CHANGE_FEED_PENDING_TABLE}') AS pending_table_name`,
-    ),
-  );
-  return Boolean(
-    rows[0]?.function_name &&
-      rows[0]?.batch_function_name &&
-      rows[0]?.drain_function_name &&
-      rows[0]?.compat_drain_function_name &&
-      rows[0]?.pending_table_name,
-  );
+/**
+ * What the installed PostgreSQL helpers are, relative to this build (#5402).
+ *
+ * - `current`: the staging table and all five helper identities carry this
+ *   build's marker.
+ * - `mixed`: the status drain is current but another identity is not, which
+ *   is what an older installer leaves behind when it restores its own bodies
+ *   over current ones. Usable: an older identity still carries the v6 floor.
+ * - `usable-older`: every existing identity carries the v6 floor marker and
+ *   the staging table exists, but the status drain is missing or older.
+ *   Usable as v6 was.
+ * - `outdated`: the feed table exists and some identity is missing or
+ *   predates v6. Not usable without an install: pre-v6 bodies do not keep the
+ *   cursor guarantee under contention or fixed-snapshot isolation.
+ * - `missing`: no feed table.
+ *
+ * @internal
+ */
+export type ChangeFeedHelperState =
+  | 'current'
+  | 'mixed'
+  | 'usable-older'
+  | 'outdated'
+  | 'missing';
+
+interface PostgresChangeFeedSchemaState {
+  tableExists: boolean;
+  pendingTableExists: boolean;
+  createdAtType: string | null;
+  helpers: ChangeFeedHelperState;
+  /** The probe result, for "has this changed since" comparisons. */
+  probeKey: string;
 }
+
+/** The four identities that existed before the status drain. */
+const PRE_STATUS_HELPER_COLUMNS = [
+  'append_version',
+  'batch_version',
+  'drain_version',
+  'compat_drain_version',
+] as const;
 
 async function getPostgresChangeFeedSchemaState(
   db: DatabaseInterface,
-): Promise<{
-  tableExists: boolean;
-  functionExists: boolean;
-  batchFunctionExists: boolean;
-  pendingTableExists: boolean;
-  drainFunctionExists: boolean;
-  createdAtType: string | null;
-}> {
+): Promise<PostgresChangeFeedSchemaState> {
   const rows = getQueryRows(
     await db.query(
       `SELECT
          to_regclass('${CHANGE_FEED_TABLE}') AS table_name,
-         ${currentHelperProbe(POSTGRES_CHANGE_FEED_APPEND_FUNCTION_IDENTITY)} AS function_name,
-         ${currentHelperProbe(POSTGRES_CHANGE_FEED_APPEND_BATCH_FUNCTION_IDENTITY)} AS batch_function_name,
          to_regclass('${POSTGRES_CHANGE_FEED_PENDING_TABLE}') AS pending_table_name,
-         ${currentHelperProbe(POSTGRES_CHANGE_FEED_DRAIN_FUNCTION_IDENTITY)} AS drain_function_name,
-         ${currentHelperProbe(POSTGRES_CHANGE_FEED_COMPAT_DRAIN_FUNCTION_IDENTITY)} AS compat_drain_function_name,
+         ${helperVersionProbe(POSTGRES_CHANGE_FEED_APPEND_FUNCTION_IDENTITY)} AS append_version,
+         ${helperVersionProbe(POSTGRES_CHANGE_FEED_APPEND_BATCH_FUNCTION_IDENTITY)} AS batch_version,
+         ${helperVersionProbe(POSTGRES_CHANGE_FEED_DRAIN_FUNCTION_IDENTITY)} AS drain_version,
+         ${helperVersionProbe(POSTGRES_CHANGE_FEED_COMPAT_DRAIN_FUNCTION_IDENTITY)} AS compat_drain_version,
+         ${helperVersionProbe(POSTGRES_CHANGE_FEED_DRAIN_STATUS_FUNCTION_IDENTITY)} AS status_drain_version,
          (
            SELECT data_type
            FROM information_schema.columns
@@ -771,20 +857,129 @@ async function getPostgresChangeFeedSchemaState(
          ) AS created_at_type`,
     ),
   );
+  const row = rows[0] ?? {};
+  const version = (value: unknown): number | null =>
+    value == null ? null : Number(value);
+  const tableExists = Boolean(row.table_name);
+  const pendingTableExists = Boolean(row.pending_table_name);
+  const older = PRE_STATUS_HELPER_COLUMNS.map((column) => version(row[column]));
+  const status = version(row.status_drain_version);
+  let helpers: ChangeFeedHelperState;
+  if (!tableExists) helpers = 'missing';
+  else if (!pendingTableExists || older.some((v) => v === null || v < 6))
+    helpers = 'outdated';
+  else if (status === 7) {
+    helpers = older.every((v) => v === 7) ? 'current' : 'mixed';
+  } else helpers = 'usable-older';
   return {
-    tableExists: Boolean(rows[0]?.table_name),
-    functionExists: Boolean(rows[0]?.function_name),
-    batchFunctionExists: Boolean(rows[0]?.batch_function_name),
-    pendingTableExists: Boolean(rows[0]?.pending_table_name),
-    // Both drain entry points: the current one, and the single-argument one
-    // older replicas still call during a rollout (#2982).
-    drainFunctionExists: Boolean(
-      rows[0]?.drain_function_name && rows[0]?.compat_drain_function_name,
-    ),
-    createdAtType: rows[0]?.created_at_type
-      ? String(rows[0].created_at_type)
-      : null,
+    tableExists,
+    pendingTableExists,
+    createdAtType: row.created_at_type ? String(row.created_at_type) : null,
+    helpers,
+    probeKey: JSON.stringify([
+      tableExists,
+      pendingTableExists,
+      ...older,
+      status,
+    ]),
   };
+}
+
+/**
+ * Probe the installed helpers on `db` (#5402). One catalog statement.
+ *
+ * @internal
+ */
+export async function probeChangeFeedHelperState(
+  db: DatabaseInterface,
+): Promise<ChangeFeedHelperState> {
+  if (getEngine(db) !== 'postgres') return 'current';
+  return (await getPostgresChangeFeedSchemaState(db)).helpers;
+}
+
+/**
+ * Whether helper DDL may be issued on `db` (#5402).
+ *
+ * Only on a root handle whose statements are their own transactions: a
+ * failed install there aborts nothing else. A handle that may be inside a
+ * caller's transaction never gets DDL for a usable older install; the caller
+ * would be left aborted (`25P02`) behind an error the feed then swallows.
+ */
+function mayInstallHelpersOn(db: DatabaseInterface): boolean {
+  return isAutocommitRoot(db);
+}
+
+/**
+ * Install or refresh the helpers on `db` according to what the probe found.
+ *
+ * `missing` and `outdated` install as before, and a refused install of
+ * `outdated` bodies throws an error saying the database owner must install
+ * the current helpers. `usable-older` and `mixed` keep working on what is
+ * there: they are upgraded only on an autocommit root, and a refused upgrade
+ * warns once instead of failing.
+ */
+async function installChangeFeedHelpersFor(
+  db: DatabaseInterface,
+  state: PostgresChangeFeedSchemaState,
+  statement: string,
+): Promise<void> {
+  if (state.helpers === 'usable-older' || state.helpers === 'mixed') {
+    if (!mayInstallHelpersOn(db)) return;
+    try {
+      await db.query(statement);
+    } catch (error) {
+      warnHelperUpgradeRefusedOnce(db, state, error);
+    }
+    return;
+  }
+  try {
+    await db.query(statement);
+  } catch (error) {
+    if (state.helpers === 'outdated') throw ownerUpgradeRequired(error);
+    throw error;
+  }
+}
+
+function ownerUpgradeRequired(error: unknown): Error {
+  const detail = error instanceof Error ? error.message : String(error);
+  const wrapped = new Error(
+    'The change-feed helpers installed in this database predate ' +
+      `${POSTGRES_CHANGE_FEED_HELPER_FLOOR_MARKER} and could not be replaced ` +
+      `(${detail}). The database owner must install the current helpers ` +
+      '(run the current CLI as the migration owner); older bodies do not keep ' +
+      'the cursor guarantee.',
+    { cause: error },
+  ) as Error & { code?: string };
+  const code = (error as { code?: unknown } | null)?.code;
+  if (typeof code === 'string') wrapped.code = code;
+  return wrapped;
+}
+
+/** Root handles already warned about a refused helper upgrade, per probe. */
+const warnedHelperUpgrades = new WeakMap<object, string>();
+
+function warnHelperUpgradeRefusedOnce(
+  db: DatabaseInterface,
+  state: PostgresChangeFeedSchemaState,
+  error: unknown,
+): void {
+  try {
+    const key = db as unknown as object;
+    if (warnedHelperUpgrades.get(key) === state.probeKey) return;
+    warnedHelperUpgrades.set(key, state.probeKey);
+    logger.warn(
+      'Change feed: the PostgreSQL helpers are older than this build and ' +
+        'could not be upgraded by this role. The feed keeps working on the ' +
+        'installed helpers; the database owner must install the current ' +
+        `ones (${POSTGRES_CHANGE_FEED_HELPER_MARKER}) to get their fixes.`,
+      {
+        state: state.helpers,
+        error: error instanceof Error ? error.message : String(error),
+      },
+    );
+  } catch {
+    // Logging must never propagate into the caller.
+  }
 }
 
 function assertPostgresChangeFeedTimestampCurrent(
@@ -818,13 +1013,16 @@ export async function ensurePostgresChangeFeedAppendFunction(
 ): Promise<void> {
   if (getEngine(db, options.typeHint) !== 'postgres') return;
 
-  assertPostgresChangeFeedTimestampCurrent(
-    await getPostgresChangeFeedSchemaState(db),
-  );
+  const state = await getPostgresChangeFeedSchemaState(db);
+  assertPostgresChangeFeedTimestampCurrent(state);
 
   if (options.replaceExisting === false) {
-    if (await postgresChangeFeedHelpersCurrent(db)) return;
-    await db.query(ENSURE_POSTGRES_CHANGE_FEED_APPEND_FUNCTION);
+    if (state.helpers === 'current') return;
+    await installChangeFeedHelpersFor(
+      db,
+      state,
+      ENSURE_POSTGRES_CHANGE_FEED_APPEND_FUNCTION,
+    );
     return;
   }
 
@@ -858,15 +1056,12 @@ export async function ensurePostgresChangeFeedHelpers(
   const state = await getPostgresChangeFeedSchemaState(db);
   if (!state.tableExists) return;
   if (state.createdAtType !== 'timestamp with time zone') return;
-  if (
-    state.functionExists &&
-    state.batchFunctionExists &&
-    state.pendingTableExists &&
-    state.drainFunctionExists
-  ) {
-    return;
-  }
-  await db.query(ENSURE_POSTGRES_CHANGE_FEED_SCHEMA);
+  if (state.helpers === 'current') return;
+  await installChangeFeedHelpersFor(
+    db,
+    state,
+    ENSURE_POSTGRES_CHANGE_FEED_SCHEMA,
+  );
 }
 
 export async function ensureChangeFeedTable(
@@ -877,17 +1072,17 @@ export async function ensureChangeFeedTable(
     const state = await getPostgresChangeFeedSchemaState(db);
     assertPostgresChangeFeedTimestampCurrent(state);
     if (
-      state.tableExists &&
-      state.functionExists &&
-      state.batchFunctionExists &&
-      state.pendingTableExists &&
-      state.drainFunctionExists &&
+      state.helpers === 'current' &&
       state.createdAtType === 'timestamp with time zone'
     ) {
       ensuredHandles.add(db);
       return;
     }
-    await db.query(ENSURE_POSTGRES_CHANGE_FEED_SCHEMA);
+    await installChangeFeedHelpersFor(
+      db,
+      state,
+      ENSURE_POSTGRES_CHANGE_FEED_SCHEMA,
+    );
   } else {
     const statements = CREATE_SMRT_CHANGES_TABLE.split(';')
       .map((statement) => statement.trim())

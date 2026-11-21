@@ -12,8 +12,10 @@
  * never touches the head, and the staging decision does not depend on the
  * staging table existing.
  *
- * The bodies carry the v6, v5 and v4 markers, so an older process's
- * version probe keeps a v6 body during a rolling upgrade.
+ * The bodies carry the v6, v5 and v4 markers (and, since #5402, v7), so an
+ * older process's version probe keeps a current body during a rolling
+ * upgrade. Since #5402 the drain body lives in the status drain; the
+ * two-argument identity delegates to it.
  *
  * Text-level checks; the PostgreSQL suite proves the installed behaviour.
  */
@@ -23,10 +25,12 @@ import {
   CREATE_POSTGRES_CHANGE_FEED_APPEND_FUNCTION,
   CREATE_POSTGRES_CHANGE_FEED_COMPAT_DRAIN_FUNCTION,
   CREATE_POSTGRES_CHANGE_FEED_DRAIN_FUNCTION,
+  CREATE_POSTGRES_CHANGE_FEED_DRAIN_STATUS_FUNCTION as DRAIN_BODY,
   POSTGRES_CHANGE_FEED_HELPER_MARKER,
 } from './schema.js';
 
 const MARKERS = [
+  'smrt-change-feed-helpers:v7',
   'smrt-change-feed-helpers:v6',
   'smrt-change-feed-helpers:v5',
   'smrt-change-feed-helpers:v4',
@@ -57,16 +61,17 @@ function insideExceptionBlock(body: string, at: number, until: number) {
 }
 
 describe('change-feed head lock in the PostgreSQL helper bodies (#5271)', () => {
-  it('bumps the helper marker to v6', () => {
+  it('bumps the helper marker past v6 (v7, #5402)', () => {
     expect(POSTGRES_CHANGE_FEED_HELPER_MARKER).toBe(MARKERS[0]);
   });
 
-  it('stamps the v6, v5 and v4 markers into all four helper bodies', () => {
+  it('stamps the v7, v6, v5 and v4 markers into all five helper bodies', () => {
     for (const body of [
       CREATE_POSTGRES_CHANGE_FEED_APPEND_FUNCTION,
       CREATE_POSTGRES_CHANGE_FEED_APPEND_BATCH_FUNCTION,
       CREATE_POSTGRES_CHANGE_FEED_DRAIN_FUNCTION,
       CREATE_POSTGRES_CHANGE_FEED_COMPAT_DRAIN_FUNCTION,
+      DRAIN_BODY,
     ]) {
       for (const marker of MARKERS) expect(body).toContain(marker);
     }
@@ -119,7 +124,7 @@ describe('change-feed head lock in the PostgreSQL helper bodies (#5271)', () => 
   });
 
   it('drain: only TRIES the head lock, after the drain lock and a candidate check, before the purge and MAX', () => {
-    const body = CREATE_POSTGRES_CHANGE_FEED_DRAIN_FUNCTION;
+    const body = DRAIN_BODY;
     const drainLock = body.indexOf("hashtext('change-feed-drain')");
     const candidate = body.indexOf('v_has_candidate :=', drainLock);
     const relation = body.indexOf(RELATION_LOCK, candidate);
@@ -137,8 +142,8 @@ describe('change-feed head lock in the PostgreSQL helper bodies (#5271)', () => 
     expect(purge).toBeGreaterThan(head);
     expect(max).toBeGreaterThan(purge);
     expect(body).not.toMatch(BLOCKING_HEAD);
-    // The only handler before MAX is the NOWAIT refusal; the helper's own
-    // boundary closes after it.
+    // The only handler before MAX is the NOWAIT refusal; the locking block's
+    // no-work handler and the helper's own boundary close after it (#5402).
     expect(body.slice(0, max).match(/EXCEPTION WHEN \w+/g)).toEqual([
       'EXCEPTION WHEN lock_not_available',
     ]);
@@ -147,10 +152,9 @@ describe('change-feed head lock in the PostgreSQL helper bodies (#5271)', () => 
     );
   });
 
-  it('drain: the feed-table lock is NOWAIT and a refusal returns without draining', () => {
-    const body = CREATE_POSTGRES_CHANGE_FEED_DRAIN_FUNCTION;
-    expect(body).toMatch(
-      /LOCK TABLE _smrt_changes IN ROW EXCLUSIVE MODE NOWAIT;\s+EXCEPTION WHEN lock_not_available THEN\s+RETURN;/,
+  it('drain: the feed-table lock is NOWAIT and a refusal ends the pass without draining', () => {
+    expect(DRAIN_BODY).toMatch(
+      /LOCK TABLE _smrt_changes IN ROW EXCLUSIVE MODE NOWAIT;\s+EXCEPTION WHEN lock_not_available THEN\s+v_status := 'relation_busy';\s+RAISE EXCEPTION USING ERRCODE = 'SMR01';/,
     );
   });
 
@@ -158,7 +162,7 @@ describe('change-feed head lock in the PostgreSQL helper bodies (#5271)', () => 
     for (const body of [
       CREATE_POSTGRES_CHANGE_FEED_APPEND_FUNCTION,
       CREATE_POSTGRES_CHANGE_FEED_APPEND_BATCH_FUNCTION,
-      CREATE_POSTGRES_CHANGE_FEED_DRAIN_FUNCTION,
+      DRAIN_BODY,
     ]) {
       const locks = body.split(RELATION_LOCK).length - 1;
       expect(locks).toBe(1);
@@ -191,7 +195,7 @@ describe('change-feed head lock in the PostgreSQL helper bodies (#5271)', () => 
       const decision = body.slice(deferred, body.indexOf(';', deferred));
       expect(decision).toMatch(NON_READ_COMMITTED);
     }
-    const drain = CREATE_POSTGRES_CHANGE_FEED_DRAIN_FUNCTION;
+    const drain = DRAIN_BODY;
     const isolation = indexOf(drain, NON_READ_COMMITTED);
     expect(isolation).toBeGreaterThan(0);
     expect(isolation).toBeLessThan(
@@ -205,6 +209,7 @@ describe('change-feed head lock in the PostgreSQL helper bodies (#5271)', () => 
       CREATE_POSTGRES_CHANGE_FEED_APPEND_BATCH_FUNCTION,
       CREATE_POSTGRES_CHANGE_FEED_DRAIN_FUNCTION,
       CREATE_POSTGRES_CHANGE_FEED_COMPAT_DRAIN_FUNCTION,
+      DRAIN_BODY,
     ]) {
       expect(body).toMatch(/\bVOLATILE\b/);
       expect(body).not.toMatch(/\b(STABLE|IMMUTABLE)\b/);
