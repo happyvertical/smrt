@@ -13,6 +13,7 @@
 import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { TenantCollection } from '@happyvertical/smrt-users';
 import { importPGlite } from '@happyvertical/sql/pglite';
 import {
   afterAll,
@@ -424,6 +425,56 @@ describe.each(backends)('the version store in the swap (%s)', (backend) => {
     expect(await live.store.current()).toBe(live.host.version);
   });
 
+  it("16. a hosted store names its tenant in its raw SQL: another tenant's draft and app row are not reopened", async () => {
+    const tenants = await TenantCollection.create({ db: shell as never });
+    const ids: string[] = [];
+    for (const slug of ['si-a', 'si-b']) {
+      const t = await tenants.create({ name: slug, slug });
+      await t.save();
+      ids.push(t.id as string);
+    }
+    const [a, b] = ids;
+    const storeA = new ShellVersionStore(shell as never, a);
+    const storeB = new ShellVersionStore(shell as never, b);
+    const base = {
+      version: 0,
+      parent: null,
+      author: 'x',
+      summary: 'v0',
+      definition: { name: 'x', models: {}, recipes: [] },
+      migration: null,
+      createdAt: new Date().toISOString(),
+    } as unknown as VersionRecord;
+    await storeB.append(base);
+    await storeB.setCurrent(0);
+    await storeA.append({ ...base, version: 1 });
+    await storeA.setCurrent(1);
+    const row = await (
+      await AppDraftCollection.create({ db: shell as never })
+    ).create({
+      name: 'B',
+      status: 'published',
+      publishedVersions: JSON.stringify([5, 6]),
+      createdAt: new Date().toISOString(),
+    });
+    await row.save();
+    const draftB = row.id as string;
+    // This harness has no tenancy interceptor: stamp the row as it would be.
+    await shell.query('UPDATE app_drafts SET tenant_id = ? WHERE id = ?', [
+      b,
+      draftB,
+    ]);
+    await shell.transaction(async (tx) => {
+      // A's store, handed B's draft (a journal copied from another app).
+      expect(await storeA.reopenDraftIn(tx, draftB, [5, 6])).toBe(false);
+    });
+    expect((await draftRow(draftB)).status).toBe('published');
+    await shell.transaction(async (tx) => {
+      expect(await storeB.reopenDraftIn(tx, draftB, [5, 6])).toBe(true);
+    });
+    expect((await draftRow(draftB)).status).toBe('open');
+  });
+
   it('15. a failure after the store write rolls back the swap and the rows together', async () => {
     const live = await seeded();
     const d = await drafted(live);
@@ -684,14 +735,14 @@ describe.each(backends)('the version store in the swap (%s)', (backend) => {
         fields: { title: { type: 'text' } },
       });
       await terminateClaim(schema);
-      let err: unknown;
-      for (let i = 0; i < 50 && !err; i++) {
-        err = await live.host.create('Chore', { title: 'x' }).then(
-          () => undefined,
-          (e) => e,
-        );
-        if (!err) await new Promise((r) => setTimeout(r, 100));
-      }
+      // Wait for the heartbeat to notice, then every call refuses with the
+      // claim's error (a call in flight at that moment does too).
+      for (let i = 0; i < 100 && !live.host.lostClaim; i++)
+        await new Promise((r) => setTimeout(r, 100));
+      const err = await live.host.create('Chore', { title: 'x' }).then(
+        () => undefined,
+        (e) => e,
+      );
       expect(err).toBeInstanceOf(ClaimLostError);
       expect(live.host.appAlive).toBe(false);
     });

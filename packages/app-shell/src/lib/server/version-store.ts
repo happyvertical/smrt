@@ -284,8 +284,15 @@ export class ShellVersionStore implements VersionStore {
         /* keep the name */
       }
       const hit = await txDb.query(
-        'UPDATE apps SET current_version = ?, definition = ?, name = ? WHERE id = ? AND current_version = ? RETURNING id',
-        [current, rec.definition, name, app.id, expected ?? -1],
+        `UPDATE apps SET current_version = ?, definition = ?, name = ? WHERE id = ? AND current_version = ?${this.tenantClause} RETURNING id`,
+        [
+          current,
+          rec.definition,
+          name,
+          app.id,
+          expected ?? -1,
+          ...this.tenantParam,
+        ],
       );
       if (!rowsOf(hit).length)
         throw new StaleStoreError(
@@ -307,29 +314,41 @@ export class ShellVersionStore implements VersionStore {
     });
   }
 
-  async reachable(tx: unknown): Promise<boolean> {
-    const id = this.appId ?? ((await this.appRow()).id as string);
-    const found = await (tx as DatabaseInterface).query(
-      'SELECT id FROM apps WHERE id = ?',
-      [id],
-    );
-    return rowsOf(found).length > 0;
+  reachable(tx: unknown): Promise<boolean> {
+    return this.scoped(async () => {
+      const id = this.appId ?? ((await this.appRow()).id as string);
+      const found = await (tx as DatabaseInterface).query(
+        `SELECT id FROM apps WHERE id = ?${this.tenantClause}`,
+        [id, ...this.tenantParam],
+      );
+      return rowsOf(found).length > 0;
+    });
+  }
+
+  /** Raw SQL bypasses the tenancy interceptor: a hosted store names its tenant itself. */
+  private get tenantClause() {
+    return this.tenantId ? ' AND tenant_id = ?' : '';
+  }
+  private get tenantParam(): string[] {
+    return this.tenantId ? [this.tenantId] : [];
   }
 
   publishingDraft(): string | null {
     return this.publishing?.draftId ?? null;
   }
 
-  async reopenDraftIn(
+  reopenDraftIn(
     tx: unknown,
     draftId: string,
     numbers: number[],
   ): Promise<boolean> {
-    const hit = await (tx as DatabaseInterface).query(
-      `UPDATE app_drafts SET status = 'open', ended_at = '', published_versions = '' WHERE id = ? AND status = 'published' AND published_versions = ? RETURNING id`,
-      [draftId, JSON.stringify(numbers)],
-    );
-    return rowsOf(hit).length > 0;
+    return this.scoped(async () => {
+      const hit = await (tx as DatabaseInterface).query(
+        `UPDATE app_drafts SET status = 'open', ended_at = '', published_versions = '' WHERE id = ? AND status = 'published' AND published_versions = ?${this.tenantClause} RETURNING id`,
+        [draftId, JSON.stringify(numbers), ...this.tenantParam],
+      );
+      return rowsOf(hit).length > 0;
+    });
   }
 
   markPurged(version: number): Promise<void> {

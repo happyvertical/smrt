@@ -16,6 +16,9 @@ import type { AppClaim, ClaimOptions } from './types.ts';
 
 type Handle = any;
 
+/** Heartbeats in a row that may fail for a reason other than a missing lock before the claim is given up. */
+const MAX_HEARTBEAT_FAILURES = 3;
+
 /** Is `e` the kind of error that says the connection, not the statement, failed? */
 function isConnectionError(e: unknown): boolean {
   const x = e as { code?: string; message?: string } | undefined;
@@ -123,14 +126,23 @@ export function createClaim(
   };
 
   let beating = false;
+  let failures = 0;
   if (every > 0) {
     timer = setInterval(() => {
       if (beating || lost) return;
       beating = true;
       transaction(async () => {})
-        .catch((e) =>
-          markLost(e instanceof ClaimLostError ? e : lostError(String(e))),
-        )
+        .then(() => {
+          failures = 0;
+        })
+        .catch((e) => {
+          // A failed proof already lost the claim (`transaction` did it, and a
+          // connection error re-proved at once). Any other error may be a
+          // blip: lost only when it keeps happening.
+          if (e instanceof ClaimLostError) markLost(e);
+          else if (++failures >= MAX_HEARTBEAT_FAILURES)
+            markLost(lostError(String(e)));
+        })
         .finally(() => {
           beating = false;
         });

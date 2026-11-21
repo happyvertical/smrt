@@ -511,7 +511,17 @@ export class AppHost extends EventEmitter {
     // A draft lives in a schema of its own and is claimed by its live host.
     const claim = marker
       ? undefined
-      : (opts.claim ?? (await claimAppDatabase(config, opts.claimOptions)));
+      : (opts.claim ??
+        (await claimAppDatabase(config, {
+          // The swap and the drops wait up to the host's lock timeout; the
+          // claim's own statement limit must not cut that wait short.
+          lockTimeoutMs: opts.swapLockTimeoutMs,
+          statementTimeoutMs: Math.max(
+            10_000,
+            (opts.swapLockTimeoutMs ?? DEFAULT_LOCK_TIMEOUT_MS) + 5_000,
+          ),
+          ...opts.claimOptions,
+        })));
     const database: HostDatabase = {
       config,
       release: claim ? () => claim.release() : undefined,
@@ -2003,6 +2013,11 @@ export class AppHost extends EventEmitter {
       );
   }
 
+  /** The error that lost this host's claim (#5470), or null: a lost host serves nothing. */
+  get lostClaim(): Error | null {
+    return this.claimLost;
+  }
+
   /** Does this host commit the store inside the swap's transaction (#5470)? */
   private get atomic() {
     return !!this.claim && !!this.store.commitIn;
@@ -2379,6 +2394,9 @@ export class AppHost extends EventEmitter {
     try {
       return await this.app.call<T>(op, ...args);
     } catch (e) {
+      // A call in flight when the claim was lost sees the loss, not the
+      // retired worker's crash.
+      if (this.claimLost) throw this.claimLost;
       if (e instanceof AppCallError) {
         if (e.stale) throw new StaleFenceError(e.message);
         if (e.user) throw new EngineError(e.message, 'invalid');

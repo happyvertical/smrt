@@ -161,4 +161,27 @@ describe('the claim connection', () => {
     expect(await lost).toBeInstanceOf(ClaimLostError);
     await claim.release();
   });
+
+  it('the heartbeat gives up on a blip only when it keeps failing', async () => {
+    const { raw } = fake();
+    let failing = true;
+    const claim = createClaim(
+      raw,
+      'app_x',
+      { heartbeatMs: 10 },
+      undefined,
+      async () => {
+        if (failing) throw new Error('blip');
+        return true;
+      },
+    );
+    await new Promise((r) => setTimeout(r, 20));
+    failing = false;
+    await new Promise((r) => setTimeout(r, 60));
+    expect(claim.lost).toBe(false); // recovered before three in a row
+    failing = true;
+    await new Promise((r) => setTimeout(r, 150));
+    expect(claim.lost).toBe(true);
+    await claim.release();
+  });
 });
