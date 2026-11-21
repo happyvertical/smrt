@@ -86,13 +86,18 @@ declaring class; a column written after the class name (`'Room.code'`) stays,
 so the constraint references that column. A confirmed target is pinned to one
 declaration, so another class of its simple name (smrt-ledgers and
 smrt-messages both declare `Account`) does not make it ambiguous. A target or
-report source written as a bare name resolves to the referring class's own
-package's model of that name; without one, `assertKnownTargets` throws
-`CONFIG_AMBIGUOUS_RELATIONSHIP_TARGET` when it matches more than one model of
-this manifest or of a manifest it reads (`parentPackages`), listing the
-candidates and the import that pins each; an
-app class that extends a candidate and shares its table (a #4921 replacement)
-is not a second candidate. Foreign-key reconciliation takes a confirmed target's
+report source written as a bare name is resolved once, right after
+`confirmPackageTargets` (`resolveBareTargets`), by its exact name: the
+referring class's own package's model of that name, else the single model of
+that name in this manifest or a manifest it reads (`parentPackages`). More
+than one throws `CONFIG_AMBIGUOUS_RELATIONSHIP_TARGET`, listing the candidates
+and the import (recorded entry and export name) that pins each; an app class
+that extends a candidate and shares its table (a #4921 replacement) is not a
+second candidate. A model whose name differs only in letter case is never
+taken: with no exact match the target throws
+`CONFIG_UNKNOWN_RELATIONSHIP_TARGET` naming it. Schema generation takes the
+foreign key from the recorded model (`bareTargets`), a dependency's by
+identity, and never looks the name up again. Foreign-key reconciliation takes a confirmed target's
 schema by identity (`qualifiedTargetSchema`), so the constraint keeps the
 provider's table, key column and declared `onDelete` (adding it to a deployed
 database: [upgrading](../../scanner/agents/static-config.md#upgrading-foreign-keys-to-another-packages-model),
