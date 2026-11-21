@@ -169,6 +169,14 @@ export interface ApplyMigrationsOptions {
   postgresSafe?: boolean;
   /** Called after each migration attempt completes, before the batch continues */
   onProgress?: (result: MigrationResult) => void;
+  /**
+   * Called inside the atomic batch transaction after every definition
+   * succeeded and before the commit, with that transaction's handle. A write
+   * here commits with the batch or rolls back with it; throwing rolls the
+   * batch back. Requires `atomic: true` (refused otherwise); not called on a
+   * dry run.
+   */
+  beforeCommit?: (tx: DatabaseInterface) => Promise<void>;
 }
 
 /**

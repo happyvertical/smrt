@@ -195,6 +195,10 @@ describe('framework NULL-equal index migration (#2834)', () => {
       transaction: async () => {
         throw new Error('transaction must not run');
       },
+      // A pool handle: concurrent-index mode applies to it (#5435).
+      acquireSession: async () => {
+        throw new Error('session must not open');
+      },
     } as unknown as DatabaseInterface;
     const tracker = new MigrationTracker({ db });
     await expect(

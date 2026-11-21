@@ -444,6 +444,13 @@ describe('MigrationTracker statement execution fallbacks', () => {
         };
         return cb(tx);
       },
+      // A pool handle pins the concurrent statements' session (#5435); its
+      // statements are recorded as outside the transaction.
+      acquireSession: async () => ({
+        query: (sql: string) => db.query(sql),
+        isActive: () => true,
+        release: async () => {},
+      }),
     };
     // getMigration / status writes go through db.query too; filter them out
     // by tagging migration DDL distinctly below.

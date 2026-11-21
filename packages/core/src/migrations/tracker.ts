@@ -53,6 +53,23 @@ import type {
 
 const logger = createLogger({ level: 'info' });
 
+/** No migrate run lends its session yet. */
+function borrowMigrationRunSession(
+  _db: DatabaseInterface,
+): MigrationSession | undefined {
+  return undefined;
+}
+
+/** A server PostgreSQL handle: its own `engine` decides, else URL or hint. */
+function isServerPostgresHandle(
+  db: DatabaseInterface,
+  engineHint?: string,
+): boolean {
+  const engine = (db as { engine?: unknown }).engine;
+  if (typeof engine === 'string') return engine === 'postgres';
+  return getDatabaseEngine(db, engineHint) === 'postgres';
+}
+
 /**
  * Row type for _smrt_schema_migrations table
  */
@@ -415,6 +432,11 @@ export class MigrationTracker {
    * `CONCURRENTLY` DDL has run. `null` on every ordinary path.
    */
   private concurrentIndexPlan: ConcurrentIndexPlan | null = null;
+  /**
+   * Set on the transaction-scoped tracker of an atomic batch: the parent has
+   * already planned and checked the batch for this handle.
+   */
+  private insideAtomicBatch = false;
 
   constructor(options: MigrationTrackerOptions) {
     this.db = options.db;
@@ -995,6 +1017,23 @@ export class MigrationTracker {
     definitions: MigrationDefinition[],
     options: ApplyMigrationsOptions = {},
   ): Promise<MigrationResult[]> {
+    if (options.beforeCommit && !options.atomic)
+      throw new Error(
+        'beforeCommit runs inside the atomic batch transaction; pass atomic: true with it.',
+      );
+    // A PostgreSQL handle that cannot pin a session (a transaction handle)
+    // has nowhere to run a statement that must run outside a transaction.
+    // Take the atomic, non-concurrent path, which builds indexes in the
+    // transaction and refuses an explicit CONCURRENTLY before anything runs.
+    if (
+      this.dbEngine === 'postgres' &&
+      !this.insideAtomicBatch &&
+      !options.dryRun &&
+      !this.canPinSession() &&
+      (!options.atomic || options.postgresSafe)
+    ) {
+      options = { ...options, atomic: true, postgresSafe: false };
+    }
     if (
       !options.dryRun &&
       this.needsSqliteRebuildSafety(definitions.flatMap((d) => d.up))
@@ -1065,6 +1104,7 @@ export class MigrationTracker {
             useConcurrentIndexes: false,
           });
           txTracker.concurrentIndexPlan = deferred;
+          txTracker.insideAtomicBatch = true;
           txTracker.sqliteRebuildTransactionOwned =
             this.sqliteRebuildTransactionOwned;
           if (this.sqliteRebuildTransactionOwned) {
@@ -1074,6 +1114,7 @@ export class MigrationTracker {
           }
           const results = await txTracker.applyAll(definitions, {
             ...options,
+            beforeCommit: undefined,
             atomic: false,
             continueOnError: false,
             postgresSafe: false,
@@ -1095,6 +1136,8 @@ export class MigrationTracker {
 
           if (this.sqliteRebuildTransactionOwned)
             await this.checkSqliteForeignKeys(tx as DatabaseInterface);
+          // Commits with the batch or rolls back with it.
+          await options.beforeCommit?.(tx as DatabaseInterface);
           return results;
         });
 
@@ -1225,7 +1268,11 @@ export class MigrationTracker {
         }
 
         if (refusal && result.name === refusal.migrationName) {
-          await this.recordConcurrentIndexFailure(result.name, refusal.message);
+          await this.recordConcurrentIndexFailure(
+            session,
+            result.name,
+            refusal.message,
+          );
           results[index] = {
             ...result,
             success: false,
@@ -1243,7 +1290,11 @@ export class MigrationTracker {
               ? `Not attempted: the concurrent index phase ran nothing because ${stoppedBy} was refused before it ran`
               : `Not attempted: concurrent index phase stopped after ${stoppedBy} failed`,
           );
-          await this.recordConcurrentIndexFailure(result.name, error.message);
+          await this.recordConcurrentIndexFailure(
+            session,
+            result.name,
+            error.message,
+          );
           results[index] = {
             ...result,
             success: false,
@@ -1271,6 +1322,7 @@ export class MigrationTracker {
             (result.execution_time_ms ?? 0) + (Date.now() - startedAt),
           );
           await this.recordConcurrentIndexSuccess(
+            session,
             result.name,
             result.checksum,
             executionTime,
@@ -1289,6 +1341,7 @@ export class MigrationTracker {
             stoppedBy = result.name;
           }
           await this.recordConcurrentIndexFailure(
+            session,
             result.name,
             indexError.message,
           );
@@ -1317,10 +1370,24 @@ export class MigrationTracker {
    * PostgreSQL pools hand each top-level `query` an arbitrary connection, so
    * a `SET lock_timeout` issued through the pool may not apply to the DDL
    * that follows. Adapters that expose `acquireSession` give us a pinned
-   * connection; anything else (SQLite, DuckDB, test doubles) is
+   * connection; anything else (SQLite, DuckDB, PGlite, test doubles) is
    * single-connection anyway and falls back to the plain interface.
+   *
+   * On a live migrate run's handle (`lock.db`) the phase runs on the run's
+   * own session, the connection that holds the migration lock, and its
+   * release only resets the timeouts it set. A server PostgreSQL handle that
+   * can do neither (a transaction) has no connection to run the phase on.
    */
   private async acquireMigrationSession(): Promise<MigrationSession> {
+    const borrowed = borrowMigrationRunSession(this.db);
+    if (borrowed) return borrowed;
+    if (
+      typeof this.db.acquireSession !== 'function' &&
+      isServerPostgresHandle(this.db, this.engineHint)
+    )
+      throw new Error(
+        'This PostgreSQL handle cannot pin a session (it is a transaction), so statements that must run outside a transaction cannot run on it. Migrate on the database handle, or without concurrent indexes.',
+      );
     if (typeof this.db.acquireSession === 'function') {
       const session = await this.db.acquireSession();
       return {
@@ -1333,6 +1400,15 @@ export class MigrationTracker {
       query: (sql, ...vars) => this.db.query(sql, ...vars),
       release: async () => {},
     };
+  }
+
+  /** Whether this handle can give the index phase a pinned connection. */
+  private canPinSession(): boolean {
+    return (
+      borrowMigrationRunSession(this.db) !== undefined ||
+      typeof this.db.acquireSession === 'function' ||
+      !isServerPostgresHandle(this.db, this.engineHint)
+    );
   }
 
   /**
@@ -1864,12 +1940,18 @@ export class MigrationTracker {
     schemas.delete(schema);
   }
 
+  /**
+   * Index-phase tracking rows are written on the phase's own session: on a
+   * pool of one connection the pool has no other connection to give, and
+   * under a migrate run the session is the connection that holds the lock.
+   */
   private async recordConcurrentIndexSuccess(
+    session: MigrationSession,
     name: string,
     checksum: string,
     executionTime: number,
   ): Promise<void> {
-    await this.db.query(
+    await session.query(
       `UPDATE _smrt_schema_migrations
          SET status = 'completed', execution_time_ms = ?, applied_checksum = ?, error_message = NULL, applied_at = CURRENT_TIMESTAMP
        WHERE name = ?`,
@@ -1880,11 +1962,12 @@ export class MigrationTracker {
   }
 
   private async recordConcurrentIndexFailure(
+    session: MigrationSession,
     name: string,
     message: string,
   ): Promise<void> {
-    try {
-      await this.db.query(
+    const update = (run: MigrationSession['query']) =>
+      run(
         `UPDATE _smrt_schema_migrations
            SET status = 'failed', error_message = ?
          WHERE name = ?`,
@@ -1893,6 +1976,22 @@ export class MigrationTracker {
         `${CONCURRENT_INDEX_PHASE1_MARKER} ${message}`,
         name,
       );
+    try {
+      try {
+        await update(session.query);
+      } catch (sessionError) {
+        // The phase's own session is gone. A session this tracker pinned
+        // from its pool leaves the pool free to record the failure, so the
+        // next run retries instead of finding the row still running. A
+        // migrate run's session has no such fallback: its handle ended
+        // with it.
+        if (
+          typeof this.db.acquireSession !== 'function' ||
+          borrowMigrationRunSession(this.db)
+        )
+          throw sessionError;
+        await update((sql, ...vars) => this.db.query(sql, ...vars));
+      }
     } catch (persistError) {
       logger.error(
         `Failed to persist failed status for migration ${name}: ${

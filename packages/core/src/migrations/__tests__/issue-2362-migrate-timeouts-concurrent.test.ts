@@ -433,7 +433,11 @@ describe('PostgreSQL concurrent-index mode (issue #2362)', () => {
     expect(fake.sessionsReleased).toBe(1);
   });
 
-  it('falls back to the plain interface when the adapter has no acquireSession', async () => {
+  it('builds indexes in the transaction when a PostgreSQL handle cannot pin a session', async () => {
+    // A handle with no acquireSession (a transaction) has no connection for a
+    // statement that must run outside a transaction (#5435): the batch takes
+    // the atomic, non-concurrent path instead of running CONCURRENTLY on
+    // whatever connection the handle's query reaches.
     const fake = createFakeDb({ withSession: false });
     const tracker = new MigrationTracker({ db: fake.db });
 
@@ -443,9 +447,14 @@ describe('PostgreSQL concurrent-index mode (issue #2362)', () => {
     });
 
     expect(results[0].success).toBe(true);
-    expect(fake.sqlIn('pool')).toContain(
-      'CREATE INDEX CONCURRENTLY IF NOT EXISTS "jobs_status_idx" ON "jobs" ("status")',
+    expect(fake.sqlIn('transaction')).toContain(
+      'CREATE INDEX IF NOT EXISTS "jobs_status_idx" ON "jobs" ("status")',
     );
+    expect(
+      [...fake.sqlIn('pool'), ...fake.sqlIn('transaction')].some((sql) =>
+        /CONCURRENTLY/i.test(sql),
+      ),
+    ).toBe(false);
   });
 
   it('accepts explicit CONCURRENTLY DDL that a plain atomic batch would reject', async () => {
