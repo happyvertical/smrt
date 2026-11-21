@@ -139,6 +139,8 @@ describe('ownerText', () => {
     leaksHost('a'.repeat(10_000));
     leaksHost('a:'.repeat(5_000));
     leaksHost(`${'a'.repeat(10_000)}!`);
+    for (const unit of ['.', '1.', 'a.'])
+      leaksHost(unit.repeat(Math.ceil(100_000 / unit.length)));
     expect(Date.now() - t).toBeLessThan(1000);
   });
 });

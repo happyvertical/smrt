@@ -18,7 +18,7 @@ const DB_UNAVAILABLE =
 
 const IPV4 =
   /(?<![\w.])(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)(?!\w|\.\d)/;
-const IPV6_CANDIDATE = /(?<![\w:])[0-9a-f:.]*:[0-9a-f:.]*(?![\w:])/gi;
+const IPV6_CANDIDATE = /(?<![\w:.])[0-9a-f:.]*:[0-9a-f:.]*(?![\w:])/gi;
 // `addr:fd00::7`, `host=fd00::7`, `peer fd00::7`: an address after a label.
 const IPV6_LABELLED =
   /\b(?:host|hostname|addr|address|ip|server|peer|remote|local|at|to|from)[:=\s]+\[?([0-9a-f:.]*:[0-9a-f:.]*)/gi;
