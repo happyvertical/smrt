@@ -837,6 +837,46 @@ ${extra}}
     ).toBe('ProductionRun');
   });
 
+  // A bare name is matched as a class name lookup matches it: the exact
+  // spelling, or another case of it when the manifest holds only that one.
+  const bareOrder = (name: string) =>
+    `${CORE}\n@smrt()\nexport class WorkOrder extends SmrtObject {\n  @foreignKey('${name}') productionRunId = '';\n}\n`;
+
+  it('generates a bare-name target spelled in another case like its exact spelling when one dependency declares it', async () => {
+    const exact = await build(
+      await project({
+        providers: { [VENDOR]: twoRuns[VENDOR] },
+        app: { 'src/WorkOrder.ts': bareOrder('ProductionRun') },
+      }),
+    );
+    const cased = await build(
+      await project({
+        providers: { [VENDOR]: twoRuns[VENDOR] },
+        app: { 'src/WorkOrder.ts': bareOrder('productionrun') },
+      }),
+    );
+
+    const column = (manifest: typeof exact) =>
+      manifest.objects[`${APP}:WorkOrder`]?.schema?.columns.production_run_id;
+    expect(column(cased)).toBeDefined();
+    expect(column(cased)).toEqual(column(exact));
+  });
+
+  it('fails a bare-name target spelled in another case that models of two dependencies share', async () => {
+    const root = await project({
+      providers: twoRuns,
+      app: { 'src/WorkOrder.ts': bareOrder('productionrun') },
+    });
+
+    const failure = build(root);
+    await expect(failure).rejects.toMatchObject({
+      code: 'CONFIG_AMBIGUOUS_RELATIONSHIP_TARGET',
+    });
+    const message = await failure.catch((error: Error) => error.message);
+    expect(message).toContain(`${VENDOR}:ProductionRun`);
+    expect(message).toContain(`${OTHER}:ProductionRun`);
+  });
+
   it('accepts a package target that an app replacement shares its table with', async () => {
     const root = await project({
       providers: { [VENDOR]: { files: { 'src/ProductionRun.ts': RUN } } },

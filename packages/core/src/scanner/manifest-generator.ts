@@ -28,6 +28,7 @@ import {
   loadExternalManifestSync,
   loadManifestFromPathSync,
   lookupInManifest,
+  matchClassNameSpelling,
 } from '../manifest/manifest-loader.js';
 import {
   annotateModelReplacements,
@@ -1232,9 +1233,12 @@ export class ManifestGenerator {
       if (isQualifiedName(target)) return;
       const className = target.split('.')[0];
       const ownPackage = owner.packageName ?? manifest.packageName;
+      // The same spelling rule `known()` used to find the name at all.
+      const spelling = matchClassNameSpelling(manifest, className);
       const ownModel = Object.values(manifest.objects).some(
         (candidate) =>
-          candidate.className === className &&
+          spelling !== undefined &&
+          candidate.className === spelling &&
           (candidate.packageName ?? manifest.packageName) === ownPackage,
       );
       if (ownModel) return;
@@ -1245,7 +1249,7 @@ export class ManifestGenerator {
           `import the one you mean and pass the class, e.g. ${candidates
             .map(
               (candidate) =>
-                `import { ${className} } from ${candidate.importFrom} for ${candidate.identity}`,
+                `${candidate.importHint} for ${candidate.identity}`,
             )
             .join(', or ')}`,
       );
@@ -1460,7 +1464,7 @@ export class ManifestGenerator {
   private modelsNamed(
     manifest: SmartObjectManifest,
     className: string,
-  ): Array<{ identity: string; label: string; importFrom: string }> {
+  ): Array<{ identity: string; label: string; importHint: string }> {
     const tableOf = (definition: SmartObjectDefinition) =>
       definition.schema?.tableName ??
       definition.decoratorConfig?.tableName ??
@@ -1470,21 +1474,30 @@ export class ManifestGenerator {
       {
         identity: string;
         label: string;
-        importFrom: string;
+        importHint: string;
         definition: SmartObjectDefinition;
       }
     >();
-    for (const candidate of Object.values(manifest.objects)) {
-      if (candidate.className !== className) continue;
+    // Each manifest is matched by the spelling rule `known()` used, so a name
+    // that exists in some case is counted in every manifest that has it.
+    const named = (from: SmartObjectManifest) => {
+      const spelling = matchClassNameSpelling(from, className);
+      return spelling === undefined
+        ? []
+        : Object.values(from.objects).filter(
+            (candidate) => candidate.className === spelling,
+          );
+    };
+    for (const candidate of named(manifest)) {
       const identity =
         candidate.qualifiedName ??
         (manifest.packageName
-          ? createQualifiedName(manifest.packageName, className)
-          : className);
+          ? createQualifiedName(manifest.packageName, candidate.className)
+          : candidate.className);
       found.set(identity, {
         identity,
         label: `${identity} (${candidate.filePath})`,
-        importFrom: `the file that declares it (${candidate.filePath})`,
+        importHint: `import { ${candidate.className} } from the file that declares it (${candidate.filePath})`,
         definition: candidate,
       });
     }
@@ -1492,17 +1505,17 @@ export class ManifestGenerator {
       const dependency = this.loadDependencyManifest(packageName, {
         warn: false,
       });
-      for (const candidate of Object.values(dependency?.objects ?? {})) {
-        if (candidate.className !== className) continue;
+      if (!dependency) continue;
+      for (const candidate of named(dependency) as SmartObjectDefinition[]) {
         const identity =
           candidate.qualifiedName ??
-          createQualifiedName(packageName, className);
+          createQualifiedName(packageName, candidate.className);
         if (found.has(identity)) continue;
         found.set(identity, {
           identity,
           label: `${identity} (dependency ${packageName})`,
-          importFrom: `'${packageName}'`,
-          definition: candidate as SmartObjectDefinition,
+          importHint: `import { ${candidate.className} } from '${packageName}'`,
+          definition: candidate,
         });
       }
     }
@@ -1517,10 +1530,10 @@ export class ManifestGenerator {
               tableOf(candidate.definition) === tableOf(other.definition),
           ),
       )
-      .map(({ identity, label, importFrom }) => ({
+      .map(({ identity, label, importHint }) => ({
         identity,
         label,
-        importFrom,
+        importHint,
       }));
   }
 
