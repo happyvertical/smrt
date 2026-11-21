@@ -409,8 +409,9 @@ export const MAX_CHANGES_LIMIT = 5_000;
  * READ COMMITTED PostgreSQL with the v6 helpers installed the head lock means
  * the retry should never run; it remains for a database still holding older
  * helper bodies mid-rollout and keeps one retry policy across engines. The
- * deadline is checked only between attempts: a single attempt can wait for
- * the head lock for as long as `lock_timeout` / `statement_timeout` allow.
+ * deadline is checked before and after each pause, never mid-attempt: a
+ * single attempt can wait for the head lock for as long as `lock_timeout` /
+ * `statement_timeout` allow.
  */
 const APPEND_RETRY_BUDGET_MS = 2_000;
 
@@ -1077,6 +1078,12 @@ export async function appendChange(
       // Sequence head contention: another append won the value. Re-running
       // recomputes MAX(seq) against the now-committed head.
       await waitBeforeAppendRetry(attempt);
+      // The pause itself can spend the rest of the budget; recheck so no
+      // attempt starts after it (#5405).
+      if (!retryBudgetRemains(attempt, monotonicNow() - startedAt)) {
+        queueDeferredSignals(db, drainedSignals);
+        throw retryBudgetExhausted('appendChange', error, attempt);
+      }
     }
   }
 }
@@ -1239,6 +1246,12 @@ export async function appendChanges(
         throw retryBudgetExhausted('appendChanges', error, attempt);
       }
       await waitBeforeAppendRetry(attempt);
+      // The pause itself can spend the rest of the budget; recheck so no
+      // attempt starts after it (#5405).
+      if (!retryBudgetRemains(attempt, monotonicNow() - startedAt)) {
+        queueDeferredSignals(db, drainedSignals);
+        throw retryBudgetExhausted('appendChanges', error, attempt);
+      }
     }
   }
 }
@@ -1371,6 +1384,8 @@ async function drainChangeFeedDetailed(
         const pauseStartedAt = monotonicNow();
         await waitBeforeAppendRetry(conflicts);
         conflictMs += monotonicNow() - pauseStartedAt;
+        // The pause itself can spend the rest of the budget (#5405).
+        if (!retryBudgetRemains(conflicts, conflictMs)) break;
         continue;
       }
       throw error;
