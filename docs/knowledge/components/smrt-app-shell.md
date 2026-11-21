@@ -5,10 +5,10 @@ description: "A smrt app that builds and runs a person's own smrt app from defin
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-21T14:04:13Z"
+  at: "2026-11-21T18:23:39Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:3c975ef0b33e2bac8b248faa98827e944d60e16ba502a0c94bdf404cb186ccf5"
+source_revision: "sha256:29ee885e2790eb3b934b527a4577cfec479bc110005ef1bd0e999c982b8f9087"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/app-shell/package.json"
@@ -20,15 +20,18 @@ sources:
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/app-shell/agents/cloud-profile.md"
     title: "@happyvertical/smrt-app-shell packages/app-shell/agents/cloud-profile.md"
   - id: "agents-3"
+    resource: "https://github.com/happyvertical/smrt/blob/main/packages/app-shell/agents/deploy.md"
+    title: "@happyvertical/smrt-app-shell packages/app-shell/agents/deploy.md"
+  - id: "agents-4"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/app-shell/agents/draft-ui.md"
     title: "@happyvertical/smrt-app-shell packages/app-shell/agents/draft-ui.md"
-  - id: "agents-4"
+  - id: "agents-5"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/app-shell/agents/engine.md"
     title: "@happyvertical/smrt-app-shell packages/app-shell/agents/engine.md"
-  - id: "agents-5"
+  - id: "agents-6"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/app-shell/agents/imports.md"
     title: "@happyvertical/smrt-app-shell packages/app-shell/agents/imports.md"
-  - id: "agents-6"
+  - id: "agents-7"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/app-shell/agents/shared-pieces.md"
     title: "@happyvertical/smrt-app-shell packages/app-shell/agents/shared-pieces.md"
 ---
@@ -46,6 +49,7 @@ sources:
 
 - `packages/app-shell/AGENTS.md`
 - `packages/app-shell/agents/cloud-profile.md`
+- `packages/app-shell/agents/deploy.md`
 - `packages/app-shell/agents/draft-ui.md`
 - `packages/app-shell/agents/engine.md`
 - `packages/app-shell/agents/imports.md`
@@ -85,6 +89,8 @@ sources:
 - `./engine`
 - `./engine/worker`
 - `./manifest`
+- `./shutdown`
+- `./start`
 
 ## Models
 

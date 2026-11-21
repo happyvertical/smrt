@@ -6,8 +6,16 @@ const mocks = vi.hoisted(() => ({
   profile: vi.fn(),
   handoff: vi.fn(),
   fresh: vi.fn(),
+  install: vi.fn(),
+  drain: vi.fn(),
+  env: { dev: false, building: false },
 }));
-vi.mock('$lib/server/host', () => ({ shellProfile: mocks.profile }));
+vi.mock('$app/environment', () => mocks.env);
+vi.mock('$lib/server/shutdown', () => ({ installShutdown: mocks.install }));
+vi.mock('$lib/server/host', () => ({
+  shellProfile: mocks.profile,
+  drainShell: mocks.drain,
+}));
 vi.mock('$lib/server/owner-handoff', () => ({
   ensureOwnerHandoff: mocks.handoff,
   keepOwnerHandoffFresh: mocks.fresh,
@@ -22,6 +30,8 @@ import { init } from './hooks.server.ts';
 
 beforeEach(() => {
   vi.resetAllMocks();
+  mocks.env.dev = false;
+  mocks.env.building = false;
   mocks.profile.mockResolvedValue('local');
 });
 it('serves the shell when import initialization or recovery fails and can retry imports lazily', async () => {
@@ -62,4 +72,16 @@ it('still starts the owner link and imports on the local profile', async () => {
   expect(mocks.handoff).toHaveBeenCalledOnce();
   expect(mocks.fresh).toHaveBeenCalledOnce();
   expect(mocks.imports).toHaveBeenCalledOnce();
+});
+it('installs the SIGTERM/SIGINT drain once the runtime is ready, not under vite dev or build', async () => {
+  mocks.imports.mockResolvedValue({});
+  await init();
+  expect(mocks.install).toHaveBeenCalledWith({ drain: mocks.drain });
+  mocks.install.mockClear();
+  mocks.env.dev = true;
+  await init();
+  mocks.env.dev = false;
+  mocks.env.building = true;
+  await init();
+  expect(mocks.install).not.toHaveBeenCalled();
 });
