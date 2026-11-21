@@ -303,6 +303,196 @@ describe('change-feed sequence retry budget (#5271)', () => {
   });
 });
 
+/**
+ * The budget is rechecked after the backoff pause (#5405). The fake clock
+ * only moves inside the stubbed query (the attempt itself) and inside the
+ * pause, so no real time passes. `Math.random` is pinned to 1 so every pause
+ * lasts its full ceiling (at most 40 ms).
+ *
+ * `lastConflictCost(spentSoFar)` picks how long the final conflicting attempt
+ * takes, so the budget is still open when the pause starts and closed (or
+ * not) once it ends.
+ */
+describe('change-feed retry budget is rechecked after the pause (#5405)', () => {
+  const FLOOR = 25;
+  const PAUSE_CEILING_MS = 40;
+
+  beforeEach(() => {
+    resetChangeFeedWarnings();
+    vi.useFakeTimers({
+      toFake: ['setTimeout', 'clearTimeout', 'Date', 'performance'],
+    });
+    vi.spyOn(Math, 'random').mockReturnValue(1);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  /** Cost of conflict number `FLOOR` so the pause straddles the budget. */
+  function finalAttemptCost(
+    startedAt: number,
+    spendsBudgetInPause: boolean,
+  ): number {
+    const spent = performance.now() - startedAt;
+    const gap = BUDGET_MS - spent;
+    // Leave 10 ms of budget when the pause starts: the pause (up to 40 ms)
+    // then either overruns it or, for the control, the attempt stays cheap.
+    return spendsBudgetInPause ? gap - 10 : 0;
+  }
+
+  it('appendChange starts no attempt once the pause used up the budget', async () => {
+    let startedAt = -1;
+    const db = postgresStub({
+      appendResult: (call) => {
+        if (startedAt < 0) startedAt = performance.now();
+        if (call === FLOOR) {
+          vi.advanceTimersByTime(finalAttemptCost(startedAt, true));
+        }
+        return [conflictRow];
+      },
+    });
+    const pending = appendChange(db, { table: 'budget_notes', rowId: 'a' });
+    const settled = pending.then(
+      () => null,
+      (error: unknown) => error,
+    );
+    await vi.advanceTimersByTimeAsync(BUDGET_MS * 3);
+    const error = (await settled) as Error & { code?: string; cause?: Error };
+    expect(error).toBeInstanceOf(Error);
+    expect(error.code).toBe('23505');
+    expect(error.message).toContain('retry budget');
+    expect(error.message).toContain(`(${FLOOR} attempts)`);
+    expect(error.cause).toBeInstanceOf(Error);
+    expect(db.calls.append).toBe(FLOOR);
+  });
+
+  it('appendChange still retries when the pause leaves budget', async () => {
+    let startedAt = -1;
+    const db = postgresStub({
+      appendResult: (call) => {
+        if (startedAt < 0) startedAt = performance.now();
+        if (call === FLOOR) {
+          vi.advanceTimersByTime(finalAttemptCost(startedAt, false));
+          return [conflictRow];
+        }
+        return call < FLOOR
+          ? [conflictRow]
+          : [{ allocated_seq: 11, error_code: null, error_message: null }];
+      },
+    });
+    const pending = appendChange(db, { table: 'budget_notes', rowId: 'a' });
+    await vi.advanceTimersByTimeAsync(BUDGET_MS * 3);
+    await expect(pending).resolves.toBe(11);
+    expect(db.calls.append).toBe(FLOOR + 1);
+  });
+
+  it('appendChanges starts no attempt once the pause used up the budget', async () => {
+    let startedAt = -1;
+    const db = postgresStub({
+      appendResult: () => [],
+      batchResult: (call) => {
+        if (startedAt < 0) startedAt = performance.now();
+        if (call === FLOOR) {
+          vi.advanceTimersByTime(finalAttemptCost(startedAt, true));
+        }
+        return [{ entry_index: null, ...conflictRow }];
+      },
+    });
+    const settled = appendChanges(db, [
+      { table: 'budget_notes', rowId: 'a' },
+    ]).then(
+      () => null,
+      (error: unknown) => error,
+    );
+    await vi.advanceTimersByTimeAsync(BUDGET_MS * 3);
+    const error = (await settled) as Error & { code?: string };
+    expect(error).toBeInstanceOf(Error);
+    expect(error.code).toBe('23505');
+    expect(error.message).toContain(`(${FLOOR} attempts)`);
+    expect(db.calls.batch).toBe(FLOOR);
+  });
+
+  it('appendChanges still retries when the pause leaves budget', async () => {
+    let startedAt = -1;
+    const db = postgresStub({
+      appendResult: () => [],
+      batchResult: (call) => {
+        if (startedAt < 0) startedAt = performance.now();
+        if (call === FLOOR) {
+          vi.advanceTimersByTime(finalAttemptCost(startedAt, false));
+        }
+        return call <= FLOOR
+          ? [{ entry_index: null, ...conflictRow }]
+          : [
+              {
+                entry_index: 0,
+                allocated_seq: 5,
+                error_code: null,
+                error_message: null,
+              },
+            ];
+      },
+    });
+    const pending = appendChanges(db, [{ table: 'budget_notes', rowId: 'a' }]);
+    await vi.advanceTimersByTimeAsync(BUDGET_MS * 3);
+    await expect(pending).resolves.toEqual([5]);
+    expect(db.calls.batch).toBe(FLOOR + 1);
+  });
+
+  it('a settling drain starts no pass once the pause used up the budget', async () => {
+    let startedAt = -1;
+    const drainConflict = [
+      {
+        drained_seq: null,
+        error_code: '23505',
+        error_message: 'duplicate key value',
+      },
+    ];
+    const db = postgresStub({
+      appendResult: () => [],
+      drainResult: (call) => {
+        if (startedAt < 0) startedAt = performance.now();
+        if (call === FLOOR) {
+          vi.advanceTimersByTime(finalAttemptCost(startedAt, true));
+        }
+        return drainConflict;
+      },
+    });
+    const pending = drainChangeFeed(db);
+    await vi.advanceTimersByTimeAsync(BUDGET_MS * 3);
+    await expect(pending).resolves.toBe(0);
+    expect(db.calls.drain).toBe(FLOOR);
+  });
+
+  it('a settling drain still takes another pass when the pause leaves budget', async () => {
+    let startedAt = -1;
+    const db = postgresStub({
+      appendResult: () => [],
+      drainResult: (call) => {
+        if (startedAt < 0) startedAt = performance.now();
+        if (call === FLOOR) {
+          vi.advanceTimersByTime(finalAttemptCost(startedAt, false));
+        }
+        return call <= FLOOR
+          ? [
+              {
+                drained_seq: null,
+                error_code: '23505',
+                error_message: 'duplicate key value',
+              },
+            ]
+          : [];
+      },
+    });
+    const pending = drainChangeFeed(db);
+    await vi.advanceTimersByTimeAsync(BUDGET_MS * 3);
+    await expect(pending).resolves.toBe(0);
+    expect(db.calls.drain).toBe(FLOOR + 1);
+  });
+});
+
 describe('change-feed retry budget on SQLite (#5271)', () => {
   let db: DatabaseInterface;
 

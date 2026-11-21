@@ -118,7 +118,12 @@ const NODE_ONLY_GROUPS: ReadonlyArray<{
   {
     reason:
       'Server half of the runtime (node:http, MCP server); belongs behind `@happyvertical/smrt-core/runtime`. createSmrtClient (fetch) is exported from the browser entry',
-    names: ['SmrtMCPServer', 'createMCPServer', 'createSmrtServer'],
+    names: [
+      'SmrtMCPServer',
+      'SmrtServerConfigError',
+      'createMCPServer',
+      'createSmrtServer',
+    ],
   },
   {
     reason:

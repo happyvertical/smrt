@@ -729,7 +729,7 @@ Every `SmrtObject`/`SmrtCollection` can persist learned knowledge via `remember(
 | Export | Description |
 |--------|------------|
 | `createMCPServer` / `SmrtMCPServer` | MCP server runtime |
-| `createSmrtServer` | REST server runtime |
+| `createSmrtServer` / `SmrtServerConfigError` | REST server runtime. `auth` requires `verify` (construction throws `SmrtServerConfigError` otherwise); omit `auth` to run with no authentication. `bearer`/`basic` require the matching `Authorization` scheme and pass `verify` the credential after it; `custom` passes the whole header. Bodies over `maxBodyBytes` (default 1 MiB) get 413, never 401, before the CORS preflight, authentication or routing, and are never buffered past the limit; a `Content-Length` that is not a decimal number gets 400. On `start()`'s listener a request with a declared `Content-Length` is authenticated before its body is read; a chunked body there, and every `dispatch()` body, is read up to the limit before `verify` runs. |
 | `createSmrtClient` | API client runtime |
 
 ### Schema & Migrations
