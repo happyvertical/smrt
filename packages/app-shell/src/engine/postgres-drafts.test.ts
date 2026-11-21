@@ -122,6 +122,7 @@ describe.each(
     const dir = tmp();
     const store = new MemoryVersionStore();
     const host = await AppHost.open(dir, {
+      allowUnfencedStore: true,
       store,
       database: config(schema),
       ...extra,
@@ -495,6 +496,7 @@ describe.each(
       await draft.close();
       hosts.splice(hosts.indexOf(draft), 1);
       const again = await AppHost.open(dir, {
+        allowUnfencedStore: true,
         store,
         autoApprove: true,
         database: config(live.schema),
@@ -544,6 +546,7 @@ describe.each(
       );
       await expect(
         AppHost.open(dir, {
+          allowUnfencedStore: true,
           store: new MemoryVersionStore(),
           autoApprove: true,
           database: config(live.schema),
@@ -859,6 +862,7 @@ describe.each(
       await live.host.close();
       hosts.splice(hosts.indexOf(live.host), 1);
       const again = await AppHost.open(live.dir, {
+        allowUnfencedStore: true,
         store: live.store,
         database: config(live.schema),
       });
@@ -910,6 +914,7 @@ describe.each(
       hosts.splice(hosts.indexOf(live.host), 1);
       rmSync(join(live.dir, `${JOURNAL_FILE}.tmp`), { recursive: true });
       const again = await AppHost.open(live.dir, {
+        allowUnfencedStore: true,
         store: live.store,
         database: config(live.schema),
       });
@@ -982,7 +987,11 @@ describe.each(
       }
       const dir = tmp();
       const store = new FailingStore();
-      const host = await AppHost.open(dir, { store, database: config(schema) });
+      const host = await AppHost.open(dir, {
+        allowUnfencedStore: true,
+        store,
+        database: config(schema),
+      });
       hosts.push(host);
       await run(host, {
         type: 'defineModel',
@@ -1039,6 +1048,7 @@ describe.each(
       const dir = tmp();
       const store = new MemoryVersionStore();
       const first = await AppHost.open(dir, {
+        allowUnfencedStore: true,
         store,
         database: config(schema),
       });
@@ -1103,6 +1113,7 @@ describe.each(
     };
     const reopen = async (c: Awaited<ReturnType<typeof crashedAfterSwap>>) => {
       const host = await AppHost.open(c.dir, {
+        allowUnfencedStore: true,
         store: c.store,
         database: config(c.schema),
       });
@@ -1232,6 +1243,7 @@ describe.each(
       await live.host.close();
       hosts.splice(hosts.indexOf(live.host), 1);
       const again = await AppHost.open(dir, {
+        allowUnfencedStore: true,
         store: live.store,
         database: config(live.schema),
       });
@@ -1245,7 +1257,11 @@ describe.each(
       const c = await crashedAfterSwap('crash_other');
       const other = await newSchema('crash_other_app');
       await expect(
-        AppHost.open(c.dir, { store: c.store, database: config(other) }),
+        AppHost.open(c.dir, {
+          allowUnfencedStore: true,
+          store: c.store,
+          database: config(other),
+        }),
       ).rejects.toThrow(/belongs to schema/);
     });
   });
@@ -1512,6 +1528,7 @@ describe.each(
       await draft.close();
       hosts.splice(hosts.indexOf(draft), 1);
       const again = await AppHost.open(dir, {
+        allowUnfencedStore: true,
         store,
         autoApprove: true,
         database: config(schema),
@@ -1530,6 +1547,7 @@ describe.each(
       await live.host.close();
       hosts.splice(hosts.indexOf(live.host), 1);
       const restarted = await AppHost.open(live.dir, {
+        allowUnfencedStore: true,
         store: live.store,
         database: config(schema),
       });
@@ -1639,7 +1657,11 @@ describe.each(
       await A.host.close();
       hosts.splice(hosts.indexOf(A.host), 1);
       hosts.push(
-        await AppHost.open(A.dir, { store: A.store, database: config(a) }),
+        await AppHost.open(A.dir, {
+          allowUnfencedStore: true,
+          store: A.store,
+          database: config(a),
+        }),
       );
       expect(await owned(b)).toEqual(
         [lookalike, String(fb.draft.draft?.schema)].sort(),
@@ -1652,6 +1674,7 @@ describe.each(
       expect(() => assertAppSchema(looks)).toThrow(/looks like a draft/);
       await expect(
         AppHost.open(tmp(), {
+          allowUnfencedStore: true,
           store: new MemoryVersionStore(),
           database: config(looks),
         }),
@@ -1843,6 +1866,7 @@ describe.each(
         // A real server: the claim refuses the second host outright.
         await expect(
           AppHost.open(tmp(), {
+            allowUnfencedStore: true,
             store: a.store,
             database: config(a.schema),
           }),
@@ -1852,6 +1876,7 @@ describe.each(
       }
       // PGlite has no session lock to claim: the generation alone decides.
       const b = await AppHost.open(tmp(), {
+        allowUnfencedStore: true,
         store: a.store,
         database: config(a.schema),
       });
@@ -1970,6 +1995,7 @@ describe.each(
       const { draft, store } = await fork(live);
       const before = draft.fence as number;
       const other = await AppHost.open(draft.dataDir, {
+        allowUnfencedStore: true,
         store,
         database: config(live.schema),
       });

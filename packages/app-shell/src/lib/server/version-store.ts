@@ -17,7 +17,11 @@
 // the tenant's first request.
 import { getCurrentTenant, withTenant } from '@happyvertical/smrt-tenancy';
 import type { DatabaseInterface } from '@happyvertical/sql';
-import type { VersionRecord, VersionStore } from '../../engine/index.ts';
+import {
+  StaleStoreError,
+  type VersionRecord,
+  type VersionStore,
+} from '../../engine/index.ts';
 import { type App, AppCollection } from '../objects/App.ts';
 import { AppDraftCollection } from '../objects/AppDraft.ts';
 import {
@@ -32,6 +36,10 @@ import {
 export const APP_SLUG = 'app';
 
 type VersionRow = AppVersion | AppDraftVersion;
+
+/** The rows of a raw query result (adapters return `{ rows }`). */
+const rowsOf = (r: unknown): unknown[] =>
+  ((r as { rows?: unknown[] })?.rows ?? []) as unknown[];
 
 /**
  * Run `fn` inside the store's own tenant. A store belongs to ONE tenant in the
@@ -110,6 +118,8 @@ export interface PublishMark {
 export class ShellVersionStore implements VersionStore {
   /** The draft the next `commit` publishes (see {@link PublishMark}); drafts.ts sets and clears it. */
   publishing: PublishMark | null = null;
+  /** The `App` row's id, once read on the shell's own connection (`reachable` needs it inside a claim transaction). */
+  private appId: string | null = null;
 
   constructor(
     private readonly db: DatabaseInterface,
@@ -143,7 +153,10 @@ export class ShellVersionStore implements VersionStore {
     return this.scoped(async () => {
       const apps = await this.apps(db);
       const rows = await apps.list({ where: { slug: APP_SLUG }, limit: 1 });
-      if (rows[0]) return rows[0];
+      if (rows[0]) {
+        this.appId ??= rows[0].id as string;
+        return rows[0];
+      }
       const created = await apps.create({
         slug: APP_SLUG,
         name: 'My app',
@@ -151,6 +164,7 @@ export class ShellVersionStore implements VersionStore {
         definition: '',
       });
       await created.save();
+      this.appId ??= created.id as string;
       return created;
     });
   }
@@ -241,6 +255,81 @@ export class ShellVersionStore implements VersionStore {
         await draft.save();
       }
     });
+  }
+
+  /**
+   * `commit` inside the hosted engine's claim transaction `tx`, which also
+   * holds the schema swap (#5470). The pointer moves only if it is still
+   * `expected` (a compare-and-set on the `App` row, whose lock lasts until the
+   * transaction ends); otherwise nothing is written and the swap rolls back
+   * with it. Only `tx` is used: no other connection may be touched inside it.
+   */
+  commitIn(
+    tx: unknown,
+    records: VersionRecord[],
+    current: number,
+    expected: number | null,
+    markDraft = false,
+  ): Promise<void> {
+    return this.scoped(async () => {
+      const txDb = tx as DatabaseInterface;
+      for (const r of records) await this.insert(r, txDb);
+      const app = await this.appRow(txDb);
+      const rec = await this.row(current, txDb);
+      if (!rec) throw new Error(`version ${current} is not stored`);
+      let name = app.name;
+      try {
+        name = JSON.parse(rec.definition).name ?? name;
+      } catch {
+        /* keep the name */
+      }
+      const hit = await txDb.query(
+        'UPDATE apps SET current_version = ?, definition = ?, name = ? WHERE id = ? AND current_version = ? RETURNING id',
+        [current, rec.definition, name, app.id, expected ?? -1],
+      );
+      if (!rowsOf(hit).length)
+        throw new StaleStoreError(
+          `the stored current version is no longer ${expected ?? 'empty'}; nothing was written. Reopen the app.`,
+          { expected },
+        );
+      const mark = markDraft ? this.publishing : null;
+      if (mark) {
+        const draft = await (await AppDraftCollection.create({ db: txDb })).get(
+          mark.draftId,
+        );
+        if (draft?.status !== 'open')
+          throw new Error('the draft is no longer open');
+        draft.status = 'published';
+        draft.endedAt = new Date().toISOString();
+        draft.publishedVersions = JSON.stringify(records.map((r) => r.version));
+        await draft.save();
+      }
+    });
+  }
+
+  async reachable(tx: unknown): Promise<boolean> {
+    const id = this.appId ?? ((await this.appRow()).id as string);
+    const found = await (tx as DatabaseInterface).query(
+      'SELECT id FROM apps WHERE id = ?',
+      [id],
+    );
+    return rowsOf(found).length > 0;
+  }
+
+  publishingDraft(): string | null {
+    return this.publishing?.draftId ?? null;
+  }
+
+  async reopenDraftIn(
+    tx: unknown,
+    draftId: string,
+    numbers: number[],
+  ): Promise<boolean> {
+    const hit = await (tx as DatabaseInterface).query(
+      `UPDATE app_drafts SET status = 'open', ended_at = '', published_versions = '' WHERE id = ? AND status = 'published' AND published_versions = ? RETURNING id`,
+      [draftId, JSON.stringify(numbers)],
+    );
+    return rowsOf(hit).length > 0;
   }
 
   markPurged(version: number): Promise<void> {

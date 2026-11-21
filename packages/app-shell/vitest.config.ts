@@ -25,6 +25,7 @@ export default defineConfig({
       'src/engine/postgres-drafts.test.ts',
       'src/engine/portable-export-postgres.test.ts',
       'src/engine/postgres-claim-connection.test.ts',
+      'src/engine/store-in-swap.test.ts',
     ],
     setupFiles: [smrtVitestSetupPath],
     testTimeout: 60000,

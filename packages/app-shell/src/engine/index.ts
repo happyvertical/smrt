@@ -76,9 +76,11 @@ export const discardDraftDirectory = (dir: string): void =>
 export {
   AppError,
   ApprovalRequiredError,
+  ClaimLostError,
   EngineError,
   type EngineErrorCode,
   StaleFenceError,
+  StaleStoreError,
   WorkerCrashedError,
 } from './errors.ts';
 export type { ExtractModelCommand, ExtractPreview } from './extract-model.ts';

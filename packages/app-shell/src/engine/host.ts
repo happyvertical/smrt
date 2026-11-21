@@ -27,8 +27,10 @@ import {
 } from './commands.ts';
 import { assertLoadBounds, type LoadPreview } from './data-migrations.ts';
 import {
+  type AppClaim,
   acquireAppOwnership,
   assertDatabaseConfig,
+  type ClaimOptions,
   claimAppDatabase,
   copySuffix,
   type DatabaseConfig,
@@ -40,13 +42,17 @@ import {
   withSchemaAdmin,
 } from './db/index.ts';
 import {
+  acquireOwnership,
   DEFAULT_LOCK_TIMEOUT_MS,
   dropSchema,
   forkSchema,
   listSideSchemas,
+  markPublished,
   readDumpHeader,
+  readPublished,
   restoreDump,
   revokeSchema,
+  type SqlDatabase,
   schemaExists,
   swapSchemas,
 } from './db/postgres-copy.ts';
@@ -85,6 +91,7 @@ import {
 } from './draft.ts';
 import {
   ApprovalRequiredError,
+  ClaimLostError,
   EngineError,
   StaleFenceError,
 } from './errors.ts';
@@ -163,6 +170,25 @@ export interface HostOptions {
    * changes nothing. Default 5000 ms.
    */
   swapLockTimeoutMs?: number;
+  /**
+   * PostgreSQL server only (#5470): bounds of the claim's transactions and its
+   * heartbeat. Defaults: 5 s lock wait, 10 s statement, 10 s idle in a
+   * transaction, a heartbeat every 5 s.
+   */
+  claimOptions?: ClaimOptions;
+  /**
+   * Tests only: a claim over an in-process PGlite (see `unprovenClaim`) in
+   * place of the one a PostgreSQL server host makes itself. Production PGlite
+   * hosts have none.
+   */
+  claim?: AppClaim;
+  /**
+   * Allow a claimed LIVE host whose version store cannot commit inside the
+   * claim's transaction (it has no `commitIn`). Refused otherwise, since such a
+   * store could not be fenced. For tests and for the portable import's
+   * throwaway start-up, which has no shell store.
+   */
+  allowUnfencedStore?: boolean;
 }
 
 /**
@@ -387,6 +413,10 @@ export class AppHost extends EventEmitter {
   private database: DatabaseConfig;
   private dialect: EngineDialect;
   private releaseDatabase?: () => Promise<void>;
+  /** PostgreSQL server: the claim this live host's swap and store commits run on (#5470). */
+  private claim?: AppClaim;
+  private claimLost: Error | null = null;
+  private readonly allowUnfencedStore: boolean;
   /**
    * What the chosen database cannot do yet, said plainly, for the shell to
    * show the owner (and a publish whose journal could not be marked finished).
@@ -418,6 +448,9 @@ export class AppHost extends EventEmitter {
     this.database = database.config;
     this.dialect = dialectFor(database.config);
     this.releaseDatabase = database.release;
+    this.claim = database.claim;
+    this.allowUnfencedStore = opts.allowUnfencedStore === true;
+    this.claim?.onLost((e) => this.loseClaim(e));
     this.lockTimeoutMs = opts.swapLockTimeoutMs ?? DEFAULT_LOCK_TIMEOUT_MS;
     this.store = opts.store;
     this.workerUrl = opts.workerUrl ?? defaultWorkerUrl();
@@ -467,14 +500,20 @@ export class AppHost extends EventEmitter {
     // drop them): claim the app before anything is touched, so a second host
     // on the same schema refuses instead of dropping the first one's copies.
     // A draft lives in a schema of its own and is claimed by its live host.
-    const release = marker ? undefined : await claimAppDatabase(config);
-    const database: HostDatabase = { config, release };
+    const claim = marker
+      ? undefined
+      : (opts.claim ?? (await claimAppDatabase(config, opts.claimOptions)));
+    const database: HostDatabase = {
+      config,
+      release: claim ? () => claim.release() : undefined,
+      claim,
+    };
     try {
       const host = new AppHost(dataDir, opts, database);
       await host.boot();
       return host;
     } catch (e) {
-      await release?.();
+      await claim?.release();
       throw e;
     }
   }
@@ -483,16 +522,32 @@ export class AppHost extends EventEmitter {
     // PostgreSQL: take ownership first (#5190). Advancing the generation
     // fences every worker of an earlier host, so nothing of theirs can commit
     // while this start-up recovers, sweeps and opens the app.
-    const fence = await acquireAppOwnership(this.database, this.lockTimeoutMs);
+    // With a claim (#5470) every step here is a claim transaction, so a host
+    // whose claim died bumps and drops nothing.
+    if (this.claim) await this.checkClaimedStore();
+    const fence = this.claim
+      ? await acquireOwnership(
+          this.claim.admin,
+          schemaOf(this.database),
+          this.lockTimeoutMs,
+        )
+      : await acquireAppOwnership(this.database, this.lockTimeoutMs);
     if (fence !== undefined)
       this.database = { ...this.database, fence } as DatabaseConfig;
     let cur = await this.store.current();
     // Finish or undo a publish a crash interrupted, before the app opens. On
     // PostgreSQL the schemas are put right first, while the journal still
-    // says what was going on.
+    // says what was going on. A boot-time undo moves the store's current
+    // version, so it is read again.
     const journal = readJournal(this.dataDir);
-    if (journal?.pg) await this.reconcilePgPublish(journal, cur);
+    let atomicOutcome: 'rolled-forward' | 'rolled-back' | null = null;
+    if (journal?.pg) {
+      const r = await this.reconcilePgPublish(journal, cur);
+      cur = r.current;
+      atomicOutcome = r.atomic;
+    }
     this.recovery = reconcilePublish(this.dataDir, cur);
+    if (atomicOutcome) this.recovery = atomicOutcome;
     // A crash outside the journal's window (a rehearsal or a restore that
     // never got to swap) leaves a side schema: drop the app's own.
     if (this.onServer && !this.draft) await this.sweepSideSchemas();
@@ -547,13 +602,16 @@ export class AppHost extends EventEmitter {
   private run<T>(fn: () => Promise<T>): Promise<T> {
     if (this.closed)
       return Promise.reject(new EngineError('the host is closed', 'refused'));
+    if (this.claimLost) return Promise.reject(this.claimLost);
     // Re-check when the work starts: a discard or close that ran ahead of this
     // item on the queue must refuse it, not let it restart a worker on the
     // removed directory (#5122).
     const guarded = () =>
       this.closed
         ? Promise.reject(new EngineError('the host is closed', 'refused'))
-        : fn();
+        : this.claimLost
+          ? Promise.reject(this.claimLost)
+          : fn();
     const p = this.queue.then(guarded, guarded);
     this.queue = p.catch(() => {});
     return p;
@@ -1895,6 +1953,51 @@ export class AppHost extends EventEmitter {
     } as DatabaseConfig;
   }
 
+  /**
+   * The host's own schema work (swap, drop, revoke, sweep). A live host with a
+   * claim runs it as claim transactions (#5470); every other host on a
+   * connection of its own.
+   */
+  private admin<T>(work: (db: SqlDatabase) => Promise<T>): Promise<T> {
+    return this.claim
+      ? work(this.claim.admin)
+      : withSchemaAdmin(this.database, work);
+  }
+
+  /** The claim died: retire the worker; every call now refuses with the claim's error. */
+  private loseClaim(e: Error) {
+    this.claimLost = e;
+    void this.app?.terminate().catch(() => {});
+    // This host serves nothing more. Reopening the app (a new claim) is the
+    // caller's: nothing listens for this event yet.
+    this.emit('claim-lost', e);
+  }
+
+  /** Refuse to open on a claim whose store cannot be committed in it, or that cannot see it. */
+  private async checkClaimedStore() {
+    const store = this.store;
+    if (this.draft) return;
+    if (!store.commitIn || !store.reachable) {
+      if (this.allowUnfencedStore) return;
+      throw new EngineError(
+        'this host holds a claim on its app, but its version store cannot commit inside the claim (no commitIn); it cannot be fenced. Not opening.',
+        'refused',
+      );
+    }
+    await store.current();
+    const reach = store.reachable.bind(store);
+    if (!(await this.claim?.transaction((tx) => reach(tx))))
+      throw new EngineError(
+        "the claim connection cannot see the version store's own app row, so it is on another database than the shell's; not opening",
+        'refused',
+      );
+  }
+
+  /** Does this host commit the store inside the swap's transaction (#5470)? */
+  private get atomic() {
+    return !!this.claim && !!this.store.commitIn;
+  }
+
   /** A live copy of the app's schema (rows, keys, sequences, policies, ownership, grants). */
   private forkSchemaTo(target: string) {
     return withSchemaAdmin(this.database, (db) =>
@@ -1931,8 +2034,9 @@ export class AppHost extends EventEmitter {
     next: string,
     aside: string,
     maybeSwapped = false,
+    within?: (tx: any) => Promise<void>,
   ) {
-    const { fence } = await withSchemaAdmin(this.database, (db) =>
+    const { fence } = await this.admin((db) =>
       swapSchemas(
         db,
         {
@@ -1946,6 +2050,7 @@ export class AppHost extends EventEmitter {
               : maybeSwapped
                 ? this.fence + 1
                 : this.fence,
+          within,
         },
         this.lockTimeoutMs,
       ),
@@ -1960,9 +2065,7 @@ export class AppHost extends EventEmitter {
    * reads), then the schema. A failure leaves the aside for the next start.
    */
   private async dropAsideSchemaOrThrow(aside: string) {
-    await withSchemaAdmin(this.database, (db) =>
-      revokeSchema(db, aside, this.ownerBase()),
-    );
+    await this.admin((db) => revokeSchema(db, aside, this.ownerBase()));
     await this.dropSideSchemaOrThrow(aside);
   }
 
@@ -1995,7 +2098,7 @@ export class AppHost extends EventEmitter {
         `${schema} is not a side schema; only a draft, rehearsal, aside or restore schema is dropped here`,
         'refused',
       );
-    return withSchemaAdmin(this.database, (db) =>
+    return this.admin((db) =>
       dropSchema(db, schema, this.lockTimeoutMs, owner, expectFence),
     );
   }
@@ -2003,7 +2106,7 @@ export class AppHost extends EventEmitter {
   /** Drop rehearsal, aside and restore schemas of this app that nothing uses (run at start, before the app opens). */
   private async sweepSideSchemas() {
     const base = schemaOf(this.database);
-    await withSchemaAdmin(this.database, async (db) => {
+    await this.admin(async (db) => {
       for (const n of await listSideSchemas(db, base, 'ron'))
         await dropSchema(db, n, this.lockTimeoutMs, base);
     });
@@ -2016,9 +2119,15 @@ export class AppHost extends EventEmitter {
    * version means only the old data's schema is left to remove, however many
    * edits followed; otherwise the old schema comes back and the rehearsal goes.
    */
-  private async reconcilePgPublish(j: PublishJournal, current: number | null) {
+  private async reconcilePgPublish(
+    j: PublishJournal,
+    current: number | null,
+  ): Promise<{
+    current: number | null;
+    atomic: 'rolled-forward' | 'rolled-back' | null;
+  }> {
     const pg = j.pg;
-    if (!pg) return;
+    if (!pg) return { current, atomic: null };
     if (pg.schema !== schemaOf(this.database))
       throw new EngineError(
         `the publish journal in ${this.dataDir} belongs to schema ${pg.schema}, not ${schemaOf(this.database)}; not guessing`,
@@ -2030,17 +2139,51 @@ export class AppHost extends EventEmitter {
           `the publish journal names ${n}, which is not a side schema of ${pg.schema}; not touching it`,
           'refused',
         );
-    await withSchemaAdmin(this.database, async (db) => {
-      const has = (n: string) => db.transaction((tx) => schemaExists(tx, n));
-      const drop = async (n: string) => {
-        if (await has(n))
-          await dropSchema(db, n, this.lockTimeoutMs, pg.schema);
+    const has = (db: SqlDatabase, n: string) =>
+      db.transaction((tx) => schemaExists(tx, n));
+    const drop = async (db: SqlDatabase, n: string) => {
+      if (await has(db, n))
+        await dropSchema(db, n, this.lockTimeoutMs, pg.schema);
+    };
+    if (j.atomic && this.claim && this.store.commitIn) {
+      // #5470: the swap and the store were one transaction, so the schemas say
+      // which way. The aside is there while the publish is not final; the
+      // readiness record says whether its new worker was ever brought up (and
+      // so may have served and been written to).
+      const outcome = await this.admin(async (db) => {
+        if (!(await has(db, pg.aside))) {
+          await drop(db, pg.staging);
+          return null;
+        }
+        if ((await readPublished(db, pg.schema)) === j.id) {
+          await drop(db, pg.aside);
+          await drop(db, pg.staging);
+          return 'rolled-forward' as const;
+        }
+        // Nothing was served on the new data: can it start? If so it is
+        // ready, whatever the crash interrupted; if not, undo the publish.
+        if (current !== null && (await this.startsOn(current))) {
+          await markPublished(db, pg.schema, j.id as string);
+          await drop(db, pg.aside);
+          await drop(db, pg.staging);
+          return 'rolled-forward' as const;
+        }
+        await this.compensate(pg, j, current, false);
+        await drop(db, pg.staging);
+        return 'rolled-back' as const;
+      });
+      return {
+        current:
+          outcome === 'rolled-back' ? await this.store.current() : current,
+        atomic: outcome,
       };
+    }
+    await this.admin(async (db) => {
       if (publishHappened(j, current)) {
-        await drop(pg.aside);
-        await drop(pg.staging);
+        await drop(db, pg.aside);
+        await drop(db, pg.staging);
       } else {
-        if (await has(pg.aside)) {
+        if (await has(db, pg.aside)) {
           const swapped = await swapSchemas(
             db,
             {
@@ -2058,8 +2201,52 @@ export class AppHost extends EventEmitter {
               fence: swapped.fence,
             } as DatabaseConfig;
         }
-        await drop(pg.staging);
+        await drop(db, pg.staging);
       }
+    });
+    return { current, atomic: null };
+  }
+
+  /** Does a worker start on `version`'s definition and the live data? (Boot recovery's readiness test.) */
+  private async startsOn(version: number): Promise<boolean> {
+    let worker: AppWorker | undefined;
+    try {
+      const rec = await this.store.get(version);
+      if (!rec || validate(rec.definition).length) return false;
+      worker = this.spawn(rec.definition, version);
+      await worker.ready;
+      return true;
+    } catch {
+      return false;
+    } finally {
+      await worker?.terminate().catch(() => {});
+    }
+  }
+
+  /**
+   * Undo a publish whose swap committed: swap the old data back and, in the
+   * same claim transaction, point the store at the old version again and
+   * reopen the draft the publish had marked published. `final` is the store's
+   * current version now. Records the publish wrote stay as never-current
+   * history, which keeps version numbers unique.
+   */
+  private async compensate(
+    pg: { staging: string; aside: string },
+    j: Pick<PublishJournal, 'oldVersion' | 'draftId' | 'numbers'>,
+    final: number | null,
+    maybeSwapped: boolean,
+  ) {
+    const store = this.store;
+    await this.swapSchemasIn(pg.aside, pg.staging, maybeSwapped, async (tx) => {
+      await store.commitIn?.(tx, [], j.oldVersion, final);
+      if (
+        j.draftId &&
+        !(await store.reopenDraftIn?.(tx, j.draftId, j.numbers ?? []))
+      )
+        throw new EngineError(
+          'the draft the publish marked published has changed since, so the publish cannot be undone safely; not touching it',
+          'refused',
+        );
     });
   }
 
@@ -2134,9 +2321,18 @@ export class AppHost extends EventEmitter {
           restoreDump(db, file, side, this.ownerBase()),
         );
         let swapped = false;
+        // #5470: the swap and a compare of the store's pointer are one
+        // transaction (the version is unchanged by a restore): a host that
+        // lost the store to another one swaps nothing.
+        const version = this.version;
+        const same = this.atomic
+          ? (tx: any) =>
+              this.store.commitIn?.(tx, [], version, version) ??
+              Promise.resolve()
+          : undefined;
         try {
           await this.app.retire();
-          await this.swapSchemasIn(side, aside);
+          await this.swapSchemasIn(side, aside, false, same);
           swapped = true;
           this.app = this.spawn(this.def, this.version);
           await this.app.ready;
@@ -2146,10 +2342,10 @@ export class AppHost extends EventEmitter {
           // lost left the aside behind and the data replaced.
           const there =
             swapped ||
-            (await withSchemaAdmin(this.database, (db) =>
+            (await this.admin((db) =>
               db.transaction((tx) => schemaExists(tx, aside)),
             ));
-          if (there) await this.swapSchemasIn(aside, side, !swapped);
+          if (there) await this.swapSchemasIn(aside, side, !swapped, same);
           this.app = this.spawn(this.def, this.version);
           await this.app.ready.catch(() => {});
           throw e;
@@ -2192,6 +2388,7 @@ export class AppHost extends EventEmitter {
       if (q === this.queue) break;
     }
     if (this.closed) throw new EngineError('the host is closed', 'refused');
+    if (this.claimLost) throw this.claimLost;
     this.inflight++;
     try {
       return await this.callApp<T>(op, ...args);
@@ -2675,6 +2872,7 @@ export class AppHost extends EventEmitter {
       ? `[draft: ${opts.draftName.replace(/\s+/g, ' ').trim()}] `
       : '';
     const oldVersion = this.version;
+    const atomic = this.atomic;
     const dir = makeRehearsalDir(this.dataDir);
     const t0 = performance.now();
     let retired = false;
@@ -2685,6 +2883,18 @@ export class AppHost extends EventEmitter {
     let snapshot = '';
     let journal: PublishJournal | null = null;
     let archives = { values: 0, tables: 0 };
+    const stamp = now();
+    const records: VersionRecord[] = chain.versions.map((rec, i) => ({
+      version: numbers[i],
+      parent: i === 0 ? oldVersion : numbers[i - 1],
+      author: rec.author,
+      summary: `${tag}${rec.summary}`,
+      definition: structuredClone(rec.definition),
+      migration: rec.migration?.steps.length
+        ? { steps: structuredClone(rec.migration.steps) }
+        : null,
+      createdAt: stamp,
+    }));
     // PostgreSQL: the rehearsal is a schema beside live, swapped in by rename.
     const pg = this.onServer
       ? {
@@ -2726,6 +2936,14 @@ export class AppHost extends EventEmitter {
         snapshot,
         startedAt: now(),
         ...(pg ? { pg } : {}),
+        ...(pg && atomic
+          ? {
+              atomic: true,
+              id: randomUUID(),
+              draftId: this.store.publishingDraft?.() ?? null,
+              numbers,
+            }
+          : {}),
       };
       writeJournal(this.dataDir, journal);
       journaled = true;
@@ -2737,7 +2955,22 @@ export class AppHost extends EventEmitter {
       if (pg) {
         // One transaction renames live aside and the rehearsal into place.
         await stage('moved-aside');
-        await this.swapSchemasIn(pg.staging, pg.aside);
+        // #5470: the store's write is part of this transaction.
+        await this.swapSchemasIn(
+          pg.staging,
+          pg.aside,
+          false,
+          atomic
+            ? (tx) =>
+                this.store.commitIn?.(
+                  tx,
+                  records,
+                  finalNumber,
+                  oldVersion,
+                  true,
+                ) ?? Promise.resolve()
+            : undefined,
+        );
         swapped = true;
         await stage('swapped');
       } else {
@@ -2749,24 +2982,26 @@ export class AppHost extends EventEmitter {
       next = this.spawn(finalDef, finalNumber);
       await next.ready;
       await stage('respawned');
-      const stamp = now();
-      await this.persistVersions(
-        chain.versions.map((rec, i) => ({
-          version: numbers[i],
-          parent: i === 0 ? oldVersion : numbers[i - 1],
-          author: rec.author,
-          summary: `${tag}${rec.summary}`,
-          definition: structuredClone(rec.definition),
-          migration: rec.migration?.steps.length
-            ? { steps: structuredClone(rec.migration.steps) }
-            : null,
-          createdAt: stamp,
-        })),
-        finalNumber,
-      );
+      if (atomic && pg && journal?.id)
+        // The new worker is up: say so, so no later boot undoes the publish
+        // over what it serves.
+        await this.admin((db) =>
+          markPublished(db, pg.schema, journal?.id as string),
+        );
+      else await this.persistVersions(records, finalNumber);
     } catch (e) {
       await this.abortPublish(
-        { retired, asideStarted, journaled, next, dir, pg, swapped },
+        {
+          retired,
+          asideStarted,
+          journaled,
+          next,
+          dir,
+          pg,
+          swapped,
+          journal: atomic ? journal : null,
+          finalNumber,
+        },
         e,
       );
       throw e; // not reached when abortPublish throws its own
@@ -2827,6 +3062,9 @@ export class AppHost extends EventEmitter {
       dir: string;
       pg: { schema: string; staging: string; aside: string } | null;
       swapped: boolean;
+      /** The journal of an atomic publish (#5470): the store committed with the swap. */
+      journal?: PublishJournal | null;
+      finalNumber?: number;
     },
     cause: unknown,
   ) {
@@ -2843,11 +3081,15 @@ export class AppHost extends EventEmitter {
         // was lost, the aside is there.
         if (
           s.swapped ||
-          (await withSchemaAdmin(this.database, (db) =>
+          (await this.admin((db) =>
             db.transaction((tx) => schemaExists(tx, s.pg?.aside ?? '')),
           ))
-        )
-          await this.swapSchemasIn(s.pg.aside, s.pg.staging, !s.swapped);
+        ) {
+          // An atomic publish's swap carried the store's write: undo both.
+          if (s.journal && s.finalNumber !== undefined)
+            await this.compensate(s.pg, s.journal, s.finalNumber, !s.swapped);
+          else await this.swapSchemasIn(s.pg.aside, s.pg.staging, !s.swapped);
+        }
         await this.dropSideSchemaOrThrow(s.pg.staging);
       }
       if (s.journaled) removeJournal(this.dataDir);
@@ -2857,6 +3099,9 @@ export class AppHost extends EventEmitter {
         await this.app.ready.catch(() => {}); // restartApp() can retry
       }
     } catch (e2) {
+      // A lost claim changes nothing more, whatever state the swap left: the
+      // next opener's boot recovers from the journal and the catalog.
+      if (e2 instanceof ClaimLostError) throw e2;
       throw new EngineError(
         `${(cause as Error).message}; and putting the old data back failed: ${(e2 as Error).message}. It is restored when the app next starts.`,
         'migration_failed',

@@ -11,10 +11,16 @@
 
 import { getDatabase } from '@happyvertical/sql';
 import { EngineError, StaleFenceError } from '../errors.ts';
+import { createClaim } from './claim.ts';
 import { createBridgeClient } from './pglite-bridge.ts';
 import { releaseAppLock, tryAppLock } from './postgres-copy.ts';
 import { assertSchemaName } from './schema-name.ts';
-import type { DatabaseConfig, WorkerDatabaseConfig } from './types.ts';
+import type {
+  AppClaim,
+  ClaimOptions,
+  DatabaseConfig,
+  WorkerDatabaseConfig,
+} from './types.ts';
 
 type Handle = any;
 
@@ -281,20 +287,27 @@ export async function openAdmin(
  * per app, because a host's start-up recovery and sweep drop the app's side
  * schemas, which a second host's publish or draft would be using. A session
  * advisory lock on a connection of its own (never pooled with anything else,
- * never idle-closed) is held until the returned release runs or the process
- * ends; a connection the network drops frees the lock server-side. Refuses
- * with an `EngineError` when another host holds it. PGlite is one process's
- * own instance: nothing to claim there.
+ * never idle-closed) is held until the returned claim is released or the
+ * process ends; a connection the network drops frees the lock server-side.
+ * Refuses with an `EngineError` when another host holds it. PGlite is one
+ * process's own instance: nothing to claim there.
+ *
+ * The claim is also where the host's swap and version-store commit run
+ * (#5470): see `createClaim`. `connectionTimeoutMillis: 0` is pinned (after
+ * the caller's connection options) so a heartbeat queued behind a long
+ * transaction on the one connection never times out waiting for it.
  */
 export async function claimApp(
   config: DatabaseConfig,
-): Promise<(() => Promise<void>) | undefined> {
+  options?: ClaimOptions,
+): Promise<AppClaim | undefined> {
   if (config.kind !== 'postgres') return undefined;
   const raw: Handle = await getDatabase({
     type: 'postgres',
     ...config.connection,
     max: 1,
     idleTimeoutMillis: 0,
+    connectionTimeoutMillis: 0,
     cache: false,
   } as any);
   try {
@@ -307,8 +320,8 @@ export async function claimApp(
     await raw.close?.().catch(() => {});
     throw e;
   }
-  return async () => {
+  return createClaim(raw, config.schema, options, async () => {
     await releaseAppLock(raw, config.schema).catch(() => {});
     await raw.close?.().catch(() => {});
-  };
+  });
 }

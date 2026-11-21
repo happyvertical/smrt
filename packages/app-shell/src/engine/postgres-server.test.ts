@@ -67,6 +67,7 @@ describe.each(backends)('app engine on PostgreSQL (%s)', (backend) => {
       stores.set(schema, new MemoryVersionStore());
     }
     const host = await AppHost.open(dir, {
+      allowUnfencedStore: true,
       store: stores.get(schema) as MemoryVersionStore,
       database: config(schema),
     });
@@ -210,6 +211,7 @@ describe.each(backends)('app engine on PostgreSQL (%s)', (backend) => {
       await first.create('Chore', { title: 'kept' });
       const dir = dirOf.get(schema) as string;
       const err = await AppHost.open(dir, {
+        allowUnfencedStore: true,
         store: stores.get(schema) as MemoryVersionStore,
         database: config(schema),
       }).then(
