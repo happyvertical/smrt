@@ -194,7 +194,7 @@ never a timer, never an eviction (`host-lifecycle.test.ts`, "desktop is unchange
   unset, it is `maxOpenApps` x `appAllowance(pool)` (live + draft + one transient
   worker pool, plus both overheads; `pool` follows the largest pool a config asks
   for, so a bigger `connection.max` scales it), and with no cap at all there is no budget.
-  A refusal is immediate (`ConnectionBudgetError`, a `CapacityError`: `refused`, and never turned into a "does not fit your data" blocker by a publish preview), never queued, so a
+  A refusal is immediate (`ConnectionBudgetError`, a `CapacityError`: `refused`; a publish check rethrows it instead of storing a "does not fit your data" blocker), never queued, so a
   swap or report that finds no room fails and can be retried. Transient admin
   connections beyond the one in `HOST_OVERHEAD` and the shell's own pool are not
   counted. SQLite and PGlite are not counted. A budget below the derived one
@@ -248,15 +248,3 @@ profile only a provider's own public https endpoint may hold one. `saveKey` refu
 custom `baseUrl` or a non-https origin, and the assistant refuses a resolved target
 whose endpoint is not the provider's own (`assertPublicProviderEndpoint`). Without that,
 a tenant could make the server call an internal address.
-
-## What an owner is told when a database fails (#5464)
-
-A driver error can name the database host or user, and the engine wraps worker
-text in an `EngineError`. An owner sees only our own messages (`PolicyError`,
-`HttpError`, an `EngineError` that is not `untrusted`); the engine marks text it
-received from a worker (boot failures, non-user call errors, a crashed thread)
-`untrusted` (`EngineError.untrusted`); an engine error that embeds such text keeps the flag (`embedding()`: swap, undo, rehearsal, abort), and a stored blocker drops the reason. A failed app tool comes back as `isError` text, but core also puts `structuredContent.error` there, with a `code` only when the error states a public message (generated-field validation, a custom action's failure, `code` + `publicMessage`). Fail closed (`ownerToolFailure`): the message reaches the owner, the assistant and `/mcp` clients only with that code; every other failure is the fixed sentence and the text is logged (an app's plain validation text is hidden there until core marks it public). A server-error body from the app's REST route is never relayed; a blocker for a command that failed to apply says only our own text; up-migration `AppError`s stay readable. Everything else becomes a fixed sentence and the detail (message only, never a stack, body or definition)
-goes to the server log. `errorResponse` did this already; `ownerMessage()`
-(`owner-errors.ts`) is the same rule for a draft that cannot open
-(`DraftSlot.problem`), a failed approval, and an assistant tool failure. A new
-owner-facing catch uses it, not `error.message`.

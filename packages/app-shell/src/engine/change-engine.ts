@@ -247,11 +247,7 @@ export function findChainBlockers(chain: DraftChain): BatchBlocker[] {
   return out;
 }
 
-/** What a blocker may say of a failed command: our own text only, never a worker's or a driver's. */
-const messageOf = (e: unknown) =>
-  e instanceof EngineError && !e.untrusted
-    ? e.message
-    : 'This change could not be applied to your app as it is.';
+const messageOf = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 function overwritesOf(preview: PublishPreview | null): BatchOverwrites {
   const dataSteps = (preview?.versions ?? []).flatMap((v) => v.dataSteps ?? []);
@@ -274,17 +270,9 @@ function overwritesOf(preview: PublishPreview | null): BatchOverwrites {
  * version so the caller can find its card. The engine's own text mentions the
  * draft and publishing; none of that reaches the owner.
  */
-/** @internal exported for tests */
-export function replayFailure(
-  raw: string,
-  chain: DraftChain,
-  untrusted = false,
-): BatchBlocker {
+function replayFailure(raw: string, chain: DraftChain): BatchBlocker {
   const rec = chain.versions.find((r) => raw.startsWith(`"${r.summary}" `));
-  // Text a worker or driver wrote can name a server: it is not the reason.
-  const reason = untrusted
-    ? undefined
-    : /(?:nothing was published|is invalid): (.+)$/s.exec(raw)?.[1];
+  const reason = /(?:nothing was published|is invalid): (.+)$/s.exec(raw)?.[1];
   return {
     code: 'replay_failed',
     ...(rec ? { versions: [rec.version] } : {}),
@@ -454,7 +442,7 @@ export class SqliteChangeEngine implements ChangeEngine {
         // No connections left is the server's state, not a verdict on the change.
         if (e instanceof CapacityError) throw e;
         if (!blockers.some((b) => b.code === 'report_uses_removed_field'))
-          blockers.push(replayFailure(e.message, chain, e.untrusted));
+          blockers.push(replayFailure(e.message, chain));
       }
     }
     return {

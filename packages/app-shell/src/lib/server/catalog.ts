@@ -23,7 +23,6 @@ import { ENGINE_TOOLS, isEngineTool, runEngineTool } from './engine-tools.ts';
 import { getShellDb, hostFor, shellDbSync } from './host.ts';
 import { HttpError } from './http.ts';
 import { runAs } from './owner.ts';
-import { ownerToolFailure, publicToolFailure } from './owner-errors.ts';
 import { reportFailureForOwner } from './report-display.ts';
 import {
   type CallScope,
@@ -365,19 +364,5 @@ async function dispatchInner(
     (out as { status?: unknown }).status === 'pending_approval'
   )
     return { content: asText(out), structuredContent: out };
-  return hideToolFailure(out as CatalogResponse);
-}
-
-/**
- * A failed app tool: the owner, the assistant and an MCP client are shown the
- * message only when the app runtime marked it public (`ownerToolFailure`).
- */
-function hideToolFailure(out: CatalogResponse): CatalogResponse {
-  if (!out?.isError || publicToolFailure(out) !== null) return out;
-  const message = ownerToolFailure(out);
-  return {
-    ...out,
-    content: [{ type: 'text', text: `Error: ${message}` }],
-    structuredContent: { error: { message } },
-  };
+  return out as CatalogResponse;
 }

@@ -9,33 +9,11 @@ export type EngineErrorCode =
   | 'stale_fence'
   | 'migration_failed';
 
-/** What an owner is told instead of an {@link EngineError.untrusted} message. */
-export const UNTRUSTED_MESSAGE =
-  'the app could not do that right now; try again in a moment';
-
-/**
- * The message of an engine error that may be shown to an owner: its own text,
- * or the fixed sentence when the text came from a worker or driver (the detail
- * is logged on the server).
- */
-export function exposableMessage(e: EngineError): string {
-  if (!e.untrusted) return e.message;
-  // biome-ignore lint/suspicious/noConsole: message only, never a stack or body
-  console.error('engine error hidden from the owner:', e.code, e.message);
-  return UNTRUSTED_MESSAGE;
-}
-
 /** A refusal or mistake the caller can act on (as opposed to a crash). */
 export class EngineError extends Error {
   readonly code: EngineErrorCode;
   /** Extra JSON a route returns beside `error` and `code` (e.g. the blockers that refused Apply). */
   readonly details?: Record<string, unknown>;
-  /**
-   * The message came from a worker or a driver (a database host or user name
-   * can be in it), not from engine code written for the caller. It is for the
-   * server log; an owner is shown a fixed sentence instead (#5464).
-   */
-  readonly untrusted: boolean = false;
   constructor(
     message: string,
     code: EngineErrorCode = 'invalid',
@@ -46,35 +24,6 @@ export class EngineError extends Error {
     this.code = code;
     this.details = details;
   }
-
-  /** An error whose text came from a worker or driver: see {@link untrusted}. */
-  static untrusted(
-    message: string,
-    code: EngineErrorCode = 'invalid',
-  ): EngineError {
-    const e = new EngineError(message, code);
-    (e as { untrusted: boolean }).untrusted = true;
-    return e;
-  }
-}
-
-/** Text from this error may not be shown to an owner: it came from a worker or a driver. */
-export function isUntrusted(e: unknown): boolean {
-  return !(e instanceof EngineError) || e.untrusted;
-}
-
-/**
- * An engine error whose message embeds `inner`'s text. It keeps the flag: it is
- * ours to show only when everything it embeds is ours.
- */
-export function embedding(
-  message: string,
-  code: EngineErrorCode,
-  ...inner: unknown[]
-): EngineError {
-  return inner.some(isUntrusted)
-    ? EngineError.untrusted(message, code)
-    : new EngineError(message, code);
 }
 
 /** The budget of database connections has no room: retry later. Never a verdict on the caller's data. */
@@ -100,12 +49,8 @@ export class ApprovalRequiredError extends EngineError {
 
 /** The app's worker thread is gone. `restartApp()` starts a new one. */
 export class WorkerCrashedError extends EngineError {
-  constructor(
-    message = 'the app stopped; restart it to continue',
-    untrusted = false,
-  ) {
+  constructor(message = 'the app stopped; restart it to continue') {
     super(message, 'worker_crashed');
-    (this as { untrusted: boolean }).untrusted = untrusted;
     this.name = 'WorkerCrashedError';
   }
 }

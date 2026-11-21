@@ -25,8 +25,7 @@ describe('an approved action that comes back as an error is a failed approval', 
         isError: true,
         content: [{ type: 'text', text: 'Error: Object not found' }],
       }),
-      // Fail closed: text with no public marker is not shown (see connection-budget.test.ts).
-    ).toBe('the tool could not do that; try again');
+    ).toBe('Error: Object not found');
     expect(returnedFailure('tool', { isError: false, content: [] })).toBe(
       undefined,
     );

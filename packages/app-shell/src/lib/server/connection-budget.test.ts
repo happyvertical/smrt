@@ -8,7 +8,6 @@
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { importPGlite } from '@happyvertical/sql/pglite';
 import {
   afterAll,
   afterEach,
@@ -18,12 +17,11 @@ import {
   it,
   vi,
 } from 'vitest';
-import type { DatabaseConfig, PGliteClient } from '../../engine/db/index.ts';
-import { UNTRUSTED_MESSAGE } from '../../engine/errors.ts';
-import { EngineError, WorkerCrashedError } from '../../engine/index.ts';
+import { createSqliteChangeEngine } from '../../engine/change-engine.ts';
+import type { DatabaseConfig } from '../../engine/db/index.ts';
+import { CapacityError } from '../../engine/errors.ts';
+import { AppHost, MemoryVersionStore } from '../../engine/index.ts';
 import { AppWorker } from '../../engine/worker-handle.ts';
-import { returnedFailure } from './approvals.ts';
-import { addChangeCard, flushChecks } from './changes.ts';
 import { type CloudHarness, openCloudShell } from './cloud-test-support.ts';
 import {
   closeHost,
@@ -40,14 +38,7 @@ import {
   HOST_OVERHEAD,
   HostLifecycle,
 } from './host-lifecycle.ts';
-import { errorResponse, HttpError } from './http.ts';
 import { runAs } from './owner.ts';
-import {
-  GENERIC_OWNER_ERROR,
-  ownerMessage,
-  ownerToolFailure,
-  TOOL_FAILURE_MESSAGE,
-} from './owner-errors.ts';
 
 describe('HostLifecycle connection budget', () => {
   it('refuses at once when the budget is spent, and a release returns it', () => {
@@ -104,71 +95,6 @@ describe('HostLifecycle connection budget', () => {
   });
 });
 
-describe('a failed app tool', () => {
-  const plain = (text: string) => ({
-    isError: true,
-    content: [{ type: 'text', text: `Error: ${text}` }],
-    structuredContent: { error: { message: text } },
-  });
-  it('fails closed: only a message core marks public reaches the owner', () => {
-    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
-    // Whatever it says, an error with no code is not provably the app's own.
-    for (const t of [
-      'connect ECONNREFUSED 10.0.3.7:5432',
-      'something nobody has thought of yet: db-7 at eu-west',
-      'title is required',
-    ]) {
-      expect(ownerToolFailure(plain(t))).toBe(TOOL_FAILURE_MESSAGE);
-      expect(returnedFailure('tool', plain(t))).toBe(TOOL_FAILURE_MESSAGE);
-    }
-    const pub = {
-      isError: true,
-      content: [{ type: 'text', text: 'Error: Total must not be negative' }],
-      structuredContent: {
-        error: {
-          code: 'VALIDATION_GENERATED_EXPRESSION',
-          message: 'Total must not be negative',
-        },
-      },
-    };
-    expect(returnedFailure('tool', pub)).toBe('Total must not be negative');
-    log.mockRestore();
-  });
-});
-
-describe('ownerMessage', () => {
-  it('keeps our own messages and hides a driver error, logging the detail', async () => {
-    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
-    expect(ownerMessage(new EngineError('no such model', 'not_found'))).toBe(
-      'no such model',
-    );
-    expect(ownerMessage(new HttpError(400, 'bad input'))).toBe('bad input');
-    const driver = new Error(
-      'connect ECONNREFUSED db.internal.example:5432 as svc_app',
-    );
-    expect(ownerMessage(driver)).toBe(GENERIC_OWNER_ERROR);
-    // The engine wraps worker and driver text in an EngineError: still hidden.
-    const wrapped = EngineError.untrusted(driver.message, 'refused');
-    expect(ownerMessage(wrapped)).toBe(UNTRUSTED_MESSAGE);
-    const res = errorResponse(wrapped);
-    expect(res.status).toBe(409);
-    expect(JSON.stringify(await res.json())).not.toMatch(
-      /db\.internal|svc_app/,
-    );
-    const crashed = new WorkerCrashedError(
-      `the app stopped: ${driver.message}`,
-      true,
-    );
-    expect(ownerMessage(crashed)).toBe(UNTRUSTED_MESSAGE);
-    expect(ownerMessage(driver, 'it failed')).toBe('it failed');
-    expect(log).toHaveBeenCalledWith(
-      expect.any(String),
-      expect.stringContaining('db.internal.example'),
-    );
-    log.mockRestore();
-  });
-});
-
 let h: CloudHarness | null = null;
 afterEach(async () => {
   await h?.close();
@@ -211,66 +137,8 @@ describe('a hosted app on the budget', () => {
       expect(err).toBeInstanceOf(Error);
       expect(String(err.message)).not.toMatch(/no database connections left/);
       expect(hostMetrics().connections).toBe(0);
-      // And what an owner would be shown names no server.
-      const body = await errorResponse(err).text();
-      expect(body).not.toMatch(/db\.internal|svc_app/);
     }
     log.mockRestore();
-  });
-});
-
-describe('a draft that cannot open', () => {
-  it('tells the owner a fixed sentence and keeps the driver text in the log', async () => {
-    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
-    const { PGlite } = await importPGlite();
-    const pg = (await PGlite.create()) as PGliteClient;
-    let broken = false;
-    // The side schema's queries fail the way a lost connection does.
-    const client = new Proxy(pg, {
-      get(target, prop) {
-        const v = Reflect.get(target, prop, target);
-        if (typeof v !== 'function') return v;
-        // PGlite keeps private fields: always call it on the instance itself.
-        if (prop !== 'query' && prop !== 'exec') return v.bind(target);
-        return (sql: string, ...rest: unknown[]) => {
-          if (broken && `${sql}${JSON.stringify(rest)}`.includes('__d'))
-            throw new Error(
-              'connect ECONNREFUSED db.internal.example:5432 (user svc_app)',
-            );
-          return v.call(target, sql, ...rest);
-        };
-      },
-    }) as PGliteClient;
-    h = await openCloudShell({
-      appDatabase: {
-        config: (schema): DatabaseConfig => ({
-          kind: 'pglite',
-          schema,
-          client,
-        }),
-        provision: async (schema) => {
-          await pg.exec(`CREATE SCHEMA IF NOT EXISTS "${schema}"`);
-        },
-      },
-    });
-    await runAs(h.a, () =>
-      addChangeCard({
-        commands: [{ type: 'defineModel', name: 'Later', fields: {} } as never],
-        source: 'api',
-      }),
-    );
-    await flushChecks();
-    await closeHost(); // a restart: the draft is adopted again
-    broken = true;
-    const slot = await runAs(h.a, () => getDraftSlot());
-    await closeHost();
-    expect(slot?.problem).toBeTruthy();
-    expect(slot?.problem).not.toMatch(/db\.internal|svc_app|ECONNREFUSED/);
-    expect(
-      log.mock.calls.some((c) => String(c[1]).includes('db.internal.example')),
-    ).toBe(true);
-    log.mockRestore();
-    await pg.close().catch(() => {});
   });
 });
 
@@ -345,11 +213,7 @@ describe('every worker reserves its pool for as long as it lives', () => {
     const l = new HostLifecycle();
     l.configure({ maxAppConnections: 10 });
     const bad = open(l, config(3), 'fail');
-    const failure = await bad.ready.catch((e) => e);
-    // The worker's text names a server: the engine marks it as not ours to show.
-    expect(failure).toBeInstanceOf(EngineError);
-    expect(failure.untrusted).toBe(true);
-    expect(ownerMessage(failure)).toBe(UNTRUSTED_MESSAGE);
+    await expect(bad.ready).rejects.toThrow();
     await bad.terminate();
     const crashed = open(l, config(3), 'crash');
     await expect(crashed.ready).rejects.toThrow();
@@ -437,5 +301,46 @@ describe('a host reserves its overhead until it is gone', () => {
     ).rejects.toThrow(ConnectionBudgetError);
     await withConnections({ kind: 'sqlite' }, 'live', async () => fake().host);
     expect(hostMetrics().connections).toBe(0);
+  });
+});
+
+describe('no connections left during a publish check', () => {
+  it('surfaces as a retryable refusal, not a stored replay_failed blocker', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'budget-check-'));
+    const engine = createSqliteChangeEngine();
+    const as = { author: 't', approved: true };
+    const live = await AppHost.open(join(dir, 'live'), {
+      store: new MemoryVersionStore(),
+    });
+    await live.execute({ type: 'defineModel', name: 'Chore', fields: {} }, as);
+    const built = await engine.rebuild({ id: 'o' }, live, {
+      draftDir: join(dir, 'draft'),
+      store: new MemoryVersionStore(),
+      commands: [
+        {
+          key: 'a',
+          command: {
+            type: 'addField',
+            model: 'Chore',
+            field: 'size',
+            definition: { type: 'integer' },
+          },
+        },
+      ],
+      author: 't',
+    });
+    const spy = vi
+      .spyOn(live, 'previewPublish')
+      .mockRejectedValue(new ConnectionBudgetError());
+    const err = await engine
+      .checkBatch({ id: 'o' }, live, built.draft)
+      .catch((e) => e);
+    spy.mockRestore();
+    expect(err).toBeInstanceOf(CapacityError);
+    expect(err.code).toBe('refused');
+    expect(err.message).toMatch(/try again/);
+    await built.draft.close().catch(() => {});
+    await live.close().catch(() => {});
+    rmSync(dir, { recursive: true, force: true });
   });
 });

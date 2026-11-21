@@ -45,7 +45,6 @@ import { ChangeCardCollection } from '../objects/ChangeCard.ts';
 import { versionSummary } from '../ui/command-summary.ts';
 import { publish, setTenantScopedEvents } from './events.ts';
 import {
-  ConnectionBudgetError,
   HOST_OVERHEAD,
   HostLifecycle,
   type HostLifecyclePolicy,
@@ -555,18 +554,7 @@ async function adoptDraft(
     wireHostEvents(draft, 'draft', holder.tenantId);
     slot.host = lifecycleOn() ? leased(holder, draft) : draft;
   } catch (e) {
-    // The driver's text can name the database host or user: the owner gets a
-    // fixed sentence, the server log the detail (message only, never a stack).
-    // Our own budget refusal is safe and says what to do.
-    slot.problem =
-      e instanceof ConnectionBudgetError
-        ? `the draft cannot be opened: ${e.message}`
-        : 'the draft cannot be opened right now; try again, or discard it to carry on';
-    // biome-ignore lint/suspicious/noConsole: message only, never a stack or body
-    console.error(
-      'draft could not be opened:',
-      e instanceof Error ? e.message : 'unknown error',
-    );
+    slot.problem = `the draft cannot be opened: ${e instanceof Error ? e.message : String(e)}`;
   }
 }
 

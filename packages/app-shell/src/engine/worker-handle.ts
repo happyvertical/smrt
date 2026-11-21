@@ -187,22 +187,18 @@ export class AppWorker {
         ) => {
           if (m.ready) resolve(m);
           else if (m.stale) reject(new StaleFenceError(m.error ?? 'stale'));
-          else if (m.user)
-            reject(
-              new EngineError(m.error ?? 'the app did not start', 'refused'),
-            );
           else
             reject(
-              EngineError.untrusted(
+              new EngineError(
                 m.error ?? 'the app did not start',
-                'migration_failed',
+                m.user ? 'refused' : 'migration_failed',
               ),
             );
           this.worker.on('message', (r: WorkerReply) => this.settle(r));
         },
       );
       this.worker.once('error', (e) => {
-        die(new WorkerCrashedError(`the app stopped: ${e.message}`, true));
+        die(new WorkerCrashedError(`the app stopped: ${e.message}`));
         reject(e);
       });
       this.worker.once('exit', () => {

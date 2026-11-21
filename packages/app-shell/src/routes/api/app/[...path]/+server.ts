@@ -57,10 +57,6 @@ const handle: RequestHandler = guarded(async (event) => {
     'live',
   );
   if (isPending(out)) return json(out, 202);
-  // Fail closed: a server error's body is never relayed (the runtime's own
-  // 500 text is not ours to vouch for); the owner gets a fixed one.
-  if (out.status >= 500)
-    return json({ error: 'the app could not do that; try again' }, out.status);
   return new Response(out.body, {
     status: out.status,
     headers: { 'content-type': out.contentType, 'cache-control': 'no-store' },

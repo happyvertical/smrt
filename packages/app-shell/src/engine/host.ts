@@ -86,7 +86,6 @@ import {
 import {
   ApprovalRequiredError,
   EngineError,
-  embedding,
   StaleFenceError,
 } from './errors.ts';
 import type { ExtractPreview } from './extract-model.ts';
@@ -599,10 +598,9 @@ export class AppHost extends EventEmitter {
         (e.code === 'refused' || e.code === 'stale_fence')
       )
         throw e;
-      throw embedding(
+      throw new EngineError(
         `the app did not start with this change, so it was not applied: ${(e as Error).message}`,
         'migration_failed',
-        e,
       );
     }
     const old = this.app;
@@ -1613,10 +1611,9 @@ export class AppHost extends EventEmitter {
             skipped += c.skipped ?? 0;
           } catch (e) {
             const code = e instanceof EngineError ? e.code : 'migration_failed';
-            throw embedding(
+            throw new EngineError(
               `undid ${i} of ${undone.length} changes; the app is now at version ${this.version}: ${(e as Error).message}`,
               code,
-              e,
             );
           }
         }
@@ -2189,7 +2186,7 @@ export class AppHost extends EventEmitter {
       if (e instanceof AppCallError) {
         if (e.stale) throw new StaleFenceError(e.message);
         if (e.user) throw new EngineError(e.message, 'invalid');
-        throw EngineError.untrusted(e.message, 'refused');
+        throw new EngineError(e.message, 'refused');
       }
       throw e;
     }
@@ -2509,10 +2506,9 @@ export class AppHost extends EventEmitter {
           }
         } catch (e) {
           await w.terminate().catch(() => {});
-          throw embedding(
+          throw new EngineError(
             `"${rec.summary}" from the draft does not apply to the current data, so nothing was published: ${(e as Error).message}`,
             'migration_failed',
-            e,
           );
         }
         if (i === chain.versions.length - 1) await w.retire();
@@ -2804,10 +2800,10 @@ export class AppHost extends EventEmitter {
     let marked = true;
     try {
       if (journal) writeJournal(this.dataDir, { ...journal, committed: true });
-    } catch {
+    } catch (e) {
       marked = false;
       this.notices.push(
-        `The publish is done, but its journal could not be marked finished; the old data is kept until the next start, which removes it. Free some disk space or fix the data directory.`,
+        `The publish is done, but its journal could not be marked finished (${(e as Error).message}); the old data is kept until the next start, which removes it. Free some disk space or fix the data directory.`,
       );
     }
     if (marked)
@@ -2873,11 +2869,9 @@ export class AppHost extends EventEmitter {
         await this.app.ready.catch(() => {}); // restartApp() can retry
       }
     } catch (e2) {
-      throw embedding(
+      throw new EngineError(
         `${(cause as Error).message}; and putting the old data back failed: ${(e2 as Error).message}. It is restored when the app next starts.`,
         'migration_failed',
-        cause,
-        e2,
       );
     }
   }
