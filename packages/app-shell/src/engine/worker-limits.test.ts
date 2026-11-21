@@ -39,6 +39,32 @@ describe('worker memory limits (#5212)', () => {
     expect(() => resourceLimitsFor({ oldMb: 1.5 })).toThrow(RangeError);
   });
 
+  it('refuses a statement timeout that is not a whole number of ms, and leaves the V8 limits alone', () => {
+    expect(() => resourceLimitsFor({ statementTimeoutMs: 0 })).toThrow(
+      RangeError,
+    );
+    expect(() => resourceLimitsFor({ statementTimeoutMs: 2.5 })).toThrow(
+      RangeError,
+    );
+    expect(resourceLimitsFor({ statementTimeoutMs: 5000 })).toEqual(
+      resourceLimitsFor(),
+    );
+  });
+
+  it('a SQLite app takes a statement timeout and ignores it', async () => {
+    const host = await AppHost.open(tmp(), {
+      store: new MemoryVersionStore(),
+      workerLimits: { statementTimeoutMs: 1000 },
+    });
+    await host.execute(
+      { type: 'defineModel', name: 'Note', fields: { t: { type: 'text' } } },
+      { author: 't' },
+    );
+    await host.create('Note', { t: 'ok' });
+    expect((await host.list('Note')).length).toBe(1);
+    await host.close();
+  });
+
   it('runs an app under configured limits', async () => {
     const host = await AppHost.open(tmp(), {
       store: new MemoryVersionStore(),

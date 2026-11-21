@@ -17,7 +17,7 @@ import { vi } from 'vitest';
 import '../objects/index.ts';
 import { applyOwnBatch } from './approvals.ts';
 import { cancelChecks, changesState, flushChecks } from './changes.ts';
-import { configureShell, resetShell } from './host.ts';
+import { configureShell, resetShell, type ShellContext } from './host.ts';
 import { resetShellInference } from './inference.ts';
 import { type Principal, runAs, setOwnerCheck } from './owner.ts';
 import { prepareShellSchema } from './schema.ts';
@@ -34,7 +34,9 @@ export interface ShellHarness {
   close(): Promise<void>;
 }
 
-export async function openShell(): Promise<ShellHarness> {
+export async function openShell(
+  extra: Partial<ShellContext> = {},
+): Promise<ShellHarness> {
   const dir = mkdtempSync(join(tmpdir(), 'shell-test-'));
   // The real driver: the vitest setup would pre-create registered tables.
   const actual =
@@ -82,6 +84,7 @@ export async function openShell(): Promise<ShellHarness> {
     dataRoot: async () => dir,
     // A fixed test key stands in for the runtime's vault-held master key.
     secretMasterKey: async () => TEST_MASTER_KEY,
+    ...extra,
   });
   return {
     dir,

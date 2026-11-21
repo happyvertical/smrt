@@ -155,6 +155,36 @@ upgrade and tenancy ON). Harness: `cloud-test-support.ts`. They run on SQLite
 with the real tenancy interceptor; PostgreSQL, the deployed runtime's startup
 (version probe), RLS and a live OIDC provider are NOT exercised.
 
+## Many apps in one process (#5192)
+
+`host-lifecycle.ts` (policy, counters, wake gate) and the registry in `host.ts`.
+Engaged ONLY when the profile is `cloud` AND `ShellContext.lifecycle` is set (the
+runtime reads `SMRT_APP_SHELL_IDLE_MS`, `_MAX_OPEN_APPS`, `_MEMORY_CEILING_MB`,
+`_APP_MEMORY_MB`, `_MAX_CONCURRENT_WAKES`; none set = no policy). Otherwise the
+desktop and an unconfigured hosted process keep the raw host, never a proxy,
+never a timer, never an eviction (`host-lifecycle.test.ts`, "desktop is unchanged").
+
+- Hosts handed out by `getHost()` and held draft hosts are wrapped in a proxy
+  that counts every call as a lease until it settles; `getHost()` also leases for
+  `handoutMs` (default 5000) so the caller's first call is never met by a closed host. An app with a lease, or
+  whose draft a workflow `hold`s, is never closed; reading `def`, `openHost()`
+  and the event bus (a live tab) touch nothing, so a tab does not keep a worker.
+- Eviction closes live worker, draft worker and the holder; the next request is
+  a first open from disk (`openLive`), sharing nothing with the old holder.
+  A request for an app being closed waits for it, then reopens: never two
+  workers on one directory.
+- Caps: `maxOpenApps` and `memoryCeilingMb / appMemoryMb` (the smaller wins,
+  at least 1). A wake over the cap closes the least recently used idle app
+  (no call inside, hand-out lease over, idle at least `minIdleMs`, default 0); if every open app is busy it waits up to `capacityWaitMs`, then refuses
+  (`refused`, "no room"), never cutting a call. A worker keeps the memory it grew
+  to, so the ceiling is a count, not a reading of the process.
+- `maxConcurrentWakes` (default 2) queues a burst of wakes.
+- `drainShell(timeoutMs)`: refuse new apps, wait for calls, close all; for
+  recycling a process. `hostMetrics()`: open, queued wakes, wakes, failed wakes,
+  evictions by cause, wake times, cap, RSS.
+- A workflow that keeps one app busy across more than `idleMs` between calls
+  (without holding a draft) can be put to sleep between them; its next call wakes it.
+
 ## Remaining (not in this slice)
 
 - Wiring a hosted identity provider's config and the signed-out landing page
@@ -162,8 +192,8 @@ with the real tenancy interceptor; PostgreSQL, the deployed runtime's startup
   redirect); the welcome/connect-AI UI still shows desktop options.
 - `required` mode and RLS policies for the shell tables (above); the
   `database-rls` request transaction is not used by the shell's long-lived stores.
-- Hosted inference (#5194), workbook import in cloud, eviction/caps (#5192),
-  a cross-process lock for the first sign-in of one account (the insert-only
+- Hosted inference (#5194), workbook import in cloud, a statement timeout per
+  operation (the database layer, not the registry), a cross-process lock for the first sign-in of one account (the insert-only
   ids already prevent a second tenant).
 
 ## Key endpoints (cloud)

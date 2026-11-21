@@ -13,7 +13,7 @@ import type { DatabaseInterface } from '@happyvertical/sql';
 import { vi } from 'vitest';
 import '../objects/index.ts';
 import { ownerTenantFor } from './accounts.ts';
-import { configureShell, resetShell } from './host.ts';
+import { configureShell, resetShell, type ShellContext } from './host.ts';
 import { resetShellInference } from './inference.ts';
 import { type Principal, setOwnerCheck } from './owner.ts';
 import { prepareShellSchema } from './schema.ts';
@@ -30,7 +30,9 @@ export interface CloudHarness {
   close(): Promise<void>;
 }
 
-export async function openCloudShell(): Promise<CloudHarness> {
+export async function openCloudShell(
+  extra: Partial<ShellContext> = {},
+): Promise<CloudHarness> {
   const dir = mkdtempSync(join(tmpdir(), 'shell-cloud-test-'));
   const actual =
     await vi.importActual<typeof import('@happyvertical/sql')>(
@@ -60,6 +62,7 @@ export async function openCloudShell(): Promise<CloudHarness> {
     db: async () => db,
     dataRoot: async () => dir,
     secretMasterKey: async () => CLOUD_MASTER_KEY,
+    ...extra,
   });
   return {
     dir,

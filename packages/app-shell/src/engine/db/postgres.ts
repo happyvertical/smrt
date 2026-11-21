@@ -47,12 +47,30 @@ const STATEMENTS = [
  * outside any transaction gets a transaction of its own. Fail closed: only
  * the listed operations exist on the result; anything else (`table()`,
  * sessions, schema sync) is absent or throws, never an unscoped path.
+ *
+ * With `statementTimeoutMs`, the same first statement sets `statement_timeout`
+ * transaction-locally too (what `SET LOCAL` does): the server cancels any one
+ * statement of the operation that runs longer, the transaction rolls back and
+ * the connection goes back to its pool exactly as it was, so the limit never
+ * reaches another app's use of that connection.
  */
-export function scopeDatabase<T extends object>(db: T, schema: string): T {
+export function scopeDatabase<T extends object>(
+  db: T,
+  schema: string,
+  options: { statementTimeoutMs?: number } = {},
+): T {
   const path = `"${assertSchemaName(schema)}"`;
+  const timeout = options.statementTimeoutMs;
+  if (timeout !== undefined && (!Number.isInteger(timeout) || timeout < 1))
+    throw new RangeError('statementTimeoutMs must be a whole ms, 1 or more');
   const raw = db as Handle;
   const apply = (h: Handle) =>
-    h.query(`SELECT set_config('search_path', ?, true)`, [path]);
+    timeout === undefined
+      ? h.query(`SELECT set_config('search_path', ?, true)`, [path])
+      : h.query(
+          `SELECT set_config('search_path', ?, true), set_config('statement_timeout', ?, true)`,
+          [path, `${timeout}ms`],
+        );
   // Core keys per-connection state (shared initialisation, the runtime-managed
   // declaration) on `db.client`, reads its class name, and tells a PostgreSQL
   // adapter by its `query`/`exec`. The real client would run SQL on the
@@ -184,7 +202,9 @@ export async function openPostgres(
       'refused',
     );
   }
-  return scopeDatabase(raw, schema);
+  return scopeDatabase(raw, schema, {
+    statementTimeoutMs: config.statementTimeoutMs,
+  });
 }
 
 /**

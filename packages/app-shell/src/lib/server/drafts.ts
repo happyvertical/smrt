@@ -37,6 +37,7 @@ import {
   hostFor,
   setDraftSlot,
   wireHostEvents,
+  withAppLease,
 } from './host.ts';
 import type { Target } from './target.ts';
 import { createTenantQueue } from './tenant-queue.ts';
@@ -77,7 +78,10 @@ export type DraftPublishResult = Omit<PublishResult, 'snapshot'> & {
 };
 
 /** Run lifecycle work one at a time per tenant. */
-const exclusive = createTenantQueue();
+const queue = createTenantQueue();
+// ...and the app stays open until the workflow is done (see `withAppLease`).
+const exclusive = <T>(fn: () => Promise<T>): Promise<T> =>
+  queue(() => withAppLease(fn));
 
 function clean(name: unknown): string {
   const text =

@@ -614,4 +614,38 @@ describe.each(backends)('app engine on PostgreSQL (%s)', (backend) => {
       expect(await tablesIn(schema)).toContain('u_everythings');
     });
   });
+  // The server itself enforces it (PGlite runs in one thread and cannot cancel
+  // a statement), so this one runs on the real-PostgreSQL lane only.
+  it.runIf(backend === 'postgres')(
+    'a statement timeout cancels a runaway statement, frees the connection and spares another app (#5192)',
+    async () => {
+      const { scopeDatabase } = await import('./db/postgres.ts');
+      // ONE pooled connection shared by both apps: a leak would show at once.
+      const raw: any = await getDatabase({
+        type: 'postgres',
+        url: serverUrl,
+        max: 1,
+        cache: false,
+      } as any);
+      try {
+        const limited: any = scopeDatabase(raw, await newSchema('to'), {
+          statementTimeoutMs: 200,
+        });
+        const other: any = scopeDatabase(raw, await newSchema('ok'));
+        await expect(limited.query('SELECT pg_sleep(60)')).rejects.toThrow(
+          /statement timeout|canceling statement/i,
+        );
+        // The same connection, straight after: no limit left on it, and the
+        // other app's own longer statement runs to the end.
+        expect(
+          (await other.query('SHOW statement_timeout')).rows[0]
+            .statement_timeout,
+        ).toBe('0');
+        await other.query('SELECT pg_sleep(0.5)');
+        expect((await limited.query('SELECT 1 AS one')).rows[0].one).toBe(1);
+      } finally {
+        await raw.close?.();
+      }
+    },
+  );
 });
