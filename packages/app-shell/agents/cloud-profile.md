@@ -208,6 +208,13 @@ directory and the schema, so a second app per tenant needs a second row, a holde
 key of (tenant, app) and a route to name it, none of which is ruled out; today
 `host.ts` holds one app per tenant.
 
+The shell's own tables and every app schema are the same database and role
+(#5418), so a live host's claim connection (`claimApp`, #5470) commits a publish
+or snapshot restore with the shell's `App`/`AppVersion` rows in one transaction
+(engine.md "The store in the swap"). The host refuses to open when its claim
+cannot see the shell's own `App` row, so a deployment that put the shell and
+the apps on different databases is refused, not silently unfenced.
+
 Needs a PostgreSQL role that may `CREATE SCHEMA` (the hosted role and policies
 are #5188/#5189). The portable export/import still refuse a PostgreSQL app (engine
 `requireSqlite`).

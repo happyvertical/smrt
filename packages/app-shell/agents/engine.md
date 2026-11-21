@@ -226,12 +226,72 @@ for the one operation on the host thread; a PGlite uses the host's client).
   `StaleFenceError`; a caller must reopen the app, never retry the call.
   Two hosts on one app: on a server the advisory claim refuses the second; where
   nothing claims (PGlite) the later opener owns and the earlier one's every
-  call fails stale. Not covered yet (smrt#5470): the version-store write and
-  the claim re-check are unfenced, so a host that lost ownership between its
-  swap and its store write can still record a version (hosted PostgreSQL only;
-  the desktop has one process per data directory and keeps its writer lease,
-  with no generation: `fence` is `undefined`). Tested in
+  call fails stale. The desktop has one process per data directory and keeps
+  its writer lease, with no generation: `fence` is `undefined`. Tested in
   `postgres-drafts.test.ts` ("ownership fencing").
+- **The store in the swap, on the claim (#5470 part 1; hosted PostgreSQL
+  server only).** `claimApp` returns an `AppClaim` (`db/claim.ts`): the
+  connection that holds the app's session lock (`max: 1`, never idle-closed,
+  `connectionTimeoutMillis: 0`). EVERY `claim.transaction` first sets
+  `lock_timeout`/`statement_timeout`/`idle_in_transaction_session_timeout`
+  (5 s / 10 s / 10 s, `HostOptions.claimOptions`) and PROVES, inside itself,
+  that its own session holds the lock (`pg_locks` row with
+  `pid = pg_backend_pid()`); a missing row is a `ClaimLostError`
+  (`stale_fence`, `resource: 'claim'`), the claim is lost for good (`onLost`,
+  the host retires its worker and every call refuses, the shell must reopen)
+  and nothing is written. A lock ends only by unlock or the session ending, and
+  a transaction cannot commit after its session ended, so whatever committed
+  there ran wholly under the claim and no takeover can have committed in
+  between. The pool reconnects silently WITHOUT the lock after a terminated
+  session, which is why the proof is per transaction. A heartbeat (every 5 s) is
+  one proof-only claim transaction. A nested `claim.transaction` throws.
+  Publish and snapshot restore run `swapSchemas` on the claim with a `within`
+  callback: `VersionStore.commitIn(tx, records, current, expected)` (the shell's
+  `ShellVersionStore`) inserts the versions and moves the `App` row only
+  `WHERE current_version = expected`, so a stale store (`StaleStoreError`,
+  `resource: 'store'`) rolls the swap back too; a publish's draft `published`
+  mark rides in it. A live host with a claim refuses to open if its store has no
+  `commitIn`, or if the claim cannot see the store's own `App` row (another
+  database); `HostOptions.allowUnfencedStore` is the test opt-out.
+  Publish order (G = generation, S = store): journal (`atomic`, `id`, `draftId`,
+  `numbers`) -> T (proof, swap, `commitIn(final, expected old)`; G+1, S final)
+  -> spawn the new worker -> readiness record (`_app_meta` `published` = journal
+  id, an upsert) -> mark the journal, drop the aside. A failed spawn, or a
+  refused readiness record with the claim proven, runs T': swap back,
+  `commitIn([], old, expected final)` and the draft reopened
+  (`UPDATE ... WHERE status='published' AND published_versions = <journal
+  numbers>`), in one transaction. The records T wrote stay as never-current
+  history so version numbers stay unique. Boot, all on the claim and in this
+  order: claim, store guard, ownership bump, reconcile, re-read
+  `store.current()` (a boot T' moves it), sweep, spawn. An `atomic` journal is
+  recovered from the catalog, never from `committed` or the store's current
+  version: aside absent -> drop staging; aside present and readiness record =
+  journal id -> forward (drop the aside; this also fixes a published-then-undone
+  restart that used to swap the old data back); aside present and no record ->
+  the new worker was never served: start the store's current version, and if it
+  starts write the record and drop the aside, otherwise run T' (draft reopened
+  from the journal) and open the old version. A journal without `atomic`
+  (older, or a host without a claim) keeps `publishHappened`. Snapshot restore:
+  T_r is the swap plus `commitIn([], v, v)` (a compare-only pointer write); a
+  failed spawn swaps back with the same compare. Tested in
+  `store-in-swap.test.ts` (registered; PGlite with a stand-in claim, and on a
+  server the tests marked [S]: a terminated claim, a delayed commit after a
+  takeover, the heartbeat, a claim lost right after it was taken) and
+  `claim.test.ts`.
+  **Unfenced in #5470 part 1** (hosted PostgreSQL; follow-up: #5486):
+  - Change and undo store writes (`append`/`setCurrent` after a migration):
+    unconditional, on the store pool, no claim proof. A host that loses its
+    claim after its worker's migration can still record the version after the
+    next host has read the store.
+  - Every `DraftVersionStore` write, and a draft host's boot, ownership bump
+    and schema drops (admin connections, no claim). The draft's own generation
+    still guards its schema.
+  - `adoptDraft`'s draft-row writes (starting/extra open -> discarded).
+  - The publish journal file (local data directory).
+  - `markPurged`; snapshot and rehearsal files.
+  - Fork and restore schema creation on admin connections (at worst a leaked
+    side schema, removed by the sweep).
+  - Portable import's `populate` (claim never proven; unchanged from today).
 - **Fork** (a draft, a publish rehearsal): a live schema beside the app's, in one transaction (a
   failure leaves none). `forkDraft` writes the name in the draft marker
   (`schema`, `liveSchema`); `AppHost.open` on that directory takes the live app's database
@@ -295,11 +355,19 @@ for the one operation on the host thread; a PGlite uses the host's client).
   `postgres-server.test.ts`:
   open, write, migrate and restart a user app, two apps' isolation, integer,
   money and boolean keys in a data load, and the archive round trip per field
-  type (removeField and removeModel, then undo). It always runs on PGlite and
+  type (removeField and removeModel, then undo).
+  It always runs on PGlite and
   also on a real server when `SMRT_TEST_POSTGRES_URL` is set (a server returns
   BIGINT as digits; PGlite returns numbers). It creates and drops its own
   schemas; run it locally with `pnpm test:postgres` and
   `CI_POSTGRES_BASE_URL` pointing at a server you started.
+  `postgres-claim-connection.test.ts` (registered too) checks what #5470 rests
+  on, on a connection opened like `claimApp`'s: it reaches the shell's tables
+  unqualified as the same role and writes them and an app schema in one
+  transaction; the session advisory lock survives a transaction, COMMIT,
+  ROLLBACK and a refused COMMIT on it (both on PGlite too); and (server only)
+  no other session can take it meanwhile, while a dropped session frees it and
+  the pool reconnects on a session without it.
   Whole numbers (integer, money) outside +/-9007199254740991 cannot be read
   back exactly, so they are refused at write time (`coerceValue`: create,
   update, record loads, field conversion, method writes) and, for a value that

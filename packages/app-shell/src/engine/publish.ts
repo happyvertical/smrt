@@ -200,6 +200,18 @@ export interface PublishJournal {
    * until one transaction renames live to `aside` and `staging` to live.
    */
   pg?: { schema: string; staging: string; aside: string };
+  /**
+   * #5470: this publish's swap committed the version store in the same
+   * transaction. Recovery then never reads `committed` or the store's current
+   * version; it reads the app's readiness record against `id`.
+   */
+  atomic?: boolean;
+  /** Unique to this publish; the readiness record in the live schema holds it once the new worker is up. */
+  id?: string;
+  /** The draft the publish marked `published` (put back to `open` if the publish is undone). */
+  draftId?: string | null;
+  /** The version numbers the publish gave (what the draft's published mark holds). */
+  numbers?: number[];
 }
 
 /**

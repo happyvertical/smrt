@@ -93,8 +93,8 @@ describe('claiming an app on a server', () => {
     vi.mocked(getDatabase).mockImplementation(server.connect as any);
     const store = new MemoryVersionStore();
     const { claimApp } = await import('./db/postgres.ts');
-    const release = await claimApp(config('app_held'));
-    expect(release).toBeTypeOf('function');
+    const claim = await claimApp(config('app_held'));
+    expect(claim?.release).toBeTypeOf('function');
     server.log.length = 0;
     await expect(
       AppHost.open(tmp(), { store, database: config('app_held') }),
@@ -104,9 +104,9 @@ describe('claiming an app on a server', () => {
     expect(server.log[0].sql).toContain('pg_try_advisory_lock');
     expect(server.closed).toContain(server.log[0].session);
     // A different app is not affected; once the first host lets go, this one can claim.
-    await expect(claimApp(config('app_other'))).resolves.toBeTypeOf('function');
-    await release?.();
-    await expect(claimApp(config('app_held'))).resolves.toBeTypeOf('function');
+    await expect(claimApp(config('app_other'))).resolves.toBeTypeOf('object');
+    await claim?.release();
+    await expect(claimApp(config('app_held'))).resolves.toBeTypeOf('object');
   });
 
   it('a host whose start fails lets go of its claim', async () => {
@@ -128,15 +128,16 @@ describe('claiming an app on a server', () => {
     const server = fakeServer();
     vi.mocked(getDatabase).mockImplementation(server.connect as any);
     const { claimApp } = await import('./db/postgres.ts');
-    const release = await claimApp(config('app_opts'));
+    const claim = await claimApp(config('app_opts'));
     expect(server.options[0]).toMatchObject({
       type: 'postgres',
       max: 1,
       idleTimeoutMillis: 0,
+      connectionTimeoutMillis: 0,
       cache: false,
     });
     expect(server.holders.size).toBe(1);
-    await release?.();
+    await claim?.release();
     expect(server.holders.size).toBe(0);
     expect(server.closed).toHaveLength(1);
   });

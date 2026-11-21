@@ -82,10 +82,43 @@ export type WorkerDatabaseConfig =
       fence?: number;
     };
 
+/**
+ * A host's claim on its app (#5470): the connection that holds the app's
+ * session advisory lock. Every `transaction` first proves, inside itself, that
+ * this very session still holds the lock, so whatever commits there ran
+ * wholly under the claim. Hosted PostgreSQL server only.
+ */
+export interface AppClaim {
+  /** Run `cb` as one claim transaction (proof first). Nesting throws. */
+  transaction<T>(cb: (tx: any) => Promise<T>): Promise<T>;
+  /** The same, in the shape the schema helpers take (`swapSchemas`, `dropSchema`). */
+  readonly admin: { transaction<T>(cb: (tx: any) => Promise<T>): Promise<T> };
+  /** The claim is gone: every call refuses with a `ClaimLostError`. */
+  readonly lost: boolean;
+  /** Called once, when the claim is lost. */
+  onLost(fn: (e: Error) => void): void;
+  /** Give the lock back and close the connection. */
+  release(): Promise<void>;
+}
+
+/** Bounds of every claim transaction, and the heartbeat. */
+export interface ClaimOptions {
+  /** Default 5000 ms (`lock_timeout`). */
+  lockTimeoutMs?: number;
+  /** Default 10000 ms (`statement_timeout`). */
+  statementTimeoutMs?: number;
+  /** Default 10000 ms (`idle_in_transaction_session_timeout`). */
+  idleInTransactionMs?: number;
+  /** Default 5000 ms; 0 turns the heartbeat off. */
+  heartbeatMs?: number;
+}
+
 /** A database the host made for the engine and must close with the host. */
 export interface HostDatabase {
   config: DatabaseConfig;
   release?: () => Promise<void>;
+  /** The live host's claim (PostgreSQL server; #5470). */
+  claim?: AppClaim;
 }
 
 export type DatabaseKind = DatabaseConfig['kind'];
