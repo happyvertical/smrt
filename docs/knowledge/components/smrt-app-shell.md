@@ -5,10 +5,10 @@ description: "A smrt app that builds and runs a person's own smrt app from defin
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-21T18:21:36Z"
+  at: "2026-11-21T19:20:29Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:72e6491f05c5d7a62dee86b5901cadd00cd72d05be33c625dceefa2f9ff7d01b"
+source_revision: "sha256:fb58dcade1bbb2e45e24d94e33db63623b168ac72bc455eab4fcebf4523db9f1"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/app-shell/package.json"
@@ -31,6 +31,9 @@ sources:
   - id: "agents-6"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/app-shell/agents/shared-pieces.md"
     title: "@happyvertical/smrt-app-shell packages/app-shell/agents/shared-pieces.md"
+  - id: "agents-7"
+    resource: "https://github.com/happyvertical/smrt/blob/main/packages/app-shell/agents/storage-metering.md"
+    title: "@happyvertical/smrt-app-shell packages/app-shell/agents/storage-metering.md"
 ---
 
 # @happyvertical/smrt-app-shell
@@ -50,6 +53,7 @@ sources:
 - `packages/app-shell/agents/engine.md`
 - `packages/app-shell/agents/imports.md`
 - `packages/app-shell/agents/shared-pieces.md`
+- `packages/app-shell/agents/storage-metering.md`
 
 ## Framework dependencies
 
@@ -66,6 +70,7 @@ sources:
 - [smrt-reports](/components/smrt-reports.md)
 - [smrt-secrets](/components/smrt-secrets.md)
 - [smrt-spreadsheets](/components/smrt-spreadsheets.md)
+- [smrt-subscriptions](/components/smrt-subscriptions.md)
 - [smrt-svelte](/components/smrt-svelte.md)
 - [smrt-tenancy](/components/smrt-tenancy.md)
 - [smrt-ui](/components/smrt-ui.md)
