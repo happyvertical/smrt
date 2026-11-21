@@ -117,7 +117,9 @@ it.each([
         : {}),
     }),
   ).toBe('{"tables":[]}');
-  const handoff = (await getRunTrajectory(db, run.id))?.entries
+  const handoff = (
+    await getRunTrajectory(db, run.id, { allowCrossTenant: true })
+  )?.entries
     .map(({ event }) => event)
     .find((event) => event?.type === 'handoff');
   expect(handoff).toMatchObject({ status: 'done', name: 'Plan', stepIndex: 0 });
@@ -129,9 +131,9 @@ it.each([
     calls: 1,
     ...(unknown ? { uncostedCalls: 1 } : { tokens: 30 }),
   });
-  const events = (await getRunTrajectory(db, childId))?.entries.map(
-    ({ event }) => event,
-  );
+  const events = (
+    await getRunTrajectory(db, childId, { allowCrossTenant: true })
+  )?.entries.map(({ event }) => event);
   expect(events?.filter((event) => event?.type === 'call')).toHaveLength(1);
   expect(events?.some((event) => event?.type === 'action')).toBe(false);
   const rows = (

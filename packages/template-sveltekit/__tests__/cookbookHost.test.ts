@@ -1562,7 +1562,10 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
       stopReason: 'check_failed',
     });
     // The failed check carries the host's own note, never model text.
-    const checks = ((await getRunTrajectory(db, runId))?.entries ?? [])
+    const checks = (
+      (await getRunTrajectory(db, runId, { allowCrossTenant: true }))
+        ?.entries ?? []
+    )
       .map((entry) => entry.event)
       .filter((event) => event?.type === 'check');
     expect(checks.at(-1)?.payload).toEqual({
@@ -1742,7 +1745,10 @@ describe('local cookbook host composition (SQLite, fake model, no providers)', (
     });
     expect(done.input.results).toHaveLength(4);
     // One hold per gated action, each its own approval in the run.
-    const approvals = ((await getRunTrajectory(db, runId))?.entries ?? [])
+    const approvals = (
+      (await getRunTrajectory(db, runId, { allowCrossTenant: true }))
+        ?.entries ?? []
+    )
       .map((entry) => entry.event)
       .filter((event) => event?.type === 'approval');
     expect(approvals.map((event) => event?.status)).toEqual([

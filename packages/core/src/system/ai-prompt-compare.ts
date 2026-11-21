@@ -24,6 +24,10 @@ import type { DatabaseInterface } from '@happyvertical/sql';
 import { EXTERNAL_AGENT_USAGE_OPERATION } from '../external-agent-usage.js';
 import { INFERENCE_BLOCKED_OPERATION } from '../inference-gate.js';
 import { AI_USAGE_COST_BASIS } from './ai-usage-observability.js';
+import {
+  type AiUsageTenantScope,
+  requireAiUsageScope,
+} from './ai-usage-scope.js';
 
 // ============================================================================
 // Shared helpers
@@ -91,43 +95,10 @@ function tenantKey(tenant: string | null, id: string): string {
   return JSON.stringify([tenant, id]);
 }
 
-/** The read was refused before any query ran: no tenant scope was given. */
-export class AiUsageScopeError extends Error {
-  readonly code = 'AI_USAGE_TENANT_REQUIRED';
-
-  constructor(message: string) {
-    super(message);
-    this.name = 'AiUsageScopeError';
-  }
-}
-
-/** The tenant scope every read here takes. */
-export interface AiUsageTenantScope {
-  /**
-   * Tenant whose usage to read; `null` reads global (tenant-less) rows.
-   * Required unless `allowCrossTenant` is set.
-   */
-  tenantId?: string | null;
-  /**
-   * Reviewed cross-tenant read (operators, the CLI's `--all-tenants`):
-   * without `tenantId`, rows of every tenant are read. Joins stay within each
-   * row's tenant.
-   */
-  allowCrossTenant?: boolean;
-}
-
-function requireScope(fn: string, scope: AiUsageTenantScope): void {
-  if (scope.tenantId === undefined && scope.allowCrossTenant !== true) {
-    throw new AiUsageScopeError(
-      `${fn}: pass tenantId (null for global rows), or allowCrossTenant: true for a reviewed cross-tenant read`,
-    );
-  }
-  if (scope.tenantId !== undefined && scope.tenantId !== null) {
-    if (typeof scope.tenantId !== 'string') {
-      throw new TypeError(`${fn}: tenantId must be a string or null`);
-    }
-  }
-}
+export {
+  AiUsageScopeError,
+  type AiUsageTenantScope,
+} from './ai-usage-scope.js';
 
 function requireText(value: unknown, name: string, fn: string): string {
   if (typeof value !== 'string' || value.trim().length === 0) {
@@ -571,7 +542,7 @@ export async function compareAiPromptRuns(
   options: AiPromptCompareOptions,
 ): Promise<AiPromptComparison> {
   const fn = 'compareAiPromptRuns';
-  requireScope(fn, options ?? {});
+  requireAiUsageScope(fn, options ?? {});
   const promptKey = requireText(options.promptKey, 'promptKey', fn);
   const a = normalizeSelector(options.a, 'a');
   const b = normalizeSelector(options.b, 'b');
@@ -1051,7 +1022,7 @@ export async function listAiPromptTemplateHistory(
   options: AiPromptTemplateHistoryOptions,
 ): Promise<AiPromptTemplateHistory> {
   const fn = 'listAiPromptTemplateHistory';
-  requireScope(fn, options ?? {});
+  requireAiUsageScope(fn, options ?? {});
   const promptKey = requireText(options.promptKey, 'promptKey', fn);
   const scope: AiUsageTenantScope =
     options.tenantId !== undefined

@@ -1,6 +1,6 @@
 /**
  * PostgreSQL lane for the Usage tab's transcript counts (#4781):
- * `reportAiUsage({ transcripts: true })` looks transcripts up by call id
+ * `reportAiUsage({ transcripts: true }, { allowCrossTenant: true })` looks transcripts up by call id
  * with `$n` placeholders, inside the report's tenant, and the `template`
  * dimension reads the `templateHash` tag.
  *

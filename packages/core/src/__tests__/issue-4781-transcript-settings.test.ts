@@ -1,7 +1,7 @@
 /**
  * The transcript settings layer and the Usage tab's transcript counts
  * (#4781): an app-level settings layer sits between `config()` and the
- * environment, and `reportAiUsage({ transcripts: true })` counts calls with
+ * environment, and `reportAiUsage({ transcripts: true }, { allowCrossTenant: true })` counts calls with
  * a stored transcript per bucket, within the report's tenant, reading ids
  * only. `template` groups by the `templateHash` tag.
  */
@@ -180,6 +180,7 @@ describe('reportAiUsage transcript counts (#4781)', () => {
     expect(report.totals.transcripts).toBe(1);
 
     const all = await reportAiUsage(db, {
+      allowCrossTenant: true,
       by: ['tenant'],
       transcripts: true,
     });
@@ -194,7 +195,10 @@ describe('reportAiUsage transcript counts (#4781)', () => {
   it('leaves the field out unless asked', async () => {
     await usage({ callId: 'c1', tenantId: 't1', promptKey: 'p.one' });
     await transcript('c1', 't1');
-    const report = await reportAiUsage(db, { by: ['prompt'] });
+    const report = await reportAiUsage(db, {
+      allowCrossTenant: true,
+      by: ['prompt'],
+    });
     expect(report.totals).not.toHaveProperty('transcripts');
     expect(report.buckets[0]).not.toHaveProperty('transcripts');
   });
@@ -215,7 +219,10 @@ describe('reportAiUsage transcript counts (#4781)', () => {
     await usage({ templateHash: 'h1', promptKey: 'p.one' });
     await usage({ templateHash: 'h1', promptKey: 'p.one' });
     await usage({ promptKey: 'p.one' });
-    const report = await reportAiUsage(db, { by: ['template'] });
+    const report = await reportAiUsage(db, {
+      allowCrossTenant: true,
+      by: ['template'],
+    });
     expect(
       Object.fromEntries(
         report.buckets.map((bucket) => [

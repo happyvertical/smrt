@@ -159,7 +159,10 @@ describe('formatAiUsageReport', () => {
         spend: '1200000',
       },
     });
-    const report = await reportAiUsage(db, { by: ['tier'] });
+    const report = await reportAiUsage(db, {
+      allowCrossTenant: true,
+      by: ['tier'],
+    });
     const text = formatAiUsageReport(report);
     expect(text).toMatch(/calls\s+blocked/);
     expect(text).toMatch(/good\s+0\s+1\s+0/);
@@ -168,6 +171,7 @@ describe('formatAiUsageReport', () => {
 
   it('says so when the window is empty', async () => {
     const report = await reportAiUsage(db, {
+      allowCrossTenant: true,
       since: new Date('2999-01-01T00:00:00Z'),
     });
     expect(formatAiUsageReport(report)).toContain(
@@ -233,6 +237,7 @@ describe('formatAiRunReport (--by fusion, #4753)', () => {
   it('says so when no run was recorded', async () => {
     const text = formatAiRunReport(
       await reportAiRuns(db, {
+        allowCrossTenant: true,
         since: new Date('2999-01-01T00:00:00Z'),
         type: 'fusion',
       }),

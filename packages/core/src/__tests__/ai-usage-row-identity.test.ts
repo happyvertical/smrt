@@ -114,7 +114,11 @@ describe('usage row identity', () => {
     expect(tags).not.toHaveProperty('runId');
     expect(tags).not.toHaveProperty('userId');
     expect(tags.promptKey).toBe('ids.prompt');
-    const trajectory = await getRunTrajectory(db, { callId: String(row?.id) });
+    const trajectory = await getRunTrajectory(
+      db,
+      { callId: String(row?.id) },
+      { allowCrossTenant: true },
+    );
     expect(trajectory?.run).toBeNull();
     expect(await getAiRun(db, run.id)).toMatchObject({ calls: 0 });
   });

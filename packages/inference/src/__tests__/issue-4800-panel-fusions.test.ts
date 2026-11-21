@@ -171,7 +171,7 @@ describe('app-row fusions reach the executor (#4800)', () => {
         'panel-pair',
       );
     }
-    const runs = await listAiRuns(db);
+    const runs = await listAiRuns(db, { allowCrossTenant: true });
     expect(runs).toHaveLength(1);
     expect(runs[0]).toMatchObject({
       fusionKey: 'panel-pair',
@@ -207,7 +207,9 @@ describe('app-row fusions reach the executor (#4800)', () => {
     await app.instance.do('Review', { tier: 'best' });
     // handoff: 2 calls (the app row), not single's 1 (config).
     expect(app.calls.map((call) => call.model)).toEqual(['cheap-m', 'great-m']);
-    expect((await listAiRuns(db))[0]).toMatchObject({ mode: 'handoff' });
+    expect((await listAiRuns(db, { allowCrossTenant: true }))[0]).toMatchObject(
+      { mode: 'handoff' },
+    );
 
     const listed = await admin.listInferenceFusions();
     expect(listed).toEqual([
@@ -310,7 +312,7 @@ describe('app-row fusions reach the executor (#4800)', () => {
       }),
     ]);
     expect(calls).toHaveLength(0);
-    expect(await listAiRuns(db)).toHaveLength(0);
+    expect(await listAiRuns(db, { allowCrossTenant: true })).toHaveLength(0);
 
     // The panel shows the same issue the executor raised.
     const [listed] = await admin.listInferenceFusions();
@@ -385,7 +387,7 @@ describe('app-row fusions reach the executor (#4800)', () => {
       }),
     ]);
     expect(calls).toHaveLength(0);
-    expect(await listAiRuns(db)).toHaveLength(0);
+    expect(await listAiRuns(db, { allowCrossTenant: true })).toHaveLength(0);
     // The panel names the same winner and the same refusal.
     expect(await admin.listInferenceFusions()).toEqual([
       expect.objectContaining({

@@ -182,7 +182,9 @@ describe.each(
     }).catch((error) => error);
     expect(refusal).toBeInstanceOf(AiRunNotFoundError);
     expect(await runCount(db)).toBe(before);
-    const trajectory = await getRunTrajectory(db, parent.id);
+    const trajectory = await getRunTrajectory(db, parent.id, {
+      allowCrossTenant: true,
+    });
     expect(trajectory?.entries ?? []).toEqual([]);
 
     // A parent that is not running is refused as not found as well: its
@@ -210,7 +212,9 @@ describe.each(
       tenantId: 'tenant-one',
       parentRunId: parent.id,
     });
-    const trajectory = await getRunTrajectory(db, parent.id);
+    const trajectory = await getRunTrajectory(db, parent.id, {
+      allowCrossTenant: true,
+    });
     expect(
       trajectory?.entries.some((entry) => entry.event?.childRunId === child.id),
     ).toBe(true);

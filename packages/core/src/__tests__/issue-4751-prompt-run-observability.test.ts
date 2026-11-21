@@ -240,14 +240,19 @@ describe('existing DuckDB install (#4751)', () => {
         },
         { runId: 'duck-run' },
       );
-      const report = await reportAiUsage(duck, { by: ['prompt'] });
+      const report = await reportAiUsage(duck, {
+        allowCrossTenant: true,
+        by: ['prompt'],
+      });
       expect(report.buckets.map((b) => b.key.prompt)).toEqual(['duck.key']);
       await recordAiEvaluation(duck, {
         runId: 'duck-run',
         label: 'ok',
         evaluator: 'human',
       });
-      expect((await listAiEvaluations(duck))[0]?.usage).toHaveLength(1);
+      expect(
+        (await listAiEvaluations(duck, { allowCrossTenant: true }))[0]?.usage,
+      ).toHaveLength(1);
     } finally {
       await duck.close?.();
     }
@@ -351,7 +356,10 @@ describe('recordAiEvaluation / listAiEvaluations', () => {
       tenantId: 'tenant-a',
     });
 
-    const [read] = await listAiEvaluations(db, { callId: 'seed-t1' });
+    const [read] = await listAiEvaluations(db, {
+      allowCrossTenant: true,
+      callId: 'seed-t1',
+    });
     expect(read).toMatchObject({
       id: record.id,
       label: 'accepted',
@@ -367,7 +375,10 @@ describe('recordAiEvaluation / listAiEvaluations', () => {
       label: 'rejected',
       evaluator: 'human',
     });
-    const [read] = await listAiEvaluations(db, { runId: 'run-a' });
+    const [read] = await listAiEvaluations(db, {
+      allowCrossTenant: true,
+      runId: 'run-a',
+    });
     expect(read?.tenantId).toBe('tenant-a');
     expect(read?.usage.map((u) => u.id).sort()).toEqual(['seed-t1', 'seed-t2']);
   });
@@ -456,7 +467,10 @@ describe('recordAiEvaluation / listAiEvaluations', () => {
       evaluator: 'human',
     });
     await db.query('DELETE FROM _smrt_ai_usage WHERE id = $1', 'seed-t2');
-    const [read] = await listAiEvaluations(db, { callId: 'seed-t2' });
+    const [read] = await listAiEvaluations(db, {
+      allowCrossTenant: true,
+      callId: 'seed-t2',
+    });
     expect(read?.label).toBe('ok');
     expect(read?.usage).toEqual([]);
   });
@@ -474,19 +488,24 @@ describe('recordAiEvaluation / listAiEvaluations', () => {
       evaluator: 'human',
       createdAt: new Date('2026-11-03T00:00:00Z'),
     });
-    expect((await listAiEvaluations(db)).map((o) => o.label)).toEqual([
-      'b',
-      'a',
-    ]);
+    expect(
+      (await listAiEvaluations(db, { allowCrossTenant: true })).map(
+        (o) => o.label,
+      ),
+    ).toEqual(['b', 'a']);
     expect(
       (await listAiEvaluations(db, { tenantId: 'tenant-a' })).map(
         (o) => o.label,
       ),
     ).toEqual(['a']);
     expect(
-      (await listAiEvaluations(db, { label: 'b' })).map((o) => o.tenantId),
+      (await listAiEvaluations(db, { allowCrossTenant: true, label: 'b' })).map(
+        (o) => o.tenantId,
+      ),
     ).toEqual(['tenant-b']);
-    expect(await listAiEvaluations(db, { limit: 1 })).toHaveLength(1);
+    expect(
+      await listAiEvaluations(db, { allowCrossTenant: true, limit: 1 }),
+    ).toHaveLength(1);
     expect(await listAiEvaluations(db, { tenantId: null })).toEqual([]);
   });
 });
@@ -572,6 +591,7 @@ describe('reportAiUsage', () => {
 
   it('groups by prompt with unattributed rows kept, cost basis stated and uncosted counted', async () => {
     const report = await reportAiUsage(db, {
+      allowCrossTenant: true,
       by: ['prompt'],
       since: new Date('2026-10-15T00:00:00Z'),
     });
@@ -628,6 +648,7 @@ describe('reportAiUsage', () => {
   it('groups by fusion and class, and rejects unknown dimensions', async () => {
     // The whole history, the 2026-10-01 row included.
     const report = await reportAiUsage(db, {
+      allowCrossTenant: true,
       by: ['fusion', 'class'],
       since: new Date(0),
     });
@@ -635,13 +656,14 @@ describe('reportAiUsage', () => {
     expect(fusion).toMatchObject({ calls: 1, key: { class: 'Doc' } });
     expect(report.totals.calls).toBe(5);
 
-    await expect(reportAiUsage(db, { by: ['nope' as never] })).rejects.toThrow(
-      /unknown dimension/,
-    );
+    await expect(
+      reportAiUsage(db, { allowCrossTenant: true, by: ['nope' as never] }),
+    ).rejects.toThrow(/unknown dimension/);
   });
 
   it('groups by binding source from the source tag (#4756)', async () => {
     const report = await reportAiUsage(db, {
+      allowCrossTenant: true,
       by: ['source'],
       since: new Date(0),
     });
@@ -661,6 +683,7 @@ describe('reportAiUsage', () => {
     });
 
     const report = await reportAiUsage(db, {
+      allowCrossTenant: true,
       by: ['tenant'],
       since: new Date('2026-10-15T00:00:00Z'),
     });
@@ -690,6 +713,7 @@ describe('reportAiUsage', () => {
       });
     }
     const report = await reportAiUsage(db, {
+      allowCrossTenant: true,
       since: new Date('2026-10-15T00:00:00Z'),
     });
     const parsed = JSON.parse(JSON.stringify(report.totals.evaluations));
@@ -709,6 +733,7 @@ describe('reportAiUsage', () => {
       );
     }
     const report = await reportAiUsage(db, {
+      allowCrossTenant: true,
       since: new Date('2026-11-04T00:00:00Z'),
     });
     expect(report.totals.calls).toBe(1005);

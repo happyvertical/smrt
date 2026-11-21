@@ -187,6 +187,7 @@ describe.skipIf(!pgUrl)('fusion run records on PostgreSQL (#4753)', () => {
     expect(run?.createdAt).toBeInstanceOf(Date);
 
     const report = await reportAiRuns(db, {
+      allowCrossTenant: true,
       since: new Date(Date.now() - 30 * 86_400_000),
     });
     expect(report.buckets).toEqual([
@@ -216,6 +217,8 @@ describe.skipIf(!pgUrl)('fusion run records on PostgreSQL (#4753)', () => {
     expect(await pruneAiRuns(db, { maxAgeMs: 86_400_000 })).toEqual({
       pruned: 1,
     });
-    expect((await listAiRuns(db)).map((r) => r.id)).toEqual(['pg-run-1']);
+    expect(
+      (await listAiRuns(db, { allowCrossTenant: true })).map((r) => r.id),
+    ).toEqual(['pg-run-1']);
   });
 });

@@ -195,9 +195,9 @@ else {out({type:'system',subtype:'init',session_id:'test',tools:[]});out({type:'
   expect(tokens).toHaveLength(1);
   expect(tokens[0].holder).toMatch(/^import-plan-[a-f0-9-]{36}$/);
   expect(tokens[0].revoked_at).toBeTruthy();
-  const handoff = (await getRunTrajectory(local.db, run.id))!.entries.find(
-    ({ event }) => event?.type === 'handoff',
-  )!.event!;
+  const handoff = (await getRunTrajectory(local.db, run.id, {
+    allowCrossTenant: true,
+  }))!.entries.find(({ event }) => event?.type === 'handoff')!.event!;
   expect(handoff.status).toBe('done');
   expect(
     (
@@ -266,9 +266,9 @@ it('resolves a signed-in ChatGPT session and runs its child turn from a job', as
     state: 'done',
     status: 'review',
   });
-  const handoff = (await getRunTrajectory(local.db, run.id))!.entries.find(
-    ({ event }) => event?.type === 'handoff',
-  )!.event!;
+  const handoff = (await getRunTrajectory(local.db, run.id, {
+    allowCrossTenant: true,
+  }))!.entries.find(({ event }) => event?.type === 'handoff')!.event!;
   expect(
     (
       await local.db.query(

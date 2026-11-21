@@ -36,6 +36,10 @@ import {
   toAiRunRow,
   withAiRunTransaction,
 } from './ai-run-model.js';
+import {
+  type AiUsageTenantScope,
+  requireAiUsageScope,
+} from './ai-usage-scope.js';
 
 /** The kinds of event a run records. */
 export type AiRunEventType =
@@ -554,13 +558,17 @@ const PAGE = 500;
  * (page section 4). Pass `{ callId }` for a call on its own: a one-entry
  * trajectory with no run. A pruned trajectory returns the row, its saved
  * counts and no events; a call event whose usage row was pruned comes back
- * without it.
+ * without it. `scope` is required: `tenantId` (`null` for global) is a
+ * predicate of the first lookup, so another tenant's run or call reads as
+ * absent (`null`); `allowCrossTenant: true` is the reviewed operator read.
  */
 export async function getRunTrajectory(
   db: DatabaseInterface,
   target: string | { runId: string } | { callId: string },
+  scope: AiUsageTenantScope,
 ): Promise<AiRunTrajectory | null> {
-  return readTrajectory(db, target, undefined);
+  requireAiUsageScope('getRunTrajectory', scope ?? {});
+  return readTrajectory(db, target, scope.tenantId);
 }
 
 /** SQL predicate on `tenant_id` (null-safe) at parameter `index`. */
@@ -619,11 +627,22 @@ async function readTrajectory(
   expectedTenant: string | null | undefined,
 ): Promise<AiRunTrajectory | null> {
   if (typeof target === 'object' && 'callId' in target) {
+    // The scope is a predicate of the first lookup: a call of another
+    // tenant is not found, and nothing of it is read.
+    const tenant =
+      expectedTenant === undefined
+        ? { sql: '', params: [] as unknown[] }
+        : (() => {
+            const predicate = tenantPredicate(expectedTenant, 2);
+            return { sql: ` AND ${predicate.sql}`, params: predicate.params };
+          })();
     const usage = getRows(
       await aiRunQuery(
         db,
-        `SELECT ${USAGE_COLUMNS}, run_id, tenant_id FROM _smrt_ai_usage WHERE id = $1`,
+        `SELECT ${USAGE_COLUMNS}, run_id, tenant_id FROM _smrt_ai_usage
+          WHERE id = $1${tenant.sql}`,
         target.callId,
+        ...tenant.params,
       ),
     );
     if (!usage[0]) return null;

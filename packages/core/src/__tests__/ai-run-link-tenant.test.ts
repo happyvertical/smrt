@@ -107,17 +107,25 @@ describe.each(
       ),
     );
 
-    const foreign = await getRunTrajectory(db, {
-      callId: ids['tags.other'] as string,
-    });
+    const foreign = await getRunTrajectory(
+      db,
+      {
+        callId: ids['tags.other'] as string,
+      },
+      { allowCrossTenant: true },
+    );
     expect(foreign?.run).toBeNull();
     expect(foreign?.entries).toHaveLength(1);
     expect(foreign?.entries[0]?.usage?.callId).toBe(ids['tags.other']);
 
     // The run's own tenant still reaches the run (control).
-    const inRun = await getRunTrajectory(db, {
-      callId: ids['tags.own'] as string,
-    });
+    const inRun = await getRunTrajectory(
+      db,
+      {
+        callId: ids['tags.own'] as string,
+      },
+      { allowCrossTenant: true },
+    );
     expect(inRun?.run?.id).toBe(run.id);
   });
 
@@ -136,7 +144,13 @@ describe.each(
       return original(sql, ...params);
     };
     expect(
-      (await getRunTrajectory(db, { callId: String(row?.id) }))?.run,
+      (
+        await getRunTrajectory(
+          db,
+          { callId: String(row?.id) },
+          { allowCrossTenant: true },
+        )
+      )?.run,
     ).toBeNull();
     (db as { query: unknown }).query = original;
     // One lookup, by id and tenant together: no check-then-read in which a
@@ -146,9 +160,7 @@ describe.each(
 
     // The row's own tenant reaches the run, and every statement reading the
     // run (its row, events and evaluations) is scoped to that tenant.
-    await createAiUsageRecorder({ db, tenantId: 'tenant-one' })(
-      rawEvent({ runId: run.id, promptKey: 'tags.own' }),
-    );
+    await linked(db, 'tenant-one', run.id, 'tags.own');
     const own = rowsOf(
       await db.query(
         "SELECT id FROM _smrt_ai_usage WHERE tenant_id = 'tenant-one'",
@@ -160,7 +172,13 @@ describe.each(
       return original(sql, ...params);
     };
     expect(
-      (await getRunTrajectory(db, { callId: String(own?.id) }))?.run?.id,
+      (
+        await getRunTrajectory(
+          db,
+          { callId: String(own?.id) },
+          { tenantId: 'tenant-one' },
+        )
+      )?.run?.id,
     ).toBe(run.id);
     (db as { query: unknown }).query = original;
     expect(seen.length).toBeGreaterThan(1);
@@ -192,7 +210,11 @@ describe.each(
     // The row is pruned; another tenant's row later takes the same id.
     await db.query("DELETE FROM _smrt_ai_usage WHERE id = 'reused-call'");
     await row('tenant-two', 'tags.two');
-    const trajectory = await getRunTrajectory(db, { callId: 'reused-call' });
+    const trajectory = await getRunTrajectory(
+      db,
+      { callId: 'reused-call' },
+      { allowCrossTenant: true },
+    );
     expect(trajectory?.entries[0]?.usage?.promptKey).toBe('tags.two');
     expect(trajectory?.entries[0]?.evaluations).toEqual([]);
   });

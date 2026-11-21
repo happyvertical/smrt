@@ -1596,7 +1596,9 @@ describe.each(aiRunTestEngines)('AI run accounting on %s (#5005)', (engine) => {
       calls: 2,
       tokens: 24,
     });
-    const trajectory = await getRunTrajectory(database, run.id);
+    const trajectory = await getRunTrajectory(database, run.id, {
+      allowCrossTenant: true,
+    });
     expect(
       trajectory?.entries.map((entry) => entry.usage?.totalTokens),
     ).toEqual([12, 12]);

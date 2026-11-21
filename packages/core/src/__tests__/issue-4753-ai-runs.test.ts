@@ -71,7 +71,7 @@ describe('_smrt_ai_runs (#4753)', () => {
 
   it('records and lists runs newest first, with filters', async () => {
     await seed();
-    const all = await listAiRuns(db);
+    const all = await listAiRuns(db, { allowCrossTenant: true });
     expect(all.map((run) => run.id)).toEqual(['r3', 'r2', 'r1']);
     const r1 = all.find((run) => run.id === 'r1');
     expect(r1).toMatchObject({
@@ -91,41 +91,61 @@ describe('_smrt_ai_runs (#4753)', () => {
     });
     expect(r1?.createdAt.toISOString()).toBe('2026-11-01T00:00:00.000Z');
     expect(
-      (await listAiRuns(db, { fusionKey: 'review-pair' })).map((r) => r.id),
+      (
+        await listAiRuns(db, {
+          allowCrossTenant: true,
+          fusionKey: 'review-pair',
+        })
+      ).map((r) => r.id),
     ).toEqual(['r2', 'r1']);
     expect(
-      (await listAiRuns(db, { status: 'failed' })).map((r) => r.id),
+      (await listAiRuns(db, { allowCrossTenant: true, status: 'failed' })).map(
+        (r) => r.id,
+      ),
     ).toEqual(['r3']);
     // The legacy fusion vocabulary still filters.
     expect(
-      (await listAiRuns(db, { status: 'degraded' })).map((r) => r.id),
+      (
+        await listAiRuns(db, { allowCrossTenant: true, status: 'degraded' })
+      ).map((r) => r.id),
     ).toEqual(['r2']);
-    expect((await listAiRuns(db, { status: 'ok' })).map((r) => r.id)).toEqual([
-      'r1',
-    ]);
-    expect((await listAiRuns(db, { status: 'done' })).map((r) => r.id)).toEqual(
-      ['r2', 'r1'],
-    );
-    expect((await listAiRuns(db, { type: 'turn' })).map((r) => r.id)).toEqual(
-      [],
-    );
+    expect(
+      (await listAiRuns(db, { allowCrossTenant: true, status: 'ok' })).map(
+        (r) => r.id,
+      ),
+    ).toEqual(['r1']);
+    expect(
+      (await listAiRuns(db, { allowCrossTenant: true, status: 'done' })).map(
+        (r) => r.id,
+      ),
+    ).toEqual(['r2', 'r1']);
+    expect(
+      (await listAiRuns(db, { allowCrossTenant: true, type: 'turn' })).map(
+        (r) => r.id,
+      ),
+    ).toEqual([]);
     expect((await listAiRuns(db, { tenantId: 't2' })).map((r) => r.id)).toEqual(
       ['r3'],
     );
     expect(await listAiRuns(db, { tenantId: null })).toEqual([]);
     expect(
-      (await listAiRuns(db, { since: new Date('2026-11-02T00:00:00Z') })).map(
+      (
+        await listAiRuns(db, {
+          allowCrossTenant: true,
+          since: new Date('2026-11-02T00:00:00Z'),
+        })
+      ).map((r) => r.id),
+    ).toEqual(['r3', 'r2']);
+    expect(
+      (await listAiRuns(db, { allowCrossTenant: true, limit: 1 })).map(
         (r) => r.id,
       ),
-    ).toEqual(['r3', 'r2']);
-    expect((await listAiRuns(db, { limit: 1 })).map((r) => r.id)).toEqual([
-      'r3',
-    ]);
+    ).toEqual(['r3']);
   });
 
   it('reports runs by fusion and counts other tenants as excluded', async () => {
     await seed();
-    const report = await reportAiRuns(db);
+    const report = await reportAiRuns(db, { allowCrossTenant: true });
     expect(report.totals).toMatchObject({
       runs: 3,
       done: 2,
@@ -197,11 +217,13 @@ describe('_smrt_ai_runs (#4753)', () => {
     expect(await pruneAiRuns(db, { maxAgeMs: DAY, now, dryRun: true })).toEqual(
       { pruned: 2 },
     );
-    expect(await listAiRuns(db)).toHaveLength(3);
+    expect(await listAiRuns(db, { allowCrossTenant: true })).toHaveLength(3);
     expect(
       await pruneAiRuns(db, { maxAgeMs: 2 * DAY, now, tenantId: 't1' }),
     ).toEqual({ pruned: 1 });
-    expect((await listAiRuns(db)).map((r) => r.id)).toEqual(['r3', 'r2']);
+    expect(
+      (await listAiRuns(db, { allowCrossTenant: true })).map((r) => r.id),
+    ).toEqual(['r3', 'r2']);
     // The sweep's clock is the real one; the seeded runs are all older.
     const sweep = await runRetentionSweep(db, {
       aiUsage: { maxAgeDays: 1 },
@@ -213,6 +235,6 @@ describe('_smrt_ai_runs (#4753)', () => {
     expect(sweep.tasks.find((task) => task.task === 'ai-runs')).toMatchObject({
       details: { runs: 2 },
     });
-    expect(await listAiRuns(db)).toEqual([]);
+    expect(await listAiRuns(db, { allowCrossTenant: true })).toEqual([]);
   });
 });

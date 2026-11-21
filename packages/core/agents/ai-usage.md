@@ -413,21 +413,28 @@ joined to its run), so a run outside the scope is never read, only not
 found. Callers that authorize by tenant and owner (the workflow checkpoint
 store, its retry pre-check) read through it.
 
-**Readers.** `listAiRuns(db, { id?, type?, definitionKey?, status?,
-parentRunId?, experimentId?, tenantId?, since?, until?, limit? })` returns
+**Readers.** Every reader below takes the scope of
+`src/system/ai-usage-scope.ts`: `tenantId` (`null` = global rows) or
+`allowCrossTenant: true` (a reviewed operator read), else it throws
+`AiUsageScopeError` (`AI_USAGE_TENANT_REQUIRED`) before any query, as
+transcripts and comparison always did. `listAiRuns(db, { id?, type?,
+definitionKey?, status?, parentRunId?, experimentId?, tenantId |
+allowCrossTenant, since?, until?, limit? })` returns
 every type in the run vocabulary (a legacy `ok` / `degraded` row reads as
 `done`, with `degraded`; the `fusionKey` and `ok` / `degraded` filters still
-work). `reportAiRuns(db, { type?, since?, until?, tenantId? })` groups by
+work). `reportAiRuns(db, { type?, since?, until?, tenantId | allowCrossTenant })` groups by
 `(type, definition_key)`: runs per status, degraded, seats, own calls,
 tokens and cost, checks and approval decisions with their rates (from the
 events, or the saved counts of a pruned trajectory), p50 active time; other
 tenants are neither read nor counted (`tenantId` is a predicate of the page
-query; `excluded.otherTenants` is always 0, deprecated). `getRunTrajectory(runId | { callId })` is the
-one reader for a call in a run and a call on its own; a usage row leads it
-only to a run of the row's tenant (the run is read by id and tenant in one
-statement, and every event page is scoped to the run's tenant, so a pruned
-and reused id never yields another tenant's run), a call on its own carries only its tenant's evaluations, and a
-run's usage rows and evaluations are joined within the run's tenant. CLI: `smrt ai:usage
+query; `excluded.otherTenants` is always 0, deprecated). `getRunTrajectory(runId | { callId }, scope)` is the
+one reader for a call in a run and a call on its own (`scope.tenantId` is a
+predicate of its first lookup: another tenant's run or call reads as
+`null`); a usage row leads it only to a run of the row's tenant (the run is
+read by id and tenant in one statement, and every event page is scoped to
+the run's tenant, so a pruned and reused id never yields another tenant's
+run), a call on its own carries only its tenant's evaluations, and a run's
+usage rows and evaluations are joined within the run's tenant. CLI: `smrt ai:usage
 --runs` (every type), `--by fusion` (fusion runs).
 
 **Upgrades.** Schema 1.14.0 created the fusion table; 1.17.0 rebuilt it once
@@ -472,7 +479,7 @@ recorded when the verdict is known. Rules:
   run rows and must neither be blocked by nor cascade into evaluations.
   Evaluations are never swept; a pruned target leaves the evaluation with an
   empty `usage` join and `target: null`, never an error.
-- `listAiEvaluations(db, filters)` returns evaluations newest first with the
+- `listAiEvaluations(db, { tenantId | allowCrossTenant, ...filters })` returns evaluations newest first with the
   judged rows (`usage`) and `target` (`{ kind: 'call', usage }` or `{ kind:
   'run', id, type, definitionKey, status, promptKey, templateHash }`, NULL
   once pruned), joined only within the evaluation's tenant. Per-prompt
@@ -487,7 +494,8 @@ recorded when the verdict is known. Rules:
 
 ## Report (`smrt ai:usage`)
 
-`reportAiUsage(db, { by, since, until, tenantId, transcripts? })` groups by
+`reportAiUsage(db, { by, since, until, tenantId | allowCrossTenant,
+transcripts? })` groups by
 `prompt`, `model`, `tier`, `class`, `tenant`, `fusion`, `source`, `template`
 (the `templateHash` tag, #4781). `transcripts: true` adds `transcripts` to each
 bucket and the totals: calls (distinct `entry_call_id`) with a transcript row of

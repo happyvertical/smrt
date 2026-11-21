@@ -112,7 +112,10 @@ describe.each(aiRunTestEngines)('usage report scope on %s', (engine) => {
     expect(global.excluded.otherTenants).toBe(0);
 
     // Without a tenant (an operator report) every tenant is totalled.
-    const all = await reportAiUsage(db, { by: ['tenant'] });
+    const all = await reportAiUsage(db, {
+      allowCrossTenant: true,
+      by: ['tenant'],
+    });
     expect(all.totals.calls).toBe(5);
     expect(all.totals.evaluations).toEqual({ accepted: 1, rejected: 1 });
   });
@@ -148,7 +151,7 @@ describe.each(aiRunTestEngines)('usage report scope on %s', (engine) => {
     await db.query(
       "UPDATE _smrt_ai_usage SET operation = 'external-agent' WHERE id IN ('external-agent:canonical', 'EXTERNAL-AGENT:mixed')",
     );
-    const all = await reportAiUsage(db, {});
+    const all = await reportAiUsage(db, { allowCrossTenant: true });
     const one = await reportAiUsage(db, { tenantId: 'tenant-one' });
     expect(all.totals.calls).toBe(1);
     expect(all.excluded.externalAgent).toBe(1);
@@ -211,6 +214,8 @@ describe.each(aiRunTestEngines)('usage report scope on %s', (engine) => {
       expect(query.sql).toMatch(/tenant_id = \$\d+/);
     }
     expect((await reportAiRuns(db, { tenantId: null })).totals.runs).toBe(1);
-    expect((await reportAiRuns(db)).totals.runs).toBe(4);
+    expect(
+      (await reportAiRuns(db, { allowCrossTenant: true })).totals.runs,
+    ).toBe(4);
   });
 });

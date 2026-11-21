@@ -155,7 +155,9 @@ describe.each(aiRunTestEngines)('AI run retention on %s (#5005)', (engine) => {
       approvalsRefused: 0,
     });
     expect(await eventCount(db, turn2.id)).toBe(0);
-    const trajectory = await getRunTrajectory(db, turn2.id);
+    const trajectory = await getRunTrajectory(db, turn2.id, {
+      allowCrossTenant: true,
+    });
     expect(trajectory?.entries).toEqual([]);
     expect(trajectory?.pruned).toEqual({
       checksPassed: 1,
@@ -359,7 +361,9 @@ describe.each(aiRunTestEngines)('AI run retention on %s (#5005)', (engine) => {
       evaluator: 'app',
     });
     expect(
-      (await listAiEvaluations(db, { runId: run.id }))[0]?.target,
+      (
+        await listAiEvaluations(db, { allowCrossTenant: true, runId: run.id })
+      )[0]?.target,
     ).toMatchObject({ kind: 'run', id: run.id, status: 'done' });
     expect(await pruneAiRuns(db, { maxAgeMs: 90 * DAY, now: NOW })).toEqual({
       pruned: 1,
@@ -373,7 +377,7 @@ describe.each(aiRunTestEngines)('AI run retention on %s (#5005)', (engine) => {
       ),
     ).toEqual([]);
     // Evaluations are never swept; their target reads back empty.
-    const evaluations = await listAiEvaluations(db, {});
+    const evaluations = await listAiEvaluations(db, { allowCrossTenant: true });
     expect(evaluations).toHaveLength(2);
     for (const read of evaluations) expect(read.target).toBeNull();
     expect(evaluations.find((read) => read.id === evaluation.id)?.runId).toBe(
