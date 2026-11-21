@@ -1602,7 +1602,7 @@ describe.each(aiRunTestEngines)('AI run accounting on %s (#5005)', (engine) => {
     ).toEqual([12, 12]);
   });
 
-  it('dedupes usage rows on the call id in the persistence handler', async () => {
+  it('writes one row for a retried save of the same event, never under a call id it did not mint', async () => {
     const database = await db();
     const handler = new AiUsagePersistenceHandler(database);
     const event = usageEvent(3, undefined, {
@@ -1611,9 +1611,15 @@ describe.each(aiRunTestEngines)('AI run accounting on %s (#5005)', (engine) => {
     });
     await handler.handle(event);
     await handler.handle(event);
-    const rows = await usageRows(database, 'same');
+    expect(await usageRows(database, 'same')).toHaveLength(0);
+    const rows = rowsOf(
+      await database.query(
+        "SELECT id, call_id, entry_call_id, tags FROM _smrt_ai_usage WHERE entry_call_id = 'entry'",
+      ),
+    );
     expect(rows).toHaveLength(1);
-    expect(rows[0]).toMatchObject({ call_id: 'same', entry_call_id: 'entry' });
+    expect(rows[0]?.call_id).toBe(rows[0]?.id);
+    expect(JSON.parse(String(rows[0]?.tags))).not.toHaveProperty('aiCallId');
   });
 });
 

@@ -155,9 +155,11 @@ describe('late usage routing', () => {
       tokens: before?.tokens,
     });
     expect((await ledger(one)).map((row) => row.total_tokens)).toEqual([null]);
+    // There the call id is no tracked call of its, so it is a row of its own.
     expect(await ledger(two)).toEqual([
-      expect.objectContaining({ id: callId, total_tokens: 50 }),
+      expect.objectContaining({ total_tokens: 50 }),
     ]);
+    expect((await ledger(two))[0]?.id).not.toBe(callId);
     // Every event the route did not take reached the handlers.
     expect(flowTwo.received).toHaveLength(1);
     expect(flowOne.received).toHaveLength(1 + 2);
