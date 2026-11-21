@@ -13,8 +13,9 @@ behaviour and tests are the baseline and must not change.
 |---|---|---|
 | Owners | one | many; one tenant each, owner-only |
 | Shell database | SQLite from the local runtime; `prepareShellSchema` runs | PostgreSQL (`DATABASE_URL`); schema by `smrt db:migrate`, never at runtime |
-| Sign-in | owner link (loopback + launch secret), `/setup` | `/auth/<provider>/login` and `/callback` (OIDC, `smrt-users`); first sign-in creates the tenant |
-| User app data | `<data root>/user-app` (+ `-draft`) | `<SMRT_APP_SHELL_DATA_ROOT>/tenants/<tenant id>/<app id>` (+ `-draft`), SQLite engine |
+| Sign-in | owner link (loopback + launch secret), `/setup` | `/auth/<provider>/login` and `/callback` (OIDC, `smrt-users`); first sign-in creates the tenant; a signed-out visitor sees a Sign in link to the configured provider (`signInHrefFor`) |
+| Start-up extras | owner hand-off files, workbook-import job runner | none (`hooks.server.ts` returns before them) |
+| User app data | `<data root>/user-app` (+ `-draft`), SQLite file | PostgreSQL, one schema per app (`appSchemaName`), its draft a side schema; the directory `<SMRT_APP_SHELL_DATA_ROOT>/tenants/<tenant id>/<app id>` (+ `-draft`) keeps only the engine's marker, journal and snapshots. SQLite files when `DATABASE_URL` is unset (tests) |
 | Data-root custody and lease | yes | never |
 | Assistant engines | `api`, `chatgpt`, `claude-code`, `codex` | `api` on the owner's own key only |
 | Operator key (config/env) | the assistant's `base` | never used: the resolved target must carry the tenant's own stored key, else "unavailable" (#5194 wires hosted inference) |
@@ -48,7 +49,9 @@ Every shell model that holds one owner's data is `tenantScoped: { mode:
 `requiredFor: 'tenant-scope'`). Preferences, inference settings, the secret
 store and AI usage rows belong to `smrt-preferences`/`smrt-inference`/
 `smrt-secrets`/core, which scope them by tenant themselves.
-`TENANT_SCOPED_TABLES` in `schema.ts` lists the nine above.
+`TENANT_SCOPED_TABLES` in `schema.ts` lists the tables above except `change_batches`
+(its `tenantId` is an explicit field the batch lookup filters on, there was
+nothing to adopt, and the change feed does not offer it).
 
 Why `optional`, not `required`: `required` makes every no-context read throw,
 and the desktop still has background paths with no tenant context (import
@@ -185,11 +188,35 @@ never a timer, never an eviction (`host-lifecycle.test.ts`, "desktop is unchange
 - A workflow that keeps one app busy across more than `idleMs` between calls
   (without holding a draft) can be put to sleep between them; its next call wakes it.
 
+## User apps on PostgreSQL (#5191)
+
+`ShellContext.appDatabase` (set by `smrt.ts` from `DATABASE_URL` in the cloud
+profile) gives each tenant's app a schema of its own: `appSchemaName(tenant,
+app)` is `app_` + 32 hex of sha256 over the two validated ids (never input, never
+shaped like an engine side schema). `host.ts` creates it before the engine opens
+it (`provision`: `CREATE SCHEMA IF NOT EXISTS`; the engine never does) and passes
+`database` to the live host and to the draft host (a draft reopens with the live
+config; its own schema comes from its marker). A leftover copy is removed with
+`discardOrphanDraft`, which also drops a PostgreSQL draft's schema
+(`discardStaleDraft`). Data-root custody and the lease are the local runtime's and
+never run here; `smrt.ts` never touches `localRuntime()` in the cloud profile.
+The two-owner proof on a PGlite stand-in is `cloud-postgres.test.ts`; a real
+server is CI's `test:postgres` lane and NOT exercised by the shell's tests.
+
+The tenant-to-app mapping is the `App` row (slug `app`) and the app id keys the
+directory and the schema, so a second app per tenant needs a second row, a holder
+key of (tenant, app) and a route to name it, none of which is ruled out; today
+`host.ts` holds one app per tenant.
+
+Needs a PostgreSQL role that may `CREATE SCHEMA` (the hosted role and policies
+are #5188/#5189). The portable export/import still refuse a PostgreSQL app (engine
+`requireSqlite`).
+
 ## Remaining (not in this slice)
 
-- Wiring a hosted identity provider's config and the signed-out landing page
-  (a visitor with no session sees the shell's signed-out card, not a sign-in
-  redirect); the welcome/connect-AI UI still shows desktop options.
+- Supplying a hosted identity provider's config is the operator's
+  (`packages.users.auth.oidc` in smrt.config; the shell only reads it): no live
+  provider was exercised. The welcome/connect-AI UI still shows desktop options.
 - `required` mode and RLS policies for the shell tables (above); the
   `database-rls` request transaction is not used by the shell's long-lived stores.
 - Hosted inference (#5194), workbook import in cloud, a statement timeout per

@@ -17,7 +17,22 @@ const hello = $derived(greeting(data.session.user));
     <header class="smrt-app-shell__head" data-smrt-part="header"><h1>My app</h1></header>
     <div class="smrt-app-shell__card" data-smrt-part="panel">
       <p><strong>You are signed out.</strong></p>
-      {#if data.desktop}
+      {#if data.hosted}
+        {#if data.signInFailed}
+          <p class="smrt-app-shell__alert smrt-app-shell__alert-warn" role="alert" data-smrt-part="status">
+            That sign-in did not work. Try again.
+          </p>
+        {/if}
+        {#if data.signIn}
+          <p>
+            <a class="smrt-app-shell__btn smrt-app-shell__btn-primary" href={data.signIn} data-smrt-part="trigger">Sign in</a>
+          </p>
+        {:else}
+          <p class="smrt-app-shell__muted">
+            Sign-in is not set up for this app yet.
+          </p>
+        {/if}
+      {:else if data.desktop}
         <p class="smrt-app-shell__muted">
           Quit and reopen the app to sign back in.
         </p>
