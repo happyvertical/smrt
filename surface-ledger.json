@@ -861,6 +861,16 @@
   },
   {
     "kind": "entry-point",
+    "name": "@happyvertical/smrt-cli#./generator",
+    "issue": 5476,
+    "nearest": [
+      "@happyvertical/smrt-cli#.",
+      "@happyvertical/smrt-cli#./app"
+    ],
+    "reason": "Side-effect-free access to CLIGenerator and its read-only listCommands(), so the served-surface gate reads the commands the CLI serves instead of restating its exposure rules. The root entry runs the CLI on import and ./app holds application operations, not command generation."
+  },
+  {
+    "kind": "entry-point",
     "name": "@happyvertical/smrt-cli#./source-checkout",
     "grandfathered": true
   },

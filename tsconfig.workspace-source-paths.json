@@ -190,6 +190,9 @@
       "@happyvertical/smrt-cli/app": [
         "./packages/cli/src/app/index.ts"
       ],
+      "@happyvertical/smrt-cli/generator": [
+        "./packages/cli/src/generator.ts"
+      ],
       "@happyvertical/smrt-comments": [
         "./packages/comments/src/index.ts"
       ],

@@ -12,9 +12,14 @@ import { declarations } from '../../scripts/declarations.js';
 export default defineConfig({
   build: {
     lib: {
-      // `app` is the side-effect-free `@happyvertical/smrt-cli/app` subpath;
-      // `index` runs the CLI on import.
-      entry: { index: 'src/index.ts', app: 'src/app/index.ts' },
+      // `app` and `generator` are side-effect-free subpaths
+      // (`@happyvertical/smrt-cli/app`, `/generator`); `index` runs the CLI
+      // on import.
+      entry: {
+        index: 'src/index.ts',
+        app: 'src/app/index.ts',
+        generator: 'src/generator.ts',
+      },
       formats: ['es'],
       fileName: (_format, entryName) => `${entryName}.js`,
     },
@@ -154,7 +159,7 @@ export default defineConfig({
     },
     declarations({
       packageDir: __dirname,
-      entries: { app: 'src/app/index.ts' },
+      entries: { app: 'src/app/index.ts', generator: 'src/generator.ts' },
     }),
   ],
   test: {

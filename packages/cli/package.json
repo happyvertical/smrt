@@ -28,6 +28,10 @@
       "types": "./dist/app.d.ts",
       "import": "./dist/app.js"
     },
+    "./generator": {
+      "types": "./dist/generator.d.ts",
+      "import": "./dist/generator.js"
+    },
     "./source-checkout": {
       "require": "./scripts/source-checkout.cjs",
       "default": "./scripts/source-checkout.cjs"

@@ -348,7 +348,7 @@ Workspace roots, AGENTS.md block: `agents/docs-agents.md`. The shipped text name
   `.svelte` styles, and root `app.css` when the project depends on smrt-ui or
   smrt-svelte. Scanner: `src/commands/cascade-layers-reset-scan.mjs`
 
-Runtime object-command discovery invalidates its cache on
+Runtime object-command discovery and the utility-command cache invalidate on
 `ObjectRegistry.getGeneration()`; do not cache generated field options across
-registry changes. `src/__tests__/runtime-model-refresh.test.ts` covers both
+registry changes. `CLIGenerator.listCommands()`: read-only served commands. `src/__tests__/runtime-model-refresh.test.ts` covers both
 refreshed field options and newly registered lists.

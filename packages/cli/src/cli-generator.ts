@@ -170,6 +170,91 @@ async function getWorkbenchCommands(): Promise<Record<string, Command>> {
   return _workbenchCommands;
 }
 
+/** The CLI's built-in command groups, by group. */
+interface BuiltInCommandGroups {
+  gnode: Record<string, Command>;
+  generate: Record<string, Command>;
+  git: Record<string, Command>;
+  init: Record<string, Command>;
+  utility: Record<string, Command>;
+  dispatch: Record<string, Command>;
+  docs: Record<string, Command>;
+  playground: Record<string, Command>;
+  workbench: Record<string, Command>;
+  cookbook: Record<string, Command>;
+  kitchen: Record<string, Command>;
+  desktop: Record<string, Command>;
+}
+
+/**
+ * Every built-in command group, loaded on first use. The one enumeration that
+ * execution, help and `listCommands()` share, so a command one of them knows
+ * is known to all three.
+ */
+async function loadBuiltInCommandGroups(): Promise<BuiltInCommandGroups> {
+  const [
+    gnode,
+    generate,
+    git,
+    init,
+    utility,
+    dispatch,
+    docs,
+    playground,
+    workbench,
+    cookbook,
+    kitchen,
+    desktop,
+  ] = await Promise.all([
+    getGnodeCommands(),
+    getGenerateCommands(),
+    getGitCommands(),
+    getInitCommands(),
+    getUtilityCommands(),
+    getDispatchCommands(),
+    getDocsCommands(),
+    getPlaygroundCommands(),
+    getWorkbenchCommands(),
+    getCookbookCommands(),
+    getKitchenCommands(),
+    getDesktopCommands(),
+  ]);
+  return {
+    gnode,
+    generate,
+    git,
+    init,
+    utility,
+    dispatch,
+    docs,
+    playground,
+    workbench,
+    cookbook,
+    kitchen,
+    desktop,
+  };
+}
+
+/** The built-in commands keyed as execution resolves them (later groups win). */
+function mergeBuiltInCommands(
+  groups: BuiltInCommandGroups,
+): Record<string, Command> {
+  return {
+    ...groups.gnode,
+    ...groups.generate,
+    ...groups.git,
+    ...groups.init,
+    ...groups.utility,
+    ...groups.dispatch,
+    ...groups.docs,
+    ...groups.playground,
+    ...groups.workbench,
+    ...groups.cookbook,
+    ...groups.kitchen,
+    ...groups.desktop,
+  };
+}
+
 export interface CLIConfig {
   name?: string;
   version?: string;
@@ -232,6 +317,12 @@ export interface CLIOptionConfig extends OptionConfig {
 export interface CLICommand extends Omit<Command, 'options'> {
   runtimeModel?: RuntimeExposureModel;
   options?: Record<string, CLIOptionConfig>;
+  /**
+   * Set by `CLIGenerator.listCommands()`: `object` for a registered model's
+   * command (it carries `runtimeModel`), `utility` for the registry utility
+   * commands, `built-in` for the CLI's own commands (`init`, `db:*`, ...).
+   */
+  source?: 'object' | 'utility' | 'built-in';
 }
 
 function collectRepeatableOptionValues(
@@ -509,6 +600,8 @@ export class CLIGenerator {
   private context: CLIContext;
   private collections = new Map<string, SmrtCollection<SmrtObject>>();
   private commandCache: CLICommand[] | null = null;
+  /** Registry generation `commandCache` was built at; a change rebuilds it. */
+  private commandCacheGeneration = -1;
   /** Lazy-loaded cache for object commands (key: objectName lowercase) */
   private objectCommandsCache = new Map<string, CLICommand[]>();
   private objectCommandsGeneration = -1;
@@ -922,6 +1015,21 @@ export class CLIGenerator {
   }
 
   /**
+   * The registry key whose commands the `<objectName>:` prefix serves: the
+   * first registration, in registry order, whose simple name matches
+   * case-insensitively (#951). That registration serves the prefix even when
+   * its config emits no command, so a later class of the same simple name
+   * serves none. Registry-only and read-only.
+   */
+  resolveCommandRegistrationKey(objectName: string): string | undefined {
+    const lowerName = objectName.toLowerCase();
+    for (const [key, info] of ObjectRegistry.getAllClasses()) {
+      if ((info.name || key).toLowerCase() === lowerName) return key;
+    }
+    return undefined;
+  }
+
+  /**
    * Get commands for a specific object (lazy generation with caching)
    */
   private async getObjectCommandsLazy(
@@ -939,18 +1047,12 @@ export class CLIGenerator {
     // Live create choices can change without a registry generation change.
     if (cachedCommands && !hasRuntimeExposureGate()) return cachedCommands;
 
-    // Find the actual registered class (may have different casing)
-    // Issue #951: Match by simple name (info.name), not the qualified map key
     const registeredClasses = ObjectRegistry.getAllClasses();
-    let actualName: string | undefined;
-    let matchedKey: string | undefined;
-    for (const [key, info] of registeredClasses) {
-      if ((info.name || key).toLowerCase() === lowerName) {
-        actualName = info.name || key;
-        matchedKey = key;
-        break;
-      }
-    }
+    const matchedKey = this.resolveCommandRegistrationKey(objectName);
+    const matchedInfo = matchedKey
+      ? registeredClasses.get(matchedKey)
+      : undefined;
+    const actualName = matchedKey ? matchedInfo?.name || matchedKey : undefined;
 
     if (!actualName || !matchedKey) {
       return [];
@@ -1021,8 +1123,13 @@ export class CLIGenerator {
       process.env.SMRT_VERBOSE === 'true' ||
       process.env.DEBUG?.includes('smrt');
 
-    // Return cached commands if already generated (prevents duplicate execution)
-    if (this.commandCache) {
+    // Return cached commands if already generated (prevents duplicate
+    // execution), unless the registry changed since: a cache built before a
+    // registration must not outlive it.
+    if (
+      this.commandCache &&
+      this.commandCacheGeneration === ObjectRegistry.getGeneration()
+    ) {
       if (verbose) {
         console.log('[CLI] generateCommands() returning cached commands');
       }
@@ -1063,12 +1170,65 @@ export class CLIGenerator {
 
     // Cache the commands to prevent duplicate generation
     this.commandCache = commands;
+    this.commandCacheGeneration = ObjectRegistry.getGeneration();
+    return commands;
+  }
+
+  /**
+   * Every command this CLI serves for the current registry, in the order
+   * execution resolves a name: the utility commands, each registered object's
+   * commands (each carrying the registration it serves as `runtimeModel`),
+   * then the built-in commands (`init`, `db:*`, ...) that no earlier command
+   * shadows. Each is tagged with its `source`.
+   *
+   * It lists what is registered now. It does not load the working
+   * directory's manifest or import the project's entry point (CLI startup
+   * does that before running a command), runs no command and opens no
+   * database. The list follows the registry, so a class registered after an
+   * earlier call appears in the next one.
+   *
+   * Listing the built-in commands imports their modules, as execution and
+   * help do, and some of those import packages whose models register on
+   * import. Pass `{ builtIns: false }` to list only the utility and object
+   * commands from the registry as it is, registering nothing: built-ins come
+   * last and take only free addresses, so they never change which object
+   * command an address runs.
+   */
+  async listCommands(
+    options: { builtIns?: boolean } = {},
+  ): Promise<CLICommand[]> {
+    const commands = await this.collectRegisteredCommands();
+    if (options.builtIns === false) return commands;
+    // Execution resolves each address (a name or an alias) on its own: an
+    // earlier command that takes a built-in's name leaves the built-in's
+    // other addresses dispatching to it, so those stay listed. A built-in
+    // whose name is taken is listed under its first free alias.
+    const claimed = new Set(
+      commands.flatMap((command) => [command.name, ...(command.aliases ?? [])]),
+    );
+    const builtIns = mergeBuiltInCommands(await loadBuiltInCommandGroups());
+    for (const command of Object.values(builtIns)) {
+      const free = [command.name, ...(command.aliases ?? [])].filter(
+        (address, index, all) =>
+          !claimed.has(address) && all.indexOf(address) === index,
+      );
+      if (free.length === 0) continue;
+      for (const address of free) claimed.add(address);
+      const [name, ...aliases] = free;
+      commands.push({
+        ...command,
+        name,
+        ...(command.aliases || aliases.length > 0 ? { aliases } : {}),
+        source: 'built-in',
+      });
+    }
     return commands;
   }
 
   /**
    * Generate ALL commands including lazy-loaded object commands.
-   * Used for help display where we need the complete list.
+   * Used for help display where we need the complete list. Loads the
+   * project's manifest and entry point first, as CLI startup does.
    */
   private async generateAllCommands(): Promise<CLICommand[]> {
     const verbose =
@@ -1081,7 +1241,15 @@ export class CLIGenerator {
 
     // Ensure manifest and classes are loaded
     await this.ensureManifestLoaded();
+    return this.collectRegisteredCommands();
+  }
 
+  /**
+   * The utility commands and every registered object's commands, from the
+   * registry as it is (no manifest or project loading), each tagged with its
+   * `source`.
+   */
+  private async collectRegisteredCommands(): Promise<CLICommand[]> {
     // Start with utility commands
     const allCommands: CLICommand[] = [];
     const commandNames = new Set<string>();
@@ -1090,7 +1258,7 @@ export class CLIGenerator {
     for (const cmd of this.generateUtilityCommands()) {
       if (!commandNames.has(cmd.name)) {
         commandNames.add(cmd.name);
-        allCommands.push(cmd);
+        allCommands.push({ ...cmd, source: 'utility' });
       }
     }
 
@@ -1104,7 +1272,7 @@ export class CLIGenerator {
       for (const cmd of objectCommands) {
         if (!commandNames.has(cmd.name)) {
           commandNames.add(cmd.name);
-          allCommands.push(cmd);
+          allCommands.push({ ...cmd, source: 'object' });
         }
       }
     }
@@ -1315,7 +1483,8 @@ export class CLIGenerator {
 
     // Abstract resources expose reads only, even when a custom method was
     // explicitly included or the manifest predates abstract normalization.
-    if (config.abstract) return commands;
+    if (config.abstract)
+      return this.bindRuntimeModel(commands, objectName, _classInfo);
 
     // CUSTOM METHODS - discover from manifest (including inherited methods)
     const methods = await ObjectRegistry.getAllMethods(objectName);
@@ -1474,7 +1643,20 @@ export class CLIGenerator {
       });
     }
 
-    const runtimeModel = _classInfo;
+    return this.bindRuntimeModel(commands, objectName, _classInfo);
+  }
+
+  /**
+   * Every object command carries the registration it serves and rechecks the
+   * runtime exposure gate before running, on every return path of
+   * `generateObjectCommands` (an abstract resource's read-only commands
+   * included).
+   */
+  private bindRuntimeModel(
+    commands: CLICommand[],
+    objectName: string,
+    runtimeModel: ReturnType<typeof ObjectRegistry.getClass>,
+  ): CLICommand[] {
     return commands.map((command) => ({
       ...command,
       runtimeModel,
@@ -1593,47 +1775,9 @@ export class CLIGenerator {
 
     // Only load built-in commands if not found in object commands
     // This avoids loading tar dependencies unless actually needed
-    const [
-      gnodeCommands,
-      generateCommands,
-      gitCommands,
-      initCommands,
-      utilityCommands,
-      dispatchCommands,
-      docsCommands,
-      playgroundCommands,
-      workbenchCommands,
-      cookbookCommands,
-      kitchenCommands,
-      desktopCommands,
-    ] = await Promise.all([
-      getGnodeCommands(),
-      getGenerateCommands(),
-      getGitCommands(),
-      getInitCommands(),
-      getUtilityCommands(),
-      getDispatchCommands(),
-      getDocsCommands(),
-      getPlaygroundCommands(),
-      getWorkbenchCommands(),
-      getCookbookCommands(),
-      getKitchenCommands(),
-      getDesktopCommands(),
-    ]);
-    const builtInCommands = {
-      ...gnodeCommands,
-      ...generateCommands,
-      ...gitCommands,
-      ...initCommands,
-      ...utilityCommands,
-      ...dispatchCommands,
-      ...docsCommands,
-      ...playgroundCommands,
-      ...workbenchCommands,
-      ...cookbookCommands,
-      ...kitchenCommands,
-      ...desktopCommands,
-    };
+    const builtInCommands = mergeBuiltInCommands(
+      await loadBuiltInCommandGroups(),
+    );
 
     const builtInMatch = matchLeadingCommand(
       processedArgv,
@@ -1999,33 +2143,20 @@ export class CLIGenerator {
     console.log();
 
     // Show built-in subcommands first
-    const [
-      gnodeCommands,
-      generateCommands,
-      gitCommands,
-      initCommands,
-      utilityCommands,
-      dispatchCommands,
-      docsCommands,
-      playgroundCommands,
-      workbenchCommands,
-      cookbookCommands,
-      kitchenCommands,
-      desktopCommands,
-    ] = await Promise.all([
-      getGnodeCommands(),
-      getGenerateCommands(),
-      getGitCommands(),
-      getInitCommands(),
-      getUtilityCommands(),
-      getDispatchCommands(),
-      getDocsCommands(),
-      getPlaygroundCommands(),
-      getWorkbenchCommands(),
-      getCookbookCommands(),
-      getKitchenCommands(),
-      getDesktopCommands(),
-    ]);
+    const {
+      gnode: gnodeCommands,
+      generate: generateCommands,
+      git: gitCommands,
+      init: initCommands,
+      utility: utilityCommands,
+      dispatch: dispatchCommands,
+      docs: docsCommands,
+      playground: playgroundCommands,
+      workbench: workbenchCommands,
+      cookbook: cookbookCommands,
+      kitchen: kitchenCommands,
+      desktop: desktopCommands,
+    } = await loadBuiltInCommandGroups();
 
     console.log('Project Setup:');
     for (const command of Object.values(initCommands)) {
