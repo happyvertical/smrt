@@ -159,6 +159,7 @@ import {
   databaseReadScope,
   deferUntilFrameworkCommit,
   isEmbeddedDatabase,
+  resolveFrameworkTransactionRoot,
   usesPostgresDialect,
   withEmbeddedWriteQueue,
 } from './embedded-write-queue.js';
@@ -2666,8 +2667,167 @@ export async function recordInstanceChange(
   await appendForInstance(instance, operation, owner);
 }
 
+/** One row a delete cascade removed or nulled (see {@link recordCascadeChanges}). */
+export interface CascadeChange {
+  /** Physical table the row lives in. */
+  table: string;
+  /** The row's id, as the cascade statement returned it. */
+  rowId: string;
+  /** `delete` for a removed row, `update` for a SET NULL row. */
+  operation: 'delete' | 'update';
+  /**
+   * The row's own owner, read from the columns the cascade statement
+   * returned. `undefined` = unresolved: nothing is recorded for the row.
+   */
+  tenantId: string | null | undefined;
+  /** Constructor of the row's registered class, for the sensitive-class check. */
+  ctor?: unknown;
+}
+
+/**
+ * Entries per append statement for a cascade. A cascade already holds every
+ * affected id in memory; this only bounds the size of one JSON payload, so a
+ * large cascade takes `ceil(rows / 1000)` statements rather than one per row.
+ */
+const CASCADE_APPEND_CHUNK = 1_000;
+
+/**
+ * Root handles on which the feed's append target was proven present, so the
+ * readiness probe runs once per database handle rather than once per cascade.
+ */
+const cascadeAppendReadyRoots = new WeakSet<object>();
+
+/**
+ * Whether a cascade may append inside its transaction without risking it.
+ *
+ * Cascade entries are appended inside the cascade's own transaction, so a
+ * failed append must not poison it. SQLite rolls back only the failing
+ * statement. On PostgreSQL each statement `appendChanges()` can issue — the
+ * drain helper, then the batch append helper — is one server-side call whose
+ * current body (marked {@link POSTGRES_CHANGE_FEED_HELPER_MARKER}) catches its
+ * own failures inside an exception subtransaction and returns them as data,
+ * so recovery never needs a client-side savepoint (which another statement
+ * on a shared transaction handle could interleave with and lose). What can
+ * still abort the transaction is calling a helper that is missing, that the
+ * role may not execute, or whose body predates that boundary; all three are
+ * probed first in one catalog statement that cannot fail. DuckDB aborts the
+ * transaction on any failed statement, so the feed table's presence is
+ * checked first.
+ */
+async function cascadeAppendReady(db: DatabaseInterface): Promise<boolean> {
+  const root = resolveFrameworkTransactionRoot(db);
+  if (cascadeAppendReadyRoots.has(root)) return true;
+  const engine = getEngine(db);
+  let ready = true;
+  if (engine === 'postgres') {
+    const callable = (identity: string) =>
+      `COALESCE((SELECT has_function_privilege(p.oid, 'EXECUTE')
+                       AND p.prosrc LIKE '%${POSTGRES_CHANGE_FEED_HELPER_MARKER}%'
+                  FROM pg_proc AS p
+                 WHERE p.oid = to_regprocedure('${identity}')), false)`;
+    const rows = getQueryRows(
+      await db.query(
+        `SELECT ${callable(POSTGRES_CHANGE_FEED_APPEND_BATCH_FUNCTION_IDENTITY)}
+            AND ${callable(POSTGRES_CHANGE_FEED_DRAIN_FUNCTION_IDENTITY)} AS ready`,
+      ),
+    );
+    ready = rows[0]?.ready === true;
+  } else if (engine === 'duckdb') {
+    ready = await db.tableExists(CHANGE_FEED_TABLE);
+  }
+  if (ready) cascadeAppendReadyRoots.add(root);
+  return ready;
+}
+
+/**
+ * Record the rows a delete cascade removed (`delete`) or nulled (`update`).
+ *
+ * Cascaded rows are removed or updated with set-based statements, so no
+ * interceptor runs for them; the cascade calls this on its own transaction
+ * handle once every level has run, so the entries commit or roll back with
+ * the cascade. Each entry carries its row's own owner, read from the columns
+ * the cascade statement returned — a child owned by another tenant than the
+ * parent is recorded under that tenant. Framework-owned and
+ * credential-bearing tables are skipped exactly as for an ordinary write, a
+ * row whose owner is unresolved is not recorded (warned), entries are
+ * appended in batches of {@link CASCADE_APPEND_CHUNK}, and live signals are
+ * published only after the enclosing framework transaction commits. Like
+ * every feed append this never throws: a failure is warned and the cascade's
+ * delete proceeds.
+ *
+ * @internal
+ */
+export async function recordCascadeChanges(
+  db: DatabaseInterface,
+  changes: readonly CascadeChange[],
+  unrecordedTables: Iterable<string> = [],
+): Promise<void> {
+  // Tables whose changed rows the statement could not return (the role
+  // cannot read their `id`): nothing to record, but say so.
+  for (const table of unrecordedTables) {
+    if (isChangeFeedObservableTable(table)) warnUnidentifiedRows(db, table);
+  }
+  const inputs: AppendChangeInput[] = [];
+  for (const change of changes) {
+    try {
+      if (!isChangeFeedObservableTable(change.table)) continue;
+      if (isChangeFeedSensitiveWrite(change.table, change.ctor)) continue;
+      if (change.tenantId === undefined) {
+        warnAmbiguousTenant(db, change.table);
+        continue;
+      }
+      inputs.push({
+        table: change.table,
+        rowId: change.rowId,
+        operation: change.operation,
+        tenantId: change.tenantId,
+      });
+    } catch {
+      // Never let feed bookkeeping fail the delete.
+    }
+  }
+  if (inputs.length === 0) return;
+  try {
+    if (!(await cascadeAppendReady(db))) {
+      warnAppendFailure(
+        db,
+        inputs[0].table,
+        new Error('the change feed is not initialized on this database'),
+      );
+      return;
+    }
+  } catch (error) {
+    warnAppendFailure(db, inputs[0].table, error);
+    return;
+  }
+  const signals: ChangeSignal[] = [];
+  for (let start = 0; start < inputs.length; start += CASCADE_APPEND_CHUNK) {
+    const chunk = inputs.slice(start, start + CASCADE_APPEND_CHUNK);
+    try {
+      const sequences = await appendChanges(db, chunk);
+      chunk.forEach((input, index) => {
+        const seq = sequences[index];
+        if (seq == null) return;
+        signals.push({
+          table: input.table,
+          operation: input.operation ?? 'update',
+          rowId: input.rowId ?? null,
+          tenantId: input.tenantId ?? null,
+          seq,
+        });
+      });
+    } catch (error) {
+      warnAppendFailure(db, chunk[0].table, error);
+    }
+  }
+  publishWhenCommitted(db, signals);
+}
+
 /** Rate-limited feed warnings; each kind keeps its own buckets. */
-type FeedWarningKind = 'append-failure' | 'unresolved-owner';
+type FeedWarningKind =
+  | 'append-failure'
+  | 'unresolved-owner'
+  | 'unidentified-rows';
 
 /**
  * Admit a feed warning of `kind`, at most once per {@link
@@ -2759,6 +2919,27 @@ function warnAmbiguousTenant(db: DatabaseInterface, table: string): void {
         '(its ownership fields name different tenants, or the ownership ' +
         'lookup failed), so its change was not recorded. Fix the row or the ' +
         'ownership registration; until then consumers of this table may miss it.',
+      { suppressedSinceLastWarning: allowed.suppressed },
+    );
+  } catch {
+    // Logging must never propagate into the write path.
+  }
+}
+
+/**
+ * A cascade changed rows of `table` that it could not identify (the role
+ * cannot read their `id`), so none of them was recorded. Rate-limited like
+ * the other feed warnings, in its own buckets.
+ */
+function warnUnidentifiedRows(db: DatabaseInterface, table: string): void {
+  try {
+    const allowed = takeAppendFailureWarning(db, table, 'unidentified-rows');
+    if (!allowed) return;
+    logger.warn(
+      `Change feed: a delete cascade changed rows of '${table}' whose id the ` +
+        'database role cannot read, so none of those changes was recorded. ' +
+        'The cascade itself completed. Grant SELECT on the id column (and the ' +
+        'ownership columns) of that table so consumers see these changes.',
       { suppressedSinceLastWarning: allowed.suppressed },
     );
   } catch {

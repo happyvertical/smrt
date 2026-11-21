@@ -3224,6 +3224,11 @@ export class SmrtObject extends SmrtClass {
                   ),
                 )
               : new Set<string>();
+          const disturbed = new Set(
+            (result.disturbedTargets ?? []).map((id) =>
+              first.normalizeSyncRowId(id),
+            ),
+          );
           deletions.forEach(({ instance, context }, index) => {
             const rowId = ids[index];
             const key = first.normalizeSyncRowId(rowId);
@@ -3235,6 +3240,11 @@ export class SmrtObject extends SmrtClass {
               removedRows.get(key),
               !present.has(key),
             );
+            // Owner columns rewritten by a database action during the
+            // cascade: the returned owner is not the row's; record nothing.
+            if (disturbed.has(key)) {
+              noteChangeFeedWriteOwner(context, undefined, rowId);
+            }
           });
           return result;
         },
@@ -6690,7 +6700,7 @@ export class SmrtObject extends SmrtClass {
               tableName: this.tableName,
               id: this.id,
             },
-            async (db) => {
+            async (db, cascade) => {
               const filter = this.guardedWriteFilter(
                 {
                   id: this.id,
@@ -6739,6 +6749,16 @@ export class SmrtObject extends SmrtClass {
                 removedRow,
                 absent,
               );
+              // A database ON DELETE action reaching back to this row during
+              // the cascade rewrote its owner columns: the owner its DELETE
+              // returned is not the owner it had, so record nothing.
+              if (
+                cascade?.disturbedTargets?.some(
+                  (id) => this.normalizeSyncRowId(id) === key,
+                )
+              ) {
+                noteChangeFeedWriteOwner(interceptorContext, undefined, rowId);
+              }
               if (
                 (expectedUpdatedAt !== undefined || writeGuard !== undefined) &&
                 affected !== 1

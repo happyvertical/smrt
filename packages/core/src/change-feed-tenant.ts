@@ -21,6 +21,13 @@ export interface ChangeFeedTenantField {
   column: string;
   /** Whether the class persists the field, so its column exists. */
   stored: boolean;
+  /**
+   * Whether an ownership source names this column for the class (a runtime
+   * registration, the declared tenant column, or a `@tenantId` field), as
+   * opposed to the implicit `tenant_id` every class is checked for. Absent
+   * means explicit.
+   */
+  explicit?: boolean;
 }
 
 /**
@@ -46,6 +53,7 @@ const DEFAULT_TENANT_FIELD: ChangeFeedTenantField = {
   field: 'tenantId',
   column: 'tenant_id',
   stored: false,
+  explicit: false,
 };
 
 /**
@@ -125,6 +133,27 @@ export function changeFeedOwnerPlan(instance: object): ChangeFeedOwnerPlan {
 }
 
 /**
+ * Snapshot the ownership fields of rows written by the class `ctor`, for a
+ * write that holds no instance of it: rows a delete cascade removes or nulls
+ * with set-based statements. Unlike {@link changeFeedOwnerPlan}, a class the
+ * registry does not know is unresolved rather than "falls back to
+ * `tenantId`": there is no instance whose fields could stand in for it, and
+ * an unresolved owner records nothing instead of a global entry.
+ */
+export function changeFeedOwnerPlanForClass(
+  ctor: unknown,
+): ChangeFeedOwnerPlan {
+  if (typeof ctor !== 'function' || !tenantFieldResolver) {
+    return { fields: undefined };
+  }
+  try {
+    return { fields: tenantFieldResolver(ctor) };
+  } catch {
+    return { fields: undefined };
+  }
+}
+
+/**
  * The ownership columns the plan's class persists — the columns a write
  * statement returns so the feed attributes the row it actually wrote or
  * removed — or `undefined` when the ownership lookup failed.
@@ -160,6 +189,44 @@ export function resolveChangeFeedTenantIdFromStoredRow(
     const record = instance as Record<string, unknown>;
     return agreeingTenant(plan.fields, ({ field }) => record[field]);
   }
+  for (const { column } of stored) {
+    if (!Object.hasOwn(row, column) || row[column] === undefined) {
+      return undefined;
+    }
+  }
+  return agreeingTenant(stored, ({ column }) => row[column]);
+}
+
+/**
+ * The tenant of a row a set-based statement returned, with no instance to
+ * fall back on (rows a delete cascade removes or nulls). `row` is keyed by
+ * column and holds only the columns the statement could return.
+ *
+ * - `undefined` (unresolved, record nothing) when the lookup failed, when an
+ *   ownership source names a field the class does not persist (its value
+ *   exists only on an instance, which a cascade does not have), or when a
+ *   stored ownership column is missing from `row` (not returned, absent from
+ *   the table, or not readable by the role).
+ * - `null` (global) only for a genuinely unowned class: no stored ownership
+ *   column and nothing named but the implicit `tenant_id` fallback (an
+ *   ownership source that names `tenant_id` explicitly is not the fallback).
+ */
+export function resolveChangeFeedTenantIdFromReturnedRow(
+  plan: ChangeFeedOwnerPlan,
+  row: Record<string, unknown>,
+): string | null | undefined {
+  if (plan.fields === undefined) return undefined;
+  if (
+    plan.fields.some(
+      ({ stored, column, explicit }) =>
+        !stored &&
+        (explicit !== false || column !== DEFAULT_TENANT_FIELD.column),
+    )
+  ) {
+    return undefined;
+  }
+  const stored = plan.fields.filter((field) => field.stored);
+  if (stored.length === 0) return null;
   for (const { column } of stored) {
     if (!Object.hasOwn(row, column) || row[column] === undefined) {
       return undefined;

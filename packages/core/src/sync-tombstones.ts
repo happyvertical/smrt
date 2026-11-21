@@ -13,6 +13,31 @@ import { getDatabaseSyncDeviceId } from './sync-device.js';
 
 export const SYNC_TOMBSTONES_TABLE = '_smrt_sync_tombstones';
 
+/**
+ * An extra SQL predicate ANDed onto a statement's `WHERE`, with its own bound
+ * values. `sql` receives the 1-based index of its first parameter (PostgreSQL
+ * numbers placeholders; SQLite and DuckDB use `?` and ignore it). Used for a
+ * predicate `buildWhere` cannot express with a bounded number of parameters.
+ */
+export interface RawPredicate {
+  sql: (firstParameter: number) => string;
+  values: unknown[];
+}
+
+/** `where` (from `buildWhere`) with `raw` ANDed on. */
+export function withRawPredicate(
+  where: { sql: string; values: unknown[] },
+  raw: RawPredicate | undefined,
+  firstParameter: number,
+): { sql: string; values: unknown[] } {
+  if (!raw) return where;
+  const clause = raw.sql(firstParameter + where.values.length);
+  return {
+    sql: where.sql.trim() ? `${where.sql} AND ${clause}` : `WHERE ${clause}`,
+    values: [...where.values, ...raw.values],
+  };
+}
+
 export interface SyncRevision {
   originDeviceId: string;
   revision: number;
@@ -28,6 +53,12 @@ export interface SyncRowIdentity {
    * caller attributes the row the statement actually removed.
    */
   ownerColumns?: readonly string[];
+  /**
+   * Return every deleted row's id even when `ownerColumns` is empty (a
+   * cascade records a change-feed entry for each row it removes, owned or
+   * global).
+   */
+  returnRows?: boolean;
 }
 
 /**
@@ -40,6 +71,8 @@ export interface SyncRowIdentity {
 export type DeletedRowOwners = Array<{
   id: string;
   columns: Record<string, unknown>;
+  /** The row's STI discriminator, when the statement returned one. */
+  metaType?: string;
 }>;
 
 function ownerAlias(index: number): string {
@@ -165,17 +198,23 @@ export async function deleteSyncRows(
   filter: Record<string, unknown>,
   didDelete: (count: number) => void,
   incoming?: { rowId: string; tenantId: string | null; revision: SyncRevision },
+  raw?: RawPredicate,
 ): Promise<{ affected: number; owners?: DeletedRowOwners }> {
+  if (raw && isJsonAdapterHandle(db)) {
+    throw RuntimeError.invalidState(
+      'A raw SQL predicate requires a SQL database',
+    );
+  }
   const ownerColumns = identity.ownerColumns ?? [];
+  const returnRows = ownerColumns.length > 0 || identity.returnRows === true;
   if (isJsonAdapterHandle(db)) {
     if (incoming)
       throw RuntimeError.invalidState('Sync tombstones require a SQL database');
     // No RETURNING here; the embedded write queue serializes framework
     // writes, so the rows read just before the delete are the rows it removes.
-    const before =
-      ownerColumns.length > 0
-        ? await db.list(identity.tableName, filter)
-        : undefined;
+    const before = returnRows
+      ? await db.list(identity.tableName, filter)
+      : undefined;
     const result = await db.delete(identity.tableName, filter);
     didDelete(result.affected);
     if (!before) return result;
@@ -186,10 +225,17 @@ export async function deleteSyncRows(
           .filter((column) => Object.hasOwn(row, column))
           .map((column) => [column, row[column]]),
       ),
+      ...(identity.sti && typeof row._meta_type === 'string'
+        ? { metaType: row._meta_type }
+        : {}),
     }));
     return { affected: result.affected, owners };
   }
-  const { sql, values } = buildWhere(filter, 1, dialect(db));
+  const { sql, values } = withRawPredicate(
+    buildWhere(filter, 1, dialect(db)),
+    raw,
+    1,
+  );
   const tenant = identity.tenantColumn
     ? ', CAST(' +
       quote(identity.tenantColumn) +
@@ -216,19 +262,21 @@ export async function deleteSyncRows(
     ...values,
   );
   didDelete(result.rows.length);
-  const owners: DeletedRowOwners | undefined =
-    ownerColumns.length > 0
-      ? result.rows.map((row) => ({
-          id: String(row._sync_deleted_id),
-          columns: Object.fromEntries(
-            ownerColumns.flatMap((column, index) =>
-              Object.hasOwn(row, ownerAlias(index))
-                ? [[column, row[ownerAlias(index)]]]
-                : [],
-            ),
+  const owners: DeletedRowOwners | undefined = returnRows
+    ? result.rows.map((row) => ({
+        id: String(row._sync_deleted_id),
+        columns: Object.fromEntries(
+          ownerColumns.flatMap((column, index) =>
+            Object.hasOwn(row, ownerAlias(index))
+              ? [[column, row[ownerAlias(index)]]]
+              : [],
           ),
-        }))
-      : undefined;
+        ),
+        ...(identity.sti && typeof row._meta_type === 'string'
+          ? { metaType: row._meta_type }
+          : {}),
+      }))
+    : undefined;
   for (const row of result.rows) {
     if (!incoming && row._sync_origin_device_id == null) continue;
     const rowId = String(row._sync_deleted_id);
@@ -335,24 +383,81 @@ export async function updateRowsReturning(
   };
 }
 
+/** What {@link nullSyncReference} returns for each row it updated. */
+export interface NullReferenceReturning {
+  /** Return each updated row's id; without it nothing is returned. */
+  id: boolean;
+  /** Ownership columns to return (as text), as the statement left them. */
+  ownerColumns?: readonly string[];
+  /** Return the STI discriminator (`_meta_type`). */
+  metaType?: boolean;
+}
+
+/**
+ * Null `column` on every row matching `filter`, advancing tracked rows' sync
+ * revision. With `returning.id`, returns each updated row's id (as text), the
+ * requested ownership columns as the statement left them (cast to text) and,
+ * when asked, its STI discriminator, so the caller can record a change for
+ * exactly the rows it changed. The caller passes only columns it proved the
+ * table has and the role can read; without `returning` the statement is the
+ * one this function always issued.
+ */
 export async function nullSyncReference(
   db: DatabaseInterface,
   tableName: string,
   column: string,
   filter: Record<string, unknown>,
   didUpdate: (count: number) => void,
-): Promise<void> {
+  returning: NullReferenceReturning = { id: false },
+  raw?: RawPredicate,
+): Promise<{ affected: number; rows: DeletedRowOwners }> {
+  const ownerColumns = returning.id ? (returning.ownerColumns ?? []) : [];
+  if (raw && isJsonAdapterHandle(db)) {
+    throw RuntimeError.invalidState(
+      'A raw SQL predicate requires a SQL database',
+    );
+  }
   if (isJsonAdapterHandle(db)) {
+    // No RETURNING here; the embedded write queue serializes framework
+    // writes, so the rows read just before the update are the rows it changes.
+    const before = returning.id ? await db.list(tableName, filter) : [];
     const result = await db.update(tableName, filter, { [column]: null });
     didUpdate(result.affected);
-    return;
+    return {
+      affected: result.affected,
+      rows: before.map((row) => ({
+        id: String(row.id),
+        columns: Object.fromEntries(
+          ownerColumns
+            .filter((owner) => Object.hasOwn(row, owner))
+            .map((owner) => [owner, owner === column ? null : row[owner]]),
+        ),
+        ...(returning.metaType && typeof row._meta_type === 'string'
+          ? { metaType: row._meta_type }
+          : {}),
+      })),
+    };
   }
   const engine = dialect(db);
   const parameter = (index: number) =>
     engine === 'postgres' ? `$${index}` : '?';
-  const { sql, values } = buildWhere(filter, 3, engine);
+  const { sql, values } = withRawPredicate(
+    buildWhere(filter, 3, engine),
+    raw,
+    3,
+  );
   const device = getDatabaseSyncDeviceId(db);
   const tracked = '_sync_origin_device_id IS NOT NULL';
+  const owner = returning.id
+    ? ', CAST(id AS VARCHAR) AS _smrt_nulled_id' +
+      (returning.metaType ? ', _meta_type' : '') +
+      ownerColumns
+        .map(
+          (ownerColumn, index) =>
+            `, CAST(${quote(ownerColumn)} AS VARCHAR) AS ${ownerAlias(index)}`,
+        )
+        .join('')
+    : '';
   const nextTimestamp =
     engine === 'sqlite'
       ? `max(${parameter(1)}, coalesce(strftime('%Y-%m-%dT%H:%M:%fZ', updated_at, '+0.001 seconds'), ''))`
@@ -363,7 +468,7 @@ export async function nullSyncReference(
             updated_at = CASE WHEN ${tracked} THEN ${nextTimestamp} ELSE updated_at END,
             _sync_origin_device_id = CASE WHEN ${tracked} THEN COALESCE(${parameter(2)}, _sync_origin_device_id) ELSE NULL END,
             _sync_revision = CASE WHEN ${tracked} THEN _sync_revision + 1 ELSE _sync_revision END
-      ${sql} RETURNING _sync_origin_device_id, _sync_revision`,
+      ${sql} RETURNING _sync_origin_device_id, _sync_revision${owner}`,
     new Date().toISOString(),
     device ?? null,
     ...values,
@@ -374,4 +479,21 @@ export async function nullSyncReference(
       validateSyncRevision(device, Number(row._sync_revision));
     }
   }
+  if (!returning.id) return { affected: result.rows.length, rows: [] };
+  return {
+    affected: result.rows.length,
+    rows: result.rows.map((row) => ({
+      id: String(row._smrt_nulled_id),
+      columns: Object.fromEntries(
+        ownerColumns.flatMap((ownerColumn, index) =>
+          Object.hasOwn(row, ownerAlias(index))
+            ? [[ownerColumn, row[ownerAlias(index)]]]
+            : [],
+        ),
+      ),
+      ...(returning.metaType && typeof row._meta_type === 'string'
+        ? { metaType: row._meta_type }
+        : {}),
+    })),
+  };
 }
