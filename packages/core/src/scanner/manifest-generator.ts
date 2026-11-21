@@ -685,6 +685,24 @@ export class ManifestGenerator {
         if (field.related && publicNames.has(field.related))
           field.related = publicNames.get(field.related);
       }
+      // A report source or join source naming a local model by its source
+      // class name follows it to its public name too; one imported from
+      // another package (`sourceQualified`) is an identity and stays.
+      const report = obj.decoratorConfig?.report as
+        | (Record<string, unknown> & {
+            joins?: Record<string, Record<string, unknown>>;
+          })
+        | undefined;
+      for (const holder of [report, ...Object.values(report?.joins ?? {})]) {
+        if (
+          holder &&
+          typeof holder.source === 'string' &&
+          typeof holder.sourceQualified !== 'string' &&
+          publicNames.has(holder.source)
+        ) {
+          holder.source = publicNames.get(holder.source);
+        }
+      }
     }
 
     // `exclude: ['*']` closes a surface; no generator reads `'*'` as a

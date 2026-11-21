@@ -797,6 +797,26 @@ ${extra}}
     expect(message).toContain('@crossPackageRef');
   });
 
+  it('takes a report source and join source given as the constructor of a model published under another name', async () => {
+    const root = await project({
+      providers: {},
+      app: {
+        'src/Invoice.ts': `${CORE}\n@smrt({ name: 'Invoice' })\nexport class InvoiceRecord extends SmrtObject {\n  customerId = '';\n  total = 0;\n}\n`,
+        'src/Customer.ts': `${CORE}\n@smrt({ name: 'Customer' })\nexport class CustomerRecord extends SmrtObject {\n  region = '';\n}\n`,
+        'src/Revenue.ts': `${CORE}\nimport { InvoiceRecord } from './Invoice';\nimport { CustomerRecord } from './Customer';\n@report({ source: InvoiceRecord, joins: { customer: { source: CustomerRecord, on: 'customerId' } } })\nexport class Revenue extends SmrtObject {\n  total = 0;\n}\n`,
+      },
+    });
+
+    const manifest = await build(root);
+    const report = manifest.objects[`${APP}:Revenue`]?.decoratorConfig
+      .report as {
+      source?: string;
+      joins?: Record<string, { source?: string }>;
+    };
+    expect(report?.source).toBe('Invoice');
+    expect(report?.joins?.customer?.source).toBe('Customer');
+  });
+
   it('fails a bare-name report source that only dependencies declare', async () => {
     const root = await project({
       providers: twoRuns,
