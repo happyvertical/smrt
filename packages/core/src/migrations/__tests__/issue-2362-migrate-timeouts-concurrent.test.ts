@@ -140,6 +140,9 @@ function createFakeDb(options: FakeDbOptions = {}): FakeDb {
     if (sql.includes('pg_try_advisory')) {
       return { rows: [{ locked: true }], rowCount: 1 };
     }
+    if (sql.includes('pg_advisory_unlock')) {
+      return { rows: [{ unlocked: true }], rowCount: 1 };
+    }
     if (sql.includes('SELECT status, attempts, error_message FROM')) {
       const row = [...rows.values()].find(
         (candidate) => candidate.id === params[0],

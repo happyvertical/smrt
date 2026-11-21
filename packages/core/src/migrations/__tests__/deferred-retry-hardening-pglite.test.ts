@@ -293,5 +293,33 @@ describe.skipIf(process.env.SMRT_TEST_PGLITE !== '1')(
         expect(await indexValid('child_pid_idx')).toEqual([]);
       });
     });
+
+    describe('cleanup that does not take effect', () => {
+      it('is reported when a row lock could not be released on a shared handle', async () => {
+        await fixDuplicates();
+        const stuck: DatabaseInterface = {
+          ...db,
+          query: (async (sql: string, ...vars: unknown[]) =>
+            /pg_advisory_unlock/.test(sql)
+              ? { rows: [{ unlocked: false }], rowCount: 1 }
+              : db.query(sql, ...vars)) as DatabaseInterface['query'],
+        };
+
+        await expect(
+          migrate(
+            [
+              definition('cleanup_lock', [
+                'CREATE INDEX IF NOT EXISTS child_n_idx ON child (n)',
+              ]),
+            ],
+            {},
+            stuck,
+          ),
+        ).rejects.toThrow(/could not be put back/);
+        // The record itself was written.
+        expect((await row('cleanup_lock'))?.status).toBe('completed');
+        await db.query('SELECT pg_advisory_unlock_all()');
+      });
+    });
   },
 );
