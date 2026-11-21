@@ -93,7 +93,9 @@ scans for it.
 - **PostgreSQL layout.** One schema per app, UNQUALIFIED table names, addressed
   by a transaction-local `search_path`: `scopeDatabase` (`db/postgres.ts`)
   wraps the handle the engine and core receive, so every statement runs after
-  `set_config('search_path', "<schema>", true)` in its transaction, with or
+  `set_config('search_path', '"<schema>", pg_temp', true)` in its transaction
+  (`pg_temp` last, so a session's temporary relation never shadows the app's
+  tables), with or
   without one of its own. Fail closed: `table()` throws, sessions and schema
   sync are absent. A config with no schema, `public`, a system schema or a
   schema the host did not create refuses to open (`EngineError` `refused`); the

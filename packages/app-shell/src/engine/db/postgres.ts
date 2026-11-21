@@ -48,7 +48,7 @@ const STATEMENTS = [
 
 /**
  * Wrap a PostgreSQL/PGlite handle so every statement runs with
- * `search_path = <schema>`, set transaction-locally (`set_config(…, true)`) as
+ * `search_path = <schema>, pg_temp`, set transaction-locally (`set_config(…, true)`) as
  * the first statement of the transaction it runs in. A statement issued
  * outside any transaction gets a transaction of its own. Fail closed: only
  * the listed operations exist on the result; anything else (`table()`,
@@ -77,7 +77,10 @@ export function scopeDatabase<T extends object>(
   schema: string,
   options: { statementTimeoutMs?: number; fence?: number } = {},
 ): T {
-  const path = `"${assertSchemaName(schema)}"`;
+  // `pg_temp` named last: unlisted, PostgreSQL searches a session's temporary
+  // schema FIRST for tables, so a temporary relation left on a pooled
+  // connection would stand in for the app's own.
+  const path = `"${assertSchemaName(schema)}", pg_temp`;
   const timeout = options.statementTimeoutMs;
   if (timeout !== undefined && (!Number.isInteger(timeout) || timeout < 1))
     throw new RangeError('statementTimeoutMs must be a whole ms, 1 or more');

@@ -138,6 +138,36 @@ describe('one schema per app (tenancy)', () => {
     ).not.toContain('app_');
   });
 
+  it("a temporary table left on the session never stands in for the app's own", async () => {
+    const raw: any = await getDatabase({ type: 'pglite', client: pg } as any);
+    const db: any = scopeDatabase(raw, 'app_a');
+    await db.query('CREATE TABLE temp_probe (who TEXT)');
+    await db.query(`INSERT INTO temp_probe VALUES ('app')`);
+    // One session, reused: an unscoped temporary table of the same name.
+    await pg.exec(
+      `CREATE TEMP TABLE temp_probe (who TEXT); INSERT INTO pg_temp.temp_probe VALUES ('temp')`,
+    );
+    try {
+      expect(
+        (
+          await db.query(
+            `SELECT n.nspname AS s FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE c.oid = to_regclass('temp_probe')`,
+          )
+        ).rows[0].s,
+      ).toBe('app_a');
+      expect(
+        (await db.query('SELECT who FROM temp_probe')).rows.map(
+          (r: { who: string }) => r.who,
+        ),
+      ).toEqual(['app']);
+      expect((await db.query('SELECT current_schema() AS s')).rows[0].s).toBe(
+        'app_a',
+      );
+    } finally {
+      await pg.exec('DROP TABLE IF EXISTS pg_temp.temp_probe');
+    }
+  });
+
   it('fails closed: no member of the raw handle reaches it unscoped', async () => {
     const raw: any = await getDatabase({ type: 'pglite', client: pg } as any);
     const db: any = scopeDatabase(raw, 'app_a');
