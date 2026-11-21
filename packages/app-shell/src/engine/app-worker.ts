@@ -5,7 +5,7 @@ import { isMainThread, parentPort, workerData } from 'node:worker_threads';
 import type { AppLimits } from './app-limits.ts';
 import type { WorkerDatabaseConfig } from './db/types.ts';
 import type { AppDefinition, Migration } from './definition.ts';
-import type { WorkerCall, WorkerReply } from './worker-protocol.ts';
+import type { LimitInfo, WorkerCall, WorkerReply } from './worker-protocol.ts';
 import { WORKER_OPS } from './worker-protocol.ts';
 
 /**
@@ -46,6 +46,17 @@ if (!isMainThread && workerData?.appWorker) {
     validateOnly?: boolean;
     appLimits?: AppLimits;
   };
+  const limitOf = (e: {
+    cap: string;
+    limit: number;
+    current: number;
+    requested: number;
+  }): LimitInfo => ({
+    cap: e.cap,
+    limit: e.limit,
+    current: e.current,
+    requested: e.requested,
+  });
   let rt: InstanceType<typeof AppRuntime>;
   const port = parentPort as NonNullable<typeof parentPort>;
   let ok = false;
@@ -69,6 +80,7 @@ if (!isMainThread && workerData?.appWorker) {
         (migration?.direction === 'down' && e instanceof AppError) ||
         e instanceof AppLimitError,
       stale: isStaleFence(e),
+      ...(e instanceof AppLimitError ? { limit: limitOf(e) } : {}),
     });
   }
   if (ok)
@@ -97,6 +109,7 @@ if (!isMainThread && workerData?.appWorker) {
           error: (e as Error).message,
           user: e instanceof AppError,
           ...(isStaleFence(e) ? { stale: true } : {}),
+          ...(e instanceof AppLimitError ? { limit: limitOf(e) } : {}),
           ...(RuntimeReportError && e instanceof RuntimeReportError
             ? {
                 reportError: {

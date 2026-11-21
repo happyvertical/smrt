@@ -12,7 +12,7 @@ import {
   assertAppLimits,
 } from './app-limits.ts';
 import { harnessDatabase } from './db/harness.ts';
-import { AppHost, MemoryVersionStore } from './index.ts';
+import { AppHost, EngineError, MemoryVersionStore } from './index.ts';
 
 const dirs: string[] = [];
 const hosts: AppHost[] = [];
@@ -267,6 +267,31 @@ describe.each([
     );
     expect(out.filter((o) => o.status === 'fulfilled')).toHaveLength(4);
     expect(await host.list('A')).toHaveLength(4);
+  });
+
+  it('a host-side caller reads the cap from error.details, not the message', async () => {
+    const { host, run } = await open(kind, { maxRows: 1, maxModels: 1 });
+    await run({
+      type: 'defineModel',
+      name: 'A',
+      fields: { t: { type: 'text' } },
+    });
+    await host.create('A', { t: 'x' });
+    const err: any = await host.create('A', { t: 'y' }).catch((e) => e);
+    expect(err).toBeInstanceOf(EngineError);
+    expect(err.details).toEqual({
+      code: 'app_limit',
+      cap: 'maxRows',
+      limit: 1,
+      current: 1,
+      requested: 1,
+    });
+    const boot: any = await run({
+      type: 'defineModel',
+      name: 'B',
+      fields: {},
+    }).catch((e) => e);
+    expect(boot.details).toMatchObject({ code: 'app_limit', cap: 'maxModels' });
   });
 
   it('a POST with an extra path segment is held to the cap too', async () => {

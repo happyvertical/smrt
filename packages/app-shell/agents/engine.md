@@ -570,10 +570,11 @@ it from the plan in a later slice (after #5194), this file only enforces.
 
 Refusals are `AppLimitError` (an `AppError`): `app limit reached (maxRows):
 this app holds 3 records of the 3 allowed; adding 1 would pass the limit`.
-Only the message crosses the worker boundary (`WorkerReply` has no typed
-field and `worker-handle.ts` builds `AppCallError(message, user)`), so a
-caller uses `appLimitCap(message)` (`app-limits.ts`), the one parser of the
-`app limit reached (<cap>)` prefix, never its own regex. A REST POST answers
+A cap refusal crosses the worker boundary typed: `WorkerReply.limit` becomes
+`AppCallError.details` and then `EngineError.details`
+`{code: 'app_limit', cap, limit, current, requested}` (a boot refusal carries
+the same on its `EngineError`); callers read that, not the message.
+`appLimitCap(message)` is only the fallback parser of the message prefix. A REST POST answers
 403 `{error, code: 'app_limit', cap, limit, current, requested}`; a boot or
 migration refusal is an `EngineError` `refused`. A method that would add rows
 over the cap is refused with the limit message, not "failed, none applied".
