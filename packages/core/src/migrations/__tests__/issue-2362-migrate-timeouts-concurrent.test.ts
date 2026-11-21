@@ -1199,3 +1199,35 @@ describe('INVALID index detection and rebuild (issue #2362)', () => {
     );
   });
 });
+
+describe('the deferred phase holds its locks and cleans up (#5325)', () => {
+  it('holds the row lock through a retry takeover outside a batch', async () => {
+    const fake = createFakeDb();
+    fake.rows.set('add_index_jobs_status_idx', {
+      id: 'seeded',
+      name: 'add_index_jobs_status_idx',
+      checksum: 'any',
+      status: 'failed',
+      error_message: 'lock timeout',
+      attempts: 1,
+      applied_at: new Date().toISOString(),
+      is_reversible: 0,
+      batch: 1,
+    });
+
+    const result = await new MigrationTracker({ db: fake.db }).apply(addIndex, {
+      reconcile: true,
+    });
+
+    expect(result.success).toBe(true);
+    const lock = fake.queries.findIndex((entry) =>
+      entry.sql.includes('pg_try_advisory_xact_lock'),
+    );
+    const takeover = fake.queries.findIndex((entry) =>
+      entry.sql.includes("status = 'running'"),
+    );
+    expect(fake.queries[lock]?.channel).toBe('transaction');
+    expect(fake.queries[takeover]?.channel).toBe('transaction');
+    expect(takeover).toBe(lock + 1);
+  });
+});
