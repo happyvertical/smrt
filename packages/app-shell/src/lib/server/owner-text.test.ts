@@ -16,7 +16,7 @@ import { call, drive, say, scripted } from './assistant/test-helpers.ts';
 import { shellMcpServer } from './catalog.ts';
 import { getHost } from './host.ts';
 import { createShellMcpServer } from './mcp-server.ts';
-import { leaksHost, ownerResult, ownerText } from './owner-text.ts';
+import { ownerResult, ownerText } from './owner-text.ts';
 import { callTool } from './policy.ts';
 import {
   applyWaiting,
@@ -52,14 +52,11 @@ const VERBATIM: [string, string][] = [
 
 const DRIVER =
   'Database query failed: INSERT INTO t (a) VALUES ($1)\nCause: connect ECONNREFUSED db.internal.example:5432 user svc_app';
-const LEAK = 'could not reach 10.0.3.7:5432';
 const SAVE = 'that change could not be saved, try again';
 const DOWN = 'the database is unavailable, try again';
 
 let h: ShellHarness;
 beforeAll(async () => {
-  process.env.DATABASE_URL =
-    'postgres://svc_app:pw@db.internal.example:5432/app';
   h = await openShell();
   await runAs(h.owner, async () => {
     await callTool(h.owner, 'app_definemodel', {
@@ -70,7 +67,6 @@ beforeAll(async () => {
   await applyWaiting(h.owner);
 });
 afterAll(async () => {
-  delete process.env.DATABASE_URL;
   await h.close();
 });
 afterEach(() => {
@@ -103,45 +99,13 @@ describe('ownerText', () => {
     expect(log).toHaveBeenCalledWith(expect.stringContaining('ECONNREFUSED'));
   });
 
-  it('checks host names and IPs as whole words only', () => {
-    expect(leaksHost('10.0.3.7')).toBe(true);
-    expect(leaksHost('peer [fe80::1]:5432 refused')).toBe(true);
-    expect(leaksHost('db.internal.example refused')).toBe(true);
-    expect(leaksHost('xdb.internal.example.org')).toBe(false);
-    expect(leaksHost('SSL is on; svc_app owns it; at 12:30:45')).toBe(false);
-    expect(leaksHost('version 1.2.3 of 300.1.1.1')).toBe(false);
-    expect(leaksHost('build 1.2.3.400 done')).toBe(false);
-    expect(leaksHost('Foo:: bar and ::')).toBe(false);
-    // the deliberate blunt rule: a valid dotted quad is hidden even as a version
-    expect(leaksHost('needs version 1.2.3.4')).toBe(true);
-    expect(leaksHost('loopback ::1')).toBe(true);
-    // punctuation after an address, and an address after a label
-    expect(leaksHost('no route to fd00::7: timed out')).toBe(true);
-    expect(leaksHost('addr:fd00::7')).toBe(true);
-    expect(leaksHost('host:2001:db8::5 refused')).toBe(true);
-    expect(leaksHost('connect ::1:5432')).toBe(true);
-    expect(leaksHost('at 10.0.3.7:5432')).toBe(true);
-    expect(leaksHost('host=fd00::7 refused')).toBe(true);
-    for (const t of [
-      'std::vector and Foo::bar and a::b',
-      'Foo::b1',
-      'std::c0',
-      'Rust::fe1',
-      'Foo::add1',
-      'Foo::Bar',
-      'at 12:30:45',
-    ])
-      expect(leaksHost(t), t).toBe(false);
-  });
-
-  it('scans long input in bounded time', () => {
-    const t = Date.now();
-    leaksHost('a'.repeat(10_000));
-    leaksHost('a:'.repeat(5_000));
-    leaksHost(`${'a'.repeat(10_000)}!`);
-    for (const unit of ['.', '1.', 'a.'])
-      leaksHost(unit.repeat(Math.ceil(100_000 / unit.length)));
-    expect(Date.now() - t).toBeLessThan(1000);
+  it('only replaces text that starts with the driver prefix', () => {
+    expect(ownerText('failed: Database query failed: SELECT 1')).toBe(
+      'failed: Database query failed: SELECT 1',
+    );
+    expect(ownerText('could not reach 10.0.3.7:5432')).toBe(
+      'could not reach 10.0.3.7:5432',
+    );
   });
 });
 
@@ -227,7 +191,6 @@ describe('every exit', () => {
       SAVE,
       ['ECONNREFUSED', 'db.internal.example', 'svc_app', 'INSERT'],
     ],
-    ['a host leak', LEAK, DOWN, ['10.0.3.7']],
   ])('%s is replaced', (_n, raw, reason, banned) => {
     const clean = (s: string) => {
       for (const b of banned) expect(s).not.toContain(b);
@@ -272,7 +235,7 @@ describe('every exit', () => {
       const body = JSON.parse((pending.content as { text: string }[])[0].text);
       const id = (body.result ?? body).approvalId as string;
       const two = errored(raw);
-      two.content.push({ type: 'text', text: `second: ${raw}` });
+      two.content.push({ type: 'text', text: `Error: ${raw}` });
       vi.spyOn(host, 'callAppTool').mockResolvedValue(two as never);
       const outcome = (await decideApproval(id, true, h.owner.id)) as {
         status: string;

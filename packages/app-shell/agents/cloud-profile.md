@@ -266,30 +266,20 @@ a tenant could make the server call an internal address.
 ## Database text in tool errors (interim, #5464; full boundary #5498)
 
 `src/lib/server/owner-text.ts` is the one place that decides which error text
-may leave. Only two things are replaced, with a generic sentence plus a short
-reason ("that change could not be saved, try again" / "the database is
-unavailable, try again"), the raw text going to the server log:
-
-- text that starts with `Database query failed:` (core's
-  `DatabaseError.queryFailed`: the SQL and the driver's cause), and
-- text naming a configured database host (`DATABASE_URL`, `PGHOST`) or any IP
-  address (v4/v6), whole words; no user or database names, no bare "SSL".
+may leave. Only text that starts with `Database query failed:` (core's
+`DatabaseError.queryFailed`: the SQL and the driver's cause) is replaced, with
+a generic sentence plus a short reason ("that change could not be saved, try
+again" / "the database is unavailable, try again"); the raw text goes to the
+server log. An optional `Error:` prefix is allowed; mid-text occurrences are
+left alone.
 
 Everything else passes through unchanged: the runtime's own messages,
-validation, a method's own text, SQLite and PostgreSQL constraint text. Exits
-covered: `dispatchTool` (app and shell tool results, and so the assistant and
-`/mcp` calls), the assistant's thrown-error chip, an approval's stored failure
-text, and the `/mcp` JSON-RPC errors (`tools/list`, scope and authorization,
-calls). Not covered: any other route, SSE, logs of other layers, the worker
-protocol and database handles. That is #5498.
-
-The check is deliberately blunt for the interim: a validation message that
-echoes a literal IP, or a version that is a valid dotted quad such as `1.2.3.4`,
-is also replaced, and a short configured host name (for example `db`) hides any
-message containing that whole word. A stored approval failure is scrubbed in
-every content item and `structuredContent`, so reading the approval back shows
-the same generic text.
-
-An IPv4 inside a longer dotted token (a leading dot, `1.2.3.4.5`) is not an
-address and passes. IPv6 needs a digit (`a::b` and `std::vector` pass) and is
-found after punctuation (`fd00::7:`) and after a label (`addr:fd00::7`).
+validation, a method's own text, SQLite and PostgreSQL constraint text.
+Address-shaped leaks (host names, IPs) in other error text are NOT covered:
+they are left to the full boundary (#5498). Exits covered: `dispatchTool` (app
+and shell tool results, and so the assistant and `/mcp` calls), the assistant's
+thrown-error chip, an approval's stored failure text (every content item and
+`structuredContent`, so reading the approval back shows the same generic text),
+and the `/mcp` JSON-RPC errors (`tools/list`, scope and authorization, calls).
+Not covered: any other route, SSE, logs of other layers, the worker protocol
+and database handles.
