@@ -1,8 +1,18 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import {
+  existsSync,
+  lstatSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  readlinkSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, relative } from 'node:path';
 import type { Plugin } from 'vite';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { SmartObjectManifest } from '../scanner/types.js';
 import type { SvelteKitOptions } from './sveltekit-generator.js';
 import {
@@ -927,5 +937,268 @@ describe('contributeSvelteKitRoutes', () => {
       }
       break;
     }
+  });
+});
+
+const OWNERSHIP_CODE = 'SMRT_ROUTE_OWNERSHIP_CONFLICT';
+const APPLICATION_HANDLER =
+  "export const GET = () => new Response('application handler');\n";
+
+/** Every path below `root` with its type and content digest. */
+function treeInventory(root: string): Record<string, string> {
+  const entries: Record<string, string> = {};
+  const walk = (directory: string) => {
+    for (const name of readdirSync(directory).sort()) {
+      const path = join(directory, name);
+      const stats = lstatSync(path);
+      const key = relative(root, path);
+      if (stats.isSymbolicLink()) entries[key] = `link:${readlinkSync(path)}`;
+      else if (stats.isDirectory()) {
+        entries[key] = 'dir';
+        walk(path);
+      } else {
+        entries[key] = createHash('sha256')
+          .update(readFileSync(path))
+          .digest('hex');
+      }
+    }
+  };
+  walk(root);
+  return entries;
+}
+
+describe('coordinated generation never replaces an application route file', () => {
+  const local = () =>
+    manifest('LocalWidget', 'LocalWidget', 'local-widgets', '@app/local');
+  const remote = () =>
+    manifest(
+      '@acme/widgets:RemoteWidget',
+      'RemoteWidget',
+      'remote-widgets',
+      '@acme/widgets',
+    );
+
+  it('coordinated producer and consumer generation enforces ownership', async () => {
+    const root = temporaryProject();
+    const first = {};
+    await contribute(
+      first,
+      ['producer', 'consumer'],
+      root,
+      'producer',
+      local(),
+    );
+    await contribute(
+      first,
+      ['producer', 'consumer'],
+      root,
+      'consumer',
+      remote(),
+    );
+    const producerFile = routeFile(root, 'local-widgets');
+    const consumerFile = join(
+      root,
+      'src/routes/api/remote-widgets/[id]/+server.ts',
+    );
+    writeFileSync(producerFile, APPLICATION_HANDLER);
+    writeFileSync(consumerFile, APPLICATION_HANDLER);
+    const before = treeInventory(root);
+
+    const next = {};
+    await contribute(next, ['producer', 'consumer'], root, 'producer', local());
+    const refusal = await contribute(
+      next,
+      ['producer', 'consumer'],
+      root,
+      'consumer',
+      remote(),
+    ).then(
+      () => undefined,
+      (error: unknown) => error as Error & { files: string[] },
+    );
+
+    expect(refusal).toMatchObject({ code: OWNERSHIP_CODE, phase: 'preflight' });
+    expect(refusal?.files).toEqual(
+      expect.arrayContaining([producerFile, consumerFile]),
+    );
+    expect(treeInventory(root)).toEqual(before);
+  });
+
+  it('a refused generation leaves its outputs untouched and runs no hooks', async () => {
+    const root = temporaryProject();
+    const beforeCleanup = vi.fn();
+    const afterGenerate = vi.fn();
+    const contribution = () => ({
+      owner: 'producer' as const,
+      routeManifest: local(),
+      semanticManifest: local(),
+      options: routeOptions(),
+      beforeCleanup,
+      afterGenerate,
+    });
+    await contributeSvelteKitRoutes({}, ['producer'], root, contribution());
+    expect(beforeCleanup).toHaveBeenCalledTimes(1);
+    expect(afterGenerate).toHaveBeenCalledTimes(1);
+    beforeCleanup.mockClear();
+    afterGenerate.mockClear();
+    const file = join(root, 'src/routes/api/local-widgets/[id]/+server.ts');
+    writeFileSync(file, APPLICATION_HANDLER);
+    const before = treeInventory(root);
+
+    await expect(
+      contributeSvelteKitRoutes({}, ['producer'], root, contribution()),
+    ).rejects.toMatchObject({
+      code: OWNERSHIP_CODE,
+      phase: 'preflight',
+      files: [file],
+    });
+
+    expect(beforeCleanup).not.toHaveBeenCalled();
+    expect(afterGenerate).not.toHaveBeenCalled();
+    expect(treeInventory(root)).toEqual(before);
+  });
+
+  it('a foreign producer’s protected route is never swept or written, and planning a write to it throws', async () => {
+    const root = temporaryProject();
+    const lifecycle = {};
+    const knowledgePath = join(
+      root,
+      'src/routes/external/knowledge/+server.ts',
+    );
+    await contribute(
+      lifecycle,
+      ['producer'],
+      root,
+      'producer',
+      local(),
+      routeOptions({
+        knowledge: { api: { enabled: true, basePath: '/external/knowledge' } },
+      }),
+    );
+    const producerBytes = readFileSync(knowledgePath, 'utf8');
+
+    // Untouched: a consumer root that contains the protected path does not
+    // sweep it.
+    await contribute(
+      lifecycle,
+      ['consumer'],
+      root,
+      'consumer',
+      remote(),
+      routeOptions({ routesDir: 'src/routes/external' }),
+    );
+    expect(readFileSync(knowledgePath, 'utf8')).toBe(producerBytes);
+
+    // Planned: a consumer route at the protected path throws before writing,
+    // even without the collision claim pass.
+    await expect(
+      contribute(
+        lifecycle,
+        ['consumer'],
+        root,
+        'consumer',
+        manifest(
+          '@acme/widgets:Knowledge',
+          'Knowledge',
+          'knowledge',
+          '@acme/widgets',
+        ),
+        routeOptions({
+          routesDir: 'src/routes/external',
+          rejectRouteCollisions: false,
+        }),
+      ),
+    ).rejects.toThrow('Conflicting SvelteKit route');
+    expect(readFileSync(knowledgePath, 'utf8')).toBe(producerBytes);
+  });
+
+  it('a foreign producer’s protected knowledge route is never removed by a producer with knowledge disabled', async () => {
+    const root = temporaryProject();
+    const lifecycle = {};
+    const knowledgePath = join(root, 'src/routes/__smrt/knowledge/+server.ts');
+    await contribute(
+      lifecycle,
+      ['producer'],
+      root,
+      'producer',
+      local(),
+      routeOptions({ knowledge: { api: { enabled: true } } }),
+    );
+    const producerBytes = readFileSync(knowledgePath, 'utf8');
+
+    await contribute(
+      lifecycle,
+      ['producer'],
+      root,
+      'producer',
+      manifest('OtherWidget', 'OtherWidget', 'other-widgets', '@app/other'),
+      routeOptions({
+        routesDir: 'src/routes/other',
+        knowledge: { api: { enabled: false } },
+      }),
+    );
+
+    expect(
+      existsSync(join(root, 'src/routes/other/other-widgets/+server.ts')),
+    ).toBe(true);
+    expect(readFileSync(knowledgePath, 'utf8')).toBe(producerBytes);
+  });
+
+  it.each([
+    ['with an application handler in the former root', true],
+    ['without an application handler (both roots reconcile)', false],
+  ])('a nested generation refusal after a successful outer commit fails the build and leaves the outer root changed (%s)', async (_label, withHandler) => {
+    const root = temporaryProject();
+    const lifecycle = {};
+    const oldOptions = routeOptions({ routesDir: 'src/routes/api-old' });
+    // 1. The producer's contribution into the former root succeeds.
+    await contribute(
+      lifecycle,
+      ['producer'],
+      root,
+      'producer',
+      local(),
+      oldOptions,
+    );
+    const oldRoot = join(root, 'src/routes/api-old');
+    const handler = join(oldRoot, 'local-widgets/+server.ts');
+    const newRoute = join(root, 'src/routes/api-new/remote-widgets/+server.ts');
+    expect(existsSync(newRoute)).toBe(false);
+    // 2. Between invocations, a hand-written handler takes a planned path.
+    if (withHandler) writeFileSync(handler, APPLICATION_HANDLER);
+    const oldBefore = treeInventory(oldRoot);
+
+    // 3. The hosted consumer moves to a new root; afterGenerate reconciles
+    // the former root through the real revocation call.
+    const run = contributeSvelteKitRoutes(lifecycle, ['consumer'], root, {
+      owner: 'consumer',
+      routeManifest: remote(),
+      semanticManifest: remote(),
+      options: routeOptions({ routesDir: 'src/routes/api-new' }),
+      afterGenerate: () =>
+        revokeSvelteKitRoutes(
+          lifecycle,
+          ['producer'],
+          root,
+          'src/routes/api-old',
+        ),
+    });
+
+    if (withHandler) {
+      await expect(run).rejects.toMatchObject({
+        code: OWNERSHIP_CODE,
+        phase: 'preflight',
+        files: [handler],
+      });
+      expect(treeInventory(oldRoot)).toEqual(oldBefore);
+      expect(readFileSync(handler, 'utf8')).toBe(APPLICATION_HANDLER);
+    } else {
+      await expect(run).resolves.toBeUndefined();
+      expect(readFileSync(handler, 'utf8')).toContain(
+        'Auto-generated by @smrt/core vite plugin',
+      );
+    }
+    // The outer invocation already committed the new root.
+    expect(existsSync(newRoute)).toBe(true);
   });
 });

@@ -19,12 +19,26 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { build } from 'esbuild';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { SmartObjectManifest } from '../scanner/types';
+import { RouteFilePlan } from './generated-route-files';
 import { generateCollectionAccessImports } from './sveltekit-config-import';
+import type { SvelteKitOptions } from './sveltekit-generator';
 import {
   collectSyncApplyTargets,
-  generateSyncApplyRoute,
+  generateSyncApplyRoute as generateSyncApplyRouteInto,
   generateSyncApplyRouteTemplate,
 } from './sync-apply-route';
+
+/** Plan, check and commit the route as the generator does; true if written. */
+function generateSyncApplyRoute(
+  projectRoot: string,
+  manifest: SmartObjectManifest,
+  options: SvelteKitOptions,
+): boolean {
+  const plan = new RouteFilePlan();
+  generateSyncApplyRouteInto(projectRoot, manifest, options, plan);
+  plan.preflight();
+  return plan.commit().length > 0;
+}
 
 function manifestWith(
   objects: Record<string, Record<string, unknown>>,

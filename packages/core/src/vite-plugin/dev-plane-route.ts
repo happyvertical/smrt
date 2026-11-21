@@ -10,9 +10,9 @@
  * only emitted when that subpath resolves from the consumer.
  */
 
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { consumerResolvesImport } from './consumer-import.js';
+import type { RouteFilePlan } from './generated-route-files.js';
 import { AUTO_GENERATED_ROUTE_HEADER } from './route-header.js';
 import { generateCollectionAccessImports } from './sveltekit-config-import.js';
 import type { SvelteKitOptions } from './sveltekit-generator.js';
@@ -41,9 +41,11 @@ export function willGenerateDevPlaneRoute(
   );
 }
 
+/** Plan the `_dev/[...tool]` route; true when it was emitted into `plan`. */
 export function generateDevPlaneRoute(
   projectRoot: string,
   options: SvelteKitOptions,
+  plan: RouteFilePlan,
 ): boolean {
   if (options.devPlaneRoute?.enabled !== true) {
     return false;
@@ -56,20 +58,16 @@ export function generateDevPlaneRoute(
     return false;
   }
   const routeDir = join(projectRoot, options.routesDir, '_dev', '[...tool]');
-  if (!existsSync(routeDir)) {
-    mkdirSync(routeDir, { recursive: true });
-  }
-  const filePath = join(routeDir, '+server.ts');
-  writeFileSync(
-    filePath,
-    generateDevPlaneRouteTemplate(
+  plan.emit({
+    root: join(projectRoot, options.routesDir),
+    routeDir,
+    content: generateDevPlaneRouteTemplate(
       generateCollectionAccessImports(projectRoot, routeDir, options, [
         'getSmrtConfig',
       ]),
     ),
-    'utf-8',
-  );
-  console.log(`[smrt] Generated: ${filePath}`);
+    label: '_dev',
+  });
   return true;
 }
 
