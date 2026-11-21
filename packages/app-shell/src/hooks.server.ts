@@ -16,6 +16,7 @@ import {
   keepOwnerHandoffFresh,
 } from '$lib/server/owner-handoff';
 import { runtime } from '$lib/server/smrt';
+import { storageMeteringHandle } from '$lib/server/storage-metering-handle';
 
 export const init = async () => {
   await runtime.ready();
@@ -39,4 +40,8 @@ export const init = async () => {
     );
   });
 };
-export const handle = sequence(runtime.handle, appsRestHandle);
+export const handle = sequence(
+  runtime.handle,
+  storageMeteringHandle,
+  appsRestHandle,
+);
