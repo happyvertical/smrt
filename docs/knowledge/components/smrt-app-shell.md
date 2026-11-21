@@ -5,10 +5,10 @@ description: "A smrt app that builds and runs a person's own smrt app from defin
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-21T14:04:13Z"
+  at: "2026-11-21T18:35:16Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:3c975ef0b33e2bac8b248faa98827e944d60e16ba502a0c94bdf404cb186ccf5"
+source_revision: "sha256:d5570049822960270596f1f2cc7fcc0fe7e72fafe12c4d5f67f737d26fe7f826"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/app-shell/package.json"
@@ -26,9 +26,12 @@ sources:
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/app-shell/agents/engine.md"
     title: "@happyvertical/smrt-app-shell packages/app-shell/agents/engine.md"
   - id: "agents-5"
+    resource: "https://github.com/happyvertical/smrt/blob/main/packages/app-shell/agents/hosted-inference.md"
+    title: "@happyvertical/smrt-app-shell packages/app-shell/agents/hosted-inference.md"
+  - id: "agents-6"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/app-shell/agents/imports.md"
     title: "@happyvertical/smrt-app-shell packages/app-shell/agents/imports.md"
-  - id: "agents-6"
+  - id: "agents-7"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/app-shell/agents/shared-pieces.md"
     title: "@happyvertical/smrt-app-shell packages/app-shell/agents/shared-pieces.md"
 ---
@@ -48,6 +51,7 @@ sources:
 - `packages/app-shell/agents/cloud-profile.md`
 - `packages/app-shell/agents/draft-ui.md`
 - `packages/app-shell/agents/engine.md`
+- `packages/app-shell/agents/hosted-inference.md`
 - `packages/app-shell/agents/imports.md`
 - `packages/app-shell/agents/shared-pieces.md`
 
@@ -58,6 +62,7 @@ sources:
 - [smrt-chat](/components/smrt-chat.md)
 - [smrt-config](/components/smrt-config.md)
 - [smrt-core](/components/smrt-core.md)
+- [smrt-features](/components/smrt-features.md)
 - [smrt-inference](/components/smrt-inference.md)
 - [smrt-jobs](/components/smrt-jobs.md)
 - [smrt-preferences](/components/smrt-preferences.md)
@@ -66,6 +71,7 @@ sources:
 - [smrt-reports](/components/smrt-reports.md)
 - [smrt-secrets](/components/smrt-secrets.md)
 - [smrt-spreadsheets](/components/smrt-spreadsheets.md)
+- [smrt-subscriptions](/components/smrt-subscriptions.md)
 - [smrt-svelte](/components/smrt-svelte.md)
 - [smrt-tenancy](/components/smrt-tenancy.md)
 - [smrt-ui](/components/smrt-ui.md)
