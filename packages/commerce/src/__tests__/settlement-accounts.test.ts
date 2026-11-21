@@ -21,6 +21,7 @@ import {
 } from '../index.js';
 import { PaymentMethod, PaymentStatus } from '../types/index.js';
 
+const databaseType = process.env.SMRT_TEST_PGLITE === '1' ? 'pglite' : 'sqlite';
 const TENANT = '11111111-1111-4111-8111-111111111111';
 const OTHER = '22222222-2222-4222-8222-222222222222';
 
@@ -28,7 +29,7 @@ describe('ensureTenantSettlementAccounts', () => {
   let db: DatabaseInterface;
 
   beforeEach(async () => {
-    db = await getTestDatabase({ type: 'sqlite', url: ':memory:' });
+    db = await getTestDatabase({ type: databaseType, url: ':memory:' });
     enableTenancy();
   });
 
@@ -160,6 +161,45 @@ describe('ensureTenantSettlementAccounts', () => {
       payment.getJournal(),
     );
     expect(journal).not.toBeNull();
+    expect(journal?.ledgerId).toBe(seeded.ledgerId);
+    expect(journal?.tenantId).toBe(TENANT);
+    const entries = await withTenant(
+      { tenantId: TENANT },
+      async () =>
+        (await journal!.getEntries()) as {
+          accountId: string;
+          debit: number;
+          credit: number;
+        }[],
+    );
+    const byAccount = Object.fromEntries(
+      entries.map((e) => [e.accountId, [e.debit, e.credit]]),
+    );
+    expect(byAccount[seeded.cashAccountId]).toEqual([300, 0]);
+    expect(byAccount[seeded.receivablesAccountId]).toEqual([0, 300]);
+  });
+
+  it('settles a payment with tenancy off, from the payment tenant alone', async () => {
+    const seeded = await ensureTenantSettlementAccounts(db, TENANT, {
+      currency: 'CAD',
+    });
+    disableTenancy();
+    const payment = await (await PaymentCollection.create({ db })).create({
+      tenantId: TENANT,
+      amount: 300,
+      currency: 'CAD',
+      method: PaymentMethod.BANK_TRANSFER,
+      status: PaymentStatus.PENDING,
+      transactionId: 'manual:test:3',
+      reference: 'manual:test:3',
+    });
+    await payment.recordPayment({
+      ledgerId: '',
+      receivablesAccountId: seeded.receivablesAccountId,
+      cashAccountId: seeded.cashAccountId,
+    });
+    expect(payment.status).toBe(PaymentStatus.COMPLETED);
+    enableTenancy();
   });
 
   it('recordPayment refuses a ledger that does not own the cash account', async () => {

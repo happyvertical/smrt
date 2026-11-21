@@ -36,3 +36,8 @@ accounts are the `arAccountId` / `revenueAccountId` of `recognizeRevenue`.
   ledger") because the journal was always ledger-less; it now takes the cash
   account's ledger and refuses a `ledgerId` that does not own it. Ledger-less
   accounts (`ledgerId: ''`) keep posting to a ledger-less journal.
+- Scope: this chart settles incoming payments (cash and receivables) and gives
+  `recognizeRevenue` its receivables, revenue and sales-tax accounts. It does not
+  yet back `BillingRuntime.ledger`: the billing tax journal and `postOnce`
+  journals stay ledger-less, and the chart has no fee or deposit-liability
+  account for connected payments or customer funds.

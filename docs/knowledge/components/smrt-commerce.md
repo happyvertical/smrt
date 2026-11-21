@@ -5,10 +5,10 @@ description: "Commerce models for the SMRT framework - contracts, fulfillments, 
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-21T00:01:52Z"
+  at: "2026-11-21T00:09:55Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:931d68d52633d0de2f01e6d1f7e7fe2acf755b82db04c41c4759a9c963e96ba6"
+source_revision: "sha256:5cffd486d5dac92d04d44686e666c2105e994175ce6d6f119b3e504a25688073"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/commerce/package.json"

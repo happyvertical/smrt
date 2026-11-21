@@ -1018,9 +1018,10 @@ export class Payment extends SmrtObject {
     );
 
     // A ledger-scoped chart posts into its own ledger (#5412): the journal
-    // takes the cash account's ledger, which must be the one the caller named.
-    // Ledger-less (legacy) accounts keep posting to a ledger-less journal, and
-    // `ledgerId: ''` stays the way to say so.
+    // takes the cash account's ledger (and the payment's tenant), and a
+    // non-empty `ledgerId` must be that ledger. `ledgerId: ''` means "whatever
+    // the cash account says"; ledger-less (legacy) cash accounts keep posting
+    // to a ledger-less journal.
     const cashAccount = await (
       await AccountCollection.create(this.options)
     ).get({ id: options.cashAccountId }, { cache: false });
@@ -1039,7 +1040,9 @@ export class Payment extends SmrtObject {
 
     // Create a new journal for this payment
     const journal = await journalCollection.create({
-      ...(journalLedgerId ? { ledgerId: journalLedgerId } : {}),
+      ...(journalLedgerId
+        ? { ledgerId: journalLedgerId, tenantId: this.tenantId }
+        : {}),
       date: effectiveDate,
       description:
         this.kind === 'refund'

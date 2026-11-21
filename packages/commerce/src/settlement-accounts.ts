@@ -16,6 +16,7 @@ import {
 } from '@happyvertical/smrt-core';
 import type { DatabaseInterface } from '@happyvertical/smrt-core/migrations';
 import { withTenant } from '@happyvertical/smrt-tenancy';
+import { createOrLoadTaxSeed, deterministicSeedId } from './tax/identity.js';
 
 /** The accounts every settlement chart carries, by stable number. */
 export const SETTLEMENT_ACCOUNTS = [
@@ -67,45 +68,6 @@ export interface TenantSettlementAccounts {
   readonly revenueAccountId: string;
 }
 
-/** Stable UUID identities make the seed retry and race safe. */
-async function settlementId(
-  tenantId: string,
-  currency: string,
-  key: string,
-): Promise<string> {
-  const bytes = new TextEncoder().encode(
-    JSON.stringify(['commerce-settlement', tenantId, currency, key]),
-  );
-  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes));
-  const uuid = digest.slice(0, 16);
-  uuid[6] = (uuid[6] & 0x0f) | 0x50;
-  uuid[8] = (uuid[8] & 0x3f) | 0x80;
-  const hex = Array.from(uuid, (byte) => byte.toString(16).padStart(2, '0'));
-  const joined = hex.join('');
-  return `${joined.slice(0, 8)}-${joined.slice(8, 12)}-${joined.slice(12, 16)}-${joined.slice(16, 20)}-${joined.slice(20)}`;
-}
-
-/** A racing deterministic insert loses safely and reloads the committed row. */
-async function createOrLoad<T>(
-  create: () => Promise<T>,
-  load: () => Promise<T | null | undefined>,
-): Promise<T> {
-  for (let attempt = 0; attempt < 3; attempt++) {
-    try {
-      return await create();
-    } catch (error) {
-      const code = (error as { code?: unknown } | null)?.code;
-      if (code === 'RUNTIME_REVISION_CONFLICT' && attempt < 2) continue;
-      if (code !== 'VALIDATION_UNIQUE_CONSTRAINT' && code !== '23505')
-        throw error;
-      const winner = await load();
-      if (!winner) throw error;
-      return winner;
-    }
-  }
-  throw new Error('Settlement account seed retry exhausted');
-}
-
 async function lockSettlementSeed(
   db: DatabaseInterface,
   tenantId: string,
@@ -147,7 +109,12 @@ export async function ensureTenantSettlementAccounts(
   const { AccountCollection, LedgerCollection } = await import(
     '@happyvertical/smrt-ledgers'
   );
-  const ledgerKey = await settlementId(tenantId, currency, 'ledger');
+  const ledgerKey = await deterministicSeedId(
+    'commerce-settlement',
+    tenantId,
+    currency,
+    'ledger',
+  );
 
   return withEmbeddedWriteTransaction(
     db,
@@ -162,7 +129,7 @@ export async function ensureTenantSettlementAccounts(
           ledgers.get({ id: ledgerKey }, { cache: false });
         let ledger = await loadLedger();
         if (!ledger) {
-          ledger = await createOrLoad(
+          ledger = await createOrLoadTaxSeed(
             () =>
               ledgers.create({
                 id: ledgerKey,
@@ -185,7 +152,8 @@ export async function ensureTenantSettlementAccounts(
 
         const ids = {} as Record<SettlementKey, string>;
         for (const seed of SETTLEMENT_ACCOUNTS) {
-          const id = await settlementId(
+          const id = await deterministicSeedId(
+            'commerce-settlement',
             tenantId,
             currency,
             `account:${seed.key}`,
@@ -193,7 +161,7 @@ export async function ensureTenantSettlementAccounts(
           const load = () => accounts.get({ id }, { cache: false });
           let account = await load();
           if (!account) {
-            account = await createOrLoad(
+            account = await createOrLoadTaxSeed(
               () =>
                 accounts.create({
                   id,

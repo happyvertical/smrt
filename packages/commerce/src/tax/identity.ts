@@ -1,3 +1,21 @@
+/**
+ * Stable UUIDv5-shaped identity from a list of parts (SHA-256 of their JSON).
+ * Shared by the tenant tax and settlement-account seeds so retries and races
+ * converge on one row.
+ */
+export async function deterministicSeedId(
+  ...parts: readonly string[]
+): Promise<string> {
+  const bytes = new TextEncoder().encode(JSON.stringify(parts));
+  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes));
+  const uuid = digest.slice(0, 16);
+  uuid[6] = (uuid[6] & 0x0f) | 0x50;
+  uuid[8] = (uuid[8] & 0x3f) | 0x80;
+  const hex = Array.from(uuid, (byte) => byte.toString(16).padStart(2, '0'));
+  const joined = hex.join('');
+  return `${joined.slice(0, 8)}-${joined.slice(8, 12)}-${joined.slice(12, 16)}-${joined.slice(16, 20)}-${joined.slice(20)}`;
+}
+
 /** Stable UUID identities make tenant tax bootstrap retry and race safe. */
 export async function deterministicTaxId(
   tenantId: string,
@@ -6,16 +24,7 @@ export async function deterministicTaxId(
 ): Promise<string> {
   if (!tenantId.trim() || !key.trim())
     throw new Error('Tax bootstrap identity requires tenant and key');
-  const bytes = new TextEncoder().encode(
-    JSON.stringify(['commerce-tax', tenantId, kind, key]),
-  );
-  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes));
-  const uuid = digest.slice(0, 16);
-  uuid[6] = (uuid[6] & 0x0f) | 0x50;
-  uuid[8] = (uuid[8] & 0x3f) | 0x80;
-  const hex = Array.from(uuid, (byte) => byte.toString(16).padStart(2, '0'));
-  const joined = hex.join('');
-  return `${joined.slice(0, 8)}-${joined.slice(8, 12)}-${joined.slice(12, 16)}-${joined.slice(16, 20)}-${joined.slice(20)}`;
+  return deterministicSeedId('commerce-tax', tenantId, kind, key);
 }
 
 /** A racing deterministic insert loses safely and reloads the committed row. */
