@@ -59,13 +59,16 @@ const h = vi.hoisted(() => {
     lockRelease: vi.fn(async () => {}),
     acquireMigrationLock: vi.fn(
       async (
-        ..._args: unknown[]
+        ...args: unknown[]
       ): Promise<{
         held: boolean;
+        db: unknown;
         waitedMs: number;
         assertHeld: () => Promise<void>;
         release: () => Promise<void>;
       }> => ({
+        // The run continues on `lock.db`, here the handle itself.
+        db: args[0],
         held: false,
         waitedMs: 0,
         assertHeld: async () => {},
@@ -242,6 +245,7 @@ vi.mock('@happyvertical/smrt-core/migrations', async () => {
     hasExecutableSchemaSql: actual.hasExecutableSchemaSql,
     acquireMigrationLock: (...args: unknown[]) =>
       h.acquireMigrationLock(...args),
+    recordMigrateConfirmation: actual.recordMigrateConfirmation,
     buildConcurrentIndexPlan: actual.buildConcurrentIndexPlan,
     DEFAULT_MIGRATION_LOCK_WAIT_TIMEOUT_MS:
       actual.DEFAULT_MIGRATION_LOCK_WAIT_TIMEOUT_MS,
@@ -758,9 +762,10 @@ describe('utility command handlers', () => {
   it('db:migrate holds the migration lock from before tracker bootstrap until the run ends (#3634)', async () => {
     configureMigrate();
     const order: string[] = [];
-    acquireMigrationLock.mockImplementationOnce(async () => {
+    acquireMigrationLock.mockImplementationOnce(async (...args: unknown[]) => {
       order.push('acquire');
       return {
+        db: args[0],
         held: true,
         waitedMs: 0,
         assertHeld: async () => {},
@@ -798,6 +803,7 @@ describe('utility command handlers', () => {
       const options = args[1] as { onWait?: () => void };
       options.onWait?.();
       return {
+        db: args[0],
         held: true,
         waitedMs: 4200,
         assertHeld: async () => {},
@@ -846,12 +852,13 @@ describe('utility command handlers', () => {
 
   it('db:migrate releases the migration lock when the run fails (#3634)', async () => {
     configureMigrate();
-    acquireMigrationLock.mockResolvedValueOnce({
+    acquireMigrationLock.mockImplementationOnce(async (...args: unknown[]) => ({
+      db: args[0],
       held: true,
       waitedMs: 0,
       assertHeld: async () => {},
       release: lockRelease,
-    });
+    }));
     schemaCompare.mockRejectedValueOnce(new Error('introspection failed'));
 
     await requireCommandHandler(utilityCommands['db:migrate'])([], {});
@@ -862,14 +869,15 @@ describe('utility command handlers', () => {
 
   it('db:migrate stops before applying when the migration lock was lost (#3634)', async () => {
     configureMigrate();
-    acquireMigrationLock.mockResolvedValueOnce({
+    acquireMigrationLock.mockImplementationOnce(async (...args: unknown[]) => ({
+      db: args[0],
       held: true,
       waitedMs: 0,
       assertHeld: async () => {
         throw new Error('The db:migrate migration lock was lost');
       },
       release: lockRelease,
-    });
+    }));
     schemaCompare.mockResolvedValue({
       added_tables: [],
       changes: [

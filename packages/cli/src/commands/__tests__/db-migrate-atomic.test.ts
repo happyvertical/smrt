@@ -226,12 +226,16 @@ vi.mock('@happyvertical/smrt-core/migrations', async () => {
     // The cross-process migration lock (#3634) has its own contract and
     // real-PostgreSQL coverage; these fixtures fake a PostgreSQL adapter with
     // no pinned sessions, so hold an inert lock here.
-    acquireMigrationLock: vi.fn(async () => ({
+    // The run continues on `lock.db`, here the handle itself.
+    acquireMigrationLock: vi.fn(async (db: unknown) => ({
       held: false,
+      kind: 'none',
+      db,
       waitedMs: 0,
       assertHeld: async () => {},
       release: async () => {},
     })),
+    recordMigrateConfirmation: actual.recordMigrateConfirmation,
     buildConcurrentIndexPlan: actual.buildConcurrentIndexPlan,
     DEFAULT_MIGRATION_LOCK_WAIT_TIMEOUT_MS:
       actual.DEFAULT_MIGRATION_LOCK_WAIT_TIMEOUT_MS,

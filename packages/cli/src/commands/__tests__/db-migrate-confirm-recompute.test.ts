@@ -157,15 +157,18 @@ describe('db:migrate --confirm-recompute (#5018)', () => {
       { id: 'b', total: 8 },
       { id: 'c', total: 10 },
     ]);
+    // Written once, in the batch that recalculated (#5435); the declarations
+    // row after it carries none.
     const recorded = await withDb(
       async (db) =>
         (
           await db.query(
-            'SELECT recomputes FROM _smrt_migrate_runs ORDER BY created_at DESC, id DESC LIMIT 1',
+            'SELECT recomputes FROM _smrt_migrate_runs WHERE recomputes IS NOT NULL ORDER BY created_at, id',
           )
-        ).rows[0],
+        ).rows,
     );
-    expect(JSON.parse(String(recorded.recomputes))).toEqual([
+    expect(recorded).toHaveLength(1);
+    expect(JSON.parse(String(recorded[0].recomputes))).toEqual([
       { table: 'items', column: 'total', rows: 1 },
     ]);
   });

@@ -34,7 +34,10 @@ vi.mock('@happyvertical/smrt-core/migrations', async (importOriginal) => {
     >();
   return {
     ...actual,
-    acquireMigrationLock: vi.fn(async () => ({
+    // The run continues on `lock.db`, here the handle itself.
+    acquireMigrationLock: vi.fn(async (db: unknown) => ({
+      kind: 'none',
+      db,
       held: false,
       waitedMs: 0,
       assertHeld: async () => {},
