@@ -5,10 +5,10 @@ description: "A smrt app that builds and runs a person's own smrt app from defin
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-21T19:20:29Z"
+  at: "2026-11-21T20:02:10Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:fb58dcade1bbb2e45e24d94e33db63623b168ac72bc455eab4fcebf4523db9f1"
+source_revision: "sha256:e8bfd2157f667c7e0c4a7cc5aaec0f6f0c009b35b591df3be618764dc4c3c08a"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/app-shell/package.json"
@@ -26,12 +26,15 @@ sources:
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/app-shell/agents/engine.md"
     title: "@happyvertical/smrt-app-shell packages/app-shell/agents/engine.md"
   - id: "agents-5"
+    resource: "https://github.com/happyvertical/smrt/blob/main/packages/app-shell/agents/hosted-inference.md"
+    title: "@happyvertical/smrt-app-shell packages/app-shell/agents/hosted-inference.md"
+  - id: "agents-6"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/app-shell/agents/imports.md"
     title: "@happyvertical/smrt-app-shell packages/app-shell/agents/imports.md"
-  - id: "agents-6"
+  - id: "agents-7"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/app-shell/agents/shared-pieces.md"
     title: "@happyvertical/smrt-app-shell packages/app-shell/agents/shared-pieces.md"
-  - id: "agents-7"
+  - id: "agents-8"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/app-shell/agents/storage-metering.md"
     title: "@happyvertical/smrt-app-shell packages/app-shell/agents/storage-metering.md"
 ---
@@ -51,6 +54,7 @@ sources:
 - `packages/app-shell/agents/cloud-profile.md`
 - `packages/app-shell/agents/draft-ui.md`
 - `packages/app-shell/agents/engine.md`
+- `packages/app-shell/agents/hosted-inference.md`
 - `packages/app-shell/agents/imports.md`
 - `packages/app-shell/agents/shared-pieces.md`
 - `packages/app-shell/agents/storage-metering.md`
@@ -62,6 +66,7 @@ sources:
 - [smrt-chat](/components/smrt-chat.md)
 - [smrt-config](/components/smrt-config.md)
 - [smrt-core](/components/smrt-core.md)
+- [smrt-features](/components/smrt-features.md)
 - [smrt-inference](/components/smrt-inference.md)
 - [smrt-jobs](/components/smrt-jobs.md)
 - [smrt-preferences](/components/smrt-preferences.md)
