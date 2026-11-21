@@ -51,7 +51,7 @@ errors: metering never fails a request. `resetStorageMeter()` stops the timer.
 
 `readTenantUsage(window)` (`monthWindow()` for the calendar month) returns, for
 the SESSION's tenant (no tenant parameter; it refuses with no context):
-`storage { bytes (latest sample), peakBytes, sampledAt, samples, backend }` and
+`storage { bytes (latest sample), peakBytes, sampledAt (measured), bucketStart, samples, backend }` and
 `requests { count, metered }`.
 
 ## Seam for #5195 (request counts and caller kind)

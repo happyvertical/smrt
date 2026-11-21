@@ -171,10 +171,10 @@ describe('the one read', () => {
     const sizes = [4000, 9000, 6000];
     let i = 0;
     const { meter } = meterWith((t) => (t === h.a.tenantId ? sizes[i++] : 11));
-    clock = Date.UTC(2026, 11, 3, 0, 0, 0); // a month nobody sampled yet
+    const base = Date.UTC(2026, 11, 3, 0, 0, 0); // a month nobody sampled yet
     for (let n = 0; n < 3; n++) {
+      clock = base + n * HOUR + 59 * 60 * 1000; // measured late in its bucket
       await meter.sample(h.a.tenantId);
-      clock += HOUR;
     }
     await meter.sample(h.b.tenantId);
     const win = monthWindow(new Date(clock));
@@ -186,6 +186,9 @@ describe('the one read', () => {
       backend: 'sqlite',
     });
     const b = await runAs(h.b, () => meter.read(win));
+    // the measurement time, not the bucket start
+    expect(a.storage.sampledAt).toEqual(new Date(base + 2 * HOUR + 59 * 60000));
+    expect(a.storage.bucketStart).toEqual(new Date(base + 2 * HOUR));
     expect(b.storage.bytes).toBe(11);
     expect(b.storage.samples).toBe(1);
     expect(b.tenantId).toBe(h.b.tenantId);

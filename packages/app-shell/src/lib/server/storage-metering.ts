@@ -175,7 +175,10 @@ export interface TenantUsage {
     bytes: number | null;
     /** Highest sample in the window; null when none. */
     peakBytes: number | null;
+    /** When the latest sample was measured (not its bucket start). */
     sampledAt: Date | null;
+    /** Start of the latest sample's bucket. */
+    bucketStart: Date | null;
     samples: number;
     backend: string | null;
   };
@@ -340,6 +343,7 @@ export class StorageMeter {
         bytes: null,
         peakBytes: null,
         sampledAt: null,
+        bucketStart: null,
         samples: 0,
         backend: null,
       },
@@ -367,7 +371,8 @@ export class StorageMeter {
       result.storage = {
         bytes: latest.quantity,
         peakBytes: Math.max(...samples.map((m) => m.quantity)),
-        sampledAt: latest.windowStart,
+        sampledAt: measuredAt(latest),
+        bucketStart: latest.windowStart,
         samples: samples.length,
         backend: String(latest.getDimensions().backend ?? '') || null,
       };
@@ -430,4 +435,13 @@ export function monthWindow(at: Date = new Date()): { start: Date; end: Date } {
     start: new Date(Date.UTC(at.getUTCFullYear(), at.getUTCMonth(), 1)),
     end: new Date(Date.UTC(at.getUTCFullYear(), at.getUTCMonth() + 1, 1)),
   };
+}
+
+/** The stored measurement time of a sample; the bucket start for a row without one. */
+function measuredAt(row: {
+  windowStart: Date;
+  getDimensions(): Record<string, unknown>;
+}): Date {
+  const at = new Date(String(row.getDimensions().sampledAt ?? ''));
+  return Number.isNaN(at.getTime()) ? row.windowStart : at;
 }
