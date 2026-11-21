@@ -320,8 +320,10 @@ stages, refusals, digest and version numbering.
   it a failure mid-append leaves unreachable orphan versions. The queue is held
   until then, so nothing writes to the new file before the commit.
 - **Boot reconcile** (`reconcilePublish`, every `AppHost.open`, before the app
-  starts; result in `host.recovery`): a journal whose `finalVersion` is the
-  store's current only needs its leftovers removed; any other journal is ROLLED
+  starts; result in `host.recovery`): a journal marked `committed` (rewritten
+  once the store has the versions, before the aside goes) or whose
+  `finalVersion` is the store's current only needs its leftovers removed; any
+  other journal is ROLLED
   BACK (asides restored, the new file removed), not forward: nothing could have
   written to the new file, and the draft stays open to publish again. An
   unreadable journal refuses to start rather than guess. Stray

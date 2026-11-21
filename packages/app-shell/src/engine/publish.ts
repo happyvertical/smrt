@@ -303,8 +303,8 @@ export function removeRehearsal(dataDir: string, dir: string): void {
  * Run at every host start, before the app opens: finish or undo an interrupted
  * publish. The new database was never written to before the store committed
  * (the change queue is held until then), so:
- *  - the store already points at the published version: the publish happened,
- *    only the leftovers are removed;
+ *  - the journal says `committed`, or the store already points at the
+ *    published version: the publish happened, only the leftovers are removed;
  *  - otherwise the old files come back.
  * Returns what it did.
  */
@@ -315,7 +315,7 @@ export function reconcilePublish(
   const journal = readJournal(dataDir);
   let did: 'none' | 'rolled-forward' | 'rolled-back' = 'none';
   if (journal) {
-    if (current === journal.finalVersion) {
+    if (journal.committed || current === journal.finalVersion) {
       dropAside(dataDir);
       did = 'rolled-forward';
     } else {

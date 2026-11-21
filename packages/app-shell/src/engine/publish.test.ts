@@ -28,7 +28,9 @@ import {
   chainDigest,
   JOURNAL_FILE,
   moveAside,
+  readJournal,
   restoreAside,
+  writeJournal,
 } from './publish.ts';
 
 const root = mkdtempSync(join(tmpdir(), 'engine-publish-'));
@@ -779,6 +781,36 @@ describe('boot reconcile after a crash', () => {
         expect(leftovers(crashed)).toEqual([]);
         expect(columns(crashed, 'u_chores')).not.toContain('notes');
         expect(await host.list('Chore')).toHaveLength(3);
+      } finally {
+        await host.close();
+      }
+    } finally {
+      await close(w);
+    }
+  });
+
+  it('a committed journal rolls forward even when the owner has edited since', async () => {
+    const { w, crashed, crashedStore, base } = await crashAt('committed');
+    try {
+      // The store committed, the journal said so, the aside could not go; then
+      // the owner made another change: the store is PAST the published version.
+      const journal = readJournal(crashed);
+      if (!journal) throw new Error('no journal');
+      writeJournal(crashed, { ...journal, committed: true });
+      const published = await crashedStore.get(base + 1);
+      await crashedStore.append({
+        ...(published as VersionRecord),
+        version: base + 2,
+        parent: base + 1,
+        summary: 'edited after the publish',
+      });
+      await crashedStore.setCurrent(base + 2);
+      const host = await AppHost.open(crashed, { store: crashedStore });
+      try {
+        expect(host.recovery).toBe('rolled-forward');
+        expect(host.version).toBe(base + 2);
+        expect(leftovers(crashed)).toEqual([]);
+        expect(columns(crashed, 'u_chores')).not.toContain('notes');
       } finally {
         await host.close();
       }
