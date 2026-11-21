@@ -29,7 +29,7 @@ a fusion inside a step, through a budget stop and a resume, row by row.
 | **Tier** | The quality a prompt asks for: `cheap`, `good`, `great`, `best` or `auto`. The app binds each tier to a model, an alias chain or a fusion. |
 | **Latency** | Whether a caller waits for the answer: `interactive` or `background`. |
 | **Rate card** | The price table used to estimate a call's cost: input and output prices per 1,000 tokens for each provider and model (built-in defaults plus the app's `usage.costRates`). |
-| **Uncosted** | A call whose model is not on the rate card. Its `estimated_cost` is NULL, never zero. It is always allowed, even under a cost limit, and counted (section 6.3). |
+| **Uncosted** | A call whose model is not on the rate card. Its `estimated_cost` is NULL, never zero. It is always allowed, even under a cost limit, and counted (section 6.3). A priced call that reports no usage is not uncosted: it is charged its reservation (section 6.4). |
 | **Run** | One piece of AI work that has its own record: a status, a budget and a trajectory. It may contain any number of calls, including none yet. A single call made on its own is **not** a run; its usage row has no `run_id`. |
 | **Run type** | The shape of the work. An open string. The framework's own types are `fusion`, `turn` and `workflow`. A type defined by an app or package carries its owner's namespace. A reader must cope with a type whose code is not loaded: it shows the row and does not interpret the type's state. |
 | **Definition** | One specific task of a run type, with a `definition_key` and a `definition_version`; for example one workflow definition, or one fusion. Apps add definitions often and run types rarely. |
@@ -845,8 +845,14 @@ can find, never another call's usage.
 `prompt_tokens + completion_tokens`. The cost charged is `estimated_cost`, or
 nothing (and one uncosted call) when it is NULL. A call that
 answered without reporting any token count is charged its reserved `R` tokens,
-and its usage row keeps NULL token columns. An answered call is always
-settled, never released.
+and its usage row keeps NULL token columns. When such a call was priced (its
+model is on the rate card) and reported no cost either, as an
+OpenAI-compatible stream does, it is also charged its reserved cost `C`: its
+usage row's `estimated_cost` is `C` and its tags carry
+`usageEstimate: reservation`, so cost limits, the ledger and hosted spend
+never read it as free (#5489). Usage that reports only `total_tokens` is
+priced at the higher of the model's input and output rates. An answered call
+is always settled, never released.
 
 The three moves a call makes in normal running, reserve, settle and release,
 are each one short transaction. Step by step:

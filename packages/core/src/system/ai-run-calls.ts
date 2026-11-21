@@ -456,6 +456,45 @@ export async function chargeAiRunCallUnreserved(
   return callId;
 }
 
+/** The tag on a usage row whose amounts are its call's reservation. */
+const AI_USAGE_ESTIMATE_TAG = 'usageEstimate';
+
+function reportsTokens(event: SmrtAiUsageEvent): boolean {
+  const usage = event.usage;
+  return [
+    usage?.promptTokens,
+    usage?.completionTokens,
+    usage?.totalTokens,
+  ].some((value) => typeof value === 'number' && Number.isFinite(value));
+}
+
+/**
+ * A priced call that answered without reporting tokens or a cost (#5489;
+ * an OpenAI-compatible stream reports none) is charged what it reserved:
+ * the run is already charged the reserved tokens, and its usage row now
+ * records the reserved cost too, tagged `usageEstimate: reservation`, so
+ * `maxCost`, the ledger and hosted spend never read it as free. A call on
+ * an unpriced model stays uncosted; reported usage is kept as reported.
+ */
+function chargedAtReservation(
+  event: SmrtAiUsageEvent,
+  reservation: AiCallReservation,
+): SmrtAiUsageEvent {
+  if (
+    reservation.uncosted ||
+    reportsTokens(event) ||
+    (typeof event.estimatedCost === 'number' &&
+      Number.isFinite(event.estimatedCost))
+  ) {
+    return event;
+  }
+  return {
+    ...event,
+    estimatedCost: reservation.reservedCost,
+    tags: { ...(event.tags ?? {}), [AI_USAGE_ESTIMATE_TAG]: 'reservation' },
+  };
+}
+
 /** The usage a response reported, for a client that sends no usage event. */
 export interface AiRunObservedUsage {
   model?: string;
@@ -559,7 +598,7 @@ export async function beginAiRunCall(
       callId,
       usageTags,
       request.afterSettle,
-      event,
+      chargedAtReservation(event, reservation),
       status,
       () => route.settlementCommitted(),
     );

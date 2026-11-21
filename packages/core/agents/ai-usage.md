@@ -50,6 +50,11 @@ present and `persist` is on, plus `usage.handlers`; instances also keep an
   gateway id (`openai/gpt-4.1-mini`) `openai:gpt-4.1-mini` and `gpt-4.1-mini`,
   one leading segment at a time. Rate lookups use own keys only. The
   missing-rate warning is logged once per `provider:model`.
+  `priceAiTokenUsage()` (#5489) prices prompt and completion tokens at their
+  rates and a total-only report at the higher rate; no tokens is no price.
+  A tracked call of a run that reports neither tokens nor cost on a priced
+  model is recorded at its reserved cost with the tag
+  `usageEstimate: reservation` (`docs/content/ai-runs.md` section 6.4).
 
 ## Tags and lifted columns
 

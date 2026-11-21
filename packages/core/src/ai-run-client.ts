@@ -13,7 +13,8 @@
  * calls share.
  */
 
-import type { SmrtAiUsageEvent } from '@happyvertical/smrt-types';
+import type { AiTokenUsage, SmrtAiUsageEvent } from '@happyvertical/smrt-types';
+import { priceAiTokenUsage } from './adapters/cost-rates.js';
 import type { AiCallRate } from './system/ai-run-accounting.js';
 import {
   type AiRunCallRequest,
@@ -78,7 +79,7 @@ function splitOptions(raw: unknown): {
 function observedUsage(
   result: unknown,
   duration: number,
-): AiRunObservedUsage | undefined {
+): (AiRunObservedUsage & { reported?: AiTokenUsage }) | undefined {
   if (!result || typeof result !== 'object') return undefined;
   const { usage, model } = result as {
     usage?: Record<string, unknown>;
@@ -103,6 +104,13 @@ function observedUsage(
           usage: {
             promptTokens: promptTokens ?? 0,
             completionTokens: completionTokens ?? 0,
+            totalTokens,
+          },
+          // The counts as reported, for pricing: a total alone is priced
+          // as one, never as zero prompt and completion tokens (#5489).
+          reported: {
+            ...(promptTokens !== undefined ? { promptTokens } : {}),
+            ...(completionTokens !== undefined ? { completionTokens } : {}),
             totalTokens,
           },
         }
@@ -251,12 +259,11 @@ export function withAiRunTracking<T>(client: T, hooks: AiRunClientHooks): T {
             sentTo.provider,
             observed?.model ?? sentTo.model,
           );
-          if (observed?.usage && rate) {
-            observed.estimatedCost =
-              ((observed.usage.promptTokens ?? 0) * rate.input +
-                (observed.usage.completionTokens ?? 0) * rate.output) /
-              1000;
-          }
+          const cost =
+            observed?.reported && rate
+              ? priceAiTokenUsage(observed.reported, rate)
+              : undefined;
+          if (observed && cost !== undefined) observed.estimatedCost = cost;
           await handle.succeed(observed);
           return result;
         };

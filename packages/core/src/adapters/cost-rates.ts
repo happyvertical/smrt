@@ -82,12 +82,36 @@ export function estimateAiUsageCost(
     return undefined;
   }
 
-  const promptTokens = usage.promptTokens ?? 0;
-  const completionTokens = usage.completionTokens ?? 0;
+  return priceAiTokenUsage(usage, rate);
+}
 
-  return (
-    (promptTokens / 1000) * rate.input + (completionTokens / 1000) * rate.output
-  );
+function tokenCount(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0
+    ? value
+    : undefined;
+}
+
+/**
+ * The cost of reported token usage at `rate` (per 1K tokens), or
+ * `undefined` when the usage reports no tokens (#5489). Prompt and
+ * completion counts are priced at their own rates; usage that reports only
+ * a total is priced at the higher of the two rates, so it is never free.
+ */
+export function priceAiTokenUsage(
+  usage: AiTokenUsage | undefined,
+  rate: { input: number; output: number },
+): number | undefined {
+  const prompt = tokenCount(usage?.promptTokens);
+  const completion = tokenCount(usage?.completionTokens);
+  if (prompt !== undefined || completion !== undefined) {
+    return (
+      ((prompt ?? 0) / 1000) * rate.input +
+      ((completion ?? 0) / 1000) * rate.output
+    );
+  }
+  const total = tokenCount(usage?.totalTokens);
+  if (total === undefined) return undefined;
+  return (total / 1000) * Math.max(rate.input, rate.output);
 }
 
 /**
