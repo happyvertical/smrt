@@ -64,8 +64,10 @@ import {
 import { SmrtError } from './smrt-error.js';
 import { type AsyncContext, createAsyncContext } from './utils/async-context';
 import {
+  applyWhereScope,
   effectiveWhereOperator,
   resolveWhereKey,
+  WhereClauseError,
   whereColumnName,
 } from './where-keys';
 
@@ -1526,14 +1528,18 @@ export function assertAdoptableStoredRow(
 }
 
 /**
- * The membership predicate of a point read on the family table. A child
- * collection replaces any `_meta_type in` list with its own subtree (an
- * owned key), so the registered family members that are not admitted are
- * also named in `_meta_type not in`: the subtree of registered types minus
- * those is exactly the admitted set, and a stored type that is not
- * registered is outside both the admitted list and any subtree.
+ * The membership predicate of a read on the family table, merged into the
+ * caller's own condition record. A child collection replaces any
+ * `_meta_type in` list with its own subtree (an owned key), so the
+ * registered family members that are not admitted are also named in
+ * `_meta_type not in`: the subtree of registered types minus those is
+ * exactly the admitted set, and a stored type that is not registered is
+ * outside both the admitted list and any subtree. Every other caller key is
+ * kept as given, so the collection treats it exactly as it would without a
+ * bound request (an STI child still replaces a caller's `_meta_type`
+ * equality, under any spelling, with its own type).
  */
-function familyPointFilter(
+function familyReadFilter(
   t: RequestTenancy,
   base: Record<string, unknown>,
 ): Record<string, unknown> {
@@ -1550,6 +1556,7 @@ function familyPointFilter(
   // spelling of `_meta_type` counts.
   const filter: Record<string, unknown> = {};
   let callerIn: unknown[] | undefined;
+  const typeKeys = new Map<string, string>();
   for (const [key, value] of Object.entries(base)) {
     const resolved = resolveWhereKey(key);
     const operator = effectiveWhereOperator(
@@ -1557,6 +1564,19 @@ function familyPointFilter(
       value,
     );
     if (resolved.column === '_meta_type' && Array.isArray(value)) {
+      // Two caller keys for one operator are refused, as the collection
+      // refuses them, rather than merged here into one list.
+      const earlier = typeKeys.get(operator);
+      if (earlier !== undefined) {
+        throw new WhereClauseError(
+          `Invalid WHERE clause: '${earlier}' and '${key}' both filter ` +
+            `'_meta_type' with operator '${operator}'. ` +
+            `Give each column one condition per operator.`,
+          'INVALID_WHERE_CLAUSE',
+          { column: '_meta_type', operator },
+        );
+      }
+      typeKeys.set(operator, key);
       if (operator === 'in') {
         callerIn = callerIn
           ? callerIn.filter((type) => value.includes(type))
@@ -1568,7 +1588,14 @@ function familyPointFilter(
         continue;
       }
     }
-    filter[key] = value;
+    // Defined, not assigned: an own `__proto__` key must stay a key the
+    // collection validates, never become a prototype write.
+    Object.defineProperty(filter, key, {
+      value,
+      enumerable: true,
+      writable: true,
+      configurable: true,
+    });
   }
   let types: unknown[] = [...admitted];
   if (callerIn) {
@@ -1613,6 +1640,16 @@ function createRequestTenancyInterceptor(): CollectionInterceptor {
       }
       const owner = familyTenancyOf(t, key);
       if (!owner && !scope) return;
+      if (!Array.isArray(options.where)) {
+        // A condition record stays one record, so the collection reads the
+        // caller's keys as it does without a bound request: an STI child's
+        // own type replaces a caller's `_meta_type` equality under any
+        // spelling instead of being ANDed beside it in an OR branch.
+        const where = owner
+          ? familyReadFilter(owner, { ...(options.where ?? {}) })
+          : options.where;
+        return { ...options, where: applyWhereScope(where, scope) };
+      }
       const admitted = owner ? [...(owner.admitted ?? [])] : undefined;
       return {
         ...options,
@@ -1642,10 +1679,10 @@ function createRequestTenancyInterceptor(): CollectionInterceptor {
         typeof filter === 'string'
           ? resolveGetStringFilter(filter)
           : { ...filter };
-      return {
-        ...(owner ? familyPointFilter(owner, base) : base),
-        ...(scope ?? {}),
-      };
+      return applyWhereScope(
+        owner ? familyReadFilter(owner, base) : base,
+        scope,
+      ) as Record<string, unknown>;
     },
 
     async beforeSave(instance, context) {

@@ -33,6 +33,7 @@ import {
   inRequestScope,
   keyOf,
   restCall,
+  rowsOf,
   segmentOf,
   TENANT_A,
   TENANT_B,
@@ -113,6 +114,10 @@ class EffScopeShelfCollection extends SmrtCollection<EffScopeShelf> {
 class EffScopeBook extends EffScopeShelf {}
 @smrt({ api: { include: ['list', 'get'] } })
 class EffScopeAtlas extends EffScopeShelf {}
+/** A collection of the subtype alone (not registered as its route). */
+class EffScopeBookCollection extends SmrtCollection<EffScopeBook> {
+  static readonly _itemClass = EffScopeBook;
+}
 
 // An unscoped STI base keyed on `slug` across its types, and a scoped
 // subtype: the subtype's rows are not admitted through the base.
@@ -458,6 +463,89 @@ describe('every collection call of a request is held to its admitted tenancy', (
       expect(await read({ id: ROW.atlas, '_meta_type in': [book] })).toBeNull();
       const found = await read({ id: ROW.bookOfA, '_meta_type in': [book] });
       expect(found?.id).toBe(ROW.bookOfA);
+    });
+  });
+
+  describe('lists keep the caller filter as the collection reads it (R2.8)', () => {
+    const list = async (model: typeof EffScopeShelf, query: string) => {
+      const answer = await restCall(
+        handler,
+        'GET',
+        `${segmentOf(model)}?${query}`,
+        as('user-of-a'),
+      );
+      return {
+        status: answer.status,
+        titles: rowsOf(answer.body)
+          .map((row) => String(row.title))
+          .sort(),
+      };
+    };
+    const atlas = encodeURIComponent(keyOf(EffScopeAtlas));
+    const book = encodeURIComponent(keyOf(EffScopeBook));
+
+    it('a subtype list serves only its own type for every spelling of a discriminator equality', async () => {
+      const books = (await EffScopeBookCollection.create({
+        db,
+      })) as unknown as SmrtCollection<SmrtObject>;
+      const other = keyOf(EffScopeAtlas);
+      for (const where of [
+        { _meta_type: 'x', _metaType: other },
+        { _metaType: other, _meta_type: 'x' },
+        { _metaType: other },
+        { '_meta_type =': other },
+      ]) {
+        const rows = await inRequestScope(() =>
+          runInRequestTenancy(
+            {
+              model: keyOf(EffScopeBook),
+              operation: 'list',
+              principal: reader,
+            },
+            () => books.list({ where }),
+          ),
+        );
+        expect(
+          rows.map((row) => String((row as { title?: unknown }).title)).sort(),
+        ).toEqual(['book of a', 'book of b']);
+      }
+    });
+
+    it('the base list applies a discriminator filter and refuses two spellings of one operator', async () => {
+      expect(await list(EffScopeShelf, `_metaType=${atlas}`)).toEqual({
+        status: 200,
+        titles: ['atlas'],
+      });
+      expect(
+        await list(
+          EffScopeShelf,
+          `${encodeURIComponent('_metaType[in]')}=${book}`,
+        ),
+      ).toEqual({ status: 200, titles: ['book of a', 'book of b'] });
+      const twice = await list(
+        EffScopeShelf,
+        `${encodeURIComponent('_metaType[in]')}=${book}&${encodeURIComponent('_meta_type[in]')}=${atlas}`,
+      );
+      expect(twice.status).toBe(400);
+    });
+
+    it('a list record with an own prototype key is refused as it is without a bound request', async () => {
+      const where = JSON.parse(
+        `{"__proto__": {"title": "shelf"}, "_metaType": ${JSON.stringify(keyOf(EffScopeAtlas))}}`,
+      ) as Record<string, unknown>;
+      await expect(shelves.list({ where })).rejects.toThrow();
+      await expect(
+        inRequestScope(() =>
+          runInRequestTenancy(
+            {
+              model: keyOf(EffScopeShelf),
+              operation: 'list',
+              principal: reader,
+            },
+            () => shelves.list({ where }),
+          ),
+        ),
+      ).rejects.toThrow();
     });
   });
 

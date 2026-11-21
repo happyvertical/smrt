@@ -143,10 +143,13 @@ rule of `src/request-actor.ts`. Per request (per sync item, per tool call):
    `allowSuperAdminBypass`, bounded-hierarchy allowance). Every read, count,
    point read, write and sync item on the family table is restricted to
    `_meta_type in admitted` (positive: a stored type that is not registered,
-   or not admitted, never matches; a point read also names the registered
-   members left out, since a child collection replaces any type list with its
-   own subtree, and keeps the caller's own `_meta_type in` / `not in` as a
-   conjunction: an empty intersection selects nothing). A new row is held to
+   or not admitted, never matches; a list or point read whose filter is one
+   condition record also names the registered members left out, since a child
+   collection replaces any type list with its own subtree, keeps the caller's
+   own `_meta_type in` / `not in` as a conjunction (an empty intersection
+   selects nothing; two caller keys for one operator are a 400), and keeps
+   every other caller key in that record, so a child still replaces a caller's
+   `_meta_type` equality under any spelling with its own type). A new row is held to
    the create targets, a stored row to the admitted types, and a natural-key
    save never adopts a stored row of a type the request does not admit (403
    `TENANT_MEMBER_EXCLUDED`). A member left out is simply absent from lists and counts, a
