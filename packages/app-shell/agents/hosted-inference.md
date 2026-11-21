@@ -36,7 +36,7 @@ features/subscriptions/gate on SQLite, fake resolver), `hooks.server.test.ts`.
 - **Provisioning and the entitlement listener.** `hosted-provisioning.ts`
   (`installHostedProvisioning`, called from `init` right after the gate): cloud
   only, and only when the operator configured a gateway
-  (`SMRT_INFERENCE_HOSTED_*`; none = inert, an incomplete one rejects `init`).
+  (`SMRT_INFERENCE_HOSTED_*`; none = inert; an incomplete one, gateway variables without `SMRT_INFERENCE_HOSTED_PROVIDER`, or a missing `SMRT_SECRET_MASTER_KEY` reject `init`).
   It registers smrt-inference's entitlement-change listener with
   smrt-subscriptions (`registerEntitlementChangeListener`, one registration however
   often it is installed). The billing writer (the host's webhook, wrapped in
@@ -46,7 +46,7 @@ features/subscriptions/gate on SQLite, fake resolver), `hooks.server.test.ts`.
   with none fails the reconcile, reported in the outcome's `failures`), one that
   loses it revokes them. The provisioner's own re-check uses the shell's stores
   (`isHostedInferenceEntitled`), so a stale event after a downgrade does not
-  mint a key. Needs `SMRT_SECRET_MASTER_KEY` (the keys are secrets). The shell
+  mint a key. The keys are secrets, so `SMRT_SECRET_MASTER_KEY` is checked at `init`. The shell
   has no billing writer: nothing fires the listener until the host's webhook
   runs in this process.
 - **Not covered.** PostgreSQL (the spend reader's JSON tag matching and
@@ -56,5 +56,7 @@ features/subscriptions/gate on SQLite, fake resolver), `hooks.server.test.ts`.
   already entitled (the host calls `provision()`; no tenant listing or member
   flow in the shell); the caller (user) of an engine, MCP or job call, so
   per-user caps and attribution there wait for #5188/#5189/#5375;
+  a removed member's active key is budget-synced but not revoked while the
+  tenant stays entitled;
   `plugins.remote`, `sync.devices`, `backup.vault` and `cloud.hosted` have no
   shell surface to gate.

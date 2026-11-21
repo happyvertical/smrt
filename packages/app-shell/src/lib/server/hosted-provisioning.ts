@@ -15,6 +15,7 @@ import {
   createHostedInferenceEntitlementListener,
   createHostedInferenceProvisioner,
   type HostedGatewayAdmin,
+  HostedInferenceError,
   hostedGatewayConfigFromEnv,
 } from '@happyvertical/smrt-inference/node';
 import type { DatabaseInterface } from '@happyvertical/sql';
@@ -59,8 +60,27 @@ export async function installHostedProvisioning(options: {
 }): Promise<boolean> {
   if ((await shellProfile()) !== 'cloud') return false;
   const db = await options.db();
-  const gateway = hostedGatewayConfigFromEnv(options.env ?? process.env);
-  if (!gateway) return false;
+  const env = options.env ?? process.env;
+  const gateway = hostedGatewayConfigFromEnv(env);
+  if (!gateway) {
+    // Gateway variables without a provider would be ignored silently: refuse.
+    const stray = Object.keys(env).filter(
+      (name) => name.startsWith('SMRT_INFERENCE_HOSTED_') && env[name]?.trim(),
+    );
+    if (stray.length > 0)
+      throw new HostedInferenceError(
+        `Hosted inference gateway variables are set (${stray.join(', ')}) but SMRT_INFERENCE_HOSTED_PROVIDER is not.`,
+        'HOSTED_GATEWAY_NOT_CONFIGURED',
+      );
+    return false;
+  }
+  // The provisioned keys are stored as secrets: fail at start, not at the
+  // first plan change.
+  if (!process.env.SMRT_SECRET_MASTER_KEY?.trim())
+    throw new HostedInferenceError(
+      'Hosted inference provisioning needs SMRT_SECRET_MASTER_KEY.',
+      'HOSTED_GATEWAY_NOT_CONFIGURED',
+    );
   const provisioner = createHostedInferenceProvisioner({
     db,
     gateway,

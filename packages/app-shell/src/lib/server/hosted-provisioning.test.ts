@@ -229,7 +229,24 @@ describe('hosted provisioning', () => {
       install(new FakeAdmin(), {
         SMRT_INFERENCE_HOSTED_PROVIDER: 'litellm',
       }),
-    ).rejects.toThrow();
+    ).rejects.toMatchObject({ code: 'HOSTED_GATEWAY_NOT_CONFIGURED' });
+  });
+
+  it('refuses gateway variables set without a provider instead of ignoring them', async () => {
+    await expect(
+      install(new FakeAdmin(), {
+        SMRT_INFERENCE_HOSTED_BASE_URL:
+          GATEWAY_ENV.SMRT_INFERENCE_HOSTED_BASE_URL,
+      }),
+    ).rejects.toMatchObject({ code: 'HOSTED_GATEWAY_NOT_CONFIGURED' });
+  });
+
+  it('refuses to start without the secrets master key', async () => {
+    vi.stubEnv('SMRT_SECRET_MASTER_KEY', '');
+    await expect(install(new FakeAdmin())).rejects.toMatchObject({
+      code: 'HOSTED_GATEWAY_NOT_CONFIGURED',
+    });
+    vi.stubEnv('SMRT_SECRET_MASTER_KEY', CLOUD_MASTER_KEY);
   });
 
   it('registers one listener however often it is installed', async () => {
