@@ -32,6 +32,11 @@ declare global {
   var __smrtRegistryClasses: Map<string, RegisteredClass> | undefined;
   // eslint-disable-next-line no-var
   var __smrtRegistryCollections: Map<string, typeof SmrtCollection> | undefined;
+  // Item constructors of junction collections seen by registerCollection, so
+  // an item that registers after its collection is still stamped. Registry
+  // state: `ObjectRegistry.clear()` empties it and test snapshots restore it.
+  // eslint-disable-next-line no-var
+  var __smrtJunctionItemConstructors: Set<object> | undefined;
   // eslint-disable-next-line no-var
   // Heterogeneous cache: stores collections of many different item types keyed
   // by class name. `SmrtCollection` is invariant in its item type (it has
@@ -202,6 +207,16 @@ export function getClasses(): Map<string, RegisteredClass> {
   const tracked = createGenerationTrackedMap<string, RegisteredClass>(current);
   globalThis.__smrtRegistryClasses = tracked;
   return tracked;
+}
+
+/**
+ * Item constructors named by a junction collection's `_itemClass`. A Set, not
+ * a WeakSet, so the registry can clear it and a test snapshot can copy it; it
+ * holds only constructors a registered collection already references.
+ */
+export function getJunctionItemConstructors(): Set<object> {
+  globalThis.__smrtJunctionItemConstructors ??= new Set<object>();
+  return globalThis.__smrtJunctionItemConstructors;
 }
 
 export function getCollections(): Map<string, typeof SmrtCollection> {

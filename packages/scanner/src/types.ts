@@ -15,6 +15,28 @@ import type { RawRecipe } from './recipes.js';
 // ============================================================================
 
 /**
+ * One reference a collection class makes to its item class, traced to the
+ * binding it names rather than its spelling.
+ *
+ * - `name` is the exported name the reference resolves to (an import alias is
+ *   followed), or the declared name of a class in the same file.
+ * - `source` is the module specifier of the import; absent for a class
+ *   declared in the same file.
+ * - `file` is the absolute path of the file that declares the item, when a
+ *   relative import was followed (through local re-exports) to it.
+ * - `unresolved` marks a reference that names neither an import nor a class
+ *   declared in the file (a default import, an undeclared name, a computed
+ *   expression). Such a reference never identifies a model.
+ */
+export interface RawItemBinding {
+  via: 'typeArg' | 'itemClass';
+  name: string;
+  source?: string;
+  file?: string;
+  unresolved?: true;
+}
+
+/**
  * Raw class definition extracted from OXC AST
  * Contains only syntactic information, no semantic resolution
  */
@@ -42,6 +64,13 @@ export interface RawClassDefinition {
    * specifier names the parent's package.
    */
   extendsSource?: string;
+
+  /**
+   * How the class names its collection item: the generic argument of its
+   * `extends` clause and its `static _itemClass` initializer, each traced to
+   * its binding. Absent when the class has neither.
+   */
+  itemBindings?: RawItemBinding[];
 
   /** Parsed @smrt() decorator configuration object */
   decoratorConfig: RawDecoratorConfig | null;

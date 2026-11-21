@@ -88,6 +88,26 @@ describe('package-relative manifest filePath (#4948)', () => {
     ).not.toThrow();
   });
 
+  it('refuses a manifest whose item binding still names an absolute file', () => {
+    const leaked = manifestOf('src/Links.ts');
+    (
+      leaked.objects['@test/pkg:Model0'] as { itemBindings?: unknown }
+    ).itemBindings = [
+      {
+        via: 'typeArg',
+        name: 'Tag',
+        source: './tag',
+        file: '/leaked/src/tag.ts',
+      },
+    ];
+    expect(findAbsoluteManifestFilePaths(leaked)).toEqual([
+      '@test/pkg:Model0 itemBindings (/leaked/src/tag.ts)',
+    ]);
+    expect(() =>
+      assertPackageRelativeFilePaths(leaked, 'Library manifest'),
+    ).toThrow(/tag\.ts/);
+  });
+
   it('publishes a package-relative manifest from the library build step', () => {
     const published = stampedLibraryManifest(
       manifestOf('/root/pkg/src/A.ts'),

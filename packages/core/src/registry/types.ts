@@ -1216,6 +1216,17 @@ export interface RegisteredClass {
    * collection and never claims a physical table (#3956).
    */
   collectionOf?: string;
+  /**
+   * Internal-model kind (`registry/internal-model.ts`): from the manifest
+   * entry's `internal` stamp, a junction collection's decorator-path
+   * registration, or a `_smrt_` table. Never cleared once set. Recorded
+   * only; no effective config reads it yet.
+   */
+  internalKind?: import('./internal-model.js').InternalModelKind;
+  /** This registration is a junction collection (manifest `junction`, or the constructor brand). */
+  junctionCollection?: true;
+  /** Surfaces whose value the manifest baked from the internal-model default. */
+  defaultedExposure?: Array<'api' | 'mcp' | 'cli'>;
   /** Full inheritance chain from base to this class (cached for performance) */
   inheritanceChain?: string[];
   /** Merged fields from entire inheritance chain (cached, includes parent fields) */

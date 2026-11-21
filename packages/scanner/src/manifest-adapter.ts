@@ -15,6 +15,7 @@ import type {
   ParameterTypeBranch,
   RawClassDefinition,
   RawFieldDefinition,
+  RawItemBinding,
   RawMethodDefinition,
   ResolvedClassDefinition,
   UiSelectorDeclaration,
@@ -185,7 +186,34 @@ interface SmartObjectDefinition {
   /** Parent's qualified name when it is imported from another package (#4145). */
   extendsQualified?: string;
   extendsTypeArg?: string;
+  /**
+   * The collection item references, traced to their bindings; a package
+   * import also names its scoped package.
+   */
+  itemBindings?: ManifestItemBinding[];
   staticProperties?: Record<string, unknown>;
+}
+
+/** A {@link RawItemBinding} with the scoped package of a package import. */
+type ManifestItemBinding = RawItemBinding & { package?: string };
+
+/**
+ * The manifest form of a class's item references: each package specifier
+ * also names its scoped package (`@scope/pkg/subpath` → `@scope/pkg`), the
+ * package whose manifest must confirm the name. Relative, alias-like and
+ * unscoped specifiers name no package.
+ */
+function manifestItemBindings(
+  bindings: RawItemBinding[] | undefined,
+): ManifestItemBinding[] | undefined {
+  if (!bindings?.length) return undefined;
+  return bindings.map((binding) => {
+    const pkg =
+      binding.source && !binding.file
+        ? scopedPackageOfSpecifier(binding.source)
+        : undefined;
+    return pkg ? { ...binding, package: pkg } : { ...binding };
+  });
 }
 
 /**
@@ -715,6 +743,7 @@ export class ManifestAdapter {
       classDef,
       packageName || undefined,
     );
+    const itemBindings = manifestItemBindings(classDef.itemBindings);
 
     return {
       name: classDef.className.toLowerCase(),
@@ -730,6 +759,7 @@ export class ManifestAdapter {
       extends: classDef.extendsClause || undefined,
       ...(extendsQualified ? { extendsQualified } : {}),
       extendsTypeArg: classDef.extendsTypeArg || undefined,
+      ...(itemBindings ? { itemBindings } : {}),
       exportName: classDef.exportName ?? classDef.className,
       collectionExportName: `${classDef.className}Collection`,
       staticProperties,

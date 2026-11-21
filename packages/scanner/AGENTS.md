@@ -39,6 +39,12 @@ executes the source.
   parent is a named, aliased, or namespace value import carries
   `extendsSource`; `ManifestAdapter` turns a scoped package other than its own
   into `extendsQualified` (#4145). Never infer it from relative paths or names.
+  A collection's item (generic argument, `static _itemClass`) is traced the
+  same way, type-only imports and local re-exports included, to `itemBindings`.
+  A barrel's explicit export wins over its stars (one that is not a class,
+  such as a type alias, is untraced, never the star's class); a name two stars export
+  from different declarations (or that a package star could also export) is
+  unresolved; a class type parameter shadows any import of its name.
 - `extractSmrtImports` — pull SMRT-related imports from a parsed file.
 - `lintNumericPrecision(classes, sourceText?)` — flags persisted `number` fields
   whose declared precision contradicts their name (#2361), returning a `kind`

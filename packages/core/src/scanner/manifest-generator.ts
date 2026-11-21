@@ -9,6 +9,7 @@ import { writeThroughFields } from '../write-through.js';
 
 import { createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
+import { posix } from 'node:path';
 import { createLogger } from '@happyvertical/logger';
 import { ConfigurationError } from '../errors.js';
 import {
@@ -36,6 +37,15 @@ import {
   inheritCollectionExposure,
 } from '../registry/collection-exposure.js';
 import { isSmrtCollectionExtendsName } from '../registry/collection-resolution.js';
+import {
+  isFrameworkBaseClass,
+  isFrameworkBaseClassName,
+} from '../registry/framework-base-classes.js';
+import {
+  isJunctionBaseName,
+  isSystemTableName,
+  mergeInternalKind,
+} from '../registry/internal-model.js';
 import { VERBOSE_ENABLED } from '../registry/shared-state.js';
 import {
   findStaleWidenings,
@@ -156,6 +166,24 @@ const require = createRequire(import.meta.url);
 // follows the repo-wide SMRT_VERBOSE/DEBUG convention (#2896) so per-class
 // detail is opt-in rather than always-on info.
 const logger = createLogger({ level: VERBOSE_ENABLED ? 'debug' : 'info' });
+
+/** What a junction collection's item reference resolved to. */
+type JunctionItemResolution =
+  | { kind: 'local'; def: SmartObjectDefinition }
+  | { kind: 'foreign'; key: string }
+  | { kind: 'unresolved' };
+
+const isRelativeSpecifier = (specifier: string) =>
+  specifier === '.' ||
+  specifier === '..' ||
+  specifier.startsWith('./') ||
+  specifier.startsWith('../');
+
+const toPosixPath = (path: string) => path.replace(/\\/g, '/');
+
+/** A module path without its source or output extension, for comparison. */
+const stripModuleExtension = (path: string) =>
+  path.replace(/\.(?:d\.)?(?:[mc]?[jt]sx?)$/, '');
 
 /**
  * Fields every `SmrtObject` carries that are not manifest fields (#3590): a
@@ -652,6 +680,9 @@ export class ManifestGenerator {
     // Fifth pass: Generate schemas for each object (build-time schema generation)
     // This pre-computes DDL, indexes, and columns for efficient external package consumption
     this.generateSchemas(manifest);
+    // The `system` stamp was computed before schemas existed, from the same
+    // table resolver; hold it to the generated schema.
+    this.assertInternalStampsMatchSchema(manifest);
     Object.assign(manifest, annotateModelReplacements(manifest));
     this.assertTenantScopedSchemaContract(manifest);
 
@@ -1573,11 +1604,9 @@ export class ManifestGenerator {
         continue;
       }
 
-      // Determine table name (may have been inherited from external STI base)
-      // Use obj.className (PascalCase) for consistent table name derivation with runtime
-      const tableName =
-        obj.decoratorConfig?.tableName ||
-        this.classNameToTableName(obj.className);
+      // Determine table name (may have been inherited from external STI base).
+      // The internal-model `system` stamp reads the same resolver.
+      const tableName = this.resolveModelTableName(obj, manifest);
 
       // Check if this is an STI class. `mergeInheritedFields()` copies the
       // base's `tableStrategy` onto every descendant, so both the root and
@@ -1602,7 +1631,7 @@ export class ManifestGenerator {
           ? (this.resolveManifestKey(stiRoot.className, aggregatedManifest) ??
             stiRoot.className)
           : name;
-        const rootTableName = stiRoot?.tableName || tableName;
+        const rootTableName = tableName;
         const rootConfig =
           aggregatedManifest.objects[rootKey]?.decoratorConfig ??
           obj.decoratorConfig;
@@ -2360,6 +2389,283 @@ export class ManifestGenerator {
   }
 
   /**
+   * The table a model's schema is generated for: its STI root's table when
+   * it is part of an STI hierarchy, else its own `tableName`, else the name
+   * derived from its class name. `generateSchemas()` and the internal-model
+   * `system` stamp both use this, so the two cannot disagree.
+   *
+   * @internal
+   */
+  resolveModelTableName(
+    obj: SmartObjectDefinition,
+    manifest: SmartObjectManifest,
+  ): string {
+    const ownTable =
+      obj.decoratorConfig?.tableName ||
+      this.classNameToTableName(obj.className);
+    if (
+      obj.decoratorConfig?.tableStrategy === 'sti' ||
+      this.isSTIChildClass(obj, manifest)
+    ) {
+      return this.findSTIBaseInfo(obj, manifest)?.tableName || ownTable;
+    }
+    return ownTable;
+  }
+
+  /** Collection classes carry no internal kind of their own. */
+  private isCollectionEntry(
+    obj: SmartObjectDefinition,
+    objectsByName: Map<string, SmartObjectDefinition>,
+    manifest: SmartObjectManifest,
+  ): boolean {
+    return (
+      obj.extends === 'SmrtCollection' ||
+      this.extendsAnyCollectionBase(obj, objectsByName, manifest)
+    );
+  }
+
+  /**
+   * Record internal-model facts on the manifest entries
+   * (`registry/internal-model.ts`). Only facts: no generated surface is
+   * read or changed here.
+   *
+   * - A model is `internal: 'system'` when its resolved table
+   *   ({@link resolveModelTableName}) starts with `_smrt_`.
+   * - A collection whose ancestry ends at `SmrtJunction` or
+   *   `SmrtJunctionBase` is `junction: true`. Parents are resolved as
+   *   everywhere else (this manifest, then dependency manifests), and the
+   *   base is matched by simple name, so a junction base reached through a
+   *   barrel, an alias or an intermediate base in a dependency still counts,
+   *   and a local class of that name is walked through like any parent.
+   * - Its item is resolved by the binding the scanner traced, never by
+   *   spelling. A same-package item gets `internal: 'junction'` and the
+   *   collection `junctionOf`. An item another package's manifest declares
+   *   is recorded (`crossPackageJunction`) but not stamped. An item that
+   *   cannot be traced leaves no model stamped (`junctionItemUnresolved`).
+   */
+  private stampInternalModels(
+    manifest: SmartObjectManifest,
+    objectsByName: Map<string, SmartObjectDefinition>,
+  ): void {
+    for (const obj of Object.values(manifest.objects)) {
+      if (FRAMEWORK_ABSTRACT_BASE_NAMES.has(obj.className)) continue;
+      if (this.isCollectionEntry(obj, objectsByName, manifest)) continue;
+      if (isSystemTableName(this.resolveModelTableName(obj, manifest))) {
+        obj.internal = mergeInternalKind(obj.internal, 'system');
+      }
+    }
+
+    for (const obj of Object.values(manifest.objects)) {
+      // The framework's own bases (core's `SmrtJunction`) are scaffolding.
+      if (
+        isFrameworkBaseClass(
+          obj.className,
+          obj.packageName ?? manifest.packageName,
+        )
+      )
+        continue;
+      const ancestry = this.junctionAncestry(obj, manifest, objectsByName);
+      if (ancestry === 'unresolved') {
+        if (obj.itemBindings?.length || obj.extendsTypeArg) {
+          logger.warn(
+            `INTERNAL_MODEL_UNRESOLVED_ANCESTRY: ${obj.className} names an item but its ancestry ends at an unresolved parent; it is not classified as a junction collection. Add the parent's package to smrtDependencies, or pin the model's exposure explicitly.`,
+          );
+        }
+        continue;
+      }
+      if (ancestry !== 'junction') continue;
+      obj.junction = true;
+      const item = this.resolveJunctionItem(obj, manifest, objectsByName);
+      if (item.kind === 'local') {
+        obj.junctionOf = item.def.qualifiedName || item.def.className;
+        item.def.internal = mergeInternalKind(item.def.internal, 'junction');
+      } else if (item.kind === 'foreign') {
+        obj.junctionOf = item.key;
+        obj.crossPackageJunction = true;
+        logger.warn(
+          `INTERNAL_MODEL_CROSS_PACKAGE_JUNCTION: ${obj.className} joins ${item.key}, which another package declares; that model is not marked internal by this package.`,
+        );
+      } else {
+        obj.junctionItemUnresolved = true;
+        logger.warn(
+          `INTERNAL_MODEL_JUNCTION_ITEM_UNRESOLVED: the item of junction collection ${obj.className} could not be traced to a model (declare it in the same file, import it by a relative path or from its package); no model is marked internal for it.`,
+        );
+      }
+    }
+
+    // A traced binding's `file` is the scanning machine's absolute path, an
+    // input to the stamps above only. A published manifest must not depend
+    // on where it was built (#4948), so it never leaves this pass.
+    for (const obj of Object.values(manifest.objects)) {
+      if (!obj.itemBindings?.length) continue;
+      obj.itemBindings = obj.itemBindings.map(
+        ({ file: _file, ...binding }) => binding,
+      );
+    }
+  }
+
+  /**
+   * Where a class's ancestry ends: at a junction base (`junction`), at another
+   * framework base (`other`), at no parent (`none`), or at a name that is
+   * neither resolvable nor a framework base (`unresolved`).
+   */
+  private junctionAncestry(
+    obj: SmartObjectDefinition,
+    manifest: SmartObjectManifest,
+    objectsByName: Map<string, SmartObjectDefinition>,
+  ): 'junction' | 'other' | 'none' | 'unresolved' {
+    let current = obj;
+    const seen = new Set<SmartObjectDefinition>();
+    for (;;) {
+      const ref = this.parentRef(current);
+      if (!ref || seen.has(current)) return 'none';
+      seen.add(current);
+      const parent = this.resolveParentDefinition(
+        ref,
+        current,
+        manifest,
+        objectsByName,
+      );
+      const simple = this.simpleClassName(ref);
+      if (
+        !parent ||
+        isFrameworkBaseClass(parent.className, parent.packageName)
+      ) {
+        if (isJunctionBaseName(simple)) return 'junction';
+        if (parent || isFrameworkBaseClassName(simple)) return 'other';
+        return 'unresolved';
+      }
+      current = parent;
+    }
+  }
+
+  /**
+   * The model a junction collection joins, from the item bindings of the
+   * collection or of the nearest ancestor in this manifest that declares
+   * them. Throws `CONFIG_JUNCTION_ITEM_MISMATCH` when the generic argument
+   * and `_itemClass` both trace and name different models.
+   */
+  private resolveJunctionItem(
+    obj: SmartObjectDefinition,
+    manifest: SmartObjectManifest,
+    objectsByName: Map<string, SmartObjectDefinition>,
+  ): JunctionItemResolution {
+    let holder: SmartObjectDefinition | undefined = obj;
+    const seen = new Set<SmartObjectDefinition>();
+    while (holder && !holder.itemBindings?.length && !seen.has(holder)) {
+      seen.add(holder);
+      const ref = this.parentRef(holder);
+      const parent: SmartObjectDefinition | undefined = ref
+        ? this.resolveParentDefinition(ref, holder, manifest, objectsByName)
+        : undefined;
+      holder =
+        parent && Object.values(manifest.objects).includes(parent)
+          ? parent
+          : undefined;
+    }
+    const bindings = holder?.itemBindings ?? [];
+    if (!holder || bindings.length === 0) return { kind: 'unresolved' };
+    const traced = bindings
+      .map((binding) => ({
+        via: binding.via,
+        item: this.resolveItemBinding(binding, holder, manifest, objectsByName),
+      }))
+      .filter((entry) => entry.item.kind !== 'unresolved');
+    const identity = (item: JunctionItemResolution) =>
+      item.kind === 'local'
+        ? item.def.qualifiedName || item.def.className
+        : item.kind === 'foreign'
+          ? item.key
+          : '';
+    const names = new Set(traced.map((entry) => identity(entry.item)));
+    if (names.size > 1) {
+      throw new ConfigurationError(
+        `Junction collection ${obj.className} names two different items: ${traced
+          .map((entry) => `${entry.via} ${identity(entry.item)}`)
+          .join(
+            ', ',
+          )}. Make the generic argument and static _itemClass name the same model.`,
+        'CONFIG_JUNCTION_ITEM_MISMATCH',
+      );
+    }
+    return traced[0]?.item ?? { kind: 'unresolved' };
+  }
+
+  /** Resolve one traced item reference of `holder` to a model. */
+  private resolveItemBinding(
+    binding: NonNullable<SmartObjectDefinition['itemBindings']>[number],
+    holder: SmartObjectDefinition,
+    manifest: SmartObjectManifest,
+    objectsByName: Map<string, SmartObjectDefinition>,
+  ): JunctionItemResolution {
+    if (binding.unresolved) return { kind: 'unresolved' };
+    const ownPackage = holder.packageName ?? manifest.packageName;
+    const localModels = Object.values(manifest.objects).filter(
+      (candidate) =>
+        candidate.className === binding.name &&
+        (candidate.packageName ?? manifest.packageName) === ownPackage &&
+        !this.isCollectionEntry(candidate, objectsByName, manifest),
+    );
+    const onlyLocal = (): JunctionItemResolution =>
+      localModels.length === 1
+        ? { kind: 'local', def: localModels[0] }
+        : { kind: 'unresolved' };
+    if (!binding.source) return onlyLocal();
+    if (isRelativeSpecifier(binding.source)) {
+      if (!binding.file && !holder.filePath) return { kind: 'unresolved' };
+      const target = stripModuleExtension(
+        binding.file
+          ? toPosixPath(binding.file)
+          : posix.resolve(
+              posix.dirname(toPosixPath(holder.filePath)),
+              binding.source,
+            ),
+      );
+      const def = localModels.find((candidate) => {
+        if (!candidate.filePath) return false;
+        const file = stripModuleExtension(toPosixPath(candidate.filePath));
+        return file === target || file === `${target}/index`;
+      });
+      return def ? { kind: 'local', def } : { kind: 'unresolved' };
+    }
+    if (!binding.package) return { kind: 'unresolved' };
+    if (binding.package === ownPackage) return onlyLocal();
+    const key = `${binding.package}:${binding.name}`;
+    const dependency = loadExternalManifestSync(binding.package, {
+      warn: false,
+    });
+    return dependency && lookupInManifest(dependency, key)
+      ? { kind: 'foreign', key }
+      : { kind: 'unresolved' };
+  }
+
+  /**
+   * I5: a model is stamped `system` exactly when its generated schema's table
+   * starts with `_smrt_`. The stamp is computed before schemas exist (the
+   * exposure passes need it), so a drift between the two resolvers fails the
+   * build with `CONFIG_INTERNAL_STAMP_DRIFT` instead of shipping a manifest
+   * whose two answers disagree.
+   *
+   * @internal
+   */
+  assertInternalStampsMatchSchema(manifest: SmartObjectManifest): void {
+    const objectsByName = new Map(
+      Object.values(manifest.objects).map((obj) => [obj.className, obj]),
+    );
+    for (const obj of Object.values(manifest.objects)) {
+      if (!obj.schema?.tableName) continue;
+      if (this.isCollectionEntry(obj, objectsByName, manifest)) continue;
+      const expected = isSystemTableName(obj.schema.tableName);
+      if (expected !== (obj.internal === 'system')) {
+        throw new ConfigurationError(
+          `Internal-model stamp for ${obj.className} (${obj.internal ?? 'none'}) disagrees with its schema table ${obj.schema.tableName}.`,
+          'CONFIG_INTERNAL_STAMP_DRIFT',
+        );
+      }
+    }
+  }
+
+  /**
    * Convert class name to table name (snake_case pluralized)
    *
    * IMPORTANT: Must use the same algorithm as runtime's tableNameFromClass()
@@ -2682,6 +2988,11 @@ export class ManifestGenerator {
         `[manifest-generator] ✅ ${obj.className} now has ${Object.keys(mergedFields).length} fields (including inherited)`,
       );
     }
+
+    // Internal-model facts: after STI table inheritance (the system test
+    // reads the resolved table) and before the exposure passes, which are
+    // where a kind will be read. Recording a kind changes no surface here.
+    this.stampInternalModels(manifest, objectsByName);
 
     // A model subclass inherits every generated surface (and `sensitive`) it
     // leaves unset from its parent model. Before the collection pass below,
@@ -4396,4 +4707,17 @@ export function generateManifest(
 ): SmartObjectManifest {
   const generator = new ManifestGenerator();
   return generator.generateManifest(scanResults, options);
+}
+
+/**
+ * Throws `CONFIG_INTERNAL_STAMP_DRIFT` when a model's `system` stamp and its
+ * generated schema table disagree (I5). Manifest generation runs it after
+ * schemas are generated; exported for tests.
+ *
+ * @internal
+ */
+export function assertInternalStampsMatchSchema(
+  manifest: SmartObjectManifest,
+): void {
+  new ManifestGenerator().assertInternalStampsMatchSchema(manifest);
 }

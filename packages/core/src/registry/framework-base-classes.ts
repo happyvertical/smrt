@@ -102,3 +102,17 @@ export function isFrameworkBaseClass(
     FRAMEWORK_BASE_CLASS_PACKAGES.get(className) === packageName
   );
 }
+
+/**
+ * True when `className` is the simple name of a framework base class. For a
+ * parent name the scanner could not resolve to any manifest, this says the
+ * ancestry ended at framework scaffolding rather than at an unknown class.
+ * Not re-exported from the package root.
+ */
+export function isFrameworkBaseClassName(
+  className: string | undefined,
+): boolean {
+  return (
+    className !== undefined && FRAMEWORK_BASE_CLASS_PACKAGES.has(className)
+  );
+}

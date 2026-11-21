@@ -7,7 +7,8 @@
  * @see https://oxc.rs/docs/guide/usage/parser.html
  */
 
-import { readFileSync } from 'node:fs';
+import { readFileSync, statSync } from 'node:fs';
+import { dirname, join as joinPath, resolve as resolvePath } from 'node:path';
 import { parseSync } from 'oxc-parser';
 import {
   extractAgentSurface,
@@ -26,6 +27,7 @@ import type {
   RawDecorator,
   RawDecoratorConfig,
   RawFieldDefinition,
+  RawItemBinding,
   RawMethodDefinition,
   RawParameterDefinition,
   ScanError,
@@ -124,10 +126,17 @@ interface ImportDefaultSpecifier extends BaseNode {
   local: Identifier;
 }
 
+interface ExportAllDeclaration extends BaseNode {
+  type: 'ExportAllDeclaration';
+  source: Literal;
+  exported?: Identifier | null;
+}
+
 type Statement =
   | ClassDeclaration
   | ExportNamedDeclaration
   | ExportDefaultDeclaration
+  | ExportAllDeclaration
   | ImportDeclaration
   | TSTypeAliasDeclaration
   | TSEnumDeclaration
@@ -168,6 +177,8 @@ interface ClassDeclaration extends BaseNode {
   superTypeParameters?: TSTypeParameterInstantiation;
   // oxc-parser v0.108+ renamed superTypeParameters to superTypeArguments
   superTypeArguments?: TSTypeParameterInstantiation;
+  /** The class's own type parameters (`class Base<T> ...`). */
+  typeParameters?: { params?: Array<{ name?: { name?: string } | string }> };
   body: ClassBody;
   decorators?: Decorator[];
 }
@@ -585,6 +596,8 @@ export function parseFile(filePath: string): FileScanResult {
         unresolved: [],
         importAliases,
         importBindings: extractImportBindings(program.body),
+        itemImportBindings: extractItemImportBindings(program.body),
+        localClassNames: extractLocalClassNames(program.body),
       };
       for (const node of program.body) {
         const extracted = extractClassFromNode(
@@ -829,6 +842,8 @@ export function parseSource(
         unresolved: [],
         importAliases,
         importBindings: extractImportBindings(program.body),
+        itemImportBindings: extractItemImportBindings(program.body),
+        localClassNames: extractLocalClassNames(program.body),
       };
       for (const node of program.body) {
         const extracted = extractClassFromNode(
@@ -971,6 +986,394 @@ function extractImportBindings(body: Statement[]): Map<string, ImportBinding> {
     }
   }
   return bindings;
+}
+
+/**
+ * Like {@link extractImportBindings}, but type-only imports are kept: a
+ * collection's generic argument (`SmrtJunction<Tag>`) is a type position, so
+ * `import type { Tag }` names its item as well as a value import does.
+ */
+function extractItemImportBindings(
+  body: Statement[],
+): Map<string, ImportBinding> {
+  const bindings = new Map<string, ImportBinding>();
+  for (const node of body) {
+    if (node.type !== 'ImportDeclaration') continue;
+    const source = node.source?.value;
+    if (typeof source !== 'string' || !node.specifiers) continue;
+    for (const spec of node.specifiers) {
+      if (!spec.local?.name) continue;
+      if (spec.type === 'ImportSpecifier') {
+        const imported =
+          spec.imported?.name ??
+          (spec.imported as { value?: unknown } | undefined)?.value;
+        if (typeof imported !== 'string') continue;
+        bindings.set(spec.local.name, { source, imported });
+      } else if (spec.type === 'ImportNamespaceSpecifier') {
+        bindings.set(spec.local.name, { source, imported: null });
+      }
+    }
+  }
+  return bindings;
+}
+
+/** Names of the classes declared at the top level of a module. */
+function extractLocalClassNames(body: Statement[]): Set<string> {
+  const names = new Set<string>();
+  for (const node of body) {
+    const declaration =
+      node.type === 'ExportNamedDeclaration' ||
+      node.type === 'ExportDefaultDeclaration'
+        ? node.declaration
+        : node;
+    if (declaration?.type === 'ClassDeclaration' && declaration.id?.name) {
+      names.add(declaration.id.name);
+    }
+  }
+  return names;
+}
+
+const isRelativeSpecifier = (specifier: string) =>
+  specifier === '.' ||
+  specifier === '..' ||
+  specifier.startsWith('./') ||
+  specifier.startsWith('../');
+
+/** The source file a relative module specifier resolves to, if it exists. */
+function resolveRelativeModule(
+  fromFile: string,
+  specifier: string,
+): string | undefined {
+  const base = resolvePath(dirname(fromFile), specifier);
+  const stripped = base.replace(/\.(?:m|c)?jsx?$/, '');
+  const candidates = [
+    base,
+    `${stripped}.ts`,
+    `${stripped}.tsx`,
+    `${stripped}.mts`,
+    `${stripped}.js`,
+    joinPath(base, 'index.ts'),
+    joinPath(base, 'index.tsx'),
+    joinPath(base, 'index.js'),
+  ];
+  return candidates.find((candidate) => {
+    try {
+      return statSync(candidate).isFile();
+    } catch {
+      return false;
+    }
+  });
+}
+
+type TracedExport =
+  | { file: string; name: string }
+  | { source: string; name: string };
+
+/**
+ * Whether an exported declaration other than a class binds `name`: a type
+ * alias, interface, enum, function, namespace, or any declarator of a
+ * variable statement (destructuring patterns included).
+ */
+function declaresName(declaration: object, name: string): boolean {
+  const node = declaration as {
+    type?: string;
+    id?: { type?: string; name?: string; value?: unknown } | null;
+    declarations?: Array<{ id?: unknown }>;
+  };
+  if (node.type === 'VariableDeclaration')
+    return (node.declarations ?? []).some((d) => patternBinds(d.id, name));
+  if (node.type === 'ClassDeclaration') return false;
+  return node.id?.name === name || node.id?.value === name;
+}
+
+/** Whether a binding pattern (identifier, object, array, rest, default) binds `name`. */
+function patternBinds(pattern: unknown, name: string): boolean {
+  const node = pattern as {
+    type?: string;
+    name?: string;
+    properties?: Array<{ value?: unknown; argument?: unknown }>;
+    elements?: unknown[];
+    left?: unknown;
+    argument?: unknown;
+  } | null;
+  if (!node) return false;
+  switch (node.type) {
+    case 'Identifier':
+      return node.name === name;
+    case 'ObjectPattern':
+      return (node.properties ?? []).some((p) =>
+        patternBinds(p.value ?? p.argument, name),
+      );
+    case 'ArrayPattern':
+      return (node.elements ?? []).some((e) => patternBinds(e, name));
+    case 'AssignmentPattern':
+      return patternBinds(node.left, name);
+    case 'RestElement':
+      return patternBinds(node.argument, name);
+    default:
+      return false;
+  }
+}
+
+/**
+ * Follow `name` exported by the module a relative specifier names, through
+ * local re-exports (`export { X } from`, `export { X as Y } from`,
+ * `export *`, `import { X } ... export { X }`), to the file that declares the
+ * class, or to the package specifier it is re-exported from. Returns
+ * `undefined` when the module cannot be read or does not export the name.
+ */
+function traceRelativeExport(
+  fromFile: string,
+  specifier: string,
+  name: string,
+  seen: Set<string> = new Set(),
+): TracedExport | undefined {
+  const file = resolveRelativeModule(fromFile, specifier);
+  if (!file || seen.has(`${file}#${name}`) || seen.size > 32) return undefined;
+  seen.add(`${file}#${name}`);
+  let body: Statement[];
+  try {
+    const sourceText = readFileSync(file, 'utf-8');
+    const result = parseSync(file, sourceText, {
+      lang: getLangFromFilename(file),
+      preserveParens: false,
+    });
+    body = (result.program as Program)?.body ?? [];
+  } catch {
+    return undefined;
+  }
+  const follow = (source: string, imported: string) =>
+    isRelativeSpecifier(source)
+      ? traceRelativeExport(file, source, imported, seen)
+      : { source, name: imported };
+  let localClasses: Set<string> | undefined;
+  let imports: Map<string, ImportBinding> | undefined;
+  // An explicit declaration of the name that is not a class (type alias,
+  // interface, variable, enum, function, namespace) still shadows every star:
+  // the name is exported, just not as a class this scan can follow.
+  let explicitNonClass = false;
+  // An explicit export of the name wins over every `export *`, wherever it
+  // appears in the module (the module's own export list is built first).
+  for (const node of body) {
+    if (node.type !== 'ExportNamedDeclaration') continue;
+    const declaration = node.declaration;
+    if (
+      declaration?.type === 'ClassDeclaration' &&
+      declaration.id?.name === name
+    )
+      return { file, name };
+    if (declaration && declaresName(declaration, name)) explicitNonClass = true;
+    for (const spec of node.specifiers ?? []) {
+      // A string-literal export name (`export { x as 'y' }`) has `value`.
+      const exported =
+        spec.exported.name ?? (spec.exported as { value?: unknown }).value;
+      if (exported !== name) continue;
+      const local =
+        spec.local.name ?? String((spec.local as { value?: unknown }).value);
+      const source = node.source?.value;
+      if (typeof source === 'string') return follow(source, local);
+      localClasses ??= extractLocalClassNames(body);
+      if (localClasses.has(local)) return { file, name: local };
+      imports ??= extractItemImportBindings(body);
+      const binding = imports.get(local);
+      if (binding?.imported) return follow(binding.source, binding.imported);
+      return undefined;
+    }
+  }
+  if (explicitNonClass) return undefined;
+  // Otherwise the stars: the name resolves only when every star that exports
+  // it leads to one declaration (two different ones make the name ambiguous,
+  // so it is not exported at all). A package star cannot be followed here, so
+  // any package star leaves the name unresolved rather than guessed.
+  const hits = new Map<string, TracedExport>();
+  for (const node of body) {
+    if (
+      node.type !== 'ExportAllDeclaration' ||
+      node.exported ||
+      typeof node.source?.value !== 'string'
+    )
+      continue;
+    if (!isRelativeSpecifier(node.source.value)) return undefined;
+    const found = traceRelativeExport(
+      file,
+      node.source.value,
+      name,
+      new Set(seen),
+    );
+    if (found)
+      hits.set(
+        'file' in found
+          ? `file:${found.file}#${found.name}`
+          : `source:${found.source}#${found.name}`,
+        found,
+      );
+  }
+  return hits.size === 1 ? [...hits.values()][0] : undefined;
+}
+
+/**
+ * Trace one item reference (a local identifier, or `ns.Member` through a
+ * namespace import) to its binding.
+ */
+function traceItemReference(
+  via: RawItemBinding['via'],
+  reference: { local: string; member?: string } | { unresolved: string },
+  filePath: string,
+  ctx: DecoratorConfigContext | undefined,
+): RawItemBinding {
+  if ('unresolved' in reference)
+    return { via, name: reference.unresolved, unresolved: true };
+  const binding = ctx?.itemImportBindings?.get(reference.local);
+  let name: string;
+  let source: string;
+  if (reference.member !== undefined) {
+    if (!binding || binding.imported !== null)
+      return {
+        via,
+        name: `${reference.local}.${reference.member}`,
+        unresolved: true,
+      };
+    name = reference.member;
+    source = binding.source;
+  } else if (binding) {
+    if (binding.imported === null)
+      return { via, name: reference.local, unresolved: true };
+    name = binding.imported;
+    source = binding.source;
+  } else if (ctx?.localClassNames?.has(reference.local)) {
+    return { via, name: reference.local };
+  } else {
+    return { via, name: reference.local, unresolved: true };
+  }
+  if (!isRelativeSpecifier(source)) return { via, name, source };
+  const traced = traceRelativeExport(filePath, source, name);
+  if (traced && 'file' in traced)
+    return { via, name: traced.name, source, file: traced.file };
+  if (traced) return { via, name: traced.name, source: traced.source };
+  return { via, name, source };
+}
+
+/**
+ * The item references of a collection class: the generic argument of its
+ * `extends` clause and its `static _itemClass` initializer, each traced to
+ * its binding. Undefined when the class has neither.
+ */
+function extractItemBindings(
+  node: ClassDeclaration,
+  filePath: string,
+  ctx: DecoratorConfigContext | undefined,
+): RawItemBinding[] | undefined {
+  const bindings: RawItemBinding[] = [];
+  const params =
+    node.superTypeArguments?.params || node.superTypeParameters?.params;
+  const typeArg = params?.[0];
+  // The class's own type parameters are in scope for the generic argument
+  // and shadow any import or class of the same name: `SmrtJunction<T>` in
+  // `class Base<T> ...` names no model, whatever else is called `T`.
+  const typeParameterNames = new Set(
+    (node.typeParameters?.params ?? [])
+      .map((param) =>
+        typeof param.name === 'string' ? param.name : param.name?.name,
+      )
+      .filter((name): name is string => typeof name === 'string'),
+  );
+  if (node.superClass && typeArg) {
+    if (typeArg.type === 'TSTypeReference') {
+      const typeName = typeArg.typeName;
+      if (
+        typeName.type === 'Identifier' &&
+        typeParameterNames.has(typeName.name)
+      ) {
+        bindings.push(
+          traceItemReference(
+            'typeArg',
+            { unresolved: typeName.name },
+            filePath,
+            ctx,
+          ),
+        );
+      } else if (typeName.type === 'Identifier') {
+        bindings.push(
+          traceItemReference(
+            'typeArg',
+            { local: typeName.name },
+            filePath,
+            ctx,
+          ),
+        );
+      } else if (
+        typeName.type === 'TSQualifiedName' &&
+        typeName.left.type === 'Identifier'
+      ) {
+        bindings.push(
+          traceItemReference(
+            'typeArg',
+            { local: typeName.left.name, member: typeName.right.name },
+            filePath,
+            ctx,
+          ),
+        );
+      } else {
+        bindings.push(
+          traceItemReference(
+            'typeArg',
+            { unresolved: extractTypeName(typeArg) ?? 'unknown' },
+            filePath,
+            ctx,
+          ),
+        );
+      }
+    } else {
+      bindings.push(
+        traceItemReference(
+          'typeArg',
+          { unresolved: extractTypeName(typeArg) ?? 'unknown' },
+          filePath,
+          ctx,
+        ),
+      );
+    }
+  }
+  for (const member of node.body.body) {
+    if (
+      member.type !== 'PropertyDefinition' ||
+      !member.static ||
+      member.key.type !== 'Identifier' ||
+      member.key.name !== '_itemClass' ||
+      !member.value
+    )
+      continue;
+    const value = member.value;
+    if (value.type === 'Identifier') {
+      bindings.push(
+        traceItemReference('itemClass', { local: value.name }, filePath, ctx),
+      );
+    } else if (
+      value.type === 'MemberExpression' &&
+      !value.computed &&
+      value.object.type === 'Identifier' &&
+      value.property.type === 'Identifier'
+    ) {
+      bindings.push(
+        traceItemReference(
+          'itemClass',
+          { local: value.object.name, member: value.property.name },
+          filePath,
+          ctx,
+        ),
+      );
+    } else {
+      bindings.push(
+        traceItemReference(
+          'itemClass',
+          { unresolved: '_itemClass' },
+          filePath,
+          ctx,
+        ),
+      );
+    }
+  }
+  return bindings.length > 0 ? bindings : undefined;
 }
 
 /**
@@ -1339,6 +1742,13 @@ interface DecoratorConfigContext {
    * exports its parent (#4145).
    */
   importBindings?: Map<string, ImportBinding>;
+  /**
+   * The same bindings including type-only imports, so a collection's item
+   * reference can be traced to its import (a generic argument is a type).
+   */
+  itemImportBindings?: Map<string, ImportBinding>;
+  /** Classes declared at the top level of this file. */
+  localClassNames?: Set<string>;
 }
 
 /**
@@ -1956,6 +2366,7 @@ function extractClassDeclaration(
     importAliases,
     ctx?.importBindings,
   );
+  const itemBindings = extractItemBindings(node, filePath, ctx);
 
   // Extract fields and methods
   const fields: RawFieldDefinition[] = [];
@@ -1995,6 +2406,7 @@ function extractClassDeclaration(
     extendsClause,
     extendsTypeArg,
     ...(extendsSource ? { extendsSource } : {}),
+    ...(itemBindings ? { itemBindings } : {}),
     decoratorConfig,
     hasSmartDecorator,
     ...(description ? { description } : {}),

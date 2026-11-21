@@ -35,6 +35,11 @@ export function findAbsoluteManifestPaths(repoRoot) {
       if (typeof filePath === 'string' && isAbsoluteManifestPath(filePath)) {
         found.push({ manifest: `packages/${name}/dist/manifest.json`, class: key, filePath });
       }
+      // A scan-time item binding path must never reach a published manifest.
+      for (const binding of object?.itemBindings ?? []) {
+        if (typeof binding?.file === 'string' && isAbsoluteManifestPath(binding.file))
+          found.push({ manifest: `packages/${name}/dist/manifest.json`, class: key, filePath: binding.file });
+      }
     }
   }
   return found;

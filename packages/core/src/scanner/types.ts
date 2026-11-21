@@ -9,6 +9,7 @@ import type {
 } from '@happyvertical/smrt-types';
 import type { RequiredForReason } from '../decorators/index.js';
 import type { RetiredTable } from '../migrations/retired-tables.js';
+import type { InternalModelKind } from '../registry/internal-model.js';
 import type { SmartObjectConfig } from '../registry.js';
 
 /**
@@ -602,6 +603,42 @@ export interface SmartObjectDefinition {
    * parent registration at runtime (#3956).
    */
   collectionOf?: string;
+  /**
+   * The collection's item references (generic argument of its `extends`
+   * clause, `static _itemClass` initializer) as the scanner traced them to
+   * their bindings. Input to the internal-model stamp; a `package` names
+   * the scoped package a package import comes from. `file` (the absolute
+   * path of the declaring file) exists only at scan time: the stamp pass
+   * removes it, so no published manifest carries it.
+   */
+  itemBindings?: Array<{
+    via: 'typeArg' | 'itemClass';
+    name: string;
+    source?: string;
+    file?: string;
+    package?: string;
+    unresolved?: true;
+  }>;
+  /**
+   * Internal-model kind stamped at scan time (`registry/internal-model.ts`):
+   * `junction` for the item model of a same-package junction collection,
+   * `system` for a model whose resolved table starts with `_smrt_`.
+   */
+  internal?: InternalModelKind;
+  /** This collection's ancestry ends at `SmrtJunction` / `SmrtJunctionBase`. */
+  junction?: true;
+  /** Qualified key of the model this junction collection joins. */
+  junctionOf?: string;
+  /** The junction item is declared by another package; it is not stamped. */
+  crossPackageJunction?: true;
+  /** The junction item reference could not be traced to a model. */
+  junctionItemUnresolved?: true;
+  /**
+   * Generated surfaces whose value comes from the internal-model default,
+   * on this model or an ancestor. Written once defaults are baked; carried
+   * by the registry when present.
+   */
+  defaultedExposure?: Array<'api' | 'mcp' | 'cli'>;
   tools?: Array<{
     type: 'function';
     function: {

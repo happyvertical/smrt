@@ -42,6 +42,26 @@ test('fails and names the manifest on an absolute path', () => {
   }
 });
 
+test('fails on an absolute item binding path too', () => {
+  const root = repoWith({
+    a: {
+      'x:ALinks': {
+        filePath: 'src/ALinks.ts',
+        itemBindings: [{ via: 'typeArg', name: 'A', source: './a', file: '/home/me/smrt/packages/a/src/a.ts' }],
+      },
+    },
+  });
+  try {
+    assert.deepEqual(
+      findAbsoluteManifestPaths(root).map((f) => f.filePath),
+      ['/home/me/smrt/packages/a/src/a.ts'],
+    );
+    assert.equal(spawnSync(process.execPath, [script, root]).status, 1);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('treats drive, UNC and file: paths as absolute', () => {
   for (const p of ['C:\\x\\A.ts', '\\\\h\\s\\A.ts', 'file:///x/A.ts', '/x/A.ts']) {
     assert.equal(isAbsoluteManifestPath(p), true);

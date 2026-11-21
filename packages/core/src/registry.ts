@@ -163,6 +163,10 @@ import {
   getEffectiveFieldsSync,
 } from './registry/inheritance-resolver';
 import {
+  internalStampsFromEntry,
+  mergeInternalStamps,
+} from './registry/internal-model.js';
+import {
   createFieldFromManifest,
   manifestFieldDiffers,
   mergeManifestField,
@@ -222,6 +226,7 @@ import {
   getDiscoveryAttemptCache,
   getFieldDecorators,
   getInheritanceCache,
+  getJunctionItemConstructors,
   getLegacyFieldDecorators,
   getMethodDecorators,
   getNextDbId,
@@ -2920,6 +2925,9 @@ export class ObjectRegistry {
     ObjectRegistry.constructorFieldDecorators.clear();
     ObjectRegistry.constructorTenantScopedDeclarations.clear();
     getLegacyFieldDecorators().clear();
+    // A junction collection registered before the reset no longer names its
+    // item: a later registration of that constructor is not a junction item.
+    getJunctionItemConstructors().clear();
     ObjectRegistry.stiSiblingsLoaded.clear();
     resetQualifiedNameAliasWarnings();
     // Release B (#1133) dropped classNameMap — case-insensitive lookups
@@ -3520,6 +3528,12 @@ export class ObjectRegistry {
         registered.collectionOf !== manifestEntry.collectionOf
       ) {
         registered.collectionOf = manifestEntry.collectionOf;
+        didHydrate = true;
+      }
+      // Scan-time internal-model stamps; a kind is never cleared.
+      if (
+        mergeInternalStamps(registered, internalStampsFromEntry(manifestEntry))
+      ) {
         didHydrate = true;
       }
 

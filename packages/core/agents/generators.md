@@ -580,6 +580,48 @@ CLI CRUD write its model closes. Gates: `registry/__tests__/collection-exposure.
 `packages/cli/src/__tests__/collection-exposure.test.ts`, and the cross-package
 `packages/bundle-gate/src/__tests__/collection-exposure.spec.ts`.
 
+## Internal-model stamps
+
+Manifest generation records which models are internal
+(`registry/internal-model.ts`); nothing reads the stamps to change a surface
+yet. `stampInternalModels` runs in `mergeInheritedFields`, after STI table
+inheritance and before the exposure passes:
+
+- `internal: 'system'`: the model's resolved table (`resolveModelTableName`,
+  the resolver `generateSchemas` uses) starts with `_smrt_` after trimming,
+  dropping one schema qualifier and quotes, and case-folding. After schemas
+  exist, `assertInternalStampsMatchSchema` fails the build with
+  `CONFIG_INTERNAL_STAMP_DRIFT` if a stamp and `schema.tableName` disagree.
+- `junction: true` on a collection whose ancestry ends at `SmrtJunction` or
+  `SmrtJunctionBase`, matched by simple name; parents resolve through this
+  manifest and dependency manifests, so a local class of that name is walked
+  through. Ancestry that ends at an unknown name warns
+  (`INTERNAL_MODEL_UNRESOLVED_ANCESTRY`) and stamps nothing.
+- The item comes from the scanner's `itemBindings` (generic argument and
+  `static _itemClass`, traced to their imports), never from
+  `findItemClass`'s name inference. A same-package item gets
+  `internal: 'junction'` and the collection `junctionOf`; an item another
+  package's manifest declares gives `junctionOf` plus `crossPackageJunction`
+  and a warning, and is not stamped; an untraceable item gives
+  `junctionItemUnresolved` and a warning. A generic argument and
+  `_itemClass` that trace to different models fail with
+  `CONFIG_JUNCTION_ITEM_MISMATCH`. `system` wins over `junction`.
+- A binding's `file` (the scanning machine's absolute path) is an input to
+  the stamps only: the pass removes it, so a published manifest never
+  carries it, and `assertPackageRelativeFilePaths` / `check-manifest-paths`
+  also refuse an absolute item binding path.
+
+The registry carries the stamps as `RegisteredClass.internalKind`,
+`junctionCollection` and `defaultedExposure`, from the manifest entry and
+across stub promotion in both loader orders; a kind is never cleared. On the
+decorator path `registerCollection` recognises a junction collection by the
+static `_isJunctionBase` brand and stamps the registration of exactly the
+constructor `_itemClass` names (its live entry, else the declaration a
+same-named replacement displaced; never the replacement), also when the item
+registers later; it bumps the registry generation whenever it changes a
+registration. The pending item set is registry state: `ObjectRegistry.clear()`
+empties it and test registry snapshots restore it.
+
 ## Explicit collection action resources
 
 A typed `SmrtCollection<Model>` may declare `@smrt({ collection: 'operations',

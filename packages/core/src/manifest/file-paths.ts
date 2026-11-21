@@ -48,7 +48,11 @@ export function relativizeManifestFilePaths(
   return { ...manifest, objects };
 }
 
-/** `Class (path)` for every object whose `filePath` is still absolute. */
+/**
+ * `Class (path)` for every object whose `filePath`, or the `file` of one of
+ * its item bindings (a scan-time field that must never be published), is
+ * still absolute.
+ */
 export function findAbsoluteManifestFilePaths(
   manifest: SmartObjectManifest,
 ): string[] {
@@ -59,6 +63,13 @@ export function findAbsoluteManifestFilePaths(
       isAbsoluteManifestPath(object.filePath)
     ) {
       found.push(`${key} (${object.filePath})`);
+    }
+    for (const binding of object.itemBindings ?? []) {
+      if (
+        typeof binding?.file === 'string' &&
+        isAbsoluteManifestPath(binding.file)
+      )
+        found.push(`${key} itemBindings (${binding.file})`);
     }
   }
   return found;

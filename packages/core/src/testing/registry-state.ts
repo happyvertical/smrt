@@ -2,14 +2,19 @@
 import { snapshotRegisteredRetiredTables } from '../migrations/retired-tables.js';
 import { snapshotGeneratedClassState } from '../registry/generated-state.js';
 import { snapshotRuntimeOverrides } from '../registry/runtime-overrides.js';
-import { getLegacyFieldDecorators } from '../registry/shared-state.js';
+import {
+  getJunctionItemConstructors,
+  getLegacyFieldDecorators,
+} from '../registry/shared-state.js';
 import { snapshotSubtypeLineage } from '../registry/subtype-lineage.js';
+import type { RegisteredClass } from '../registry/types.js';
 import { ObjectRegistry } from '../registry.js';
 
 /**
  * Internal test-only view onto ObjectRegistry's private registration maps.
- * Snapshot/restore copies these Maps opaquely (values are never inspected),
- * so the value types are `unknown` rather than the registry's concrete
+ * Snapshot/restore copies these Maps opaquely (only a registration's
+ * internal-model stamps are read, to restore them by value), so the value
+ * types are `unknown` rather than the registry's concrete
  * registration shapes. This is the single boundary where test utilities reach
  * into registry internals; access goes through a documented cast below.
  */
@@ -75,7 +80,26 @@ export function snapshotObjectRegistryState(): () => void {
       new Map(fields),
     ]),
   );
+  const junctionItems = new Set(getJunctionItemConstructors());
   const registry = getRegistryForTests();
+  // Registrations are restored as the same objects, and the registry stamps
+  // them in place (a junction collection registered after the snapshot marks
+  // its already-registered item), so their stamps are saved by value.
+  const stamps = new Map(
+    Array.from(
+      registry.classes.values() as Iterable<RegisteredClass>,
+      (entry) => [
+        entry,
+        {
+          internalKind: entry.internalKind,
+          junctionCollection: entry.junctionCollection,
+          defaultedExposure: entry.defaultedExposure
+            ? [...entry.defaultedExposure]
+            : undefined,
+        },
+      ],
+    ),
+  );
   const snapshot: RegistryTestState = {
     classes: new Map(registry.classes),
     collectionTableNames: new Map(registry.collectionTableNames),
@@ -98,9 +122,20 @@ export function snapshotObjectRegistryState(): () => void {
     for (const [key, value] of legacyFields) {
       getLegacyFieldDecorators().set(key, new Map(value));
     }
+    for (const ctor of junctionItems) getJunctionItemConstructors().add(ctor);
 
     for (const [key, value] of snapshot.classes) {
       registry.classes.set(key, value);
+    }
+    for (const [entry, saved] of stamps) {
+      for (const field of [
+        'internalKind',
+        'junctionCollection',
+        'defaultedExposure',
+      ] as const) {
+        if (saved[field] === undefined) delete entry[field];
+        else Object.assign(entry, { [field]: saved[field] });
+      }
     }
 
     for (const [key, value] of snapshot.collections) {

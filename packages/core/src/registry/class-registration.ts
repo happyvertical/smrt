@@ -81,6 +81,14 @@ import {
   getEffectiveFieldsSync,
 } from './inheritance-resolver';
 import {
+  type InternalModelStamps,
+  internalStampsFromEntry,
+  isJunctionCollectionConstructor,
+  isSystemTableName,
+  mergeInternalKind,
+  mergeInternalStamps,
+} from './internal-model.js';
+import {
   createFieldFromManifest,
   mergeManifestField,
 } from './manifest-field-merge.js';
@@ -104,6 +112,7 @@ import {
   getConstructorIndex,
   getConstructorTenantScopedDeclarations,
   getInheritanceCache,
+  getJunctionItemConstructors,
   getLegacyFieldDecorators,
   getSourceFileFromStack,
   getStampedPackageName,
@@ -1627,6 +1636,9 @@ function registerUntracked(
   // constructor-bound identity that holds wherever a consumer bundles it.
   const explicitPackageName = config.packageName ?? getStampedPackageName(ctor);
   let promotedCollectionConstructor: RegisteredClass['collectionConstructor'];
+  // Internal-model stamps of the registrations this one replaces for the
+  // same class; carried like the collection constructor.
+  const promotedInternalStamps: InternalModelStamps[] = [];
   let promotedRuntimeConfig: SmartObjectConfig | undefined;
   let promotedReplacementAncestry: string[] | undefined;
   let isolatedSubtypeParent: [string, RegisteredClass] | undefined;
@@ -1881,6 +1893,9 @@ function registerUntracked(
 
       promotedCollectionConstructor =
         constructorEntry.collectionConstructor || targetCollectionConstructor;
+      promotedInternalStamps.push(constructorEntry);
+      if (targetIsManifestStub && targetEntry)
+        promotedInternalStamps.push(targetEntry);
       // Generated manifests are JSON data and cannot carry runtime-only
       // values such as function-valued lifecycle hooks. Preserve the exact
       // constructor's decorator-time config as the lowest-priority layer;
@@ -2840,6 +2855,27 @@ function registerUntracked(
     // it lazily using the `extends` field. This ensures correct chain for both
     // decorator-registered and manifest-loaded classes.
   };
+  // Internal-model stamps, recorded only: the manifest entry's, those of the
+  // registration being promoted for this class, the junction brand on the
+  // constructor, a junction collection that already named this constructor
+  // as its item, and a `_smrt_` table. A kind is never cleared.
+  mergeInternalStamps(registration, internalStampsFromEntry(manifestEntry));
+  for (const promoted of promotedInternalStamps)
+    mergeInternalStamps(registration, promoted);
+  if (isJunctionCollectionConstructor(ctor))
+    registration.junctionCollection = true;
+  if (!registration.collectionOf) {
+    if (getJunctionItemConstructors().has(ctor))
+      registration.internalKind = mergeInternalKind(
+        registration.internalKind,
+        'junction',
+      );
+    if (isSystemTableName(schema.tableName))
+      registration.internalKind = mergeInternalKind(
+        registration.internalKind,
+        'system',
+      );
+  }
   // #3338: a deprecated alias must never name a second live class.
   if (
     declaresGeneratedFields(registration) ||
@@ -2890,6 +2926,9 @@ function registerUntracked(
   assertQualifiedNameAliasesAvailable(registrationKey, registration);
   if (isolatedSubtypeParent) {
     const [parentKey, parent] = isolatedSubtypeParent;
+    // Stamps follow only the registration with the same qualified name.
+    if (parentKey === registrationKey)
+      mergeInternalStamps(registration, parent);
     retainReplacedDeclaration(parentKey, parent);
     registration.replacedQualifiedNames = [
       ...new Set([
@@ -2906,6 +2945,9 @@ function registerUntracked(
       qualifiedName: parent.qualifiedName,
     });
   }
+  const displaced = getClasses().get(registrationKey);
+  if (displaced && displaced !== registration)
+    mergeInternalStamps(registration, displaced);
   getClasses().set(registrationKey, registration);
 
   // Release B (#1133): case-insensitive lookups iterate the classes Map
@@ -3086,6 +3128,22 @@ function orderStiSiblingsBaseFirst(
   ];
 }
 
+/**
+ * The registration whose constructor is exactly `ctor`: its live entry, or
+ * the retained declaration a same-named replacement displaced. Never a
+ * replacement of `ctor`.
+ */
+function exactRegistrationOf(ctor: object): RegisteredClass | undefined {
+  const key = getConstructorIndex().get(ctor as typeof SmrtObject);
+  if (!key) return undefined;
+  // The constructor index outlives a registry reset, so the key can now hold
+  // an unrelated class: the live entry counts only when it is `ctor`'s own.
+  const live = getClasses().get(key);
+  if (live?.constructor === ctor) return live;
+  const retained = replacedDeclarations().get(key);
+  return retained?.constructor === ctor ? retained : undefined;
+}
+
 export function registerCollection(
   objectName: string,
   // `new (options: any) => SmrtCollection<any>` is the irreducible
@@ -3112,9 +3170,51 @@ export function registerCollection(
     ObjectRegistry.getEffectiveClassByConstructor(
       itemClass as typeof SmrtObject,
     ) === registered;
-  if (registered && ownsItem) {
+  let changed = false;
+  if (
+    registered &&
+    ownsItem &&
+    registered.collectionConstructor !== collectionConstructor
+  ) {
     registered.collectionConstructor = collectionConstructor;
+    changed = true;
   }
+
+  // A junction collection is known by its constructor brand, never by name
+  // or `instanceof` (another core copy). Its item is found by constructor,
+  // never by `findClass(objectName)`, which can name a same-named class of
+  // another package. Recorded only: no effective config reads these yet.
+  if (isJunctionCollectionConstructor(collectionConstructor)) {
+    const collectionRegistration =
+      ObjectRegistry.getEffectiveClassByConstructor(
+        collectionConstructor as unknown as typeof SmrtObject,
+      );
+    if (collectionRegistration && !collectionRegistration.junctionCollection) {
+      collectionRegistration.junctionCollection = true;
+      changed = true;
+    }
+    if (typeof itemClass === 'function') {
+      // An item that registers later is stamped by its own registration.
+      getJunctionItemConstructors().add(itemClass);
+      // The fact belongs to the exact constructor the collection names: its
+      // live registration, else the declaration a same-named replacement
+      // displaced. Never the replacement itself (another qualified identity,
+      // which `getEffectiveClassByConstructor` would return); a replacement
+      // that extends the item reaches it through ancestry.
+      const itemRegistration = exactRegistrationOf(itemClass);
+      if (itemRegistration && !itemRegistration.collectionOf) {
+        const kind = mergeInternalKind(
+          itemRegistration.internalKind,
+          'junction',
+        );
+        if (kind !== itemRegistration.internalKind) {
+          itemRegistration.internalKind = kind;
+          changed = true;
+        }
+      }
+    }
+  }
+  if (changed) bumpRegistryGeneration();
 
   // The collections map stores `typeof SmrtCollection`; the runtime value is a
   // SmrtCollection subclass constructor. Bridge the loose constructor shape to
@@ -3613,6 +3713,10 @@ function mergeManifestIntoExistingRegistration(
   // A class registered before its manifest loaded learns it is a collection
   // here, so it stops claiming its model's table (#3956).
   if (objectDef.collectionOf) existing.collectionOf = objectDef.collectionOf;
+  // Internal-model stamps reach a class decorated before its manifest
+  // loaded; a later entry without them never clears one.
+  if (mergeInternalStamps(existing, internalStampsFromEntry(objectDef)))
+    bumpRegistryGeneration();
 
   // The manifest's collection is authoritative (it carries STI inheritance):
   // a class decorated before its manifest loaded registered a derived one,
@@ -4076,6 +4180,7 @@ function registerFromManifestUntracked(
     extendsTypeArg: objectDef.extendsTypeArg, // SmrtCollection<T> generic arg
     inheritedExposure: objectDef.inheritedExposure, // #3468
     collectionOf: objectDef.collectionOf, // #3956 manifest collection classification
+    ...internalStampsFromEntry(objectDef), // scan-time internal-model stamps
     visibility, // New: Visibility control for manifest filtering
   };
   // #3338: a deprecated alias must never name a second live class.
@@ -4108,6 +4213,9 @@ function registerFromManifestUntracked(
       getConstructorFieldDecorators().get(registration.constructor)?.keys(),
     );
   assertQualifiedNameAliasesAvailable(registrationKey, registration);
+  const displacedEntry = getClasses().get(registrationKey);
+  if (displacedEntry && displacedEntry !== registration)
+    mergeInternalStamps(registration, displacedEntry);
   getClasses().set(registrationKey, registration);
   // A run-time class is looked up by constructor to resolve its own identity
   // (`_meta_type`, fields); by simple name it could be its same-named parent.
