@@ -13,9 +13,9 @@
 
 import type { DatabaseInterface } from '@happyvertical/sql';
 import {
-  maskSecretFieldsInJsonText,
+  builtInRedactionStamp,
+  getTranscriptRedactor,
   redactAiTranscriptMessages,
-  redactAiTranscriptPart,
 } from '../ai-transcripts.js';
 import {
   AI_RUN_COLUMNS,
@@ -112,6 +112,12 @@ export type AiRunReservationState =
 /** Default cap of one event payload, in bytes of its JSON. */
 export const AI_RUN_EVENT_PAYLOAD_MAX_BYTES = 16_384;
 
+/**
+ * Smallest cap accepted: always holds the envelope with an empty head and
+ * tail, so a stored envelope never exceeds its cap.
+ */
+const AI_RUN_EVENT_PAYLOAD_MIN_BYTES = 256;
+
 /** Collisions on `(run_id, seq)` retried before the append gives up. */
 const SEQ_ATTEMPTS = 5;
 
@@ -132,7 +138,11 @@ export interface AiRunEventInput {
   name?: string | null;
   status?: string | null;
   duration?: number | null;
-  /** JSON-serializable; redacted, then capped (head and tail kept). */
+  /**
+   * JSON-serializable. Serialized once (`toJSON` honoured), redacted, then
+   * capped: a larger payload keeps its head and tail (see
+   * {@link AiRunEvent.payload} for what a read returns).
+   */
   payload?: unknown;
   /** A pointer at content the host already stores (a chat message, a file). */
   payloadRef?: string | null;
@@ -142,7 +152,11 @@ export interface AiRunEventInput {
 
 /** Options of {@link appendAiRunEvent}. */
 export interface AppendAiRunEventOptions extends AiRunTxOptions {
-  /** Payload cap in bytes; default {@link AI_RUN_EVENT_PAYLOAD_MAX_BYTES}. */
+  /**
+   * Payload cap in bytes of stored JSON; default
+   * {@link AI_RUN_EVENT_PAYLOAD_MAX_BYTES}. A safe integer of at least 256,
+   * or the append throws `RangeError` before anything is read or written.
+   */
   maxPayloadBytes?: number;
   /** Runs before the built-in redactor (which always runs). */
   redact?: AiRunEventRedactor;
@@ -160,6 +174,19 @@ export interface AiRunEvent {
   name: string | null;
   status: string | null;
   duration: number | null;
+  /**
+   * The stored payload, redacted again by the built-in rules on read (the
+   * host redactor runs on the write path only). A `truncated` event's
+   * payload is `{ truncated: true, originalBytes, head, tail }`: `head` and
+   * `tail` are the start and end of the payload's JSON text as written, when
+   * the redacting append stored the event under the current built-in rules.
+   * Otherwise (stored by an earlier version, under other rules, or by any
+   * other writer) neither fragment is returned: `head` and `tail` are empty,
+   * `withheld` is `['head', 'tail']`, and `originalBytes` is `null` unless the
+   * stored size is a valid byte count. A row whose stored flag is neither
+   * cut nor whole (missing, `2`, unrecognised) is never verified: an
+   * envelope-shaped payload reads as withheld, any other as whole.
+   */
   payload: unknown;
   payloadRef: string | null;
   truncated: boolean;
@@ -172,18 +199,45 @@ export interface AiRunEvent {
 
 const encoder = new TextEncoder();
 
-/**
- * The payload as stored: JSON within `maxBytes`, or, when it is larger, a
- * JSON envelope keeping its head and tail with `truncated` set.
- */
-export function capAiRunEventPayload(
-  payload: unknown,
-  maxBytes = AI_RUN_EVENT_PAYLOAD_MAX_BYTES,
-): { payload: string | null; truncated: boolean } {
-  if (payload === undefined || payload === null) {
-    return { payload: null, truncated: false };
+function checkPayloadCap(maxBytes: number, caller: string): void {
+  if (
+    !Number.isSafeInteger(maxBytes) ||
+    maxBytes < AI_RUN_EVENT_PAYLOAD_MIN_BYTES
+  ) {
+    throw new RangeError(
+      `${caller}: the payload cap must be an integer of at least ${AI_RUN_EVENT_PAYLOAD_MIN_BYTES} bytes (got ${String(maxBytes)})`,
+    );
   }
-  const json = JSON.stringify(payload);
+}
+
+const isHighSurrogate = (code: number) => code >= 0xd800 && code <= 0xdbff;
+const isLowSurrogate = (code: number) => code >= 0xdc00 && code <= 0xdfff;
+
+/** `end`, moved back so a cut there never splits a surrogate pair. */
+function wholeCharEnd(text: string, end: number): number {
+  return end > 0 && isHighSurrogate(text.charCodeAt(end - 1)) ? end - 1 : end;
+}
+
+/** `start`, moved forward so a cut there never splits a surrogate pair. */
+function wholeCharStart(text: string, start: number): number {
+  return start > 0 &&
+    start < text.length &&
+    isLowSurrogate(text.charCodeAt(start))
+    ? start + 1
+    : start;
+}
+
+/**
+ * JSON text as stored: whole within `maxBytes`, or, when larger, the
+ * envelope keeping its head and tail. Only the redacting append passes a
+ * `stamp` (the built-in rules it redacted under): it is what lets a read
+ * return the fragments as written.
+ */
+function capJsonText(
+  json: string,
+  maxBytes: number,
+  stamp: number | undefined,
+): { payload: string; truncated: boolean } {
   const bytes = encoder.encode(json).length;
   if (bytes <= maxBytes) return { payload: json, truncated: false };
   let keep = Math.max(0, Math.floor(maxBytes / 2) - 64);
@@ -191,9 +245,13 @@ export function capAiRunEventPayload(
     const envelope = JSON.stringify({
       truncated: true,
       originalBytes: bytes,
-      head: json.slice(0, keep),
-      tail: keep > 0 ? json.slice(-keep) : '',
+      ...(stamp === undefined ? {} : { redaction: stamp }),
+      head: json.slice(0, wholeCharEnd(json, keep)),
+      tail:
+        keep > 0 ? json.slice(wholeCharStart(json, json.length - keep)) : '',
     });
+    // The cap is at least AI_RUN_EVENT_PAYLOAD_MIN_BYTES, which always holds
+    // the envelope with empty fragments, so this ends within the cap.
     if (encoder.encode(envelope).length <= maxBytes || keep === 0) {
       return { payload: envelope, truncated: true };
     }
@@ -201,60 +259,234 @@ export function capAiRunEventPayload(
   }
 }
 
-async function redactPayload(
+/**
+ * The payload as stored: JSON within `maxBytes`, or, when it is larger, a
+ * JSON envelope keeping its head and tail with `truncated` set. It redacts
+ * nothing and does not stamp the envelope, so a row stored from its result
+ * reads with both fragments withheld (see {@link AiRunEvent.payload}).
+ * `maxBytes` must be a safe integer of at least 256 (`RangeError`).
+ */
+export function capAiRunEventPayload(
+  payload: unknown,
+  maxBytes = AI_RUN_EVENT_PAYLOAD_MAX_BYTES,
+): { payload: string | null; truncated: boolean } {
+  checkPayloadCap(maxBytes, 'capAiRunEventPayload');
+  if (payload === undefined || payload === null) {
+    return { payload: null, truncated: false };
+  }
+  return capJsonText(JSON.stringify(payload), maxBytes, undefined);
+}
+
+const isBinary = (value: unknown) =>
+  ArrayBuffer.isView(value) || value instanceof ArrayBuffer;
+
+/**
+ * A value's JSON form as inert data (plain objects and arrays, strings,
+ * finite numbers, booleans, null), computed once with JSON's rules: every
+ * property is read exactly once, and `toJSON` (own or inherited) runs on
+ * that one read and nowhere later. Binary values become `'[binary]'` and an
+ * object met again becomes `'[Circular]'` (as the built-in redactor does).
+ * What the redactor then sees is exactly what is serialized. `BigInt`
+ * throws, as `JSON.stringify` does.
+ */
+function toInertJson(value: unknown): unknown {
+  const seen = new WeakSet<object>();
+  const visit = (raw: unknown, key: string): unknown => {
+    if (isBinary(raw)) return '[binary]';
+    let item = raw;
+    if (
+      item !== null &&
+      (typeof item === 'object' || typeof item === 'bigint')
+    ) {
+      const toJSON = (item as { toJSON?: unknown }).toJSON;
+      if (typeof toJSON === 'function') item = toJSON.call(item, key);
+      if (isBinary(item)) return '[binary]';
+    }
+    if (
+      item instanceof Number ||
+      item instanceof String ||
+      item instanceof Boolean
+    ) {
+      item = item.valueOf();
+    }
+    switch (typeof item) {
+      case 'string':
+      case 'boolean':
+        return item;
+      case 'number':
+        return Number.isFinite(item) ? item : null;
+      case 'bigint':
+        throw new TypeError('Do not know how to serialize a BigInt');
+      case 'undefined':
+      case 'function':
+      case 'symbol':
+        return undefined;
+    }
+    if (item === null) return null;
+    const node = item as object;
+    if (seen.has(node)) return '[Circular]';
+    seen.add(node);
+    if (Array.isArray(node)) {
+      const out: unknown[] = [];
+      const length = node.length;
+      for (let i = 0; i < length; i++) {
+        const element = visit(node[i], String(i));
+        out.push(element === undefined ? null : element);
+      }
+      return out;
+    }
+    const out: Record<string, unknown> = {};
+    for (const name of Object.keys(node)) {
+      const child = visit((node as Record<string, unknown>)[name], name);
+      if (child === undefined) continue;
+      // defineProperty: a `__proto__` key stays data, as JSON.parse keeps it.
+      Object.defineProperty(out, name, {
+        value: child,
+        enumerable: true,
+        writable: true,
+        configurable: true,
+      });
+    }
+    return out;
+  };
+  const result = visit(value, '');
+  return result === undefined ? null : result;
+}
+
+/**
+ * The payload's stored JSON text: the event redactor and the host redactor
+ * (with the run's tenant) see the caller's value; it is then materialized
+ * once and the built-in redactor runs on that inert value, whose JSON is
+ * the text measured and stored.
+ */
+async function redactPayloadJson(
   input: AiRunEventInput,
+  captured: unknown,
   runId: string,
   tenantId: string | null,
   options: AppendAiRunEventOptions,
-): Promise<unknown> {
-  if (input.payload === undefined || input.payload === null) return null;
+): Promise<string | null> {
+  if (captured === undefined || captured === null) return null;
   const context = {
     runId,
     type: input.type,
     name: input.name ?? null,
   };
   const payload = options.redact
-    ? await options.redact(input.payload, context)
-    : input.payload;
+    ? await options.redact(captured, context)
+    : captured;
   // The transcripts' redaction path (page section 8): the host redactor with
-  // the run's tenant, then the built-in one.
-  const messages = await redactAiTranscriptPart(
-    [{ role: 'event', content: payload }],
-    {
-      part: 'tools',
-      callId: input.callId ?? runId,
-      tenantId,
-      operation: `run-event:${input.type}`,
-    },
-    {},
+  // the run's tenant, then the built-in one, here on the materialized value.
+  const host = getTranscriptRedactor();
+  const messages = [{ role: 'event', content: payload }];
+  const hosted = host
+    ? await host(messages, {
+        part: 'tools',
+        callId: input.callId ?? runId,
+        tenantId,
+        operation: `run-event:${input.type}`,
+      })
+    : messages;
+  const inert = toInertJson(
+    Array.isArray(hosted) ? (hosted[0]?.content ?? null) : null,
   );
-  return messages[0]?.content ?? null;
+  const redacted =
+    redactAiTranscriptMessages([{ role: 'event', content: inert }])[0]
+      ?.content ?? null;
+  return redacted === null ? null : JSON.stringify(redacted);
+}
+
+/** One event row as {@link insertAiRunEventTx} takes it. */
+interface AiRunEventRowInput {
+  id: string;
+  type: AiRunEventType;
+  parentEventId?: string | null;
+  callId?: string | null;
+  stepIndex?: number | null;
+  name?: string | null;
+  status?: string | null;
+  duration?: number | null;
+  payload?: string | null;
+  payloadRef?: string | null;
+  truncated?: boolean;
+  childRunId?: string | null;
+  reservation?: AiRunReservationState | null;
+  reservedTokens?: number | null;
+  reservedCost?: number | null;
+}
+
+/**
+ * A cut payload handed to the public insert, without a redaction stamp: the
+ * stamp says the redacting append produced the text, which no other caller
+ * can attest, so such a row reads with its fragments withheld.
+ */
+function withoutRedactionStamp(
+  payload: string | null | undefined,
+  truncated: boolean | undefined,
+): string | null {
+  if (payload === undefined || payload === null || !truncated) {
+    return payload ?? null;
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(payload);
+  } catch {
+    return payload;
+  }
+  if (
+    !parsed ||
+    typeof parsed !== 'object' ||
+    Array.isArray(parsed) ||
+    !Object.hasOwn(parsed, 'redaction')
+  ) {
+    return payload;
+  }
+  const { redaction: _dropped, ...rest } = parsed as Record<string, unknown>;
+  return JSON.stringify(rest);
 }
 
 /**
  * Insert one event inside an open accounting transaction whose caller holds
- * (on PostgreSQL) the run row's lock. Returns the allocated `seq`.
+ * (on PostgreSQL) the run row's lock. Returns the allocated `seq`. Stores
+ * the payload as given, except that a `truncated` payload loses any
+ * `redaction` stamp: only {@link appendAiRunEvent} stamps what it redacted,
+ * so a cut payload stored here reads with its head and tail withheld.
  */
 export async function insertAiRunEventTx(
   tx: AiRunTx,
   runId: string,
-  event: {
-    id: string;
-    type: AiRunEventType;
-    parentEventId?: string | null;
-    callId?: string | null;
-    stepIndex?: number | null;
-    name?: string | null;
-    status?: string | null;
-    duration?: number | null;
-    payload?: string | null;
-    payloadRef?: string | null;
-    truncated?: boolean;
-    childRunId?: string | null;
-    reservation?: AiRunReservationState | null;
-    reservedTokens?: number | null;
-    reservedCost?: number | null;
-  },
+  event: AiRunEventRowInput,
+): Promise<number> {
+  // One read of each declared field (prototype getters included); the stamp
+  // strip and the insert use these same values.
+  const snapshot: AiRunEventRowInput = {
+    id: event.id,
+    type: event.type,
+    parentEventId: event.parentEventId,
+    callId: event.callId,
+    stepIndex: event.stepIndex,
+    name: event.name,
+    status: event.status,
+    duration: event.duration,
+    payload: event.payload,
+    payloadRef: event.payloadRef,
+    truncated: event.truncated,
+    childRunId: event.childRunId,
+    reservation: event.reservation,
+    reservedTokens: event.reservedTokens,
+    reservedCost: event.reservedCost,
+  };
+  return insertEventRow(tx, runId, {
+    ...snapshot,
+    payload: withoutRedactionStamp(snapshot.payload, snapshot.truncated),
+  });
+}
+
+/** The insert itself; the redacting append's stamped rows go through here. */
+async function insertEventRow(
+  tx: AiRunTx,
+  runId: string,
+  event: AiRunEventRowInput,
 ): Promise<number> {
   for (let attempt = 1; attempt <= SEQ_ATTEMPTS; attempt++) {
     const rows = getRows(
@@ -313,9 +545,17 @@ export async function appendAiRunEvent(
     throw new TypeError(`appendAiRunEvent: unknown event type ${input.type}`);
   }
   checkEventStatus(input.type, input.status ?? null);
+  // Only an omitted cap means the default; null is an invalid cap.
+  const maxPayloadBytes =
+    options.maxPayloadBytes === undefined
+      ? AI_RUN_EVENT_PAYLOAD_MAX_BYTES
+      : options.maxPayloadBytes;
+  checkPayloadCap(maxPayloadBytes, 'appendAiRunEvent');
+  // Read once: the tenant decision and the redaction see the same value.
+  const payload = input.payload;
   // The tenant the payload was redacted for; the final lock is taken in it.
   let tenantId: string | null | undefined;
-  if (input.payload !== undefined && input.payload !== null) {
+  if (payload !== undefined && payload !== null) {
     // The host redactor applies the run's tenant rules, so it needs the
     // run's tenant before anything is stored. Read behind the claim fence,
     // like every other step of an append: a worker whose claim was taken
@@ -331,8 +571,19 @@ export async function appendAiRunEvent(
       options,
     );
   }
-  const redacted = await redactPayload(input, runId, tenantId ?? null, options);
-  const capped = capAiRunEventPayload(redacted, options.maxPayloadBytes);
+  const json = await redactPayloadJson(
+    input,
+    payload,
+    runId,
+    tenantId ?? null,
+    options,
+  );
+  // Only this writer stamps a cut envelope: it redacted the whole value
+  // under the built-in rules the stamp names.
+  const capped =
+    json === null
+      ? { payload: null, truncated: false }
+      : capJsonText(json, maxPayloadBytes, builtInRedactionStamp());
   const id = input.id ?? newAiRunId();
   const seq = await withAiRunTransaction(
     db,
@@ -365,7 +616,7 @@ export async function appendAiRunEvent(
         ),
       );
       if (existing[0]) return num(existing[0].seq);
-      return insertAiRunEventTx(tx, runId, {
+      return insertEventRow(tx, runId, {
         id,
         type: input.type,
         parentEventId: input.parentEventId ?? null,
@@ -385,16 +636,134 @@ export async function appendAiRunEvent(
   return { id, seq };
 }
 
+/**
+ * A row's payload as inert data, read once: stored text is parsed; any other
+ * value (a host converting rows it built itself) is turned into its JSON
+ * form, so no `toJSON` or accessor runs after it is checked. A value that
+ * has no JSON form reads as no payload.
+ */
 function parsePayload(value: unknown): unknown {
-  if (typeof value !== 'string') return value ?? null;
+  if (typeof value === 'string') {
+    try {
+      return JSON.parse(value);
+    } catch {
+      return value;
+    }
+  }
+  if (value === undefined || value === null) return null;
   try {
-    return JSON.parse(value);
+    return toInertJson(value);
   } catch {
-    return value;
+    return null;
   }
 }
 
+/**
+ * A row's `truncated` flag, in three states: `'cut'` (`1`, `1n`, `'1'`,
+ * `true`, as the writer stores it), `'whole'` (`0`, `0n`, `'0'`, `false`),
+ * and `'unclear'` for anything else (a missing column, `2`, an unrecognised
+ * value). Only `'cut'` lets an envelope be verified.
+ */
+type RowFlag = 'cut' | 'whole' | 'unclear';
+
+function rowFlag(value: unknown): RowFlag {
+  if (value === 1 || value === 1n || value === '1' || value === true) {
+    return 'cut';
+  }
+  if (value === 0 || value === 0n || value === '0' || value === false) {
+    return 'whole';
+  }
+  return 'unclear';
+}
+
+/** A payload that looks like a cut envelope: `truncated: true` with a head or tail. */
+function envelopeShaped(payload: unknown): boolean {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    return false;
+  }
+  const fields = payload as Record<string, unknown>;
+  return (
+    fields.truncated === true &&
+    (Object.hasOwn(fields, 'head') || Object.hasOwn(fields, 'tail'))
+  );
+}
+
+/** Whether a row reads as cut: always for `'cut'`, for an envelope when unclear. */
+function readsAsCut(flag: RowFlag, payload: unknown): boolean {
+  return flag === 'cut' || (flag === 'unclear' && envelopeShaped(payload));
+}
+
+const ENVELOPE_KEYS = 'head,originalBytes,redaction,tail,truncated';
+
+const byteCount = (value: unknown): number | null =>
+  Number.isSafeInteger(value) && (value as number) >= 0
+    ? (value as number)
+    : null;
+
+/**
+ * What a read returns of one stored payload (built-in rules only; the host
+ * redactor is never called by a read).
+ *
+ * - A row flagged whole holds a whole payload: it is redacted as a
+ *   structured value, whatever its fields (a payload shaped like an envelope
+ *   is caller data). So is a row whose flag is unclear, unless its payload is
+ *   shaped like an envelope.
+ * - A row flagged cut is returned as written only when it holds exactly the
+ *   envelope the redacting append writes, stamped with the current built-in
+ *   rules; the stamp is dropped. Any other cut row (no stamp, an older or
+ *   newer or malformed one, other fields), and an envelope-shaped row whose
+ *   flag is unclear, returns no stored text: its head and tail cannot be
+ *   checked against today's rules, and a cut can fall before the delimiter a
+ *   rule needs.
+ */
+function readStoredPayload(payload: unknown, flag: RowFlag): unknown {
+  if (!readsAsCut(flag, payload)) {
+    if (payload === null || payload === undefined) return null;
+    return (
+      redactAiTranscriptMessages([{ role: 'event', content: payload }])[0]
+        ?.content ?? null
+    );
+  }
+  const fields =
+    payload && typeof payload === 'object' && !Array.isArray(payload)
+      ? (payload as Record<string, unknown>)
+      : null;
+  const originalBytes = byteCount(fields?.originalBytes);
+  if (
+    flag === 'cut' &&
+    fields &&
+    Object.keys(fields).sort().join(',') === ENVELOPE_KEYS &&
+    fields.truncated === true &&
+    originalBytes !== null &&
+    typeof fields.head === 'string' &&
+    typeof fields.tail === 'string' &&
+    Number.isSafeInteger(fields.redaction) &&
+    fields.redaction === builtInRedactionStamp()
+  ) {
+    return {
+      truncated: true,
+      originalBytes,
+      head: fields.head,
+      tail: fields.tail,
+    };
+  }
+  return {
+    truncated: true,
+    originalBytes,
+    head: '',
+    tail: '',
+    withheld: ['head', 'tail'],
+  };
+}
+
+/**
+ * One stored event row as an {@link AiRunEvent}, its payload read under the
+ * read-time rule ({@link AiRunEvent.payload}).
+ */
 export function toAiRunEvent(row: Record<string, unknown>): AiRunEvent {
+  const flag = rowFlag(row.truncated);
+  const stored = parsePayload(row.payload);
+  const truncated = readsAsCut(flag, stored);
   return {
     id: String(row.id),
     runId: String(row.run_id),
@@ -412,9 +781,9 @@ export function toAiRunEvent(row: Record<string, unknown>): AiRunEvent {
       row.duration === null || row.duration === undefined
         ? null
         : num(row.duration),
-    payload: parsePayload(row.payload),
+    payload: readStoredPayload(stored, flag),
     payloadRef: text(row.payload_ref),
-    truncated: num(row.truncated) !== 0 || row.truncated === true,
+    truncated,
     childRunId: text(row.child_run_id),
     reservation: text(row.reservation) as AiRunReservationState | null,
     reservedTokens:
@@ -567,39 +936,6 @@ function tenantPredicate(
     : { sql: `${column} = $${index}`, params: [tenant] };
 }
 
-/** The read-time redaction of one stored payload (built-in rules only). */
-function redactStoredPayload(payload: unknown): unknown {
-  const envelope = payload as {
-    truncated?: unknown;
-    head?: unknown;
-    tail?: unknown;
-  } | null;
-  const fragment = (value: unknown) =>
-    typeof value === 'string'
-      ? String(
-          redactAiTranscriptMessages([
-            { role: 'event', content: maskSecretFieldsInJsonText(value) },
-          ])[0]?.content ?? '',
-        )
-      : value;
-  if (
-    envelope &&
-    typeof envelope === 'object' &&
-    envelope.truncated === true &&
-    ('head' in envelope || 'tail' in envelope)
-  ) {
-    return {
-      ...envelope,
-      head: fragment(envelope.head),
-      tail: fragment(envelope.tail),
-    };
-  }
-  return (
-    redactAiTranscriptMessages([{ role: 'event', content: payload }])[0]
-      ?.content ?? null
-  );
-}
-
 /**
  * {@link getRunTrajectory}, with the run read in `tenant` when one is given:
  * the tenant is a predicate of the run's lookup and of every event page, so
@@ -699,6 +1035,9 @@ async function readTrajectory(
   const entries: AiRunTrajectoryEntry[] = [];
   let lastSeq = 0;
   for (;;) {
+    // `toAiRunEvent` applies the read-time rule to every payload: whole
+    // payloads through the built-in redactor again, cut ones as written only
+    // under the current stamp (AiRunEvent.payload).
     const page = getRows(
       await aiRunQuery(
         db,
@@ -718,16 +1057,6 @@ async function readTrajectory(
       ),
     ).map(toAiRunEvent);
     if (page.length === 0) break;
-    // Stored payloads go through the built-in redactor again on read (the
-    // host redactor runs on the write path only): a payload stored under an
-    // earlier version is masked by today's built-in rules. A truncated
-    // payload's `head` and `tail` are fragments of JSON text that field
-    // rules cannot parse, so they are masked at string level (credential
-    // fields and token shapes), never returned as stored.
-    for (const event of page) {
-      if (event.payload === null || event.payload === undefined) continue;
-      event.payload = redactStoredPayload(event.payload);
-    }
     lastSeq = page[page.length - 1]?.seq ?? lastSeq;
     const callIds = [
       ...new Set(

@@ -1433,14 +1433,20 @@ retries, and its `reason` is one typed code:
   kept after its trajectory is pruned, for as long as the failed run's row is
   kept, so the run can still be retried (section 7); it is deleted with the
   row.
-- **Payload size.** Each event payload is capped (head and tail kept, `truncated`
-  set). Full request and response text of a call is stored only when
-  transcripts are enabled.
+- **Payload size.** Each event payload is capped (default 16 KiB; a cap must
+  be a whole number of at least 256 bytes). A larger payload keeps its head
+  and tail, and the event is marked `truncated`. Full request and response
+  text of a call is stored only when transcripts are enabled.
 - **Privacy.** Trajectories hold user data. An event payload is redacted
   before it is stored, on the same path transcripts use, and the host
-  redactor sees the run's tenant. When a trajectory is read, the built-in
-  redactor runs again (never the host's), and the head and tail kept from a
-  truncated payload are masked as text.
+  redactor sees the run's tenant. The payload is turned into plain JSON once
+  before the built-in redactor runs, so what is redacted is exactly what is
+  stored. A cut payload records which version of the built-in rules
+  redacted it. When a trajectory is read, the built-in redactor runs again
+  on whole payloads (never the host's). A cut payload's head and tail are
+  returned as written only when they were stored under the current rules;
+  otherwise both come back empty and the payload says `withheld: ['head',
+  'tail']`.
 
 ### Run identity
 
@@ -1529,6 +1535,10 @@ table, and a migrate of a JSON database that still holds
 - **New columns** on existing tables are added by the system compatibility
   step, with a schema version bump, so a legacy database ends in the same shape
   as a fresh install.
+- **Cut event payloads stored before the rules stamp.** They are not
+  rewritten. They carry no stamp, so a read returns them with an empty head
+  and tail and `withheld: ['head', 'tail']`; their `originalBytes` is kept.
+  Whole payloads are unaffected.
 
 ## 10. What is deliberately not here
 

@@ -157,11 +157,14 @@ describe.each(aiRunTestEngines)('run event redaction on %s', (engine) => {
       }),
       run.id,
     );
-    const payload = JSON.stringify(await storedPayload(db, run.id));
-    expect(payload).not.toContain('raw-secret-in-head');
-    expect(payload).not.toContain('raw-secret-in-tail');
-    expect(payload).toContain('[REDACTED]');
-    expect(payload).toContain('"note\\":\\"start');
+    // Not stamped by the redacting append: neither fragment is returned.
+    expect(await storedPayload(db, run.id)).toEqual({
+      truncated: true,
+      originalBytes: 90_000,
+      head: '',
+      tail: '',
+      withheld: ['head', 'tail'],
+    });
   });
 
   it('refuses a payload for a run that does not exist', async () => {
