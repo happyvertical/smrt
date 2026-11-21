@@ -99,6 +99,7 @@ import {
   moveAside,
   type PublishJournal,
   type PublishMethod,
+  publishHappened,
   readJournal,
   reconcilePublish,
   removeJournal,
@@ -382,7 +383,8 @@ export class AppHost extends EventEmitter {
   private releaseDatabase?: () => Promise<void>;
   /**
    * What the chosen database cannot do yet, said plainly, for the shell to
-   * show the owner. Empty: PostgreSQL has every undo point SQLite has (#5187).
+   * show the owner (and a publish whose journal could not be marked finished).
+   * Empty: PostgreSQL has every undo point SQLite has (#5187).
    */
   readonly notices: string[] = [];
   private lockTimeoutMs: number;
@@ -1967,7 +1969,7 @@ export class AppHost extends EventEmitter {
         if (await has(n))
           await dropSchema(db, n, this.lockTimeoutMs, pg.schema);
       };
-      if (j.committed || current === j.finalVersion) {
+      if (publishHappened(j, current)) {
         await drop(pg.aside);
         await drop(pg.staging);
       } else {
@@ -2695,20 +2697,30 @@ export class AppHost extends EventEmitter {
     } catch {
       // too late to matter
     }
+    // Say so in the journal before the old data goes. If that write fails the
+    // old data and the journal stay (the next start finishes the clean-up:
+    // `publishHappened` reads a store at or past the final version as
+    // published) and the owner is told, never left to find out at a restart.
+    let marked = true;
     try {
-      // Say so in the journal before the old data goes: the next start must
-      // not read a later store version (the owner's next edit) as "the
-      // publish did not happen" and swap the old data back over it.
       if (journal) writeJournal(this.dataDir, { ...journal, committed: true });
-      // PostgreSQL: the old data's schema goes; if that fails the journal
-      // stays, and the next start removes it (the journal says published).
-      if (pg) await this.dropSideSchemaOrThrow(pg.aside);
-      dropAside(this.dataDir);
-      removeJournal(this.dataDir);
-      removeRehearsal(this.dataDir, dir);
-    } catch {
-      // leftovers are removed at the next start (reconcilePublish)
+    } catch (e) {
+      marked = false;
+      this.notices.push(
+        `The publish is done, but its journal could not be marked finished (${(e as Error).message}); the old data is kept until the next start, which removes it. Free some disk space or fix the data directory.`,
+      );
     }
+    if (marked)
+      try {
+        // PostgreSQL: the old data's schema goes; if that fails the journal
+        // stays, and the next start removes it (the journal says published).
+        if (pg) await this.dropSideSchemaOrThrow(pg.aside);
+        dropAside(this.dataDir);
+        removeJournal(this.dataDir);
+        removeRehearsal(this.dataDir, dir);
+      } catch {
+        // leftovers are removed at the next start (reconcilePublish)
+      }
     const summary = `${tag}published ${chain.versions.length} change${chain.versions.length === 1 ? '' : 's'}`;
     this.emit('changed', { version: finalNumber, summary });
     return {
@@ -2985,8 +2997,11 @@ export class AppHost extends EventEmitter {
   async close() {
     await this.queue;
     this.closed = true;
-    await this.app.terminate();
-    await this.releaseDatabase?.();
+    try {
+      await this.app.terminate();
+    } finally {
+      await this.releaseDatabase?.();
+    }
   }
 }
 
