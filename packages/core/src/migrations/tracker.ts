@@ -1661,6 +1661,8 @@ export class MigrationTracker {
               result.checksum,
               executionTime,
             );
+            // A record taken over stops the batch like any other failure.
+            if (!recorded && !options.continueOnError) stoppedBy = result.name;
             results[index] = recorded
               ? {
                   ...result,

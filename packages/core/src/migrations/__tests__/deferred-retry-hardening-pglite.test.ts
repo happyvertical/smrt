@@ -261,5 +261,37 @@ describe.skipIf(process.env.SMRT_TEST_PGLITE !== '1')(
         expect(await indexSchemas('items_plain_idx')).toEqual(['app_ns']);
       });
     });
+
+    describe('a record another run took over while its deferred statements ran', () => {
+      it('stops the batch: later migrations are not attempted', async () => {
+        await fixDuplicates();
+        const first = definition('takeover_first', [
+          'CREATE INDEX IF NOT EXISTS child_n_idx ON child (n)',
+        ]);
+        const second = definition('takeover_second', [
+          'CREATE INDEX IF NOT EXISTS child_pid_idx ON child (pid)',
+        ]);
+        const bumping: DatabaseInterface = {
+          ...db,
+          query: (async (sql: string, ...vars: unknown[]) => {
+            const result = await db.query(sql, ...vars);
+            if (/CONCURRENTLY.*child_n_idx/.test(sql))
+              await db.query(
+                'UPDATE _smrt_schema_migrations SET attempts = attempts + 1 WHERE name = ?',
+                first.id,
+              );
+            return result;
+          }) as DatabaseInterface['query'],
+        };
+
+        const [taken, later] = await migrate([first, second], {}, bumping);
+
+        expect(taken?.success).toBe(false);
+        expect(errorOf(taken)).toContain('another run');
+        expect(later?.success).toBe(false);
+        expect(errorOf(later)).toContain('Not attempted');
+        expect(await indexValid('child_pid_idx')).toEqual([]);
+      });
+    });
   },
 );
