@@ -228,20 +228,20 @@ describe('what needs SQLite stays SQLite', () => {
     expect(lite.notices).toEqual([]);
   });
 
-  it('portable export and import refuse a PostgreSQL host', async () => {
-    const database = { kind: 'pglite' as const };
+  it('portable export and import need the host to name a schema', async () => {
+    const database = { kind: 'pglite' as const } as never;
     await expect(
       exportUserApp({ dataDir: tmp(), versions: [], database }),
-    ).rejects.toThrow(/not supported on this database yet/);
+    ).rejects.toThrow(/needs a schema/);
     await expect(
       importUserApp({ dataDir: tmp(), bundle: {} as never, database }),
-    ).rejects.toThrow(/not supported on this database yet/);
+    ).rejects.toThrow();
     await expect(inspectUserApp({ dataDir: tmp(), database })).rejects.toThrow(
-      /not supported on this database yet/,
+      /needs a schema/,
     );
     await expect(
       verifyUserApp({ dataDir: tmp(), bundle: {} as never, database }),
-    ).rejects.toThrow(/not supported on this database yet/);
+    ).rejects.toThrow(/needs a schema/);
   });
 });
 

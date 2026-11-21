@@ -50,7 +50,13 @@ import {
 } from './db/postgres-portable.ts';
 import * as sqlite from './db/sqlite.ts';
 import { sqlitePortable } from './db/sqlite-portable.ts';
-import { type AppDefinition, tableFor, validate } from './definition.ts';
+import {
+  type AppDefinition,
+  builtInFields,
+  snake,
+  tableFor,
+  validate,
+} from './definition.ts';
 import { EngineError } from './errors.ts';
 import { AppHost } from './host.ts';
 import { MemoryVersionStore, type VersionRecord } from './store.ts';
@@ -283,30 +289,51 @@ async function readMeta(db: PortableDb): Promise<Meta | null> {
   }
 }
 
-/** Columns the app's definition says hold JSON, whatever the database calls them. */
-function jsonColumnsOf(
+const FAMILY_OF_FIELD: Record<string, ColumnFamily> = {
+  text: 'text',
+  choice: 'text',
+  reference: 'text',
+  json: 'json',
+  boolean: 'boolean',
+  date: 'date',
+  integer: 'integer',
+  money: 'integer',
+  number: 'real',
+};
+
+/**
+ * What the definition says each field's column holds (hidden fields too), by
+ * table and COLUMN name (the engine's `snake()` of the field name): SQLite
+ * declares a boolean INTEGER and a JSON field TEXT, so the declared type alone
+ * would recreate them as the wrong kind on PostgreSQL.
+ */
+function fieldFamiliesOf(
   def: AppDefinition | undefined,
-): Map<string, Set<string>> {
-  const out = new Map<string, Set<string>>();
+): Map<string, Map<string, ColumnFamily>> {
+  const out = new Map<string, Map<string, ColumnFamily>>();
   for (const [model, md] of Object.entries(def?.models ?? {})) {
-    const names = Object.entries(md.fields ?? {})
-      .filter(([, f]) => f.type === 'json')
-      .map(([n]) => n);
-    if (names.length) out.set(tableFor(model, md), new Set(names));
+    const fields = { ...builtInFields(model, md), ...(md.fields ?? {}) };
+    const cols = new Map<string, ColumnFamily>();
+    for (const [name, f] of Object.entries(fields)) {
+      const family = FAMILY_OF_FIELD[f.type];
+      if (family) cols.set(snake(name), family);
+    }
+    out.set(tableFor(model, md), cols);
   }
   return out;
 }
 
-/** The columns of a table as the bundle describes them (JSON by the definition). */
+/** The columns of a table as the bundle describes them (the definition decides what it can). */
 async function columnsOf(
   db: PortableDb,
   table: string,
-  json: Map<string, Set<string>>,
+  families: Map<string, Map<string, ColumnFamily>>,
 ): Promise<PortableColumn[]> {
-  const only = json.get(table);
-  return (await db.columns(table)).map((c) =>
-    only?.has(c.name) ? { ...c, family: 'json' as const } : c,
-  );
+  const known = families.get(table);
+  return (await db.columns(table)).map((c) => {
+    const family = known?.get(c.name);
+    return family ? { ...c, family } : c;
+  });
 }
 
 /** One consistent read of the meta record and every table. */
@@ -315,7 +342,7 @@ async function readAll(
   rows = true,
 ): Promise<{ meta: Meta | null; tables: TableData[] }> {
   const meta = await readMeta(db);
-  const json = jsonColumnsOf(meta?.definition);
+  const json = fieldFamiliesOf(meta?.definition);
   const tables: TableData[] = [];
   for (const name of await db.tables()) {
     assertIdentifier(name, 'table');

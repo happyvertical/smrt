@@ -416,4 +416,63 @@ describe.each(
         .rows.find((r) => r.title === 'Bins')!._sync_revision,
     ).toBe(9007199254740991);
   });
+
+  it('takes column kinds from the definition: camelCase JSON, a hidden boolean', async () => {
+    const store = new MemoryVersionStore();
+    const dataDir = dir();
+    const host = await AppHost.open(dataDir, { store });
+    await host.execute(
+      {
+        type: 'defineModel',
+        name: 'Gadget',
+        fields: {
+          extraData: { type: 'json' },
+          armed: { type: 'boolean' },
+        },
+      },
+      A,
+    );
+    await host.create('Gadget', {
+      extraData: { a: 1, b: [1, 2] },
+      armed: true,
+    });
+    await host.execute(
+      { type: 'hideField', model: 'Gadget', field: 'armed' },
+      A,
+    );
+    await host.close();
+    const bundle = viaJson(
+      await exportUserApp({ dataDir, versions: await store.list() }),
+    ) as PortableUserApp;
+    const gadget = bundle.tables.find((t) => t.name === 'u_gadgets');
+    const family = (n: string) =>
+      gadget?.columns.find((c) => c.name === n)?.family;
+    expect(family('extra_data')).toBe('json');
+    expect(family('armed')).toBe('boolean');
+
+    const schema = await newSchema('fam');
+    const database = config(schema);
+    const target = dir();
+    await importUserApp({ dataDir: target, database, bundle });
+    const type = (
+      await rows(
+        `SELECT column_name, data_type FROM information_schema.columns WHERE table_schema = ? AND table_name = 'u_gadgets'`,
+        [schema],
+      )
+    ).reduce((m, r) => ({ ...m, [r.column_name]: r.data_type }), {} as any);
+    expect(type.extra_data).toBe('jsonb');
+    expect(type.armed).toBe('boolean');
+    // Un-hiding works: the column holds the kind the engine expects.
+    const h = await hostOn(bundle, target, database);
+    await h.execute(
+      {
+        type: 'addField',
+        model: 'Gadget',
+        field: 'armed',
+        definition: { type: 'boolean' },
+      },
+      A,
+    );
+    await h.close();
+  });
 });
