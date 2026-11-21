@@ -18,7 +18,10 @@ const DB_UNAVAILABLE =
 
 const IPV4 =
   /(?<![\w.])(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)(?!\w|\.\d)/;
-const IPV6_CANDIDATE = /[0-9a-f:.]*:[0-9a-f:.]*(?!\w)/gi;
+const IPV6_CANDIDATE = /(?<![\w:])[0-9a-f:.]*:[0-9a-f:.]*(?![\w:])/gi;
+// `addr:fd00::7`, `host=fd00::7`, `peer fd00::7`: an address after a label.
+const IPV6_LABELLED =
+  /\b(?:host|hostname|addr|address|ip|server|peer|remote|local|at|to|from)[:=\s]+\[?([0-9a-f:.]*:[0-9a-f:.]*)/gi;
 
 /** Host names the shell's database is configured with (never user or db names). */
 function configuredHosts(): string[] {
@@ -50,14 +53,11 @@ function isV6(token: string): boolean {
 
 function hasIp(text: string): boolean {
   if (IPV4.test(text)) return true;
-  for (const m of text.matchAll(IPV6_CANDIDATE)) {
-    // `no route to fd00::7: timed out` ends in punctuation; `addr:fd00::7`
-    // starts after a label: try the token and every part after a colon.
-    const token = m[0].replace(/[:.]+$/, '');
-    if (isV6(token)) return true;
-    for (let i = token.indexOf(':'); i >= 0; i = token.indexOf(':', i + 1))
-      if (isV6(token.slice(i + 1))) return true;
-  }
+  // `no route to fd00::7: timed out` ends in punctuation: strip it first.
+  for (const m of text.matchAll(IPV6_CANDIDATE))
+    if (isV6(m[0].replace(/[:.]+$/, ''))) return true;
+  for (const m of text.matchAll(IPV6_LABELLED))
+    if (isV6(m[1].replace(/[:.]+$/, ''))) return true;
   return false;
 }
 
@@ -96,8 +96,6 @@ function scrubValue(value: unknown, where: string): unknown {
   if (typeof value === 'string') return ownerText(value, where);
   if (!value || typeof value !== 'object') return value;
   const isArray = Array.isArray(value);
-  const proto = Object.getPrototypeOf(value);
-  if (!isArray && proto !== Object.prototype && proto !== null) return value;
   const entries = Object.entries(value as object);
   let changed = false;
   const next = entries.map(([k, v]) => {

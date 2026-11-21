@@ -121,7 +121,25 @@ describe('ownerText', () => {
     expect(leaksHost('host:2001:db8::5 refused')).toBe(true);
     expect(leaksHost('connect ::1:5432')).toBe(true);
     expect(leaksHost('at 10.0.3.7:5432')).toBe(true);
-    expect(leaksHost('std::vector and Foo::bar and a::b')).toBe(false);
+    expect(leaksHost('host=fd00::7 refused')).toBe(true);
+    for (const t of [
+      'std::vector and Foo::bar and a::b',
+      'Foo::b1',
+      'std::c0',
+      'Rust::fe1',
+      'Foo::add1',
+      'Foo::Bar',
+      'at 12:30:45',
+    ])
+      expect(leaksHost(t), t).toBe(false);
+  });
+
+  it('scans long input in bounded time', () => {
+    const t = Date.now();
+    leaksHost('a'.repeat(10_000));
+    leaksHost('a:'.repeat(5_000));
+    leaksHost(`${'a'.repeat(10_000)}!`);
+    expect(Date.now() - t).toBeLessThan(1000);
   });
 });
 
@@ -134,6 +152,12 @@ describe('ownerResult', () => {
     };
     expect(ownerResult(r)).toBe(r);
     expect(ownerResult(errored(DRIVER))).not.toBe(r);
+    // a non-plain object (a class instance) is still scrubbed
+    class Detail {
+      cause = DRIVER;
+    }
+    const withInstance = { ...errored('x'), structuredContent: new Detail() };
+    expect(JSON.stringify(ownerResult(withInstance))).not.toContain('INSERT');
   });
 });
 
