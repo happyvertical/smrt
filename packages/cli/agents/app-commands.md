@@ -205,7 +205,10 @@ Agent docs (#4878): `install` runs `docs:agents`, `dev` refreshes a missing or s
   database in a staging directory, verifies counts and digests, renames it in,
   and is idempotent and resumable (a matching target is `already-imported`; a
   rerun after rows committed completes the user app; a rollback takes it back
-  out). It only lands in a local (SQLite) installation. Not migrated: changes
+  out). The CLI itself reads and writes a local (SQLite) installation; the same
+  `format: 2` bundle (typed values, no SQL) is what the engine installs into a
+  hosted PostgreSQL schema and exports back (`importUserApp({ database })`,
+  `packages/app-shell/agents/engine.md`). Not migrated: changes
   waiting (#5178: a `change_batches` row `open`/`held` with an active
   `change_cards` row, or an open `app_drafts` working copy; export refuses with
   "apply them or discard them", via `hasChangesWaiting`, the one place to adapt
@@ -216,8 +219,9 @@ Agent docs (#4878): `install` runs `docs:agents`, `dev` refreshes a missing or s
   (`inspectUserApp`: integrity and a valid recorded definition) and fails
   closed when the engine is missing. The cloud plan carries the section
   (`plan.bundle.userApp`, in the bundle digest; `verifyCloudMigration` compares
-  digests); `runSharedCloudMigration` refuses it, and a hosted import refuses
-  it, until the PostgreSQL engine profile exists (#5186, #5187).
+  digests); `runSharedCloudMigration` refuses it (the shared sync/apply stream has
+  no receiver for run-time tables; a per-tenant receiver needs the caller
+  hand-off, #5188).
 - **Cloud migration** (#4806, `cloud-migration.ts`, library only; hosted
   routes and `smrt app cloud` commands are follow-ups): built on a
   `smrt-cloud-link-v1` link (app-runtime README). `planCloudMigration`

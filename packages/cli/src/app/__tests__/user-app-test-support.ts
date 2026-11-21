@@ -329,7 +329,7 @@ const fakeEngine: TestEngine = {
   checkUserAppBundle(bundle) {
     const problems: string[] = [];
     for (const table of bundle.tables) {
-      if (table.digest !== tableDigest(table))
+      if (table.digest !== tableDigest(table as FakeTable))
         problems.push(`table ${table.name} does not match its digest`);
     }
     if (bundle.digest !== sectionDigest(bundle))
@@ -348,7 +348,7 @@ const fakeEngine: TestEngine = {
     writeState(dataDir, {
       definition: bundle.definition as FakeDefinition,
       version: bundle.version,
-      tables: bundle.tables.map(({ digest: _digest, ...t }) => t),
+      tables: bundle.tables.map(({ digest: _digest, ...t }) => t as FakeTable),
       importedDigest: bundle.digest,
     });
     return summary('imported', bundle);
