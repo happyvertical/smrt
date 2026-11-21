@@ -133,6 +133,7 @@ export {
   PORTABLE_USER_APP_FORMAT,
   type PortableUserApp,
   type PortableUserAppTable,
+  readAppMetaValue,
   type UserAppInspection,
   type UserAppVerification,
   verifyUserApp,
@@ -159,6 +160,7 @@ export {
 } from './sandbox.ts';
 export {
   isMigratedToPostgres,
+  MIGRATION_COMPLETION_KEY,
   type MigrateToPostgresOptions,
   type MigrateToPostgresResult,
   migrateUserAppToPostgres,

@@ -244,11 +244,23 @@ Needs a PostgreSQL role that may `CREATE SCHEMA` (the hosted role and policies
 are #5188/#5189). The portable export/import work on a PostgreSQL app (#5419).
 
 An app still in an `app.db` is refused until `migrateOwnAppToPostgres()` (host.ts;
-engine.md "SQLite to PostgreSQL in place") has moved it: it runs as the app's
-owner (tenant from the verified principal, never an argument), refuses while
-changes wait or a working copy exists (neither is carried), keeps the SQLite
-file, and is safe to rerun. NOT wired to any route or command: who triggers it
-(owner or operator) waits for the caller/principal hand-off (#5188/#5195/#5375).
+engine.md "SQLite to PostgreSQL in place") has moved it. v1 decisions:
+
+- **Trigger**: an explicit operator action, never a boot job and no owner-facing
+  route. Today the function is not wired to anything: the operator command needs
+  the shell context over the hosted database (the CLI has none), so it waits with
+  the caller/principal hand-off (#5188/#5195/#5375). The function runs as the
+  app's owner (tenant from the verified principal, never an argument), so a
+  command must supply that principal.
+- **Refuses** (nothing written) while there is an open draft, waiting changes, or
+  an unsettled approval (pending, accepted, executing), each named in the message.
+- **The kept `app.db`** stays until an operator removes it; it is a snapshot as of
+  migration time, not a live fallback (the PostgreSQL app diverges at its first
+  write).
+- **Downgrade** is unsupported once the app has taken writes on PostgreSQL. Before
+  any write an operator may return to SQLite by hand: `DROP SCHEMA <app schema>
+  CASCADE` (which removes the completion row) and delete `postgres-migration.json`.
+  Afterwards the refusal applies again until a new migration.
 
 ## Remaining (not in this slice)
 
@@ -268,3 +280,24 @@ profile only a provider's own public https endpoint may hold one. `saveKey` refu
 custom `baseUrl` or a non-https origin, and the assistant refuses a resolved target
 whose endpoint is not the provider's own (`assertPublicProviderEndpoint`). Without that,
 a tenant could make the server call an internal address.
+
+## Database text in tool errors (interim, #5464; full boundary #5498)
+
+`src/lib/server/owner-text.ts` is the one place that decides which error text
+may leave. Only text that starts with `Database query failed:` (core's
+`DatabaseError.queryFailed`: the SQL and the driver's cause) is replaced, with
+a generic sentence plus a short reason ("that change could not be saved, try
+again" / "the database is unavailable, try again"); the raw text goes to the
+server log. An optional `Error:` prefix is allowed; mid-text occurrences are
+left alone.
+
+Everything else passes through unchanged: the runtime's own messages,
+validation, a method's own text, SQLite and PostgreSQL constraint text.
+Address-shaped leaks (host names, IPs) in other error text are NOT covered:
+they are left to the full boundary (#5498). Exits covered: `dispatchTool` (app
+and shell tool results, and so the assistant and `/mcp` calls), the assistant's
+thrown-error chip, an approval's stored failure text (every content item and
+`structuredContent`, so reading the approval back shows the same generic text),
+and the `/mcp` JSON-RPC errors (`tools/list`, scope and authorization, calls).
+Not covered: any other route, SSE, logs of other layers, the worker protocol
+and database handles.

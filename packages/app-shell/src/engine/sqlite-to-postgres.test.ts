@@ -9,6 +9,7 @@ import type { DatabaseConfig, PGliteClient } from './db/index.ts';
 import {
   AppHost,
   exportUserApp,
+  importUserApp,
   isMigratedToPostgres,
   MemoryVersionStore,
   migrateUserAppToPostgres,
@@ -90,7 +91,34 @@ describe('migrateUserAppToPostgres', () => {
     expect(await isMigratedToPostgres(dataDir, database)).toBe(true);
   });
 
-  it('is rerunnable: a crash after the import leaves no duplicates and no marker, the rerun finishes', async () => {
+  it('a failure inside the transaction is never complete: nothing is recorded, a plain rerun converges', async () => {
+    const { store, dataDir } = await desktopApp();
+    const database = await schemaConfig();
+    const versions = await store.list();
+    await expect(
+      migrateUserAppToPostgres({
+        dataDir,
+        database,
+        versions,
+        onTransaction: () => {
+          throw new Error('crash');
+        },
+      }),
+    ).rejects.toThrow('crash');
+    expect(readPostgresMigrationMarker(dataDir)).toBeNull();
+    expect(await isMigratedToPostgres(dataDir, database)).toBe(false);
+    expect(await count(database.schema, 'u_chores')).toBe(0);
+    const again = await migrateUserAppToPostgres({
+      dataDir,
+      database,
+      versions,
+    });
+    expect(again.status).toBe('migrated');
+    expect(await count(database.schema, 'u_chores')).toBe(3);
+    expect(await isMigratedToPostgres(dataDir, database)).toBe(true);
+  });
+
+  it('a crash after the commit but before the marker file finishes without duplicates', async () => {
     const { store, dataDir } = await desktopApp();
     const database = await schemaConfig();
     const versions = await store.list();
@@ -100,26 +128,81 @@ describe('migrateUserAppToPostgres', () => {
         database,
         versions,
         onPhase: (p) => {
-          if (p === 'imported') throw new Error('crash');
+          if (p === 'verified') throw new Error('crash');
         },
       }),
     ).rejects.toThrow('crash');
     expect(readPostgresMigrationMarker(dataDir)).toBeNull();
-    expect(await isMigratedToPostgres(dataDir, database)).toBe(false);
+    expect(await isMigratedToPostgres(dataDir, database)).toBe(true);
     const again = await migrateUserAppToPostgres({
       dataDir,
       database,
       versions,
     });
-    expect(again.status).toBe('migrated');
+    expect(again.status).toBe('already-migrated');
+    expect(readPostgresMigrationMarker(dataDir)?.schema).toBe(database.schema);
     expect(await count(database.schema, 'u_chores')).toBe(3);
-    const third = await migrateUserAppToPostgres({
+  });
+
+  it('stays complete after an undo below the original version and a dropped archived table', async () => {
+    const { store, dataDir } = await desktopApp();
+    const database = await schemaConfig();
+    await migrateUserAppToPostgres({
       dataDir,
       database,
-      versions,
+      versions: await store.list(),
     });
-    expect(third.status).toBe('already-migrated');
-    expect(await count(database.schema, 'u_chores')).toBe(3);
+    const schema = database.schema;
+    await pg.exec(
+      `UPDATE "${schema}"._app_meta SET value = '0' WHERE key = 'version'`,
+    );
+    await pg.exec(`CREATE TABLE "${schema}".u_extra (id TEXT)`);
+    await pg.exec(`DROP TABLE "${schema}".u_extra`);
+    await pg.exec(`DROP TABLE "${schema}"._archive`);
+    expect(await isMigratedToPostgres(dataDir, database)).toBe(true);
+    expect(
+      (
+        await migrateUserAppToPostgres({
+          dataDir,
+          database,
+          versions: await store.list(),
+        })
+      ).status,
+    ).toBe('already-migrated');
+  });
+
+  it('refuses, importing nothing, when the schema was recreated or emptied under a stale marker', async () => {
+    const { store, dataDir } = await desktopApp();
+    const database = await schemaConfig();
+    const versions = await store.list();
+    await migrateUserAppToPostgres({ dataDir, database, versions });
+    await pg.exec(`DROP SCHEMA "${database.schema}" CASCADE`);
+    await pg.exec(`CREATE SCHEMA "${database.schema}"`);
+    expect(await isMigratedToPostgres(dataDir, database)).toBe(false);
+    await expect(
+      migrateUserAppToPostgres({ dataDir, database, versions }),
+    ).rejects.toThrow(/no completion record/);
+    expect(
+      (
+        (await pg.query(
+          `SELECT count(*) AS c FROM information_schema.tables WHERE table_schema = $1`,
+          [database.schema],
+        )) as { rows: { c: string }[] }
+      ).rows[0].c,
+    ).toEqual(0 as never);
+  });
+
+  it('refuses a schema that already matches but was not completed by this migration', async () => {
+    const { store, dataDir } = await desktopApp();
+    const database = await schemaConfig();
+    const versions = await store.list();
+    const bundle = await exportUserApp({ dataDir, versions });
+    await importUserApp({ dataDir: dir(), database, bundle });
+    await expect(
+      migrateUserAppToPostgres({ dataDir, database, versions }),
+    ).rejects.toThrow(/without a completion record/);
+    expect(await isMigratedToPostgres(dataDir, database)).toBe(false);
+    expect(readPostgresMigrationMarker(dataDir)).toBeNull();
   });
 
   it('refuses a schema holding different data and does not mark', async () => {
@@ -137,7 +220,7 @@ describe('migrateUserAppToPostgres', () => {
         database,
         versions: await b.store.list(),
       }),
-    ).rejects.toThrow(/different/);
+    ).rejects.toThrow(/different app/);
     expect(readPostgresMigrationMarker(b.dataDir)).toBeNull();
     expect(await count(database.schema, 'u_chores')).toBe(3);
   });
@@ -161,24 +244,19 @@ describe('migrateUserAppToPostgres', () => {
     ).toMatchObject({ rows: [] });
   });
 
-  it('is not migrated when the schema is gone or a marker is forged', async () => {
-    const { store, dataDir } = await desktopApp();
+  it('a marker file alone never counts as migrated', async () => {
     const database = await schemaConfig();
-    await migrateUserAppToPostgres({
-      dataDir,
-      database,
-      versions: await store.list(),
-    });
-    await pg.exec(`DROP SCHEMA "${database.schema}" CASCADE`);
-    await pg.exec(`CREATE SCHEMA "${database.schema}"`);
-    expect(await isMigratedToPostgres(dataDir, database)).toBe(false);
-
     const fresh = await desktopApp();
     writeFileSync(
       join(fresh.dataDir, POSTGRES_MIGRATION_MARKER),
       JSON.stringify({ format: 1, schema: database.schema }),
     );
     expect(readPostgresMigrationMarker(fresh.dataDir)).toBeNull();
+    await migrateUserAppToPostgres({
+      dataDir: (await desktopApp()).dataDir,
+      database,
+      versions: [],
+    }).catch(() => {});
     expect(await isMigratedToPostgres(fresh.dataDir, database)).toBe(false);
   });
 

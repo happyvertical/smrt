@@ -102,6 +102,32 @@ export function sqlitePortable(h: Handle): PortableDb {
       const get = (k: string) => rows.find((r) => r.key === k)?.value;
       return { version: get('version'), definition: get('definition') };
     },
+    async metaValue(key) {
+      const there = (
+        await h.query(`SELECT 1 AS x FROM sqlite_master WHERE name = ?`, [
+          META_TABLE,
+        ])
+      ).rows.length;
+      if (!there) return null;
+      const rows = (
+        await h.query(`SELECT value FROM ${META_TABLE} WHERE key = ?`, [key])
+      ).rows as Array<{ value: string }>;
+      return rows[0]?.value ?? null;
+    },
+    async recordMeta(key, value) {
+      await h.query(
+        `INSERT OR IGNORE INTO ${META_TABLE} (key, value) VALUES (?, ?)`,
+        [key, value],
+      );
+      const rows = (
+        await h.query(`SELECT value FROM ${META_TABLE} WHERE key = ?`, [key])
+      ).rows as Array<{ value: string }>;
+      if (rows[0]?.value !== value)
+        throw new EngineError(
+          `${key} is already recorded differently`,
+          'refused',
+        );
+    },
     async createArchive() {
       await h.query(sqliteDialect.archiveTableDDL);
       await h.query(ARCHIVE_INDEX);

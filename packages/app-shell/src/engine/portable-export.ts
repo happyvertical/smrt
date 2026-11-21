@@ -142,8 +142,16 @@ export interface ImportUserAppOptions {
    */
   database?: DatabaseConfig;
   bundle: PortableUserApp;
+  /**
+   * PostgreSQL only: a fact recorded ONCE in the app's `_app_meta`, inside the
+   * same transaction that inserts the rows, so it exists exactly when the whole
+   * import committed. Refused for SQLite.
+   */
+  completion?: { key: string; value: string };
   /** Test seam: observe phases (`staged`, `verified`, `published`). */
   onPhase?: (phase: string) => void | Promise<void>;
+  /** Test seam: runs inside the PostgreSQL transaction, after every row is in; throwing rolls it back. */
+  onTransaction?: () => void | Promise<void>;
 }
 
 export interface ImportUserAppResult {
@@ -392,6 +400,26 @@ async function inDatabase<T>(
       return fn(postgresPortable(tx));
     }),
   );
+}
+
+/**
+ * One `_app_meta` value of an app on PostgreSQL, or null (also when the
+ * schema or its meta table does not exist: a dropped schema holds nothing).
+ */
+export async function readAppMetaValue(options: {
+  dataDir: string;
+  database: DatabaseConfig;
+  key: string;
+}): Promise<string | null> {
+  if (options.database.kind === 'sqlite')
+    throw new EngineError('this reads a PostgreSQL app', 'refused');
+  try {
+    return await inDatabase(options.dataDir, options.database, 'read', (db) =>
+      db.metaValue(options.key),
+    );
+  } catch {
+    return null;
+  }
 }
 
 /** True when the directory holds an app.db the engine has started. */
@@ -748,6 +776,8 @@ export async function importUserApp(
 ): Promise<ImportUserAppResult> {
   const database = options.database ?? SQLITE;
   const { bundle } = options;
+  if (options.completion && database.kind === 'sqlite')
+    refuse('A completion record is for a PostgreSQL import.');
   const problems = checkUserAppBundle(bundle);
   if (problems.length)
     refuse(`The user app section is not usable: ${problems[0]}.`);
@@ -859,6 +889,9 @@ async function importPostgres(
       const verified = await compare(db, bundle);
       if (!verified.ok)
         refuse('The imported user app database did not match the bundle.');
+      if (options.completion)
+        await db.recordMeta(options.completion.key, options.completion.value);
+      await options.onTransaction?.();
       await options.onPhase?.('verified');
     });
   } finally {

@@ -44,6 +44,7 @@ import {
 } from '../../engine/index.ts';
 import { AppDraftCollection } from '../objects/AppDraft.ts';
 import { AppImportCollection } from '../objects/AppImport.ts';
+import { ApprovalCollection } from '../objects/Approval.ts';
 import { ChangeBatchCollection } from '../objects/ChangeBatch.ts';
 import { ChangeCardCollection } from '../objects/ChangeCard.ts';
 import { versionSummary } from '../ui/command-summary.ts';
@@ -654,18 +655,27 @@ export async function migrateOwnAppToPostgres(): Promise<MigrateToPostgresResult
     tenant,
     app.id as string,
   );
+  // None of these is carried across; each is named so the owner knows what to settle.
   if (existsSync(draft))
     throw new EngineError(
-      'a working copy exists; apply or discard it before migrating',
+      'an open draft (working copy) exists; apply or discard it before migrating',
       'refused',
     );
-  if (
-    await withTenant({ tenantId: tenant, permissions: new Set<string>() }, () =>
-      hasWaitingChanges(db),
-    )
-  )
+  const pending = await withTenant(
+    { tenantId: tenant, permissions: new Set<string>() },
+    async () => ({
+      changes: await hasWaitingChanges(db),
+      approvals: await hasUnsettledApprovals(db),
+    }),
+  );
+  if (pending.changes)
     throw new EngineError(
       'changes are waiting; apply or discard them before migrating',
+      'refused',
+    );
+  if (pending.approvals)
+    throw new EngineError(
+      'an approval is unsettled (pending, accepted or executing); decide it before migrating',
       'refused',
     );
   const schema = appSchemaName(tenant, app.id as string);
@@ -685,6 +695,15 @@ export async function migrateOwnAppToPostgres(): Promise<MigrateToPostgresResult
 export async function discardStaleDraft(dir: string): Promise<void> {
   const database = (await currentHolder()).database;
   await discardOrphanDraft(dir, database ?? undefined);
+}
+
+/** True when an approval is still waiting to be decided or applied. */
+async function hasUnsettledApprovals(db: DatabaseInterface): Promise<boolean> {
+  const approvals = await ApprovalCollection.create({ db });
+  for (const status of ['pending', 'accepted', 'executing'])
+    if ((await approvals.list({ where: { status }, limit: 1 })).length)
+      return true;
+  return false;
 }
 
 /** True when an open or held batch has an active card. */

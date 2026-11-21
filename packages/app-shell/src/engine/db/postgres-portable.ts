@@ -184,6 +184,36 @@ export function postgresPortable(tx: Tx): PortableDb {
       const get = (k: string) => rows.find((r) => r.key === k)?.value;
       return { version: get('version'), definition: get('definition') };
     },
+    async metaValue(key) {
+      const there = (
+        await tx.query(
+          `SELECT to_regclass(${lit(q(META_TABLE))}) IS NOT NULL AS has`,
+        )
+      ).rows[0]?.has;
+      if (!(there === true || there === 't')) return null;
+      const rows = (
+        await tx.query(`SELECT value FROM ${q(META_TABLE)} WHERE key = $1`, [
+          key,
+        ])
+      ).rows as Array<{ value: string }>;
+      return rows[0]?.value ?? null;
+    },
+    async recordMeta(key, value) {
+      await tx.query(
+        `INSERT INTO ${q(META_TABLE)} (key, value) VALUES ($1, $2) ON CONFLICT (key) DO NOTHING`,
+        [key, value],
+      );
+      const rows = (
+        await tx.query(`SELECT value FROM ${q(META_TABLE)} WHERE key = $1`, [
+          key,
+        ])
+      ).rows as Array<{ value: string }>;
+      if (rows[0]?.value !== value)
+        throw new EngineError(
+          `${key} is already recorded differently`,
+          'refused',
+        );
+    },
     async createArchive() {
       await tx.query(postgresDialect.archiveTableDDL);
       await tx.query(ARCHIVE_INDEX);

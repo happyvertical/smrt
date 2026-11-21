@@ -13,9 +13,11 @@
 //    transaction, verified before commit; a match is `already-imported`,
 //    other data is refused, so a rerun is safe),
 // 3. verify the schema against the bundle again, then
-// 4. record a marker beside `app.db` (atomic rename). The marker is what the
-//    host reads to let the app open on PostgreSQL; `app.db` stays as the
-//    caller's backup until they remove it themselves.
+// 4. record a marker file beside `app.db` (atomic rename, after the commit): a
+//    hint for operators. What lets the app open on PostgreSQL is the completion
+//    fact the import writes into the schema's own `_app_meta` in its
+//    transaction (`MIGRATION_COMPLETION_KEY`). `app.db` stays, a snapshot as of
+//    the migration, until an operator removes it.
 //
 // The schema comes only from the host's `database` config, never from input.
 // Waiting changes, drafts and who may run this are the CALLER's (see
@@ -35,7 +37,7 @@ import {
   exportUserApp,
   hasUserAppDatabase,
   importUserApp,
-  inspectUserApp,
+  readAppMetaValue,
   verifyUserApp,
 } from './portable-export.ts';
 import type { VersionRecord } from './store.ts';
@@ -66,6 +68,8 @@ export interface MigrateToPostgresOptions {
   provision?: () => Promise<void>;
   /** Test seam: observe phases (`exported`, `imported`, `verified`). */
   onPhase?: (phase: string) => void | Promise<void>;
+  /** Test seam: runs inside the PostgreSQL transaction; throwing rolls it back. */
+  onTransaction?: () => void | Promise<void>;
 }
 
 export interface MigrateToPostgresResult {
@@ -100,35 +104,28 @@ export function readPostgresMigrationMarker(
   return null;
 }
 
+/** The key of the completion fact in the app's `_app_meta`. */
+export const MIGRATION_COMPLETION_KEY = 'sqlite-migration';
+
 /**
- * True when the app's SQLite file has been moved into `database`'s schema: the
- * marker names this very schema AND the schema still holds a recorded app at the
- * marked version. A dropped or emptied schema is not migrated, so the host never
- * opens a fresh empty schema over an app.
+ * True when the SQLite file was moved into `database`'s schema: the schema's own
+ * `_app_meta` holds the completion fact, written once inside the import's
+ * transaction. It is immutable, so a later undo, a removed model or a cleanup
+ * never changes the answer; a dropped, recreated or emptied schema has no such
+ * row, so the host never opens a fresh empty schema over an app. The marker
+ * file is only a hint and decides nothing.
  */
 export async function isMigratedToPostgres(
   dataDir: string,
   database: DatabaseConfig,
 ): Promise<boolean> {
-  const marker = readPostgresMigrationMarker(dataDir);
-  if (
-    !marker ||
-    database.kind === 'sqlite' ||
-    marker.schema !== database.schema
-  )
-    return false;
-  try {
-    const found = await inspectUserApp({ dataDir, database });
-    return (
-      found.integrity &&
-      found.recorded &&
-      found.version !== null &&
-      found.version >= marker.version &&
-      found.tables >= marker.tables
-    );
-  } catch {
-    return false;
-  }
+  if (database.kind === 'sqlite') return false;
+  const value = await readAppMetaValue({
+    dataDir,
+    database,
+    key: MIGRATION_COMPLETION_KEY,
+  });
+  return value !== null;
 }
 
 function writeMarker(dataDir: string, marker: PostgresMigrationMarker): void {
@@ -143,9 +140,13 @@ function writeMarker(dataDir: string, marker: PostgresMigrationMarker): void {
 }
 
 /**
- * Move the SQLite user app in `dataDir` into `database`'s schema. Safe to
- * rerun at any point: each step is idempotent, a schema holding different data
- * is refused, and `app.db` is never removed or given a user-row change.
+ * Move the SQLite user app in `dataDir` into `database`'s schema. Rerunnable
+ * after a crash: the rows and the completion fact commit together, so a crash
+ * leaves no fact and no marker file, and a plain rerun converges. Once the fact
+ * exists nothing is compared or moved again. It never puts old data back: a
+ * marker file with no fact in the schema (dropped, recreated or emptied), a
+ * schema that already matches without the fact, or other data are refused.
+ * `app.db` is never removed or given a user-row change.
  */
 export async function migrateUserAppToPostgres(
   options: MigrateToPostgresOptions,
@@ -163,20 +164,64 @@ export async function migrateUserAppToPostgres(
       'refused',
     );
 
-  // Done already: the schema is the app now (the host may have written to it
-  // since), so never compare or move again.
-  if (marked && (await isMigratedToPostgres(dataDir, database)))
+  const recorded = await readAppMetaValue({
+    dataDir,
+    database,
+    key: MIGRATION_COMPLETION_KEY,
+  });
+  if (recorded !== null) {
+    // Done: the schema is the app now (the host may have written to it since).
+    const fact = parseCompletion(recorded);
+    // The kept SQLite file is a snapshot, so it still digests to what moved; a
+    // different app pointed at a completed schema is refused.
+    const source = await exportUserApp({ dataDir, versions: options.versions });
+    if (source.digest !== fact.digest)
+      throw new EngineError(
+        'the schema holds a different app than this SQLite file; nothing was changed',
+        'refused',
+      );
+    if (!marked || marked.digest !== fact.digest) writeMarker(dataDir, fact);
     return {
       status: 'already-migrated',
-      tables: marked.tables,
-      rows: marked.rows,
-      digest: marked.digest,
+      tables: fact.tables,
+      rows: fact.rows,
+      digest: fact.digest,
     };
+  }
+  if (marked)
+    throw new EngineError(
+      'a migration marker exists but the schema holds no completion record (dropped, recreated or emptied); nothing was imported. An operator must remove the marker after checking the schema',
+      'refused',
+    );
 
   const bundle = await exportUserApp({ dataDir, versions: options.versions });
   await options.onPhase?.('exported');
   await options.provision?.();
-  const imported = await importUserApp({ dataDir, database, bundle });
+  const rows = bundle.tables.reduce((n, t) => n + t.rows.length, 0);
+  const fact: PostgresMigrationMarker = {
+    format: 1,
+    schema: database.schema,
+    digest: bundle.digest,
+    version: bundle.version,
+    tables: bundle.tables.length,
+    rows,
+    migratedAt: new Date().toISOString(),
+  };
+  const imported = await importUserApp({
+    dataDir,
+    database,
+    bundle,
+    completion: {
+      key: MIGRATION_COMPLETION_KEY,
+      value: JSON.stringify(fact),
+    },
+    onTransaction: options.onTransaction,
+  });
+  if (imported.status !== 'imported')
+    throw new EngineError(
+      'the schema already holds this app without a completion record; it was not written by this migration, so nothing was marked',
+      'refused',
+    );
   await options.onPhase?.('imported');
   const verified = await verifyUserApp({ dataDir, database, bundle });
   if (!verified.ok)
@@ -185,21 +230,23 @@ export async function migrateUserAppToPostgres(
       'refused',
     );
   await options.onPhase?.('verified');
-
-  mkdirSync(dataDir, { recursive: true });
-  writeMarker(dataDir, {
-    format: 1,
-    schema: database.schema as string,
-    digest: bundle.digest,
-    version: bundle.version,
-    tables: imported.tables,
-    rows: imported.rows,
-    migratedAt: new Date().toISOString(),
-  });
+  // After the commit only: a hint, never the decision.
+  writeMarker(dataDir, fact);
   return {
     status: 'migrated',
-    tables: imported.tables,
-    rows: imported.rows,
-    digest: bundle.digest,
+    tables: fact.tables,
+    rows: fact.rows,
+    digest: fact.digest,
   };
+}
+
+function parseCompletion(text: string): PostgresMigrationMarker {
+  try {
+    const m = JSON.parse(text) as Partial<PostgresMigrationMarker>;
+    if (m.format === 1 && typeof m.schema === 'string')
+      return m as PostgresMigrationMarker;
+  } catch {
+    // fall through
+  }
+  throw new EngineError('the completion record is unreadable', 'refused');
 }

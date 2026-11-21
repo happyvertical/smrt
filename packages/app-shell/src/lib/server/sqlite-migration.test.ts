@@ -2,12 +2,13 @@
 // cloud profile's refusal lifts only after it, the SQLite file stays, waiting
 // changes and working copies refuse it, and a neighbour is untouched. PGlite
 // stands in for the server; a real one is CI's `test:postgres` lane.
-import { existsSync } from 'node:fs';
+import { existsSync, mkdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { importPGlite } from '@happyvertical/sql/pglite';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { DatabaseConfig, PGliteClient } from '../../engine/db/index.ts';
 import { App } from '../objects/App.ts';
+import { ApprovalCollection } from '../objects/Approval.ts';
 import { ownerTenantFor } from './accounts.ts';
 import { applyOwnBatch } from './approvals.ts';
 import {
@@ -27,6 +28,7 @@ import {
   configureShell,
   getHost,
   migrateOwnAppToPostgres,
+  tenantAppDirs,
 } from './host.ts';
 import { type Principal, runAs } from './owner.ts';
 
@@ -148,6 +150,70 @@ describe('migrating a tenant app from SQLite to PostgreSQL', () => {
     );
     await useShell(true);
     await expect(migrateOwnAppToPostgres()).rejects.toThrow(/sign in first/);
+  });
+});
+
+describe('what refuses the move', () => {
+  const seed = async (email: string) => {
+    const user = await h.newUser(email);
+    const tenantId = await ownerTenantFor(h.db, { id: user.id, name: email });
+    const who = { id: user.id, tenantId };
+    await useShell(false);
+    await runAs(who, () =>
+      App.defineModel('Note', { title: { type: 'text' } }),
+    );
+    await applyWaiting(who);
+    await runAs(who, async () =>
+      (await getHost()).create('Note', { title: 'x' }),
+    );
+    const appId = await appIdOf(who);
+    const { draft } = tenantAppDirs(h.dir, tenantId, appId);
+    return { who, draft, appId };
+  };
+
+  it('waiting changes with no working copy on disk, named as changes', async () => {
+    const { who, draft } = await seed('wait@example.test');
+    await runAs(who, () =>
+      addChangeCard({
+        commands: [{ type: 'defineModel', name: 'Later', fields: {} } as never],
+        source: 'api',
+      }),
+    );
+    await flushChecks();
+    await closeHost();
+    rmSync(draft, { recursive: true, force: true });
+    await useShell(true);
+    await expect(runAs(who, () => migrateOwnAppToPostgres())).rejects.toThrow(
+      /changes are waiting/,
+    );
+  });
+
+  it('an open working copy with no waiting changes, named as a draft', async () => {
+    const { who, draft } = await seed('draft@example.test');
+    await closeHost();
+    mkdirSync(draft, { recursive: true });
+    await useShell(true);
+    await expect(runAs(who, () => migrateOwnAppToPostgres())).rejects.toThrow(
+      /open draft/,
+    );
+  });
+
+  it('an unsettled approval, named as an approval', async () => {
+    const { who } = await seed('approval@example.test');
+    await runAs(who, async () =>
+      (await ApprovalCollection.create({ db: h.db })).create({
+        command: '{}',
+        actionKey: 'k',
+        summary: 's',
+        preview: '{}',
+        status: 'pending',
+        requestedBy: who.id,
+      } as never),
+    );
+    await useShell(true);
+    await expect(runAs(who, () => migrateOwnAppToPostgres())).rejects.toThrow(
+      /approval is unsettled/,
+    );
   });
 });
 

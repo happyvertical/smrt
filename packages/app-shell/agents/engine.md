@@ -540,17 +540,22 @@ one bundle (`format: 2`), so a desktop app moves to a hosted one and back.
   it. A target that matches is `already-imported`; any other data is refused,
   never overwritten.
 - **SQLite to PostgreSQL in place** (`sqlite-to-postgres.ts`,
-  `migrateUserAppToPostgres`): exports `app.db`, provisions the host's schema,
-  `importUserApp`s and re-verifies, then writes `postgres-migration.json` (schema,
-  bundle digest, version, counts; atomic rename) beside `app.db`. The file is
-  never removed (it is the backup; the engine's own bookkeeping rows
-  `_smrt_changes`/`_smrt_migrations` are added on first open, user rows are not
-  touched). A rerun after a crash before the marker finishes; after the marker it
-  returns `already-migrated` without comparing (the live app may have written).
-  A schema holding other data, or a marker for another schema, is refused.
-  `isMigratedToPostgres` = marker names this schema AND the schema still holds a
-  recorded app at the marked version or later; the cloud host uses it to lift its
-  "still lives in a SQLite file" refusal (a dropped schema re-refuses).
+  `migrateUserAppToPostgres`): exports `app.db`, provisions the host's schema and
+  `importUserApp`s with a `completion` record: the fact `sqlite-migration` (JSON:
+  schema, bundle digest, version, counts) is written ONCE into the schema's own
+  `_app_meta` inside the import's transaction, so it exists exactly when every
+  row does. `isMigratedToPostgres` = that row exists (immutable: an undo, a
+  removed model or a cleanup never changes it; a dropped/recreated/emptied schema
+  has none). The cloud host lifts its "still lives in a SQLite file" refusal on
+  it alone. `postgres-migration.json` beside `app.db` is written after the
+  commit and is only a hint. Rerun: a crash before commit leaves nothing and
+  converges; after commit it returns `already-migrated` (the kept file must still
+  digest to the fact, else refused). A marker without the fact, a schema that
+  matches but was not completed by this migration, other data, or another schema
+  are all REFUSED, never re-imported. `app.db` is kept, a snapshot as of the
+  migration and not a live fallback, until an operator removes it (never
+  automatic); opening it lets the engine add its bookkeeping rows
+  (`_smrt_changes`/`_smrt_migrations`), user rows are untouched.
 - **Approvals and drafts in a move.** Not carried: the caller (the CLI) refuses an
   export while changes wait (a working copy open, or a batch with an active card)
   and drops approvals still waiting (`pending`/`accepted`/`executing`), reporting

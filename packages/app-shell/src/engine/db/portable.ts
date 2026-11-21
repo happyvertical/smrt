@@ -52,6 +52,13 @@ export interface PortableDb {
   count(table: string): Promise<number>;
   /** `_app_meta`: the recorded version and definition text. */
   meta(): Promise<{ version: unknown; definition: unknown } | null>;
+  /** One `_app_meta` value by key, or null (also when the meta table is absent). */
+  metaValue(key: string): Promise<string | null>;
+  /**
+   * Record `key` once. Present with the same value: no-op; present with a
+   * different value: refused (a fact is never rewritten).
+   */
+  recordMeta(key: string, value: string): Promise<void>;
   /** The engine's `_archive` (undo data) with its own DDL and index, when the engine did not make it. */
   createArchive(): Promise<void>;
   /** A table the definition does not describe (an archived one kept for undo). */
