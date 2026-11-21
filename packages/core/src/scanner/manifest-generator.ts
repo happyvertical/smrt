@@ -394,7 +394,16 @@ export class ManifestGenerator {
    * The model each bare-name relationship field resolved to in this run
    * (`resolveBareTargets`), keyed by the field definition.
    */
-  private readonly bareTargets = new WeakMap<object, BareTarget>();
+  private readonly bareTargets = new WeakMap<object, BareTarget | null>();
+
+  /**
+   * What `resolveBareTargets` could not resolve in this run, reported by
+   * `assertKnownTargets` after the passes' more specific checks.
+   */
+  private bareTargetErrors: { unknown: string[]; ambiguous: string[] } = {
+    unknown: [],
+    ambiguous: [],
+  };
 
   /**
    * Generate manifest from scan results
@@ -1236,9 +1245,11 @@ export class ManifestGenerator {
     };
     // A target the scanner traced to a package export (`@pkg:Export`) was
     // confirmed by identity in `confirmPackageTargets`, and a bare name was
-    // resolved to one model by `resolveBareTargets`; what is left here is a
-    // missing target and a written qualified name.
-    const unknown: string[] = [];
+    // resolved to one model by `resolveBareTargets`, whose failures are
+    // reported here; what is checked here is a missing target and a written
+    // qualified name.
+    const unknown: string[] = [...this.bareTargetErrors.unknown];
+    const ambiguous = this.bareTargetErrors.ambiguous;
     for (const obj of Object.values(manifest.objects)) {
       for (const [fieldName, field] of Object.entries(obj.fields ?? {})) {
         if (
@@ -1292,11 +1303,21 @@ export class ManifestGenerator {
     if (unknown.length > 0) {
       throw new ConfigurationError(
         `Relationship and report targets must name a model class this package or one of its SMRT ` +
-          `dependencies declares; these name none:\n  ${unknown.join('\n  ')}\n` +
-          `Import the model class by its own name (or write its name as a string), and make sure the ` +
+          `dependencies declares, by its exact name; these name none:\n  ${unknown.join('\n  ')}\n` +
+          `Import the model class by its own name (or write its exact name as a string), and make sure the ` +
           `package that declares it is built and is a dependency of this package.`,
         'CONFIG_UNKNOWN_RELATIONSHIP_TARGET',
         { targets: unknown },
+      );
+    }
+    if (ambiguous.length > 0) {
+      throw new ConfigurationError(
+        `A relationship target or report source written as a bare name is looked up by that name, so it must ` +
+          `match exactly one model this package or a package it reads declares; these match more than one:\n  ` +
+          `${ambiguous.join('\n  ')}\n` +
+          `Pass the imported class instead of its name: an imported class is resolved to its one declaration.`,
+        'CONFIG_AMBIGUOUS_RELATIONSHIP_TARGET',
+        { targets: ambiguous },
       );
     }
   }
@@ -1384,7 +1405,9 @@ export class ManifestGenerator {
           field.related,
           obj,
         );
-        if (resolved) this.bareTargets.set(field, resolved);
+        // A target that did not resolve is recorded as such: its column gets
+        // no constraint by any other lookup, and the build fails at the end.
+        this.bareTargets.set(field, resolved ?? null);
       }
       const report = obj.decoratorConfig?.report as
         | {
@@ -1419,26 +1442,7 @@ export class ManifestGenerator {
         );
       }
     }
-    if (unknown.length > 0) {
-      throw new ConfigurationError(
-        `Relationship and report targets must name a model class this package or one of its SMRT ` +
-          `dependencies declares, by its exact name; these name none:\n  ${unknown.join('\n  ')}\n` +
-          `Import the model class by its own name (or write its exact name as a string), and make sure the ` +
-          `package that declares it is built and is a dependency of this package.`,
-        'CONFIG_UNKNOWN_RELATIONSHIP_TARGET',
-        { targets: unknown },
-      );
-    }
-    if (ambiguous.length > 0) {
-      throw new ConfigurationError(
-        `A relationship target or report source written as a bare name is looked up by that name, so it must ` +
-          `match exactly one model this package or a package it reads declares; these match more than one:\n  ` +
-          `${ambiguous.join('\n  ')}\n` +
-          `Pass the imported class instead of its name: an imported class is resolved to its one declaration.`,
-        'CONFIG_AMBIGUOUS_RELATIONSHIP_TARGET',
-        { targets: ambiguous },
-      );
-    }
+    this.bareTargetErrors = { unknown, ambiguous };
   }
 
   /**
@@ -2874,14 +2878,20 @@ export class ManifestGenerator {
         // this run did not resolve (a caller of `generateSchemas()` outside
         // the generation passes) keeps the legacy name lookup.
         const bare = this.bareTargets.get(field);
+        // The resolved model's table: this manifest's schema of that table
+        // (a single-table child carries its provider root's), else the
+        // provider's own schema, by identity.
+        const bareSchema = (target: BareTarget) =>
+          schemaByTable.get(this.getObjectTableName(target.definition) ?? '') ??
+          (target.local
+            ? undefined
+            : this.qualifiedTargetSchema(target.identity, manifest));
         const targetSchema = field.relatedQualified
           ? this.qualifiedTargetSchema(field.relatedQualified, manifest)
-          : bare
-            ? bare.local
-              ? schemaByTable.get(
-                  this.getObjectTableName(bare.definition) ?? '',
-                )
-              : this.qualifiedTargetSchema(bare.identity, manifest)
+          : bare !== undefined
+            ? bare
+              ? bareSchema(bare)
+              : undefined
             : this.findForeignKeyTargetSchema(
                 field.related,
                 manifest,
