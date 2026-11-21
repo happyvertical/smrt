@@ -13,7 +13,10 @@
 import { createLogger } from '@happyvertical/logger';
 import type { SmrtAiUsageEvent } from '@happyvertical/smrt-types';
 import type { DatabaseInterface } from '@happyvertical/sql';
-import { AI_OWN_CALL_ID_TAG } from '../adapters/ai-usage.js';
+import {
+  AI_OWN_CALL_ID_TAG,
+  markAiRunSettledUsageEvent,
+} from '../adapters/ai-usage.js';
 import {
   type AiCallRate,
   type AiCallReservation,
@@ -23,6 +26,7 @@ import {
   reserveAiCall,
   settleAiCall,
 } from './ai-run-accounting.js';
+import { AiRunCallRoute, openAiRunCallRoute } from './ai-run-late-usage.js';
 import { stopAiRunForChild } from './ai-run-lifecycle.js';
 import {
   AiCallLimitError,
@@ -373,6 +377,7 @@ async function settleTaggedCall(
   afterSettle: ((event: SmrtAiUsageEvent) => Promise<void>) | undefined,
   event: SmrtAiUsageEvent,
   status: string,
+  committed?: () => void,
 ): Promise<void> {
   const tagged: SmrtAiUsageEvent = {
     ...event,
@@ -383,8 +388,17 @@ async function settleTaggedCall(
       : {}),
     tags: { ...(event.tags ?? {}), ...usageTags },
   };
+  // The call's own record: the handlers receive it and it is never routed
+  // back to the call as late usage.
+  markAiRunSettledUsageEvent(tagged);
   const input = { runId: context.runId, callId, usage: tagged, status };
-  const after = afterSettle ? () => afterSettle(tagged) : undefined;
+  const after =
+    afterSettle || committed
+      ? async () => {
+          committed?.();
+          if (afterSettle) await afterSettle(tagged);
+        }
+      : undefined;
   // The run is settled in the tenant its context names, also when the
   // settlement is queued and written later.
   if (context.tenantId !== undefined) {
@@ -398,6 +412,8 @@ async function settleTaggedCall(
         error instanceof Error ? error.message : String(error)
       }`,
     );
+    // Written later from the pending list; `after` (the handlers, and a
+    // late correction waiting for the settlement) runs then.
     deferAiRunSettlement(context.db, input, after);
     return;
   }
@@ -524,7 +540,6 @@ export async function beginAiRunCall(
         },
       );
 
-  const slot: { event?: SmrtAiUsageEvent; ended?: true } = {};
   const timeout =
     reservation.callTimeoutMs !== null
       ? AbortSignal.timeout(reservation.callTimeoutMs)
@@ -535,6 +550,9 @@ export async function beginAiRunCall(
       : (timeout ?? request.signal);
   const usageTags = aiRunCallTags(context, callId, entryCallId);
 
+  // The call's route: its usage, while it runs and after it ended, wherever
+  // the event is delivered (ai-run-late-usage.ts). Its state, the
+  // once-only correction included, lives on the route, not here.
   const settle = (event: SmrtAiUsageEvent, status: string) =>
     settleTaggedCall(
       context,
@@ -543,7 +561,25 @@ export async function beginAiRunCall(
       request.afterSettle,
       event,
       status,
+      () => route.settlementCommitted(),
     );
+  const route = openAiRunCallRoute(
+    new AiRunCallRoute(
+      callId,
+      context.db,
+      context.runId,
+      context.tenantId,
+      settle,
+    ),
+  );
+  // An event handed to the call's own capture names the call's run (core's
+  // tags); one that does not is not this call's usage.
+  const capture = (event: SmrtAiUsageEvent): void => {
+    if (event.tags?.runId !== undefined && event.tags.runId !== context.runId) {
+      return;
+    }
+    route.capture(event);
+  };
 
   return {
     reservation,
@@ -553,15 +589,13 @@ export async function beginAiRunCall(
       outputLimit: reservation.outputLimit,
       usageTags,
       signal,
-      capture(event) {
-        slot.event = event;
-      },
+      capture,
     },
     async succeed(observed) {
-      if (slot.ended) return;
-      slot.ended = true;
+      if (route.ended) return;
+      route.ended = true;
       await settle(
-        slot.event ?? {
+        route.settlementEvent() ?? {
           ...request.fallbackUsage,
           ...(observed?.model ? { model: observed.model } : {}),
           ...(observed?.usage ? { usage: observed.usage } : {}),
@@ -575,18 +609,20 @@ export async function beginAiRunCall(
       );
     },
     async fail(error) {
-      if (slot.ended) return error;
-      slot.ended = true;
+      if (route.ended) return error;
+      route.ended = true;
       const timedOut = Boolean(timeout?.aborted);
       const status = timedOut
         ? 'timed_out'
         : isAbort(error)
           ? 'cancelled'
           : 'failed';
-      if (slot.event) {
+      const captured = route.settlementEvent();
+      if (captured) {
         // It reported usage before it ended: charged, with how it ended.
-        await settle(slot.event, status);
+        await settle(captured, status);
       } else {
+        route.released(status);
         await releaseAiCall(
           context.db,
           { runId: context.runId, callId, status },

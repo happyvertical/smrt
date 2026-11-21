@@ -174,6 +174,22 @@ function sendOptions(
   };
 }
 
+/**
+ * How long a tracked call's usage capture stays registered after the call
+ * ended. The provider SDK starts its usage callback without awaiting it, and
+ * an app's own callback runs before core routes the event, so the event can
+ * arrive after the call returned; while the capture is registered it still
+ * reaches its call (dropped when the call settled, charged late when it was
+ * released), never the ordinary handlers a second time.
+ */
+const AI_RUN_LATE_USAGE_GRACE_MS = 60_000;
+
+/** Unregister a capture once late usage can no longer arrive. */
+function releaseLater(release: () => void): void {
+  const timer = setTimeout(release, AI_RUN_LATE_USAGE_GRACE_MS);
+  (timer as { unref?: () => void }).unref?.();
+}
+
 const wrappers = new WeakMap<object, WeakMap<AiRunClientHooks, object>>();
 
 /**
@@ -225,10 +241,10 @@ export function withAiRunTracking<T>(client: T, hooks: AiRunClientHooks): T {
               ...rest,
             );
           } catch (error) {
-            release();
+            releaseLater(release);
             throw await handle.fail(error);
           }
-          release();
+          releaseLater(release);
           const observed = observedUsage(result, Date.now() - started);
           const sentTo = hooks.target();
           const rate = hooks.rateFor(
@@ -280,11 +296,11 @@ export function withAiRunTracking<T>(client: T, hooks: AiRunClientHooks): T {
               for await (const chunk of iterable) yield chunk;
             } catch (error) {
               failed = true;
-              release();
+              releaseLater(release);
               throw await handle.fail(error);
             } finally {
               if (!failed) {
-                release();
+                releaseLater(release);
                 // Finished, or the consumer stopped reading: what was used
                 // is settled.
                 await handle.succeed();

@@ -832,6 +832,15 @@ reconciliation abandoned while its process was in fact still alive is likewise
 charged once when that process settles it: it finds `abandoned` and takes the
 late-usage path.
 
+**Usage that arrives after the call.** A provider can report a call's usage
+after the call returned. The process that made the call still routes that
+usage to it for an hour: a released call is charged on the late-usage path,
+and a call settled from its response or fallback row is corrected to the
+measured counts, once. On another process, or later than that, a released
+call is still charged from its stored reservation, but a call settled from
+its response keeps those counts: an estimate that a later reconciliation
+can find, never another call's usage.
+
 **Actual amounts.** The tokens charged are the usage row's `total_tokens`, else
 `prompt_tokens + completion_tokens`. The cost charged is `estimated_cost`, or
 nothing (and one uncosted call) when it is NULL. A call that
