@@ -45,8 +45,10 @@ class, a method or a field: it may be `@smrt`, `@TenantScoped`, `@method` or
 a field decorator whose configuration would be lost. On a class it is
 reported whether or not the class otherwise reaches the manifest, since it
 may be the decorator that makes it a model.
-A member of anything other than a namespace import is not a decorator call
-the scanner reads.
+A member of anything other than a namespace import of an `@happyvertical/smrt-*`
+package is not a decorator call the scanner reads: another library's
+`@forms.field()` is that library's decorator, and its options never merge
+into an SMRT field's.
 
 ## Value forms
 
