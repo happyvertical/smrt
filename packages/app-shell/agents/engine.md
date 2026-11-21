@@ -555,6 +555,56 @@ one bundle (`format: 2`), so a desktop app moves to a hosted one and back.
   PostgreSQL and back with undo, idempotence, interrupted import, tenant
   schema, 2^53 refusal; PGlite always, a server when `SMRT_TEST_POSTGRES_URL`).
 
+## Per-app caps (#5198)
+
+`HostOptions.appLimits` (`src/engine/app-limits.ts`, `AppLimits`) bounds one
+app. None injected means no check and no query (desktop unchanged). The host
+passes it to every worker it spawns (`workerData.appLimits`); the shell fills
+it from the plan in a later slice (after #5194), this file only enforces.
+
+| Limit | Refuses | Counted by |
+|---|---|---|
+| `maxModels` | a boot whose definition has more models than the stored one and than the cap (an app already over can still reopen) | `_app_meta` definition vs new definition |
+| `maxRows`, `maxRowsPerModel` | create (engine, generated REST POST, `<model>_create` tool), `importRecords`, a method's creates, `loadRecords`/`extractModel`/`mergeRecords` that GROW the app past the cap | `COUNT(*)` per table, cached per worker |
+| `maxMethodRuns` + `methodRunPeriodMs` | a method run (engine, REST/tool method) after N runs in the period | in memory, window starts at the first run |
+
+Refusals are `AppLimitError` (an `AppError`): `app limit reached (maxRows):
+this app holds 3 records of the 3 allowed; adding 1 would pass the limit`.
+A cap refusal crosses the worker boundary typed: `WorkerReply.limit` becomes
+`AppCallError.details` and then `EngineError.details`
+`{code: 'app_limit', cap, limit, current, requested}` (a boot refusal carries
+the same on its `EngineError`); callers read that, not the message.
+`appLimitCap(message)` is only the fallback parser of the message prefix. A REST POST answers
+403 `{error, code: 'app_limit', cap, limit, current, requested}`; a boot or
+migration refusal is an `EngineError` `refused`. A method that would add rows
+over the cap is refused with the limit message, not "failed, none applied".
+
+Concurrency: with a row cap set, every capped write (engine create, REST POST
+under a model route, `<model>_create` tool, `importRecords`, a method's
+transaction) runs inside `AppCaps.withWriteLock`, a promise chain per worker,
+so a check and its write are one unit and two creates with one slot left
+cannot both pass. Holders never take the lock again (their inner creates are
+`capChecked`), so it cannot deadlock; without a row cap it is a no-op.
+Every POST under `/api/<route>` or `/api/<route>/<segment>` is treated as a
+create (core's handler may route the second form to `handleCreate`). A
+method's total check is on the SIGNED net change (creates minus deletes);
+each model's own cap is on that model's growth.
+
+Counting is the same `COUNT(*)` on SQLite and PostgreSQL, one per model table,
+cached. The engine's own single create and remove (a remove is also under the
+lock) move the cache; a REST/tool write, import, method or migration drops it,
+so the NEXT capped create after one of those recounts every model table once,
+under the lock. That is one `COUNT(*)` per table per such write, not a scan per
+engine write; an app that writes mostly over REST pays it each time. Migration
+steps are counted before and after inside their transaction, so a refusal
+rolls the step back. Undo (`undoTo`, restoring archived rows or a deleted
+model) is exempt from the caps: it restores what the app already held.
+Not enforced: storage
+bytes (the cloud profile meters storage separately), requests per period and
+the 429 rate limit (core hooks, #5195), and the owner notice. The method-run
+window lives in the worker, so it starts again on every worker start: each
+publish, restart and structural change renews the period.
+
 ## Lessons
 
 - A worker must not be terminated while `@happyvertical/sql`'s startup HMAC key
