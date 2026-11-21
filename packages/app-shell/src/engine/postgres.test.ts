@@ -244,3 +244,132 @@ describe('what needs SQLite stays SQLite', () => {
     ).rejects.toThrow(/not supported on this database yet/);
   });
 });
+
+// A stand-in for the server side of one shared connection: transaction-local
+// settings live until the transaction ends (commit or rollback), a statement
+// that outlasts `statement_timeout` is cancelled (SQLSTATE 57014). PGlite runs
+// in one thread and cannot cancel a statement, so the real server is covered by
+// postgres-server.test.ts on the CI lane.
+function fakeConnection() {
+  const local = new Map<string, string>();
+  const log: string[] = [];
+  const state = { rollbacks: 0, open: 0 };
+  const query = async (sql: string, params: unknown[] = []) => {
+    log.push(sql);
+    if (sql.includes('set_config')) {
+      if (sql.includes("'statement_timeout'"))
+        local.set('statement_timeout', String(params[1]));
+      return { rows: [] };
+    }
+    if (sql.includes('pg_sleep')) {
+      if (local.has('statement_timeout'))
+        throw Object.assign(
+          new Error('canceling statement due to statement timeout'),
+          { code: '57014' },
+        );
+      return { rows: [{ slept: true }] };
+    }
+    if (sql === 'SHOW statement_timeout')
+      return {
+        rows: [{ statement_timeout: local.get('statement_timeout') ?? '0' }],
+      };
+    return { rows: [{ one: 1 }] };
+  };
+  const tx = { query, engine: 'postgres' };
+  const handle = {
+    engine: 'postgres',
+    query: (sql: string, params?: unknown[]) =>
+      handle.transaction((t: any) => t.query(sql, params)),
+    async transaction<R>(cb: (t: typeof tx) => Promise<R>): Promise<R> {
+      state.open++;
+      try {
+        return await cb(tx);
+      } catch (e) {
+        state.rollbacks++;
+        throw e;
+      } finally {
+        local.clear(); // the transaction ended: nothing stays on the connection
+        state.open--;
+      }
+    },
+    async beginTransaction() {
+      state.open++;
+      return {
+        ...tx,
+        commit: async () => {
+          local.clear();
+          state.open--;
+        },
+        rollback: async () => {
+          state.rollbacks++;
+          local.clear();
+          state.open--;
+        },
+      };
+    },
+  };
+  return { handle, local, log, state };
+}
+
+describe('per-operation statement timeout (#5192)', () => {
+  const CANCELLED = /statement timeout/;
+
+  it('cancels a runaway statement on every path, leaving no setting and no open transaction on the connection', async () => {
+    const conn = fakeConnection();
+    const limited = scopeDatabase(conn.handle, 'app_a', {
+      statementTimeoutMs: 100,
+    }) as any;
+    await expect(limited.query('SELECT pg_sleep(600)')).rejects.toThrow(
+      CANCELLED,
+    );
+    await expect(
+      limited.transaction(async (tx: any) => {
+        await tx.query('SELECT pg_sleep(600)');
+      }),
+    ).rejects.toThrow(CANCELLED);
+    const manual = await limited.beginTransaction();
+    await expect(manual.query('SELECT pg_sleep(600)')).rejects.toThrow(
+      CANCELLED,
+    );
+    await manual.rollback();
+    // Set as the first statement of each transaction, transaction-locally.
+    expect(
+      conn.log.filter((q) => q.includes("'statement_timeout', ?, true")),
+    ).toHaveLength(3);
+    // Released: the transactions are over and the setting went with them.
+    expect(conn.state.open).toBe(0);
+    expect(conn.state.rollbacks).toBe(3);
+    expect(conn.local.size).toBe(0);
+    // The connection is usable straight after.
+    expect((await limited.query('SELECT 1 AS one')).rows[0].one).toBe(1);
+  });
+
+  it('does not reach another app on the same connection', async () => {
+    const conn = fakeConnection();
+    const limited = scopeDatabase(conn.handle, 'app_a', {
+      statementTimeoutMs: 100,
+    }) as any;
+    const other = scopeDatabase(conn.handle, 'app_b') as any;
+    await expect(limited.query('SELECT pg_sleep(600)')).rejects.toThrow(
+      CANCELLED,
+    );
+    // The other app's long statement runs to the end, and sees no limit.
+    expect((await other.query('SELECT pg_sleep(600)')).rows[0].slept).toBe(
+      true,
+    );
+    expect(
+      (await other.query('SHOW statement_timeout')).rows[0].statement_timeout,
+    ).toBe('0');
+  });
+
+  it('is off when not configured, and refuses nonsense', async () => {
+    const conn = fakeConnection();
+    const free = scopeDatabase(conn.handle, 'app_a') as any;
+    expect((await free.query('SELECT pg_sleep(600)')).rows[0].slept).toBe(true);
+    expect(conn.log.some((q) => q.includes('statement_timeout'))).toBe(false);
+    for (const bad of [0, -5, 1.5])
+      expect(() =>
+        scopeDatabase(conn.handle, 'app_a', { statementTimeoutMs: bad }),
+      ).toThrow(RangeError);
+  });
+});

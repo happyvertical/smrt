@@ -1,7 +1,11 @@
 // The host's handle on one app runtime thread.
 
 import { Worker } from 'node:worker_threads';
-import { type DatabaseConfig, forWorker } from './db/index.ts';
+import {
+  type DatabaseConfig,
+  forWorker,
+  type WorkerDatabaseConfig,
+} from './db/index.ts';
 import type { AppDefinition, Migration } from './definition.ts';
 import { EngineError, WorkerCrashedError } from './errors.ts';
 import type { BootInfo, WorkerOp, WorkerReply } from './worker-protocol.ts';
@@ -30,6 +34,14 @@ export interface WorkerLimits {
   youngMb?: number | null;
   /** Old generation cap in MiB. Default {@link WORKER_HEAP_MB}. */
   oldMb?: number;
+  /**
+   * PostgreSQL only: the server cancels any one statement of an app's
+   * operation that runs longer than this (ms), so a runaway query in one app
+   * holds neither its worker nor a connection. Set transaction-locally, so it
+   * never reaches another app's use of a pooled connection. Default: none.
+   * SQLite (the desktop) has no equivalent and ignores it.
+   */
+  statementTimeoutMs?: number;
 }
 
 /**
@@ -47,6 +59,11 @@ export function resourceLimitsFor(limits: WorkerLimits = {}) {
     limits.youngMb === undefined
       ? DEFAULT_WORKER_LIMITS.youngMb
       : limits.youngMb;
+  const st = limits.statementTimeoutMs;
+  if (st !== undefined && (!Number.isInteger(st) || st < 1))
+    throw new RangeError(
+      'worker limit statementTimeoutMs must be a whole ms, 1 or more',
+    );
   for (const [name, v] of [
     ['youngMb', young],
     ['oldMb', limits.oldMb],
@@ -91,8 +108,12 @@ export class AppWorker {
     // A PGlite instance cannot cross into the thread: the worker gets one end
     // of a port, this thread serves the other (db/pglite-bridge.ts).
     const db = forWorker(database ?? { kind: 'sqlite' });
+    const config: WorkerDatabaseConfig =
+      db.config.kind !== 'sqlite' && limits?.statementTimeoutMs !== undefined
+        ? { ...db.config, statementTimeoutMs: limits.statementTimeoutMs }
+        : db.config;
     this.worker = new Worker(workerUrl, {
-      workerData: { appWorker: true, ...data, database: db.config },
+      workerData: { appWorker: true, ...data, database: config },
       transferList: db.transfer,
       resourceLimits: resourceLimitsFor(limits),
     });

@@ -99,6 +99,17 @@ scans for it.
   schema the host did not create refuses to open (`EngineError` `refused`); the
   engine never creates a schema and never falls back to `public`. Core is
   untouched. The role and policies of a hosted deployment are #5188/#5189.
+- **Statement timeout (#5192).** `HostOptions.workerLimits.statementTimeoutMs`
+  (shell: `ShellContext.workerLimits`) makes `scopeDatabase` also run
+  `set_config('statement_timeout', '<n>ms', true)` as the first statement of
+  every transaction it opens (`SET LOCAL`'s effect): the server cancels any one
+  statement that runs longer (57014), the transaction rolls back, the call
+  rejects (its lease and worker are free again) and the pooled connection goes
+  back with no setting left, so it never reaches another app. Default: none.
+  SQLite has no per-statement cancel the engine could use and ignores it, so
+  the desktop is unchanged. PGlite cannot cancel a statement either; only the
+  real-server lane (`postgres-server.test.ts`) proves the cancel, and
+  `postgres.test.ts` proves where and how it is set (a recording connection).
 - **How the config reaches the worker.** `DatabaseConfig` is plain data except a
   PGlite instance, which cannot cross threads (and two instances on one
   storage corrupt it, yet a new worker boots while the old one still serves).

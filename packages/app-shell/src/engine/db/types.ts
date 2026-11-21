@@ -58,8 +58,19 @@ export type DatabaseConfig =
 /** What reaches a worker thread: the config with the instance replaced by a port. */
 export type WorkerDatabaseConfig =
   | { kind: 'sqlite' }
-  | { kind: 'postgres'; schema: string; connection: PostgresConnection }
-  | { kind: 'pglite'; schema: string; port: MessagePort };
+  | {
+      kind: 'postgres';
+      schema: string;
+      connection: PostgresConnection;
+      /** Cancel any one statement running longer (ms); from `WorkerLimits`. */
+      statementTimeoutMs?: number;
+    }
+  | {
+      kind: 'pglite';
+      schema: string;
+      port: MessagePort;
+      statementTimeoutMs?: number;
+    };
 
 /** A database the host made for the engine and must close with the host. */
 export interface HostDatabase {
