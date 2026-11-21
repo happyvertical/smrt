@@ -9,6 +9,7 @@ import {
 } from '@happyvertical/smrt-app-mcp';
 import { dispatchTool, shellMcpServer } from './catalog.ts';
 import { PolicyError, type Principal } from './owner.ts';
+import { ownerError, ownerSafe } from './owner-text.ts';
 import { authorizeCall, toolsFor } from './policy.ts';
 import { type CallScope, LIVE_SCOPE } from './target.ts';
 
@@ -19,6 +20,7 @@ function asPrincipal(p: McpAppPrincipal | null | undefined) {
 }
 
 function denied(error: unknown): never {
+  error = ownerError(error, 'mcp');
   if (error instanceof PolicyError)
     throw new McpAccessError(
       error.status === 401 ? 401 : error.status,
@@ -53,9 +55,8 @@ export function createShellMcpServer(
       const who = asPrincipal(principal);
       // A request without a principal lists nothing; the scope is only
       // resolved for someone who can see tools.
-      const tools = await toolsFor(
-        who,
-        who ? await resolveScope(who) : LIVE_SCOPE,
+      const tools = await ownerSafe('mcp tools/list', async () =>
+        toolsFor(who, who ? await resolveScope(who) : LIVE_SCOPE),
       );
       return tools.map(({ name, description, inputSchema, annotations }) => ({
         name,
@@ -79,11 +80,13 @@ export function createShellMcpServer(
       } catch (e) {
         denied(e);
       }
-      const result = await dispatchTool(
-        principal as McpAppPrincipal & { id: string },
-        tool,
-        args ?? {},
-        scope,
+      const result = await ownerSafe('mcp tools/call', () =>
+        dispatchTool(
+          principal as McpAppPrincipal & { id: string },
+          tool,
+          args ?? {},
+          scope,
+        ),
       );
       // The host-only `pending` marker never goes to a client.
       const { pending: _pending, ...wire } = result;

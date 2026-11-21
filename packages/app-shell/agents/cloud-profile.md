@@ -262,3 +262,24 @@ profile only a provider's own public https endpoint may hold one. `saveKey` refu
 custom `baseUrl` or a non-https origin, and the assistant refuses a resolved target
 whose endpoint is not the provider's own (`assertPublicProviderEndpoint`). Without that,
 a tenant could make the server call an internal address.
+
+## Database text in tool errors (interim, #5464; full boundary #5498)
+
+`src/lib/server/owner-text.ts` is the one place that decides which error text
+may leave. Only text that starts with `Database query failed:` (core's
+`DatabaseError.queryFailed`: the SQL and the driver's cause) is replaced, with
+a generic sentence plus a short reason ("that change could not be saved, try
+again" / "the database is unavailable, try again"); the raw text goes to the
+server log. An optional `Error:` prefix is allowed; mid-text occurrences are
+left alone.
+
+Everything else passes through unchanged: the runtime's own messages,
+validation, a method's own text, SQLite and PostgreSQL constraint text.
+Address-shaped leaks (host names, IPs) in other error text are NOT covered:
+they are left to the full boundary (#5498). Exits covered: `dispatchTool` (app
+and shell tool results, and so the assistant and `/mcp` calls), the assistant's
+thrown-error chip, an approval's stored failure text (every content item and
+`structuredContent`, so reading the approval back shows the same generic text),
+and the `/mcp` JSON-RPC errors (`tools/list`, scope and authorization, calls).
+Not covered: any other route, SSE, logs of other layers, the worker protocol
+and database handles.

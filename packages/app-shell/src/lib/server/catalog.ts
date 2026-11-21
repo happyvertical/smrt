@@ -23,6 +23,7 @@ import { ENGINE_TOOLS, isEngineTool, runEngineTool } from './engine-tools.ts';
 import { getShellDb, hostFor, shellDbSync } from './host.ts';
 import { HttpError } from './http.ts';
 import { runAs } from './owner.ts';
+import { ownerSafe } from './owner-text.ts';
 import { reportFailureForOwner } from './report-display.ts';
 import {
   type CallScope,
@@ -295,8 +296,11 @@ export async function dispatchTool(
   args: Record<string, unknown>,
   scope: CallScope = LIVE_SCOPE,
 ): Promise<CatalogResponse> {
+  // Driver text (and a database host) never leaves as a tool error (#5464).
   const { value, issued } = await collectIssuedApprovals(() =>
-    dispatchInner(principal, tool, args, scope),
+    ownerSafe(`tool ${tool.name}`, () =>
+      dispatchInner(principal, tool, args, scope),
+    ),
   );
   return issued.length ? { ...value, pending: issued[0] } : value;
 }

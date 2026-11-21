@@ -47,8 +47,9 @@ features/subscriptions/gate on SQLite, fake resolver), `hooks.server.test.ts`.
   loses it revokes them. The provisioner's own re-check uses the shell's stores
   (`isHostedInferenceEntitled`), so a stale event after a downgrade does not
   mint a key. The keys are secrets, so `SMRT_SECRET_MASTER_KEY` is checked at `init`. The shell
-  has no billing writer: nothing fires the listener until the host's webhook
-  runs in this process.
+  has no billing writer: the code that writes plan changes and calls
+  `trackEntitlementChange` lives outside this repository, so the listener is an
+  exported, tested entry point that stays idle until a host calls it in this process.
 - **Not covered.** PostgreSQL (the spend reader's JSON tag matching and
   required-tenancy reads, and the provisioner's per-tenant advisory lock, which
   needs a pool of at least three connections, run on SQLite here); a scheduled
@@ -59,4 +60,5 @@ features/subscriptions/gate on SQLite, fake resolver), `hooks.server.test.ts`.
   a removed member's active key is budget-synced but not revoked while the
   tenant stays entitled;
   `plugins.remote`, `sync.devices`, `backup.vault` and `cloud.hosted` have no
-  shell surface to gate.
+  shell surface to gate. `cloud.hosted` is deliberately not a gate on the whole
+  cloud shell (v1 decision); the gate is code-local, so that stays possible.
