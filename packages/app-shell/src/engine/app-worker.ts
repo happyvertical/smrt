@@ -2,6 +2,7 @@
 // on it is in worker-handle.ts. Messages are plain JSON-safe values.
 
 import { isMainThread, parentPort, workerData } from 'node:worker_threads';
+import type { AppLimits } from './app-limits.ts';
 import type { WorkerDatabaseConfig } from './db/types.ts';
 import type { AppDefinition, Migration } from './definition.ts';
 import type { WorkerCall, WorkerReply } from './worker-protocol.ts';
@@ -24,21 +25,32 @@ const settleStartupJobs = async () => {
 if (!isMainThread && workerData?.appWorker) {
   const { AppRuntime } = await import('./app-runtime.ts');
   const { AppError, isStaleFence } = await import('./errors.ts');
-  const { dataDir, def, version, migration, readOnly, validateOnly, database } =
-    workerData as {
-      dataDir: string;
-      /** Where the app's data lives; chosen by the host (default SQLite). */
-      database?: WorkerDatabaseConfig;
-      def: AppDefinition;
-      version: number;
-      migration?: Migration;
-      readOnly?: boolean;
-      validateOnly?: boolean;
-    };
-  const rt = new AppRuntime(dataDir, def, version, database);
+  const { AppLimitError } = await import('./app-limits.ts');
+  const {
+    dataDir,
+    def,
+    version,
+    migration,
+    readOnly,
+    validateOnly,
+    database,
+    appLimits,
+  } = workerData as {
+    dataDir: string;
+    /** Where the app's data lives; chosen by the host (default SQLite). */
+    database?: WorkerDatabaseConfig;
+    def: AppDefinition;
+    version: number;
+    migration?: Migration;
+    readOnly?: boolean;
+    validateOnly?: boolean;
+    appLimits?: AppLimits;
+  };
+  let rt: InstanceType<typeof AppRuntime>;
   const port = parentPort as NonNullable<typeof parentPort>;
   let ok = false;
   try {
+    rt = new AppRuntime(dataDir, def, version, database, appLimits);
     const t0 = performance.now();
     const booted = await rt.boot(migration, readOnly, validateOnly);
     ok = true;
@@ -53,7 +65,9 @@ if (!isMainThread && workerData?.appWorker) {
     port.postMessage({
       ready: false,
       error: (e as Error).message,
-      user: migration?.direction === 'down' && e instanceof AppError,
+      user:
+        (migration?.direction === 'down' && e instanceof AppError) ||
+        e instanceof AppLimitError,
       stale: isStaleFence(e),
     });
   }

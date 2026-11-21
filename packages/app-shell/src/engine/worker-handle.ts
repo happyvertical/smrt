@@ -1,6 +1,7 @@
 // The host's handle on one app runtime thread.
 
 import { Worker } from 'node:worker_threads';
+import type { AppLimits } from './app-limits.ts';
 import {
   type DatabaseConfig,
   forWorker,
@@ -145,6 +146,8 @@ export class AppWorker {
       readOnly?: boolean;
       validateOnly?: boolean;
       limits?: WorkerLimits;
+      /** Per-app caps the host injected (#5198); none means unlimited. */
+      appLimits?: AppLimits;
       /** The host's database choice; default SQLite in `dataDir`. */
       database?: DatabaseConfig;
       /** Longest a schema dump waits for table locks (ms); the host's lock timeout. */
