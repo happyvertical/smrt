@@ -107,6 +107,24 @@ export function ownerResult<T>(result: T, where = 'tool result'): T {
   } as T;
 }
 
+/**
+ * A returned non-2xx REST response (`{ status, body }`, no `isError`) with its
+ * string `body` made owner-safe by the same rule; the same object otherwise.
+ */
+export function ownerRestFailure<T>(result: T, where = 'rest result'): T {
+  const r = result as { status?: unknown; body?: unknown } | null | undefined;
+  if (
+    !r ||
+    typeof r !== 'object' ||
+    typeof r.status !== 'number' ||
+    (r.status >= 200 && r.status <= 299) ||
+    typeof r.body !== 'string'
+  )
+    return result;
+  const body = scrubContentText(r.body, where);
+  return body === r.body ? result : ({ ...r, body } as T);
+}
+
 /** A thrown error, its message made owner-safe in place (class and codes kept). */
 export function ownerError(error: unknown, where = 'tool error'): unknown {
   if (!(error instanceof Error)) return error;

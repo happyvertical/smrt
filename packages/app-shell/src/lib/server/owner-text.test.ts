@@ -13,10 +13,11 @@ import {
 } from 'vitest';
 import { decideApproval, getApprovalView } from './approvals.ts';
 import { call, drive, say, scripted } from './assistant/test-helpers.ts';
+import { runRest } from './builder.ts';
 import { shellMcpServer } from './catalog.ts';
 import { getHost } from './host.ts';
 import { createShellMcpServer } from './mcp-server.ts';
-import { ownerResult, ownerText } from './owner-text.ts';
+import { ownerRestFailure, ownerResult, ownerText } from './owner-text.ts';
 import { callTool } from './policy.ts';
 import {
   applyWaiting,
@@ -124,6 +125,25 @@ describe('ownerResult', () => {
     }
     const withInstance = { ...errored('x'), structuredContent: new Detail() };
     expect(JSON.stringify(ownerResult(withInstance))).not.toContain('INSERT');
+  });
+});
+
+describe('ownerRestFailure', () => {
+  it('scrubs a failed response body, plain or JSON, and nothing else', () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const plain = ownerRestFailure({ status: 500, body: DRIVER });
+    expect(plain.body).toContain(SAVE);
+    expect(plain.body).not.toContain('ECONNREFUSED');
+    const json = ownerRestFailure({
+      status: 500,
+      body: JSON.stringify({ error: DRIVER }),
+    });
+    expect(json.body).not.toContain('ECONNREFUSED');
+    expect(json.body).toContain(SAVE);
+    const same = { status: 422, body: '{"error":"title is required"}' };
+    expect(ownerRestFailure(same)).toBe(same);
+    const ok = { status: 200, body: DRIVER };
+    expect(ownerRestFailure(ok)).toBe(ok);
   });
 });
 
@@ -244,6 +264,31 @@ describe('every exit', () => {
       expect(outcome.status).toBe('failed');
       clean(outcome.error ?? '');
       // What the owner reads back later: every stored content item too.
+      const view = await getApprovalView(id);
+      clean(JSON.stringify(view?.result));
+    });
+    it('approval stored text when a REST approval returns a non-2xx', async () => {
+      const host = await getHost();
+      const rec = (await host.create('Chore', { title: 'z' })) as {
+        id: string;
+      };
+      const pending = (await runRest(
+        { method: 'DELETE', url: `/api/chores/${rec.id}` },
+        h.owner.id,
+        'live',
+      )) as { approvalId?: string; result?: { approvalId?: string } };
+      const id = (pending.approvalId ?? pending.result?.approvalId) as string;
+      expect(id).toBeTruthy();
+      vi.spyOn(host, 'rest').mockResolvedValue({
+        status: 500,
+        body: JSON.stringify({ error: raw }),
+      } as never);
+      const outcome = (await decideApproval(id, true, h.owner.id)) as {
+        status: string;
+        error?: string;
+      };
+      expect(outcome.status).toBe('failed');
+      expect(outcome.error).toMatch(/status 500/);
       const view = await getApprovalView(id);
       clean(JSON.stringify(view?.result));
     });
