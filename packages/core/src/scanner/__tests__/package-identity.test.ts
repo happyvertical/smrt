@@ -13,6 +13,7 @@ import {
   mkdtempSync,
   realpathSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -1019,6 +1020,51 @@ ${extra}}
       manifest.objects[`${APP}:WorkOrder`]?.schema?.columns.production_run_id
         ?.foreignKey?.table,
     ).toBe('app_runs');
+  });
+
+  it('fails a written qualified target the package no longer declares, though its previous build lists it', async () => {
+    // A workspace install links the package into its own node_modules, so it
+    // resolves its previous dist manifest by name.
+    const root = realpathSync(mkdtempSync(join(tmpdir(), 'smrt-identity-')));
+    roots.push(root);
+    write(root, {
+      'package.json': JSON.stringify({
+        name: APP,
+        version: '1.0.0',
+        type: 'module',
+        exports: {
+          '.': './dist/index.js',
+          './manifest': './dist/manifest.json',
+        },
+      }),
+      'dist/index.js': 'export {};\n',
+      'dist/manifest.json': JSON.stringify({
+        version: '1.0.0',
+        packageName: APP,
+        objects: {
+          [`${APP}:Customer`]: {
+            name: 'customer',
+            className: 'Customer',
+            qualifiedName: `${APP}:Customer`,
+            packageName: APP,
+            importPath: APP,
+            collection: 'customers',
+            filePath: 'src/Customer.ts',
+            fields: {},
+            methods: {},
+            decoratorConfig: {},
+          },
+        },
+      }),
+      'src/Order.ts': `${CORE}\n@smrt()\nexport class Order extends SmrtObject {\n  @foreignKey('${APP}:Customer') customerId = '';\n}\n`,
+    });
+    mkdirSync(join(root, 'node_modules', '@fixture'), { recursive: true });
+    symlinkSync(root, join(root, 'node_modules', APP), 'dir');
+
+    await expect(build(root)).rejects.toMatchObject({
+      code: 'CONFIG_UNKNOWN_RELATIONSHIP_TARGET',
+      message: expect.stringContaining(`${APP}:Customer`),
+    });
   });
 
   it('fails a written qualified target whose class name differs only in letter case', async () => {

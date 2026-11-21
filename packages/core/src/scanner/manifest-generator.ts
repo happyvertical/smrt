@@ -1218,6 +1218,15 @@ export class ManifestGenerator {
         lookupInManifest(from ?? ({ objects: {} } as SmartObjectManifest), name)
           ?.className === className;
       if (exact(manifest)) return true;
+      // For a package this manifest generates, the manifest being built is
+      // the only authority: a previous build of the same package on disk can
+      // still list a class the source no longer declares.
+      const generated =
+        packageName === manifest.packageName ||
+        Object.values(manifest.objects).some(
+          (candidate) => candidate.packageName === packageName,
+        );
+      if (generated) return false;
       return exact(
         this.loadDependencyManifest(packageName, { warn: false }) ?? undefined,
       );
