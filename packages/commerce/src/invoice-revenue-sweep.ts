@@ -87,6 +87,38 @@ export async function postInvoiceRevenueToSettlementChart(
   });
 }
 
+/**
+ * One page of unposted, issued invoice ids after `after`, ordered by id.
+ *
+ * Raw SQL, because an unposted invoice stores either NULL or '' in
+ * `ar_journal_id` and the collection filter cannot match both. Id columns are
+ * cast to text so the same statement runs on PostgreSQL (UUID columns) and
+ * SQLite (text).
+ *
+ * @internal exported for the PostgreSQL-dialect test.
+ */
+export async function selectUnpostedInvoiceIds(
+  db: DatabaseInterface,
+  tenantId: string,
+  after: string | null,
+  limit: number,
+): Promise<{ id: string }[]> {
+  const statuses = POSTABLE_STATUSES.map(() => '?').join(', ');
+  const { rows } = await db.query(
+    `SELECT CAST(id AS TEXT) AS id FROM invoices
+      WHERE CAST(tenant_id AS TEXT) = ? AND kind = 'invoice'
+        AND COALESCE(CAST(ar_journal_id AS TEXT), '') = ''
+        AND status IN (${statuses})
+        ${after ? 'AND CAST(id AS TEXT) > ?' : ''}
+      ORDER BY CAST(id AS TEXT) ASC LIMIT ?`,
+    tenantId,
+    ...POSTABLE_STATUSES,
+    ...(after ? [after] : []),
+    limit,
+  );
+  return rows as { id: string }[];
+}
+
 export interface PostPendingInvoiceRevenueOptions {
   /** Invoices per page (1-200, default 50). */
   readonly limit?: number;
@@ -121,22 +153,7 @@ export async function postPendingInvoiceRevenue(
   let cursor: string | null = null;
   for (let page = 0; page < MAX_SWEEP_PAGES; page += 1) {
     const after: string | null = cursor;
-    // Raw ids, because an unposted invoice stores either NULL or '' in
-    // `ar_journal_id` and the collection filter cannot match both.
-    const statuses = POSTABLE_STATUSES.map(() => '?').join(', ');
-    const { rows } = await db.query(
-      `SELECT CAST(id AS TEXT) AS id FROM invoices
-        WHERE CAST(tenant_id AS TEXT) = ? AND kind = 'invoice'
-          AND COALESCE(CAST(ar_journal_id AS TEXT), '') = ''
-          AND status IN (${statuses})
-          ${after ? 'AND CAST(id AS TEXT) > ?' : ''}
-        ORDER BY CAST(id AS TEXT) ASC LIMIT ?`,
-      tenantId,
-      ...POSTABLE_STATUSES,
-      ...(after ? [after] : []),
-      limit,
-    );
-    const batch = rows as { id: string }[];
+    const batch = await selectUnpostedInvoiceIds(db, tenantId, after, limit);
     for (const candidate of batch) {
       cursor = String(candidate.id);
       try {

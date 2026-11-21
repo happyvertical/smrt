@@ -22,8 +22,8 @@ import { InvoiceStatus } from '../types/index.js';
 
 const TENANT = '11111111-1111-4111-8111-111111111111';
 
-// Invoice money writes use a SQLite-only call under PGlite; the Postgres
-// invoice-posting suite is separate (invoice-posting-postgres.optional).
+// Invoice money writes use a SQLite-only call under PGlite; the sweep's
+// PostgreSQL query is covered by invoice-revenue-sweep-pglite.test.ts.
 describe.skipIf(process.env.SMRT_TEST_PGLITE === '1')(
   'invoice revenue sweep',
   () => {
