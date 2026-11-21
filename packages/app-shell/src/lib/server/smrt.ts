@@ -27,6 +27,7 @@ import { createProviderReadinessProbe } from '@happyvertical/smrt-app-runtime';
 import { createSmrtSvelteKitRuntime } from '@happyvertical/smrt-app-runtime/sveltekit';
 import './registry.ts';
 import '../objects/index.ts';
+import { appLimitsFromEnv } from './app-limits-env.ts';
 import { installChangeFeedPolicy } from './change-feed.ts';
 import {
   configureShell,
@@ -97,6 +98,9 @@ function cloudAppDatabase(): ShellContext['appDatabase'] {
   };
 }
 
+// Read once so a bad value refuses the start, not the first request.
+const operatorLimits = appLimitsFromEnv();
+
 configureShell({
   profile: profileOfRuntime,
   db: async () =>
@@ -111,6 +115,8 @@ configureShell({
   secretMasterKey: () => runtime.secretMasterKey(),
   // Hosted only (the desktop ignores it): how many apps this process keeps.
   lifecycle: lifecycleFromEnv(),
+  // Cloud only: the operator's per-app caps (none set: uncapped).
+  appLimits: operatorLimits ? () => operatorLimits : undefined,
   // Cloud only (a local owner's app is a file in the data root).
   appDatabase: cloudAppDatabase(),
 });

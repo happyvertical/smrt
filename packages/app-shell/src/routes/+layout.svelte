@@ -8,7 +8,7 @@ import { page } from '$app/state';
 import '$lib/ui/ui.css';
 import AssistantPanel from '$lib/assistant/AssistantPanel.svelte';
 import ChangesPill from '$lib/components/ChangesPill.svelte';
-import { ApiError } from '$lib/ui/api';
+import { ApiError, isLimitRefusal } from '$lib/ui/api';
 import { changesApi } from '$lib/ui/changes';
 import {
   ASSISTANT_OPEN_EVENT,
@@ -46,7 +46,8 @@ async function applyFromChat(applyNow: boolean): Promise<void> {
   } catch (e) {
     if (e instanceof ApiError && e.status === 409)
       throw new Error(
-        e.message.startsWith("Can't apply yet") ||
+        isLimitRefusal(e) ||
+          e.message.startsWith("Can't apply yet") ||
           e.message.startsWith('This one needs')
           ? e.message
           : 'These changes were different when you last looked. Review them, then Apply.',

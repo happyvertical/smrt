@@ -319,6 +319,29 @@ describe('changes waiting view', () => {
     );
   });
 
+  it("shows a per-app cap refusal on Apply as the owner's own notice, not the stale-digest line", async () => {
+    const message =
+      'app limit reached (maxModels): this app has 3 of the 3 models allowed; adding 1 would pass the limit';
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValueOnce(
+          json({ error: message, code: 'app_limit', cap: 'maxModels' }, 409),
+        )
+        .mockResolvedValueOnce(json(changes())),
+    );
+    await render();
+    button('Apply 2 changes')?.click();
+    await vi.waitFor(() =>
+      expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+        message,
+      ),
+    );
+    expect(container.textContent).not.toContain('Review them again');
+    expect(toast.success).not.toHaveBeenCalled();
+  });
+
   it('discards at once, then Put them back restores', async () => {
     const gone = noChanges({
       discarded: { batchId: 'b1', count: 2, generation: 4 },

@@ -14,6 +14,14 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * A per-app cap refused the call (#5503): its message names the cap and the
+ * numbers, so every surface shows it as is, never a generic stale-state line.
+ */
+export function isLimitRefusal(e: unknown): e is ApiError {
+  return e instanceof ApiError && e.code === 'app_limit';
+}
+
 export function isPendingApproval(v: unknown): v is PendingApproval {
   return (
     !!v &&

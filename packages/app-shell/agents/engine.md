@@ -559,8 +559,18 @@ one bundle (`format: 2`), so a desktop app moves to a hosted one and back.
 
 `HostOptions.appLimits` (`src/engine/app-limits.ts`, `AppLimits`) bounds one
 app. None injected means no check and no query (desktop unchanged). The host
-passes it to every worker it spawns (`workerData.appLimits`); the shell fills
-it from the plan in a later slice (after #5194), this file only enforces.
+passes it to every worker it spawns (`workerData.appLimits`). The shell fills it
+for the cloud profile only (#5503): `ShellContext.appLimits(tenantId)` is asked
+each time a live host opens (and for a draft host reopened after a restart; a
+draft forked from live inherits it from the engine), the desktop never asks.
+There is no numeric plan entitlement yet (smrt-features flags are on/off), so
+`smrt.ts` sets one operator default for every tenant from the environment
+(`app-limits-env.ts`): `SMRT_APP_SHELL_MAX_MODELS`, `_MAX_ROWS`,
+`_MAX_ROWS_PER_MODEL`, `_MAX_METHOD_RUNS` (needs `_METHOD_RUN_PERIOD_MS`);
+none set means uncapped; a bad value refuses the start. A plan that grants
+numbers replaces that function. A refusal reaches the owner as a message
+naming the cap (`ApiError.code === 'app_limit'`, `isLimitRefusal`): record
+forms and the changes/import Apply show it as is, never the stale-digest line.
 
 | Limit | Refuses | Counted by |
 |---|---|---|
@@ -601,7 +611,7 @@ rolls the step back. Undo (`undoTo`, restoring archived rows or a deleted
 model) is exempt from the caps: it restores what the app already held.
 Not enforced: storage
 bytes (the cloud profile meters storage separately), requests per period and
-the 429 rate limit (core hooks, #5195), and the owner notice. The method-run
+the 429 rate limit (core hooks, #5195). The method-run
 window lives in the worker, so it starts again on every worker start: each
 publish, restart and structural change renews the period.
 
