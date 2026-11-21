@@ -1768,6 +1768,7 @@ describe('app model editor: one customised registry per process', () => {
     ObjectRegistry.register(AppGuardMember, {
       name: 'GuardMember',
       packageName: APP,
+      replaceParent: true,
     });
     const recipe = {
       ...memberCatalog,
@@ -1823,6 +1824,7 @@ describe('app model editor: one customised registry per process', () => {
     ObjectRegistry.register(AppGuardMember, {
       name: 'GuardMember',
       packageName: APP,
+      replaceParent: true,
     });
     const recipe = {
       ...memberCatalog,
@@ -1872,6 +1874,7 @@ describe('app model editor: one customised registry per process', () => {
     ObjectRegistry.register(AppGuardMember, {
       name: 'GuardMember',
       packageName: APP,
+      replaceParent: true,
     });
     const recipe = {
       ...memberCatalog,

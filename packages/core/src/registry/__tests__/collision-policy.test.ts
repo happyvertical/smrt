@@ -33,6 +33,8 @@ function baseline(overrides: Partial<CollisionInputs> = {}): CollisionInputs {
     newInBundledContext: false,
     newExtendsExisting: false,
     existingExtendsNew: false,
+    newDeclaredChoice: undefined,
+    existingDeclaredChoice: undefined,
     samePackage: false,
     existingIsPackageQualified: false,
     sameName: false,
@@ -94,114 +96,6 @@ describe('decideCollisionPolicy', () => {
       expect(result.scenario).toBe('manifest-same-source-file');
     });
 
-    it('manifest-sti-child-wins → replace', () => {
-      // Issue #950: new manifest entry extends existing; STI child wins.
-      const result = decideCollisionPolicy(
-        baseline({
-          origin: 'manifest',
-          newExtendsExisting: true,
-        }),
-      );
-      expect(result.policy).toBe('replace');
-      expect(result.scenario).toBe('manifest-sti-child-wins');
-    });
-
-    it('manifest-sti-parent-skip → skip', () => {
-      // Reverse direction: existing is already the child.
-      const result = decideCollisionPolicy(
-        baseline({
-          origin: 'manifest',
-          existingExtendsNew: true,
-        }),
-      );
-      expect(result.policy).toBe('skip');
-      expect(result.scenario).toBe('manifest-sti-parent-skip');
-    });
-
-    it('manifest-different-packages-qualified-coexist → coexist-qualified', () => {
-      // Issue #951: two packages define the same simple class name;
-      // both live under their qualified keys.
-      const result = decideCollisionPolicy(
-        baseline({
-          origin: 'manifest',
-          samePackage: false,
-          hasNewQualifiedKey: true,
-          existingHasAnyPackage: true,
-        }),
-      );
-      expect(result.policy).toBe('coexist-qualified');
-      expect(result.scenario).toBe(
-        'manifest-different-packages-qualified-coexist',
-      );
-    });
-
-    it('manifest-different-packages-qualified-coexist works for unscoped package names', () => {
-      // Unscoped manifests like `smrt-profiles` (no leading `@scope/`) must
-      // also coexist. Pre-Release-C allowCoexistingQualifiedRegistration
-      // only required both packages to be present and different; narrowing
-      // to scoped names via `existingIsPackageQualified` would silently
-      // drop these. PR #1140 review, willgriffin P2 at line 251.
-      const result = decideCollisionPolicy(
-        baseline({
-          origin: 'manifest',
-          samePackage: false,
-          hasNewQualifiedKey: true,
-          existingHasAnyPackage: true,
-          existingIsPackageQualified: false, // unscoped — no `@` prefix
-        }),
-      );
-      expect(result.scenario).toBe(
-        'manifest-different-packages-qualified-coexist',
-      );
-    });
-
-    it('manifest-same-package-merge upgrades a manifest stub when content arrives', () => {
-      // Pre-Release-C: merge ran whenever `!existing.packageName ||
-      // packageName === existing.packageName`, regardless of stub status.
-      // Release C preserves that: a stub from an earlier unqualified
-      // manifest should still be upgraded by a later package-qualified
-      // manifest. PR #1140 review, willgriffin P1 at line 270.
-      const result = decideCollisionPolicy(
-        baseline({
-          origin: 'manifest',
-          existingIsManifestStub: true,
-          existingHasNoPackage: true,
-          hasNewQualifiedKey: true,
-          hasManifestContent: true,
-        }),
-      );
-      expect(result.policy).toBe('merge-manifest');
-      expect(result.scenario).toBe('manifest-same-package-merge');
-    });
-
-    it('manifest-same-package-merge → merge-manifest (when there is content to merge)', () => {
-      // Issue #1000 + #951:144-200: same-package manifest arriving for an
-      // existing source registration; merge fields + alias the qualified key.
-      const result = decideCollisionPolicy(
-        baseline({
-          origin: 'manifest',
-          samePackage: true,
-          hasManifestContent: true,
-        }),
-      );
-      expect(result.policy).toBe('merge-manifest');
-      expect(result.scenario).toBe('manifest-same-package-merge');
-    });
-
-    it('manifest-same-package without content → skip (merge has nothing to fold in)', () => {
-      // Guards the `hasManifestContent` gate: empty manifest entries must
-      // NOT trigger a merge-manifest policy, otherwise the caller would
-      // alias a qualified key and incorrectly report a merge.
-      const result = decideCollisionPolicy(
-        baseline({
-          origin: 'manifest',
-          samePackage: true,
-          hasManifestContent: false,
-        }),
-      );
-      expect(result.scenario).toBe('manifest-default-skip');
-    });
-
     it('manifest-default-skip → skip (pre-Release-C resolveManifestCollision default)', () => {
       // Manifest path used to return 'skip' as its final default (not throw).
       const result = decideCollisionPolicy(baseline({ origin: 'manifest' }));
@@ -209,17 +103,19 @@ describe('decideCollisionPolicy', () => {
       expect(result.scenario).toBe('manifest-default-skip');
     });
 
-    it('manifest sti-child-wins precedence: STI check beats same-package merge', () => {
-      // Ordering check: if new extends existing AND both in the same
-      // package, STI child-wins should win (replace), not merge.
+    it('a same-named pair is decided before the same-package merge', () => {
+      // Ordering check: an inheritance edge is decided by the declared
+      // choice even when both sides report one package.
       const result = decideCollisionPolicy(
         baseline({
           origin: 'manifest',
           newExtendsExisting: true,
+          newDeclaredChoice: 'replace',
           samePackage: true,
+          hasManifestContent: true,
         }),
       );
-      expect(result.scenario).toBe('manifest-sti-child-wins');
+      expect(result.scenario).toBe('same-name-subclass-replaces-parent');
     });
   });
 
@@ -371,7 +267,7 @@ describe('decideCollisionPolicy', () => {
       ).toBe('coexist-qualified');
     });
 
-    it('leaves same-package duplicates, same files and STI pairs to their rows', () => {
+    it('leaves same-package duplicates, same files and same-named pairs to their rows', () => {
       expect(
         decideCollisionPolicy(
           baseline({ ...differentPackages, samePackage: true }),
@@ -384,9 +280,13 @@ describe('decideCollisionPolicy', () => {
       ).toBe('decorator-same-source-file');
       expect(
         decideCollisionPolicy(
-          baseline({ ...differentPackages, newExtendsExisting: true }),
+          baseline({
+            ...differentPackages,
+            newExtendsExisting: true,
+            newDeclaredChoice: 'subtype',
+          }),
         ).scenario,
-      ).toBe('sti-child-wins');
+      ).toBe('same-name-subclass-coexists');
     });
 
     it('an unknown package on either side is still a true collision', () => {
@@ -435,31 +335,227 @@ describe('decideCollisionPolicy', () => {
     });
   });
 
-  describe('STI inheritance rows (fallback for decorator path after source-file rows)', () => {
-    it('sti-child-wins → replace', () => {
-      // Issue #950 — decorator path: new.ctor.prototype instanceof existing.
+  describe('same-named inheritance rows (#5143)', () => {
+    const origins = ['decorator', 'manifest'] as const;
+
+    it.each(
+      origins,
+    )('same-name-subclass-replaces-parent → replace (%s)', (origin) => {
       const result = decideCollisionPolicy(
         baseline({
-          origin: 'decorator',
-          bothSourceFilesKnown: true,
+          origin,
           newExtendsExisting: true,
+          newDeclaredChoice: 'replace',
         }),
       );
       expect(result.policy).toBe('replace');
-      expect(result.scenario).toBe('sti-child-wins');
+      expect(result.scenario).toBe('same-name-subclass-replaces-parent');
     });
 
-    it('sti-parent-skip → skip', () => {
+    it.each(origins)('same-name-subclass-coexists → throw (%s)', (origin) => {
       const result = decideCollisionPolicy(
         baseline({
-          origin: 'decorator',
-          bothSourceFilesKnown: true,
-          existingExtendsNew: true,
+          origin,
+          newExtendsExisting: true,
+          newDeclaredChoice: 'subtype',
         }),
       );
-      expect(result.policy).toBe('skip');
-      expect(result.scenario).toBe('sti-parent-skip');
+      expect(result.policy).toBe('throw');
+      expect(result.scenario).toBe('same-name-subclass-coexists');
     });
+
+    it.each(origins)('same-name-subclass-undeclared → throw (%s)', (origin) => {
+      const result = decideCollisionPolicy(
+        baseline({ origin, newExtendsExisting: true }),
+      );
+      expect(result.policy).toBe('throw');
+      expect(result.scenario).toBe('same-name-subclass-undeclared');
+    });
+
+    it.each(
+      origins,
+    )('same-name-parent-of-replacement → retain-as-replaced (%s)', (origin) => {
+      const result = decideCollisionPolicy(
+        baseline({
+          origin,
+          existingExtendsNew: true,
+          existingDeclaredChoice: 'replace',
+        }),
+      );
+      expect(result.policy).toBe('retain-as-replaced');
+      expect(result.scenario).toBe('same-name-parent-of-replacement');
+    });
+
+    it.each(
+      origins,
+    )('same-name-parent-of-coexisting → throw (%s)', (origin) => {
+      const result = decideCollisionPolicy(
+        baseline({
+          origin,
+          existingExtendsNew: true,
+          existingDeclaredChoice: 'subtype',
+        }),
+      );
+      expect(result.policy).toBe('throw');
+      expect(result.scenario).toBe('same-name-parent-of-coexisting');
+    });
+
+    it.each(
+      origins,
+    )('same-name-parent-of-undeclared → throw (%s)', (origin) => {
+      const result = decideCollisionPolicy(
+        baseline({ origin, existingExtendsNew: true }),
+      );
+      expect(result.policy).toBe('throw');
+      expect(result.scenario).toBe('same-name-parent-of-undeclared');
+    });
+
+    it('a manifest stub is not taken over by a class that extends its class', () => {
+      // The caller reads the edge from declared lineage: a stub has no
+      // prototype to test.
+      const stub = {
+        origin: 'decorator',
+        existingIsManifestStub: true,
+        newExtendsExisting: true,
+      } as const;
+      expect(
+        decideCollisionPolicy(
+          baseline({ ...stub, newDeclaredChoice: 'replace' }),
+        ).scenario,
+      ).toBe('same-name-subclass-replaces-parent');
+      expect(
+        decideCollisionPolicy(
+          baseline({ ...stub, newDeclaredChoice: 'subtype' }),
+        ).scenario,
+      ).toBe('same-name-subclass-coexists');
+      expect(decideCollisionPolicy(baseline(stub)).policy).toBe('throw');
+    });
+
+    it('bundled output and unknown sources leave a same-named pair to its declared choice', () => {
+      for (const context of [
+        { newInBundledContext: true, existingIsPackageQualified: true },
+        { bothSourceFilesKnown: false },
+      ]) {
+        expect(
+          decideCollisionPolicy(
+            baseline({
+              ...context,
+              newExtendsExisting: true,
+              newDeclaredChoice: 'replace',
+            }),
+          ).scenario,
+        ).toBe('same-name-subclass-replaces-parent');
+      }
+    });
+  });
+
+  describe('every combination of inputs', () => {
+    const flags = [
+      'sameConstructor',
+      'sameSourceFile',
+      'bothSourceFilesKnown',
+      'existingIsManifestStub',
+      'newInBundledContext',
+      'newExtendsExisting',
+      'existingExtendsNew',
+      'samePackage',
+      'existingIsPackageQualified',
+      'sameName',
+      'hasNewQualifiedKey',
+      'existingKeyIsQualified',
+      'hasManifestContent',
+      'registrationKeyDiffersFromExistingKey',
+      'existingHasNoPackage',
+      'existingHasAnyPackage',
+      'declaresDifferentTable',
+      'existingPackageStampsConstructors',
+    ] as const satisfies ReadonlyArray<keyof CollisionInputs>;
+    const choices = [undefined, 'replace', 'subtype'] as const;
+    const byNewChoice = {
+      replace: ['replace', 'same-name-subclass-replaces-parent'],
+      subtype: ['throw', 'same-name-subclass-coexists'],
+      undeclared: ['throw', 'same-name-subclass-undeclared'],
+    } as const;
+    const byExistingChoice = {
+      replace: ['retain-as-replaced', 'same-name-parent-of-replacement'],
+      subtype: ['throw', 'same-name-parent-of-coexisting'],
+      undeclared: ['throw', 'same-name-parent-of-undeclared'],
+    } as const;
+
+    it('has a row for each, and decides a same-named pair by its declared choice alone', () => {
+      // Guards the enumeration itself: a new input must be added to it.
+      expect(
+        [
+          ...flags,
+          'origin',
+          'matchKind',
+          'newDeclaredChoice',
+          'existingDeclaredChoice',
+        ].sort(),
+      ).toEqual(Object.keys(baseline()).sort());
+
+      const reached = new Set<string>();
+      const violations: string[] = [];
+      const inputs = baseline() as {
+        -readonly [K in keyof CollisionInputs]: CollisionInputs[K];
+      };
+      for (const origin of ['decorator', 'manifest'] as const) {
+        for (const matchKind of [
+          'exact-key',
+          'case-insensitive',
+          'canonical-name',
+        ] as const) {
+          for (const newDeclaredChoice of choices) {
+            for (const existingDeclaredChoice of choices) {
+              for (let bits = 0; bits < 1 << flags.length; bits++) {
+                inputs.origin = origin;
+                inputs.matchKind = matchKind;
+                inputs.newDeclaredChoice = newDeclaredChoice;
+                inputs.existingDeclaredChoice = existingDeclaredChoice;
+                for (let index = 0; index < flags.length; index++) {
+                  inputs[flags[index]] = (bits & (1 << index)) !== 0;
+                }
+                // Throws if no row matches.
+                const decision = decideCollisionPolicy(inputs);
+                reached.add(decision.scenario);
+                const sameNameScenario =
+                  decision.scenario.startsWith('same-name-');
+                let expected: readonly [string, string] | undefined;
+                if (!inputs.sameConstructor) {
+                  if (inputs.newExtendsExisting && !inputs.existingExtendsNew) {
+                    expected = byNewChoice[newDeclaredChoice ?? 'undeclared'];
+                  } else if (
+                    inputs.existingExtendsNew &&
+                    !inputs.newExtendsExisting
+                  ) {
+                    expected =
+                      byExistingChoice[existingDeclaredChoice ?? 'undeclared'];
+                  }
+                }
+                const ok = expected
+                  ? decision.policy === expected[0] &&
+                    decision.scenario === expected[1]
+                  : // No inheritance edge: the declared choice decides nothing,
+                    // and no declaration is ever retained as replaced.
+                    !sameNameScenario &&
+                    decision.policy !== 'retain-as-replaced' &&
+                    // A manifest collision with no edge never raises.
+                    (origin !== 'manifest' || decision.policy !== 'throw');
+                if (!ok && violations.length < 5) {
+                  violations.push(
+                    `${decision.scenario} → ${decision.policy} for ${JSON.stringify(inputs)}`,
+                  );
+                }
+              }
+            }
+          }
+        }
+      }
+      expect(violations).toEqual([]);
+      expect([...reached].sort()).toEqual(
+        __POLICY_ROWS_FOR_TEST.map((row) => row.scenario).sort(),
+      );
+    }, 120_000);
   });
 
   describe('default: true collision', () => {
@@ -496,6 +592,11 @@ describe('decideCollisionPolicy', () => {
           existingIsPackageQualified: true,
         }),
         baseline({ newExtendsExisting: true, bothSourceFilesKnown: true }),
+        baseline({ newExtendsExisting: true, newDeclaredChoice: 'replace' }),
+        baseline({
+          existingExtendsNew: true,
+          existingDeclaredChoice: 'replace',
+        }),
         baseline({ bothSourceFilesKnown: true }),
       ];
       for (const inputs of samples) {

@@ -67,6 +67,7 @@ import type { ValidationError } from './errors';
 import { ConfigurationError } from './errors';
 import { discoverInstalledSmrtPackages } from './host.js';
 import { getPackageName } from './manifest/manifest-loader.js';
+import { sameNameCoexistenceUnsupported } from './manifest/model-replacements.js';
 import { getDefaultCompositeSource } from './manifest/sources/composite.js';
 import { ExplicitPathsManifestSource } from './manifest/sources/explicit-paths.js';
 import {
@@ -98,6 +99,7 @@ import {
   ensureTenantScopedField,
   isBundledOutputPath,
   isSameSourcePath,
+  validateManifestEntry,
 } from './registry/class-registration';
 import {
   applyRuntimeOverrides,
@@ -2741,20 +2743,49 @@ export class ObjectRegistry {
   ): { loaded: boolean; packageName?: string; objectsRegistered: number } {
     const packageName = manifest.packageName;
 
+    // A package registers whole or not at all (#5143): every entry (declared
+    // choices, same-name coexistence, replacement tables) and the package's
+    // table retirements are checked against the registry before the first
+    // entry registers or the manifest cache changes, so a refused package
+    // changes nothing. What only registering can show (a sibling an earlier
+    // entry discovers, a relation between two entries of the package) still
+    // throws part-way; the cache entry is then not kept.
+    for (const [key, def] of Object.entries(manifest.objects))
+      validateManifestEntry(def.className || key, def, packageName);
+    if (packageName)
+      readManifestRetiredTables(
+        { packageName, retiredTables: manifest.retiredTables },
+        {
+          source: sourceLabel,
+          outside: 'refuse',
+          ...(Array.isArray(manifest.smrtDependencies)
+            ? { consumed: manifest.smrtDependencies }
+            : {}),
+        },
+      );
+
     // Seed the manifest cache so discoverManifestSync() finds entries when
     // @smrt() decorators run for classes in this package.
     const cacheKey = packageName || sourceLabel;
-    getManifestCache().set(cacheKey, manifest);
+    const cache = getManifestCache();
+    const cachedBefore = cache.get(cacheKey);
+    cache.set(cacheKey, manifest);
 
     // Merge manifest fields into any already-registered classes. This covers
     // the case where class modules were evaluated before the package's
     // self-register shim (e.g., a consumer imported a deep subpath that
     // bypassed the main entry).
     let objectsRegistered = 0;
-    for (const [key, def] of Object.entries(manifest.objects)) {
-      const className = def.className || key;
-      ObjectRegistry.registerFromManifest(className, def, packageName);
-      objectsRegistered++;
+    try {
+      for (const [key, def] of Object.entries(manifest.objects)) {
+        const className = def.className || key;
+        ObjectRegistry.registerFromManifest(className, def, packageName);
+        objectsRegistered++;
+      }
+    } catch (error) {
+      if (cachedBefore) cache.set(cacheKey, cachedBefore);
+      else cache.delete(cacheKey);
+      throw error;
     }
 
     // The package's declared table retirements (#5005), which migrate reads
@@ -5226,10 +5257,22 @@ export function smrt(config: SmartObjectConfig = {}) {
     ctor: T,
     decoratorContext?: ClassDecoratorContext<T>,
   ): T => {
-    applyPendingDecoratorRegistrations(ctor, decoratorContext);
-
     // Check if this is a SmrtCollection class
     const isCollection = ctor.prototype instanceof SmrtCollection;
+
+    // `replaceParent: false` would keep a same-named subclass registered
+    // next to its parent; generation refuses it on any entry (#5143), so the
+    // decorator refuses it on a collection too, before the class's pending
+    // field registrations, the item or any collection binding change.
+    if (isCollection && config.replaceParent === false) {
+      throw sameNameCoexistenceUnsupported(
+        config.name ?? ctor.name,
+        (Object.getPrototypeOf(ctor) as { name?: string })?.name ||
+          'the class it extends',
+      );
+    }
+
+    applyPendingDecoratorRegistrations(ctor, decoratorContext);
 
     if (isCollection) {
       // Handle SmrtCollection registration. `_itemClass` is the paired model
@@ -5282,8 +5325,11 @@ export function smrt(config: SmartObjectConfig = {}) {
           ? tableName
           : ObjectRegistry.getClassByConstructor(itemClass)?.schema
               ?.tableName || tableName;
+        // `replaceParent` is the collection's own declaration about a
+        // same-named parent collection; it says nothing about the item (#5143).
+        const { replaceParent: _collectionChoice, ...itemConfig } = config;
         ObjectRegistry.register(itemClass, {
-          ...config,
+          ...itemConfig,
           // The collection may belong to a different package. Its config must
           // not move an already-registered item out of its declaring package.
           packageName:
@@ -5324,6 +5370,26 @@ export function smrt(config: SmartObjectConfig = {}) {
     } else {
       // Handle SmrtObject registration (existing behavior)
       let tableName = config.tableName;
+
+      if (!tableName && config.replaceParent === true) {
+        // A declared replacement stores rows in the table of the same-named
+        // class it extends (#5143); a name derived from this class could
+        // differ from a parent's explicit one.
+        const ownName = config.name ?? ctor.name;
+        for (
+          let proto = Object.getPrototypeOf(ctor);
+          typeof proto === 'function' && proto !== Function.prototype;
+          proto = Object.getPrototypeOf(proto)
+        ) {
+          const parent = ObjectRegistry.getEffectiveClassByConstructor(
+            proto as SmrtObjectConstructor,
+          );
+          if (parent?.name === ownName && parent.schema?.tableName) {
+            tableName = parent.schema.tableName;
+            break;
+          }
+        }
+      }
 
       if (!tableName) {
         // First, check manifest for tableName (manifest generator correctly handles STI inheritance)
@@ -5369,6 +5435,10 @@ export function smrt(config: SmartObjectConfig = {}) {
         const manifestEntry = keepForeignEntry ? lookedUp : undefined;
         if (manifestEntry?.decoratorConfig?.tableName) {
           tableName = manifestEntry.decoratorConfig.tableName;
+        } else if (config.replaceParent === true) {
+          // A declared replacement whose parent has not registered yet takes
+          // that parent's table when it does (#5143); a name derived here
+          // would read as declared and contradict it.
         } else if (config.tableStrategy === 'sti') {
           // Fallback: Runtime prototype chain walking for STI detection
           // This is used when:

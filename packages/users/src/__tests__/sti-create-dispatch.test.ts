@@ -160,6 +160,7 @@ describe('STI generated create paths', () => {
         const AppRoot = class CreateDispatchRoot extends Base {};
         ObjectRegistry.register(AppRoot, {
           packageName: '@fixture/create-app',
+          replaceParent: true,
         });
       }
       const key =
