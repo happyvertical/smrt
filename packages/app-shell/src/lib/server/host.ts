@@ -667,6 +667,9 @@ async function openLive(holder: Holder): Promise<AppHost> {
     }),
   );
   wireHostEvents(host, 'live', holder.tenantId);
+  // A lost claim (#5470) leaves a host that refuses everything: forget it, so
+  // the next request opens the app again on a fresh claim.
+  host.on('claim-lost', () => void dropLostHost(holder, host));
   try {
     await adoptDraft(holder, db, host, dirs.draft, database);
     await freezeForWaitingChanges(db, host);
@@ -683,6 +686,7 @@ async function openLive(holder: Holder): Promise<AppHost> {
   holder.database = database;
   holder.storeRef = store;
   holder.hostRef = host;
+  if (host.lostClaim) void dropLostHost(holder, host);
   return host;
 }
 
@@ -967,6 +971,19 @@ function evict(holder: Holder, why: 'idle' | 'capacity'): Promise<void> {
     await live?.close().catch(() => {});
     if (holders.get(holder.key) === holder) holders.delete(holder.key);
     lifecycle.evictions[why]++;
+  })();
+  holder.evicting = done;
+  void done.finally(() => lifecycle.changed());
+  return done;
+}
+
+/** Close a host whose claim was lost and forget its holder (any profile, with or without a lifecycle policy). */
+function dropLostHost(holder: Holder, host: AppHost): Promise<void> {
+  if (holder.hostRef !== host || holder.evicting) return Promise.resolve();
+  const done = (async () => {
+    await holder.slotRef?.host?.close().catch(() => {});
+    await host.close().catch(() => {});
+    if (holders.get(holder.key) === holder) holders.delete(holder.key);
   })();
   holder.evicting = done;
   void done.finally(() => lifecycle.changed());

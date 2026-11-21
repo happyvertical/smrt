@@ -38,6 +38,34 @@ export interface VersionStore {
    * records behind as unreachable history (they are never current).
    */
   commit?(records: VersionRecord[], current: number): Promise<void>;
+  /**
+   * Optional, hosted PostgreSQL only (#5470): `commit`, but inside the caller's
+   * transaction `tx` (the claim's), which also holds the schema swap. Refuses
+   * with a `StaleStoreError` unless the stored current version is `expected`
+   * (null: none yet), so the whole transaction rolls back. `markDraft` (a
+   * publish only) also marks the draft this store is publishing.
+   */
+  commitIn?(
+    tx: unknown,
+    records: VersionRecord[],
+    current: number,
+    expected: number | null,
+    markDraft?: boolean,
+  ): Promise<void>;
+  /** Optional, with `commitIn`: can `tx` see this store's own app row? (False: the claim is on another database.) */
+  reachable?(tx: unknown): Promise<boolean>;
+  /** Optional, with `commitIn`: the draft the next publish marks `published`, for the journal. */
+  publishingDraft?(): string | null;
+  /**
+   * Optional, with `commitIn`: put a draft a publish marked `published` back to
+   * `open`, only while it still holds exactly these published `numbers`.
+   * False when it does not (nothing changed).
+   */
+  reopenDraftIn?(
+    tx: unknown,
+    draftId: string,
+    numbers: number[],
+  ): Promise<boolean>;
 }
 
 export class MemoryVersionStore implements VersionStore {

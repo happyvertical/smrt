@@ -10,6 +10,8 @@ import { postgresDialect } from './postgres-dialect.ts';
 import { assertAppSchema, assertSchemaName, sideName } from './schema-name.ts';
 import { sqliteDialect } from './sqlite-dialect.ts';
 import type {
+  AppClaim,
+  ClaimOptions,
   DatabaseConfig,
   DatabaseKind,
   EngineDialect,
@@ -17,6 +19,8 @@ import type {
 } from './types.ts';
 
 export type {
+  AppClaim,
+  ClaimOptions,
   DatabaseConfig,
   EngineDialect,
   HostDatabase,
@@ -132,13 +136,15 @@ export async function withSchemaAdmin<T>(
 
 /**
  * Claim the app's database for this host (PostgreSQL server only; see
- * `claimApp`). Resolves to the release to run when the host closes.
+ * `claimApp`). Resolves to the claim, whose `release()` runs when the host
+ * closes.
  */
 export async function claimAppDatabase(
   config: DatabaseConfig,
-): Promise<(() => Promise<void>) | undefined> {
+  options?: ClaimOptions,
+): Promise<AppClaim | undefined> {
   if (config.kind !== 'postgres') return undefined;
-  return (await import('./postgres.ts')).claimApp(config);
+  return (await import('./postgres.ts')).claimApp(config, options);
 }
 
 /**

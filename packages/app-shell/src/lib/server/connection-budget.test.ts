@@ -1,7 +1,6 @@
 // The cloud profile's process-wide connection budget and what an owner is told
 // when a database fails (#5464). WHAT THIS PROVES: the budget's accounting and
-// refusal, that a failed open gives its connections back, and that a driver's
-// text never reaches the owner. WHAT IT DOES NOT: a real server's connection
+// refusal, and that a failed open gives its connections back. WHAT IT DOES NOT: a real server's connection
 // limit (PostgreSQL is the on-demand workflow's); the "postgres" configs below
 // point at a port nothing listens on, so no connection is ever made.
 
@@ -341,6 +340,62 @@ describe('no connections left during a publish check', () => {
     expect(err.message).toMatch(/try again/);
     await built.draft.close().catch(() => {});
     await live.close().catch(() => {});
+    rmSync(dir, { recursive: true, force: true });
+  });
+});
+
+describe('a migrating swap holds its pool across the retire', () => {
+  it('cannot be left without an app by another taking the freed connections', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'budget-swap-'));
+    const stub = join(dir, 'stub.mjs');
+    writeFileSync(
+      stub,
+      `import { parentPort } from 'node:worker_threads';
+       parentPort.on('message', () => {});
+       parentPort.postMessage({ ready: true });`,
+    );
+    const l = new HostLifecycle();
+    l.configure({ maxAppConnections: 2 });
+    const host = await AppHost.open(join(dir, 'live'), {
+      store: new MemoryVersionStore(),
+      workerUrl: stub,
+      workerLimits: { connections: l.workerBudget },
+    });
+    // Make the host a server PostgreSQL one (the stub never connects anywhere).
+    const inner = host as unknown as {
+      database: DatabaseConfig;
+      app: AppWorker;
+      def: unknown;
+      version: number;
+      swap(d: unknown, v: number, m: unknown): Promise<unknown>;
+    };
+    inner.database = {
+      kind: 'postgres',
+      schema: 'app_x',
+      connection: { url: NOWHERE, max: 2 },
+    };
+    await host.restartApp();
+    expect(l.connectionsInUse).toBe(2);
+    // Another app, report or rehearsal asks for connections the moment the
+    // old worker is gone.
+    let stolen = false;
+    const retire = inner.app.retire.bind(inner.app);
+    inner.app.retire = async (ms?: number) => {
+      await retire(ms);
+      try {
+        l.takeConnections(2);
+        stolen = true;
+      } catch {
+        /* the budget is still held: nothing to take */
+      }
+    };
+    const migration = { steps: [{}], direction: 'up', version: 1 };
+    await inner.swap(inner.def, inner.version, migration).catch(() => {});
+    expect(stolen).toBe(false);
+    expect(host.appAlive).toBe(true);
+    expect(l.connectionsInUse).toBe(2);
+    await host.close();
+    expect(l.connectionsInUse).toBe(0);
     rmSync(dir, { recursive: true, force: true });
   });
 });

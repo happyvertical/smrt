@@ -102,11 +102,26 @@ export class AppWorker {
   private worker: Worker;
   private next = 1;
   private dead: Error | null = null;
+  /** The connections this worker's pool holds in the host's budget; returned when its thread exits. */
+  private budget: (() => void) | null = null;
   private pending = new Map<
     number,
     { resolve: (v: unknown) => void; reject: (e: Error) => void }
   >();
   readonly ready: Promise<BootInfo>;
+
+  /**
+   * Hand the pool's reserved connections to the caller, so the thread's exit
+   * no longer returns them: a host that stops this worker and starts its
+   * replacement holds the reservation across the gap, and nothing else can
+   * take it. The caller passes it to the next worker (`reservation`) or calls
+   * it to give it back. Null when this worker holds none.
+   */
+  surrenderBudget(): (() => void) | null {
+    const r = this.budget;
+    this.budget = null;
+    return r;
+  }
 
   constructor(
     workerUrl: URL | string,
@@ -122,17 +137,27 @@ export class AppWorker {
       database?: DatabaseConfig;
       /** Longest a schema dump waits for table locks (ms); the host's lock timeout. */
       lockTimeoutMs?: number;
+      /**
+       * A reservation of this pool's size the caller took over from a retired
+       * worker (`surrenderBudget`) and still owns on a failed construction.
+       */
+      reservation?: () => void;
     },
   ) {
     this.version = init.version;
-    const { limits, database, lockTimeoutMs, ...data } = init;
+    const { limits, database, lockTimeoutMs, reservation, ...data } = init;
     // A PGlite instance cannot cross into the thread: the worker gets one end
     // of a port, this thread serves the other (db/pglite-bridge.ts).
-    let release = () => {};
+    let release: () => void = () => {};
+    // A handed-over reservation stays with the caller when this fails.
+    const giveBack = () => {
+      if (!reservation) release();
+    };
     let sized = database;
     if (database?.kind === 'postgres' && limits?.connections) {
       const pool = database.connection.max ?? limits.connections.poolSize;
-      release = limits.connections.take(pool);
+      release = reservation ?? limits.connections.take(pool);
+      this.budget = release;
       sized = {
         ...database,
         connection: { ...database.connection, max: pool },
@@ -142,7 +167,7 @@ export class AppWorker {
     try {
       db = forWorker(sized ?? { kind: 'sqlite' });
     } catch (e) {
-      release();
+      giveBack();
       throw e;
     }
     const config: WorkerDatabaseConfig =
@@ -162,11 +187,13 @@ export class AppWorker {
         resourceLimits: resourceLimitsFor(limits),
       });
     } catch (e) {
-      release();
+      giveBack();
       throw e;
     }
     this.worker.once('exit', () => {
-      release();
+      const r = this.budget;
+      this.budget = null;
+      r?.();
       db.dispose();
     });
     const die = (e: Error) => {

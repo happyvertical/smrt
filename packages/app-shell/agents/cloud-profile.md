@@ -188,14 +188,18 @@ never a timer, never an eviction (`host-lifecycle.test.ts`, "desktop is unchange
   worker, a report worker and a publish rehearsal are counted while they live;
   the pool is created at exactly the size reserved (`connection.max`, else
   `POOL_SIZE` = 2, set explicitly, never the adapter default). A host also reserves
-  `HOST_OVERHEAD` (live 2: ownership claim + one admin connection in flight; draft
+  `HOST_OVERHEAD` (live 2: the claim connection, one connection that also carries its
+  transactions and heartbeat (#5470), + one admin connection in flight; draft
   1), returned on `close`, a successful `discardIfEmpty`, and a failed open
   (`withConnections`). `maxAppConnections` caps the total held by the process;
   unset, it is `maxOpenApps` x `appAllowance(pool)` (live + draft + one transient
   worker pool, plus both overheads; `pool` follows the largest pool a config asks
   for, so a bigger `connection.max` scales it), and with no cap at all there is no budget.
   A refusal is immediate (`ConnectionBudgetError`, a `CapacityError`: `refused`; a publish check rethrows it instead of storing a "does not fit your data" blocker), never queued, so a
-  swap or report that finds no room fails and can be retried. Transient admin
+  swap or report that finds no room fails and can be retried. A swap that
+  stops the old worker first (migration, restore, publish) keeps its pool's
+  share across the gap (`retireApp`), so nothing can take it and the
+  replacement or the rollback is never refused. Transient admin
   connections beyond the one in `HOST_OVERHEAD` and the shell's own pool are not
   counted. SQLite and PGlite are not counted. A budget below the derived one
   refuses rather than evicts. `hostMetrics()` reports `connections` and
@@ -225,6 +229,13 @@ The tenant-to-app mapping is the `App` row (slug `app`) and the app id keys the
 directory and the schema, so a second app per tenant needs a second row, a holder
 key of (tenant, app) and a route to name it, none of which is ruled out; today
 `host.ts` holds one app per tenant.
+
+The shell's own tables and every app schema are the same database and role
+(#5418), so a live host's claim connection (`claimApp`, #5470) commits a publish
+or snapshot restore with the shell's `App`/`AppVersion` rows in one transaction
+(engine.md "The store in the swap"). The host refuses to open when its claim
+cannot see the shell's own `App` row, so a deployment that put the shell and
+the apps on different databases is refused, not silently unfenced.
 
 Needs a PostgreSQL role that may `CREATE SCHEMA` (the hosted role and policies
 are #5188/#5189). The portable export/import still refuse a PostgreSQL app (engine

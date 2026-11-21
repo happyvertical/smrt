@@ -80,6 +80,22 @@ export class StaleFenceError extends EngineError {
   }
 }
 
+/** The host's claim on its app is gone (its session ended); the app must be reopened (#5470). */
+export class ClaimLostError extends StaleFenceError {
+  constructor(message: string) {
+    super(message, { resource: 'claim' });
+    this.name = 'ClaimLostError';
+  }
+}
+
+/** The version store's current version is not what the caller expected; nothing was written (#5470). */
+export class StaleStoreError extends StaleFenceError {
+  constructor(message: string, details: Record<string, unknown> = {}) {
+    super(message, { resource: 'store', ...details });
+    this.name = 'StaleStoreError';
+  }
+}
+
 /** Is `e` (or a cause of it) a stale-fence refusal, even if a library wrapped it? */
 export function isStaleFence(e: unknown): boolean {
   for (let i = 0, x = e as any; x && i < 6; i++, x = x.cause)

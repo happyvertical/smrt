@@ -536,6 +536,14 @@ const appLockKey = (schema: string) =>
   `hashtext(${lit(APP_LOCK_NAMESPACE)}), hashtext(${lit(schema)})`;
 
 /**
+ * The `pg_locks` predicate that finds the granted session lock of `schema`'s
+ * app claim (`pg_try_advisory_lock(int, int)` is `objsubid = 2`; the keys are
+ * stored as unsigned 32-bit values).
+ */
+export const appLockMatch = (schema: string) =>
+  `locktype = 'advisory' AND granted AND objsubid = 2 AND classid::bigint = (hashtext(${lit(APP_LOCK_NAMESPACE)})::bigint & 4294967295) AND objid::bigint = (hashtext(${lit(assertSchemaName(schema))})::bigint & 4294967295)`;
+
+/**
  * Take the session-level advisory lock that says "this process hosts app
  * `schema`" (#5187). It is held by the session that took it until that
  * session ends, so the caller keeps one connection open for the host's life.
@@ -725,6 +733,46 @@ export async function dropSchema(
   });
 }
 
+/** The key of a publish's readiness record in an app's `_app_meta` (#5470). */
+const PUBLISHED_KEY = 'published';
+
+/**
+ * Which publish's new worker was last brought up on `schema` (its journal id),
+ * or null. A worker that started on the published data is the point after
+ * which the publish may have been served and must never be rolled back.
+ */
+export async function readPublished(
+  db: SqlDatabase,
+  schema: string,
+): Promise<string | null> {
+  assertSchemaName(schema);
+  return db.transaction(async (tx: SqlRunner) => {
+    const rows = asRows(
+      await tx.query(
+        `SELECT value FROM ${qi(schema)}._app_meta WHERE key = ${lit(PUBLISHED_KEY)}`,
+      ),
+    );
+    return rows.length ? String(rows[0].value) : null;
+  });
+}
+
+/**
+ * Record that publish `id` is up on `schema`. An upsert: a fork copies
+ * `_app_meta`, so a value from an earlier publish may already be there.
+ */
+export async function markPublished(
+  db: SqlDatabase,
+  schema: string,
+  id: string,
+): Promise<void> {
+  assertSchemaName(schema);
+  await db.transaction(async (tx: SqlRunner) => {
+    await tx.query(
+      `INSERT INTO ${qi(schema)}._app_meta (key, value) VALUES (${lit(PUBLISHED_KEY)}, ${lit(id)}) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
+    );
+  });
+}
+
 /**
  * Replace `live` by `next` in one transaction: `live` is renamed to `aside`
  * and `next` to `live`. Every table of both is locked first (waiting at most
@@ -746,6 +794,12 @@ export async function swapSchemas(
      * never reaches here).
      */
     expectFence?: number;
+    /**
+     * Runs in the swap's own transaction, after the rename and the new
+     * generation, before COMMIT (#5470: the version store's write). A throw
+     * rolls the whole swap back.
+     */
+    within?: (tx: SqlRunner) => Promise<void>;
   },
   lockTimeoutMs = DEFAULT_LOCK_TIMEOUT_MS,
 ): Promise<{ fence: number | null }> {
@@ -789,14 +843,17 @@ export async function swapSchemas(
     await tx.query(`COMMENT ON SCHEMA ${qi(live)} IS NULL`);
     // The new live data is a new generation, in the same transaction as the
     // rename: every worker of the old one now reads a different number.
-    if (held === null) return { fence: null };
-    const fence = held + 1;
-    await tx.query(
-      `CREATE TABLE IF NOT EXISTS ${qi(live)}._app_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)`,
-    );
-    await tx.query(
-      `INSERT INTO ${qi(live)}._app_meta (key, value) VALUES (${lit(FENCE_KEY)}, ${lit(String(fence))}) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
-    );
+    let fence: number | null = null;
+    if (held !== null) {
+      fence = held + 1;
+      await tx.query(
+        `CREATE TABLE IF NOT EXISTS ${qi(live)}._app_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)`,
+      );
+      await tx.query(
+        `INSERT INTO ${qi(live)}._app_meta (key, value) VALUES (${lit(FENCE_KEY)}, ${lit(String(fence))}) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
+      );
+    }
+    await names.within?.(tx);
     return { fence };
   });
 }
