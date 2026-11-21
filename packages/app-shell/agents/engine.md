@@ -289,11 +289,18 @@ for the one operation on the host thread; a PGlite uses the host's client).
   `postgres-server.test.ts`:
   open, write, migrate and restart a user app, two apps' isolation, integer,
   money and boolean keys in a data load, and the archive round trip per field
-  type (removeField and removeModel, then undo). It always runs on PGlite and
+  type (removeField and removeModel, then undo).
+  It always runs on PGlite and
   also on a real server when `SMRT_TEST_POSTGRES_URL` is set (a server returns
   BIGINT as digits; PGlite returns numbers). It creates and drops its own
   schemas; run it locally with `pnpm test:postgres` and
   `CI_POSTGRES_BASE_URL` pointing at a server you started.
+  `postgres-claim-connection.test.ts` (registered too) checks what #5470 rests
+  on, on a connection opened like `claimApp`'s: it reaches the shell's tables
+  unqualified as the same role and writes them and an app schema in one
+  transaction (PGlite and server); and (server only) the session advisory lock
+  survives a transaction, COMMIT, ROLLBACK and a refused COMMIT on it, while a
+  dropped session frees it and the pool reconnects on a session without it.
   Whole numbers (integer, money) outside +/-9007199254740991 cannot be read
   back exactly, so they are refused at write time (`coerceValue`: create,
   update, record loads, field conversion, method writes) and, for a value that

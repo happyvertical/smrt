@@ -11,6 +11,7 @@ export const POSTGRES_SUITES = [
   'src/engine/postgres-server.test.ts',
   'src/engine/postgres-drafts.test.ts',
   'src/engine/portable-export-postgres.test.ts',
+  'src/engine/postgres-claim-connection.test.ts',
 ];
 
 const baseTest = (base as { test?: Record<string, unknown> }).test ?? {};
