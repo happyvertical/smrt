@@ -1923,7 +1923,9 @@ export class AppHost extends EventEmitter {
    * still holds the old one is fenced out. The ownership check always runs, so
    * a host that lost ownership changes nothing, a rollback included: it must
    * find the generation its own swap produced. `maybeSwapped` (the forward
-   * swap's reply was lost) also accepts the generation one past the held one.
+   * swap's reply was lost, so its generation was never adopted) expects the
+   * one past the held one: the caller only gets here when this publish's own
+   * aside (a name no other operation uses) exists, so that swap committed.
    */
   private async swapSchemasIn(
     next: string,
@@ -1942,7 +1944,7 @@ export class AppHost extends EventEmitter {
             this.fence === undefined
               ? undefined
               : maybeSwapped
-                ? [this.fence, this.fence + 1]
+                ? this.fence + 1
                 : this.fence,
         },
         this.lockTimeoutMs,
