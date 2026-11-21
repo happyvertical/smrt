@@ -1047,29 +1047,57 @@ export class MigrationTracker {
       // Every other path updates it as before.
       const fenced = this.dbEngine === 'postgres' && context.rows !== null;
       // Not while another run holds this row's deferred phase.
-      const free =
-        !fenced ||
-        isTrue(
-          (
-            await this.db.query(
-              'SELECT pg_try_advisory_xact_lock(hashtextextended(?, 0)) AS locked',
-              deferredLockKey(id),
-            )
-          ).rows[0]?.locked,
-        );
-      const updated = !free
-        ? { rows: [] }
-        : await this.db.query(
-            `UPDATE _smrt_schema_migrations
-         SET status = 'running', checksum = ?, attempts = ?, error_message = NULL, batch = ?, applied_by = ?, applied_at = CURRENT_TIMESTAMP
-         WHERE id = ?${fenced ? ' AND status = ? AND COALESCE(attempts, 0) = ? RETURNING id' : ''}`,
-            checksum,
-            attempts,
-            this.currentBatch,
-            hostname(),
-            id,
-            ...(fenced ? [existing.status, existing.attempts] : []),
+      const takeOver = async (db: DatabaseInterface) => {
+        const free =
+          !fenced ||
+          isTrue(
+            (
+              await db.query(
+                'SELECT pg_try_advisory_xact_lock(hashtextextended(?, 0)) AS locked',
+                deferredLockKey(id),
+              )
+            ).rows[0]?.locked,
           );
+        return !free
+          ? { rows: [] }
+          : await db.query(
+              `UPDATE _smrt_schema_migrations
+         SET status = 'running', checksum = ?, attempts = ?, error_message = NULL, batch = ?, applied_by = ?, applied_at = CURRENT_TIMESTAMP
+         WHERE id = ?${fenced ? ' AND status = ? AND COALESCE(attempts, 0) = ? AND error_message IS NOT DISTINCT FROM ? RETURNING id' : ''}`,
+              checksum,
+              attempts,
+              this.currentBatch,
+              hostname(),
+              id,
+              // The record the retry was checked against, marker included:
+              // another run that started its deferred statements meanwhile
+              // changed it, and this run takes nothing over.
+              ...(fenced
+                ? [
+                    existing.status,
+                    existing.attempts,
+                    existing.error_message ?? null,
+                  ]
+                : []),
+            );
+      };
+      // The row lock is transaction-scoped: it is held through the guarded
+      // update only when both run in one transaction (the batch's own). A
+      // handle without one cannot hold it, so nothing is taken over.
+      if (fenced && !this.db.transaction)
+        return {
+          success: false,
+          applied: false,
+          skipped: false,
+          name: definition.id,
+          checksum,
+          execution_time_ms: 0,
+          error: `Migration ${definition.id} was not retried: its record can be taken over only in a transaction that holds its row lock through the update, and this database handle has none. Nothing was run.`,
+        };
+      const updated =
+        fenced && this.db.transaction
+          ? await this.db.transaction((tx) => takeOver(tx as DatabaseInterface))
+          : await takeOver(this.db);
       if (fenced && updated.rows.length === 0) {
         return {
           success: false,

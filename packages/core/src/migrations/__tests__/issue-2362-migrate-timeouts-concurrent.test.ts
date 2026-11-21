@@ -1205,3 +1205,60 @@ describe('INVALID index detection and rebuild (issue #2362)', () => {
     );
   });
 });
+
+describe('the deferred phase holds its locks and cleans up (#5325)', () => {
+  const seedFailed = (fake: FakeDb) =>
+    fake.rows.set('add_index_jobs_status_idx', {
+      id: 'seeded',
+      name: 'add_index_jobs_status_idx',
+      checksum: 'any',
+      status: 'failed',
+      error_message: 'lock timeout',
+      attempts: 1,
+      applied_at: new Date().toISOString(),
+      is_reversible: 0,
+      batch: 1,
+    });
+
+  it('holds the row lock through a retry takeover in an atomic batch', async () => {
+    const fake = createFakeDb();
+    seedFailed(fake);
+
+    const [result] = await new MigrationTracker({ db: fake.db }).applyAll(
+      [addIndex],
+      { atomic: true, postgresSafe: true, reconcile: true },
+    );
+
+    expect(result?.success).toBe(true);
+    const lock = fake.queries.findIndex((entry) =>
+      entry.sql.includes('pg_try_advisory_xact_lock'),
+    );
+    const takeover = fake.queries.findIndex((entry) =>
+      entry.sql.includes("status = 'running'"),
+    );
+    expect(fake.queries[lock]?.channel).toBe('transaction');
+    expect(fake.queries[takeover]?.channel).toBe('transaction');
+    expect(takeover).toBe(lock + 1);
+  });
+
+  it('takes no record over on a handle that cannot hold the row lock through the update', async () => {
+    const fake = createFakeDb();
+    seedFailed(fake);
+    const tracker = new MigrationTracker({
+      db: { ...fake.db, transaction: undefined },
+    });
+    // As inside an atomic postgres-safe batch, where a retry's takeover is
+    // fenced by the row lock.
+    (
+      tracker as unknown as { deferredRows: Map<string, unknown> }
+    ).deferredRows = new Map();
+
+    const result = await tracker.apply(addIndex, { reconcile: true });
+
+    expect(result.success).toBe(false);
+    expect(String(result.error)).toContain('only in a transaction');
+    expect(
+      fake.queries.some((entry) => entry.sql.includes("status = 'running'")),
+    ).toBe(false);
+  });
+});
