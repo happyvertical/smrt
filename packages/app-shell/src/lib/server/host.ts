@@ -488,8 +488,8 @@ export function openDraftHost(
       store: new DraftVersionStore(db, id, pin),
       workerUrl: workerUrl(),
       workerLimits: budgetedLimits(),
-      ...(appLimits ? { appLimits } : {}),
       autoApprove: true,
+      ...(appLimits ? { appLimits } : {}),
       // A draft on PostgreSQL reopens with the LIVE app's config; its own
       // schema comes from the marker in `dir`.
       ...(database ? { database } : {}),
