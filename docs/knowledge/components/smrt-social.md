@@ -5,10 +5,10 @@ description: "Social media account management for multi-platform publishing in t
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-21T20:33:59Z"
+  at: "2026-11-21T22:32:40Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:20f45496945676b6e75b0a13b9a665e252bf0d0f59126b40e33165fc84585b68"
+source_revision: "sha256:192eb8a2b28f5a8d8b6bfb4274a2e90b7cbf672441a7ca03e8856d9c1f20ca16"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/social/package.json"
@@ -24,7 +24,7 @@ sources:
 
 - Directory: `packages/social`
 - Private: no
-- Object source: `domain-artifact`
+- Object source: `scanner`
 - Evidence level: `source-inspected`
 
 ## Documentation
@@ -60,19 +60,15 @@ sources:
 ## Models
 
 - `OAuthState` (collection `oauthstates`, extends `SmrtObject`, STI table)
-- `OAuthStateCollection` (collection `oauthstates`, extends `SmrtCollection`)
 - `SocialAccount` (collection `socialaccounts`, extends `SmrtObject`, STI table)
-- `SocialAccountCollection` (collection `socialaccounts`, extends `SmrtCollection`)
 - `SocialPost` (collection `socialposts`, extends `SmrtObject`, STI table)
 - `SocialPostAnalyticsSnapshot` (collection `socialpostanalyticssnapshots`, extends `SmrtObject`, STI table)
-- `SocialPostAnalyticsSnapshotCollection` (collection `socialpostanalyticssnapshots`, extends `SmrtCollection`)
-- `SocialPostCollection` (collection `socialposts`, extends `SmrtCollection`)
 
 ## MCP tools
 
-- `socialaccount_get`: get on `@happyvertical/smrt-social:SocialAccount`
-- `socialaccount_list`: list on `@happyvertical/smrt-social:SocialAccount`
-- `socialpost_get`: get on `@happyvertical/smrt-social:SocialPost`
-- `socialpost_list`: list on `@happyvertical/smrt-social:SocialPost`
-- `socialpostanalyticssnapshot_get`: get on `@happyvertical/smrt-social:SocialPostAnalyticsSnapshot`
-- `socialpostanalyticssnapshot_list`: list on `@happyvertical/smrt-social:SocialPostAnalyticsSnapshot`
+- `get_socialaccounts`: get on `@happyvertical/smrt-social:SocialAccount`
+- `get_socialpostanalyticssnapshots`: get on `@happyvertical/smrt-social:SocialPostAnalyticsSnapshot`
+- `get_socialposts`: get on `@happyvertical/smrt-social:SocialPost`
+- `list_socialaccounts`: list on `@happyvertical/smrt-social:SocialAccount`
+- `list_socialpostanalyticssnapshots`: list on `@happyvertical/smrt-social:SocialPostAnalyticsSnapshot`
+- `list_socialposts`: list on `@happyvertical/smrt-social:SocialPost`

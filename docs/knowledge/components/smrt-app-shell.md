@@ -5,10 +5,10 @@ description: "A smrt app that builds and runs a person's own smrt app from defin
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-21T21:45:58Z"
+  at: "2026-11-21T22:32:40Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:2e6ac2f72a50e81687f318ea9c82d2678608b79cd8261e80b4c5f6eb0bc26625"
+source_revision: "sha256:48f265ccea922dd801798b42c6b4d228d2a0a90983ca203b962f4d925104a362"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/app-shell/package.json"
@@ -48,7 +48,7 @@ sources:
 
 - Directory: `packages/app-shell`
 - Private: no
-- Object source: `manifest`
+- Object source: `scanner`
 - Evidence level: `source-inspected`
 
 ## Documentation
@@ -105,25 +105,15 @@ sources:
 ## Models
 
 - `App` (collection `apps`, extends `SmrtObject`)
-- `AppCollection` (collection `apps`, extends `SmrtCollection`)
 - `AppDraft` (collection `appdrafts`, extends `SmrtObject`)
-- `AppDraftCollection` (collection `appdrafts`, extends `SmrtCollection`)
 - `AppDraftVersion` (collection `appdraftversions`, extends `SmrtObject`)
-- `AppDraftVersionCollection` (collection `appdraftversions`, extends `SmrtCollection`)
 - `AppImport` (collection `appimports`, extends `SmrtObject`)
-- `AppImportCollection` (collection `appimports`, extends `SmrtCollection`)
 - `AppVersion` (collection `appversions`, extends `SmrtObject`)
-- `AppVersionCollection` (collection `appversions`, extends `SmrtCollection`)
 - `Approval` (collection `approvals`, extends `SmrtObject`)
-- `ApprovalCollection` (collection `approvals`, extends `SmrtCollection`)
 - `AssistantMessage` (collection `assistantmessages`, extends `SmrtObject`)
-- `AssistantMessageCollection` (collection `assistantmessages`, extends `SmrtCollection`)
 - `AssistantThread` (collection `assistantthreads`, extends `SmrtObject`)
-- `AssistantThreadCollection` (collection `assistantthreads`, extends `SmrtCollection`)
 - `ChangeBatch` (collection `changebatches`, extends `SmrtObject`)
-- `ChangeBatchCollection` (collection `changebatches`, extends `SmrtCollection`)
 - `ChangeCard` (collection `changecards`, extends `SmrtObject`)
-- `ChangeCardCollection` (collection `changecards`, extends `SmrtCollection`)
 
 ## MCP tools
 
