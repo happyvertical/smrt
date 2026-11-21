@@ -9,6 +9,8 @@ SvelteKit or `src/lib`). README has the route and JSON contracts.
 
 Cloud profile (tenant scoping, accounts, what must not exist there): [cloud profile](agents/cloud-profile.md).
 
+Starting the published server, graceful shutdown (SIGTERM/SIGINT drain), Node version: [deploy](agents/deploy.md).
+
 Hosted inference (gate at startup, entitlement, caps): [hosted inference](agents/hosted-inference.md).
 
 Per-tenant storage metering (`storage.bytes` gauge, one read, request-count seam for #5195): [storage metering](agents/storage-metering.md).
