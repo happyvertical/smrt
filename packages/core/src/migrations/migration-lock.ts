@@ -66,7 +66,7 @@ export const DEFAULT_MIGRATION_LOCK_WAIT_TIMEOUT_MS = 15 * 60 * 1000;
  * connection-affinity claim and whose sessions offer `database()` and
  * `destroy()`.
  */
-export const MIGRATION_LOCK_MINIMUM_SQL_VERSION = '0.117.0';
+export const MIGRATION_LOCK_MINIMUM_SQL_VERSION = '0.116.7';
 
 const DEFAULT_POLL_INTERVAL_MS = 1000;
 /** How long a normal release may take before the session is destroyed. */

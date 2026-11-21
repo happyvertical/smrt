@@ -1988,7 +1988,7 @@ app model editor (boot and edit), `withMigrationLock` and
   wrapper, spread copy or proxy, `MigrationLockUnsupportedError` before any
   statement. The claim is `Symbol.for('@happyvertical/sql/connection-affinity')`
   with `{ kind, handle }`, accepted only when `handle === db`; it needs
-  `@happyvertical/sql` `MIGRATION_LOCK_MINIMUM_SQL_VERSION` (0.117.0) in the
+  `@happyvertical/sql` `MIGRATION_LOCK_MINIMUM_SQL_VERSION` (0.116.7) in the
   copy that created the handle. Engine: the handle's own `engine` decides
   (`postgres` is a server; `pglite` and the rest take no lock), else URL/hint.
   SQLite, DuckDB, JSON and PGlite: `held: false`, `lock.db === db`, no guard.

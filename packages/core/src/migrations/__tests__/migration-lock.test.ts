@@ -41,7 +41,7 @@ import {
   never,
 } from './pg-lock-double.js';
 
-const MINIMUM_SQL = '0.117.0';
+const MINIMUM_SQL = '0.116.7';
 const EDITOR_TENANT = '11111111-1111-4111-8111-111111111111';
 
 afterEach(() => {
