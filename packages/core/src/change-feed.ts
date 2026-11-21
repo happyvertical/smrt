@@ -1132,7 +1132,11 @@ export async function ensureChangeFeedTable(
  * transaction commits, so no sequence exists to return yet. The entry is
  * durable and ordered — it simply is not numbered at this instant. Callers
  * that need the sequence (an SSE event id, say) must treat `null` as "not
- * available yet", never as a failure: a failure still throws. Such an append
+ * available yet", never as a failure: a failure still throws. Since #5438 a
+ * direct allocation that fails with a lock timeout (`55P03`), as a deadlock
+ * victim (`40P01`) or on a duplicate of the feed's own sequence key is staged
+ * the same way and returns `null` too; a cancelled statement (`57014`) and
+ * every other error still throw. Such an append
  * also throws, with the database's `42P01`, when `_smrt_changes_pending` is
  * missing: it is never allocated directly instead.
  *

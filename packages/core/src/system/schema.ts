@@ -1433,6 +1433,74 @@ $smrt_change_feed_drain_compat$;
 `;
 
 /**
+ * The append helpers' fallback (#5438), placed in the direct block's
+ * exception handler: a direct allocation that failed on contention is staged
+ * in the same statement instead of being dropped.
+ *
+ * - Eligible: a lock timeout (`55P03`), a deadlock (`40P01`), or a duplicate
+ *   on the feed's own sequence key (`23505` whose `CONSTRAINT_NAME` is the
+ *   live primary-key constraint of `_smrt_changes`). A cancelled statement
+ *   (`57014`) stays an error: staging after a cancel would change what a
+ *   cancel means. Every other SQLSTATE (data, privilege) is returned as
+ *   before, so nothing is staged the drain could never sequence.
+ * - The tenant id is first converted to the FEED table's live column type.
+ *   The direct block may have failed on a lock before it reached that
+ *   conversion, and a value only the staging column accepts (TEXT staging,
+ *   uuid feed, mid `db:migrate-uuid`) would make every drain batch fail
+ *   behind it.
+ * - The staging table's insert lock is taken without waiting (`NOWAIT`; a
+ *   role without a table-level privilege for it gets a 1 ms local
+ *   `lock_timeout` instead, restored after the insert): after a lock timeout
+ *   nothing else bounds a second wait.
+ * - Any failure while staging returns the original error and stages nothing.
+ * - Staged: `error_code` NULL, the original SQLSTATE and message noted in
+ *   `error_message` (the single helper's one row; the batch helper's one row
+ *   per entry, the same shape as its staged branch).
+ */
+function postgresAppendFallback(parts: {
+  /** Extra condition; the batch requires a direct path that emitted nothing. */
+  eligible: string;
+  /** Convert every tenant id to the feed table's live type. */
+  validate: string;
+  /** The staged insert (and, for the batch, its RETURN QUERY). */
+  stage: string;
+  /** What follows a successful stage, before RETURN. */
+  staged: string;
+}): string {
+  return `    IF v_error_code IN ('55P03', '40P01')
+      OR (
+        v_error_code = '23505'
+        AND v_constraint = (
+          SELECT c.conname
+          FROM pg_constraint AS c
+          WHERE c.conrelid = to_regclass('_smrt_changes')
+            AND c.contype = 'p'
+        )
+      ) THEN
+      IF ${parts.eligible} THEN
+        BEGIN
+          v_note := 'staged after ' || v_error_code || ': ' || v_error_message;
+          ${parts.validate}
+          IF has_table_privilege('_smrt_changes_pending', 'INSERT, UPDATE, DELETE, TRUNCATE') THEN
+            LOCK TABLE _smrt_changes_pending IN ROW EXCLUSIVE MODE NOWAIT;
+          ELSE
+            v_lock_timeout := current_setting('lock_timeout');
+            PERFORM set_config('lock_timeout', '1ms', true);
+          END IF;
+          ${parts.stage}
+          IF v_lock_timeout IS NOT NULL THEN
+            PERFORM set_config('lock_timeout', v_lock_timeout, true);
+          END IF;
+          ${parts.staged}
+          RETURN;
+        EXCEPTION WHEN query_canceled OR assert_failure OR OTHERS THEN
+          NULL;
+        END;
+      END IF;
+    END IF;`;
+}
+
+/**
  * PostgreSQL-only change-feed append function.
  *
  * A PL/pgSQL block with an EXCEPTION handler runs its body in an internal
@@ -1464,6 +1532,9 @@ DECLARE
   v_seq BIGINT;
   v_error_code TEXT;
   v_error_message TEXT;
+  v_constraint TEXT;
+  v_note TEXT;
+  v_lock_timeout TEXT;
   v_deferred BOOLEAN;
 BEGIN
   -- Has the caller already written in this transaction?
@@ -1582,7 +1653,27 @@ BEGIN
   EXCEPTION WHEN query_canceled OR assert_failure OR OTHERS THEN
     GET STACKED DIAGNOSTICS
       v_error_code = RETURNED_SQLSTATE,
-      v_error_message = MESSAGE_TEXT;
+      v_error_message = MESSAGE_TEXT,
+      v_constraint = CONSTRAINT_NAME;
+${postgresAppendFallback({
+  eligible: 'TRUE',
+  validate: `PERFORM ${postgresTenantIdAs('_smrt_changes', 'p_tenant_id')};`,
+  stage: `INSERT INTO _smrt_changes_pending (
+          table_name,
+          row_id,
+          operation,
+          tenant_id,
+          created_at
+        )
+        VALUES (
+          p_table_name,
+          p_row_id,
+          p_operation,
+          ${postgresTenantIdAs('_smrt_changes_pending', 'p_tenant_id')},
+          p_created_at
+        );`,
+  staged: 'RETURN QUERY SELECT NULL::BIGINT, NULL::TEXT, v_note;',
+})}
     RETURN QUERY SELECT NULL::BIGINT, v_error_code, v_error_message;
   END;
 END;
@@ -1612,8 +1703,12 @@ AS $smrt_change_feed_batch$
 ${POSTGRES_CHANGE_FEED_HELPER_MARKER_LINES}
 DECLARE
   v_deferred BOOLEAN;
+  v_base BIGINT;
   v_error_code TEXT;
   v_error_message TEXT;
+  v_constraint TEXT;
+  v_note TEXT;
+  v_lock_timeout TEXT;
 BEGIN
   BEGIN
     -- As in the single append, a missing staging table fails the staged
@@ -1654,43 +1749,66 @@ BEGIN
     END IF;
     PERFORM pg_advisory_xact_lock(${POSTGRES_CHANGE_FEED_HEAD_LOCK_KEY});
 
-    RETURN QUERY
-    WITH input AS (
-      SELECT entries.ordinality::INTEGER - 1 AS entry_index, entries.value
-      FROM jsonb_array_elements(COALESCE(p_entries, '[]'::jsonb))
-        WITH ORDINALITY AS entries(value, ordinality)
-    ), numbered AS (
-      SELECT
-        input.*,
-        COALESCE((SELECT MAX(seq) FROM _smrt_changes), 0)
-          + row_number() OVER (ORDER BY input.entry_index) AS new_seq
-      FROM input
-    ), inserted AS (
-      INSERT INTO _smrt_changes (
-        seq, table_name, row_id, operation, tenant_id, created_at
-      )
-      SELECT
-        numbered.new_seq,
-        numbered.value->>'table',
-        numbered.value->>'rowId',
-        numbered.value->>'operation',
-        ${postgresTenantIdAs('_smrt_changes', "numbered.value->>'tenantId'")},
-        (numbered.value->>'timestamp')::TIMESTAMPTZ
-      FROM numbered
-      ORDER BY numbered.entry_index
-      RETURNING seq
+    -- The insert runs as its own statement and the rows are returned only
+    -- after it succeeded (#5438): a failure can then never leave allocated
+    -- rows in the result ahead of the fallback's staged ones.
+    SELECT COALESCE((SELECT MAX(seq) FROM _smrt_changes), 0) INTO v_base;
+    INSERT INTO _smrt_changes (
+      seq, table_name, row_id, operation, tenant_id, created_at
     )
     SELECT
-      numbered.entry_index,
-      numbered.new_seq,
+      v_base + entries.ordinality,
+      entries.value->>'table',
+      entries.value->>'rowId',
+      entries.value->>'operation',
+      ${postgresTenantIdAs('_smrt_changes', "entries.value->>'tenantId'")},
+      (entries.value->>'timestamp')::TIMESTAMPTZ
+    FROM jsonb_array_elements(COALESCE(p_entries, '[]'::jsonb))
+      WITH ORDINALITY AS entries(value, ordinality)
+    ORDER BY entries.ordinality;
+
+    RETURN QUERY
+    SELECT
+      entries.ordinality::INTEGER - 1,
+      v_base + entries.ordinality,
       NULL::TEXT,
       NULL::TEXT
-    FROM numbered
-    ORDER BY numbered.entry_index;
+    FROM jsonb_array_elements(COALESCE(p_entries, '[]'::jsonb))
+      WITH ORDINALITY AS entries(value, ordinality)
+    ORDER BY entries.ordinality;
   EXCEPTION WHEN query_canceled OR assert_failure OR OTHERS THEN
     GET STACKED DIAGNOSTICS
       v_error_code = RETURNED_SQLSTATE,
-      v_error_message = MESSAGE_TEXT;
+      v_error_message = MESSAGE_TEXT,
+      v_constraint = CONSTRAINT_NAME;
+${postgresAppendFallback({
+  eligible: 'v_deferred IS FALSE',
+  validate: `PERFORM count(${postgresTenantIdAs('_smrt_changes', "entries.value->>'tenantId'")})
+        FROM jsonb_array_elements(COALESCE(p_entries, '[]'::jsonb)) AS entries(value);`,
+  stage: `RETURN QUERY
+        WITH input AS (
+          SELECT entries.ordinality::INTEGER - 1 AS entry_index, entries.value
+          FROM jsonb_array_elements(COALESCE(p_entries, '[]'::jsonb))
+            WITH ORDINALITY AS entries(value, ordinality)
+        ), staged AS (
+          INSERT INTO _smrt_changes_pending (
+            table_name, row_id, operation, tenant_id, created_at
+          )
+          SELECT
+            input.value->>'table',
+            input.value->>'rowId',
+            input.value->>'operation',
+            ${postgresTenantIdAs('_smrt_changes_pending', "input.value->>'tenantId'")},
+            (input.value->>'timestamp')::TIMESTAMPTZ
+          FROM input
+          ORDER BY input.entry_index
+          RETURNING 1
+        )
+        SELECT input.entry_index, NULL::BIGINT, NULL::TEXT, v_note
+        FROM input
+        ORDER BY input.entry_index;`,
+  staged: 'RETURN;',
+})}
     RETURN QUERY SELECT NULL::INTEGER, NULL::BIGINT, v_error_code, v_error_message;
   END;
 END;
