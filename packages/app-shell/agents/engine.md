@@ -199,8 +199,14 @@ for the one operation on the host thread; a PGlite uses the host's client).
   `expectFence` under those locks (a host that lost ownership changes nothing)
   and, in the same transaction as the rename, writes the new live data's
   generation (old + 1); the host adopts it for the workers it starts next. A
-  swap that undoes this host's own swap (abort, failed restore) passes no
-  expectation. After the swap commits, the aside's table, sequence and schema
+  swap that undoes this host's own swap (abort, failed restore) checks too: it
+  expects the generation its own swap produced (the held one, or held + 1 when
+  the swap committed but its reply was lost: the abort and the restore ask the
+  catalog for the aside, not their flag), so it cannot swap over a newer owner.
+  Dropping a draft's schema (`discard`, `discardIfEmpty`) passes the draft
+  host's generation to `dropSchema`, which compares it under an exclusive lock
+  on `_app_meta` in the drop's own transaction (`discardOrphanDraft`, for a
+  directory no host holds, has none to pass). After the swap commits, the aside's table, sequence and schema
   privileges are revoked from PUBLIC and the connected role in a transaction of
   its own (`revokeSchema`) before it is dropped, so a stale plan fails with
   permission denied; the revoke runs only on a schema that will never be
@@ -209,10 +215,16 @@ for the one operation on the host thread; a PGlite uses the host's client).
   `StaleFenceError`; a caller must reopen the app, never retry the call.
   Two hosts on one app: on a server the advisory claim refuses the second; where
   nothing claims (PGlite) the later opener owns and the earlier one's every
-  call fails stale. The version store (the shell's own database) is not
-  covered by the fence. SQLite keeps its writer lease and has no generation
-  (`fence` is `undefined`). Tested in `postgres-drafts.test.ts` ("ownership
-  fencing").
+  call fails stale. The version store (the shell's own database, a different
+  one from the app's) is written only while the generation is held
+  (`holdOwnership`: the fence row read `FOR SHARE` in a transaction that lasts
+  through the store write, for publish, every definition change and undo). A
+  new owner's start advances the row first thing, which waits for that
+  transaction: either it advanced first and the stale host's write fails, or
+  the write finishes first and the new owner's recovery reads the store with
+  the version in it. There is no gap between the check and the write. SQLite
+  keeps its writer lease and has no generation (`fence` is `undefined`). Tested
+  in `postgres-drafts.test.ts` ("ownership fencing").
 - **Fork** (a draft, a publish rehearsal): a live schema beside the app's, in one transaction (a
   failure leaves none). `forkDraft` writes the name in the draft marker
   (`schema`, `liveSchema`); `AppHost.open` on that directory takes the live app's database

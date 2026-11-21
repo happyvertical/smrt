@@ -590,6 +590,55 @@ export async function acquireOwnership(
   });
 }
 
+/** Exclusive lock on the fence's table: waits for every transaction that checked it (they hold it shared). */
+async function lockFence(tx: SqlRunner, schema: string) {
+  const has = asRows(
+    await tx.query(
+      `SELECT to_regclass(${lit(`${qi(schema)}._app_meta`)}) IS NOT NULL AS has`,
+    ),
+  )[0];
+  if (has?.has)
+    await tx.query(
+      `LOCK TABLE ${qi(schema)}._app_meta IN ACCESS EXCLUSIVE MODE`,
+    );
+}
+
+/**
+ * Run `work` while holding the app's generation: the fence row is read
+ * `FOR SHARE` (so another host's start, which advances it, waits until this
+ * transaction ends) and compared with `expect`; `work` runs, and the
+ * transaction ends after it. For a write to something outside the app's
+ * database (the version store) that must not happen after ownership moved:
+ * either the other host advanced first and this fails, or this finishes first
+ * and the other host starts after it. No gap between the check and the write.
+ */
+export async function holdOwnership<T>(
+  db: SqlDatabase,
+  schema: string,
+  expect: number,
+  work: () => Promise<T>,
+  lockTimeoutMs = DEFAULT_LOCK_TIMEOUT_MS,
+): Promise<T> {
+  assertSchemaName(schema);
+  return db.transaction(async (tx: SqlRunner) => {
+    await tx.query(
+      `SELECT set_config('lock_timeout', ${lit(`${Math.floor(lockTimeoutMs)}ms`)}, true)`,
+    );
+    const row = asRows(
+      await tx.query(
+        `SELECT value FROM ${qi(schema)}._app_meta WHERE key = ${lit(FENCE_KEY)} FOR SHARE`,
+      ),
+    )[0];
+    const held = row ? Number(row.value) : null;
+    if (held !== expect)
+      throw new StaleFenceError(
+        `this host no longer owns the app in schema ${schema} (it holds generation ${expect}, the database is at ${held ?? 'none'}); nothing was recorded`,
+        { schema, expected: expect, actual: held },
+      );
+    return work();
+  });
+}
+
 /** The generation stored in `schema`, or null when it has none (an app no host owns yet). */
 async function readFence(
   tx: SqlRunner,
@@ -685,6 +734,12 @@ export async function dropSchema(
   schema: string,
   lockTimeoutMs = DEFAULT_LOCK_TIMEOUT_MS,
   owner?: string,
+  /**
+   * The ownership generation the caller holds on `schema` (a draft's own
+   * schema). Checked under an exclusive lock on its `_app_meta`, in the same
+   * transaction as the drop: a caller that lost ownership drops nothing.
+   */
+  expectFence?: number,
 ) {
   assertSchemaName(schema);
   await db.transaction(async (tx: SqlRunner) => {
@@ -693,6 +748,15 @@ export async function dropSchema(
     );
     if (owner && (await schemaExists(tx, schema)))
       await assertClaimed(tx, schema, owner);
+    if (expectFence !== undefined && (await schemaExists(tx, schema))) {
+      await lockFence(tx, schema);
+      const held = await readFence(tx, schema);
+      if (held !== expectFence)
+        throw new StaleFenceError(
+          `this host no longer owns ${schema} (it holds generation ${expectFence}, the database is at ${held ?? 'none'}); nothing was dropped`,
+          { schema, expected: expectFence, actual: held },
+        );
+    }
     await tx.query(`DROP SCHEMA IF EXISTS ${qi(schema)} CASCADE`);
   });
 }

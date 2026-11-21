@@ -43,6 +43,7 @@ import {
   DEFAULT_LOCK_TIMEOUT_MS,
   dropSchema,
   forkSchema,
+  holdOwnership,
   listSideSchemas,
   readDumpHeader,
   restoreDump,
@@ -604,6 +605,26 @@ export class AppHost extends EventEmitter {
    * Swap to `next`, then persist. If persisting fails the app is put back
    * where the store still says it is.
    */
+  /**
+   * Run a write to the version store (a different database from the app's)
+   * while this host's generation is held, so a host that lost ownership cannot
+   * record a version after the new owner started (its recovery would then read
+   * a store that disagrees with the data). SQLite: no generation, just runs.
+   */
+  private underOwnership<T>(work: () => Promise<T>): Promise<T> {
+    const fence = this.fence;
+    if (fence === undefined) return work();
+    return withSchemaAdmin(this.database, (db) =>
+      holdOwnership(
+        db,
+        schemaOf(this.database),
+        fence,
+        work,
+        this.lockTimeoutMs,
+      ),
+    );
+  }
+
   private async transition(
     next: AppDefinition,
     nextVersion: number,
@@ -612,7 +633,7 @@ export class AppHost extends EventEmitter {
   ) {
     const swapped = await this.swap(next, nextVersion, migration);
     try {
-      await persist();
+      await this.underOwnership(persist);
     } catch (e) {
       const back: Migration | undefined = migration?.steps.length
         ? {
@@ -1967,9 +1988,13 @@ export class AppHost extends EventEmitter {
   }
 
   /** Drop a side schema; a failure is left for the next start's cleanup unless `strict`. */
-  private async dropSideSchema(schema: string, strict = false) {
+  private async dropSideSchema(
+    schema: string,
+    strict = false,
+    expectFence?: number,
+  ) {
     try {
-      await this.dropSideSchemaOrThrow(schema);
+      await this.dropSideSchemaOrThrow(schema, expectFence);
     } catch (e) {
       if (strict) throw e;
     }
@@ -1980,7 +2005,7 @@ export class AppHost extends EventEmitter {
     return schemaOf(this.database);
   }
 
-  private dropSideSchemaOrThrow(schema: string) {
+  private dropSideSchemaOrThrow(schema: string, expectFence?: number) {
     // A draft drops its own schema, which its LIVE app owns.
     const owner =
       this.draft?.schema === schema && this.draft.liveSchema
@@ -1992,7 +2017,7 @@ export class AppHost extends EventEmitter {
         'refused',
       );
     return withSchemaAdmin(this.database, (db) =>
-      dropSchema(db, schema, this.lockTimeoutMs, owner),
+      dropSchema(db, schema, this.lockTimeoutMs, owner, expectFence),
     );
   }
 
@@ -2138,7 +2163,14 @@ export class AppHost extends EventEmitter {
           await this.app.ready;
         } catch (e) {
           await this.app.terminate().catch(() => {});
-          if (swapped) await this.swapSchemasIn(aside, side);
+          // Ask the catalog, not the flag: a swap that committed with its reply
+          // lost left the aside behind and the data replaced.
+          const there =
+            swapped ||
+            (await withSchemaAdmin(this.database, (db) =>
+              db.transaction((tx) => schemaExists(tx, aside)),
+            ));
+          if (there) await this.swapSchemasIn(aside, side, !swapped);
           this.app = this.spawn(this.def, this.version);
           await this.app.ready.catch(() => {});
           throw e;
@@ -2272,7 +2304,8 @@ export class AppHost extends EventEmitter {
       throw new EngineError('only a draft can be discarded', 'refused');
     await this.close();
     // Its schema first: if that fails the marker is still there to retry.
-    if (this.draft.schema) await this.dropSideSchema(this.draft.schema, true);
+    if (this.draft.schema)
+      await this.dropSideSchema(this.draft.schema, true, this.fence);
     removeDraftDirectory(this.dataDir, true);
   }
 
@@ -2294,7 +2327,8 @@ export class AppHost extends EventEmitter {
       await this.drainInflight();
       this.closed = true;
       await this.app.terminate();
-      if (draft.schema) await this.dropSideSchema(draft.schema, true);
+      if (draft.schema)
+        await this.dropSideSchema(draft.schema, true, this.fence);
       removeDraftDirectory(this.dataDir, true);
       return true;
     });
@@ -2737,19 +2771,21 @@ export class AppHost extends EventEmitter {
       await next.ready;
       await stage('respawned');
       const stamp = now();
-      await this.persistVersions(
-        chain.versions.map((rec, i) => ({
-          version: numbers[i],
-          parent: i === 0 ? oldVersion : numbers[i - 1],
-          author: rec.author,
-          summary: `${tag}${rec.summary}`,
-          definition: structuredClone(rec.definition),
-          migration: rec.migration?.steps.length
-            ? { steps: structuredClone(rec.migration.steps) }
-            : null,
-          createdAt: stamp,
-        })),
-        finalNumber,
+      await this.underOwnership(() =>
+        this.persistVersions(
+          chain.versions.map((rec, i) => ({
+            version: numbers[i],
+            parent: i === 0 ? oldVersion : numbers[i - 1],
+            author: rec.author,
+            summary: `${tag}${rec.summary}`,
+            definition: structuredClone(rec.definition),
+            migration: rec.migration?.steps.length
+              ? { steps: structuredClone(rec.migration.steps) }
+              : null,
+            createdAt: stamp,
+          })),
+          finalNumber,
+        ),
       );
     } catch (e) {
       await this.abortPublish(

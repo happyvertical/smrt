@@ -1866,41 +1866,146 @@ describe.each(
       expect(await titles(b)).toEqual(['Bins', 'Dishes', 'Garage', 'B'].sort());
     });
 
-    it.skipIf(backend === 'postgres')(
-      'a publish rollback by a host that lost ownership after the swap changes nothing',
-      async () => {
-        const live = await seeded('fence_abort');
-        const { draft } = await fork(live);
-        await run(draft, {
-          type: 'addField',
-          model: 'Chore',
-          field: 'done',
-          definition: { type: 'boolean' },
-        });
-        live.host.setFrozen(true);
-        const preview = await live.host.previewPublish(draft);
-        const before = live.host.fence as number;
-        await expect(
-          live.host.publishDraft(draft, {
-            ...OK,
-            expect: preview.digest,
-            onStage: async (stage) => {
-              if (stage !== 'swapped') return;
-              // Another host takes ownership (the first thing its start does,
-              // before its sweep), then this publish fails.
-              await withSchemaAdmin(config(live.schema), (db) =>
-                acquireOwnership(db, live.schema),
-              );
-              throw new Error('boom after the swap');
-            },
-          }),
-        ).rejects.toThrow(
-          /boom after the swap|putting the old data back failed/,
-        );
-        // The newer owner's generation is untouched: the rollback did not swap.
-        expect(await fenceIn(live.schema)).toBe(before + 2);
-      },
-    );
+    it('a publish rollback by a host that lost ownership after the swap changes nothing', async () => {
+      const live = await seeded('fence_abort');
+      const { draft } = await fork(live);
+      await run(draft, {
+        type: 'addField',
+        model: 'Chore',
+        field: 'done',
+        definition: { type: 'boolean' },
+      });
+      live.host.setFrozen(true);
+      const preview = await live.host.previewPublish(draft);
+      const before = live.host.fence as number;
+      await expect(
+        live.host.publishDraft(draft, {
+          ...OK,
+          expect: preview.digest,
+          onStage: async (stage) => {
+            if (stage !== 'swapped') return;
+            // Another host takes ownership (the first thing its start does,
+            // before its sweep), then this publish fails.
+            await withSchemaAdmin(config(live.schema), (db) =>
+              acquireOwnership(db, live.schema),
+            );
+            throw new Error('boom after the swap');
+          },
+        }),
+      ).rejects.toThrow(/boom after the swap|putting the old data back failed/);
+      // The newer owner's generation is untouched: the rollback did not swap.
+      expect(await fenceIn(live.schema)).toBe(before + 2);
+    });
+
+    /** Make the next forward swap commit but lose its reply: the host never adopts the new generation. */
+    const loseNextSwapReply = (host: AppHost) => {
+      const h = host as any;
+      const orig = h.swapSchemasIn.bind(h);
+      let first = true;
+      h.swapSchemasIn = async (...args: unknown[]) => {
+        if (!first) return orig(...args);
+        first = false;
+        const before = h.database;
+        await orig(...args);
+        h.database = before;
+        throw new Error('reply lost');
+      };
+    };
+
+    it('a publish whose swap committed but whose reply was lost rolls back and keeps ownership', async () => {
+      const live = await seeded('fence_lost');
+      const { draft } = await fork(live);
+      await run(draft, {
+        type: 'addField',
+        model: 'Chore',
+        field: 'done',
+        definition: { type: 'boolean' },
+      });
+      live.host.setFrozen(true);
+      const preview = await live.host.previewPublish(draft);
+      const base = live.host.version;
+      const before = live.host.fence as number;
+      loseNextSwapReply(live.host);
+      await expect(
+        live.host.publishDraft(draft, { ...OK, expect: preview.digest }),
+      ).rejects.toThrow(/reply lost/);
+      expect(live.host.version).toBe(base);
+      expect(await live.store.current()).toBe(base);
+      expect(await fenceIn(live.schema)).toBe(before + 2);
+      expect(live.host.fence).toBe(before + 2);
+      live.host.setFrozen(false);
+      await live.host.create('Chore', { title: 'Still ours', points: 1 });
+      expect(await sideSchemas(live.schema)).toHaveLength(1); // the draft's
+    });
+
+    it('a restore whose swap committed but whose reply was lost rolls back and keeps ownership', async () => {
+      const live = await seeded('fence_lost_restore');
+      const file = join(
+        live.dir,
+        'snapshots',
+        `${Date.now()}-0-method-test.pgdump`,
+      );
+      await withSchemaAdmin(config(live.schema), (db) =>
+        dumpSchema(db, live.schema, file),
+      );
+      await live.host.create('Chore', { title: 'After', points: 1 });
+      const before = live.host.fence as number;
+      loseNextSwapReply(live.host);
+      await expect(
+        live.host.restoreSnapshot(file.split('/').pop() as string, OK),
+      ).rejects.toThrow(/reply lost/);
+      expect(await titles(live.host)).toContain('After'); // rolled back
+      expect(await fenceIn(live.schema)).toBe(before + 2);
+      expect(live.host.fence).toBe(before + 2);
+      await live.host.create('Chore', { title: 'Next', points: 2 });
+    });
+
+    it('a publish that lost ownership after its swap does not record the version', async () => {
+      const live = await seeded('fence_store');
+      const { draft } = await fork(live);
+      await run(draft, {
+        type: 'addField',
+        model: 'Chore',
+        field: 'done',
+        definition: { type: 'boolean' },
+      });
+      live.host.setFrozen(true);
+      const preview = await live.host.previewPublish(draft);
+      const base = live.host.version;
+      const before = live.host.fence as number;
+      await expect(
+        live.host.publishDraft(draft, {
+          ...OK,
+          expect: preview.digest,
+          onStage: async (stage) => {
+            if (stage !== 'respawned') return;
+            // Another host starts (its first act is to advance the generation).
+            await withSchemaAdmin(config(live.schema), (db) =>
+              acquireOwnership(db, live.schema),
+            );
+          },
+        }),
+      ).rejects.toThrow(/no longer owns|stale fence|putting the old data back/);
+      expect(await live.store.current()).toBe(base); // nothing recorded
+      expect(await live.store.maxVersion()).toBe(base);
+      expect(await fenceIn(live.schema)).toBe(before + 2);
+    });
+
+    it("a draft host that lost ownership cannot discard the new owner's draft", async () => {
+      const live = await seeded('fence_discard');
+      const { draft, store } = await fork(live);
+      const before = draft.fence as number;
+      const other = await AppHost.open(draft.dataDir, {
+        store,
+        database: config(live.schema),
+      });
+      hosts.push(other);
+      expect(other.fence).toBe(before + 1);
+      const err = await draft.discard().catch((e: any) => e);
+      expect(err).toBeInstanceOf(StaleFenceError);
+      expect(await sideSchemas(live.schema)).toHaveLength(1); // still there
+      expect(await titles(other)).toEqual(['Bins', 'Dishes', 'Garage']);
+    });
 
     it('a swap by a host that lost ownership changes nothing', async () => {
       const live = await seeded('fence_swap');
