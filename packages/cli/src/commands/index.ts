@@ -10,6 +10,7 @@ export { configExportCommand } from './config-export.js';
 export { cookbookCommands } from './cookbook.js';
 // Migration commands
 export { dbDiffCommand } from './db-diff.js';
+export { dbFeedGapsCommand } from './db-feed-gaps.js';
 export { dbGenerateCommand } from './db-generate.js';
 export { dbHistoryCommand } from './db-history.js';
 export { dbOrphansCommand } from './db-orphans.js';

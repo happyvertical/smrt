@@ -1837,6 +1837,29 @@ function systemTenantColumnKeys(): Set<string> {
 }
 
 /**
+ * Whether an unconverted, unreconciled gap marker (#5438) carries a tenant
+ * key that is not a UUID. Converted markers are evidence only and reconciled
+ * ones never convert, so neither holds the conversion back. False when the
+ * gap table does not exist.
+ */
+async function hasNonUuidGapMarkerKey(db: QueryExecutor): Promise<boolean> {
+  const { rows } = await db.query(
+    `SELECT to_regclass('public._smrt_change_gaps') IS NOT NULL AS present`,
+  );
+  const present = (rows[0] as Record<string, unknown> | undefined)?.present;
+  if (present !== true && present !== 't') return false;
+  const { rows: offending } = await db.query(
+    `SELECT 1 FROM public._smrt_change_gaps
+      WHERE converted_seq IS NULL
+        AND reconciled_at IS NULL
+        AND NULLIF(btrim(tenant_key), '') IS NOT NULL
+        AND btrim(tenant_key) !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+      LIMIT 1`,
+  );
+  return offending.length > 0;
+}
+
+/**
  * The system tenant columns convert together or not at all (#3297).
  *
  * They are linked by behaviour, not foreign keys: the drain moves
@@ -1874,6 +1897,12 @@ async function holdSystemTenantColumnsTogether<
     reason = `${blockedSystem.table}.${blockedSystem.column} is not convertible`;
   } else if (blockedTenant) {
     reason = `application tenant column ${blockedTenant.table}.${blockedTenant.column} is not convertible (non-UUID tenants are still in use)`;
+  } else if (await hasNonUuidGapMarkerKey(db)) {
+    // A marker still waiting for a feed position (#5438) is converted into
+    // a `_smrt_changes` row carrying its tenant key; once that column is
+    // uuid, a non-UUID key could never convert.
+    reason =
+      '_smrt_change_gaps.tenant_key holds a non-UUID tenant key on a gap marker that is not yet converted (inspect it with smrt db:feed-gaps status)';
   } else {
     const { rows } = await db.query(
       `SELECT data_type FROM information_schema.columns

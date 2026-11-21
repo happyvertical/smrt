@@ -205,6 +205,48 @@ describePostgres(
       }
     }, 60_000);
 
+    it('holds them back while a waiting gap marker carries a non-UUID tenant key (#5438)', async () => {
+      await query(
+        'UPDATE unrelated_things SET tenant_id = $1 WHERE tenant_id = $2',
+        tenant,
+        'legacy-tenant-slug',
+      );
+      // Evidence of a converted marker and a reconciled marker never convert
+      // again, so their keys do not block.
+      await query(
+        `INSERT INTO _smrt_change_gaps (table_name, tenant_key, created_at, converted_seq)
+         VALUES ('things', 'legacy-tenant-slug', now(), 1)`,
+      );
+      await query(
+        `INSERT INTO _smrt_change_gaps (table_name, tenant_key, created_at, reconciled_at)
+         VALUES ('things', 'legacy-tenant-slug', now(), now())`,
+      );
+      let output = await run({ 'dry-run': true });
+      expect(output).not.toContain('_smrt_change_gaps');
+
+      await query(
+        `INSERT INTO _smrt_change_gaps (table_name, tenant_key, created_at)
+         VALUES ('things', 'legacy-tenant-slug', now())`,
+      );
+      output = await run({ 'dry-run': true });
+      for (const table of SYSTEM) {
+        expect(output).toMatch(
+          new RegExp(
+            `SKIP ${table}\\.tenant_id: system tenant columns convert together; _smrt_change_gaps\\.tenant_key`,
+          ),
+        );
+      }
+
+      await query(
+        `UPDATE _smrt_change_gaps SET tenant_key = $1
+          WHERE converted_seq IS NULL AND reconciled_at IS NULL`,
+        tenant,
+      );
+      output = await run({ 'dry-run': true });
+      expect(output).not.toContain('_smrt_change_gaps');
+      await query('DELETE FROM _smrt_change_gaps');
+    }, 60_000);
+
     it('converts all system tenant columns together once clean, keeps every row, and is then a no-op', async () => {
       await query(
         'UPDATE unrelated_things SET tenant_id = $1 WHERE tenant_id = $2',

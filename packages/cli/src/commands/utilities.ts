@@ -52,6 +52,7 @@ import {
 } from './db-command-utils.js';
 import { dbDiffCommand } from './db-diff.js';
 import { dbDropFrameworkBaseTablesCommand } from './db-drop-framework-base-tables.js';
+import { dbFeedGapsCommand } from './db-feed-gaps.js';
 import { dbGenerateCommand } from './db-generate.js';
 import { dbHistoryCommand } from './db-history.js';
 import { dbMaterializeTenantHierarchyCommand } from './db-materialize-tenant-hierarchy.js';
@@ -4124,6 +4125,7 @@ export default testManifest;
   'db:materialize-tenant-hierarchy': dbMaterializeTenantHierarchyCommand,
   'users:provision-owner': usersProvisionOwnerCommand,
   'db:drop-framework-base-tables': dbDropFrameworkBaseTablesCommand,
+  'db:feed-gaps': dbFeedGapsCommand,
   'db:orphans': dbOrphansCommand,
   'db:prune': dbPruneCommand,
   'ai:usage': aiUsageCommand,
