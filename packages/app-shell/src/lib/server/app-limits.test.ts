@@ -3,7 +3,11 @@
 // passes none. SQLite, two tenants, no containers.
 import { afterEach, describe, expect, it } from 'vitest';
 import { App } from '../objects/App.ts';
-import { appLimitsFromEnv, workerLimitsFromEnv } from './app-limits-env.ts';
+import {
+  appLimitsFromEnv,
+  cloudLimitsFromEnv,
+  workerLimitsFromEnv,
+} from './app-limits-env.ts';
 import { type CloudHarness, openCloudShell } from './cloud-test-support.ts';
 import { startDraftWith } from './drafts.ts';
 import { getDraftSlot, getHost, hostMetrics, sweepIdleHosts } from './host.ts';
@@ -144,5 +148,41 @@ describe('workerLimitsFromEnv', () => {
       expect(() =>
         workerLimitsFromEnv({ SMRT_APP_SHELL_STATEMENT_TIMEOUT_MS: bad }),
       ).toThrow(/STATEMENT_TIMEOUT_MS/);
+  });
+});
+
+describe('strict numbers', () => {
+  it('rejects hex, exponent, padded and signed values', () => {
+    for (const bad of ['0x10', '1e3', ' 5 ', '+5', '5.0', '', ' '])
+      if (bad.trim() !== '')
+        expect(() =>
+          appLimitsFromEnv({ SMRT_APP_SHELL_MAX_ROWS: bad }),
+        ).toThrow(/SMRT_APP_SHELL_MAX_ROWS/);
+    expect(appLimitsFromEnv({ SMRT_APP_SHELL_MAX_ROWS: '0' })).toEqual({
+      maxRows: 0,
+    });
+  });
+});
+
+describe('cloudLimitsFromEnv', () => {
+  const env = {
+    SMRT_APP_SHELL_MAX_ROWS: 'bad',
+    SMRT_APP_SHELL_STATEMENT_TIMEOUT_MS: 'bad',
+  };
+  it('never parses on the desktop or before the profile is known', () => {
+    for (const p of ['local', null]) {
+      const l = cloudLimitsFromEnv(() => p, env);
+      expect(l.workerLimits).toBeUndefined();
+      expect(l.appLimits()).toBeUndefined();
+    }
+  });
+  it('reads both in cloud and refuses a bad value there', () => {
+    const l = cloudLimitsFromEnv(() => 'cloud', {
+      SMRT_APP_SHELL_MAX_ROWS: '7',
+      SMRT_APP_SHELL_STATEMENT_TIMEOUT_MS: '900',
+    });
+    expect(l.appLimits()).toEqual({ maxRows: 7 });
+    expect(l.workerLimits).toEqual({ statementTimeoutMs: 900 });
+    expect(() => cloudLimitsFromEnv(() => 'cloud', env).appLimits()).toThrow();
   });
 });

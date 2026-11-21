@@ -342,6 +342,23 @@ describe('changes waiting view', () => {
     expect(toast.success).not.toHaveBeenCalled();
   });
 
+  it('still shows the stale-digest line for a plain 409 that is not a cap', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValueOnce(json({ error: 'stale', code: 'refused' }, 409))
+        .mockResolvedValueOnce(json(changes())),
+    );
+    await render();
+    button('Apply 2 changes')?.click();
+    await vi.waitFor(() =>
+      expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+        'These changes were different when you last looked',
+      ),
+    );
+  });
+
   it('discards at once, then Put them back restores', async () => {
     const gone = noChanges({
       discarded: { batchId: 'b1', count: 2, generation: 4 },

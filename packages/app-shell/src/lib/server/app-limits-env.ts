@@ -13,8 +13,8 @@ const ENV_FIELDS = {
 } as const;
 
 function whole(name: string, raw: string, min: number): number {
-  const n = Number(raw);
-  if (!Number.isInteger(n) || n < min)
+  const n = /^\d+$/.test(raw) ? Number(raw) : Number.NaN;
+  if (!Number.isSafeInteger(n) || n < min)
     throw new Error(`${name} must be a whole number, ${min} or more`);
   return n;
 }
@@ -53,4 +53,33 @@ export function workerLimitsFromEnv(
   const raw = env[name];
   if (raw === undefined || raw === '') return undefined;
   return { statementTimeoutMs: whole(name, raw, 1) };
+}
+
+/**
+ * The env-derived pieces of a `ShellContext`, read only once the profile is
+ * `cloud` (#5503): on the desktop nothing is parsed, so a bad variable cannot
+ * stop it and no statement timeout reaches its hosts. A bad value in cloud
+ * throws on the first read (the first host open).
+ */
+export function cloudLimitsFromEnv(
+  profile: () => string | null,
+  env: Record<string, string | undefined> = process.env,
+): {
+  readonly workerLimits: WorkerLimits | undefined;
+  appLimits: () => AppLimits | undefined;
+} {
+  let app: { v: AppLimits | undefined } | null = null;
+  let worker: { v: WorkerLimits | undefined } | null = null;
+  return {
+    get workerLimits() {
+      if (profile() !== 'cloud') return undefined;
+      worker ??= { v: workerLimitsFromEnv(env) };
+      return worker.v;
+    },
+    appLimits() {
+      if (profile() !== 'cloud') return undefined;
+      app ??= { v: appLimitsFromEnv(env) };
+      return app.v;
+    },
+  };
 }

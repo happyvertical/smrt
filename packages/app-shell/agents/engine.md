@@ -568,7 +568,7 @@ There is no numeric plan entitlement yet (smrt-features flags are on/off), so
 `smrt.ts` sets one operator default for every tenant from the environment
 (`app-limits-env.ts`): `SMRT_APP_SHELL_MAX_MODELS`, `_MAX_ROWS`,
 `_MAX_ROWS_PER_MODEL`, `_MAX_METHOD_RUNS` (needs `_METHOD_RUN_PERIOD_MS`);
-none set means uncapped; a bad value refuses the start. A plan that grants
+none set means uncapped. Values are strict digits (`^\d+$`) and parsed lazily, only once the profile is cloud (`cloudLimitsFromEnv`), so a bad variable never stops the desktop; in cloud it refuses the first host open. A plan that grants
 numbers replaces that function. A refusal reaches the owner as a message
 naming the cap (`ApiError.code === 'app_limit'`, `isLimitRefusal`): record
 forms and the changes/import Apply show it as is, never the stale-digest line.
