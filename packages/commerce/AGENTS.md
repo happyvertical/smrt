@@ -37,6 +37,7 @@ See [historical issued sales](agents/historical-sales.md) for exact original sou
 money, immutable source children and combined historical/live customer funds.
 See [payment allocation integrity](agents/payment-allocations.md) for atomic splits,
 retry identity, parent corrections and supported dialects.
+See [settlement accounts](agents/settlement-accounts.md) for the default per-tenant ledger and chart that lets `recordPayment` settle payments.
 See [tax codes](agents/tax-codes.md) for tenant-owned rate components, default codes,
 and the standard codes every tenant gets.
 See [document money persistence](agents/document-money.md) for the one money
