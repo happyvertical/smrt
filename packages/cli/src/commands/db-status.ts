@@ -553,8 +553,10 @@ export const dbStatusCommand: CLICommand = {
 
       // 5. Get applied migrations
       const applied = await tracker.getAppliedMigrations();
-      // `error_message` is the driver's failure text, which can echo the
-      // connection string; scrub it before it feeds any JSON or human output.
+      // `error_message` is the tracker's closed failure reason (no driver
+      // text since #5425), but rows written before then may still hold the
+      // driver's text, which can echo the connection string; scrub it before
+      // it feeds any JSON or human output.
       const failed = (await tracker.getHistory({ status: 'failed' })).map(
         (row) =>
           row.error_message

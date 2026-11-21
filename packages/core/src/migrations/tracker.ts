@@ -35,14 +35,32 @@ import {
 import { toSafeBooleanInteger, toSafeInteger } from '../utils/safe-integer.js';
 import { computeChecksum, verifyChecksum } from './checksum.js';
 import {
+  attachCleanupFailure,
+  closedCauseText,
+  closeMigrationError,
+  type FailurePhase,
+  frameworkError,
+  type GeneratedStatement,
+  MigrationStatementFailure,
+  markFrameworkError,
+  runStatementClosed,
+  statementKindOf,
+} from './migration-failure.js';
+import {
   type CreateIndexStatement,
   classifyIndexStatement,
   type IndexStatementKind,
   quotePostgresIdentifier,
   readCreateIndexStatement,
 } from './postgres-create-index.js';
-import { asTableChangedSincePlan } from './rebuild-plan-guard.js';
-import { runRetireAwareStatement } from './retire-guard.js';
+import {
+  asTableChangedSincePlan,
+  TableChangedSincePlanError,
+} from './rebuild-plan-guard.js';
+import {
+  RetiredTableRowsAppearedError,
+  runRetireAwareStatement,
+} from './retire-guard.js';
 import { SQLITE_RELAX_REBUILD_MARKER } from './sqlite-rebuild.js';
 import type {
   ApplyMigrationsOptions,
@@ -52,6 +70,10 @@ import type {
 } from './types.js';
 
 const logger = createLogger({ level: 'info' });
+
+/** How `assertPostgresSystemTimestampsCurrent`'s own refusal begins. */
+const LEGACY_SYSTEM_TIMESTAMPS_REFUSAL =
+  'Legacy SMRT system timestamps remain (';
 
 /**
  * Row type for _smrt_schema_migrations table
@@ -167,10 +189,20 @@ function refuseIndexStatement(
   why: string,
   sql: string,
   before = 'anything ran',
+  ordinal: number | null = null,
 ): Error {
-  return new Error(
-    `${why}, so it was refused under --postgres-safe before ${before}; the migration stays retryable. Statement: ${sql}`,
+  return frameworkError(
+    `${why}, so it was refused under --postgres-safe before ${before}; the migration stays retryable. ${statementLabel(ordinal, sql)}`,
   );
+}
+
+/**
+ * Closed: a statement's authored position and fixed kind, never its text.
+ * Identifiers elsewhere in a message (index and table names) are schema
+ * names, not values, and are not withheld.
+ */
+function statementLabel(ordinal: number | null, sql: string): string {
+  return `Statement${ordinal === null ? '' : ` ${ordinal}`} kind: ${statementKindOf(sql)}`;
 }
 
 /**
@@ -180,19 +212,27 @@ function refuseIndexStatement(
  * on the whole planned list before anything runs, so a refusal can never
  * follow a drop that already committed.
  */
-function assertConcurrentCreatesCheckable(statements: string[]): void {
-  for (const sql of statements) {
+function assertConcurrentCreatesCheckable(
+  statements: string[],
+  positions: AuthoredPosition[] = positionsOf(statements),
+): void {
+  for (const [position, sql] of statements.entries()) {
+    const { ordinal } = statementAt(positions[position]);
     if (classifyIndexStatement(sql).kind !== 'create-index') continue;
     const reading = readCreateIndexStatement(sql);
     if (reading.kind !== 'create-index')
       throw refuseIndexStatement(
         `The CREATE INDEX statement could not be read with certainty (${reading.kind === 'unreadable' ? reading.reason : 'not a CREATE INDEX'})`,
         sql,
+        undefined,
+        ordinal,
       );
     if (reading.statement.name === null)
       throw refuseIndexStatement(
         'The CREATE INDEX statement names no index, and a retry could not find the index an interrupted run built (it would build another); name the index',
         sql,
+        undefined,
+        ordinal,
       );
   }
 }
@@ -225,9 +265,94 @@ class ConcurrentIndexRefusal extends Error {
     readonly migrationName: string,
     message: string,
     options?: { cause?: unknown },
+    /** The closed failure of the check, when a database read failed. */
+    readonly failure: MigrationStatementFailure | null = null,
   ) {
     super(message, options);
   }
+}
+
+/**
+ * What a refusal is reported as: the closed failure of the check, named for
+ * its migration, or the refusal's own framework text with the migration.
+ */
+function refusalFailure(refusal: ConcurrentIndexRefusal): Error {
+  if (refusal.failure)
+    return refusal.migrationName
+      ? refusal.failure.bindMigration(refusal.migrationName)
+      : refusal.failure;
+  return frameworkError(
+    refusal.migrationName
+      ? `Migration ${refusal.migrationName}: ${refusal.message}`
+      : refusal.message,
+  );
+}
+
+/**
+ * Where a planned statement came from: its 0-based index in the migration's
+ * `up` (the authored order), and, for a statement the planner synthesised,
+ * what it is. A failure reports this index, never the position in a planned
+ * sublist.
+ */
+interface AuthoredPosition {
+  index: number;
+  generated?: GeneratedStatement;
+}
+
+/**
+ * The authored positions of planned statement lists, carried beside the
+ * lists so the exported planning functions keep returning plain `string[]`.
+ * A list without an entry is in authored order.
+ */
+const authoredPositions = new WeakMap<readonly string[], AuthoredPosition[]>();
+
+function positionsOf(list: readonly string[]): AuthoredPosition[] {
+  return authoredPositions.get(list) ?? list.map((_, index) => ({ index }));
+}
+
+function withPositions<T extends readonly string[]>(
+  list: T,
+  positions: AuthoredPosition[],
+): T {
+  authoredPositions.set(list, positions);
+  return list;
+}
+
+/** What a closed failure names for `position`: its 1-based ordinal and origin. */
+function statementAt(position: AuthoredPosition | undefined): {
+  ordinal: number | null;
+  generated: GeneratedStatement | null;
+} {
+  return position
+    ? { ordinal: position.index + 1, generated: position.generated ?? null }
+    : { ordinal: null, generated: null };
+}
+
+/**
+ * `error` when the executor raised it, otherwise a closed failure in
+ * `phase` (see {@link closeMigrationError}). The default is closed.
+ */
+function closeFailure(error: unknown, phase: FailurePhase): Error {
+  if (error instanceof ConcurrentIndexRefusal) return error.failure ?? error;
+  if (
+    error instanceof AtomicMigrationRollback ||
+    error instanceof TableChangedSincePlanError ||
+    error instanceof RetiredTableRowsAppearedError
+  )
+    return error;
+  return closeMigrationError(error, phase);
+}
+
+/** {@link closeFailure}, naming `migrationId` on a closed failure. */
+function closeFailureOf(
+  error: unknown,
+  phase: FailurePhase,
+  migrationId: string,
+): Error {
+  const closed = closeFailure(error, phase);
+  return closed instanceof MigrationStatementFailure
+    ? closed.bindMigration(migrationId)
+    : closed;
 }
 
 /** `sql` with ` CONCURRENTLY` after its `INDEX` keyword, when it has none. */
@@ -415,6 +540,8 @@ export class MigrationTracker {
    * `CONCURRENTLY` DDL has run. `null` on every ordinary path.
    */
   private concurrentIndexPlan: ConcurrentIndexPlan | null = null;
+  /** Set while a failed rebuild left foreign key enforcement unrestored. */
+  private sqliteForeignKeysToRestore: number | null = null;
 
   constructor(options: MigrationTrackerOptions) {
     this.db = options.db;
@@ -461,9 +588,11 @@ export class MigrationTracker {
    */
   async initialize(): Promise<void> {
     if (!this.initializePromise) {
+      // Closed like every other executor failure: `db:migrate` calls this
+      // directly, outside `apply`/`applyAll`.
       this.initializePromise = this.runInitializeDdl().catch((error) => {
         this.initializePromise = null;
-        throw error;
+        throw closeFailure(error, 'unknown');
       });
     }
     return this.initializePromise;
@@ -483,7 +612,19 @@ export class MigrationTracker {
       await this.db.query(statement);
     }
 
-    await assertPostgresSystemTimestampsCurrent(this.db, this.engineHint);
+    try {
+      await assertPostgresSystemTimestampsCurrent(this.db, this.engineHint);
+    } catch (error) {
+      // Its own refusal is framework text (it names system columns, which are
+      // identifiers) and keeps its message; a failed catalog read is closed
+      // by `initialize`.
+      if (
+        error instanceof Error &&
+        error.message.startsWith(LEGACY_SYSTEM_TIMESTAMPS_REFUSAL)
+      )
+        throw markFrameworkError(error);
+      throw error;
+    }
   }
 
   /**
@@ -576,27 +717,23 @@ export class MigrationTracker {
     }
     if (!lists.some((list) => !list.runsFirst && list.statements.length > 0))
       return;
-    const session = await this.acquireMigrationSession();
     try {
-      await session.query(
-        `SET lock_timeout = '${formatPostgresTimeout(this.options.lockTimeout)}'`,
-      );
-      await session.query(
-        `SET statement_timeout = '${formatPostgresTimeout(this.options.statementTimeout)}'`,
-      );
-      await this.preflightConcurrentCreates(
-        session,
-        lists,
-        'any migration of the batch ran',
-      );
+      await this.withMigrationSession(async (session) => {
+        await session.query(
+          `SET lock_timeout = '${formatPostgresTimeout(this.options.lockTimeout)}'`,
+        );
+        await session.query(
+          `SET statement_timeout = '${formatPostgresTimeout(this.options.statementTimeout)}'`,
+        );
+        await this.preflightConcurrentCreates(
+          session,
+          lists,
+          'any migration of the batch ran',
+        );
+      });
     } catch (error) {
-      if (error instanceof ConcurrentIndexRefusal)
-        throw new Error(`Migration ${error.migrationName}: ${error.message}`, {
-          cause: error,
-        });
-      throw error;
-    } finally {
-      await session.release();
+      if (error instanceof ConcurrentIndexRefusal) throw refusalFailure(error);
+      throw closeFailure(error, 'index-check');
     }
   }
 
@@ -721,12 +858,27 @@ export class MigrationTracker {
   }
 
   /**
-   * Apply a single migration
+   * Apply a single migration. A failure of the tracker's own bookkeeping
+   * (initialization, the history read, the batch number, the `running` row)
+   * is thrown closed; no failed row is written for it, because the row may
+   * not exist.
    */
   async apply(
     definition: MigrationDefinition,
     options: ApplyMigrationsOptions = {},
   ): Promise<MigrationResult> {
+    try {
+      return await this.applyOne(definition, options);
+    } catch (error) {
+      throw closeFailureOf(error, 'unknown', definition.id);
+    }
+  }
+
+  private async applyOne(
+    definition: MigrationDefinition,
+    options: ApplyMigrationsOptions,
+  ): Promise<MigrationResult> {
+    await this.assertSqliteForeignKeysRestored();
     await this.initialize();
     const startTime = Date.now();
     const checksum = computeChecksum(definition.up);
@@ -776,7 +928,9 @@ export class MigrationTracker {
               name: definition.id,
               checksum,
               execution_time_ms: 0,
-              error: `Migration ${definition.id} previously failed: ${existing.error_message || 'Unknown error'}. Use --force-migration ${definition.id} to retry only this migration, or --force to retry the whole batch.`,
+              // Fixed text only: the stored `error_message` is not repeated
+              // (rows written before closed reasons can hold driver text).
+              error: `Migration ${definition.id} previously failed; its recorded failure is in the migration history (smrt db:history). Use --force-migration ${definition.id} to retry only this migration, or --force to retry the whole batch.`,
             };
           }
           // Will retry below
@@ -881,6 +1035,7 @@ export class MigrationTracker {
       await this.executeStatements(
         phase1AlreadyCommitted ? [] : split ? split.regular : definition.up,
         options,
+        definition.id,
       );
 
       const executionTime = Date.now() - startTime;
@@ -933,10 +1088,14 @@ export class MigrationTracker {
         execution_time_ms: executionTime,
       };
     } catch (error) {
-      // A rebuild that found its table changed since the plan stops by name.
+      // Closed first: only an error the executor raised itself keeps its
+      // message. A rebuild that found its table changed since the plan (its
+      // guard's own failure, framework text) then stops by name.
+      const closed = closeFailureOf(error, 'unknown', definition.id);
       const migrationError =
-        asTableChangedSincePlan(error) ??
-        (error instanceof Error ? error : new Error(String(error)));
+        closed instanceof MigrationStatementFailure
+          ? closed
+          : (asTableChangedSincePlan(closed) ?? closed);
 
       // Mark as failed. In an outer atomic Postgres transaction, a DDL error
       // aborts the transaction and this status write must be skipped so the
@@ -952,12 +1111,8 @@ export class MigrationTracker {
       } catch (persistError) {
         // Preserve the migration failure; status persistence is secondary and
         // may be impossible until the surrounding transaction rolls back.
-        const persistMessage =
-          persistError instanceof Error
-            ? persistError.message
-            : String(persistError);
         logger.error(
-          `Failed to persist failed status for migration ${definition.id}: ${persistMessage}`,
+          `Failed to persist failed status for migration ${definition.id} (${closedCauseText(persistError)})`,
         );
       }
 
@@ -995,6 +1150,22 @@ export class MigrationTracker {
     definitions: MigrationDefinition[],
     options: ApplyMigrationsOptions = {},
   ): Promise<MigrationResult[]> {
+    try {
+      return await this.applyBatch(definitions, options);
+    } catch (error) {
+      // Closed at the public boundary: bookkeeping, session and connection
+      // setup and cleanup fail here, not only statements.
+      throw definitions.length === 1
+        ? closeFailureOf(error, 'unknown', definitions[0].id)
+        : closeFailure(error, 'unknown');
+    }
+  }
+
+  private async applyBatch(
+    definitions: MigrationDefinition[],
+    options: ApplyMigrationsOptions,
+  ): Promise<MigrationResult[]> {
+    await this.assertSqliteForeignKeysRestored();
     if (
       !options.dryRun &&
       this.needsSqliteRebuildSafety(definitions.flatMap((d) => d.up))
@@ -1005,7 +1176,7 @@ export class MigrationTracker {
     }
     if (options.atomic && !options.dryRun) {
       if (!this.db.transaction) {
-        throw new Error(
+        throw frameworkError(
           'Atomic migration batches require a database adapter with transaction support.',
         );
       }
@@ -1028,7 +1199,7 @@ export class MigrationTracker {
         await this.checkDefinitionsToRun(definitions, options, (toRun) => {
           const concurrentStatement = findConcurrentIndexStatement(toRun);
           if (concurrentStatement) {
-            throw new Error(
+            throw frameworkError(
               `Atomic migration batch cannot include CONCURRENTLY index DDL in ${concurrentStatement.migrationName}; PostgreSQL forbids CONCURRENTLY inside a transaction. Re-run with PostgreSQL concurrent-index mode (smrt db:migrate --postgres-safe) to build those indexes outside the batch.`,
             );
           }
@@ -1038,7 +1209,7 @@ export class MigrationTracker {
       const deferred = plan && plan.size > 0 ? plan : null;
 
       try {
-        const committed = await this.db.transaction(async (tx) => {
+        const committed = await this.transactionClosed(this.db, async (tx) => {
           const txDb = {
             ...tx,
             transaction: async <T>(
@@ -1120,14 +1291,18 @@ export class MigrationTracker {
               applied: false,
               skipped: false,
               rolled_back: true,
-              error: new Error(
+              error: frameworkError(
                 `Rolled back because migration ${error.failed.name} failed`,
               ),
             };
           });
         }
 
-        throw error;
+        // A commit failure, or one of the concurrent phase's own reads, is
+        // closed here; it names the migration when the batch has one.
+        throw definitions.length === 1
+          ? closeFailureOf(error, 'unknown', definitions[0].id)
+          : closeFailure(error, 'unknown');
       }
     }
 
@@ -1179,9 +1354,8 @@ export class MigrationTracker {
     options: ApplyMigrationsOptions,
   ): Promise<MigrationResult[]> {
     const results = [...committed];
-    const session = await this.acquireMigrationSession();
 
-    try {
+    return this.withMigrationSession(async (session) => {
       await session.query(
         `SET lock_timeout = '${formatPostgresTimeout(this.options.lockTimeout)}'`,
       );
@@ -1225,20 +1399,26 @@ export class MigrationTracker {
         }
 
         if (refusal && result.name === refusal.migrationName) {
-          await this.recordConcurrentIndexFailure(result.name, refusal.message);
+          const reported = refusal.failure
+            ? refusal.failure.bindMigration(result.name)
+            : refusal;
+          await this.recordConcurrentIndexFailure(
+            result.name,
+            reported.message,
+          );
           results[index] = {
             ...result,
             success: false,
             applied: false,
             skipped: false,
-            error: refusal,
+            error: reported,
           };
           options.onProgress?.(results[index]);
           continue;
         }
 
         if (stoppedBy) {
-          const error = new Error(
+          const error = frameworkError(
             refusal
               ? `Not attempted: the concurrent index phase ran nothing because ${stoppedBy} was refused before it ran`
               : `Not attempted: concurrent index phase stopped after ${stoppedBy} failed`,
@@ -1283,8 +1463,11 @@ export class MigrationTracker {
             execution_time_ms: executionTime,
           };
         } catch (error) {
-          const indexError =
-            error instanceof Error ? error : new Error(String(error));
+          const indexError = closeFailureOf(
+            error,
+            'concurrent-index',
+            result.name,
+          );
           if (!options.continueOnError) {
             stoppedBy = result.name;
           }
@@ -1306,9 +1489,7 @@ export class MigrationTracker {
       }
 
       return results;
-    } finally {
-      await session.release();
-    }
+    });
   }
 
   /**
@@ -1377,9 +1558,7 @@ export class MigrationTracker {
       }
     } catch (error) {
       logger.warn(
-        `Could not read pg_index.indisvalid; skipping INVALID index repair: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
+        `Could not read pg_index.indisvalid; skipping INVALID index repair (${closedCauseText(error)})`,
       );
     }
 
@@ -1398,11 +1577,13 @@ export class MigrationTracker {
     statements: string[],
     invalidIndexes: Map<string, Set<string>>,
   ): Promise<void> {
+    const positions = positionsOf(statements);
     for (let index = 0; index < statements.length; index++) {
       const sql = statements[index];
+      const at = statementAt(positions[index]);
       const swap = readSwapClose(statements, index);
       if (swap) {
-        await this.closeUniqueIndexSwap(session, swap);
+        await this.closeUniqueIndexSwap(session, swap, at.ordinal);
         index += 1;
         continue;
       }
@@ -1411,12 +1592,18 @@ export class MigrationTracker {
         throw refuseIndexStatement(
           `The index statement could not be read with certainty (${kind.reason})`,
           sql,
+          undefined,
+          at.ordinal,
         );
       if (kind.kind !== 'create-index') {
-        await session.query(sql);
+        await runStatementClosed(() => session.query(sql), {
+          phase: 'concurrent-index',
+          ...at,
+          sql,
+        });
         continue;
       }
-      await this.runCreateIndex(session, sql, invalidIndexes);
+      await this.runCreateIndex(session, sql, invalidIndexes, at);
     }
   }
 
@@ -1439,31 +1626,51 @@ export class MigrationTracker {
     session: MigrationSession,
     sql: string,
     invalidIndexes: Map<string, Set<string>>,
+    at: { ordinal: number | null; generated: GeneratedStatement | null },
   ): Promise<void> {
+    const { ordinal } = at;
     const reading = readCreateIndexStatement(sql);
     if (reading.kind !== 'create-index')
-      throw new Error(
-        `The CREATE INDEX statement could not be read with certainty (${reading.kind === 'unreadable' ? reading.reason : 'not a CREATE INDEX'}), so it was not run; the migration stays retryable. Statement: ${sql}`,
+      throw frameworkError(
+        `The CREATE INDEX statement could not be read with certainty (${reading.kind === 'unreadable' ? reading.reason : 'not a CREATE INDEX'}), so it was not run; the migration stays retryable. ${statementLabel(ordinal, sql)}`,
       );
     const statement = reading.statement;
     if (statement.name === null)
       throw refuseIndexStatement(
         'The CREATE INDEX statement names no index, and a retry could not find the index an interrupted run built (it would build another); name the index',
         sql,
+        undefined,
+        ordinal,
       );
-    const failure = (why: string) =>
-      new Error(
-        `PostgreSQL index ${statement.name} on ${statement.relationSql} ${why}. Repair or drop that index, then rerun the migration.`,
-      );
+    // A failed catalog read is a closed failure (its SQLSTATE, phase and
+    // statement); a finding about the index is framework text.
+    const failure = (why: string, readFailure?: unknown) => {
+      const explanation = `PostgreSQL index ${statement.name} on ${statement.relationSql} ${why}. Repair or drop that index, then rerun the migration.`;
+      return readFailure === undefined
+        ? frameworkError(explanation)
+        : new MigrationStatementFailure(readFailure, {
+            phase: 'catalog-read',
+            ...at,
+            sql,
+            explanation,
+          });
+    };
     try {
       await this.explainStatementParts(session, statement);
     } catch (error) {
-      throw new Error(
-        `The CREATE INDEX statement's expressions or predicate cannot be checked against ${statement.relationSql} (${error instanceof Error ? error.message : String(error)}), so it was not run; the migration stays retryable. Statement: ${sql}`,
-        { cause: error },
-      );
+      throw new MigrationStatementFailure(error, {
+        phase: 'index-check',
+        ...at,
+        sql,
+        explanation: `its expressions or predicate cannot be checked against ${statement.relationSql}, so it was not run; the migration stays retryable`,
+      });
     }
-    await this.dropInvalidIndexBeforeCreate(session, statement, invalidIndexes);
+    await this.dropInvalidIndexBeforeCreate(
+      session,
+      statement,
+      invalidIndexes,
+      at,
+    );
 
     const before = await this.findNamedIndex(session, statement, failure);
     if (before?.valid) {
@@ -1477,7 +1684,11 @@ export class MigrationTracker {
       return;
     }
 
-    await session.query(sql);
+    await runStatementClosed(() => session.query(sql), {
+      phase: 'concurrent-index',
+      ...at,
+      sql,
+    });
 
     const after = await this.findNamedIndex(session, statement, failure);
     if (!after)
@@ -1498,7 +1709,7 @@ export class MigrationTracker {
   private async findNamedIndex(
     session: MigrationSession,
     statement: CreateIndexStatement,
-    failure: (why: string) => Error,
+    failure: (why: string, readFailure?: unknown) => Error,
   ): Promise<{ oid: unknown; valid: boolean } | null> {
     try {
       const result = await session.query(
@@ -1513,9 +1724,7 @@ export class MigrationTracker {
       const row = result.rows[0];
       return row ? { oid: row.index_oid, valid: isTrue(row.is_valid) } : null;
     } catch (error) {
-      throw failure(
-        `could not be confirmed (the catalog read failed: ${error instanceof Error ? error.message : String(error)})`,
-      );
+      throw failure('could not be confirmed (the catalog read failed)', error);
     }
   }
 
@@ -1523,14 +1732,12 @@ export class MigrationTracker {
     session: MigrationSession,
     statement: CreateIndexStatement,
     oid: unknown,
-    failure: (why: string) => Error,
+    failure: (why: string, readFailure?: unknown) => Error,
   ): Promise<boolean> {
     try {
       return await this.indexMatchesStatement(session, statement, oid);
     } catch (error) {
-      throw failure(
-        `could not be compared with its statement (${error instanceof Error ? error.message : String(error)})`,
-      );
+      throw failure('could not be compared with its statement', error);
     }
   }
 
@@ -1595,7 +1802,10 @@ export class MigrationTracker {
     // (last part of each name: a qualified drop is matched conservatively).
     const dropped = new Set<string>();
     for (const { migrationName, statements, runsFirst } of lists) {
-      for (const sql of statements) {
+      const positions = positionsOf(statements);
+      for (const [position, sql] of statements.entries()) {
+        const at = statementAt(positions[position]);
+        const { ordinal } = at;
         const kind = classifyIndexStatement(sql);
         if (kind.kind === 'drop-index') {
           for (const parts of kind.names) dropped.add(parts[parts.length - 1]);
@@ -1615,20 +1825,24 @@ export class MigrationTracker {
               'The CREATE INDEX statement could not be read with certainty or names no index',
               sql,
               before,
+              ordinal,
             ).message,
           );
         try {
           await this.explainStatementParts(session, reading.statement);
         } catch (error) {
           if (sawOther && !dropped.has(reading.statement.name)) continue;
+          const explanation = `its expressions or predicate cannot be checked against ${reading.statement.relationSql}, so it was refused under --postgres-safe before ${before}; the migration stays retryable`;
           throw new ConcurrentIndexRefusal(
             migrationName,
-            refuseIndexStatement(
-              `The CREATE INDEX statement's expressions or predicate cannot be checked against ${reading.statement.relationSql} (${error instanceof Error ? error.message : String(error)})`,
+            explanation,
+            undefined,
+            new MigrationStatementFailure(error, {
+              phase: 'index-check',
+              ...at,
               sql,
-              before,
-            ).message,
-            { cause: error },
+              explanation,
+            }),
           );
         }
       }
@@ -1762,6 +1976,7 @@ export class MigrationTracker {
   private async closeUniqueIndexSwap(
     session: MigrationSession,
     swap: { name: string; temporary: string; relationSql: string },
+    ordinal: number | null,
   ): Promise<void> {
     let schema: unknown;
     let holder: unknown;
@@ -1781,29 +1996,36 @@ export class MigrationTracker {
       schema = resolved.rows[0]?.schema_name;
       holder = resolved.rows[0]?.on_table;
     } catch (error) {
-      throw new Error(
-        `Could not resolve the table of the unique-index swap for ${swap.name}; nothing was dropped. Rerun the migration: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
-        { cause: error },
+      throw frameworkError(
+        `Could not resolve the table of the unique-index swap for ${swap.name}; nothing was dropped. Rerun the migration (${closedCauseText(error)})`,
       );
     }
     if (typeof schema !== 'string')
-      throw new Error(
+      throw frameworkError(
         `The table of the unique-index swap for ${swap.name} (${swap.relationSql}) does not resolve; nothing was dropped. Rerun the migration.`,
       );
     if (holder !== null && holder !== undefined && !isTrue(holder))
-      throw new Error(
+      throw frameworkError(
         `The index name ${swap.name} in schema ${schema} belongs to another table, so the unique-index swap on ${swap.relationSql} cannot take it; nothing was dropped. Rename or drop that index, then rerun the migration.`,
       );
     const qualify = (name: string) =>
       `${quotePostgresIdentifier(schema as string)}.${quotePostgresIdentifier(name)}`;
-    await session.query(
-      `DROP INDEX CONCURRENTLY IF EXISTS ${qualify(swap.name)}`,
-    );
-    await session.query(
-      `ALTER INDEX IF EXISTS ${qualify(swap.temporary)} RENAME TO ${quotePostgresIdentifier(swap.name)}`,
-    );
+    const drop = `DROP INDEX CONCURRENTLY IF EXISTS ${qualify(swap.name)}`;
+    // Both closing statements are synthesised; they report the authored
+    // position of the drop the swap replaced.
+    await runStatementClosed(() => session.query(drop), {
+      phase: 'concurrent-index',
+      ordinal,
+      generated: 'swap close',
+      sql: drop,
+    });
+    const rename = `ALTER INDEX IF EXISTS ${qualify(swap.temporary)} RENAME TO ${quotePostgresIdentifier(swap.name)}`;
+    await runStatementClosed(() => session.query(rename), {
+      phase: 'concurrent-index',
+      ordinal,
+      generated: 'swap close',
+      sql: rename,
+    });
   }
 
   /**
@@ -1823,6 +2045,7 @@ export class MigrationTracker {
     session: MigrationSession,
     statement: CreateIndexStatement,
     invalidIndexes: Map<string, Set<string>>,
+    at: { ordinal: number | null; generated: GeneratedStatement | null },
   ): Promise<void> {
     const { name: indexName, relationSql: table } = statement;
     const schemas = indexName ? invalidIndexes.get(indexName) : undefined;
@@ -1847,9 +2070,7 @@ export class MigrationTracker {
       schema = resolved.rows[0]?.schema_name;
     } catch (error) {
       logger.warn(
-        `Could not resolve the table of pending index ${indexName}; skipping INVALID index repair: ${
-          error instanceof Error ? error.message : String(error)
-        }`,
+        `Could not resolve the table of pending index ${indexName}; skipping INVALID index repair (${closedCauseText(error)})`,
       );
       return;
     }
@@ -1858,9 +2079,13 @@ export class MigrationTracker {
     logger.warn(
       `Rebuilding INVALID PostgreSQL index ${schema}.${indexName} left by a previous failed CREATE INDEX CONCURRENTLY`,
     );
-    await session.query(
-      `DROP INDEX CONCURRENTLY IF EXISTS ${quoteIndexName(schema)}.${quoteIndexName(indexName)}`,
-    );
+    const dropInvalid = `DROP INDEX CONCURRENTLY IF EXISTS ${quoteIndexName(schema)}.${quoteIndexName(indexName)}`;
+    // Reported at the position of the CREATE INDEX that needed the repair.
+    await runStatementClosed(() => session.query(dropInvalid), {
+      phase: 'concurrent-index',
+      ...at,
+      sql: dropInvalid,
+    });
     schemas.delete(schema);
   }
 
@@ -1895,11 +2120,7 @@ export class MigrationTracker {
       );
     } catch (persistError) {
       logger.error(
-        `Failed to persist failed status for migration ${name}: ${
-          persistError instanceof Error
-            ? persistError.message
-            : String(persistError)
-        }`,
+        `Failed to persist failed status for migration ${name} (${closedCauseText(persistError)})`,
       );
     }
   }
@@ -1912,6 +2133,19 @@ export class MigrationTracker {
     definition: MigrationDefinition,
     options: RollbackOptions = {},
   ): Promise<MigrationResult> {
+    try {
+      return await this.rollbackOne(name, definition, options);
+    } catch (error) {
+      throw closeFailureOf(error, 'unknown', name);
+    }
+  }
+
+  private async rollbackOne(
+    name: string,
+    definition: MigrationDefinition,
+    options: RollbackOptions,
+  ): Promise<MigrationResult> {
+    await this.assertSqliteForeignKeysRestored();
     await this.initialize();
     const startTime = Date.now();
     const checksum = computeChecksum(definition.down);
@@ -1923,7 +2157,7 @@ export class MigrationTracker {
         name,
         checksum,
         execution_time_ms: 0,
-        error: new Error(`Migration ${name} not found in database`),
+        error: frameworkError(`Migration ${name} not found in database`),
       };
     }
 
@@ -1933,7 +2167,7 @@ export class MigrationTracker {
         name,
         checksum,
         execution_time_ms: 0,
-        error: new Error(
+        error: frameworkError(
           `Migration ${name} is not in completed state (current: ${record.status})`,
         ),
       };
@@ -1945,7 +2179,7 @@ export class MigrationTracker {
         name,
         checksum,
         execution_time_ms: 0,
-        error: new Error(
+        error: frameworkError(
           `Migration ${name} is not reversible (no down statements)`,
         ),
       };
@@ -1963,7 +2197,7 @@ export class MigrationTracker {
 
     try {
       // Execute DOWN statements
-      await this.executeStatements(definition.down, {});
+      await this.executeStatements(definition.down, {}, name);
 
       // Mark as rolled back
       await this.db.query(
@@ -1986,7 +2220,7 @@ export class MigrationTracker {
         name,
         checksum,
         execution_time_ms: Date.now() - startTime,
-        error: error instanceof Error ? error : new Error(String(error)),
+        error: closeFailureOf(error, 'unknown', name),
         rolled_back: false,
       };
     }
@@ -2038,7 +2272,7 @@ export class MigrationTracker {
   ): Promise<void> {
     const result = await db.query('PRAGMA foreign_keys');
     if (Number(result.rows[0]?.foreign_keys) !== 0) {
-      throw new Error(
+      throw frameworkError(
         'SQLite rebuild requires an exclusive connection outside an active transaction; foreign key suspension failed',
       );
     }
@@ -2046,7 +2280,7 @@ export class MigrationTracker {
 
   private async checkSqliteForeignKeys(db: DatabaseInterface): Promise<void> {
     if ((await db.query('PRAGMA foreign_key_check')).rows.length > 0) {
-      throw new Error(
+      throw frameworkError(
         'SQLite rebuild foreign key validation failed; transaction rolled back',
       );
     }
@@ -2057,7 +2291,7 @@ export class MigrationTracker {
       (await this.db.query('PRAGMA foreign_keys')).rows[0]?.foreign_keys,
     );
     if (restored !== expected)
-      throw new Error(
+      throw frameworkError(
         'SQLite rebuild could not restore foreign key enforcement',
       );
   }
@@ -2065,7 +2299,7 @@ export class MigrationTracker {
   /** SQLite ignores FK changes inside a transaction. Verify on both connections. */
   private async withSqliteRebuildSafety<T>(work: () => Promise<T>): Promise<T> {
     if (!this.db.transaction)
-      throw new Error('SQLite rebuild requires transaction support');
+      throw frameworkError('SQLite rebuild requires transaction support');
     const foreignKeys = Number(
       (await this.db.query('PRAGMA foreign_keys')).rows[0]?.foreign_keys,
     );
@@ -2074,20 +2308,120 @@ export class MigrationTracker {
         ?.legacy_alter_table,
     );
     if (![0, 1].includes(foreignKeys) || ![0, 1].includes(legacy))
-      throw new Error('Cannot read SQLite rebuild connection settings');
+      throw frameworkError('Cannot read SQLite rebuild connection settings');
+    // Both settings are always restored. The first failure is the one the
+    // caller sees; a restore that fails after it is kept beside it, closed.
+    // If foreign key enforcement could not be verified as restored, this
+    // tracker refuses further work until it is (see
+    // {@link assertSqliteForeignKeysRestored}).
+    let failure: Error | null = null;
+    let result: T | undefined;
     try {
       await this.db.query(SQLITE_RELAX_REBUILD_MARKER);
       await this.assertSqliteForeignKeysSuspended(this.db);
       this.sqliteRebuildTransactionOwned = true;
-      return await work();
-    } finally {
-      this.sqliteRebuildTransactionOwned = false;
+      result = await work();
+    } catch (error) {
+      failure = closeFailure(error, 'unknown');
+    }
+    this.sqliteRebuildTransactionOwned = false;
+    const restore = async (step: () => Promise<unknown>): Promise<boolean> => {
       try {
-        await this.db.query(`PRAGMA legacy_alter_table = ${legacy}`);
-      } finally {
-        await this.db.query(`PRAGMA foreign_keys = ${foreignKeys}`);
-        await this.assertSqliteForeignKeySetting(foreignKeys);
+        await step();
+        return true;
+      } catch (error) {
+        const closed = closeFailure(error, 'unknown');
+        if (failure === null) failure = closed;
+        else {
+          attachCleanupFailure(failure, closed);
+          logger.warn(
+            `Could not restore a SQLite connection setting after a failed rebuild (${closedCauseText(error)})`,
+          );
+        }
+        return false;
       }
+    };
+    await restore(() => this.db.query(`PRAGMA legacy_alter_table = ${legacy}`));
+    const restored = await restore(async () => {
+      await this.db.query(`PRAGMA foreign_keys = ${foreignKeys}`);
+      await this.assertSqliteForeignKeySetting(foreignKeys);
+    });
+    this.sqliteForeignKeysToRestore = restored ? null : foreignKeys;
+    if (failure !== null) throw failure;
+    return result as T;
+  }
+
+  /**
+   * Refuse migration work on a connection whose foreign key enforcement a
+   * failed rebuild could not restore, until it reads back as restored: the
+   * next writer would otherwise commit rows no foreign key checks.
+   */
+  private async assertSqliteForeignKeysRestored(): Promise<void> {
+    const expected = this.sqliteForeignKeysToRestore;
+    if (expected === null) return;
+    const current = Number(
+      (await this.db.query('PRAGMA foreign_keys')).rows[0]?.foreign_keys,
+    );
+    if (current === expected) {
+      this.sqliteForeignKeysToRestore = null;
+      return;
+    }
+    throw frameworkError(
+      `SQLite foreign key enforcement was not restored after a failed table rebuild on this connection (PRAGMA foreign_keys should be ${expected}); restore it or reopen the connection before migrating again`,
+    );
+  }
+
+  /**
+   * Run `work` on a pinned session and release it. The first failure wins:
+   * a release that fails after `work` failed is logged closed and the
+   * work's failure is kept; a release that fails alone is thrown closed.
+   */
+  private async withMigrationSession<T>(
+    work: (session: MigrationSession) => Promise<T>,
+  ): Promise<T> {
+    const session = await this.acquireMigrationSession();
+    let failure: { error: unknown } | null = null;
+    let result: T | undefined;
+    try {
+      result = await work(session);
+    } catch (error) {
+      failure = { error };
+    }
+    try {
+      await session.release();
+    } catch (error) {
+      if (failure === null) failure = { error: closeFailure(error, 'unknown') };
+      else
+        logger.warn(
+          `Could not release the migration session after a failure (${closedCauseText(error)})`,
+        );
+    }
+    if (failure !== null) throw failure.error;
+    return result as T;
+  }
+
+  /**
+   * Run `body` in a transaction of `db`. A failure the executor did not
+   * raise itself is closed: one raised after `body` finished is the commit
+   * (a deferred constraint, a serialization failure), anything else the
+   * transaction's own statements (`BEGIN`, `SET LOCAL`, `ROLLBACK`).
+   */
+  private async transactionClosed<T>(
+    db: DatabaseInterface,
+    body: (tx: DatabaseInterface) => Promise<T>,
+  ): Promise<T> {
+    const transaction = db.transaction;
+    if (!transaction)
+      throw frameworkError('The database adapter has no transaction support');
+    let bodyFinished = false;
+    try {
+      return (await transaction.call(db, async (tx: DatabaseInterface) => {
+        const value = await body(tx);
+        bodyFinished = true;
+        return value;
+      })) as T;
+    } catch (error) {
+      throw closeFailure(error, bodyFinished ? 'commit' : 'unknown');
     }
   }
 
@@ -2097,9 +2431,10 @@ export class MigrationTracker {
   private async executeStatements(
     statements: string[],
     options: ApplyMigrationsOptions,
+    migrationId: string,
   ): Promise<void> {
     if (this.dbEngine === 'postgres' && options.postgresSafe) {
-      await this.executePostgresStatements(statements);
+      await this.executePostgresStatements(statements, migrationId);
     } else {
       await this.executeWithTransaction(statements);
     }
@@ -2114,16 +2449,26 @@ export class MigrationTracker {
         this.executeWithTransaction(statements),
       );
     }
-    statements = statements.filter(
-      (sql) => sql !== SQLITE_RELAX_REBUILD_MARKER,
+    // The marker is the executor's, not a statement; the rest keep their
+    // authored positions.
+    const authored = positionsOf(statements);
+    const kept = statements.flatMap((sql, at) =>
+      sql === SQLITE_RELAX_REBUILD_MARKER
+        ? []
+        : [{ sql, at: statementAt(authored[at] ?? { index: at }) }],
     );
     if (this.db.transaction) {
-      await this.db.transaction(async (tx) => {
+      await this.transactionClosed(this.db, async (tx) => {
         if (this.sqliteRebuildTransactionOwned)
           await this.assertSqliteForeignKeysSuspended(tx as DatabaseInterface);
-        for (const sql of statements) {
+        for (const { sql, at } of kept) {
           await runRetireAwareStatement(
-            (statement) => tx.query(statement),
+            (statement) =>
+              runStatementClosed(() => tx.query(statement), {
+                phase: 'regular',
+                ...at,
+                sql,
+              }),
             this.dbEngine,
             sql,
           );
@@ -2133,9 +2478,14 @@ export class MigrationTracker {
       });
     } else {
       // Fallback to sequential execution
-      for (const sql of statements) {
+      for (const { sql, at } of kept) {
         await runRetireAwareStatement(
-          (statement) => this.db.query(statement),
+          (statement) =>
+            runStatementClosed(() => this.db.query(statement), {
+              phase: 'regular',
+              ...at,
+              sql,
+            }),
           this.dbEngine,
           sql,
         );
@@ -2155,7 +2505,10 @@ export class MigrationTracker {
    * `DROP INDEX CONCURRENTLY` for shape-drift recreates and orphan-index
    * cleanups, so the regex needs to cover both keywords.
    */
-  private async executePostgresStatements(statements: string[]): Promise<void> {
+  private async executePostgresStatements(
+    statements: string[],
+    migrationId: string,
+  ): Promise<void> {
     const { concurrent: finalConcurrent, regular: finalRegular } =
       planPostgresStatements(statements, !!this.options.useConcurrentIndexes);
 
@@ -2164,9 +2517,11 @@ export class MigrationTracker {
     // outside-transaction set. The original `concurrentStatements` list
     // is folded in there too so callers below see one merged stream.
 
+    const regularAt = positionsOf(finalRegular).map(statementAt);
+
     // Execute regular statements in transaction with timeouts
     if (finalRegular.length > 0 && this.db.transaction) {
-      await this.db.transaction(async (tx) => {
+      await this.transactionClosed(this.db, async (tx) => {
         // Set session-level timeouts
         await tx.query(
           `SET LOCAL lock_timeout = '${formatPostgresTimeout(this.options.lockTimeout)}'`,
@@ -2175,18 +2530,28 @@ export class MigrationTracker {
           `SET LOCAL statement_timeout = '${formatPostgresTimeout(this.options.statementTimeout)}'`,
         );
 
-        for (const sql of finalRegular) {
+        for (const [position, sql] of finalRegular.entries()) {
           await runRetireAwareStatement(
-            (statement) => tx.query(statement),
+            (statement) =>
+              runStatementClosed(() => tx.query(statement), {
+                phase: 'regular',
+                ...regularAt[position],
+                sql,
+              }),
             this.dbEngine,
             sql,
           );
         }
       });
     } else if (finalRegular.length > 0) {
-      for (const sql of finalRegular) {
+      for (const [position, sql] of finalRegular.entries()) {
         await runRetireAwareStatement(
-          (statement) => this.db.query(statement),
+          (statement) =>
+            runStatementClosed(() => this.db.query(statement), {
+              phase: 'regular',
+              ...regularAt[position],
+              sql,
+            }),
           this.dbEngine,
           sql,
         );
@@ -2201,8 +2566,7 @@ export class MigrationTracker {
     // connection so `SET lock_timeout` / `SET statement_timeout` actually
     // govern the DDL that follows them (a pooled `db.query` may not reuse the
     // connection the SET landed on).
-    const session = await this.acquireMigrationSession();
-    try {
+    await this.withMigrationSession(async (session) => {
       await session.query(
         `SET lock_timeout = '${formatPostgresTimeout(this.options.lockTimeout)}'`,
       );
@@ -2211,7 +2575,7 @@ export class MigrationTracker {
       );
 
       await this.preflightConcurrentCreates(session, [
-        { migrationName: '', statements: finalConcurrent },
+        { migrationName: migrationId, statements: finalConcurrent },
       ]);
       const invalidIndexes = await this.readInvalidIndexes(session);
 
@@ -2220,9 +2584,7 @@ export class MigrationTracker {
         finalConcurrent,
         invalidIndexes,
       );
-    } finally {
-      await session.release();
-    }
+    });
   }
 }
 
@@ -2293,8 +2655,10 @@ const VALIDATE_CONSTRAINT_RE = /\bVALIDATE\s+CONSTRAINT\b/i;
  */
 export function swapUniqueIndexRecreates(lists: string[][]): string[][] {
   const result = lists.map((list) => [...list]);
+  const positions = lists.map((list) => [...positionsOf(list)]);
   for (let li = 0; li < result.length; li++) {
     const list = result[li] ?? [];
+    const at = positions[li] ?? [];
     for (let si = 0; si < list.length; si++) {
       // Read by the PostgreSQL lexer: comments, quoting and case are what the
       // server sees, and names are compared and written as it stores them.
@@ -2319,10 +2683,19 @@ export function swapUniqueIndexRecreates(lists: string[][]): string[][] {
         `${UNIQUE_INDEX_SWAP_MARKER} DROP INDEX CONCURRENTLY IF EXISTS ${quoteIndexName(name)}`,
         `${UNIQUE_INDEX_SWAP_MARKER} ALTER INDEX IF EXISTS ${quoteIndexName(temporary)} RENAME TO ${quoteIndexName(name)}`,
       );
+      // All three stand in for the authored drop and report its position.
+      const dropAt = at[si] ?? { index: si };
+      at.splice(
+        si,
+        1,
+        { index: dropAt.index, generated: 'swap build' },
+        { index: dropAt.index, generated: 'swap close' },
+        { index: dropAt.index, generated: 'swap close' },
+      );
       si += 2;
     }
   }
-  return result;
+  return result.map((list, li) => withPositions(list, positions[li] ?? []));
 }
 
 function findLaterUniqueCreate(
@@ -2390,12 +2763,24 @@ export function planPostgresStatements(
 ): { concurrent: string[]; regular: string[] } {
   const concurrent: string[] = [];
   const regular: string[] = [];
+  // Each planned statement keeps the position it was authored at.
+  const authored = positionsOf(statements);
+  const concurrentAt: AuthoredPosition[] = [];
+  const regularAt: AuthoredPosition[] = [];
+  const pushConcurrent = (sql: string, at: number) => {
+    concurrent.push(sql);
+    concurrentAt.push(authored[at] ?? { index: at });
+  };
+  const pushRegular = (sql: string, at: number) => {
+    regular.push(sql);
+    regularAt.push(authored[at] ?? { index: at });
+  };
   // Once a VALIDATE CONSTRAINT leaves the transaction, every later statement
   // of the same migration follows it, in order (a foreign-key replacement
   // validates its staged constraint, then drops the old one and renames).
   let deferRest = false;
 
-  for (const sql of statements) {
+  for (const [at, sql] of statements.entries()) {
     if (
       useConcurrentIndexes &&
       !deferRest &&
@@ -2415,34 +2800,38 @@ export function planPostgresStatements(
       throw refuseIndexStatement(
         `The index statement could not be read with certainty (${kind.reason})`,
         sql,
+        undefined,
+        statementAt(authored[at] ?? { index: at }).ordinal,
       );
     if (deferRest && !sql.trimStart().startsWith(NULL_EQUAL_INDEX_MARKER)) {
-      concurrent.push(withConcurrently(sql, kind));
+      pushConcurrent(withConcurrently(sql, kind), at);
       continue;
     }
     if (sql.trimStart().startsWith(NULL_EQUAL_INDEX_MARKER)) {
       if (useConcurrentIndexes) {
-        throw new Error(
+        throw frameworkError(
           'NULL-equal conflict index DDL requires an atomic maintenance-window migration; retry without --postgres-safe. Existing indexes require db:migrate-null-equal-indexes.',
         );
       }
-      regular.push(sql);
+      pushRegular(sql, at);
       continue;
     }
     if (isConcurrentIndexStatement(kind)) {
-      concurrent.push(sql);
+      pushConcurrent(sql, at);
       continue;
     }
     if (
       useConcurrentIndexes &&
       (kind.kind === 'create-index' || kind.kind === 'drop-index')
     ) {
-      concurrent.push(withConcurrently(sql, kind));
+      pushConcurrent(withConcurrently(sql, kind), at);
       continue;
     }
-    regular.push(sql);
+    pushRegular(sql, at);
   }
 
+  withPositions(concurrent, concurrentAt);
+  withPositions(regular, regularAt);
   assertConcurrentCreatesCheckable(concurrent);
   if (options.swapUniqueRecreates === false) {
     return { concurrent, regular };

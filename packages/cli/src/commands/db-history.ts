@@ -214,9 +214,11 @@ export const dbHistoryCommand: CLICommand = {
       );
 
       const annotatedHistory: AnnotatedHistoryEntry[] = history.map((row) => {
-        // `error_message` stores the driver's failure text, which can echo
-        // the connection string; scrub it once here so every output form
-        // (JSON, verbose, compact) renders the redacted value.
+        // `error_message` holds the tracker's closed failure reason (no
+        // driver text since #5425); rows written before then may still hold
+        // the driver's text, which can echo the connection string. Scrub it
+        // once here so every output form (JSON, verbose, compact) renders the
+        // redacted value.
         const m = {
           ...row,
           error_message: row.error_message

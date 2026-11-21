@@ -18,6 +18,10 @@ import {
   resolveBuildSchema,
   resolveRetiredTables,
 } from './build-schema.js';
+import {
+  closeMigrationError,
+  MigrationStatementFailure,
+} from './migration-failure.js';
 import type { PackagesSeenInput } from './migration-run-decision.js';
 import { computeSchemaFingerprint } from './schema-fingerprint.js';
 
@@ -280,6 +284,35 @@ export async function recordSuccessfulMigrate(
   const packages = [...new Set(input.packages)].sort();
   const recomputes = options.recomputes ?? [];
   const confirmed = options.confirmedRetirements ?? [];
+  try {
+    return await recordMigrateRun(
+      db,
+      options,
+      input,
+      packages,
+      recomputes,
+      confirmed,
+    );
+  } catch (error) {
+    // Closed: the ledger write's database text never reaches the caller.
+    // Schema changes the run applied are already committed.
+    if (closeMigrationError(error, 'ledger-record') === error) throw error;
+    throw new MigrationStatementFailure(error, {
+      phase: 'ledger-record',
+      explanation:
+        'schema changes this run applied are committed; run db:migrate again to record the run',
+    });
+  }
+}
+
+function recordMigrateRun(
+  db: DatabaseInterface,
+  options: MigrateRecordOptions,
+  input: MigrateRecordInput,
+  packages: string[],
+  recomputes: readonly ConfirmedRecompute[],
+  confirmed: readonly ConfirmedRetirement[],
+): Promise<{ written: boolean; record: MigrateRecord }> {
   return withEmbeddedWriteQueue(
     db,
     getDatabaseEngine(db, options.engineHint) !== 'postgres',

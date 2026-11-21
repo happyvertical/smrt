@@ -189,6 +189,19 @@ export function migrationResultRan(result: MigrationResult): boolean {
   return result.execution_time_ms !== 0;
 }
 
+/**
+ * Whether `error` is core's closed `MigrationStatementFailure`: it carries no
+ * driver text, and nothing it wraps is printed. Read by shape, so test doubles
+ * of the migrations module need not provide the class.
+ */
+function isClosedMigrationFailure(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    error.name === 'MigrationStatementFailure' &&
+    'phase' in error
+  );
+}
+
 function migrationResultError(result: MigrationResult): Error {
   const cause = result.error instanceof Error ? result.error : undefined;
   return new Error(`${result.name}: ${migrationErrorMessage(result.error)}`, {
@@ -2928,6 +2941,8 @@ export default testManifest;
             // Show underlying database error if available
             if (
               error instanceof Error &&
+              !isClosedMigrationFailure(error) &&
+              !isClosedMigrationFailure(error.cause) &&
               getErrorContext(error)?.originalError
             ) {
               console.error(
@@ -3260,7 +3275,11 @@ export default testManifest;
         );
         if (error instanceof Error) {
           console.error(`   ${redactDatabaseUrlsInText(error.message)}`);
-          const ctx = getErrorContext(error);
+          // A closed migration failure carries no driver text; nothing else
+          // from it (or anything it wraps) is printed.
+          const ctx = isClosedMigrationFailure(error)
+            ? undefined
+            : getErrorContext(error);
           if (ctx) {
             if (ctx.originalError) {
               console.error(
