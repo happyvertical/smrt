@@ -475,6 +475,33 @@ describe.each(backends)('the version store in the swap (%s)', (backend) => {
     expect((await draftRow(draftB)).status).toBe('open');
   });
 
+  describe.skipIf(backend !== 'pglite')(
+    'a lost claim and a worker call',
+    () => {
+      it('17. a call in flight says its outcome is unknown; a call refused up front says it wrote nothing', async () => {
+        const live = await seeded();
+        await live.claim?.transaction(async () => {});
+        live.claim?.kill();
+        await live.claim?.transaction(async () => {}).catch(() => {});
+        expect(live.host.lostClaim).toBeTruthy();
+        const refused = await live.host.list('Chore').catch((e) => e);
+        expect(refused).toBeInstanceOf(ClaimLostError);
+        expect(refused.message).toMatch(/wrote nothing/);
+        // A worker call that was already running when the claim went.
+        (live.host as any).app.call = async () => {
+          throw new Error('the app stopped');
+        };
+        const inFlight = await (live.host as any)
+          .callApp('list', 'Chore')
+          .catch((e: Error) => e);
+        expect(inFlight).toBeInstanceOf(ClaimLostError);
+        expect(inFlight.message).toMatch(/unknown/);
+        expect(inFlight.message).not.toMatch(/wrote nothing/);
+        expect((inFlight as Error).cause).toBeInstanceOf(Error);
+      });
+    },
+  );
+
   it('15. a failure after the store write rolls back the swap and the rows together', async () => {
     const live = await seeded();
     const d = await drafted(live);

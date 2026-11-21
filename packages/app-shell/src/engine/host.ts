@@ -2395,8 +2395,15 @@ export class AppHost extends EventEmitter {
       return await this.app.call<T>(op, ...args);
     } catch (e) {
       // A call in flight when the claim was lost sees the loss, not the
-      // retired worker's crash.
-      if (this.claimLost) throw this.claimLost;
+      // retired worker's crash. The worker commits on its own connection, so
+      // whether this call took effect is unknown (never "wrote nothing").
+      if (this.claimLost) {
+        const lost = new ClaimLostError(
+          'this host lost its claim on the app while this call was running, so whether the call took effect is unknown; reopen the app and check before repeating it.',
+        );
+        lost.cause = e;
+        throw lost;
+      }
       if (e instanceof AppCallError) {
         if (e.stale) throw new StaleFenceError(e.message);
         if (e.user) throw new EngineError(e.message, 'invalid');
