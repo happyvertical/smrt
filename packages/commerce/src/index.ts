@@ -541,6 +541,12 @@ export {
   type RevenueJournalTaxInput,
 } from './revenue-journal.js';
 export {
+  type EnsureTenantSettlementAccountsOptions,
+  ensureTenantSettlementAccounts,
+  SETTLEMENT_ACCOUNTS,
+  type TenantSettlementAccounts,
+} from './settlement-accounts.js';
+export {
   applyCommerceCookbookSettings,
   applyCookbookTaxSettings,
   applyTaxCodeExamplePack,
