@@ -22,7 +22,15 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { getDatabase } from '@happyvertical/sql';
 import { importPGlite } from '@happyvertical/sql/pglite';
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest';
 import type { DatabaseConfig, PGliteClient } from './db/index.ts';
 import { withSchemaAdmin } from './db/index.ts';
 import {
@@ -676,6 +684,55 @@ describe.each(
       ).toBe(2); // live and the (undiscarded) draft
     });
 
+    it('an aside that cannot be dropped after the store write is journaled as committed; the owner edits; the next start keeps both', async () => {
+      const live = await seeded('dropfail');
+      const { draft } = await fork(live);
+      await edit(draft);
+      live.host.setFrozen(true);
+      const preview = await live.host.previewPublish(draft);
+      // The old data's schema cannot be dropped (say, a lock_timeout).
+      const drop = vi
+        .spyOn(live.host as any, 'dropSideSchemaOrThrow')
+        .mockRejectedValueOnce(new Error('lock timeout'));
+      const result = await live.host.publishDraft(draft, {
+        ...OK,
+        expect: preview.digest,
+      });
+      expect(drop).toHaveBeenCalledTimes(1);
+      drop.mockRestore();
+      const journal = JSON.parse(
+        readFileSync(join(live.dir, JOURNAL_FILE), 'utf8'),
+      );
+      expect(journal.committed).toBe(true);
+      expect(await sideSchemas(live.schema)).toContain(journal.pg.aside);
+      // The owner edits after the publish: the store passes the journal's final version.
+      live.host.setFrozen(false);
+      await run(live.host, {
+        type: 'defineModel',
+        name: 'Later',
+        fields: { note: { type: 'text' } },
+      });
+      expect(live.host.version).toBeGreaterThan(result.version);
+      const version = live.host.version;
+      await draft.discard();
+      await live.host.close();
+      hosts.splice(hosts.indexOf(live.host), 1);
+      const again = await AppHost.open(live.dir, {
+        store: live.store,
+        database: config(live.schema),
+      });
+      hosts.push(again);
+      expect(again.version).toBe(version);
+      expect(await titles(again)).toEqual(['Bins', 'Dishes', 'Garage']);
+      expect(Object.keys(again.def.models)).toContain('Later');
+      // The published data (`points` renamed to `score`, values carried over), not the old.
+      expect(
+        (await again.list('Chore')).map((r) => Number(r.score)).sort(),
+      ).toEqual([3, 5, 8]);
+      expect(await sideSchemas(live.schema)).toEqual([]);
+      expect(existsSync(join(live.dir, JOURNAL_FILE))).toBe(false);
+    });
+
     const STAGES: PublishStage[] = [
       'copied',
       'rehearsed',
@@ -891,6 +948,39 @@ describe.each(
       const host = await reopen(c);
       expect(host.recovery).toBe('rolled-forward');
       await consistent(host, c, true);
+    });
+
+    it('window (ii-b): the store write was journaled as committed, then the owner edited: the next start does not roll the publish back', async () => {
+      const c = await crashedAfterSwap('crash_fwd_edit');
+      await publishedInStore(c);
+      // The owner's next edit: the store is now PAST the published version.
+      await c.store.append({
+        version: c.version + 2,
+        parent: c.version + 1,
+        author: 'owner',
+        summary: 'edited after the publish',
+        definition: (await c.store.get(c.version))?.definition as any,
+        migration: null,
+        createdAt: new Date().toISOString(),
+      });
+      await c.store.setCurrent(c.version + 2);
+      writeJournal(c.dir, {
+        format: 1,
+        oldVersion: c.version,
+        finalVersion: c.version + 1,
+        rehearsal: join(c.dir, 'publish-rehearsal-x'),
+        snapshot: join(c.dir, 'snapshots', 'x'),
+        startedAt: new Date().toISOString(),
+        committed: true,
+        pg: { schema: c.schema, staging: c.staging, aside: c.aside },
+      });
+      const host = await reopen(c);
+      expect(host.version).toBe(c.version + 2);
+      expect((await host.list('Chore')).map((r) => r.title)).toEqual([
+        'new data',
+      ]);
+      expect(await sideSchemas(c.schema)).toEqual([]);
+      expect(existsSync(join(c.dir, JOURNAL_FILE))).toBe(false);
     });
 
     it('window (iii): died during the swap-back: the recovery finishes it, and a second recovery changes nothing', async () => {

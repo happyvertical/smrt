@@ -171,10 +171,14 @@ for the one operation on the host thread; a PGlite uses the host's client).
   aside, the rehearsal to live. The definition version lives in the schema's
   `_app_meta`, so it swaps with the data. A session still using the old tables
   makes the swap fail and change nothing; the worker is retired first, and
-  the aside is dropped only after the store has the versions. The journal
+  the aside is dropped only after the store has the versions, and only after
+  the journal is rewritten with `committed: true` (so a failed drop plus the
+  owner's next edit cannot make the next start read "store past the published
+  version" as "publish did not happen"). The journal
   carries `pg: { schema, staging, aside }`: at start `reconcilePgPublish`
-  swaps the aside back (store behind) or drops it (store at the published
-  version), before the app opens. A failure after the swap (respawn, store)
+  swaps the aside back (journal not committed and store behind) or drops it
+  (journal committed, or store at the published version), before the app
+  opens. A failure after the swap (respawn, store)
   swaps back. Leftover side schemas of a crash before the journal are named
   `<schema>__<tag>...` and safe to drop. The unfinished part: the version
   store (the shell's tables) is a different database from the app's, so a

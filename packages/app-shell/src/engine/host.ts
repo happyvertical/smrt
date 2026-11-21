@@ -1929,9 +1929,11 @@ export class AppHost extends EventEmitter {
   }
 
   /**
-   * A publish a crash interrupted: put the schemas right. The store says which
-   * way: at the published version only the old data's schema is left to
-   * remove; otherwise the old schema comes back and the rehearsal goes.
+   * A publish a crash interrupted: put the schemas right. The journal and the
+   * store say which way: a journal marked `committed` (the store had the
+   * versions before the old data was dropped) or a store at the published
+   * version means only the old data's schema is left to remove, however many
+   * edits followed; otherwise the old schema comes back and the rehearsal goes.
    */
   private async reconcilePgPublish(j: PublishJournal, current: number | null) {
     const pg = j.pg;
@@ -1953,7 +1955,7 @@ export class AppHost extends EventEmitter {
         if (await has(n))
           await dropSchema(db, n, this.lockTimeoutMs, pg.schema);
       };
-      if (current === j.finalVersion) {
+      if (j.committed || current === j.finalVersion) {
         await drop(pg.aside);
         await drop(pg.staging);
       } else {
@@ -2583,6 +2585,7 @@ export class AppHost extends EventEmitter {
     let swapped = false;
     let next: AppWorker | null = null;
     let snapshot = '';
+    let journal: PublishJournal | null = null;
     let archives = { values: 0, tables: 0 };
     // PostgreSQL: the rehearsal is a schema beside live, swapped in by rename.
     const pg = this.onServer
@@ -2617,7 +2620,7 @@ export class AppHost extends EventEmitter {
       );
       await this.callApp('copyTo', snapshot);
       await stage('snapshotted');
-      writeJournal(this.dataDir, {
+      journal = {
         format: 1,
         oldVersion,
         finalVersion: finalNumber,
@@ -2625,7 +2628,8 @@ export class AppHost extends EventEmitter {
         snapshot,
         startedAt: now(),
         ...(pg ? { pg } : {}),
-      });
+      };
+      writeJournal(this.dataDir, journal);
       journaled = true;
       await stage('journaled');
       retired = true;
@@ -2680,8 +2684,12 @@ export class AppHost extends EventEmitter {
       // too late to matter
     }
     try {
+      // Say so in the journal before the old data goes: the next start must
+      // not read a later store version (the owner's next edit) as "the
+      // publish did not happen" and swap the old data back over it.
+      if (journal) writeJournal(this.dataDir, { ...journal, committed: true });
       // PostgreSQL: the old data's schema goes; if that fails the journal
-      // stays, and the next start removes it (the store says published).
+      // stays, and the next start removes it (the journal says published).
       if (pg) await this.dropSideSchemaOrThrow(pg.aside);
       dropAside(this.dataDir);
       removeJournal(this.dataDir);

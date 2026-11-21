@@ -188,6 +188,14 @@ export interface PublishJournal {
   snapshot: string;
   startedAt: string;
   /**
+   * Set (and the journal rewritten) once the version store holds the published
+   * versions, BEFORE the old data is dropped. A recovery that finds it knows
+   * the publish happened whatever the store's current version says now: the
+   * owner may have edited since (the store is past `finalVersion`), and the
+   * old data must not come back over their work.
+   */
+  committed?: boolean;
+  /**
    * PostgreSQL: the schemas of the swap. `staging` holds the rehearsed result
    * until one transaction renames live to `aside` and `staging` to live.
    */
