@@ -111,6 +111,19 @@ export const DEFAULT_EVENTS_MAX_SUBSCRIBERS = 1000;
 /** Retry hint for over-cap `_events` connections (#1860). */
 export const DEFAULT_EVENTS_RETRY_AFTER_SECONDS = 5;
 
+/** The SSE `retry:` reconnection hint every `_events` response carries. */
+const EVENTS_RECONNECT_MS = 3000;
+
+/**
+ * The `id:` an `_events` response sets when it could not give the connection
+ * a start. The client's reconnect sends it back as `Last-Event-ID`, and the
+ * route then opens live-forward with a `resync` frame first, so the client
+ * reloads its state after the new start and misses nothing committed while
+ * it was without one. Not a feed sequence: any non-numeric id is otherwise
+ * ignored as a cursor.
+ */
+const EVENTS_RESYNC_ON_OPEN_ID = 'resync';
+
 /**
  * Chunks the stream buffers ahead of its reader. The connection reads the
  * feed only while the buffer has room, so an unread connection holds at most
@@ -160,6 +173,14 @@ export interface ChangeEventStreamOptions {
    */
   locals?: unknown;
   request?: Request;
+  /**
+   * Make the opening frame an `event: resync` at the start (one SSE block
+   * with the start's `id:`), so the client reloads its state from after the
+   * start. The generated routes set
+   * it when the client reconnects from a response that gave it no start
+   * (see {@link eventStreamStartFailedResponse}).
+   */
+  resyncOnOpen?: boolean;
 }
 
 /**
@@ -217,6 +238,45 @@ export function eventStreamCapacityExceededResponse(): Response {
       headers: {
         'Content-Type': 'application/json',
         'Retry-After': String(DEFAULT_EVENTS_RETRY_AFTER_SECONDS),
+      },
+    },
+  );
+}
+
+/**
+ * Retryable response for an `_events` connection whose start could not be
+ * resolved (the head sample failed: a statement or pool timeout, or the
+ * refusal inside a framework write transaction), or whose client went away
+ * while it was resolved. Shared by REST and generated SvelteKit routes.
+ *
+ * It is a `200 text/event-stream` that carries a `retry:` hint and one
+ * `event: unavailable`, then ends, so an `EventSource` reconnects after the
+ * hint instead of failing for good (a non-200 response closes an
+ * `EventSource` permanently). Its `id:` is not a feed sequence but a marker
+ * the reconnect sends back as `Last-Event-ID`: that connection starts at the
+ * head it samples and sends `event: resync` first, so a client that loaded
+ * its state on this response's `onopen` reloads it after a real start. The
+ * event names no detail of the failure; pass the error to have it logged
+ * server-side.
+ */
+export function eventStreamStartFailedResponse(error?: unknown): Response {
+  if (error !== undefined) {
+    logger.warn('_events: could not resolve the stream start; client retries', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+  return new Response(
+    `retry: ${EVENTS_RECONNECT_MS}\nid: ${EVENTS_RESYNC_ON_OPEN_ID}\nevent: unavailable\ndata: ${JSON.stringify(
+      {
+        error: 'Live events temporarily unavailable',
+      },
+    )}\n\n`,
+    {
+      status: 200,
+      headers: {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache, no-transform',
+        'X-Accel-Buffering': 'no',
       },
     },
   );
@@ -384,6 +444,45 @@ function readFeedPage(
 }
 
 /**
+ * The feed's current head, read outside the caller's write context: on an
+ * embedded engine it waits for an open framework write transaction instead
+ * of counting that transaction's uncommitted rows.
+ */
+async function sampleChangeFeedHead(db: DatabaseInterface): Promise<number> {
+  const head = await runOutsideWriteContext(() =>
+    getChangesSince(db, { since: 0, denyAllTables: true }),
+  );
+  return head.resyncRequired ? (head.resyncCursor ?? 0) : head.cursor;
+}
+
+/**
+ * The cursor a new `_events` connection starts from: the client's `cursor`
+ * when it sent one, else the feed's current head. The generated routes
+ * resolve it BEFORE they build the response and pass it to
+ * {@link buildChangeEventStream} as `cursor`, so a client that sees the
+ * response (`EventSource` `onopen`) has a fixed start: everything committed
+ * before it is visible to a state load made then, and everything committed
+ * after it is framed. Behind an open framework write transaction on an
+ * embedded engine the head waits for that transaction, so the response
+ * follows its commit. Refused inside such a transaction on the same
+ * database, where the head would wait for the caller itself.
+ */
+export async function resolveChangeEventStartCursor(
+  db: DatabaseInterface,
+  cursor: number | null,
+): Promise<number> {
+  if (cursor != null) return cursor;
+  if (holdsWriteQueue(db)) {
+    throw new Error(
+      'An _events connection cannot be opened inside a framework write ' +
+        'transaction on the same database: its start waits for that ' +
+        'transaction to finish.',
+    );
+  }
+  return sampleChangeFeedHead(db);
+}
+
+/**
  * Build the SSE body stream for an `_events` connection.
  *
  * **Delivery invariant.** Every `change` frame with an `id:` is read from the durable feed,
@@ -407,10 +506,17 @@ function readFeedPage(
  *
  * **Supported handles.** `db` is a root, or a statement-scoped root: a
  * root-shaped handle whose every statement runs in a transaction of its own
- * that first applies the caller's scope (the hosted engine's `scopeDatabase`).
+ * that first applies the caller's scope (the hosted engine's `scopeDatabase`,
+ * without its ownership `fence`: a fenced handle stages every append and its
+ * drains allocate nothing, so nothing written through it is framed, #5570).
  * Each read then sees committed rows only and resolves the scope's own feed,
  * helpers and head lock. Hosted v1 runs one app per core instance, so the
  * process-global authorization hooks and sensitive-table set are that app's.
+ *
+ * A stream built without a `cursor` is live from its first frame, not from
+ * its construction: it samples the head in `start()`. A caller that hands
+ * out a response before that (as the generated routes do) resolves the start
+ * first with {@link resolveChangeEventStartCursor} and passes it as `cursor`.
  *
  * `start(controller)`:
  *  a. Live-forward only (no `cursor`): sample the feed's current head
@@ -736,12 +842,7 @@ export function buildChangeEventStream(
           // so it waits for an open write transaction instead of seeing its
           // uncommitted rows.
           if (startCursor == null) {
-            const head = await runOutsideWriteContext(() =>
-              getChangesSince(db, { since: 0, denyAllTables: true }),
-            );
-            startCursor = head.resyncRequired
-              ? (head.resyncCursor ?? 0)
-              : head.cursor;
+            startCursor = await sampleChangeFeedHead(db);
           }
           if (closed) return;
           // (b) Subscribe; see the delivery invariant.
@@ -771,8 +872,18 @@ export function buildChangeEventStream(
           throw error;
         }
 
-        // (d) Reconnection hint and contract advertisement (#1859).
-        controller.enqueue(encoder.encode('retry: 3000\n\n'));
+        // (d) Reconnection hint and contract advertisement (#1859). With
+        // `resyncOnOpen` the opening frame IS the resync, with the start as
+        // its `id:`: one block, so the client takes the start and the resync
+        // together or neither (a drop after a separate id-only block would
+        // leave a numeric resume that never resyncs).
+        controller.enqueue(
+          encoder.encode(
+            options.resyncOnOpen
+              ? `retry: ${EVENTS_RECONNECT_MS}\nid: ${startCursor}\nevent: resync\ndata: {}\n\n`
+              : 'retry: 3000\n\n',
+          ),
+        );
         if (manifestHash !== undefined) {
           controller.enqueue(encodeSseManifestEvent(manifestHash));
         }
@@ -908,6 +1019,10 @@ export async function handleEventsRoute(
   // A raw handle passed straight to the generator may not have gone through
   // framework init; the feed table backs cursor catch-up.
   await ensureChangeFeedTable(db);
+  // Capture the tenant scope ONCE at connection open — delivery runs outside
+  // any tenant ALS context and must filter against this fixed value. Captured
+  // before a subscriber slot is reserved, so nothing between the reservation
+  // and the response can fail without releasing it.
   const releaseSubscriberSlot = tryReserveChangeEventSubscriberSlot(
     db,
     options.maxSubscribers,
@@ -917,18 +1032,29 @@ export async function handleEventsRoute(
   }
 
   // Cursor: Last-Event-ID (reconnection) takes precedence over ?since=.
-  // Default = live-forward only (no catch-up).
-  const cursor = parseCursor(authResult);
+  // Default = live-forward only (no catch-up), from the head sampled now,
+  // before the response: see resolveChangeEventStartCursor.
+  let cursor: number;
+  try {
+    cursor = await resolveChangeEventStartCursor(db, parseCursor(authResult));
+  } catch (error) {
+    releaseSubscriberSlot();
+    return eventStreamStartFailedResponse(error);
+  }
+  // The client may have gone while the start was resolved (it can wait for
+  // an open embedded transaction): build nothing it would never cancel.
+  if (req.signal?.aborted || authResult.signal?.aborted) {
+    releaseSubscriberSlot();
+    return eventStreamStartFailedResponse();
+  }
 
-  // Capture the tenant scope ONCE at connection open — delivery runs outside
-  // any tenant ALS context and must filter against this fixed value.
   const tenantScope = resolveDispatchTenantScope();
-
   return new Response(
     buildChangeEventStream(db, {
       cursor,
       tenantScope,
       manifestHash: options.manifestHash,
+      resyncOnOpen: reconnectsWithoutStart(authResult),
       releaseSubscriberSlot,
       // REST has no `locals`; the authorization hooks (#3020) identify the
       // principal from the authMiddleware-processed request instead.
@@ -953,6 +1079,7 @@ export async function handleEventsRoute(
  * non-negative integer, or `null` for live-forward only.
  */
 function parseCursor(req: Request): number | null {
+  if (reconnectsWithoutStart(req)) return null;
   const lastEventId = req.headers.get('Last-Event-ID');
   if (lastEventId !== null && lastEventId.trim() !== '') {
     const n = Number(lastEventId);
@@ -966,4 +1093,13 @@ function parseCursor(req: Request): number | null {
   }
 
   return null;
+}
+
+/**
+ * Whether the request is the reconnect of a client whose previous response
+ * gave it no start ({@link eventStreamStartFailedResponse}): it opens
+ * live-forward and resyncs first.
+ */
+function reconnectsWithoutStart(req: Request): boolean {
+  return req.headers.get('Last-Event-ID')?.trim() === EVENTS_RESYNC_ON_OPEN_ID;
 }

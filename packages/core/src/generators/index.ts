@@ -72,7 +72,9 @@ export {
   DEFAULT_EVENTS_MAX_SUBSCRIBERS,
   DEFAULT_EVENTS_RETRY_AFTER_SECONDS,
   eventStreamCapacityExceededResponse,
+  eventStreamStartFailedResponse,
   normalizeEventsMaxSubscribers,
+  resolveChangeEventStartCursor,
   signalVisibleToTenant,
   tryReserveChangeEventSubscriberSlot,
 } from './events-route';

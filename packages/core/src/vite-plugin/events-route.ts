@@ -127,6 +127,7 @@ function buildEventsCorsBlock(
   helpers: string;
   streamHeadersSpread: string;
   capacityReturn: string;
+  startFailedExpr: string;
   optionsHandler: string;
 } {
   const originsLiteral = JSON.stringify(allowedOrigins);
@@ -163,6 +164,8 @@ function applyEventsCors(response: Response, request: Request): Response {
   const streamHeadersSpread = '...eventsCorsHeaders(request),\n        ';
   const capacityReturn =
     '    return applyEventsCors(eventStreamCapacityExceededResponse(), request);';
+  const startFailedExpr =
+    '(cause?: unknown) =>\n    applyEventsCors(eventStreamStartFailedResponse(cause), request)';
   const optionsHandler = `
 // Preflight for a credentialed cross-origin subscription. \`EventSource\` GETs
 // are "simple" requests (no preflight), but a fetch-based SSE client may
@@ -183,7 +186,13 @@ export const OPTIONS: RequestHandler = async ({ request }) => {
   });
 };
 `;
-  return { helpers, streamHeadersSpread, capacityReturn, optionsHandler };
+  return {
+    helpers,
+    streamHeadersSpread,
+    capacityReturn,
+    startFailedExpr,
+    optionsHandler,
+  };
 }
 
 function generateEventsRouteTemplate(
@@ -217,6 +226,7 @@ function generateEventsRouteTemplate(
         helpers: '',
         streamHeadersSpread: '',
         capacityReturn: '    return eventStreamCapacityExceededResponse();',
+        startFailedExpr: 'eventStreamStartFailedResponse',
         optionsHandler: '',
       };
   const tenantHelper = tenantScoped
@@ -252,6 +262,8 @@ import { error } from '@sveltejs/kit';
 import {
   buildChangeEventStream,
   eventStreamCapacityExceededResponse,
+  eventStreamStartFailedResponse,
+  resolveChangeEventStartCursor,
   resolveDispatchTenantScope,
   tryReserveChangeEventSubscriberSlot,
 } from '@happyvertical/smrt-core';
@@ -280,9 +292,17 @@ function requireRouteAuth(locals: unknown): void {
   }
 }
 
+// A client whose previous response gave it no start reconnects with this
+// Last-Event-ID (core's eventStreamStartFailedResponse sets it): it opens
+// live-forward and resyncs first, so it reloads its state after the start.
+function reconnectsWithoutStart(request: Request): boolean {
+  return request.headers.get('Last-Event-ID')?.trim() === 'resync';
+}
+
 // Last-Event-ID (auto-reconnect) takes precedence over ?since=; default is
 // live-forward only (no catch-up replay).
 function parseCursor(request: Request, url: URL): number | null {
+  if (reconnectsWithoutStart(request)) return null;
   const lastEventId = request.headers.get('Last-Event-ID');
   if (lastEventId !== null && lastEventId.trim() !== '') {
     const n = Number(lastEventId);
@@ -314,11 +334,30 @@ export const GET: RequestHandler = async ({ locals, url, request }) => {
   if (!releaseSubscriberSlot) {
 ${corsBlock.capacityReturn}
   }
+  // The start is fixed before the response (live-forward: the head sampled
+  // now), so a client that sees the response misses nothing committed after.
+  // A start that cannot be resolved answers with a retryable stream, so the
+  // client reconnects instead of giving up on live events.
+  const startFailed = ${corsBlock.startFailedExpr};
+  let startCursor: number;
+  try {
+    startCursor = await resolveChangeEventStartCursor(collection.db, cursor);
+  } catch (startError) {
+    releaseSubscriberSlot();
+    return startFailed(startError);
+  }
+  // The client may have gone while the start was resolved: build nothing it
+  // would never cancel.
+  if (request.signal?.aborted) {
+    releaseSubscriberSlot();
+    return startFailed();
+  }
   return new Response(
     buildChangeEventStream(collection.db, {
-      cursor,
+      cursor: startCursor,
       tenantScope,
       manifestHash: MANIFEST_HASH,
+      resyncOnOpen: reconnectsWithoutStart(request),
       releaseSubscriberSlot,
       locals,
       request,

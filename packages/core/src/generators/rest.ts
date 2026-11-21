@@ -533,13 +533,27 @@ export class APIGenerator {
    */
   createServer(): { server: http.Server; url: string } {
     const server = http.createServer(async (req, res) => {
+      // Watch for the client going away from the start, not only once the
+      // response exists: a route may await (the `_events` start waits behind
+      // an open embedded transaction) and the socket can close meanwhile. The
+      // request's signal reports it to the route.
+      const clientClosed = new AbortController();
+      const onEarlyClose = () => {
+        if (!res.writableFinished) clientClosed.abort();
+      };
+      res.once('close', onEarlyClose);
       try {
-        const request = await this.nodeRequestToWebRequest(req);
+        const request = await this.nodeRequestToWebRequest(
+          req,
+          clientClosed.signal,
+        );
         const response = await this.handleRequest(request);
         await this.webResponseToNodeResponse(response, res);
       } catch (_error) {
         res.statusCode = 500;
         res.end('Internal Server Error');
+      } finally {
+        res.off('close', onEarlyClose);
       }
     });
 
@@ -567,6 +581,7 @@ export class APIGenerator {
    */
   private async nodeRequestToWebRequest(
     req: http.IncomingMessage,
+    signal?: AbortSignal,
   ): Promise<Request> {
     const url = `http://${this.config.hostname}:${this.config.port}${req.url}`;
     const method = req.method || 'GET';
@@ -587,6 +602,7 @@ export class APIGenerator {
       method,
       headers,
       body,
+      signal,
     });
   }
 
@@ -620,9 +636,14 @@ export class APIGenerator {
         void reader.cancel().catch(() => {});
       };
       res.on('close', onClose);
+      // The client may already be gone: its 'close' fired while the route was
+      // still producing this response, so `onClose` will never run. Writing to
+      // the destroyed socket would wait forever for 'drain', and the stream
+      // would never be cancelled.
+      if (res.destroyed || res.closed) onClose();
 
       try {
-        while (true) {
+        while (!clientGone) {
           const { done, value } = await reader.read();
           if (done || clientGone) break;
           if (!res.write(value)) {

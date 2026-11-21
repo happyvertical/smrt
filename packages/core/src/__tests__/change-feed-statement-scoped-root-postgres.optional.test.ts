@@ -32,7 +32,11 @@ import {
   publishChangeSignal,
   resetChangeSignals,
 } from '../change-signals';
-import { buildChangeEventStream } from '../generators/events-route';
+import {
+  buildChangeEventStream,
+  DEFAULT_EVENTS_HEARTBEAT_MS,
+  handleEventsRoute,
+} from '../generators/events-route';
 import { getTestDatabase } from '../testing/database';
 
 const pgUrl = process.env.SMRT_TEST_POSTGRES_URL;
@@ -286,6 +290,62 @@ postgresDescribe(
       expect(text + more).not.toContain('"before"');
       expect(changeIds(text + more)).toEqual([2, next]);
     });
+
+    it('frames a commit made on another connection right after the route responded', async () => {
+      await appendChange(a, { table: TABLE, rowId: 'before' });
+      const writer = statementScoped(other, SCHEMA_A);
+      const response = await handleEventsRoute(
+        new Request('http://x/api/v1/_events'),
+        { authMiddleware: () => async (req: Request) => req, db: a },
+      );
+      expect(response.status).toBe(200);
+      const seq = (await appendChange(writer, {
+        table: TABLE,
+        rowId: 'after-response',
+      })) as number;
+      publishChangeSignal(a, {
+        table: TABLE,
+        operation: 'update',
+        rowId: 'after-response',
+        tenantId: null,
+        seq,
+      });
+      const body = response.body as ReadableStream<Uint8Array>;
+      const text = await readUntil(body, (t) => t.includes('after-response'));
+      await body.cancel().catch(() => {});
+      expect(text).not.toContain('"before"');
+      expect(changeIds(text)).toEqual([seq]);
+    });
+
+    it(
+      'frames a commit made right after the route responded that no signal announces',
+      async () => {
+        await appendChange(a, { table: TABLE, rowId: 'before' });
+        const response = await handleEventsRoute(
+          new Request('http://x/api/v1/_events'),
+          { authMiddleware: () => async (req: Request) => req, db: a },
+        );
+        expect(response.status).toBe(200);
+        // Committed on another connection by plain SQL: nothing publishes a
+        // signal, so only the stream's own idle read can deliver it.
+        const inserted = rowsOf(
+          await admin.query(
+            `INSERT INTO "${SCHEMA_A}"._smrt_changes (seq, table_name, row_id, operation, created_at) SELECT COALESCE(MAX(seq), 0) + 1, '${TABLE}', 'unsignalled', 'update', now() FROM "${SCHEMA_A}"._smrt_changes RETURNING seq`,
+          ),
+        );
+        const seq = Number(inserted[0].seq);
+        const body = response.body as ReadableStream<Uint8Array>;
+        const text = await readUntil(
+          body,
+          (t) => t.includes('unsignalled'),
+          DEFAULT_EVENTS_HEARTBEAT_MS + 5000,
+        );
+        await body.cancel().catch(() => {});
+        expect(text).not.toContain('"before"');
+        expect(changeIds(text)).toEqual([seq]);
+      },
+      DEFAULT_EVENTS_HEARTBEAT_MS + 15_000,
+    );
 
     it('a drain skipped under contention keeps the cursor and delivers once it clears', async () => {
       const head = (await appendChange(a, {
