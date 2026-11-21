@@ -13,6 +13,16 @@ import {
   CHANGE_FEED_WAS_PERSISTED_KEY,
   recordInstanceChange,
 } from './change-feed';
+import {
+  type ChangeFeedOwnerPlan,
+  changeFeedOwnerPlan,
+  changeFeedPlanStoredColumns,
+  changeFeedWriteOwner,
+  noteChangeFeedWriteOwner,
+  rebindChangeFeedWriteRowId,
+  resolveChangeFeedTenantIdFromStoredRow,
+  resolveChangeFeedTenantIdFromWrite,
+} from './change-feed-tenant';
 import type { SmrtClassOptions } from './class';
 import { SmrtClass } from './class';
 import {
@@ -95,10 +105,12 @@ import {
   bindSyncRevision,
   compareSyncRevisions,
   deleteSyncRows,
+  existingRowIds,
   lockSyncRowIdentity,
   putSyncTombstone,
   SYNC_TOMBSTONES_TABLE,
   syncRevisionConflict,
+  updateRowsReturning,
   validateSyncRevision,
 } from './sync-tombstones';
 import type { AiRunContext } from './system/ai-run-calls';
@@ -664,6 +676,67 @@ const TEXT_VERDICT_ASK =
   'Does the content meet all the given criteria? Answer with the single word yes or no.';
 
 /**
+ * Record, for the change feed, the id and owner of the row a delete statement
+ * removed, captured together at the statement so no later hook can pair the
+ * owner with another id or change it.
+ *
+ * - The owner comes from the statement's returned ownership columns for the
+ *   row whose id matches the bound id (both sides in the engine's canonical
+ *   id form), resolved against the same ownership snapshot the statement used.
+ * - When the statement removed no row under the id and the row is proven
+ *   absent, the provisional owner the feed writer recorded before any model
+ *   hook ran stands (a delete of a row already gone).
+ * - Otherwise the owner is unresolved and nothing is recorded: a failed
+ *   lookup, a row that is still present (the delete was suppressed), or a
+ *   returned row that does not carry an ownership column. None of these may
+ *   become a global entry.
+ *
+ * A class that persists no ownership column keeps the provisional owner.
+ */
+function noteDeletedRowOwner(
+  instance: SmrtObject,
+  context: object,
+  plan: ChangeFeedOwnerPlan,
+  rowId: unknown,
+  removedRow: Record<string, unknown> | undefined,
+  absent: boolean,
+): void {
+  try {
+    const ownerColumns = changeFeedPlanStoredColumns(plan);
+    if (ownerColumns === undefined) {
+      noteChangeFeedWriteOwner(context, undefined, rowId);
+      return;
+    }
+    const provisional = changeFeedWriteOwner(context);
+    if (ownerColumns.length === 0) {
+      noteChangeFeedWriteOwner(
+        context,
+        provisional
+          ? provisional.tenantId
+          : resolveChangeFeedTenantIdFromStoredRow(plan, instance, {}),
+        rowId,
+      );
+      return;
+    }
+    if (removedRow) {
+      noteChangeFeedWriteOwner(
+        context,
+        resolveChangeFeedTenantIdFromStoredRow(plan, instance, removedRow),
+        rowId,
+      );
+      return;
+    }
+    noteChangeFeedWriteOwner(
+      context,
+      absent && provisional ? provisional.tenantId : undefined,
+      rowId,
+    );
+  } catch {
+    noteChangeFeedWriteOwner(context, undefined, rowId);
+  }
+}
+
+/**
  * Base class for all persistent SMRT domain objects.
  *
  * Provides a full ORM lifecycle: construct with options, call `initialize()`,
@@ -1024,6 +1097,21 @@ export class SmrtObject extends SmrtClass {
             tombstone: false,
           })
         : null;
+  }
+
+  /**
+   * Resolve this class's merged (inherited) field set before a write takes
+   * its change-feed ownership snapshot: a subtype's own declarations can omit
+   * the owner field its parent declares. One attempt; when it fails the
+   * ownership lookup reports the class as unresolved and the feed records
+   * nothing rather than a global entry.
+   */
+  private async warmChangeFeedOwnerFields(): Promise<void> {
+    try {
+      await ObjectRegistry.getAllFields(this.getResolvedQualifiedName());
+    } catch {
+      // Left unresolved; see above.
+    }
   }
 
   private normalizeSyncRowId(id: string): string {
@@ -3069,6 +3157,7 @@ export class SmrtObject extends SmrtClass {
         return false;
     }
     const deletions: BulkMutationEntry[] = [];
+    if (removed.length > 0) await first.warmChangeFeedOwnerFields();
     for (const instance of removed) {
       const context = createInterceptorContext(
         instance.constructor.name,
@@ -3100,16 +3189,53 @@ export class SmrtObject extends SmrtClass {
             ids,
           });
           const model = first.getResolvedQualifiedName();
-          await deleteSyncRows(
+          // The change feed attributes each tombstone to the owner its row
+          // had when this statement removed it, not to the instance fields.
+          // One ownership snapshot serves the statement and the attribution.
+          const plan = changeFeedOwnerPlan(first);
+          const ownerColumns = changeFeedPlanStoredColumns(plan);
+          const { owners } = await deleteSyncRows(
             db,
             {
               tableName: first.tableName,
               model,
               tenantColumn: ObjectRegistry.getOwnershipTenantColumn(model),
+              ownerColumns: ownerColumns ?? [],
             },
             { 'id in': ids },
             (affected) => recordCascadeWrite(db, { affected }),
           );
+          const removedRows = new Map(
+            (owners ?? []).map(({ id, columns }) => [
+              first.normalizeSyncRowId(id),
+              columns,
+            ]),
+          );
+          // A bound id the statement did not remove counts as absent only
+          // when no row is stored under it.
+          const unmatched = ids.filter(
+            (id) => !removedRows.has(first.normalizeSyncRowId(id)),
+          );
+          const present =
+            ownerColumns && ownerColumns.length > 0 && unmatched.length > 0
+              ? new Set(
+                  (await existingRowIds(db, first.tableName, unmatched)).map(
+                    (id) => first.normalizeSyncRowId(id),
+                  ),
+                )
+              : new Set<string>();
+          deletions.forEach(({ instance, context }, index) => {
+            const rowId = ids[index];
+            const key = first.normalizeSyncRowId(rowId);
+            noteDeletedRowOwner(
+              instance,
+              context,
+              plan,
+              rowId,
+              removedRows.get(key),
+              !present.has(key),
+            );
+          });
           return result;
         },
         true,
@@ -3829,6 +3955,23 @@ export class SmrtObject extends SmrtClass {
       conflictColumns,
     );
 
+    // The change feed records this write under the owner the persisted row
+    // carries, which a `transformJSON()` hook may set without the field.
+    await this.warmChangeFeedOwnerFields();
+    try {
+      noteChangeFeedWriteOwner(
+        interceptorContext,
+        resolveChangeFeedTenantIdFromWrite(
+          changeFeedOwnerPlan(this),
+          this,
+          data,
+        ),
+        data.id,
+      );
+    } catch {
+      noteChangeFeedWriteOwner(interceptorContext, undefined, data.id);
+    }
+
     return { interceptorContext, data, writePlan, conflictColumns };
   }
 
@@ -4243,6 +4386,8 @@ export class SmrtObject extends SmrtClass {
       this._syncMetadata = syncMetadata;
       if (adopted.id) {
         this.id = adopted.id;
+        // The statement wrote the adopted row, not the id prepareSave bound.
+        rebindChangeFeedWriteRowId(interceptorContext, adopted.id);
         if (adopted.createdAt != null) {
           const createdAt = new Date(adopted.createdAt as string | Date);
           if (!Number.isNaN(createdAt.getTime())) this.created_at = createdAt;
@@ -4337,8 +4482,19 @@ export class SmrtObject extends SmrtClass {
         ),
       }),
     };
-    let result: Awaited<ReturnType<typeof this.db.update>> | undefined;
+    let result: { affected: number } | undefined;
     let revisionMatched = true;
+    // The claim changes only revision columns, so its feed entry belongs to
+    // the owner the stored row has, never to an owner field changed in memory.
+    let storedOwner:
+      | { tenantId: string | null | undefined; rowId: string | null }
+      | undefined;
+    await this.warmChangeFeedOwnerFields();
+    // One ownership snapshot serves the statement and the attribution.
+    const ownerPlan = changeFeedOwnerPlan(this);
+    const ownerColumns = changeFeedPlanStoredColumns(ownerPlan);
+    const claimedRowId =
+      typeof this.id === 'string' && this.id ? this.id : null;
     const useEmbeddedRevisionFallback = usesEmbeddedRevisionFallback(this.db);
     await withEmbeddedWriteQueue(
       this.db,
@@ -4366,16 +4522,43 @@ export class SmrtObject extends SmrtClass {
             revisionMatched = false;
             return;
           }
-        }
-        if (!useEmbeddedRevisionFallback) {
-          result = await this.db.update(
-            this.tableName,
-            this.guardedWriteFilter(
-              { id: this.id, ...this.revisionPredicate(expectedUpdatedAt) },
-              writeGuard,
+          storedOwner = {
+            tenantId: resolveChangeFeedTenantIdFromStoredRow(
+              ownerPlan,
+              this,
+              current,
             ),
+            rowId: claimedRowId,
+          };
+        }
+        const filter = this.guardedWriteFilter(
+          { id: this.id, ...this.revisionPredicate(expectedUpdatedAt) },
+          writeGuard,
+        );
+        if (!useEmbeddedRevisionFallback && isJsonAdapterHandle(this.db)) {
+          result = await this.db.update(this.tableName, filter, updates);
+        } else if (!useEmbeddedRevisionFallback) {
+          // One statement returns the claimed row's owner columns: no
+          // separate read can see another row version or abort a
+          // caller-managed transaction.
+          const claimed = await updateRowsReturning(
+            this.db,
+            this.tableName,
+            filter,
             updates,
+            ownerColumns ?? [],
           );
+          result = claimed;
+          storedOwner = {
+            tenantId: claimed.rows[0]
+              ? resolveChangeFeedTenantIdFromStoredRow(
+                  ownerPlan,
+                  this,
+                  claimed.rows[0],
+                )
+              : undefined,
+            rowId: claimedRowId,
+          };
         } else if (this.isPositivelyNativeDuckDb()) {
           // Native DuckDB rewrites a row whose indexed column is assigned, even
           // unchanged, and a referenced parent then refuses it (#3737). The
@@ -4403,7 +4586,7 @@ export class SmrtObject extends SmrtClass {
     // claimRevision intentionally skips domain afterSave hooks, but the public
     // row revision still changed and must remain visible to ETags, delta pull,
     // and SSE. When transaction-bound this feed row shares the transaction.
-    await recordInstanceChange(this, 'update');
+    await recordInstanceChange(this, 'update', storedOwner);
     return this;
   }
 
@@ -4418,6 +4601,7 @@ export class SmrtObject extends SmrtClass {
   ): Promise<void> {
     await this.loadDataFromDb(durableRow);
     this.invalidateCollectionReadCache();
+    await this.warmChangeFeedOwnerFields();
     const context = createInterceptorContext(
       this.getResolvedClassName(),
       'save',
@@ -6428,6 +6612,9 @@ export class SmrtObject extends SmrtClass {
         { className },
       );
     }
+    // The change feed's ownership lookups need the merged (inherited) field
+    // set; resolve it once before the feed writer's provisional read.
+    await this.warmChangeFeedOwnerFields();
     // Execute beforeDelete interceptors (e.g., tenant validation)
     const interceptorContext = createInterceptorContext(
       this.constructor.name,
@@ -6513,12 +6700,44 @@ export class SmrtObject extends SmrtClass {
                 },
                 writeGuard,
               );
-              const { affected } = await deleteSyncRows(
+              // The change feed attributes the tombstone to the owner the row
+              // had when this statement removed it, not to the instance fields.
+              // The bound id and one ownership snapshot are captured here, so
+              // a later hook or registration change cannot alter either.
+              const rowId = this.id;
+              const plan = changeFeedOwnerPlan(this);
+              const ownerColumns = changeFeedPlanStoredColumns(plan);
+              const { affected, owners } = await deleteSyncRows(
                 db,
-                identity,
+                { ...identity, ownerColumns: ownerColumns ?? [] },
                 filter,
                 (count) => recordCascadeWrite(db, { affected: count }),
                 incomingDeletion,
+              );
+              const key = this.normalizeSyncRowId(String(rowId));
+              const removedRow = owners?.find(
+                ({ id }) => this.normalizeSyncRowId(id) === key,
+              )?.columns;
+              // Zero affected rows proves nothing by itself (a trigger can
+              // suppress the delete); the provisional owner applies only to
+              // an id with no stored row.
+              // A guarded delete that removed nothing throws below instead.
+              const absent =
+                !removedRow &&
+                affected === 0 &&
+                expectedUpdatedAt === undefined &&
+                writeGuard === undefined &&
+                ownerColumns !== undefined &&
+                ownerColumns.length > 0 &&
+                (await existingRowIds(db, this.tableName, [rowId])).length ===
+                  0;
+              noteDeletedRowOwner(
+                this,
+                interceptorContext,
+                plan,
+                rowId,
+                removedRow,
+                absent,
               );
               if (
                 (expectedUpdatedAt !== undefined || writeGuard !== undefined) &&
