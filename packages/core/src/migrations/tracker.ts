@@ -38,12 +38,15 @@ import {
   captureSessionBaseline,
   type DeferredRow,
   deferredLockKey,
+  deferredNotStarted,
   deferredRetryRefusal,
+  deferredSessionTargets,
   hasPhaseOneMarker,
   phaseOneMarker,
   planDigest,
   recordedPlanDigest,
   restoreSessionBaseline,
+  retryPlanMatches,
   type SessionBaseline,
 } from './deferred-retry.js';
 import {
@@ -353,18 +356,21 @@ export { parsePostgresTimeoutMs };
  * committed but whose `CONCURRENTLY` index build has not run yet. The marker
  * carries the plan digest a retry is checked against.
  */
-function concurrentIndexPendingMessage(digest: string): string {
-  return `${phaseOneMarker(digest)} Concurrent index build pending: the non-index half of this migration committed but the CONCURRENTLY index DDL had not completed. Re-run db:migrate to finish it.`;
+function concurrentIndexPendingMessage(
+  digest: string,
+  notStarted: boolean,
+): string {
+  return `${phaseOneMarker(digest, notStarted)} Concurrent index build pending: the non-index half of this migration committed but the CONCURRENTLY index DDL had not completed. Re-run db:migrate to finish it.`;
 }
 
 /**
  * Statements split out of the atomic batch for PostgreSQL concurrent-index
  * mode, keyed by migration definition id.
  */
-type ConcurrentIndexPlan = Map<
-  string,
-  { regular: string[]; concurrent: string[] }
->;
+type ConcurrentIndexPlan = Map<string, PlannedSplit>;
+
+/** One definition's transaction-safe and deferred statements, as planned. */
+type PlannedSplit = { regular: string[]; concurrent: string[] };
 
 /**
  * Minimal pinned-session shape used by the concurrent-index phase.
@@ -376,6 +382,25 @@ type ConcurrentIndexPlan = Map<
  */
 /** Whether this run may run a migration's deferred statements now. */
 type DeferredClaim = 'ok' | 'held' | 'done' | 'changed';
+
+/**
+ * What one {@link MigrationTracker.apply} call checks a retry against. Held
+ * per call, never on the tracker, so one call (a dry run) cannot change
+ * what a concurrent call on the same tracker checks.
+ */
+interface ApplyContext {
+  /**
+   * The atomic batch's concurrent-index plan (its phase 1, or its dry run);
+   * `null` when this call plans its definition on its own.
+   */
+  plan: ConcurrentIndexPlan | null;
+  /** The `useConcurrentIndexes` that planned `plan`. */
+  routing: boolean;
+  /** Filled by phase 1: the row each deferred migration finishes in phase 2. */
+  rows: Map<string, DeferredRow> | null;
+  /** `false` in a dry run whose batch plan could not be built. */
+  guard: boolean;
+}
 
 interface MigrationSession {
   query: (
@@ -659,6 +684,29 @@ export class MigrationTracker {
   }
 
   /**
+   * A migration record read without initializing the tracker (no DDL, no
+   * timestamp check), for dry runs. History that cannot be read (no tracking
+   * table yet) shows no record.
+   */
+  private async readMigrationRecord(
+    name: string,
+  ): Promise<SchemaMigrationRecord | null> {
+    let rows: MigrationRow[];
+    try {
+      rows = (
+        await this.db.query(
+          `SELECT * FROM _smrt_schema_migrations WHERE name = ? LIMIT 1`,
+          name,
+        )
+      ).rows as MigrationRow[];
+    } catch {
+      return null;
+    }
+    const row = rows[0];
+    return row ? hydrateMigrationRow(row) : null;
+  }
+
+  /**
    * Get the next batch number
    */
   async getNextBatch(): Promise<number> {
@@ -729,24 +777,24 @@ export class MigrationTracker {
   }
 
   /**
-   * Why this run must not retry a `failed` migration whose phase 1 committed
-   * (#5325), or `null`. Only `--force-migration <id>` skips the check.
+   * Whether a `failed` record's phase 1 committed under this run's plan, so
+   * skipping it skips exactly what committed (#5325).
    */
-  private deferredRetryRefusal(
+  private phaseOneMatches(
     definition: MigrationDefinition,
-    existing: SchemaMigrationRecord,
+    existing: SchemaMigrationRecord | null,
     checksum: string,
-    options: ApplyMigrationsOptions,
-  ): string | null {
+    split: PlannedSplit | undefined,
+    routing: boolean,
+    forced: boolean,
+  ): boolean {
     if (
+      existing?.status !== 'failed' ||
       existing.checksum !== checksum ||
-      !hasPhaseOneMarker(existing.error_message) ||
-      options.forceMigrations?.includes(definition.id)
+      !hasPhaseOneMarker(existing.error_message)
     )
-      return null;
-    const split = this.concurrentIndexPlan?.get(definition.id);
-    return deferredRetryRefusal({
-      id: definition.id,
+      return false;
+    return retryPlanMatches({
       recordedMessage: existing.error_message,
       digest: planDigest(
         definition.id,
@@ -754,8 +802,10 @@ export class MigrationTracker {
         split?.regular ?? definition.up,
         split?.concurrent ?? [],
       ),
-      concurrent: split?.concurrent.length ? split.concurrent : null,
-      concurrentRouting: this.concurrentIndexRouting,
+      regular: split?.regular ?? definition.up,
+      concurrent: split?.concurrent ?? [],
+      concurrentRouting: routing,
+      forced,
     });
   }
 
@@ -766,16 +816,39 @@ export class MigrationTracker {
     definition: MigrationDefinition,
     options: ApplyMigrationsOptions = {},
   ): Promise<MigrationResult> {
-    await this.initialize();
+    return this.applyOne(definition, options, {
+      plan: this.concurrentIndexPlan,
+      routing: this.concurrentIndexRouting,
+      rows: this.deferredRows,
+      guard: true,
+    });
+  }
+
+  private async applyOne(
+    definition: MigrationDefinition,
+    options: ApplyMigrationsOptions,
+    context: ApplyContext,
+  ): Promise<MigrationResult> {
+    // A dry run reads the history only: it creates and alters nothing.
+    if (!options.dryRun) await this.initialize();
     const startTime = Date.now();
     const checksum = computeChecksum(definition.up);
+    // Only an atomic batch splits a definition under the recorded-plan
+    // protocol; outside one (`plan` null) a definition runs as before.
+    const split = context.plan?.get(definition.id);
+    const routing = context.routing;
     const force = Boolean(
       options.force || options.forceMigrations?.includes(definition.id),
     );
     const hasScopedForce = Boolean(options.forceMigrations?.length);
+    const namedForce = Boolean(
+      options.forceMigrations?.includes(definition.id),
+    );
 
     // Check if migration record already exists
-    const existing = await this.getMigration(definition.id);
+    const existing = options.dryRun
+      ? await this.readMigrationRecord(definition.id)
+      : await this.getMigration(definition.id);
 
     if (existing) {
       // Handle based on existing status
@@ -807,16 +880,30 @@ export class MigrationTracker {
           break;
 
         case 'failed': {
-          // A retry after phase 1 committed is checked before anything else,
-          // so no message below offers a retry that would be refused.
-          const refusal = options.dryRun
-            ? null
-            : this.deferredRetryRefusal(
-                definition,
-                existing,
-                checksum,
-                options,
-              );
+          // A retry after phase 1 committed is checked before anything else
+          // (dry runs included), so no message below offers a retry that
+          // would be refused.
+          // Only `--force-migration <id>` skips the check.
+          const refusal =
+            context.guard && hasPhaseOneMarker(existing.error_message)
+              ? deferredRetryRefusal({
+                  id: definition.id,
+                  recordedMessage: existing.error_message,
+                  sameChecksum: existing.checksum === checksum,
+                  samePlan: this.phaseOneMatches(
+                    definition,
+                    existing,
+                    checksum,
+                    split,
+                    routing,
+                    namedForce,
+                  ),
+                  regular: split?.regular ?? definition.up,
+                  concurrent: split?.concurrent ?? [],
+                  concurrentRouting: routing,
+                  forced: namedForce,
+                })
+              : null;
           if (refusal) {
             return {
               success: false,
@@ -828,7 +915,14 @@ export class MigrationTracker {
               error: refusal,
             };
           }
-          if (!force && (!options.reconcile || hasScopedForce)) {
+          // A scoped force leaves a reconciling run free to retry an unlisted
+          // phase-1-committed record the check above accepted.
+          const acceptedRetry =
+            context.guard && hasPhaseOneMarker(existing.error_message);
+          if (
+            !force &&
+            (!options.reconcile || (hasScopedForce && !acceptedRetry))
+          ) {
             return {
               success: false,
               applied: false,
@@ -875,6 +969,46 @@ export class MigrationTracker {
       };
     }
 
+    // PostgreSQL concurrent-index mode splits this definition: the
+    // transaction-safe statements run here, the CONCURRENTLY index DDL runs
+    // after the batch commits.
+    const deferredConcurrent = (split?.concurrent.length ?? 0) > 0;
+
+    // A retry of an interrupted concurrent-index migration must not re-run the
+    // half that already committed. The marker on the previous attempt's
+    // `error_message` says it did, and the checksum says it was this same
+    // definition. Without this, a definition that mixes non-idempotent DDL
+    // (`ALTER TABLE … ADD COLUMN`, which the differ emits without
+    // `IF NOT EXISTS`) with index DDL would fail on "column already exists"
+    // forever, never reaching the index build it was retrying for. Whether
+    // the retry may run at all was checked above (deferredRetryRefusal).
+    // A forced run under another plan or definition runs from statement 1.
+    const phase1AlreadyCommitted =
+      deferredConcurrent &&
+      this.phaseOneMatches(
+        definition,
+        existing,
+        checksum,
+        split,
+        routing,
+        namedForce,
+      );
+    const firstHalf = phase1AlreadyCommitted
+      ? []
+      : split
+        ? split.regular
+        : definition.up;
+
+    // No deferred statement has run when phase 1 runs now, or when the
+    // skipped attempt's record still said so.
+    const notStarted =
+      !phase1AlreadyCommitted || deferredNotStarted(existing?.error_message);
+    const digest = planDigest(
+      definition.id,
+      checksum,
+      split?.regular ?? [],
+      split?.concurrent ?? [],
+    );
     // Get batch number
     if (this.currentBatch === null) {
       this.currentBatch = await this.getNextBatch();
@@ -892,17 +1026,30 @@ export class MigrationTracker {
       // read above is taken over: one another run changed since (finished
       // it, or started it again) is left alone.
       const fenced = this.dbEngine === 'postgres';
-      const updated = await this.db.query(
-        `UPDATE _smrt_schema_migrations
+      // Not while another run holds this row's deferred phase.
+      const free =
+        !fenced ||
+        isTrue(
+          (
+            await this.db.query(
+              'SELECT pg_try_advisory_xact_lock(hashtextextended(?, 0)) AS locked',
+              deferredLockKey(id),
+            )
+          ).rows[0]?.locked,
+        );
+      const updated = !free
+        ? { rows: [] }
+        : await this.db.query(
+            `UPDATE _smrt_schema_migrations
          SET status = 'running', checksum = ?, attempts = ?, error_message = NULL, batch = ?, applied_by = ?, applied_at = CURRENT_TIMESTAMP
          WHERE id = ?${fenced ? ' AND status = ? AND COALESCE(attempts, 0) = ? RETURNING id' : ''}`,
-        checksum,
-        attempts,
-        this.currentBatch,
-        hostname(),
-        id,
-        ...(fenced ? [existing.status, existing.attempts] : []),
-      );
+            checksum,
+            attempts,
+            this.currentBatch,
+            hostname(),
+            id,
+            ...(fenced ? [existing.status, existing.attempts] : []),
+          );
       if (fenced && updated.rows.length === 0) {
         return {
           success: false,
@@ -932,32 +1079,9 @@ export class MigrationTracker {
       );
     }
 
-    // PostgreSQL concurrent-index mode splits this definition: the
-    // transaction-safe statements run here, the CONCURRENTLY index DDL runs
-    // after the batch commits.
-    const split = this.concurrentIndexPlan?.get(definition.id);
-    const deferredConcurrent = (split?.concurrent.length ?? 0) > 0;
-
-    // A retry of an interrupted concurrent-index migration must not re-run the
-    // half that already committed. The marker on the previous attempt's
-    // `error_message` says it did, and the checksum says it was this same
-    // definition. Without this, a definition that mixes non-idempotent DDL
-    // (`ALTER TABLE … ADD COLUMN`, which the differ emits without
-    // `IF NOT EXISTS`) with index DDL would fail on "column already exists"
-    // forever, never reaching the index build it was retrying for. Whether
-    // the retry may run at all was checked above (deferredRetryRefusal).
-    const phase1AlreadyCommitted =
-      deferredConcurrent &&
-      existing?.status === 'failed' &&
-      existing.checksum === checksum &&
-      hasPhaseOneMarker(existing.error_message);
-
     try {
       // Execute the migration
-      await this.executeStatements(
-        phase1AlreadyCommitted ? [] : split ? split.regular : definition.up,
-        options,
-      );
+      await this.executeStatements(firstHalf, options);
 
       const executionTime = Date.now() - startTime;
 
@@ -971,21 +1095,20 @@ export class MigrationTracker {
         // `--force-migration`. `failed` is retryable under the CLI's
         // reconciling re-run, which is what an interrupted index rollout
         // needs. The concurrent phase overwrites this a moment later.
-        const digest = planDigest(
-          definition.id,
-          checksum,
-          split?.regular ?? [],
-          split?.concurrent ?? [],
-        );
         await this.db.query(
           `UPDATE _smrt_schema_migrations
            SET status = 'failed', execution_time_ms = ?, error_message = ?
            WHERE id = ?`,
           executionTime,
-          concurrentIndexPendingMessage(digest),
+          concurrentIndexPendingMessage(digest, notStarted),
           id,
         );
-        this.deferredRows?.set(definition.id, { id, attempts, digest });
+        context.rows?.set(definition.id, {
+          id,
+          attempts,
+          digest,
+          notStarted,
+        });
 
         return {
           success: true,
@@ -1078,6 +1201,8 @@ export class MigrationTracker {
     definitions: MigrationDefinition[],
     options: ApplyMigrationsOptions = {},
   ): Promise<MigrationResult[]> {
+    if (this.dbEngine === 'postgres' && options.postgresSafe && options.atomic)
+      assertDistinctMigrationIds(definitions);
     if (
       !options.dryRun &&
       this.needsSqliteRebuildSafety(definitions.flatMap((d) => d.up))
@@ -1232,10 +1357,43 @@ export class MigrationTracker {
     }
 
     const results: MigrationResult[] = [];
-    this.currentBatch = await this.getNextBatch();
+    // A dry run writes no record, so it takes no batch number either.
+    this.currentBatch = options.dryRun ? null : await this.getNextBatch();
+    // `null`: each definition goes through the public `apply()`.
+    let context: ApplyContext | null = null;
+    // A dry run checks retries against the plan the real run would follow,
+    // held for this call only.
+    if (
+      options.dryRun &&
+      options.atomic &&
+      options.postgresSafe &&
+      this.dbEngine === 'postgres'
+    ) {
+      try {
+        context = {
+          plan: await this.checkDefinitionsToRun(
+            definitions,
+            options,
+            (toRun) =>
+              buildConcurrentIndexPlan(
+                toRun,
+                this.options.useConcurrentIndexes,
+              ),
+          ),
+          routing: this.options.useConcurrentIndexes,
+          rows: null,
+          guard: true,
+        };
+      } catch {
+        // The real run refuses the batch before anything runs.
+        context = { plan: null, routing: false, rows: null, guard: false };
+      }
+    }
 
     for (const definition of definitions) {
-      const result = await this.apply(definition, options);
+      const result = context
+        ? await this.applyOne(definition, options, context)
+        : await this.apply(definition, options);
       results.push(result);
       options.onProgress?.(result);
 
@@ -1274,11 +1432,20 @@ export class MigrationTracker {
   ): Promise<MigrationResult[]> {
     const results = [...committed];
     const table = await this.trackingTableName();
+    // The named settings any deferred statement changes, read back after.
+    const named = [
+      ...new Set(
+        [...plan].flatMap(([id, split]) =>
+          deferredSessionTargets(id, split.concurrent),
+        ),
+      ),
+    ];
     const session = await this.acquireMigrationSession();
     let baseline: SessionBaseline | null = null;
+    let restored = true;
 
     try {
-      baseline = await captureSessionBaseline(session);
+      baseline = await captureSessionBaseline(session, named);
       const handedOver = baseline;
       await this.applySessionTimeouts(session);
 
@@ -1317,7 +1484,9 @@ export class MigrationTracker {
           continue;
         }
 
+        // Each row is claimed by one result only.
         const row = rows.get(result.name);
+        rows.delete(result.name);
         if (refusal && result.name === refusal.migrationName) {
           await this.recordConcurrentIndexFailure(table, row, refusal.message);
           results[index] = {
@@ -1406,19 +1575,30 @@ export class MigrationTracker {
               1,
               (result.execution_time_ms ?? 0) + (Date.now() - startedAt),
             );
-            await this.recordConcurrentIndexSuccess(
+            const recorded = await this.recordConcurrentIndexSuccess(
               table,
               row as DeferredRow,
               result.checksum,
               executionTime,
             );
-            results[index] = {
-              ...result,
-              success: true,
-              applied: true,
-              skipped: false,
-              execution_time_ms: executionTime,
-            };
+            results[index] = recorded
+              ? {
+                  ...result,
+                  success: true,
+                  applied: true,
+                  skipped: false,
+                  execution_time_ms: executionTime,
+                }
+              : {
+                  ...result,
+                  success: false,
+                  applied: false,
+                  skipped: false,
+                  execution_time_ms: executionTime,
+                  error: new Error(
+                    `Migration ${result.name}: another run took its record over while its deferred statements ran; the record was left to that run. Re-run to finish it.`,
+                  ),
+                };
           } else {
             if (!options.continueOnError) {
               stoppedBy = result.name;
@@ -1444,20 +1624,27 @@ export class MigrationTracker {
 
         options.onProgress?.(results[index]);
       }
-
-      return results;
     } finally {
-      if (baseline) {
-        try {
-          await restoreSessionBaseline(session, baseline);
-        } catch {
-          logger.warn(
-            'Could not restore the migration session settings before releasing it',
-          );
-        }
+      try {
+        if (baseline) await restoreSessionBaseline(session, baseline);
+      } catch {
+        restored = false;
+      } finally {
+        await session.release();
       }
-      await session.release();
     }
+    if (!restored) {
+      // A pooled session's connection is discarded on release; a shared
+      // handle (PGlite) goes back to the caller as it is, so it fails closed.
+      if (typeof this.db.acquireSession !== 'function')
+        throw new Error(
+          'The migration session could not be put back as it was handed over; the migration records were written. Close and reopen the database handle before using it again.',
+        );
+      logger.warn(
+        'Could not restore the migration session before releasing it; its connection is discarded.',
+      );
+    }
+    return results;
   }
 
   /**
@@ -1475,22 +1662,41 @@ export class MigrationTracker {
       deferredLockKey(row.id),
     );
     if (!isTrue(locked.rows[0]?.locked)) return 'held';
-    const current = (
-      await session.query(
-        `SELECT status, attempts, error_message FROM ${table} WHERE id = ?`,
-        row.id,
-      )
-    ).rows[0];
-    const claim: DeferredClaim =
-      current?.status === 'completed'
-        ? 'done'
-        : current?.status === 'failed' &&
-            Number(current.attempts) === row.attempts &&
-            typeof current.error_message === 'string' &&
-            hasPhaseOneMarker(current.error_message) &&
-            recordedPlanDigest(current.error_message) === row.digest
-          ? 'ok'
-          : 'changed';
+    let claim: DeferredClaim = 'changed';
+    try {
+      const current = (
+        await session.query(
+          `SELECT status, attempts, error_message FROM ${table} WHERE id = ?`,
+          row.id,
+        )
+      ).rows[0];
+      claim =
+        current?.status === 'completed'
+          ? 'done'
+          : current?.status === 'failed' &&
+              Number(current.attempts) === row.attempts &&
+              typeof current.error_message === 'string' &&
+              hasPhaseOneMarker(current.error_message) &&
+              recordedPlanDigest(current.error_message) === row.digest
+            ? 'ok'
+            : 'changed';
+      if (claim === 'ok' && row.notStarted) {
+        // Written ahead of the first deferred statement: from here on a
+        // retry can no longer assume none of them ran.
+        const cleared = await session.query(
+          `UPDATE ${table} SET error_message = ?
+            WHERE id = ? AND status = 'failed' AND attempts = ? RETURNING id`,
+          concurrentIndexPendingMessage(row.digest, false),
+          row.id,
+          row.attempts,
+        );
+        if (cleared.rows.length === 0) claim = 'changed';
+        else row.notStarted = false;
+      }
+    } catch (error) {
+      await this.releaseDeferredRow(session, row);
+      throw error;
+    }
     if (claim !== 'ok') await this.releaseDeferredRow(session, row);
     return claim;
   }
@@ -2100,16 +2306,17 @@ export class MigrationTracker {
     row: DeferredRow,
     checksum: string,
     executionTime: number,
-  ): Promise<void> {
-    await this.db.query(
+  ): Promise<boolean> {
+    const written = await this.db.query(
       `UPDATE ${table}
          SET status = 'completed', execution_time_ms = ?, applied_checksum = ?, error_message = NULL, applied_at = CURRENT_TIMESTAMP
-       WHERE id = ? AND status = 'failed' AND attempts = ?`,
+       WHERE id = ? AND status = 'failed' AND attempts = ? RETURNING id`,
       executionTime,
       checksum,
       row.id,
       row.attempts,
     );
+    return written.rows.length > 0;
   }
 
   private async recordConcurrentIndexFailure(
@@ -2125,7 +2332,7 @@ export class MigrationTracker {
          WHERE id = ? AND status = 'failed' AND attempts = ?`,
         // Keep the resume marker and its plan: this failure happened *after*
         // phase 1 committed, so the retry must skip the non-index statements.
-        `${phaseOneMarker(row.digest)} ${message}`,
+        `${phaseOneMarker(row.digest, row.notStarted)} ${message}`,
         row.id,
         row.attempts,
       );
@@ -2463,6 +2670,21 @@ export class MigrationTracker {
 }
 
 /**
+ * A `postgresSafe` batch keys each migration's split and phase-2 record by
+ * its id, so one id may appear once; refused before anything runs.
+ */
+function assertDistinctMigrationIds(definitions: MigrationDefinition[]): void {
+  const seen = new Set<string>();
+  for (const { id } of definitions) {
+    if (seen.has(id))
+      throw new Error(
+        `Migration batch lists ${id} more than once; nothing was run. List each migration once.`,
+      );
+    seen.add(id);
+  }
+}
+
+/**
  * Quote an index identifier for PostgreSQL, escaping embedded double quotes.
  */
 function quoteIndexName(name: string): string {
@@ -2500,6 +2722,7 @@ export function buildConcurrentIndexPlan(
   splits.forEach(({ id, split }, index) => {
     const concurrent = swapped[index] ?? split.concurrent;
     if (concurrent.length > 0) {
+      deferredSessionTargets(id, concurrent);
       plan.set(id, { regular: split.regular, concurrent });
     }
   });

@@ -65,10 +65,15 @@ are written after the diff, when both runs have already planned.
 - Without the flag, a batch containing explicit `CONCURRENTLY` DDL is rejected
   before the transaction opens — PostgreSQL cannot run it there.
 - Retrying a migration whose phase 1 committed (#5325) is checked before
-  anything runs: rerun in the mode that recorded it (`--postgres-safe`, same
-  `useConcurrently`), and only index statements, `VALIDATE CONSTRAINT` and plain
-  `SET` / `RESET` run again. Otherwise the retry is refused with the statement
-  ordinal and kind; revert by hand what took effect, then
-  `--force-migration <id>` runs it again. `--force` does not lift the check.
-  Contract: `packages/core/agents/schema-paths.md` § "PostgreSQL migration
-  execution". Test: `src/commands/__tests__/db-migrate-retry-guard.optional.test.ts`.
+  anything runs: rerun the same definition in the mode that recorded it
+  (`--postgres-safe`, same `useConcurrently`). A migration whose deferred phase
+  never started (for example "Not attempted") retries normally; after it
+  started, only index statements, `VALIDATE CONSTRAINT` and plain `SET` /
+  `RESET` run again. Otherwise the retry is refused with the statement ordinal
+  and kind; revert by hand what took effect, then `--force-migration <id>`.
+  `--force` does not lift the check. `--dry-run` asks the tracker the same
+  question (only when the tracking table exists; it reads history only and
+  creates or alters nothing) and exits 1 listing each refusal. Contract:
+  `packages/core/agents/schema-paths.md` § "PostgreSQL migration execution".
+  Tests: `src/commands/__tests__/db-migrate-retry-guard.optional.test.ts`,
+  `db-migrate-retry-dry-run.test.ts`.
