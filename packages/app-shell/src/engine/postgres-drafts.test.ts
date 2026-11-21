@@ -1926,9 +1926,14 @@ describe.each(
       const base = live.host.version;
       const before = live.host.fence as number;
       loseNextSwapReply(live.host);
-      await expect(
-        live.host.publishDraft(draft, { ...OK, expect: preview.digest }),
-      ).rejects.toThrow(/reply lost/);
+      const err = await live.host
+        .publishDraft(draft, { ...OK, expect: preview.digest })
+        .catch((e: any) => e);
+      expect(String(err.message)).toMatch(/reply lost/);
+      // The rollback itself succeeded: it is not the "put back failed" error.
+      expect(String(err.message)).not.toMatch(
+        /putting the old data back failed/,
+      );
       expect(live.host.version).toBe(base);
       expect(await live.store.current()).toBe(base);
       expect(await fenceIn(live.schema)).toBe(before + 2);

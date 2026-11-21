@@ -191,11 +191,16 @@ for the one operation on the host thread; a PGlite uses the host's client).
   carries it. `scopeDatabase` reads the row `FOR SHARE` as the first statement
   of EVERY transaction (reads and writes, boot DDL included) and throws
   `StaleFenceError` (`EngineError` code `stale_fence`, HTTP 409, details
-  `{ schema, expected, actual }`) unless it matches. The share lock lasts to
+  `{ schema, expected, actual }` when raised by the host or a swap or drop; the
+  copy that crosses the worker boundary carries the message only) unless it
+  matches. The share lock lasts to
   commit and `swapSchemas` locks every table exclusively first, so a
   transaction either finishes before a swap or fails after it: no commit
-  straddles one, and a session still pointed at the renamed old schema reads a
-  different number. `swapSchemas` (publish, restore, start-up recovery) checks
+  straddles one. The new number is written only into the new live schema, so a
+  session still pointed at the renamed old schema is covered by retiring the
+  workers at the swap and by the aside's revoke before its drop, not by the
+  fence (residual: a session with a cached plan on an old table could write
+  into the aside until the revoke). `swapSchemas` (publish, restore, start-up recovery) checks
   `expectFence` under those locks (a host that lost ownership changes nothing)
   and, in the same transaction as the rename, writes the new live data's
   generation (old + 1); the host adopts it for the workers it starts next. A

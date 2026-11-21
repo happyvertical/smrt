@@ -742,11 +742,10 @@ export async function swapSchemas(
     /**
      * The ownership generation the caller holds. Checked under the table
      * locks: a caller that is no longer the owner changes nothing and gets a
-     * `StaleFenceError`. A list allows each (a rollback whose forward swap's
-     * reply was lost may find either generation). Omit only for a caller with
-     * no generation (SQLite never reaches here).
+     * `StaleFenceError`. Omit only for a caller with no generation (SQLite
+     * never reaches here).
      */
-    expectFence?: number | readonly number[];
+    expectFence?: number;
   },
   lockTimeoutMs = DEFAULT_LOCK_TIMEOUT_MS,
 ): Promise<{ fence: number | null }> {
@@ -778,11 +777,10 @@ export async function swapSchemas(
     // Under the locks nothing can move the generation: this is the owner's
     // last chance to find out it is not the owner any more.
     const held = await readFence(tx, live);
-    const expected =
-      names.expectFence === undefined ? undefined : [names.expectFence].flat();
-    if (expected !== undefined && (held === null || !expected.includes(held)))
+    const expected = names.expectFence;
+    if (expected !== undefined && held !== expected)
       throw new StaleFenceError(
-        `this host no longer owns the app in schema ${live} (it holds generation ${expected.join(' or ')}, the database is at ${held ?? 'none'}); the swap changed nothing`,
+        `this host no longer owns the app in schema ${live} (it holds generation ${expected}, the database is at ${held ?? 'none'}); the swap changed nothing`,
         { schema: live, expected, actual: held },
       );
     await tx.query(`ALTER SCHEMA ${qi(live)} RENAME TO ${qi(aside)}`);

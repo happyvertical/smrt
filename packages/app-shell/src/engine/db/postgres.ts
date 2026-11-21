@@ -60,7 +60,11 @@ const STATEMENTS = [
  * end of the transaction, so a publish or restore (which locks every table of
  * the schema exclusively before it moves the generation) either waits for this
  * transaction to finish or runs first and this one fails: no commit can
- * straddle the swap, and a name resolved to a renamed schema is caught too.
+ * straddle the swap. A session still pointed at the renamed old schema is NOT
+ * caught by this (the new number is written only into the new live schema):
+ * retiring workers at the swap and revoking the aside's privileges before it
+ * is dropped cover it; a cached plan on an old table could write into the
+ * aside until that revoke.
  */
 export function scopeDatabase<T extends object>(
   db: T,

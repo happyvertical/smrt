@@ -63,7 +63,11 @@ export class AppError extends EngineError {
  */
 export class StaleFenceError extends EngineError {
   constructor(message: string, details?: Record<string, unknown>) {
-    super(`stale fence: ${message}`, 'stale_fence', details);
+    super(
+      message.startsWith('stale fence: ') ? message : `stale fence: ${message}`,
+      'stale_fence',
+      details,
+    );
     this.name = 'StaleFenceError';
   }
 }
