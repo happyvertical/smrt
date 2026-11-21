@@ -85,8 +85,10 @@ provider's own models is given that identity. `related` / `source` become the
 declaring class; a column written after the class name (`'Room.code'`) stays,
 so the constraint references that column. A confirmed target is pinned to one
 declaration, so another class of its simple name (smrt-ledgers and
-smrt-messages both declare `Account`) does not make it ambiguous. A target or
-report source written as a bare name names a model of the manifest being
+smrt-messages both declare `Account`) does not make it ambiguous. A report
+source or join source written as a bare name is left as written and not
+checked, as the base does (an imported one is confirmed by identity above).
+A relationship target written as a bare name names a model of the manifest being
 built, by its exact class name (`localBareTarget`): the referring class's own
 package's model of that name, else the only one. A dependency's model and a
 model whose name differs only in letter case are never it: `assertKnownTargets`
