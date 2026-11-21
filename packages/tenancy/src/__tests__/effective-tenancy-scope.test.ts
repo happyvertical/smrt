@@ -296,19 +296,35 @@ describe('every collection call of a request is held to its admitted tenancy', (
     });
 
     it('a read with no tenant sees only rows without an owner of another optional-mode model and none of a required-mode one', async () => {
-      const logs = await restCall(
-        handler,
-        'GET',
-        `${segmentOf(EffScopeDesk)}/count-logs`,
+      // Runtime REST refuses a caller with no tenant every custom collection
+      // action of a tenant-scoped model (#5164), so the request is admitted
+      // here through the core resolver directly.
+      const read = await inRequestScope(() =>
+        runInRequestTenancy(
+          {
+            model: keyOf(EffScopeDesk),
+            operation: 'list',
+            principal: anonymous,
+          },
+          async () => ({
+            logs: (await (reached.logs as SmrtCollection<SmrtObject>).list({}))
+              .length,
+            vaults: (reached.vaults as SmrtCollection<SmrtObject>).list({}),
+          }),
+        ),
       );
-      expect(logs.status).toBe(200);
-      expect((logs.body as { result: unknown }).result).toBe(1);
-      const vaults = await restCall(
-        handler,
-        'GET',
-        `${segmentOf(EffScopeDesk)}/count-vaults`,
-      );
-      expect(vaults.status).toBe(401);
+      expect(read.logs).toBe(1);
+      await expect(read.vaults).rejects.toMatchObject({
+        code: 'TENANT_CONTEXT_REQUIRED',
+      });
+      for (const action of ['count-logs', 'count-vaults']) {
+        const refused = await restCall(
+          handler,
+          'GET',
+          `${segmentOf(EffScopeDesk)}/${action}`,
+        );
+        expect(refused.status).toBe(401);
+      }
       // A tenant's read of the other model is its own tenant's rows (control).
       const ours = await restCall(
         handler,

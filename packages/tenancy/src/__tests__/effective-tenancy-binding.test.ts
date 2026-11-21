@@ -171,10 +171,17 @@ describe('a request keeps the tenancy it was admitted under', () => {
   };
 
   it('a policy change between admission and the first query refuses that request with 403; the next request uses the new policy', async () => {
-    // Unregistration while an anonymous request is in flight.
+    // Unregistration while tenant A's request is in flight. A caller with no
+    // tenant never reaches the action while the model is scoped: runtime
+    // REST refuses it every custom collection action (#5164).
     registerTenantScopedClass(key, { mode: 'optional' });
-    const dropped = await servedAcrossAChange({}, () =>
-      unregisterTenantScopedClass(key),
+    expect(
+      (await restCall(handler, 'GET', `${segmentOf(EffGauge)}/paused-count`))
+        .status,
+    ).toBe(401);
+    const dropped = await servedAcrossAChange(
+      { authorization: 'Bearer user-of-a' },
+      () => unregisterTenantScopedClass(key),
     );
     expect(dropped.status).toBe(403);
     const afterDrop = await restCall(

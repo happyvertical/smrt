@@ -379,11 +379,30 @@ describe('runtime REST applies the tenancy a model has when it is served', () =>
       }
     });
 
-    it('an action that ignores its options counts only rows without an owner', async () => {
+    it('an action that ignores its options is refused to a caller with no tenant and counts only its own tenant for one', async () => {
+      // Runtime REST refuses a caller with no tenant every custom collection
+      // action of a tenant-scoped model, whatever the method's parameters
+      // (#5164); the emitted routes serve such a read under the bound
+      // rows-without-an-owner scope (effective-tenancy-emitted, row 3).
       for (const segment of [flyers(), notices()]) {
-        const answer = await restCall(handler, 'GET', `${segment}/tally`);
-        expect(answer.status).toBe(200);
-        expect((answer.body as { result: unknown }).result).toBe(1);
+        const anonymous = await restCall(handler, 'GET', `${segment}/tally`);
+        expect(anonymous.status).toBe(401);
+        expect(JSON.stringify(anonymous.body)).not.toContain('"result"');
+        const signedIn = await restCall(
+          handler,
+          'GET',
+          `${segment}/tally`,
+          as('reader-none'),
+        );
+        expect(signedIn.status).toBe(403);
+        const ours = await restCall(
+          handler,
+          'GET',
+          `${segment}/tally`,
+          as('user-of-a'),
+        );
+        expect(ours.status).toBe(200);
+        expect((ours.body as { result: unknown }).result).toBe(1);
       }
     });
   });
