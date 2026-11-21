@@ -115,6 +115,14 @@ export interface MigrateSmrtSchemasOptions {
   postgresSafe?: boolean;
   /** Forwarded to MigrationTracker — defaults to true. */
   reconcile?: boolean;
+  /**
+   * Forwarded to MigrationTracker: retry the named migrations past the
+   * checks a retry otherwise stops at (`--force-migration`), including a
+   * retry of a partly committed deferred phase.
+   */
+  forceMigrations?: string[];
+  /** Forwarded to MigrationTracker (the batch-wide `--force`). */
+  force?: boolean;
   /** Forwarded to MigrationTracker — defaults to true for `CREATE INDEX CONCURRENTLY`. */
   useConcurrentIndexes?: boolean;
   /**
@@ -606,6 +614,8 @@ export async function migrateSmrtSchemas(
     atomic: true,
     postgresSafe: options.postgresSafe ?? true,
     reconcile: options.reconcile ?? true,
+    force: options.force,
+    forceMigrations: options.forceMigrations,
   });
 
   const failed = results.find((result) => !result.success);

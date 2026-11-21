@@ -35,6 +35,18 @@ import {
 import { toSafeBooleanInteger, toSafeInteger } from '../utils/safe-integer.js';
 import { computeChecksum, verifyChecksum } from './checksum.js';
 import {
+  captureSessionBaseline,
+  type DeferredRow,
+  deferredLockKey,
+  deferredRetryRefusal,
+  hasPhaseOneMarker,
+  phaseOneMarker,
+  planDigest,
+  recordedPlanDigest,
+  restoreSessionBaseline,
+  type SessionBaseline,
+} from './deferred-retry.js';
+import {
   type CreateIndexStatement,
   classifyIndexStatement,
   type IndexStatementKind,
@@ -337,23 +349,13 @@ function formatPostgresTimeout(milliseconds: number): string {
 export { parsePostgresTimeoutMs };
 
 /**
- * Prefix stamped on the `error_message` of every concurrent-index migration
- * whose transactional half has already committed.
- *
- * This is the resume marker: it is the only durable record that phase 1's
- * statements ran, so a retry can skip straight to the index build. It must
- * therefore be carried by *both* the interim write at the end of phase 1 and
- * every failure recorded during phase 2 — a lock timeout on the index build
- * leaves the non-index DDL committed just as surely as a crash does.
- */
-const CONCURRENT_INDEX_PHASE1_MARKER =
-  '[smrt: concurrent-index phase 1 committed]';
-
-/**
  * Interim `error_message` for a migration whose transactional half has
- * committed but whose `CONCURRENTLY` index build has not run yet.
+ * committed but whose `CONCURRENTLY` index build has not run yet. The marker
+ * carries the plan digest a retry is checked against.
  */
-const CONCURRENT_INDEX_PENDING_MESSAGE = `${CONCURRENT_INDEX_PHASE1_MARKER} Concurrent index build pending: the non-index half of this migration committed but the CONCURRENTLY index DDL had not completed. Re-run db:migrate to finish it.`;
+function concurrentIndexPendingMessage(digest: string): string {
+  return `${phaseOneMarker(digest)} Concurrent index build pending: the non-index half of this migration committed but the CONCURRENTLY index DDL had not completed. Re-run db:migrate to finish it.`;
+}
 
 /**
  * Statements split out of the atomic batch for PostgreSQL concurrent-index
@@ -372,6 +374,9 @@ type ConcurrentIndexPlan = Map<
  * state — on a pooled adapter a top-level `db.query` may land on a different
  * connection, so the SET would silently not apply to the DDL (issue #2362).
  */
+/** Whether this run may run a migration's deferred statements now. */
+type DeferredClaim = 'ok' | 'held' | 'done' | 'changed';
+
 interface MigrationSession {
   query: (
     sql: string,
@@ -415,6 +420,10 @@ export class MigrationTracker {
    * `CONCURRENTLY` DDL has run. `null` on every ordinary path.
    */
   private concurrentIndexPlan: ConcurrentIndexPlan | null = null;
+  /** The parent's `useConcurrentIndexes`, which planned `concurrentIndexPlan`. */
+  private concurrentIndexRouting = false;
+  /** Filled by phase 1: the row each deferred migration finishes in phase 2. */
+  private deferredRows: Map<string, DeferredRow> | null = null;
 
   constructor(options: MigrationTrackerOptions) {
     this.db = options.db;
@@ -577,13 +586,10 @@ export class MigrationTracker {
     if (!lists.some((list) => !list.runsFirst && list.statements.length > 0))
       return;
     const session = await this.acquireMigrationSession();
+    let baseline: SessionBaseline | null = null;
     try {
-      await session.query(
-        `SET lock_timeout = '${formatPostgresTimeout(this.options.lockTimeout)}'`,
-      );
-      await session.query(
-        `SET statement_timeout = '${formatPostgresTimeout(this.options.statementTimeout)}'`,
-      );
+      baseline = await captureSessionBaseline(session);
+      await this.applySessionTimeouts(session);
       await this.preflightConcurrentCreates(
         session,
         lists,
@@ -596,6 +602,8 @@ export class MigrationTracker {
         });
       throw error;
     } finally {
+      // The tracker's timeouts do not outlive the check on the session.
+      if (baseline) await restoreSessionBaseline(session, baseline);
       await session.release();
     }
   }
@@ -721,6 +729,37 @@ export class MigrationTracker {
   }
 
   /**
+   * Why this run must not retry a `failed` migration whose phase 1 committed
+   * (#5325), or `null`. Only `--force-migration <id>` skips the check.
+   */
+  private deferredRetryRefusal(
+    definition: MigrationDefinition,
+    existing: SchemaMigrationRecord,
+    checksum: string,
+    options: ApplyMigrationsOptions,
+  ): string | null {
+    if (
+      existing.checksum !== checksum ||
+      !hasPhaseOneMarker(existing.error_message) ||
+      options.forceMigrations?.includes(definition.id)
+    )
+      return null;
+    const split = this.concurrentIndexPlan?.get(definition.id);
+    return deferredRetryRefusal({
+      id: definition.id,
+      recordedMessage: existing.error_message,
+      digest: planDigest(
+        definition.id,
+        checksum,
+        split?.regular ?? definition.up,
+        split?.concurrent ?? [],
+      ),
+      concurrent: split?.concurrent.length ? split.concurrent : null,
+      concurrentRouting: this.concurrentIndexRouting,
+    });
+  }
+
+  /**
    * Apply a single migration
    */
   async apply(
@@ -767,7 +806,28 @@ export class MigrationTracker {
           }
           break;
 
-        case 'failed':
+        case 'failed': {
+          // A retry after phase 1 committed is checked before anything else,
+          // so no message below offers a retry that would be refused.
+          const refusal = options.dryRun
+            ? null
+            : this.deferredRetryRefusal(
+                definition,
+                existing,
+                checksum,
+                options,
+              );
+          if (refusal) {
+            return {
+              success: false,
+              applied: false,
+              skipped: false,
+              name: definition.id,
+              checksum,
+              execution_time_ms: 0,
+              error: refusal,
+            };
+          }
           if (!force && (!options.reconcile || hasScopedForce)) {
             return {
               success: false,
@@ -781,6 +841,7 @@ export class MigrationTracker {
           }
           // Will retry below
           break;
+        }
 
         case 'running':
           if (!force) {
@@ -827,17 +888,32 @@ export class MigrationTracker {
     );
 
     if (existing) {
-      // Update existing record to 'running'
-      await this.db.query(
+      // Update existing record to 'running'. On PostgreSQL only the record
+      // read above is taken over: one another run changed since (finished
+      // it, or started it again) is left alone.
+      const fenced = this.dbEngine === 'postgres';
+      const updated = await this.db.query(
         `UPDATE _smrt_schema_migrations
          SET status = 'running', checksum = ?, attempts = ?, error_message = NULL, batch = ?, applied_by = ?, applied_at = CURRENT_TIMESTAMP
-         WHERE id = ?`,
+         WHERE id = ?${fenced ? ' AND status = ? AND COALESCE(attempts, 0) = ? RETURNING id' : ''}`,
         checksum,
         attempts,
         this.currentBatch,
         hostname(),
         id,
+        ...(fenced ? [existing.status, existing.attempts] : []),
       );
+      if (fenced && updated.rows.length === 0) {
+        return {
+          success: false,
+          applied: false,
+          skipped: false,
+          name: definition.id,
+          checksum,
+          execution_time_ms: 0,
+          error: `Migration ${definition.id} was changed by another run while this run started it; nothing was run. Re-run to retry it.`,
+        };
+      }
     } else {
       // Insert new record
       await this.db.query(
@@ -868,13 +944,13 @@ export class MigrationTracker {
     // definition. Without this, a definition that mixes non-idempotent DDL
     // (`ALTER TABLE … ADD COLUMN`, which the differ emits without
     // `IF NOT EXISTS`) with index DDL would fail on "column already exists"
-    // forever, never reaching the index build it was retrying for.
+    // forever, never reaching the index build it was retrying for. Whether
+    // the retry may run at all was checked above (deferredRetryRefusal).
     const phase1AlreadyCommitted =
       deferredConcurrent &&
       existing?.status === 'failed' &&
       existing.checksum === checksum &&
-      typeof existing.error_message === 'string' &&
-      existing.error_message.startsWith(CONCURRENT_INDEX_PHASE1_MARKER);
+      hasPhaseOneMarker(existing.error_message);
 
     try {
       // Execute the migration
@@ -895,14 +971,21 @@ export class MigrationTracker {
         // `--force-migration`. `failed` is retryable under the CLI's
         // reconciling re-run, which is what an interrupted index rollout
         // needs. The concurrent phase overwrites this a moment later.
+        const digest = planDigest(
+          definition.id,
+          checksum,
+          split?.regular ?? [],
+          split?.concurrent ?? [],
+        );
         await this.db.query(
           `UPDATE _smrt_schema_migrations
            SET status = 'failed', execution_time_ms = ?, error_message = ?
            WHERE id = ?`,
           executionTime,
-          CONCURRENT_INDEX_PENDING_MESSAGE,
+          concurrentIndexPendingMessage(digest),
           id,
         );
+        this.deferredRows?.set(definition.id, { id, attempts, digest });
 
         return {
           success: true,
@@ -1036,6 +1119,7 @@ export class MigrationTracker {
       }
 
       const deferred = plan && plan.size > 0 ? plan : null;
+      const deferredRows = new Map<string, DeferredRow>();
 
       try {
         const committed = await this.db.transaction(async (tx) => {
@@ -1065,6 +1149,9 @@ export class MigrationTracker {
             useConcurrentIndexes: false,
           });
           txTracker.concurrentIndexPlan = deferred;
+          txTracker.concurrentIndexRouting =
+            concurrentIndexMode && this.options.useConcurrentIndexes;
+          txTracker.deferredRows = deferredRows;
           txTracker.sqliteRebuildTransactionOwned =
             this.sqliteRebuildTransactionOwned;
           if (this.sqliteRebuildTransactionOwned) {
@@ -1105,6 +1192,7 @@ export class MigrationTracker {
         return await this.applyDeferredConcurrentIndexes(
           committed,
           deferred,
+          deferredRows,
           options,
         );
       } catch (error) {
@@ -1172,22 +1260,27 @@ export class MigrationTracker {
    * On failure the batch stops: the failing migration and every migration it
    * did not reach are recorded `failed`, which the CLI's reconciling
    * `db:migrate` retries on the next run.
+   *
+   * Each migration starts from the session as it was handed over (a deferred
+   * `SET` neither reaches the next migration nor outlives the phase), holds
+   * its row's advisory lock while it runs, and records its outcome only over
+   * the row its phase 1 wrote, in the schema that holds the tracking table.
    */
   private async applyDeferredConcurrentIndexes(
     committed: MigrationResult[],
     plan: ConcurrentIndexPlan,
+    rows: Map<string, DeferredRow>,
     options: ApplyMigrationsOptions,
   ): Promise<MigrationResult[]> {
     const results = [...committed];
+    const table = await this.trackingTableName();
     const session = await this.acquireMigrationSession();
+    let baseline: SessionBaseline | null = null;
 
     try {
-      await session.query(
-        `SET lock_timeout = '${formatPostgresTimeout(this.options.lockTimeout)}'`,
-      );
-      await session.query(
-        `SET statement_timeout = '${formatPostgresTimeout(this.options.statementTimeout)}'`,
-      );
+      baseline = await captureSessionBaseline(session);
+      const handedOver = baseline;
+      await this.applySessionTimeouts(session);
 
       // Check every pending create before any statement of the phase runs:
       // a refusal must never follow a drop that already committed.
@@ -1224,8 +1317,9 @@ export class MigrationTracker {
           continue;
         }
 
+        const row = rows.get(result.name);
         if (refusal && result.name === refusal.migrationName) {
-          await this.recordConcurrentIndexFailure(result.name, refusal.message);
+          await this.recordConcurrentIndexFailure(table, row, refusal.message);
           results[index] = {
             ...result,
             success: false,
@@ -1243,7 +1337,7 @@ export class MigrationTracker {
               ? `Not attempted: the concurrent index phase ran nothing because ${stoppedBy} was refused before it ran`
               : `Not attempted: concurrent index phase stopped after ${stoppedBy} failed`,
           );
-          await this.recordConcurrentIndexFailure(result.name, error.message);
+          await this.recordConcurrentIndexFailure(table, row, error.message);
           results[index] = {
             ...result,
             success: false,
@@ -1256,50 +1350,96 @@ export class MigrationTracker {
         }
 
         const startedAt = Date.now();
+        let claim: DeferredClaim = 'changed';
+        let failure: Error | null = null;
 
         try {
-          await this.runConcurrentIndexStatements(
-            session,
-            split.concurrent,
-            invalidIndexes,
-          );
-
-          // Floor at 1ms: older callers read `execution_time_ms === 0` as
-          // "nothing ran"; `applied: true` is the authoritative signal.
-          const executionTime = Math.max(
-            1,
-            (result.execution_time_ms ?? 0) + (Date.now() - startedAt),
-          );
-          await this.recordConcurrentIndexSuccess(
-            result.name,
-            result.checksum,
-            executionTime,
-          );
-          results[index] = {
-            ...result,
-            success: true,
-            applied: true,
-            skipped: false,
-            execution_time_ms: executionTime,
-          };
+          await restoreSessionBaseline(session, handedOver);
+          await this.applySessionTimeouts(session);
+          if (row) claim = await this.claimDeferredRow(session, table, row);
+          if (claim === 'ok')
+            await this.runConcurrentIndexStatements(
+              session,
+              split.concurrent,
+              invalidIndexes,
+            );
         } catch (error) {
-          const indexError =
-            error instanceof Error ? error : new Error(String(error));
-          if (!options.continueOnError) {
+          failure = error instanceof Error ? error : new Error(String(error));
+        }
+
+        if (claim !== 'ok' && !failure) {
+          // Another run holds, finished, or took over this migration: this run
+          // ran nothing of it and writes nothing to its record.
+          results[index] =
+            claim === 'done'
+              ? { ...result, success: true, applied: false, skipped: true }
+              : {
+                  ...result,
+                  success: false,
+                  applied: false,
+                  skipped: false,
+                  error: new Error(
+                    claim === 'held'
+                      ? `Migration ${result.name}: another run is applying its deferred statements; nothing was run. Re-run once it has finished.`
+                      : `Migration ${result.name}: its record changed during this run (another run took it over); nothing was run. Re-run to retry it.`,
+                  ),
+                };
+          if (claim !== 'done' && !options.continueOnError)
             stoppedBy = result.name;
+          options.onProgress?.(results[index]);
+          continue;
+        }
+
+        try {
+          // The record is written as the session was handed over, not under
+          // a role or path a deferred statement set.
+          await restoreSessionBaseline(session, handedOver);
+        } catch (error) {
+          failure ??= error instanceof Error ? error : new Error(String(error));
+        }
+
+        try {
+          if (!failure) {
+            // Floor at 1ms: older callers read `execution_time_ms === 0` as
+            // "nothing ran"; `applied: true` is the authoritative signal.
+            const executionTime = Math.max(
+              1,
+              (result.execution_time_ms ?? 0) + (Date.now() - startedAt),
+            );
+            await this.recordConcurrentIndexSuccess(
+              table,
+              row as DeferredRow,
+              result.checksum,
+              executionTime,
+            );
+            results[index] = {
+              ...result,
+              success: true,
+              applied: true,
+              skipped: false,
+              execution_time_ms: executionTime,
+            };
+          } else {
+            if (!options.continueOnError) {
+              stoppedBy = result.name;
+            }
+            await this.recordConcurrentIndexFailure(
+              table,
+              row,
+              failure.message,
+            );
+            results[index] = {
+              ...result,
+              success: false,
+              applied: false,
+              skipped: false,
+              execution_time_ms: Date.now() - startedAt,
+              error: failure,
+            };
           }
-          await this.recordConcurrentIndexFailure(
-            result.name,
-            indexError.message,
-          );
-          results[index] = {
-            ...result,
-            success: false,
-            applied: false,
-            skipped: false,
-            execution_time_ms: Date.now() - startedAt,
-            error: indexError,
-          };
+        } finally {
+          if (claim === 'ok' && row)
+            await this.releaseDeferredRow(session, row);
         }
 
         options.onProgress?.(results[index]);
@@ -1307,8 +1447,94 @@ export class MigrationTracker {
 
       return results;
     } finally {
+      if (baseline) {
+        try {
+          await restoreSessionBaseline(session, baseline);
+        } catch {
+          logger.warn(
+            'Could not restore the migration session settings before releasing it',
+          );
+        }
+      }
       await session.release();
     }
+  }
+
+  /**
+   * Take one migration row's deferred phase: its session advisory lock on the
+   * pinned session, then the row read again under the lock. `ok` only while
+   * the row is still the `failed` record this run's phase 1 wrote.
+   */
+  private async claimDeferredRow(
+    session: MigrationSession,
+    table: string,
+    row: DeferredRow,
+  ): Promise<DeferredClaim> {
+    const locked = await session.query(
+      'SELECT pg_try_advisory_lock(hashtextextended(?, 0)) AS locked',
+      deferredLockKey(row.id),
+    );
+    if (!isTrue(locked.rows[0]?.locked)) return 'held';
+    const current = (
+      await session.query(
+        `SELECT status, attempts, error_message FROM ${table} WHERE id = ?`,
+        row.id,
+      )
+    ).rows[0];
+    const claim: DeferredClaim =
+      current?.status === 'completed'
+        ? 'done'
+        : current?.status === 'failed' &&
+            Number(current.attempts) === row.attempts &&
+            typeof current.error_message === 'string' &&
+            hasPhaseOneMarker(current.error_message) &&
+            recordedPlanDigest(current.error_message) === row.digest
+          ? 'ok'
+          : 'changed';
+    if (claim !== 'ok') await this.releaseDeferredRow(session, row);
+    return claim;
+  }
+
+  private async releaseDeferredRow(
+    session: MigrationSession,
+    row: DeferredRow,
+  ): Promise<void> {
+    try {
+      await session.query(
+        'SELECT pg_advisory_unlock(hashtextextended(?, 0))',
+        deferredLockKey(row.id),
+      );
+    } catch {
+      // A lost connection released it already.
+    }
+  }
+
+  /** Bound the pinned session by the tracker's lock and statement timeouts. */
+  private async applySessionTimeouts(session: MigrationSession): Promise<void> {
+    await session.query(
+      `SET lock_timeout = '${formatPostgresTimeout(this.options.lockTimeout)}'`,
+    );
+    await session.query(
+      `SET statement_timeout = '${formatPostgresTimeout(this.options.statementTimeout)}'`,
+    );
+  }
+
+  /**
+   * `_smrt_schema_migrations` qualified by the schema that holds it, resolved
+   * on the tracker's own handle before any deferred statement runs. On PGlite
+   * that handle is the session, and a deferred `SET search_path` must not
+   * move the tracker's writes.
+   */
+  private async trackingTableName(): Promise<string> {
+    const found = await this.db.query(
+      `SELECT quote_ident(n.nspname) AS schema_name
+         FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE c.oid = to_regclass('_smrt_schema_migrations')`,
+    );
+    const schema = found.rows[0]?.schema_name;
+    return typeof schema === 'string'
+      ? `${schema}._smrt_schema_migrations`
+      : '_smrt_schema_migrations';
   }
 
   /**
@@ -1864,38 +2090,48 @@ export class MigrationTracker {
     schemas.delete(schema);
   }
 
+  /**
+   * Phase-2 outcomes are written only over the row phase 1 wrote, by id and
+   * attempt number, while it is still `failed`: a late or stale write never
+   * overwrites a record another run completed or took over.
+   */
   private async recordConcurrentIndexSuccess(
-    name: string,
+    table: string,
+    row: DeferredRow,
     checksum: string,
     executionTime: number,
   ): Promise<void> {
     await this.db.query(
-      `UPDATE _smrt_schema_migrations
+      `UPDATE ${table}
          SET status = 'completed', execution_time_ms = ?, applied_checksum = ?, error_message = NULL, applied_at = CURRENT_TIMESTAMP
-       WHERE name = ?`,
+       WHERE id = ? AND status = 'failed' AND attempts = ?`,
       executionTime,
       checksum,
-      name,
+      row.id,
+      row.attempts,
     );
   }
 
   private async recordConcurrentIndexFailure(
-    name: string,
+    table: string,
+    row: DeferredRow | undefined,
     message: string,
   ): Promise<void> {
+    if (!row) return;
     try {
       await this.db.query(
-        `UPDATE _smrt_schema_migrations
+        `UPDATE ${table}
            SET status = 'failed', error_message = ?
-         WHERE name = ?`,
-        // Keep the resume marker: this failure happened *after* phase 1
-        // committed, so the retry must skip the non-index statements too.
-        `${CONCURRENT_INDEX_PHASE1_MARKER} ${message}`,
-        name,
+         WHERE id = ? AND status = 'failed' AND attempts = ?`,
+        // Keep the resume marker and its plan: this failure happened *after*
+        // phase 1 committed, so the retry must skip the non-index statements.
+        `${phaseOneMarker(row.digest)} ${message}`,
+        row.id,
+        row.attempts,
       );
     } catch (persistError) {
       logger.error(
-        `Failed to persist failed status for migration ${name}: ${
+        `Failed to persist failed status for migration row ${row.id}: ${
           persistError instanceof Error
             ? persistError.message
             : String(persistError)
