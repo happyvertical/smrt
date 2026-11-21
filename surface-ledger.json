@@ -1781,6 +1781,16 @@
   },
   {
     "kind": "entry-point",
+    "name": "@happyvertical/smrt-messages#./connect",
+    "issue": 5128,
+    "nearest": [
+      "@happyvertical/smrt-social#./connect",
+      "@happyvertical/smrt-messages#./ui"
+    ],
+    "reason": "Server-only mailbox OAuth connect (start and complete) built on the shared smrt-secrets connect kernel. smrt-social/connect is X-specific and would pull social's content and video packages into mail; the root entry stays free of the OAuth flow so browser bundles do not load it."
+  },
+  {
+    "kind": "entry-point",
     "name": "@happyvertical/smrt-messages#./manifest",
     "grandfathered": true
   },
@@ -2238,6 +2248,16 @@
     "kind": "entry-point",
     "name": "@happyvertical/smrt-secrets#.",
     "grandfathered": true
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-secrets#./connect",
+    "issue": 5128,
+    "nearest": [
+      "@happyvertical/smrt-secrets#./service",
+      "@happyvertical/smrt-social#./connect"
+    ],
+    "reason": "The provider-neutral credential connect kernel (single-use state, PKCE, safe return path, generic OAuth 2.0 and OIDC mechanics) that smrt-social and smrt-messages both consume. ./service is the secret store and smrt-social/connect holds the platform-specific flow, so neither could host a shared kernel without a social or messaging dependency."
   },
   {
     "kind": "entry-point",
@@ -3277,6 +3297,26 @@
   },
   {
     "kind": "model",
+    "name": "@happyvertical/smrt-app-shell:AppVersion",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-app-shell:Approval",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-app-shell:AssistantMessage",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
+    "name": "@happyvertical/smrt-app-shell:AssistantThread",
+    "grandfathered": true
+  },
+  {
+    "kind": "model",
     "name": "@happyvertical/smrt-app-shell:ChangeBatch",
     "issue": 5203,
     "nearest": [
@@ -3296,26 +3336,6 @@
       "@happyvertical/smrt-jobs:SmrtJob"
     ],
     "reason": "One owner-meaningful change in a ChangeBatch: its engine commands, order, source, revision, checks and review questions, soft-removable so it can be put back. AppDraftVersion stores resulting definitions without the commands, so a card cannot be removed from the middle of a chain from it."
-  },
-  {
-    "kind": "model",
-    "name": "@happyvertical/smrt-app-shell:AppVersion",
-    "grandfathered": true
-  },
-  {
-    "kind": "model",
-    "name": "@happyvertical/smrt-app-shell:Approval",
-    "grandfathered": true
-  },
-  {
-    "kind": "model",
-    "name": "@happyvertical/smrt-app-shell:AssistantMessage",
-    "grandfathered": true
-  },
-  {
-    "kind": "model",
-    "name": "@happyvertical/smrt-app-shell:AssistantThread",
-    "grandfathered": true
   },
   {
     "kind": "model",
@@ -5434,6 +5454,16 @@
   },
   {
     "kind": "model",
+    "name": "@happyvertical/smrt-secrets:ConnectState",
+    "issue": 5128,
+    "nearest": [
+      "@happyvertical/smrt-social:OAuthState",
+      "@happyvertical/smrt-secrets:Secret"
+    ],
+    "reason": "One in-flight credential connect (state, PKCE verifier, redirect, initiating user) for flows that are not social platforms. OAuthState is typed to social platforms and lives in smrt-social, which smrt-messages must not depend on; smrt-social keeps OAuthState behind the same store contract, so no table moves."
+  },
+  {
+    "kind": "model",
     "name": "@happyvertical/smrt-secrets:Secret",
     "grandfathered": true
   },
@@ -6081,35 +6111,5 @@
     "kind": "model",
     "name": "@happyvertical/smrt-webhooks:WebhookSubscription",
     "grandfathered": true
-  },
-  {
-    "kind": "entry-point",
-    "name": "@happyvertical/smrt-messages#./connect",
-    "issue": 5128,
-    "nearest": [
-      "@happyvertical/smrt-social#./connect",
-      "@happyvertical/smrt-messages#./ui"
-    ],
-    "reason": "Server-only mailbox OAuth connect (start and complete) built on the shared smrt-secrets connect kernel. smrt-social/connect is X-specific and would pull social's content and video packages into mail; the root entry stays free of the OAuth flow so browser bundles do not load it."
-  },
-  {
-    "kind": "entry-point",
-    "name": "@happyvertical/smrt-secrets#./connect",
-    "issue": 5128,
-    "nearest": [
-      "@happyvertical/smrt-secrets#./service",
-      "@happyvertical/smrt-social#./connect"
-    ],
-    "reason": "The provider-neutral credential connect kernel (single-use state, PKCE, safe return path, generic OAuth 2.0 and OIDC mechanics) that smrt-social and smrt-messages both consume. ./service is the secret store and smrt-social/connect holds the platform-specific flow, so neither could host a shared kernel without a social or messaging dependency."
-  },
-  {
-    "kind": "model",
-    "name": "@happyvertical/smrt-secrets:ConnectState",
-    "issue": 5128,
-    "nearest": [
-      "@happyvertical/smrt-social:OAuthState",
-      "@happyvertical/smrt-secrets:Secret"
-    ],
-    "reason": "One in-flight credential connect (state, PKCE verifier, redirect, initiating user) for flows that are not social platforms. OAuthState is typed to social platforms and lives in smrt-social, which smrt-messages must not depend on; smrt-social keeps OAuthState behind the same store contract, so no table moves."
   }
 ]
