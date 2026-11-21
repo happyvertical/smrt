@@ -691,18 +691,29 @@ export const POSTGRES_CHANGE_FEED_APPEND_FUNCTION_IDENTITY = `${POSTGRES_CHANGE_
 export const POSTGRES_CHANGE_FEED_APPEND_BATCH_FUNCTION_IDENTITY = `${POSTGRES_CHANGE_FEED_APPEND_BATCH_FUNCTION_NAME}(jsonb)`;
 
 /**
- * Body marker stamped into both PostgreSQL change-feed helpers (#2649).
+ * Body marker stamped into every PostgreSQL change-feed helper (#2649).
  *
  * Existence is not currency: an install can hold a helper of the right name
  * and signature whose *body* predates a fix. The probe in `change-feed.ts`
  * matches this token against `pg_proc.prosrc`, so a stale body is detected and
- * replaced. Bump it whenever either helper's body changes in a way an existing
+ * replaced. Bump it whenever a helper's body changes in a way an existing
  * database must pick up.
+ *
+ * v6 (#5271) serializes every sequence allocator on the feed's head lock and
+ * stages appends made under a fixed-snapshot isolation level.
  */
-export const POSTGRES_CHANGE_FEED_HELPER_MARKER = 'smrt-change-feed-helpers:v5';
+export const POSTGRES_CHANGE_FEED_HELPER_MARKER = 'smrt-change-feed-helpers:v6';
 
 /**
- * The previous body marker, still stamped into every v5 body (#3297).
+ * The v5 marker, still stamped into every v6 body (#5271), for the same
+ * reason v5 carries v4: a v5 process probes for it, and finding it keeps that
+ * process from replacing a v6 body with its own during a rolling upgrade.
+ */
+export const POSTGRES_CHANGE_FEED_HELPER_PREVIOUS_MARKER =
+  'smrt-change-feed-helpers:v5';
+
+/**
+ * The v4 marker, still stamped into every v5 and v6 body (#3297).
  *
  * v5 only changes how a tenant id is coerced: it is converted to whatever type
  * the live `tenant_id` column has (TEXT before `db:migrate-uuid`, native uuid
@@ -713,6 +724,66 @@ export const POSTGRES_CHANGE_FEED_HELPER_MARKER = 'smrt-change-feed-helpers:v5';
  */
 export const POSTGRES_CHANGE_FEED_HELPER_COMPAT_MARKER =
   'smrt-change-feed-helpers:v4';
+
+/** Marker comment lines for a helper body: current first, then every older one. */
+const POSTGRES_CHANGE_FEED_HELPER_MARKER_LINES = [
+  POSTGRES_CHANGE_FEED_HELPER_MARKER,
+  POSTGRES_CHANGE_FEED_HELPER_PREVIOUS_MARKER,
+  POSTGRES_CHANGE_FEED_HELPER_COMPAT_MARKER,
+]
+  .map((marker) => `-- ${marker}`)
+  .join('\n');
+
+/**
+ * Advisory-lock key of the feed's "head lock" (#5271).
+ *
+ * Every allocator of `_smrt_changes.seq` (direct single and batch appends,
+ * and the drain) takes this transaction-scoped lock before reading
+ * `MAX(seq)`, so two allocators never compute the same value. The second key
+ * is the resolved feed table's oid: the sequence belongs to that table, so
+ * separate schemas in one database never serialize on each other (a hash
+ * collision only adds serialization).
+ *
+ * Why the lock is sufficient: the helpers are VOLATILE (PL/pgSQL's default,
+ * stated explicitly in each body and required to stay that way), so under
+ * READ COMMITTED every statement after the lock takes a fresh snapshot, and
+ * PostgreSQL makes a commit visible before it releases that transaction's
+ * locks. The next holder therefore always sees its predecessor's row.
+ *
+ * The feed table's own insert lock is always taken before this one, so the
+ * head lock is never held while waiting for that relation lock (a session
+ * holding `SHARE` on the feed table could otherwise close a cycle). See
+ * {@link POSTGRES_CHANGE_FEED_CAN_LOCK_RELATION} for the one exception.
+ */
+const POSTGRES_CHANGE_FEED_HEAD_LOCK_KEY = `hashtext('smrt-change-feed-head'), hashtext(to_regclass('_smrt_changes')::oid::text)`;
+
+/**
+ * True when the invoking role may take the feed table's explicit insert lock
+ * (#5271).
+ *
+ * `LOCK TABLE ... IN ROW EXCLUSIVE MODE` checks TABLE-level privileges
+ * (INSERT, UPDATE, DELETE or TRUNCATE), while the feed's own INSERT is also
+ * satisfied by column-level INSERT grants. A role granted only column-level
+ * INSERT on `_smrt_changes` could append before v6, so the helpers skip the
+ * explicit lock for it rather than fail every append with `42501`. Its INSERT
+ * then takes the same relation lock after the head lock, so a session holding
+ * `SHARE` on the feed table that also appends can form a cycle with it, which
+ * PostgreSQL breaks with `40P01` (returned as data, the entry warned and
+ * dropped).
+ */
+const POSTGRES_CHANGE_FEED_CAN_LOCK_RELATION = `has_table_privilege('_smrt_changes', 'INSERT, UPDATE, DELETE, TRUNCATE')`;
+
+/**
+ * True when the current transaction reads through a fixed snapshot (#5271).
+ *
+ * REPEATABLE READ and SERIALIZABLE keep the snapshot of the transaction's
+ * first statement, so a `MAX(seq)` read after waiting for the head lock can
+ * be stale and could even succeed behind a cursor a consumer has already
+ * observed once retention freed that slot. Such appends are staged and such
+ * drains allocate nothing. PostgreSQL runs READ UNCOMMITTED as READ
+ * COMMITTED, so it allocates normally.
+ */
+const POSTGRES_FIXED_SNAPSHOT_ISOLATION = `current_setting('transaction_isolation') NOT IN ('read committed', 'read uncommitted')`;
 
 /**
  * Coerce a text tenant id to the live type of `<table>.tenant_id` (#3297).
@@ -761,7 +832,12 @@ export const POSTGRES_CHANGE_FEED_DRAIN_BATCH = 1000;
  *   it, and it is picked up by a later drain once that transaction commits;
  * - concurrent drains are excluded by a `pg_try_advisory_xact_lock`, which
  *   *skips* rather than waits, so a drain can never become an edge in a lock
- *   cycle either.
+ *   cycle either;
+ * - direct appenders are excluded by the head lock (#5271), which the drain
+ *   also only *tries*, and only once a non-sensitive row is staged: a busy
+ *   head makes it return, never wait. Its feed-table lock before that is
+ *   `NOWAIT` for the same reason;
+ * - under REPEATABLE READ / SERIALIZABLE it allocates nothing (#5271).
  *
  * Because exactly one drain runs at a time and it numbers rows
  * `COALESCE(MAX(seq), 0) + row_number()` in staged order, committed sequences
@@ -794,12 +870,13 @@ RETURNS TABLE(
   error_message TEXT
 )
 LANGUAGE plpgsql
+VOLATILE
 SECURITY INVOKER
 AS $smrt_change_feed_drain$
--- ${POSTGRES_CHANGE_FEED_HELPER_MARKER}
--- ${POSTGRES_CHANGE_FEED_HELPER_COMPAT_MARKER}
+${POSTGRES_CHANGE_FEED_HELPER_MARKER_LINES}
 DECLARE
   v_base BIGINT;
+  v_has_candidate BOOLEAN;
   v_error_code TEXT;
   v_error_message TEXT;
 BEGIN
@@ -822,6 +899,13 @@ BEGIN
       RETURN;
     END IF;
 
+    -- A fixed snapshot (REPEATABLE READ / SERIALIZABLE) could read a stale
+    -- MAX(seq), so it never allocates (#5271). The staged rows keep for a
+    -- READ COMMITTED drain.
+    IF ${POSTGRES_FIXED_SNAPSHOT_ISOLATION} THEN
+      RETURN;
+    END IF;
+
     -- Cheap common case: nothing staged, so an autocommit append pays one
     -- index probe rather than a drain.
     IF NOT EXISTS (SELECT 1 FROM _smrt_changes_pending LIMIT 1) THEN
@@ -834,6 +918,36 @@ BEGIN
       hashtext('change-feed-drain')
     ) THEN
       RETURN;
+    END IF;
+
+    -- The head lock (#5271) serializes this drain with direct appenders. It is
+    -- only TRIED: a reader must never wait behind an appender's transaction,
+    -- so when it is busy the drain returns and a later one sequences the
+    -- staged rows. It is taken only when something will be sequenced, so a
+    -- purge of sensitive rows alone never holds the head. The feed table's
+    -- insert lock comes first, as in the append helpers, and is NOWAIT for
+    -- the same reason the head lock is only tried: a session holding SHARE
+    -- on the feed table would otherwise make this drain wait for it. A
+    -- refusal is a skipped pass, not an error. A role without a table-level
+    -- privilege for that lock skips it, as the append helpers do.
+    v_has_candidate := EXISTS (
+      SELECT 1
+      FROM _smrt_changes_pending AS candidate
+      WHERE NOT (
+        candidate.table_name = ANY(COALESCE(p_excluded_tables, ARRAY[]::TEXT[]))
+      )
+    );
+    IF v_has_candidate THEN
+      IF ${POSTGRES_CHANGE_FEED_CAN_LOCK_RELATION} THEN
+        BEGIN
+          LOCK TABLE _smrt_changes IN ROW EXCLUSIVE MODE NOWAIT;
+        EXCEPTION WHEN lock_not_available THEN
+          RETURN;
+        END;
+      END IF;
+      IF NOT pg_try_advisory_xact_lock(${POSTGRES_CHANGE_FEED_HEAD_LOCK_KEY}) THEN
+        RETURN;
+      END IF;
     END IF;
 
     -- The feed never records a sensitive table (#2982). Staged entries for
@@ -851,6 +965,10 @@ BEGIN
         ORDER BY staged.pending_id
         LIMIT GREATEST(COALESCE(p_limit, ${POSTGRES_CHANGE_FEED_DRAIN_BATCH}), 1)
       );
+    END IF;
+
+    IF NOT v_has_candidate THEN
+      RETURN;
     END IF;
 
     SELECT COALESCE(MAX(changes.seq), 0) INTO v_base FROM _smrt_changes AS changes;
@@ -953,9 +1071,10 @@ RETURNS TABLE(
   error_message TEXT
 )
 LANGUAGE plpgsql
+VOLATILE
 SECURITY INVOKER
 AS $smrt_change_feed_drain_compat$
--- ${POSTGRES_CHANGE_FEED_HELPER_MARKER}
+${POSTGRES_CHANGE_FEED_HELPER_MARKER_LINES}
 DECLARE
   v_error_code TEXT;
   v_error_message TEXT;
@@ -1007,10 +1126,10 @@ RETURNS TABLE(
   error_message TEXT
 )
 LANGUAGE plpgsql
+VOLATILE
 SECURITY INVOKER
 AS $smrt_change_feed$
--- ${POSTGRES_CHANGE_FEED_HELPER_MARKER}
--- ${POSTGRES_CHANGE_FEED_HELPER_COMPAT_MARKER}
+${POSTGRES_CHANGE_FEED_HELPER_MARKER_LINES}
 DECLARE
   v_seq BIGINT;
   v_error_code TEXT;
@@ -1034,9 +1153,17 @@ BEGIN
   -- Preflight inside its own exception boundary for the same reason the drain
   -- wraps its own: an error here would abort a caller-owned transaction
   -- (#2026), and a catalog probe is still a statement that can fail.
+  --
+  -- A fixed-snapshot transaction (#5271) is staged too, written or not: its
+  -- MAX(seq) can be stale even after waiting for the head lock.
+  --
+  -- The decision does not depend on the staging table existing (#5271). If
+  -- it is missing, the staged insert below fails and its error comes back as
+  -- data: such a caller must neither allocate from a stale snapshot nor wait
+  -- on the head while it holds a transaction id.
   BEGIN
     v_deferred := pg_current_xact_id_if_assigned() IS NOT NULL
-      AND to_regclass('_smrt_changes_pending') IS NOT NULL;
+      OR ${POSTGRES_FIXED_SNAPSHOT_ISOLATION};
   EXCEPTION WHEN query_canceled OR assert_failure OR OTHERS THEN
     GET STACKED DIAGNOSTICS
       v_error_code = RETURNED_SQLSTATE,
@@ -1090,7 +1217,19 @@ BEGIN
   -- Last-Event-ID resumes above them and never receives them. Draining is
   -- driven from JavaScript (drainChangeFeed) so every sequenced entry gets
   -- its signal.
+  --
+  -- The head lock (#5271) serializes this allocation with every other one, so
+  -- MAX(seq) below already sees the previous holder's committed row and the
+  -- primary key never has to arbitrate. The feed table's insert lock is taken
+  -- first (skipped for a role whose INSERT is granted only per column). Both
+  -- sit inside the exception boundary: a lock timeout, cancel or deadlock
+  -- comes back as data (#2026).
   BEGIN
+    IF ${POSTGRES_CHANGE_FEED_CAN_LOCK_RELATION} THEN
+      LOCK TABLE _smrt_changes IN ROW EXCLUSIVE MODE;
+    END IF;
+    PERFORM pg_advisory_xact_lock(${POSTGRES_CHANGE_FEED_HEAD_LOCK_KEY});
+
     INSERT INTO _smrt_changes (
       seq,
       table_name,
@@ -1137,18 +1276,20 @@ RETURNS TABLE(
   error_message TEXT
 )
 LANGUAGE plpgsql
+VOLATILE
 SECURITY INVOKER
 AS $smrt_change_feed_batch$
--- ${POSTGRES_CHANGE_FEED_HELPER_MARKER}
--- ${POSTGRES_CHANGE_FEED_HELPER_COMPAT_MARKER}
+${POSTGRES_CHANGE_FEED_HELPER_MARKER_LINES}
 DECLARE
   v_deferred BOOLEAN;
   v_error_code TEXT;
   v_error_message TEXT;
 BEGIN
   BEGIN
+    -- As in the single append, a missing staging table fails the staged
+    -- insert (returned as data) rather than falling through to allocate.
     v_deferred := pg_current_xact_id_if_assigned() IS NOT NULL
-      AND to_regclass('_smrt_changes_pending') IS NOT NULL;
+      OR ${POSTGRES_FIXED_SNAPSHOT_ISOLATION};
 
     IF v_deferred THEN
       RETURN QUERY
@@ -1175,6 +1316,13 @@ BEGIN
       ORDER BY input.entry_index;
       RETURN;
     END IF;
+
+    -- Same order as the single append (#5271): feed-table insert lock, then
+    -- the head lock, then the statement that reads MAX(seq).
+    IF ${POSTGRES_CHANGE_FEED_CAN_LOCK_RELATION} THEN
+      LOCK TABLE _smrt_changes IN ROW EXCLUSIVE MODE;
+    END IF;
+    PERFORM pg_advisory_xact_lock(${POSTGRES_CHANGE_FEED_HEAD_LOCK_KEY});
 
     RETURN QUERY
     WITH input AS (
