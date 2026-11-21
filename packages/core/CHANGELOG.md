@@ -1,5 +1,30 @@
 # @happyvertical/smrt-core
 
+## 0.67.0
+
+### Minor Changes
+
+- ### Breaking Changes
+  
+  - require verify for SmrtServer auth and cap request bodies (#5482) (core)
+  
+  ### Features
+  
+  - post issued invoices to the settlement chart and sweep unposted ones (#5501) (commerce)
+  - user apps on PostgreSQL and a sign-in landing on the cloud profile (#5191) (#5418) (app-shell)
+  - user app export and import across SQLite and PostgreSQL (#5193) (#5419) (portability)
+  
+  ### Bug Fixes
+  
+  - stop change-feed append retries once the time budget is spent (#5478) (core)
+  - match a reference to the notification table as SQLite does (#5461) (messages)
+
+### Patch Changes
+
+- @happyvertical/smrt-config@0.67.0
+  - @happyvertical/smrt-scanner@0.67.0
+  - @happyvertical/smrt-types@0.67.0
+
 ## 0.66.1
 
 ### Patch Changes

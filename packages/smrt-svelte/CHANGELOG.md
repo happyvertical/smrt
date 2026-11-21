@@ -1,5 +1,20 @@
 # @happyvertical/smrt-svelte
 
+## 0.67.0
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.67.0
+  - @happyvertical/smrt-chat@0.67.0
+  - @happyvertical/smrt-fields@0.67.0
+  - @happyvertical/smrt-inference@0.67.0
+  - @happyvertical/smrt-languages@0.67.0
+  - @happyvertical/smrt-mcp-apps@0.67.0
+  - @happyvertical/smrt-web@0.67.0
+  - @happyvertical/smrt-ui@0.67.0
+  - @happyvertical/smrt-types@0.67.0
+
 ## 0.66.1
 
 ### Patch Changes
