@@ -312,10 +312,32 @@ subscriptions or features code.
   gate reads the principal). Probes pass `probe: true` and record nothing;
   a blocked probe answers `{ available: false, reason: 'entitlement', mode:
   'hosted', policy, resetsAt? }` (never cap or spend).
-- **Granularity.** The gate runs once per client acquisition: every object
-  operation (`do()`, `prepareAiOperation()`), every chain attempt, every
-  `resolveInferenceTarget()`. A caller that keeps a raw client across many
-  calls is checked when it built it.
+- **Granularity.** The gate runs when a client is acquired (every object
+  operation, chain attempt and `resolveInferenceTarget()`) and again before
+  every send on a client core built for a hosted target: a `getAiClient(tier)`
+  single target, a hosted chain candidate, or any candidate of a chain
+  stamped hosted (#5489, `src/hosted-inference-holds.ts`). A kept client
+  stops at a cap or kill switch like a fresh one. A raw `getAI()` site that
+  builds its own client from `resolveInferenceTarget()` is still checked
+  only at resolution.
+- **Holds (#5489).** Before each such send, while a gate is registered and
+  usage is persisted, core writes the call's estimate (the run reservation
+  size: input characters / 4 plus `maxTokens`, else the declared or default
+  output allowance, at the model's rate; nothing for an unpriced model) as
+  one `_smrt_ai_usage` row, `operation: 'hosted-hold'`, id
+  `hosted-hold:<uuid>`, `source: hosted`, the metered user and usage
+  tenant; then asks the gate, whose spend read counts it. A call whose own
+  estimate brings spend to the cap is refused, and of two calls in flight
+  the later checker sees both (no lock; both may be refused under
+  contention, never both allowed on their estimates). The hold is deleted
+  when the call is refused or fails, and when it answered once its usage row
+  is written (a run's call: at settlement; any other call: when its usage
+  event is recorded, else after 60 s). A call outside a run whose usage
+  reports neither tokens nor cost is recorded at its held estimate with
+  `usageEstimate: reservation`. A hold left by a stopped process counts as
+  spend for `HOSTED_AI_HOLD_TTL_MS` (1 h). Call-counting readers exclude
+  holds (`HOSTED_AI_HOLD_ROW_SQL`, `isHostedAiHoldRow()`): `listAiUsage` /
+  `summarizeAiUsage`, `reportAiUsage`, smrt-subscriptions' tenant meter.
 
 Tests: `src/__tests__/issue-4760-hosted-inference-gate.test.ts`,
 `src/__tests__/issue-4757-inference-unavailable.test.ts`,

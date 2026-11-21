@@ -352,7 +352,10 @@ key on your gateway (Bifrost or LiteLLM), stored as their binding with
   nothing to spend.
 - **Gate.** `registerHostedInferenceGate({ killSwitch, spend })` from
   `@happyvertical/smrt-inference/gate` checks every `source: hosted` call
-  before it runs: kill switch, tenant, entitlement, then caps. A block throws
+  before it runs, on every send of a kept client too: kill switch, tenant,
+  entitlement, then caps. Each call's estimated cost is held as spend while
+  it runs, so calls running at the same time count each other, and a call
+  whose estimate would reach the cap is refused. A block throws
   `AI_UNAVAILABLE` (`reason: 'entitlement'`) and writes one `blocked` usage
   row as the audit record; `byo`, `local` and `app` calls never reach it.
 - **Kill switch.** `smrt inference:hosted disable [--tenant <id>]` stops

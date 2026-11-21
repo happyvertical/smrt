@@ -111,7 +111,12 @@ window, amount and enforcement come from the plan (pinned version included):
   `instr` elsewhere, never `LIKE`, which folds ASCII case on SQLite and
   would merge `Alice` and `alice`); errors only over-count.
   `operation: 'blocked'` rows and external-agent measurements never count;
-  uncosted rows add nothing (give hosted models a cost rate). The `userId`
+  uncosted rows add nothing (give hosted models a cost rate). Core's hosted
+  spend holds (`operation: 'hosted-hold'`, #5489: each hosted call's
+  estimate, written before the gate is asked and deleted when the call
+  ends) count while younger than `HOSTED_AI_HOLD_TTL_MS`, so calls in flight
+  see each other's estimates; the tenant meter's AI summary excludes them
+  (`HOSTED_AI_HOLD_ROW_SQL`). The `userId`
   tag exists only while the hosted gate's ambient-user resolver is
   registered.
 - `resetsAt`: the calendar window's end; for a blocked `rolling` cap (30

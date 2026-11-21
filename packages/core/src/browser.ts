@@ -370,6 +370,12 @@ export {
   type TypedHttpFailure,
 } from './generators/typed-http-error';
 export { type HierarchyView, SmrtHierarchical } from './hierarchical';
+export {
+  HOSTED_AI_HOLD_OPERATION,
+  HOSTED_AI_HOLD_ROW_SQL,
+  HOSTED_AI_HOLD_TTL_MS,
+  isHostedAiHoldRow,
+} from './hosted-inference-holds';
 // Inference tiers and the binding resolver seam (#4750). Browser-safe; keep
 // this list identical in index.ts and browser.ts.
 export {

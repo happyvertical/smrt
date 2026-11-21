@@ -148,6 +148,22 @@ export function getAiUsageUserResolver(): AiUsageUserResolver | undefined {
   return globalThis.__smrtAiUsageUserResolver;
 }
 
+/**
+ * The user a usage row is metered to, as {@link normalizeAiUsageEvent}
+ * attributes it: the sink attribution's `userId` tag, else the ambient
+ * user. Used for rows core writes itself (hosted spend holds, #5489).
+ *
+ * @internal Not part of the package surface.
+ */
+export function resolveAiUsageUserId(
+  attributionTags?: Record<string, string>,
+): string | undefined {
+  return (
+    nonEmptyString(attributionTags?.[AI_USAGE_USER_TAG]) ??
+    readAmbientAiUsageUser()
+  );
+}
+
 function readAmbientAiUsageUser(): string | undefined {
   const resolver = globalThis.__smrtAiUsageUserResolver;
   if (!resolver) return undefined;
@@ -360,12 +376,15 @@ export async function dispatchAiUsageEvent(
   }
 
   if (usageConfig.estimateCosts) {
-    event.estimatedCost = estimateAiUsageCost(
-      event.provider,
-      event.model,
-      event.usage,
-      usageConfig.costRates,
-    );
+    // A cost core already put on an event it cannot price (a call charged
+    // its reservation, #5489) is kept, never replaced by "no cost".
+    event.estimatedCost =
+      estimateAiUsageCost(
+        event.provider,
+        event.model,
+        event.usage,
+        usageConfig.costRates,
+      ) ?? event.estimatedCost;
   }
   // A tracked call's usage that arrived after its call stopped listening
   // still belongs to the call: it is settled or corrected there (priced as

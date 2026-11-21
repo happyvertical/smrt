@@ -16,6 +16,7 @@
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { DEFAULT_AI_COST_RATES } from '../adapters/cost-rates.js';
 import { EXTERNAL_AGENT_USAGE_OPERATION } from '../external-agent-usage.js';
+import { isHostedAiHoldRow } from '../hosted-inference-holds.js';
 import { INFERENCE_BLOCKED_OPERATION } from '../inference-gate.js';
 import { toSafeInteger } from '../utils/safe-integer.js';
 import {
@@ -1028,6 +1029,8 @@ export async function reportAiUsage(
         excluded.externalAgent++;
         continue;
       }
+      // A hosted spend hold (#5489) is a reservation in flight, not a call.
+      if (isHostedAiHoldRow(row)) continue;
       const tags = parseTags(row.tags);
       const key: AiUsageReportBucket['key'] = {};
       for (const dimension of by)

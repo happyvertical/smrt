@@ -21,14 +21,22 @@
  * window whose `tags` record `source: hosted` (and, for the per-user cap,
  * the `userId` tag), matched as case-sensitive exact JSON fragments. Blocked rows (`operation: 'blocked'`) and
  * external-agent measurements never count. Rows without a cost rate add
- * nothing; give hosted models a cost rate.
+ * nothing; give hosted models a cost rate. Core's hosted spend holds
+ * (#5489: each hosted call's estimate, written before the gate is asked
+ * and dropped when the call ends) count while younger than
+ * `HOSTED_AI_HOLD_TTL_MS`, so calls in flight see each other: a call is
+ * refused when its own estimate would bring spend to the cap.
  *
  * These keys are evaluated by {@link HostedAiSpendEvaluator} only:
  * `resolveEntitlements()` reports them with quantity 0 (the tenant usage
  * meter has no hosted or per-user meter).
  */
 
-import { usesPostgresDialect } from '@happyvertical/smrt-core';
+import {
+  HOSTED_AI_HOLD_ROW_SQL,
+  HOSTED_AI_HOLD_TTL_MS,
+  usesPostgresDialect,
+} from '@happyvertical/smrt-core';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import type {
   PlanThreshold,
@@ -170,13 +178,17 @@ function scopeSql(
     tenantId,
     window.start.toISOString(),
     window.end.toISOString(),
+    new Date(Date.now() - HOSTED_AI_HOLD_TTL_MS).toISOString(),
     hostedAiTagFragment('source', 'hosted'),
   ];
+  // A hold (#5489) counts as spend while its call is in flight; one older
+  // than its time-to-live belongs to a call that never released it.
   let where = `tenant_id = ?
             AND created_at >= ?
             AND created_at < ?
             AND operation <> 'blocked'
             AND NOT (operation = 'external-agent' AND id LIKE 'external-agent:%')
+            AND NOT (${HOSTED_AI_HOLD_ROW_SQL} AND created_at < ?)
             AND ${contains}`;
   if (userId !== undefined) {
     params.push(hostedAiTagFragment('userId', userId));

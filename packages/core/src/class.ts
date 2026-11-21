@@ -27,6 +27,7 @@ import {
   AI_OWN_CALL_ID_TAG,
   AiUsageCollector,
   AiUsagePersistenceHandler,
+  insertAiUsageRow,
 } from './adapters/ai-usage.js';
 import {
   type AiUsageSinkAttribution,
@@ -40,6 +41,7 @@ import {
   type ResolvedAiUsageConfig,
   resolveAiUsageConfig,
   resolveAiUsageTenantId,
+  resolveAiUsageUserId,
   unwrapAiUsageSink,
 } from './adapters/ai-usage-recorder.js';
 import {
@@ -86,6 +88,13 @@ import { isPerConnectionMemoryUrl } from './embedded-write-queue.js';
 import { createFilesystemAdapter } from './filesystem-loader.js';
 import { getDatabase, importAI } from './host.js';
 import {
+  applyHostedAiHold,
+  HOSTED_AI_HOLD_OPERATION,
+  HOSTED_AI_HOLD_ROW_SQL,
+  type HostedHoldHooks,
+  withHostedInferenceHolds,
+} from './hosted-inference-holds.js';
+import {
   getInferenceConfig as getProcessInferenceConfig,
   InferenceBindingError,
   type InferenceConfig,
@@ -125,6 +134,7 @@ import {
 import {
   checkInferenceGate,
   enforceInferenceGate,
+  getInferenceGate,
   inferenceGateRequest,
   isHostedInferenceTarget,
 } from './inference-gate.js';
@@ -140,6 +150,7 @@ import {
 } from './postgres-timeouts.js';
 import { detectEngine } from './schema/ddl/index.js';
 import { SignalBus } from './signals/bus.js';
+import { sizeAiCallReservation } from './system/ai-run-accounting.js';
 import {
   beginAiRunCall,
   chargeAiRunCallUnreserved,
@@ -302,6 +313,8 @@ function buildAiUsageWhereClause(
   // External harness measurements have a separate nullable summary contract.
   const conditions: string[] = [
     "NOT (operation = 'external-agent' AND id LIKE 'external-agent:%')",
+    // Hosted spend holds (#5489) are reservations, not calls.
+    `NOT ${HOSTED_AI_HOLD_ROW_SQL}`,
   ];
   const params: unknown[] = [];
   let nextParamIndex = 1;
@@ -1077,11 +1090,29 @@ export class SmrtClass {
           clientFor: async (target) => {
             await this.enforceHostedInferenceGate(request, resolution, target);
             // A fusion's calls are always calls of its run (#5005).
-            return (await this.getAiClientForTarget(
+            const tracked = options.runTracking || isFusion;
+            const client = await this.getAiClientForTarget(
               target,
               undefined,
-              options.runTracking || isFusion,
-            )) as unknown as InferenceModelClient;
+              tracked,
+            );
+            // A hosted candidate, or any candidate of a chain stamped hosted
+            // as a whole, holds its estimate per send (#5489).
+            const hostedAs = isHostedInferenceTarget(target)
+              ? target
+              : isHostedInferenceTarget(resolution.target)
+                ? resolution.target
+                : undefined;
+            return (hostedAs
+              ? withHostedInferenceHolds(
+                  client,
+                  this.hostedHoldHooks(request, resolution, {
+                    gateTarget: hostedAs,
+                    sendTarget: target,
+                    runTracking: tracked,
+                  }),
+                )
+              : client) as unknown as InferenceModelClient;
           },
           resolveTier: (next, overrides) =>
             this.resolveInferenceTier({
@@ -1107,12 +1138,24 @@ export class SmrtClass {
           billingTags,
         ) as unknown as AIClient;
       }
+      const single = await this.getAiClientForTarget(
+        resolution.target,
+        resolution.tierResolved,
+        options.runTracking,
+      );
+      // A hosted target holds its estimate and asks the gate before every
+      // send, not only when the client is built (#5489).
       return withInferenceBindingTags(
-        await this.getAiClientForTarget(
-          resolution.target,
-          resolution.tierResolved,
-          options.runTracking,
-        ),
+        isHostedInferenceTarget(resolution.target)
+          ? withHostedInferenceHolds(
+              single,
+              this.hostedHoldHooks(request, resolution, {
+                gateTarget: resolution.target,
+                sendTarget: resolution.target,
+                runTracking: Boolean(options.runTracking),
+              }),
+            )
+          : single,
         billingTags,
       );
     }
@@ -1324,6 +1367,133 @@ export class SmrtClass {
         owner: this._className,
       },
     );
+  }
+
+  /**
+   * The hosted spend hold of each send on a hosted client (#5489;
+   * `hosted-inference-holds.ts`): the estimate is the run accounting's
+   * reservation size at the send target's rate; the hold row is written to
+   * this instance's usage database under its usage tenant and metered user;
+   * the gate is asked for `gateTarget` (the hosted target, or the chain
+   * stamped hosted) after the hold is written.
+   */
+  private hostedHoldHooks(
+    request: InferenceRequest,
+    resolution: InferenceResolution,
+    targets: {
+      gateTarget: InferenceTarget;
+      sendTarget: InferenceTarget;
+      runTracking: boolean;
+    },
+  ): HostedHoldHooks {
+    const usageConfig = () =>
+      this._aiUsageResolvedConfig ?? this.mergeAiUsageConfig(config.toJSON());
+    const identity = inferenceTargetIdentity(targets.sendTarget);
+    const sentTo = (options: Record<string, unknown>) => {
+      const base = this._aiClientConfig ?? {};
+      const field = (name: string) =>
+        typeof base[name] === 'string' ? (base[name] as string) : '';
+      const label = this._aiClientLabel;
+      return {
+        provider:
+          identity.provider ??
+          (field('provider') || label?.provider || 'unknown'),
+        model:
+          (typeof options.model === 'string' && options.model) ||
+          identity.model ||
+          field('model') ||
+          label?.model ||
+          'unknown',
+      };
+    };
+    return {
+      runTracking: targets.runTracking,
+      estimate: (input, options) => {
+        const resolved = usageConfig();
+        if (!resolved.estimateCosts) return 0;
+        const { provider, model } = sentTo(options);
+        const rate = lookupAiCostRate(provider, model, resolved.costRates);
+        if (!rate) return 0;
+        let inputChars = 0;
+        try {
+          inputChars =
+            typeof input === 'string'
+              ? input.length
+              : JSON.stringify(input ?? '').length;
+        } catch {
+          inputChars = 0;
+        }
+        const size = sizeAiCallReservation({
+          inputChars,
+          ...(typeof options.maxTokens === 'number'
+            ? { outputLimit: options.maxTokens }
+            : {}),
+          ...(typeof options.expectedOutputTokens === 'number'
+            ? { expectedOutputTokens: options.expectedOutputTokens }
+            : {}),
+          rate,
+        });
+        return size?.reservedCost ?? 0;
+      },
+      place: async (cost) => {
+        const resolved = usageConfig();
+        const db = this._db;
+        // No gate means no cap to hold against; no persisted usage means
+        // no spend for a cap to read.
+        if (!getInferenceGate() || !db || !resolved.enabled) return undefined;
+        if (!resolved.persist) return undefined;
+        const id = `${HOSTED_AI_HOLD_OPERATION}:${crypto.randomUUID()}`;
+        const userId = resolveAiUsageUserId(this._aiSinkAttribution?.tags);
+        const { provider, model } = sentTo({});
+        await insertAiUsageRow(
+          db,
+          {
+            provider,
+            model,
+            operation: HOSTED_AI_HOLD_OPERATION,
+            estimatedCost: cost,
+            duration: 0,
+            className: this._className,
+            tenantId:
+              resolveAiUsageTenantId(
+                this._aiSinkAttribution?.tenantId,
+                this.currentTenantId(),
+              ) ?? null,
+            tags: {
+              source: 'hosted',
+              ...(userId ? { userId } : {}),
+            },
+            timestamp: new Date(),
+          },
+          { id, runId: null },
+        );
+        return id;
+      },
+      drop: async (holdId) => {
+        const db = this._db;
+        if (!db) return;
+        try {
+          await db.query(
+            'DELETE FROM _smrt_ai_usage WHERE id = $1 AND operation = $2',
+            holdId,
+            HOSTED_AI_HOLD_OPERATION,
+          );
+        } catch (error) {
+          logger.warn(
+            `[smrt] Could not release hosted spend hold ${holdId}; it expires on its own: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          );
+        }
+      },
+      check: async () => {
+        await this.enforceHostedInferenceGate(
+          request,
+          resolution,
+          targets.gateTarget,
+        );
+      },
+    };
   }
 
   /** The gate request for this instance's class, tenant and user scope. */
@@ -3060,26 +3230,38 @@ export class SmrtClass {
       capture(normalizedEvent);
       return;
     }
-    if (!usageConfig.enabled) return;
+    // A hosted call outside a run (#5489): usage reporting nothing is
+    // recorded at its held estimate, and its hold is released once the row
+    // is written. The hold tag never reaches a handler.
+    const recorded = applyHostedAiHold(normalizedEvent);
+    if (!usageConfig.enabled) {
+      recorded?.();
+      return;
+    }
 
     if (observed) {
       // Fusion run observers (#4753) see the event with its estimated cost;
       // dispatch below computes the same estimate for the handlers.
       if (usageConfig.estimateCosts) {
-        normalizedEvent.estimatedCost = estimateAiUsageCost(
-          normalizedEvent.provider,
-          normalizedEvent.model,
-          normalizedEvent.usage,
-          usageConfig.costRates,
-        );
+        normalizedEvent.estimatedCost =
+          estimateAiUsageCost(
+            normalizedEvent.provider,
+            normalizedEvent.model,
+            normalizedEvent.usage,
+            usageConfig.costRates,
+          ) ?? normalizedEvent.estimatedCost;
       }
       this.notifyRunUsage(normalizedEvent);
     }
 
-    await dispatchAiUsageEvent(
-      normalizedEvent,
-      this._aiUsageHandlers,
-      usageConfig,
-    );
+    try {
+      await dispatchAiUsageEvent(
+        normalizedEvent,
+        this._aiUsageHandlers,
+        usageConfig,
+      );
+    } finally {
+      recorded?.();
+    }
   }
 }

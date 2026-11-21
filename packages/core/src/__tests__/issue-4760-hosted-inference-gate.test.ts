@@ -163,7 +163,11 @@ describe('#4760 hosted inference gate seam', () => {
       await expect(
         doc.do('summarize', { tier: 'great', promptKey: 'p.k' }),
       ).resolves.toBe('done');
-      expect(gate.check).toHaveBeenCalledTimes(1);
+      // Once when the client is built, once before its send (#5489).
+      expect(gate.check).toHaveBeenCalledTimes(2);
+      expect(gate.check.mock.calls[1]?.[0]).toEqual(
+        gate.check.mock.calls[0]?.[0],
+      );
       const request = gate.check.mock.calls[0]?.[0] as InferenceGateRequest;
       expect(request).toMatchObject({
         tierRequested: 'great',

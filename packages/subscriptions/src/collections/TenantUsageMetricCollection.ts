@@ -1,4 +1,7 @@
-import { SmrtCollection } from '@happyvertical/smrt-core';
+import {
+  HOSTED_AI_HOLD_ROW_SQL,
+  SmrtCollection,
+} from '@happyvertical/smrt-core';
 import { TenantUsageMetric } from '../models/TenantUsageMetric.js';
 import type {
   AiUsageSummary,
@@ -218,6 +221,7 @@ export class TenantUsageMetricCollection extends SmrtCollection<TenantUsageMetri
         WHERE tenant_id = ?
           AND operation <> 'blocked'
           AND NOT (operation = 'external-agent' AND id LIKE 'external-agent:%')
+          AND NOT ${HOSTED_AI_HOLD_ROW_SQL}
           AND created_at >= ?
           AND created_at < ?`,
       options.tenantId,
