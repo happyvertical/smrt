@@ -428,6 +428,15 @@ export class AppHost extends EventEmitter {
   }
 
   static async open(dataDir: string, opts: HostOptions): Promise<AppHost> {
+    // 0 turns lock_timeout off (a dump or swap would wait forever); a fraction
+    // floors to 0 and a negative or NaN makes the server refuse the setting.
+    // Refuse before anything is opened or claimed.
+    const lockMs = opts.swapLockTimeoutMs;
+    if (lockMs !== undefined && (!Number.isInteger(lockMs) || lockMs < 1))
+      throw new EngineError(
+        'swapLockTimeoutMs must be a whole number of ms, 1 or more',
+        'refused',
+      );
     if (opts.autoApprove) {
       const marker = readDraftMarker(dataDir);
       if (!marker || sameDir(marker.liveDir, dataDir))
