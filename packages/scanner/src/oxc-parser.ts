@@ -1750,6 +1750,14 @@ function collectModuleConstants(
   },
 ): Map<string, ModuleConstant> {
   const constants = new Map<string, ModuleConstant>();
+  // The escape analysis below asks whether a call is a decorator this scanner
+  // reads, and a computed namespace decorator (`core[KEY]`) is named through
+  // this file's constants: make the table visible while it is filled. The
+  // decorator readers check the key's final state again afterwards, so a key
+  // later found unsafe leaves the decorator unnamed (and reported).
+  if (options.importBindings) {
+    CONSTANTS_BY_BINDINGS.set(options.importBindings, constants);
+  }
 
   for (const node of body) {
     // Both `const X = {}` and `export const X = {}`.

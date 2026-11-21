@@ -309,6 +309,26 @@ describe('class decorators reached through a computed namespace member', () => {
     expect(errors).toEqual([]);
     expect(model('Vault')?.decoratorConfig).toMatchObject({ api: false });
   });
+
+  it('reads a same-file options constant passed to a decorator keyed by a same-file string constant', async () => {
+    const { errors, model } = await scanProject({
+      'src/models/Vault.ts': `import * as core from '@happyvertical/smrt-core';\nconst KEY = 'smrt';\nconst OPTIONS = { api: false };\n@(core[KEY])(OPTIONS)\nexport class Vault extends core.SmrtObject {}\n`,
+    });
+
+    expect(errors).toEqual([]);
+    expect(model('Vault')?.decoratorConfig).toMatchObject({ api: false });
+  });
+
+  it('still reports a decorator keyed by a reassignable binding when its options are a same-file constant', async () => {
+    const { errors } = await scanProject({
+      'src/models/Vault.ts': `import * as core from '@happyvertical/smrt-core';\nimport { ExternalBase } from '@fixture/external';\nlet KEY = 'smrt';\nconst OPTIONS = { api: false };\n@(core[KEY])(OPTIONS)\nexport class Vault extends ExternalBase {}\n`,
+    });
+
+    expect(errors.length).toBeGreaterThan(0);
+    expect(errors.map((error) => error.message).join('\n')).toContain(
+      'core[KEY]',
+    );
+  });
 });
 
 describe('field decorators reached through a namespace', () => {
