@@ -380,6 +380,9 @@ type PlannedSplit = { regular: string[]; concurrent: string[] };
  * state — on a pooled adapter a top-level `db.query` may land on a different
  * connection, so the SET would silently not apply to the DDL (issue #2362).
  */
+/** The last queued session-state run per shared connection. */
+const sharedHandleRuns = new WeakMap<object, Promise<void>>();
+
 /** Whether this run may run a migration's deferred statements now. */
 type DeferredClaim = 'ok' | 'held' | 'done' | 'changed';
 
@@ -1370,7 +1373,7 @@ export class MigrationTracker {
       !options.dryRun
     ) {
       await this.checkDefinitionsToRun(definitions, options, (toRun) =>
-        this.preflightSequentialBatch(toRun),
+        this.onSharedHandle(() => this.preflightSequentialBatch(toRun)),
       );
     }
 
@@ -1443,6 +1446,48 @@ export class MigrationTracker {
    * the row its phase 1 wrote, in the schema that holds the tracking table.
    */
   private async applyDeferredConcurrentIndexes(
+    committed: MigrationResult[],
+    plan: ConcurrentIndexPlan,
+    rows: Map<string, DeferredRow>,
+    options: ApplyMigrationsOptions,
+  ): Promise<MigrationResult[]> {
+    return this.onSharedHandle(() =>
+      this.runDeferredPhase(committed, plan, rows, options),
+    );
+  }
+
+  /**
+   * Run `work`, which sets session state on the migration session and puts
+   * it back, alone on its connection. With `acquireSession` each run has a
+   * session of its own. Without it (PGlite: the session is the shared
+   * handle) runs over the same handle wait for each other, so one run's
+   * deferred `SET` or baseline restore never lands between another run's
+   * statements.
+   */
+  private async onSharedHandle<T>(work: () => Promise<T>): Promise<T> {
+    if (typeof this.db.acquireSession === 'function') return work();
+    // Wrappers of one handle (a transaction view, a test double that spreads
+    // it) keep its `client`, the connection itself.
+    const key =
+      ((this.db as { client?: unknown }).client as object | undefined) ??
+      this.db;
+    const previous = sharedHandleRuns.get(key) ?? Promise.resolve();
+    let done = () => {};
+    const mine = new Promise<void>((resolve) => {
+      done = resolve;
+    });
+    const tail = previous.then(() => mine);
+    sharedHandleRuns.set(key, tail);
+    await previous;
+    try {
+      return await work();
+    } finally {
+      done();
+      if (sharedHandleRuns.get(key) === tail) sharedHandleRuns.delete(key);
+    }
+  }
+
+  private async runDeferredPhase(
     committed: MigrationResult[],
     plan: ConcurrentIndexPlan,
     rows: Map<string, DeferredRow>,

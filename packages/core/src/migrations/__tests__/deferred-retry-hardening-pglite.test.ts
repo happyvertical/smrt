@@ -174,5 +174,92 @@ describe.skipIf(process.env.SMRT_TEST_PGLITE !== '1')(
         expect(await counts()).toEqual(['a:1']);
       });
     });
+
+    describe('runs that share one handle', () => {
+      beforeEach(async () => {
+        await fixDuplicates();
+        await db.query('CREATE SCHEMA app_ns');
+        await db.query('CREATE SCHEMA other_ns');
+        for (const schema of ['app_ns', 'other_ns'])
+          await db.query(`CREATE TABLE ${schema}.items (id INT, v INT)`);
+      });
+
+      const indexSchemas = async (name: string) =>
+        (
+          await db.query(
+            `SELECT n.nspname AS schema FROM pg_class c
+               JOIN pg_namespace n ON n.oid = c.relnamespace
+              WHERE c.relname = ? ORDER BY 1`,
+            name,
+          )
+        ).rows.map((r) => r.schema);
+
+      it('do not interleave their deferred session state', async () => {
+        await db.query('SET search_path TO app_ns, public');
+        const switching = definition('shared_switching', [
+          'ALTER TABLE items ADD CONSTRAINT items_v_check CHECK (v >= 0) NOT VALID',
+          'ALTER TABLE items VALIDATE CONSTRAINT items_v_check',
+          'SET search_path TO other_ns, public',
+          'CREATE INDEX IF NOT EXISTS items_switched_idx ON items (v)',
+        ]);
+        const plain = definition('shared_plain', [
+          'CREATE INDEX IF NOT EXISTS items_plain_idx ON items (id)',
+        ]);
+        // Steer the two runs toward the interleaving: the plain run captures
+        // the session, the switching run sets its path, the plain run puts
+        // its captured path back, then the switching run builds its index.
+        // Each wait gives up after a moment, so runs that wait for each other
+        // (as they must) still finish.
+        const signal = () => {
+          let fire = () => {};
+          const fired = new Promise<void>((resolve) => {
+            fire = resolve;
+          });
+          return { fire, fired };
+        };
+        const plainCaptured = signal();
+        const pathSet = signal();
+        const plainRestored = signal();
+        let plainRestoring = false;
+        const switchingDb: DatabaseInterface = {
+          ...db,
+          query: (async (sql: string, ...vars: unknown[]) => {
+            if (sql.includes('FROM pg_settings'))
+              await within(plainCaptured.fired, 400);
+            const result = await db.query(sql, ...vars);
+            if (sql.startsWith('SET search_path TO other_ns')) {
+              pathSet.fire();
+              await within(plainRestored.fired, 400);
+            }
+            return result;
+          }) as DatabaseInterface['query'],
+        };
+        const plainDb: DatabaseInterface = {
+          ...db,
+          query: (async (sql: string, ...vars: unknown[]) => {
+            if (sql === 'RESET ROLE' && !plainRestoring) {
+              plainRestoring = true;
+              await within(pathSet.fired, 400);
+            }
+            const result = await db.query(sql, ...vars);
+            if (sql.includes("current_setting('role') AS role_name"))
+              plainCaptured.fire();
+            if (plainRestoring && sql.startsWith('SET lock_timeout'))
+              plainRestored.fire();
+            return result;
+          }) as DatabaseInterface['query'],
+        };
+
+        const [[switched], [built]] = await Promise.all([
+          migrate([switching], {}, switchingDb),
+          migrate([plain], {}, plainDb),
+        ]);
+
+        expect(switched?.success, errorOf(switched)).toBe(true);
+        expect(built?.success, errorOf(built)).toBe(true);
+        expect(await indexSchemas('items_switched_idx')).toEqual(['other_ns']);
+        expect(await indexSchemas('items_plain_idx')).toEqual(['app_ns']);
+      });
+    });
   },
 );
