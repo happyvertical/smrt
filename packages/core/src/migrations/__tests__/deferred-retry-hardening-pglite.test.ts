@@ -321,5 +321,35 @@ describe.skipIf(process.env.SMRT_TEST_PGLITE !== '1')(
         await db.query('SELECT pg_advisory_unlock_all()');
       });
     });
+
+    describe('a tracking table whose schema cannot be resolved', () => {
+      it('runs no deferred statement and leaves the record as phase 1 wrote it', async () => {
+        await fixDuplicates();
+        const unresolved: DatabaseInterface = {
+          ...db,
+          query: (async (sql: string, ...vars: unknown[]) =>
+            sql.includes("to_regclass('_smrt_schema_migrations')")
+              ? { rows: [], rowCount: 0 }
+              : db.query(sql, ...vars)) as DatabaseInterface['query'],
+        };
+
+        const [result] = await migrate(
+          [
+            definition('unresolved_table', [
+              'CREATE INDEX IF NOT EXISTS child_n_idx ON child (n)',
+            ]),
+          ],
+          {},
+          unresolved,
+        );
+
+        expect(result?.success).toBe(false);
+        expect(errorOf(result)).toContain('could not be resolved');
+        expect(await indexValid('child_n_idx')).toEqual([]);
+        expect((await row('unresolved_table'))?.error_message).toContain(
+          'deferred not started',
+        );
+      });
+    });
   },
 );

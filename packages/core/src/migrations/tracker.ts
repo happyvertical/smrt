@@ -1512,6 +1512,26 @@ export class MigrationTracker {
   ): Promise<MigrationResult[]> {
     const results = [...committed];
     const table = await this.trackingTableName();
+    if (table === null) {
+      // Without the schema that holds the tracking table, a status write could
+      // land on another table of that name: nothing deferred runs, and each
+      // record keeps what phase 1 wrote.
+      return results.map((result) => {
+        if (result.skipped || !plan.get(result.name)?.concurrent.length)
+          return result;
+        const stopped = {
+          ...result,
+          success: false,
+          applied: false,
+          skipped: false,
+          error: new Error(
+            `Not attempted: the schema that holds _smrt_schema_migrations could not be resolved, so none of ${result.name}'s deferred statements ran. Re-run to retry it.`,
+          ),
+        };
+        options.onProgress?.(stopped);
+        return stopped;
+      });
+    }
     // The named settings any deferred statement changes, read back after.
     const named = [
       ...new Set(
@@ -1827,9 +1847,10 @@ export class MigrationTracker {
    * `_smrt_schema_migrations` qualified by the schema that holds it, resolved
    * on the tracker's own handle before any deferred statement runs. On PGlite
    * that handle is the session, and a deferred `SET search_path` must not
-   * move the tracker's writes.
+   * move the tracker's writes. `null` when it cannot be resolved: never an
+   * unqualified fallback, which another checkout may resolve elsewhere.
    */
-  private async trackingTableName(): Promise<string> {
+  private async trackingTableName(): Promise<string | null> {
     const found = await this.db.query(
       `SELECT quote_ident(n.nspname) AS schema_name
          FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
@@ -1838,7 +1859,7 @@ export class MigrationTracker {
     const schema = found.rows[0]?.schema_name;
     return typeof schema === 'string'
       ? `${schema}._smrt_schema_migrations`
-      : '_smrt_schema_migrations';
+      : null;
   }
 
   /**
