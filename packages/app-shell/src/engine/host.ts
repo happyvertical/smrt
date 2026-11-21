@@ -91,6 +91,7 @@ import {
 } from './draft.ts';
 import {
   ApprovalRequiredError,
+  CapacityError,
   ClaimLostError,
   EngineError,
   StaleFenceError,
@@ -605,8 +606,11 @@ export class AppHost extends EventEmitter {
     await this.app.ready;
   }
 
+  /** Connections parked by `retireApp` for the next worker; see there. */
+  private spare: (() => void) | null = null;
+
   private spawn(def: AppDefinition, version: number, migration?: Migration) {
-    return new AppWorker(this.workerUrl, {
+    const worker = new AppWorker(this.workerUrl, {
       dataDir: this.dataDir,
       def,
       version,
@@ -614,7 +618,33 @@ export class AppHost extends EventEmitter {
       limits: this.workerLimits,
       database: this.database,
       lockTimeoutMs: this.lockTimeoutMs,
+      ...(this.spare ? { reservation: this.spare } : {}),
     });
+    this.spare = null; // taken over: the new worker returns it when it exits
+    return worker;
+  }
+
+  /**
+   * Stop the app worker for a replacement, keeping its pool's share of the
+   * connection budget (#5464): between the retire and the respawn nothing else
+   * on the server can take it, so the replacement (or the rollback to the old
+   * app) cannot be refused for lack of connections and leave no worker.
+   */
+  private async retireApp() {
+    this.keepBudget(this.app);
+    await this.app.retire();
+  }
+
+  /** Park the connections of `w` (about to be stopped) for the next worker. */
+  private keepBudget(w: AppWorker | undefined) {
+    if (w) this.spare ??= w.surrenderBudget();
+  }
+
+  /** Give back connections parked for a worker that will not come. */
+  private releaseSpare() {
+    const r = this.spare;
+    this.spare = null;
+    r?.();
   }
 
   // ---------- the change queue ----------
@@ -650,17 +680,27 @@ export class AppHost extends EventEmitter {
   ) {
     const t0 = performance.now();
     const migrating = !!migration?.steps.length;
-    if (migrating) await this.app.retire();
-    const next = this.spawn(def, version, migration);
+    if (migrating) await this.retireApp();
+    let next: AppWorker | undefined;
     let booted: BootInfo;
     try {
+      next = this.spawn(def, version, migration);
       booted = await next.ready;
     } catch (e) {
-      await next.terminate();
-      if (migrating) {
-        this.app = this.spawn(this.def, this.version);
-        await this.app.ready.catch(() => {}); // surfaced later by the dead worker
+      try {
+        if (next) {
+          this.keepBudget(next);
+          await next.terminate();
+        }
+        if (migrating) {
+          this.app = this.spawn(this.def, this.version);
+          await this.app.ready.catch(() => {});
+          this.app.settleBudget();
+        }
+      } finally {
+        this.releaseSpare();
       }
+      if (e instanceof CapacityError) throw e;
       if (
         e instanceof EngineError &&
         (e.code === 'refused' || e.code === 'stale_fence')
@@ -2356,23 +2396,29 @@ export class AppHost extends EventEmitter {
               Promise.resolve()
           : undefined;
         try {
-          await this.app.retire();
+          await this.retireApp();
           await this.swapSchemasIn(side, aside, false, same);
           swapped = true;
           this.app = this.spawn(this.def, this.version);
           await this.app.ready;
         } catch (e) {
-          await this.app.terminate().catch(() => {});
-          // Ask the catalog, not the flag: a swap that committed with its reply
-          // lost left the aside behind and the data replaced.
-          const there =
-            swapped ||
-            (await this.admin((db) =>
-              db.transaction((tx) => schemaExists(tx, aside)),
-            ));
-          if (there) await this.swapSchemasIn(aside, side, !swapped, same);
-          this.app = this.spawn(this.def, this.version);
-          await this.app.ready.catch(() => {});
+          try {
+            this.keepBudget(this.app);
+            await this.app.terminate().catch(() => {});
+            // Ask the catalog, not the flag: a swap that committed with its reply
+            // lost left the aside behind and the data replaced.
+            const there =
+              swapped ||
+              (await this.admin((db) =>
+                db.transaction((tx) => schemaExists(tx, aside)),
+              ));
+            if (there) await this.swapSchemasIn(aside, side, !swapped, same);
+            this.app = this.spawn(this.def, this.version);
+            await this.app.ready.catch(() => {});
+            this.app.settleBudget();
+          } finally {
+            this.releaseSpare();
+          }
           throw e;
         }
         await this.dropAsideSchemaOrThrow(aside).catch(() => {});
@@ -2986,7 +3032,7 @@ export class AppHost extends EventEmitter {
       journaled = true;
       await stage('journaled');
       retired = true;
-      await this.app.retire();
+      await this.retireApp();
       await stage('retired');
       asideStarted = true;
       if (pg) {
@@ -3106,7 +3152,10 @@ export class AppHost extends EventEmitter {
     cause: unknown,
   ) {
     try {
-      if (s.next) await s.next.terminate().catch(() => {});
+      if (s.next) {
+        this.keepBudget(s.next);
+        await s.next.terminate().catch(() => {});
+      }
       if (s.retired) {
         await this.app.terminate().catch(() => {});
         if (s.asideStarted && !s.pg) restoreAside(this.dataDir);
@@ -3133,7 +3182,8 @@ export class AppHost extends EventEmitter {
       removeRehearsal(this.dataDir, s.dir);
       if (s.retired) {
         this.app = this.spawn(this.def, this.version);
-        await this.app.ready.catch(() => {}); // restartApp() can retry
+        await this.app.ready.catch(() => {});
+        this.app.settleBudget();
       }
     } catch (e2) {
       // A lost claim changes nothing more, whatever state the swap left: the
@@ -3143,6 +3193,8 @@ export class AppHost extends EventEmitter {
         `${(cause as Error).message}; and putting the old data back failed: ${(e2 as Error).message}. It is restored when the app next starts.`,
         'migration_failed',
       );
+    } finally {
+      this.releaseSpare();
     }
   }
 
@@ -3364,6 +3416,7 @@ export class AppHost extends EventEmitter {
   async close() {
     await this.queue;
     this.closed = true;
+    this.releaseSpare();
     try {
       await this.app.terminate();
     } finally {

@@ -45,6 +45,22 @@ export interface WorkerLimits {
    * SQLite (the desktop) has no equivalent and ignores it.
    */
   statementTimeoutMs?: number;
+  /**
+   * PostgreSQL only: a process-wide budget of connections (#5464). Every
+   * worker that opens a pool reserves its size here before the thread starts
+   * (a refusal throws at once) and returns it when the thread exits, so a
+   * swap, a report worker or a rehearsal is counted for as long as it lives.
+   * The pool is created at exactly the size reserved.
+   */
+  connections?: ConnectionBudget;
+}
+
+/** What {@link WorkerLimits.connections} asks of the host. */
+export interface ConnectionBudget {
+  /** The pool size for a worker whose config names none. */
+  poolSize: number;
+  /** Reserve `n` connections (throws when none are left); returns the release. */
+  take(n: number): () => void;
 }
 
 /**
@@ -86,11 +102,38 @@ export class AppWorker {
   private worker: Worker;
   private next = 1;
   private dead: Error | null = null;
+  /** The connections this worker's pool holds in the host's budget; returned when its thread exits. */
+  private budget: (() => void) | null = null;
+  /** A handed-over reservation is the host's until `ready` settles: a thread that dies first leaves it parked. */
+  private adopting = false;
+  private exited = false;
   private pending = new Map<
     number,
     { resolve: (v: unknown) => void; reject: (e: Error) => void }
   >();
   readonly ready: Promise<BootInfo>;
+
+  /** The host is done with a worker that may have died before it was ready: return what it still holds. */
+  settleBudget() {
+    this.adopting = false;
+    if (!this.exited) return;
+    const r = this.budget;
+    this.budget = null;
+    r?.();
+  }
+
+  /**
+   * Hand the pool's reserved connections to the caller, so the thread's exit
+   * no longer returns them: a host that stops this worker and starts its
+   * replacement holds the reservation across the gap, and nothing else can
+   * take it. The caller passes it to the next worker (`reservation`) or calls
+   * it to give it back. Null when this worker holds none.
+   */
+  surrenderBudget(): (() => void) | null {
+    const r = this.budget;
+    this.budget = null;
+    return r;
+  }
 
   constructor(
     workerUrl: URL | string,
@@ -106,13 +149,40 @@ export class AppWorker {
       database?: DatabaseConfig;
       /** Longest a schema dump waits for table locks (ms); the host's lock timeout. */
       lockTimeoutMs?: number;
+      /**
+       * A reservation of this pool's size the caller took over from a retired
+       * worker (`surrenderBudget`) and still owns on a failed construction.
+       */
+      reservation?: () => void;
     },
   ) {
     this.version = init.version;
-    const { limits, database, lockTimeoutMs, ...data } = init;
+    const { limits, database, lockTimeoutMs, reservation, ...data } = init;
     // A PGlite instance cannot cross into the thread: the worker gets one end
     // of a port, this thread serves the other (db/pglite-bridge.ts).
-    const db = forWorker(database ?? { kind: 'sqlite' });
+    let release: () => void = () => {};
+    // A handed-over reservation stays with the caller when this fails.
+    const giveBack = () => {
+      if (!reservation) release();
+    };
+    let sized = database;
+    if (database?.kind === 'postgres' && limits?.connections) {
+      const pool = database.connection.max ?? limits.connections.poolSize;
+      release = reservation ?? limits.connections.take(pool);
+      this.budget = release;
+      this.adopting = !!reservation;
+      sized = {
+        ...database,
+        connection: { ...database.connection, max: pool },
+      };
+    }
+    let db: ReturnType<typeof forWorker>;
+    try {
+      db = forWorker(sized ?? { kind: 'sqlite' });
+    } catch (e) {
+      giveBack();
+      throw e;
+    }
     const config: WorkerDatabaseConfig =
       db.config.kind === 'sqlite'
         ? db.config
@@ -123,12 +193,27 @@ export class AppWorker {
               : { statementTimeoutMs: limits.statementTimeoutMs }),
             ...(lockTimeoutMs === undefined ? {} : { lockTimeoutMs }),
           };
-    this.worker = new Worker(workerUrl, {
-      workerData: { appWorker: true, ...data, database: config },
-      transferList: db.transfer,
-      resourceLimits: resourceLimitsFor(limits),
+    try {
+      this.worker = new Worker(workerUrl, {
+        workerData: { appWorker: true, ...data, database: config },
+        transferList: db.transfer,
+        resourceLimits: resourceLimitsFor(limits),
+      });
+    } catch (e) {
+      giveBack();
+      throw e;
+    }
+    this.worker.once('exit', () => {
+      this.exited = true;
+      // Died before it was ready: the host takes the reservation back
+      // (`surrenderBudget`) for the rollback, or `settleBudget` returns it.
+      if (!this.adopting) {
+        const r = this.budget;
+        this.budget = null;
+        r?.();
+      }
+      db.dispose();
     });
-    this.worker.once('exit', db.dispose);
     const die = (e: Error) => {
       this.dead ??= e;
       for (const p of this.pending.values()) p.reject(this.dead);
@@ -166,6 +251,12 @@ export class AppWorker {
         reject(new WorkerCrashedError('the app stopped before it was ready'));
       });
     });
+    this.ready.then(
+      () => {
+        this.adopting = false;
+      },
+      () => {},
+    );
     // A rejected `ready` nobody awaited (a worker that died later) is not an error.
     this.ready.catch(() => {});
   }

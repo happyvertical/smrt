@@ -38,6 +38,7 @@ import {
   setDraftSlot,
   wireHostEvents,
   withAppLease,
+  withDraftConnections,
 } from './host.ts';
 import type { Target } from './target.ts';
 import { createTenantQueue } from './tenant-queue.ts';
@@ -202,12 +203,14 @@ export function startDraftWith(
     let host: AppHost | null = null;
     try {
       await beforeFork?.(id);
-      host = await fork({
-        id,
-        dir,
-        live,
-        store: new DraftVersionStore(db, id, pin),
-      });
+      host = await withDraftConnections(() =>
+        fork({
+          id,
+          dir,
+          live,
+          store: new DraftVersionStore(db, id, pin),
+        }),
+      );
       // The draft's store moved the row's pointer: re-read it before updating.
       const fresh = (await drafts.get(id)) ?? row;
       fresh.status = 'open';

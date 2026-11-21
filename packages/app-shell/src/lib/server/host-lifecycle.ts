@@ -4,6 +4,8 @@
 // Nothing here runs unless the `cloud` profile is configured with a policy:
 // the desktop keeps its one host open for as long as the process lives.
 
+import { CapacityError } from '../../engine/errors.ts';
+
 /** What a hosted process does about the apps it holds. Every field is optional. */
 export interface HostLifecyclePolicy {
   /** Close an app that nobody has used for this long (ms). Default: never. */
@@ -16,6 +18,15 @@ export interface HostLifecyclePolicy {
    * of the process: with `maxOpenApps` the smaller of the two wins.
    */
   memoryCeilingMb?: number;
+  /**
+   * At most this many PostgreSQL connections held by all apps of this process
+   * together (#5464): every worker's pool for as long as the worker lives
+   * (live, draft, a swap's new worker, a report or rehearsal worker), plus a
+   * fixed overhead per open host (see `HOST_OVERHEAD`). Default with
+   * `maxOpenApps`: that many apps at `APP_ALLOWANCE` each; without it, no
+   * budget. Never applies to SQLite or PGlite apps.
+   */
+  maxAppConnections?: number;
   /** What one open app is budgeted at (MiB). Default 80. */
   appMemoryMb?: number;
   /** At most this many apps waking at once; the rest queue. Default 2. */
@@ -55,9 +66,37 @@ export interface HostMetrics {
   totalWakeMs: number;
   /** The cap in force, or null for none. */
   maxOpen: number | null;
+  /** PostgreSQL connections held by app workers now, and the budget (null: none). */
+  connections: number;
+  maxConnections: number | null;
   draining: boolean;
   /** The process's resident memory (bytes). */
   rssBytes: number;
+}
+
+/** The pool of a worker whose config names none: the budget sets it, so it is what is reserved. */
+export const POOL_SIZE = 2;
+/**
+ * Connections a host holds beside its workers' pools: a live host keeps one
+ * permanent ownership-claim connection and may have one admin connection in
+ * flight (copy, swap, drop); a draft host the admin one only.
+ */
+export const HOST_OVERHEAD = { live: 2, draft: 1 } as const;
+/**
+ * Per app in the derived budget, for pools of `pool` connections: live and
+ * draft pools, one more worker (swap, report, rehearsal), and both hosts' overhead.
+ */
+export const appAllowance = (pool: number = POOL_SIZE) =>
+  3 * pool + HOST_OVERHEAD.live + HOST_OVERHEAD.draft;
+
+/** The refusal when the budget has no room. Its message names no server and is safe to show. */
+export class ConnectionBudgetError extends CapacityError {
+  constructor() {
+    super(
+      'this server has no database connections left for another app right now; try again',
+    );
+    this.name = 'ConnectionBudgetError';
+  }
 }
 
 const DEFAULTS = {
@@ -76,6 +115,9 @@ function positive(name: string, v: number | undefined) {
 export class HostLifecycle {
   private policy: HostLifecyclePolicy | null = null;
   private slots = 0;
+  // An object, so a release after `reset()` settles the old count, not the new.
+  private conns = { used: 0 };
+  private poolSeen: number = POOL_SIZE;
   private gateWaiters: (() => void)[] = [];
   private changeWaiters: (() => void)[] = [];
   private timer: ReturnType<typeof setInterval> | null = null;
@@ -93,6 +135,7 @@ export class HostLifecycle {
       for (const k of [
         'idleMs',
         'maxOpenApps',
+        'maxAppConnections',
         'memoryCeilingMb',
         'appMemoryMb',
         'maxConcurrentWakes',
@@ -123,6 +166,54 @@ export class HostLifecycle {
     this.totalWakeMs = 0;
     this.slots = 0;
     this.gateWaiters = [];
+    this.conns = { used: 0 };
+    this.poolSeen = POOL_SIZE;
+  }
+
+  /**
+   * Take `n` connections of the process-wide budget for one worker's pool, or
+   * refuse at once (never wait: a hang here would hold a request). Returns the
+   * release, which is safe to call more than once. With no policy, or no
+   * budget in force, nothing is limited. The message names no server.
+   */
+  takeConnections(n: number): () => void {
+    const c = this.conns;
+    const limit = this.connectionBudget();
+    if (limit !== null && c.used + n > limit) throw new ConnectionBudgetError();
+    c.used += n;
+    let done = false;
+    return () => {
+      if (done) return;
+      done = true;
+      c.used = Math.max(0, c.used - n);
+    };
+  }
+
+  /** The budget in connections, or null for none. */
+  private connectionBudget(): number | null {
+    const p = this.policy;
+    if (!p) return null;
+    if (p.maxAppConnections !== undefined)
+      return Math.floor(p.maxAppConnections);
+    const apps = this.maxOpen;
+    // The pool size follows the largest one asked for, so a config with
+    // a bigger `connection.max` scales the budget instead of starving it.
+    return apps === null ? null : apps * appAllowance(this.poolSeen);
+  }
+
+  /** What a worker's `WorkerLimits.connections` is: this budget, pool size included. */
+  get workerBudget() {
+    return {
+      poolSize: POOL_SIZE,
+      take: (n: number) => {
+        this.poolSeen = Math.max(this.poolSeen, n);
+        return this.takeConnections(n);
+      },
+    };
+  }
+
+  get connectionsInUse(): number {
+    return this.conns.used;
   }
 
   get configured(): boolean {
@@ -239,6 +330,8 @@ export class HostLifecycle {
       maxWakeMs: this.maxWakeMs,
       totalWakeMs: this.totalWakeMs,
       maxOpen: this.maxOpen,
+      connections: this.conns.used,
+      maxConnections: this.policy ? this.connectionBudget() : null,
       draining: this.draining,
       rssBytes: process.memoryUsage.rss(),
     };
@@ -248,6 +341,7 @@ export class HostLifecycle {
 const ENV_FIELDS = {
   SMRT_APP_SHELL_IDLE_MS: 'idleMs',
   SMRT_APP_SHELL_MAX_OPEN_APPS: 'maxOpenApps',
+  SMRT_APP_SHELL_MAX_APP_CONNECTIONS: 'maxAppConnections',
   SMRT_APP_SHELL_MEMORY_CEILING_MB: 'memoryCeilingMb',
   SMRT_APP_SHELL_APP_MEMORY_MB: 'appMemoryMb',
   SMRT_APP_SHELL_MAX_CONCURRENT_WAKES: 'maxConcurrentWakes',

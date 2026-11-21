@@ -12,7 +12,7 @@
 import { createHash } from 'node:crypto';
 import type { Command } from './commands.ts';
 import { type AppDefinition, type Step, validate } from './definition.ts';
-import { EngineError } from './errors.ts';
+import { CapacityError, EngineError } from './errors.ts';
 import type {
   AppHost,
   ChangeResult,
@@ -389,6 +389,7 @@ export class SqliteChangeEngine implements ChangeEngine {
           applied.push({ key, version: r.version });
         } catch (e) {
           if (input.signal?.aborted) throw e;
+          if (e instanceof CapacityError) throw e;
           blockers.push({
             code: 'depends_on_removed',
             key,
@@ -438,6 +439,8 @@ export class SqliteChangeEngine implements ChangeEngine {
         preview = await this.previewPublish(principal, live, draft, fence);
       } catch (e) {
         if (!(e instanceof EngineError)) throw e;
+        // No connections left is the server's state, not a verdict on the change.
+        if (e instanceof CapacityError) throw e;
         if (!blockers.some((b) => b.code === 'report_uses_removed_field'))
           blockers.push(replayFailure(e.message, chain));
       }

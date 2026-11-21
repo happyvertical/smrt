@@ -30,6 +30,7 @@ import { getCurrentTenant } from '@happyvertical/smrt-tenancy';
 import { TenantCollection } from '@happyvertical/smrt-users';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import type { DatabaseConfig } from '../../engine/db/index.ts';
+import { CapacityError } from '../../engine/errors.ts';
 import {
   AppHost,
   bundledWorkerUrl,
@@ -45,6 +46,7 @@ import { ChangeCardCollection } from '../objects/ChangeCard.ts';
 import { versionSummary } from '../ui/command-summary.ts';
 import { publish, setTenantScopedEvents } from './events.ts';
 import {
+  HOST_OVERHEAD,
   HostLifecycle,
   type HostLifecyclePolicy,
   type HostMetrics,
@@ -401,6 +403,63 @@ export function wireHostEvents(
 }
 
 /**
+ * The worker limits with the connection budget: every worker that opens a
+ * pool reserves it (`AppWorker`, #5464). Only a hosted process with a
+ * lifecycle policy counts; nothing else changes.
+ */
+function budgetedLimits(): WorkerLimits | undefined {
+  const limits = requireContext().workerLimits;
+  return lifecycleOn()
+    ? { ...limits, connections: lifecycle.workerBudget }
+    : limits;
+}
+
+/**
+ * Reserve what a host holds beside its workers' pools (`HOST_OVERHEAD`: the
+ * claim and an admin connection) while it is open. Refused at once when the
+ * budget has no room; returned on `close`, `discardIfEmpty` that succeeds, and a
+ * failed open (`discard` closes). Server PostgreSQL only.
+ * @internal exported for tests
+ */
+export async function withConnections(
+  database: DatabaseConfig | null,
+  kind: keyof typeof HOST_OVERHEAD,
+  open: () => Promise<AppHost>,
+): Promise<AppHost> {
+  if (database?.kind !== 'postgres' || !lifecycleOn()) return open();
+  const release = lifecycle.takeConnections(HOST_OVERHEAD[kind]);
+  let host: AppHost;
+  try {
+    host = await open();
+  } catch (e) {
+    release();
+    throw e;
+  }
+  const close = host.close.bind(host);
+  host.close = async () => {
+    try {
+      await close();
+    } finally {
+      release();
+    }
+  };
+  const discardIfEmpty = host.discardIfEmpty.bind(host);
+  host.discardIfEmpty = async () => {
+    const gone = await discardIfEmpty();
+    if (gone) release();
+    return gone;
+  };
+  return host;
+}
+
+/** drafts.ts: open a draft worker for the current app under the connection budget. */
+export async function withDraftConnections(
+  open: () => Promise<AppHost>,
+): Promise<AppHost> {
+  return withConnections((await currentHolder()).database, 'draft', open);
+}
+
+/**
  * Open a draft's host. `autoApprove` (risky changes need no approval) is the
  * draft's alone: the engine refuses it unless `dir` holds its draft marker, so
  * this call can never hand it to the live host.
@@ -412,15 +471,17 @@ export function openDraftHost(
   pin: string | null = null,
   database: DatabaseConfig | null = null,
 ): Promise<AppHost> {
-  return AppHost.open(dir, {
-    store: new DraftVersionStore(db, id, pin),
-    workerUrl: workerUrl(),
-    workerLimits: requireContext().workerLimits,
-    autoApprove: true,
-    // A draft on PostgreSQL reopens with the LIVE app's config; its own
-    // schema comes from the marker in `dir`.
-    ...(database ? { database } : {}),
-  });
+  return withConnections(database, 'draft', () =>
+    AppHost.open(dir, {
+      store: new DraftVersionStore(db, id, pin),
+      workerUrl: workerUrl(),
+      workerLimits: budgetedLimits(),
+      autoApprove: true,
+      // A draft on PostgreSQL reopens with the LIVE app's config; its own
+      // schema comes from the marker in `dir`.
+      ...(database ? { database } : {}),
+    }),
+  );
 }
 
 /**
@@ -494,6 +555,9 @@ async function adoptDraft(
     wireHostEvents(draft, 'draft', holder.tenantId);
     slot.host = lifecycleOn() ? leased(holder, draft) : draft;
   } catch (e) {
+    // No connections left is the server's state, never a verdict on the
+    // draft: refuse the open (openLive closes live), so a retry can adopt it.
+    if (e instanceof CapacityError) throw e;
     slot.problem = `the draft cannot be opened: ${e instanceof Error ? e.message : String(e)}`;
   }
 }
@@ -598,12 +662,14 @@ async function openLive(holder: Holder): Promise<AppHost> {
   const dirs = await directoriesFor(holder, store);
   mkdirSync(dirs.live, { recursive: true, mode: 0o700 });
   const database = await liveDatabase(holder, store, dirs.live);
-  const host = await AppHost.open(dirs.live, {
-    store,
-    workerUrl: workerUrl(),
-    workerLimits: requireContext().workerLimits,
-    ...(database ? { database } : {}),
-  });
+  const host = await withConnections(database, 'live', () =>
+    AppHost.open(dirs.live, {
+      store,
+      workerUrl: workerUrl(),
+      workerLimits: budgetedLimits(),
+      ...(database ? { database } : {}),
+    }),
+  );
   wireHostEvents(host, 'live', holder.tenantId);
   // A lost claim (#5470) leaves a host that refuses everything: forget it, so
   // the next request opens the app again on a fresh claim.
