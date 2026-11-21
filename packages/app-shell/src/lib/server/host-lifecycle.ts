@@ -4,7 +4,7 @@
 // Nothing here runs unless the `cloud` profile is configured with a policy:
 // the desktop keeps its one host open for as long as the process lives.
 
-import { EngineError } from '../../engine/errors.ts';
+import { CapacityError } from '../../engine/errors.ts';
 
 /** What a hosted process does about the apps it holds. Every field is optional. */
 export interface HostLifecyclePolicy {
@@ -82,16 +82,18 @@ export const POOL_SIZE = 2;
  * flight (copy, swap, drop); a draft host the admin one only.
  */
 export const HOST_OVERHEAD = { live: 2, draft: 1 } as const;
-/** Per app in the derived budget: live and draft pools, one more worker (swap, report, rehearsal), and both hosts' overhead. */
-export const APP_ALLOWANCE =
-  3 * POOL_SIZE + HOST_OVERHEAD.live + HOST_OVERHEAD.draft;
+/**
+ * Per app in the derived budget, for pools of `pool` connections: live and
+ * draft pools, one more worker (swap, report, rehearsal), and both hosts' overhead.
+ */
+export const appAllowance = (pool: number = POOL_SIZE) =>
+  3 * pool + HOST_OVERHEAD.live + HOST_OVERHEAD.draft;
 
 /** The refusal when the budget has no room. Its message names no server and is safe to show. */
-export class ConnectionBudgetError extends EngineError {
+export class ConnectionBudgetError extends CapacityError {
   constructor() {
     super(
       'this server has no database connections left for another app right now; try again',
-      'refused',
     );
     this.name = 'ConnectionBudgetError';
   }
@@ -115,6 +117,7 @@ export class HostLifecycle {
   private slots = 0;
   // An object, so a release after `reset()` settles the old count, not the new.
   private conns = { used: 0 };
+  private poolSeen: number = POOL_SIZE;
   private gateWaiters: (() => void)[] = [];
   private changeWaiters: (() => void)[] = [];
   private timer: ReturnType<typeof setInterval> | null = null;
@@ -164,6 +167,7 @@ export class HostLifecycle {
     this.slots = 0;
     this.gateWaiters = [];
     this.conns = { used: 0 };
+    this.poolSeen = POOL_SIZE;
   }
 
   /**
@@ -192,14 +196,19 @@ export class HostLifecycle {
     if (p.maxAppConnections !== undefined)
       return Math.floor(p.maxAppConnections);
     const apps = this.maxOpen;
-    return apps === null ? null : apps * APP_ALLOWANCE;
+    // The pool size follows the largest one asked for, so a config with
+    // a bigger `connection.max` scales the budget instead of starving it.
+    return apps === null ? null : apps * appAllowance(this.poolSeen);
   }
 
   /** What a worker's `WorkerLimits.connections` is: this budget, pool size included. */
   get workerBudget() {
     return {
       poolSize: POOL_SIZE,
-      take: (n: number) => this.takeConnections(n),
+      take: (n: number) => {
+        this.poolSeen = Math.max(this.poolSeen, n);
+        return this.takeConnections(n);
+      },
     };
   }
 

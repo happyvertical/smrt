@@ -22,6 +22,7 @@ import type { DatabaseConfig, PGliteClient } from '../../engine/db/index.ts';
 import { UNTRUSTED_MESSAGE } from '../../engine/errors.ts';
 import { EngineError, WorkerCrashedError } from '../../engine/index.ts';
 import { AppWorker } from '../../engine/worker-handle.ts';
+import { returnedFailure } from './approvals.ts';
 import { addChangeCard, flushChecks } from './changes.ts';
 import { type CloudHarness, openCloudShell } from './cloud-test-support.ts';
 import {
@@ -34,14 +35,18 @@ import {
   withConnections,
 } from './host.ts';
 import {
-  APP_ALLOWANCE,
+  appAllowance,
   ConnectionBudgetError,
   HOST_OVERHEAD,
   HostLifecycle,
 } from './host-lifecycle.ts';
 import { errorResponse, HttpError } from './http.ts';
 import { runAs } from './owner.ts';
-import { GENERIC_OWNER_ERROR, ownerMessage } from './owner-errors.ts';
+import {
+  GENERIC_OWNER_ERROR,
+  ownerMessage,
+  ownerToolText,
+} from './owner-errors.ts';
 
 describe('HostLifecycle connection budget', () => {
   it('refuses at once when the budget is spent, and a release returns it', () => {
@@ -60,9 +65,22 @@ describe('HostLifecycle connection budget', () => {
   it('derives the budget from maxOpenApps: a fixed allowance per app', () => {
     const l = new HostLifecycle();
     l.configure({ maxOpenApps: 2 });
-    expect(l.metrics(0).maxConnections).toBe(2 * APP_ALLOWANCE);
-    l.takeConnections(2 * APP_ALLOWANCE);
+    expect(l.metrics(0).maxConnections).toBe(2 * appAllowance());
+    l.takeConnections(2 * appAllowance());
     expect(() => l.takeConnections(1)).toThrow(ConnectionBudgetError);
+  });
+
+  it('scales the derived budget with the pool size the config asks for', () => {
+    const l = new HostLifecycle();
+    l.configure({ maxOpenApps: 1 });
+    // Pools of 10: a live pool, a draft pool and a swap's pool, plus overhead.
+    const b = l.workerBudget;
+    b.take(10);
+    b.take(10);
+    b.take(10);
+    l.takeConnections(HOST_OVERHEAD.live + HOST_OVERHEAD.draft);
+    expect(l.metrics(0).maxConnections).toBe(appAllowance(10));
+    expect(() => b.take(10)).toThrow(ConnectionBudgetError);
   });
 
   it('limits nothing without a policy or without any cap', () => {
@@ -82,6 +100,26 @@ describe('HostLifecycle connection budget', () => {
     expect(l.connectionsInUse).toBe(0);
     l.takeConnections(2);
     expect(l.connectionsInUse).toBe(2);
+  });
+});
+
+describe('a failed app tool', () => {
+  it("hides driver text in its result and keeps the app's own messages", () => {
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+    for (const t of [
+      'connect ECONNREFUSED 10.0.3.7:5432',
+      'password authentication failed for user "svc_app"',
+      'remaining connection slots are reserved for roles with the SUPERUSER attribute',
+    ])
+      expect(ownerToolText(t, 'x')).toBe('x');
+    expect(ownerToolText('title is required', 'x')).toBe('title is required');
+    expect(
+      returnedFailure('tool', {
+        isError: true,
+        content: [{ text: 'connect ECONNREFUSED db.internal.example:5432' }],
+      }),
+    ).toBe('the tool reported an error');
+    log.mockRestore();
   });
 });
 

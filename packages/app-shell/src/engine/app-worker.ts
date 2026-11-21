@@ -53,7 +53,7 @@ if (!isMainThread && workerData?.appWorker) {
     port.postMessage({
       ready: false,
       error: (e as Error).message,
-      user: migration?.direction === 'down' && e instanceof AppError,
+      user: !!migration && e instanceof AppError,
       stale: isStaleFence(e),
     });
   }

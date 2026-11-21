@@ -68,6 +68,8 @@ export type WorkerDatabaseConfig =
       connection: PostgresConnection;
       /** Cancel any one statement running longer (ms); from `WorkerLimits`. */
       statementTimeoutMs?: number;
+      /** Longest a schema dump (snapshot, copy) waits for table locks (ms); from the host. */
+      lockTimeoutMs?: number;
       /** Every transaction checks the schema's ownership generation equals this (#5190). */
       fence?: number;
     }
@@ -76,6 +78,7 @@ export type WorkerDatabaseConfig =
       schema: string;
       port: MessagePort;
       statementTimeoutMs?: number;
+      lockTimeoutMs?: number;
       fence?: number;
     };
 

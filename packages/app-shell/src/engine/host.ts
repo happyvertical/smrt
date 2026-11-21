@@ -86,6 +86,7 @@ import {
 import {
   ApprovalRequiredError,
   EngineError,
+  embedding,
   StaleFenceError,
 } from './errors.ts';
 import type { ExtractPreview } from './extract-model.ts';
@@ -428,6 +429,15 @@ export class AppHost extends EventEmitter {
   }
 
   static async open(dataDir: string, opts: HostOptions): Promise<AppHost> {
+    // 0 turns lock_timeout off (a dump or swap would wait forever); a fraction
+    // floors to 0 and a negative or NaN makes the server refuse the setting.
+    // Refuse before anything is opened or claimed.
+    const lockMs = opts.swapLockTimeoutMs;
+    if (lockMs !== undefined && (!Number.isInteger(lockMs) || lockMs < 1))
+      throw new EngineError(
+        'swapLockTimeoutMs must be a whole number of ms, 1 or more',
+        'refused',
+      );
     if (opts.autoApprove) {
       const marker = readDraftMarker(dataDir);
       if (!marker || sameDir(marker.liveDir, dataDir))
@@ -539,6 +549,7 @@ export class AppHost extends EventEmitter {
       migration,
       limits: this.workerLimits,
       database: this.database,
+      lockTimeoutMs: this.lockTimeoutMs,
     });
   }
 
@@ -588,9 +599,10 @@ export class AppHost extends EventEmitter {
         (e.code === 'refused' || e.code === 'stale_fence')
       )
         throw e;
-      throw new EngineError(
+      throw embedding(
         `the app did not start with this change, so it was not applied: ${(e as Error).message}`,
         'migration_failed',
+        e,
       );
     }
     const old = this.app;
@@ -1601,9 +1613,10 @@ export class AppHost extends EventEmitter {
             skipped += c.skipped ?? 0;
           } catch (e) {
             const code = e instanceof EngineError ? e.code : 'migration_failed';
-            throw new EngineError(
+            throw embedding(
               `undid ${i} of ${undone.length} changes; the app is now at version ${this.version}: ${(e as Error).message}`,
               code,
+              e,
             );
           }
         }
@@ -2431,6 +2444,7 @@ export class AppHost extends EventEmitter {
               version: chain.baseVersion,
               limits: this.workerLimits,
               database: place.database,
+              lockTimeoutMs: this.lockTimeoutMs,
             });
           carried = null;
           try {
@@ -2476,6 +2490,7 @@ export class AppHost extends EventEmitter {
           version: numbers[i],
           limits: this.workerLimits,
           database: place.database,
+          lockTimeoutMs: this.lockTimeoutMs,
           migration: steps.length
             ? { steps, direction: 'up', version: numbers[i] }
             : undefined,
@@ -2494,9 +2509,10 @@ export class AppHost extends EventEmitter {
           }
         } catch (e) {
           await w.terminate().catch(() => {});
-          throw new EngineError(
+          throw embedding(
             `"${rec.summary}" from the draft does not apply to the current data, so nothing was published: ${(e as Error).message}`,
             'migration_failed',
+            e,
           );
         }
         if (i === chain.versions.length - 1) await w.retire();
@@ -2857,9 +2873,11 @@ export class AppHost extends EventEmitter {
         await this.app.ready.catch(() => {}); // restartApp() can retry
       }
     } catch (e2) {
-      throw new EngineError(
+      throw embedding(
         `${(cause as Error).message}; and putting the old data back failed: ${(e2 as Error).message}. It is restored when the app next starts.`,
         'migration_failed',
+        cause,
+        e2,
       );
     }
   }
@@ -2890,6 +2908,7 @@ export class AppHost extends EventEmitter {
         version: this.version,
         limits: this.workerLimits,
         database: this.database,
+        lockTimeoutMs: this.lockTimeoutMs,
         readOnly: true,
       });
       let timer: ReturnType<typeof setTimeout> | undefined;

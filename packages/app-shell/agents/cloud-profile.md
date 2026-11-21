@@ -191,9 +191,10 @@ never a timer, never an eviction (`host-lifecycle.test.ts`, "desktop is unchange
   `HOST_OVERHEAD` (live 2: ownership claim + one admin connection in flight; draft
   1), returned on `close`, a successful `discardIfEmpty`, and a failed open
   (`withConnections`). `maxAppConnections` caps the total held by the process;
-  unset, it is `maxOpenApps` x `APP_ALLOWANCE` (live + draft + one transient
-  worker pool, plus both overheads), and with no cap at all there is no budget.
-  A refusal is immediate (`ConnectionBudgetError`, `refused`), never queued, so a
+  unset, it is `maxOpenApps` x `appAllowance(pool)` (live + draft + one transient
+  worker pool, plus both overheads; `pool` follows the largest pool a config asks
+  for, so a bigger `connection.max` scales it), and with no cap at all there is no budget.
+  A refusal is immediate (`ConnectionBudgetError`, a `CapacityError`: `refused`, and never turned into a "does not fit your data" blocker by a publish preview), never queued, so a
   swap or report that finds no room fails and can be retried. Transient admin
   connections beyond the one in `HOST_OVERHEAD` and the shell's own pool are not
   counted. SQLite and PGlite are not counted. A budget below the derived one
@@ -254,7 +255,7 @@ A driver error can name the database host or user, and the engine wraps worker
 text in an `EngineError`. An owner sees only our own messages (`PolicyError`,
 `HttpError`, an `EngineError` that is not `untrusted`); the engine marks text it
 received from a worker (boot failures, non-user call errors, a crashed thread)
-`untrusted` (`EngineError.untrusted`). Everything else becomes a fixed sentence and the detail (message only, never a stack, body or definition)
+`untrusted` (`EngineError.untrusted`); an engine error that embeds such text keeps the flag (`embedding()`: swap, undo, rehearsal, abort), and a stored blocker drops the reason. A failed app tool returns text only, so a driver's connection errors are recognised by signature and hidden (`ownerToolText`, best effort); up-migration `AppError`s stay readable. Everything else becomes a fixed sentence and the detail (message only, never a stack, body or definition)
 goes to the server log. `errorResponse` did this already; `ownerMessage()`
 (`owner-errors.ts`) is the same rule for a draft that cannot open
 (`DraftSlot.problem`), a failed approval, and an assistant tool failure. A new

@@ -12,7 +12,7 @@
 import { createHash } from 'node:crypto';
 import type { Command } from './commands.ts';
 import { type AppDefinition, type Step, validate } from './definition.ts';
-import { EngineError } from './errors.ts';
+import { CapacityError, EngineError } from './errors.ts';
 import type {
   AppHost,
   ChangeResult,
@@ -270,9 +270,17 @@ function overwritesOf(preview: PublishPreview | null): BatchOverwrites {
  * version so the caller can find its card. The engine's own text mentions the
  * draft and publishing; none of that reaches the owner.
  */
-function replayFailure(raw: string, chain: DraftChain): BatchBlocker {
+/** @internal exported for tests */
+export function replayFailure(
+  raw: string,
+  chain: DraftChain,
+  untrusted = false,
+): BatchBlocker {
   const rec = chain.versions.find((r) => raw.startsWith(`"${r.summary}" `));
-  const reason = /(?:nothing was published|is invalid): (.+)$/s.exec(raw)?.[1];
+  // Text a worker or driver wrote can name a server: it is not the reason.
+  const reason = untrusted
+    ? undefined
+    : /(?:nothing was published|is invalid): (.+)$/s.exec(raw)?.[1];
   return {
     code: 'replay_failed',
     ...(rec ? { versions: [rec.version] } : {}),
@@ -438,8 +446,10 @@ export class SqliteChangeEngine implements ChangeEngine {
         preview = await this.previewPublish(principal, live, draft, fence);
       } catch (e) {
         if (!(e instanceof EngineError)) throw e;
+        // No connections left is the server's state, not a verdict on the change.
+        if (e instanceof CapacityError) throw e;
         if (!blockers.some((b) => b.code === 'report_uses_removed_field'))
-          blockers.push(replayFailure(e.message, chain));
+          blockers.push(replayFailure(e.message, chain, e.untrusted));
       }
     }
     return {

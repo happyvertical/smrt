@@ -58,6 +58,33 @@ export class EngineError extends Error {
   }
 }
 
+/** Text from this error may not be shown to an owner: it came from a worker or a driver. */
+export function isUntrusted(e: unknown): boolean {
+  return !(e instanceof EngineError) || e.untrusted;
+}
+
+/**
+ * An engine error whose message embeds `inner`'s text. It keeps the flag: it is
+ * ours to show only when everything it embeds is ours.
+ */
+export function embedding(
+  message: string,
+  code: EngineErrorCode,
+  ...inner: unknown[]
+): EngineError {
+  return inner.some(isUntrusted)
+    ? EngineError.untrusted(message, code)
+    : new EngineError(message, code);
+}
+
+/** The budget of database connections has no room: retry later. Never a verdict on the caller's data. */
+export class CapacityError extends EngineError {
+  constructor(message: string) {
+    super(message, 'refused');
+    this.name = 'CapacityError';
+  }
+}
+
 /**
  * A risky command or tool call was made without `approved: true`. The shell's
  * approval model sets that only after the owner decided in its own UI.

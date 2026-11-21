@@ -120,10 +120,12 @@ export class AppWorker {
       limits?: WorkerLimits;
       /** The host's database choice; default SQLite in `dataDir`. */
       database?: DatabaseConfig;
+      /** Longest a schema dump waits for table locks (ms); the host's lock timeout. */
+      lockTimeoutMs?: number;
     },
   ) {
     this.version = init.version;
-    const { limits, database, ...data } = init;
+    const { limits, database, lockTimeoutMs, ...data } = init;
     // A PGlite instance cannot cross into the thread: the worker gets one end
     // of a port, this thread serves the other (db/pglite-bridge.ts).
     let release = () => {};
@@ -144,9 +146,15 @@ export class AppWorker {
       throw e;
     }
     const config: WorkerDatabaseConfig =
-      db.config.kind !== 'sqlite' && limits?.statementTimeoutMs !== undefined
-        ? { ...db.config, statementTimeoutMs: limits.statementTimeoutMs }
-        : db.config;
+      db.config.kind === 'sqlite'
+        ? db.config
+        : {
+            ...db.config,
+            ...(limits?.statementTimeoutMs === undefined
+              ? {}
+              : { statementTimeoutMs: limits.statementTimeoutMs }),
+            ...(lockTimeoutMs === undefined ? {} : { lockTimeoutMs }),
+          };
     try {
       this.worker = new Worker(workerUrl, {
         workerData: { appWorker: true, ...data, database: config },
