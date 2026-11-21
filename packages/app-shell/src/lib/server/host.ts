@@ -22,16 +22,18 @@
 // TWO copies, never a "current" one: `getHost()` is the LIVE host, always;
 // the draft host is reachable only through `hostFor('draft')` /
 // `getDraftSlot()`, which callers reach by naming the copy (see target.ts).
+import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync } from 'node:fs';
 import { join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { getCurrentTenant } from '@happyvertical/smrt-tenancy';
 import { TenantCollection } from '@happyvertical/smrt-users';
 import type { DatabaseInterface } from '@happyvertical/sql';
+import type { DatabaseConfig } from '../../engine/db/index.ts';
 import {
   AppHost,
   bundledWorkerUrl,
-  discardDraftDirectory,
+  discardOrphanDraft,
   EngineError,
   type WorkerLimits,
   wantsBundledWorker,
@@ -99,6 +101,18 @@ export interface ShellContext {
    * shell unusable: it never falls back to `local`.
    */
   profile?: () => ShellProfile | Promise<ShellProfile>;
+  /**
+   * Cloud only: where each app's DATA lives on PostgreSQL, one schema per app
+   * (the engine's layout). `config(schema)` is the app's database config;
+   * `provision(schema)` creates the schema (idempotent), because the engine
+   * never creates one. Absent: the app's data is a SQLite file in its
+   * directory under the data root (tests, and a deployment with no server
+   * for the apps yet). The desktop ignores it: it never leaves SQLite.
+   */
+  appDatabase?: {
+    config: (schema: string) => DatabaseConfig;
+    provision: (schema: string) => Promise<void>;
+  };
 }
 
 /** Everything the shell holds for one app (one tenant's, or the local one). */
@@ -119,6 +133,8 @@ interface Holder {
   slotRef: DraftSlot | null;
   /** Where the draft copy goes (known once the live host is open). */
   draftDir: string | null;
+  /** Cloud on PostgreSQL: the live app's database config (its schema); else null (SQLite files). */
+  database: DatabaseConfig | null;
   /** Lifecycle (cloud with a policy): calls inside the app right now. */
   leases: number;
   /** Lifecycle: hosts handed out by `getHost()` whose hand-out lease is running. */
@@ -262,6 +278,23 @@ export function tenantAppDirs(
   return { live, draft };
 }
 
+/**
+ * The PostgreSQL schema of one tenant's app: `app_` and 32 hex of
+ * sha256(tenant id, app id). Derived from the two validated ids only (never from
+ * input), a plain lower-case identifier well inside the 63-byte limit, and
+ * never shaped like the copies the engine makes (`assertAppSchema`). Two
+ * apps of one tenant, or of two tenants, never share one.
+ */
+export function appSchemaName(tenantId: string, appId: string): string {
+  const tenant = safeId(tenantId, 'the tenant');
+  const app = safeId(appId, 'the app');
+  const digest = createHash('sha256')
+    .update(`${tenant}\0${app}`)
+    .digest('hex')
+    .slice(0, 32);
+  return `app_${digest}`;
+}
+
 function workerUrl(): URL | string {
   const configured = requireContext().workerUrl;
   if (configured) return configured;
@@ -306,6 +339,7 @@ function holderOf(key: string, tenantId: string | null): Holder {
       storeRef: null,
       slotRef: null,
       draftDir: null,
+      database: null,
       leases: 0,
       handouts: 0,
       lastUsed: lifecycle.now(),
@@ -376,12 +410,16 @@ export function openDraftHost(
   id: string,
   dir: string,
   pin: string | null = null,
+  database: DatabaseConfig | null = null,
 ): Promise<AppHost> {
   return AppHost.open(dir, {
     store: new DraftVersionStore(db, id, pin),
     workerUrl: workerUrl(),
     workerLimits: requireContext().workerLimits,
     autoApprove: true,
+    // A draft on PostgreSQL reopens with the LIVE app's config; its own
+    // schema comes from the marker in `dir`.
+    ...(database ? { database } : {}),
   });
 }
 
@@ -396,6 +434,7 @@ async function adoptDraft(
   db: DatabaseInterface,
   live: AppHost,
   dir: string,
+  database: DatabaseConfig | null,
 ): Promise<void> {
   const drafts = await AppDraftCollection.create({ db });
   const now = new Date().toISOString();
@@ -421,7 +460,7 @@ async function adoptDraft(
     // was recorded): the engine removes it, and only if it is one of its own.
     if (existsSync(dir))
       try {
-        discardDraftDirectory(dir);
+        await discardOrphanDraft(dir, database ?? undefined);
       } catch {
         // not removable (no marker, a symlink): left alone, never forced
       }
@@ -444,12 +483,14 @@ async function adoptDraft(
     slot.hold =
       'The workbook import is still being checked. Return to Import to finish or discard it.';
   holder.slotRef = slot;
-  if (!existsSync(join(dir, 'app.db'))) {
+  // SQLite: the copy is a file. PostgreSQL: a schema; the directory (its
+  // marker) is what is left to look for here, and opening checks the rest.
+  if (!existsSync(database ? dir : join(dir, 'app.db'))) {
     slot.problem = 'the draft copy is missing from the data folder';
     return;
   }
   try {
-    const draft = await openDraftHost(db, slot.id, dir, holder.pin);
+    const draft = await openDraftHost(db, slot.id, dir, holder.pin, database);
     wireHostEvents(draft, 'draft', holder.tenantId);
     slot.host = lifecycleOn() ? leased(holder, draft) : draft;
   } catch (e) {
@@ -488,6 +529,33 @@ async function directoriesFor(
 }
 
 /**
+ * Cloud with `appDatabase`: the tenant's app on PostgreSQL, in its own schema
+ * (created here, once, before the engine opens it). Otherwise null: the app is
+ * a SQLite file in its directory (the desktop, and tests with no server).
+ */
+async function liveDatabase(
+  holder: Holder,
+  store: ShellVersionStore,
+): Promise<DatabaseConfig | null> {
+  const provider = requireContext().appDatabase;
+  if (!provider || holder.tenantId === null) return null;
+  const app = await store.appRow();
+  const schema = appSchemaName(holder.tenantId, app.id as string);
+  await provider.provision(schema);
+  return provider.config(schema);
+}
+
+/**
+ * Remove a copy nothing refers to (a crash left it), without the draft being
+ * open: on PostgreSQL its schema goes too. The engine removes only what is one
+ * of its own drafts.
+ */
+export async function discardStaleDraft(dir: string): Promise<void> {
+  const database = (await currentHolder()).database;
+  await discardOrphanDraft(dir, database ?? undefined);
+}
+
+/**
  * Changes waiting freeze live structure even when their working copy is not
  * open (a restart or a crash mid-rebuild): the cards are the truth, the copy
  * is rebuilt lazily by changes.ts.
@@ -519,14 +587,16 @@ async function openLive(holder: Holder): Promise<AppHost> {
   const store = new ShellVersionStore(db, holder.pin);
   const dirs = await directoriesFor(holder, store);
   mkdirSync(dirs.live, { recursive: true, mode: 0o700 });
+  const database = await liveDatabase(holder, store);
   const host = await AppHost.open(dirs.live, {
     store,
     workerUrl: workerUrl(),
     workerLimits: requireContext().workerLimits,
+    ...(database ? { database } : {}),
   });
   wireHostEvents(host, 'live', holder.tenantId);
   try {
-    await adoptDraft(holder, db, host, dirs.draft);
+    await adoptDraft(holder, db, host, dirs.draft, database);
     await freezeForWaitingChanges(db, host);
   } catch (e) {
     // Never serve live thawed when we could not tell whether a draft is
@@ -538,6 +608,7 @@ async function openLive(holder: Holder): Promise<AppHost> {
   // Tables imported before workbook bookkeeping stopped being required.
   await host.repairLegacyImport().catch(() => 0);
   holder.draftDir = dirs.draft;
+  holder.database = database;
   holder.storeRef = store;
   holder.hostRef = host;
   return host;

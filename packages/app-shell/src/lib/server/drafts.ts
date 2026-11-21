@@ -14,7 +14,6 @@ import { existsSync, realpathSync } from 'node:fs';
 import { resolve } from 'node:path';
 import {
   type AppHost,
-  discardDraftDirectory,
   EngineError,
   type PublishPreview as EnginePublishPreview,
   type PublishResult,
@@ -27,6 +26,7 @@ import type { FieldDef } from '../ui/types.ts';
 import { publish } from './events.ts';
 import {
   type DraftSlot,
+  discardStaleDraft,
   getAppTenantId,
   getDraftDir,
   getDraftSlot,
@@ -186,7 +186,7 @@ export function startDraftWith(
     const pin = await getStorePin();
     // A leftover copy no row refers to (host.ts removes these at start): the
     // engine only removes a directory that is one of its own drafts.
-    if (existsSync(dir)) discardDraftDirectory(dir);
+    if (existsSync(dir)) await discardStaleDraft(dir);
     const drafts = await AppDraftCollection.create({ db });
     const row = await drafts.create({
       name: clean(name),
@@ -410,7 +410,7 @@ export function discardNow(
       if (!slot.host || !(await slot.host.discardIfEmpty()))
         throw new EngineError('this draft has changes', 'refused');
     } else if (slot.host) await slot.host.discard();
-    else if (existsSync(slot.dir)) discardDraftDirectory(slot.dir);
+    else if (existsSync(slot.dir)) await discardStaleDraft(slot.dir);
     const row = await (
       await AppDraftCollection.create({ db: await getShellDb() })
     ).get(slot.id);
