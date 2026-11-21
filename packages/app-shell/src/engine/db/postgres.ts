@@ -12,8 +12,9 @@
 import { getDatabase } from '@happyvertical/sql';
 import { EngineError } from '../errors.ts';
 import { createBridgeClient } from './pglite-bridge.ts';
-import { assertAppSchema } from './schema-name.ts';
-import type { WorkerDatabaseConfig } from './types.ts';
+import { releaseAppLock, tryAppLock } from './postgres-copy.ts';
+import { assertSchemaName } from './schema-name.ts';
+import type { DatabaseConfig, WorkerDatabaseConfig } from './types.ts';
 
 type Handle = any;
 
@@ -48,7 +49,7 @@ const STATEMENTS = [
  * sessions, schema sync) is absent or throws, never an unscoped path.
  */
 export function scopeDatabase<T extends object>(db: T, schema: string): T {
-  const path = `"${assertAppSchema(schema)}"`;
+  const path = `"${assertSchemaName(schema)}"`;
   const raw = db as Handle;
   const apply = (h: Handle) =>
     h.query(`SELECT set_config('search_path', ?, true)`, [path]);
@@ -163,7 +164,7 @@ export const SCOPED_MEMBERS = new Set<string>([
 export async function openPostgres(
   config: Extract<WorkerDatabaseConfig, { kind: 'postgres' | 'pglite' }>,
 ) {
-  const schema = assertAppSchema(config.schema);
+  const schema = assertSchemaName(config.schema);
   const raw: Handle =
     config.kind === 'postgres'
       ? await getDatabase({ type: 'postgres', ...config.connection } as any)
@@ -184,4 +185,83 @@ export async function openPostgres(
     );
   }
   return scopeDatabase(raw, schema);
+}
+
+/**
+ * A connection for the host's own schema work (copy, swap, drop): outside any
+ * app schema, so it can name two schemas in one transaction. The host thread
+ * opens one briefly; an app worker never does. A PGlite is the host's own
+ * instance and stays open.
+ */
+export async function openAdmin(
+  config: Extract<DatabaseConfig, { kind: 'postgres' | 'pglite' }>,
+) {
+  if (config.kind === 'postgres') {
+    const raw: Handle = await getDatabase({
+      type: 'postgres',
+      ...config.connection,
+      max: 1,
+      // A pool of its own: the shared per-process cache would hand back (and
+      // closing would end) a connection another operation is using.
+      cache: false,
+    } as any);
+    return { db: raw, close: () => raw.close?.() };
+  }
+  const client = config.client;
+  // PGlite's own client takes numbered parameters; the helpers use `?`.
+  const numbered = (sql: string) => {
+    let n = 0;
+    return sql.replace(/\?/g, () => `$${++n}`);
+  };
+  const wrap = (c: {
+    query(sql: string, params?: unknown[]): Promise<any>;
+  }) => ({
+    query: (sql: string, params?: unknown[]) =>
+      params?.length ? c.query(numbered(sql), params) : c.query(sql),
+  });
+  return {
+    db: {
+      ...wrap(client),
+      transaction: <T>(cb: (tx: any) => Promise<T>) =>
+        client.transaction((tx) => cb(wrap(tx))),
+    },
+    close: async () => {},
+  };
+}
+
+/**
+ * Claim an app on a PostgreSQL SERVER for this host (#5187): one host process
+ * per app, because a host's start-up recovery and sweep drop the app's side
+ * schemas, which a second host's publish or draft would be using. A session
+ * advisory lock on a connection of its own (never pooled with anything else,
+ * never idle-closed) is held until the returned release runs or the process
+ * ends; a connection the network drops frees the lock server-side. Refuses
+ * with an `EngineError` when another host holds it. PGlite is one process's
+ * own instance: nothing to claim there.
+ */
+export async function claimApp(
+  config: DatabaseConfig,
+): Promise<(() => Promise<void>) | undefined> {
+  if (config.kind !== 'postgres') return undefined;
+  const raw: Handle = await getDatabase({
+    type: 'postgres',
+    ...config.connection,
+    max: 1,
+    idleTimeoutMillis: 0,
+    cache: false,
+  } as any);
+  try {
+    if (!(await tryAppLock(raw, config.schema)))
+      throw new EngineError(
+        `another host already runs the app in schema ${config.schema}; one host per app. Stop it, or point this host at its own schema.`,
+        'refused',
+      );
+  } catch (e) {
+    await raw.close?.().catch(() => {});
+    throw e;
+  }
+  return async () => {
+    await releaseAppLock(raw, config.schema).catch(() => {});
+    await raw.close?.().catch(() => {});
+  };
 }

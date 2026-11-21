@@ -23,6 +23,10 @@ export interface DraftMarker {
   /** The live version the draft started from. */
   baseVersion: number;
   createdAt: string;
+  /** PostgreSQL: the schema holding the draft's data (a SQLite draft has none). */
+  schema?: string;
+  /** PostgreSQL: the live app's schema this draft was made from (owner of the draft's schema). */
+  liveSchema?: string;
 }
 
 /** A path as the file system sees it; the plain resolved path while it does not exist. */
@@ -69,6 +73,8 @@ export function writeDraftMarker(
   dataDir: string,
   liveDir: string,
   baseVersion: number,
+  schema?: string,
+  liveSchema?: string,
 ): DraftMarker {
   const marker: DraftMarker = {
     kind: 'smrt-app-draft',
@@ -76,6 +82,7 @@ export function writeDraftMarker(
     liveDir: realDir(liveDir),
     baseVersion,
     createdAt: new Date().toISOString(),
+    ...(schema ? { schema, liveSchema } : {}),
   };
   writeFileSync(join(dataDir, DRAFT_MARKER_FILE), JSON.stringify(marker), {
     flag: 'wx',
@@ -113,11 +120,21 @@ export function checkDraftPath(draftDir: string, liveDir: string): string {
  * one the engine made), is not a symlink and does not contain the live
  * directory it names. Nothing else is ever removed.
  */
-export function removeDraftDirectory(dataDir: string): void {
+export function removeDraftDirectory(
+  dataDir: string,
+  schemaGone = false,
+): void {
   const marker = readDraftMarker(dataDir);
   if (!marker)
     throw new EngineError(
       `${dataDir} is not a draft directory, so it is not removed`,
+      'refused',
+    );
+  // A PostgreSQL draft's data is a schema: removing only the directory would
+  // strand it. The engine's own discard drops the schema first.
+  if (marker.schema && !schemaGone)
+    throw new EngineError(
+      `${dataDir} is a PostgreSQL draft; discard it with the draft's discard() or discardOrphanDraft(dir, database), which drop its schema too`,
       'refused',
     );
   if (lstatSync(dataDir).isSymbolicLink())

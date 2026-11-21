@@ -8,12 +8,14 @@
 // PostgreSQL counterpart for the engine paths they cover. Single tests that
 // need it skip themselves with `{ skip: onPglite }` (pglite-env.ts). Bringing
 // the excluded files across needs a dual-database SQL helper for their raw
-// assertions, and drafts and publish on PostgreSQL (#5187).
+// assertions. Drafts, snapshots and publish on PostgreSQL (#5187) are tested
+// in `src/engine/postgres-drafts.test.ts`, and, like `postgres-server.test.ts`,
+// run once from `pnpm test:postgres` (the base config excludes them).
 import { defineConfig } from 'vitest/config';
 import base from './vitest.config.ts';
 
 const SQLITE_ONLY = [
-  // draft copies and publish (VACUUM INTO, file swap): #5187
+  // draft copies and publish: SQLite files (`postgres-drafts.test.ts` is the PostgreSQL twin)
   'draft.test.ts',
   'publish.test.ts',
   'change-engine.test.ts',

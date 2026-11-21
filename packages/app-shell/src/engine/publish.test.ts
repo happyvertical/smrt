@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto';
 import {
   cpSync,
   existsSync,
+  mkdirSync,
   mkdtempSync,
   readdirSync,
   readFileSync,
@@ -28,7 +29,9 @@ import {
   chainDigest,
   JOURNAL_FILE,
   moveAside,
+  readJournal,
   restoreAside,
+  writeJournal,
 } from './publish.ts';
 
 const root = mkdtempSync(join(tmpdir(), 'engine-publish-'));
@@ -784,6 +787,88 @@ describe('boot reconcile after a crash', () => {
       }
     } finally {
       await close(w);
+    }
+  });
+
+  it('a committed journal rolls forward even when the owner has edited since', async () => {
+    const { w, crashed, crashedStore, base } = await crashAt('committed');
+    try {
+      // The store committed, the journal said so, the aside could not go; then
+      // the owner made another change: the store is PAST the published version.
+      const journal = readJournal(crashed);
+      if (!journal) throw new Error('no journal');
+      writeJournal(crashed, { ...journal, committed: true });
+      const published = await crashedStore.get(base + 1);
+      await crashedStore.append({
+        ...(published as VersionRecord),
+        version: base + 2,
+        parent: base + 1,
+        summary: 'edited after the publish',
+      });
+      await crashedStore.setCurrent(base + 2);
+      const host = await AppHost.open(crashed, { store: crashedStore });
+      try {
+        expect(host.recovery).toBe('rolled-forward');
+        expect(host.version).toBe(base + 2);
+        expect(leftovers(crashed)).toEqual([]);
+        expect(columns(crashed, 'u_chores')).not.toContain('notes');
+      } finally {
+        await host.close();
+      }
+    } finally {
+      await close(w);
+    }
+  });
+
+  it('a journal that could not be marked committed is surfaced, and a later edit does not roll the publish back', async () => {
+    const w = await world();
+    try {
+      await w.draft.execute(
+        { type: 'removeField', model: 'Chore', field: 'notes' },
+        AUTHOR,
+      );
+      const { digest } = await w.live.previewPublish(w.draft);
+      const result = await w.live.publishDraft(w.draft, {
+        ...OK,
+        expect: digest,
+        // The journal's temp file cannot be created (a stand-in for a full disk).
+        onStage: (s) => {
+          if (s === 'committed')
+            mkdirSync(join(w.liveDir, `${JOURNAL_FILE}.tmp`));
+        },
+      });
+      expect(w.live.notices.join('\n')).toMatch(/could not be marked finished/);
+      // The journal and the old data stay; the journal does not say committed.
+      expect(readJournal(w.liveDir)?.committed).toBeUndefined();
+      expect(existsSync(join(w.liveDir, `app.db${ASIDE}`))).toBe(true);
+      // The owner edits: the store is now past the journal's final version.
+      w.live.setFrozen(false);
+      await w.live.execute(
+        {
+          type: 'defineModel',
+          name: 'Later',
+          fields: { note: { type: 'text' } },
+        },
+        AUTHOR,
+      );
+      expect(w.live.version).toBeGreaterThan(result.version);
+      const version = w.live.version;
+      await w.draft.close();
+      await w.live.close();
+      rmSync(join(w.liveDir, `${JOURNAL_FILE}.tmp`), { recursive: true });
+      const again = await AppHost.open(w.liveDir, { store: w.liveStore });
+      try {
+        expect(again.recovery).toBe('rolled-forward');
+        expect(again.version).toBe(version);
+        expect(columns(w.liveDir, 'u_chores')).not.toContain('notes');
+        expect(leftovers(w.liveDir)).toEqual([]);
+        expect(await again.list('Chore')).toHaveLength(3);
+      } finally {
+        await again.close();
+      }
+    } finally {
+      await w.draft.close().catch(() => {});
+      await w.live.close().catch(() => {});
     }
   });
 

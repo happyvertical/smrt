@@ -28,13 +28,27 @@ import {
 import { assertLoadBounds, type LoadPreview } from './data-migrations.ts';
 import {
   assertDatabaseConfig,
+  claimAppDatabase,
+  copySuffix,
   type DatabaseConfig,
   dialectFor,
   type EngineDialect,
   type HostDatabase,
-  requireSnapshots,
   SQLITE,
+  sideSchemaName,
+  withSchemaAdmin,
 } from './db/index.ts';
+import {
+  DEFAULT_LOCK_TIMEOUT_MS,
+  dropSchema,
+  forkSchema,
+  listSideSchemas,
+  readDumpHeader,
+  restoreDump,
+  schemaExists,
+  swapSchemas,
+} from './db/postgres-copy.ts';
+import { assertSchemaName, isSideSchema } from './db/schema-name.ts';
 import {
   type AppDefinition,
   builtInFields,
@@ -83,7 +97,10 @@ import {
   listMethods,
   makeRehearsalDir,
   moveAside,
+  type PublishJournal,
   type PublishMethod,
+  publishHappened,
+  readJournal,
   reconcilePublish,
   removeJournal,
   removeRehearsal,
@@ -96,6 +113,7 @@ import {
   titleField,
 } from './reports.ts';
 import { checkSyntax } from './sandbox.ts';
+import { resolveSnapshot } from './snapshots.ts';
 import type { VersionRecord, VersionStore } from './store.ts';
 import { AppCallError, AppWorker, type WorkerLimits } from './worker-handle.ts';
 import type { BootInfo, WorkerOp } from './worker-protocol.ts';
@@ -133,7 +151,25 @@ export interface HostOptions {
    * only in the sense of serving it to workers: closing it stays the caller's.
    */
   database?: DatabaseConfig;
+  /**
+   * PostgreSQL only: how long a schema swap (publish, snapshot restore) waits
+   * for another session's lock on the app's tables before it gives up and
+   * changes nothing. Default 5000 ms.
+   */
+  swapLockTimeoutMs?: number;
 }
+
+/**
+ * Where a copy of the live data sits while it is worked on: a directory's
+ * `app.db` (SQLite) or a schema of the live app's database (PostgreSQL).
+ */
+interface CopyPlace {
+  dir: string;
+  /** PostgreSQL: the copy's own database config (same server, its own schema). */
+  database?: DatabaseConfig;
+}
+
+const schemaOf = (c: DatabaseConfig) => (c.kind === 'sqlite' ? '' : c.schema);
 
 export interface ForkDraftOptions {
   /**
@@ -346,12 +382,12 @@ export class AppHost extends EventEmitter {
   private dialect: EngineDialect;
   private releaseDatabase?: () => Promise<void>;
   /**
-   * What the chosen database cannot do yet, said plainly. On PostgreSQL there
-   * is no pre-change copy, so a method run or schema change has no undo point
-   * (#5187). Exposed for the shell, and for #5187, to surface to the owner;
-   * nothing in this package displays it.
+   * What the chosen database cannot do yet, said plainly, for the shell to
+   * show the owner (and a publish whose journal could not be marked finished).
+   * Empty: PostgreSQL has every undo point SQLite has (#5187).
    */
   readonly notices: string[] = [];
+  private lockTimeoutMs: number;
   private app!: AppWorker;
   private closed = false;
   #autoApprove = false;
@@ -376,10 +412,7 @@ export class AppHost extends EventEmitter {
     this.database = database.config;
     this.dialect = dialectFor(database.config);
     this.releaseDatabase = database.release;
-    if (!this.dialect.snapshots)
-      this.notices.push(
-        'No undo point for method runs on this database: PostgreSQL has no pre-change copy yet (#5187).',
-      );
+    this.lockTimeoutMs = opts.swapLockTimeoutMs ?? DEFAULT_LOCK_TIMEOUT_MS;
     this.store = opts.store;
     this.workerUrl = opts.workerUrl ?? defaultWorkerUrl();
     this.workerLimits = opts.workerLimits;
@@ -399,21 +432,58 @@ export class AppHost extends EventEmitter {
     }
     mkdirSync(join(dataDir, 'snapshots'), { recursive: true });
     if (opts.database) assertDatabaseConfig(opts.database);
-    const database: HostDatabase = { config: opts.database ?? SQLITE };
-    const host = new AppHost(dataDir, opts, database);
+    let config: DatabaseConfig = opts.database ?? SQLITE;
+    // A draft on PostgreSQL lives in a schema of its own, named in its marker:
+    // the caller passes the live app's config, the schema comes from here.
+    const marker = readDraftMarker(dataDir);
+    if (marker?.schema) {
+      if (config.kind === 'sqlite')
+        throw new EngineError(
+          "this draft lives on PostgreSQL; open it with the live app's database config",
+          'refused',
+        );
+      if (
+        !marker.liveSchema ||
+        marker.liveSchema !== config.schema ||
+        !isSideSchema(marker.schema, marker.liveSchema, 'd')
+      )
+        throw new EngineError(
+          `the draft marker in ${dataDir} names ${marker.schema}, which is not a draft schema of ${config.schema}; not trusting it`,
+          'refused',
+        );
+      config = { ...config, schema: assertSchemaName(marker.schema) };
+    } else if (marker && config.kind !== 'sqlite')
+      throw new EngineError(
+        'this draft is a SQLite copy; it cannot open on PostgreSQL',
+        'refused',
+      );
+    // A live host owns its app's side schemas (start-up recovery and the sweep
+    // drop them): claim the app before anything is touched, so a second host
+    // on the same schema refuses instead of dropping the first one's copies.
+    // A draft lives in a schema of its own and is claimed by its live host.
+    const release = marker ? undefined : await claimAppDatabase(config);
+    const database: HostDatabase = { config, release };
     try {
+      const host = new AppHost(dataDir, opts, database);
       await host.boot();
+      return host;
     } catch (e) {
-      await host.releaseDatabase?.();
+      await release?.();
       throw e;
     }
-    return host;
   }
 
   private async boot() {
     let cur = await this.store.current();
-    // Finish or undo a publish a crash interrupted, before the app opens.
+    // Finish or undo a publish a crash interrupted, before the app opens. On
+    // PostgreSQL the schemas are put right first, while the journal still
+    // says what was going on.
+    const journal = readJournal(this.dataDir);
+    if (journal?.pg) await this.reconcilePgPublish(journal, cur);
     this.recovery = reconcilePublish(this.dataDir, cur);
+    // A crash outside the journal's window (a rehearsal or a restore that
+    // never got to swap) leaves a side schema: drop the app's own.
+    if (this.onServer && !this.draft) await this.sweepSideSchemas();
     if (cur === null) {
       await this.store.append({
         version: 0,
@@ -1795,6 +1865,226 @@ export class AppHost extends EventEmitter {
     };
   }
 
+  // ---------- PostgreSQL: copies of the app's schema ----------
+
+  private get onServer() {
+    return this.database.kind !== 'sqlite';
+  }
+
+  /** The app's database config, pointed at a new side schema (a draft, a rehearsal, an aside). */
+  private sideDatabase(tag: 'd' | 'r' | 'o' | 'n'): DatabaseConfig {
+    return {
+      ...this.database,
+      schema: sideSchemaName(schemaOf(this.database), tag),
+    } as DatabaseConfig;
+  }
+
+  /** A live copy of the app's schema (rows, keys, sequences, policies, ownership, grants). */
+  private forkSchemaTo(target: string) {
+    return withSchemaAdmin(this.database, (db) =>
+      forkSchema(
+        db,
+        schemaOf(this.database),
+        target,
+        this.ownerBase(),
+        this.lockTimeoutMs,
+      ),
+    );
+  }
+
+  /** Replace the live schema by `next` (the live one goes to `aside`) in one transaction. */
+  private swapSchemasIn(next: string, aside: string) {
+    return withSchemaAdmin(this.database, (db) =>
+      swapSchemas(
+        db,
+        { live: schemaOf(this.database), next, aside, owner: this.ownerBase() },
+        this.lockTimeoutMs,
+      ),
+    );
+  }
+
+  /** Drop a side schema; a failure is left for the next start's cleanup unless `strict`. */
+  private async dropSideSchema(schema: string, strict = false) {
+    try {
+      await this.dropSideSchemaOrThrow(schema);
+    } catch (e) {
+      if (strict) throw e;
+    }
+  }
+
+  /** The full schema name of the app the copies of this host belong to. */
+  private ownerBase() {
+    return schemaOf(this.database);
+  }
+
+  private dropSideSchemaOrThrow(schema: string) {
+    // A draft drops its own schema, which its LIVE app owns.
+    const owner =
+      this.draft?.schema === schema && this.draft.liveSchema
+        ? this.draft.liveSchema
+        : this.ownerBase();
+    if (!isSideSchema(schema, owner))
+      throw new EngineError(
+        `${schema} is not a side schema; only a draft, rehearsal, aside or restore schema is dropped here`,
+        'refused',
+      );
+    return withSchemaAdmin(this.database, (db) =>
+      dropSchema(db, schema, this.lockTimeoutMs, owner),
+    );
+  }
+
+  /** Drop rehearsal, aside and restore schemas of this app that nothing uses (run at start, before the app opens). */
+  private async sweepSideSchemas() {
+    const base = schemaOf(this.database);
+    await withSchemaAdmin(this.database, async (db) => {
+      for (const n of await listSideSchemas(db, base, 'ron'))
+        await dropSchema(db, n, this.lockTimeoutMs, base);
+    });
+  }
+
+  /**
+   * A publish a crash interrupted: put the schemas right. The journal and the
+   * store say which way: a journal marked `committed` (the store had the
+   * versions before the old data was dropped) or a store at the published
+   * version means only the old data's schema is left to remove, however many
+   * edits followed; otherwise the old schema comes back and the rehearsal goes.
+   */
+  private async reconcilePgPublish(j: PublishJournal, current: number | null) {
+    const pg = j.pg;
+    if (!pg) return;
+    if (pg.schema !== schemaOf(this.database))
+      throw new EngineError(
+        `the publish journal in ${this.dataDir} belongs to schema ${pg.schema}, not ${schemaOf(this.database)}; not guessing`,
+        'refused',
+      );
+    for (const n of [pg.staging, pg.aside])
+      if (!isSideSchema(n, pg.schema, 'ro'))
+        throw new EngineError(
+          `the publish journal names ${n}, which is not a side schema of ${pg.schema}; not touching it`,
+          'refused',
+        );
+    await withSchemaAdmin(this.database, async (db) => {
+      const has = (n: string) => db.transaction((tx) => schemaExists(tx, n));
+      const drop = async (n: string) => {
+        if (await has(n))
+          await dropSchema(db, n, this.lockTimeoutMs, pg.schema);
+      };
+      if (publishHappened(j, current)) {
+        await drop(pg.aside);
+        await drop(pg.staging);
+      } else {
+        if (await has(pg.aside))
+          await swapSchemas(
+            db,
+            {
+              live: pg.schema,
+              next: pg.aside,
+              aside: pg.staging,
+              owner: pg.schema,
+            },
+            this.lockTimeoutMs,
+          );
+        await drop(pg.staging);
+      }
+    });
+  }
+
+  /**
+   * PostgreSQL: put the data back as it was in a snapshot of this app (a file
+   * of `snapshots/`, by name). The snapshot becomes a side schema, then one
+   * transaction swaps it in; the data it replaces is first kept as a snapshot
+   * of its own, so a restore can be undone by another. Refused unless the
+   * snapshot was taken at the version the app is on (the definition and the
+   * tables must agree). Live waits while it runs; a failed restore leaves the
+   * app as it was.
+   */
+  restoreSnapshot(
+    name: string,
+    opts: { approved?: boolean } = {},
+  ): Promise<{
+    version: number;
+    restoredFrom: string;
+    /** The snapshot of the data this restore replaced. */
+    snapshot: string;
+  }> {
+    if (!this.onServer)
+      return Promise.reject(
+        new EngineError(
+          'restoring a snapshot is for PostgreSQL; on SQLite the snapshot is a database file',
+          'refused',
+        ),
+      );
+    return this.run(async () => {
+      if (this.frozenNow)
+        throw new EngineError(
+          'the app is frozen while a draft is open; restore after it is published or discarded',
+          'refused',
+        );
+      const file = resolveSnapshot(join(this.dataDir, 'snapshots'), name);
+      if (!file.endsWith('.pgdump'))
+        throw new EngineError(
+          `${name} is a SQLite database file, not a PostgreSQL dump; it cannot be restored here`,
+          'refused',
+        );
+      const header = readDumpHeader(file);
+      const schema = schemaOf(this.database);
+      if (header.schema !== schema)
+        throw new EngineError(
+          `${name} was taken of schema ${header.schema}, not this app's ${schema}`,
+          'refused',
+        );
+      if (header.version !== this.version)
+        throw new EngineError(
+          `${name} was taken at version ${header.version}; the app is on version ${this.version}. Undo to that version first.`,
+          'refused',
+        );
+      if (opts.approved !== true)
+        throw new ApprovalRequiredError({
+          summary: `restore the data from ${name}`,
+          risky: true,
+          preview: {
+            snapshot: name,
+            takenAt: header.takenAt,
+            version: header.version,
+          },
+        });
+      await this.drainInflight();
+      const side = schemaOf(this.sideDatabase('n'));
+      const aside = schemaOf(this.sideDatabase('o'));
+      const kept = await this.callApp<string>(
+        'snapshot',
+        'migrate-before-restore',
+      );
+      try {
+        await withSchemaAdmin(this.database, (db) =>
+          restoreDump(db, file, side, this.ownerBase()),
+        );
+        let swapped = false;
+        try {
+          await this.app.retire();
+          await this.swapSchemasIn(side, aside);
+          swapped = true;
+          this.app = this.spawn(this.def, this.version);
+          await this.app.ready;
+        } catch (e) {
+          await this.app.terminate().catch(() => {});
+          if (swapped) await this.swapSchemasIn(aside, side);
+          this.app = this.spawn(this.def, this.version);
+          await this.app.ready.catch(() => {});
+          throw e;
+        }
+        await this.dropSideSchema(aside);
+      } finally {
+        await this.dropSideSchema(side);
+      }
+      this.emit('changed', {
+        version: this.version,
+        summary: `restored from ${name}`,
+      });
+      return { version: this.version, restoredFrom: name, snapshot: kept };
+    });
+  }
+
   // ---------- the running app ----------
 
   /** Talk to the app. Callers inside the change queue use this; others use onApp. */
@@ -1854,11 +2144,6 @@ export class AppHost extends EventEmitter {
    * the draft is open; the caller freezes live structure with `setFrozen`.
    */
   forkDraft(draftDir: string, opts: ForkDraftOptions): Promise<AppHost> {
-    try {
-      requireSnapshots(this.database, 'a draft');
-    } catch (e) {
-      return Promise.reject(e);
-    }
     if (this.draft)
       return Promise.reject(
         new EngineError('a draft cannot be forked again', 'refused'),
@@ -1879,9 +2164,15 @@ export class AppHost extends EventEmitter {
       await this.drainInflight();
       mkdirSync(dirname(dir), { recursive: true });
       mkdirSync(dir); // EEXIST: someone else made it first; not ours to remove
+      // PostgreSQL: the draft is a schema beside the live one, in the same database.
+      const schema = this.onServer
+        ? sideSchemaName(schemaOf(this.database), 'd')
+        : undefined;
+      const liveSchema = schema ? schemaOf(this.database) : undefined;
       try {
-        await this.callApp('copyTo', join(dir, 'app.db'));
-        writeDraftMarker(dir, this.dataDir, base.version);
+        if (schema) await this.forkSchemaTo(schema);
+        else await this.callApp('copyTo', join(dir, 'app.db'));
+        writeDraftMarker(dir, this.dataDir, base.version, schema, liveSchema);
         await opts.store.append(structuredClone(base));
         await opts.store.setCurrent(base.version);
         return await AppHost.open(dir, {
@@ -1889,9 +2180,12 @@ export class AppHost extends EventEmitter {
           workerUrl: this.workerUrl,
           workerLimits: this.workerLimits,
           autoApprove: true,
+          database: schema ? this.database : undefined,
+          swapLockTimeoutMs: this.lockTimeoutMs,
         });
       } catch (e) {
         rmSync(dir, { recursive: true, force: true });
+        if (schema) await this.dropSideSchema(schema);
         throw e;
       }
     });
@@ -1906,7 +2200,9 @@ export class AppHost extends EventEmitter {
     if (!this.draft)
       throw new EngineError('only a draft can be discarded', 'refused');
     await this.close();
-    removeDraftDirectory(this.dataDir);
+    // Its schema first: if that fails the marker is still there to retry.
+    if (this.draft.schema) await this.dropSideSchema(this.draft.schema, true);
+    removeDraftDirectory(this.dataDir, true);
   }
 
   /**
@@ -1927,7 +2223,8 @@ export class AppHost extends EventEmitter {
       await this.drainInflight();
       this.closed = true;
       await this.app.terminate();
-      removeDraftDirectory(this.dataDir);
+      if (draft.schema) await this.dropSideSchema(draft.schema, true);
+      removeDraftDirectory(this.dataDir, true);
       return true;
     });
   }
@@ -2004,12 +2301,13 @@ export class AppHost extends EventEmitter {
    * writing the result as one standalone file, `dir/final/app.db`. Touches
    * nothing but `dir`.
    */
-  private async replay(dir: string, chain: DraftChain, numbers: number[]) {
+  private async replay(place: CopyPlace, chain: DraftChain, numbers: number[]) {
+    const dir = place.dir;
     const boots: BootInfo[] = [];
     const dataSteps: PublishDataStep[][] = [];
     const allSteps = chain.versions.flatMap((r) => r.migration?.steps ?? []);
     let archives = { values: 0, tables: 0 };
-    const file = join(dir, 'final', 'app.db');
+    const file = place.database ? '' : join(dir, 'final', 'app.db');
     // The worker that applied the previous version: it holds exactly the
     // definition and data the next version's previews must read, so it answers
     // them instead of a second worker booted just for that.
@@ -2048,6 +2346,7 @@ export class AppHost extends EventEmitter {
               def: chain.base.definition,
               version: chain.baseVersion,
               limits: this.workerLimits,
+              database: place.database,
             });
           carried = null;
           try {
@@ -2092,6 +2391,7 @@ export class AppHost extends EventEmitter {
           def: rec.definition,
           version: numbers[i],
           limits: this.workerLimits,
+          database: place.database,
           migration: steps.length
             ? { steps, direction: 'up', version: numbers[i] }
             : undefined,
@@ -2104,7 +2404,9 @@ export class AppHost extends EventEmitter {
               numbers,
               archivedTables(allSteps),
             );
-            await w.call('copyTo', file);
+            // SQLite: the result is written as one standalone file. On
+            // PostgreSQL the rehearsal schema already is the result.
+            if (!place.database) await w.call('copyTo', file);
           }
         } catch (e) {
           await w.terminate().catch(() => {});
@@ -2136,22 +2438,33 @@ export class AppHost extends EventEmitter {
    * while the copy is taken). `digest` pins the answer for `publishDraft`.
    */
   async previewPublish(draft: AppHost): Promise<PublishPreview> {
-    requireSnapshots(this.database, 'publishing a draft');
     const ctx = await this.run(async () => {
       const { chain, digest } = await this.publishInputs(draft);
       await this.drainInflight();
       const numbers = await this.nextNumbers(chain);
       const dir = makeRehearsalDir(this.dataDir);
+      let place: CopyPlace = { dir };
       try {
-        await this.callApp('copyTo', join(dir, 'app.db'));
+        if (this.onServer) {
+          place = { dir, database: this.sideDatabase('r') };
+          await this.forkSchemaTo(schemaOf(place.database as DatabaseConfig));
+        } else await this.callApp('copyTo', join(dir, 'app.db'));
       } catch (e) {
         removeRehearsal(this.dataDir, dir);
         throw e;
       }
-      return { chain, digest, numbers, dir, from: this.def, at: this.version };
+      return {
+        chain,
+        digest,
+        numbers,
+        dir,
+        place,
+        from: this.def,
+        at: this.version,
+      };
     });
     try {
-      const r = await this.replay(ctx.dir, ctx.chain, ctx.numbers);
+      const r = await this.replay(ctx.place, ctx.chain, ctx.numbers);
       const final =
         ctx.chain.versions[ctx.chain.versions.length - 1].definition;
       return {
@@ -2205,6 +2518,8 @@ export class AppHost extends EventEmitter {
       };
     } finally {
       removeRehearsal(this.dataDir, ctx.dir);
+      if (ctx.place.database)
+        await this.dropSideSchema(schemaOf(ctx.place.database));
     }
   }
 
@@ -2224,11 +2539,6 @@ export class AppHost extends EventEmitter {
    * Live records wait (not fail) while this runs. The caller discards the draft.
    */
   publishDraft(draft: AppHost, opts: PublishOptions): Promise<PublishResult> {
-    try {
-      requireSnapshots(this.database, 'publishing a draft');
-    } catch (e) {
-      return Promise.reject(e);
-    }
     if (!opts || typeof opts.author !== 'string' || !opts.author)
       return Promise.reject(new EngineError('publish needs an author'));
     if (typeof opts.expect !== 'string' || !opts.expect)
@@ -2286,13 +2596,30 @@ export class AppHost extends EventEmitter {
     let retired = false;
     let journaled = false;
     let asideStarted = false;
+    let swapped = false;
     let next: AppWorker | null = null;
     let snapshot = '';
+    let journal: PublishJournal | null = null;
     let archives = { values: 0, tables: 0 };
+    // PostgreSQL: the rehearsal is a schema beside live, swapped in by rename.
+    const pg = this.onServer
+      ? {
+          schema: schemaOf(this.database),
+          staging: schemaOf(this.sideDatabase('r')),
+          aside: schemaOf(this.sideDatabase('o')),
+        }
+      : null;
+    const place: CopyPlace = pg
+      ? {
+          dir,
+          database: { ...this.database, schema: pg.staging } as DatabaseConfig,
+        }
+      : { dir };
     try {
-      await this.callApp('copyTo', join(dir, 'app.db'));
+      if (pg) await this.forkSchemaTo(pg.staging);
+      else await this.callApp('copyTo', join(dir, 'app.db'));
       await stage('copied');
-      const r = await this.replay(dir, chain, numbers);
+      const r = await this.replay(place, chain, numbers);
       if (this.replayDigest(digest, r.dataSteps) !== opts.expect)
         throw new EngineError(
           'the draft or live data counts changed since review; review it again',
@@ -2303,28 +2630,38 @@ export class AppHost extends EventEmitter {
       snapshot = join(
         this.dataDir,
         'snapshots',
-        `${Date.now()}-0-migrate-prepublish.db`,
+        `${Date.now()}-0-migrate-prepublish.${copySuffix(this.database)}`,
       );
       await this.callApp('copyTo', snapshot);
       await stage('snapshotted');
-      writeJournal(this.dataDir, {
+      journal = {
         format: 1,
         oldVersion,
         finalVersion: finalNumber,
         rehearsal: dir,
         snapshot,
         startedAt: now(),
-      });
+        ...(pg ? { pg } : {}),
+      };
+      writeJournal(this.dataDir, journal);
       journaled = true;
       await stage('journaled');
       retired = true;
       await this.app.retire();
       await stage('retired');
       asideStarted = true;
-      moveAside(this.dataDir);
-      await stage('moved-aside');
-      renameSync(r.file, join(this.dataDir, 'app.db'));
-      await stage('swapped');
+      if (pg) {
+        // One transaction renames live aside and the rehearsal into place.
+        await stage('moved-aside');
+        await this.swapSchemasIn(pg.staging, pg.aside);
+        swapped = true;
+        await stage('swapped');
+      } else {
+        moveAside(this.dataDir);
+        await stage('moved-aside');
+        renameSync(r.file, join(this.dataDir, 'app.db'));
+        await stage('swapped');
+      }
       next = this.spawn(finalDef, finalNumber);
       await next.ready;
       await stage('respawned');
@@ -2345,7 +2682,7 @@ export class AppHost extends EventEmitter {
       );
     } catch (e) {
       await this.abortPublish(
-        { retired, asideStarted, journaled, next, dir },
+        { retired, asideStarted, journaled, next, dir, pg, swapped },
         e,
       );
       throw e; // not reached when abortPublish throws its own
@@ -2360,13 +2697,30 @@ export class AppHost extends EventEmitter {
     } catch {
       // too late to matter
     }
+    // Say so in the journal before the old data goes. If that write fails the
+    // old data and the journal stay (the next start finishes the clean-up:
+    // `publishHappened` reads a store at or past the final version as
+    // published) and the owner is told, never left to find out at a restart.
+    let marked = true;
     try {
-      dropAside(this.dataDir);
-      removeJournal(this.dataDir);
-      removeRehearsal(this.dataDir, dir);
-    } catch {
-      // leftovers are removed at the next start (reconcilePublish)
+      if (journal) writeJournal(this.dataDir, { ...journal, committed: true });
+    } catch (e) {
+      marked = false;
+      this.notices.push(
+        `The publish is done, but its journal could not be marked finished (${(e as Error).message}); the old data is kept until the next start, which removes it. Free some disk space or fix the data directory.`,
+      );
     }
+    if (marked)
+      try {
+        // PostgreSQL: the old data's schema goes; if that fails the journal
+        // stays, and the next start removes it (the journal says published).
+        if (pg) await this.dropSideSchemaOrThrow(pg.aside);
+        dropAside(this.dataDir);
+        removeJournal(this.dataDir);
+        removeRehearsal(this.dataDir, dir);
+      } catch {
+        // leftovers are removed at the next start (reconcilePublish)
+      }
     const summary = `${tag}published ${chain.versions.length} change${chain.versions.length === 1 ? '' : 's'}`;
     this.emit('changed', { version: finalNumber, summary });
     return {
@@ -2387,6 +2741,8 @@ export class AppHost extends EventEmitter {
       journaled: boolean;
       next: AppWorker | null;
       dir: string;
+      pg: { schema: string; staging: string; aside: string } | null;
+      swapped: boolean;
     },
     cause: unknown,
   ) {
@@ -2394,7 +2750,21 @@ export class AppHost extends EventEmitter {
       if (s.next) await s.next.terminate().catch(() => {});
       if (s.retired) {
         await this.app.terminate().catch(() => {});
-        if (s.asideStarted) restoreAside(this.dataDir);
+        if (s.asideStarted && !s.pg) restoreAside(this.dataDir);
+      }
+      if (s.pg) {
+        // The swap is one transaction: either it happened (put the old schema
+        // back) or live was never touched. The rehearsal goes either way.
+        // Ask the catalog, not the flag: if the swap committed but its reply
+        // was lost, the aside is there.
+        if (
+          s.swapped ||
+          (await withSchemaAdmin(this.database, (db) =>
+            db.transaction((tx) => schemaExists(tx, s.pg?.aside ?? '')),
+          ))
+        )
+          await this.swapSchemasIn(s.pg.aside, s.pg.staging);
+        await this.dropSideSchemaOrThrow(s.pg.staging);
       }
       if (s.journaled) removeJournal(this.dataDir);
       removeRehearsal(this.dataDir, s.dir);
@@ -2627,8 +2997,11 @@ export class AppHost extends EventEmitter {
   async close() {
     await this.queue;
     this.closed = true;
-    await this.app.terminate();
-    await this.releaseDatabase?.();
+    try {
+      await this.app.terminate();
+    } finally {
+      await this.releaseDatabase?.();
+    }
   }
 }
 
@@ -2636,4 +3009,37 @@ export class AppHost extends EventEmitter {
 function shown(fd: FieldDef): FieldDef {
   const { hidden: _hidden, ...rest } = fd;
   return rest;
+}
+
+/**
+ * Discard a draft directory no host holds (a crash left it). On PostgreSQL the
+ * draft's schema goes too, through the live app's `database` config; on SQLite
+ * `discardDraftDirectory` is enough.
+ */
+export async function discardOrphanDraft(
+  dataDir: string,
+  database: DatabaseConfig = SQLITE,
+): Promise<void> {
+  const marker = readDraftMarker(dataDir);
+  if (marker?.schema) {
+    if (database.kind === 'sqlite')
+      throw new EngineError(
+        "this draft lives on PostgreSQL; pass the live app's database config",
+        'refused',
+      );
+    if (
+      !marker.liveSchema ||
+      marker.liveSchema !== database.schema ||
+      !isSideSchema(marker.schema, marker.liveSchema, 'd')
+    )
+      throw new EngineError(
+        `the draft marker in ${dataDir} names ${marker.schema}, which is not a draft schema of ${database.schema}; not dropping it`,
+        'refused',
+      );
+    const schema = assertSchemaName(marker.schema);
+    await withSchemaAdmin({ ...database, schema }, (db) =>
+      dropSchema(db, schema, undefined, marker.liveSchema),
+    );
+  }
+  removeDraftDirectory(dataDir, true);
 }

@@ -20,8 +20,8 @@ adds) and swaps it in once it is ready. The engine must not import SvelteKit,
   reading through the transaction handle. Destructive ones retire the old worker
   first and restart the old definition if the new one fails. They hold no SQL
   that names a database: column types, storage families and the few differing
-  statements come from the dialect (see "Database" below). `VACUUM INTO` and the
-  file swap of publish are SQLite only (#5187).
+  statements come from the dialect (see "Database" below). Copies, snapshots and
+  publish differ per database (see "PostgreSQL copies, snapshots and publish").
 - **app.db is runtime-managed.** The engine builds app.db's schema itself
   (`_app_meta.version` is its record); core's migrate never runs on it. So
   `AppRuntime.boot` declares the handle with core's
@@ -49,18 +49,21 @@ adds) and swaps it in once it is ready. The engine must not import SvelteKit,
   stack (128 KB), 1000 writes, 1 MB output, 8 MB input. The body is checked as a
   function body by V8 first (QuickJS's own `Function` accepts a body that closes
   the wrapper). Writes are validated and a `VACUUM INTO` snapshot is taken before
-  they are applied (#5185). Method runs are atomic and serialized per app
+  they are applied (#5185; a dump file on PostgreSQL, #5187). Method runs are atomic and serialized per app
   (`AppRuntime.runMethod`): one method at a time; the sandbox reads each
   model (at most 1000 rows; more fails the call naming the model, never
   truncates); the data is then re-read and all writes applied in one
   transaction that rolls back on any failure, so a failed method leaves
   nothing behind and the owner has nothing to recover. If the data changed
   between the read and the write (an edit outside methods) the method re-runs
-  (3 retries). The snapshot stays as a pre-write undo point (SQLite only: PGlite runs the
-  method without one). On a PostgreSQL SERVER the run is refused
-  (`requireSingleWriter`): the re-read check needs the one connection of an
-  embedded database, and the server port is serializable isolation with the
-  same retry, not built yet.
+  (3 retries). The snapshot stays as a pre-write undo point (a `.db` file on SQLite, a
+  `.pgdump` file on PostgreSQL; `AppHost.restoreSnapshot` puts a dump back). On a PostgreSQL SERVER the
+  write transaction first takes `SHARE ROW EXCLUSIVE` on every model table
+  (`dialect.writeLock`, sorted, so other connections' writes wait until it
+  ends) and only then re-reads and compares; embedded databases have the one
+  connection already. A write that holds another table's row lock while
+  waiting on ours can deadlock: the server aborts one, the method reports
+  "none applied" and can be run again.
   `setMemoryLimit` does not bound large single allocations in this build, and the
   interrupt handler is polled only every ~10,000 operations, so the WebAssembly
   heap itself is capped (`SANDBOX_HEAP_PAGES`, 128 MB): a memory bomb stops in
@@ -106,12 +109,106 @@ scans for it.
   serialised and each worker opens its own connection. The PGlite pass is not a
   test double of the worker: it is the same worker code path.
 - **Still SQLite only** (a clear `not supported on this database yet`
-  `EngineError`, `requireSnapshots`): `copyTo`, `forkDraft`, `previewPublish`,
-  `publishDraft`; the portable export and import (`openAppDatabase(dataDir)`
-  opens SQLite; they refuse a host that reports another database). On PostgreSQL `snapshot()` returns `null`: boot and method runs
-  proceed without a pre-change copy, so there is no method undo point there
-  until #5187 (`AppHost.notices` says so on open; #5187 must restore it). Method runs on a PostgreSQL SERVER (`kind: 'postgres'`) are
-  refused (`requireSingleWriter`, see Sandbox); PGlite runs them.
+  `EngineError`, `requireSqlite`): the portable export and import
+  (`openAppDatabase(dataDir)` opens SQLite; they refuse a host that reports
+  another database).
+
+## PostgreSQL copies, snapshots and publish (#5187)
+
+Three operations on one schema, each its own thing; the SQL is in
+`db/postgres-copy.ts` and takes explicit schema names, so it runs on a worker's
+scoped handle and on a host-side admin connection (`withSchemaAdmin`, opened
+for the one operation on the host thread; a PGlite uses the host's client).
+
+- **One description, three uses.** `describeSchema` reads the catalog once
+  into statements (schema, sequences, tables, keys, indexes under the source's
+  names, checks, foreign keys, policies and row-level-security flags,
+  comments, plain functions, owners, grants, default privileges, sequence
+  positions) naming `TARGET` for the new schema. A fork runs them and copies
+  rows with `INSERT ... SELECT` (identity values with `OVERRIDING SYSTEM
+  VALUE`, generated columns left to the database); a dump writes them and the
+  rows (every value as text, cast back to the column's type) to a file; a
+  restore replays that file. The shortcut (`CREATE TABLE ... LIKE` plus
+  `INSERT ... SELECT`) loses foreign keys, policies, ownership and grants,
+  leaves serial defaults on the source's sequences, does not advance
+  identity sequences and fails on generated columns (#5184); each of those is
+  an explicit statement. Privileges are exact: an object whose source has an
+  explicit ACL is reset (`REVOKE ALL ... FROM PUBLIC`) before the captured
+  grants, because a recreated function is PUBLIC-executable by default; tables,
+  columns, sequences, functions, the schema and default privileges are
+  compared by effective ACL. Values travel as text under a fixed `DateStyle`,
+  `IntervalStyle` and `bytea_output`; dumps are mode 0600. Tested by catalog comparison in
+  `postgres-drafts.test.ts`. A schema holding what a copy does not carry
+  (views, procedures, types, triggers, inheritance, rules) is refused, never
+  copied partly. Copies read with `row_security` off: a role a policy would
+  filter fails loudly instead of losing rows, so run them as the owner or a
+  role that bypasses the policies.
+- **Names and ownership.** A copy is `<first 44 of the app's schema>__<d|r|o|n>
+  <8 hex of sha256(full schema)><8 random>` (`sideName`, at most 63 bytes); an
+  app's own schema may not look like one (`assertAppSchema`). The name is only
+  a filter: each copy carries `COMMENT ON SCHEMA 'smrt-side:<FULL app schema>'`
+  (set in the creating transaction, moved to the aside by the swap), and
+  `dropSchema` / `swapSchemas` / the sweep verify it before touching anything,
+  so two apps sharing a prefix never drop each other's copies.
+- **One point in time.** The scoped handle cannot set REPEATABLE READ, so a
+  fork (`forkSchema`) and a dump (`dumpSchema`) first `lockForCopy`: every table
+  `LOCK TABLE ... IN SHARE MODE`, sorted by name (C collation), BEFORE the first
+  read (readers continue, writers wait), so no parent/child skew can reach a
+  draft or an undo point. The wait is `swapLockTimeoutMs` for a fork (default 5
+  s for a dump); a writer that holds on surfaces as a lock-timeout error, the
+  transaction rolls back and the connection is released. The role needs UPDATE,
+  DELETE or TRUNCATE on each table. Tested by statement recording (PGlite is
+  one connection) plus a held-open writer on a real server.
+- **One live host per app (PostgreSQL server).** Start-up recovery
+  (`reconcilePgPublish`, which runs FIRST while the journal still says what was
+  going on) and then the sweep drop the app's `r`/`o`/`n` schemas, which a second host's
+  publish or restore would be using. So a live `AppHost.open` first claims the
+  app (`claimApp`): `pg_try_advisory_lock(hashtext('smrt-app-shell'),
+  hashtext(<app schema>))` on a connection of its own (`max: 1`, never
+  idle-closed, never shared), held until `close()` or process end (a dropped
+  connection frees it server-side), and refuses with "another host already runs
+  the app" when it is taken, before touching anything. A draft host is claimed by
+  its live host; PGlite and SQLite claim nothing. Tested by `app-lock.test.ts`
+  (modelled lock semantics and statement recording) and, on a real server, by
+  `postgres-server.test.ts`.
+- **Fork** (a draft, a publish rehearsal): a live schema beside the app's, in one transaction (a
+  failure leaves none). `forkDraft` writes the name in the draft marker
+  (`schema`, `liveSchema`); `AppHost.open` on that directory takes the live app's database
+  config and uses the marker's schema. `discard` drops it (a failure keeps
+  the marker, so it can be retried); `discardOrphanDraft(dir, database)` does
+  the same for a directory no host holds.
+- **Snapshot** (undo points, `.pgdump` in `snapshots/`, same retention as
+  `.db`): restore-only, adds no table. `AppHost.restoreSnapshot(name)` builds
+  the dump as a side schema, retires the worker, swaps it in and starts a
+  new worker; the data it replaces is first kept as its own snapshot
+  (`migrate-before-restore`), so a restore can be undone by another. Only a
+  snapshot taken at the app's current version restores (the definition and the
+  tables must agree); undo to that version first. SQLite's snapshot is a file
+  the owner copies back by hand and `restoreSnapshot` refuses it.
+- **Publish.** Same stages as SQLite. The rehearsal is a forked schema the
+  replay workers run on (`CopyPlace.database`); the swap is ONE transaction
+  (`swapSchemas`): every table of both schemas is locked `ACCESS EXCLUSIVE`
+  (waiting at most `swapLockTimeoutMs`, default 5 s), live is renamed to an
+  aside, the rehearsal to live. The definition version lives in the schema's
+  `_app_meta`, so it swaps with the data. A session still using the old tables
+  makes the swap fail and change nothing; the worker is retired first, and
+  the aside is dropped only after the store has the versions, and only after
+  the journal is rewritten with `committed: true` (so a failed drop plus the
+  owner's next edit cannot make the next start read "store past the published
+  version" as "publish did not happen"). The journal
+  carries `pg: { schema, staging, aside }`: at start `reconcilePgPublish`
+  swaps the aside back (journal not committed and store behind) or drops it
+  (journal committed, or store at or past the published version:
+  `publishHappened`, shared with SQLite's `reconcilePublish`), before the app
+  opens. A version past `finalVersion` can only be numbered after the
+  publish's store commit, so it proves the publish even if the `committed`
+  rewrite failed (disk full); that failure is added to `host.notices`, the old
+  data stays, and the next start removes it. A failure after the swap (respawn, store)
+  swaps back. Leftover side schemas of a crash before the journal are named
+  `<schema>__<tag>...` and safe to drop. The unfinished part: the version
+  store (the shell's tables) is a different database from the app's, so a
+  crash between the swap and the store write is recovered by the journal, not
+  by one transaction.
 - **Tests.** `pnpm test:pglite` (`vitest.pglite.config.ts`) runs the engine
   suite with `SMRT_APP_SHELL_DB=pglite`: each data directory gets its own
   PGlite in schema `app` (`db/harness.ts`, injected by `pglite-setup.ts`; a
@@ -126,8 +223,15 @@ scans for it.
   **Coverage on PostgreSQL is partial**: 25 files, 202 tests, against 41
   files and 383 tests on SQLite; the excluded files are listed with their
   reason in `vitest.pglite.config.ts`.
-  `postgres-server.test.ts` is the registered `test:postgres` suite (the
-  "Registered PostgreSQL Suites" lane, `scripts/run-with-ci-postgres.mjs`):
+  `postgres-server.test.ts` and `postgres-drafts.test.ts` are the registered
+  `test:postgres` suites (`vitest.postgres.config.ts`; the "Registered
+  PostgreSQL Suites" lane, `scripts/run-with-ci-postgres.mjs`); the default and
+  PGlite configs exclude them, so each runs once on PGlite. `postgres-drafts`
+  covers the copy (keys, identity and serial sequences, generated columns,
+  policies, ownership, grants, index names), drafts, publish and a failure at
+  every stage, the journal's recovery, snapshot restore, two apps staying
+  apart, and (server only) a session holding the old tables stopping the swap.
+  `postgres-server.test.ts`:
   open, write, migrate and restart a user app, two apps' isolation, integer,
   money and boolean keys in a data load, and the archive round trip per field
   type (removeField and removeModel, then undo). It always runs on PGlite and
@@ -182,7 +286,10 @@ Covered by core's `runtime-model.test.ts` and engine `profile-subclass.test.ts`.
 
 A draft is a second `AppHost` over a COPY of the live data in its own
 directory; publishing replays its changes onto the live data. The engine side
-is documented here; the shell's tables, approvals and UI sit on top.
+is documented here; the shell's tables, approvals and UI sit on top. The text
+below describes the SQLite files; on PostgreSQL the same operations work on
+schemas (see "PostgreSQL copies, snapshots and publish"), with the same
+stages, refusals, digest and version numbering.
 
 - **Frozen host.** `HostOptions.frozen` / `host.setFrozen(bool)`: `plan` and
   `execute` of every command in `STRUCTURAL_COMMANDS` (all but
@@ -238,8 +345,10 @@ is documented here; the shell's tables, approvals and UI sit on top.
   it a failure mid-append leaves unreachable orphan versions. The queue is held
   until then, so nothing writes to the new file before the commit.
 - **Boot reconcile** (`reconcilePublish`, every `AppHost.open`, before the app
-  starts; result in `host.recovery`): a journal whose `finalVersion` is the
-  store's current only needs its leftovers removed; any other journal is ROLLED
+  starts; result in `host.recovery`): a journal marked `committed` (rewritten
+  once the store has the versions, before the aside goes) or whose
+  `finalVersion` the store has reached or passed only needs its leftovers removed; any
+  other journal is ROLLED
   BACK (asides restored, the new file removed), not forward: nothing could have
   written to the new file, and the draft stays open to publish again. An
   unreadable journal refuses to start rather than guess. Stray

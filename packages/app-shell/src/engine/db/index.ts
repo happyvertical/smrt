@@ -2,11 +2,12 @@
 // asks this module (never a database) for its dialect, its worker-side handle
 // and the few operations that exist on one database only.
 
+import { randomBytes } from 'node:crypto';
 import { MessageChannel, type MessagePort } from 'node:worker_threads';
 import { EngineError } from '../errors.ts';
 import { serveBridge } from './pglite-bridge.ts';
 import { postgresDialect } from './postgres-dialect.ts';
-import { assertAppSchema } from './schema-name.ts';
+import { assertAppSchema, assertSchemaName, sideName } from './schema-name.ts';
 import { sqliteDialect } from './sqlite-dialect.ts';
 import type {
   DatabaseConfig,
@@ -85,30 +86,71 @@ export function forWorker(config: DatabaseConfig): {
   };
 }
 
-/**
- * A method re-reads and writes in one transaction and re-runs if the data
- * moved in between. That check needs the one connection of an embedded
- * database; a server pool at default isolation would not hold it against
- * other connections, and SERIALIZABLE with retry is not built yet (#5183).
- */
-export function requireSingleWriter(
-  config: { kind: DatabaseKind },
-  what: string,
-) {
-  if (config.kind === 'postgres')
+/** Refuse what is built on the SQLite file (the portable export has its own issue). */
+export function requireSqlite(config: { kind: DatabaseKind }, what: string) {
+  if (config.kind !== 'sqlite')
     throw new EngineError(
-      `${what} is not supported on a PostgreSQL server yet (it needs serializable isolation)`,
+      `${what} is not supported on this database yet (it needs SQLite)`,
       'refused',
     );
 }
 
-/** Refuse what exists on SQLite only (snapshots, copies, drafts, publish, portable export; #5187). */
-export function requireSnapshots(config: { kind: DatabaseKind }, what: string) {
-  if (config.kind !== 'sqlite')
-    throw new EngineError(
-      `${what} is not supported on this database yet (it needs SQLite; PostgreSQL is #5187)`,
-      'refused',
-    );
+/** File name suffix of a standalone copy: a SQLite file, or a PostgreSQL dump. */
+export const copySuffix = (config: { kind: DatabaseKind }) =>
+  config.kind === 'sqlite' ? 'db' : 'pgdump';
+
+/**
+ * A consistent, standalone, restore-only copy of the app's database at `file`:
+ * `VACUUM INTO` on SQLite, a dump of the app's schema on PostgreSQL (no live
+ * tables added). `db` is the app's own handle.
+ */
+export async function copyAppDatabase(
+  db: any,
+  config: WorkerDatabaseConfig,
+  file: string,
+): Promise<void> {
+  if (config.kind === 'sqlite')
+    return (await import('./sqlite.ts')).copyDatabaseTo(db, file);
+  await (await import('./postgres-copy.ts')).dumpSchema(
+    db,
+    config.schema,
+    file,
+  );
+}
+
+/**
+ * Run the host's schema work (copy, swap, drop a schema) on a connection of
+ * its own. Loaded on use: a SQLite host never reaches the database drivers.
+ */
+export async function withSchemaAdmin<T>(
+  config: DatabaseConfig,
+  work: (db: import('./postgres-copy.ts').SqlDatabase) => Promise<T>,
+): Promise<T> {
+  if (config.kind === 'sqlite')
+    throw new EngineError('schema operations need PostgreSQL', 'refused');
+  const { openAdmin } = await import('./postgres.ts');
+  const admin = await openAdmin(config);
+  try {
+    return await work(admin.db);
+  } finally {
+    await admin.close();
+  }
+}
+
+/**
+ * Claim the app's database for this host (PostgreSQL server only; see
+ * `claimApp`). Resolves to the release to run when the host closes.
+ */
+export async function claimAppDatabase(
+  config: DatabaseConfig,
+): Promise<(() => Promise<void>) | undefined> {
+  if (config.kind !== 'postgres') return undefined;
+  return (await import('./postgres.ts')).claimApp(config);
+}
+
+/** A schema name for a copy of `base` (draft, rehearsal, aside, restore), new on each call. */
+export function sideSchemaName(base: string, tag: 'd' | 'r' | 'o' | 'n') {
+  return assertSchemaName(sideName(base, tag, randomBytes(4).toString('hex')));
 }
 
 /** A column as `@happyvertical/sql` reports it. */

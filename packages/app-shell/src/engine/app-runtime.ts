@@ -2,7 +2,7 @@
 // smrt registry: built fresh from one definition, thrown away on the next.
 //
 // The database comes from the host (`./db`): this file holds no SQL that names
-// one. Snapshots, copies and publish still need SQLite (#5187).
+// one.
 import { existsSync, mkdirSync } from 'node:fs';
 import { isAbsolute, join } from 'node:path';
 import {
@@ -25,15 +25,14 @@ import {
   undoRows,
 } from './data-migrations.ts';
 import {
+  copyAppDatabase,
+  copySuffix,
   dialectFor,
   type EngineDialect,
   openDatabase,
-  requireSingleWriter,
-  requireSnapshots,
   tableColumns,
   type WorkerDatabaseConfig,
 } from './db/index.ts';
-import { copyDatabaseTo } from './db/sqlite.ts';
 import {
   type AppDefinition,
   builtInFields,
@@ -813,19 +812,18 @@ export class AppRuntime {
   }
 
   /**
-   * A consistent copy of app.db in snapshots/, made with VACUUM INTO. `null`
-   * where the database has no snapshots yet (PostgreSQL, #5187): the change
-   * proceeds without an undo point.
+   * A consistent, restore-only copy of the app's data in snapshots/: app.db
+   * made with VACUUM INTO on SQLite, a dump of the app's schema on PostgreSQL
+   * (a file, so the database gains no tables).
    */
   async snapshot(kind: string): Promise<string | null> {
-    if (!this.dialect.snapshots) return null;
     const safe = kind.replace(/[^A-Za-z0-9._-]/g, '_').slice(0, 60);
     const file = join(
       this.dataDir,
       'snapshots',
-      `${Date.now()}-${this.snapshots++}-${safe}.db`,
+      `${Date.now()}-${this.snapshots++}-${safe}.${copySuffix(this.database)}`,
     );
-    await copyDatabaseTo(this.db, file);
+    await copyAppDatabase(this.db, this.database, file);
     // Applied method writes can come in a stream: keep only the newest few.
     if (safe.startsWith('method-'))
       pruneMethodSnapshots(join(this.dataDir, 'snapshots'));
@@ -833,17 +831,16 @@ export class AppRuntime {
   }
 
   /**
-   * A consistent, standalone copy of app.db at `path` (VACUUM INTO: one
-   * statement, so it sees a single committed state, and it needs no -wal or
-   * -shm file next to it). Refuses a path that exists. The host calls it with
-   * no change running and no call in flight.
+   * A consistent, standalone copy of the app's data at `path` (SQLite:
+   * VACUUM INTO, one statement, a single committed state with no -wal or -shm
+   * file; PostgreSQL: a dump, restore-only). Refuses a path that exists. The
+   * host calls it with no change running and no call in flight.
    */
   async copyTo(path: string) {
-    requireSnapshots(this.database, 'copying the database');
     if (typeof path !== 'string' || !isAbsolute(path))
       throw new AppError('copyTo needs an absolute path');
     if (existsSync(path)) throw new AppError(`${path} already exists`);
-    await copyDatabaseTo(this.db, path);
+    await copyAppDatabase(this.db, this.database, path);
     return path;
   }
 
@@ -1253,7 +1250,6 @@ export class AppRuntime {
   ) {
     const md = this.modelDef(model).methods?.[method];
     if (!md) throw new AppError(`no method ${model}.${method}()`);
-    requireSingleWriter(this.database, 'running a method');
     for (const [p, pd] of Object.entries(md.params ?? {}))
       if (pd.required && params[p] == null)
         throw new AppError(`param ${p} is required`);
@@ -1338,6 +1334,18 @@ export class AppRuntime {
           this.db,
           isEmbeddedDatabase(this.db),
           async (tx: Handle) => {
+            // A server has other connections: hold their writes off until this
+            // transaction ends, so the re-read below stays true (the embedded
+            // databases have the one connection already).
+            if (this.database.kind === 'postgres')
+              for (const table of [
+                ...new Set(
+                  Object.entries(this.def.models).map(([m, md]) =>
+                    tableFor(m, md),
+                  ),
+                ),
+              ].sort())
+                await tx.query(this.dialect.writeLock(table));
             const now = await this.methodData(tx);
             const nowRecord = id ? await this.get(model, id, tx) : null;
             if (

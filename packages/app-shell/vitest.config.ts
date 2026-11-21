@@ -16,7 +16,14 @@ export default defineConfig({
     environment: 'node',
     include: ['src/**/*.test.ts'],
     // Component tests run under vitest.dom.config.ts (jsdom + Svelte).
-    exclude: ['**/node_modules/**', 'src/**/*.dom.test.ts'],
+    exclude: [
+      '**/node_modules/**',
+      'src/**/*.dom.test.ts',
+      // The engine on a database server: PGlite and, in CI, a real server,
+      // from `pnpm test:postgres` (vitest.postgres.config.ts), once.
+      'src/engine/postgres-server.test.ts',
+      'src/engine/postgres-drafts.test.ts',
+    ],
     setupFiles: [smrtVitestSetupPath],
     testTimeout: 60000,
     hookTimeout: 60000,

@@ -196,6 +196,39 @@ describe.each(backends)('app engine on PostgreSQL (%s)', (backend) => {
     ).toEqual([]);
   });
 
+  // A server holds real locks between sessions; PGlite is one process's own instance.
+  it.skipIf(backend !== 'postgres')(
+    'one live host per app: a second host on the same schema is refused until the first closes',
+    async () => {
+      const schema = await newSchema('claim');
+      const first = await open(schema);
+      await run(first, {
+        type: 'defineModel',
+        name: 'Chore',
+        fields: { title: { type: 'text' } },
+      });
+      await first.create('Chore', { title: 'kept' });
+      const dir = dirOf.get(schema) as string;
+      const err = await AppHost.open(dir, {
+        store: stores.get(schema) as MemoryVersionStore,
+        database: config(schema),
+      }).then(
+        (h) => {
+          hosts.push(h);
+          return null;
+        },
+        (e) => e,
+      );
+      expect(err).toBeInstanceOf(EngineError);
+      expect(String(err?.message)).toMatch(/another host already runs/);
+      // The refused host touched nothing: the first still serves.
+      expect((await first.list('Chore')).map((r) => r.title)).toEqual(['kept']);
+      await closeHost(first);
+      const again = await open(schema);
+      expect((await again.list('Chore')).map((r) => r.title)).toEqual(['kept']);
+    },
+  );
+
   it('two apps with the same model name never see each other', async () => {
     const a = await open(await newSchema('iso_a'));
     const b = await open(await newSchema('iso_b'));
@@ -398,37 +431,67 @@ describe.each(backends)('app engine on PostgreSQL (%s)', (backend) => {
       expect(all[0].n).toBe(1);
     });
 
-    // A method run is refused on a database SERVER (single writer), so its
-    // write-time refusal is checked on the PGlite twin.
-    it.skipIf(backend !== 'pglite')(
-      'a method write past 2^53 fails when it runs, naming the record',
-      async () => {
-        const host = await open(await newSchema('bigm'));
-        await run(host, {
-          type: 'defineModel',
-          name: 'Big',
-          fields: { n: { type: 'integer' } },
-        });
-        const row = await host.create('Big', { n: 1 });
-        await run(host, {
-          type: 'addMethod',
-          model: 'Big',
-          name: 'blow',
-          method: {
-            description: 'writes too much',
-            code: `app.update('Big', record.id, { n: 9007199254740993n.toString() }); return 'ok';`,
-          },
-        });
-        const err = await host.runMethod('Big', 'blow', String(row.id)).then(
-          () => null,
-          (e) => e,
-        );
-        expect(err).not.toBeNull();
-        expect(String(err.message)).toMatch(/Big\.n must be a whole number/);
-        expect(String(err.message)).toContain(String(row.id));
-        expect((await host.get('Big', String(row.id))).n).toBe(1);
-      },
-    );
+    // A method run is allowed on a database server (it write-locks the model
+    // tables for its transaction), so this runs on both backends.
+    it('a method write past 2^53 fails when it runs, naming the record', async () => {
+      const host = await open(await newSchema('bigm'));
+      await run(host, {
+        type: 'defineModel',
+        name: 'Big',
+        fields: { n: { type: 'integer' } },
+      });
+      const row = await host.create('Big', { n: 1 });
+      await run(host, {
+        type: 'addMethod',
+        model: 'Big',
+        name: 'blow',
+        method: {
+          description: 'writes too much',
+          code: `app.update('Big', record.id, { n: 9007199254740993n.toString() }); return 'ok';`,
+        },
+      });
+      const err = await host.runMethod('Big', 'blow', String(row.id)).then(
+        () => null,
+        (e) => e,
+      );
+      expect(err).not.toBeNull();
+      expect(String(err.message)).toMatch(/Big\.n must be a whole number/);
+      expect(String(err.message)).toContain(String(row.id));
+      expect((await host.get('Big', String(row.id))).n).toBe(1);
+    });
+  });
+
+  describe('a method run on a database server', () => {
+    it('is allowed, leaves a pre-write undo point, and the undo point restores the data', async () => {
+      const host = await open(await newSchema('methodundo'));
+      await run(host, {
+        type: 'defineModel',
+        name: 'Chore',
+        fields: { title: { type: 'text' } },
+      });
+      for (const t of ['Bins', 'Dishes'])
+        await host.create('Chore', { title: t });
+      await run(host, {
+        type: 'addMethod',
+        model: 'Chore',
+        name: 'wipe',
+        method: {
+          description: 'rename every chore',
+          code: `for (const c of data.Chore) app.update('Chore', c.id, { title: 'wiped' }); return 'ok';`,
+        },
+      });
+      const titles = async () =>
+        (await host.list('Chore')).map((r) => String(r.title)).sort();
+      const out = await host.runMethod('Chore', 'wipe', null);
+      expect(out.applied).toBe(2);
+      expect(String(out.snapshot)).toMatch(/-method-Chore\.wipe\.pgdump$/);
+      expect(await titles()).toEqual(['wiped', 'wiped']);
+      await host.restoreSnapshot(
+        String(out.snapshot).split('/').pop() as string,
+        { approved: true },
+      );
+      expect(await titles()).toEqual(['Bins', 'Dishes']);
+    });
   });
 
   describe('archive round trip per field type', () => {

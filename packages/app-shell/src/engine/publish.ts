@@ -7,6 +7,8 @@
 //   3. the journal is written, the live worker is retired
 //   4. live's app.db (+ -wal/-shm/-journal) is renamed to `<name>.prepublish`,
 //      the rehearsed file is renamed to app.db        <- the crash window
+//      (PostgreSQL: the rehearsal is a schema; one transaction renames live
+//      to an aside schema and the rehearsal to live; the journal names them)
 //   5. the new worker starts, the versions are written to the store
 //   6. the journal and the `.prepublish` files are removed
 // Before step 4 nothing of live has changed; after a failure in 4 or 5 the
@@ -185,6 +187,35 @@ export interface PublishJournal {
   /** The prepublish snapshot (a retained copy of the old data). */
   snapshot: string;
   startedAt: string;
+  /**
+   * Set (and the journal rewritten) once the version store holds the published
+   * versions, BEFORE the old data is dropped. A recovery that finds it knows
+   * the publish happened whatever the store's current version says now: the
+   * owner may have edited since (the store is past `finalVersion`), and the
+   * old data must not come back over their work.
+   */
+  committed?: boolean;
+  /**
+   * PostgreSQL: the schemas of the swap. `staging` holds the rehearsed result
+   * until one transaction renames live to `aside` and `staging` to live.
+   */
+  pg?: { schema: string; staging: string; aside: string };
+}
+
+/**
+ * Did the publish this journal describes reach the version store? Yes when the
+ * journal says `committed`, or the store is AT or PAST its final version: a
+ * version past `finalVersion` can only be numbered after the publish's own
+ * store commit, so it is proof even when the `committed` rewrite itself
+ * failed (disk full) and the owner went on editing.
+ */
+export function publishHappened(
+  j: Pick<PublishJournal, 'committed' | 'finalVersion'>,
+  current: number | null,
+): boolean {
+  return (
+    j.committed === true || (current !== null && current >= j.finalVersion)
+  );
 }
 
 export function readJournal(dataDir: string): PublishJournal | null {
@@ -288,8 +319,8 @@ export function removeRehearsal(dataDir: string, dir: string): void {
  * Run at every host start, before the app opens: finish or undo an interrupted
  * publish. The new database was never written to before the store committed
  * (the change queue is held until then), so:
- *  - the store already points at the published version: the publish happened,
- *    only the leftovers are removed;
+ *  - the journal says `committed`, or the store is at or past the published
+ *    version (`publishHappened`): the publish happened, only the leftovers are removed;
  *  - otherwise the old files come back.
  * Returns what it did.
  */
@@ -300,7 +331,7 @@ export function reconcilePublish(
   const journal = readJournal(dataDir);
   let did: 'none' | 'rolled-forward' | 'rolled-back' = 'none';
   if (journal) {
-    if (current === journal.finalVersion) {
+    if (publishHappened(journal, current)) {
       dropAside(dataDir);
       did = 'rolled-forward';
     } else {

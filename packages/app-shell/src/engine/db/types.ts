@@ -105,6 +105,11 @@ export interface EngineDialect {
   isDistinct(a: string, b: string): string;
   /** Options for a transaction that must introspect tables (none on SQLite). */
   readonly transactionOptions: { introspection: true } | undefined;
-  /** Whether snapshots, copies and publish are implemented (#5187). */
-  readonly snapshots: boolean;
+  /**
+   * Statement that stops other connections writing `table` until the
+   * transaction ends (a method's write transaction re-reads and compares, which
+   * needs the data to hold still). `null` where one connection does that
+   * already (SQLite, PGlite): see `needsWriteLock`.
+   */
+  writeLock(table: string): string;
 }

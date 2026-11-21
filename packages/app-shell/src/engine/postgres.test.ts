@@ -8,7 +8,6 @@ import { getDatabase } from '@happyvertical/sql';
 import { importPGlite } from '@happyvertical/sql/pglite';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { PGliteClient } from './db/index.ts';
-import { requireSingleWriter } from './db/index.ts';
 import { PASS_THROUGH, SCOPED_MEMBERS, scopeDatabase } from './db/postgres.ts';
 import { AppHost, EngineError, MemoryVersionStore } from './index.ts';
 import {
@@ -217,10 +216,10 @@ describe('no schema, no start', () => {
   });
 });
 
-describe('what needs SQLite stays SQLite (#5187)', () => {
-  it('opening an app on PostgreSQL says there is no undo point; SQLite says nothing', async () => {
+describe('what needs SQLite stays SQLite', () => {
+  it('opening an app on PostgreSQL has nothing to warn about: it has the undo points SQLite has', async () => {
     const host = await open('app_a');
-    expect(host.notices.join(' ')).toMatch(/No undo point/);
+    expect(host.notices).toEqual([]);
     const lite = await AppHost.open(tmp(), {
       store: new MemoryVersionStore(),
       database: { kind: 'sqlite' },
@@ -242,25 +241,6 @@ describe('what needs SQLite stays SQLite (#5187)', () => {
     );
     await expect(
       verifyUserApp({ dataDir: tmp(), bundle: {} as never, database }),
-    ).rejects.toThrow(/not supported on this database yet/);
-  });
-
-  it('a method run is refused on a PostgreSQL server, allowed on PGlite and SQLite', () => {
-    expect(() =>
-      requireSingleWriter({ kind: 'postgres' }, 'running a method'),
-    ).toThrow(/not supported on a PostgreSQL server/);
-    expect(() => requireSingleWriter({ kind: 'pglite' }, 'x')).not.toThrow();
-    expect(() => requireSingleWriter({ kind: 'sqlite' }, 'x')).not.toThrow();
-  });
-
-  it('drafts and publish are refused with a clear error; method undo points are skipped', async () => {
-    const host = await open('app_a');
-    const draft = host.forkDraft(join(tmp(), 'draft'), {
-      store: new MemoryVersionStore(),
-    });
-    await expect(draft).rejects.toThrow(/not supported on this database yet/);
-    await expect(
-      host.previewPublish(host as unknown as AppHost),
     ).rejects.toThrow(/not supported on this database yet/);
   });
 });
