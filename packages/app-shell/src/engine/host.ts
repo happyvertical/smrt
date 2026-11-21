@@ -15,6 +15,7 @@ import {
   parseRuntimeReportSpec,
   type RuntimeReportSpec,
 } from '@happyvertical/smrt-reports';
+import type { AppLimits } from './app-limits.ts';
 import {
   type Command,
   type ExecuteOptions,
@@ -144,6 +145,12 @@ export interface HostOptions {
    * generation and a 512 MiB old generation (see `DEFAULT_WORKER_LIMITS`).
    */
   workerLimits?: WorkerLimits;
+  /**
+   * Per-app caps (#5198): models, records, method runs. A call over a cap is
+   * refused with an `AppLimitError` message naming the cap and the numbers.
+   * Absent: unlimited, as on the desktop.
+   */
+  appLimits?: AppLimits;
   /**
    * Start frozen: every structural command is refused (see
    * {@link AppHost.setFrozen}). Records, reports, the app's own tools and REST
@@ -411,6 +418,7 @@ export class AppHost extends EventEmitter {
   private store: VersionStore;
   private workerUrl: URL | string;
   private workerLimits: WorkerLimits | undefined;
+  private appLimits: AppLimits | undefined;
   private database: DatabaseConfig;
   private dialect: EngineDialect;
   private releaseDatabase?: () => Promise<void>;
@@ -456,6 +464,7 @@ export class AppHost extends EventEmitter {
     this.store = opts.store;
     this.workerUrl = opts.workerUrl ?? defaultWorkerUrl();
     this.workerLimits = opts.workerLimits;
+    this.appLimits = opts.appLimits;
     this.frozenNow = opts.frozen === true;
     this.#autoApprove = opts.autoApprove === true;
     this.draft = readDraftMarker(dataDir);
@@ -616,6 +625,7 @@ export class AppHost extends EventEmitter {
       version,
       migration,
       limits: this.workerLimits,
+      appLimits: this.appLimits,
       database: this.database,
       lockTimeoutMs: this.lockTimeoutMs,
       ...(this.spare ? { reservation: this.spare } : {}),
@@ -1927,6 +1937,7 @@ export class AppHost extends EventEmitter {
         def,
         version: this.version,
         limits: this.workerLimits,
+        appLimits: this.appLimits,
         validateOnly: true,
       });
       try {
@@ -2452,7 +2463,7 @@ export class AppHost extends EventEmitter {
       }
       if (e instanceof AppCallError) {
         if (e.stale) throw new StaleFenceError(e.message);
-        if (e.user) throw new EngineError(e.message, 'invalid');
+        if (e.user) throw new EngineError(e.message, 'invalid', e.details);
         throw new EngineError(e.message, 'refused');
       }
       throw e;
@@ -2539,6 +2550,7 @@ export class AppHost extends EventEmitter {
           store: opts.store,
           workerUrl: this.workerUrl,
           workerLimits: this.workerLimits,
+          appLimits: this.appLimits,
           autoApprove: true,
           database: schema ? this.database : undefined,
           swapLockTimeoutMs: this.lockTimeoutMs,
@@ -2708,6 +2720,7 @@ export class AppHost extends EventEmitter {
               def: chain.base.definition,
               version: chain.baseVersion,
               limits: this.workerLimits,
+              appLimits: this.appLimits,
               database: place.database,
               lockTimeoutMs: this.lockTimeoutMs,
             });
@@ -2754,6 +2767,7 @@ export class AppHost extends EventEmitter {
           def: rec.definition,
           version: numbers[i],
           limits: this.workerLimits,
+          appLimits: this.appLimits,
           database: place.database,
           lockTimeoutMs: this.lockTimeoutMs,
           migration: steps.length
@@ -3223,6 +3237,7 @@ export class AppHost extends EventEmitter {
         def: this.def,
         version: this.version,
         limits: this.workerLimits,
+        appLimits: this.appLimits,
         database: this.database,
         lockTimeoutMs: this.lockTimeoutMs,
         readOnly: true,

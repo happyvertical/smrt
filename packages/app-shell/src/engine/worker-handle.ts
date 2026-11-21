@@ -1,6 +1,7 @@
 // The host's handle on one app runtime thread.
 
 import { Worker } from 'node:worker_threads';
+import type { AppLimits } from './app-limits.ts';
 import {
   type DatabaseConfig,
   forWorker,
@@ -8,15 +9,29 @@ import {
 } from './db/index.ts';
 import type { AppDefinition, Migration } from './definition.ts';
 import { EngineError, StaleFenceError, WorkerCrashedError } from './errors.ts';
-import type { BootInfo, WorkerOp, WorkerReply } from './worker-protocol.ts';
+import {
+  type BootInfo,
+  type LimitInfo,
+  limitDetails,
+  type WorkerOp,
+  type WorkerReply,
+} from './worker-protocol.ts';
 
 /** The app answered with an error (as opposed to the thread dying). */
 export class AppCallError extends Error {
   readonly user: boolean;
   /** The call was refused by the ownership fence (#5190); nothing was written. */
   readonly stale: boolean;
-  constructor(message: string, user: boolean, stale = false) {
+  /** A cap refusal's details (`code: 'app_limit'` and the numbers), else undefined. */
+  readonly details?: Record<string, unknown>;
+  constructor(
+    message: string,
+    user: boolean,
+    stale = false,
+    details?: Record<string, unknown>,
+  ) {
     super(message);
+    this.details = details;
     this.name = 'AppCallError';
     this.user = user;
     this.stale = stale;
@@ -145,6 +160,8 @@ export class AppWorker {
       readOnly?: boolean;
       validateOnly?: boolean;
       limits?: WorkerLimits;
+      /** Per-app caps the host injected (#5198); none means unlimited. */
+      appLimits?: AppLimits;
       /** The host's database choice; default SQLite in `dataDir`. */
       database?: DatabaseConfig;
       /** Longest a schema dump waits for table locks (ms); the host's lock timeout. */
@@ -228,6 +245,7 @@ export class AppWorker {
             error?: string;
             user?: boolean;
             stale?: boolean;
+            limit?: LimitInfo;
           },
         ) => {
           if (m.ready) resolve(m);
@@ -237,6 +255,7 @@ export class AppWorker {
               new EngineError(
                 m.error ?? 'the app did not start',
                 m.user ? 'refused' : 'migration_failed',
+                m.limit ? limitDetails(m.limit) : undefined,
               ),
             );
           this.worker.on('message', (r: WorkerReply) => this.settle(r));
@@ -284,7 +303,15 @@ export class AppWorker {
           ),
         (e) => p.reject(e as Error),
       );
-    } else p.reject(new AppCallError(r.error, r.user, r.stale === true));
+    } else
+      p.reject(
+        new AppCallError(
+          r.error,
+          r.user,
+          r.stale === true,
+          r.limit ? limitDetails(r.limit) : undefined,
+        ),
+      );
   }
 
   call<T = unknown>(op: WorkerOp, ...args: unknown[]): Promise<T> {
