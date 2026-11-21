@@ -24,7 +24,7 @@ import {
 import { publish } from './events.ts';
 import { getHost, getShellDb } from './host.ts';
 import { assertOwner } from './owner.ts';
-import { ownerMessage, ownerToolText } from './owner-errors.ts';
+import { ownerMessage, ownerToolFailure } from './owner-errors.ts';
 import { publicChangeResult } from './results.ts';
 
 /** What an approval runs once the owner says yes. */
@@ -330,17 +330,7 @@ export function returnedFailure(
       }
     | null
     | undefined;
-  if (kind === 'tool' && r?.isError) {
-    const first = Array.isArray(r.content)
-      ? (r.content[0] as { text?: string } | undefined)
-      : undefined;
-    return (
-      ownerToolText(
-        first?.text?.slice(0, 500) ?? '',
-        'the tool reported an error',
-      ) || 'the tool reported an error'
-    );
-  }
+  if (kind === 'tool' && r?.isError) return ownerToolFailure(result);
   if (kind === 'rest' && typeof r?.status === 'number') {
     if (r.status < 200 || r.status > 299) {
       return `the request failed with status ${r.status}`;

@@ -247,7 +247,11 @@ export function findChainBlockers(chain: DraftChain): BatchBlocker[] {
   return out;
 }
 
-const messageOf = (e: unknown) => (e instanceof Error ? e.message : String(e));
+/** What a blocker may say of a failed command: our own text only, never a worker's or a driver's. */
+const messageOf = (e: unknown) =>
+  e instanceof EngineError && !e.untrusted
+    ? e.message
+    : 'This change could not be applied to your app as it is.';
 
 function overwritesOf(preview: PublishPreview | null): BatchOverwrites {
   const dataSteps = (preview?.versions ?? []).flatMap((v) => v.dataSteps ?? []);
@@ -397,6 +401,7 @@ export class SqliteChangeEngine implements ChangeEngine {
           applied.push({ key, version: r.version });
         } catch (e) {
           if (input.signal?.aborted) throw e;
+          if (e instanceof CapacityError) throw e;
           blockers.push({
             code: 'depends_on_removed',
             key,

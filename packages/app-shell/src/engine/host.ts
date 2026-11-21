@@ -2804,10 +2804,10 @@ export class AppHost extends EventEmitter {
     let marked = true;
     try {
       if (journal) writeJournal(this.dataDir, { ...journal, committed: true });
-    } catch (e) {
+    } catch {
       marked = false;
       this.notices.push(
-        `The publish is done, but its journal could not be marked finished (${(e as Error).message}); the old data is kept until the next start, which removes it. Free some disk space or fix the data directory.`,
+        `The publish is done, but its journal could not be marked finished; the old data is kept until the next start, which removes it. Free some disk space or fix the data directory.`,
       );
     }
     if (marked)

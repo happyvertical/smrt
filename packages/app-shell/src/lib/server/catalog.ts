@@ -23,7 +23,7 @@ import { ENGINE_TOOLS, isEngineTool, runEngineTool } from './engine-tools.ts';
 import { getShellDb, hostFor, shellDbSync } from './host.ts';
 import { HttpError } from './http.ts';
 import { runAs } from './owner.ts';
-import { ownerToolText } from './owner-errors.ts';
+import { ownerToolFailure, publicToolFailure } from './owner-errors.ts';
 import { reportFailureForOwner } from './report-display.ts';
 import {
   type CallScope,
@@ -368,15 +368,16 @@ async function dispatchInner(
   return hideToolFailure(out as CatalogResponse);
 }
 
-/** A failed app tool returns its error as text; hide a driver's from the owner and their client. */
+/**
+ * A failed app tool: the owner, the assistant and an MCP client are shown the
+ * message only when the app runtime marked it public (`ownerToolFailure`).
+ */
 function hideToolFailure(out: CatalogResponse): CatalogResponse {
-  if (!out?.isError || !Array.isArray(out.content)) return out;
-  let hidden = false;
-  const content = (out.content as { text?: unknown }[]).map((c) => {
-    if (typeof c?.text !== 'string') return c;
-    const text = ownerToolText(c.text, 'the tool could not do that; try again');
-    if (text !== c.text) hidden = true;
-    return { ...c, text };
-  });
-  return hidden ? { ...out, content, structuredContent: undefined } : out;
+  if (!out?.isError || publicToolFailure(out) !== null) return out;
+  const message = ownerToolFailure(out);
+  return {
+    ...out,
+    content: [{ type: 'text', text: `Error: ${message}` }],
+    structuredContent: { error: { message } },
+  };
 }

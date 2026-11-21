@@ -45,7 +45,8 @@ import { runAs } from './owner.ts';
 import {
   GENERIC_OWNER_ERROR,
   ownerMessage,
-  ownerToolText,
+  ownerToolFailure,
+  TOOL_FAILURE_MESSAGE,
 } from './owner-errors.ts';
 
 describe('HostLifecycle connection budget', () => {
@@ -104,21 +105,33 @@ describe('HostLifecycle connection budget', () => {
 });
 
 describe('a failed app tool', () => {
-  it("hides driver text in its result and keeps the app's own messages", () => {
+  const plain = (text: string) => ({
+    isError: true,
+    content: [{ type: 'text', text: `Error: ${text}` }],
+    structuredContent: { error: { message: text } },
+  });
+  it('fails closed: only a message core marks public reaches the owner', () => {
     const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+    // Whatever it says, an error with no code is not provably the app's own.
     for (const t of [
       'connect ECONNREFUSED 10.0.3.7:5432',
-      'password authentication failed for user "svc_app"',
-      'remaining connection slots are reserved for roles with the SUPERUSER attribute',
-    ])
-      expect(ownerToolText(t, 'x')).toBe('x');
-    expect(ownerToolText('title is required', 'x')).toBe('title is required');
-    expect(
-      returnedFailure('tool', {
-        isError: true,
-        content: [{ text: 'connect ECONNREFUSED db.internal.example:5432' }],
-      }),
-    ).toBe('the tool reported an error');
+      'something nobody has thought of yet: db-7 at eu-west',
+      'title is required',
+    ]) {
+      expect(ownerToolFailure(plain(t))).toBe(TOOL_FAILURE_MESSAGE);
+      expect(returnedFailure('tool', plain(t))).toBe(TOOL_FAILURE_MESSAGE);
+    }
+    const pub = {
+      isError: true,
+      content: [{ type: 'text', text: 'Error: Total must not be negative' }],
+      structuredContent: {
+        error: {
+          code: 'VALIDATION_GENERATED_EXPRESSION',
+          message: 'Total must not be negative',
+        },
+      },
+    };
+    expect(returnedFailure('tool', pub)).toBe('Total must not be negative');
     log.mockRestore();
   });
 });
