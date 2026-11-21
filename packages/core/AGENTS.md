@@ -18,7 +18,7 @@ and repository rules.
 | `src/postgres-permissions.ts` | Explicit PostgreSQL ACL plans and atomic reconciliation | [deployment permission contract](../../docs/content/postgres-permissions.md) |
 | `src/migrations/deployment-phase-tracker.ts` | Permanent checksummed PostgreSQL deployment steps, atomic markers and explicit external-effect reconciliation | [agents/deployment-phases.md](agents/deployment-phases.md) |
 | `src/change-feed.ts` | Durable changes, cursors, table versions, retention | [agents/change-feed.md](agents/change-feed.md) |
-| `src/change-feed-authz.ts` | Consumer table/row change-feed authorization hooks (#3020) | [agents/change-feed.md](agents/change-feed.md) |
+| `src/change-feed-authz.ts` | Consumer table/row change-feed authorization hooks (#3020); default table policy in `change-feed-default-authz.ts` (#5446) | [agents/change-feed.md](agents/change-feed.md) |
 | `src/change-signals.ts` | Signal bus, replica fan-out, SSE | [agents/change-signals.md](agents/change-signals.md) |
 | `src/generators/`, `src/vite-plugin/web-collections.ts` | REST/CLI/MCP generation, manifest hashes, ETags | [agents/generators.md](agents/generators.md) |
 | `src/vite-plugin/`, `src/consumer-plugin/`, `src/knowledge.ts` | Decorator UI hints, knowledge projection, generation snapshots | [agents/build-knowledge.md](agents/build-knowledge.md) |

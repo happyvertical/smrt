@@ -10,7 +10,10 @@ import {
   registerChangeFeedWriter,
   resetChangeFeedWarnings,
 } from '../change-feed';
-import { setChangeFeedAuthorizer } from '../change-feed-authz';
+import {
+  allowAllChangeFeedTables,
+  setChangeFeedAuthorizer,
+} from '../change-feed-authz';
 import {
   changeSignalSubscriberCount,
   publishChangeSignal,
@@ -54,6 +57,9 @@ describe('_events resource bounds', () => {
     registerChangeFeedWriter();
     resetChangeFeedWarnings();
     resetChangeSignals();
+    // The fixture table belongs to no registered model, which the default
+    // table policy never serves (#5446); this suite covers resource bounds.
+    setChangeFeedAuthorizer(allowAllChangeFeedTables);
     db = await getTestDatabase({
       type: 'sqlite',
       url: ':memory:',

@@ -28,6 +28,10 @@ import {
   resetChangeFeedWarnings,
 } from '../change-feed';
 import {
+  allowAllChangeFeedTables,
+  setChangeFeedAuthorizer,
+} from '../change-feed-authz';
+import {
   type ChangeSignal,
   publishChangeSignal,
   resetChangeSignals,
@@ -115,11 +119,15 @@ postgresDescribe('change feed delivery on PostgreSQL (optional)', () => {
   beforeEach(async () => {
     resetChangeFeedWarnings();
     resetChangeSignals();
+    // The fixture table belongs to no registered model, which the default
+    // table policy never serves (#5446); this suite covers delivery.
+    setChangeFeedAuthorizer(allowAllChangeFeedTables);
     await reader.query('DELETE FROM _smrt_changes_pending');
     await reader.query('DELETE FROM _smrt_changes');
   });
 
   afterAll(async () => {
+    setChangeFeedAuthorizer(undefined);
     await reader?.close?.();
     await sweeper?.close?.();
     await admin?.query(`DROP SCHEMA IF EXISTS ${SCHEMA} CASCADE`);

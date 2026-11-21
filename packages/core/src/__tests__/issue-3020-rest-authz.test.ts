@@ -28,6 +28,7 @@ import {
   resetChangeFeedWarnings,
 } from '../change-feed';
 import {
+  allowAllChangeFeedTables,
   setChangeFeedAuthorizer,
   setChangeFeedEntryVisibility,
 } from '../change-feed-authz';
@@ -234,7 +235,8 @@ describe('change-feed authorization seam (issue #3020, REST transport)', () => {
       expect(body.cursor).toBeGreaterThan(0);
     });
 
-    it('default unchanged: with no hooks registered, REST _changes returns every table', async () => {
+    it('all-tables opt-in: allowAllChangeFeedTables keeps REST _changes returning every table', async () => {
+      setChangeFeedAuthorizer(allowAllChangeFeedTables);
       await appendChange(db, { table: PUNCHES_TABLE, rowId: 'p1' });
       await appendChange(db, { table: NOTES_TABLE, rowId: 'n1' });
 
@@ -344,7 +346,8 @@ describe('change-feed authorization seam (issue #3020, REST transport)', () => {
       expect(text).not.toContain('event: change');
     });
 
-    it('default unchanged: with no hooks registered, REST _events delivers every signal', async () => {
+    it('all-tables opt-in: allowAllChangeFeedTables keeps REST _events delivering every signal', async () => {
+      setChangeFeedAuthorizer(allowAllChangeFeedTables);
       const response = await handleEventsRoute(
         new Request('http://localhost/api/v1/_events'),
         { authMiddleware: passThroughAuth, db },

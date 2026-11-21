@@ -25,6 +25,7 @@ import {
   resetChangeFeedWarnings,
 } from '../change-feed';
 import {
+  allowAllChangeFeedTables,
   setChangeFeedAuthorizer,
   setChangeFeedEntryVisibility,
 } from '../change-feed-authz';
@@ -149,8 +150,9 @@ describe('change-feed authorization seam (issue #3020, push side)', () => {
     }
   });
 
-  describe('default behavior (no hooks registered)', () => {
-    it('delivers a live signal exactly as before', async () => {
+  describe('all-tables opt-in (allowAllChangeFeedTables, no row hook)', () => {
+    it('delivers a live signal exactly as before #5446', async () => {
+      setChangeFeedAuthorizer(allowAllChangeFeedTables);
       const stream = buildChangeEventStream(db, {
         cursor: null,
         tenantScope: UNENFORCED_SCOPE,
@@ -209,6 +211,12 @@ describe('change-feed authorization seam (issue #3020, push side)', () => {
   });
 
   describe('row-level visibility: live delivery', () => {
+    // A row hook narrows the table answer; these fixture tables belong to no
+    // registered model, so grant them explicitly (#5446).
+    beforeEach(() => {
+      setChangeFeedAuthorizer(allowAllChangeFeedTables);
+    });
+
     it('a station only receives signals for its own rows', async () => {
       setChangeFeedEntryVisibility(({ locals, entry }) => {
         const role = (locals as typeof stationLocals).user.role;

@@ -17,10 +17,12 @@
  *   own changes plus global rows.
  * - **Table/row authorization** (#3020): the same call additionally applies
  *   the consumer-supplied `authorizeChangeFeed`/`isChangeFeedEntryVisible`
- *   hooks (`@happyvertical/smrt-core`'s `change-feed-authz.ts`), if
- *   registered — a table-level and row-level seam beyond tenant scope (e.g. a
- *   station principal reading only its own rows of a table the office can
- *   read in full). Unregistered, behavior is unchanged from pre-#3020.
+ *   hooks (`@happyvertical/smrt-core`'s `change-feed-authz.ts`) — a
+ *   table-level and row-level seam beyond tenant scope (e.g. a station
+ *   principal reading only its own rows of a table the office can read in
+ *   full). With no table authorizer registered the route serves the tables
+ *   of models a list route would serve (#5446); `allowAllChangeFeedTables`
+ *   opts in to every table.
  * - **Database resolution**: the route anchors on the project's first
  *   generated collection (alphabetical) via the embedded access prelude's
  *   `getCollection()` (the app runtime's request-scoped accessor),

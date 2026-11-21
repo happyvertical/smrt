@@ -25,11 +25,14 @@
  *   tenancy enabled but no active tenant, only global rows (fail-closed).
  * - **Table/row authorization** (#3020): the read additionally applies the
  *   consumer-supplied `authorizeChangeFeed`/`isChangeFeedEntryVisible` hooks,
- *   if registered (`change-feed-authz.ts`), via
- *   `getAuthorizedTenantScopedChangesSince()`. REST has no `locals`, so the
- *   hooks receive `locals: undefined` and the `authMiddleware`-processed
- *   `Request` as `request` — a REST-hosting consumer identifies the principal
- *   from `request`. Unregistered, behavior is unchanged from pre-#3020.
+ *   (`change-feed-authz.ts`), via `getAuthorizedTenantScopedChangesSince()`.
+ *   REST has no `locals`, so the hooks receive `locals: undefined` and the
+ *   `authMiddleware`-processed `Request` as `request` — a REST-hosting
+ *   consumer identifies the principal from `request`. With no table
+ *   authorizer registered the route serves the tables of models a REST
+ *   list/get would serve, including this route's `authMiddleware(model,
+ *   'get')` decision (#5446); `allowAllChangeFeedTables` opts in to every
+ *   table.
  */
 
 import { createLogger } from '@happyvertical/logger';
@@ -61,7 +64,20 @@ export interface ChangesRouteOptions {
   authMiddleware?: ChangesAuthMiddleware;
   /** The generator's `APIContext.db` (instance, config object, or URL string). */
   db?: unknown;
+  /** The REST server's tenant and served models for this request (#5446). */
+  changeFeedScope?: ChangeFeedScopeResolver;
 }
+
+/**
+ * What a REST server tells the change-feed default table policy about one
+ * admitted request (#5446): the tenant its list routes resolve
+ * (`requestTenant(req).effectiveTenantId`) and the models it serves (registry
+ * key → the object name its routes use). `APIGenerator` supplies it.
+ */
+export type ChangeFeedScopeResolver = (req: Request) => Promise<{
+  exposureTenantId: string | null;
+  servedModels: ReadonlyMap<string, string>;
+}>;
 
 /**
  * Pseudo object name passed to the auth middleware for the feed route, so
@@ -213,6 +229,11 @@ export async function handleChangesRoute(
       // principal from the authMiddleware-processed request instead.
       locals: undefined,
       request: authResult,
+      // The default table policy (#5446) asks the same middleware about each
+      // served model's `get`, for the tenant the list routes resolve, as a
+      // REST read of that model would.
+      authMiddleware: options.authMiddleware,
+      ...(await options.changeFeedScope?.(authResult)),
     });
     return jsonResponse(page);
   } catch (error) {

@@ -105,11 +105,16 @@ export {
   unregisterChangeFeedWriter,
 } from './change-feed';
 // Consumer-supplied change-feed table/row authorization seam (issue #3020).
-// Optional and independent of tenant scoping: unset, both generated routes
-// keep their pre-#3020 behavior (authenticated + tenant-scoped only).
+// With no table authorizer registered, both generated routes serve what a
+// list/get of each table's model would serve (#5446);
+// `allowAllChangeFeedTables` opts in to every table (authenticated +
+// tenant-scoped only).
 export {
+  allowAllChangeFeedTables,
+  type ChangeFeedAllTables,
   type ChangeFeedEntryVisibility,
   type ChangeFeedEntryVisibilityRequest,
+  type ChangeFeedRouteAuthMiddleware,
   type ChangeFeedTableAuthorizationRequest,
   type ChangeFeedTableAuthorizer,
   type ChangeFeedVisibilityEntry,

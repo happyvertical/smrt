@@ -29,6 +29,7 @@ import {
   resetChangeFeedWarnings,
 } from '../change-feed';
 import {
+  allowAllChangeFeedTables,
   type ChangeFeedTableAuthorizationRequest,
   type ChangeFeedVisibilityEntry,
   filterVisibleChangeFeedEntries,
@@ -85,10 +86,17 @@ describe('change-feed authorization seam (issue #3020, pull side)', () => {
   });
 
   // ==========================================================================
-  // Default behavior is unchanged when no hooks are registered
+  // The all-tables opt-in (#5446) keeps the pre-#5446 behavior. With no table
+  // authorizer at all, the default table policy applies (these fixture tables
+  // belong to no registered model, so it serves none of them): see
+  // issue-5446-change-feed-authz-required.test.ts.
   // ==========================================================================
 
-  describe('default behavior (no hooks registered)', () => {
+  describe('all-tables opt-in (allowAllChangeFeedTables, no row hook)', () => {
+    beforeEach(() => {
+      setChangeFeedAuthorizer(allowAllChangeFeedTables);
+    });
+
     it('returns exactly what getTenantScopedChangesSince returns', async () => {
       await appendChange(db, { table: PUNCHES_TABLE, rowId: 'p1' });
       await appendChange(db, { table: NOTES_TABLE, rowId: 'n1' });
@@ -105,11 +113,10 @@ describe('change-feed authorization seam (issue #3020, pull side)', () => {
     });
 
     it('an empty requested tables: [] behaves exactly like an omitted filter (Copilot #3020 follow-up)', async () => {
-      // Documented as equivalent to an omitted `tables` filter. Without a
-      // hook registered, `resolveAuthorizedChangeFeedTables` used to return
-      // `[]` unchanged, and `isChangeFeedDenyAll([])` then turned that into
-      // deny-all — silently breaking the promised unchanged default for a
-      // client that happens to send `tables=` with nothing in it.
+      // Documented as equivalent to an omitted `tables` filter. Under an
+      // all-tables grant, `resolveAuthorizedChangeFeedTables` must not return
+      // `[]` unchanged, or `isChangeFeedDenyAll([])` would turn a client's
+      // `tables=` with nothing in it into deny-all.
       await appendChange(db, { table: PUNCHES_TABLE, rowId: 'p1' });
       await appendChange(db, { table: NOTES_TABLE, rowId: 'n1' });
 

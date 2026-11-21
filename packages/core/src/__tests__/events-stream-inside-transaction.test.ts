@@ -16,7 +16,10 @@ import {
   registerChangeFeedWriter,
   resetChangeFeedWarnings,
 } from '../change-feed';
-import { setChangeFeedAuthorizer } from '../change-feed-authz';
+import {
+  allowAllChangeFeedTables,
+  setChangeFeedAuthorizer,
+} from '../change-feed-authz';
 import {
   changeSignalSubscriberCount,
   publishChangeSignal,
@@ -42,9 +45,13 @@ describe('an _events stream awaited inside a framework transaction', () => {
     });
     await getChangesSince(db, { since: 0 });
     await appendChange(db, { table: TABLE, rowId: 'committed' });
+    // The fixture table belongs to no registered model, which the default
+    // table policy never serves (#5446); this suite covers transactions.
+    setChangeFeedAuthorizer(allowAllChangeFeedTables);
   });
 
   afterEach(async () => {
+    setChangeFeedAuthorizer(undefined);
     resetChangeSignals();
     await db.close?.();
   });
@@ -162,9 +169,11 @@ describe('reads from a callback whose transaction has ended, while another is op
       classes: [],
     });
     await getChangesSince(db, { since: 0 });
+    setChangeFeedAuthorizer(allowAllChangeFeedTables);
   });
 
   afterEach(async () => {
+    setChangeFeedAuthorizer(undefined);
     resetChangeSignals();
     await db.close?.();
   });

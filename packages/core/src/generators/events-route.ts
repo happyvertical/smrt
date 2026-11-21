@@ -48,7 +48,6 @@ import {
   type ChangeFeedRequestContext,
   filterVisibleChangeFeedEntries,
   hasChangeFeedEntryVisibilityHook,
-  hasChangeFeedTableAuthorizerHook,
   isChangeFeedDenyAll,
   isChangeFeedEntryVisible,
   resolveAuthorizedChangeFeedTables,
@@ -69,6 +68,7 @@ import {
   runOutsideWriteContext,
 } from '../embedded-write-queue.js';
 import {
+  type ChangeFeedScopeResolver,
   type ChangesAuthMiddleware,
   resolveChangesDb,
 } from './changes-route.js';
@@ -94,6 +94,8 @@ export interface EventsRouteOptions {
    * cap.
    */
   maxSubscribers?: number;
+  /** The REST server's tenant and served models for this request (#5446). */
+  changeFeedScope?: ChangeFeedScopeResolver;
 }
 
 /**
@@ -160,7 +162,19 @@ export interface ChangeEventStreamOptions {
    */
   locals?: unknown;
   request?: Request;
+  /**
+   * What the REST server tells the default table policy (#5446): its route
+   * `authMiddleware`, the tenant its list routes resolve for this request,
+   * and the models it serves. The SvelteKit route passes none.
+   */
+  feedContext?: ChangeFeedRouteContext;
 }
+
+/** REST route facts the change-feed default table policy uses (#5446). */
+export type ChangeFeedRouteContext = Pick<
+  ChangeFeedRequestContext,
+  'authMiddleware' | 'exposureTenantId' | 'servedModels'
+>;
 
 /**
  * Normalize an `_events` subscriber cap.
@@ -439,7 +453,12 @@ export function buildChangeEventStream(
   options: ChangeEventStreamOptions,
 ): ReadableStream<Uint8Array> {
   const { cursor, tenantScope, manifestHash, locals, request } = options;
-  const requestContext: ChangeFeedRequestContext = { locals, request };
+  const requestContext: ChangeFeedRequestContext = {
+    locals,
+    request,
+    ...options.feedContext,
+    ambientTenantId: tenantScope.tenantId,
+  };
   const heartbeatMs = options.heartbeatMs ?? DEFAULT_EVENTS_HEARTBEAT_MS;
 
   let unsubscribe: (() => void) | null = null;
@@ -461,8 +480,8 @@ export function buildChangeEventStream(
   let pumpExhaustive = false;
   let shortReadRetried = false;
 
-  // Captured table authorization (#3020). `null` = no table hook, or not yet
-  // resolved (wake-ups are then not pre-filtered; reads still are, below).
+  // Captured table authorization (#3020). `null` = every table granted, or not
+  // yet resolved (wake-ups are then not pre-filtered; reads still are, below).
   let allowedTableSet: Set<string> | null = null;
   let denyAllTables = false;
   /** True once the table authorization (if any) has been captured. */
@@ -756,18 +775,17 @@ export function buildChangeEventStream(
             }
           }
           if (closed) return;
-          // (c) Table authorization, captured once for the connection.
-          if (hasChangeFeedTableAuthorizerHook()) {
-            const allowedTables = await resolveAuthorizedChangeFeedTables(
-              requestContext,
-              undefined,
-            );
-            // The client may have disconnected while that awaited (#3020 P2);
-            // teardown already unsubscribed and released the slot.
-            if (closed) return;
-            allowedTableSet = allowedTables ? new Set(allowedTables) : null;
-            denyAllTables = isChangeFeedDenyAll(allowedTables);
-          }
+          // (c) Table authorization, captured once for the connection. With
+          // no table authorizer registered the default policy answers (#5446).
+          const allowedTables = await resolveAuthorizedChangeFeedTables(
+            requestContext,
+            undefined,
+          );
+          // The client may have disconnected while that awaited (#3020 P2);
+          // teardown already unsubscribed and released the slot.
+          if (closed) return;
+          allowedTableSet = allowedTables ? new Set(allowedTables) : null;
+          denyAllTables = isChangeFeedDenyAll(allowedTables);
           authorizationSettled = true;
         } catch (error) {
           // A rejected start errors the stream, and cancelling an errored
@@ -914,6 +932,8 @@ export async function handleEventsRoute(
   // A raw handle passed straight to the generator may not have gone through
   // framework init; the feed table backs cursor catch-up.
   await ensureChangeFeedTable(db);
+  // Resolved before a subscriber slot is reserved, so a failure here holds none.
+  const feedScope = await options.changeFeedScope?.(authResult);
   const releaseSubscriberSlot = tryReserveChangeEventSubscriberSlot(
     db,
     options.maxSubscribers,
@@ -940,6 +960,10 @@ export async function handleEventsRoute(
       // principal from the authMiddleware-processed request instead.
       locals: undefined,
       request: authResult,
+      feedContext: {
+        authMiddleware: options.authMiddleware,
+        ...feedScope,
+      },
     }),
     {
       status: 200,

@@ -11,13 +11,17 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { DatabaseInterface } from '@happyvertical/sql';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   appendChange,
   getChangesSince,
   registerChangeFeedWriter,
   resetChangeFeedWarnings,
 } from '../change-feed';
+import {
+  allowAllChangeFeedTables,
+  setChangeFeedAuthorizer,
+} from '../change-feed-authz';
 import { publishChangeSignal, resetChangeSignals } from '../change-signals';
 import {
   runOutsideWriteContext,
@@ -40,7 +44,14 @@ for (const { engine, file } of cases) {
     let db: DatabaseInterface | undefined;
     let dir: string | undefined;
 
+    // The fixture table belongs to no registered model, which the default
+    // table policy never serves (#5446); this suite covers commit visibility.
+    beforeEach(() => {
+      setChangeFeedAuthorizer(allowAllChangeFeedTables);
+    });
+
     afterEach(async () => {
+      setChangeFeedAuthorizer(undefined);
       resetChangeSignals();
       await db?.close?.();
       if (dir) rmSync(dir, { recursive: true, force: true });

@@ -22,12 +22,14 @@
  *   the stream (delivery filters against that fixed value — it cannot
  *   re-resolve per signal outside the request's ALS context).
  * - **Table/row authorization** (#3020): `locals` is forwarded to
- *   `buildChangeEventStream`, which — if the consumer registered
+ *   `buildChangeEventStream`, which applies the consumer's
  *   `authorizeChangeFeed`/`isChangeFeedEntryVisible`
- *   (`@happyvertical/smrt-core`'s `change-feed-authz.ts`) — resolves the
+ *   (`@happyvertical/smrt-core`'s `change-feed-authz.ts`): it resolves the
  *   allowed tables ONCE at connection open (same reasoning as tenant scope)
  *   and applies both hooks to catch-up replay AND every live signal before it
- *   is enqueued. Unregistered, behavior is unchanged from pre-#3020.
+ *   is enqueued. With no table authorizer registered it frames changes of
+ *   the tables whose models a list route would serve (#5446);
+ *   `allowAllChangeFeedTables` opts in to every table.
  * - **Database resolution**: anchors on the project's first generated
  *   collection (alphabetical) via `getCollection()`, exactly as `_changes`.
  * - Cleanup rides the generated-route sweep: the file starts with

@@ -42,15 +42,68 @@
  * principal from `request`, not `locals`. Every real caller supplies
  * `request`; it is typed optional only so a low-level unit test can omit it.
  *
- * Both hooks are optional and independent. When neither is registered, every
- * transport behaves exactly as before (#1540 posture — authenticated +
- * tenant scoped only, no per-table or per-row check): every call in this
- * module is a synchronous no-op pass-through until a consumer opts in.
+ * ## Default table policy: what list/get would serve (#5446)
+ *
+ * With no table authorizer registered — never registered, cleared with
+ * `setChangeFeedAuthorizer(undefined)`, or a non-function in the slot — the
+ * feed serves a table exactly when the caller could list that table's model
+ * on the same transport (`change-feed-default-authz.ts`):
+ *
+ * - the table belongs to a registered, served model: never a framework table
+ *   (`CHANGE_FEED_EXCLUDED_TABLES`), a sensitive table, an unregistered
+ *   table, or a table whose registrations are all abstract (a registered
+ *   domain model on a `_smrt_`-named table is decided by its model). Each
+ *   registration is first resolved to the model serving its rows (a
+ *   collection to its item), then an STI subtype to its base: an STI table is
+ *   decided by its base model, so a subtype is served only through its
+ *   base's table, and feed entries of subtype rows the caller could not list
+ *   are still served once the base passes (interim; REST list filters
+ *   subtype rows per caller). A junction row model (the item of a
+ *   `SmrtJunction`/`SmrtJunctionBase` collection) is served only when its
+ *   own `@smrt({ api })` is declared and opens `list`. When several models
+ *   decide one table, every one must pass. This internal-model rule is
+ *   interim: the T-exposure work replaces it with the shared internal-model
+ *   rule every transport uses;
+ * - the model's API action gate opens `list` (`isApiActionEnabledForObject`:
+ *   `api: false` and an `include`/`exclude` that closes `list` refuse);
+ * - the runtime exposure gate admits the model for the tenant the
+ *   transport's list route resolves (`isRuntimeModelEnabled`, surface
+ *   `rest`): REST's `requestTenant(req).effectiveTenantId`
+ *   ({@link ChangeFeedRequestContext.exposureTenantId}); SvelteKit's tenant
+ *   from `locals`, then the captured or active tenant scope;
+ * - on the REST transport, the model is one the server serves
+ *   ({@link ChangeFeedRequestContext.servedModels}: a
+ *   `createRestServer(objects)` scope, unambiguous segments, no framework
+ *   base classes), and the route's own `authMiddleware(objectName, 'get')`
+ *   admits the request under the object name the REST routes use, asked at
+ *   most once per model per request
+ *   ({@link ChangeFeedRequestContext.authMiddleware}); the SvelteKit list
+ *   routes have no per-model check beyond authentication, so neither does
+ *   their feed.
+ *
+ * Tenant scoping and the sensitive-table filter apply on top, unchanged. A
+ * registered authorizer replaces this default entirely; a row hook narrows
+ * whichever table answer applies. `setChangeFeedAuthorizer(allowAllChangeFeedTables)`
+ * is the explicit opt-in to the behaviour before #5446 (every table, for
+ * every authenticated, tenant-scoped principal). An authorizer may also return
+ * {@link allowAllChangeFeedTables}'s result for some principals and a table
+ * list for others.
+ *
+ * The all-tables answer is a `Symbol.for` value, so a second copy of core in
+ * one process recognises it; the hook slot itself is on `globalThis`, so the
+ * registration made through either copy governs both. The default policy
+ * reads the registry of the copy that resolves the request.
+ *
+ * Reads that serve no principal do not pass through this module and are
+ * unaffected: `getChangesSince`/`getTenantScopedChangesSince` called directly
+ * (internal sync, webhooks' tenant-context poll, diagnostics), the
+ * conditional-GET table versions (`getTableVersion`), and dispatch.
  *
  * ## Fail-closed
  *
- * A hook that throws, or returns something other than the documented shape,
- * is treated as authorizing nothing for that call — the same posture
+ * A hook that throws or returns something other than the documented shape,
+ * and a default-policy check that throws for a model, are treated as
+ * authorizing nothing for that call (or that model) — the same posture
  * {@link resolveDispatchTenantScope} takes for a throwing tenant resolver
  * (fail closed rather than fail the request), and the same *shape* of answer
  * (200, empty `changes`, cursor still advances) the change-feed sensitivity
@@ -90,6 +143,7 @@ import {
   getChangesSince,
   getTenantScopedChangesSince,
 } from './change-feed.js';
+import { defaultChangeFeedTables } from './change-feed-default-authz.js';
 
 const logger = createLogger({ level: 'info' });
 
@@ -119,7 +173,47 @@ export interface ChangeFeedVisibilityEntry {
 export interface ChangeFeedRequestContext {
   locals: unknown;
   request?: Request;
+  /**
+   * The REST route's own `authMiddleware` (#5446). When present, the default
+   * table policy serves a model's table only if
+   * `authMiddleware(model, 'get')(request)` admits the request, the same
+   * decision a REST `get` of that model makes. The SvelteKit routes pass none.
+   * A registered authorizer receives it too and may ignore it.
+   */
+  authMiddleware?: ChangeFeedRouteAuthMiddleware;
+  /**
+   * The tenant the transport's list route resolves for this request, for the
+   * default policy's runtime exposure check: REST passes its
+   * `requestTenant(req).effectiveTenantId` (`resolveTenant` /
+   * `APIContext.tenantId`, then the ambient tenant). When omitted, the
+   * default derives it as generated SvelteKit list routes do: from `locals`
+   * (`tenantId`, `user`, `session`, `tenantContext`), then
+   * {@link ambientTenantId}, then the active dispatch tenant scope. Distinct
+   * from a read's `tenantId` filter.
+   */
+  exposureTenantId?: string | null;
+  /**
+   * The tenant scope captured at `_events` connection open, used after
+   * `locals` when {@link exposureTenantId} is omitted. Set by
+   * `buildChangeEventStream`.
+   */
+  ambientTenantId?: string | null;
+  /**
+   * The models a REST server serves, as registry key → the object name its
+   * routes pass to `authMiddleware` and the action gate (#5446). When set,
+   * the default policy serves only tables these models decide; a
+   * `createRestServer(objects)` scope, ambiguous segments, models with
+   * generated-field errors and framework base classes are therefore never
+   * served. The SvelteKit routes pass none.
+   */
+  servedModels?: ReadonlyMap<string, string>;
 }
+
+/** The REST generator's `authMiddleware` shape (`APIConfig.authMiddleware`). */
+export type ChangeFeedRouteAuthMiddleware = (
+  objectName: string,
+  action: string,
+) => (req: Request) => Promise<Request | Response>;
 
 /** Input to the table-level {@link ChangeFeedTableAuthorizer} hook. */
 export interface ChangeFeedTableAuthorizationRequest
@@ -134,14 +228,41 @@ export interface ChangeFeedTableAuthorizationRequest
 }
 
 /**
+ * The "every table" answer a {@link ChangeFeedTableAuthorizer} may return.
+ * `Symbol.for`, so a value produced by another copy of core is the same
+ * symbol.
+ */
+const ALL_CHANGE_FEED_TABLES: unique symbol = Symbol.for(
+  '@happyvertical/smrt-core:change-feed-all-tables',
+);
+
+/** Type of {@link allowAllChangeFeedTables}'s result: "every table". */
+export type ChangeFeedAllTables = typeof ALL_CHANGE_FEED_TABLES;
+
+/**
  * Table-level change-feed authorization hook (#3020). Returns the tables the
  * requester may read from the feed at all; a table it does not name is denied
- * regardless of the client's own `?tables=` filter. Register with
- * {@link setChangeFeedAuthorizer}.
+ * regardless of the client's own `?tables=` filter. Returning
+ * {@link allowAllChangeFeedTables}'s result instead grants every table (the
+ * client's `?tables=` still narrows it). Register with
+ * {@link setChangeFeedAuthorizer}; it replaces the default table policy
+ * (#5446, see the module docs).
  */
 export type ChangeFeedTableAuthorizer = (
   request: ChangeFeedTableAuthorizationRequest,
-) => string[] | Promise<string[]>;
+) => string[] | ChangeFeedAllTables | Promise<string[] | ChangeFeedAllTables>;
+
+/**
+ * Explicit opt-in to serving every table of the change feed to every
+ * principal the route already admits (authenticated, tenant scoped, minus
+ * sensitive tables) — the behaviour before the default table policy (#5446),
+ * including system, unregistered and non-exposed models' tables. Register it as the authorizer
+ * (`setChangeFeedAuthorizer(allowAllChangeFeedTables)`), or return its result
+ * from your own authorizer for the principals that may read every table.
+ */
+export function allowAllChangeFeedTables(): ChangeFeedAllTables {
+  return ALL_CHANGE_FEED_TABLES;
+}
 
 /** Input to the row-level {@link ChangeFeedEntryVisibility} hook. */
 export interface ChangeFeedEntryVisibilityRequest
@@ -167,8 +288,9 @@ declare global {
 
 /**
  * Register the table-level change-feed authorization hook used by both
- * generated routes. `undefined` clears it, restoring the pre-#3020 default
- * (tenant-scoped only, no per-table check).
+ * generated routes, replacing the default table policy. `undefined` clears it
+ * and restores the default (#5446, see the module docs). Pass
+ * {@link allowAllChangeFeedTables} to serve every table.
  */
 export function setChangeFeedAuthorizer(
   authorizeChangeFeed: ChangeFeedTableAuthorizer | undefined,
@@ -178,7 +300,9 @@ export function setChangeFeedAuthorizer(
 
 /**
  * Register the row-level change-feed visibility hook used by both generated
- * routes. `undefined` clears it (every table-authorized row is visible).
+ * routes. `undefined` clears it (every table-authorized row is visible). It
+ * narrows the table answer (a registered authorizer's, or the default
+ * policy's) and grants nothing on its own (#5446).
  */
 export function setChangeFeedEntryVisibility(
   isChangeFeedEntryVisible: ChangeFeedEntryVisibility | undefined,
@@ -198,9 +322,10 @@ export function hasChangeFeedEntryVisibilityHook(): boolean {
 
 /**
  * Whether a resolved allow-list means "match no tables" (an explicit empty
- * array — every table was denied or no hook answer was authorized) as
- * opposed to `undefined` (no hook registered — unchanged "no filter"
- * default). Callers pass this through to `getChangesSince`'s
+ * array — every table was denied, the default policy serves none, or the
+ * hook's answer was unusable) as opposed to `undefined` (the authorizer
+ * granted every table and the client named no filter). Callers pass this
+ * through to `getChangesSince`'s
  * `denyAllTables` option rather than an empty `tables` array — see the
  * module docs' "Cursor correctness" section for why.
  */
@@ -221,39 +346,15 @@ function isValidChangeFeedTableName(name: string): boolean {
   return name.length > 0 && !name.includes('\u0000');
 }
 
-/**
- * Resolve the tables a request may read from the feed: the registered
- * {@link ChangeFeedTableAuthorizer}'s answer intersected with the client's
- * own `?tables=` filter (never widened by it). Returns `requestedTables`
- * unchanged when no hook is registered — the unmodified default behavior —
- * EXCEPT that an explicit empty `requestedTables` (`tables: []`) is
- * normalized to `undefined`: `getChangesSince` (and this module's own
- * {@link isChangeFeedDenyAll}) treat an omitted filter and an empty one as
- * equivalent "no filter", so with no hook registered to actually narrow
- * anything, a client-sent `tables: []` must stay a no-op rather than being
- * read as "deny every table" (#3020 Copilot follow-up).
- *
- * Once a hook is registered, the result is always an explicit array (possibly
- * empty): a throwing or malformed hook fails closed to `[]` (logged, never
- * surfaced as a 5xx — see module docs). A returned table name that is not
- * {@link isValidChangeFeedTableName} (at minimum: contains a NUL byte, or is
- * empty) is treated the same way — the hook's own answer must never be able
- * to reach the database with an unusable value.
- */
-export async function resolveAuthorizedChangeFeedTables(
+/** A registered authorizer's validated answer; anything unusable is `[]`. */
+async function callTableAuthorizer(
+  authorizer: ChangeFeedTableAuthorizer,
   ctx: ChangeFeedRequestContext,
   requestedTables: string[] | undefined,
-): Promise<string[] | undefined> {
-  const authorizer = globalThis.__smrtChangeFeedTableAuthorizer;
-  if (!authorizer) {
-    return requestedTables && requestedTables.length === 0
-      ? undefined
-      : requestedTables;
-  }
-
-  let allowed: string[];
+): Promise<string[] | ChangeFeedAllTables> {
   try {
     const result = await authorizer({ ...ctx, tables: requestedTables });
+    if (result === ALL_CHANGE_FEED_TABLES) return result;
     if (
       !Array.isArray(result) ||
       result.some(
@@ -265,12 +366,49 @@ export async function resolveAuthorizedChangeFeedTables(
       );
       return [];
     }
-    allowed = result;
+    return result;
   } catch (error) {
     logger.error('authorizeChangeFeed() threw; failing closed to no tables', {
       error: error instanceof Error ? error.message : String(error),
     });
     return [];
+  }
+}
+
+/**
+ * Resolve the tables a request may read from the feed: the registered
+ * {@link ChangeFeedTableAuthorizer}'s answer — or, with none registered, the
+ * default table policy's (#5446, see the module docs) — intersected with the
+ * client's own `?tables=` filter (never widened by it).
+ *
+ * The result is an explicit array (possibly empty), except when the hook
+ * returns {@link allowAllChangeFeedTables}'s
+ * result: then `requestedTables` is returned unchanged, with an explicit
+ * empty `requestedTables` (`tables: []`) normalized to `undefined`, because
+ * `getChangesSince` (and this module's own {@link isChangeFeedDenyAll}) treat
+ * an omitted filter and an empty one as equivalent "no filter" and an
+ * all-tables grant must not read a client's `tables: []` as "deny every
+ * table" (#3020 Copilot follow-up).
+ *
+ * A throwing or malformed hook fails closed to `[]` (logged, never surfaced
+ * as a 5xx — see module docs). A returned table name that is not
+ * {@link isValidChangeFeedTableName} (at minimum: contains a NUL byte, or is
+ * empty) is treated the same way — the hook's own answer must never be able
+ * to reach the database with an unusable value.
+ */
+export async function resolveAuthorizedChangeFeedTables(
+  ctx: ChangeFeedRequestContext,
+  requestedTables: string[] | undefined,
+): Promise<string[] | undefined> {
+  const authorizer = globalThis.__smrtChangeFeedTableAuthorizer;
+  const allowed =
+    typeof authorizer === 'function'
+      ? await callTableAuthorizer(authorizer, ctx, requestedTables)
+      : await defaultChangeFeedTables(ctx);
+  if (allowed === ALL_CHANGE_FEED_TABLES) {
+    return requestedTables && requestedTables.length === 0
+      ? undefined
+      : requestedTables;
   }
 
   if (!requestedTables || requestedTables.length === 0) return allowed;
@@ -364,9 +502,26 @@ export async function getAuthorizedChangesSince(
   db: DatabaseInterface,
   options: AuthorizedChangesInput,
 ): Promise<ChangeFeedPage> {
-  const { locals, request, tables, ...rest } = options;
+  const {
+    locals,
+    request,
+    authMiddleware,
+    exposureTenantId,
+    ambientTenantId,
+    servedModels,
+    tables,
+    ...rest
+  } = options;
   return readAuthorized(
-    { locals, request },
+    {
+      locals,
+      request,
+      authMiddleware,
+      exposureTenantId,
+      // The caller-resolved read tenant is the scope the request acts in.
+      ambientTenantId: ambientTenantId ?? rest.tenantId,
+      servedModels,
+    },
     tables,
     (effectiveTables, denyAllTables) =>
       getChangesSince(db, {
@@ -391,9 +546,25 @@ export async function getAuthorizedTenantScopedChangesSince(
   db: DatabaseInterface,
   options: Omit<AuthorizedChangesInput, 'tenantId'>,
 ): Promise<ChangeFeedPage> {
-  const { locals, request, tables, ...rest } = options;
+  const {
+    locals,
+    request,
+    authMiddleware,
+    exposureTenantId,
+    ambientTenantId,
+    servedModels,
+    tables,
+    ...rest
+  } = options;
   return readAuthorized(
-    { locals, request },
+    {
+      locals,
+      request,
+      authMiddleware,
+      exposureTenantId,
+      ambientTenantId,
+      servedModels,
+    },
     tables,
     (effectiveTables, denyAllTables) =>
       getTenantScopedChangesSince(db, {

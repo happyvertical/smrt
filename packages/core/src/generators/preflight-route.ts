@@ -220,49 +220,9 @@ function readRegisteredMethod(
   return ObjectRegistry.resolveRuntimeMethod(objectName, action).method;
 }
 
-/**
- * Whether `@smrt({ api })` exposes `action` on `objectName`.
- *
- * The generator's own action gate, lifted to a module function so preflight and
- * the live route read the same rule from one place. Accepts any action name so
- * a custom action is gated by the same `include`/`exclude` lists.
- *
- * @remarks An absent `objectName` returns `true` — fail-**open**, because the
- * live route reaches this only after it has already resolved a model, and an
- * unnamed object there means "not gated by this rule". A caller *predicting*
- * rather than serving has no such guarantee and must reject an unresolvable
- * model before asking (see `createRestPreflightLayerSource`).
- */
-export function isApiActionEnabledForObject(
-  objectName: string | undefined,
-  action: string,
-): boolean {
-  if (!objectName) {
-    return true;
-  }
-
-  const config = ObjectRegistry.getConfig(objectName);
-  if (config.abstract && action !== 'list' && action !== 'get') {
-    return false;
-  }
-  const apiConfig = config.api;
-
-  if (apiConfig === false) {
-    return false;
-  }
-
-  if (apiConfig && typeof apiConfig === 'object') {
-    if (apiConfig.include && !apiConfig.include.includes(action)) {
-      return false;
-    }
-
-    if (apiConfig.exclude?.includes(action)) {
-      return false;
-    }
-  }
-
-  return true;
-}
+// The `@smrt({ api })` action gate lives in a leaf module so the change-feed
+// default table policy reads the same rule (#5446).
+export { isApiActionEnabledForObject } from '../api-action-gate.js';
 
 /**
  * Whether `action` names a route the generated REST surface can actually

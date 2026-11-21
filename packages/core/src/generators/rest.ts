@@ -74,7 +74,10 @@ import {
   mergeOwnedWhere,
   normalizeWhereKey,
 } from '../where-keys';
-import { handleChangesRoute } from './changes-route';
+import {
+  type ChangeFeedScopeResolver,
+  handleChangesRoute,
+} from './changes-route';
 import {
   canonicalReadRepresentation,
   computeTableVersionEtag,
@@ -705,6 +708,7 @@ export class APIGenerator {
       const response = await handleChangesRoute(req, {
         authMiddleware: this.config.authMiddleware,
         db: this.resolveContextDb(),
+        changeFeedScope: this.changeFeedScope,
       });
       return this.addCorsHeaders(response, req);
     }
@@ -724,6 +728,7 @@ export class APIGenerator {
         db: this.resolveContextDb(),
         manifestHash: this.resolveManifestHash(),
         maxSubscribers: this.config.eventsRoute?.maxSubscribers,
+        changeFeedScope: this.changeFeedScope,
       });
       return this.addCorsHeaders(response, req);
     }
@@ -1119,6 +1124,43 @@ export class APIGenerator {
    * request; the exposure gate, create targets and the tenant gate all read
    * this answer.
    */
+  /**
+   * What this server tells the change-feed default table policy about an
+   * admitted `_changes`/`_events` request (#5446): the tenant its list routes
+   * resolve for it, and the models it serves under the object names its
+   * routes use.
+   */
+  private readonly changeFeedScope: ChangeFeedScopeResolver = async (req) => ({
+    exposureTenantId: (await this.requestTenant(req)).effectiveTenantId,
+    servedModels: this.changeFeedServedModels(),
+  });
+
+  /**
+   * Every model this server serves, as registry key → the object name its
+   * routes pass to `authMiddleware` and the action gate: explicitly
+   * registered collections (`getCollectionObjectName(collection) || name`),
+   * then every unambiguous auto-discovery segment's model (the registry key).
+   * A segment that is ambiguous or carries a generated-field error, a model
+   * outside a `createRestServer(objects)` scope, an `api: false` model and a
+   * framework base class are not served, so they are absent.
+   */
+  private changeFeedServedModels(): ReadonlyMap<string, string> {
+    const served = new Map<string, string>();
+    for (const entry of this.collectionSegmentIndex().values()) {
+      if (entry.error || entry.models.size !== 1) continue;
+      const model = entry.models.values().next().value;
+      if (model) served.set(registryKeyOf(model), registryKeyOf(model));
+    }
+    for (const [name, collection] of this.collections) {
+      const objectName = this.getCollectionObjectName(collection) || name;
+      const model =
+        ObjectRegistry.getExposureModel(objectName) ??
+        ObjectRegistry.getClass(objectName);
+      if (model) served.set(registryKeyOf(model), objectName);
+    }
+    return served;
+  }
+
   private requestTenant(req: Request): Promise<ResolvedRequestTenant> {
     let pending = this.requestTenants.get(req);
     if (!pending) {

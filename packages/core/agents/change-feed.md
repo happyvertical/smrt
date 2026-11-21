@@ -146,9 +146,11 @@ the authoritative write-path check still verifies the instance's actual table.
 
 Scope note: the generated `_changes`/`_events` routes — both the SvelteKit
 routes and the runtime REST generator's — authorize on an authenticated
-principal plus tenant scoping (`getTenantScopedChangesSince`, fail-closed) by
-default. A consumer-supplied table/row authorization seam beyond that —
-`change-feed-authz.ts` (#3020, below) — is optional and off until registered.
+principal plus tenant scoping (`getTenantScopedChangesSince`, fail-closed),
+and narrow the tables served through the authorization seam —
+`change-feed-authz.ts` (#3020, below). With no table authorizer registered
+they serve what a list/get of each table's model would serve on that
+transport (#5446).
 
 ## Consumer table/row authorization seam (#3020)
 
@@ -159,7 +161,7 @@ station versus the back office). `?tables=` on `_changes` was always a
 client-chosen filter, never enforcement — a table the client did not ask for
 was withheld only because it did not ask, not because it could not have.
 
-`src/change-feed-authz.ts` closes that gap with two independent, optional
+`src/change-feed-authz.ts` closes that gap with two independent
 hooks, dependency-inverted onto `globalThis` exactly like
 `resolveDispatchTenantScope` (`dispatch/tenant-resolver.ts`), so a consumer
 registers them once with no change to the generated "DO NOT EDIT" route files.
@@ -185,8 +187,69 @@ REST-hosting consumer identifies the principal from `request` instead
 (whatever the `authMiddleware` attached — headers, a decoded token, etc.).
 Every generated route supplies `request`.
 
-Both hooks are optional and independent; unregistered, every transport
-behaves exactly as before (tenant-scoped only). A hook that throws or returns
+**Default table policy (#5446).** With no table authorizer registered — never
+registered, cleared with `setChangeFeedAuthorizer(undefined)`, or a
+non-function in the slot — `resolveAuthorizedChangeFeedTables()` answers with
+`change-feed-default-authz.ts`'s `defaultChangeFeedTables()`: a table is
+served exactly when the caller could list its model on the same transport.
+
+- The table belongs to a registered, served model. Never a framework table
+  (`CHANGE_FEED_EXCLUDED_TABLES`), a sensitive table, an unregistered table,
+  or a table whose registrations are all abstract. A registered domain model
+  on a `_smrt_`-named table (#2376) is decided by its model like any other.
+  Each registration is first resolved to the model serving its rows
+  (`getExposureModel`: a collection to its item), then an STI subtype to its
+  base. An STI table is decided by its base model (a subtype is served only
+  through its base's table); entries of subtype rows the caller could not
+  list are still served once the base passes (interim; REST list filters
+  subtype rows per caller). A junction row model (item class of a
+  `SmrtJunction`/`SmrtJunctionBase` collection) is served only when its own
+  `@smrt({ api })` is declared and opens `list`. When several models decide
+  one table, every one must pass. This internal-model rule is interim: the
+  T-exposure work replaces it with the shared internal-model rule.
+- `isApiActionEnabledForObject(model, 'list')` (`src/api-action-gate.ts`, the
+  REST generator's action gate): `api: false` and an `include`/`exclude` that
+  closes `list` refuse.
+- `isRuntimeModelEnabled(model, { surface: 'rest', tenantId, request, locals })`
+  admits the model for the tenant the transport's list route resolves:
+  REST passes `requestTenant(req).effectiveTenantId` (`resolveTenant` /
+  `APIContext.tenantId`, then the ambient tenant) as `exposureTenantId`;
+  otherwise the tenant `locals` names (`tenantId`, `user`, `session`,
+  `tenantContext`, as generated list routes read it), then the captured
+  `_events` scope (`ambientTenantId`), then the active dispatch tenant scope.
+- REST only: the model is one the server serves (`servedModels`, from
+  `APIGenerator`: explicit collections under
+  `getCollectionObjectName(collection) || name`, and unambiguous
+  auto-discovery segments under the registry key; a
+  `createRestServer(objects)` scope, ambiguous segments, generated-field
+  errors, `api: false` models and framework base classes are absent), and the
+  route's own `authMiddleware(objectName, 'get')(request)` admits the request,
+  asked at most once per model per request. Threaded from
+  `handleChangesRoute`/`handleEventsRoute` via their `changeFeedScope` option.
+  SvelteKit list routes check only authentication per model, so their feed
+  adds nothing here.
+
+A check that throws for a model refuses that model's table. A denied table
+gives the usual 200 page with an advancing cursor (`_events`: no frame). A row
+hook narrows the table answer and grants nothing. A registered authorizer
+replaces the default. The explicit opt-in to the behaviour before #5446 (every
+table, including system, unregistered and non-exposed models' tables, for every
+authenticated, tenant-scoped principal, minus sensitive tables) is
+`setChangeFeedAuthorizer(allowAllChangeFeedTables)`. An authorizer may also
+return `allowAllChangeFeedTables()` for some principals and a table list for
+others; the client's `?tables=` still narrows an all-tables grant, and an
+explicit empty `tables: []` under it means "no filter". The all-tables value
+is a `Symbol.for` symbol, so a second copy of core in the process recognises
+it; the hook slot is on `globalThis`, so a registration through either copy
+governs both.
+
+Reads that serve no principal do not go through the seam and are unaffected:
+direct `getChangesSince`/`getTenantScopedChangesSince` callers (internal sync,
+`@happyvertical/smrt-webhooks`' `WebhookChangeFeed.poll()` in a host-run tenant
+context, `readRecentChanges` diagnostics and the `smrt-dev-mcp` runtime tool),
+`getTableVersion` for conditional GET, and dispatch.
+
+A hook that throws or returns
 something other than the documented shape fails closed to "authorizes
 nothing" for that call — same posture as a throwing `resolveDispatchTenantScope`
 resolver, and the same 200-empty-page shape the sensitivity filter above
@@ -210,17 +273,15 @@ required 200 empty page, #3020 P1 follow-up). `denyAllTables` still runs every
 resync/pruned-cursor check unfiltered first, so the real horizon computation
 runs and the cursor still advances — it just matches zero rows.
 `change-feed-authz.ts`'s `isChangeFeedDenyAll()` is the one place that decides
-"empty allow-list" (deny all) vs. "no hook registered" (no filter); both
+"empty allow-list" (deny all) vs. "all tables granted" (no filter); both
 `readAuthorized()` (pull side) and `buildChangeEventStream()`'s catch-up loop
-(push side) call it rather than re-deriving the distinction. With NO hook
-registered, `resolveAuthorizedChangeFeedTables()` normalizes an explicit empty
-requested `tables: []` to `undefined` before that decision runs: `?tables=`
-with nothing in it is documented as equivalent to an omitted filter, and
-without a hook there is no authorized answer to narrow anything with — feeding
-`[]` through unchanged would let `isChangeFeedDenyAll()` read it as "deny
-every table" and silently break the promised unchanged default (#3020
-follow-up). Once a hook IS registered, its own answer is what decides
-deny-all, exactly as above.
+(push side) call it rather than re-deriving the distinction. Under an
+all-tables grant, `resolveAuthorizedChangeFeedTables()` normalizes an explicit
+empty requested `tables: []` to `undefined` before that decision runs:
+`?tables=` with nothing in it is documented as equivalent to an omitted
+filter — feeding `[]` through unchanged would let `isChangeFeedDenyAll()` read
+it as "deny every table" (#3020 follow-up). A table list from the hook is
+intersected with the request, and its own answer decides deny-all.
 
 A registered hook's returned table list is also validated for USABLE
 strings, not just string-typed ones: any entry that is empty or contains a

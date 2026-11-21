@@ -14,6 +14,7 @@ import {
   resetChangeFeedWarnings,
 } from '../change-feed';
 import {
+  allowAllChangeFeedTables,
   setChangeFeedAuthorizer,
   setChangeFeedEntryVisibility,
 } from '../change-feed-authz';
@@ -77,6 +78,10 @@ describe('_events connection scoping', () => {
       classes: [],
     });
     await getChangesSince(db, { since: 0 });
+    // The fixture tables belong to no registered model, which the default
+    // table policy never serves (#5446); serve every table unless a case
+    // registers its own authorizer.
+    setChangeFeedAuthorizer(allowAllChangeFeedTables);
   });
 
   afterEach(async () => {
@@ -136,7 +141,12 @@ describe('_events connection scoping', () => {
 describe('_events reads of two per-connection in-memory databases', () => {
   const handles: DatabaseInterface[] = [];
 
+  beforeEach(() => {
+    setChangeFeedAuthorizer(allowAllChangeFeedTables);
+  });
+
   afterEach(async () => {
+    setChangeFeedAuthorizer(undefined);
     resetChangeSignals();
     for (const handle of handles.splice(0)) await handle.close?.();
   });
@@ -191,9 +201,11 @@ describe('_events signals and startup across databases and connections', () => {
     registerChangeFeedWriter();
     resetChangeFeedWarnings();
     resetChangeSignals();
+    setChangeFeedAuthorizer(allowAllChangeFeedTables);
   });
 
   afterEach(async () => {
+    setChangeFeedAuthorizer(undefined);
     resetChangeSignals();
     for (const handle of handles.splice(0)) await handle.close?.();
   });
