@@ -342,7 +342,9 @@ export async function resolveInferenceTarget(
         ...(usage.db ? { db: usage.db } : {}),
         className: usage.className ?? options.className,
         ...(usage.tenantId !== undefined ? { tenantId: usage.tenantId } : {}),
-        tags: { ...usageTags, ...(usage.tags ?? {}) },
+        // The binding's source and tiers win over the site's own tags
+        // (#5489): hosted spend is metered from `source: hosted`.
+        tags: { ...(usage.tags ?? {}), ...usageTags },
         aiConfig: clientOptions,
       }),
     );

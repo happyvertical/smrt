@@ -116,6 +116,7 @@ import {
   InferenceUnavailableError,
   inferenceUnavailableStatus,
 } from './inference-availability.js';
+import { withInferenceBindingTags } from './inference-binding-tags.js';
 import {
   ASSUMED_INFERENCE_CAPABILITIES,
   detectInferenceCapabilities,
@@ -1049,6 +1050,16 @@ export class SmrtClass {
       // executor reaches later (a ladder step's resolution) passes it in
       // `clientFor`, per attempt.
       await this.enforceHostedInferenceGate(request, resolution);
+      // Every call on the client carries the binding's `source` (and the
+      // binding's own usage tags) over the caller's tags (#5489): hosted
+      // spend is metered from `source: hosted`, whichever caller sent the
+      // call. The tier tags stay with the object operation and executor
+      // paths, so one client still serves every tier bound to its target.
+      const {
+        tierRequested: _tierRequested,
+        tierResolved: _tierResolved,
+        ...billingTags
+      } = inferenceUsageTags(request.tier, resolution);
       const executor = inferenceExecutorFor(resolution.target);
       if (executor) {
         const tenantId = this.currentTenantId();
@@ -1091,14 +1102,18 @@ export class SmrtClass {
             this.observeRunUsage(runId, listener),
           lookupFusion: (key) => this.lookupInferenceFusion(key, request),
         });
-        return (options.runTracking
-          ? withAiRunEntryCallId(chainClient)
-          : chainClient) as unknown as AIClient;
+        return withInferenceBindingTags(
+          options.runTracking ? withAiRunEntryCallId(chainClient) : chainClient,
+          billingTags,
+        ) as unknown as AIClient;
       }
-      return this.getAiClientForTarget(
-        resolution.target,
-        resolution.tierResolved,
-        options.runTracking,
+      return withInferenceBindingTags(
+        await this.getAiClientForTarget(
+          resolution.target,
+          resolution.tierResolved,
+          options.runTracking,
+        ),
+        billingTags,
       );
     }
 

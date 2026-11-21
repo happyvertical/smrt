@@ -69,7 +69,8 @@ row's own `id` is its call id and is written to `call_id` too (#5005).
 
 Tag-only keys read by the report: `promptLayer` (prompts),
 `substitutions` (JSON array, #4752), `fusionKey` (#4753), `source` (binding
-origin `byo | local | hosted | app`, #4756). `userId` (#4760) and the hosted
+origin `byo | local | hosted | app`, #4756; stamped by every tier client over
+caller tags, #5489). `userId` (#4760) and the hosted
 gate's audit tags (`reason`, `policy`, `cap`, `spend`, `resetsAt`,
 `disabledBy` on `operation: 'blocked'` rows) stay in `tags`; smrt-subscriptions
 meters `source`/`userId` with a case-sensitive exact-fragment match on `tags`. Indexes:

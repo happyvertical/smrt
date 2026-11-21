@@ -199,7 +199,12 @@ when not. Per-call `model` options must follow the bound model.
 
 `InferenceTarget.source` (`INFERENCE_TARGET_SOURCES`: `byo | local | hosted
 | app`) is never identity; `inferenceUsageTags()` adds it as the `source` tag,
-so tier calls record it too. `InferenceTarget.usageTags` (#4759) are
+so tier calls record it too. Every client `getAiClient(tier)` returns (single
+target or chain, so every tracked client and workflow step) stamps the
+binding's `source` and own `usageTags` over each call's caller tags
+(`inference-binding-tags.ts`, #5489); `resolveInferenceTarget({ usage })`
+lets the binding's tags win over `usage.tags` the same way. A caller tag
+never moves a call off `source: hosted`. `InferenceTarget.usageTags` (#4759) are
 non-secret tags a binding adds under the tier keys (hosted inference's
 `gatewayKeyAlias`); they are never identity and never a credential. The per-user resolver lives in
 [smrt-inference `./resolver`](../../inference/AGENTS.md). Converted raw
