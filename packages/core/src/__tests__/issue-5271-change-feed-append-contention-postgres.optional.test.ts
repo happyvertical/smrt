@@ -530,25 +530,23 @@ postgresDescribe(
       await expectContiguous(held.seq);
     }, 60_000);
 
-    it('a lock timeout while waiting comes back as data and leaves the caller transaction usable', async () => {
+    it('a lock timeout while waiting stages the entry and leaves the caller transaction usable', async () => {
+      // Since #5438 a direct allocation that times out is staged in the same
+      // statement (null), not returned as a 55P03 the writer drops.
       const held = await holdHead();
       try {
         await runTransaction(writers[2], async (tx) => {
           await tx.query("SET LOCAL lock_timeout = '200ms'");
-          const error = await appendChange(tx, {
-            table: FEED_TABLE,
-            rowId: 'timed-out',
-          }).then(
-            () => null,
-            (caught: unknown) => caught as Error & { code?: string },
-          );
-          expect(error?.code).toBe('55P03');
+          expect(
+            await appendChange(tx, { table: FEED_TABLE, rowId: 'timed-out' }),
+          ).toBeNull();
           const rows = rowsOf(await tx.query('SELECT 1 AS ok'));
           expect(Number(rows[0]?.ok)).toBe(1);
         });
       } finally {
         await held.release('commit');
       }
+      expect(await pendingCount()).toBe(1);
     }, 60_000);
 
     it('a reader never waits on the head: it serves the committed horizon and a later read delivers', async () => {
