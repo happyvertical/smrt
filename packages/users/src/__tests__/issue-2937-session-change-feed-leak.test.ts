@@ -21,11 +21,13 @@ import { existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
+  allowAllChangeFeedTables,
   CHANGE_FEED_TABLE,
   ensureChangeFeedTable,
   getChangesSince,
   isChangeFeedSensitiveTable,
   registerChangeFeedWriter,
+  setChangeFeedAuthorizer,
 } from '@happyvertical/smrt-core';
 import { APIGenerator } from '@happyvertical/smrt-core/generators/rest';
 import type { DatabaseInterface } from '@happyvertical/sql';
@@ -61,6 +63,9 @@ describe('session ids never reach the change feed (issue #2937)', () => {
 
   beforeEach(async () => {
     registerChangeFeedWriter();
+    // Serve every table, so the empty answer below comes from the
+    // sensitive-table filter, not from the default table policy (#5446).
+    setChangeFeedAuthorizer(allowAllChangeFeedTables);
     dbPath = join(tmpdir(), `smrt-2937-session-feed-${Date.now()}.db`);
     const options = { db: { type: 'sqlite' as const, url: dbPath } };
     sessions = await SessionCollection.create(options);
@@ -70,6 +75,7 @@ describe('session ids never reach the change feed (issue #2937)', () => {
   });
 
   afterEach(async () => {
+    setChangeFeedAuthorizer(undefined);
     // Close the handle before unlinking: an open SQLite handle can block the
     // delete and leave temp files behind.
     if (db && typeof db.close === 'function') {
