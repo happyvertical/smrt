@@ -63,6 +63,8 @@ in the data folder. If the link is lost, stop the
 server and run `smrt app recover` for a new one. Setup is loopback only and
 single use. Health: `GET /api/_runtime/health`.
 
+From the registry package (no checkout): `npx smrt-app-shell`; SIGTERM/SIGINT drain open apps and exit within `SMRT_APP_SHELL_SHUTDOWN_MS`. See [deploy](agents/deploy.md), which also states the supported Node version.
+
 Desktop: the shell also mounts `GET /api/_runtime/owner-link`
 (`createOwnerLinkHandler`), the route the desktop wrapper opens its window on.
 It is loopback-only and answers 403 without the wrapper's per-launch secret, so
