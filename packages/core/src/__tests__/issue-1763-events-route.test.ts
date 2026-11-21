@@ -617,6 +617,8 @@ describe('_events SSE route + change signals (issue #1763, server half)', () => 
 
       expect(first.status).toBe(200);
       expect(second.status).toBe(200);
+      // A live-forward stream subscribes once it has sampled the feed head.
+      await waitFor(() => activeSubscriberCount(db) === 2);
       expect(activeSubscriberCount(db)).toBe(2);
 
       await first.body?.cancel();

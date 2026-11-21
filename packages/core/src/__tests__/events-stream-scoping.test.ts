@@ -330,7 +330,7 @@ describe('_events signals and startup across databases and connections', () => {
     expect(changeSignalSubscriberCount(handle)).toBe(0);
   });
 
-  it('delivers a write signalled after subscribing but before the head query samples it', async () => {
+  it('delivers a write committed between the head sample and the subscription, whose signal reached no subscriber', async () => {
     const db = await open(':memory:');
     let delayHead = true;
     let headReached: () => void = () => {};
@@ -346,12 +346,13 @@ describe('_events signals and startup across databases and connections', () => {
         const value = Reflect.get(target, prop, receiver);
         if (prop === 'query' && typeof value === 'function') {
           return async (sql: string, ...args: unknown[]) => {
+            const result = await value.call(target, sql, ...args);
             if (delayHead && /MAX\(seq\) AS horizon/.test(sql)) {
               delayHead = false;
               headReached();
               await headGate;
             }
-            return value.call(target, sql, ...args);
+            return result;
           };
         }
         return typeof value === 'function' ? value.bind(target) : value;
@@ -362,20 +363,22 @@ describe('_events signals and startup across databases and connections', () => {
       tenantScope: UNENFORCED,
     });
     await headSeen;
-    // Subscribed; the head query has not sampled MAX(seq) yet.
+    // The head is sampled; the stream has not subscribed yet, so this
+    // write's signal reaches nobody. The catch-up from the head reads it.
+    expect(changeSignalSubscriberCount(gated)).toBe(0);
     const seq = (await appendChange(db, {
       table: ALLOWED,
-      rowId: 'during-head',
+      rowId: 'after-head',
     })) as number;
     publishChangeSignal(gated, {
       table: ALLOWED,
       operation: 'update',
-      rowId: 'during-head',
+      rowId: 'after-head',
       tenantId: null,
       seq,
     });
     releaseHead();
-    const text = await readFor(stream, (t) => t.includes('during-head'));
+    const text = await readFor(stream, (t) => t.includes('after-head'));
     await stream.cancel().catch(() => {});
     expect(text).toContain(`id: ${seq}\nevent: change`);
   });

@@ -406,12 +406,18 @@ function readFeedPage(
  * meant to deliver.
  *
  * `start(controller)`:
- *  a. **Subscribe first.** Signals published from now on raise the
- *     connection's wanted sequence; nothing is emitted until the starting
- *     cursor is known, and the first read covers everything signalled
- *     meanwhile.
- *  b. Fix the starting cursor: the supplied `cursor`, or — live-forward only
- *     — the feed's current head.
+ *  a. Live-forward only (no `cursor`): sample the feed's current head
+ *     BEFORE subscribing. Sequences are allocated under the feed's head lock
+ *     (PostgreSQL) or the write queue (embedded), so nothing commits at or
+ *     below the sampled head afterwards, and the exhaustive catch-up in (e)
+ *     reads every sequence above it whether or not its signal ever arrives.
+ *     The start never depends on a signal: a writer publishes only after its
+ *     own commit, so its signal can arrive after the head already includes
+ *     its row, and a sequenced wake-up need not come from this feed at all.
+ *  b. **Subscribe.** Signals published from now on raise the connection's
+ *     wanted sequence; nothing is emitted until the starting cursor is set,
+ *     and the first read covers everything signalled meanwhile. With a
+ *     supplied `cursor` this is the first step.
  *  c. Resolve the change-feed table authorization (#3020), if a hook is
  *     registered, and capture it for the life of the connection — exactly
  *     like `tenantScope`, and for the same reason (delivery runs outside this
@@ -467,8 +473,6 @@ export function buildChangeEventStream(
   let denyAllTables = false;
   /** True once the table authorization (if any) has been captured. */
   let authorizationSettled = false;
-  /** Earliest feed sequence signalled before the starting cursor was fixed. */
-  let earliestSignalledSeq: number | null = null;
   /** Row-visibility checks in flight for unsequenced signals. */
   let pendingUnsequencedChecks = 0;
 
@@ -707,14 +711,6 @@ export function buildChangeEventStream(
     // Pre-filtering is an optimisation only: a change this connection may not
     // see never needs a read of its own — the next visible wake-up's read
     // passes over it.
-    if (sentCursor === null) {
-      // Before the starting cursor is fixed: remember the earliest sequence
-      // signalled since subscribing, unfiltered, so a live-forward start
-      // position can never sit past a change signalled to this connection.
-      if (earliestSignalledSeq === null || sig.seq < earliestSignalledSeq) {
-        earliestSignalledSeq = sig.seq;
-      }
-    }
     if (!passesStaticFilters(sig)) return;
     if (sentCursor !== null && sig.seq <= sentCursor) return;
     if (sig.seq > wantedSeq) wantedSeq = sig.seq;
@@ -725,17 +721,10 @@ export function buildChangeEventStream(
     {
       async start(controller) {
         streamController = controller;
-        // (a) Subscribe first; see the delivery invariant.
-        unsubscribe = subscribeToChangeSignals(db, onSignal);
-        if (releaseSubscriberSlot) {
-          releaseSubscriberSlot();
-          releaseSubscriberSlot = null;
-        }
-
         let startCursor = cursor;
         try {
-          // (b) Live-forward only: start from the feed's current head (one
-          // bounds read via `denyAllTables`, no row scan).
+          // (a) Live-forward only: the feed's current head, sampled before
+          // subscribing (one bounds read via `denyAllTables`, no row scan).
           // Detached from the caller's write context, like every stream read,
           // so it waits for an open write transaction instead of seeing its
           // uncommitted rows.
@@ -746,16 +735,14 @@ export function buildChangeEventStream(
             startCursor = head.resyncRequired
               ? (head.resyncCursor ?? 0)
               : head.cursor;
-            // A change signalled after subscribing but already inside the
-            // sampled head is still delivered.
-            if (
-              earliestSignalledSeq !== null &&
-              earliestSignalledSeq - 1 < startCursor
-            ) {
-              startCursor = Math.max(0, earliestSignalledSeq - 1);
-            }
           }
           if (closed) return;
+          // (b) Subscribe; see the delivery invariant.
+          unsubscribe = subscribeToChangeSignals(db, onSignal);
+          if (releaseSubscriberSlot) {
+            releaseSubscriberSlot();
+            releaseSubscriberSlot = null;
+          }
           // (c) Table authorization, captured once for the connection.
           if (hasChangeFeedTableAuthorizerHook()) {
             const allowedTables = await resolveAuthorizedChangeFeedTables(
