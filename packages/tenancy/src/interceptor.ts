@@ -20,6 +20,7 @@ import {
   type ListOptions,
   type QueryInterceptResult,
   type QueryOptions,
+  type RequestTenantContextHooks,
   resolveGetStringFilter,
   resolveWhereKey,
   setAiUsageTenantResolver,
@@ -923,6 +924,44 @@ export function createTenantInterceptor(
 let registeredInterceptor: CollectionInterceptor | null = null;
 
 /**
+ * The request tenant context lent to core, so request paths (the generated
+ * routes, sync items, tool calls) enter the caller's tenant and read the
+ * active one without importing this package. Lent when this package is
+ * loaded, whether or not tenancy is enabled: a route that carries a complete
+ * principal (`api.principalContext`) into this context store does so for a
+ * model with no tenancy too, and an active context must agree with the
+ * request's principal either way. Extra fields of an active context being
+ * refreshed (its database, metadata, bypass flag) are kept. The super-admin
+ * bypass applies only while tenancy is enabled, by the interceptor's own
+ * rule: to a class that opts in, never inside a bounded hierarchy read scope.
+ */
+const requestTenantContextHooks: RequestTenantContextHooks = {
+  enter: (context) =>
+    enterTenantContext({
+      ...(context as unknown as Record<string, unknown>),
+      tenantId: context.tenantId,
+      ...(context.userId ? { userId: context.userId } : {}),
+      permissions: new Set(context.permissions ?? []),
+    }),
+  current: () => getCurrentTenant(),
+  run: (context, fn) =>
+    withTenant(
+      {
+        ...(context as unknown as Record<string, unknown>),
+        tenantId: context.tenantId,
+        ...(context.userId ? { userId: context.userId } : {}),
+        permissions: new Set(context.permissions ?? []),
+      } as Parameters<typeof withTenant>[0],
+      fn,
+    ),
+  isSuperAdminBypass: (className) =>
+    isTenancyEnabled() &&
+    !getTenantHierarchyReadScope() &&
+    isSuperAdminBypassAllowed(className),
+};
+setRequestTenantContextHooks(requestTenantContextHooks);
+
+/**
  * Enable tenant enforcement globally
  *
  * Call this once at application startup to enable automatic tenant isolation.
@@ -1010,26 +1049,9 @@ export function enableTenancy(options: TenantInterceptorOptions = {}): void {
           ),
   });
 
-  // Lend core the request tenant context and the super-admin bypass, so the
-  // generated read routes of a model whose tenancy is registered at runtime
-  // can establish the caller's tenant and honour a bypass without importing
-  // this package.
-  setRequestTenantContextHooks({
-    // Extra fields of an active context being refreshed (its database,
-    // metadata, bypass flag) are kept.
-    enter: (context) =>
-      enterTenantContext({
-        ...(context as unknown as Record<string, unknown>),
-        tenantId: context.tenantId,
-        ...(context.userId ? { userId: context.userId } : {}),
-        permissions: new Set(context.permissions ?? []),
-      }),
-    current: () => getCurrentTenant(),
-    // The interceptor's own rule for a read: the bypass flag applies only to
-    // a class that opts in, and never inside a bounded hierarchy read scope.
-    isSuperAdminBypass: (className) =>
-      !getTenantHierarchyReadScope() && isSuperAdminBypassAllowed(className),
-  });
+  // The request tenant context hooks are lent at load (below); while tenancy
+  // is enabled they also answer the super-admin bypass.
+  setRequestTenantContextHooks(requestTenantContextHooks);
 
   setTenancyEnabled(true);
 }
@@ -1072,8 +1094,10 @@ export function disableTenancy(): void {
   setTenantScopedClassResolver(undefined);
   // Clear the AI usage ambient-tenant resolver (#3077).
   setAiUsageTenantResolver(undefined);
-  // Clear the request tenant context hooks and the policy source.
-  setRequestTenantContextHooks(undefined);
+  // Clear the policy source. The request tenant context stays lent: it is
+  // this package's context store, enabled or not, and the bypass hook
+  // answers `false` once tenancy is disabled.
+  setRequestTenantContextHooks(requestTenantContextHooks);
   setTenantPolicySource(undefined);
   registeredInterceptor = null;
   setTenancyEnabled(false);

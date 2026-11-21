@@ -20,8 +20,9 @@
  * column.
  *
  * Core cannot import smrt-tenancy. The request tenant context and the
- * super-admin bypass are reached through hooks smrt-tenancy installs when
- * tenancy is enabled ({@link setRequestTenantContextHooks}).
+ * super-admin bypass are reached through hooks smrt-tenancy installs when it
+ * is loaded; the bypass answers only while tenancy is enabled
+ * ({@link setRequestTenantContextHooks}).
  */
 
 import {

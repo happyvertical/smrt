@@ -181,7 +181,12 @@ rule of `src/request-actor.ts`. Per request (per sync item, per tool call):
 5. **Binding.** The operation runs inside `withResolvedTenancy()` (REST, sync
    items, MCP tools) or after `enterResolvedTenancy()` (an emitted handler's
    `enterTenancy(locals, operation)`), in the actor's tenant or system
-   context. The `smrt-request-tenancy` collection interceptor (priority 110,
+   context. The actor's tenant context is entered whether or not tenancy is
+   enabled: smrt-tenancy lends core its context store when the package is
+   loaded, so a complete principal (`api.principalContext`) on a model with
+   no tenancy is what the request's code reads (`getCurrentTenant()`), and an
+   active context of another tenant refuses the request; enforcement decides
+   only which rows it touches. The `smrt-request-tenancy` collection interceptor (priority 110,
    installed on first bind) holds every collection call of the request,
    custom action bodies included, to the bound decision: membership, the
    rows-without-an-owner scope for a caller with no tenant, the write gate,

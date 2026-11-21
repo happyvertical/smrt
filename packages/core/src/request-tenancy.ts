@@ -58,6 +58,8 @@ import { getResolvedFieldsSync } from './registry/inheritance-resolver';
 import {
   enterRequestTenantContext,
   getRequestTenantContext,
+  type RequestTenantContext,
+  runInRequestTenantContext,
 } from './request-tenant-context';
 import { SmrtError } from './smrt-error.js';
 import { type AsyncContext, createAsyncContext } from './utils/async-context';
@@ -1061,9 +1063,47 @@ function assertBindable(t: RequestTenancy): void {
 }
 
 /**
+ * The tenant context a request runs in for its actor, when it is not already
+ * the active one: the actor's tenant when another (or none) is active, or,
+ * for a complete principal (`refreshPrincipal`), the active context of the
+ * same tenant with the actor's permission snapshot, never a broader one it
+ * already carried (the rest of that context, its database and metadata, is
+ * kept). `undefined` for a system actor or an actor with no tenant.
+ */
+function actorTenantContext(
+  t: RequestTenancy,
+  active: RequestTenantContext | undefined,
+  refreshPrincipal: boolean | undefined,
+): RequestTenancyContext | undefined {
+  if (t.actor.system || !t.actor.tenantId) return undefined;
+  if (active?.tenantId !== t.actor.tenantId) {
+    return {
+      tenantId: t.actor.tenantId,
+      ...(t.actor.userId ? { userId: t.actor.userId } : {}),
+      ...(t.actor.permissions ? { permissions: t.actor.permissions } : {}),
+    };
+  }
+  if (refreshPrincipal && t.actor.permissions) {
+    return {
+      ...(active as Record<string, unknown>),
+      tenantId: t.actor.tenantId,
+      ...(t.actor.userId ? { userId: t.actor.userId } : {}),
+      permissions: t.actor.permissions,
+    } as RequestTenancyContext;
+  }
+  return undefined;
+}
+
+/**
  * Run an operation inside the resolved tenancy: in the actor's tenant or
  * system context, with the decision bound for the collection interceptor.
  * Nested calls bind their own (for example one per sync item).
+ *
+ * The actor's tenant context is entered whether or not tenancy is enforced:
+ * the context is smrt-tenancy's store, lent to core once the package is
+ * loaded, and code the request runs reads its principal there (a complete
+ * principal, `api.principalContext`, on a model with no tenancy). Enforcement
+ * decides only which rows the request may touch.
  *
  * @param options.refreshPrincipal - The actor is a complete principal: an
  *   active context of the same tenant runs with the actor's permission
@@ -1076,79 +1116,44 @@ export async function withResolvedTenancy<T>(
 ): Promise<T> {
   assertBindable(t);
   const bound = () => scopeContext().run(t, fn);
-  if (!t.enforced) return bound();
-  const source = getTenantPolicySource();
-  if (!source) return bound();
+  const source = t.enforced ? getTenantPolicySource() : undefined;
+  if (!source) {
+    const context = actorTenantContext(
+      t,
+      getRequestTenantContext(),
+      options.refreshPrincipal,
+    );
+    return context ? runInRequestTenantContext(context, bound) : bound();
+  }
   if (t.actor.system && !source.systemContextActive()) {
     return source.runInContext('system', bound);
   }
-  const active = getRequestTenantContext();
-  if (!t.actor.system && t.actor.tenantId) {
-    if (active?.tenantId !== t.actor.tenantId) {
-      return source.runInContext(
-        {
-          tenantId: t.actor.tenantId,
-          ...(t.actor.userId ? { userId: t.actor.userId } : {}),
-          ...(t.actor.permissions ? { permissions: t.actor.permissions } : {}),
-        },
-        bound,
-      );
-    }
-    if (options.refreshPrincipal && t.actor.permissions) {
-      // Keep the rest of the active context (its database, metadata), with
-      // the authority the request was admitted with.
-      return source.runInContext(
-        {
-          ...(active as Record<string, unknown>),
-          tenantId: t.actor.tenantId,
-          ...(t.actor.userId ? { userId: t.actor.userId } : {}),
-          permissions: t.actor.permissions,
-        } as RequestTenancyContext,
-        bound,
-      );
-    }
-  }
-  return bound();
+  const context = actorTenantContext(
+    t,
+    getRequestTenantContext(),
+    options.refreshPrincipal,
+  );
+  return context ? source.runInContext(context, bound) : bound();
 }
 
 /**
  * Bind the resolved tenancy for the rest of the current request, entering
  * the actor's tenant context when none is active (the emitted SvelteKit
- * routes, whose handlers run in their own request scope). A system actor
- * here always comes from an active system context.
+ * routes, whose handlers run in their own request scope), whether or not
+ * tenancy is enforced (see {@link withResolvedTenancy}). A system actor here
+ * always comes from an active system context.
  */
 export function enterResolvedTenancy(
   t: RequestTenancy,
   options: { refreshPrincipal?: boolean } = {},
 ): void {
   assertBindable(t);
-  const active = getRequestTenantContext();
-  if (
-    t.enforced &&
-    !t.actor.system &&
-    t.actor.tenantId &&
-    active?.tenantId !== t.actor.tenantId
-  ) {
-    enterRequestTenantContext({
-      tenantId: t.actor.tenantId,
-      ...(t.actor.userId ? { userId: t.actor.userId } : {}),
-      ...(t.actor.permissions ? { permissions: t.actor.permissions } : {}),
-    });
-  } else if (
-    options.refreshPrincipal &&
-    active &&
-    t.actor.tenantId &&
-    active.tenantId === t.actor.tenantId
-  ) {
-    // A complete principal refreshes the active context's authority to the
-    // request's permission snapshot, keeping the rest of that context.
-    enterRequestTenantContext({
-      ...(active as Record<string, unknown>),
-      tenantId: t.actor.tenantId,
-      ...(t.actor.userId ? { userId: t.actor.userId } : {}),
-      ...(t.actor.permissions ? { permissions: t.actor.permissions } : {}),
-    } as Parameters<typeof enterRequestTenantContext>[0]);
-  }
+  const context = actorTenantContext(
+    t,
+    getRequestTenantContext(),
+    options.refreshPrincipal,
+  );
+  if (context) enterRequestTenantContext(context);
   scopeContext().enter(t);
 }
 
