@@ -47,17 +47,27 @@ describe.skipIf(process.env.SMRT_TEST_PGLITE !== '1')(
       await db.close?.();
     });
 
-    it('installs the v6 helpers', async () => {
-      const rows = rowsOf(
-        await db.query(
-          `SELECT bool_and(prosrc LIKE '%smrt-change-feed-helpers:v6%') AS current,
-                  count(*)::int AS n
-             FROM pg_proc
-            WHERE proname IN ('_smrt_append_change', '_smrt_append_changes', '_smrt_drain_changes')`,
-        ),
-      );
-      expect(rows[0]?.current).toBe(true);
-      expect(Number(rows[0]?.n)).toBe(4);
+    it('installs the helpers at the five exact identities, each carrying v6 (and v7, #5402)', async () => {
+      const identities = [
+        '_smrt_append_change(text,text,text,text,timestamp with time zone)',
+        '_smrt_append_changes(jsonb)',
+        '_smrt_drain_changes(integer,text[])',
+        '_smrt_drain_changes(integer)',
+        '_smrt_drain_changes(integer,text[],jsonb)',
+      ];
+      for (const identity of identities) {
+        const rows = rowsOf(
+          await db.query(
+            `SELECT prosrc LIKE '%smrt-change-feed-helpers:v6%' AS v6,
+                    prosrc LIKE '%smrt-change-feed-helpers:v7%' AS v7
+               FROM pg_proc
+              WHERE oid = to_regprocedure($1)`,
+            identity,
+          ),
+        );
+        expect(rows, identity).toHaveLength(1);
+        expect(rows[0], identity).toMatchObject({ v6: true, v7: true });
+      }
     });
 
     it('appends, batch-appends and drains', async () => {

@@ -701,8 +701,25 @@ export const POSTGRES_CHANGE_FEED_APPEND_BATCH_FUNCTION_IDENTITY = `${POSTGRES_C
  *
  * v6 (#5271) serializes every sequence allocator on the feed's head lock and
  * stages appends made under a fixed-snapshot isolation level.
+ *
+ * v7 (#5402) moves the drain body into the status overload
+ * {@link POSTGRES_CHANGE_FEED_DRAIN_STATUS_FUNCTION_IDENTITY}, which releases
+ * every lock a pass took when it finds no work; the older drain identities
+ * delegate to it. The append bodies are only re-stamped.
  */
-export const POSTGRES_CHANGE_FEED_HELPER_MARKER = 'smrt-change-feed-helpers:v6';
+export const POSTGRES_CHANGE_FEED_HELPER_MARKER = 'smrt-change-feed-helpers:v7';
+
+/**
+ * The v6 marker, still stamped into every v7 body (#5402).
+ *
+ * It is also the compatibility floor: v6 is the first body set that gives
+ * the cursor guarantee under contention and fixed-snapshot isolation, so a
+ * database whose every existing helper carries it is usable while a v7
+ * install is refused, and one whose helpers predate it is not (see
+ * `change-feed.ts`, helper probe states).
+ */
+export const POSTGRES_CHANGE_FEED_HELPER_FLOOR_MARKER =
+  'smrt-change-feed-helpers:v6';
 
 /**
  * The v5 marker, still stamped into every v6 body (#5271), for the same
@@ -728,6 +745,7 @@ export const POSTGRES_CHANGE_FEED_HELPER_COMPAT_MARKER =
 /** Marker comment lines for a helper body: current first, then every older one. */
 const POSTGRES_CHANGE_FEED_HELPER_MARKER_LINES = [
   POSTGRES_CHANGE_FEED_HELPER_MARKER,
+  POSTGRES_CHANGE_FEED_HELPER_FLOOR_MARKER,
   POSTGRES_CHANGE_FEED_HELPER_PREVIOUS_MARKER,
   POSTGRES_CHANGE_FEED_HELPER_COMPAT_MARKER,
 ]
@@ -816,11 +834,30 @@ export const POSTGRES_CHANGE_FEED_DRAIN_FUNCTION_IDENTITY = `${POSTGRES_CHANGE_F
  */
 export const POSTGRES_CHANGE_FEED_COMPAT_DRAIN_FUNCTION_IDENTITY = `${POSTGRES_CHANGE_FEED_DRAIN_FUNCTION_NAME}(integer)`;
 
+/**
+ * Identity of the status drain (#5402): the batch limit, the live sensitive
+ * set, and a JSON options object. It holds the drain body; the two older
+ * identities delegate to it and return only its entry and error rows.
+ */
+export const POSTGRES_CHANGE_FEED_DRAIN_STATUS_FUNCTION_IDENTITY = `${POSTGRES_CHANGE_FEED_DRAIN_FUNCTION_NAME}(integer,text[],jsonb)`;
+
 /** How many staged entries one drain call sequences. */
 export const POSTGRES_CHANGE_FEED_DRAIN_BATCH = 1000;
 
 /**
+ * SQLSTATE the status drain raises to leave its locking block when a pass
+ * finds no work (#5402). Private to the helper body: the block's own handler
+ * catches it, and that rollback is what releases every lock the pass took.
+ */
+const POSTGRES_CHANGE_FEED_NO_WORK_SQLSTATE = 'SMR01';
+
+/**
  * PostgreSQL-only drain: move committed staged appends into `_smrt_changes`.
+ *
+ * The body lives in the status overload
+ * ({@link POSTGRES_CHANGE_FEED_DRAIN_STATUS_FUNCTION_IDENTITY}); the
+ * two-argument identity this text describes delegates to it (see
+ * {@link CREATE_POSTGRES_CHANGE_FEED_DRAIN_FUNCTION}).
  *
  * This is where the feed's sequence is actually allocated for entries written
  * inside a caller transaction. It runs in its own short transaction (an
@@ -855,6 +892,315 @@ export const POSTGRES_CHANGE_FEED_DRAIN_BATCH = 1000;
  * an upgrade) never reaches `_smrt_changes`. Neither parameter has a default:
  * a call with no arguments resolves only to the compatibility overload.
  */
+export const CREATE_POSTGRES_CHANGE_FEED_DRAIN_STATUS_FUNCTION = `
+CREATE OR REPLACE FUNCTION ${POSTGRES_CHANGE_FEED_DRAIN_FUNCTION_NAME}(
+  p_limit INTEGER,
+  p_excluded_tables TEXT[],
+  p_options JSONB
+)
+RETURNS TABLE(
+  drained_seq BIGINT,
+  drained_table TEXT,
+  drained_row_id TEXT,
+  drained_operation TEXT,
+  drained_tenant_id TEXT,
+  error_code TEXT,
+  error_message TEXT,
+  status TEXT,
+  backlog_remaining BOOLEAN,
+  helpers_current BOOLEAN
+)
+LANGUAGE plpgsql
+VOLATILE
+SECURITY INVOKER
+AS $smrt_change_feed_drain_status$
+${POSTGRES_CHANGE_FEED_HELPER_MARKER_LINES}
+DECLARE
+  v_base BIGINT;
+  v_has_candidate BOOLEAN := false;
+  v_purged BIGINT := 0;
+  v_status TEXT;
+  v_backlog BOOLEAN;
+  v_helpers BOOLEAN;
+  v_error_code TEXT;
+  v_error_message TEXT;
+BEGIN
+  -- EVERY statement below sits inside this exception boundary, preflight
+  -- included. The caller may own the surrounding transaction, and an error
+  -- escaping this function would abort it — the #2026 contract. A probe that
+  -- blocks on a table lock until statement_timeout is exactly that: it is not
+  -- the insert, but it aborts the caller just the same.
+  BEGIN
+    IF to_regclass('_smrt_changes_pending') IS NULL THEN
+      v_status := 'empty';
+
+    -- Never sequence from inside a transaction that has already written. Doing
+    -- so would hold freshly allocated sequences uncommitted for the rest of
+    -- that transaction, which is precisely the wait edge #2649 removes — a
+    -- reader calling getChangesSince() inside a long write transaction must
+    -- not put it back. The staged rows keep for the next drain.
+    ELSIF pg_current_xact_id_if_assigned() IS NOT NULL THEN
+      v_status := 'in_transaction';
+
+    -- A fixed snapshot (REPEATABLE READ / SERIALIZABLE) could read a stale
+    -- MAX(seq), so it never allocates (#5271). The staged rows keep for a
+    -- READ COMMITTED drain.
+    ELSIF ${POSTGRES_FIXED_SNAPSHOT_ISOLATION} THEN
+      v_status := 'fixed_snapshot';
+    END IF;
+
+    IF v_status IS NULL THEN
+      -- Every statement that can take a lock runs in this block (#5402). A
+      -- pass that finds no work sets its status and raises
+      -- ${POSTGRES_CHANGE_FEED_NO_WORK_SQLSTATE}; the handler below catches it, and that rollback
+      -- releases everything the block took: the staging probe's lock, the
+      -- drain lock, the feed table's insert lock and the head lock. Without
+      -- it a skipped pass issued as the first statement of a caller
+      -- transaction kept those locks until that transaction ended, and every
+      -- other drain was refused meanwhile. Only a pass that sequenced or
+      -- purged something commits the block and keeps its locks. (Leaving it
+      -- with EXIT instead of the raise would commit it: that keeps the locks.)
+      <<smrt_drain_pass>>
+      BEGIN
+        -- Cheap common case: nothing staged, so an autocommit append pays one
+        -- index probe rather than a drain.
+        IF NOT EXISTS (SELECT 1 FROM _smrt_changes_pending LIMIT 1) THEN
+          v_status := 'empty';
+          RAISE EXCEPTION USING ERRCODE = '${POSTGRES_CHANGE_FEED_NO_WORK_SQLSTATE}';
+        END IF;
+
+        -- Try, never wait: a drain that waited could become an edge in a cycle.
+        IF NOT pg_try_advisory_xact_lock(
+          hashtext('smrt'),
+          hashtext('change-feed-drain')
+        ) THEN
+          v_status := 'drain_busy';
+          RAISE EXCEPTION USING ERRCODE = '${POSTGRES_CHANGE_FEED_NO_WORK_SQLSTATE}';
+        END IF;
+
+        -- The head lock (#5271) serializes this drain with direct appenders.
+        -- It is only TRIED: a reader must never wait behind an appender's
+        -- transaction, so when it is busy the drain returns and a later one
+        -- sequences the staged rows. It is taken only when something will be
+        -- sequenced, so a purge of sensitive rows alone never holds the head.
+        -- The feed table's insert lock comes first, as in the append helpers,
+        -- and is NOWAIT for the same reason the head lock is only tried: a
+        -- session holding SHARE on the feed table would otherwise make this
+        -- drain wait for it. A refusal is a skipped pass, not an error. A role
+        -- without a table-level privilege for that lock skips it, as the
+        -- append helpers do.
+        v_has_candidate := EXISTS (
+          SELECT 1
+          FROM _smrt_changes_pending AS candidate
+          WHERE NOT (
+            candidate.table_name = ANY(COALESCE(p_excluded_tables, ARRAY[]::TEXT[]))
+          )
+        );
+        IF v_has_candidate THEN
+          IF ${POSTGRES_CHANGE_FEED_CAN_LOCK_RELATION} THEN
+            BEGIN
+              LOCK TABLE _smrt_changes IN ROW EXCLUSIVE MODE NOWAIT;
+            EXCEPTION WHEN lock_not_available THEN
+              v_status := 'relation_busy';
+              RAISE EXCEPTION USING ERRCODE = '${POSTGRES_CHANGE_FEED_NO_WORK_SQLSTATE}';
+            END;
+          END IF;
+          IF NOT pg_try_advisory_xact_lock(${POSTGRES_CHANGE_FEED_HEAD_LOCK_KEY}) THEN
+            v_status := 'head_busy';
+            RAISE EXCEPTION USING ERRCODE = '${POSTGRES_CHANGE_FEED_NO_WORK_SQLSTATE}';
+          END IF;
+        END IF;
+
+        -- The feed never records a sensitive table (#2982). Staged entries for
+        -- one — from an older replica, or staged before the table was
+        -- declared sensitive — are dropped here, before a sequence is
+        -- allocated. Bounded like the sequencing batch, so a large legacy
+        -- backlog cannot make one pass outlive statement_timeout and stall the
+        -- feed; the remainder is purged by later passes, and the batch below
+        -- skips it meanwhile.
+        IF COALESCE(cardinality(p_excluded_tables), 0) > 0 THEN
+          DELETE FROM _smrt_changes_pending AS sensitive
+          WHERE sensitive.pending_id IN (
+            SELECT staged.pending_id
+            FROM _smrt_changes_pending AS staged
+            WHERE staged.table_name = ANY(p_excluded_tables)
+            ORDER BY staged.pending_id
+            LIMIT GREATEST(COALESCE(p_limit, ${POSTGRES_CHANGE_FEED_DRAIN_BATCH}), 1)
+          );
+          GET DIAGNOSTICS v_purged = ROW_COUNT;
+        END IF;
+
+        IF NOT v_has_candidate THEN
+          IF v_purged = 0 THEN
+            v_status := 'empty';
+            RAISE EXCEPTION USING ERRCODE = '${POSTGRES_CHANGE_FEED_NO_WORK_SQLSTATE}';
+          END IF;
+          -- A purge is work: the block commits and keeps the deletion.
+          v_status := 'drained';
+        ELSE
+          SELECT COALESCE(MAX(changes.seq), 0) INTO v_base FROM _smrt_changes AS changes;
+          v_status := 'drained';
+
+          -- The sequencing statement is the LAST statement of this block.
+          -- Rows a RETURN QUERY has appended to the result stay there even
+          -- when a later error rolls the block back, so anything fallible
+          -- after it could hand back sequences that never committed. The
+          -- status below is computed in its own block, after this one.
+          RETURN QUERY
+          WITH removed AS (
+            DELETE FROM _smrt_changes_pending AS pending
+            WHERE pending.pending_id IN (
+              SELECT candidate.pending_id
+              FROM _smrt_changes_pending AS candidate
+              -- A sensitive row committed after the purge above is skipped,
+              -- not sequenced; the next drain purges it.
+              WHERE NOT (
+                candidate.table_name = ANY(COALESCE(p_excluded_tables, ARRAY[]::TEXT[]))
+              )
+              ORDER BY candidate.pending_id
+              LIMIT GREATEST(COALESCE(p_limit, ${POSTGRES_CHANGE_FEED_DRAIN_BATCH}), 1)
+            )
+            RETURNING
+              pending.pending_id,
+              pending.table_name,
+              pending.row_id,
+              pending.operation,
+              pending.tenant_id,
+              pending.created_at
+          ),
+          numbered AS (
+            SELECT
+              removed.*,
+              v_base + row_number() OVER (ORDER BY removed.pending_id) AS new_seq
+            FROM removed
+          ),
+          inserted AS (
+            INSERT INTO _smrt_changes (
+              seq,
+              table_name,
+              row_id,
+              operation,
+              tenant_id,
+              created_at
+            )
+            SELECT
+              numbered.new_seq,
+              numbered.table_name,
+              numbered.row_id,
+              numbered.operation,
+              ${postgresTenantIdAs('_smrt_changes', 'numbered.tenant_id::TEXT')},
+              numbered.created_at
+            FROM numbered
+            RETURNING
+              _smrt_changes.seq,
+              _smrt_changes.table_name,
+              _smrt_changes.row_id,
+              _smrt_changes.operation,
+              _smrt_changes.tenant_id
+          )
+          SELECT
+            inserted.seq,
+            inserted.table_name,
+            inserted.row_id,
+            inserted.operation,
+            inserted.tenant_id::TEXT,
+            NULL::TEXT,
+            NULL::TEXT,
+            NULL::TEXT,
+            NULL::BOOLEAN,
+            NULL::BOOLEAN
+          FROM inserted
+          ORDER BY inserted.seq;
+        END IF;
+      EXCEPTION WHEN SQLSTATE '${POSTGRES_CHANGE_FEED_NO_WORK_SQLSTATE}' THEN
+        NULL;
+      END;
+    END IF;
+
+    -- The status is computed in its own block, so nothing here can roll back
+    -- the sequencing above; a failure only leaves the extras unknown.
+    -- backlog_remaining: whether a committed, non-sensitive staged row is
+    -- still visible after this pass (NULL when it cannot be told).
+    -- helpers_current: whether the other four helper identities carry this
+    -- body's marker; skipped on the common empty pass.
+    BEGIN
+      IF v_status = 'drained' THEN
+        -- This pass still holds its staging-table lock, so this read never
+        -- waits.
+        v_backlog := EXISTS (
+          SELECT 1
+          FROM _smrt_changes_pending AS remaining
+          WHERE NOT (
+            remaining.table_name = ANY(COALESCE(p_excluded_tables, ARRAY[]::TEXT[]))
+          )
+        );
+      ELSIF v_status = 'empty' THEN
+        v_backlog := false;
+      ELSIF v_status IN ('relation_busy', 'head_busy') THEN
+        v_backlog := v_has_candidate;
+      END IF;
+      IF v_status <> 'empty' THEN
+        v_helpers := (
+          SELECT count(*) = 4
+          FROM pg_proc AS helper
+          WHERE helper.oid IN (
+            to_regprocedure('${POSTGRES_CHANGE_FEED_APPEND_FUNCTION_IDENTITY}'),
+            to_regprocedure('${POSTGRES_CHANGE_FEED_APPEND_BATCH_FUNCTION_IDENTITY}'),
+            to_regprocedure('${POSTGRES_CHANGE_FEED_DRAIN_FUNCTION_IDENTITY}'),
+            to_regprocedure('${POSTGRES_CHANGE_FEED_COMPAT_DRAIN_FUNCTION_IDENTITY}')
+          )
+            AND helper.prosrc LIKE '%${POSTGRES_CHANGE_FEED_HELPER_MARKER}%'
+        );
+      END IF;
+    EXCEPTION WHEN query_canceled OR assert_failure OR OTHERS THEN
+      v_backlog := NULL;
+      v_helpers := NULL;
+    END;
+
+    RETURN QUERY SELECT
+      NULL::BIGINT,
+      NULL::TEXT,
+      NULL::TEXT,
+      NULL::TEXT,
+      NULL::TEXT,
+      NULL::TEXT,
+      NULL::TEXT,
+      v_status,
+      v_backlog,
+      v_helpers;
+  EXCEPTION WHEN query_canceled OR assert_failure OR OTHERS THEN
+    -- No status row follows an error row. Entry rows appended before the
+    -- error may still be in the result; callers must discard every entry of
+    -- a call that returned an error row.
+    GET STACKED DIAGNOSTICS
+      v_error_code = RETURNED_SQLSTATE,
+      v_error_message = MESSAGE_TEXT;
+    RETURN QUERY SELECT
+      NULL::BIGINT,
+      NULL::TEXT,
+      NULL::TEXT,
+      NULL::TEXT,
+      NULL::TEXT,
+      v_error_code,
+      v_error_message,
+      NULL::TEXT,
+      NULL::BOOLEAN,
+      NULL::BOOLEAN;
+  END;
+END;
+$smrt_change_feed_drain_status$;
+`;
+
+/**
+ * Two-argument drain (#2982), a delegator since #5402: it calls the status
+ * drain with no options and returns only its entry and error rows, so its
+ * columns are unchanged for every caller (current SMRT on a handle that may
+ * be inside a caller transaction, and older replicas during a rollout).
+ *
+ * It keeps its own exception boundary: a role that may execute this identity
+ * but not the status drain gets `42501` back as an error row, and the
+ * caller's transaction is never aborted (#2026).
+ */
 export const CREATE_POSTGRES_CHANGE_FEED_DRAIN_FUNCTION = `
 CREATE OR REPLACE FUNCTION ${POSTGRES_CHANGE_FEED_DRAIN_FUNCTION_NAME}(
   p_limit INTEGER,
@@ -875,166 +1221,25 @@ SECURITY INVOKER
 AS $smrt_change_feed_drain$
 ${POSTGRES_CHANGE_FEED_HELPER_MARKER_LINES}
 DECLARE
-  v_base BIGINT;
-  v_has_candidate BOOLEAN;
   v_error_code TEXT;
   v_error_message TEXT;
 BEGIN
-  -- EVERY statement below sits inside this exception boundary, preflight
-  -- included. The caller may own the surrounding transaction, and an error
-  -- escaping this function would abort it — the #2026 contract. A probe that
-  -- blocks on a table lock until statement_timeout is exactly that: it is not
-  -- the insert, but it aborts the caller just the same.
   BEGIN
-    IF to_regclass('_smrt_changes_pending') IS NULL THEN
-      RETURN;
-    END IF;
-
-    -- Never sequence from inside a transaction that has already written. Doing
-    -- so would hold freshly allocated sequences uncommitted for the rest of
-    -- that transaction, which is precisely the wait edge #2649 removes — a
-    -- reader calling getChangesSince() inside a long write transaction must
-    -- not put it back. The staged rows keep for the next drain.
-    IF pg_current_xact_id_if_assigned() IS NOT NULL THEN
-      RETURN;
-    END IF;
-
-    -- A fixed snapshot (REPEATABLE READ / SERIALIZABLE) could read a stale
-    -- MAX(seq), so it never allocates (#5271). The staged rows keep for a
-    -- READ COMMITTED drain.
-    IF ${POSTGRES_FIXED_SNAPSHOT_ISOLATION} THEN
-      RETURN;
-    END IF;
-
-    -- Cheap common case: nothing staged, so an autocommit append pays one
-    -- index probe rather than a drain.
-    IF NOT EXISTS (SELECT 1 FROM _smrt_changes_pending LIMIT 1) THEN
-      RETURN;
-    END IF;
-
-    -- Try, never wait: a drain that waited could become an edge in a cycle.
-    IF NOT pg_try_advisory_xact_lock(
-      hashtext('smrt'),
-      hashtext('change-feed-drain')
-    ) THEN
-      RETURN;
-    END IF;
-
-    -- The head lock (#5271) serializes this drain with direct appenders. It is
-    -- only TRIED: a reader must never wait behind an appender's transaction,
-    -- so when it is busy the drain returns and a later one sequences the
-    -- staged rows. It is taken only when something will be sequenced, so a
-    -- purge of sensitive rows alone never holds the head. The feed table's
-    -- insert lock comes first, as in the append helpers, and is NOWAIT for
-    -- the same reason the head lock is only tried: a session holding SHARE
-    -- on the feed table would otherwise make this drain wait for it. A
-    -- refusal is a skipped pass, not an error. A role without a table-level
-    -- privilege for that lock skips it, as the append helpers do.
-    v_has_candidate := EXISTS (
-      SELECT 1
-      FROM _smrt_changes_pending AS candidate
-      WHERE NOT (
-        candidate.table_name = ANY(COALESCE(p_excluded_tables, ARRAY[]::TEXT[]))
-      )
-    );
-    IF v_has_candidate THEN
-      IF ${POSTGRES_CHANGE_FEED_CAN_LOCK_RELATION} THEN
-        BEGIN
-          LOCK TABLE _smrt_changes IN ROW EXCLUSIVE MODE NOWAIT;
-        EXCEPTION WHEN lock_not_available THEN
-          RETURN;
-        END;
-      END IF;
-      IF NOT pg_try_advisory_xact_lock(${POSTGRES_CHANGE_FEED_HEAD_LOCK_KEY}) THEN
-        RETURN;
-      END IF;
-    END IF;
-
-    -- The feed never records a sensitive table (#2982). Staged entries for
-    -- one — from an older replica, or staged before the table was declared
-    -- sensitive — are dropped here, before a sequence is allocated.
-    -- Bounded like the sequencing batch, so a large legacy backlog cannot make
-    -- one pass outlive statement_timeout and stall the feed; the remainder is
-    -- purged by later passes, and the batch below skips it meanwhile.
-    IF COALESCE(cardinality(p_excluded_tables), 0) > 0 THEN
-      DELETE FROM _smrt_changes_pending AS sensitive
-      WHERE sensitive.pending_id IN (
-        SELECT staged.pending_id
-        FROM _smrt_changes_pending AS staged
-        WHERE staged.table_name = ANY(p_excluded_tables)
-        ORDER BY staged.pending_id
-        LIMIT GREATEST(COALESCE(p_limit, ${POSTGRES_CHANGE_FEED_DRAIN_BATCH}), 1)
-      );
-    END IF;
-
-    IF NOT v_has_candidate THEN
-      RETURN;
-    END IF;
-
-    SELECT COALESCE(MAX(changes.seq), 0) INTO v_base FROM _smrt_changes AS changes;
-
     RETURN QUERY
-    WITH removed AS (
-      DELETE FROM _smrt_changes_pending AS pending
-      WHERE pending.pending_id IN (
-        SELECT candidate.pending_id
-        FROM _smrt_changes_pending AS candidate
-        -- A sensitive row committed after the purge above is skipped, not
-        -- sequenced; the next drain purges it.
-        WHERE NOT (
-          candidate.table_name = ANY(COALESCE(p_excluded_tables, ARRAY[]::TEXT[]))
-        )
-        ORDER BY candidate.pending_id
-        LIMIT GREATEST(COALESCE(p_limit, ${POSTGRES_CHANGE_FEED_DRAIN_BATCH}), 1)
-      )
-      RETURNING
-        pending.pending_id,
-        pending.table_name,
-        pending.row_id,
-        pending.operation,
-        pending.tenant_id,
-        pending.created_at
-    ),
-    numbered AS (
-      SELECT
-        removed.*,
-        v_base + row_number() OVER (ORDER BY removed.pending_id) AS new_seq
-      FROM removed
-    ),
-    inserted AS (
-      INSERT INTO _smrt_changes (
-        seq,
-        table_name,
-        row_id,
-        operation,
-        tenant_id,
-        created_at
-      )
-      SELECT
-        numbered.new_seq,
-        numbered.table_name,
-        numbered.row_id,
-        numbered.operation,
-        ${postgresTenantIdAs('_smrt_changes', 'numbered.tenant_id::TEXT')},
-        numbered.created_at
-      FROM numbered
-      RETURNING
-        _smrt_changes.seq,
-        _smrt_changes.table_name,
-        _smrt_changes.row_id,
-        _smrt_changes.operation,
-        _smrt_changes.tenant_id
-    )
     SELECT
-      inserted.seq,
-      inserted.table_name,
-      inserted.row_id,
-      inserted.operation,
-      inserted.tenant_id::TEXT,
-      NULL::TEXT,
-      NULL::TEXT
-    FROM inserted
-    ORDER BY inserted.seq;
+      drained.drained_seq,
+      drained.drained_table,
+      drained.drained_row_id,
+      drained.drained_operation,
+      drained.drained_tenant_id,
+      drained.error_code,
+      drained.error_message
+    FROM ${POSTGRES_CHANGE_FEED_DRAIN_FUNCTION_NAME}(
+      p_limit,
+      p_excluded_tables,
+      '{}'::JSONB
+    ) AS drained
+    WHERE drained.status IS NULL;
   EXCEPTION WHEN query_canceled OR assert_failure OR OTHERS THEN
     GET STACKED DIAGNOSTICS
       v_error_code = RETURNED_SQLSTATE,
@@ -1388,12 +1593,46 @@ $smrt_change_feed_pending_ddl$;`,
  * unable to call. When this block creates it, it therefore inherits the
  * compatibility drain's reconciled EXECUTE grants. A role that may not grant
  * keeps the default ACL; the permissions planner reports and repairs it.
+ *
+ * The status drain (#5402) is created first, since both older identities
+ * delegate to it. Its owner and EXECUTE grantees are then made equal to the
+ * two-argument drain's, so it never has more callers than the entry point it
+ * backs: a new function would otherwise take PostgreSQL's default ACL plus any
+ * default privileges, and one created by a member of the owning role would be
+ * owned by that member. The grantee sets are compared normalised
+ * (`acldefault` stands in for a NULL ACL; grantee and grant option compared,
+ * grantor ignored), so a grantee never holds a grant option on it that the
+ * two-argument drain does not give it.
+ * If they cannot be made equal the block raises, and the whole installation
+ * rolls back: the database keeps the helpers it had.
  */
+const POSTGRES_CHANGE_FEED_DRAIN_STATUS_GRANTEES = (identity: string) => `
+          SELECT acl.grantee, acl.is_grantable
+          FROM pg_proc AS p,
+            aclexplode(COALESCE(p.proacl, acldefault('f', p.proowner))) AS acl
+          WHERE p.oid = to_regprocedure('${identity}')
+            AND acl.privilege_type = 'EXECUTE'`;
+
+const POSTGRES_CHANGE_FEED_DRAIN_STATUS_ACL_DIFFERS = `EXISTS (
+        (${POSTGRES_CHANGE_FEED_DRAIN_STATUS_GRANTEES(POSTGRES_CHANGE_FEED_DRAIN_STATUS_FUNCTION_IDENTITY)}
+         EXCEPT
+         ${POSTGRES_CHANGE_FEED_DRAIN_STATUS_GRANTEES(POSTGRES_CHANGE_FEED_DRAIN_FUNCTION_IDENTITY)})
+        UNION ALL
+        (${POSTGRES_CHANGE_FEED_DRAIN_STATUS_GRANTEES(POSTGRES_CHANGE_FEED_DRAIN_FUNCTION_IDENTITY)}
+         EXCEPT
+         ${POSTGRES_CHANGE_FEED_DRAIN_STATUS_GRANTEES(POSTGRES_CHANGE_FEED_DRAIN_STATUS_FUNCTION_IDENTITY)})
+      )`;
+
 const POSTGRES_CHANGE_FEED_DRAIN_INSTALL = `  DECLARE
     v_drain_created BOOLEAN :=
       to_regprocedure('${POSTGRES_CHANGE_FEED_DRAIN_FUNCTION_IDENTITY}') IS NULL;
     v_grant RECORD;
+    v_source_owner OID;
+    v_status_owner OID;
   BEGIN
+    EXECUTE $smrt_change_feed_drain_status_ddl$
+${CREATE_POSTGRES_CHANGE_FEED_DRAIN_STATUS_FUNCTION.trim()}
+$smrt_change_feed_drain_status_ddl$;
     EXECUTE $smrt_change_feed_drain_ddl$
 ${CREATE_POSTGRES_CHANGE_FEED_DRAIN_FUNCTION.trim()}
 $smrt_change_feed_drain_ddl$;
@@ -1424,6 +1663,67 @@ $smrt_change_feed_drain_compat_ddl$;
       EXCEPTION WHEN insufficient_privilege THEN
         NULL;
       END;
+    END IF;
+
+    SELECT p.proowner INTO v_source_owner FROM pg_proc AS p
+    WHERE p.oid = to_regprocedure('${POSTGRES_CHANGE_FEED_DRAIN_FUNCTION_IDENTITY}');
+    SELECT p.proowner INTO v_status_owner FROM pg_proc AS p
+    WHERE p.oid = to_regprocedure('${POSTGRES_CHANGE_FEED_DRAIN_STATUS_FUNCTION_IDENTITY}');
+    IF v_status_owner IS DISTINCT FROM v_source_owner THEN
+      EXECUTE format(
+        'ALTER FUNCTION ${POSTGRES_CHANGE_FEED_DRAIN_STATUS_FUNCTION_IDENTITY} OWNER TO %I',
+        pg_get_userbyid(v_source_owner)
+      );
+    END IF;
+    IF ${POSTGRES_CHANGE_FEED_DRAIN_STATUS_ACL_DIFFERS} THEN
+      FOR v_grant IN
+        ${POSTGRES_CHANGE_FEED_DRAIN_STATUS_GRANTEES(POSTGRES_CHANGE_FEED_DRAIN_STATUS_FUNCTION_IDENTITY)}
+        EXCEPT
+        ${POSTGRES_CHANGE_FEED_DRAIN_STATUS_GRANTEES(POSTGRES_CHANGE_FEED_DRAIN_FUNCTION_IDENTITY)}
+      LOOP
+        IF v_grant.grantee = 0 THEN
+          EXECUTE 'REVOKE EXECUTE ON FUNCTION ${POSTGRES_CHANGE_FEED_DRAIN_STATUS_FUNCTION_IDENTITY} FROM PUBLIC';
+        ELSIF v_grant.is_grantable AND EXISTS (
+          SELECT 1 FROM (${POSTGRES_CHANGE_FEED_DRAIN_STATUS_GRANTEES(POSTGRES_CHANGE_FEED_DRAIN_FUNCTION_IDENTITY)}
+          ) AS source
+          WHERE source.grantee = v_grant.grantee AND NOT source.is_grantable
+        ) THEN
+          -- The grantee may call it, but may not pass the right on.
+          EXECUTE format(
+            'REVOKE GRANT OPTION FOR EXECUTE ON FUNCTION ${POSTGRES_CHANGE_FEED_DRAIN_STATUS_FUNCTION_IDENTITY} FROM %I CASCADE',
+            pg_get_userbyid(v_grant.grantee)
+          );
+        ELSE
+          EXECUTE format(
+            'REVOKE EXECUTE ON FUNCTION ${POSTGRES_CHANGE_FEED_DRAIN_STATUS_FUNCTION_IDENTITY} FROM %I CASCADE',
+            pg_get_userbyid(v_grant.grantee)
+          );
+        END IF;
+      END LOOP;
+      FOR v_grant IN
+        ${POSTGRES_CHANGE_FEED_DRAIN_STATUS_GRANTEES(POSTGRES_CHANGE_FEED_DRAIN_FUNCTION_IDENTITY)}
+        EXCEPT
+        ${POSTGRES_CHANGE_FEED_DRAIN_STATUS_GRANTEES(POSTGRES_CHANGE_FEED_DRAIN_STATUS_FUNCTION_IDENTITY)}
+      LOOP
+        IF v_grant.grantee = 0 THEN
+          EXECUTE 'GRANT EXECUTE ON FUNCTION ${POSTGRES_CHANGE_FEED_DRAIN_STATUS_FUNCTION_IDENTITY} TO PUBLIC';
+        ELSIF v_grant.is_grantable THEN
+          EXECUTE format(
+            'GRANT EXECUTE ON FUNCTION ${POSTGRES_CHANGE_FEED_DRAIN_STATUS_FUNCTION_IDENTITY} TO %I WITH GRANT OPTION',
+            pg_get_userbyid(v_grant.grantee)
+          );
+        ELSE
+          EXECUTE format(
+            'GRANT EXECUTE ON FUNCTION ${POSTGRES_CHANGE_FEED_DRAIN_STATUS_FUNCTION_IDENTITY} TO %I',
+            pg_get_userbyid(v_grant.grantee)
+          );
+        END IF;
+      END LOOP;
+      IF ${POSTGRES_CHANGE_FEED_DRAIN_STATUS_ACL_DIFFERS} THEN
+        RAISE EXCEPTION
+          'EXECUTE on ${POSTGRES_CHANGE_FEED_DRAIN_STATUS_FUNCTION_IDENTITY} could not be made equal to ${POSTGRES_CHANGE_FEED_DRAIN_FUNCTION_IDENTITY}; the change-feed helpers were not installed'
+          USING ERRCODE = 'insufficient_privilege';
+      END IF;
     END IF;
   END;`;
 
