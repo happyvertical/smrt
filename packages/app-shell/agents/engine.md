@@ -202,7 +202,10 @@ for the one operation on the host thread; a PGlite uses the host's client).
   `StaleFenceError` (`EngineError` code `stale_fence`, HTTP 409, details
   `{ schema, expected, actual }` when raised by the host or a swap or drop; the
   copy that crosses the worker boundary carries the message only) unless it
-  matches. The share lock lasts to
+  matches. That share lock gives every fenced transaction a transaction id,
+  so on a fenced handle every change-feed append is staged and its drains
+  allocate nothing: `_changes` and `_events` frame nothing written through a
+  fenced handle until #5570. The share lock lasts to
   commit and `swapSchemas` locks every table exclusively first, so a
   transaction either finishes before a swap or fails after it: no commit
   straddles one. The new number is written only into the new live schema, so a

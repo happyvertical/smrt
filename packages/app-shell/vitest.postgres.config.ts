@@ -15,6 +15,7 @@ export const POSTGRES_SUITES = [
   'src/engine/store-in-swap.test.ts',
   'src/lib/server/hosted-inference-postgres.test.ts',
   'src/lib/server/storage-metering-postgres.test.ts',
+  'src/engine/postgres-feed-stream.test.ts',
 ];
 
 const baseTest = (base as { test?: Record<string, unknown> }).test ?? {};

@@ -405,6 +405,13 @@ function readFeedPage(
  * live-only would let a later id overtake the changes the failed read was
  * meant to deliver.
  *
+ * **Supported handles.** `db` is a root, or a statement-scoped root: a
+ * root-shaped handle whose every statement runs in a transaction of its own
+ * that first applies the caller's scope (the hosted engine's `scopeDatabase`).
+ * Each read then sees committed rows only and resolves the scope's own feed,
+ * helpers and head lock. Hosted v1 runs one app per core instance, so the
+ * process-global authorization hooks and sensitive-table set are that app's.
+ *
  * `start(controller)`:
  *  a. Live-forward only (no `cursor`): sample the feed's current head
  *     BEFORE subscribing. Sequences are allocated under the feed's head lock
