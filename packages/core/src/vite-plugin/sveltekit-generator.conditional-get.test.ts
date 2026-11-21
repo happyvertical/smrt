@@ -101,13 +101,13 @@ describe('SvelteKit generated routes: conditional GET (#1757)', () => {
       );
     }
     expect(collectionRoute).toContain(
-      "import { parseRestListWhere } from '@happyvertical/smrt-core';",
+      "import { assertQueryAccess, parseRestListWhere } from '@happyvertical/smrt-core';",
     );
     expect(collectionRoute).toContain(
-      'applyWhereScope(parseRestListWhere(url.searchParams), resolveAnonymousTenantReadScope(',
+      'applyWhereScope(query.where, resolveAnonymousTenantReadScope(',
     );
     expect(collectionRoute).toContain(
-      "const orderBy = url.searchParams.get('orderBy') || LIST_ORDER_BY;",
+      'const orderBy = query.orderBy || LIST_ORDER_BY;',
     );
     expect(itemRoute).toContain('{ displayLabel: true }');
     expect(collectionRoute).toContain(
@@ -164,15 +164,17 @@ describe('SvelteKit generated routes: conditional GET (#1757)', () => {
     expect(itemRoute).toContain(
       'return conditionalVersionedRead(request, collection.db, collection.tableName, async () => {',
     );
-    expect(itemRoute).toContain('return item.toPublicJSON(publicJsonOptions);');
+    expect(itemRoute).toContain(
+      'return toPublicJSONValue(item, publicJsonOptions);',
+    );
 
     // Mutation handlers stay as-is (plain json responses, no conditional).
     expect(collectionRoute).toContain(
-      'return json(item.toPublicJSON(publicJsonOptions), { status: 201 });',
+      'return json(toPublicJSONValue(item, publicJsonOptions), { status: 201 });',
     );
     expect(itemRoute).toContain('export const PUT: RequestHandler');
     expect(itemRoute).toMatch(
-      /PUT[\s\S]*return json\(item\.toPublicJSON\(publicJsonOptions\)\);/,
+      /PUT[\s\S]*return json\(toPublicJSONValue\(item, publicJsonOptions\)\);/,
     );
   });
 

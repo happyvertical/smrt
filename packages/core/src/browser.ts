@@ -188,6 +188,13 @@ export type {
 } from './config';
 // Global configuration (callable function)
 export { config } from './config';
+// Which STI subtypes a create through a base may select on a transport.
+export {
+  assertCreateTargetSurface,
+  type CreateSurface,
+  CreateTargetError,
+  isCreateOpenOnSurface,
+} from './create-target';
 // Canonical bounded query protocol — adapters supply their own authorization
 // and execution, while this runtime normalizes the shared envelope (#2444).
 export {
@@ -594,6 +601,19 @@ export {
   type ResolvedPostgresTimeouts,
   resolvePostgresTimeouts,
 } from './postgres-timeouts';
+// The public serialiser an object's class provides, for request-facing
+// output; never an own property of the instance.
+export {
+  publicSerializerOf,
+  toPublicJSONValue,
+  toPublicResultValue,
+} from './public-json';
+// Which fields a caller may filter and sort a list by: the ones it may read.
+export {
+  assertQueryAccess,
+  QueryFieldError,
+  type RequestQuery,
+} from './query-access';
 // Shared list query bounds for every generated read surface (#2367)
 export {
   buildDefaultListOrderBy,
@@ -667,6 +687,15 @@ export {
   type SubclassExposureEscalation,
   surfaceOpensOperation,
 } from './registry/subclass-exposure';
+// What an update body may set on a loaded object: declared fields and
+// settable accessors. Every request-facing update path assigns through
+// `applyUpdateInput`.
+export {
+  applyUpdateInput,
+  assertCreateInput,
+  assertUpdateInput,
+  updateInputRulesFor,
+} from './request-input';
 // How `where` keys resolve to columns, shared by the collection and by anything
 // that inspects a filter before it runs (interceptors, generated routes).
 // Request tenant context hooks (installed by smrt-tenancy, which browser
@@ -747,6 +776,12 @@ export type {
 } from './system/types';
 // Table existence verification cache (for test setup reset)
 export { resetVerifiedTables } from './table-cache';
+// Identifier arguments of generated tools are checked before use.
+export {
+  identifierArgument,
+  requireIdentifierArgument,
+  ToolArgumentError,
+} from './tool-arguments';
 // AI function calling tools
 export * from './tools/index';
 export {
@@ -800,6 +835,7 @@ export {
 } from './utils/qualified-names';
 export {
   applyWhereScope,
+  assertGetFilter,
   effectiveWhereOperator,
   mergeOwnedWhere,
   normalizeWhereKey,
@@ -808,6 +844,16 @@ export {
   WhereClauseError,
   whereColumnName,
 } from './where-keys';
+export {
+  assignUpdateInput,
+  classifyUpdateKey,
+  isWriteInputError,
+  resolveUpdateInput,
+  STRUCTURAL_UPDATE_RULES,
+  type UpdateInputRules,
+  type UpdateKeyKind,
+  WriteInputError,
+} from './write-input';
 
 // Vite plugin excluded (Node.js-only)
 

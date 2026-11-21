@@ -15,7 +15,7 @@ invariants, and the traps that apply before editing anything live in
 ### Write bodies set fields only
 
 Every generated or request-facing write path filters the body through its
-writable policy before `collection.create(data)` or `Object.assign(item, data)`:
+writable policy before `collection.create(data)` or `applyUpdateInput(item, data)`:
 runtime REST and MCP (`applyWritablePolicy` in `rest.ts` and `mcp.ts`), both
 emitted MCP servers (`mcp.ts` modular, `mcp-runtime-template.ts`), the emitted
 SvelteKit create and update handlers, and sync apply (`sync/apply.ts` and the
@@ -27,6 +27,261 @@ and `options`. A new write path must apply the same rule; the collection also
 enforces it on construction (see [object-runtime.md](object-runtime.md),
 "Services never come from data"). The policies are still separate copies;
 they share the rule, not the code.
+
+### An update sets declared fields and settable accessors
+
+No update path assigns a body with `Object.assign`. After its writable policy,
+each one calls `applyUpdateInput(instance, data, model)` (`src/request-input.ts`
+over the rule in `src/write-input.ts`): runtime REST update and sync apply,
+in-process MCP, both emitted MCP servers, the emitted SvelteKit `PUT` and sync
+route, the CLI `update` command (`packages/cli`) and the assistant tool loop
+(`packages/chat`). The structural sync processor uses the same rule for a host
+that supplies no `mutate` seam.
+
+- A key is assigned when it names a field the object's own class (or an
+  ancestor) declares, a write-through field, or an accessor with a setter on
+  the prototype chain or the instance. Models take derived input through
+  getter/setter pairs (`Contract.sellerTaxRegistrations`, `Content.assetIds`);
+  those keep working. `slug` and `context` are accessors of every object.
+- A key that names a method, an accessor without a setter, a member of
+  `Object.prototype` (`constructor`, `toString`, `__proto__`), or nothing the
+  model declares is refused: `WriteInputError`, code
+  `VALIDATION_UNKNOWN_FIELD`, a typed 400 whose message names the key. Sync
+  apply reports the item `rejected` / `invalid_payload`. Every key is checked
+  before the first is assigned.
+- The model is read from the instance's prototype, so an STI row loaded through
+  its base collection may set its own subtype's fields, and obeys its own
+  subtype's write policy too: keys the subtype marks read-only or leaves out
+  of its `api.writable` allowlist are skipped, on top of the route's policy.
+- `displayLabel` is skipped without an error on a model that projects one, so a
+  body read from the API can be sent back.
+- A class with no registered field at all (an unscanned inline class) is judged
+  by its instance's own plain properties.
+- Create input follows the same rule before the object is constructed:
+  `assertCreateInput(model, data)` (`src/request-input.ts`) runs after each
+  create path's writable policy (runtime REST, the emitted SvelteKit POST,
+  in-process and both emitted MCP servers, runtime and emitted sync, the CLI
+  and the assistant) and refuses a key that is not a declared field, a
+  write-through field or a settable accessor of the class (`VALIDATION_UNKNOWN_FIELD`,
+  sync `invalid_payload`). A constructor that copies its options would
+  otherwise install any request key on the instance. A model with no field
+  metadata is not checked. The smrt-dev-mcp class generator emits per-field
+  constructor assignments, never `Object.assign(this, options)`.
+- Sync apply checks an update payload against the stored row
+  (`SyncApplyTarget.assertUpdate`) before it answers a replay or a stale
+  write, so an unknown key is always `invalid_payload`.
+
+Output: every transport finds the serialiser with `publicSerializerOf()` /
+`toPublicJSONValue()` (`src/public-json.ts`), which read `toPublicJSON` from
+the prototype chain. An own property of that name on an instance is never
+called and never hides the class's serialiser. A result that may hold models
+anywhere inside it (a custom action's result, a custom serialiser's
+envelope) goes through `toPublicResultValue()`, which projects every nested
+model too; the assistant tool loop uses it for every observation.
+
+Tests: `src/__tests__/update-input-fields.test.ts` executes all seven
+transports; `packages/cli/src/__tests__/cli-writable-policy.test.ts`;
+`packages/chat/src/tool-loop.test.ts`.
+
+### Tenant-scoped models: every operation runs in a tenant
+
+The runtime REST server runs every operation on a tenant-scoped model through
+`runWithTenantGate` (`generators/tenant-gate.ts`), the gate the in-process MCP
+generator uses. The tenant comes from the host per request:
+`APIConfig.resolveTenant(req)` returns `{ tenantId?, allowCrossTenant?,
+authenticated? }` and is called once per request, after `authMiddleware`
+admitted it, with the request the middleware returned. Without it the fixed
+`APIContext.tenantId` / `allowCrossTenant` apply. That one answer is what the
+runtime exposure gate (`isRuntimeModelEnabled`), STI create targets and the
+tenant gate all read; the exposure gate therefore runs after authentication
+(a disabled model answers 404 to an admitted request). When the answer names
+no tenant, the tenant context the host already entered (`withTenant`) is the
+one exposure and create targets read, the one persistence runs in. Sync items
+resolve it per item, after the item's authorization. An explicitly
+cross-tenant caller's reads carry no global-rows scope (it reads every
+tenant's rows) and have an ETag representation of their own.
+
+| Caller | Read | Write (create, update, delete, custom action, sync item) |
+|---|---|---|
+| Has a tenant | Inside that tenant | Inside that tenant |
+| `allowCrossTenant` | System context | System context |
+| Neither, optional-mode model | Global rows only (#1782) | Refused |
+| Neither, required-mode model | Refused | Refused |
+| A context the host already entered | Kept | Kept |
+| A tenant other than the context the host entered | Refused (403) | Refused (403) |
+
+A refusal is `{ error: { code: 'TENANT_CONTEXT_REQUIRED', status } }`: 403 for
+a signed-in caller, 401 for an anonymous one (no `authMiddleware`, or
+`authenticated: false`); a sync item is `rejected` with `forbidden` /
+`auth_required`. The read of a caller with no tenant stays outside the gate,
+which has no global-only mode; its #1782 scope and the interceptor's refusal
+go through the same error mapping. On runtime REST that exception covers the
+CRUD list, get and count handlers only: every custom collection action of a
+tenant-scoped model, GET included, runs inside the gate, so a caller with no
+tenant is refused it whatever the method's signature or scanned metadata (the
+decision reads no method metadata). A caller with a tenant, or an explicitly
+cross-tenant one, is served as before: a GET action's options carry the
+request's read scope, and a parameter named after an ownership property is
+handed its scope value, never a caller value under the parameter's transport
+name (such as `actionId` for `id`). The emitted SvelteKit routes still serve a
+caller with no tenant a custom collection GET action whose arguments carry the
+read scope (`readActionReceivesTenantScope`: a single `options` parameter, or
+parameters named after every ownership property the live registry reports);
+any other collection-scoped (or static) action of a tenant-scoped model calls
+`requireTenantWriteContext`, and one whose parameters name the manifest's
+ownership property (`tenantScoped.field`, else `tenantId`) decides again at
+request time against the properties `scopeTenantReadOptions` sets. A caller
+with no tenant never writes a tenant-scoped row, global rows included.
+
+A caller whose resolved tenant differs from a tenant context the host already
+entered is refused by `runTenantScopedEntryPoint` with `TenantIsolationError`;
+a host that names no tenant per request keeps its ambient context. Every
+`TENANT_ISOLATION_VIOLATION` (that refusal, the save-time natural-key
+ownership check, a filter outside the caller's tenant) is answered as a plain
+permission denial that names no tenant: `normalizeTypedHttpError` renders 403
+`{ code: 'permission_denied', message: 'Permission denied.' }` on runtime REST
+and the emitted SvelteKit routes, the MCP servers report the same code and
+text, and sync apply rejects the item `forbidden` (not the retryable
+`write_failed`). An isolation error that carries its own `publicMessage`
+(a package's typed refusal written for the caller) keeps its code and text.
+`TENANT_CONTEXT_REQUIRED` with no status of its own renders as 403 with the
+same code, so the emitted routes answer a required-mode read without a tenant
+with 403, not 500; their point lookups (GET, and the lookup before PUT and
+DELETE) go through `rejectRouteRead`, the list route through
+`rejectListQuery`.
+Tests: `packages/tenancy/src/__tests__/rest-request-tenant.test.ts`,
+`src/__tests__/tenant-isolation-refusal.test.ts`,
+`src/__tests__/rest-request-scope.test.ts` (exposure gate per tenant).
+
+The emitted SvelteKit routes read the tenant from `locals`
+(`establishTenantContext`) and then, for a mutating handler of a tenant-scoped
+model (create, update, delete, mutating custom action), call
+`requireTenantWriteContext(locals)`: with tenancy enabled and no tenant
+context it throws 403 (401 for an anonymous caller) unless a system context is
+active, or `locals.tenantContext.superAdminBypass === true` on a model that
+opts in with `tenantScoped: { allowSuperAdminBypass: true }` (the tenancy
+interceptor lifts its filter only for those; the sync route checks it per
+target). Every emitted route authenticates before the runtime exposure gate,
+and reads the request's tenant for it from the same `locals` sources the
+tenant helper enters (`tenantId`, `user.tenantId`, `session.tenantId`,
+`tenantContext.tenantId`), else from the tenant context already active for the
+request (a host may enter it itself); the emitted sync route checks exposure per item in
+`run`, after the item's authorization.
+
+The emitted sync-apply route and the CRUD routes are generated from one set
+of policy functions (`vite-plugin/route-policy.ts`): the read-only field list
+(`collectRouteReadonlyFields`: read-only, calculated and `displayLabel`), the
+writable allowlist, public access, the permission collection, and the tenant
+and principal helper (`generateTenantContextHelper`). The sync route takes the
+principal requirement per item (`api.principalContext` of the target) and
+rejects the item as `forbidden` when the CRUD helper would have thrown. Like
+the CRUD routes, it enters the caller's tenant for a target that is
+tenant-scoped at request time (`isTenantScopedModel`) even when its manifest
+declares no tenancy; a manifest without tenant-scoped models emits the core
+request-context form of the helper. The generated write gate for a model whose
+tenancy exists only at runtime is not emitted (#5345).
+
+Tests: `packages/tenancy/src/__tests__/rest-write-tenant-gate.test.ts` (real
+tenancy), `src/vite-plugin/sveltekit-generator.runtime.test.ts` and
+`src/vite-plugin/sync-apply-route.test.ts` (emitted handlers, executed).
+
+### Tool identifiers are non-empty strings
+
+MCP arguments are untyped JSON. The `get`, `update`, `delete` and item-action
+tools of the in-process generator and of both emitted servers read `id` /
+`slug` through `requireIdentifierArgument()` / `identifierArgument()`
+(`src/tool-arguments.ts`): `undefined`, `null` and `''` are absent (the
+existing "ID is required" answers), a non-empty string is the identifier, and
+any other value (a number, a boolean, an array, an object of conditions) is
+`ToolArgumentError`, code `VALIDATION_INVALID_ARGUMENT`, a typed 400. A
+present, unusable `id` never falls back to `slug`. Tests:
+`src/__tests__/tool-identifier-arguments.test.ts`.
+
+### A request reaches one model, under that model's policy
+
+Runtime REST resolves a URL or sync `object` segment to one registered model
+and then looks up every policy by that model's qualified registry key
+(`qualifiedName || name`): the `authMiddleware(objectName, action)` argument,
+`api.public`, enabled actions, the writable policy, read permissions, tenant
+scope and the collection factory. Two packages may declare models with the
+same simple name; a simple-name lookup resolves to whichever registered first,
+so no REST policy lookup uses one. The `registerCollection()` branch already
+passed the qualified name; auto-discovery and sync now do too.
+
+Auto-discovery (`findClassByCollectionSegment` over `collectionSegmentIndex()`,
+rebuilt when the registry generation moves) maps each segment to the model it
+serves: a collection class to its row model, an STI subtype that keeps its
+base's collection to the ancestor that owns it. Models with `api: false` are
+not candidates. A segment that two distinct models serve is ambiguous: a
+request naming it fails with `ConfigurationError`
+(`REST_COLLECTION_SEGMENT_AMBIGUOUS`, an opaque 500) before any middleware or
+policy runs, instead of being served by registration order.
+`createRestServer(objects)` / `startRestServer(objects)` serve the models in
+`objects` and no other registered model (an unregistered class is warned about
+and not served); two of them on one segment make the server refuse to start
+with the same error. Such a server also creates only its models: an STI
+create selecting a subtype that was not among `objects` is refused with
+`CreateTargetError` (a subtype of a served base is a model of its own, served
+when it was given too), and reads through the base (list, count, get, and the
+lookup before update, delete and a sync item) reach only rows of the base and
+of the subtypes it was given that open the read on `api`
+(`servedFamilyTypes()`, a `_meta_type in [...]` filter). A row the route does
+not read is `404` / `not_found`. An update or delete through the base of a
+row whose own model is a subtype needs that subtype's action (`405` /
+`op_not_allowed`) and authorization: its `authMiddleware` decision under its
+own name, or its `api.public` without middleware. Every REST server also
+admits each subtype per request (`settleFamilyAdmission`): its rows are read
+through the base only when it is switched on for the request's tenant and, for
+a read, the caller may read the subtype itself (its `authMiddleware` decision
+under its own name, or its `api.public` without middleware). Only subtypes the
+server could serve are put to the exposure gate and middleware
+(`familyMembersInScope`: on its model list, with a read or row operation open
+on `api`), so a host needs no policy for a model it does not serve; a write to a
+subtype row checks the subtype's exposure too (`404` / `not_found`). Reads of
+an STI base under an `authMiddleware` vary by caller, so they are cached and
+validated like reads with permission-gated fields. The restriction narrows a
+caller's own `_meta_type` `in` filter to the types both name (none left serves
+nothing). The restriction also names the left-out members as
+`_meta_type not in` (a caller's own `not in` list joins it): the collection of
+a route model that is itself a subtype with subtypes of its own replaces any
+`_meta_type in` list with its subtree, and the exclusion keeps the two in
+force together (`src/__tests__/rest-sti-intermediate-route.test.ts`). A
+restricted point read resolves the segment as
+`collection.get()` does, so a slug still finds its row. An update, delete or
+sync write of a row whose own model is tenant-scoped, through a base that is
+not, runs in that model's tenant gate with the request's tenant
+(`runInRowTenantGate`), as a create already did. A sync item looks its row up
+under the same served-types restriction: a create naming a row of a subtype
+the route does not serve collides as `id_conflict`. A plain `new APIGenerator()` spans the whole registry,
+which may hold models the host never serves, so it does not refuse at
+construction. Tests: `src/__tests__/rest-model-identity.test.ts`.
+
+A create through an STI base selects a subtype with `createType` (or
+`_meta_type`). The base's surface decides whether the base accepts creates; the
+selected subtype's own surface decides too. Every transport calls
+`assertCreateTargetSurface(base, target, surface)` (`src/create-target.ts`)
+on what `ObjectRegistry.resolveCreateTarget()` returned: runtime REST and the
+emitted SvelteKit POST route with `'api'`, the in-process MCP generator and
+both emitted MCP servers with `'mcp'`, the CLI with `'cli'` (before it
+prompts). A selected subtype also authorizes the create itself: runtime REST
+runs its `authMiddleware` decision (or its `api.public`), the emitted route
+`requireCreateTargetAccess` (an authenticated principal and the family's
+`<collection>.create` unless the subtype is `public: true`), even when the
+base is public. A subtype that is abstract, has
+`api: false` / `mcp: false`, or an `include` list without `create` (or an
+`exclude` with it) on that surface is refused with `CreateTargetError`
+(`CREATE_TARGET_UNAVAILABLE`, a typed 400) before anything is written. The MCP
+create schema offers only subtypes `isCreateOpenOnSurface(name, 'mcp')`
+admits, so the offer and the execution agree. The assistant tool loop
+(`packages/chat`) checks the `api` surface, whose write policy and permission
+catalog its manifest tools follow, and offers only subtypes open on it; the
+CLI's `--createType` help and OpenAPI's `createType` enum list only subtypes
+open on their surface. `resolveCreateTarget()` and `getCreateTargets()`
+themselves do not read subtype surfaces (registry-owned). Tests:
+`src/__tests__/sti-create-target-surface.test.ts`,
+`src/__tests__/rest-sti-row-policy.test.ts`,
+`packages/cli/src/__tests__/cli-create-target-surface.test.ts`,
+`packages/chat/src/assistant-create-surface.test.ts`.
 
 The same web virtual module exports `webMcpToolDefinitions` (#2518), a
 canonical per-tool array selected independently of list materialization. Every

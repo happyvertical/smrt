@@ -240,14 +240,26 @@ interface SerializedRecord {
 }
 
 /**
- * Transient, non-persisted fields synchronized into junction links during
- * `save()`. They are attached dynamically from constructor options rather
- * than declared as ORM-managed fields, so callers narrow `this` to this
- * shape instead of reaching in untyped.
+ * Transient, non-persisted link ids synchronized into junction links during
+ * `save()`, held outside the instance so they never become columns or
+ * serialized properties. Read and written through the `referenceIds` /
+ * `assetIds` accessors of {@link Content}.
  */
 interface ContentTransientLinkIds {
   referenceIds?: string[];
   assetIds?: string[];
+}
+const pendingLinkIds = new WeakMap<object, ContentTransientLinkIds>();
+
+function setPendingLinkIds(
+  owner: object,
+  key: keyof ContentTransientLinkIds,
+  ids: string[] | undefined,
+): void {
+  const pending = pendingLinkIds.get(owner) ?? {};
+  if (Array.isArray(ids)) pending[key] = [...ids];
+  else delete pending[key];
+  pendingLinkIds.set(owner, pending);
 }
 
 type FactAuditState = {
@@ -904,13 +916,37 @@ export class Content
     this.state = options.state || 'active';
     this.metadata = options.metadata || {};
     this.thumbnailAssetId = options.thumbnailAssetId ?? null;
-    const transient = this as Content & ContentTransientLinkIds;
     if (Array.isArray(options.referenceIds)) {
-      transient.referenceIds = [...options.referenceIds];
+      this.referenceIds = options.referenceIds;
     }
     if (Array.isArray(options.assetIds)) {
-      transient.assetIds = [...options.assetIds];
+      this.assetIds = options.assetIds;
     }
+  }
+
+  /**
+   * Reference ids to synchronise into ContentReference links on the next
+   * save. Transient: not a column. An accessor pair, so an update body may
+   * set it (update input sets declared fields and settable accessors only).
+   */
+  get referenceIds(): string[] | undefined {
+    return pendingLinkIds.get(this)?.referenceIds;
+  }
+
+  set referenceIds(ids: string[] | undefined) {
+    setPendingLinkIds(this, 'referenceIds', ids);
+  }
+
+  /**
+   * Asset ids to synchronise into ContentAsset links on the next save.
+   * Transient, settable by an update body; see {@link referenceIds}.
+   */
+  get assetIds(): string[] | undefined {
+    return pendingLinkIds.get(this)?.assetIds;
+  }
+
+  set assetIds(ids: string[] | undefined) {
+    setPendingLinkIds(this, 'assetIds', ids);
   }
 
   /**
@@ -1776,8 +1812,7 @@ export class Content
   }
 
   private getPendingReferenceIds(): string[] | null {
-    const pendingReferenceIds = (this as Content & ContentTransientLinkIds)
-      .referenceIds;
+    const pendingReferenceIds = this.referenceIds;
 
     if (!Array.isArray(pendingReferenceIds)) {
       return null;
@@ -1796,8 +1831,7 @@ export class Content
   }
 
   private getPendingAssetIds(): string[] | null {
-    const pendingAssetIds = (this as Content & ContentTransientLinkIds)
-      .assetIds;
+    const pendingAssetIds = this.assetIds;
 
     if (!Array.isArray(pendingAssetIds)) {
       return null;

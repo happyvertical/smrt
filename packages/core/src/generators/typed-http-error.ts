@@ -13,6 +13,29 @@ export interface TypedHttpFailure {
   status: number;
 }
 
+const TENANT_ISOLATION_CODE = 'TENANT_ISOLATION_VIOLATION';
+const TENANT_ISOLATION_REFUSAL: TypedHttpFailure = Object.freeze({
+  code: 'permission_denied',
+  message: 'Permission denied.',
+  ok: false,
+  status: 403,
+});
+
+function hasPublicMessage(details: { publicMessage?: unknown }): boolean {
+  return (
+    typeof details.publicMessage === 'string' &&
+    details.publicMessage.length > 0
+  );
+}
+
+const TENANT_CONTEXT_CODE = 'TENANT_CONTEXT_REQUIRED';
+const TENANT_CONTEXT_REFUSAL: TypedHttpFailure = Object.freeze({
+  code: TENANT_CONTEXT_CODE,
+  message: 'Tenant context required.',
+  ok: false,
+  status: 403,
+});
+
 export function normalizeTypedHttpError(
   error: unknown,
 ): TypedHttpFailure | undefined {
@@ -22,6 +45,23 @@ export function normalizeTypedHttpError(
     publicMessage?: unknown;
     status?: unknown;
   };
+  // A row another tenant owns (a save-time ownership check, a filter outside
+  // the caller's tenant, a caller whose tenant differs from the active one)
+  // is refused like any other permission denial: the answer says nothing
+  // about the other tenant or its rows. An isolation error that states its
+  // own public message was written for the caller and keeps it.
+  if (details.code === TENANT_ISOLATION_CODE && !hasPublicMessage(details)) {
+    return TENANT_ISOLATION_REFUSAL;
+  }
+  // A tenant-scoped operation reached with no tenant is a refusal, not a
+  // server fault.
+  if (
+    details.code === TENANT_CONTEXT_CODE &&
+    details.status === undefined &&
+    !hasPublicMessage(details)
+  ) {
+    return TENANT_CONTEXT_REFUSAL;
+  }
   const status = details.status;
   if (
     typeof status !== 'number' ||

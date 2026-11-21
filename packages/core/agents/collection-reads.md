@@ -94,9 +94,51 @@ ownership keys are the field the tenancy configuration names
 (`tenantScoped: { field }`, default `tenantId`) and every runtime ownership
 column (`ObjectRegistry.getRuntimeOwnershipColumns`). On a model owned through
 another field, a column named `tenantId` is ordinary data and is never the
-scope. Both answer a refused where clause
-(`INVALID_WHERE_CLAUSE`) with its 400. Generated
+scope. Both answer a refused query (any typed 4xx from the route or the
+collection: `INVALID_WHERE_CLAUSE`, `QUERY_FIELD_NOT_ALLOWED`,
+`INVALID_ORDER_BY*`) with its status. Generated
 list/get routes use the same body-hash rule and strip computed label writes.
+
+### Request filters: fields the caller may read
+
+`collection.list({ where })` is the framework's own read primitive: server
+code filters on any column, including `readPermission` fields and the
+`_meta_data` column, and the collection refuses only `sensitive` fields (a
+plain `Error`). A request is different. Before a caller's filter or ordering
+reaches the collection, every request-facing list and count calls
+`assertQueryAccess(model, { where, orderBy }, { permissions })`
+(`src/query-access.ts`) with the options it projects rows with:
+
+| Key names | Answer |
+|---|---|
+| A `readPermission` field | Allowed when the caller's permissions include the slug |
+| A `sensitive` field | Refused for every caller |
+| The whole `_meta_data` / `meta_data` column, as a filter or a sort key | Refused for every caller; `_meta_type` stays |
+| Nothing the model declares | Refused |
+| A `where` that is not a record or the DNF array form | `INVALID_WHERE_CLAUSE` |
+
+Keys are read by resolved column (`resolveWhereKey`), DNF branches are walked,
+and for a shared table the policies of every family member apply. A refused
+filter key is `QueryFieldError`: code `QUERY_FIELD_NOT_ALLOWED`, a typed 400
+whose text (`Invalid filter field: '<key>'.`) is the same for an unknown and
+an unreadable field. A refused sort term has one answer too: an ordering by
+the `_meta_data` column, a `sensitive` field, a `readPermission` field (the
+collection refuses those for every caller, [query-bounds.md](query-bounds.md))
+or a field the model does not have is `QueryOrderByError`, code
+`INVALID_ORDER_BY_UNKNOWN_FIELD`, text `Invalid orderBy field: '<field>'.`,
+on every transport, so the answer never says which of these it was. An
+ordering that is not a string or a list of strings is refused
+(`INVALID_ORDER_BY`): what is checked is exactly what runs.
+
+Where each transport takes the caller's permissions, which is where it takes
+them for projection: runtime REST `APIContext.permissions`; in-process MCP
+`MCPContext.permissions`; emitted SvelteKit routes `locals.permissions` /
+`permissionSet` / `smrtPermissions`; emitted MCP servers the
+`SMRT_MCP_PERMISSIONS` environment list (they have no per-call principal);
+the assistant tool loop `run.permissions`. The CLI `list --where` is an
+operator surface that prints unredacted rows and does not apply the check.
+A new request-facing list must call `assertQueryAccess` too. Tests:
+`src/__tests__/request-query-fields.test.ts` executes every transport.
 
 ### B1b test design
 

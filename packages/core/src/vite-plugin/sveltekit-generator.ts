@@ -18,7 +18,6 @@ import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 import type { DomainKnowledgeConfig } from '@happyvertical/smrt-types';
 import { generateActivationRegistration } from '../activation/generate.js';
 import { publishArtifactFiles } from '../consumer-plugin/artifact-publication.js';
-import { generatedExpression } from '../generated-fields.js';
 import { generateConditionalGetRouteHelper } from '../generators/conditional-get.js';
 import {
   type ApiMethodExposure,
@@ -29,6 +28,7 @@ import {
   isCrudOperation,
   isFrameworkLifecycleMethod,
   queryStringDecoderFor,
+  readActionReceivesTenantScope,
   resolveApiMethodExposure,
   resolveCustomActionMetadata,
   resolveCustomActionNames,
@@ -48,7 +48,6 @@ import {
 } from '../query-bounds.js';
 import { isFrameworkBaseClass } from '../registry/framework-base-classes.js';
 import type {
-  ApiConfig,
   ApiHttpMethod,
   ApiSerializerReference,
 } from '../registry/types.js';
@@ -69,6 +68,18 @@ import {
   reservesResourcesRoute,
 } from './resources-route.js';
 import { AUTO_GENERATED_ROUTE_HEADER } from './route-header.js';
+import {
+  allowsSuperAdminBypass,
+  collectRouteReadonlyFields,
+  generateTenantContextHelper,
+  getApiConfigObject,
+  getApiPublicAccess,
+  getApiWritableAllowlist,
+  isTenantScoped,
+  manifestOwnershipProperties,
+  resolvePermissionCollection,
+  usesPrincipalContext,
+} from './route-policy.js';
 import {
   assertSvelteKitConfigModuleNotReserved,
   generateCollectionAccessImports,
@@ -284,14 +295,6 @@ function toSingleQuotedStringLiteral(value: string): string {
   return `'${jsonContent}'`;
 }
 
-function getApiConfigObject(apiConfig: unknown): ApiConfig | null {
-  if (!apiConfig || typeof apiConfig !== 'object') {
-    return null;
-  }
-
-  return apiConfig as ApiConfig;
-}
-
 function isSameSerializerReference(
   left?: ApiSerializerReference,
   right?: ApiSerializerReference,
@@ -441,35 +444,6 @@ function findObjectDefByRegistryKey(
 }
 
 /**
- * Collect property names marked `@field({ readonly: true })` for an object, so
- * the generated write surfaces can strip them from request bodies (#1540, 2b).
- */
-function collectReadonlyFieldNames(objectDef: SmartObjectDefinition): string[] {
-  const fields = objectDef.fields || {};
-  const names: string[] = [];
-  for (const [name, def] of Object.entries(fields)) {
-    const meta = (def as { _meta?: Record<string, unknown> })._meta;
-    if (
-      (def as { readonly?: boolean }).readonly === true ||
-      meta?.readonly === true ||
-      generatedExpression(def) !== undefined
-    ) {
-      names.push(name);
-    }
-  }
-  return names;
-}
-
-/**
- * Resolve the optional `@smrt({ api: { writable: [...] } })` allowlist. When
- * present, only these fields may be set from a create/update request body.
- */
-function getApiWritableAllowlist(apiConfig: unknown): string[] | null {
-  const config = getApiConfigObject(apiConfig);
-  return Array.isArray(config?.writable) ? config.writable : null;
-}
-
-/**
  * Emit the mass-assignment guard helper injected into generated route files
  * (#1540, 2b). It strips framework/server-managed (`id`, `tenantId`,
  * timestamps, `_`-prefixed) and `@field({ readonly: true })` fields from
@@ -486,10 +460,8 @@ function generateWritablePolicyHelper(
   objectDef: SmartObjectDefinition,
   dynamicTarget = false,
 ): string {
-  const readonly = [
-    ...collectReadonlyFieldNames(objectDef),
-    ...(objectDef.displayLabelProjection ? ['displayLabel'] : []),
-  ];
+  // The same read-only set the generated sync-apply route uses.
+  const readonly = collectRouteReadonlyFields(objectDef);
   const writable = getApiWritableAllowlist(objectDef.decoratorConfig?.api);
 
   return `
@@ -532,21 +504,6 @@ ${
   return result;
 }
 `;
-}
-
-/**
- * Resolve the `@smrt({ api: { public } })` posture (fail-closed default).
- * - `false`/unset → all routes require an authenticated principal.
- * - `true` → all routes are public.
- * - `'read'` → reads are public, mutations still require auth.
- */
-function getApiPublicAccess(apiConfig: unknown): boolean | 'read' {
-  const config = getApiConfigObject(apiConfig);
-  const value = config?.public;
-  if (value === true || value === 'read') {
-    return value;
-  }
-  return false;
 }
 
 function toFieldColumnAlias(fieldName: string): string {
@@ -659,23 +616,6 @@ function collectReadPermissionFields(
 }
 
 /**
- * The collection segment of generated operation permission slugs. Mirrors the
- * smrt-users `PermissionCatalogService` derivation: an explicit
- * `@smrt({ collection })` wins, then the manifest collection. A hosted STI
- * subclass moved to its own route collection keeps the STI base's slugs through
- * `permissionCollection` (#3770).
- */
-function resolvePermissionCollection(objectDef: SmartObjectDefinition): string {
-  if (objectDef.permissionCollection) return objectDef.permissionCollection;
-  const configured = (
-    objectDef.decoratorConfig as { collection?: unknown } | undefined
-  )?.collection;
-  return typeof configured === 'string' && configured.length > 0
-    ? configured
-    : objectDef.collection;
-}
-
-/**
  * Emit the fail-closed authorization guard injected into generated route files
  * (#1540, 2c). Every generated CRUD/action handler calls `requireRouteAuth`,
  * which throws 401 unless the route is `public` or `locals` carries an
@@ -694,7 +634,7 @@ function generateAuthGuardHelper(
   return `
 // Fail-closed authorization (#1540): generated routes require an authenticated
 // principal on \`locals\` unless explicitly marked \`@smrt({ api: { public } })\`.
-import { isRuntimeModelEnabled } from '@happyvertical/smrt-core';
+import { isRuntimeModelEnabled, publicSerializerOf, toPublicJSONValue } from '@happyvertical/smrt-core';
 const RUNTIME_MODEL = ${JSON.stringify({
     qualifiedName:
       permissionObjectDef.qualifiedName ??
@@ -738,18 +678,27 @@ function hasAuthenticatedPrincipal(locals: unknown): boolean {
   );
 }
 
+// The tenant the request acts for, from the same \`locals\` sources the tenant
+// helper enters (\`tenantId\`, \`user\`, \`session\`, \`tenantContext\`), else
+// the tenant context the host already entered for the request.
+function requestTenantOf(locals: unknown): string | undefined {
+  const l = locals && typeof locals === 'object' ? locals as Record<string, unknown> : {};
+  const record = (value: unknown) => value && typeof value === 'object' ? value as Record<string, unknown> : {};
+  const tenant = l.tenantId ?? record(l.user).tenantId ?? record(l.session).tenantId ?? record(l.tenantContext).tenantId;
+  if (typeof tenant === 'string' && tenant) return tenant;
+  const active = (getCurrentTenant() as { tenantId?: unknown } | undefined)?.tenantId;
+  return typeof active === 'string' && active ? active : undefined;
+}
+
+// Authentication first, then the runtime exposure gate for the request's
+// tenant: a switched-off model answers 404 only to an admitted caller.
 function requireRouteAuth(locals: unknown, mutating: boolean): void {
-  const context = locals && typeof locals === 'object' ? locals as Record<string, unknown> : {};
-  const tenantContext = context.tenantContext && typeof context.tenantContext === 'object'
-    ? context.tenantContext as Record<string, unknown> : {};
-  const tenantId = context.tenantId ?? tenantContext.tenantId;
-  if (!isRuntimeModelEnabled(RUNTIME_MODEL, { surface: 'rest', locals, tenantId: typeof tenantId === 'string' ? tenantId : undefined })) {
-    throw error(404, 'Not found');
-  }
-  if (PUBLIC_ACCESS === true) return;
-  if (PUBLIC_ACCESS === 'read' && !mutating) return;
-  if (!hasAuthenticatedPrincipal(locals)) {
+  const open = PUBLIC_ACCESS === true || (PUBLIC_ACCESS === 'read' && !mutating);
+  if (!open && !hasAuthenticatedPrincipal(locals)) {
     throw error(401, 'Authentication required');
+  }
+  if (!isRuntimeModelEnabled(RUNTIME_MODEL, { surface: 'rest', locals, tenantId: requestTenantOf(locals) })) {
+    throw error(404, 'Not found');
   }
 }
 
@@ -808,13 +757,10 @@ function applyReadPermissionRedaction(
 ): unknown {
   if (value === null || typeof value !== 'object') return value;
   if (seen.has(value)) return null;
-  if (hasPublicJson(value)) {
+  const serialize = publicSerializerOf(value);
+  if (serialize) {
     seen.add(value);
-    return applyReadPermissionRedaction(
-      value.toPublicJSON(options),
-      options,
-      seen,
-    );
+    return applyReadPermissionRedaction(serialize(options), options, seen);
   }
   if (Array.isArray(value)) {
     seen.add(value);
@@ -846,18 +792,8 @@ function applyReadPermissionRedaction(
 // custom method may return a SmrtObject (or one nested in an array/plain
 // object), so recurse and route each through toPublicJSON() rather than letting
 // JSON.stringify call toJSON(). Non-plain instances (Date, etc.) and primitives
-// pass through; a cycle guard prevents infinite loops.
-interface PublicJsonSource {
-  toPublicJSON(options?: PublicJsonOptions): unknown;
-}
-
-function hasPublicJson(value: object): value is PublicJsonSource {
-  return (
-    'toPublicJSON' in value &&
-    typeof (value as { toPublicJSON?: unknown }).toPublicJSON === 'function'
-  );
-}
-
+// pass through; a cycle guard prevents infinite loops. \`publicSerializerOf\`
+// returns the serialiser a value's class provides, never an instance property.
 function readJsonRecord(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
   return value as Record<string, unknown>;
@@ -870,9 +806,10 @@ function toPublicResult(
 ): unknown {
   if (value === null || typeof value !== 'object') return value;
   if (seen.has(value)) return null;
-  if (hasPublicJson(value)) {
+  const serialize = publicSerializerOf(value);
+  if (serialize) {
     seen.add(value);
-    return toPublicResult(value.toPublicJSON(options), options, seen);
+    return toPublicResult(serialize(options), options, seen);
   }
   if (Array.isArray(value)) {
     seen.add(value);
@@ -890,15 +827,6 @@ function toPublicResult(
   return out;
 }
 `;
-}
-
-/**
- * Whether an object is `@TenantScoped` (carries a `tenantScoped` config in its
- * `@smrt()`/`@TenantScoped()` decorator). Drives tenant-context establishment in
- * generated routes (#1540, facet 2).
- */
-function isTenantScoped(objectDef: SmartObjectDefinition): boolean {
-  return !!objectDef.decoratorConfig?.tenantScoped;
 }
 
 /**
@@ -921,16 +849,6 @@ function readScopeModelName(
       ? `${objectDef.packageName}:${objectDef.className}`
       : objectDef.className || fallback)
   );
-}
-
-/**
- * Whether generated routes must publish the authenticated principal into the
- * tenancy ALS without making the model itself tenant-scoped. This is an
- * explicit model-level opt-in: body data is never an identity source.
- */
-function usesPrincipalContext(objectDef: SmartObjectDefinition): boolean {
-  const api = getApiConfigObject(objectDef.decoratorConfig?.api);
-  return api?.principalContext === true;
 }
 
 function needsRouteTenantContext(objectDef: SmartObjectDefinition): boolean {
@@ -1022,96 +940,6 @@ function resolveDefaultListOrderBy(
 }
 
 /**
- * Emit the tenant-context establishment helper for `@TenantScoped` objects
- * (#1540 facet 2; #1782). Generated handlers call
- * `establishTenantContext(locals)` after the auth guard so every query runs
- * inside the tenant context derived from the authenticated principal — engaging
- * the `@TenantScoped` interceptors that auto-filter by tenant.
- *
- * `establishTenantContext` reads the canonical `locals.tenantId` set by the
- * smrt-users auth hook (with `user`/`session` fallbacks). An upstream context
- * must identify the same tenant/user; conflicting authority fails closed.
- *
- * When no context could be established, an `optional`-mode read would otherwise
- * fall through the interceptor UNFILTERED and return rows from ALL tenants (the
- * interceptor only hard-fails `required` mode) — the #1782 leak. So every
- * generated read also calls core's `resolveAnonymousTenantReadScope()` (or,
- * for custom GET actions, `scopeTenantReadOptions()`),
- * resolved at request time from the live registry, which restricts reads to
- * rows without an owner when tenancy is on and no tenant is active. That call
- * is emitted for every model, since tenancy can be registered at runtime; it
- * resolves to nothing for a model that is not tenant-scoped. This helper is
- * imported only for tenant-scoped routes, which already depend on
- * `@happyvertical/smrt-tenancy`; `includeSuperAdminBypass` adds
- * `isSuperAdminBypass` for routes whose action options carry the scope.
- */
-function generateTenantContextHelper(
-  requirePrincipal: boolean,
-  fromCore: boolean,
-): string {
-  const principalGuard = requirePrincipal
-    ? `  if (
-    typeof tenantId !== 'string' || !tenantId ||
-    typeof userId !== 'string' || !userId ||
-    !permissions
-  ) {
-    throw error(403, 'Authenticated principal context is incomplete');
-  }
-`
-    : '';
-  const contextArgument = requirePrincipal
-    ? '{ tenantId, userId, permissions }'
-    : '{ tenantId }';
-  const activeUserMismatch = requirePrincipal
-    ? 'active.userId !== userId'
-    : "typeof userId === 'string' && userId && active.userId && active.userId !== userId";
-  // A route whose manifest declares tenancy (or principal context) imports the
-  // tenant context from smrt-tenancy. Any other route reaches it through
-  // core's request hooks, which smrt-tenancy installs when tenancy is enabled,
-  // and enters it only when the model is tenant-scoped at request time.
-  const tenancyImport = fromCore
-    ? "import { enterRequestTenantContext as enterTenantContext, getRequestTenantContext as getCurrentTenant, isTenantScopedModel } from '@happyvertical/smrt-core';"
-    : "import { enterTenantContext, getCurrentTenant } from '@happyvertical/smrt-tenancy';";
-  return `
-${tenancyImport}
-
-function establishTenantContext(locals: unknown): void {
-  if (!locals || typeof locals !== 'object') return;
-  const l = locals as Record<string, unknown>;
-  const user = l.user as Record<string, unknown> | undefined;
-  const session = l.session as Record<string, unknown> | undefined;
-  const tenantContext = l.tenantContext as Record<string, unknown> | undefined;
-  const tenantId = l.tenantId ?? user?.tenantId ?? session?.tenantId ?? tenantContext?.tenantId;
-  const userId = l.userId ?? user?.id ?? user?.userId ?? session?.userId ?? tenantContext?.userId;
-  const rawPermissions =
-    l.permissions ?? l.permissionSet ?? l.smrtPermissions ?? tenantContext?.permissions;
-  const permissions =
-    rawPermissions instanceof Set && [...rawPermissions].every((value) => typeof value === 'string')
-      ? rawPermissions
-      : Array.isArray(rawPermissions) && rawPermissions.every((value) => typeof value === 'string')
-        ? new Set(rawPermissions)
-        : undefined;
-${principalGuard}
-  const active = getCurrentTenant();
-  if (active) {
-    if (
-      (typeof tenantId === 'string' && tenantId && active.tenantId !== tenantId) ||
-      (${activeUserMismatch})
-    ) {
-      throw error(403, 'Tenant context does not match authenticated principal');
-    }
-${requirePrincipal ? '    enterTenantContext({ ...active, tenantId, userId, permissions });\n' : ''}    return;
-  }
-  if (typeof tenantId === 'string' && tenantId) {
-    enterTenantContext(
-      ${contextArgument},
-    );
-  }
-}
-
-`;
-}
-
 /**
  * The per-handler guard preamble: the fail-closed auth check (#1540 2c) plus, for
  * tenant-scoped objects, tenant-context establishment (#1540 facet 2).
@@ -1138,6 +966,11 @@ function routeGuardPreamble(
     lines.push(
       `  if (isTenantScopedModel(${JSON.stringify(readScopeModelName(objectDef, objectDef.className))})) establishTenantContext(locals);`,
     );
+  }
+  // A write to a tenant-scoped model needs a tenant (or an explicitly
+  // cross-tenant principal), whatever the model's tenancy mode.
+  if (mutating && isTenantScoped(objectDef)) {
+    lines.push('  requireTenantWriteContext(locals);');
   }
   return lines.join('\n');
 }
@@ -1417,7 +1250,11 @@ function buildActionInvocationExpression(
   ].join('\n');
 }
 
-/** Whether a GET action receives the tenant read scope in its options. */
+/**
+ * Whether a GET action's options are built through `scopeTenantReadOptions`
+ * (every GET action that declares parameters). Whether the scope then reaches
+ * the method is `readActionReceivesTenantScope`'s question.
+ */
 function receivesTenantReadOptions(
   actionDef: MethodDefinition,
   routeConfig: ResolvedApiActionRouteConfig,
@@ -3449,20 +3286,80 @@ function smrtRouteErrorResponse(cause: unknown, request: Request) {
 }
 
 /**
- * Emit the list route's answer to a where clause the collection refuses: two
- * query filters that resolve to the same column and operator. That is the
- * caller's error, so it is answered with the error's own 4xx status. Every
- * other failure is rethrown unchanged.
+ * Emit `requireCreateTargetAccess(locals, model)`: an STI subtype selected
+ * through its base authorizes the create itself. A subtype that is not
+ * \`api.public: true\` needs an authenticated principal and the family's
+ * \`<collection>.create\` permission even when the base is public.
  */
-function generateListWhereErrorHelper(): string {
+function generateCreateTargetAccessHelper(): string {
   return `
-// A where clause the collection refuses is a client error, not a server fault.
-function rejectListWhere(cause: unknown): never {
+function requireCreateTargetAccess(locals: unknown, model: string): void {
+  const api = ObjectRegistry.getConfig(model).api;
+  const publicAccess = api && typeof api === 'object' ? (api as { public?: unknown }).public : undefined;
+  if (publicAccess === true) return;
+  if (!hasAuthenticatedPrincipal(locals)) throw error(401, 'Authentication required');
+  const l = readJsonRecord(locals);
+  const tenantContext = readJsonRecord(l.tenantContext);
+  if (tenantContext.superAdminBypass === true) return;
+  const permission = \`\${PERMISSION_COLLECTION}.create\`;
+  const granted =
+    hasGrantedPermission(l.permissions, permission) ||
+    hasGrantedPermission(l.permissionSet, permission) ||
+    hasGrantedPermission(l.smrtPermissions, permission) ||
+    hasGrantedPermission(tenantContext.permissions, permission);
+  if (!granted) throw error(403, 'Permission denied');
+}
+`;
+}
+
+/**
+ * Emit `rejectRouteRead(cause)`: a lookup the collection or the tenancy
+ * interceptor refuses (a typed 4xx, a tenant isolation or missing-tenant
+ * refusal) answers with its status; any other failure is rethrown.
+ */
+function generateRouteReadErrorHelper(): string {
+  return `
+function rejectRouteRead(cause: unknown): never {
   const failure = normalizeTypedHttpError(cause);
-  if (failure?.code === 'INVALID_WHERE_CLAUSE') {
-    throw error(failure.status, failure.message);
-  }
+  if (failure) throw error(failure.status, failure.message);
   throw cause;
+}
+`;
+}
+
+/**
+ * Emit the list route's query helpers.
+ *
+ * `listQuery` reads the caller's filter and ordering and refuses any that
+ * names a field the caller may not read, with the same `assertQueryAccess`
+ * rule and the same projection options the runtime REST route uses.
+ * `rejectListQuery` answers a query the route or the collection refuses (a
+ * typed 4xx) with that status. Every other failure is rethrown unchanged.
+ */
+function generateListQueryHelper(className: string): string {
+  return `
+// A query the route or the collection refuses is a client error, not a
+// server fault.
+function rejectListQuery(cause: unknown): never {
+  const failure = normalizeTypedHttpError(cause);
+  if (failure) throw error(failure.status, failure.message);
+  throw cause;
+}
+
+// The caller's filter and ordering. Both may name only fields this caller
+// may read: the permissions the rows are projected with.
+function listQuery(
+  url: URL,
+  options: PublicJsonOptions,
+): { where: Record<string, string | string[]>; orderBy: string | null } {
+  const where = parseRestListWhere(url.searchParams);
+  const orderBy = url.searchParams.get('orderBy');
+  try {
+    assertQueryAccess(${JSON.stringify(className)}, { where, orderBy }, options);
+  } catch (cause) {
+    rejectListQuery(cause);
+  }
+  return { where, orderBy };
 }
 `;
 }
@@ -3517,12 +3414,12 @@ function generateCollectionRouteTemplate(
 // DO NOT EDIT - changes will be overwritten
 
 import { error${hasPost ? ', json' : ''} } from '@sveltejs/kit';
-${hasGet ? "import { parseRestListWhere } from '@happyvertical/smrt-core';\n" : ''}${hasGet ? "import { applyWhereScope, resolveAnonymousTenantReadScope } from '@happyvertical/smrt-core';\n" : ''}${hasGet && !hasPost ? "import { normalizeTypedHttpError } from '@happyvertical/smrt-core';\n" : ''}
-${serializerImports ? `${serializerImports}\n` : ''}${hasPost ? "import { ObjectRegistry, normalizeTypedHttpError, reportUnexpectedHttpError } from '@happyvertical/smrt-core';\n" : ''}
+${hasGet ? "import { assertQueryAccess, parseRestListWhere } from '@happyvertical/smrt-core';\n" : ''}${hasGet ? "import { applyWhereScope, resolveAnonymousTenantReadScope } from '@happyvertical/smrt-core';\n" : ''}${hasGet && !hasPost ? "import { normalizeTypedHttpError } from '@happyvertical/smrt-core';\n" : ''}
+${serializerImports ? `${serializerImports}\n` : ''}${hasPost ? "import { assertCreateInput, assertCreateTargetSurface, ObjectRegistry, normalizeTypedHttpError, reportUnexpectedHttpError } from '@happyvertical/smrt-core';\n" : ''}
 ${modelType.importStatement ? `${modelType.importStatement}\n` : ''}import type { RequestHandler } from './$types';
 ${collectionAccessImports}
 // Note: ${className} is auto-registered by the Vite plugin scanner
-${generateAuthGuardHelper(objectDef, semanticManifest)}${generateTenantContextHelper(usesPrincipalContext(objectDef), !needsRouteTenantContext(objectDef))}${hasPost ? generateWritablePolicyHelper(className, objectDef, true) : ''}${hasPost ? generateTypedRouteErrorHelper() : ''}${hasGet ? generateListBoundsHelper(objectDef) : ''}${hasGet ? generateListWhereErrorHelper() : ''}${hasGet ? generateConditionalGetRouteHelper(objectDef.decoratorConfig?.api, { runtimeExposure: true, tenantScoped: isTenantScoped(objectDef), permissionScoped: listUsesPermissionScopedBody, modelName: className, readScopeModel: readScopeModelName(objectDef, className), useBodyHash: listUsesBodyHash, manifestHash: webManifestHash }) : ''}`;
+${generateAuthGuardHelper(objectDef, semanticManifest)}${generateTenantContextHelper(usesPrincipalContext(objectDef), isTenantScoped(objectDef), !needsRouteTenantContext(objectDef), allowsSuperAdminBypass(objectDef))}${hasPost ? generateWritablePolicyHelper(className, objectDef, true) : ''}${hasPost ? generateTypedRouteErrorHelper() : ''}${hasPost ? generateCreateTargetAccessHelper() : ''}${hasGet ? generateListBoundsHelper(objectDef) : ''}${hasGet ? generateListQueryHelper(className) : ''}${hasGet ? generateConditionalGetRouteHelper(objectDef.decoratorConfig?.api, { runtimeExposure: true, tenantScoped: isTenantScoped(objectDef), permissionScoped: listUsesPermissionScopedBody, modelName: className, readScopeModel: readScopeModelName(objectDef, className), useBodyHash: listUsesBodyHash, manifestHash: webManifestHash }) : ''}`;
 
   // #1782: tenant-scoped reads fail closed to global (NULL-tenant) rows when no
   // tenant context is active (public/anonymous read). The scope is resolved at
@@ -3534,11 +3431,13 @@ ${generateAuthGuardHelper(objectDef, semanticManifest)}${generateTenantContextHe
   // #2367: every generated page is ordered. `LIST_ORDER_BY` is emitted as a
   // module constant so the ordering is visible in the generated file rather
   // than implied by the database's row order.
-  const listWhere = `applyWhereScope(parseRestListWhere(url.searchParams), resolveAnonymousTenantReadScope(${JSON.stringify(readScopeModelName(objectDef, className))})) ?? {}`;
+  // `query` is the caller's filter and ordering, already checked against the
+  // fields this caller may read (`listQuery`), before any ETag or table work.
+  const listWhere = `applyWhereScope(query.where, resolveAnonymousTenantReadScope(${JSON.stringify(readScopeModelName(objectDef, className))})) ?? {}`;
   const listAndCount = `  const where = ${listWhere};
-  const orderBy = url.searchParams.get('orderBy') || LIST_ORDER_BY;
-  const items = await collection.list({ limit, offset, orderBy, where${objectDef.displayLabelProjection ? ', displayLabel: true' : ''} }).catch(rejectListWhere);
-  const count = await collection.count({ where }).catch(rejectListWhere);`;
+  const orderBy = query.orderBy || LIST_ORDER_BY;
+  const items = await collection.list({ limit, offset, orderBy, where${objectDef.displayLabelProjection ? ', displayLabel: true' : ''} }).catch(rejectListQuery);
+  const count = await collection.count({ where }).catch(rejectListQuery);`;
 
   const getHandler = hasGet
     ? `
@@ -3547,6 +3446,7 @@ export const GET: RequestHandler = async ({ locals, url, request }) => {
 ${routeGuardPreamble(objectDef, false)}
   const publicJsonOptions = getPublicJsonOptions(locals);
   const { limit, offset } = listBounds(url);
+  const query = listQuery(url, publicJsonOptions);
 
 ${generateCollectionLoad(className, { typeName: modelType.typeName })}
 ${
@@ -3565,13 +3465,13 @@ ${
     : listUsesPermissionScopedBody
       ? `${listAndCount}
   // Field read permissions make the body vary by caller permissions → v1 body-hash ETag (#1565).
-  const items_public = items.map((item) => item.toPublicJSON(publicJsonOptions));
+  const items_public = items.map((item) => toPublicJSONValue(item, publicJsonOptions));
   return conditionalJson(request, { items: items_public, count, limit, offset });`
       : `  // ETag v2 (#1765): the table-version ETag is checked first; on a concrete
   // If-None-Match the list query below never runs (zero-query 304).
   return conditionalVersionedRead(request, collection.db, collection.tableName, async () => {
 ${listAndCount}
-    const items_public = items.map((item) => item.toPublicJSON(publicJsonOptions));
+    const items_public = items.map((item) => toPublicJSONValue(item, publicJsonOptions));
     return { items: items_public, count, limit, offset };
   });`
 }
@@ -3587,12 +3487,17 @@ ${routeGuardPreamble(objectDef, true, 'create')}
   const publicJsonOptions = getPublicJsonOptions(locals);
   const body: unknown = await request.json();
   try {
-    const scope = locals as { tenantId?: string; tenantContext?: { tenantId?: string } };
     const target = ObjectRegistry.resolveCreateTarget('${className}', body, {
-      surface: 'rest', tenantId: scope.tenantId ?? scope.tenantContext?.tenantId, locals, request,
+      surface: 'rest', tenantId: requestTenantOf(locals), locals, request,
     });
+    // A subtype whose own surface closes create is not a target here, and
+    // a subtype authorizes its own create as well as the base.
+    assertCreateTargetSurface('${className}', target, 'api');
+    if (target.collectionName !== '${className}') requireCreateTargetAccess(locals, target.name);
     const data = applyWritablePolicy(target.data, target.collectionName === '${className}' ? undefined : target.name);
     const collection = await getCollection${modelType.typeName ? `<${modelType.typeName}>` : ''}(target.collectionName);
+    // Create input names declared fields and settable accessors only.
+    assertCreateInput(target.collectionName, data, collection);
     const item = await collection.create(data);
 ${
   serializers.itemSerializerName
@@ -3604,7 +3509,7 @@ ${
       { status: 201 },
     );`
     : `
-    return json(item.toPublicJSON(publicJsonOptions), { status: 201 });`
+    return json(toPublicJSONValue(item, publicJsonOptions), { status: 201 });`
 }
   } catch (cause) {
     return smrtRouteErrorResponse(cause, request);
@@ -3718,10 +3623,10 @@ function generateItemRouteTemplate(
 // DO NOT EDIT - changes will be overwritten
 
 import { error${hasPut || hasDelete ? ', json' : ''} } from '@sveltejs/kit';
-${serializerImports ? `${serializerImports}\n` : ''}${hasPut || hasDelete ? "import { normalizeTypedHttpError, reportUnexpectedHttpError } from '@happyvertical/smrt-core';\n" : ''}${hasPut ? "import { ObjectRegistry } from '@happyvertical/smrt-core';\n" : ''}${hasGet ? "import { resolveAnonymousTenantReadScope } from '@happyvertical/smrt-core';\n" : ''}
+${serializerImports ? `${serializerImports}\n` : ''}${hasGet || hasPut || hasDelete ? "import { normalizeTypedHttpError, reportUnexpectedHttpError } from '@happyvertical/smrt-core';\n" : ''}${hasPut ? "import { applyUpdateInput, ObjectRegistry } from '@happyvertical/smrt-core';\n" : ''}${hasGet ? "import { resolveAnonymousTenantReadScope } from '@happyvertical/smrt-core';\n" : ''}
 ${modelType.importStatement ? `${modelType.importStatement}\n` : ''}import type { RequestHandler } from './$types';
 ${collectionAccessImports}
-${generateAuthGuardHelper(objectDef, semanticManifest)}${generateTenantContextHelper(usesPrincipalContext(objectDef), !needsRouteTenantContext(objectDef))}${hasPut ? generateWritablePolicyHelper(className, objectDef) : ''}${hasPut || hasDelete ? generateTypedRouteErrorHelper() : ''}${hasGet ? generateConditionalGetRouteHelper(objectDef.decoratorConfig?.api, { runtimeExposure: true, tenantScoped: isTenantScoped(objectDef), permissionScoped: getUsesPermissionScopedBody, modelName: className, readScopeModel: readScopeModelName(objectDef, className), useBodyHash: getUsesBodyHash, manifestHash: webManifestHash }) : ''}`;
+${generateAuthGuardHelper(objectDef, semanticManifest)}${generateTenantContextHelper(usesPrincipalContext(objectDef), isTenantScoped(objectDef), !needsRouteTenantContext(objectDef), allowsSuperAdminBypass(objectDef))}${hasPut ? generateWritablePolicyHelper(className, objectDef) : ''}${hasPut || hasDelete ? generateTypedRouteErrorHelper() : ''}${hasGet || hasPut || hasDelete ? generateRouteReadErrorHelper() : ''}${hasGet ? generateConditionalGetRouteHelper(objectDef.decoratorConfig?.api, { runtimeExposure: true, tenantScoped: isTenantScoped(objectDef), permissionScoped: getUsesPermissionScopedBody, modelName: className, readScopeModel: readScopeModelName(objectDef, className), useBodyHash: getUsesBodyHash, manifestHash: webManifestHash }) : ''}`;
 
   // #1782: a tenant-scoped single read fails closed to global (NULL-tenant)
   // rows when no tenant context is active, so a public/anonymous GET /:id can't
@@ -3732,7 +3637,7 @@ ${generateAuthGuardHelper(objectDef, semanticManifest)}${generateTenantContextHe
   const getForRead = `  const readScope = resolveAnonymousTenantReadScope(${JSON.stringify(readScopeModelName(objectDef, className))});
   const item = await collection.get(
     readScope ? { id: params.id, ...readScope } : params.id,${objectDef.displayLabelProjection ? '\n    { displayLabel: true },' : ''}
-  );`;
+  ).catch(rejectRouteRead);`;
 
   const getHandler = hasGet
     ? `
@@ -3755,14 +3660,14 @@ ${generateNotFoundError(className)}
       ? `${getForRead}
 ${generateNotFoundError(className)}
   // Field read permissions make the body vary by caller permissions → v1 body-hash ETag (#1565).
-  return conditionalJson(request, item.toPublicJSON(publicJsonOptions));`
+  return conditionalJson(request, toPublicJSONValue(item, publicJsonOptions));`
       : `  // ETag v2 (#1765): a concrete If-None-Match answers 304 without the row fetch
   // (a delete advances the version, so a since-deleted row can't false-match);
   // a wildcard \`*\` is deferred until the fetch confirms the row exists.
   return conditionalVersionedRead(request, collection.db, collection.tableName, async () => {
 ${getForRead}
 ${generateNotFoundError(className)}
-    return item.toPublicJSON(publicJsonOptions);
+    return toPublicJSONValue(item, publicJsonOptions);
   });`
 }
 };
@@ -3776,14 +3681,15 @@ export const PUT: RequestHandler = async ({ locals, params, request }) => {
 ${routeGuardPreamble(objectDef, true, 'update')}
   const publicJsonOptions = getPublicJsonOptions(locals);
 ${generateCollectionLoad(className, { typeName: modelType.typeName })}
-  const item = await collection.get(params.id);
+  const item = await collection.get(params.id).catch(rejectRouteRead);
 ${generateNotFoundError(className)}
 
   const body: unknown = await request.json();
   const data = applyWritablePolicy(body);
   try {
     await collection.withAuditMutation(item, 'updated', async (bound) => {
-      Object.assign(bound, data);
+      // The body sets declared fields and settable accessors, nothing else.
+      applyUpdateInput(bound, data, ${JSON.stringify(className)});
       await bound.save();
     });
   } catch (cause) {
@@ -3796,7 +3702,7 @@ ${
 
   return json(applyReadPermissionRedaction(serializedItem, publicJsonOptions));`
     : `
-  return json(item.toPublicJSON(publicJsonOptions));`
+  return json(toPublicJSONValue(item, publicJsonOptions));`
 }
 };
 `
@@ -3808,7 +3714,7 @@ ${
 export const DELETE: RequestHandler = async ({ request, locals, params }) => {
 ${routeGuardPreamble(objectDef, true, 'delete')}
 ${generateCollectionLoad(className, { typeName: modelType.typeName })}
-  const item = await collection.get(params.id);
+  const item = await collection.get(params.id).catch(rejectRouteRead);
 ${generateNotFoundError(className)}
 
   try {
@@ -3932,6 +3838,14 @@ function generateActionRouteTemplate(
     routeSpecs.some(
       (spec) => !!spec.lookupObjectDef && isTenantScoped(spec.lookupObjectDef),
     );
+  // The tenant-scoped model whose write gate the action uses: the host when
+  // it is tenant-scoped, otherwise the first tenant-scoped lookup model.
+  const writeGateDef = isTenantScoped(objectDef)
+    ? objectDef
+    : (routeSpecs.find(
+        (spec) =>
+          !!spec.lookupObjectDef && isTenantScoped(spec.lookupObjectDef),
+      )?.lookupObjectDef ?? objectDef);
   const principalContext =
     usesPrincipalContext(objectDef) ||
     routeSpecs.some(
@@ -3947,6 +3861,7 @@ function generateActionRouteTemplate(
         spec.actionDef,
         spec.routeConfig,
         spec.hostType,
+        tenantScoped,
         needsTenantContext,
         lookupModelType.typeName,
         hostModelType.typeName,
@@ -3963,6 +3878,7 @@ function generateActionRouteTemplate(
             )
           : undefined,
         readScopeModelName(spec.lookupObjectDef, spec.lookupClassName),
+        manifestOwnershipProperties(spec.lookupObjectDef ?? writeGateDef),
       ),
     )
     .join('\n');
@@ -3981,7 +3897,7 @@ ${generateAuthGuardHelper(
     isCollectionManifestClass(semanticManifest, objectDef)
     ? firstSpec.lookupObjectDef
     : objectDef,
-)}${generateTenantContextHelper(principalContext, !needsTenantContext)}
+)}${generateTenantContextHelper(principalContext, tenantScoped, !needsTenantContext, allowsSuperAdminBypass(writeGateDef))}
 ${generateTypedRouteErrorHelper()}
 ${handlers}`;
 }
@@ -3992,12 +3908,14 @@ function generateActionRouteHandler(
   actionDef: MethodDefinition,
   routeConfig: ResolvedApiActionRouteConfig,
   hostType: 'item' | 'collection',
+  tenantScoped: boolean,
   needsTenantContext: boolean,
   lookupTypeName: string,
   hostTypeName: string,
   permissionAction?: string,
   collectionRegistryKey = lookupClassName,
   readScopeModel = lookupClassName,
+  ownershipProperties: readonly string[] = [],
 ): string {
   const successResponse = `  return json({
     action: '${actionName}',
@@ -4021,6 +3939,37 @@ function generateActionRouteHandler(
     // is tenant-scoped now.
     guardLines.push(
       `  if (isTenantScopedModel(${JSON.stringify(readScopeModel)})) establishTenantContext(locals);`,
+    );
+  }
+  // A mutating action on a tenant-scoped model needs a tenant too, and so
+  // does a collection-scoped read whose arguments do not carry the scope: its
+  // body reads through the collection with no tenant scope of its own
+  // (runtime REST refuses it too, as it refuses a caller with no tenant every
+  // custom collection action of a tenant-scoped model). A read handed the
+  // scoped options whole, or the scope under parameters named after every
+  // ownership property, is scoped through it (`scopeTenantReadOptions`), so a
+  // caller with no tenant reads only rows without an owner.
+  const collectionScoped = hostType === 'collection' || !!actionDef.isStatic;
+  const parameterNames = (
+    Array.isArray(actionDef.parameters) ? actionDef.parameters : []
+  ).map((parameter) => parameter.name);
+  const readsScopedOptions =
+    routeConfig.method === 'GET' &&
+    readActionReceivesTenantScope(parameterNames, ownershipProperties);
+  if (tenantScoped && (mutating || (collectionScoped && !readsScopedOptions))) {
+    guardLines.push('  requireTenantWriteContext(locals);');
+  } else if (
+    tenantScoped &&
+    collectionScoped &&
+    !(parameterNames.length === 1 && parameterNames[0] === 'options')
+  ) {
+    // Named ownership parameters: the manifest's ownership property is among
+    // them, but the scope is injected from the live registry, which may name
+    // more ownership properties. Decide again at request time against the
+    // properties `scopeTenantReadOptions` sets (none when tenancy is off or a
+    // super-admin bypass applies).
+    guardLines.push(
+      `  if (Object.keys(scopeTenantReadOptions(${JSON.stringify(readScopeModel)}, {})).some((property) => !${JSON.stringify(parameterNames)}.includes(property))) requireTenantWriteContext(locals);`,
     );
   }
   const authGuardLine = guardLines.join('\n');

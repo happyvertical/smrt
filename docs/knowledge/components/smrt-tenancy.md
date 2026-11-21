@@ -5,10 +5,10 @@ description: "Production-ready multi-tenancy framework for SMRT with automatic t
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-19T17:56:53Z"
+  at: "2026-11-20T21:24:51Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:ac8fd9f84c09f240afdddc0fe9e1fb8d99833c26d17e13aef56d89d25e8d6ee3"
+source_revision: "sha256:331ecf8a80e77022d810394a86d2ca9ce42a744e25977e119c53b40044949547"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/tenancy/package.json"

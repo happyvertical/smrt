@@ -49,7 +49,9 @@ const request = async (path, cookie, body) => {
     : response;
 };
 assert.equal((await request('/api/_runtime/health')).status, 200);
-assert.equal((await request('/api/customers')).status, 404);
+// Generated routes authenticate before the exposure gate: an anonymous caller
+// is refused before it can learn whether a model is switched on.
+assert.equal((await request('/api/customers')).status, 401);
 assert.equal((await request('/api/_runtime/owner-link?launch=wrong')).status, 403);
 const claimed = await request('/api/_runtime/owner-link?launch=' + process.env.SMRT_DESKTOP_OWNER_LINK_SECRET);
 assert.equal(claimed.status, 302);

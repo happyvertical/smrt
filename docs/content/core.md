@@ -68,7 +68,10 @@ class Document extends SmrtObject {
 
   constructor(options: any = {}) {
     super(options);
-    Object.assign(this, options);
+    // Copy declared fields only: a blanket Object.assign(this, options) would
+    // install any option key, a request body's included, on the instance.
+    if (options.title !== undefined) this.title = options.title;
+    if (options.content !== undefined) this.content = options.content;
   }
 
   // AI-powered content validation
@@ -597,7 +600,7 @@ CLI generation does not live here. `@happyvertical/smrt-core` shipped an in-proc
 
 ### REST API Generation
 
-`APIGenerator` serves REST for whatever `@smrt()` objects are registered. `APIConfig` is `{ basePath?, enableCors?, allowedOrigins?, allowCredentials?, customRoutes?, authMiddleware?, port?, hostname?, eventsRoute?, manifestHash?, playbookPreflight? }` — there is no `collections`, `outputDir`, `includeSwagger`, or `middleware` option, and no `generate()` method.
+`APIGenerator` serves REST for whatever `@smrt()` objects are registered; `createRestServer(objects)` / `startRestServer(objects)` serve only `objects`. `APIConfig` is `{ basePath?, enableCors?, allowedOrigins?, allowCredentials?, customRoutes?, authMiddleware?, resolveTenant?, port?, hostname?, eventsRoute?, manifestHash?, playbookPreflight? }` — there is no `collections`, `outputDir`, `includeSwagger`, or `middleware` option, and no `generate()` method.
 
 ```typescript
 import { APIGenerator, startRestServer } from '@happyvertical/smrt-core/generators';
@@ -610,12 +613,62 @@ const handler = generator.generateHandler(); // (req: Request) => Promise<Respon
 generator.registerCollection('products', productCollection);
 const { server, url } = generator.createServer();
 
-// Or the startRestServer() convenience wrapper: warns for any of the passed
-// classes not already registered by their own @smrt() decorator (it does not
-// register them itself), starts a Node http.Server, and resolves a
-// graceful-shutdown function.
+// Or the startRestServer() convenience wrapper: serves the passed classes and
+// no other registered model (a class not registered by its own @smrt()
+// decorator is warned about and not served), starts a Node http.Server, and
+// resolves a graceful-shutdown function.
 const shutdown = await startRestServer([Product, Order], { db }, { basePath: '/api/v1' });
 ```
+
+Each request resolves to one model, and that model's qualified name
+(`@scope/pkg:Class`) is what `authMiddleware(objectName, action)` receives and
+what every policy lookup uses, so same-named models of two packages keep their
+own policies. A collection segment that two models serve is refused rather
+than served by registration order; give each a distinct `collection`, or
+`api: false` on the one that should not be served. `startRestServer` refuses to
+start when two of the passed classes share a segment. A create through an STI
+base selects (`createType`) only subtypes whose own `api` surface opens
+`create`.
+
+#### Tenant-scoped models need a tenant per request
+
+Every operation on a tenant-scoped model runs inside the tenant gate. The
+server cannot derive a tenant from a `Request`, so the host supplies it:
+
+```typescript
+const generator = new APIGenerator({
+  basePath: '/api/v1',
+  authMiddleware: () => async (req) => ((await verify(req)) ? req : deny()),
+  // Called once for every admitted request (and sync item), whatever the
+  // model: the exposure gate reads the same tenant. Return {} for a caller
+  // with no tenant; do not throw.
+  resolveTenant: async (req) => ({ tenantId: (await sessionOf(req))?.tenantId }),
+});
+```
+
+- `{ tenantId }` runs the operation inside that tenant.
+- `{ allowCrossTenant: true }` runs it across tenants; only for a principal
+  that is explicitly cross-tenant.
+- Neither: a read of an optional-mode model serves global rows only, and every
+  write (create, update, delete, custom action, sync item) is refused with
+  `403 TENANT_CONTEXT_REQUIRED` (`401` for an anonymous caller).
+
+Take the tenant from the principal your authentication verified, never from
+request input. A server that serves one tenant can set `APIContext.tenantId`
+instead; a host that already wraps the handler in `withTenant(...)` needs
+neither (naming a different tenant than that context is refused with 403).
+
+A request reaches a model in this order: authentication (`authMiddleware`, or
+the model's `api.public`), then the runtime exposure gate for the request's
+tenant (a switched-off model answers `404` only to an admitted caller), then
+the operation inside the tenant gate. A caller with no tenant is refused
+every custom collection action of a tenant-scoped model, GET actions
+included, whatever the method's parameters; the CRUD list, get and count
+reads are the ones that serve it global rows. A caller with a tenant, or an
+explicitly cross-tenant one, is served custom actions as before.
+A refusal because a row belongs to another tenant is a plain
+`403 permission_denied`.
+
 
 OpenAPI documentation is a separate concern, generated by `generateOpenAPISpec()` (`@happyvertical/smrt-core/generators/swagger`) rather than an `includeSwagger` option on `APIGenerator`.
 

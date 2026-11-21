@@ -136,6 +136,18 @@ class EmittedRouteBulletin extends SmrtObject {
 class EmittedRouteBulletinCollection extends SmrtCollection<EmittedRouteBulletin> {
   static readonly _itemClass = EmittedRouteBulletin;
 
+  /** A custom GET action taking no options: nothing scopes its reads. */
+  async countAll() {
+    return (await this.list({})).length;
+  }
+
+  /** A custom GET action whose one parameter carries no ownership. */
+  async latest(limit?: number) {
+    return (await this.list({ limit: Number(limit ?? 10) }))
+      .map((row) => row.title)
+      .sort();
+  }
+
   /** A custom GET action that reads with its options as the filter. */
   async browse(options: Record<string, unknown> = {}) {
     return (await this.list({ where: options })).map((row) => row.title).sort();
@@ -419,12 +431,33 @@ describe('emitted SvelteKit list route with the real tenant interceptor', () => 
           readOrg: optionsMethod('readOrg'),
           readTenant: optionsMethod('readTenant'),
           readOrgNamed: optionsMethod('readOrgNamed', 'organizationId'),
+          latest: {
+            name: 'latest',
+            parameters: [{ name: 'limit', type: 'number', optional: true }],
+            returnType: 'Promise<any>',
+            isPublic: true,
+          },
+          countAll: {
+            name: 'countAll',
+            parameters: [],
+            returnType: 'Promise<any>',
+            isPublic: true,
+          },
         },
         decoratorConfig: {
           api: {
             public: 'read',
-            include: ['browse', 'readOrg', 'readTenant', 'readOrgNamed'],
+            include: [
+              'browse',
+              'readOrg',
+              'readTenant',
+              'readOrgNamed',
+              'countAll',
+              'latest',
+            ],
             routes: {
+              countAll: { method: 'GET', path: 'count-all' },
+              latest: { method: 'GET', path: 'latest' },
               readOrgNamed: { method: 'GET', path: 'read-org-named' },
               browse: { method: 'GET', path: 'browse' },
               readOrg: { method: 'GET', path: 'read-org' },
@@ -537,6 +570,8 @@ describe('emitted SvelteKit list route with the real tenant interceptor', () => 
 
     for (const path of [
       'emittedroutebulletins/browse',
+      'emittedroutebulletins/count-all',
+      'emittedroutebulletins/latest',
       'emittedroutebulletins/read-org',
       'emittedroutebulletins/read-tenant',
       'emittedroutebulletins/read-org-named',
@@ -565,7 +600,8 @@ describe('emitted SvelteKit list route with the real tenant interceptor', () => 
       );
     }
 
-    // The runtime REST transport over the same collection, anonymous.
+    // The runtime REST transport over the same collection. It names no
+    // tenant per request: a caller acts in the tenant context it entered.
     const rest = new APIGenerator({ basePath: '/api' }, { db });
     rest.registerCollection('bulletins', bulletins as never);
     rest.registerCollection('flyers', flyers as never);
@@ -634,7 +670,26 @@ describe('emitted SvelteKit list route with the real tenant interceptor', () => 
       `?TenantId=${THEIRS}`,
       `?${enc('tenant_id[=]')}=${THEIRS}`,
     ])('refuses %s', async (query) => {
-      await expect(asUs(query)).rejects.toThrow(TenantIsolationError);
+      // A filter outside the caller's tenant is a permission denial that
+      // names neither tenant.
+      const refusal = await asUs(query).then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+      expect(refusal).toMatchObject({
+        status: 403,
+        message: 'Permission denied.',
+      });
+    });
+
+    it('refuses a required-mode read by a caller with no tenant with a 403', async () => {
+      const refusal = await request(orderRoute, 'emittedrouteorders', {
+        user: { id: 'reader' },
+      }).then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+      expect(refusal).toMatchObject({ status: 403 });
     });
 
     it('answers 400 when two spellings both name the caller tenant', async () => {
@@ -699,7 +754,7 @@ describe('emitted SvelteKit list route with the real tenant interceptor', () => 
           `emittedroutenotices?tenantId=${OURS}&tenant_id=${THEIRS}`,
           signedIn,
         ),
-      ).rejects.toThrow(TenantIsolationError);
+      ).rejects.toMatchObject({ status: 403, message: 'Permission denied.' });
     });
   });
 
@@ -787,7 +842,7 @@ describe('emitted SvelteKit list route with the real tenant interceptor', () => 
       request: Request;
       url: URL;
     }) => Promise<Response>;
-    /** Call a generated route anonymously, in its own async scope. */
+    /** Call a generated route (anonymously by default), in its own async scope. */
     const call = (
       path: string,
       params: Record<string, string> = {},
@@ -825,8 +880,72 @@ describe('emitted SvelteKit list route with the real tenant interceptor', () => 
       // `browse` lists with its options as the filter: the scope must name
       // `organizationId`, not the ordinary `tenantId` column.
       expect(
+        await actionResult(
+          await call('emittedroutebulletins/browse', {}, '', {
+            locals: { tenantId: OURS, user: { id: 'reader' } },
+          }),
+        ),
+      ).toEqual(['our bulletin']);
+    });
+
+    it('a collection GET action taking no options is refused to a caller with no tenant', async () => {
+      expect((await call('emittedroutebulletins/count-all')).status).toBe(401);
+    });
+
+    it('a collection GET action whose parameter carries no ownership is refused to a caller with no tenant', async () => {
+      expect(
+        (await call('emittedroutebulletins/latest', {}, '?limit=50')).status,
+      ).toBe(401);
+      expect(
+        await actionResult(
+          await call('emittedroutebulletins/latest', {}, '?limit=50', {
+            locals: { tenantId: OURS, user: { id: 'reader' } },
+          }),
+        ),
+      ).toEqual(['our bulletin']);
+    });
+
+    it('a collection GET action taking options reads rows without an owner for a caller with no tenant', async () => {
+      expect(
         await actionResult(await call('emittedroutebulletins/browse')),
       ).toEqual(['bulletin for everyone', 'bulletin for everyone, labelled']);
+    });
+
+    describe('an ownership property the live registry adds to the manifest one', () => {
+      let dispose: (() => void) | undefined;
+      beforeAll(() => {
+        dispose = ObjectRegistry.registerOwnershipColumnSource((name) =>
+          name.split(':').pop() === 'EmittedRouteBulletin'
+            ? ['tenant_id']
+            : undefined,
+        );
+      });
+      afterAll(() => dispose?.());
+
+      it('a collection GET action naming only the manifest ownership parameter is refused to a caller with no tenant', async () => {
+        expect(
+          (
+            await call(
+              'emittedroutebulletins/read-org-named',
+              {},
+              `?organizationId=${THEIRS}`,
+            )
+          ).status,
+        ).toBe(401);
+        expect(
+          await actionResult(
+            await call('emittedroutebulletins/read-org-named', {}, '', {
+              locals: { tenantId: OURS, user: { id: 'reader' } },
+            }),
+          ),
+        ).toBe(OURS);
+      });
+
+      it('a collection GET action taking options reads rows owned through neither property', async () => {
+        expect(
+          await actionResult(await call('emittedroutebulletins/browse')),
+        ).toEqual(['bulletin for everyone']);
+      });
     });
 
     it('an item GET action loads only rows without an owner', async () => {
@@ -992,25 +1111,31 @@ describe('emitted SvelteKit list route with the real tenant interceptor', () => 
           rest: 'bulletins',
           globalId: () => bulletinIds.everyone,
           globals: ['bulletin for everyone', 'bulletin for everyone, labelled'],
+          ours: ['our bulletin'],
         },
         {
           model: 'emittedrouteflyers',
           rest: 'flyers',
           globalId: () => flyerIds.everyone,
           globals: ['flyer for everyone'],
+          ours: ['our flyer'],
         },
       ])('custom GET action options of $model never take ownership from the caller', ({
         model,
         rest,
         globalId,
         globals,
+        ours,
       }) => {
-        const restAction = async (path: string) => {
-          const response = await bulletinRest(
-            new Request(`http://local/api/${rest}/${path}`),
+        // Runtime REST refuses a caller with no tenant every custom
+        // collection read of a tenant-scoped model; a caller in a tenant
+        // context gets that tenant as the scope.
+        const restRequest = (path: string) =>
+          bulletinRest(new Request(`http://local/api/${rest}/${path}`));
+        const restActionInOurs = async (path: string) =>
+          actionResult(
+            await withTenant({ tenantId: OURS }, () => restRequest(path)),
           );
-          return actionResult(response);
-        };
 
         it('a collection action reading the ownership property gets the scope', async () => {
           for (const query of [
@@ -1020,7 +1145,8 @@ describe('emitted SvelteKit list route with the real tenant interceptor', () => 
             expect(
               await actionResult(await call(`${model}/read-org`, {}, query)),
             ).toBeNull();
-            expect(await restAction(`readOrg${query}`)).toBeNull();
+            expect((await restRequest(`readOrg${query}`)).status).toBe(401);
+            expect(await restActionInOurs(`readOrg${query}`)).toBe(OURS);
           }
         });
 
@@ -1030,7 +1156,10 @@ describe('emitted SvelteKit list route with the real tenant interceptor', () => 
               await call(`${model}/read-tenant`, {}, `?tenantId=${THEIRS}`),
             ),
           ).toBe('absent');
-          expect(await restAction(`readTenant?tenantId=${THEIRS}`)).toBe(
+          expect(
+            (await restRequest(`readTenant?tenantId=${THEIRS}`)).status,
+          ).toBe(401);
+          expect(await restActionInOurs(`readTenant?tenantId=${THEIRS}`)).toBe(
             'absent',
           );
         });
@@ -1041,9 +1170,12 @@ describe('emitted SvelteKit list route with the real tenant interceptor', () => 
               await call(`${model}/browse`, {}, `?organizationId=${THEIRS}`),
             ),
           ).toEqual(globals);
-          expect(await restAction(`browse?organizationId=${THEIRS}`)).toEqual(
-            globals,
-          );
+          const refused = await restRequest(`browse?organizationId=${THEIRS}`);
+          expect(refused.status).toBe(401);
+          expect(await refused.text()).not.toContain('for everyone');
+          expect(
+            await restActionInOurs(`browse?organizationId=${THEIRS}`),
+          ).toEqual(ours);
         });
 
         it('a named ownership parameter gets the scope, not the caller, on collection and item actions', async () => {

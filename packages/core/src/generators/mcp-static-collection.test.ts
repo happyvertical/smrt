@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { REQUEST_HELPER_EXPORTS } from '../__tests__/fixtures/emitted-core-stub.js';
 import { SmrtCollection } from '../collection.js';
 import { SmrtObject } from '../object.js';
 import { ObjectRegistry } from '../registry.js';
@@ -230,7 +231,8 @@ export { hasRuntimeExposureGate, isRuntimeModelEnabled, subscribeRuntimeExposure
             getConfig() { return {}; },
           };
           export function normalizeCustomActionFailure() {}
-          export const SMRT_CUSTOM_ACTION_ERROR_METADATA_KEY = 'smrt';`,
+          export const SMRT_CUSTOM_ACTION_ERROR_METADATA_KEY = 'smrt';
+          ${REQUEST_HELPER_EXPORTS}`,
         },
       };
       for (const [name, files] of Object.entries(packages)) {

@@ -1283,7 +1283,7 @@ describe('SvelteKit Route Generator', () => {
       expect(content).toContain('await collection.create');
       expect(content).not.toContain('await item.save()');
       expect(content).toContain(
-        "import { ObjectRegistry, normalizeTypedHttpError, reportUnexpectedHttpError } from '@happyvertical/smrt-core';",
+        "import { assertCreateInput, assertCreateTargetSurface, ObjectRegistry, normalizeTypedHttpError, reportUnexpectedHttpError } from '@happyvertical/smrt-core';",
       );
       expect(content).toContain('function smrtRouteErrorResponse');
       expect(content).toContain(
@@ -1351,7 +1351,12 @@ describe('SvelteKit Route Generator', () => {
       // Should include PUT handler
       expect(content).toContain('export const PUT: RequestHandler');
       expect(content).toContain("collection.withAuditMutation(item, 'updated'");
-      expect(content).toContain('Object.assign(bound, data)');
+      // The body is assigned through the shared update-input rule, for the
+      // route's own model.
+      expect(content).toMatch(
+        /applyUpdateInput\(bound, data, "[^"]*Product"\);/,
+      );
+      expect(content).not.toContain('Object.assign(bound');
       expect(content).toContain('await bound.save()');
       expect(content).toContain(
         'return smrtRouteErrorResponse(cause, request);',
@@ -3333,11 +3338,16 @@ describe('SvelteKit Route Generator', () => {
       expect(collectionContent).toContain(
         'const { limit, offset } = listBounds(url);',
       );
+      // The caller's filter and ordering are read once, through the checked
+      // `listQuery`, before the bounds reach the collection.
       expect(collectionContent).toContain(
-        "const orderBy = url.searchParams.get('orderBy') || LIST_ORDER_BY;",
+        'const query = listQuery(url, publicJsonOptions);',
       );
       expect(collectionContent).toContain(
-        'const count = await collection.count({ where }).catch(rejectListWhere);',
+        'const orderBy = query.orderBy || LIST_ORDER_BY;',
+      );
+      expect(collectionContent).toContain(
+        'const count = await collection.count({ where }).catch(rejectListQuery);',
       );
       expect(collectionContent).not.toContain(
         "Number(url.searchParams.get('limit')) || 50",

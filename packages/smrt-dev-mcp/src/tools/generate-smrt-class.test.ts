@@ -26,7 +26,7 @@ describe('generateSmrtClass', () => {
       expect(result).toContain('@field({"required":true})');
     });
 
-    it('should generate constructor with Object.assign', async () => {
+    it('should generate a constructor that copies declared fields only', async () => {
       const result = await generateSmrtClass({
         className: 'Article',
         properties: [{ name: 'title', type: 'text' }],
@@ -34,7 +34,10 @@ describe('generateSmrtClass', () => {
 
       expect(result).toContain('constructor(options: any = {})');
       expect(result).toContain('super(options)');
-      expect(result).toContain('Object.assign(this, options)');
+      expect(result).toContain(
+        "if ('title' in options) this.title = options.title;",
+      );
+      expect(result).not.toContain('Object.assign(this, options)');
     });
   });
 

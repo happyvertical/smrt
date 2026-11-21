@@ -15,17 +15,21 @@ import { clearCache, loadConfig } from '@happyvertical/smrt-config';
 import { build } from 'esbuild';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SmrtCollection } from '../collection.js';
+import { assertCreateTargetSurface } from '../create-target.js';
 import { field } from '../decorators/index.js';
 import { reportUnexpectedHttpError } from '../generators/route-error';
 import { clearManifestCache } from '../manifest/manifest-loader.js';
 import { SmrtObject } from '../object.js';
+import { publicSerializerOf, toPublicJSONValue } from '../public-json.js';
 import { parseRestListWhere } from '../query-bounds.js';
 import { ObjectRegistry, smrt } from '../registry.js';
+import { assertCreateInput } from '../request-input.js';
 import { setRuntimeExposureGate } from '../runtime-exposure.js';
 import type { SmartObjectManifest } from '../scanner/types.js';
 import { isServiceOptionInput } from '../service-options.js';
 import { snapshotObjectRegistryState } from '../test-utils.js';
 import { applyWhereScope, WhereClauseError } from '../where-keys.js';
+import { assignUpdateInput } from '../write-input.js';
 import { generateSvelteKitRoutes } from './sveltekit-generator.js';
 
 // Canonical instance injection prevents provider/env/file configuration fallback.
@@ -90,6 +94,7 @@ function writeWorkspaceTenancyShim(projectRoot: string): void {
       'export function getCurrentTenant() { return globalThis.__smrtGeneratedActiveTenantContext; }',
       'export function hasTenantContext() { return Boolean(globalThis.__smrtGeneratedActiveTenantContext); }',
       'export function isSuperAdminBypass() { return false; }',
+      'export function isSystemContext() { return globalThis.__smrtGeneratedSystemContext === true; }',
       'export function isTenancyEnabled() { return true; }',
       'export function enterTenantContext(context) {',
       '  globalThis.__smrtGeneratedActiveTenantContext = context;',
@@ -189,6 +194,7 @@ function writeWorkspaceCoreShim(projectRoot: string): void {
       // The real request-key rule over the fixture registry's fields.
       '  isServiceOptionInput(name, key) { return globalThis.__smrtGeneratedIsServiceOptionInput(key, (field) => (globalThis.__smrtGeneratedRegistry?.getFields(name) ?? new Map()).has(field)); },',
       '  getConfig(name) { return globalThis.__smrtGeneratedRegistry?.getConfig(name) ?? {}; },',
+      '  getClass(name) { return globalThis.__smrtGeneratedRegistry?.getClass?.(name); },',
       '  async getCollection(...args) {',
       '    globalThis.__smrtGeneratedHelperCalls.push(args);',
       '    if (globalThis.__smrtGeneratedCollectionResolver) return globalThis.__smrtGeneratedCollectionResolver(...args);',
@@ -227,6 +233,23 @@ function writeWorkspaceCoreShim(projectRoot: string): void {
       'export function isTenantScopedModel(name) { return globalThis.__smrtGeneratedTenantScopedModel?.(name) === true; }',
       'export function getRequestTenantContext() { return globalThis.__smrtGeneratedActiveTenantContext; }',
       'export function enterRequestTenantContext(context) { globalThis.__smrtGeneratedActiveTenantContext = context; (globalThis.__smrtGeneratedTenantContexts ??= []).push(context); }',
+      // The real request helpers. `applyUpdateInput` runs the real update
+      // rule over the fixture registry's fields.
+      'export const publicSerializerOf = (value) => globalThis.__smrtGeneratedRequestHelpers.publicSerializerOf(value);',
+      'export const toPublicJSONValue = (value, options) => globalThis.__smrtGeneratedRequestHelpers.toPublicJSONValue(value, options);',
+      // The fixture registry declares no field policy, so a list query passes
+      // the check; `request-query-fields.test.ts` executes the real rule.
+      'export const assertQueryAccess = (...args) => globalThis.__smrtGeneratedRequestHelpers.assertQueryAccess?.(...args);',
+      // The real create-target rule, over the registry the test installs.
+      'export const assertCreateTargetSurface = (...args) => globalThis.__smrtGeneratedRequestHelpers.assertCreateTargetSurface(...args);',
+      'export const assertCreateInput = (...args) => globalThis.__smrtGeneratedRequestHelpers.assertCreateInput(...args);',
+      'export const applyUpdateInput = (instance, data, name) => {',
+      '  const fields = globalThis.__smrtGeneratedRegistry?.getFields(name) ?? new Map();',
+      '  return globalThis.__smrtGeneratedRequestHelpers.assignUpdateInput(instance, data, {',
+      '    declaresField: (key) => fields.has(key),',
+      '    hasFieldMetadata: fields.size > 0,',
+      '  });',
+      '};',
       "export function resolveTenantEtagDiscriminator() { return 't:global'; }",
       'export function ifNoneMatchHasConcreteMatch() { return false; }',
       'export function ifNoneMatchSatisfied() { return false; }',
@@ -279,6 +302,13 @@ describe('generated SvelteKit helper runtime', () => {
     (
       globalThis as Record<string, unknown>
     ).__smrtGeneratedIsServiceOptionInput = isServiceOptionInput;
+    (globalThis as Record<string, unknown>).__smrtGeneratedRequestHelpers = {
+      assertCreateInput,
+      assertCreateTargetSurface,
+      assignUpdateInput,
+      publicSerializerOf,
+      toPublicJSONValue,
+    };
     (globalThis as Record<string, unknown>).__smrtGeneratedHelperCalls = [];
     (globalThis as Record<string, unknown>).__smrtGeneratedHelperRegistrations =
       [];
@@ -331,6 +361,8 @@ describe('generated SvelteKit helper runtime', () => {
       .__smrtGeneratedApplyWhereScope;
     delete (globalThis as Record<string, unknown>)
       .__smrtGeneratedIsServiceOptionInput;
+    delete (globalThis as Record<string, unknown>)
+      .__smrtGeneratedRequestHelpers;
     vi.restoreAllMocks();
     clearCache();
 
@@ -439,7 +471,7 @@ describe('generated SvelteKit helper runtime', () => {
     );
   }
 
-  async function importGeneratedItemActionPost() {
+  async function importGeneratedItemActionPost(tenantScoped = false) {
     const objectFilePath = join(projectRoot, 'src/lib/objects/Widget.ts');
     const manifest = createManifest(projectRoot, objectFilePath, ['inspect']);
     manifest.objects.Widget.methods = {
@@ -459,7 +491,8 @@ describe('generated SvelteKit helper runtime', () => {
           inspect: { method: 'POST', path: 'inspect' },
         },
       },
-    };
+      ...(tenantScoped ? { tenantScoped: { mode: 'optional' } } : {}),
+    } as never;
 
     await generateSvelteKitRoutes(projectRoot, manifest, {
       configFileName: 'smrt.ts',
@@ -472,6 +505,43 @@ describe('generated SvelteKit helper runtime', () => {
     return await bundleGeneratedRoute(
       'src/routes/api/widgets/[id]/inspect/+server.ts',
       'generated-item-action-post-route.mjs',
+    );
+  }
+
+  async function importGeneratedCollectionActionGet() {
+    const objectFilePath = join(projectRoot, 'src/lib/objects/Widget.ts');
+    const manifest = createManifest(projectRoot, objectFilePath, ['recent']);
+    manifest.objects.Widget.methods = {
+      recent: {
+        async: true,
+        isStatic: true,
+        isPublic: true,
+        name: 'recent',
+        parameters: [],
+        returnType: 'Promise<unknown>',
+      },
+    };
+    manifest.objects.Widget.decoratorConfig = {
+      api: {
+        include: ['recent'],
+        routes: {
+          recent: { method: 'GET', path: 'recent', scope: 'collection' },
+        },
+      },
+      tenantScoped: { mode: 'optional' },
+    } as never;
+
+    await generateSvelteKitRoutes(projectRoot, manifest, {
+      configFileName: 'smrt.ts',
+      configPath: 'src/lib/server',
+      enabled: true,
+      objectsDir: 'src/lib/objects',
+      routesDir: 'src/routes/api',
+    });
+
+    return await bundleGeneratedRoute(
+      'src/routes/api/widgets/recent/+server.ts',
+      'generated-collection-action-get-route.mjs',
     );
   }
 
@@ -1334,7 +1404,7 @@ describe('generated SvelteKit helper runtime', () => {
       // a mocked factory. It must construct and initialize against this DB.
       writeFileSync(
         join(projectRoot, 'node_modules/@happyvertical/smrt-core/index.js'),
-        `export const { ObjectRegistry, isRuntimeModelEnabled, hasRuntimeExposureGate, createGeneratedCollectionAccess, normalizeCustomActionFailure, normalizeTypedHttpError, reportUnexpectedHttpError, canonicalReadRepresentation, computeTableVersionEtag, getTableVersion, ifNoneMatchHasConcreteMatch, ifNoneMatchSatisfied, parseRestListWhere, applyWhereScope, resolveAnonymousTenantReadScope, scopeTenantReadOptions, isTenantScopedModel, enterRequestTenantContext, getRequestTenantContext, resolveTenantEtagDiscriminator } = globalThis.__smrt4320Core;`,
+        `export const { ObjectRegistry, isRuntimeModelEnabled, hasRuntimeExposureGate, createGeneratedCollectionAccess, normalizeCustomActionFailure, normalizeTypedHttpError, reportUnexpectedHttpError, canonicalReadRepresentation, computeTableVersionEtag, getTableVersion, ifNoneMatchHasConcreteMatch, ifNoneMatchSatisfied, parseRestListWhere, applyWhereScope, resolveAnonymousTenantReadScope, scopeTenantReadOptions, publicSerializerOf, toPublicJSONValue, assertQueryAccess, assertCreateTargetSurface, assertCreateInput, isTenantScopedModel, enterRequestTenantContext, getRequestTenantContext, resolveTenantEtagDiscriminator } = globalThis.__smrt4320Core;`,
       );
       const objectFilePath = join(projectRoot, 'src/lib/objects/Widget.ts');
       writeFileSync(
@@ -1761,6 +1831,249 @@ describe('generated SvelteKit helper runtime', () => {
     }
   });
 
+  /**
+   * A write to a tenant-scoped model needs a tenant. With tenancy enabled and
+   * no tenant context after the principal's tenant was read, the emitted
+   * create, update, delete and mutating-action handlers refuse the request
+   * before they reach the collection: 403 for a signed-in caller, 401 for an
+   * anonymous one. Only an explicitly cross-tenant principal writes without a
+   * tenant. The tenancy package is the recording stand-in above, with
+   * enforcement on.
+   */
+  describe('generated write routes of a tenant-scoped model require a tenant', () => {
+    const state = globalThis as Record<string, unknown>;
+    const WRITES = ['widgets.create', 'widgets.update', 'widgets.delete'];
+    let touched: string[];
+
+    async function importTenantWrites(
+      api: Record<string, unknown> = {},
+      tenantScoped: Record<string, unknown> = { mode: 'optional' },
+    ) {
+      const objectFilePath = join(projectRoot, 'src/lib/objects/Widget.ts');
+      const manifest = createManifest(projectRoot, objectFilePath, [
+        'create',
+        'update',
+        'delete',
+      ]);
+      manifest.objects.Widget.decoratorConfig = {
+        api: { include: ['create', 'update', 'delete'], ...api },
+        tenantScoped,
+      } as never;
+      await generateSvelteKitRoutes(projectRoot, manifest, {
+        configFileName: 'smrt.ts',
+        configPath: 'src/lib/server',
+        enabled: true,
+        objectsDir: 'src/lib/objects',
+        routesDir: 'src/routes/api',
+      });
+      touched = [];
+      const item = {
+        name: 'Widget',
+        save: async () => {
+          touched.push('save');
+        },
+        toPublicJSON: () => ({ id: 'widget-1' }),
+      };
+      state.__smrtGeneratedRouteCollection = {
+        create: async () => {
+          touched.push('create');
+          return item;
+        },
+        delete: async () => {
+          touched.push('delete');
+        },
+        get: async () => {
+          touched.push('get');
+          return item;
+        },
+        withAuditMutation: async (
+          bound: typeof item,
+          _action: string,
+          mutate: (bound: typeof item) => Promise<void>,
+        ) => mutate(bound),
+      };
+      const collection = await bundleGeneratedRoute(
+        'src/routes/api/widgets/+server.ts',
+        'tenant-write-collection.mjs',
+      );
+      const single = await bundleGeneratedRoute(
+        'src/routes/api/widgets/[id]/+server.ts',
+        'tenant-write-item.mjs',
+      );
+      const body = () =>
+        new Request('http://localhost/api/widgets', {
+          body: JSON.stringify({ name: 'Renamed' }),
+          method: 'POST',
+        });
+      return {
+        create: (locals: unknown) =>
+          collection.POST({ locals, request: body() }),
+        update: (locals: unknown) =>
+          single.PUT({ locals, params: { id: 'widget-1' }, request: body() }),
+        remove: (locals: unknown) =>
+          single.DELETE({
+            locals,
+            params: { id: 'widget-1' },
+            request: body(),
+          }),
+      };
+    }
+
+    afterEach(() => {
+      delete state.__smrtGeneratedSystemContext;
+    });
+
+    it('refuses create, update and delete by a signed-in caller with no tenant', async () => {
+      const routes = await importTenantWrites();
+      const locals = { permissions: WRITES, user: { id: 'user-1' } };
+      for (const write of [routes.create, routes.update, routes.remove]) {
+        await expect(write(locals)).rejects.toMatchObject({
+          status: 403,
+          message: 'Tenant context required',
+        });
+      }
+      // Refused before the collection was reached.
+      expect(touched).toEqual([]);
+      expect(state.__smrtGeneratedTenantContexts).toEqual([]);
+    });
+
+    it('refuses an anonymous write to a public model with a 401', async () => {
+      const routes = await importTenantWrites({ public: true });
+      for (const write of [routes.create, routes.update, routes.remove]) {
+        await expect(write({})).rejects.toMatchObject({ status: 401 });
+      }
+      expect(touched).toEqual([]);
+    });
+
+    it('writes inside the tenant of the signed-in caller', async () => {
+      const routes = await importTenantWrites();
+      const locals = {
+        permissions: WRITES,
+        tenantId: 'tenant-a',
+        user: { id: 'user-1' },
+      };
+      expect((await routes.create(locals)).status).toBe(201);
+      expect(state.__smrtGeneratedActiveTenantContext).toMatchObject({
+        tenantId: 'tenant-a',
+      });
+      expect((await routes.update(locals)).status).toBe(200);
+      expect((await routes.remove(locals)).status).toBe(200);
+      expect(touched).toEqual(['create', 'get', 'save', 'get', 'delete']);
+    });
+
+    it('refuses a super-admin bypass on a model that does not opt in', async () => {
+      const routes = await importTenantWrites();
+      const superAdmin = {
+        tenantContext: { superAdminBypass: true },
+        user: { id: 'operator' },
+      };
+      for (const write of [routes.create, routes.update, routes.remove]) {
+        await expect(write(superAdmin)).rejects.toMatchObject({
+          status: 403,
+          message: 'Tenant context required',
+        });
+      }
+      expect(touched).toEqual([]);
+    });
+
+    it('writes for an explicitly cross-tenant principal', async () => {
+      const routes = await importTenantWrites(
+        {},
+        { mode: 'optional', allowSuperAdminBypass: true },
+      );
+      // A verified super-admin bypass published by the tenancy session hook,
+      // on a model that opts in to it.
+      const superAdmin = {
+        tenantContext: { superAdminBypass: true },
+        user: { id: 'operator' },
+      };
+      expect((await routes.create(superAdmin)).status).toBe(201);
+      // A system context the host entered around the request.
+      state.__smrtGeneratedSystemContext = true;
+      expect(
+        (
+          await routes.update({
+            permissions: WRITES,
+            user: { id: 'operator' },
+          })
+        ).status,
+      ).toBe(200);
+      expect(touched).toEqual(['create', 'get', 'save']);
+    });
+
+    it('refuses a mutating custom action by a caller with no tenant', async () => {
+      const route = await importGeneratedItemActionPost(true);
+      let invoked = 0;
+      state.__smrtGeneratedRouteCollection = {
+        get: async () => ({
+          inspect: async () => {
+            invoked += 1;
+            return { ok: true };
+          },
+        }),
+      };
+      const call = (locals: Record<string, unknown>) =>
+        route.POST({
+          locals: {
+            permissions: ['widgets.inspect'],
+            user: { id: 'user-1' },
+            ...locals,
+          },
+          params: { id: 'widget-1' },
+          request: new Request(
+            'http://localhost/api/widgets/widget-1/inspect',
+            {
+              method: 'POST',
+            },
+          ),
+        });
+      await expect(call({})).rejects.toMatchObject({
+        status: 403,
+        message: 'Tenant context required',
+      });
+      expect(invoked).toBe(0);
+      expect((await call({ tenantId: 'tenant-a' })).status).toBe(200);
+      expect(invoked).toBe(1);
+    });
+
+    it('refuses a collection read action by a caller with no tenant', async () => {
+      const route = await importGeneratedCollectionActionGet();
+      let invoked = 0;
+      class WidgetCollectionStub {
+        static async recent() {
+          invoked += 1;
+          return { items: [] };
+        }
+      }
+      state.__smrtGeneratedRouteCollection = new WidgetCollectionStub();
+      state.__smrtGeneratedRegistry = {
+        getClass: () => ({ constructor: WidgetCollectionStub }),
+        getConfig: () => ({}),
+      };
+      const call = (locals: Record<string, unknown>) =>
+        route.GET({
+          locals: { user: { id: 'user-1' }, ...locals },
+          params: {},
+          request: new Request('http://localhost/api/widgets/recent'),
+          url: new URL('http://localhost/api/widgets/recent'),
+        });
+      await expect(call({})).rejects.toMatchObject({
+        status: 403,
+        message: 'Tenant context required',
+      });
+      expect(invoked).toBe(0);
+      expect((await call({ tenantId: 'tenant-a' })).status).toBe(200);
+      expect(invoked).toBe(1);
+    });
+
+    it('keeps a context the host already entered', async () => {
+      const routes = await importTenantWrites({ public: true });
+      state.__smrtGeneratedActiveTenantContext = { tenantId: 'tenant-a' };
+      expect((await routes.create({})).status).toBe(201);
+      expect(touched).toEqual(['create']);
+    });
+  });
+
   describe('generated write routes enforce operation permissions (#2977)', () => {
     async function importGeneratedWrite(
       include: string[],
@@ -1873,7 +2186,9 @@ describe('generated SvelteKit helper runtime', () => {
         'perm-item-route.mjs',
       );
       const saved: string[] = [];
+      // `name` is the field the update below sets.
       const item = {
+        name: 'Widget',
         save: async () => {
           saved.push('save');
         },
@@ -2331,7 +2646,9 @@ describe('generated SvelteKit helper runtime', () => {
     async function put(...declared: string[]) {
       const route = await importGeneratedItemPut();
       declareFields(...declared);
+      // The loaded item already holds `name`, the field the body updates.
       const item: Record<string, unknown> = {
+        name: 'Before',
         options: { db: 'collection-db' },
         save: async () => {},
         toPublicJSON: () => ({}),
@@ -2383,7 +2700,8 @@ describe('generated SvelteKit helper runtime', () => {
     });
 
     it('PUT keeps a service-named key the model declares as a field', async () => {
-      const { item } = await put('metrics');
+      const { item, response } = await put('name', 'metrics');
+      expect(response.status).toBe(200);
       expect(item.metrics).toEqual({ from: 'metrics' });
       expect(item.options).toEqual({ db: 'collection-db' });
       expect(Object.hasOwn(item, 'usage')).toBe(false);

@@ -81,11 +81,13 @@ import {
 import { chunkArray, IN_LIST_CHUNK_SIZE } from './utils/chunk';
 import { jsonValuesEqual, parseJsonContainerText } from './utils/json-equal';
 import {
+  assertGetFilter,
   effectiveWhereOperator,
   mergeOwnedWhere,
   resolveWhereKey,
   WhereClauseError,
 } from './where-keys';
+import { WriteInputError } from './write-input';
 
 const logger = createLogger({ level: 'info' });
 
@@ -3344,6 +3346,11 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    *
    * Runs `beforeGet` / `afterGet` interceptors (used by multi-tenancy, etc.).
    *
+   * A filter names one row. Anything that is not a string or a plain object
+   * with at least one condition — a number, a boolean, an array, `{}`,
+   * `null` — would match whichever row the engine returns first, so it is
+   * refused (`WhereClauseError`, code `INVALID_GET_FILTER`, a typed 400).
+   *
    * @param filter - UUID string, slug string, or a WHERE conditions object
    * @param options.cache - Opt-in read-through cache for this call
    *   (`{ ttl }` in milliseconds), or `false` to force a fresh read when the
@@ -3375,6 +3382,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       displayLabel?: boolean;
     } = {},
   ): Promise<ModelType | null> {
+    assertGetFilter(filter);
     await this.ensureStorageReady();
     const itemClassName = this.getResolvedItemClassName();
     const itemQualifiedName = this.getResolvedItemQualifiedName();
@@ -4241,9 +4249,19 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     const fields = await ObjectRegistry.getAllFields(name);
     if (registered?.generatedFields)
       ObjectRegistry.assertWritableInput(name, values);
+    let writeThrough:
+      | ReturnType<typeof ObjectRegistry.getWriteThroughFields>
+      | undefined;
     for (const key of Object.keys(values)) {
-      const definition =
-        fields.get(key) ?? ObjectRegistry.getWriteThroughFields(name)[key];
+      // Own entries only: a key must name a field this model declares, never
+      // something a plain object inherits (`constructor`, `toString`, ...).
+      let definition = fields.get(key) as
+        | ReturnType<typeof ObjectRegistry.getWriteThroughFields>[string]
+        | undefined;
+      if (!definition) {
+        writeThrough ??= ObjectRegistry.getWriteThroughFields(name);
+        if (Object.hasOwn(writeThrough, key)) definition = writeThrough[key];
+      }
       if (
         !definition ||
         definition.readonly ||
@@ -4258,7 +4276,11 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
         ].includes(key) ||
         key.startsWith('_')
       ) {
-        throw new Error(`Collection update cannot assign field '${key}'`);
+        throw new WriteInputError(
+          `Collection update cannot assign field '${key}'`,
+          'VALIDATION_UNKNOWN_FIELD',
+          { field: key },
+        );
       }
     }
     await this.withAuditMutation(
@@ -4907,7 +4929,8 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
    * Loads the object and calls its delete() method, ensuring all interceptors
    * and lifecycle hooks (beforeDelete/afterDelete) are executed correctly.
    *
-   * @param id - The ID of the record to delete
+   * @param id - The ID of the record to delete. Held to the same rule as a
+   *   `get()` filter: a string, or a plain object with at least one condition
    * @returns Promise resolving to true if deleted, false if not found
    *
    * @example
@@ -4923,6 +4946,10 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     context?: Partial<AuditContext>,
   ): Promise<boolean> {
     // Schema already initialized in Collection.create() static factory
+
+    // The row to remove is named the way `get()` names one: never by a
+    // value that selects whichever row comes first.
+    assertGetFilter(id);
 
     // Ensure manifest is loaded for external packages
     await ObjectRegistry.ensureManifestLoaded(this.getResolvedItemClassName());

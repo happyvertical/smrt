@@ -75,3 +75,15 @@ DDL, migration and OpenAPI digests have not moved since the recapture above.
   tenant through core's request hooks when the model is tenant-scoped at
   request time, and choose the read cache policy and ETag tenant
   discriminator at request time.
+- Request-path checks (#5164): both MCP servers (`single/index.ts`,
+  `modular/handlers/index.ts`), the list and item routes of each model, and
+  `sync/apply/+server.ts` apply the update-input, filter and tenant write gate
+  rules (an update assigns declared fields only, a list filter names readable
+  fields, a write to a tenant-scoped model needs a tenant, a create through a
+  base selects only subtypes open on the transport).
+- Sync tenant (#5164): `sync/apply/+server.ts` enters the caller's tenant for
+  a model whose tenancy is registered at runtime, as the CRUD routes do.
+- Ambient request tenant (#5164): the list and item routes of each model and
+  `sync/apply/+server.ts` read the request's tenant for the runtime exposure
+  gate from `locals`, else from the tenant context already active for the
+  request.
