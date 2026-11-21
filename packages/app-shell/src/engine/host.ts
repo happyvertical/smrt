@@ -1920,11 +1920,16 @@ export class AppHost extends EventEmitter {
    * Replace the live schema by `next` (the live one goes to `aside`) in one
    * transaction, which also advances the ownership generation: this host
    * adopts the new one for the workers it starts next, and every worker that
-   * still holds the old one is fenced out. `trust` skips the ownership check
-   * (undoing this host's own swap, whose reply may have been lost); a forward
-   * swap checks it, so a host that lost ownership changes nothing.
+   * still holds the old one is fenced out. The ownership check always runs, so
+   * a host that lost ownership changes nothing, a rollback included: it must
+   * find the generation its own swap produced. `maybeSwapped` (the forward
+   * swap's reply was lost) also accepts the generation one past the held one.
    */
-  private async swapSchemasIn(next: string, aside: string, trust = false) {
+  private async swapSchemasIn(
+    next: string,
+    aside: string,
+    maybeSwapped = false,
+  ) {
     const { fence } = await withSchemaAdmin(this.database, (db) =>
       swapSchemas(
         db,
@@ -1933,7 +1938,12 @@ export class AppHost extends EventEmitter {
           next,
           aside,
           owner: this.ownerBase(),
-          expectFence: trust ? undefined : this.fence,
+          expectFence:
+            this.fence === undefined
+              ? undefined
+              : maybeSwapped
+                ? [this.fence, this.fence + 1]
+                : this.fence,
         },
         this.lockTimeoutMs,
       ),
@@ -2126,7 +2136,7 @@ export class AppHost extends EventEmitter {
           await this.app.ready;
         } catch (e) {
           await this.app.terminate().catch(() => {});
-          if (swapped) await this.swapSchemasIn(aside, side, true);
+          if (swapped) await this.swapSchemasIn(aside, side);
           this.app = this.spawn(this.def, this.version);
           await this.app.ready.catch(() => {});
           throw e;
@@ -2822,7 +2832,7 @@ export class AppHost extends EventEmitter {
             db.transaction((tx) => schemaExists(tx, s.pg?.aside ?? '')),
           ))
         )
-          await this.swapSchemasIn(s.pg.aside, s.pg.staging, true);
+          await this.swapSchemasIn(s.pg.aside, s.pg.staging, !s.swapped);
         await this.dropSideSchemaOrThrow(s.pg.staging);
       }
       if (s.journaled) removeJournal(this.dataDir);

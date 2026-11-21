@@ -35,6 +35,7 @@ import type { DatabaseConfig, PGliteClient } from './db/index.ts';
 import { withSchemaAdmin } from './db/index.ts';
 import { scopeDatabase } from './db/postgres.ts';
 import {
+  acquireOwnership,
   dropSchema,
   dumpSchema,
   forkSchema,
@@ -1864,6 +1865,42 @@ describe.each(
       await b.create('Chore', { title: 'B', points: 2 });
       expect(await titles(b)).toEqual(['Bins', 'Dishes', 'Garage', 'B'].sort());
     });
+
+    it.skipIf(backend === 'postgres')(
+      'a publish rollback by a host that lost ownership after the swap changes nothing',
+      async () => {
+        const live = await seeded('fence_abort');
+        const { draft } = await fork(live);
+        await run(draft, {
+          type: 'addField',
+          model: 'Chore',
+          field: 'done',
+          definition: { type: 'boolean' },
+        });
+        live.host.setFrozen(true);
+        const preview = await live.host.previewPublish(draft);
+        const before = live.host.fence as number;
+        await expect(
+          live.host.publishDraft(draft, {
+            ...OK,
+            expect: preview.digest,
+            onStage: async (stage) => {
+              if (stage !== 'swapped') return;
+              // Another host takes ownership (the first thing its start does,
+              // before its sweep), then this publish fails.
+              await withSchemaAdmin(config(live.schema), (db) =>
+                acquireOwnership(db, live.schema),
+              );
+              throw new Error('boom after the swap');
+            },
+          }),
+        ).rejects.toThrow(
+          /boom after the swap|putting the old data back failed/,
+        );
+        // The newer owner's generation is untouched: the rollback did not swap.
+        expect(await fenceIn(live.schema)).toBe(before + 2);
+      },
+    );
 
     it('a swap by a host that lost ownership changes nothing', async () => {
       const live = await seeded('fence_swap');
