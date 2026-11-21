@@ -1,5 +1,39 @@
 # @happyvertical/smrt-core
 
+## 0.65.0
+
+### Minor Changes
+
+- ### Breaking Changes
+  
+  - order generated activation by parent; same-name replacement needs replaceParent (#5410) (core)
+  - read and check PostgreSQL index DDL as the server reads it (#5356) (core)
+  - AI run tenancy and usage accounting, with a lifetime run id registry (#5399) (core)
+  - guard the app model editor (identity, ownership, storage, admission) (#5317) (core)
+  
+  ### Features
+  
+  - ensureTenantSettlementAccounts and ledger-scoped recordPayment (#5412) (#5413) (commerce)
+  - engine takes an injected database and stops assuming SQLite (#5374) (app-shell)
+  
+  ### Bug Fixes
+  
+  - safer SQLite table rebuilds and an atomic money-column rescale (#5396) (core)
+  - ordered, committed-only change-feed delivery (#5324) (core)
+  - allow batched merge queues in release admission (#5380) (release)
+  
+  ### Other Changes
+  
+  - test: real-PostgreSQL CI coverage and SDK bump (#5386) (#5387) (app-shell)
+  - ci: retry transient install and apt failures, rebalance app-shell shard (#5385) (workflows)
+  - chore: bump @happyvertical SDK catalog to 0.116.4 (#5294) (deps)
+
+### Patch Changes
+
+- @happyvertical/smrt-config@0.65.0
+  - @happyvertical/smrt-scanner@0.65.0
+  - @happyvertical/smrt-types@0.65.0
+
 ## 0.64.0
 
 ### Patch Changes

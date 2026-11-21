@@ -82,13 +82,20 @@ function canonicalEntries(entries: readonly JournalEntryData[]): string {
   );
 }
 
+/**
+ * Check the posting accounts are active and tenant-owned, and that they share
+ * one ledger (#5412): a ledger-scoped chart posts into its own ledger, a
+ * ledger-less (legacy) set stays ledger-less, and a mixed set is refused with a
+ * clear error rather than failing deep in the journal. Returns that ledger id.
+ */
 async function validateAccounts(
   db: DatabaseInterface,
   tenantId: string,
   accountIds: readonly string[],
-): Promise<void> {
+): Promise<string | null> {
   const { AccountCollection } = await import('@happyvertical/smrt-ledgers');
   const accounts = await AccountCollection.create({ db });
+  const ledgers = new Set<string | null>();
   for (const accountId of [...new Set(accountIds)]) {
     const account = await accounts.get({ id: accountId }, { cache: false });
     if (!account || account.tenantId !== tenantId || !account.active)
@@ -96,7 +103,14 @@ async function validateAccounts(
         'INVALID_MONEY_INPUT',
         `Posting account ${accountId} must be active and owned by the invoice tenant`,
       );
+    ledgers.add(account.ledgerId ?? null);
   }
+  if (ledgers.size > 1)
+    throw new MoneyValidationError(
+      'INVALID_MONEY_INPUT',
+      'Posting accounts must all belong to one ledger, or none (tax component liability accounts must come from the same chart as the receivables and revenue accounts)',
+    );
+  return [...ledgers][0] ?? null;
 }
 
 async function entriesForJournal(
@@ -138,6 +152,8 @@ async function createOrReadPostedJournal(
     date: Date;
     metadata: PostingMetadata;
     entries: readonly JournalEntryData[];
+    /** The ledger every posting account belongs to, or null for legacy accounts. */
+    ledgerId: string | null;
   },
 ): Promise<Journal> {
   const { JournalCollection } = await import('@happyvertical/smrt-ledgers');
@@ -148,6 +164,7 @@ async function createOrReadPostedJournal(
     if (
       existing.status !== 'posted' ||
       existing.tenantId !== input.tenantId ||
+      (existing.ledgerId ?? null) !== input.ledgerId ||
       existing.sourceModule !== 'smrt-commerce' ||
       existing.sourceRef !== input.sourceRef ||
       !metadataMatches(existing, input.metadata) ||
@@ -162,6 +179,7 @@ async function createOrReadPostedJournal(
   const journal = await journals.create({
     id: input.id,
     tenantId: input.tenantId,
+    ...(input.ledgerId ? { ledgerId: input.ledgerId } : {}),
     date: input.date,
     description: input.description,
     sourceModule: 'smrt-commerce',
@@ -268,7 +286,7 @@ export async function recognizeInvoiceRevenue(
           direction: invoice.kind === 'credit_note' ? -1 : 1,
         },
       );
-      await validateAccounts(
+      const ledgerId = await validateAccounts(
         tx,
         tenantId,
         built.entries.map((entry) => entry.accountId),
@@ -296,6 +314,7 @@ export async function recognizeInvoiceRevenue(
         date: invoice.issueDate,
         metadata,
         entries: built.entries,
+        ledgerId,
       });
       if (invoice.arJournalId && invoice.arJournalId !== journalId)
         throw new MoneyValidationError(
@@ -404,7 +423,7 @@ export async function cancelInvoiceWithRevenueReversal(
         );
       const originalEntries = await entriesForJournal(tx, originalJournalId);
       const reversalEntries = reverseEntries(originalEntries, currency);
-      await validateAccounts(
+      const ledgerId = await validateAccounts(
         tx,
         tenantId,
         reversalEntries.map((entry) => entry.accountId),
@@ -434,6 +453,7 @@ export async function cancelInvoiceWithRevenueReversal(
         date: new Date(),
         metadata,
         entries: reversalEntries,
+        ledgerId,
       });
       if (
         invoice.arReversalJournalId &&
