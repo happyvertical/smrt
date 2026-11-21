@@ -447,7 +447,9 @@ describe('a migrating swap holds its pool across the retire', () => {
   it('surfaces a worker that cannot start as itself, not as a failed change', async () => {
     const { host, inner, done } = await stubHost(4); // room for a second pool
     inner.workerUrl = 'not-a-path.mjs'; // refused synchronously by the thread API
-    const err = await inner.swap(inner.def, inner.version).catch((e) => e);
+    const err = (await inner
+      .swap(inner.def, inner.version)
+      .catch((e) => e)) as Error;
     expect(err).toBeInstanceOf(Error);
     expect(String(err.message)).not.toMatch(/did not start with this change/);
     expect(host.appAlive).toBe(true); // the running app was never touched
