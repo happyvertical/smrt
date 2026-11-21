@@ -264,3 +264,7 @@ is also replaced, and a short configured host name (for example `db`) hides any
 message containing that whole word. A stored approval failure is scrubbed in
 every content item and `structuredContent`, so reading the approval back shows
 the same generic text.
+
+An IPv4 inside a longer dotted token (a leading dot, `1.2.3.4.5`) is not an
+address and passes. IPv6 needs a digit (`a::b` and `std::vector` pass) and is
+found after punctuation (`fd00::7:`) and after a label (`addr:fd00::7`).

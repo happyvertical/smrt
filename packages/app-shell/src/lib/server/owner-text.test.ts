@@ -16,7 +16,7 @@ import { call, drive, say, scripted } from './assistant/test-helpers.ts';
 import { shellMcpServer } from './catalog.ts';
 import { getHost } from './host.ts';
 import { createShellMcpServer } from './mcp-server.ts';
-import { leaksHost, ownerText } from './owner-text.ts';
+import { leaksHost, ownerResult, ownerText } from './owner-text.ts';
 import { callTool } from './policy.ts';
 import {
   applyWaiting,
@@ -115,6 +115,25 @@ describe('ownerText', () => {
     // the deliberate blunt rule: a valid dotted quad is hidden even as a version
     expect(leaksHost('needs version 1.2.3.4')).toBe(true);
     expect(leaksHost('loopback ::1')).toBe(true);
+    // punctuation after an address, and an address after a label
+    expect(leaksHost('no route to fd00::7: timed out')).toBe(true);
+    expect(leaksHost('addr:fd00::7')).toBe(true);
+    expect(leaksHost('host:2001:db8::5 refused')).toBe(true);
+    expect(leaksHost('connect ::1:5432')).toBe(true);
+    expect(leaksHost('at 10.0.3.7:5432')).toBe(true);
+    expect(leaksHost('std::vector and Foo::bar and a::b')).toBe(false);
+  });
+});
+
+describe('ownerResult', () => {
+  it('keeps the same object when nothing was replaced', () => {
+    const r = {
+      isError: true,
+      content: [{ type: 'text', text: 'title is required' }],
+      structuredContent: { error: { message: 'x' }, at: new Date(0) },
+    };
+    expect(ownerResult(r)).toBe(r);
+    expect(ownerResult(errored(DRIVER))).not.toBe(r);
   });
 });
 

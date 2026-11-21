@@ -18,7 +18,7 @@ const DB_UNAVAILABLE =
 
 const IPV4 =
   /(?<![\w.])(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)(?!\w|\.\d)/;
-const IPV6_CANDIDATE = /(?<![\w:])[0-9a-f:.]*:[0-9a-f:.]*(?![\w:])/gi;
+const IPV6_CANDIDATE = /[0-9a-f:.]*:[0-9a-f:.]*(?!\w)/gi;
 
 /** Host names the shell's database is configured with (never user or db names). */
 function configuredHosts(): string[] {
@@ -43,12 +43,20 @@ function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+function isV6(token: string): boolean {
+  // A bare `12:30`, `a::b` or `::` is not an address: it needs a digit.
+  return /\d/.test(token) && isIP(token) === 6;
+}
+
 function hasIp(text: string): boolean {
   if (IPV4.test(text)) return true;
   for (const m of text.matchAll(IPV6_CANDIDATE)) {
-    const token = m[0].replace(/\.+$/, '');
-    // A bare `12:30` or `a:b` is not an address; isIP decides.
-    if (/[0-9a-f]/i.test(token) && isIP(token) === 6) return true;
+    // `no route to fd00::7: timed out` ends in punctuation; `addr:fd00::7`
+    // starts after a label: try the token and every part after a colon.
+    const token = m[0].replace(/[:.]+$/, '');
+    if (isV6(token)) return true;
+    for (let i = token.indexOf(':'); i >= 0; i = token.indexOf(':', i + 1))
+      if (isV6(token.slice(i + 1))) return true;
   }
   return false;
 }
@@ -83,14 +91,27 @@ export function ownerText(raw: string, where = 'tool error'): string {
   return replaced;
 }
 
+/** `value` with every string owner-safe; the same object when nothing changed. */
 function scrubValue(value: unknown, where: string): unknown {
   if (typeof value === 'string') return ownerText(value, where);
-  if (Array.isArray(value)) return value.map((v) => scrubValue(v, where));
-  if (value && typeof value === 'object')
-    return Object.fromEntries(
-      Object.entries(value).map(([k, v]) => [k, scrubValue(v, where)]),
-    );
-  return value;
+  if (!value || typeof value !== 'object') return value;
+  const isArray = Array.isArray(value);
+  const proto = Object.getPrototypeOf(value);
+  if (!isArray && proto !== Object.prototype && proto !== null) return value;
+  const entries = Object.entries(value as object);
+  let changed = false;
+  const next = entries.map(([k, v]) => {
+    const clean = scrubValue(v, where);
+    if (clean !== v) changed = true;
+    return [k, clean] as const;
+  });
+  if (!changed) return value;
+  return isArray ? next.map(([, v]) => v) : Object.fromEntries(next);
+}
+
+function withText<C extends { text: string }>(c: C, where: string): C {
+  const text = scrubContentText(c.text, where);
+  return text === c.text ? c : { ...c, text };
 }
 
 function scrubContentText(text: string, where: string): string {
@@ -121,10 +142,7 @@ export function ownerResult<T>(result: T, where = 'tool result'): T {
         c &&
         typeof c === 'object' &&
         typeof (c as { text?: unknown }).text === 'string'
-          ? {
-              ...c,
-              text: scrubContentText((c as { text: string }).text, where),
-            }
+          ? withText(c as { text: string }, where)
           : c,
       )
     : r.content;
@@ -132,6 +150,13 @@ export function ownerResult<T>(result: T, where = 'tool result'): T {
     r.structuredContent === undefined
       ? undefined
       : scrubValue(r.structuredContent, where);
+  const same =
+    structuredContent === r.structuredContent &&
+    (!Array.isArray(content) ||
+      (content as unknown[]).every(
+        (c, i) => c === (r.content as unknown[])[i],
+      ));
+  if (same) return result;
   return {
     ...r,
     content,
