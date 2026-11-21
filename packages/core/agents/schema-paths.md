@@ -2042,16 +2042,36 @@ pooled session's connection is discarded on release.
 Each migration's deferred statements run under
 `pg_try_advisory_lock(hashtextextended('smrt:migration-deferred:<row id>',
 0))` on the pinned session, and a retry's `running` update first takes
-`pg_try_advisory_xact_lock` on the same key; when another run holds it,
-nothing runs and the record is not written. On PGlite the lock is re-entrant
-on the shared connection, so there only the record fences below apply. Under
-the lock the row is read again; phase-2 status writes target the
-schema-qualified tracking table phase 1 resolved by row id, attempt number
-and `status = 'failed'`, so a late failure never overwrites `completed`, and
-a success write that matches no row is reported as taken over, not applied.
-In an atomic `postgresSafe` batch on PostgreSQL the `running` update of a
-retry also matches the status and attempt number it read; other paths
-update it as before.
+`pg_try_advisory_xact_lock` on the same key in the batch's transaction, the
+same one as the update, so the lock is held through the update (a handle
+without a transaction cannot hold it, and the takeover is refused before
+anything is written); when another run holds it, nothing runs and the record
+is not written. On PGlite the lock is re-entrant on the shared connection,
+so there only the record fences below apply. Runs over one handle without
+`acquireSession` (PGlite) take turns for their whole run: each
+`postgresSafe` `applyAll()` (record reads, phase 1, the batch check, phase 2
+and cleanup) and each direct `postgresSafe` `apply()` holds the handle's one
+turn, so no other run's statements land between its own; dry runs and
+pooled adapters take no turn. Under the lock the row is read again; phase-2
+status writes go through the pinned session (never a second checkout, which
+a saturated pool would not hand over while the session holds the row lock)
+to the schema-qualified tracking table phase 1 resolved, by row id, attempt
+number and `status = 'failed'`, so a late failure never overwrites
+`completed`, and a success write that matches no row is reported as taken
+over, not applied, and stops the batch like any other failure. In an atomic
+`postgresSafe` batch on PostgreSQL the `running` update of a retry also
+matches the status, attempt number and `error_message` it read, so a retry
+checked against a record that said no deferred statement had run takes
+nothing over once another run has started them; other paths update it as
+before. Cleanup is checked: a row lock whose unlock reports nothing
+released, or tracker settings that could not be put back, is reported; on a
+shared handle (PGlite) the run fails with that report after writing its
+records and marks the handle unusable before the next queued run gets its
+turn, so every later run on it is refused until the caller reopens it; on a
+pooled session (discarded on release) it is logged. The non-atomic batch
+check is checked again over the definitions that would run only after a
+definition's refusal; a failure of the check itself rejects the batch as it
+was thrown.
 
 **Upgrade.** This changes atomic `postgresSafe` batches; non-atomic runs and
 a direct `apply()` behave as before (a marked record they meet is refused as
