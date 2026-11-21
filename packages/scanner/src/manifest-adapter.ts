@@ -9,6 +9,10 @@ import type { RecipeDefinition } from '@happyvertical/smrt-types';
 import { type EnumValue, resolveEnumValues } from './enum-values.js';
 import { FRAMEWORK_BASE_CLASSES } from './inheritance-resolver.js';
 import { isSafeObjectKey } from './oxc-parser.js';
+import {
+  isReservedModelFieldName,
+  reservedFieldNameMessage,
+} from './reserved-field-names.js';
 import type {
   FieldTypeInference,
   InferredFieldType,
@@ -232,6 +236,31 @@ interface SmartObjectManifest {
 // ============================================================================
 // Utilities
 // ============================================================================
+
+/** Framework bases whose subclasses are object models (SmrtObject family). */
+const OBJECT_MODEL_BASES: ReadonlySet<string> = new Set([
+  'SmrtObject',
+  'SmrtHierarchical',
+  'SmrtPolymorphicAssociation',
+  'SmrtReport',
+]);
+
+/**
+ * Whether a class with this resolved inheritance chain (base first) is an
+ * object model, so the reserved field-name rule applies. Collections
+ * (`SmrtCollection`, `SmrtReportCollection`, junctions) and plain `SmrtClass`
+ * services are not. A chain that stops at a class the resolver cannot trace
+ * counts as a model only when the class itself carries `@smrt()`.
+ */
+function hasObjectModelAncestry(
+  chain: readonly string[],
+  hasSmartDecorator: boolean,
+): boolean {
+  const root = chain[0] ?? '';
+  if (OBJECT_MODEL_BASES.has(root)) return true;
+  if (FRAMEWORK_BASE_CLASSES.has(root)) return false;
+  return hasSmartDecorator;
+}
 
 /**
  * Property keys that must never appear as own properties on a manifest object.
@@ -674,6 +703,40 @@ export class ManifestAdapter {
           }
         } catch {
           // Failed to parse static property initializer — skip
+        }
+      }
+    }
+
+    // A model's own public field (a data field) may not take a name the
+    // object runtime uses (an instance member, a prototype method or
+    // accessor, or a constructor flag): such a field is not stored or loaded
+    // as data and shadows the runtime value. Private and protected members
+    // are deliberate overrides (a model may back its own `context` accessor
+    // with `_context`), framework base classes declare those members
+    // themselves, a `declare` field emits nothing at runtime, and the names
+    // belong to SmrtObject, so only public fields of classes with object-model
+    // ancestry are checked (not collections, which keep their own `options`,
+    // and not plain SmrtClass services). A field spelled with a literal
+    // computed key (`['save'] = …`) is a runtime field like any other.
+    if (
+      !classDef.isFrameworkBase &&
+      hasObjectModelAncestry(
+        // Callers may pass unresolved definitions without a chain.
+        classDef.inheritanceChain ?? [classDef.extendsClause ?? ''],
+        classDef.hasSmartDecorator,
+      )
+    ) {
+      const runtimeFields = [
+        ...classDef.fields,
+        ...(classDef.literalComputedFields ?? []),
+      ];
+      for (const field of runtimeFields) {
+        if (field.isStatic || field.accessibility !== 'public') continue;
+        if (field.declare) continue;
+        if (isReservedModelFieldName(field.name)) {
+          throw new Error(
+            `${reservedFieldNameMessage(classDef.className, field.name)} (${classDef.filePath}${field.line ? `:${field.line}` : ''})`,
+          );
         }
       }
     }

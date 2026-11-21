@@ -10,6 +10,18 @@
 import type { RecipeDefinition } from '@happyvertical/smrt-types';
 import type { RawRecipe } from './recipes.js';
 
+// The reserved field-name rule is pure data, exported here so smrt-core's
+// browser-safe modules can share it without loading the parser.
+export {
+  isReservedModelFieldName,
+  reservedFieldNameMessage,
+  SMRT_FRAMEWORK_FIELD_NAMES,
+  SMRT_INSTANCE_MEMBERS,
+  SMRT_OPTION_KEYS,
+  SMRT_PROTOTYPE_MEMBERS,
+  SMRT_RESERVED_FIELD_NAMES,
+} from './reserved-field-names.js';
+
 // ============================================================================
 // Phase 1: Raw Types (Direct OXC output)
 // ============================================================================
@@ -57,6 +69,16 @@ export interface RawClassDefinition {
 
   /** Class properties/fields */
   fields: RawFieldDefinition[];
+
+  /**
+   * Fields declared with a computed string-literal key (`['save'] = …`). They
+   * are not manifest fields, but they are runtime fields, so the reserved
+   * field-name rule still sees them.
+   */
+  literalComputedFields?: Pick<
+    RawFieldDefinition,
+    'name' | 'isStatic' | 'accessibility' | 'line' | 'declare'
+  >[];
 
   /** Class methods */
   methods: RawMethodDefinition[];
@@ -163,6 +185,9 @@ export interface RawFieldDefinition {
 
   /** Start line in source */
   line: number;
+
+  /** Whether the field is a type-only `declare` field (emits nothing at runtime) */
+  declare?: boolean;
 }
 
 /**

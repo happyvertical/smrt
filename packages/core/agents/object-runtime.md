@@ -10,6 +10,21 @@ Cascade reuse of a no-savepoint transaction requires an active framework-owned
 transaction handle; raw caller transactions retain the ordinary delete limitation.
 See [audit contract](../../../docs/content/audit-trail.md).
 
+**Reserved field names (#5504).** A model field may not take an own
+`SmrtObject` instance member (`options`, `_db`, …), a `SmrtObject`/`SmrtClass`
+prototype member (`db`, `ai`, `fs`, `save`, `toJSON`, `tableName`, …) or an
+underscore constructor flag (`_skipLoad`, …): the scanner fails the build
+and `@field`-family decorators throw, naming the model, the field and the
+fix. Framework columns (`id`, `slug`, `context`, `created_at`, `updated_at`),
+service-option names that are not members (`metrics`, `logging`, `usage`, …;
+row data, see `service-options.ts`) and words like `key` stay allowed. One
+rule: `@happyvertical/smrt-scanner/types` `isReservedModelFieldName`;
+`cookbook/reserved-names.test.ts` keeps its member lists equal to a
+constructed instance and the real prototypes. The scanner applies it to
+object models only (collections keep their `options`; plain `SmrtClass`
+services are not checked), sees literal computed keys and skips `declare`
+fields; the app model editor's `FIELD_NAME_RESERVED` names the target model.
+
 - `initialize()`: loads field initializers, applies option values (options override initializers), loads from DB if id/slug provided
 - `save()`: upsert with STI validation, interceptor execution, auto-embeddings. Persisted objects (`isPersisted` — set by DB hydration and successful saves) upsert on `['id']` so natural-key edits (e.g. slug renames) update in place; new objects upsert on the natural-key conflict columns for ingestion-style dedup (#1472)
 - Persisted `save()` uses loaded `updated_at` in its `UPDATE`; zero rows throws

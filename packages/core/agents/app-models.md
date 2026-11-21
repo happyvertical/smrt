@@ -126,10 +126,14 @@ check compares truncated names); on PostgreSQL a migration of a table holding
 such a truncated column is refused up front with `MODEL_MIGRATION_REQUIRED`
 (instead of failing on a duplicate column) while edits of other models stay
 available.
-Reserved field names live in one place, `src/cookbook/reserved-names.ts`:
-JS/SQL/framework column names, every `SmrtClassOptions`/`SmrtObjectOptions`
-key (constructor input mixes options with field values) and every own instance
-property of a constructed `SmrtObject` (`options`, …). A new field, or its money
+Reserved field names: the model-field rule (own instance members such as
+`options`, `SmrtObject` prototype members, underscore constructor flags) lives
+in `@happyvertical/smrt-scanner/types` (`reserved-field-names.ts`) and is
+shared by the scanner, `@field` registration and the editor (#5504); see
+[object-runtime.md](object-runtime.md). `src/cookbook/reserved-names.ts`
+re-exports it, asserts at compile time that the option list equals the
+`SmrtClassOptions`/`SmrtObjectOptions` keys, and for custom fields also
+rejects every option key and JS/SQL/framework column words. A new field, or its money
 companion, may not take one, nor a prototype member of its model; a field the
 journal already holds stays accepted. The app tools prefix a reserved label's
 derived name (`Options` → `customOptions`).

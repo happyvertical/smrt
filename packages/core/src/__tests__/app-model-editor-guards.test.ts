@@ -1358,7 +1358,31 @@ describe('app model editor: reserved field names', () => {
           fields: { ...mats.fields, options: { type: 'text' } },
         },
       }),
-    ).rejects.toThrow(/FIELD_NAME_RESERVED: options/);
+    ).rejects.toThrow(/FIELD_NAME_RESERVED: options on GuardMat/);
+    // A runtime-member name names the target model and the shared rename
+    // guidance; other reserved words name the model too.
+    await expect(
+      apply({
+        type: 'add_field',
+        model: MEMBER,
+        name: 'save',
+        field: { type: 'text' },
+      }),
+    ).rejects.toThrow(
+      new RegExp(
+        `FIELD_NAME_RESERVED: save on ${MEMBER}\\. Model ${MEMBER} declares a field named "save".*Rename the field`,
+      ),
+    );
+    await expect(
+      apply({
+        type: 'add_field',
+        model: MEMBER,
+        name: 'order',
+        field: { type: 'text' },
+      }),
+    ).rejects.toThrow(
+      new RegExp(`FIELD_NAME_RESERVED: order on ${MEMBER}; choose`),
+    );
     // Prototype members stay refused, and ordinary names still work.
     await expect(
       apply({

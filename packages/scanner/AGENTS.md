@@ -289,6 +289,14 @@ place, `toKnowledgeAgentSurface` in `vite-plugin/index.ts`.
   unwrapped from their `UnaryExpression` before the check. The rule is silent
   and SQLite's affinity masks the consequence, so money- and rate-shaped fields
   are gated by `lintNumericPrecision` rather than left to review (#2361).
+- **Reserved field names** (#5504): `reserved-field-names.ts`, exported from
+  `./types`, is the one rule for model field names; `toSmartObjectDefinition`
+  throws for a public field of a class with object-model ancestry
+  (`SmrtObject`, `SmrtHierarchical`, `SmrtPolymorphicAssociation`,
+  `SmrtReport`; not collections, report collections, junctions, plain
+  `SmrtClass` services or framework bases), including literal computed keys
+  (`['save'] = …`, kept as `literalComputedFields`) and excluding type-only
+  `declare` fields. See core `agents/object-runtime.md`.
 - **`RawFieldDefinition.line` is `0`**: the OXC AST nodes reaching this package
   carry no `loc`. Pass the source text to a consumer that needs a real line.
 - **Static property capture**: captures `uiSlots` and `adminRoutes` for agent

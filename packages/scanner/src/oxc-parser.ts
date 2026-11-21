@@ -215,6 +215,8 @@ interface PropertyDefinition extends BaseNode {
   accessibility?: 'public' | 'private' | 'protected';
   typeAnnotation?: TSTypeAnnotation;
   decorators?: Decorator[];
+  /** `declare` field: type-only, emits nothing at runtime */
+  declare?: boolean;
 }
 
 interface MethodDefinition extends BaseNode {
@@ -1960,12 +1962,18 @@ function extractClassDeclaration(
   // Extract fields and methods
   const fields: RawFieldDefinition[] = [];
   const methods: RawMethodDefinition[] = [];
+  const literalComputedFields: NonNullable<
+    RawClassDefinition['literalComputedFields']
+  > = [];
 
   for (const member of node.body.body) {
     if (member.type === 'PropertyDefinition') {
       const field = extractPropertyDefinition(member, sourceText);
       if (field) {
         fields.push(field);
+      } else {
+        const computed = extractLiteralComputedField(member);
+        if (computed) literalComputedFields.push(computed);
       }
     } else if (member.type === 'MethodDefinition') {
       const method = extractMethodDefinition(member, sourceText, ctx);
@@ -1999,6 +2007,7 @@ function extractClassDeclaration(
     hasSmartDecorator,
     ...(description ? { description } : {}),
     fields,
+    ...(literalComputedFields.length > 0 ? { literalComputedFields } : {}),
     methods,
     startLine: node.loc?.start.line || 1,
     endLine: node.loc?.end.line || 1,
@@ -2749,6 +2758,45 @@ function getQualifiedName(node: TSQualifiedName): string {
 }
 
 /**
+ * The name of a class field declared with a computed key that is a plain
+ * string (`['save']`, `` [`save`] ``). Such a field is not a manifest field,
+ * but it is a runtime field with a statically known name, so the reserved
+ * field-name rule checks it. Any other computed key yields null.
+ */
+function extractLiteralComputedField(
+  node: PropertyDefinition,
+): NonNullable<RawClassDefinition['literalComputedFields']>[number] | null {
+  if (!node.computed) return null;
+  // OXC also yields template literals here; the local Expression union does
+  // not model them.
+  const key = node.key as
+    | Expression
+    | {
+        type: 'TemplateLiteral';
+        expressions: unknown[];
+        quasis: { value: { cooked?: string | null } }[];
+      };
+  let name: string | null = null;
+  if (key.type === 'Literal' && typeof key.value === 'string') {
+    name = key.value;
+  } else if (
+    key.type === 'TemplateLiteral' &&
+    key.expressions.length === 0 &&
+    key.quasis.length === 1
+  ) {
+    name = key.quasis[0]?.value.cooked ?? null;
+  }
+  if (name === null) return null;
+  return {
+    name,
+    isStatic: node.static || false,
+    accessibility: node.accessibility || 'public',
+    line: node.loc?.start.line || 0,
+    ...(node.declare ? { declare: true } : {}),
+  };
+}
+
+/**
  * Extract property definition
  */
 function extractPropertyDefinition(
@@ -2863,6 +2911,7 @@ function extractPropertyDefinition(
     readonly: node.readonly || false,
     accessibility: node.accessibility || 'public',
     line: node.loc?.start.line || 0,
+    ...(node.declare ? { declare: true } : {}),
   };
 }
 

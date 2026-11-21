@@ -1,103 +1,48 @@
 /**
  * Names a field must not take because the object runtime already uses them.
- * One place for every consumer: the app model editor rejects them for custom
- * fields, and a decorated-class check can adopt the same list.
  *
- * Type-only imports: this module has no registry, database or host
- * dependency, so the browser-safe cookbook engine can import it.
+ * The model-field rule (instance members, prototype members, constructor
+ * flags) lives in `@happyvertical/smrt-scanner/types` so the scanner,
+ * `@field` registration and this editor list share one source. The app model
+ * editor additionally rejects every constructor option key and JavaScript,
+ * SQL and framework words for custom fields.
+ *
+ * Type-only imports from core plus a pure-data scanner module: this module has
+ * no registry, database or host dependency, so the browser-safe cookbook
+ * engine can import it.
  */
+import {
+  SMRT_INSTANCE_MEMBERS,
+  SMRT_OPTION_KEYS,
+  SMRT_RESERVED_FIELD_NAMES,
+} from '@happyvertical/smrt-scanner/types';
 import type { SmrtClassOptions } from '../class.js';
 import type { SmrtObjectOptions } from '../object.js';
 
-/**
- * Every constructor option key. Constructor input mixes options with field
- * values, so a field with one of these names would be read as an option.
- * `satisfies` keeps this list equal to the option interfaces: adding an
- * option without listing it here fails typecheck.
- */
-const OPTION_KEYS = {
-  _className: true,
-  db: true,
-  persistence: true,
-  fs: true,
-  ai: true,
-  decisions: true,
-  inference: true,
-  usage: true,
-  logging: true,
-  metrics: true,
-  pubsub: true,
-  sanitization: true,
-  signals: true,
-  _reuseInitializedDb: true,
-  _deferRuntimeInitialization: true,
-  id: true,
-  slug: true,
-  context: true,
-  created_at: true,
-  updated_at: true,
-  _extractingFields: true,
-  _skipLoad: true,
-  _skipAutoEmbeddings: true,
-} satisfies Record<keyof SmrtObjectOptions | keyof SmrtClassOptions, true>;
-
-export const SMRT_OPTION_KEYS: readonly string[] = Object.keys(OPTION_KEYS);
+export { SMRT_INSTANCE_MEMBERS, SMRT_OPTION_KEYS };
 
 /**
- * Own instance properties a constructed `SmrtObject` carries (they are not on
- * the prototype, so a prototype walk cannot find them). A field with one of
- * these names would be skipped on save and overwrite the property on load.
- * `reserved-names.test.ts` constructs an instance and fails when one is missing.
+ * Compile-time parity: the shared option-key list must equal every
+ * `SmrtObjectOptions` / `SmrtClassOptions` key. Adding an option without
+ * listing it in the scanner module (or listing a key that no longer exists)
+ * fails typecheck.
  */
-export const SMRT_INSTANCE_MEMBERS: readonly string[] = [
-  'options',
-  '_ai',
-  '_decisionClient',
-  '_decisionClientInitPromise',
-  '_aiClientConfig',
-  '_aiUserOnUsage',
-  '_aiSinkAttribution',
-  '_aiUsageResolvedConfig',
-  '_tierAiClients',
-  '_aiTranscriptClients',
-  '_aiTranscriptKeys',
-  '_aiCapabilityAnswers',
-  '_fs',
-  '_db',
-  '_dbEngineHint',
-  '_className',
-  '_signalBus',
-  '_registeredAdapters',
-  '_aiUsageCollector',
-  '_aiUsageHandlers',
-  '_aiRunUsageListeners',
-  '_aiRunCallCaptures',
-  '_aiRunClientHooks',
-  '_aiClientLabel',
-  '_runtimeServicesInitialized',
-  '_runtimeServicesInitPromise',
-  '_writeThroughDraft',
-  '_writeThroughRead',
-  '_writingThrough',
-  '_writeThroughOriginalLinks',
-  '_displayLabel',
-  '_tableName',
-  '_loadedRelationships',
-  '_persisted',
-  '_explicitId',
-  '_insertOnly',
-  '_insertOnlyPreserveDerivedSlug',
-  '_derivedSlug',
-  '_derivedSlugBase',
-  '_adoptNaturalKey',
-  '_id',
-  '_slug',
-  '_context',
-  'created_at',
-  'updated_at',
-  '_syncMetadata',
-  '_generatedValues',
-];
+// `SmrtObjectOptions` carries a `[key: string]: any` index signature (field
+// values ride along), so only the declared keys are compared.
+type DeclaredKeys<T> = keyof {
+  [K in keyof T as string extends K
+    ? never
+    : number extends K
+      ? never
+      : K]: T[K];
+};
+type OptionKey =
+  | DeclaredKeys<SmrtObjectOptions>
+  | DeclaredKeys<SmrtClassOptions>;
+type ListedOptionKey = (typeof SMRT_OPTION_KEYS)[number];
+type Same<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
+const optionKeysMatch: Same<OptionKey, ListedOptionKey> = true;
+void optionKeysMatch;
 
 /** JavaScript, SQL and framework column names no custom field may take. */
 export const RESERVED_IDENTIFIERS: readonly string[] =
@@ -106,15 +51,17 @@ export const RESERVED_IDENTIFIERS: readonly string[] =
   );
 
 const RESERVED_FIELD_NAMES = new Set([
+  ...SMRT_RESERVED_FIELD_NAMES,
   ...RESERVED_IDENTIFIERS,
   ...SMRT_OPTION_KEYS,
   ...SMRT_INSTANCE_MEMBERS,
 ]);
 
 /**
- * Whether `name` is reserved for the object runtime. Prototype members
- * (`save`, `delete`, `loadRelated`, …) are found separately by walking the
- * model's prototype chain, which also covers subclasses.
+ * Whether `name` is reserved for an editor-created custom field: the shared
+ * model-field rule plus every option key and the JS/SQL words above.
+ * Members a model subclass adds to its prototype are found separately by
+ * walking the model's prototype chain.
  */
 export function isReservedFieldName(name: string): boolean {
   return RESERVED_FIELD_NAMES.has(name);

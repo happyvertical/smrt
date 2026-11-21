@@ -1,3 +1,7 @@
+import {
+  isReservedModelFieldName,
+  reservedFieldNameMessage,
+} from '@happyvertical/smrt-scanner/types';
 import type { GeneratedExpression } from '../generated-fields.js';
 /**
  * Field decorators for SMRT objects
@@ -37,6 +41,13 @@ function registerFieldDecoratorForCompatibility(
   options: CompatibleFieldDecoratorOptions,
   ctor?: Function,
 ): void {
+  // Same rule as the scanner: a field may not take a SmrtObject instance
+  // member, prototype member or underscore constructor flag name, because it
+  // would not be stored or loaded as data and would shadow the runtime value.
+  // Service option names that are not members stay allowed (row data).
+  if (isReservedModelFieldName(propertyKey)) {
+    throw new Error(reservedFieldNameMessage(className, propertyKey));
+  }
   ObjectRegistry.registerFieldDecorator(className, propertyKey, options, ctor);
 }
 

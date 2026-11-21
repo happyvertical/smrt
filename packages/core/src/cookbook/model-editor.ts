@@ -1,5 +1,9 @@
 /** The app model editor: cookbook source, durable revisions, tracked DDL, live publication. */
 
+import {
+  isReservedModelFieldName,
+  reservedFieldNameMessage,
+} from '@happyvertical/smrt-scanner/types';
 import type {
   Cookbook,
   CookbookCustomList,
@@ -736,7 +740,7 @@ async function openAppModelEditor(
           modelProtected.add(name);
       for (const [name, field] of Object.entries(entry.fields)) {
         if (!isCustomIdentifier(name) || modelProtected.has(name))
-          throw new Error(`FIELD_NAME_RESERVED: ${name}`);
+          throw new Error(`FIELD_NAME_RESERVED: ${name} on ${entry.name}`);
         // Constructor options and instance members (`options`, `db`, `ai`, …)
         // are not on the prototype. A new field, or its money companion, must
         // not take one; a field the journal already holds stays accepted.
@@ -748,7 +752,7 @@ async function openAppModelEditor(
           )
         )
           throw new Error(
-            `FIELD_NAME_RESERVED: ${name} is used by the object runtime; choose another field name`,
+            `FIELD_NAME_RESERVED: ${name} on ${entry.name} is used by the object runtime; choose another field name`,
           );
         for (const columnName of [
           name,
@@ -1814,7 +1818,9 @@ async function openAppModelEditor(
         case 'add_field': {
           if (!isCustomIdentifier(edit.name) || isReservedFieldName(edit.name))
             throw new Error(
-              `FIELD_NAME_RESERVED: ${edit.name}; choose a descriptive name such as sortOrder, groupName, fromDate or toDate (unquoted SDK columns, sdk#1513)`,
+              isReservedModelFieldName(edit.name)
+                ? `FIELD_NAME_RESERVED: ${edit.name} on ${edit.model}. ${reservedFieldNameMessage(edit.model, edit.name)}`
+                : `FIELD_NAME_RESERVED: ${edit.name} on ${edit.model}; choose a descriptive name such as sortOrder, groupName, fromDate or toDate (unquoted SDK columns, sdk#1513)`,
             );
           if (
             !Object.hasOwn(models.lists, edit.model) &&
