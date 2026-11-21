@@ -198,8 +198,12 @@ for the one operation on the host thread; a PGlite uses the host's client).
   version" as "publish did not happen"). The journal
   carries `pg: { schema, staging, aside }`: at start `reconcilePgPublish`
   swaps the aside back (journal not committed and store behind) or drops it
-  (journal committed, or store at the published version), before the app
-  opens. A failure after the swap (respawn, store)
+  (journal committed, or store at or past the published version:
+  `publishHappened`, shared with SQLite's `reconcilePublish`), before the app
+  opens. A version past `finalVersion` can only be numbered after the
+  publish's store commit, so it proves the publish even if the `committed`
+  rewrite failed (disk full); that failure is added to `host.notices`, the old
+  data stays, and the next start removes it. A failure after the swap (respawn, store)
   swaps back. Leftover side schemas of a crash before the journal are named
   `<schema>__<tag>...` and safe to drop. The unfinished part: the version
   store (the shell's tables) is a different database from the app's, so a
@@ -343,7 +347,7 @@ stages, refusals, digest and version numbering.
 - **Boot reconcile** (`reconcilePublish`, every `AppHost.open`, before the app
   starts; result in `host.recovery`): a journal marked `committed` (rewritten
   once the store has the versions, before the aside goes) or whose
-  `finalVersion` is the store's current only needs its leftovers removed; any
+  `finalVersion` the store has reached or passed only needs its leftovers removed; any
   other journal is ROLLED
   BACK (asides restored, the new file removed), not forward: nothing could have
   written to the new file, and the draft stays open to publish again. An

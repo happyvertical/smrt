@@ -202,6 +202,22 @@ export interface PublishJournal {
   pg?: { schema: string; staging: string; aside: string };
 }
 
+/**
+ * Did the publish this journal describes reach the version store? Yes when the
+ * journal says `committed`, or the store is AT or PAST its final version: a
+ * version past `finalVersion` can only be numbered after the publish's own
+ * store commit, so it is proof even when the `committed` rewrite itself
+ * failed (disk full) and the owner went on editing.
+ */
+export function publishHappened(
+  j: Pick<PublishJournal, 'committed' | 'finalVersion'>,
+  current: number | null,
+): boolean {
+  return (
+    j.committed === true || (current !== null && current >= j.finalVersion)
+  );
+}
+
 export function readJournal(dataDir: string): PublishJournal | null {
   const file = join(dataDir, JOURNAL_FILE);
   if (!existsSync(file)) return null;
@@ -303,8 +319,8 @@ export function removeRehearsal(dataDir: string, dir: string): void {
  * Run at every host start, before the app opens: finish or undo an interrupted
  * publish. The new database was never written to before the store committed
  * (the change queue is held until then), so:
- *  - the journal says `committed`, or the store already points at the
- *    published version: the publish happened, only the leftovers are removed;
+ *  - the journal says `committed`, or the store is at or past the published
+ *    version (`publishHappened`): the publish happened, only the leftovers are removed;
  *  - otherwise the old files come back.
  * Returns what it did.
  */
@@ -315,7 +331,7 @@ export function reconcilePublish(
   const journal = readJournal(dataDir);
   let did: 'none' | 'rolled-forward' | 'rolled-back' = 'none';
   if (journal) {
-    if (journal.committed || current === journal.finalVersion) {
+    if (publishHappened(journal, current)) {
       dropAside(dataDir);
       did = 'rolled-forward';
     } else {

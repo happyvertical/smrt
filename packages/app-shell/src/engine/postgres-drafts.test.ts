@@ -871,6 +871,55 @@ describe.each(
       expect(existsSync(join(live.dir, JOURNAL_FILE))).toBe(false);
     });
 
+    it('a journal that cannot be marked committed is surfaced; the owner edits; the next start still keeps the publish', async () => {
+      const live = await seeded('markfail');
+      const { draft } = await fork(live);
+      await edit(draft);
+      live.host.setFrozen(true);
+      const preview = await live.host.previewPublish(draft);
+      const result = await live.host.publishDraft(draft, {
+        ...OK,
+        expect: preview.digest,
+        // The journal's temp file cannot be created (a stand-in for a full disk).
+        onStage: (s) => {
+          if (s === 'committed')
+            mkdirSync(join(live.dir, `${JOURNAL_FILE}.tmp`));
+        },
+      });
+      expect(live.host.notices.join('\n')).toMatch(
+        /could not be marked finished/,
+      );
+      const journal = JSON.parse(
+        readFileSync(join(live.dir, JOURNAL_FILE), 'utf8'),
+      );
+      expect(journal.committed).toBeUndefined();
+      expect(await sideSchemas(live.schema)).toContain(journal.pg.aside);
+      live.host.setFrozen(false);
+      await run(live.host, {
+        type: 'defineModel',
+        name: 'Later',
+        fields: { note: { type: 'text' } },
+      });
+      expect(live.host.version).toBeGreaterThan(result.version);
+      const version = live.host.version;
+      await draft.discard();
+      await live.host.close();
+      hosts.splice(hosts.indexOf(live.host), 1);
+      rmSync(join(live.dir, `${JOURNAL_FILE}.tmp`), { recursive: true });
+      const again = await AppHost.open(live.dir, {
+        store: live.store,
+        database: config(live.schema),
+      });
+      hosts.push(again);
+      expect(again.recovery).toBe('rolled-forward');
+      expect(again.version).toBe(version);
+      expect(
+        (await again.list('Chore')).map((r) => Number(r.score)).sort(),
+      ).toEqual([3, 5, 8]);
+      expect(await sideSchemas(live.schema)).toEqual([]);
+      expect(existsSync(join(live.dir, JOURNAL_FILE))).toBe(false);
+    });
+
     const STAGES: PublishStage[] = [
       'copied',
       'rehearsed',
