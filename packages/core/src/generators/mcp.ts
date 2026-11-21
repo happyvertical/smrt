@@ -19,6 +19,7 @@ import {
   assertCreateTargetSurface,
   isCreateOpenOnSurface,
 } from '../create-target';
+import { importOptionalDependency } from '../lazy-external';
 import {
   type McpGetSerializer,
   resolveMcpGetSerializer,
@@ -1960,14 +1961,15 @@ export class MCPGenerator {
   private async tenantScopedObjectNames(tools: MCPTool[]): Promise<string[]> {
     let isTenantScopedClass: ((name: string) => boolean) | undefined;
     try {
-      // Held in a variable so neither TypeScript's declaration emit (TS2307 —
-      // core deliberately does not depend on tenancy) nor the bundler tries to
-      // statically resolve this optional sibling package. Same pattern as
-      // `tenant-gate.ts` / `embeddings/provider.ts`.
-      const tenancySpecifier = '@happyvertical/smrt-tenancy';
-      const tenancy = (await import(/* @vite-ignore */ tenancySpecifier)) as {
-        isTenantScopedClass?: (name: string) => boolean;
-      };
+      // Passed as a function argument so neither TypeScript's declaration
+      // emit (TS2307 — core deliberately does not depend on tenancy) nor a
+      // bundler resolves this optional sibling package: a local constant is
+      // folded into a literal `import()` in dist, which a consumer's Vite
+      // import analysis then fails to resolve.
+      const tenancy = (await importOptionalDependency(
+        '@happyvertical/smrt-tenancy',
+        'Install @happyvertical/smrt-tenancy to gate tenant-scoped tools.',
+      )) as { isTenantScopedClass?: (name: string) => boolean };
       isTenantScopedClass = tenancy.isTenantScopedClass;
     } catch {
       isTenantScopedClass = undefined;
