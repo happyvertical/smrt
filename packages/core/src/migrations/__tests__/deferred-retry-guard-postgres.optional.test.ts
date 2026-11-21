@@ -1,8 +1,8 @@
 /**
  * Retrying a `--postgres-safe` migration's deferred phase on a real PostgreSQL
  * server with a connection pool (#5325): one run at a time per migration,
- * across connections, and session settings that neither carry from one
- * migration to the next nor reach the pool's next checkout.
+ * across connections; deferred statements may not change session state, and
+ * the tracker's own settings never reach the pool's next checkout.
  *
  * Runs only in the PostgreSQL lane (`DATABASE_URL` / `SMRT_TEST_POSTGRES_URL`).
  */
@@ -74,11 +74,11 @@ describe.skipIf(!pgUrl)(
         )
       ).rows.map((row) => row.schema);
 
-    const switchesPath = (id: string) =>
+    const validated = (id: string, extra: string[] = []) =>
       definition(id, [
         'ALTER TABLE items ADD CONSTRAINT items_v_check CHECK (v >= 0) NOT VALID',
         'ALTER TABLE items VALIDATE CONSTRAINT items_v_check',
-        'SET search_path TO other_ns, public',
+        ...extra,
       ]);
 
     beforeAll(async () => {
@@ -135,36 +135,45 @@ describe.skipIf(!pgUrl)(
       expect(await indexSchemas(db, 'items_id_uq')).toEqual(['app_ns']);
     });
 
-    it('starts each migration from the connection defaults, not the previous migration settings', async () => {
+    it('refuses a deferred path change before anything runs', async () => {
       const db = await freshDatabase();
 
-      const [first, second] = await migrate(db, [
-        switchesPath('path_first'),
-        definition('path_second', [
-          'CREATE INDEX IF NOT EXISTS items_id_idx ON items (id)',
+      await expect(
+        migrate(db, [
+          validated('path_switch', ['SET search_path TO other_ns, public']),
+        ]),
+      ).rejects.toThrow(/changes session state/);
+      expect(
+        (
+          await db.query(
+            "SELECT 1 FROM pg_constraint WHERE conname = 'items_v_check'",
+          )
+        ).rows,
+      ).toEqual([]);
+    });
+
+    it('hands the pool no connection with the tracker settings', async () => {
+      const db = await freshDatabase();
+      const read = async () => {
+        const found = (
+          await db.query(
+            "SELECT current_setting('search_path') AS p, current_setting('lock_timeout') AS l",
+          )
+        ).rows[0];
+        return `${found?.p}|${found?.l}`;
+      };
+      const before = await read();
+
+      const [result] = await migrate(db, [
+        validated('path_pool', [
+          'CREATE INDEX IF NOT EXISTS items_v_idx ON items (v)',
         ]),
       ]);
 
-      expect(first?.success, errorOf(first)).toBe(true);
-      expect(second?.success, errorOf(second)).toBe(true);
-      expect(await indexSchemas(db, 'items_id_idx')).toEqual(['app_ns']);
-    });
-
-    it('hands the pool no connection with a deferred setting', async () => {
-      const db = await freshDatabase();
-
-      const [result] = await migrate(db, [switchesPath('path_pool')]);
-
       expect(result?.success, errorOf(result)).toBe(true);
-      const paths = await Promise.all(
-        Array.from({ length: 8 }, async () =>
-          String(
-            (await db.query("SELECT current_setting('search_path') AS p"))
-              .rows[0]?.p,
-          ),
-        ),
-      );
-      expect(new Set(paths)).toEqual(new Set(['app_ns, public']));
+      const sessions = await Promise.all(Array.from({ length: 8 }, read));
+      expect(before.startsWith('app_ns, public|')).toBe(true);
+      expect(new Set(sessions)).toEqual(new Set([before]));
     });
   },
 );

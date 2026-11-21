@@ -720,8 +720,10 @@ describe('utility command handlers', () => {
     expect(out).toContain('SQL Statements');
     expect(out).toContain('CREATE TABLE x ()');
     expect(out).not.toContain('CREATE TABLE widgets (id TEXT)');
-    // Dry-run never invokes the tracker.
-    expect(trackerApplyAll).not.toHaveBeenCalled();
+    // A dry run asks the tracker only as a dry run (#5325): the real run's
+    // refusals, nothing applied.
+    for (const [, options] of trackerApplyAll.mock.calls)
+      expect(options).toMatchObject({ dryRun: true });
   });
 
   it('db:migrate applies schema changes through the tracker', async () => {

@@ -7,7 +7,8 @@
  * builds) one by one. A retry skips phase 1. It must not run a deferred
  * statement it cannot confirm has not already taken effect, must refuse when
  * the plan it would follow is not the plan the earlier attempt recorded, and
- * must leave the session as it found it.
+ * must leave the session as it found it (deferred statements may not change
+ * it).
  *
  * Runs under `pnpm test:pglite` (and so in the PostgreSQL lane); skipped on the
  * default SQLite run.
@@ -348,8 +349,12 @@ describe.skipIf(process.env.SMRT_TEST_PGLITE !== '1')(
           await fixDuplicates();
         }
 
-        it('retries a list of validations and index statements', async () => {
-          const def = indexOnly();
+        it('retries a list of index statements with no first half', async () => {
+          // With a first half the boundary is not known (see the protocol
+          // tests); with none, skipping phase 1 skips nothing.
+          const def = definition('retry_index_alone', [
+            'CREATE UNIQUE INDEX IF NOT EXISTS child_id_uq ON child (id)',
+          ]);
           await legacyRow(def);
 
           const [retry] = await migrate([def], { reconcile: true });
@@ -409,78 +414,42 @@ describe.skipIf(process.env.SMRT_TEST_PGLITE !== '1')(
           )
         ).rows.map((r) => r.schema);
 
-      const switchesPath = (id: string, extra: string[] = []) =>
+      const validated = (id: string, extra: string[] = []) =>
         definition(id, [
           'ALTER TABLE items ADD CONSTRAINT items_v_check CHECK (v >= 0) NOT VALID',
           'ALTER TABLE items VALIDATE CONSTRAINT items_v_check',
-          'SET search_path TO other_ns, public',
           ...extra,
         ]);
 
-      it('returns the session with the caller settings and without the deferred ones', async () => {
+      it('returns the session with the caller settings and without the tracker ones', async () => {
         const lockTimeout = await showSetting('lock_timeout');
 
         const [result] = await migrate([
-          switchesPath('switch_path', [
+          validated('session_kept', [
             'CREATE INDEX IF NOT EXISTS items_v_idx ON items (v)',
           ]),
         ]);
 
         expect(result?.success, errorOf(result)).toBe(true);
-        // The authored setting applied to the statement after it.
-        expect(await indexSchemas('items_v_idx')).toEqual(['other_ns']);
+        expect(await indexSchemas('items_v_idx')).toEqual(['app_ns']);
         expect(await showSetting('search_path')).toBe('app_ns, public');
         expect(await showSetting('lock_timeout')).toBe(lockTimeout);
       });
 
-      it('writes the record to its own table after a deferred path change', async () => {
-        await db.query(
-          'CREATE TABLE other_ns._smrt_schema_migrations (LIKE app_ns._smrt_schema_migrations INCLUDING ALL)',
-        );
-        await db.query(
-          `INSERT INTO other_ns._smrt_schema_migrations (id, name, version, checksum, status)
-           VALUES ('decoy', 'switch_record', '1', 'x', 'failed')`,
-        );
-
-        const [result] = await migrate([switchesPath('switch_record')]);
-
-        expect(result?.success, errorOf(result)).toBe(true);
-        const own = await db.query(
-          "SELECT status FROM app_ns._smrt_schema_migrations WHERE name = 'switch_record'",
-        );
-        const decoy = await db.query(
-          "SELECT status FROM other_ns._smrt_schema_migrations WHERE name = 'switch_record'",
-        );
-        expect(own.rows).toEqual([{ status: 'completed' }]);
-        expect(decoy.rows).toEqual([{ status: 'failed' }]);
-      });
-
-      it('starts every migration from the caller settings', async () => {
-        const [first, second] = await migrate([
-          switchesPath('switch_first'),
-          definition('switch_second', [
-            'CREATE INDEX IF NOT EXISTS items_id_idx ON items (id)',
-          ]),
-        ]);
-
-        expect(first?.success, errorOf(first)).toBe(true);
-        expect(second?.success, errorOf(second)).toBe(true);
-        expect(await indexSchemas('items_id_idx')).toEqual(['app_ns']);
-      });
-
-      it('records the outcome as the caller after a deferred role change', async () => {
+      it('refuses a deferred path or role change before anything runs', async () => {
         await db.query('CREATE ROLE deferred_role NOLOGIN');
-        const def = definition('switch_role', [
-          'ALTER TABLE items ADD CONSTRAINT items_v_check CHECK (v >= 0) NOT VALID',
-          'ALTER TABLE items VALIDATE CONSTRAINT items_v_check',
+        for (const statement of [
+          'SET search_path TO other_ns, public',
           'SET ROLE deferred_role',
-        ]);
-
-        const [result] = await migrate([def]);
-
-        expect(result?.success, errorOf(result)).toBe(true);
-        expect((await row('switch_role'))?.status).toBe('completed');
-        expect(await showSetting('role')).toBe('none');
+        ]) {
+          await expect(
+            migrate([validated('session_switch', [statement])]),
+            statement,
+          ).rejects.toThrow(/changes session state/);
+          expect(await row('session_switch')).toBeUndefined();
+          expect(await showSetting('search_path')).toBe('app_ns, public');
+          expect(await showSetting('role')).toBe('none');
+        }
       });
     });
 
@@ -591,6 +560,239 @@ describe.skipIf(process.env.SMRT_TEST_PGLITE !== '1')(
 
         expect(result?.success).toBe(false);
         expect((await row('runner_race'))?.status).toBe('completed');
+      });
+
+      it('does not report a migration applied when another run took its record over meanwhile', async () => {
+        await fixDuplicates();
+        const bumping: DatabaseInterface = {
+          ...db,
+          query: (async (sql: string, ...vars: unknown[]) => {
+            const result = await db.query(sql, ...vars);
+            if (/CREATE UNIQUE INDEX CONCURRENTLY/.test(sql))
+              await db.query(
+                'UPDATE _smrt_schema_migrations SET attempts = attempts + 1 WHERE name = ?',
+                'runner_race',
+              );
+            return result;
+          }) as DatabaseInterface['query'],
+        };
+
+        const [result] = await migrate([firstRun], {}, { db: bumping });
+
+        expect(result?.success).toBe(false);
+        expect(errorOf(result)).toContain('another run');
+        expect((await row('runner_race'))?.status).toBe('failed');
+      });
+
+      it('does not start a retry while another run holds the migration', async () => {
+        const def = indexOnly();
+        await failOnce(def);
+        await fixDuplicates();
+        const held: DatabaseInterface = {
+          ...db,
+          transaction: (async (
+            callback: (tx: DatabaseInterface) => Promise<unknown>,
+          ) =>
+            db.transaction?.(async (tx) =>
+              callback({
+                ...tx,
+                query: (async (sql: string, ...vars: unknown[]) =>
+                  /pg_try_advisory_xact_lock/.test(sql)
+                    ? { rows: [{ locked: false }], rowCount: 1 }
+                    : tx.query(sql, ...vars)) as DatabaseInterface['query'],
+              } as DatabaseInterface),
+            )) as DatabaseInterface['transaction'],
+        };
+
+        const [result] = await migrate(
+          [def],
+          { reconcile: true },
+          { db: held },
+        );
+
+        expect(result?.success).toBe(false);
+        expect(errorOf(result)).toContain('another run');
+        expect(await indexValid('child_id_uq')).not.toContain(true);
+      });
+
+      it('releases the migration lock when reading the record under it fails', async () => {
+        await fixDuplicates();
+        const failing: DatabaseInterface = {
+          ...db,
+          query: (async (sql: string, ...vars: unknown[]) => {
+            if (/SELECT status, attempts, error_message FROM/.test(sql))
+              throw new Error('read failed');
+            return db.query(sql, ...vars);
+          }) as DatabaseInterface['query'],
+        };
+
+        const [result] = await migrate([firstRun], {}, { db: failing });
+
+        expect(result?.success).toBe(false);
+        const locks = await db.query(
+          "SELECT count(*)::int AS n FROM pg_locks WHERE locktype = 'advisory'",
+        );
+        expect(locks.rows[0]?.n).toBe(0);
+      });
+    });
+
+    describe('a retry whose deferred phase never started, or whose definition changed', () => {
+      it('runs the whole migration again when forced under another plan', async () => {
+        const def = definition('force_flipped', [
+          addForeignKey[0],
+          'CREATE UNIQUE INDEX IF NOT EXISTS child_id_uq ON child (id)',
+          addForeignKey[1],
+          'CREATE INDEX CONCURRENTLY IF NOT EXISTS child_n_idx ON child (n)',
+        ]);
+        await failOnce(def);
+        await fixDuplicates();
+
+        const [refused] = await migrate(
+          [def],
+          { reconcile: true },
+          { useConcurrentIndexes: false },
+        );
+        expect(refused?.success).toBe(false);
+        expect(errorOf(refused)).toContain('from its first statement');
+
+        // Revert by hand what the earlier attempt applied, as directed.
+        await db.query('ALTER TABLE child DROP CONSTRAINT child_pid_fk');
+        await db.query('DROP INDEX IF EXISTS child_id_uq');
+        const [forced] = await migrate(
+          [def],
+          { forceMigrations: ['force_flipped'] },
+          { useConcurrentIndexes: false },
+        );
+
+        expect(forced?.success, errorOf(forced)).toBe(true);
+        expect(await indexValid('child_id_uq')).toEqual([true]);
+        const fk = await db.query(
+          "SELECT convalidated FROM pg_constraint WHERE conname = 'child_pid_fk'",
+        );
+        expect(fk.rows).toEqual([{ convalidated: true }]);
+      });
+
+      it('refuses a retry after the definition changed, and applies it again only when forced', async () => {
+        const first = definition('edited', [
+          `UPDATE child SET n = n + 1 /* ${SENTINEL} */`,
+          'CREATE UNIQUE INDEX IF NOT EXISTS child_id_uq ON child (id)',
+        ]);
+        await failOnce(first);
+        const edited = definition('edited', [
+          `UPDATE child SET n = n + 1 /* ${SENTINEL} */`,
+          'CREATE UNIQUE INDEX IF NOT EXISTS child_id_tag_uq ON child (id, tag)',
+        ]);
+
+        const [retry] = await migrate([edited], { reconcile: true });
+
+        expect(retry?.success).toBe(false);
+        expect(errorOf(retry)).toContain('changed');
+        expect(errorOf(retry)).not.toContain(SENTINEL);
+        expect(errorOf(retry)).not.toMatch(BATCH_FORCE);
+        expect(await counts()).toEqual(['a:1', 'b:1']);
+
+        const [forced] = await migrate([edited], {
+          forceMigrations: ['edited'],
+        });
+        expect(forced?.success, errorOf(forced)).toBe(true);
+        expect(await counts()).toEqual(['a:2', 'b:2']);
+      });
+
+      it('retries a migration the stopped phase never reached', async () => {
+        const unreached = definition('never_reached', [
+          'ALTER TABLE child ADD CONSTRAINT child_tag_check CHECK (tag IS NOT NULL) NOT VALID',
+          'ALTER TABLE child VALIDATE CONSTRAINT child_tag_check',
+          'ALTER TABLE child ADD COLUMN extra INT',
+        ]);
+        const [first, second] = await migrate([indexOnly(), unreached]);
+        expect(first?.success).toBe(false);
+        expect(errorOf(second)).toContain('Not attempted');
+        await fixDuplicates();
+
+        const [retryFirst, retrySecond] = await migrate(
+          [indexOnly(), unreached],
+          { reconcile: true },
+        );
+
+        expect(retryFirst?.success, errorOf(retryFirst)).toBe(true);
+        expect(retrySecond?.success, errorOf(retrySecond)).toBe(true);
+        const columns = await db.query(
+          "SELECT column_name FROM information_schema.columns WHERE table_name = 'child' AND column_name = 'extra'",
+        );
+        expect(columns.rows).toEqual([{ column_name: 'extra' }]);
+      });
+
+      it('retries a migration after a stop between its phases', async () => {
+        await fixDuplicates();
+        let committed = false;
+        let stopped = false;
+        const stopping: DatabaseInterface = {
+          ...db,
+          transaction: (async (callback: never) => {
+            const result = await db.transaction?.(callback);
+            committed = true;
+            return result;
+          }) as DatabaseInterface['transaction'],
+          query: (async (sql: string, ...vars: unknown[]) => {
+            if (committed && !stopped) {
+              stopped = true;
+              throw new Error('process stopped');
+            }
+            return db.query(sql, ...vars);
+          }) as DatabaseInterface['query'],
+        };
+        await expect(
+          migrate([withDataChange], {}, { db: stopping }),
+        ).rejects.toThrow('process stopped');
+        expect(await counts()).toEqual(['a:0']);
+
+        const [retry] = await migrate([withDataChange], { reconcile: true });
+
+        expect(retry?.success, errorOf(retry)).toBe(true);
+        expect(await counts()).toEqual(['a:1']);
+      });
+
+      it('retries an unlisted migration the check accepts beside a forced one', async () => {
+        const unreached = definition('beside_forced', [
+          'CREATE UNIQUE INDEX IF NOT EXISTS child_tag_uq ON child (tag)',
+        ]);
+        const [, second] = await migrate([withDataChange, unreached]);
+        expect(errorOf(second)).toContain('Not attempted');
+        await fixDuplicates();
+
+        const [forced, beside] = await migrate([withDataChange, unreached], {
+          reconcile: true,
+          forceMigrations: ['retry_data_change'],
+        });
+
+        expect(forced?.success, errorOf(forced)).toBe(true);
+        expect(beside?.success, errorOf(beside)).toBe(true);
+      });
+
+      it('reports the refusal in a dry run', async () => {
+        await failOnce(withDataChange);
+        await fixDuplicates();
+
+        const [preview] = await migrate([withDataChange], {
+          reconcile: true,
+          dryRun: true,
+        });
+
+        expect(preview?.success).toBe(false);
+        expect(errorOf(preview)).toContain('statement 2 of 3');
+      });
+
+      it('still previews a retry the check accepts in a dry run', async () => {
+        const def = indexOnly();
+        await failOnce(def);
+        await fixDuplicates();
+
+        const [preview] = await migrate([def], {
+          reconcile: true,
+          dryRun: true,
+        });
+
+        expect(preview?.success, errorOf(preview)).toBe(true);
       });
     });
   },

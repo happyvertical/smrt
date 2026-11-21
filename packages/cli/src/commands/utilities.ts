@@ -2653,6 +2653,45 @@ export default testManifest;
             console.log();
           }
 
+          // The real run's per-migration checks (a retry it would refuse,
+          // #5325), asked of the tracker as a dry run. Without a tracking
+          // table there is no record to refuse, and none is created.
+          const hasHistory =
+            !schemaUpToDate &&
+            (await db
+              .query('SELECT 1 FROM _smrt_schema_migrations LIMIT 1')
+              .then(
+                () => true,
+                () => false,
+              ));
+          const refused = hasHistory
+            ? (
+                await tracker.applyAll(
+                  buildSchemaMigrationDefs().migrationDefs,
+                  {
+                    atomic: true,
+                    postgresSafe: concurrentIndexMode,
+                    force: forceSelection.force,
+                    forceMigrations: forceSelection.forceMigrations,
+                    reconcile: true,
+                    continueOnError: true,
+                    dryRun: true,
+                  },
+                )
+              ).filter((result) => !result.success)
+            : [];
+          for (const result of refused)
+            console.error(
+              `  ✗ ${redactDatabaseUrlsInText(migrationResultError(result).message)}`,
+            );
+          if (refused.length > 0) {
+            console.error(
+              '❌ Dry-run: the real run would not apply the migration(s) above (no changes made)\n',
+            );
+            process.exitCode = 1;
+            return;
+          }
+
           if (!repairData) {
             console.log('✅ Dry-run complete (no changes made)');
             console.log('   Run without --dry-run to apply migrations\n');
@@ -2685,11 +2724,9 @@ export default testManifest;
           migrations.length +
           deferredForeignKeyMigrations.length;
 
-        if (applySchemaMigrations && schemaChangeCount > 0) {
-          // The lock's connection can die between comparison and apply
-          // (failover, an idle-connection reaper); PostgreSQL then frees it
-          // and another run may already be applying. Stop instead (#3634).
-          await migrationLock?.assertHeld();
+        // The batch's tracked definitions. Declared here, hoisted to the top
+        // of this block: the dry run above checks the same definitions.
+        function buildSchemaMigrationDefs() {
           const migrationDefs: MigrationDefinition[] = [];
           const migrationLogs = new Map<string, SchemaMigrationLogInfo>();
 
@@ -2830,6 +2867,15 @@ export default testManifest;
           for (const migration of remainingMigrations) {
             pushMigrationDef(migration);
           }
+          return { migrationDefs, migrationLogs };
+        }
+
+        if (applySchemaMigrations && schemaChangeCount > 0) {
+          // The lock's connection can die between comparison and apply
+          // (failover, an idle-connection reaper); PostgreSQL then frees it
+          // and another run may already be applying. Stop instead (#3634).
+          await migrationLock?.assertHeld();
+          const { migrationDefs, migrationLogs } = buildSchemaMigrationDefs();
 
           // Ask core for the exact split it will perform, rather than
           // re-deriving it here: this counts the index DDL a `create_table_*`

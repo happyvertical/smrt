@@ -9,7 +9,6 @@
 import { createHash } from 'node:crypto';
 import {
   classifyIndexStatement,
-  quotePostgresIdentifier,
   readPostgresTokens,
 } from './postgres-create-index.js';
 
@@ -24,12 +23,28 @@ export const CONCURRENT_INDEX_PHASE1_MARKER =
 
 const PLAN_TAG_RE = /^ \[smrt: plan sha256:([0-9a-f]{64})\]/;
 
+/**
+ * Written with the marker when phase 1 runs, kept until this row's first
+ * deferred statement is about to run: while present, no deferred statement
+ * of the row has run, so a retry may run them all.
+ */
+const NOT_STARTED_TAG = ' [smrt: deferred not started]';
+
+/**
+ * Ends the tracker's own tags: diagnostic text (a failure message, which an
+ * authored statement can choose) is written only after it, so it never
+ * stands where a tag is read.
+ */
+const TEXT_SEPARATOR = ' | ';
+
 /** The row phase 1 wrote for a migration that finishes in phase 2. */
 export interface DeferredRow {
   id: string;
   /** The attempt number phase 1 recorded: the row's fence. */
   attempts: number;
   digest: string;
+  /** Whether the record still says no deferred statement has run. */
+  notStarted: boolean;
 }
 
 /**
@@ -49,9 +64,24 @@ export function planDigest(
     .digest('hex');
 }
 
-/** The phase-1 marker carrying the plan digest. */
-export function phaseOneMarker(digest: string): string {
-  return `${CONCURRENT_INDEX_PHASE1_MARKER} [smrt: plan sha256:${digest}]`;
+/**
+ * A phase-1 record: the marker, the plan digest, the not-started bit, then
+ * the tracker-owned separator and the diagnostic text.
+ */
+export function phaseOneMessage(
+  digest: string,
+  notStarted: boolean,
+  text: string,
+): string {
+  return `${CONCURRENT_INDEX_PHASE1_MARKER} [smrt: plan sha256:${digest}]${notStarted ? NOT_STARTED_TAG : ''}${TEXT_SEPARATOR}${text}`;
+}
+
+/**
+ * A failure message as the tracker records it outside a phase-1 record: one
+ * that begins with a tracker tag is prefixed, so it never reads as one.
+ */
+export function diagnosticText(message: string): string {
+  return message.startsWith('[smrt:') ? `error: ${message}` : message;
 }
 
 /** Whether a recorded `error_message` says phase 1 committed. */
@@ -62,12 +92,123 @@ export function hasPhaseOneMarker(message: unknown): message is string {
   );
 }
 
-/** The plan digest a phase-1 marker carries, or `null` (older marker). */
+/**
+ * The plan a phase-1 marker records: its digest; `absent` for a marker
+ * written before plans were recorded; `malformed` for a plan tag that is not
+ * a whole sha256 digest, which never counts as either.
+ */
+export type RecordedPlan =
+  | { kind: 'digest'; digest: string }
+  | { kind: 'absent' }
+  | { kind: 'malformed' };
+
+/**
+ * Anything that looks like a damaged reserved tag: a bracket, the `smrt`
+ * introducer or a digest label, in any spacing or case.
+ */
+const DAMAGED_TAG_RE = /\[|\bsmrt\b|plan\s*sha|sha256/i;
+
+export function recordedPlan(message: string): RecordedPlan {
+  const rest = message.slice(CONCURRENT_INDEX_PHASE1_MARKER.length);
+  const tag = PLAN_TAG_RE.exec(rest);
+  if (tag)
+    // The tags end at the separator (or the end): anything else is damaged.
+    return tagsEnd(rest, tag[0].length) !== null
+      ? { kind: 'digest', digest: tag[1] as string }
+      : { kind: 'malformed' };
+  // An older smrt wrote the marker, one space, then its message (never a
+  // tag). Anything else after the marker is a damaged tag, not an old record.
+  const legacy = /^ (\S.*)$/s.exec(rest);
+  return legacy && !DAMAGED_TAG_RE.test(legacy[1]?.slice(0, 40) ?? '')
+    ? { kind: 'absent' }
+    : { kind: 'malformed' };
+}
+
+/** The plan digest a phase-1 marker carries, or `null`. */
 export function recordedPlanDigest(message: string): string | null {
+  const plan = recordedPlan(message);
+  return plan.kind === 'digest' ? plan.digest : null;
+}
+
+/** Whether every deferred statement may run a second time. */
+function everyRetrySafe(concurrent: readonly string[]): boolean {
+  return concurrent.every((sql) => retryUnsafeKind(sql) === null);
+}
+
+/**
+ * Where the tags after the plan tag (at `at`) end: the not-started bit, if
+ * present, then the separator or the end of the record. `notStarted` says
+ * whether the bit is there; `null` when the tags do not end that way.
+ */
+function tagsEnd(rest: string, at: number): { notStarted: boolean } | null {
+  const ends = (from: number) =>
+    from === rest.length || rest.startsWith(TEXT_SEPARATOR, from);
+  if (rest.startsWith(NOT_STARTED_TAG, at))
+    return ends(at + NOT_STARTED_TAG.length) ? { notStarted: true } : null;
+  return ends(at) ? { notStarted: false } : null;
+}
+
+/**
+ * Whether a marker with a plan digest says no deferred statement has run.
+ * Read from the tracker's own tags only, never from the text after them.
+ */
+export function deferredNotStarted(message: unknown): boolean {
+  if (!hasPhaseOneMarker(message)) return false;
+  const rest = message.slice(CONCURRENT_INDEX_PHASE1_MARKER.length);
+  const plan = PLAN_TAG_RE.exec(rest);
+  return plan !== null && tagsEnd(rest, plan[0].length)?.notStarted === true;
+}
+
+/**
+ * Whether the recorded marker's plan is this run's plan, so skipping phase 1
+ * skips exactly what committed. A malformed plan tag never counts.
+ *
+ * A marker from before plans were recorded counts only under concurrent
+ * routing, only for a deferred list that may run again in full, and only
+ * when skipping phase 1 skips nothing or the migration is forced by name.
+ * The earlier attempt's phase boundary is not known: a statement now
+ * deferred may have committed in its phase 1 (hence the harmless list), and
+ * the planner of the time read `VALIDATE CONSTRAINT` in comments, which the
+ * checksum leaves out, so a statement now in phase 1 may have been deferred
+ * and never run. Forcing it by name is the operator's word that the first
+ * half took effect.
+ */
+export function retryPlanMatches(input: {
+  recordedMessage: string;
+  digest: string;
+  regular: readonly string[];
+  concurrent: readonly string[];
+  concurrentRouting: boolean;
+  forced: boolean;
+}): boolean {
+  if (input.concurrent.length === 0) return false;
+  const recorded = recordedPlan(input.recordedMessage);
+  if (recorded.kind === 'digest') return recorded.digest === input.digest;
   return (
-    PLAN_TAG_RE.exec(
-      message.slice(CONCURRENT_INDEX_PHASE1_MARKER.length),
-    )?.[1] ?? null
+    recorded.kind === 'absent' &&
+    input.concurrentRouting &&
+    everyRetrySafe(input.concurrent) &&
+    (input.regular.length === 0 || input.forced)
+  );
+}
+
+/**
+ * Whether only the first half stands between a pre-plan record and a retry:
+ * routed concurrently, every deferred statement harmless, but a first half
+ * to skip whose boundary the record cannot establish.
+ */
+function legacyFirstHalfUnknown(input: {
+  recordedMessage: string;
+  regular: readonly string[];
+  concurrent: readonly string[];
+  concurrentRouting: boolean;
+}): boolean {
+  return (
+    recordedPlan(input.recordedMessage).kind === 'absent' &&
+    input.concurrentRouting &&
+    input.concurrent.length > 0 &&
+    everyRetrySafe(input.concurrent) &&
+    input.regular.length > 0
   );
 }
 
@@ -86,7 +227,7 @@ const DATA_CHANGE_WORDS = new Set([
 /**
  * Whether a deferred statement may run again on a retry: `null` when its
  * second run is harmless (index DDL the lexer reads, one `ALTER TABLE …
- * VALIDATE CONSTRAINT`, one plain `SET` / `RESET`), otherwise why not.
+ * VALIDATE CONSTRAINT`), otherwise why not.
  * Read by the PostgreSQL lexer; a string holding more than one statement, or
  * text it cannot read, is never harmless.
  */
@@ -103,7 +244,6 @@ export function retryUnsafeKind(sql: string): RetryUnsafeKind | null {
     tokens[index]?.kind === 'word' ? tokens[index]?.value : undefined;
   const first = word(0);
   if (first === undefined) return 'other';
-  if (first === 'set' || first === 'reset') return null;
   const index = classifyIndexStatement(sql).kind;
   if (
     index === 'create-index' ||
@@ -150,32 +290,60 @@ function isValidateConstraint(tokens: ReadToken[]): boolean {
 
 /**
  * Why a retry of a migration whose phase 1 committed must not run, or `null`.
- * Checked before any statement of the retry runs.
+ * Checked before any statement of the retry runs. A migration forced by name
+ * is never refused: under the recorded plan it replays the deferred list
+ * from its start; otherwise the caller runs it from its first statement.
  */
 export function deferredRetryRefusal(input: {
   id: string;
   recordedMessage: string;
-  digest: string;
-  /** The deferred statements this run would run, or `null` when none. */
-  concurrent: readonly string[] | null;
-  /** Whether this run routes index DDL concurrently (`useConcurrentIndexes`). */
+  /** Whether this run's checksum is the one the earlier attempt recorded. */
+  sameChecksum: boolean;
+  /** {@link retryPlanMatches} for this run. */
+  samePlan: boolean;
+  /** The first-half statements this run would skip after phase 1. */
+  regular: readonly string[];
+  /** The deferred statements this run would run. */
+  concurrent: readonly string[];
+  /** Whether this run routes index DDL concurrently. */
   concurrentRouting: boolean;
+  forced: boolean;
 }): string | null {
   const { id } = input;
-  const recorded = recordedPlanDigest(input.recordedMessage);
-  const samePlan =
-    recorded !== null
-      ? recorded === input.digest
-      : // A marker from before plans were recorded: this run's phase-1 half
-        // is a subset of any earlier one only under concurrent routing.
-        input.concurrent !== null && input.concurrentRouting;
-  if (!samePlan || input.concurrent === null)
-    return `Migration ${id} was not retried: an earlier attempt committed part of it under another statement plan (a different --postgres-safe mode, concurrent-index setting or batch), or its record does not match this migration. Nothing was run. Re-run with the options of the earlier attempt. Otherwise check by hand which of its statements took effect and revert them; --force-migration ${id} then runs it again without this check.`;
-  const statements = input.concurrent;
-  for (let index = 0; index < statements.length; index++) {
-    const kind = retryUnsafeKind(statements[index] ?? '');
+  if (input.forced) return null;
+  const numbering =
+    'Deferred statements are numbered as planned: the first half is not counted, and one unique-index recreate counts as three.';
+  const fullRemedy = `revert by hand what that attempt applied, in both halves, and --force-migration ${id} then runs the migration again from its first statement.`;
+  if (!input.sameChecksum)
+    return `Migration ${id} was not retried: it changed since an earlier attempt committed part of it. Nothing was run. Restore the definition the earlier attempt ran; otherwise, ${fullRemedy}`;
+  const recorded = recordedPlan(input.recordedMessage);
+  if (recorded.kind === 'malformed')
+    return `Migration ${id} was not retried: the record of an earlier attempt that committed part of it is unreadable, so the part that committed is not known. Nothing was run. To retry it, ${fullRemedy}`;
+  const unsafe = firstRetryUnsafe(input.concurrent);
+  if (!input.samePlan && recorded.kind === 'absent' && unsafe)
+    return `Migration ${id} was not retried: an earlier attempt committed part of it before statement plans were recorded, so which of its statements committed is not known, and ${unsafe} may already have taken effect. Nothing was run. To retry it, ${fullRemedy} ${numbering}`;
+  if (!input.samePlan && legacyFirstHalfUnknown(input))
+    return `Migration ${id} was not retried: an earlier attempt committed part of it before statement plans were recorded, so where its first half ended is not known, and a first-half statement may never have run. Nothing was run. Check that each first-half statement took effect, and run by hand any that did not; --force-migration ${id} then runs its deferred statements again (they are all safe to run twice), not its first half.`;
+  if (!input.samePlan)
+    return `Migration ${id} was not retried: an earlier attempt committed part of it under another statement plan (a different --postgres-safe mode, concurrent-index setting, or set of migrations run with it), or its record does not match this migration. Nothing was run. Re-run with the options and migrations of the earlier attempt; or ${fullRemedy}`;
+  // The record says none of its deferred statements has run yet.
+  if (deferredNotStarted(input.recordedMessage)) return null;
+  if (unsafe)
+    return `Migration ${id} was not retried: an earlier attempt committed part of it, and ${unsafe} may already have taken effect. The tracker does not run such a statement a second time. Nothing was run. Revert by hand the deferred statements that took effect; --force-migration ${id} then runs every deferred statement again (its committed first half is not run again). ${numbering}`;
+  return null;
+}
+
+/**
+ * The first deferred statement that may not run a second time, described by
+ * its place in the planned deferred list. That numbering is not the authored
+ * one: the list leaves out the statements that run in the first half, and one
+ * unique-index recreate becomes three statements. `null` when there is none.
+ */
+function firstRetryUnsafe(concurrent: readonly string[]): string | null {
+  for (let index = 0; index < concurrent.length; index++) {
+    const kind = retryUnsafeKind(concurrent[index] ?? '');
     if (kind)
-      return `Migration ${id} was not retried: an earlier attempt committed part of it, and deferred statement ${index + 1} of ${statements.length} (${kind}) may already have taken effect. The tracker does not run such a statement a second time. Nothing was run. Check by hand which deferred statements took effect and revert them; --force-migration ${id} then runs every deferred statement again without this check.`;
+      return `planned deferred statement ${index + 1} of ${concurrent.length} (${kind})`;
   }
   return null;
 }
@@ -188,182 +356,184 @@ interface SessionLike {
   ) => Promise<{ rows: Record<string, unknown>[] }>;
 }
 
+type ReadStatement = Array<{ kind: string; value?: string }>;
+
+const isPunct = (token: ReadStatement[number] | undefined, value: string) =>
+  token?.kind === 'punct' && token.value === value;
+const isName = (token: ReadStatement[number] | undefined) =>
+  token?.kind === 'word' || token?.kind === 'quoted';
+
 /**
- * The settings a deferred statement may change that `pg_settings` does not
- * list (application-defined `a.b` settings), by name: `SET`, `RESET` and
- * `set_config` with a literal name. `null` when its changes cannot be named
- * from its text (`RESET ALL`, `DISCARD ALL`, `set_config` with a computed
- * name, or text the lexer cannot read): the tracker could not restore them.
- * Changes made inside a function body or `DO` block are not seen.
+ * Words after which `set_config (` names a relation (an index, table or
+ * foreign-key target), not a call.
  */
-export function sessionSettingTargets(sql: string): string[] | null {
-  const read = readPostgresTokens(sql, { literals: true });
-  if (!Array.isArray(read)) return null;
-  const targets = new Set<string>();
+const RELATION_INTRODUCERS = new Set([
+  'on',
+  'only',
+  'into',
+  'table',
+  'references',
+  'exists',
+]);
+
+/**
+ * Whether a deferred statement may change session state, or cannot be read
+ * whole: a `SET` (`SET LOCAL`, `SET ROLE`, `SET SESSION AUTHORIZATION`
+ * included), `RESET`, `DISCARD`, or a `set_config(...)` call anywhere in it.
+ * `set_config` followed by a column list after `ON`, `INTO`, `TABLE`,
+ * `REFERENCES` or the like names a relation and is not a call. Changes made
+ * inside a function body or `DO` block are not seen.
+ */
+export function changesSessionState(sql: string): boolean {
+  const read = readPostgresTokens(sql);
+  if (!Array.isArray(read)) return true;
   let start = 0;
   for (let end = 0; end <= read.length; end++) {
-    const token = read[end];
-    if (end < read.length && !(token?.kind === 'punct' && token.value === ';'))
-      continue;
-    const statement = read.slice(start, end);
+    if (end < read.length && !isPunct(read[end], ';')) continue;
+    if (statementChangesSession(read.slice(start, end))) return true;
     start = end + 1;
-    const word = (index: number) =>
-      statement[index]?.kind === 'word' ? statement[index]?.value : undefined;
-    // A dotted name after SET [SESSION | LOCAL] or RESET.
-    let at = word(0) === 'set' ? 1 : word(0) === 'reset' ? 1 : -1;
-    if (word(0) === 'set' && (word(1) === 'session' || word(1) === 'local'))
-      at = 2;
-    if (word(0) === 'reset' && word(1) === 'all') return null;
-    if (word(0) === 'discard' && word(1) === 'all') return null;
-    const name = (index: number) => {
-      const part = statement[index];
-      return part?.kind === 'word' || part?.kind === 'quoted'
-        ? part.value?.toLowerCase()
-        : undefined;
-    };
-    if (
-      at > 0 &&
-      name(at) !== undefined &&
-      statement[at + 1]?.kind === 'punct' &&
-      statement[at + 1]?.value === '.' &&
-      name(at + 2) !== undefined
-    )
-      targets.add(`${name(at)}.${name(at + 2)}`);
-    for (let i = 0; i < statement.length; i++) {
-      if (word(i) !== 'set_config') continue;
-      const open = statement[i + 1];
-      const first = statement[i + 2];
-      if (!(open?.kind === 'punct' && open.value === '(')) continue;
-      if (first?.kind !== 'string' || first.literal === undefined) return null;
-      targets.add(first.literal.toLowerCase());
-    }
   }
-  return [...targets];
+  return false;
+}
+
+/** {@link changesSessionState} of one statement's tokens. */
+function statementChangesSession(statement: ReadStatement): boolean {
+  const lead = statement[0]?.kind === 'word' ? statement[0].value : undefined;
+  if (lead === 'set' || lead === 'reset' || lead === 'discard') return true;
+  for (let i = 0; i < statement.length; i++) {
+    const token = statement[i];
+    if (!isName(token) || token?.value?.toLowerCase() !== 'set_config')
+      continue;
+    if (!isPunct(statement[i + 1], '(')) continue;
+    // Skip a qualifier (`schema.set_config`) to the word before the name.
+    let before = i - 1;
+    if (isPunct(statement[before], '.') && isName(statement[before - 1]))
+      before -= 2;
+    const introducer = statement[before];
+    if (
+      introducer?.kind === 'word' &&
+      RELATION_INTRODUCERS.has(String(introducer.value)) &&
+      (introducer.value !== 'on' || isIndexStatement(statement))
+    )
+      continue;
+    return true;
+  }
+  return false;
 }
 
 /**
- * The named settings a migration's deferred statements change; throws,
- * before anything runs, when one changes settings that cannot be named, so
- * the session could not be put back after it.
+ * `CREATE [UNIQUE] INDEX`: its expressions and predicate take only immutable
+ * functions, so `ON set_config (` names its table.
  */
-export function deferredSessionTargets(
-  id: string,
-  concurrent: readonly string[],
-): string[] {
-  const all = new Set<string>();
-  concurrent.forEach((sql, index) => {
-    const targets = sessionSettingTargets(sql);
-    if (targets === null)
-      throw new Error(
-        `Migration ${id}: planned deferred statement ${index + 1} of ${concurrent.length} changes session settings that cannot be named from its text (RESET ALL, DISCARD ALL, or set_config with a computed name), so the session could not be put back after it. Nothing was run. Name each setting the statement changes instead.`,
-      );
-    for (const target of targets) all.add(target);
-  });
-  return [...all];
-}
-
-/** The session state a migration session was handed, before any statement. */
-export interface SessionBaseline {
-  /** `pg_settings` rows set in the session, by name (identity excluded). */
-  settings: Map<string, string>;
-  /** Each named setting's value, `null` while it was not defined. */
-  named: Map<string, string | null>;
-  sessionUser: string;
-  role: string;
-}
-
-async function sessionSettings(
-  session: SessionLike,
-): Promise<Map<string, string>> {
-  return new Map(
-    (
-      await session.query(
-        `SELECT name, setting FROM pg_settings
-          WHERE source = 'session' AND name NOT IN ('role', 'session_authorization')
-          ORDER BY name`,
-      )
-    ).rows.map((row) => [String(row.name), String(row.setting)]),
+function isIndexStatement(statement: ReadStatement): boolean {
+  const word = (index: number) =>
+    statement[index]?.kind === 'word' ? statement[index]?.value : undefined;
+  return (
+    word(0) === 'create' &&
+    (word(1) === 'index' || (word(1) === 'unique' && word(2) === 'index'))
   );
 }
 
-async function namedSetting(
-  session: SessionLike,
-  name: string,
-): Promise<string | null> {
-  const value = (
-    await session.query('SELECT current_setting(?, true) AS value', name)
-  ).rows[0]?.value;
-  return value === null || value === undefined ? null : String(value);
+/**
+ * Refuses, before anything runs, a migration whose deferred statements may
+ * change session state: they run outside the migration's transaction, on a
+ * session the tracker hands back, so they may not change it.
+ */
+export function assertNoDeferredSessionChange(
+  id: string,
+  concurrent: readonly string[],
+): void {
+  concurrent.forEach((sql, index) => {
+    if (changesSessionState(sql))
+      throw new Error(
+        `Migration ${id}: planned deferred statement ${index + 1} of ${concurrent.length} changes session state (SET, SET LOCAL, SET ROLE, SET SESSION AUTHORIZATION, RESET, DISCARD or set_config), or its text cannot be read whole. Deferred statements run outside the migration's transaction, on a session the tracker hands back, so they may not change it. Nothing was run. Move the statement ahead of the migration's first VALIDATE CONSTRAINT (as SET LOCAL, scoped to its transaction), or into a migration of its own.`,
+      );
+  });
 }
 
-/**
- * Read the session's own settings and identity, and the current value of
- * each setting in `named` (the {@link sessionSettingTargets} of the
- * statements that will run on it).
- */
-export async function captureSessionBaseline(
+/** The settings the tracker itself sets on a migration session. */
+const TRACKER_SETTINGS = ['lock_timeout', 'statement_timeout'];
+
+/** The session state a migration session was handed, before any statement. */
+export interface SessionBaseline {
+  /** Each tracker setting's value, and whether the session had set it. */
+  trackerSettings: Array<{ name: string; setting: string; session: boolean }>;
+  sessionUser: string;
+  currentUser: string;
+  searchPath: string;
+}
+
+async function readIdentity(
   session: SessionLike,
-  named: readonly string[] = [],
-): Promise<SessionBaseline> {
-  const settings = await sessionSettings(session);
-  const values = new Map<string, string | null>();
-  for (const name of named) values.set(name, await namedSetting(session, name));
+): Promise<Omit<SessionBaseline, 'trackerSettings'>> {
   const identity = (
     await session.query(
-      `SELECT session_user AS session_name, current_setting('role') AS role_name`,
+      `SELECT session_user AS session_name, current_user AS current_name, pg_catalog.current_setting('search_path') AS search_path`,
     )
   ).rows[0];
   return {
-    settings,
-    named: values,
     sessionUser: String(identity?.session_name),
-    role: String(identity?.role_name),
+    currentUser: String(identity?.current_name),
+    searchPath: String(identity?.search_path),
   };
 }
 
 /**
- * Put the session back as it was handed over: every setting and identity a
- * deferred statement changed is undone, the caller's own are kept. Nothing
- * is reset wholesale (a blanket reset would also clear caller settings that
- * cannot be read back). The session user's privileges come back first, so a
- * restricted setting can be restored, and the caller's role last.
+ * Read, before the tracker sets anything, the tracker settings' values and
+ * the session's identity and `search_path`.
+ */
+export async function captureSessionBaseline(
+  session: SessionLike,
+): Promise<SessionBaseline> {
+  const settings = (
+    await session.query(
+      `SELECT name, setting, source FROM pg_catalog.pg_settings
+        WHERE name IN (${TRACKER_SETTINGS.map((name) => `'${name}'`).join(', ')})
+        ORDER BY name`,
+    )
+  ).rows.map((row) => ({
+    name: String(row.name),
+    setting: String(row.setting),
+    session: row.source === 'session',
+  }));
+  return { trackerSettings: settings, ...(await readIdentity(session)) };
+}
+
+/**
+ * Fail closed when the session's identity or `search_path` is no longer what
+ * it was handed over with: no deferred statement may change them, so a
+ * difference means something the tracker cannot undo.
+ */
+export async function assertSessionUnchanged(
+  session: SessionLike,
+  baseline: SessionBaseline,
+): Promise<void> {
+  const now = await readIdentity(session);
+  if (
+    now.sessionUser !== baseline.sessionUser ||
+    now.currentUser !== baseline.currentUser ||
+    now.searchPath !== baseline.searchPath
+  )
+    throw new Error(
+      'The migration session is not as it was handed over (its user, role or search_path differs), and the tracker does not change them back.',
+    );
+}
+
+/**
+ * Put back what the tracker itself set (its timeouts), then check the
+ * session's identity and `search_path`. Nothing else is reset: deferred
+ * statements may not change session state.
  */
 export async function restoreSessionBaseline(
   session: SessionLike,
   baseline: SessionBaseline,
 ): Promise<void> {
-  await session.query('RESET ROLE');
-  const user = async () =>
-    String(
-      (await session.query('SELECT session_user AS session_name')).rows[0]
-        ?.session_name,
+  for (const { name, setting, session: set } of baseline.trackerSettings)
+    await session.query(
+      set ? 'SELECT pg_catalog.set_config(?, ?, false)' : `RESET ${name}`,
+      ...(set ? [name, setting] : []),
     );
-  if ((await user()) !== baseline.sessionUser) {
-    await session.query('RESET SESSION AUTHORIZATION');
-    if ((await user()) !== baseline.sessionUser)
-      await session.query(
-        `SET SESSION AUTHORIZATION ${quotePostgresIdentifier(baseline.sessionUser)}`,
-      );
-  }
-  const now = await sessionSettings(session);
-  for (const name of now.keys())
-    if (!baseline.settings.has(name))
-      await session.query(`RESET ${quotePostgresIdentifier(name)}`);
-  for (const [name, setting] of baseline.settings)
-    if (now.get(name) !== setting)
-      await session.query('SELECT set_config(?, ?, false)', name, setting);
-  for (const [name, value] of baseline.named) {
-    if ((await namedSetting(session, name)) === value) continue;
-    // A setting first defined by a deferred statement cannot be undefined
-    // again; it is reset to empty.
-    if (value === null)
-      await session.query(
-        `RESET ${name.split('.').map(quotePostgresIdentifier).join('.')}`,
-      );
-    else await session.query('SELECT set_config(?, ?, false)', name, value);
-  }
-  if (baseline.role !== 'none')
-    await session.query(`SET ROLE ${quotePostgresIdentifier(baseline.role)}`);
+  await assertSessionUnchanged(session, baseline);
 }
 
 /** The advisory-lock key of one migration row's deferred phase. */

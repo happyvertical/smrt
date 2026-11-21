@@ -1948,52 +1948,148 @@ without replaying committed DDL. Inspect `pg_index.indisvalid` and drop
 INVALID indexes before rebuild (`pg_indexes` alone cannot detect them).
 Operational commands: `packages/cli/AGENTS.md`.
 
-**Retrying the deferred phase (#5325).** The statements deferred to the
-concurrent phase (a foreign-key `VALIDATE CONSTRAINT` and every statement
-after it, and the index builds) commit as they run, and nothing records how
-far an attempt got. Before any statement of a retry runs, `apply()` checks a
-`failed` row that carries the phase-1 marker and this checksum:
+**Retrying the deferred phase (#5325).** The statements an atomic
+`postgresSafe` batch defers to its concurrent phase (a foreign-key `VALIDATE
+CONSTRAINT` and every statement after it, and the index builds) commit as
+they run, and nothing records how far an attempt got. The protocol below is
+the atomic batch's (`db:migrate --postgres-safe`). A non-atomic `postgresSafe`
+run (`applyAll` without `atomic`, or a direct `apply()`) splits and runs a
+definition as before: it writes no phase-1 marker and refuses none of the
+deferred statements below (#5522 extends the protocol there), and takes no
+row lock, attempt fence or session reading; a marked record it meets is
+checked like any other and, run outside the batch's plan, refused as another
+plan. A deferred statement that may change session state (`SET`, `SET
+LOCAL`, `SET ROLE`, `SET SESSION AUTHORIZATION`, `RESET`, `DISCARD`, a
+`set_config(` call; `set_config` before a column list after `ON`, `INTO`,
+`TABLE` or `REFERENCES` names a relation) or whose text the lexer cannot
+read whole is refused when the atomic batch is planned, before anything
+runs. An atomic `postgresSafe` batch that lists one
+migration id twice is refused before anything runs. Before any statement of
+a retry runs (dry runs included, with the check held per call so a dry run
+cannot change what a concurrent run on the same tracker checks), `apply()`
+checks a `failed` row that carries the phase-1 marker:
 
+- **Same definition.** A changed checksum is refused: running it would
+  repeat the committed first half.
 - **Same plan.** The digest is sha256 over the migration id, checksum,
   phase-1 statements and deferred statements as planned. A retry under
   another plan is refused: `--postgres-safe` off,
   `migrations.postgres.useConcurrently` / `useConcurrentIndexes` changed, or a
-  batch whose unique-index swap pairing differs. A marker without a digest
-  (written by an older smrt) is accepted only when this run routes index DDL
-  concurrently.
-- **Only harmless statements run again.** Every deferred statement must be
-  index DDL the lexer reads (create, drop, `REINDEX`, `ALTER INDEX … RENAME`,
-  the swap closes), one `ALTER TABLE … VALIDATE CONSTRAINT`, or one plain
-  `SET` / `RESET`. Anything else (a data change, another `ALTER TABLE`
+  different set of migrations in the batch (unique-index swap pairing). A
+  plan tag that is not a whole sha256 digest, and any damaged tag text after
+  the marker (extra spaces, a near-miss `[smrt` introducer, another case), is
+  refused as unreadable, with the full-reapplication remedy. A marker without
+  a digest (an older smrt wrote the marker, one space, then its message) has
+  no known phase boundary: a statement now deferred may have committed in its
+  first half, and the planner of the time also read `VALIDATE CONSTRAINT` in
+  comments, which the checksum leaves out, so a statement now in the first
+  half may have been deferred and never run. It is accepted only when this
+  run routes index DDL concurrently, every deferred statement is harmless
+  (below), and there is no first half to skip. A list that is not harmless
+  is refused with the full-reapplication remedy (`--force-migration` then
+  runs it from its first statement). A harmless list with a first half is
+  refused with a first-half check: confirm that each first-half statement
+  took effect (run by hand any that did not); `--force-migration <id>` then
+  skips the first half and runs the deferred list again.
+- **Deferred phase not started.** The marker carries `[smrt: deferred not
+  started]` from the phase-1 commit until the row's first deferred statement
+  is about to run (cleared by a fenced update under the row lock). While it is
+  there, the whole deferred list runs: a migration recorded "Not attempted",
+  refused by the preflight, or stopped between its phases retries normally.
+  The tags are read only before the tracker-owned ` | ` separator; failure
+  text is always written after it, so a message a statement raises (even one
+  beginning with a tag) never reads as a tag. A failure recorded outside a
+  phase-1 record that begins with `[smrt:` is stored prefixed `error: `.
+- **Otherwise only harmless statements run again.** Every deferred statement
+  must be index DDL the lexer reads (create, drop, `REINDEX`, `ALTER INDEX …
+  RENAME`, the swap closes) or one `ALTER TABLE … VALIDATE CONSTRAINT`.
+  Anything else (a data change, another `ALTER TABLE`
   form such as the foreign-key replacement's `DROP` / `RENAME CONSTRAINT`, a
   temporary object, a string holding several statements) refuses the retry.
-  The message names the migration, the statement ordinal and a closed kind
-  (`data change`, `table change`, `other`), never the statement text.
-- **Recovery.** Check which deferred statements took effect and revert them
-  by hand; `--force-migration <id>` then retries that migration without the
-  check and runs every deferred statement again. The batch-wide `--force`
-  never lifts the check. Index statements still replay as before; their
-  target is not bound to the earlier attempt (planned follow-up).
+  Messages name the migration, the statement ordinal and a closed kind
+  (`data change`, `table change`, `other`), never the statement text. The
+  ordinal counts the deferred list as planned, not as authored: the first
+  half's statements are not counted, and one unique-index recreate becomes
+  three statements (build, drop, rename).
+- **Recovery.** `--force-migration <id>` is the only way past a refusal; the
+  batch-wide `--force` never lifts it, and a scoped force does not stop a
+  reconciling run from retrying other records the check accepts. It skips
+  the first half and replays the deferred list from its start under the
+  recorded plan and definition, or, for a marker without a digest, when this
+  run routes index DDL concurrently and every deferred statement is harmless
+  (revert by hand first the deferred statements that took effect, or confirm
+  the first half as above); otherwise it runs the migration from its first
+  statement (revert both halves first). A committed deferred statement that cannot be
+  reverted (a backfill) has no supported recovery until per-statement progress
+  lands (PR C of #5325). Index statements still replay as before; their target
+  is not bound to the earlier attempt (same follow-up).
 
-The concurrent phase captures the pinned session's own settings
-(`pg_settings` with `source = 'session'`), session user and role before its
-first statement, restores them before each migration's deferred statements
-and before its status write, and again before releasing the session. A
-deferred `SET search_path` or `SET ROLE` applies to the statements after it
-in that migration only. Each migration's deferred statements run under
+Phase 1 writes its marker to the tracking table resolved (schema-qualified,
+with `pg_catalog`-qualified catalog reads) inside the batch's transaction
+before any authored statement, and to exactly one row: a write that matches
+no row (an earlier `SET LOCAL search_path` put the record elsewhere) aborts
+the batch, so a first half never commits without its marker. The
+concurrent phase sets only its own `lock_timeout` and `statement_timeout` on
+the pinned session and puts back only those before releasing it (the
+caller's value where the session had set one, otherwise `RESET`). Before
+each migration's deferred statements, before its status write and at the
+end it compares `session_user`, `current_user` and `search_path` with what
+it was handed; it never changes the role or path itself. A mismatch (a
+change made inside a function body or `DO` block, which the scan does not
+see) fails closed: the migration fails, and at the end of the phase a shared
+handle (PGlite) raises an error asking the caller to reopen it, while a
+pooled session's connection is discarded on release.
+Each migration's deferred statements run under
 `pg_try_advisory_lock(hashtextextended('smrt:migration-deferred:<row id>',
-0))` on the pinned session; when another run holds it, nothing runs and the
-record is not written. Under the lock the row is read again, and phase-2
-status writes target the schema-qualified tracking table by row id, attempt
-number and `status = 'failed'`, so a late failure never overwrites
-`completed`. On PostgreSQL the `running` update of a retry also matches the
-status and attempt number it read.
+0))` on the pinned session, and a retry's `running` update first takes
+`pg_try_advisory_xact_lock` on the same key; when another run holds it,
+nothing runs and the record is not written. On PGlite the lock is re-entrant
+on the shared connection, so there only the record fences below apply. Under
+the lock the row is read again; phase-2 status writes target the
+schema-qualified tracking table phase 1 resolved by row id, attempt number
+and `status = 'failed'`, so a late failure never overwrites `completed`, and
+a success write that matches no row is reported as taken over, not applied.
+In an atomic `postgresSafe` batch on PostgreSQL the `running` update of a
+retry also matches the status and attempt number it read; other paths
+update it as before.
 
-**Upgrade.** A retry that earlier replayed its deferred statements may now be
-refused: lists with data changes or other `ALTER TABLE` forms, retries in
-another mode, and retries under the batch-wide `--force`. Follow the message;
-callers that relied on the old replay pass `forceMigrations: [id]`
-(`--force-migration <id>`) after checking the database by hand.
+**Upgrade.** This changes atomic `postgresSafe` batches; non-atomic runs and
+a direct `apply()` behave as before (a marked record they meet is refused as
+another plan). A retry that earlier replayed may now be refused: a changed
+definition or plan, deferred lists with data changes or other `ALTER TABLE`
+forms after the deferred phase started, retries in another mode, retries
+under the batch-wide `--force`, unreadable or damaged plan tags, and
+pre-upgrade markers (no digest) unless their deferred list is harmless and
+they have no first half. Follow the message:
+
+- Deferred-list refusal: revert the deferred statements that took effect;
+  `forceMigrations: [id]` (`--force-migration <id>`) then runs the deferred
+  list again, not the first half.
+- Changed definition or plan, unreadable record, or a pre-upgrade marker
+  whose deferred list is not harmless (the full-reapplication refusal):
+  revert both halves; `--force-migration <id>` then runs the migration from
+  its first statement, committed first-half data changes included.
+- Pre-upgrade marker with a harmless deferred list and a first half (the
+  first-half refusal, and only that refusal): revert nothing; confirm each
+  first-half statement took effect, running by hand any that did not;
+  `--force-migration <id>` then skips the first half and runs the deferred
+  list again. That message is given only when both prerequisites hold:
+  concurrent index routing is on for this run and the definition's checksum
+  matches the record. For a pre-upgrade marker, named force skips the first
+  half exactly when the checksum matches, the run routes index DDL
+  concurrently and every deferred statement is harmless; otherwise
+  (including with concurrent routing off) it runs from the first statement,
+  so follow the full-reapplication remedy instead.
+
+`migrateSmrtSchemas` forwards `forceMigrations` and `force`. Refused before
+anything runs: a deferred statement that may change session state or whose
+text the lexer cannot read (above; move a `SET` ahead of the migration's
+first `VALIDATE CONSTRAINT` as `SET LOCAL`, or into a migration of its own)
+and an atomic batch listing an id twice. A session whose identity or search
+path changed fails closed (above). An atomic batch whose phase-1 marker
+matches no row is rolled back. Dry runs read the migration history only: they no
+longer create or alter the tracking table or check the system timestamps.
+`db:migrate --dry-run` reports the refusals the real run gives and exits 1.
 
 **The repair drops one exact index.** Before a pending `CREATE INDEX`, the
 tracker drops the INVALID index an interrupted `CREATE INDEX CONCURRENTLY`

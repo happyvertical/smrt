@@ -128,16 +128,22 @@ function createFakeDb(options: FakeDbOptions = {}): FakeDb {
     if (sql.includes("to_regclass('_smrt_schema_migrations')")) {
       return { rows: [{ schema_name: 'public' }], rowCount: 1 };
     }
-    if (sql.includes('FROM pg_settings')) {
+    if (sql.includes('FROM pg_catalog.pg_settings')) {
       return { rows: [], rowCount: 0 };
     }
     if (sql.includes('session_user AS session_name')) {
       return {
-        rows: [{ session_name: 'migrator', role_name: 'none' }],
+        rows: [
+          {
+            session_name: 'migrator',
+            current_name: 'migrator',
+            search_path: 'public',
+          },
+        ],
         rowCount: 1,
       };
     }
-    if (sql.includes('pg_try_advisory_lock')) {
+    if (sql.includes('pg_try_advisory')) {
       return { rows: [{ locked: true }], rowCount: 1 };
     }
     if (sql.includes('SELECT status, attempts, error_message FROM')) {
@@ -619,9 +625,10 @@ describe('PostgreSQL concurrent-index mode (issue #2362)', () => {
     );
   });
 
-  it('re-runs everything when the definition itself changed', async () => {
-    // A different checksum means the interim marker describes different SQL,
-    // so resuming would skip statements that never ran.
+  it('refuses a retry when the definition itself changed (#5325)', async () => {
+    // A different checksum means the interim marker describes different SQL:
+    // resuming would skip statements that never ran, and running everything
+    // again would repeat the half that committed.
     const fake = createFakeDb();
     fake.rows.set('add_index_jobs_status_idx', {
       id: 'seeded',
@@ -639,6 +646,38 @@ describe('PostgreSQL concurrent-index mode (issue #2362)', () => {
     const results = await new MigrationTracker({ db: fake.db }).applyAll(
       [addIndex],
       { atomic: true, postgresSafe: true, reconcile: true },
+    );
+
+    expect(results[0].success).toBe(false);
+    expect(String(results[0].error)).toContain('changed');
+    expect(fake.sqlIn('session')).not.toContain(
+      'CREATE INDEX CONCURRENTLY IF NOT EXISTS "jobs_status_idx" ON "jobs" ("status")',
+    );
+  });
+
+  it('re-runs everything when a changed definition is forced by name', async () => {
+    const fake = createFakeDb();
+    fake.rows.set('add_index_jobs_status_idx', {
+      id: 'seeded',
+      name: 'add_index_jobs_status_idx',
+      checksum: 'a-different-definition',
+      status: 'failed',
+      error_message:
+        '[smrt: concurrent-index phase 1 committed] Concurrent index build pending.',
+      attempts: 1,
+      applied_at: new Date().toISOString(),
+      is_reversible: 0,
+      batch: 1,
+    });
+
+    const results = await new MigrationTracker({ db: fake.db }).applyAll(
+      [addIndex],
+      {
+        atomic: true,
+        postgresSafe: true,
+        reconcile: true,
+        forceMigrations: ['add_index_jobs_status_idx'],
+      },
     );
 
     expect(results[0].success).toBe(true);
