@@ -38,7 +38,10 @@ takes the natural-key default, and an absent model is a missing table.
 A decorator is recognized as the base scanner recognizes it. A class or
 method decorator (`@smrt`, `@report`, `@TenantScoped`, `@method`) is named
 by the name it is imported under, so a renamed import
-(`import { smrt as model }`) reads as `smrt`. A field decorator is named by
+(`import { smrt as model }`) reads as `smrt`; a decorator under a renamed
+import does not accept a shared module constant, though (`@model(OPTIONS)`
+fails the scan: the escape check never trusts a call through a renamed
+import as a read-only SMRT call). A field decorator is named by
 its local identifier, and `RawDecorator.name` is that identifier. A
 namespace member (`@core.field()`, `@(core['field'])()`, `@(core[KEY])()`) is
 not a decorator call the scanner reads, whichever package the namespace
@@ -399,6 +402,7 @@ now stops the build. The message names the file, class and member.
 | A class named `SmrtObject`, `SmrtClass`, `SmrtCollection`, `SmrtJunction`, `SmrtJunctionBase`, `SmrtHierarchical`, `SmrtPolymorphicAssociation`, `SmrtReport` or `SmrtReportCollection` outside the framework package that owns the name, or published under one by its `@smrt({ name })` option or export name | Rename the class or its public name; the framework reserves these names |
 | `moduleSuffixes` in the active text of the project root's `tsconfig.json`, of a config it extends by a relative path, or of a config it references (with or without a leading `./`) | Remove the option and import platform files explicitly (`./Base.ios`) |
 | A constant shared by a manifest static property (`uiSlots` etc.) and any other reader | Give the static property its own constant |
+| A module constant passed to a decorator imported under another name (`@model(OPTIONS)` with `import { smrt as model }`, or another library's decorator renamed on import) and read by an SMRT decorator | Import the SMRT decorator under its own name, or write the options inline |
 | Two models of one class name in a package | Rename one |
 | A parent, relationship target, report source or collection item imported through a relative barrel, `export *`, `export { A } from`, an import passed on, a default re-export or a renamed export | Import it from the file that declares it |
 | ... imported through a tsconfig `paths` alias, a `baseUrl` bare import, `$lib`, `@/`, `~`, `#imports` or a bundler alias | Import it by relative path from the declaring file |

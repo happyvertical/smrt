@@ -47,7 +47,9 @@ class VaultKey extends SmrtObject {
 ```
 
 A value imported from another module must be inlined; imports are not
-followed.
+followed. A decorator imported under another name (`import { smrt as model }`)
+does not accept a shared module constant: `@model(OPTIONS)` fails the scan.
+Import the decorator under its own name, or write the options inline.
 
 **Imported parents.** A class whose `extends` is imported from another scoped
 package carries that package's identity (`extendsQualified`, #4145) and the
