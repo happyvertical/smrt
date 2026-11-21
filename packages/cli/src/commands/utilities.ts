@@ -29,6 +29,7 @@ import {
 import {
   type MigrationDefinition,
   type MigrationResult,
+  recordMigrateConfirmation,
   unusedRetireConfirmations,
 } from '@happyvertical/smrt-core/migrations';
 import { renderForeignKeyAddStatements } from '@happyvertical/smrt-core/schema';
@@ -1851,6 +1852,8 @@ export default testManifest;
       console.log('\n🔄 Migrating database schema...\n');
 
       let db: DatabaseInterface | undefined;
+      /** The pool handle, closed at the end; `db` becomes `lock.db`. */
+      let poolDb: DatabaseInterface | undefined;
       let migrationLock:
         | { assertHeld(): Promise<void>; release(): Promise<void> }
         | undefined;
@@ -2020,6 +2023,13 @@ export default testManifest;
             },
           });
           migrationLock = lock;
+          // Run the whole migration on the lock's connection (#5435): on
+          // PostgreSQL `lock.db` is the pinned session that holds the lock,
+          // so the run needs no other connection, and when that connection
+          // ends the run's next statement fails instead of applying
+          // unserialized. The pool handle is kept only to close it.
+          poolDb = db;
+          db = lock.db;
           if (lock.held && lock.waitedMs > 0) {
             console.log(
               `✓ Migration lock acquired after ${Math.round(lock.waitedMs / 1000)}s; re-reading the schema\n`,
@@ -2870,8 +2880,27 @@ export default testManifest;
             );
           }
 
+          // A confirmed destructive change commits its ledger row in this
+          // batch, so a run that ends before its record still leaves exactly
+          // that confirmation on the ledger (#5435).
+          const confirmedRetirements = confirmedRetirementsOf(diff.changes);
+          const confirmsDestructive =
+            recomputes.length > 0 || confirmedRetirements.length > 0;
+          if (confirmsDestructive) await ensureSystemTables(db, dbType);
           try {
             const results = await tracker.applyAll(migrationDefs, {
+              ...(confirmsDestructive
+                ? {
+                    beforeCommit: async (tx: DatabaseInterface) => {
+                      await recordMigrateConfirmation(tx, {
+                        engineHint: dbType,
+                        input: recordInput,
+                        recomputes,
+                        confirmedRetirements,
+                      });
+                    },
+                  }
+                : {}),
               atomic: true,
               postgresSafe: concurrentIndexMode,
               force: forceSelection.force,
@@ -3018,7 +3047,9 @@ export default testManifest;
           // Find all STI tables (tables with _meta_type column)
           const stiTables: string[] = [];
           for (const tableName of allTableNames) {
-            const schema = await db.getTableSchema(tableName);
+            // Checked at connect; `lock.db` (a pinned session database) offers
+            // it too.
+            const schema = await db.getTableSchema!(tableName);
             if (schema?.columns._meta_type) {
               stiTables.push(tableName);
             }
@@ -3237,14 +3268,11 @@ export default testManifest;
             stiErrorCount === 0 &&
             (applySchemaMigrations || schemaUpToDate)
           ) {
+            // Confirmed recomputes and retirements (#5005) were written in the
+            // batch that performed them; this appends the declarations.
             await recordSuccessfulMigrate(db, {
               engineHint: dbType,
               input: recordInput,
-              recomputes,
-              // Every drop over a confirmed definition mismatch (#5005).
-              confirmedRetirements: applySchemaMigrations
-                ? confirmedRetirementsOf(diff.changes)
-                : [],
             });
           }
         }
@@ -3286,7 +3314,7 @@ export default testManifest;
         try {
           await migrationLock?.release();
         } finally {
-          await closeDatabaseConnection(db);
+          await closeDatabaseConnection(poolDb ?? db);
         }
       }
     },
