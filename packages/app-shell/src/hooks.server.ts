@@ -10,8 +10,9 @@ import { sequence } from '@sveltejs/kit/hooks';
 import { building, dev } from '$app/environment';
 import { appsRestHandle } from '$lib/server/apps-rest';
 import { installChangeReview } from '$lib/server/change-review';
+import { closeAllStreams } from '$lib/server/events';
 import { drainShell, shellProfile } from '$lib/server/host';
-import { shellImports } from '$lib/server/import-runtime';
+import { shellImports, stopShellImports } from '$lib/server/import-runtime';
 import {
   ensureOwnerHandoff,
   keepOwnerHandoffFresh,
@@ -23,7 +24,12 @@ export const init = async () => {
   await runtime.ready();
   // SIGTERM/SIGINT: stop accepting, drain every open app, exit (#5494). Not
   // under `vite dev` (vite owns its signals) or the build's analysis pass.
-  if (!dev && !building) installShutdown({ drain: drainShell });
+  if (!dev && !building)
+    installShutdown({
+      drain: drainShell,
+      endStreams: closeAllStreams,
+      stopWork: stopShellImports,
+    });
   // The assistant's review of the changes waiting runs after the exact checks.
   installChangeReview();
   // The hosted app has no owner link to hand off and no embedded job runner

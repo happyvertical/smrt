@@ -8,8 +8,38 @@ import { installShutdown } from '../src/lib/server/shutdown.ts';
 
 const mode = process.env.CHILD_MODE ?? 'drain';
 let drains = 0;
-const server = createServer((_req, res) => res.end('ok'));
+const streams = new Set<import('node:http').ServerResponse>();
+const server = createServer((req, res) => {
+  if (req.url === '/stream') {
+    // An open EventSource: never ends on its own.
+    res.writeHead(200, { 'content-type': 'text/event-stream' });
+    res.write('event: ready\n\n');
+    streams.add(res);
+    res.on('close', () => streams.delete(res));
+    return;
+  }
+  res.end('ok');
+});
+let workDone = false;
 installShutdown({
+  ...(process.env.CHILD_ENDSTREAMS === '0'
+    ? {}
+    : {
+        endStreams: () => {
+          for (const res of streams) res.end();
+        },
+      }),
+  // A workbook import that finishes 700 ms after the stop begins.
+  ...(process.env.CHILD_STOPWORK === '0'
+    ? {}
+    : {
+        stopWork: async () => {
+          if (process.env.CHILD_STOPWORK === 'throw') throw new Error('x');
+          await new Promise((r) => setTimeout(r, 700));
+          workDone = true;
+          process.stdout.write('work done\n');
+        },
+      }),
   stopAccepting: () =>
     new Promise<void>((resolve) => {
       server.closeIdleConnections();
@@ -17,7 +47,7 @@ installShutdown({
     }),
   drain: async (timeoutMs) => {
     drains++;
-    process.stdout.write(`drain ${drains} timeout<=${timeoutMs}\n`);
+    process.stdout.write(`drain ${drains} workDone=${workDone}\n`);
     if (mode === 'hang') return new Promise(() => {});
     if (mode === 'stuck') {
       await new Promise((r) => setTimeout(r, timeoutMs));
@@ -32,4 +62,7 @@ installShutdown({
     process.exit(code);
   },
 });
-server.listen(0, '127.0.0.1', () => process.stdout.write('ready\n'));
+server.listen(0, '127.0.0.1', () => {
+  const { port } = server.address() as { port: number };
+  process.stdout.write(`ready ${port}\n`);
+});

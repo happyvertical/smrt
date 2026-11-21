@@ -1,10 +1,13 @@
 /**
  * Graceful shutdown for a process that serves the shell (#5494).
  *
- * On SIGTERM or SIGINT: (1) stop accepting requests, (2) drain the shell
- * (`drainShell`: refuse new apps, wait for calls and wakes in flight, close
- * every open app), (3) exit 0 when everything finished inside the deadline,
- * non-zero when it did not. A repeated signal does nothing; it joins the
+ * On SIGTERM or SIGINT, in this order: (1) end long-lived streams (`endStreams`),
+ * (2) stop accepting requests and let accepted ones end (`stopAccepting`),
+ * (3) stop background work and wait for its jobs (`stopWork`), (4) drain the
+ * shell (`drainShell`: refuse new apps, wait for calls and wakes in flight,
+ * close every open app), (5) exit, only after all of those returned: 0 when
+ * everything finished inside the deadline, non-zero when it did not. A failed
+ * or timed-out step makes the exit non-zero but never skips the later ones. A repeated signal does nothing; it joins the
  * shutdown already running.
  *
  * Order matters: the HTTP server stops FIRST. `drainShell` refuses new apps
@@ -39,6 +42,16 @@ export interface ShutdownOptions {
   /** Called with the exit code once the shutdown is over. Default: `process.exit`. */
   onExit?: (code: number) => void;
   /**
+   * First step: end long-lived response streams (SSE) and refuse new ones.
+   * An open stream holds the listener's close until the deadline.
+   */
+  endStreams?: () => void | Promise<void>;
+  /**
+   * Third step, after the listener stopped: stop background work and wait for
+   * the jobs it is running (workbook imports), before the apps close.
+   */
+  stopWork?: () => void | Promise<void>;
+  /**
    * Stop accepting requests and resolve once every accepted request has ended.
    * Default: wait for adapter-node's `sveltekit:shutdown` event (its own signal
    * handler has already closed the listener).
@@ -68,6 +81,7 @@ export const SHUTDOWN_ENV = 'SMRT_APP_SHELL_SHUTDOWN_MS';
 export const DEFAULT_SHUTDOWN_MS = 30_000;
 /** After the deadline a stuck drain gets this long before the process exits anyway. */
 const EXIT_GRACE_MS = 1_000;
+const TIMED_OUT = Symbol('timed out');
 
 /** The deadline: an explicit option, else the environment, else the default. */
 export function resolveDeadlineMs(
@@ -98,15 +112,18 @@ export function installShutdown(options: ShutdownOptions): ShutdownHandle {
   const signals = options.signals ?? ['SIGTERM', 'SIGINT'];
   let running: Promise<ShutdownResult> | null = null;
 
-  const stopAccepting =
-    options.stopAccepting ??
-    (() =>
-      new Promise<void>((resolve) => {
-        // adapter-node emits this after `server.close()` completes.
-        (process as NodeJS.EventEmitter).once('sveltekit:shutdown', () =>
-          resolve(),
-        );
-      }));
+  // adapter-node emits `sveltekit:shutdown` once `server.close()` completed,
+  // which on an idle server is the tick after the signal: listen from install
+  // time, not from the step that waits for it.
+  let httpStopped: Promise<void> | undefined;
+  if (!options.stopAccepting) {
+    httpStopped = new Promise<void>((resolve) => {
+      (process as NodeJS.EventEmitter).once('sveltekit:shutdown', () =>
+        resolve(),
+      );
+    });
+  }
+  const stopAccepting = () => options.stopAccepting?.() ?? httpStopped;
 
   const run = async (reason: string): Promise<ShutdownResult> => {
     const started = Date.now();
@@ -123,50 +140,68 @@ export function installShutdown(options: ShutdownOptions): ShutdownHandle {
       result = r;
       onExit(r.code);
     };
-    // Last resort: a drain, or a listener close, that never returns.
+    // Last resort: a step that never returns.
     const hard = setTimeout(() => {
       process.stderr.write('[shutdown] deadline hit: exiting\n');
       finish({ ...result, code: 1 });
     }, deadlineMs + EXIT_GRACE_MS);
-    try {
-      // Listener first, within half the deadline; the drain gets the rest.
-      const gate = Promise.resolve(stopAccepting());
+    let clean = true;
+    // One step, bounded by `ms`: a throw or a timeout makes the exit non-zero
+    // but never skips the steps after it.
+    const step = async <T>(
+      name: string,
+      ms: number,
+      fn: () => T | Promise<T>,
+    ): Promise<T | undefined> => {
       let timer: NodeJS.Timeout | undefined;
-      const timedOut = new Promise<'timeout'>((resolve) => {
-        timer = setTimeout(
-          () => resolve('timeout'),
-          Math.floor(deadlineMs / 2),
-        );
-      });
-      const outcome = await Promise.race([
-        gate.then(() => 'ok' as const),
-        timedOut,
-      ]);
-      clearTimeout(timer);
-      const stopped = outcome === 'ok';
-      if (!stopped) {
+      try {
+        const out = await Promise.race([
+          Promise.resolve().then(fn),
+          new Promise<typeof TIMED_OUT>((resolve) => {
+            timer = setTimeout(() => resolve(TIMED_OUT), ms);
+          }),
+        ]);
+        if (out === TIMED_OUT) {
+          clean = false;
+          process.stderr.write(
+            `[shutdown] ${name}: still running at its limit\n`,
+          );
+          return undefined;
+        }
+        return out;
+      } catch (error) {
+        clean = false;
         process.stderr.write(
-          '[shutdown] requests still in flight: draining anyway\n',
+          `[shutdown] ${name} failed: ${error instanceof Error ? error.name : 'error'}\n`,
         );
+        return undefined;
+      } finally {
+        clearTimeout(timer);
       }
-      const drained = await options.drain(left());
-      const clean = stopped && drained.busy === 0 && left() > 0;
-      if (!clean) {
-        process.stderr.write(
-          `[shutdown] not clean: ${drained.busy} app(s) busy${stopped ? '' : ', requests open'}\n`,
-        );
-      }
-      finish({
-        code: clean ? 0 : 1,
-        closed: drained.closed,
-        busy: drained.busy,
-      });
-    } catch (error) {
-      process.stderr.write(
-        `[shutdown] failed: ${error instanceof Error ? error.name : 'error'}\n`,
-      );
-      finish({ ...result, code: 1 });
+    };
+    // 1. Long-lived streams end, or the listener could never close.
+    if (options.endStreams)
+      await step('endStreams', left(), options.endStreams);
+    // 2. The listener stops and every accepted request ends (at most half the
+    //    deadline; a request still running then is cut by the exit below).
+    await step('stopAccepting', Math.floor(deadlineMs / 2), stopAccepting);
+    // 3. Background work (imports) stops and its jobs in flight finish, while
+    //    the apps they use are still open.
+    if (options.stopWork) await step('stopWork', left(), options.stopWork);
+    // 4. Close the apps. Runs even when an earlier step failed.
+    const drained = await step('drain', left() + 500, () =>
+      options.drain(left()),
+    );
+    if (drained === undefined) clean = false;
+    if (drained && drained.busy > 0) {
+      clean = false;
+      process.stderr.write(`[shutdown] ${drained.busy} app(s) busy at close\n`);
     }
+    finish({
+      code: clean ? 0 : 1,
+      closed: drained?.closed ?? 0,
+      busy: drained?.busy ?? 0,
+    });
     return result;
   };
 

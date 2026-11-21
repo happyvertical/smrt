@@ -7,6 +7,8 @@ const mocks = vi.hoisted(() => ({
   handoff: vi.fn(),
   fresh: vi.fn(),
   install: vi.fn(),
+  closeStreams: vi.fn(),
+  stopImports: vi.fn(),
   drain: vi.fn(),
   env: { dev: false, building: false },
 }));
@@ -23,7 +25,11 @@ vi.mock('$lib/server/owner-handoff', () => ({
 vi.mock('$lib/server/smrt', () => ({
   runtime: { ready: mocks.ready, handle: vi.fn() },
 }));
-vi.mock('$lib/server/import-runtime', () => ({ shellImports: mocks.imports }));
+vi.mock('$lib/server/import-runtime', () => ({
+  shellImports: mocks.imports,
+  stopShellImports: mocks.stopImports,
+}));
+vi.mock('$lib/server/events', () => ({ closeAllStreams: mocks.closeStreams }));
 vi.mock('$lib/server/apps-rest', () => ({ appsRestHandle: vi.fn() }));
 
 import { init } from './hooks.server.ts';
@@ -76,7 +82,11 @@ it('still starts the owner link and imports on the local profile', async () => {
 it('installs the SIGTERM/SIGINT drain once the runtime is ready, not under vite dev or build', async () => {
   mocks.imports.mockResolvedValue({});
   await init();
-  expect(mocks.install).toHaveBeenCalledWith({ drain: mocks.drain });
+  expect(mocks.install).toHaveBeenCalledWith({
+    drain: mocks.drain,
+    endStreams: mocks.closeStreams,
+    stopWork: mocks.stopImports,
+  });
   mocks.install.mockClear();
   mocks.env.dev = true;
   await init();
