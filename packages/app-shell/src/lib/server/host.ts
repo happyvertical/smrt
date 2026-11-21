@@ -640,6 +640,20 @@ export async function getDraftSlot(): Promise<DraftSlot | null> {
 /** drafts.ts only: record the draft that just opened, or null once it is gone. */
 export function setDraftSlot(slot: DraftSlot | null): void {
   const holder = currentHolderSync();
+  // A draft host must never attach to an app that is closing or already
+  // closed (its holder gone): nothing would ever close it, and the next open
+  // would start a second draft worker on the same directory.
+  if (
+    slot?.host &&
+    lifecycleOn() &&
+    (holder.evicting || holders.get(holder.key) !== holder)
+  ) {
+    void slot.host.close().catch(() => {});
+    throw new EngineError(
+      'the app was closed while its draft was starting; try again',
+      'refused',
+    );
+  }
   if (slot?.host && lifecycleOn()) slot.host = leased(holder, slot.host);
   holder.slotRef = slot;
 }
@@ -746,6 +760,24 @@ function leased(holder: Holder, host: AppHost): AppHost {
   proxies.set(host, proxy);
   proxied.add(proxy);
   return proxy;
+}
+
+/**
+ * Hold the request's app open across a whole workflow (a draft start forks,
+ * saves rows and only then attaches the draft): the hand-out leases of the
+ * `getHost` calls inside it run out after `handoutMs`, so this lease is what
+ * keeps the app from being evicted between its steps. A no-op without a policy.
+ */
+export async function withAppLease<T>(fn: () => Promise<T>): Promise<T> {
+  if (!lifecycleOn()) return fn();
+  await getHost(); // opened, and handed out: that lease covers the next line
+  const holder = await currentHolder();
+  holder.leases++;
+  try {
+    return await fn();
+  } finally {
+    release(holder);
+  }
 }
 
 function release(holder: Holder): void {

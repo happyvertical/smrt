@@ -10,6 +10,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { App } from '../objects/App.ts';
 import { ownerTenantFor } from './accounts.ts';
 import { type CloudHarness, openCloudShell } from './cloud-test-support.ts';
+import { startDraftWith } from './drafts.ts';
 import { publish, subscribe } from './events.ts';
 import {
   drainShell,
@@ -362,6 +363,54 @@ describe('leases', () => {
     await expect(call).rejects.toThrow();
     clock += IDLE;
     expect(await sweepIdleHosts()).toBe(1); // lease returned: evictable
+  });
+});
+
+describe('a workflow keeps its app open', () => {
+  it('a draft start that outlasts every hand-out is not evicted before its draft attaches', async () => {
+    // The reviewer's window: the fork has returned, the row saves are still
+    // ahead, every hand-out lease has run out, and another app wants the only
+    // place with no minimum idle. Without the workflow lease, that app evicts
+    // this one and the draft host attaches to a closed holder.
+    const { a, b } = await twoOwners({ maxOpenApps: 1, minIdleMs: 0 });
+    let release: () => void = () => {};
+    const gate = new Promise<void>((r) => {
+      release = r;
+    });
+    let forked: () => void = () => {};
+    const afterFork = new Promise<void>((r) => {
+      forked = r;
+    });
+    const starting = runAs(a, () =>
+      startDraftWith(
+        async ({ dir, store, live }) => {
+          const draft = await live.forkDraft(dir, { store });
+          forked();
+          await gate; // the slow step after the fork
+          return draft;
+        },
+        'slow',
+        a.id,
+      ),
+    );
+    await afterFork;
+    await settled(); // every hand-out lease of the start is over
+    const live = await runAs(a, async () => openHost());
+    const other = runAs(b, () => getHost());
+    let woke = false;
+    void other.then(() => {
+      woke = true;
+    });
+    await settled();
+    expect(woke).toBe(false); // B waits: A is mid-workflow
+    expect(live?.appAlive).toBe(true);
+    release();
+    await starting;
+    const slot = await runAs(a, () => getDraftSlot());
+    expect(slot?.host?.appAlive).toBe(true); // attached to the open app
+    // Done: now A is idle like any other, and B takes the place.
+    expect((await other).dataDir).toContain(b.tenantId);
+    expect(slot?.host?.appAlive).toBe(false); // closed with its app, none orphaned
   });
 });
 
