@@ -119,28 +119,114 @@ export async function selectUnpostedInvoiceIds(
   return rows as { id: string }[];
 }
 
+/**
+ * One page of cancelled invoices that still carry a revenue journal but no
+ * reversal, after `after`, ordered by id. Same casts as
+ * {@link selectUnpostedInvoiceIds}.
+ *
+ * @internal exported for the PostgreSQL-dialect test.
+ */
+export async function selectCancelledUnreversedInvoiceIds(
+  db: DatabaseInterface,
+  tenantId: string,
+  after: string | null,
+  limit: number,
+): Promise<{ id: string }[]> {
+  const { rows } = await db.query(
+    `SELECT CAST(id AS TEXT) AS id FROM invoices
+      WHERE CAST(tenant_id AS TEXT) = ? AND kind = 'invoice'
+        AND status = ?
+        AND COALESCE(CAST(ar_journal_id AS TEXT), '') <> ''
+        AND COALESCE(CAST(ar_reversal_journal_id AS TEXT), '') = ''
+        ${after ? 'AND CAST(id AS TEXT) > ?' : ''}
+      ORDER BY CAST(id AS TEXT) ASC LIMIT ?`,
+    tenantId,
+    InvoiceStatus.CANCELLED,
+    ...(after ? [after] : []),
+    limit,
+  );
+  return rows as { id: string }[];
+}
+
+/**
+ * Reverse the revenue journal of a cancelled invoice that still carries one.
+ * Idempotent: the reversal is a deterministic journal, and an invoice that is
+ * not cancelled, has no journal, or is already reversed is left alone.
+ */
+export async function reverseCancelledInvoiceRevenue(
+  db: DatabaseInterface,
+  tenantId: string,
+  invoiceId: string,
+): Promise<{ reversed: boolean }> {
+  return withTenant({ tenantId }, async () => {
+    const invoice = await (await InvoiceCollection.create({ db })).get(
+      { id: invoiceId, tenantId },
+      { cache: false },
+    );
+    if (
+      !invoice ||
+      invoice.status !== InvoiceStatus.CANCELLED ||
+      !invoice.arJournalId ||
+      invoice.arReversalJournalId
+    )
+      return { reversed: false };
+    await invoice.cancelWithRevenueReversal({ bookCurrency: invoice.currency });
+    return { reversed: true };
+  });
+}
+
 export interface PostPendingInvoiceRevenueOptions {
   /** Invoices per page (1-200, default 50). */
   readonly limit?: number;
-  /** Called with the invoice id and error when one invoice fails to post. */
+  /** Pages per call (default 20). A larger backlog returns `nextCursor`. */
+  readonly maxPages?: number;
+  /** Resume from a previous call's `nextCursor`. */
+  readonly cursor?: string | null;
+  /** Called with the invoice id and error when one invoice fails. */
   readonly onError?: (invoiceId: string, error: unknown) => void;
 }
 
 export interface PostPendingInvoiceRevenueResult {
   /** Invoices posted by this call. */
   readonly posted: number;
-  /** Invoices whose posting threw; the rest of the batch still ran. */
+  /** Cancelled invoices whose revenue journal this call reversed. */
+  readonly reversed: number;
+  /** Invoices whose post or reversal threw; the rest of the batch still ran. */
   readonly failed: number;
+  /**
+   * Pass back as `options.cursor` to continue past this call's page budget, so
+   * invoices that fail every run cannot starve the ones after them. Null when
+   * the scan finished.
+   */
+  readonly nextCursor: string | null;
+}
+
+type SweepPhase = 'reverse' | 'post';
+
+function parseCursor(cursor: string | null | undefined): {
+  phase: SweepPhase;
+  after: string | null;
+} {
+  if (!cursor) return { phase: 'reverse', after: null };
+  const [phase, ...rest] = cursor.split(':');
+  const after = rest.join(':') || null;
+  return { phase: phase === 'post' ? 'post' : 'reverse', after };
 }
 
 /**
- * Repair: post every issued invoice of the tenant that has no revenue journal.
+ * Repair: bring the tenant's books in line with its invoices.
  *
- * The query keeps only unposted, issued, non-cancelled, non-written-off
- * invoices before paging, so posted invoices never consume the scan (up to 20
- * pages of `limit`). Safe to repeat and to run concurrently: posting is keyed
- * on the invoice and its snapshot. A paid invoice whose payment settled before
- * posting existed is balanced by the new journal.
+ * Two phases, each filtered in the query before paging so settled invoices
+ * never consume the scan: (1) cancelled invoices that still carry a revenue
+ * journal get it reversed (a cancel that raced a post, or a reversal that
+ * failed); (2) issued, non-cancelled, non-written-off invoices with no journal
+ * get posted. A paid invoice whose payment settled before posting existed is
+ * balanced by its new journal. Safe to repeat and to run concurrently: posting
+ * and reversal are keyed on the invoice and its snapshot.
+ *
+ * One call scans up to `maxPages` pages. If it stops there, `nextCursor`
+ * resumes where it left off; an invoice that fails stays unposted but the
+ * cursor moves past it, so it cannot starve later ones.
  */
 export async function postPendingInvoiceRevenue(
   db: DatabaseInterface,
@@ -148,27 +234,49 @@ export async function postPendingInvoiceRevenue(
   options: PostPendingInvoiceRevenueOptions = {},
 ): Promise<PostPendingInvoiceRevenueResult> {
   const limit = Math.min(Math.max(options.limit ?? 50, 1), 200);
+  const maxPages = Math.max(options.maxPages ?? MAX_SWEEP_PAGES, 1);
   let posted = 0;
+  let reversed = 0;
   let failed = 0;
-  let cursor: string | null = null;
-  for (let page = 0; page < MAX_SWEEP_PAGES; page += 1) {
-    const after: string | null = cursor;
-    const batch = await selectUnpostedInvoiceIds(db, tenantId, after, limit);
+  let { phase, after } = parseCursor(options.cursor);
+  let pages = 0;
+  while (true) {
+    if (pages >= maxPages)
+      return {
+        posted,
+        reversed,
+        failed,
+        nextCursor: `${phase}:${after ?? ''}`,
+      };
+    const batch =
+      phase === 'reverse'
+        ? await selectCancelledUnreversedInvoiceIds(db, tenantId, after, limit)
+        : await selectUnpostedInvoiceIds(db, tenantId, after, limit);
+    pages += 1;
     for (const candidate of batch) {
-      cursor = String(candidate.id);
+      after = String(candidate.id);
       try {
-        const outcome = await postInvoiceRevenueToSettlementChart(
-          db,
-          tenantId,
-          String(candidate.id),
-        );
-        if (outcome.posted) posted += 1;
+        if (phase === 'reverse') {
+          if (
+            (await reverseCancelledInvoiceRevenue(db, tenantId, after)).reversed
+          )
+            reversed += 1;
+        } else if (
+          (await postInvoiceRevenueToSettlementChart(db, tenantId, after))
+            .posted
+        ) {
+          posted += 1;
+        }
       } catch (error) {
         failed += 1;
-        options.onError?.(String(candidate.id), error);
+        options.onError?.(after, error);
       }
     }
-    if (batch.length < limit) break;
+    if (batch.length < limit) {
+      if (phase === 'post')
+        return { posted, reversed, failed, nextCursor: null };
+      phase = 'post';
+      after = null;
+    }
   }
-  return { posted, failed };
 }

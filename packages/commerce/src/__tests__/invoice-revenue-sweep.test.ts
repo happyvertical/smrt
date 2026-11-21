@@ -125,14 +125,16 @@ describe.skipIf(process.env.SMRT_TEST_PGLITE === '1')(
       const cancelled = await issue(InvoiceStatus.CANCELLED);
       await issue(InvoiceStatus.DRAFT);
       expect(await postPendingInvoiceRevenue(db, TENANT, { limit: 1 })).toEqual(
-        { posted: 2, failed: 0 },
+        { posted: 2, reversed: 0, failed: 0, nextCursor: null },
       );
       expect(await arJournal(a)).not.toBe('');
       expect(await arJournal(b)).not.toBe('');
       expect(await arJournal(cancelled)).toBe('');
       expect(await postPendingInvoiceRevenue(db, TENANT)).toEqual({
         posted: 0,
+        reversed: 0,
         failed: 0,
+        nextCursor: null,
       });
     });
 
@@ -147,6 +149,57 @@ describe.skipIf(process.env.SMRT_TEST_PGLITE === '1')(
       expect(result.posted).toBe(1);
       expect(result.failed).toBe(1);
       expect(errors).toEqual([bad]);
+      expect(await arJournal(good)).not.toBe('');
+    });
+
+    it('reverses a cancelled invoice that kept its revenue journal, once', async () => {
+      const id = await issue();
+      await postInvoiceRevenueToSettlementChart(db, TENANT, id);
+      // A cancel that raced the post, or a reversal that failed.
+      await db.query(
+        "UPDATE invoices SET status = 'cancelled' WHERE id = ?",
+        id,
+      );
+      const first = await postPendingInvoiceRevenue(db, TENANT);
+      expect(first).toMatchObject({ reversed: 1, posted: 0, failed: 0 });
+      const reversal = await withTenant(
+        { tenantId: TENANT },
+        async () =>
+          (
+            await (
+              await InvoiceCollection.create({ db })
+            ).get({ id }, { cache: false })
+          )?.arReversalJournalId,
+      );
+      expect(reversal).toBeTruthy();
+      expect(await postPendingInvoiceRevenue(db, TENANT)).toMatchObject({
+        reversed: 0,
+        posted: 0,
+      });
+    });
+
+    it('resumes past invoices that fail every run instead of starving later ones', async () => {
+      const bad = [await issue(), await issue(), await issue()];
+      const good = await issue();
+      for (const id of bad)
+        await db.query("UPDATE invoices SET currency = 'XXX' WHERE id = ?", id);
+      let cursor: string | null = null;
+      let posted = 0;
+      let failed = 0;
+      for (let call = 0; call < 10; call += 1) {
+        const result = await postPendingInvoiceRevenue(db, TENANT, {
+          limit: 1,
+          maxPages: 1,
+          cursor,
+        });
+        posted += result.posted;
+        failed += result.failed;
+        cursor = result.nextCursor;
+        if (!cursor) break;
+      }
+      expect(cursor).toBeNull();
+      expect(posted).toBe(1);
+      expect(failed).toBe(3);
       expect(await arJournal(good)).not.toBe('');
     });
   },

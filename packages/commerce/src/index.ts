@@ -291,6 +291,7 @@ export {
   type PostPendingInvoiceRevenueResult,
   postInvoiceRevenueToSettlementChart,
   postPendingInvoiceRevenue,
+  reverseCancelledInvoiceRevenue,
 } from './invoice-revenue-sweep.js';
 export {
   bindInvoiceLineSource,

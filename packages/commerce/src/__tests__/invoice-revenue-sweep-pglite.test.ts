@@ -9,7 +9,10 @@ import { randomUUID } from 'node:crypto';
 import { getTestDatabase } from '@happyvertical/smrt-core';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { selectUnpostedInvoiceIds } from '../invoice-revenue-sweep.js';
+import {
+  selectCancelledUnreversedInvoiceIds,
+  selectUnpostedInvoiceIds,
+} from '../invoice-revenue-sweep.js';
 import { InvoiceStatus } from '../types/index.js';
 
 describe('selectUnpostedInvoiceIds on PostgreSQL (PGlite)', () => {
@@ -24,16 +27,18 @@ describe('selectUnpostedInvoiceIds on PostgreSQL (PGlite)', () => {
     status: string,
     journal: string | null,
     kind = 'invoice',
+    reversal: string | null = null,
   ) {
     await db.query(
-      `INSERT INTO invoices (id, slug, tenant_id, kind, status, ar_journal_id, invoice_number, currency)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 'CAD')`,
+      `INSERT INTO invoices (id, slug, tenant_id, kind, status, ar_journal_id, ar_reversal_journal_id, invoice_number, currency)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'CAD')`,
       id,
       id,
       tenantId,
       kind,
       status,
       journal,
+      reversal,
       `PG-${id.slice(0, 8)}`,
     );
   }
@@ -48,6 +53,15 @@ describe('selectUnpostedInvoiceIds on PostgreSQL (PGlite)', () => {
     await insert(ids[1], tenant, InvoiceStatus.PAID, null);
     await insert(ids[2], tenant, InvoiceStatus.SENT, randomUUID());
     await insert(ids[3], tenant, InvoiceStatus.CANCELLED, null);
+    await insert(ids[4], tenant, InvoiceStatus.CANCELLED, randomUUID());
+    await insert(
+      randomUUID(),
+      tenant,
+      InvoiceStatus.CANCELLED,
+      randomUUID(),
+      'invoice',
+      randomUUID(),
+    );
     await insert(randomUUID(), other, InvoiceStatus.SENT, null);
     await insert(randomUUID(), tenant, InvoiceStatus.DRAFT, null);
     await insert(randomUUID(), tenant, InvoiceStatus.SENT, null, 'credit_note');
@@ -68,5 +82,15 @@ describe('selectUnpostedInvoiceIds on PostgreSQL (PGlite)', () => {
     const second = await selectUnpostedInvoiceIds(db, tenant, ids[0], 1);
     expect(second.map((row) => row.id)).toEqual([ids[1]]);
     expect(await selectUnpostedInvoiceIds(db, tenant, ids[1], 1)).toEqual([]);
+  });
+
+  it('finds cancelled invoices that kept a journal and were not reversed', async () => {
+    const rows = await selectCancelledUnreversedInvoiceIds(
+      db,
+      tenant,
+      null,
+      50,
+    );
+    expect(rows.map((row) => row.id)).toEqual([ids[4]]);
   });
 });
