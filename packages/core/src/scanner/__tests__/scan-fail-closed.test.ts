@@ -152,18 +152,6 @@ describe('field decorator options in the generated manifest', () => {
     expect(Object.keys(account.schema?.columns ?? {})).not.toContain('scratch');
   });
 
-  it('reads a field decorator imported under another name', async () => {
-    const { entry } = await build({
-      'src/models/account.ts': `import { SmrtObject, smrt, field as f } from '@happyvertical/smrt-core';\nimport * as core from '@happyvertical/smrt-core';\n@smrt()\nexport class FailClosedAccount extends SmrtObject {\n  @f({ sensitive: true }) aliasSecret = '';\n  @core.field({ sensitive: true }) namespaceSecret = '';\n  label = '';\n}`,
-    });
-    const account = entry('FailClosedAccount');
-    if (!account) throw new Error('FailClosedAccount missing');
-
-    expect(account.fields.aliasSecret.sensitive).toBe(true);
-    expect(account.fields.namespaceSecret.sensitive).toBe(true);
-    expect(Object.keys(buildWebFieldDefinitions(account))).toEqual(['label']);
-  });
-
   it('fails the build on an option it cannot read', async () => {
     await expect(
       build({
@@ -286,24 +274,6 @@ describe('classes that share a name in the generated manifest', () => {
         'src/sales/FailClosedInvoice.ts': MODEL,
       }),
     ).rejects.toThrow(/Class name collision.*FailClosedInvoice/s);
-  });
-});
-
-describe('class decorators reached through a computed namespace member', () => {
-  it('fails the build on a computed tenant decorator and writes no manifest', async () => {
-    const root = writeProject({
-      'src/models/ledger.ts': `${CORE}\nimport * as core from '@happyvertical/smrt-core';\nlet TENANT = 'TenantScoped';\n@smrt()\n@(core[TENANT])({ field: 'orgId' })\nexport class FailClosedLedger extends SmrtObject {\n  orgId = '';\n}`,
-    });
-
-    await expect(
-      new ManifestBuilder(root).generate({
-        include: ['src/**/*.ts'],
-        outputMode: 'dev',
-        outputDir: '.smrt',
-        generateTypeStub: false,
-      }),
-    ).rejects.toThrow(/core\[TENANT\].*FailClosedLedger/s);
-    expect(existsSync(join(root, '.smrt/manifest.json'))).toBe(false);
   });
 });
 

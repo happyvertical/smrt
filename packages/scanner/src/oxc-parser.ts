@@ -1533,7 +1533,6 @@ function createDecoratorConfigContext(
     importAliases,
     importBindings,
   });
-  CONSTANTS_BY_BINDINGS.set(importBindings, constants);
   return {
     constants,
     enums,
@@ -1750,14 +1749,6 @@ function collectModuleConstants(
   },
 ): Map<string, ModuleConstant> {
   const constants = new Map<string, ModuleConstant>();
-  // The escape analysis below asks whether a call is a decorator this scanner
-  // reads, and a computed namespace decorator (`core[KEY]`) is named through
-  // this file's constants: make the table visible while it is filled. The
-  // decorator readers check the key's final state again afterwards, so a key
-  // later found unsafe leaves the decorator unnamed (and reported).
-  if (options.importBindings) {
-    CONSTANTS_BY_BINDINGS.set(options.importBindings, constants);
-  }
 
   for (const node of body) {
     // Both `const X = {}` and `export const X = {}`.
@@ -2328,7 +2319,6 @@ function isReadDecoratorCall(
   const name = resolveDecoratorName(
     parent as unknown as Decorator,
     imports.importAliases,
-    imports.importBindings,
   );
   return name !== null && READ_DECORATOR_NAMES.has(name);
 }
@@ -2630,13 +2620,13 @@ function extractClassDeclaration(
   // Extract decorators
   const decorators = node.decorators || [];
   const smrtDecorator = decorators.find((d) =>
-    isSmrtDecorator(d, importAliases, ctx?.importBindings),
+    isSmrtDecorator(d, importAliases),
   );
   const reportDecorator = decorators.find((d) =>
-    isNamedDecorator(d, 'report', importAliases, ctx?.importBindings),
+    isNamedDecorator(d, 'report', importAliases),
   );
   const tenantScopedDecorator = decorators.find((d) =>
-    isNamedDecorator(d, 'TenantScoped', importAliases, ctx?.importBindings),
+    isNamedDecorator(d, 'TenantScoped', importAliases),
   );
   const hasSmartDecorator = !!smrtDecorator;
   // Every class decorator is read with the same rules: a value is a literal,
@@ -2719,12 +2709,6 @@ function extractClassDeclaration(
   // whether they are diagnostics at all depends on the class being a model,
   // which is known here only when it carries `@smrt()`.
   const memberCtx = ctx ? { ...ctx, unresolved: [] } : ctx;
-  // A class decorator decides whether the class is a model at all
-  // (`@smrt`), so one the reader cannot name is reported now, before model
-  // filtering could drop the class and its diagnostic together.
-  recordUnnamedNamespaceDecorators(decorators, sourceText, ctx, {
-    className,
-  });
   for (const member of node.body.body) {
     if (member.type === 'PropertyDefinition') {
       const field = extractPropertyDefinition(
@@ -2737,16 +2721,6 @@ function extractClassDeclaration(
         fields.push(field);
       }
     } else if (member.type === 'MethodDefinition') {
-      recordUnnamedNamespaceDecorators(
-        member.decorators,
-        sourceText,
-        memberCtx,
-        {
-          className,
-          member:
-            member.key.type === 'Identifier' ? member.key.name : undefined,
-        },
-      );
       const method = extractMethodDefinition(
         member,
         sourceText,
@@ -3226,134 +3200,22 @@ function isReportClassReferencePath(path: string | undefined): boolean {
 }
 
 /**
- * The exported name of the decorator applied by `@x`, `@x()`, `@ns.x` or
- * `@ns.x()`, or `null` for any other expression.
- *
- * A renamed import binds the decorator to a different local identifier
- * (`import { smrt as model }`), and a namespace import reaches it as a member
- * (`import * as core` then `@core.smrt()`). Both still run the real decorator,
- * so both must be recognized here: a decorator the scanner does not see
- * leaves the manifest without the config the runtime applies.
+ * The name of the decorator applied by `@x` or `@x()`, or `null` for any
+ * other expression, as the base scanner names it: a class or method
+ * decorator through a renamed import (`import { smrt as model }`), a field
+ * decorator by its local identifier (`importAliases` omitted). A namespace
+ * member (`@ns.x()`, `@(ns[key])()`) is not a decorator the scanner reads.
  */
 function resolveDecoratorName(
   decorator: Decorator,
   importAliases?: Map<string, string>,
-  importBindings?: Map<string, ImportBinding>,
 ): string | null {
   const expr = decorator.expression;
   const callee = expr.type === 'CallExpression' ? expr.callee : expr;
   if (callee.type === 'Identifier') {
     return importAliases?.get(callee.name) ?? callee.name;
   }
-  // A namespace member names an SMRT decorator only when the namespace is
-  // imported from an SMRT package: another library's `@forms.field()` is
-  // that library's decorator, and its options are not SMRT field options.
-  const namespace =
-    callee.type === 'MemberExpression' && callee.object.type === 'Identifier'
-      ? importBindings?.get(callee.object.name)
-      : undefined;
-  if (
-    importBindings &&
-    callee.type === 'MemberExpression' &&
-    namespace?.imported === null &&
-    namespace.source.startsWith('@happyvertical/smrt-')
-  ) {
-    // `ns.field` and `ns['field']` name the same export.
-    if (!callee.computed && callee.property.type === 'Identifier') {
-      return callee.property.name;
-    }
-    if (
-      callee.computed &&
-      callee.property.type === 'Literal' &&
-      typeof callee.property.value === 'string'
-    ) {
-      return callee.property.value;
-    }
-    // `ns[KEY]` with `const KEY = 'smrt'` in this file names that export,
-    // but only through a clean read: a scalar copied from an object member
-    // that a module statement writes is not the string its initializer
-    // shows, so the decorator stays unnamed (and is reported).
-    if (callee.computed && callee.property.type === 'Identifier') {
-      const constant = CONSTANTS_BY_BINDINGS.get(importBindings)?.get(
-        callee.property.name,
-      );
-      if (
-        constant?.kind === 'scalar' &&
-        typeof constant.value === 'string' &&
-        constant.unresolved.length === 0 &&
-        constant.unsafeReferences.length === 0
-      ) {
-        return constant.value;
-      }
-    }
-  }
   return null;
-}
-
-/**
- * Each file's module constants, keyed by its import-binding table, so the
- * decorator-name reader (which receives the bindings) can resolve a
- * computed namespace member through a same-file string constant.
- */
-const CONSTANTS_BY_BINDINGS = new WeakMap<
-  Map<string, ImportBinding>,
-  Map<string, ModuleConstant>
->();
-
-/**
- * A decorator reached through a namespace import by a computed member the
- * reader cannot name (`ns[key]`). Which export it is cannot be known, so it
- * may be a field decorator whose options would be lost: a scan error.
- */
-/**
- * Record every decorator in `decorators` reached through a namespace import
- * by a computed member the reader cannot name, labeled with the class and
- * member it decorates. Class and method decorators carry exposure and
- * tenancy (`@smrt`, `@TenantScoped`, `@method`): one silently not read is a
- * model published open.
- */
-function recordUnnamedNamespaceDecorators(
-  decorators: readonly Decorator[] | undefined,
-  sourceText: string,
-  ctx: DecoratorConfigContext | undefined,
-  target: { className?: string; member?: string },
-): void {
-  if (!ctx?.resolveReferences || !decorators) return;
-  for (const decorator of decorators) {
-    if (!isUnnamedNamespaceDecorator(decorator, ctx.importBindings)) continue;
-    const from = ctx.unresolved.length;
-    ctx.unresolved.push({
-      expression:
-        sliceSource(decorator.expression, sourceText) ?? '<decorator>',
-      start: decorator.start,
-    });
-    labelUnresolved(ctx, from, {
-      decorator: '@<namespace member>()',
-      className: target.className,
-      member: target.member,
-    });
-  }
-}
-
-function isUnnamedNamespaceDecorator(
-  decorator: Decorator,
-  importBindings?: Map<string, ImportBinding>,
-): boolean {
-  if (resolveDecoratorName(decorator, undefined, importBindings) !== null) {
-    return false;
-  }
-  const expr = decorator.expression;
-  const callee = expr.type === 'CallExpression' ? expr.callee : expr;
-  return (
-    callee.type === 'MemberExpression' &&
-    callee.computed &&
-    callee.object.type === 'Identifier' &&
-    importBindings?.get(callee.object.name)?.imported === null &&
-    !(
-      callee.property.type === 'Literal' &&
-      typeof callee.property.value === 'string'
-    )
-  );
 }
 
 /**
@@ -3362,20 +3224,16 @@ function isUnnamedNamespaceDecorator(
 function isSmrtDecorator(
   decorator: Decorator,
   importAliases?: Map<string, string>,
-  importBindings?: Map<string, ImportBinding>,
 ): boolean {
-  return isNamedDecorator(decorator, 'smrt', importAliases, importBindings);
+  return isNamedDecorator(decorator, 'smrt', importAliases);
 }
 
 function isNamedDecorator(
   decorator: Decorator,
   name: string,
   importAliases?: Map<string, string>,
-  importBindings?: Map<string, ImportBinding>,
 ): boolean {
-  return (
-    resolveDecoratorName(decorator, importAliases, importBindings) === name
-  );
+  return resolveDecoratorName(decorator, importAliases) === name;
 }
 
 /**
@@ -4801,8 +4659,9 @@ export function parseStaticLiteralSource(
 /**
  * Extract field decorator
  *
- * The decorator is named by what it was exported as, so an aliased or
- * namespaced import is read like a direct one. For the decorators in
+ * The decorator is named by its local identifier, as the base scanner names
+ * it: an aliased import (`import { field as f }`) and a namespace member
+ * (`@ns.field()`) are not read as a field decorator. For the decorators in
  * {@link FIELD_DECORATOR_ARGUMENTS} every argument is also read statically
  * into `argumentValues`; nothing downstream evaluates the raw source text.
  */
@@ -4813,29 +4672,8 @@ function extractFieldDecorator(
   target?: { className?: string; member: string },
 ): RawDecorator | null {
   const expr = decorator.expression;
-  const name = resolveDecoratorName(
-    decorator,
-    ctx?.importAliases,
-    ctx?.importBindings,
-  );
-  if (!name) {
-    if (
-      ctx?.resolveReferences &&
-      isUnnamedNamespaceDecorator(decorator, ctx.importBindings)
-    ) {
-      const from = ctx.unresolved.length;
-      ctx.unresolved.push({
-        expression: sliceSource(expr, sourceText) ?? '<decorator>',
-        start: decorator.start,
-      });
-      labelUnresolved(ctx, from, {
-        decorator: '@<namespace member>()',
-        className: target?.className,
-        member: target?.member,
-      });
-    }
-    return null;
-  }
+  const name = resolveDecoratorName(decorator);
+  if (!name) return null;
 
   const args: string[] = [];
   if (expr.type === 'CallExpression') {
@@ -5054,7 +4892,7 @@ function extractMethodDecoratorConfig(
   target?: { className: string; member: string },
 ): Record<string, unknown> | undefined {
   const decorator = node.decorators?.find((d) =>
-    isNamedDecorator(d, 'method', ctx?.importAliases, ctx?.importBindings),
+    isNamedDecorator(d, 'method', ctx?.importAliases),
   );
   if (!decorator) return undefined;
 

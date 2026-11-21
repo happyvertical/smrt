@@ -84,29 +84,6 @@ describe('a constant held by a static property', () => {
   });
 });
 
-describe('a field decorator reached through a namespace import', () => {
-  it("reads core['field'] like core.field", () => {
-    const { errors, fields } = scan(
-      `@(core['field'])({ sensitive: true }) apiToken = '';\n@core.field({ sensitive: true }) pin = '';`,
-    );
-
-    expect(errors).toHaveLength(0);
-    expect(fields.apiToken.sensitive).toBe(true);
-    expect(fields.pin.sensitive).toBe(true);
-  });
-
-  it('fails on a computed member it cannot name', () => {
-    const { errors } = scan(
-      `@(core[DECORATOR])({ sensitive: true }) apiToken = '';`,
-      `let DECORATOR = 'field';`,
-    );
-
-    expect(errors).toHaveLength(1);
-    expect(errors[0].message).toContain('core[DECORATOR]');
-    expect(errors[0].message).toContain('ClosureLedger.apiToken');
-  });
-});
-
 describe('relationship and report targets', () => {
   it('records an aliased class import by its exported name', () => {
     const { errors, fields } = scan(
@@ -245,64 +222,6 @@ describe('a scanner run twice', () => {
 });
 
 describe('review round 3', () => {
-  describe('computed namespace members on class and method decorators', () => {
-    it('fails on a computed tenant decorator on a model class', () => {
-      const { errors } = scan(
-        `name = '';`,
-        `let TENANT = 'TenantScoped';`,
-        `@smrt()\n@(core[TENANT])({ field: 'orgId' })`,
-      );
-
-      expect(errors).toHaveLength(1);
-      expect(errors[0].message).toContain('core[TENANT]');
-      expect(errors[0].message).toContain('ClosureLedger');
-    });
-
-    it('fails on a computed decorator on a method', () => {
-      const { errors } = scan(
-        `@(core[EXPOSE])({ expose: false }) archive() { return true; }`,
-        `let EXPOSE = 'method';`,
-      );
-
-      expect(errors).toHaveLength(1);
-      expect(errors[0].message).toContain('core[EXPOSE]');
-      expect(errors[0].message).toContain('archive');
-    });
-
-    it("reads core['smrt'] like core.smrt", () => {
-      const { errors, raw } = scan(
-        `name = '';`,
-        '',
-        `@(core['smrt'])({ api: false })`,
-      );
-
-      expect(errors).toHaveLength(0);
-      expect(raw.classes[0].decoratorConfig).toMatchObject({ api: false });
-    });
-
-    it('fails on a computed decorator key copied from a written object member', () => {
-      const { errors } = scan(
-        `name = '';`,
-        `const NAMES = { tenant: 'smrt' };\nNAMES.tenant = 'TenantScoped';\nconst KEY = NAMES.tenant;`,
-        `@smrt()\n@(core[KEY])({ field: 'orgId' })`,
-      );
-
-      expect(errors).toHaveLength(1);
-      expect(errors[0].message).toContain('core[KEY]');
-    });
-
-    it('reads core[KEY] with a clean same-file string constant', () => {
-      const { errors, raw } = scan(
-        `name = '';`,
-        `const KEY = 'smrt';`,
-        `@(core[KEY])({ api: false })`,
-      );
-
-      expect(errors).toHaveLength(0);
-      expect(raw.classes[0].decoratorConfig).toMatchObject({ api: false });
-    });
-  });
-
   describe('a static property as a reader of everything it reaches', () => {
     it('fails when another reader shares an object the held constant nests', () => {
       const { errors } = scan(

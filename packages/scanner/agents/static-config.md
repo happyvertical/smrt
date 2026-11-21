@@ -35,20 +35,19 @@ takes the natural-key default, and an absent model is a missing table.
 | Field text | `@crossPackageRef` qualified name; `@groupBy`, `@sum`, `@avg`, `@min`, `@max`, `@count` column; `@minute` … `@year` column |
 | Static properties | `uiSlots`, `adminRoutes`, `signalSubscriptions`, `createEntries` |
 
-A decorator is recognized by the name it is **exported** under: a direct
-import, an alias (`import { field as f }`), or a namespace
-(`import * as core` then `@core.field()` or `@(core['field'])()`).
-`RawDecorator.name` is that name. A computed namespace member keyed by a
-same-file string constant (`@(core[KEY])()` with `const KEY = 'smrt'`) reads
-as that export. One the scanner cannot name (`let KEY`) is a scan error on a
-class, a method or a field: it may be `@smrt`, `@TenantScoped`, `@method` or
-a field decorator whose configuration would be lost. On a class it is
-reported whether or not the class otherwise reaches the manifest, since it
-may be the decorator that makes it a model.
-A member of anything other than a namespace import of an `@happyvertical/smrt-*`
-package is not a decorator call the scanner reads: another library's
-`@forms.field()` is that library's decorator, and its options never merge
-into an SMRT field's.
+A decorator is recognized as the base scanner recognizes it. A class or
+method decorator (`@smrt`, `@report`, `@TenantScoped`, `@method`) is named
+by the name it is imported under, so a renamed import
+(`import { smrt as model }`) reads as `smrt`. A field decorator is named by
+its local identifier, and `RawDecorator.name` is that identifier. A
+namespace member (`@core.field()`, `@(core['field'])()`, `@(core[KEY])()`) is
+not a decorator call the scanner reads, whichever package the namespace
+comes from: write SMRT's decorators as direct named imports. Another
+library's decorator under an alias (`import { field as formField }`) or a
+namespace (`@forms.field()`) is not read, so its options never merge into an
+SMRT field's. A decorator named like an SMRT field decorator and imported
+directly from another library is read by that name, as the base scanner
+reads it.
 
 ## Value forms
 
@@ -400,7 +399,6 @@ now stops the build. The message names the file, class and member.
 | A class named `SmrtObject`, `SmrtClass`, `SmrtCollection`, `SmrtJunction`, `SmrtJunctionBase`, `SmrtHierarchical`, `SmrtPolymorphicAssociation`, `SmrtReport` or `SmrtReportCollection` outside the framework package that owns the name, or published under one by its `@smrt({ name })` option or export name | Rename the class or its public name; the framework reserves these names |
 | `moduleSuffixes` in the active text of the project root's `tsconfig.json`, of a config it extends by a relative path, or of a config it references (with or without a leading `./`) | Remove the option and import platform files explicitly (`./Base.ios`) |
 | A constant shared by a manifest static property (`uiSlots` etc.) and any other reader | Give the static property its own constant |
-| A computed namespace decorator the scanner cannot name (`@(core[key])()`), including a key copied from an object member a module statement writes | Use `@core.smrt()` / `@(core['smrt'])()`, or a same-file string constant key nothing writes |
 | Two models of one class name in a package | Rename one |
 | A parent, relationship target, report source or collection item imported through a relative barrel, `export *`, `export { A } from`, an import passed on, a default re-export or a renamed export | Import it from the file that declares it |
 | ... imported through a tsconfig `paths` alias, a `baseUrl` bare import, `$lib`, `@/`, `~`, `#imports` or a bundler alias | Import it by relative path from the declaring file |

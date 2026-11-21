@@ -473,31 +473,6 @@ describe('decorator config given as a reference', () => {
   });
 
   describe('decorators reached through a namespace import', () => {
-    it('reads class and method config from `ns.decorator()`', () => {
-      const result = parseSource(
-        `import * as core from '@happyvertical/smrt-core';
-         import * as tenancy from '@happyvertical/smrt-tenancy';
-
-         @tenancy.TenantScoped({ field: 'orgId' })
-         @core.smrt({ api: false, tableName: 'reference_widgets' })
-         class ReferenceWidget extends core.SmrtObject {
-           @core.method({ expose: false })
-           async review(): Promise<void> {}
-         }`,
-        FILE,
-      );
-      const widget = result.classes[0];
-
-      expect(result.errors).toHaveLength(0);
-      expect(widget.hasSmartDecorator).toBe(true);
-      expect(widget.decoratorConfig).toEqual({
-        api: false,
-        tableName: 'reference_widgets',
-        tenantScoped: { field: 'orgId' },
-      });
-      expect(widget.methods[0].decoratorConfig).toEqual({ expose: false });
-    });
-
     it('does not read a member of an unrelated local object as a decorator', () => {
       const result = parseSource(
         `const helpers = { smrt: () => (target: unknown) => target };
