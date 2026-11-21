@@ -285,7 +285,8 @@ describe.skipIf(process.env.SMRT_TEST_PGLITE !== '1')(
     });
 
     it('reinstalls helpers an older installer restored at most once per probe result, from the drainer only', async () => {
-      // An older installer put back an append body without the v7 marker.
+      // An older installer put back an append body without the current
+      // marker (v8, #5438; it still carries v7 and older).
       const def = String(
         (
           await one(
@@ -293,7 +294,7 @@ describe.skipIf(process.env.SMRT_TEST_PGLITE !== '1')(
             `SELECT pg_get_functiondef(to_regprocedure('_smrt_append_changes(jsonb)')) AS def`,
           )
         ).def,
-      ).replace('-- smrt-change-feed-helpers:v7\n', '');
+      ).replace('-- smrt-change-feed-helpers:v8\n', '');
       await db.query(def);
       expect(await probeChangeFeedHelperState(db)).toBe('mixed');
       await db.query(`DROP ROLE IF EXISTS ${RUNTIME_ROLE}`);

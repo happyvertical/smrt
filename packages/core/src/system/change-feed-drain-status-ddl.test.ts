@@ -28,6 +28,7 @@ import {
 } from './schema.js';
 
 const MARKERS = [
+  'smrt-change-feed-helpers:v8',
   'smrt-change-feed-helpers:v7',
   'smrt-change-feed-helpers:v6',
   'smrt-change-feed-helpers:v5',
@@ -114,17 +115,17 @@ describe('change-feed status drain bodies (#5402)', () => {
     }
   });
 
-  it('makes the sequencing statement the last statement of the locking block', () => {
+  it('returns entry rows only after every block committed, never from inside the locking block', () => {
+    // Since #5438 the batch hands its rows back through a variable, checked
+    // against its receipt, and they are returned after the gap-marker phase,
+    // so no row a rolled-back block produced can reach the result.
     const block = lockingBlock();
-    const sequencing = STATUS.indexOf('RETURN QUERY', block.start);
-    expect(sequencing).toBeLessThan(block.end);
-    const after = STATUS.slice(
-      STATUS.indexOf('ORDER BY inserted.seq;', sequencing) +
-        'ORDER BY inserted.seq;'.length,
-      block.end,
+    expect(block.text).not.toMatch(/^\s*RETURN QUERY/m);
+    const entries = STATUS.indexOf('FROM jsonb_to_recordset(v_entries)');
+    expect(entries).toBeGreaterThan(STATUS.indexOf('<<smrt_drain_gaps>>'));
+    expect(STATUS.lastIndexOf('RETURN QUERY', entries)).toBeGreaterThan(
+      STATUS.indexOf('v_helpers := ('),
     );
-    // Only block terminators follow it.
-    expect(after.replace(/\s+/g, ' ').trim()).toBe('END IF;');
   });
 
   it('computes the status extras in their own block after the locking block, then one status row', () => {
@@ -205,8 +206,12 @@ describe('change-feed waiting drain bodies (#5403)', () => {
 
   it('never sets lock_timeout to zero and ends a spent budget as timeout before waiting', () => {
     expect(STATUS).not.toMatch(/set_config\('lock_timeout',\s*'0/);
-    const budgets = STATUS.split(BUDGET_STEP).length - 1;
+    const gaps = STATUS.indexOf('<<smrt_drain_gaps>>');
+    const budgets = STATUS.slice(0, gaps).split(BUDGET_STEP).length - 1;
     expect(budgets).toBe(BLOCKING_STEPS.length);
+    // The gap-marker phase (#5438): its probe, the drain lock, the sensitive
+    // purge, the setting's row lock, its own table's lock and the head.
+    expect(STATUS.slice(gaps).split(BUDGET_STEP).length - 1).toBe(6);
     expect(STATUS).toMatch(
       /IF v_remaining_ms < 1 THEN\s+v_status := 'timeout';\s+RAISE EXCEPTION USING ERRCODE = 'SMR01';\s+END IF;\s+PERFORM set_config\('lock_timeout', GREATEST\(1,/,
     );

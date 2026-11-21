@@ -5,7 +5,7 @@ description: "Production-ready multi-tenancy framework for SMRT with automatic t
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-21T12:09:17Z"
+  at: "2026-11-21T22:51:06Z"
 audience: "internal"
 evidence_level: "source-inspected"
 source_revision: "sha256:331ecf8a80e77022d810394a86d2ca9ce42a744e25977e119c53b40044949547"

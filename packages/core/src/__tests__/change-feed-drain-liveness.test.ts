@@ -78,11 +78,13 @@ function fakeRoot(
           {
             table_name: '_smrt_changes',
             pending_table_name: '_smrt_changes_pending',
-            append_version: 7,
-            batch_version: 7,
-            drain_version: 7,
-            compat_drain_version: 7,
-            status_drain_version: 7,
+            // Current helpers: v8 since #5438, the version routine included.
+            append_version: 8,
+            batch_version: 8,
+            drain_version: 8,
+            compat_drain_version: 8,
+            status_drain_version: 8,
+            version_routine_version: 8,
             created_at_type: 'timestamp with time zone',
           },
         ];
@@ -237,7 +239,13 @@ describe('change-feed drain parsing and the root drainer (#5402, #5403)', () => 
     await drainChangeFeed(root);
     expect(root.statusCalls[0]).toEqual({});
     await vi.advanceTimersByTimeAsync(300);
-    expect(root.statusCalls[1]).toEqual({ waitMs: 2000, firstStatement: true });
+    // A drainer's first pass also retries blocked gap markers (#5438), then
+    // at most every ten minutes.
+    expect(root.statusCalls[1]).toEqual({
+      waitMs: 2000,
+      firstStatement: true,
+      retryBlocked: true,
+    });
   });
 
   it('doubles the wait after each timeout up to 30 s, and halves it after a cancelled statement', async () => {

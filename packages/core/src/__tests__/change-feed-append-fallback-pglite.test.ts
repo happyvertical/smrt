@@ -151,7 +151,13 @@ describe.skipIf(process.env.SMRT_TEST_PGLITE !== '1')(
       await expect(
         appendChange(db, { table: SUBJECT, rowId: 'other' }),
       ).rejects.toMatchObject({ code: '23505' });
-      expect(await count(db, '_smrt_changes_pending')).toBe(1);
+      // The staged entry is kept. The second append's drain meets the same
+      // trigger, a duplicate on another constraint, which since #5438 is a
+      // refusal of that row: the drain records it as a gap marker.
+      expect(
+        (await count(db, '_smrt_changes_pending')) +
+          (await count(db, '_smrt_change_gaps')),
+      ).toBe(1);
     });
 
     it('returns a cancelled statement as an error and stages nothing', async () => {

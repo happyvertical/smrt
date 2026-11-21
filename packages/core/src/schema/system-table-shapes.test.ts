@@ -111,6 +111,7 @@ describe('getSystemTableShapes', () => {
       '_smrt_ai_transcripts',
       '_smrt_ai_usage',
       '_smrt_backfills',
+      '_smrt_change_gaps',
       '_smrt_changes',
       '_smrt_contexts',
       '_smrt_dispatch',

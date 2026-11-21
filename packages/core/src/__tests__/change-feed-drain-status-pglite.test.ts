@@ -34,6 +34,7 @@ const IDENTITIES = [
   STATUS_DRAIN,
 ];
 const MARKERS = [
+  'smrt-change-feed-helpers:v8',
   'smrt-change-feed-helpers:v7',
   'smrt-change-feed-helpers:v6',
   'smrt-change-feed-helpers:v5',
@@ -222,7 +223,7 @@ describe.skipIf(process.env.SMRT_TEST_PGLITE !== '1')(
     it('installs the status drain beside the four helpers, each carrying the v7 to v4 markers', async () => {
       const versions = await helperVersions(db);
       for (const identity of IDENTITIES) {
-        expect(versions[identity], identity).toEqual([true, true, true, true]);
+        expect(versions[identity], identity).toEqual(MARKERS.map(() => true));
       }
       expect(await probeChangeFeedHelperState(db)).toBe('current');
     });
@@ -460,6 +461,7 @@ describe.skipIf(process.env.SMRT_TEST_PGLITE !== '1')(
     it('names the owner upgrade when helpers older than v6 cannot be replaced', async () => {
       await stripMarker(db, IDENTITIES[2] as string, MARKERS[0] as string);
       await stripMarker(db, IDENTITIES[2] as string, MARKERS[1] as string);
+      await stripMarker(db, IDENTITIES[2] as string, MARKERS[2] as string);
       expect(await probeChangeFeedHelperState(db)).toBe('outdated');
       await createRuntimeRole(db);
       await db.query(`SET ROLE ${RUNTIME_ROLE}`);

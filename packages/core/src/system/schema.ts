@@ -628,6 +628,94 @@ CREATE INDEX IF NOT EXISTS idx_smrt_changes_created_at
 `;
 
 /**
+ * Gap markers: change-feed entries that were lost before they could be
+ * sequenced (#5438).
+ *
+ * One row per lost entry. A marker is written when the PostgreSQL drain
+ * cannot move a staged entry into `_smrt_changes` (the entry itself is
+ * refused: a data or constraint error, or a trigger that drops it), so the
+ * loss is recorded instead of blocking every later drain or vanishing.
+ *
+ * - `table_name` and `tenant_key` say whose readers the loss concerns.
+ *   `tenant_key` is text on every engine (a lost entry's owner may be a value
+ *   the uuid column would refuse); NULL only for a global entry.
+ * - `row_id` and `operation` are the lost entry's identity. They are private
+ *   evidence with the sensitivity of `_smrt_changes` rows, never shown by a
+ *   public read. A NULL `row_id` is valid evidence (a lost row-less entry).
+ * - Lifecycle: *unconverted* (`converted_seq` and `reconciled_at` NULL),
+ *   counted in the table's version; *blocked* (`blocked_at` set), an
+ *   unconverted marker whose conversion failed and that ordinary drain passes
+ *   skip; *converted* (`converted_seq` set, `tenant_key` rewritten to the
+ *   feed row's canonical tenant text), kept as evidence until retention
+ *   deletes it after its feed row; *reconciled* (`reconciled_at` set), retired
+ *   by an operator, never converted, and counted in the table version for good
+ *   so that version never decreases.
+ *
+ * Conversion (giving a marker a feed position) happens only while the
+ * delivery setting is present in `_smrt_backfills`
+ * ({@link CHANGE_FEED_GAP_DELIVERY_SETTING}); nothing in this release creates
+ * it. `gap_id` is a native uuid on PostgreSQL and DuckDB and TEXT on SQLite
+ * (see {@link getSystemTableDDLForEngine}).
+ */
+export const CREATE_SMRT_CHANGE_GAPS_TABLE = `
+CREATE TABLE IF NOT EXISTS _smrt_change_gaps (
+  gap_id TEXT PRIMARY KEY,
+  table_name TEXT NOT NULL,
+  row_id TEXT,
+  operation TEXT,
+  tenant_key TEXT,
+  created_at TIMESTAMP NOT NULL,
+  blocked_at TIMESTAMP,
+  converted_seq BIGINT,
+  reconciled_at TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_smrt_change_gaps_table
+  ON _smrt_change_gaps(table_name);
+
+CREATE INDEX IF NOT EXISTS idx_smrt_change_gaps_converted_seq
+  ON _smrt_change_gaps(converted_seq);
+`;
+
+/** Name of the change-feed gap-marker table (#5438). */
+export const CHANGE_FEED_GAPS_TABLE = '_smrt_change_gaps';
+
+/**
+ * `_smrt_backfills` row whose presence lets the drain give gap markers a
+ * feed position (#5438). No code in this release creates it, so delivery is
+ * off everywhere; markers are kept and counted in table versions meanwhile.
+ */
+export const CHANGE_FEED_GAP_DELIVERY_SETTING =
+  '@happyvertical/smrt-core:change-feed-gap-delivery:v1';
+
+/**
+ * Render the gap table's `gap_id` for an engine (#5438): a native uuid with a
+ * per-row default on PostgreSQL, where the drain writes markers; a native
+ * uuid without a default on DuckDB (nothing writes markers there yet, and the
+ * DDL must stay valid where a SQLite file is detected as DuckDB by its name);
+ * TEXT on SQLite and the JSON adapter (UUID as text). Plain string work with
+ * no module-level state, so the helper install DDL above the engine
+ * materializer can use it at module load.
+ */
+function renderChangeGapsId(ddl: string, engine: DatabaseEngine): string {
+  if (engine === 'postgres') {
+    return ddl.replace(
+      /\bgap_id TEXT PRIMARY KEY\b/,
+      'gap_id UUID PRIMARY KEY DEFAULT gen_random_uuid()',
+    );
+  }
+  return engine === 'duckdb'
+    ? ddl.replace(/\bgap_id TEXT PRIMARY KEY\b/, 'gap_id UUID PRIMARY KEY')
+    : ddl;
+}
+
+/** PostgreSQL materialization of {@link CREATE_SMRT_CHANGE_GAPS_TABLE}. */
+const CREATE_POSTGRES_SMRT_CHANGE_GAPS_TABLE = renderChangeGapsId(
+  CREATE_SMRT_CHANGE_GAPS_TABLE,
+  'postgres',
+).replace(/\bTIMESTAMP\b/g, 'TIMESTAMPTZ');
+
+/**
  * PostgreSQL-only staging table for change-feed appends made inside a
  * caller-managed transaction (issue #2649).
  *
@@ -706,11 +794,27 @@ export const POSTGRES_CHANGE_FEED_APPEND_BATCH_FUNCTION_IDENTITY = `${POSTGRES_C
  * {@link POSTGRES_CHANGE_FEED_DRAIN_STATUS_FUNCTION_IDENTITY}, which releases
  * every lock a pass took when it finds no work; the older drain identities
  * delegate to it. The append bodies are only re-stamped.
+ *
+ * v8 (#5438) adds gap markers to the status drain: a staged batch whose
+ * removed and inserted counts differ is rolled back, a staged entry the feed
+ * refuses becomes a gap marker, and markers are converted while delivery is
+ * enabled. It also adds the version routine
+ * {@link POSTGRES_CHANGE_FEED_VERSION_FUNCTION_IDENTITY}. The other bodies are
+ * only re-stamped.
  */
-export const POSTGRES_CHANGE_FEED_HELPER_MARKER = 'smrt-change-feed-helpers:v7';
+export const POSTGRES_CHANGE_FEED_HELPER_MARKER = 'smrt-change-feed-helpers:v8';
 
 /**
- * The v6 marker, still stamped into every v7 body (#5402).
+ * The v7 marker, still stamped into every v8 body (#5438): a v7 process
+ * probes for it, and finding it keeps that process from replacing a v8 body
+ * with its own during a rolling upgrade. The v7 status drain is also what
+ * this build still calls directly when a v8 install is refused.
+ */
+export const POSTGRES_CHANGE_FEED_HELPER_STATUS_MARKER =
+  'smrt-change-feed-helpers:v7';
+
+/**
+ * The v6 marker, still stamped into every v7 and v8 body (#5402).
  *
  * It is also the compatibility floor: v6 is the first body set that gives
  * the cursor guarantee under contention and fixed-snapshot isolation, so a
@@ -745,6 +849,7 @@ export const POSTGRES_CHANGE_FEED_HELPER_COMPAT_MARKER =
 /** Marker comment lines for a helper body: current first, then every older one. */
 const POSTGRES_CHANGE_FEED_HELPER_MARKER_LINES = [
   POSTGRES_CHANGE_FEED_HELPER_MARKER,
+  POSTGRES_CHANGE_FEED_HELPER_STATUS_MARKER,
   POSTGRES_CHANGE_FEED_HELPER_FLOOR_MARKER,
   POSTGRES_CHANGE_FEED_HELPER_PREVIOUS_MARKER,
   POSTGRES_CHANGE_FEED_HELPER_COMPAT_MARKER,
@@ -841,6 +946,13 @@ export const POSTGRES_CHANGE_FEED_COMPAT_DRAIN_FUNCTION_IDENTITY = `${POSTGRES_C
  */
 export const POSTGRES_CHANGE_FEED_DRAIN_STATUS_FUNCTION_IDENTITY = `${POSTGRES_CHANGE_FEED_DRAIN_FUNCTION_NAME}(integer,text[],jsonb)`;
 
+/** PostgreSQL helper that reads one table's change version (#5438). */
+export const POSTGRES_CHANGE_FEED_VERSION_FUNCTION_NAME =
+  '_smrt_change_feed_version';
+
+/** Exact PostgreSQL identity of the version routine (#5438). */
+export const POSTGRES_CHANGE_FEED_VERSION_FUNCTION_IDENTITY = `${POSTGRES_CHANGE_FEED_VERSION_FUNCTION_NAME}(text)`;
+
 /** How many staged entries one drain call sequences. */
 export const POSTGRES_CHANGE_FEED_DRAIN_BATCH = 1000;
 
@@ -861,12 +973,12 @@ const POSTGRES_CHANGE_FEED_DRAIN_MAX_WAIT_MS = 600_000;
  * waits at all. The computed value is never below 1 ms, because PostgreSQL
  * reads `lock_timeout = 0` as no limit. A no-op without `waitMs`.
  */
-function drainBudgetStep(indent: string): string {
+function drainBudgetStep(indent: string, statusVar = 'v_status'): string {
   return [
     'IF v_wait THEN',
     '  v_remaining_ms := EXTRACT(EPOCH FROM v_deadline - clock_timestamp()) * 1000;',
     '  IF v_remaining_ms < 1 THEN',
-    "    v_status := 'timeout';",
+    `    ${statusVar} := 'timeout';`,
     `    RAISE EXCEPTION USING ERRCODE = '${POSTGRES_CHANGE_FEED_NO_WORK_SQLSTATE}';`,
     '  END IF;',
     "  PERFORM set_config('lock_timeout', GREATEST(1, floor(v_remaining_ms))::BIGINT::TEXT || 'ms', true);",
@@ -875,6 +987,143 @@ function drainBudgetStep(indent: string): string {
     .map((line) => `${indent}${line}`)
     .join('\n');
 }
+
+/** Indent every line of a generated SQL fragment. */
+function indentSql(indent: string, lines: string[]): string {
+  return lines
+    .flatMap((line) => line.split('\n'))
+    .map((line) => (line.length > 0 ? `${indent}${line}` : line))
+    .join('\n');
+}
+
+/**
+ * The drain advisory lock step of a pass (#5402): waited for in wait mode,
+ * only tried otherwise. Shared by the staged-entry and gap-marker phases
+ * (#5438), which take the same lock.
+ */
+function drainAdvisoryLockStep(indent: string, statusVar: string): string {
+  return [
+    `${indent}IF v_wait THEN`,
+    drainBudgetStep(`${indent}  `, statusVar),
+    indentSql(indent, [
+      '  PERFORM pg_advisory_xact_lock(',
+      "    hashtext('smrt'),",
+      "    hashtext('change-feed-drain')",
+      '  );',
+      'ELSIF NOT pg_try_advisory_xact_lock(',
+      "  hashtext('smrt'),",
+      "  hashtext('change-feed-drain')",
+      ') THEN',
+      `  ${statusVar} := 'drain_busy';`,
+      `  RAISE EXCEPTION USING ERRCODE = '${POSTGRES_CHANGE_FEED_NO_WORK_SQLSTATE}';`,
+      'END IF;',
+    ]),
+  ].join('\n');
+}
+
+/**
+ * The feed table's insert lock and the head lock of a pass that will
+ * allocate (#5271, #5402); see the comment above their first use in the
+ * status drain for the order. `ownTable` is the table the phase writes
+ * besides the feed (the staging table, or the gap table, #5438): in wait mode
+ * its insert lock is taken first, so no later statement of the phase waits
+ * for it while holding the head.
+ */
+function drainHeadLockSteps(
+  indent: string,
+  statusVar: string,
+  ownTable: string,
+): string {
+  const busy = (status: string) => [
+    `  ${statusVar} := '${status}';`,
+    `  RAISE EXCEPTION USING ERRCODE = '${POSTGRES_CHANGE_FEED_NO_WORK_SQLSTATE}';`,
+  ];
+  return [
+    `${indent}IF v_wait THEN`,
+    drainBudgetStep(`${indent}  `, statusVar),
+    indentSql(indent, [
+      `  LOCK TABLE ${ownTable} IN ROW EXCLUSIVE MODE;`,
+      'END IF;',
+      `IF NOT ${POSTGRES_CHANGE_FEED_CAN_LOCK_RELATION} THEN`,
+      "  PERFORM set_config('lock_timeout', '1ms', true);",
+      '  BEGIN',
+      '    INSERT INTO _smrt_changes (seq) SELECT NULL::BIGINT WHERE false;',
+      '  EXCEPTION WHEN lock_not_available THEN',
+      ...busy('relation_busy').map((line) => `  ${line}`),
+      '  END;',
+      "  PERFORM set_config('lock_timeout', v_lock_timeout, true);",
+      'ELSIF NOT v_wait THEN',
+      '  BEGIN',
+      '    LOCK TABLE _smrt_changes IN ROW EXCLUSIVE MODE NOWAIT;',
+      '  EXCEPTION WHEN lock_not_available THEN',
+      ...busy('relation_busy').map((line) => `  ${line}`),
+      '  END;',
+      'END IF;',
+      'IF v_wait THEN',
+    ]),
+    drainBudgetStep(`${indent}  `, statusVar),
+    indentSql(indent, [
+      `  PERFORM pg_advisory_xact_lock(${POSTGRES_CHANGE_FEED_HEAD_LOCK_KEY});`,
+      `  IF ${POSTGRES_CHANGE_FEED_CAN_LOCK_RELATION} THEN`,
+      '    BEGIN',
+      '      LOCK TABLE _smrt_changes IN ROW EXCLUSIVE MODE NOWAIT;',
+      '    EXCEPTION WHEN lock_not_available THEN',
+      ...busy('relation_busy').map((line) => `    ${line}`),
+      '    END;',
+      '  END IF;',
+      `ELSIF NOT pg_try_advisory_xact_lock(${POSTGRES_CHANGE_FEED_HEAD_LOCK_KEY}) THEN`,
+      ...busy('head_busy'),
+      'END IF;',
+    ]),
+  ].join('\n');
+}
+
+/**
+ * SQLSTATE the status drain raises to undo a move whose receipt did not
+ * match (#5438): a batch that removed more staged rows than it inserted feed
+ * rows, or a single move or conversion that did not affect exactly one row.
+ * Private to the helper body, caught by the block that raised it.
+ */
+const POSTGRES_CHANGE_FEED_RECEIPT_SQLSTATE = 'SMR02';
+
+/**
+ * At most this many staged rows are moved one at a time by a pass after its
+ * batch failed on a row (#5438). The rest wait for the next pass.
+ */
+export const POSTGRES_CHANGE_FEED_ISOLATION_BATCH = 64;
+
+/** At most this many gap markers are converted by one pass (#5438). */
+export const POSTGRES_CHANGE_FEED_GAP_BATCH = 200;
+
+/**
+ * Whether the error in `v_code` / `v_constraint` is attributable to the row
+ * being moved (#5438), so the row may be replaced by a gap marker: a data
+ * exception (class 22), an integrity violation (class 23) other than a
+ * duplicate of the feed's own sequence key (the head race an older appender
+ * can cause, retried as before), or a raise from a trigger (`P0001`). Lock
+ * timeouts, cancels, privilege and resource errors are not: they leave the
+ * staged row for a later pass.
+ */
+const POSTGRES_CHANGE_FEED_ROW_ATTRIBUTABLE = `(
+  v_code LIKE '22%'
+  OR v_code = 'P0001'
+  OR (
+    v_code LIKE '23%'
+    AND NOT (
+      v_code = '23505'
+      AND v_constraint IS NOT DISTINCT FROM (
+        SELECT feed_key.conname::TEXT
+        FROM pg_constraint AS feed_key
+        WHERE feed_key.conrelid = to_regclass('_smrt_changes')
+          AND feed_key.contype = 'p'
+      )
+    )
+  )
+)`;
+
+/** The staged rows a pass may sequence: every table outside the sensitive set. */
+const POSTGRES_CHANGE_FEED_NOT_EXCLUDED = (alias: string) =>
+  `NOT (${alias}.table_name = ANY(COALESCE(p_excluded_tables, ARRAY[]::TEXT[])))`;
 
 /**
  * PostgreSQL-only drain: move committed staged appends into `_smrt_changes`.
@@ -956,6 +1205,35 @@ DECLARE
   v_sequencing BOOLEAN := false;
   v_error_code TEXT;
   v_error_message TEXT;
+  -- Gap markers (#5438).
+  v_entries JSONB := '[]'::JSONB;
+  v_removed BIGINT;
+  v_inserted BIGINT;
+  v_isolate BOOLEAN := false;
+  v_isolated INTEGER := 0;
+  v_mark BOOLEAN;
+  v_next BIGINT;
+  v_seq BIGINT;
+  v_canonical TEXT;
+  v_gap_id TEXT;
+  v_staged RECORD;
+  v_marker RECORD;
+  v_code TEXT;
+  v_constraint TEXT;
+  v_detail TEXT;
+  v_staged_error_code TEXT;
+  v_staged_error_message TEXT;
+  v_staged_status TEXT;
+  v_gap_status TEXT;
+  v_gap_enabled BOOLEAN := false;
+  v_gap_backlog BOOLEAN;
+  v_gap_purged BIGINT := 0;
+  v_gap_first BIGINT;
+  v_gap_last BIGINT;
+  v_converted INTEGER := 0;
+  v_blocked INTEGER := 0;
+  v_retry_blocked BOOLEAN := COALESCE(p_options->'retryBlocked' = 'true'::JSONB, false);
+  v_notes TEXT[] := ARRAY[]::TEXT[];
 BEGIN
   -- EVERY statement below sits inside this exception boundary, preflight
   -- included. The caller may own the surrounding transaction, and an error
@@ -963,15 +1241,12 @@ BEGIN
   -- blocks on a table lock until statement_timeout is exactly that: it is not
   -- the insert, but it aborts the caller just the same.
   BEGIN
-    IF to_regclass('_smrt_changes_pending') IS NULL THEN
-      v_status := 'empty';
-
     -- Never sequence from inside a transaction that has already written. Doing
     -- so would hold freshly allocated sequences uncommitted for the rest of
     -- that transaction, which is precisely the wait edge #2649 removes — a
     -- reader calling getChangesSince() inside a long write transaction must
     -- not put it back. The staged rows keep for the next drain.
-    ELSIF pg_current_xact_id_if_assigned() IS NOT NULL THEN
+    IF pg_current_xact_id_if_assigned() IS NOT NULL THEN
       v_status := 'in_transaction';
 
     -- firstStatement (#5403): a background drain must never run inside
@@ -1023,6 +1298,16 @@ BEGIN
       -- other drain was refused meanwhile. Only a pass that sequenced or
       -- purged something commits the block and keeps its locks. (Leaving it
       -- with EXIT instead of the raise would commit it: that keeps the locks.)
+      --
+      -- Two phases follow, each in its own blocks (#5438): staged entries,
+      -- then gap markers. Neither depends on the other's tables or outcome:
+      -- a missing staging table or a failed staged phase still lets markers
+      -- convert. A staged-phase error is reported (as the call's error row)
+      -- only after the marker phase ran.
+      IF to_regclass('_smrt_changes_pending') IS NULL THEN
+        v_status := 'empty';
+      ELSE
+      BEGIN
       <<smrt_drain_pass>>
       BEGIN
 ${drainBudgetStep('        ')}
@@ -1036,19 +1321,7 @@ ${drainBudgetStep('        ')}
         -- Without waitMs: try, never wait — a reader's drain must not become
         -- an edge in a cycle. Waiting for the drain lock is safe: nothing but
         -- another drain ever requests it.
-        IF v_wait THEN
-${drainBudgetStep('          ')}
-          PERFORM pg_advisory_xact_lock(
-            hashtext('smrt'),
-            hashtext('change-feed-drain')
-          );
-        ELSIF NOT pg_try_advisory_xact_lock(
-          hashtext('smrt'),
-          hashtext('change-feed-drain')
-        ) THEN
-          v_status := 'drain_busy';
-          RAISE EXCEPTION USING ERRCODE = '${POSTGRES_CHANGE_FEED_NO_WORK_SQLSTATE}';
-        END IF;
+${drainAdvisoryLockStep('        ', 'v_status')}
 
         -- The head lock (#5271) serializes this drain with direct appenders.
         -- Without waitMs it is only TRIED: a reader must never wait behind an
@@ -1080,42 +1353,7 @@ ${drainBudgetStep('          ')}
           )
         );
         IF v_has_candidate THEN
-          IF v_wait THEN
-${drainBudgetStep('            ')}
-            LOCK TABLE _smrt_changes_pending IN ROW EXCLUSIVE MODE;
-          END IF;
-          IF NOT ${POSTGRES_CHANGE_FEED_CAN_LOCK_RELATION} THEN
-            PERFORM set_config('lock_timeout', '1ms', true);
-            BEGIN
-              INSERT INTO _smrt_changes (seq) SELECT NULL::BIGINT WHERE false;
-            EXCEPTION WHEN lock_not_available THEN
-              v_status := 'relation_busy';
-              RAISE EXCEPTION USING ERRCODE = '${POSTGRES_CHANGE_FEED_NO_WORK_SQLSTATE}';
-            END;
-            PERFORM set_config('lock_timeout', v_lock_timeout, true);
-          ELSIF NOT v_wait THEN
-            BEGIN
-              LOCK TABLE _smrt_changes IN ROW EXCLUSIVE MODE NOWAIT;
-            EXCEPTION WHEN lock_not_available THEN
-              v_status := 'relation_busy';
-              RAISE EXCEPTION USING ERRCODE = '${POSTGRES_CHANGE_FEED_NO_WORK_SQLSTATE}';
-            END;
-          END IF;
-          IF v_wait THEN
-${drainBudgetStep('            ')}
-            PERFORM pg_advisory_xact_lock(${POSTGRES_CHANGE_FEED_HEAD_LOCK_KEY});
-            IF ${POSTGRES_CHANGE_FEED_CAN_LOCK_RELATION} THEN
-              BEGIN
-                LOCK TABLE _smrt_changes IN ROW EXCLUSIVE MODE NOWAIT;
-              EXCEPTION WHEN lock_not_available THEN
-                v_status := 'relation_busy';
-                RAISE EXCEPTION USING ERRCODE = '${POSTGRES_CHANGE_FEED_NO_WORK_SQLSTATE}';
-              END;
-            END IF;
-          ELSIF NOT pg_try_advisory_xact_lock(${POSTGRES_CHANGE_FEED_HEAD_LOCK_KEY}) THEN
-            v_status := 'head_busy';
-            RAISE EXCEPTION USING ERRCODE = '${POSTGRES_CHANGE_FEED_NO_WORK_SQLSTATE}';
-          END IF;
+${drainHeadLockSteps('          ', 'v_status', POSTGRES_CHANGE_FEED_PENDING_TABLE)}
         END IF;
 
         -- The feed never records a sensitive table (#2982). Staged entries for
@@ -1151,16 +1389,22 @@ ${drainBudgetStep('          ')}
           -- the caller had it: a committed block keeps a local setting until
           -- the caller's transaction ends.
           PERFORM set_config('lock_timeout', v_lock_timeout, true);
-          SELECT COALESCE(MAX(changes.seq), 0) INTO v_base FROM _smrt_changes AS changes;
           v_status := 'drained';
           v_sequencing := true;
 
-          -- The sequencing statement is the LAST statement of this block.
-          -- Rows a RETURN QUERY has appended to the result stay there even
-          -- when a later error rolls the block back, so anything fallible
-          -- after it could hand back sequences that never committed. The
-          -- status below is computed in its own block, after this one.
-          RETURN QUERY
+          -- The batch runs in its own block and hands its rows back through
+          -- v_entries, never through RETURN QUERY: rows a RETURN QUERY has
+          -- appended stay in the result even when a later error rolls the
+          -- block back (#5402). Its receipt is checked (#5438): every staged
+          -- row it removed must have become exactly one feed row. A trigger
+          -- that silently drops a feed insert would otherwise delete a staged
+          -- entry with nothing to show for it. On a mismatch, or on an error
+          -- attributable to a row, the batch is rolled back and the rows are
+          -- moved one at a time below. Any other error ends the pass as
+          -- before: it reaches the staged-phase boundary and becomes the
+          -- call's error row, and the staged rows wait for a later pass.
+          BEGIN
+          SELECT COALESCE(MAX(changes.seq), 0) INTO v_base FROM _smrt_changes AS changes;
           WITH removed AS (
             DELETE FROM _smrt_changes_pending AS pending
             WHERE pending.pending_id IN (
@@ -1213,18 +1457,183 @@ ${drainBudgetStep('          ')}
               _smrt_changes.tenant_id
           )
           SELECT
-            inserted.seq,
-            inserted.table_name,
-            inserted.row_id,
-            inserted.operation,
-            inserted.tenant_id::TEXT,
-            NULL::TEXT,
-            NULL::TEXT,
-            NULL::TEXT,
-            NULL::BOOLEAN,
-            NULL::BOOLEAN
-          FROM inserted
-          ORDER BY inserted.seq;
+            (SELECT count(*) FROM removed),
+            count(*),
+            COALESCE(
+              jsonb_agg(
+                jsonb_build_object(
+                  'seq', inserted.seq,
+                  'table_name', inserted.table_name,
+                  'row_id', inserted.row_id,
+                  'operation', inserted.operation,
+                  'tenant_id', inserted.tenant_id::TEXT
+                )
+                ORDER BY inserted.seq
+              ),
+              '[]'::JSONB
+            )
+          INTO v_removed, v_inserted, v_entries
+          FROM inserted;
+          IF v_removed <> v_inserted THEN
+            RAISE EXCEPTION USING ERRCODE = '${POSTGRES_CHANGE_FEED_RECEIPT_SQLSTATE}';
+          END IF;
+          EXCEPTION
+            WHEN query_canceled THEN
+              RAISE;
+            WHEN SQLSTATE '${POSTGRES_CHANGE_FEED_RECEIPT_SQLSTATE}' THEN
+              -- Variables survive a block's rollback; its rows do not.
+              v_entries := '[]'::JSONB;
+              v_isolate := true;
+            WHEN OTHERS THEN
+              v_entries := '[]'::JSONB;
+              GET STACKED DIAGNOSTICS
+                v_code = RETURNED_SQLSTATE,
+                v_constraint = CONSTRAINT_NAME;
+              IF NOT ${POSTGRES_CHANGE_FEED_ROW_ATTRIBUTABLE.replaceAll('\n', '\n              ')} THEN
+                RAISE;
+              END IF;
+              v_isolate := true;
+          END;
+
+          -- Isolation (#5438): at most ${POSTGRES_CHANGE_FEED_ISOLATION_BATCH} rows, in staged order, each
+          -- moved in its own block with the same receipt check and the same
+          -- classification. A row refused for a reason of its own is replaced
+          -- by a gap marker carrying its table, row id, operation and tenant;
+          -- the staged row is deleted only after the marker's insert returned
+          -- its row. A move that fails for any other reason (a lock timeout,
+          -- a privilege or resource error) leaves that row staged and ends
+          -- isolation for this pass, so a retryable failure never turns a
+          -- deliverable entry into a marker. Still under every lock above.
+          IF v_isolate THEN
+            SELECT COALESCE(MAX(changes.seq), 0) INTO v_next FROM _smrt_changes AS changes;
+            <<smrt_drain_isolation>>
+            FOR v_staged IN
+              SELECT
+                candidate.pending_id,
+                candidate.table_name,
+                candidate.row_id,
+                candidate.operation,
+                NULLIF(candidate.tenant_id::TEXT, '') AS tenant_text,
+                candidate.created_at
+              FROM _smrt_changes_pending AS candidate
+              WHERE ${POSTGRES_CHANGE_FEED_NOT_EXCLUDED('candidate')}
+              ORDER BY candidate.pending_id
+              LIMIT ${POSTGRES_CHANGE_FEED_ISOLATION_BATCH}
+            LOOP
+              v_mark := false;
+              BEGIN
+                DELETE FROM _smrt_changes_pending AS pending
+                WHERE pending.pending_id = v_staged.pending_id;
+                GET DIAGNOSTICS v_removed = ROW_COUNT;
+                INSERT INTO _smrt_changes (
+                  seq,
+                  table_name,
+                  row_id,
+                  operation,
+                  tenant_id,
+                  created_at
+                )
+                VALUES (
+                  v_next + 1,
+                  v_staged.table_name,
+                  v_staged.row_id,
+                  v_staged.operation,
+                  ${postgresTenantIdAs('_smrt_changes', 'v_staged.tenant_text')},
+                  v_staged.created_at
+                )
+                RETURNING _smrt_changes.seq, _smrt_changes.tenant_id::TEXT
+                INTO v_seq, v_canonical;
+                GET DIAGNOSTICS v_inserted = ROW_COUNT;
+                IF v_removed <> 1 OR v_inserted <> 1 THEN
+                  RAISE EXCEPTION USING ERRCODE = '${POSTGRES_CHANGE_FEED_RECEIPT_SQLSTATE}';
+                END IF;
+                v_next := GREATEST(v_next + 1, v_seq);
+                v_entries := v_entries || jsonb_build_array(
+                  jsonb_build_object(
+                    'seq', v_seq,
+                    'table_name', v_staged.table_name,
+                    'row_id', v_staged.row_id,
+                    'operation', v_staged.operation,
+                    'tenant_id', v_canonical
+                  )
+                );
+              EXCEPTION
+                WHEN query_canceled THEN
+                  RAISE;
+                WHEN SQLSTATE '${POSTGRES_CHANGE_FEED_RECEIPT_SQLSTATE}' THEN
+                  v_mark := true;
+                WHEN OTHERS THEN
+                  GET STACKED DIAGNOSTICS
+                    v_code = RETURNED_SQLSTATE,
+                    v_constraint = CONSTRAINT_NAME,
+                    v_detail = MESSAGE_TEXT;
+                  IF ${POSTGRES_CHANGE_FEED_ROW_ATTRIBUTABLE.replaceAll('\n', '\n                  ')} THEN
+                    v_mark := true;
+                  ELSE
+                    v_staged_error_code := v_code;
+                    v_staged_error_message := v_detail;
+                    EXIT smrt_drain_isolation;
+                  END IF;
+              END;
+              IF v_mark THEN
+                BEGIN
+                  INSERT INTO ${CHANGE_FEED_GAPS_TABLE} (
+                    table_name,
+                    row_id,
+                    operation,
+                    tenant_key,
+                    created_at
+                  )
+                  VALUES (
+                    v_staged.table_name,
+                    v_staged.row_id,
+                    v_staged.operation,
+                    v_staged.tenant_text,
+                    clock_timestamp()
+                  )
+                  RETURNING ${CHANGE_FEED_GAPS_TABLE}.gap_id::TEXT INTO v_gap_id;
+                  IF v_gap_id IS NULL THEN
+                    RAISE EXCEPTION USING ERRCODE = '${POSTGRES_CHANGE_FEED_RECEIPT_SQLSTATE}';
+                  END IF;
+                  DELETE FROM _smrt_changes_pending AS pending
+                  WHERE pending.pending_id = v_staged.pending_id;
+                  GET DIAGNOSTICS v_removed = ROW_COUNT;
+                  IF v_removed <> 1 THEN
+                    RAISE EXCEPTION USING ERRCODE = '${POSTGRES_CHANGE_FEED_RECEIPT_SQLSTATE}';
+                  END IF;
+                  v_isolated := v_isolated + 1;
+                EXCEPTION
+                  WHEN query_canceled THEN
+                    RAISE;
+                  WHEN OTHERS THEN
+                    -- No marker, so the staged row stays exactly as it was.
+                    GET STACKED DIAGNOSTICS
+                      v_staged_error_code = RETURNED_SQLSTATE,
+                      v_staged_error_message = MESSAGE_TEXT;
+                    EXIT smrt_drain_isolation;
+                END;
+              END IF;
+            END LOOP;
+            IF v_isolated > 0 THEN
+              v_notes := v_notes || ('isolated=' || v_isolated);
+            END IF;
+            IF v_isolated = 0 AND jsonb_array_length(v_entries) = 0 THEN
+              -- Nothing moved: release this pass's locks. The error that
+              -- stopped isolation (if any) is the call's error row below.
+              IF v_staged_error_code IS NULL THEN
+                v_status := 'empty';
+              END IF;
+              IF v_purged = 0 THEN
+                RAISE EXCEPTION USING ERRCODE = '${POSTGRES_CHANGE_FEED_NO_WORK_SQLSTATE}';
+              END IF;
+            ELSIF v_staged_error_code IS NOT NULL THEN
+              -- Some rows moved: they stand, and the rest wait for a later
+              -- pass. The stop is noted on the status row, not raised.
+              v_notes := v_notes || ('isolation stopped: ' || v_staged_error_code);
+              v_staged_error_code := NULL;
+              v_staged_error_message := NULL;
+            END IF;
+          END IF;
         END IF;
       EXCEPTION
         WHEN SQLSTATE '${POSTGRES_CHANGE_FEED_NO_WORK_SQLSTATE}' THEN
@@ -1239,16 +1648,232 @@ ${drainBudgetStep('          ')}
           END IF;
           v_status := 'timeout';
       END;
+      EXCEPTION
+        WHEN query_canceled THEN
+          RAISE;
+        WHEN OTHERS THEN
+          -- The staged phase failed and rolled back (#5438). The marker
+          -- phase still runs; this error becomes the call's error row.
+          GET STACKED DIAGNOSTICS
+            v_staged_error_code = RETURNED_SQLSTATE,
+            v_staged_error_message = MESSAGE_TEXT;
+          v_entries := '[]'::JSONB;
+          v_isolated := 0;
+          v_notes := ARRAY[]::TEXT[];
+      END;
+      END IF;
+
+      -- Gap markers (#5438), in blocks of their own. A marker is given a
+      -- feed position (a row with row_id NULL and the stored operation
+      -- 'gap') only while the delivery setting is present in _smrt_backfills,
+      -- read under the drain lock and locked FOR SHARE, so the setting
+      -- cannot be removed while a pass that saw it is converting; under a
+      -- fixed snapshot nothing gets here at all (preflight above). Each
+      -- marker converts in its own block: the feed insert must return exactly
+      -- one row, then the marker records converted_seq and the feed row's
+      -- canonical tenant text and stays as evidence. A marker whose
+      -- conversion fails is flagged blocked_at and skipped by ordinary
+      -- passes; later markers proceed. Nothing here ever deletes a marker,
+      -- except those of a table in the live sensitive set (#2937).
+      IF to_regclass('${CHANGE_FEED_GAPS_TABLE}') IS NULL THEN
+        v_gap_status := 'empty';
+      ELSE
+      BEGIN
+      <<smrt_drain_gaps>>
+      BEGIN
+${drainBudgetStep('        ', 'v_gap_status')}
+        -- Cheap common case: no marker waiting and none of a sensitive
+        -- table, so a pass pays one index probe and takes no lock it keeps.
+        IF NOT EXISTS (
+          SELECT 1
+          FROM ${CHANGE_FEED_GAPS_TABLE} AS marker
+          WHERE marker.converted_seq IS NULL
+            AND marker.reconciled_at IS NULL
+          LIMIT 1
+        ) AND (
+          COALESCE(cardinality(p_excluded_tables), 0) = 0
+          OR NOT EXISTS (
+            SELECT 1
+            FROM ${CHANGE_FEED_GAPS_TABLE} AS marker
+            WHERE marker.table_name = ANY(p_excluded_tables)
+            LIMIT 1
+          )
+        ) THEN
+          v_gap_status := 'empty';
+          RAISE EXCEPTION USING ERRCODE = '${POSTGRES_CHANGE_FEED_NO_WORK_SQLSTATE}';
+        END IF;
+
+${drainAdvisoryLockStep('        ', 'v_gap_status')}
+
+        IF COALESCE(cardinality(p_excluded_tables), 0) > 0 THEN
+${drainBudgetStep('          ', 'v_gap_status')}
+          DELETE FROM ${CHANGE_FEED_GAPS_TABLE} AS sensitive
+          WHERE sensitive.gap_id IN (
+            SELECT marker.gap_id
+            FROM ${CHANGE_FEED_GAPS_TABLE} AS marker
+            WHERE marker.table_name = ANY(p_excluded_tables)
+            LIMIT GREATEST(COALESCE(p_limit, ${POSTGRES_CHANGE_FEED_DRAIN_BATCH}), 1)
+          );
+          GET DIAGNOSTICS v_gap_purged = ROW_COUNT;
+        END IF;
+
+        -- The plain read first: the row lock needs more than SELECT, and a
+        -- database where delivery was never enabled should never ask for it.
+        IF to_regclass('_smrt_backfills') IS NOT NULL AND EXISTS (
+          SELECT 1
+          FROM _smrt_backfills AS setting
+          WHERE setting.name = '${CHANGE_FEED_GAP_DELIVERY_SETTING}'
+        ) THEN
+${drainBudgetStep('          ', 'v_gap_status')}
+          IF v_wait THEN
+            PERFORM 1
+            FROM _smrt_backfills AS setting
+            WHERE setting.name = '${CHANGE_FEED_GAP_DELIVERY_SETTING}'
+            FOR SHARE OF setting;
+          ELSE
+            PERFORM 1
+            FROM _smrt_backfills AS setting
+            WHERE setting.name = '${CHANGE_FEED_GAP_DELIVERY_SETTING}'
+            FOR SHARE OF setting NOWAIT;
+          END IF;
+          v_gap_enabled := FOUND;
+        END IF;
+
+        IF NOT v_gap_enabled OR NOT EXISTS (
+          SELECT 1
+          FROM ${CHANGE_FEED_GAPS_TABLE} AS marker
+          WHERE marker.converted_seq IS NULL
+            AND marker.reconciled_at IS NULL
+            AND (marker.blocked_at IS NULL OR v_retry_blocked)
+            AND ${POSTGRES_CHANGE_FEED_NOT_EXCLUDED('marker')}
+        ) THEN
+          IF v_gap_purged = 0 THEN
+            v_gap_status := 'empty';
+            RAISE EXCEPTION USING ERRCODE = '${POSTGRES_CHANGE_FEED_NO_WORK_SQLSTATE}';
+          END IF;
+          v_gap_status := 'drained';
+          PERFORM set_config('lock_timeout', v_lock_timeout, true);
+        ELSE
+${drainHeadLockSteps('          ', 'v_gap_status', CHANGE_FEED_GAPS_TABLE)}
+          PERFORM set_config('lock_timeout', v_lock_timeout, true);
+          v_gap_status := 'drained';
+          SELECT COALESCE(MAX(changes.seq), 0) INTO v_next FROM _smrt_changes AS changes;
+          FOR v_marker IN
+            SELECT marker.gap_id, marker.table_name, marker.tenant_key
+            FROM ${CHANGE_FEED_GAPS_TABLE} AS marker
+            WHERE marker.converted_seq IS NULL
+              AND marker.reconciled_at IS NULL
+              AND (marker.blocked_at IS NULL OR v_retry_blocked)
+              AND ${POSTGRES_CHANGE_FEED_NOT_EXCLUDED('marker')}
+            ORDER BY marker.created_at, marker.gap_id
+            LIMIT ${POSTGRES_CHANGE_FEED_GAP_BATCH}
+          LOOP
+            BEGIN
+              INSERT INTO _smrt_changes (
+                seq,
+                table_name,
+                row_id,
+                operation,
+                tenant_id,
+                created_at
+              )
+              VALUES (
+                v_next + 1,
+                v_marker.table_name,
+                NULL,
+                'gap',
+                ${postgresTenantIdAs('_smrt_changes', 'v_marker.tenant_key')},
+                clock_timestamp()
+              )
+              RETURNING _smrt_changes.seq, _smrt_changes.tenant_id::TEXT
+              INTO v_seq, v_canonical;
+              GET DIAGNOSTICS v_inserted = ROW_COUNT;
+              IF v_inserted <> 1 THEN
+                RAISE EXCEPTION USING ERRCODE = '${POSTGRES_CHANGE_FEED_RECEIPT_SQLSTATE}';
+              END IF;
+              UPDATE ${CHANGE_FEED_GAPS_TABLE} AS marker
+              SET converted_seq = v_seq,
+                tenant_key = v_canonical,
+                blocked_at = NULL
+              WHERE marker.gap_id = v_marker.gap_id
+                AND marker.converted_seq IS NULL
+                AND marker.reconciled_at IS NULL;
+              GET DIAGNOSTICS v_removed = ROW_COUNT;
+              IF v_removed <> 1 THEN
+                RAISE EXCEPTION USING ERRCODE = '${POSTGRES_CHANGE_FEED_RECEIPT_SQLSTATE}';
+              END IF;
+              v_next := GREATEST(v_next + 1, v_seq);
+              v_gap_first := LEAST(COALESCE(v_gap_first, v_seq), v_seq);
+              v_gap_last := GREATEST(COALESCE(v_gap_last, v_seq), v_seq);
+              v_converted := v_converted + 1;
+            EXCEPTION
+              WHEN query_canceled THEN
+                RAISE;
+              WHEN OTHERS THEN
+                BEGIN
+                  UPDATE ${CHANGE_FEED_GAPS_TABLE} AS marker
+                  SET blocked_at = clock_timestamp()
+                  WHERE marker.gap_id = v_marker.gap_id
+                    AND marker.converted_seq IS NULL;
+                  v_blocked := v_blocked + 1;
+                EXCEPTION
+                  WHEN query_canceled THEN
+                    RAISE;
+                  WHEN OTHERS THEN
+                    NULL;
+                END;
+            END;
+          END LOOP;
+        END IF;
+      EXCEPTION
+        WHEN SQLSTATE '${POSTGRES_CHANGE_FEED_NO_WORK_SQLSTATE}' THEN
+          NULL;
+        WHEN lock_not_available THEN
+          v_gap_status := 'timeout';
+      END;
+      EXCEPTION
+        WHEN query_canceled THEN
+          RAISE;
+        WHEN OTHERS THEN
+          -- The marker phase rolled back as a whole; the staged phase stands.
+          GET STACKED DIAGNOSTICS v_code = RETURNED_SQLSTATE;
+          v_gap_status := 'error';
+          v_gap_first := NULL;
+          v_gap_last := NULL;
+          v_converted := 0;
+          v_blocked := 0;
+          v_gap_enabled := false;
+          v_notes := v_notes || ('gaps: ' || v_code);
+      END;
+      END IF;
+      IF v_converted > 0 THEN
+        v_notes := v_notes || ('gaps converted=' || v_converted);
+      END IF;
+      IF v_blocked > 0 THEN
+        v_notes := v_notes || ('gaps blocked=' || v_blocked);
+      END IF;
+      -- One status for the call: work in either phase is 'drained';
+      -- otherwise the staged phase's status, unless it found nothing staged,
+      -- in which case the marker phase's.
+      v_staged_status := v_status;
+      IF v_status = 'drained' OR v_gap_status = 'drained' THEN
+        v_status := 'drained';
+      ELSIF v_status = 'empty'
+        AND v_gap_status NOT IN ('empty', 'error') THEN
+        v_status := v_gap_status;
+      END IF;
     END IF;
 
     -- The status is computed in its own block, so nothing here can roll back
     -- the sequencing above; a failure only leaves the extras unknown.
     -- backlog_remaining: whether a committed, non-sensitive staged row is
-    -- still visible after this pass (NULL when it cannot be told).
-    -- helpers_current: whether the other four helper identities carry this
-    -- body's marker; skipped on the common empty pass.
+    -- still visible after this pass, or (#5438) an unconverted, unblocked,
+    -- unreconciled marker while delivery is enabled (NULL when it cannot be
+    -- told). helpers_current: whether the other five helper identities carry
+    -- this body's marker; skipped on the common empty pass.
+    v_staged_status := COALESCE(v_staged_status, v_status);
     BEGIN
-      IF v_status = 'drained' THEN
+      IF v_staged_status = 'drained' THEN
         -- This pass still holds its staging-table lock, so this read never
         -- waits.
         v_backlog := EXISTS (
@@ -1258,21 +1883,36 @@ ${drainBudgetStep('          ')}
             remaining.table_name = ANY(COALESCE(p_excluded_tables, ARRAY[]::TEXT[]))
           )
         );
-      ELSIF v_status = 'empty' THEN
+      ELSIF v_staged_status = 'empty' THEN
         v_backlog := false;
-      ELSIF v_status IN ('relation_busy', 'head_busy', 'timeout')
+      ELSIF v_staged_status IN ('relation_busy', 'head_busy', 'timeout')
         AND v_has_candidate THEN
         v_backlog := true;
       END IF;
+      IF v_gap_enabled
+        AND v_gap_status IN ('drained', 'drain_busy', 'relation_busy', 'head_busy', 'timeout') THEN
+        v_gap_backlog := EXISTS (
+          SELECT 1
+          FROM ${CHANGE_FEED_GAPS_TABLE} AS marker
+          WHERE marker.converted_seq IS NULL
+            AND marker.reconciled_at IS NULL
+            AND marker.blocked_at IS NULL
+            AND ${POSTGRES_CHANGE_FEED_NOT_EXCLUDED('marker')}
+        );
+      ELSE
+        v_gap_backlog := false;
+      END IF;
+      v_backlog := v_backlog OR v_gap_backlog;
       IF v_status <> 'empty' THEN
         v_helpers := (
-          SELECT count(*) = 4
+          SELECT count(*) = 5
           FROM pg_proc AS helper
           WHERE helper.oid IN (
             to_regprocedure('${POSTGRES_CHANGE_FEED_APPEND_FUNCTION_IDENTITY}'),
             to_regprocedure('${POSTGRES_CHANGE_FEED_APPEND_BATCH_FUNCTION_IDENTITY}'),
             to_regprocedure('${POSTGRES_CHANGE_FEED_DRAIN_FUNCTION_IDENTITY}'),
-            to_regprocedure('${POSTGRES_CHANGE_FEED_COMPAT_DRAIN_FUNCTION_IDENTITY}')
+            to_regprocedure('${POSTGRES_CHANGE_FEED_COMPAT_DRAIN_FUNCTION_IDENTITY}'),
+            to_regprocedure('${POSTGRES_CHANGE_FEED_VERSION_FUNCTION_IDENTITY}')
           )
             AND helper.prosrc LIKE '%${POSTGRES_CHANGE_FEED_HELPER_MARKER}%'
         );
@@ -1282,6 +1922,62 @@ ${drainBudgetStep('          ')}
       v_helpers := NULL;
     END;
 
+    -- Rows only now, after every phase has committed its block (#5438):
+    -- the sequenced entries, then (when markers were converted) one
+    -- allocation row, then the status row, or the staged phase's error row
+    -- in its place. The allocation row carries the first and last sequence
+    -- the marker phase allocated, as text in drained_row_id and
+    -- drained_tenant_id, with drained_seq NULL and drained_operation
+    -- 'allocated': every parser that keys entries on drained_seq ignores it,
+    -- so no gap row is ever returned, counted or signalled as an entry,
+    -- while a current parser holds back reads at or above the range.
+    RETURN QUERY SELECT
+      entry.seq,
+      entry.table_name,
+      entry.row_id,
+      entry.operation,
+      entry.tenant_id,
+      NULL::TEXT,
+      NULL::TEXT,
+      NULL::TEXT,
+      NULL::BOOLEAN,
+      NULL::BOOLEAN
+    FROM jsonb_to_recordset(v_entries) AS entry(
+      seq BIGINT,
+      table_name TEXT,
+      row_id TEXT,
+      operation TEXT,
+      tenant_id TEXT
+    )
+    ORDER BY entry.seq;
+    IF v_gap_first IS NOT NULL THEN
+      RETURN QUERY SELECT
+        NULL::BIGINT,
+        NULL::TEXT,
+        v_gap_first::TEXT,
+        'allocated'::TEXT,
+        v_gap_last::TEXT,
+        NULL::TEXT,
+        NULL::TEXT,
+        NULL::TEXT,
+        NULL::BOOLEAN,
+        NULL::BOOLEAN;
+    END IF;
+    IF v_staged_error_code IS NOT NULL THEN
+      RETURN QUERY SELECT
+        NULL::BIGINT,
+        NULL::TEXT,
+        NULL::TEXT,
+        NULL::TEXT,
+        NULL::TEXT,
+        v_staged_error_code,
+        v_staged_error_message,
+        NULL::TEXT,
+        NULL::BOOLEAN,
+        NULL::BOOLEAN;
+      RETURN;
+    END IF;
+
     RETURN QUERY SELECT
       NULL::BIGINT,
       NULL::TEXT,
@@ -1289,7 +1985,7 @@ ${drainBudgetStep('          ')}
       NULL::TEXT,
       NULL::TEXT,
       NULL::TEXT,
-      NULL::TEXT,
+      NULLIF(array_to_string(v_notes, '; '), ''),
       v_status,
       v_backlog,
       v_helpers;
@@ -1430,6 +2126,59 @@ BEGIN
   END;
 END;
 $smrt_change_feed_drain_compat$;
+`;
+
+/**
+ * The per-table version read behind `getTableVersion()` on PostgreSQL
+ * (#5438).
+ *
+ * One statement, so every term comes from one snapshot: the table's
+ * `MAX(seq)`, the feed's horizon, the table's staged count and the table's
+ * markers that are not converted (unconverted, blocked and reconciled ones:
+ * each stands for a change the table's `MAX(seq)` does not show). Converting a
+ * marker adds a sequence and removes it from the count in one transaction, so
+ * the sum never decreases.
+ *
+ * Inside its own exception boundary, `query_canceled` included: any failure
+ * (a missing staging or gap table, a role that may not read the gap table)
+ * returns `known = false` instead of raising, so a version read issued inside
+ * a caller's transaction never aborts it. The caller then serves an
+ * unrepeatable value, which no cached validator can match.
+ */
+export const CREATE_POSTGRES_CHANGE_FEED_VERSION_FUNCTION = `
+CREATE OR REPLACE FUNCTION ${POSTGRES_CHANGE_FEED_VERSION_FUNCTION_NAME}(
+  p_table TEXT
+)
+RETURNS TABLE(
+  table_version BIGINT,
+  horizon BIGINT,
+  staged BIGINT,
+  markers BIGINT,
+  known BOOLEAN
+)
+LANGUAGE plpgsql
+VOLATILE
+SECURITY INVOKER
+AS $smrt_change_feed_version$
+${POSTGRES_CHANGE_FEED_HELPER_MARKER_LINES}
+BEGIN
+  BEGIN
+    RETURN QUERY
+    SELECT
+      (SELECT MAX(changes.seq) FROM _smrt_changes AS changes
+        WHERE changes.table_name = p_table),
+      (SELECT MAX(changes.seq) FROM _smrt_changes AS changes),
+      (SELECT count(*) FROM _smrt_changes_pending AS pending
+        WHERE pending.table_name = p_table),
+      (SELECT count(*) FROM ${CHANGE_FEED_GAPS_TABLE} AS marker
+        WHERE marker.table_name = p_table
+          AND marker.converted_seq IS NULL),
+      true;
+  EXCEPTION WHEN query_canceled OR assert_failure OR OTHERS THEN
+    RETURN QUERY SELECT NULL::BIGINT, NULL::BIGINT, NULL::BIGINT, NULL::BIGINT, false;
+  END;
+END;
+$smrt_change_feed_version$;
 `;
 
 /**
@@ -1824,6 +2573,20 @@ const POSTGRES_CHANGE_FEED_PENDING_DDL =
 ${statement}
 $smrt_change_feed_pending_ddl$;`,
     )
+    .concat(
+      // The gap table (#5438) travels with the helpers that write and read
+      // it, like the staging table: a database whose helpers are installed
+      // outside the system-table bootstrap still gets it, so the version
+      // routine never runs without its table.
+      CREATE_POSTGRES_SMRT_CHANGE_GAPS_TABLE.split(';')
+        .map((statement) => statement.trim())
+        .filter((statement) => statement.length > 0)
+        .map(
+          (statement) => `EXECUTE $smrt_change_feed_gaps_ddl$
+${statement}
+$smrt_change_feed_gaps_ddl$;`,
+        ),
+    )
     .join('\n');
 
 /**
@@ -1854,15 +2617,72 @@ const POSTGRES_CHANGE_FEED_DRAIN_STATUS_GRANTEES = (identity: string) => `
           WHERE p.oid = to_regprocedure('${identity}')
             AND acl.privilege_type = 'EXECUTE'`;
 
-const POSTGRES_CHANGE_FEED_DRAIN_STATUS_ACL_DIFFERS = `EXISTS (
-        (${POSTGRES_CHANGE_FEED_DRAIN_STATUS_GRANTEES(POSTGRES_CHANGE_FEED_DRAIN_STATUS_FUNCTION_IDENTITY)}
+const POSTGRES_CHANGE_FEED_DRAIN_STATUS_ACL_DIFFERS = (
+  identity: string,
+) => `EXISTS (
+        (${POSTGRES_CHANGE_FEED_DRAIN_STATUS_GRANTEES(identity)}
          EXCEPT
          ${POSTGRES_CHANGE_FEED_DRAIN_STATUS_GRANTEES(POSTGRES_CHANGE_FEED_DRAIN_FUNCTION_IDENTITY)})
         UNION ALL
         (${POSTGRES_CHANGE_FEED_DRAIN_STATUS_GRANTEES(POSTGRES_CHANGE_FEED_DRAIN_FUNCTION_IDENTITY)}
          EXCEPT
-         ${POSTGRES_CHANGE_FEED_DRAIN_STATUS_GRANTEES(POSTGRES_CHANGE_FEED_DRAIN_STATUS_FUNCTION_IDENTITY)})
+         ${POSTGRES_CHANGE_FEED_DRAIN_STATUS_GRANTEES(identity)})
       )`;
+
+/**
+ * Make a routine's owner and normalised EXECUTE grantees equal to the
+ * two-argument drain's (#5402), or raise and roll back the whole helper
+ * installation. Used for the status drain and, since #5438, the version
+ * routine: neither may ever have more callers than the entry point the
+ * permissions planner reconciles.
+ */
+function reconcileRoutineWithDrain(identity: string): string {
+  return `    SELECT p.proowner INTO v_source_owner FROM pg_proc AS p
+    WHERE p.oid = to_regprocedure('${POSTGRES_CHANGE_FEED_DRAIN_FUNCTION_IDENTITY}');
+    SELECT p.proowner INTO v_status_owner FROM pg_proc AS p
+    WHERE p.oid = to_regprocedure('${identity}');
+    IF v_status_owner IS DISTINCT FROM v_source_owner THEN
+      EXECUTE format(
+        'ALTER FUNCTION ${identity} OWNER TO %I',
+        pg_get_userbyid(v_source_owner)
+      );
+    END IF;
+    IF ${POSTGRES_CHANGE_FEED_DRAIN_STATUS_ACL_DIFFERS(identity)} THEN
+      FOR v_grant IN
+        ${POSTGRES_CHANGE_FEED_DRAIN_STATUS_GRANTEES(identity)}
+        EXCEPT
+        ${POSTGRES_CHANGE_FEED_DRAIN_STATUS_GRANTEES(POSTGRES_CHANGE_FEED_DRAIN_FUNCTION_IDENTITY)}
+      LOOP
+        IF v_grant.grantee = 0 THEN
+          EXECUTE 'REVOKE EXECUTE ON FUNCTION ${identity} FROM PUBLIC';
+        ELSE
+          EXECUTE format(
+            'REVOKE EXECUTE ON FUNCTION ${identity} FROM %I',
+            pg_get_userbyid(v_grant.grantee)
+          );
+        END IF;
+      END LOOP;
+      FOR v_grant IN
+        ${POSTGRES_CHANGE_FEED_DRAIN_STATUS_GRANTEES(POSTGRES_CHANGE_FEED_DRAIN_FUNCTION_IDENTITY)}
+        EXCEPT
+        ${POSTGRES_CHANGE_FEED_DRAIN_STATUS_GRANTEES(identity)}
+      LOOP
+        IF v_grant.grantee = 0 THEN
+          EXECUTE 'GRANT EXECUTE ON FUNCTION ${identity} TO PUBLIC';
+        ELSE
+          EXECUTE format(
+            'GRANT EXECUTE ON FUNCTION ${identity} TO %I',
+            pg_get_userbyid(v_grant.grantee)
+          );
+        END IF;
+      END LOOP;
+      IF ${POSTGRES_CHANGE_FEED_DRAIN_STATUS_ACL_DIFFERS(identity)} THEN
+        RAISE EXCEPTION
+          'EXECUTE on ${identity} could not be made equal to ${POSTGRES_CHANGE_FEED_DRAIN_FUNCTION_IDENTITY}; the change-feed helpers were not installed'
+          USING ERRCODE = 'insufficient_privilege';
+      END IF;
+    END IF;`;
+}
 
 const POSTGRES_CHANGE_FEED_DRAIN_INSTALL = `  DECLARE
     v_drain_created BOOLEAN :=
@@ -1880,6 +2700,9 @@ $smrt_change_feed_drain_ddl$;
     EXECUTE $smrt_change_feed_drain_compat_ddl$
 ${CREATE_POSTGRES_CHANGE_FEED_COMPAT_DRAIN_FUNCTION.trim()}
 $smrt_change_feed_drain_compat_ddl$;
+    EXECUTE $smrt_change_feed_version_ddl$
+${CREATE_POSTGRES_CHANGE_FEED_VERSION_FUNCTION.trim()}
+$smrt_change_feed_version_ddl$;
     IF v_drain_created AND (
       SELECT p.proacl FROM pg_proc AS p
       WHERE p.oid = to_regprocedure('${POSTGRES_CHANGE_FEED_COMPAT_DRAIN_FUNCTION_IDENTITY}')
@@ -1906,51 +2729,8 @@ $smrt_change_feed_drain_compat_ddl$;
       END;
     END IF;
 
-    SELECT p.proowner INTO v_source_owner FROM pg_proc AS p
-    WHERE p.oid = to_regprocedure('${POSTGRES_CHANGE_FEED_DRAIN_FUNCTION_IDENTITY}');
-    SELECT p.proowner INTO v_status_owner FROM pg_proc AS p
-    WHERE p.oid = to_regprocedure('${POSTGRES_CHANGE_FEED_DRAIN_STATUS_FUNCTION_IDENTITY}');
-    IF v_status_owner IS DISTINCT FROM v_source_owner THEN
-      EXECUTE format(
-        'ALTER FUNCTION ${POSTGRES_CHANGE_FEED_DRAIN_STATUS_FUNCTION_IDENTITY} OWNER TO %I',
-        pg_get_userbyid(v_source_owner)
-      );
-    END IF;
-    IF ${POSTGRES_CHANGE_FEED_DRAIN_STATUS_ACL_DIFFERS} THEN
-      FOR v_grant IN
-        ${POSTGRES_CHANGE_FEED_DRAIN_STATUS_GRANTEES(POSTGRES_CHANGE_FEED_DRAIN_STATUS_FUNCTION_IDENTITY)}
-        EXCEPT
-        ${POSTGRES_CHANGE_FEED_DRAIN_STATUS_GRANTEES(POSTGRES_CHANGE_FEED_DRAIN_FUNCTION_IDENTITY)}
-      LOOP
-        IF v_grant.grantee = 0 THEN
-          EXECUTE 'REVOKE EXECUTE ON FUNCTION ${POSTGRES_CHANGE_FEED_DRAIN_STATUS_FUNCTION_IDENTITY} FROM PUBLIC';
-        ELSE
-          EXECUTE format(
-            'REVOKE EXECUTE ON FUNCTION ${POSTGRES_CHANGE_FEED_DRAIN_STATUS_FUNCTION_IDENTITY} FROM %I',
-            pg_get_userbyid(v_grant.grantee)
-          );
-        END IF;
-      END LOOP;
-      FOR v_grant IN
-        ${POSTGRES_CHANGE_FEED_DRAIN_STATUS_GRANTEES(POSTGRES_CHANGE_FEED_DRAIN_FUNCTION_IDENTITY)}
-        EXCEPT
-        ${POSTGRES_CHANGE_FEED_DRAIN_STATUS_GRANTEES(POSTGRES_CHANGE_FEED_DRAIN_STATUS_FUNCTION_IDENTITY)}
-      LOOP
-        IF v_grant.grantee = 0 THEN
-          EXECUTE 'GRANT EXECUTE ON FUNCTION ${POSTGRES_CHANGE_FEED_DRAIN_STATUS_FUNCTION_IDENTITY} TO PUBLIC';
-        ELSE
-          EXECUTE format(
-            'GRANT EXECUTE ON FUNCTION ${POSTGRES_CHANGE_FEED_DRAIN_STATUS_FUNCTION_IDENTITY} TO %I',
-            pg_get_userbyid(v_grant.grantee)
-          );
-        END IF;
-      END LOOP;
-      IF ${POSTGRES_CHANGE_FEED_DRAIN_STATUS_ACL_DIFFERS} THEN
-        RAISE EXCEPTION
-          'EXECUTE on ${POSTGRES_CHANGE_FEED_DRAIN_STATUS_FUNCTION_IDENTITY} could not be made equal to ${POSTGRES_CHANGE_FEED_DRAIN_FUNCTION_IDENTITY}; the change-feed helpers were not installed'
-          USING ERRCODE = 'insufficient_privilege';
-      END IF;
-    END IF;
+${reconcileRoutineWithDrain(POSTGRES_CHANGE_FEED_DRAIN_STATUS_FUNCTION_IDENTITY)}
+${reconcileRoutineWithDrain(POSTGRES_CHANGE_FEED_VERSION_FUNCTION_IDENTITY)}
   END;`;
 
 /**
@@ -2196,6 +2976,7 @@ export const ALL_SYSTEM_TABLES = [
   CREATE_SMRT_AI_RUN_IDS_TABLE,
   CREATE_SMRT_AI_TRANSCRIPTS_TABLE,
   CREATE_SMRT_CHANGES_TABLE,
+  CREATE_SMRT_CHANGE_GAPS_TABLE,
   CREATE_SMRT_SYNC_TOMBSTONES_TABLE,
 ];
 
@@ -2312,10 +3093,12 @@ export function getSystemTableDDLForEngine(
   ddl: string,
   engine: DatabaseEngine,
 ): string {
-  const integerDdl =
+  const integerDdl = renderChangeGapsId(
     engine === 'postgres' || engine === 'duckdb' || engine === 'json'
       ? ddl.replace(/\bINTEGER\b/g, 'BIGINT')
-      : ddl;
+      : ddl,
+    engine,
+  );
   return engine === 'postgres'
     ? toPostgresTenantUuid(integerDdl.replace(/\bTIMESTAMP\b/g, 'TIMESTAMPTZ'))
     : integerDdl;

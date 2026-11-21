@@ -54,19 +54,25 @@ describe.skipIf(process.env.SMRT_TEST_PGLITE !== '1')(
         '_smrt_drain_changes(integer,text[])',
         '_smrt_drain_changes(integer)',
         '_smrt_drain_changes(integer,text[],jsonb)',
+        '_smrt_change_feed_version(text)',
       ];
       for (const identity of identities) {
         const rows = rowsOf(
           await db.query(
             `SELECT prosrc LIKE '%smrt-change-feed-helpers:v6%' AS v6,
-                    prosrc LIKE '%smrt-change-feed-helpers:v7%' AS v7
+                    prosrc LIKE '%smrt-change-feed-helpers:v7%' AS v7,
+                    prosrc LIKE '%smrt-change-feed-helpers:v8%' AS v8
                FROM pg_proc
               WHERE oid = to_regprocedure($1)`,
             identity,
           ),
         );
         expect(rows, identity).toHaveLength(1);
-        expect(rows[0], identity).toMatchObject({ v6: true, v7: true });
+        expect(rows[0], identity).toMatchObject({
+          v6: true,
+          v7: true,
+          v8: true,
+        });
       }
     });
 

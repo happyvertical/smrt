@@ -169,6 +169,7 @@ import type { SmrtObject } from './object.js';
 import { detectEngine } from './schema/ddl/index.js';
 import { SYSTEM_TABLE_NAMES } from './schema/system-table-shapes.js';
 import {
+  CHANGE_FEED_GAPS_TABLE,
   CREATE_SMRT_CHANGES_TABLE,
   ENSURE_POSTGRES_CHANGE_FEED_APPEND_FUNCTION,
   ENSURE_POSTGRES_CHANGE_FEED_SCHEMA,
@@ -184,13 +185,22 @@ import {
   POSTGRES_CHANGE_FEED_DRAIN_STATUS_FUNCTION_IDENTITY,
   POSTGRES_CHANGE_FEED_HELPER_FLOOR_MARKER,
   POSTGRES_CHANGE_FEED_HELPER_MARKER,
+  POSTGRES_CHANGE_FEED_HELPER_STATUS_MARKER,
   POSTGRES_CHANGE_FEED_PENDING_TABLE,
+  POSTGRES_CHANGE_FEED_VERSION_FUNCTION_IDENTITY,
+  POSTGRES_CHANGE_FEED_VERSION_FUNCTION_NAME,
   REPLACE_POSTGRES_CHANGE_FEED_APPEND_FUNCTION,
   RETIRED_SYSTEM_TABLES,
 } from './system/schema.js';
 import { toSafeInteger } from './utils/safe-integer.js';
 
 const logger = createLogger({ level: 'info' });
+
+/**
+ * Stored operation of a converted gap marker's feed row (#5438). Internal:
+ * not a {@link ChangeOperation}, and never returned as an entry.
+ */
+const CHANGE_FEED_GAP_OPERATION = 'gap';
 
 /** Name of the append-only change-feed system table. */
 export const CHANGE_FEED_TABLE = '_smrt_changes';
@@ -793,7 +803,8 @@ const ensuredHandles = new WeakSet<object>();
 function helperVersionProbe(identity: string): string {
   return `(
     SELECT CASE
-      WHEN p.prosrc LIKE '%${POSTGRES_CHANGE_FEED_HELPER_MARKER}%' THEN 7
+      WHEN p.prosrc LIKE '%${POSTGRES_CHANGE_FEED_HELPER_MARKER}%' THEN 8
+      WHEN p.prosrc LIKE '%${POSTGRES_CHANGE_FEED_HELPER_STATUS_MARKER}%' THEN 7
       WHEN p.prosrc LIKE '%${POSTGRES_CHANGE_FEED_HELPER_FLOOR_MARKER}%' THEN 6
       ELSE 0
     END
@@ -805,14 +816,17 @@ function helperVersionProbe(identity: string): string {
 /**
  * What the installed PostgreSQL helpers are, relative to this build (#5402).
  *
- * - `current`: the staging table and all five helper identities carry this
- *   build's marker.
- * - `mixed`: the status drain is current but another identity is not, which
- *   is what an older installer leaves behind when it restores its own bodies
- *   over current ones. Usable: an older identity still carries the v6 floor.
+ * - `current`: the staging table and all six helper identities (the five
+ *   drain and append identities and, since #5438, the version routine) carry
+ *   this build's marker.
+ * - `mixed`: the status drain carries at least the v7 marker (its columns
+ *   are unchanged since v7, so it can be called directly) but the set is not
+ *   current: what an older installer leaves behind when it restores its own
+ *   bodies over current ones, or a v7 install this role could not upgrade.
+ *   Usable: an older identity still carries the v6 floor.
  * - `usable-older`: every existing identity carries the v6 floor marker and
- *   the staging table exists, but the status drain is missing or older.
- *   Usable as v6 was.
+ *   the staging table exists, but the status drain is missing or older than
+ *   v7. Usable as v6 was.
  * - `outdated`: the feed table exists and some identity is missing or
  *   predates v6. Not usable without an install: pre-v6 bodies do not keep the
  *   cursor guarantee under contention or fixed-snapshot isolation.
@@ -857,6 +871,7 @@ async function getPostgresChangeFeedSchemaState(
          ${helperVersionProbe(POSTGRES_CHANGE_FEED_DRAIN_FUNCTION_IDENTITY)} AS drain_version,
          ${helperVersionProbe(POSTGRES_CHANGE_FEED_COMPAT_DRAIN_FUNCTION_IDENTITY)} AS compat_drain_version,
          ${helperVersionProbe(POSTGRES_CHANGE_FEED_DRAIN_STATUS_FUNCTION_IDENTITY)} AS status_drain_version,
+         ${helperVersionProbe(POSTGRES_CHANGE_FEED_VERSION_FUNCTION_IDENTITY)} AS version_routine_version,
          (
            SELECT data_type
            FROM information_schema.columns
@@ -873,12 +888,16 @@ async function getPostgresChangeFeedSchemaState(
   const pendingTableExists = Boolean(row.pending_table_name);
   const older = PRE_STATUS_HELPER_COLUMNS.map((column) => version(row[column]));
   const status = version(row.status_drain_version);
+  const versionRoutine = version(row.version_routine_version);
   let helpers: ChangeFeedHelperState;
   if (!tableExists) helpers = 'missing';
   else if (!pendingTableExists || older.some((v) => v === null || v < 6))
     helpers = 'outdated';
-  else if (status === 7) {
-    helpers = older.every((v) => v === 7) ? 'current' : 'mixed';
+  else if (status !== null && status >= 7) {
+    helpers =
+      status === 8 && versionRoutine === 8 && older.every((v) => v === 8)
+        ? 'current'
+        : 'mixed';
   } else helpers = 'usable-older';
   noteRootHelperState(db, helpers);
   return {
@@ -891,6 +910,7 @@ async function getPostgresChangeFeedSchemaState(
       pendingTableExists,
       ...older,
       status,
+      versionRoutine,
     ]),
   };
 }
@@ -1560,22 +1580,70 @@ interface DrainCallResult {
   status: DrainStatus | null;
   backlog: boolean | null;
   helpersCurrent: boolean | null;
+  /** Sequences the marker phase allocated (#5438), never entries. */
+  gapRange: GapAllocation | null;
+  /** The status row's notes (`isolated=N`, …), or null. */
+  notes: string | null;
+}
+
+/** First and last sequence a drain call gave to gap markers (#5438). */
+interface GapAllocation {
+  first: number;
+  last: number;
+}
+
+/** The gap range an error row's call reported before failing (#5438). */
+const DRAIN_GAP_RANGE = Symbol('smrt.changeFeed.drainGapRange');
+
+/**
+ * The allocation row of a drain call (#5438): `drained_seq` NULL,
+ * `drained_operation` 'allocated', the range as text in `drained_row_id` and
+ * `drained_tenant_id`. Emitted only after every block of the call committed,
+ * so it is the one row besides the status row a later error does not void:
+ * its sequences may be uncommitted inside the caller's transaction and must
+ * be held back.
+ */
+function parseGapAllocation(
+  rows: Record<string, unknown>[],
+): GapAllocation | null {
+  const row = rows.find(
+    (candidate) =>
+      candidate.drained_seq == null &&
+      candidate.drained_operation === 'allocated' &&
+      candidate.error_code == null,
+  );
+  if (!row) return null;
+  try {
+    const first = toSeqNumber(row.drained_row_id);
+    const last = toSeqNumber(row.drained_tenant_id);
+    return first > 0 && last >= first ? { first, last } : null;
+  } catch {
+    return null;
+  }
 }
 
 /**
  * Parse one drain call's rows. Any error row voids the call's entry rows
  * (#5402): rows a `RETURN QUERY` appended before a later error in the same
  * block survive its rollback in the result set, and publishing or counting
- * them would advertise sequences that never committed.
+ * them would advertise sequences that never committed. The gap allocation
+ * row is carried on the thrown error, so the caller still holds its range
+ * back (#5438).
  */
 function parseDrainCall(rows: Record<string, unknown>[]): DrainCallResult {
+  const gapRange = parseGapAllocation(rows);
   const failure = rows.find((row) => row.error_code != null);
   if (failure) {
     const error = new Error(
       String(failure.error_message || 'PostgreSQL change-feed drain failed'),
-    ) as Error & { code: string; [DRAIN_ERROR_ROW]: true };
+    ) as Error & {
+      code: string;
+      [DRAIN_ERROR_ROW]: true;
+      [DRAIN_GAP_RANGE]?: GapAllocation;
+    };
     error.code = String(failure.error_code);
     error[DRAIN_ERROR_ROW] = true;
+    if (gapRange) error[DRAIN_GAP_RANGE] = gapRange;
     throw error;
   }
   const statusRow = rows.find(
@@ -1598,7 +1666,19 @@ function parseDrainCall(rows: Record<string, unknown>[]): DrainCallResult {
     status,
     backlog: statusRow ? flag(statusRow.backlog_remaining) : null,
     helpersCurrent: statusRow ? flag(statusRow.helpers_current) : null,
+    gapRange,
+    notes:
+      statusRow && typeof statusRow.error_message === 'string'
+        ? statusRow.error_message
+        : null,
   };
+}
+
+function gapRangeOf(error: unknown): GapAllocation | null {
+  if (typeof error !== 'object' || error === null) return null;
+  return (
+    (error as { [DRAIN_GAP_RANGE]?: GapAllocation })[DRAIN_GAP_RANGE] ?? null
+  );
 }
 
 /**
@@ -1612,7 +1692,11 @@ function parseDrainCall(rows: Record<string, unknown>[]): DrainCallResult {
 async function issueDrainCall(
   db: DatabaseInterface,
   useStatus: boolean,
-  drainOptions: { waitMs?: number; firstStatement?: boolean },
+  drainOptions: {
+    waitMs?: number;
+    firstStatement?: boolean;
+    retryBlocked?: boolean;
+  },
 ): Promise<DrainCallResult> {
   const p = placeholders(db);
   const excluded = JSON.stringify(getChangeFeedSensitiveTables());
@@ -1621,6 +1705,7 @@ async function issueDrainCall(
     if (drainOptions.waitMs !== undefined && drainOptions.waitMs > 0) {
       statusOptions.waitMs = Math.round(drainOptions.waitMs);
     }
+    if (drainOptions.retryBlocked) statusOptions.retryBlocked = true;
     if (drainOptions.firstStatement) {
       statusOptions.firstStatement = true;
       // Sent without parameters, as one simple-protocol statement. The
@@ -1717,11 +1802,14 @@ async function drainChangeFeedDetailed(
     statusDrain?: boolean;
     /** Issued by the root's own drainer, not by a caller. */
     background?: boolean;
+    /** Re-attempt blocked gap markers too (#5438); status drain only. */
+    retryBlocked?: boolean;
   } = {},
 ): Promise<DrainDetail> {
   if (getEngine(db) !== 'postgres')
     return {
       drained: 0,
+      gapsAllocated: 0,
       firstAllocatedSeq: null,
       unsettledSignals: [],
       status: null,
@@ -1766,6 +1854,18 @@ async function drainChangeFeedDetailed(
 
   let firstAllocatedSeq: number | null = null;
   let drained = 0;
+  let gapsAllocated = 0;
+  // Gap rows (#5438) are never entries: they are not returned, counted as
+  // drained or signalled. Their sequences still join the uncommitted-drain
+  // mark, since inside a caller's transaction they are as uncommitted as any
+  // entry the same call sequenced.
+  const noteGapRange = (range: GapAllocation | null): void => {
+    if (!range) return;
+    gapsAllocated += range.last - range.first + 1;
+    if (firstAllocatedSeq === null || range.first < firstAllocatedSeq) {
+      firstAllocatedSeq = range.first;
+    }
+  };
   const unsettledSignals: ChangeSignal[] = [];
   // Each call sequences one bounded batch; loop so a large backlog is not left
   // behind, with a hard iteration cap so a persistent failure cannot spin.
@@ -1802,6 +1902,10 @@ async function drainChangeFeedDetailed(
         continue;
       }
       if (!isDrainErrorRow(error)) throw error;
+      // The staged phase failed, but the marker phase may have committed
+      // gap sequences in the same call (#5438): hold them back like entries.
+      noteGapRange(gapRangeOf(error));
+      recordUncommittedDrainMark(db, firstAllocatedSeq);
       // An appender running older helper bodies (no head lock, mid-rollout)
       // can win the head between this drain's MAX(seq) read and its insert.
       // The whole batch rolled back, so the staged rows are still there —
@@ -1823,6 +1927,8 @@ async function drainChangeFeedDetailed(
     pass += 1;
     const sequenced = call.rows;
     drained += sequenced.length;
+    noteGapRange(call.gapRange);
+    if (call.notes !== null) noteDrainPassNotes(db, call.notes);
     lastStatus = call.status;
     lastBacklog = call.backlog;
     lastHelpersCurrent = call.helpersCurrent;
@@ -1866,13 +1972,15 @@ async function drainChangeFeedDetailed(
       }
     }
 
-    if (sequenced.length === 0) break;
+    // A pass that sequenced nothing and converted no marker is the last.
+    if (sequenced.length === 0 && call.gapRange === null) break;
     // A drained pass that left no backlog needs no second statement.
     if (call.status === 'drained' && call.backlog === false) break;
   }
   recordUncommittedDrainMark(db, firstAllocatedSeq);
   const detail: DrainDetail = {
     drained,
+    gapsAllocated,
     firstAllocatedSeq,
     unsettledSignals,
     status: lastStatus,
@@ -1896,6 +2004,8 @@ async function drainChangeFeedDetailed(
 
 interface DrainDetail {
   drained: number;
+  /** Sequences given to gap markers (#5438); not entries, never signalled. */
+  gapsAllocated: number;
   firstAllocatedSeq: number | null;
   unsettledSignals: ChangeSignal[];
   /** The last call's status; null when only the two-argument drain ran. */
@@ -2013,8 +2123,13 @@ interface ChangeFeedDrainer {
   trailingSince: number;
   lastForegroundDrainAt: number;
   fixedSnapshotWarned: boolean;
+  /** When this drainer last asked the drain to retry blocked markers. */
+  lastRetryBlockedAt: number;
   idleWaiters: Array<() => void>;
 }
+
+/** How often a root's drainer re-attempts blocked gap markers (#5438). */
+const DRAINER_RETRY_BLOCKED_MS = 10 * 60_000;
 
 const drainers = new WeakMap<object, ChangeFeedDrainer>();
 /** Drainers with a pass scheduled or running (held for test settlement). */
@@ -2044,6 +2159,7 @@ function drainerFor(db: DatabaseInterface): ChangeFeedDrainer | null {
       trailingSince: 0,
       lastForegroundDrainAt: 0,
       fixedSnapshotWarned: false,
+      lastRetryBlockedAt: 0,
       idleWaiters: [],
     };
     drainers.set(key, drainer);
@@ -2252,10 +2368,17 @@ async function drainerPass(
   }
   if (rootClientInTransaction(root)) return { kind: 'skipped' };
   const useStatus = rootUsesStatusDrain(root);
+  // Blocked gap markers (#5438) are skipped by ordinary passes; this
+  // drainer re-attempts them every ten minutes.
+  const now = Date.now();
+  const retryBlocked =
+    useStatus && now - drainer.lastRetryBlockedAt >= DRAINER_RETRY_BLOCKED_MS;
+  if (retryBlocked) drainer.lastRetryBlockedAt = now;
   const detail = await drainChangeFeedDetailed(root, {
     waitMs: drainer.waitMs,
     firstStatement: true,
     background: true,
+    retryBlocked,
   });
   if (detail.status !== 'fixed_snapshot' || !useStatus) {
     return { kind: 'done', detail };
@@ -2336,10 +2459,12 @@ function decideAfterPass(
     return;
   }
   const { detail } = outcome;
+  // Converting gap markers (#5438) is progress as much as sequencing is.
+  const progressed = detail.drained + detail.gapsAllocated > 0;
   if (detail.helpersCurrent === false) drainer.stale = true;
   if (detail.status === 'timeout') {
     drainer.waitMs = Math.min(DRAINER_MAX_WAIT_MS, drainer.waitMs * 2);
-  } else if (detail.drained > 0) {
+  } else if (progressed) {
     drainer.waitMs = DRAINER_START_WAIT_MS;
   }
   const owed =
@@ -2349,7 +2474,7 @@ function decideAfterPass(
   noteObservedBacklog(drainer, root, detail.backlog === true || owed);
   if (owed) {
     drainer.observedWork = true;
-    rearmDrainer(drainer, detail.drained > 0);
+    rearmDrainer(drainer, progressed);
     return;
   }
   if (drainer.stale) {
@@ -2940,8 +3065,15 @@ async function readChangesSince(
   // was in flight is not in the NOT IN list above, and its rows must still not
   // be served (#2937). Pagination below uses the unfiltered page so the cursor
   // still advances past them.
+  //
+  // A gap row (#5438: a converted marker, stored operation 'gap') is never
+  // an entry. Readers that act on gaps arrive with gap delivery; until then
+  // no gap row can be positioned, and one that is still never reaches a
+  // page. It counts for pagination like every other physical row.
   const changes = entries.filter(
-    (entry) => !isChangeFeedSensitiveTable(entry.table),
+    (entry) =>
+      !isChangeFeedSensitiveTable(entry.table) &&
+      (entry.operation as string) !== CHANGE_FEED_GAP_OPERATION,
   );
 
   // Page limited → resume after the last returned row. Page exhaustive →
@@ -3072,6 +3204,16 @@ export async function getTableVersion(
 
   await ensureChangeFeedTable(db);
 
+  if (getEngine(db) === 'postgres') {
+    // Gap markers (#5438) count too, and the read goes through the version
+    // routine, which cannot raise: see readPostgresTableVersion.
+    const routine = await readPostgresTableVersion(db, name);
+    if (routine !== undefined) {
+      noteRootFeedCall(db);
+      return routine;
+    }
+  }
+
   const p = placeholders(db);
 
   // Staged-but-unsequenced entries for this table (#2649) still have to move
@@ -3114,6 +3256,71 @@ export async function getTableVersion(
   // all-pruned (or never-written) table never reports a resettable low value
   // that could false-304 a stale client. 0 only when the feed is empty.
   return toSeqNumber(row?.horizon) + staged;
+}
+
+/** Handles whose probe found the version routine executable (#5438). */
+const versionRoutineHandles = new WeakSet<object>();
+
+function sqlTrue(value: unknown): boolean {
+  return value === true || value === 't';
+}
+
+/**
+ * The PostgreSQL table version through the version routine (#5438):
+ * `MAX(seq)` for the table (or the horizon when it has no retained entry)
+ * plus its staged entries plus its markers that are not converted, all from
+ * one snapshot.
+ *
+ * The routine is called only after a non-raising probe (`to_regprocedure`,
+ * `has_function_privilege`) saw it executable; a positive probe is cached per
+ * handle. When the routine is absent but the gap table exists, or the routine
+ * reports the version unknown (a missing table, a role that may not read the
+ * gap table), the answer is an unrepeatable value, so no cached validator
+ * matches and the read returns a full `200`; the routine never raises, so a
+ * reader's transaction stays usable. `undefined` means neither exists: an
+ * install that predates gap markers, read as before.
+ */
+async function readPostgresTableVersion(
+  db: DatabaseInterface,
+  table: string,
+): Promise<number | undefined> {
+  const key = db as unknown as object;
+  if (!versionRoutineHandles.has(key)) {
+    const probe =
+      getQueryRows(
+        await db.query(
+          `SELECT
+             COALESCE(has_function_privilege(to_regprocedure('${POSTGRES_CHANGE_FEED_VERSION_FUNCTION_IDENTITY}'), 'EXECUTE'), false) AS routine,
+             to_regclass('${CHANGE_FEED_GAPS_TABLE}') IS NOT NULL AS gaps`,
+        ),
+      )[0] ?? {};
+    if (!sqlTrue(probe.routine)) {
+      return sqlTrue(probe.gaps) ? randomUnobservableTableVersion() : undefined;
+    }
+    versionRoutineHandles.add(key);
+  }
+  let row: Record<string, unknown> | undefined;
+  try {
+    row = getQueryRows(
+      await db.query(
+        `SELECT table_version, horizon, staged, markers, known FROM ${POSTGRES_CHANGE_FEED_VERSION_FUNCTION_NAME}($1)`,
+        table,
+      ),
+    )[0];
+  } catch (error) {
+    // The routine was dropped or its grant revoked after the probe. On an
+    // autocommit root that failed statement aborted nothing else; anywhere
+    // else the caller's transaction is already aborted and must be told.
+    versionRoutineHandles.delete(key);
+    if (isAutocommitRoot(db)) return randomUnobservableTableVersion();
+    throw error;
+  }
+  if (!row || !sqlTrue(row.known)) return randomUnobservableTableVersion();
+  const base =
+    row.table_version != null
+      ? toSeqNumber(row.table_version)
+      : toSeqNumber(row.horizon);
+  return base + toSeqNumber(row.staged) + toSeqNumber(row.markers);
 }
 
 /**
@@ -3182,12 +3389,15 @@ function normalizeTimestamp(value: unknown): string {
  * cursor falls out of it are told to full-resync via `resyncRequired`.
  *
  * @returns The number of entries pruned — or, with `dryRun`, the number the
- *   same bounds would prune (approximate under concurrent prunes).
+ *   same bounds would prune (approximate under concurrent prunes). On
+ *   PostgreSQL with the gap-marker table (#5438), `prunedGapRecords` counts
+ *   the gap markers removed with them (evidence of pruned gap rows, and
+ *   markers of sensitive tables), counted the same way under `dryRun`.
  */
 export async function pruneChangeFeed(
   db: DatabaseInterface,
   retention: ChangeFeedRetention,
-): Promise<{ pruned: number }> {
+): Promise<{ pruned: number; prunedGapRecords?: number }> {
   const { maxAgeMs, maxRows, dryRun = false } = retention;
   if (maxAgeMs == null && maxRows == null) {
     throw new Error('pruneChangeFeed requires maxAgeMs and/or maxRows');
@@ -3217,6 +3427,9 @@ export async function pruneChangeFeed(
 
   let pruned = 0;
   let prunedThrough = 0;
+  // The highest sequence either bound selects; the feed keeps a prefix
+  // above it (gap-marker evidence below, #5438).
+  let boundThrough = 0;
 
   // Purge credential-bearing rows an older build wrote, ahead of either bound
   // (#2937). The read path already refuses to serve them, so this is about the
@@ -3289,6 +3502,7 @@ export async function pruneChangeFeed(
     const pruneThrough = Math.min(horizon - Math.floor(maxRows), horizon - 1);
     if (pruneThrough > 0) {
       prunedThrough = pruneThrough;
+      boundThrough = Math.max(boundThrough, pruneThrough);
       const exclusion = excludeSensitive(1);
       pruned += await deleteCounted(
         db,
@@ -3341,10 +3555,122 @@ export async function pruneChangeFeed(
         [ageThrough, prunedThrough, ...exclusion.params],
         dryRun,
       );
+      boundThrough = Math.max(boundThrough, ageThrough);
     }
   }
 
+  // Gap-marker evidence (#5438) goes only after the feed prefix it belongs
+  // to: a reader that still holds a gap row's cursor has its evidence, and a
+  // sweep that stops between the two deletes leaves orphan evidence for the
+  // next sweep, never a retained gap row without it.
+  if (getEngine(db) === 'postgres') {
+    const prunedGapRecords = await pruneGapRecords(db, {
+      dryRun,
+      sensitiveTables,
+      horizon,
+      boundThrough,
+    });
+    if (prunedGapRecords !== undefined) return { pruned, prunedGapRecords };
+  }
+
   return { pruned };
+}
+
+/**
+ * Retention for `_smrt_change_gaps` (#5438), PostgreSQL only: markers and
+ * evidence of tables in the live sensitive set (all states, #2937), then
+ * converted markers whose feed row is below the retained floor. Unconverted,
+ * blocked and reconciled markers are never deleted otherwise. With `dryRun`
+ * the same rows are counted against the floor the feed prune would leave.
+ * `undefined` when the table does not exist.
+ */
+async function pruneGapRecords(
+  db: DatabaseInterface,
+  options: {
+    dryRun: boolean;
+    sensitiveTables: string[];
+    horizon: number;
+    boundThrough: number;
+  },
+): Promise<number | undefined> {
+  const present = getQueryRows(
+    await db.query(
+      `SELECT to_regclass('${CHANGE_FEED_GAPS_TABLE}') IS NOT NULL AS present`,
+    ),
+  )[0];
+  if (!sqlTrue(present?.present)) return undefined;
+  const { dryRun, sensitiveTables, horizon, boundThrough } = options;
+  const sensitiveList = (offset: number) =>
+    sensitiveTables.map((_, index) => `$${offset + index + 1}`).join(', ');
+  let total = 0;
+  if (sensitiveTables.length > 0) {
+    total += await deleteGapRecordsCounted(
+      db,
+      `table_name IN (${sensitiveList(0)})`,
+      [...sensitiveTables],
+      dryRun,
+    );
+  }
+  // The floor the feed has (or, under dryRun, would have) once the prune
+  // is done: its oldest retained row.
+  let floor: number;
+  if (dryRun) {
+    const sensitiveSkip =
+      sensitiveTables.length > 0
+        ? ` AND NOT (seq < $2 AND table_name IN (${sensitiveList(2)}))`
+        : '';
+    floor = toSeqNumber(
+      getQueryRows(
+        await db.query(
+          `SELECT MIN(seq) AS floor FROM ${CHANGE_FEED_TABLE} WHERE seq > $1${sensitiveSkip}`,
+          boundThrough,
+          ...(sensitiveTables.length > 0 ? [horizon, ...sensitiveTables] : []),
+        ),
+      )[0]?.floor,
+    );
+  } else {
+    floor = toSeqNumber(
+      getQueryRows(
+        await db.query(`SELECT MIN(seq) AS floor FROM ${CHANGE_FEED_TABLE}`),
+      )[0]?.floor,
+    );
+  }
+  if (floor > 0) {
+    const sensitiveKeep =
+      dryRun && sensitiveTables.length > 0
+        ? ` AND table_name NOT IN (${sensitiveList(1)})`
+        : '';
+    total += await deleteGapRecordsCounted(
+      db,
+      `converted_seq IS NOT NULL AND converted_seq < $1${sensitiveKeep}`,
+      [floor, ...(sensitiveKeep ? sensitiveTables : [])],
+      dryRun,
+    );
+  }
+  return total;
+}
+
+async function deleteGapRecordsCounted(
+  db: DatabaseInterface,
+  condition: string,
+  params: unknown[],
+  dryRun: boolean,
+): Promise<number> {
+  const total = toSeqNumber(
+    getQueryRows(
+      await db.query(
+        `SELECT COUNT(*) AS total FROM ${CHANGE_FEED_GAPS_TABLE} WHERE ${condition}`,
+        ...params,
+      ),
+    )[0]?.total,
+  );
+  if (total > 0 && !dryRun) {
+    await db.query(
+      `DELETE FROM ${CHANGE_FEED_GAPS_TABLE} WHERE ${condition}`,
+      ...params,
+    );
+  }
+  return total;
 }
 
 async function deleteCounted(
@@ -3827,6 +4153,36 @@ function warnDrainFailureOnce(db: DatabaseInterface, error: unknown): void {
   }
 }
 
+/** dbKey → last time a drain's gap-marker notes were logged (#5438). */
+const lastGapNoteWarning = new Map<string, number>();
+
+/**
+ * Log, at most once a minute per database, that a drain pass recorded
+ * staged entries as gap markers or could not convert markers (#5438). The
+ * notes carry counts and SQLSTATEs only, never a row id or a tenant.
+ */
+function noteDrainPassNotes(db: DatabaseInterface, notes: string): void {
+  if (!/isolated=|gaps blocked=|gaps: |isolation stopped/.test(notes)) return;
+  try {
+    const dbKey = resolveDbCacheKey(db);
+    const now = Date.now();
+    const last = lastGapNoteWarning.get(dbKey);
+    if (last !== undefined && now - last < APPEND_FAILURE_LOG_INTERVAL_MS) {
+      return;
+    }
+    lastGapNoteWarning.set(dbKey, now);
+    logger.warn(
+      'Change feed: a drain pass could not sequence some entries as they ' +
+        'were and recorded them as gap markers, or could not convert ' +
+        'markers. The markers are durable and count in table versions; ' +
+        'run `smrt db:feed-gaps status` for the details.',
+      { notes },
+    );
+  } catch {
+    // Logging must never propagate into the read or write path.
+  }
+}
+
 function warnSignalPublishFailureOnce(
   db: DatabaseInterface,
   table: string,
@@ -3856,6 +4212,7 @@ export function resetChangeFeedWarnings(): void {
   privateAppendFailureLogs = new WeakMap();
   warnedSignalPublishFailures.clear();
   warnedDrainFailures.clear();
+  lastGapNoteWarning.clear();
   // The append path's drain interval is process state too; a test that asserts
   // on drain-driven signals must not inherit a neighbour's timestamp.
   lastAppendDrain.clear();

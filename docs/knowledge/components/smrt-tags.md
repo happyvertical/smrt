@@ -5,7 +5,7 @@ description: "Reusable tagging system with hierarchies, contexts, and multi-lang
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-21T12:09:17Z"
+  at: "2026-11-21T22:51:06Z"
 audience: "internal"
 evidence_level: "source-inspected"
 source_revision: "sha256:8aafbd784cd5ca464be069107247892c21241df81cdfb8c02441538f10ce403c"

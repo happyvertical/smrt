@@ -3111,6 +3111,16 @@
   },
   {
     "kind": "system-table",
+    "name": "_smrt_change_gaps",
+    "issue": 5438,
+    "nearest": [
+      "_smrt_changes",
+      "_smrt_changes_pending"
+    ],
+    "reason": "A gap marker records a lost feed entry that has no sequence yet and may never get one (blocked, reconciled), keeps private row evidence after conversion, and has a text tenant key; a row in _smrt_changes would need a sequence and would be served by every reader, and _smrt_changes_pending rows are drained and deleted, with a uuid tenant column."
+  },
+  {
+    "kind": "system-table",
     "name": "_smrt_changes",
     "grandfathered": true
   },

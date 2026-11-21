@@ -5,7 +5,7 @@ description: "Per-tenant secret management with envelope encryption for SMRT"
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-21T12:09:17Z"
+  at: "2026-11-21T22:51:06Z"
 audience: "internal"
 evidence_level: "source-inspected"
 source_revision: "sha256:f46913fba811e97d33c34049f85ef39699815ffbda6d48a75909782b23755b64"

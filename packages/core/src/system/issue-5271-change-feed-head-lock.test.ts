@@ -30,12 +30,18 @@ import {
 } from './schema.js';
 
 const MARKERS = [
+  'smrt-change-feed-helpers:v8',
   'smrt-change-feed-helpers:v7',
   'smrt-change-feed-helpers:v6',
   'smrt-change-feed-helpers:v5',
   'smrt-change-feed-helpers:v4',
 ];
 const RELATION_LOCK = 'LOCK TABLE _smrt_changes IN ROW EXCLUSIVE MODE';
+/** The status drain's staged-entry phase, before the gap-marker phase (#5438). */
+const STAGED_PHASE = DRAIN_BODY.slice(
+  0,
+  DRAIN_BODY.indexOf('<<smrt_drain_gaps>>'),
+);
 const BLOCKING_HEAD =
   /PERFORM pg_advisory_xact_lock\(\s*hashtext\('smrt-change-feed-head'\)/;
 const PRIVILEGE_GUARD =
@@ -126,7 +132,9 @@ describe('change-feed head lock in the PostgreSQL helper bodies (#5271)', () => 
   it('drain: without waitMs only TRIES the head lock, after the drain lock and a candidate check, before the purge and MAX', () => {
     // Wait mode (#5403) lives in `IF v_wait THEN` branches, checked in
     // change-feed-drain-status-ddl.test.ts; the try path is checked here.
-    const body = DRAIN_BODY;
+    // The staged-entry phase; the gap-marker phase (#5438) takes the same
+    // locks in the same order and is checked in its own DDL test.
+    const body = STAGED_PHASE;
     const drainLock = body.indexOf("hashtext('change-feed-drain')");
     const candidate = body.indexOf('v_has_candidate :=', drainLock);
     const relation = body.indexOf(RELATION_LOCK, candidate);
@@ -159,9 +167,9 @@ describe('change-feed head lock in the PostgreSQL helper bodies (#5271)', () => 
     expect(new Set(body.slice(0, max).match(/EXCEPTION WHEN \w+/g))).toEqual(
       new Set(['EXCEPTION WHEN lock_not_available']),
     );
-    expect(body.indexOf('EXCEPTION WHEN query_canceled', max)).toBeGreaterThan(
-      max,
-    );
+    expect(
+      DRAIN_BODY.indexOf('EXCEPTION WHEN query_canceled', max),
+    ).toBeGreaterThan(max);
   });
 
   it('drain: the feed-table lock is NOWAIT and a refusal ends the pass without draining', () => {
@@ -187,8 +195,10 @@ describe('change-feed head lock in the PostgreSQL helper bodies (#5271)', () => 
     // NOWAIT and both reached only past the privilege check; a role without
     // it takes the lock with a zero-row insert instead (see the status-drain
     // DDL test).
-    const drainLocks = DRAIN_BODY.split(RELATION_LOCK);
+    const drainLocks = STAGED_PHASE.split(RELATION_LOCK);
     expect(drainLocks).toHaveLength(3);
+    // The gap-marker phase (#5438) repeats the same two NOWAIT locks.
+    expect(DRAIN_BODY.split(RELATION_LOCK)).toHaveLength(5);
     for (const rest of drainLocks.slice(1)) expect(rest).toMatch(/^ NOWAIT;/);
     const columnGrant = DRAIN_BODY.indexOf(
       "IF NOT has_table_privilege('_smrt_changes', 'INSERT, UPDATE, DELETE, TRUNCATE') THEN",
