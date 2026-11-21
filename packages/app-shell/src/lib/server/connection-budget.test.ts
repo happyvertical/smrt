@@ -18,7 +18,7 @@ import {
 } from 'vitest';
 import { createSqliteChangeEngine } from '../../engine/change-engine.ts';
 import type { DatabaseConfig } from '../../engine/db/index.ts';
-import { CapacityError } from '../../engine/errors.ts';
+import { CapacityError, EngineError } from '../../engine/errors.ts';
 import { AppHost, MemoryVersionStore } from '../../engine/index.ts';
 import { AppWorker } from '../../engine/worker-handle.ts';
 import { type CloudHarness, openCloudShell } from './cloud-test-support.ts';
@@ -444,16 +444,28 @@ describe('a migrating swap holds its pool across the retire', () => {
     expect(l.connectionsInUse).toBe(0);
   });
 
-  it('surfaces a worker that cannot start as itself, not as a failed change', async () => {
+  it('words a worker that cannot start as a failed change, and a budget refusal as itself', async () => {
     const { host, inner, done } = await stubHost(4); // room for a second pool
+    const real = (host as unknown as { workerUrl: string }).workerUrl;
     inner.workerUrl = 'not-a-path.mjs'; // refused synchronously by the thread API
     const err = (await inner
       .swap(inner.def, inner.version)
       .catch((e) => e)) as Error;
-    expect(err).toBeInstanceOf(Error);
-    expect(String(err.message)).not.toMatch(/did not start with this change/);
+    expect(err).toBeInstanceOf(EngineError);
+    expect(err).not.toBeInstanceOf(CapacityError);
+    expect(err.message).toMatch(/did not start with this change/);
+    inner.workerUrl = real;
     expect(host.appAlive).toBe(true); // the running app was never touched
-    inner.workerUrl = (host as unknown as { workerUrl: string }).workerUrl;
+    await done();
+  });
+
+  it('surfaces a budget refusal at the spawn as itself', async () => {
+    const { host, inner, done } = await stubHost(2); // the pool fills it
+    const err = (await inner
+      .swap(inner.def, inner.version)
+      .catch((e) => e)) as Error;
+    expect(err).toBeInstanceOf(CapacityError);
+    expect(host.appAlive).toBe(true);
     await done();
   });
 });

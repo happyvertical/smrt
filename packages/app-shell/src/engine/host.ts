@@ -700,9 +700,7 @@ export class AppHost extends EventEmitter {
       } finally {
         this.releaseSpare();
       }
-      // A throw before any worker existed (no connections left, a thread that
-      // could not start) is not a failed change: surface it unchanged.
-      if (!next || e instanceof CapacityError) throw e;
+      if (e instanceof CapacityError) throw e;
       if (
         e instanceof EngineError &&
         (e.code === 'refused' || e.code === 'stale_fence')
