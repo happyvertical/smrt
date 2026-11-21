@@ -1,5 +1,11 @@
 /** Payment sync, invoice readback and batch entry points (#5139). */
-import type { InvoiceInput, SyncResult } from '@happyvertical/accounting';
+
+import { createHash } from 'node:crypto';
+import {
+  getAccountingProvider,
+  type InvoiceInput,
+  type SyncResult,
+} from '@happyvertical/accounting';
 import { getTestDatabase } from '@happyvertical/smrt-core';
 import {
   disableTenancy,
@@ -20,9 +26,11 @@ import {
   readbackDue,
   readbackInvoice,
   reconcileAccountingPaymentSync,
+  resolveUnknownPaymentSync,
   syncPaymentToAccounting,
   syncPending,
 } from '../accounting-payment-sync.js';
+import { paymentPortFromProvider } from '../accounting-provider-adapters.js';
 import { AccountingPaymentSyncCollection } from '../collections/AccountingSyncRecordCollections.js';
 import { PaymentAllocationCollection } from '../collections/PaymentAllocationCollection.js';
 import { PaymentCollection } from '../collections/PaymentCollection.js';
@@ -805,6 +813,236 @@ describe('payment sync and readback (#5139)', () => {
       );
       expect(stale.items).toHaveLength(1);
       expect(reader.readInvoice).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  // The real SDK payment operations behind commerce's port (#5420): commerce
+  // persists the provider's own payload identity, so the SDK's descriptor check
+  // passes and the exact bytes that were hashed are the bytes posted.
+  describe('against the real QuickBooks payment operations', () => {
+    afterEach(() => {
+      vi.restoreAllMocks();
+      vi.unstubAllGlobals();
+    });
+
+    async function realProvider() {
+      const real = (await getAccountingProvider({
+        type: 'quickbooks',
+        clientId: 'test',
+        clientSecret: 'test',
+        refreshToken: 'test',
+        realmId: 'realm-a',
+        environment: 'sandbox',
+        maxRetries: 0,
+      } as never)) as never as {
+        ensureAccessToken: () => Promise<string>;
+        payments: unknown;
+      };
+      vi.spyOn(real, 'ensureAccessToken').mockResolvedValue('token');
+      return real;
+    }
+
+    function stubQuickBooks() {
+      const posts: { url: URL; body: string }[] = [];
+      let stored: Record<string, unknown> | null = null;
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async (url: string, init: RequestInit) => {
+          if (url.includes('/preferences'))
+            return new Response(
+              JSON.stringify({
+                Preferences: {
+                  CurrencyPrefs: { HomeCurrency: { value: 'CAD' } },
+                },
+              }),
+            );
+          if (init.method === 'POST') {
+            posts.push({ url: new URL(url), body: String(init.body) });
+            stored = {
+              ...JSON.parse(String(init.body)),
+              Id: 'qb-pay-real',
+              SyncToken: '0',
+              UnappliedAmt: 0,
+            };
+            return new Response(JSON.stringify({ Payment: stored }));
+          }
+          return new Response(JSON.stringify({ Payment: stored }));
+        }),
+      );
+      return posts;
+    }
+
+    it('pushes a payment end to end: the persisted hash is the hash of the posted payload', async () => {
+      const s = await seed();
+      const paymentId = await paidPayment(s);
+      const posts = stubQuickBooks();
+      const port = paymentPortFromProvider(await realProvider());
+      const result = await run(paymentId, port);
+      expect(result).toMatchObject({
+        status: 'synced',
+        externalId: 'qb-pay-real',
+      });
+      expect(posts).toHaveLength(1);
+      expect(posts[0]?.url.searchParams.get('requestid')).toBe(
+        result.requestId,
+      );
+      const row = await rowOf(paymentId);
+      expect(row?.status).toBe('synced');
+      expect(row?.payloadHash).toBe(
+        createHash('sha256')
+          .update(posts[0]?.body ?? '')
+          .digest('hex'),
+      );
+      // A repeat is a no-op and sends nothing.
+      await run(paymentId, port);
+      expect(posts).toHaveLength(1);
+    });
+
+    it('records a request the provider cannot form as a retryable rejection with its cause, sending nothing', async () => {
+      const s = await seed();
+      const paymentId = await paidPayment(s);
+      await setAccountingMapping({ db }, s.scope, {
+        kind: 'deposit_account',
+        localId: 'default',
+        externalId: 'not a valid ref!',
+      });
+      const posts = stubQuickBooks();
+      const port = paymentPortFromProvider(await realProvider());
+      await expect(run(paymentId, port)).rejects.toMatchObject({
+        outcome: 'rejected',
+        code: 'INVALID_PROVIDER_REQUEST',
+      });
+      expect(posts).toHaveLength(0);
+      expect(await rowOf(paymentId)).toMatchObject({
+        status: 'rejected',
+        lastError: 'INVALID_PROVIDER_REQUEST',
+      });
+      // Fixing the mapping makes the same payment pushable, exactly once.
+      await setAccountingMapping({ db }, s.scope, {
+        kind: 'deposit_account',
+        localId: 'default',
+        externalId: 'qb-clearing',
+      });
+      expect(await run(paymentId, port)).toMatchObject({ status: 'synced' });
+      expect(posts).toHaveLength(1);
+    });
+
+    it('names a provider without payment creation as not sent, not unknown', async () => {
+      const s = await seed();
+      const paymentId = await paidPayment(s);
+      await expect(
+        run(paymentId, paymentPortFromProvider({ payments: {} })),
+      ).rejects.toMatchObject({
+        outcome: 'rejected',
+        code: 'PROVIDER_UNSUPPORTED',
+      });
+      expect(await rowOf(paymentId)).toMatchObject({
+        status: 'rejected',
+        lastError: 'PROVIDER_UNSUPPORTED',
+      });
+    });
+  });
+
+  describe('resolving an unknown push', () => {
+    async function unknownPush() {
+      const s = await seed();
+      const paymentId = await paidPayment(s);
+      const { impl } = port(async () => {
+        throw new Error('socket hang up');
+      });
+      await expect(run(paymentId, impl)).rejects.toThrow('socket hang up');
+      expect(await rowOf(paymentId)).toMatchObject({
+        status: 'unknown',
+        lastError: 'UNKNOWN_OUTCOME',
+      });
+      return { s, paymentId };
+    }
+    const readerOf = (
+      transactions: AccountingInvoiceEvidence['transactions'],
+    ) => ({
+      readInvoice: vi.fn(
+        async (): Promise<AccountingInvoiceEvidence> => ({
+          tenantId: TENANT,
+          realmId: 'realm-a',
+          environment: 'sandbox',
+          externalId: 'qb-inv-1',
+          customerExternalId: 'qb-cust',
+          currency: 'CAD',
+          subtotalMinor: 0,
+          discountMinor: 0,
+          taxMinor: 0,
+          totalMinor: 0,
+          dueDate: null,
+          balanceMinor: 0,
+          voided: false,
+          complete: true,
+          transactions,
+        }),
+      ),
+    });
+
+    it('releases a push the provider never received, then retries it once', async () => {
+      const { paymentId } = await unknownPush();
+      const resolved = await inTenant(() =>
+        resolveUnknownPaymentSync({
+          db,
+          tenantId: TENANT,
+          paymentId,
+          reader: readerOf([]),
+        }),
+      );
+      expect(resolved.status).toBe('retryable');
+      expect(await rowOf(paymentId)).toMatchObject({ status: 'rejected' });
+      const { impl, calls } = port();
+      expect(await run(paymentId, impl)).toMatchObject({ status: 'synced' });
+      expect(calls).toHaveLength(1);
+      // Resolving again is a no-op once synced.
+      expect(
+        await inTenant(() =>
+          resolveUnknownPaymentSync({
+            db,
+            tenantId: TENANT,
+            paymentId,
+            reader: readerOf([]),
+          }),
+        ),
+      ).toEqual({ status: 'not_unknown' });
+    });
+
+    it('leaves the push unknown when the provider already holds a payment on the invoice', async () => {
+      const { paymentId } = await unknownPush();
+      const resolved = await inTenant(() =>
+        resolveUnknownPaymentSync({
+          db,
+          tenantId: TENANT,
+          paymentId,
+          reader: readerOf([{ id: 'p-1', kind: 'payment', amountMinor: 100 }]),
+        }),
+      );
+      expect(resolved).toEqual({
+        status: 'ambiguous',
+        providerPaymentIds: ['p-1'],
+      });
+      expect(await rowOf(paymentId)).toMatchObject({ status: 'unknown' });
+    });
+
+    it('changes nothing when the provider cannot be read', async () => {
+      const { paymentId } = await unknownPush();
+      await expect(
+        inTenant(() =>
+          resolveUnknownPaymentSync({
+            db,
+            tenantId: TENANT,
+            paymentId,
+            reader: {
+              readInvoice: async () => {
+                throw new Error('QBO 503');
+              },
+            },
+          }),
+        ),
+      ).rejects.toThrow('QBO 503');
+      expect(await rowOf(paymentId)).toMatchObject({ status: 'unknown' });
     });
   });
 });

@@ -111,9 +111,35 @@ export interface AccountingPaymentRequest {
  * provider definitely refused; any other failure leaves the outcome unknown.
  */
 export interface AccountingPaymentPort {
+  /**
+   * The provider's own identity for these facts, derived before anything is
+   * persisted or sent. QuickBooks requires `payloadHash` to be the SHA-256 of
+   * the exact mapped payload, which only the provider can compute; commerce
+   * persists what this returns. Throw when the facts cannot form a valid
+   * provider request: nothing was sent, so the row becomes a retryable
+   * `rejected` with a stable code. Must perform no I/O.
+   */
+  prepare?(request: AccountingPaymentRequest): {
+    readonly payloadHash: string;
+  };
   create(
     request: AccountingPaymentRequest,
   ): Promise<{ readonly externalId: string; readonly syncedAt: Date }>;
+}
+
+/** Throw from a port when a failure happened before anything reached the provider. */
+export class AccountingPaymentNotSentError extends Error {
+  readonly outcome = 'rejected' as const;
+  readonly reason: string;
+  /** Same as `reason`, so batch items report it. */
+  readonly code: string;
+
+  constructor(reason: string, message: string) {
+    super(message);
+    this.name = 'AccountingPaymentNotSentError';
+    this.reason = reason;
+    this.code = reason;
+  }
 }
 
 /**
@@ -396,7 +422,25 @@ export async function syncPaymentToAccounting(
     provider: input.provider,
     scope,
   });
-  const request = await loadPaymentRequest(input, scope);
+  let request = await loadPaymentRequest(input, scope);
+  // The provider derives the persisted identity (see AccountingPaymentPort.prepare).
+  let notSent: AccountingPaymentNotSentError | null = null;
+  if (input.payments.prepare) {
+    try {
+      request = {
+        ...request,
+        payloadHash: input.payments.prepare(request).payloadHash,
+      };
+    } catch (error) {
+      notSent =
+        error instanceof AccountingPaymentNotSentError
+          ? error
+          : new AccountingPaymentNotSentError(
+              'INVALID_PROVIDER_REQUEST',
+              (error as Error)?.message ?? 'Invalid provider request',
+            );
+    }
+  }
   const claimed = await claim(input, scope, request);
   if (claimed.kind === 'done')
     return {
@@ -404,6 +448,15 @@ export async function syncPaymentToAccounting(
       externalId: claimed.row.externalId,
       requestId: claimed.row.requestId,
     };
+  if (notSent) {
+    // Nothing was sent: a known, retryable rejection, with its cause kept.
+    const failure = notSent;
+    await settle(input, scope, claimed.attemptId, (row) => {
+      row.status = 'rejected';
+      row.lastError = failure.reason;
+    });
+    throw failure;
+  }
   let result: { externalId: string; syncedAt: Date };
   try {
     result = await input.payments.create(request);
@@ -418,7 +471,9 @@ export async function syncPaymentToAccounting(
       row.lastError = rejected
         ? isReauthRequired(error)
           ? 'REAUTH_REQUIRED'
-          : 'REJECTED'
+          : error instanceof AccountingPaymentNotSentError
+            ? error.reason
+            : 'REJECTED'
         : 'UNKNOWN_OUTCOME';
     });
     throw error;
@@ -540,6 +595,78 @@ export async function reconcileAccountingPaymentSync(
     environment: scope.environment,
     paymentId: input.paymentId,
   })) as AccountingPaymentSync;
+}
+
+/** Input of {@link resolveUnknownPaymentSync}. */
+export interface ResolveUnknownPaymentSyncInput {
+  readonly db: DatabaseInterface;
+  /** Must be the active tenant. */
+  readonly tenantId: string;
+  readonly paymentId: string;
+  /** Reads the provider's invoices with their linked transactions. */
+  readonly reader: AccountingInvoiceReader;
+}
+
+/** What {@link resolveUnknownPaymentSync} concluded. */
+export type ResolveUnknownPaymentSyncResult =
+  | { readonly status: 'not_unknown' }
+  /** The provider holds no payment against the applied invoices: retryable. */
+  | { readonly status: 'retryable'; readonly row: AccountingPaymentSync }
+  /** The provider has a payment on an applied invoice; only a person can tell whose. */
+  | { readonly status: 'ambiguous'; readonly providerPaymentIds: string[] };
+
+/**
+ * Recover a payment push stuck as `unknown` without hand-written SQL. It asks
+ * the provider, through the invoice reader, whether any payment is recorded
+ * against the invoices the push applied to. None means the push never landed,
+ * so the row is released for a normal retry (the same `requestid` keeps it
+ * idempotent even if the provider is slower than the read); any payment leaves
+ * the row `unknown`, because a provider payment cannot be attributed to this
+ * push from the document alone. A failed read throws and changes nothing.
+ * Run it inside the tenant context.
+ */
+export async function resolveUnknownPaymentSync(
+  input: ResolveUnknownPaymentSyncInput,
+): Promise<ResolveUnknownPaymentSyncResult> {
+  principal(input.tenantId);
+  const scope = await getAccountingMappingScope(input, input.tenantId);
+  const collection = await AccountingPaymentSyncCollection.create({
+    db: input.db,
+  });
+  const row = await collection.findForPayment({
+    tenantId: input.tenantId,
+    realmId: scope.realmId,
+    environment: scope.environment,
+    paymentId: input.paymentId,
+  });
+  if (!row || row.status !== 'unknown') return { status: 'not_unknown' };
+  let applications: { invoiceExternalId: string }[] = [];
+  try {
+    applications = JSON.parse(row.requestJson).applications ?? [];
+  } catch {
+    refuse('INVALID_INPUT', 'The stored payment request cannot be read');
+  }
+  if (applications.length === 0)
+    refuse('INVALID_INPUT', 'The stored payment request has no invoices');
+  const found: string[] = [];
+  for (const application of applications) {
+    const evidence = await input.reader.readInvoice(
+      application.invoiceExternalId,
+    );
+    for (const transaction of evidence.transactions)
+      if (transaction.kind === 'payment') found.push(transaction.id);
+  }
+  if (found.length > 0)
+    return { status: 'ambiguous', providerPaymentIds: found };
+  const resolved = await reconcileAccountingPaymentSync({
+    db: input.db,
+    tenantId: input.tenantId,
+    paymentId: input.paymentId,
+    requestId: row.requestId,
+    attemptId: row.attemptId,
+    outcome: { status: 'absent' },
+  });
+  return { status: 'retryable', row: resolved };
 }
 
 // ---------------------------------------------------------------------------

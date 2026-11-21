@@ -29,6 +29,23 @@ provider's authoritative lookup of that request (`found` completes it,
 `confirmInterruptedOwnerStopped`). Two concurrent calls: one pushes, the other
 gets `SYNC_IN_PROGRESS`. A synced payment returns `unchanged`.
 
+A failure before anything reached the provider (the facts cannot form a valid
+provider request, or the provider has no payment creation) is a known non-send:
+throw `AccountingPaymentNotSentError(reason, message)` from the port and the row
+becomes a retryable `rejected` whose `lastError` is that stable code
+(`INVALID_PROVIDER_REQUEST`, `PROVIDER_UNSUPPORTED`; the batch item reports it as
+`reason`). Only a failure after the provider may have received the request is
+`unknown`.
+
+`resolveUnknownPaymentSync({ db, tenantId, paymentId, reader })` recovers an
+`unknown` row without hand-written SQL: it reads every applied invoice through
+the `AccountingInvoiceReader`; none with a provider payment means the push never
+landed, so it applies `reconcileAccountingPaymentSync` `absent` and returns
+`retryable` (the next `syncPending` pushes it, with the same `requestid`); any
+provider payment returns `ambiguous` with their ids and leaves the row `unknown`
+for a person (a provider payment cannot be attributed to this push from the
+document). A failed read throws and changes nothing.
+
 The local `Payment` row is not edited; `AccountingPaymentSync.externalId` is the
 provider id. Payments cannot be un-applied by this module: if allocations change
 after the push, readback reports drift.
@@ -37,7 +54,13 @@ after the push, readback reports drift.
 
 `AccountingPaymentPort.create(request)` is the provider call; the host adapts
 the SDK's payment creation to it (`requestId` is the idempotency key; throw an
-error with `outcome: 'rejected'` on a definite refusal). smrt tests use fakes.
+error with `outcome: 'rejected'` on a definite refusal). The optional
+`prepare(request)` returns the provider's own `payloadHash`, persisted before the
+push: QuickBooks verifies it against the exact mapped payload, which only the
+provider can compute (`paymentPortFromProvider` implements it with
+`prepareQuickBooksPaymentRequest`; without it the SDK throws "payload mismatch"
+before any network call, #5420). `accounting-payment-sync.test.ts` runs commerce
+through the real SDK payment operations.
 
 ## Readback
 
