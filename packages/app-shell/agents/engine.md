@@ -150,6 +150,15 @@ for the one operation on the host thread; a PGlite uses the host's client).
   (set in the creating transaction, moved to the aside by the swap), and
   `dropSchema` / `swapSchemas` / the sweep verify it before touching anything,
   so two apps sharing a prefix never drop each other's copies.
+- **One point in time.** The scoped handle cannot set REPEATABLE READ, so a
+  fork (`forkSchema`) and a dump (`dumpSchema`) first `lockForCopy`: every table
+  `LOCK TABLE ... IN SHARE MODE`, sorted by name (C collation), BEFORE the first
+  read (readers continue, writers wait), so no parent/child skew can reach a
+  draft or an undo point. The wait is `swapLockTimeoutMs` for a fork (default 5
+  s for a dump); a writer that holds on surfaces as a lock-timeout error, the
+  transaction rolls back and the connection is released. The role needs UPDATE,
+  DELETE or TRUNCATE on each table. Tested by statement recording (PGlite is
+  one connection) plus a held-open writer on a real server.
 - **Fork** (a draft, a publish rehearsal): a live schema beside the app's, in one transaction (a
   failure leaves none). `forkDraft` writes the name in the draft marker
   (`schema`, `liveSchema`); `AppHost.open` on that directory takes the live app's database

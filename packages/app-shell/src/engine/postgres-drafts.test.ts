@@ -585,6 +585,141 @@ describe.each(
     });
   });
 
+  // ---------- a copy is one point in time ----------
+
+  describe('a fork and a dump lock every table before the first read', () => {
+    /**
+     * The scoped handle cannot ask for REPEATABLE READ, so one point in time
+     * comes from locking each table IN SHARE MODE before any read (writers
+     * wait; readers do not). A single PGlite connection cannot interleave a
+     * writer, so this records the statements each helper sends and checks the
+     * lock comes first, in sorted order; the real-server test below holds an
+     * open writer and checks the copy waits for it and then gives up.
+     */
+    const recorded = (db: any, log: string[], failOn?: RegExp) => ({
+      transaction: <T>(cb: (tx: any) => Promise<T>) =>
+        db.transaction((tx: any) =>
+          cb({
+            query: (sql: string, params?: unknown[]) => {
+              log.push(sql);
+              if (failOn?.test(sql))
+                return Promise.reject(new Error('lock timeout (injected)'));
+              return tx.query(sql, params);
+            },
+          }),
+        ),
+    });
+    const isRead = (sql: string) =>
+      /^\s*(INSERT INTO .* SELECT |DECLARE |SELECT value FROM )/.test(sql);
+    const checkOrder = (log: string[], schema: string, tables: string[]) => {
+      const locks = log.filter((q) => q.startsWith('LOCK TABLE'));
+      expect(locks).toEqual(
+        [...tables]
+          .sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))
+          .map((t) => `LOCK TABLE "${schema}"."${t}" IN SHARE MODE`),
+      );
+      const firstRead = log.findIndex(isRead);
+      const lastLock = log
+        .map((q) => q.startsWith('LOCK TABLE'))
+        .lastIndexOf(true);
+      expect(firstRead).toBeGreaterThan(lastLock);
+      const timeout = log.findIndex((q) => q.includes("'lock_timeout'"));
+      expect(timeout).toBeGreaterThanOrEqual(0);
+      expect(timeout).toBeLessThan(log.findIndex((q) => q.startsWith('LOCK')));
+    };
+
+    it('forkSchema: lock timeout set, then every table locked in sorted order, then the first read', async () => {
+      const live = await seeded('lockfork');
+      const dst = sideName(live.schema, 'r', 'lockfork1');
+      schemas.push(dst);
+      const tables = (await tablesIn(live.schema)).filter((t) => t);
+      const log: string[] = [];
+      await withSchemaAdmin(config(live.schema), (db) =>
+        forkSchema(recorded(db, log), live.schema, dst, live.schema, 1234),
+      );
+      expect(log.some((q) => q.includes("'1234ms'"))).toBe(true);
+      checkOrder(log, live.schema, tables);
+      expect((await tablesIn(dst)).sort()).toEqual([...tables].sort());
+    });
+
+    it('dumpSchema: lock timeout set, then every table locked in sorted order, then the first read', async () => {
+      const live = await seeded('lockdump');
+      const file = join(live.dir, 'snapshots', `${Date.now()}-0-lock.pgdump`);
+      const tables = await tablesIn(live.schema);
+      const log: string[] = [];
+      await withSchemaAdmin(config(live.schema), (db) =>
+        dumpSchema(recorded(db, log), live.schema, file),
+      );
+      checkOrder(log, live.schema, tables);
+      expect(existsSync(file)).toBe(true);
+    });
+
+    it('a lock that cannot be taken fails the fork and the dump, and leaves nothing behind', async () => {
+      const live = await seeded('lockfail');
+      const dst = sideName(live.schema, 'r', 'lockfail1');
+      schemas.push(dst);
+      await expect(
+        withSchemaAdmin(config(live.schema), (db) =>
+          forkSchema(
+            recorded(db, [], /^LOCK TABLE/),
+            live.schema,
+            dst,
+            live.schema,
+          ),
+        ),
+      ).rejects.toThrow(/lock timeout/);
+      expect(await tablesIn(dst)).toEqual([]);
+      const file = join(live.dir, 'snapshots', `${Date.now()}-1-lock.pgdump`);
+      await expect(
+        withSchemaAdmin(config(live.schema), (db) =>
+          dumpSchema(recorded(db, [], /^LOCK TABLE/), live.schema, file),
+        ),
+      ).rejects.toThrow(/lock timeout/);
+      expect(existsSync(file)).toBe(false);
+      // The connection and the app are fine: a plain copy still works.
+      await withSchemaAdmin(config(live.schema), (db) =>
+        dumpSchema(db, live.schema, file),
+      );
+      expect(existsSync(file)).toBe(true);
+    });
+
+    it.skipIf(backend !== 'postgres')(
+      'on a server an open writer holds the copy back until its lock timeout, and the copy works once the writer is done',
+      async () => {
+        const live = await seeded('lockwriter');
+        const dst = sideName(live.schema, 'r', 'lockwr001');
+        schemas.push(dst);
+        const writer = (await getDatabase({
+          type: 'postgres',
+          url: serverUrl,
+          max: 1,
+          cache: false,
+        } as any)) as any;
+        raws.push(writer);
+        const tx = await writer.beginTransaction();
+        try {
+          await tx.query(
+            `UPDATE "${live.schema}".u_chores SET points = points + 1`,
+          );
+          const t0 = Date.now();
+          await expect(
+            withSchemaAdmin(config(live.schema), (db) =>
+              forkSchema(db, live.schema, dst, live.schema, 300),
+            ),
+          ).rejects.toThrow(/lock timeout/i);
+          expect(Date.now() - t0).toBeGreaterThanOrEqual(250);
+          expect(await tablesIn(dst)).toEqual([]);
+        } finally {
+          await tx.rollback();
+        }
+        await withSchemaAdmin(config(live.schema), (db) =>
+          forkSchema(db, live.schema, dst, live.schema, 300),
+        );
+        expect(await tablesIn(dst)).toContain('u_chores');
+      },
+    );
+  });
+
   // ---------- publish ----------
 
   describe('publish', () => {

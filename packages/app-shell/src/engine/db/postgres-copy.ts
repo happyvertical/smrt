@@ -458,6 +458,36 @@ const readAllRows = async (tx: SqlRunner) => {
   await tx.query(`SELECT set_config('bytea_output', 'hex', true)`);
 };
 
+/**
+ * Make a copy of `source` ONE point in time. The transaction cannot ask for a
+ * REPEATABLE READ snapshot (the scoped handle fixes its isolation level), so
+ * each table read would otherwise see its own READ COMMITTED snapshot and a
+ * concurrent writer could leave a parent and its child from different moments:
+ * a fork whose foreign keys fail, or an undo point that cannot be restored.
+ * Instead every table is locked IN SHARE MODE (reads continue, writers wait)
+ * BEFORE the first read, in one fixed order (sorted by name in the C collation)
+ * so two copies cannot deadlock each other, waiting at most `lockTimeoutMs`
+ * per table: a writer that will not let go surfaces as a lock-timeout error
+ * (the transaction rolls back, the connection is released, nothing is left).
+ * A role needs UPDATE, DELETE or TRUNCATE on a table to take this lock.
+ */
+export async function lockForCopy(
+  tx: SqlRunner,
+  source: string,
+  lockTimeoutMs = DEFAULT_LOCK_TIMEOUT_MS,
+) {
+  await tx.query(
+    `SELECT set_config('lock_timeout', ${lit(`${Math.floor(lockTimeoutMs)}ms`)}, true)`,
+  );
+  const tables = asRows(
+    await tx.query(
+      `SELECT c.relname AS name FROM pg_class c WHERE c.relnamespace = to_regnamespace(${lit(source)}) AND c.relkind IN ('r', 'p') ORDER BY c.relname COLLATE "C"`,
+    ),
+  );
+  for (const t of tables)
+    await tx.query(`LOCK TABLE ${qi(source)}.${qi(t.name)} IN SHARE MODE`);
+}
+
 /** Mark `schema` as a copy that belongs to the app whose FULL schema name is `owner`. */
 const claim = (tx: SqlRunner, schema: string, owner: string) =>
   tx.query(
@@ -521,12 +551,14 @@ export async function forkSchema(
   source: string,
   target: string,
   owner?: string,
+  lockTimeoutMs = DEFAULT_LOCK_TIMEOUT_MS,
 ): Promise<void> {
   assertSchemaName(source);
   assertSchemaName(target);
   await db.transaction(async (tx: SqlRunner) => {
     if (await schemaExists(tx, target))
       throw new EngineError(`schema ${target} already exists`, 'refused');
+    await lockForCopy(tx, source, lockTimeoutMs);
     await readAllRows(tx);
     const plan = await describeSchema(tx, source);
     await run(tx, plan.before, target);
@@ -639,6 +671,7 @@ export async function dumpSchema(
   db: SqlDatabase,
   source: string,
   file: string,
+  lockTimeoutMs = DEFAULT_LOCK_TIMEOUT_MS,
 ): Promise<{ version: number | null }> {
   assertSchemaName(source);
   mkdirSync(dirname(file), { recursive: true });
@@ -647,6 +680,7 @@ export async function dumpSchema(
   const put = (line: DumpLine) => writeSync(fd, `${JSON.stringify(line)}\n`);
   try {
     const version = await db.transaction(async (tx: SqlRunner) => {
+      await lockForCopy(tx, source, lockTimeoutMs);
       await readAllRows(tx);
       const plan = await describeSchema(tx, source);
       const meta = asRows(

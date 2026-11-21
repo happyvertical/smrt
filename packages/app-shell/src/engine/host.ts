@@ -1874,7 +1874,13 @@ export class AppHost extends EventEmitter {
   /** A live copy of the app's schema (rows, keys, sequences, policies, ownership, grants). */
   private forkSchemaTo(target: string) {
     return withSchemaAdmin(this.database, (db) =>
-      forkSchema(db, schemaOf(this.database), target, this.ownerBase()),
+      forkSchema(
+        db,
+        schemaOf(this.database),
+        target,
+        this.ownerBase(),
+        this.lockTimeoutMs,
+      ),
     );
   }
 
