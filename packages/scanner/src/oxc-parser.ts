@@ -3253,6 +3253,7 @@ function resolveDecoratorName(
       ? importBindings?.get(callee.object.name)
       : undefined;
   if (
+    importBindings &&
     callee.type === 'MemberExpression' &&
     namespace?.imported === null &&
     namespace.source.startsWith('@happyvertical/smrt-')
