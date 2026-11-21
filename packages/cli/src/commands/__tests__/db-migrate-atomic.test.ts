@@ -192,6 +192,8 @@ vi.mock('@happyvertical/smrt-core', () => ({
     confirmedRemoved: [],
   })),
   readLastMigrateRecord: vi.fn(async () => ({ state: 'none' })),
+  readRecordedSystemSchema: vi.fn(async () => null),
+  checkUnrecordedDatabaseAge: vi.fn(() => null),
   recordSuccessfulMigrate: vi.fn(async () => {}),
   confirmedRetirementsOf: vi.fn(() => []),
   ObjectRegistry: {

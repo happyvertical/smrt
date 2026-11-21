@@ -10,6 +10,7 @@ import { createRequire } from 'node:module';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
+  checkUnrecordedDatabaseAge,
   collectConfirmedRecomputes,
   collectMigrateRecordInput,
   confirmedRetirementsOf,
@@ -23,6 +24,7 @@ import {
   planForeignKeyCreation,
   planPostgresSystemTimestampMigrations,
   readLastMigrateRecord,
+  readRecordedSystemSchema,
   recordSuccessfulMigrate,
   SchemaComparer,
 } from '@happyvertical/smrt-core';
@@ -2319,6 +2321,16 @@ export default testManifest;
         const lastMigrate = await readLastMigrateRecord(db, {
           engineHint: dbType,
         });
+        if (lastMigrate.state !== 'recorded') {
+          // No record: date the system tables. Nothing in this run has
+          // prepared them yet, so the stamps are the database's own. An old
+          // stamp is a warning, not a stop: it cannot say which release last
+          // migrated the application tables.
+          const ageWarning = checkUnrecordedDatabaseAge(
+            await readRecordedSystemSchema(db, { engineHint: dbType }),
+          );
+          if (ageWarning) console.warn(`\n⚠️  ${ageWarning}\n`);
+        }
         const removedOption = options['confirm-removed-package'];
         const confirmedRemoved =
           typeof removedOption === 'string'

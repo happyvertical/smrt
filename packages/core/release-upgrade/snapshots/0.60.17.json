@@ -458,6 +458,7 @@
     "zones"
   ],
   "release": "0.60.17",
+  "systemSchema": "1.15.0",
   "tables": {
     "_smrt_agent_schedules": {
       "columns": {
