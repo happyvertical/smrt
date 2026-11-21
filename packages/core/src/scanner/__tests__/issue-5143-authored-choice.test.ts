@@ -20,10 +20,14 @@ let cwd: string;
 let video: SmartObjectManifest;
 
 async function scan(root: string, pkg: string, deps: string[] = []) {
-  const { resolved } = await new OxcScanner({
+  const { results, resolved } = await new OxcScanner({
     cwd: root,
     include: ['src/**/*.ts'],
   }).scanAndResolve();
+  // A scan error drops the identity a case asserts on; fail the case instead.
+  expect(results.errors.filter((error) => error.severity === 'error')).toEqual(
+    [],
+  );
   const manifest = new ManifestAdapter().toManifest(resolved, {
     packageName: pkg,
   }) as SmartObjectManifest;
@@ -40,6 +44,9 @@ async function install(pkg: string, source: string, deps: string[] = []) {
     JSON.stringify({
       name: pkg,
       type: 'module',
+      // The scan accepts a class imported from a package only when the
+      // importing package declares it as a dependency.
+      dependencies: Object.fromEntries(deps.map((dep) => [dep, '*'])),
       exports: {
         '.': './dist/index.js',
         './manifest.json': './dist/manifest.json',
@@ -49,6 +56,9 @@ async function install(pkg: string, source: string, deps: string[] = []) {
   ws.write(`${dir}/dist/index.js`, 'export {};');
   ws.write(`${dir}/src/models.ts`, source);
   const manifest = await scan(ws.path(dir), pkg, deps);
+  // A built package manifest records the entry each model is exported from;
+  // a consumer's import of the model is confirmed against it.
+  for (const object of Object.values(manifest.objects)) object.importPath = pkg;
   ws.write(`${dir}/dist/manifest.json`, JSON.stringify(manifest));
   return manifest;
 }
@@ -56,7 +66,13 @@ async function install(pkg: string, source: string, deps: string[] = []) {
 beforeEach(async () => {
   ws = createConsumerWorkspace('smrt-5143-authored');
   cwd = process.cwd();
-  ws.writePackage('app', APP);
+  ws.write(
+    'app/package.json',
+    JSON.stringify({
+      name: APP,
+      dependencies: { [VIDEO]: '*', [LIB]: '*' },
+    }),
+  );
   process.chdir(ws.path('app'));
   video = await install(
     VIDEO,
