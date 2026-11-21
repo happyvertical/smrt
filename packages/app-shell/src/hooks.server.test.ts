@@ -1,6 +1,17 @@
 import { beforeEach, expect, it, vi } from 'vitest';
 
-const mocks = vi.hoisted(() => ({ ready: vi.fn(), imports: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  ready: vi.fn(),
+  imports: vi.fn(),
+  profile: vi.fn(),
+  handoff: vi.fn(),
+  fresh: vi.fn(),
+}));
+vi.mock('$lib/server/host', () => ({ shellProfile: mocks.profile }));
+vi.mock('$lib/server/owner-handoff', () => ({
+  ensureOwnerHandoff: mocks.handoff,
+  keepOwnerHandoffFresh: mocks.fresh,
+}));
 vi.mock('$lib/server/smrt', () => ({
   runtime: { ready: mocks.ready, handle: vi.fn() },
 }));
@@ -11,6 +22,7 @@ import { init } from './hooks.server.ts';
 
 beforeEach(() => {
   vi.resetAllMocks();
+  mocks.profile.mockResolvedValue('local');
 });
 it('serves the shell when import initialization or recovery fails and can retry imports lazily', async () => {
   const warn = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
@@ -30,4 +42,24 @@ it('still fails closed on the runtime startup guard', async () => {
   mocks.ready.mockRejectedValueOnce(new Error('migration guard'));
   await expect(init()).rejects.toThrow('migration guard');
   expect(mocks.imports).not.toHaveBeenCalled();
+});
+it('starts none of the desktop-only work on the cloud profile', async () => {
+  const warn = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
+  mocks.profile.mockResolvedValue('cloud');
+  mocks.imports.mockRejectedValue(new Error('no job runner'));
+  await expect(init()).resolves.toBeUndefined();
+  expect(mocks.ready).toHaveBeenCalledOnce();
+  expect(mocks.imports).not.toHaveBeenCalled();
+  expect(mocks.handoff).not.toHaveBeenCalled();
+  expect(mocks.fresh).not.toHaveBeenCalled();
+  // No "imports are unavailable" warning on every hosted start.
+  expect(warn).not.toHaveBeenCalled();
+  warn.mockRestore();
+});
+it('still starts the owner link and imports on the local profile', async () => {
+  mocks.imports.mockResolvedValue({});
+  await init();
+  expect(mocks.handoff).toHaveBeenCalledOnce();
+  expect(mocks.fresh).toHaveBeenCalledOnce();
+  expect(mocks.imports).toHaveBeenCalledOnce();
 });
