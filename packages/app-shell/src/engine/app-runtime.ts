@@ -17,6 +17,7 @@ import { MCPGenerator } from '@happyvertical/smrt-core/generators/mcp';
 import { APIGenerator } from '@happyvertical/smrt-core/generators/rest';
 import { declareRuntimeManagedDatabase } from '@happyvertical/smrt-core/migrations';
 import type { RuntimeReportSpec } from '@happyvertical/smrt-reports';
+import { AppCaps, AppLimitError, type AppLimits } from './app-limits.ts';
 import {
   applyLoad,
   type LoadRecordsCommand,
@@ -125,13 +126,27 @@ export class AppRuntime {
 
   private database: WorkerDatabaseConfig;
   private dialect: EngineDialect;
+  /** Per-app caps (#5198); undefined when the host injected none. */
+  private caps?: AppCaps;
 
   constructor(
     dataDir: string,
     def: AppDefinition,
     version: number,
     database: WorkerDatabaseConfig = { kind: 'sqlite' },
+    limits?: AppLimits,
   ) {
+    if (limits)
+      this.caps = new AppCaps(
+        limits,
+        () =>
+          Object.entries(def.models).map(([model, md]) => ({
+            model,
+            label: md.label ?? model,
+            table: tableFor(model, md),
+          })),
+        (table, h) => this.countRowsIn(h as Handle, table),
+      );
     this.database = database;
     this.dialect = dialectFor(database);
     this.dataDir = dataDir;
@@ -161,6 +176,11 @@ export class AppRuntime {
     for (const report of Object.values(this.def.reports ?? {}))
       await compileReport(this.def, report.spec);
     if (readOnly) return { statements: [], snapshot: null };
+    if (this.caps)
+      this.caps.checkModels(
+        Object.keys(this.def.models).length,
+        await this.storedModelCount(),
+      );
     const steps = migration?.steps ?? [];
     if (!steps.length) await this.checkColumns(this.db);
     // With steps the tables change first; planning happens inside the transaction.
@@ -191,10 +211,20 @@ export class AppRuntime {
           );
           const ordered =
             migration?.direction === 'down' ? [...steps].reverse() : steps;
+          // Steps that put records in (a load, an extract, a merge) are held
+          // to the row caps: counted before and after, in this transaction.
+          const grows =
+            this.caps?.rowsCapped &&
+            migration?.direction === 'up' &&
+            steps.some((s) =>
+              ['loadRecords', 'extractModel', 'mergeRecords'].includes(s.op),
+            );
+          const before = grows ? await this.caps?.counts(tx, true) : undefined;
           for (const step of ordered)
             statements.push(
               ...(await this.runStep(tx, step, migration as Migration)),
             );
+          if (before) await this.caps?.checkGrowth(before, tx);
           await this.checkColumns(tx);
           statements.push(...(await this.plan(tx, true)));
         }),
@@ -613,9 +643,28 @@ export class AppRuntime {
   }
 
   async countRows(table: string) {
-    if (!(await this.tableExists(this.db, table))) return 0;
-    const r = await this.db.query(`SELECT COUNT(*) AS n FROM ${q(table)}`);
+    return this.countRowsIn(this.db, table);
+  }
+
+  private async countRowsIn(h: Handle, table: string) {
+    if (!(await this.tableExists(h, table))) return 0;
+    const r = await h.query(`SELECT COUNT(*) AS n FROM ${q(table)}`);
     return Number(r.rows[0].n);
+  }
+
+  /** Models of the definition stored before this boot (0 for a new app). */
+  private async storedModelCount(): Promise<number> {
+    if (!(await this.tableExists(this.db, '_app_meta'))) return 0;
+    const r = await this.db.query(
+      `SELECT value FROM _app_meta WHERE key = 'definition'`,
+    );
+    if (!r.rows.length) return 0;
+    try {
+      return Object.keys(JSON.parse(String(r.rows[0].value)).models ?? {})
+        .length;
+    } catch {
+      return 0;
+    }
   }
 
   /** How many archived values and tables the given versions hold. */
@@ -875,10 +924,22 @@ export class AppRuntime {
 
   async callTool(name: string, args: Row) {
     if (!this.toolNames().has(name)) throw new AppError(`unknown tool ${name}`);
-    const r: any = await this.mcp().handleToolCall({
-      method: 'tools/call',
-      params: { name, arguments: args },
-    } as any);
+    const writes = !/_(list|get)$/.test(name);
+    if (this.caps && writes) {
+      const created = Object.entries(this.def.models).find(
+        ([m, md]) => `${classNameFor(m, md).toLowerCase()}_create` === name,
+      );
+      if (created) await this.caps.checkAdd({ [created[0]]: 1 }, this.db);
+    }
+    let r: any;
+    try {
+      r = await this.mcp().handleToolCall({
+        method: 'tools/call',
+        params: { name, arguments: args },
+      } as any);
+    } finally {
+      if (writes) this.caps?.invalidate();
+    }
     return {
       content: r.content,
       isError: !!r.isError,
@@ -917,18 +978,63 @@ export class AppRuntime {
       : req.url;
     const hasBody =
       req.body !== undefined && req.method !== 'GET' && req.method !== 'HEAD';
-    const r = await api.generateHandler()(
-      new Request(url, {
-        method: req.method,
-        headers: { 'content-type': 'application/json' },
-        body: hasBody ? req.body : undefined,
-      }),
-    );
+    const mutates = !['GET', 'HEAD'].includes(req.method.toUpperCase());
+    if (this.caps && req.method.toUpperCase() === 'POST') {
+      const refused = await this.capRestCreate(url, req.body);
+      if (refused) return refused;
+    }
+    let r: Response;
+    try {
+      r = await api.generateHandler()(
+        new Request(url, {
+          method: req.method,
+          headers: { 'content-type': 'application/json' },
+          body: hasBody ? req.body : undefined,
+        }),
+      );
+    } finally {
+      if (mutates) this.caps?.invalidate();
+    }
     return {
       status: r.status,
       contentType: r.headers.get('content-type') ?? 'application/json',
       body: await r.text(),
     };
+  }
+
+  /** A POST to a model's collection route adds records: hold it to the row caps. */
+  private async capRestCreate(url: string, body?: string) {
+    const parts = new URL(url).pathname.split('/').filter(Boolean);
+    if (parts.length !== 2) return null;
+    const hit = Object.entries(this.def.models).find(
+      ([m, md]) => routeFor(m, md) === parts[1],
+    );
+    if (!hit) return null;
+    let k = 1;
+    try {
+      const parsed = body ? JSON.parse(body) : null;
+      if (Array.isArray(parsed)) k = parsed.length;
+    } catch {
+      // not JSON: the generated handler answers that
+    }
+    try {
+      await this.caps?.checkAdd({ [hit[0]]: k }, this.db);
+    } catch (e) {
+      if (!(e instanceof AppLimitError)) throw e;
+      return {
+        status: 403,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          error: e.message,
+          code: 'app_limit',
+          cap: e.cap,
+          limit: e.limit,
+          current: e.current,
+          requested: e.requested,
+        }),
+      };
+    }
+    return null;
   }
 
   // ---------- records ----------
@@ -1158,10 +1264,12 @@ export class AppRuntime {
   async create(
     model: string,
     data: Row,
-    opts: { id?: string; refs?: boolean } = {},
+    opts: { id?: string; refs?: boolean; capChecked?: boolean } = {},
     db: Handle = this.db,
   ): Promise<Row> {
     const base = await this.coerce(model, data, true, opts.refs !== false, db);
+    if (this.caps && !opts.capChecked)
+      await this.caps.checkAdd({ [model]: 1 }, db);
     if (recipeModelFor(model, this.def.models[model]))
       base.typeId = await this.personType(db);
     if (opts.id) base.id = opts.id;
@@ -1170,6 +1278,7 @@ export class AppRuntime {
       .catch((e) => {
         throw this.named(model, e);
       });
+    if (!opts.capChecked) this.caps?.noteAdded(model);
     return this.get(model, String(obj.id), db);
   }
 
@@ -1210,24 +1319,37 @@ export class AppRuntime {
     const obj: any = await (await this.collection(model, db)).get(id);
     if (!obj) throw new AppError(`no ${model} ${id}`);
     await obj.delete();
+    if (db === this.db) this.caps?.noteRemoved(model);
     return { deleted: id };
   }
 
   /** Create records of a template with their ids (references stay valid). */
   async importRecords(records: Record<string, Row[]>) {
     let n = 0;
-    for (const [model, rows] of Object.entries(records)) {
-      this.modelDef(model);
-      for (const row of rows) {
-        const { id, createdAt: _c, ...data } = row;
-        for (const [f, fd] of Object.entries(this.fieldsOf(model)))
-          if (fd.calculated) delete data[f];
-        await this.create(model, data, {
-          id: typeof id === 'string' ? id : undefined,
-          refs: false,
-        });
-        n++;
+    for (const model of Object.keys(records)) this.modelDef(model);
+    await this.caps?.checkAdd(
+      Object.fromEntries(
+        Object.entries(records).map(([m, rows]) => [m, rows.length]),
+      ),
+      this.db,
+      true,
+    );
+    try {
+      for (const [model, rows] of Object.entries(records)) {
+        for (const row of rows) {
+          const { id, createdAt: _c, ...data } = row;
+          for (const [f, fd] of Object.entries(this.fieldsOf(model)))
+            if (fd.calculated) delete data[f];
+          await this.create(model, data, {
+            id: typeof id === 'string' ? id : undefined,
+            refs: false,
+            capChecked: true,
+          });
+          n++;
+        }
       }
+    } finally {
+      this.caps?.invalidate();
     }
     return { records: n };
   }
@@ -1257,6 +1379,7 @@ export class AppRuntime {
     for (const [p, pd] of Object.entries(md.params ?? {}))
       if (pd.required && params[p] == null)
         throw new AppError(`param ${p} is required`);
+    this.caps?.checkMethodRun();
     // One method at a time per app: the worker handles calls concurrently on
     // one connection, so two runs would otherwise act on the same stale read.
     return this.exclusive(() =>
@@ -1358,10 +1481,28 @@ export class AppRuntime {
             )
               return null;
             await this.checkWrites(writes, tx);
+            const adds: Record<string, number> = {};
+            for (const w of writes)
+              if (w.op === 'create') adds[w.model] = (adds[w.model] ?? 0) + 1;
+            for (const w of writes)
+              if (w.op === 'delete') adds[w.model] = (adds[w.model] ?? 0) - 1;
+            if (this.caps)
+              await this.caps.checkAdd(
+                Object.fromEntries(
+                  Object.entries(adds).filter(([, v]) => v > 0),
+                ),
+                tx,
+                true,
+              );
             let n = 0;
             for (const w of writes) {
               if (w.op === 'create')
-                await this.create(w.model, w.data ?? {}, {}, tx);
+                await this.create(
+                  w.model,
+                  w.data ?? {},
+                  { capChecked: true },
+                  tx,
+                );
               else if (w.op === 'update')
                 await this.update(w.model, String(w.id), w.data ?? {}, tx);
               else await this.remove(w.model, String(w.id), tx);
@@ -1370,6 +1511,7 @@ export class AppRuntime {
             return n;
           },
         );
+        this.caps?.invalidate();
         if (applied === null) {
           if (attempt >= METHOD_RETRIES)
             throw new AppError(
@@ -1380,6 +1522,7 @@ export class AppRuntime {
         return { result: out.result, writes, applied, snapshot };
       } catch (e) {
         if (e instanceof AppError && /kept changing/.test(e.message)) throw e;
+        if (e instanceof AppLimitError) throw e;
         throw new AppError(
           `method ${model}.${method}() failed, none of its ${writes.length} writes were applied: ${(e as Error).message}`,
         );

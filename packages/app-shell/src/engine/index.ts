@@ -74,6 +74,11 @@ import { removeDraftDirectory as removeDraftDirectoryOf } from './draft.ts';
 export const discardDraftDirectory = (dir: string): void =>
   removeDraftDirectoryOf(dir);
 export {
+  AppLimitError,
+  type AppLimitName,
+  type AppLimits,
+} from './app-limits.ts';
+export {
   AppError,
   ApprovalRequiredError,
   ClaimLostError,
