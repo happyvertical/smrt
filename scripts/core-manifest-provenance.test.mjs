@@ -24,7 +24,11 @@ test('core production generator excludes temporary test projects without hiding 
     ];
     for (const [path, name] of models) {
       mkdirSync(dirname(join(root, path)), { recursive: true });
-      writeFileSync(join(root, path), `@smrt()\nexport class ${name} extends SmrtObject { title = ''; }\n`);
+      // The scan accepts a framework base only through its import from the framework package.
+      writeFileSync(
+        join(root, path),
+        `import { SmrtObject, smrt } from '@happyvertical/smrt-core';\n@smrt()\nexport class ${name} extends SmrtObject { title = ''; }\n`,
+      );
     }
     const run = spawnSync(process.execPath, [join(core, 'scripts/generate-manifest.js')], { cwd: root, encoding: 'utf8' });
     assert.equal(run.status, 0, `${run.stdout}\n${run.stderr}`);
