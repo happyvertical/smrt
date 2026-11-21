@@ -241,8 +241,14 @@ cannot see the shell's own `App` row, so a deployment that put the shell and
 the apps on different databases is refused, not silently unfenced.
 
 Needs a PostgreSQL role that may `CREATE SCHEMA` (the hosted role and policies
-are #5188/#5189). The portable export/import still refuse a PostgreSQL app (engine
-`requireSqlite`).
+are #5188/#5189). The portable export/import work on a PostgreSQL app (#5419).
+
+An app still in an `app.db` is refused until `migrateOwnAppToPostgres()` (host.ts;
+engine.md "SQLite to PostgreSQL in place") has moved it: it runs as the app's
+owner (tenant from the verified principal, never an argument), refuses while
+changes wait or a working copy exists (neither is carried), keeps the SQLite
+file, and is safe to rerun. NOT wired to any route or command: who triggers it
+(owner or operator) waits for the caller/principal hand-off (#5188/#5195/#5375).
 
 ## Remaining (not in this slice)
 

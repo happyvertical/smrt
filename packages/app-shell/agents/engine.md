@@ -539,6 +539,18 @@ one bundle (`format: 2`), so a desktop app moves to a hosted one and back.
   digests BEFORE it commits; a crash leaves nothing to clean up and a rerun fills
   it. A target that matches is `already-imported`; any other data is refused,
   never overwritten.
+- **SQLite to PostgreSQL in place** (`sqlite-to-postgres.ts`,
+  `migrateUserAppToPostgres`): exports `app.db`, provisions the host's schema,
+  `importUserApp`s and re-verifies, then writes `postgres-migration.json` (schema,
+  bundle digest, version, counts; atomic rename) beside `app.db`. The file is
+  never removed (it is the backup; the engine's own bookkeeping rows
+  `_smrt_changes`/`_smrt_migrations` are added on first open, user rows are not
+  touched). A rerun after a crash before the marker finishes; after the marker it
+  returns `already-migrated` without comparing (the live app may have written).
+  A schema holding other data, or a marker for another schema, is refused.
+  `isMigratedToPostgres` = marker names this schema AND the schema still holds a
+  recorded app at the marked version or later; the cloud host uses it to lift its
+  "still lives in a SQLite file" refusal (a dropped schema re-refuses).
 - **Approvals and drafts in a move.** Not carried: the caller (the CLI) refuses an
   export while changes wait (a working copy open, or a batch with an active card)
   and drops approvals still waiting (`pending`/`accepted`/`executing`), reporting

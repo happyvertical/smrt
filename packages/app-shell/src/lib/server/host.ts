@@ -26,7 +26,7 @@ import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync } from 'node:fs';
 import { join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { getCurrentTenant } from '@happyvertical/smrt-tenancy';
+import { getCurrentTenant, withTenant } from '@happyvertical/smrt-tenancy';
 import { TenantCollection } from '@happyvertical/smrt-users';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import type { DatabaseConfig } from '../../engine/db/index.ts';
@@ -36,6 +36,9 @@ import {
   bundledWorkerUrl,
   discardOrphanDraft,
   EngineError,
+  isMigratedToPostgres,
+  type MigrateToPostgresResult,
+  migrateUserAppToPostgres,
   type WorkerLimits,
   wantsBundledWorker,
 } from '../../engine/index.ts';
@@ -51,7 +54,7 @@ import {
   type HostLifecyclePolicy,
   type HostMetrics,
 } from './host-lifecycle.ts';
-import { PolicyError } from './owner.ts';
+import { assertOwner, PolicyError } from './owner.ts';
 import type { Target } from './target.ts';
 import { DraftVersionStore, ShellVersionStore } from './version-store.ts';
 
@@ -604,19 +607,74 @@ async function liveDatabase(
 ): Promise<DatabaseConfig | null> {
   const provider = requireContext().appDatabase;
   if (!provider || holder.tenantId === null) return null;
+  const app = await store.appRow();
+  const schema = appSchemaName(holder.tenantId, app.id as string);
   // An app that already lives in a SQLite file is never opened on a new, empty
   // PostgreSQL schema: its rows would seem to vanish and new writes would
-  // diverge from the file. Fail closed until an explicit migration (#5193)
-  // moves it. A PostgreSQL app keeps no app.db.
-  if (existsSync(join(liveDir, 'app.db')))
+  // diverge from the file. Fail closed until the explicit migration
+  // (`migrateOwnAppToPostgres`, #5193) has moved it AND its schema still
+  // holds it. A PostgreSQL app keeps no app.db.
+  if (
+    existsSync(join(liveDir, 'app.db')) &&
+    !(await isMigratedToPostgres(liveDir, provider.config(schema)))
+  )
     throw new EngineError(
       'this app still lives in a SQLite file; an explicit migration to PostgreSQL is required before it can open',
       'refused',
     );
-  const app = await store.appRow();
-  const schema = appSchemaName(holder.tenantId, app.id as string);
   await provider.provision(schema);
   return provider.config(schema);
+}
+
+/**
+ * Migrate one tenant's SQLite app into its PostgreSQL schema (#5193), so the
+ * refusal above clears. Idempotent and safe to rerun after any crash; the
+ * SQLite file is only read and stays as the backup. Refuses (nothing written)
+ * unless: the cloud profile has `appDatabase`, no changes wait and no working
+ * copy exists (neither is carried). The tenant, app and
+ * schema come from the shell's own rows, never from input.
+ *
+ * NOT wired to any caller yet: who may run it (an operator, the owner) is the
+ * hosted caller/principal work (#5188/#5195/#5375).
+ */
+export async function migrateOwnAppToPostgres(): Promise<MigrateToPostgresResult> {
+  const provider = requireContext().appDatabase;
+  if (!provider)
+    throw new EngineError(
+      'there is no PostgreSQL database for apps configured',
+      'refused',
+    );
+  // The caller's own tenant, from the verified principal; never an argument.
+  const tenant = safeId((await assertOwner()).tenantId, 'the tenant');
+  const db = await getShellDb();
+  const store = new ShellVersionStore(db, tenant);
+  const app = await store.appRow();
+  const { live, draft } = tenantAppDirs(
+    await dataRoot(),
+    tenant,
+    app.id as string,
+  );
+  if (existsSync(draft))
+    throw new EngineError(
+      'a working copy exists; apply or discard it before migrating',
+      'refused',
+    );
+  if (
+    await withTenant({ tenantId: tenant, permissions: new Set<string>() }, () =>
+      hasWaitingChanges(db),
+    )
+  )
+    throw new EngineError(
+      'changes are waiting; apply or discard them before migrating',
+      'refused',
+    );
+  const schema = appSchemaName(tenant, app.id as string);
+  return migrateUserAppToPostgres({
+    dataDir: live,
+    database: provider.config(schema),
+    versions: await store.list(),
+    provision: () => provider.provision(schema),
+  });
 }
 
 /**
@@ -629,6 +687,22 @@ export async function discardStaleDraft(dir: string): Promise<void> {
   await discardOrphanDraft(dir, database ?? undefined);
 }
 
+/** True when an open or held batch has an active card. */
+async function hasWaitingChanges(db: DatabaseInterface): Promise<boolean> {
+  const batches = await ChangeBatchCollection.create({ db });
+  const cards = await ChangeCardCollection.create({ db });
+  for (const status of ['open', 'held']) {
+    for (const batch of await batches.list({ where: { status }, limit: 100 })) {
+      const active = await cards.list({
+        where: { batchId: batch.id as string, status: 'active' },
+        limit: 1,
+      });
+      if (active.length) return true;
+    }
+  }
+  return false;
+}
+
 /**
  * Changes waiting freeze live structure even when their working copy is not
  * open (a restart or a crash mid-rebuild): the cards are the truth, the copy
@@ -638,20 +712,7 @@ async function freezeForWaitingChanges(
   db: DatabaseInterface,
   live: AppHost,
 ): Promise<void> {
-  const batches = await ChangeBatchCollection.create({ db });
-  const cards = await ChangeCardCollection.create({ db });
-  for (const status of ['open', 'held']) {
-    for (const batch of await batches.list({ where: { status }, limit: 100 })) {
-      const active = await cards.list({
-        where: { batchId: batch.id as string, status: 'active' },
-        limit: 1,
-      });
-      if (active.length) {
-        live.setFrozen(true);
-        return;
-      }
-    }
-  }
+  if (await hasWaitingChanges(db)) live.setFrozen(true);
 }
 
 /** Open one holder's live host: the app, its draft, the freeze. */

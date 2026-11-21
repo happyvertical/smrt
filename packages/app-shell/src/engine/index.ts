@@ -158,6 +158,15 @@ export {
   type Write,
 } from './sandbox.ts';
 export {
+  isMigratedToPostgres,
+  type MigrateToPostgresOptions,
+  type MigrateToPostgresResult,
+  migrateUserAppToPostgres,
+  POSTGRES_MIGRATION_MARKER,
+  type PostgresMigrationMarker,
+  readPostgresMigrationMarker,
+} from './sqlite-to-postgres.ts';
+export {
   MemoryVersionStore,
   type VersionMigration,
   type VersionRecord,
