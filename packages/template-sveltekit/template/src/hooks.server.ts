@@ -15,6 +15,11 @@ import { runtime } from '$lib/server/smrt';
 
 export const { handle, init } = runtime;
 
+// The generated `_changes` / `_events` routes serve each signed-in user the
+// tables of the models a list route would serve. For narrower rules, call
+// `setChangeFeedAuthorizer()` from `@happyvertical/smrt-core` here with the
+// tables each principal may read.
+
 // Tier bindings, aliases and fusions saved on the Inference settings page
 // apply to every inference call (lazy: the database resolves in `init`).
 installInferenceOverrides();
