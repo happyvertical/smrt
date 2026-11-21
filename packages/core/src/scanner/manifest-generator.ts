@@ -38,6 +38,10 @@ import {
 } from '../registry/collection-exposure.js';
 import { isSmrtCollectionExtendsName } from '../registry/collection-resolution.js';
 import {
+  type ModelExposure,
+  resolveModelExposure,
+} from '../registry/exposure-resolution.js';
+import {
   isFrameworkBaseClass,
   isFrameworkBaseClassName,
 } from '../registry/framework-base-classes.js';
@@ -51,7 +55,6 @@ import {
   findStaleWidenings,
   findSubclassExposureEscalations,
   formatSubclassExposureEscalations,
-  inheritSubclassExposure,
 } from '../registry/subclass-exposure.js';
 import type { SmartObjectConfig } from '../registry/types.js';
 import {
@@ -3145,32 +3148,34 @@ export class ManifestGenerator {
     obj: SmartObjectDefinition,
     manifest: SmartObjectManifest,
     objectsByName: Map<string, SmartObjectDefinition>,
-    memo: Map<SmartObjectDefinition, SmartObjectConfig>,
-    visiting: Set<SmartObjectDefinition> = new Set(),
+    memo: Map<SmartObjectDefinition, ModelExposure>,
   ): SmartObjectConfig {
-    const cached = memo.get(obj);
-    if (cached) return cached;
+    // One resolution over the parent-model chain
+    // (`registry/exposure-resolution.ts`). The build bakes the pre-ruling
+    // value, so a widening without a grant still reaches
+    // `assertSubclassExposure` and fails the build.
+    const resolved = resolveModelExposure(
+      obj,
+      {
+        ownConfig: (definition) => definition.decoratorConfig || {},
+        parentOf: (definition) =>
+          this.findParentModel(definition, manifest, objectsByName),
+        // Own methods; the resolver adds each ancestor's.
+        operationsOf: (definition) => Object.keys(definition.methods ?? {}),
+      },
+      memo,
+    );
     const own = obj.decoratorConfig || {};
-    if (visiting.has(obj)) return own;
-    visiting.add(obj);
-    let config = own;
-    const parent = this.findParentModel(obj, manifest, objectsByName);
-    if (parent) {
-      const inherited = inheritSubclassExposure(
-        own,
-        this.subclassEffectiveConfig(
-          parent,
-          manifest,
-          objectsByName,
-          memo,
-          visiting,
-        ),
+    const config = resolved.unclampedConfig;
+    const keys = Object.keys(config);
+    const same =
+      keys.length === Object.keys(own).length &&
+      keys.every(
+        (key) =>
+          (config as Record<string, unknown>)[key] ===
+          (own as Record<string, unknown>)[key],
       );
-      if (Object.keys(inherited).length > 0) config = { ...own, ...inherited };
-    }
-    visiting.delete(obj);
-    memo.set(obj, config);
-    return config;
+    return same ? own : config;
   }
 
   /**
@@ -3183,7 +3188,7 @@ export class ManifestGenerator {
     manifest: SmartObjectManifest,
     objectsByName: Map<string, SmartObjectDefinition>,
   ): void {
-    const memo = new Map<SmartObjectDefinition, SmartObjectConfig>();
+    const memo = new Map<SmartObjectDefinition, ModelExposure>();
     const updates: Array<[SmartObjectDefinition, SmartObjectConfig]> = [];
     for (const obj of Object.values(manifest.objects)) {
       const effective = this.subclassEffectiveConfig(
@@ -3216,7 +3221,7 @@ export class ManifestGenerator {
     for (const objectDef of Object.values(manifest.objects)) {
       objectsByName.set(objectDef.className, objectDef);
     }
-    const memo = new Map<SmartObjectDefinition, SmartObjectConfig>();
+    const memo = new Map<SmartObjectDefinition, ModelExposure>();
     const findings: Parameters<typeof formatSubclassExposureEscalations>[0] =
       [];
     for (const obj of Object.values(manifest.objects)) {

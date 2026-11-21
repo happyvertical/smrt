@@ -808,6 +808,13 @@ item, an invalid entry, or a stale one.
 | `entry-point` | `<package>#<exports key>` | each key of `exports` |
 | `system-table` | table name | `CREATE TABLE _smrt_*` in `packages/core/src/system/schema.ts` |
 | `model` | `<package>:<Class>` | classes decorated `@smrt` in `packages/*/src` (tests excluded; aliased imports followed; classes registered without their own `@smrt` are not listed) |
+| `export` | `<package>#.:<Name>` | names in a committed root export snapshot (`packages/*/api/*.exports.json`) |
+
+`export` entries are optional: the export snapshot gate already shows every new
+root name, so a name added to an existing root records an entry by hand and the
+check validates it (and fails it as stale once the name leaves the snapshot), but
+a name without one is not reported missing and `pnpm surface:ledger` never
+grandfathers one.
 
 Existing items are `{ "kind", "name", "grandfathered": true }`. That set is
 frozen: `scripts/check-new-surface.mjs` fails if the grandfathered count exceeds

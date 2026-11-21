@@ -18,6 +18,7 @@ import {
   buildInventory,
   itemKey,
   LEDGER_FILE,
+  OPTIONAL_KINDS,
   readLedger,
   sortItems,
   template,
@@ -45,11 +46,12 @@ const inventory = buildInventory(ROOT);
 const exists = new Set(inventory.map((i) => itemKey(i.kind, i.name)));
 const bootstrap = !existsSync(file);
 const byKey = new Map(existing.map((e) => [itemKey(e.kind, e.name), e]));
+const required = inventory.filter((i) => !OPTIONAL_KINDS.includes(i.kind));
 const missing = bootstrap
   ? []
-  : inventory.filter((i) => !byKey.has(itemKey(i.kind, i.name)));
+  : required.filter((i) => !byKey.has(itemKey(i.kind, i.name)));
 const entries = bootstrap
-  ? inventory.map((i) => ({ kind: i.kind, name: i.name, grandfathered: true }))
+  ? required.map((i) => ({ kind: i.kind, name: i.name, grandfathered: true }))
   : existing.filter((e) => exists.has(itemKey(e.kind, e.name)));
 writeFileSync(file, `${JSON.stringify(sortItems(entries), null, 2)}\n`);
 console.log(

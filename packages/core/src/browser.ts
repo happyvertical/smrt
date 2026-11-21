@@ -679,6 +679,16 @@ export {
   inheritCollectionExposure,
   inheritedCollectionSurface,
 } from './registry/collection-exposure';
+// One resolution of a model's generated surfaces over a caller's lookup:
+// narrowing is free, widening beyond a parent needs widenParentExposure.
+export {
+  type ExposureLookup,
+  type ExposureParents,
+  type ExposureSource,
+  type ModelExposure,
+  resolveModelExposure,
+  type SurfaceExposure,
+} from './registry/exposure-resolution';
 export type { RuntimeRegistrationOverride } from './registry/runtime-overrides';
 // Subclass models inherit their parent model's generated surface.
 export {

@@ -6151,5 +6151,59 @@
     "kind": "model",
     "name": "@happyvertical/smrt-webhooks:WebhookSubscription",
     "grandfathered": true
+  },
+  {
+    "kind": "export",
+    "name": "@happyvertical/smrt-core#.:ExposureLookup",
+    "issue": 5476,
+    "nearest": [
+      "@happyvertical/smrt-core#."
+    ],
+    "reason": "The lookup type resolveModelExposure reads (own config, parents, operations, cap hook). Part of the one exported resolution of a model's generated surfaces that the manifest generator, the registry and a read-time gate share; no existing root type describes a model's ancestry for exposure."
+  },
+  {
+    "kind": "export",
+    "name": "@happyvertical/smrt-core#.:ExposureParents",
+    "issue": 5476,
+    "nearest": [
+      "@happyvertical/smrt-core#."
+    ],
+    "reason": "Inherit and restrict parents of a node for resolveModelExposure, the shape a read-time gate passes. No existing root type models a parent that only closes operations."
+  },
+  {
+    "kind": "export",
+    "name": "@happyvertical/smrt-core#.:ExposureSource",
+    "issue": 5476,
+    "nearest": [
+      "@happyvertical/smrt-core#."
+    ],
+    "reason": "Where a resolved surface's value came from (own, inherited, clamped, unset), reported by resolveModelExposure so a gate can explain a decision."
+  },
+  {
+    "kind": "export",
+    "name": "@happyvertical/smrt-core#.:ModelExposure",
+    "issue": 5476,
+    "nearest": [
+      "@happyvertical/smrt-core#."
+    ],
+    "reason": "The result of resolveModelExposure: the clamped and pre-ruling configs and the per-surface record. The existing subclass-exposure helpers return plain config fragments and cannot carry both values."
+  },
+  {
+    "kind": "export",
+    "name": "@happyvertical/smrt-core#.:SurfaceExposure",
+    "issue": 5476,
+    "nearest": [
+      "@happyvertical/smrt-core#."
+    ],
+    "reason": "One surface's resolution in a ModelExposure (effective, declared, pre-ruling value, source, refused and granted operations)."
+  },
+  {
+    "kind": "export",
+    "name": "@happyvertical/smrt-core#.:resolveModelExposure",
+    "issue": 5476,
+    "nearest": [
+      "@happyvertical/smrt-core#."
+    ],
+    "reason": "One pure resolution of a model's generated surfaces over a caller-supplied lookup, replacing the separate manifest and runtime inheritance walks so build time and read time cannot disagree. The exported inheritSubclassExposure resolves one parent edge only, without rulings, grants or several parents, so extending it would change what its callers receive."
   }
 ]

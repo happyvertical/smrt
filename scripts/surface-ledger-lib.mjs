@@ -12,13 +12,41 @@
  *                  `packages/core/src/system/schema.ts`
  * - `model`        every `@smrt()`-decorated class in package sources,
  *                  `<package>:<Class>`
+ * - `export`       every name in a committed root export snapshot
+ *                  (`packages/*\/api/*.exports.json`, the root entry `.` and
+ *                  its browser condition), `<package>#.:<Name>`. Ledger-optional:
+ *                  the export snapshot gate already shows every new name, so an
+ *                  entry is recorded for a name added to an existing root and
+ *                  validated like any other, but a name without one is not
+ *                  reported missing.
  */
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { modelsInSource, sourceFiles } from './smrt-model-scan.mjs';
 
-export const KINDS = ['package', 'entry-point', 'system-table', 'model'];
+export const KINDS = ['package', 'entry-point', 'system-table', 'model', 'export'];
+/** Kinds whose inventory items need no ledger entry (see `export` above). */
+export const OPTIONAL_KINDS = ['export'];
 export const LEDGER_FILE = 'surface-ledger.json';
+
+/** Names in a package's committed root export snapshots. */
+function exportsOfPackage(pkg) {
+  const apiDir = join(pkg.dir, 'api');
+  if (!existsSync(apiDir)) return [];
+  const names = new Set();
+  for (const file of readdirSync(apiDir).sort()) {
+    if (!file.endsWith('.exports.json')) continue;
+    let snapshot;
+    try {
+      snapshot = JSON.parse(readFileSync(join(apiDir, file), 'utf8'));
+    } catch (error) {
+      throw new Error(`${join(apiDir, file)} is not valid JSON: ${error.message}`);
+    }
+    for (const row of snapshot.exports ?? [])
+      if (typeof row?.name === 'string') names.add(row.name);
+  }
+  return [...names];
+}
 
 const SCHEMA_FILE = join('packages', 'core', 'src', 'system', 'schema.ts');
 export const itemKey = (kind, name) => `${kind}\u0000${name}`;
@@ -97,6 +125,7 @@ export function buildInventory(root, { models = true } = {}) {
     const isConditions = keys.length > 0 && keys.every((k) => !k.startsWith('.'));
     for (const key of isConditions ? ['.'] : keys) add('entry-point', `${name}#${key}`);
     if (models) for (const cls of modelsOfPackage(pkg)) add('model', `${name}:${cls}`);
+    for (const exported of exportsOfPackage(pkg)) add('export', `${name}#.:${exported}`);
   }
   for (const table of systemTables(root)) add('system-table', table);
   return sortItems([...items.values()]);
@@ -173,6 +202,7 @@ export function validate(inventory, entries, { models = true } = {}) {
 
   const inventoryKeys = new Set(inventory.map((i) => itemKey(i.kind, i.name)));
   for (const item of inventory) {
+    if (OPTIONAL_KINDS.includes(item.kind)) continue;
     if (!present.has(itemKey(item.kind, item.name))) missing.push(item);
   }
   for (const [key, entry] of present) {

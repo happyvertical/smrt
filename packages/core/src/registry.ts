@@ -150,6 +150,10 @@ import {
   hasEmbeddings as _hasEmbeddings,
   resolveEmbeddingConfig as _resolveEmbeddingConfig,
 } from './registry/embedding-manager';
+import {
+  type ExposureLookup,
+  resolveModelExposure,
+} from './registry/exposure-resolution';
 import { isFrameworkBaseClass } from './registry/framework-base-classes';
 import {
   bumpRegistryGeneration,
@@ -235,7 +239,6 @@ import {
   setNextDbId,
   verboseLog,
 } from './registry/shared-state';
-import { inheritSubclassExposure } from './registry/subclass-exposure';
 import type {
   RegisteredClass,
   RegisteredField,
@@ -711,6 +714,36 @@ function resolveParentModel(
 }
 
 /**
+ * The runtime lookup for `resolveModelExposure`: a registration's own config
+ * (`exclude: ['*']` closed, #3468), its parent model, and its registered
+ * method names (the parent operations a subclass may not open unless it
+ * grants them).
+ */
+const runtimeExposureLookup: ExposureLookup<RegisteredClass> = {
+  ownConfig: (registered) => closeWildcardExclusions(registered.config),
+  parentOf: (registered) =>
+    isFrameworkBaseClass(registered.name, registered.packageName)
+      ? undefined
+      : resolveParentModel(registered),
+  // Declared or inherited: an ancestor's method is a parent operation too.
+  operationsOf: (registered) => chainMethodNames(registered),
+};
+
+/** Same keys with the same values (by identity). */
+function sameShallowConfig(
+  left: SmartObjectConfig,
+  right: SmartObjectConfig,
+): boolean {
+  const keys = Object.keys(left);
+  if (keys.length !== Object.keys(right).length) return false;
+  return keys.every(
+    (key) =>
+      (left as Record<string, unknown>)[key] ===
+      (right as Record<string, unknown>)[key],
+  );
+}
+
+/**
  * A class's effective config: its registered config plus the
  * generated-surface exposure it inherits. A collection class takes it from
  * its model (`registry/collection-exposure.ts`); a model subclass takes it
@@ -794,20 +827,17 @@ function resolveEffectiveConfig(
           config = { ...ownConfig, ...inherited };
         }
       }
-    } else {
-      const parent = resolveParentModel(registered);
-      if (parent) {
-        const inherited = inheritSubclassExposure(
-          ownConfig,
-          resolveEffectiveConfig(
-            parent.qualifiedName || parent.name,
-            parent,
-            visiting,
-          ),
-        );
-        if (Object.keys(inherited).length > 0) {
-          config = { ...ownConfig, ...inherited };
-        }
+    } else if (resolveParentModel(registered)) {
+      // A model subclass: one resolution over its parent-model chain
+      // (`registry/exposure-resolution.ts`); unset surfaces inherit. This
+      // serves the pre-ruling value, as before: the clamped `config` (an
+      // operation opened beyond a parent only with a `widenParentExposure`
+      // grant) is adopted here once a collection decorator can no longer
+      // overwrite its model's registered config, or a parent corrupted that
+      // way would close its subclasses too.
+      const resolved = resolveModelExposure(registered, runtimeExposureLookup);
+      if (!sameShallowConfig(resolved.unclampedConfig, ownConfig)) {
+        config = resolved.unclampedConfig;
       }
     }
   }

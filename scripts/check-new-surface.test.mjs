@@ -431,3 +431,37 @@ test('property-access decorators that are not model decorators are ignored', () 
     );
     assert.equal(run(CHECK, root).code, 0);
   }));
+
+const SNAPSHOT = (names) =>
+  JSON.stringify({
+    entry: 'packages/core/src/index.ts',
+    exports: names.map((name) => ({ name, kind: 'value', module: 'packages/core/src/a.ts' })),
+  });
+
+test('a root export name is ledger-optional; its entry is validated and goes stale with the name', () =>
+  withRoot(recorded({ 'packages/core/api/index.exports.json': SNAPSHOT(['oldName', 'newName']) }), (root) => {
+    // Snapshot names need no entry, and the generator neither adds nor grandfathers them.
+    assert.equal(run(CHECK, root).code, 0);
+    assert.ok(readEntries(root).every((e) => e.kind !== 'export'));
+    const entry = {
+      kind: 'export',
+      name: '@x/core#.:newName',
+      issue: 5476,
+      nearest: ['@x/core#.'],
+      reason: 'A new name in an existing root.',
+    };
+    writeEntries(root, [...readEntries(root), entry]);
+    assert.equal(run(CHECK, root).code, 0);
+    assert.equal(run(GENERATE, root).code, 0);
+    assert.ok(readEntries(root).some((e) => e.name === entry.name), 'the generator keeps it');
+    const { issue, ...unlinked } = entry;
+    writeEntries(root, [...readEntries(root).filter((e) => e.name !== entry.name), unlinked]);
+    const bad = run(CHECK, root);
+    assert.equal(bad.code, 1);
+    assert.match(bad.output, /export @x\/core#\.:newName: "issue" must be a positive integer/);
+    writeEntries(root, [...readEntries(root).filter((e) => e.name !== entry.name), entry]);
+    writeFileSync(join(root, 'packages/core/api/index.exports.json'), SNAPSHOT(['oldName']));
+    const stale = run(CHECK, root);
+    assert.equal(stale.code, 1);
+    assert.match(stale.output, /stale ledger entry: export @x\/core#\.:newName/);
+  }));

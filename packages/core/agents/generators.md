@@ -580,6 +580,57 @@ CLI CRUD write its model closes. Gates: `registry/__tests__/collection-exposure.
 `packages/cli/src/__tests__/collection-exposure.test.ts`, and the cross-package
 `packages/bundle-gate/src/__tests__/collection-exposure.spec.ts`.
 
+## Model exposure resolution
+
+`resolveModelExposure(node, lookup, memo)` (`registry/exposure-resolution.ts`,
+exported from the root) is the one resolution of a model's `api`/`mcp`/`cli`
+and `sensitive`. It is pure: it reads only the lookup (`ownConfig`,
+`parentOf`, optional `operationsOf` and `cap`), with no registry state, no
+database and no generator imports, so the manifest generator, the registry
+and a request-time gate share it. Per surface:
+
+1. The candidate is the node's own value, else the first inherit parent's
+   effective value (with several inherit parents, an operation is open only if
+   every one opens it). This is `unclamped`.
+2. Rulings against every parent, `inherit` and `restrict` alike, decided per
+   operation by `surfaceOpensOperation`:
+   - narrowing is free;
+   - opening an operation a parent closes needs `widenParentExposure`, else
+     it goes into `exclude` and is reported in `widenedBeyondAncestor`;
+   - the node's own methods are closed only by a parent's whole-surface close
+     (`S: false`), unless granted; the result then lists the granted
+     operations in `include` and every other named operation in `exclude` (a
+     CLI `include` of CRUD verbs alone leaves methods open), and its children
+     rule against that surface as against `false`;
+   - under a parent allowlist (`include` on MCP/REST, or a CLI `include`
+     naming a method) a non-allowlist result becomes an `include` of what is
+     left open, so an operation the lookup cannot name stays closed;
+   - a parent's operations are what it declares or inherits plus every name
+     it excludes (kept per memo and node, not per result object), so an
+     operation a grandparent declares and a parent closes stays closed below
+     it even when `operationsOf` reports own methods only. A CLI value cannot
+     withhold a method no lookup names, so clamping callers pass
+     `operationsOf`.
+3. Nothing sets the surface: the open default. An own key declared
+   `undefined` stays a key in both configs. `exclude: ['*']` in what
+   `ownConfig` returns is closed (`closeWildcardExclusions`).
+4. `sensitive` comes from the first inherit parent and cannot be dropped at
+   read time.
+5. `cap` runs once per node before memoising. A result whose resolution
+   skipped a cycle edge anywhere at or below it (the entry node included) is
+   not memoised, so each cycle member is answered from its own edges with or
+   without a shared memo.
+
+`parentOf` returns one parent or `{ inherit, restrict }`. Both adapters, the
+manifest generator (which bakes it, so a widening without a grant still fails
+the build with `CONFIG_SUBCLASS_EXPOSURE`) and `ObjectRegistry.getConfig()`,
+serve `unclampedConfig`, the same value as before. The clamped `config` is for
+read-time gates. `getConfig()` adopts it only once a collection decorator can
+no longer overwrite its model's registered config. Until then a parent
+corrupted that way (content's `Contents` re-registering `Content`) would also
+close its subclasses. Collections keep `inheritCollectionExposure`. Test:
+`registry/__tests__/exposure-resolution.test.ts`.
+
 ## Internal-model stamps
 
 Manifest generation records which models are internal
