@@ -536,7 +536,8 @@ export async function resolveChangeEventStartCursor(
  *     like `tenantScope`, and for the same reason (delivery runs outside this
  *     call's context). Because the starting cursor was fixed before this
  *     await, a write that commits while the hook is pending is still read.
- *  d. Write the `retry:` reconnection hint and the optional manifest frame.
+ *  d. Write the `retry:` reconnection hint with the start as its `id:`, and
+ *     the optional manifest frame.
  *  e. Read from the starting cursor until the feed is exhausted (catch-up),
  *     applying the captured tenant scope and table/row authorization; on
  *     `resyncRequired`, emit `event: resync` at the server's fresh horizon
@@ -872,16 +873,19 @@ export function buildChangeEventStream(
           throw error;
         }
 
-        // (d) Reconnection hint and contract advertisement (#1859). With
-        // `resyncOnOpen` the opening frame IS the resync, with the start as
-        // its `id:`: one block, so the client takes the start and the resync
-        // together or neither (a drop after a separate id-only block would
-        // leave a numeric resume that never resyncs).
+        // (d) Reconnection hint and contract advertisement (#1859). The
+        // opening frame carries the start as its `id:`, so a client that
+        // reconnects before any change frame resumes from where this
+        // connection started instead of a later head. With `resyncOnOpen`
+        // the opening frame IS the resync: one block, so the client takes
+        // the start and the resync together or neither (a drop after a
+        // separate id-only block would leave a numeric resume that never
+        // resyncs).
         controller.enqueue(
           encoder.encode(
             options.resyncOnOpen
               ? `retry: ${EVENTS_RECONNECT_MS}\nid: ${startCursor}\nevent: resync\ndata: {}\n\n`
-              : 'retry: 3000\n\n',
+              : `retry: ${EVENTS_RECONNECT_MS}\nid: ${startCursor}\n\n`,
           ),
         );
         if (manifestHash !== undefined) {

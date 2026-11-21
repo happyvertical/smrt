@@ -244,6 +244,47 @@ describe('_events live-forward start (#5291)', () => {
   });
 });
 
+describe('_events opening frame (#5291)', () => {
+  let db: DatabaseInterface;
+
+  beforeEach(async () => {
+    registerChangeFeedWriter();
+    resetChangeFeedWarnings();
+    resetChangeSignals();
+    db = await getTestDatabase({
+      type: 'sqlite',
+      url: ':memory:',
+      classes: [],
+    });
+    await ensureChangeFeedTable(db);
+    for (let index = 1; index <= BACKLOG; index++) {
+      await appendChange(db, { table: TABLE, rowId: `before-${index}` });
+    }
+  });
+
+  afterEach(async () => {
+    resetChangeSignals();
+    await db.close?.();
+  });
+
+  it('carries the start as its id, so a reconnect before any change resumes from it', async () => {
+    for (const [cursor, expected] of [
+      [null, BACKLOG],
+      [2, 2],
+    ] as const) {
+      const stream = buildChangeEventStream(db, {
+        cursor,
+        tenantScope: UNENFORCED,
+      });
+      const text = await readUntil(stream, (t) => t.includes('retry:'), 1000);
+      await stream.cancel().catch(() => {});
+      expect(text.startsWith(`retry: 3000\nid: ${expected}\n\n`), text).toBe(
+        true,
+      );
+    }
+  });
+});
+
 describe('_events route: the response implies a fixed start (#5291)', () => {
   let db: DatabaseInterface;
   const allowAuth =
