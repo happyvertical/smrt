@@ -76,6 +76,7 @@
     "quickjs-emscripten": "0.31.0",
     "@happyvertical/spreadsheets": "catalog:",
     "@happyvertical/smrt-spreadsheets": "workspace:*",
+    "@happyvertical/smrt-subscriptions": "workspace:*",
     "@happyvertical/smrt-workflows": "workspace:*",
     "@happyvertical/smrt-jobs": "workspace:*",
     "ajv": "8.20.0",

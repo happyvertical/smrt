@@ -11,6 +11,8 @@ Cloud profile (tenant scoping, accounts, what must not exist there): [cloud prof
 
 Starting the published server, graceful shutdown (SIGTERM/SIGINT drain), Node version: [deploy](agents/deploy.md).
 
+Per-tenant storage metering (`storage.bytes` gauge, one read, request-count seam for #5195): [storage metering](agents/storage-metering.md).
+
 Workbook workflow ownership, upload limits, proof and recovery: [imports](agents/imports.md).
 
 Shared assistant adapters and legacy approval storage: [agents/shared-pieces.md](agents/shared-pieces.md).

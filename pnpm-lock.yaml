@@ -501,6 +501,9 @@ importers:
       '@happyvertical/smrt-spreadsheets':
         specifier: workspace:*
         version: link:../spreadsheets
+      '@happyvertical/smrt-subscriptions':
+        specifier: workspace:*
+        version: link:../subscriptions
       '@happyvertical/smrt-svelte':
         specifier: workspace:*
         version: link:../smrt-svelte
