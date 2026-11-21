@@ -851,6 +851,31 @@ export const POSTGRES_CHANGE_FEED_DRAIN_BATCH = 1000;
  */
 const POSTGRES_CHANGE_FEED_NO_WORK_SQLSTATE = 'SMR01';
 
+/** Upper bound on one waiting drain's `waitMs`, whatever a caller passes. */
+const POSTGRES_CHANGE_FEED_DRAIN_MAX_WAIT_MS = 600_000;
+
+/**
+ * One budget step of a waiting drain (#5403), placed before each blocking
+ * statement: the time left until the deadline becomes the local
+ * `lock_timeout`, and a spent budget ends the pass as `timeout` before it
+ * waits at all. The computed value is never below 1 ms, because PostgreSQL
+ * reads `lock_timeout = 0` as no limit. A no-op without `waitMs`.
+ */
+function drainBudgetStep(indent: string): string {
+  return [
+    'IF v_wait THEN',
+    '  v_remaining_ms := EXTRACT(EPOCH FROM v_deadline - clock_timestamp()) * 1000;',
+    '  IF v_remaining_ms < 1 THEN',
+    "    v_status := 'timeout';",
+    `    RAISE EXCEPTION USING ERRCODE = '${POSTGRES_CHANGE_FEED_NO_WORK_SQLSTATE}';`,
+    '  END IF;',
+    "  PERFORM set_config('lock_timeout', GREATEST(1, floor(v_remaining_ms))::BIGINT::TEXT || 'ms', true);",
+    'END IF;',
+  ]
+    .map((line) => `${indent}${line}`)
+    .join('\n');
+}
+
 /**
  * PostgreSQL-only drain: move committed staged appends into `_smrt_changes`.
  *
@@ -922,6 +947,14 @@ DECLARE
   v_status TEXT;
   v_backlog BOOLEAN;
   v_helpers BOOLEAN;
+  v_wait BOOLEAN := false;
+  v_budget_ms DOUBLE PRECISION;
+  v_remaining_ms DOUBLE PRECISION;
+  v_statement_timeout_ms DOUBLE PRECISION;
+  v_deadline TIMESTAMPTZ;
+  v_lock_timeout TEXT := current_setting('lock_timeout');
+  v_sequenced BIGINT := 0;
+  v_emitting BOOLEAN := false;
   v_error_code TEXT;
   v_error_message TEXT;
 BEGIN
@@ -942,6 +975,13 @@ BEGIN
     ELSIF pg_current_xact_id_if_assigned() IS NOT NULL THEN
       v_status := 'in_transaction';
 
+    -- firstStatement (#5403): a background drain must never run inside
+    -- somebody's transaction block, written or not. The first statement of a
+    -- transaction is the only one whose start time is the transaction's.
+    ELSIF p_options->'firstStatement' = 'true'::JSONB
+      AND statement_timestamp() <> transaction_timestamp() THEN
+      v_status := 'in_transaction';
+
     -- A fixed snapshot (REPEATABLE READ / SERIALIZABLE) could read a stale
     -- MAX(seq), so it never allocates (#5271). The staged rows keep for a
     -- READ COMMITTED drain.
@@ -950,6 +990,30 @@ BEGIN
     END IF;
 
     IF v_status IS NULL THEN
+      -- Wait mode (#5403): with a positive waitMs the drain waits for the
+      -- drain lock, the staging table's insert lock and the head, all inside
+      -- ONE deadline. The budget is capped below the session's
+      -- statement_timeout (so a slow pass ends as 'timeout', never as a
+      -- cancelled statement) and applied before every blocking step.
+      IF jsonb_typeof(p_options->'waitMs') = 'number'
+        AND (p_options->>'waitMs')::DOUBLE PRECISION > 0 THEN
+        v_wait := true;
+        v_budget_ms := LEAST((p_options->>'waitMs')::DOUBLE PRECISION, ${POSTGRES_CHANGE_FEED_DRAIN_MAX_WAIT_MS});
+        SELECT setting::DOUBLE PRECISION INTO v_statement_timeout_ms
+        FROM pg_settings
+        WHERE name = 'statement_timeout';
+        IF v_statement_timeout_ms > 0 THEN
+          v_budget_ms := LEAST(
+            v_budget_ms,
+            v_statement_timeout_ms
+              - EXTRACT(EPOCH FROM clock_timestamp() - statement_timestamp()) * 1000
+              - GREATEST(v_statement_timeout_ms / 10, 50)
+          );
+        END IF;
+        v_deadline := clock_timestamp()
+          + make_interval(secs => GREATEST(v_budget_ms, 0) / 1000);
+      END IF;
+
       -- Every statement that can take a lock runs in this block (#5402). A
       -- pass that finds no work sets its status and raises
       -- ${POSTGRES_CHANGE_FEED_NO_WORK_SQLSTATE}; the handler below catches it, and that rollback
@@ -962,6 +1026,14 @@ BEGIN
       -- with EXIT instead of the raise would commit it: that keeps the locks.)
       <<smrt_drain_pass>>
       BEGIN
+        -- Without waitMs no statement of this pass may wait for a lock, the
+        -- first staging probe included (an ACCESS EXCLUSIVE holder on the
+        -- staging table would otherwise stall a reader there): a
+        -- NOWAIT-equivalent limit from the start. Put back after the block.
+        IF NOT v_wait THEN
+          PERFORM set_config('lock_timeout', '1ms', true);
+        END IF;
+${drainBudgetStep('        ')}
         -- Cheap common case: nothing staged, so an autocommit append pays one
         -- index probe rather than a drain.
         IF NOT EXISTS (SELECT 1 FROM _smrt_changes_pending LIMIT 1) THEN
@@ -969,8 +1041,16 @@ BEGIN
           RAISE EXCEPTION USING ERRCODE = '${POSTGRES_CHANGE_FEED_NO_WORK_SQLSTATE}';
         END IF;
 
-        -- Try, never wait: a drain that waited could become an edge in a cycle.
-        IF NOT pg_try_advisory_xact_lock(
+        -- Without waitMs: try, never wait — a reader's drain must not become
+        -- an edge in a cycle. Waiting for the drain lock is safe: nothing but
+        -- another drain ever requests it.
+        IF v_wait THEN
+${drainBudgetStep('          ')}
+          PERFORM pg_advisory_xact_lock(
+            hashtext('smrt'),
+            hashtext('change-feed-drain')
+          );
+        ELSIF NOT pg_try_advisory_xact_lock(
           hashtext('smrt'),
           hashtext('change-feed-drain')
         ) THEN
@@ -978,17 +1058,44 @@ BEGIN
           RAISE EXCEPTION USING ERRCODE = '${POSTGRES_CHANGE_FEED_NO_WORK_SQLSTATE}';
         END IF;
 
+        -- The staging table's insert lock, before the head in both modes: the
+        -- purge and the sequencing statement delete from it, and a session
+        -- holding SHARE on it must never make this drain wait while it holds
+        -- the head. Without waitMs it is NOWAIT, and a refusal ends the pass.
+        IF v_wait THEN
+${drainBudgetStep('          ')}
+          LOCK TABLE _smrt_changes_pending IN ROW EXCLUSIVE MODE;
+        ELSE
+          BEGIN
+            LOCK TABLE _smrt_changes_pending IN ROW EXCLUSIVE MODE NOWAIT;
+          EXCEPTION WHEN lock_not_available THEN
+            v_status := 'relation_busy';
+            RAISE EXCEPTION USING ERRCODE = '${POSTGRES_CHANGE_FEED_NO_WORK_SQLSTATE}';
+          END;
+        END IF;
+
         -- The head lock (#5271) serializes this drain with direct appenders.
-        -- It is only TRIED: a reader must never wait behind an appender's
-        -- transaction, so when it is busy the drain returns and a later one
-        -- sequences the staged rows. It is taken only when something will be
-        -- sequenced, so a purge of sensitive rows alone never holds the head.
-        -- The feed table's insert lock comes first, as in the append helpers,
-        -- and is NOWAIT for the same reason the head lock is only tried: a
-        -- session holding SHARE on the feed table would otherwise make this
-        -- drain wait for it. A refusal is a skipped pass, not an error. A role
-        -- without a table-level privilege for that lock skips it, as the
-        -- append helpers do.
+        -- Without waitMs it is only TRIED: a reader must never wait behind an
+        -- appender's transaction, so when it is busy the drain returns and a
+        -- later one sequences the staged rows. It is taken only when
+        -- something will be sequenced, so a purge of sensitive rows alone
+        -- never holds the head. The feed table's insert lock is NOWAIT for the
+        -- same reason: a session holding SHARE on the feed table would
+        -- otherwise make this drain wait for it. A refusal is a skipped pass,
+        -- not an error.
+        --
+        -- In wait mode (#5403) the drain first takes the staging table's
+        -- insert lock (so the sequencing statement below never waits for it),
+        -- then waits for the head holding only the drain lock and that lock,
+        -- neither of which a head holder requests, so the wait cannot close a
+        -- cycle; the feed table's insert lock is then taken NOWAIT. It never
+        -- waits for a relation lock while holding the head.
+        --
+        -- A role with only column-level INSERT on the feed table cannot LOCK
+        -- it, so it takes the same lock BEFORE the head with a zero-row
+        -- insert under a NOWAIT-equivalent 1 ms lock_timeout; a refusal is a
+        -- skipped pass holding nothing. Its sequencing insert then re-uses a
+        -- lock it already holds.
         v_has_candidate := EXISTS (
           SELECT 1
           FROM _smrt_changes_pending AS candidate
@@ -997,7 +1104,20 @@ BEGIN
           )
         );
         IF v_has_candidate THEN
-          IF ${POSTGRES_CHANGE_FEED_CAN_LOCK_RELATION} THEN
+          IF NOT ${POSTGRES_CHANGE_FEED_CAN_LOCK_RELATION} THEN
+            PERFORM set_config('lock_timeout', '1ms', true);
+            BEGIN
+              INSERT INTO _smrt_changes (seq) SELECT NULL::BIGINT WHERE false;
+            EXCEPTION WHEN lock_not_available THEN
+              v_status := 'relation_busy';
+              RAISE EXCEPTION USING ERRCODE = '${POSTGRES_CHANGE_FEED_NO_WORK_SQLSTATE}';
+            END;
+            -- Back to this pass's limit: the 1 ms above without waitMs; in
+            -- wait mode the next budget step sets the remaining budget.
+            IF v_wait THEN
+              PERFORM set_config('lock_timeout', v_lock_timeout, true);
+            END IF;
+          ELSIF NOT v_wait THEN
             BEGIN
               LOCK TABLE _smrt_changes IN ROW EXCLUSIVE MODE NOWAIT;
             EXCEPTION WHEN lock_not_available THEN
@@ -1005,7 +1125,18 @@ BEGIN
               RAISE EXCEPTION USING ERRCODE = '${POSTGRES_CHANGE_FEED_NO_WORK_SQLSTATE}';
             END;
           END IF;
-          IF NOT pg_try_advisory_xact_lock(${POSTGRES_CHANGE_FEED_HEAD_LOCK_KEY}) THEN
+          IF v_wait THEN
+${drainBudgetStep('            ')}
+            PERFORM pg_advisory_xact_lock(${POSTGRES_CHANGE_FEED_HEAD_LOCK_KEY});
+            IF ${POSTGRES_CHANGE_FEED_CAN_LOCK_RELATION} THEN
+              BEGIN
+                LOCK TABLE _smrt_changes IN ROW EXCLUSIVE MODE NOWAIT;
+              EXCEPTION WHEN lock_not_available THEN
+                v_status := 'relation_busy';
+                RAISE EXCEPTION USING ERRCODE = '${POSTGRES_CHANGE_FEED_NO_WORK_SQLSTATE}';
+              END;
+            END IF;
+          ELSIF NOT pg_try_advisory_xact_lock(${POSTGRES_CHANGE_FEED_HEAD_LOCK_KEY}) THEN
             v_status := 'head_busy';
             RAISE EXCEPTION USING ERRCODE = '${POSTGRES_CHANGE_FEED_NO_WORK_SQLSTATE}';
           END IF;
@@ -1017,8 +1148,10 @@ BEGIN
         -- allocated. Bounded like the sequencing batch, so a large legacy
         -- backlog cannot make one pass outlive statement_timeout and stall the
         -- feed; the remainder is purged by later passes, and the batch below
-        -- skips it meanwhile.
+        -- skips it meanwhile. Without waitMs it runs under the 1 ms limit set
+        -- at the top of this block; in wait mode under the budget.
         IF COALESCE(cardinality(p_excluded_tables), 0) > 0 THEN
+${drainBudgetStep('          ')}
           DELETE FROM _smrt_changes_pending AS sensitive
           WHERE sensitive.pending_id IN (
             SELECT staged.pending_id
@@ -1038,8 +1171,36 @@ BEGIN
           -- A purge is work: the block commits and keeps the deletion.
           v_status := 'drained';
         ELSE
+          -- The batch's staged rows are locked without waiting before the
+          -- head-holding sequencing statement runs, so a row another session
+          -- holds locked ends the pass at once (no sum of per-row waits can
+          -- outrun the budget). A role without UPDATE on the staging table
+          -- cannot lock rows that way; its sequencing statement runs under
+          -- a 1 ms limit instead, so each contended row costs at most 1 ms
+          -- and the first refusal ends the pass.
+${drainBudgetStep('          ')}
+          IF has_table_privilege('_smrt_changes_pending', 'UPDATE') THEN
+            PERFORM 1
+            FROM _smrt_changes_pending AS batch
+            WHERE batch.pending_id IN (
+              SELECT candidate.pending_id
+              FROM _smrt_changes_pending AS candidate
+              WHERE NOT (
+                candidate.table_name = ANY(COALESCE(p_excluded_tables, ARRAY[]::TEXT[]))
+              )
+              ORDER BY candidate.pending_id
+              LIMIT GREATEST(COALESCE(p_limit, ${POSTGRES_CHANGE_FEED_DRAIN_BATCH}), 1)
+            )
+            FOR UPDATE NOWAIT;
+          ELSE
+            PERFORM set_config('lock_timeout', '1ms', true);
+          END IF;
           SELECT COALESCE(MAX(changes.seq), 0) INTO v_base FROM _smrt_changes AS changes;
           v_status := 'drained';
+          -- From here rows can be in the result: a failure of any kind,
+          -- a lock timeout in an AFTER trigger included, must reach the
+          -- boundary as an error row so every entry of this call is voided.
+          v_emitting := true;
 
           -- The sequencing statement is the LAST statement of this block.
           -- Rows a RETURN QUERY has appended to the result stay there even
@@ -1111,11 +1272,40 @@ BEGIN
             NULL::BOOLEAN
           FROM inserted
           ORDER BY inserted.seq;
+          -- The batch can come back empty: its rows were deleted while this
+          -- pass waited. Nothing was returned, so leaving through the no-work
+          -- path is safe, and it releases every lock this pass took.
+          GET DIAGNOSTICS v_sequenced = ROW_COUNT;
+          IF v_sequenced = 0 AND v_purged = 0 THEN
+            v_status := 'empty';
+            RAISE EXCEPTION USING ERRCODE = '${POSTGRES_CHANGE_FEED_NO_WORK_SQLSTATE}';
+          END IF;
         END IF;
-      EXCEPTION WHEN SQLSTATE '${POSTGRES_CHANGE_FEED_NO_WORK_SQLSTATE}' THEN
-        NULL;
+      EXCEPTION
+        WHEN SQLSTATE '${POSTGRES_CHANGE_FEED_NO_WORK_SQLSTATE}' THEN
+          NULL;
+        -- A lock wait that ran out of its limit before the sequencing
+        -- statement is a timed-out pass holding nothing. Once that statement
+        -- has started, rows may already be in the result (AFTER triggers
+        -- run once its rows are produced), so it goes to the boundary as an
+        -- error row instead, which voids every entry of the call.
+        WHEN lock_not_available THEN
+          IF v_emitting THEN
+            RAISE;
+          END IF;
+          v_status := 'timeout';
       END;
     END IF;
+
+    -- lock_timeout back as the caller had it. A rolled-back block already
+    -- reverted it; a committed one keeps its local setting until the caller's
+    -- transaction ends. Its own block: nothing here can roll back the
+    -- sequencing above.
+    BEGIN
+      PERFORM set_config('lock_timeout', v_lock_timeout, true);
+    EXCEPTION WHEN query_canceled OR assert_failure OR OTHERS THEN
+      NULL;
+    END;
 
     -- The status is computed in its own block, so nothing here can roll back
     -- the sequencing above; a failure only leaves the extras unknown.
@@ -1135,9 +1325,13 @@ BEGIN
           )
         );
       ELSIF v_status = 'empty' THEN
-        v_backlog := false;
-      ELSIF v_status IN ('relation_busy', 'head_busy') THEN
+        -- A candidate was seen but nothing moved (its rows were held back
+        -- or removed meanwhile): ask for another look rather than certify
+        -- the backlog empty.
         v_backlog := v_has_candidate;
+      ELSIF v_status IN ('relation_busy', 'head_busy', 'timeout')
+        AND v_has_candidate THEN
+        v_backlog := true;
       END IF;
       IF v_status <> 'empty' THEN
         v_helpers := (

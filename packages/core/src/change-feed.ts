@@ -160,6 +160,7 @@ import {
   deferUntilFrameworkCommit,
   isEmbeddedDatabase,
   isKnownDatabaseTransaction,
+  runOutsideWriteContext,
   usesPostgresDialect,
   withEmbeddedWriteQueue,
 } from './embedded-write-queue.js';
@@ -187,7 +188,10 @@ import {
   REPLACE_POSTGRES_CHANGE_FEED_APPEND_FUNCTION,
   RETIRED_SYSTEM_TABLES,
 } from './system/schema.js';
-import { redactDatabaseUrlsInText } from './utils/database-url.js';
+import {
+  redactDatabaseUrl,
+  redactDatabaseUrlsInText,
+} from './utils/database-url.js';
 import { toSafeInteger } from './utils/safe-integer.js';
 
 const logger = createLogger({ level: 'info' });
@@ -535,6 +539,9 @@ function noteStagedAppend(db: DatabaseInterface): void {
   } catch {
     // Unkeyable handle — the interval below still drives the drain.
   }
+  // The staged entry needs a drain once its transaction commits (#5403): on
+  // a root that is now; inside a framework transaction, after its commit.
+  kickDrainerAfterCommit(db);
 }
 
 async function drainBeforeAppend(
@@ -547,6 +554,7 @@ async function drainBeforeAppend(
   } catch {
     return [];
   }
+  noteRootFeedCall(db);
   const now = Date.now();
   const last = lastAppendDrain.get(dbKey);
   // A handle that staged an append since its last drain skips the interval:
@@ -556,6 +564,10 @@ async function drainBeforeAppend(
     last !== undefined &&
     now - last < APPEND_DRAIN_INTERVAL_MS
   ) {
+    // The throttle must not make this append the last feed call to look
+    // (#5403): on a root, one trailing pass runs at the end of the window
+    // unless a drain on the root runs first.
+    armTrailingDrain(db, last + APPEND_DRAIN_INTERVAL_MS - now);
     return [];
   }
   stagedSinceLastDrain.delete(dbKey);
@@ -873,6 +885,7 @@ async function getPostgresChangeFeedSchemaState(
   else if (status === 7) {
     helpers = older.every((v) => v === 7) ? 'current' : 'mixed';
   } else helpers = 'usable-older';
+  noteRootHelperState(db, helpers);
   return {
     tableExists,
     pendingTableExists,
@@ -908,7 +921,11 @@ export async function probeChangeFeedHelperState(
  * would be left aborted (`25P02`) behind an error the feed then swallows.
  */
 function mayInstallHelpersOn(db: DatabaseInterface): boolean {
-  return isAutocommitRoot(db);
+  // Never on one shared session (PGlite) either: a caller's raw BEGIN can
+  // reach it between any check and the DDL. Such a database keeps its usable
+  // helpers until an explicit replacement (bootstrap's version install,
+  // `ensurePostgresChangeFeedAppendFunction`) runs.
+  return isAutocommitRoot(db) && !rootClientTracksTransactions(db);
 }
 
 /**
@@ -929,6 +946,7 @@ async function installChangeFeedHelpersFor(
     if (!mayInstallHelpersOn(db)) return;
     try {
       await db.query(statement);
+      noteRootHelperState(db, 'current');
     } catch (error) {
       warnHelperUpgradeRefusedOnce(db, state, error);
     }
@@ -940,6 +958,7 @@ async function installChangeFeedHelpersFor(
     if (state.helpers === 'outdated') throw ownerUpgradeRequired(error);
     throw error;
   }
+  noteRootHelperState(db, 'current');
 }
 
 function ownerUpgradeRequired(error: unknown): Error {
@@ -1056,6 +1075,7 @@ export async function ensurePostgresChangeFeedAppendFunction(
   }
 
   await db.query(REPLACE_POSTGRES_CHANGE_FEED_APPEND_FUNCTION);
+  noteRootHelperState(db, 'current');
 }
 
 /**
@@ -1507,6 +1527,14 @@ export async function appendChanges(
  * session holds a `SHARE` lock on `_smrt_changes`, the drain returns without
  * waiting and a later one sequences the rows.
  *
+ * `{ wait: true }` (#5403) makes one call wait, up to 2 s, for the head of the
+ * log instead: a try fails while the head is held *or queued for*, so under
+ * steady direct appends from several connections a try-only drain rarely
+ * succeeds. It applies only on a root database handle (one that can open its
+ * own transactions and is not itself one) whose helpers have the status drain;
+ * elsewhere the call behaves as without it. Use it from a scheduled job on a
+ * writable root connection.
+ *
  * Best-effort by the feed's failure policy: a drain that cannot run leaves the
  * staged entries in place for the next attempt and never throws into the
  * caller's write path. Nothing is lost — staged entries are durable — they are
@@ -1514,8 +1542,196 @@ export async function appendChanges(
  *
  * @returns How many staged entries were sequenced.
  */
-export async function drainChangeFeed(db: DatabaseInterface): Promise<number> {
-  return (await drainChangeFeedDetailed(db)).drained;
+export async function drainChangeFeed(
+  db: DatabaseInterface,
+  options: { wait?: boolean } = {},
+): Promise<number> {
+  return (
+    await drainChangeFeedDetailed(db, {
+      waitMs: options.wait === true ? DRAIN_WAIT_MS : undefined,
+    })
+  ).drained;
+}
+
+/** How long one `drainChangeFeed(db, { wait: true })` waits (#5403). */
+const DRAIN_WAIT_MS = 2_000;
+
+/**
+ * What the status drain reported for one call (#5402), or `error` when the
+ * call returned an error row.
+ */
+type DrainStatus =
+  | 'drained'
+  | 'empty'
+  | 'in_transaction'
+  | 'fixed_snapshot'
+  | 'drain_busy'
+  | 'relation_busy'
+  | 'head_busy'
+  | 'timeout'
+  | 'error';
+
+const KNOWN_DRAIN_STATUSES: ReadonlySet<string> = new Set([
+  'drained',
+  'empty',
+  'in_transaction',
+  'fixed_snapshot',
+  'drain_busy',
+  'relation_busy',
+  'head_busy',
+  'timeout',
+]);
+
+/** Marks an error a drain call returned as a row, as opposed to a throw. */
+const DRAIN_ERROR_ROW = Symbol('smrt.changeFeed.drainErrorRow');
+
+function isDrainErrorRow(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    (error as { [DRAIN_ERROR_ROW]?: boolean })[DRAIN_ERROR_ROW] === true
+  );
+}
+
+/** SQLSTATEs that mean the status drain cannot be called on this handle. */
+const STATUS_DRAIN_UNAVAILABLE_CODES: ReadonlySet<string> = new Set([
+  '42883', // undefined_function: an older install
+  '42501', // insufficient_privilege: EXECUTE not granted
+]);
+
+interface DrainCallResult {
+  rows: Record<string, unknown>[];
+  status: DrainStatus | null;
+  backlog: boolean | null;
+  helpersCurrent: boolean | null;
+}
+
+/**
+ * Parse one drain call's rows. Any error row voids the call's entry rows
+ * (#5402): rows a `RETURN QUERY` appended before a later error in the same
+ * block survive its rollback in the result set, and publishing or counting
+ * them would advertise sequences that never committed.
+ */
+function parseDrainCall(rows: Record<string, unknown>[]): DrainCallResult {
+  const failure = rows.find((row) => row.error_code != null);
+  if (failure) {
+    const error = new Error(
+      String(failure.error_message || 'PostgreSQL change-feed drain failed'),
+    ) as Error & { code: string; [DRAIN_ERROR_ROW]: true };
+    error.code = String(failure.error_code);
+    error[DRAIN_ERROR_ROW] = true;
+    throw error;
+  }
+  const statusRow = rows.find(
+    (row) => row.status != null && row.drained_seq == null,
+  );
+  const status =
+    statusRow === undefined
+      ? null
+      : KNOWN_DRAIN_STATUSES.has(String(statusRow.status))
+        ? (String(statusRow.status) as DrainStatus)
+        : 'error';
+  const flag = (value: unknown): boolean | null =>
+    value === true || value === 't'
+      ? true
+      : value === false || value === 'f'
+        ? false
+        : null;
+  return {
+    rows: rows.filter((row) => row.drained_seq != null),
+    status,
+    backlog: statusRow ? flag(statusRow.backlog_remaining) : null,
+    helpersCurrent: statusRow ? flag(statusRow.helpers_current) : null,
+  };
+}
+
+/**
+ * Issue one drain call. The status drain is called directly only when asked
+ * to (`useStatus`), which callers decide from {@link rootUsesStatusDrain} or
+ * a transaction form they own; every other handle, possibly inside a caller
+ * transaction, calls the protected two-argument entry point (#5402): a
+ * direct call that PostgreSQL refuses with `42501` before entering the
+ * function would abort that transaction.
+ */
+async function issueDrainCall(
+  db: DatabaseInterface,
+  useStatus: boolean,
+  drainOptions: { waitMs?: number; firstStatement?: boolean },
+): Promise<DrainCallResult> {
+  const p = placeholders(db);
+  const excluded = JSON.stringify(getChangeFeedSensitiveTables());
+  if (useStatus) {
+    const statusOptions: Record<string, unknown> = {};
+    if (drainOptions.waitMs !== undefined && drainOptions.waitMs > 0) {
+      statusOptions.waitMs = Math.round(drainOptions.waitMs);
+    }
+    if (drainOptions.firstStatement) {
+      statusOptions.firstStatement = true;
+      // Sent without parameters, as one simple-protocol statement. The
+      // server tells "first statement of its transaction" by its start time
+      // equalling the transaction's, and the extended protocol stamps a new
+      // statement time at Bind and Execute after Parse began the
+      // transaction, so a parameterized call would never qualify.
+      return parseDrainCall(
+        getQueryRows(
+          await db.query(
+            `SELECT * FROM ${POSTGRES_CHANGE_FEED_DRAIN_FUNCTION_NAME}(` +
+              `${POSTGRES_CHANGE_FEED_DRAIN_BATCH}, ` +
+              `ARRAY(SELECT jsonb_array_elements_text(${dollarQuoted(excluded)}::jsonb)), ` +
+              `${dollarQuoted(JSON.stringify(statusOptions))}::jsonb)`,
+          ),
+        ),
+      );
+    }
+    return parseDrainCall(
+      getQueryRows(
+        await db.query(
+          `SELECT * FROM ${POSTGRES_CHANGE_FEED_DRAIN_FUNCTION_NAME}(` +
+            `${POSTGRES_CHANGE_FEED_DRAIN_BATCH}, ` +
+            `ARRAY(SELECT jsonb_array_elements_text(${p(1)}::jsonb)), ` +
+            `${p(2)}::jsonb)`,
+          excluded,
+          JSON.stringify(statusOptions),
+        ),
+      ),
+    );
+  }
+  return parseDrainCall(
+    getQueryRows(
+      await db.query(
+        `SELECT * FROM ${POSTGRES_CHANGE_FEED_DRAIN_FUNCTION_NAME}(` +
+          `${POSTGRES_CHANGE_FEED_DRAIN_BATCH}, ` +
+          `ARRAY(SELECT jsonb_array_elements_text(${p(1)}::jsonb)))`,
+        excluded,
+      ),
+    ),
+  );
+}
+
+/**
+ * A PostgreSQL dollar-quoted literal of `text` whose tag cannot occur in it,
+ * so no character of `text` needs escaping under any server setting.
+ */
+function dollarQuoted(text: string): string {
+  let tag = 'smrt';
+  for (let n = 0; text.includes(`$${tag}$`); n += 1) tag = `smrt${n}`;
+  return `$${tag}$${text}$${tag}$`;
+}
+
+/** What a drain call's status asks of the root's drainer, if anything. */
+function statusWantsDrainer(result: {
+  status: DrainStatus | null;
+  backlog: boolean | null;
+}): boolean {
+  return (
+    result.backlog === true ||
+    result.status === 'drain_busy' ||
+    result.status === 'relation_busy' ||
+    result.status === 'head_busy' ||
+    result.status === 'timeout' ||
+    result.status === 'fixed_snapshot' ||
+    result.status === 'error'
+  );
 }
 
 /**
@@ -1535,14 +1751,61 @@ export async function drainChangeFeed(db: DatabaseInterface): Promise<number> {
  */
 async function drainChangeFeedDetailed(
   db: DatabaseInterface,
-  options: { settle?: boolean; maxPasses?: number } = {},
-): Promise<{
-  drained: number;
-  firstAllocatedSeq: number | null;
-  unsettledSignals: ChangeSignal[];
-}> {
+  options: {
+    settle?: boolean;
+    maxPasses?: number;
+    /** Wait mode (#5403); honoured only where the status drain is called. */
+    waitMs?: number;
+    /** Refuse to run unless this is the first statement of its transaction. */
+    firstStatement?: boolean;
+    /** Force the status drain (a transaction form the caller owns). */
+    statusDrain?: boolean;
+    /** Issued by the root's own drainer, not by a caller. */
+    background?: boolean;
+  } = {},
+): Promise<DrainDetail> {
   if (getEngine(db) !== 'postgres')
-    return { drained: 0, firstAllocatedSeq: null, unsettledSignals: [] };
+    return {
+      drained: 0,
+      firstAllocatedSeq: null,
+      unsettledSignals: [],
+      status: null,
+      backlog: null,
+      helpersCurrent: null,
+      lastBatchFull: false,
+    };
+  // One deadline for the whole call (#5403), started before anything else
+  // it does: a waiting call never spends more than its waitMs across its
+  // probe and all its batches; what remains is left to the root's drainer,
+  // which a reported backlog hands it to.
+  const waitDeadline =
+    options.waitMs !== undefined && options.waitMs > 0
+      ? monotonicNow() + options.waitMs
+      : null;
+  if (!options.background) noteRootFeedCall(db);
+  // A caller asking to wait on a root whose helpers were never probed (a
+  // pool that skipped ensureChangeFeedTable/bootstrap) would otherwise get a
+  // try-only drain without knowing it. Probe once: on an autocommit root
+  // that statement is its own transaction and can abort nothing.
+  if (
+    options.statusDrain === undefined &&
+    options.waitMs !== undefined &&
+    options.waitMs > 0 &&
+    isAutocommitRoot(db) &&
+    !rootClientTracksTransactions(db) &&
+    !rootHelperStates.has(db as unknown as object)
+  ) {
+    await getPostgresChangeFeedSchemaState(db);
+  }
+  // Re-decided before every statement (the root's state can change between
+  // passes); a refusal makes this call use the protected entry point.
+  let statusRefused = false;
+  const usesStatusNow = (): boolean =>
+    options.statusDrain ?? (!statusRefused && rootUsesStatusDrain(db));
+  let lastStatus: DrainStatus | null = null;
+  let lastBacklog: boolean | null = null;
+  let lastHelpersCurrent: boolean | null = null;
+  let lastBatchFull = false;
 
   // `settle: false` is the write path (see drainBeforeAppend): it issues the
   // drain statement and NOTHING else, because every additional statement run
@@ -1557,7 +1820,11 @@ async function drainChangeFeedDetailed(
   // Anything a previous, unproven drain queued is settled first: its
   // transaction has ended by now, and each queued entry is published only if
   // its sequence still holds the row it was drained for.
-  if (settle) await flushDeferredSignals(db);
+  // A waiting call settles them after its passes instead, so their
+  // verification cannot eat into its lock budget; nothing queued is lost.
+  if (settle && waitDeadline === null) await flushDeferredSignals(db);
+  const sharedSession = rootClientTracksTransactions(db);
+  let verifyAfterPasses = waitDeadline !== null && settle;
 
   let firstAllocatedSeq: number | null = null;
   let drained = 0;
@@ -1578,21 +1845,41 @@ async function drainChangeFeedDetailed(
     // their staged rows before allocating a sequence, so the feed never
     // records them — including entries an older replica staged. It travels as
     // one JSON parameter, like the batch append's payload.
-    const p = placeholders(db);
-    const rows = getQueryRows(
-      await db.query(
-        `SELECT * FROM ${POSTGRES_CHANGE_FEED_DRAIN_FUNCTION_NAME}(` +
-          `${POSTGRES_CHANGE_FEED_DRAIN_BATCH}, ` +
-          `ARRAY(SELECT jsonb_array_elements_text(${p(1)}::jsonb)))`,
-        JSON.stringify(getChangeFeedSensitiveTables()),
-      ),
-    );
-    const failure = rows.find((row) => row.error_code != null);
-    if (failure) {
-      const error = new Error(
-        String(failure.error_message || 'PostgreSQL change-feed drain failed'),
-      ) as Error & { code: string };
-      error.code = String(failure.error_code);
+    let call: DrainCallResult;
+    const useStatus = usesStatusNow();
+    let passOptions = options;
+    if (waitDeadline !== null) {
+      const remaining = Math.ceil(waitDeadline - monotonicNow());
+      if (remaining < 1) {
+        // Budget spent between batches: what is left goes to the drainer.
+        if (pass === 0) lastStatus = 'timeout';
+        break;
+      }
+      // Every statement, the first included, gets only what is left.
+      passOptions = {
+        ...options,
+        waitMs: Math.min(remaining, options.waitMs as number),
+      };
+    }
+    try {
+      call = await issueDrainCall(db, useStatus, passOptions);
+    } catch (error) {
+      const code = postgresSqlState(error) ?? '';
+      if (
+        useStatus &&
+        options.statusDrain === undefined &&
+        !isDrainErrorRow(error) &&
+        STATUS_DRAIN_UNAVAILABLE_CODES.has(code)
+      ) {
+        // The status drain cannot be called here after all. This root runs
+        // autocommit statements, so the refusal aborted nothing; fall back to
+        // the protected entry point until the helpers are probed again. The
+        // SDK reports the SQLSTATE on the wrapped driver error.
+        noteRootHelperState(db, 'usable-older');
+        statusRefused = true;
+        continue;
+      }
+      if (!isDrainErrorRow(error)) throw error;
       // An appender running older helper bodies (no head lock, mid-rollout)
       // can win the head between this drain's MAX(seq) read and its insert.
       // The whole batch rolled back, so the staged rows are still there —
@@ -1601,6 +1888,10 @@ async function drainChangeFeedDetailed(
       // pass (#3062); the write-path drain never retries.
       if (isUniqueViolation(error)) {
         conflicts += 1;
+        // An unfinished batch is owed: the caller's drain hands it to the
+        // root's drainer, and a drainer pass backs off and retries, rather
+        // than reading the give-up as an idle feed.
+        lastStatus = 'error';
         if (!settle) break;
         conflictMs += monotonicNow() - passStartedAt;
         if (!retryBudgetRemains(conflicts, conflictMs)) break;
@@ -1611,11 +1902,31 @@ async function drainChangeFeedDetailed(
         if (!retryBudgetRemains(conflicts, conflictMs)) break;
         continue;
       }
+      // A lock limit that ran out once the sequencing statement had started
+      // (an older appender's uncommitted row on the same sequence, an AFTER
+      // trigger) is contention, not a failure: the call's entries are
+      // voided — none of them was counted or signalled — and the pass ends
+      // as a timeout the drainer backs off from, without throwing at the
+      // caller, as a lock refusal before sequencing already does.
+      if (postgresSqlState(error) === '55P03') {
+        lastStatus = 'timeout';
+        break;
+      }
       throw error;
     }
     pass += 1;
-    const sequenced = rows.filter((row) => row.drained_seq != null);
+    const sequenced = call.rows;
     drained += sequenced.length;
+    lastStatus = call.status;
+    lastBacklog = call.backlog;
+    lastHelpersCurrent = call.helpersCurrent;
+    lastBatchFull = sequenced.length >= POSTGRES_CHANGE_FEED_DRAIN_BATCH;
+    if (options.background && (call.backlog === true || lastBatchFull)) {
+      // Seen now, owed now: a later batch of this pass failing must not make
+      // the drainer forget it.
+      const drainer = drainers.get(db as unknown as object);
+      if (drainer) drainer.observedWork = true;
+    }
     for (const row of sequenced) {
       const seq = toSeqNumber(row.drained_seq);
       if (firstAllocatedSeq === null || seq < firstAllocatedSeq) {
@@ -1648,6 +1959,13 @@ async function drainChangeFeedDetailed(
         // The write path decides: see appendChange, which can prove these
         // committed without spending a statement on it.
         unsettledSignals.push(...signals);
+      } else if (sharedSession) {
+        // One shared session (PGlite): a caller's raw transaction can have
+        // run this pass and rolled it back before a commit probe, which
+        // would then see no transaction id. Never publish on that probe
+        // alone: queue, and publish only what the committed log verifies.
+        queueDeferredSignals(db, signals);
+        verifyAfterPasses = true;
       } else if (await drainCommitted(db)) {
         publishSignals(db, signals);
       } else {
@@ -1656,9 +1974,635 @@ async function drainChangeFeedDetailed(
     }
 
     if (sequenced.length === 0) break;
+    // A drained pass that left no backlog needs no second statement.
+    if (call.status === 'drained' && call.backlog === false) break;
   }
+  if (verifyAfterPasses) await flushDeferredSignals(db);
   recordUncommittedDrainMark(db, firstAllocatedSeq);
-  return { drained, firstAllocatedSeq, unsettledSignals };
+  const detail: DrainDetail = {
+    drained,
+    firstAllocatedSeq,
+    unsettledSignals,
+    status: lastStatus,
+    backlog: lastBacklog,
+    helpersCurrent: lastHelpersCurrent,
+    lastBatchFull,
+  };
+  // A caller's drain on a root that reports work it could not finish hands
+  // it to the root's drainer, which waits for the head (#5403); a report
+  // that the other helpers are older hands it a reinstall (#5402).
+  if (!options.background && isVerifiedRoot(db)) {
+    const drainer = drainers.get(db as unknown as object);
+    if (drainer) drainer.lastForegroundDrainAt = Date.now();
+    if (detail.helpersCurrent === false) noteRootHelpersStale(db);
+    if (statusWantsDrainer(detail) || detail.helpersCurrent === false) {
+      kickChangeFeedDrainer(db, statusWantsDrainer(detail));
+    }
+  }
+  return detail;
+}
+
+interface DrainDetail {
+  drained: number;
+  firstAllocatedSeq: number | null;
+  unsettledSignals: ChangeSignal[];
+  /** The last call's status; null when only the two-argument drain ran. */
+  status: DrainStatus | null;
+  backlog: boolean | null;
+  helpersCurrent: boolean | null;
+  /** Whether the last call sequenced a full batch. */
+  lastBatchFull: boolean;
+}
+
+// ============================================================================
+// Root drainer (#5403)
+// ============================================================================
+//
+// Staged entries need a drain after their transaction commits, and nothing
+// in a caller's request is a safe place to wait for the head of the log. Each
+// verified root therefore gets one detached drainer: single-flight, waiting
+// for the head within a bounded budget, kicked by feed activity on that root,
+// and re-armed while the last status reported work it could not finish.
+//
+// Kicks: the root's first feed call in this process; a framework transaction
+// on the root committing staged work; an append on the root that staged; a
+// status from a caller's drain on the root reporting busy, timeout, a fixed
+// snapshot, backlog or older helpers; and the trailing pass after a
+// write-path drain the throttle skipped.
+//
+// Not covered, by design: backlog committed by a caller-owned or raw
+// transaction (or another process) after the drainer stopped at an empty
+// backlog, with no feed call on any root afterwards. Such deployments
+// schedule `drainChangeFeed(root, { wait: true })`.
+
+/** Root helper probe results, per handle. */
+const rootHelperStates = new WeakMap<object, ChangeFeedHelperState>();
+
+function noteRootHelperState(
+  db: DatabaseInterface,
+  state: ChangeFeedHelperState,
+): void {
+  if (isVerifiedRoot(db)) rootHelperStates.set(db, state);
+}
+
+/**
+ * Whether a caller's drain on `db` may call the status drain directly: only
+ * an autocommit root whose probe found it current. Everything else uses the
+ * protected two-argument entry point.
+ */
+function rootUsesStatusDrain(db: DatabaseInterface): boolean {
+  if (!isAutocommitRoot(db)) return false;
+  // One shared session (PGlite): a caller's raw BEGIN can reach the session
+  // between this check and the call, and PostgreSQL refuses a status-drain
+  // call it may not execute before the helper's own boundary runs, which
+  // would abort that caller's transaction. Such roots use only the
+  // protected two-argument entry point.
+  if (rootClientTracksTransactions(db)) return false;
+  const state = rootHelperStates.get(db);
+  return state === 'current' || state === 'mixed';
+}
+
+/** Whether the root's client reports transaction state at all (PGlite). */
+function rootClientTracksTransactions(db: DatabaseInterface): boolean {
+  const client = (db as unknown as RootShape).client as
+    | { isInTransaction?: unknown }
+    | undefined;
+  return typeof client?.isInTransaction === 'function';
+}
+
+/**
+ * Positive closure of a root: PGlite's `closed`, or a pg pool that is
+ * ending or ended. Never inferred from a failed statement alone, except for
+ * the closed-pool errors {@link isClosedRootError} recognizes.
+ */
+function rootClosed(db: DatabaseInterface): boolean {
+  const client = (db as unknown as RootShape).client as
+    | { closed?: unknown; ending?: unknown; ended?: unknown }
+    | undefined;
+  return (
+    client?.closed === true || client?.ending === true || client?.ended === true
+  );
+}
+
+function isClosedRootError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return (
+    /Cannot use a pool after calling end/i.test(message) ||
+    /PGlite is closed/i.test(message) ||
+    /pool is (?:closed|ended|ending)/i.test(message)
+  );
+}
+
+const DRAINER_START_WAIT_MS = 2_000;
+const DRAINER_MAX_WAIT_MS = 30_000;
+const DRAINER_MIN_WAIT_MS = 250;
+const DRAINER_MIN_BACKOFF_MS = 250;
+const DRAINER_MAX_BACKOFF_MS = 30_000;
+/** Consecutive thrown passes after which a drainer with no observed work stops. */
+const DRAINER_TRANSPORT_FAILURE_LIMIT = 5;
+/** How long observed backlog may persist before it is warned about. */
+const DRAINER_BACKLOG_WARN_MS = 30_000;
+
+interface ChangeFeedDrainer {
+  readonly root: WeakRef<DatabaseInterface>;
+  running: boolean;
+  trailing: boolean;
+  timer: ReturnType<typeof setTimeout> | null;
+  dueAt: number;
+  waitMs: number;
+  backoffMs: number;
+  transportFailures: number;
+  /** The last status reported work this drainer has not yet seen finished. */
+  observedWork: boolean;
+  backlogSince: number | null;
+  backlogWarned: boolean;
+  /** Closed root: never runs again. */
+  terminal: boolean;
+  /** A status said the other helpers are older; probe before the next pass. */
+  stale: boolean;
+  /** The probe result a reinstall was last attempted for. */
+  reinstallTriedFor: string | null;
+  /** A pass scheduled only as the throttle's trailing pass. */
+  trailingOnly: boolean;
+  trailingSince: number;
+  lastForegroundDrainAt: number;
+  /** A kick that marked owed work arrived while a pass was running. */
+  observedDuringPass: boolean;
+  /** Stopped by the test helper: no re-arm until the next kick. */
+  halted: boolean;
+  idleWaiters: Array<() => void>;
+}
+
+const drainers = new WeakMap<object, ChangeFeedDrainer>();
+/** Drainers with a pass scheduled or running (held for test settlement). */
+const activeDrainers = new Set<ChangeFeedDrainer>();
+
+function drainerFor(db: DatabaseInterface): ChangeFeedDrainer | null {
+  if (!isVerifiedRoot(db)) return null;
+  const key = db as unknown as object;
+  let drainer = drainers.get(key);
+  if (!drainer) {
+    drainer = {
+      root: new WeakRef(db),
+      running: false,
+      trailing: false,
+      timer: null,
+      dueAt: 0,
+      waitMs: DRAINER_START_WAIT_MS,
+      backoffMs: DRAINER_MIN_BACKOFF_MS,
+      transportFailures: 0,
+      observedWork: false,
+      backlogSince: null,
+      backlogWarned: false,
+      terminal: false,
+      stale: false,
+      reinstallTriedFor: null,
+      trailingOnly: false,
+      trailingSince: 0,
+      lastForegroundDrainAt: 0,
+      observedDuringPass: false,
+      halted: false,
+      idleWaiters: [],
+    };
+    drainers.set(key, drainer);
+  }
+  return drainer;
+}
+
+/** The root's first feed call in this process starts one pass. */
+function noteRootFeedCall(db: DatabaseInterface): void {
+  try {
+    if (!isVerifiedRoot(db)) return;
+    if (drainers.has(db as unknown as object)) return;
+    const drainer = drainerFor(db);
+    if (drainer) scheduleDrainer(drainer, APPEND_DRAIN_INTERVAL_MS);
+  } catch {
+    // Liveness is best-effort; it must never fail a caller.
+  }
+}
+
+function noteRootHelpersStale(db: DatabaseInterface): void {
+  const drainer = drainerFor(db);
+  if (drainer) drainer.stale = true;
+}
+
+/**
+ * Kick the root's drainer: one pass after the coalescing window, or a
+ * trailing pass when one is running.
+ */
+function kickChangeFeedDrainer(
+  db: DatabaseInterface,
+  observedWork = false,
+): void {
+  try {
+    const drainer = drainerFor(db);
+    if (!drainer || drainer.terminal) return;
+    // A status that reported unfinished work makes it owed: connection
+    // failures no longer stop the drainer until a status reports none.
+    if (observedWork) {
+      drainer.observedWork = true;
+      // The running pass may have taken its snapshot before this work
+      // existed: its own result must not clear it.
+      if (drainer.running) drainer.observedDuringPass = true;
+    }
+    drainer.halted = false;
+    drainer.trailingOnly = false;
+    scheduleDrainer(drainer, APPEND_DRAIN_INTERVAL_MS);
+  } catch {
+    // Liveness is best-effort; it must never fail a caller.
+  }
+}
+
+/**
+ * The throttle skipped a write-path drain on `db` (#5403). Arm one pass at
+ * the end of the window; it is skipped if a drain on the root ran after the
+ * skip.
+ */
+function armTrailingDrain(db: DatabaseInterface, delayMs: number): void {
+  try {
+    const drainer = drainerFor(db);
+    if (!drainer || drainer.terminal) return;
+    drainer.halted = false;
+    if (drainer.running) {
+      drainer.trailing = true;
+      return;
+    }
+    if (drainer.timer === null) {
+      drainer.trailingOnly = true;
+      drainer.trailingSince = Date.now();
+    }
+    scheduleDrainer(drainer, Math.max(0, delayMs));
+  } catch {
+    // Liveness is best-effort; it must never fail a caller.
+  }
+}
+
+/** Kick the drainer of the root a framework transaction on `db` commits on. */
+function kickDrainerAfterCommit(db: DatabaseInterface): void {
+  try {
+    // A staged entry this process knows was (or will be) committed is owed
+    // work: connection failures must not make the drainer give up on it
+    // until a pass shows the backlog gone.
+    if (isVerifiedRoot(db)) {
+      kickChangeFeedDrainer(db, true);
+      return;
+    }
+    deferUntilFrameworkCommit(db, (root) => kickChangeFeedDrainer(root, true));
+  } catch {
+    // Liveness is best-effort; it must never fail a caller.
+  }
+}
+
+function scheduleDrainer(drainer: ChangeFeedDrainer, delayMs: number): void {
+  if (drainer.terminal) return;
+  if (drainer.running) {
+    drainer.trailing = true;
+    return;
+  }
+  const dueAt = Date.now() + delayMs;
+  if (drainer.timer !== null) {
+    if (drainer.dueAt <= dueAt) return;
+    clearTimeout(drainer.timer);
+  }
+  drainer.dueAt = dueAt;
+  activeDrainers.add(drainer);
+  drainer.timer = setTimeout(() => {
+    drainer.timer = null;
+    void runDrainer(drainer);
+  }, delayMs);
+  // A pending re-arm must never keep a process alive.
+  (drainer.timer as { unref?: () => void }).unref?.();
+}
+
+function settleDrainerIdle(drainer: ChangeFeedDrainer): void {
+  if (drainer.running || drainer.timer !== null) return;
+  activeDrainers.delete(drainer);
+  const waiters = drainer.idleWaiters.splice(0);
+  for (const resolve of waiters) resolve();
+}
+
+function stopDrainer(drainer: ChangeFeedDrainer, terminal = false): void {
+  if (drainer.timer !== null) clearTimeout(drainer.timer);
+  drainer.timer = null;
+  drainer.trailing = false;
+  drainer.trailingOnly = false;
+  drainer.observedWork = false;
+  drainer.backoffMs = DRAINER_MIN_BACKOFF_MS;
+  if (terminal) drainer.terminal = true;
+  settleDrainerIdle(drainer);
+}
+
+function rearmDrainer(drainer: ChangeFeedDrainer, progressed: boolean): void {
+  drainer.backoffMs = progressed
+    ? DRAINER_MIN_BACKOFF_MS
+    : Math.min(DRAINER_MAX_BACKOFF_MS, drainer.backoffMs * 2);
+  scheduleDrainer(drainer, drainer.backoffMs);
+}
+
+type DrainerOutcome =
+  | { kind: 'skipped' }
+  | { kind: 'thrown'; error: unknown }
+  | { kind: 'error-row'; error: unknown }
+  | { kind: 'done'; detail: DrainDetail };
+
+async function runDrainer(drainer: ChangeFeedDrainer): Promise<void> {
+  const root = drainer.root.deref();
+  if (!root) {
+    stopDrainer(drainer, true);
+    return;
+  }
+  if (drainer.terminal || rootClosed(root)) {
+    stopDrainer(drainer, true);
+    return;
+  }
+  if (
+    drainer.trailingOnly &&
+    drainer.lastForegroundDrainAt > drainer.trailingSince
+  ) {
+    // A drain on the root ran after the skip that armed this pass.
+    drainer.trailingOnly = false;
+    settleDrainerIdle(drainer);
+    return;
+  }
+  drainer.trailingOnly = false;
+  if (rootClientInTransaction(root)) {
+    // A caller holds a transaction block open on the root's one session:
+    // detached work must never run inside it. Look again later.
+    rearmDrainer(drainer, false);
+    return;
+  }
+  drainer.running = true;
+  drainer.observedDuringPass = false;
+  let outcome: DrainerOutcome;
+  try {
+    outcome = await runOutsideWriteContext(() => drainerPass(drainer, root));
+  } catch (error) {
+    outcome = isDrainErrorRow(error)
+      ? { kind: 'error-row', error }
+      : { kind: 'thrown', error };
+  } finally {
+    drainer.running = false;
+  }
+  // A kick that arrived during the pass (a commit after the pass took its
+  // snapshot) is owed one more pass whatever this one concluded: an idle
+  // result must not discard it.
+  const kickedDuringPass = drainer.trailing;
+  const owedSincePassStart = drainer.observedDuringPass;
+  drainer.trailing = false;
+  drainer.observedDuringPass = false;
+  if (drainer.halted) {
+    settleDrainerIdle(drainer);
+    return;
+  }
+  try {
+    decideAfterPass(drainer, root, outcome);
+  } catch {
+    stopDrainer(drainer);
+  }
+  if (kickedDuringPass && !drainer.terminal) {
+    // Owed work recorded during the pass survives that pass's own result;
+    // only a later pass that saw it can clear it.
+    if (owedSincePassStart) drainer.observedWork = true;
+    scheduleDrainer(drainer, 0);
+  }
+  settleDrainerIdle(drainer);
+}
+
+async function drainerPass(
+  drainer: ChangeFeedDrainer,
+  root: DatabaseInterface,
+): Promise<DrainerOutcome> {
+  if (!rootHelperStates.has(root) || drainer.stale) {
+    drainer.stale = false;
+    const state = await getPostgresChangeFeedSchemaState(root);
+    if (
+      (state.helpers === 'usable-older' || state.helpers === 'mixed') &&
+      drainer.reinstallTriedFor !== state.probeKey &&
+      state.createdAtType === 'timestamp with time zone' &&
+      // Never on one shared session (PGlite): a caller's raw BEGIN can reach
+      // it between any check and the DDL, and a refused install would abort
+      // that caller. Such databases upgrade through bootstrap.
+      !rootClientTracksTransactions(root)
+    ) {
+      // Only here, detached, at most once per probe result (#5402): never on
+      // a caller's path, never repeated while nothing changed.
+      drainer.reinstallTriedFor = state.probeKey;
+      try {
+        await root.query(ENSURE_POSTGRES_CHANGE_FEED_SCHEMA);
+        noteRootHelperState(root, 'current');
+      } catch (error) {
+        warnHelperUpgradeRefusedOnce(root, state, error);
+      }
+    }
+  }
+  if (rootClientInTransaction(root)) return { kind: 'skipped' };
+  const useStatus = rootUsesStatusDrain(root);
+  const detail = await drainChangeFeedDetailed(root, {
+    waitMs: drainer.waitMs,
+    firstStatement: true,
+    background: true,
+  });
+  // Only a root that uses the status drain can report a fixed snapshot, and
+  // such a root is never one shared session (rootUsesStatusDrain).
+  if (detail.status !== 'fixed_snapshot' || !useStatus) {
+    return { kind: 'done', detail };
+  }
+  // The root's default isolation keeps a fixed snapshot. Drain once in a
+  // transaction of its own that reads committed data; publish after commit.
+  let inner: DrainDetail | null = null;
+  const transaction = root.transaction?.bind(root);
+  if (!transaction) return { kind: 'done', detail };
+  await transaction(async (tx: DatabaseInterface) => {
+    await tx.query('SET TRANSACTION ISOLATION LEVEL READ COMMITTED');
+    inner = await drainChangeFeedDetailed(tx, {
+      settle: false,
+      maxPasses: 1,
+      waitMs: drainer.waitMs,
+      statusDrain: true,
+      background: true,
+    });
+  });
+  const committed = inner as DrainDetail | null;
+  if (!committed) return { kind: 'done', detail };
+  publishSignals(root, committed.unsettledSignals);
+  return { kind: 'done', detail: committed };
+}
+
+function decideAfterPass(
+  drainer: ChangeFeedDrainer,
+  root: DatabaseInterface,
+  outcome: DrainerOutcome,
+): void {
+  if (outcome.kind === 'skipped') {
+    rearmDrainer(drainer, false);
+    return;
+  }
+  if (outcome.kind === 'thrown') {
+    if (rootClosed(root) || isClosedRootError(outcome.error)) {
+      // Closing the root ends its drainer, silently.
+      stopDrainer(drainer, true);
+      return;
+    }
+    drainer.transportFailures += 1;
+    warnDrainFailureOnce(root, outcome.error);
+    if (
+      !drainer.observedWork &&
+      drainer.transportFailures >= DRAINER_TRANSPORT_FAILURE_LIMIT
+    ) {
+      stopDrainer(drainer);
+      return;
+    }
+    // Observed work stays owed: keep retrying at the capped backoff.
+    rearmDrainer(drainer, false);
+    return;
+  }
+  drainer.transportFailures = 0;
+  if (outcome.kind === 'error-row') {
+    const code = String(
+      (outcome.error as { code?: unknown } | null)?.code ?? '',
+    );
+    if (code === '57014') {
+      drainer.waitMs = Math.max(
+        DRAINER_MIN_WAIT_MS,
+        Math.floor(drainer.waitMs / 2),
+      );
+    }
+    warnDrainFailureOnce(root, outcome.error);
+    drainer.observedWork = true;
+    rearmDrainer(drainer, false);
+    return;
+  }
+  const { detail } = outcome;
+  if (detail.helpersCurrent === false) drainer.stale = true;
+  if (detail.status === 'timeout') {
+    drainer.waitMs = Math.min(DRAINER_MAX_WAIT_MS, drainer.waitMs * 2);
+  } else if (detail.drained > 0) {
+    drainer.waitMs = DRAINER_START_WAIT_MS;
+  }
+  const owed =
+    statusWantsDrainer(detail) ||
+    detail.status === 'in_transaction' ||
+    (detail.backlog === null && detail.lastBatchFull);
+  noteObservedBacklog(drainer, root, detail.backlog === true || owed);
+  if (owed) {
+    drainer.observedWork = true;
+    rearmDrainer(drainer, detail.drained > 0);
+    return;
+  }
+  if (drainer.stale) {
+    // One more pass to probe and, if allowed, reinstall the helpers; the
+    // reinstall itself is attempted at most once per probe result.
+    rearmDrainer(drainer, true);
+    return;
+  }
+  stopDrainer(drainer);
+}
+
+function noteObservedBacklog(
+  drainer: ChangeFeedDrainer,
+  root: DatabaseInterface,
+  outstanding: boolean,
+): void {
+  if (!outstanding) {
+    drainer.backlogSince = null;
+    drainer.backlogWarned = false;
+    return;
+  }
+  const now = Date.now();
+  drainer.backlogSince ??= now;
+  if (
+    !drainer.backlogWarned &&
+    now - drainer.backlogSince >= DRAINER_BACKLOG_WARN_MS
+  ) {
+    drainer.backlogWarned = true;
+    try {
+      logger.warn(
+        'Change feed: entries staged inside transactions have stayed ' +
+          'unsequenced for 30 s while this process kept retrying. They are ' +
+          'durable but invisible to cursor readers until a drain reaches the ' +
+          'head of the log; check for long-held transactions on _smrt_changes.',
+        { database: safeDbKey(root) },
+      );
+    } catch {
+      // Logging must never propagate.
+    }
+  }
+}
+
+/**
+ * A loggable name for `db`: its connection string with credentials removed
+ * (a PostgreSQL URL can carry a password), never the raw cache key.
+ */
+function safeDbKey(db: DatabaseInterface): string {
+  try {
+    return redactDatabaseUrl(resolveDbCacheKey(db)) || '(unnamed)';
+  } catch {
+    return '(unkeyed)';
+  }
+}
+
+/**
+ * Resolve once no drainer in this process has a pass scheduled or running
+ * (test helper).
+ *
+ * @internal
+ */
+export async function settleChangeFeedDrainers(): Promise<void> {
+  for (;;) {
+    const busy = [...activeDrainers].filter(
+      (drainer) => drainer.running || drainer.timer !== null,
+    );
+    if (busy.length === 0) return;
+    await Promise.all(
+      busy.map(
+        (drainer) =>
+          new Promise<void>((resolve) => drainer.idleWaiters.push(resolve)),
+      ),
+    );
+  }
+}
+
+/**
+ * Stop every drainer's scheduled pass (test helper). A running pass still
+ * finishes.
+ *
+ * @internal
+ */
+export function stopChangeFeedDrainers(): void {
+  for (const drainer of [...activeDrainers]) {
+    // A running pass finishes but does not re-arm; the next kick resumes.
+    drainer.halted = true;
+    stopDrainer(drainer);
+  }
+}
+
+/**
+ * A snapshot of the root's drainer, or null when it has none (test helper).
+ *
+ * @internal
+ */
+export function changeFeedDrainerSnapshot(db: DatabaseInterface): {
+  scheduled: boolean;
+  running: boolean;
+  terminal: boolean;
+  waitMs: number;
+  transportFailures: number;
+  observedWork: boolean;
+  timerHasRef: boolean | null;
+} | null {
+  const drainer = drainers.get(db as unknown as object);
+  if (!drainer) return null;
+  const timer = drainer.timer as { hasRef?: () => boolean } | null;
+  return {
+    scheduled: drainer.timer !== null,
+    running: drainer.running,
+    terminal: drainer.terminal,
+    waitMs: drainer.waitMs,
+    transportFailures: drainer.transportFailures,
+    observedWork: drainer.observedWork,
+    timerHasRef:
+      timer && typeof timer.hasRef === 'function' ? timer.hasRef() : null,
+  };
 }
 
 /** Signals a drain produced but could not yet prove committed. */
@@ -1752,27 +2696,42 @@ async function publishVerifiedSignals(
   const p = placeholders(db);
   const rows = getQueryRows(
     await db.query(
-      `SELECT seq, table_name, row_id FROM ${CHANGE_FEED_TABLE} WHERE seq IN (${candidates
+      `SELECT seq, table_name, row_id, operation, CAST(tenant_id AS TEXT) AS tenant_id FROM ${CHANGE_FEED_TABLE} WHERE seq IN (${candidates
         .map((_, index) => p(index + 1))
         .join(', ')})`,
       ...candidates.map((signal) => signal.seq),
     ),
   );
-  const identity = (table: string, rowId: string | null) =>
-    `${table}\u0000${rowId ?? ''}`;
+  // The whole entry must match — table, row, operation and owner — so a
+  // sequence a rollback released and another entry took is never announced
+  // as the one queued.
+  const identity = (
+    table: string,
+    rowId: string | null,
+    operation: string,
+    tenantId: string | null,
+  ) => `${table}\u0000${rowId ?? ''}\u0000${operation}\u0000${tenantId ?? ''}`;
   const committed = new Map(
     rows.map((row) => [
       toSeqNumber(row.seq),
       identity(
         String(row.table_name ?? ''),
         row.row_id == null ? null : String(row.row_id),
+        String(row.operation ?? ''),
+        row.tenant_id == null ? null : String(row.tenant_id),
       ),
     ]),
   );
 
   const verified = candidates.filter(
     (signal) =>
-      committed.get(signal.seq) === identity(signal.table, signal.rowId),
+      committed.get(signal.seq) ===
+      identity(
+        signal.table,
+        signal.rowId,
+        String(signal.operation),
+        signal.tenantId ?? null,
+      ),
   );
   if (verified.length === 0) return candidates;
 
@@ -2285,6 +3244,9 @@ export async function getTableVersion(
   );
   const row = versionRows[0];
   const staged = toSeqNumber(row?.staged);
+  // A version read is a feed call too: on a root's first one, its drainer
+  // starts a pass, so a backlog left by a previous process gets sequenced.
+  noteRootFeedCall(db);
   const tableVersion = row?.version;
   if (tableVersion != null) {
     return toSeqNumber(tableVersion) + staged;
@@ -3045,4 +4007,6 @@ export function resetChangeFeedWarnings(): void {
   lastAppendDrain.clear();
   stagedSinceLastDrain.clear();
   deferredSignals.clear();
+  // Scheduled background drains are process state of the same kind (#5403).
+  stopChangeFeedDrainers();
 }

@@ -17,6 +17,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   drainChangeFeed,
   ensureChangeFeedTable,
+  ensurePostgresChangeFeedAppendFunction,
   ensurePostgresChangeFeedHelpers,
   probeChangeFeedHelperState,
   resetChangeFeedWarnings,
@@ -325,6 +326,68 @@ describe.skipIf(process.env.SMRT_TEST_PGLITE !== '1')(
       expect(Number(held.n)).toBe(0);
     });
 
+    it('keeps no lock after a pass whose batch comes back empty inside an open transaction', async () => {
+      // The candidate is seen, but its delete removes nothing (as when it
+      // was deleted while the pass waited): the pass found no work.
+      await db.query(`
+        CREATE OR REPLACE FUNCTION drain_status_keep_rows() RETURNS trigger
+        LANGUAGE plpgsql AS $keep$ BEGIN RETURN NULL; END; $keep$`);
+      await db.query(
+        `CREATE TRIGGER drain_status_keep_rows BEFORE DELETE ON _smrt_changes_pending
+         FOR EACH ROW EXECUTE FUNCTION drain_status_keep_rows()`,
+      );
+      await stageCommitted(db, SUBJECT, 'kept');
+      await db.query('BEGIN');
+      const rows = await statusDrain(db);
+      const held = await one(
+        db,
+        `SELECT count(*)::int AS n
+           FROM pg_locks
+          WHERE pid = pg_backend_pid()
+            AND (locktype = 'advisory'
+                 OR relation IN (to_regclass('_smrt_changes'),
+                                 to_regclass('_smrt_changes_pending')))`,
+      );
+      await db.query('ROLLBACK');
+      expect(rows).toEqual([
+        // The candidate is still there: another look is asked for.
+        expect.objectContaining({
+          status: 'empty',
+          drained_seq: null,
+          backlog_remaining: true,
+        }),
+      ]);
+      expect(Number(held.n)).toBe(0);
+    });
+
+    it('voids every entry of a pass whose sequencing fails after its rows were produced', async () => {
+      // An AFTER trigger runs once the sequencing statement has produced
+      // its rows; a lock timeout there must not read as a skipped pass.
+      await db.query(`
+        CREATE OR REPLACE FUNCTION drain_status_late_lock() RETURNS trigger
+        LANGUAGE plpgsql AS $late$
+        BEGIN
+          RAISE EXCEPTION 'lock wait ran out' USING ERRCODE = '55P03';
+        END;
+        $late$`);
+      await db.query(
+        `CREATE TRIGGER drain_status_late_lock AFTER INSERT ON _smrt_changes
+         FOR EACH ROW EXECUTE FUNCTION drain_status_late_lock()`,
+      );
+      await stageCommitted(db, SUBJECT, 'late');
+      const rows = await statusDrain(db);
+      expect(rows.some((row) => row.error_code === '55P03')).toBe(true);
+      expect(rows.some((row) => row.status != null)).toBe(false);
+      // The public drain voids those entries and reports nothing drained:
+      // contention, never thrown at the caller.
+      expect(await drainChangeFeed(db)).toBe(0);
+      expect(
+        Number(
+          (await one(db, 'SELECT count(*) AS n FROM _smrt_changes_pending')).n,
+        ),
+      ).toBe(1);
+    });
+
     it('purges sensitive rows alone without taking the head, and reports drained', async () => {
       await stageCommitted(db, SECRET, 'secret-1');
       await db.query('BEGIN');
@@ -390,7 +453,9 @@ describe.skipIf(process.env.SMRT_TEST_PGLITE !== '1')(
       );
       try {
         await db.query(`DROP FUNCTION ${STATUS_DRAIN}`);
-        await ensurePostgresChangeFeedHelpers(db);
+        // The explicit replacement (opportunistic upgrades skip a shared
+        // PGlite session).
+        await ensurePostgresChangeFeedAppendFunction(db);
         const grantees = await executeGrantees(db, STATUS_DRAIN);
         expect(grantees).toEqual(
           await executeGrantees(db, '_smrt_drain_changes(integer,text[])'),
@@ -433,28 +498,28 @@ describe.skipIf(process.env.SMRT_TEST_PGLITE !== '1')(
       expect(await probeChangeFeedHelperState(db)).toBe('usable-older');
     });
 
-    it('keeps working on v6 helpers when this role may not upgrade them, with one warning', async () => {
+    it('keeps working on v6 helpers and runs no opportunistic upgrade DDL on one shared session', async () => {
       await db.query(`DROP FUNCTION ${STATUS_DRAIN}`);
       await db.query(V6_DRAIN);
       for (const identity of [IDENTITIES[0], IDENTITIES[1], IDENTITIES[3]]) {
         await stripMarker(db, identity as string, MARKERS[0] as string);
       }
-      await createRuntimeRole(db);
-      await db.query(
-        `GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO ${RUNTIME_ROLE}`,
-      );
       await stageCommitted(db, SUBJECT, 'a');
-      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-      await db.query(`SET ROLE ${RUNTIME_ROLE}`);
-      await ensurePostgresChangeFeedHelpers(db);
+      const installs: string[] = [];
+      const query = db.query.bind(db);
+      (db as { query: unknown }).query = (sql: string, ...rest: unknown[]) => {
+        if (/^\s*DO\b/.test(sql)) installs.push(sql);
+        return query(sql, ...rest);
+      };
+      // A caller's raw BEGIN could reach this session between any check and
+      // the DDL; the upgrade is left to an explicit replacement.
       await ensurePostgresChangeFeedHelpers(db);
       expect(await drainChangeFeed(db)).toBe(1);
-      await db.query('RESET ROLE');
+      expect(installs).toHaveLength(0);
       expect(await probeChangeFeedHelperState(db)).toBe('usable-older');
-      const upgradeWarnings = warn.mock.calls.filter((call) =>
-        call.some((part) => String(part).includes('could not be upgraded')),
-      );
-      expect(upgradeWarnings).toHaveLength(1);
+      // The explicit replacement still upgrades it.
+      await ensurePostgresChangeFeedAppendFunction(db);
+      expect(await probeChangeFeedHelperState(db)).toBe('current');
     });
 
     it('names the owner upgrade when helpers older than v6 cannot be replaced', async () => {
@@ -486,9 +551,8 @@ describe.skipIf(process.env.SMRT_TEST_PGLITE !== '1')(
       await db.query(
         `GRANT EXECUTE ON FUNCTION ${STATUS_DRAIN} TO ${RUNTIME_ROLE} WITH GRANT OPTION`,
       );
-      // Force a reinstall: the probe sees an older body and reruns the install.
-      await stripMarker(db, IDENTITIES[1] as string, MARKERS[0] as string);
-      await ensurePostgresChangeFeedHelpers(db);
+      // Reinstall through the explicit replacement.
+      await ensurePostgresChangeFeedAppendFunction(db);
       const rows = rowsOf(
         await db.query(
           `SELECT acl.is_grantable

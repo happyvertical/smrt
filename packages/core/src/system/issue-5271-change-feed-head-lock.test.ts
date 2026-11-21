@@ -123,7 +123,9 @@ describe('change-feed head lock in the PostgreSQL helper bodies (#5271)', () => 
     expect(staged).not.toContain(RELATION_LOCK);
   });
 
-  it('drain: only TRIES the head lock, after the drain lock and a candidate check, before the purge and MAX', () => {
+  it('drain: without waitMs only TRIES the head lock, after the drain lock and a candidate check, before the purge and MAX', () => {
+    // Wait mode (#5403) lives in `IF v_wait THEN` branches, checked in
+    // change-feed-drain-status-ddl.test.ts; the try path is checked here.
     const body = DRAIN_BODY;
     const drainLock = body.indexOf("hashtext('change-feed-drain')");
     const candidate = body.indexOf('v_has_candidate :=', drainLock);
@@ -141,12 +143,22 @@ describe('change-feed head lock in the PostgreSQL helper bodies (#5271)', () => 
     expect(head).toBeGreaterThan(relation);
     expect(purge).toBeGreaterThan(head);
     expect(max).toBeGreaterThan(purge);
-    expect(body).not.toMatch(BLOCKING_HEAD);
-    // The only handler before MAX is the NOWAIT refusal; the locking block's
-    // no-work handler and the helper's own boundary close after it (#5402).
-    expect(body.slice(0, max).match(/EXCEPTION WHEN \w+/g)).toEqual([
-      'EXCEPTION WHEN lock_not_available',
-    ]);
+    // The blocking head wait exists only in wait mode, right after a budget
+    // step sets lock_timeout.
+    const blocking = indexOf(body, BLOCKING_HEAD);
+    expect(blocking).toBeGreaterThan(0);
+    const before = body.slice(
+      body.lastIndexOf('IF v_wait THEN', blocking),
+      blocking,
+    );
+    expect(before).toContain("PERFORM set_config('lock_timeout'");
+    expect(body.slice(blocking + 1)).not.toMatch(BLOCKING_HEAD);
+    // The only handlers before MAX are the NOWAIT refusals; the locking
+    // block's no-work handler and the helper's own boundary close after it
+    // (#5402).
+    expect(new Set(body.slice(0, max).match(/EXCEPTION WHEN \w+/g))).toEqual(
+      new Set(['EXCEPTION WHEN lock_not_available']),
+    );
     expect(body.indexOf('EXCEPTION WHEN query_canceled', max)).toBeGreaterThan(
       max,
     );
@@ -162,7 +174,6 @@ describe('change-feed head lock in the PostgreSQL helper bodies (#5271)', () => 
     for (const body of [
       CREATE_POSTGRES_CHANGE_FEED_APPEND_FUNCTION,
       CREATE_POSTGRES_CHANGE_FEED_APPEND_BATCH_FUNCTION,
-      DRAIN_BODY,
     ]) {
       const locks = body.split(RELATION_LOCK).length - 1;
       expect(locks).toBe(1);
@@ -172,6 +183,25 @@ describe('change-feed head lock in the PostgreSQL helper bodies (#5271)', () => 
       // Nothing but the guarded block sits between the check and the lock.
       expect(body.slice(guard, relation)).not.toContain('END IF;');
     }
+    // The drain (#5403) takes it in two places, try path and wait path, both
+    // NOWAIT and both reached only past the privilege check; a role without
+    // it takes the lock with a zero-row insert instead (see the status-drain
+    // DDL test).
+    const drainLocks = DRAIN_BODY.split(RELATION_LOCK);
+    expect(drainLocks).toHaveLength(3);
+    for (const rest of drainLocks.slice(1)) expect(rest).toMatch(/^ NOWAIT;/);
+    const columnGrant = DRAIN_BODY.indexOf(
+      "IF NOT has_table_privilege('_smrt_changes', 'INSERT, UPDATE, DELETE, TRUNCATE') THEN",
+    );
+    const tryLock = DRAIN_BODY.indexOf(RELATION_LOCK);
+    expect(columnGrant).toBeGreaterThan(0);
+    expect(DRAIN_BODY.slice(columnGrant, tryLock)).toContain(
+      'ELSIF NOT v_wait THEN',
+    );
+    const waitLock = DRAIN_BODY.indexOf(RELATION_LOCK, tryLock + 1);
+    const waitGuard = DRAIN_BODY.lastIndexOf(PRIVILEGE_GUARD, waitLock);
+    expect(waitGuard).toBeGreaterThan(tryLock);
+    expect(DRAIN_BODY.slice(waitGuard, waitLock)).not.toContain('END IF;');
   });
 
   it('decides to stage without consulting whether the staging table exists', () => {
