@@ -1,5 +1,11 @@
 # @happyvertical/smrt-scanner
 
+## 0.67.0
+
+### Patch Changes
+
+- @happyvertical/smrt-types@0.67.0
+
 ## 0.66.1
 
 ### Patch Changes
