@@ -79,6 +79,37 @@ describe('decorator source recognition, as the base scanner reads it', () => {
     expect(sensitive).toBe(true);
   });
 
+  it("flags a shared options constant handed to another library's renamed field decorator", async () => {
+    const root = mkdtempSync(join(tmpdir(), 'smrt-decorator-source-'));
+    roots.push(root);
+    mkdirSync(join(root, 'src/models'), { recursive: true });
+    writeFileSync(
+      join(root, 'package.json'),
+      JSON.stringify({
+        name: PACKAGE,
+        version: '0.0.0',
+        dependencies: { '@happyvertical/smrt-core': '*', 'forms-lib': '*' },
+      }),
+    );
+    // The other library's decorator may change POLICY's nested values, which
+    // the model decorator's spread shares, so the scanner cannot trust them.
+    writeFileSync(
+      join(root, 'src/models/Account.ts'),
+      `import { SmrtObject, smrt } from '@happyvertical/smrt-core';\nimport { field as formField } from 'forms-lib';\nconst POLICY = { api: { include: ['list'] } };\n@smrt({ ...POLICY })\nexport class Account extends SmrtObject {\n  @formField(POLICY)\n  label: string = '';\n}\n`,
+    );
+    let flagged: boolean;
+    try {
+      const { results } = await new OxcScanner({
+        cwd: root,
+        include: ['src/**/*.ts'],
+      }).scanAndResolve();
+      flagged = results.errors.some((error) => error.severity === 'error');
+    } catch {
+      flagged = true;
+    }
+    expect(flagged).toBe(true);
+  });
+
   it("neither reads nor fails on another library's decorator under a computed constant key", async () => {
     const { errors, sensitive } = await apiSecret(
       "import * as forms from 'forms-lib';\nconst KEY = 'field';",

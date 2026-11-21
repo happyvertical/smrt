@@ -234,9 +234,9 @@ export interface RawFieldDefinition {
  */
 export interface RawDecorator {
   /**
-   * Decorator name as exported (e.g., "field", "foreignKey"), whatever local
-   * name it was imported under: `import { field as f }` then `@f()` and
-   * `import * as core` then `@core.field()` both read as `field`.
+   * The decorator's local identifier (e.g., "field", "foreignKey"), as written
+   * at the use site. A field decorator under a renamed import (`@f()`) keeps
+   * that local name, and a namespace member (`@core.field()`) is not read.
    */
   name: string;
 

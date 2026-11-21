@@ -1517,8 +1517,9 @@ export function extractModuleObjectConstants(
 
 /**
  * Build the context every decorator reader in one file shares: the module
- * constant table, same-file enum members, and the import tables used to
- * recognize a decorator reached through an alias or a namespace.
+ * constant table, same-file enum members, the import-alias table that names a
+ * class or method decorator through a renamed import, and the import-binding
+ * table the reference proof uses.
  */
 function createDecoratorConfigContext(
   body: Statement[],
@@ -2300,14 +2301,15 @@ function hasNestedReferenceValue(value: unknown): boolean {
  * Whether `node` is the call of a decorator this scanner reads, as opposed to
  * an arbitrary function the constant would escape into. `parent` is the
  * node's direct ancestor.
+ *
+ * The decorator is named by its local identifier, as the base scanner names
+ * it here and as the field reader names a field decorator: a call through a
+ * renamed import (`import { field as formField } from 'other-lib'`) is not
+ * trusted as a read-only SMRT call, so a constant passed to it escapes.
  */
 function isReadDecoratorCall(
   node: Record<string, unknown>,
   parent: Record<string, unknown> | undefined,
-  imports: {
-    importAliases?: Map<string, string>;
-    importBindings?: Map<string, ImportBinding>;
-  },
 ): boolean {
   if (
     node.type !== 'CallExpression' ||
@@ -2316,10 +2318,7 @@ function isReadDecoratorCall(
   ) {
     return false;
   }
-  const name = resolveDecoratorName(
-    parent as unknown as Decorator,
-    imports.importAliases,
-  );
+  const name = resolveDecoratorName(parent as unknown as Decorator);
   return name !== null && READ_DECORATOR_NAMES.has(name);
 }
 
@@ -2327,7 +2326,9 @@ function isSafeModuleConstantReference(
   identifier: Record<string, unknown>,
   ancestors: Array<Record<string, unknown>>,
   constants: Map<string, ModuleConstant>,
-  imports: {
+  // Decorator calls are named by their local identifier (`isReadDecoratorCall`),
+  // so the import tables are not consulted here.
+  _imports: {
     importAliases?: Map<string, string>;
     importBindings?: Map<string, ImportBinding>;
   } = {},
@@ -2410,7 +2411,7 @@ function isSafeModuleConstantReference(
       // whatever receives the copy. A decorator this scanner reads does not
       // mutate its config; anything else might.
       return ancestors.some((ancestor, at) =>
-        isReadDecoratorCall(ancestor, ancestors[at - 1], imports),
+        isReadDecoratorCall(ancestor, ancestors[at - 1]),
       );
     }
 
@@ -2439,7 +2440,7 @@ function isSafeModuleConstantReference(
       Array.isArray(parent.arguments) &&
       parent.arguments.includes(child)
     ) {
-      return isReadDecoratorCall(parent, ancestors[index - 1], imports);
+      return isReadDecoratorCall(parent, ancestors[index - 1]);
     }
 
     // The initializer of a static property the scanner reads into the
