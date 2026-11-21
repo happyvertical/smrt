@@ -1352,11 +1352,17 @@ export class AppRuntime {
   }
 
   async remove(model: string, id: string, db: Handle = this.db) {
-    const obj: any = await (await this.collection(model, db)).get(id);
-    if (!obj) throw new AppError(`no ${model} ${id}`);
-    await obj.delete();
-    if (db === this.db) this.caps?.noteRemoved(model);
-    return { deleted: id };
+    const del = async () => {
+      const obj: any = await (await this.collection(model, db)).get(id);
+      if (!obj) throw new AppError(`no ${model} ${id}`);
+      await obj.delete();
+      if (db === this.db) this.caps?.noteRemoved(model);
+      return { deleted: id };
+    };
+    // Lookup and delete are one locked unit (a method's own deletes run on its
+    // transaction handle, already under the lock): two removes of one record
+    // must not both find it and both lower the cached count.
+    return db === this.db ? this.locked(del) : del();
   }
 
   /** Create records of a template with their ids (references stay valid). */
@@ -1496,56 +1502,61 @@ export class AppRuntime {
         // The transaction takes core's per-database write queue first (as an
         // ordinary model save does), so a concurrent create/update/delete can
         // never hold the queue while waiting on this transaction's lock.
-        const applied = await this.locked(() =>
-          withEmbeddedWriteTransaction(
-            this.db,
-            isEmbeddedDatabase(this.db),
-            async (tx: Handle) => {
-              // A server has other connections: hold their writes off until this
-              // transaction ends, so the re-read below stays true (the embedded
-              // databases have the one connection already).
-              if (this.database.kind === 'postgres')
-                for (const table of [
-                  ...new Set(
-                    Object.entries(this.def.models).map(([m, md]) =>
-                      tableFor(m, md),
+        const applied = await this.locked(async () => {
+          try {
+            return await withEmbeddedWriteTransaction(
+              this.db,
+              isEmbeddedDatabase(this.db),
+              async (tx: Handle) => {
+                // A server has other connections: hold their writes off until this
+                // transaction ends, so the re-read below stays true (the embedded
+                // databases have the one connection already).
+                if (this.database.kind === 'postgres')
+                  for (const table of [
+                    ...new Set(
+                      Object.entries(this.def.models).map(([m, md]) =>
+                        tableFor(m, md),
+                      ),
                     ),
-                  ),
-                ].sort())
-                  await tx.query(this.dialect.writeLock(table));
-              const now = await this.methodData(tx);
-              const nowRecord = id ? await this.get(model, id, tx) : null;
-              if (
-                JSON.stringify([now, nowRecord]) !==
-                JSON.stringify([data, record])
-              )
-                return null;
-              await this.checkWrites(writes, tx);
-              const adds: Record<string, number> = {};
-              for (const w of writes)
-                if (w.op === 'create') adds[w.model] = (adds[w.model] ?? 0) + 1;
-              for (const w of writes)
-                if (w.op === 'delete') adds[w.model] = (adds[w.model] ?? 0) - 1;
-              if (this.caps) await this.caps.checkAdd(adds, tx, true);
-              let n = 0;
-              for (const w of writes) {
-                if (w.op === 'create')
-                  await this.create(
-                    w.model,
-                    w.data ?? {},
-                    { capChecked: true },
-                    tx,
-                  );
-                else if (w.op === 'update')
-                  await this.update(w.model, String(w.id), w.data ?? {}, tx);
-                else await this.remove(w.model, String(w.id), tx);
-                n++;
-              }
-              return n;
-            },
-          ),
-        );
-        this.caps?.invalidate();
+                  ].sort())
+                    await tx.query(this.dialect.writeLock(table));
+                const now = await this.methodData(tx);
+                const nowRecord = id ? await this.get(model, id, tx) : null;
+                if (
+                  JSON.stringify([now, nowRecord]) !==
+                  JSON.stringify([data, record])
+                )
+                  return null;
+                await this.checkWrites(writes, tx);
+                const adds: Record<string, number> = {};
+                for (const w of writes)
+                  if (w.op === 'create')
+                    adds[w.model] = (adds[w.model] ?? 0) + 1;
+                for (const w of writes)
+                  if (w.op === 'delete')
+                    adds[w.model] = (adds[w.model] ?? 0) - 1;
+                if (this.caps) await this.caps.checkAdd(adds, tx, true);
+                let n = 0;
+                for (const w of writes) {
+                  if (w.op === 'create')
+                    await this.create(
+                      w.model,
+                      w.data ?? {},
+                      { capChecked: true },
+                      tx,
+                    );
+                  else if (w.op === 'update')
+                    await this.update(w.model, String(w.id), w.data ?? {}, tx);
+                  else await this.remove(w.model, String(w.id), tx);
+                  n++;
+                }
+                return n;
+              },
+            );
+          } finally {
+            this.caps?.invalidate();
+          }
+        });
         if (applied === null) {
           if (attempt >= METHOD_RETRIES)
             throw new AppError(

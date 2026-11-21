@@ -251,7 +251,18 @@ describe.each([
         body: JSON.stringify({ t: 'p5' }),
       }),
     ]);
-    expect(mixed.length).toBe(5);
+    const ok = mixed.filter(
+      (m) =>
+        m.status === 'fulfilled' &&
+        !(
+          m.value &&
+          typeof m.value === 'object' &&
+          ('status' in m.value
+            ? (m.value as { status: number }).status >= 300
+            : (m.value as { isError?: boolean }).isError === true)
+        ),
+    );
+    expect(ok).toHaveLength(1);
     expect(await host.list('A')).toHaveLength(3);
   });
 
@@ -292,6 +303,61 @@ describe.each([
       fields: {},
     }).catch((e) => e);
     expect(boot.details).toMatchObject({ code: 'app_limit', cap: 'maxModels' });
+  });
+
+  it('two parallel removes of one record lower the count once', async () => {
+    const { host, run } = await open(kind, { maxRows: 2 });
+    await run({
+      type: 'defineModel',
+      name: 'A',
+      fields: { t: { type: 'text' } },
+    });
+    const a = await host.create('A', { t: '1' });
+    await host.create('A', { t: '2' });
+    const out = await Promise.allSettled([
+      host.remove('A', String(a.id)),
+      host.remove('A', String(a.id)),
+    ]);
+    expect(out.filter((o) => o.status === 'fulfilled')).toHaveLength(1);
+    await host.create('A', { t: '3' });
+    await expect(host.create('A', { t: '4' })).rejects.toThrow(/maxRows/);
+    expect(await host.list('A')).toHaveLength(2);
+  });
+
+  it('the lock is released after a failed create', async () => {
+    const { host, run } = await open(kind, { maxRows: 5 });
+    await run({
+      type: 'defineModel',
+      name: 'A',
+      fields: { t: { type: 'text', required: true } },
+    });
+    await expect(host.create('A', {})).rejects.toThrow();
+    await host.create('A', { t: 'ok' });
+    expect(await host.list('A')).toHaveLength(1);
+  });
+
+  it('a method racing a create never takes the app past the cap', async () => {
+    const { host, run } = await open(kind, { maxRows: 2 });
+    await run({
+      type: 'defineModel',
+      name: 'A',
+      fields: { t: { type: 'text' } },
+    });
+    await run({
+      type: 'addMethod',
+      model: 'A',
+      name: 'add',
+      method: {
+        description: 'add',
+        code: `app.create('A', { t: 'm' }); return 1;`,
+      },
+    });
+    await host.create('A', { t: 'seed' });
+    await Promise.allSettled([
+      host.runMethod('A', 'add'),
+      host.create('A', { t: 'racer' }),
+    ]);
+    expect(await host.list('A')).toHaveLength(2);
   });
 
   it('a POST with an extra path segment is held to the cap too', async () => {

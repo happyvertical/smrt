@@ -591,10 +591,15 @@ method's total check is on the SIGNED net change (creates minus deletes);
 each model's own cap is on that model's growth.
 
 Counting is the same `COUNT(*)` on SQLite and PostgreSQL, one per model table,
-cached; the engine's own single create/remove moves the cache, a REST/tool
-write, import, method or migration drops it so the next check recounts. It is
-never a scan per write. Migration steps are counted before and after inside
-their transaction, so a refusal rolls the step back. Not enforced: storage
+cached. The engine's own single create and remove (a remove is also under the
+lock) move the cache; a REST/tool write, import, method or migration drops it,
+so the NEXT capped create after one of those recounts every model table once,
+under the lock. That is one `COUNT(*)` per table per such write, not a scan per
+engine write; an app that writes mostly over REST pays it each time. Migration
+steps are counted before and after inside their transaction, so a refusal
+rolls the step back. Undo (`undoTo`, restoring archived rows or a deleted
+model) is exempt from the caps: it restores what the app already held.
+Not enforced: storage
 bytes (the cloud profile meters storage separately), requests per period and
 the 429 rate limit (core hooks, #5195), and the owner notice. The method-run
 window lives in the worker, so it starts again on every worker start: each
