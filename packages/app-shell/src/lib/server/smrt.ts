@@ -27,7 +27,7 @@ import { createProviderReadinessProbe } from '@happyvertical/smrt-app-runtime';
 import { createSmrtSvelteKitRuntime } from '@happyvertical/smrt-app-runtime/sveltekit';
 import './registry.ts';
 import '../objects/index.ts';
-import { appLimitsFromEnv } from './app-limits-env.ts';
+import { appLimitsFromEnv, workerLimitsFromEnv } from './app-limits-env.ts';
 import { installChangeFeedPolicy } from './change-feed.ts';
 import {
   configureShell,
@@ -116,6 +116,8 @@ configureShell({
   // Hosted only (the desktop ignores it): how many apps this process keeps.
   lifecycle: lifecycleFromEnv(),
   // Cloud only: the operator's per-app caps (none set: uncapped).
+  // Cloud on PostgreSQL: cancel one app's runaway statement (none set: no limit).
+  workerLimits: workerLimitsFromEnv(),
   appLimits: operatorLimits ? () => operatorLimits : undefined,
   // Cloud only (a local owner's app is a file in the data root).
   appDatabase: cloudAppDatabase(),

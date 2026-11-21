@@ -100,7 +100,8 @@ scans for it.
   engine never creates a schema and never falls back to `public`. Core is
   untouched. The role and policies of a hosted deployment are #5188/#5189.
 - **Statement timeout (#5192).** `HostOptions.workerLimits.statementTimeoutMs`
-  (shell: `ShellContext.workerLimits`) makes `scopeDatabase` also run
+  (shell: `ShellContext.workerLimits`, set in `smrt.ts` from
+  `SMRT_APP_SHELL_STATEMENT_TIMEOUT_MS`, unset means none; #5503) makes `scopeDatabase` also run
   `set_config('statement_timeout', '<n>ms', true)` as the first statement of
   every transaction it opens (`SET LOCAL`'s effect): the server cancels any one
   statement that runs longer (57014), the transaction rolls back, the call

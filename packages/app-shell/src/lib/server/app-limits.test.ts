@@ -3,7 +3,7 @@
 // passes none. SQLite, two tenants, no containers.
 import { afterEach, describe, expect, it } from 'vitest';
 import { App } from '../objects/App.ts';
-import { appLimitsFromEnv } from './app-limits-env.ts';
+import { appLimitsFromEnv, workerLimitsFromEnv } from './app-limits-env.ts';
 import { type CloudHarness, openCloudShell } from './cloud-test-support.ts';
 import { startDraftWith } from './drafts.ts';
 import { getDraftSlot, getHost, hostMetrics, sweepIdleHosts } from './host.ts';
@@ -131,5 +131,18 @@ describe('appLimitsFromEnv', () => {
     expect(() =>
       appLimitsFromEnv({ SMRT_APP_SHELL_MAX_METHOD_RUNS: '5' }),
     ).toThrow(/PERIOD_MS/);
+  });
+});
+
+describe('workerLimitsFromEnv', () => {
+  it('reads the statement timeout, is undefined when unset, refuses a bad one', () => {
+    expect(workerLimitsFromEnv({})).toBeUndefined();
+    expect(
+      workerLimitsFromEnv({ SMRT_APP_SHELL_STATEMENT_TIMEOUT_MS: '5000' }),
+    ).toEqual({ statementTimeoutMs: 5000 });
+    for (const bad of ['0', '-1', '2.5', 'soon'])
+      expect(() =>
+        workerLimitsFromEnv({ SMRT_APP_SHELL_STATEMENT_TIMEOUT_MS: bad }),
+      ).toThrow(/STATEMENT_TIMEOUT_MS/);
   });
 });
