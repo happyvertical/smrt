@@ -1448,8 +1448,9 @@ retries, and its `reason` is one typed code:
   set). Full request and response text of a call is stored only when
   transcripts are enabled.
 - **Privacy.** Trajectories hold user data. An event payload is redacted
-  before it is stored, on the same path transcripts use, and the host
-  redactor sees the run's tenant. When a trajectory is read, the built-in
+  before it is stored, on the same path transcripts use: the host redactor
+  sees the run's tenant, and the caller can hand the exact secrets and
+  sensitive values to mask. When a trajectory is read, the built-in
   redactor runs again (never the host's), and the head and tail kept from a
   truncated payload are masked as text.
 
