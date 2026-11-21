@@ -20,6 +20,7 @@ import {
   openHost,
   setDraftSlot,
   sweepIdleHosts,
+  withAppLease,
 } from './host.ts';
 import { HostLifecycle, lifecycleFromEnv } from './host-lifecycle.ts';
 import { runAs } from './owner.ts';
@@ -411,6 +412,50 @@ describe('a workflow keeps its app open', () => {
     // Done: now A is idle like any other, and B takes the place.
     expect((await other).dataDir).toContain(b.tenantId);
     expect(slot?.host?.appAlive).toBe(false); // closed with its app, none orphaned
+  });
+});
+
+describe('the workflow lease edges', () => {
+  it('a workflow that is the first call of a cloud process still holds its app', async () => {
+    clock = 1_000_000;
+    cloud = await openCloudShell({
+      lifecycle: { idleMs: IDLE, minIdleMs: 0, handoutMs: 20, now },
+    });
+    const { a } = cloud;
+    await runAs(a, () =>
+      withAppLease(async () => {
+        await getHost();
+        await settled(); // the hand-out is over; only the workflow lease holds
+        clock += IDLE * 2;
+        expect(await sweepIdleHosts()).toBe(0);
+      }),
+    );
+    await settled();
+    clock += IDLE * 2;
+    expect(await sweepIdleHosts()).toBe(1); // released with the workflow
+  });
+
+  it('a draft host is refused, and closed, once its app has been evicted', async () => {
+    const { a } = await twoOwners();
+    await runAs(a, () => getHost());
+    await settled();
+    clock += IDLE * 2;
+    expect(await sweepIdleHosts()).toBe(1); // the app is gone, holder and all
+    const close = vi.fn(async () => {});
+    await expect(
+      runAs(a, async () =>
+        setDraftSlot({
+          id: 'd',
+          name: 'late',
+          dir: '/nowhere',
+          host: { close } as never,
+          problem: null,
+        }),
+      ),
+    ).rejects.toThrow(/closed while its draft/);
+    expect(close).toHaveBeenCalled();
+    // Nothing attached to a fresh holder: the next open finds no draft.
+    expect(await runAs(a, () => getDraftSlot())).toBeNull();
   });
 });
 

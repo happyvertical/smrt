@@ -325,6 +325,13 @@ async function currentHolder(): Promise<Holder> {
   return holderOf(tenantId, tenantId);
 }
 
+/** The key `currentHolderSync` would use, without creating the holder. */
+function currentHolderKeySync(): string {
+  const profile = profileCache;
+  if (!profile) throw new Error('the shell profile is not resolved yet');
+  return profile === 'local' ? 'local' : requestTenant();
+}
+
 /** Sync form, for the few sync callers; the profile is cached by then. */
 function currentHolderSync(): Holder {
   const profile = profileCache;
@@ -639,21 +646,22 @@ export async function getDraftSlot(): Promise<DraftSlot | null> {
 
 /** drafts.ts only: record the draft that just opened, or null once it is gone. */
 export function setDraftSlot(slot: DraftSlot | null): void {
-  const holder = currentHolderSync();
   // A draft host must never attach to an app that is closing or already
-  // closed (its holder gone): nothing would ever close it, and the next open
-  // would start a second draft worker on the same directory.
-  if (
-    slot?.host &&
-    lifecycleOn() &&
-    (holder.evicting || holders.get(holder.key) !== holder)
-  ) {
-    void slot.host.close().catch(() => {});
-    throw new EngineError(
-      'the app was closed while its draft was starting; try again',
-      'refused',
-    );
+  // closed: nothing would ever close it, and the next open would start a
+  // second draft worker on the same directory. Look the holder up WITHOUT
+  // creating one: after an eviction `holderOf` would hand back a fresh,
+  // unopened holder that looks fine.
+  if (slot?.host && lifecycleOn()) {
+    const existing = holders.get(currentHolderKeySync());
+    if (!existing || existing.evicting) {
+      void slot.host.close().catch(() => {});
+      throw new EngineError(
+        'the app was closed while its draft was starting; try again',
+        'refused',
+      );
+    }
   }
+  const holder = currentHolderSync();
   if (slot?.host && lifecycleOn()) slot.host = leased(holder, slot.host);
   holder.slotRef = slot;
 }
@@ -769,6 +777,7 @@ function leased(holder: Holder, host: AppHost): AppHost {
  * keeps the app from being evicted between its steps. A no-op without a policy.
  */
 export async function withAppLease<T>(fn: () => Promise<T>): Promise<T> {
+  await shellProfile(); // lifecycleOn() reads the cached profile
   if (!lifecycleOn()) return fn();
   await getHost(); // opened, and handed out: that lease covers the next line
   const holder = await currentHolder();
