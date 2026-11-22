@@ -210,4 +210,40 @@ describe('Issue #1540 (facet 2): tenant-context establishment', () => {
     expect(collectionRoute).not.toContain('body.tenantId');
     expect(collectionRoute).not.toContain('body.userId');
   });
+
+  it('scopes a singleton STI base to its manifest, but not a plain model', async () => {
+    await generate({
+      packageName: '@test/sti',
+      objects: {
+        Doc: {
+          className: 'Doc',
+          collection: 'docs',
+          fields: { title: { type: 'text' } },
+          methods: {},
+          decoratorConfig: {
+            tableStrategy: 'sti',
+            api: { include: ['list', 'get', 'create', 'update', 'delete'] },
+          },
+        },
+        Plain: {
+          className: 'Plain',
+          collection: 'plains',
+          fields: { title: { type: 'text' } },
+          methods: {},
+          decoratorConfig: { api: { include: ['list', 'get'] } },
+        },
+      },
+    } as unknown as SmartObjectManifest);
+
+    for (const suffix of ['docs/+server.ts', 'docs/[id]/+server.ts']) {
+      const route = findRouteContent(suffix);
+      expect(route).toContain(
+        'const TENANCY_MODEL_SCOPE: ReadonlySet<string> = new Set(["@test/sti:Doc"]);',
+      );
+      expect(route).toContain('modelScope: TENANCY_MODEL_SCOPE');
+    }
+    for (const suffix of ['plains/+server.ts', 'plains/[id]/+server.ts']) {
+      expect(findRouteContent(suffix)).not.toContain('TENANCY_MODEL_SCOPE');
+    }
+  });
 });

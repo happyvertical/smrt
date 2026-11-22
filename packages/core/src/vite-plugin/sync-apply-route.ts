@@ -228,6 +228,8 @@ export function syncModelScope(
     ([, objectDef]) => !isCollectionManifestClass(manifest, objectDef),
   );
   const hasStiAncestor = (objectDef: SmartObjectDefinition): boolean => {
+    // A singleton STI base is a family too: it must exclude later subtypes.
+    if (objectDef.decoratorConfig?.tableStrategy === 'sti') return true;
     const seen = new Set<string>();
     let child = objectDef;
     let parentName = child.extendsQualified || child.extends;
