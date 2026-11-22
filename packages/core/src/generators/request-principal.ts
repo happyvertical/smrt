@@ -19,6 +19,7 @@
 
 import { resolveOperationPermissionAlias } from '../operation-permission.js';
 import { resolvePermissionCollection } from '../permission-collection.js';
+import { readonlySetOf } from '../readonly-collections';
 import { ObjectRegistry } from '../registry';
 import type { SettledRequestPrincipal } from '../request-actor';
 import { tenantOwnershipFields } from '../tenant-read-scope';
@@ -165,14 +166,14 @@ export function normalizeRequestPrincipal(
     ) {
       throw new TypeError('principal.permissions must be an iterable of slugs');
     }
-    const slugs = new Set<string>();
+    const slugs: string[] = [];
     for (const slug of raw.permissions as Iterable<unknown>) {
       if (typeof slug !== 'string') {
         throw new TypeError('principal.permissions must hold strings only');
       }
-      slugs.add(slug);
+      slugs.push(slug);
     }
-    permissions = slugs;
+    permissions = readonlySetOf(slugs);
   }
   const optionalText = (key: 'userId' | 'callerKind') => {
     const entry = raw[key];
@@ -189,7 +190,7 @@ export function normalizeRequestPrincipal(
     allowCrossTenant: raw.allowCrossTenant === true,
     authenticated: raw.authenticated === true,
     ...(userId !== undefined ? { userId } : {}),
-    ...(permissions ? { permissions } : {}),
+    permissions: permissions ?? readonlySetOf<string>([]),
     ...(callerKind !== undefined ? { callerKind } : {}),
     superAdminBypass: raw.superAdminBypass === true,
   });

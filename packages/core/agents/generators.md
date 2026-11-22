@@ -95,7 +95,12 @@ request as received, and passes the result (`ResolvedRequestPrincipal`,
 actions, each `sync/apply` item, subtype re-checks, `_changes`, `_events`,
 `_inference` and `_preflight`. Rebuilt requests (sync items, subtype checks)
 never resolve it again. A throw, or a value of the wrong shape, is a 500 that
-carries only a request id. Permissions are copied into a `Set` once. The
+carries only a request id. Permissions are copied once into a read-only view
+(`ReadonlySetView`, `src/readonly-collections.ts`: a private store, no `Set`
+slot, so neither its own nor `Set.prototype` mutators change it; `forEach`
+passes the view); an absent list is an empty view. The actor's permissions
+(`resolveRequestActor`) and the resolved tenancy's `members` / `admitted` /
+`creatable` are the same kind of view, copied from their source. The
 answer is kept per request object (`requestPrincipals`, carried to the
 request an `authMiddleware` returns); a request without one is a 500, never
 another caller. With `resolvePrincipal` configured, `resolveTenant` (kept

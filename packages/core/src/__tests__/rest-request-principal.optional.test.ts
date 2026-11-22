@@ -31,6 +31,7 @@ import {
 } from '../generators/rest.js';
 import { SmrtObject } from '../object.js';
 import { ObjectRegistry, smrt } from '../registry.js';
+import { getResolvedTenancy } from '../request-tenancy.js';
 import { setRequestTenantContextHooks } from '../request-tenant-context.js';
 import { getTestDatabase } from '../testing/database.js';
 
@@ -56,10 +57,14 @@ class PrincipalNote extends SmrtObject {
 
   tenantId: string | null = null;
 }
+/** What a test runs inside the `archive` action, when set. */
+let archiveProbe: (() => void) | undefined;
+
 class PrincipalNoteCollection extends SmrtCollection<PrincipalNote> {
   static readonly _itemClass = PrincipalNote;
 
   async archive(): Promise<{ archived: boolean }> {
+    archiveProbe?.();
     return { archived: true };
   }
 
@@ -317,6 +322,128 @@ for (const type of ['sqlite', 'postgres'] as const) {
         expect(
           (await send(refusesAll, 'writer', 'GET', noteSegment())).status,
         ).toBe(403);
+      });
+    });
+
+    describe('a read-only principal', () => {
+      afterEach(() => {
+        archiveProbe = undefined;
+      });
+
+      /** Try every mutator on a permission view; returns what happened. */
+      const tryMutations = (
+        view: ReadonlySet<string> | undefined,
+        extra: string,
+      ): string[] => {
+        const mutable = view as unknown as Set<string>;
+        const outcomes: string[] = [];
+        for (const [name, attempt] of [
+          ['add', () => mutable.add(extra)],
+          ['delete', () => mutable.delete([...(view ?? [])][0] ?? extra)],
+          ['clear', () => mutable.clear()],
+          ['Set.prototype.add', () => Set.prototype.add.call(view, extra)],
+          ['Set.prototype.clear', () => Set.prototype.clear.call(view)],
+        ] as const) {
+          try {
+            attempt();
+            outcomes.push(`${name}: changed`);
+          } catch {
+            outcomes.push(`${name}: refused`);
+          }
+        }
+        return outcomes;
+      };
+      const allRefused = [
+        'add: refused',
+        'delete: refused',
+        'clear: refused',
+        'Set.prototype.add: refused',
+        'Set.prototype.clear: refused',
+      ];
+      /** Every way of reading a set, as one comparable record. */
+      const readAll = (view: ReadonlySet<string>) => {
+        const forEachEntries: string[] = [];
+        let collectionArg: unknown;
+        view.forEach((value, _key, collection) => {
+          forEachEntries.push(value);
+          collectionArg = collection;
+        });
+        const iterated: string[] = [];
+        for (const value of view) iterated.push(value);
+        return {
+          size: view.size,
+          spread: [...view].sort(),
+          iterated: iterated.sort(),
+          forEach: forEachEntries.sort(),
+          collectionIsView: collectionArg === view,
+        };
+      };
+
+      it('a hook cannot add a permission, and reading is unchanged', async () => {
+        const createSlug = slug('PrincipalNote', 'create');
+        const hookOutcomes: string[][] = [];
+        const hookReads: unknown[] = [];
+        const api = handler({
+          onRequest: (principal) => {
+            const view = principal?.permissions as ReadonlySet<string>;
+            hookOutcomes.push(tryMutations(view, createSlug));
+            hookReads.push(readAll(view));
+            return undefined;
+          },
+        });
+        // The reader holds no permission; its hook tries to add one.
+        const created = await send(api, 'reader', 'POST', noteSegment(), {
+          title: 'new',
+        });
+        expect(created.status).toBe(403);
+        expect(hookOutcomes).toEqual([allRefused]);
+        expect(hookReads).toEqual([
+          {
+            size: 0,
+            spread: [],
+            iterated: [],
+            forEach: [],
+            collectionIsView: false,
+          },
+        ]);
+
+        // An action reads the bound actor's permissions and tries the same.
+        let actorOutcomes: string[] = [];
+        let actorReads: unknown;
+        archiveProbe = () => {
+          const view = getResolvedTenancy()?.actor
+            .permissions as ReadonlySet<string>;
+          actorOutcomes = tryMutations(view, slug('PrincipalNote', 'delete'));
+          actorReads = readAll(view);
+        };
+        const writer = principals().writer;
+        const expected = [...(writer.permissions as string[])].sort();
+        const archived = await send(
+          api,
+          'writer',
+          'POST',
+          `${noteSegment()}/archive`,
+          {},
+        );
+        expect(archived.status).toBe(200);
+        expect(actorOutcomes).toEqual(allRefused);
+        expect(actorReads).toEqual({
+          size: expected.length,
+          spread: expected,
+          iterated: expected,
+          forEach: expected,
+          collectionIsView: true,
+        });
+        expect(hookReads[1]).toEqual(actorReads);
+        // Still refused after both attempts.
+        expect(
+          (
+            await send(api, 'reader', 'POST', noteSegment(), {
+              title: 'again',
+            })
+          ).status,
+        ).toBe(403);
+        expect(await titles()).toEqual([]);
       });
     });
 

@@ -52,6 +52,7 @@ import {
   resolveGetStringFilter,
 } from './interceptors';
 import type { SmrtObject } from './object.js';
+import { ReadonlyMapView, ReadonlySetView } from './readonly-collections';
 import { ObjectRegistry } from './registry';
 import { getRegistryGeneration } from './registry/generation';
 import { getResolvedFieldsSync } from './registry/inheritance-resolver';
@@ -525,45 +526,6 @@ function stiDescendants(model: string): string[] {
     .filter((member) => ObjectRegistry.getTableStrategy(member) === 'sti');
 }
 
-/**
- * A map no caller can change after resolution: the bound decision is read
- * by every collection call of the request, so it never moves under it.
- */
-class FrozenMap<K, V> extends Map<K, V> {
-  constructor(entries: Iterable<readonly [K, V]>) {
-    super();
-    for (const [key, value] of entries) super.set(key, value);
-    Object.freeze(this);
-  }
-  override set(): this {
-    throw new TypeError('The resolved request tenancy is read-only');
-  }
-  override delete(): boolean {
-    throw new TypeError('The resolved request tenancy is read-only');
-  }
-  override clear(): void {
-    throw new TypeError('The resolved request tenancy is read-only');
-  }
-}
-
-/** A set no caller can change after resolution (see {@link FrozenMap}). */
-class FrozenSet<T> extends Set<T> {
-  constructor(values: Iterable<T>) {
-    super();
-    for (const value of values) super.add(value);
-    Object.freeze(this);
-  }
-  override add(): this {
-    throw new TypeError('The resolved request tenancy is read-only');
-  }
-  override delete(): boolean {
-    throw new TypeError('The resolved request tenancy is read-only');
-  }
-  override clear(): void {
-    throw new TypeError('The resolved request tenancy is read-only');
-  }
-}
-
 function fingerprintOf(members: Iterable<MemberTenancy>): string {
   const parts = [...members]
     .map((member) => `${member.key}=${member.signature}`)
@@ -603,7 +565,7 @@ export function resolveRequestTenancy(
       enforced,
       actor,
       route,
-      members: new FrozenMap([[input.model, route]]),
+      members: new ReadonlyMapView([[input.model, route]]),
       family: null,
       admitted: null,
       creatable: null,
@@ -619,9 +581,9 @@ export function resolveRequestTenancy(
       enforced,
       actor,
       route,
-      members: new FrozenMap([[input.model, route]]),
+      members: new ReadonlyMapView([[input.model, route]]),
       family: null,
-      admitted: new FrozenSet<string>([]),
+      admitted: new ReadonlySetView<string>([]),
       creatable: null,
       excluded: Object.freeze([]),
       fingerprint: fingerprintOf([route]),
@@ -673,10 +635,10 @@ export function resolveRequestTenancy(
     enforced,
     actor,
     route,
-    members: new FrozenMap(members),
+    members: new ReadonlyMapView(members),
     family,
-    admitted: admitted ? new FrozenSet(admitted) : null,
-    creatable: creatable ? new FrozenSet(creatable) : null,
+    admitted: admitted ? new ReadonlySetView(admitted) : null,
+    creatable: creatable ? new ReadonlySetView(creatable) : null,
     excluded: Object.freeze(excluded),
     fingerprint: fingerprintOf(members.values()),
     hierarchy: hierarchyKeyOf(enforced),

@@ -29,6 +29,7 @@ import {
   resolveListLimit,
   resolveListOffset,
 } from '../query-bounds';
+import { readonlySetOf } from '../readonly-collections';
 import { ObjectRegistry } from '../registry';
 import { isFrameworkBaseClass } from '../registry/framework-base-classes.js';
 import type {
@@ -954,7 +955,7 @@ export class APIGenerator {
         ? this.context.tenantId
         : null;
     const permissions = this.context.permissions
-      ? new Set(this.context.permissions)
+      ? readonlySetOf(this.context.permissions)
       : undefined;
     const authenticated = Boolean(this.config.authMiddleware);
     const fixed: APIRequestPrincipal = {

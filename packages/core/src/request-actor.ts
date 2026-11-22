@@ -32,6 +32,7 @@ import {
 } from './create-target';
 import { resolveDispatchTenantId } from './dispatch/tenant-resolver.js';
 import { readActionReceivesTenantScope } from './generators/custom-action';
+import { readonlySetOf } from './readonly-collections';
 import { ObjectRegistry } from './registry';
 import {
   customActionScope,
@@ -98,17 +99,22 @@ function nonEmpty(value: unknown): string | null {
   return typeof value === 'string' && value.length > 0 ? value : null;
 }
 
+/**
+ * A read-only copy of a permission list taken now: the actor never aliases a
+ * set its caller (or a hook) can still change.
+ */
 function permissionSet(value: unknown): ReadonlySet<string> | undefined {
   if (value instanceof Set) {
-    return [...value].every((entry) => typeof entry === 'string')
-      ? (value as ReadonlySet<string>)
+    const entries = [...value];
+    return entries.every((entry) => typeof entry === 'string')
+      ? readonlySetOf(entries as string[])
       : undefined;
   }
   if (
     Array.isArray(value) &&
     value.every((entry) => typeof entry === 'string')
   ) {
-    return new Set(value as string[]);
+    return readonlySetOf(value as string[]);
   }
   return undefined;
 }
@@ -196,7 +202,7 @@ export function resolveRequestActor(input: RequestActorInput): RequestActor {
     tenantId = nonEmpty(input.principal.tenantId);
     userId = nonEmpty(input.principal.userId);
     permissions = input.principal.permissions
-      ? new Set(input.principal.permissions)
+      ? readonlySetOf(input.principal.permissions)
       : undefined;
     authenticated = input.principal.authenticated !== false;
     grant = input.principal.allowCrossTenant === true;
@@ -246,7 +252,9 @@ export function resolveRequestActor(input: RequestActorInput): RequestActor {
     grant = false;
     tenantId = activeTenant;
     userId ??= activeUser;
-    permissions ??= active?.permissions;
+    permissions ??= active?.permissions
+      ? readonlySetOf(active.permissions)
+      : undefined;
   }
 
   const systemContext = source?.systemContextActive() === true;
