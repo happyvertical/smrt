@@ -600,7 +600,7 @@ CLI generation does not live here. `@happyvertical/smrt-core` shipped an in-proc
 
 ### REST API Generation
 
-`APIGenerator` serves REST for whatever `@smrt()` objects are registered; `createRestServer(objects)` / `startRestServer(objects)` serve only `objects`. `APIConfig` is `{ basePath?, enableCors?, allowedOrigins?, allowCredentials?, customRoutes?, authMiddleware?, resolveTenant?, port?, hostname?, eventsRoute?, manifestHash?, playbookPreflight? }` — there is no `collections`, `outputDir`, `includeSwagger`, or `middleware` option, and no `generate()` method.
+`APIGenerator` serves REST for whatever `@smrt()` objects are registered; `createRestServer(objects)` / `startRestServer(objects)` serve only `objects`. `APIConfig` is `{ basePath?, enableCors?, allowedOrigins?, allowCredentials?, customRoutes?, authMiddleware?, resolvePrincipal?, onRequest?, port?, hostname?, eventsRoute?, manifestHash?, playbookPreflight? }` — there is no `collections`, `outputDir`, `includeSwagger`, or `middleware` option, and no `generate()` method.
 
 ```typescript
 import { APIGenerator, startRestServer } from '@happyvertical/smrt-core/generators';
@@ -630,23 +630,37 @@ start when two of the passed classes share a segment. A create through an STI
 base selects (`createType`) only subtypes whose own `api` surface opens
 `create`.
 
-#### Tenant-scoped models need a tenant per request
+#### The host says who each request acts for
 
 Every request resolves the tenancy its model has *now* (declared, or
 registered at run time with `registerTenantScopedClass()`) and runs inside
-it. The server cannot derive a tenant from a `Request`, so the host supplies
-it:
+it. The server cannot derive a caller from a `Request`, so the host supplies a
+principal, once per request, from what its authentication verified:
 
 ```typescript
 const generator = new APIGenerator({
   basePath: '/api/v1',
-  authMiddleware: () => async (req) => ((await verify(req)) ? req : deny()),
-  // Called once for every admitted request (and sync item), whatever the
-  // model: the exposure gate reads the same tenant. Return {} for a caller
-  // with no tenant; do not throw.
-  resolveTenant: async (req) => ({ tenantId: (await sessionOf(req))?.tenantId }),
+  // Called once per request, before anything else runs. Return null for an
+  // anonymous caller. A throw is answered with a 500 that carries no detail.
+  resolvePrincipal: async (req) => {
+    const session = await sessionOf(req);
+    return session
+      ? {
+          tenantId: session.tenantId ?? null,
+          allowCrossTenant: false,
+          authenticated: true,
+          userId: session.userId,
+          permissions: session.permissions, // e.g. ['products.create']
+        }
+      : null;
+  },
 });
 ```
+
+A host that supplies only a tenant can keep `resolveTenant(req)` instead,
+returning `{ tenantId }`, `{ allowCrossTenant: true }` or neither; when both
+options are configured the principal decides and `resolveTenant` is not
+called. Either way the tenant is applied the same way:
 
 - `{ tenantId }` runs the operation inside that tenant.
 - `{ allowCrossTenant: true }` runs it across tenants, for this request's
@@ -669,13 +683,47 @@ no tenant acts in that tenant, as each does outside a request, except in a
 request admitted under a cross-tenant read grant, which writes no
 tenant-scoped row whatever context its code enters.
 
-Take the tenant from the principal your authentication verified, never from
-request input. A server that serves one tenant can set `APIContext.tenantId`
-instead; a host that already wraps the handler in `withTenant(...)` needs
-neither (naming a different tenant than that context is refused with 403).
+With `resolvePrincipal` configured the server also enforces, from that
+principal and from nothing in the request:
 
-A request reaches a model in this order: authentication (`authMiddleware`, or
-the model's `api.public`), then the runtime exposure gate for the request's
+- **Sign-in.** A route that is not `@smrt({ api: { public } })` needs
+  `authenticated` (`401`); `public: 'read'` opens reads only. `_changes` and
+  `_events` are never public.
+- **Permissions.** Create, update and delete need `<collection>.<action>`, a
+  mutating custom action `<collection>.<method>`, each `sync/apply` item
+  `<collection>.<op>`, and a row of an STI subtype its own model's slug too.
+  The slug collection is the one the generated SvelteKit routes and the
+  smrt-users permission catalog use. A missing permission is
+  `403 PERMISSION_DENIED` (a sync item is `rejected` / `forbidden`).
+  `api.public: true` models need none. `superAdminBypass: true` stands in for
+  a permission only on a model with `tenantScoped: { allowSuperAdminBypass: true }`.
+- **Tenant.** The tenant is the principal's, applied as above. A write body
+  that names another tenant
+  (`tenantId`, `tenant_id` or the model's ownership field, `null` included)
+  is `403 TENANT_MISMATCH`; the principal's own tenant is accepted. Query
+  filters on the tenant are ignored unless `allowCrossTenant`. `_changes`,
+  `_events` and `_inference` read in the principal's tenant. A host that
+  already wraps the handler in `withTenant(...)` keeps that context; a
+  principal naming a different tenant is refused with 403.
+- **Field reads.** Read redaction and `_preflight` use `permissions`.
+
+`authMiddleware`, when also configured, runs after these checks and can only
+refuse. `onRequest(principal, { route, model?, action? })` is called once per
+request right after the principal is resolved, and once per `sync/apply` item
+after the item was authorized; returning a `Response` (for example a 429)
+answers the request with it. For a sync item it rejects only that item
+(`auth_required` for a 401, the retryable `rate_limited` for a 429, else
+`forbidden`), and the rest of the batch goes on.
+
+Without `resolvePrincipal` the tenant comes from `resolveTenant` or the
+server's fixed `APIContext` (`tenantId`, `allowCrossTenant`), its
+`permissions` apply to every request, and
+`authMiddleware` alone decides authentication and authorization; a server
+that serves one tenant can rely on that.
+
+A request reaches a model in this order: the principal and `onRequest` (with
+`resolvePrincipal`), authentication (its sign-in and `authMiddleware`, or the
+model's `api.public`), then the runtime exposure gate for the request's
 tenant (a switched-off model answers `404` only to an admitted caller), then
 the operation inside the request's tenancy. A caller with no tenant is
 refused every custom collection action of a tenant-scoped model, GET actions

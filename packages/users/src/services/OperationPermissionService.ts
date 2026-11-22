@@ -3,7 +3,11 @@
  * @packageDocumentation
  */
 
-import type { SmrtClassOptions } from '@happyvertical/smrt-core';
+import {
+  getRequestPrincipal,
+  type RequestPrincipal,
+  type SmrtClassOptions,
+} from '@happyvertical/smrt-core';
 import {
   deriveOperationPermissionSlug,
   type OperationPermissionCollectionInput,
@@ -21,7 +25,12 @@ export type OperationPermissionDenyReason =
   | 'missing_principal'
   | 'resolution_error'
   | 'unknown_permission'
-  | 'permission_denied';
+  | 'permission_denied'
+  /**
+   * Inside a transaction-scoped REST request (#5195), a check for a user or
+   * tenant other than the request's principal.
+   */
+  | 'subject_mismatch';
 
 export type OperationPermissionAllowReason =
   | 'permission_granted'
@@ -173,6 +182,14 @@ export async function checkOperationPermission(
     return deny(permission, 'unknown_permission');
   }
 
+  // Inside a REST request acting for a host-resolved principal (#5195) the
+  // principal caps every positive decision: a slug it lacks is denied
+  // whichever branch below would grant it.
+  const requestPrincipal = getRequestPrincipal();
+  if (requestPrincipal) {
+    return decideForRequestPrincipal(requestPrincipal, permission, options);
+  }
+
   const sessionContext = getCurrentSessionPermissionContext();
   let tenancyContext: RuntimeBypassContext;
   try {
@@ -231,6 +248,67 @@ export async function checkOperationPermission(
       : deny(permission, 'permission_denied');
   }
 
+  try {
+    const resolver =
+      options.resolver ?? (await PermissionResolver.create(options));
+    const hasPermission = await resolver.hasPermission(
+      userId,
+      tenantId,
+      permission,
+      { membership: options.membership },
+    );
+    return hasPermission
+      ? allow(permission, 'permission_granted')
+      : deny(permission, 'permission_denied');
+  } catch (error) {
+    return deny(permission, 'resolution_error', error);
+  }
+}
+
+/**
+ * The decision inside a request acting for a host-resolved principal: the
+ * slug must be in the principal's permissions. For the principal's own user
+ * and tenant its permissions stand in for resolution (an explicit
+ * `permissionSet` is intersected with them); for another subject a
+ * transaction-scoped request denies (`subject_mismatch`), and any other
+ * resolves that subject live and still requires the slug in the principal.
+ * The ambient system context and bypass flag grant nothing here.
+ */
+async function decideForRequestPrincipal(
+  principal: RequestPrincipal,
+  permission: string,
+  options: OperationPermissionOptions,
+): Promise<OperationPermissionDecision> {
+  if (!principal.permissions.has(permission)) {
+    return deny(permission, 'permission_denied');
+  }
+  const userId = options.userId ?? principal.userId;
+  const tenantId = options.tenantId ?? principal.tenantId;
+  if (!userId || !tenantId) {
+    return deny(permission, 'missing_principal');
+  }
+  const ownSubject =
+    userId === principal.userId && tenantId === principal.tenantId;
+  if (ownSubject) {
+    if (options.permissionSet !== undefined) {
+      const granted = Array.isArray(options.permissionSet)
+        ? options.permissionSet.includes(permission)
+        : (options.permissionSet as ReadonlySet<string>).has(permission);
+      if (!granted) return deny(permission, 'permission_denied');
+    }
+    return allow(permission, 'permission_granted');
+  }
+  if (principal.requestScoped) {
+    return deny(permission, 'subject_mismatch');
+  }
+  if (options.permissionSet !== undefined) {
+    const granted = Array.isArray(options.permissionSet)
+      ? options.permissionSet.includes(permission)
+      : (options.permissionSet as ReadonlySet<string>).has(permission);
+    return granted
+      ? allow(permission, 'permission_granted')
+      : deny(permission, 'permission_denied');
+  }
   try {
     const resolver =
       options.resolver ?? (await PermissionResolver.create(options));

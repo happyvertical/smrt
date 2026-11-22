@@ -47,6 +47,11 @@ const NODE_ONLY_GROUPS: ReadonlyArray<{
   },
   {
     reason:
+      'The principal a host resolved for the current REST request (#5195): read from the request execution scope of the server handler; a browser serves no request',
+    names: ['RequestPrincipalScopeError', 'getRequestPrincipal'],
+  },
+  {
+    reason:
       'Request tenancy of server request paths (#5375): the actor rule, the resolver, its decisions and the execution-scope binding every server transport uses; a browser serves no request to resolve',
     names: [
       'RequestTenancyError',

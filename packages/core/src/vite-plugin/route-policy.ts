@@ -6,7 +6,9 @@
  * sync-apply route (`sync-apply-route.ts`) answer the same questions about a
  * model: which body fields a write may set, whether it is tenant-scoped, which
  * principal a request must carry. Both generators call the functions in this
- * module, so the two routes cannot answer differently.
+ * module, so the two routes cannot answer differently. The permission slug
+ * collection comes from `../permission-collection.ts`, which the runtime REST
+ * server reads too.
  */
 
 import { generatedExpression } from '../generated-fields.js';
@@ -78,25 +80,6 @@ export function getApiPublicAccess(apiConfig: unknown): boolean | 'read' {
     return value;
   }
   return false;
-}
-
-/**
- * The collection segment of generated operation permission slugs. Mirrors the
- * smrt-users `PermissionCatalogService` derivation: an explicit
- * `@smrt({ collection })` wins, then the manifest collection. A hosted STI
- * subclass moved to its own route collection keeps the STI base's slugs through
- * `permissionCollection` (#3770).
- */
-export function resolvePermissionCollection(
-  objectDef: SmartObjectDefinition,
-): string {
-  if (objectDef.permissionCollection) return objectDef.permissionCollection;
-  const configured = (
-    objectDef.decoratorConfig as { collection?: unknown } | undefined
-  )?.collection;
-  return typeof configured === 'string' && configured.length > 0
-    ? configured
-    : objectDef.collection;
 }
 
 /**

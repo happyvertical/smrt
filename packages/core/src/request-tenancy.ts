@@ -52,9 +52,17 @@ import {
   resolveGetStringFilter,
 } from './interceptors';
 import type { SmrtObject } from './object.js';
+import { ReadonlyMapView, ReadonlySetView } from './readonly-collections';
 import { ObjectRegistry } from './registry';
 import { getRegistryGeneration } from './registry/generation';
 import { getResolvedFieldsSync } from './registry/inheritance-resolver';
+import {
+  currentPrincipalFrame,
+  enterNonWidening,
+  enterNonWideningForRest,
+  requestEnded,
+  runPrincipalOperationFrame,
+} from './request-principal-scope';
 import {
   enterRequestTenantContext,
   getRequestTenantContext,
@@ -127,6 +135,23 @@ export interface TenantPolicySource {
     context: RequestTenancyContext | 'system',
     fn: () => Promise<T>,
   ): Promise<T>;
+  /**
+   * Run `fn` as a host-resolved request principal (#5195): inside a frozen
+   * tenant context projected from it (its tenant, user and read-only
+   * permissions, never the super-admin bypass flag), or, for `null`, with no
+   * tenant and no system context. Replaces whatever context is active, on
+   * the source's own storage. Optional: a source without it (an older
+   * tenancy copy) gets a defined fallback.
+   */
+  runForPrincipal?<T>(
+    context: RequestTenancyContext | null,
+    fn: () => Promise<T>,
+  ): Promise<T>;
+  /**
+   * A counter that changes on every registration or removal of a tenancy
+   * policy and on enable and disable. Optional; must not throw.
+   */
+  generation?(): number;
 }
 
 declare global {
@@ -525,45 +550,6 @@ function stiDescendants(model: string): string[] {
     .filter((member) => ObjectRegistry.getTableStrategy(member) === 'sti');
 }
 
-/**
- * A map no caller can change after resolution: the bound decision is read
- * by every collection call of the request, so it never moves under it.
- */
-class FrozenMap<K, V> extends Map<K, V> {
-  constructor(entries: Iterable<readonly [K, V]>) {
-    super();
-    for (const [key, value] of entries) super.set(key, value);
-    Object.freeze(this);
-  }
-  override set(): this {
-    throw new TypeError('The resolved request tenancy is read-only');
-  }
-  override delete(): boolean {
-    throw new TypeError('The resolved request tenancy is read-only');
-  }
-  override clear(): void {
-    throw new TypeError('The resolved request tenancy is read-only');
-  }
-}
-
-/** A set no caller can change after resolution (see {@link FrozenMap}). */
-class FrozenSet<T> extends Set<T> {
-  constructor(values: Iterable<T>) {
-    super();
-    for (const value of values) super.add(value);
-    Object.freeze(this);
-  }
-  override add(): this {
-    throw new TypeError('The resolved request tenancy is read-only');
-  }
-  override delete(): boolean {
-    throw new TypeError('The resolved request tenancy is read-only');
-  }
-  override clear(): void {
-    throw new TypeError('The resolved request tenancy is read-only');
-  }
-}
-
 function fingerprintOf(members: Iterable<MemberTenancy>): string {
   const parts = [...members]
     .map((member) => `${member.key}=${member.signature}`)
@@ -603,7 +589,7 @@ export function resolveRequestTenancy(
       enforced,
       actor,
       route,
-      members: new FrozenMap([[input.model, route]]),
+      members: new ReadonlyMapView([[input.model, route]]),
       family: null,
       admitted: null,
       creatable: null,
@@ -619,9 +605,9 @@ export function resolveRequestTenancy(
       enforced,
       actor,
       route,
-      members: new FrozenMap([[input.model, route]]),
+      members: new ReadonlyMapView([[input.model, route]]),
       family: null,
-      admitted: new FrozenSet<string>([]),
+      admitted: new ReadonlySetView<string>([]),
       creatable: null,
       excluded: Object.freeze([]),
       fingerprint: fingerprintOf([route]),
@@ -673,10 +659,10 @@ export function resolveRequestTenancy(
     enforced,
     actor,
     route,
-    members: new FrozenMap(members),
+    members: new ReadonlyMapView(members),
     family,
-    admitted: admitted ? new FrozenSet(admitted) : null,
-    creatable: creatable ? new FrozenSet(creatable) : null,
+    admitted: admitted ? new ReadonlySetView(admitted) : null,
+    creatable: creatable ? new ReadonlySetView(creatable) : null,
     excluded: Object.freeze(excluded),
     fingerprint: fingerprintOf(members.values()),
     hierarchy: hierarchyKeyOf(enforced),
@@ -1048,8 +1034,15 @@ function scopeContext(): AsyncContext<RequestTenancy> {
   return globalThis.__smrtRequestTenancyScope;
 }
 
-/** The request tenancy bound to the current execution scope, if any. */
+/**
+ * The request tenancy bound to the current execution scope, if any. Inside
+ * a request acting for a host-resolved principal (#5195) it is the tenancy
+ * of the current operation frame of that request's record, whatever the
+ * released slot holds.
+ */
 export function getResolvedTenancy(): RequestTenancy | undefined {
+  const frame = currentPrincipalFrame();
+  if (frame) return frame.tenancy;
   return scopeContext().getStore();
 }
 
@@ -1107,17 +1100,59 @@ function actorTenantContext(
  * principal, `api.principalContext`, on a model with no tenancy). Enforcement
  * decides only which rows the request may touch.
  *
+ * Inside a REST request acting for a host-resolved principal the decision
+ * may only narrow the request (#5195); see {@link enterNonWidening}.
+ *
  * @param options.refreshPrincipal - The actor is a complete principal: an
  *   active context of the same tenant runs with the actor's permission
  *   snapshot, never a broader one it already carried
  */
-export async function withResolvedTenancy<T>(
+export function withResolvedTenancy<T>(
   t: RequestTenancy,
   fn: () => Promise<T>,
   options: { refreshPrincipal?: boolean } = {},
 ): Promise<T> {
+  return bindResolvedTenancy(t, fn, {
+    refreshPrincipal: options.refreshPrincipal === true,
+  });
+}
+
+/**
+ * {@link withResolvedTenancy} for an operation runtime REST resolved itself.
+ * With `principal`, inside a principal request it opens an operation frame
+ * of the record (`runPrincipalOperationFrame`) and runs as the principal's
+ * actor. Internal to the REST server: never exported from a package entry,
+ * so request code binds only through the non-widening path.
+ *
+ * @internal
+ */
+export function withRestOperationTenancy<T>(
+  t: RequestTenancy,
+  fn: () => Promise<T>,
+  options: { principal: boolean },
+): Promise<T> {
+  return bindResolvedTenancy(t, fn, { principal: options.principal });
+}
+
+async function bindResolvedTenancy<T>(
+  t: RequestTenancy,
+  fn: () => Promise<T>,
+  options: { refreshPrincipal?: boolean; principal?: boolean },
+): Promise<T> {
   assertBindable(t);
+  if (currentPrincipalFrame()) {
+    // Inside a principal request: REST's own resolution opens an operation
+    // frame; anything else may only narrow the request (#5195).
+    if (options.principal) {
+      return runPrincipalOperationFrame(t, () =>
+        runAsPrincipalActor(t.actor, fn),
+      );
+    }
+    const narrowed = enterNonWidening(t, fn);
+    if (narrowed) return narrowed.result;
+  }
   const bound = () => scopeContext().run(t, fn);
+  if (options.principal) return runAsPrincipalActor(t.actor, bound);
   const source = t.enforced ? getTenantPolicySource() : undefined;
   if (!source) {
     const context = actorTenantContext(
@@ -1139,6 +1174,78 @@ export async function withResolvedTenancy<T>(
 }
 
 /**
+ * Run `fn` as the actor of a host-resolved principal (#5195): a grant's
+ * system actor in a system context; otherwise the principal's own context,
+ * entered through the policy source's `runForPrincipal` (a frozen
+ * projection that replaces any ambient context, or no context at all for a
+ * principal with no tenant). A source without `runForPrincipal` enters a
+ * tenanted principal through `runInContext` and refuses a request that
+ * arrives inside a system context rather than run in it. Without a source,
+ * the principal's tenant is entered through the request tenant context
+ * hooks.
+ */
+function runAsPrincipalActor<T>(
+  actor: RequestActor,
+  fn: () => Promise<T>,
+): Promise<T> {
+  const source = getTenantPolicySource();
+  if (actor.system) {
+    return source && !source.systemContextActive()
+      ? source.runInContext('system', fn)
+      : fn();
+  }
+  const context: RequestTenancyContext | null = actor.tenantId
+    ? {
+        tenantId: actor.tenantId,
+        ...(actor.userId ? { userId: actor.userId } : {}),
+        ...(actor.permissions ? { permissions: actor.permissions } : {}),
+      }
+    : null;
+  if (source?.runForPrincipal) return source.runForPrincipal(context, fn);
+  if (source) {
+    if (source.systemContextActive()) {
+      throw new RequestTenancyError(
+        403,
+        'TENANT_ISOLATION_VIOLATION',
+        'The request arrived inside a system context.',
+      );
+    }
+    return context ? source.runInContext(context, fn) : fn();
+  }
+  return context ? runInRequestTenantContext(context, fn) : fn();
+}
+
+/**
+ * Run `fn` as `actor` outside any one model's tenancy (a route that reads
+ * across models, such as the change feed): in the actor's tenant context,
+ * or in a system context for a system actor, when that is not already the
+ * active one. No decision is bound.
+ */
+export async function withActorContext<T>(
+  actor: RequestActor,
+  fn: () => Promise<T>,
+  options: { principal?: boolean } = {},
+): Promise<T> {
+  if (options.principal) return runAsPrincipalActor(actor, fn);
+  const source = getTenantPolicySource();
+  if (actor.system) {
+    return source && !source.systemContextActive()
+      ? source.runInContext('system', fn)
+      : fn();
+  }
+  if (!actor.tenantId) return fn();
+  if (getRequestTenantContext()?.tenantId === actor.tenantId) return fn();
+  const context: RequestTenancyContext = {
+    tenantId: actor.tenantId,
+    ...(actor.userId ? { userId: actor.userId } : {}),
+    ...(actor.permissions ? { permissions: actor.permissions } : {}),
+  };
+  return source
+    ? source.runInContext(context, fn)
+    : runInRequestTenantContext(context, fn);
+}
+
+/**
  * Bind the resolved tenancy for the rest of the current request, entering
  * the actor's tenant context when none is active (the emitted SvelteKit
  * routes, whose handlers run in their own request scope), whether or not
@@ -1150,6 +1257,8 @@ export function enterResolvedTenancy(
   options: { refreshPrincipal?: boolean } = {},
 ): void {
   assertBindable(t);
+  // Inside a principal request the decision may only narrow it (#5195).
+  if (enterNonWideningForRest(t)) return;
   const context = actorTenantContext(
     t,
     getRequestTenantContext(),
@@ -1204,8 +1313,12 @@ function actingTenancy(t: RequestTenancy): RequestTenancy {
   return actor ? Object.freeze({ ...t, actor: Object.freeze(actor) }) : t;
 }
 
-/** The bound tenancy as the current collection call acts under it. */
+/**
+ * The bound tenancy as the current collection call acts under it. Work that
+ * kept the context of a principal request that has ended is refused.
+ */
 function actingAtCall(): RequestTenancy | undefined {
+  if (currentPrincipalFrame()?.record.state === 'ended') throw requestEnded();
   const t = getResolvedTenancy();
   return t ? actingTenancy(t) : undefined;
 }
@@ -1611,6 +1724,12 @@ function familyReadFilter(
       outside.add(t.family as string);
     }
   }
+  if (types.length === 0) {
+    // No admitted type (a nested operation narrowed to nothing) matches
+    // no row.
+    types = [t.family as string];
+    outside.add(t.family as string);
+  }
   return {
     ...filter,
     '_meta_type in': types,
@@ -1651,11 +1770,19 @@ function createRequestTenancyInterceptor(): CollectionInterceptor {
         return { ...options, where: applyWhereScope(where, scope) };
       }
       const admitted = owner ? [...(owner.admitted ?? [])] : undefined;
+      // No admitted type matches no row (`in` needs a non-empty list).
+      const types =
+        admitted?.length === 0
+          ? {
+              '_meta_type in': [owner?.family],
+              '_meta_type not in': [owner?.family],
+            }
+          : { '_meta_type in': admitted };
       return {
         ...options,
         where: dnfOf(options.where).map((group) => [
           ...group,
-          ...(admitted ? [{ '_meta_type in': admitted }] : []),
+          ...(admitted ? [types] : []),
           ...(scope ? [scope] : []),
         ]),
       };

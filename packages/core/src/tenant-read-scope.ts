@@ -60,7 +60,7 @@ export function isTenantScopedModel(className: string): boolean {
  * when no declared property maps to it). `tenantId` when the class is
  * tenant-scoped but names none; empty when it is not tenant-scoped.
  */
-function tenantOwnershipFields(className: string): Map<string, string> {
+export function tenantOwnershipFields(className: string): Map<string, string> {
   const byColumn = new Map<string, string>();
   if (!isTenantScopedModel(className)) return new Map();
   const add = (property: string) => {

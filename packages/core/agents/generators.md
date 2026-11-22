@@ -83,6 +83,138 @@ Tests: `src/__tests__/update-input-fields.test.ts` executes all seven
 transports; `packages/cli/src/__tests__/cli-writable-policy.test.ts`;
 `packages/chat/src/tool-loop.test.ts`.
 
+### Host-resolved principal on runtime REST (#5195)
+
+`APIConfig.resolvePrincipal(req)` returns the request's
+`APIRequestPrincipal` (`{ tenantId, allowCrossTenant, authenticated, userId?,
+permissions?, callerKind?, superAdminBypass? }`) or `null` (anonymous). The
+host decides it; nothing in the request changes it. `handleRequest` calls it
+once per request, before custom routes and before `authMiddleware`, with the
+request as received, and passes the result (`ResolvedRequestPrincipal`,
+`generators/request-principal.ts`) explicitly to every check: CRUD, custom
+actions, each `sync/apply` item, subtype re-checks, `_changes`, `_events`,
+`_inference` and `_preflight`. Rebuilt requests (sync items, subtype checks)
+never resolve it again. A throw, or a value of the wrong shape, is a 500 that
+carries only a request id, before any hook. `normalizeRequestPrincipal` reads
+the answer into the request's one `RequestPrincipal` snapshot (frozen, null
+prototype; what `onRequest` receives): each own field exactly once in a fixed
+order through its property descriptor (an accessor or proxy trap runs once,
+its first value is used), inherited properties never, unknown fields ignored;
+ids are non-empty and at most 256 characters, flags are booleans, permissions
+are at most 4096 slugs without whitespace, an own `__proto__` key is refused.
+An anonymous caller is a snapshot with `authenticated: false`, never `null`.
+Permissions are copied once into a read-only view
+(`ReadonlySetView`, `src/readonly-collections.ts`: a private store, no `Set`
+slot, so neither its own nor `Set.prototype` mutators change it; `forEach`
+passes the view); an absent list is an empty view. The actor's permissions
+(`resolveRequestActor`) and the resolved tenancy's `members` / `admitted` /
+`creatable` are the same kind of view, copied from their source. The
+answer is kept per request object (`requestPrincipals`, carried to the
+request an `authMiddleware` returns); a request without one is a 500, never
+another caller. With `resolvePrincipal` configured, `resolveTenant` (kept
+for hosts that supply only a tenant) is not called. The principal's tenant,
+user, permissions, grant and sign-in are the settled principal of
+`resolveRequestActor` (`settledPrincipalOf`), resolved with `enforced: true`
+(#5195 D2): everything comes from the principal; an active tenant context
+must name the same tenant (and user, when both name one), a principal with
+no tenant inside any tenant context is refused (403, before any hook or
+write), nothing is adopted from it, and the ambient system context and
+bypass flag are not read (`bypass` is the principal's `superAdminBypass`; a
+read grant is still inherited from the bound tenancy). The exposure gate and
+create targets read the principal's own tenant, never the ambient one. The
+request then runs in the principal's context through the policy source's
+optional `runForPrincipal` (a frozen projection: tenant, user, read-only
+permissions, no bypass flag; `null` clears tenant and system), with
+`withRestOperationTenancy(..., { principal: true })` (internal, not exported
+from a package entry; the public `withResolvedTenancy` has no such option);
+a source without it enters a tenanted principal through `runInContext` and refuses a request that arrives
+inside a system context. `_changes`, `_events` and `_inference` run as that
+actor the same way (`withActorContext`; a cross-tenant grant in a system
+context; `_events` captures it at open).
+
+**The principal record** (`src/request-principal-scope.ts`). With
+`resolvePrincipal`, the rest of the request runs inside one
+`PrincipalRecord` (snapshot, state `open` / `closing` / `ended`) bound in an
+async context and ended in a `finally` when `handleRequest` returns. REST's
+own resolutions (the route, each sync item) open an operation frame
+(`withRestOperationTenancy(..., { principal: true })` →
+`runPrincipalOperationFrame`): its tenancy and, per family, a ceiling
+(admitted, creatable, member signatures) intersected with the enclosing
+frame's. The tenancy REST keeps and the frame binds is held to that ceiling
+(`narrowToEnclosingFrame`): a member the enclosing operation left out, or
+whose signature differs, is not admitted, and an operation narrowed to no
+type reads no row. Inside a principal request `getResolvedTenancy()` reads
+the current frame, never the released slot, and every other `withResolvedTenancy` /
+`enterResolvedTenancy` (request code, an in-process tool call) goes through
+`enterNonWidening`: it binds only for an actor equal to the frame's field by
+field and, for a family with a ceiling, admitted and creatable subsets with
+equal member signatures; anything else is 403 `TENANT_CONTEXT_CONFLICT`
+(`RequestPrincipalScopeError`). Work that kept the context of an ended
+record is refused by the request-tenancy interceptor (`REQUEST_ENDED`), and
+`requirePermission` refuses unless the live record's snapshot is the
+principal checked. A handler invoked while a record is live (nested
+dispatch, `handleRequest` sees `currentPrincipalFrame()`) inherits it
+exactly: its own `resolvePrincipal`, `resolveTenant`, fixed context and
+enforcement are not consulted (the exposure gate and create targets read the
+outer principal's tenant), no new record is made, and its operations open
+frames of the outer record (so a read grant still refuses writes and a ceiling only
+narrows); under an ended record it answers 403 `REQUEST_ENDED`.
+`getRequestPrincipal()` (core root) returns the live
+record's snapshot, else `undefined` (outside a request, after it ended, in
+another thread). The first core copy defines
+`globalThis.__smrtRequestPrincipalScope` (frozen, non-writable,
+non-configurable `{ version, read, enterNonWidening, recordOf }`, no entry
+function); later copies adopt it to read. Only the creating copy binds
+records: a server built with `resolvePrincipal` in a later copy, an
+unsupported shared object, or a released `__smrtRequestTenancyScope` slot an
+older core created first throws at construction and refuses each request
+(500 `REQUEST_PRINCIPAL_SCOPE_UNSUPPORTED`). An older copy loading later is
+not detectable; one core version per process is a prerequisite. Tests:
+`src/__tests__/rest-request-principal-scope.optional.test.ts`,
+`src/__tests__/rest-request-principal-nested.optional.test.ts`.
+
+When it is configured, runtime REST enforces, from the principal:
+
+| Rule | Where | Refusal |
+|---|---|---|
+| Sign-in: `authenticated`, unless `api.public` opens the route (`'read'`: reads only), as `requireRouteAuth` decides on the emitted routes | `admitObjectRequest`, `authorizeRowModel`, sync `authorize`; `_changes` / `_events` are never public (`authenticateFeedRequest`) | 401; sync `auth_required` |
+| `<collection>.<action>` through one `requirePermission(principal, model, action)`: create, update, delete; mutating custom actions as `<collection>.<method>` (or the `operationPermissions` alias); each sync item as `<collection>.<op>`; a subtype row's own model on create, update, delete and sync | `routeCrudOperation`, `dispatchCustomCollectionAction`, sync `authorize`, `authorizeRowModel` | 403 `PERMISSION_DENIED`; sync `forbidden` |
+| A write body naming a tenant other than `tenantId` (`tenantId`, `tenant_id`, or an ownership column of the model, any spelling of the column; `null` included) | `assertWriteTenant` on create (base and selected subtype), update (and the subtype row's model), sync `prepare` | 403 `TENANT_MISMATCH`; sync `forbidden` |
+| Query filters on a tenant ownership column are removed unless `allowCrossTenant` | `withoutTenantFilters` in `applyTenantReadScope` (list, count) | none: the filter is ignored |
+| Read redaction, query field checks and `_preflight` use `principal.permissions` | `getPublicJsonOptions(principal)` | — |
+
+The permission collection is `resolvePermissionCollection()`
+(`src/permission-collection.ts`), the function the emitted CRUD, action and
+sync routes use: `@smrt({ collection })`, else the model's manifest
+collection. `api.public: true` models need no permission (as on the emitted
+routes). `superAdminBypass` stands in for a permission only on a model with
+`tenantScoped: { allowSuperAdminBypass: true }`; the emitted routes'
+`tenantContext.superAdminBypass` skips the check on every model. GET custom
+actions need no permission, as on the emitted routes. `authMiddleware`, when
+also set, runs after these checks as an extra check and can only refuse.
+`APIContext.user` / `permissions` are not read.
+
+`APIConfig.onRequest(principal, { route, model?, action? })` is the seam for
+rate limits and metering (#5198, #5199): called once right after resolution
+(`route` is `object`, `sync/apply`, `_changes`, `_events`, `_inference`,
+`_preflight`, `custom` or `unmatched`; an object route names its model and
+`list` / `get` / `count` / `create` / `update` / `delete` or the custom
+action), and once per sync item after the item was authorized. A returned
+`Response` answers the request. For a sync item it rejects that item only,
+before any of it is applied (`auth_required` for a 401, the retryable
+`rate_limited` for a 429, else `forbidden`),
+and the batch goes on. A throw is a 500 (a sync item: `write_failed`).
+
+Without `resolvePrincipal`, the tenant is `resolveTenant`'s answer or the
+fixed `APIContext` one, and the fixed principal applies to every request
+(`tenantId`, `allowCrossTenant`, `permissions`;
+`authenticated` = an `authMiddleware` is configured), `authMiddleware` alone
+decides authentication and authorization, and none of the rules above apply:
+behaviour is unchanged. `onRequest` then receives that fixed principal.
+Tests: `src/__tests__/rest-request-principal.optional.test.ts` (SQLite, and
+PostgreSQL in the `test:postgres` lane),
+`packages/tenancy/src/__tests__/rest-request-tenant.test.ts` (real tenancy).
+
 ### Request tenancy: one resolver for every request path (#5375)
 
 Runtime REST, the emitted SvelteKit routes, both sync apply paths and both MCP
@@ -301,8 +433,9 @@ of the subtypes it was given that open the read on `api`
 (`servedFamilyTypes()`, a `_meta_type in [...]` filter). A row the route does
 not read is `404` / `not_found`. An update or delete through the base of a
 row whose own model is a subtype needs that subtype's action (`405` /
-`op_not_allowed`) and authorization: its `authMiddleware` decision under its
-own name, or its `api.public` without middleware. Every REST server also
+`op_not_allowed`) and authorization: with `resolvePrincipal`, its sign-in and
+`<collection>.<action>`, then its `authMiddleware` decision under its own
+name; without, that decision, or its `api.public` without middleware. Every REST server also
 admits each subtype per request (`settleFamilyAdmission`): its rows are read
 through the base only when it is switched on for the request's tenant and, for
 a read, the caller may read the subtype itself (its `authMiddleware` decision
@@ -327,7 +460,8 @@ on what `ObjectRegistry.resolveCreateTarget()` returned: runtime REST and the
 emitted SvelteKit POST route with `'api'`, the in-process MCP generator and
 both emitted MCP servers with `'mcp'`, the CLI with `'cli'` (before it
 prompts). A selected subtype also authorizes the create itself: runtime REST
-runs its `authMiddleware` decision (or its `api.public`), the emitted route
+runs its sign-in and `<collection>.create` when the host resolves principals,
+then its `authMiddleware` decision (or its `api.public`), the emitted route
 `requireCreateTargetAccess` (an authenticated principal and the family's
 `<collection>.create` unless the subtype is `public: true`), even when the
 base is public. A subtype that is abstract, has
@@ -480,7 +614,8 @@ binding name there, however convenient it reads.
 
 `GET {basePath}/_inference[?tier=<tier>]` (`src/generators/inference-status-route.ts`)
 on the runtime `APIGenerator` returns the ambient principal's `InferenceStatus`
-(`{ available, mode, reason?, tier? }`, never a key), runs
+(`{ available, mode, reason?, tier? }`, never a key), runs inside a
+host-resolved principal's tenant, runs
 `authMiddleware('_inference', 'status')` when one is configured, and refuses
 non-`GET` with 405. SvelteKit apps serve the same body from their own
 `+server.ts` with `createInferenceStatusHandler()`; no route file is
@@ -503,7 +638,9 @@ instead — so there is no handle in the module to invoke by mistake. A syntheti
 returns a `Response` rather than a boolean, and may consult session stores,
 rate-limit, or audit. The app-auth layer therefore reports `unknown`, which is the
 honest answer, and a future `authPredicate` seam can fill it in without changing
-the contract.
+the contract. `appAuthConfigured` is true when either `authMiddleware` or
+`resolvePrincipal` is configured; the caller's permission slugs are the
+request principal's.
 
 The static layers preflight predicts against are exported from the same module —
 `isApiActionEnabledForObject`, `isRestActionRoutable`, `isRestRoutePublic`,
@@ -775,7 +912,7 @@ connection.
 Core never imports smrt-dev-mcp; only the generated file does, at consumer
 runtime. The route carries the auto-generated header so the sweep owns it.
 
-Generated SvelteKit write routes (#2977) call `requireRoutePermission(locals, action)` after `requireRouteAuth`: CRUD writes need `<collection>.create|update|delete` and mutating custom actions `<collection>.<method>` in the session permission snapshot on `locals`, else 403 (fail-closed; `api.public: true` stays open, `tenantContext.superAdminBypass` skips). See `packages/users/agents/permissions.md`.
+Generated SvelteKit write routes (#2977) call `requireRoutePermission(locals, action)` after `requireRouteAuth`: CRUD writes need `<collection>.create|update|delete` and mutating custom actions `<collection>.<method>` in the session permission snapshot on `locals`, else 403 (fail-closed; `api.public: true` stays open, `tenantContext.superAdminBypass` skips). See `packages/users/agents/permissions.md`. Runtime REST enforces the same slugs when the host resolves principals; see "Host-resolved principal on runtime REST" above.
 
 ## MCP protocol identifiers (#3219)
 

@@ -94,7 +94,9 @@ export type SyncApplyRejectionReason =
   | 'forbidden'
   | 'not_found'
   | 'id_conflict'
-  | 'write_failed';
+  | 'write_failed'
+  /** The host throttled this item; retry it later (#5195). */
+  | 'rate_limited';
 
 /** Machine-readable reasons for `conflict` items. */
 export type SyncApplyConflictReason = 'stale_write' | 'create_conflict';
@@ -292,6 +294,7 @@ const SYNC_APPLY_REJECTION_REASONS: readonly string[] = [
   'not_found',
   'id_conflict',
   'write_failed',
+  'rate_limited',
 ] satisfies readonly SyncApplyRejectionReason[];
 
 /** Codes of the request tenancy refusals (`request-tenancy.ts`, #5375). */

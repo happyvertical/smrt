@@ -116,6 +116,7 @@ HTTP 200
 | `rejected` | `not_found` | Update target does not exist — or is not visible in the caller's tenant. |
 | `rejected` | `id_conflict` | A create collides with an existing row: its id belongs to a row the caller cannot see (e.g. another tenant's, or a row of an STI subtype the route does not serve), a natural-key unique constraint (e.g. slug) matches a different row, or a concurrent writer won the race. Sync creates are strict inserts — the existing row is never adopted or overwritten. |
 | `rejected` | `write_failed` | Unexpected error applying this item; the batch continued. Safe to retry. |
+| `rejected` | `rate_limited` | The host throttled this item (runtime REST: an `APIConfig.onRequest` answer of 429 for the item, before any of it was applied); the batch continued. Safe to retry later. A per-item `Retry-After` is not carried. |
 
 ## Ordering
 
@@ -244,11 +245,15 @@ interceptors guard sync exactly like CRUD:
   with a foreign row's id rejects with `id_conflict` without touching it.
 - Creates are stamped with the context tenant; a forged `tenantId` in the
   payload is stripped by the writable policy before it ever reaches the model.
+  On runtime REST with a host-resolved principal, a payload naming a tenant
+  other than the principal's rejects the item (`forbidden`) instead, and each
+  item needs its `<collection>.<op>` permission.
 - Each item runs inside the request tenancy of its target model (#5375),
   resolved per item at request time whatever the manifest declares: the actor
   from `locals` on the generated route (with the complete-principal
-  requirement of an `api.principalContext` model) or from the host's
-  `APIConfig.resolveTenant` on the runtime REST server, the target's policy,
+  requirement of an `api.principalContext` model) or from the principal the
+  runtime REST server's host resolved once for the request
+  (`APIConfig.resolvePrincipal`, else `resolveTenant`), the target's policy,
   and the STI members its segment serves. The item's lookup and write see
   only rows of admitted types: an update of a row whose type the segment does
   not serve (a subtype whose tenancy differs from the base's) is rejected
@@ -291,7 +296,10 @@ transaction completion: `applied` → transaction confirmed;
 `conflict` → confirmed-with-notice (persist the returned `updatedAt`, refetch
 the row, surface the conflict to app code); `rejected` with
 `auth_required`/`forbidden` → pause the queue and re-authenticate; other
-rejections → mark failed for app-level handling. `write_failed` is retryable.
+rejections → mark failed for app-level handling. `write_failed` and
+`rate_limited` are retryable. A client with an exhaustive switch over rejection
+reasons must handle `rate_limited`; a reason a client does not know is
+terminal for that item.
 
 **Mobile queue (#1739 / ADR 0001)** — mapping onto the
 `pending → uploading → synced → failed` state machine:
@@ -299,7 +307,7 @@ rejections → mark failed for app-level handling. `write_failed` is retryable.
 | Apply result | Queue transition |
 |---|---|
 | HTTP 200, item `applied` or `conflict` | `uploading → synced` (conflicts additionally surface to the app with the server `updatedAt`) |
-| HTTP 200, item `rejected` (`write_failed`) | `uploading → pending` (retry; counts an attempt toward `maxAttempts`) |
+| HTTP 200, item `rejected` (`write_failed` or `rate_limited`) | `uploading → pending` (retry; counts an attempt toward `maxAttempts`) |
 | HTTP 200, item `rejected` (any other reason) | `uploading → failed` (terminal — retrying an `invalid_id` or `forbidden` item cannot succeed) |
 | HTTP 400 / network failure / response lost | whole batch `uploading → pending`; blind replay is safe by construction |
 

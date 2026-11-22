@@ -708,6 +708,12 @@ export {
   assertUpdateInput,
   updateInputRulesFor,
 } from './request-input';
+// The principal of the current REST request (#5195): read-only, and
+// `undefined` outside one.
+export {
+  getRequestPrincipal,
+  RequestPrincipalScopeError,
+} from './request-principal-scope';
 export {
   boundMemberTenancy,
   boundTenancyCacheScoped,
