@@ -7,7 +7,7 @@
  * consumer did not configure.
  */
 
-import { basename, join, relative } from 'node:path';
+import { join, posix, relative } from 'node:path';
 
 export interface SvelteKitConfigImportOptions {
   configPath?: string;
@@ -103,12 +103,28 @@ const REGISTRATION_MODULE_NAME = /^smrt-register(?:\.[cm]?[jt]sx?)?$/i;
  * extension or case). Generation overwrites `smrt-register.ts`, and generated
  * routes import the config module as the application's runtime, so such a
  * name would destroy the authored file and leave routes without a runtime.
+ * A name starting with `+` is rejected too: SvelteKit reserves it for route
+ * files, so the config module could alias a route handler.
  */
 export function assertSvelteKitConfigModuleNotReserved(
   options: SvelteKitConfigImportOptions,
 ): void {
   const configFileName = options.configFileName || 'smrt.ts';
-  if (REGISTRATION_MODULE_NAME.test(basename(normalizePath(configFileName)))) {
+  // The name of the file the config writer actually creates: dot segments
+  // (`+server.js/.`, `x/../+server.js`) resolve away before the check.
+  const configBaseName = posix.basename(
+    posix.join('/', normalizePath(configFileName)),
+  );
+  // SvelteKit reserves `+`-prefixed names (`+server.js`, `+page.ts`, ...);
+  // a config module of that name could land on a route file.
+  if (configBaseName.startsWith('+')) {
+    throw new Error(
+      `[smrt] svelteKit.configFileName '${configFileName}' is reserved: names ` +
+        "starting with '+' are SvelteKit route files. Name the application's " +
+        'SMRT config module something else, for example smrt.ts.',
+    );
+  }
+  if (REGISTRATION_MODULE_NAME.test(configBaseName)) {
     throw new Error(
       `[smrt] svelteKit.configFileName '${configFileName}' is reserved for the ` +
         'generated registration module (smrt-register.ts). Name the ' +

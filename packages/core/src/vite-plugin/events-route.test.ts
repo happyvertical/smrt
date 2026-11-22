@@ -9,7 +9,7 @@
  * rather than duplicating SSE framing/subscribe logic).
  */
 
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SmartObjectManifest } from '../scanner/types';
@@ -25,11 +25,21 @@ vi.mock('node:fs', () => ({
 }));
 
 // Import after mocking
-import { generateEventsRoute } from './events-route';
+import { generateEventsRoute as generateEventsRouteInto } from './events-route';
+import { RouteFilePlan } from './generated-route-files';
 import { AUTO_GENERATED_ROUTE_HEADER } from './route-header';
 import type { SvelteKitOptions } from './sveltekit-generator';
 
 const projectRoot = '/test/project';
+
+// The writer renders into the route-file plan and never touches the disk.
+let plan = new RouteFilePlan();
+const generateEventsRoute = (
+  root: string,
+  manifest: SmartObjectManifest,
+  options: SvelteKitOptions,
+  webManifestHash?: string,
+) => generateEventsRouteInto(root, manifest, options, plan, webManifestHash);
 
 const baseOptions: SvelteKitOptions = {
   enabled: true,
@@ -44,19 +54,16 @@ function buildManifest(
 }
 
 function writtenRouteContent(): string {
-  const call = vi
-    .mocked(writeFileSync)
-    .mock.calls.find(
-      (args) => typeof args[0] === 'string' && args[0].endsWith('+server.ts'),
-    );
-  expect(call).toBeDefined();
-  return String(call?.[1]);
+  const entry = plan.entries().at(-1);
+  expect(entry).toBeDefined();
+  return String(entry?.content);
 }
 
 describe('generateEventsRoute (#1763)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(existsSync).mockReturnValue(false);
+    plan = new RouteFilePlan();
   });
 
   it('emits an auth-guarded _events route anchored on the first object', () => {
@@ -86,15 +93,10 @@ describe('generateEventsRoute (#1763)', () => {
     );
 
     expect(generated).toBe(true);
-    expect(mkdirSync).toHaveBeenCalledWith(
+    expect(plan.entries().map(({ routeDir }) => routeDir)).toEqual([
       join(projectRoot, 'src/routes/api', '_events'),
-      { recursive: true },
-    );
-    expect(writeFileSync).toHaveBeenCalledWith(
-      join(projectRoot, 'src/routes/api', '_events', '+server.ts'),
-      expect.any(String),
-      'utf-8',
-    );
+    ]);
+    expect(writeFileSync).not.toHaveBeenCalled();
 
     const content = writtenRouteContent();
     // Cleanup pass recognizes generated files by this exact header.
@@ -377,11 +379,11 @@ describe('generateEventsRoute (#1763)', () => {
         eventsRoute: { enabled: false },
       }),
     ).toBe(false);
-    expect(writeFileSync).not.toHaveBeenCalled();
+    expect(plan.entries()).toEqual([]);
 
     expect(
       generateEventsRoute(projectRoot, buildManifest({}), baseOptions),
     ).toBe(false);
-    expect(writeFileSync).not.toHaveBeenCalled();
+    expect(plan.entries()).toEqual([]);
   });
 });

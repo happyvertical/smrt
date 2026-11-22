@@ -16,13 +16,13 @@
  * Contract documentation: docs/content/architecture/sync-apply-contract.md
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { isFrameworkBaseClass } from '../registry/framework-base-classes.js';
 import type {
   SmartObjectDefinition,
   SmartObjectManifest,
 } from '../scanner/types';
+import type { RouteFilePlan } from './generated-route-files.js';
 import { AUTO_GENERATED_ROUTE_HEADER } from './route-header.js';
 import {
   allowsSuperAdminBypass,
@@ -448,15 +448,18 @@ ${
 }
 
 /**
- * Generate `{routesDir}/sync/apply/+server.ts` for the manifest's syncable
- * models. Returns true when a route was written. Skips generation (with a
- * warning) if a non-generated file already occupies the path, and writes
- * nothing when the manifest has no syncable models.
+ * Plan `{routesDir}/sync/apply/+server.ts` for the manifest's syncable
+ * models. Returns true when a route was emitted into `plan`, and emits
+ * nothing when the manifest has no syncable models. The route yields: when it
+ * is the only claimant of its path and an application `+server.ts` or
+ * `+server.js` occupies it, the preflight leaves that handler in place (with
+ * a warning) and nothing is written.
  */
 export function generateSyncApplyRoute(
   projectRoot: string,
   manifest: SmartObjectManifest,
   options: SvelteKitOptions,
+  plan: RouteFilePlan,
 ): boolean {
   const targets = collectSyncApplyTargets(manifest);
   if (targets.length === 0) {
@@ -464,32 +467,21 @@ export function generateSyncApplyRoute(
   }
 
   const routeDir = join(projectRoot, options.routesDir, 'sync', 'apply');
-  const routePath = join(routeDir, '+server.ts');
-
-  if (existsSync(routePath)) {
-    const existing = readFileSync(routePath, 'utf-8');
-    if (!existing.startsWith(AUTO_GENERATED_ROUTE_HEADER)) {
-      console.warn(
-        `[smrt] Skipping sync-apply route - ${routePath} exists and is not generated`,
-      );
-      return false;
-    }
-  }
-
-  if (!existsSync(routeDir)) {
-    mkdirSync(routeDir, { recursive: true });
-  }
-
-  writeFileSync(
-    routePath,
-    generateSyncApplyRouteTemplate(
+  plan.emit({
+    root: join(projectRoot, options.routesDir),
+    routeDir,
+    content: generateSyncApplyRouteTemplate(
       targets,
       generateCollectionAccessImports(projectRoot, routeDir, options, [
         'getCollection',
       ]),
     ),
-    'utf-8',
-  );
-  console.log(`[smrt] Generated: ${routePath}`);
+    label: 'sync/apply',
+    policy: 'yield',
+    onYield: (routePath) =>
+      console.warn(
+        `[smrt] Skipping sync-apply route - ${routePath} exists and is not generated`,
+      ),
+  });
   return true;
 }

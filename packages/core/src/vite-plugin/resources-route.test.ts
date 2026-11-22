@@ -16,15 +16,31 @@ import { pathToFileURL } from 'node:url';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Mock node:fs module (same pattern as changes-route.test.ts / events-route.test.ts)
-vi.mock('node:fs', () => ({
-  existsSync: vi.fn(),
-  mkdirSync: vi.fn(),
-  writeFileSync: vi.fn(),
-  readFileSync: vi.fn(),
-  readdirSync: vi.fn(),
-  unlinkSync: vi.fn(),
-  statSync: vi.fn(() => ({ isFile: () => true })),
-}));
+vi.mock('node:fs', () => {
+  const existsSync = vi.fn();
+  return {
+    existsSync,
+    // Route ownership lstats planned paths: every directory exists, and an
+    // endpoint file exists exactly when the existsSync fixture says so.
+    lstatSync: vi.fn((path: string) => {
+      const endpoint = /\+server\.[jt]s$/.test(String(path));
+      if (endpoint && !existsSync(path)) {
+        throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
+      }
+      return {
+        isFile: () => endpoint,
+        isDirectory: () => !endpoint,
+        isSymbolicLink: () => false,
+      };
+    }),
+    mkdirSync: vi.fn(),
+    writeFileSync: vi.fn(),
+    readFileSync: vi.fn(() => '// hand-written route\n'),
+    readdirSync: vi.fn(),
+    unlinkSync: vi.fn(),
+    statSync: vi.fn(() => ({ isFile: () => true })),
+  };
+});
 
 // Resolve the exact generated import under ESM conditions from the consumer.
 // Real import-only/hoisted/missing target fixtures live in resources-route-resolution.test.ts.
@@ -35,12 +51,24 @@ vi.mock('import-meta-resolve', () => ({
 }));
 
 // Import after mocking
+import { RouteFilePlan } from './generated-route-files';
 import {
   consumerHasSmrtUsers,
-  generateResourcesRoute,
+  generateResourcesRoute as generateResourcesRouteInto,
 } from './resources-route';
 import { AUTO_GENERATED_ROUTE_HEADER } from './route-header';
 import type { SvelteKitOptions } from './sveltekit-generator';
+
+/** Plan, check and commit the route as the generator does; true if written. */
+function generateResourcesRoute(
+  root: string,
+  options: SvelteKitOptions,
+): boolean {
+  const plan = new RouteFilePlan();
+  generateResourcesRouteInto(root, options, plan);
+  plan.preflight();
+  return plan.commit().length > 0;
+}
 
 const projectRoot = '/test/project';
 
@@ -131,7 +159,7 @@ describe('generateResourcesRoute (#2663)', () => {
     expect(writeFileSync).toHaveBeenCalledWith(
       routeFilePath,
       expect.any(String),
-      'utf-8',
+      { encoding: 'utf-8', flag: 'wx' },
     );
 
     const content = writtenRouteContent();

@@ -11,10 +11,9 @@ import {
   readdirSync,
   readFileSync,
   statSync,
-  unlinkSync,
   writeFileSync,
 } from 'node:fs';
-import { isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import type { DomainKnowledgeConfig } from '@happyvertical/smrt-types';
 import { generateActivationRegistration } from '../activation/generate.js';
 import { publishArtifactFiles } from '../consumer-plugin/artifact-publication.js';
@@ -63,6 +62,14 @@ import {
   willGenerateDevPlaneRoute,
 } from './dev-plane-route.js';
 import { generateEventsRoute } from './events-route.js';
+import {
+  findUnlistableRouteDirectories,
+  isGeneratedRouteFile,
+  physicalRouteFileKey,
+  type RouteCaseBehaviour,
+  RouteFilePlan,
+  removeGeneratedRouteFile,
+} from './generated-route-files.js';
 import {
   generateResourcesRoute,
   reservesResourcesRoute,
@@ -1387,13 +1394,22 @@ export function assertNoCrossObjectRouteCollisions(
     | 'resources'
     | 'knowledge';
   const claims = new Map<string, { owner: string; writer: RouteWriter }>();
+  const caseBehaviours = new Map<string, RouteCaseBehaviour>();
   const claimPath = (
     routePath: string,
     routeDir: string,
     owner: string,
     writer: RouteWriter,
   ) => {
-    const canonicalRoutePath = canonicalSvelteKitPath(routePath);
+    // The same physical identity the route-file plan uses: case-only aliases
+    // are one handler unless the destination is known to be case-sensitive.
+    const physical = physicalRouteFileKey(
+      dirname(routePath),
+      undefined,
+      caseBehaviours,
+    );
+    const canonicalRoutePath =
+      physical.behaviour === 'sensitive' ? physical.exact : physical.folded;
     const prior = claims.get(canonicalRoutePath);
     if (prior && (prior.owner !== owner || prior.writer !== writer)) {
       throw new Error(
@@ -1585,21 +1601,13 @@ export async function generateSvelteKitRoutes(
     });
   }
 
-  await hooks.beforeCleanup?.();
-
-  clearGeneratedSvelteKitRouteFiles(
-    join(projectRoot, options.routesDir),
-    utilityManifests.protectedRoutePaths,
-    utilityManifests.protectedRouteRoots,
-  );
-  if (utilityManifests.clearKnowledgeRoute !== false) {
-    clearGeneratedKnowledgeRoute(projectRoot, options);
-  }
-
-  // Generate centralized configuration file first (if it doesn't exist)
-  await generateSmrtConfigFile(projectRoot, registrationManifest, options);
-
-  const generatedRoutePaths: string[] = [];
+  // Render every route file into one in-memory plan. Rendering never touches
+  // the disk: the plan is checked against the route tree before anything of
+  // this invocation changes (#5437).
+  const routesRoot = join(projectRoot, options.routesDir);
+  const plan = new RouteFilePlan({
+    protectedPaths: utilityManifests.protectedRoutePaths,
+  });
   let generatedCount = 0;
   let skippedCollections = 0;
   for (const [className, objectDef] of orderedManifestObjectEntries(
@@ -1618,8 +1626,8 @@ export async function generateSvelteKitRoutes(
         objectDef,
         semanticManifest,
         options,
+        plan,
       );
-      generatedRoutePaths.push(...collectionRoutePaths);
       if (collectionRoutePaths.length > 0) {
         generatedCount++;
       } else {
@@ -1630,60 +1638,64 @@ export async function generateSvelteKitRoutes(
       }
       continue;
     }
-    generatedRoutePaths.push(
-      ...(await generateRoutesForObject(
-        projectRoot,
-        className,
-        objectDef,
-        semanticManifest,
-        options,
-      )),
+    await generateRoutesForObject(
+      projectRoot,
+      className,
+      objectDef,
+      semanticManifest,
+      options,
+      plan,
     );
     generatedCount++;
   }
 
   if (options.knowledge?.api?.enabled) {
-    generatedRoutePaths.push(generateKnowledgeRoute(projectRoot, options));
+    generateKnowledgeRoute(projectRoot, options, plan);
   }
 
   // Batch write contract route (#1759): {routesDir}/sync/apply/+server.ts.
-  if (generateSyncApplyRoute(projectRoot, utilityManifests.sync, options)) {
-    generatedRoutePaths.push(
-      join(projectRoot, options.routesDir, 'sync', 'apply', '+server.ts'),
-    );
-  }
-  // Change-feed route (#1758) — cleanup rides clearGeneratedRouteFiles above.
-  if (generateChangesRoute(projectRoot, utilityManifests.changes, options)) {
-    generatedRoutePaths.push(
-      join(projectRoot, options.routesDir, '_changes', '+server.ts'),
-    );
-  }
-  if (generateDevPlaneRoute(projectRoot, options)) {
-    generatedRoutePaths.push(
-      join(projectRoot, options.routesDir, '_dev', '[...tool]', '+server.ts'),
-    );
-  }
-  // Live change-signal SSE route (#1763) — cleanup rides the sweep above.
-  if (
-    generateEventsRoute(
-      projectRoot,
-      utilityManifests.events,
-      options,
-      computeWebManifestHash(utilityManifests.eventsSemantic),
-    )
-  ) {
-    generatedRoutePaths.push(
-      join(projectRoot, options.routesDir, '_events', '+server.ts'),
-    );
+  generateSyncApplyRoute(projectRoot, utilityManifests.sync, options, plan);
+  // Change-feed route (#1758) — cleanup rides the generated-route sweep.
+  generateChangesRoute(projectRoot, utilityManifests.changes, options, plan);
+  generateDevPlaneRoute(projectRoot, options, plan);
+  // Live change-signal SSE route (#1763) — cleanup rides the sweep.
+  generateEventsRoute(
+    projectRoot,
+    utilityManifests.events,
+    options,
+    plan,
+    computeWebManifestHash(utilityManifests.eventsSemantic),
+  );
+  // CLI discovery route (#2663): a fallback, emitted only when no other route
+  // claims its path, and yielding to a hand-written handler.
+  generateResourcesRoute(projectRoot, options, plan);
+
+  // Read-only: every planned path is checked before the hooks, the sweep,
+  // the config and registration writes, and any route file.
+  // Every directory the sweep will walk must be listable, or the sweep could
+  // stop part-way after removing earlier generated files.
+  plan.preflight(
+    findUnlistableRouteDirectories(
+      routesRoot,
+      utilityManifests.protectedRouteRoots,
+    ).map((finding) => ({ ...finding, route: 'generated-route sweep' })),
+  );
+
+  await hooks.beforeCleanup?.();
+
+  clearGeneratedSvelteKitRouteFiles(
+    routesRoot,
+    utilityManifests.protectedRoutePaths,
+    utilityManifests.protectedRouteRoots,
+  );
+  if (utilityManifests.clearKnowledgeRoute !== false) {
+    clearGeneratedKnowledgeRoute(projectRoot, options, plan);
   }
 
-  // CLI discovery route (#2663) — cleanup rides the sweep above; skipped
-  // when smrt-users isn't resolvable or a hand-written route already exists.
-  if (generateResourcesRoute(projectRoot, options)) {
-    generatedRoutePaths.push(
-      join(projectRoot, options.routesDir, '_resources', '+server.ts'),
-    );
-  }
+  // Generate centralized configuration file first (if it doesn't exist)
+  await generateSmrtConfigFile(projectRoot, registrationManifest, options);
+
+  const generatedRoutePaths = plan.commit();
 
   // Ignore only the concrete route files generated in this pass. This keeps
   // handwritten handlers below routesDir visible to Git.
@@ -1739,10 +1751,9 @@ export function clearGeneratedSvelteKitRouteFiles(
     }
     if (excludedPaths.has(canonicalSvelteKitPath(entryPath))) continue;
 
-    const fileContent = readFileSync(entryPath, 'utf-8');
-    if (fileContent.startsWith(AUTO_GENERATED_ROUTE_HEADER)) {
-      unlinkSync(entryPath);
-    }
+    // Re-checked immediately before the unlink: only a file that is generated
+    // at this moment is removed.
+    removeGeneratedRouteFile(entryPath);
   }
 }
 
@@ -1809,26 +1820,31 @@ function svelteKitRouteRoot(routesDir: string): string {
 function clearGeneratedKnowledgeRoute(
   projectRoot: string,
   options: SvelteKitOptions,
+  plan: RouteFilePlan,
 ): void {
-  const routePath = knowledgeRoutePath(projectRoot, options);
-  if (!existsSync(routePath)) return;
-
-  const content = readFileSync(routePath, 'utf-8');
-  if (content.startsWith(AUTO_GENERATED_ROUTE_HEADER)) {
-    unlinkSync(routePath);
-  }
+  // Another producer in this build owns the handler at this path; compared
+  // as emission compares it (a case-only alias counts on a volume that is
+  // not known to be case-sensitive).
+  if (plan.protects(knowledgeRouteDir(projectRoot, options))) return;
+  removeGeneratedRouteFile(knowledgeRoutePath(projectRoot, options));
 }
 
 function generateKnowledgeRoute(
   projectRoot: string,
   options: SvelteKitOptions,
+  plan: RouteFilePlan,
 ): string {
   const routeDir = knowledgeRouteDir(projectRoot, options);
   const route = generateKnowledgeRouteTemplate(
     options.knowledge ?? {},
     readKnowledgeRouteArtifact(projectRoot),
   );
-  return writeRoute(routeDir, '+server.ts', route);
+  return plan.emit({
+    root: join(projectRoot, svelteKitRouteRoot(options.routesDir)),
+    routeDir,
+    content: route,
+    label: 'knowledge',
+  });
 }
 
 function readKnowledgeRouteArtifact(
@@ -2593,9 +2609,11 @@ async function generateRoutesForObject(
   objectDef: SmartObjectDefinition,
   semanticManifest: SmartObjectManifest,
   options: SvelteKitOptions,
+  plan: RouteFilePlan,
 ): Promise<string[]> {
   const collectionName = objectDef.collection;
-  const routeDir = join(projectRoot, options.routesDir, collectionName);
+  const routesRoot = join(projectRoot, options.routesDir);
+  const routeDir = join(routesRoot, collectionName);
   const generatedRoutePaths: string[] = [];
 
   // Check if API is enabled for this object
@@ -2620,7 +2638,12 @@ async function generateRoutesForObject(
       routeDir,
     );
     generatedRoutePaths.push(
-      writeRoute(routeDir, '+server.ts', collectionRoute),
+      plan.emit({
+        root: routesRoot,
+        routeDir,
+        content: collectionRoute,
+        label: `${className} collection`,
+      }),
     );
   }
 
@@ -2640,7 +2663,12 @@ async function generateRoutesForObject(
       join(routeDir, '[id]'),
     );
     generatedRoutePaths.push(
-      writeRoute(join(routeDir, '[id]'), '+server.ts', itemRoute),
+      plan.emit({
+        root: routesRoot,
+        routeDir: join(routeDir, '[id]'),
+        content: itemRoute,
+        label: `${className} item`,
+      }),
     );
   }
 
@@ -2704,7 +2732,12 @@ async function generateRoutesForObject(
       options,
     );
     generatedRoutePaths.push(
-      writeRoute(actionRouteDir, '+server.ts', actionRoute),
+      plan.emit({
+        root: join(projectRoot, options.routesDir),
+        routeDir: actionRouteDir,
+        content: actionRoute,
+        label: `${className} action ${routeSpecs.map(({ actionName }) => actionName).join(', ')}`,
+      }),
     );
   }
 
@@ -2717,6 +2750,7 @@ async function generateCollectionRoutesForObject(
   objectDef: SmartObjectDefinition,
   semanticManifest: SmartObjectManifest,
   options: SvelteKitOptions,
+  plan: RouteFilePlan,
 ): Promise<string[]> {
   const generatedRoutePaths: string[] = [];
   const apiConfig = objectDef.decoratorConfig?.api;
@@ -2792,7 +2826,12 @@ async function generateCollectionRoutesForObject(
       options,
     );
     generatedRoutePaths.push(
-      writeRoute(actionRouteDir, '+server.ts', actionRoute),
+      plan.emit({
+        root: join(projectRoot, options.routesDir),
+        routeDir: actionRouteDir,
+        content: actionRoute,
+        label: `${className} action ${routeSpecs.map(({ actionName }) => actionName).join(', ')}`,
+      }),
     );
   }
 
@@ -3187,30 +3226,6 @@ export function validateCliIncludeAgainstApi(
   ];
 
   throw new Error(messages.join('\n\n'));
-}
-
-/**
- * Writes a route file, creating directories as needed
- */
-function writeRoute(dir: string, filename: string, content: string): string {
-  try {
-    // Create directory if needed
-    if (!existsSync(dir)) {
-      mkdirSync(dir, { recursive: true });
-    }
-
-    // Write the file (writeFileSync is synchronous and will throw on failure)
-    const filePath = join(dir, filename);
-    writeFileSync(filePath, content, 'utf-8');
-    console.log(`[smrt] Generated: ${filePath}`);
-    return filePath;
-  } catch (error) {
-    console.error(`[smrt] [ERROR] Failed to write route file:`);
-    console.error(`[smrt] [ERROR]   Directory: ${dir}`);
-    console.error(`[smrt] [ERROR]   Filename: ${filename}`);
-    console.error(`[smrt] [ERROR]   Error:`, error);
-    throw error;
-  }
 }
 
 /**
@@ -4299,7 +4314,7 @@ function findGeneratedRouteFiles(routeRoot: string): string[] {
     } else if (
       entry.isFile() &&
       entry.name === '+server.ts' &&
-      readFileSync(path, 'utf-8').startsWith(AUTO_GENERATED_ROUTE_HEADER)
+      isGeneratedRouteFile(path)
     ) {
       files.push(path);
     }

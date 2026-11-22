@@ -392,8 +392,9 @@ against `include`/`exclude` (an absolute pattern under the root is made
 relative). It ignores the plugin's own outputs (`+server.*` under `routesDir`,
 `smrt-register.ts`, `virtual-modules.d.ts`, the knowledge route
 (`knowledgeRoutePath` as the last generation resolved it, outside `routesDir`;
-the watcher never evaluates the project config itself), any file starting with the route
-header), or each regeneration would trigger the next. After a rescan, change,
+the watcher never evaluates the project config itself), any file whose source
+the generated-route predicate accepts (`isGeneratedRouteSource`)), or each
+regeneration would trigger the next. After a rescan, change,
 add and unlink alike invalidate every loaded virtual module by its resolved
 `\0smrt:*` id in each Vite environment's module graph and send that
 environment's hot channel a full reload; `server.reloadModule` cannot be used
@@ -411,9 +412,72 @@ alike, so a duplicate or mixed-host custom route fails with the previous
 routes still on disk. It checks only what rendering already enforced: two
 claims on one handler file (`Conflicting SvelteKit route`, within an object or
 across objects) stay a hosted-consumer (`rejectRouteCollisions`) rule, so a
-producer-only app still generates STI siblings that share a collection, a
-static action whose path is `[id]` beside CRUD, or a `sync` collection with an
-`apply` action beside the sync-apply route, exactly as before.
+producer-only app still generates STI siblings that share a collection or a
+static action whose path is `[id]` beside CRUD, exactly as before. A model
+route at the sync-apply path (a `sync` collection with an `apply` action, when
+a syncable model generates `sync/apply`) fails during rendering, below.
+
+Route generation never replaces or shadows an application route file (#5437,
+`vite-plugin/generated-route-files.ts`). A route file is generated only when
+it is a regular `+server.ts` at the unresolved path whose first bytes, after
+at most one byte-order mark, are the route header (`isGeneratedRouteFile`);
+any `+server.js` and any other `+server.ts` (hand-written, empty, unreadable,
+symlinked, or a directory) is application code. Every reader of the header
+(the sweep, the knowledge clear, `findGeneratedRouteFiles`, the `_resources`
+reservation, `sync/apply`, the watcher fallback) uses this predicate.
+`generateSvelteKitRoutes()` renders every route writer (CRUD, custom actions,
+knowledge, `sync/apply`, `_changes`, `_events`, `_dev`, `_resources`) into an
+in-memory `RouteFilePlan` (writers import no mutating `node:fs` call; a source
+guard enforces it), then runs a read-only preflight over every lexical spelling
+of every planned path. A conflict throws `ApplicationRouteConflictError`
+(`code: 'SMRT_ROUTE_OWNERSHIP_CONFLICT'`, `phase: 'preflight'`, `files`,
+`routes`; not a package export) naming every conflict before `beforeCleanup`,
+the sweep, the config and registration writes, any route file, `.gitignore` or
+any directory creation. The preflight walks each existing path component from
+the routes root (for a knowledge `basePath` that climbs out with `..`, from
+the deepest directory the root and the destination share): a symlinked
+component whose target is missing, a non-directory component, or one that
+cannot be inspected refuses; only a genuinely missing component counts as
+absent. Every directory the sweep will walk must be listable, or the
+preflight refuses. Case behaviour is probed read-only inside the nearest
+existing directory of the destination (`destinationCaseBehaviour`): on a
+case-insensitive volume, planned paths that differ only by case are one path;
+when it cannot be determined (nothing to probe), case-only claims refuse. The
+hosted claim pass and the plan use the same key (`physicalRouteFileKey`). The
+knowledge clear skips a path another producer in the build owns
+(`protectedRoutePaths`), compared the way emission compares it. The sweep and the commit re-run
+the predicate immediately before each unlink or replacement; the commit
+creates an absent leaf with an exclusive open and stops with `phase: 'commit'`
+(listing the files already written) instead of overwriting an application
+file found there. `_resources` and `sync/apply` yield (leave an application
+`+server.ts`/`+server.js` in place and write nothing) only as the sole
+claimant of their path, and name the application file they keep; a yield
+route refuses when the occupying `+server.ts` carries the header after its
+first line terminator (LF, CR, U+2028 or U+2029), is empty, or holds only
+part of the header (an interrupted
+generated write). A header mention on the first line of a hand-written
+handler still yields. `_resources` is a fallback, emitted
+only when no other route claims its path. A `refuse` and a `yield` emit on one
+path, or an emit to a coordinator `protectedRoutePaths` entry, throw
+`Conflicting SvelteKit route` during rendering; two `refuse` emits keep the
+later one. A `configFileName` whose resolved name (after dot segments)
+starts with `+` is rejected. `smrt generate`
+keeps the refusal as `cause` and copies its `code`.
+Scope: `+server.ts`/`+server.js` files under the routes root and at the
+knowledge route path that exist when the invocation starts. The guarantee
+constrains the route writers, the commit and the sweeps only: the plugin's
+other outputs (registration module, declarations, build-schema module,
+`.gitignore`, config file, artifact staging) keep their own writers, so such an
+output aliased to an existing application handler (for example a symlinked
+`smrt-register.ts`) can still overwrite it (#5469). A refusal leaves that
+invocation's outputs untouched; on a coordinated hosting move the new root is
+committed before the former root is reconciled, so a nested refusal fails the
+build after the new root changed. Concurrent generation, editor races and
+hard links are #5460. An interrupted write is replaced next run only if its
+complete header survived; an empty or partial-header file refuses until the
+operator removes or restores it. Dev publication order is unchanged: a refused
+rescan may already have published the scan's declarations, manifest and
+knowledge.
 
 The generated API client (`generateClientModule`, behind both
 `@happyvertical/smrt-virt-client` and `@smrt/client`) sends every

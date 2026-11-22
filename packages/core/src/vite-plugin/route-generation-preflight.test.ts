@@ -181,7 +181,10 @@ export class PreflightTicket extends SmrtObject {
     expect(existsSync(itemRoute())).toBe(true);
   });
 
-  it('still builds a collection named sync with an apply action beside the sync-apply route', async () => {
+  it('rejects a collection named sync whose apply action takes the sync-apply route', async () => {
+    writeModel(VALID_MODEL);
+    await generate();
+    const previous = readFileSync(collectionRoute(), 'utf-8');
     writeModel(`import { SmrtObject, smrt } from '@happyvertical/smrt-core';
 
 @smrt({
@@ -196,9 +199,9 @@ export class PreflightTicket extends SmrtObject {
   }
 }
 `);
-    await expect(generate()).resolves.toBeUndefined();
-    expect(
-      existsSync(join(projectRoot, 'src/routes/api/sync/apply/+server.ts')),
-    ).toBe(true);
+    // The model route and the generated sync-apply route would write the same
+    // handler; rendering refuses before anything changes (#5437).
+    await expect(generate()).rejects.toThrow(/Conflicting SvelteKit route/);
+    expect(readFileSync(collectionRoute(), 'utf-8')).toBe(previous);
   });
 });

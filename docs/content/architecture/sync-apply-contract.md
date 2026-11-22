@@ -22,7 +22,7 @@ web and mobile cannot drift (parent PRD:
 | Generator | Route | Notes |
 |---|---|---|
 | Runtime REST generator (`APIGenerator`) | `POST {basePath}/sync/apply` (default `POST /api/v1/sync/apply`) | Always available; `sync` is a **reserved** path segment under the base path. |
-| SvelteKit generator (vite plugin) | `POST {routesDir}/sync/apply` (default `POST /api/sync/apply`) | Generated as `sync/apply/+server.ts` when at least one model is syncable. A hand-written file at that path is never overwritten (a warning is logged instead). |
+| SvelteKit generator (vite plugin) | `POST {routesDir}/sync/apply` (default `POST /api/sync/apply`) | Generated as `sync/apply/+server.ts` when at least one model is syncable. A hand-written `+server.ts` or `+server.js` at that path is never overwritten and gets no generated sibling (a warning naming it is logged instead). Generation fails instead when the `+server.ts` there is empty, holds only part of the generated header, or has lines above the generated header (`ApplicationRouteConflictError`), and when a model route resolves to the same path (`Conflicting SvelteKit route`). |
 
 Both transports delegate to the same engine —
 `processSyncApplyBatch()` in `@happyvertical/smrt-core` (`src/sync/apply.ts`)

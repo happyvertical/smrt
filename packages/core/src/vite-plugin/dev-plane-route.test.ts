@@ -1,8 +1,21 @@
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { generateDevPlaneRoute } from './dev-plane-route.js';
+import { generateDevPlaneRoute as generateDevPlaneRouteInto } from './dev-plane-route.js';
+import { RouteFilePlan } from './generated-route-files.js';
 import { AUTO_GENERATED_ROUTE_HEADER } from './route-header.js';
 import type { SvelteKitOptions } from './sveltekit-generator.js';
+
+/** Plan the route, then check and commit the plan as the generator does. */
+function generateDevPlaneRoute(
+  projectRoot: string,
+  options: SvelteKitOptions,
+): boolean {
+  const plan = new RouteFilePlan();
+  const planned = generateDevPlaneRouteInto(projectRoot, options, plan);
+  plan.preflight();
+  plan.commit();
+  return planned;
+}
 
 vi.mock('node:fs', async () => {
   const actual = await vi.importActual<typeof import('node:fs')>('node:fs');

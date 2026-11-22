@@ -371,9 +371,17 @@ export const generateCommands: Record<string, CLICommand> = {
         console.log('  3. Run: npm run dev');
         console.log();
       } catch (error) {
-        throw new Error(
+        // Keep the original error (for example the route ownership refusal,
+        // code SMRT_ROUTE_OWNERSHIP_CONFLICT) as the cause and copy its code.
+        const wrapped = new Error(
           `Failed to generate routes: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          { cause: error },
         );
+        const code = (error as { code?: unknown } | null)?.code;
+        if (typeof code === 'string') {
+          Object.assign(wrapped, { code });
+        }
+        throw wrapped;
       }
     },
   },
