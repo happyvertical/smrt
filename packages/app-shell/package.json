@@ -6,6 +6,9 @@
   "engines": {
     "node": ">=26.0.0"
   },
+  "bin": {
+    "smrt-app-shell": "./bin/smrt-app-shell.mjs"
+  },
   "exports": {
     ".": {
       "types": "./dist/lib/objects/index.d.ts",
@@ -18,9 +21,17 @@
     "./engine/worker": {
       "import": "./dist/engine/app-worker.js"
     },
+    "./shutdown": {
+      "types": "./dist/lib/server/shutdown.d.ts",
+      "import": "./dist/lib/server/shutdown.js"
+    },
+    "./start": {
+      "import": "./build/index.js"
+    },
     "./manifest": "./dist/manifest.json"
   },
   "files": [
+    "bin",
     "build",
     "dist",
     "CLAUDE.md",
@@ -33,11 +44,13 @@
     "preview": "vite preview",
     "start": "node build",
     "clean": "rm -rf dist build .svelte-kit",
+    "test:packed": "vitest run -c vitest.packed.config.ts",
     "test:bundled-worker": "SMRT_APP_SHELL_WORKER=bundle vitest run src/engine",
-    "test": "svelte-kit sync && vitest run && vitest run -c vitest.pglite.config.ts && vitest run -c vitest.dom.config.ts",
+    "test": "svelte-kit sync && vitest run && vitest run -c vitest.pglite.config.ts && vitest run -c vitest.dom.config.ts && vitest run -c vitest.packed.config.ts",
     "test:postgres": "node ../../scripts/run-with-ci-postgres.mjs -- pnpm exec vitest run -c vitest.postgres.config.ts",
     "test:pglite": "vitest run -c vitest.pglite.config.ts",
     "typecheck": "svelte-kit sync && node ../../scripts/write-source-typecheck-config.mjs tsconfig.json .svelte-kit/tsconfig.typecheck.json && tsc -p .svelte-kit/tsconfig.typecheck.json && node ../../scripts/svelte-check-workspace.mjs --config ./svelte.config.typecheck.js --tsconfig ./.svelte-kit/tsconfig.typecheck.json",
+    "verify:exports": "node tools/verify-exports.mjs",
     "prepack": "node ../../scripts/prepack-package.js"
   },
   "dependencies": {
@@ -47,12 +60,14 @@
     "@happyvertical/smrt-chat": "workspace:*",
     "@happyvertical/smrt-config": "workspace:*",
     "@happyvertical/smrt-core": "workspace:*",
+    "@happyvertical/smrt-features": "workspace:*",
     "@happyvertical/smrt-prompts": "workspace:*",
     "@happyvertical/smrt-inference": "workspace:*",
     "@happyvertical/smrt-preferences": "workspace:*",
     "@happyvertical/smrt-profiles": "workspace:*",
     "@happyvertical/smrt-reports": "workspace:*",
     "@happyvertical/smrt-secrets": "workspace:*",
+    "@happyvertical/smrt-subscriptions": "workspace:*",
     "@happyvertical/smrt-svelte": "workspace:*",
     "@happyvertical/smrt-tenancy": "workspace:*",
     "@happyvertical/smrt-ui": "workspace:*",

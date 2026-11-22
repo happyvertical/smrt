@@ -86,7 +86,10 @@ describe.each(
   async function desktopApp() {
     const store = new MemoryVersionStore();
     const dataDir = dir();
-    const host = await AppHost.open(dataDir, { store });
+    const host = await AppHost.open(dataDir, {
+      allowUnfencedStore: true,
+      store,
+    });
     await host.execute(
       {
         type: 'defineModel',
@@ -155,7 +158,11 @@ describe.each(
     const store = new MemoryVersionStore();
     for (const v of bundle.versions) await store.append(v);
     await store.setCurrent(bundle.version);
-    return AppHost.open(dataDir, { store, ...(database ? { database } : {}) });
+    return AppHost.open(dataDir, {
+      allowUnfencedStore: true,
+      store,
+      ...(database ? { database } : {}),
+    });
   };
 
   it('moves a desktop app to PostgreSQL and back: every record, hidden field, timestamp, history and undo point', async () => {
@@ -420,7 +427,10 @@ describe.each(
   it('takes column kinds from the definition: camelCase JSON, a hidden boolean', async () => {
     const store = new MemoryVersionStore();
     const dataDir = dir();
-    const host = await AppHost.open(dataDir, { store });
+    const host = await AppHost.open(dataDir, {
+      allowUnfencedStore: true,
+      store,
+    });
     await host.execute(
       {
         type: 'defineModel',

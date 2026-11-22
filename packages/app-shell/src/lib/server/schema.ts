@@ -49,8 +49,9 @@ async function tableExists(
  */
 export async function prepareShellSchema(
   db: DatabaseInterface,
+  options: { hosted?: boolean } = {},
 ): Promise<string[]> {
-  const created = await createMissingTables(db);
+  const created = await createMissingTables(db, options.hosted === true);
   await adoptTenantScope(db);
   return created;
 }
@@ -105,13 +106,40 @@ async function adoptTenantScope(db: DatabaseInterface): Promise<void> {
   }
 }
 
-async function createMissingTables(db: DatabaseInterface): Promise<string[]> {
+/**
+ * Packages whose models only the hosted (cloud) profile uses (#5194): the
+ * hosted inference gate's plans, subscriptions and feature overrides. The
+ * build manifest registers them in every process, but a desktop database
+ * never gets their tables (a deployed database gets them from `smrt db:migrate`).
+ */
+export const HOSTED_ONLY_PACKAGES = [
+  '@happyvertical/smrt-features',
+  '@happyvertical/smrt-subscriptions',
+] as const;
+
+export function hostedOnlyTables(): Set<string> {
+  const tables = new Set<string>();
+  for (const packageName of HOSTED_ONLY_PACKAGES)
+    for (const name of ObjectRegistry.getClassesByPackage(packageName).keys()) {
+      const table = ObjectRegistry.getTableName(name);
+      if (table) tables.add(table);
+    }
+  return tables;
+}
+
+async function createMissingTables(
+  db: DatabaseInterface,
+  hosted = false,
+): Promise<string[]> {
   const engine = detectEngine(
     (db as { url?: string }).url ?? '',
     (db as { type?: string }).type,
   );
   const strategy = getDDLStrategy(engine);
-  const schemas = Object.values(ObjectRegistry.getAllSchemasAsDefinitions());
+  const skip = hosted ? new Set<string>() : hostedOnlyTables();
+  const schemas = Object.values(
+    ObjectRegistry.getAllSchemasAsDefinitions(),
+  ).filter((schema) => !skip.has(schema.tableName));
   const missing = [];
   for (const schema of schemas)
     if (!(await tableExists(db, engine, schema.tableName)))

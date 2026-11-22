@@ -694,6 +694,8 @@ async function startEngine(
   const host = await AppHost.open(dataDir, {
     store,
     ...(database.kind === 'sqlite' ? {} : { database }),
+    // A throwaway store for one start-up: there is no shell store to fence.
+    allowUnfencedStore: true,
   });
   await host.close();
 }
@@ -850,7 +852,7 @@ async function importPostgres(
   await startEngine(dataDir, database, bundle);
   await options.onPhase?.('staged');
   // One host per app while the rows go in; the engine's own start released its claim.
-  const release = await claimAppDatabase(database);
+  const claim = await claimAppDatabase(database);
   try {
     await inDatabase(dataDir, database, 'write', async (db) => {
       await populate(db, bundle);
@@ -860,7 +862,7 @@ async function importPostgres(
       await options.onPhase?.('verified');
     });
   } finally {
-    await release?.();
+    await claim?.release();
   }
   await options.onPhase?.('published');
   const final = await verifyUserApp({ dataDir, bundle, database });

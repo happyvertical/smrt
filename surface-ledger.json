@@ -666,6 +666,26 @@
   },
   {
     "kind": "entry-point",
+    "name": "@happyvertical/smrt-app-shell#./shutdown",
+    "issue": 5494,
+    "nearest": [
+      "@happyvertical/smrt-app-shell#.",
+      "@happyvertical/smrt-app-shell#./engine"
+    ],
+    "reason": "The ordered SIGTERM/SIGINT shutdown (end streams, stop imports, drain open apps, exit) that the published server's ./start installs and a host embedding the build can install itself. The root entry is the shell's browser-safe surface and ./engine is the engine that must not import the shell, so neither can hold server process lifecycle."
+  },
+  {
+    "kind": "entry-point",
+    "name": "@happyvertical/smrt-app-shell#./start",
+    "issue": 5494,
+    "nearest": [
+      "@happyvertical/smrt-app-shell#.",
+      "@happyvertical/smrt-app-shell#./engine"
+    ],
+    "reason": "Starts the published SvelteKit server build (the packaged build/ directory and the bin) with the graceful shutdown installed. The root entry exports no runnable server and ./engine must not import SvelteKit or the shell, so a package consumer had no way to run the shipped build."
+  },
+  {
+    "kind": "entry-point",
     "name": "@happyvertical/smrt-approvals#.",
     "grandfathered": true
   },

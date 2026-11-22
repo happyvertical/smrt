@@ -103,6 +103,9 @@
       "@happyvertical/smrt-app-shell/engine/worker": [
         "./packages/app-shell/src/engine/app-worker.ts"
       ],
+      "@happyvertical/smrt-app-shell/shutdown": [
+        "./packages/app-shell/src/lib/server/shutdown.ts"
+      ],
       "@happyvertical/smrt-approvals": [
         "./packages/approvals/src/index.ts"
       ],

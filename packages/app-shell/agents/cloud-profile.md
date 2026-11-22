@@ -163,7 +163,7 @@ with the real tenancy interceptor; PostgreSQL, the deployed runtime's startup
 `host-lifecycle.ts` (policy, counters, wake gate) and the registry in `host.ts`.
 Engaged ONLY when the profile is `cloud` AND `ShellContext.lifecycle` is set (the
 runtime reads `SMRT_APP_SHELL_IDLE_MS`, `_MAX_OPEN_APPS`, `_MEMORY_CEILING_MB`,
-`_APP_MEMORY_MB`, `_MAX_CONCURRENT_WAKES`; none set = no policy). Otherwise the
+`_APP_MEMORY_MB`, `_MAX_CONCURRENT_WAKES`, `_MAX_APP_CONNECTIONS`; none set = no policy). Otherwise the
 desktop and an unconfigured hosted process keep the raw host, never a proxy,
 never a timer, never an eviction (`host-lifecycle.test.ts`, "desktop is unchanged").
 
@@ -182,6 +182,31 @@ never a timer, never an eviction (`host-lifecycle.test.ts`, "desktop is unchange
   (`refused`, "no room"), never cutting a call. A worker keeps the memory it grew
   to, so the ceiling is a count, not a reading of the process.
 - `maxConcurrentWakes` (default 2) queues a burst of wakes.
+- Connection budget (#5464): `WorkerLimits.connections`, set by `host.ts` on
+  every host it opens. EVERY worker on a server PostgreSQL reserves its pool in
+  `AppWorker`'s constructor and returns it when the thread exits, so a swap's new
+  worker, a report worker and a publish rehearsal are counted while they live;
+  the pool is created at exactly the size reserved (`connection.max`, else
+  `POOL_SIZE` = 2, set explicitly, never the adapter default). A host also reserves
+  `HOST_OVERHEAD` (live 2: the claim connection, one connection that also carries its
+  transactions and heartbeat (#5470), + one admin connection in flight; draft
+  1), returned on `close`, a successful `discardIfEmpty`, and a failed open
+  (`withConnections`). `maxAppConnections` caps the total held by the process;
+  unset, it is `maxOpenApps` x `appAllowance(pool)` (live + draft + one transient
+  worker pool, plus both overheads; `pool` follows the largest pool a config asks
+  for, so a bigger `connection.max` scales it), and with no cap at all there is no budget.
+  A refusal is immediate (`ConnectionBudgetError`, a `CapacityError`: `refused`; a publish check rethrows it instead of storing a "does not fit your data" blocker), never queued, so a
+  swap or report that finds no room fails and can be retried. A swap that
+  stops the old worker first (migration, restore, publish) keeps its pool's
+  share across the gap (`retireApp`), so nothing can take it and the
+  replacement or the rollback is never refused. The handed-over reservation stays the
+  host's until the replacement is ready (a thread that dies first does not
+  release it). A refusal while a wake adopts its draft fails the wake for a retry; it
+  is never stored as a draft problem. Transient admin
+  connections beyond the one in `HOST_OVERHEAD` and the shell's own pool are not
+  counted. SQLite and PGlite are not counted. A budget below the derived one
+  refuses rather than evicts. `hostMetrics()` reports `connections` and
+  `maxConnections`.
 - `drainShell(timeoutMs)`: refuse new apps, wait for calls, close all; for
   recycling a process. `hostMetrics()`: open, queued wakes, wakes, failed wakes,
   evictions by cause, wake times, cap, RSS.
@@ -207,6 +232,13 @@ The tenant-to-app mapping is the `App` row (slug `app`) and the app id keys the
 directory and the schema, so a second app per tenant needs a second row, a holder
 key of (tenant, app) and a route to name it, none of which is ruled out; today
 `host.ts` holds one app per tenant.
+
+The shell's own tables and every app schema are the same database and role
+(#5418), so a live host's claim connection (`claimApp`, #5470) commits a publish
+or snapshot restore with the shell's `App`/`AppVersion` rows in one transaction
+(engine.md "The store in the swap"). The host refuses to open when its claim
+cannot see the shell's own `App` row, so a deployment that put the shell and
+the apps on different databases is refused, not silently unfenced.
 
 Needs a PostgreSQL role that may `CREATE SCHEMA` (the hosted role and policies
 are #5188/#5189). The portable export/import still refuse a PostgreSQL app (engine

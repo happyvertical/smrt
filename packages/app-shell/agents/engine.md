@@ -110,6 +110,12 @@ scans for it.
   the desktop is unchanged. PGlite cannot cancel a statement either; only the
   real-server lane (`postgres-server.test.ts`) proves the cancel, and
   `postgres.test.ts` proves where and how it is set (a recording connection).
+- **Dump lock timeout (#5415).** The host passes its lock timeout
+  (`swapLockTimeoutMs`) to every worker it spawns on a server database as
+  `WorkerDatabaseConfig.lockTimeoutMs` (set in `AppWorker`, next to
+  `statementTimeoutMs`); `copyAppDatabase` hands it to `dumpSchema`, so a
+  snapshot, undo point or `copyTo` waits at most that long per table lock and
+  then fails with a lock-timeout error instead of using the default.
 - **How the config reaches the worker.** `DatabaseConfig` is plain data except a
   PGlite instance, which cannot cross threads (and two instances on one
   storage corrupt it, yet a new worker boots while the old one still serves).
@@ -182,6 +188,110 @@ for the one operation on the host thread; a PGlite uses the host's client).
   its live host; PGlite and SQLite claim nothing. Tested by `app-lock.test.ts`
   (modelled lock semantics and statement recording) and, on a real server, by
   `postgres-server.test.ts`.
+- **Ownership fencing (#5190).** Each PostgreSQL/PGlite app has an ownership
+  generation stored in its own schema: `_app_meta` key `fence` (created at 1 by
+  the first host; copied by forks and dumps, so it swaps with the data). A host
+  takes ownership at start by advancing it (`acquireOwnership`, first thing in
+  `boot`, before recovery and the sweep) and holds the number
+  (`AppHost.fence`); every worker it starts (`WorkerDatabaseConfig.fence`)
+  carries it. `scopeDatabase` reads the row `FOR SHARE` as the first statement
+  of EVERY transaction (reads and writes, boot DDL included) and throws
+  `StaleFenceError` (`EngineError` code `stale_fence`, HTTP 409, details
+  `{ schema, expected, actual }` when raised by the host or a swap or drop; the
+  copy that crosses the worker boundary carries the message only) unless it
+  matches. The share lock lasts to
+  commit and `swapSchemas` locks every table exclusively first, so a
+  transaction either finishes before a swap or fails after it: no commit
+  straddles one. The new number is written only into the new live schema, so a
+  session still pointed at the renamed old schema is covered by retiring the
+  workers at the swap and by the aside's revoke before its drop, not by the
+  fence (residual: a session with a cached plan on an old table could write
+  into the aside until the revoke). `swapSchemas` (publish, restore, start-up recovery) checks
+  `expectFence` under those locks (a host that lost ownership changes nothing)
+  and, in the same transaction as the rename, writes the new live data's
+  generation (old + 1); the host adopts it for the workers it starts next. A
+  swap that undoes this host's own swap (abort, failed restore) checks too: it
+  expects the generation its own swap produced (the held one, or held + 1 when
+  the swap committed but its reply was lost: the abort and the restore ask the
+  catalog for the aside, not their flag), so it cannot swap over a newer owner.
+  Dropping a draft's schema (`discard`, `discardIfEmpty`) passes the draft
+  host's generation to `dropSchema`, which compares it under an exclusive lock
+  on `_app_meta` in the drop's own transaction (`discardOrphanDraft`, for a
+  directory no host holds, has none to pass). After the swap commits, the aside's table, sequence and schema
+  privileges are revoked from PUBLIC and the connected role in a transaction of
+  its own (`revokeSchema`) before it is dropped, so a stale plan fails with
+  permission denied; the revoke runs only on a schema that will never be
+  swapped back. The error crosses the worker boundary as a `stale` flag on the
+  reply (`AppCallError.stale`, the boot message), and the host rethrows it as
+  `StaleFenceError`; a caller must reopen the app, never retry the call.
+  Two hosts on one app: on a server the advisory claim refuses the second; where
+  nothing claims (PGlite) the later opener owns and the earlier one's every
+  call fails stale. The desktop has one process per data directory and keeps
+  its writer lease, with no generation: `fence` is `undefined`. Tested in
+  `postgres-drafts.test.ts` ("ownership fencing").
+- **The store in the swap, on the claim (#5470 part 1; hosted PostgreSQL
+  server only).** `claimApp` returns an `AppClaim` (`db/claim.ts`): the
+  connection that holds the app's session lock (`max: 1`, never idle-closed,
+  `connectionTimeoutMillis: 0`). EVERY `claim.transaction` first sets
+  `lock_timeout`/`statement_timeout`/`idle_in_transaction_session_timeout`
+  (5 s / 10 s / 10 s, `HostOptions.claimOptions`) and PROVES, inside itself,
+  that its own session holds the lock (`pg_locks` row with
+  `pid = pg_backend_pid()`); a missing row is a `ClaimLostError`
+  (`stale_fence`, `resource: 'claim'`), the claim is lost for good (`onLost`,
+  the host retires its worker and every call refuses, the shell must reopen)
+  and nothing is written. A lock ends only by unlock or the session ending, and
+  a transaction cannot commit after its session ended, so whatever committed
+  there ran wholly under the claim and no takeover can have committed in
+  between. The pool reconnects silently WITHOUT the lock after a terminated
+  session, which is why the proof is per transaction. A heartbeat (every 5 s) is
+  one proof-only claim transaction. A nested `claim.transaction` throws.
+  Publish and snapshot restore run `swapSchemas` on the claim with a `within`
+  callback: `VersionStore.commitIn(tx, records, current, expected)` (the shell's
+  `ShellVersionStore`) inserts the versions and moves the `App` row only
+  `WHERE current_version = expected`, so a stale store (`StaleStoreError`,
+  `resource: 'store'`) rolls the swap back too; a publish's draft `published`
+  mark rides in it. A live host with a claim refuses to open if its store has no
+  `commitIn`, or if the claim cannot see the store's own `App` row (another
+  database); `HostOptions.allowUnfencedStore` is the test opt-out.
+  Publish order (G = generation, S = store): journal (`atomic`, `id`, `draftId`,
+  `numbers`) -> T (proof, swap, `commitIn(final, expected old)`; G+1, S final)
+  -> spawn the new worker -> readiness record (`_app_meta` `published` = journal
+  id, an upsert) -> mark the journal, drop the aside. A failed spawn, or a
+  refused readiness record with the claim proven, runs T': swap back,
+  `commitIn([], old, expected final)` and the draft reopened
+  (`UPDATE ... WHERE status='published' AND published_versions = <journal
+  numbers>`), in one transaction. The records T wrote stay as never-current
+  history so version numbers stay unique. Boot, all on the claim and in this
+  order: claim, store guard, ownership bump, reconcile, re-read
+  `store.current()` (a boot T' moves it), sweep, spawn. An `atomic` journal is
+  recovered from the catalog, never from `committed` or the store's current
+  version: aside absent -> drop staging; aside present and readiness record =
+  journal id -> forward (drop the aside; this also fixes a published-then-undone
+  restart that used to swap the old data back); aside present and no record ->
+  the new worker was never served: start the store's current version, and if it
+  starts write the record and drop the aside, otherwise run T' (draft reopened
+  from the journal) and open the old version. A journal without `atomic`
+  (older, or a host without a claim) keeps `publishHappened`. Snapshot restore:
+  T_r is the swap plus `commitIn([], v, v)` (a compare-only pointer write); a
+  failed spawn swaps back with the same compare. Tested in
+  `store-in-swap.test.ts` (registered; PGlite with a stand-in claim, and on a
+  server the tests marked [S]: a terminated claim, a delayed commit after a
+  takeover, the heartbeat, a claim lost right after it was taken) and
+  `claim.test.ts`.
+  **Unfenced in #5470 part 1** (hosted PostgreSQL; follow-up: #5486):
+  - Change and undo store writes (`append`/`setCurrent` after a migration):
+    unconditional, on the store pool, no claim proof. A host that loses its
+    claim after its worker's migration can still record the version after the
+    next host has read the store.
+  - Every `DraftVersionStore` write, and a draft host's boot, ownership bump
+    and schema drops (admin connections, no claim). The draft's own generation
+    still guards its schema.
+  - `adoptDraft`'s draft-row writes (starting/extra open -> discarded).
+  - The publish journal file (local data directory).
+  - `markPurged`; snapshot and rehearsal files.
+  - Fork and restore schema creation on admin connections (at worst a leaked
+    side schema, removed by the sweep).
+  - Portable import's `populate` (claim never proven; unchanged from today).
 - **Fork** (a draft, a publish rehearsal): a live schema beside the app's, in one transaction (a
   failure leaves none). `forkDraft` writes the name in the draft marker
   (`schema`, `liveSchema`); `AppHost.open` on that directory takes the live app's database
@@ -245,11 +355,19 @@ for the one operation on the host thread; a PGlite uses the host's client).
   `postgres-server.test.ts`:
   open, write, migrate and restart a user app, two apps' isolation, integer,
   money and boolean keys in a data load, and the archive round trip per field
-  type (removeField and removeModel, then undo). It always runs on PGlite and
+  type (removeField and removeModel, then undo).
+  It always runs on PGlite and
   also on a real server when `SMRT_TEST_POSTGRES_URL` is set (a server returns
   BIGINT as digits; PGlite returns numbers). It creates and drops its own
   schemas; run it locally with `pnpm test:postgres` and
   `CI_POSTGRES_BASE_URL` pointing at a server you started.
+  `postgres-claim-connection.test.ts` (registered too) checks what #5470 rests
+  on, on a connection opened like `claimApp`'s: it reaches the shell's tables
+  unqualified as the same role and writes them and an app schema in one
+  transaction; the session advisory lock survives a transaction, COMMIT,
+  ROLLBACK and a refused COMMIT on it (both on PGlite too); and (server only)
+  no other session can take it meanwhile, while a dropped session frees it and
+  the pool reconnects on a session without it.
   Whole numbers (integer, money) outside +/-9007199254740991 cannot be read
   back exactly, so they are refused at write time (`coerceValue`: create,
   update, record loads, field conversion, method writes) and, for a value that
@@ -436,6 +554,56 @@ one bundle (`format: 2`), so a desktop app moves to a hosted one and back.
   `portable-export-postgres.test.ts` (registered `test:postgres` suite: SQLite to
   PostgreSQL and back with undo, idempotence, interrupted import, tenant
   schema, 2^53 refusal; PGlite always, a server when `SMRT_TEST_POSTGRES_URL`).
+
+## Per-app caps (#5198)
+
+`HostOptions.appLimits` (`src/engine/app-limits.ts`, `AppLimits`) bounds one
+app. None injected means no check and no query (desktop unchanged). The host
+passes it to every worker it spawns (`workerData.appLimits`); the shell fills
+it from the plan in a later slice (after #5194), this file only enforces.
+
+| Limit | Refuses | Counted by |
+|---|---|---|
+| `maxModels` | a boot whose definition has more models than the stored one and than the cap (an app already over can still reopen) | `_app_meta` definition vs new definition |
+| `maxRows`, `maxRowsPerModel` | create (engine, generated REST POST, `<model>_create` tool), `importRecords`, a method's creates, `loadRecords`/`extractModel`/`mergeRecords` that GROW the app past the cap | `COUNT(*)` per table, cached per worker |
+| `maxMethodRuns` + `methodRunPeriodMs` | a method run (engine, REST/tool method) after N runs in the period | in memory, window starts at the first run |
+
+Refusals are `AppLimitError` (an `AppError`): `app limit reached (maxRows):
+this app holds 3 records of the 3 allowed; adding 1 would pass the limit`.
+A cap refusal crosses the worker boundary typed: `WorkerReply.limit` becomes
+`AppCallError.details` and then `EngineError.details`
+`{code: 'app_limit', cap, limit, current, requested}` (a boot refusal carries
+the same on its `EngineError`); callers read that, not the message.
+`appLimitCap(message)` is only the fallback parser of the message prefix. A REST POST answers
+403 `{error, code: 'app_limit', cap, limit, current, requested}`; a boot or
+migration refusal is an `EngineError` `refused`. A method that would add rows
+over the cap is refused with the limit message, not "failed, none applied".
+
+Concurrency: with a row cap set, every capped write (engine create, REST POST
+under a model route, `<model>_create` tool, `importRecords`, a method's
+transaction) runs inside `AppCaps.withWriteLock`, a promise chain per worker,
+so a check and its write are one unit and two creates with one slot left
+cannot both pass. Holders never take the lock again (their inner creates are
+`capChecked`), so it cannot deadlock; without a row cap it is a no-op.
+Every POST under `/api/<route>` or `/api/<route>/<segment>` is treated as a
+create (core's handler may route the second form to `handleCreate`). A
+method's total check is on the SIGNED net change (creates minus deletes);
+each model's own cap is on that model's growth.
+
+Counting is the same `COUNT(*)` on SQLite and PostgreSQL, one per model table,
+cached. The engine's own single create and remove (a remove is also under the
+lock) move the cache; a REST/tool write, import, method or migration drops it,
+so the NEXT capped create after one of those recounts every model table once,
+under the lock. That is one `COUNT(*)` per table per such write, not a scan per
+engine write; an app that writes mostly over REST pays it each time. Migration
+steps are counted before and after inside their transaction, so a refusal
+rolls the step back. Undo (`undoTo`, restoring archived rows or a deleted
+model) is exempt from the caps: it restores what the app already held.
+Not enforced: storage
+bytes (the cloud profile meters storage separately), requests per period and
+the 429 rate limit (core hooks, #5195), and the owner notice. The method-run
+window lives in the worker, so it starts again on every worker start: each
+publish, restart and structural change renews the period.
 
 ## Lessons
 

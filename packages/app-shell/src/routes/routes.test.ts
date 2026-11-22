@@ -1,6 +1,7 @@
 // The JSON routes, called as functions with a fake SvelteKit event. The owner
 // session is the only way in; the verified principal comes from `locals`.
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { EngineError } from '../engine/index.ts';
 import { App } from '../lib/objects/App.ts';
 import { type Approval, ApprovalCollection } from '../lib/objects/Approval.ts';
 import { ChangeCardCollection } from '../lib/objects/ChangeCard.ts';
@@ -213,6 +214,42 @@ describe('owner flows', () => {
       await historyRoute.GET(event(h.owner, 'GET', '/api/shell/history'))
     ).json();
     expect(hist.versions.at(-1).current).toBe(true);
+  });
+
+  it('a cap refusal from the engine keeps its code and numbers in the response (#5198)', async () => {
+    const host = await getHost();
+    const spy = vi.spyOn(host, 'create').mockRejectedValue(
+      new EngineError(
+        'app limit reached (maxRows): this app holds 3 records of the 3 allowed; adding 1 would pass the limit',
+        'invalid',
+        {
+          code: 'app_limit',
+          cap: 'maxRows',
+          limit: 3,
+          current: 3,
+          requested: 1,
+        },
+      ),
+    );
+    try {
+      const res = await recordsRoute.POST(
+        event(h.owner, 'POST', '/api/shell/records/Chore', {
+          body: { title: 'one too many' },
+          params: { model: 'Chore' },
+        }),
+      );
+      expect(res.status).toBe(400);
+      expect(await res.json()).toMatchObject({
+        code: 'app_limit',
+        cap: 'maxRows',
+        limit: 3,
+        current: 3,
+        requested: 1,
+        error: expect.stringContaining('app limit reached (maxRows)'),
+      });
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it('request bodies are validated', async () => {

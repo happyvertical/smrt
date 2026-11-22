@@ -10,6 +10,8 @@ import { postgresDialect } from './postgres-dialect.ts';
 import { assertAppSchema, assertSchemaName, sideName } from './schema-name.ts';
 import { sqliteDialect } from './sqlite-dialect.ts';
 import type {
+  AppClaim,
+  ClaimOptions,
   DatabaseConfig,
   DatabaseKind,
   EngineDialect,
@@ -17,6 +19,8 @@ import type {
 } from './types.ts';
 
 export type {
+  AppClaim,
+  ClaimOptions,
   DatabaseConfig,
   EngineDialect,
   HostDatabase,
@@ -80,6 +84,7 @@ export function forWorker(config: DatabaseConfig): {
       kind: 'pglite',
       schema: config.schema,
       port: port2,
+      ...(config.fence === undefined ? {} : { fence: config.fence }),
     },
     transfer: [port2],
     dispose: stop,
@@ -106,6 +111,7 @@ export async function copyAppDatabase(
     db,
     config.schema,
     file,
+    config.lockTimeoutMs,
   );
 }
 
@@ -130,13 +136,31 @@ export async function withSchemaAdmin<T>(
 
 /**
  * Claim the app's database for this host (PostgreSQL server only; see
- * `claimApp`). Resolves to the release to run when the host closes.
+ * `claimApp`). Resolves to the claim, whose `release()` runs when the host
+ * closes.
  */
 export async function claimAppDatabase(
   config: DatabaseConfig,
-): Promise<(() => Promise<void>) | undefined> {
+  options?: ClaimOptions,
+): Promise<AppClaim | undefined> {
   if (config.kind !== 'postgres') return undefined;
-  return (await import('./postgres.ts')).claimApp(config);
+  return (await import('./postgres.ts')).claimApp(config, options);
+}
+
+/**
+ * Take ownership of the app's schema for this host: advance its generation
+ * (#5190). PostgreSQL and PGlite only; SQLite keeps its writer lease and has no
+ * generation. Resolves to the generation to hold, or `undefined` for SQLite.
+ */
+export async function acquireAppOwnership(
+  config: DatabaseConfig,
+  lockTimeoutMs?: number,
+): Promise<number | undefined> {
+  if (config.kind === 'sqlite') return undefined;
+  const { acquireOwnership } = await import('./postgres-copy.ts');
+  return withSchemaAdmin(config, (db) =>
+    acquireOwnership(db, config.schema, lockTimeoutMs),
+  );
 }
 
 /** A schema name for a copy of `base` (draft, rehearsal, aside, restore), new on each call. */
