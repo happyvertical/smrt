@@ -605,10 +605,11 @@ function buildBridge(root, given) {
 }
 
 /** Local unsigned macOS packaging; release signing remains release-preflight's. */
-export function buildNativeApp(bundle, root, target, closeBehavior = 'hide') {
+export function buildNativeApp(bundle, root, target, closeBehavior = 'hide', privateDocuments) {
   if (process.platform !== 'darwin' || target !== `${process.arch === 'arm64' ? 'aarch64' : 'x86_64'}-apple-darwin`) {
     throw new Error('--native requires the matching macOS host target');
   }
+  if (privateDocuments !== undefined && target !== 'aarch64-apple-darwin') throw new Error('privateDocuments requires Darwin arm64');
   const report = JSON.parse(readFileSync(join(bundle, 'bundle-report.json'), 'utf8'));
   const stage = join(root, 'native', target);
   if (existsSync(stage)) throw new Error('native staging directory already exists');
@@ -628,7 +629,7 @@ export function buildNativeApp(bundle, root, target, closeBehavior = 'hide') {
     version: report.product.productVersion,
     app: { windows: JSON.parse(readFileSync(join(stage, 'tauri.conf.json'), 'utf8')).app.windows.map((window) => ({ ...window, title: report.product.displayName })) },
     bundle: { externalBin: [`binaries/${report.product.productId}-node`], resources: { 'resources/': './' }, createUpdaterArtifacts: false },
-    plugins: { 'smrt-desktop': { closeBehavior } },
+    plugins: { 'smrt-desktop': { closeBehavior, ...(privateDocuments === undefined ? {} : { privateDocuments }) } },
   };
   writeFileSync(join(stage, 'tauri.local.json'), `${JSON.stringify(overlay, null, 2)}\n`);
   run('tauri', ['build', '--no-sign', '--bundles', 'app', '--config', 'tauri.local.json', '--', '--locked'], {
@@ -698,7 +699,7 @@ async function main() {
         ...(options.measure ? ['--measure'] : []),
       ]);
       console.error(`bundled ${target}`);
-      if (options.native) buildNativeApp(out, root, target, options.closeBehavior);
+      if (options.native) buildNativeApp(out, root, target, options.closeBehavior, JSON.parse(readFileSync(join(app, 'smrt-desktop.json'), 'utf8')).privateDocuments);
     }
   } finally {
     const stopped = registry.child.exitCode !== null || registry.child.signalCode !== null

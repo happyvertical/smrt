@@ -217,6 +217,12 @@ fn publish(app: &AppHandle, status: String, retryable: bool, ready_url: Option<S
 }
 
 fn on_phase(app: &AppHandle, logger: &Logger, owner_route: Option<&str>, phase: &Phase) {
+    if let Some(documents) = app.try_state::<crate::document_ui::Documents>() {
+        *locked(&documents.origin) = match phase {
+            Phase::Ready { origin, .. } => origin.parse().ok(),
+            _ => None,
+        };
+    }
     logger.info(&format!("phase: {}", phase.status_line()));
     let (retryable, target) = match phase {
         Phase::Failed(_) => (true, None),
@@ -305,6 +311,93 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     logger.info("wrapper starting");
 
     app.manage(Wrapper::default());
+    app.manage(crate::document_ui::Documents::default());
+    let documents_enabled = app
+        .config()
+        .plugins
+        .0
+        .get("smrt-desktop")
+        .and_then(|v| v.get("privateDocuments"))
+        .is_some();
+    let action_key = if documents_enabled {
+        let mut random = [0u8; 32];
+        getrandom::fill(&mut random).map_err(|_| "document capability unavailable")?;
+        random
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>()
+    } else {
+        String::new()
+    };
+    *locked(&app.state::<crate::document_ui::Documents>().action_key) = action_key.clone();
+    let popup_app = handle.clone();
+    let nav_app = handle.clone();
+    let main_config = app
+        .config()
+        .app
+        .windows
+        .iter()
+        .find(|w| w.label == MAIN_WINDOW)
+        .ok_or("missing main window configuration")?
+        .clone();
+    let main = tauri::WebviewWindowBuilder::from_config(app, &main_config)?;
+    let main = if app
+        .config()
+        .plugins
+        .0
+        .get("smrt-desktop")
+        .and_then(|v| v.get("privateDocuments"))
+        .is_some()
+    {
+        main.initialization_script(
+            crate::document_ui::ANCHOR_SCRIPT
+                .replace("__SMRT_PRIVATE_ACTION_CAPABILITY__", &action_key),
+        )
+    } else {
+        main
+    };
+    // Keep WebKit's download delegate absent: its shouldPerformDownload
+    // path bypasses navigation policy before response-time download callbacks.
+    // Trusted main-frame anchors use the guarded native retrieval instead.
+    main.on_new_window(move |_, _| {
+        crate::document_ui::unsupported(&popup_app);
+        tauri::webview::NewWindowResponse::Deny
+    })
+    .on_navigation(move |url| {
+        if url.scheme() == "smrt-private-document" {
+            crate::document_ui::action(&nav_app, url);
+            return false;
+        }
+        // The stricter origin boundary belongs to the opt-in document
+        // capability; existing products retain their navigation contract.
+        if nav_app
+            .config()
+            .plugins
+            .0
+            .get("smrt-desktop")
+            .and_then(|v| v.get("privateDocuments"))
+            .is_none()
+        {
+            return true;
+        }
+        if url.scheme() == "tauri"
+            || (url.scheme() == "http" && url.host_str() == Some("tauri.localhost"))
+        {
+            return true;
+        }
+        nav_app
+            .state::<crate::document_ui::Documents>()
+            .origin
+            .lock()
+            .unwrap()
+            .as_ref()
+            .is_some_and(|origin| {
+                url.origin() == origin.origin()
+                    && url.username().is_empty()
+                    && url.password().is_none()
+            })
+    })
+    .build()?;
     let ui = build_tray(&handle)?;
     *locked(&handle.state::<Wrapper>().tray) = Some(ui);
     spawn_signal_thread(&handle, logger.clone());
@@ -337,6 +430,7 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     };
 
     let owner_route = manifest.owner_claim_route.clone();
+    *locked(&handle.state::<crate::document_ui::Documents>().owner_route) = owner_route.clone();
     let config = SupervisorConfig {
         log_failure_output: std::env::var_os(LOG_OUTPUT_ENV).is_some_and(|v| v == "1"),
         ..SupervisorConfig::default()
@@ -416,6 +510,7 @@ pub fn run() {
     block_termination_signals();
     install_panic_hook();
     let app = tauri::Builder::default()
+        .register_uri_scheme_protocol("smrt-document", crate::document_ui::protocol)
         // Must be registered first. A second launch focuses the first window.
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             show_main_window(app);
@@ -429,6 +524,9 @@ pub fn run() {
                     .try_state::<Wrapper>()
                     .is_some_and(|wrapper| wrapper.quitting.load(Ordering::SeqCst));
                 if !quitting {
+                    if window.label() != MAIN_WINDOW {
+                        return;
+                    }
                     api.prevent_close();
                     if quits_on_close(window.app_handle().config().plugins.0.get("smrt-desktop")) {
                         begin_quit(window.app_handle());

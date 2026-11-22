@@ -59,7 +59,11 @@ export type { TreeFs } from './paths.js';
 export { nodeTreeFs } from './paths.js';
 export type { PnpmRequest, PnpmResult } from './pnpm-runner.js';
 export { createPnpmRunner, pnpmCommand } from './pnpm-runner.js';
-export type { FeatureDefinition, ProductConfig } from './product-config.js';
+export type {
+  FeatureDefinition,
+  PrivateDocumentsPolicy,
+  ProductConfig,
+} from './product-config.js';
 export {
   FEATURE_CATALOG,
   PRODUCT_CONFIG_FILE,

@@ -717,3 +717,20 @@ Tauri's app_log_dir (`~/Library/Logs/<bundle-id>/supervisor.log` on macOS).
 
 For normal built apps, app-root cwd, optional quit-on-close, unsigned macOS
 archives and headless persistence smoke, see [built apps](../agents/built-apps.md).
+
+## Private PDF host policy
+
+`plugins.smrt-desktop.privateDocuments` is generated from the product's public
+`privateDocuments` configuration; see the package README for its strict route
+contract and Darwin-arm64-only support. The wrapper uses the main WebView cookie
+store for a bounded native GET with redirects/proxies disabled, then serves the
+validated bytes only to an isolated, identity-bound document WebView. The Save
+link uses the native panel and an atomic no-overwrite destination write. No
+external opener, renderer credential bridge or persistent preview cache exists.
+A native panel Replace prompt cannot authorize replacing an existing file: the
+backend refuses and tells the user to choose another filename. PDF-window close
+destroys the window and drops its bytes; main-window hide/quit behavior is
+unchanged. Trusted main-frame download anchors enter this preview flow. WebKit's
+download delegate remains absent, preserving its pre-request cancellation for
+all other download requests; destination callbacks cannot enforce origin before
+the response. Native popups without the guarded main-frame capability are denied.
