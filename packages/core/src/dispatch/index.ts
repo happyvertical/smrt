@@ -43,6 +43,11 @@ export { createDispatchBus, DispatchBus } from './bus.js';
 // Collections (for advanced use cases)
 export { DispatchCollection } from './collections/Dispatches.js';
 export { DispatchSubscriptionCollection } from './collections/DispatchSubscriptions.js';
+// Lease health counts (`smrt doctor --db`)
+export {
+  type DispatchLeaseInspection,
+  inspectDispatchLeases,
+} from './maintenance.js';
 // Models
 export { Dispatch, type DispatchData } from './models/Dispatch.js';
 export {

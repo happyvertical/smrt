@@ -256,6 +256,105 @@ export async function sweepOrphanedDispatchLeases(
   return failed;
 }
 
+/** Lease health of `_smrt_dispatch` (`smrt doctor --db`). */
+export interface DispatchLeaseInspection {
+  /** `processing` rows with no lease: claimed by an older core. */
+  legacyProcessing: number;
+  /** `processing` rows holding a lease token (live or expired). */
+  leasedProcessing: number;
+  /** Leased `processing` rows whose lease already expired. */
+  expiredLeases: number;
+  /** Leased `processing` rows claimed longer than 3x `leaseMs` ago. */
+  longLeases: number;
+  /**
+   * `pending` or `processing` rows no subscription (enabled or disabled)
+   * can route; a tenant row counts only its own tenant's subscriptions.
+   */
+  unrouted: number;
+}
+
+/**
+ * Count the lease health of every row (system scope; the route check of
+ * global rows is the named cross-tenant read). Diagnostic only: writes
+ * nothing.
+ *
+ * @param options.leaseMs - Lease length the long-lease count assumes
+ *   (default 300 000).
+ */
+export async function inspectDispatchLeases(
+  db: DatabaseInterface,
+  options: { now?: Date; leaseMs?: number } = {},
+): Promise<DispatchLeaseInspection> {
+  const now = options.now ?? new Date();
+  const leaseMs = assertPositiveMs('leaseMs', options.leaseMs ?? 300_000);
+  const count = async (where: string, ...params: unknown[]) => {
+    const result = await db.query(
+      `SELECT COUNT(*) AS total FROM _smrt_dispatch WHERE ${where}`,
+      ...params,
+    );
+    return Number((result.rows ?? [])[0]?.total ?? 0);
+  };
+  const legacyProcessing = await count(
+    "status = 'processing' AND lease_token IS NULL AND claimed_until IS NULL",
+  );
+  const leasedProcessing = await count(
+    "status = 'processing' AND lease_token IS NOT NULL",
+  );
+  const expiredLeases = await count(
+    "status = 'processing' AND lease_token IS NOT NULL AND claimed_until < $1",
+    now.toISOString(),
+  );
+  // A claim writes `updated_at`; renewals move only `claimed_until`.
+  const longLeases = await count(
+    "status = 'processing' AND lease_token IS NOT NULL AND updated_at < $1",
+    new Date(now.getTime() - 3 * leaseMs).toISOString(),
+  );
+
+  const subscriptions = await loadRouteSubscriptions(
+    db,
+    { enforced: false, tenantId: null },
+    DISPATCH_ORPHAN_ROUTE_CHECK,
+  );
+  let unrouted = 0;
+  let after: string | null = null;
+  for (;;) {
+    const { params, bind } = placeholders();
+    const conditions = ["status IN ('pending', 'processing')"];
+    if (after !== null) conditions.push(`CAST(id AS TEXT) > ${bind(after)}`);
+    const result = await db.query(
+      `SELECT CAST(id AS TEXT) AS id, type, target_subscriber, tenant_id
+         FROM _smrt_dispatch
+        WHERE ${conditions.join(' AND ')}
+        ORDER BY CAST(id AS TEXT)
+        LIMIT ${bind(BATCH)}`,
+      ...params,
+    );
+    const rows = (result.rows ?? []) as Record<string, unknown>[];
+    for (const row of rows) {
+      const routable = isDispatchRoutable(
+        {
+          id: String(row.id),
+          type: String(row.type),
+          targetSubscriber: (row.target_subscriber as string | null) ?? null,
+          tenantId: (row.tenant_id as string | null) ?? null,
+        },
+        subscriptions,
+      );
+      if (!routable) unrouted++;
+    }
+    if (rows.length < BATCH) break;
+    after = String(rows[rows.length - 1].id);
+  }
+
+  return {
+    legacyProcessing,
+    leasedProcessing,
+    expiredLeases,
+    longLeases,
+    unrouted,
+  };
+}
+
 /** Release modes of {@link releaseDispatchLeases}. */
 export type DispatchReleaseMode = 'expired' | 'afterDrain' | 'legacy';
 

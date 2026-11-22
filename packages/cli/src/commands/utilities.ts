@@ -4033,6 +4033,37 @@ export default testManifest;
           }
         }
         console.log();
+
+        // Dispatch lease health: rows an older core left leaseless, leases
+        // still held (zero before a rollback), and unroutable rows.
+        console.log('📬  Dispatch Leases\n');
+        const {
+          runDispatchLeaseCheck,
+          formatDispatchLeaseCheck,
+          dispatchLeaseCheckNeedsAttention,
+        } = await import('./doctor-dispatch-leases.js');
+        const leases = await runDispatchLeaseCheck();
+        if (leases.skipped) {
+          console.log(`   Skipped: ${leases.skipped}`);
+        } else if (!leases.check) {
+          check(
+            'Dispatch leases',
+            false,
+            leases.error ?? 'Could not check dispatch leases',
+          );
+        } else {
+          for (const line of formatDispatchLeaseCheck(leases.check)) {
+            console.log(line);
+          }
+          if (dispatchLeaseCheckNeedsAttention(leases.check)) {
+            warnings.push(
+              `dispatch leases: ${leases.check.legacyProcessing} without a lease, ${leases.check.expiredLeases} expired, ${leases.check.longLeases} long-held, ${leases.check.unrouted} unrouted`,
+            );
+          } else {
+            passed.push('Dispatch leases');
+          }
+        }
+        console.log();
       }
 
       // ========== Inference Bindings (opt-in, #4752) ==========
