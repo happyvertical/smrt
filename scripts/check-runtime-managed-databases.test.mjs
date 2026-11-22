@@ -9,6 +9,7 @@ import { evaluate, findUses, scanPackages } from './check-runtime-managed-databa
 
 const script = fileURLToPath(new URL('./check-runtime-managed-databases.mjs', import.meta.url));
 const ENGINE = 'packages/app-shell/src/engine/app-runtime.ts';
+const ENGINE_POSTGRES = 'packages/app-shell/src/engine/db/postgres.ts';
 const CALL = `import { declareRuntimeManagedDatabase } from '@happyvertical/smrt-core';
 declareRuntimeManagedDatabase(db, { owner: 'x', reason: 'y' });
 `;
@@ -37,6 +38,7 @@ declareRuntimeManagedDatabase(db, d);`),
 test('the allowed engine call passes; tests and core exports are not flagged', () => {
   const root = repo({
     [ENGINE]: CALL,
+    [ENGINE_POSTGRES]: CALL,
     'packages/core/src/migrations/index.ts': 'export { declareRuntimeManagedDatabase } from "./x.js";\n',
     'packages/core/src/migrations/runtime-managed-database.ts':
       'export function declareRuntimeManagedDatabase() {}\n',
