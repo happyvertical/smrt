@@ -109,5 +109,34 @@ describe.skipIf(process.env.SMRT_TEST_PGLITE !== '1')(
       expect(await counts()).toEqual(['a:0', 'b:0']);
       expect(await row(def.id)).toBeUndefined();
     });
+
+    it('keeps the marker when the first half committed but its acknowledgement was lost', async () => {
+      const def = dataThenIndex('nonatomic_lost_ack');
+      let lose = true;
+      const flaky: DatabaseInterface = {
+        ...db,
+        transaction: (async (work: (tx: DatabaseInterface) => unknown) => {
+          const committed = await db.transaction?.(work as never);
+          if (lose) {
+            lose = false;
+            throw new Error('connection lost after commit');
+          }
+          return committed;
+        }) as DatabaseInterface['transaction'],
+      };
+
+      const first = await tracker(flaky).apply(def, { postgresSafe: true });
+
+      expect(first.success).toBe(false);
+      expect(await counts()).toEqual(['a:1', 'b:1']);
+      expect((await row(def.id))?.error_message?.startsWith(MARKER)).toBe(true);
+      await fixDuplicates();
+      const retry = await tracker().apply(def, {
+        postgresSafe: true,
+        reconcile: true,
+      });
+      expect(retry.success, errorOf(retry)).toBe(true);
+      expect(await counts()).toEqual(['a:1']);
+    });
   },
 );

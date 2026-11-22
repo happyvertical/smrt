@@ -1255,12 +1255,17 @@ export class MigrationTracker {
       // aborts the transaction and this status write must be skipped so the
       // caller can roll back the whole batch while preserving the root error.
       try {
+        // Outside an atomic batch a split's first half may have committed
+        // with its marker even though its acknowledgement was lost: only the
+        // same attempt, still running, is marked failed here.
+        const splitRun = sequential && deferredConcurrent;
         await this.db.query(
           `UPDATE _smrt_schema_migrations
            SET status = 'failed', error_message = ?
-           WHERE id = ?`,
+           WHERE id = ?${splitRun ? " AND status = 'running' AND attempts = ?" : ''}`,
           migrationError.message,
           id,
+          ...(splitRun ? [attempts] : []),
         );
       } catch (persistError) {
         // Preserve the migration failure; status persistence is secondary and
