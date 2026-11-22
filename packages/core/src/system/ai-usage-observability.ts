@@ -610,6 +610,11 @@ export type AiUsageReportDimension =
 export interface AiUsageReportOptions {
   /** Grouping dimensions, in order. Default `['prompt']`. */
   by?: AiUsageReportDimension[];
+  /**
+   * Window start. Default: 30 days before `until` (or now), so a report
+   * never reads the whole history unless asked (pass an early date for
+   * that). The report's `since` says which start was used.
+   */
   since?: Date;
   until?: Date;
   /**
@@ -666,6 +671,7 @@ export interface AiUsageReportBucket extends AiUsageReportStats {
 /** The result of {@link reportAiUsage}. */
 export interface AiUsageReport {
   by: AiUsageReportDimension[];
+  /** The window start the report read from (the default when none was given). */
   since: Date | null;
   until: Date | null;
   /** The tenant filter, when one was given. */
@@ -793,6 +799,8 @@ function dimensionValue(
 }
 
 const REPORT_PAGE_SIZE = 1000;
+/** `reportAiUsage()`'s window when the caller gives no `since`. */
+const REPORT_DEFAULT_WINDOW_DAYS = 30;
 /** Ids per `IN` list of a page lookup. */
 const REPORT_LOOKUP_CHUNK = 500;
 
@@ -923,12 +931,18 @@ export async function reportAiUsage(
     }
   }
 
+  // The window always has a start: without one a report would read the
+  // whole history on every call (the inference settings page passes none).
+  const since =
+    options.since ??
+    new Date(
+      (options.until ?? new Date()).getTime() -
+        REPORT_DEFAULT_WINDOW_DAYS * 86_400_000,
+    );
   const windowConditions: string[] = [];
   const windowParams: unknown[] = [];
-  if (options.since) {
-    windowParams.push(options.since.toISOString());
-    windowConditions.push(`created_at >= $${windowParams.length}`);
-  }
+  windowParams.push(since.toISOString());
+  windowConditions.push(`created_at >= $${windowParams.length}`);
   if (options.until) {
     windowParams.push(options.until.toISOString());
     windowConditions.push(`created_at <= $${windowParams.length}`);
@@ -1114,7 +1128,7 @@ export async function reportAiUsage(
 
   const report: AiUsageReport = {
     by,
-    since: options.since ?? null,
+    since,
     until: options.until ?? null,
     costBasis: AI_USAGE_COST_BASIS,
     totals: finish(totals),
