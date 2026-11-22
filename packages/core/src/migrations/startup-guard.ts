@@ -25,6 +25,48 @@ const starts = new Map<
   { build: object | undefined; start: Promise<void> }
 >();
 
+/** Env switch that turns on wait mode; the value is the total timeout in ms. */
+export const MIGRATION_WAIT_TIMEOUT_ENV = 'SMRT_MIGRATION_WAIT_TIMEOUT_MS';
+export const DEFAULT_MIGRATION_WAIT_INITIAL_DELAY_MS = 2_000;
+export const DEFAULT_MIGRATION_WAIT_MAX_DELAY_MS = 15_000;
+
+/**
+ * Opt-in wait mode for the guard (#5530). A second workload that starts while
+ * another workload's init container migrates would otherwise crash-loop on
+ * `DB_MIGRATION_REQUIRED`. Only that error is retried, with exponential
+ * backoff; once the next wait would pass `timeoutMs` the original error is
+ * rethrown unchanged.
+ */
+export interface MigrationWaitOptions {
+  /** Total time to wait for the migration before the guard's error is thrown. */
+  timeoutMs: number;
+  /** First retry delay. Default 2000. */
+  initialDelayMs?: number;
+  /** Cap for the doubling delay. Default 15000. */
+  maxDelayMs?: number;
+  /** Injected in tests. */
+  sleep?: (ms: number) => Promise<void>;
+  /** Injected in tests. */
+  now?: () => number;
+}
+
+export interface StartupGuardOptions extends MigrateRecordOptions {
+  /** Wait for the migration instead of failing fast. Overrides the env switch. */
+  wait?: MigrationWaitOptions;
+}
+
+/** Wait settings from `SMRT_MIGRATION_WAIT_TIMEOUT_MS`; unset, invalid or 0 means fail fast. */
+export function migrationWaitFromEnv(
+  env: Record<string, string | undefined> = typeof process === 'undefined'
+    ? {}
+    : process.env,
+): MigrationWaitOptions | undefined {
+  const raw = env[MIGRATION_WAIT_TIMEOUT_ENV]?.trim();
+  if (!raw || !/^\d+$/.test(raw)) return undefined;
+  const timeoutMs = Number.parseInt(raw, 10);
+  return timeoutMs > 0 ? { timeoutMs } : undefined;
+}
+
 /**
  * SELECT-only startup gate, once per database per process. Compares the
  * build's stamp (`resolveBuildSchema()`: the build module the app's generated
@@ -35,7 +77,63 @@ const starts = new Map<
  */
 export async function assertDatabaseMigratedForBuild(
   db: DatabaseInterface,
-  options: MigrateRecordOptions = {},
+  options: StartupGuardOptions = {},
+): Promise<void> {
+  const { wait: explicitWait, ...recordOptions } = options;
+  const wait = explicitWait ?? migrationWaitFromEnv();
+  // A timeout that is not a positive finite number can never be exceeded, so
+  // it means fail fast rather than an endless wait.
+  if (!wait || !Number.isFinite(wait.timeoutMs) || wait.timeoutMs <= 0)
+    return assertOnce(db, recordOptions);
+
+  const timeoutMs = wait.timeoutMs;
+  const maxDelayMs = wait.maxDelayMs ?? DEFAULT_MIGRATION_WAIT_MAX_DELAY_MS;
+  const now = wait.now ?? Date.now;
+  const sleep =
+    wait.sleep ??
+    ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+  const startedAt = now();
+  let delay = Math.min(
+    wait.initialDelayMs ?? DEFAULT_MIGRATION_WAIT_INITIAL_DELAY_MS,
+    maxDelayMs,
+  );
+  for (let attempt = 1; ; attempt++) {
+    try {
+      await assertOnce(db, recordOptions);
+      if (attempt > 1) {
+        logger.info('Database migration landed; continuing startup', {
+          attempts: attempt,
+          waitedMs: now() - startedAt,
+        });
+      }
+      return;
+    } catch (error) {
+      if (!isMigrationRequired(error)) throw error;
+      const waitedMs = now() - startedAt;
+      if (waitedMs + delay > timeoutMs) throw error;
+      logger.warn('Waiting for database migration before starting', {
+        attempt,
+        retryInMs: delay,
+        waitedMs,
+        timeoutMs,
+        reason: error instanceof Error ? error.message : String(error),
+      });
+      await sleep(delay);
+      delay = Math.min(delay * 2, maxDelayMs);
+    }
+  }
+}
+
+function isMigrationRequired(error: unknown): boolean {
+  return (
+    error instanceof DatabaseError &&
+    (error as { code?: string }).code === 'DB_MIGRATION_REQUIRED'
+  );
+}
+
+async function assertOnce(
+  db: DatabaseInterface,
+  options: MigrateRecordOptions,
 ): Promise<void> {
   // Tests normally use the quiet exemption. Production-mode tests can still
   // exercise the strict policy with an ordinary (unmarked) database handle.

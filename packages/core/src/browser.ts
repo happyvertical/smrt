@@ -907,7 +907,12 @@ export {
   manifestTableEntries,
   tryComputeManifestSchemaFingerprint,
 } from './migrations/schema-fingerprint.js';
-export { assertDatabaseMigratedForBuild } from './migrations/startup-guard.js';
+export {
+  assertDatabaseMigratedForBuild,
+  MIGRATION_WAIT_TIMEOUT_ENV,
+  type MigrationWaitOptions,
+  type StartupGuardOptions,
+} from './migrations/startup-guard.js';
 export {
   type OperationPermissionAlias,
   resolveOperationPermissionAlias,

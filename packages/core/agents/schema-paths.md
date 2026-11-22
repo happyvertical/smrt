@@ -2204,6 +2204,17 @@ exported from `@happyvertical/smrt-core/migrations` only (not the root or
 browser entry), and each handle's first declaration is logged once at `info`
 with the owner, reason and database (credentials and query string removed).
 
+Wait mode is opt-in (#5530) and the default stays fail-fast. For a workload
+that starts while another workload's init container migrates, pass
+`assertDatabaseMigratedForBuild(db, { wait: { timeoutMs, initialDelayMs?, maxDelayMs? } })`
+or set `SMRT_MIGRATION_WAIT_TIMEOUT_MS` (a positive integer; unset, invalid or
+`0` means fail fast; an explicit `wait` option wins). Only `DB_MIGRATION_REQUIRED`
+is retried, with doubling backoff (default 2s start, 15s cap). Each retry logs a
+`warn` (attempt, retryInMs, waitedMs, timeoutMs, reason); landing logs an `info`.
+When the next delay would pass the timeout, the guard's original error is
+rethrown unchanged, so a real mismatch is still a hard failure. Other errors fail
+at once. Every retry re-reads the record: failed starts are not cached.
+
 For an emergency, `SMRT_ALLOW_UNMIGRATED_START=1` starts anyway. It logs once
 per database per process, including when fingerprints match. The warning names
 the override and the expected/found values. Other values do not override.

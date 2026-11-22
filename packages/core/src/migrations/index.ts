@@ -253,7 +253,12 @@ export {
   type SqliteTableRebuildPlan,
   sqliteRebuildPlaceholderSql,
 } from './sqlite-rebuild.js';
-export { assertDatabaseMigratedForBuild } from './startup-guard.js';
+export {
+  assertDatabaseMigratedForBuild,
+  MIGRATION_WAIT_TIMEOUT_ENV,
+  type MigrationWaitOptions,
+  type StartupGuardOptions,
+} from './startup-guard.js';
 // Core classes
 export {
   buildConcurrentIndexPlan,
