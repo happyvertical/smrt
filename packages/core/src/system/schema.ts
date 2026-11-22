@@ -1913,7 +1913,14 @@ function toPostgresTenantUuid(ddl: string): string {
 // id ever opened); the bootstrap fills it from the ids still present or
 // referenced after its DDL replay and before this stamp
 // (`system/ai-run-ids.ts`).
-export const SMRT_SCHEMA_VERSION = '1.20.0';
+// 1.21.0 partitions `_smrt_contexts` by tenant (#5449): a NOT NULL
+// `tenant_id` (`''` for the global partition) joins the memory identity, whose
+// inline UNIQUE becomes the named `uq_smrt_contexts_identity`; existing tables
+// are reshaped by `ensureContextsSystemTableCompatibility()` and their rows
+// land in the global partition. It also adds
+// `idx_smrt_embeddings_class_field_model_id`, the keyset-paging index behind
+// exact semantic search (#5451), which the DDL replay creates.
+export const SMRT_SCHEMA_VERSION = '1.21.0';
 
 /**
  * Canonical form of the system DDL that {@link SMRT_SCHEMA_DDL_CHECKSUMS} covers.
@@ -1978,4 +1985,6 @@ export const SMRT_SCHEMA_DDL_CHECKSUMS: Readonly<Record<string, string>> =
       'b9ea16aaf8c5d3232245395dbd6374c0878594f3e2e443f1ae58e64c726acca1',
     '1.20.0':
       'c507de3133c44e3350196c1a30ad821c3faf96b79392d885d3465a6d57dfc4f8',
+    '1.21.0':
+      '70879cb4c0955c804e9ed6c031d3299c0b77185878ee80390687df755a463443',
   });

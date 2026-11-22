@@ -210,7 +210,10 @@ describe.each(engines)('run id registry upgrade on %s', (engine) => {
         ),
       ),
     ).toHaveLength(1);
-    expect(SMRT_SCHEMA_VERSION).toBe('1.20.0');
+    // The backfill arrived in 1.20.0; any later stamp also covers it.
+    expect(
+      SMRT_SCHEMA_VERSION.localeCompare('1.20.0', undefined, { numeric: true }),
+    ).toBeGreaterThanOrEqual(0);
     const statements: string[] = [];
     const restore = recordStatements(db, (sql) => statements.push(sql));
     await ensureSystemTables(db, hint(engine));
