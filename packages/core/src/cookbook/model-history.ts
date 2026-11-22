@@ -100,7 +100,9 @@ const REVISION_TRANSACTIONS = new WeakMap<object, RevisionTransaction>();
  * The revision transaction behind `store.transaction` when it is the one
  * {@link createAppModelHistory} installed (recognised by identity, as
  * `append` is for the journal); `undefined` for a store with a transaction
- * of its own. Internal: not re-exported.
+ * of its own. The editor's, not a public API (the `app-models` entry
+ * re-exports this module wholesale, so it is reachable there).
+ * @internal
  */
 export function revisionTransactionOf(
   store: AppModelHistoryStore,
