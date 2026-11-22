@@ -282,7 +282,28 @@ instances and never use this path to overwrite a loaded revision.
 - `on(pattern, handler)` → in-memory handler (immediate)
 - `subscribe({ signalType, subscriber })` → persistent subscription (survives restarts)
 - `process(subscriberName, handler)` → process pending dispatches
-- Wildcards: `campaign.*` matches `campaign.completed` (single segment only)
+- Wildcards: every `*` is one or more non-dot characters (`campaign.*`
+  matches `campaign.completed`, not `campaign.a.b`; `invoice.v*` matches
+  `invoice.v2`); case-sensitive. `dispatch/pattern.ts` is the one compiler
+  for `DispatchSubscription.matches()` and the SQL candidate predicate
+  (GLOB on SQLite, `LIKE ... ESCAPE` elsewhere, `=` for literals); never
+  match patterns another way.
+- Routing (`dispatch/routing.ts`): a row is routed to subscriber S iff ANY
+  enabled subscription of S matches its type and either the row targets S
+  or the row has no target and that subscription is `compete`. The SQL
+  candidate query and the in-memory recheck use this one rule.
+- `process()` candidates (`dispatch/candidates.ts`): oldest first, NULL
+  `created_at` rows first (by id), then `(created_at, id)`, keyset-paged with
+  one sort key for ORDER BY and the cursor: `CAST(id AS TEXT)`, and
+  `created_at` by instant (the native column on PostgreSQL/PGlite, whose
+  text form follows the session `TimeZone` and is not chronological across
+  DST; the text form on SQLite/DuckDB); routing, patterns, `signalTypes` and
+  the tenant predicate apply in SQL before the page limit; `limit` caps
+  claims (default 100, also for 0; a negative `limit` means no limit).
+  Each later page re-reads the subscriber's enabled subscriptions. A row
+  that fails to hydrate is skipped with one `dispatch.malformed_row` warning
+  per call and never blocks later rows. Bind placeholders in statement-text
+  order: SQLite allocates `$n` slots by first occurrence.
 - Tables: `_smrt_dispatch`, `_smrt_dispatch_subscriptions`
 - Status: `pending → processing → completed` (or `failed`)
 - Tenancy (`dispatch/tenant-resolver.ts`): `emit` stamps the server-derived

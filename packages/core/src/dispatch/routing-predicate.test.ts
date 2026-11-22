@@ -1,6 +1,7 @@
 /**
  * One routing predicate (P6 T28): a row is routed to a subscriber when ANY of
  * its matching subscriptions routes it, not only the first one found.
+ * Revocation per page (P6 T29): subscriptions are re-read before each page.
  */
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -8,9 +9,11 @@ import {
   type DispatchTestDatabase,
   dispatchStatus,
   dispatchTestEngines,
+  insertRawDispatch,
   openDispatchTestDatabase,
   rowsOf,
 } from '../__tests__/fixtures/dispatch-test-db';
+import { DispatchSubscriptionCollection } from './collections/DispatchSubscriptions.js';
 import type { DispatchMetadata } from './types.js';
 
 describe.each(
@@ -81,5 +84,39 @@ describe.each(
     });
     const afterUpsert = await bus.process('ledger', async () => {});
     expect(afterUpsert).toBe(1);
+  });
+
+  it('disabling a subscription stops claims from the next page', async () => {
+    const { bus, db } = ctx;
+    await bus.subscribe({ signalType: 'job.run', subscriber: 'worker' });
+    for (let i = 0; i < 150; i++) {
+      await insertRawDispatch(db, {
+        id: `job-${String(i).padStart(3, '0')}`,
+        type: 'job.run',
+        createdAt: `2026-04-01T00:00:00.${String(i).padStart(3, '0')}Z`,
+      });
+    }
+
+    let calls = 0;
+    const count = await bus.process(
+      'worker',
+      async () => {
+        calls++;
+        if (calls === 1) {
+          // Takes effect at the next page; the running handler and the rows
+          // already read on this page are not revoked.
+          await DispatchSubscriptionCollection.disable(db, 'job.run', 'worker');
+        }
+      },
+      { limit: 150 },
+    );
+
+    expect(count).toBe(100);
+    const pending = rowsOf(
+      await db.query(
+        "SELECT COUNT(*) AS n FROM _smrt_dispatch WHERE status = 'pending'",
+      ),
+    );
+    expect(Number(pending[0]?.n)).toBe(50);
   });
 });

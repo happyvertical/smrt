@@ -33,16 +33,19 @@ import type {
  *   when a tenant id value is bound. Ignored for the no-value branches.
  * @param includeGlobal - Whether an active tenant also matches global (NULL)
  *   rows. Processing paths (claim/findPending/retry/cleanup) keep `true` so a
- *   tenant worker can pick up global work (including the wildcard path of
- *   `DispatchBus.process()`, which uses `list`). The bus's public inspection
+ *   tenant worker can pick up global work (including the candidate query of
+ *   `DispatchBus.process()`, `dispatch/candidates.ts`). The bus's public inspection
  *   reads (`DispatchBus.list()` / `get()`) pass `false`: a global row's
  *   payload is not owned by the tenant (e.g. a delivery emitted outside tenant
  *   context for another tenant's recipient), so global rows are visible to
  *   system scope only.
  * @returns `true` when a value placeholder was consumed (so the caller can
  *   advance its param index), `false` otherwise.
+ *
+ * Exported for the bus's internal candidate query (`dispatch/candidates.ts`);
+ * not re-exported from the package entry point.
  */
-function pushTenantPredicate(
+export function pushTenantPredicate(
   conditions: string[],
   params: unknown[],
   scope: DispatchTenantScope | undefined,
@@ -219,8 +222,8 @@ export class DispatchCollection {
    * List dispatches with filtering
    *
    * @param includeGlobal - Whether an active tenant also matches global
-   *   (NULL-tenant) rows. Defaults to `true`, which the wildcard path of
-   *   `DispatchBus.process()` relies on to claim global work. The public
+   *   (NULL-tenant) rows. Defaults to `true` (the processing scope, under
+   *   which an active tenant also sees global work). The public
    *   `DispatchBus.list()` passes `false` so global rows are system-only on
    *   inspection reads (#3301).
    */

@@ -77,7 +77,10 @@ export interface DispatchSubscribeOptions {
  * Options for processing dispatches
  */
 export interface DispatchProcessOptions {
-  /** Maximum number of dispatches to process */
+  /**
+   * Maximum number of dispatches to claim (default 100; 0 also means the
+   * default, and a negative value means no limit)
+   */
   limit?: number;
   /** Signal types to process (default: all subscribed) */
   signalTypes?: string[];

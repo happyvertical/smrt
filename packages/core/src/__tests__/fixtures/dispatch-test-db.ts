@@ -82,10 +82,12 @@ export const postgresDispatchUrl = process.env.SMRT_TEST_POSTGRES_URL;
 
 /**
  * Open a PostgreSQL database in a fresh schema of its own (optional lane).
- * `close()` drops the schema.
+ * `close()` drops the schema. `timeZone` sets the session `TimeZone` of
+ * every pooled connection (through the connection `options`).
  */
 export async function openPostgresDispatchDatabase(
   label: string,
+  session: { timeZone?: string } = {},
 ): Promise<DispatchTestDatabase> {
   const url = postgresDispatchUrl;
   if (!url) throw new Error('SMRT_TEST_POSTGRES_URL is not set');
@@ -100,9 +102,13 @@ export async function openPostgresDispatchDatabase(
   } as Parameters<typeof getDatabase>[0])) as DatabaseInterface;
   await admin.query(`CREATE SCHEMA ${schema}`);
   const separator = url.includes('?') ? '&' : '?';
+  const options = [
+    `-c search_path=${schema}`,
+    ...(session.timeZone ? [`-c TimeZone=${session.timeZone}`] : []),
+  ].join(' ');
   const db = (await getDatabase({
     type: 'postgres',
-    url: `${url}${separator}options=-c%20search_path%3D${schema}`,
+    url: `${url}${separator}options=${encodeURIComponent(options)}`,
     dbid: `smrt-test-dispatch-${randomUUID()}`,
   } as Parameters<typeof getDatabase>[0])) as DatabaseInterface;
   const bus = await createDispatchBus({ db });

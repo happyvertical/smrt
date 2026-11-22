@@ -41,10 +41,18 @@ import {
   CREATE_SMRT_DISPATCH_TABLE,
   getSystemTableDDLForEngine,
 } from '../system/schema.js';
+import {
+  candidateCursor,
+  hydrateCandidate,
+  PENDING_CANDIDATE_PHASES,
+  type PendingCandidateCursor,
+  readPendingCandidatePage,
+} from './candidates.js';
 import { DispatchCollection } from './collections/Dispatches.js';
 import { DispatchSubscriptionCollection } from './collections/DispatchSubscriptions.js';
 import { Dispatch } from './models/Dispatch.js';
 import { DispatchSubscription } from './models/DispatchSubscription.js';
+import { dispatchPatternDialect } from './pattern.js';
 import { isDispatchRoutedTo } from './routing.js';
 import {
   resolveDispatchTenantId,
@@ -543,13 +551,20 @@ export class DispatchBus {
    * 3. On success: sets status to `completed`
    * 4. On error: sets status to `failed` (stores the error message)
    *
-   * Uses a wildcard-aware query strategy: subscriptions with `*` patterns fetch
-   * all pending dispatches and filter in memory; exact-match subscriptions use
-   * a direct SQL `IN` query for efficiency.
+   * Candidates are read oldest first (rows without `created_at` first, then
+   * by `created_at`, ties by id), in keyset pages. Subscription patterns,
+   * delivery routing, `signalTypes` and the tenant scope are applied in SQL
+   * before the page limit, so a routed row is never hidden behind newer or
+   * non-matching rows. Each page re-reads the subscriber's enabled
+   * subscriptions: disabling or removing one stops claims from the next page;
+   * a handler already running is not interrupted. A row the bus cannot
+   * hydrate (for example an unparsable timestamp) is skipped with a warning
+   * and does not block the rows after it.
    *
    * @param subscriber - The subscriber name (must match a `subscribe()` call)
    * @param handler - Function to call for each pending dispatch
-   * @param options.limit - Maximum dispatches to process in one call (default 100)
+   * @param options.limit - Maximum dispatches claimed in one call (default
+   *   100; 0 also means the default, and a negative value means no limit)
    * @param options.signalTypes - Optional filter to process only specific signal types
    * @returns Number of dispatches successfully processed (excludes failed)
    *
@@ -585,25 +600,38 @@ export class DispatchBus {
 
     // Get subscriber's subscriptions, scoped to the active tenant so a tenant-A
     // processor only matches tenant-A (and, when global, global) subscriptions.
-    const subscriptions = await DispatchSubscriptionCollection.findBySubscriber(
-      this.db,
-      subscriber,
-      true,
-      tenantScope,
-    );
+    // Re-read before every later page so a disabled or removed subscription
+    // stops claims from the next page.
+    const loadSubscriptions = () =>
+      DispatchSubscriptionCollection.findBySubscriber(
+        this.db,
+        subscriber,
+        true,
+        tenantScope,
+      );
+    let subscriptions = await loadSubscriptions();
 
     if (subscriptions.length === 0) {
       return 0;
     }
 
-    // Get signal types (including wildcards)
-    const signalTypes = subscriptions.map((s) => s.signalType);
+    // A negative limit means no limit (as the old SQLite `LIMIT -1` did);
+    // 0 or an omitted limit means the default.
+    const limit =
+      typeof options.limit === 'number' && options.limit < 0
+        ? Number.POSITIVE_INFINITY
+        : options.limit || 100;
+    const pageSize = Math.min(limit, DispatchBus.CANDIDATE_PAGE_SIZE);
+    const engine = getDatabaseEngine(this.db);
+    const dialect = dispatchPatternDialect(engine);
+    const nativeCreatedAt = engine === 'postgres';
+    const signalTypes =
+      options.signalTypes && options.signalTypes.length > 0
+        ? options.signalTypes
+        : undefined;
 
-    // For non-wildcard subscriptions, we can query directly
-    // For wildcards, we need to get all pending and filter
-    const hasWildcards = signalTypes.some((t) => t.includes('*'));
-
-    // Helper: check if a dispatch should be visible to this subscriber
+    // In-memory recheck of a candidate the SQL query selected (defense in
+    // depth: tenant scope and routing are also in the SQL predicate).
     const isVisibleToSubscriber = (dispatch: Dispatch): boolean => {
       // Tenant isolation (defense in depth — the SQL queries below also filter).
       if (tenantScope.enforced) {
@@ -627,71 +655,122 @@ export class DispatchBus {
       return isDispatchRoutedTo(dispatch, subscriber, subscriptions);
     };
 
-    let pendingDispatches: Dispatch[];
-    if (hasWildcards) {
-      // Get all pending dispatches and filter by subscription patterns + target
-      const allPending = await DispatchCollection.list(this.db, {
-        status: 'pending',
-        limit: options.limit || 100,
-        tenantScope,
-      });
-
-      pendingDispatches = allPending.filter(isVisibleToSubscriber);
-    } else {
-      // Direct query for exact signal types (with target_subscriber filter)
-      const raw = await DispatchCollection.findPending(
-        this.db,
-        signalTypes,
-        options.limit || 100,
-        subscriber,
-        tenantScope,
-      );
-      // Post-filter for delivery mode correctness
-      pendingDispatches = raw.filter(isVisibleToSubscriber);
-    }
-
-    // Filter by specific signal types if provided
-    if (options.signalTypes && options.signalTypes.length > 0) {
-      pendingDispatches = pendingDispatches.filter((d) =>
-        options.signalTypes?.includes(d.type),
-      );
-    }
-
     let processed = 0;
+    let claims = 0;
+    let pages = 0;
+    let recheckRejects = 0;
+    const malformedIds: string[] = [];
 
-    for (const dispatch of pendingDispatches) {
-      // Atomically claim the dispatch (S5 #1398). The conditional UPDATE
-      // (WHERE id = ? AND status = 'pending' [AND tenant predicate]) closes the
-      // TOCTOU window: if a competing worker — or a system-scoped processor —
-      // already moved this row out of 'pending', our claim affects no rows and
-      // we skip it, so a compete/global dispatch is processed at most once.
-      const claimed = await DispatchCollection.claim(
-        this.db,
-        dispatch,
-        tenantScope,
+    candidates: for (const phase of PENDING_CANDIDATE_PHASES) {
+      let cursor: PendingCandidateCursor | undefined;
+      while (claims < limit) {
+        if (pages > 0) {
+          subscriptions = await loadSubscriptions();
+          if (subscriptions.length === 0) break candidates;
+        }
+        pages++;
+        const rows = await readPendingCandidatePage(this.db, {
+          dialect,
+          nativeCreatedAt,
+          subscriber,
+          subscriptions,
+          signalTypes,
+          tenantScope,
+          phase,
+          cursor,
+          pageSize,
+        });
+
+        for (const row of rows) {
+          if (claims >= limit) break;
+          cursor = candidateCursor(row);
+          const dispatch = hydrateCandidate(row);
+          if (!dispatch) {
+            // Isolated: the cursor has moved past it, so it never blocks
+            // the rows behind it.
+            malformedIds.push(cursor.id);
+            continue;
+          }
+          if (!isVisibleToSubscriber(dispatch)) {
+            recheckRejects++;
+            continue;
+          }
+          // Atomically claim the dispatch (S5 #1398). The conditional UPDATE
+          // (WHERE id = ? AND status = 'pending' [AND tenant predicate])
+          // closes the TOCTOU window: if a competing worker — or a
+          // system-scoped processor — already moved this row out of
+          // 'pending', our claim affects no rows and we skip it, so a
+          // compete/global dispatch is processed at most once.
+          const claimed = await DispatchCollection.claim(
+            this.db,
+            dispatch,
+            tenantScope,
+          );
+          if (!claimed) {
+            continue;
+          }
+          claims++;
+          if (await this.runClaimedDispatch(subscriber, handler, dispatch)) {
+            processed++;
+          }
+        }
+
+        if (rows.length < pageSize) break;
+      }
+    }
+
+    if (malformedIds.length > 0) {
+      logger.warn('dispatch.malformed_row: skipped rows that cannot be read', {
+        subscriber,
+        count: malformedIds.length,
+        ids: malformedIds.slice(0, 10),
+      });
+    }
+    if (recheckRejects > 0) {
+      // The SQL predicate and the in-memory recheck share one compiler and
+      // one routing rule, so this indicates a defect, not routine filtering.
+      logger.warn(
+        'dispatch.scan_reject: candidate failed the routing recheck',
+        {
+          subscriber,
+          count: recheckRejects,
+        },
       );
-      if (!claimed) {
-        continue;
-      }
-
-      try {
-        // Invoke handler
-        await handler(dispatch.payload, dispatch.getMetadata());
-
-        // Mark as completed
-        dispatch.markCompleted(subscriber);
-        await DispatchCollection.update(this.db, dispatch);
-        processed++;
-      } catch (error) {
-        // Mark as failed
-        const errorMessage =
-          error instanceof Error ? error.message : String(error);
-        dispatch.markFailed(errorMessage);
-        await DispatchCollection.update(this.db, dispatch);
-      }
     }
 
     return processed;
+  }
+
+  /** Page size of the candidate query (bounded by `options.limit`). */
+  private static readonly CANDIDATE_PAGE_SIZE = 100;
+
+  /**
+   * Run the handler for a dispatch this call claimed and record the outcome.
+   *
+   * @returns `true` when the handler succeeded and the row was marked
+   *   completed.
+   */
+  private async runClaimedDispatch(
+    subscriber: string,
+    handler: DispatchHandler,
+    dispatch: Dispatch,
+  ): Promise<boolean> {
+    try {
+      // Invoke handler
+      await handler(dispatch.payload, dispatch.getMetadata());
+
+      // Mark as completed
+      dispatch.markCompleted(subscriber);
+      await DispatchCollection.update(this.db, dispatch);
+      return true;
+    } catch (error) {
+      // Mark as failed
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      dispatch.markFailed(errorMessage);
+      await DispatchCollection.update(this.db, dispatch);
+      return false;
+    }
   }
 
   /**
