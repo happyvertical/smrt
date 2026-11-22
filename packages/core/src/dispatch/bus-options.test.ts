@@ -25,6 +25,27 @@ describe('dispatch bus lease options', () => {
     );
   });
 
+  it.each([
+    [{ maxExecutionMs: 999 }],
+    [{ leaseMs: 5000, maxExecutionMs: 4999 }],
+    [{ maxExecutionMs: 1500.5 }],
+  ])('rejects maxExecutionMs below leaseMs or not an integer (%o)', async (options) => {
+    await expect(createDispatchBus({ db, ...options })).rejects.toThrow(
+      /\bmaxExecutionMs\b/,
+    );
+    expect(() => new DispatchBus({} as never, options)).toThrow(
+      /\bmaxExecutionMs\b/,
+    );
+  });
+
+  it('rejects an invalid per-call maxExecutionMs naming the option', async () => {
+    const bus = await createDispatchBus({ db, leaseMs: 1000 });
+    await bus.subscribe({ signalType: 'job.run', subscriber: 'worker' });
+    await expect(
+      bus.process('worker', async () => {}, { maxExecutionMs: 10 }),
+    ).rejects.toThrow(/\bmaxExecutionMs\b/);
+  });
+
   it('accepts the documented minimums', () => {
     expect(
       () => new DispatchBus({} as never, { leaseMs: 1000, maxAttempts: 1 }),

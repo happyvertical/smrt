@@ -52,9 +52,11 @@ import {
 import { DispatchCollection } from './collections/Dispatches.js';
 import { DispatchSubscriptionCollection } from './collections/DispatchSubscriptions.js';
 import {
+  assertMaxExecutionMs,
   claimDispatchLease,
   type DispatchLease,
   type DispatchLeaseSettings,
+  expireDispatchLease,
   renewDispatchLease,
   resolveDispatchLeaseSettings,
   settleDispatchLease,
@@ -630,6 +632,11 @@ export class DispatchBus {
     handler: DispatchHandler,
     options: DispatchProcessOptions = {},
   ): Promise<number> {
+    // Opt-in execution deadline: per call, else per bus; unset by default.
+    const maxExecutionMs =
+      options.maxExecutionMs === undefined
+        ? this.lease.maxExecutionMs
+        : assertMaxExecutionMs(options.maxExecutionMs, this.lease.leaseMs);
     await this.initialize();
     // Renewals and outcome writes must commit independently of a handler;
     // a handle that provably cannot is refused before anything is claimed.
@@ -712,6 +719,8 @@ export class DispatchBus {
       malformed: 0,
       exhausted: 0,
       scanRejects: 0,
+      timedOut: 0,
+      longLeases: 0,
     };
     let pages = 0;
     const malformedIds: string[] = [];
@@ -817,6 +826,7 @@ export class DispatchBus {
             lease,
             tenantScope,
             stats,
+            maxExecutionMs,
           );
         }
 
@@ -871,6 +881,7 @@ export class DispatchBus {
     lease: DispatchLease,
     tenantScope: DispatchTenantScope,
     stats: DispatchProcessStats,
+    maxExecutionMs: number | undefined,
   ): Promise<void> {
     const releaseLocal = holdLeaseLocally(this.db, lease.id);
     const heartbeat = startLeaseHeartbeat({
@@ -879,28 +890,99 @@ export class DispatchBus {
       renew: (claimedUntil) =>
         renewDispatchLease(this.leaseDb, lease, claimedUntil),
     });
-    let outcome:
+    type Outcome =
       | { status: 'completed'; subscriber: string }
       | { status: 'failed'; error: string };
-    try {
-      await handler(dispatch.payload, {
+    const run: Promise<Outcome> = (async () =>
+      handler(dispatch.payload, {
         ...dispatch.getMetadata(),
         signal: heartbeat.signal,
-      });
-      outcome = { status: 'completed', subscriber };
-    } catch (error) {
-      // Handler text can never read as a framework `[smrt:CODE]` reason.
-      outcome = {
+      }))().then(
+      () => ({ status: 'completed', subscriber }),
+      (error: unknown) => ({
         status: 'failed',
+        // Handler text can never read as a framework `[smrt:CODE]` reason.
         error: encodeHandlerError(
           error instanceof Error ? error.message : String(error),
         ),
-      };
+      }),
+    );
+
+    let deadline: ReturnType<typeof setTimeout> | undefined;
+    let longLease: ReturnType<typeof setTimeout> | undefined;
+    let outcome: Outcome | 'timedOut';
+    try {
+      if (maxExecutionMs === undefined) {
+        // No deadline: a hung handler keeps renewing. Say so once.
+        longLease = setTimeout(() => {
+          stats.longLeases++;
+          logger.warn(
+            'dispatch.long_lease: attempt running longer than 3x leaseMs',
+            {
+              id: dispatch.id,
+              type: dispatch.type,
+              leaseMs: this.lease.leaseMs,
+            },
+          );
+        }, 3 * this.lease.leaseMs);
+        longLease.unref?.();
+        outcome = await run;
+      } else {
+        outcome = await Promise.race([
+          run,
+          new Promise<'timedOut'>((resolve) => {
+            deadline = setTimeout(() => resolve('timedOut'), maxExecutionMs);
+          }),
+        ]);
+      }
     } finally {
-      // No renewal is sent once the handler returned.
-      await heartbeat.stop();
-      stats.renewErrors += heartbeat.counters.renewErrors;
+      clearTimeout(deadline);
+      clearTimeout(longLease);
     }
+
+    if (outcome === 'timedOut') {
+      // The deadline passed. JavaScript cannot stop the handler: stop
+      // renewing, abort its signal, clear the token so nothing this attempt
+      // writes later can match, and move on. The row is reclaimable by a
+      // later call, never by this one (`claimedThisCall`).
+      const reason = formatDispatchFailureReason(
+        DISPATCH_FAILURE_CODES.executionTimeout,
+        `after ${maxExecutionMs} ms`,
+      );
+      heartbeat.timeOut(
+        Object.assign(
+          new Error(`${DISPATCH_FAILURE_CODES.executionTimeout}: ${reason}`),
+          { code: DISPATCH_FAILURE_CODES.executionTimeout },
+        ),
+      );
+      stats.timedOut++;
+      stats.renewErrors += heartbeat.counters.renewErrors;
+      logger.warn('dispatch.execution_timeout: attempt passed its deadline', {
+        id: dispatch.id,
+        type: dispatch.type,
+        maxExecutionMs,
+      });
+      try {
+        await expireDispatchLease(this.leaseDb, lease, reason);
+      } catch (expireError) {
+        // The lease then simply expires on its own.
+        stats.settleErrors++;
+        logger.warn('dispatch.settle_error: could not end a timed-out lease', {
+          id: dispatch.id,
+          error:
+            expireError instanceof Error
+              ? expireError.message
+              : String(expireError),
+        });
+      } finally {
+        releaseLocal();
+      }
+      return;
+    }
+
+    // No renewal is sent once the handler returned.
+    await heartbeat.stop();
+    stats.renewErrors += heartbeat.counters.renewErrors;
 
     try {
       if (heartbeat.signal.aborted) {
@@ -1220,6 +1302,7 @@ export async function createDispatchBus(
   const leaseOptions = {
     leaseMs: options.leaseMs,
     maxAttempts: options.maxAttempts,
+    maxExecutionMs: options.maxExecutionMs,
     leaseDb: options.leaseDb,
   };
   resolveDispatchLeaseSettings(leaseOptions);

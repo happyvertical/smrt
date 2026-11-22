@@ -127,6 +127,12 @@ export interface DispatchHeartbeat {
   readonly signal: AbortSignal;
   readonly counters: DispatchHeartbeatCounters;
   stop(): Promise<void>;
+  /**
+   * The attempt's execution deadline passed: stop renewing at once and abort
+   * `signal` with `reason`. A renewal in flight is not awaited; it carries a
+   * token the deadline write clears, so it matches nothing.
+   */
+  timeOut(reason: Error): void;
 }
 
 /**
@@ -222,6 +228,12 @@ export function startLeaseHeartbeat(input: {
         clearTimeout(timer);
       }
       state = 'done';
+    },
+    timeOut(reason: Error) {
+      if (state === 'done') return;
+      state = 'done';
+      clearInterval(handle);
+      controller.abort(reason);
     },
   };
 }

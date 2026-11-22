@@ -7,6 +7,7 @@
 
 import { afterEach, expect, it } from 'vitest';
 import { setDispatchTenantResolver } from '../../dispatch/tenant-resolver';
+import type { DispatchProcessStats } from '../../dispatch/types';
 import type { DispatchOpener } from './dispatch-lease-suites';
 import {
   type DispatchTestDatabase,
@@ -356,5 +357,135 @@ export function defineLeaseReleaseCases(openDatabase: DispatchOpener): void {
     await expect(
       bus.maintain({ release: 'everything' as never }),
     ).rejects.toThrow(/release/);
+  });
+}
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/** T10: the opt-in execution deadline. */
+export function defineLeaseDeadlineCases(openDatabase: DispatchOpener): void {
+  const open = useOpener(openDatabase);
+  const leaseMs = 1_000;
+
+  it('opt-in deadline nulls the token, moves on, and is not re-claimed in the same call', async () => {
+    const { bus, db } = await open({
+      bus: { leaseMs, maxExecutionMs: leaseMs },
+    });
+    await bus.subscribe({ signalType: 'job.run', subscriber: 'worker' });
+    await insertRawDispatch(db, {
+      id: 'hung',
+      type: 'job.run',
+      createdAt: ago(60_000),
+    });
+    await insertRawDispatch(db, {
+      id: 'next',
+      type: 'job.run',
+      createdAt: ago(30_000),
+    });
+
+    const calls: string[] = [];
+    let hungSignal: AbortSignal | undefined;
+    let releaseHung = () => {};
+    const hungDone = new Promise<void>((resolve) => {
+      releaseHung = resolve;
+    });
+    let stats: DispatchProcessStats | undefined;
+    const first = await bus.process(
+      'worker',
+      async (_payload, metadata) => {
+        calls.push(metadata.id);
+        if (metadata.id === 'hung' && metadata.attempts === 1) {
+          hungSignal = metadata.signal;
+          await hungDone;
+        }
+      },
+      { onStats: (value) => (stats = value) },
+    );
+
+    expect(first).toBe(1);
+    expect(calls).toEqual(['hung', 'next']);
+    expect(stats?.timedOut).toBe(1);
+    expect(hungSignal?.aborted).toBe(true);
+    expect((hungSignal?.reason as { code?: string })?.code).toBe(
+      'DISPATCH_EXECUTION_TIMEOUT',
+    );
+    const timedOut = await dispatchLeaseRow(db, 'hung');
+    expect(timedOut.status).toBe('processing');
+    expect(timedOut.leaseToken).toBeNull();
+    expect(
+      timedOut.lastError?.startsWith('[smrt:DISPATCH_EXECUTION_TIMEOUT]'),
+    ).toBe(true);
+
+    // Another call reclaims the timed-out row.
+    await sleep(5);
+    expect(await bus.process('worker', async () => {})).toBe(1);
+    const reclaimed = await dispatchLeaseRow(db, 'hung');
+    expect(reclaimed.status).toBe('completed');
+    expect(reclaimed.attempts).toBe(2);
+
+    // The first attempt finishing late changes nothing.
+    releaseHung();
+    await sleep(20);
+    expect(await dispatchLeaseRow(db, 'hung')).toEqual(reclaimed);
+  });
+
+  it('without a deadline a slow handler is never timed out', async () => {
+    const { bus, db } = await open({ bus: { leaseMs } });
+    await bus.subscribe({ signalType: 'job.run', subscriber: 'worker' });
+    await insertRawDispatch(db, { id: 'slow', type: 'job.run' });
+    let stats: DispatchProcessStats | undefined;
+    const count = await bus.process(
+      'worker',
+      async () => {
+        await sleep(leaseMs + 500);
+      },
+      { onStats: (value) => (stats = value) },
+    );
+    expect(count).toBe(1);
+    expect(stats?.timedOut).toBe(0);
+    expect((await dispatchLeaseRow(db, 'slow')).status).toBe('completed');
+  });
+
+  it('a per-call deadline applies to that call', async () => {
+    const { bus, db } = await open({ bus: { leaseMs } });
+    await bus.subscribe({ signalType: 'job.run', subscriber: 'worker' });
+    await insertRawDispatch(db, { id: 'hung', type: 'job.run' });
+    let stats: DispatchProcessStats | undefined;
+    let release = () => {};
+    const done = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await bus.process('worker', async () => done, {
+      maxExecutionMs: leaseMs,
+      onStats: (value) => (stats = value),
+    });
+    release();
+    expect(stats?.timedOut).toBe(1);
+    expect((await dispatchLeaseRow(db, 'hung')).leaseToken).toBeNull();
+  });
+}
+
+/** T11: the long-lease diagnostic, without a deadline. */
+export function defineLongLeaseCases(openDatabase: DispatchOpener): void {
+  const open = useOpener(openDatabase);
+
+  it('warns once when an attempt exceeds 3x leaseMs without a deadline', async () => {
+    const leaseMs = 1_000;
+    const { bus, db } = await open({ bus: { leaseMs } });
+    await bus.subscribe({ signalType: 'job.run', subscriber: 'worker' });
+    await insertRawDispatch(db, { id: 'long', type: 'job.run' });
+    let stats: DispatchProcessStats | undefined;
+    const count = await bus.process(
+      'worker',
+      async () => {
+        await sleep(3 * leaseMs + 400);
+      },
+      { onStats: (value) => (stats = value) },
+    );
+    expect(count).toBe(1);
+    expect(stats?.longLeases).toBe(1);
+    expect(stats?.timedOut).toBe(0);
+    // Diagnostic only: the attempt kept its lease and settled.
+    expect((await dispatchLeaseRow(db, 'long')).status).toBe('completed');
   });
 }

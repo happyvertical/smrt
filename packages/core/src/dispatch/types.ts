@@ -94,6 +94,11 @@ export interface DispatchProcessOptions {
   signalTypes?: string[];
   /** Called once with the counters of this call before `process()` resolves. */
   onStats?: (stats: DispatchProcessStats) => void;
+  /**
+   * Execution deadline for this call, overriding the bus `maxExecutionMs`
+   * (an integer of at least `leaseMs`).
+   */
+  maxExecutionMs?: number;
 }
 
 /** Counters of one `DispatchBus.process()` call. */
@@ -116,6 +121,10 @@ export interface DispatchProcessStats {
   exhausted: number;
   /** Candidates the in-memory routing recheck rejected (indicates a defect). */
   scanRejects: number;
+  /** Attempts that passed an opted-in execution deadline. */
+  timedOut: number;
+  /** Attempts (without a deadline) that ran longer than 3x `leaseMs`. */
+  longLeases: number;
 }
 
 /**
@@ -279,6 +288,18 @@ export interface DispatchBusOptions {
    */
   maxAttempts?: number;
   /**
+   * Opt-in execution deadline in milliseconds (unset by default; an integer
+   * of at least `leaseMs`). When an attempt passes it, the bus stops
+   * renewing, aborts `metadata.signal` (`DISPATCH_EXECUTION_TIMEOUT`), clears
+   * the row's lease token (noting `[smrt:DISPATCH_EXECUTION_TIMEOUT]`) and
+   * moves on; a later `process()` call reclaims the row. JavaScript cannot
+   * stop the handler: one that ignores the signal may overlap the
+   * redelivery. Without a deadline a hung handler keeps its lease, and the
+   * bus warns (`dispatch.long_lease`, `longLeases`) once an attempt runs
+   * longer than 3x `leaseMs`. `process()` takes a per-call override.
+   */
+  maxExecutionMs?: number;
+  /**
    * Handle for lease renewals and outcome writes, when the bus handle cannot
    * run them independently of a handler (for example a pool a handler may
    * exhaust). Lease statements must commit on their own: never pass a
@@ -328,7 +349,7 @@ export interface DispatchMaintainResult {
 /** The lease options of {@link DispatchBusOptions}. */
 export type DispatchLeaseOptions = Pick<
   DispatchBusOptions,
-  'leaseMs' | 'maxAttempts' | 'leaseDb'
+  'leaseMs' | 'maxAttempts' | 'maxExecutionMs' | 'leaseDb'
 >;
 
 /** Startup retry budget for {@link DispatchBusOptions.startupRetry}. */

@@ -36,6 +36,25 @@ export const DEFAULT_DISPATCH_MAX_ATTEMPTS = 5;
 export interface DispatchLeaseSettings {
   leaseMs: number;
   maxAttempts: number;
+  /** Opt-in execution deadline; unset by default. */
+  maxExecutionMs?: number;
+}
+
+/**
+ * Validate an execution deadline: an integer of at least `leaseMs`. Throws
+ * naming the option.
+ */
+export function assertMaxExecutionMs(value: unknown, leaseMs: number): number {
+  if (
+    typeof value !== 'number' ||
+    !Number.isSafeInteger(value) ||
+    value < leaseMs
+  ) {
+    throw new Error(
+      `DispatchBus: maxExecutionMs must be an integer of at least leaseMs (${leaseMs}) (got ${String(value)})`,
+    );
+  }
+  return value;
 }
 
 /**
@@ -43,7 +62,11 @@ export interface DispatchLeaseSettings {
  * option for an invalid value.
  */
 export function resolveDispatchLeaseSettings(
-  options: { leaseMs?: number; maxAttempts?: number } = {},
+  options: {
+    leaseMs?: number;
+    maxAttempts?: number;
+    maxExecutionMs?: number;
+  } = {},
 ): DispatchLeaseSettings {
   const leaseMs = options.leaseMs ?? DEFAULT_DISPATCH_LEASE_MS;
   if (!Number.isSafeInteger(leaseMs) || leaseMs < MIN_DISPATCH_LEASE_MS) {
@@ -57,7 +80,12 @@ export function resolveDispatchLeaseSettings(
       `DispatchBus: maxAttempts must be an integer of at least 1 (got ${String(options.maxAttempts)})`,
     );
   }
-  return { leaseMs, maxAttempts };
+  if (options.maxExecutionMs === undefined) return { leaseMs, maxAttempts };
+  return {
+    leaseMs,
+    maxAttempts,
+    maxExecutionMs: assertMaxExecutionMs(options.maxExecutionMs, leaseMs),
+  };
 }
 
 /** A lease this process holds on one row. */
@@ -156,6 +184,32 @@ export async function renewDispatchLease(
      WHERE id = $2 AND lease_token = $3 AND status = 'processing'
      RETURNING id`,
     claimedUntil.toISOString(),
+    lease.id,
+    lease.token,
+  );
+  return (result.rows ?? []).length > 0;
+}
+
+/**
+ * End a held lease whose opted-in execution deadline passed: clear the token
+ * and set the expiry to now, noting `[smrt:DISPATCH_EXECUTION_TIMEOUT]`.
+ * Any later renewal or settle of that attempt carries the old token and
+ * matches nothing, whatever the clock says; the row is reclaimable by a
+ * later `process()` call.
+ *
+ * @returns `true` iff this call ended the lease.
+ */
+export async function expireDispatchLease(
+  db: DatabaseInterface,
+  lease: DispatchLease,
+  reason: string,
+): Promise<boolean> {
+  const result = await db.query(
+    `UPDATE _smrt_dispatch SET lease_token = NULL, claimed_until = $1, last_error = $2
+     WHERE id = $3 AND lease_token = $4 AND status = 'processing'
+     RETURNING id`,
+    new Date().toISOString(),
+    reason,
     lease.id,
     lease.token,
   );
