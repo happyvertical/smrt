@@ -44,41 +44,51 @@ vi.mock('../../discovery/index.js', () => ({
 const sent: string[] = [];
 let startSequence = 0;
 
+const AFFINITY = Symbol.for('@happyvertical/sql/connection-affinity');
+
+/**
+ * A recording wrapper. It forwards every member to the handle it wraps, so
+ * it carries that handle's connection-affinity claim for itself (the
+ * migration lock refuses an unclaimed wrapper, #5435), and it wraps a pinned
+ * session's database, where `db:migrate` runs. A plain object rather than a
+ * Proxy: the adapter's claim is non-configurable, so a proxy must report the
+ * target's claim, which names the target.
+ */
 function recording<T extends object>(target: T): T {
-  return new Proxy(target, {
-    get(object, property) {
-      const value = Reflect.get(object, property, object);
-      if (typeof value !== 'function') return value;
-      if (property === 'query') {
-        return (sql: unknown, ...rest: unknown[]) => {
+  const source = target as Record<string | symbol, any>;
+  const wrapper: Record<string | symbol, unknown> = { ...source };
+  if (typeof source.query === 'function')
+    wrapper.query = (sql: unknown, ...rest: unknown[]) => {
+      if (typeof sql === 'string') sent.push(sql);
+      return source.query(sql, ...rest);
+    };
+  if (typeof source.transaction === 'function')
+    wrapper.transaction = (
+      callback: (tx: object) => unknown,
+      ...rest: unknown[]
+    ) => source.transaction((tx: object) => callback(recording(tx)), ...rest);
+  if (typeof source.acquireSession === 'function')
+    wrapper.acquireSession = async (...args: unknown[]) => {
+      const session = await source.acquireSession(...args);
+      const inner = session.database?.();
+      const database = inner ? recording(inner) : undefined;
+      return {
+        query: (sql: unknown, ...rest: unknown[]) => {
           if (typeof sql === 'string') sent.push(sql);
-          return (value as (...args: unknown[]) => unknown).call(
-            object,
-            sql,
-            ...rest,
-          );
-        };
-      }
-      if (property === 'acquireSession') {
-        return async (...args: unknown[]) =>
-          recording(
-            (await (value as (...a: unknown[]) => unknown).apply(
-              object,
-              args,
-            )) as object,
-          );
-      }
-      if (property === 'transaction') {
-        return (callback: (tx: object) => unknown, ...rest: unknown[]) =>
-          (value as (...a: unknown[]) => unknown).call(
-            object,
-            (tx: object) => callback(recording(tx)),
-            ...rest,
-          );
-      }
-      return value.bind(object);
-    },
-  });
+          return session.query(sql, ...rest);
+        },
+        isActive: () => session.isActive(),
+        release: () => session.release(),
+        ...(session.destroy ? { destroy: () => session.destroy() } : {}),
+        ...(database ? { database: () => database } : {}),
+      };
+    };
+  const claim = source[AFFINITY] as { kind: string } | undefined;
+  if (claim)
+    Object.defineProperty(wrapper, AFFINITY, {
+      value: Object.freeze({ kind: claim.kind, handle: wrapper }),
+    });
+  return wrapper as T;
 }
 
 vi.mock('@happyvertical/sql', async (importOriginal) => {

@@ -3228,6 +3228,17 @@ export default testManifest;
           }
         }
 
+        // A failed batch on a lost lock connection: name the cause.
+        if (errorCount > 0 || stiErrorCount > 0) {
+          const lockLost = await migrationLock?.assertHeld().then(
+            () => undefined,
+            (lost: unknown) =>
+              lost instanceof Error && lost.name === 'MigrationLockLostError'
+                ? lost
+                : undefined,
+          );
+          if (lockLost) console.error(`❌ ${lockLost.message}`);
+        }
         if (
           shouldFailDbMigrate({
             manualInterventionCount: runDecision.stops.length,
@@ -3286,6 +3297,16 @@ export default testManifest;
         console.error(
           formatSchemaCommandFailureHeader(error, '\n❌ Migration failed:'),
         );
+        // The run executes on the lock's connection: when that connection
+        // ended, say so (another run may be migrating; rerun to converge).
+        const lockLost = await migrationLock?.assertHeld().then(
+          () => undefined,
+          (lost: unknown) =>
+            lost instanceof Error && lost.name === 'MigrationLockLostError'
+              ? lost
+              : undefined,
+        );
+        if (lockLost) console.error(`   ${lockLost.message}`);
         if (error instanceof Error) {
           console.error(`   ${redactDatabaseUrlsInText(error.message)}`);
           const ctx = getErrorContext(error);
