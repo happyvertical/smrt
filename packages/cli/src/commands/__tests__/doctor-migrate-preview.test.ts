@@ -115,6 +115,37 @@ describe('doctor next migrate (#4934)', () => {
       'found no migrate record. Run smrt db:migrate before starting this build.',
     );
   });
+  describe('a database with no record but a system-table stamp', () => {
+    async function stamp(version: string) {
+      await db.query(
+        'CREATE TABLE _smrt_migrations (id TEXT PRIMARY KEY, version TEXT NOT NULL UNIQUE, applied_at TEXT, description TEXT, checksum TEXT)',
+      );
+      await db.query(
+        'INSERT INTO _smrt_migrations (id, version, description) VALUES (?, ?, ?)',
+        'stamp',
+        version,
+        'earlier release',
+      );
+    }
+    it('warns when the stamp is older than the floor', async () => {
+      await stamp('1.0.0');
+      const { report, out } = await preview();
+      expect(report.warnings.join('\n')).toContain(
+        'system tables were last prepared',
+      );
+      expect(out).toContain('system schema 1.0.0');
+    });
+    it('says the age is not proven, never a pass, when the stamp is not older', async () => {
+      await stamp('99.0.0');
+      const { report, out } = await preview();
+      expect(report.warnings.join('\n')).not.toContain(
+        'system tables were last prepared',
+      );
+      expect(out).toContain('age not proven');
+      expect(out).toContain('schema 99.0.0');
+      expect(out).not.toContain('ok:');
+    });
+  });
   describe('declared table retirements (#5005)', () => {
     const declare = (rows?: 'discard') =>
       ObjectRegistry.registerManifestRetiredTables({

@@ -483,12 +483,58 @@ The generated API client (`generateClientModule`, behind both
 `@happyvertical/smrt-virt-client` and `@smrt/client`) sends every
 caller-supplied path value (an item `id`, a named route parameter) as exactly
 one `encodeURIComponent` segment (`__smrtPathSegment`). An empty, `.` or `..`
-value cannot be one segment, and an item id holding a lone UTF-16 surrogate
-cannot be encoded, so its request promise rejects (nothing is sent) instead of
-the request resolving onto another route or the call throwing. An unencodable
-named route parameter still throws its `URIError` synchronously. Fetchers stay plain functions returning
-that promise; a missing named route parameter still throws synchronously.
-Static collection and route segments are emitted as JSON string literals.
+value cannot be one segment, and a lone UTF-16 surrogate cannot be encoded, so
+its request promise rejects (nothing is sent) instead of the request resolving
+onto another route. Every fetcher is `async`, so any bad argument (a missing
+named route parameter, or one that cannot be encoded, which rejects with its
+`URIError`) rejects like a failed request. A named route parameter is read
+once and only as the caller's own property; an inherited one (`toString`) is
+missing. Static collection and route segments are emitted as JSON string
+literals.
+
+`list(params)` writes the one query grammar both list routes read
+(`parseRestListWhere`, `src/query-access.ts`, shared by runtime REST list and
+count and the emitted SvelteKit list route): `limit`, `offset`, `orderBy` (a
+string, or a list of terms comma-joined), `field=value` and `field[op]=value`
+with `op` one of `gt`, `gte`, `lt`, `lte`, `ne`, `in`, `like`. An `[in]`
+operand is a non-empty list sent as one comma-joined value; comma-joining is
+the form every deployed list route already splits, so a new client stays
+correct against an older server. `params.where` (`{ field: value }`,
+`{ field: { op, value } }` or `{ 'field op': value }`, the WebMCP list-tool
+shape) flattens into the same parameters; `params` and `where` must be plain
+records (`list(null)`, a `Map`, `URLSearchParams` or `Date` rejects; only
+`undefined` omits them). A value is a string, number, boolean, bigint or
+`Date` (its ISO string); a query name or value that is not a well-formed
+string (a lone surrogate) rejects, and an explicit `op` in a structured
+condition must be a supported operator string (`null`, `false`, `''` reject).
+An empty or scalar `[in]`
+operand (in every form, `{ op: 'in', value }` included), `null`, an `[in]`
+member holding a comma, an object value, a list without `[in]`, an unsupported
+operator or one parameter given twice rejects before any request. The routes
+refuse a repeated query parameter, and two parameters naming one predicate
+(`price[gte]` and `price >=`), with 400 `REPEATED_QUERY_PARAMETER` instead of
+keeping one value. They refuse a key the caller may not filter (unknown or
+unreadable field, `__proto__` included, since the parsed record has no
+prototype, and a non-field option such as `cache`) with 400
+`QUERY_FIELD_NOT_ALLOWED`; the emitted SvelteKit route keeps the code in its
+public error body. Decoding follows the operator the collection applies (the
+bracket token, or the one written in a whitespace-form key, so `featured like`
+keeps its string pattern). A value compared against a `boolean` field
+(`true`/`false`/`1`/`0`) becomes a boolean. One compared against a `datetime`
+field (including `created_at`, `updated_at`) that is an ISO-8601 instant with
+`Z` or an offset, or a date alone (UTC midnight), becomes its UTC ISO string
+with every fractional digit kept, never a millisecond `Date`, so PostgreSQL
+microsecond comparisons stay exact. Anything else, an offset-less date-time
+included, passes through unchanged, as does a column whose declarations
+disagree on its type. An already-emitted SvelteKit route must be regenerated
+to get the 400s and the decoding. GET custom actions keep their own
+serialization (arrays repeat the key with `String(member)`, objects
+JSON-encode), except that a `Date` is sent as its ISO string, the form their
+routes decode for a `Date` parameter. A named route parameter must be the
+caller's own property and is read once; that value is the one the query or
+the JSON body carries, and a body otherwise follows the options' own
+`toJSON()`. The list
+response shape is unchanged here.
 
 
 `src/vite-preset/` (`@happyvertical/smrt-core/vite`, `smrt()`) composes the Oxc

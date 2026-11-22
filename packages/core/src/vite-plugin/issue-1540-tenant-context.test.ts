@@ -2,11 +2,13 @@
  * Test for issue #1540 (facet 2): tenant-context establishment in generated
  * SvelteKit routes.
  *
- * Generated routes for `@TenantScoped` objects must enter the tenant context
- * (from the authenticated principal's `locals.tenantId`) before touching the
- * collection, so `@TenantScoped` interceptors auto-filter every query. Without
- * it, an `optional`-mode scoped object would return cross-tenant rows. Routes
- * for non-tenant objects must NOT pull in the tenancy dependency.
+ * Every generated route resolves the request's tenancy through core
+ * (`enterRequestTenancy`, #5375) before touching the collection: the actor from
+ * the authenticated principal's `locals`, the model's policy at request time,
+ * and the tenant context every query then runs in. The manifest's tenancy
+ * selects nothing, so no route imports the tenancy package. The decisions
+ * themselves are exercised in `src/__tests__/request-tenancy.test.ts` and the
+ * smrt-tenancy `effective-tenancy-*` suites.
  */
 
 import {
@@ -106,14 +108,30 @@ describe('Issue #1540 (facet 2): tenant-context establishment', () => {
     const collectionRoute = findRouteContent('tenantdocs/+server.ts');
     const itemRoute = findRouteContent('tenantdocs/[id]/+server.ts');
 
-    // Tenancy import + helper present.
-    expect(collectionRoute).toContain("from '@happyvertical/smrt-tenancy'");
-    expect(collectionRoute).toContain('function establishTenantContext');
-    // Established after the auth guard in every handler.
-    expect(collectionRoute).toContain('establishTenantContext(locals);');
-    expect(itemRoute).toContain('establishTenantContext(locals);');
-    // Reads `locals.tenantId` (the canonical smrt-users field).
-    expect(collectionRoute).toContain('l.tenantId');
+    for (const route of [collectionRoute, itemRoute]) {
+      // Core resolves the request's tenancy; nothing comes from the tenancy
+      // package or the manifest flag.
+      expect(route).toContain('enterRequestTenancy,');
+      expect(route).not.toContain('@happyvertical/smrt-tenancy');
+      expect(route).not.toContain('isTenantScopedModel');
+      expect(route).toContain(
+        'const TENANCY_MODEL = "@test/fields:TenantDoc";',
+      );
+      expect(route).toContain('requirePrincipal: false,');
+    }
+    // Entered after the auth guard in every handler, for the operation it
+    // performs.
+    expect(collectionRoute).toContain(
+      'const tenancy = enterTenancy(locals, "list");',
+    );
+    expect(collectionRoute).toContain('enterTenancy(locals, "create");');
+    expect(itemRoute).toContain('const tenancy = enterTenancy(locals, "get");');
+    expect(itemRoute).toContain('enterTenancy(locals, "update");');
+    expect(itemRoute).toContain('enterTenancy(locals, "delete");');
+    // A refusal is answered with its own status.
+    expect(collectionRoute).toContain(
+      'if (failure) throw error(failure.status, failure.message);',
+    );
   });
 
   it('does NOT pull tenancy into a non-tenant object’s routes', async () => {
@@ -133,15 +151,18 @@ describe('Issue #1540 (facet 2): tenant-context establishment', () => {
 
     const collectionRoute = findRouteContent('plaindocs/+server.ts');
     expect(collectionRoute).not.toContain('@happyvertical/smrt-tenancy');
-    // Tenancy can be registered at runtime: the route enters the caller's
-    // tenant through core's request hooks, and only when the model is
-    // tenant-scoped at request time.
+    // Tenancy can be registered at run time: the route resolves it per
+    // request through core exactly as for a model that declares it, with no
+    // generation-time switch.
+    expect(collectionRoute).not.toContain('isTenantScopedModel');
+    expect(collectionRoute).toContain('enterRequestTenancy,');
     expect(collectionRoute).toContain(
-      'if (isTenantScopedModel("@test/tenant-context:PlainDoc")) establishTenantContext(locals);',
+      'const TENANCY_MODEL = "@test/tenant-context:PlainDoc";',
     );
     expect(collectionRoute).toContain(
-      "import { enterRequestTenantContext as enterTenantContext, getRequestTenantContext as getCurrentTenant, isTenantScopedModel } from '@happyvertical/smrt-core';",
+      'const tenancy = enterTenancy(locals, "list");',
     );
+    expect(collectionRoute).toContain('enterTenancy(locals, "create");');
     // Auth guard is still present (every route is fail-closed).
     expect(collectionRoute).toContain('requireRouteAuth(locals,');
   });
@@ -177,23 +198,52 @@ describe('Issue #1540 (facet 2): tenant-context establishment', () => {
     );
 
     for (const route of [collectionRoute, actionRoute]) {
-      expect(route).toContain("from '@happyvertical/smrt-tenancy'");
-      expect(route).toContain('function establishTenantContext');
-      expect(route).toContain('const userId = l.userId ?? user?.id');
-      expect(route).toContain(
-        'l.permissions ?? l.permissionSet ?? l.smrtPermissions ?? tenantContext?.permissions',
-      );
-      expect(route).toContain("typeof userId !== 'string' || !userId");
-      expect(route).toContain('!permissions');
-      expect(route).toContain(
-        "throw error(403, 'Authenticated principal context is incomplete')",
-      );
-      expect(route).toContain('enterTenantContext(');
-      expect(route).toContain('{ ...active, tenantId, userId, permissions }');
-      expect(route).toContain('establishTenantContext(locals);');
+      // The complete-principal rule (tenant, user and permissions, the active
+      // context refreshed with them) is core's `resolveRequestActor`; the
+      // route asks for it.
+      expect(route).not.toContain('@happyvertical/smrt-tenancy');
+      expect(route).toContain('enterRequestTenancy,');
+      expect(route).toContain('requirePrincipal: true,');
+      expect(route).toContain('enterTenancy(locals, ');
     }
     // Request body ownership values are intentionally absent from the helper.
     expect(collectionRoute).not.toContain('body.tenantId');
     expect(collectionRoute).not.toContain('body.userId');
+  });
+
+  it('scopes a singleton STI base to its manifest, but not a plain model', async () => {
+    await generate({
+      packageName: '@test/sti',
+      objects: {
+        Doc: {
+          className: 'Doc',
+          collection: 'docs',
+          fields: { title: { type: 'text' } },
+          methods: {},
+          decoratorConfig: {
+            tableStrategy: 'sti',
+            api: { include: ['list', 'get', 'create', 'update', 'delete'] },
+          },
+        },
+        Plain: {
+          className: 'Plain',
+          collection: 'plains',
+          fields: { title: { type: 'text' } },
+          methods: {},
+          decoratorConfig: { api: { include: ['list', 'get'] } },
+        },
+      },
+    } as unknown as SmartObjectManifest);
+
+    for (const suffix of ['docs/+server.ts', 'docs/[id]/+server.ts']) {
+      const route = findRouteContent(suffix);
+      expect(route).toContain(
+        'const TENANCY_MODEL_SCOPE: ReadonlySet<string> = new Set(["@test/sti:Doc"]);',
+      );
+      expect(route).toContain('modelScope: TENANCY_MODEL_SCOPE');
+    }
+    for (const suffix of ['plains/+server.ts', 'plains/[id]/+server.ts']) {
+      expect(findRouteContent(suffix)).not.toContain('TENANCY_MODEL_SCOPE');
+    }
   });
 });

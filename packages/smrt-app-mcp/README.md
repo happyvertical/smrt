@@ -435,8 +435,8 @@ import { mcpServer } from '$lib/server/mcp';
 export const POST = mountMcpRoute(mcpServer);
 ```
 
-`mountMcpRoute` is a modern-only, fetch-style Streamable HTTP endpoint. It
-serves `server/discover`, `tools/list`, and `tools/call` with the SDK's
+`mountMcpRoute` is a modern-only (by default), fetch-style Streamable HTTP
+endpoint. It serves `server/discover`, `tools/list`, and `tools/call` with the SDK's
 2026-07-28 envelope. It advertises the optional
 `io.modelcontextprotocol/tasks` extension only when an allowed object enables
 MCP tasks (`mcp: { tasks: [...] }`); task-aware clients can then call
@@ -448,6 +448,19 @@ ordered by name. Stock MCP clients send the required
 `Mcp-Method` header (and `Mcp-Name` for `tools/call`); the mount validates them
 against the JSON-RPC body and returns the protocol `HeaderMismatch` error
 (`-32020`, HTTP 400) for a missing or mismatched header.
+
+Legacy (2025-era) JSON-RPC clients, such as Paperclip, send an `initialize`
+handshake or a request naming no protocol version. By default the route
+answers those with `-32022` (Unsupported protocol version). Pass
+`legacy: 'stateless'` to `mountMcpRoute` or `mountMcpAppRoute` to opt in
+(default `'reject'`; the SDK's own vocabulary; mount-time only, never read from
+a request). Each legacy request is served by a fresh protocol server from the
+same per-request factory with the same authenticated, bound principal, so
+OAuth challenge, per-call grant liveness, `bindPrincipal`, scopes, tool policy,
+role-filtered `tools/list`, 404 for unknown or forbidden tools, `confirmTools`
+and approvals, and audit all apply unchanged. Legacy clients get stateless
+semantics: no sessions, no `list_changed`, no subscriptions. Modern requests
+are served identically either way (#5109).
 
 `tools/list` emits the required cache metadata with a one-day, `private`
 default. Shared (`public`) caching is intentionally exceptional: set

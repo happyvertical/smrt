@@ -27,7 +27,7 @@ import {
   importModelName,
 } from '../../engine/import-target.ts';
 import { AppDraftCollection } from '../objects/AppDraft.ts';
-import { AppImportCollection } from '../objects/AppImport.ts';
+import { AppImport, AppImportCollection } from '../objects/AppImport.ts';
 import { applyOwnBatch } from './approvals.ts';
 import { runCommand } from './builder.ts';
 import {
@@ -43,6 +43,7 @@ import {
   previewDraft,
   startDraft,
 } from './drafts.ts';
+import { subscribe } from './events.ts';
 import {
   closeHost,
   configureShell,
@@ -68,23 +69,56 @@ let texts: string[];
 let testEngine: 'api' | 'codex';
 let offeredTools: unknown[][];
 let release: (() => void) | undefined;
+let stopWaking: () => void;
 const request = async (bad = false, badCache = false) =>
   new Request('http://shell/api/shell/import', {
     method: 'POST',
     body: (await businessBytes(bad, badCache)) as BodyInit,
   });
-const pause = (ms = 10) => new Promise((resolve) => setTimeout(resolve, ms));
 // The two full-lifecycle tests below (load, exact checks, rebuilds, Apply) pass a
 // 180s timeout: a chain of engine rebuilds, seconds each on a loaded host.
 // Measured 45s at host load ~33 and 52s on a CI runner (the Apply test); the
 // Remove/Put back test hit the 60s default on CI three times. 3x headroom.
-async function until(check: () => Promise<boolean>) {
-  for (let n = 0; n < 1000; n++) {
-    if (await check()) return;
-    await pause();
-  }
-  throw new Error('Import did not reach the expected state');
+//
+// `until` waits on what actually moves an import, not on a budget of polls
+// (#5542: the old 1000 x 10 ms budget ran out under host load while the work
+// was still progressing, and its polling competed with that work). It
+// re-checks when a test runner emits any event (a job started, progressed,
+// completed, failed, ...), when the shell publishes an event, when an import
+// row is saved, and when work reaches a test gate. The test's own timeout bounds the
+// wait. A slow re-check covers a transition no signal follows, such as a
+// stopped runner's late return releasing its job slot.
+const RECHECK_MS = 250;
+let wakes = 0;
+const sleepers = new Set<() => void>();
+function wake() {
+  wakes += 1;
+  for (const sleeper of [...sleepers]) sleeper();
 }
+function nextWake() {
+  return new Promise<void>((resolve) => {
+    const done = () => {
+      clearTimeout(timer);
+      sleepers.delete(done);
+      resolve();
+    };
+    const timer = setTimeout(done, RECHECK_MS);
+    sleepers.add(done);
+  });
+}
+async function until(check: () => Promise<boolean>) {
+  for (;;) {
+    const seen = wakes;
+    if (await check()) return;
+    if (wakes === seen) await nextWake();
+  }
+}
+/** Hold the caller until the test calls `release`; reaching the gate wakes `until`. */
+const hold = () =>
+  new Promise<void>((resolve) => {
+    release = resolve;
+    wake();
+  });
 const install = () =>
   createShellImportService({
     db: h.db,
@@ -139,6 +173,18 @@ async function worker(extra: ConstructorParameters<typeof TaskRunner>[0] = {}) {
     retention: false,
     ...extra,
   });
+  for (const event of [
+    'job:started',
+    'job:progress',
+    'job:event',
+    'job:completed',
+    'job:retrying',
+    'job:failed',
+    'job:unclaimed',
+    'runner:error',
+    'runner:stopped',
+  ])
+    runner.on(event, wake);
   runners.push(runner);
   await runner.initialize(h.db);
   await runner.start();
@@ -161,9 +207,22 @@ beforeEach(async () => {
   texts = [];
   release = undefined;
   answer = () => businessWorkbook().plan;
+  stopWaking = subscribe(wake);
+  const save = AppImport.prototype.save;
+  vi.spyOn(AppImport.prototype, 'save').mockImplementation(async function (
+    this: AppImport,
+    ...args: Parameters<AppImport['save']>
+  ) {
+    try {
+      return await save.apply(this, args);
+    } finally {
+      wake();
+    }
+  });
   service = install();
 });
 afterEach(async () => {
+  stopWaking();
   release?.();
   for (const runner of runners) await runner.stop();
   service.dispose();
@@ -512,9 +571,7 @@ it('holds edits and publishing during a partial load; a repeated check discards 
     const result = await original.call(this, command, options);
     if (once && command.type === 'loadRecords') {
       once = false;
-      await new Promise<void>((resolve) => {
-        release = resolve;
-      });
+      await hold();
     }
     return result;
   });
@@ -546,9 +603,7 @@ it.each([
   answer = async () => {
     if (once) {
       once = false;
-      await new Promise<void>((resolve) => {
-        release = resolve;
-      });
+      await hold();
     }
     return businessWorkbook().plan;
   };
@@ -601,9 +656,7 @@ it.each([
 ] as const)('cancels a %s planning turn finally and removes the owned file and draft', async (engine) => {
   testEngine = engine;
   answer = async () => {
-    await new Promise<void>((resolve) => {
-      release = resolve;
-    });
+    await hold();
     return businessWorkbook().plan;
   };
   await service.start(h.owner, await request());
@@ -621,10 +674,7 @@ it.each([
 it('stops and resumes CLI planning without opening a draft from the stopped child', async () => {
   testEngine = 'codex';
   answer = async (index) => {
-    if (!index)
-      await new Promise<void>((resolve) => {
-        release = resolve;
-      });
+    if (!index) await hold();
     return businessWorkbook().plan;
   };
   await service.start(h.owner, await request());
@@ -1068,9 +1118,7 @@ it('keeps a late Cancel on a completed import ready for review until an explicit
 });
 it('uses the authoritative result when completion races a Stop request', async () => {
   answer = async () => {
-    await new Promise<void>((resolve) => {
-      release = resolve;
-    });
+    await hold();
     return businessWorkbook().plan;
   };
   await service.start(h.owner, await request());
@@ -1085,6 +1133,7 @@ it('uses the authoritative result when completion races a Stop request', async (
       stop: async (id: string) => {
         await new Promise<void>((resolve) => {
           finishStop = resolve;
+          wake();
         });
         return api.stop(id);
       },

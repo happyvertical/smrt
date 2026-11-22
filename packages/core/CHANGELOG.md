@@ -1,5 +1,24 @@
 # @happyvertical/smrt-core
 
+## 0.69.0
+
+### Minor Changes
+
+- ### Breaking Changes
+  
+  - async generated client fetchers; list() sends its params (#5565) (core)
+  
+  ### Features
+  
+  - embed entry with handler and drain; build ./start on them (#5550) (app-shell)
+  - hosted engine follow-ups: caps wiring, hosted keys, migration (#5183) (#5540) (app-shell)
+
+### Patch Changes
+
+- @happyvertical/smrt-config@0.69.0
+  - @happyvertical/smrt-scanner@0.69.0
+  - @happyvertical/smrt-types@0.69.0
+
 ## 0.68.0
 
 ### Minor Changes

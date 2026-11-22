@@ -18,11 +18,18 @@ export interface AsyncContext<T> {
   run<R>(store: T, callback: () => R): R;
   /** The value of the innermost enclosing `run()`, if any. */
   getStore(): T | undefined;
+  /**
+   * Make `store` visible to `getStore()` for the rest of the current
+   * synchronous execution and the async work it starts (a no-op where the
+   * store does not propagate).
+   */
+  enter(store: T): void;
 }
 
 type AsyncLocalStorageConstructor = new <T>() => {
   run<R>(store: T, callback: () => R): R;
   getStore(): T | undefined;
+  enterWith(store: T): void;
 };
 
 function resolveAsyncLocalStorage(): AsyncLocalStorageConstructor | undefined {
@@ -45,11 +52,13 @@ export function createAsyncContext<T>(): AsyncContext<T> {
       propagatesAcrossAwait: true,
       run: (store, callback) => storage.run(store, callback),
       getStore: () => storage.getStore(),
+      enter: (store) => storage.enterWith(store),
     };
   }
   return {
     propagatesAcrossAwait: false,
     run: (_store, callback) => callback(),
     getStore: () => undefined,
+    enter: () => {},
   };
 }

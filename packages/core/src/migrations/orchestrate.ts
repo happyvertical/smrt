@@ -38,6 +38,7 @@ import {
   confirmedRetirementsOf,
   packagesSeenInput,
   readLastMigrateRecord,
+  readRecordedSystemSchema,
   recordSuccessfulMigrate,
 } from './migrate-record.js';
 import {
@@ -45,6 +46,7 @@ import {
   formatMigrationRefusal,
   type MigrationRunDecision,
 } from './migration-run-decision.js';
+import { checkUnrecordedDatabaseAge } from './oldest-supported.js';
 import { isRetiredTableRowsAppeared } from './retire-guard.js';
 import { MigrationTracker } from './tracker.js';
 
@@ -498,6 +500,17 @@ export async function migrateSmrtSchemas(
   const last = await readLastMigrateRecord(options.db, {
     engineHint: options.engineHint,
   });
+  if (last.state !== 'recorded') {
+    // No record: date the system tables, before this run prepares any of
+    // them. A stamp older than the floor's is a warning, never a stop: it
+    // cannot tell which release last migrated the application tables.
+    const ageWarning = checkUnrecordedDatabaseAge(
+      await readRecordedSystemSchema(options.db, {
+        engineHint: options.engineHint,
+      }),
+    );
+    if (ageWarning) logger.warn(ageWarning);
+  }
   const decision = decideMigrationRun({
     changes: pending.diff.changes,
     addedTables: pending.diff.added_tables,

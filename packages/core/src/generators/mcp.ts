@@ -19,6 +19,7 @@ import {
   assertCreateTargetSurface,
   isCreateOpenOnSurface,
 } from '../create-target';
+import { importOptionalDependency } from '../lazy-external';
 import {
   type McpGetSerializer,
   resolveMcpGetSerializer,
@@ -38,6 +39,7 @@ import type {
   ApiSerializerReference,
   RegisteredClass,
 } from '../registry/types.js';
+import { runToolInRequestTenancy } from '../request-actor';
 import { applyUpdateInput, assertCreateInput } from '../request-input';
 import {
   isRuntimeModelEnabled,
@@ -82,7 +84,6 @@ import {
   type RuntimeOptions,
 } from './mcp-runtime-template.js';
 import { canonicalMcpToolNames, type McpToolTarget } from './mcp-tool-name.js';
-import { runWithTenantGate } from './tenant-gate.js';
 import {
   buildToolInputSchema,
   describeAction,
@@ -1910,19 +1911,36 @@ export class MCPGenerator {
     const mutating = action !== 'list' && action !== 'get';
     this.requireToolAuth(targetObjectName, mutating);
 
-    // Fail-closed tenant context (#1554). For tenant-scoped objects, establish
-    // the context from the principal's tenant (or an explicit cross-tenant
-    // opt-in); without either, this throws when tenancy is enabled rather than
-    // letting an optional-scoped read range across all tenants. Tenant-scoping
-    // is resolved inside tenancy by class name so it matches the interceptor.
-    return runWithTenantGate(
+    // Fail-closed tenant context (#1554), decided by the request tenancy of
+    // the tool's model (#5375): the tenancy it has now, the STI members the
+    // tool serves, the context's tenant or explicit cross-tenant grant. A
+    // tenant-scoped model refuses a call with neither; the bound decision
+    // holds every collection call of the tool.
+    const run = () =>
+      this.runAction(targetCollection, action, args, targetObjectName);
+    if (!targetObjectName) return run();
+    const modelScope = this.resolveClassScope(ObjectRegistry.getAllClasses());
+    return runToolInRequestTenancy(
       {
-        className: targetObjectName,
-        tenantId: this.context.tenantId,
-        allowCrossTenant: this.context.allowCrossTenant,
-        surface: 'MCP',
+        model: targetObjectName,
+        action,
+        principal: {
+          tenantId: this.context.tenantId,
+          allowCrossTenant: this.context.allowCrossTenant,
+          userId: this.context.user?.id,
+          // A family member that is not public is served through its base
+          // only to a caller with a principal, as its own tool would be.
+          authenticated: !!this.context.user,
+        },
+        ...(modelScope
+          ? {
+              modelScope: new Set(
+                [...modelScope].map((info) => info.qualifiedName || info.name),
+              ),
+            }
+          : {}),
       },
-      () => this.runAction(targetCollection, action, args, targetObjectName),
+      run,
     );
   }
 
@@ -1943,14 +1961,15 @@ export class MCPGenerator {
   private async tenantScopedObjectNames(tools: MCPTool[]): Promise<string[]> {
     let isTenantScopedClass: ((name: string) => boolean) | undefined;
     try {
-      // Held in a variable so neither TypeScript's declaration emit (TS2307 —
-      // core deliberately does not depend on tenancy) nor the bundler tries to
-      // statically resolve this optional sibling package. Same pattern as
-      // `tenant-gate.ts` / `embeddings/provider.ts`.
-      const tenancySpecifier = '@happyvertical/smrt-tenancy';
-      const tenancy = (await import(/* @vite-ignore */ tenancySpecifier)) as {
-        isTenantScopedClass?: (name: string) => boolean;
-      };
+      // Passed as a function argument so neither TypeScript's declaration
+      // emit (TS2307 — core deliberately does not depend on tenancy) nor a
+      // bundler resolves this optional sibling package: a local constant is
+      // folded into a literal `import()` in dist, which a consumer's Vite
+      // import analysis then fails to resolve.
+      const tenancy = (await importOptionalDependency(
+        '@happyvertical/smrt-tenancy',
+        'Install @happyvertical/smrt-tenancy to gate tenant-scoped tools.',
+      )) as { isTenantScopedClass?: (name: string) => boolean };
       isTenantScopedClass = tenancy.isTenantScopedClass;
     } catch {
       isTenantScopedClass = undefined;
@@ -2998,20 +3017,52 @@ import { ObjectRegistry, normalizeCustomActionFailure, SMRT_CUSTOM_ACTION_ERROR_
 import { hasRuntimeExposureGate, isRuntimeModelEnabled } from '@happyvertical/smrt-core';
 import { applyUpdateInput, assertCreateInput, assertCreateTargetSurface, assertQueryAccess, identifierArgument, publicSerializerOf, requireIdentifierArgument, toPublicJSONValue } from '@happyvertical/smrt-core';
 import { COOKBOOK_TOOL_NAMES, getCookbookToolService } from '@happyvertical/smrt-core/cookbook/tools';
-${hasTenantScoped ? "import { enableTenancy, runTenantScopedEntryPoint } from '@happyvertical/smrt-tenancy';\n" : ''}${
+import { runToolInRequestTenancy } from '@happyvertical/smrt-core';
+${hasTenantScoped ? "import { enableTenancy } from '@happyvertical/smrt-tenancy';\n" : ''}${
   hasTenantScoped
     ? `
-// Install the tenancy interceptor so tenant-scoped tools are filtered and the
-// gate fail-closes when no tenant is supplied (#1554).
+// Install the tenancy interceptor so tenant-scoped tools are filtered (#1554).
 enableTenancy();
-const TENANT_SCOPED = new Set(${JSON.stringify(tenantScopedSet)});
-const MCP_TENANT_ID = process.env.SMRT_MCP_TENANT_ID || undefined;
-const MCP_ALLOW_CROSS_TENANT = process.env.SMRT_MCP_ALLOW_CROSS_TENANT === 'true';
 `
     : ''
 }
+// Every tool runs inside the request tenancy its model has when it is
+// called, decided per call (#5375); the tenant is taken from the environment.
+const MCP_TENANT_ID = process.env.SMRT_MCP_TENANT_ID || undefined;
+const MCP_ALLOW_CROSS_TENANT = process.env.SMRT_MCP_ALLOW_CROSS_TENANT === 'true';
+
 
 const TOOL_TARGETS: Record<string, { objectName: string; action: string; registryKey?: string }> = ${JSON.stringify(toolTargets)};
+// The models this server serves: a family member outside them is not served
+// through its base's tools.
+const SERVED_MODELS: ReadonlySet<string> = new Set(Object.values(TOOL_TARGETS).map((target) => target.registryKey || target.objectName));
+
+// Tenancy is decided when a tool is called, not when this server was
+// generated (#5375): when the application installed smrt-tenancy and the
+// tool's model (or a member of its STI family) is tenant-scoped now, a
+// registration made after generation included, the tenancy layer is turned
+// on before the tool runs.
+type ToolTenancyLayer = {
+  enableTenancy(): void;
+  isTenancyEnabled(): boolean;
+  isTenantScopedClass(name: string): boolean;
+};
+let toolTenancyLayer: ToolTenancyLayer | null | undefined;
+async function ensureToolTenancy(model: string): Promise<void> {
+  if (toolTenancyLayer === undefined) {
+    try {
+      const specifier = '@happyvertical/smrt-tenancy';
+      toolTenancyLayer = (await import(/* @vite-ignore */ specifier)) as ToolTenancyLayer;
+    } catch {
+      toolTenancyLayer = null;
+    }
+  }
+  const layer = toolTenancyLayer;
+  if (!layer || layer.isTenancyEnabled()) return;
+  if ([model, ...ObjectRegistry.getDescendants(model)].some((name) => layer.isTenantScopedClass(name))) {
+    layer.enableTenancy();
+  }
+}
 export function runtimeToolEnabled(name: string): boolean {
   if (!hasRuntimeExposureGate()) return true;
   const target = TOOL_TARGETS[name];
@@ -3176,21 +3227,17 @@ ${switchCases}
           throw new Error(\`Unknown tool: \${name}\`);
       }
     };
-${
-  hasTenantScoped
-    ? `
-    // Fail-closed tenant context for tenant-scoped tools (#1554).
-    const toolObject = TOOL_TARGETS[name]?.objectName;
-    const result =
-      toolObject && TENANT_SCOPED.has(toolObject.toLowerCase())
-        ? await runTenantScopedEntryPoint(
-            { tenantScoped: true, tenantId: MCP_TENANT_ID, allowCrossTenant: MCP_ALLOW_CROSS_TENANT, surface: 'MCP' },
-            runToolBody,
-          )
-        : await runToolBody();`
-    : `
-    const result = await runToolBody();`
-}
+
+    // The request tenancy of the tool's model, resolved per call (#5375).
+    const toolTarget = TOOL_TARGETS[name];
+    const toolModel = toolTarget?.registryKey || toolTarget?.objectName;
+    if (toolModel) await ensureToolTenancy(toolModel);
+    const result = toolModel
+      ? await runToolInRequestTenancy(
+          { model: toolModel, action: toolTarget.action, principal: { tenantId: MCP_TENANT_ID, allowCrossTenant: MCP_ALLOW_CROSS_TENANT, userId: process.env.SMRT_MCP_USER_ID, authenticated: true }, modelScope: SERVED_MODELS },
+          runToolBody,
+        )
+      : await runToolBody();
 
     return result;
   } catch (error) {

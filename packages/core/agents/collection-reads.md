@@ -69,27 +69,27 @@ hydrated object excludes it from persistence, and REST strips label input.
 Fresh, unqueried instances do not have a projected label; reload through the
 collection after a write. Requested display projections bypass the row cache and
 REST uses a body-hash ETag so target renames cannot leave stale names behind.
-Generated SvelteKit list routes share `parseRestListWhere()` with runtime REST,
-honor explicit `orderBy` with the existing stable default, and count the filtered
+Generated SvelteKit list routes share `parseRestListWhere()` with runtime REST
+(its grammar, repeated-parameter refusal and boolean/datetime decoding are in
+[build-knowledge](build-knowledge.md)), honor explicit `orderBy` with the existing stable default, and count the filtered
 rows. Their tenant predicate still applies to client-supplied filters: both
-transports force the anonymous `{ <ownership field>: null }` scope with
-`applyWhereScope()`, which drops every query filter on the ownership column
-under any spelling or operator, on list, count and point reads. Every
-dispatch site of a custom GET action (runtime REST collection actions,
-emitted collection and item actions) passes its options through
-`scopeTenantReadOptions()`, which drops every ownership key the caller sent
+transports force the `{ <ownership field>: null }` scope of a caller with no
+tenant with `applyWhereScope()`, which drops every query filter on the
+ownership column under any spelling or operator, on list, count and point
+reads. Every dispatch site of a custom GET action (runtime REST collection
+actions, emitted collection and item actions) passes its options through
+`scopeActionOptions()`, which drops every ownership key the caller sent
 (`tenantId`, and each ownership field under its property or column name) and
-sets the request's scope under the ownership property (active tenant, or
-`null` without one; untouched under a super-admin bypass only on a class that
-allows it, `allowSuperAdminBypass`, as the interceptor decides). Named GET
-action arguments are read from the same scoped options. One core module
-(`src/tenant-read-scope.ts`) resolves all of it at request time from the
-live registry, so a model whose tenancy is registered at runtime is covered
-like one declared in its manifest: emitted routes also enter the caller's
-tenant through core's request hooks (`setRequestTenantContextHooks`, which
-smrt-tenancy installs in `enableTenancy()`) and switch to the private cache
-policy and the tenant ETag discriminator when the model is tenant-scoped at
-request time. The
+sets the request's scope under the ownership property (the actor's tenant, or
+`null` without one; untouched for a system actor or a super-admin bypass on a
+class that allows it). Named GET action arguments are read from the same
+scoped options. All of it is decided by the request's tenancy, resolved once
+per request from the live registry and the tenancy policy source
+(`src/request-tenancy.ts`, see `agents/generators.md` "Request tenancy"), so a
+model whose tenancy is registered at runtime is covered like one declared in
+its manifest, and the bound collection interceptor holds every collection call
+of the request to the same scope whatever an action does with its options.
+The
 ownership keys are the field the tenancy configuration names
 (`tenantScoped: { field }`, default `tenantId`) and every runtime ownership
 column (`ObjectRegistry.getRuntimeOwnershipColumns`). On a model owned through
@@ -257,7 +257,7 @@ is not a bounded, authorized collection query and was not reused.
 | `DisplayLabelProjection`, `resolveDisplayLabelProjection` in ui-metadata | Extends the owning display-label contract; the existing resolver only accepted own fields |
 | `resolveDisplayLabelSource` in collection | Reuses latest-related's target `beforeList`/STI pattern, public projection and ordering validation, primary-key resolution, and qualified relationship resolver |
 | SmrtObject serialization / `_setDisplayLabel` | Uses the existing hydration and framework serialization seams; computed labels never enter registered/persisted fields |
-| `parseRestListWhere` in query-bounds | Extracts the existing REST bracket decoder for generated SvelteKit list/count queries; MCP architecture and `rg` parser/operator searches across core, smrt-web, smrt-svelte, smrt-ui and chat found no existing server decoder outside REST |
+| `parseRestListWhere` (now in query-access) | Extracts the existing REST bracket decoder for generated SvelteKit list/count queries; MCP architecture and `rg` parser/operator searches across core, smrt-web, smrt-svelte, smrt-ui and chat found no existing server decoder outside REST |
 | Test-schema dependency expansion | Extends `getTestDatabase`'s existing physical-FK closure to the declared display read dependency |
 | `display-label-projection.test.ts` | Test-only Display* models and fixtures reuse `getTestDatabase`, real SQLite, `GlobalInterceptors`, and generated REST; existing tests covered projections and relationships separately |
 | commerce `customer-display-projection.test.ts` | Test-only setup reuses actual Customer, Profile, generated REST/web definitions and existing screens `createRecipeScreenReferences`/`screenRecordLabel`; no duplicate screen adapter |

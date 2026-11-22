@@ -331,10 +331,13 @@ describe('request query fields', () => {
           );
           const text = `${result.status} ${JSON.stringify(result.body)}`;
           if (result.status !== 200) {
-            // SvelteKit `error(status, message)` carries the message only.
-            return failure(text, {
-              message: (result.body as { message?: string } | null)?.message,
-            });
+            // The list route's SvelteKit error body carries the message and
+            // the refusal's code.
+            return failure(
+              text,
+              (result.body as { message?: string; code?: string } | null) ??
+                undefined,
+            );
           }
           const body = result.body as { items: unknown[]; count: number };
           return {
@@ -385,9 +388,8 @@ describe('request query fields', () => {
     }
     if (name === 'emitted SvelteKit route') {
       expect(listing.text.startsWith('400 ')).toBe(true);
-    } else {
-      expect(listing.code).toBe('QUERY_FIELD_NOT_ALLOWED');
     }
+    expect(listing.code).toBe('QUERY_FIELD_NOT_ALLOWED');
     expect(listing.text).not.toContain('alice');
     expect(listing.text).not.toContain('153250');
   };

@@ -651,6 +651,16 @@
   },
   {
     "kind": "entry-point",
+    "name": "@happyvertical/smrt-app-shell#./embed",
+    "issue": 5546,
+    "nearest": [
+      "@happyvertical/smrt-app-shell#./start",
+      "@happyvertical/smrt-app-shell#./shutdown"
+    ],
+    "reason": "The shell's request handler without a listener, plus an awaitable drain that never closes a listener or exits, for a host that owns its HTTP listener, signals and exit (readiness 503, drain, then exit). ./start owns the listener and the process exit, and ./shutdown is the engine-free sequence that cannot import the SvelteKit server bundle, so neither could hand an embedder the handler or the bundle's own drain."
+  },
+  {
+    "kind": "entry-point",
     "name": "@happyvertical/smrt-app-shell#./engine",
     "grandfathered": true
   },

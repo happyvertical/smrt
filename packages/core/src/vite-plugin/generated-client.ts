@@ -73,60 +73,50 @@ export function generateClientModule(
             routeConfig.scope === 'collection'
               ? `basePath + ${JSON.stringify(`/${collection}/${urlSegment}`)}`
               : itemUrl(`/${urlSegment}`);
-          const actionUrl = `__smrtActionUrl(${route}, options, ${JSON.stringify(
+          return `    ${methodName}: async (${args}) => __smrtSendAction(${route}, options, ${JSON.stringify(
             routeConfig.pathParamNames,
-          )}, ${routeConfig.method === 'GET'})`;
-          const requestInit =
-            routeConfig.method === 'GET'
-              ? `{
-      method: 'GET',
-      headers: { 'Accept': 'application/json' }
-    }`
-              : `{
-      method: '${routeConfig.method}',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(options || {})
-    }`;
-          return `    ${methodName}: (${args}) => __smrtWithUrl(${actionUrl}, (url) => __smrtFetchActionResult(url, ${requestInit}))`;
+          )}, ${JSON.stringify(routeConfig.method)})`;
         })
         .join(',\n');
 
+      // Every fetcher is async so an invalid argument (a missing named route
+      // parameter included) rejects like a failed request does.
       const enabledCrudMethods = new Set(crudMethods);
       const crudMethodImpls = [
         enabledCrudMethods.has('list')
-          ? `    list: (params) => __smrtFetchJson(${collectionPath}, {
+          ? `    list: async (params) => __smrtFetchJson(__smrtListUrl(${collectionPath}, params), {
       method: 'GET',
       headers: { 'Content-Type': 'application/json' }
     })`
           : '',
         enabledCrudMethods.has('get')
-          ? `    get: (id) => __smrtWithUrl(${itemUrl()}, (url) => __smrtFetchJson(url, {
+          ? `    get: async (id) => __smrtWithUrl(${itemUrl()}, (url) => __smrtFetchJson(url, {
       method: 'GET',
       headers: { 'Content-Type': 'application/json' }
     }))`
           : '',
         enabledCrudMethods.has('create')
-          ? `    create: (data) => __smrtFetchJson(${collectionPath}, {
+          ? `    create: async (data) => __smrtFetchJson(${collectionPath}, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data)
     })`
           : '',
         enabledCrudMethods.has('update')
-          ? `    update: (id, data) => __smrtWithUrl(${itemUrl()}, (url) => __smrtFetchJson(url, {
+          ? `    update: async (id, data) => __smrtWithUrl(${itemUrl()}, (url) => __smrtFetchJson(url, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data)
     }))`
           : '',
         enabledCrudMethods.has('delete')
-          ? `    delete: (id) => __smrtWithUrl(${itemUrl()}, (url) => __smrtFetchOk(url, {
+          ? `    delete: async (id) => __smrtWithUrl(${itemUrl()}, (url) => __smrtFetchOk(url, {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' }
     }))`
           : '',
         enabledCrudMethods.has('search')
-          ? `    search: (query) => __smrtFetchJson(basePath + ${JSON.stringify(`/${collection}/search?q=`)} + encodeURIComponent(query), {
+          ? `    search: async (query) => __smrtFetchJson(basePath + ${JSON.stringify(`/${collection}/search?q=`)} + encodeURIComponent(query), {
       method: 'GET',
       headers: { 'Content-Type': 'application/json' }
     })`
@@ -164,7 +154,8 @@ async function __smrtFetchActionResult(url, init) {
 // route), so it yields an Error that __smrtWithUrl turns into a rejected
 // request promise instead of a request. A value that cannot be encoded (a
 // lone UTF-16 surrogate) yields an Error for an item id; a named route
-// parameter keeps throwing its URIError synchronously, as it always did.
+// parameter throws its URIError, which the async fetcher turns into a
+// rejection.
 function __smrtPathSegment(value, name, throwUnencodable) {
   const segment = String(value);
   if (segment === '' || segment === '.' || segment === '..') {
@@ -192,25 +183,79 @@ function __smrtItemUrl(base, id, suffix) {
   return segment instanceof Error ? segment : base + '/' + segment + (suffix || '');
 }
 
-// Keeps every fetcher a plain function returning the request promise: an
-// unusable URL rejects that promise rather than throwing.
+// An unusable URL rejects the request promise instead of sending a request.
 function __smrtWithUrl(url, request) {
   return url instanceof Error ? Promise.reject(url) : request(url);
 }
 
-function __smrtActionUrl(url, options, pathParamNames, includeQuery) {
+// One custom action call. A named route parameter is the caller's own
+// property, read exactly once: an inherited one ('toString', 'constructor')
+// is missing, not a function's source text, and the value read for the path
+// is the value the query or the body carries.
+function __smrtSendAction(url, options, pathParamNames, method) {
   const values = options && typeof options === 'object' ? options : {};
-  const pathParams = new Set(pathParamNames);
-  for (const name of pathParamNames) {
-    const value = values[name];
+  const pathValues = pathParamNames.map((name) =>
+    Object.prototype.hasOwnProperty.call(values, name) ? values[name] : undefined,
+  );
+  const resolvedUrl = __smrtActionUrl(url, pathParamNames, pathValues);
+  if (method === 'GET') {
+    return __smrtWithUrl(resolvedUrl, (target) =>
+      __smrtFetchActionResult(__smrtWithQuery(target, values, pathParamNames), {
+        method: 'GET',
+        headers: { 'Accept': 'application/json' },
+      }),
+    );
+  }
+  return __smrtWithUrl(resolvedUrl, (target) =>
+    __smrtFetchActionResult(target, {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(__smrtActionBody(options, pathParamNames, pathValues)),
+    }),
+  );
+}
+
+// The JSON body: the options as JSON.stringify would serialise them (the
+// caller's own toJSON() included), except that a named route parameter the
+// serialised record carries holds the value already read for the path
+// instead of being read again.
+function __smrtActionBody(options, pathParamNames, pathValues) {
+  if (
+    pathParamNames.length === 0 ||
+    !options ||
+    typeof options !== 'object' ||
+    Array.isArray(options)
+  ) {
+    return options || {};
+  }
+  let source = options;
+  if (typeof options.toJSON === 'function') {
+    source = options.toJSON('');
+    if (!source || typeof source !== 'object' || Array.isArray(source)) {
+      return source;
+    }
+  }
+  // The serialiser chooses which keys travel; a path parameter it kept
+  // carries the value the path was built from.
+  const body = Object.create(null);
+  for (const key of Object.keys(source)) {
+    const index = pathParamNames.indexOf(key);
+    body[key] = index >= 0 ? pathValues[index] : source[key];
+  }
+  return body;
+}
+
+function __smrtActionUrl(url, pathParamNames, pathValues) {
+  for (const [index, name] of pathParamNames.entries()) {
+    const value = pathValues[index];
     if (value === undefined || value === null) {
       throw new Error('Missing generated client route parameter: ' + name);
     }
   }
-  // Named parameters are encoded first, so an unencodable one still throws
-  // synchronously whatever else is wrong with the call.
-  const segments = pathParamNames.map((name) =>
-    __smrtPathSegment(values[name], name, true),
+  // Named parameters are encoded first, so an unencodable one rejects with
+  // its URIError whatever else is wrong with the call.
+  const segments = pathParamNames.map((name, index) =>
+    __smrtPathSegment(pathValues[index], name, true),
   );
   if (url instanceof Error) return url;
   let resolvedUrl = url;
@@ -219,26 +264,216 @@ function __smrtActionUrl(url, options, pathParamNames, includeQuery) {
     if (segment instanceof Error) return segment;
     resolvedUrl = resolvedUrl.replace('[' + name + ']', segment);
   }
+  return resolvedUrl;
+}
 
-  if (!includeQuery) return resolvedUrl;
-
+// GET custom-action query: arrays repeat the key with String(member), other
+// objects JSON-encode, and a Date (scalar or member) is its ISO string, the
+// form the action route decodes for a Date parameter. A named route
+// parameter is skipped before it is read, so it is read only for the path.
+function __smrtWithQuery(url, values, skipNames) {
+  if (!values || typeof values !== 'object') return url;
+  const skip = new Set(skipNames || []);
   const searchParams = new URLSearchParams();
-  for (const [name, value] of Object.entries(values)) {
-    if (pathParams.has(name) || value === undefined) continue;
+  for (const name of Object.keys(values)) {
+    if (skip.has(name)) continue;
+    const value = values[name];
+    if (value === undefined) continue;
     if (Array.isArray(value)) {
-      for (const item of value) searchParams.append(name, String(item));
+      for (const item of value) {
+        searchParams.append(
+          name,
+          item instanceof Date ? item.toISOString() : String(item),
+        );
+      }
       continue;
     }
-    searchParams.append(
-      name,
-      value !== null && typeof value === 'object'
-        ? JSON.stringify(value)
-        : String(value),
-    );
+    searchParams.append(name, __smrtQueryText(value));
   }
 
   const query = searchParams.toString();
-  return query ? resolvedUrl + '?' + query : resolvedUrl;
+  return query ? url + '?' + query : url;
+}
+
+function __smrtQueryText(value) {
+  if (value instanceof Date) return value.toISOString();
+  return value !== null && typeof value === 'object'
+    ? JSON.stringify(value)
+    : String(value);
+}
+
+// list(params) writes the one query grammar both list routes read
+// (parseRestListWhere): limit, offset, orderBy (a string, or a list of terms
+// joined with commas), field=value and field[op]=value with op one of gt,
+// gte, lt, lte, ne, in, like. An [in] operand is a non-empty list (in every
+// form, the structured { op: 'in', value } included) sent as one comma-joined
+// value. params and params.where are plain records; where ({ field: value },
+// { field: { op, value } } or { 'field op': value }) flattens into the same
+// parameters. A value is a string, number, boolean, bigint or Date (its ISO
+// string). Anything the routes would read with another meaning (an empty or
+// scalar [in] operand, null, a list member holding a comma, an object, a Map
+// or other non-record container, one parameter given twice) rejects before
+// any request is sent.
+const __SMRT_LIST_OPERATORS = {
+  '>': 'gt', '>=': 'gte', '<': 'lt', '<=': 'lte', '!=': 'ne', in: 'in', like: 'like',
+};
+const __SMRT_LIST_REST_OPERATORS = new Set(Object.values(__SMRT_LIST_OPERATORS));
+const __SMRT_LIST_RESERVED = new Set(['limit', 'offset', 'orderBy']);
+
+function __smrtListError(name, reason) {
+  return new Error(
+    'Invalid generated client list parameter ' + JSON.stringify(name) + ': ' + reason,
+  );
+}
+
+// A query name or value must be a well-formed string: URLSearchParams turns
+// a lone UTF-16 surrogate into U+FFFD, which would filter on another string.
+function __smrtListWellFormed(name, text) {
+  try {
+    encodeURIComponent(text);
+  } catch {
+    throw __smrtListError(name, 'not a well-formed string');
+  }
+  return text;
+}
+
+function __smrtListText(name, value) {
+  if (value instanceof Date) {
+    if (Number.isNaN(value.getTime())) throw __smrtListError(name, 'invalid Date');
+    return value.toISOString();
+  }
+  if (typeof value === 'string') return __smrtListWellFormed(name, value);
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value)) throw __smrtListError(name, 'not a finite number');
+    return String(value);
+  }
+  if (typeof value === 'boolean' || typeof value === 'bigint') return String(value);
+  if (value === null) {
+    throw __smrtListError(name, 'null has no list query form');
+  }
+  throw __smrtListError(name, 'expected a string, number, boolean or Date');
+}
+
+function __smrtListParam(name, value) {
+  const membership = /\\[in\\]$/.test(name);
+  if (membership && !Array.isArray(value)) {
+    throw __smrtListError(name, 'an [in] operand must be a non-empty list');
+  }
+  if (Array.isArray(value)) {
+    if (value.length === 0) {
+      throw __smrtListError(name, 'an empty list would match every row');
+    }
+    if (name === 'orderBy') {
+      return value.map((term) => __smrtListText(name, term)).join(',');
+    }
+    if (!membership) {
+      throw __smrtListError(name, 'a list needs the [in] operator');
+    }
+    return value
+      .map((member) => {
+        const text = __smrtListText(name, member);
+        if (text.includes(',')) {
+          throw __smrtListError(name, 'an [in] member cannot contain a comma');
+        }
+        return text;
+      })
+      .join(',');
+  }
+  return __smrtListText(name, value);
+}
+
+// A plain record (Object.prototype or no prototype). A Map, URLSearchParams,
+// Date, array or class instance has no own entries to read as parameters,
+// so reading it would send an unfiltered request.
+function __smrtIsPlainRecord(value) {
+  if (value === null || typeof value !== 'object') return false;
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
+}
+
+function __smrtListWhere(where, add) {
+  if (!__smrtIsPlainRecord(where)) {
+    throw __smrtListError('where', 'expected an object of conditions');
+  }
+  for (const [key, condition] of Object.entries(where)) {
+    if (condition === undefined) continue;
+    const parts = key.trim().split(/\\s+/);
+    let field = parts[0];
+    let operator = parts.slice(1).join(' ');
+    let value = condition;
+    if (
+      condition !== null &&
+      typeof condition === 'object' &&
+      !Array.isArray(condition) &&
+      !(condition instanceof Date)
+    ) {
+      if (
+        operator ||
+        !Object.prototype.hasOwnProperty.call(condition, 'op') ||
+        !Object.prototype.hasOwnProperty.call(condition, 'value')
+      ) {
+        throw __smrtListError('where.' + key, 'expected a value or { op, value }');
+      }
+      // An explicit op is one of the supported operator strings; null,
+      // false or '' is not "no operator".
+      if (
+        typeof condition.op !== 'string' ||
+        (condition.op !== '=' &&
+          !Object.prototype.hasOwnProperty.call(__SMRT_LIST_OPERATORS, condition.op))
+      ) {
+        throw __smrtListError(
+          'where.' + key,
+          'unsupported operator ' + JSON.stringify(String(condition.op)),
+        );
+      }
+      operator = condition.op;
+      value = condition.value;
+    }
+    if (!field || __SMRT_LIST_RESERVED.has(field)) {
+      throw __smrtListError('where.' + key, 'not a filterable field name');
+    }
+    if (!operator || operator === '=') {
+      add(field, value);
+      continue;
+    }
+    const token = Object.prototype.hasOwnProperty.call(__SMRT_LIST_OPERATORS, operator)
+      ? __SMRT_LIST_OPERATORS[operator]
+      : undefined;
+    if (!token) {
+      throw __smrtListError('where.' + key, 'unsupported operator ' + JSON.stringify(operator));
+    }
+    add(field + '[' + token + ']', value);
+  }
+}
+
+function __smrtListUrl(url, params) {
+  // Only undefined means "no params"; null is not an empty filter.
+  if (params === undefined) return url;
+  if (!__smrtIsPlainRecord(params)) {
+    throw __smrtListError('params', 'expected a plain object');
+  }
+  const searchParams = new URLSearchParams();
+  const add = (name, value) => {
+    if (value === undefined) return;
+    __smrtListWellFormed(name, name);
+    const operator = /\\[([^\\]]*)\\]$/.exec(name);
+    if (operator && !__SMRT_LIST_REST_OPERATORS.has(operator[1])) {
+      throw __smrtListError(name, 'unsupported operator ' + JSON.stringify(operator[1]));
+    }
+    if (searchParams.has(name)) {
+      throw __smrtListError(name, 'given more than once');
+    }
+    searchParams.append(name, __smrtListParam(name, value));
+  };
+  for (const [name, value] of Object.entries(params)) {
+    if (name === 'where' && value !== null && typeof value === 'object') {
+      __smrtListWhere(value, add);
+      continue;
+    }
+    add(name, value);
+  }
+  const query = searchParams.toString();
+  return query ? url + '?' + query : url;
 }
 
 export function createClient(basePath = '/api/v1') {

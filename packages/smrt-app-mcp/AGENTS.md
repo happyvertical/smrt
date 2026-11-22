@@ -46,6 +46,12 @@ tool policy; `./sveltekit` owns the stateless Streamable HTTP transport.
   validates JWT access tokens and requires an application-owned principal mapper.
 - Mount `mountMcpRoute` as one modern `POST` endpoint. It creates a fresh
   protocol server per request, emits no session id, and refuses subscriptions.
+  `legacy: 'reject' | 'stateless'` (both mounts, SDK vocabulary, default
+  `'reject'` = `-32022`, mount-time only, #5109) opts 2025-era JSON-RPC clients
+  in; the SDK serves them from the SAME per-request factory and bound
+  principal, so every gate (auth, grant liveness, binder, scopes, policy,
+  confirm/approvals, audit) applies. Never add a parallel legacy dispatch path;
+  legacy gets stateless semantics (no sessions, `list_changed`, subscriptions).
 - `mountMcpAppRoute` (`src/defaults.ts` + `./sveltekit`) is the one-call app
   route: explicit `models` allow-list, required `requiredScopes`, principal from
   session locals (`principalFromSessionLocals`; absent `principalKind` denies

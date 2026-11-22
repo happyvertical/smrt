@@ -74,6 +74,14 @@ interface ModelQueryPolicy {
   sensitive: Set<string>;
   /** Columns (and raw field names) and the permission slugs that read them. */
   readPermissions: Map<string, Set<string>>;
+  /**
+   * The declared field type of each column, as every registration that
+   * declares it agrees. A column two declarations (family members, a parent
+   * and a child) give different types maps to `null`. A query-string value
+   * is decoded only for a column whose single type is `boolean` or
+   * `datetime`.
+   */
+  columnTypes: Map<string, string | null>;
 }
 
 const META_DATA_COLUMNS = new Set(['_meta_data', 'meta_data']);
@@ -93,6 +101,18 @@ function addPolicies(
 ): void {
   for (const [name, definition] of fields) {
     const names = [toSnakeCase(name), name];
+    // A registration without a type declares nothing to agree or disagree
+    // with; any two declared types that differ leave the column undecoded.
+    if (typeof definition?.type === 'string') {
+      const column = whereColumnName(name);
+      const known = policy.columnTypes.get(column);
+      policy.columnTypes.set(
+        column,
+        known === undefined || known === definition.type
+          ? definition.type
+          : null,
+      );
+    }
     if (
       definition?.sensitive === true ||
       definition?._meta?.sensitive === true
@@ -137,6 +157,10 @@ function queryPolicyFor(model: string): ModelQueryPolicy {
     columns: new Set(SYSTEM_COLUMNS),
     sensitive: new Set(),
     readPermissions: new Map(),
+    columnTypes: new Map([
+      ['created_at', 'datetime'],
+      ['updated_at', 'datetime'],
+    ]),
   };
   const include = (fields: Map<string, RegisteredField>) => {
     for (const field of fields.keys()) policy.columns.add(toSnakeCase(field));
@@ -314,4 +338,168 @@ export function assertQueryAccess(
       );
     }
   }
+}
+
+/** Query-string operator tokens the list routes accept, as `field[op]`. */
+const REST_LIST_OPERATORS: Readonly<Record<string, string>> = {
+  gt: '>',
+  gte: '>=',
+  lt: '<',
+  lte: '<=',
+  ne: '!=',
+  in: 'in',
+  like: 'like',
+};
+
+/** Operators whose operand is compared as the column's type. */
+const DECODED_OPERATORS = new Set(['=', '>', '>=', '<', '<=', '!=', 'in']);
+
+/**
+ * An ISO-8601 instant: a calendar date alone (read as UTC midnight), or a
+ * date and time with seconds optional, any number of fractional digits and an
+ * explicit `Z` or `±hh:mm` / `±hhmm` offset. Nothing else is an instant here:
+ * an offset-less date-time would be read in the server's own zone.
+ */
+const ISO_INSTANT =
+  /^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2})(?::(\d{2})(?:\.(\d+))?)?(Z|[+-](\d{2}):?(\d{2})))?$/;
+
+/**
+ * The UTC ISO string of an {@link ISO_INSTANT}, keeping every fractional digit
+ * (padded to at least milliseconds, the form SMRT writes), or `undefined` for
+ * anything else. A string, not a `Date`: a `Date` holds milliseconds, and
+ * PostgreSQL stores microseconds, so an exact or bounding comparison against
+ * a finer value must bind the digits the caller sent.
+ */
+function normalizeIsoInstant(value: string): string | undefined {
+  const match = ISO_INSTANT.exec(value);
+  if (!match) return undefined;
+  const [, y, mo, d, h = '00', mi = '00', s = '00', fraction = '', zone] =
+    match;
+  const fields = [y, mo, d, h, mi, s].map(Number);
+  const [year, month, day, hour, minute, second] = fields;
+  const local = Date.UTC(year, month - 1, day, hour, minute, second);
+  const check = new Date(local);
+  if (
+    check.getUTCFullYear() !== year ||
+    check.getUTCMonth() !== month - 1 ||
+    check.getUTCDate() !== day ||
+    check.getUTCHours() !== hour ||
+    check.getUTCMinutes() !== minute ||
+    check.getUTCSeconds() !== second
+  ) {
+    return undefined;
+  }
+  let offsetMinutes = 0;
+  if (zone && zone !== 'Z') {
+    const offsetHours = Number(match[9]);
+    const offsetMins = Number(match[10]);
+    if (offsetHours > 23 || offsetMins > 59) return undefined;
+    offsetMinutes =
+      (zone.startsWith('-') ? -1 : 1) * (offsetHours * 60 + offsetMins);
+  }
+  const utc = new Date(local - offsetMinutes * 60_000).toISOString();
+  return `${utc.slice(0, 19)}.${fraction.padEnd(3, '0')}Z`;
+}
+
+function decodeListValue(value: string, type: string | undefined): unknown {
+  if (type === 'boolean') {
+    const normalized = value.trim().toLowerCase();
+    if (normalized === 'true' || normalized === '1') return true;
+    if (normalized === 'false' || normalized === '0') return false;
+    return value;
+  }
+  if (type === 'datetime') return normalizeIsoInstant(value) ?? value;
+  return value;
+}
+
+/**
+ * Read a list or count request's filter from its query string: the grammar
+ * the generated client's `list(params)` writes and both list routes (runtime
+ * REST and generated SvelteKit) read.
+ *
+ * - `limit`, `offset` and `orderBy` are not filters and are skipped.
+ * - `field=value` is equality; `field[op]=value` applies `op` (`gt`, `gte`,
+ *   `lt`, `lte`, `ne`, `in`, `like`). An `in` operand is one comma-separated
+ *   value.
+ * - Every parameter appears at most once. A repeated one is refused with a
+ *   typed 400 (`REPEATED_QUERY_PARAMETER`) instead of keeping one of its
+ *   values, so a filter never silently narrows to the last value sent.
+ * - Two parameters that name the same predicate (`price[gte]` and
+ *   `price >=`) are refused the same way, whichever comes first.
+ * - With `model`, a value compared against a `boolean` field (`true`,
+ *   `false`, `1`, `0`) becomes a boolean, and one compared against a
+ *   `datetime` field that is an ISO-8601 instant with an explicit `Z` or
+ *   offset (or a date alone, read as UTC) becomes its UTC ISO string with
+ *   every fractional digit kept, so the comparison has the column's meaning
+ *   on every adapter (SQLite stores booleans as integers and timestamps as
+ *   ISO text). A column whose declarations disagree on its type is not
+ *   decoded. A value that does not decode is passed through unchanged.
+ *   Decoding never changes a key, so {@link assertQueryAccess} sees the same
+ *   fields either way.
+ * - The record has no prototype, so every parameter name, `__proto__`
+ *   included, is an own key that {@link assertQueryAccess} checks.
+ *
+ * @throws {WhereClauseError} `REPEATED_QUERY_PARAMETER` for a repeated
+ *   parameter or predicate
+ */
+export function parseRestListWhere(
+  params: URLSearchParams,
+  model?: string,
+): Record<string, unknown> {
+  const repeated = (parameter: string): never => {
+    throw new WhereClauseError(
+      `Invalid query: parameter '${parameter}' appears more than once. Send ` +
+        'each parameter once; join the members of an [in] filter with commas.',
+      'REPEATED_QUERY_PARAMETER',
+      { parameter },
+    );
+  };
+  const seen = new Set<string>();
+  for (const key of params.keys()) {
+    if (seen.has(key)) repeated(key);
+    seen.add(key);
+  }
+
+  const columnTypes = model ? queryPolicyFor(model).columnTypes : undefined;
+  const where: Record<string, unknown> = Object.create(null);
+  for (const [key, value] of params.entries()) {
+    if (key === 'limit' || key === 'offset' || key === 'orderBy') continue;
+    const match = key.match(/^(.+)\[(.+)\]$/);
+    const field = match ? match[1] : key;
+    const operator = match
+      ? Object.hasOwn(REST_LIST_OPERATORS, match[2])
+        ? REST_LIST_OPERATORS[match[2]]
+        : match[2]
+      : '=';
+    const predicate = match ? `${field} ${operator}` : key;
+    if (Object.hasOwn(where, predicate)) repeated(key);
+    const operand: string | string[] =
+      operator === 'in' ? value.split(',') : value;
+    // The operator the collection will apply decides the decoding: the
+    // bracket token, or the operator written in a whitespace-form key
+    // (`featured like` compares a string pattern, not a boolean).
+    const resolved = columnTypes ? resolveWhereKey(field) : undefined;
+    const effective = !resolved
+      ? undefined
+      : match
+        ? resolved.operator === '='
+          ? operator
+          : undefined
+        : resolved.operator.toLowerCase();
+    const type =
+      resolved &&
+      resolved.path === null &&
+      effective !== undefined &&
+      DECODED_OPERATORS.has(effective) &&
+      (effective !== 'in' || Array.isArray(operand))
+        ? (columnTypes?.get(resolved.column) ?? undefined)
+        : undefined;
+    where[predicate] =
+      type === 'boolean' || type === 'datetime'
+        ? Array.isArray(operand)
+          ? operand.map((item) => decodeListValue(item, type))
+          : decodeListValue(operand, type)
+        : operand;
+  }
+  return where;
 }
