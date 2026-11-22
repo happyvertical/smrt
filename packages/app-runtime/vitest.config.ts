@@ -22,7 +22,16 @@ export default defineConfig({
       },
     ],
   },
-  plugins: [smrtVitestPlugin({ setupFile: smrtVitestSetupPath })],
+  plugins: [
+    smrtVitestPlugin({
+      setupFile: smrtVitestSetupPath,
+      // device-entitlements.test.ts drives smrt-features' requireFeature by
+      // relative source import. app-runtime must not depend on smrt-features
+      // (features -> cli -> desktop -> app-runtime would cycle), so scan its
+      // source for the manifest instead of resolving a package (#5116).
+      include: ['src/**/*.ts', '../features/src/**/*.ts'],
+    }),
+  ],
   test: {
     globals: true,
     environment: 'node',
