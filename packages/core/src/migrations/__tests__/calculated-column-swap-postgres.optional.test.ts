@@ -538,19 +538,20 @@ describe.skipIf(!pgUrl)(
     });
 
     it('judges the rule through a type conversion, its preflight and a replacement in one run', async () => {
-      // qty is REAL live; the run converts it (after a read-only preflight)
-      // and replaces total, which reads qty. The old total is dropped before
-      // the conversion and the new one added after it (#5008): PostgreSQL
-      // refuses to convert a column a calculated column reads.
+      // qty is INTEGER live; the run widens it to REAL and replaces total,
+      // which reads qty. The old total is dropped before the conversion and
+      // the new one added after it (#5008): PostgreSQL refuses to convert a
+      // column a calculated column reads. (REAL to INTEGER is a stop of its
+      // own, #5454.)
       await db.query(
-        'CREATE TABLE items (id TEXT PRIMARY KEY NOT NULL, _meta_type TEXT, qty REAL, total INTEGER GENERATED ALWAYS AS ((COALESCE(qty, 0) * 2)::integer) STORED)',
+        'CREATE TABLE items (id TEXT PRIMARY KEY NOT NULL, _meta_type TEXT, qty INTEGER, total INTEGER GENERATED ALWAYS AS ((COALESCE(qty, 0) * 2)::integer) STORED)',
       );
       await insert('a', 2);
       await insert('b', null, '@app/a:Loose');
       declare(
         items(
           {
-            qty: { type: 'INTEGER' },
+            qty: { type: 'REAL' },
             total: total(times(5)),
           },
           { checks: [rule] },
@@ -620,14 +621,15 @@ describe.skipIf(!pgUrl)(
       // whose type drifts compares its NOT NULL once the type is settled),
       // so the Strict row still has no total when the rule would be added:
       // a named stop, `check.deferred-fill`, not a bare `check.violated`.
+      // qty widens INTEGER to REAL (REAL to INTEGER stops on its own, #5454).
       await db.query(
-        'CREATE TABLE items (id TEXT PRIMARY KEY NOT NULL, _meta_type TEXT, qty REAL, total INTEGER GENERATED ALWAYS AS ((COALESCE(qty, 0) * 2)::integer) STORED)',
+        'CREATE TABLE items (id TEXT PRIMARY KEY NOT NULL, _meta_type TEXT, qty INTEGER, total INTEGER GENERATED ALWAYS AS ((COALESCE(qty, 0) * 2)::integer) STORED)',
       );
       await insert('a', null);
       declare(
         items(
           {
-            qty: { type: 'INTEGER', notNull: true, backfill: '0' },
+            qty: { type: 'REAL', notNull: true, backfill: '0' },
             total: total(times(5)),
           },
           { checks: [rule] },

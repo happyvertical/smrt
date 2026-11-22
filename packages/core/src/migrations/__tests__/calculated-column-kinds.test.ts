@@ -679,13 +679,15 @@ describe.skipIf(process.env.SMRT_TEST_PGLITE !== '1')(
     // conversion itself rewrites, so the planner does not; a rule that rests
     // on that fill stops by name instead.
     it('names a rule that rests on a fill deferred by a type conversion (#5008)', async () => {
+      // qty widens INTEGER to REAL: a conversion migrate plans (REAL to
+      // INTEGER is a stop of its own, #5454).
       await db.query(
-        'CREATE TABLE items (id TEXT PRIMARY KEY NOT NULL, _meta_type TEXT, qty REAL, total INTEGER GENERATED ALWAYS AS ((COALESCE(qty, 0) * 2)::integer) STORED)',
+        'CREATE TABLE items (id TEXT PRIMARY KEY NOT NULL, _meta_type TEXT, qty INTEGER, total INTEGER GENERATED ALWAYS AS ((COALESCE(qty, 0) * 2)::integer) STORED)',
       );
       await insertStrict('a', null);
       declare(
         shared(times('qty', { value: 5 }), true, {
-          type: 'INTEGER',
+          type: 'REAL',
           notNull: true,
           backfill: '0',
         }),
@@ -695,9 +697,10 @@ describe.skipIf(process.env.SMRT_TEST_PGLITE !== '1')(
       expect(result.stops.map((stop) => `${stop.reason}:${stop.kind}`)).toEqual(
         ['invents-data:check.deferred-fill'],
       );
-      expect(result.stops[0]?.message).toContain(
-        'planned only on the next run',
-      );
+      expect(
+        result.stops.find((stop) => stop.kind === 'check.deferred-fill')
+          ?.message,
+      ).toContain('planned only on the next run');
       // Nothing ran: the conversion waits for the stop to be resolved.
       expect(await totals()).toEqual([['a', 0]]);
     });

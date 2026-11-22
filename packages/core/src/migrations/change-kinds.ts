@@ -429,6 +429,15 @@ export const SCHEMA_CHANGE_KINDS = {
       'The incompatible conversion cannot preserve the existing values.',
     ),
   },
+  // #5454: migrate cannot tell money in major units (a field declared `= 0.0`
+  // before v0.41) from any other number; whole values do not prove the unit.
+  'type.float-to-integer': {
+    type: 'type_mismatch',
+    engines: stop(
+      'loses-data',
+      'A floating-point column whose field is now integer may hold money in major units (a field declared `= 0.0` before v0.41); casting it would read 10.00 as 10 minor units. Rescale a money column to minor units first (rescaleMoneyColumnsToMinorUnits, or the owning package money upgrade); convert any other column by hand once its values are whole.',
+    ),
+  },
   'type.convert': {
     type: 'type_upgrade',
     engines: apply(

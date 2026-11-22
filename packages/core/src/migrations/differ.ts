@@ -100,6 +100,12 @@ import {
   type DuckDbRebuildPlan,
   planDuckDbTableChanges,
 } from './duckdb-rebuild.js';
+import {
+  minorUnitsColumnMarker,
+  minorUnitsColumnState,
+  minorUnitsColumnStateSql,
+} from './minor-units.js';
+import { rebuildPlanStaleMessage } from './rebuild-plan-guard.js';
 import { resolveRetirementContext } from './retire-context.js';
 import {
   planTableRetirements,
@@ -731,6 +737,15 @@ export class SchemaComparer {
    */
   private checksDroppedWithColumn = new Map<string, Set<string>>();
 
+  /**
+   * SQLite columns the money rescale converted, by `table.column`: the
+   * marker that vouches for them and the state it recorded (#5454).
+   */
+  private rescaledMoneyColumns = new Map<
+    string,
+    { marker: string; state: string }
+  >();
+
   private liveSchemas = new Map<
     string,
     SqlTableSchemaInfo | null | undefined
@@ -1139,6 +1154,8 @@ export class SchemaComparer {
         constraintChanges: foreignKeyChanges,
         foreignKeysSuspended: true,
         mapType: (type) => this.ddlStrategy.mapType(type),
+        retypeStatements: (change) =>
+          this.rescaledMoneyStatements(tableName, change),
         formatDefault: (change) => this.formatChangeDefault(change),
         foreignKeyDefinition: (change) =>
           this.embeddedForeignKeyDefinition(tableName, change),
@@ -4601,6 +4618,29 @@ export class SchemaComparer {
                   }
                 : {}),
             });
+          } else if (
+            this.engine === 'sqlite' &&
+            this.normalizeType(colDef.type) === 'INTEGER' &&
+            normalizedActual === 'REAL' &&
+            (await this.holdsRescaledMinorUnits(tableName, colName))
+          ) {
+            // #5454: the money rescale converted these values and said so
+            // for this column; only the declaration is left, which the
+            // table rebuild changes (values copy with integer affinity).
+            changes.push({
+              type: 'type_upgrade',
+              table: tableName,
+              name: colName,
+              column: colDef,
+              mismatch: { expected: colDef.type, actual: dbCol.type },
+              sql: this.generateTypeUpgradeSQL(
+                tableName,
+                colName,
+                colDef,
+                dbCol.type,
+              ).sql,
+              note: 'rescaled to minor units by the money rescale; the declared type becomes integer',
+            });
           } else if (!this.options.ignoreTypeMismatches) {
             changes.push({
               type: 'type_mismatch',
@@ -4610,6 +4650,10 @@ export class SchemaComparer {
                 expected: colDef.type,
                 actual: dbCol.type,
               },
+              ...(this.normalizeType(colDef.type) === 'INTEGER' &&
+              normalizedActual === 'REAL'
+                ? this.floatToIntegerStop(tableName, colName)
+                : {}),
             });
           }
         }
@@ -6742,13 +6786,129 @@ export class SchemaComparer {
    *   as UTC ISO wall times, so interpreting the naive value as UTC preserves
    *   the originally supplied instant.
    * - INTEGER→REAL: Safe widening of integer to floating point
-   * - TEXT/REAL→INTEGER on PostgreSQL: explicit data-checked repairs for
-   *   legacy integer columns that were previously stored as text/real.
+   * - TEXT→INTEGER on PostgreSQL: an explicit data-checked repair for legacy
+   *   integer columns that were previously stored as text. REAL→INTEGER is
+   *   the `type.float-to-integer` stop on every engine (#5454).
    *
    * @param manifestType - The abstract type from the manifest (e.g., 'JSON')
    * @param dbType - The actual type in the database (e.g., 'TEXT')
    * @returns true if the change from dbType to manifestType is a safe upgrade
    */
+  /**
+   * The named stop for a floating-point column whose field is now integer
+   * (#5454), on every engine: it says which column and what to run first.
+   */
+  private floatToIntegerStop(
+    tableName: string,
+    colName: string,
+  ): Pick<SchemaChange, 'kindHint' | 'advisory'> {
+    const quotedTable = this.quoteIdentifier(tableName);
+    const quotedCol = this.quoteIdentifier(colName);
+    // The rescale changes the type itself on PostgreSQL; on SQLite it
+    // rewrites the values and records the column, and migrate then rebuilds
+    // the declaration. A DuckDB handle the rescale treats as JSON-backed gets
+    // the values only.
+    const byHand =
+      this.engine === 'postgres'
+        ? 'The rescale converts the column; this stop clears once it has run.'
+        : this.engine === 'sqlite'
+          ? 'The rescale records the column it converted, and the next migrate then changes its declared type to integer; a column rescaled without that record (an older release, or by hand) needs its table rebuilt by hand (#2370).'
+          : 'Where the rescale leaves the floating-point declaration, this stop stays until the column is converted by hand.';
+    return {
+      kindHint: 'type.float-to-integer',
+      advisory: {
+        severity: 'warning',
+        message: `${tableName}.${colName} is floating-point and its field is now integer. If it holds money, rescale it to minor units with rescaleMoneyColumnsToMinorUnits (or the owning package's money upgrade) before migrating. ${byHand} Otherwise check that every value is whole and convert it by hand.`,
+        suggestedSql:
+          this.engine === 'sqlite'
+            ? [
+                `SELECT count(*) FROM ${quotedTable} WHERE ${quotedCol} <> CAST(${quotedCol} AS INTEGER)`,
+              ]
+            : [
+                `SELECT count(*) FROM ${quotedTable} WHERE ${quotedCol} <> trunc(${quotedCol})`,
+                `ALTER TABLE ${quotedTable} ALTER COLUMN ${quotedCol} TYPE BIGINT USING ${quotedCol}::bigint`,
+              ],
+      },
+    };
+  }
+
+  /**
+   * SQLite: did the money rescale convert this column as it is now? True only
+   * when the column's current state (`minorUnitsColumnState`) matches the one
+   * a rescale marker recorded, so no row was written, changed or removed
+   * since, and every stored value is whole. The marker and state are kept
+   * for the rebuild, which re-checks the state in its own transaction and
+   * removes the marker it consumed. Anything else, including an unreadable
+   * marker table, is false.
+   */
+  private async holdsRescaledMinorUnits(
+    tableName: string,
+    colName: string,
+  ): Promise<boolean> {
+    try {
+      const state = await minorUnitsColumnState(this.db, tableName, colName);
+      if (state === null) return false;
+      const name = minorUnitsColumnMarker(tableName, colName, state);
+      const marker = await this.db.query(
+        `SELECT 1 AS present FROM _smrt_backfills WHERE name = ${this.quoteLiteral(name)}`,
+      );
+      if ((marker.rows?.length ?? 0) === 0) return false;
+      const quotedCol = this.quoteIdentifier(colName);
+      const fractional = await this.db.query(
+        `SELECT 1 AS present FROM ${this.quoteIdentifier(tableName)} WHERE ${quotedCol} IS NOT NULL AND ${quotedCol} <> CAST(${quotedCol} AS INTEGER) LIMIT 1`,
+      );
+      if ((fractional.rows?.length ?? 0) > 0) return false;
+      this.rescaledMoneyColumns.set(`${tableName}.${colName}`, {
+        marker: name,
+        state,
+      });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * The statements a SQLite rebuild runs around a column the money rescale
+   * converted (#5454): before copying, fail the batch unless the column is
+   * exactly as planned and still all whole (a row written since could hold
+   * major units or a fraction); after it, remove the marker it consumed.
+   */
+  private rescaledMoneyStatements(
+    tableName: string,
+    change: SchemaChange,
+  ): { before: string[]; after: string[] } | undefined {
+    const entry = this.rescaledMoneyColumns.get(`${tableName}.${change.name}`);
+    if (!entry || !change.name) return undefined;
+    const [n, s, m, r] = entry.state.split(':');
+    const quotedTable = this.quoteIdentifier(tableName);
+    const quotedCol = this.quoteIdentifier(change.name);
+    const found = this.quoteIdentifier('_smrt_money_rebuild_found');
+    const guard = this.quoteIdentifier('_smrt_money_rebuild_guard');
+    const state = minorUnitsColumnStateSql(tableName, change.name);
+    const unchanged = [
+      `(SELECT n FROM (${state})) = ${Number(n)}`,
+      `(SELECT s FROM (${state})) = ${Number(s)}`,
+      `(SELECT m FROM (${state})) = ${Number(m)}`,
+      `(SELECT r FROM (${state})) = ${Number(r)}`,
+      `NOT EXISTS (SELECT 1 FROM ${quotedTable} WHERE ${quotedCol} IS NOT NULL AND ${quotedCol} <> CAST(${quotedCol} AS INTEGER))`,
+    ].join(' AND ');
+    return {
+      before: [
+        `DROP TABLE IF EXISTS temp.${found}`,
+        `CREATE TEMP TABLE ${found} AS SELECT (${unchanged}) AS "unchanged"`,
+        `DROP TABLE IF EXISTS temp.${guard}`,
+        `CREATE TEMP TABLE ${guard} ("unchanged" INTEGER CONSTRAINT ${this.quoteIdentifier(rebuildPlanStaleMessage(tableName))} CHECK ("unchanged" = 1))`,
+        `INSERT INTO temp.${guard} ("unchanged") SELECT "unchanged" FROM temp.${found}`,
+        `DROP TABLE temp.${guard}`,
+        `DROP TABLE temp.${found}`,
+      ],
+      after: [
+        `DELETE FROM _smrt_backfills WHERE name = ${this.quoteLiteral(entry.marker)}`,
+      ],
+    };
+  }
+
   private isCompatibleTypeUpgrade(
     manifestType: string,
     dbType: string,
@@ -6788,13 +6948,11 @@ export class SchemaComparer {
       return true;
     }
 
-    // PostgreSQL can safely repair legacy integer columns when the generated
-    // migration validates that every existing value is already an integer.
-    if (
-      this.engine === 'postgres' &&
-      manifest === 'INTEGER' &&
-      (db === 'TEXT' || db === 'REAL')
-    ) {
+    // PostgreSQL can safely repair legacy integer columns stored as text when
+    // the generated migration validates that every value is an integer. Not
+    // a floating-point column: whole values do not prove it is not money in
+    // major units (#5454), so that is the `type.float-to-integer` stop.
+    if (this.engine === 'postgres' && manifest === 'INTEGER' && db === 'TEXT') {
       return true;
     }
 

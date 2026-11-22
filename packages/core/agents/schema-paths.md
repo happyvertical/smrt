@@ -2177,6 +2177,34 @@ the helper reads it as the JSON adapter. Tests: `minor-units.test.ts` (SQLite,
 DuckDB), `minor-units-postgres.optional.test.ts`, `backfill-once.test.ts`,
 `backfill-once-postgres.optional.test.ts`.
 
+**Migrate never converts a floating-point column to integer (#5454).** A field
+that becomes integer over a live floating-point column (`REAL`, `DOUBLE`,
+`FLOAT`, `NUMERIC`) is the `type.float-to-integer` stop (loses-data) on every
+engine, whatever the values: migrate cannot tell money in major units (fields
+declared `= 0.0` before v0.41) from other numbers, and whole values do not
+prove the unit (`10` dollars cast to `10` reads as ten cents). The stop names
+the column and the rescale. PostgreSQL no longer whitelists REAL→INTEGER
+(TEXT→INTEGER stays a guarded repair). After the rescale a PostgreSQL column is
+`BIGINT` and the stop clears. On SQLite the rescale moves the values and, in
+the same transaction, records each column it converted in `_smrt_backfills`
+(`minorUnitsColumnMarker`: `smrt:minor-units:<table>.<column>@<state>`, where
+the state is the row count, the column's sum, the largest rowid and the rowid
+sum, `minorUnitsColumnStateSql`). The marker vouches only for those contents:
+the differ accepts a column whose current state matches a marker and whose
+values are all whole, and plans a `type_upgrade` that the table rebuild applies
+(integer affinity keeps the values). Inside the rebuild's transaction, before
+the copy, the state is checked again and the batch fails
+(`TableChangedSincePlanError`) when any row was written, changed or removed
+since planning; after the copy the marker is deleted, so it cannot vouch for a
+later floating-point column of the same name. A column with no matching marker
+(written since the rescale, rescaled by an older release or by hand), or one
+holding a fractional value, still stops. Like every SQLite rebuild, the
+retype keeps rowids and refuses an AUTOINCREMENT table
+(`type.rebuild-unavailable`) rather than reset its sequence. The bundled DuckDB handle above gets the values only
+and still stops. A column that is not money is converted by hand once its
+values are whole (the stop's suggested SQL). Tests: `float-to-integer-stop.test.ts`
+(SQLite, DuckDB; PGlite under `pnpm test:pglite`), `differ.test.ts`.
+
 ### Subclass conflict identities (#3456)
 
 An STI child's explicit `conflictColumns` owns a partial unique index restricted

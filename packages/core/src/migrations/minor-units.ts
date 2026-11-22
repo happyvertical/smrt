@@ -39,7 +39,9 @@
  * behaves as integer minor units; bringing the *declaration* into line needs
  * the table-rebuild path (#2370). The result flags that with
  * {@link MinorUnitsRescaleResult.declaredTypeChangePending} rather than
- * pretending the column type moved.
+ * pretending the column type moved, and each such column gets its own marker
+ * ({@link minorUnitsColumnMarker}) in the same transaction, from which the
+ * next migrate rebuilds the declaration to integer (#5454).
  */
 
 import { isJsonAdapterHandle } from '../native-duckdb.js';
@@ -66,6 +68,56 @@ const INTEGRALITY_TOLERANCE = 1e-6;
 
 /** Default minor units per major unit — cents. */
 const DEFAULT_SCALE = 100;
+
+/**
+ * The `_smrt_backfills` name recorded for one column the rescale converted
+ * while leaving its floating-point declaration (SQLite): migrate reads it to
+ * change that column's declared type to integer (#5454). It carries the
+ * column's state right after the rescale ({@link minorUnitsColumnState}), so
+ * it vouches only for those exact contents: any row written, changed or
+ * removed since makes the state differ and the marker no longer applies.
+ */
+export function minorUnitsColumnMarker(
+  table: string,
+  column: string,
+  state: string,
+): string {
+  return `smrt:minor-units:${table}.${column}@${state}`;
+}
+
+/**
+ * SQL for a SQLite column's state as {@link minorUnitsColumnMarker} records
+ * it: the row count, the sum of the column, the largest rowid and the sum of
+ * the rowids. Returns one row with `n`, `s`, `m` and `r`.
+ */
+export function minorUnitsColumnStateSql(
+  table: string,
+  column: string,
+): string {
+  return `SELECT COUNT(*) AS n, TOTAL(${quoteIdentifier(column)}) AS s, COALESCE(MAX(rowid), 0) AS m, TOTAL(rowid) AS r FROM ${quoteIdentifier(table)}`;
+}
+
+/**
+ * A SQLite column's state (see {@link minorUnitsColumnStateSql}) as text,
+ * or `null` when it cannot be read (a table without rowid, say): such a
+ * column cannot be vouched for.
+ */
+export async function minorUnitsColumnState(
+  db: DatabaseInterface,
+  table: string,
+  column: string,
+): Promise<string | null> {
+  try {
+    const row = (await db.query(minorUnitsColumnStateSql(table, column)))
+      .rows[0] as Record<string, unknown> | undefined;
+    if (!row) return null;
+    return ['n', 's', 'm', 'r']
+      .map((key) => String(Number(row[key])))
+      .join(':');
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Round half away from zero, the way SQL `round()` does — and the way
@@ -756,6 +808,24 @@ async function rescaleInTransaction(
         table: report.table,
         column: report.column,
       });
+      // The values are minor units now but the column still declares a
+      // floating-point type. This per-column marker, written in the same
+      // transaction, is what lets migrate change the declared type to
+      // integer instead of stopping on it (#5454). It records the column's
+      // state, so it covers exactly what this transaction wrote.
+      const state = await minorUnitsColumnState(
+        unit,
+        report.table,
+        report.column,
+      );
+      if (state !== null)
+        await new BackfillTracker({ db: unit }).recordApplied(
+          minorUnitsColumnMarker(report.table, report.column, state),
+          {
+            description: `${report.table}.${report.column} holds integer minor units (scale ${scale}); its declared type is still floating-point.`,
+            packageName: options.packageName,
+          },
+        );
     }
     rescaledColumns.push({ table: report.table, column: report.column });
   }

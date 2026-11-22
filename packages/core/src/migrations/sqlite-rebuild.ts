@@ -335,6 +335,14 @@ export interface PlanSqliteTableRebuildsOptions {
   formatDefault?: (change: SchemaChange) => string | undefined;
   /** #4937: the table-level constraint text for an added foreign key. */
   foreignKeyDefinition?: (change: SchemaChange) => string | undefined;
+  /**
+   * #5454: statements a retyped column needs around the rebuild, inside its
+   * transaction: `before` ahead of the copy (a check that fails the batch),
+   * `after` once the table is rebuilt.
+   */
+  retypeStatements?: (
+    change: SchemaChange,
+  ) => { before: string[]; after: string[] } | undefined;
 }
 
 export interface SqliteRebuildPlanResult {
@@ -520,8 +528,15 @@ export async function planSqliteTableRebuildsWithConstraints(
   if (!context.createTableSql) {
     return block('no CREATE TABLE statement found in sqlite_master');
   }
+  // Every rebuild, a retype-only one included, keeps the AUTOINCREMENT
+  // refusal (it would reset the sequence to the highest surviving id) and
+  // copies the rowids (#5454).
   const newOperations =
-    relaxations.length + alterations.length + constraintOps.length > 0;
+    retypes.length +
+      relaxations.length +
+      alterations.length +
+      constraintOps.length >
+    0;
   if (newOperations && /\bAUTOINCREMENT\b/i.test(context.createTableSql)) {
     return block(
       'AUTOINCREMENT sequence preservation is not supported for this rebuild',
@@ -671,12 +686,18 @@ export async function planSqliteTableRebuildsWithConstraints(
   }
 
   const primary = pendingColumns[0] ?? constraintOps[0];
+  const around = retypes.flatMap((change) => {
+    const extra = options.retypeStatements?.(change);
+    return extra ? [extra] : [];
+  });
   const statements = [
     ...(relaxations.length || options.foreignKeysSuspended
       ? [SQLITE_RELAX_REBUILD_MARKER]
       : []),
+    ...around.flatMap((extra) => extra.before),
     ...plan.statements,
     ...followUps,
+    ...around.flatMap((extra) => extra.after),
   ];
   const carry = (change: SchemaChange): SchemaChange => {
     const carried: SchemaChange = {

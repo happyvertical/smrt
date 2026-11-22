@@ -1088,7 +1088,7 @@ describe('SchemaComparer engine-specific SQL generation', () => {
     );
   });
 
-  it('should generate PostgreSQL guarded USING clause for legacy REAL→INTEGER drift', async () => {
+  it('stops a PostgreSQL REAL column becoming INTEGER instead of casting it', async () => {
     const mockPostgresDb = {
       url: 'postgresql://localhost/test',
       query: async () => ({ rows: [{ table_name: 'ad_campaigns' }] }),
@@ -1123,20 +1123,15 @@ describe('SchemaComparer engine-specific SQL generation', () => {
 
     const diff = await pgComparer.compare(manifest);
 
-    const typeUpgrades = diff.changes.filter((c) => c.type === 'type_upgrade');
-    expect(typeUpgrades).toHaveLength(1);
-    expect(typeUpgrades[0].sql).toContain('ALTER TABLE');
-    expect(typeUpgrades[0].sql).toContain('TYPE BIGINT');
-    expect(typeUpgrades[0].sql).toContain('USING "target_clicks"::bigint');
-    expect(typeUpgrades[0].sqlStatements).toHaveLength(2);
-    expect(typeUpgrades[0].sqlStatements?.[0]).toContain(
-      'DO $$ BEGIN IF EXISTS',
-    );
-    expect(typeUpgrades[0].sqlStatements?.[0]).toContain(
-      '"target_clicks" IS NOT NULL AND "target_clicks" <> trunc("target_clicks")',
-    );
-    expect(typeUpgrades[0].sqlStatements?.[1]).toContain(
-      'USING "target_clicks"::bigint',
+    // #5454: a floating-point column may be money in major units; whole
+    // values do not prove otherwise, so the conversion is a named stop.
+    expect(diff.changes.filter((c) => c.type === 'type_upgrade')).toEqual([]);
+    const stops = diff.changes.filter((c) => c.type === 'type_mismatch');
+    expect(stops).toHaveLength(1);
+    expect(stops[0].kindHint).toBe('type.float-to-integer');
+    expect(stops[0].sql).toBeUndefined();
+    expect(stops[0].advisory?.message).toContain(
+      'rescaleMoneyColumnsToMinorUnits',
     );
   });
 
