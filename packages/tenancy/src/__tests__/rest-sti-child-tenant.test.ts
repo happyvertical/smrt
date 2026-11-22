@@ -1,7 +1,8 @@
 /**
- * Runtime REST acts for the request's tenant on a tenant-scoped STI subtype
- * served through a base that is not tenant-scoped: an update, delete or sync
- * item on a subtype row owned by another tenant changes nothing.
+ * Runtime REST and a tenant-scoped STI subtype of a base that is not
+ * tenant-scoped: an update, delete or sync item through the base on a
+ * subtype row changes nothing, whichever tenant owns it (the base's route
+ * does not serve a member whose tenancy differs, #5375).
  *
  * Real SQLite file, the real tenant interceptor and entry-point gate.
  */
@@ -137,12 +138,15 @@ describe('runtime REST, a tenant-scoped subtype through an unscoped base', () =>
     expect(response.status).toBeGreaterThanOrEqual(400);
   });
 
-  it('an update of the caller tenant subtype row is applied', async () => {
+  // The base is not tenant-scoped and the subtype is, so the base's route
+  // does not serve the subtype's rows at all (#5375), the caller's own
+  // included: the subtype needs a route of its own.
+  it("the base route does not serve the caller tenant's subtype row", async () => {
     const response = await call('PUT', `${segment()}/${ROW_A}`, {
       title: 'changed by a',
     });
-    expect(response.status).toBe(200);
-    expect(await titles()).toEqual(['changed by a', 'owned by b']);
+    expect(response.status).toBe(404);
+    expect(await titles()).toEqual(['owned by a', 'owned by b']);
   });
 
   it('a delete of another tenant subtype row changes nothing', async () => {

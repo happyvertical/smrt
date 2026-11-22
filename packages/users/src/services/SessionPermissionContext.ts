@@ -228,46 +228,49 @@ function isModuleNotFoundError(error: unknown): boolean {
   );
 }
 
+/**
+ * The tenancy package, or `undefined` when it is not installed. Only the
+ * import is guarded: an error the caller's callback throws is never read as
+ * a missing package, so the callback runs at most once.
+ */
+async function loadTenancy(): Promise<
+  typeof import('@happyvertical/smrt-tenancy') | undefined
+> {
+  try {
+    return await import('@happyvertical/smrt-tenancy');
+  } catch (error) {
+    if (isModuleNotFoundError(error)) return undefined;
+    throw error;
+  }
+}
+
 async function runWithOptionalTenantContext<T>(
   controls: PermissionRuntimeControls,
   context: SessionPermissionRuntimeContext,
   fn: () => Promise<T>,
 ): Promise<T> {
   if (controls.systemContext) {
-    try {
-      const tenancy = await import('@happyvertical/smrt-tenancy');
-      return await tenancy.withSystemContext(fn);
-    } catch (error) {
-      if (isModuleNotFoundError(error)) {
-        return await fn();
-      }
-      throw error;
-    }
+    const tenancy = await loadTenancy();
+    return tenancy ? await tenancy.withSystemContext(fn) : await fn();
   }
 
   if (!controls.enterTenantContext || !context.tenantId) {
     return await fn();
   }
 
-  try {
-    const tenancy = await import('@happyvertical/smrt-tenancy');
-    return await tenancy.withTenant(
-      {
-        database: context.database,
-        permissions: context.permissionSet,
-        superAdminBypass: context.superAdminBypass,
-        tenantId: context.tenantId,
-        user: context.user ?? undefined,
-        userId: context.userId ?? undefined,
-      },
-      fn,
-    );
-  } catch (error) {
-    if (isModuleNotFoundError(error)) {
-      return await fn();
-    }
-    throw error;
-  }
+  const tenancy = await loadTenancy();
+  if (!tenancy) return await fn();
+  return await tenancy.withTenant(
+    {
+      database: context.database,
+      permissions: context.permissionSet,
+      superAdminBypass: context.superAdminBypass,
+      tenantId: context.tenantId,
+      user: context.user ?? undefined,
+      userId: context.userId ?? undefined,
+    },
+    fn,
+  );
 }
 
 /**

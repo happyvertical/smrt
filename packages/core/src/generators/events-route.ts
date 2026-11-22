@@ -16,8 +16,9 @@
  * only registers the path.
  *
  * Contract:
- * - **Fail-closed auth** (identical to `_changes`, #1540 posture): no
- *   `authMiddleware` configured → 401; the middleware may return a Response to
+ * - **Fail-closed auth** (identical to `_changes`, #1540 posture): a
+ *   host-resolved principal must be signed in; without one, no
+ *   `authMiddleware` configured → 401. The middleware may return a Response to
  *   short-circuit (e.g. 403). The feed spans every table, so per-model
  *   `api: { public }` opt-outs deliberately do not apply.
  * - **Tenant scope is captured ONCE at connection open** — signal delivery
@@ -69,16 +70,15 @@ import {
   runOutsideWriteContext,
 } from '../embedded-write-queue.js';
 import {
-  type ChangesAuthMiddleware,
+  authenticateFeedRequest,
+  type FeedAuthenticationOptions,
   resolveChangesDb,
 } from './changes-route.js';
 
 const logger = createLogger({ level: 'info' });
 
 /** Options for the `_events` route handler. */
-export interface EventsRouteOptions {
-  /** The generator's configured auth middleware, if any. */
-  authMiddleware?: ChangesAuthMiddleware;
+export interface EventsRouteOptions extends FeedAuthenticationOptions {
   /** The generator's `APIContext.db` (instance, config object, or URL string). */
   db?: unknown;
   /**
@@ -867,8 +867,8 @@ export function buildChangeEventStream(
 /**
  * Handle a request against the generated `_events` route.
  *
- * Returns 405 for non-GET; 401 when no auth middleware is configured
- * (fail-closed) or the middleware rejects; 503 when the generator has no
+ * Returns 405 for non-GET; 401 when the request is not authenticated
+ * (`authenticateFeedRequest`: fail-closed) or the middleware rejects; 503 when the generator has no
  * database; otherwise a 200 `text/event-stream` response whose body is the
  * live signal stream (built by {@link buildChangeEventStream}).
  */
@@ -884,18 +884,12 @@ export async function handleEventsRoute(
   }
 
   // Fail-closed (#1540): the signal stream spans every table, so it is never
-  // public — an auth middleware must be configured and must pass.
-  if (!options.authMiddleware) {
-    return new Response(JSON.stringify({ error: 'Authentication required' }), {
-      status: 401,
-      headers: { 'Content-Type': 'application/json' },
-    });
-  }
-  const authCheck = options.authMiddleware(
+  // public.
+  const authResult = await authenticateFeedRequest(
+    req,
     EVENTS_ROUTE_OBJECT_NAME,
-    req.method.toLowerCase(),
+    options,
   );
-  const authResult = await authCheck(req);
   if (authResult instanceof Response) {
     return authResult;
   }

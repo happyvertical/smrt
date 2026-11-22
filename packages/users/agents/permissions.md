@@ -127,6 +127,16 @@ through REST, MCP, CLI's create handler and assistant manifest dispatch on SQLit
 Use onDeny: 'return', checkOperationPermission or hasOperationPermission only
 when the caller handles a structured/boolean denial.
 
+Inside a runtime REST request acting for a host-resolved principal
+(`getRequestPrincipal()` from core, #5195), `checkOperationPermission` and
+its siblings are capped by that principal: a slug it lacks is denied
+whichever branch would grant it (system context, super-admin bypass, live
+role, explicit `permissionSet`). For the principal's own user and tenant its
+permissions stand in for resolution (an explicit set is intersected); for
+another subject a transaction-scoped request denies with `subject_mismatch`
+and any other request resolves that subject live, still capped. Outside such
+a request the gate is unchanged. Test: `src/__tests__/rest-request-scope.test.ts`.
+
 Generated SvelteKit write routes (POST/PUT/PATCH/DELETE CRUD and mutating
 custom actions) enforce the same `collection.action` slug (custom actions use
 `collection.<method>`; actions hosted on a collection class use the item collection, which the catalog now emits) after authentication: the slug must be in the request's

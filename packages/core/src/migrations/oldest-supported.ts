@@ -4,6 +4,20 @@ import oldest from '../../release-upgrade/oldest-supported.json' with {
 
 export const OLDEST_SUPPORTED_RELEASE = oldest.release;
 
+/**
+ * The system-table schema version the oldest supported release stamps in
+ * `_smrt_migrations` (`SMRT_SCHEMA_VERSION` at that release), or `null` when
+ * the floor record does not carry one.
+ *
+ * Migrate records start at 0.61.4; every release before that stamps its system
+ * schema version only when it prepares system tables (`smrt db:migrate`, the
+ * first model use), not when an app migrates through `migrateSmrtSchemas`.
+ * So a stamp dates a database's system tables, not its application tables:
+ * see {@link checkUnrecordedDatabaseAge}.
+ */
+export const OLDEST_SUPPORTED_SYSTEM_SCHEMA: string | null =
+  (oldest as typeof oldest & { systemSchema?: string }).systemSchema ?? null;
+
 /** Semver ordering, including prerelease identifiers; build metadata is ignored. */
 export function compareReleases(a: string, b: string): number {
   const parse = (value: string) => {
@@ -75,4 +89,71 @@ export function checkOldestSupportedRelease(recordedRelease: string | null):
     firstHop,
     message: `This database was last migrated by smrt ${recordedRelease}. This build supports upgrades from ${OLDEST_SUPPORTED_RELEASE} and later. First upgrade the database with smrt ${firstHop}, then run this build's migrate again.`,
   };
+}
+
+/**
+ * The last release that migrates application tables without writing a migrate
+ * record (records start at 0.61.4). An app on a supported release up to this
+ * one can leave an old system-table stamp behind.
+ */
+const LAST_RELEASE_WITHOUT_MIGRATE_RECORD = '0.61.3';
+
+/**
+ * The sentence naming the supported releases whose databases still show an
+ * old stamp, or an empty string when the floor is past the last release that
+ * leaves one (then every database below the floor's stamp is unsupported).
+ */
+function supportedOldStampSentence(floorRelease: string): string {
+  const order = compareReleases(
+    floorRelease,
+    LAST_RELEASE_WITHOUT_MIGRATE_RECORD,
+  );
+  if (order > 0) return '';
+  const range =
+    order === 0
+      ? `smrt ${floorRelease}`
+      : `smrt ${floorRelease} to ${LAST_RELEASE_WITHOUT_MIGRATE_RECORD}`;
+  return ` A database an app on ${range} migrated through migrateSmrtSchemas also shows this and is safe to continue.`;
+}
+
+/**
+ * A warning for a database with no migrate record whose system tables are
+ * older than the oldest supported release's, or `null`. No writes; never a
+ * refusal.
+ *
+ * `systemSchema` is the highest version stamped in `_smrt_migrations`
+ * (`readRecordedSystemSchema`). A stamp below the floor's means the system
+ * tables were last prepared by a release older than the floor. It does not
+ * prove the application tables are that old: releases 0.60.17 to 0.61.3
+ * migrate application tables through `migrateSmrtSchemas` without stamping,
+ * so a supported database migrated only that way shows an old stamp. Nor does
+ * a stamp at the floor prove the database is new enough: 0.60.16 shares the
+ * floor's system schema, and newer model code stamps its own version when it
+ * starts, before any migrate. No evidence in the database tells these
+ * histories apart, so the run proceeds and the warning asks the operator to
+ * confirm.
+ */
+export function checkUnrecordedDatabaseAge(
+  systemSchema: string | null,
+  // The floor to read; the recorded one unless a test names another.
+  floor: {
+    release: string;
+    systemSchema: string | null;
+    upgradeFirstTo?: string;
+  } = {
+    release: OLDEST_SUPPORTED_RELEASE,
+    systemSchema: OLDEST_SUPPORTED_SYSTEM_SCHEMA,
+    upgradeFirstTo: (oldest as typeof oldest & { upgradeFirstTo?: string })
+      .upgradeFirstTo,
+  },
+): string | null {
+  if (systemSchema === null || floor.systemSchema === null) return null;
+  try {
+    if (compareReleases(systemSchema, floor.systemSchema) >= 0) return null;
+  } catch {
+    // A stamp that is not a version dates nothing.
+    return null;
+  }
+  const firstHop = floor.upgradeFirstTo ?? floor.release;
+  return `This database has no migrate record, and its system tables were last prepared by a smrt release older than ${floor.release} (system schema ${systemSchema}; smrt ${floor.release} has ${floor.systemSchema}). This build supports upgrades from ${floor.release} and later, and cannot tell from the database which release last migrated its application tables. If that was a release older than ${floor.release}, stop and upgrade the database with smrt ${firstHop} first.${supportedOldStampSentence(floor.release)}`;
 }

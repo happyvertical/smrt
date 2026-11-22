@@ -96,6 +96,7 @@ import {
   resolveOneToManyInverse,
   resolveRelationshipTargetName,
 } from './relationship-loader';
+import { assertAdoptableStoredRow } from './request-tenancy';
 import {
   isReservedInstanceField,
   warnReservedInstanceField,
@@ -5227,6 +5228,9 @@ export class SmrtObject extends SmrtClass {
     conflictFilter: Record<string, unknown>,
     adopted: AdoptedNaturalKeyRow,
   ): void {
+    // A key shared across an STI family's types can match a stored row of a
+    // type the bound request does not admit: never adopt it (#5375).
+    assertAdoptableStoredRow(this.getResolvedQualifiedName(), existing);
     this.assertSameNaturalKeyOwner(
       data,
       existing,

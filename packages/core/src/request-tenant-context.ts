@@ -26,10 +26,15 @@ export interface RequestTenantContextHooks {
   /** The active tenant context, if any. */
   current(): RequestTenantContext | undefined;
   /**
+   * Run `fn` inside a tenant context that ends with it (one sync item, one
+   * tool call). Without it, `fn` runs in the current context.
+   */
+  run?<T>(context: EnterRequestTenantContext, fn: () => Promise<T>): Promise<T>;
+  /**
    * Whether an active super-admin bypass applies to reads of this class:
    * the bypass flag is set, the class opts in (`allowSuperAdminBypass`), and
    * no bounded hierarchy read scope is active — the tenancy interceptor's own
-   * rule.
+   * rule. `false` while tenancy is not enabled.
    */
   isSuperAdminBypass(className: string): boolean;
 }
@@ -41,7 +46,10 @@ declare global {
 
 /**
  * Install (or, with `undefined`, remove) the request tenant context hooks.
- * Called by smrt-tenancy's `enableTenancy()` / `disableTenancy()`.
+ * smrt-tenancy installs them when it is loaded, enabled or not: the tenant
+ * context is its context store, which a request carries for code that reads
+ * it (a complete principal, `api.principalContext`) whether or not rows are
+ * scoped. `enableTenancy()` adds the super-admin bypass rule.
  */
 export function setRequestTenantContextHooks(
   hooks: RequestTenantContextHooks | undefined,
@@ -49,13 +57,17 @@ export function setRequestTenantContextHooks(
   globalThis.__smrtRequestTenantContextHooks = hooks;
 }
 
-/** The active request tenant context, or `undefined` without tenancy. */
+/**
+ * The active request tenant context, or `undefined` when none is active or
+ * smrt-tenancy is not loaded.
+ */
 export function getRequestTenantContext(): RequestTenantContext | undefined {
   return globalThis.__smrtRequestTenantContextHooks?.current();
 }
 
 /**
- * Enter a request tenant context; does nothing without tenancy.
+ * Enter a request tenant context; does nothing when smrt-tenancy is not
+ * loaded.
  *
  * Throws `TypeError`, before any context changes, unless `tenantId` is a
  * non-empty string: a context without a tenant would read as an active one,
@@ -73,6 +85,18 @@ export function enterRequestTenantContext(
     );
   }
   globalThis.__smrtRequestTenantContextHooks?.enter(context);
+}
+
+/**
+ * Run `fn` inside a request tenant context that ends with it; `fn` runs in
+ * the current context when smrt-tenancy is not loaded.
+ */
+export function runInRequestTenantContext<T>(
+  context: EnterRequestTenantContext,
+  fn: () => Promise<T>,
+): Promise<T> {
+  const hooks = globalThis.__smrtRequestTenantContextHooks;
+  return hooks?.run ? hooks.run(context, fn) : fn();
 }
 
 /**

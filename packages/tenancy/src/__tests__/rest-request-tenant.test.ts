@@ -9,6 +9,9 @@
  *   it is not served across tenants.
  * - A create whose natural key belongs to another tenant's row is a 403 that
  *   says nothing about that row.
+ * - With a host-resolved principal (`APIConfig.resolvePrincipal`), a query
+ *   filter cannot read another tenant, and a write body that names another
+ *   tenant is refused with 403 `TENANT_MISMATCH`.
  *
  * Real SQLite file, the real tenant interceptor and entry-point gate.
  */
@@ -347,6 +350,7 @@ describe('runtime REST request tenant', () => {
   };
   let handler: (req: Request) => Promise<Response>;
   let ambientHandler: (req: Request) => Promise<Response>;
+  let principalHandler: (req: Request) => Promise<Response>;
 
   beforeAll(async () => {
     ObjectRegistry.registerCollection(
@@ -514,6 +518,25 @@ describe('runtime REST request tenant', () => {
     ambientHandler = serve({
       authMiddleware: () => async (req) => req,
       resolveTenant: () => ({ authenticated: true }),
+    });
+    // The same sessions, resolved by the host as principals.
+    const grants = ['ScopedMemo', 'ScopedLegacyMemo'].flatMap((name) =>
+      ['create', 'update', 'delete'].map(
+        (action) => `${ObjectRegistry.getClass(name)?.collection}.${action}`,
+      ),
+    );
+    principalHandler = serve({
+      resolvePrincipal: (req) => {
+        const session = sessionOf(req);
+        return session
+          ? {
+              tenantId: session.tenantId ?? null,
+              allowCrossTenant: session.operator === true,
+              authenticated: true,
+              permissions: grants,
+            }
+          : null;
+      },
     });
   });
 
@@ -766,7 +789,9 @@ describe('runtime REST request tenant', () => {
     // action filtering by its options is handed the scoped options, as before.
     const UNSCANNED: Array<[string, string, string[]]> = [
       ['declaring no parameters', 'memos/unscanned', EVERY_ROW],
-      ['taking options', `memos/filtered?tenantId=${TENANT_B}`, ['global']],
+      // An explicitly cross-tenant caller reads every tenant: its own filter
+      // narrows the rows as the CRUD list's would (#5375).
+      ['taking options', `memos/filtered?tenantId=${TENANT_B}`, ['b']],
       [
         'taking a destructured, defaulted page and options',
         'memos/windowed?limit=50',
@@ -924,6 +949,73 @@ describe('runtime REST request tenant', () => {
         id: TENANT_A,
         label: 'kept',
       });
+    });
+  });
+
+  describe('a principal request that names a tenant itself', () => {
+    const listedTitles = async (query: string) => {
+      const listed = await call(principalHandler, 'GET', `memos?${query}`, {
+        as: 'user-of-a',
+      });
+      expect(listed.status).toBe(200);
+      return ((await listed.json()) as Array<{ title: string }>)
+        .map((row) => row.title)
+        .sort();
+    };
+
+    it('reads its own tenant whatever tenant filter the query names', async () => {
+      const own = await listedTitles('');
+      expect(own).toContain('a');
+      expect(own).not.toContain('b');
+      for (const query of [
+        `tenantId=${TENANT_B}`,
+        `tenant_id[ne]=${TENANT_A}`,
+        `TenantId=${TENANT_B}`,
+      ]) {
+        expect(await listedTitles(query)).toEqual(own);
+      }
+      const counted = await call(
+        principalHandler,
+        'GET',
+        `memos/count?tenantId=${TENANT_B}`,
+        { as: 'user-of-a' },
+      );
+      expect(await counted.json()).toEqual({ count: own.length });
+    });
+
+    it('is refused a write whose body names another tenant', async () => {
+      const created = await call(principalHandler, 'POST', 'memos', {
+        as: 'user-of-a',
+        body: { title: 'escaped', tenantId: TENANT_B },
+      });
+      expect(created.status).toBe(403);
+      expect(await created.json()).toMatchObject({
+        error: { code: 'TENANT_MISMATCH', status: 403 },
+      });
+      const updated = await call(principalHandler, 'PUT', `memos/${ROW_A}`, {
+        as: 'user-of-a',
+        body: { title: 'moved', tenantId: TENANT_B },
+      });
+      expect(updated.status).toBe(403);
+      expect(await titles()).toEqual(['a', 'b', 'global']);
+      const owner = await db.query(
+        `SELECT tenant_id FROM ${memos.tableName} WHERE id = ?`,
+        [ROW_A],
+      );
+      expect(owner.rows[0]?.tenant_id).toBe(TENANT_A);
+    });
+
+    it('writes when the body names its own tenant', async () => {
+      const created = await call(principalHandler, 'POST', 'memos', {
+        as: 'user-of-a',
+        body: { title: 'own', tenantId: TENANT_A },
+      });
+      expect(created.status).toBe(201);
+      const owner = await db.query(
+        `SELECT tenant_id FROM ${memos.tableName} WHERE title = ?`,
+        ['own'],
+      );
+      expect(owner.rows[0]?.tenant_id).toBe(TENANT_A);
     });
   });
 

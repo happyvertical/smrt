@@ -88,16 +88,22 @@ describe('Issue #1782: fail-closed tenant read scope in generated routes', () =>
     const collectionRoute = findRouteContent('publictenantdocs/+server.ts');
     const itemRoute = findRouteContent('publictenantdocs/[id]/+server.ts');
 
-    // The scope is resolved at request time by core, from the live registry,
+    // The scope is the request's tenancy, resolved at request time by core
     // exactly as runtime REST resolves it; no manifest-derived helper.
     expect(collectionRoute).not.toContain('function tenantReadScope()');
     expect(collectionRoute).toContain(
-      "import { applyWhereScope, resolveAnonymousTenantReadScope } from '@happyvertical/smrt-core';",
+      "import { applyWhereScope, tenancyReadScope } from '@happyvertical/smrt-core';",
+    );
+    expect(collectionRoute).toContain(
+      'const TENANCY_MODEL = "@test/smrt:PublicTenantDoc";',
+    );
+    expect(collectionRoute).toContain(
+      'const tenancy = enterTenancy(locals, "list");',
     );
     // List + count both carry the scope, applied by the helper the runtime
     // REST route uses so no spelling of the tenant key survives beside it.
     expect(collectionRoute).toContain(
-      'const where = applyWhereScope(query.where, resolveAnonymousTenantReadScope("@test/smrt:PublicTenantDoc")) ?? {};',
+      'const where = applyWhereScope(query.where, tenancyReadScope(tenancy)) ?? {};',
     );
     expect(collectionRoute).not.toContain('...tenantReadScope()');
     // #2367 added the deterministic ordering; the read scope still rides along.
@@ -107,9 +113,8 @@ describe('Issue #1782: fail-closed tenant read scope in generated routes', () =>
     expect(collectionRoute).toContain('collection.count({ where })');
 
     // Single-read get scopes the id lookup to global when no tenant is active.
-    expect(itemRoute).toContain(
-      'const readScope = resolveAnonymousTenantReadScope("@test/smrt:PublicTenantDoc");',
-    );
+    expect(itemRoute).toContain('const tenancy = enterTenancy(locals, "get");');
+    expect(itemRoute).toContain('const readScope = tenancyReadScope(tenancy);');
     expect(itemRoute).toContain(
       'readScope ? { id: params.id, ...readScope } : params.id',
     );
@@ -150,7 +155,10 @@ describe('Issue #1782: fail-closed tenant read scope in generated routes', () =>
     );
 
     expect(actionRoute).toContain(
-      'const readScope = resolveAnonymousTenantReadScope("@test/smrt:PublicTenantDoc");',
+      'const TENANCY_MODEL = "@test/smrt:PublicTenantDoc";',
+    );
+    expect(actionRoute).toContain(
+      'const readScope = tenancyReadScope(tenancy);',
     );
     expect(actionRoute).toContain(
       'readScope ? { id: params.id, ...readScope } : params.id',
@@ -205,14 +213,15 @@ describe('Issue #1782: fail-closed tenant read scope in generated routes', () =>
     );
 
     // Core's shared helper takes ownership out of the caller's options and
-    // sets the request's scope under the ownership field, resolving tenancy
-    // and the super-admin bypass at request time.
+    // sets the request's scope under the ownership field, as the request's
+    // tenancy (resolved at request time, bypass included) decided.
     expect(collectionActionRoute).toContain(
-      'const scopedOptions = scopeTenantReadOptions("@test/smrt:PublicTenantDoc", options);',
+      'const scopedOptions = scopeActionOptions(tenancy, options);',
     );
     expect(collectionActionRoute).toContain(
-      "import { enterTenantContext, getCurrentTenant, hasTenantContext, isSystemContext, isTenancyEnabled } from '@happyvertical/smrt-tenancy';",
+      'const TENANCY_MODEL = "@test/smrt:PublicTenantDoc";',
     );
+    expect(collectionActionRoute).not.toContain('@happyvertical/smrt-tenancy');
     expect(collectionActionRoute).toContain(
       'await typedCollection.getBySlug(scopedOptions)',
     );
@@ -241,14 +250,15 @@ describe('Issue #1782: fail-closed tenant read scope in generated routes', () =>
     // model that is not tenant-scoped the answer is no scope at all.
     expect(collectionRoute).not.toContain('@happyvertical/smrt-tenancy');
     expect(collectionRoute).toContain(
-      'resolveAnonymousTenantReadScope("@test/smrt:PlainDoc")',
+      'const TENANCY_MODEL = "@test/smrt:PlainDoc";',
+    );
+    expect(collectionRoute).toContain(
+      'applyWhereScope(query.where, tenancyReadScope(tenancy))',
     );
     expect(collectionRoute).toContain(
       'collection.list({ limit, offset, orderBy, where })',
     );
     expect(itemRoute).not.toContain('@happyvertical/smrt-tenancy');
-    expect(itemRoute).toContain(
-      'const readScope = resolveAnonymousTenantReadScope("@test/smrt:PlainDoc");',
-    );
+    expect(itemRoute).toContain('const readScope = tenancyReadScope(tenancy);');
   });
 });

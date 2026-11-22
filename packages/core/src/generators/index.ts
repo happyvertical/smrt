@@ -109,7 +109,15 @@ export {
   restFieldReadPermissions,
   restMethodForApiAction,
 } from './preflight-route';
-export type { APIConfig, APIContext, RestServerConfig } from './rest';
+export type {
+  APIConfig,
+  APIContext,
+  APIRequestInfo,
+  APIRequestPrincipal,
+  APIRequestRoute,
+  RequestPrincipal,
+  RestServerConfig,
+} from './rest';
 // REST API Generator and server utilities
 export {
   APIGenerator,

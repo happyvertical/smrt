@@ -1266,7 +1266,7 @@ describe('smrtConsumer explicit SvelteKit route hosting (#2850)', () => {
       'requireRouteAuth(locals, false);',
     );
     expect(readFileSync(collectionRoute, 'utf8')).toContain(
-      'establishTenantContext(locals);',
+      'const tenancy = enterTenancy(locals, "list");',
     );
     expect(readFileSync(collectionRoute, 'utf8')).toContain(
       'function applyWritablePolicy',

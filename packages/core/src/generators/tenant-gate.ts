@@ -12,7 +12,8 @@
  *
  * `MCPGenerator` (`generators/mcp.ts`, `surface: 'MCP'`) and the runtime REST
  * server (`APIGenerator` in `generators/rest.ts`, `surface: 'REST'`, with the
- * tenant its host supplies per request through `APIConfig.resolveTenant`) are
+ * tenant of the principal its host supplies per request through
+ * `APIConfig.resolvePrincipal`) are
  * the in-repo callers of {@link runWithTenantGate}. Core's
  * `CLIGenerator`, which used to call this with `surface: 'CLI'` and the
  * `--tenant`/`--all-tenants` flags documented on {@link TenantGateOptions}
@@ -47,7 +48,8 @@ export interface TenantGateOptions {
   tenantScoped?: boolean;
   /**
    * Explicit operator-provided tenant selector (`context.tenantId` for
-   * MCPGenerator, the host's `resolveTenant` answer for the REST server;
+   * MCPGenerator, the tenant of the host's `resolvePrincipal` answer for the
+   * REST server;
    * core's retired `CLIGenerator` used to
    * pass this from a `--tenant` flag the shipped local CLI does not have,
    * #2664).
