@@ -10,7 +10,7 @@
  * route.
  */
 
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, openSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -35,6 +35,9 @@ vi.mock('node:fs', () => {
     }),
     mkdirSync: vi.fn(),
     writeFileSync: vi.fn(),
+    // Writers open, then write to the descriptor (here: the path).
+    openSync: vi.fn((path: string) => path),
+    closeSync: vi.fn(),
     readFileSync: vi.fn(() => '// hand-written route\n'),
     readdirSync: vi.fn(),
     unlinkSync: vi.fn(),
@@ -156,10 +159,13 @@ describe('generateResourcesRoute (#2663)', () => {
       join(projectRoot, 'src/routes/api', '_resources'),
       { recursive: true },
     );
+    // Created exclusively, then written through the descriptor (the mocked
+    // descriptor is the path).
+    expect(openSync).toHaveBeenCalledWith(routeFilePath, 'wx');
     expect(writeFileSync).toHaveBeenCalledWith(
       routeFilePath,
       expect.any(String),
-      { encoding: 'utf-8', flag: 'wx' },
+      'utf-8',
     );
 
     const content = writtenRouteContent();

@@ -5,6 +5,7 @@
 
 export { smrtAssetUrlCompatibility } from './asset-url-compatibility.js';
 
+import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import {
@@ -92,16 +93,30 @@ import { importBuildAwareModule } from './import-build-aware.js';
 import { injectPackageStamps, packageStampText } from './package-stamp.js';
 import {
   findCliApiCoherenceViolations,
-  generateSvelteKitRoutes,
   knowledgeRoutePath,
+  type RouteGenerationAttempt,
+  runSvelteKitRouteGeneration,
   validateCliIncludeAgainstApi,
 } from './sveltekit-generator.js';
+import { canonicalSvelteKitPath } from './sveltekit-path.js';
 import { injectSvelteKitRegistration } from './sveltekit-register-injection.js';
 import {
   assertSvelteKitRouteCoordinationComplete,
   contributeSvelteKitRoutes,
+  createSvelteKitLifecycleLock,
+  ensureSvelteKitBuildSchemaModule,
   expectedSvelteKitRouteOwners,
+  isSvelteKitPostReleaseError,
   markSvelteKitRouteParticipant,
+  pauseSvelteKitCoordinator,
+  registerSvelteKitProducer,
+  registerSvelteKitProducerPlugin,
+  type SvelteKitContributionResult,
+  type SvelteKitLifecycleLock,
+  type SvelteKitProducerEntry,
+  type SvelteKitSubmissionOutcome,
+  settleSvelteKitSubmission,
+  svelteKitLifecycleLock,
 } from './sveltekit-route-coordinator.js';
 import {
   buildWebMcpToolDefinitions,
@@ -343,6 +358,52 @@ function toProjectGlobPattern(projectRoot: string, pattern: string): string {
   return slashed.replace(/^(?:\.\/)+/, '');
 }
 
+const KNOWLEDGE_ARTIFACT_MODULE_PREFIX = 'smrt:knowledge-artifact/';
+
+/**
+ * The per-root knowledge module a plugin-managed knowledge route imports: a
+ * short hash of the canonical committed root, so two producers in one Vite
+ * lifecycle never share a module.
+ */
+function knowledgeArtifactModuleId(projectRoot: string): string {
+  const key = createHash('sha256')
+    .update(canonicalSvelteKitPath(projectRoot))
+    .digest('hex')
+    .slice(0, 16);
+  return `${KNOWLEDGE_ARTIFACT_MODULE_PREFIX}${key}`;
+}
+
+/**
+ * The knowledge artifact under one committed root: `.smrt/smrt-knowledge.json`
+ * when present, otherwise `dist/smrt-knowledge.json`. Only the selected file
+ * is parsed; a malformed or absent artifact is `null` (the route answers 404).
+ */
+function readKnowledgeArtifactFor(projectRoot: string): {
+  artifact: Record<string, unknown> | null;
+  candidates: string[];
+} {
+  const candidates = [
+    join(projectRoot, '.smrt', 'smrt-knowledge.json'),
+    join(projectRoot, 'dist', 'smrt-knowledge.json'),
+  ];
+  for (const candidate of candidates) {
+    if (!existsSync(candidate)) continue;
+    try {
+      const parsed = JSON.parse(readFileSync(candidate, 'utf-8'));
+      return {
+        artifact:
+          parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+            ? parsed
+            : null,
+        candidates,
+      };
+    } catch {
+      return { artifact: null, candidates };
+    }
+  }
+  return { artifact: null, candidates };
+}
+
 /**
  * Module-graph operations the watcher uses, narrowed privately from the Vite
  * dev server at run time. The exported `SmrtDevServer` hook type stays as
@@ -380,12 +441,15 @@ interface InvalidatingDevServer {
  * reload. `reloadModule` cannot be used: it skips modules without a file,
  * which every virtual module is.
  */
-function invalidateVirtualModules(server: SmrtDevServer): void {
+function invalidateVirtualModules(
+  server: SmrtDevServer,
+  extraIds: readonly string[] = [],
+): void {
   const devServer = server as unknown as InvalidatingDevServer;
   const timestamp = Date.now();
   const invalidateIn = (graph: DevModuleGraph | undefined): boolean => {
     let invalidated = false;
-    for (const id of RESOLVED_VIRTUAL_MODULE_IDS) {
+    for (const id of [...RESOLVED_VIRTUAL_MODULE_IDS, ...extraIds]) {
       const module = graph?.getModuleById(id);
       if (!module) continue;
       graph?.invalidateModule?.(module, new Set(), timestamp, true);
@@ -950,14 +1014,24 @@ export function smrtPlugin(
   }
 
   let server: SmrtDevServer | undefined;
+  /** Published manifest: written only by {@link publishLocked}. */
   let manifest: SmartObjectManifest | null = null;
   /**
-   * The declared agent surface from the most recent OXC scan (#2591). Held
-   * beside `manifest` rather than on it, because `manifest.json` is the runtime
-   * manifest and stays runtime-focused; this belongs to the knowledge artifact.
+   * The published declared agent surface (#2591). Held beside `manifest`
+   * rather than on it, because `manifest.json` is the runtime manifest and
+   * stays runtime-focused; this belongs to the knowledge artifact. Written
+   * only by {@link publishLocked}, together with the manifest it was scanned
+   * with.
    */
   let agentSurface: DomainKnowledgeAgentSurface | undefined;
-  let activeManifestScan: Promise<SmartObjectManifest> | undefined;
+  /** Sequence of the published prepared result (0: nothing published yet). */
+  let publishedSeq = 0;
+  /** Root of the published prepared result (the committed root). */
+  let publishedRoot: string | undefined;
+  /** Per-instance preparation counter; each preparation takes the next value. */
+  let prepareCounter = 0;
+  /** Operations in flight (preparations, generations, publications). */
+  const activeOperations = new Set<Promise<unknown>>();
   /** The last watcher rescan scheduled, running or waiting. */
   let watchedRescanTail: Promise<void> = Promise.resolve();
   /** The watcher rescan that has not started yet, if any. */
@@ -968,18 +1042,137 @@ export function smrtPlugin(
   let config: SmrtResolvedConfig | null = null; // Store resolved config for closeBundle hook
   let resolvedPluginNames: string[] = [];
   let hasFreshConfigResolvedManifest = false;
-  let configHookManifest: SmartObjectManifest | null = null;
+  let configHookPrepared: PreparedGeneration | null = null;
   let generatedRoutesDuringConfig = false;
+  /** The Vite lifecycle recorded by the config hook (lock and registry key). */
+  let lifecycle: object | undefined;
   let routeLifecycleConfig: object | undefined;
   let routeExpectedOwners: Array<'producer' | 'consumer'> = ['producer'];
+  /** Lock for a plugin used without any Vite hook context. */
+  const instanceLock = createSvelteKitLifecycleLock();
+  /** The resolved config, when no config hook recorded a lifecycle. */
+  let resolvedLockKey: object | undefined;
   let workerRegistrationBuilt = false;
   /** Knowledge handler path of the last route generation (watcher guard). */
   let generatedKnowledgeRoute: string | undefined;
+  /**
+   * Route-tree events a refused rescan waits for (#5462). `files` alone:
+   * only those files (a generation that changed outputs and then threw).
+   * `routeTree`: any route endpoint under routesDir, the knowledge route and
+   * the named files (a rejected generation).
+   */
+  let refusedPending: { files: Set<string>; routeTree: boolean } | undefined;
 
-  async function generateConfiguredSvelteKitRoutes(
+  /** One frozen, side-effect-free scan result. */
+  interface PreparedGeneration {
+    readonly seq: number;
+    readonly root: string;
+    readonly manifest: SmartObjectManifest;
+    readonly agentSurface: DomainKnowledgeAgentSurface | undefined;
+  }
+
+  function track<T>(operation: Promise<T>): Promise<T> {
+    activeOperations.add(operation);
+    const settled = () => {
+      activeOperations.delete(operation);
+    };
+    operation.then(settled, settled);
+    return operation;
+  }
+
+  /** Wait for every operation in flight; never rejects. */
+  async function awaitInFlight(): Promise<void> {
+    await Promise.all(
+      [...activeOperations].map((operation) => operation.catch(() => {})),
+    );
+  }
+
+  /** The lock of the recorded lifecycle, or this instance's own. */
+  function currentLock(): SvelteKitLifecycleLock {
+    if (lifecycle) return svelteKitLifecycleLock(lifecycle);
+    // Without a config hook, the resolved config the companions share keys
+    // one fallback lock (the consumer uses the same key).
+    if (resolvedLockKey) return svelteKitLifecycleLock(resolvedLockKey);
+    return instanceLock;
+  }
+
+  /**
+   * Scan without publishing anything. The sequence is taken when preparation
+   * starts, so a slower, older preparation can never be published over a
+   * newer one.
+   */
+  async function prepareGeneration(
     rootDir: string,
-    currentManifest: SmartObjectManifest,
+  ): Promise<PreparedGeneration> {
+    const seq = ++prepareCounter;
+    const scanned = await scanManifest(rootDir);
+    return Object.freeze({
+      seq,
+      root: rootDir,
+      manifest: scanned.manifest,
+      agentSurface: scanned.agentSurface,
+    });
+  }
+
+  /**
+   * The one publication body. The caller holds the lifecycle lock. An older
+   * sequence than the published one is a no-op.
+   */
+  async function publishLocked(
+    prepared: PreparedGeneration,
+    knowledgeRoute?: string,
   ): Promise<void> {
+    if (prepared.seq <= publishedSeq) return;
+    publishedSeq = prepared.seq;
+    manifest = prepared.manifest;
+    agentSurface = prepared.agentSurface;
+    publishedRoot = prepared.root;
+    if (knowledgeRoute !== undefined) generatedKnowledgeRoute = knowledgeRoute;
+    if (lifecycle) registerSvelteKitProducer(lifecycle, prepared.root, entry);
+    reportAgentSurfaceDiagnostics(prepared.agentSurface);
+    if (generateTypes) {
+      await generateTypeDeclarationFile(
+        prepared.manifest,
+        prepared.root,
+        typeDeclarationsPath,
+      );
+    }
+    if (!generationSnapshot) {
+      await writeLocalManifest(
+        prepared.manifest,
+        prepared.root,
+        prepared.agentSurface,
+      );
+    }
+    if (server) {
+      invalidateVirtualModules(server, [
+        `\0${knowledgeArtifactModuleId(prepared.root)}`,
+      ]);
+      warnCliApiCoherenceViolations(prepared.manifest);
+    }
+  }
+
+  /** Publish outside route generation: takes the lock, then publishes. */
+  async function publish(prepared: PreparedGeneration): Promise<void> {
+    const release = await currentLock().acquire();
+    try {
+      await publishLocked(prepared);
+    } finally {
+      release();
+    }
+  }
+
+  /**
+   * Generate routes for `prepared` and publish it at settlement. The returned
+   * outcome (also recorded in `outcome.value` before any throw) is this
+   * submission's own: `accepted`, `rejected` or `superseded`, or `pending`
+   * while a peer has not contributed.
+   */
+  async function generateConfiguredSvelteKitRoutes(
+    prepared: PreparedGeneration,
+    outcome: { value?: SvelteKitSubmissionOutcome } = {},
+  ): Promise<SvelteKitContributionResult> {
+    const rootDir = prepared.root;
     const routeOptions = {
       lazyActivation: svelteKit.lazyActivation,
       enabled: svelteKit.enabled,
@@ -991,34 +1184,120 @@ export function smrtPlugin(
       changesRoute: svelteKit.changesRoute,
       eventsRoute: svelteKit.eventsRoute,
       resourcesRoute: svelteKit.resourcesRoute,
-      knowledge: await resolveKnowledgeConfig(rootDir, currentManifest),
+      knowledge: await resolveKnowledgeConfig(rootDir, prepared.manifest),
     };
-    generatedKnowledgeRoute = resolve(
-      knowledgeRoutePath(rootDir, routeOptions),
-    );
+    const knowledgeRoute = resolve(knowledgeRoutePath(rootDir, routeOptions));
+    const knowledgeModuleId = knowledgeArtifactModuleId(rootDir);
+    const settle = async (result: SvelteKitSubmissionOutcome) => {
+      outcome.value = result;
+      if (result === 'accepted') await publishLocked(prepared, knowledgeRoute);
+    };
+    const publishesBuildSchemaFor = generationSnapshot
+      ? undefined
+      : canonicalSvelteKitPath(rootDir);
     if (routeLifecycleConfig) {
-      await contributeSvelteKitRoutes(
+      return contributeSvelteKitRoutes(
         routeLifecycleConfig,
         routeExpectedOwners,
         rootDir,
         {
           owner: 'producer',
-          routeManifest: currentManifest,
-          semanticManifest: currentManifest,
+          routeManifest: prepared.manifest,
+          semanticManifest: prepared.manifest,
           options: routeOptions,
+          seq: prepared.seq,
+          isStale: () => prepared.seq < publishedSeq,
+          settle,
+          publishesBuildSchemaFor,
+          knowledgeModuleId,
         },
       );
-      return;
     }
-    // Validate every object's routes before generation sweeps the route tree.
-    assertSvelteKitObjectRoutesValid(
-      rootDir,
-      currentManifest,
-      currentManifest,
-      routeOptions,
-    );
-    await generateSvelteKitRoutes(rootDir, currentManifest, routeOptions);
+    // Direct path: the same lock around generation and settlement.
+    const release = await currentLock().acquire();
+    const attempt: RouteGenerationAttempt = { changed: false };
+    try {
+      if (prepared.seq < publishedSeq) {
+        await settleSvelteKitSubmission(settle, 'superseded');
+        return 'superseded';
+      }
+      try {
+        // Validate every object's routes before generation sweeps the route tree.
+        assertSvelteKitObjectRoutesValid(
+          rootDir,
+          prepared.manifest,
+          prepared.manifest,
+          routeOptions,
+        );
+        await pauseSvelteKitCoordinator('beforeMark', {
+          owners: ['producer'],
+          projectRoot: rootDir,
+        });
+        await runSvelteKitRouteGeneration(
+          {
+            projectRoot: rootDir,
+            routeManifest: prepared.manifest,
+            options: routeOptions,
+          },
+          attempt,
+          {
+            deferBuildSchema: publishesBuildSchemaFor !== undefined,
+            knowledgeModule: knowledgeModuleId,
+          },
+        );
+      } catch (error) {
+        if (!attempt.changed) {
+          await settleSvelteKitSubmission(settle, 'rejected');
+          throw error;
+        }
+        await settleDirect(prepared, settle, publishesBuildSchemaFor, true);
+        throw error;
+      }
+      await settleDirect(prepared, settle, publishesBuildSchemaFor);
+      return 'accepted';
+    } finally {
+      release();
+    }
   }
+
+  async function settleDirect(
+    prepared: PreparedGeneration,
+    settle: (result: SvelteKitSubmissionOutcome) => Promise<void>,
+    publishesBuildSchemaFor: string | undefined,
+    partialCommit = false,
+  ): Promise<void> {
+    await pauseSvelteKitCoordinator('beforeSettle', {
+      owners: ['producer'],
+      projectRoot: prepared.root,
+    });
+    await settleSvelteKitSubmission(settle, 'accepted');
+    if (publishesBuildSchemaFor === undefined) return;
+    try {
+      ensureSvelteKitBuildSchemaModule(prepared.root, prepared.manifest);
+    } catch (error) {
+      // Success path: the unresolved registration import fails the run.
+      // After a partial commit the generation error is what the caller sees.
+      if (!partialCommit) throw error;
+      console.error('[smrt] Error writing the build-schema module:', error);
+    }
+  }
+
+  /** What a companion consumer in this lifecycle may read (private). */
+  const entry: SvelteKitProducerEntry = {
+    get api() {
+      return plugin.api;
+    },
+    async awaitOperation() {
+      // Through the public reader first, then every operation in flight.
+      await plugin.api.resolveKnowledgeAgentSurface().catch(() => {});
+      await awaitInFlight();
+    },
+    readPublished: () => ({
+      seq: publishedSeq,
+      surface: agentSurface,
+      root: publishedRoot,
+    }),
+  };
 
   /**
    * Write manifest to .smrt/manifest.json for CLI discovery.
@@ -1038,6 +1317,7 @@ export function smrtPlugin(
   async function writeLocalManifest(
     m: SmartObjectManifest,
     rootDir: string,
+    surface: DomainKnowledgeAgentSurface | undefined,
   ): Promise<void> {
     try {
       const { mkdirSync } = await import('node:fs');
@@ -1069,6 +1349,7 @@ export function smrtPlugin(
         rootDir,
         resolve(smrtDir, 'smrt-knowledge.json'),
         manifestPath,
+        surface,
       );
 
       const objectCount = Object.keys(m.objects).length;
@@ -1097,6 +1378,7 @@ export function smrtPlugin(
     rootDir: string,
     outputPath: string,
     manifestPath: string,
+    surface: DomainKnowledgeAgentSurface | undefined,
     deterministic = false,
   ): Promise<void> {
     const resolvedKnowledge = await resolveKnowledgeConfig(rootDir, m);
@@ -1112,7 +1394,7 @@ export function smrtPlugin(
       rootDir,
       manifestPath,
       config: resolvedKnowledge,
-      agentSurface,
+      agentSurface: surface,
     });
     const emitted = deterministic
       ? { ...artifact, generatedAt: DETERMINISTIC_GENERATED_AT }
@@ -1251,32 +1533,52 @@ export function smrtPlugin(
     if (hasFreshConfigResolvedManifest) {
       hasFreshConfigResolvedManifest = false;
       // configureServer may be attached between configResolved and buildStart.
-      // Emit declarations from the reused manifest even though the scanner
-      // itself does not need to run again.
-      if (generateTypes && manifest) {
-        await generateTypeDeclarationFile(
-          manifest,
-          projectRoot,
-          typeDeclarationsPath,
-        );
+      // Re-render declarations from the published manifest, under the lock,
+      // even though the scanner itself does not need to run again.
+      if (generateTypes) {
+        const release = await currentLock().acquire();
+        try {
+          if (manifest) {
+            await generateTypeDeclarationFile(
+              manifest,
+              publishedRoot ?? projectRoot,
+              typeDeclarationsPath,
+            );
+          }
+        } finally {
+          release();
+        }
       }
       return;
     }
 
-    // Rescan files on build start in all modes.
-    manifest = await scanAndGenerateManifest(projectRoot);
+    const routeGeneration = svelteKit.enabled && !config?.build?.lib;
+    const watchRebuild =
+      config?.command === 'build' &&
+      Boolean((config?.build as { watch?: unknown } | undefined)?.watch);
+    if (routeGeneration && !watchRebuild && publishedSeq > 0) {
+      // Serve mode: a later buildStart (for example the SSR environment's,
+      // started lazily on its first request) reuses the current accepted
+      // publication. Dev source changes reach the watcher rescan instead.
+      return;
+    }
 
-    // Write local manifest for CLI discovery (Issue #963).
-    if (manifest && !generationSnapshot) {
-      await writeLocalManifest(manifest, projectRoot);
+    // Rescan files on build start in all modes. Validation runs before any
+    // publication, so a refused manifest is never published.
+    const prepared = await prepareGeneration(projectRoot);
+    validateLibraryMinifySetup(prepared.manifest, 'buildStart');
+    validateConsumerPluginSetup(prepared.manifest, 'buildStart');
+    if (validateCliApiCoherence) {
+      validateCliIncludeAgainstApi(prepared.manifest);
     }
-    if (manifest) {
-      validateLibraryMinifySetup(manifest, 'buildStart');
-      validateConsumerPluginSetup(manifest, 'buildStart');
-      if (validateCliApiCoherence) {
-        validateCliIncludeAgainstApi(manifest);
-      }
+    if (routeGeneration) {
+      // A watch rebuild (or a buildStart with nothing published yet)
+      // generates routes first and publishes at settlement; a refused
+      // rebuild leaves the previous outputs in place.
+      await generateConfiguredSvelteKitRoutes(prepared);
+      return;
     }
+    await publish(prepared);
   }
 
   const plugin: SmrtVitePlugin<SmrtPluginApi> & { api: SmrtPluginApi } = {
@@ -1293,23 +1595,33 @@ export function smrtPlugin(
     config: {
       order: 'pre',
       async handler(userConfig, env) {
-        if (!svelteKit.enabled) return;
-
+        // The lifecycle is recorded even without route generation: it keys
+        // the coordination lock and the private producer registry.
+        lifecycle = env ?? userConfig;
         projectRoot =
           configuredProjectRoot ??
           resolve(process.cwd(), userConfig.root ?? '.');
-        routeLifecycleConfig = env ?? userConfig;
+        registerSvelteKitProducer(lifecycle, projectRoot, entry);
+        if (!svelteKit.enabled) return;
+
+        routeLifecycleConfig = lifecycle;
         routeExpectedOwners = await expectedSvelteKitRouteOwners(
           userConfig,
           projectRoot,
           svelteKit.routesDir || 'src/routes/api',
           env,
         );
-        configHookManifest = await scanAndGenerateManifest(projectRoot);
-        await generateConfiguredSvelteKitRoutes(
-          projectRoot,
-          configHookManifest,
-        );
+        // Prepare outside the lock; publication happens when this
+        // submission settles, inside whichever config hook generates it.
+        const operation = (async () => {
+          const prepared = await prepareGeneration(projectRoot);
+          configHookPrepared = prepared;
+          if (validateCliApiCoherence) {
+            validateCliIncludeAgainstApi(prepared.manifest);
+          }
+          await generateConfiguredSvelteKitRoutes(prepared);
+        })();
+        await track(operation);
         generatedRoutesDuringConfig = true;
       },
     },
@@ -1329,7 +1641,9 @@ export function smrtPlugin(
       resolveKnowledgeConfig: (currentManifest: SmartObjectManifest) =>
         resolveKnowledgeConfig(projectRoot, currentManifest),
       async resolveKnowledgeAgentSurface() {
-        await (activeBuildStart ?? activeManifestScan);
+        // Published state only. Before the first publication, wait for the
+        // operation in flight; its rejection is never returned.
+        if (publishedSeq === 0) await awaitInFlight();
         return agentSurface;
       },
     } satisfies SmrtPluginApi,
@@ -1338,12 +1652,28 @@ export function smrtPlugin(
       hasFreshConfigResolvedManifest = false;
       // Store config for closeBundle hook
       config = resolvedConfig;
+      resolvedLockKey = resolvedConfig;
       resolvedPluginNames = (resolvedConfig.plugins || []).map(
         (plugin) => plugin?.name || '',
       );
 
-      // Store project root for file scanning
-      projectRoot = configuredProjectRoot ?? resolvedConfig.root;
+      // Store project root for file scanning. A config-hook generation has
+      // committed its root: keep it, and say so when Vite resolved another.
+      const resolvedRoot = configuredProjectRoot ?? resolvedConfig.root;
+      const committed = configHookPrepared;
+      if (
+        committed &&
+        canonicalSvelteKitPath(resolvedRoot) !==
+          canonicalSvelteKitPath(committed.root)
+      ) {
+        console.warn(
+          `[smrt] Vite resolved the project root to ${resolvedRoot}, but routes and artifacts were generated under ${committed.root} in the config hook; keeping ${committed.root}.`,
+        );
+        projectRoot = committed.root;
+      } else {
+        projectRoot = resolvedRoot;
+      }
+      if (lifecycle) registerSvelteKitProducer(lifecycle, projectRoot, entry);
       if (svelteKit.enabled && routeLifecycleConfig) {
         assertSvelteKitRouteCoordinationComplete(routeLifecycleConfig);
       }
@@ -1365,38 +1695,45 @@ export function smrtPlugin(
 
       console.log(`[smrt] Running in ${pluginMode} mode`);
 
-      // Scan files and generate initial manifest in all modes
-      manifest =
-        configHookManifest ?? (await scanAndGenerateManifest(projectRoot));
-      configHookManifest = null;
-
-      // Write local manifest for CLI discovery (Issue #963)
-      if (manifest && !generationSnapshot) {
-        await writeLocalManifest(manifest, projectRoot);
-      }
-      if (manifest) {
-        validateLibraryMinifySetup(manifest, 'configResolved');
-        validateConsumerPluginSetup(manifest, 'configResolved');
+      if (committed) {
+        // Published when the config-hook generation settled; never twice.
+        configHookPrepared = null;
+        validateLibraryMinifySetup(committed.manifest, 'configResolved');
+        validateConsumerPluginSetup(committed.manifest, 'configResolved');
         if (validateCliApiCoherence) {
-          validateCliIncludeAgainstApi(manifest);
+          validateCliIncludeAgainstApi(committed.manifest);
         }
-      }
-
-      // Generate SvelteKit routes if enabled
-      if (svelteKit.enabled && manifest && !generatedRoutesDuringConfig) {
-        await generateConfiguredSvelteKitRoutes(projectRoot, manifest);
+      } else {
+        const operation = (async () => {
+          const prepared = await prepareGeneration(projectRoot);
+          // Validate before anything is published.
+          validateLibraryMinifySetup(prepared.manifest, 'configResolved');
+          validateConsumerPluginSetup(prepared.manifest, 'configResolved');
+          if (validateCliApiCoherence) {
+            validateCliIncludeAgainstApi(prepared.manifest);
+          }
+          if (svelteKit.enabled && !generatedRoutesDuringConfig) {
+            // Fallback generation: publication happens at settlement.
+            await generateConfiguredSvelteKitRoutes(prepared);
+          } else {
+            await publish(prepared);
+          }
+        })();
+        await track(operation);
       }
       generatedRoutesDuringConfig = false;
 
       // Vite calls buildStart immediately after configResolved for the initial
       // build. The manifest already reflects the same source tree, so let that
-      // first hook reuse it. Later buildStart calls are watch rebuilds and must
-      // rescan changed classes.
+      // first hook reuse it. With route generation, a later buildStart
+      // regenerates only for a watch rebuild (`vite build --watch`); in serve
+      // mode it reuses the current publication. Without route generation it
+      // rescans and publishes.
       hasFreshConfigResolvedManifest = true;
     },
 
     async buildStart() {
-      const build = runBuildStart();
+      const build = track(runBuildStart());
       activeBuildStart = build;
       try {
         await build;
@@ -1540,6 +1877,15 @@ export function smrtPlugin(
         return `\0smrt:index-html`;
       }
 
+      // Only this instance's own per-root knowledge module: another producer
+      // in the lifecycle resolves its own key.
+      if (
+        id.startsWith(KNOWLEDGE_ARTIFACT_MODULE_PREFIX) &&
+        id === knowledgeArtifactModuleId(publishedRoot ?? projectRoot)
+      ) {
+        return `\0${id}`;
+      }
+
       return null;
     },
 
@@ -1547,9 +1893,39 @@ export function smrtPlugin(
       // Load virtual modules (strip the \0 prefix)
       const cleanId = id.startsWith('\0') ? id.slice(1) : id;
 
-      if (!manifest) {
-        manifest = await scanAndGenerateManifest(projectRoot);
+      if (cleanId.startsWith(KNOWLEDGE_ARTIFACT_MODULE_PREFIX)) {
+        const root = publishedRoot ?? projectRoot;
+        if (cleanId !== knowledgeArtifactModuleId(root)) return null;
+        // Server environment only: a client build never contains the
+        // artifact; the SSR route still applies its 403 and redactions.
+        const context = this as unknown as
+          | {
+              environment?: { config?: { consumer?: string } };
+              addWatchFile?: (file: string) => void;
+            }
+          | undefined;
+        const consumer =
+          context?.environment?.config?.consumer ??
+          (loadOptions?.ssr ? 'server' : 'client');
+        if (consumer !== 'server') return 'export default null;\n';
+        const { artifact, candidates } = readKnowledgeArtifactFor(root);
+        for (const candidate of candidates) context?.addWatchFile?.(candidate);
+        return `export default ${JSON.stringify(artifact)};\n`;
       }
+
+      if (!manifest) {
+        // Read published state; before the first publication, wait for the
+        // operation in flight (its rejection is not ours), then prepare and
+        // publish under the lock if still nothing is published.
+        await awaitInFlight();
+        if (!manifest) {
+          const operation = (async () => {
+            await publish(await prepareGeneration(projectRoot));
+          })();
+          await track(operation);
+        }
+      }
+      if (!manifest) return null;
 
       switch (cleanId) {
         case 'smrt:routes':
@@ -1701,6 +2077,7 @@ export function smrtPlugin(
           projectRoot,
           knowledgePath,
           manifestPath,
+          agentSurface,
           true,
         );
 
@@ -1727,24 +2104,24 @@ export function smrtPlugin(
         (userConfig as { root?: string } | undefined)?.root ?? '.',
       ),
   );
+  registerSvelteKitProducerPlugin(
+    plugin,
+    () => publishedRoot ?? projectRoot,
+    entry,
+  );
   return plugin;
 
-  function scanAndGenerateManifest(
-    rootDir: string,
-  ): Promise<SmartObjectManifest> {
-    const scan = scanAndGenerateManifestImpl(rootDir);
-    const tracked = scan.finally(() => {
-      if (activeManifestScan === tracked) {
-        activeManifestScan = undefined;
-      }
-    });
-    activeManifestScan = tracked;
-    return tracked;
+  /** A side-effect-free scan: assigns no plugin state and writes nothing. */
+  function scanManifest(rootDir: string): Promise<ScannedManifest> {
+    return track(scanManifestImpl(rootDir));
   }
 
-  async function scanAndGenerateManifestImpl(
-    rootDir: string,
-  ): Promise<SmartObjectManifest> {
+  interface ScannedManifest {
+    manifest: SmartObjectManifest;
+    agentSurface: DomainKnowledgeAgentSurface | undefined;
+  }
+
+  async function scanManifestImpl(rootDir: string): Promise<ScannedManifest> {
     if (generationSnapshot) {
       const verified = loadVerifiedSmrtGenerationSnapshot<SmartObjectManifest>(
         generationSnapshot,
@@ -1754,14 +2131,7 @@ export function smrtPlugin(
       console.log(
         `[smrt] Reusing verified generation snapshot (${generationSnapshot.provenance})`,
       );
-      if (generateTypes) {
-        await generateTypeDeclarationFile(
-          verified,
-          rootDir,
-          typeDeclarationsPath,
-        );
-      }
-      return verified;
+      return { manifest: verified, agentSurface: undefined };
     }
 
     // NOTE: We do NOT use the framework's static manifest here
@@ -1798,7 +2168,7 @@ export function smrtPlugin(
    * Scan files using OXC-based scanner (experimental fast path)
    * Uses Rust-based oxc-parser for 2-3x faster parsing
    */
-  async function scanWithOxc(rootDir: string): Promise<SmartObjectManifest> {
+  async function scanWithOxc(rootDir: string): Promise<ScannedManifest> {
     const startTime = performance.now();
 
     try {
@@ -1823,9 +2193,9 @@ export function smrtPlugin(
       // The same scan already read every module-scope `defineIntent()` /
       // `definePlaybook()` declaration (#2591). Hold it for the knowledge
       // artifact rather than scanning a second time; it never reaches the
-      // runtime manifest, which stays runtime-focused.
-      agentSurface = toKnowledgeAgentSurface(results.agentSurface);
-      reportAgentSurfaceDiagnostics(agentSurface);
+      // runtime manifest, which stays runtime-focused. The scan returns it
+      // with the manifest; only publication assigns it (#5462).
+      const scannedSurface = toKnowledgeAgentSurface(results.agentSurface);
 
       // Check for errors
       if (results.errors.length > 0) {
@@ -1909,7 +2279,7 @@ export function smrtPlugin(
       // the comparison is against the exposure-policy-filtered set that will
       // really register — not against every verb a class could expose, which
       // would invent collisions with tools nobody mounts.
-      if (agentSurface && results.agentSurface) {
+      if (scannedSurface && results.agentSurface) {
         try {
           const collisions = collectAgentSurfaceToolNameCollisions({
             surface: results.agentSurface,
@@ -1920,8 +2290,8 @@ export function smrtPlugin(
           });
           if (collisions.length > 0) {
             reportAgentSurfaceToolNameCollisions(collisions);
-            agentSurface.diagnostics = sortKnowledgeAgentSurfaceDiagnostics([
-              ...agentSurface.diagnostics,
+            scannedSurface.diagnostics = sortKnowledgeAgentSurfaceDiagnostics([
+              ...scannedSurface.diagnostics,
               ...collisions,
             ]);
           }
@@ -1962,16 +2332,8 @@ export function smrtPlugin(
       }
       console.log(`[smrt] OXC scan completed in ${elapsed.toFixed(2)}ms`);
 
-      // Generate TypeScript declarations if enabled
-      if (generateTypes) {
-        await generateTypeDeclarationFile(
-          newManifest,
-          rootDir,
-          typeDeclarationsPath,
-        );
-      }
-
-      return newManifest;
+      // Declarations are written at publication, never by the scan.
+      return { manifest: newManifest, agentSurface: scannedSurface };
     } catch (error) {
       console.error('[smrt] Error in OXC scanner:', error);
       throw error;
@@ -2030,20 +2392,60 @@ export function smrtPlugin(
   async function rescanAfterWatchEvent(): Promise<void> {
     // The initial build owns the manifest until it has published it.
     await activeBuildStart?.catch(() => {});
-    const next = await scanAndGenerateManifest(projectRoot);
-    manifest = next;
-    try {
-      // Write local manifest for CLI discovery (Issue #963)
-      await writeLocalManifest(next, projectRoot);
-      warnCliApiCoherenceViolations(next);
-
-      // Generate SvelteKit routes if enabled
-      if (svelteKit.enabled && server) {
-        await generateConfiguredSvelteKitRoutes(projectRoot, next);
-      }
-    } finally {
-      if (server) invalidateVirtualModules(server);
+    // A retry takes the pending refusal when it starts, so its own route
+    // writes are never admitted; only a new refusal re-arms it.
+    refusedPending = undefined;
+    // Preparation runs outside the lock; a scan error publishes nothing.
+    const prepared = await prepareGeneration(projectRoot);
+    if (!(svelteKit.enabled && server)) {
+      await publish(prepared);
+      return;
     }
+    const outcome: { value?: SvelteKitSubmissionOutcome } = {};
+    try {
+      await generateConfiguredSvelteKitRoutes(prepared, outcome);
+    } catch (error) {
+      // Keyed on this submission's own settle outcome, never on the throw.
+      const files = (error as { files?: unknown }).files;
+      const named = new Set(
+        Array.isArray(files)
+          ? files.filter((file): file is string => typeof file === 'string')
+          : [],
+      );
+      if (isSvelteKitPostReleaseError(error)) {
+        // A nested reconciliation failed after this rescan was accepted and
+        // published: nothing of this run waits for a route-tree change.
+      } else if (outcome.value === 'rejected') {
+        refusedPending = { files: named, routeTree: true };
+        console.error(
+          '[smrt] Route generation was refused; the previous manifest, declarations and routes stay published. The rescan retries when a route file changes.',
+        );
+      } else if (outcome.value === 'accepted' && named.size > 0) {
+        refusedPending = { files: named, routeTree: false };
+      }
+      throw error;
+    }
+  }
+
+  /** Whether a refused rescan waits for this route-tree event. */
+  function admitsRefusedPending(absoluteFile: string): boolean {
+    const pending = refusedPending;
+    if (!pending) return false;
+    if ([...pending.files].some((file) => resolve(file) === absoluteFile)) {
+      return true;
+    }
+    if (!pending.routeTree) return false;
+    if (generatedKnowledgeRoute && absoluteFile === generatedKnowledgeRoute) {
+      return true;
+    }
+    const name = basename(absoluteFile);
+    return (
+      (name === '+server.ts' || name === '+server.js') &&
+      isInsideDirectory(
+        resolve(projectRoot, svelteKit.routesDir || 'src/routes/api'),
+        absoluteFile,
+      )
+    );
   }
 
   async function shouldRescan(file: string): Promise<boolean> {
@@ -2055,6 +2457,7 @@ export function smrtPlugin(
     try {
       const { minimatch } = await import('minimatch');
       const absoluteFile = resolve(projectRoot, file);
+      if (admitsRefusedPending(absoluteFile)) return true;
       if (isGeneratedDevOutput(absoluteFile)) return false;
       const projectPath = toProjectGlobPath(projectRoot, absoluteFile);
       const matches = (pattern: string) =>

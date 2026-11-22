@@ -24,8 +24,10 @@
  */
 
 import {
+  closeSync,
   lstatSync,
   mkdirSync,
+  openSync,
   readdirSync,
   readFileSync,
   statSync,
@@ -56,13 +58,20 @@ interface RouteDirectoryEntry {
   isSymbolicLink(): boolean;
 }
 
-/** The file-system calls route ownership uses; tests inject failures here. */
+/**
+ * The file-system calls route ownership and the generator's in-place writers
+ * use; tests inject failures here. Writers open, then write, so a caller can
+ * record a change once the open succeeds.
+ */
 export interface RouteFileSystem {
   lstatSync(path: string): RouteFileStats;
   statSync(path: string): RouteFileStats;
   readdirSync(path: string): RouteDirectoryEntry[];
   readFileSync(path: string): string;
   writeFileSync(path: string, content: string, flag: 'w' | 'wx'): void;
+  openSync(path: string, flag: 'w' | 'wx'): number;
+  writeSync(descriptor: number, content: string): void;
+  closeSync(descriptor: number): void;
   mkdirSync(path: string): void;
   unlinkSync(path: string): void;
 }
@@ -75,11 +84,30 @@ export const nodeRouteFileSystem: RouteFileSystem = {
   readFileSync: (path) => readFileSync(path, 'utf-8'),
   writeFileSync: (path, content, flag) =>
     writeFileSync(path, content, { encoding: 'utf-8', flag }),
+  openSync: (path, flag) => openSync(path, flag),
+  // Writing to an open descriptor writes the whole content.
+  writeSync: (descriptor, content) =>
+    writeFileSync(descriptor, content, 'utf-8'),
+  closeSync: (descriptor) => closeSync(descriptor),
   mkdirSync: (path) => {
     mkdirSync(path, { recursive: true });
   },
   unlinkSync: (path) => unlinkSync(path),
 };
+
+let routeFileSystemOverride: RouteFileSystem | undefined;
+
+/** The route-fs seam in force: `node:fs` unless a test replaced it. */
+export function activeRouteFileSystem(): RouteFileSystem {
+  return routeFileSystemOverride ?? nodeRouteFileSystem;
+}
+
+/** Test seam (not a package export): replace the route-fs for every writer. */
+export function setRouteFileSystemForTesting(
+  fs: RouteFileSystem | undefined,
+): void {
+  routeFileSystemOverride = fs;
+}
 
 /** Whether route source text starts with the generated-route header. */
 export function isGeneratedRouteSource(text: string): boolean {
@@ -94,7 +122,7 @@ export function isGeneratedRouteSource(text: string): boolean {
  */
 export function isGeneratedRouteFile(
   path: string,
-  fs: RouteFileSystem = nodeRouteFileSystem,
+  fs: RouteFileSystem = activeRouteFileSystem(),
 ): boolean {
   if (basename(path) !== GENERATED_ROUTE_FILE) return false;
   try {
@@ -111,7 +139,7 @@ export function isGeneratedRouteFile(
  */
 export function removeGeneratedRouteFile(
   path: string,
-  fs: RouteFileSystem = nodeRouteFileSystem,
+  fs: RouteFileSystem = activeRouteFileSystem(),
 ): boolean {
   if (!isGeneratedRouteFile(path, fs)) return false;
   fs.unlinkSync(path);
@@ -156,7 +184,7 @@ function errorCode(error: unknown): string | undefined {
 export function inspectRouteDirectory(
   root: string,
   routeDir: string,
-  fs: RouteFileSystem = nodeRouteFileSystem,
+  fs: RouteFileSystem = activeRouteFileSystem(),
 ): RouteDirectoryInspection {
   const inspection: RouteDirectoryInspection = {
     blocking: [],
@@ -320,7 +348,7 @@ function swapCase(name: string): string {
  */
 export function destinationCaseBehaviour(
   routeDir: string,
-  fs: RouteFileSystem = nodeRouteFileSystem,
+  fs: RouteFileSystem = activeRouteFileSystem(),
   cache?: Map<string, RouteCaseBehaviour>,
 ): RouteCaseBehaviour {
   let existing = routeDir;
@@ -376,7 +404,7 @@ export function destinationCaseBehaviour(
  */
 export function physicalRouteFileKey(
   routeDir: string,
-  fs: RouteFileSystem = nodeRouteFileSystem,
+  fs: RouteFileSystem = activeRouteFileSystem(),
   cache?: Map<string, RouteCaseBehaviour>,
   caseInsensitive?: boolean,
 ): { exact: string; folded: string; behaviour: RouteCaseBehaviour } {
@@ -399,7 +427,7 @@ export function physicalRouteFileKey(
 export function findUnlistableRouteDirectories(
   routesRoot: string,
   protectedRouteRoots: ReadonlySet<string> = new Set(),
-  fs: RouteFileSystem = nodeRouteFileSystem,
+  fs: RouteFileSystem = activeRouteFileSystem(),
 ): RouteOwnershipFinding[] {
   const findings: RouteOwnershipFinding[] = [];
   const visited = new Set<string>();
@@ -560,7 +588,7 @@ export class RouteFilePlan {
     } = {},
   ) {
     this.protectedPaths = options.protectedPaths ?? new Set();
-    this.fs = options.fs ?? nodeRouteFileSystem;
+    this.fs = options.fs ?? activeRouteFileSystem();
     this.caseInsensitive = options.caseInsensitive;
   }
 
@@ -753,8 +781,12 @@ export class RouteFilePlan {
    * created exclusively; a present leaf is re-checked immediately before it
    * is replaced, and replaced only if it is generated. Returns the files
    * written.
+   *
+   * `onMutate` runs once a route file's open succeeds, before any byte is
+   * written: a file created and then left truncated by a failed write is a
+   * change, and the error names it.
    */
-  commit(): string[] {
+  commit(onMutate: () => void = () => {}): string[] {
     const written: string[] = [];
     for (const entry of this.planned.values()) {
       if (entry.yielded) continue;
@@ -777,23 +809,51 @@ export class RouteFilePlan {
       }
       if (absent) {
         this.fs.mkdirSync(entry.routeDir);
+        let descriptor: number | undefined;
         try {
-          this.fs.writeFileSync(file, entry.content, 'wx');
+          descriptor = this.fs.openSync(file, 'wx');
+        } catch (error) {
+          if (errorCode(error) !== 'EEXIST') throw error;
+        }
+        if (descriptor !== undefined) {
+          this.writeOpened(descriptor, file, entry.content, onMutate);
           written.push(file);
           console.log(`[smrt] Generated: ${file}`);
           continue;
-        } catch (error) {
-          if (errorCode(error) !== 'EEXIST') throw error;
         }
       }
       if (!isGeneratedRouteFile(file, this.fs)) {
         throw this.commitRefusal(entry, file, written);
       }
-      this.fs.writeFileSync(file, entry.content, 'w');
+      this.writeOpened(
+        this.fs.openSync(file, 'w'),
+        file,
+        entry.content,
+        onMutate,
+      );
       written.push(file);
       console.log(`[smrt] Generated: ${file}`);
     }
     return written;
+  }
+
+  private writeOpened(
+    descriptor: number,
+    file: string,
+    content: string,
+    onMutate: () => void,
+  ): void {
+    try {
+      onMutate();
+      this.fs.writeSync(descriptor, content);
+    } catch (error) {
+      throw new Error(
+        `[smrt] Writing generated route file ${file} failed after it was opened; the file may be truncated`,
+        { cause: error },
+      );
+    } finally {
+      this.fs.closeSync(descriptor);
+    }
   }
 
   private commitRefusal(

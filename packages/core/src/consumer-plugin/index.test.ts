@@ -2096,6 +2096,261 @@ export class CurrentOrder extends SmrtObject {
     ).toBeUndefined();
   });
 
+  it('the consumer merges the surface published with the manifest it reads', async () => {
+    const intentPath = join(tmpDir, 'src', 'notes.intents.ts');
+    mkdirSync(join(tmpDir, 'src'), { recursive: true });
+    const intentSource = (id: string) =>
+      `import { defineIntent } from '@happyvertical/smrt-web/intents';
+
+export const notes = defineIntent({
+  id: '${id}',
+  description: 'Consumer transaction fixture',
+  target: { registry: 'dataSurface', controlId: 'notes', kind: 'table' },
+});`;
+    writeFileSync(intentPath, intentSource('notes.previous'));
+    const consumer = smrtConsumer({
+      packages: ['@test/pkg'],
+      generateTypes: false,
+      projectRoot: tmpDir,
+      disableScanning: true,
+    });
+    const producer = smrtPlugin({
+      projectRoot: tmpDir,
+      include: ['src/**/*.ts'],
+      generateTypes: false,
+    });
+    const resolvedConfig = {
+      root: tmpDir,
+      build: {},
+      plugins: [producer, consumer],
+    };
+    await configResolved(producer, producer, resolvedConfig as any);
+    await configResolved(consumer, consumer, resolvedConfig as any);
+    await buildStart(producer, producer);
+
+    // Pause the consumer after its wait for the producer and before its
+    // transaction: an intent-only producer publication completes meanwhile.
+    const original = producer.api.resolveKnowledgeAgentSurface.bind(
+      producer.api,
+    );
+    let published = false;
+    vi.spyOn(producer.api, 'resolveKnowledgeAgentSurface').mockImplementation(
+      async () => {
+        const surface = await original();
+        if (!published) {
+          published = true;
+          writeFileSync(intentPath, intentSource('notes.current'));
+          await buildStart(producer, producer);
+        }
+        return surface;
+      },
+    );
+    await buildStart(consumer, consumer);
+
+    const knowledge = JSON.parse(
+      readFileSync(join(tmpDir, '.smrt', 'smrt-knowledge.json'), 'utf-8'),
+    );
+    expect(knowledge.agentSurface.intents).toEqual([
+      expect.objectContaining({ id: 'notes.current' }),
+    ]);
+    const manifestBytes = readFileSync(
+      join(tmpDir, '.smrt', 'manifest.json'),
+      'utf-8',
+    );
+    expect(knowledge.sourceHashes.manifest).toBe(
+      manifestHash(JSON.parse(manifestBytes)),
+    );
+  });
+
+  it.each([
+    ['producer A first', 'a-first'],
+    ['producer B first', 'b-first'],
+  ])('a consumer reads only its own root’s producer surface (%s)', async (_order, order) => {
+    const roots = { a: join(tmpDir, 'root-a'), b: tmpDir };
+    mkdirSync(join(roots.a, 'src'), { recursive: true });
+    mkdirSync(join(roots.b, 'src'), { recursive: true });
+    writeFileSync(
+      join(roots.a, 'package.json'),
+      JSON.stringify({ name: '@fixture/root-a', version: '1.0.0' }),
+    );
+    for (const [name, root] of Object.entries(roots)) {
+      writeFileSync(
+        join(root, 'src', 'marker.intents.ts'),
+        `import { defineIntent } from '@happyvertical/smrt-web/intents';
+
+export const marker = defineIntent({
+  id: 'marker.root-${name}',
+  description: 'Root marker',
+  target: { registry: 'dataSurface', controlId: 'marker', kind: 'table' },
+});`,
+      );
+    }
+    const producerA = smrtPlugin({
+      projectRoot: roots.a,
+      include: ['src/**/*.ts'],
+      generateTypes: false,
+    });
+    const producerB = smrtPlugin({
+      projectRoot: roots.b,
+      include: ['src/**/*.ts'],
+      exclude: ['root-a/**', '**/node_modules/**'],
+      generateTypes: false,
+    });
+    const consumer = smrtConsumer({
+      packages: ['@test/pkg'],
+      generateTypes: false,
+      projectRoot: roots.b,
+      disableScanning: true,
+    });
+    const producers =
+      order === 'a-first' ? [producerA, producerB] : [producerB, producerA];
+    const lifecycle = { plugins: [...producers, consumer] };
+    const env = { command: 'build', mode: 'test' };
+    for (const plugin of [...producers, consumer]) {
+      const hook = (plugin as any).config;
+      const handler = typeof hook === 'function' ? hook : hook.handler;
+      await handler.call(plugin, lifecycle, env);
+    }
+    for (const plugin of [...producers, consumer]) {
+      const root = plugin === producerA ? roots.a : roots.b;
+      await configResolved(plugin, plugin, {
+        root,
+        build: {},
+        mode: 'test',
+        plugins: [...producers, consumer],
+      });
+    }
+    await buildStart(consumer, consumer);
+
+    const knowledgeB = readFileSync(
+      join(roots.b, '.smrt', 'smrt-knowledge.json'),
+      'utf-8',
+    );
+    expect(knowledgeB).toContain('marker.root-b');
+    expect(knowledgeB).not.toContain('marker.root-a');
+    const knowledgeA = readFileSync(
+      join(roots.a, '.smrt', 'smrt-knowledge.json'),
+      'utf-8',
+    );
+    expect(knowledgeA).toContain('marker.root-a');
+    expect(knowledgeA).not.toContain('marker.root-b');
+  });
+
+  it('a consumer never merges a producer surface published under another root', async () => {
+    const rootB = join(tmpDir, 'moved-root');
+    mkdirSync(join(rootB, 'src'), { recursive: true });
+    writeFileSync(
+      join(rootB, 'package.json'),
+      JSON.stringify({ name: '@fixture/moved-root', version: '1.0.0' }),
+    );
+    writeFileSync(
+      join(rootB, 'src', 'marker.intents.ts'),
+      `import { defineIntent } from '@happyvertical/smrt-web/intents';
+
+export const marker = defineIntent({
+  id: 'marker.moved-root',
+  description: 'Root B marker',
+  target: { registry: 'dataSurface', controlId: 'marker', kind: 'table' },
+});`,
+    );
+    // No projectRoot option: the producer's root follows Vite's root.
+    const producer = smrtPlugin({
+      include: ['src/**/*.ts'],
+      generateTypes: false,
+    });
+    const consumer = smrtConsumer({
+      packages: ['@test/pkg'],
+      generateTypes: false,
+      projectRoot: tmpDir,
+      disableScanning: true,
+    });
+    const plugins = [producer, consumer];
+    const env = { command: 'build', mode: 'test' };
+    // The config hooks see root A (this consumer's root)...
+    for (const plugin of plugins) {
+      const hook = (plugin as any).config;
+      const handler = typeof hook === 'function' ? hook : hook.handler;
+      await handler.call(plugin, { root: tmpDir, plugins }, env);
+    }
+    // ...the consumer resolves first, then a later hook moves Vite's root to
+    // B and the producer publishes there.
+    await configResolved(consumer, consumer, {
+      root: tmpDir,
+      build: {},
+      mode: 'test',
+      plugins,
+    });
+    await configResolved(producer, producer, {
+      root: rootB,
+      build: {},
+      mode: 'test',
+      plugins,
+    });
+    expect(
+      readFileSync(join(rootB, '.smrt', 'smrt-knowledge.json'), 'utf-8'),
+    ).toContain('marker.moved-root');
+
+    await buildStart(consumer, consumer);
+    expect(
+      readFileSync(join(tmpDir, '.smrt', 'smrt-knowledge.json'), 'utf-8'),
+    ).not.toContain('marker.moved-root');
+  });
+
+  it('hook-less companions serialise the manifest transaction on one lock', async () => {
+    mkdirSync(join(tmpDir, 'src'), { recursive: true });
+    const model = (className: string) =>
+      `import { smrt, SmrtObject } from '@happyvertical/smrt-core';\n\n@smrt()\nexport class ${className} extends SmrtObject {\n  status = '';\n}\n`;
+    writeFileSync(join(tmpDir, 'src', 'first.ts'), model('FirstOrder'));
+    const consumer = smrtConsumer({
+      packages: ['@test/pkg'],
+      generateTypes: false,
+      projectRoot: tmpDir,
+      disableScanning: true,
+    });
+    const producer = smrtPlugin({
+      projectRoot: tmpDir,
+      include: ['src/**/*.ts'],
+      generateTypes: false,
+    });
+    // No config hook ran: both see only the same resolved config.
+    const resolvedConfig = {
+      root: tmpDir,
+      build: {},
+      plugins: [producer, consumer],
+    };
+    await configResolved(producer, producer, resolvedConfig as any);
+    await configResolved(consumer, consumer, resolvedConfig as any);
+    await buildStart(producer, producer);
+
+    // While the consumer is inside its merge (resolving knowledge config,
+    // after it read the manifest), a producer rebuild publishes a new model.
+    writeFileSync(join(tmpDir, 'src', 'second.ts'), model('SecondOrder'));
+    const original = producer.api.resolveKnowledgeConfig.bind(producer.api);
+    let producerRebuild: Promise<void> | undefined;
+    vi.spyOn(producer.api, 'resolveKnowledgeConfig').mockImplementation(
+      async (manifest) => {
+        if (!producerRebuild) {
+          producerRebuild = buildStart(producer, producer);
+          // Give the rebuild every chance to publish inside the merge; with
+          // one lock it waits for this transaction instead.
+          await Promise.race([
+            producerRebuild,
+            new Promise((resolve) => setTimeout(resolve, 5_000)),
+          ]);
+        }
+        return original(manifest);
+      },
+    );
+    await buildStart(consumer, consumer);
+    await producerRebuild;
+
+    const manifest = JSON.parse(
+      readFileSync(join(tmpDir, '.smrt', 'manifest.json'), 'utf-8'),
+    );
+    expect(manifest.objects['@fixture/consumer-app:SecondOrder']).toBeDefined();
+    expect(manifest.objects.ExternalThing).toBeDefined();
+  }, 60_000);
+
   it('does not rehash a prior artifact agent surface without a producer', async () => {
     const knowledgePath = join(tmpDir, '.smrt', 'smrt-knowledge.json');
     mkdirSync(join(tmpDir, '.smrt'), { recursive: true });

@@ -21,8 +21,20 @@ const failedWrites = vi.hoisted(() => ({
 }));
 vi.mock('node:fs', async (importOriginal) => {
   const actual = await importOriginal<typeof import('node:fs')>();
+  // Generated files are opened, then written through the descriptor.
+  const openedPaths = new Map<number, string>();
+  const openSync = ((path: unknown, ...rest: unknown[]) => {
+    const descriptor = (actual.openSync as (...args: unknown[]) => number)(
+      path,
+      ...rest,
+    );
+    openedPaths.set(descriptor, String(path));
+    return descriptor;
+  }) as typeof actual.openSync;
   const writeFileSync = ((path: unknown, ...rest: unknown[]) => {
-    if (failedWrites.path !== undefined && String(path) === failedWrites.path) {
+    const target =
+      typeof path === 'number' ? openedPaths.get(path) : String(path);
+    if (failedWrites.path !== undefined && target === failedWrites.path) {
       throw Object.assign(new Error('EIO: injected write failure'), {
         code: 'EIO',
       });
@@ -32,7 +44,12 @@ vi.mock('node:fs', async (importOriginal) => {
       ...rest,
     );
   }) as typeof actual.writeFileSync;
-  return { ...actual, default: { ...actual, writeFileSync }, writeFileSync };
+  return {
+    ...actual,
+    default: { ...actual, openSync, writeFileSync },
+    openSync,
+    writeFileSync,
+  };
 });
 
 let projectRoot: string;
@@ -210,7 +227,11 @@ describe('consumer SvelteKit route ownership recovery', () => {
         objects: ['@acme/widgets:AddedLater', '@acme/widgets:Widget'],
         routesDir: 'src/routes/hosted-b',
       }),
-    ).rejects.toThrow(/EIO/);
+    ).rejects.toMatchObject({
+      // The commit names the opened file and keeps the I/O error as cause.
+      message: expect.stringContaining('failed after it was opened'),
+      cause: expect.objectContaining({ code: 'EIO' }),
+    });
     failedWrites.path = undefined;
 
     const partialHandler = join(

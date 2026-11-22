@@ -24,6 +24,10 @@ vi.mock('node:fs', () => ({
   }),
   mkdirSync: vi.fn(),
   writeFileSync: vi.fn(),
+  // Generator writers open, then write the content to the descriptor; the
+  // mocked descriptor is the path, so writes record (path, content).
+  openSync: vi.fn((path: string) => path),
+  closeSync: vi.fn(),
   readFileSync: vi.fn(),
   realpathSync: Object.assign(
     vi.fn((path: string) => path),
@@ -3602,6 +3606,64 @@ describe('SvelteKit Route Generator', () => {
       );
       expect(enabledWrite?.[1]).toContain('queryBoolean');
       expect(enabledWrite?.[1]).not.toContain('process.cwd()');
+    });
+
+    it('the knowledge module serves the selected artifact: the managed route imports it, a standalone route embeds it', async () => {
+      const manifest = withSyntheticQualifiedNames({
+        version: '1',
+        timestamp: 0,
+        objects: {
+          Thing: {
+            className: 'Thing',
+            name: 'Thing',
+            filePath: '',
+            collection: 'things',
+            fields: {},
+            methods: {},
+            decoratorConfig: { api: true },
+          },
+        },
+      } as SmartObjectManifest);
+      const artifactPath = join(projectRoot, '.smrt', 'smrt-knowledge.json');
+      vi.mocked(existsSync).mockImplementation(
+        (path) => String(path) === artifactPath,
+      );
+      vi.mocked(readFileSync).mockImplementation(((path: string) =>
+        String(path) === artifactPath
+          ? JSON.stringify({ marker: 'knowledge-artifact-marker' })
+          : '') as never);
+      const options = {
+        enabled: true,
+        routesDir: 'src/routes/api',
+        objectsDir: 'src/lib/objects',
+        knowledge: { api: { enabled: true } },
+      };
+      const knowledgeWrite = () =>
+        vi
+          .mocked(writeFileSync)
+          .mock.calls.find((call) =>
+            call[0].toString().includes('__smrt/knowledge/+server.ts'),
+          )?.[1] as string | undefined;
+
+      // `smrt generate` and other direct callers embed the artifact read now.
+      await generateSvelteKitRoutes(projectRoot, manifest, options);
+      expect(knowledgeWrite()).toContain('knowledge-artifact-marker');
+
+      // The plugin-managed route imports its root's module instead.
+      vi.mocked(writeFileSync).mockClear();
+      const { runSvelteKitRouteGeneration } = await import(
+        './sveltekit-generator'
+      );
+      await runSvelteKitRouteGeneration(
+        { projectRoot, routeManifest: manifest, options },
+        { changed: false },
+        { knowledgeModule: 'smrt:knowledge-artifact/0123456789abcdef' },
+      );
+      const managed = knowledgeWrite();
+      expect(managed).toContain(
+        'import knowledgeArtifactModule from "smrt:knowledge-artifact/0123456789abcdef";',
+      );
+      expect(managed).not.toContain('knowledge-artifact-marker');
     });
   });
 

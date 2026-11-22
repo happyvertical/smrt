@@ -21,6 +21,7 @@ import {
   sha256SmrtGenerationSnapshot,
 } from '../generation-snapshot.js';
 import { smrtPlugin } from './index';
+import { canonicalSvelteKitPath } from './sveltekit-path.js';
 
 function createExternalSmrtPackage(
   projectRoot: string,
@@ -939,5 +940,211 @@ describe('smrtPlugin local manifest writing (Issue #963)', () => {
         plugins: [],
       }),
     ).resolves.toBeUndefined();
+  });
+});
+
+describe('the build-schema module is published with its manifest (#5462)', () => {
+  let tmpDir: string;
+  const SVELTEKIT = {
+    enabled: true,
+    routesDir: 'src/routes/api',
+    objectsDir: 'src/lib/objects',
+    changesRoute: { enabled: false },
+    eventsRoute: { enabled: false },
+    resourcesRoute: { enabled: false },
+  };
+  const buildSchema = () => join(tmpDir, '.smrt', 'build-schema.js');
+  const registration = () => join(tmpDir, 'src/lib/server/smrt-register.ts');
+
+  /** The registration's build-schema import names an existing module. */
+  function registrationImportResolves(): boolean {
+    const source = readFileSync(registration(), 'utf-8');
+    const specifier = /import '([^']*build-schema\.js)';/.exec(source)?.[1];
+    if (!specifier) return false;
+    return existsSync(resolve(join(tmpDir, 'src/lib/server'), specifier));
+  }
+
+  beforeEach(() => {
+    tmpDir = resolve(import.meta.dirname, `__test-build-schema-${Date.now()}`);
+    mkdirSync(join(tmpDir, 'src', 'lib', 'objects'), { recursive: true });
+    writeFileSync(
+      join(tmpDir, 'package.json'),
+      JSON.stringify({ name: '@fixture/build-schema-app', type: 'module' }),
+    );
+    writeFileSync(
+      join(tmpDir, 'src', 'lib', 'objects', 'Note.ts'),
+      [
+        "import { SmrtObject, smrt } from '@happyvertical/smrt-core';",
+        "@smrt({ api: { include: ['list', 'get'] } })",
+        'export class Note extends SmrtObject {',
+        "  title = '';",
+        '}',
+      ].join('\n'),
+    );
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+  });
+
+  afterEach(async () => {
+    const { setSvelteKitCoordinatorPauseHookForTesting } = await import(
+      './sveltekit-route-coordinator.js'
+    );
+    const { setArtifactFilesystemForTesting } = await import(
+      '../consumer-plugin/artifact-publication.js'
+    );
+    // Optional: the regression run executes this file without the seams.
+    setSvelteKitCoordinatorPauseHookForTesting?.(undefined);
+    setArtifactFilesystemForTesting?.(undefined);
+    vi.restoreAllMocks();
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  async function configHook(plugin: any) {
+    const handler =
+      typeof plugin.config === 'function'
+        ? plugin.config
+        : plugin.config.handler;
+    await handler.call(
+      plugin,
+      { root: tmpDir, plugins: [plugin] },
+      { command: 'build', mode: 'test' },
+    );
+  }
+
+  it.each([
+    ['eager', false],
+    ['lazy', true],
+  ])('the managed build-schema module appears at publication and resolves (%s)', async (_mode, lazyActivation) => {
+    const { setSvelteKitCoordinatorPauseHookForTesting } = await import(
+      './sveltekit-route-coordinator.js'
+    );
+    const atSettle: boolean[] = [];
+    setSvelteKitCoordinatorPauseHookForTesting((point) => {
+      if (point === 'beforeSettle') atSettle.push(existsSync(buildSchema()));
+    });
+    const plugin = smrtPlugin({
+      projectRoot: tmpDir,
+      include: ['src/**/*.ts'],
+      generateTypes: false,
+      svelteKit: { ...SVELTEKIT, lazyActivation },
+    });
+    await configHook(plugin);
+    // Deferred past the commit to the manifest writer for this root...
+    expect(atSettle).toEqual([false]);
+    // ...which published it at settlement.
+    expect(existsSync(buildSchema())).toBe(true);
+    expect(registrationImportResolves()).toBe(true);
+    const manifest = JSON.parse(
+      readFileSync(join(tmpDir, '.smrt', 'manifest.json'), 'utf-8'),
+    );
+    expect(readFileSync(buildSchema(), 'utf-8')).toContain(
+      manifest.schemaFingerprint ?? 'Note',
+    );
+  });
+
+  it('the build-schema module resolves for a standalone generator call', async () => {
+    const { generateSvelteKitRoutes } = await import(
+      './sveltekit-generator.js'
+    );
+    await generateSvelteKitRoutes(
+      tmpDir,
+      {
+        version: '1',
+        timestamp: 0,
+        packageName: '@fixture/build-schema-app',
+        objects: {},
+      } as never,
+      SVELTEKIT,
+    );
+    expect(existsSync(buildSchema())).toBe(true);
+    expect(registrationImportResolves()).toBe(true);
+  });
+
+  it('the build-schema module resolves in snapshot mode', async () => {
+    const provenance = 'git-tree:fixture';
+    const artifactPath = join(tmpDir, 'prebuilt-manifest.json');
+    const contents = serializeSmrtGenerationSnapshot(
+      {
+        version: '1.0.0',
+        timestamp: 0,
+        packageName: '@fixture/build-schema-app',
+        objects: {},
+      },
+      provenance,
+      { sourceRoot: tmpDir },
+    );
+    writeFileSync(artifactPath, contents);
+    const plugin = smrtPlugin({
+      projectRoot: tmpDir,
+      include: ['src/**/*.ts'],
+      generateTypes: false,
+      generationSnapshot: {
+        path: artifactPath,
+        sha256: sha256SmrtGenerationSnapshot(contents),
+        provenance,
+        sourceRoot: tmpDir,
+      },
+      svelteKit: SVELTEKIT,
+    });
+    await configHook(plugin);
+    expect(existsSync(buildSchema())).toBe(true);
+    expect(registrationImportResolves()).toBe(true);
+  });
+
+  it('a deferred build-schema module exists after settlement even if publish did not write it', async () => {
+    const { setArtifactFilesystemForTesting } = await import(
+      '../consumer-plugin/artifact-publication.js'
+    );
+    const fs = await import('node:fs');
+    // (b) The manifest writer fails through the seam.
+    setArtifactFilesystemForTesting({
+      ...fs,
+      renameSync: (from, to) => {
+        if (String(to).endsWith('manifest.json')) {
+          throw Object.assign(new Error('EIO: injected manifest write'), {
+            code: 'EIO',
+          });
+        }
+        fs.renameSync(from, to);
+      },
+    } as never);
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const plugin = smrtPlugin({
+      projectRoot: tmpDir,
+      include: ['src/**/*.ts'],
+      generateTypes: false,
+      svelteKit: SVELTEKIT,
+    });
+    await configHook(plugin);
+    expect(existsSync(join(tmpDir, '.smrt', 'manifest.json'))).toBe(false);
+    expect(existsSync(buildSchema())).toBe(true);
+    expect(registrationImportResolves()).toBe(true);
+  });
+
+  it('a deferred build-schema module exists after a settlement whose publish was skipped', async () => {
+    const { contributeSvelteKitRoutes } = await import(
+      './sveltekit-route-coordinator.js'
+    );
+    const manifest = {
+      version: '1',
+      timestamp: 0,
+      packageName: '@fixture/build-schema-app',
+      objects: {},
+    } as never;
+    // (a) The settle is a writer for this root but publishes nothing (its
+    // sequence is not above the published one).
+    const settle = vi.fn();
+    await contributeSvelteKitRoutes({}, ['producer'], tmpDir, {
+      owner: 'producer',
+      routeManifest: manifest,
+      semanticManifest: manifest,
+      options: SVELTEKIT,
+      seq: 1,
+      settle,
+      publishesBuildSchemaFor: canonicalSvelteKitPath(tmpDir),
+    });
+    expect(settle).toHaveBeenCalledWith('accepted');
+    expect(existsSync(buildSchema())).toBe(true);
+    expect(registrationImportResolves()).toBe(true);
   });
 });

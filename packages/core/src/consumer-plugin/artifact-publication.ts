@@ -15,6 +15,20 @@ export interface ArtifactFilesystem {
   chmodSync: typeof fs.chmodSync;
 }
 
+let artifactFilesystemOverride: ArtifactFilesystem | undefined;
+
+/** The artifact-publication seam in force: `node:fs` unless a test replaced it. */
+export function activeArtifactFilesystem(): ArtifactFilesystem {
+  return artifactFilesystemOverride ?? fs;
+}
+
+/** Test seam (not a package export): replace the filesystem renames go through. */
+export function setArtifactFilesystemForTesting(
+  filesystem: ArtifactFilesystem | undefined,
+): void {
+  artifactFilesystemOverride = filesystem;
+}
+
 interface StagedArtifact {
   path: string;
   stagedPath: string;
@@ -32,16 +46,26 @@ interface StagedArtifact {
  *
  * There is no portable multi-file filesystem transaction: a process crash or a
  * concurrent reader between individual renames can still observe a mixed set.
+ *
+ * `onFirstRename` runs once, after the first rename (backup or publication)
+ * succeeds: from then on the reader-visible set has changed.
  */
 export function publishArtifactFiles(
   files: ArtifactFile[],
-  filesystem: ArtifactFilesystem = fs,
+  filesystem: ArtifactFilesystem = activeArtifactFilesystem(),
+  onFirstRename: () => void = () => {},
 ): void {
   const unique = `${process.pid}-${Date.now()}`;
   const staged: StagedArtifact[] = [];
   const backed: StagedArtifact[] = [];
   const published: StagedArtifact[] = [];
   let retainBackups = false;
+  let renamed = false;
+  const afterRename = () => {
+    if (renamed) return;
+    renamed = true;
+    onFirstRename();
+  };
 
   try {
     for (const [index, file] of files.entries()) {
@@ -68,10 +92,12 @@ export function publishArtifactFiles(
       if (!file.backupPath) continue;
       filesystem.renameSync(file.path, file.backupPath);
       backed.push(file);
+      afterRename();
     }
     for (const file of staged) {
       filesystem.renameSync(file.stagedPath, file.path);
       published.push(file);
+      afterRename();
     }
   } catch (publicationError) {
     const rollbackErrors: unknown[] = [];
@@ -127,7 +153,7 @@ export function publishArtifactFiles(
 /** Atomically replace one artifact without ever removing its reader-visible path. */
 export function publishAtomicArtifact(
   file: ArtifactFile,
-  filesystem: ArtifactFilesystem = fs,
+  filesystem: ArtifactFilesystem = activeArtifactFilesystem(),
 ): void {
   const stagedPath = `${file.path}.smrt-${randomUUID()}.tmp`;
   const exists = filesystem.existsSync(file.path);

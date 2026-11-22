@@ -24,6 +24,9 @@ vi.mock('node:fs', async () => {
     existsSync: vi.fn(),
     mkdirSync: vi.fn(),
     writeFileSync: vi.fn(),
+    // Writers open, then write to the descriptor (here: the path).
+    openSync: vi.fn((path: string) => path),
+    closeSync: vi.fn(),
   };
 });
 // Template-shape tests only; real consumer resolution of the import-only

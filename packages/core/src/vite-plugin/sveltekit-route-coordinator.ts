@@ -1,19 +1,36 @@
 import { existsSync, readdirSync, statSync } from 'node:fs';
 import { join, relative, resolve, sep } from 'node:path';
+import type { DomainKnowledgeAgentSurface } from '@happyvertical/smrt-types';
+import { BUILD_SCHEMA_MODULE } from '../migrations/build-schema.js';
 import type { SmartObjectManifest } from '../scanner/types.js';
 import { assertSvelteKitObjectRoutesValid } from './generated-route-preflight.js';
 import type { SmrtConfigEnv, SmrtVitePlugin } from './plugin-contract.js';
 import {
   assertNoCrossObjectRouteCollisions,
-  generateSvelteKitRoutes,
   knowledgeRoutePath,
-  type SvelteKitGenerationHooks,
+  materializeBuildSchemaModule,
+  type RouteGenerationAttempt,
+  runSvelteKitRouteGeneration,
+  type SvelteKitManagedGenerationHooks,
   type SvelteKitOptions,
   type SvelteKitUtilityManifests,
 } from './sveltekit-generator.js';
 import { canonicalSvelteKitPath } from './sveltekit-path.js';
 
 export type SvelteKitRouteOwner = 'producer' | 'consumer';
+
+/**
+ * How one submission ended. `accepted`: its generation succeeded or mutated
+ * a generator output, and its `settle` published it. `rejected`: generation
+ * threw before any generator output changed; nothing was published.
+ * `superseded`: a newer submission or publication of the same producer
+ * already exists, so no hook or generator code ran for it.
+ */
+export type SvelteKitSubmissionOutcome = 'accepted' | 'rejected' | 'superseded';
+/** A submission whose peers have not all contributed yet is `pending`. */
+export type SvelteKitContributionResult =
+  | SvelteKitSubmissionOutcome
+  | 'pending';
 
 const ROUTE_PARTICIPANT = Symbol('smrt.sveltekit-route-participant');
 const coordinators = new WeakMap<object, Map<string, RouteCoordinator>>();
@@ -26,15 +43,249 @@ interface RouteContribution {
   semanticManifest: SmartObjectManifest;
   options: SvelteKitOptions;
   reservedRoutePaths?: ReadonlySet<string>;
-  beforeCleanup?: () => void | Promise<void>;
+  /**
+   * Runs under the lifecycle lock after preflight. `mark` records that a
+   * generator output changed; call it after the first successful mutation.
+   */
+  beforeCleanup?: (
+    mark: () => void,
+    run?: SvelteKitGenerationRunContext,
+  ) => void | Promise<void>;
   afterGenerate?: () => void | Promise<void>;
+  /** Producer preparation sequence; consumers and revocations carry none. */
+  seq?: number;
+  /** True once the producer has published a newer prepared result. */
+  isStale?: () => boolean;
+  /** Awaited under the lock with this submission's outcome. */
+  settle?: (outcome: SvelteKitSubmissionOutcome) => void | Promise<void>;
+  /**
+   * Canonical root under which `settle` publishes the build-schema module.
+   * Set only by a writer that will publish it at settlement.
+   */
+  publishesBuildSchemaFor?: string;
+  /** Per-root knowledge module id the managed knowledge route imports. */
+  knowledgeModuleId?: string;
 }
 type RouteContributionInput = Omit<RouteContribution, 'projectRoot'>;
 
+/** What a contribution's `beforeCleanup` learns about the run it is in. */
+export interface SvelteKitGenerationRunContext {
+  /**
+   * The producer manifest this run generates and will publish at settlement.
+   * `.smrt/manifest.json` still holds the previous publication while the run
+   * is in progress, so registration built in this run reads this instead.
+   */
+  producerManifest?: SmartObjectManifest;
+  /** The producer's project root; its `.smrt` is the one that manifest replaces. */
+  producerRoot?: string;
+}
+
 interface RouteCoordinator {
-  contributions: Map<SvelteKitRouteOwner, RouteContribution>;
+  /** Every owner's latest admitted submission, settled or not. */
+  latest: Map<SvelteKitRouteOwner, RouteContribution>;
+  /** Every owner's last accepted submission. */
+  accepted: Map<SvelteKitRouteOwner, RouteContribution>;
   expectedOwners: Set<SvelteKitRouteOwner>;
   afterRevocation: Array<() => void | Promise<void>>;
+}
+
+/**
+ * A non-reentrant FIFO lock. `acquire()` resolves to a release function bound
+ * to this lock object, so a holder always releases the lock it acquired even
+ * if its plugin later records another lifecycle.
+ */
+export interface SvelteKitLifecycleLock {
+  acquire(): Promise<() => void>;
+}
+
+export function createSvelteKitLifecycleLock(): SvelteKitLifecycleLock {
+  let tail: Promise<void> = Promise.resolve();
+  return {
+    acquire() {
+      let releaseNext!: () => void;
+      const next = new Promise<void>((resolveNext) => {
+        releaseNext = resolveNext;
+      });
+      const ready = tail.then(() => {
+        let released = false;
+        return () => {
+          if (released) return;
+          released = true;
+          releaseNext();
+        };
+      });
+      tail = tail.then(() => next);
+      return ready;
+    },
+  };
+}
+
+/** Run `operation` while holding `lock`; the lock is released on every path. */
+export async function withSvelteKitLifecycleLock<T>(
+  lock: SvelteKitLifecycleLock,
+  operation: () => T | Promise<T>,
+): Promise<T> {
+  const release = await lock.acquire();
+  try {
+    return await operation();
+  } finally {
+    release();
+  }
+}
+
+/** What a producer exposes to a companion consumer in the same lifecycle. */
+export interface SvelteKitProducerEntry {
+  /** The producer's public API (knowledge config resolution). */
+  api: {
+    resolveKnowledgeConfig(
+      manifest: SmartObjectManifest,
+    ): Promise<import('@happyvertical/smrt-types').DomainKnowledgeConfig>;
+    resolveKnowledgeAgentSurface(): Promise<
+      DomainKnowledgeAgentSurface | undefined
+    >;
+  };
+  /** Wait for the producer's in-flight operation; never rejects. Call outside the lock. */
+  awaitOperation(): Promise<void>;
+  /** The producer's published state; read synchronously under the lock. */
+  readPublished(): {
+    seq: number;
+    surface: DomainKnowledgeAgentSurface | undefined;
+    root: string | undefined;
+  };
+}
+
+interface LifecycleRegistry {
+  lock: SvelteKitLifecycleLock;
+  /** Producer entries by canonical committed root. */
+  producers: Map<string, SvelteKitProducerEntry>;
+}
+
+/** Module-private: keyed by the Vite lifecycle object, then by canonical root. */
+const lifecycleRegistries = new WeakMap<object, LifecycleRegistry>();
+/** Module-private: producer entries by plugin object, for hook-less callers. */
+const producerEntriesByPlugin = new WeakMap<
+  object,
+  { root: () => string; entry: SvelteKitProducerEntry }
+>();
+
+function lifecycleRegistry(lifecycle: object): LifecycleRegistry {
+  let registry = lifecycleRegistries.get(lifecycle);
+  if (!registry) {
+    registry = { lock: createSvelteKitLifecycleLock(), producers: new Map() };
+    lifecycleRegistries.set(lifecycle, registry);
+  }
+  return registry;
+}
+
+/** The one coordination lock of a Vite lifecycle (`env ?? userConfig`). */
+export function svelteKitLifecycleLock(
+  lifecycle: object,
+): SvelteKitLifecycleLock {
+  return lifecycleRegistry(lifecycle).lock;
+}
+
+/** Record a producer under its canonical committed root in one lifecycle. */
+export function registerSvelteKitProducer(
+  lifecycle: object,
+  projectRoot: string,
+  entry: SvelteKitProducerEntry,
+): void {
+  const producers = lifecycleRegistry(lifecycle).producers;
+  for (const [root, existing] of producers) {
+    if (existing === entry) producers.delete(root);
+  }
+  producers.set(canonicalSvelteKitPath(projectRoot), entry);
+}
+
+/** Record a producer plugin object for callers that never ran a config hook. */
+export function registerSvelteKitProducerPlugin(
+  plugin: object,
+  root: () => string,
+  entry: SvelteKitProducerEntry,
+): void {
+  producerEntriesByPlugin.set(plugin, { root, entry });
+}
+
+/**
+ * The producer whose canonical committed root equals `projectRoot`: first in
+ * the lifecycle registry, then among `plugins` (resolved plugins of a caller
+ * that never ran a config hook). No match means no producer.
+ */
+export function findSvelteKitProducer(
+  lifecycle: object | undefined,
+  projectRoot: string,
+  plugins: readonly unknown[] = [],
+): SvelteKitProducerEntry | undefined {
+  const root = canonicalSvelteKitPath(projectRoot);
+  const registered = lifecycle
+    ? lifecycleRegistries.get(lifecycle)?.producers.get(root)
+    : undefined;
+  if (registered) return registered;
+  for (const plugin of plugins) {
+    if (!plugin || typeof plugin !== 'object') continue;
+    const candidate = producerEntriesByPlugin.get(plugin);
+    if (candidate && canonicalSvelteKitPath(candidate.root()) === root) {
+      return candidate.entry;
+    }
+  }
+  return undefined;
+}
+
+/** Points at which tests may pause a run to order concurrent operations. */
+export type SvelteKitCoordinatorPausePoint =
+  | 'afterAdmission'
+  | 'afterRegistrationInputs'
+  | 'beforeMark'
+  | 'beforeSettle';
+
+type CoordinatorPauseHook = (
+  point: SvelteKitCoordinatorPausePoint,
+  info: { owners: SvelteKitRouteOwner[]; projectRoot: string },
+) => void | Promise<void>;
+
+let coordinatorPauseHook: CoordinatorPauseHook | undefined;
+
+/** Test seam (not a package export): awaited at the named points of every run. */
+export function setSvelteKitCoordinatorPauseHookForTesting(
+  hook: CoordinatorPauseHook | undefined,
+): void {
+  coordinatorPauseHook = hook;
+}
+
+export async function pauseSvelteKitCoordinator(
+  point: SvelteKitCoordinatorPausePoint,
+  info: { owners: SvelteKitRouteOwner[]; projectRoot: string },
+): Promise<void> {
+  await coordinatorPauseHook?.(point, info);
+}
+
+/** Settle one submission; a throwing `settle` is logged, never rethrown. */
+export async function settleSvelteKitSubmission(
+  settle: RouteContribution['settle'],
+  outcome: SvelteKitSubmissionOutcome,
+): Promise<void> {
+  if (!settle) return;
+  try {
+    await settle(outcome);
+  } catch (error) {
+    console.error(
+      `[smrt] Publishing a ${outcome} route generation failed:`,
+      error,
+    );
+  }
+}
+
+/**
+ * After a settlement that deferred the build-schema module to its writer,
+ * materialise it if that writer did not (a publish skipped by the sequence
+ * guard, or a failed manifest write), so the registration import resolves.
+ */
+export function ensureSvelteKitBuildSchemaModule(
+  projectRoot: string,
+  manifest: SmartObjectManifest,
+): void {
+  if (existsSync(join(projectRoot, '.smrt', BUILD_SCHEMA_MODULE))) return;
+  materializeBuildSchemaModule(projectRoot, manifest);
 }
 
 export interface ActiveSvelteKitRouteParticipant {
@@ -280,24 +531,27 @@ export async function contributeSvelteKitRoutes(
   expectedOwners: Iterable<SvelteKitRouteOwner>,
   projectRoot: string,
   contribution: RouteContributionInput,
-): Promise<void> {
+): Promise<SvelteKitContributionResult> {
   const target = routeTarget(projectRoot, contribution.options.routesDir);
   const sessions = coordinators.get(lifecycle) ?? new Map();
   coordinators.set(lifecycle, sessions);
   const coordinator =
     sessions.get(target) ??
     ({
-      contributions: new Map(),
+      latest: new Map(),
+      accepted: new Map(),
       expectedOwners: new Set(expectedOwners),
       afterRevocation: [],
     } satisfies RouteCoordinator);
   sessions.set(target, coordinator);
-  coordinator.contributions.set(contribution.owner, {
-    ...contribution,
-    projectRoot,
-  });
-
-  await generateWhenReady(sessions, coordinator, projectRoot);
+  const submission: RouteContribution = { ...contribution, projectRoot };
+  const result = await runCoordinated(
+    lifecycle,
+    sessions,
+    coordinator,
+    submission,
+  );
+  return result ?? 'pending';
 }
 
 /**
@@ -318,14 +572,23 @@ export async function revokeSvelteKitRoutes(
   const coordinator =
     sessions.get(target) ??
     ({
-      contributions: new Map(),
+      latest: new Map(),
+      accepted: new Map(),
       expectedOwners: new Set(expectedOwners),
       afterRevocation: [],
     } satisfies RouteCoordinator);
   sessions.set(target, coordinator);
-  if (afterGenerate) coordinator.afterRevocation.push(afterGenerate);
 
-  await generateWhenReady(sessions, coordinator, projectRoot);
+  // A revocation is not a submission: it is exempt from the sequence rule.
+  // Its callback is queued only once this run holds the lock, so an earlier
+  // holder's generation can never dispatch it.
+  await runCoordinated(
+    lifecycle,
+    sessions,
+    coordinator,
+    undefined,
+    afterGenerate,
+  );
 }
 
 /**
@@ -337,8 +600,9 @@ export function assertSvelteKitRouteCoordinationComplete(
   lifecycle: object,
 ): void {
   for (const [target, coordinator] of coordinators.get(lifecycle) ?? []) {
+    // Reads `latest`: a pending submission counts as contributed.
     const missing = [...coordinator.expectedOwners].filter(
-      (owner) => !coordinator.contributions.has(owner),
+      (owner) => !coordinator.latest.has(owner),
     );
     if (missing.length === 0) continue;
     throw new Error(
@@ -347,11 +611,15 @@ export function assertSvelteKitRouteCoordinationComplete(
   }
 }
 
-/** Current producer-owned knowledge handlers, which may sit outside its API root. */
+/**
+ * Current producer-owned knowledge handlers, which may sit outside its API
+ * root. Reads every target's `latest` submission, so a pending producer's
+ * handler stays protected.
+ */
 export function producerKnowledgeRoutePaths(lifecycle: object): Set<string> {
   const paths = new Set<string>();
   for (const coordinator of coordinators.get(lifecycle)?.values() ?? []) {
-    const producer = coordinator.contributions.get('producer');
+    const producer = coordinator.latest.get('producer');
     if (!producer?.options.knowledge?.api?.enabled) continue;
     paths.add(
       canonicalSvelteKitPath(
@@ -394,97 +662,337 @@ export async function activeProducerKnowledgeRoutePaths(
   return paths;
 }
 
-async function generateWhenReady(
+/** Errors thrown by `afterGenerate`/`afterRevocation` after the lock was released. */
+const postReleaseErrors = new WeakSet<object>();
+
+/**
+ * Whether `error` came from reconciliation that ran after its run settled and
+ * released the lock, rather than from inside the locked generation.
+ */
+export function isSvelteKitPostReleaseError(error: unknown): boolean {
+  return !!error && typeof error === 'object' && postReleaseErrors.has(error);
+}
+
+/** Submissions whose outcome has been delivered to their `settle`. */
+const settledSubmissions = new WeakSet<RouteContribution>();
+
+async function settleOnce(
+  submission: RouteContribution,
+  outcome: SvelteKitSubmissionOutcome,
+): Promise<void> {
+  if (settledSubmissions.has(submission)) return;
+  settledSubmissions.add(submission);
+  await settleSvelteKitSubmission(submission.settle, outcome);
+}
+
+/** Whether a producer submission is older than one already admitted or published. */
+function isSupersededProducerSubmission(
+  coordinator: RouteCoordinator,
+  submission: RouteContribution,
+): boolean {
+  if (submission.owner !== 'producer' || submission.seq === undefined) {
+    return false;
+  }
+  const latestSeq = coordinator.latest.get('producer')?.seq;
+  const acceptedSeq = coordinator.accepted.get('producer')?.seq;
+  if (latestSeq !== undefined && submission.seq <= latestSeq) return true;
+  if (acceptedSeq !== undefined && submission.seq <= acceptedSeq) return true;
+  return submission.isStale?.() === true;
+}
+
+/**
+ * Admission, generation and settlement of one target, under the lifecycle
+ * lock. The lock is released on every path before `afterGenerate` and
+ * `afterRevocation` run; those run only after a fully successful generation.
+ */
+async function runCoordinated(
+  lifecycle: object,
   sessions: Map<string, RouteCoordinator>,
   coordinator: RouteCoordinator,
-  _projectRoot: string,
-): Promise<void> {
-  if (
-    [...coordinator.expectedOwners].some(
-      (owner) => !coordinator.contributions.has(owner),
-    )
-  )
-    return;
-
-  const contributions = [...coordinator.contributions.values()];
-  const primary = primaryContribution(contributions);
-  assertNoForeignKnowledgeRouteCollisions(sessions);
-  const registrationContributions = [...sessions.values()].flatMap(
-    ({ contributions }) =>
-      [...contributions.values()].filter(
-        (contribution) =>
-          configTarget(contribution.projectRoot, contribution.options) ===
-          configTarget(primary.projectRoot, primary.options),
-      ),
-  );
-  const registrationPaths = consumerRegistrationPaths(
-    registrationContributions,
-  );
-  if (
-    new Set(
-      registrationContributions.map(({ options }) => !!options.lazyActivation),
-    ).size > 1
-  ) {
-    throw new Error('SMRT producer and consumer must agree on lazyActivation');
-  }
-  const options = {
-    ...mergeOptions(contributions),
-    ...(registrationPaths.length > 0
-      ? { consumerRegistrationPaths: registrationPaths }
-      : {}),
-  };
-  const hooks: SvelteKitGenerationHooks = {
-    beforeCleanup: async () => {
-      for (const contribution of contributions) {
-        await contribution.beforeCleanup?.();
+  submission?: RouteContribution,
+  revocationCallback?: () => void | Promise<void>,
+): Promise<SvelteKitContributionResult | undefined> {
+  let afterSuccess: Array<() => void | Promise<void>> = [];
+  let result: SvelteKitContributionResult | undefined;
+  // The handle is captured here and released below, never re-resolved.
+  const release = await svelteKitLifecycleLock(lifecycle).acquire();
+  try {
+    if (revocationCallback) {
+      coordinator.afterRevocation.push(revocationCallback);
+    }
+    if (submission) {
+      // Admission: a stale producer submission never reaches a hook or the
+      // generator. Consumer submissions carry no sequence and are exempt.
+      if (isSupersededProducerSubmission(coordinator, submission)) {
+        await settleOnce(submission, 'superseded');
+        return 'superseded';
       }
-    },
+      const replaced = coordinator.latest.get(submission.owner);
+      coordinator.latest.set(submission.owner, submission);
+      if (replaced && replaced !== submission) {
+        await settleOnce(replaced, 'superseded');
+      }
+      await pauseSvelteKitCoordinator('afterAdmission', {
+        owners: [submission.owner],
+        projectRoot: submission.projectRoot,
+      });
+    }
+    // A producer submission that waited for its peers may have been
+    // overtaken by a newer publication of the same producer meanwhile (a
+    // `load()` self-preparation): it must not generate. The run then needs
+    // a current producer contribution.
+    const pendingProducer = coordinator.latest.get('producer');
+    if (pendingProducer?.isStale?.() === true) {
+      await settleOnce(pendingProducer, 'superseded');
+      const accepted = coordinator.accepted.get('producer');
+      if (accepted && accepted !== pendingProducer && !accepted.isStale?.()) {
+        coordinator.latest.set('producer', accepted);
+      } else {
+        coordinator.latest.delete('producer');
+      }
+    }
+    if (
+      [...coordinator.expectedOwners].some(
+        (owner) => !coordinator.latest.has(owner),
+      )
+    ) {
+      return 'pending';
+    }
+    const after = await generateLocked(sessions, coordinator);
+    afterSuccess = after;
+    result = submission ? 'accepted' : undefined;
+  } finally {
+    release();
+  }
+  try {
+    for (const callback of afterSuccess) await callback();
+  } catch (error) {
+    // Thrown after the run settled and released the lock (reconciliation):
+    // it says nothing about this run's own generation.
+    if (error && typeof error === 'object') postReleaseErrors.add(error);
+    throw error;
+  }
+  return result;
+}
+
+/** One coordinated generation. Runs only while the lifecycle lock is held. */
+async function generateLocked(
+  sessions: Map<string, RouteCoordinator>,
+  coordinator: RouteCoordinator,
+): Promise<Array<() => void | Promise<void>>> {
+  const used = [...coordinator.latest.entries()];
+  const contributions = used.map(([, contribution]) => contribution);
+  const attempt: RouteGenerationAttempt = { changed: false };
+  const mark = () => {
+    attempt.changed = true;
   };
-  const routeManifest = mergeManifests(
-    contributions.map(({ routeManifest }) => routeManifest),
-  );
-  const semanticManifest = mergeManifests(
-    contributions.map(({ semanticManifest }) => semanticManifest),
-  );
-  // Validate every object's routes before generation sweeps the route tree.
-  assertSvelteKitObjectRoutesValid(
-    primary.projectRoot,
-    routeManifest,
-    semanticManifest,
-    options,
-  );
-  await generateSvelteKitRoutes(
-    primary.projectRoot,
-    routeManifest,
-    options,
-    semanticManifest,
-    utilityManifests(
-      contributions,
-      protectedProducerKnowledgeRoutePaths(sessions, coordinator),
+  let deferredBuildSchema:
+    | { projectRoot: string; manifest: SmartObjectManifest }
+    | undefined;
+  try {
+    const primary = primaryContribution(contributions);
+    assertNoForeignKnowledgeRouteCollisions(sessions);
+    const primaryConfigTarget = configTarget(
+      primary.projectRoot,
+      primary.options,
+    );
+    // This target's own submissions, plus every other target's accepted
+    // state: target runs are serialised, so nothing else is in flight.
+    const registrationContributions = [
+      ...contributions,
+      ...[...sessions.values()]
+        .filter((candidate) => candidate !== coordinator)
+        .flatMap(({ accepted }) => [...accepted.values()]),
+    ].filter(
+      (contribution) =>
+        configTarget(contribution.projectRoot, contribution.options) ===
+        primaryConfigTarget,
+    );
+    await pauseSvelteKitCoordinator('afterRegistrationInputs', {
+      owners: used.map(([owner]) => owner),
+      projectRoot: primary.projectRoot,
+    });
+    const registrationPaths = consumerRegistrationPaths(
+      registrationContributions,
+    );
+    if (
       new Set(
-        [...sessions.entries()]
-          .filter(
-            ([target, candidate]) =>
-              target !==
-                routeTarget(primary.projectRoot, primary.options.routesDir) &&
-              candidate.contributions.size > 0,
-          )
-          .map(([target]) => target),
-      ),
-    ),
-    mergeManifests(
+        registrationContributions.map(
+          ({ options }) => !!options.lazyActivation,
+        ),
+      ).size > 1
+    ) {
+      throw new Error(
+        'SMRT producer and consumer must agree on lazyActivation',
+      );
+    }
+    const options = {
+      ...mergeOptions(contributions),
+      ...(registrationPaths.length > 0
+        ? { consumerRegistrationPaths: registrationPaths }
+        : {}),
+    };
+    const runProducer = contributions.find(({ owner }) => owner === 'producer');
+    const runContext: SvelteKitGenerationRunContext = {
+      producerManifest: runProducer?.routeManifest,
+      producerRoot: runProducer?.projectRoot,
+    };
+    const hooks: SvelteKitManagedGenerationHooks = {
+      beforeCleanup: async () => {
+        for (const contribution of contributions) {
+          await contribution.beforeCleanup?.(mark, runContext);
+        }
+        // A contribution rooted elsewhere than the generation root (a
+        // consumer at the repository root beside a producer at app/) has
+        // its own `.smrt/register.js` importing its own build-schema module.
+        // Settlement publishes that module only for a settling writer's
+        // root, so materialise it for every other root, as a change.
+        const settlingRoots = new Set(
+          contributions.flatMap(({ settle, publishesBuildSchemaFor }) =>
+            settle && publishesBuildSchemaFor ? [publishesBuildSchemaFor] : [],
+          ),
+        );
+        const generationRoot = canonicalSvelteKitPath(primary.projectRoot);
+        for (const contribution of contributions) {
+          const root = canonicalSvelteKitPath(contribution.projectRoot);
+          if (root === generationRoot || settlingRoots.has(root)) continue;
+          if (existsSync(join(root, '.smrt', BUILD_SCHEMA_MODULE))) continue;
+          materializeBuildSchemaModule(
+            contribution.projectRoot,
+            contribution.semanticManifest,
+            mark,
+          );
+        }
+      },
+    };
+    const routeManifest = mergeManifests(
+      contributions.map(({ routeManifest }) => routeManifest),
+    );
+    const semanticManifest = mergeManifests(
+      contributions.map(({ semanticManifest }) => semanticManifest),
+    );
+    const registrationManifest = mergeManifests(
       registrationContributions.map(
         ({ routeManifest, semanticManifest, options }) =>
           options.lazyActivation ? semanticManifest : routeManifest,
       ),
-    ),
-    hooks,
-  );
-  for (const contribution of contributions) {
-    await contribution.afterGenerate?.();
+    );
+    // Validate every object's routes before generation sweeps the route tree.
+    assertSvelteKitObjectRoutesValid(
+      primary.projectRoot,
+      routeManifest,
+      semanticManifest,
+      options,
+    );
+    // Defer the build-schema module only to a writer that publishes it for
+    // this exact root at settlement.
+    const generationRoot = canonicalSvelteKitPath(primary.projectRoot);
+    const deferBuildSchema = contributions.some(
+      (contribution) =>
+        contribution.owner === 'producer' &&
+        contribution.settle !== undefined &&
+        contribution.publishesBuildSchemaFor === generationRoot,
+    );
+    if (deferBuildSchema) {
+      deferredBuildSchema = {
+        projectRoot: primary.projectRoot,
+        manifest: registrationManifest,
+      };
+    }
+    await pauseSvelteKitCoordinator('beforeMark', {
+      owners: used.map(([owner]) => owner),
+      projectRoot: primary.projectRoot,
+    });
+    await runSvelteKitRouteGeneration(
+      {
+        projectRoot: primary.projectRoot,
+        routeManifest,
+        options,
+        semanticManifest,
+        utilityManifests: utilityManifests(
+          contributions,
+          protectedProducerKnowledgeRoutePaths(sessions, coordinator),
+          new Set(
+            [...sessions.entries()]
+              .filter(
+                ([target, candidate]) =>
+                  target !==
+                    routeTarget(
+                      primary.projectRoot,
+                      primary.options.routesDir,
+                    ) && candidate.latest.size > 0,
+              )
+              .map(([target]) => target),
+          ),
+        ),
+        registrationManifest,
+        hooks,
+      },
+      attempt,
+      {
+        deferBuildSchema,
+        knowledgeModule: primary.knowledgeModuleId,
+      },
+    );
+  } catch (error) {
+    if (attempt.changed) {
+      // A generator output already changed: publish, consistent with disk,
+      // and skip reconciliation (the caller sees the error).
+      await acceptUsed(coordinator, used, deferredBuildSchema, true);
+      throw error;
+    }
+    for (const [owner] of used) {
+      const accepted = coordinator.accepted.get(owner);
+      if (accepted) coordinator.latest.set(owner, accepted);
+      else coordinator.latest.delete(owner);
+    }
+    for (const [, contribution] of used) {
+      await settleOnce(contribution, 'rejected');
+    }
+    throw error;
   }
+  await acceptUsed(coordinator, used, deferredBuildSchema);
   const afterRevocation = coordinator.afterRevocation.splice(0);
-  for (const callback of afterRevocation) await callback();
+  return [
+    ...contributions.flatMap((contribution) =>
+      contribution.afterGenerate ? [contribution.afterGenerate] : [],
+    ),
+    ...afterRevocation,
+  ];
+}
+
+async function acceptUsed(
+  coordinator: RouteCoordinator,
+  used: Array<[SvelteKitRouteOwner, RouteContribution]>,
+  deferredBuildSchema:
+    | { projectRoot: string; manifest: SmartObjectManifest }
+    | undefined,
+  partialCommit = false,
+): Promise<void> {
+  await pauseSvelteKitCoordinator('beforeSettle', {
+    owners: used.map(([owner]) => owner),
+    projectRoot: used[0]?.[1].projectRoot ?? '',
+  });
+  for (const [owner, contribution] of used) {
+    coordinator.accepted.set(owner, contribution);
+  }
+  for (const [, contribution] of used) {
+    await settleOnce(contribution, 'accepted');
+  }
+  if (!deferredBuildSchema) return;
+  try {
+    ensureSvelteKitBuildSchemaModule(
+      deferredBuildSchema.projectRoot,
+      deferredBuildSchema.manifest,
+    );
+  } catch (error) {
+    // The registration imports this module. On a fully successful run the
+    // failure propagates, so no reconciliation runs beside an unresolved
+    // import; after a partial commit the generation error is the one the
+    // caller sees, and reconciliation is already skipped.
+    if (!partialCommit) throw error;
+    console.error('[smrt] Error writing the build-schema module:', error);
+  }
 }
 
 function routeTarget(projectRoot: string, routesDir: string): string {
@@ -544,11 +1052,15 @@ function utilityManifests(
   };
 }
 
+/**
+ * Protections and collision checks read every target's `latest` submission,
+ * pending ones included, so they err toward protecting unsettled routes.
+ */
 function producerKnowledgeContributions(
   sessions: Map<string, RouteCoordinator>,
 ): RouteContribution[] {
-  return [...sessions.values()].flatMap(({ contributions }) =>
-    [...contributions.values()].filter(
+  return [...sessions.values()].flatMap(({ latest }) =>
+    [...latest.values()].filter(
       (contribution) =>
         contribution.owner === 'producer' &&
         contribution.options.knowledge?.api?.enabled === true,
@@ -562,7 +1074,7 @@ function foreignProducerKnowledgeRoutePaths(
 ): Set<string> {
   const paths = new Set<string>();
   for (const contribution of producerKnowledgeContributions(sessions)) {
-    if (current.contributions.get('producer') === contribution) continue;
+    if (current.latest.get('producer') === contribution) continue;
     paths.add(
       canonicalSvelteKitPath(
         knowledgeRoutePath(contribution.projectRoot, contribution.options),
@@ -575,7 +1087,7 @@ function foreignProducerKnowledgeRoutePaths(
 function currentProducerKnowledgeRoutePaths(
   coordinator: RouteCoordinator,
 ): Set<string> {
-  const producer = coordinator.contributions.get('producer');
+  const producer = coordinator.latest.get('producer');
   if (!producer?.options.knowledge?.api?.enabled) return new Set();
   return new Set([
     canonicalSvelteKitPath(
@@ -591,7 +1103,7 @@ function protectedProducerKnowledgeRoutePaths(
   const ownPaths = currentProducerKnowledgeRoutePaths(current);
   return new Set([
     ...foreignProducerKnowledgeRoutePaths(sessions, current),
-    ...[...current.contributions.values()].flatMap((contribution) =>
+    ...[...current.latest.values()].flatMap((contribution) =>
       [...(contribution.reservedRoutePaths ?? [])].filter(
         (path) => !ownPaths.has(canonicalSvelteKitPath(path)),
       ),
@@ -605,7 +1117,7 @@ function assertNoForeignKnowledgeRouteCollisions(
   const knowledgeContributions = producerKnowledgeContributions(sessions);
   for (const routeCoordinator of sessions.values()) {
     const ownPaths = currentProducerKnowledgeRoutePaths(routeCoordinator);
-    for (const contribution of routeCoordinator.contributions.values()) {
+    for (const contribution of routeCoordinator.latest.values()) {
       if (!contribution.options.rejectRouteCollisions) continue;
       const foreignPaths = new Set(
         knowledgeContributions

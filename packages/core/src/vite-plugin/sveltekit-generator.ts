@@ -11,7 +11,6 @@ import {
   readdirSync,
   readFileSync,
   statSync,
-  writeFileSync,
 } from 'node:fs';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import type { DomainKnowledgeConfig } from '@happyvertical/smrt-types';
@@ -63,6 +62,7 @@ import {
 } from './dev-plane-route.js';
 import { generateEventsRoute } from './events-route.js';
 import {
+  activeRouteFileSystem,
   findUnlistableRouteDirectories,
   isGeneratedRouteFile,
   physicalRouteFileKey,
@@ -237,21 +237,67 @@ function buildSchemaImportFor(
   projectRoot: string,
   configDir: string,
   manifest: SmartObjectManifest,
+  run: GenerationRun = standaloneRun(),
 ): string {
   const buildSchemaFile = join(projectRoot, '.smrt', BUILD_SCHEMA_MODULE);
   const buildSchemaPath = relative(configDir, buildSchemaFile).replace(
     /\\/g,
     '/',
   );
-  if (!existsSync(buildSchemaFile)) {
-    mkdirSync(join(projectRoot, '.smrt'), { recursive: true });
-    writeFileSync(
-      buildSchemaFile,
-      generateBuildSchemaModule(manifest),
-      'utf-8',
-    );
+  // Deferred only when a writer for this exact root publishes the module at
+  // settlement; every other caller materialises it here, as before.
+  if (!run.deferBuildSchema && !existsSync(buildSchemaFile)) {
+    materializeBuildSchemaModule(projectRoot, manifest, run.mark);
   }
   return `import '${buildSchemaPath.startsWith('.') ? buildSchemaPath : `./${buildSchemaPath}`}';`;
+}
+
+/**
+ * Write `.smrt/<build-schema>` from `manifest`. A materialisation counts as
+ * a generator-output mutation: `mark` runs once the file is open.
+ */
+export function materializeBuildSchemaModule(
+  projectRoot: string,
+  manifest: SmartObjectManifest,
+  mark: () => void = () => {},
+): void {
+  mkdirSync(join(projectRoot, '.smrt'), { recursive: true });
+  writeGeneratorOutput(
+    join(projectRoot, '.smrt', BUILD_SCHEMA_MODULE),
+    generateBuildSchemaModule(manifest),
+    mark,
+  );
+}
+
+/**
+ * Write one auxiliary generator output in place through the route-fs seam.
+ * `mark` runs after `open` succeeds and before any byte is written, so a
+ * create that then fails while writing still counts as a change.
+ */
+function writeGeneratorOutput(
+  path: string,
+  content: string,
+  mark: () => void,
+): void {
+  const fs = activeRouteFileSystem();
+  const descriptor = fs.openSync(path, 'w');
+  try {
+    mark();
+    fs.writeSync(descriptor, content);
+  } finally {
+    fs.closeSync(descriptor);
+  }
+}
+
+/** Internal state of one generator invocation. */
+interface GenerationRun {
+  mark: () => void;
+  deferBuildSchema: boolean;
+  knowledgeModule?: string;
+}
+
+function standaloneRun(): GenerationRun {
+  return { mark: () => {}, deferBuildSchema: false };
 }
 
 function extractSimpleClassName(qualifiedName: string): string {
@@ -1559,21 +1605,97 @@ export interface SvelteKitGenerationHooks {
   beforeCleanup?: () => void | Promise<void>;
 }
 
+/**
+ * Internal hooks of a managed generation: `mark` records that a generator
+ * output changed. The public {@link SvelteKitGenerationHooks} callback keeps
+ * its zero-argument shape.
+ */
+export interface SvelteKitManagedGenerationHooks {
+  beforeCleanup?: (mark: () => void) => void | Promise<void>;
+}
+
+/**
+ * Internal: whether a generator invocation has changed any output it owns.
+ * Set once, after the first successful mutation (an unlink once it
+ * succeeds, an in-place write once `open` succeeds, a rename publication
+ * once its first rename succeeds); never cleared.
+ */
+export interface RouteGenerationAttempt {
+  changed: boolean;
+}
+
+/** Internal generation inputs; the exported signature wraps these. */
+export interface SvelteKitGenerationArgs {
+  projectRoot: string;
+  routeManifest: SmartObjectManifest;
+  options: SvelteKitOptions;
+  semanticManifest?: SmartObjectManifest;
+  utilityManifests?: SvelteKitUtilityManifests;
+  registrationManifest?: SmartObjectManifest;
+  hooks?: SvelteKitManagedGenerationHooks;
+}
+
+/** Internal context of a plugin-managed generation. */
+export interface SvelteKitGenerationContext {
+  /** A writer for this root publishes the build-schema module at settlement. */
+  deferBuildSchema?: boolean;
+  /**
+   * Plugin-managed knowledge route: import this per-root module served by
+   * `smrtPlugin` instead of embedding the artifact.
+   */
+  knowledgeModule?: string;
+}
+
 export async function generateSvelteKitRoutes(
   projectRoot: string,
   routeManifest: SmartObjectManifest,
   options: SvelteKitOptions,
   semanticManifest: SmartObjectManifest = routeManifest,
-  utilityManifests: SvelteKitUtilityManifests = {
+  utilityManifests?: SvelteKitUtilityManifests,
+  registrationManifest: SmartObjectManifest = routeManifest,
+  hooks: SvelteKitGenerationHooks = {},
+): Promise<void> {
+  await runSvelteKitRouteGeneration(
+    {
+      projectRoot,
+      routeManifest,
+      options,
+      semanticManifest,
+      utilityManifests,
+      registrationManifest,
+      // The public callback takes no arguments; the change mark stays
+      // internal to managed generations.
+      hooks: hooks.beforeCleanup
+        ? { beforeCleanup: () => hooks.beforeCleanup?.() }
+        : {},
+    },
+    { changed: false },
+  );
+}
+
+export async function runSvelteKitRouteGeneration(
+  args: SvelteKitGenerationArgs,
+  attempt: RouteGenerationAttempt,
+  context: SvelteKitGenerationContext = {},
+): Promise<void> {
+  const { projectRoot, routeManifest, options } = args;
+  const semanticManifest = args.semanticManifest ?? routeManifest;
+  const utilityManifests: SvelteKitUtilityManifests = args.utilityManifests ?? {
     sync: routeManifest,
     changes: routeManifest,
     events: routeManifest,
     eventsSemantic: semanticManifest,
     clearKnowledgeRoute: true,
-  },
-  registrationManifest: SmartObjectManifest = routeManifest,
-  hooks: SvelteKitGenerationHooks = {},
-): Promise<void> {
+  };
+  const registrationManifest = args.registrationManifest ?? routeManifest;
+  const hooks = args.hooks ?? {};
+  const run: GenerationRun = {
+    mark: () => {
+      attempt.changed = true;
+    },
+    deferBuildSchema: context.deferBuildSchema === true,
+    knowledgeModule: context.knowledgeModule,
+  };
   if (!options.enabled) return;
   // Before any write: the config module must not alias generated output.
   assertSvelteKitConfigModuleNotReserved(options);
@@ -1650,7 +1772,7 @@ export async function generateSvelteKitRoutes(
   }
 
   if (options.knowledge?.api?.enabled) {
-    generateKnowledgeRoute(projectRoot, options, plan);
+    generateKnowledgeRoute(projectRoot, options, plan, run.knowledgeModule);
   }
 
   // Batch write contract route (#1759): {routesDir}/sync/apply/+server.ts.
@@ -1681,21 +1803,23 @@ export async function generateSvelteKitRoutes(
     ).map((finding) => ({ ...finding, route: 'generated-route sweep' })),
   );
 
-  await hooks.beforeCleanup?.();
+  await hooks.beforeCleanup?.(run.mark);
 
   clearGeneratedSvelteKitRouteFiles(
     routesRoot,
     utilityManifests.protectedRoutePaths,
     utilityManifests.protectedRouteRoots,
+    new Set(),
+    run.mark,
   );
   if (utilityManifests.clearKnowledgeRoute !== false) {
-    clearGeneratedKnowledgeRoute(projectRoot, options, plan);
+    clearGeneratedKnowledgeRoute(projectRoot, options, plan, run.mark);
   }
 
   // Generate centralized configuration file first (if it doesn't exist)
-  await generateSmrtConfigFile(projectRoot, registrationManifest, options);
+  await generateSmrtConfigFile(projectRoot, registrationManifest, options, run);
 
-  const generatedRoutePaths = plan.commit();
+  const generatedRoutePaths = plan.commit(run.mark);
 
   // Ignore only the concrete route files generated in this pass. This keeps
   // handwritten handlers below routesDir visible to Git.
@@ -1703,6 +1827,7 @@ export async function generateSvelteKitRoutes(
     projectRoot,
     generatedRoutePaths,
     join(projectRoot, svelteKitRouteRoot(options.routesDir)),
+    run.mark,
   );
 
   const skippedMsg =
@@ -1720,6 +1845,7 @@ export function clearGeneratedSvelteKitRouteFiles(
   excludedPaths: ReadonlySet<string> = new Set(),
   protectedRouteRoots: ReadonlySet<string> = new Set(),
   visitedRoots: Set<string> = new Set(),
+  onRemove: () => void = () => {},
 ): void {
   const canonicalRoot = canonicalSvelteKitPath(routesRoot);
   if (
@@ -1742,6 +1868,7 @@ export function clearGeneratedSvelteKitRouteFiles(
         excludedPaths,
         protectedRouteRoots,
         visitedRoots,
+        onRemove,
       );
       continue;
     }
@@ -1752,8 +1879,10 @@ export function clearGeneratedSvelteKitRouteFiles(
     if (excludedPaths.has(canonicalSvelteKitPath(entryPath))) continue;
 
     // Re-checked immediately before the unlink: only a file that is generated
-    // at this moment is removed.
-    removeGeneratedRouteFile(entryPath);
+    // at this moment is removed. A successful unlink is a change.
+    if (removeGeneratedRouteFile(entryPath, activeRouteFileSystem())) {
+      onRemove();
+    }
   }
 }
 
@@ -1821,24 +1950,38 @@ function clearGeneratedKnowledgeRoute(
   projectRoot: string,
   options: SvelteKitOptions,
   plan: RouteFilePlan,
+  onRemove: () => void,
 ): void {
   // Another producer in this build owns the handler at this path; compared
   // as emission compares it (a case-only alias counts on a volume that is
   // not known to be case-sensitive).
   if (plan.protects(knowledgeRouteDir(projectRoot, options))) return;
-  removeGeneratedRouteFile(knowledgeRoutePath(projectRoot, options));
+  if (
+    removeGeneratedRouteFile(
+      knowledgeRoutePath(projectRoot, options),
+      activeRouteFileSystem(),
+    )
+  ) {
+    onRemove();
+  }
 }
 
 function generateKnowledgeRoute(
   projectRoot: string,
   options: SvelteKitOptions,
   plan: RouteFilePlan,
+  knowledgeModule?: string,
 ): string {
   const routeDir = knowledgeRouteDir(projectRoot, options);
-  const route = generateKnowledgeRouteTemplate(
-    options.knowledge ?? {},
-    readKnowledgeRouteArtifact(projectRoot),
-  );
+  // The plugin-managed route imports its root's artifact from smrtPlugin's
+  // per-root module; standalone callers embed the artifact read now.
+  const route = knowledgeModule
+    ? generateKnowledgeRouteTemplate(options.knowledge ?? {}, {
+        module: knowledgeModule,
+      })
+    : generateKnowledgeRouteTemplate(options.knowledge ?? {}, {
+        artifact: readKnowledgeRouteArtifact(projectRoot),
+      });
   return plan.emit({
     root: join(projectRoot, svelteKitRouteRoot(options.routesDir)),
     routeDir,
@@ -1874,6 +2017,7 @@ async function generateRegistrationFile(
   projectRoot: string,
   manifest: SmartObjectManifest,
   options: SvelteKitOptions,
+  run: GenerationRun,
 ): Promise<void> {
   const configPath = options.configPath || 'src/lib/server';
   const configDir = join(projectRoot, configPath);
@@ -1924,21 +2068,31 @@ async function generateRegistrationFile(
       mkdirSync(resolve(configDir, file, '..'), { recursive: true });
     const smrtDir = join(projectRoot, '.smrt');
     if (!existsSync(smrtDir)) mkdirSync(smrtDir, { recursive: true });
-    publishArtifactFiles([
-      ...Object.entries(generated.files).map(([file, content]) => ({
-        path: join(configDir, file),
-        content,
-      })),
-      {
-        path: join(smrtDir, 'activation-manifest.json'),
-        content: JSON.stringify(generated.manifest, null, 2),
-      },
-      {
-        path: registrationFilePath,
-        // The build's stamp travels in the lazy registration too (#4929).
-        content: `${buildSchemaImportFor(projectRoot, configDir, manifest)}\n${generated.source}`,
-      },
-    ]);
+    const buildSchemaImport = buildSchemaImportFor(
+      projectRoot,
+      configDir,
+      manifest,
+      run,
+    );
+    publishArtifactFiles(
+      [
+        ...Object.entries(generated.files).map(([file, content]) => ({
+          path: join(configDir, file),
+          content,
+        })),
+        {
+          path: join(smrtDir, 'activation-manifest.json'),
+          content: JSON.stringify(generated.manifest, null, 2),
+        },
+        {
+          path: registrationFilePath,
+          // The build's stamp travels in the lazy registration too (#4929).
+          content: `${buildSchemaImport}\n${generated.source}`,
+        },
+      ],
+      undefined,
+      run.mark,
+    );
     return;
   }
   const externalRuntimeDependencies = (manifest.smrtDependencies || []).filter(
@@ -2091,6 +2245,7 @@ async function generateRegistrationFile(
     projectRoot,
     configDir,
     manifest,
+    run,
   );
   let consumerRegistrationImport = '';
   if (consumerRegistrationPaths.length > 0) {
@@ -2304,7 +2459,7 @@ ${collectionRegistrations}
     mkdirSync(configDir, { recursive: true });
   }
 
-  writeFileSync(registrationFilePath, registrationContent, 'utf-8');
+  writeGeneratorOutput(registrationFilePath, registrationContent, run.mark);
   console.log(`[smrt] Generated registration file: ${registrationFilePath}`);
 }
 
@@ -2432,6 +2587,7 @@ async function generateSmrtConfigFile(
   projectRoot: string,
   manifest: SmartObjectManifest,
   options: SvelteKitOptions,
+  run: GenerationRun,
 ): Promise<void> {
   const configPath = options.configPath || 'src/lib/server';
   const configFileName = options.configFileName || 'smrt.ts';
@@ -2439,7 +2595,7 @@ async function generateSmrtConfigFile(
   const configFilePath = join(configDir, configFileName);
 
   // Always generate registration file (it gets overwritten)
-  await generateRegistrationFile(projectRoot, manifest, options);
+  await generateRegistrationFile(projectRoot, manifest, options, run);
 
   // Don't overwrite existing config file
   if (existsSync(configFilePath)) {
@@ -2454,7 +2610,7 @@ async function generateSmrtConfigFile(
   // Apps that install the SMRT application runtime get a runtime-shaped
   // config: generated routes resolve collections through `runtime`.
   if (consumerHasSmrtAppRuntime(projectRoot)) {
-    writeFileSync(configFilePath, RUNTIME_CONFIG_FILE_CONTENT, 'utf-8');
+    writeGeneratorOutput(configFilePath, RUNTIME_CONFIG_FILE_CONTENT, run.mark);
     console.log(`[smrt] Generated configuration file: ${configFilePath}`);
     return;
   }
@@ -2596,7 +2752,7 @@ export async function getCollection<
     mkdirSync(configDir, { recursive: true });
   }
 
-  writeFileSync(configFilePath, configContent, 'utf-8');
+  writeGeneratorOutput(configFilePath, configContent, run.mark);
   console.log(`[smrt] Generated configuration file: ${configFilePath}`);
 }
 
@@ -4160,13 +4316,25 @@ ${successResponse}
 
 function generateKnowledgeRouteTemplate(
   knowledge: DomainKnowledgeConfig,
-  artifact: Record<string, unknown> | null,
+  source: { artifact: Record<string, unknown> | null } | { module: string },
 ): string {
   const api = knowledge.api ?? {};
   const includeDocs = api.includeDocs === true;
   const includePrompts = api.includePrompts === true;
   const requireAdmin = api.requireAdmin !== false;
-  const artifactLiteral = artifact ? JSON.stringify(artifact) : 'null';
+  // The managed route reads its root's artifact from smrtPlugin's per-root,
+  // server-only module, so it follows the published artifact without a route
+  // rewrite and never reaches a client bundle.
+  const artifactSource =
+    'module' in source
+      ? `// @ts-ignore -- served by smrtPlugin() as a per-root, server-only module
+import knowledgeArtifactModule from ${JSON.stringify(source.module)};
+
+const KNOWLEDGE_ARTIFACT: Record<string, unknown> | null =
+  knowledgeArtifactModule;`
+      : `const KNOWLEDGE_ARTIFACT: Record<string, unknown> | null = ${
+          source.artifact ? JSON.stringify(source.artifact) : 'null'
+        };`;
 
   return `${AUTO_GENERATED_ROUTE_HEADER}
 // DO NOT EDIT - changes will be overwritten
@@ -4178,7 +4346,7 @@ import type { RequestHandler } from './$types';
 const INCLUDE_DOCS_BY_DEFAULT = ${JSON.stringify(includeDocs)};
 const INCLUDE_PROMPTS_BY_DEFAULT = ${JSON.stringify(includePrompts)};
 const REQUIRE_ADMIN = ${JSON.stringify(requireAdmin)};
-const KNOWLEDGE_ARTIFACT: Record<string, unknown> | null = ${artifactLiteral};
+${artifactSource}
 
 if (!dev && !REQUIRE_ADMIN) {
   console.warn('[smrt] PUBLIC knowledge API route enabled; unauthenticated responses are sanitized.');
@@ -4284,6 +4452,7 @@ function updateGitignore(
   projectRoot: string,
   generatedRoutePaths: readonly string[],
   routeRoot: string,
+  mark: () => void = () => {},
 ): void {
   const gitignorePath = join(projectRoot, '.gitignore');
 
@@ -4306,7 +4475,7 @@ function updateGitignore(
   );
 
   if (updatedContent !== gitignoreContent) {
-    writeFileSync(gitignorePath, updatedContent, 'utf-8');
+    writeGeneratorOutput(gitignorePath, updatedContent, mark);
     console.log('[smrt] Updated .gitignore with generated route paths');
   }
 }

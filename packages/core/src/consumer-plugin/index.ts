@@ -65,10 +65,14 @@ import {
   assertNoSvelteKitRouteRootSymlinkConflict,
   assertSvelteKitRouteCoordinationComplete,
   contributeSvelteKitRoutes,
+  createSvelteKitLifecycleLock,
   expectedSvelteKitRouteOwners,
+  findSvelteKitProducer,
   markSvelteKitRouteParticipant,
   producerKnowledgeRoutePaths,
   revokeSvelteKitRoutes,
+  svelteKitLifecycleLock,
+  withSvelteKitLifecycleLock,
 } from '../vite-plugin/sveltekit-route-coordinator.js';
 import {
   generateWebModule,
@@ -803,8 +807,20 @@ export function smrtConsumer(
   let smrtPackages: string[] = [];
   let typeManifest: ConsumerManifest | null = null;
   let typesGenerated = false;
-  let producerApi: SmrtPluginApi | undefined;
   let routeLifecycleConfig: object | undefined;
+  /** The resolved config: plugin list for hook-less producer lookup, and lock key. */
+  let resolvedConfigRef: { plugins?: readonly unknown[] } | undefined;
+  /** Lock for a consumer used without any Vite hook context. */
+  const instanceLock = createSvelteKitLifecycleLock();
+  // Without a config hook, the resolved config both companions receive keys
+  // one shared fallback lock, so a hook-less producer and consumer still
+  // serialise their writes to `.smrt/manifest.json`.
+  const consumerLock = () =>
+    routeLifecycleConfig
+      ? svelteKitLifecycleLock(routeLifecycleConfig)
+      : resolvedConfigRef
+        ? svelteKitLifecycleLock(resolvedConfigRef)
+        : instanceLock;
   let isBuild = false;
   const devNativeSsrModules = createDevNativeSsrModules();
   let selectiveSsrPackages = new Map<string, SelectiveSsrPackage>();
@@ -1129,17 +1145,32 @@ export function smrtConsumer(
               semanticManifest: routeManifest as unknown as SmartObjectManifest,
               options: routeOptions,
               reservedRoutePaths,
-              beforeCleanup: async () => {
+              beforeCleanup: async (mark, run) => {
                 // Route selection and collision checks have succeeded, but no
                 // generated output has changed. SvelteKit type checking still
                 // runs after this config hook and needs these declarations.
                 await generateConfigTypes(routeManifest);
                 // The generated TS registration imports this runtime module.
                 // SvelteKit sync must resolve it before Vite buildStart runs.
+                // It is a generator output: its first replacement marks the
+                // run, so a later failure here still settles accepted.
+                // The producer manifest of this run is published only at
+                // settlement, so lazy registration reads it from the run,
+                // not from the previous .smrt/manifest.json.
                 await generateRegistrationFile(
                   routeManifest,
                   projectRoot,
                   options.lazyActivation,
+                  mark,
+                  // Only a producer whose .smrt is this consumer's replaces
+                  // the on-disk manifest; another root's never does.
+                  run?.producerRoot &&
+                    canonicalSvelteKitPath(run.producerRoot) ===
+                      canonicalSvelteKitPath(projectRoot)
+                    ? (run.producerManifest as unknown as
+                        | ConsumerManifest
+                        | undefined)
+                    : undefined,
                 );
                 if (ownershipJournaled) return;
                 ownershipJournaled = true;
@@ -1176,10 +1207,16 @@ export function smrtConsumer(
           // SvelteKit typecheck reaches Vite's later buildStart lifecycle.
           await generateConfigTypes();
           if (options.svelteKit && typeManifest) {
-            await generateRegistrationFile(
-              typeManifest,
-              projectRoot,
-              options.lazyActivation,
+            const registered = typeManifest;
+            // Registration is a generator output: written under the lock.
+            await withSvelteKitLifecycleLock(
+              svelteKitLifecycleLock(routeLifecycle),
+              () =>
+                generateRegistrationFile(
+                  registered,
+                  projectRoot,
+                  options.lazyActivation,
+                ),
             );
           }
           if (previousConsumerRouteRoots.length > 0) {
@@ -1217,9 +1254,10 @@ export function smrtConsumer(
       if (consumerSvelteKit && routeLifecycleConfig) {
         assertSvelteKitRouteCoordinationComplete(routeLifecycleConfig);
       }
-      producerApi = (resolvedConfig.plugins ?? []).find(
-        (plugin) => plugin?.name === 'smrt-auto-service',
-      )?.api as SmrtPluginApi | undefined;
+      // buildStart resolves the producer whose canonical root is this
+      // consumer's from the lifecycle registry, then from these plugins; with
+      // none, no producer surface is used (as with no producer at all).
+      resolvedConfigRef = resolvedConfig;
     },
 
     configureServer(server) {
@@ -1234,10 +1272,13 @@ export function smrtConsumer(
         console.log(
           `[smrt:consumer] Reusing verified generation snapshot (${generationSnapshot.provenance})`,
         );
-        await generateRegistrationFile(
-          typeManifest,
-          projectRoot,
-          options.lazyActivation,
+        const registered = typeManifest;
+        await withSvelteKitLifecycleLock(consumerLock(), () =>
+          generateRegistrationFile(
+            registered,
+            projectRoot,
+            options.lazyActivation,
+          ),
         );
         if (generateTypes && !typesGenerated) {
           await generateProjectTypes(typeManifest, typesDir, projectRoot);
@@ -1259,27 +1300,51 @@ export function smrtConsumer(
         typeManifest = await aggregateHosted(smrtPackages, projectRoot, {
           explicit: resolvedPackages.explicit,
         });
-        // Wait before reading .smrt/manifest.json: a producer's parallel
-        // buildStart writes its current local manifest after scanning. Reading
-        // first could merge an older local manifest with a newer surface.
-        const agentSurface = producerApi
-          ? await producerApi.resolveKnowledgeAgentSurface()
-          : undefined;
+        // Wait for the producer's operation in flight outside the lock: the
+        // producer may need the lock to publish, so waiting while holding it
+        // could never finish.
+        // The producer is resolved now, by canonical root, not cached from
+        // configResolved: a later hook can still move a producer's root.
+        const findCompanion = () =>
+          findSvelteKitProducer(
+            routeLifecycleConfig,
+            projectRoot,
+            resolvedConfigRef?.plugins ?? [],
+          );
+        await findCompanion()?.awaitOperation();
+        const aggregated = typeManifest;
+        // Under the lock: read the published surface, then read, merge and
+        // write the manifest, then the registration. The surface and the
+        // on-disk manifest therefore come from the same publication.
+        await withSvelteKitLifecycleLock(consumerLock(), async () => {
+          const candidate = findCompanion();
+          const published = candidate?.readPublished();
+          // A producer whose publication is under another root is not ours.
+          const companion =
+            published?.root === undefined ||
+            canonicalSvelteKitPath(published.root) ===
+              canonicalSvelteKitPath(projectRoot)
+              ? candidate
+              : undefined;
+          const agentSurface = companion?.readPublished().surface;
 
-        // Save aggregated manifest for CLI discovery
-        await saveAggregatedManifest(
-          typeManifest,
-          projectRoot,
-          producerApi?.resolveKnowledgeConfig,
-          agentSurface,
-        );
+          // Save aggregated manifest for CLI discovery
+          await saveAggregatedManifest(
+            aggregated,
+            projectRoot,
+            companion
+              ? (manifest) => companion.api.resolveKnowledgeConfig(manifest)
+              : undefined,
+            agentSurface,
+          );
 
-        // Generate registration file for CLI class loading
-        await generateRegistrationFile(
-          typeManifest,
-          projectRoot,
-          options.lazyActivation,
-        );
+          // Generate registration file for CLI class loading
+          await generateRegistrationFile(
+            aggregated,
+            projectRoot,
+            options.lazyActivation,
+          );
+        });
 
         // Generate types if requested
         if (generateTypes && !typesGenerated) {
@@ -2065,14 +2130,25 @@ async function generateRegistrationFile(
   manifest: ConsumerManifest,
   projectRoot: string,
   lazyActivation = false,
+  /** Inside a route generation: records the first replaced output. */
+  mark: () => void = () => {},
+  /**
+   * Inside a route generation that includes a producer: that run's manifest,
+   * which supersedes the on-disk one until it is published at settlement.
+   */
+  producerManifest?: ConsumerManifest,
 ): Promise<void> {
   const smrtDir = path.join(projectRoot, '.smrt');
   const registerPath = path.join(smrtDir, 'register.js');
   if (lazyActivation) {
     const manifestPath = path.join(smrtDir, 'manifest.json');
-    const existing = fs.existsSync(manifestPath)
-      ? (JSON.parse(fs.readFileSync(manifestPath, 'utf8')) as ConsumerManifest)
-      : undefined;
+    const existing =
+      producerManifest ??
+      (fs.existsSync(manifestPath)
+        ? (JSON.parse(
+            fs.readFileSync(manifestPath, 'utf8'),
+          ) as ConsumerManifest)
+        : undefined);
     const full = {
       ...manifest,
       ...(existing?.packageName ? { packageName: existing.packageName } : {}),
@@ -2085,21 +2161,25 @@ async function generateRegistrationFile(
     fs.mkdirSync(smrtDir, { recursive: true });
     for (const file of Object.keys(generated.files))
       fs.mkdirSync(path.dirname(path.join(smrtDir, file)), { recursive: true });
-    publishArtifactFiles([
-      ...Object.entries(generated.files).map(([file, content]) => ({
-        path: path.join(smrtDir, file),
-        content,
-      })),
-      {
-        path: registerPath,
-        // This app build's schema first, as in the eager register (#4929).
-        content: `import './${BUILD_SCHEMA_MODULE}';\n${generated.source}`,
-      },
-      {
-        path: path.join(smrtDir, 'activation-manifest.json'),
-        content: JSON.stringify(generated.manifest, null, 2),
-      },
-    ]);
+    publishArtifactFiles(
+      [
+        ...Object.entries(generated.files).map(([file, content]) => ({
+          path: path.join(smrtDir, file),
+          content,
+        })),
+        {
+          path: registerPath,
+          // This app build's schema first, as in the eager register (#4929).
+          content: `import './${BUILD_SCHEMA_MODULE}';\n${generated.source}`,
+        },
+        {
+          path: path.join(smrtDir, 'activation-manifest.json'),
+          content: JSON.stringify(generated.manifest, null, 2),
+        },
+      ],
+      undefined,
+      mark,
+    );
     return;
   }
 
@@ -2622,8 +2702,15 @@ export function registerAll() {
     fs.mkdirSync(smrtDir, { recursive: true });
   }
 
-  // Write registration file
-  fs.writeFileSync(registerPath, content, 'utf-8');
+  // Write registration file in place; a successful open is a change.
+  const descriptor = fs.openSync(registerPath, 'w');
+  try {
+    mark();
+    // Writes the whole content or throws; a short write never passes as done.
+    fs.writeFileSync(descriptor, content, 'utf8');
+  } finally {
+    fs.closeSync(descriptor);
+  }
 
   console.log(
     `[smrt:consumer] Generated .smrt/register.js with ${importedEntryCount} external entries (${registeredObjectCount} registered ${registeredObjectLabel})`,

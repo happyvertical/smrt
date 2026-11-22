@@ -453,9 +453,9 @@ describe('the route-file plan', () => {
           path === file && !existsSync(file)
             ? failing('ENOENT')
             : nodeRouteFileSystem.lstatSync(path),
-        writeFileSync: (path, content, flag) => {
+        openSync: (path, flag) => {
           if (path === file && flag === 'wx') writeFileSync(file, APPLICATION);
-          nodeRouteFileSystem.writeFileSync(path, content, flag);
+          return nodeRouteFileSystem.openSync(path, flag);
         },
       }),
     });
@@ -495,11 +495,11 @@ describe('the route-file plan', () => {
     const file = join(routeDir, '+server.ts');
     const plan = new RouteFilePlan({
       fs: seamWith({
-        writeFileSync: (path, content, flag) => {
+        openSync: (path, flag) => {
           if (path === file && flag === 'wx') {
             writeFileSync(file, `${HEADER}\n// stale\n`);
           }
-          nodeRouteFileSystem.writeFileSync(path, content, flag);
+          return nodeRouteFileSystem.openSync(path, flag);
         },
       }),
     });
@@ -513,6 +513,35 @@ describe('the route-file plan', () => {
 
     expect(plan.commit()).toEqual([file]);
     expect(readFileSync(file, 'utf-8')).toBe(GENERATED);
+  });
+
+  it('a create that fails while writing counts as a change', () => {
+    const routeDir = join(routes(), 'gliders');
+    const file = join(routeDir, '+server.ts');
+    const plan = new RouteFilePlan({
+      fs: seamWith({
+        writeSync: () => {
+          throw Object.assign(new Error('ENOSPC: no space left on device'), {
+            code: 'ENOSPC',
+          });
+        },
+      }),
+    });
+    plan.emit({
+      root: routes(),
+      routeDir,
+      content: GENERATED,
+      label: 'gliders',
+    });
+    plan.preflight();
+    const onMutate = vi.fn();
+
+    expect(() => plan.commit(onMutate)).toThrow(
+      `${file} failed after it was opened`,
+    );
+    // The exclusive create succeeded before the write failed: a change.
+    expect(onMutate).toHaveBeenCalledTimes(1);
+    expect(existsSync(file)).toBe(true);
   });
 
   it('a yield route leaves an application handler in place and writes nothing', () => {
@@ -817,10 +846,12 @@ function fsMutationViolations(
  * that keep their own writers (#5469). Route files go through the plan.
  */
 const GENERATOR_AUXILIARY_MUTATIONS: AllowedMutations = {
-  buildSchemaImportFor: ['mkdirSync', 'writeFileSync'],
-  generateRegistrationFile: ['mkdirSync', 'writeFileSync'],
-  generateSmrtConfigFile: ['mkdirSync', 'writeFileSync'],
-  updateGitignore: ['writeFileSync'],
+  // Auxiliary in-place writes go through the route-fs seam's open/write in
+  // `writeGeneratorOutput` (no direct `node:fs` mutation), so the generator
+  // can record a change once an open succeeds (#5462).
+  materializeBuildSchemaModule: ['mkdirSync'],
+  generateRegistrationFile: ['mkdirSync'],
+  generateSmrtConfigFile: ['mkdirSync'],
 };
 
 /** Modules that render route files: they import the header or the plan. */

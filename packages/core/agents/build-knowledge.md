@@ -394,15 +394,111 @@ relative). It ignores the plugin's own outputs (`+server.*` under `routesDir`,
 (`knowledgeRoutePath` as the last generation resolved it, outside `routesDir`;
 the watcher never evaluates the project config itself), any file whose source
 the generated-route predicate accepts (`isGeneratedRouteSource`)), or each
-regeneration would trigger the next. After a rescan, change,
-add and unlink alike invalidate every loaded virtual module by its resolved
-`\0smrt:*` id in each Vite environment's module graph and send that
+regeneration would trigger the next. A publication (below) invalidates every
+loaded virtual module, and this instance's knowledge module, by its resolved
+`\0smrt:*` id in each Vite environment's module graph and sends that
 environment's hot channel a full reload; `server.reloadModule` cannot be used
 because it skips modules without a file. `watcher-dev-server.test.ts` drives a
 real Vite dev server; a handler test with a relative path cannot see either
 defect. Rescans are serialized: one runs and at most one waits; events that
 arrive meanwhile join the waiting one, which scans the latest sources once the
 running one finishes, so an older scan never publishes over a newer one.
+
+Staged publication (#5462). A scan is side-effect free: `prepareGeneration`
+returns a frozen prepared result (`seq` from a per-instance counter taken
+when preparation starts, the root, the manifest and the agent surface) and
+assigns no plugin state; a scan error assigns nothing. `publishLocked` is the
+only writer of the published manifest, `agentSurface`, the committed root,
+the watcher's knowledge-route guard, `virtual-modules.d.ts` and the
+producer's `.smrt` writes, and the only post-generation module invalidation;
+an older `seq` is a no-op. With route generation, publication happens only
+when the route submission settles `accepted`: the config hook (start path;
+a later config-hook abort leaves the published artifacts beside the committed
+routes, and a different `configResolved` root logs a warning and keeps the
+committed root), the `configResolved` fallback, a dev rescan, and a watch
+rebuild `buildStart` (`command === 'build'` with `build.watch`: it now
+regenerates routes before publishing). In serve mode, and in a build without
+watch, a later `buildStart` (the SSR environment's lazy one) reuses the
+current accepted publication: no rescan, no generation. Paths
+without route generation (`load()` before any publication, svelteKit-disabled
+`configResolved`/`buildStart`, library builds) publish directly under the
+lock. `load()` and `resolveKnowledgeAgentSurface()` read published state;
+before the first publication they await the operation in flight with its
+rejection discarded. The exported `SmrtPluginApi` is unchanged
+(`plugin-api-compat.typecheck.ts` compiles an external implementer).
+
+Mark point: a route generation is `accepted` when it succeeds or after the
+first successful mutation of any generator output (route unlinks once they
+succeed; in-place writes of routes, the registration module, the config file,
+`.gitignore` and a materialised build-schema module once `open` succeeds,
+through the route-fs seam's `openSync`/`writeSync`; a rename publication such
+as the lazy registration and `.smrt/activation-manifest.json` once its first
+rename succeeds). A throw before that mark is `rejected`: nothing is
+published, nothing is invalidated, and the coordinator's `latest` reverts to
+`accepted`. A throw after it publishes, consistent with disk, and rethrows.
+No decision reads an error field.
+
+One lifecycle lock (`sveltekit-route-coordinator.ts`): a non-reentrant FIFO
+lock keyed by the Vite lifecycle (`env ?? userConfig`), recorded by both
+plugins' config hooks (the producer records it even with svelteKit
+disabled), covers admission, pre-checks, generation (including
+`beforeCleanup` and every consumer `.smrt/register.js` write), settlement,
+publication and the consumer's `buildStart` transaction. Admission rejects
+a producer submission as `superseded`, before any hook, when its `seq` is not
+above `latest`/`accepted` or is below the producer's published `seq`;
+consumer submissions and revocations carry no `seq` and are exempt. Each
+holder releases the handle it acquired, in `finally` on every path;
+`afterGenerate`/`afterRevocation` run after release and only after a fully
+successful generation. Protections, collision checks,
+`producerKnowledgeRoutePaths` and the completeness assertion read `latest`;
+only cross-target registration reads `accepted`. Nothing under the lock calls
+an acquirer or awaits a producer operation: the consumer awaits its producer
+outside the lock, then reads the published surface synchronously under it
+with its manifest merge and registration. The consumer selects its producer
+by canonical committed root through a module-private registry (with none,
+it uses no surface); it no longer takes the first `smrt-auto-service`. It
+resolves that producer at `buildStart` and, under the lock, uses it only if
+its published root is the consumer's root. Companions used without a config
+hook share one fallback lock keyed by the resolved config they both receive.
+A producer submission that waited for its peers is superseded, never
+generated, when the producer published a newer result meanwhile. A
+revocation's callback is queued only once its run holds the lock. The
+consumer's lazy registration takes the run's producer manifest only when the
+producer's root is its own. The lock is in-process: independent Vite
+lifecycles and other processes are #5460. The build-schema module is
+deferred to settlement only when a writer for that exact root settles in the
+run (not in snapshot mode); otherwise it is materialised as before, and after
+a deferred settlement it is materialised if still absent. A contribution
+rooted elsewhere (a consumer at the repository root beside a producer at
+`app/`) gets its own module materialised in the generation, as a change,
+unless a settling writer publishes for its root. If that fallback
+fails, a fully successful run fails with it (no reconciliation beside an
+unresolved import); after a partial commit the generation error stays the
+one reported. The public `generateSvelteKitRoutes` hook keeps its
+zero-argument `beforeCleanup` (`generator-hooks-compat.typecheck.ts`).
+
+Knowledge module: the plugin-managed knowledge route imports
+`smrt:knowledge-artifact/<key>` (a hash of the canonical committed root)
+behind `// @ts-ignore`; only the `smrtPlugin` instance with that key resolves
+it, and `load` reads the committed root's `.smrt/smrt-knowledge.json`, else
+`dist/smrt-knowledge.json` (only the selected file is parsed; malformed or
+absent serves `null`, a 404), watching both. It exports `null` outside the
+server environment, so client bundles never contain the artifact. The managed
+route therefore needs `smrtPlugin` in the Vite config that bundles it;
+`smrt generate` and direct `generateSvelteKitRoutes` callers still embed the
+artifact.
+
+Refused-pending: a dev rescan whose submission settled `rejected` logs and
+admits route-tree events (`+server.ts`/`.js` under `routesDir`, the files
+the error named, the knowledge route); one that settled `accepted` but threw
+admits only the files its error named. A retry takes the pending refusal when
+it starts, so its own route writes never re-trigger it. An error thrown by
+`afterGenerate`/`afterRevocation` after the run settled and released the
+lock never arms it. Inside a run, the consumer's lazy registration reads the
+run's producer manifest (passed to `beforeCleanup`), not the previous
+`.smrt/manifest.json`, which is replaced only at settlement. Residuals: a fix made
+between the refused run's preflight and its arming waits for the next edit;
+a changed-and-thrown error without `files` gets no retry.
 
 Route generation validates every object's routes
 (`assertSvelteKitObjectRoutesValid`, `vite-plugin/generated-route-preflight.ts`:
@@ -475,9 +571,8 @@ committed before the former root is reconciled, so a nested refusal fails the
 build after the new root changed. Concurrent generation, editor races and
 hard links are #5460. An interrupted write is replaced next run only if its
 complete header survived; an empty or partial-header file refuses until the
-operator removes or restores it. Dev publication order is unchanged: a refused
-rescan may already have published the scan's declarations, manifest and
-knowledge.
+operator removes or restores it. A refusal before any generator-output
+mutation publishes nothing (staged publication, above).
 
 The generated API client (`generateClientModule`, behind both
 `@happyvertical/smrt-virt-client` and `@smrt/client`) sends every

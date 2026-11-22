@@ -26,6 +26,9 @@ vi.mock('node:fs', () => ({
   }),
   mkdirSync: vi.fn(),
   writeFileSync: vi.fn(),
+  // Writers open, then write to the descriptor (here: the path).
+  openSync: vi.fn((path: string) => path),
+  closeSync: vi.fn(),
   readFileSync: vi.fn(),
   readdirSync: vi.fn(),
   unlinkSync: vi.fn(),
