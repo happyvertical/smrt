@@ -473,46 +473,90 @@ export function assignUpdateInput(
 ): void {
   const keys = resolveUpdateInput(target, data, rules);
   const writable = target as Record<string, unknown>;
-  // A settable accessor writes through to other fields: a protected one must
-  // hold the value it had, whatever key the body used to reach it.
-  const guarded = keys.some(
+  const accessors = keys.filter(
     (key) => classifyUpdateKey(target, key) === 'accessor',
-  )
-    ? protectedFieldsOf(target, rules)
-    : [];
-  const declared = guarded.length
-    ? Object.keys(target).filter(
-        (key) =>
-          !key.startsWith('_') &&
-          !isServerManagedWriteKey(key) &&
-          rules.declaresField(key),
-      )
-    : [];
+  );
+  // A settable accessor writes through to other fields: a protected field
+  // must hold the value it had, whatever key the body used to reach it.
+  const guarded = accessors.length ? protectedFieldsOf(target, rules) : [];
+  if (!guarded.length) {
+    for (const key of keys) writable[key] = data[key];
+    return;
+  }
+  const unreadable = guarded.filter((key) => rules.isReadable?.(key) === false);
+  const declared = Object.keys(target).filter(
+    (key) =>
+      !key.startsWith('_') &&
+      !isServerManagedWriteKey(key) &&
+      rules.declaresField(key),
+  );
   const before = new Map(
     declared.map((key) => [key, storedValueOf(target, key)] as const),
   );
-  for (const key of keys) writable[key] = data[key];
-  for (const key of guarded) {
-    const was = before.get(key);
-    const now = storedValueOf(target, key);
-    if (now === was) continue;
-    const same =
-      was !== STORED_UNMATCHABLE &&
-      (rules.sameValue
-        ? rules.sameValue(key, was, now)
-        : sameStoredValue(undefined, was, now));
-    if (same) continue;
-    // A refused body changes nothing: put every declared field back.
-    for (const [name, value] of before) {
-      if (value === STORED_UNMATCHABLE) continue;
-      try {
-        writable[name] = value;
-      } catch {
-        // A field that refuses assignment was not changed through one.
+
+  // A field the caller cannot read must not answer by its value: the outcome
+  // may not tell an equal assignment from a different one. Any assignment to
+  // it while the body is applied is caught by a trap on the instance, and
+  // refuses the body. A field that cannot be trapped refuses the accessor.
+  const originals = new Map<string, PropertyDescriptor>();
+  let assigned = false;
+  for (const key of unreadable) {
+    const descriptor = Object.getOwnPropertyDescriptor(target, key);
+    if (!descriptor || !('value' in descriptor) || !descriptor.configurable) {
+      throw new FieldNotWritableError(accessors[0]);
+    }
+    originals.set(key, descriptor);
+  }
+  try {
+    for (const [key, descriptor] of originals) {
+      Object.defineProperty(target, key, {
+        configurable: true,
+        enumerable: descriptor.enumerable,
+        get: () => descriptor.value,
+        set: () => {
+          assigned = true;
+        },
+      });
+    }
+    for (const key of keys) writable[key] = data[key];
+  } finally {
+    for (const [key, descriptor] of originals) {
+      Object.defineProperty(target, key, descriptor);
+    }
+  }
+
+  let refused: string | undefined;
+  if (assigned) {
+    // The same answer for every value, and no hidden field named.
+    refused = accessors[0];
+  } else {
+    for (const key of guarded) {
+      if (originals.has(key)) continue;
+      const was = before.get(key);
+      const now = storedValueOf(target, key);
+      if (now === was) continue;
+      const same =
+        was !== STORED_UNMATCHABLE &&
+        (rules.sameValue
+          ? rules.sameValue(key, was, now)
+          : sameStoredValue(undefined, was, now));
+      if (!same) {
+        refused = key;
+        break;
       }
     }
-    throw new FieldNotWritableError(key);
   }
+  if (refused === undefined) return;
+  // A refused body changes nothing: put every declared field back.
+  for (const [name, value] of before) {
+    if (value === STORED_UNMATCHABLE) continue;
+    try {
+      writable[name] = value;
+    } catch {
+      // A field that refuses assignment was not changed through one.
+    }
+  }
+  throw new FieldNotWritableError(refused);
 }
 
 /** The declared fields of `target` the caller may not write. */

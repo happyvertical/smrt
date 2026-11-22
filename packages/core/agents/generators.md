@@ -55,6 +55,14 @@ data, stored?)` (`src/request-input.ts`, over `resolveWriteBody` in
   `tagsJson`) changes one, `assignUpdateInput` puts every declared field back
   and refuses with the same 400 naming the backing field. A setter whose
   effect leaves protected fields alone, or sets the value they hold, applies.
+  A protected field the caller cannot read is not compared at all (the
+  comparison would be the oracle again): `assignUpdateInput` traps any
+  assignment to it while the accessor runs, even an equal value, and refuses
+  with the 400 naming the accessor key, never the hidden field, so the answer
+  is the same for every value. A write-only setter over such a field (a
+  `password` setter hashing into a sensitive column) is therefore refused too;
+  set it server-side. Without `read` options for the request none is held, so
+  every `readPermission` field counts as hidden here.
   Test: `__tests__/protected-field-alias.test.ts`.
 - The refusal is `FieldNotWritableError`: code
   `VALIDATION_FIELD_NOT_WRITABLE`, a typed 400 whose `details.field` names the

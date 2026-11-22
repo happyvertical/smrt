@@ -77,6 +77,14 @@ export class ProtectedWriteSecret extends SmrtObject {
     readPermission: 'protectedwritesecret.read_gated',
   })
   gated: string = '';
+
+  /** Write-only aliases over the two hidden columns. */
+  set token(value: string) {
+    this.secretHash = value;
+  }
+  set gatedToken(value: string) {
+    this.gated = value;
+  }
 }
 export class ProtectedWriteSecretCollection extends SmrtCollection<ProtectedWriteSecret> {
   static readonly _itemClass = ProtectedWriteSecret;
@@ -674,6 +682,33 @@ export function describeProtectedFieldWrites(
           expect(correct.text).not.toContain(
             key === 'secretHash' ? GATED : CORRECT,
           );
+        }
+        expect(await snapshot(id)).toEqual(before);
+      });
+
+      it('answers an accessor over a hidden field the same for any value', async () => {
+        const id = await seedSecret(`${name}: accessor oracle`);
+        const before = await snapshot(id);
+        for (const [alias, hidden, stored] of [
+          ['token', 'secretHash', CORRECT],
+          ['gatedToken', 'gated', GATED],
+        ] as const) {
+          const correct = await transport(name).update('secret', id, {
+            [alias]: stored,
+          });
+          const wrong = await transport(name).update('secret', id, {
+            [alias]: GUESS,
+          });
+          expect(correct.applied, correct.text).toBe(false);
+          expect(wrong.applied, wrong.text).toBe(false);
+          expect(correct.code).toBe('VALIDATION_FIELD_NOT_WRITABLE');
+          // The same answer, naming the alias and never the hidden field.
+          expect(correct.field).toBe(alias);
+          expect({ ...correct, text: '' }).toEqual({ ...wrong, text: '' });
+          expect(correct.text.replace(stored, '')).toBe(
+            wrong.text.replace(GUESS, ''),
+          );
+          expect(correct.text).not.toMatch(new RegExp(`\\b${hidden}\\b`));
         }
         expect(await snapshot(id)).toEqual(before);
       });
