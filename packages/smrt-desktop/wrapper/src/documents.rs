@@ -1,10 +1,12 @@
 //! Private PDF trust boundary. No URL, cookie, response body or filesystem path
 //! is ever included in an error. The sidecar remains the authorization authority.
 use serde::Deserialize;
+#[cfg(any(all(target_os = "macos", target_arch = "aarch64"), all(test, unix)))]
+use std::io;
 use std::io::Read;
-#[cfg(unix)]
-use std::io::{self, Write};
-#[cfg(unix)]
+#[cfg(any(all(target_os = "macos", target_arch = "aarch64"), test))]
+use std::io::Write;
+#[cfg(any(all(target_os = "macos", target_arch = "aarch64"), all(test, unix)))]
 use std::path::Path;
 use std::time::Duration;
 use tauri::Url;
@@ -221,6 +223,7 @@ fn retrieve_with_timeout(
     Ok(bytes)
 }
 
+#[cfg(any(all(target_os = "macos", target_arch = "aarch64"), test))]
 pub fn safe_filename(value: &str) -> bool {
     value.len() <= 128
         && value.ends_with(".pdf")
@@ -234,12 +237,12 @@ pub fn safe_filename(value: &str) -> bool {
 /// pinned by fd, the sibling temporary is exclusive/no-follow and final exclusive publication
 /// fails if *anything* already exists at the selected destination. No check/use
 /// race can replace an existing file or follow a final symlink.
-#[cfg(unix)]
+#[cfg(any(all(target_os = "macos", target_arch = "aarch64"), all(test, unix)))]
 pub fn save_new(path: &Path, bytes: &[u8]) -> io::Result<()> {
     save_new_inner(path, bytes, || {})
 }
 
-#[cfg(unix)]
+#[cfg(any(all(target_os = "macos", target_arch = "aarch64"), all(test, unix)))]
 fn save_new_inner(path: &Path, bytes: &[u8], before_publish: impl FnOnce()) -> io::Result<()> {
     use std::ffi::CString;
     use std::fs::{File, OpenOptions};
