@@ -14,7 +14,6 @@
 process.env.BODY_SIZE_LIMIT ??= '__IMPORT_MAX_BYTES__';
 
 const signals = ['SIGTERM', 'SIGINT'];
-const before = new Map(signals.map((s) => [s, new Set(process.listeners(s))]));
 
 const predrain = process.env.SMRT_APP_SHELL_PREDRAIN_MS ?? '';
 const predrainMs = predrain === '' ? 0 : Number(predrain);
@@ -27,6 +26,16 @@ if (!Number.isInteger(predrainMs) || predrainMs < 0) {
 // The handler first (one module instance, shared with server-start.js), then
 // the listener.
 const { drain } = await import('./embed.js');
+
+// Only what adapter-node itself installs is taken over below: snapshot after
+// the shell initialised (its own signal handlers stay), before the listener.
+const before = new Map(signals.map((s) => [s, new Set(process.listeners(s))]));
+// adapter-node announces `sveltekit:shutdown` once its listener closed and
+// every accepted request ended, whoever asked it to (a signal, or its own idle
+// timeout under socket activation): listen from the start, not from the step.
+const listenerStopped = new Promise((resolve) =>
+  process.once('sveltekit:shutdown', () => resolve()),
+);
 await import('./server-start.js');
 
 // adapter-node's own SIGTERM/SIGINT handler closes the listener the moment the
@@ -44,13 +53,10 @@ if (adapterStops.size === 0) {
     'smrt-app-shell: adapter-node installed no signal handler to take over',
   );
 }
-const stopListener = (reason) =>
-  new Promise((resolve) => {
-    // adapter-node announces this once the listener closed and every accepted
-    // request ended.
-    process.once('sveltekit:shutdown', () => resolve());
-    for (const stop of adapterStops) stop(reason);
-  });
+const stopListener = (reason) => {
+  for (const stop of adapterStops) stop(reason);
+  return listenerStopped;
+};
 
 let running;
 function shutdown(reason) {

@@ -229,5 +229,5 @@ server.closeAllConnections();
   });
   // The host's listener is still open and still answers after the drain.
   expect(r.listening).toBe(true);
-  expect(typeof r.after).toBe('number');
+  expect(r.after).toBeGreaterThanOrEqual(200);
 });

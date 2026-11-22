@@ -63,8 +63,8 @@ process exits only after all of them returned:
 Deadline: `SMRT_APP_SHELL_SHUTDOWN_MS` (whole milliseconds, default 30000),
 or `installShutdown({ deadlineMs })`. The listener gets at most half of it; set
 adapter-node's `SHUTDOWN_TIMEOUT` (seconds) at or below the deadline, and the
-orchestrator's termination grace period above it (Kubernetes
-`terminationGracePeriodSeconds`).
+orchestrator's termination grace period above it, plus
+`SMRT_APP_SHELL_PREDRAIN_MS` and 1 s (Kubernetes `terminationGracePeriodSeconds`).
 
 ## Embedding: the host owns the listener, the signals and the exit
 
@@ -110,6 +110,13 @@ process.once('SIGTERM', stop);
   `failed`, `timeout` or `busy`. `stopAccepting` is `skipped` unless you pass
   `drain({ stopAccepting })` for a listener step of your own, which then runs
   second, as in `./start`.
+- A step that outlasts the deadline is reported `timeout` and the promise
+  resolves, but the sequence keeps going in the background (the later steps
+  still run, so the apps still close).
+- `drain` installs no signal handler. Importing `./embed` initialises the
+  runtime, which, when `ORIGIN` is a loopback origin, installs its own
+  SIGTERM/SIGINT handlers to remove the origin file; keep your own handler
+  registered, or the process is re-killed when none exists.
 - After the drain the shell refuses new app work; requests that still reach
   `handler` get errors. Close your listener next.
 
