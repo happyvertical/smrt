@@ -240,6 +240,7 @@ describe('remote protected resource', () => {
         id: 'alice',
         tenantId: 'tenant-a',
         scopes: ['read'],
+        unmappedToolScopes: ['read'],
         roles: undefined,
         kind: undefined,
         tenantBinding: 'direct-or-inherited',

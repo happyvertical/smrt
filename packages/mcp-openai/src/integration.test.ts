@@ -690,7 +690,8 @@ describe('verified M2 gateway and M6 native discovery factory', () => {
       for (const claims of [
         { exp: 1 },
         { aud: `${origin}/other` },
-        { scope: 'view' },
+        { scope: '' },
+        { scope: 'unrelated' },
       ]) {
         await expect(connect(token(claims))).rejects.toThrow();
         expect(projected).toEqual([]);
@@ -718,6 +719,21 @@ describe('verified M2 gateway and M6 native discovery factory', () => {
           arguments: { set: { grid: false }, tenantId: 'other' },
         }),
       );
+      expect(f.values()).toEqual({ units: 'in', grid: true });
+      expect(f.writes()).toBe(1);
+      // A token narrowed to one advertised scope still connects (#5110), but
+      // every tool here is unmapped and needs both scopes: nothing is listed
+      // and every call or resource read is refused like an unknown one.
+      const narrowed = await connect(token({ scope: 'view' }));
+      expect((await narrowed.listTools()).tools).toEqual([]);
+      for (const name of ['view', 'settings_read', 'settings_update']) {
+        await expect(
+          narrowed.callTool({ name, arguments: {} }),
+        ).rejects.toThrow();
+      }
+      await expect(
+        narrowed.readResource({ uri: 'ui://synthetic/v1/view' }),
+      ).rejects.toThrow();
       expect(f.values()).toEqual({ units: 'in', grid: true });
       expect(f.writes()).toBe(1);
       const other = await connect(token({ sub: 'synthetic-other' }));
