@@ -137,6 +137,7 @@ import {
   applyPostgresRuntimeTimeouts,
   resolveRuntimePoolDbid,
 } from './postgres-timeouts.js';
+import { UNBOUNDED_LIMIT_SQL } from './query-bounds.js';
 import { detectEngine } from './schema/ddl/index.js';
 import { SignalBus } from './signals/bus.js';
 import {
@@ -2813,6 +2814,9 @@ export class SmrtClass {
     }
 
     if (options.offset !== undefined) {
+      if (options.limit === undefined) {
+        sql += UNBOUNDED_LIMIT_SQL;
+      }
       sql += ` OFFSET $${paramIndex++}`;
       params.push(options.offset);
     }
