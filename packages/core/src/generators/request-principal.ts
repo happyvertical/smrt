@@ -22,6 +22,7 @@ import { resolvePermissionCollection } from '../permission-collection.js';
 import { readonlySetOf } from '../readonly-collections';
 import { ObjectRegistry } from '../registry';
 import type { SettledRequestPrincipal } from '../request-actor';
+import { livePrincipalRecord } from '../request-principal-scope';
 import { tenantOwnershipFields } from '../tenant-read-scope';
 import { resolveWhereKey, whereColumnName } from '../where-keys';
 
@@ -401,6 +402,11 @@ export function requirePermission(
   action: string,
 ): void {
   if (!principal.enforced) return;
+  // The check runs for the live request it belongs to, never for work that
+  // escaped it or outlived it.
+  if (livePrincipalRecord()?.snapshot !== principal.principal) {
+    throw permissionDenied();
+  }
   const api = ObjectRegistry.getConfig(model)?.api;
   if (
     api &&

@@ -57,6 +57,13 @@ import { ObjectRegistry } from './registry';
 import { getRegistryGeneration } from './registry/generation';
 import { getResolvedFieldsSync } from './registry/inheritance-resolver';
 import {
+  currentPrincipalFrame,
+  enterNonWidening,
+  enterNonWideningForRest,
+  requestEnded,
+  runPrincipalOperationFrame,
+} from './request-principal-scope';
+import {
   enterRequestTenantContext,
   getRequestTenantContext,
   type RequestTenantContext,
@@ -1027,8 +1034,15 @@ function scopeContext(): AsyncContext<RequestTenancy> {
   return globalThis.__smrtRequestTenancyScope;
 }
 
-/** The request tenancy bound to the current execution scope, if any. */
+/**
+ * The request tenancy bound to the current execution scope, if any. Inside
+ * a request acting for a host-resolved principal (#5195) it is the tenancy
+ * of the current operation frame of that request's record, whatever the
+ * released slot holds.
+ */
 export function getResolvedTenancy(): RequestTenancy | undefined {
+  const frame = currentPrincipalFrame();
+  if (frame) return frame.tenancy;
   return scopeContext().getStore();
 }
 
@@ -1096,6 +1110,17 @@ export async function withResolvedTenancy<T>(
   options: { refreshPrincipal?: boolean; principal?: boolean } = {},
 ): Promise<T> {
   assertBindable(t);
+  if (currentPrincipalFrame()) {
+    // Inside a principal request: REST's own resolution opens an operation
+    // frame; anything else may only narrow the request (#5195).
+    if (options.principal) {
+      return runPrincipalOperationFrame(t, () =>
+        runAsPrincipalActor(t.actor, fn),
+      );
+    }
+    const narrowed = enterNonWidening(t, fn);
+    if (narrowed) return narrowed.result;
+  }
   const bound = () => scopeContext().run(t, fn);
   if (options.principal) return runAsPrincipalActor(t.actor, bound);
   const source = t.enforced ? getTenantPolicySource() : undefined;
@@ -1202,6 +1227,8 @@ export function enterResolvedTenancy(
   options: { refreshPrincipal?: boolean } = {},
 ): void {
   assertBindable(t);
+  // Inside a principal request the decision may only narrow it (#5195).
+  if (enterNonWideningForRest(t)) return;
   const context = actorTenantContext(
     t,
     getRequestTenantContext(),
@@ -1256,8 +1283,12 @@ function actingTenancy(t: RequestTenancy): RequestTenancy {
   return actor ? Object.freeze({ ...t, actor: Object.freeze(actor) }) : t;
 }
 
-/** The bound tenancy as the current collection call acts under it. */
+/**
+ * The bound tenancy as the current collection call acts under it. Work that
+ * kept the context of a principal request that has ended is refused.
+ */
 function actingAtCall(): RequestTenancy | undefined {
+  if (currentPrincipalFrame()?.record.state === 'ended') throw requestEnded();
   const t = getResolvedTenancy();
   return t ? actingTenancy(t) : undefined;
 }

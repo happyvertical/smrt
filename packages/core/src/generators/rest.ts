@@ -45,6 +45,11 @@ import {
   modelOfInstance,
 } from '../request-input';
 import {
+  assertPrincipalScopeUsable,
+  PrincipalRecord,
+  runInPrincipalRecord,
+} from '../request-principal-scope';
+import {
   cachePolicy,
   customActionScope,
   etagDiscriminator,
@@ -606,6 +611,8 @@ export class APIGenerator {
       ...config,
     };
     this.context = context;
+    // A server that resolves principals needs a usable principal scope.
+    if (this.config.resolvePrincipal) assertPrincipalScopeUsable();
     this.modelScope = (config as ScopedAPIConfig)[MODEL_SCOPE];
     // A server given its models (`createRestServer(objects)`) must be able to
     // serve each of them: two of them on one collection segment is a
@@ -818,7 +825,35 @@ export class APIGenerator {
     // request reaches; nothing below resolves it again (#5195).
     let principal: ResolvedRequestPrincipal;
     try {
+      if (this.config.resolvePrincipal) assertPrincipalScopeUsable();
       principal = await this.resolveRequestPrincipal(req);
+    } catch (error) {
+      return this.addCorsHeaders(
+        this.createJsonResponse(reportUnexpectedHttpError(error, req), 500),
+        req,
+      );
+    }
+    if (!principal.enforced)
+      return this.handleResolvedRequest(req, url, principal);
+    // A host-resolved principal: the rest of the request runs inside its
+    // record, which ends with the response.
+    const record = new PrincipalRecord(principal.principal);
+    try {
+      return await runInPrincipalRecord(record, () =>
+        this.handleResolvedRequest(req, url, principal),
+      );
+    } finally {
+      record.end();
+    }
+  }
+
+  /** The rest of `handleRequest`, once the principal is resolved. */
+  private async handleResolvedRequest(
+    req: Request,
+    url: URL,
+    principal: ResolvedRequestPrincipal,
+  ): Promise<Response> {
+    try {
       this.requestPrincipals.set(req, principal);
       const hooked = this.config.onRequest
         ? await this.config.onRequest(
