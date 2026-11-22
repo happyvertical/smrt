@@ -394,7 +394,34 @@ export async function reconcileLateAiRunUsage(
   return true;
 }
 
+/**
+ * Whether a usage event names a tracked call core minted, in the event's
+ * tenant on this database: this process's route of the call, or the call's
+ * persisted `call` event in a run of that tenant (another process's call).
+ */
+async function isTrackedAiRunCall(
+  event: SmrtAiUsageEvent,
+  db: DatabaseInterface,
+): Promise<boolean> {
+  const callId = event.tags?.[AI_OWN_CALL_ID_TAG];
+  if (typeof callId !== 'string' || callId === '') return false;
+  const route = liveRoute(callId);
+  if (route) return route.db === db;
+  const tenant = event.tenantId ?? null;
+  const rows = getRows(
+    await aiRunQuery(
+      db,
+      `SELECT r.tenant_id FROM _smrt_ai_run_events e
+         JOIN _smrt_ai_runs r ON r.id = e.run_id
+        WHERE e.call_id = $1 AND e.type = 'call'`,
+      callId,
+    ),
+  );
+  return rows.some((row) => (text(row.tenant_id) ?? null) === tenant);
+}
+
 setAiRunLateUsageHooks({
+  isTrackedCall: isTrackedAiRunCall,
   route: async (event, db) =>
     (await liveRoute(event.tags?.[AI_OWN_CALL_ID_TAG])?.take(event, db)) ??
     false,

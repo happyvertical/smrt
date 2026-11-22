@@ -1006,7 +1006,9 @@ returned, and no handler ever saw the call. That is the same documented limit
 as a lost provider response.
 
 A call outside any run has no reservation; its usage row is written by the
-persistence handler, deduplicated on `id = call_id`.
+persistence handler under its own id. Only a tracked call's events keep the
+`aiCallId` tag as their row id; a call that carries the tag otherwise
+(copied from another call's options) still gets a row of its own.
 
 ### 6.5 Transactions and lock order
 

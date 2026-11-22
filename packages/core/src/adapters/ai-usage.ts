@@ -2,6 +2,7 @@
  * In-memory AI usage tracking adapters.
  */
 
+import { createLogger } from '@happyvertical/logger';
 import type {
   AiUsageHandler,
   AiUsageSnapshot,
@@ -9,6 +10,8 @@ import type {
   SmrtAiUsageEvent,
 } from '@happyvertical/smrt-types';
 import type { DatabaseInterface } from '@happyvertical/sql';
+
+const logger = createLogger({ level: 'info' });
 
 function emptyStats(timestamp: number): AiUsageStats {
   return {
@@ -143,6 +146,11 @@ interface AiRunLateUsageHooks {
   route(event: SmrtAiUsageEvent, db: DatabaseInterface): Promise<boolean>;
   /** Settle a released call whose route is gone; whether it did. */
   reconcile(event: SmrtAiUsageEvent, db: DatabaseInterface): Promise<boolean>;
+  /** Whether the event names a tracked call core minted, in its tenant. */
+  isTrackedCall(
+    event: SmrtAiUsageEvent,
+    db: DatabaseInterface,
+  ): Promise<boolean>;
 }
 
 let lateUsageHooks: AiRunLateUsageHooks | undefined;
@@ -181,6 +189,53 @@ export async function routeAiRunCallUsage(
     if (db) return lateUsageHooks.route(event, db);
   }
   return false;
+}
+
+/** Row ids minted for events whose `aiCallId` tag was not core's. */
+const mintedRowIds = new WeakMap<object, string>();
+let warnedForeignCallId = false;
+
+/**
+ * The row id of an event the persistence handler writes. The `aiCallId` tag
+ * is the primary key of a tracked call's row and only core mints it: it is
+ * kept as the row id for the event a settlement wrote and for any event
+ * naming a tracked call core minted (a call of a run of the event's tenant
+ * on this database, by its route or its persisted `call` event: another
+ * pipeline seeing the same call, such as a recorder the host attached to
+ * its own client, converges on one row). Any other event carrying the tag (a caller's
+ * or binding's `usageTags`, a copied invocation's) gets its own id, without
+ * the tag, so a reused value can never make another call's row be skipped
+ * by `ON CONFLICT (id) DO NOTHING`. The same event object saved again keeps
+ * the id it got the first time (a retried save writes one row).
+ */
+async function rowIdentity(
+  event: SmrtAiUsageEvent,
+  db: DatabaseInterface,
+): Promise<{
+  event: SmrtAiUsageEvent;
+  id?: string;
+}> {
+  const callId = event.tags?.[AI_OWN_CALL_ID_TAG];
+  if (callId === undefined || !event.tags) return { event };
+  if (
+    settledRunEvents.has(event) ||
+    (lateUsageHooks && (await lateUsageHooks.isTrackedCall(event, db)))
+  ) {
+    return { event };
+  }
+  if (!warnedForeignCallId) {
+    warnedForeignCallId = true;
+    logger.warn(
+      `[smrt] The "${AI_OWN_CALL_ID_TAG}" usage tag is core's tracked-call id; a usage event carrying a value core did not mint is recorded under its own id, without the tag`,
+    );
+  }
+  const { [AI_OWN_CALL_ID_TAG]: _foreign, ...tags } = event.tags;
+  let id = mintedRowIds.get(event);
+  if (!id) {
+    id = crypto.randomUUID();
+    mintedRowIds.set(event, id);
+  }
+  return { event: { ...event, tags }, id };
 }
 
 /** A lifted tag value: a non-empty string, else NULL. */
@@ -274,8 +329,9 @@ export async function insertAiUsageRow(
 }
 
 /**
- * Persists normalized AI usage events into the framework system table.
- * Deduplicates on the call id (`aiCallId` tag) when the call carries one.
+ * Persists normalized AI usage events into the framework system table. A
+ * tracked call's event keeps its core-minted call id (`aiCallId`) as the row
+ * id, so its row is written once; see {@link rowIdentity} for any other.
  */
 export class AiUsagePersistenceHandler implements AiUsageHandler {
   constructor(private readonly db: DatabaseInterface) {
@@ -294,7 +350,8 @@ export class AiUsagePersistenceHandler implements AiUsageHandler {
       ) {
         return;
       }
-      await insertAiUsageRow(this.db, event);
+      const { event: row, id } = await rowIdentity(event, this.db);
+      await insertAiUsageRow(this.db, row, id ? { id } : {});
     } catch (error) {
       throw new Error(
         `Failed to persist AI usage event for ${event.provider}:${event.model}: ${

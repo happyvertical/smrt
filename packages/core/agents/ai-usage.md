@@ -219,7 +219,14 @@ lock timeout, a write conflict on the job row) is rethrown as is, so
 
 **Call ids.** Every tracked call gets a call id before it is sent; its usage
 row is written with `id = call_id` (`ON CONFLICT (id) DO NOTHING`), so a
-retried save never makes a second row. `entry_call_id` is the entry call's id
+retried save never makes a second row. The `aiCallId` tag is core's: in
+`AiUsagePersistenceHandler` it stays the row id only for the settled event
+and for an event naming a tracked call core minted (its live route in this
+process, or its persisted `call` event in a run of the event's tenant on
+that database; a host recorder on its own client converges on the same
+row); any other event carrying it is
+written under its own id without the tag (warned once), and the same event
+object saved twice still writes one row. `entry_call_id` is the entry call's id
 (the `callId` tag), shared by every call of an alias chain or fusion. A
 transcript joins on `_smrt_ai_usage.entry_call_id = _smrt_ai_transcripts.call_id`.
 
