@@ -2,30 +2,20 @@
   "version": "1.0.0",
   "timestamp": 0,
   "packageName": "@happyvertical/smrt-agents",
-  "packageVersion": "0.49.2",
+  "packageVersion": "0.67.0",
   "objects": {
-    "@happyvertical/smrt-agents:Agent": {
-      "name": "agent",
-      "className": "Agent",
-      "qualifiedName": "@happyvertical/smrt-agents:Agent",
-      "collection": "agents",
-      "filePath": "packages/agents/src/agent.ts",
+    "@happyvertical/smrt-agents:AgentInvocation": {
+      "name": "agentinvocation",
+      "className": "AgentInvocation",
+      "qualifiedName": "@happyvertical/smrt-agents:AgentInvocation",
+      "collection": "agentinvocations",
+      "description": "One dispatch-delivered agent invocation. Internal bookkeeping: never served over REST, CLI or MCP.",
+      "filePath": "packages/agents/src/agent-invocation.ts",
       "packageName": "@happyvertical/smrt-agents",
       "fields": {
-        "created_at": {
-          "type": "datetime",
-          "required": false
-        },
-        "updated_at": {
-          "type": "datetime",
-          "required": false
-        },
         "tenantId": {
           "type": "text",
-          "required": false,
           "_meta": {
-            "sqlType": "UUID",
-            "nullable": true,
             "__tenancy": {
               "isTenantIdField": true,
               "autoFilter": true,
@@ -35,13 +25,397 @@
               "mode": "optional",
               "field": "tenantId",
               "allowSuperAdminBypass": false
-            }
+            },
+            "__statedOptions": [
+              "sqlType",
+              "nullable",
+              "__tenancy",
+              "required"
+            ],
+            "sqlType": "UUID",
+            "nullable": true,
+            "required": false
+          },
+          "required": false
+        },
+        "dispatchId": {
+          "type": "text",
+          "_meta": {
+            "__statedOptions": [
+              "required",
+              "unique",
+              "requiredFor"
+            ],
+            "required": true,
+            "unique": true,
+            "requiredFor": "idempotency"
+          },
+          "required": true
+        },
+        "correlationId": {
+          "type": "text",
+          "_meta": {
+            "__statedOptions": [
+              "nullable",
+              "required"
+            ],
+            "nullable": true,
+            "required": false
+          },
+          "required": false
+        },
+        "agentClass": {
+          "type": "text",
+          "_meta": {
+            "__statedOptions": []
+          },
+          "required": false
+        },
+        "state": {
+          "type": "text",
+          "_meta": {
+            "__statedOptions": [
+              "enum"
+            ]
+          },
+          "required": false,
+          "enum": [
+            "reserved",
+            "result_recorded",
+            "published",
+            "uncertain"
+          ]
+        },
+        "resultJson": {
+          "type": "text",
+          "_meta": {
+            "__statedOptions": [
+              "nullable",
+              "sensitive",
+              "required"
+            ],
+            "sensitive": true,
+            "nullable": true,
+            "required": false
+          },
+          "required": false,
+          "sensitive": true
+        },
+        "attemptsSeen": {
+          "type": "integer",
+          "_meta": {
+            "__statedOptions": []
+          },
+          "required": false
+        }
+      },
+      "methods": {},
+      "decoratorConfig": {
+        "tableName": "_smrt_agent_invocations",
+        "api": false,
+        "cli": false,
+        "mcp": false,
+        "tenantScoped": {
+          "mode": "optional"
+        },
+        "conflictColumns": [
+          "tenant_id",
+          "slug",
+          "context"
+        ]
+      },
+      "extends": "SmrtObject",
+      "exportName": "AgentInvocation",
+      "collectionExportName": "AgentInvocationCollection",
+      "validationRules": [
+        {
+          "field": "dispatchId",
+          "rule": "required",
+          "fieldType": "text"
+        }
+      ],
+      "schema": {
+        "tableName": "_smrt_agent_invocations",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"_smrt_agent_invocations\" (\n  \"_sync_origin_device_id\" TEXT,\n  \"_sync_revision\" INTEGER,\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID,\n  \"dispatch_id\" TEXT NOT NULL UNIQUE,\n  \"correlation_id\" TEXT,\n  \"agent_class\" TEXT,\n  \"state\" TEXT,\n  \"result_json\" TEXT,\n  \"attempts_seen\" INTEGER\n);",
+        "columns": {
+          "_sync_origin_device_id": {
+            "type": "TEXT"
+          },
+          "_sync_revision": {
+            "type": "INTEGER"
+          },
+          "id": {
+            "type": "UUID",
+            "primaryKey": true,
+            "referenceKind": "id",
+            "notNull": true
+          },
+          "slug": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "context": {
+            "type": "TEXT",
+            "notNull": true,
+            "default": ""
+          },
+          "created_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "updated_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "tenant_id": {
+            "type": "UUID",
+            "referenceKind": "tenantId",
+            "notNull": false,
+            "unique": false
+          },
+          "dispatch_id": {
+            "type": "TEXT",
+            "notNull": true,
+            "unique": true
+          },
+          "correlation_id": {
+            "type": "TEXT",
+            "notNull": false,
+            "unique": false
+          },
+          "agent_class": {
+            "type": "TEXT",
+            "notNull": false,
+            "unique": false
+          },
+          "state": {
+            "type": "TEXT",
+            "notNull": false,
+            "unique": false
+          },
+          "result_json": {
+            "type": "TEXT",
+            "notNull": false,
+            "unique": false
+          },
+          "attempts_seen": {
+            "type": "INTEGER",
+            "notNull": false,
+            "unique": false
           }
+        },
+        "indexes": [
+          {
+            "name": "_smrt_agent_invocations_slug_context_idx",
+            "columns": [
+              "tenant_id",
+              "slug",
+              "context"
+            ],
+            "unique": true,
+            "nullsNotDistinct": true
+          },
+          {
+            "name": "_smrt_agent_invocations_tenant_id_created_at_idx",
+            "columns": [
+              "tenant_id",
+              "created_at"
+            ]
+          }
+        ],
+        "version": "abdcb50a"
+      },
+      "importPath": "@happyvertical/smrt-agents"
+    },
+    "@happyvertical/smrt-agents:AgentInvocationCollection": {
+      "name": "agentinvocationcollection",
+      "className": "AgentInvocationCollection",
+      "qualifiedName": "@happyvertical/smrt-agents:AgentInvocationCollection",
+      "collection": "agentinvocations",
+      "description": "Collection for AgentInvocation; used for the storage check.",
+      "filePath": "packages/agents/src/agent-invocation.ts",
+      "packageName": "@happyvertical/smrt-agents",
+      "fields": {},
+      "methods": {},
+      "decoratorConfig": {
+        "tableName": "_smrt_agent_invocations",
+        "api": false,
+        "mcp": false,
+        "cli": false
+      },
+      "extends": "SmrtCollection",
+      "extendsTypeArg": "AgentInvocation",
+      "exportName": "AgentInvocationCollection",
+      "collectionExportName": "AgentInvocationCollectionCollection",
+      "collectionOf": "@happyvertical/smrt-agents:AgentInvocation",
+      "inheritedExposure": [
+        "api",
+        "mcp",
+        "cli"
+      ],
+      "schema": {
+        "tableName": "_smrt_agent_invocations",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"_smrt_agent_invocations\" (\n  \"_sync_origin_device_id\" TEXT,\n  \"_sync_revision\" INTEGER,\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID,\n  \"dispatch_id\" TEXT NOT NULL UNIQUE,\n  \"correlation_id\" TEXT,\n  \"agent_class\" TEXT,\n  \"state\" TEXT,\n  \"result_json\" TEXT,\n  \"attempts_seen\" INTEGER\n);",
+        "columns": {
+          "_sync_origin_device_id": {
+            "type": "TEXT"
+          },
+          "_sync_revision": {
+            "type": "INTEGER"
+          },
+          "id": {
+            "type": "UUID",
+            "primaryKey": true,
+            "referenceKind": "id",
+            "notNull": true
+          },
+          "slug": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "context": {
+            "type": "TEXT",
+            "notNull": true,
+            "default": ""
+          },
+          "created_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "updated_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "tenant_id": {
+            "type": "UUID",
+            "referenceKind": "tenantId",
+            "notNull": false,
+            "unique": false
+          },
+          "dispatch_id": {
+            "type": "TEXT",
+            "notNull": true,
+            "unique": true
+          },
+          "correlation_id": {
+            "type": "TEXT",
+            "notNull": false,
+            "unique": false
+          },
+          "agent_class": {
+            "type": "TEXT",
+            "notNull": false,
+            "unique": false
+          },
+          "state": {
+            "type": "TEXT",
+            "notNull": false,
+            "unique": false
+          },
+          "result_json": {
+            "type": "TEXT",
+            "notNull": false,
+            "unique": false
+          },
+          "attempts_seen": {
+            "type": "INTEGER",
+            "notNull": false,
+            "unique": false
+          }
+        },
+        "indexes": [
+          {
+            "name": "_smrt_agent_invocations_slug_context_idx",
+            "columns": [
+              "tenant_id",
+              "slug",
+              "context"
+            ],
+            "unique": true,
+            "nullsNotDistinct": true
+          },
+          {
+            "name": "_smrt_agent_invocations_tenant_id_created_at_idx",
+            "columns": [
+              "tenant_id",
+              "created_at"
+            ]
+          }
+        ],
+        "version": "abdcb50a"
+      },
+      "importPath": "@happyvertical/smrt-agents"
+    },
+    "@happyvertical/smrt-agents:Agent": {
+      "name": "agent",
+      "className": "Agent",
+      "qualifiedName": "@happyvertical/smrt-agents:Agent",
+      "collection": "agents",
+      "description": "Base Agent class for building autonomous actors in the SMRT ecosystem",
+      "filePath": "packages/agents/src/agent.ts",
+      "packageName": "@happyvertical/smrt-agents",
+      "fields": {
+        "created_at": {
+          "type": "datetime",
+          "_meta": {
+            "__statedOptions": []
+          },
+          "required": false
+        },
+        "updated_at": {
+          "type": "datetime",
+          "_meta": {
+            "__statedOptions": []
+          },
+          "required": false
+        },
+        "tenantId": {
+          "type": "text",
+          "_meta": {
+            "__tenancy": {
+              "isTenantIdField": true,
+              "autoFilter": true,
+              "required": false,
+              "autoPopulate": true,
+              "nullable": true,
+              "mode": "optional",
+              "field": "tenantId",
+              "allowSuperAdminBypass": false
+            },
+            "__statedOptions": [
+              "sqlType",
+              "nullable",
+              "__tenancy",
+              "required"
+            ],
+            "sqlType": "UUID",
+            "nullable": true,
+            "required": false
+          },
+          "required": false
         },
         "status": {
           "type": "text",
+          "_meta": {
+            "__statedOptions": [
+              "default",
+              "enum"
+            ]
+          },
           "required": false,
-          "default": "idle"
+          "default": "idle",
+          "enum": [
+            "idle",
+            "initializing",
+            "running",
+            "error",
+            "skipped",
+            "shutdown"
+          ]
         }
       },
       "methods": {
@@ -246,12 +620,19 @@
       "staticProperties": {
         "uiSlots": {},
         "adminRoutes": [],
+        "createEntries": [],
         "signalSubscriptions": []
       },
       "schema": {
         "tableName": "agents",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"agents\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID,\n  \"status\" TEXT DEFAULT 'idle'\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"agents\" (\n  \"_sync_origin_device_id\" TEXT,\n  \"_sync_revision\" INTEGER,\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"_meta_type\" TEXT NOT NULL,\n  \"_meta_data\" JSON,\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID,\n  \"status\" TEXT DEFAULT 'idle'\n);",
         "columns": {
+          "_sync_origin_device_id": {
+            "type": "TEXT"
+          },
+          "_sync_revision": {
+            "type": "INTEGER"
+          },
           "id": {
             "type": "UUID",
             "primaryKey": true,
@@ -322,23 +703,22 @@
             ]
           }
         ],
-        "version": "dde8777b"
-      }
+        "version": "182cb523"
+      },
+      "importPath": "@happyvertical/smrt-agents"
     },
     "@happyvertical/smrt-agents:AgentConfig": {
       "name": "agentconfig",
       "className": "AgentConfig",
       "qualifiedName": "@happyvertical/smrt-agents:AgentConfig",
       "collection": "agentconfigs",
+      "description": "AgentConfig stores agent configuration in the database",
       "filePath": "packages/agents/src/config.ts",
       "packageName": "@happyvertical/smrt-agents",
       "fields": {
         "tenantId": {
           "type": "text",
-          "required": false,
           "_meta": {
-            "sqlType": "UUID",
-            "nullable": true,
             "__tenancy": {
               "isTenantIdField": true,
               "autoFilter": true,
@@ -348,36 +728,57 @@
               "mode": "optional",
               "field": "tenantId",
               "allowSuperAdminBypass": false
-            }
-          }
+            },
+            "__statedOptions": [
+              "sqlType",
+              "nullable",
+              "__tenancy",
+              "required"
+            ],
+            "sqlType": "UUID",
+            "nullable": true,
+            "required": false
+          },
+          "required": false
         },
         "agentId": {
           "type": "text",
-          "required": false,
-          "_meta": {}
+          "_meta": {
+            "__statedOptions": []
+          },
+          "required": false
         },
         "agentClass": {
           "type": "text",
-          "required": false,
-          "_meta": {}
+          "_meta": {
+            "__statedOptions": []
+          },
+          "required": false
         },
         "slotId": {
           "type": "text",
-          "required": false,
-          "_meta": {}
+          "_meta": {
+            "__statedOptions": []
+          },
+          "required": false
         },
         "configData": {
           "type": "json",
-          "required": false,
           "_meta": {
+            "__statedOptions": [
+              "sensitive"
+            ],
             "sensitive": true
           },
+          "required": false,
           "sensitive": true
         },
         "schemaVersion": {
           "type": "integer",
-          "required": false,
-          "_meta": {}
+          "_meta": {
+            "__statedOptions": []
+          },
+          "required": false
         }
       },
       "methods": {
@@ -501,8 +902,14 @@
       "collectionExportName": "AgentConfigCollection",
       "schema": {
         "tableName": "agent_configs",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"agent_configs\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID,\n  \"agent_id\" TEXT,\n  \"agent_class\" TEXT,\n  \"slot_id\" TEXT,\n  \"config_data\" JSON,\n  \"schema_version\" INTEGER\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"agent_configs\" (\n  \"_sync_origin_device_id\" TEXT,\n  \"_sync_revision\" INTEGER,\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID,\n  \"agent_id\" TEXT,\n  \"agent_class\" TEXT,\n  \"slot_id\" TEXT,\n  \"config_data\" JSON,\n  \"schema_version\" INTEGER\n);",
         "columns": {
+          "_sync_origin_device_id": {
+            "type": "TEXT"
+          },
+          "_sync_revision": {
+            "type": "INTEGER"
+          },
           "id": {
             "type": "UUID",
             "primaryKey": true,
@@ -579,14 +986,16 @@
             ]
           }
         ],
-        "version": "25c6ac4c"
-      }
+        "version": "d97cedb8"
+      },
+      "importPath": "@happyvertical/smrt-agents"
     },
     "@happyvertical/smrt-agents:AgentConfigCollection": {
       "name": "agentconfigcollection",
       "className": "AgentConfigCollection",
       "qualifiedName": "@happyvertical/smrt-agents:AgentConfigCollection",
       "collection": "agentconfigs",
+      "description": "Collection for AgentConfig objects",
       "filePath": "packages/agents/src/config.ts",
       "packageName": "@happyvertical/smrt-agents",
       "fields": {},
@@ -629,16 +1038,42 @@
         }
       },
       "decoratorConfig": {
-        "tableName": "agent_configs"
+        "tableName": "agent_configs",
+        "api": {
+          "include": [
+            "list",
+            "get",
+            "create",
+            "update",
+            "delete"
+          ]
+        },
+        "mcp": {
+          "include": [
+            "list",
+            "get"
+          ]
+        }
       },
       "extends": "SmrtCollection",
       "extendsTypeArg": "AgentConfig",
       "exportName": "AgentConfigCollection",
       "collectionExportName": "AgentConfigCollectionCollection",
+      "collectionOf": "@happyvertical/smrt-agents:AgentConfig",
+      "inheritedExposure": [
+        "api",
+        "mcp"
+      ],
       "schema": {
         "tableName": "agent_configs",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"agent_configs\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID,\n  \"agent_id\" TEXT,\n  \"agent_class\" TEXT,\n  \"slot_id\" TEXT,\n  \"config_data\" JSON,\n  \"schema_version\" INTEGER\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"agent_configs\" (\n  \"_sync_origin_device_id\" TEXT,\n  \"_sync_revision\" INTEGER,\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID,\n  \"agent_id\" TEXT,\n  \"agent_class\" TEXT,\n  \"slot_id\" TEXT,\n  \"config_data\" JSON,\n  \"schema_version\" INTEGER\n);",
         "columns": {
+          "_sync_origin_device_id": {
+            "type": "TEXT"
+          },
+          "_sync_revision": {
+            "type": "INTEGER"
+          },
           "id": {
             "type": "UUID",
             "primaryKey": true,
@@ -715,23 +1150,22 @@
             ]
           }
         ],
-        "version": "25c6ac4c"
-      }
+        "version": "d97cedb8"
+      },
+      "importPath": "@happyvertical/smrt-agents"
     },
     "@happyvertical/smrt-agents:AgentSchedule": {
       "name": "agentschedule",
       "className": "AgentSchedule",
       "qualifiedName": "@happyvertical/smrt-agents:AgentSchedule",
       "collection": "agentschedules",
+      "description": "AgentSchedule model for cron-based agent scheduling",
       "filePath": "packages/agents/src/schedule.ts",
       "packageName": "@happyvertical/smrt-agents",
       "fields": {
         "tenantId": {
           "type": "text",
-          "required": false,
           "_meta": {
-            "sqlType": "UUID",
-            "nullable": true,
             "__tenancy": {
               "isTenantIdField": true,
               "autoFilter": true,
@@ -741,119 +1175,198 @@
               "mode": "optional",
               "field": "tenantId",
               "allowSuperAdminBypass": false
-            }
-          }
+            },
+            "__statedOptions": [
+              "sqlType",
+              "nullable",
+              "__tenancy",
+              "required"
+            ],
+            "sqlType": "UUID",
+            "nullable": true,
+            "required": false
+          },
+          "required": false
         },
         "agentType": {
           "type": "text",
-          "required": false,
-          "_meta": {}
+          "_meta": {
+            "__statedOptions": []
+          },
+          "required": false
         },
         "agentId": {
           "type": "text",
-          "required": false,
           "_meta": {
-            "nullable": true
-          }
+            "__statedOptions": [
+              "nullable",
+              "required"
+            ],
+            "nullable": true,
+            "required": false
+          },
+          "required": false
         },
         "agentConfig": {
           "type": "json",
-          "required": false,
           "_meta": {
-            "sqlType": "TEXT",
-            "sensitive": true
+            "__statedOptions": [
+              "sqlType",
+              "sensitive"
+            ],
+            "sensitive": true,
+            "sqlType": "TEXT"
           },
+          "required": false,
           "sensitive": true
         },
         "cron": {
           "type": "text",
-          "required": false,
-          "_meta": {}
+          "_meta": {
+            "__statedOptions": []
+          },
+          "required": false
         },
         "timezone": {
           "type": "text",
-          "required": false,
-          "_meta": {}
+          "_meta": {
+            "__statedOptions": []
+          },
+          "required": false
         },
         "enabled": {
           "type": "boolean",
-          "required": false,
-          "_meta": {}
+          "_meta": {
+            "__statedOptions": []
+          },
+          "required": false
         },
         "status": {
           "type": "text",
+          "_meta": {
+            "__statedOptions": [
+              "enum"
+            ]
+          },
           "required": false,
-          "_meta": {}
+          "enum": [
+            "active",
+            "paused",
+            "disabled",
+            "error"
+          ]
         },
         "lastRun": {
           "type": "datetime",
-          "required": false,
           "_meta": {
-            "nullable": true
-          }
+            "__statedOptions": [
+              "nullable",
+              "required"
+            ],
+            "nullable": true,
+            "required": false
+          },
+          "required": false
         },
         "nextRun": {
           "type": "datetime",
-          "required": false,
           "_meta": {
-            "nullable": true
-          }
+            "__statedOptions": [
+              "nullable",
+              "required"
+            ],
+            "nullable": true,
+            "required": false
+          },
+          "required": false
         },
         "lastStatus": {
           "type": "text",
-          "required": false,
           "_meta": {
-            "nullable": true
-          }
+            "__statedOptions": [
+              "nullable",
+              "enum",
+              "required"
+            ],
+            "nullable": true,
+            "required": false
+          },
+          "required": false,
+          "enum": [
+            "success",
+            "failed"
+          ]
         },
         "lastError": {
           "type": "text",
-          "required": false,
           "_meta": {
-            "nullable": true
-          }
+            "__statedOptions": [
+              "nullable",
+              "required"
+            ],
+            "nullable": true,
+            "required": false
+          },
+          "required": false
         },
         "runCount": {
           "type": "integer",
-          "required": false,
-          "_meta": {}
+          "_meta": {
+            "__statedOptions": []
+          },
+          "required": false
         },
         "successCount": {
           "type": "integer",
-          "required": false,
-          "_meta": {}
+          "_meta": {
+            "__statedOptions": []
+          },
+          "required": false
         },
         "failureCount": {
           "type": "integer",
-          "required": false,
-          "_meta": {}
+          "_meta": {
+            "__statedOptions": []
+          },
+          "required": false
         },
         "maxConcurrent": {
           "type": "integer",
-          "required": false,
-          "_meta": {}
+          "_meta": {
+            "__statedOptions": []
+          },
+          "required": false
         },
         "runningCount": {
           "type": "integer",
-          "required": false,
-          "_meta": {}
+          "_meta": {
+            "__statedOptions": []
+          },
+          "required": false
         },
         "timeout": {
           "type": "integer",
-          "required": false,
-          "_meta": {}
+          "_meta": {
+            "__statedOptions": []
+          },
+          "required": false
         },
         "method": {
           "type": "text",
-          "required": false,
-          "_meta": {}
+          "_meta": {
+            "__statedOptions": []
+          },
+          "required": false
         },
         "methodArgs": {
           "type": "json",
-          "required": false,
           "_meta": {
+            "__statedOptions": [
+              "sqlType"
+            ],
             "sqlType": "TEXT"
-          }
+          },
+          "required": false
         }
       },
       "methods": {
@@ -902,6 +1415,52 @@
           "async": false,
           "parameters": [],
           "returnType": "string",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "save": {
+          "name": "save",
+          "async": true,
+          "parameters": [
+            {
+              "name": "options",
+              "type": "SaveOptions",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<this>",
+          "isStatic": false,
+          "isPublic": true
+        },
+        "reconfigureAdmissionPolicy": {
+          "name": "reconfigureAdmissionPolicy",
+          "async": true,
+          "parameters": [
+            {
+              "name": "policy",
+              "type": "ScheduleAdmissionPolicy | null",
+              "optional": false,
+              "unionBranches": [
+                {
+                  "type": "ScheduleAdmissionPolicy"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            {
+              "name": "authorization",
+              "type": "ScheduleAdmissionReconfiguration",
+              "optional": false
+            },
+            {
+              "name": "options",
+              "type": "SaveOptions",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<this>",
           "isStatic": false,
           "isPublic": true
         },
@@ -967,8 +1526,14 @@
       "collectionExportName": "AgentScheduleCollection",
       "schema": {
         "tableName": "_smrt_agent_schedules",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"_smrt_agent_schedules\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID,\n  \"agent_type\" TEXT,\n  \"agent_id\" TEXT,\n  \"agent_config\" TEXT,\n  \"cron\" TEXT,\n  \"timezone\" TEXT,\n  \"enabled\" BOOLEAN,\n  \"status\" TEXT,\n  \"last_run\" TIMESTAMP,\n  \"next_run\" TIMESTAMP,\n  \"last_status\" TEXT,\n  \"last_error\" TEXT,\n  \"run_count\" INTEGER,\n  \"success_count\" INTEGER,\n  \"failure_count\" INTEGER,\n  \"max_concurrent\" INTEGER,\n  \"running_count\" INTEGER,\n  \"timeout\" INTEGER,\n  \"method\" TEXT,\n  \"method_args\" TEXT\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"_smrt_agent_schedules\" (\n  \"_sync_origin_device_id\" TEXT,\n  \"_sync_revision\" INTEGER,\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID,\n  \"agent_type\" TEXT,\n  \"agent_id\" TEXT,\n  \"agent_config\" TEXT,\n  \"cron\" TEXT,\n  \"timezone\" TEXT,\n  \"enabled\" BOOLEAN,\n  \"status\" TEXT,\n  \"last_run\" TIMESTAMP,\n  \"next_run\" TIMESTAMP,\n  \"last_status\" TEXT,\n  \"last_error\" TEXT,\n  \"run_count\" INTEGER,\n  \"success_count\" INTEGER,\n  \"failure_count\" INTEGER,\n  \"max_concurrent\" INTEGER,\n  \"running_count\" INTEGER,\n  \"timeout\" INTEGER,\n  \"method\" TEXT,\n  \"method_args\" TEXT\n);",
         "columns": {
+          "_sync_origin_device_id": {
+            "type": "TEXT"
+          },
+          "_sync_revision": {
+            "type": "INTEGER"
+          },
           "id": {
             "type": "UUID",
             "primaryKey": true,
@@ -1123,14 +1688,16 @@
             ]
           }
         ],
-        "version": "c21a1f29"
-      }
+        "version": "d2d72032"
+      },
+      "importPath": "@happyvertical/smrt-agents"
     },
     "@happyvertical/smrt-agents:AgentScheduleCollection": {
       "name": "agentschedulecollection",
       "className": "AgentScheduleCollection",
       "qualifiedName": "@happyvertical/smrt-agents:AgentScheduleCollection",
       "collection": "agentschedules",
+      "description": "Collection for managing AgentSchedule objects",
       "filePath": "packages/agents/src/schedule.ts",
       "packageName": "@happyvertical/smrt-agents",
       "fields": {},
@@ -1226,16 +1793,53 @@
         }
       },
       "decoratorConfig": {
-        "tableName": "_smrt_agent_schedules"
+        "tableName": "_smrt_agent_schedules",
+        "api": {
+          "include": [
+            "list",
+            "get",
+            "create",
+            "update",
+            "delete"
+          ]
+        },
+        "mcp": {
+          "include": [
+            "list",
+            "get"
+          ]
+        },
+        "cli": {
+          "include": [
+            "list",
+            "get",
+            "create",
+            "update",
+            "delete"
+          ],
+          "skipApiCheck": true
+        }
       },
       "extends": "SmrtCollection",
       "extendsTypeArg": "AgentSchedule",
       "exportName": "AgentScheduleCollection",
       "collectionExportName": "AgentScheduleCollectionCollection",
+      "collectionOf": "@happyvertical/smrt-agents:AgentSchedule",
+      "inheritedExposure": [
+        "api",
+        "mcp",
+        "cli"
+      ],
       "schema": {
         "tableName": "_smrt_agent_schedules",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"_smrt_agent_schedules\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID,\n  \"agent_type\" TEXT,\n  \"agent_id\" TEXT,\n  \"agent_config\" TEXT,\n  \"cron\" TEXT,\n  \"timezone\" TEXT,\n  \"enabled\" BOOLEAN,\n  \"status\" TEXT,\n  \"last_run\" TIMESTAMP,\n  \"next_run\" TIMESTAMP,\n  \"last_status\" TEXT,\n  \"last_error\" TEXT,\n  \"run_count\" INTEGER,\n  \"success_count\" INTEGER,\n  \"failure_count\" INTEGER,\n  \"max_concurrent\" INTEGER,\n  \"running_count\" INTEGER,\n  \"timeout\" INTEGER,\n  \"method\" TEXT,\n  \"method_args\" TEXT\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"_smrt_agent_schedules\" (\n  \"_sync_origin_device_id\" TEXT,\n  \"_sync_revision\" INTEGER,\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID,\n  \"agent_type\" TEXT,\n  \"agent_id\" TEXT,\n  \"agent_config\" TEXT,\n  \"cron\" TEXT,\n  \"timezone\" TEXT,\n  \"enabled\" BOOLEAN,\n  \"status\" TEXT,\n  \"last_run\" TIMESTAMP,\n  \"next_run\" TIMESTAMP,\n  \"last_status\" TEXT,\n  \"last_error\" TEXT,\n  \"run_count\" INTEGER,\n  \"success_count\" INTEGER,\n  \"failure_count\" INTEGER,\n  \"max_concurrent\" INTEGER,\n  \"running_count\" INTEGER,\n  \"timeout\" INTEGER,\n  \"method\" TEXT,\n  \"method_args\" TEXT\n);",
         "columns": {
+          "_sync_origin_device_id": {
+            "type": "TEXT"
+          },
+          "_sync_revision": {
+            "type": "INTEGER"
+          },
           "id": {
             "type": "UUID",
             "primaryKey": true,
@@ -1390,22 +1994,535 @@
             ]
           }
         ],
-        "version": "c21a1f29"
-      }
+        "version": "d2d72032"
+      },
+      "importPath": "@happyvertical/smrt-agents"
+    },
+    "@happyvertical/smrt-agents:SmrtDataSurfaceActionTask": {
+      "name": "smrtdatasurfaceactiontask",
+      "className": "SmrtDataSurfaceActionTask",
+      "qualifiedName": "@happyvertical/smrt-agents:SmrtDataSurfaceActionTask",
+      "collection": "smrtdatasurfaceactiontasks",
+      "filePath": "packages/agents/src/server/jobs-data-surface-action-queue.ts",
+      "packageName": "@happyvertical/smrt-agents",
+      "fields": {
+        "tenantId": {
+          "type": "text",
+          "_meta": {
+            "__tenancy": {
+              "isTenantIdField": true,
+              "autoFilter": true,
+              "required": false,
+              "autoPopulate": true,
+              "nullable": true,
+              "mode": "optional",
+              "field": "tenantId",
+              "allowSuperAdminBypass": false
+            },
+            "__statedOptions": [
+              "sqlType",
+              "nullable",
+              "__tenancy",
+              "required"
+            ],
+            "sqlType": "UUID",
+            "nullable": true,
+            "required": false
+          },
+          "required": false
+        },
+        "args": {
+          "type": "json",
+          "_meta": {
+            "__statedOptions": [
+              "required"
+            ],
+            "required": true
+          },
+          "required": true
+        }
+      },
+      "methods": {
+        "run": {
+          "name": "run",
+          "async": true,
+          "parameters": [
+            {
+              "name": "args",
+              "type": "DataSurfaceActionJobArgs",
+              "optional": true
+            },
+            {
+              "name": "context",
+              "type": "JobExecutionContext",
+              "optional": true
+            }
+          ],
+          "returnType": "Promise<DataSurfaceActionResult>",
+          "isStatic": false,
+          "isPublic": true
+        }
+      },
+      "decoratorConfig": {
+        "tableName": "_smrt_data_surface_action_tasks",
+        "api": false,
+        "cli": false,
+        "mcp": false,
+        "tenantScoped": {
+          "mode": "optional"
+        },
+        "conflictColumns": [
+          "tenant_id",
+          "slug",
+          "context"
+        ]
+      },
+      "extends": "SmrtObject",
+      "exportName": "SmrtDataSurfaceActionTask",
+      "collectionExportName": "SmrtDataSurfaceActionTaskCollection",
+      "validationRules": [
+        {
+          "field": "args",
+          "rule": "required",
+          "fieldType": "json"
+        }
+      ],
+      "schema": {
+        "tableName": "_smrt_data_surface_action_tasks",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"_smrt_data_surface_action_tasks\" (\n  \"_sync_origin_device_id\" TEXT,\n  \"_sync_revision\" INTEGER,\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID,\n  \"args\" JSON NOT NULL\n);",
+        "columns": {
+          "_sync_origin_device_id": {
+            "type": "TEXT"
+          },
+          "_sync_revision": {
+            "type": "INTEGER"
+          },
+          "id": {
+            "type": "UUID",
+            "primaryKey": true,
+            "referenceKind": "id",
+            "notNull": true
+          },
+          "slug": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "context": {
+            "type": "TEXT",
+            "notNull": true,
+            "default": ""
+          },
+          "created_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "updated_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "tenant_id": {
+            "type": "UUID",
+            "referenceKind": "tenantId",
+            "notNull": false,
+            "unique": false
+          },
+          "args": {
+            "type": "JSON",
+            "notNull": true,
+            "unique": false
+          }
+        },
+        "indexes": [
+          {
+            "name": "_smrt_data_surface_action_tasks_slug_context_idx",
+            "columns": [
+              "tenant_id",
+              "slug",
+              "context"
+            ],
+            "unique": true,
+            "nullsNotDistinct": true
+          },
+          {
+            "name": "_smrt_data_surface_action_tasks_tenant_id_created_at_idx",
+            "columns": [
+              "tenant_id",
+              "created_at"
+            ]
+          }
+        ],
+        "version": "1fb979e9"
+      },
+      "importPath": "@happyvertical/smrt-agents/server"
+    },
+    "@happyvertical/smrt-agents:DataSurfaceActionTokenState": {
+      "name": "datasurfaceactiontokenstate",
+      "className": "DataSurfaceActionTokenState",
+      "qualifiedName": "@happyvertical/smrt-agents:DataSurfaceActionTokenState",
+      "collection": "datasurfaceactiontokenstates",
+      "filePath": "packages/agents/src/server/sql-data-surface-action-state.ts",
+      "packageName": "@happyvertical/smrt-agents",
+      "fields": {
+        "tokenHash": {
+          "type": "text",
+          "_meta": {
+            "__statedOptions": [
+              "required",
+              "unique",
+              "requiredFor"
+            ],
+            "required": true,
+            "unique": true,
+            "requiredFor": "identity"
+          },
+          "required": true
+        },
+        "record": {
+          "type": "json",
+          "_meta": {
+            "__statedOptions": [
+              "required"
+            ],
+            "required": true
+          },
+          "required": true
+        },
+        "consumedBy": {
+          "type": "text",
+          "_meta": {
+            "__statedOptions": [
+              "nullable",
+              "required"
+            ],
+            "nullable": true,
+            "required": false
+          },
+          "required": false
+        }
+      },
+      "methods": {},
+      "decoratorConfig": {
+        "tableName": "_smrt_data_surface_action_tokens",
+        "api": false,
+        "cli": false,
+        "mcp": false
+      },
+      "extends": "SmrtObject",
+      "exportName": "DataSurfaceActionTokenState",
+      "collectionExportName": "DataSurfaceActionTokenStateCollection",
+      "validationRules": [
+        {
+          "field": "tokenHash",
+          "rule": "required",
+          "fieldType": "text"
+        },
+        {
+          "field": "record",
+          "rule": "required",
+          "fieldType": "json"
+        }
+      ],
+      "schema": {
+        "tableName": "_smrt_data_surface_action_tokens",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"_smrt_data_surface_action_tokens\" (\n  \"_sync_origin_device_id\" TEXT,\n  \"_sync_revision\" INTEGER,\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"token_hash\" TEXT NOT NULL UNIQUE,\n  \"record\" JSON NOT NULL,\n  \"consumed_by\" TEXT\n);",
+        "columns": {
+          "_sync_origin_device_id": {
+            "type": "TEXT"
+          },
+          "_sync_revision": {
+            "type": "INTEGER"
+          },
+          "id": {
+            "type": "UUID",
+            "primaryKey": true,
+            "referenceKind": "id",
+            "notNull": true
+          },
+          "slug": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "context": {
+            "type": "TEXT",
+            "notNull": true,
+            "default": ""
+          },
+          "created_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "updated_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "token_hash": {
+            "type": "TEXT",
+            "notNull": true,
+            "unique": true
+          },
+          "record": {
+            "type": "JSON",
+            "notNull": true,
+            "unique": false
+          },
+          "consumed_by": {
+            "type": "TEXT",
+            "notNull": false,
+            "unique": false
+          }
+        },
+        "indexes": [
+          {
+            "name": "_smrt_data_surface_action_tokens_slug_context_idx",
+            "columns": [
+              "slug",
+              "context"
+            ],
+            "unique": true
+          },
+          {
+            "name": "_smrt_data_surface_action_tokens_created_at_idx",
+            "columns": [
+              "created_at"
+            ]
+          }
+        ],
+        "version": "3f4eccf8"
+      },
+      "importPath": "@happyvertical/smrt-agents/server"
+    },
+    "@happyvertical/smrt-agents:DataSurfaceActionIdempotencyState": {
+      "name": "datasurfaceactionidempotencystate",
+      "className": "DataSurfaceActionIdempotencyState",
+      "qualifiedName": "@happyvertical/smrt-agents:DataSurfaceActionIdempotencyState",
+      "collection": "datasurfaceactionidempotencystates",
+      "filePath": "packages/agents/src/server/sql-data-surface-action-state.ts",
+      "packageName": "@happyvertical/smrt-agents",
+      "fields": {
+        "keyHash": {
+          "type": "text",
+          "_meta": {
+            "__statedOptions": [
+              "required",
+              "unique",
+              "requiredFor"
+            ],
+            "required": true,
+            "unique": true,
+            "requiredFor": "idempotency"
+          },
+          "required": true
+        },
+        "status": {
+          "type": "text",
+          "_meta": {
+            "__statedOptions": [
+              "required",
+              "enum"
+            ],
+            "required": true
+          },
+          "required": true,
+          "enum": [
+            "reserved",
+            "completed"
+          ]
+        },
+        "requestFingerprint": {
+          "type": "text",
+          "_meta": {
+            "__statedOptions": [
+              "required",
+              "requiredFor"
+            ],
+            "required": true,
+            "requiredFor": "idempotency"
+          },
+          "required": true
+        },
+        "ownerHash": {
+          "type": "text",
+          "_meta": {
+            "__statedOptions": [
+              "nullable",
+              "required"
+            ],
+            "nullable": true,
+            "required": false
+          },
+          "required": false
+        },
+        "reservedAt": {
+          "type": "text",
+          "_meta": {
+            "__statedOptions": [
+              "nullable",
+              "required"
+            ],
+            "nullable": true,
+            "required": false
+          },
+          "required": false
+        },
+        "result": {
+          "type": "json",
+          "_meta": {
+            "__statedOptions": [
+              "nullable",
+              "required"
+            ],
+            "nullable": true,
+            "required": false
+          },
+          "required": false
+        },
+        "recovery": {
+          "type": "json",
+          "_meta": {
+            "__statedOptions": [
+              "nullable",
+              "required"
+            ],
+            "nullable": true,
+            "required": false
+          },
+          "required": false
+        }
+      },
+      "methods": {},
+      "decoratorConfig": {
+        "tableName": "_smrt_data_surface_action_idempotency",
+        "api": false,
+        "cli": false,
+        "mcp": false
+      },
+      "extends": "SmrtObject",
+      "exportName": "DataSurfaceActionIdempotencyState",
+      "collectionExportName": "DataSurfaceActionIdempotencyStateCollection",
+      "validationRules": [
+        {
+          "field": "keyHash",
+          "rule": "required",
+          "fieldType": "text"
+        },
+        {
+          "field": "status",
+          "rule": "required",
+          "fieldType": "text"
+        },
+        {
+          "field": "requestFingerprint",
+          "rule": "required",
+          "fieldType": "text"
+        }
+      ],
+      "schema": {
+        "tableName": "_smrt_data_surface_action_idempotency",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"_smrt_data_surface_action_idempotency\" (\n  \"_sync_origin_device_id\" TEXT,\n  \"_sync_revision\" INTEGER,\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"key_hash\" TEXT NOT NULL UNIQUE,\n  \"status\" TEXT NOT NULL,\n  \"request_fingerprint\" TEXT NOT NULL,\n  \"owner_hash\" TEXT,\n  \"reserved_at\" TEXT,\n  \"result\" JSON,\n  \"recovery\" JSON\n);",
+        "columns": {
+          "_sync_origin_device_id": {
+            "type": "TEXT"
+          },
+          "_sync_revision": {
+            "type": "INTEGER"
+          },
+          "id": {
+            "type": "UUID",
+            "primaryKey": true,
+            "referenceKind": "id",
+            "notNull": true
+          },
+          "slug": {
+            "type": "TEXT",
+            "notNull": true
+          },
+          "context": {
+            "type": "TEXT",
+            "notNull": true,
+            "default": ""
+          },
+          "created_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "updated_at": {
+            "type": "TIMESTAMP",
+            "notNull": true,
+            "default": "current_timestamp"
+          },
+          "key_hash": {
+            "type": "TEXT",
+            "notNull": true,
+            "unique": true
+          },
+          "status": {
+            "type": "TEXT",
+            "notNull": true,
+            "unique": false
+          },
+          "request_fingerprint": {
+            "type": "TEXT",
+            "notNull": true,
+            "unique": false
+          },
+          "owner_hash": {
+            "type": "TEXT",
+            "notNull": false,
+            "unique": false
+          },
+          "reserved_at": {
+            "type": "TEXT",
+            "notNull": false,
+            "unique": false
+          },
+          "result": {
+            "type": "JSON",
+            "notNull": false,
+            "unique": false
+          },
+          "recovery": {
+            "type": "JSON",
+            "notNull": false,
+            "unique": false
+          }
+        },
+        "indexes": [
+          {
+            "name": "_smrt_data_surface_action_idempotency_slug_context_idx",
+            "columns": [
+              "slug",
+              "context"
+            ],
+            "unique": true
+          },
+          {
+            "name": "_smrt_data_surface_action_idempotency_created_at_idx",
+            "columns": [
+              "created_at"
+            ]
+          }
+        ],
+        "version": "bc104907"
+      },
+      "importPath": "@happyvertical/smrt-agents/server"
     },
     "@happyvertical/smrt-agents:TenantAgent": {
       "name": "tenantagent",
       "className": "TenantAgent",
       "qualifiedName": "@happyvertical/smrt-agents:TenantAgent",
       "collection": "tenantagents",
+      "description": "TenantAgent SmrtObject — junction between tenants and agents",
       "filePath": "packages/agents/src/tenant-agent.ts",
       "packageName": "@happyvertical/smrt-agents",
       "fields": {
         "tenantId": {
           "type": "text",
-          "required": true,
           "_meta": {
-            "sqlType": "UUID",
             "__tenancy": {
               "isTenantIdField": true,
               "autoFilter": true,
@@ -1415,33 +2532,62 @@
               "mode": "required",
               "field": "tenantId",
               "allowSuperAdminBypass": false
-            }
-          }
+            },
+            "__statedOptions": [
+              "sqlType",
+              "requiredFor",
+              "__tenancy"
+            ],
+            "sqlType": "UUID",
+            "requiredFor": "tenant-scope"
+          },
+          "required": true
         },
         "agentClass": {
           "type": "text",
-          "required": false,
-          "_meta": {}
+          "_meta": {
+            "__statedOptions": []
+          },
+          "required": false
         },
         "status": {
           "type": "text",
+          "_meta": {
+            "__statedOptions": [
+              "enum"
+            ]
+          },
           "required": false,
-          "_meta": {}
+          "enum": [
+            "active",
+            "disabled"
+          ]
         },
         "permissions": {
           "type": "json",
-          "required": false,
           "_meta": {
-            "nullable": true
-          }
+            "__statedOptions": [
+              "nullable",
+              "required"
+            ],
+            "nullable": true,
+            "required": false
+          },
+          "required": false
         },
         "config": {
           "type": "json",
-          "required": false,
           "_meta": {
+            "__statedOptions": [
+              "nullable",
+              "sensitive",
+              "required"
+            ],
+            "sensitive": true,
             "nullable": true,
-            "sensitive": true
+            "required": false
           },
+          "required": false,
           "sensitive": true
         }
       },
@@ -1483,8 +2629,14 @@
       "validationRules": [],
       "schema": {
         "tableName": "tenant_agents",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"tenant_agents\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID NOT NULL,\n  \"agent_class\" TEXT,\n  \"status\" TEXT,\n  \"permissions\" JSON,\n  \"config\" JSON\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"tenant_agents\" (\n  \"_sync_origin_device_id\" TEXT,\n  \"_sync_revision\" INTEGER,\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID NOT NULL,\n  \"agent_class\" TEXT,\n  \"status\" TEXT,\n  \"permissions\" JSON,\n  \"config\" JSON\n);",
         "columns": {
+          "_sync_origin_device_id": {
+            "type": "TEXT"
+          },
+          "_sync_revision": {
+            "type": "INTEGER"
+          },
           "id": {
             "type": "UUID",
             "primaryKey": true,
@@ -1562,14 +2714,16 @@
             ]
           }
         ],
-        "version": "9892a054"
-      }
+        "version": "554fa890"
+      },
+      "importPath": "@happyvertical/smrt-agents"
     },
     "@happyvertical/smrt-agents:TenantAgentCollection": {
       "name": "tenantagentcollection",
       "className": "TenantAgentCollection",
       "qualifiedName": "@happyvertical/smrt-agents:TenantAgentCollection",
       "collection": "tenantagents",
+      "description": "Collection for managing tenant-agent bindings",
       "filePath": "packages/agents/src/tenant-agent.ts",
       "packageName": "@happyvertical/smrt-agents",
       "fields": {},
@@ -1700,16 +2854,49 @@
         }
       },
       "decoratorConfig": {
-        "tableName": "tenant_agents"
+        "tableName": "tenant_agents",
+        "api": {
+          "include": [
+            "list",
+            "get",
+            "create",
+            "update",
+            "delete"
+          ]
+        },
+        "mcp": {
+          "include": [
+            "list",
+            "get"
+          ]
+        },
+        "cli": {
+          "include": [
+            "list",
+            "get"
+          ]
+        }
       },
       "extends": "SmrtCollection",
       "extendsTypeArg": "TenantAgent",
       "exportName": "TenantAgentCollection",
       "collectionExportName": "TenantAgentCollectionCollection",
+      "collectionOf": "@happyvertical/smrt-agents:TenantAgent",
+      "inheritedExposure": [
+        "api",
+        "mcp",
+        "cli"
+      ],
       "schema": {
         "tableName": "tenant_agents",
-        "ddl": "CREATE TABLE IF NOT EXISTS \"tenant_agents\" (\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID NOT NULL,\n  \"agent_class\" TEXT,\n  \"status\" TEXT,\n  \"permissions\" JSON,\n  \"config\" JSON\n);",
+        "ddl": "CREATE TABLE IF NOT EXISTS \"tenant_agents\" (\n  \"_sync_origin_device_id\" TEXT,\n  \"_sync_revision\" INTEGER,\n  \"id\" UUID PRIMARY KEY NOT NULL,\n  \"slug\" TEXT NOT NULL,\n  \"context\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"updated_at\" TIMESTAMP NOT NULL DEFAULT current_timestamp,\n  \"tenant_id\" UUID NOT NULL,\n  \"agent_class\" TEXT,\n  \"status\" TEXT,\n  \"permissions\" JSON,\n  \"config\" JSON\n);",
         "columns": {
+          "_sync_origin_device_id": {
+            "type": "TEXT"
+          },
+          "_sync_revision": {
+            "type": "INTEGER"
+          },
           "id": {
             "type": "UUID",
             "primaryKey": true,
@@ -1787,20 +2974,40 @@
             ]
           }
         ],
-        "version": "9892a054"
-      }
+        "version": "554fa890"
+      },
+      "importPath": "@happyvertical/smrt-agents"
     }
   },
   "moduleType": "smrt",
   "smrtDependencies": [
-    "@happyvertical/smrt-config",
     "@happyvertical/smrt-core",
+    "@happyvertical/smrt-jobs",
     "@happyvertical/smrt-playbooks",
     "@happyvertical/smrt-reports",
     "@happyvertical/smrt-secrets",
     "@happyvertical/smrt-tenancy",
-    "@happyvertical/smrt-types",
-    "@happyvertical/smrt-ui",
     "@happyvertical/smrt-users"
-  ]
+  ],
+  "browser": {
+    "status": "server-only",
+    "issues": [
+      "#3615",
+      "#3617",
+      "#3624",
+      "#3625",
+      "#3626",
+      "#3627"
+    ],
+    "reason": "node:crypto in root; core migrations (node:os)",
+    "via": [
+      "@happyvertical/smrt-jobs",
+      "@happyvertical/smrt-profiles",
+      "@happyvertical/smrt-reports",
+      "@happyvertical/smrt-secrets",
+      "@happyvertical/smrt-tenancy",
+      "@happyvertical/smrt-users"
+    ]
+  },
+  "schemaFingerprint": "10a2cee050f2203b989712b93fc7cdbacab9f841da4441cee91a49c41e3b02db"
 }

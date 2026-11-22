@@ -8,6 +8,7 @@ Agent framework for autonomous actors with inter-agent messaging, interest-based
 | --- | --- |
 | [Data-surface discovery](agents/data-surface-discovery.md) | Summary discovery, row-count hints, allowed values, `id`/request aliases |
 | [Lazy agent_config](agents/lazy-config.md) | `$env` sentinels, class `configResolvers`, resolver context and precedence (#1161, #2806) |
+| [Invocation dedupe](agents/invocation-dedupe.md) | `_smrt_agent_invocations`: one run per dispatch (#5525) |
 
 ## Agent Lifecycle
 

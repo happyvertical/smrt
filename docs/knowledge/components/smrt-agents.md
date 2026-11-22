@@ -5,10 +5,10 @@ description: "Agent framework for building autonomous actors in the SMRT ecosyst
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-20T00:35:42Z"
+  at: "2026-11-22T01:41:15Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:4237702881c12f769b5d4195a67e2c4e476df7c743e9cb9f8ac3cf39fbe54b2e"
+source_revision: "sha256:bf383838ad77b275c6bdfee7740538ae621a449f17faabf8b2c7396e9e73fda5"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/agents/package.json"
@@ -23,9 +23,12 @@ sources:
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/agents/agents/data-surface-discovery.md"
     title: "@happyvertical/smrt-agents packages/agents/agents/data-surface-discovery.md"
   - id: "agents-4"
+    resource: "https://github.com/happyvertical/smrt/blob/main/packages/agents/agents/invocation-dedupe.md"
+    title: "@happyvertical/smrt-agents packages/agents/agents/invocation-dedupe.md"
+  - id: "agents-5"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/agents/agents/lazy-config.md"
     title: "@happyvertical/smrt-agents packages/agents/agents/lazy-config.md"
-  - id: "agents-5"
+  - id: "agents-6"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/agents/agents/principal-binding.md"
     title: "@happyvertical/smrt-agents packages/agents/agents/principal-binding.md"
 ---
@@ -44,6 +47,7 @@ sources:
 - `packages/agents/AGENTS.md`
 - `packages/agents/agents/data-surface-denials.md`
 - `packages/agents/agents/data-surface-discovery.md`
+- `packages/agents/agents/invocation-dedupe.md`
 - `packages/agents/agents/lazy-config.md`
 - `packages/agents/agents/principal-binding.md`
 
@@ -86,6 +90,8 @@ sources:
 - `Agent` (collection `agents`, extends `SmrtObject`, STI table)
 - `AgentConfig` (collection `agentconfigs`, extends `SmrtObject`)
 - `AgentConfigCollection` (collection `agentconfigs`, extends `SmrtCollection`)
+- `AgentInvocation` (collection `agentinvocations`, extends `SmrtObject`)
+- `AgentInvocationCollection` (collection `agentinvocations`, extends `SmrtCollection`)
 - `AgentSchedule` (collection `agentschedules`, extends `SmrtObject`)
 - `AgentScheduleCollection` (collection `agentschedules`, extends `SmrtCollection`)
 - `DataSurfaceActionIdempotencyState` (collection `datasurfaceactionidempotencystates`, extends `SmrtObject`)

@@ -3246,6 +3246,16 @@
   },
   {
     "kind": "model",
+    "name": "@happyvertical/smrt-agents:AgentInvocation",
+    "issue": 5525,
+    "nearest": [
+      "@happyvertical/smrt-agents:DataSurfaceActionIdempotencyState",
+      "@happyvertical/smrt-agents:SmrtDataSurfaceActionTask"
+    ],
+    "reason": "One ledger row per dispatch-delivered agent invocation, unique on the dispatch id, carrying reserved/result_recorded/published/uncertain state and the recorded completion. DataSurfaceActionIdempotencyState is keyed by a hashed caller idempotency key with an owner token and a data-surface action result shape; SmrtDataSurfaceActionTask is a job payload. Neither holds the per-dispatch publication state, and changing either would change the data-surface action contract."
+  },
+  {
+    "kind": "model",
     "name": "@happyvertical/smrt-agents:DataSurfaceActionIdempotencyState",
     "grandfathered": true
   },

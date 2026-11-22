@@ -36,8 +36,18 @@
 
 import type { AITool } from '@happyvertical/ai';
 import { createLogger, type Logger } from '@happyvertical/logger';
-import type { DispatchBus, SmrtClassOptions } from '@happyvertical/smrt-core';
+import type {
+  Dispatch,
+  DispatchBus,
+  DispatchMetadata,
+  SmrtClassOptions,
+} from '@happyvertical/smrt-core';
+import { withTenant } from '@happyvertical/smrt-tenancy';
 import { PermissionResolver } from '@happyvertical/smrt-users';
+import {
+  AGENT_INVOCATION_UNCERTAIN,
+  AgentInvocationLedger,
+} from './agent-invocation.js';
 import {
   assertWithinDelegationDepth,
   type DelegationEnvelope,
@@ -123,6 +133,13 @@ export interface WorkerInvocation {
   task: Record<string, unknown>;
   /** The database handle for the worker's operations. */
   db?: SmrtClassOptions['db'];
+  /**
+   * Stable id of this invocation when it was delivered through the
+   * DispatchBus (the `_smrt_dispatch` row id). It is the same on every
+   * redelivery, so pass it as the provider's idempotency key wherever the
+   * provider client supports one. Absent for in-process (inline) invocations.
+   */
+  invocationId?: string;
 }
 
 /**
@@ -255,16 +272,44 @@ export async function executeDelegatedInvocation(options: {
   postgresRls?: boolean;
   logger?: Logger;
 }): Promise<AgentCompletion> {
+  const { dispatchBus } = options;
+  return runDelegatedWorker(options, async (completion) => {
+    // Emit the correlated completion inside the tenant context so it is
+    // stamped with the principal's tenant (readable by the orchestrator).
+    if (dispatchBus) {
+      await emitAgentCompletion(dispatchBus, completion);
+    }
+  });
+}
+
+/**
+ * Run the worker inside one {@link executeAsPrincipal} context and build its
+ * completion. `inContext` runs inside that context after the worker returns.
+ */
+async function runDelegatedWorker(
+  options: {
+    envelope: DelegationEnvelope;
+    agentClass: string;
+    task: Record<string, unknown>;
+    worker: WorkerRunner;
+    db?: SmrtClassOptions['db'];
+    audit?: PrincipalAuditSink;
+    postgresRls?: boolean;
+    logger?: Logger;
+    invocationId?: string;
+  },
+  inContext?: (completion: AgentCompletion) => Promise<void>,
+): Promise<AgentCompletion> {
   const {
     envelope,
     agentClass,
     task,
     worker,
     db,
-    dispatchBus,
     audit,
     postgresRls,
     logger,
+    invocationId,
   } = options;
 
   // A snapshot-narrowed chain (#2978) carries a permission ceiling. The worker
@@ -313,7 +358,14 @@ export async function executeDelegatedInvocation(options: {
     async (run): Promise<AgentCompletion> => {
       let completion: AgentCompletion;
       try {
-        const result = await worker({ run, envelope, agentClass, task, db });
+        const result = await worker({
+          run,
+          envelope,
+          agentClass,
+          task,
+          db,
+          ...(invocationId !== undefined ? { invocationId } : {}),
+        });
         completion = {
           correlationId: envelope.correlationId,
           agentClass,
@@ -330,10 +382,8 @@ export async function executeDelegatedInvocation(options: {
           error: error instanceof Error ? error.message : String(error),
         };
       }
-      // Emit the correlated completion inside the tenant context so it is
-      // stamped with the principal's tenant (readable by the orchestrator).
-      if (dispatchBus) {
-        await emitAgentCompletion(dispatchBus, completion);
+      if (inContext) {
+        await inContext(completion);
       }
       return completion;
     },
@@ -342,10 +392,16 @@ export async function executeDelegatedInvocation(options: {
 
 /**
  * Emit a correlated `agent.completed` dispatch for a worker's completion.
+ *
+ * Pass `invocationId` (the invoking dispatch row id) for a dispatch-delivered
+ * invocation: it is stored as `metadata.invocationId`, and
+ * {@link surfaceAgentCompletions} reports one completion per invocation id, so
+ * a republished completion is never reported twice.
  */
 export async function emitAgentCompletion(
   dispatchBus: DispatchBus,
   completion: AgentCompletion,
+  options: { invocationId?: string } = {},
 ): Promise<void> {
   await dispatchBus.emit(
     AGENT_COMPLETED_SIGNAL,
@@ -359,22 +415,58 @@ export async function emitAgentCompletion(
     {
       correlationId: completion.correlationId,
       source: completion.agentClass || 'agent',
+      ...(options.invocationId
+        ? { metadata: { invocationId: options.invocationId } }
+        : {}),
     },
   );
+}
+
+/** Whether `dispatch` is a newer report of the same invocation than `held`. */
+function supersedes(dispatch: Dispatch, held: Dispatch): boolean {
+  const delta = dispatch.createdAt.getTime() - held.createdAt.getTime();
+  if (delta !== 0) return delta > 0;
+  // Same instant: a concrete outcome wins over an uncertain one.
+  const isUncertain = (d: Dispatch) =>
+    (d.payload as Record<string, unknown> | null)?.error ===
+    AGENT_INVOCATION_UNCERTAIN;
+  return isUncertain(held) && !isUncertain(dispatch);
 }
 
 /**
  * Read the correlated completions for an invocation, so the orchestrator can
  * surface a worker's result back into the conversation on a later turn (the
  * async transport). Returns `[]` when nothing has completed yet.
+ *
+ * Completions that carry the same `metadata.invocationId` are reports of one
+ * dispatch-delivered invocation (a republish after a crash, or an
+ * `AGENT_INVOCATION_UNCERTAIN` report followed by a late result); only the
+ * newest is returned. Completions without an invocation id are each returned.
  */
 export async function surfaceAgentCompletions(
   dispatchBus: DispatchBus,
   correlationId: string,
 ): Promise<AgentCompletion[]> {
-  const dispatches = await dispatchBus.list({
+  const listed = await dispatchBus.list({
     type: AGENT_COMPLETED_SIGNAL,
     correlationId,
+  });
+  const newest = new Map<string, Dispatch>();
+  for (const dispatch of listed) {
+    const invocationId = dispatch.metadata?.invocationId;
+    if (typeof invocationId !== 'string' || invocationId.length === 0) {
+      continue;
+    }
+    const held = newest.get(invocationId);
+    if (!held || supersedes(dispatch, held)) {
+      newest.set(invocationId, dispatch);
+    }
+  }
+  const dispatches = listed.filter((dispatch) => {
+    const invocationId = dispatch.metadata?.invocationId;
+    return typeof invocationId !== 'string' || invocationId.length === 0
+      ? true
+      : newest.get(invocationId) === dispatch;
   });
   return dispatches.map((dispatch) => {
     const payload = dispatch.payload as Record<string, unknown>;
@@ -477,6 +569,29 @@ export function createDispatchInvokeTransport(
  * before the worker runs — a malformed or tampered envelope cannot drive the
  * chain past {@link MAX_DELEGATION_DEPTH}.
  *
+ * **Each dispatch row starts paid work at most once** (durable ledger
+ * `_smrt_agent_invocations`, see {@link AgentInvocationLedger}):
+ *
+ * 1. Before the worker's principal context opens, a reservation keyed by the
+ *    dispatch row id is committed on the base `db` handle.
+ * 2. After the worker returns, its completion is recorded
+ *    (`result_recorded`), then published with `metadata.invocationId`, then
+ *    marked `published`.
+ * 3. A redelivery of the same row never reruns the worker: `published` is
+ *    skipped; `result_recorded` republishes the recorded completion; a
+ *    reservation with no result becomes `uncertain` and publishes an
+ *    `ok: false` completion with error `AGENT_INVOCATION_UNCERTAIN`, so the
+ *    orchestrator stops waiting. An operator reconciles uncertain rows from
+ *    the ledger.
+ *
+ * The worker receives the dispatch row id as
+ * {@link WorkerInvocation.invocationId} to use as a provider idempotency key.
+ *
+ * `db` is required: when it is missing, or `_smrt_agent_invocations` has not
+ * been migrated (`smrt db:migrate`), this throws
+ * `AgentInvocationLedgerMissingError` (`code:
+ * 'AGENT_INVOCATION_LEDGER_MISSING'`) before claiming anything.
+ *
  * @returns The number of invocations processed.
  */
 export async function processAgentInvocations(options: {
@@ -494,6 +609,8 @@ export async function processAgentInvocations(options: {
   const { dispatchBus, subscriber, worker, db, audit, postgresRls, logger } =
     options;
   const log = logger ?? createLogger({ level: 'info' });
+  // Fail closed: no paid work runs without the dedupe ledger.
+  const ledger = await AgentInvocationLedger.open(db);
   // Targeted processors subscribe to their own class's signal; a generic
   // processor uses the single-segment wildcard to handle every class.
   const signalType = options.agentClass
@@ -502,7 +619,7 @@ export async function processAgentInvocations(options: {
   await dispatchBus.subscribe({ signalType, subscriber });
   return dispatchBus.process(
     subscriber,
-    async (payload) => {
+    async (payload, metadata) => {
       const record = isRecord(payload) ? payload : {};
       const envelope = record.envelope;
       const agentClass =
@@ -520,7 +637,9 @@ export async function processAgentInvocations(options: {
       // Defense in depth: a persisted (tamperable) envelope cannot exceed the
       // depth ceiling (or carry a NaN/negative depth that bypasses it).
       assertWithinDelegationDepth(envelope.depth);
-      await executeDelegatedInvocation({
+      await runLedgeredInvocation({
+        ledger,
+        metadata,
         envelope,
         agentClass,
         task: isRecord(record.task) ? record.task : {},
@@ -530,9 +649,200 @@ export async function processAgentInvocations(options: {
         audit,
         postgresRls,
         logger,
+        log,
       });
     },
     { limit: options.limit },
+  );
+}
+
+/**
+ * Publish a completion for a dispatch-delivered invocation inside the
+ * envelope's tenant context (the same tenant the worker ran under), tagged
+ * with the invocation id.
+ */
+async function publishInvocationCompletion(
+  dispatchBus: DispatchBus,
+  envelope: DelegationEnvelope,
+  completion: AgentCompletion,
+  invocationId: string,
+): Promise<void> {
+  const emit = () =>
+    emitAgentCompletion(dispatchBus, completion, { invocationId });
+  if (envelope.tenantId) {
+    await withTenant({ tenantId: envelope.tenantId }, emit);
+  } else {
+    await emit();
+  }
+}
+
+/** Parse a recorded completion back from the ledger. */
+function parseRecordedCompletion(
+  resultJson: string | null,
+  dispatchId: string,
+): AgentCompletion {
+  let parsed: unknown;
+  try {
+    parsed = resultJson === null ? null : JSON.parse(resultJson);
+  } catch {
+    parsed = null;
+  }
+  if (
+    !isRecord(parsed) ||
+    typeof parsed.correlationId !== 'string' ||
+    typeof parsed.agentClass !== 'string' ||
+    typeof parsed.onBehalfOfUserId !== 'string' ||
+    typeof parsed.ok !== 'boolean'
+  ) {
+    throw new Error(
+      `Agent invocation ledger holds a malformed result for dispatch ${dispatchId}`,
+    );
+  }
+  return {
+    correlationId: parsed.correlationId,
+    agentClass: parsed.agentClass,
+    onBehalfOfUserId: parsed.onBehalfOfUserId,
+    ok: parsed.ok,
+    result: parsed.result,
+    ...(typeof parsed.error === 'string' ? { error: parsed.error } : {}),
+  };
+}
+
+/**
+ * Run one dispatch-delivered invocation through the ledger: reserve, run,
+ * record, publish, mark published; or, on a redelivery, act on the recorded
+ * state without running the worker again.
+ */
+async function runLedgeredInvocation(options: {
+  ledger: AgentInvocationLedger;
+  metadata: DispatchMetadata;
+  envelope: DelegationEnvelope;
+  agentClass: string;
+  task: Record<string, unknown>;
+  worker: WorkerRunner;
+  db?: SmrtClassOptions['db'];
+  dispatchBus: DispatchBus;
+  audit?: PrincipalAuditSink;
+  postgresRls?: boolean;
+  logger?: Logger;
+  log: Logger;
+}): Promise<void> {
+  const { ledger, metadata, envelope, agentClass, dispatchBus, log } = options;
+  const dispatchId = metadata.id;
+
+  // Committed on the base handle before executeAsPrincipal (which may open an
+  // RLS transaction), so a lost worker transaction cannot erase it.
+  const reservationId = await ledger.reserve({
+    dispatchId,
+    tenantId: envelope.tenantId,
+    correlationId: envelope.correlationId,
+    agentClass,
+  });
+
+  if (reservationId === null) {
+    await handleRedelivery(options);
+    return;
+  }
+
+  const completion = await runDelegatedWorker({
+    envelope,
+    agentClass,
+    task: options.task,
+    worker: options.worker,
+    db: options.db,
+    audit: options.audit,
+    postgresRls: options.postgresRls,
+    logger: options.logger,
+    invocationId: dispatchId,
+  });
+
+  if (!(await ledger.recordResult(reservationId, JSON.stringify(completion)))) {
+    throw new Error(
+      `Agent invocation ledger row for dispatch ${dispatchId} could not record its result`,
+    );
+  }
+  await publishInvocationCompletion(
+    dispatchBus,
+    envelope,
+    completion,
+    dispatchId,
+  );
+  if (!(await ledger.markPublished(dispatchId))) {
+    log.warn('agent invocation was published but not marked published', {
+      dispatchId,
+    });
+  }
+}
+
+/** Act on a redelivered invocation without running the worker again. */
+async function handleRedelivery(options: {
+  ledger: AgentInvocationLedger;
+  metadata: DispatchMetadata;
+  envelope: DelegationEnvelope;
+  agentClass: string;
+  dispatchBus: DispatchBus;
+  log: Logger;
+}): Promise<void> {
+  const { ledger, metadata, envelope, agentClass, dispatchBus, log } = options;
+  const dispatchId = metadata.id;
+  let current = await ledger.observeRedelivery(dispatchId);
+
+  // Two passes at most: a `reserved` row may move to `result_recorded` (its
+  // owner finished) between the read and the `uncertain` transition.
+  for (let pass = 0; pass < 2 && current; pass++) {
+    switch (current.state) {
+      case 'published':
+        log.info('agent invocation already published; skipping redelivery', {
+          dispatchId,
+        });
+        return;
+      case 'result_recorded': {
+        const completion = parseRecordedCompletion(
+          current.resultJson,
+          dispatchId,
+        );
+        await publishInvocationCompletion(
+          dispatchBus,
+          envelope,
+          completion,
+          dispatchId,
+        );
+        await ledger.markPublished(dispatchId);
+        return;
+      }
+      case 'reserved':
+        if (!(await ledger.markUncertain(dispatchId))) {
+          current = await ledger.get(dispatchId);
+          continue;
+        }
+        break;
+      case 'uncertain':
+        break;
+    }
+    // Reserved earlier with no recorded result: the worker may have done its
+    // paid work, so it is not rerun. Report the uncertainty so the
+    // orchestrator stops waiting; an operator reconciles from the ledger.
+    log.warn('agent invocation outcome is uncertain; not rerunning', {
+      dispatchId,
+      agentClass,
+      correlationId: envelope.correlationId,
+    });
+    await publishInvocationCompletion(
+      dispatchBus,
+      envelope,
+      {
+        correlationId: envelope.correlationId,
+        agentClass,
+        onBehalfOfUserId: envelope.onBehalfOfUserId,
+        ok: false,
+        error: AGENT_INVOCATION_UNCERTAIN,
+      },
+      dispatchId,
+    );
+    return;
+  }
+  throw new Error(
+    `Agent invocation ledger row for dispatch ${dispatchId} is missing or changing`,
   );
 }
 

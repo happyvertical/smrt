@@ -92,6 +92,16 @@ export {
   unregisterConfigResolver,
 } from '@happyvertical/smrt-core';
 export { Agent, type AgentOptions } from './agent.js';
+// Durable dedupe ledger for dispatch-delivered invocations (#5525).
+export {
+  AGENT_INVOCATION_LEDGER_MISSING,
+  AGENT_INVOCATION_TABLE,
+  AGENT_INVOCATION_UNCERTAIN,
+  AgentInvocation,
+  AgentInvocationCollection,
+  AgentInvocationLedgerMissingError,
+  type AgentInvocationState,
+} from './agent-invocation.js';
 export {
   type AgentAIOptions,
   type AgentAISecretFallback,
