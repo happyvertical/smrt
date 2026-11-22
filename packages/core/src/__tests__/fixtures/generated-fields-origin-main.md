@@ -62,6 +62,11 @@ DDL, migration and OpenAPI digests have not moved since the recapture above.
 - Generated list routes (`compat_plain/+server.ts`, `compatroots/+server.ts`):
   the list and count handlers answer a where clause the collection refuses
   with its 400 status.
+- List query grammar (#5439): the same two list routes read their filter with
+  `parseRestListWhere(searchParams, model)` inside the typed-400 guard, so a
+  repeated query parameter is refused and boolean/datetime values are decoded
+  against the model's fields; the list route's refusal body keeps the
+  normalized error code.
 - Generated write paths (both MCP servers `single/index.ts` and
   `modular/handlers/index.ts`, the list and item routes of each model, and
   `sync/apply/+server.ts`): each writable policy asks

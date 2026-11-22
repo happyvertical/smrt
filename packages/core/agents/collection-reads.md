@@ -69,8 +69,9 @@ hydrated object excludes it from persistence, and REST strips label input.
 Fresh, unqueried instances do not have a projected label; reload through the
 collection after a write. Requested display projections bypass the row cache and
 REST uses a body-hash ETag so target renames cannot leave stale names behind.
-Generated SvelteKit list routes share `parseRestListWhere()` with runtime REST,
-honor explicit `orderBy` with the existing stable default, and count the filtered
+Generated SvelteKit list routes share `parseRestListWhere()` with runtime REST
+(its grammar, repeated-parameter refusal and boolean/datetime decoding are in
+[build-knowledge](build-knowledge.md)), honor explicit `orderBy` with the existing stable default, and count the filtered
 rows. Their tenant predicate still applies to client-supplied filters: both
 transports force the anonymous `{ <ownership field>: null }` scope with
 `applyWhereScope()`, which drops every query filter on the ownership column
@@ -257,7 +258,7 @@ is not a bounded, authorized collection query and was not reused.
 | `DisplayLabelProjection`, `resolveDisplayLabelProjection` in ui-metadata | Extends the owning display-label contract; the existing resolver only accepted own fields |
 | `resolveDisplayLabelSource` in collection | Reuses latest-related's target `beforeList`/STI pattern, public projection and ordering validation, primary-key resolution, and qualified relationship resolver |
 | SmrtObject serialization / `_setDisplayLabel` | Uses the existing hydration and framework serialization seams; computed labels never enter registered/persisted fields |
-| `parseRestListWhere` in query-bounds | Extracts the existing REST bracket decoder for generated SvelteKit list/count queries; MCP architecture and `rg` parser/operator searches across core, smrt-web, smrt-svelte, smrt-ui and chat found no existing server decoder outside REST |
+| `parseRestListWhere` (now in query-access) | Extracts the existing REST bracket decoder for generated SvelteKit list/count queries; MCP architecture and `rg` parser/operator searches across core, smrt-web, smrt-svelte, smrt-ui and chat found no existing server decoder outside REST |
 | Test-schema dependency expansion | Extends `getTestDatabase`'s existing physical-FK closure to the declared display read dependency |
 | `display-label-projection.test.ts` | Test-only Display* models and fixtures reuse `getTestDatabase`, real SQLite, `GlobalInterceptors`, and generated REST; existing tests covered projections and relationships separately |
 | commerce `customer-display-projection.test.ts` | Test-only setup reuses actual Customer, Profile, generated REST/web definitions and existing screens `createRecipeScreenReferences`/`screenRecordLabel`; no duplicate screen adapter |

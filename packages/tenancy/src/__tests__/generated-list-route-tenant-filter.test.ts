@@ -524,8 +524,13 @@ describe('emitted SvelteKit list route with the real tenant interceptor', () => 
 
     // The SvelteKit runtime: `error()` throws an object carrying the status.
     vi.doMock('@sveltejs/kit', () => ({
-      error: (status: number, message: string) => {
-        throw Object.assign(new Error(message), { status });
+      // As SvelteKit: a string body becomes { message }, an object is the body.
+      error: (status: number, body: string | { message: string }) => {
+        const payload = typeof body === 'string' ? { message: body } : body;
+        throw Object.assign(new Error(payload.message), {
+          status,
+          body: payload,
+        });
       },
       json: (body: unknown, init: ResponseInit = {}) =>
         new Response(JSON.stringify(body), init),

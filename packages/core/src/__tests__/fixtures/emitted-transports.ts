@@ -237,8 +237,10 @@ export async function emitTransports(
   writeFileSync(
     join(harness, 'kit.ts'),
     [
-      'export function error(status: number, message: string): never {',
-      '  throw Object.assign(new Error(message), { status, body: { message } });',
+      // As SvelteKit: a string body becomes { message }, an object is the body.
+      'export function error(status: number, body: string | { message: string }): never {',
+      "  const payload = typeof body === 'string' ? { message: body } : body;",
+      '  throw Object.assign(new Error(payload.message), { status, body: payload });',
       '}',
       'export function json(body: unknown, init: ResponseInit = {}): Response {',
       "  return new Response(JSON.stringify(body), { ...init, headers: { 'content-type': 'application/json', ...(init.headers as Record<string, string> | undefined) } });",

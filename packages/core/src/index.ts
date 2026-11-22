@@ -603,6 +603,7 @@ export {
 // Which fields a caller may filter and sort a list by: the ones it may read.
 export {
   assertQueryAccess,
+  parseRestListWhere,
   QueryFieldError,
   type RequestQuery,
 } from './query-access';
@@ -613,7 +614,6 @@ export {
   DEFAULT_LIST_ORDER_BY,
   type ListBoundOptions,
   MAX_LIST_LIMIT,
-  parseRestListWhere,
   QueryBoundsError,
   QueryOrderByError,
   resolveListLimit,

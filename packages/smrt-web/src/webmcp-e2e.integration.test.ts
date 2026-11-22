@@ -9,6 +9,10 @@
  * so auth, action exposure, serialization, and persistence still execute.
  */
 
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import {
   APIGenerator,
   field,
@@ -21,7 +25,16 @@ import {
 import { ManifestGenerator } from '@happyvertical/smrt-core/scanner';
 import { getTestDatabase } from '@happyvertical/smrt-core/testing';
 import { ManifestAdapter, OxcScanner } from '@happyvertical/smrt-scanner';
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest';
+import { generateClientModule } from '../../../packages/core/src/vite-plugin/generated-client.js';
 import {
   buildWebCollectionDefinition,
   buildWebMcpToolDefinitions,
@@ -174,6 +187,7 @@ describe('WebMCP application composition (#2523)', () => {
   let generatedDefinitions: WebMcpToolDefinition[];
   let getDefinition: WebMcpToolDefinition;
   let commandDefinition: WebMcpToolDefinition;
+  let fixtureManifest: Parameters<typeof generateClientModule>[0];
   const baseUrl = 'http://fixture.local/api/v1';
 
   beforeAll(async () => {
@@ -196,6 +210,7 @@ describe('WebMCP application composition (#2523)', () => {
     new ManifestGenerator().applyGenerationPasses(manifest, {
       packageName: '@fixture/smrt-web',
     });
+    fixtureManifest = manifest;
     const collectionDefinitions = selectWebCollectionEntries(manifest).map(
       (entry) => buildWebCollectionDefinition(entry, manifest),
     );
@@ -461,6 +476,66 @@ describe('WebMCP application composition (#2523)', () => {
 
     registration();
     expect(tools.every((tool) => tool.signal?.aborted)).toBe(true);
+  });
+
+  it('runs the list tool through the generated client fetcher with a structured where', async () => {
+    const { tools } = installModelContext();
+    const moduleDir = mkdtempSync(join(tmpdir(), 'smrt-web-generated-client-'));
+    try {
+      const modulePath = join(moduleDir, 'client.mjs');
+      writeFileSync(modulePath, generateClientModule(fixtureManifest), 'utf-8');
+      const { createClient } = (await import(
+        pathToFileURL(modulePath).href
+      )) as {
+        createClient: (
+          basePath?: string,
+        ) => Record<string, SmrtCrudFetchers | undefined>;
+      };
+      // The generated client calls the global fetch.
+      vi.stubGlobal('fetch', authenticatedFetch());
+      const generatedFetchers = createClient('/api/v1').webmcpfixtureitems;
+      if (!generatedFetchers) {
+        throw new Error('generated client has no webmcpfixtureitems fetchers');
+      }
+      await itemCollection.create({ name: 'structured-second' });
+      const registration = registerWebMcpTools(
+        generatedDefinitions.filter(
+          (definition) =>
+            definition.collection === 'webmcpfixtureitems' &&
+            definition.action === 'list',
+        ),
+        {
+          resolveFetchers: () => generatedFetchers,
+          resolveToolFetchers: () => generatedFetchers,
+        },
+      );
+      await registration.ready;
+      const list = tools.find((tool) => tool.name.endsWith('_list'));
+      if (!list) throw new Error('fixture list tool was not registered');
+      const names = async (args: Record<string, unknown>) =>
+        (JSON.parse(await list.execute(args)) as Array<{ name: string }>).map(
+          (row) => row.name,
+        );
+
+      expect(await names({ where: { name: 'first' } })).toEqual(['first']);
+      expect(
+        await names({
+          where: { name: { op: 'in', value: ['first', 'structured-second'] } },
+          orderBy: 'name ASC',
+        }),
+      ).toEqual(['first', 'structured-second']);
+      expect(
+        await names({ where: { 'name like': 'structured-%' }, limit: 5 }),
+      ).toEqual(['structured-second']);
+      // An empty membership list never widens to every row.
+      await expect(
+        list.execute({ where: { name: { op: 'in', value: [] } } }),
+      ).rejects.toThrow(/empty list/);
+      registration();
+    } finally {
+      vi.unstubAllGlobals();
+      rmSync(moduleDir, { force: true, recursive: true });
+    }
   });
 
   it('defaults to read exposure and namespaces the selected browser surface', async () => {

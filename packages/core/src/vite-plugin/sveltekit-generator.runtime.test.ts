@@ -21,7 +21,7 @@ import { reportUnexpectedHttpError } from '../generators/route-error';
 import { clearManifestCache } from '../manifest/manifest-loader.js';
 import { SmrtObject } from '../object.js';
 import { publicSerializerOf, toPublicJSONValue } from '../public-json.js';
-import { parseRestListWhere } from '../query-bounds.js';
+import { assertQueryAccess, parseRestListWhere } from '../query-access.js';
 import { ObjectRegistry, smrt } from '../registry.js';
 import { assertCreateInput } from '../request-input.js';
 import { setRuntimeExposureGate } from '../runtime-exposure.js';
@@ -30,6 +30,7 @@ import { isServiceOptionInput } from '../service-options.js';
 import { snapshotObjectRegistryState } from '../test-utils.js';
 import { applyWhereScope, WhereClauseError } from '../where-keys.js';
 import { assignUpdateInput } from '../write-input.js';
+import { generateClientModule } from './generated-client.js';
 import { generateSvelteKitRoutes } from './sveltekit-generator.js';
 
 // Canonical instance injection prevents provider/env/file configuration fallback.
@@ -221,7 +222,8 @@ function writeWorkspaceCoreShim(projectRoot: string): void {
       "  return 'W/\"' + version + '-' + representation + '\"';",
       '}',
       'export async function getTableVersion() { return 1; }',
-      `export const parseRestListWhere = (${parseRestListWhere.toString()});`,
+      // The real list query parser, over the real registry.
+      'export const parseRestListWhere = (...args) => globalThis.__smrtGeneratedRequestHelpers.parseRestListWhere(...args);',
       // The real scope helper: the emitted tenant-scoped list route calls it.
       'export const applyWhereScope = globalThis.__smrtGeneratedApplyWhereScope;',
       // Every emitted read resolves its tenant scope at request time; a test
@@ -306,6 +308,7 @@ describe('generated SvelteKit helper runtime', () => {
       assertCreateInput,
       assertCreateTargetSurface,
       assignUpdateInput,
+      parseRestListWhere,
       publicSerializerOf,
       toPublicJSONValue,
     };
@@ -410,8 +413,10 @@ describe('generated SvelteKit helper runtime', () => {
     writeFileSync(
       svelteKitShim,
       [
-        'export function error(status: number, message: string): never {',
-        '  throw Object.assign(new Error(message), { status });',
+        // As SvelteKit: a string becomes { message }, an object is the body.
+        'export function error(status: number, body: string | { message: string }): never {',
+        "  const payload = typeof body === 'string' ? { message: body } : body;",
+        '  throw Object.assign(new Error(payload.message), { status, body: payload });',
         '}',
         'export function json(body: unknown, init: ResponseInit = {}): Response {',
         '  return new Response(JSON.stringify(body), init);',
@@ -2560,6 +2565,248 @@ describe('generated SvelteKit helper runtime', () => {
     it('rejects a malformed ?offset the same way', async () => {
       const { invoke } = await listWithQuery('?offset=abc');
       await expect(invoke()).rejects.toMatchObject({ status: 400 });
+    });
+  });
+
+  /**
+   * The generated client's `list(params)` and the emitted list route read one
+   * query grammar: an `[in]` list and an `orderBy` list arrive as one
+   * comma-joined value each, a boolean is decoded against its field, and a
+   * repeated parameter is refused rather than narrowed to its last value.
+   */
+  describe('generated list route reads the generated client list grammar', () => {
+    const modelKey = '@fixture/listgrammar:GrammarRow';
+
+    async function withGrammarRoute(
+      run: (context: {
+        client: {
+          list(params?: unknown): Promise<{
+            items: Array<Record<string, unknown>>;
+            count: number;
+          }>;
+        };
+        invoke: (query: string) => Promise<Response>;
+        listCalls: number;
+      }) => Promise<void>,
+    ): Promise<void> {
+      clearManifestCache();
+      const restore = snapshotObjectRegistryState();
+      class GrammarRow extends SmrtObject {
+        @field({ type: 'text' })
+        name = '';
+
+        @field({ type: 'integer' })
+        rank = 0;
+
+        @field({ type: 'boolean' })
+        active = false;
+
+        constructor(options: Record<string, unknown> = {}) {
+          super(options);
+          if (options.name !== undefined) this.name = options.name as string;
+          if (options.rank !== undefined) this.rank = options.rank as number;
+          if (options.active !== undefined)
+            this.active = options.active as boolean;
+        }
+      }
+      class GrammarRowCollection extends SmrtCollection<GrammarRow> {
+        static readonly _itemClass = GrammarRow;
+      }
+      let db:
+        | Awaited<
+            ReturnType<
+              typeof import('../testing/database.js')['getTestDatabase']
+            >
+          >
+        | undefined;
+      try {
+        smrt({
+          packageName: '@fixture/listgrammar',
+          tableName: 'grammar_rows',
+          collection: 'grammarrows',
+          api: { include: ['list'] },
+        })(GrammarRow);
+        ObjectRegistry.registerCollection(modelKey, GrammarRowCollection);
+        const { getTestDatabase } = await import('../testing/database.js');
+        db = await getTestDatabase({ classes: [modelKey] });
+        const rows = await GrammarRowCollection.create({ db });
+        for (const seed of [
+          { name: 'A', rank: 1, active: true },
+          { name: 'B', rank: 1, active: false },
+          { name: 'C', rank: 2, active: true },
+          { name: 'D', rank: 3, active: false },
+        ]) {
+          await (await rows.create(seed)).save();
+        }
+        const tracked = {
+          count: (options: Record<string, unknown>) => rows.count(options),
+          db: rows.db,
+          list: (options: Record<string, unknown>) => {
+            context.listCalls += 1;
+            return rows.list(options);
+          },
+          tableName: rows.tableName,
+        };
+        (globalThis as Record<string, unknown>).__smrtGeneratedRouteCollection =
+          tracked;
+        // The real field-access rule, over the real registry.
+        (
+          (globalThis as Record<string, unknown>)
+            .__smrtGeneratedRequestHelpers as Record<string, unknown>
+        ).assertQueryAccess = assertQueryAccess;
+
+        const objectFilePath = join(
+          projectRoot,
+          'src/lib/objects/GrammarRow.ts',
+        );
+        writeFileSync(objectFilePath, 'export class GrammarRow {}\n');
+        const manifest: SmartObjectManifest = {
+          version: '1',
+          timestamp: 0,
+          packageName: '@fixture/listgrammar',
+          objects: {
+            [modelKey]: {
+              className: 'GrammarRow',
+              name: 'GrammarRow',
+              collection: 'grammarrows',
+              qualifiedName: modelKey,
+              decoratorConfig: { api: { include: ['list'] } },
+              fields: {
+                name: { type: 'text' },
+                rank: { type: 'integer' },
+                active: { type: 'boolean' },
+              },
+              filePath: objectFilePath,
+              methods: {},
+            } as SmartObjectManifest['objects'][string],
+          },
+        };
+        await generateSvelteKitRoutes(projectRoot, manifest, {
+          configFileName: 'smrt.ts',
+          configPath: 'src/lib/server',
+          enabled: true,
+          objectsDir: 'src/lib/objects',
+          routesDir: 'src/routes/api',
+        });
+        const route = await bundleGeneratedRoute(
+          'src/routes/api/grammarrows/+server.ts',
+          'generated-list-grammar-route.mjs',
+        );
+        const invoke = async (query: string) => {
+          const url = new URL(`http://localhost/api/grammarrows${query}`);
+          return route.GET({
+            locals: { user: { id: 'user-1' } },
+            request: new Request(url),
+            url,
+          }) as Promise<Response>;
+        };
+
+        const clientPath = join(projectRoot, 'generated-client.mjs');
+        writeFileSync(clientPath, generateClientModule(manifest), 'utf-8');
+        const { createClient } = await import(pathToFileURL(clientPath).href);
+        vi.stubGlobal('fetch', async (input: string | URL) => {
+          const url = new URL(String(input), 'http://localhost');
+          try {
+            return await invoke(url.search);
+          } catch (cause) {
+            const status = (cause as { status?: unknown }).status;
+            if (typeof status !== 'number') throw cause;
+            return Response.json(
+              { error: (cause as Error).message },
+              { status },
+            );
+          }
+        });
+        const context = {
+          client: createClient('/api').grammarrows,
+          invoke,
+          listCalls: 0,
+        };
+        await run(context);
+      } finally {
+        vi.unstubAllGlobals();
+        await db?.close?.();
+        restore();
+      }
+    }
+
+    it('returns every matching row for [in], orderBy and boolean filters', async () => {
+      await withGrammarRoute(async ({ client }) => {
+        const names = (body: { items: Array<Record<string, unknown>> }) =>
+          body.items.map((item) => item.name);
+
+        expect(
+          names(
+            await client.list({
+              'name[in]': ['A', 'B', 'C'],
+              orderBy: ['rank DESC', 'name DESC'],
+            }),
+          ),
+        ).toEqual(['C', 'B', 'A']);
+        expect(
+          names(
+            await client.list({
+              where: { name: { op: 'in', value: ['A', 'D'] } },
+              orderBy: 'name ASC',
+            }),
+          ),
+        ).toEqual(['A', 'D']);
+        expect(
+          names(await client.list({ active: true, orderBy: 'name ASC' })),
+        ).toEqual(['A', 'C']);
+        expect(
+          names(
+            await client.list({
+              where: { active: false, 'rank >=': 1 },
+              orderBy: 'name ASC',
+            }),
+          ),
+        ).toEqual(['B', 'D']);
+      });
+    });
+
+    it('refuses a repeated parameter with a 400 before querying, and keeps comma-delimited [in]', async () => {
+      await withGrammarRoute(async (context) => {
+        const refusal = await context
+          .invoke('?name%5Bin%5D=A&name%5Bin%5D=B')
+          .then(
+            () => undefined,
+            (cause: { status?: number; body?: unknown }) => cause,
+          );
+        expect(refusal?.status).toBe(400);
+        // The public body SvelteKit serializes keeps the refusal's code.
+        expect(JSON.parse(JSON.stringify(refusal?.body))).toEqual({
+          message: expect.stringContaining('more than once'),
+          code: 'REPEATED_QUERY_PARAMETER',
+        });
+        for (const query of [
+          '?rank%5Bgte%5D=3&rank%20%3E%3D=1',
+          '?rank%20%3E%3D=1&rank%5Bgte%5D=3',
+        ]) {
+          await expect(context.invoke(query)).rejects.toMatchObject({
+            status: 400,
+            body: { code: 'REPEATED_QUERY_PARAMETER' },
+          });
+        }
+        await expect(context.invoke('?__proto__=x')).rejects.toMatchObject({
+          status: 400,
+          body: { code: 'QUERY_FIELD_NOT_ALLOWED' },
+        });
+        await expect(
+          context.invoke('?orderBy=name&orderBy=rank'),
+        ).rejects.toMatchObject({ status: 400 });
+        expect(context.listCalls).toBe(0);
+
+        const joined = await context.invoke(
+          '?name%5Bin%5D=A,B&orderBy=name%20ASC',
+        );
+        expect(joined.status).toBe(200);
+        expect(
+          (
+            (await joined.json()) as { items: Array<Record<string, unknown>> }
+          ).items.map((item) => item.name),
+        ).toEqual(['A', 'B']);
+      });
     });
   });
 
