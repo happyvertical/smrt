@@ -675,7 +675,7 @@ export async function migrateOwnAppToPostgres(): Promise<MigrateToPostgresResult
     );
   if (pending.approvals)
     throw new EngineError(
-      'an approval is unsettled (pending, accepted or executing); decide it before migrating',
+      'an approval is unsettled (pending, accepted, executing, or approved with no result, i.e. a crashed execution); decide it before migrating',
       'refused',
     );
   const schema = appSchemaName(tenant, app.id as string);
@@ -698,18 +698,26 @@ export async function discardStaleDraft(dir: string): Promise<void> {
 }
 
 /** True when an approval is still waiting to be decided or applied. */
-async function hasUnsettledApprovals(db: DatabaseInterface): Promise<boolean> {
+export async function hasUnsettledApprovals(
+  db: DatabaseInterface,
+  pageSize = 500,
+): Promise<boolean> {
   const approvals = await ApprovalCollection.create({ db });
   // `approved` without a result is a crashed execution (the store reads it as
   // executing); with a result it is settled.
   for (const status of ['pending', 'accepted', 'executing'])
     if ((await approvals.list({ where: { status }, limit: 1 })).length)
       return true;
-  const approved = await approvals.list({
-    where: { status: 'approved' },
-    limit: 1000,
-  });
-  return approved.some((row) => !row.result);
+  // Every `approved` row, in pages: a crashed one must not hide behind settled ones.
+  for (let offset = 0; ; offset += pageSize) {
+    const page = await approvals.list({
+      where: { status: 'approved' },
+      limit: pageSize,
+      offset,
+    });
+    if (page.some((row) => !row.result)) return true;
+    if (page.length < pageSize) return false;
+  }
 }
 
 /** True when an open or held batch has an active card. */

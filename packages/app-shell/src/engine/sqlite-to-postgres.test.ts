@@ -283,11 +283,37 @@ describe('migrateUserAppToPostgres', () => {
       database: a,
       versions: await store.list(),
     });
+    rmSync(join(dataDir, POSTGRES_MIGRATION_MARKER)); // a crash before the hint
     await pg.exec(
       `CREATE TABLE "${b.schema}"._app_meta AS SELECT * FROM "${a.schema}"._app_meta`,
     );
     expect(await isMigratedToPostgres(dataDir, a)).toBe(true);
     expect(await isMigratedToPostgres(dataDir, b)).toBe(false);
+    // The migrate path refuses it too, and writes no marker naming another schema.
+    await expect(
+      migrateUserAppToPostgres({
+        dataDir,
+        database: b,
+        versions: await store.list(),
+      }),
+    ).rejects.toThrow(/another schema|different schema/);
+    expect(readPostgresMigrationMarker(dataDir)).toBeNull();
+  });
+
+  it('a malformed completion row fails closed with its own message', async () => {
+    const { store, dataDir } = await desktopApp();
+    const database = await schemaConfig();
+    await migrateUserAppToPostgres({
+      dataDir,
+      database,
+      versions: await store.list(),
+    });
+    await pg.exec(
+      `UPDATE "${database.schema}"._app_meta SET value = 'garbage' WHERE key = 'sqlite-migration'`,
+    );
+    await expect(isMigratedToPostgres(dataDir, database)).rejects.toThrow(
+      /migration record .* unreadable/,
+    );
   });
 
   it('a database that cannot be read throws a retryable error, a missing schema is just not migrated', async () => {

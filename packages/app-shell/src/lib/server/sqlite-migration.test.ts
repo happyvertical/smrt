@@ -27,6 +27,7 @@ import {
   closeHost,
   configureShell,
   getHost,
+  hasUnsettledApprovals,
   migrateOwnAppToPostgres,
   tenantAppDirs,
 } from './host.ts';
@@ -215,6 +216,25 @@ describe('what refuses the move', () => {
     await expect(runAs(who, () => migrateOwnAppToPostgres())).rejects.toThrow(
       /approval is unsettled/,
     );
+  });
+
+  it('a crashed approval is found behind many settled ones (paged, not capped)', async () => {
+    const { who } = await seed('paged@example.test');
+    const make = (key: string, result: string) =>
+      runAs(who, async () =>
+        (await ApprovalCollection.create({ db: h.db })).create({
+          command: '{}',
+          actionKey: key,
+          summary: 's',
+          preview: '{}',
+          status: 'approved',
+          result,
+          requestedBy: who.id,
+        } as never),
+      );
+    for (let i = 0; i < 5; i++) await make(`ok${i}`, '{"ok":true}');
+    await make('crashed', '');
+    expect(await runAs(who, () => hasUnsettledApprovals(h.db, 2))).toBe(true);
   });
 
   it('an unsettled approval, named as an approval', async () => {

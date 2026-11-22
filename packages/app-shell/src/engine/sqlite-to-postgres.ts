@@ -126,12 +126,9 @@ export async function isMigratedToPostgres(
     key: MIGRATION_COMPLETION_KEY,
   });
   if (value === null) return false;
-  try {
-    // The row must be THIS schema's own fact (a copied schema would carry another's).
-    return parseCompletion(value).schema === database.schema;
-  } catch {
-    return false;
-  }
+  // The row must be THIS schema's own fact (a copied schema would carry another's);
+  // an unreadable one fails closed with its own message, not "not migrated".
+  return parseCompletion(value).schema === database.schema;
 }
 
 function writeMarker(dataDir: string, marker: PostgresMigrationMarker): void {
@@ -178,6 +175,11 @@ export async function migrateUserAppToPostgres(
   if (recorded !== null) {
     // Done: the schema is the app now (the host may have written to it since).
     const fact = parseCompletion(recorded);
+    if (fact.schema !== database.schema)
+      throw new EngineError(
+        'the completion record in this schema names another schema (a copy?); nothing was changed',
+        'refused',
+      );
     // The kept SQLite file is a snapshot, so it still digests to what moved; a
     // different app pointed at a completed schema is refused.
     const source = await exportUserApp({ dataDir, versions: options.versions });
@@ -256,5 +258,8 @@ function parseCompletion(text: string): PostgresMigrationMarker {
   } catch {
     // fall through
   }
-  throw new EngineError('the completion record is unreadable', 'refused');
+  throw new EngineError(
+    'the migration record in the schema is unreadable; an operator must inspect it',
+    'refused',
+  );
 }
