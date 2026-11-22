@@ -602,7 +602,13 @@ function tenancyFamilyScope(
 ): string[] | undefined {
   if (!objectDef) return undefined;
   const members = collectStiHierarchyObjects(objectDef, manifest);
-  if (members.length < 2) return undefined;
+  // A singleton STI base still carries the boundary: a subtype registered
+  // only at run time must not be admitted through it. A plain model stays
+  // unchanged.
+  const isStiBase =
+    manifest !== undefined &&
+    objectDef.decoratorConfig?.tableStrategy === 'sti';
+  if (members.length < 2 && !isStiBase) return undefined;
   return members.map((member) => readScopeModelName(member, member.className));
 }
 

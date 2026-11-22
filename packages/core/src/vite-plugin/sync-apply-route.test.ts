@@ -244,6 +244,30 @@ describe('generateSyncApplyRouteTemplate', () => {
     expect(withoutTenants).toContain('runInRequestTenancy(');
   });
 
+  it('scopes a singleton STI base, so a later subtype is not synced through it', () => {
+    const base = {
+      qualifiedName: '@fixture/app:Revision',
+      className: 'Revision',
+      packageName: '@fixture/app',
+      collection: 'revisions',
+      fields: {},
+      methods: {},
+      decoratorConfig: { tableStrategy: 'sti', api: { include: ['update'] } },
+    };
+    const single = manifestWith({
+      '@fixture/app:Revision': base,
+      Product: productDef,
+    });
+    const scope = syncModelScope(single);
+    expect(scope).toEqual(['@fixture/app:Revision', 'Product']);
+    const route = generateSyncApplyRouteTemplate(
+      collectSyncApplyTargets(single),
+      ACCESS_IMPORTS,
+      scope,
+    );
+    expect(route).toContain('modelScope: SYNC_MODEL_SCOPE');
+  });
+
   it('limits family members served through a base to the models the manifest generates', () => {
     const base = {
       qualifiedName: '@fixture/app:Revision',

@@ -59,6 +59,7 @@ function oldSnapshot(value = col('text'), extra = {}) {
     release,
     engine: 'postgres',
     capturedFrom: 'migrateSmrtSchemas on an empty database',
+    systemSchema: '1.15.0',
     tables: {
       [tableName]: {
         columns: {
@@ -457,14 +458,19 @@ test('capture is stable and restore round trips catalogs and bookkeeping', async
   const first = await capture({ root, build });
   const second = await capture({ root, build });
   assert.equal(stableJSON(first), stableJSON(second));
+  // A capture names the release's system-table schema version; the catalogs
+  // themselves do not hold it.
+  assert.equal(first.systemSchema, build.SMRT_SCHEMA_VERSION);
+  assert.match(first.systemSchema, /^\d+\.\d+\.\d+$/);
   const db = await restore(first, { root });
   try {
     assert.equal(
-      stableJSON(
-        await introspect(db, first.release, {
+      stableJSON({
+        ...(await introspect(db, first.release, {
           modelTables: first.modelTables,
-        }),
-      ),
+        })),
+        systemSchema: first.systemSchema,
+      }),
       stableJSON(first),
     );
   } finally {
@@ -582,6 +588,7 @@ function records(
     stableJSON({
       release,
       snapshot: `snapshots/${release}.json`,
+      systemSchema: '1.15.0',
       decision: 'First release whose schema was saved.',
       recordedAt: '2026-11-12',
       history: [],
@@ -612,6 +619,8 @@ test('move-oldest requires first hop, reason and existing snapshots; records his
   const next = moveOldest(options);
   assert.equal(next.history[0].release, release);
   assert.match(next.decision, /smrt 0.60.18/);
+  // The new floor carries its snapshot's system-table schema version.
+  assert.equal(next.systemSchema, '1.15.0');
   assert.equal(
     validateOldest(directory, build.compareReleases).release,
     '0.60.19',
@@ -624,6 +633,64 @@ test('move-oldest requires first hop, reason and existing snapshots; records his
   assert.throws(
     () => validateOldest(directory, build.compareReleases),
     /must name the release/,
+  );
+});
+test('the floor names its system schema, and a floor move takes it from the snapshot', () => {
+  const directory = records('system-schema');
+  const file = path.join(directory, 'oldest-supported.json');
+  const record = JSON.parse(readFileSync(file));
+  for (const systemSchema of [undefined, 'latest', '1.14.0']) {
+    writeFileSync(file, stableJSON({ ...record, systemSchema }));
+    assert.throws(
+      () => validateOldest(directory, build.compareReleases),
+      /systemSchema/,
+    );
+  }
+  writeFileSync(file, stableJSON(record));
+  assert.equal(
+    validateOldest(directory, build.compareReleases).systemSchema,
+    '1.15.0',
+  );
+
+  const { systemSchema: _dropped, ...undated } = {
+    ...oldSnapshot(),
+    release: '0.60.19',
+  };
+  writeFileSync(
+    path.join(directory, 'snapshots/0.60.19.json'),
+    stableJSON(undated),
+  );
+  const move = {
+    directory,
+    upgradeFirstTo: '0.60.18',
+    reason: 'Remove the old data step.',
+    compare: build.compareReleases,
+  };
+  assert.throws(
+    () => moveOldest({ ...move, to: '0.60.19' }),
+    /Snapshot 0\.60\.19 must record systemSchema/,
+  );
+  // A malformed value is refused before the floor record is written.
+  const before = readFileSync(file, 'utf8');
+  for (const systemSchema of ['1.16', 'latest', '1.16.0-beta', 16]) {
+    writeFileSync(
+      path.join(directory, 'snapshots/0.60.19.json'),
+      stableJSON({ ...oldSnapshot(), release: '0.60.19', systemSchema }),
+    );
+    assert.throws(
+      () => moveOldest({ ...move, to: '0.60.19' }),
+      /Snapshot 0\.60\.19 must record systemSchema/,
+    );
+    assert.equal(readFileSync(file, 'utf8'), before);
+  }
+  writeFileSync(
+    path.join(directory, 'snapshots/0.60.20.json'),
+    stableJSON({ ...oldSnapshot(), release: '0.60.20', systemSchema: '1.16.0' }),
+  );
+  assert.equal(moveOldest({ ...move, to: '0.60.20' }).systemSchema, '1.16.0');
+  assert.equal(
+    validateOldest(directory, build.compareReleases).systemSchema,
+    '1.16.0',
   );
 });
 test('oldest record validator refuses mismatched file name, release and empty decision', () => {
@@ -881,6 +948,51 @@ test('save fails after writing when the online owners check disagrees', async ()
   assert.equal(existsSync(path.join(directory, `owners/${version}.json`)), true);
 });
 
+test('save refuses an undated snapshot that is already saved, before writing or pruning anything', async () => {
+  const directory = records('save-undated');
+  const version = '0.60.21';
+  const file = path.join(directory, 'snapshots/0.60.19.json');
+  const { systemSchema: _dropped, ...undated } = JSON.parse(
+    readFileSync(file, 'utf8'),
+  );
+  writeFileSync(file, stableJSON(undated));
+  const before = readdirSync(path.join(directory, 'snapshots')).sort();
+  await assert.rejects(
+    save({
+      root: checkout('save-undated-checkout', version),
+      directory,
+      captureSnapshot: async () => ({
+        ...oldSnapshot(),
+        release: version,
+        modelTables: [tableName],
+      }),
+      verify: async () => ({ state: 'skipped', failures: [], message: '' }),
+      report: () => {},
+    }),
+    /release snapshot 0\.60\.19 must record systemSchema/,
+  );
+  // Nothing was written and nothing was pruned.
+  assert.deepEqual(readdirSync(path.join(directory, 'snapshots')).sort(), before);
+  assert.equal(existsSync(path.join(directory, `snapshots/${version}.json`)), false);
+  assert.equal(existsSync(path.join(directory, 'snapshots/0.60.18.json')), true);
+  // Saving the undated release itself again is how it is repaired.
+  await save({
+    root: checkout('save-undated-repair-checkout', '0.60.19'),
+    directory,
+    captureSnapshot: async () => ({
+      ...oldSnapshot(),
+      release: '0.60.19',
+      modelTables: [tableName],
+    }),
+    verify: async () => ({ state: 'skipped', failures: [], message: '' }),
+    report: () => {},
+  });
+  assert.equal(
+    JSON.parse(readFileSync(file, 'utf8')).systemSchema,
+    oldSnapshot().systemSchema,
+  );
+});
+
 test('prune keeps oldest supported snapshot and the newest two others', () => {
   const directory = records('prune');
   assert.deepEqual(prune(directory, release, build.compareReleases), [
@@ -1045,13 +1157,20 @@ function plausible(count, version = release) {
   const modelTables = Array.from({ length: count }, (_, i) => `t${i}`);
   return {
     release: version,
+    systemSchema: '1.15.0',
     modelTables,
     tables: Object.fromEntries(modelTables.map((name) => [name, {}])),
   };
 }
 test('an empty or shrunken snapshot is refused by the plausibility rule', () => {
   assert.throws(
-    () => assertSnapshotPlausible({ release: '0.61.3', modelTables: [], tables: {} }),
+    () =>
+      assertSnapshotPlausible({
+        release: '0.61.3',
+        systemSchema: '1.15.0',
+        modelTables: [],
+        tables: {},
+      }),
     /Refusing release snapshot 0\.61\.3: it holds 0 model table/,
   );
   assert.throws(
@@ -1060,6 +1179,28 @@ test('an empty or shrunken snapshot is refused by the plausibility rule', () => 
   );
   assertSnapshotPlausible(plausible(90, '0.60.18'), plausible(100));
   assertSnapshotPlausible(plausible(5));
+});
+test('every snapshot must record a well-formed system schema, at capture and in the plausibility rule check and save apply to all of them', async () => {
+  const { systemSchema: _dropped, ...undated } = plausible(5);
+  for (const systemSchema of [undefined, '', '1.15', 'x.y.z', 1.15]) {
+    assert.throws(
+      () => assertSnapshotPlausible({ ...undated, systemSchema }),
+      /release snapshot 0\.60\.17 must record systemSchema/,
+    );
+  }
+  assert.throws(
+    () => assertSnapshotPlausible(undated),
+    /must record systemSchema/,
+  );
+  // A build that names no system schema cannot be captured.
+  for (const SMRT_SCHEMA_VERSION of [undefined, 'latest']) {
+    await assert.rejects(
+      capture({ root, build: { ...build, SMRT_SCHEMA_VERSION } }),
+      /must record systemSchema/,
+    );
+  }
+  // `check` and `save` both run every snapshot through assertSnapshotPlausible,
+  // so an undated snapshot that is not the floor is refused there too.
 });
 test('save refuses a capture far smaller than the newest snapshot and writes nothing', async () => {
   const directory = records('save-shrunk', ['0.60.17']);
