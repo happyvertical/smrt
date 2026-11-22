@@ -45,6 +45,7 @@ import { DispatchCollection } from './collections/Dispatches.js';
 import { DispatchSubscriptionCollection } from './collections/DispatchSubscriptions.js';
 import { Dispatch } from './models/Dispatch.js';
 import { DispatchSubscription } from './models/DispatchSubscription.js';
+import { isDispatchRoutedTo } from './routing.js';
 import {
   resolveDispatchTenantId,
   resolveDispatchTenantScope,
@@ -619,20 +620,11 @@ export class DispatchBus {
           return false;
         }
       }
-      if (dispatch.targetSubscriber === subscriber) {
-        // Targeted at this subscriber (fanout copy) — always visible
-        return true;
-      }
-      if (dispatch.targetSubscriber !== null) {
-        // Targeted at a different subscriber — not visible
-        return false;
-      }
-      // Null target (compete dispatch): only visible if this subscriber
-      // has a compete subscription matching this dispatch type
-      const matchingSub = subscriptions.find((sub) =>
-        sub.matches(dispatch.type),
-      );
-      return matchingSub?.delivery === 'compete';
+      // One routing predicate: a targeted copy needs any matching
+      // subscription of this subscriber; a compete (NULL-target) row needs a
+      // matching compete subscription. Any matching subscription decides,
+      // never only the first one found.
+      return isDispatchRoutedTo(dispatch, subscriber, subscriptions);
     };
 
     let pendingDispatches: Dispatch[];
@@ -644,11 +636,7 @@ export class DispatchBus {
         tenantScope,
       });
 
-      pendingDispatches = allPending.filter(
-        (dispatch) =>
-          subscriptions.some((sub) => sub.matches(dispatch.type)) &&
-          isVisibleToSubscriber(dispatch),
-      );
+      pendingDispatches = allPending.filter(isVisibleToSubscriber);
     } else {
       // Direct query for exact signal types (with target_subscriber filter)
       const raw = await DispatchCollection.findPending(
