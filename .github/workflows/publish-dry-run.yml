@@ -151,6 +151,10 @@ jobs:
             # catalog and CLI version: build outputs outside dist/, archived
             # exactly as publish.yml archives them.
             find packages/planner/app -type f -print
+            # The app shell publishes its adapter-node server build at build/
+            # (a start entry for consumers); like app/ above it is a build
+            # output outside dist/, and a reused dist would otherwise ship without it.
+            find packages/app-shell/build -type f -print
             printf '%s\n' \
               packages/planner/src/lib/catalog/catalog.json \
               packages/planner/src/lib/smrt-version.ts

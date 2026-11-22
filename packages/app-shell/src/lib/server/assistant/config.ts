@@ -32,6 +32,7 @@ import {
 import type { AssistantStatus } from '../../assistant/events.ts';
 import { CHATGPT_ASSISTANT_CLASS, CHATGPT_SETTINGS_HREF } from '../chatgpt.ts';
 import { shellProfile } from '../host.ts';
+import { assertHostedInferenceEntitled } from '../hosted-inference.ts';
 import { type Principal, runAs } from '../owner.ts';
 import { assistantSystemPrompt } from './guidance.ts';
 
@@ -152,6 +153,7 @@ export async function resolveAssistantOptions(
       ...(base ? { base: base as Record<string, unknown> } : {}),
       tenantId: principal.tenantId,
       className: 'AppShellAssistant',
+      ...(config.resolver ? { resolver: config.resolver } : {}),
       usage: { className: 'AppShellAssistant', tenantId: principal.tenantId },
       // The thread is stored in shell.db: no second transcript copy.
       transcript: false,
@@ -159,8 +161,53 @@ export async function resolveAssistantOptions(
   );
   assertApiKeyOptions(resolved.options);
   if (!resolved.options) throw new AssistantNotConfiguredError();
-  if (hosted) assertOwnerSuppliedKey(resolved);
+  if (hosted) await assertCloudTarget(resolved, principal.tenantId);
   return resolved.options;
+}
+
+/**
+ * Hosted: the target is either the platform's hosted inference (only for a
+ * tenant whose plan grants `inference.hosted`, through the registered gate) or
+ * the owner's own key. A hosted binding is never silently swapped for another
+ * key: a tenant that lost the entitlement is told so.
+ */
+async function assertCloudTarget(
+  resolved: Parameters<typeof assertOwnerSuppliedKey>[0],
+  tenantId: string,
+): Promise<void> {
+  if (resolved.resolution.target?.source !== 'hosted') {
+    assertOwnerSuppliedKey(resolved);
+    return;
+  }
+  const target = resolved.resolution.target;
+  const key = target.apiKey;
+  // Only the operator's own gateway, through a stored hosted binding with its
+  // own key: never an endpoint an owner could have typed.
+  if (
+    !resolved.bound ||
+    resolved.resolution.via !== 'resolver' ||
+    typeof key !== 'string' ||
+    key.trim() === '' ||
+    resolved.options?.apiKey !== key.trim() ||
+    !(await isHostedGatewayEndpoint(target.baseUrl))
+  )
+    throw new AssistantNotConfiguredError();
+  await assertHostedInferenceEntitled(tenantId);
+}
+
+async function isHostedGatewayEndpoint(baseUrl: string | undefined) {
+  if (!baseUrl?.trim()) return false;
+  try {
+    const { getHostedGatewayConfig } = await import(
+      '@happyvertical/smrt-inference/node'
+    );
+    return (
+      new URL(baseUrl).origin ===
+      new URL(getHostedGatewayConfig().baseUrl).origin
+    );
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -334,7 +381,7 @@ export function unavailableBody(error: unknown):
       error: error.message,
     };
   if (isInferenceUnavailableError(error)) {
-    const message = inferenceUnavailableMessage(error.reason);
+    const message = unavailableMessage(error);
     return {
       type: 'unavailable',
       configured: false,
@@ -344,4 +391,27 @@ export function unavailableBody(error: unknown):
     };
   }
   return undefined;
+}
+
+/** The owner-facing sentence for an unavailable error, naming the cap's reset. */
+function unavailableMessage(error: {
+  reason: Parameters<typeof inferenceUnavailableMessage>[0];
+  entitlement?: { policy: string; resetsAt?: string };
+}): string {
+  const policy = error.entitlement?.policy;
+  const base = inferenceUnavailableMessage(error.reason, policy);
+  if (error.reason !== 'entitlement') return base;
+  if (policy === 'tenant-cap' || policy === 'user-cap') {
+    const resets = error.entitlement?.resetsAt;
+    return `${base} ${
+      resets ? `It resets ${resets.slice(0, 10)}. ` : ''
+    }You can add your own API key in Settings to keep going.`;
+  }
+  if (
+    policy === 'subscription' ||
+    policy === 'no-tenant' ||
+    policy === 'gate-error'
+  )
+    return `${base} Upgrade your plan, or add your own API key in Settings.`;
+  return base;
 }

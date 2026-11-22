@@ -42,6 +42,8 @@ export type DatabaseConfig =
       kind: 'postgres';
       schema: string;
       connection: PostgresConnection;
+      /** Ownership generation this host holds (#5190); set by the host, not the caller. */
+      fence?: number;
     }
   | {
       /**
@@ -53,6 +55,8 @@ export type DatabaseConfig =
       kind: 'pglite';
       schema: string;
       client: PGliteClient;
+      /** Ownership generation this host holds (#5190); set by the host, not the caller. */
+      fence?: number;
     };
 
 /** What reaches a worker thread: the config with the instance replaced by a port. */
@@ -64,18 +68,57 @@ export type WorkerDatabaseConfig =
       connection: PostgresConnection;
       /** Cancel any one statement running longer (ms); from `WorkerLimits`. */
       statementTimeoutMs?: number;
+      /** Longest a schema dump (snapshot, copy) waits for table locks (ms); from the host. */
+      lockTimeoutMs?: number;
+      /** Every transaction checks the schema's ownership generation equals this (#5190). */
+      fence?: number;
     }
   | {
       kind: 'pglite';
       schema: string;
       port: MessagePort;
       statementTimeoutMs?: number;
+      lockTimeoutMs?: number;
+      fence?: number;
     };
+
+/**
+ * A host's claim on its app (#5470): the connection that holds the app's
+ * session advisory lock. Every `transaction` first proves, inside itself, that
+ * this very session still holds the lock, so whatever commits there ran
+ * wholly under the claim. Hosted PostgreSQL server only.
+ */
+export interface AppClaim {
+  /** Run `cb` as one claim transaction (proof first). Nesting throws. */
+  transaction<T>(cb: (tx: any) => Promise<T>): Promise<T>;
+  /** The same, in the shape the schema helpers take (`swapSchemas`, `dropSchema`). */
+  readonly admin: { transaction<T>(cb: (tx: any) => Promise<T>): Promise<T> };
+  /** The claim is gone: every call refuses with a `ClaimLostError`. */
+  readonly lost: boolean;
+  /** Called once, when the claim is lost. */
+  onLost(fn: (e: Error) => void): void;
+  /** Give the lock back and close the connection. */
+  release(): Promise<void>;
+}
+
+/** Bounds of every claim transaction, and the heartbeat. */
+export interface ClaimOptions {
+  /** Default 5000 ms (`lock_timeout`). */
+  lockTimeoutMs?: number;
+  /** Default 10000 ms (`statement_timeout`). */
+  statementTimeoutMs?: number;
+  /** Default 10000 ms (`idle_in_transaction_session_timeout`). */
+  idleInTransactionMs?: number;
+  /** Default 5000 ms; 0 turns the heartbeat off. */
+  heartbeatMs?: number;
+}
 
 /** A database the host made for the engine and must close with the host. */
 export interface HostDatabase {
   config: DatabaseConfig;
   release?: () => Promise<void>;
+  /** The live host's claim (PostgreSQL server; #5470). */
+  claim?: AppClaim;
 }
 
 export type DatabaseKind = DatabaseConfig['kind'];

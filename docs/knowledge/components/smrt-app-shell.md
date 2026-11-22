@@ -5,10 +5,10 @@ description: "A smrt app that builds and runs a person's own smrt app from defin
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-21T20:33:21Z"
+  at: "2026-11-21T22:28:14Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:c91f4aacc04ce9fc2e371e3e22c971a3b6328b0f0ca757c1f65f5b612f1c2a8e"
+source_revision: "sha256:2e6ac2f72a50e81687f318ea9c82d2678608b79cd8261e80b4c5f6eb0bc26625"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/app-shell/package.json"
@@ -20,17 +20,26 @@ sources:
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/app-shell/agents/cloud-profile.md"
     title: "@happyvertical/smrt-app-shell packages/app-shell/agents/cloud-profile.md"
   - id: "agents-3"
+    resource: "https://github.com/happyvertical/smrt/blob/main/packages/app-shell/agents/deploy.md"
+    title: "@happyvertical/smrt-app-shell packages/app-shell/agents/deploy.md"
+  - id: "agents-4"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/app-shell/agents/draft-ui.md"
     title: "@happyvertical/smrt-app-shell packages/app-shell/agents/draft-ui.md"
-  - id: "agents-4"
+  - id: "agents-5"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/app-shell/agents/engine.md"
     title: "@happyvertical/smrt-app-shell packages/app-shell/agents/engine.md"
-  - id: "agents-5"
+  - id: "agents-6"
+    resource: "https://github.com/happyvertical/smrt/blob/main/packages/app-shell/agents/hosted-inference.md"
+    title: "@happyvertical/smrt-app-shell packages/app-shell/agents/hosted-inference.md"
+  - id: "agents-7"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/app-shell/agents/imports.md"
     title: "@happyvertical/smrt-app-shell packages/app-shell/agents/imports.md"
-  - id: "agents-6"
+  - id: "agents-8"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/app-shell/agents/shared-pieces.md"
     title: "@happyvertical/smrt-app-shell packages/app-shell/agents/shared-pieces.md"
+  - id: "agents-9"
+    resource: "https://github.com/happyvertical/smrt/blob/main/packages/app-shell/agents/storage-metering.md"
+    title: "@happyvertical/smrt-app-shell packages/app-shell/agents/storage-metering.md"
 ---
 
 # @happyvertical/smrt-app-shell
@@ -46,10 +55,13 @@ sources:
 
 - `packages/app-shell/AGENTS.md`
 - `packages/app-shell/agents/cloud-profile.md`
+- `packages/app-shell/agents/deploy.md`
 - `packages/app-shell/agents/draft-ui.md`
 - `packages/app-shell/agents/engine.md`
+- `packages/app-shell/agents/hosted-inference.md`
 - `packages/app-shell/agents/imports.md`
 - `packages/app-shell/agents/shared-pieces.md`
+- `packages/app-shell/agents/storage-metering.md`
 
 ## Framework dependencies
 
@@ -58,6 +70,7 @@ sources:
 - [smrt-chat](/components/smrt-chat.md)
 - [smrt-config](/components/smrt-config.md)
 - [smrt-core](/components/smrt-core.md)
+- [smrt-features](/components/smrt-features.md)
 - [smrt-inference](/components/smrt-inference.md)
 - [smrt-jobs](/components/smrt-jobs.md)
 - [smrt-preferences](/components/smrt-preferences.md)
@@ -66,6 +79,7 @@ sources:
 - [smrt-reports](/components/smrt-reports.md)
 - [smrt-secrets](/components/smrt-secrets.md)
 - [smrt-spreadsheets](/components/smrt-spreadsheets.md)
+- [smrt-subscriptions](/components/smrt-subscriptions.md)
 - [smrt-svelte](/components/smrt-svelte.md)
 - [smrt-tenancy](/components/smrt-tenancy.md)
 - [smrt-ui](/components/smrt-ui.md)
@@ -85,6 +99,8 @@ sources:
 - `./engine`
 - `./engine/worker`
 - `./manifest`
+- `./shutdown`
+- `./start`
 
 ## Models
 

@@ -95,3 +95,21 @@ describe('host restart', () => {
     }
   });
 });
+
+describe('a host that lost its claim', () => {
+  it('is dropped, and the next request opens the app again', async () => {
+    const h3 = await openShell();
+    try {
+      const first = await getHost();
+      // What the engine emits when the heartbeat or a claim transaction finds
+      // the claim gone (engine tests cover the engine side).
+      first.emit('claim-lost', new Error('claim lost'));
+      await new Promise((r) => setTimeout(r, 50));
+      const again = await getHost();
+      expect(again).not.toBe(first);
+      expect(again.version).toBe(first.version);
+    } finally {
+      await h3.close();
+    }
+  });
+});
