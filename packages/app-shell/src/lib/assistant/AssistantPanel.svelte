@@ -216,6 +216,8 @@ function stop() {
 function newChat() {
   stop();
   send({ type: 'reset' });
+  stepsOpen = {};
+  unfolded = {};
   void loadViews();
   field?.focus();
 }
@@ -311,7 +313,7 @@ onDestroy(() => controller?.abort());
       {:else if item.kind === 'assistant'}
         {@const folds = item.id !== newestReply && foldsReply(item.text)}
         {@const folded = folds && !unfolded[item.id]}
-        <div id={`reply-${item.id}`} class="smrt-assistant-panel__reply smrt-assistant-panel__markdown" class:smrt-assistant-panel__folded={folded}><span class="smrt-assistant-panel__sr-only">Assistant: </span>{@html renderAssistantMarkdown(item.text)}</div>
+        <div id={`reply-${item.id}`} class="smrt-assistant-panel__reply smrt-assistant-panel__markdown" class:smrt-assistant-panel__folded={folded} inert={folded}><span class="smrt-assistant-panel__sr-only">Assistant: </span>{@html renderAssistantMarkdown(item.text)}</div>
         {#if folds}
           <button type="button" class="smrt-assistant-panel__more" aria-expanded={!folded} aria-controls={`reply-${item.id}`} onclick={() => (unfolded = { ...unfolded, [item.id]: folded })}>{folded ? 'Show more' : 'Show less'}</button>
         {/if}
@@ -343,6 +345,7 @@ onDestroy(() => controller?.abort());
         {/if}
         {#if item.failed && item.retry && item.id === lastSteps}
           <div class="smrt-assistant-panel__oops" role="alert">
+            <span>{item.rows.at(-1)?.label ?? "Something didn't work."}</span>
             <button type="button" class="smrt-app-shell__btn" disabled={dock.running} onclick={() => void submit(item.retry)}>Try again</button>
           </div>
         {/if}

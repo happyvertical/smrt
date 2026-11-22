@@ -527,6 +527,8 @@ describe('one scroller (#5395)', () => {
     expect(replies[0]?.classList.contains('smrt-assistant-panel__folded')).toBe(
       true,
     );
+    expect((replies[0] as HTMLElement).inert).toBe(true);
+    expect((replies[1] as HTMLElement).inert).toBeFalsy();
     expect(replies[1]?.classList.contains('smrt-assistant-panel__folded')).toBe(
       false,
     );
@@ -618,6 +620,9 @@ describe('quieter steps (#5395)', () => {
     );
     expect(stepsButton()?.getAttribute('aria-expanded')).toBe('true');
     expect(container.textContent).toContain('comparison the app cannot do');
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+      'comparison the app cannot do',
+    );
     const fetchMock = vi.mocked(fetch);
     const first = fetchMock.getMockImplementation();
     // The second turn is a plain reply (the stubbed tool ids would repeat).
@@ -701,4 +706,38 @@ it('a wide report shows its key columns in a table that fits, with the rest coun
   // the reply text comes before the table
   const html = container.innerHTML;
   expect(html.indexOf('Maple leads.')).toBeLessThan(html.indexOf('<table'));
+});
+
+it('New chat forgets which replies were unfolded and which steps were opened', async () => {
+  stubTurn(
+    [],
+    [
+      { id: '1', seq: 1, role: 'user', content: 'one' },
+      {
+        id: '2',
+        seq: 2,
+        role: 'assistant',
+        content: Array.from({ length: 12 }, (_, i) => `Point ${i}.`).join(
+          '\n\n',
+        ),
+      },
+      { id: '3', seq: 3, role: 'user', content: 'two' },
+      { id: '4', seq: 4, role: 'assistant', content: 'Short.' },
+    ],
+  );
+  await open({}, /Short\./);
+  container
+    .querySelector<HTMLButtonElement>('.smrt-assistant-panel__more')
+    ?.click();
+  await vi.waitFor(() =>
+    expect(
+      container.querySelector('.smrt-assistant-panel__more')?.textContent,
+    ).toBe('Show less'),
+  );
+  [...container.querySelectorAll<HTMLButtonElement>('button')]
+    .find((b) => b.textContent?.trim() === 'New chat')
+    ?.click();
+  await vi.waitFor(() =>
+    expect(container.querySelector('.smrt-assistant-panel__more')).toBeNull(),
+  );
 });
