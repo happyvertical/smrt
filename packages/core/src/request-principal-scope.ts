@@ -225,7 +225,9 @@ function intersect(
  * `t` held to an enclosing ceiling: its admitted and creatable types that the
  * ceiling admits (creatable within the ceiling's creatable, else admitted
  * types), less every member whose policy signature differs from the one the
- * ceiling recorded. `t` itself when nothing is narrowed.
+ * ceiling recorded. `t` itself when nothing is narrowed. `admitted` is
+ * `null` only for a model that is not STI, whose ceiling (same key) is not
+ * STI either, so `null` never widens a family.
  */
 function constrainTo(
   t: RequestTenancy,
@@ -247,7 +249,22 @@ function constrainTo(
     return kept.length === set.size ? set : new ReadonlySetView(kept);
   };
   const admitted = narrow(t.admitted, outer.admitted);
-  const creatable = narrow(t.creatable, outer.creatable ?? outer.admitted);
+  // A new row is held to `creatable ?? admitted` on both sides, so an
+  // operation that selects no create target (a read) still keeps the
+  // enclosing create ceiling: `null` stays only when it narrows nothing.
+  let creatable = narrow(
+    t.creatable ?? t.admitted,
+    outer.creatable ?? outer.admitted,
+  );
+  if (
+    t.creatable === null &&
+    creatable !== null &&
+    admitted !== null &&
+    creatable.size === admitted.size &&
+    [...creatable].every((key) => admitted.has(key))
+  ) {
+    creatable = null;
+  }
   if (admitted === t.admitted && creatable === t.creatable) return t;
   return Object.freeze({ ...t, admitted, creatable });
 }

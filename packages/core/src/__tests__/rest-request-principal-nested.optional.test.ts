@@ -45,8 +45,11 @@ let inspected: unknown;
 @smrt({
   tableStrategy: 'sti',
   api: {
-    include: ['list', 'get', 'create', 'inspect'],
-    routes: { inspect: { method: 'POST', scope: 'collection' } },
+    include: ['list', 'get', 'create', 'inspect', 'peek'],
+    routes: {
+      inspect: { method: 'POST', scope: 'collection' },
+      peek: { method: 'GET', scope: 'collection' },
+    },
   },
 })
 class NestedScopeDoc extends SmrtObject {
@@ -60,7 +63,17 @@ class NestedScopeDocCollection extends SmrtCollection<NestedScopeDoc> {
     inspected = await inspectWork?.();
     return { ok: true };
   }
+
+  /** A read action: runs `peekWork` and returns what it returned. */
+  async peek(): Promise<{ result: unknown }> {
+    return { result: await peekWork?.() };
+  }
 }
+
+/** Work a test runs inside the `peek` action, when set. */
+let peekWork: (() => Promise<unknown> | unknown) | undefined;
+/** Whether the outer request is served the page subtype (read only). */
+let outerSeesPages = false;
 
 /** A served subtype the outer request's exposure gate leaves out. */
 @smrt({ collection: 'nested-scope-pages', api: { include: ['list', 'get'] } })
@@ -160,13 +173,17 @@ for (const type of ['sqlite', 'postgres'] as const) {
           // The outer request (it carries the principal header) is not
           // served the page subtype; the nested request is.
           if (key === keyOf('NestedScopePage')) {
-            return !context.request?.headers.has('x-principal');
+            return (
+              outerSeesPages || !context.request?.headers.has('x-principal')
+            );
           }
           return true;
         },
       });
       inspectWork = undefined;
       inspected = undefined;
+      peekWork = undefined;
+      outerSeesPages = false;
       const docs = new NestedScopeDocCollection({ db });
       await docs.initialize();
       await docs.create({ title: 'doc' } as never);
@@ -234,6 +251,63 @@ for (const type of ['sqlite', 'postgres'] as const) {
         await get(signedIn, segmentOf('NestedScopeDoc'))
       ).json()) as Array<{ title: string }>;
       expect(direct.map((row) => row.title).sort()).toEqual(['doc', 'page']);
+    });
+
+    it('a nested read frame keeps the enclosing create ceiling', async () => {
+      // The outer POST reads doc and page rows but creates docs only (the
+      // page subtype does not open create).
+      outerSeesPages = true;
+      const nested = inner();
+      peekWork = async () => {
+        const tenancy = getResolvedTenancy();
+        const outcome: Record<string, unknown> = {
+          admitted: [...(tenancy?.admitted ?? [])].sort(),
+        };
+        for (const [name, make] of [
+          ['page', () => new NestedScopePage({ db, title: 'n', page: 'x' })],
+          ['doc', () => new NestedScopeDoc({ db, title: 'n' })],
+        ] as const) {
+          try {
+            const row = make();
+            await row.initialize();
+            await row.save();
+            outcome[name] = 'created';
+          } catch (error) {
+            outcome[name] = (error as { code?: string }).code ?? 'refused';
+          }
+        }
+        return outcome;
+      };
+      const { status, seen } = await inspectAsWriter(async () => {
+        const outerTenancy = getResolvedTenancy();
+        const response = await get(
+          nested,
+          `${segmentOf('NestedScopeDoc')}/peek`,
+        );
+        return {
+          outerAdmitted: [...(outerTenancy?.admitted ?? [])].sort(),
+          outerCreatable: [...(outerTenancy?.creatable ?? [])].sort(),
+          status: response.status,
+          body: await response.json(),
+        };
+      });
+      expect(status).toBe(200);
+      const both = [keyOf('NestedScopeDoc'), keyOf('NestedScopePage')].sort();
+      expect(seen).toEqual({
+        outerAdmitted: both,
+        outerCreatable: [keyOf('NestedScopeDoc')],
+        status: 200,
+        body: {
+          action: 'peek',
+          result: {
+            result: {
+              admitted: both,
+              page: 'TENANT_MEMBER_EXCLUDED',
+              doc: 'created',
+            },
+          },
+        },
+      });
     });
 
     it('request code cannot open a trusted operation frame', async () => {
