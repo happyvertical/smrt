@@ -429,24 +429,30 @@ function onEvent(state: DockState, e: TurnEvent): DockState {
   }
 }
 
+const TOOL_LABELS: Record<string, string> = {
+  app_definereport: 'Making a report',
+  app_renamereport: 'Renaming a report',
+  app_removereport: 'Removing a report',
+  app_runreport: 'Running a report',
+  app_describe: 'Looking at your app',
+  app_history: 'Checking recent changes',
+  approval_pending: 'Checking what needs your approval',
+  app_setcalculation: 'Setting up a calculated field',
+  app_loadrecords: 'Loading records',
+  app_extractmodel: 'Splitting out linked records',
+  app_mergerecords: 'Merging records',
+};
+
 /** A short label for a tool chip: `chore_create` -> `Chore create`. */
 export function toolLabel(name: string): string {
-  const labels: Record<string, string> = {
-    app_definereport: 'Making a report',
-    app_renamereport: 'Renaming a report',
-    app_removereport: 'Removing a report',
-    app_runreport: 'Running a report',
-    app_describe: 'Looking at your app',
-    app_history: 'Checking recent changes',
-    approval_pending: 'Checking what needs your approval',
-    app_setcalculation: 'Setting up a calculated field',
-    app_loadrecords: 'Loading records',
-    app_extractmodel: 'Splitting out linked records',
-    app_mergerecords: 'Merging records',
-  };
-  if (labels[name]) return labels[name];
+  if (TOOL_LABELS[name]) return TOOL_LABELS[name];
   const words = name.replace(/^app_/, '').replace(/[_-]+/g, ' ').trim();
   return words ? words.charAt(0).toUpperCase() + words.slice(1) : name;
+}
+
+/** What a step is in plain words; a tool nobody wrote words for shows no internal name. */
+export function stepLabel(name: string): string {
+  return TOOL_LABELS[name] ?? 'Working on it';
 }
 
 /** What to tell the person when a turn ended early. */
@@ -509,7 +515,7 @@ export function workingStep(state: DockState): string {
   if (!state.running) return '';
   const last = state.items.at(-1);
   if (last?.kind === 'tool' && last.state === 'running')
-    return toolLabel(last.name);
+    return stepLabel(last.name);
   if (last?.kind === 'approval' && last.state === 'pending')
     return 'Waiting for your decision';
   if (last?.kind === 'assistant' && last.streaming) return 'Writing a reply';
@@ -536,4 +542,122 @@ export function foldsReply(text: string): boolean {
   for (const line of text.split('\n'))
     lines += Math.max(1, Math.ceil(line.length / LINE_CHARS));
   return lines > FOLD_LINES;
+}
+
+export interface StepRow {
+  id: string;
+  /** Plain words: what was done, or why it did not work. */
+  label: string;
+  state: 'running' | 'ok' | 'error';
+  failures: number;
+}
+
+/** A turn's tool steps as one quiet line that opens to the list. */
+export interface StepsView {
+  kind: 'steps';
+  id: string;
+  rows: StepRow[];
+  /** The one line: the step in progress, or up to two finished phrases. */
+  line: string;
+  /** The turn's last step did not work: red, opens itself, offers Try again. */
+  failed: boolean;
+  /** The turn is still running (the line shows the step in progress). */
+  live: boolean;
+  /** What was asked, to send again. */
+  retry: string;
+}
+
+/** A report a step produced, shown after the reply text. */
+export interface ReportView {
+  kind: 'report';
+  id: string;
+  report?: ToolItem['report'];
+  href?: string;
+}
+
+export type TurnView = Exclude<Item, { kind: 'tool' }> | StepsView | ReportView;
+
+const PHRASES_SHOWN = 2;
+
+function stepRow(item: ViewItem & { kind: 'tool' }): StepRow {
+  const failures = 'failures' in item ? item.failures : 1;
+  const label =
+    item.state === 'running'
+      ? stepLabel(item.name)
+      : item.summary ||
+        (item.state === 'ok' ? stepLabel(item.name) : 'This did not work.');
+  return { id: item.id, label, state: item.state, failures };
+}
+
+function stepsLine(rows: StepRow[], failed: boolean): string {
+  if (failed) return "Something didn't work";
+  const done = [
+    ...new Set(rows.filter((r) => r.state === 'ok').map((r) => r.label)),
+  ];
+  if (done.length === 0) return 'Working on it';
+  const shown = done.slice(0, PHRASES_SHOWN).join(' · ');
+  const more = done.length - PHRASES_SHOWN;
+  return more > 0 ? `${shown} and ${more} more` : shown;
+}
+
+/**
+ * The thread as the panel draws it: each turn's (the stretch after one of the
+ * owner's messages) tool steps fold into ONE line before the reply, and a
+ * report a step made moves after the reply text. Works on a reopened thread
+ * the same as on a live one.
+ */
+export function groupTurns(state: DockState): TurnView[] {
+  const items = collapseFailures(state.items);
+  const out: TurnView[] = [];
+  let start = 0;
+  while (start < items.length) {
+    let end = start + 1;
+    while (end < items.length && items[end].kind !== 'user') end += 1;
+    const turn = items.slice(start, end);
+    start = end;
+    const tools = turn.filter(
+      (i): i is ViewItem & { kind: 'tool' } => i.kind === 'tool',
+    );
+    if (tools.length === 0) {
+      out.push(...(turn as TurnView[]));
+      continue;
+    }
+    const rows = tools.map(stepRow);
+    const failed = rows.at(-1)?.state === 'error';
+    const live = state.running && end === items.length;
+    const asked = turn[0].kind === 'user' ? turn[0].text : '';
+    const steps: StepsView = {
+      kind: 'steps',
+      id: tools[0].id,
+      rows,
+      live,
+      failed: failed && !live,
+      line: live ? `${workingStep(state)}…` : stepsLine(rows, failed),
+      retry: asked,
+    };
+    const reports: ReportView[] = tools.flatMap((t) =>
+      t.report || t.reportHref
+        ? [
+            {
+              kind: 'report' as const,
+              id: `${t.id}:report`,
+              ...(t.report ? { report: t.report } : {}),
+              ...(t.reportHref ? { href: t.reportHref } : {}),
+            },
+          ]
+        : [],
+    );
+    const rest = turn.filter((i) => i.kind !== 'tool') as TurnView[];
+    const lastReply = rest.findLastIndex((i) => i.kind === 'assistant');
+    const at = lastReply === -1 ? rest.length : lastReply + 1;
+    const first = rest[0]?.kind === 'user' ? 1 : 0;
+    out.push(
+      ...rest.slice(0, first),
+      steps,
+      ...rest.slice(first, at),
+      ...reports,
+      ...rest.slice(at),
+    );
+  }
+  return out;
 }

@@ -21,15 +21,14 @@ import {
 import {
   type Action,
   announcement,
-  collapseFailures,
   type DockState,
   foldsReply,
+  groupTurns,
   type Item,
   initialState,
   newestReplyId,
   reduce,
   stopNote,
-  toolLabel,
   workingStep,
 } from './reducer';
 
@@ -69,6 +68,10 @@ const canSend = $derived(
     draft.trim().length > 0,
 );
 const announce = $derived(announcement(dock));
+const turns = $derived(groupTurns(dock));
+// A turn's steps line: open by the owner's choice; a failed one opens itself.
+let stepsOpen = $state<Record<string, boolean>>({});
+const lastSteps = $derived(turns.findLast((t) => t.kind === 'steps')?.id);
 const block = $derived(planReplyBlock(changes));
 // Only the newest block is live; earlier ones in the thread would only repeat it.
 const lastBlock = $derived(
@@ -160,10 +163,10 @@ function scrollDown() {
   });
 }
 
-async function submit() {
-  const text = draft.trim();
+async function submit(again?: string) {
+  const text = again ?? draft.trim();
   if (!text || dock.running || dock.availability === 'unavailable') return;
-  draft = '';
+  if (again === undefined) draft = '';
   send({ type: 'send', text });
   controller = new AbortController();
   const mine = controller;
@@ -305,7 +308,7 @@ onDestroy(() => controller?.abort());
       </p>
     {/if}
 
-    {#each collapseFailures(dock.items) as item (item.id)}
+    {#each turns as item (item.id)}
       {#if item.kind === 'user'}
         <p class="smrt-assistant-panel__msg smrt-assistant-panel__user"><span class="smrt-assistant-panel__sr-only">You: </span>{item.text}</p>
       {:else if item.kind === 'assistant'}
@@ -315,20 +318,40 @@ onDestroy(() => controller?.abort());
         {#if folds}
           <button type="button" class="smrt-assistant-panel__more" aria-expanded={!folded} aria-controls={`reply-${item.id}`} onclick={() => (unfolded = { ...unfolded, [item.id]: folded })}>{folded ? 'Show more' : 'Show less'}</button>
         {/if}
-      {:else if item.kind === 'tool'}
-        <p
-          class="smrt-assistant-panel__chip"
-          class:smrt-assistant-panel__err={item.state === 'error'}
-          title={item.summary}
+      {:else if item.kind === 'steps'}
+        {@const open = stepsOpen[item.id] ?? item.failed}
+        <button
+          type="button"
+          class="smrt-assistant-panel__steps"
+          class:smrt-assistant-panel__err={item.failed}
+          aria-expanded={open}
+          aria-controls={`steps-${item.id}`}
+          data-testid={item.live ? 'assistant-working' : undefined}
+          onclick={() => (stepsOpen = { ...stepsOpen, [item.id]: !open })}
         >
-          <span aria-hidden="true">{item.state === 'running' ? '…' : item.state === 'ok' ? '✓' : '!'}</span>
-          <span>{toolLabel(item.name)}{item.state === 'error' ? " didn't work" : ''}</span>
-          {#if 'failures' in item && item.failures > 1}<span class="smrt-app-shell__muted">Tried {item.failures} times.</span>{/if}
-          {#if item.summary}<span class="smrt-app-shell__muted smrt-assistant-panel__sum">{item.summary}</span>{/if}
-          <span class="smrt-assistant-panel__sr-only">{item.state === 'running' ? 'running' : item.state === 'ok' ? 'done' : 'did not work'}</span>
-        </p>
+          {#if item.live}<span class="smrt-assistant-panel__dots" aria-hidden="true"><i></i><i></i><i></i></span>{:else}<span aria-hidden="true">{item.failed ? '!' : '✓'}</span>{/if}
+          <span>{item.line}</span>
+          <span class="smrt-assistant-panel__chev" aria-hidden="true">{open ? '▾' : '▸'}</span>
+        </button>
+        {#if open}
+          <ul id={`steps-${item.id}`} class="smrt-assistant-panel__steplist">
+            {#each item.rows as row (row.id)}
+              <li class:smrt-assistant-panel__err={row.state === 'error'} title={row.state === 'error' ? row.label : undefined}>
+                <span aria-hidden="true">{row.state === 'running' ? '…' : row.state === 'ok' ? '✓' : '!'}</span>
+                <span>{row.label}{#if row.failures > 1} Tried {row.failures} times.{/if}</span>
+                <span class="smrt-assistant-panel__sr-only">{row.state === 'running' ? 'running' : row.state === 'ok' ? 'done' : 'did not work'}</span>
+              </li>
+            {/each}
+          </ul>
+        {/if}
+        {#if item.failed && item.retry && item.id === lastSteps}
+          <div class="smrt-assistant-panel__oops" role="alert">
+            <button type="button" class="smrt-app-shell__btn" disabled={dock.running} onclick={() => void submit(item.retry)}>Try again</button>
+          </div>
+        {/if}
+      {:else if item.kind === 'report'}
         {#if item.report}<div class="smrt-app-shell__card"><ReportResult result={item.report.result} formatCell={reportCell} cellHref={reportCellHref} />{#if item.report.href}<a href={item.report.href}>Open report</a>{/if}</div>
-        {:else if item.reportHref}<a href={item.reportHref}>Open report</a>{/if}
+        {:else if item.href}<a href={item.href}>Open report</a>{/if}
       {:else if item.kind === 'changes'}
         {#if item.id === lastBlock && block}
           <div class="smrt-assistant-panel__block" role="group" aria-label={block.label} data-testid="changes-block">
@@ -381,7 +404,7 @@ onDestroy(() => controller?.abort());
         <p class="smrt-app-shell__alert {item.tone === 'error' ? 'smrt-app-shell__alert-error' : ''}" role={item.tone === 'error' ? 'alert' : 'status'}>{item.text}{#if item.action} <a class="smrt-app-shell__link" href={item.action.href}>{item.action.label}</a>{/if}</p>
       {/if}
     {/each}
-    {#if dock.running}
+    {#if dock.running && !turns.some((t) => t.kind === 'steps' && t.live)}
       <p class="smrt-assistant-panel__working" data-testid="assistant-working"><span class="smrt-assistant-panel__dots" aria-hidden="true"><i></i><i></i><i></i></span><span>{workingStep(dock)}…</span></p>
     {/if}
   </div>
@@ -511,20 +534,36 @@ onDestroy(() => controller?.abort());
   .smrt-assistant-panel__user {
     align-self: flex-end;
   }
-  .smrt-assistant-panel__chip {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: baseline;
+  .smrt-assistant-panel__steps {
+    display: inline-flex;
+    align-items: center;
     gap: 0.4rem;
-    margin: 0;
     align-self: flex-start;
-    padding: 0.125rem var(--smrt-spacing-sm, 0.5rem);
+    max-inline-size: 100%;
+    margin: 0;
+    padding: 0.15rem 0.35rem;
+    border: 0;
+    background: none;
+    font: inherit;
+    text-align: start;
+    cursor: pointer;
   }
-  .smrt-assistant-panel__sum {
-    max-inline-size: 16rem;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+  .smrt-assistant-panel__steplist {
+    display: grid;
+    gap: 0.3rem;
+    margin: 0 0 0 0.3rem;
+    padding: 0.1rem 0 0.1rem 0.8rem;
+    list-style: none;
+  }
+  .smrt-assistant-panel__steplist li {
+    display: flex;
+    align-items: baseline;
+    gap: 0.45rem;
+  }
+  .smrt-assistant-panel__oops {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
   }
   .smrt-assistant-panel__hint {
     margin: 0;
@@ -648,13 +687,20 @@ onDestroy(() => controller?.abort());
     background: var(--smrt-color-primary-container, rgb(128 128 128 / 0.2));
     color: var(--smrt-color-on-primary-container, inherit);
   }
-  .smrt-assistant-panel__chip {
-    border: var(--smrt-hairline);
-    border-radius: var(--smrt-radius-full);
+  .smrt-assistant-panel__steps,
+  .smrt-assistant-panel__steplist {
+    color: var(--smrt-color-on-surface-variant);
     font-size: 0.8125rem;
   }
-  .smrt-assistant-panel__chip.smrt-assistant-panel__err {
-    border-color: var(--smrt-color-error);
+  .smrt-assistant-panel__steps:hover {
+    background: var(--smrt-color-surface-container, rgb(128 128 128 / 0.1));
+    border-radius: var(--smrt-radius-md, 0.5rem);
+  }
+  .smrt-assistant-panel__steplist {
+    border-inline-start: 2px solid var(--smrt-color-outline-variant, currentColor);
+  }
+  .smrt-assistant-panel__err {
+    color: var(--smrt-color-error);
   }
   .smrt-assistant-panel__compose {
     border-block-start: var(--smrt-hairline);

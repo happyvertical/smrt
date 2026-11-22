@@ -6,10 +6,12 @@ import {
   collapseFailures,
   type DockState,
   foldsReply,
+  groupTurns,
   type Item,
   initialState,
   newestReplyId,
   reduce,
+  stepLabel,
   stopNote,
   toolLabel,
   workingStep,
@@ -398,5 +400,77 @@ describe('folding long replies (#5395)', () => {
     ];
     expect(newestReplyId(items)).toBe('b');
     expect(newestReplyId([])).toBeUndefined();
+  });
+});
+
+describe('quiet steps per turn (#5395)', () => {
+  const tool = (
+    id: string,
+    name: string,
+    ok: boolean,
+    summary: string,
+  ): Action[] => [
+    ev({ type: 'tool_call', id, name, args: '{}' }),
+    ev({ type: 'tool_result', id, name, ok, summary }),
+  ];
+  it("folds a turn's tools into one steps view before the reply, with at most two phrases", () => {
+    const s = run([
+      { type: 'send', text: 'hi' },
+      ...tool('1', 'app_describe', true, 'Checked the app structure'),
+      ...tool('2', 'app_a', true, 'Looked up 40 orders'),
+      ...tool('3', 'app_b', true, 'Made a report'),
+      ev({ type: 'text', delta: 'Done.' }),
+      ev({ type: 'done', stop: 'complete' }),
+    ]);
+    const view = groupTurns(s);
+    expect(view.map((i) => i.kind)).toEqual(['user', 'steps', 'assistant']);
+    expect(view[1]).toMatchObject({
+      line: 'Checked the app structure · Looked up 40 orders and 1 more',
+      failed: false,
+      live: false,
+      retry: 'hi',
+    });
+  });
+  it('a turn whose last step failed is red; while running the line is the step in progress', () => {
+    const failed = run([
+      { type: 'send', text: 'hi' },
+      ...tool(
+        '1',
+        'app_runreport',
+        false,
+        'That took too long and was stopped.',
+      ),
+      ev({ type: 'done', stop: 'complete' }),
+    ]);
+    expect(groupTurns(failed)[1]).toMatchObject({
+      failed: true,
+      line: "Something didn't work",
+    });
+    const live = run([
+      { type: 'send', text: 'hi' },
+      ev({ type: 'tool_call', id: '1', name: 'app_describe', args: '{}' }),
+    ]);
+    expect(groupTurns(live)[1]).toMatchObject({
+      live: true,
+      failed: false,
+      line: 'Looking at your app…',
+    });
+  });
+  it('unknown tools show no internal name', () => {
+    const s = run([
+      { type: 'send', text: 'hi' },
+      ev({ type: 'tool_call', id: '1', name: 'dog_list', args: '{}' }),
+      ev({
+        type: 'tool_result',
+        id: '1',
+        name: 'dog_list',
+        ok: true,
+        summary: '',
+      }),
+      ev({ type: 'text', delta: 'Here.' }),
+    ]);
+    expect(stepLabel('dog_list')).toBe('Working on it');
+    const steps = groupTurns(s)[1];
+    expect(JSON.stringify(steps)).not.toMatch(/dog_list|Dog list/);
   });
 });

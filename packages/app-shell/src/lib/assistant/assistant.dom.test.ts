@@ -493,7 +493,7 @@ it('renders a markdown table in a reply and the plain reason on a failed card', 
   await vi.waitFor(() => expect(target.querySelector('table')).not.toBeNull());
   expect(target.querySelectorAll('td')[1]?.textContent).toBe('3');
   expect(target.textContent).not.toContain('| Dog |');
-  const chip = target.querySelector('.smrt-assistant-panel__err');
+  const chip = target.querySelector('li.smrt-assistant-panel__err');
   expect(chip?.getAttribute('title')).toBe(
     'That search used a comparison the app cannot do, so nothing was looked up.',
   );
@@ -545,5 +545,107 @@ describe('one scroller (#5395)', () => {
     expect(
       container.querySelector('.smrt-assistant-panel__more')?.textContent,
     ).toBe('Show less');
+  });
+});
+
+describe('quieter steps (#5395)', () => {
+  const results = (ok2: boolean) => [
+    { type: 'tool_call', id: 'a', name: 'app_describe', args: '{}' },
+    {
+      type: 'tool_result',
+      id: 'a',
+      name: 'app_describe',
+      ok: true,
+      summary: 'Checked the app structure',
+    },
+    { type: 'tool_call', id: 'b', name: 'app_zzz_secret', args: '{}' },
+    ok2
+      ? {
+          type: 'tool_result',
+          id: 'b',
+          name: 'app_zzz_secret',
+          ok: true,
+          summary: 'Looked up 40 orders',
+        }
+      : {
+          type: 'tool_result',
+          id: 'b',
+          name: 'app_zzz_secret',
+          ok: false,
+          summary: 'Invalid WHERE clause operator',
+        },
+  ];
+  const stepsButton = () =>
+    container.querySelector<HTMLButtonElement>('.smrt-assistant-panel__steps');
+
+  it("a reply's steps fold into one plain line that opens to the list; no tool name shows", async () => {
+    stubTurn([
+      ...results(true),
+      { type: 'text', delta: 'Done.' },
+      { type: 'done', stop: 'complete' },
+    ]);
+    await open();
+    await say('Look around');
+    await vi.waitFor(() => expect(container.textContent).toContain('Done.'));
+    expect(
+      container.querySelectorAll('.smrt-assistant-panel__steps'),
+    ).toHaveLength(1);
+    expect(stepsButton()?.textContent).toContain(
+      'Checked the app structure · Looked up 40 orders',
+    );
+    expect(stepsButton()?.getAttribute('aria-expanded')).toBe('false');
+    expect(
+      container.querySelector('.smrt-assistant-panel__steplist'),
+    ).toBeNull();
+    stepsButton()?.click();
+    await vi.waitFor(() =>
+      expect(
+        container.querySelectorAll('.smrt-assistant-panel__steplist li'),
+      ).toHaveLength(2),
+    );
+    expect(container.textContent).not.toMatch(/app_|zzz|Zzz/);
+  });
+
+  it('a failed step opens itself in red and Try again sends the same question', async () => {
+    stubTurn([...results(false), { type: 'done', stop: 'complete' }]);
+    await open();
+    await say('Look around');
+    await vi.waitFor(() =>
+      expect(container.querySelector('[role="alert"] button')).not.toBeNull(),
+    );
+    expect(stepsButton()?.classList.contains('smrt-assistant-panel__err')).toBe(
+      true,
+    );
+    expect(stepsButton()?.getAttribute('aria-expanded')).toBe('true');
+    expect(container.textContent).toContain('comparison the app cannot do');
+    const fetchMock = vi.mocked(fetch);
+    const first = fetchMock.getMockImplementation();
+    // The second turn is a plain reply (the stubbed tool ids would repeat).
+    fetchMock.mockImplementation(async (input, init) =>
+      String(input).includes('/turn')
+        ? new Response(
+            `event: turn\ndata: ${JSON.stringify({ type: 'done', stop: 'complete' })}\n\n`,
+            { headers: { 'content-type': 'text/event-stream' } },
+          )
+        : (first as typeof fetch)(input, init),
+    );
+    const turnsBefore = fetchMock.mock.calls.filter((c) =>
+      String(c[0]).includes('/turn'),
+    ).length;
+    container
+      .querySelector<HTMLButtonElement>('[role="alert"] button')
+      ?.click();
+    await vi.waitFor(() =>
+      expect(
+        fetchMock.mock.calls.filter((c) => String(c[0]).includes('/turn'))
+          .length,
+      ).toBe(turnsBefore + 1),
+    );
+    const last = fetchMock.mock.calls
+      .filter((c) => String(c[0]).includes('/turn'))
+      .at(-1);
+    expect(String((last?.[1] as RequestInit | undefined)?.body)).toContain(
+      'Look around',
+    );
   });
 });
