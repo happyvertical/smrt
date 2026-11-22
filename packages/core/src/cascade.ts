@@ -111,7 +111,9 @@ import {
   type DeletedRowOwners,
   deleteSyncRows,
   nullSyncReference,
+  type RawPredicate,
   type SyncRowIdentity,
+  withRawPredicate,
 } from './sync-tombstones.js';
 import { chunkArray, IN_LIST_CHUNK_SIZE } from './utils/chunk.js';
 import { toSnakeCase } from './utils/naming.js';
@@ -427,6 +429,15 @@ interface CascadeContext {
   unrecorded: Set<string>;
   /** PostgreSQL: whether the role may lock rows of each table `FOR UPDATE`. */
   lockable: Map<string, boolean>;
+  /** PostgreSQL: the target table's `id` column type, for the exclusion cast. */
+  targetIdType?: string;
+  /** STI hierarchies by base class, for discriminator resolution. */
+  stiHierarchies: Map<string, StiHierarchy>;
+  /**
+   * Owner columns of the caller's target rows read before any cascade
+   * statement, by id, to detect a database action that rewrites them.
+   */
+  targetOwnersBefore?: Map<string, Record<string, unknown>>;
 }
 
 /** One class's change-feed ownership snapshot for one cascade. */
@@ -453,10 +464,11 @@ interface CascadeFeedProjection {
   metaTypeReadable: boolean;
   /**
    * Ownership snapshots of every class whose rows the table can hold, by
-   * name. A simple or legacy name two different classes share maps to
-   * `null` (ambiguous): a row carrying it is unresolved.
+   * qualified class name (the hierarchy resolver's member names).
    */
-  members: Map<string, CascadeClassOwner | null>;
+  members: Map<string, CascadeClassOwner>;
+  /** The STI hierarchy a row's discriminator is resolved in (STI only). */
+  hierarchy?: StiHierarchy;
 }
 
 /**
@@ -468,17 +480,66 @@ function rowKey(table: string, id: string): string {
   return `${table}\u0000${id}`;
 }
 
+/** How a cascade statement on one table keeps away from the caller's targets. */
+interface TargetExclusion {
+  /** `buildWhere` keys (the JSON adapter, which has no SQL). */
+  filter: Record<string, unknown>;
+  /** One bound JSON array, however many targets there are (SQL engines). */
+  raw?: RawPredicate;
+}
+
 /**
- * The SQL filter that keeps a cascade statement on `table` away from the
- * caller's own target rows (empty for any other table).
+ * The predicate that keeps a cascade statement on `table` away from the
+ * caller's own target rows (nothing for any other table). The engine compares
+ * the ids with the column's own identity rules. The whole target list is one
+ * bound JSON value, so a batch of any size stays within the engine's limit
+ * on bound parameters.
  */
-function excludeTargets(
+async function excludeTargets(
   ctx: CascadeContext,
   table: string,
-): Record<string, unknown> {
-  return table === ctx.target.tableName && ctx.target.ids.length > 0
-    ? { 'id not in': ctx.target.ids }
-    : {};
+): Promise<TargetExclusion> {
+  if (table !== ctx.target.tableName || ctx.target.ids.length === 0) {
+    return { filter: {} };
+  }
+  if (isJsonAdapterHandle(ctx.db)) {
+    return { filter: { 'id not in': ctx.target.ids } };
+  }
+  const values = [JSON.stringify(ctx.target.ids)];
+  if (usesPostgresDialect(ctx.db)) {
+    if (ctx.targetIdType === undefined) {
+      const result = await ctx.db.query(
+        `SELECT format_type(atttypid, atttypmod) AS type FROM pg_attribute
+          WHERE attrelid = to_regclass(format('%I', $1::text))
+            AND attname = 'id' AND NOT attisdropped`,
+        table,
+      );
+      const type = String(result.rows[0]?.type ?? 'text');
+      ctx.targetIdType = /^[a-z0-9 _(),]+$/i.test(type) ? type : 'text';
+    }
+    const type = ctx.targetIdType;
+    return {
+      filter: {},
+      raw: {
+        sql: (index) =>
+          `NOT ("id" = ANY (ARRAY(SELECT jsonb_array_elements_text($${index}::jsonb))::${type}[]))`,
+        values,
+      },
+    };
+  }
+  if (isKnownNativeDuckDbHandle(ctx.db)) {
+    return {
+      filter: {},
+      raw: {
+        sql: () => `"id" NOT IN (SELECT unnest(from_json(?, '["VARCHAR"]')))`,
+        values,
+      },
+    };
+  }
+  return {
+    filter: {},
+    raw: { sql: () => `"id" NOT IN (SELECT value FROM json_each(?))`, values },
+  };
 }
 
 /**
@@ -602,34 +663,17 @@ async function feedProjectionFor(
   const key = `${tableName}\u0000${className}`;
   const cached = ctx.projections.get(key);
   if (cached) return cached;
-  const names = new Set<string>([className]);
-  if (sti) {
-    const base = ctx.registry.getSTIBase(className) ?? className;
-    names.add(base);
-    for (const descendant of ctx.registry.getDescendants(base)) {
-      names.add(descendant);
-    }
-  }
-  const members = new Map<string, CascadeClassOwner | null>();
+  // Member names are the hierarchy resolver's (qualified where known), so
+  // attribution and traversal resolve a discriminator the same way.
+  const hierarchy = sti ? stiHierarchyFor(ctx, className) : undefined;
+  const names = hierarchy
+    ? new Set([...hierarchy.bySpelling.values()].flatMap((set) => [...set]))
+    : new Set([className]);
+  const members = new Map<string, CascadeClassOwner>();
   const needed = new Set<string>();
   for (const name of names) {
     const owner = await classOwnerFor(ctx, name);
-    const registered = ctx.registry.getClass(name);
-    const aliases = new Set(
-      [name, registered?.qualifiedName, registered?.name].filter(
-        (alias): alias is string => Boolean(alias),
-      ),
-    );
-    for (const alias of aliases) {
-      if (!members.has(alias)) {
-        members.set(alias, owner);
-        continue;
-      }
-      // The same class reached under another of its names is not ambiguous;
-      // two different classes sharing a name are.
-      const existing = members.get(alias);
-      if (existing && existing.ctor !== owner.ctor) members.set(alias, null);
-    }
+    members.set(name, owner);
     for (const column of owner.stored ?? []) needed.add(column);
   }
   const available = await readableColumns(ctx.db, tableName, [
@@ -644,6 +688,7 @@ async function feedProjectionFor(
     idReadable: available.has('id'),
     metaTypeReadable: sti && available.has('_meta_type'),
     members,
+    hierarchy,
   };
   ctx.projections.set(key, projection);
   return projection;
@@ -662,18 +707,18 @@ function returnedRowOwner(
   row: DeletedRowOwners[number],
   rewrittenColumn?: string,
 ): { tenantId: string | null | undefined; ctor: unknown } {
-  let owner: CascadeClassOwner | null | undefined;
+  let owner: CascadeClassOwner | undefined;
   if (projection.sti) {
-    const metaType = row.metaType;
-    if (metaType) {
-      owner = projection.members.get(metaType);
-      if (owner === undefined) {
-        const qualifiedName = ctx.registry.getClass(metaType)?.qualifiedName;
-        owner = qualifiedName
-          ? projection.members.get(qualifiedName)
-          : undefined;
-      }
-    }
+    // Exactly one member class, or nothing: an unknown or ambiguous
+    // discriminator is unresolved, never a guess.
+    const candidates =
+      row.metaType && projection.hierarchy
+        ? stiCandidates(projection.hierarchy, row.metaType)
+        : [];
+    owner =
+      candidates.length === 1
+        ? projection.members.get(candidates[0])
+        : undefined;
   } else {
     owner = projection.members.get(projection.className);
   }
@@ -914,16 +959,20 @@ async function selectChildren(
   tableName: string,
   column: string,
   ids: string[],
-  exclude: Record<string, unknown>,
+  exclude: TargetExclusion,
   withMetaType: boolean,
 ): Promise<Array<{ id: string; metaType?: string }>> {
   const found: Array<{ id: string; metaType?: string }> = [];
   for (const batch of chunkArray(ids, IN_LIST_CHUNK_SIZE)) {
     const dialect = usesPostgresDialect(db) ? 'postgres' : 'sqlite';
-    const where = buildWhere(
-      { ...idPredicate(column, batch), ...exclude },
+    const where = withRawPredicate(
+      buildWhere(
+        { ...idPredicate(column, batch), ...exclude.filter },
+        1,
+        dialect,
+      ),
+      exclude.raw,
       1,
-      dialect,
     );
     const table = `"${tableName.replaceAll('"', '""')}"`;
     const sql = `SELECT CAST("id" AS VARCHAR) AS "id"${withMetaType ? ', "_meta_type"' : ''} FROM ${table} ${where.sql}`;
@@ -946,25 +995,134 @@ async function selectChildren(
 }
 
 /**
+ * The classes sharing one STI table, indexed by every spelling a stored
+ * discriminator may use (qualified name, simple name, previous qualified
+ * names), compared case-insensitively *within the hierarchy only*. A spelling
+ * two different member classes share is ambiguous. Never resolved through the
+ * registry's global, case-insensitive lookup, which can pick a class from
+ * another table.
+ */
+interface StiHierarchy {
+  bySpelling: Map<string, Set<string>>;
+}
+
+function stiHierarchyFor(ctx: CascadeContext, className: string): StiHierarchy {
+  const base = ctx.registry.getSTIBase(className) ?? className;
+  const cached = ctx.stiHierarchies.get(base);
+  if (cached) return cached;
+  const bySpelling = new Map<string, Set<string>>();
+  for (const name of [base, ...ctx.registry.getDescendants(base), className]) {
+    const registered = ctx.registry.getClass(name);
+    const member = registered?.qualifiedName ?? name;
+    const spellings = [
+      name,
+      registered?.qualifiedName,
+      registered?.name,
+      ...(registered?.config?.previousQualifiedNames ?? []),
+    ];
+    for (const spelling of spellings) {
+      if (typeof spelling !== 'string' || !spelling) continue;
+      const key = spelling.toLowerCase();
+      const set = bySpelling.get(key) ?? new Set<string>();
+      set.add(member);
+      bySpelling.set(key, set);
+    }
+  }
+  const hierarchy = { bySpelling };
+  ctx.stiHierarchies.set(base, hierarchy);
+  return hierarchy;
+}
+
+/**
+ * The member classes a stored discriminator can name: one class, several
+ * (ambiguous), or none (unknown).
+ */
+function stiCandidates(hierarchy: StiHierarchy, metaType: string): string[] {
+  return [...(hierarchy.bySpelling.get(metaType.toLowerCase()) ?? [])];
+}
+
+/** One group of selected STI rows and how to expand it. */
+interface StiGroup {
+  className: string;
+  ids: string[];
+  /** Polymorphic `meta_type` identities to match besides the class's own. */
+  extraMetaTypes: string[];
+}
+
+/**
  * Group an STI table's selected rows by concrete class, so each group is
  * expanded with the references that point at that class (a subtype can be
- * referenced where its base is not). A discriminator the registry does not
- * know stays with the class that declared the reference.
+ * referenced where its base is not), and with polymorphic associations
+ * stored against the declaring class as well as the concrete one. A
+ * discriminator the hierarchy does not know stays with the declaring class.
+ * An ambiguous one stays with it too when no candidate class carries
+ * references the declaring class does not; otherwise following them would
+ * delete or null rows on the strength of a guess, so the delete is refused.
  */
 function groupByConcreteClass(
   ctx: CascadeContext,
   className: string,
+  tableName: string,
   rows: Array<{ id: string; metaType?: string }>,
-): Map<string, string[]> {
-  const groups = new Map<string, string[]>();
+): StiGroup[] {
+  const hierarchy = stiHierarchyFor(ctx, className);
+  const declaringMetaTypes = buildCascadePlan(
+    ctx.registry,
+    className,
+  ).metaTypes;
+  const declaringKeys = new Set(
+    buildCascadePlan(ctx.registry, className).references.map(referenceKey),
+  );
+  const groups = new Map<string, StiGroup>();
+  const add = (group: string, id: string, extra: readonly string[]) => {
+    const existing = groups.get(group) ?? {
+      className: group,
+      ids: [],
+      extraMetaTypes: [],
+    };
+    existing.ids.push(id);
+    for (const metaType of extra) {
+      if (!existing.extraMetaTypes.includes(metaType)) {
+        existing.extraMetaTypes.push(metaType);
+      }
+    }
+    groups.set(group, existing);
+  };
   for (const { id, metaType } of rows) {
-    const concrete =
-      (metaType && ctx.registry.getClass(metaType)?.qualifiedName) || className;
-    const group = groups.get(concrete);
-    if (group) group.push(id);
-    else groups.set(concrete, [id]);
+    const candidates = metaType ? stiCandidates(hierarchy, metaType) : [];
+    if (candidates.length === 1) {
+      add(candidates[0], id, declaringMetaTypes);
+      continue;
+    }
+    if (candidates.length === 0) {
+      add(className, id, []);
+      continue;
+    }
+    const extra: string[] = [];
+    for (const candidate of candidates) {
+      const plan = buildCascadePlan(ctx.registry, candidate);
+      if (
+        plan.references.some((ref) => !declaringKeys.has(referenceKey(ref)))
+      ) {
+        throw DatabaseError.constraintViolation(
+          `cascade delete cannot tell which class a '${tableName}' row is: ` +
+            `its discriminator '${metaType}' names ${candidates.join(', ')}, ` +
+            'and they are referenced differently; refusing to delete or null ' +
+            'rows that depend on that choice. Store the qualified class name ' +
+            'in its _meta_type.',
+          '_meta_type',
+        );
+      }
+      extra.push(...plan.metaTypes);
+    }
+    add(className, id, extra);
   }
-  return groups;
+  return [...groups.values()];
+}
+
+/** Identity of one reference for comparing two cascade plans. */
+function referenceKey(reference: CascadeReference): string {
+  return `${reference.tableName}\u0000${reference.column}\u0000${reference.action}`;
 }
 
 async function deleteByIds(
@@ -1106,6 +1264,8 @@ async function resolveReferences(
   tableName: string,
   ids: string[],
   depth: number,
+  /** Polymorphic `meta_type` identities to match besides the class's own. */
+  extraMetaTypes: readonly string[] = [],
 ): Promise<void> {
   const pending = ids.filter((id) => {
     const key = `${tableName}:${id}`;
@@ -1124,7 +1284,11 @@ async function resolveReferences(
     );
   }
 
-  const plan = buildCascadePlan(ctx.registry, className);
+  const basePlan = buildCascadePlan(ctx.registry, className);
+  const plan: CascadePlan = {
+    ...basePlan,
+    metaTypes: [...new Set([...basePlan.metaTypes, ...extraMetaTypes])],
+  };
 
   // PostgreSQL READ COMMITTED: another connection could insert a referencing
   // row after the scans below and before this level's rows are deleted; the
@@ -1174,6 +1338,10 @@ async function resolveReferences(
         reference.tableName,
         ctx.registry.getTableStrategy(reference.className) === 'sti',
       );
+      // A self-referencing SET NULL leaves the caller's own target rows
+      // alone: clearing a target's owner column first would leave its own
+      // DELETE nothing to attribute its tombstone to.
+      const exclusion = await excludeTargets(ctx, reference.tableName);
       for (const batch of chunkArray(pending, IN_LIST_CHUNK_SIZE)) {
         const result = await tolerateMissingTable(
           () =>
@@ -1181,12 +1349,9 @@ async function resolveReferences(
               ctx.db,
               reference.tableName,
               reference.column,
-              // A self-referencing SET NULL leaves the caller's own target
-              // rows alone: clearing a target's owner column first would leave
-              // its own DELETE nothing to attribute its tombstone to.
               {
                 ...idPredicate(reference.column, batch),
-                ...excludeTargets(ctx, reference.tableName),
+                ...exclusion.filter,
               },
               (affected) => recordCascadeWrite(ctx.db, { affected }),
               // Only columns proven present and readable; without a readable
@@ -1196,6 +1361,7 @@ async function resolveReferences(
                 ownerColumns: projection.ownerColumns,
                 metaType: projection.metaTypeReadable,
               },
+              exclusion.raw,
             ),
           undefined,
           { table: reference.tableName, action: 'SET NULL' },
@@ -1231,24 +1397,31 @@ async function resolveReferences(
       reference.tableName,
       reference.column,
       pending,
-      excludeTargets(ctx, reference.tableName),
+      await excludeTargets(ctx, reference.tableName),
       sti,
     );
     if (children.length === 0) continue;
     const childIds = children.map(({ id }) => id);
 
     // An STI child is expanded as its concrete class: a subtype can carry
-    // incoming references its base does not.
-    const groups = sti
-      ? groupByConcreteClass(ctx, reference.className, children)
-      : new Map([[reference.className, childIds]]);
-    for (const [childClass, groupIds] of groups) {
+    // incoming references its base does not, and associations stored
+    // against the declaring class are still matched.
+    const groups: StiGroup[] = sti
+      ? groupByConcreteClass(
+          ctx,
+          reference.className,
+          reference.tableName,
+          children,
+        )
+      : [{ className: reference.className, ids: childIds, extraMetaTypes: [] }];
+    for (const group of groups) {
       await resolveReferences(
         ctx,
-        childClass,
+        group.className,
         reference.tableName,
-        groupIds,
+        group.ids,
         depth + 1,
+        group.extraMetaTypes,
       );
     }
     await deleteSystemRows(
@@ -1296,13 +1469,14 @@ async function resolveReferences(
       association.tableName,
       associationSti,
     );
+    // An association row that points at itself and is the caller's own
+    // target stays with the caller's DELETE (recorded once, under its stored
+    // owner).
+    const exclusion = await excludeTargets(ctx, association.tableName);
     for (const batch of chunkArray(pending, IN_LIST_CHUNK_SIZE)) {
-      // An association row that points at itself and is the caller's own
-      // target stays with the caller's DELETE (recorded once, under its
-      // stored owner).
       const where: Record<string, unknown> = {
         ...idPredicate('meta_id', batch),
-        ...excludeTargets(ctx, association.tableName),
+        ...exclusion.filter,
       };
       if (plan.metaTypes.length === 1) {
         where.meta_type = plan.metaTypes[0];
@@ -1325,6 +1499,8 @@ async function resolveReferences(
             },
             where,
             (affected) => recordCascadeWrite(ctx.db, { affected }),
+            undefined,
+            exclusion.raw,
           ),
         undefined,
         {
@@ -1360,6 +1536,14 @@ export interface CascadeResult {
    * cross-process cache config rather than only its own.
    */
   affectedTableClasses: Map<string, string>;
+  /**
+   * Target ids (as the engine returned them) whose stored ownership columns
+   * changed while the cascade ran — a database `ON DELETE` action reaching
+   * back to the target. The owner the caller's own DELETE returns for them
+   * is not the owner they had, so their tombstone must not be attributed
+   * from it.
+   */
+  disturbedTargets?: string[];
 }
 
 /**
@@ -1386,7 +1570,12 @@ export async function cascadeReferencesTo(
     target: { tableName: target.tableName, ids: [...target.ids] },
     unrecorded: new Set(),
     lockable: new Map(),
+    stiHierarchies: new Map(),
   };
+  // The targets' own owner columns before any cascade statement: a database
+  // ON DELETE action (a physical FK cycle back to a target) can rewrite them
+  // before the caller's DELETE returns them.
+  const ownersBefore = await readTargetOwners(ctx, target);
   await resolveReferences(
     ctx,
     target.className,
@@ -1399,6 +1588,19 @@ export async function cascadeReferencesTo(
     target.ids,
     ownerClassCandidates(registry, target.className),
   );
+  const ownersAfter = ownersBefore
+    ? await readTargetOwners(ctx, target)
+    : undefined;
+  const disturbedTargets: string[] = [];
+  for (const [id, before] of ownersBefore ?? []) {
+    const after = ownersAfter?.get(id);
+    if (!after) continue;
+    if (
+      Object.keys(before).some((column) => before[column] !== after[column])
+    ) {
+      disturbedTargets.push(id);
+    }
+  }
   // Every level ran without a refusal, so the cascade's rows are final for
   // this transaction. Appended on its handle, the entries commit or roll back
   // with it; a failed append is warned and never fails the delete.
@@ -1406,7 +1608,68 @@ export async function cascadeReferencesTo(
   return {
     affectedTables: ctx.affectedTables,
     affectedTableClasses: ctx.affectedTableClasses,
+    disturbedTargets,
   };
+}
+
+/**
+ * The caller's target rows' stored ownership columns (as text), by id as the
+ * engine returns it, or `undefined` when the target class has none the role
+ * can read (nothing to verify).
+ */
+async function readTargetOwners(
+  ctx: CascadeContext,
+  target: { className: string; tableName: string; ids: string[] },
+): Promise<Map<string, Record<string, unknown>> | undefined> {
+  if (target.ids.length === 0) return undefined;
+  const projection = await feedProjectionFor(
+    ctx,
+    target.className,
+    target.tableName,
+    ctx.registry.getTableStrategy(target.className) === 'sti',
+  );
+  const columns = projection.ownerColumns;
+  if (columns.length === 0) return undefined;
+  const owners = new Map<string, Record<string, unknown>>();
+  for (const batch of chunkArray(target.ids, IN_LIST_CHUNK_SIZE)) {
+    if (isJsonAdapterHandle(ctx.db)) {
+      for (const row of await ctx.db.list(
+        target.tableName,
+        idPredicate('id', batch),
+      )) {
+        owners.set(
+          String(row.id),
+          Object.fromEntries(columns.map((column) => [column, row[column]])),
+        );
+      }
+      continue;
+    }
+    const dialect = usesPostgresDialect(ctx.db) ? 'postgres' : 'sqlite';
+    const where = buildWhere(idPredicate('id', batch), 1, dialect);
+    const table = `"${target.tableName.replaceAll('"', '""')}"`;
+    const select = columns
+      .map(
+        (column, index) =>
+          `CAST("${column.replaceAll('"', '""')}" AS VARCHAR) AS "_smrt_owner_${index}"`,
+      )
+      .join(', ');
+    const result = await ctx.db.query(
+      `SELECT CAST("id" AS VARCHAR) AS "id", ${select} FROM ${table} ${where.sql}`,
+      ...where.values,
+    );
+    for (const row of result.rows) {
+      owners.set(
+        String(row.id),
+        Object.fromEntries(
+          columns.map((column, index) => [
+            column,
+            row[`_smrt_owner_${index}`] ?? null,
+          ]),
+        ),
+      );
+    }
+  }
+  return owners;
 }
 
 type TransactionCapable = DatabaseInterface & {
@@ -1440,7 +1703,7 @@ export async function runCascadeDelete(
     /** An unsaved object has none; the cascade is then a no-op. */
     id: string | null | undefined;
   },
-  deleteSelf: (db: DatabaseInterface) => Promise<void>,
+  deleteSelf: (db: DatabaseInterface, cascade?: CascadeResult) => Promise<void>,
   shouldCascade?: (db: DatabaseInterface) => Promise<boolean>,
 ): Promise<CascadeResult> {
   const ids = target.id ? [target.id] : [];
@@ -1487,7 +1750,9 @@ export async function runCascadeDelete(
             affectedTables: new Set<string>(),
             affectedTableClasses: new Map<string, string>(),
           };
-    await deleteSelf(bound);
+    // The cascade's result goes to the caller's DELETE so a target whose
+    // owner a database action rewrote is not attributed from its new value.
+    await deleteSelf(bound, result);
     return result;
   };
 

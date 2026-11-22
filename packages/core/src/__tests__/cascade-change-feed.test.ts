@@ -153,6 +153,69 @@ class CascadeFeedAttachmentNote extends SmrtObject {
   attachmentId: string = '';
 }
 
+/**
+ * Two STI hierarchies whose subtypes' names differ only by case: a legacy,
+ * case-variant discriminator names both.
+ */
+@smrt({ tableName: 'cascade_feed_shapes', tableStrategy: 'sti' })
+class CascadeFeedShape extends SmrtObject {
+  @foreignKey('CascadeFeedDoc', { onDelete: 'CASCADE' })
+  docId: string = '';
+}
+
+@smrt()
+class CascadeFeedCaseShape extends CascadeFeedShape {
+  label: string = '';
+}
+
+@smrt()
+class CascadeFeedCASEShape extends CascadeFeedShape {
+  workspaceId: string = '';
+}
+
+@smrt({ tableName: 'cascade_feed_panels', tableStrategy: 'sti' })
+class CascadeFeedPanel extends SmrtObject {
+  @foreignKey('CascadeFeedDoc', { onDelete: 'CASCADE' })
+  docId: string = '';
+}
+
+@smrt()
+class CascadeFeedCasePanel extends CascadeFeedPanel {
+  label: string = '';
+}
+
+@smrt()
+class CascadeFeedCASEPanel extends CascadeFeedPanel {
+  caption: string = '';
+}
+
+/** Referenced only by the upper-case panel subtype. */
+@smrt({ tableName: 'cascade_feed_panel_pins' })
+class CascadeFeedPanelPin extends SmrtObject {
+  @foreignKey('CascadeFeedCASEPanel', { onDelete: 'CASCADE' })
+  panelId: string = '';
+}
+
+/**
+ * A row owned through a reference to its own child; the database (not the
+ * cascade) applies that reference's SET NULL (see the FK-cycle test).
+ */
+@smrt({ tableName: 'cascade_feed_cycle_owners' })
+class CascadeFeedCycleOwner extends SmrtObject {
+  @foreignKey('CascadeFeedCycleChild', {
+    onDelete: 'SET NULL',
+    nullable: true,
+    constraint: false,
+  })
+  workspaceId: string | null = null;
+}
+
+@smrt({ tableName: 'cascade_feed_cycle_children' })
+class CascadeFeedCycleChild extends SmrtObject {
+  @foreignKey('CascadeFeedCycleOwner', { onDelete: 'CASCADE' })
+  ownerId: string = '';
+}
+
 /** A row whose ownership column references its own table (SET NULL). */
 @smrt({ tableName: 'cascade_feed_self_owned' })
 class CascadeFeedSelfOwned extends SmrtObject {
@@ -304,6 +367,15 @@ describe(`delete cascades record change-feed entries (${pglite ? 'pglite' : 'sql
         'CascadeFeedAttachmentNote',
         'CascadeFeedSelfOwned',
         'CascadeFeedTextNode',
+        'CascadeFeedShape',
+        'CascadeFeedCaseShape',
+        'CascadeFeedCASEShape',
+        'CascadeFeedPanel',
+        'CascadeFeedCasePanel',
+        'CascadeFeedCASEPanel',
+        'CascadeFeedPanelPin',
+        'CascadeFeedCycleOwner',
+        'CascadeFeedCycleChild',
         'CascadeFeedLegacyPart',
         'CascadeFeedLegacyRef',
         'CascadeFeedNode',
@@ -1106,6 +1178,188 @@ describe(`delete cascades record change-feed entries (${pglite ? 'pglite' : 'sql
       unregister();
     }
   });
+
+  it('records nothing for an STI row whose case-variant discriminator names two registered subtypes', async () => {
+    const unregister = ownedBy(CascadeFeedCASEShape, ['workspace_id']);
+    try {
+      const doc = await make(CascadeFeedDoc, db, {
+        title: 'd',
+        organizationId: ORG_A,
+      });
+      const shape = await make(CascadeFeedCASEShape, db, {
+        docId: doc.id,
+        workspaceId: ORG_B,
+      });
+      // A legacy simple discriminator in neither subtype's exact case.
+      await db.query(
+        `UPDATE cascade_feed_shapes SET _meta_type = 'cascadefeedcaseshape' WHERE id = '${shape.id}'`,
+      );
+      const before = (await feed(db)).length;
+
+      await doc.delete();
+
+      // No subtype carries its own references, so the row is removed with
+      // the parent — but never attributed to a guessed class.
+      expect(await count(db, 'cascade_feed_shapes')).toBe(0);
+      const added = (await feed(db)).slice(before);
+      expect(added.some((entry) => entry.rowId === shape.id)).toBe(false);
+    } finally {
+      unregister();
+    }
+  });
+
+  it('refuses a delete whose STI child is ambiguous between subtypes referenced differently', async () => {
+    const doc = await make(CascadeFeedDoc, db, {
+      title: 'd',
+      organizationId: ORG_A,
+    });
+    const panel = await make(CascadeFeedCASEPanel, db, { docId: doc.id });
+    const pin = await make(CascadeFeedPanelPin, db, { panelId: panel.id });
+    await db.query(
+      `UPDATE cascade_feed_panels SET _meta_type = 'cascadefeedcasepanel' WHERE id = '${panel.id}'`,
+    );
+    const before = await feed(db);
+
+    await expect(doc.delete()).rejects.toThrow(/cannot tell which class/);
+
+    expect(await count(db, DOCS)).toBe(1);
+    expect(await count(db, 'cascade_feed_panels')).toBe(1);
+    const pins = await db.query(
+      `SELECT COUNT(*) AS n FROM cascade_feed_panel_pins WHERE id = '${pin.id}'`,
+    );
+    expect(Number(pins.rows[0]?.n)).toBe(1);
+    expect(await feed(db)).toEqual(before);
+  });
+
+  it('removes and records associations stored against an STI child under its base and its own class', async () => {
+    const baseType =
+      ObjectRegistry.getClassByConstructor(CascadeFeedAttachment)
+        ?.qualifiedName ?? 'CascadeFeedAttachment';
+    const ownType =
+      ObjectRegistry.getClassByConstructor(CascadeFeedOwnedAttachment)
+        ?.qualifiedName ?? 'CascadeFeedOwnedAttachment';
+    const doc = await make(CascadeFeedDoc, db, {
+      title: 'd',
+      organizationId: ORG_A,
+    });
+    const attachment = await make(CascadeFeedOwnedAttachment, db, {
+      docId: doc.id,
+      workspaceId: ORG_B,
+    });
+    const viaBase = await make(CascadeFeedLinkRemark, db, {
+      organizationId: ORG_A,
+      metaType: baseType,
+      metaId: attachment.id,
+      role: 'base',
+    });
+    const viaOwn = await make(CascadeFeedLinkRemark, db, {
+      organizationId: ORG_A,
+      metaType: ownType,
+      metaId: attachment.id,
+      role: 'own',
+    });
+    const before = (await feed(db)).length;
+
+    await doc.delete();
+
+    expect(await count(db, REMARKS)).toBe(0);
+    const added = (await feed(db)).slice(before);
+    for (const remark of [viaBase, viaOwn]) {
+      expect(added).toContainEqual(
+        expect.objectContaining({
+          table: REMARKS,
+          operation: 'delete',
+          rowId: remark.id,
+          tenantId: ORG_A,
+        }),
+      );
+    }
+  });
+
+  it.skipIf(!pglite)(
+    'records no tombstone under an owner a database action rewrote during the cascade',
+    async () => {
+      const unregister = ownedBy(CascadeFeedCycleOwner, ['workspace_id']);
+      try {
+        const owner = await make(CascadeFeedCycleOwner, db, {});
+        const child = await make(CascadeFeedCycleChild, db, {
+          ownerId: owner.id,
+        });
+        owner.workspaceId = child.id ?? null;
+        await owner.save();
+        // The database, not the cascade, applies this reference: deleting
+        // the child clears the owner's ownership column before the owner's
+        // own DELETE returns it.
+        await db.query(
+          `ALTER TABLE cascade_feed_cycle_owners
+             ADD FOREIGN KEY (workspace_id)
+             REFERENCES cascade_feed_cycle_children (id) ON DELETE SET NULL`,
+        );
+        const before = (await feed(db)).length;
+
+        await owner.delete();
+
+        expect(await count(db, 'cascade_feed_cycle_owners')).toBe(0);
+        const added = (await feed(db)).slice(before);
+        expect(
+          added.some(
+            (entry) => entry.rowId === owner.id && entry.tenantId === null,
+          ),
+        ).toBe(false);
+        const elsewhere = await getChangesSince(db, {
+          since: 0,
+          tenantId: ORG_B,
+        });
+        expect(
+          elsewhere.changes.some(
+            (change) =>
+              change.rowId === owner.id && change.operation === 'delete',
+          ),
+        ).toBe(false);
+      } finally {
+        unregister();
+      }
+    },
+  );
+
+  it.skipIf(pglite)(
+    'excludes a target batch larger than the engine’s bound-parameter limit',
+    async () => {
+      const root = await make(CascadeFeedTextNode, db, {
+        id: 'b-0',
+        slug: 'b-0',
+      });
+      const columns = (
+        await db.query(`SELECT name FROM pragma_table_info('${TEXT_NODES}')`)
+      ).rows.map((row) => String(row.name));
+      const value = (column: string) =>
+        column === 'id' || column === 'slug'
+          ? `'b-' || n.i`
+          : column === 'parent_node_id'
+            ? `'b-' || (n.i - 1)`
+            : `t."${column}"`;
+      const total = 33_000;
+      await db.query(
+        `INSERT INTO ${TEXT_NODES} (${columns.map((column) => `"${column}"`).join(', ')})
+         WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < ${total})
+         SELECT ${columns.map(value).join(', ')}
+           FROM n, ${TEXT_NODES} AS t WHERE t.id = '${root.id}'`,
+      );
+      const ids = Array.from({ length: total + 1 }, (_, index) => `b-${index}`);
+
+      // Every child is itself a target: the cascade must exclude all of them
+      // without binding one parameter per target.
+      await cascadeReferencesTo(db, ObjectRegistry, {
+        className:
+          ObjectRegistry.getClassByConstructor(CascadeFeedTextNode)
+            ?.qualifiedName ?? 'CascadeFeedTextNode',
+        tableName: TEXT_NODES,
+        ids,
+      });
+
+      expect(await count(db, TEXT_NODES)).toBe(total + 1);
+    },
+  );
 
   it('records nothing for a row whose explicitly registered tenant_id is not persisted', async () => {
     const unregister = ownedBy(CascadeFeedGlobalNote, ['tenant_id']);

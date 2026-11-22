@@ -13,6 +13,31 @@ import { getDatabaseSyncDeviceId } from './sync-device.js';
 
 export const SYNC_TOMBSTONES_TABLE = '_smrt_sync_tombstones';
 
+/**
+ * An extra SQL predicate ANDed onto a statement's `WHERE`, with its own bound
+ * values. `sql` receives the 1-based index of its first parameter (PostgreSQL
+ * numbers placeholders; SQLite and DuckDB use `?` and ignore it). Used for a
+ * predicate `buildWhere` cannot express with a bounded number of parameters.
+ */
+export interface RawPredicate {
+  sql: (firstParameter: number) => string;
+  values: unknown[];
+}
+
+/** `where` (from `buildWhere`) with `raw` ANDed on. */
+export function withRawPredicate(
+  where: { sql: string; values: unknown[] },
+  raw: RawPredicate | undefined,
+  firstParameter: number,
+): { sql: string; values: unknown[] } {
+  if (!raw) return where;
+  const clause = raw.sql(firstParameter + where.values.length);
+  return {
+    sql: where.sql.trim() ? `${where.sql} AND ${clause}` : `WHERE ${clause}`,
+    values: [...where.values, ...raw.values],
+  };
+}
+
 export interface SyncRevision {
   originDeviceId: string;
   revision: number;
@@ -173,7 +198,13 @@ export async function deleteSyncRows(
   filter: Record<string, unknown>,
   didDelete: (count: number) => void,
   incoming?: { rowId: string; tenantId: string | null; revision: SyncRevision },
+  raw?: RawPredicate,
 ): Promise<{ affected: number; owners?: DeletedRowOwners }> {
+  if (raw && isJsonAdapterHandle(db)) {
+    throw RuntimeError.invalidState(
+      'A raw SQL predicate requires a SQL database',
+    );
+  }
   const ownerColumns = identity.ownerColumns ?? [];
   const returnRows = ownerColumns.length > 0 || identity.returnRows === true;
   if (isJsonAdapterHandle(db)) {
@@ -200,7 +231,11 @@ export async function deleteSyncRows(
     }));
     return { affected: result.affected, owners };
   }
-  const { sql, values } = buildWhere(filter, 1, dialect(db));
+  const { sql, values } = withRawPredicate(
+    buildWhere(filter, 1, dialect(db)),
+    raw,
+    1,
+  );
   const tenant = identity.tenantColumn
     ? ', CAST(' +
       quote(identity.tenantColumn) +
@@ -374,8 +409,14 @@ export async function nullSyncReference(
   filter: Record<string, unknown>,
   didUpdate: (count: number) => void,
   returning: NullReferenceReturning = { id: false },
+  raw?: RawPredicate,
 ): Promise<{ affected: number; rows: DeletedRowOwners }> {
   const ownerColumns = returning.id ? (returning.ownerColumns ?? []) : [];
+  if (raw && isJsonAdapterHandle(db)) {
+    throw RuntimeError.invalidState(
+      'A raw SQL predicate requires a SQL database',
+    );
+  }
   if (isJsonAdapterHandle(db)) {
     // No RETURNING here; the embedded write queue serializes framework
     // writes, so the rows read just before the update are the rows it changes.
@@ -400,7 +441,11 @@ export async function nullSyncReference(
   const engine = dialect(db);
   const parameter = (index: number) =>
     engine === 'postgres' ? `$${index}` : '?';
-  const { sql, values } = buildWhere(filter, 3, engine);
+  const { sql, values } = withRawPredicate(
+    buildWhere(filter, 3, engine),
+    raw,
+    3,
+  );
   const device = getDatabaseSyncDeviceId(db);
   const tracked = '_sync_origin_device_id IS NOT NULL';
   const owner = returning.id
