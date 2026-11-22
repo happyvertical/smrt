@@ -42,16 +42,17 @@ function stubTurn(events: object[], thread: object[] = []) {
   );
 }
 
-async function open(props: Record<string, unknown> = {}) {
+async function open(
+  props: Record<string, unknown> = {},
+  ready = /Tell me what you want|waiting/,
+) {
   container = document.createElement('div');
   document.body.appendChild(container);
   component = mount(AssistantPanel, {
     target: container,
     props: { open: true, ...props },
   });
-  await vi.waitFor(() =>
-    expect(container.textContent).toMatch(/Tell me what you want|waiting/),
-  );
+  await vi.waitFor(() => expect(container.textContent).toMatch(ready));
 }
 
 async function say(text: string) {
@@ -456,4 +457,50 @@ it('renders a markdown table in a reply and the plain reason on a failed card', 
   expect(target.textContent).not.toMatch(/WHERE|Valid operators/);
   unmount(mounted);
   target.remove();
+});
+
+describe('one scroller (#5395)', () => {
+  const longReply = Array.from({ length: 12 }, (_, i) => `Point ${i}.`).join(
+    '\n\n',
+  );
+  const thread = [
+    { id: '1', seq: 1, role: 'user', content: 'one' },
+    { id: '2', seq: 2, role: 'assistant', content: longReply },
+    { id: '3', seq: 3, role: 'user', content: 'two' },
+    { id: '4', seq: 4, role: 'assistant', content: longReply },
+  ];
+  it('replies are plain text; only an older long reply folds, and Show more opens it', async () => {
+    stubTurn([], thread);
+    await open({}, /Point 11/);
+    await vi.waitFor(() =>
+      expect(
+        container.querySelectorAll('.smrt-assistant-panel__reply'),
+      ).toHaveLength(2),
+    );
+    const replies = [
+      ...container.querySelectorAll('.smrt-assistant-panel__reply'),
+    ];
+    expect(container.querySelector('.smrt-assistant-panel__bot')).toBeNull();
+    expect(replies[0]?.classList.contains('smrt-assistant-panel__folded')).toBe(
+      true,
+    );
+    expect(replies[1]?.classList.contains('smrt-assistant-panel__folded')).toBe(
+      false,
+    );
+    const more = container.querySelectorAll<HTMLButtonElement>(
+      '.smrt-assistant-panel__more',
+    );
+    expect(more).toHaveLength(1);
+    expect(more[0]?.textContent).toBe('Show more');
+    expect(more[0]?.getAttribute('aria-expanded')).toBe('false');
+    more[0]?.click();
+    await vi.waitFor(() =>
+      expect(
+        replies[0]?.classList.contains('smrt-assistant-panel__folded'),
+      ).toBe(false),
+    );
+    expect(
+      container.querySelector('.smrt-assistant-panel__more')?.textContent,
+    ).toBe('Show less');
+  });
 });

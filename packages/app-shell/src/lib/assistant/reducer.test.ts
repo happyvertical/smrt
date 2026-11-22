@@ -5,7 +5,10 @@ import {
   announcement,
   collapseFailures,
   type DockState,
+  foldsReply,
+  type Item,
   initialState,
+  newestReplyId,
   reduce,
   stopNote,
   toolLabel,
@@ -376,5 +379,24 @@ describe('the changes block', () => {
       },
     ]);
     expect(s.items.map((i) => i.kind)).toEqual(['user', 'changes']);
+  });
+});
+
+describe('folding long replies (#5395)', () => {
+  const long = Array.from({ length: 9 }, (_, i) => `Line ${i}`).join('\n');
+  it('folds only a reply taller than about seven lines', () => {
+    expect(foldsReply('Short answer.')).toBe(false);
+    expect(foldsReply(long)).toBe(true);
+    expect(foldsReply('word '.repeat(120))).toBe(true);
+  });
+  it('names the newest assistant reply, which never folds', () => {
+    const items: Item[] = [
+      { kind: 'assistant', id: 'a', text: long, streaming: false },
+      { kind: 'user', id: 'u', text: 'and?' },
+      { kind: 'assistant', id: 'b', text: long, streaming: false },
+      { kind: 'note', id: 'n', tone: 'info', text: 'Stopped.' },
+    ];
+    expect(newestReplyId(items)).toBe('b');
+    expect(newestReplyId([])).toBeUndefined();
   });
 });

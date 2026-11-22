@@ -23,8 +23,10 @@ import {
   announcement,
   collapseFailures,
   type DockState,
+  foldsReply,
   type Item,
   initialState,
+  newestReplyId,
   reduce,
   stopNote,
   toolLabel,
@@ -72,6 +74,9 @@ const block = $derived(planReplyBlock(changes));
 const lastBlock = $derived(
   dock.items.findLast((i) => i.kind === 'changes')?.id,
 );
+// An older long reply folds to a few lines; the newest never does.
+const newestReply = $derived(newestReplyId(dock.items));
+let unfolded = $state<Record<string, boolean>>({});
 let applying = $state(false);
 let applyError = $state('');
 
@@ -303,7 +308,12 @@ onDestroy(() => controller?.abort());
       {#if item.kind === 'user'}
         <p class="smrt-assistant-panel__msg smrt-assistant-panel__user"><span class="smrt-assistant-panel__sr-only">You: </span>{item.text}</p>
       {:else if item.kind === 'assistant'}
-        <div class="smrt-assistant-panel__msg smrt-assistant-panel__bot smrt-assistant-panel__markdown"><span class="smrt-assistant-panel__sr-only">Assistant: </span>{@html renderAssistantMarkdown(item.text)}</div>
+        {@const folds = item.id !== newestReply && foldsReply(item.text)}
+        {@const folded = folds && !unfolded[item.id]}
+        <div id={`reply-${item.id}`} class="smrt-assistant-panel__reply smrt-assistant-panel__markdown" class:smrt-assistant-panel__folded={folded}><span class="smrt-assistant-panel__sr-only">Assistant: </span>{@html renderAssistantMarkdown(item.text)}</div>
+        {#if folds}
+          <button type="button" class="smrt-assistant-panel__more" aria-expanded={!folded} aria-controls={`reply-${item.id}`} onclick={() => (unfolded = { ...unfolded, [item.id]: folded })}>{folded ? 'Show more' : 'Show less'}</button>
+        {/if}
       {:else if item.kind === 'tool'}
         <p
           class="smrt-assistant-panel__chip"
@@ -450,16 +460,37 @@ onDestroy(() => controller?.abort());
     gap: var(--smrt-spacing-sm, 0.5rem);
     overflow-wrap: anywhere;
   }
+  /* The log is the only scroller: nothing in it shrinks into a box of its own. */
+  .smrt-assistant-panel__log > * {
+    flex: none;
+  }
   .smrt-assistant-panel__msg {
     margin: 0;
     padding: var(--smrt-spacing-xs, 0.25rem) var(--smrt-spacing-md, 0.75rem);
     white-space: pre-wrap;
     max-inline-size: 90%;
   }
-  /* The renderer's blocks carry their own spacing, so no pre-wrap here. */
-  .smrt-assistant-panel__markdown {
+  /* A reply is plain text as tall as its words: no bubble, no scroll box. */
+  .smrt-assistant-panel__reply {
+    min-inline-size: 0;
     white-space: normal;
-    overflow-x: auto;
+  }
+  .smrt-assistant-panel__markdown :global(table) {
+    inline-size: 100%;
+    table-layout: auto;
+  }
+  .smrt-assistant-panel__folded {
+    max-block-size: 10.5rem;
+    overflow: hidden;
+  }
+  .smrt-assistant-panel__more {
+    align-self: flex-start;
+    margin: 0;
+    padding: 0.1rem 0;
+    border: 0;
+    background: none;
+    font: inherit;
+    cursor: pointer;
   }
   .smrt-assistant-panel__markdown :global(:is(p, ul, ol, pre, table)) {
     margin: 0 0 var(--smrt-spacing-xs, 0.25rem);
@@ -472,9 +503,6 @@ onDestroy(() => controller?.abort());
   }
   .smrt-assistant-panel__user {
     align-self: flex-end;
-  }
-  .smrt-assistant-panel__bot {
-    align-self: flex-start;
   }
   .smrt-assistant-panel__chip {
     display: flex;
@@ -578,8 +606,13 @@ onDestroy(() => controller?.abort());
     background: var(--smrt-color-primary-container, rgb(128 128 128 / 0.2));
     color: var(--smrt-color-on-primary-container, inherit);
   }
-  .smrt-assistant-panel__bot {
-    background: var(--smrt-color-surface-container, rgb(128 128 128 / 0.1));
+  .smrt-assistant-panel__folded {
+    mask-image: linear-gradient(#000 60%, transparent);
+  }
+  .smrt-assistant-panel__more {
+    color: var(--smrt-color-primary);
+    font-size: 0.875rem;
+    font-weight: 600;
   }
   .smrt-assistant-panel__block {
     border: var(--smrt-hairline);

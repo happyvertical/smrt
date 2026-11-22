@@ -515,3 +515,25 @@ export function workingStep(state: DockState): string {
   if (last?.kind === 'assistant' && last.streaming) return 'Writing a reply';
   return 'Thinking';
 }
+
+/** The newest assistant reply: it always shows in full. */
+export function newestReplyId(items: Item[]): string | undefined {
+  return items.findLast((i) => i.kind === 'assistant')?.id;
+}
+
+/** Lines of a reply that stay visible when an older one is folded. */
+const FOLD_LINES = 7;
+/** Roughly one line of the 400px column. */
+const LINE_CHARS = 44;
+
+/**
+ * Whether an older reply is long enough to fold to "Show more": taller than
+ * about seven lines (counted from the text, as the DOM has no height to ask
+ * while it renders).
+ */
+export function foldsReply(text: string): boolean {
+  let lines = 0;
+  for (const line of text.split('\n'))
+    lines += Math.max(1, Math.ceil(line.length / LINE_CHARS));
+  return lines > FOLD_LINES;
+}
