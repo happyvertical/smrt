@@ -230,6 +230,13 @@ export {
   readManifestRetiredTables,
   readRetiredTablesFromPackageJson,
 } from './retired-tables.js';
+// Migrate under PostgreSQL row-level security (#5452)
+export {
+  assertMigrationSeesEveryRow,
+  assertTablesReadable,
+  MigrationRowSecurityError,
+  rowSecurityFailure,
+} from './row-security.js';
 export {
   declareRuntimeManagedDatabase,
   type RuntimeManagedDatabaseDeclaration,

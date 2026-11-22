@@ -19,6 +19,7 @@ import {
   resolveRetiredTables,
 } from './build-schema.js';
 import type { PackagesSeenInput } from './migration-run-decision.js';
+import { assertTablesReadable } from './row-security.js';
 import { computeSchemaFingerprint } from './schema-fingerprint.js';
 
 export interface MigrateRecordInput {
@@ -237,6 +238,13 @@ export async function readLastMigrateRecord(
   if (!(await tableExists(db, '_smrt_migrate_runs', options.engineHint))) {
     return { state: 'none' };
   }
+  // A record hidden by row-level security would read as "no earlier
+  // migrate" and skip the release and package checks (#5452).
+  await assertTablesReadable(
+    db,
+    ['_smrt_migrate_runs'],
+    getDatabaseEngine(db, options.engineHint),
+  );
   const result = await db.query(
     'SELECT release, packages, fingerprint, created_at FROM _smrt_migrate_runs ORDER BY created_at DESC, id DESC LIMIT 1',
   );

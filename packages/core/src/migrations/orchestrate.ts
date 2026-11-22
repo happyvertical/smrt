@@ -46,6 +46,10 @@ import {
   type MigrationRunDecision,
 } from './migration-run-decision.js';
 import { isRetiredTableRowsAppeared } from './retire-guard.js';
+import {
+  assertMigrationSeesEveryRow,
+  rowSecurityFailure,
+} from './row-security.js';
 import { MigrationTracker } from './tracker.js';
 
 const logger = createLogger({ level: 'info' });
@@ -486,6 +490,10 @@ export async function migrateSmrtSchemas(
   if (options.requireComplete && pending.hasManualDrift) {
     throw new Error('SMRT activation requires a manual schema migration');
   }
+  // Every verdict above came from rows the planner read; under row-level
+  // security for this role they may not be all the rows (#5452).
+  const engine = resolveMigrationEngine(options.db, options.engineHint);
+  await assertMigrationSeesEveryRow(options.db, pending.diff.changes, engine);
   // A run limited to `tables` (lazy activation, run-time model edits) migrates
   // part of the schema, not the build: it does not compare the build's
   // packages and writes no last-migrate record, so it can neither stop on a
@@ -652,6 +660,13 @@ export async function migrateSmrtSchemas(
     };
   }
   if (failed) {
+    const hidden = await rowSecurityFailure(
+      options.db,
+      failed.error,
+      pending.diff.changes,
+      engine,
+    );
+    if (hidden) throw hidden;
     throw failed.error instanceof Error
       ? failed.error
       : new Error(String(failed.error ?? `Migration ${failed.name} failed`));

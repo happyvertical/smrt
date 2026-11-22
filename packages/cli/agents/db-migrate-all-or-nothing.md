@@ -104,6 +104,17 @@ applies, because the rows go with the table. The retired list is part of the
 build's stamp, so production refuses to start a build that retires a table
 until `db:migrate` has run.
 
+## Row-level security (#5452)
+
+On PostgreSQL, when row-level security applies to the migrating role on a table
+the plan reads (not superuser or `BYPASSRLS`, and not the owner or the owner
+under `FORCE ROW LEVEL SECURITY`), `db:migrate` exits 1 with
+`MigrationRowSecurityError` naming the tables, before it applies anything,
+`--dry-run` included. Its statements run with `row_security = off`, so a read
+a policy would filter fails the batch with the same error. Run it as a role
+with `BYPASSRLS`, or as the owner without `FORCE`; see
+`docs/content/postgres-permissions.md`.
+
 ## `--null-orphans`
 
 This explicit data step stays available. It clears orphan foreign-key references

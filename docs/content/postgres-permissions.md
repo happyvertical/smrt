@@ -138,6 +138,31 @@ migration or restore. Existing objects, historical column grants, and global
 defaults must be assessed as well as schema-local defaults. Monitoring access
 does not automatically expand when columns or tables are added.
 
+### Row-level security and the migration owner
+
+Migrate reads rows to decide whether a change is safe: whether a retired table
+is empty, whether a column about to become required holds NULLs, whether a
+conversion would change a stored value. Row-level security that applies to the
+migrating role would hide rows from those reads without an error. It applies
+when the table has row-level security enabled and the role is neither a
+superuser nor `BYPASSRLS`, and either does not own the table or owns it under
+`FORCE ROW LEVEL SECURITY` (the users package's generated policies always
+force it).
+
+So `smrt db:migrate` and `migrateSmrtSchemas` stop with
+`MigrationRowSecurityError`, naming the tables, before anything runs when that
+holds for a table the plan reads, and run their statements with
+`row_security = off`, so a read a policy would filter raises the same error
+instead. Nothing is changed either way. The same check covers the migrate
+record (`_smrt_migrate_runs`), the shared tables `--repair-data` reads, and
+the money rescale (`rescaleMoneyColumnsToMinorUnits`) and its preflight. With
+row-level security on application
+tables, give the migration owner `BYPASSRLS` (it is not a runtime role, so the
+runtime and monitor checks above do not apply to it), or keep it the owner of
+those tables without `FORCE ROW LEVEL SECURITY`. Setting `smrt.system_context`
+for the role is not enough: with `row_security = off` PostgreSQL raises
+whenever a policy applies, whatever the policy allows.
+
 The migration bookkeeping tables `_smrt_migrations`, `_smrt_schema_migrations`,
 and `_smrt_backfills` must already exist before permission setup can succeed.
 Their runtime access is SELECT-only. PostgreSQL defaults cannot distinguish

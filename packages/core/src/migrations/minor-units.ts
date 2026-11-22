@@ -46,6 +46,7 @@ import { isJsonAdapterHandle } from '../native-duckdb.js';
 import { detectEngine } from '../schema/ddl/index.js';
 import { runBackfillOnceInTransaction } from './backfill-once.js';
 import { BackfillTracker } from './backfill-tracker.js';
+import { assertTablesReadable } from './row-security.js';
 import type { DatabaseInterface } from './types.js';
 
 /** Hydrated integers must remain exactly representable in JavaScript. */
@@ -566,6 +567,14 @@ export async function preflightMinorUnitsRescale(
     quoteIdentifier(target.table);
     for (const column of target.columns) quoteIdentifier(column);
   }
+  // The preflight decides what may be rounded from the rows it reads; under
+  // row-level security for this role it would not see them all (#5452).
+  if (engine === 'postgres')
+    await assertTablesReadable(
+      db,
+      targets.map((target) => target.table),
+      'postgres',
+    );
 
   const columns: MinorUnitsColumnReport[] = [];
   for (const target of targets) {

@@ -2061,6 +2061,60 @@ two schemas on the search path,
 `concurrent-index-recovery-postgres.optional.test.ts`; on PGlite
 (`pnpm test:pglite`), `concurrent-index-check-pglite.test.ts`.
 
+### Migrate never reads under row-level security (#5452)
+
+The planner's verdicts come from rows it reads (retire row count, NULL and
+value probes, foreign-key orphans, CHECK and calculated-column probes), and so
+do in-batch guards (the retire re-count, the conversion guards). Row-level
+security that applies to the migrating role filters those reads silently
+(table has RLS enabled; role not superuser or `BYPASSRLS`; not the owner, or
+the owner under `FORCE ROW LEVEL SECURITY`). `migrations/row-security.ts`:
+
+- After planning, `migrateSmrtSchemas` and `smrt db:migrate` call
+  `assertMigrationSeesEveryRow`: `row_security_active()` for each table of a
+  change that applies or stops, and each parent of a foreign key one adds
+  (`tablesMigrateReads`; a change is planned whatever its rows hold, only its
+  verdict depends on them, and reports act on nothing). Any hit throws
+  `MigrationRowSecurityError` naming the tables, before the tracker runs.
+- Every transaction the tracker runs statements in on PostgreSQL
+  (`executeWithTransaction`, `executePostgresStatements`, so the atomic batch,
+  per-migration transactions and package migrations alike) runs them under
+  `SET LOCAL row_security = off` and sets the previous value back on success
+  (`withRowSecurityOff`), so a caller-owned transaction goes on unchanged. A
+  read a policy would filter raises SQLSTATE 42501; `rowSecurityFailure`
+  turns it into the same named error when the server message names a policy
+  or the catalog shows one on a table the plan reads (42501 alone also means
+  other missing privileges).
+- Each table is resolved to the one relation the statements read
+  (`to_regclass`; the retire step's reads are `public.`-qualified), so a
+  same-named table elsewhere in the search path neither hides nor raises a
+  stop. A retirement also reads `public._smrt_app_model_changes` (stored
+  run-time models), which is checked with it.
+- A retirement's lock, row check and drop never leave the transaction: a
+  deferred `VALIDATE CONSTRAINT` does not carry them to the concurrent phase
+  (`planPostgresStatements`).
+- The concurrent-index phase builds indexes with no row reads (index builds
+  read the heap, not through policies; its checks are `EXPLAIN` only, see
+  above). Any other statement deferred there (a package data statement after a
+  `VALIDATE`) runs on the pinned session under `row_security = off`, set back
+  afterwards (`withSessionRowSecurityOff`). A PostgreSQL handle without
+  `transaction` is refused: there is nowhere to scope the setting.
+- Reads outside a schema plan are checked the same way
+  (`assertTablesReadable`): `_smrt_migrate_runs` before the last record is
+  read (a hidden record would skip the release and package checks), the shared
+  tables `--repair-data` reads (before the run is decided and again before
+  their discriminators are read), and the money rescale's preflight.
+- A SQLSTATE 42501 is named from the catalog, not the server's (possibly
+  translated) message: the tables the plan reads first, then every table the
+  role can reach that row-level security applies to.
+- The remedy is the role, not a setting: `BYPASSRLS`, or ownership without
+  `FORCE`. A role default `smrt.system_context = true` still stops, because
+  `row_security = off` raises whenever a policy applies
+  (`docs/content/postgres-permissions.md`).
+
+Tests: `row-security-migrate.test.ts` (PGlite under `pnpm test:pglite`; the
+SQLite part runs by default).
+
 ### The money rescale runs once (`migrations/minor-units.ts`)
 
 `rescaleMoneyColumnsToMinorUnits` (and the `migrate*MoneyToMinorUnits`

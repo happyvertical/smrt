@@ -476,11 +476,11 @@ describe('MigrationTracker statement execution fallbacks', () => {
     ).toBe(true);
   });
 
-  it('runs regular postgres statements directly when no transaction is available', async () => {
+  it('refuses postgres statements when no transaction is available, running none (#5452)', async () => {
     const ran: string[] = [];
     const db: any = {
       url: 'postgres://localhost/test',
-      // No `transaction` method -> regular statements run via db.query loop.
+      // No `transaction` method: nowhere to scope row_security = off.
       query: async (sql: string) => {
         ran.push(sql);
         return { rows: [] };
@@ -488,20 +488,22 @@ describe('MigrationTracker statement execution fallbacks', () => {
     };
 
     const tracker = new MigrationTracker({ db, useConcurrentIndexes: false });
-    const result = await tracker.apply(
-      {
-        id: '0001_pg_notx',
-        description: 'x',
-        version: '1.0.0',
-        up: ['ALTER TABLE t ADD COLUMN d TEXT'],
-        down: [],
-      },
-      { postgresSafe: true },
-    );
-
-    expect(result.success).toBe(true);
+    for (const postgresSafe of [true, false]) {
+      const result = await tracker.apply(
+        {
+          id: `0001_pg_notx_${postgresSafe}`,
+          description: 'x',
+          version: '1.0.0',
+          up: ['ALTER TABLE t ADD COLUMN d TEXT'],
+          down: [],
+        },
+        { postgresSafe },
+      );
+      expect(result.success).toBe(false);
+      expect(String(result.error)).toContain('transaction support');
+    }
     expect(ran.some((s) => s.includes('ALTER TABLE t ADD COLUMN d'))).toBe(
-      true,
+      false,
     );
   });
 });

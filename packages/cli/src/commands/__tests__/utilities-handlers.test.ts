@@ -73,6 +73,9 @@ const h = vi.hoisted(() => {
       }),
     ),
     trackerGetEngine: vi.fn(() => 'sqlite'),
+    assertTablesReadable: vi.fn(
+      async (_db: unknown, _tables: unknown, _engine: unknown) => {},
+    ),
     trackerApplyAll: vi.fn(
       async (..._args: unknown[]): Promise<MigrationResult[]> => [],
     ),
@@ -252,6 +255,10 @@ vi.mock('@happyvertical/smrt-core/migrations', async () => {
     },
     parsePostgresTimeoutMs: actual.parsePostgresTimeoutMs,
     unusedRetireConfirmations: actual.unusedRetireConfirmations,
+    assertMigrationSeesEveryRow: actual.assertMigrationSeesEveryRow,
+    assertTablesReadable: (db: unknown, tables: unknown, engine: unknown) =>
+      h.assertTablesReadable(db, tables, engine),
+    rowSecurityFailure: actual.rowSecurityFailure,
     // No retired tables in these fixtures (#5005).
     shortChecksum: (s: string) => (s ? s.slice(0, 8) : 'nochk'),
   };
@@ -326,6 +333,7 @@ describe('utility command handlers', () => {
     }) as typeof process.exit);
 
     // defaults
+    h.assertTablesReadable.mockImplementation(async () => {});
     registry.getAllClasses.mockReturnValue(new Map());
     registry.getInitializationOrder.mockReturnValue([]);
     registry.getAllSchemasAsDefinitions.mockImplementation(() =>
@@ -1442,6 +1450,50 @@ describe('utility command handlers', () => {
     });
 
     expect(logged()).toContain('Repairing STI discriminators');
+  });
+
+  it('db:migrate checks the shared tables --repair-data reads before deciding the run (#5452)', async () => {
+    configureMigrate();
+    registry.getInitializationOrder.mockReturnValue(['Article']);
+    registry.getTableName.mockReturnValue('contents');
+    registry.getAllSchemasAsDefinitions.mockImplementation(() => ({
+      contents: {
+        tableName: 'contents',
+        columns: { _meta_type: { type: 'TEXT' } },
+      },
+    }));
+    schemaCompare.mockResolvedValue({ added_tables: [], changes: [] });
+    const query = vi.fn(async () => ({ rows: [] }));
+    getDatabase.mockResolvedValue(
+      migratableDb({
+        getTableSchema: vi.fn(async () => ({
+          columns: { _meta_type: { type: 'TEXT' } },
+        })),
+        query,
+      }),
+    );
+    h.assertTablesReadable.mockImplementation(async (_db, tables) => {
+      if ((tables as string[]).includes('contents'))
+        throw new Error('Row-level security applies to the migrating role');
+    });
+
+    await requireCommandHandler(utilityCommands['db:migrate'])([], {
+      'repair-data': true,
+    });
+
+    expect(h.assertTablesReadable).toHaveBeenCalledWith(
+      expect.anything(),
+      ['contents'],
+      'sqlite',
+    );
+    expect(errored()).toContain('Row-level security');
+    expect(process.exitCode).toBe(1);
+    expect(
+      query.mock.calls.some((call) =>
+        String((call as unknown[])[0]).includes('_meta_type'),
+      ),
+    ).toBe(false);
+    expect(trackerApplyAll).not.toHaveBeenCalled();
   });
 
   it('db:migrate builds migration defs for index and type-upgrade changes', async () => {

@@ -27,8 +27,11 @@ import {
   SchemaComparer,
 } from '@happyvertical/smrt-core';
 import {
+  assertMigrationSeesEveryRow,
+  assertTablesReadable,
   type MigrationDefinition,
   type MigrationResult,
+  rowSecurityFailure,
   unusedRetireConfirmations,
 } from '@happyvertical/smrt-core/migrations';
 import { renderForeignKeyAddStatements } from '@happyvertical/smrt-core/schema';
@@ -2158,6 +2161,19 @@ export default testManifest;
         });
         const diff = await comparer.compare(manifestSchemas);
         const engine = tracker.getEngine();
+        // The plan's verdicts came from rows it read; under row-level
+        // security for this role they may not be all of them (#5452).
+        await assertMigrationSeesEveryRow(db, diff.changes, engine);
+        // --repair-data reads and rewrites every shared (STI) table's
+        // discriminators, schema change or not: those reads too (#5452).
+        if (repairData)
+          await assertTablesReadable(
+            db,
+            Object.entries(manifestSchemas)
+              .filter(([, schema]) => schema.columns?._meta_type)
+              .map(([table]) => table),
+            engine,
+          );
         const tablePlan = planForeignKeyCreation(diff.added_tables, engine);
         const plannedTableDDL = new Map(
           tablePlan.schemas.map((schema) => [
@@ -2910,7 +2926,14 @@ export default testManifest;
 
             const failed = migrationResultFailure(results);
             if (failed) {
-              throw migrationResultError(failed);
+              throw (
+                (await rowSecurityFailure(
+                  db,
+                  failed.error,
+                  diff.changes,
+                  engine,
+                )) ?? migrationResultError(failed)
+              );
             }
 
             successCount += results.filter(
@@ -3024,6 +3047,8 @@ export default testManifest;
             }
           }
 
+          // The tables found live, checked again right before they are read.
+          await assertTablesReadable(db, stiTables, tracker.getEngine());
           if (stiTables.length === 0) {
             console.log(
               '  No STI tables found - skipping discriminator repair\n',

@@ -42,7 +42,11 @@ import {
   readCreateIndexStatement,
 } from './postgres-create-index.js';
 import { asTableChangedSincePlan } from './rebuild-plan-guard.js';
-import { runRetireAwareStatement } from './retire-guard.js';
+import { retireGuardTarget, runRetireAwareStatement } from './retire-guard.js';
+import {
+  withRowSecurityOff,
+  withSessionRowSecurityOff,
+} from './row-security.js';
 import { SQLITE_RELAX_REBUILD_MARKER } from './sqlite-rebuild.js';
 import type {
   ApplyMigrationsOptions,
@@ -1413,7 +1417,11 @@ export class MigrationTracker {
           sql,
         );
       if (kind.kind !== 'create-index') {
-        await session.query(sql);
+        // A deferred statement that is not an index build (a package data
+        // statement after a VALIDATE, say) reads rows: never under
+        // row-level security (#5452). Index builds and their EXPLAIN-only
+        // checks stay as they are (see row-security.ts).
+        await withSessionRowSecurityOff(session, () => session.query(sql));
         continue;
       }
       await this.runCreateIndex(session, sql, invalidIndexes);
@@ -2121,17 +2129,26 @@ export class MigrationTracker {
       await this.db.transaction(async (tx) => {
         if (this.sqliteRebuildTransactionOwned)
           await this.assertSqliteForeignKeysSuspended(tx as DatabaseInterface);
-        for (const sql of statements) {
-          await runRetireAwareStatement(
-            (statement) => tx.query(statement),
-            this.dbEngine,
-            sql,
-          );
-        }
+        const run = async () => {
+          for (const sql of statements) {
+            await runRetireAwareStatement(
+              (statement) => tx.query(statement),
+              this.dbEngine,
+              sql,
+            );
+          }
+        };
+        // A read row-level security would filter raises instead (#5452).
+        if (this.dbEngine === 'postgres') await withRowSecurityOff(tx, run);
+        else await run();
         if (this.sqliteRebuildTransactionOwned)
           await this.checkSqliteForeignKeys(tx as DatabaseInterface);
       });
     } else {
+      // Without a transaction there is no place to turn row-level security
+      // off for these statements alone (#5452).
+      if (this.dbEngine === 'postgres')
+        throw new Error(POSTGRES_NEEDS_TRANSACTION);
       // Fallback to sequential execution
       for (const sql of statements) {
         await runRetireAwareStatement(
@@ -2175,22 +2192,21 @@ export class MigrationTracker {
           `SET LOCAL statement_timeout = '${formatPostgresTimeout(this.options.statementTimeout)}'`,
         );
 
-        for (const sql of finalRegular) {
-          await runRetireAwareStatement(
-            (statement) => tx.query(statement),
-            this.dbEngine,
-            sql,
-          );
-        }
+        // A read row-level security would filter raises instead (#5452).
+        await withRowSecurityOff(tx, async () => {
+          for (const sql of finalRegular) {
+            await runRetireAwareStatement(
+              (statement) => tx.query(statement),
+              this.dbEngine,
+              sql,
+            );
+          }
+        });
       });
     } else if (finalRegular.length > 0) {
-      for (const sql of finalRegular) {
-        await runRetireAwareStatement(
-          (statement) => this.db.query(statement),
-          this.dbEngine,
-          sql,
-        );
-      }
+      // Without a transaction there is no place to turn row-level security
+      // off for these statements alone (#5452).
+      throw new Error(POSTGRES_NEEDS_TRANSACTION);
     }
 
     if (finalConcurrent.length === 0) {
@@ -2272,6 +2288,15 @@ export function buildConcurrentIndexPlan(
 }
 
 const VALIDATE_CONSTRAINT_RE = /\bVALIDATE\s+CONSTRAINT\b/i;
+/** The refusal for a PostgreSQL handle that cannot open a transaction. */
+const POSTGRES_NEEDS_TRANSACTION =
+  'Migrations on PostgreSQL need a database handle with transaction support: their statements run with row_security off, which only a transaction can scope. Nothing was run.';
+/** The drop that ends a retirement (`retire-plan.ts`). */
+const RETIRE_DROP_RE = /^\s*DROP\s+TABLE\s+IF\s+EXISTS\s/i;
+/** The lock that starts a retirement on PostgreSQL (`retireLockSql`). */
+function isRetireLockStatement(sql: string): boolean {
+  return sql.includes('$smrt_retire$');
+}
 
 /**
  * Keep a unique index in place while `--postgres-safe` recreates it.
@@ -2394,8 +2419,24 @@ export function planPostgresStatements(
   // of the same migration follows it, in order (a foreign-key replacement
   // validates its staged constraint, then drops the old one and renames).
   let deferRest = false;
+  // A retirement (lock, optional row check, drop) never leaves the
+  // transaction: outside it the lock ends with its own statement and the
+  // check's count would not stop the drop (#5452). Running it ahead of a
+  // deferred VALIDATE is safe: nothing declared references a retired table.
+  let inRetirement = false;
 
   for (const sql of statements) {
+    if (isRetireLockStatement(sql)) inRetirement = true;
+    if (
+      inRetirement &&
+      (isRetireLockStatement(sql) ||
+        retireGuardTarget(sql) !== undefined ||
+        RETIRE_DROP_RE.test(sql))
+    ) {
+      if (RETIRE_DROP_RE.test(sql)) inRetirement = false;
+      regular.push(sql);
+      continue;
+    }
     if (
       useConcurrentIndexes &&
       !deferRest &&
