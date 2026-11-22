@@ -155,6 +155,8 @@ onMount(() => {
   chrome={!page.route.id?.startsWith('/setup')}
   panelEnabled={plan.chat}
   panelLabel="Assistant"
+  panelSide="end"
+  panelSize={400}
   panelToggle={plan.chat ? { label: 'Assistant' } : false}
   voiceToggle={plan.voice
     ? {

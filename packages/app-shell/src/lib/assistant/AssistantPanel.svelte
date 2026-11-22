@@ -32,8 +32,8 @@ import {
   workingStep,
 } from './reducer';
 
-// The assistant's chat column, docked between the sidebar and the content by
-// the layout (smrt-svelte's AppShell `panel`). `open` is the layout's state: the
+// The assistant's chat column, docked at the right of the page by the layout
+// (smrt-svelte's AppShell `panel`, `panelSide="end"`). `open` is the layout's state: the
 // panel stays mounted while closed, so a running turn and the thread survive
 // a toggle.
 let {
@@ -278,10 +278,7 @@ onDestroy(() => controller?.abort());
 
 <div id="assistant-panel" class="smrt-assistant-panel__panel">
   <header class="smrt-assistant-panel__bar">
-    <div class="smrt-assistant-panel__title">
-      <h2>Assistant</h2>
-      {#if dock.engineLabel}<p class="smrt-app-shell__muted smrt-assistant-panel__engine">Using {dock.engineLabel}</p>{/if}
-    </div>
+    <h2>Assistant</h2>
     <div class="smrt-assistant-panel__bar-actions">
       <button type="button" class="smrt-app-shell__btn" onclick={newChat} disabled={dock.items.length === 0 && !dock.running}>New chat</button>
     </div>
@@ -481,12 +478,6 @@ onDestroy(() => controller?.abort());
   .smrt-assistant-panel__bar h2 {
     margin: 0;
   }
-  .smrt-assistant-panel__title {
-    min-inline-size: 0;
-  }
-  .smrt-assistant-panel__engine {
-    margin: 0;
-  }
   .smrt-assistant-panel__bar-actions {
     display: flex;
     gap: var(--smrt-spacing-xs, 0.25rem);
@@ -684,9 +675,6 @@ onDestroy(() => controller?.abort());
   }
   .smrt-assistant-panel__bar h2 {
     font-size: 1rem;
-  }
-  .smrt-assistant-panel__engine {
-    font-size: 0.8125rem;
   }
   .smrt-assistant-panel__msg {
     border-radius: var(--smrt-radius-md, 0.5rem);
