@@ -234,6 +234,14 @@ export class EmbeddingStorage {
    * JSON vectors are always persisted, including with native vector storage.
    * Eligibility is checked before scoring; neither all vectors nor all eligible
    * object IDs are materialized. The callback must fail closed on scope errors.
+   *
+   * Pages are keyset: each seeks past the previous page's last `id` within one
+   * `(object_class, field_name, model)` and reads in `id` order, which
+   * `idx_smrt_embeddings_class_field_model_id` serves directly on SQLite and
+   * PostgreSQL (#5451). Keep the predicate and ORDER BY in that shape, or each
+   * page re-sorts every remaining row of the model and a full scan becomes
+   * quadratic. DuckDB does not use the index for the ordered range; each page
+   * there is a scan plus top-N over the rows past the cursor.
    */
   static async searchSimilarBatched(
     db: DatabaseInterface,

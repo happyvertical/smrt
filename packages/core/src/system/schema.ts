@@ -160,6 +160,15 @@ CREATE INDEX IF NOT EXISTS idx_smrt_embeddings_hash
 
 CREATE INDEX IF NOT EXISTS idx_smrt_embeddings_model
   ON _smrt_embeddings(model);
+
+-- Keyset paging for exact semantic search (#5451): each page of
+-- EmbeddingStorage.searchSimilarBatched() seeks past the previous page's last
+-- id within one (object_class, field_name, model) and reads in id order. On
+-- SQLite and PostgreSQL a full scan then reads each row once instead of
+-- re-sorting the rest of the model on every page. DuckDB does not use this
+-- index for the ordered range and keeps a scan plus top-N per page.
+CREATE INDEX IF NOT EXISTS idx_smrt_embeddings_class_field_model_id
+  ON _smrt_embeddings(object_class, field_name, model, id);
 `;
 
 /**

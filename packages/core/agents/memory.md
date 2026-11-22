@@ -70,8 +70,18 @@ persisted); each batch checks application eligibility using a fixed-size scalar
 SQL mask of primary-key `EXISTS` probes. This supports separate system/app
 databases without fetching all tenant IDs or application rows. Memory is
 O(limit + 64); the exact fallback still scans all matching stored embeddings.
-The embedding primary key supports the cursor and application primary keys
-support eligibility probes; no new application index is needed. Pagination
+Each page seeks past the previous page's last embedding id through
+`idx_smrt_embeddings_class_field_model_id` `(object_class, field_name, model,
+id)` (#5451). On SQLite and PostgreSQL a scan then reads each
+row of the class/field/model once in index order (O(N) overall, not a re-sort
+of the remaining rows per page). DuckDB (and the JSON adapter) does not use the
+index for this ordered range: each page is a filtered table scan plus a top-N
+over the rows past the cursor, pruned only by zone maps, so a full scan there
+stays super-linear in the class's embedding count. The scan is not
+tenant-bounded: a tenant's query still reads every embedding of the class, and
+eligibility masks out other tenants' rows.
+Application primary keys support eligibility probes; no application index is
+needed. Pagination
 callers can request offset + limit scored IDs, then hydrate only their page.
 
 `semanticSearchIds` reports missing embedding configuration/provider failure as
