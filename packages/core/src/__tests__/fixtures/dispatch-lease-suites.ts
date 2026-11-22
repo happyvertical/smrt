@@ -4,6 +4,7 @@
  * same cases run on SQLite, DuckDB, PGlite and PostgreSQL.
  */
 
+import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, expect, it, vi } from 'vitest';
 import type { DispatchMetadata } from '../../dispatch/types';
 import {
@@ -31,6 +32,223 @@ function useOpener(open: DispatchOpener): DispatchOpener {
     opened.push(ctx);
     return ctx;
   };
+}
+
+const RENEWAL = /^UPDATE _smrt_dispatch SET claimed_until = /;
+
+/**
+ * Intercept lease renewal statements on `db`: count them, optionally hold
+ * each until `release()` is called, or make them throw.
+ */
+export function interceptRenewals(db: DatabaseInterface): {
+  readonly count: number;
+  hold(): void;
+  release(): void;
+  failNext(times: number): void;
+  restore(): void;
+} {
+  const mutable = db as unknown as { query: DatabaseInterface['query'] };
+  const original = mutable.query;
+  let count = 0;
+  let failures = 0;
+  let gate: { promise: Promise<void>; open: () => void } | null = null;
+  mutable.query = (async (sql: string, ...params: unknown[]) => {
+    if (RENEWAL.test(sql.replace(/\s+/g, ' ').trim())) {
+      count++;
+      if (failures > 0) {
+        failures--;
+        throw new Error('injected renewal failure');
+      }
+      if (gate) await gate.promise;
+    }
+    return original.call(db, sql, ...params);
+  }) as DatabaseInterface['query'];
+  return {
+    get count() {
+      return count;
+    },
+    hold() {
+      let open = () => {};
+      const promise = new Promise<void>((resolve) => {
+        open = resolve;
+      });
+      gate = { promise, open };
+    },
+    release() {
+      gate?.open();
+      gate = null;
+    },
+    failNext(times: number) {
+      failures = times;
+    },
+    restore() {
+      gate?.open();
+      mutable.query = original;
+    },
+  };
+}
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/** Resolve once `predicate()` holds (polling), or reject after `ms`. */
+async function until(predicate: () => boolean, ms = 5_000): Promise<void> {
+  const deadline = Date.now() + ms;
+  while (!predicate()) {
+    if (Date.now() > deadline) throw new Error('condition not reached');
+    await sleep(10);
+  }
+}
+
+/** T07: heartbeat serialized, gated on the live attempt, fenced by token. */
+export function defineLeaseHeartbeatCases(openDatabase: DispatchOpener): void {
+  const open = useOpener(openDatabase);
+  const leaseMs = 1_000;
+
+  it('renews the lease while the handler runs and stops once it settles', async () => {
+    const { bus, db } = await open({ bus: { leaseMs } });
+    await bus.subscribe({ signalType: 'job.run', subscriber: 'worker' });
+    await insertRawDispatch(db, { id: 'long', type: 'job.run' });
+    const renewals = interceptRenewals(db);
+    try {
+      let first: string | null = null;
+      let later: string | null = null;
+      const count = await bus.process('worker', async () => {
+        first = (await dispatchLeaseRow(db, 'long')).claimedUntil;
+        await until(() => renewals.count >= 2);
+        await sleep(50);
+        later = (await dispatchLeaseRow(db, 'long')).claimedUntil;
+      });
+      expect(count).toBe(1);
+      expect(String(later) > String(first)).toBe(true);
+      const settledAt = renewals.count;
+      await sleep(leaseMs);
+      expect(renewals.count).toBe(settledAt);
+    } finally {
+      renewals.restore();
+    }
+  });
+
+  it('sends at most one renewal at a time', async () => {
+    const { bus, db } = await open({ bus: { leaseMs } });
+    await bus.subscribe({ signalType: 'job.run', subscriber: 'worker' });
+    await insertRawDispatch(db, { id: 'slow-renewal', type: 'job.run' });
+    const renewals = interceptRenewals(db);
+    renewals.hold();
+    try {
+      const count = await bus.process('worker', async () => {
+        await until(() => renewals.count === 1);
+        // Several ticks pass while the first renewal is held.
+        await sleep(leaseMs);
+        expect(renewals.count).toBe(1);
+        renewals.release();
+      });
+      expect(count).toBe(1);
+    } finally {
+      renewals.restore();
+    }
+  });
+
+  it('a renewal released after the token changed never extends the lease and aborts the signal', async () => {
+    const { bus, db } = await open({ bus: { leaseMs } });
+    await bus.subscribe({ signalType: 'job.run', subscriber: 'worker' });
+    await insertRawDispatch(db, { id: 'taken', type: 'job.run' });
+    const renewals = interceptRenewals(db);
+    renewals.hold();
+    try {
+      let aborted = false;
+      const count = await bus.process('worker', async (_payload, metadata) => {
+        await until(() => renewals.count === 1);
+        // Another writer replaces the token (a reclaim or a sweep) while
+        // the renewal is still queued.
+        await db.query(
+          'UPDATE _smrt_dispatch SET lease_token = $1, claimed_until = $2 WHERE id = $3',
+          'other-holder',
+          PAST,
+          'taken',
+        );
+        renewals.release();
+        await until(() => metadata.signal?.aborted === true);
+        aborted = true;
+      });
+      expect(aborted).toBe(true);
+      expect(count).toBe(0);
+      const row = await dispatchLeaseRow(db, 'taken');
+      expect(row.status).toBe('processing');
+      expect(row.leaseToken).toBe('other-holder');
+      expect(row.claimedUntil?.startsWith('2026-01-01')).toBe(true);
+    } finally {
+      renewals.restore();
+    }
+  });
+
+  it('a renewal error does not abort the handler', async () => {
+    const { bus, db } = await open({ bus: { leaseMs } });
+    await bus.subscribe({ signalType: 'job.run', subscriber: 'worker' });
+    await insertRawDispatch(db, { id: 'flaky', type: 'job.run' });
+    const renewals = interceptRenewals(db);
+    renewals.failNext(2);
+    try {
+      let aborted: boolean | undefined;
+      const count = await bus.process('worker', async (_payload, metadata) => {
+        await until(() => renewals.count >= 3);
+        aborted = metadata.signal?.aborted;
+      });
+      expect(aborted).toBe(false);
+      expect(count).toBe(1);
+      expect((await dispatchLeaseRow(db, 'flaky')).status).toBe('completed');
+    } finally {
+      renewals.restore();
+    }
+  });
+}
+
+/**
+ * T08 (embedded half): an attempt running in this process is never started
+ * a second time by this process, even when its database lease looks expired.
+ */
+export function defineLocalLeaseRegistryCases(
+  openDatabase: DispatchOpener,
+): void {
+  const open = useOpener(openDatabase);
+
+  it('lease writes commit independently or lease mode is rejected: no local double execution', async () => {
+    const { bus, db } = await open({ bus: { leaseMs: 1_000 } });
+    await bus.subscribe({ signalType: 'job.run', subscriber: 'worker' });
+    await insertRawDispatch(db, { id: 'held', type: 'job.run' });
+    const renewals = interceptRenewals(db);
+    // Renewals never land (as if rolled back with a handler transaction).
+    renewals.hold();
+    try {
+      const calls: string[] = [];
+      let finish = () => {};
+      const finished = new Promise<void>((resolve) => {
+        finish = resolve;
+      });
+      const first = bus.process('worker', async (_payload, metadata) => {
+        calls.push(metadata.id);
+        await finished;
+      });
+      await until(() => calls.length === 1);
+      // The database lease looks expired to everyone. (Not shaped like a
+      // renewal, so the interceptor lets it through.)
+      await db.query(
+        'UPDATE _smrt_dispatch SET status = status, claimed_until = $1 WHERE id = $2',
+        PAST,
+        'held',
+      );
+      const second = await bus.process('worker', async (_payload, metadata) => {
+        calls.push(metadata.id);
+      });
+      expect(second).toBe(0);
+      expect(calls).toEqual(['held']);
+      renewals.release();
+      finish();
+      expect(await first).toBe(1);
+      expect((await dispatchLeaseRow(db, 'held')).status).toBe('completed');
+    } finally {
+      renewals.restore();
+    }
+  });
 }
 
 /** T01, T04, T35: claim exclusivity, RETURNING wins, stale pending token. */

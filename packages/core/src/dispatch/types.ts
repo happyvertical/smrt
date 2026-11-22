@@ -47,6 +47,14 @@ export interface DispatchMetadata {
   attempts: number;
   /** Additional metadata from emission */
   metadata: Record<string, unknown>;
+  /**
+   * Aborted when this attempt's lease is lost (another worker reclaimed the
+   * row, or it was swept, retried or released). The bus cannot stop a
+   * handler; a handler that keeps running after the abort may overlap the
+   * row's next delivery. Present for `process()` handlers; absent for
+   * in-memory `on()` handlers.
+   */
+  signal?: AbortSignal;
 }
 
 /**
@@ -84,6 +92,30 @@ export interface DispatchProcessOptions {
   limit?: number;
   /** Signal types to process (default: all subscribed) */
   signalTypes?: string[];
+  /** Called once with the counters of this call before `process()` resolves. */
+  onStats?: (stats: DispatchProcessStats) => void;
+}
+
+/** Counters of one `DispatchBus.process()` call. */
+export interface DispatchProcessStats {
+  /** Rows this call claimed. */
+  claimed: number;
+  /** Claimed rows whose handler succeeded and whose outcome this call wrote. */
+  completed: number;
+  /** Claimed rows whose handler threw and whose outcome this call wrote. */
+  failed: number;
+  /** Outcomes not written because another writer took the row over. */
+  leaseLost: number;
+  /** Outcome writes that threw (the row stays leased until it expires). */
+  settleErrors: number;
+  /** Lease renewals that threw or timed out (retried, never fatal). */
+  renewErrors: number;
+  /** Rows the bus could not read (skipped). */
+  malformed: number;
+  /** Rows failed by the claim budget sweep at the start of the call. */
+  exhausted: number;
+  /** Candidates the in-memory routing recheck rejected (indicates a defect). */
+  scanRejects: number;
 }
 
 /**
@@ -236,12 +268,22 @@ export interface DispatchBusOptions {
    * spends one.
    */
   maxAttempts?: number;
+  /**
+   * Handle for lease renewals and outcome writes, when the bus handle cannot
+   * run them independently of a handler (for example a pool a handler may
+   * exhaust). Lease statements must commit on their own: never pass a
+   * transaction handle. `createDispatchBus` rejects a lease handle that
+   * provably cannot (`DISPATCH_LEASE_EXECUTOR_UNSAFE`): a PostgreSQL pool of
+   * fewer than two clients, a single PostgreSQL connection, or a
+   * transaction handle. Defaults to the bus handle.
+   */
+  leaseDb?: DatabaseInterface;
 }
 
 /** The lease options of {@link DispatchBusOptions}. */
 export type DispatchLeaseOptions = Pick<
   DispatchBusOptions,
-  'leaseMs' | 'maxAttempts'
+  'leaseMs' | 'maxAttempts' | 'leaseDb'
 >;
 
 /** Startup retry budget for {@link DispatchBusOptions.startupRetry}. */

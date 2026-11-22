@@ -54,9 +54,16 @@ import {
   claimDispatchLease,
   type DispatchLease,
   type DispatchLeaseSettings,
+  renewDispatchLease,
   resolveDispatchLeaseSettings,
   settleDispatchLease,
 } from './lease.js';
+import {
+  assertLeaseExecutorSafe,
+  holdLeaseLocally,
+  isLeaseHeldLocally,
+  startLeaseHeartbeat,
+} from './lease-heartbeat.js';
 import { Dispatch } from './models/Dispatch.js';
 import { DispatchSubscription } from './models/DispatchSubscription.js';
 import { dispatchPatternDialect } from './pattern.js';
@@ -78,6 +85,7 @@ import type {
   DispatchListOptions,
   DispatchMetadata,
   DispatchProcessOptions,
+  DispatchProcessStats,
   DispatchRetryOptions,
   DispatchSubscribeOptions,
 } from './types.js';
@@ -178,6 +186,9 @@ export class DispatchBus {
   /** Resolved lease length and claim budget. */
   private readonly lease: DispatchLeaseSettings;
 
+  /** Handle for renewals and outcome writes (`leaseDb`, else the bus handle). */
+  private readonly leaseDb: DatabaseInterface;
+
   /**
    * Create a new DispatchBus (use createDispatchBus factory instead)
    *
@@ -186,6 +197,7 @@ export class DispatchBus {
   constructor(db: DatabaseInterface, options: DispatchLeaseOptions = {}) {
     this.db = db;
     this.lease = resolveDispatchLeaseSettings(options);
+    this.leaseDb = options.leaseDb ?? db;
   }
 
   /**
@@ -603,6 +615,9 @@ export class DispatchBus {
     options: DispatchProcessOptions = {},
   ): Promise<number> {
     await this.initialize();
+    // Renewals and outcome writes must commit independently of a handler;
+    // a handle that provably cannot is refused before anything is claimed.
+    assertLeaseExecutorSafe(this.leaseDb);
 
     // Resolve the active tenant scope server-side (S5 #1398). This distinguishes
     // three states (see resolveDispatchTenantScope):
@@ -671,10 +686,18 @@ export class DispatchBus {
       return isDispatchRoutedTo(dispatch, subscriber, subscriptions);
     };
 
-    let processed = 0;
-    let claims = 0;
+    const stats: DispatchProcessStats = {
+      claimed: 0,
+      completed: 0,
+      failed: 0,
+      leaseLost: 0,
+      settleErrors: 0,
+      renewErrors: 0,
+      malformed: 0,
+      exhausted: 0,
+      scanRejects: 0,
+    };
     let pages = 0;
-    let recheckRejects = 0;
     const malformedIds: string[] = [];
     // Phase bounds are frozen at the call start: a lease that expires while
     // this call runs is left for a later call.
@@ -684,7 +707,7 @@ export class DispatchBus {
 
     candidates: for (const phase of DISPATCH_CANDIDATE_PHASES) {
       let cursor: DispatchCandidateCursor | undefined;
-      while (claims < limit) {
+      while (stats.claimed < limit) {
         if (pages > 0) {
           subscriptions = await loadSubscriptions();
           if (subscriptions.length === 0) break candidates;
@@ -705,9 +728,17 @@ export class DispatchBus {
         });
 
         for (const row of rows) {
-          if (claims >= limit) break;
+          if (stats.claimed >= limit) break;
           cursor = candidateCursor(row);
-          if (claimedThisCall.has(cursor.id)) continue;
+          // This call's own rows, and (embedded engines) rows an attempt in
+          // this process is still running, are never claimed again, even
+          // when their database lease looks expired.
+          if (
+            claimedThisCall.has(cursor.id) ||
+            isLeaseHeldLocally(this.db, cursor.id)
+          ) {
+            continue;
+          }
           const dispatch = hydrateCandidate(row);
           if (!dispatch) {
             // Isolated: the cursor has moved past it, so it never blocks
@@ -716,7 +747,7 @@ export class DispatchBus {
             continue;
           }
           if (!isVisibleToSubscriber(dispatch)) {
-            recheckRejects++;
+            stats.scanRejects++;
             continue;
           }
           // Atomically claim the dispatch (S5 #1398): one conditional UPDATE
@@ -734,26 +765,24 @@ export class DispatchBus {
             continue;
           }
           claimedThisCall.add(lease.id);
-          claims++;
+          stats.claimed++;
           dispatch.status = 'processing';
           dispatch.attempts = lease.attempts;
-          if (
-            await this.runClaimedDispatch(
-              subscriber,
-              handler,
-              dispatch,
-              lease,
-              tenantScope,
-            )
-          ) {
-            processed++;
-          }
+          await this.runClaimedDispatch(
+            subscriber,
+            handler,
+            dispatch,
+            lease,
+            tenantScope,
+            stats,
+          );
         }
 
         if (rows.length < pageSize) break;
       }
     }
 
+    stats.malformed = malformedIds.length;
     if (malformedIds.length > 0) {
       logger.warn('dispatch.malformed_row: skipped rows that cannot be read', {
         subscriber,
@@ -761,19 +790,20 @@ export class DispatchBus {
         ids: malformedIds.slice(0, 10),
       });
     }
-    if (recheckRejects > 0) {
+    if (stats.scanRejects > 0) {
       // The SQL predicate and the in-memory recheck share one compiler and
       // one routing rule, so this indicates a defect, not routine filtering.
       logger.warn(
         'dispatch.scan_reject: candidate failed the routing recheck',
         {
           subscriber,
-          count: recheckRejects,
+          count: stats.scanRejects,
         },
       );
     }
 
-    return processed;
+    options.onStats?.({ ...stats });
+    return stats.completed;
   }
 
   /** Page size of the candidate query (bounded by `options.limit`). */
@@ -790,8 +820,7 @@ export class DispatchBus {
    * tried to record, and the row stays `processing` under its lease. The
    * rest of the batch still runs.
    *
-   * @returns `true` when the handler succeeded and this call's settle wrote
-   *   `completed`.
+   * Counts the result into `stats`.
    */
   private async runClaimedDispatch(
     subscriber: string,
@@ -799,23 +828,44 @@ export class DispatchBus {
     dispatch: Dispatch,
     lease: DispatchLease,
     tenantScope: DispatchTenantScope,
-  ): Promise<boolean> {
+    stats: DispatchProcessStats,
+  ): Promise<void> {
+    const releaseLocal = holdLeaseLocally(this.db, lease.id);
+    const heartbeat = startLeaseHeartbeat({
+      lease,
+      leaseMs: this.lease.leaseMs,
+      renew: (claimedUntil) =>
+        renewDispatchLease(this.leaseDb, lease, claimedUntil),
+    });
     let outcome:
       | { status: 'completed'; subscriber: string }
       | { status: 'failed'; error: string };
     try {
-      await handler(dispatch.payload, dispatch.getMetadata());
+      await handler(dispatch.payload, {
+        ...dispatch.getMetadata(),
+        signal: heartbeat.signal,
+      });
       outcome = { status: 'completed', subscriber };
     } catch (error) {
       outcome = {
         status: 'failed',
         error: error instanceof Error ? error.message : String(error),
       };
+    } finally {
+      // No renewal is sent once the handler returned.
+      await heartbeat.stop();
+      stats.renewErrors += heartbeat.counters.renewErrors;
     }
 
     try {
+      if (heartbeat.signal.aborted) {
+        // The lease was taken over while the handler ran: its outcome is
+        // not recorded (the settle below would match nothing either).
+        stats.leaseLost++;
+        return;
+      }
       const settled = await settleDispatchLease(
-        this.db,
+        this.leaseDb,
         lease,
         outcome,
         tenantScope,
@@ -828,10 +878,13 @@ export class DispatchBus {
           type: dispatch.type,
           outcome: outcome.status,
         });
-        return false;
+        stats.leaseLost++;
+        return;
       }
-      return outcome.status === 'completed';
+      if (outcome.status === 'completed') stats.completed++;
+      else stats.failed++;
     } catch (settleError) {
+      stats.settleErrors++;
       // A status write that throws is isolated to its row: the rest of the
       // batch still runs and process() still resolves. The row keeps its
       // lease and becomes claimable again once the lease expires.
@@ -844,7 +897,8 @@ export class DispatchBus {
             ? settleError.message
             : String(settleError),
       });
-      return false;
+    } finally {
+      releaseLocal();
     }
   }
 
@@ -1058,6 +1112,7 @@ export async function createDispatchBus(
   const leaseOptions = {
     leaseMs: options.leaseMs,
     maxAttempts: options.maxAttempts,
+    leaseDb: options.leaseDb,
   };
   resolveDispatchLeaseSettings(leaseOptions);
 

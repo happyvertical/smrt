@@ -137,6 +137,29 @@ export async function claimDispatchLease(
 }
 
 /**
+ * Extend a held lease to `claimedUntil`. Fenced by the token: a renewal that
+ * arrives after the row was reclaimed, swept, retried or settled matches
+ * nothing, whatever the clock says.
+ *
+ * @returns `true` iff the renewal matched the row.
+ */
+export async function renewDispatchLease(
+  db: DatabaseInterface,
+  lease: DispatchLease,
+  claimedUntil: Date,
+): Promise<boolean> {
+  const result = await db.query(
+    `UPDATE _smrt_dispatch SET claimed_until = $1
+     WHERE id = $2 AND lease_token = $3 AND status = 'processing'
+     RETURNING id`,
+    claimedUntil.toISOString(),
+    lease.id,
+    lease.token,
+  );
+  return (result.rows ?? []).length > 0;
+}
+
+/**
  * Record the outcome of a held lease. Fenced by the token alone (plus the
  * tenant predicate): a holder whose lease expired but was not reclaimed still
  * settles; a holder whose row was reclaimed, swept or retried meanwhile

@@ -35,6 +35,8 @@ export interface DispatchTestDatabase {
   db: DatabaseInterface;
   bus: DispatchBus;
   close(): Promise<void>;
+  /** PostgreSQL only: URL of this test's schema (search_path set). */
+  url?: string;
 }
 
 export interface DispatchTestOpenOptions {
@@ -127,9 +129,10 @@ export async function openPostgresDispatchDatabase(
     `-c search_path=${schema}`,
     ...(options.timeZone ? [`-c TimeZone=${options.timeZone}`] : []),
   ].join(' ');
+  const schemaUrl = `${url}${separator}options=${encodeURIComponent(connectionOptions)}`;
   const db = (await getDatabase({
     type: 'postgres',
-    url: `${url}${separator}options=${encodeURIComponent(connectionOptions)}`,
+    url: schemaUrl,
     dbid: `smrt-test-dispatch-${randomUUID()}`,
   } as Parameters<typeof getDatabase>[0])) as DatabaseInterface;
   await options.preload?.(db);
@@ -138,6 +141,7 @@ export async function openPostgresDispatchDatabase(
     engine: 'postgres',
     db,
     bus,
+    url: schemaUrl,
     async close() {
       await db.close?.();
       await admin.query(`DROP SCHEMA IF EXISTS ${schema} CASCADE`);
