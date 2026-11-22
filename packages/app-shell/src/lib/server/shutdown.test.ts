@@ -1,8 +1,12 @@
 import { type ChildProcess, spawn } from 'node:child_process';
 import { get } from 'node:http';
 import { fileURLToPath } from 'node:url';
-import { afterEach, describe, expect, it } from 'vitest';
-import { DEFAULT_SHUTDOWN_MS, resolveDeadlineMs } from './shutdown.ts';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import {
+  createDrain,
+  DEFAULT_SHUTDOWN_MS,
+  resolveDeadlineMs,
+} from './shutdown.ts';
 
 const child = fileURLToPath(
   new URL('../../../test-support/shutdown-child.ts', import.meta.url),
@@ -18,7 +22,7 @@ afterEach(() => {
 async function start(env: Record<string, string>) {
   const proc = spawn(process.execPath, [child], {
     env: { ...process.env, ...env },
-    stdio: ['ignore', 'pipe', 'inherit'],
+    stdio: ['pipe', 'pipe', 'inherit'],
   });
   children.push(proc);
   let out = '';
@@ -135,5 +139,104 @@ describe('graceful shutdown (signal to a child process)', () => {
     c.proc.kill('SIGTERM');
     const { code } = await c.exited;
     expect(code).toBe(1);
+  });
+});
+
+describe('embedded drain (the host owns the listener, signals and exit, #5546)', () => {
+  it('runs the ordered steps, leaves the host listener open, and does not exit the host', async () => {
+    const c = await start({ CHILD_MODE: 'embedded' });
+    c.proc.stdin?.write('drain\n');
+    // The process leaves only when the HOST closes its listener and exits.
+    expect((await c.exited).code).toBe(0);
+    const out = c.output();
+    // Streams end, then the import finishes, then the apps close.
+    expect(out).toMatch(
+      /streams ended\nwork done\ndrain 1 workDone=true\ncall finished\n/,
+    );
+    expect(out).toContain('same promise true');
+    expect(out).toContain(
+      'steps {"endStreams":"ok","stopAccepting":"skipped","stopWork":"ok","drain":"ok"}',
+    );
+    // Still listening, and still answering, after the drain returned.
+    expect(out).toContain('listening true');
+    expect(out).toContain('served 200 ok');
+    expect(out).toContain('exit code 0');
+  });
+
+  it('never closes a listener or installs a signal handler by itself', async () => {
+    const exit = vi
+      .spyOn(process, 'exit')
+      .mockImplementation((() => {}) as never);
+    const err = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
+    const before = process.listenerCount('SIGTERM');
+    const drain = createDrain({ drain: async () => ({ closed: 2, busy: 0 }) });
+    const result = await drain();
+    expect(result).toMatchObject({ code: 0, clean: true, closed: 2, busy: 0 });
+    expect(result.steps.stopAccepting).toBe('skipped');
+    expect(process.listenerCount('SIGTERM')).toBe(before);
+    expect(exit).not.toHaveBeenCalled();
+    exit.mockRestore();
+    err.mockRestore();
+  });
+
+  it('is idempotent: a second call returns the first promise and drains once', async () => {
+    const err = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
+    const apps = vi.fn(async () => ({ closed: 1, busy: 0 }));
+    const drain = createDrain({ drain: apps });
+    const first = drain();
+    expect(drain({ reason: 'again' })).toBe(first);
+    await first;
+    expect(drain()).toBe(first);
+    expect(apps).toHaveBeenCalledTimes(1);
+    err.mockRestore();
+  });
+
+  it('reports a failed step and still closes the apps', async () => {
+    const err = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
+    const apps = vi.fn(async () => ({ closed: 1, busy: 0 }));
+    const result = await createDrain({
+      stopWork: () => {
+        throw new Error('x');
+      },
+      drain: apps,
+    })();
+    expect(apps).toHaveBeenCalledOnce();
+    expect(result).toMatchObject({ code: 1, clean: false });
+    expect(result.steps).toMatchObject({ stopWork: 'failed', drain: 'ok' });
+    err.mockRestore();
+  });
+
+  it('reports busy apps at close', async () => {
+    const err = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
+    const result = await createDrain({
+      drain: async () => ({ closed: 1, busy: 2 }),
+    })();
+    expect(result).toMatchObject({ code: 1, busy: 2 });
+    expect(result.steps.drain).toBe('busy');
+    err.mockRestore();
+  });
+
+  it('is bounded: a drain that never returns resolves by the deadline with that step timed out', async () => {
+    const err = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
+    const started = Date.now();
+    const result = await createDrain({
+      deadlineMs: 200,
+      drain: () => new Promise(() => {}),
+    })();
+    expect(Date.now() - started).toBeLessThan(1_800);
+    expect(result).toMatchObject({ code: 1, clean: false });
+    expect(result.steps.drain).toBe('timeout');
+    err.mockRestore();
+  });
+
+  it('runs the listener step only when the caller owns one and passes it', async () => {
+    const err = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
+    const stop = vi.fn();
+    const result = await createDrain({
+      drain: async () => ({ closed: 0, busy: 0 }),
+    })({ stopAccepting: stop });
+    expect(stop).toHaveBeenCalledOnce();
+    expect(result.steps.stopAccepting).toBe('ok');
+    err.mockRestore();
   });
 });

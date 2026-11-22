@@ -203,6 +203,9 @@ test('the shell copy takes sources and config, never tests or generated files', 
   assert.equal(shellFileWanted('src/routes/api/_runtime/owner-link/+server.ts'), true);
   assert.equal(shellFileWanted('vite.config.ts'), true);
   assert.equal(shellFileWanted('tools/manifest-guard.ts'), true);
+  // svelte.config.js copies these into build/ (the desktop sidecar's entry).
+  assert.equal(shellFileWanted('tools/start-entry.js'), true);
+  assert.equal(shellFileWanted('tools/embed-entry.js'), true);
   assert.equal(shellFileWanted('src/routes/routes.test.ts'), false);
   assert.equal(shellFileWanted('src/lib/server/smrt-register.ts'), false);
   assert.equal(shellFileWanted('src/routes/api/apps/addField/+server.ts'), false);

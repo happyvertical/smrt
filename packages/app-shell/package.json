@@ -25,6 +25,10 @@
       "types": "./dist/lib/server/shutdown.d.ts",
       "import": "./dist/lib/server/shutdown.js"
     },
+    "./embed": {
+      "types": "./dist/lib/server/embed.d.ts",
+      "import": "./build/embed.js"
+    },
     "./start": {
       "import": "./build/index.js"
     },

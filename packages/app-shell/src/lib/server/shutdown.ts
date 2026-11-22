@@ -20,6 +20,13 @@
  * ended; this module waits for that event. An embedding host passes
  * `stopAccepting` instead.
  *
+ * The ordered sequence is also exported on its own as `createDrain` (#5546),
+ * for a host that embeds the shell on a listener it owns: it runs the same
+ * steps, but never closes a listener it was not given (`stopAccepting` is an
+ * explicit per-call option, skipped when absent), never installs a signal
+ * handler and never calls `process.exit`. The result says which steps failed
+ * or timed out; a second call returns the first call's promise.
+ *
  * Kept free of SvelteKit and `$lib` imports (the caller passes `drain`), so the
  * package publishes it as `@happyvertical/smrt-app-shell/shutdown`.
  */
@@ -63,12 +70,61 @@ export interface ShutdownOptions {
   env?: NodeJS.ProcessEnv;
 }
 
+/** The steps of the sequence, in order. */
+export type ShutdownStep =
+  | 'endStreams'
+  | 'stopAccepting'
+  | 'stopWork'
+  | 'drain';
+
+/**
+ * How one step ended: `ok`; `skipped` (no such step was given); `failed` (it
+ * threw); `timeout` (it was still running at its limit); `busy` (`drain` only:
+ * it returned, but an app still had a call in flight).
+ */
+export type StepStatus = 'ok' | 'skipped' | 'failed' | 'timeout' | 'busy';
+
 export interface ShutdownResult {
   /** 0 drained inside the deadline; 1 not (a request, an app call or the close outlasted it). */
   code: number;
   closed: number;
   busy: number;
+  /** True when every step that ran ended `ok` (same as `code === 0`). */
+  clean: boolean;
+  /** How each step ended. */
+  steps: Record<ShutdownStep, StepStatus>;
 }
+
+/** The steps a drain runs: all but `stopAccepting`, which belongs to the listener's owner. */
+export interface DrainOptions {
+  /** `drainShell` of the shell host (`$lib/server/host`). */
+  drain: (timeoutMs: number) => Promise<DrainResult>;
+  /** Milliseconds the whole drain may take (same default as `ShutdownOptions`). */
+  deadlineMs?: number;
+  endStreams?: () => void | Promise<void>;
+  stopWork?: () => void | Promise<void>;
+  env?: NodeJS.ProcessEnv;
+}
+
+/** Per-call part of a drain: the owner's own listener step, and a log label. */
+export interface DrainCall {
+  /**
+   * Stop accepting requests and resolve once every accepted request has
+   * ended. Only the owner of the listener passes it; without it the step is
+   * skipped and no listener is touched.
+   */
+  stopAccepting?: () => void | Promise<void>;
+  /** Names the drain in the log line. Default: `drain`. */
+  reason?: string;
+}
+
+/**
+ * Run the ordered drain. Safe to call more than once: every call returns the
+ * promise of the first (its `DrainCall` wins). Bounded: it resolves by the
+ * deadline plus one second even if a step never returns, with that step
+ * marked `timeout`. Never rejects.
+ */
+export type Drain = (call?: DrainCall) => Promise<ShutdownResult>;
 
 export interface ShutdownHandle {
   /** Start the shutdown (what a signal does); the same promise on every call. */
@@ -99,6 +155,134 @@ export function resolveDeadlineMs(
   return ms;
 }
 
+const STEP_ORDER: ShutdownStep[] = [
+  'endStreams',
+  'stopAccepting',
+  'stopWork',
+  'drain',
+];
+
+/**
+ * The ordered drain without a listener, a signal handler or an exit (#5546).
+ * `installShutdown` is this plus signals, the adapter's listener step and
+ * `onExit`.
+ */
+export function createDrain(options: DrainOptions): Drain {
+  const deadlineMs = resolveDeadlineMs(options.deadlineMs, options.env);
+  let running: Promise<ShutdownResult> | null = null;
+
+  const run = (call: DrainCall): Promise<ShutdownResult> =>
+    new Promise<ShutdownResult>((resolve) => {
+      const started = Date.now();
+      const left = () => Math.max(0, deadlineMs - (Date.now() - started));
+      process.stderr.write(
+        `[shutdown] ${call.reason ?? 'drain'}: draining (deadline ${deadlineMs} ms)\n`,
+      );
+      const steps = Object.fromEntries(
+        STEP_ORDER.map((name) => [name, 'skipped']),
+      ) as Record<ShutdownStep, StepStatus | 'running'>;
+      const result: ShutdownResult = {
+        code: 1,
+        closed: 0,
+        busy: 0,
+        clean: false,
+        steps: steps as Record<ShutdownStep, StepStatus>,
+      };
+      let finished = false;
+      const finish = (code: number) => {
+        if (finished) return;
+        finished = true;
+        clearTimeout(hard);
+        for (const name of STEP_ORDER)
+          if (steps[name] === 'running') steps[name] = 'timeout';
+        result.code = code;
+        result.clean = code === 0;
+        resolve(result);
+      };
+      // Last resort: a step that never returns.
+      const hard = setTimeout(() => {
+        process.stderr.write('[shutdown] deadline hit: exiting\n');
+        finish(1);
+      }, deadlineMs + EXIT_GRACE_MS);
+      let clean = true;
+      // One step, bounded by `ms`: a throw or a timeout makes the result
+      // non-clean but never skips the steps after it.
+      const step = async <T>(
+        name: ShutdownStep,
+        ms: number,
+        fn: () => T | Promise<T>,
+      ): Promise<T | undefined> => {
+        let timer: NodeJS.Timeout | undefined;
+        steps[name] = 'running';
+        try {
+          const out = await Promise.race([
+            Promise.resolve().then(fn),
+            new Promise<typeof TIMED_OUT>((resolveTimer) => {
+              timer = setTimeout(() => resolveTimer(TIMED_OUT), ms);
+            }),
+          ]);
+          if (out === TIMED_OUT) {
+            clean = false;
+            steps[name] = 'timeout';
+            process.stderr.write(
+              `[shutdown] ${name}: still running at its limit\n`,
+            );
+            return undefined;
+          }
+          steps[name] = 'ok';
+          return out;
+        } catch (error) {
+          clean = false;
+          steps[name] = 'failed';
+          process.stderr.write(
+            `[shutdown] ${name} failed: ${error instanceof Error ? error.name : 'error'}\n`,
+          );
+          return undefined;
+        } finally {
+          clearTimeout(timer);
+        }
+      };
+      void (async () => {
+        // 1. Long-lived streams end, or the listener could never close.
+        if (options.endStreams)
+          await step('endStreams', left(), options.endStreams);
+        // 2. The listener's owner stops it and every accepted request ends (at
+        //    most half the deadline; a request still running then is cut by the
+        //    exit that follows). Skipped when the caller owns no listener step.
+        const stopAccepting = call.stopAccepting;
+        if (stopAccepting)
+          await step(
+            'stopAccepting',
+            Math.floor(deadlineMs / 2),
+            stopAccepting,
+          );
+        // 3. Background work (imports) stops and its jobs in flight finish,
+        //    while the apps they use are still open.
+        if (options.stopWork) await step('stopWork', left(), options.stopWork);
+        // 4. Close the apps. Runs even when an earlier step failed.
+        const drained = await step('drain', left() + 500, () =>
+          options.drain(left()),
+        );
+        if (drained === undefined) clean = false;
+        if (drained && drained.busy > 0) {
+          clean = false;
+          steps.drain = 'busy';
+          process.stderr.write(
+            `[shutdown] ${drained.busy} app(s) busy at close\n`,
+          );
+        }
+        result.closed = drained?.closed ?? 0;
+        result.busy = drained?.busy ?? 0;
+        finish(clean ? 0 : 1);
+      })();
+    });
+
+  return (call = {}) => {
+    running ??= run(call);
+    return running;
+  };
+}
+
 let installed: ShutdownHandle | null = null;
 
 /**
@@ -107,10 +291,9 @@ let installed: ShutdownHandle | null = null;
  */
 export function installShutdown(options: ShutdownOptions): ShutdownHandle {
   if (installed) return installed;
-  const deadlineMs = resolveDeadlineMs(options.deadlineMs, options.env);
   const onExit = options.onExit ?? ((code: number) => process.exit(code));
   const signals = options.signals ?? ['SIGTERM', 'SIGINT'];
-  let running: Promise<ShutdownResult> | null = null;
+  const drain = createDrain(options);
 
   // adapter-node emits `sveltekit:shutdown` once `server.close()` completed,
   // which on an idle server is the tick after the signal: listen from install
@@ -125,88 +308,12 @@ export function installShutdown(options: ShutdownOptions): ShutdownHandle {
   }
   const stopAccepting = () => options.stopAccepting?.() ?? httpStopped;
 
-  const run = async (reason: string): Promise<ShutdownResult> => {
-    const started = Date.now();
-    const left = () => Math.max(0, deadlineMs - (Date.now() - started));
-    process.stderr.write(
-      `[shutdown] ${reason}: draining (deadline ${deadlineMs} ms)\n`,
-    );
-    let finished = false;
-    let result: ShutdownResult = { code: 1, closed: 0, busy: 0 };
-    const finish = (r: ShutdownResult) => {
-      if (finished) return;
-      finished = true;
-      clearTimeout(hard);
-      result = r;
-      onExit(r.code);
-    };
-    // Last resort: a step that never returns.
-    const hard = setTimeout(() => {
-      process.stderr.write('[shutdown] deadline hit: exiting\n');
-      finish({ ...result, code: 1 });
-    }, deadlineMs + EXIT_GRACE_MS);
-    let clean = true;
-    // One step, bounded by `ms`: a throw or a timeout makes the exit non-zero
-    // but never skips the steps after it.
-    const step = async <T>(
-      name: string,
-      ms: number,
-      fn: () => T | Promise<T>,
-    ): Promise<T | undefined> => {
-      let timer: NodeJS.Timeout | undefined;
-      try {
-        const out = await Promise.race([
-          Promise.resolve().then(fn),
-          new Promise<typeof TIMED_OUT>((resolve) => {
-            timer = setTimeout(() => resolve(TIMED_OUT), ms);
-          }),
-        ]);
-        if (out === TIMED_OUT) {
-          clean = false;
-          process.stderr.write(
-            `[shutdown] ${name}: still running at its limit\n`,
-          );
-          return undefined;
-        }
-        return out;
-      } catch (error) {
-        clean = false;
-        process.stderr.write(
-          `[shutdown] ${name} failed: ${error instanceof Error ? error.name : 'error'}\n`,
-        );
-        return undefined;
-      } finally {
-        clearTimeout(timer);
-      }
-    };
-    // 1. Long-lived streams end, or the listener could never close.
-    if (options.endStreams)
-      await step('endStreams', left(), options.endStreams);
-    // 2. The listener stops and every accepted request ends (at most half the
-    //    deadline; a request still running then is cut by the exit below).
-    await step('stopAccepting', Math.floor(deadlineMs / 2), stopAccepting);
-    // 3. Background work (imports) stops and its jobs in flight finish, while
-    //    the apps they use are still open.
-    if (options.stopWork) await step('stopWork', left(), options.stopWork);
-    // 4. Close the apps. Runs even when an earlier step failed.
-    const drained = await step('drain', left() + 500, () =>
-      options.drain(left()),
-    );
-    if (drained === undefined) clean = false;
-    if (drained && drained.busy > 0) {
-      clean = false;
-      process.stderr.write(`[shutdown] ${drained.busy} app(s) busy at close\n`);
-    }
-    finish({
-      code: clean ? 0 : 1,
-      closed: drained?.closed ?? 0,
-      busy: drained?.busy ?? 0,
-    });
-    return result;
-  };
-
+  let running: Promise<ShutdownResult> | null = null;
   const shutdown = (reason = 'requested'): Promise<ShutdownResult> => {
-    running ??= run(reason);
+    running ??= drain({ stopAccepting, reason }).then((result) => {
+      onExit(result.code);
+      return result;
+    });
     return running;
   };
   const handlers = signals.map((signal) => {
