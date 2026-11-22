@@ -1,5 +1,28 @@
 # @happyvertical/smrt-core
 
+## 0.68.0
+
+### Minor Changes
+
+- ### Breaking Changes
+  
+  - route generation never overwrites application routes (#5523) (core)
+  
+  ### Features
+  
+  - opt-in wait mode for the startup migration guard (#5531) (core)
+  - hosted engine wave 4 and milestone 2 slices (#5183) (#5527) (app-shell)
+  
+  ### Bug Fixes
+  
+  - audit patch train: test cleanup, build order, flakes, ledger (#5509)
+
+### Patch Changes
+
+- @happyvertical/smrt-config@0.68.0
+  - @happyvertical/smrt-scanner@0.68.0
+  - @happyvertical/smrt-types@0.68.0
+
 ## 0.67.0
 
 ### Minor Changes
