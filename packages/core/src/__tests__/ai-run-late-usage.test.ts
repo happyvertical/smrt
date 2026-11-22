@@ -25,7 +25,11 @@ vi.mock('@happyvertical/ai', async (importOriginal) => {
 
 import { AI_OWN_CALL_ID_TAG } from '../adapters/ai-usage.js';
 import { config } from '../config.js';
-import { reconcileLateAiRunUsage } from '../system/ai-run-late-usage.js';
+import {
+  AiRunCallRoute,
+  isTrackedAiRunCall,
+  reconcileLateAiRunUsage,
+} from '../system/ai-run-late-usage.js';
 import { getAiRun } from '../system/browser';
 import { createTrackedAiClient } from '../tracked-ai-client.js';
 
@@ -249,5 +253,37 @@ describe('late usage events of tracked calls', () => {
       seen.filter((row) => row.id === run.id || row.tenant_id === 'tenant-one'),
     ).toEqual([]);
     expect(await ledger(db)).toEqual([]);
+  });
+
+  it('scopes the route and persisted-call lookups to the event tenant, null included', async () => {
+    const { db, run } = await setup();
+    const seen: Record<string, unknown>[] = [];
+    const query = db.query.bind(db) as (...a: unknown[]) => Promise<unknown>;
+    (db as { query: unknown }).query = async (...args: unknown[]) => {
+      const result = await query(...args);
+      seen.push(...rowsOf(result));
+      return result;
+    };
+    for (const tenantId of ['tenant-two', null]) {
+      const event = {
+        provider: 'openai',
+        model: 'gpt-4o',
+        tenantId,
+        tags: { runId: run.id, [AI_OWN_CALL_ID_TAG]: 'foreign-call' },
+      } as unknown as SmrtAiUsageEvent;
+      // A route whose tenant is not yet known looks the run up by the
+      // event's tenant; the persisted-call lookup does the same.
+      const route = new AiRunCallRoute(
+        'foreign-call',
+        db,
+        run.id,
+        undefined,
+        async () => {},
+      );
+      expect(await route.binds(event, db)).toBe(false);
+      expect(await route.take(event, db)).toBe(false);
+      expect(await isTrackedAiRunCall(event, db)).toBe(false);
+    }
+    expect(seen.filter((row) => row.id === run.id)).toEqual([]);
   });
 });

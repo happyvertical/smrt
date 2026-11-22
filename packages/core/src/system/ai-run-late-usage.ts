@@ -69,14 +69,14 @@ export function isMeasuredAiUsage(event: SmrtAiUsageEvent): boolean {
 }
 
 /** What correcting a call's usage did. */
-type Correction = 'applied' | 'unchanged' | 'not_settled' | 'foreign';
+type Correction = 'applied' | 'unchanged' | 'not_settled';
 
 /**
  * Replace a settled call's usage with the provider's measured usage: the
  * usage row (only the run's own row, in the run's tenant) is updated in
  * place and the chain's totals move by the difference, never below zero,
  * in one chain transaction. A row of another run or tenant under the call
- * id is never touched ('foreign').
+ * id is never read or touched.
  */
 async function correctAiCallUsage(
   db: DatabaseInterface,
@@ -103,23 +103,24 @@ async function correctAiCallUsage(
       ) {
         return 'not_settled';
       }
+      const tenant = caller.tenantId ?? null;
       const row = getRows(
         await aiRunQuery(
           tx.db,
-          `SELECT run_id, tenant_id, prompt_tokens, completion_tokens,
-                  total_tokens, estimated_cost
-             FROM _smrt_ai_usage WHERE id = $1`,
+          `SELECT prompt_tokens, completion_tokens, total_tokens,
+                  estimated_cost
+             FROM _smrt_ai_usage
+            WHERE id = $1 AND run_id = $2 AND ${
+              tenant === null ? 'tenant_id IS NULL' : 'tenant_id = $3'
+            }`,
           input.callId,
+          input.runId,
+          ...(tenant === null ? [] : [tenant]),
         ),
       )[0];
+      // Only the run's own row in the run's tenant is read; a row of
+      // another run or tenant under the call id is never loaded.
       if (!row) return 'not_settled';
-      const tenant = caller.tenantId ?? null;
-      if (
-        text(row.run_id) !== input.runId ||
-        (text(row.tenant_id) ?? null) !== tenant
-      ) {
-        return 'foreign';
-      }
       const reserved = num(event.reserved_tokens ?? 0);
       const nullable = (value: unknown) =>
         value === null || value === undefined ? null : num(value);
@@ -270,18 +271,9 @@ export class AiRunCallRoute {
    */
   async take(event: SmrtAiUsageEvent, db: DatabaseInterface): Promise<boolean> {
     if (db !== this.db || event.tags?.runId !== this.runId) return false;
-    if (this.tenantId === undefined) {
-      const row = getRows(
-        await aiRunQuery(
-          db,
-          'SELECT tenant_id FROM _smrt_ai_runs WHERE id = $1',
-          this.runId,
-        ),
-      )[0];
-      if (!row) return false;
-      this.tenantId = text(row.tenant_id) ?? null;
-    }
-    if ((event.tenantId ?? null) !== this.tenantId) return false;
+    if (!(await this.binds(event, db))) return false;
+    // The run row matched in the event's tenant: that is the call's tenant.
+    this.tenantId ??= event.tenantId ?? null;
     return this.capture(event);
   }
 
@@ -432,7 +424,7 @@ export async function reconcileLateAiRunUsage(
  * tenant (another process's call). An event naming only a call id, or a
  * call id with another run or tenant, is not the call's.
  */
-async function isTrackedAiRunCall(
+export async function isTrackedAiRunCall(
   event: SmrtAiUsageEvent,
   db: DatabaseInterface,
 ): Promise<boolean> {
