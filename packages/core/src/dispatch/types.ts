@@ -300,6 +300,18 @@ export interface DispatchBusOptions {
    */
   maxExecutionMs?: number;
   /**
+   * Opt-in legacy reclaim, in milliseconds (unset by default; a positive
+   * integer). Rows an older core left `processing` carry no lease and are
+   * never reclaimed automatically. With this set, `process()` also claims
+   * such a row once its `updated_at` is this much older than the call start
+   * (oldest first, under the claim budget), and `maintain()` treats it as an
+   * abandoned lease. Set it only after every older dispatch process has been
+   * stopped: an older process still running such a row would overlap the
+   * redelivery. A row whose `updated_at` cannot be read is left for
+   * `maintain({ release: 'legacy' })`.
+   */
+  legacyLeaseGraceMs?: number;
+  /**
    * Handle for lease renewals and outcome writes, when the bus handle cannot
    * run them independently of a handler (for example a pool a handler may
    * exhaust). Lease statements must commit on their own: never pass a
@@ -349,7 +361,11 @@ export interface DispatchMaintainResult {
 /** The lease options of {@link DispatchBusOptions}. */
 export type DispatchLeaseOptions = Pick<
   DispatchBusOptions,
-  'leaseMs' | 'maxAttempts' | 'maxExecutionMs' | 'leaseDb'
+  | 'leaseMs'
+  | 'maxAttempts'
+  | 'maxExecutionMs'
+  | 'legacyLeaseGraceMs'
+  | 'leaseDb'
 >;
 
 /** Startup retry budget for {@link DispatchBusOptions.startupRetry}. */

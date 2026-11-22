@@ -13,9 +13,14 @@
  * 1. `expired`: `status = 'processing' AND claimed_until IS NOT NULL AND
  *    claimed_until < <call start>`, ordered by `(claimed_until, id)`: leases
  *    whose holder stopped renewing before this call began;
- * 2. `undated`: `status = 'pending' AND created_at IS NULL`, ordered by id
+ * 2. `legacy` (only with legacy reclaim on): `status = 'processing' AND
+ *    claimed_until IS NULL AND lease_token IS NULL AND updated_at < <call
+ *    start - legacyLeaseGraceMs>`, ordered by `(updated_at, id)`: rows an
+ *    older core claimed. A row whose `updated_at` JavaScript cannot read is
+ *    skipped (release only); a NULL `updated_at` is never a candidate;
+ * 3. `undated`: `status = 'pending' AND created_at IS NULL`, ordered by id
  *    (pre-default legacy rows, taken as the oldest);
- * 3. `dated`: `status = 'pending' AND created_at IS NOT NULL`, ordered by
+ * 4. `dated`: `status = 'pending' AND created_at IS NOT NULL`, ordered by
  *    `(created_at, id)`.
  *
  * The call start is read once per `process()` call, so a lease that expires
@@ -42,16 +47,22 @@
 
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { pushTenantPredicate } from './collections/Dispatches.js';
+import { claimableStateSql } from './lease.js';
 import { Dispatch, type DispatchData } from './models/Dispatch.js';
 import type { DispatchSubscription } from './models/DispatchSubscription.js';
 import { type DispatchPatternDialect, dispatchPatternSql } from './pattern.js';
 import type { DispatchTenantScope } from './tenant-resolver.js';
 
 /** Candidate phases, in the order `process()` reads them. */
-export type DispatchCandidatePhase = 'expired' | 'undated' | 'dated';
+export type DispatchCandidatePhase = 'expired' | 'legacy' | 'undated' | 'dated';
 
+/**
+ * Phases in the order `process()` reads them. `legacy` is read only with
+ * legacy reclaim on (`legacyCutoff` set).
+ */
 export const DISPATCH_CANDIDATE_PHASES: readonly DispatchCandidatePhase[] = [
   'expired',
+  'legacy',
   'undated',
   'dated',
 ];
@@ -91,6 +102,12 @@ export interface DispatchCandidateQuery {
    * `COALESCE(attempts, 0)` reached their budget are not candidates.
    */
   maxAttempts: number;
+  /**
+   * Legacy reclaim cutoff (`callStart - legacyLeaseGraceMs`), or unset when
+   * legacy reclaim is off: lease-less `processing` rows whose `updated_at`
+   * is before it are candidates of the `legacy` phase.
+   */
+  legacyCutoff?: Date;
 }
 
 /**
@@ -136,7 +153,7 @@ export async function failExhaustedCandidates(
     ...(query.dialect === 'glob'
       ? ["lower(typeof(attempts)) IN ('integer', 'bigint', 'null')"]
       : []),
-    `(status = 'pending' OR (status = 'processing' AND claimed_until IS NOT NULL AND claimed_until < ${bind(query.callStart.toISOString())}))`,
+    claimableStateSql(bind, query.callStart, query.legacyCutoff),
   ];
   if (query.signalTypes && query.signalTypes.length > 0) {
     conditions.push(`type IN (${query.signalTypes.map(bind).join(', ')})`);
@@ -164,6 +181,7 @@ export async function failExhaustedCandidates(
 /** Sort column of each phase (besides id). */
 const PHASE_SORT_COLUMN: Record<DispatchCandidatePhase, string | null> = {
   expired: 'claimed_until',
+  legacy: 'updated_at',
   undated: null,
   dated: 'created_at',
 };
@@ -186,10 +204,16 @@ export function candidateCursor(
  */
 export function hydrateCandidate(
   row: Record<string, unknown>,
+  phase?: DispatchCandidatePhase,
 ): Dispatch | null {
   try {
     const dispatch = Dispatch.fromRow(row as unknown as DispatchData);
     if (Number.isNaN(dispatch.createdAt.getTime())) return null;
+    // A legacy candidate is aged by `updated_at`: one JavaScript cannot
+    // read is never reclaimed automatically (release only).
+    if (phase === 'legacy' && Number.isNaN(dispatch.updatedAt.getTime())) {
+      return null;
+    }
     if (dispatch.processedAt && Number.isNaN(dispatch.processedAt.getTime())) {
       return null;
     }
@@ -230,6 +254,15 @@ export async function readCandidatePage(
       "status = 'processing'",
       'claimed_until IS NOT NULL',
       `claimed_until < ${bind(query.callStart.toISOString())}`,
+    );
+  } else if (query.phase === 'legacy') {
+    if (!query.legacyCutoff) return [];
+    conditions.push(
+      "status = 'processing'",
+      'claimed_until IS NULL',
+      'lease_token IS NULL',
+      'updated_at IS NOT NULL',
+      `updated_at < ${bind(query.legacyCutoff.toISOString())}`,
     );
   } else {
     conditions.push(

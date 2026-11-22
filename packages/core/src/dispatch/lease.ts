@@ -38,6 +38,12 @@ export interface DispatchLeaseSettings {
   maxAttempts: number;
   /** Opt-in execution deadline; unset by default. */
   maxExecutionMs?: number;
+  /**
+   * Opt-in legacy reclaim: rows an older core left `processing` without a
+   * lease become claimable once `updated_at` is this much older than the
+   * call start. Unset by default (never reclaimed automatically).
+   */
+  legacyLeaseGraceMs?: number;
 }
 
 /**
@@ -66,6 +72,7 @@ export function resolveDispatchLeaseSettings(
     leaseMs?: number;
     maxAttempts?: number;
     maxExecutionMs?: number;
+    legacyLeaseGraceMs?: number;
   } = {},
 ): DispatchLeaseSettings {
   const leaseMs = options.leaseMs ?? DEFAULT_DISPATCH_LEASE_MS;
@@ -80,12 +87,58 @@ export function resolveDispatchLeaseSettings(
       `DispatchBus: maxAttempts must be an integer of at least 1 (got ${String(options.maxAttempts)})`,
     );
   }
-  if (options.maxExecutionMs === undefined) return { leaseMs, maxAttempts };
-  return {
-    leaseMs,
-    maxAttempts,
-    maxExecutionMs: assertMaxExecutionMs(options.maxExecutionMs, leaseMs),
-  };
+  const settings: DispatchLeaseSettings = { leaseMs, maxAttempts };
+  if (options.maxExecutionMs !== undefined) {
+    settings.maxExecutionMs = assertMaxExecutionMs(
+      options.maxExecutionMs,
+      leaseMs,
+    );
+  }
+  if (options.legacyLeaseGraceMs !== undefined) {
+    const grace = options.legacyLeaseGraceMs;
+    if (!Number.isSafeInteger(grace) || grace < 1) {
+      throw new Error(
+        `DispatchBus: legacyLeaseGraceMs must be a positive integer number of milliseconds (got ${String(grace)})`,
+      );
+    }
+    settings.legacyLeaseGraceMs = grace;
+  }
+  return settings;
+}
+
+/**
+ * The legacy-reclaim cutoff of a call starting at `callStart`, or
+ * `undefined` when legacy reclaim is off.
+ */
+export function legacyLeaseCutoff(
+  settings: DispatchLeaseSettings,
+  callStart: Date,
+): Date | undefined {
+  return settings.legacyLeaseGraceMs === undefined
+    ? undefined
+    : new Date(callStart.getTime() - settings.legacyLeaseGraceMs);
+}
+
+/**
+ * SQL of the claimable states of a row: `pending`, a lease that expired
+ * before the call began and, with legacy reclaim on, a row an older core
+ * left `processing` without a lease before the legacy cutoff.
+ */
+export function claimableStateSql(
+  bind: (value: unknown) => string,
+  callStart: Date,
+  legacyCutoff: Date | undefined,
+): string {
+  const branches = [
+    "status = 'pending'",
+    `(status = 'processing' AND claimed_until IS NOT NULL AND claimed_until < ${bind(callStart.toISOString())})`,
+  ];
+  if (legacyCutoff) {
+    branches.push(
+      `(status = 'processing' AND claimed_until IS NULL AND lease_token IS NULL AND updated_at < ${bind(legacyCutoff.toISOString())})`,
+    );
+  }
+  return `(${branches.join(' OR ')})`;
 }
 
 /** A lease this process holds on one row. */
@@ -108,8 +161,10 @@ function placeholders() {
 }
 
 /**
- * Claim one row: a `pending` row, or a `processing` row whose lease expired
- * before `callStart`, while `COALESCE(attempts, 0)` is under the cap. Sets a
+ * Claim one row: a `pending` row, a `processing` row whose lease expired
+ * before `callStart` or, with legacy reclaim on, a lease-less `processing`
+ * row older than the legacy cutoff ({@link claimableStateSql}), while
+ * `COALESCE(attempts, 0)` is under the cap. Sets a
  * fresh token and expiry and increments `attempts` in SQL.
  *
  * @returns The lease, or `null` when another worker holds or settled the row,
@@ -138,7 +193,11 @@ export async function claimDispatchLease(
   const conditions = [
     `id = ${bind(input.id)}`,
     `COALESCE(attempts, 0) < COALESCE(max_attempts, ${bind(input.settings.maxAttempts)})`,
-    `(status = 'pending' OR (status = 'processing' AND claimed_until IS NOT NULL AND claimed_until < ${bind(input.callStart.toISOString())}))`,
+    claimableStateSql(
+      bind,
+      input.callStart,
+      legacyLeaseCutoff(input.settings, input.callStart),
+    ),
   ];
   pushTenantPredicate(
     conditions,

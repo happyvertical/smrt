@@ -57,6 +57,7 @@ import {
   type DispatchLease,
   type DispatchLeaseSettings,
   expireDispatchLease,
+  legacyLeaseCutoff,
   renewDispatchLease,
   resolveDispatchLeaseSettings,
   settleDispatchLease,
@@ -727,6 +728,9 @@ export class DispatchBus {
     // Phase bounds are frozen at the call start: a lease that expires while
     // this call runs is left for a later call.
     const callStart = new Date();
+    // Opt-in legacy reclaim (unset by default): lease-less rows an older
+    // core left `processing` before this cutoff are claimable.
+    const legacyCutoff = legacyLeaseCutoff(this.lease, callStart);
     // Rows this call claimed are never claimed again by it.
     const claimedThisCall = new Set<string>();
 
@@ -740,6 +744,7 @@ export class DispatchBus {
       signalTypes,
       tenantScope,
       callStart,
+      legacyCutoff,
       maxAttempts: this.lease.maxAttempts,
       reason: formatDispatchFailureReason(
         DISPATCH_FAILURE_CODES.attemptsExhausted,
@@ -757,6 +762,7 @@ export class DispatchBus {
     }
 
     candidates: for (const phase of DISPATCH_CANDIDATE_PHASES) {
+      if (phase === 'legacy' && legacyCutoff === undefined) continue;
       let cursor: DispatchCandidateCursor | undefined;
       while (stats.claimed < limit) {
         if (pages > 0) {
@@ -775,6 +781,7 @@ export class DispatchBus {
           cursor,
           pageSize,
           callStart,
+          legacyCutoff,
           maxAttempts: this.lease.maxAttempts,
         });
 
@@ -790,7 +797,7 @@ export class DispatchBus {
           ) {
             continue;
           }
-          const dispatch = hydrateCandidate(row);
+          const dispatch = hydrateCandidate(row, phase);
           if (!dispatch) {
             // Isolated: the cursor has moved past it, so it never blocks
             // the rows behind it.
@@ -1108,6 +1115,9 @@ export class DispatchBus {
           tenantScope,
           now,
           orphanedLeaseAfterMs,
+          // Lease-less rows of an older core are candidates only with
+          // legacy reclaim opted in.
+          includeLegacy: this.lease.legacyLeaseGraceMs !== undefined,
           dryRun,
           allowCrossTenant: DISPATCH_ORPHAN_ROUTE_CHECK,
         })
@@ -1303,6 +1313,7 @@ export async function createDispatchBus(
     leaseMs: options.leaseMs,
     maxAttempts: options.maxAttempts,
     maxExecutionMs: options.maxExecutionMs,
+    legacyLeaseGraceMs: options.legacyLeaseGraceMs,
     leaseDb: options.leaseDb,
   };
   resolveDispatchLeaseSettings(leaseOptions);

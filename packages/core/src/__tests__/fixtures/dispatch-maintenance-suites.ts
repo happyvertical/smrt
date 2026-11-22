@@ -6,6 +6,7 @@
  */
 
 import { afterEach, expect, it } from 'vitest';
+import { DispatchBus } from '../../dispatch/bus';
 import { setDispatchTenantResolver } from '../../dispatch/tenant-resolver';
 import type { DispatchProcessStats } from '../../dispatch/types';
 import type { DispatchOpener } from './dispatch-lease-suites';
@@ -487,5 +488,166 @@ export function defineLongLeaseCases(openDatabase: DispatchOpener): void {
     expect(stats?.timedOut).toBe(0);
     // Diagnostic only: the attempt kept its lease and settled.
     expect((await dispatchLeaseRow(db, 'long')).status).toBe('completed');
+  });
+}
+
+/** A `processing` row an older core claimed (no lease), last written `ageMs` ago. */
+function legacyClaimed(id: string, ageMs: number, attempts = 1) {
+  const at = ago(ageMs);
+  return {
+    id,
+    type: 'job.run',
+    status: 'processing',
+    attempts,
+    createdAt: at,
+    updatedAt: at,
+  };
+}
+
+/** T27, T15 (legacy branch): opt-in reclaim of rows claimed by an older core. */
+export function defineLeaseLegacyCases(openDatabase: DispatchOpener): void {
+  const open = useOpener(openDatabase);
+  const HOUR = 3_600_000;
+
+  it('pages NULL-lease rows when legacy reclaim is on; untouched when off', async () => {
+    const { bus, db } = await open();
+    await bus.subscribe({ signalType: 'job.run', subscriber: 'worker' });
+    await insertRawDispatch(db, legacyClaimed('old-1', 2 * HOUR));
+    await insertRawDispatch(db, legacyClaimed('old-2', 3 * HOUR));
+    await insertRawDispatch(db, legacyClaimed('within-grace', 60_000));
+    await insertRawDispatch(db, { id: 'waiting', type: 'job.run' });
+
+    // Off (default): only the pending row is processed.
+    const off: string[] = [];
+    await bus.process('worker', async (_payload, metadata) => {
+      off.push(metadata.id);
+    });
+    expect(off).toEqual(['waiting']);
+    expect((await dispatchLeaseRow(db, 'old-1')).status).toBe('processing');
+
+    // On: legacy rows past the grace period, oldest first.
+    const legacy = new DispatchBus(db, { legacyLeaseGraceMs: 30 * 60_000 });
+    const on: Array<[string, number]> = [];
+    await legacy.process('worker', async (_payload, metadata) => {
+      on.push([metadata.id, metadata.attempts]);
+    });
+    expect(on).toEqual([
+      ['old-2', 2],
+      ['old-1', 2],
+    ]);
+    expect((await dispatchLeaseRow(db, 'old-1')).status).toBe('completed');
+    expect((await dispatchLeaseRow(db, 'within-grace')).status).toBe(
+      'processing',
+    );
+  });
+
+  it('claim cap applies to the legacy branch when legacy reclaim is on', async () => {
+    const { bus, db } = await open({ bus: { maxAttempts: 2 } });
+    await bus.subscribe({ signalType: 'job.run', subscriber: 'worker' });
+    await insertRawDispatch(db, legacyClaimed('legacy-at-cap', 2 * HOUR, 2));
+
+    await bus.process('worker', async () => {});
+    expect((await dispatchLeaseRow(db, 'legacy-at-cap')).status).toBe(
+      'processing',
+    );
+
+    const legacy = new DispatchBus(db, {
+      maxAttempts: 2,
+      legacyLeaseGraceMs: 60_000,
+    });
+    const calls: string[] = [];
+    await legacy.process('worker', async (_payload, metadata) => {
+      calls.push(metadata.id);
+    });
+    expect(calls).toEqual([]);
+    const row = await dispatchLeaseRow(db, 'legacy-at-cap');
+    expect(row.status).toBe('failed');
+    expect(
+      row.lastError?.startsWith('[smrt:DISPATCH_ATTEMPTS_EXHAUSTED]'),
+    ).toBe(true);
+  });
+
+  it('maintenance fails an unrouted legacy row only when legacy reclaim is on', async () => {
+    const { bus, db } = await open();
+    await insertRawDispatch(db, {
+      ...legacyClaimed('legacy-unrouted', 2 * DAY_MS),
+      type: 'nobody.listens',
+    });
+    expect((await bus.maintain()).orphaned).toBe(0);
+    const legacy = new DispatchBus(db, { legacyLeaseGraceMs: 60_000 });
+    expect((await legacy.maintain()).orphaned).toBe(1);
+    expect((await dispatchLeaseRow(db, 'legacy-unrouted')).status).toBe(
+      'failed',
+    );
+  });
+}
+
+/**
+ * T26 (legacy half), T34: SQLite-only shapes. A legacy row whose timestamp
+ * text JavaScript cannot read is never reclaimed and never blocks healthy
+ * rows; statements an older core runs still work on the upgraded table.
+ */
+export function defineLeaseLegacySqliteCases(
+  openDatabase: DispatchOpener,
+): void {
+  const open = useOpener(openDatabase);
+
+  it('a legacy row with an unreadable timestamp is never reclaimed and never blocks', async () => {
+    const { bus, db } = await open({ bus: { legacyLeaseGraceMs: 60_000 } });
+    await bus.subscribe({ signalType: 'job.run', subscriber: 'worker' });
+    // Sorts below every ISO timestamp, so it is the first legacy candidate.
+    await insertRawDispatch(db, {
+      ...legacyClaimed('garbage', 0),
+      updatedAt: '0000-not-a-time',
+    });
+    await insertRawDispatch(db, legacyClaimed('healthy', 2 * 3_600_000));
+    const calls: string[] = [];
+    let stats: DispatchProcessStats | undefined;
+    await bus.process(
+      'worker',
+      async (_payload, metadata) => {
+        calls.push(metadata.id);
+      },
+      { onStats: (value) => (stats = value) },
+    );
+    expect(calls).toEqual(['healthy']);
+    expect(stats?.malformed).toBe(1);
+    const garbage = await dispatchLeaseRow(db, 'garbage');
+    expect(garbage.status).toBe('processing');
+    expect(garbage.leaseToken).toBeNull();
+  });
+
+  it('old settle SQL on the upgraded table: no reclaim when legacy is off; old code runs after a legacy release', async () => {
+    const { bus, db } = await open();
+    await bus.subscribe({ signalType: 'job.run', subscriber: 'worker' });
+    await insertRawDispatch(db, legacyClaimed('old-claim', 2 * 3_600_000));
+
+    await bus.process('worker', async () => {
+      throw new Error('must not run');
+    });
+    expect((await dispatchLeaseRow(db, 'old-claim')).status).toBe('processing');
+
+    // The drained older process is gone; release its claim, then an older
+    // process claims and settles it with its own statements.
+    expect(
+      (await bus.maintain({ release: 'legacy', sweepOrphans: false })).released,
+    ).toBe(1);
+    const now = new Date().toISOString();
+    const claimed = await db.query(
+      `UPDATE _smrt_dispatch SET status = 'processing', attempts = attempts + 1, updated_at = $1
+        WHERE id = $2 AND status = 'pending' RETURNING id`,
+      now,
+      'old-claim',
+    );
+    expect(claimed.rows).toHaveLength(1);
+    await db.query(
+      `UPDATE _smrt_dispatch SET status = 'completed', processed_at = $1,
+              processed_by = $2, updated_at = $3 WHERE id = $4`,
+      now,
+      'old-worker',
+      now,
+      'old-claim',
+    );
+    expect((await dispatchLeaseRow(db, 'old-claim')).status).toBe('completed');
   });
 }

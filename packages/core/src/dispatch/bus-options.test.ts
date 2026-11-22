@@ -16,6 +16,9 @@ describe('dispatch bus lease options', () => {
     ['maxAttempts', 0],
     ['maxAttempts', 2.5],
     ['maxAttempts', -1],
+    ['legacyLeaseGraceMs', 0],
+    ['legacyLeaseGraceMs', -5],
+    ['legacyLeaseGraceMs', 1.5],
   ])('rejects %s = %s naming the option', async (option, value) => {
     await expect(createDispatchBus({ db, [option]: value })).rejects.toThrow(
       new RegExp(`\\b${option}\\b`),
