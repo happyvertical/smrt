@@ -100,13 +100,16 @@ export async function claimDispatchLease(
   const claimedUntil = new Date(now.getTime() + input.settings.leaseMs);
   const token = randomUUID();
   const { params, bind } = placeholders();
+  // The row's claim budget is stamped at its first claim, so every bus that
+  // claims it later applies the same budget whatever its own maxAttempts.
   const set = `status = 'processing', lease_token = ${bind(token)},
        claimed_until = ${bind(claimedUntil.toISOString())},
        attempts = COALESCE(attempts, 0) + 1,
-       updated_at = ${bind(now.toISOString())}`;
+       updated_at = ${bind(now.toISOString())},
+       max_attempts = COALESCE(max_attempts, ${bind(input.settings.maxAttempts)})`;
   const conditions = [
     `id = ${bind(input.id)}`,
-    `COALESCE(attempts, 0) < ${bind(input.settings.maxAttempts)}`,
+    `COALESCE(attempts, 0) < COALESCE(max_attempts, ${bind(input.settings.maxAttempts)})`,
     `(status = 'pending' OR (status = 'processing' AND claimed_until IS NOT NULL AND claimed_until < ${bind(input.callStart.toISOString())}))`,
   ];
   pushTenantPredicate(

@@ -50,6 +50,12 @@ export function isLeaseHeldLocally(db: DatabaseInterface, id: string): boolean {
   return key !== null && liveLeases.get(key)?.has(id) === true;
 }
 
+/** Ids of rows of `db` this process is running attempts on. */
+export function locallyHeldLeaseIds(db: DatabaseInterface): string[] {
+  const key = registryKey(db);
+  return key === null ? [] : [...(liveLeases.get(key) ?? [])];
+}
+
 /** Record a live local attempt on row `id`; returns the release. */
 export function holdLeaseLocally(
   db: DatabaseInterface,

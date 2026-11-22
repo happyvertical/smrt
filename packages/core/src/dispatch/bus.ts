@@ -45,6 +45,7 @@ import {
   candidateCursor,
   DISPATCH_CANDIDATE_PHASES,
   type DispatchCandidateCursor,
+  failExhaustedCandidates,
   hydrateCandidate,
   readCandidatePage,
 } from './candidates.js';
@@ -62,12 +63,17 @@ import {
   assertLeaseExecutorSafe,
   holdLeaseLocally,
   isLeaseHeldLocally,
+  locallyHeldLeaseIds,
   startLeaseHeartbeat,
 } from './lease-heartbeat.js';
 import { Dispatch } from './models/Dispatch.js';
 import { DispatchSubscription } from './models/DispatchSubscription.js';
 import { dispatchPatternDialect } from './pattern.js';
-import { encodeHandlerError } from './reasons.js';
+import {
+  DISPATCH_FAILURE_CODES,
+  encodeHandlerError,
+  formatDispatchFailureReason,
+} from './reasons.js';
 import { retryFailedDispatches } from './retry.js';
 import { isDispatchRoutedTo } from './routing.js';
 import {
@@ -705,6 +711,32 @@ export class DispatchBus {
     const callStart = new Date();
     // Rows this call claimed are never claimed again by it.
     const claimedThisCall = new Set<string>();
+
+    // Rows routed to this subscriber whose claim budget is spent end as
+    // `failed` with a framework reason instead of waiting for ever.
+    const exhausted = await failExhaustedCandidates(this.db, {
+      dialect,
+      nativeTimestamps,
+      subscriber,
+      subscriptions,
+      signalTypes,
+      tenantScope,
+      callStart,
+      maxAttempts: this.lease.maxAttempts,
+      reason: formatDispatchFailureReason(
+        DISPATCH_FAILURE_CODES.attemptsExhausted,
+        'claim budget spent',
+      ),
+      excludeIds: locallyHeldLeaseIds(this.db),
+    });
+    stats.exhausted = exhausted.length;
+    if (exhausted.length > 0) {
+      logger.warn('dispatch.attempts_exhausted: failed rows at their budget', {
+        subscriber,
+        count: exhausted.length,
+        ids: exhausted.slice(0, 10),
+      });
+    }
 
     candidates: for (const phase of DISPATCH_CANDIDATE_PHASES) {
       let cursor: DispatchCandidateCursor | undefined;
