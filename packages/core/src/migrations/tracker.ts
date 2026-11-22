@@ -1614,7 +1614,12 @@ export class MigrationTracker {
         const row = rows.get(result.name);
         rows.delete(result.name);
         if (refusal && result.name === refusal.migrationName) {
-          await this.recordConcurrentIndexFailure(table, row, refusal.message);
+          await this.recordConcurrentIndexFailure(
+            session,
+            table,
+            row,
+            refusal.message,
+          );
           results[index] = {
             ...result,
             success: false,
@@ -1632,7 +1637,12 @@ export class MigrationTracker {
               ? `Not attempted: the concurrent index phase ran nothing because ${stoppedBy} was refused before it ran`
               : `Not attempted: concurrent index phase stopped after ${stoppedBy} failed`,
           );
-          await this.recordConcurrentIndexFailure(table, row, error.message);
+          await this.recordConcurrentIndexFailure(
+            session,
+            table,
+            row,
+            error.message,
+          );
           results[index] = {
             ...result,
             success: false,
@@ -1701,6 +1711,7 @@ export class MigrationTracker {
               (result.execution_time_ms ?? 0) + (Date.now() - startedAt),
             );
             const recorded = await this.recordConcurrentIndexSuccess(
+              session,
               table,
               row as DeferredRow,
               result.checksum,
@@ -1731,6 +1742,7 @@ export class MigrationTracker {
               stoppedBy = result.name;
             }
             await this.recordConcurrentIndexFailure(
+              session,
               table,
               row,
               failure.message,
@@ -2490,15 +2502,19 @@ export class MigrationTracker {
   /**
    * Phase-2 outcomes are written only over the row phase 1 wrote, by id and
    * attempt number, while it is still `failed`: a late or stale write never
-   * overwrites a record another run completed or took over.
+   * overwrites a record another run completed or took over. They go through
+   * the phase's pinned session (to the qualified table), never a second
+   * checkout, which a saturated pool would never hand over while the
+   * session holds its row lock.
    */
   private async recordConcurrentIndexSuccess(
+    session: MigrationSession,
     table: string,
     row: DeferredRow,
     checksum: string,
     executionTime: number,
   ): Promise<boolean> {
-    const written = await this.db.query(
+    const written = await session.query(
       `UPDATE ${table}
          SET status = 'completed', execution_time_ms = ?, applied_checksum = ?, error_message = NULL, applied_at = CURRENT_TIMESTAMP
        WHERE id = ? AND status = 'failed' AND attempts = ? RETURNING id`,
@@ -2511,13 +2527,14 @@ export class MigrationTracker {
   }
 
   private async recordConcurrentIndexFailure(
+    session: MigrationSession,
     table: string,
     row: DeferredRow | undefined,
     message: string,
   ): Promise<void> {
     if (!row) return;
     try {
-      await this.db.query(
+      await session.query(
         `UPDATE ${table}
            SET status = 'failed', error_message = ?
          WHERE id = ? AND status = 'failed' AND attempts = ?`,

@@ -3,8 +3,9 @@
  * failed cleanup (#5325), against a real PostgreSQL server (PGlite): a stale
  * read of a record never takes it over; runs that share one handle take
  * turns for their whole run; a record another run took over stops the
- * batch; cleanup that did not take effect is reported; and a batch check
- * that fails without refusing a definition rejects the batch.
+ * batch; cleanup that did not take effect is reported; a batch check that
+ * fails without refusing a definition rejects the batch; and the deferred
+ * phase records its outcomes on its own session.
  *
  * Runs under `pnpm test:pglite` (and so in the PostgreSQL lane); skipped on the
  * default SQLite run.
@@ -411,6 +412,51 @@ describe.skipIf(process.env.SMRT_TEST_PGLITE !== '1')(
         else await expect(run).rejects.toBeUndefined();
         expect(await row(pending.id)).toBeUndefined();
         expect(await indexValid('child_pid_idx')).toEqual([]);
+      });
+    });
+    describe('a pool that hands out one connection', () => {
+      it('records the deferred phase without asking it for a second', async () => {
+        await fixDuplicates();
+        let held = false;
+        const secondCheckouts: string[] = [];
+        // The pool's one connection is the pinned session while it is held:
+        // any other query would wait for it, with no checkout timeout.
+        const poolOfOne: DatabaseInterface = {
+          ...db,
+          query: (async (sql: string, ...vars: unknown[]) => {
+            if (held) secondCheckouts.push(sql);
+            return db.query(sql, ...vars);
+          }) as DatabaseInterface['query'],
+          acquireSession: async () => {
+            held = true;
+            return {
+              query: (sql: string, ...vars: unknown[]) =>
+                db.query(sql, ...vars),
+              release: async () => {
+                held = false;
+              },
+            };
+          },
+        } as DatabaseInterface;
+
+        const [built, refused] = await migrate(
+          [
+            definition('pool_built', [
+              'CREATE INDEX IF NOT EXISTS child_n_idx ON child (n)',
+            ]),
+            definition('pool_failed', [
+              'CREATE INDEX IF NOT EXISTS child_n_idx ON child (no_such_column)',
+            ]),
+          ],
+          { continueOnError: true },
+          poolOfOne,
+        );
+
+        expect(built?.success, errorOf(built)).toBe(true);
+        expect(refused?.success).toBe(false);
+        expect(secondCheckouts).toEqual([]);
+        expect((await row('pool_built'))?.status).toBe('completed');
+        expect((await row('pool_failed'))?.status).toBe('failed');
       });
     });
   },
