@@ -267,9 +267,10 @@ runtime, replace that object with `createSmrtSvelteKitRuntime()` from
 
 | Command | Description |
 |---------|------------|
-| `smrt dispatch:list` | List dispatch messages |
-| `smrt dispatch:process` | Process pending dispatches |
-| `smrt dispatch:retry` | Retry failed dispatches |
+| `smrt dispatch:list` | List dispatch messages (`--reason <CODE>` for framework reasons) |
+| `smrt dispatch:process` | Process pending dispatches (`--dry` previews with phases; `--include-expired` also reclaims expired leases) |
+| `smrt dispatch:retry` | Retry failed dispatches below their claim budget (`--reset-attempts` revives spent rows) |
+| `smrt dispatch:release-leases` | Return expired (default), all (`--after-drain`) or older-core (`--legacy`) leases to pending |
 | `smrt dispatch:cleanup` | Clean up old dispatch records |
 
 ### Git Integration

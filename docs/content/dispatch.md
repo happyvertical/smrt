@@ -182,7 +182,52 @@ is therefore **at-least-once**: handlers must be idempotent on
 - Clock skew between processes must stay well below `leaseMs`.
 - Pass `onStats` to `process()` to receive `DispatchProcessStats`
   (claimed, completed, failed, leaseLost, settleErrors, renewErrors,
-  malformed, exhausted, scanRejects).
+  malformed, exhausted, scanRejects, timedOut, longLeases).
+- **No execution deadline by default.** A hung handler keeps renewing its
+  lease; once an attempt runs longer than 3x `leaseMs` the bus logs
+  `dispatch.long_lease` once and counts `longLeases`. Opt in with
+  `maxExecutionMs` (bus option or per `process()` call, at least
+  `leaseMs`): at the deadline the bus stops renewing, aborts
+  `metadata.signal` (`DISPATCH_EXECUTION_TIMEOUT`), clears the row's lease
+  (`[smrt:DISPATCH_EXECUTION_TIMEOUT] ...`) and moves on; a later call
+  reclaims the row. JavaScript cannot stop the handler, so one that ignores
+  the signal may overlap the redelivery.
+- `process({ phases: 'pending' })` claims pending rows only and leaves
+  every leased row alone; `previewProcess(subscriber)` returns what
+  `process()` would claim, with each row's phase, without writing.
+
+### Maintenance
+
+`process()` never fails a row for being abandoned. `bus.maintain()` and the
+retention `dispatch` task (`smrt db:prune`, `runRetentionSweep`) fail a
+`processing` row whose lease expired more than `orphanedLeaseAfterMs`
+(`DispatchRetentionPolicy.orphanedLeaseAfterDays`, default 1 day) ago with
+`[smrt:DISPATCH_LEASE_ORPHANED]`, **only when no subscription can route
+it**. Any subscription row whose pattern matches counts, enabled or
+disabled (a disabled subscription is a paused route); a targeted row needs
+a subscription of its target, an untargeted row a `compete` subscription.
+A routed row waits for its subscriber, which reclaims it under its claim
+budget. Run maintenance (or `smrt db:prune`) at least daily: without a
+polling processor or maintenance there is no time bound on an abandoned
+row.
+
+`bus.maintain({ release })` returns leases to `pending` with their
+attempt count kept: `'expired'`, `'afterDrain'` (every lease, live or
+expired; only once every worker of this release has stopped) or
+`'legacy'` (rows an older core left `processing` without a lease). The CLI
+form is `smrt dispatch:release-leases`. Both accept `dryRun`.
+
+Maintenance is tenant-exact: under an active tenant it touches only that
+tenant's rows, routed only by that tenant's subscriptions, and never global
+rows. With tenancy on and no tenant it touches global rows only; with
+tenancy off (and in retention) every row, each tenant row routed only by
+its own tenant's subscriptions. A global row may be routed by any tenant's
+subscription; that one cross-tenant read is named in code
+(`DISPATCH_ORPHAN_ROUTE_CHECK`).
+
+`smrt doctor --db` reports leased `processing` rows, expired and
+long-held leases, `processing` rows without a lease, and rows no
+subscription routes.
 
 ```typescript
 await bus.process('Fiscus', async (payload, metadata) => {
@@ -216,14 +261,29 @@ rows without the lease token and would overwrite a live lease.
    `idx_smrt_dispatch_status_updated_id`) to avoid blocking writes.
 
 Rows an older process left `processing` carry no lease and are not
-reclaimed automatically. Rows whose `attempts` already reached the budget
-become `failed` with `[smrt:DISPATCH_ATTEMPTS_EXHAUSTED]` when polled;
-revive them with `retry({ resetAttempts: true })`.
+reclaimed automatically; `smrt doctor --db` counts them. Once every older
+process is stopped, either return them to `pending` with
+`smrt dispatch:release-leases --legacy`, or opt in to legacy reclaim with
+`legacyLeaseGraceMs` (a row is then claimed once its `updated_at` is that
+much older than the call start; a row whose `updated_at` cannot be read is
+left for the release command). Never set `legacyLeaseGraceMs` while an
+older process may still be running such a row. Rows whose `attempts`
+already reached the budget become `failed` with
+`[smrt:DISPATCH_ATTEMPTS_EXHAUSTED]` when polled; revive them with
+`retry({ resetAttempts: true })` or `smrt dispatch:retry --reset-attempts`.
 
-Rollback: stop the new processes and wait `leaseMs` so every lease expires,
-then confirm no `processing` row has a non-NULL `lease_token` before
-starting older code; release any that remain to `pending` first. Older code
-ignores the extra columns.
+`smrt dispatch:process` (the CLI's logging handler) no longer reclaims
+expired leases unless `--include-expired` is passed, and
+`smrt dispatch:retry` without `--max-attempts` retries rows below their own
+claim budget (5 by default) instead of below 3. `smrt db:prune` now also
+fails abandoned leases no subscription routes (reported as
+`details.orphaned`).
+
+Rollback: stop the new processes, run
+`smrt dispatch:release-leases --after-drain` (or wait `leaseMs` and run it
+without the flag), confirm `smrt doctor --db` shows **zero leased
+processing rows**, then start older code. Older code ignores the extra
+columns, and `[smrt:...]` failed rows are plain `failed` rows to it.
 
 ## Retry Failed Dispatches
 
@@ -340,12 +400,26 @@ await bus.process('Billing', async (payload, metadata) => {
 smrt dispatch:list
 smrt dispatch:list --status pending
 smrt dispatch:list --source Suasor
+smrt dispatch:list --status failed --reason DISPATCH_ATTEMPTS_EXHAUSTED
 
-# Process pending for a subscriber
+# Preview, then process, for a subscriber. --dry runs the bus's own
+# candidate query and prints each row's phase. The live command processes
+# pending rows only; --include-expired also reclaims expired leases.
+smrt dispatch:process --subscriber Fiscus --dry
 smrt dispatch:process --subscriber Fiscus
+smrt dispatch:process --subscriber Fiscus --include-expired
 
-# Retry failed dispatches
-smrt dispatch:retry --max-attempts 3
+# Retry failed dispatches below their claim budget (5 unless configured);
+# --reset-attempts revives rows whose budget is spent
+smrt dispatch:retry
+smrt dispatch:retry --reset-attempts --type invoice.created
+
+# Return leases to pending (attempts kept): expired leases by default,
+# every lease after all workers stopped, or rows an older core left behind
+smrt dispatch:release-leases --dry
+smrt dispatch:release-leases
+smrt dispatch:release-leases --after-drain
+smrt dispatch:release-leases --legacy
 
 # Cleanup old dispatches (--dry counts what the same cutoffs would delete)
 smrt dispatch:cleanup --completed-older-than 30
@@ -451,9 +525,15 @@ const count = await bus.process(
     limit: 100,                          // Optional: max rows claimed (default 100; negative = no limit)
     signalTypes: ['campaign.completed'], // Optional: filter by type
     onStats: (stats) => {},              // Optional: DispatchProcessStats
+    maxExecutionMs: 600_000,             // Optional: deadline for this call
+    phases: 'all',                       // 'pending': no lease reclaim
   }
 );
 // Returns the rows whose handler succeeded and whose outcome this call wrote.
+
+// Read-only: what process() would claim, with each row's phase
+// ('expired' | 'legacy' | 'undated' | 'dated').
+const preview = await bus.previewProcess('Fiscus', { limit: 20 });
 ```
 
 A handler that throws marks its dispatch `failed`. If the bus cannot record
@@ -463,8 +543,24 @@ an outcome at all (the database write throws), the dispatch stays
 runs.
 
 Bus options for the lease: `leaseMs` (default 300000, integer >= 1000),
-`maxAttempts` (default 5, integer >= 1), `leaseDb` (dedicated handle for
-renewals and outcome writes). Invalid values throw naming the option.
+`maxAttempts` (default 5, integer >= 1), `maxExecutionMs` (unset by
+default; integer >= `leaseMs`), `legacyLeaseGraceMs` (unset by default;
+positive integer), `leaseDb` (dedicated handle for renewals and outcome
+writes). Invalid values throw naming the option.
+
+### bus.maintain(options)
+
+Fail abandoned leases no subscription routes and, optionally, release
+leases (see Maintenance).
+
+```typescript
+const { orphaned, released, dryRun } = await bus.maintain({
+  orphanedLeaseAfterMs: 86_400_000, // Optional (default one day)
+  release: 'expired',               // Optional: 'expired' | 'afterDrain' | 'legacy'
+  sweepOrphans: true,               // Optional (default true)
+  dryRun: false,                    // Optional: count only
+});
+```
 
 ### bus.retry(options)
 
@@ -502,6 +598,7 @@ const dispatches = await bus.list({
   status: 'pending',           // Optional: filter by status
   source: 'Suasor',            // Optional: filter by source
   type: 'campaign.completed',  // Optional: filter by type
+  reason: 'DISPATCH_ATTEMPTS_EXHAUSTED', // Optional: exact framework reason
   limit: 50,                   // Optional: max results
   offset: 0                    // Optional: pagination offset
 });

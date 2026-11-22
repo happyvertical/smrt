@@ -294,18 +294,24 @@ instances and never use this path to overwrite a loaded revision.
   candidate query and the in-memory recheck use this one rule.
 - `process()` candidates (`dispatch/candidates.ts`): phases `expired`
   (`processing`, `claimed_until < call start`, by `(claimed_until, id)`),
-  then pending NULL `created_at` (by id), then `(created_at, id)`,
+  then `legacy` only with `legacyLeaseGraceMs` set (lease-less `processing`,
+  `updated_at < call start - grace`, by `(updated_at, id)`; unreadable or
+  NULL `updated_at` never reclaimed), then pending NULL `created_at` (by
+  id), then `(created_at, id)`. `phases: 'pending'` reads only the pending
+  phases and claims, and cap-sweeps, only `pending` rows.
+  `previewProcess()` runs the same query read-only. Candidates are
   keyset-paged with one sort key for ORDER BY and the cursor:
   `CAST(id AS TEXT)`, and the phase's timestamp by instant (the native
   column on PostgreSQL/PGlite, whose text form follows the session
   `TimeZone` and is not chronological across DST; the text form on
   SQLite/DuckDB); routing, patterns, `signalTypes`, the claim budget and the
   tenant predicate apply in SQL before the page limit; `limit` caps claims
-  (default 100, also for 0; a negative `limit` means no limit). Each later
-  page re-reads the subscriber's enabled subscriptions. A row that fails to
-  hydrate is skipped with one `dispatch.malformed_row` warning per call and
-  never blocks later rows. Bind placeholders in statement-text order: SQLite
-  allocates `$n` slots by first occurrence.
+  (default 100, also for 0; a negative `limit` means no limit, in
+  `previewProcess()` too). Each later page re-reads the subscriber's enabled
+  subscriptions. A row that fails to hydrate is skipped with one
+  `dispatch.malformed_row` warning per call and never blocks later rows.
+  Bind placeholders in statement-text order: SQLite allocates `$n` slots by
+  first occurrence.
 - Lease (`dispatch/lease.ts`, schema 1.22.0: `lease_token`,
   `claimed_until`, `max_attempts`): delivery is at-least-once. Every lease
   mutation is one `UPDATE ... RETURNING`; never trust `rowCount` (DuckDB
@@ -345,6 +351,25 @@ instances and never use this path to overwrite a loaded revision.
   `dispatch.settle_error` with the `outcome` it tried to record, the row
   stays `processing` under its lease, is not counted, and is reclaimed after
   expiry; the batch continues and `process()` rejects only on setup errors.
+- Deadline: `maxExecutionMs` (bus or call, unset by default, >= `leaseMs`)
+  stops renewal, aborts `signal` (`DISPATCH_EXECUTION_TIMEOUT`) and runs
+  one fenced UPDATE that NULLs the token and sets `claimed_until = now`;
+  the row is excluded from the rest of the call. Without it, an attempt
+  past 3x `leaseMs` logs `dispatch.long_lease` once (`longLeases`).
+- Maintenance (`dispatch/maintenance.ts`), never inside `process()`:
+  `maintain()` and the retention `dispatch` task fail an abandoned lease
+  (`claimed_until` older than `orphanedLeaseAfterMs`/`orphanedLeaseAfterDays`,
+  default 1 day; legacy rows only with legacy reclaim on) with
+  `[smrt:DISPATCH_LEASE_ORPHANED]` only when NO subscription row (enabled
+  or disabled) routes it; routed rows wait for their subscriber.
+  `maintain({ release })` returns `expired`, `afterDrain` or `legacy`
+  leases to `pending` (attempts kept, `[smrt:DISPATCH_RELEASED]`). Scope is
+  owner-exact (active tenant: its rows and subscriptions only, never
+  global rows); a tenant row is routed only by its own tenant's
+  subscriptions; a global row's route check reads every tenant's
+  subscriptions through the one named path `DISPATCH_ORPHAN_ROUTE_CHECK`
+  (no active tenant only). Writes restate the candidate predicate.
+  `inspectDispatchLeases()` feeds `smrt doctor --db` (read-only).
 - Gate: the lease must not be enabled (released and deployed) before the
   agents invocation dedupe release is deployed; no option turns the lease
   off. Deploys stop every older dispatch process first (no rolling deploy).

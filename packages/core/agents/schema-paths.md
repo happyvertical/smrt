@@ -1740,7 +1740,9 @@ split registrations under duplicate core resolution; package tasks exist only
 after importing the package. CLI prune optionally imports jobs/users.
 
 Defaults are opt-out: changes 30 days, AI usage 90 days, completed dispatch 30
-days/failed dispatch 90 days, contexts by `expires_at`, run-once claims 30
+days/failed dispatch 90 days (the task also fails abandoned dispatch leases
+no subscription routes after `orphanedLeaseAfterDays`, default 1, reported as
+`details.orphaned`, never deleted), contexts by `expires_at`, run-once claims 30
 days on `completed_at` (#3080; `in_progress` rows never match — the window is
 a replay deadline for `runOnce()`, not just disk hygiene, see
 `agents/run-once.md`). `smrt.configure({ retention })` tunes built-ins;
