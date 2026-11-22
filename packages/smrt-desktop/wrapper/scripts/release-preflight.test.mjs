@@ -713,15 +713,36 @@ describe('parseNodePins', () => {
       'utf8',
     );
     const trust = { nodePins: parseNodePins(source) };
-    const verified = Object.values(trust.nodePins.provenance).some(
-      (record) => record.verification === 'gpg-verified',
-    );
+    const verified =
+      trust.nodePins.provenance['26.8.1'].verification === 'gpg-verified';
     const { problems } = check(writeBundle(), trust);
     assert.ok(problems.length > 0);
     assert.equal(
       problems.some((p) => p.includes('committed pin record')),
       !verified,
     );
+  });
+
+  it('accepts a bundle bound to the verified Node 26.12.1 record', () => {
+    const source = readFileSync(
+      join(here, '..', '..', 'src', 'bundler', 'node-pins.ts'),
+      'utf8',
+    );
+    const nodePins = parseNodePins(source);
+    const version = '26.12.1';
+    const distFile = `node-v${version}-darwin-arm64.tar.gz`;
+    const dir = writeBundle({
+      report: {
+        node: {
+          version,
+          distFile,
+          archiveSha256: nodePins.pins[version][distFile],
+          binarySha256: sha(NODE_BINARY),
+          pin: nodePins.provenance[version],
+        },
+      },
+    });
+    assert.deepEqual(check(dir, { nodePins }).problems, []);
   });
 
   it('throws on a missing block and on anything that is not plain data', () => {
