@@ -285,6 +285,31 @@ export class AiRunCallRoute {
     return this.capture(event);
   }
 
+  /**
+   * Whether a usage event names this call and its run, in the call's
+   * tenant, on the database it is written to (whichever handle reaches the
+   * database): the identity of an event the call owns. Takes nothing.
+   */
+  async binds(
+    event: SmrtAiUsageEvent,
+    db: DatabaseInterface,
+  ): Promise<boolean> {
+    if (event.tags?.runId !== this.runId) return false;
+    let tenant = this.tenantId;
+    if (tenant === undefined) {
+      const row = getRows(
+        await aiRunQuery(
+          db,
+          'SELECT tenant_id FROM _smrt_ai_runs WHERE id = $1',
+          this.runId,
+        ),
+      )[0];
+      if (!row) return false;
+      tenant = text(row.tenant_id) ?? null;
+    }
+    return (event.tenantId ?? null) === tenant;
+  }
+
   private async applyCorrection(): Promise<void> {
     if (this.correcting || !this.pending || this.corrected) return;
     this.correcting = true;
@@ -395,9 +420,11 @@ export async function reconcileLateAiRunUsage(
 }
 
 /**
- * Whether a usage event names a tracked call core minted, in the event's
- * tenant on this database: this process's route of the call, or the call's
- * persisted `call` event in a run of that tenant (another process's call).
+ * Whether a usage event names a tracked call core minted, together with the
+ * call's run, in the event's tenant on this database: this process's route
+ * of the call, or the call's persisted `call` event in that run of that
+ * tenant (another process's call). An event naming only a call id, or a
+ * call id with another run or tenant, is not the call's.
  */
 async function isTrackedAiRunCall(
   event: SmrtAiUsageEvent,
@@ -405,16 +432,21 @@ async function isTrackedAiRunCall(
 ): Promise<boolean> {
   const callId = event.tags?.[AI_OWN_CALL_ID_TAG];
   if (typeof callId !== 'string' || callId === '') return false;
+  const runId = event.tags?.runId;
+  if (typeof runId !== 'string' || runId === '') return false;
   const route = liveRoute(callId);
-  if (route) return route.db === db;
+  // Another handle on the call's database falls through to the persisted
+  // call below; a different database is not the call's.
+  if (route?.db === db) return route.binds(event, db);
   const tenant = event.tenantId ?? null;
   const rows = getRows(
     await aiRunQuery(
       db,
       `SELECT r.tenant_id FROM _smrt_ai_run_events e
          JOIN _smrt_ai_runs r ON r.id = e.run_id
-        WHERE e.call_id = $1 AND e.type = 'call'`,
+        WHERE e.call_id = $1 AND e.run_id = $2 AND e.type = 'call'`,
       callId,
+      runId,
     ),
   );
   return rows.some((row) => (text(row.tenant_id) ?? null) === tenant);

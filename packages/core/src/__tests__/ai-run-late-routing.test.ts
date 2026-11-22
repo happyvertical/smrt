@@ -154,7 +154,15 @@ describe('late usage routing', () => {
       calls: before?.calls,
       tokens: before?.tokens,
     });
-    expect((await ledger(one)).map((row) => row.total_tokens)).toEqual([null]);
+    // The forged events are rows of their own: a fresh id, in no run. The
+    // call's own row is untouched.
+    const rowsOne = await ledger(one);
+    expect(rowsOne.filter((row) => row.id === callId)).toEqual([
+      expect.objectContaining({ total_tokens: null, run_id: a.run.id }),
+    ]);
+    const forged = rowsOne.filter((row) => row.id !== callId);
+    expect(forged.map((row) => row.total_tokens).sort()).toEqual([70, 90]);
+    expect(forged.every((row) => row.run_id === null)).toBe(true);
     // There the call id is no tracked call of its, so it is a row of its own.
     expect(await ledger(two)).toEqual([
       expect.objectContaining({ total_tokens: 50 }),
@@ -172,6 +180,42 @@ describe('late usage routing', () => {
       calls: 1,
       tokens: 12,
     });
+  });
+
+  it("does not let a forged call id take a live call's row or run before it settles", async () => {
+    const db = await newAiRunTestDatabase('sqlite');
+    const flow = pipeline(db);
+    const { run, context } = await runOn(db, 'tenant-one');
+    const handle = await beginAiRunCall(context, {
+      inputTokens: 10,
+      fallbackUsage: {
+        provider: 'openai',
+        model: 'gpt-4o',
+        operation: 'message',
+      },
+      afterSettle: (event) => flow.dispatch(event),
+    });
+    const callId = handle.invocation.callId;
+    // In flight: another tenant, another run, and no run name the call id.
+    await flow.dispatch(
+      measured({ runId: run.id, tenantId: 'tenant-two' }, callId, 70),
+    );
+    await flow.dispatch(
+      measured({ runId: 'other-run', tenantId: 'tenant-one' }, callId, 80),
+    );
+    const bare = measured(context, callId, 90);
+    delete bare.tags?.runId;
+    await flow.dispatch(bare);
+    await handle.succeed();
+    await delay(50);
+    const rows = await ledger(db);
+    const own = rows.filter((row) => row.id === callId);
+    expect(own).toHaveLength(1);
+    expect(own[0]).toMatchObject({ tenant_id: 'tenant-one', run_id: run.id });
+    const forged = rows.filter((row) => row.id !== callId);
+    expect(forged).toHaveLength(3);
+    expect(forged.every((row) => row.run_id === null)).toBe(true);
+    expect(await getAiRun(db, run.id)).toMatchObject({ calls: 1 });
   });
 
   it('never lets an event without token counts erase counts or use up the correction', async () => {
