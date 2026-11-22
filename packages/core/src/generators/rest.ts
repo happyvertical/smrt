@@ -947,7 +947,8 @@ export class APIGenerator {
         userId: principal.userId,
         allowCrossTenant: principal.allowCrossTenant,
         authenticated: principal.authenticated,
-        effectiveTenantId: principal.tenantId ?? ambientTenant,
+        // The principal's own tenant: an ambient context is never adopted.
+        effectiveTenantId: principal.tenantId,
         permissions: principal.permissions,
         superAdminBypass: principal.superAdminBypass,
       };
@@ -1102,8 +1103,9 @@ export class APIGenerator {
       const actor = resolveRequestActor({
         principal: settledPrincipalOf(principal),
         operation: 'read',
+        enforced: true,
       });
-      return await withActorContext(actor, route);
+      return await withActorContext(actor, route, { principal: true });
     } catch (error) {
       const failure = normalizeTypedHttpError(error);
       if (failure) {
@@ -1251,8 +1253,11 @@ export class APIGenerator {
       );
       this.requestTenancies.set(req, tenancy);
       authenticated = tenancy.actor.authenticated;
-      return await withResolvedTenancy(tenancy, () =>
-        this.routeCrudOperation(req, collection, objectId, url, objectName),
+      return await withResolvedTenancy(
+        tenancy,
+        () =>
+          this.routeCrudOperation(req, collection, objectId, url, objectName),
+        { principal: this.principalOf(req).enforced },
       );
     } catch (error) {
       const refusal = tenantRefusal(error, authenticated);
@@ -1298,6 +1303,7 @@ export class APIGenerator {
             authenticated: tenant.authenticated,
           },
       operation: write ? 'write' : 'read',
+      ...(principal.enforced ? { enforced: true } : {}),
     });
     const admits = this.familyAdmission.get(req)?.get(objectName);
     const servedFor = (op: FamilyRowOperation) =>
@@ -2707,7 +2713,9 @@ export class APIGenerator {
           );
           authenticated = tenancy.actor.authenticated;
           throwIfRefused(writeGate(tenancy));
-          return await withResolvedTenancy(tenancy, apply);
+          return await withResolvedTenancy(tenancy, apply, {
+            principal: principal.enforced,
+          });
         } catch (error) {
           const refusal =
             tenantRefusal(error, authenticated) ??

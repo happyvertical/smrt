@@ -114,9 +114,22 @@ request an `authMiddleware` returns); a request without one is a 500, never
 another caller. With `resolvePrincipal` configured, `resolveTenant` (kept
 for hosts that supply only a tenant) is not called. The principal's tenant,
 user, permissions, grant and sign-in are the settled principal of
-`resolveRequestActor` (`settledPrincipalOf`); `_changes`, `_events` and
-`_inference` run as that actor (`withActorContext`: its tenant, or a system
-context for a cross-tenant grant; `_events` captures it at open).
+`resolveRequestActor` (`settledPrincipalOf`), resolved with `enforced: true`
+(#5195 D2): everything comes from the principal; an active tenant context
+must name the same tenant (and user, when both name one), a principal with
+no tenant inside any tenant context is refused (403, before any hook or
+write), nothing is adopted from it, and the ambient system context and
+bypass flag are not read (`bypass` is the principal's `superAdminBypass`; a
+read grant is still inherited from the bound tenancy). The exposure gate and
+create targets read the principal's own tenant, never the ambient one. The
+request then runs in the principal's context through the policy source's
+optional `runForPrincipal` (a frozen projection: tenant, user, read-only
+permissions, no bypass flag; `null` clears tenant and system), with
+`withResolvedTenancy(..., { principal: true })`; a source without it enters a
+tenanted principal through `runInContext` and refuses a request that arrives
+inside a system context. `_changes`, `_events` and `_inference` run as that
+actor the same way (`withActorContext`; a cross-tenant grant in a system
+context; `_events` captures it at open).
 
 When it is configured, runtime REST enforces, from the principal:
 

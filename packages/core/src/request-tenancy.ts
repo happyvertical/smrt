@@ -128,6 +128,23 @@ export interface TenantPolicySource {
     context: RequestTenancyContext | 'system',
     fn: () => Promise<T>,
   ): Promise<T>;
+  /**
+   * Run `fn` as a host-resolved request principal (#5195): inside a frozen
+   * tenant context projected from it (its tenant, user and read-only
+   * permissions, never the super-admin bypass flag), or, for `null`, with no
+   * tenant and no system context. Replaces whatever context is active, on
+   * the source's own storage. Optional: a source without it (an older
+   * tenancy copy) gets a defined fallback.
+   */
+  runForPrincipal?<T>(
+    context: RequestTenancyContext | null,
+    fn: () => Promise<T>,
+  ): Promise<T>;
+  /**
+   * A counter that changes on every registration or removal of a tenancy
+   * policy and on enable and disable. Optional; must not throw.
+   */
+  generation?(): number;
 }
 
 declare global {
@@ -1076,10 +1093,11 @@ function actorTenantContext(
 export async function withResolvedTenancy<T>(
   t: RequestTenancy,
   fn: () => Promise<T>,
-  options: { refreshPrincipal?: boolean } = {},
+  options: { refreshPrincipal?: boolean; principal?: boolean } = {},
 ): Promise<T> {
   assertBindable(t);
   const bound = () => scopeContext().run(t, fn);
+  if (options.principal) return runAsPrincipalActor(t.actor, bound);
   const source = t.enforced ? getTenantPolicySource() : undefined;
   if (!source) {
     const context = actorTenantContext(
@@ -1101,6 +1119,48 @@ export async function withResolvedTenancy<T>(
 }
 
 /**
+ * Run `fn` as the actor of a host-resolved principal (#5195): a grant's
+ * system actor in a system context; otherwise the principal's own context,
+ * entered through the policy source's `runForPrincipal` (a frozen
+ * projection that replaces any ambient context, or no context at all for a
+ * principal with no tenant). A source without `runForPrincipal` enters a
+ * tenanted principal through `runInContext` and refuses a request that
+ * arrives inside a system context rather than run in it. Without a source,
+ * the principal's tenant is entered through the request tenant context
+ * hooks.
+ */
+function runAsPrincipalActor<T>(
+  actor: RequestActor,
+  fn: () => Promise<T>,
+): Promise<T> {
+  const source = getTenantPolicySource();
+  if (actor.system) {
+    return source && !source.systemContextActive()
+      ? source.runInContext('system', fn)
+      : fn();
+  }
+  const context: RequestTenancyContext | null = actor.tenantId
+    ? {
+        tenantId: actor.tenantId,
+        ...(actor.userId ? { userId: actor.userId } : {}),
+        ...(actor.permissions ? { permissions: actor.permissions } : {}),
+      }
+    : null;
+  if (source?.runForPrincipal) return source.runForPrincipal(context, fn);
+  if (source) {
+    if (source.systemContextActive()) {
+      throw new RequestTenancyError(
+        403,
+        'TENANT_ISOLATION_VIOLATION',
+        'The request arrived inside a system context.',
+      );
+    }
+    return context ? source.runInContext(context, fn) : fn();
+  }
+  return context ? runInRequestTenantContext(context, fn) : fn();
+}
+
+/**
  * Run `fn` as `actor` outside any one model's tenancy (a route that reads
  * across models, such as the change feed): in the actor's tenant context,
  * or in a system context for a system actor, when that is not already the
@@ -1109,7 +1169,9 @@ export async function withResolvedTenancy<T>(
 export async function withActorContext<T>(
   actor: RequestActor,
   fn: () => Promise<T>,
+  options: { principal?: boolean } = {},
 ): Promise<T> {
+  if (options.principal) return runAsPrincipalActor(actor, fn);
   const source = getTenantPolicySource();
   if (actor.system) {
     return source && !source.systemContextActive()

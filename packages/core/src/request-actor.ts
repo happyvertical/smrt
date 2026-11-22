@@ -62,6 +62,14 @@ export interface SettledRequestPrincipal {
   allowCrossTenant?: boolean;
   /** Signed in (decides 401 or 403 on a refusal). */
   authenticated?: boolean;
+  /** What kind of caller this is (a user, an agent, a service). */
+  callerKind?: string | null;
+  /**
+   * The host verified a super-admin bypass. Read only for an enforced
+   * principal (`RequestActorInput.enforced`); otherwise the bypass comes from
+   * the tenancy flag.
+   */
+  superAdminBypass?: boolean;
 }
 
 /** Inputs of {@link resolveRequestActor}. */
@@ -77,6 +85,16 @@ export interface RequestActorInput {
    * `locals`; refused with 403 otherwise.
    */
   requirePrincipal?: boolean;
+  /**
+   * The principal was resolved by the host for this request (#5195) and is
+   * the only source of the actor: its tenant, user, permissions, sign-in,
+   * grant and bypass. An active tenant context must agree with it (another
+   * tenant, another user, or any tenant when the principal has none, is
+   * refused with 403) and is never adopted; the system context and bypass
+   * flag of the ambient tenancy context are not read. A read grant is still
+   * inherited from the bound request tenancy.
+   */
+  enforced?: boolean;
 }
 
 /** What an actor extractor reads from trusted locals. */
@@ -182,6 +200,9 @@ function incomplete(message: string): RequestTenancyError {
  * a required principal is incomplete.
  */
 export function resolveRequestActor(input: RequestActorInput): RequestActor {
+  if (input.enforced && input.principal) {
+    return resolveEnforcedActor(input.principal, input.operation);
+  }
   const source = getTenantPolicySource();
   const active = getRequestTenantContext();
   // The tenant context the host entered: the request hooks' answer, else
@@ -281,6 +302,59 @@ export function resolveRequestActor(input: RequestActorInput): RequestActor {
     readGrant,
     bypass,
     authenticated: authenticated || !!activeTenant,
+  });
+}
+
+/**
+ * The actor of a host-resolved principal (`RequestActorInput.enforced`):
+ * everything from the principal, nothing adopted from ambient context.
+ */
+function resolveEnforcedActor(
+  principal: SettledRequestPrincipal,
+  operation: 'read' | 'write',
+): RequestActor {
+  const tenantId = nonEmpty(principal.tenantId);
+  const userId = nonEmpty(principal.userId);
+  const permissions = readonlySetOf(principal.permissions ?? []);
+  let grant = principal.allowCrossTenant === true;
+  const readGrant =
+    getResolvedTenancy()?.actor.readGrant === true ||
+    (grant && operation === 'read');
+  const active = getRequestTenantContext();
+  const activeTenant =
+    nonEmpty(active?.tenantId) ?? nonEmpty(resolveDispatchTenantId());
+  const activeUser = nonEmpty(active?.userId);
+  if (activeTenant) {
+    // An active tenant context must name the principal's own tenant, and
+    // its user when both name one. A principal with no tenant is never
+    // placed in the active one.
+    if (!tenantId || tenantId !== activeTenant) {
+      throw new RequestTenantConflictError(
+        'Tenant context does not match authenticated principal',
+      );
+    }
+    if (userId && activeUser && userId !== activeUser) {
+      throw new RequestTenantConflictError(
+        'Tenant context does not match authenticated principal',
+      );
+    }
+    // The host has already scoped the request to this tenant: a grant does
+    // not widen it.
+    grant = false;
+  }
+  const system: RequestActor['system'] = grant
+    ? readGrant
+      ? 'read'
+      : operation
+    : null;
+  return Object.freeze({
+    tenantId: system ? null : tenantId,
+    userId,
+    permissions,
+    system,
+    readGrant,
+    bypass: !system && !!tenantId && principal.superAdminBypass === true,
+    authenticated: principal.authenticated === true,
   });
 }
 

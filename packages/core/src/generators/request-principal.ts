@@ -339,6 +339,8 @@ export function settledPrincipalOf(
     ...(principal.permissions ? { permissions: principal.permissions } : {}),
     allowCrossTenant: principal.allowCrossTenant,
     authenticated: principal.authenticated,
+    callerKind: principal.principal.callerKind,
+    superAdminBypass: principal.superAdminBypass,
   };
 }
 
