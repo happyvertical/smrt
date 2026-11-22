@@ -2087,11 +2087,29 @@ row.
 
 If you want expiry, a confidence floor, and reinforcement counters applied for
 you, use `LearningMemory` (exported from `@happyvertical/smrt-core`) instead of
-calling `remember()`/`recall()` directly. It reads and writes the same
-`_smrt_contexts` rows, but it drops expired rows, applies a confidence floor
+calling `remember()`/`recall()` directly. It uses the same `_smrt_contexts`
+table, but it drops expired rows, applies a confidence floor
 (0.7 by default), and updates `success_count`/`failure_count` from the outcomes
 you report. It can also decay confidence by age, but that is opt-in: time decay
 is off unless you set `decayHalfLifeMs`.
+
+Memory is partitioned by tenant. A `LearningMemory` constructed with a
+`tenantId` reads and writes only that tenant's memories, so two tenants that
+use the same owner (for example the same persona `memoryScope`) never share a
+memory. Without a `tenantId` it uses the global partition, which is also where
+`remember()`/`recall()` keep object and collection memory; a tenant-bound
+`LearningMemory` never falls back to it. Memories stored before this partition
+existed are in the global partition: they stay readable
+without a tenant and are not attributed to any tenant automatically.
+
+On PostgreSQL the upgrade drops the old memory constraint, after which
+processes still running a release from before the partition fail every
+`remember()` and first `LearningMemory.capture()`. Finish the rollout before
+old processes serve traffic again. There is no in-place rollback: putting the
+old constraint back would let the old release read and reinforce
+tenant-owned memory without regard to its tenant, and a later re-upgrade
+would not remove it again. To roll back, restore a backup of the database
+taken before the upgrade.
 
 ### Best Practices
 

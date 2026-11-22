@@ -20,6 +20,11 @@
  */
 
 import type { DatabaseInterface } from '@happyvertical/sql';
+import { isJsonAdapterHandle } from '../native-duckdb.js';
+import {
+  CONTEXTS_GLOBAL_TENANT,
+  CONTEXTS_IDENTITY_COLUMNS,
+} from '../system/schema.js';
 import { toSafeInteger } from '../utils/safe-integer.js';
 
 /**
@@ -160,12 +165,21 @@ export interface LearningMemoryOptions {
   db: DatabaseInterface;
   /** `owner_class` the memories are filed under. */
   ownerClass: string;
-  /** `owner_id` the memories are filed under (isolates memory per owner). */
+  /**
+   * `owner_id` the memories are filed under (isolates memory per owner).
+   * Deleting an object removes the memory filed under its class and id in
+   * every tenant partition; memory owned by a scope string rather than an
+   * object should use an `ownerClass` that is not a class name.
+   */
   ownerId: string;
   /**
-   * Optional tenant id. When set it is threaded into the semantic searcher's
-   * `where` filter so embedding recall stays tenant-scoped. Keyed-context
-   * recall is already isolated by `owner_id`.
+   * Optional tenant id. It partitions keyed memory: capture and recall read
+   * and write only rows of this tenant, so two tenants using the same
+   * `ownerClass`/`ownerId` keep separate memories (#5449). Without a tenant
+   * (`undefined`, `null` or `''`) the memory uses the global partition, which
+   * a tenant-bound memory never reads. When set it is also threaded into the
+   * semantic searcher's `where` filter so embedding recall stays
+   * tenant-scoped.
    */
   tenantId?: string | null;
   /** Optional embedding search for the semantic recall arm. */
@@ -175,7 +189,6 @@ export interface LearningMemoryOptions {
 }
 
 const CONTEXTS_TABLE = '_smrt_contexts';
-const CONFLICT_COLUMNS = ['owner_class', 'owner_id', 'scope', 'key', 'version'];
 /**
  * The single `_smrt_contexts` version LearningMemory reads and writes. Kept
  * explicit so capture and recall agree on the row identity.
@@ -245,6 +258,11 @@ export class LearningMemory {
   private readonly ownerClass: string;
   private readonly ownerId: string;
   private readonly tenantId: string | null;
+  /**
+   * `_smrt_contexts.tenant_id` of this memory's partition. Part of the row
+   * identity, so every keyed read and write filters on it.
+   */
+  private readonly partition: string;
   private readonly semanticSearch?: LearningSemanticSearch;
   private readonly config: LearningMemoryConfig;
 
@@ -253,8 +271,18 @@ export class LearningMemory {
     this.ownerClass = options.ownerClass;
     this.ownerId = options.ownerId;
     this.tenantId = options.tenantId ?? null;
+    this.partition = this.tenantId || CONTEXTS_GLOBAL_TENANT;
     this.semanticSearch = options.semanticSearch;
     this.config = { ...DEFAULT_LEARNING_CONFIG, ...(options.config ?? {}) };
+  }
+
+  /**
+   * The tenant whose partition this memory reads and writes, or `null` for
+   * the global partition. Lets a caller that consumes signals on a memory's
+   * behalf check the binding first (#5449).
+   */
+  get partitionTenantId(): string | null {
+    return this.partition === CONTEXTS_GLOBAL_TENANT ? null : this.partition;
   }
 
   /** The resolved reinforcement thresholds (defaults merged with overrides). */
@@ -266,8 +294,8 @@ export class LearningMemory {
    * Recall confidence-filtered, relevant memories for a scope.
    *
    * Unions two arms:
-   * 1. **Keyed context recall** over `_smrt_contexts` — owner-scoped (and thus
-   *    tenant-isolated), filtered by the confidence floor, expiry, and optional
+   * 1. **Keyed context recall** over `_smrt_contexts` — scoped to this
+   *    memory's tenant partition and owner, filtered by the confidence floor, expiry, and optional
    *    time-decay, with hierarchical scope fallback. Surviving rows have their
    *    `last_used_at` refreshed.
    * 2. **Semantic recall** over stored embeddings (only when a searcher was
@@ -343,6 +371,7 @@ export class LearningMemory {
     const now = new Date();
 
     const existing = await this.db.get(CONTEXTS_TABLE, {
+      tenant_id: this.partition,
       owner_class: this.ownerClass,
       owner_id: this.ownerId,
       scope: episode.scope,
@@ -395,7 +424,13 @@ export class LearningMemory {
         });
       }
 
-      await this.db.update(CONTEXTS_TABLE, { id: existing.id }, data);
+      // The partition is part of the predicate: a row moved to another tenant
+      // after the lookup above (an operator reassignment keeps its id) is not
+      // this memory's any more and must not be overwritten. When nothing
+      // matched, fall through and seed this partition's memory afresh.
+      if (!(await this.updateOwnRow(existing.id, data))) {
+        return this.seed(episode, success, error, now);
+      }
 
       return {
         id: String(existing.id),
@@ -413,7 +448,19 @@ export class LearningMemory {
       };
     }
 
-    // No existing memory: seed one only if the episode provides a value.
+    return this.seed(episode, success, error, now);
+  }
+
+  /**
+   * Seed this partition's memory for an episode with no existing row. Seeds
+   * only when the episode provides a value.
+   */
+  private async seed(
+    episode: LearningEpisode,
+    success: boolean,
+    error: string | undefined,
+    now: Date,
+  ): Promise<LearningMemoryRecord | null> {
     if (episode.value === undefined) {
       return null;
     }
@@ -430,8 +477,9 @@ export class LearningMemory {
           })
         : null;
 
-    await this.db.upsert(CONTEXTS_TABLE, CONFLICT_COLUMNS, {
+    await this.db.upsert(CONTEXTS_TABLE, [...CONTEXTS_IDENTITY_COLUMNS], {
       id,
+      tenant_id: this.partition,
       owner_class: this.ownerClass,
       owner_id: this.ownerId,
       scope: episode.scope,
@@ -500,14 +548,17 @@ export class LearningMemory {
     scope: string,
     key?: string,
   ): Promise<Record<string, unknown>[]> {
-    // Row identity is (owner_class, owner_id, scope, key, version); `capture()`
-    // only ever writes version 1, so recall filters to it — otherwise a future
+    // Row identity is (tenant_id, owner_class, owner_id, scope, key, version).
+    // The tenant partition is filtered on every read so equal owner strings in
+    // two tenants never surface each other's memory (#5449). `capture()` only
+    // ever writes version 1, so recall filters to it — otherwise a future
     // multi-version write would surface stale versions here.
     if (key !== undefined) {
       const { rows } = await this.db.query(
         `SELECT * FROM ${CONTEXTS_TABLE}
-         WHERE owner_class = ? AND owner_id = ? AND scope = ? AND key = ?
-           AND version = ?`,
+         WHERE tenant_id = ? AND owner_class = ? AND owner_id = ? AND scope = ?
+           AND key = ? AND version = ?`,
+        this.partition,
         this.ownerClass,
         this.ownerId,
         scope,
@@ -518,7 +569,9 @@ export class LearningMemory {
     }
     const { rows } = await this.db.query(
       `SELECT * FROM ${CONTEXTS_TABLE}
-       WHERE owner_class = ? AND owner_id = ? AND scope = ? AND version = ?`,
+       WHERE tenant_id = ? AND owner_class = ? AND owner_id = ? AND scope = ?
+         AND version = ?`,
+      this.partition,
       this.ownerClass,
       this.ownerId,
       scope,
@@ -613,15 +666,73 @@ export class LearningMemory {
     }));
   }
 
+  /**
+   * Update a row of this partition by id; `false` when no row of this
+   * partition has that id any more.
+   *
+   * SQL engines use a raw `UPDATE … RETURNING`, which counts the match
+   * everywhere (DuckDB's `update()` always reports one row). The JSON adapter
+   * persists a table only from its own writes and enforces its read-only mode
+   * there, so it goes through `update()` and confirms the match with a
+   * partition-scoped read.
+   */
+  private async updateOwnRow(
+    id: unknown,
+    data: Record<string, unknown>,
+  ): Promise<boolean> {
+    const where = { id, tenant_id: this.partition };
+    if (isJsonAdapterHandle(this.db)) {
+      await this.db.update(CONTEXTS_TABLE, where, data);
+      return (await this.db.get(CONTEXTS_TABLE, where)) != null;
+    }
+    // Raw binds do not coerce Dates, so serialise.
+    const columns = Object.keys(data);
+    const { rows: matched } = await this.db.query(
+      `UPDATE ${CONTEXTS_TABLE}
+          SET ${columns.map((column) => `${column} = ?`).join(', ')}
+        WHERE id = ? AND tenant_id = ?
+        RETURNING id`,
+      ...columns.map((column) => {
+        const value = data[column];
+        return value instanceof Date ? value.toISOString() : value;
+      }),
+      id,
+      this.partition,
+    );
+    return matched.length > 0;
+  }
+
   private async touch(ids: string[], now: Date): Promise<void> {
     if (ids.length === 0) return;
+    // The partition is in the predicate so a row moved to another tenant since
+    // it was read is left alone.
+    if (isJsonAdapterHandle(this.db)) {
+      // Through the adapter so the JSON file keeps `last_used_at`; a
+      // read-only store refuses, which must not fail the recall.
+      try {
+        for (const id of ids) {
+          await this.db.update(
+            CONTEXTS_TABLE,
+            { id, tenant_id: this.partition },
+            { last_used_at: now },
+          );
+        }
+      } catch (error) {
+        if (!/write strategy is set to none|read-only/i.test(String(error))) {
+          throw error;
+        }
+      }
+      return;
+    }
     // Single batched UPDATE rather than one per row (avoids an N+1 on large
     // recalls). Raw parameterised queries don't coerce Date bind params the way
     // db.update() does, so serialise to ISO first.
     const placeholders = ids.map(() => '?').join(', ');
     await this.db.query(
-      `UPDATE ${CONTEXTS_TABLE} SET last_used_at = ? WHERE id IN (${placeholders})`,
+      `UPDATE ${CONTEXTS_TABLE} SET last_used_at = ?
+        WHERE tenant_id = ? AND id IN (${placeholders})`,
       now.toISOString(),
+      this.partition,
       ...ids,
     );
   }

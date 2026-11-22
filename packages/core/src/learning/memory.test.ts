@@ -511,4 +511,63 @@ describe('LearningMemory — real embedding composition', () => {
       'invoice',
     );
   });
+
+  it('keeps object and collection memory in the global partition, apart from tenant learning memory (#5449)', async () => {
+    const tenantId = '6a5b4c3d-2e1f-4a0b-9c8d-7e6f5a4b3c01';
+    const note = await collection.create({ content: 'partitioned' });
+    await note.save();
+    const episode = { scope: 'parser', key: 'invoice' };
+    const tenantMemory = (ownerId: string) =>
+      new LearningMemory({
+        db: collection.db,
+        ownerClass: 'LearningNote',
+        ownerId,
+        tenantId,
+      });
+
+    await tenantMemory(note.id as string).capture(
+      { ...episode, value: 'tenant-object' },
+      { success: true },
+    );
+    await tenantMemory('__collection__').capture(
+      { ...episode, value: 'tenant-collection' },
+      { success: true },
+    );
+
+    // Object and collection reads never see a tenant partition.
+    expect(await note.recall(episode)).toBeNull();
+    expect(await collection.recall(episode)).toBeNull();
+    expect((await note.recallAll({ scope: 'parser' })).size).toBe(0);
+    expect((await collection.recallAll({ scope: 'parser' })).size).toBe(0);
+
+    // Their writes add global rows rather than replacing the tenant ones.
+    await note.remember({ ...episode, value: 'object' });
+    await collection.remember({ ...episode, value: 'collection' });
+    expect(await note.recall(episode)).toBe('object');
+    expect(await collection.recall(episode)).toBe('collection');
+
+    // Their deletes leave the tenant partition alone.
+    await note.forget(episode);
+    await collection.forgetScope({ scope: 'parser' });
+    expect(await note.recall(episode)).toBeNull();
+    expect(await collection.recall(episode)).toBeNull();
+    const [objectHit] = await tenantMemory(note.id as string).recall(
+      episode.scope,
+      { key: episode.key },
+    );
+    expect(objectHit?.value).toBe('tenant-object');
+    const [collectionHit] = await tenantMemory('__collection__').recall(
+      episode.scope,
+      { key: episode.key },
+    );
+    expect(collectionHit?.value).toBe('tenant-collection');
+
+    // Deleting the owning object removes its memory in every partition.
+    await note.delete();
+    expect(
+      await tenantMemory(note.id as string).recall(episode.scope, {
+        key: episode.key,
+      }),
+    ).toEqual([]);
+  });
 });

@@ -5,10 +5,10 @@ description: "Agent framework for building autonomous actors in the SMRT ecosyst
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-20T00:35:42Z"
+  at: "2026-11-22T03:14:21Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:4237702881c12f769b5d4195a67e2c4e476df7c743e9cb9f8ac3cf39fbe54b2e"
+source_revision: "sha256:43f749ed665dd41fbea2ed475b4b26d18372967cb44ce085ffd05a0bf9b12873"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/agents/package.json"

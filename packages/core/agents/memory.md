@@ -3,7 +3,8 @@
 # Object memory and semantic search
 
 Context memory (`remember`, `recall`, `recallAll`, `forget`, `forgetScope`) is
-stored in `_smrt_contexts`, keyed by owner, scope, key, and version. Values have
+stored in `_smrt_contexts`, keyed by tenant partition, owner, scope, key, and
+version. Values have
 a 0–1 confidence and optional expiry metadata; `recall()` does not filter
 expired rows. Ancestor fallback is opt-in (`includeAncestors: true`) and walks
 `a/b/c → a/b → a → global`. `LearningMemory` owns outcome counters and expiry
@@ -18,6 +19,46 @@ tenant isolation still applies. Keep injected search behind the public
 `LearningMemory.capture()` reinforces successes and decays failures while
 updating outcome counters. Its tenant-isolated `recall()` applies confidence,
 expiry, time-decay, and hierarchical-scope filters and refreshes `last_used_at`.
+
+`_smrt_contexts` is partitioned by a NOT NULL `tenant_id` that is part of the
+memory identity `(tenant_id, owner_class, owner_id, scope, key, version)`
+(`uq_smrt_contexts_identity`, #5449). `''` is the global
+partition (`CONTEXTS_GLOBAL_TENANT`); it is a partition key, not a tenant FK,
+so it stays TEXT on PostgreSQL. A `LearningMemory` built with a `tenantId`
+reads and writes only that tenant's rows, so equal owner strings (a shared
+persona `memoryScope`) in two tenants are two memories; without a tenant it
+uses the global partition, and neither side falls back to the other. Object
+and collection memory always use the global partition (collection memory keys
+tenants through `owner_id`, #2365); every upsert targets
+`CONTEXTS_IDENTITY_COLUMNS`. `LearningMemory` writes (`capture()`'s update and
+recall's `last_used_at` touch) carry `tenant_id` in their predicate; a capture
+whose row moved partition after its lookup seeds afresh. Object delete
+cascades remove rows whose `owner_class` is the deleted object's class and
+`owner_id` its id, in every partition: memory owned by a scope string must use
+an `owner_class` that is not a class name (personas use `persona-scope:<class>`).
+`partitionTenantId` exposes a memory's binding so signal consumers (the
+personas `ReflectionRunner`) can check it before writing. Rows written before
+the partition existed move into the global partition in the bootstrap compatibility pass
+(PostgreSQL adds the column and drops the old inline UNIQUE; SQLite, DuckDB
+and the JSON adapter rebuild the table in one transaction that re-reads the
+shape, joining a transaction the caller already owns): they stay readable only
+without a tenant and are never attributed to one implicitly. Starters in one
+process queue on core's write queue; across processes the libsql adapter waits
+for the lock, while the sqlite-native adapter's deferred BEGIN makes a second
+process fail its start with SQLITE_BUSY without writing (restart it). A
+populated legacy table on a handle without `transaction()` is refused with
+`SystemTableRebuildError` before any DDL. Only the JSON adapter
+(`isJsonAdapterHandle`) gets its files rewritten after the rebuild; native
+DuckDB's export directory is never written. On the JSON adapter
+`LearningMemory` writes go through the adapter API so they persist and honour
+read-only stores. An operator who can establish a row's tenant moves it with
+an explicit `UPDATE _smrt_contexts SET tenant_id = …`. On PostgreSQL, once
+the first upgraded process drops the old constraint, older processes fail
+every memory upsert: do not run mixed versions. There is no in-place
+rollback: restoring the old constraint lets the old release read and
+reinforce tenant rows tenant-blind, and a re-upgrade would not drop it again
+under the new system schema stamp. Roll back only by restoring a pre-upgrade backup of
+the database.
 
 `semanticSearchIds(query, options)` and `findSimilarIdsToEmbedding(vector, options)`
 return `{ id, similarity }` without object hydration. They apply caller `where`,

@@ -8,12 +8,42 @@
 import type { DatabaseEngine } from '../schema/ddl/types.js';
 
 /**
+ * `_smrt_contexts.tenant_id` of the global memory partition (#5449).
+ *
+ * The column is part of the memory identity, so it is NOT NULL and the global
+ * partition is the empty string rather than NULL: every engine then enforces
+ * the identity natively and upserts need no NULL-aware fallback. Object and
+ * collection memory (`remember()`/`recall()`) always use this partition;
+ * `LearningMemory` uses it when constructed without a tenant.
+ */
+export const CONTEXTS_GLOBAL_TENANT = '';
+
+/**
+ * Columns of the `_smrt_contexts` memory identity, in the order of
+ * `uq_smrt_contexts_identity`. Every upsert into the table targets them.
+ */
+export const CONTEXTS_IDENTITY_COLUMNS: readonly string[] = Object.freeze([
+  'tenant_id',
+  'owner_class',
+  'owner_id',
+  'scope',
+  'key',
+  'version',
+]);
+
+/**
  * Context memory storage
  * Stores remembered context (learned strategies, patterns, selectors) for reuse
+ *
+ * A memory is identified by `(tenant_id, owner_class, owner_id, scope, key,
+ * version)` (#5449): equal owner strings in two tenants are two memories.
+ * `tenant_id` is a partition key, not a tenant foreign key: `''` is the global
+ * partition ({@link CONTEXTS_GLOBAL_TENANT}), so it stays TEXT on every engine.
  */
 export const CREATE_SMRT_CONTEXTS_TABLE = `
 CREATE TABLE IF NOT EXISTS _smrt_contexts (
   id TEXT PRIMARY KEY,
+  tenant_id TEXT NOT NULL DEFAULT '',
   owner_class TEXT NOT NULL,
   owner_id TEXT NOT NULL,
   scope TEXT NOT NULL,
@@ -27,9 +57,11 @@ CREATE TABLE IF NOT EXISTS _smrt_contexts (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   last_used_at TIMESTAMP,
-  expires_at TIMESTAMP,
-  UNIQUE(owner_class, owner_id, scope, key, version)
+  expires_at TIMESTAMP
 );
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_smrt_contexts_identity
+  ON _smrt_contexts(tenant_id, owner_class, owner_id, scope, key, version);
 
 CREATE INDEX IF NOT EXISTS idx_smrt_contexts_owner
   ON _smrt_contexts(owner_class, owner_id);
@@ -1749,6 +1781,9 @@ export const RETIRED_SYSTEM_TABLES: readonly string[] = [
  * - `_smrt_run_once_claims.tenant_id`: a NOT NULL claim scope folded into the
  *   claim key; a caller without a tenant must pass a scope string, so it is a
  *   scope key, not a tenant FK;
+ * - `_smrt_contexts.tenant_id`: a NOT NULL memory partition key in the
+ *   memory identity, `''` for the global partition (#5449), and
+ *   `LearningMemory` accepts any text tenant id;
  * - `_smrt_ai_usage.tenant_id`: model usage writes tenant UUIDs, but the
  *   published external-agent usage API accepts any non-empty text tenant id,
  *   so converting it is a contract change tracked separately;

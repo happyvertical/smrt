@@ -1,10 +1,16 @@
 import type { DatabaseInterface } from '@happyvertical/sql';
-import { usesPostgresDialect } from '../embedded-write-queue.js';
+import {
+  isKnownDatabaseTransaction,
+  usesPostgresDialect,
+  withEmbeddedWriteTransaction,
+} from '../embedded-write-queue.js';
+import { isJsonAdapterHandle } from '../native-duckdb.js';
 import { detectEngine } from '../schema/ddl/index.js';
 import {
   CREATE_POSTGRES_CHANGE_FEED_APPEND_FUNCTION,
   CREATE_SMRT_AI_EVALUATIONS_TABLE,
   CREATE_SMRT_AI_RUNS_TABLE,
+  CREATE_SMRT_CONTEXTS_TABLE,
   getSystemTableDDLForEngine,
   LEGACY_POSTGRES_CHANGE_FEED_APPEND_FUNCTION_IDENTITY,
 } from './schema.js';
@@ -1507,10 +1513,284 @@ export async function ensureMigrateRunsSystemTableCompatibility(
  * (issue #2376). {@link ensureDeferredSystemTableCompatibility} runs outside
  * the lock instead.
  */
+/** Columns a pre-partition `_smrt_contexts` may hold, copied by the rebuild. */
+const CONTEXTS_REBUILD_COLUMNS = [
+  'id',
+  'owner_class',
+  'owner_id',
+  'scope',
+  'key',
+  'value',
+  'metadata',
+  'version',
+  'confidence',
+  'success_count',
+  'failure_count',
+  'created_at',
+  'updated_at',
+  'last_used_at',
+  'expires_at',
+];
+
+/** The pre-partition memory identity, sorted, as its inline UNIQUE named it. */
+const LEGACY_CONTEXTS_IDENTITY = 'key,owner_class,owner_id,scope,version';
+
+/**
+ * Tenant partition of `_smrt_contexts` (#5449).
+ *
+ * The memory identity was `UNIQUE(owner_class, owner_id, scope, key, version)`,
+ * so two tenants that used the same owner string shared one memory. The
+ * tenant partition adds a NOT NULL `tenant_id` (`''` is the global partition) and makes
+ * the identity the named unique index `uq_smrt_contexts_identity`, which the
+ * DDL replay after this step creates. An existing table is reshaped once:
+ *
+ * - **PostgreSQL**: `ADD COLUMN tenant_id TEXT NOT NULL DEFAULT ''`, then the
+ *   legacy inline UNIQUE is dropped, found by its definition rather than its
+ *   generated name.
+ * - **SQLite / DuckDB**: neither can drop an inline UNIQUE, so the table is
+ *   rebuilt as `_smrt_dispatch_subscriptions` and `_smrt_ai_runs` were: create
+ *   the new shape, copy the rows, drop the old table, rename. A rebuild
+ *   interrupted after the drop is finished from the leftover
+ *   `_smrt_contexts_new`.
+ *
+ * Every existing row lands in the global partition: nothing recorded which
+ * tenant wrote it, so it stays readable only without a tenant and is never
+ * attributed to one implicitly. An operator who can establish a row's tenant
+ * may move it with an explicit `UPDATE _smrt_contexts SET tenant_id = …`.
+ * Idempotent: a table that already has `tenant_id` is left alone.
+ */
+export async function ensureContextsSystemTableCompatibility(
+  db: DatabaseInterface,
+  typeHint?: string,
+): Promise<void> {
+  const engine = getDatabaseEngine(db, typeHint);
+  // Embedded engines use catalog lookups: a failed probe statement would
+  // abort a caller-owned DuckDB transaction this bootstrap may be running in.
+  const embedded = engine === 'sqlite' || engine === 'duckdb';
+  const exists = (table: string) =>
+    embedded
+      ? embeddedTableExists(db, table)
+      : tableExists(db, table, typeHint);
+  const hasContexts = await exists('_smrt_contexts');
+  const hasRebuilt = await exists('_smrt_contexts_new');
+  if (!hasContexts && !hasRebuilt) return;
+
+  if (engine === 'postgres') {
+    if (!hasContexts) {
+      await finishContextsRebuild(db, engine);
+      return;
+    }
+    await addColumnIfMissing(
+      db,
+      '_smrt_contexts',
+      'tenant_id',
+      "TEXT NOT NULL DEFAULT ''",
+      typeHint,
+    );
+    await dropLegacyPostgresContextsIdentity(db);
+    return;
+  }
+
+  // SQLite, DuckDB, and the JSON adapter (which reports the DuckDB engine).
+  if (!embedded) {
+    return;
+  }
+  if (
+    hasContexts &&
+    !hasRebuilt &&
+    (await columnExists(db, '_smrt_contexts', 'tenant_id', typeHint))
+  ) {
+    return;
+  }
+
+  // Copy, drop and rename run as ONE transaction, and the shape is re-read
+  // inside it, so no writer can commit between the copy and the drop and no
+  // row is lost or copied twice. Starters in one process are serialised by
+  // core's embedded write queue: the second waits, then finds the finished
+  // table. Across processes, the libsql SQLite adapter begins IMMEDIATE and a
+  // second process waits for the lock; the sqlite-native adapter begins
+  // DEFERRED, so a second process that read the legacy shape fails its first
+  // write with SQLITE_BUSY and its start fails, without writing anything (a
+  // restart then finds the finished table). Inside a transaction the caller
+  // already owns (a bootstrap run on a transaction handle), the rebuild joins
+  // it, commits with it and rolls back with it.
+  const inTransaction = async <T>(
+    work: (tx: DatabaseInterface) => Promise<T>,
+  ): Promise<T> => {
+    if (isKnownDatabaseTransaction(db)) return work(db);
+    if (typeof db.transaction === 'function') {
+      return withEmbeddedWriteTransaction(db, true, work, true);
+    }
+    // A handle with no transactions may only reshape an empty legacy table:
+    // with rows in it, a write between the copy and the drop would be lost.
+    if (
+      hasContexts &&
+      Number(
+        getQueryRows(
+          await db.query('SELECT COUNT(*) AS n FROM _smrt_contexts'),
+        )[0]?.n ?? 0,
+      ) > 0
+    ) {
+      throw new SystemTableRebuildError(
+        '_smrt_contexts must be rebuilt for the tenant partition, and that ' +
+          'needs a database handle with transaction support; this handle ' +
+          'has none, so nothing was changed',
+      );
+    }
+    return work(db);
+  };
+  let joinedCallerTransaction = false;
+  const rebuilt = await inTransaction(async (tx) => {
+    // The work runs on `db` itself only inside a caller-owned transaction
+    // (or on a transactionless handle, which the JSON adapter never is).
+    joinedCallerTransaction = tx === db;
+    const stillLegacy = await embeddedTableExists(tx, '_smrt_contexts');
+    const leftover = await embeddedTableExists(tx, '_smrt_contexts_new');
+    if (!stillLegacy) {
+      // A rebuild from before this transaction existed stopped after its drop.
+      if (!leftover) return false;
+      await finishContextsRebuild(tx, engine);
+      return true;
+    }
+    if (await columnExists(tx, '_smrt_contexts', 'tenant_id', engine)) {
+      // Another starter finished the rebuild while this one waited.
+      if (leftover) await tx.query('DROP TABLE _smrt_contexts_new');
+      return false;
+    }
+
+    const legacyColumns = new Set(
+      getQueryRows(await tx.query('PRAGMA table_info(_smrt_contexts)')).map(
+        (row) => String(row.name),
+      ),
+    );
+    const copied = CONTEXTS_REBUILD_COLUMNS.filter((column) =>
+      legacyColumns.has(column),
+    ).join(', ');
+
+    if (leftover) await tx.query('DROP TABLE _smrt_contexts_new');
+    await tx.query(
+      getSystemTableDDLForEngine(
+        CREATE_SMRT_CONTEXTS_TABLE.split(';')[0] ?? '',
+        engine,
+      ).replace('_smrt_contexts', '_smrt_contexts_new'),
+    );
+    await tx.query(
+      `INSERT INTO _smrt_contexts_new (${copied})
+       SELECT ${copied} FROM _smrt_contexts`,
+    );
+    await tx.query('DROP TABLE _smrt_contexts');
+    await finishContextsRebuild(tx, engine);
+    return true;
+  });
+
+  // The JSON adapter keeps tables in DuckDB memory and writes a table's rows
+  // and DDL back to its files only on its own writes, so persist the rebuilt
+  // shape now; otherwise the next open would restore the legacy schema. Only
+  // the JSON adapter (`isJsonAdapterHandle`; it reports the DuckDB engine)
+  // owns files here: native DuckDB also has `exportTable()`, writing to an
+  // operator's export directory, and is never exported. Inside a caller's
+  // transaction the export would precede its commit, so it is left to the
+  // adapter's next own write of the table (until then a reopen repeats the
+  // rebuild from the unchanged files, losslessly).
+  const exportTable = (db as { exportTable?: (table: string) => Promise<void> })
+    .exportTable;
+  if (
+    rebuilt &&
+    !joinedCallerTransaction &&
+    isJsonAdapterHandle(db) &&
+    typeof exportTable === 'function'
+  ) {
+    try {
+      await exportTable.call(db, '_smrt_contexts');
+    } catch (error) {
+      // A read-only JSON store (`writeStrategy: 'none'`) refuses and keeps
+      // its files; the rebuild then repeats, losslessly, on each open.
+      if (!/write strategy is set to none|read-only/i.test(String(error))) {
+        throw error;
+      }
+    }
+  }
+}
+
+/**
+ * A system table needed reshaping that the given handle cannot perform
+ * safely; nothing was changed.
+ */
+export class SystemTableRebuildError extends Error {
+  override readonly name = 'SystemTableRebuildError';
+}
+
+/**
+ * Catalog lookup for an embedded engine that never raises: a failed statement
+ * aborts an open DuckDB transaction, so `tableExists()`'s probe-by-SELECT
+ * cannot be used inside one.
+ */
+async function embeddedTableExists(
+  db: DatabaseInterface,
+  tableName: string,
+): Promise<boolean> {
+  // DuckDB serves `sqlite_master` too, so one catalog query fits both engines
+  // even when the engine hint and the adapter disagree.
+  return (
+    getQueryRows(
+      await db.query(
+        `SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ? LIMIT 1`,
+        tableName,
+      ),
+    ).length > 0
+  );
+}
+
+async function finishContextsRebuild(
+  db: DatabaseInterface,
+  engine: ReturnType<typeof detectEngine>,
+): Promise<void> {
+  await db.query('ALTER TABLE _smrt_contexts_new RENAME TO _smrt_contexts');
+  if (engine === 'postgres') {
+    await db.query(
+      'ALTER INDEX IF EXISTS _smrt_contexts_new_pkey RENAME TO _smrt_contexts_pkey',
+    );
+  }
+}
+
+/**
+ * Drop the pre-partition `UNIQUE(owner_class, owner_id, scope, key, version)`
+ * constraint on PostgreSQL. Matched by its column set, so a name truncated or
+ * chosen differently is still found; a constraint that also covers
+ * `tenant_id` is not this one and is kept.
+ */
+async function dropLegacyPostgresContextsIdentity(
+  db: DatabaseInterface,
+): Promise<void> {
+  const rows = getQueryRows(
+    await db.query(
+      `SELECT con.conname::text AS name,
+              (SELECT string_agg(att.attname::text, ',' ORDER BY att.attname::text)
+                 FROM unnest(con.conkey) AS k(attnum)
+                 JOIN pg_attribute att
+                   ON att.attrelid = con.conrelid AND att.attnum = k.attnum
+              ) AS columns
+         FROM pg_constraint con
+         JOIN pg_class rel ON rel.oid = con.conrelid
+         JOIN pg_namespace ns ON ns.oid = rel.relnamespace
+        WHERE ns.nspname = current_schema()
+          AND rel.relname = '_smrt_contexts'
+          AND con.contype = 'u'`,
+    ),
+  );
+  for (const row of rows) {
+    if (row.columns !== LEGACY_CONTEXTS_IDENTITY) continue;
+    await db.query(
+      `ALTER TABLE _smrt_contexts DROP CONSTRAINT ${quotePostgresIdentifier(String(row.name))}`,
+    );
+  }
+}
+
 export async function ensureBootstrapSystemTableCompatibility(
   db: DatabaseInterface,
   typeHint?: string,
 ): Promise<void> {
+  await ensureContextsSystemTableCompatibility(db, typeHint);
   await ensureMigrateRunsSystemTableCompatibility(db, typeHint);
   await ensureDispatchSystemTableCompatibility(db, typeHint);
   await ensureDispatchSubscriptionsSystemTableCompatibility(db, typeHint);

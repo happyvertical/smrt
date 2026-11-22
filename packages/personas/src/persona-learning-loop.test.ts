@@ -16,7 +16,7 @@
 
 import { getTestDatabase } from '@happyvertical/smrt-core';
 import { clearPromptCache, PromptRegistry } from '@happyvertical/smrt-prompts';
-import { disableTenancy } from '@happyvertical/smrt-tenancy';
+import { disableTenancy, withTenant } from '@happyvertical/smrt-tenancy';
 import { PermissionCatalogService } from '@happyvertical/smrt-users';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -33,7 +33,11 @@ import {
 } from './directive-principal.js';
 import { DirectiveProposalCollection } from './directive-proposal.js';
 import { FeedbackCollection } from './feedback.js';
-import { personaLearningMemory, personaMemoryScope } from './persona-memory.js';
+import {
+  personaLearningMemory,
+  personaMemoryScope,
+  reinforceFromFeedback,
+} from './persona-memory.js';
 import {
   applyPersonaInstructions,
   ensurePersonaInstructionsPrompt,
@@ -450,6 +454,152 @@ describe('persona learning & adaptation loop (#1889)', () => {
     });
     expect(afterSecond[0].confidence).toBeCloseTo(0.6, 5);
     expect(afterSecond[0].failureCount).toBe(1);
+  });
+
+  it("reinforces only the pass tenant's signals, filtered before the limit (#5449)", async () => {
+    const persona = await createPersona('Shared', 'Base.', 'praeco:shared');
+    await applyPersonaInstructions({ persona, db });
+    const memory = personaLearningMemory({ db, persona });
+    const feedback = await FeedbackCollection.create({ db });
+    const signal = (tenantId: string, correction: string, id: string) =>
+      feedback.create({
+        tenantId,
+        personaId: persona.id,
+        agentClass: AGENT,
+        memoryScope: personaMemoryScope(persona),
+        scope: 'task',
+        key: 'k',
+        signalType: 'correction',
+        source: 'human',
+        correlationId: id,
+        correction,
+      });
+    const mine = await signal(TENANT, 'mine', 'job-mine');
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    // A child tenant inheriting the persona files a newer signal.
+    const theirs = await signal('tenant-child', 'theirs', 'job-theirs');
+
+    const runner = new ReflectionRunner({
+      db,
+      principal: reflectionPrincipal,
+      reflect: async () => null,
+    });
+    const result = await runner.run({ persona, memory, feedbackLimit: 1 });
+
+    expect(result.reinforced).toBe(1);
+    const [record] = await memory.recall('task', {
+      key: 'k',
+      minConfidence: 0,
+    });
+    expect(record?.value).toBe('mine');
+    const reloaded = await feedback.list({ where: {} });
+    const byId = new Map(reloaded.map((row) => [row.id, row]));
+    expect(byId.get(mine.id)?.reinforcedAt).toBeTruthy();
+    expect(byId.get(theirs.id)?.reinforcedAt ?? null).toBeNull();
+  });
+
+  it("refuses a memory bound to another partition than the persona's tenant (#5449)", async () => {
+    const persona = await createPersona('Bound', 'Base.', 'praeco:bound');
+    const feedback = await FeedbackCollection.create({ db });
+    const row = await feedback.create({
+      tenantId: TENANT,
+      personaId: persona.id,
+      agentClass: AGENT,
+      memoryScope: personaMemoryScope(persona),
+      scope: 'task',
+      key: 'k',
+      signalType: 'correction',
+      source: 'human',
+      correlationId: 'job-bound',
+      correction: 'value',
+    });
+    const globalMemory = personaLearningMemory({
+      db,
+      persona: { ...persona, tenantId: null, memoryScope: 'praeco:bound' },
+    });
+    const runner = new ReflectionRunner({
+      db,
+      principal: reflectionPrincipal,
+      reflect: async () => null,
+    });
+
+    await expect(runner.run({ persona, memory: globalMemory })).rejects.toThrow(
+      /bound to the persona's tenant/,
+    );
+    const [reloaded] = await feedback.list({ where: { id: row.id } });
+    expect(reloaded?.reinforcedAt ?? null).toBeNull();
+  });
+
+  it("refuses to apply a signal to another tenant's memory (#5449)", async () => {
+    const persona = await createPersona('Direct', 'Base.', 'praeco:direct');
+    const feedback = await FeedbackCollection.create({ db });
+    const signal = await feedback.create({
+      tenantId: TENANT,
+      personaId: persona.id,
+      agentClass: AGENT,
+      memoryScope: personaMemoryScope(persona),
+      scope: 'task',
+      key: 'k',
+      signalType: 'correction',
+      source: 'human',
+      correlationId: 'job-direct',
+      correction: 'tenant a text',
+    });
+    const otherTenantMemory = personaLearningMemory({
+      db,
+      persona: { ...persona, tenantId: 'tenant-b' },
+    });
+
+    await expect(
+      reinforceFromFeedback(otherTenantMemory, signal),
+    ).rejects.toThrow(/does not match/);
+    expect(
+      await otherTenantMemory.recall('task', { key: 'k', minConfidence: 0 }),
+    ).toEqual([]);
+  });
+
+  it('binds persona memory to the active tenant and refuses a conflicting persona (#5449)', async () => {
+    const shared = {
+      id: 'persona-shared',
+      tenantId: null,
+      agentClass: AGENT,
+      memoryScope: 'praeco:shared-default',
+    };
+    await withTenant({ tenantId: TENANT }, async () => {
+      const memory = personaLearningMemory({ db, persona: shared });
+      expect(memory.partitionTenantId).toBe(TENANT);
+      expect(() =>
+        personaLearningMemory({
+          db,
+          persona: { ...shared, tenantId: 'tenant-b' },
+        }),
+      ).toThrow(/another tenant/);
+    });
+    // Outside any tenant the tenantless persona keeps the global partition.
+    expect(
+      personaLearningMemory({ db, persona: shared }).partitionTenantId,
+    ).toBeNull();
+  });
+
+  it('keeps a persona memory whose scope equals a deleted object id (#5449)', async () => {
+    const victim = await createPersona('Victim', 'Base.', 'praeco:victim');
+    const owner = await createPersona('Owner', 'Base.', victim.id as string);
+    // The scope string equals the victim's id and the owner class names the
+    // victim's class: an object delete must still not reach it.
+    const memory = personaLearningMemory({
+      db,
+      persona: owner,
+      ownerClass: 'AgentPersona',
+    });
+    await memory.capture(
+      { scope: 'task', key: 'k', value: 'kept' },
+      { success: true },
+    );
+
+    await victim.delete();
+
+    const [record] = await memory.recall('task', { key: 'k' });
+    expect(record?.value).toBe('kept');
   });
 
   it('rejects a conflicting editability re-registration for a persona prompt', async () => {

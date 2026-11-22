@@ -67,6 +67,10 @@ import {
   SMRT_SERVICE_OPTION_KEYS,
   type SmrtServiceOptionKey,
 } from './service-options';
+import {
+  CONTEXTS_GLOBAL_TENANT,
+  CONTEXTS_IDENTITY_COLUMNS,
+} from './system/schema';
 import { prependSmrtSystemFields } from './system-fields';
 import { resolveDisplayLabelProjection } from './ui-metadata';
 import {
@@ -5655,10 +5659,13 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     // Postgres/DuckDB: INSERT ... ON CONFLICT ... DO UPDATE
     await this.systemDb.upsert(
       '_smrt_contexts',
-      // UNIQUE constraint: (owner_class, owner_id, scope, key, version)
-      ['owner_class', 'owner_id', 'scope', 'key', 'version'],
+      // Memory identity: (tenant_id, owner_class, owner_id, scope, key,
+      // version). Collection memory is tenant-keyed through owner_id and
+      // always lives in the global tenant_id partition (#5449).
+      [...CONTEXTS_IDENTITY_COLUMNS],
       {
         id,
+        tenant_id: CONTEXTS_GLOBAL_TENANT,
         owner_class: this._itemClass.name,
         owner_id: this.resolveCollectionMemoryOwnerId(),
         scope: options.scope,
@@ -5713,7 +5720,8 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       result = await this.systemDb.single`
         SELECT value, confidence
         FROM _smrt_contexts
-        WHERE owner_class = ${this._itemClass.name}
+        WHERE tenant_id = ${CONTEXTS_GLOBAL_TENANT}
+          AND owner_class = ${this._itemClass.name}
           AND owner_id = ${ownerId}
           AND scope = ${options.scope}
           AND key = ${options.key}
@@ -5725,7 +5733,8 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
       result = await this.systemDb.single`
         SELECT value, confidence
         FROM _smrt_contexts
-        WHERE owner_class = ${this._itemClass.name}
+        WHERE tenant_id = ${CONTEXTS_GLOBAL_TENANT}
+          AND owner_class = ${this._itemClass.name}
           AND owner_id = ${ownerId}
           AND scope = ${options.scope}
           AND key = ${options.key}
@@ -5803,9 +5812,10 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     let query = `
       SELECT key, value, confidence
       FROM _smrt_contexts
-      WHERE owner_class = ? AND owner_id = ?
+      WHERE tenant_id = ? AND owner_class = ? AND owner_id = ?
     `;
     const params: unknown[] = [
+      CONTEXTS_GLOBAL_TENANT,
       this._itemClass.name,
       this.resolveCollectionMemoryOwnerId(),
     ];
@@ -5869,7 +5879,9 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
 
     await this.systemDb.query(
       `DELETE FROM _smrt_contexts
-       WHERE owner_class = ? AND owner_id = ? AND scope = ? AND key = ?`,
+       WHERE tenant_id = ? AND owner_class = ? AND owner_id = ? AND scope = ?
+         AND key = ?`,
+      CONTEXTS_GLOBAL_TENANT,
       this._itemClass.name,
       this.resolveCollectionMemoryOwnerId(),
       options.scope,
@@ -5903,9 +5915,10 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
 
     let query = `
       DELETE FROM _smrt_contexts
-      WHERE owner_class = ? AND owner_id = ?
+      WHERE tenant_id = ? AND owner_class = ? AND owner_id = ?
     `;
     const params: unknown[] = [
+      CONTEXTS_GLOBAL_TENANT,
       this._itemClass.name,
       this.resolveCollectionMemoryOwnerId(),
     ];

@@ -20,7 +20,9 @@ import {
 
 function makeSignal(fields: Partial<Feedback>): Feedback {
   const feedback = new Feedback();
-  Object.assign(feedback, fields);
+  // A signal carries the tenant it was saved under; reinforcement only
+  // applies it to that tenant's memory (#5449).
+  Object.assign(feedback, { tenantId: 'tenant-a', ...fields });
   return feedback;
 }
 

@@ -260,13 +260,20 @@ export class Feedback extends SmrtObject {
 export class FeedbackCollection extends SmrtCollection<Feedback> {
   static readonly _itemClass = Feedback;
 
-  /** All signals for a persona, newest first. */
+  /**
+   * All signals for a persona, newest first. With `tenantId`, only that
+   * tenant's signals: tenants inheriting one persona share its id, so a pass
+   * acting for one tenant filters before `limit` is applied (#5449).
+   */
   async forPersona(
     personaId: string,
-    options: { limit?: number } = {},
+    options: { limit?: number; tenantId?: string } = {},
   ): Promise<Feedback[]> {
     return this.list({
-      where: { personaId },
+      where: {
+        personaId,
+        ...(options.tenantId ? { tenantId: options.tenantId } : {}),
+      },
       orderBy: 'created_at DESC',
       limit: options.limit,
     });

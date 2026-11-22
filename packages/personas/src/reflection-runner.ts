@@ -198,12 +198,22 @@ export class ReflectionRunner {
   async run(options: ReflectionRunOptions): Promise<ReflectionRunResult> {
     const { memory } = options;
     const persona = normalizePersona(options.persona);
+    // Signals are consumed into `memory`, so it must be bound to the tenant
+    // this pass acts for; otherwise one tenant's corrections would land in
+    // another tenant's (or the global) partition (#5449).
+    if (memory.partitionTenantId !== persona.tenantId) {
+      throw new Error(
+        "ReflectionRunner.run requires a memory bound to the persona's tenant",
+      );
+    }
     const feedbackCol = await this.feedbackCollection();
 
-    // 1. Recent feedback for the persona (optionally windowed).
+    // 1. Recent feedback for the persona and tenant (optionally windowed).
+    //    The tenant filter runs in the query, before the limit.
     const feedbackLimit = options.feedbackLimit ?? 50;
     let feedback = await feedbackCol.forPersona(persona.id, {
       limit: feedbackLimit,
+      tenantId: persona.tenantId,
     });
     if (options.lookbackMs != null) {
       const cutoff = this.now().getTime() - options.lookbackMs;

@@ -115,6 +115,10 @@ import {
 } from './sync-tombstones';
 import type { AiRunContext } from './system/ai-run-calls';
 import {
+  CONTEXTS_GLOBAL_TENANT,
+  CONTEXTS_IDENTITY_COLUMNS,
+} from './system/schema';
+import {
   executeToolCall as executeToolCallInternal,
   type ToolCall,
   type ToolCallResult,
@@ -7497,6 +7501,9 @@ export class SmrtObject extends SmrtClass {
    * Context entries are keyed by `(owner_class, owner_id, scope, key, version)` and
    * support an optional `confidence` score (0–1, default 1.0) for learned patterns.
    * Calling `remember()` with the same scope+key upserts the existing entry.
+   * Object memory lives in the global `_smrt_contexts` partition; tenant-bound
+   * `LearningMemory` rows of the same owner are not read, replaced or deleted
+   * by these methods (#5449).
    *
    * Requires `initialize()` to have been called (needs `this.systemDb`).
    *
@@ -7553,9 +7560,10 @@ export class SmrtObject extends SmrtClass {
 
     await this.systemDb.upsert(
       '_smrt_contexts',
-      ['owner_class', 'owner_id', 'scope', 'key', 'version'],
+      [...CONTEXTS_IDENTITY_COLUMNS],
       {
         id,
+        tenant_id: CONTEXTS_GLOBAL_TENANT,
         owner_class: this._className,
         owner_id: this.id,
         scope: options.scope,
@@ -7622,7 +7630,8 @@ export class SmrtObject extends SmrtClass {
       result = await this.systemDb.single`
         SELECT value, confidence
         FROM _smrt_contexts
-        WHERE owner_class = ${this._className}
+        WHERE tenant_id = ${CONTEXTS_GLOBAL_TENANT}
+          AND owner_class = ${this._className}
           AND owner_id = ${this.id}
           AND scope = ${options.scope}
           AND key = ${options.key}
@@ -7634,7 +7643,8 @@ export class SmrtObject extends SmrtClass {
       result = await this.systemDb.single`
         SELECT value, confidence
         FROM _smrt_contexts
-        WHERE owner_class = ${this._className}
+        WHERE tenant_id = ${CONTEXTS_GLOBAL_TENANT}
+          AND owner_class = ${this._className}
           AND owner_id = ${this.id}
           AND scope = ${options.scope}
           AND key = ${options.key}
@@ -7725,6 +7735,7 @@ export class SmrtObject extends SmrtClass {
 
     // Build where clause for db.list()
     const where: Record<string, unknown> = {
+      tenant_id: CONTEXTS_GLOBAL_TENANT,
       owner_class: this._className,
       owner_id: this.id,
     };
@@ -7788,6 +7799,7 @@ export class SmrtObject extends SmrtClass {
     }
 
     await this.systemDb.delete('_smrt_contexts', {
+      tenant_id: CONTEXTS_GLOBAL_TENANT,
       owner_class: this._className,
       owner_id: this.id,
       scope: options.scope,
@@ -7829,6 +7841,7 @@ export class SmrtObject extends SmrtClass {
 
     // Build where clause for db.delete()
     const where: Record<string, unknown> = {
+      tenant_id: CONTEXTS_GLOBAL_TENANT,
       owner_class: this._className,
       owner_id: this.id,
     };

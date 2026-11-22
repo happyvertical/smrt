@@ -132,9 +132,13 @@ export async function captureChatFeedback(
   if (options.reinforce !== false) {
     // LearningMemory operates on a resolved DB handle; core's `resolveDatabase`
     // accepts a config or a handle and returns a handle (identity for a handle).
+    // Reinforce the partition of the tenant the saved feedback row belongs to
+    // (the save fills it from the active tenant when the persona has none),
+    // so a tenant's signal never lands in the global partition (#5449).
     const memory = personaLearningMemory({
       db: await resolveDatabase(options.db ?? {}),
       persona: options.persona,
+      tenantId: feedback.tenantId || null,
       semanticSearch: options.semanticSearch,
     });
     reinforced = await reinforceFromFeedback(memory, feedback, {

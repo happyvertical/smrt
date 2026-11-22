@@ -27,6 +27,7 @@ import {
   smrt,
 } from '@happyvertical/smrt-core';
 import { personaLearningMemory } from '@happyvertical/smrt-personas';
+import { withTenant } from '@happyvertical/smrt-tenancy';
 import {
   MembershipCollection,
   PermissionCollection,
@@ -47,6 +48,7 @@ import type { ChatMessage } from './models/ChatMessage.js';
 import {
   bindPersonaToSession,
   type ConversationPersona,
+  recallPersonaMemory,
   runPersonaConversationTurn,
 } from './persona-conversation.js';
 import { ChatService } from './services/index.js';
@@ -258,6 +260,115 @@ describe('persona-bound conversation', () => {
         recall: false,
       }),
     ).rejects.toThrow(/run-as user/);
+  });
+
+  it('refuses a persona owned by another tenant before reading its memory (#5449)', async () => {
+    const foreign: ConversationPersona = {
+      ...persona,
+      tenantId: '9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d',
+    };
+    await personaLearningMemory({ db, persona: foreign }).capture(
+      { scope: 'chat', key: 'style', value: 'other tenant strategy' },
+      { success: true },
+    );
+    const { ai, captured } = makeAI(
+      () => ({ content: 'x', finishReason: 'stop' }) as AIResponse,
+    );
+    await expect(
+      runPersonaConversationTurn({
+        ai,
+        db,
+        persona: foreign,
+        tenantId,
+        userMessage: 'hi',
+        recall: { scope: 'chat', key: 'style' },
+      }),
+    ).rejects.toThrow(/another tenant/);
+    expect(captured).toHaveLength(0);
+  });
+
+  it("recalls a tenantless persona's memory from the turn tenant's partition, never the global one (#5449)", async () => {
+    const shared: ConversationPersona = { ...persona, tenantId: null };
+    await personaLearningMemory({ db, persona: shared }).capture(
+      { scope: 'chat', key: 'style', value: 'global strategy' },
+      { success: true },
+    );
+    await personaLearningMemory({ db, persona: shared, tenantId }).capture(
+      { scope: 'chat', key: 'style', value: 'this tenant strategy' },
+      { success: true },
+    );
+    const { ai, captured } = makeAI(
+      () => ({ content: 'ok', finishReason: 'stop' }) as AIResponse,
+    );
+
+    const turn = await runPersonaConversationTurn({
+      ai,
+      db,
+      persona: shared,
+      tenantId,
+      userMessage: 'hi',
+      recall: { scope: 'chat', key: 'style' },
+    });
+
+    expect(turn.recalled.map((record) => record.value)).toEqual([
+      'this tenant strategy',
+    ]);
+    const system = captured[0]?.messages.find((m) => m.role === 'system');
+    expect(String(system?.content)).not.toContain('global strategy');
+  });
+
+  it("runs a tenantless persona's tools within the turn tenant (#5449)", async () => {
+    const shared: ConversationPersona = { ...persona, tenantId: null };
+    const { ai } = makeAI((call, offered) =>
+      call === 0 && offered
+        ? toolCall('conv_notes.create', { title: 'Shared note', tenantId })
+        : ({ content: 'done', finishReason: 'stop' } as AIResponse),
+    );
+    const audits: PrincipalAuditEntry[] = [];
+
+    await runPersonaConversationTurn({
+      ai,
+      db,
+      persona: shared,
+      tenantId,
+      userMessage: 'add a note',
+      recall: false,
+      audit: (entry) => {
+        audits.push(entry);
+      },
+    });
+
+    expect(audits.length).toBeGreaterThan(0);
+    expect(audits.every((entry) => entry.tenantId === tenantId)).toBe(true);
+  });
+
+  it('binds a direct recall to the active tenant and refuses a persona of another tenant (#5449)', async () => {
+    const shared: ConversationPersona = { ...persona, tenantId: null };
+    await personaLearningMemory({ db, persona: shared }).capture(
+      { scope: 'chat', key: 'style', value: 'global strategy' },
+      { success: true },
+    );
+    await personaLearningMemory({ db, persona: shared, tenantId }).capture(
+      { scope: 'chat', key: 'style', value: 'this tenant strategy' },
+      { success: true },
+    );
+
+    await withTenant({ tenantId }, async () => {
+      const recalled = await recallPersonaMemory(db, shared, {
+        scope: 'chat',
+        key: 'style',
+      });
+      expect(recalled.map((record) => record.value)).toEqual([
+        'this tenant strategy',
+      ]);
+      await expect(
+        recallPersonaMemory(
+          db,
+          { ...shared, tenantId: '9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d' },
+          { scope: 'chat', key: 'style' },
+        ),
+      ).rejects.toThrow(/another tenant/);
+    });
   });
 
   it('does not duplicate the instruction block already on the session prompt', async () => {

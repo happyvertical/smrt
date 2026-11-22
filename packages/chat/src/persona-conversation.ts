@@ -149,6 +149,14 @@ export interface PersonaRecallOptions {
   minConfidence?: number;
   /** Optional embedding search for the semantic recall arm. */
   semanticSearch?: LearningSemanticSearch;
+  /**
+   * Tenant the recall serves (#5449). Selects the memory partition: a
+   * tenantless persona recalls this tenant's memory, never the global
+   * partition, and a persona of another tenant is refused. Omitted, the
+   * active tenant context (if any) binds the recall the same way.
+   * {@link runPersonaConversationTurn} always sets it to the turn's tenant.
+   */
+  tenantId?: string | null;
 }
 
 /**
@@ -171,6 +179,7 @@ export async function recallPersonaMemory(
   const memory = personaLearningMemory({
     db: await resolveDatabase(db ?? {}),
     persona,
+    tenantId: options.tenantId ?? null,
     semanticSearch: options.semanticSearch,
   });
   return memory.recall(options.scope ?? 'chat', {
@@ -409,12 +418,25 @@ export async function runPersonaConversationTurn(
         '(runAsUserId); an unbound/default persona cannot operate the app.',
     );
   }
+  // The turn's tenant is the authority (#5449): a persona owned by another
+  // tenant is refused before its memory or tools are touched. A tenantless
+  // (default) persona serves this tenant, and its memory is recalled from
+  // this tenant's partition, never the global one.
+  if (persona.tenantId && persona.tenantId !== tenantId) {
+    throw new Error(
+      'runPersonaConversationTurn: the persona belongs to another tenant ' +
+        'than the turn',
+    );
+  }
   const correlationId = options.correlationId ?? crypto.randomUUID();
 
   const recalled =
     options.recall === false
       ? []
-      : await recallPersonaMemory(db, persona, options.recall ?? {});
+      : await recallPersonaMemory(db, persona, {
+          ...(options.recall ?? {}),
+          tenantId,
+        });
 
   const instructions = await resolveConversationInstructions(db, persona);
   const memoryBlock = formatRecalledMemory(recalled);
@@ -449,7 +471,10 @@ export async function runPersonaConversationTurn(
     messages,
     tools,
     extraTools,
-    principal: principalBindingFor(persona),
+    // Tools run within the turn's tenant, the same one recall used: a
+    // tenantless (default) persona would otherwise bind a null tenant, and
+    // tool exposure and audit would fall back to global settings (#5449).
+    principal: { ...principalBindingFor(persona), tenantId },
     db,
     maxSteps: options.maxSteps,
     ...(options.maxRepeatedCalls !== undefined

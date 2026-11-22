@@ -73,7 +73,16 @@ below). `ExecuteAsPrincipal` remains a separate issue (#1888).
   instructions owns the call and its tier.
 - **Memory scoping** (`persona-memory.ts`): `personaLearningMemory` routes a
   `LearningMemory` by the persona's `memoryScope` (used as `owner_id`), so
-  personas learn independently. `reinforceFromFeedback` applies a `Feedback`
+  personas learn independently, under `owner_class`
+  `persona-scope:<agentClass>` so an object delete never reaches a scope that
+  equals an object id. The tenant partition is `personaMemoryTenant()`: the
+  caller's `tenantId` (turn, saved feedback row, reflection pass) or else the
+  active tenant context wins, so a tenantless default persona learns per
+  tenant, and any disagreement between the caller, active and persona tenant
+  is refused (core #5449). `reinforceFromFeedback` refuses a signal whose
+  tenant differs from the memory's `partitionTenantId`. `ReflectionRunner` reads feedback filtered by
+  the persona's tenant before its limit and refuses a memory bound elsewhere
+  (`LearningMemory.partitionTenantId`). `reinforceFromFeedback` applies a `Feedback`
   signal to memory as automatic, confidence-only reinforcement (ungated).
 - **ReflectionRunner** (`reflection-runner.ts`): a schedulable pass that, under
   the autonomous reflection principal (which **lacks**

@@ -178,6 +178,31 @@ CREATE TABLE _smrt_ai_usage (
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 )`;
 
+/**
+ * `_smrt_contexts` before #5449: no `tenant_id`, and the tenant-blind inline
+ * `UNIQUE(owner_class, owner_id, scope, key, version)` identity that the
+ * compatibility pass has to rebuild away.
+ */
+const LEGACY_CONTEXTS_TABLE = `
+CREATE TABLE _smrt_contexts (
+  id TEXT PRIMARY KEY,
+  owner_class TEXT NOT NULL,
+  owner_id TEXT NOT NULL,
+  scope TEXT NOT NULL,
+  key TEXT NOT NULL,
+  value TEXT,
+  metadata TEXT,
+  version INTEGER DEFAULT 1,
+  confidence REAL DEFAULT 1.0,
+  success_count INTEGER DEFAULT 0,
+  failure_count INTEGER DEFAULT 0,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  last_used_at TIMESTAMP,
+  expires_at TIMESTAMP,
+  UNIQUE(owner_class, owner_id, scope, key, version)
+)`;
+
 // ============================================================================
 // Tests
 // ============================================================================
@@ -201,6 +226,11 @@ describe('system schema evolution (issue #2376)', () => {
         `INSERT INTO _smrt_ai_usage (id, provider, model, operation, duration, tags)
          VALUES ('usage-1', 'openai', 'gpt-4o', 'chat', 5, '{"promptKey":"legacy.key"}')`,
       );
+      await upgraded.query(LEGACY_CONTEXTS_TABLE);
+      await upgraded.query(
+        `INSERT INTO _smrt_contexts (id, owner_class, owner_id, scope, key, value)
+         VALUES ('ctx-1', 'Learner', 'owner', 'parser', 'invoice', '"legacy"')`,
+      );
       await bootstrap(upgraded);
       const upgradedShape = await readSystemShape(upgraded);
 
@@ -217,6 +247,14 @@ describe('system schema evolution (issue #2376)', () => {
         'SELECT id FROM _smrt_dispatch_subscriptions',
       );
       expect(rows.rows).toHaveLength(1);
+
+      // #5449: rebuilt with its rows, each in the global partition.
+      const contexts = await upgraded.query(
+        'SELECT id, tenant_id, value FROM _smrt_contexts',
+      );
+      expect(contexts.rows).toEqual([
+        { id: 'ctx-1', tenant_id: '', value: '"legacy"' },
+      ]);
 
       // #4751: the new columns arrive NULL; no backfill, tags keep the copy.
       const usage = await upgraded.query(
@@ -283,6 +321,7 @@ describe('system schema evolution (issue #2376)', () => {
       await upgraded.query(LEGACY_DISPATCH_TABLE);
       await upgraded.query(LEGACY_DISPATCH_SUBSCRIPTIONS_TABLE);
       await upgraded.query(LEGACY_AI_USAGE_TABLE);
+      await upgraded.query(LEGACY_CONTEXTS_TABLE);
       await bootstrap(upgraded);
 
       const freshReport = await checkLiveSchemaParity({

@@ -133,6 +133,28 @@ describe('chat feedback capture', () => {
     });
   });
 
+  it("reinforces the saved feedback row's tenant when the persona carries none (#5449)", async () => {
+    const { tenantId: _omitted, ...tenantless } = persona;
+    await withTenant({ tenantId: TENANT }, async () => {
+      const { feedback, reinforced } = await correctResponse({
+        db,
+        persona: tenantless,
+        correlationId: 'msg-tenantless',
+        scope: 'chat',
+        key: 'signoff',
+        correction: 'Regards,',
+      });
+      expect(feedback.tenantId).toBe(TENANT);
+      expect(reinforced).not.toBeNull();
+    });
+
+    const { rows } = await feedbacks.db.query(
+      `SELECT tenant_id, value FROM _smrt_contexts WHERE owner_id = ?`,
+      'praeco:support',
+    );
+    expect(rows).toEqual([{ tenant_id: TENANT, value: '"Regards,"' }]);
+  });
+
   it('an inline correction supersedes the stored strategy value', async () => {
     await withTenant({ tenantId: TENANT }, async () => {
       // LearningMemory needs a resolved handle; borrow the collection's.

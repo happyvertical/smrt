@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
 import type { AIClientOptions } from '@happyvertical/ai';
 import { createLogger, type Logger } from '@happyvertical/logger';
 import { sanitizeConfig } from '@happyvertical/smrt-config';
@@ -50,6 +51,15 @@ import {
 } from './learning.js';
 import type { AgentRunRecord, AgentStatusType } from './types.js';
 import type { AgentAdminRoute, AgentCreateEntry, AgentUISlots } from './ui.js';
+
+/**
+ * Learning-run queue slots held by the current async context, one per agent
+ * instance whose learning run is executing here. `live` turns false when the
+ * run ends, so work it spawned that outlives it is not treated as re-entry.
+ */
+const learningRunHolds = new AsyncLocalStorage<
+  ReadonlyArray<{ owner: object; live: boolean }>
+>();
 
 /**
  * Agent constructor options
@@ -413,6 +423,40 @@ export abstract class Agent extends SmrtObject {
    * permanently stick the agent in a learning-disabled state.
    */
   private _learningMemory?: LearningMemory;
+  /** Tenant the cached binding was built for; a different tenant rebuilds it. */
+  private _learningMemoryTenantId: string | null = null;
+  /** Settles when the instance's latest learning run has finished. */
+  #learningRunTail: Promise<void> = Promise.resolve();
+
+  /**
+   * How long a learning run waits on the previous run of the same instance
+   * before logging a warning (it keeps waiting: runs of one instance never
+   * overlap). A run that never settles blocks later learning runs of its
+   * instance, so give `run()` its own deadlines.
+   */
+  static learningRunWaitWarnMs = 30_000;
+
+  /** Wait for the previous learning run, warning once if it takes long. */
+  private async waitForPreviousLearningRun(previous: Promise<void>) {
+    const warnAfter = (this.constructor as typeof Agent).learningRunWaitWarnMs;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const warning = new Promise<void>((resolve) => {
+      timer = setTimeout(() => {
+        this.logger.warn(
+          `Learning run is waiting more than ${warnAfter} ms for the previous ` +
+            'run of this agent instance; runs of one instance never overlap',
+        );
+        resolve();
+      }, warnAfter);
+      (timer as { unref?: () => void }).unref?.();
+    });
+    try {
+      await Promise.race([previous, warning]);
+      await previous;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
 
   /**
    * Whether `run()` has been wrapped with the learning loop (idempotency guard).
@@ -893,7 +937,10 @@ export abstract class Agent extends SmrtObject {
    * single static-flag check), which keeps non-opted agents unchanged.
    */
   getLearningMemory(): LearningMemory | null {
-    if (this._learningMemory) {
+    // The binding fixes its tenant partition, so it is reused only while the
+    // resolved tenant is unchanged (#5449).
+    const tenantId = this.resolveLearningTenantId();
+    if (this._learningMemory && this._learningMemoryTenantId === tenantId) {
       return this._learningMemory;
     }
 
@@ -916,10 +963,11 @@ export abstract class Agent extends SmrtObject {
       db: this.systemDb,
       ownerClass: this.getAgentTypeName(),
       ownerId: this.id as string,
-      tenantId: this.resolveLearningTenantId(),
+      tenantId,
       semanticSearch: this.getLearningSemanticSearch(),
       config: resolved.memoryConfig,
     });
+    this._learningMemoryTenantId = tenantId;
     return this._learningMemory;
   }
 
@@ -943,12 +991,44 @@ export abstract class Agent extends SmrtObject {
 
     const originalRun = this.run.bind(this);
     (this as { run: () => Promise<void> }).run = async (): Promise<void> => {
+      // Learning state (`recalledMemories`, the staged episode and outcome)
+      // lives on the instance, so overlapping runs of one instance would read
+      // each other's recall and capture each other's episode into their own
+      // tenant partition. Learning runs of an instance are therefore queued:
+      // each starts after the previous one has captured (#5449).
+      //
+      // A run re-entered from inside a run of the same instance (a recursive
+      // retry, a helper calling `execute()`) would wait on itself forever, so
+      // the async context records which instances' queue slot it holds, live
+      // only while that run lasts (as core's embedded write queue does). A
+      // nested run executes inline without its own recall or capture: the
+      // outermost run owns the learning episode.
+      const held = learningRunHolds.getStore() ?? [];
+      if (held.some((hold) => hold.owner === this && hold.live)) {
+        await originalRun();
+        return;
+      }
+      const previous = this.#learningRunTail;
+      let release: () => void = () => {};
+      this.#learningRunTail = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const hold = { owner: this as object, live: true };
+      try {
+        await this.waitForPreviousLearningRun(previous);
+        await learningRunHolds.run([...held, hold], runLearningLoop);
+      } finally {
+        hold.live = false;
+        release();
+      }
+    };
+
+    const runLearningLoop = async (): Promise<void> => {
       const memory = this.getLearningMemory();
       if (!memory) {
         await originalRun();
         return;
       }
-
       // Clear per-run learning state up front so a throw in recallForRun()
       // can't leave stale recalled memories from a previous run.
       this.recalledMemories = [];
