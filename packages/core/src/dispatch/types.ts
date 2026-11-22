@@ -163,8 +163,18 @@ export interface DispatchListOptions {
  * Options for retrying failed dispatches
  */
 export interface DispatchRetryOptions {
-  /** Maximum total attempts before giving up */
+  /**
+   * Retry only rows with fewer attempts than this. Default: the row's claim
+   * budget (its stamped `max_attempts`, else the bus `maxAttempts`), so a
+   * row that could not be claimed again is not revived.
+   */
   maxAttempts?: number;
+  /**
+   * Set `attempts` back to 0 and retry rows whatever their attempt count:
+   * the explicit operator reset for rows whose claim budget is spent.
+   * Without it a retried row keeps its attempt count.
+   */
+  resetAttempts?: boolean;
   /** Only retry dispatches older than this date */
   olderThan?: Date;
   /** Only retry specific signal types */

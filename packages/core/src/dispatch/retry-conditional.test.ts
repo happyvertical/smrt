@@ -1,14 +1,15 @@
 /**
- * Conditional retry (P6 T12, T13 filter half; the `resetAttempts` half is a
- * new option and ships separately): `retry()` moves only rows
- * that are still `failed` when its write runs, applies its filters in that
- * write, and counts the rows it changed.
+ * Conditional retry (P6 T12, T13): `retry()` moves only rows that are still
+ * `failed` when its write runs, applies its filters in that write, counts
+ * the rows it changed, keeps attempts unless `resetAttempts` is passed, and
+ * clears a stale lease token.
  */
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { beforeStatement } from '../__tests__/fixtures/ai-run-test-db';
 import {
   type DispatchTestDatabase,
+  dispatchLeaseRow,
   dispatchStatus,
   dispatchTestEngines,
   insertRawDispatch,
@@ -175,5 +176,46 @@ describe.each(
 
     expect(await bus.retry({ signalTypes: ['job.run'] })).toBe(1);
     expect(await dispatchStatus(db, 'legacy-null-attempts')).toBe('pending');
+  });
+
+  it('retry keeps attempts, clears the stale lease, and reset-attempts revives exhausted rows', async () => {
+    const { bus, db } = ctx;
+    await insertRawDispatch(db, {
+      id: 'retryable',
+      type: 'job.run',
+      status: 'failed',
+      attempts: 2,
+      leaseToken: 'old-attempt',
+      claimedUntil: '2026-01-01T00:00:00.000Z',
+    });
+    await insertRawDispatch(db, {
+      id: 'exhausted',
+      type: 'job.run',
+      status: 'failed',
+      attempts: 5,
+    });
+    await insertRawDispatch(db, {
+      id: 'stamped-budget',
+      type: 'job.run',
+      status: 'failed',
+      attempts: 2,
+      maxAttempts: 2,
+    });
+
+    // Default filter: the row's claim budget (bus maxAttempts 5).
+    expect(await bus.retry()).toBe(1);
+    const revived = await dispatchLeaseRow(db, 'retryable');
+    expect(revived.status).toBe('pending');
+    expect(revived.attempts).toBe(2);
+    expect(revived.leaseToken).toBeNull();
+    expect(revived.claimedUntil).toBeNull();
+    expect(await dispatchStatus(db, 'exhausted')).toBe('failed');
+    expect(await dispatchStatus(db, 'stamped-budget')).toBe('failed');
+
+    expect(await bus.retry({ resetAttempts: true })).toBe(2);
+    const reset = await dispatchLeaseRow(db, 'exhausted');
+    expect(reset.status).toBe('pending');
+    expect(reset.attempts).toBe(0);
+    expect((await dispatchLeaseRow(db, 'stamped-budget')).attempts).toBe(0);
   });
 });

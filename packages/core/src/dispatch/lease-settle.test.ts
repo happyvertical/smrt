@@ -20,9 +20,11 @@ vi.mock('@happyvertical/logger', async (importOriginal) => {
   };
 });
 
+import { defineLeaseSettleFenceCases } from '../__tests__/fixtures/dispatch-lease-suites';
 import {
   type DispatchTestDatabase,
   dispatchStatus,
+  dispatchTestEngines,
   insertRawDispatch,
   openDispatchTestDatabase,
   rowsOf,
@@ -74,6 +76,14 @@ async function lastError(
   );
   return rows[0]?.last_error as string | null | undefined;
 }
+
+describe.each(
+  dispatchTestEngines,
+)('dispatch settle fencing on %s', (engine) => {
+  defineLeaseSettleFenceCases((options) =>
+    openDispatchTestDatabase(engine as 'sqlite', options),
+  );
+});
 
 describe('dispatch outcome-write isolation on sqlite', () => {
   let ctx: DispatchTestDatabase;
