@@ -292,32 +292,63 @@ instances and never use this path to overwrite a loaded revision.
   enabled subscription of S matches its type and either the row targets S
   or the row has no target and that subscription is `compete`. The SQL
   candidate query and the in-memory recheck use this one rule.
-- `process()` candidates (`dispatch/candidates.ts`): oldest first, NULL
-  `created_at` rows first (by id), then `(created_at, id)`, keyset-paged with
-  one sort key for ORDER BY and the cursor: `CAST(id AS TEXT)`, and
-  `created_at` by instant (the native column on PostgreSQL/PGlite, whose
-  text form follows the session `TimeZone` and is not chronological across
-  DST; the text form on SQLite/DuckDB); routing, patterns, `signalTypes` and
-  the tenant predicate apply in SQL before the page limit; `limit` caps
-  claims (default 100, also for 0; a negative `limit` means no limit).
-  Each later page re-reads the subscriber's enabled subscriptions. A row
-  that fails to hydrate is skipped with one `dispatch.malformed_row` warning
-  per call and never blocks later rows. Bind placeholders in statement-text
-  order: SQLite allocates `$n` slots by first occurrence.
+- `process()` candidates (`dispatch/candidates.ts`): phases `expired`
+  (`processing`, `claimed_until < call start`, by `(claimed_until, id)`),
+  then pending NULL `created_at` (by id), then `(created_at, id)`,
+  keyset-paged with one sort key for ORDER BY and the cursor:
+  `CAST(id AS TEXT)`, and the phase's timestamp by instant (the native
+  column on PostgreSQL/PGlite, whose text form follows the session
+  `TimeZone` and is not chronological across DST; the text form on
+  SQLite/DuckDB); routing, patterns, `signalTypes`, the claim budget and the
+  tenant predicate apply in SQL before the page limit; `limit` caps claims
+  (default 100, also for 0; a negative `limit` means no limit). Each later
+  page re-reads the subscriber's enabled subscriptions. A row that fails to
+  hydrate is skipped with one `dispatch.malformed_row` warning per call and
+  never blocks later rows. Bind placeholders in statement-text order: SQLite
+  allocates `$n` slots by first occurrence.
+- Lease (`dispatch/lease.ts`, schema 1.22.0: `lease_token`,
+  `claimed_until`, `max_attempts`): delivery is at-least-once. Every lease
+  mutation is one `UPDATE ... RETURNING`; never trust `rowCount` (DuckDB
+  over-reports). Ownership is the token alone (`lease_token = $tok AND
+  status = 'processing'`); the clock decides only reclaimability. Every
+  writer that can intervene (reclaim, sweep, retry, release) replaces or
+  NULLs the token, so a stale holder's renew/settle matches nothing. A claim
+  stamps `max_attempts = COALESCE(max_attempts, bus maxAttempts)`; caps
+  compare `COALESCE(attempts, 0) < COALESCE(max_attempts, bus max)` and
+  bound claims, not handler runs. Phase bounds are frozen at the call
+  start; a row is claimed at most once per call.
+- Heartbeat (`dispatch/lease-heartbeat.ts`): renew every `leaseMs / 3`, one
+  renewal in flight, only while the handler runs; zero rows aborts
+  `metadata.signal` (`DISPATCH_LEASE_LOST`); a renewal error never aborts.
+  On embedded engines the in-process registry of running attempts is
+  authoritative: never claim or sweep a row this process is running. Lease
+  statements run on `leaseDb ?? db`; `process()` refuses a PostgreSQL pool
+  of < 2 clients, a single connection or a transaction handle
+  (`DISPATCH_LEASE_EXECUTOR_UNSAFE`); a bus on a transaction handle still
+  emits.
+- `process()` starts with the cap sweep (`failExhaustedCandidates`): routed
+  rows at their budget (`pending`, or expired leases) become `failed` with
+  `[smrt:DISPATCH_ATTEMPTS_EXHAUSTED] ...`. Framework reasons are
+  `[smrt:CODE] detail` (`dispatch/reasons.ts`); handler text starting with
+  `[smrt:` is stored as `handler: ...`. No `dead` status.
 - `retry()` (`dispatch/retry.ts`) is one `UPDATE ... WHERE status = 'failed'
   AND <filters, tenant> RETURNING id`: it never reverts a row claimed,
-  completed or retried meanwhile, and returns the RETURNING count.
-  `maxAttempts` is `attempts < n`, so a row with NULL `attempts` is not
-  retried under it (it is without it). Never write dispatch state from
-  a stale read with the full-row `DispatchCollection.update()`.
+  completed or retried meanwhile, returns the RETURNING count, clears the
+  lease token, keeps `attempts` unless `resetAttempts`, and by default skips
+  rows at their budget. An explicit `maxAttempts` is `attempts < n`, so a
+  row with NULL `attempts` is not retried under it (the default budget
+  counts NULL as 0). `DispatchCollection.update()` refuses a leased row
+  (`DISPATCH_ROW_LEASED`); never write dispatch state from a stale read.
 - `process()` keeps handler failure and outcome-write failure apart: only a
   handler that throws records `failed` with its own error. An outcome write
-  that throws (the `completed` or the `failed` write, row serialization
-  included) is not retried and never relabels the row: it is logged as
+  that throws is not retried and never relabels the row: it is logged as
   `dispatch.settle_error` with the `outcome` it tried to record, the row
-  stays `processing` and is not counted, the batch continues, and
-  `process()` rejects only on setup errors. Recovering such a row needs the
-  lease/reclaim work (P6); until then it stays `processing`.
+  stays `processing` under its lease, is not counted, and is reclaimed after
+  expiry; the batch continues and `process()` rejects only on setup errors.
+- Gate: the lease must not be enabled (released and deployed) before the
+  agents invocation dedupe release is deployed; no option turns the lease
+  off. Deploys stop every older dispatch process first (no rolling deploy).
+  See `docs/content/dispatch.md` (upgrade).
 - Tables: `_smrt_dispatch`, `_smrt_dispatch_subscriptions`
 - Status: `pending → processing → completed` (or `failed`)
 - Tenancy (`dispatch/tenant-resolver.ts`): `emit` stamps the server-derived

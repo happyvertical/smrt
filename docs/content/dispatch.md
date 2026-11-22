@@ -148,20 +148,98 @@ pending → processing → completed
 
 **Status Values:**
 - `pending`: Waiting to be processed
-- `processing`: Currently being handled
+- `processing`: Claimed under a lease and being handled
 - `completed`: Successfully processed
-- `failed`: Handler threw an error
+- `failed`: Handler threw an error, or the bus failed the row with a
+  framework reason (`[smrt:CODE] detail` in `last_error`)
+
+## Leases and At-Least-Once Delivery
+
+`process()` claims each row under a lease: a random `lease_token` and a
+`claimed_until` expiry (`leaseMs`, default 5 minutes). While the handler
+runs, the bus renews the lease every `leaseMs / 3`. If the process stops
+(crash, deploy, a blocked event loop), the lease expires and the next
+`process()` call of an eligible subscriber claims the row again. Delivery
+is therefore **at-least-once**: handlers must be idempotent on
+`metadata.id`, and may read `metadata.attempts`.
+
+- `metadata.signal` is aborted when the attempt's lease is lost (another
+  worker reclaimed the row, or it was retried or swept). The bus cannot
+  stop a handler; one that ignores the signal may overlap the row's next
+  delivery. The outcome of a lost attempt is not recorded.
+- A holder whose lease expired but was not reclaimed still records its
+  outcome.
+- `maxAttempts` (default 5) bounds **claims** per row, not handler runs: a
+  process that stops between a claim and its handler spends one. The budget
+  is stamped on the row at its first claim. When an eligible subscriber
+  polls, a row at its budget becomes `failed` with
+  `[smrt:DISPATCH_ATTEMPTS_EXHAUSTED] ...`.
+- Lease statements must commit independently of the handler. `process()`
+  refuses (`DISPATCH_LEASE_EXECUTOR_UNSAFE`) a PostgreSQL pool of fewer
+  than two clients, a single PostgreSQL connection or a transaction handle;
+  pass a dedicated handle as `leaseDb`. A pool a handler can exhaust delays
+  renewals (each is bounded and retried); size the pool for it.
+- Clock skew between processes must stay well below `leaseMs`.
+- Pass `onStats` to `process()` to receive `DispatchProcessStats`
+  (claimed, completed, failed, leaseLost, settleErrors, renewErrors,
+  malformed, exhausted, scanRejects).
+
+```typescript
+await bus.process('Fiscus', async (payload, metadata) => {
+  // Idempotent on metadata.id; stop early when the lease is lost.
+  if (await alreadyInvoiced(metadata.id)) return;
+  await createInvoice(payload, { signal: metadata.signal });
+}, { onStats: (stats) => log.info('dispatch', stats) });
+```
+
+Framework reasons are exported: `DISPATCH_FAILURE_CODES` and
+`parseDispatchFailureReason(lastError)`. Handler error text that starts
+with `[smrt:` is stored as `handler: ...` and never parses as one.
+
+## Upgrading to the dispatch lease (schema 1.22.0)
+
+**Drain first. There is no rolling deploy.** Older processes write dispatch
+rows without the lease token and would overwrite a live lease.
+
+1. Stop every process running an older dispatch bus: workers, and anything
+   calling `retry()`, `cleanup()` or `DispatchCollection.update()`.
+2. Deploy the agents invocation dedupe release and run its migration
+   **before** enabling this release. Until that release is deployed, do
+   not enable the lease anywhere: a redelivered `agent.invoke` would run
+   paid work twice. There is no option that turns the lease off.
+3. Start the new processes. Bootstrap adds the nullable columns and the
+   `(status, created_at, id)`, `(status, claimed_until, id)` and
+   `(status, updated_at, id)` indexes. On a large PostgreSQL
+   `_smrt_dispatch`, pre-create those indexes `CONCURRENTLY` under the same
+   names (`idx_smrt_dispatch_status_created_id`,
+   `idx_smrt_dispatch_status_claimed_id`,
+   `idx_smrt_dispatch_status_updated_id`) to avoid blocking writes.
+
+Rows an older process left `processing` carry no lease and are not
+reclaimed automatically. Rows whose `attempts` already reached the budget
+become `failed` with `[smrt:DISPATCH_ATTEMPTS_EXHAUSTED]` when polled;
+revive them with `retry({ resetAttempts: true })`.
+
+Rollback: stop the new processes and wait `leaseMs` so every lease expires,
+then confirm no `processing` row has a non-NULL `lease_token` before
+starting older code; release any that remain to `pending` first. Older code
+ignores the extra columns.
 
 ## Retry Failed Dispatches
 
 ```typescript
-// Retry failed dispatches (up to 3 attempts)
-const count = await bus.retry({ maxAttempts: 3 });
+// Retry failed rows whose claim budget is not spent
+const count = await bus.retry();
 console.log(`Reset ${count} dispatches for retry`);
+
+// Revive rows whose budget is spent (attempts back to 0)
+await bus.retry({ resetAttempts: true });
 
 // Then process again
 await bus.process('Fiscus', handler);
 ```
+
+A retried row keeps its attempt count unless `resetAttempts` is passed.
 
 ## Cleanup Old Dispatches
 
@@ -296,11 +374,14 @@ Stores dispatch messages:
 | source_id | TEXT | Optional instance identifier |
 | payload | TEXT | JSON-encoded payload |
 | status | TEXT | pending, processing, completed, failed |
-| attempts | INTEGER | Number of processing attempts |
-| last_error | TEXT | Error message from last failure |
+| attempts | INTEGER | Number of claims |
+| last_error | TEXT | Handler error, or a framework reason `[smrt:CODE] detail` |
 | processed_at | DATETIME | When processing completed |
 | processed_by | TEXT | Subscriber that processed |
 | metadata | TEXT | JSON-encoded trace metadata |
+| lease_token | TEXT | Token of the current (or last) claim |
+| claimed_until | TIMESTAMP | Lease expiry while `processing` |
+| max_attempts | INTEGER | Claim budget, stamped at the first claim |
 
 ### `_smrt_dispatch_subscriptions`
 
@@ -367,16 +448,23 @@ const count = await bus.process(
     // Handle dispatch
   },
   {
-    limit: 100,                         // Optional: max to claim (default 100; negative = no limit)
-    signalTypes: ['campaign.completed'] // Optional: filter by type
+    limit: 100,                          // Optional: max rows claimed (default 100; negative = no limit)
+    signalTypes: ['campaign.completed'], // Optional: filter by type
+    onStats: (stats) => {},              // Optional: DispatchProcessStats
   }
 );
+// Returns the rows whose handler succeeded and whose outcome this call wrote.
 ```
 
 A handler that throws marks its dispatch `failed`. If the bus cannot record
 an outcome at all (the database write throws), the dispatch stays
-`processing`, a `dispatch.settle_error` warning is logged, and the rest of
-the batch still runs.
+`processing` under its lease (reclaimed after the lease expires), a
+`dispatch.settle_error` warning is logged, and the rest of the batch still
+runs.
+
+Bus options for the lease: `leaseMs` (default 300000, integer >= 1000),
+`maxAttempts` (default 5, integer >= 1), `leaseDb` (dedicated handle for
+renewals and outcome writes). Invalid values throw naming the option.
 
 ### bus.retry(options)
 
@@ -385,6 +473,8 @@ Retry failed dispatches.
 ```typescript
 const count = await bus.retry({
   maxAttempts: 3,                      // Only retry if under this limit
+                                       // (default: the row's claim budget)
+  resetAttempts: false,                // true: attempts back to 0, any count
   signalTypes: ['campaign.completed'] // Optional: exact types (no wildcards)
 });
 // Returns the number of rows this call moved back to pending. Rows another
