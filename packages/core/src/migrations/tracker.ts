@@ -606,6 +606,7 @@ export class MigrationTracker {
         definition.up,
         !!this.options.useConcurrentIndexes,
       );
+      deferredSessionTargets(definition.id, concurrent);
       lists.push(
         { migrationName: definition.id, statements: regular, runsFirst: true },
         { migrationName: definition.id, statements: concurrent },
@@ -830,6 +831,24 @@ export class MigrationTracker {
   }
 
   /**
+   * The split a non-atomic `postgresSafe` run gives one definition: its
+   * transaction-safe statements commit with its record, then its deferred
+   * statements run as the atomic batch's phase 2 does. `undefined` when it
+   * defers nothing. Throws, before anything runs, for a definition whose
+   * deferred statements change session settings that cannot be named.
+   */
+  private planDefinition(
+    definition: MigrationDefinition,
+  ): PlannedSplit | undefined {
+    const split = planPostgresStatements(
+      definition.up,
+      !!this.options.useConcurrentIndexes,
+    );
+    deferredSessionTargets(definition.id, split.concurrent);
+    return split.concurrent.length > 0 ? split : undefined;
+  }
+
+  /**
    * Apply a single migration
    */
   async apply(
@@ -853,10 +872,25 @@ export class MigrationTracker {
     if (!options.dryRun) await this.initialize();
     const startTime = Date.now();
     const checksum = computeChecksum(definition.up);
-    // Only an atomic batch splits a definition under the recorded-plan
-    // protocol; outside one (`plan` null) a definition runs as before.
-    const split = context.plan?.get(definition.id);
-    const routing = context.routing;
+    // Outside an atomic batch, `postgresSafe` splits each definition on its
+    // own; its retries follow the same recorded-plan protocol.
+    const sequential =
+      context.plan === null &&
+      this.dbEngine === 'postgres' &&
+      Boolean(options.postgresSafe);
+    let split = context.plan?.get(definition.id);
+    let routing = context.routing;
+    if (sequential) {
+      routing = !!this.options.useConcurrentIndexes;
+      try {
+        split = this.planDefinition(definition);
+      } catch {
+        // Nothing to check a retry against: one recorded with a phase-1
+        // marker is refused below as another plan. Any other run fails as
+        // the statements are executed, as before.
+        split = undefined;
+      }
+    }
     const force = Boolean(
       options.force || options.forceMigrations?.includes(definition.id),
     );
@@ -991,7 +1025,8 @@ export class MigrationTracker {
 
     // PostgreSQL concurrent-index mode splits this definition: the
     // transaction-safe statements run here, the CONCURRENTLY index DDL runs
-    // after the batch commits.
+    // after the batch commits (or, outside an atomic batch, right after this
+    // definition's own first half commits).
     const deferredConcurrent = (split?.concurrent.length ?? 0) > 0;
 
     // A retry of an interrupted concurrent-index migration must not re-run the
@@ -1029,6 +1064,11 @@ export class MigrationTracker {
       split?.regular ?? [],
       split?.concurrent ?? [],
     );
+    // Outside an atomic batch there is no transaction to roll a takeover
+    // back: a retry that skips phase 1 takes the record straight back to the
+    // state phase 1 leaves it in, so it never loses its marker.
+    const resumeOnly = sequential && phase1AlreadyCommitted;
+
     // Get batch number
     if (this.currentBatch === null) {
       this.currentBatch = await this.getNextBatch();
@@ -1062,10 +1102,13 @@ export class MigrationTracker {
           ? { rows: [] }
           : await db.query(
               `UPDATE _smrt_schema_migrations
-         SET status = 'running', checksum = ?, attempts = ?, error_message = NULL, batch = ?, applied_by = ?, applied_at = CURRENT_TIMESTAMP
+         SET ${resumeOnly ? "status = 'failed'" : "status = 'running'"}, checksum = ?, attempts = ?, error_message = ${resumeOnly ? '?' : 'NULL'}, batch = ?, applied_by = ?, applied_at = CURRENT_TIMESTAMP
          WHERE id = ?${fenced ? ' AND status = ? AND COALESCE(attempts, 0) = ? AND error_message IS NOT DISTINCT FROM ? RETURNING id' : ''}`,
               checksum,
               attempts,
+              ...(resumeOnly
+                ? [concurrentIndexPendingMessage(digest, notStarted)]
+                : []),
               this.currentBatch,
               hostname(),
               id,
@@ -1118,6 +1161,17 @@ export class MigrationTracker {
     }
 
     try {
+      if (sequential && split && deferredConcurrent) {
+        return await this.applySequentialSplit(definition, split, {
+          row: { id, attempts, digest, notStarted },
+          checksum,
+          // A retry that skips phase 1 already wrote its record.
+          firstHalf: resumeOnly ? null : firstHalf,
+          startTime,
+          options,
+        });
+      }
+
       // Execute the migration
       await this.executeStatements(firstHalf, options);
 
@@ -1218,6 +1272,101 @@ export class MigrationTracker {
   }
 
   /**
+   * A non-atomic `postgresSafe` run of a definition that defers statements:
+   * its first half commits together with the phase-1 marker, then its
+   * deferred statements run exactly as the atomic batch's phase 2 runs them
+   * (row lock, fenced writes, session baseline), so a failure leaves the
+   * record a retry checks like any other. Once the first half committed, a
+   * failure never takes the marker off the record.
+   */
+  private async applySequentialSplit(
+    definition: MigrationDefinition,
+    split: PlannedSplit,
+    run: {
+      row: DeferredRow;
+      checksum: string;
+      /** The first half to run with the record; `null` = already recorded. */
+      firstHalf: string[] | null;
+      startTime: number;
+      options: ApplyMigrationsOptions;
+    },
+  ): Promise<MigrationResult> {
+    const { row, checksum } = run;
+    if (run.firstHalf)
+      await this.runPostgresFirstHalf(run.firstHalf, (db) =>
+        db.query(
+          `UPDATE _smrt_schema_migrations
+           SET status = 'failed', execution_time_ms = ?, error_message = ?
+           WHERE id = ?`,
+          Date.now() - run.startTime,
+          concurrentIndexPendingMessage(row.digest, row.notStarted),
+          row.id,
+        ),
+      );
+    const phaseOne: MigrationResult = {
+      success: true,
+      applied: true,
+      skipped: false,
+      name: definition.id,
+      checksum,
+      execution_time_ms: Date.now() - run.startTime,
+    };
+    try {
+      const [result] = await this.applyDeferredConcurrentIndexes(
+        [phaseOne],
+        new Map([[definition.id, split]]),
+        new Map([[definition.id, row]]),
+        { ...run.options, onProgress: undefined, continueOnError: false },
+      );
+      return result ?? phaseOne;
+    } catch (error) {
+      // The record still carries the marker phase 1 wrote.
+      return {
+        ...phaseOne,
+        success: false,
+        applied: false,
+        error: error instanceof Error ? error : new Error(String(error)),
+      };
+    }
+  }
+
+  /**
+   * Run statements in one PostgreSQL transaction bounded by the tracker's
+   * timeouts, with `record` (the migration's status write) in the same
+   * transaction when given.
+   */
+  private async runPostgresFirstHalf(
+    statements: string[],
+    record?: (db: DatabaseInterface) => Promise<unknown>,
+  ): Promise<void> {
+    if (!this.db.transaction) {
+      for (const sql of statements)
+        await runRetireAwareStatement(
+          (statement) => this.db.query(statement),
+          this.dbEngine,
+          sql,
+        );
+      await record?.(this.db);
+      return;
+    }
+    await this.db.transaction(async (tx) => {
+      await tx.query(
+        `SET LOCAL lock_timeout = '${formatPostgresTimeout(this.options.lockTimeout)}'`,
+      );
+      await tx.query(
+        `SET LOCAL statement_timeout = '${formatPostgresTimeout(this.options.statementTimeout)}'`,
+      );
+      for (const sql of statements)
+        await runRetireAwareStatement(
+          (statement) => tx.query(statement),
+          this.dbEngine,
+          sql,
+        );
+      await record?.(tx as DatabaseInterface);
+    });
+  }
+
+  /**
    * Apply multiple migrations in order.
    *
    * On PostgreSQL the atomic path always bounds itself with
@@ -1239,7 +1388,7 @@ export class MigrationTracker {
     definitions: MigrationDefinition[],
     options: ApplyMigrationsOptions = {},
   ): Promise<MigrationResult[]> {
-    if (this.dbEngine === 'postgres' && options.postgresSafe && options.atomic)
+    if (this.dbEngine === 'postgres' && options.postgresSafe)
       assertDistinctMigrationIds(definitions);
     if (
       !options.dryRun &&
@@ -2727,33 +2876,7 @@ export class MigrationTracker {
     // is folded in there too so callers below see one merged stream.
 
     // Execute regular statements in transaction with timeouts
-    if (finalRegular.length > 0 && this.db.transaction) {
-      await this.db.transaction(async (tx) => {
-        // Set session-level timeouts
-        await tx.query(
-          `SET LOCAL lock_timeout = '${formatPostgresTimeout(this.options.lockTimeout)}'`,
-        );
-        await tx.query(
-          `SET LOCAL statement_timeout = '${formatPostgresTimeout(this.options.statementTimeout)}'`,
-        );
-
-        for (const sql of finalRegular) {
-          await runRetireAwareStatement(
-            (statement) => tx.query(statement),
-            this.dbEngine,
-            sql,
-          );
-        }
-      });
-    } else if (finalRegular.length > 0) {
-      for (const sql of finalRegular) {
-        await runRetireAwareStatement(
-          (statement) => this.db.query(statement),
-          this.dbEngine,
-          sql,
-        );
-      }
-    }
+    if (finalRegular.length > 0) await this.runPostgresFirstHalf(finalRegular);
 
     if (finalConcurrent.length === 0) {
       return;

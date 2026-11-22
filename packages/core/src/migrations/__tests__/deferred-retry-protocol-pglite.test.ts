@@ -1,9 +1,10 @@
 /**
  * The retry protocol of a `--postgres-safe` migration whose deferred phase
  * partly committed (#5325), on every path that runs one, against a real
- * PostgreSQL server (PGlite): an atomic batch lists each migration once; a
- * dry run cannot change what a concurrent run checks and creates nothing; an
- * unreadable or pre-plan record never earns a skipped first half; and the
+ * PostgreSQL server (PGlite): a batch lists each migration once; a
+ * non-atomic run records and checks its first half as the atomic batch does;
+ * a dry run cannot change what a concurrent run checks and creates nothing;
+ * an unreadable or pre-plan record never earns a skipped first half; and the
  * session is put back without clearing settings the caller set.
  *
  * Runs under `pnpm test:pglite` (and so in the PostgreSQL lane); skipped on the
@@ -154,6 +155,71 @@ describe.skipIf(process.env.SMRT_TEST_PGLITE !== '1')(
         expect(await counts()).toEqual(['a:0', 'b:0']);
         expect(await constraintExists('child_pid_fk')).toBe(false);
         expect(await row(withDataChange.id)).toBeUndefined();
+      });
+
+      it('is refused in a non-atomic run too', async () => {
+        await expect(
+          migrate([withDataChange, withDataChange], {
+            atomic: false,
+            reconcile: true,
+            continueOnError: true,
+          }),
+        ).rejects.toThrow(/more than once/);
+
+        expect(await counts()).toEqual(['a:0', 'b:0']);
+      });
+    });
+
+    describe('a non-atomic run', () => {
+      it('does not run the committed first half again on retry', async () => {
+        const def = dataThenIndex('protocol_sequential');
+        await failOnce(def, { atomic: false });
+        expect(await counts()).toEqual(['a:1', 'b:1']);
+        expect((await row(def.id))?.error_message).toMatch(
+          /^\[smrt: concurrent-index phase 1 committed\]/,
+        );
+        await fixDuplicates();
+
+        const [retry] = await migrate([def], {
+          atomic: false,
+          reconcile: true,
+        });
+
+        expect(retry?.success, errorOf(retry)).toBe(true);
+        expect(await counts()).toEqual(['a:1']);
+        expect(await indexValid('child_id_uq')).toEqual([true]);
+        expect((await row(def.id))?.status).toBe('completed');
+      });
+
+      it('records and checks a retry through the public apply as well', async () => {
+        const def = dataThenIndex('protocol_apply');
+        const [first] = [await tracker().apply(def, { postgresSafe: true })];
+        expect(first?.success).toBe(false);
+        await fixDuplicates();
+
+        const retry = await tracker().apply(def, {
+          postgresSafe: true,
+          reconcile: true,
+        });
+
+        expect(retry.success, errorOf(retry)).toBe(true);
+        expect(await counts()).toEqual(['a:1']);
+      });
+
+      it('refuses a retry whose deferred statements include a data change', async () => {
+        await failOnce(withDataChange, { atomic: false });
+        expect(await counts()).toEqual(['a:1', 'b:1']);
+        await fixDuplicates();
+
+        const [retry] = await migrate([withDataChange], {
+          atomic: false,
+          reconcile: true,
+        });
+
+        expect(retry?.success).toBe(false);
+        expect(errorOf(retry)).toContain('was not retried');
+        expect(errorOf(retry)).not.toContain(SENTINEL);
+        expect(await counts()).toEqual(['a:1']);
       });
     });
 

@@ -410,12 +410,28 @@ describe('MigrationTracker statement execution fallbacks', () => {
     const outsideTx: string[] = [];
     let txCalls = 0;
     let built = false;
+    // The phase-1 marker the first half commits with its record (#5325);
+    // the deferred half re-reads it under the row lock.
+    let marker: unknown = null;
 
     // Records which statements run inside db.transaction() vs direct db.query().
     const db: any = {
       url: 'postgres://localhost/test',
       query: async (sql: string) => {
         outsideTx.push(sql);
+        if (sql.includes('pg_try_advisory_lock'))
+          return { rows: [{ locked: true }] };
+        if (sql.includes('pg_advisory_unlock'))
+          return { rows: [{ unlocked: true }] };
+        if (sql.includes("to_regclass('_smrt_schema_migrations')"))
+          return { rows: [{ schema_name: 'public' }] };
+        if (sql.includes('session_user AS session_name'))
+          return { rows: [{ session_name: 'migrator', role_name: 'none' }] };
+        if (sql.includes('SELECT status, attempts, error_message'))
+          return {
+            rows: [{ status: 'failed', attempts: 1, error_message: marker }],
+          };
+        if (sql.includes('RETURNING id')) return { rows: [{ id: 'row' }] };
         // The tracker confirms the built index is valid on its table and is
         // the index its statement describes (after the create has run).
         if (sql.includes('AS definition'))
@@ -437,8 +453,9 @@ describe('MigrationTracker statement execution fallbacks', () => {
       transaction: async (cb: (tx: any) => Promise<unknown>) => {
         txCalls++;
         const tx = {
-          query: async (sql: string) => {
+          query: async (sql: string, ...params: unknown[]) => {
             insideTx.push(sql);
+            if (sql.includes("SET status = 'failed'")) marker = params[1];
             return { rows: [] };
           },
         };
