@@ -28,6 +28,7 @@ import {
   initialState,
   newestReplyId,
   reduce,
+  type StepDefinition,
   stopNote,
   workingStep,
 } from './reducer';
@@ -40,15 +41,15 @@ let {
   open = true,
   owner = null,
   changes = null,
-  modelLabels = {},
+  definition = { models: {} },
   onapply,
 }: {
   open?: boolean;
   owner?: OwnerProfile | null;
   /** The ONE changes state (the layout's): the reply block reads its numbers here. */
   changes?: ChangesState | null;
-  /** The app's model labels by model key: record steps say "Added 4 customers". */
-  modelLabels?: Record<string, string | undefined>;
+  /** The app's models (labels, fields): steps read like the changes cards. */
+  definition?: StepDefinition;
   /** The owner's Apply click from the block; `applyNow` is which button it was. Throws a plain message to show. */
   onapply?: (applyNow: boolean) => Promise<void>;
 } = $props();
@@ -71,7 +72,7 @@ const canSend = $derived(
     draft.trim().length > 0,
 );
 const announce = $derived(announcement(dock));
-const turns = $derived(groupTurns(dock, modelLabels));
+const turns = $derived(groupTurns(dock, definition));
 // A turn's steps line: open by the owner's choice; a failed one opens itself.
 let stepsOpen = $state<Record<string, boolean>>({});
 const lastSteps = $derived(turns.findLast((t) => t.kind === 'steps')?.id);

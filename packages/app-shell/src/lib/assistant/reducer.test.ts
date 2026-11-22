@@ -505,13 +505,13 @@ describe('one reply per turn (#5395)', () => {
       [true, "I'll look at the app first."],
       [false, 'Checked the app structure'],
       [true, 'Enabling the people model.'],
-      [false, 'Enable profiles'],
+      [false, 'Set up profiles'],
       [true, 'Profiles already have names.'],
       [false, 'Made a report'],
     ]);
     // Narration is not a step: the line counts tool phrases only, in sentence case.
     expect(steps.line).toBe(
-      'Checked the app structure · enable profiles and 1 more',
+      'Checked the app structure · set up profiles and 1 more',
     );
   });
 
@@ -606,8 +606,10 @@ describe('plain-words record steps (#5395)', () => {
       ev({ type: 'done', stop: 'complete' }),
     ]);
     const steps = groupTurns(one, {
-      customer: 'Profile',
-      order: 'Category',
+      models: {
+        customer: { label: 'Profile', fields: {} },
+        order: { label: 'Categories', fields: {} },
+      },
     })[1] as Extract<ReturnType<typeof groupTurns>[number], { kind: 'steps' }>;
     expect(steps.line).toBe('Added 2 profiles · updated 1 category');
   });
@@ -631,5 +633,62 @@ describe('plain-words record steps (#5395)', () => {
     >;
     expect(steps.failed).toBe(true);
     expect(steps.rows[0].label).toBe('A required value was missing.');
+  });
+});
+
+describe('structural steps and plural labels (#5395)', () => {
+  const def = {
+    models: {
+      order: {
+        label: 'Orders',
+        fields: { priority: { type: 'text' as const, label: 'Priority' } },
+      },
+    },
+  };
+  const step = (name: string, summary: string, id = '1'): Action[] => [
+    ev({ type: 'tool_call', id, name, args: '{}' }),
+    ev({ type: 'tool_result', id, name, ok: true, summary }),
+  ];
+  const lineOf = (actions: Action[], d = def) => {
+    const s = run([
+      { type: 'send', text: 'x' },
+      ...actions,
+      ev({ type: 'text', delta: 'ok' }),
+      ev({ type: 'done', stop: 'complete' }),
+    ]);
+    return (groupTurns(s, d)[1] as { line: string; rows: { label: string }[] })
+      .line;
+  };
+
+  it('a plural model label is never pluralised again', () => {
+    const writes = Array.from({ length: 10 }, (_, n) =>
+      step('order_create', 'Completed this action', `o${n}`),
+    ).flat();
+    expect(lineOf(writes)).toBe('Added 10 orders');
+    expect(lineOf(step('order_create', 'Completed this action'))).toBe(
+      'Added 1 order',
+    );
+  });
+
+  it('a field add reads like the changes card, in plain words', () => {
+    expect(lineOf(step('app_addfield', 'add order.priority'))).toBe(
+      'Added a Priority field to orders',
+    );
+    expect(lineOf(step('app_addfield', 'add Order.priority'))).not.toMatch(
+      /Order\.priority/,
+    );
+  });
+
+  it('a recipe enable says what was set up, with no tool verb', () => {
+    expect(
+      lineOf([
+        ...step('app_describe', 'Checked the app structure', 'a'),
+        ...step('app_enable', 'enable profiles', 'b'),
+        ...step('app_addfield', 'add order.priority', 'c'),
+      ]),
+    ).toBe('Checked the app structure · set up profiles and 1 more');
+    expect(lineOf(step('app_enable', 'enable profiles'))).toBe(
+      'Set up profiles',
+    );
   });
 });

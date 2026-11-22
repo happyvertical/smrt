@@ -315,7 +315,7 @@ it('reopens old tool chips as human lines without JSON, SQL or snapshot paths', 
     props: { open: true },
   });
   await vi.waitFor(() =>
-    expect(container.textContent).toContain('Add Product.notes'),
+    expect(container.textContent).toContain('Added a Notes field to product'),
   );
   expect(container.textContent).toContain('checked the app structure');
   for (const chip of container.querySelectorAll('.chip')) {
@@ -649,7 +649,14 @@ describe('quieter steps (#5395)', () => {
       { type: 'text', delta: 'Added them.' },
       { type: 'done', stop: 'complete' },
     ]);
-    await open({ modelLabels: { customer: 'Profile', order: 'Order' } });
+    await open({
+      definition: {
+        models: {
+          customer: { label: 'Profile', fields: {} },
+          order: { label: 'Orders', fields: {} },
+        },
+      },
+    });
     await say('Add data');
     await vi.waitFor(() =>
       expect(container.textContent).toContain('Added them.'),

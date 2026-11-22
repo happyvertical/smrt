@@ -1,7 +1,11 @@
 // The dock's state as a pure reducer: the thread, the streaming reply,
 // tool-call chips and approval cards. No DOM, no fetch.
 
-import { humanize } from '../ui/fields.ts';
+import {
+  type SummaryDefinition,
+  versionSummary,
+} from '../ui/command-summary.ts';
+import { humanize, singularLabel } from '../ui/fields.ts';
 import type {
   AssistantStatus,
   ThreadMessage,
@@ -582,8 +586,8 @@ export type TurnView = Exclude<Item, { kind: 'tool' }> | StepsView | ReportView;
 
 const PHRASES_SHOWN = 2;
 
-/** Display labels of the app's models, by model key (the layout's description). */
-export type ModelLabels = Record<string, string | undefined>;
+/** The app's models and fields, as the changes cards read them (the layout's description). */
+export type StepDefinition = SummaryDefinition;
 
 const squash = (value: string) => value.toLowerCase().replace(/[^a-z0-9]/g, '');
 const lowerFirst = (text: string) =>
@@ -609,29 +613,73 @@ const RECORD_VERB = {
 } as const;
 
 /** A record tool (`customer_create`) as what it did and to which model. */
-function recordWrite(name: string, labels: ModelLabels) {
+function recordWrite(name: string, def: StepDefinition) {
   const match = name.startsWith('app_') ? null : RECORD_WRITE.exec(name);
   if (!match) return;
   const key = match[1];
   const wanted = squash(key);
-  const found = Object.entries(labels).find(
-    ([model, label]) => label && squash(model) === wanted,
+  const found = Object.entries(def.models).find(
+    ([model, info]) => info?.label && squash(model) === wanted,
   );
-  const label = found?.[1]?.trim() || humanize(key.replace(/[._-]/g, ' '));
+  const label = found?.[1].label?.trim();
+  // The model's label is its plural ("Orders"); its singular comes from the
+  // same label. A label that does not look plural, or a key with no label,
+  // gets a regular plural only for the many form.
+  const one = label
+    ? singularLabel(label)
+    : humanize(key.replace(/[._-]/g, ' '));
+  const many = label && label !== one ? label : pluralNoun(one);
   return {
     verb: RECORD_VERB[match[2].toLowerCase() as keyof typeof RECORD_VERB],
-    noun: lowerFirst(label),
+    one: lowerFirst(one),
+    many: lowerFirst(many),
     key: `${match[2].toLowerCase() === 'remove' ? 'delete' : match[2].toLowerCase()}:${wanted}`,
   };
 }
 
-function stepRow(item: ViewItem & { kind: 'tool' }): StepRow {
+const PAST: Record<string, string> = {
+  Add: 'Added',
+  Remove: 'Removed',
+  Change: 'Changed',
+  Hide: 'Hid',
+  Rename: 'Renamed',
+  Load: 'Loaded',
+  Merge: 'Merged',
+};
+
+/**
+ * A structural step ("add Order.priority", "enable profiles") in the changes
+ * cards' words (versionSummary / commandSummary), in the past tense. Anything
+ * that is not engine grammar keeps its own words.
+ */
+function structuralPhrase(summary: string, def: StepDefinition): string {
+  const card = versionSummary(summary, def, def);
+  if (card === 'Change your app') return summary;
+  let m = /^Add field: (.+) in (.+)$/.exec(card);
+  if (m) return `Added a ${m[1]} field to ${lowerFirst(m[2])}`;
+  m = /^(Remove|Hide) field: (.+) in (.+)$/.exec(card);
+  if (m) return `${PAST[m[1]]} the ${m[2]} field in ${lowerFirst(m[3])}`;
+  m = /^Enable recipe: (.+)$/.exec(card);
+  if (m) return `Set up ${lowerFirst(m[1])}`;
+  m = /^Add model: (.+)$/.exec(card);
+  if (m) return `Added ${lowerFirst(m[1])}`;
+  m = /^(Add|Remove|Change|Hide|Rename|Load|Merge) (.+)$/.exec(card);
+  if (m) return `${PAST[m[1]]} ${lowerFirst(m[2])}`;
+  return card;
+}
+
+function stepRow(
+  item: ViewItem & { kind: 'tool' },
+  def: StepDefinition,
+): StepRow {
   const failures = 'failures' in item ? item.failures : 1;
   const label =
     item.state === 'running'
       ? stepLabel(item.name)
-      : item.summary ||
-        (item.state === 'ok' ? stepLabel(item.name) : 'This did not work.');
+      : item.state === 'ok' && item.summary
+        ? structuralPhrase(item.summary, def)
+        : item.summary ||
+          (item.state === 'ok' ? stepLabel(item.name) : 'This did not work.');
   return { id: item.id, label: upperFirst(label), state: item.state, failures };
 }
 
@@ -640,7 +688,7 @@ function stepRow(item: ViewItem & { kind: 'tool' }): StepRow {
  * ONE row in plain words from the model's label ("Added 4 customers"); the
  * narration between steps keeps its place as a row without a tick.
  */
-function stepRows(items: ViewItem[], labels: ModelLabels): StepRow[] {
+function stepRows(items: ViewItem[], def: StepDefinition): StepRow[] {
   const rows: StepRow[] = [];
   const groups = new Map<string, { row: StepRow; n: number }>();
   for (const item of items) {
@@ -655,10 +703,9 @@ function stepRows(items: ViewItem[], labels: ModelLabels): StepRow[] {
       continue;
     }
     if (item.kind !== 'tool') continue;
-    const write =
-      item.state === 'ok' ? recordWrite(item.name, labels) : undefined;
+    const write = item.state === 'ok' ? recordWrite(item.name, def) : undefined;
     if (!write) {
-      rows.push(stepRow(item));
+      rows.push(stepRow(item, def));
       continue;
     }
     const group = groups.get(write.key);
@@ -683,7 +730,7 @@ function recordPhrase(
   write: NonNullable<ReturnType<typeof recordWrite>>,
   n: number,
 ) {
-  return `${write.verb} ${n} ${n === 1 ? write.noun : pluralNoun(write.noun)}`;
+  return `${write.verb} ${n} ${n === 1 ? write.one : write.many}`;
 }
 
 /** Sentence case: the line starts with a capital, later phrases do not. */
@@ -711,7 +758,7 @@ function stepsLine(rows: StepRow[], failed: boolean): string {
  */
 export function groupTurns(
   state: DockState,
-  labels: ModelLabels = {},
+  definition: StepDefinition = { models: {} },
 ): TurnView[] {
   const items = collapseFailures(state.items);
   const out: TurnView[] = [];
@@ -737,7 +784,7 @@ export function groupTurns(
         (i) =>
           i.kind === 'tool' || (i.kind === 'assistant' && i !== finalReply),
       ),
-      labels,
+      definition,
     );
     const failed = rows.findLast((r) => !r.narration)?.state === 'error';
     const live = state.running && end === items.length;
