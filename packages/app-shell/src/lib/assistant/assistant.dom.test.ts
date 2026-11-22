@@ -649,3 +649,56 @@ describe('quieter steps (#5395)', () => {
     );
   });
 });
+
+it('a wide report shows its key columns in a table that fits, with the rest counted and Open report', async () => {
+  const col = (id: string, label: string, role: 'dimension' | 'measure') => ({
+    id,
+    label,
+    role,
+    type: role === 'measure' ? 'integer' : 'string',
+  });
+  const wide = {
+    ...result,
+    columns: [
+      col('customer', 'Customer', 'dimension'),
+      col('town', 'Town', 'dimension'),
+      col('spent', 'Money spent', 'measure'),
+      col('orders', 'Order count', 'measure'),
+      col('avg', 'Average order', 'measure'),
+    ],
+    rows: [
+      { customer: 'Maple', town: 'Eastport', spent: 5, orders: 2, avg: 3 },
+    ],
+    chart: { type: 'bar', x: 'customer', y: ['spent', 'orders'] },
+  };
+  stubTurn([
+    { type: 'tool_call', id: 'r', name: 'app_runreport', args: '{}' },
+    {
+      type: 'tool_result',
+      id: 'r',
+      name: 'app_runreport',
+      ok: true,
+      summary: 'Ran Sales',
+      report: { result: wide, href: '/reports/sales' },
+    },
+    { type: 'text', delta: 'Maple leads.' },
+    { type: 'done', stop: 'complete' },
+  ]);
+  await open();
+  await say('Top customers');
+  await vi.waitFor(() =>
+    expect(container.querySelector('table')).not.toBeNull(),
+  );
+  expect(
+    [...container.querySelectorAll('th')].map((h) => h.textContent),
+  ).toEqual(['Customer', 'Money spent', 'Order count']);
+  const group = container.querySelector('.smrt-assistant-panel__result');
+  expect(group?.textContent).toContain('2 more columns');
+  expect(group?.querySelector('a[href="/reports/sales"]')?.textContent).toBe(
+    'Open report',
+  );
+  expect(container.querySelector('[data-fit]')).not.toBeNull();
+  // the reply text comes before the table
+  const html = container.innerHTML;
+  expect(html.indexOf('Maple leads.')).toBeLessThan(html.indexOf('<table'));
+});

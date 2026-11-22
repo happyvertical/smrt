@@ -6,7 +6,7 @@ import ApprovalCard from '$lib/components/ApprovalCard.svelte';
 import { planReplyBlock, plural } from '$lib/ui/changes';
 import type { OwnerProfile } from '$lib/ui/format';
 import { ASSISTANT_STATUS_EVENT } from '$lib/ui/layout';
-import { reportCell, reportCellHref } from '$lib/ui/reports';
+import { keyColumns, reportCell, reportCellHref } from '$lib/ui/reports';
 import type { ApprovalView, ChangesState } from '$lib/ui/types';
 import {
   AssistantRequestError,
@@ -350,7 +350,18 @@ onDestroy(() => controller?.abort());
           </div>
         {/if}
       {:else if item.kind === 'report'}
-        {#if item.report}<div class="smrt-app-shell__card"><ReportResult result={item.report.result} formatCell={reportCell} cellHref={reportCellHref} />{#if item.report.href}<a href={item.report.href}>Open report</a>{/if}</div>
+        {#if item.report}
+          {@const shown = keyColumns(item.report.result)}
+          <div class="smrt-assistant-panel__result" role="group" aria-label={`Report: ${shown.result.title}`}>
+            <p class="smrt-assistant-panel__result-h">{shown.result.title}</p>
+            <ReportResult result={shown.result} fit formatCell={reportCell} cellHref={reportCellHref} />
+            {#if shown.hidden > 0 || item.report.href}
+              <p class="smrt-assistant-panel__result-f">
+                {#if shown.hidden > 0}<span class="smrt-app-shell__muted">{plural(shown.hidden, 'more column')}</span>{/if}
+                {#if item.report.href}<a href={item.report.href}>Open report</a>{/if}
+              </p>
+            {/if}
+          </div>
         {:else if item.href}<a href={item.href}>Open report</a>{/if}
       {:else if item.kind === 'changes'}
         {#if item.id === lastBlock && block}
@@ -568,6 +579,22 @@ onDestroy(() => controller?.abort());
   .smrt-assistant-panel__hint {
     margin: 0;
   }
+  .smrt-assistant-panel__result {
+    min-inline-size: 0;
+  }
+  .smrt-assistant-panel__result-h {
+    margin: 0;
+    padding: 0.55rem 0.75rem;
+  }
+  .smrt-assistant-panel__result-f {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    margin: 0;
+    padding: 0.45rem 0.75rem;
+  }
   .smrt-assistant-panel__block {
     display: grid;
     gap: 0.5rem;
@@ -675,6 +702,19 @@ onDestroy(() => controller?.abort());
     color: var(--smrt-color-primary);
     font-size: 0.875rem;
     font-weight: 600;
+  }
+  .smrt-assistant-panel__result {
+    border: var(--smrt-hairline);
+    border-radius: var(--smrt-radius-md, 0.5rem);
+    background: var(--smrt-surface-raised, transparent);
+  }
+  .smrt-assistant-panel__result-h {
+    font-size: 0.875rem;
+    font-weight: 600;
+  }
+  .smrt-assistant-panel__result-f {
+    border-block-start: var(--smrt-hairline);
+    font-size: 0.8125rem;
   }
   .smrt-assistant-panel__block {
     border: var(--smrt-hairline);

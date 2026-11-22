@@ -38,6 +38,32 @@ export function reportCell(
     value,
   );
 }
+/** Columns the chat shows: a 400px column fits three without scrolling. */
+export const CHAT_KEY_COLUMNS = 3;
+
+/**
+ * The report's key columns for the chat: the ones the report itself charts
+ * (its category and measures), else the first few, up to `max`, in result
+ * order. Rows stay whole (a reference column's label lives in a row key);
+ * only what the table shows is trimmed. `hidden` counts the rest.
+ */
+export function keyColumns(
+  result: AppReportResult,
+  max = CHAT_KEY_COLUMNS,
+): { result: AppReportResult; hidden: number } {
+  const picked = new Set(
+    [result.chart.x, ...(result.chart.y ?? [])].filter(
+      (id): id is string => typeof id === 'string',
+    ),
+  );
+  const wanted = result.columns.filter((c) => picked.has(c.id));
+  const key = (wanted.length > 0 ? wanted : result.columns).slice(0, max);
+  return {
+    result: { ...result, columns: key, chart: { type: 'table' } },
+    hidden: result.columns.length - key.length,
+  };
+}
+
 export function reportCellHref(
   column: AppReportResult['columns'][number],
   row: AppReportResult['rows'][number],
