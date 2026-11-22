@@ -2,6 +2,7 @@
 import {
   checkOldestSupportedRelease,
   checkPackagesSeen,
+  checkUnrecordedDatabaseAge,
   collectMigrateRecordInput,
   decideMigrationRun,
   decideSchemaChange,
@@ -12,6 +13,7 @@ import {
   OLDEST_SUPPORTED_RELEASE,
   packagesSeenInput,
   readLastMigrateRecord,
+  readRecordedSystemSchema,
   type SchemaChangeEngine,
 } from '@happyvertical/smrt-core';
 import {
@@ -37,6 +39,11 @@ export interface MigratePreviewReport {
   tables: string[];
   current: MigrateRecordInput;
   last: LastMigrateRecord;
+  /**
+   * With no migrate record: the highest system-table schema version stamped
+   * in the database, which dates it against the oldest supported release.
+   */
+  systemSchema: string | null;
   missingPackages: string[];
   newPackages: string[];
   decision: MigrationRunDecision<SchemaChange>;
@@ -107,6 +114,9 @@ export async function buildMigratePreview(
   const current = collectMigrateRecordInput();
   const last = await readLastMigrateRecord(db, { engineHint: engine });
   const recorded = last.state === 'recorded' ? last.record : null;
+  const systemSchema = recorded
+    ? null
+    : await readRecordedSystemSchema(db, { engineHint: engine });
   const packagesSeen = packagesSeenInput(current, last);
   const packages = checkPackagesSeen(packagesSeen);
   const decision = decideMigrationRun({
@@ -125,6 +135,7 @@ export async function buildMigratePreview(
     tables: pending.diff.added_tables.map((table) => table.tableName),
     current,
     last,
+    systemSchema,
     missingPackages: packages.unconfirmed,
     newPackages: recorded
       ? current.packages.filter((name) => !recorded.packages.includes(name))
@@ -232,6 +243,10 @@ export async function buildMigratePreview(
     );
   const age = checkOldestSupportedRelease(recorded?.release ?? null);
   if (!age.ok) report.warnings.push(age.message);
+  const unrecordedAge = recorded
+    ? null
+    : checkUnrecordedDatabaseAge(systemSchema);
+  if (unrecordedAge) report.warnings.push(unrecordedAge);
   if (current.build?.notice) report.warnings.push(current.build.notice);
   // Startup compares the build's stamp, so the doctor does too (#4929).
   const expected = current.build
@@ -360,10 +375,19 @@ export function formatMigratePreview(
     report.decision.heldBack.map((item) => item.description),
   );
   const age = checkOldestSupportedRelease(recorded?.release ?? null);
+  const unrecordedAge = recorded
+    ? null
+    : checkUnrecordedDatabaseAge(report.systemSchema);
   group(
     'Database release',
     !recorded
-      ? ['age unknown: no earlier migrate record']
+      ? [
+          unrecordedAge
+            ? `⚠️ ${unrecordedAge}`
+            : report.systemSchema
+              ? `age not proven: no earlier migrate record, and a system-table stamp (schema ${report.systemSchema}) does not date the application tables; oldest supported ${OLDEST_SUPPORTED_RELEASE}`
+              : 'age unknown: no earlier migrate record',
+        ]
       : [
           age.ok
             ? `ok: ${recorded.release}; oldest supported ${OLDEST_SUPPORTED_RELEASE}`
