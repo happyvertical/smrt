@@ -522,9 +522,6 @@ onDestroy(() => controller?.abort());
     align-self: flex-start;
     margin: 0;
     padding: 0.1rem 0;
-    border: 0;
-    background: none;
-    font: inherit;
     cursor: pointer;
   }
   .smrt-assistant-panel__markdown :global(:is(p, ul, ol, pre, table)) {
@@ -547,10 +544,6 @@ onDestroy(() => controller?.abort());
     max-inline-size: 100%;
     margin: 0;
     padding: 0.15rem 0.35rem;
-    border: 0;
-    background: none;
-    font: inherit;
-    text-align: start;
     cursor: pointer;
   }
   .smrt-assistant-panel__steplist {
@@ -611,8 +604,6 @@ onDestroy(() => controller?.abort());
     display: inline-flex;
     align-items: center;
     gap: 0.25rem;
-    border: 0;
-    font: inherit;
     cursor: pointer;
   }
   .smrt-assistant-panel__ask {
@@ -685,6 +676,19 @@ onDestroy(() => controller?.abort());
   .smrt-assistant-panel__user {
     background: var(--smrt-color-primary-container, rgb(128 128 128 / 0.2));
     color: var(--smrt-color-on-primary-container, inherit);
+  }
+  .smrt-assistant-panel__more,
+  .smrt-assistant-panel__steps,
+  .smrt-assistant-panel__q {
+    border: 0;
+    font: inherit;
+  }
+  .smrt-assistant-panel__more,
+  .smrt-assistant-panel__steps {
+    background: none;
+  }
+  .smrt-assistant-panel__steps {
+    text-align: start;
   }
   .smrt-assistant-panel__folded {
     mask-image: linear-gradient(currentColor 60%, transparent);
