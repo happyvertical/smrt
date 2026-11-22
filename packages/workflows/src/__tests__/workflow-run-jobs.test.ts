@@ -230,8 +230,10 @@ describe('workflow run jobs', () => {
       "UPDATE _smrt_ai_runs SET finished_at = '2000-01-01T00:00:00.000Z' WHERE id = $1",
       first.id,
     );
-    await pruneAiRunTrajectories(db, { maxAgeMs: 0 });
-    await pruneAiRuns(db, { maxAgeMs: 0 });
+    // Two hours on: past the hour a call's charge can still change (#5516).
+    const now = new Date(Date.now() + 2 * 60 * 60_000);
+    await pruneAiRunTrajectories(db, { maxAgeMs: 0, now });
+    await pruneAiRuns(db, { maxAgeMs: 0, now });
     expect(await getAiRun(db, first.id)).toBeNull();
     await expect(bound.start(startInput('expiring'))).rejects.toBeInstanceOf(
       WorkflowRunKeyExpiredError,
