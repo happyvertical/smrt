@@ -295,19 +295,21 @@ export class AiRunCallRoute {
     db: DatabaseInterface,
   ): Promise<boolean> {
     if (event.tags?.runId !== this.runId) return false;
-    let tenant = this.tenantId;
-    if (tenant === undefined) {
-      const row = getRows(
+    const eventTenant = event.tenantId ?? null;
+    if (this.tenantId !== undefined) return eventTenant === this.tenantId;
+    // The tenant is part of the lookup: another tenant's run is never read.
+    return (
+      getRows(
         await aiRunQuery(
           db,
-          'SELECT tenant_id FROM _smrt_ai_runs WHERE id = $1',
+          `SELECT id FROM _smrt_ai_runs WHERE id = $1 AND ${
+            eventTenant === null ? 'tenant_id IS NULL' : 'tenant_id = $2'
+          }`,
           this.runId,
+          ...(eventTenant === null ? [] : [eventTenant]),
         ),
-      )[0];
-      if (!row) return false;
-      tenant = text(row.tenant_id) ?? null;
-    }
-    return (event.tenantId ?? null) === tenant;
+      ).length > 0
+    );
   }
 
   private async applyCorrection(): Promise<void> {
@@ -387,16 +389,20 @@ export async function reconcileLateAiRunUsage(
   const runId = event.tags?.runId;
   if (typeof callId !== 'string' || typeof runId !== 'string') return false;
   if (liveRoute(callId)) return false;
+  // The tenant is part of the lookup, so another tenant's run row is never
+  // read; a null tenant matches only an untenanted run.
+  const eventTenant = event.tenantId ?? null;
   const run = getRows(
     await aiRunQuery(
       db,
-      'SELECT tenant_id FROM _smrt_ai_runs WHERE id = $1',
+      `SELECT id FROM _smrt_ai_runs WHERE id = $1 AND ${
+        eventTenant === null ? 'tenant_id IS NULL' : 'tenant_id = $2'
+      }`,
       runId,
+      ...(eventTenant === null ? [] : [eventTenant]),
     ),
   )[0];
-  if (!run || (text(run.tenant_id) ?? null) !== (event.tenantId ?? null)) {
-    return false;
-  }
+  if (!run) return false;
   const call = getRows(
     await aiRunQuery(
       db,
@@ -442,14 +448,16 @@ async function isTrackedAiRunCall(
   const rows = getRows(
     await aiRunQuery(
       db,
-      `SELECT r.tenant_id FROM _smrt_ai_run_events e
+      `SELECT e.id FROM _smrt_ai_run_events e
          JOIN _smrt_ai_runs r ON r.id = e.run_id
-        WHERE e.call_id = $1 AND e.run_id = $2 AND e.type = 'call'`,
+        WHERE e.call_id = $1 AND e.run_id = $2 AND e.type = 'call'
+          AND ${tenant === null ? 'r.tenant_id IS NULL' : 'r.tenant_id = $3'}`,
       callId,
       runId,
+      ...(tenant === null ? [] : [tenant]),
     ),
   );
-  return rows.some((row) => (text(row.tenant_id) ?? null) === tenant);
+  return rows.length > 0;
 }
 
 setAiRunLateUsageHooks({

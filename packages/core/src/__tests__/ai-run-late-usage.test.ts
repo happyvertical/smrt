@@ -23,7 +23,9 @@ vi.mock('@happyvertical/ai', async (importOriginal) => {
   return { ...actual, getAI: getAIMock };
 });
 
+import { AI_OWN_CALL_ID_TAG } from '../adapters/ai-usage.js';
 import { config } from '../config.js';
+import { reconcileLateAiRunUsage } from '../system/ai-run-late-usage.js';
 import { getAiRun } from '../system/browser';
 import { createTrackedAiClient } from '../tracked-ai-client.js';
 
@@ -221,5 +223,31 @@ describe('late usage events of tracked calls', () => {
       { reservation: 'settled_late' },
     ]);
     expect(handled).toHaveLength(1);
+  });
+
+  it('never reads another tenant run when a foreign tenant event looks it up', async () => {
+    const { db, run } = await setup();
+    const seen: Record<string, unknown>[] = [];
+    const query = db.query.bind(db) as (...a: unknown[]) => Promise<unknown>;
+    (db as { query: unknown }).query = async (...args: unknown[]) => {
+      const result = await query(...args);
+      seen.push(...rowsOf(result));
+      return result;
+    };
+    const event = {
+      provider: 'openai',
+      model: 'gpt-4o',
+      promptTokens: 5,
+      completionTokens: 7,
+      totalTokens: 12,
+      tenantId: 'tenant-two',
+      tags: { runId: run.id, [AI_OWN_CALL_ID_TAG]: 'foreign-call' },
+    } as unknown as SmrtAiUsageEvent;
+    expect(await reconcileLateAiRunUsage(event, db)).toBe(false);
+    // The lookup itself returned no row, not only the verdict.
+    expect(
+      seen.filter((row) => row.id === run.id || row.tenant_id === 'tenant-one'),
+    ).toEqual([]);
+    expect(await ledger(db)).toEqual([]);
   });
 });
