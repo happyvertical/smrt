@@ -29,7 +29,6 @@ import {
   resolveListLimit,
   resolveListOffset,
 } from '../query-bounds';
-import { readonlySetOf } from '../readonly-collections';
 import { ObjectRegistry } from '../registry';
 import { isFrameworkBaseClass } from '../registry/framework-base-classes.js';
 import type {
@@ -117,7 +116,9 @@ import {
   type APIRequestPrincipal,
   assertWriteTenant,
   customActionPermission,
+  fixedRequestPrincipal,
   normalizeRequestPrincipal,
+  type RequestPrincipal,
   type ResolvedRequestPrincipal,
   requirePermission,
   settledPrincipalOf,
@@ -312,7 +313,7 @@ export interface APIConfig {
    * {@link APIContext} principal.
    */
   onRequest?: (
-    principal: Readonly<APIRequestPrincipal> | null,
+    principal: RequestPrincipal,
     info: APIRequestInfo,
   ) => undefined | Response | Promise<undefined | Response>;
 }
@@ -321,6 +322,7 @@ export type {
   APIRequestInfo,
   APIRequestPrincipal,
   APIRequestRoute,
+  RequestPrincipal,
 } from './request-principal';
 
 /** The tenant one request acts for; see {@link APIConfig.resolveTenant}. */
@@ -941,39 +943,38 @@ export class APIGenerator {
       return {
         enforced: true,
         principal,
-        tenantId: principal?.tenantId ?? null,
-        userId: principal?.userId ?? null,
-        allowCrossTenant: principal?.allowCrossTenant ?? false,
-        authenticated: principal?.authenticated ?? false,
-        effectiveTenantId: principal?.tenantId ?? ambientTenant,
-        permissions: principal?.permissions as ReadonlySet<string> | undefined,
-        superAdminBypass: principal?.superAdminBypass === true,
+        tenantId: principal.tenantId,
+        userId: principal.userId,
+        allowCrossTenant: principal.allowCrossTenant,
+        authenticated: principal.authenticated,
+        effectiveTenantId: principal.tenantId ?? ambientTenant,
+        permissions: principal.permissions,
+        superAdminBypass: principal.superAdminBypass,
       };
     }
     const tenantId =
       typeof this.context.tenantId === 'string' && this.context.tenantId
         ? this.context.tenantId
         : null;
-    const permissions = this.context.permissions
-      ? readonlySetOf(this.context.permissions)
-      : undefined;
     const authenticated = Boolean(this.config.authMiddleware);
-    const fixed: APIRequestPrincipal = {
-      tenantId,
-      allowCrossTenant: this.context.allowCrossTenant === true,
-      authenticated,
-      ...(this.context.user?.id ? { userId: this.context.user.id } : {}),
-      ...(permissions ? { permissions } : {}),
-    };
-    return {
-      enforced: false,
-      principal: Object.freeze(fixed),
+    const fixed = fixedRequestPrincipal({
       tenantId,
       userId: this.context.user?.id ?? null,
+      authenticated,
+      allowCrossTenant: this.context.allowCrossTenant === true,
+      permissions: this.context.permissions,
+    });
+    return {
+      enforced: false,
+      principal: fixed,
+      tenantId,
+      userId: fixed.userId,
       allowCrossTenant: fixed.allowCrossTenant,
       authenticated,
       effectiveTenantId: tenantId ?? ambientTenant,
-      permissions,
+      // `undefined` keeps the read projection of a server with no fixed
+      // permissions exactly as before.
+      permissions: this.context.permissions ? fixed.permissions : undefined,
       superAdminBypass: false,
     };
   }

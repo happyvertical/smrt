@@ -23,6 +23,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { SmrtCollection } from '../collection.js';
 import { field } from '../decorators/index.js';
 import { setDispatchTenantResolver } from '../dispatch/tenant-resolver.js';
+import { normalizeRequestPrincipal } from '../generators/request-principal.js';
 import {
   type APIConfig,
   APIGenerator,
@@ -200,6 +201,180 @@ interface Rows {
   results: Array<{ status: string; reason?: string }>;
 }
 
+const SNAPSHOT_FIELDS = [
+  'tenantId',
+  'userId',
+  'authenticated',
+  'callerKind',
+  'allowCrossTenant',
+  'superAdminBypass',
+  'permissions',
+] as const;
+
+describe('the principal a host resolves is read once into a snapshot', () => {
+  const valid = {
+    tenantId: TENANT_A,
+    userId: 'user-a',
+    authenticated: true,
+    callerKind: 'user',
+    allowCrossTenant: false,
+    superAdminBypass: false,
+    permissions: ['notes.create'],
+  };
+
+  it('each own property is read exactly once', () => {
+    // Data properties.
+    const fromData = normalizeRequestPrincipal({ ...valid });
+    expect(fromData.tenantId).toBe(TENANT_A);
+    expect([...fromData.permissions]).toEqual(['notes.create']);
+
+    // Accessors: each runs once, and its first value is the one used.
+    const reads = new Map<string, number>();
+    const accessors: Record<string, unknown> = {};
+    for (const key of SNAPSHOT_FIELDS) {
+      Object.defineProperty(accessors, key, {
+        enumerable: true,
+        get() {
+          const count = (reads.get(key) ?? 0) + 1;
+          reads.set(key, count);
+          // A second read would see another tenant and a wider grant.
+          if (count > 1) {
+            if (key === 'tenantId') return TENANT_B;
+            if (key === 'allowCrossTenant') return true;
+            if (key === 'permissions') return ['notes.create', 'notes.delete'];
+          }
+          return valid[key];
+        },
+      });
+    }
+    const fromAccessors = normalizeRequestPrincipal(accessors);
+    expect(Object.fromEntries(reads)).toEqual(
+      Object.fromEntries(SNAPSHOT_FIELDS.map((key) => [key, 1])),
+    );
+    expect(fromAccessors.tenantId).toBe(TENANT_A);
+    expect(fromAccessors.allowCrossTenant).toBe(false);
+    expect([...fromAccessors.permissions]).toEqual(['notes.create']);
+
+    // A proxy: one trap per field, whatever traps it counts.
+    const traps = new Map<string, number>();
+    const count = (key: PropertyKey) => {
+      if (typeof key !== 'string') return;
+      traps.set(key, (traps.get(key) ?? 0) + 1);
+    };
+    const proxy = new Proxy(
+      { ...valid },
+      {
+        get(target, key, receiver) {
+          count(key);
+          return Reflect.get(target, key, receiver);
+        },
+        getOwnPropertyDescriptor(target, key) {
+          count(key);
+          return Reflect.getOwnPropertyDescriptor(target, key);
+        },
+        has(target, key) {
+          count(key);
+          return Reflect.has(target, key);
+        },
+      },
+    );
+    const fromProxy = normalizeRequestPrincipal(proxy);
+    expect(fromProxy.userId).toBe('user-a');
+    for (const key of SNAPSHOT_FIELDS) {
+      expect(traps.get(key) ?? 0, key).toBeLessThanOrEqual(1);
+    }
+
+    // An accessor whose first value is invalid is refused, never retried.
+    let tenantReads = 0;
+    const flaky = {
+      ...valid,
+      get tenantId() {
+        tenantReads += 1;
+        return tenantReads === 1 ? 42 : TENANT_A;
+      },
+    };
+    expect(() => normalizeRequestPrincipal(flaky)).toThrow(TypeError);
+    expect(tenantReads).toBe(1);
+  });
+
+  it('only own properties of the answer are read', () => {
+    const inherited = Object.create({
+      allowCrossTenant: true,
+      userId: 'someone-else',
+      permissions: ['notes.delete'],
+      superAdminBypass: true,
+    }) as Record<string, unknown>;
+    inherited.tenantId = TENANT_A;
+    inherited.authenticated = true;
+    const proto = Object.prototype as Record<string, unknown>;
+    proto.allowCrossTenant = true;
+    proto.permissions = ['notes.delete'];
+    try {
+      const snapshot = normalizeRequestPrincipal(inherited);
+      expect(snapshot.tenantId).toBe(TENANT_A);
+      expect(snapshot.allowCrossTenant).toBe(false);
+      expect(snapshot.superAdminBypass).toBe(false);
+      expect(snapshot.userId).toBeNull();
+      expect([...snapshot.permissions]).toEqual([]);
+    } finally {
+      delete proto.allowCrossTenant;
+      delete proto.permissions;
+    }
+  });
+
+  it('an anonymous caller is an explicit principal that is not signed in', () => {
+    for (const answer of [null, undefined]) {
+      const snapshot = normalizeRequestPrincipal(answer);
+      expect(snapshot).toMatchObject({
+        tenantId: null,
+        userId: null,
+        authenticated: false,
+        allowCrossTenant: false,
+        superAdminBypass: false,
+        requestScoped: false,
+      });
+      expect(snapshot.permissions.size).toBe(0);
+      expect(Object.isFrozen(snapshot)).toBe(true);
+      expect(Object.getPrototypeOf(snapshot)).toBeNull();
+    }
+  });
+
+  it('refuses a malformed answer and ignores an unknown field', () => {
+    const malformed: Array<[string, unknown]> = [
+      ['string permissions', { ...valid, permissions: 'notes.create' }],
+      ['non-string slug', { ...valid, permissions: [1] }],
+      ['slug with whitespace', { ...valid, permissions: ['notes create'] }],
+      ['empty tenant id', { ...valid, tenantId: '' }],
+      ['empty user id', { ...valid, userId: '' }],
+      ['oversized tenant id', { ...valid, tenantId: 'x'.repeat(1000) }],
+      [
+        'oversized permissions',
+        {
+          ...valid,
+          permissions: Array.from({ length: 5000 }, (_, i) => `a.${i}`),
+        },
+      ],
+      ['non-boolean grant', { ...valid, allowCrossTenant: 'yes' }],
+      ['non-boolean sign-in', { ...valid, authenticated: 1 }],
+      ['non-boolean bypass', { ...valid, superAdminBypass: 'true' }],
+      [
+        'an own __proto__ key',
+        JSON.parse(
+          '{"__proto__": {"allowCrossTenant": true}, "tenantId": null, "authenticated": true}',
+        ),
+      ],
+      ['an array', [valid]],
+      ['a string', 'principal'],
+    ];
+    for (const [label, answer] of malformed) {
+      expect(() => normalizeRequestPrincipal(answer), label).toThrow(TypeError);
+    }
+    const extra = normalizeRequestPrincipal({ ...valid, role: 'admin' });
+    expect(extra.tenantId).toBe(TENANT_A);
+    expect('role' in extra).toBe(false);
+  });
+});
+
 for (const type of ['sqlite', 'postgres'] as const) {
   const pgUrl = process.env.SMRT_TEST_POSTGRES_URL;
   const suite = type === 'postgres' && !pgUrl ? describe.skip : describe;
@@ -322,6 +497,68 @@ for (const type of ['sqlite', 'postgres'] as const) {
         expect(
           (await send(refusesAll, 'writer', 'GET', noteSegment())).status,
         ).toBe(403);
+      });
+    });
+
+    describe('a malformed principal', () => {
+      it('is refused before any hook', async () => {
+        const seen: unknown[] = [];
+        for (const answer of [
+          { tenantId: TENANT_A, authenticated: true, permissions: 'x' },
+          { tenantId: '', authenticated: true },
+          { tenantId: TENANT_A, authenticated: 'yes' },
+        ]) {
+          const api = new APIGenerator(
+            {
+              basePath: '/api',
+              resolvePrincipal: () => answer as never,
+              onRequest: (principal) => {
+                seen.push(principal);
+                return undefined;
+              },
+            },
+            { db },
+          ).generateHandler();
+          expect((await send(api, 'x', 'GET', noteSegment())).status).toBe(500);
+        }
+        const rejecting = new APIGenerator(
+          {
+            basePath: '/api',
+            resolvePrincipal: async () => {
+              throw new Error('session store down');
+            },
+            onRequest: (principal) => {
+              seen.push(principal);
+              return undefined;
+            },
+          },
+          { db },
+        ).generateHandler();
+        expect((await send(rejecting, 'x', 'GET', noteSegment())).status).toBe(
+          500,
+        );
+        expect(seen).toEqual([]);
+      });
+
+      it('an anonymous caller reaches onRequest as a principal that is not signed in', async () => {
+        const seen: Array<{ authenticated: boolean } | null> = [];
+        const api = handler({
+          onRequest: (principal) => {
+            seen.push(principal as { authenticated: boolean } | null);
+            return undefined;
+          },
+        });
+        expect(
+          (await send(api, undefined, 'GET', segmentOf('PrincipalBulletin')))
+            .status,
+        ).toBe(200);
+        expect((await send(api, undefined, 'GET', noteSegment())).status).toBe(
+          401,
+        );
+        expect(seen.map((principal) => principal?.authenticated)).toEqual([
+          false,
+          false,
+        ]);
       });
     });
 
@@ -844,10 +1081,10 @@ for (const type of ['sqlite', 'postgres'] as const) {
 
     describe('onRequest', () => {
       it('sees the route, model and action of a request and of each sync item', async () => {
-        const seen: Array<[string | undefined, APIRequestInfo]> = [];
+        const seen: Array<[string | null, APIRequestInfo]> = [];
         const api = handler({
           onRequest: (principal, info) => {
-            seen.push([principal?.callerKind, info]);
+            seen.push([principal.callerKind, info]);
           },
         });
         await send(api, 'writer', 'GET', noteSegment());
@@ -1111,13 +1348,16 @@ for (const type of ['sqlite', 'postgres'] as const) {
       });
 
       it('gives onRequest the fixed context principal', async () => {
-        const seen: Array<Readonly<APIRequestPrincipal> | null> = [];
+        const seen: unknown[] = [];
         const api = new APIGenerator(
           {
             basePath: '/api',
             authMiddleware: () => async (req) => req,
             onRequest: (principal) => {
-              seen.push(principal);
+              seen.push({
+                ...principal,
+                permissions: [...principal.permissions],
+              });
             },
           },
           { db, tenantId: TENANT_A, user: { id: 'fixed-user' } },
@@ -1126,9 +1366,13 @@ for (const type of ['sqlite', 'postgres'] as const) {
         expect(seen).toEqual([
           {
             tenantId: TENANT_A,
-            allowCrossTenant: false,
-            authenticated: true,
             userId: 'fixed-user',
+            authenticated: true,
+            callerKind: null,
+            allowCrossTenant: false,
+            superAdminBypass: false,
+            requestScoped: false,
+            permissions: [],
           },
         ]);
       });

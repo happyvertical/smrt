@@ -84,8 +84,8 @@ export interface APIRequestInfo {
 export interface ResolvedRequestPrincipal {
   /** `resolvePrincipal` is configured: the rules of this module apply. */
   readonly enforced: boolean;
-  /** What hooks receive: the host's principal, or `null` for anonymous. */
-  readonly principal: Readonly<APIRequestPrincipal> | null;
+  /** What hooks receive: the request's one principal snapshot. */
+  readonly principal: RequestPrincipal;
   readonly tenantId: string | null;
   readonly userId: string | null;
   readonly allowCrossTenant: boolean;
@@ -137,62 +137,192 @@ export function tenantMismatch(): RequestPrincipalRefusal {
 }
 
 /**
- * Check and copy what a host's `resolvePrincipal` returned. `null` or
- * `undefined` is an anonymous caller. A value of the wrong shape is a host
- * defect and throws, which the server answers with a 500.
+ * The one principal a request acts for, read once from the host's answer
+ * (#5195). Frozen, with no prototype: every reader of the request sees this
+ * object, and nothing the request runs can change it. An anonymous caller is
+ * a principal that is not signed in, never `null`.
  */
-export function normalizeRequestPrincipal(
-  value: unknown,
-): Readonly<APIRequestPrincipal> | null {
-  if (value === null || value === undefined) return null;
+export interface RequestPrincipal {
+  /** Tenant the caller acts in; `null` for a caller with no tenant. */
+  readonly tenantId: string | null;
+  /** The signed-in user, or `null`. */
+  readonly userId: string | null;
+  /** The caller is signed in. */
+  readonly authenticated: boolean;
+  /** What kind of caller this is (a user, an agent, a service), or `null`. */
+  readonly callerKind: string | null;
+  /** The caller is explicitly cross-tenant (an operator). */
+  readonly allowCrossTenant: boolean;
+  /** The host verified a super-admin bypass. */
+  readonly superAdminBypass: boolean;
+  /**
+   * The request runs inside a transaction its host opened for this principal
+   * (`APIConfig.requestScope`).
+   */
+  readonly requestScoped: boolean;
+  /** Permission slugs held; empty when the host supplied none. Read-only. */
+  readonly permissions: ReadonlySet<string>;
+}
+
+/** Longest tenant or user id a principal may carry. */
+const MAX_ID_LENGTH = 256;
+/** Longest caller kind a principal may carry. */
+const MAX_CALLER_KIND_LENGTH = 64;
+/** Most permission slugs a principal may carry. */
+const MAX_PERMISSIONS = 4096;
+/** One permission slug: no whitespace or control characters, bounded. */
+const SLUG_PATTERN = /^[A-Za-z0-9_*][A-Za-z0-9_.:*/@-]{0,255}$/u;
+
+/**
+ * The value of one own property of the host's answer, read exactly once: a
+ * data property's value, or an accessor's getter called once. Inherited
+ * properties are never read.
+ */
+function readOwn(source: object, key: string): unknown {
+  const descriptor = Reflect.getOwnPropertyDescriptor(source, key);
+  if (!descriptor) return undefined;
+  if ('value' in descriptor) return descriptor.value;
+  return descriptor.get ? descriptor.get.call(source) : undefined;
+}
+
+function idField(key: string, value: unknown): string | null {
+  if (value === undefined || value === null) return null;
+  if (typeof value !== 'string' || value.length === 0) {
+    throw new TypeError(`principal.${key} must be a non-empty string or null`);
+  }
+  if (value.length > MAX_ID_LENGTH) {
+    throw new TypeError(`principal.${key} is too long`);
+  }
+  return value;
+}
+
+function flagField(key: string, value: unknown): boolean {
+  if (value === undefined) return false;
+  if (typeof value !== 'boolean') {
+    throw new TypeError(`principal.${key} must be a boolean`);
+  }
+  return value;
+}
+
+function permissionsField(value: unknown): ReadonlySet<string> {
+  if (value === undefined || value === null) return readonlySetOf<string>([]);
+  const iterator = (value as { [Symbol.iterator]?: unknown })[Symbol.iterator];
+  if (typeof value === 'string' || typeof iterator !== 'function') {
+    throw new TypeError('principal.permissions must be an iterable of slugs');
+  }
+  const slugs: string[] = [];
+  for (const slug of value as Iterable<unknown>) {
+    if (typeof slug !== 'string' || !SLUG_PATTERN.test(slug)) {
+      throw new TypeError('principal.permissions must hold permission slugs');
+    }
+    slugs.push(slug);
+    if (slugs.length > MAX_PERMISSIONS) {
+      throw new TypeError('principal.permissions holds too many slugs');
+    }
+  }
+  return readonlySetOf(slugs);
+}
+
+/**
+ * Read what a host's `resolvePrincipal` returned into the request's
+ * {@link RequestPrincipal}. `null` or `undefined` is an anonymous caller.
+ *
+ * Each own field is read exactly once, in a fixed order, so an accessor or a
+ * proxy trap runs once and its first value is the one used; inherited
+ * properties are never read and unknown fields are ignored. A value of the
+ * wrong shape (an empty or oversized id, a flag that is not a boolean,
+ * permissions that are not a bounded list of slugs, an own `__proto__` key)
+ * is a host defect and throws `TypeError`, which the server answers with a
+ * 500 before any hook runs.
+ */
+export function normalizeRequestPrincipal(value: unknown): RequestPrincipal {
+  if (value === null || value === undefined) {
+    return snapshotOf({
+      tenantId: null,
+      userId: null,
+      authenticated: false,
+      callerKind: null,
+      allowCrossTenant: false,
+      superAdminBypass: false,
+      permissions: readonlySetOf<string>([]),
+    });
+  }
   if (typeof value !== 'object' || Array.isArray(value)) {
     throw new TypeError('resolvePrincipal must return an object or null');
   }
-  const raw = value as Record<string, unknown>;
-  const tenantId = raw.tenantId;
+  if (Reflect.getOwnPropertyDescriptor(value, '__proto__')) {
+    throw new TypeError('principal must not carry a __proto__ key');
+  }
+  const tenantId = idField('tenantId', readOwn(value, 'tenantId'));
+  const userId = idField('userId', readOwn(value, 'userId'));
+  const authenticated = flagField(
+    'authenticated',
+    readOwn(value, 'authenticated'),
+  );
+  const rawKind = readOwn(value, 'callerKind');
   if (
-    tenantId !== null &&
-    tenantId !== undefined &&
-    typeof tenantId !== 'string'
+    rawKind !== undefined &&
+    rawKind !== null &&
+    (typeof rawKind !== 'string' ||
+      rawKind.length === 0 ||
+      rawKind.length > MAX_CALLER_KIND_LENGTH)
   ) {
-    throw new TypeError('principal.tenantId must be a string or null');
+    throw new TypeError('principal.callerKind must be a short string');
   }
-  let permissions: ReadonlySet<string> | undefined;
-  if (raw.permissions !== undefined && raw.permissions !== null) {
-    const source = raw.permissions as { [Symbol.iterator]?: unknown };
-    if (
-      typeof raw.permissions === 'string' ||
-      typeof source[Symbol.iterator] !== 'function'
-    ) {
-      throw new TypeError('principal.permissions must be an iterable of slugs');
-    }
-    const slugs: string[] = [];
-    for (const slug of raw.permissions as Iterable<unknown>) {
-      if (typeof slug !== 'string') {
-        throw new TypeError('principal.permissions must hold strings only');
-      }
-      slugs.push(slug);
-    }
-    permissions = readonlySetOf(slugs);
-  }
-  const optionalText = (key: 'userId' | 'callerKind') => {
-    const entry = raw[key];
-    if (entry === undefined || entry === null) return undefined;
-    if (typeof entry !== 'string') {
-      throw new TypeError(`principal.${key} must be a string`);
-    }
-    return entry;
-  };
-  const userId = optionalText('userId');
-  const callerKind = optionalText('callerKind');
-  return Object.freeze({
-    tenantId: typeof tenantId === 'string' && tenantId ? tenantId : null,
-    allowCrossTenant: raw.allowCrossTenant === true,
-    authenticated: raw.authenticated === true,
-    ...(userId !== undefined ? { userId } : {}),
-    permissions: permissions ?? readonlySetOf<string>([]),
-    ...(callerKind !== undefined ? { callerKind } : {}),
-    superAdminBypass: raw.superAdminBypass === true,
+  const allowCrossTenant = flagField(
+    'allowCrossTenant',
+    readOwn(value, 'allowCrossTenant'),
+  );
+  const superAdminBypass = flagField(
+    'superAdminBypass',
+    readOwn(value, 'superAdminBypass'),
+  );
+  const permissions = permissionsField(readOwn(value, 'permissions'));
+  return snapshotOf({
+    tenantId,
+    userId,
+    authenticated,
+    callerKind: typeof rawKind === 'string' ? rawKind : null,
+    allowCrossTenant,
+    superAdminBypass,
+    permissions,
+  });
+}
+
+/** The frozen, prototype-free snapshot object. */
+function snapshotOf(
+  fields: Omit<RequestPrincipal, 'requestScoped'> & {
+    requestScoped?: boolean;
+  },
+): RequestPrincipal {
+  const snapshot = Object.create(null) as Record<string, unknown>;
+  snapshot.tenantId = fields.tenantId;
+  snapshot.userId = fields.userId;
+  snapshot.authenticated = fields.authenticated;
+  snapshot.callerKind = fields.callerKind;
+  snapshot.allowCrossTenant = fields.allowCrossTenant;
+  snapshot.superAdminBypass = fields.superAdminBypass;
+  snapshot.requestScoped = fields.requestScoped === true;
+  snapshot.permissions = fields.permissions;
+  return Object.freeze(snapshot) as unknown as RequestPrincipal;
+}
+
+/**
+ * The fixed principal of a server without `resolvePrincipal`: its
+ * `APIContext` tenant, user and permissions.
+ */
+export function fixedRequestPrincipal(fields: {
+  tenantId: string | null;
+  userId: string | null;
+  authenticated: boolean;
+  allowCrossTenant: boolean;
+  permissions: Iterable<string> | undefined;
+}): RequestPrincipal {
+  return snapshotOf({
+    ...fields,
+    callerKind: null,
+    superAdminBypass: false,
+    permissions: readonlySetOf(fields.permissions ?? []),
   });
 }
 

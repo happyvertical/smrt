@@ -115,6 +115,7 @@ export type {
   APIRequestInfo,
   APIRequestPrincipal,
   APIRequestRoute,
+  RequestPrincipal,
   RestServerConfig,
 } from './rest';
 // REST API Generator and server utilities

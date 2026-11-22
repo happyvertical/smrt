@@ -95,7 +95,15 @@ request as received, and passes the result (`ResolvedRequestPrincipal`,
 actions, each `sync/apply` item, subtype re-checks, `_changes`, `_events`,
 `_inference` and `_preflight`. Rebuilt requests (sync items, subtype checks)
 never resolve it again. A throw, or a value of the wrong shape, is a 500 that
-carries only a request id. Permissions are copied once into a read-only view
+carries only a request id, before any hook. `normalizeRequestPrincipal` reads
+the answer into the request's one `RequestPrincipal` snapshot (frozen, null
+prototype; what `onRequest` receives): each own field exactly once in a fixed
+order through its property descriptor (an accessor or proxy trap runs once,
+its first value is used), inherited properties never, unknown fields ignored;
+ids are non-empty and at most 256 characters, flags are booleans, permissions
+are at most 4096 slugs without whitespace, an own `__proto__` key is refused.
+An anonymous caller is a snapshot with `authenticated: false`, never `null`.
+Permissions are copied once into a read-only view
 (`ReadonlySetView`, `src/readonly-collections.ts`: a private store, no `Set`
 slot, so neither its own nor `Set.prototype` mutators change it; `forEach`
 passes the view); an absent list is an empty view. The actor's permissions
