@@ -209,37 +209,37 @@ minimumReleaseAgeExclude:
   - '@happyvertical/ocr@0.62.1'
 
 catalog:
-  '@aws-sdk/client-sqs': ^3.1136.0
-  '@google-cloud/tasks': ^7.1.1
-  '@happyvertical/accounting': ^0.116.6
-  '@happyvertical/ai': ^0.116.6
-  '@happyvertical/auth': ^0.116.6
-  '@happyvertical/cache': ^0.116.6
-  '@happyvertical/documents': ^0.116.6
-  '@happyvertical/email': ^0.116.6
-  '@happyvertical/encryption': ^0.116.6
-  '@happyvertical/files': ^0.116.6
-  '@happyvertical/geo': ^0.116.6
-  '@happyvertical/images': ^0.116.6
-  '@happyvertical/jobs': ^0.116.6
-  '@happyvertical/payments': ^0.116.6
-  '@happyvertical/json': ^0.116.6
-  '@happyvertical/logger': ^0.116.6
-  '@happyvertical/messages': ^0.116.6
+  '@aws-sdk/client-sqs': ^3.1175.0
+  '@google-cloud/tasks': ^7.3.1
+  '@happyvertical/accounting': ^0.119.0
+  '@happyvertical/ai': ^0.119.0
+  '@happyvertical/auth': ^0.119.0
+  '@happyvertical/cache': ^0.119.0
+  '@happyvertical/documents': ^0.119.0
+  '@happyvertical/email': ^0.119.0
+  '@happyvertical/encryption': ^0.119.0
+  '@happyvertical/files': ^0.119.0
+  '@happyvertical/geo': ^0.119.0
+  '@happyvertical/images': ^0.119.0
+  '@happyvertical/jobs': ^0.119.0
+  '@happyvertical/payments': ^0.119.0
+  '@happyvertical/json': ^0.119.0
+  '@happyvertical/logger': ^0.119.0
+  '@happyvertical/messages': ^0.119.0
   '@happyvertical/ocr': ^0.62.1
   '@happyvertical/pdf': ^0.67.2
-  '@happyvertical/projects': ^0.116.6
-  '@happyvertical/repos': ^0.116.6
-  '@happyvertical/secrets': ^0.116.6
-  '@happyvertical/signatures': ^0.116.6
-  '@happyvertical/speech': ^0.116.6
-  '@happyvertical/spreadsheets': ^0.116.6
+  '@happyvertical/projects': ^0.119.0
+  '@happyvertical/repos': ^0.119.0
+  '@happyvertical/secrets': ^0.119.0
+  '@happyvertical/signatures': ^0.119.0
+  '@happyvertical/speech': ^0.119.0
+  '@happyvertical/spreadsheets': ^0.119.0
   '@happyvertical/spider': ^1.1.13
-  '@happyvertical/sql': ^0.116.6
-  '@happyvertical/utils': ^0.116.6
-  '@sentry/node': ^10.75.0
+  '@happyvertical/sql': ^0.119.0
+  '@happyvertical/utils': ^0.119.0
+  '@sentry/node': ^11.16.0
   bull: ^4.16.5
-  bullmq: ^6.3.8
+  bullmq: ^6.7.8
   sharp: ^0.35.5
 
 allowBuilds:

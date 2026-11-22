@@ -226,7 +226,7 @@ jobs:
           persist-credentials: false
 
       - name: Set up Node
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: ${{ inputs.node_version }}
 
@@ -299,7 +299,7 @@ jobs:
 
       - name: Upload the release tools
         id: upload
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: desktop-tools
           path: ${{ runner.temp }}/release-tools
@@ -337,7 +337,7 @@ jobs:
           persist-credentials: false
 
       - name: Set up Node
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: ${{ inputs.node_version }}
 
@@ -346,7 +346,7 @@ jobs:
       # job, so no caller-controlled code can touch the environment (GITHUB_ENV,
       # GITHUB_PATH, the runner) before a secret step.
       - name: Download the release tools
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           artifact-ids: ${{ needs.tools.outputs.artifact_id }}
           merge-multiple: true
@@ -464,7 +464,7 @@ jobs:
             librsvg2-dev libssl-dev libxdo-dev patchelf
 
       - name: Set up Node
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: ${{ inputs.node_version }}
 
@@ -552,7 +552,7 @@ jobs:
 
       - name: Upload the unsigned installer
         if: github.event_name != 'pull_request' && !inputs.release
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: desktop-installer-unsigned-${{ matrix.target }}
           path: ${{ runner.temp }}/installer.tar
@@ -566,7 +566,7 @@ jobs:
       # and restores the modes it needs). Hidden files are included.
       - name: Upload the bundle for signing
         if: inputs.release
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: desktop-bundle-${{ matrix.target }}
           path: ${{ runner.temp }}/bundle
@@ -576,7 +576,7 @@ jobs:
 
       - name: Upload the unsigned output for signing
         if: inputs.release
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: desktop-unsigned-${{ matrix.target }}
           path: ${{ runner.temp }}/installer
@@ -614,7 +614,7 @@ jobs:
           persist-credentials: false
 
       - name: Set up Node
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: ${{ inputs.node_version }}
 
@@ -623,7 +623,7 @@ jobs:
       # job, so no caller-controlled code can touch the environment (GITHUB_ENV,
       # GITHUB_PATH, the runner) before a secret step.
       - name: Download the release tools
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           artifact-ids: ${{ needs.tools.outputs.artifact_id }}
           merge-multiple: true
@@ -683,13 +683,13 @@ jobs:
           mkdir -p "$RUNNER_TEMP/desktop-bundle" "$RUNNER_TEMP/desktop-unsigned" "$RUNNER_TEMP/desktop-signed"
 
       - name: Download the bundle
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: desktop-bundle-${{ matrix.target }}
           path: ${{ runner.temp }}/desktop-bundle
 
       - name: Download the unsigned build
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: desktop-unsigned-${{ matrix.target }}
           path: ${{ runner.temp }}/desktop-unsigned
@@ -876,7 +876,7 @@ jobs:
             --out .desktop-leg
 
       - name: Upload the leg
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: desktop-release-${{ matrix.target }}
           path: .desktop-leg
@@ -938,7 +938,7 @@ jobs:
           persist-credentials: false
 
       - name: Set up Node
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: ${{ inputs.node_version }}
 
@@ -947,7 +947,7 @@ jobs:
       # job, so no caller-controlled code can touch the environment (GITHUB_ENV,
       # GITHUB_PATH, the runner) before a secret step.
       - name: Download the release tools
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           artifact-ids: ${{ needs.tools.outputs.artifact_id }}
           merge-multiple: true
@@ -994,7 +994,7 @@ jobs:
         run: echo "DESKTOP_PKG=$RUNNER_TEMP/release-tools" >> "$GITHUB_ENV"
 
       - name: Download every leg
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           pattern: desktop-release-*
           path: .desktop-legs

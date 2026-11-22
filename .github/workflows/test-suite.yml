@@ -200,7 +200,7 @@ jobs:
           ref: ${{ env.CHECKOUT_REF }}
 
       - name: Setup Node.js
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
         with:
           node-version: '26.12.1'
 
@@ -506,7 +506,7 @@ jobs:
 
       - name: Upload ingestion review failure evidence
         if: failure()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: ingestion-review-browser-evidence
           path: packages/ingestion/test-results/review
@@ -515,7 +515,7 @@ jobs:
 
       - name: Upload mobile shell failure evidence
         if: failure()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: mobile-shell-browser-evidence
           path: packages/smrt-svelte/test-results
@@ -551,7 +551,7 @@ jobs:
     timeout-minutes: 60
     services:
       postgres:
-        image: postgres:18-alpine@sha256:6c538e7206ea40ff740ef27883529390a690b6ead6ba96b44c67a9f7c638e8fd
+        image: postgres:19-alpine@sha256:8b0ff4cdf221f0c53d7fcda681d3b461be725c492cd881c5ec9c0ad25023f188
         env:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
@@ -649,7 +649,7 @@ jobs:
       # removed before this step runs.
       - name: Upload sanitized M5 gate summary
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: m5-gate-summary-${{ github.run_id }}-${{ github.run_attempt }}
           path: packages/template-sveltekit/m5-gate-summary.json
@@ -834,7 +834,7 @@ jobs:
 
       - name: Upload core test results
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: test-results-core-${{ strategy.job-index }}
           path: |
@@ -948,7 +948,7 @@ jobs:
 
       - name: Upload test results
         if: always()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: test-results-${{ strategy.job-index }}
           path: |
