@@ -5,10 +5,10 @@ description: "SMRT browser client data runtime: typed collection factory wrappin
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-05T15:48:19Z"
+  at: "2026-11-22T06:47:32Z"
 audience: "internal"
 evidence_level: "manifest-described"
-source_revision: "sha256:5c707f9e4ae6c5113a9d287510974a15f0acf725a178550328abe93d312bae34"
+source_revision: "sha256:d1fe6cb854482063ae34c335c4f81057eb6b4abfb2a2fefe1c33243d9c6a7ea7"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/smrt-web/package.json"

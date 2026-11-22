@@ -19,6 +19,7 @@ let enabled = false;
  */
 export function setTenancyEnabled(value: boolean): void {
   enabled = value;
+  bumpTenantPolicyGeneration();
 }
 
 /**
@@ -29,4 +30,26 @@ export function setTenancyEnabled(value: boolean): void {
  */
 export function isTenancyEnabled(): boolean {
   return enabled;
+}
+
+// The policy generation (#5195): a counter core reads through the policy
+// source's `generation()` to know that the policies it resolved may be
+// stale. Shared by every copy of this package in the process, like the
+// context storage, through a registered symbol.
+const GENERATION_KEY = Symbol.for('smrt:tenant-policy-generation');
+
+type GenerationRoot = typeof globalThis & { [GENERATION_KEY]?: number };
+
+/**
+ * Advance the policy generation. Internal: called on every registration or
+ * removal of a tenancy policy and on enable and disable.
+ */
+export function bumpTenantPolicyGeneration(): void {
+  const root = globalThis as GenerationRoot;
+  root[GENERATION_KEY] = (root[GENERATION_KEY] ?? 0) + 1;
+}
+
+/** The current policy generation. Never throws. */
+export function tenantPolicyGeneration(): number {
+  return (globalThis as GenerationRoot)[GENERATION_KEY] ?? 0;
 }

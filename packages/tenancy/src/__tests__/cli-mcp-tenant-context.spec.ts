@@ -159,7 +159,7 @@ describe('Generated MCP fail-closed tenant context (#1554)', () => {
       const dir = await generateInto(false);
       const code = await readFile(join(dir, 'index.js'), 'utf-8');
       expect(code).toContain('enableTenancy()');
-      expect(code).toContain('runTenantScopedEntryPoint');
+      expect(code).toContain('runToolInRequestTenancy');
       expect(code).toContain('tenantdoc');
     });
 
@@ -172,7 +172,7 @@ describe('Generated MCP fail-closed tenant context (#1554)', () => {
         'utf-8',
       );
       expect(handlers).toContain('enableTenancy()');
-      expect(handlers).toContain('runTenantScopedEntryPoint');
+      expect(handlers).toContain('runToolInRequestTenancy');
       expect(handlers).toContain('tenantdoc');
     });
   });

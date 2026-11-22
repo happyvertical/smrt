@@ -3919,6 +3919,27 @@ export default testManifest;
         );
       }
 
+      // ========== STI Family Tenancy (#5375) ==========
+      // Warning-level and read-only: an STI member whose tenancy differs from
+      // its table owner's is not served through the owner's routes.
+      try {
+        const { runStiTenancyDoctorSection } = await import(
+          './doctor-sti-tenancy.js'
+        );
+        const section = runStiTenancyDoctorSection(cwd);
+        if (section.applies) {
+          console.log('🧬 STI Family Tenancy\n');
+          for (const line of section.lines) console.log(line);
+          warnings.push(...section.warnings);
+          passed.push(...section.passed);
+          console.log();
+        }
+      } catch (error) {
+        warnings.push(
+          `STI family tenancy check skipped: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+
       // ========== Live Database Parity (opt-in) ==========
       // Off by default because it opens a connection and issues catalog
       // queries; `--db` is what turns doctor's database section from "a URL is

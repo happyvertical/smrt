@@ -10,7 +10,10 @@ it:
   entry exists for another reason).
 - `pnpm test:browser` bundles the built `dist/browser.js`, loads it in
   Chromium, registers a decorated class, and fails on any evaluation error or
-  any module Vite externalized "for browser compatibility". Set
+  any module Vite externalized "for browser compatibility". Its
+  `--test-env` run bundles with `NODE_ENV` defined as `test`, where the page
+  reports a test environment: test-manifest discovery still returns nothing
+  without a Node host instead of reading `process`. Set
   `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` to use another Chromium. CI runs it in
   the workbench browser job.
 
