@@ -16,6 +16,10 @@ import {
 } from '../__tests__/fixtures/dispatch-test-db';
 import { setDispatchTenantResolver } from './tenant-resolver.js';
 
+// Tenant ids are UUIDs: PostgreSQL stores `tenant_id` as a native UUID.
+const TENANT_A = '00000000-0000-4000-8000-00000000000a';
+const TENANT_B = '00000000-0000-4000-8000-00000000000b';
+
 const firstDispatchUpdate = (sql: string) =>
   sql.startsWith('UPDATE _smrt_dispatch ');
 
@@ -128,7 +132,7 @@ describe.each(
       type: 'job.run',
       status: 'failed',
       attempts: 1,
-      tenantId: 'tenant-b',
+      tenantId: TENANT_B,
       createdAt: '2026-01-01T00:00:00.000Z',
     });
     await insertRawDispatch(db, {
@@ -136,11 +140,11 @@ describe.each(
       type: 'job.run',
       status: 'failed',
       attempts: 1,
-      tenantId: 'tenant-a',
+      tenantId: TENANT_A,
       createdAt: '2026-01-01T00:00:00.000Z',
     });
 
-    activeTenant = 'tenant-a';
+    activeTenant = TENANT_A;
     const count = await bus.retry({
       maxAttempts: 3,
       olderThan: new Date('2026-03-01T00:00:00.000Z'),
