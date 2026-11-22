@@ -47,6 +47,7 @@ import {
 import {
   assertPrincipalScopeUsable,
   currentPrincipalFrame,
+  narrowToEnclosingFrame,
   PrincipalRecord,
   requestEnded,
   runInPrincipalRecord,
@@ -63,7 +64,7 @@ import {
   scopedOptionProperties,
   throwIfRefused,
   withActorContext,
-  withResolvedTenancy,
+  withRestOperationTenancy,
   writeGate,
 } from '../request-tenancy';
 import {
@@ -997,7 +998,7 @@ export class APIGenerator {
           ? { permissions: principal.permissions }
           : {}),
         appAuthConfigured: Boolean(
-          this.config.authMiddleware || this.config.resolvePrincipal,
+          this.config.authMiddleware || principal.enforced,
         ),
         db: this.resolveContextDb(),
       });
@@ -1330,7 +1331,7 @@ export class APIGenerator {
       );
       this.requestTenancies.set(req, tenancy);
       authenticated = tenancy.actor.authenticated;
-      return await withResolvedTenancy(
+      return await withRestOperationTenancy(
         tenancy,
         () =>
           this.routeCrudOperation(req, collection, objectId, url, objectName),
@@ -1402,7 +1403,9 @@ export class APIGenerator {
         : {}),
       actor,
     });
-    return tenancy;
+    // Inside a principal request (a nested dispatch included) the operation
+    // admits no member the enclosing operation left out (#5195).
+    return principal.enforced ? narrowToEnclosingFrame(tenancy) : tenancy;
   }
 
   /**
@@ -1657,21 +1660,27 @@ export class APIGenerator {
 
   /**
    * Whether the rows a read through `objectName` serves depend on who asks:
-   * an STI base with subtypes, read under an auth middleware, admits each
+   * an STI base with subtypes, read under an auth middleware or for a
+   * host-resolved principal (a nested handler's included), admits each
    * subtype by the caller's own authorization.
    */
   private hasCallerDependentFamily(objectName: string | undefined): boolean {
     return (
       !!objectName &&
-      !!(this.config.authMiddleware || this.config.resolvePrincipal) &&
+      !!(
+        this.config.authMiddleware ||
+        this.config.resolvePrincipal ||
+        currentPrincipalFrame()
+      ) &&
       ObjectRegistry.getTableStrategy(objectName) === 'sti' &&
       ObjectRegistry.getDescendants(objectName).length > 0
     );
   }
 
   /**
-   * The tenant a request acts for: the principal's when the host resolves
-   * principals, else what the host's `resolveTenant` says for the admitted
+   * The tenant a request acts for: the principal's when the request acts for
+   * a host-resolved principal (its own or, for a nested handler, the outer
+   * request's), else what the host's `resolveTenant` says for the admitted
    * request, or the server's fixed context. Resolved once per request; the
    * exposure gate, create targets and the tenant gate all read this answer.
    */
@@ -1679,8 +1688,8 @@ export class APIGenerator {
     let pending = this.requestTenants.get(req);
     if (!pending) {
       pending = (async () => {
-        if (this.config.resolvePrincipal) {
-          const principal = this.principalOf(req);
+        const principal = this.principalOf(req);
+        if (principal.enforced) {
           return {
             tenantId: principal.tenantId,
             allowCrossTenant: principal.allowCrossTenant,
@@ -2790,7 +2799,7 @@ export class APIGenerator {
           );
           authenticated = tenancy.actor.authenticated;
           throwIfRefused(writeGate(tenancy));
-          return await withResolvedTenancy(tenancy, apply, {
+          return await withRestOperationTenancy(tenancy, apply, {
             principal: principal.enforced,
           });
         } catch (error) {

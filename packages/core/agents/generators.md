@@ -125,8 +125,9 @@ create targets read the principal's own tenant, never the ambient one. The
 request then runs in the principal's context through the policy source's
 optional `runForPrincipal` (a frozen projection: tenant, user, read-only
 permissions, no bypass flag; `null` clears tenant and system), with
-`withResolvedTenancy(..., { principal: true })`; a source without it enters a
-tenanted principal through `runInContext` and refuses a request that arrives
+`withRestOperationTenancy(..., { principal: true })` (internal, not exported
+from a package entry; the public `withResolvedTenancy` has no such option);
+a source without it enters a tenanted principal through `runInContext` and refuses a request that arrives
 inside a system context. `_changes`, `_events` and `_inference` run as that
 actor the same way (`withActorContext`; a cross-tenant grant in a system
 context; `_events` captures it at open).
@@ -136,11 +137,14 @@ context; `_events` captures it at open).
 `PrincipalRecord` (snapshot, state `open` / `closing` / `ended`) bound in an
 async context and ended in a `finally` when `handleRequest` returns. REST's
 own resolutions (the route, each sync item) open an operation frame
-(`withResolvedTenancy(..., { principal: true })` →
+(`withRestOperationTenancy(..., { principal: true })` →
 `runPrincipalOperationFrame`): its tenancy and, per family, a ceiling
 (admitted, creatable, member signatures) intersected with the enclosing
-frame's. Inside a principal request `getResolvedTenancy()` reads the current
-frame, never the released slot, and every other `withResolvedTenancy` /
+frame's. The tenancy REST keeps and the frame binds is held to that ceiling
+(`narrowToEnclosingFrame`): a member the enclosing operation left out, or
+whose signature differs, is not admitted, and an operation narrowed to no
+type reads no row. Inside a principal request `getResolvedTenancy()` reads
+the current frame, never the released slot, and every other `withResolvedTenancy` /
 `enterResolvedTenancy` (request code, an in-process tool call) goes through
 `enterNonWidening`: it binds only for an actor equal to the frame's field by
 field and, for a family with a ceiling, admitted and creatable subsets with
@@ -150,9 +154,10 @@ record is refused by the request-tenancy interceptor (`REQUEST_ENDED`), and
 `requirePermission` refuses unless the live record's snapshot is the
 principal checked. A handler invoked while a record is live (nested
 dispatch, `handleRequest` sees `currentPrincipalFrame()`) inherits it
-exactly: its own `resolvePrincipal`, fixed context and enforcement are not
-consulted, no new record is made, and its operations open frames of the
-outer record (so a read grant still refuses writes and a ceiling only
+exactly: its own `resolvePrincipal`, `resolveTenant`, fixed context and
+enforcement are not consulted (the exposure gate and create targets read the
+outer principal's tenant), no new record is made, and its operations open
+frames of the outer record (so a read grant still refuses writes and a ceiling only
 narrows); under an ended record it answers 403 `REQUEST_ENDED`.
 `getRequestPrincipal()` (core root) returns the live
 record's snapshot, else `undefined` (outside a request, after it ended, in
@@ -165,7 +170,8 @@ unsupported shared object, or a released `__smrtRequestTenancyScope` slot an
 older core created first throws at construction and refuses each request
 (500 `REQUEST_PRINCIPAL_SCOPE_UNSUPPORTED`). An older copy loading later is
 not detectable; one core version per process is a prerequisite. Tests:
-`src/__tests__/rest-request-principal-scope.optional.test.ts`.
+`src/__tests__/rest-request-principal-scope.optional.test.ts`,
+`src/__tests__/rest-request-principal-nested.optional.test.ts`.
 
 When it is configured, runtime REST enforces, from the principal:
 

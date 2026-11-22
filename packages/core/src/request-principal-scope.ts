@@ -42,6 +42,7 @@
  */
 
 import type { RequestPrincipal } from './generators/request-principal';
+import { ReadonlySetView } from './readonly-collections';
 import type { RequestActor, RequestTenancy } from './request-tenancy';
 import { SmrtError } from './smrt-error.js';
 import { type AsyncContext, createAsyncContext } from './utils/async-context';
@@ -218,6 +219,37 @@ function intersect(
     creatable: keep(own.creatable, outer.creatable),
     signatures,
   });
+}
+
+/**
+ * `t` held to an enclosing ceiling: its admitted and creatable types that the
+ * ceiling admits (creatable within the ceiling's creatable, else admitted
+ * types), less every member whose policy signature differs from the one the
+ * ceiling recorded. `t` itself when nothing is narrowed.
+ */
+function constrainTo(
+  t: RequestTenancy,
+  outer: FamilyCeiling | undefined,
+): RequestTenancy {
+  if (!outer) return t;
+  const allowed = (key: string, bound: ReadonlySet<string> | null): boolean => {
+    if (bound !== null && !bound.has(key)) return false;
+    const signature = outer.signatures.get(key);
+    const own = t.members.get(key)?.signature;
+    return signature === undefined || signature === own;
+  };
+  const narrow = (
+    set: ReadonlySet<string> | null,
+    bound: ReadonlySet<string> | null,
+  ): ReadonlySet<string> | null => {
+    if (set === null) return null;
+    const kept = [...set].filter((key) => allowed(key, bound));
+    return kept.length === set.size ? set : new ReadonlySetView(kept);
+  };
+  const admitted = narrow(t.admitted, outer.admitted);
+  const creatable = narrow(t.creatable, outer.creatable ?? outer.admitted);
+  if (admitted === t.admitted && creatable === t.creatable) return t;
+  return Object.freeze({ ...t, admitted, creatable });
 }
 
 /** Whether a decision stays within the frame's actor and ceilings. */
@@ -421,12 +453,28 @@ export function runPrincipalOperationFrame<T>(
   if (!owned || !frame) return fn();
   if (frame.record.state === 'ended') throw requestEnded();
   const key = familyKey(t);
+  const outer = frame.ceilings.get(key);
+  // The frame binds the operation's tenancy held to the enclosing ceiling,
+  // so collection enforcement never reads a wider membership than it.
+  const bound = constrainTo(t, outer);
   const ceilings = new Map(frame.ceilings);
-  ceilings.set(key, intersect(ceilingOf(t), frame.ceilings.get(key)));
+  ceilings.set(key, intersect(ceilingOf(bound), outer));
   return owned.frames.run(
-    Object.freeze({ record: frame.record, tenancy: t, ceilings }),
+    Object.freeze({ record: frame.record, tenancy: bound, ceilings }),
     fn,
   );
+}
+
+/**
+ * `t` held to the ceiling the current principal frame has for its family
+ * (see {@link runPrincipalOperationFrame}); `t` itself outside a principal
+ * request or when nothing is narrowed. REST applies it where it resolves an
+ * operation, so the copy it keeps per request is the one the frame binds.
+ */
+export function narrowToEnclosingFrame(t: RequestTenancy): RequestTenancy {
+  const frame = currentPrincipalFrame();
+  if (!frame) return t;
+  return constrainTo(t, frame.ceilings.get(familyKey(t)));
 }
 
 /**

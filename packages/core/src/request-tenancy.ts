@@ -1100,14 +1100,44 @@ function actorTenantContext(
  * principal, `api.principalContext`, on a model with no tenancy). Enforcement
  * decides only which rows the request may touch.
  *
+ * Inside a REST request acting for a host-resolved principal the decision
+ * may only narrow the request (#5195); see {@link enterNonWidening}.
+ *
  * @param options.refreshPrincipal - The actor is a complete principal: an
  *   active context of the same tenant runs with the actor's permission
  *   snapshot, never a broader one it already carried
  */
-export async function withResolvedTenancy<T>(
+export function withResolvedTenancy<T>(
   t: RequestTenancy,
   fn: () => Promise<T>,
-  options: { refreshPrincipal?: boolean; principal?: boolean } = {},
+  options: { refreshPrincipal?: boolean } = {},
+): Promise<T> {
+  return bindResolvedTenancy(t, fn, {
+    refreshPrincipal: options.refreshPrincipal === true,
+  });
+}
+
+/**
+ * {@link withResolvedTenancy} for an operation runtime REST resolved itself.
+ * With `principal`, inside a principal request it opens an operation frame
+ * of the record (`runPrincipalOperationFrame`) and runs as the principal's
+ * actor. Internal to the REST server: never exported from a package entry,
+ * so request code binds only through the non-widening path.
+ *
+ * @internal
+ */
+export function withRestOperationTenancy<T>(
+  t: RequestTenancy,
+  fn: () => Promise<T>,
+  options: { principal: boolean },
+): Promise<T> {
+  return bindResolvedTenancy(t, fn, { principal: options.principal });
+}
+
+async function bindResolvedTenancy<T>(
+  t: RequestTenancy,
+  fn: () => Promise<T>,
+  options: { refreshPrincipal?: boolean; principal?: boolean },
 ): Promise<T> {
   assertBindable(t);
   if (currentPrincipalFrame()) {
@@ -1694,6 +1724,12 @@ function familyReadFilter(
       outside.add(t.family as string);
     }
   }
+  if (types.length === 0) {
+    // No admitted type (a nested operation narrowed to nothing) matches
+    // no row.
+    types = [t.family as string];
+    outside.add(t.family as string);
+  }
   return {
     ...filter,
     '_meta_type in': types,
@@ -1734,11 +1770,19 @@ function createRequestTenancyInterceptor(): CollectionInterceptor {
         return { ...options, where: applyWhereScope(where, scope) };
       }
       const admitted = owner ? [...(owner.admitted ?? [])] : undefined;
+      // No admitted type matches no row (`in` needs a non-empty list).
+      const types =
+        admitted?.length === 0
+          ? {
+              '_meta_type in': [owner?.family],
+              '_meta_type not in': [owner?.family],
+            }
+          : { '_meta_type in': admitted };
       return {
         ...options,
         where: dnfOf(options.where).map((group) => [
           ...group,
-          ...(admitted ? [{ '_meta_type in': admitted }] : []),
+          ...(admitted ? [types] : []),
           ...(scope ? [scope] : []),
         ]),
       };
