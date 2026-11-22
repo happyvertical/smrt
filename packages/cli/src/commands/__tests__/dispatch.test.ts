@@ -190,10 +190,34 @@ describe('dispatch commands', () => {
   });
 
   describe('dispatch:cleanup', () => {
-    it('dry-run reports current counts', async () => {
+    it('cleanup --dry counts exactly what the live cleanup deletes', async () => {
+      // Cleanup half of P6 T32: the preview counts exactly the rows the live
+      // cleanup deletes, and deletes nothing.
       const { db, bus } = await openBus();
       await bus.emit('a.event', {}, { source: 's1' });
-      await db.close?.();
+      const daysAgo = (n: number) =>
+        new Date(Date.now() - n * 86_400_000).toISOString();
+      const seed = async (id: string, status: string, at: string) =>
+        db.query(
+          `INSERT INTO _smrt_dispatch (id, type, source, payload, status, attempts, processed_at, metadata, created_at, updated_at)
+           VALUES ($1, 'a.event', 's1', '{}', $2, 1, $3, '{}', $4, $5)`,
+          id,
+          status,
+          status === 'completed' ? at : null,
+          at,
+          at,
+        );
+      await seed('old-completed', 'completed', daysAgo(20));
+      await seed('new-completed', 'completed', daysAgo(2));
+      await seed('old-failed', 'failed', daysAgo(10));
+      await seed('new-failed', 'failed', daysAgo(1));
+      const total = async () => {
+        const { rows } = await db.query(
+          'SELECT COUNT(*) AS n FROM _smrt_dispatch',
+        );
+        return Number((rows[0] as { n: unknown }).n);
+      };
+      expect(await total()).toBe(5);
 
       await requireCommandHandler(dispatchCommands['dispatch:cleanup'])([], {
         dry: true,
@@ -202,9 +226,19 @@ describe('dispatch commands', () => {
       });
 
       const out = allOutput();
-      expect(out).toContain('Current counts');
-      expect(out).toContain('Would delete completed older than 15 days');
-      expect(out).toContain('Would delete failed older than 7 days');
+      expect(out).toContain('Would delete completed older than 15 days: 1');
+      expect(out).toContain('Would delete failed older than 7 days: 1');
+      expect(await total()).toBe(5);
+
+      logSpy.mockClear();
+      await requireCommandHandler(dispatchCommands['dispatch:cleanup'])([], {
+        'completed-older-than': 15,
+        'failed-older-than': 7,
+      });
+      expect(allOutput()).toContain('Completed deleted: 1');
+      expect(allOutput()).toContain('Failed deleted: 1');
+      expect(await total()).toBe(3);
+      await db.close?.();
     });
 
     it('performs cleanup and reports deleted counts', async () => {

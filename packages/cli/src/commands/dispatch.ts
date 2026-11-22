@@ -358,37 +358,31 @@ export const dispatchCommands: Record<string, CLICommand> = {
         db = context.db;
         const { bus } = context;
 
+        const cleanupOptions = {
+          completedOlderThanDays: options['completed-older-than'] || 30,
+          failedOlderThanDays: options['failed-older-than'] || undefined,
+        };
+
         if (options.dry) {
-          // Just show counts
-          const { DispatchCollection } = await import(
-            '@happyvertical/smrt-core'
-          );
-
-          const completed = await DispatchCollection.countByStatus(
-            db,
-            'completed',
-          );
-          const failed = await DispatchCollection.countByStatus(db, 'failed');
-
+          // Same predicates and tenant scope as the live cleanup below,
+          // counted without deleting.
+          const preview = await bus.cleanup({
+            ...cleanupOptions,
+            dryRun: true,
+          });
+          console.log('\nDry run: nothing deleted.');
           console.log(
-            `\nCurrent counts:\n  Completed: ${completed}\n  Failed: ${failed}`,
+            `Would delete completed older than ${cleanupOptions.completedOlderThanDays} days: ${preview.completedDeleted}`,
           );
-          const completedDays = options['completed-older-than'] || 30;
-          console.log(
-            `\nWould delete completed older than ${completedDays} days`,
-          );
-          if (options['failed-older-than']) {
+          if (cleanupOptions.failedOlderThanDays) {
             console.log(
-              `Would delete failed older than ${options['failed-older-than']} days`,
+              `Would delete failed older than ${cleanupOptions.failedOlderThanDays} days: ${preview.failedDeleted}`,
             );
           }
           return;
         }
 
-        const result = await bus.cleanup({
-          completedOlderThanDays: options['completed-older-than'] || 30,
-          failedOlderThanDays: options['failed-older-than'] || undefined,
-        });
+        const result = await bus.cleanup(cleanupOptions);
 
         console.log(`Cleanup complete:`);
         console.log(`  Completed deleted: ${result.completedDeleted}`);

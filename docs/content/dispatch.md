@@ -261,8 +261,9 @@ smrt dispatch:process --subscriber Fiscus
 # Retry failed dispatches
 smrt dispatch:retry --max-attempts 3
 
-# Cleanup old dispatches
+# Cleanup old dispatches (--dry counts what the same cutoffs would delete)
 smrt dispatch:cleanup --completed-older-than 30
+smrt dispatch:cleanup --completed-older-than 30 --failed-older-than 7 --dry
 
 # Manage subscriptions
 smrt dispatch:subscriptions
