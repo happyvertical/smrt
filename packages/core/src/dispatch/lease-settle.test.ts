@@ -19,8 +19,8 @@ function failSettleWritesFor(db: DatabaseInterface, id: string): () => void {
   mutable.query = ((sql: string, ...params: unknown[]) => {
     const text = sql.replace(/\s+/g, ' ').trim();
     if (
-      text.startsWith('UPDATE _smrt_dispatch SET type =') &&
-      params[params.length - 1] === id
+      /^UPDATE _smrt_dispatch SET status = '(completed|failed)'/.test(text) &&
+      params.includes(id)
     ) {
       return Promise.reject(new Error('injected settle failure'));
     }

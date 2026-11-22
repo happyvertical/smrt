@@ -391,6 +391,10 @@ export class DispatchCollection {
    *
    * @returns `true` if this call claimed the dispatch, `false` if another
    *   worker already moved it out of `pending` (or it is not visible in scope).
+   *
+   * @deprecated `DispatchBus.process()` no longer calls this. It writes no
+   *   lease, so a row it claims is never reclaimed after a crash: it stays
+   *   `processing` until an operator releases it.
    */
   static async claim(
     db: DatabaseInterface,
@@ -415,14 +419,16 @@ export class DispatchCollection {
       paramIndex++;
     }
 
-    const { rowCount } = await db.query(
+    // RETURNING, not rowCount: DuckDB over-reports affected rows.
+    const result = await db.query(
       `UPDATE _smrt_dispatch
          SET status = $1, attempts = $2, updated_at = $3
-       WHERE ${conditions.join(' AND ')}`,
+       WHERE ${conditions.join(' AND ')}
+       RETURNING id`,
       ...params,
     );
 
-    return (rowCount ?? 0) > 0;
+    return (result.rows ?? []).length > 0;
   }
 
   /**

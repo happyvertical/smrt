@@ -43,19 +43,27 @@ import {
 } from '../system/schema.js';
 import {
   candidateCursor,
+  DISPATCH_CANDIDATE_PHASES,
+  type DispatchCandidateCursor,
   hydrateCandidate,
-  PENDING_CANDIDATE_PHASES,
-  type PendingCandidateCursor,
-  readPendingCandidatePage,
+  readCandidatePage,
 } from './candidates.js';
 import { DispatchCollection } from './collections/Dispatches.js';
 import { DispatchSubscriptionCollection } from './collections/DispatchSubscriptions.js';
+import {
+  claimDispatchLease,
+  type DispatchLease,
+  type DispatchLeaseSettings,
+  resolveDispatchLeaseSettings,
+  settleDispatchLease,
+} from './lease.js';
 import { Dispatch } from './models/Dispatch.js';
 import { DispatchSubscription } from './models/DispatchSubscription.js';
 import { dispatchPatternDialect } from './pattern.js';
 import { retryFailedDispatches } from './retry.js';
 import { isDispatchRoutedTo } from './routing.js';
 import {
+  type DispatchTenantScope,
   resolveDispatchTenantId,
   resolveDispatchTenantScope,
 } from './tenant-resolver.js';
@@ -66,6 +74,7 @@ import type {
   DispatchCleanupResult,
   DispatchEmitOptions,
   DispatchHandler,
+  DispatchLeaseOptions,
   DispatchListOptions,
   DispatchMetadata,
   DispatchProcessOptions,
@@ -166,11 +175,17 @@ export class DispatchBus {
     return raw.slice(0, DispatchBus.MAX_SOURCE_LENGTH);
   }
 
+  /** Resolved lease length and claim budget. */
+  private readonly lease: DispatchLeaseSettings;
+
   /**
    * Create a new DispatchBus (use createDispatchBus factory instead)
+   *
+   * @param options - Lease options; an invalid value throws naming the option.
    */
-  constructor(db: DatabaseInterface) {
+  constructor(db: DatabaseInterface, options: DispatchLeaseOptions = {}) {
     this.db = db;
+    this.lease = resolveDispatchLeaseSettings(options);
   }
 
   /**
@@ -653,16 +668,21 @@ export class DispatchBus {
     let pages = 0;
     let recheckRejects = 0;
     const malformedIds: string[] = [];
+    // Phase bounds are frozen at the call start: a lease that expires while
+    // this call runs is left for a later call.
+    const callStart = new Date();
+    // Rows this call claimed are never claimed again by it.
+    const claimedThisCall = new Set<string>();
 
-    candidates: for (const phase of PENDING_CANDIDATE_PHASES) {
-      let cursor: PendingCandidateCursor | undefined;
+    candidates: for (const phase of DISPATCH_CANDIDATE_PHASES) {
+      let cursor: DispatchCandidateCursor | undefined;
       while (claims < limit) {
         if (pages > 0) {
           subscriptions = await loadSubscriptions();
           if (subscriptions.length === 0) break candidates;
         }
         pages++;
-        const rows = await readPendingCandidatePage(this.db, {
+        const rows = await readCandidatePage(this.db, {
           dialect,
           subscriber,
           subscriptions,
@@ -671,11 +691,14 @@ export class DispatchBus {
           phase,
           cursor,
           pageSize,
+          callStart,
+          maxAttempts: this.lease.maxAttempts,
         });
 
         for (const row of rows) {
           if (claims >= limit) break;
           cursor = candidateCursor(row);
+          if (claimedThisCall.has(cursor.id)) continue;
           const dispatch = hydrateCandidate(row);
           if (!dispatch) {
             // Isolated: the cursor has moved past it, so it never blocks
@@ -687,22 +710,33 @@ export class DispatchBus {
             recheckRejects++;
             continue;
           }
-          // Atomically claim the dispatch (S5 #1398). The conditional UPDATE
-          // (WHERE id = ? AND status = 'pending' [AND tenant predicate])
-          // closes the TOCTOU window: if a competing worker — or a
-          // system-scoped processor — already moved this row out of
-          // 'pending', our claim affects no rows and we skip it, so a
-          // compete/global dispatch is processed at most once.
-          const claimed = await DispatchCollection.claim(
-            this.db,
-            dispatch,
+          // Atomically claim the dispatch (S5 #1398): one conditional UPDATE
+          // ... RETURNING (pending, or a lease that expired before this call
+          // began, under the claim budget, in tenant scope) writes a fresh
+          // lease token. Only the caller whose token comes back owns the
+          // row, so a compete/global dispatch has one live holder at a time.
+          const lease = await claimDispatchLease(this.db, {
+            id: dispatch.id,
+            callStart,
+            settings: this.lease,
             tenantScope,
-          );
-          if (!claimed) {
+          });
+          if (!lease) {
             continue;
           }
+          claimedThisCall.add(lease.id);
           claims++;
-          if (await this.runClaimedDispatch(subscriber, handler, dispatch)) {
+          dispatch.status = 'processing';
+          dispatch.attempts = lease.attempts;
+          if (
+            await this.runClaimedDispatch(
+              subscriber,
+              handler,
+              dispatch,
+              lease,
+              tenantScope,
+            )
+          ) {
             processed++;
           }
         }
@@ -737,44 +771,62 @@ export class DispatchBus {
   private static readonly CANDIDATE_PAGE_SIZE = 100;
 
   /**
-   * Run the handler for a dispatch this call claimed and record the outcome.
+   * Run the handler for a dispatch this call claimed and record the outcome
+   * under the lease token.
    *
-   * @returns `true` when the handler succeeded and the row was marked
-   *   completed.
+   * @returns `true` when the handler succeeded and this call's settle wrote
+   *   `completed`.
    */
   private async runClaimedDispatch(
     subscriber: string,
     handler: DispatchHandler,
     dispatch: Dispatch,
+    lease: DispatchLease,
+    tenantScope: DispatchTenantScope,
   ): Promise<boolean> {
+    let outcome:
+      | { status: 'completed'; subscriber: string }
+      | { status: 'failed'; error: string };
     try {
-      // Invoke handler
       await handler(dispatch.payload, dispatch.getMetadata());
-
-      // Mark as completed
-      dispatch.markCompleted(subscriber);
-      await DispatchCollection.update(this.db, dispatch);
-      return true;
+      outcome = { status: 'completed', subscriber };
     } catch (error) {
-      // Mark as failed
-      const errorMessage =
-        error instanceof Error ? error.message : String(error);
-      dispatch.markFailed(errorMessage);
-      try {
-        await DispatchCollection.update(this.db, dispatch);
-      } catch (settleError) {
-        // A status write that throws is isolated to its row: the rest of
-        // the batch still runs and process() still resolves. The row stays
-        // `processing`.
-        logger.warn('dispatch.settle_error: could not record the outcome', {
+      outcome = {
+        status: 'failed',
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+
+    try {
+      const settled = await settleDispatchLease(
+        this.db,
+        lease,
+        outcome,
+        tenantScope,
+      );
+      if (!settled) {
+        // Another worker reclaimed the row, or a sweep or retry moved it,
+        // after this attempt's lease: the row is left as that writer set it.
+        logger.warn('dispatch.lease_lost: outcome not recorded', {
           id: dispatch.id,
           type: dispatch.type,
-          error:
-            settleError instanceof Error
-              ? settleError.message
-              : String(settleError),
+          outcome: outcome.status,
         });
+        return false;
       }
+      return outcome.status === 'completed';
+    } catch (settleError) {
+      // A status write that throws is isolated to its row: the rest of the
+      // batch still runs and process() still resolves. The row keeps its
+      // lease and becomes claimable again once the lease expires.
+      logger.warn('dispatch.settle_error: could not record the outcome', {
+        id: dispatch.id,
+        type: dispatch.type,
+        error:
+          settleError instanceof Error
+            ? settleError.message
+            : String(settleError),
+      });
       return false;
     }
   }
@@ -985,6 +1037,13 @@ async function withStartupRetry<T>(
 export async function createDispatchBus(
   options: DispatchBusOptions = {},
 ): Promise<DispatchBus> {
+  // Lease options are validated before any database is opened.
+  const leaseOptions = {
+    leaseMs: options.leaseMs,
+    maxAttempts: options.maxAttempts,
+  };
+  resolveDispatchLeaseSettings(leaseOptions);
+
   // Resolve database configuration
   const dbConfig = options.db || options.persistence;
 
@@ -1029,7 +1088,7 @@ export async function createDispatchBus(
     throw new Error('Invalid database configuration for DispatchBus');
   }
 
-  const bus = new DispatchBus(db);
+  const bus = new DispatchBus(db, leaseOptions);
   // initialize() sets `initialized` only on success and its DDL is idempotent
   // and serialized, so a retry after a dropped connection starts it over.
   await withStartupRetry(() => bus.initialize(), options.startupRetry);

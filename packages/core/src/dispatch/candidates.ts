@@ -1,26 +1,31 @@
 /**
- * Pending-candidate query for `DispatchBus.process()` (internal).
+ * Candidate query for `DispatchBus.process()` (internal).
  *
- * Selects, oldest first, the pending rows routed to one subscriber, with the
- * routing predicate (`dispatch/routing.ts`), the compiled subscription
- * patterns (`dispatch/pattern.ts`), the optional `signalTypes` filter and the
- * tenant predicate all applied in SQL BEFORE the page limit, so an eligible
- * row is never hidden behind newer or non-matching rows.
+ * Selects, oldest first, the claimable rows routed to one subscriber, with
+ * the routing predicate (`dispatch/routing.ts`), the compiled subscription
+ * patterns (`dispatch/pattern.ts`), the optional `signalTypes` filter, the
+ * claim budget and the tenant predicate all applied in SQL BEFORE the page
+ * limit, so an eligible row is never hidden behind newer, non-matching or
+ * spent rows.
  *
- * Pages are keyset-paged and come in two phases:
+ * Pages are keyset-paged and come in phases, read in this order:
  *
- * 1. `undated`: `status = 'pending' AND created_at IS NULL`, ordered by id
+ * 1. `expired`: `status = 'processing' AND claimed_until IS NOT NULL AND
+ *    claimed_until < <call start>`, ordered by `(claimed_until, id)`: leases
+ *    whose holder stopped renewing before this call began;
+ * 2. `undated`: `status = 'pending' AND created_at IS NULL`, ordered by id
  *    (pre-default legacy rows, taken as the oldest);
- * 2. `dated`: `status = 'pending' AND created_at IS NOT NULL`, ordered by
+ * 3. `dated`: `status = 'pending' AND created_at IS NOT NULL`, ordered by
  *    `(created_at, id)`.
+ *
+ * The call start is read once per `process()` call, so a lease that expires
+ * while the call runs (or one this call wrote) is never in its expired phase.
  *
  * Both cursor columns are read as `CAST(... AS TEXT)` in the same query and
  * compared as text, in the same expression the query orders by, so any
  * non-NULL text id pages exactly once (identical timestamps and arbitrary
  * caller ids included) and a value JavaScript cannot parse never stops the
- * cursor. Ordering by the text form means no index serves the sort; the
- * `status` index narrows the scan to pending rows. A dedicated
- * `(status, created_at, id)` index belongs to the lease schema change.
+ * cursor.
  */
 
 import type { DatabaseInterface } from '@happyvertical/sql';
@@ -31,24 +36,26 @@ import { type DispatchPatternDialect, dispatchPatternSql } from './pattern.js';
 import type { DispatchTenantScope } from './tenant-resolver.js';
 
 /** Candidate phases, in the order `process()` reads them. */
-export type PendingCandidatePhase = 'undated' | 'dated';
+export type DispatchCandidatePhase = 'expired' | 'undated' | 'dated';
 
-export const PENDING_CANDIDATE_PHASES: readonly PendingCandidatePhase[] = [
+export const DISPATCH_CANDIDATE_PHASES: readonly DispatchCandidatePhase[] = [
+  'expired',
   'undated',
   'dated',
 ];
 
 /** Keyset position after the last row read in a phase. */
-export interface PendingCandidateCursor {
-  createdAt: string | null;
+export interface DispatchCandidateCursor {
+  /** Text form of the phase's sort column (`null` in the `undated` phase). */
+  key: string | null;
   id: string;
 }
 
 /** Column aliases carrying each row's cursor values. */
-export const CURSOR_CREATED_COLUMN = 'smrt_cursor_created';
+export const CURSOR_KEY_COLUMN = 'smrt_cursor_key';
 export const CURSOR_ID_COLUMN = 'smrt_cursor_id';
 
-export interface PendingCandidateQuery {
+export interface DispatchCandidateQuery {
   dialect: DispatchPatternDialect;
   subscriber: string;
   /** The subscriber's enabled subscriptions for the active scope. */
@@ -56,18 +63,29 @@ export interface PendingCandidateQuery {
   /** Optional exact signal-type filter (`process({ signalTypes })`). */
   signalTypes?: readonly string[];
   tenantScope?: DispatchTenantScope;
-  phase: PendingCandidatePhase;
-  cursor?: PendingCandidateCursor;
+  phase: DispatchCandidatePhase;
+  cursor?: DispatchCandidateCursor;
   pageSize: number;
+  /** Start of the `process()` call: the expired phase's upper bound. */
+  callStart: Date;
+  /** Claim budget: rows with `COALESCE(attempts, 0)` at or above it are not candidates. */
+  maxAttempts: number;
 }
+
+/** Sort column of each phase (besides id). */
+const PHASE_SORT_COLUMN: Record<DispatchCandidatePhase, string | null> = {
+  expired: 'claimed_until',
+  undated: null,
+  dated: 'created_at',
+};
 
 /** Read the cursor of a candidate row. */
 export function candidateCursor(
   row: Record<string, unknown>,
-): PendingCandidateCursor {
-  const created = row[CURSOR_CREATED_COLUMN];
+): DispatchCandidateCursor {
+  const key = row[CURSOR_KEY_COLUMN];
   return {
-    createdAt: created == null ? null : String(created),
+    key: key == null ? null : String(key),
     id: String(row[CURSOR_ID_COLUMN]),
   };
 }
@@ -93,12 +111,12 @@ export function hydrateCandidate(
 }
 
 /**
- * Read one page of pending candidates. Returns raw rows (with the cursor
- * aliases); the caller hydrates and isolates malformed rows.
+ * Read one page of candidates of one phase. Returns raw rows (with the
+ * cursor aliases); the caller hydrates and isolates malformed rows.
  */
-export async function readPendingCandidatePage(
+export async function readCandidatePage(
   db: DatabaseInterface,
-  query: PendingCandidateQuery,
+  query: DispatchCandidateQuery,
 ): Promise<Record<string, unknown>[]> {
   const params: unknown[] = [];
   const bind = (value: unknown): string => {
@@ -111,22 +129,37 @@ export async function readPendingCandidatePage(
   const route = routingPredicateSql(query, bind);
   if (route === null) return [];
 
-  const createdText = 'CAST(created_at AS TEXT)';
+  const sortColumn = PHASE_SORT_COLUMN[query.phase];
+  const keyText = sortColumn ? `CAST(${sortColumn} AS TEXT)` : 'NULL';
   const idText = 'CAST(id AS TEXT)';
-  const conditions: string[] = ["status = 'pending'", 'id IS NOT NULL', route];
+  const conditions: string[] = ['id IS NOT NULL', route];
 
-  if (query.phase === 'undated') {
-    conditions.push('created_at IS NULL');
-    if (query.cursor) conditions.push(`${idText} > ${bind(query.cursor.id)}`);
+  if (query.phase === 'expired') {
+    conditions.push(
+      "status = 'processing'",
+      'claimed_until IS NOT NULL',
+      `claimed_until < ${bind(query.callStart.toISOString())}`,
+    );
   } else {
-    conditions.push('created_at IS NOT NULL');
-    if (query.cursor && query.cursor.createdAt !== null) {
+    conditions.push(
+      "status = 'pending'",
+      query.phase === 'undated'
+        ? 'created_at IS NULL'
+        : 'created_at IS NOT NULL',
+    );
+  }
+  conditions.push(`COALESCE(attempts, 0) < ${bind(query.maxAttempts)}`);
+
+  if (query.cursor) {
+    if (sortColumn === null) {
+      conditions.push(`${idText} > ${bind(query.cursor.id)}`);
+    } else if (query.cursor.key !== null) {
       // Each placeholder used once, in text order (positional adapters).
-      const after = bind(query.cursor.createdAt);
-      const same = bind(query.cursor.createdAt);
+      const after = bind(query.cursor.key);
+      const same = bind(query.cursor.key);
       const id = bind(query.cursor.id);
       conditions.push(
-        `(${createdText} > ${after} OR (${createdText} = ${same} AND ${idText} > ${id}))`,
+        `(${keyText} > ${after} OR (${keyText} = ${same} AND ${idText} > ${id}))`,
       );
     }
   }
@@ -142,9 +175,8 @@ export async function readPendingCandidatePage(
     `$${params.length + 1}`,
   );
 
-  const order =
-    query.phase === 'undated' ? idText : `${createdText}, ${idText}`;
-  const sql = `SELECT *, ${createdText} AS ${CURSOR_CREATED_COLUMN}, ${idText} AS ${CURSOR_ID_COLUMN}
+  const order = sortColumn ? `${keyText}, ${idText}` : idText;
+  const sql = `SELECT *, ${keyText} AS ${CURSOR_KEY_COLUMN}, ${idText} AS ${CURSOR_ID_COLUMN}
      FROM _smrt_dispatch
      WHERE ${conditions.join(' AND ')}
      ORDER BY ${order}
@@ -161,7 +193,7 @@ export async function readPendingCandidatePage(
  * anything.
  */
 function routingPredicateSql(
-  query: PendingCandidateQuery,
+  query: DispatchCandidateQuery,
   bind: (value: unknown) => string,
 ): string | null {
   const enabled = query.subscriptions.filter((sub) => sub.enabled);
