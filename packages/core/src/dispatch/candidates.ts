@@ -68,8 +68,72 @@ export interface DispatchCandidateQuery {
   pageSize: number;
   /** Start of the `process()` call: the expired phase's upper bound. */
   callStart: Date;
-  /** Claim budget: rows with `COALESCE(attempts, 0)` at or above it are not candidates. */
+  /**
+   * Bus claim budget, for rows without a stamped `max_attempts`: rows whose
+   * `COALESCE(attempts, 0)` reached their budget are not candidates.
+   */
   maxAttempts: number;
+}
+
+/**
+ * Fail the rows routed to this subscriber whose claim budget is spent: a
+ * `pending` row (revived or released at its budget) or a `processing` row
+ * whose lease expired before the call began. One `UPDATE ... RETURNING`
+ * under the same routing, `signalTypes` and tenant predicates as the
+ * candidate query; a lease renewed after the call began is never touched,
+ * and neither is a row in `excludeIds` (attempts this process is running).
+ *
+ * @returns The ids this call failed.
+ */
+export async function failExhaustedCandidates(
+  db: DatabaseInterface,
+  query: Omit<DispatchCandidateQuery, 'phase' | 'cursor' | 'pageSize'> & {
+    reason: string;
+    excludeIds: readonly string[];
+  },
+): Promise<string[]> {
+  const params: unknown[] = [];
+  const bind = (value: unknown): string => {
+    params.push(value);
+    return `$${params.length}`;
+  };
+  // Bound in statement-text order (SQLite allocates `$n` by first use).
+  const set = `status = 'failed',
+       last_error = CAST(${bind(query.reason)} AS TEXT) || ' after ' || CAST(COALESCE(attempts, 0) AS TEXT) || ' claims',
+       updated_at = ${bind(new Date().toISOString())},
+       lease_token = NULL, claimed_until = NULL`;
+  const route = routingPredicateSql(
+    { ...query, phase: 'dated', pageSize: 0 },
+    bind,
+  );
+  if (route === null) return [];
+  const conditions = [
+    'id IS NOT NULL',
+    route,
+    `COALESCE(attempts, 0) >= COALESCE(max_attempts, ${bind(query.maxAttempts)})`,
+    `(status = 'pending' OR (status = 'processing' AND claimed_until IS NOT NULL AND claimed_until < ${bind(query.callStart.toISOString())}))`,
+  ];
+  if (query.signalTypes && query.signalTypes.length > 0) {
+    conditions.push(`type IN (${query.signalTypes.map(bind).join(', ')})`);
+  }
+  if (query.excludeIds.length > 0) {
+    conditions.push(`id NOT IN (${query.excludeIds.map(bind).join(', ')})`);
+  }
+  pushTenantPredicate(
+    conditions,
+    params,
+    query.tenantScope,
+    `$${params.length + 1}`,
+  );
+  const result = await db.query(
+    `UPDATE _smrt_dispatch SET ${set}
+     WHERE ${conditions.join(' AND ')}
+     RETURNING id`,
+    ...params,
+  );
+  return (result.rows ?? []).map((row: Record<string, unknown>) =>
+    String(row.id),
+  );
 }
 
 /** Sort column of each phase (besides id). */
@@ -148,7 +212,9 @@ export async function readCandidatePage(
         : 'created_at IS NOT NULL',
     );
   }
-  conditions.push(`COALESCE(attempts, 0) < ${bind(query.maxAttempts)}`);
+  conditions.push(
+    `COALESCE(attempts, 0) < COALESCE(max_attempts, ${bind(query.maxAttempts)})`,
+  );
 
   if (query.cursor) {
     if (sortColumn === null) {

@@ -6,6 +6,7 @@
 
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, expect, it, vi } from 'vitest';
+import { DispatchBus } from '../../dispatch/bus';
 import type {
   DispatchMetadata,
   DispatchProcessStats,
@@ -15,6 +16,7 @@ import {
   type DispatchTestOpenOptions,
   dispatchLeaseRow,
   insertRawDispatch,
+  rowsOf,
 } from './dispatch-test-db';
 
 export type DispatchOpener = (
@@ -251,6 +253,124 @@ export function defineLocalLeaseRegistryCases(
     } finally {
       renewals.restore();
     }
+  });
+}
+
+/** T15, T16, T23: per-row claim budget and the cap sweep. */
+export function defineLeaseCapCases(openDatabase: DispatchOpener): void {
+  const open = useOpener(openDatabase);
+  const future = () => new Date(Date.now() + 3_600_000).toISOString();
+
+  it('claim cap applies to pending and expired branches; pre-handler crashes exhaust', async () => {
+    const { bus, db } = await open({ bus: { maxAttempts: 2 } });
+    await bus.subscribe({ signalType: 'job.run', subscriber: 'worker' });
+    // Claimed twice by processes that stopped before their handler ran.
+    await insertRawDispatch(db, {
+      id: 'crashed-twice',
+      type: 'job.run',
+      status: 'processing',
+      attempts: 2,
+      leaseToken: 'gone',
+      claimedUntil: PAST,
+      updatedAt: PAST,
+    });
+    await insertRawDispatch(db, {
+      id: 'revived-at-cap',
+      type: 'job.run',
+      attempts: 2,
+      updatedAt: PAST,
+    });
+    await insertRawDispatch(db, {
+      id: 'live-at-cap',
+      type: 'job.run',
+      status: 'processing',
+      attempts: 2,
+      leaseToken: 'running',
+      claimedUntil: future(),
+    });
+
+    const calls: string[] = [];
+    let stats: DispatchProcessStats | undefined;
+    await bus.process(
+      'worker',
+      async (_payload, metadata) => {
+        calls.push(metadata.id);
+      },
+      { onStats: (value) => (stats = value) },
+    );
+
+    expect(calls).toEqual([]);
+    expect(stats?.exhausted).toBe(2);
+    for (const id of ['crashed-twice', 'revived-at-cap']) {
+      const row = await dispatchLeaseRow(db, id);
+      expect(row.status).toBe('failed');
+      expect(row.leaseToken).toBeNull();
+      expect(row.lastError).toBe(
+        '[smrt:DISPATCH_ATTEMPTS_EXHAUSTED] claim budget spent after 2 claims',
+      );
+      const updated = rowsOf(
+        await db.query(
+          'SELECT CAST(updated_at AS TEXT) AS u FROM _smrt_dispatch WHERE id = $1',
+          id,
+        ),
+      )[0]?.u;
+      // Failure time, so retention ages the row from when it failed.
+      expect(String(updated).startsWith('2026-01-01')).toBe(false);
+    }
+    const live = await dispatchLeaseRow(db, 'live-at-cap');
+    expect(live.status).toBe('processing');
+    expect(live.leaseToken).toBe('running');
+  });
+
+  it('stamps the claim budget at the first claim; a cap-1 bus never fails another subscriber row', async () => {
+    const { bus, db } = await open({ bus: { maxAttempts: 5 } });
+    const strict = new DispatchBus(db, { maxAttempts: 1 });
+    await bus.subscribe({ signalType: 'job.run', subscriber: 'patient' });
+    await strict.subscribe({ signalType: 'job.run', subscriber: 'strict' });
+    await insertRawDispatch(db, { id: 'shared', type: 'job.run' });
+
+    // First claim by the budget-5 bus stamps 5 on the row.
+    await bus.process('patient', async () => {
+      throw new Error('transient');
+    });
+    expect((await dispatchLeaseRow(db, 'shared')).maxAttempts).toBe(5);
+    expect(await bus.retry()).toBe(1);
+
+    // The cap-1 bus applies the row's budget, not its own.
+    const seen: number[] = [];
+    let stats: DispatchProcessStats | undefined;
+    await strict.process(
+      'strict',
+      async (_payload, metadata) => {
+        seen.push(metadata.attempts);
+      },
+      { onStats: (value) => (stats = value) },
+    );
+    expect(stats?.exhausted).toBe(0);
+    expect(seen).toEqual([2]);
+    expect((await dispatchLeaseRow(db, 'shared')).status).toBe('completed');
+  });
+
+  it('cap sweep uses the compiled pattern', async () => {
+    const { bus, db } = await open({ bus: { maxAttempts: 1 } });
+    await bus.subscribe({ signalType: 'invoice.v*', subscriber: 'billing' });
+    await bus.subscribe({ signalType: 'campaign.*', subscriber: 'billing' });
+    await insertRawDispatch(db, {
+      id: 'routed',
+      type: 'invoice.v2',
+      attempts: 1,
+    });
+    await insertRawDispatch(db, {
+      id: 'other-case',
+      type: 'Campaign.X',
+      attempts: 1,
+    });
+
+    await bus.process('billing', async () => {});
+
+    expect((await dispatchLeaseRow(db, 'routed')).status).toBe('failed');
+    // Case-sensitive on every engine (GLOB on SQLite).
+    expect((await dispatchLeaseRow(db, 'other-case')).status).toBe('pending');
   });
 }
 
@@ -499,9 +619,13 @@ export function defineLeaseReclaimCases(openDatabase: DispatchOpener): void {
       ['legacy-null-attempts', 1],
       ['pending-under-cap', 2],
     ]);
-    expect((await dispatchLeaseRow(db, 'pending-at-cap')).attempts).toBe(2);
-    expect((await dispatchLeaseRow(db, 'expired-at-cap')).leaseToken).toBe(
-      'gone',
-    );
+    // Not claimed; the claim budget sweep fails them instead.
+    const pendingAtCap = await dispatchLeaseRow(db, 'pending-at-cap');
+    expect(pendingAtCap.attempts).toBe(2);
+    expect(pendingAtCap.status).toBe('failed');
+    const expiredAtCap = await dispatchLeaseRow(db, 'expired-at-cap');
+    expect(expiredAtCap.attempts).toBe(2);
+    expect(expiredAtCap.status).toBe('failed');
+    expect(expiredAtCap.leaseToken).toBeNull();
   });
 }
