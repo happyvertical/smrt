@@ -120,7 +120,7 @@ describe('reportAiUsage transcript counts (#4781)', () => {
     await db.query(
       `INSERT INTO _smrt_ai_usage
          (id, provider, model, operation, prompt_tokens, completion_tokens,
-          total_tokens, estimated_cost, duration, tenant_id, prompt_key,
+          total_tokens, estimated_cost, duration_ms, tenant_id, prompt_key,
           entry_call_id, tags, created_at)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
       `u-${String(seq).padStart(4, '0')}`,

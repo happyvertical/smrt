@@ -121,7 +121,10 @@ describe.skipIf(!pgUrl)('AI call ledger on PostgreSQL (#5516)', () => {
         usageParts: {
           call: call.sdkCall,
           complete: true,
-          parts: [{ index: 0, last: true, usage: counted(20) }],
+          parts: [
+            { index: 0, usage: counted(6) },
+            { index: 1, last: true, usage: counted(14) },
+          ],
         },
       };
     };

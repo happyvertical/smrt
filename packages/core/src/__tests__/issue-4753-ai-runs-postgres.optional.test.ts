@@ -94,6 +94,8 @@ describe.skipIf(!pgUrl)('fusion run records on PostgreSQL (#4753)', () => {
       'budget',
       'mode',
       'details',
+      // 1.21.0: late amounts the call ledger refused (#5516).
+      'refused_usage',
     ];
     const bigint = [
       'degraded',

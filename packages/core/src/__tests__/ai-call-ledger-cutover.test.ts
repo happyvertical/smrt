@@ -19,6 +19,7 @@ import {
 } from '../system/ai-call-ledger-schema';
 import { ensureSystemTables } from '../system/bootstrap';
 import { openAiRun, SMRT_SCHEMA_VERSION } from '../system/browser';
+import { getSystemTableDDLForEngine } from '../system/schema';
 import {
   columnsOf,
   downgradeToV120,
@@ -270,7 +271,15 @@ describe.each(aiRunTestEngines)('1.21.0 cutover on %s', (engine) => {
       await db.query(`DROP TABLE IF EXISTS ${table}`);
     }
     await db.query('DELETE FROM _smrt_migrations');
-    for (const statement of LEGACY_AI_RUN_DDL) await db.query(statement);
+    for (const statement of LEGACY_AI_RUN_DDL) {
+      // On PostgreSQL the legacy tables take the zone-aware timestamps the
+      // audited timestamp migration leaves (a naive table fails closed).
+      await db.query(
+        engine === 'pglite'
+          ? getSystemTableDDLForEngine(statement, 'postgres')
+          : statement,
+      );
+    }
     await db.query(
       `INSERT INTO _smrt_ai_usage (id, provider, model, operation, duration, created_at)
        VALUES ('legacy-1', 'openai', 'gpt-4o', 'message', 9, '2025-01-01T00:00:00.000Z')`,
@@ -376,6 +385,13 @@ describe.each(aiRunTestEngines)('1.21.0 cutover on %s', (engine) => {
 
   it("1.20.0's bootstrap on a database created at 1.21.0 completes and its inserts still fail", async () => {
     const db = await fileDatabase(engine);
+    if (engine !== 'sqlite') {
+      // DuckDB and PostgreSQL bind `CREATE INDEX IF NOT EXISTS` before they
+      // check the name: the older replay of the sweep index names
+      // `reservation` and the older bootstrap stops there, before its stamp.
+      await expect(runV120Bootstrap(db, engine)).rejects.toThrow(/reservation/);
+      return;
+    }
     await runV120Bootstrap(db, engine);
     const run = await openAiRun(
       { db, usageTracking: true, tenantId: 't' },

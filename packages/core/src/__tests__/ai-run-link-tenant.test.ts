@@ -11,6 +11,7 @@
 
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, describe, expect, it } from 'vitest';
+import { insertAiUsageRow } from '../adapters/ai-usage';
 import { createAiUsageRecorder } from '../adapters/ai-usage-recorder';
 import {
   finishAiRun,
@@ -160,8 +161,19 @@ describe.each(
 
   it('returns a call on its own with its own tenant evaluations only', async () => {
     const db = await newAiRunTestDatabase(engine);
-    const own = createAiUsageRecorder({ db, tenantId: 'tenant-one' });
-    await own(rawEvent({ aiCallId: 'reused-call', promptKey: 'tags.one' }));
+    // A row under a chosen id (an event's `aiCallId` is a claim since
+    // #5516, so the row is written directly).
+    const row = (tenantId: string, promptKey: string) =>
+      insertAiUsageRow(
+        db,
+        {
+          ...rawEvent({ promptKey }),
+          timestamp: new Date(),
+          tenantId,
+        } as never,
+        { id: 'reused-call' },
+      );
+    await row('tenant-one', 'tags.one');
     await recordAiEvaluation(db, {
       callId: 'reused-call',
       label: 'tenant-one-label',
@@ -169,8 +181,7 @@ describe.each(
     });
     // The row is pruned; another tenant's row later takes the same id.
     await db.query("DELETE FROM _smrt_ai_usage WHERE id = 'reused-call'");
-    const other = createAiUsageRecorder({ db, tenantId: 'tenant-two' });
-    await other(rawEvent({ aiCallId: 'reused-call', promptKey: 'tags.two' }));
+    await row('tenant-two', 'tags.two');
     const trajectory = await getRunTrajectory(db, { callId: 'reused-call' });
     expect(trajectory?.entries[0]?.usage?.promptKey).toBe('tags.two');
     expect(trajectory?.entries[0]?.evaluations).toEqual([]);

@@ -15,6 +15,19 @@ import type { SmrtAiUsageEvent } from '@happyvertical/smrt-types';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { insertAiUsageRow } from '../adapters/ai-usage.js';
 import {
+  AI_CALL_USAGE_WINDOW_MS,
+  applyCallUsageLocked,
+  type CallUsageMode,
+  callUsageHeld,
+  emptyCallUsage,
+  flushCallCloses,
+  parseCallUsage,
+  queuedCallCloses,
+  type RunRefusedAmount,
+  refusedAmountsOf,
+  reservationAdmission,
+} from './ai-call-ledger.js';
+import {
   type AiRunReservationState,
   insertAiRunEventTx,
 } from './ai-run-events.js';
@@ -334,6 +347,10 @@ export async function reserveAiCalls(
       const out: AiCallReservation[] = [];
       for (const [i, { request, callId, eventId }] of prepared.entries()) {
         const size = sizes[i] as AiCallReservationSize;
+        // The call's ledger (#5516): its rate, fixed here for every later
+        // charge, and for an ordinary tracked call its proof, billed row
+        // and mode, in this same transaction.
+        const admission = reservationAdmission(request)?.(tx.now);
         const seq = await insertAiRunEventTx(tx, runId, {
           id: eventId,
           type: 'call',
@@ -345,6 +362,15 @@ export async function reserveAiCalls(
           reservation: 'reserved',
           reservedTokens: size.reservedTokens,
           reservedCost: size.reservedCost,
+          ledger: {
+            callRate: request.rate
+              ? JSON.stringify({
+                  input: request.rate.input,
+                  output: request.rate.output,
+                })
+              : null,
+            ...(admission ?? {}),
+          },
         });
         out.push({ ...size, runId, callId, eventId, seq, callTimeoutMs });
       }
@@ -512,12 +538,15 @@ async function moveReservation(
   to: AiRunReservationState,
   status: string | null,
 ): Promise<{ reservedTokens: number; reservedCost: number } | null> {
-  const marks = from.map((_, i) => `$${i + 5}`).join(', ');
+  const marks = from.map((_, i) => `$${i + 6}`).join(', ');
+  // `ended_at` is written once, when the call first leaves `reserved`: the
+  // ledger's one-hour window counts from it (#5516).
   const rows = getRows(
     await aiRunQuery(
       tx.db,
       `UPDATE _smrt_ai_run_events
-          SET call_state = $3, status = COALESCE($4, status)
+          SET call_state = $3, status = COALESCE($4, status),
+              ended_at = COALESCE(ended_at, $5)
         WHERE run_id = $1 AND call_id = $2 AND type = 'call'
           AND call_state IN (${marks})
         RETURNING reserved_tokens, reserved_cost`,
@@ -525,6 +554,7 @@ async function moveReservation(
       callId,
       to,
       status,
+      tx.now.toISOString(),
       ...from,
     ),
   );
@@ -550,6 +580,32 @@ export interface SettleAiCallInput {
   usage: SmrtAiUsageEvent;
   /** The call event's status; default `ok`. */
   status?: string;
+}
+
+/**
+ * The ledger of a call admitted on 1.21.0 (its reservation carries a proof):
+ * its mode and whether usage already reached it. Null for a pre-1.21.0
+ * call, a direct reservation, or a call with no reservation.
+ */
+async function ledgerOf(
+  tx: AiRunTx,
+  runId: string,
+  callId: string,
+): Promise<{ mode: CallUsageMode; held: boolean } | null> {
+  const row = getRows(
+    await aiRunQuery(
+      tx.db,
+      `SELECT call_proof, call_usage FROM _smrt_ai_run_events
+        WHERE run_id = $1 AND call_id = $2 AND type = 'call'`,
+      runId,
+      callId,
+    ),
+  )[0];
+  if (!row || row.call_proof === null || row.call_proof === undefined) {
+    return null;
+  }
+  const state = parseCallUsage(row.call_usage) ?? emptyCallUsage('single');
+  return { mode: state.mode, held: callUsageHeld(state) };
 }
 
 /** Whether the usage row under the call id is this call's (run and tenant). */
@@ -582,6 +638,37 @@ async function settleInTx(
   const chain = await lockAiRunChainInTenant(tx, input.runId, expectedTenant);
   const status = input.status ?? 'ok';
   const usage = input.usage;
+  const ledger = await ledgerOf(tx, input.runId, input.callId);
+  if (ledger) {
+    // A call admitted on 1.21.0 is charged only through its ledger: the
+    // stated usage closes a single-mode call; a parts-mode call takes what
+    // its parts said (#5516).
+    const result = await applyCallUsageLocked(tx, chain, {
+      runId: input.runId,
+      callId: input.callId,
+      caller: 'sender',
+      status,
+      mode: ledger.mode,
+      inputs:
+        ledger.mode === 'single'
+          ? [
+              {
+                kind: 'stated',
+                ...(usage.usage ? { usage: usage.usage } : {}),
+                ...(usage.estimatedCost !== undefined
+                  ? { estimatedCost: usage.estimatedCost }
+                  : {}),
+                ...(usage.model ? { model: usage.model } : {}),
+                duration: usage.duration,
+              },
+            ]
+          : [],
+    });
+    if (result.outcome === 'charged') {
+      return result.from === 'reserved' ? 'settled' : 'settled_late';
+    }
+    return 'already_settled';
+  }
   let path: AiCallSettlement;
   let returned: { tokens: number; cost: number } | null = null;
   let reservedTokens = 0;
@@ -708,6 +795,19 @@ async function releaseInTx(
   status: 'failed' | 'timed_out' | 'cancelled',
 ): Promise<boolean> {
   const run = chain[chain.length - 1] as AiRunRow;
+  const ledger = await ledgerOf(tx, run.id, callId);
+  if (ledger?.held) {
+    // Usage already reached the call: it is settled, not released (#5516).
+    await applyCallUsageLocked(tx, chain, {
+      runId: run.id,
+      callId,
+      caller: 'sender',
+      status,
+      mode: ledger.mode,
+      inputs: [],
+    });
+    return false;
+  }
   const held = await moveReservation(
     tx,
     run.id,
@@ -795,6 +895,20 @@ export async function reconcileAiCall(
         runId,
         expectedTenantOf(options),
       );
+      const ledger = await ledgerOf(tx, runId, callId);
+      if (ledger) {
+        // A 1.21.0 call: the sweep charges the usage parked on its ledger,
+        // else abandons it (#5516).
+        const result = await applyCallUsageLocked(tx, chain, {
+          runId,
+          callId,
+          caller: 'sweep',
+          inputs: [],
+        });
+        if (result.outcome === 'charged') return 'settled';
+        if (result.outcome === 'abandoned') return 'abandoned';
+        return 'moved';
+      }
       // Only this call's own row is evidence of its usage: the one under
       // its id, of its run, in its run's tenant.
       const tenant = chain[chain.length - 1]?.tenantId ?? null;
@@ -991,8 +1105,11 @@ export async function reconcileAiRunOnClaim(
 export const AI_RUN_SWEEP_DEFAULTS = Object.freeze({
   /** Grace added to the smallest `callTimeoutMs` on the chain. */
   graceMs: 60_000,
-  /** The stale-reservation threshold when no `callTimeoutMs` is set. */
-  staleReservationMs: 60 * 60_000,
+  /**
+   * The stale-reservation threshold when no `callTimeoutMs` is set; also
+   * the call ledger's window after a call first ended (#5516).
+   */
+  staleReservationMs: AI_CALL_USAGE_WINDOW_MS,
   /** A non-durable run quiet this long is closed as abandoned. */
   staleRunMs: 24 * 60 * 60_000,
   /** Reservations examined per sweep. */
@@ -1347,7 +1464,7 @@ export function deferAiRunSettlement(
 
 /** Settlements waiting for this database. */
 export function pendingAiRunSettlements(db: DatabaseInterface): number {
-  return pendingList(db, false)?.length ?? 0;
+  return (pendingList(db, false)?.length ?? 0) + queuedCallCloses(db);
 }
 
 function removePending(list: PendingSettlement[], entry: PendingSettlement) {
@@ -1500,6 +1617,9 @@ export async function flushAiRunSettlements(
   db: DatabaseInterface,
   options: { runId?: string } & AiRunTxOptions = {},
 ): Promise<void> {
+  // A tracked call's own queued close (#5516) first: its run's next
+  // reservation waits for it the same way.
+  await flushCallCloses(db, options);
   const list = pendingList(db, false);
   if (!list || list.length === 0) return;
   const held = new Set<string>();
@@ -1563,14 +1683,24 @@ export interface AiRunOwnTotals {
 /** What {@link checkAiRunTotals} found. */
 export interface AiRunTotalsCheck {
   runId: string;
-  /** False when a charged call's usage row is gone: never reported wrong. */
+  /**
+   * False when the run's trajectory was pruned, or a charged pre-1.21.0
+   * call's usage row is gone: never reported wrong.
+   */
   verifiable: boolean;
-  /** Charged call events whose usage row is missing. */
+  /** Charged pre-1.21.0 call events whose usage row is missing. */
   missingUsageRows: number;
   stored: AiRunOwnTotals;
-  /** From the usage rows; null when not verifiable. */
+  /** From the amounts charged; null when not verifiable. */
   computed: AiRunOwnTotals | null;
   matches: boolean | null;
+  /**
+   * Late amounts the ledger refused (call id, tenant, amount, reason): a
+   * sender that closed more than an hour after its call first ended, one
+   * whose reservation was pruned, a delivery from another process. Never
+   * charged; listed so an operator can bill them deliberately (#5516).
+   */
+  refused: RunRefusedAmount[];
 }
 
 const COST_TOLERANCE = 1e-6;
@@ -1578,7 +1708,16 @@ const COST_TOLERANCE = 1e-6;
 const OWN_TOTALS_USAGE = `u.id AS usage_id, u.prompt_tokens, u.completion_tokens,
               u.total_tokens, u.estimated_cost`;
 
-/** Fold charged call rows (`reserved_tokens` plus their usage row) into totals. */
+const OWN_TOTALS_LEDGER = `e.call_id, e.call_state, e.call_usage,
+              e.charged_tokens, e.charged_cost`;
+
+const CHARGED_STATES = new Set(['settled', 'settled_late', 'unreserved']);
+
+/**
+ * Fold a run's call rows into totals: a 1.21.0 call by the amounts its
+ * ledger charged, a pre-1.21.0 call by its usage row (`reserved_tokens` for
+ * one charged without counts).
+ */
 function foldOwnTotals(rows: Record<string, unknown>[]): {
   computed: AiRunOwnTotals;
   missing: number;
@@ -1591,6 +1730,17 @@ function foldOwnTotals(rows: Record<string, unknown>[]): {
   };
   let missing = 0;
   for (const row of rows) {
+    if (!CHARGED_STATES.has(String(row.call_state))) continue;
+    if (row.charged_tokens !== null && row.charged_tokens !== undefined) {
+      computed.calls++;
+      computed.tokens += num(row.charged_tokens);
+      if (row.charged_cost === null || row.charged_cost === undefined) {
+        computed.uncostedCalls++;
+      } else {
+        computed.cost += num(row.charged_cost);
+      }
+      continue;
+    }
     if (row.usage_id === null || row.usage_id === undefined) {
       missing++;
       continue;
@@ -1614,26 +1764,65 @@ function foldOwnTotals(rows: Record<string, unknown>[]): {
   return { computed, missing };
 }
 
-async function computeOwnTotals(
+/**
+ * The run row, its stored totals and refusals, and every call event with its
+ * own usage row (its id, its run, its run's tenant), in one statement
+ * anchored on the run: a settle or a prune committing meanwhile is seen
+ * whole or not at all, and a run that is gone reads as not found.
+ */
+async function readOwnTotalsRows(
   db: DatabaseInterface,
   runId: string,
-): Promise<{ computed: AiRunOwnTotals; missing: number }> {
-  const rows = getRows(
+): Promise<Record<string, unknown>[]> {
+  return getRows(
     await aiRunQuery(
       db,
-      `SELECT e.reserved_tokens, ${OWN_TOTALS_USAGE}
-         FROM _smrt_ai_run_events e
-         JOIN _smrt_ai_runs r ON r.id = e.run_id
+      `SELECT r.tokens AS run_tokens, r.cost_used AS run_cost,
+              r.calls AS run_calls, r.uncosted_calls AS run_uncosted,
+              r.trajectory_pruned, r.tenant_id AS run_tenant, r.refused_usage,
+              e.id AS event_id, e.reserved_tokens, ${OWN_TOTALS_LEDGER},
+              ${OWN_TOTALS_USAGE}
+         FROM _smrt_ai_runs r
+         LEFT JOIN _smrt_ai_run_events e ON e.run_id = r.id AND e.type = 'call'
          -- Only the call's own row: its id, its run, its run's tenant.
-         LEFT JOIN _smrt_ai_usage u ON u.id = e.call_id AND u.run_id = e.run_id
+         LEFT JOIN _smrt_ai_usage u ON u.id = e.call_id AND u.run_id = r.id
               AND (u.tenant_id = r.tenant_id
                    OR (u.tenant_id IS NULL AND r.tenant_id IS NULL))
-        WHERE e.run_id = $1 AND e.type = 'call'
-          AND e.call_state IN ('settled', 'settled_late', 'unreserved')`,
+        WHERE r.id = $1`,
       runId,
     ),
   );
-  return foldOwnTotals(rows);
+}
+
+/** Totals, verifiability and refusals from {@link readOwnTotalsRows}. */
+function ownTotalsOf(runId: string, rows: Record<string, unknown>[]) {
+  const first = rows[0];
+  if (!first) throw new AiRunNotFoundError(runId);
+  const stored: AiRunOwnTotals = {
+    tokens: num(first.run_tokens),
+    cost: num(first.run_cost),
+    calls: num(first.run_calls),
+    uncostedCalls: num(first.run_uncosted),
+  };
+  const events = rows.filter(
+    (row) => row.event_id !== null && row.event_id !== undefined,
+  );
+  const tenant =
+    first.run_tenant === null || first.run_tenant === undefined
+      ? null
+      : String(first.run_tenant);
+  const refused = refusedAmountsOf(
+    tenant,
+    events.map((row) => ({
+      callId: String(row.call_id),
+      callUsage: row.call_usage,
+    })),
+    first.refused_usage,
+  );
+  const pruned =
+    first.trajectory_pruned === true || num(first.trajectory_pruned) !== 0;
+  const { computed, missing } = foldOwnTotals(events);
+  return { stored, computed, missing, pruned, refused };
 }
 
 function sameTotals(a: AiRunOwnTotals, b: AiRunOwnTotals): boolean {
@@ -1647,49 +1836,21 @@ function sameTotals(a: AiRunOwnTotals, b: AiRunOwnTotals): boolean {
 }
 
 /**
- * Compare a run's own totals with its usage rows (page section 6.6). Only
- * while every `settled`, `settled_late` and `unreserved` call event still has
- * its usage row; otherwise the run is unverifiable, never wrong.
+ * Compare a run's own totals with the amounts charged to its calls (page
+ * section 6.6): a 1.21.0 call's `charged_*`, a pre-1.21.0 call's usage row.
+ * A run whose trajectory was pruned is unverifiable, never wrong, and so is
+ * one with a charged pre-1.21.0 call whose usage row is gone. `refused`
+ * lists the late amounts the ledger refused, in every case.
  */
 export async function checkAiRunTotals(
   db: DatabaseInterface,
   runId: string,
 ): Promise<AiRunTotalsCheck> {
-  // One statement anchored on the run: its stored totals and every charged
-  // call with its own usage row are read in one snapshot, so a settle or a
-  // prune committing meanwhile is seen whole or not at all, and a run that
-  // is gone reads as not found, never as stored totals beside empty
-  // figures.
-  const rows = getRows(
-    await aiRunQuery(
-      db,
-      `SELECT r.tokens AS run_tokens, r.cost_used AS run_cost,
-              r.calls AS run_calls, r.uncosted_calls AS run_uncosted,
-              e.id AS event_id, e.reserved_tokens, ${OWN_TOTALS_USAGE}
-         FROM _smrt_ai_runs r
-         LEFT JOIN _smrt_ai_run_events e ON e.run_id = r.id
-              AND e.type = 'call'
-              AND e.call_state IN ('settled', 'settled_late', 'unreserved')
-         -- Only the call's own row: its id, its run, its run's tenant.
-         LEFT JOIN _smrt_ai_usage u ON u.id = e.call_id AND u.run_id = r.id
-              AND (u.tenant_id = r.tenant_id
-                   OR (u.tenant_id IS NULL AND r.tenant_id IS NULL))
-        WHERE r.id = $1`,
-      runId,
-    ),
+  const { stored, computed, missing, pruned, refused } = ownTotalsOf(
+    runId,
+    await readOwnTotalsRows(db, runId),
   );
-  const first = rows[0];
-  if (!first) throw new AiRunNotFoundError(runId);
-  const stored: AiRunOwnTotals = {
-    tokens: num(first.run_tokens),
-    cost: num(first.run_cost),
-    calls: num(first.run_calls),
-    uncostedCalls: num(first.run_uncosted),
-  };
-  const { computed, missing } = foldOwnTotals(
-    rows.filter((row) => row.event_id !== null && row.event_id !== undefined),
-  );
-  if (missing > 0) {
+  if (pruned || missing > 0) {
     return {
       runId,
       verifiable: false,
@@ -1697,6 +1858,7 @@ export async function checkAiRunTotals(
       stored,
       computed: null,
       matches: null,
+      refused,
     };
   }
   return {
@@ -1706,6 +1868,7 @@ export async function checkAiRunTotals(
     stored,
     computed,
     matches: sameTotals(stored, computed),
+    refused,
   };
 }
 
@@ -1714,36 +1877,48 @@ export class AiRunTotalsUnverifiableError extends AiRunError {
   constructor(
     readonly runId: string,
     readonly missingUsageRows: number,
+    readonly trajectoryPruned = false,
   ) {
     super(
-      `AI run ${runId} cannot be repaired: ${missingUsageRows} charged call(s) have lost their usage rows`,
+      trajectoryPruned
+        ? `AI run ${runId} cannot be repaired: its trajectory was pruned, so the amounts charged to its calls are gone`
+        : `AI run ${runId} cannot be repaired: ${missingUsageRows} charged call(s) have lost their usage rows`,
       'AI_RUN_TOTALS_UNVERIFIABLE',
       'runtime',
-      { runId, missingUsageRows },
+      { runId, missingUsageRows, trajectoryPruned },
     );
   }
 }
 
 /**
  * The operator's explicit repair (page section 6.6): recompute the run's own
- * totals from its usage rows and add the difference to its own and inclusive
- * totals and to every ancestor's inclusive totals, in one chain transaction.
- * Never touches descendants or `reserved_*`. Refuses an unverifiable run.
- * Returns the difference applied.
+ * totals from the amounts charged to its calls and add the difference to its
+ * own and inclusive totals and to every ancestor's inclusive totals, in one
+ * chain transaction. Never touches descendants or `reserved_*`. Refuses an
+ * unverifiable run (a pruned trajectory included). Returns the difference
+ * applied, with the late amounts the ledger refused (never charged here).
  */
 export async function repairAiRunTotals(
   db: DatabaseInterface,
   runId: string,
   options: AiRunTxOptions = {},
-): Promise<AiRunOwnTotals> {
+): Promise<AiRunOwnTotals & { refused: RunRefusedAmount[] }> {
   return withAiRunTransaction(
     db,
     async (tx) => {
       const chain = await lockAiRunChain(tx, runId);
       const run = chain[chain.length - 1] as AiRunRow;
-      const { computed, missing } = await computeOwnTotals(tx.db, runId);
-      if (missing > 0) {
-        throw new AiRunTotalsUnverifiableError(runId, missing);
+      const { computed, missing, pruned, refused } = ownTotalsOf(
+        runId,
+        await readOwnTotalsRows(tx.db, runId),
+      );
+      if (pruned || missing > 0) {
+        throw new AiRunTotalsUnverifiableError(runId, missing, pruned);
+      }
+      for (const entry of refused) {
+        logger.warn(
+          `[smrt] AI run ${runId} call ${entry.callId} (tenant ${entry.tenantId ?? 'global'}): a late amount of ${entry.tokens} tokens was refused (${entry.reason}) and is not part of the repaired totals`,
+        );
       }
       const diff: AiRunOwnTotals = {
         tokens: computed.tokens - run.tokens,
@@ -1764,7 +1939,7 @@ export async function repairAiRunTotals(
         }
         await writeAiRunTotals(tx, chainRun);
       }
-      return diff;
+      return { ...diff, refused };
     },
     options,
   );

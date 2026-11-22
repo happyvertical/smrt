@@ -218,6 +218,9 @@ export class AiUsagePersistenceHandler implements AiUsageHandler {
   constructor(private readonly db: DatabaseInterface) {}
 
   async handle(event: SmrtAiUsageEvent): Promise<void> {
+    // A tracked call's row is written by its own ledger (#5516); its record
+    // reaching this handler finds nothing to add.
+    if (liftedTag(event.tags, AI_OWN_CALL_ID_TAG) !== null) return;
     try {
       await insertAiUsageRow(this.db, event);
     } catch (error) {

@@ -13,13 +13,13 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { SmrtAiUsageEvent } from '@happyvertical/smrt-types';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   AiUsagePersistenceHandler,
   insertAiUsageRow,
 } from '../adapters/ai-usage';
+import { createAiUsageRecorder } from '../adapters/ai-usage-recorder';
 import { withAiRunTracking } from '../ai-run-client';
 import {
   AI_RUN_DEFAULT_OUTPUT_TOKENS,
@@ -144,7 +144,7 @@ describe.each(aiRunTestEngines)('AI run accounting on %s (#5005)', (engine) => {
   async function reservation(database: DatabaseInterface, callId: string) {
     return rowsOf(
       await database.query(
-        "SELECT reservation, status FROM _smrt_ai_run_events WHERE call_id = $1 AND type = 'call'",
+        "SELECT call_state AS reservation, status FROM _smrt_ai_run_events WHERE call_id = $1 AND type = 'call'",
         callId,
       ),
     )[0];
@@ -1530,25 +1530,22 @@ describe.each(aiRunTestEngines)('AI run accounting on %s (#5005)', (engine) => {
   it('tracks calls on a client that carry a run context; others pass untouched', async () => {
     const database = await db();
     const run = await openAiRun(store(database), { type: 'turn' });
-    const captures = new Map<string, (event: SmrtAiUsageEvent) => void>();
     const handled: string[] = [];
     const sent: Record<string, unknown>[] = [];
+    // The provider's usage callback: a recorder in the call's process, which
+    // hands an event carrying the call's secret to that call (#5516).
+    const onUsage = createAiUsageRecorder();
     const raw = {
       async message(_text: string, options: Record<string, unknown> = {}) {
         sent.push(options);
         const tags = (options.usageTags ?? {}) as Record<string, string>;
-        const capture = tags.aiCallId ? captures.get(tags.aiCallId) : undefined;
-        capture?.({ ...usageEvent(12, 0.001), tags });
+        await onUsage({ ...usageEvent(12, 0.001), tags });
         return 'answer';
       },
     };
     const client = withAiRunTracking(raw, {
       target: () => ({ provider: 'openai', model: 'gpt-4o' }),
       rateFor: () => RATE,
-      registerCapture: (callId, capture) => {
-        captures.set(callId, capture);
-        return () => captures.delete(callId);
-      },
       afterSettle: async (event) => {
         handled.push(event.tags?.aiCallId ?? '');
       },
@@ -1602,15 +1599,18 @@ describe.each(aiRunTestEngines)('AI run accounting on %s (#5005)', (engine) => {
     ).toEqual([12, 12]);
   });
 
-  it('dedupes usage rows on the call id in the persistence handler', async () => {
+  it("leaves a tracked call's row to its ledger; a row insert dedupes on the call id", async () => {
     const database = await db();
     const handler = new AiUsagePersistenceHandler(database);
     const event = usageEvent(3, undefined, {
       aiCallId: 'same',
       callId: 'entry',
     });
+    // An event naming a call is written by that call's ledger only (#5516).
     await handler.handle(event);
-    await handler.handle(event);
+    expect(await usageRows(database, 'same')).toHaveLength(0);
+    await insertAiUsageRow(database, event, { id: 'same' });
+    await insertAiUsageRow(database, event, { id: 'same' });
     const rows = await usageRows(database, 'same');
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ call_id: 'same', entry_call_id: 'entry' });

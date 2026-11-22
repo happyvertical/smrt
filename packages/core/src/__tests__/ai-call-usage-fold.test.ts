@@ -187,6 +187,34 @@ describe('foldCallUsage: parts mode (T20)', () => {
     expect(amount(state)).toMatchObject({ source: 'complete', tokens: 0 });
   });
 
+  it('an uncounted part (sdk#1585) is count-less: its counters are ignored and it never completes the call', () => {
+    const first = foldCallUsage(emptyCallUsage('parts'), {
+      kind: 'part',
+      part: { call: 'sdk-1', index: 0 },
+      usage: counted(10),
+    }).state;
+    const uncounted = foldCallUsage(first, {
+      kind: 'part',
+      part: { call: 'sdk-1', index: 1, last: true, uncounted: true },
+      usage: counted(999),
+    }).state;
+    expect(amount(uncounted)).toMatchObject({ source: 'parts', tokens: 10 });
+    expect(uncounted.countless).toEqual([[1, 1]]);
+    const listed = foldCallUsage(emptyCallUsage('parts'), {
+      kind: 'parts',
+      call: 'sdk-1',
+      complete: false,
+      parts: [
+        { index: 0, usage: counted(4) },
+        { index: 1, last: true, uncounted: true, usage: counted(50) },
+      ],
+    }).state;
+    expect(amount(listed)).toMatchObject({ source: 'parts', tokens: 4 });
+    expect(parseUsagePart({ call: 'c', index: 0, uncounted: false })).toBe(
+      null,
+    );
+  });
+
   it('no part at all is a fallback charge of the reservation', () => {
     expect(amount(emptyCallUsage('parts'))).toMatchObject({
       source: 'fallback',

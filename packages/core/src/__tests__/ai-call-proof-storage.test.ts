@@ -129,6 +129,6 @@ describe.each(aiRunTestEngines)('call proof storage on %s', (engine) => {
     ]) {
       expect(text).not.toContain(field);
     }
-    expect(trajectory.entries[0]?.event?.reservation).toBe('settled');
+    expect(trajectory?.entries[0]?.event?.reservation).toBe('settled');
   });
 });

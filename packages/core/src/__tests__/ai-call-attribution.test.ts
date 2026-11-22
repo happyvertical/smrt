@@ -324,7 +324,7 @@ describe.each(
         usageTags: { source: 'hosted', userId: 'bob' },
       } as never,
     });
-    const { context } = await tracked.openRun({ type: 'job' });
+    const { context } = await tracked.openRun({ type: 'workflow' });
     await (
       (await tracked.client(
         { promptKey: 'p' },

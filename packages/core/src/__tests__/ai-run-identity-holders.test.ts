@@ -86,7 +86,7 @@ describe.each(aiRunTestEngines)('run id holders on %s', (engine) => {
     expect(send).not.toHaveBeenCalled();
     const otherEvents = rowsOf(
       await db.query(
-        'SELECT reservation FROM _smrt_ai_run_events WHERE call_id = $1',
+        'SELECT call_state AS reservation FROM _smrt_ai_run_events WHERE call_id = $1',
         otherHeld.callId,
       ),
     );

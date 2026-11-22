@@ -49,7 +49,7 @@ async function heldRow(
 async function calls(db: DatabaseInterface, runId: string) {
   return rowsOf(
     await db.query(
-      "SELECT reservation FROM _smrt_ai_run_events WHERE run_id = $1 AND type = 'call'",
+      "SELECT call_state AS reservation FROM _smrt_ai_run_events WHERE run_id = $1 AND type = 'call'",
       runId,
     ),
   ).map((row) => row.reservation);
@@ -155,7 +155,7 @@ describe.each(aiRunTestEngines)('ledger ownership on %s', (engine) => {
     // The call event reads as settled (as an older refusal left it): its
     // own usage row does not exist, so the held row is not joined to it.
     await db.query(
-      "UPDATE _smrt_ai_run_events SET reservation = 'settled' WHERE run_id = $1 AND call_id = $2",
+      "UPDATE _smrt_ai_run_events SET call_state = 'settled' WHERE run_id = $1 AND call_id = $2",
       run.id,
       callId,
     );

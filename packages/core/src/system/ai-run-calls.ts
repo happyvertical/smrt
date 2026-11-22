@@ -15,11 +15,43 @@ import type { SmrtAiUsageEvent } from '@happyvertical/smrt-types';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { AI_OWN_CALL_ID_TAG } from '../adapters/ai-usage.js';
 import {
+  AI_USAGE_USER_TAG,
+  getAiUsageUserResolver,
+  normalizeAiUsageTags,
+} from '../adapters/ai-usage-recorder.js';
+import {
+  AI_CALL_CORE_TAGS,
+  AI_CALL_LOCATOR_TTL_MS,
+  AI_CALL_PROOF_TAG,
+  type ApplyCallUsageRequest,
+  type ApplyCallUsageResult,
+  admitHeldCall,
+  admitWithReservation,
+  applyCallUsage,
+  type CallAdmission,
+  type CallRowTemplate,
+  type CallUsageInput,
+  type CallUsageMode,
+  callInternals,
+  callProofDigest,
+  callUsageHeld,
+  callUsageInputFromRaw,
+  closeCallLocator,
+  emptyCallUsage,
+  foldCallUsage,
+  isTransactionHandle,
+  markSenderRecord,
+  mintCallSecret,
+  observedUsageParts,
+  parseUsagePart,
+  queueCallClose,
+  registerCallLocator,
+} from './ai-call-ledger.js';
+import {
   type AiCallRate,
   type AiCallReservation,
-  assertAiRunStillRunning,
+  type AiCallReservationRequest,
   deferAiRunSettlement,
-  releaseAiCall,
   reserveAiCall,
   settleAiCall,
 } from './ai-run-accounting.js';
@@ -29,17 +61,11 @@ import {
   type AiRunClaimFence,
   AiRunNotFoundError,
   type AiRunScopedTxOptions,
-  type AiRunStatus,
   AiRunStoppedError,
-  AiRunTransitionError,
-  aiRunQuery,
-  assertAiRunFence,
-  expectedTenantOf,
+  type AiRunTxOptions,
   getAiRun,
-  getRows,
   newAiRunId,
   rememberSettlementTenant,
-  withAiRunTransaction,
 } from './ai-run-model.js';
 
 const logger = createLogger({ level: 'info' });
@@ -279,86 +305,43 @@ function readAiRunContextOnce(context: AiRunContext): AiRunContext {
   };
 }
 
-/**
- * Admit a held reservation just before its call is sent (page section 6.3),
- * in the tenant the caller's context established: with `checkRunning`, the
- * chain is locked and must still be `running` (a stopped chain releases the
- * reservation and the stop is thrown); either way the held call's own event
- * must still be `reserved` in this run. With a claim fence, both modes
- * assert it first: a worker whose claim was taken over gets
- * {@link AiRunClaimLostError}. A run that is gone throws
- * {@link AiRunNotFoundError}, a reservation no longer held throws
- * {@link AiRunTransitionError}; nothing is sent.
- */
-async function admitHeldAiCall(
-  db: DatabaseInterface,
-  runId: string,
-  callId: string,
-  options: AiRunScopedTxOptions & { checkRunning: boolean },
-): Promise<void> {
-  if (options.checkRunning) {
-    // The claim fence is asserted first, inside the same transaction.
-    await assertAiRunStillRunning(db, runId, {
-      ...options,
-      releaseCallId: callId,
-    });
-    return;
+/** A usage tag value read once: a string, else nothing. */
+function readUser(): string | undefined {
+  const resolver = getAiUsageUserResolver();
+  if (!resolver) return undefined;
+  try {
+    const user = resolver();
+    return typeof user === 'string' && user.length > 0 ? user : undefined;
+  } catch {
+    return undefined;
   }
-  const tenant = expectedTenantOf(options);
-  if (options.fence) {
-    // A worker that lost its claim never spends a reservation it took
-    // before: the fence is asserted, then the reservation read, in one
-    // transaction (the job row first, as in every accounting write).
-    const fence = options.fence;
-    await withAiRunTransaction(
-      db,
-      async (tx) => {
-        await assertAiRunFence(tx, runId, fence, tenant);
-        await readHeldReservation(tx.db, runId, callId, tenant);
-      },
-      options,
-    );
-    return;
-  }
-  await readHeldReservation(db, runId, callId, tenant);
 }
 
-/** Throw unless the held call's event is still `reserved` in its run. */
-async function readHeldReservation(
-  db: DatabaseInterface,
-  runId: string,
-  callId: string,
-  tenant: string | null | undefined,
-): Promise<void> {
-  const rows = getRows(
-    await aiRunQuery(
-      db,
-      `SELECT r.status, e.call_state FROM _smrt_ai_runs r
-         LEFT JOIN _smrt_ai_run_events e
-           ON e.run_id = r.id AND e.call_id = $2 AND e.type = 'call'
-        WHERE r.id = $1${
-          tenant === undefined
-            ? ''
-            : tenant === null
-              ? ' AND r.tenant_id IS NULL'
-              : ' AND r.tenant_id = $3'
-        }`,
-      runId,
-      callId,
-      ...(tenant === undefined || tenant === null ? [] : [tenant]),
-    ),
-  );
-  const row = rows[0];
-  if (!row) throw new AiRunNotFoundError(runId);
-  if (row.call_state !== 'reserved') {
-    const status = String(row.status) as AiRunStatus;
-    throw new AiRunTransitionError(
-      `AI call ${callId} of run ${runId} is no longer reserved`,
-      runId,
-      status,
-      status,
-    );
-  }
+/**
+ * The tags of a call's billed row, fixed at admission (plan section 3.1), in
+ * rising precedence: the sink attribution's and the client's provider-level
+ * tags, the tags the call is sent with, then core's own (its call id, entry
+ * call id, run and step). Core's tag names are removed from the first two
+ * sources. An explicit `userId` wins; otherwise the ambient user resolver's,
+ * read now, at admission.
+ */
+function billedRowTags(
+  attributionTags: Record<string, string> | undefined,
+  callTags: Record<string, string> | undefined,
+  coreTags: Record<string, string>,
+): Record<string, string> {
+  const callers = (tags: Record<string, string> | undefined) => {
+    const out = normalizeAiUsageTags(tags) ?? {};
+    for (const name of AI_CALL_CORE_TAGS) delete out[name];
+    return out;
+  };
+  const merged = { ...callers(attributionTags), ...callers(callTags) };
+  const user = merged[AI_USAGE_USER_TAG] ? undefined : readUser();
+  return {
+    ...merged,
+    ...(user ? { [AI_USAGE_USER_TAG]: user } : {}),
+    ...coreTags,
+  };
 }
 
 /**
@@ -384,7 +367,11 @@ async function settleTaggedCall(
     tags: { ...(event.tags ?? {}), ...usageTags },
   };
   const input = { runId: context.runId, callId, usage: tagged, status };
-  const after = afterSettle ? () => afterSettle(tagged) : undefined;
+  // The record is the sender's own: it carries the call id and reaches the
+  // handlers (a forwarded copy would not).
+  const after = afterSettle
+    ? () => afterSettle(markSenderRecord(tagged))
+    : undefined;
   // The run is settled in the tenant its context names, also when the
   // settlement is queued and written later.
   if (context.tenantId !== undefined) {
@@ -481,50 +468,90 @@ export async function beginAiRunCall(
   // Each property is read once: the fence, tenant and run that admit the
   // call are the ones every later step uses.
   const context = readAiRunContextOnce(passed);
-  const held = context.reservations?.take();
-  if (held) {
-    await admitHeldAiCall(context.db, context.runId, held.reservation.callId, {
-      checkRunning: Boolean(held.checkRunning),
-      ...(context.fence ? { fence: context.fence } : {}),
-      ...inContextTenant(context),
-    });
+  // The ledger is written only in transactions core owns: a caller's
+  // transaction could roll the charge back after the handlers ran.
+  if (isTransactionHandle(context.db)) {
+    throw new TypeError(
+      'beginAiRunCall: the run context database is a transaction; pass the database itself, a tracked call writes its ledger in transactions it owns',
+    );
   }
+  const internals = callInternals(request);
+  const mode: CallUsageMode = internals?.mode ?? 'single';
+  const secret = mintCallSecret();
+  const proof = await callProofDigest(secret);
+  const held = context.reservations?.take();
   const callId = held?.reservation.callId ?? request.callId ?? newAiRunId();
   const entryCallId = request.entryCallId ?? callId;
+  const coreTags = aiRunCallTags(context, callId, entryCallId);
+  const fallback = request.fallbackUsage;
+  const rowTags = billedRowTags(
+    internals?.attributionTags,
+    fallback.tags,
+    coreTags,
+  );
+  const admission = (now: Date): CallAdmission => ({
+    callProof: proof,
+    callRow: JSON.stringify({
+      provider: fallback.provider,
+      model: fallback.model,
+      operation: fallback.operation,
+      ...(fallback.className ? { className: fallback.className } : {}),
+      tags: rowTags,
+      createdAt: now.toISOString(),
+    } satisfies CallRowTemplate),
+    callUsage: JSON.stringify(emptyCallUsage(mode)),
+  });
+  if (held) {
+    await admitHeldCall(
+      context.db,
+      context.runId,
+      callId,
+      {
+        checkRunning: Boolean(held.checkRunning),
+        ...(context.fence ? { fence: context.fence } : {}),
+        ...(context.tenantId !== undefined
+          ? { expectedTenant: context.tenantId ?? null }
+          : {}),
+      },
+      admission,
+    );
+  }
   const reservation: AiCallReservation = held
     ? held.reservation
     : await reserveAiCall(
         context.db,
         context.runId,
-        {
-          callId,
-          ...(request.inputTokens !== undefined
-            ? { inputTokens: request.inputTokens }
-            : {}),
-          ...(request.inputChars !== undefined
-            ? { inputChars: request.inputChars }
-            : {}),
-          ...(request.outputLimit !== undefined
-            ? { outputLimit: request.outputLimit }
-            : {}),
-          ...(request.expectedOutputTokens !== undefined
-            ? { expectedOutputTokens: request.expectedOutputTokens }
-            : {}),
-          ...(request.modelMaxOutput !== undefined
-            ? { modelMaxOutput: request.modelMaxOutput }
-            : {}),
-          rate: request.rate ?? null,
-          stepIndex: context.stepIndex ?? null,
-          name: request.name ?? context.stepName ?? null,
-          parentEventId: request.parentEventId ?? null,
-        },
+        admitWithReservation<AiCallReservationRequest>(
+          {
+            callId,
+            ...(request.inputTokens !== undefined
+              ? { inputTokens: request.inputTokens }
+              : {}),
+            ...(request.inputChars !== undefined
+              ? { inputChars: request.inputChars }
+              : {}),
+            ...(request.outputLimit !== undefined
+              ? { outputLimit: request.outputLimit }
+              : {}),
+            ...(request.expectedOutputTokens !== undefined
+              ? { expectedOutputTokens: request.expectedOutputTokens }
+              : {}),
+            ...(request.modelMaxOutput !== undefined
+              ? { modelMaxOutput: request.modelMaxOutput }
+              : {}),
+            rate: request.rate ?? null,
+            stepIndex: context.stepIndex ?? null,
+            name: request.name ?? context.stepName ?? null,
+            parentEventId: request.parentEventId ?? null,
+          },
+          admission,
+        ),
         {
           ...(context.fence ? { fence: context.fence } : {}),
           ...inContextTenant(context),
         },
       );
 
-  const slot: { event?: SmrtAiUsageEvent; ended?: true } = {};
   const timeout =
     reservation.callTimeoutMs !== null
       ? AbortSignal.timeout(reservation.callTimeoutMs)
@@ -533,17 +560,137 @@ export async function beginAiRunCall(
     timeout && request.signal
       ? AbortSignal.any([timeout, request.signal])
       : (timeout ?? request.signal);
-  const usageTags = aiRunCallTags(context, callId, entryCallId);
+  // The secret travels in the call's usage tags (the SDK echoes them on its
+  // events) and in this closure; core removes it from everything it stores.
+  const usageTags = { ...coreTags, [AI_CALL_PROOF_TAG]: secret };
 
-  const settle = (event: SmrtAiUsageEvent, status: string) =>
-    settleTaggedCall(
-      context,
-      callId,
-      usageTags,
-      request.afterSettle,
-      event,
-      status,
-    );
+  // The handle's memory: the usage that reached it while it was open, folded
+  // the same way the ledger folds it; refusals counted for its write.
+  const slot = {
+    inputs: [] as CallUsageInput[],
+    state: emptyCallUsage(mode),
+    refused: {} as Record<string, number>,
+    ending: false,
+    notified: false,
+  };
+  const ledgerRequest = (
+    inputs: CallUsageInput[],
+    caller: 'sender' | 'delivery',
+    extra: Partial<ApplyCallUsageRequest> = {},
+  ): ApplyCallUsageRequest => ({
+    runId: context.runId,
+    callId,
+    ...(context.tenantId !== undefined
+      ? { expectedTenant: context.tenantId ?? null }
+      : {}),
+    caller,
+    inputs,
+    mode,
+    ...extra,
+  });
+  const accept = (input?: CallUsageInput, refused?: string) => {
+    if (refused || !input) {
+      const reason = refused ?? 'malformed';
+      slot.refused[reason] = (slot.refused[reason] ?? 0) + 1;
+      return;
+    }
+    const step = foldCallUsage(slot.state, input);
+    if (step.refused) {
+      slot.refused[step.refused] = (slot.refused[step.refused] ?? 0) + 1;
+      return;
+    }
+    if (!step.changed) return;
+    slot.state = step.state;
+    slot.inputs.push(input);
+  };
+  // After the handle closed: a parts-mode call applies a late part through
+  // the ledger on the call's own database; a single-mode one refuses it.
+  const late = async (input?: CallUsageInput, refused?: string) => {
+    try {
+      await applyCallUsage(
+        context.db,
+        ledgerRequest(input ? [input] : [], 'delivery', {
+          ...(refused ? { refusedCounts: { [refused]: 1 } } : {}),
+        }),
+      );
+    } catch (error) {
+      logger.warn(
+        `[smrt] AI run ${context.runId} call ${callId}: a late usage part could not be applied: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+  };
+  const receive = async (input?: CallUsageInput, refused?: string) => {
+    if (!slot.ending) {
+      accept(input, refused);
+      return;
+    }
+    await late(input, refused);
+  };
+  registerCallLocator(secret, {
+    callId,
+    deliver: async (raw) => {
+      const { input, refused } = callUsageInputFromRaw(raw, mode);
+      await receive(input, refused);
+    },
+  });
+  const notify = async (result: ApplyCallUsageResult) => {
+    if (slot.notified || !('record' in result) || !result.record) return;
+    slot.notified = true;
+    if (!request.afterSettle) return;
+    try {
+      await request.afterSettle(result.record);
+    } catch (error) {
+      logger.warn(
+        `[smrt] AI usage handlers failed for call ${callId}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+  };
+  /**
+   * The sender's closing write; one that fails every retry is queued and
+   * written by the next flush, which notifies the handlers once it commits.
+   */
+  const close = async (
+    status: string,
+    inputs: CallUsageInput[],
+    releaseIfEmpty: boolean,
+  ): Promise<ApplyCallUsageResult['outcome'] | 'queued'> => {
+    const write = async (options: AiRunTxOptions = {}) => {
+      const result = await applyCallUsage(
+        context.db,
+        ledgerRequest(inputs, 'sender', {
+          status,
+          refusedCounts: slot.refused,
+          ...(releaseIfEmpty ? { releaseIfEmpty } : {}),
+        }),
+        options,
+      );
+      await notify(result);
+      return result;
+    };
+    try {
+      return (await write()).outcome;
+    } catch (error) {
+      logger.warn(
+        `[smrt] AI run ${context.runId} settlement of call ${callId} failed; kept pending: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      queueCallClose(context.db, {
+        runId: context.runId,
+        callId,
+        write: async (options) => {
+          await write(options);
+        },
+      });
+      return 'queued';
+    } finally {
+      closeCallLocator(secret, AI_CALL_LOCATOR_TTL_MS);
+    }
+  };
 
   return {
     reservation,
@@ -554,59 +701,84 @@ export async function beginAiRunCall(
       usageTags,
       signal,
       capture(event) {
-        slot.event = event;
+        // A normalized event the sender's own code hands over: bound to
+        // this call by construction.
+        const raw = event as SmrtAiUsageEvent & { part?: unknown };
+        const usage = raw.usage
+          ? {
+              ...(raw.usage.promptTokens !== undefined
+                ? { promptTokens: raw.usage.promptTokens }
+                : {}),
+              ...(raw.usage.completionTokens !== undefined
+                ? { completionTokens: raw.usage.completionTokens }
+                : {}),
+              ...(raw.usage.totalTokens !== undefined
+                ? { totalTokens: raw.usage.totalTokens }
+                : {}),
+            }
+          : undefined;
+        const common = {
+          ...(usage ? { usage } : {}),
+          ...(raw.model ? { model: raw.model } : {}),
+          ...(raw.provider ? { provider: raw.provider } : {}),
+          ...(typeof raw.duration === 'number'
+            ? { duration: raw.duration }
+            : {}),
+        };
+        if (mode === 'single') {
+          void receive({ kind: 'event', ...common });
+          return;
+        }
+        const part = parseUsagePart(raw.part);
+        if (part === undefined) void receive(undefined, 'no_part');
+        else if (part === null) void receive(undefined, 'malformed');
+        else void receive({ kind: 'part', part, ...common });
       },
     },
     async succeed(observed) {
-      if (slot.ended) return;
-      slot.ended = true;
-      await settle(
-        slot.event ?? {
-          ...request.fallbackUsage,
-          ...(observed?.model ? { model: observed.model } : {}),
-          ...(observed?.usage ? { usage: observed.usage } : {}),
-          ...(observed?.estimatedCost !== undefined
+      if (slot.ending) return;
+      slot.ending = true;
+      const inputs = [...slot.inputs];
+      if (mode === 'parts') {
+        const parts = observedUsageParts(observed);
+        if (parts) inputs.push(parts);
+      } else if (observed) {
+        inputs.push({
+          kind: 'stated',
+          ...(observed.usage ? { usage: observed.usage } : {}),
+          ...(observed.estimatedCost !== undefined
             ? { estimatedCost: observed.estimatedCost }
             : {}),
-          duration: observed?.duration ?? 0,
-          timestamp: new Date(),
-        },
-        'ok',
-      );
+          ...(observed.model ? { model: observed.model } : {}),
+          ...(observed.duration !== undefined
+            ? { duration: observed.duration }
+            : {}),
+        });
+      }
+      await close('ok', inputs, false);
     },
     async fail(error) {
-      if (slot.ended) return error;
-      slot.ended = true;
+      if (slot.ending) return error;
+      slot.ending = true;
       const timedOut = Boolean(timeout?.aborted);
       const status = timedOut
         ? 'timed_out'
         : isAbort(error)
           ? 'cancelled'
           : 'failed';
-      if (slot.event) {
-        // It reported usage before it ended: charged, with how it ended.
-        await settle(slot.event, status);
-      } else {
-        await releaseAiCall(
-          context.db,
-          { runId: context.runId, callId, status },
-          inContextTenant(context),
-        ).catch((releaseError) => {
-          logger.warn(
-            `[smrt] AI run ${context.runId} could not release call ${callId}: ${
-              releaseError instanceof Error
-                ? releaseError.message
-                : String(releaseError)
-            }`,
-          );
-        });
-        if (timedOut) {
-          return new AiCallLimitError(
-            `The call exceeded callTimeoutMs ${reservation.callTimeoutMs}`,
-            'callTimeoutMs',
-            context.runId,
-          );
-        }
+      // Settled with how it ended when the handle or the reservation holds
+      // any usage, counted or count-less; released otherwise.
+      const outcome = await close(status, [...slot.inputs], true);
+      if (
+        timedOut &&
+        !callUsageHeld(slot.state) &&
+        (outcome === 'released' || outcome === 'queued')
+      ) {
+        return new AiCallLimitError(
+          `The call exceeded callTimeoutMs ${reservation.callTimeoutMs}`,
+          'callTimeoutMs',
+          context.runId,
+        );
       }
       if (error instanceof AiRunStoppedError && error.runId !== context.runId) {
         return stopAiRunForChild(

@@ -143,7 +143,20 @@ describe.each(aiRunTestEngines)('call ledger on %s', (engine) => {
     'stopped ancestor',
     'another tenant',
   ] as const)('a held share %s is refused with nothing sent', async (variant) => {
-    const f = await ledgerFixture(engine);
+    const base = await ledgerFixture(engine);
+    // The claim fence guards a durable run's job: that variant's run is one.
+    const run =
+      variant === 'claim lost'
+        ? await openAiRun(
+            { db: base.db, usageTracking: true, tenantId: 'tenant-a' },
+            { type: 'workflow', durable: true },
+          )
+        : base.run;
+    const f = {
+      ...base,
+      run,
+      context: { ...base.context, runId: run.id },
+    };
     const [share] = await reserveAiCalls(f.db, f.run.id, [
       { name: 'seat-a', inputChars: 40, rate: FIXTURE_RATE },
     ]);

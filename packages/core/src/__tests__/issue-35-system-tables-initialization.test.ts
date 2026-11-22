@@ -172,6 +172,15 @@ function createPostgresBootstrapTx({
         return { rows: [], rowCount: 0 };
       }
 
+      // A stamped database has the 1.21.0 renamed columns too: the fast
+      // path checks both (#5516).
+      if (sql.includes('information_schema.columns')) {
+        return {
+          rows: versionApplied ? [{ '?column?': 1 }] : [],
+          rowCount: versionApplied ? 1 : 0,
+        };
+      }
+
       return { rows: [], rowCount: 0 };
     }),
     execute: vi.fn(async () => undefined),

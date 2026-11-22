@@ -103,7 +103,7 @@ async function seedReferences(db: DatabaseInterface) {
     `INSERT INTO _smrt_ai_run_checkpoints (run_id, state) VALUES ('orphan-cp', '{}')`,
   );
   await db.query(
-    `INSERT INTO _smrt_ai_usage (id, provider, model, operation, duration, run_id)
+    `INSERT INTO _smrt_ai_usage (id, provider, model, operation, duration_ms, run_id)
      VALUES ('u1', 'openai', 'gpt-4o', 'chat', 1, 'orphan-usage')`,
   );
   await db.query(
@@ -137,7 +137,7 @@ describe.each(engines)('run id registry upgrade on %s', (engine) => {
     // More distinct ids than one backfill chunk.
     for (let i = 0; i < 1100; i++) {
       await db.query(
-        `INSERT INTO _smrt_ai_usage (id, provider, model, operation, duration, run_id)
+        `INSERT INTO _smrt_ai_usage (id, provider, model, operation, duration_ms, run_id)
          VALUES ($1, 'openai', 'gpt-4o', 'chat', 1, $2)`,
         `bulk-u-${i}`,
         `bulk-run-${String(i).padStart(4, '0')}`,
@@ -210,7 +210,7 @@ describe.each(engines)('run id registry upgrade on %s', (engine) => {
         ),
       ),
     ).toHaveLength(1);
-    expect(SMRT_SCHEMA_VERSION).toBe('1.20.0');
+    expect(SMRT_SCHEMA_VERSION).toBe('1.21.0');
     const statements: string[] = [];
     const restore = recordStatements(db, (sql) => statements.push(sql));
     await ensureSystemTables(db, hint(engine));
@@ -255,7 +255,7 @@ describe.each(engines)('run id registry upgrade on %s', (engine) => {
     // An older core wrote a usage row for a run it never registered, and a
     // run whose parent id was reused (the parent row is newer than its child).
     await db.query(
-      `INSERT INTO _smrt_ai_usage (id, provider, model, operation, duration, run_id)
+      `INSERT INTO _smrt_ai_usage (id, provider, model, operation, duration_ms, run_id)
        VALUES ('u-old', 'openai', 'gpt-4o', 'chat', 1, 'never-registered')`,
     );
     await db.query(

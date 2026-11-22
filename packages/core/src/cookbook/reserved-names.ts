@@ -72,6 +72,7 @@ export const SMRT_INSTANCE_MEMBERS: readonly string[] = [
   '_aiUsageHandlers',
   '_aiRunUsageListeners',
   '_aiRunCallCaptures',
+  '_aiProviderTags',
   '_aiRunClientHooks',
   '_aiClientLabel',
   '_runtimeServicesInitialized',

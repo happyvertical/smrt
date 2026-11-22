@@ -678,7 +678,7 @@ describe('reportAiUsage', () => {
   it('pages through more rows than one keyset page', async () => {
     for (let i = 0; i < 1005; i++) {
       await db.query(
-        `INSERT INTO _smrt_ai_usage (id, provider, model, operation, duration, created_at)
+        `INSERT INTO _smrt_ai_usage (id, provider, model, operation, duration_ms, created_at)
          VALUES ($1, 'p', 'm', 'chat', 1, '2026-11-05T00:00:00.000Z')`,
         `bulk-${String(i).padStart(5, '0')}`,
       );

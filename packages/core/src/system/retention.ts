@@ -52,6 +52,7 @@ import type { DatabaseInterface } from '@happyvertical/sql';
 import { pruneChangeFeed } from '../change-feed.js';
 import { detectEngine } from '../schema/ddl/index.js';
 import { toSafeInteger } from '../utils/safe-integer.js';
+import { AI_CALL_USAGE_WINDOW_MS } from './ai-call-ledger.js';
 import { sweepAiRuns } from './ai-run-accounting.js';
 import {
   AI_RUN_RETENTION_DEFAULTS,
@@ -503,6 +504,18 @@ export async function pruneAiUsage(
   // External reports are immutable replay evidence, not disposable AI telemetry.
   scope.conditions.push(
     "NOT (operation = 'external-agent' AND id LIKE 'external-agent:%')",
+  );
+  // A tracked call's row stays while its charge can still change: the call
+  // is still reserved, or first ended less than an hour ago (#5516). The
+  // call event is found by `idx_smrt_ai_run_events_call`.
+  scope.conditions.push(
+    `NOT EXISTS (SELECT 1 FROM _smrt_ai_run_events e
+                  WHERE e.call_id = ${AI_USAGE_TABLE}.id AND e.type = 'call'
+                    AND (e.call_state = 'reserved'
+                         OR (e.call_proof IS NOT NULL AND e.ended_at > ?)))`,
+  );
+  scope.params.push(
+    new Date(now.getTime() - AI_CALL_USAGE_WINDOW_MS).toISOString(),
   );
   let pruned = 0;
 

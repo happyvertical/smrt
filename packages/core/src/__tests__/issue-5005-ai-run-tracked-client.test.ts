@@ -59,6 +59,7 @@ describe('SmrtClass run tracking (#5005)', () => {
           operation: 'message',
           usage: { promptTokens: 7, completionTokens: 5, totalTokens: 12 },
           duration: 4,
+          timestamp: new Date(),
           tags: options.usageTags,
         });
         return 'answer';

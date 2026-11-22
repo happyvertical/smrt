@@ -226,7 +226,7 @@ describe.each(aiRunTestEngines)('AI run readers on %s (#5005)', (engine) => {
     // A legacy row: no step columns, template only as a tag.
     await db.query(
       `INSERT INTO _smrt_ai_usage (id, provider, model, operation,
-         prompt_tokens, completion_tokens, total_tokens, duration, prompt_key,
+         prompt_tokens, completion_tokens, total_tokens, duration_ms, prompt_key,
          tags, created_at)
        VALUES ('legacy-1', 'openai', 'gpt-4o', 'message', 1, 1, 2, 3, 'brief',
                $1, $2)`,

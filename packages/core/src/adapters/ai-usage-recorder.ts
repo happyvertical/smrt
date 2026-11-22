@@ -25,7 +25,13 @@ import type { DatabaseInterface } from '@happyvertical/sql';
 import { observeAiTranscriptUsage } from '../ai-transcripts.js';
 import type { AiUsageConfig } from '../config.js';
 import { config } from '../config.js';
-import { AiUsagePersistenceHandler } from './ai-usage.js';
+import {
+  AI_CALL_PROOF_TAG,
+  classifyAiUsageClaim,
+  isSenderRecord,
+  recordRefusedClaim,
+} from '../system/ai-call-ledger.js';
+import { AI_OWN_CALL_ID_TAG, AiUsagePersistenceHandler } from './ai-usage.js';
 import { estimateAiUsageCost } from './cost-rates.js';
 
 const logger = createLogger({ level: 'info' });
@@ -351,6 +357,18 @@ export async function dispatchAiUsageEvent(
   if (!usageConfig.enabled || handlers.length === 0) {
     return;
   }
+  // A record that names a tracked call reaches handlers only from that
+  // call's own closing write (#5516); a forwarded copy is refused.
+  if (
+    !isSenderRecord(event) &&
+    (event.tags?.[AI_OWN_CALL_ID_TAG] !== undefined ||
+      event.tags?.[AI_CALL_PROOF_TAG] !== undefined)
+  ) {
+    logger.warn(
+      `[smrt] AI usage event for call ${event.tags?.[AI_OWN_CALL_ID_TAG] ?? '(none)'} refused: only its call's own record reaches handlers; remove aiCallId before forwarding a record`,
+    );
+    return;
+  }
 
   if (usageConfig.estimateCosts) {
     event.estimatedCost = estimateAiUsageCost(
@@ -518,6 +536,32 @@ export function createAiUsageRecorder(
     // Transcript capture (#4780) reads the raw event first, whatever the
     // usage config says.
     observeAiTranscriptUsage(event);
+    try {
+      // An event that names a tracked call is never ordinary usage (#5516):
+      // in the call's own process it reaches the call by its secret; any
+      // other claim is refused and writes nothing, whatever it names.
+      const claim = classifyAiUsageClaim(event);
+      if (claim.kind === 'bound') {
+        await claim.locator.deliver(event as Record<string, unknown>);
+        return;
+      }
+      if (claim.kind === 'refused') {
+        await recordRefusedClaim(
+          options.db,
+          claim,
+          resolveAiUsageTenantId(options.tenantId),
+          event,
+        );
+        return;
+      }
+    } catch (error) {
+      logger.warn(
+        `[smrt] AI usage recorder failed: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      return;
+    }
     if (handlers.length === 0) return;
     try {
       const normalized = normalizeAiUsageEvent(event, options.aiConfig, {

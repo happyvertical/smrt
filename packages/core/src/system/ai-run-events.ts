@@ -254,6 +254,13 @@ export async function insertAiRunEventTx(
     reservation?: AiRunReservationState | null;
     reservedTokens?: number | null;
     reservedCost?: number | null;
+    /** A call's ledger, written with its reservation (#5516). */
+    ledger?: {
+      callRate: string | null;
+      callProof?: string | null;
+      callRow?: string | null;
+      callUsage?: string | null;
+    };
   },
 ): Promise<number> {
   for (let attempt = 1; attempt <= SEQ_ATTEMPTS; attempt++) {
@@ -263,9 +270,10 @@ export async function insertAiRunEventTx(
         `INSERT INTO _smrt_ai_run_events
            (id, run_id, seq, parent_event_id, type, call_id, step_index, name,
             status, duration, payload, payload_ref, truncated, child_run_id,
-            call_state, reserved_tokens, reserved_cost, created_at)
+            call_state, reserved_tokens, reserved_cost, created_at,
+            call_rate, call_proof, call_row, call_usage)
          SELECT $1, $2, COALESCE(MAX(seq), 0) + 1, $3, $4, $5, $6, $7, $8, $9,
-                $10, $11, $12, $13, $14, $15, $16, $17
+                $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21
            FROM _smrt_ai_run_events
           WHERE run_id = $2
          ON CONFLICT (run_id, seq) DO NOTHING
@@ -287,6 +295,10 @@ export async function insertAiRunEventTx(
         event.reservedTokens ?? null,
         event.reservedCost ?? null,
         tx.now.toISOString(),
+        event.ledger?.callRate ?? null,
+        event.ledger?.callProof ?? null,
+        event.ledger?.callRow ?? null,
+        event.ledger?.callUsage ?? null,
       ),
     );
     if (rows[0]) return num(rows[0].seq);

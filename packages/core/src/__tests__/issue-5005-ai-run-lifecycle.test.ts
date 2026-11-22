@@ -793,7 +793,7 @@ describe.each(aiRunTestEngines)('AI run lifecycle on %s (#5005)', (engine) => {
     ).toBe(run.id);
     // A call on its own: one entry, no run.
     await database.query(
-      `INSERT INTO _smrt_ai_usage (id, provider, model, operation, duration, call_id, entry_call_id, created_at)
+      `INSERT INTO _smrt_ai_usage (id, provider, model, operation, duration_ms, call_id, entry_call_id, created_at)
        VALUES ('solo', 'openai', 'gpt-4o', 'message', 3, 'solo', 'solo', $1)`,
       new Date().toISOString(),
     );

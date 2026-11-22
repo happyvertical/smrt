@@ -84,7 +84,7 @@ describe.each(aiRunTestEngines)('AI entry runs on %s (#5005)', (engine) => {
     });
     const states = rowsOf(
       await db.query(
-        `SELECT name, reservation FROM _smrt_ai_run_events
+        `SELECT name, call_state AS reservation FROM _smrt_ai_run_events
           WHERE run_id = $1 ORDER BY seq`,
         entry.runId,
       ),

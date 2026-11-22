@@ -53,6 +53,7 @@ describe('tracked client run identity', () => {
           operation: 'message',
           usage: { promptTokens: 7, completionTokens: 5, totalTokens: 12 },
           duration: 4,
+          timestamp: new Date(),
           tags: options.usageTags,
         });
         return 'answer';

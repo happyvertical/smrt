@@ -341,7 +341,7 @@ describe.each(engines)('AI run schema upgrade on %s (#5005)', (engine) => {
     // A row an older writer added after the upgrade (the external-agent
     // insert once left both ids NULL): the next pass splits it, once.
     await db.query(
-      `INSERT INTO _smrt_ai_usage (id, provider, model, operation, duration)
+      `INSERT INTO _smrt_ai_usage (id, provider, model, operation, duration_ms)
        VALUES ('external-agent:late', 'openai', 'gpt-4o', 'external-agent', 0)`,
     );
     await db.query(
@@ -437,6 +437,15 @@ describe.each(engines)('AI run schema upgrade on %s (#5005)', (engine) => {
       ddl
         .replace(/\s*retry_of_run_id TEXT,/, '')
         .replace(/\s*stop_detail TEXT,/, '')
+        // The call ledger's columns (1.21.0) came long after this shape.
+        .replace(
+          /\s*(call_proof|call_row|call_rate|call_usage|usage_source) TEXT,/g,
+          '',
+        )
+        .replace(/\s*ended_at TIMESTAMP,/, '')
+        .replace(/\s*charged_tokens INTEGER,/, '')
+        .replace(/\s*charged_cost DOUBLE PRECISION,/, '')
+        .replace(/,\s*refused_usage TEXT/, '')
         .replace(/DOUBLE PRECISION/g, 'REAL')
         .replace(
           /CREATE INDEX IF NOT EXISTS idx_smrt_ai_runs_retry_of\s+ON _smrt_ai_runs\(retry_of_run_id\);/,
@@ -507,7 +516,7 @@ describe('recordAiEvaluation (#5005)', () => {
     await bootstrap(db, 'sqlite');
     await db.query(
       `INSERT INTO _smrt_ai_usage
-        (id, provider, model, operation, duration, tenant_id, run_id, call_id, entry_call_id)
+        (id, provider, model, operation, duration_ms, tenant_id, run_id, call_id, entry_call_id)
        VALUES ('call-1', 'openai', 'gpt-4o', 'chat', 5, 't1', 'run-1', 'call-1', 'call-1')`,
     );
     return db;

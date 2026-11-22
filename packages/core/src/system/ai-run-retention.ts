@@ -28,6 +28,7 @@
  */
 
 import type { DatabaseInterface } from '@happyvertical/sql';
+import { AI_CALL_USAGE_WINDOW_MS } from './ai-call-ledger.js';
 import {
   type AiRunTxOptions,
   aiRunIdDigest,
@@ -102,6 +103,17 @@ const UNPROTECTED = `r.finished_at IS NOT NULL
            AND NOT EXISTS (SELECT 1 FROM _smrt_ai_run_checkpoints c
                             WHERE c.run_id = r.id)))`;
 
+/**
+ * No call of the run can still change its charge (#5516): none is still
+ * `reserved` (unconditional, as before) and none admitted on 1.21.0 first
+ * ended after `$2`, one hour before the pass's clock.
+ */
+const CALLS_SETTLED_BEYOND_CHANGE = `NOT EXISTS (SELECT 1 FROM _smrt_ai_run_events e
+                         WHERE e.run_id = r.id AND e.type = 'call'
+                           AND (e.call_state = 'reserved'
+                                OR (e.call_proof IS NOT NULL
+                                    AND e.ended_at > $2)))`;
+
 function tenantCondition(
   scope: { tenantId?: string | null },
   params: unknown[],
@@ -140,6 +152,10 @@ export async function pruneAiRunTrajectories(
     );
   }
   const cutoff = new Date(now.getTime() - retention.maxAgeMs).toISOString();
+  // A call's charge can change until one hour after it first ended (#5516).
+  const windowCutoff = new Date(
+    now.getTime() - AI_CALL_USAGE_WINDOW_MS,
+  ).toISOString();
   const batch = retention.batch ?? AI_RUN_RETENTION_DEFAULTS.batch;
   const sampling = sampleRate < 1;
   const done = new Set<string>();
@@ -149,12 +165,13 @@ export async function pruneAiRunTrajectories(
     let progressed = false;
     let lastId: string | null = null;
     for (;;) {
-      const params: unknown[] = [sampling ? now.toISOString() : cutoff];
+      const params: unknown[] = [
+        sampling ? now.toISOString() : cutoff,
+        windowCutoff,
+      ];
       let where = `r.trajectory_pruned = 0 AND ${UNPROTECTED}
         AND r.finished_at < $1
-        AND NOT EXISTS (SELECT 1 FROM _smrt_ai_run_events e
-                         WHERE e.run_id = r.id AND e.type = 'call'
-                           AND e.call_state = 'reserved')`;
+        AND ${CALLS_SETTLED_BEYOND_CHANGE}`;
       where += tenantCondition(retention, params);
       if (lastId !== null) {
         params.push(lastId);
@@ -205,6 +222,7 @@ export async function pruneAiRunTrajectories(
         const pruned = await pruneOneTrajectory(db, id, options, {
           tenant: nullableTenant(row.tenant_id),
           finishedBefore: sampled ? cutoff : now.toISOString(),
+          windowCutoff,
         });
         if (pruned) {
           done.add(id);
@@ -235,6 +253,8 @@ function nullableTenant(value: unknown): string | null {
 interface RetentionCandidate {
   tenant: string | null;
   finishedBefore: string;
+  /** Calls that first ended after this keep the run's events (#5516). */
+  windowCutoff?: string;
 }
 
 function candidateClause(
@@ -273,16 +293,21 @@ async function pruneOneTrajectory(
       );
       const run = rows[0];
       if (!run) return false;
-      const reserved = getRows(
+      // Rechecked under the lock: a call still reserved, or one whose charge
+      // can still change, keeps the run's events (#5516).
+      const changeable = getRows(
         await aiRunQuery(
           tx.db,
-          `SELECT 1 AS x FROM _smrt_ai_run_events
-            WHERE run_id = $1 AND type = 'call' AND call_state = 'reserved'
+          `SELECT 1 AS x FROM _smrt_ai_run_events e
+            WHERE e.run_id = $1 AND e.type = 'call'
+              AND (e.call_state = 'reserved'
+                   OR (e.call_proof IS NOT NULL AND e.ended_at > $2))
             LIMIT 1`,
           runId,
+          candidate.windowCutoff ?? tx.now.toISOString(),
         ),
       );
-      if (reserved.length > 0) return false;
+      if (changeable.length > 0) return false;
       const counts = { passed: 0, failed: 0, approved: 0, refused: 0 };
       for (const row of getRows(
         await aiRunQuery(

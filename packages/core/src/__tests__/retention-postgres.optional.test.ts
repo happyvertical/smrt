@@ -84,7 +84,7 @@ describe.skipIf(!pgUrl)('system-table retention on PostgreSQL (#2375)', () => {
     await db.query(
       `INSERT INTO _smrt_ai_usage
          (id, provider, model, operation, prompt_tokens, completion_tokens,
-          total_tokens, estimated_cost, duration, class_name, tenant_id, tags, created_at)
+          total_tokens, estimated_cost, duration_ms, class_name, tenant_id, tags, created_at)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
       options.id,
       'openai',

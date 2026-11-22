@@ -24,7 +24,6 @@ import type {
 } from '@happyvertical/smrt-types';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import {
-  AI_OWN_CALL_ID_TAG,
   AiUsageCollector,
   AiUsagePersistenceHandler,
 } from './adapters/ai-usage.js';
@@ -139,6 +138,14 @@ import {
 } from './postgres-timeouts.js';
 import { detectEngine } from './schema/ddl/index.js';
 import { SignalBus } from './signals/bus.js';
+import {
+  classifyAiUsageClaim,
+  recordRefusedClaim,
+  withCallInternals,
+  withoutClaimTags,
+  withoutProof,
+} from './system/ai-call-ledger.js';
+import type { AiRunCallRequest } from './system/ai-run-calls.js';
 import {
   beginAiRunCall,
   chargeAiRunCallUnreserved,
@@ -558,13 +565,12 @@ export class SmrtClass {
     Set<(event: InferenceUsageObservation) => void>
   >();
   /**
-   * Tracked calls of a run waiting for their usage event (#5005), keyed by
-   * the call's own id (`aiCallId` tag): the event is written with the call's
-   * settlement and the handlers run only after it commits.
+   * The provider-level `usageTags` of each tier client this instance built
+   * (#5516): the second tag source of a tracked call's billed row.
    */
-  private readonly _aiRunCallCaptures = new Map<
-    string,
-    (event: SmrtAiUsageEvent) => void
+  private readonly _aiProviderTags = new WeakMap<
+    object,
+    Record<string, string>
   >();
   /** Run-tracking hooks per provider-bound client (#5005). */
   private readonly _aiRunClientHooks = new WeakMap<object, AiRunClientHooks>();
@@ -896,6 +902,12 @@ export class SmrtClass {
               aiConfig,
               withAIAliases(aiConfig as Record<string, unknown>),
             );
+            // Core's claim tags are never a client's tag defaults (#5516).
+            if (aiConfig.usageTags && typeof aiConfig.usageTags === 'object') {
+              aiConfig.usageTags = withoutClaimTags(
+                aiConfig.usageTags as Record<string, string>,
+              );
+            }
 
             // A recorder or `withAiUsage()` sink in the config is replaced
             // (keeping the callback it wraps): this client records through
@@ -1196,6 +1208,27 @@ export class SmrtClass {
   }
 
   /**
+   * The first two tag sources of a tracked call's billed row (#5516), read
+   * when the call is admitted: the sink attribution's tags, then the
+   * client's provider-level `usageTags`, which the SDK merges into every
+   * event. Core's claim tags never come from here.
+   */
+  private aiCallAttributionTags(
+    client: object,
+  ): Record<string, string> | undefined {
+    const providerTags =
+      this._aiProviderTags.get(client) ?? this._aiClientConfig?.usageTags;
+    const merged = {
+      ...(this._aiSinkAttribution?.tags ?? {}),
+      ...(providerTags && typeof providerTags === 'object'
+        ? (providerTags as Record<string, string>)
+        : {}),
+    };
+    const tags = withoutClaimTags(merged);
+    return Object.keys(tags).length > 0 ? tags : undefined;
+  }
+
+  /**
    * `client` with run tracking (#5005): a call whose options carry a
    * `runContext` is reserved, sent with its own call id, and settled with
    * its usage row in the run's database; other calls are unchanged.
@@ -1233,14 +1266,7 @@ export class SmrtClass {
         },
         className: this._className,
         tenantId: () => this.currentTenantId() ?? null,
-        registerCapture: (callId, capture) => {
-          this._aiRunCallCaptures.set(callId, capture);
-          return () => {
-            if (this._aiRunCallCaptures.get(callId) === capture) {
-              this._aiRunCallCaptures.delete(callId);
-            }
-          };
-        },
+        attribution: () => this.aiCallAttributionTags(key),
         afterSettle: (event) =>
           dispatchAiUsageEvent(event, this._aiUsageHandlers, usageConfig()),
       };
@@ -1841,12 +1867,25 @@ export class SmrtClass {
       }
     };
 
+    // Core's claim tags are never a client's tag defaults (#5516).
+    if (tierConfig.usageTags && typeof tierConfig.usageTags === 'object') {
+      tierConfig.usageTags = withoutClaimTags(
+        tierConfig.usageTags as Record<string, string>,
+      );
+    }
     const pending = (async () => {
       // Same lazy SDK import as the default client (#2894).
       const { getAI } = await importAI();
-      return (await getAI(
+      const client = (await getAI(
         tierConfig as unknown as Parameters<typeof getAI>[0],
       )) as unknown as AIClient;
+      if (tierConfig.usageTags && typeof tierConfig.usageTags === 'object') {
+        this._aiProviderTags.set(
+          client as unknown as object,
+          tierConfig.usageTags as Record<string, string>,
+        );
+      }
+      return client;
     })();
     byCredential.set(credentialKey, pending);
     pending.catch(() => {
@@ -1880,68 +1919,79 @@ export class SmrtClass {
     const decision = await this.getDecisionClient();
     if (!decision) return undefined;
     const run = isAiRunContext(options.runContext) ? options.runContext : null;
+    // The run's tags (seat, fusion key, prompt tags) are known before the
+    // call is admitted, so the billed row carries them whoever closes it
+    // (#5516); core's claim tags never come from the caller.
+    const runTags = withoutClaimTags({
+      ...(options.usageTags ?? {}),
+      operation: 'decision',
+    });
     // A decision that is a call of a run (a fusion's `gate` seat, #5005)
     // takes its held reservation and settles with its usage row.
     const handle = run
-      ? await beginAiRunCall(run, {
-          inputChars: JSON.stringify(request ?? '').length,
-          fallbackUsage: {
-            provider: 'unknown',
-            model: 'unknown',
-            operation: 'decision',
-            className: this._className,
-          },
-          afterSettle: (event) => {
-            const usageConfig =
-              this._aiUsageResolvedConfig ??
-              this.mergeAiUsageConfig(config.toJSON());
-            return dispatchAiUsageEvent(
-              event,
-              this._aiUsageHandlers,
-              usageConfig,
-            );
-          },
-          ...(options.signal ? { signal: options.signal } : {}),
-        })
+      ? await beginAiRunCall(
+          run,
+          withCallInternals<AiRunCallRequest>(
+            {
+              inputChars: JSON.stringify(request ?? '').length,
+              fallbackUsage: {
+                provider: 'unknown',
+                model: 'unknown',
+                operation: 'decision',
+                className: this._className,
+                tags: runTags,
+              },
+              afterSettle: (event) => {
+                const usageConfig =
+                  this._aiUsageResolvedConfig ??
+                  this.mergeAiUsageConfig(config.toJSON());
+                return dispatchAiUsageEvent(
+                  event,
+                  this._aiUsageHandlers,
+                  usageConfig,
+                );
+              },
+              ...(options.signal ? { signal: options.signal } : {}),
+            },
+            {
+              mode: 'single',
+              ...(this.aiCallAttributionTags({})
+                ? { attributionTags: this.aiCallAttributionTags({}) }
+                : {}),
+            },
+          ),
+        )
       : null;
     const tags = {
-      ...(options.usageTags ?? {}),
+      ...runTags,
       ...(handle?.invocation.usageTags ?? {}),
-      operation: 'decision',
     };
-    let release: (() => void) | undefined;
-    if (handle) {
-      const capture = (event: SmrtAiUsageEvent) =>
-        handle.invocation.capture(event);
-      const callId = handle.invocation.callId;
-      this._aiRunCallCaptures.set(callId, capture);
-      release = () => {
-        if (this._aiRunCallCaptures.get(callId) === capture) {
-          this._aiRunCallCaptures.delete(callId);
-        }
-      };
-    }
     try {
       const signal = handle?.invocation.signal ?? options.signal;
       const result = await executeDecision(decision, request, {
         ...(signal ? { signal } : {}),
         usageTags: tags,
       } as DecisionOptions);
+      // The usage event reaches the call by its secret, after the run
+      // observers saw it, as a provider's would.
       await this.recordAiUsageEvent(
         {
           provider: result.provenance.provider,
           model: result.provenance.model,
           operation: 'decision',
           usage: result.usage,
+          duration: 0,
+          timestamp: new Date(),
           tags,
         },
         result.provenance,
       );
-      release?.();
-      await handle?.succeed();
+      await handle?.succeed({
+        ...(result.usage ? { usage: result.usage } : {}),
+        ...(result.provenance.model ? { model: result.provenance.model } : {}),
+      });
       return result;
     } catch (error) {
-      release?.();
       if (handle) throw await handle.fail(error);
       throw error;
     }
@@ -2084,7 +2134,8 @@ export class SmrtClass {
         ? { estimatedCost: event.estimatedCost }
         : {}),
       duration: event.duration,
-      tags: { ...(event.tags ?? {}) },
+      // The call's secret never leaves core (#5516).
+      tags: { ...(withoutProof(event.tags) ?? {}) },
     };
     for (const listener of listeners) {
       try {
@@ -3002,10 +3053,11 @@ export class SmrtClass {
     // raw event first, whatever the usage config says.
     observeAiTranscriptUsage(event);
     const observed = this._aiRunUsageListeners.size > 0;
-    // A tracked call of a run (#5005) is waiting for its usage either way.
-    const tracked = this._aiRunCallCaptures.size > 0;
+    // An event that names a tracked call is never ordinary usage (#5516):
+    // bound to its call by the call's secret, or refused.
+    const claim = classifyAiUsageClaim(event);
     if (
-      !tracked &&
+      claim.kind === 'ordinary' &&
       (!usageConfig.enabled ||
         (this._aiUsageHandlers.length === 0 && !observed))
     ) {
@@ -3017,32 +3069,38 @@ export class SmrtClass {
       (this as { tenantId?: string | null }).tenantId !== undefined
         ? ((this as { tenantId?: string | null }).tenantId ?? null)
         : undefined;
-    const normalizedEvent = normalizeAiUsageEvent(event, aiConfig, {
-      className: this._className,
-      tenantId: resolveAiUsageTenantId(overrides.tenantId, instanceTenantId),
-      tags: overrides.tags,
-    });
-    if (!normalizedEvent) {
+    const tenantId = resolveAiUsageTenantId(
+      overrides.tenantId,
+      instanceTenantId,
+    );
+    if (claim.kind === 'refused') {
+      await recordRefusedClaim(this._db, claim, tenantId, event);
       return;
     }
-
-    // A tracked call of a run (#5005) writes its usage row with its
-    // settlement; the handlers run once that commits (ai-run-client.ts).
-    const ownCallId = normalizedEvent.tags?.[AI_OWN_CALL_ID_TAG];
-    const capture = ownCallId
-      ? this._aiRunCallCaptures.get(ownCallId)
-      : undefined;
-    if (capture) {
-      if (usageConfig.estimateCosts) {
-        normalizedEvent.estimatedCost = estimateAiUsageCost(
-          normalizedEvent.provider,
-          normalizedEvent.model,
-          normalizedEvent.usage,
-          usageConfig.costRates,
-        );
+    const normalizedEvent = normalizeAiUsageEvent(event, aiConfig, {
+      className: this._className,
+      tenantId,
+      tags: overrides.tags,
+    });
+    if (claim.kind === 'bound') {
+      // A tracked call of a run (#5005, #5516): the run observers see the
+      // event, then the call's ledger takes it; the handlers run once the
+      // call's closing write commits (ai-run-client.ts).
+      if (normalizedEvent && observed) {
+        if (usageConfig.estimateCosts) {
+          normalizedEvent.estimatedCost = estimateAiUsageCost(
+            normalizedEvent.provider,
+            normalizedEvent.model,
+            normalizedEvent.usage,
+            usageConfig.costRates,
+          );
+        }
+        this.notifyRunUsage(normalizedEvent);
       }
-      if (observed) this.notifyRunUsage(normalizedEvent);
-      capture(normalizedEvent);
+      await claim.locator.deliver(event as Record<string, unknown>);
+      return;
+    }
+    if (!normalizedEvent) {
       return;
     }
     if (!usageConfig.enabled) return;

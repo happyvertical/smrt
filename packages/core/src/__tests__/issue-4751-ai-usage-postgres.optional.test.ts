@@ -93,7 +93,7 @@ describe.skipIf(!pgUrl)(
       await db.query('DELETE FROM _smrt_ai_evaluations');
       await db.query('DELETE FROM _smrt_ai_usage');
       await db.query(
-        `INSERT INTO _smrt_ai_usage (id, provider, model, operation, duration)
+        `INSERT INTO _smrt_ai_usage (id, provider, model, operation, duration_ms)
        VALUES ('legacy-1', 'openai', 'gpt-4o', 'chat', 5)`,
       );
 

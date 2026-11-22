@@ -6,6 +6,15 @@
  * usage row afterwards. A call without `runContext` is sent exactly as
  * before. `runContext` and `expectedOutputTokens` never reach the provider.
  *
+ * The call's ledger (#5516): a client that declares `usageFeatures.parts`
+ * (sdk#1576) is billed in parts mode, every other client in single mode,
+ * decided here from the declared capability and never from a provider name.
+ * The call's usage events reach it through the secret its usage tags carry
+ * (the provider-level callback looks the call up by that secret), and core's
+ * own tag names (`aiCallId`, `aiCallProof`) are removed from what a caller
+ * passes before the SDK sees it. The call is priced from the rate its
+ * reservation recorded, never from the rate card at completion.
+ *
  * `SmrtClass` wraps every provider-bound client (one per target, so each
  * alias-chain candidate actually sent is its own call) with
  * {@link withAiRunTracking}, and the client of a chain or fusion executor
@@ -14,6 +23,12 @@
  */
 
 import type { SmrtAiUsageEvent } from '@happyvertical/smrt-types';
+import {
+  type CallUsageMode,
+  withCallInternals,
+  withObservedParts,
+  withoutClaimTags,
+} from './system/ai-call-ledger.js';
 import type { AiCallRate } from './system/ai-run-accounting.js';
 import {
   type AiRunCallRequest,
@@ -32,11 +47,11 @@ export interface AiRunClientHooks {
   rateFor(provider: string, model: string): AiCallRate | null;
   className?: string;
   tenantId?(): string | null | undefined;
-  /** Route the usage event tagged with this call id to `capture`. */
-  registerCapture(
-    callId: string,
-    capture: (event: SmrtAiUsageEvent) => void,
-  ): () => void;
+  /**
+   * The billed row's first two tag sources, read when a call is admitted:
+   * the sink attribution's tags and the client's provider-level tags.
+   */
+  attribution?(): Record<string, string> | undefined;
   /** The usage handlers, run once the settlement committed. */
   afterSettle(event: SmrtAiUsageEvent): Promise<void>;
 }
@@ -66,23 +81,44 @@ function splitOptions(raw: unknown): {
       typeof expectedOutputTokens === 'number'
         ? expectedOutputTokens
         : undefined,
-    options,
+    options: withoutClaimOptions(options),
   };
+}
+
+/** `options` with core's claim tags removed from its `usageTags`. */
+function withoutClaimOptions(options: Options): Options {
+  const tags = options.usageTags;
+  const stripped = withoutClaimTags(tags);
+  return stripped === tags ? options : { ...options, usageTags: stripped };
+}
+
+/** An untracked call's raw options, its claim tags removed when present. */
+function untrackedOptions(raw: unknown): unknown {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return raw;
+  return withoutClaimOptions(raw as Options);
+}
+
+/** The client's declared capability (sdk#1576 R6): parts mode, else single. */
+function usageModeOf(client: unknown): CallUsageMode {
+  const features = (client as { usageFeatures?: { parts?: unknown } } | null)
+    ?.usageFeatures;
+  return features?.parts === true ? 'parts' : 'single';
 }
 
 /**
  * The usage a response reports (`chat()` answers carry `usage` and `model`),
- * for a client whose usage never reaches the pipeline: the call is then
- * settled with it instead of a zero-token row.
+ * for a client whose usage never reaches the pipeline: a single-mode call is
+ * then settled with it; a parts-mode response's `usageParts` folds as parts.
  */
 function observedUsage(
   result: unknown,
   duration: number,
 ): AiRunObservedUsage | undefined {
   if (!result || typeof result !== 'object') return undefined;
-  const { usage, model } = result as {
+  const { usage, model, usageParts } = result as {
     usage?: Record<string, unknown>;
     model?: unknown;
+    usageParts?: unknown;
   };
   const count = (value: unknown) =>
     typeof value === 'number' && Number.isFinite(value) && value >= 0
@@ -95,7 +131,7 @@ function observedUsage(
     (promptTokens !== undefined && completionTokens !== undefined
       ? promptTokens + completionTokens
       : undefined);
-  return {
+  const observed: AiRunObservedUsage = {
     duration,
     ...(typeof model === 'string' && model ? { model } : {}),
     ...(totalTokens !== undefined
@@ -108,6 +144,9 @@ function observedUsage(
         }
       : {}),
   };
+  return usageParts === undefined
+    ? observed
+    : withObservedParts(observed, usageParts);
 }
 
 function inputChars(input: unknown): number {
@@ -121,6 +160,7 @@ function inputChars(input: unknown): number {
 
 function request(
   hooks: AiRunClientHooks,
+  client: unknown,
   operation: string,
   input: unknown,
   options: Options,
@@ -131,29 +171,36 @@ function request(
   const model =
     typeof options.model === 'string' ? options.model : target.model;
   const tenantId = hooks.tenantId?.();
-  return {
-    ...(options.usageTags?.callId
-      ? { entryCallId: options.usageTags.callId }
-      : {}),
-    inputChars: inputChars(input),
-    ...(typeof options.maxTokens === 'number'
-      ? { outputLimit: options.maxTokens }
-      : {}),
-    ...(expectedOutputTokens !== undefined ? { expectedOutputTokens } : {}),
-    rate: hooks.rateFor(provider, model),
-    fallbackUsage: {
-      provider,
-      model,
-      operation,
-      ...(options.usageTags ? { tags: options.usageTags } : {}),
-      ...(hooks.className ? { className: hooks.className } : {}),
-      ...(tenantId !== undefined ? { tenantId } : {}),
+  const attributionTags = hooks.attribution?.();
+  return withCallInternals<AiRunCallRequest>(
+    {
+      ...(options.usageTags?.callId
+        ? { entryCallId: options.usageTags.callId }
+        : {}),
+      inputChars: inputChars(input),
+      ...(typeof options.maxTokens === 'number'
+        ? { outputLimit: options.maxTokens }
+        : {}),
+      ...(expectedOutputTokens !== undefined ? { expectedOutputTokens } : {}),
+      rate: hooks.rateFor(provider, model),
+      fallbackUsage: {
+        provider,
+        model,
+        operation,
+        ...(options.usageTags ? { tags: options.usageTags } : {}),
+        ...(hooks.className ? { className: hooks.className } : {}),
+        ...(tenantId !== undefined ? { tenantId } : {}),
+      },
+      afterSettle: (event) => hooks.afterSettle(event),
+      ...(options.signal instanceof AbortSignal
+        ? { signal: options.signal }
+        : {}),
     },
-    afterSettle: (event) => hooks.afterSettle(event),
-    ...(options.signal instanceof AbortSignal
-      ? { signal: options.signal }
-      : {}),
-  };
+    {
+      mode: usageModeOf(client),
+      ...(attributionTags ? { attributionTags } : {}),
+    },
+  );
 }
 
 function sendOptions(
@@ -199,21 +246,18 @@ export function withAiRunTracking<T>(client: T, hooks: AiRunClientHooks): T {
           if (!split.context) {
             return raw === undefined
               ? value.call(target, input, ...rest)
-              : value.call(target, input, raw, ...rest);
+              : value.call(target, input, untrackedOptions(raw), ...rest);
           }
           const handle = await beginAiRunCall(
             split.context,
             request(
               hooks,
+              target,
               property,
               input,
               split.options,
               split.expectedOutputTokens,
             ),
-          );
-          const release = hooks.registerCapture(
-            handle.invocation.callId,
-            (event) => handle.invocation.capture(event),
           );
           const started = Date.now();
           let result: unknown;
@@ -225,23 +269,9 @@ export function withAiRunTracking<T>(client: T, hooks: AiRunClientHooks): T {
               ...rest,
             );
           } catch (error) {
-            release();
             throw await handle.fail(error);
           }
-          release();
-          const observed = observedUsage(result, Date.now() - started);
-          const sentTo = hooks.target();
-          const rate = hooks.rateFor(
-            sentTo.provider,
-            observed?.model ?? sentTo.model,
-          );
-          if (observed?.usage && rate) {
-            observed.estimatedCost =
-              ((observed.usage.promptTokens ?? 0) * rate.input +
-                (observed.usage.completionTokens ?? 0) * rate.output) /
-              1000;
-          }
-          await handle.succeed(observed);
+          await handle.succeed(observedUsage(result, Date.now() - started));
           return result;
         };
       }
@@ -251,7 +281,7 @@ export function withAiRunTracking<T>(client: T, hooks: AiRunClientHooks): T {
           if (!split.context) {
             return raw === undefined
               ? value.call(target, input, ...rest)
-              : value.call(target, input, raw, ...rest);
+              : value.call(target, input, untrackedOptions(raw), ...rest);
           }
           const context = split.context;
           return (async function* () {
@@ -259,15 +289,12 @@ export function withAiRunTracking<T>(client: T, hooks: AiRunClientHooks): T {
               context,
               request(
                 hooks,
+                target,
                 'stream',
                 input,
                 split.options,
                 split.expectedOutputTokens,
               ),
-            );
-            const release = hooks.registerCapture(
-              handle.invocation.callId,
-              (event) => handle.invocation.capture(event),
             );
             let failed = false;
             try {
@@ -280,11 +307,9 @@ export function withAiRunTracking<T>(client: T, hooks: AiRunClientHooks): T {
               for await (const chunk of iterable) yield chunk;
             } catch (error) {
               failed = true;
-              release();
               throw await handle.fail(error);
             } finally {
               if (!failed) {
-                release();
                 // Finished, or the consumer stopped reading: what was used
                 // is settled.
                 await handle.succeed();

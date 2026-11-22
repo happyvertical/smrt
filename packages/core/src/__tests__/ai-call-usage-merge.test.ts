@@ -96,7 +96,7 @@ describe.each(aiRunTestEngines)('call ledger merge on %s', (engine) => {
     expect(rows[0]?.total_tokens).toBe(15);
   });
 
-  it('bills a streamed two-part continuation the sum, never complete', async () => {
+  it('bills a streamed two-part continuation the sum; without a last mark it stays parts', async () => {
     const f = await ledgerFixture(engine);
     stub.script.onCall = async (call) => {
       await call.emit({ index: 0, usage: counted(8) });
@@ -454,7 +454,10 @@ describe.each(aiRunTestEngines)('call ledger merge on %s', (engine) => {
         usageParts: {
           call: call.sdkCall,
           complete: true,
-          parts: [{ index: 0, last: true, usage: counted(25) }],
+          parts: [
+            { index: 0, usage: counted(10) },
+            { index: 1, last: true, usage: counted(15) },
+          ],
         },
       };
     };
