@@ -115,12 +115,55 @@ describe('the reply block', () => {
     expect(el.getAttribute('aria-label')).toBe('2 changes waiting');
     expect(el.textContent).toContain('1 question');
     expect(el.textContent).toContain('Add field Fulfillment to Orders');
-    expect(buttons(el)).toEqual([
+    expect(buttons(el).slice(1)).toEqual([
       { text: 'Review', primary: true, href: '/changes' },
       { text: 'Apply', primary: false, href: null },
     ]);
+    // the pill is the one place the question shows; it is answered in Review
+    const pill = el.querySelector<HTMLButtonElement>(
+      '.smrt-assistant-panel__q',
+    );
+    expect(pill?.getAttribute('aria-expanded')).toBe('false');
+    expect(el.textContent).not.toContain('Mark them?');
+    pill?.click();
+    await vi.waitFor(() => expect(el.textContent).toContain('Mark them?'));
+    expect(pill?.getAttribute('aria-expanded')).toBe('true');
+    expect(
+      el.querySelector('a[href="/changes"]:not(.smrt-app-shell__btn)')
+        ?.textContent,
+    ).toBe('Answer in Review');
+    expect(el.querySelector('input, [role="radio"]')).toBeNull();
     expect(container.textContent).not.toMatch(
       /draft|Tried in|Changed in your live/i,
+    );
+  });
+
+  it('Review leads even for a small addition while a question is open', async () => {
+    stubTurn([
+      ...TOOL,
+      { type: 'changes_block' },
+      { type: 'done', stop: 'complete' },
+    ]);
+    await open({
+      changes: changes({
+        applyNow: true,
+        cards: [
+          card({
+            questions: [
+              { id: 'q1', text: 'Which?', choices: [], state: 'open' },
+            ],
+          }),
+        ],
+      }),
+      onapply: vi.fn(),
+    });
+    await say('Add a field');
+    await vi.waitFor(() => expect(block()).not.toBeNull());
+    expect(buttons(block() as HTMLElement).map((b) => b.text)).not.toContain(
+      'Apply now',
+    );
+    expect(buttons(block() as HTMLElement).find((b) => b.primary)?.text).toBe(
+      'Review',
     );
   });
 

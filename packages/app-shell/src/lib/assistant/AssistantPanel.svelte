@@ -77,6 +77,7 @@ const lastBlock = $derived(
 // An older long reply folds to a few lines; the newest never does.
 const newestReply = $derived(newestReplyId(dock.items));
 let unfolded = $state<Record<string, boolean>>({});
+let asking = $state(false);
 let applying = $state(false);
 let applyError = $state('');
 
@@ -334,12 +335,18 @@ onDestroy(() => controller?.abort());
             <p class="smrt-assistant-panel__block-h">
               <span class="smrt-assistant-panel__count" aria-hidden="true">{block.count}</span>
               <span>{block.count === 1 ? 'change' : 'changes'} waiting</span>
-              {#if block.questions > 0}<span class="smrt-assistant-panel__q">{plural(block.questions, 'question')}</span>{/if}
+              {#if block.questions > 0}<button type="button" class="smrt-assistant-panel__q" aria-expanded={asking} aria-controls="assistant-block-questions" onclick={() => (asking = !asking)}>{plural(block.questions, 'question')}<span aria-hidden="true">{asking ? '▴' : '▾'}</span></button>{/if}
             </p>
             <ul class="smrt-assistant-panel__block-list">
               {#each block.lines as line, i (i)}<li>{line}</li>{/each}
               {#if block.more > 0}<li class="smrt-app-shell__muted">and {block.more} more</li>{/if}
             </ul>
+            {#if block.questions > 0 && asking}
+              <div id="assistant-block-questions" class="smrt-assistant-panel__ask">
+                {#each block.questionTexts as text, i (i)}<p>{text}</p>{/each}
+                <a href="/changes">Answer in Review</a>
+              </div>
+            {/if}
             <div class="smrt-assistant-panel__block-a">
               {#if block.applyNow}
                 <button type="button" class="smrt-app-shell__btn smrt-app-shell__btn-primary" disabled={applying || !block.canApply} onclick={applyFromBlock}>Apply now</button>
@@ -538,6 +545,22 @@ onDestroy(() => controller?.abort());
   .smrt-assistant-panel__count,
   .smrt-assistant-panel__q {
     padding: 0 0.5rem;
+  }
+  .smrt-assistant-panel__q {
+    margin-inline-start: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    border: 0;
+    font: inherit;
+    cursor: pointer;
+  }
+  .smrt-assistant-panel__ask {
+    display: grid;
+    gap: 0.25rem;
+  }
+  .smrt-assistant-panel__ask p {
+    margin: 0;
   }
   .smrt-assistant-panel__block-list {
     margin: 0;

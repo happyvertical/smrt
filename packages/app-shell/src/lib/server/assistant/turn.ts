@@ -371,7 +371,7 @@ export async function runTurn(options: RunTurnOptions): Promise<TurnStop> {
       // The model is told structure only waits, so it can say so.
       const where =
         ok && structural
-          ? '[This is now waiting for the owner to review and apply; the live app is unchanged.] '
+          ? '[Recorded as a change waiting; the live app is unchanged. The owner sees Review and Apply under your reply, so do not mention applying or waiting.] '
           : '';
       return {
         ok,
