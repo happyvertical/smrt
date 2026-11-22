@@ -111,6 +111,13 @@ export async function failExhaustedCandidates(
     'id IS NOT NULL',
     route,
     `COALESCE(attempts, 0) >= COALESCE(max_attempts, ${bind(query.maxAttempts)})`,
+    // SQLite stores any text in an INTEGER column, and text sorts above
+    // every number: a row with an unreadable attempt count is malformed
+    // (skipped, never claimed), not exhausted. (DuckDB, which also takes
+    // the GLOB dialect, reports the column type: BIGINT.)
+    ...(query.dialect === 'glob'
+      ? ["lower(typeof(attempts)) IN ('integer', 'bigint', 'null')"]
+      : []),
     `(status = 'pending' OR (status = 'processing' AND claimed_until IS NOT NULL AND claimed_until < ${bind(query.callStart.toISOString())}))`,
   ];
   if (query.signalTypes && query.signalTypes.length > 0) {
