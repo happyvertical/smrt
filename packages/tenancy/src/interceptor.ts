@@ -38,12 +38,17 @@ import {
   getTenantId,
   isSuperAdminBypass,
   isSystemContext,
+  runInPrincipalContext,
   TenantContextError,
   TenantIsolationError,
   withSystemContext,
   withTenant,
 } from './context.js';
-import { isTenancyEnabled, setTenancyEnabled } from './enabled-state.js';
+import {
+  isTenancyEnabled,
+  setTenancyEnabled,
+  tenantPolicyGeneration,
+} from './enabled-state.js';
 import { runTenantScopedEntryPoint } from './entry-point.js';
 import {
   getTenantScopedConfig,
@@ -1033,6 +1038,10 @@ export function enableTenancy(options: TenantInterceptorOptions = {}): void {
           ])
         : undefined;
     },
+    // A host-resolved request principal (#5195): a frozen projection that
+    // replaces the active context, on this package's own storage.
+    runForPrincipal: (context, fn) => runInPrincipalContext(context, fn),
+    generation: () => tenantPolicyGeneration(),
     // Extra fields of a context core refreshes (its database, metadata) are
     // kept; tenant, user and permissions are core's.
     runInContext: (context, fn) =>
