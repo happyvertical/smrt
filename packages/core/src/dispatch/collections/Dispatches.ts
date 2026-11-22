@@ -41,8 +41,11 @@ import type {
  *   system scope only.
  * @returns `true` when a value placeholder was consumed (so the caller can
  *   advance its param index), `false` otherwise.
+ *
+ * Exported for the bus's internal candidate query (`dispatch/candidates.ts`);
+ * not re-exported from the package entry point.
  */
-function pushTenantPredicate(
+export function pushTenantPredicate(
   conditions: string[],
   params: unknown[],
   scope: DispatchTenantScope | undefined,
