@@ -36,7 +36,7 @@ export function reportJsonTableChange(change: SchemaChange): SchemaChange {
     kindHint: 'json.ddl-not-durable',
     advisory: {
       severity: 'warning',
-      message: `${subject}: the JSON adapter keeps DDL run through query() in memory only until its next write to the table, so this change was not executed${change.advisory ? ` (${change.advisory.message})` : ''}. To apply it, convert the table: create it again in the new shape, copy its rows, and export it with exportTable().`,
+      message: `${subject}: the JSON adapter keeps DDL run through query() in memory only until its next write to the table, so this change was not executed${change.advisory ? ` (${change.advisory.message})` : ''}. To apply it, convert the table: create it again in the new shape, copy its rows, and export it with exportTable(); for 4-byte decimal columns, convertJsonDecimalColumns() does this with checks.`,
       ...(planned.length > 0
         ? { suggestedSql: planned }
         : change.advisory?.suggestedSql

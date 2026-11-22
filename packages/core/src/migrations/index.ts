@@ -115,6 +115,12 @@ export {
   preflightIntegerWidthWidening,
   widenIntegerColumnsToBigInt,
 } from './integer-width.js';
+// Converting 4-byte decimal columns of existing JSON-adapter tables (P5a)
+export {
+  type ConvertJsonDecimalColumnsOptions,
+  convertJsonDecimalColumns,
+  type JsonDecimalConversion,
+} from './json-decimal-conversion.js';
 export {
   type ConfirmedRecompute,
   type ConfirmedRetirement,

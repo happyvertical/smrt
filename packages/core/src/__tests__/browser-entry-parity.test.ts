@@ -217,6 +217,7 @@ const NODE_ONLY_GROUPS: ReadonlyArray<{
       'ViewInvalidatedAfterCommitWarning',
       'ViewsChangedSincePlanError',
       'asViewsChangedSincePlan',
+      'convertJsonDecimalColumns',
     ],
   },
   {

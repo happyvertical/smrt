@@ -730,7 +730,7 @@ function compareColumns(
               : table.origin === 'system'
                 ? 'A system column is widened on start; this one was deferred by a blocker (a view that projects it or does not bind, or a dependency-tracked view), named in the start-up warning. Remove the blocker and restart.'
                 : unrepairable
-                  ? 'The JSON adapter does not persist DDL, so `smrt db:migrate` does not widen this column; convert the table (create it again in the new shape, copy its rows, export it).'
+                  ? 'The JSON adapter does not persist DDL, so `smrt db:migrate` does not widen this column; convert it with `convertJsonDecimalColumns()` (core), which checks the data file and a fresh reopen.'
                   : 'Run `smrt db:migrate` to widen this column to double precision (lossless).',
             details: { expected: column.type, actual: live.type },
           });

@@ -1111,6 +1111,21 @@ DuckDB failure still fails the start. Nothing is attempted inside a caller's
 transaction. Live parity reports a deferred system column as a width warning
 (`system-decimal-width.test.ts`, `system-decimal-width-postgres.optional.test.ts`).
 
+JSON adapter: `db:migrate` reports a 4-byte decimal column of an existing
+table (`json.ddl-not-durable`) and live parity reports it as an error.
+`convertJsonDecimalColumns(db, { dryRun, tables, dataDir })`
+(`migrations/json-decimal-conversion.ts`, root handle only, outside any
+transaction) converts it durably: per table it refuses when
+`getTableLoadErrors()` names the table, the live row count differs from
+`<table>.json`, or the file holds a key that is not a column (exporting then
+would overwrite data); otherwise it runs the rebuild plan in a transaction,
+copies both files aside, `exportTable()`s, and opens the directory again on
+a fresh handle without schemas to check DOUBLE columns and the row count,
+putting the copied files back if the check fails. A refused table is left
+byte for byte (`decimal-conversion-adapter.test.ts`). When both generated
+schemas and a `.schema.sql` exist, the adapter creates the table from the
+schemas passed to `getDatabase` (they win); the helper's reopen passes none.
+
 ### Explicit SQLite NOT NULL relaxation (#4413)
 
 Removing an ordinary inline `NOT NULL` clause from a manifest-nullable column

@@ -529,6 +529,11 @@ export {
   SchemaComparer,
 } from './migrations/differ';
 export {
+  type ConvertJsonDecimalColumnsOptions,
+  convertJsonDecimalColumns,
+  type JsonDecimalConversion,
+} from './migrations/json-decimal-conversion.js';
+export {
   type ConfirmedRecompute,
   type ConfirmedRetirement,
   type ConfirmedRetirementRecord,
