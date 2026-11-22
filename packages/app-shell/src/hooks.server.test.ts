@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   handoff: vi.fn(),
   fresh: vi.fn(),
   install: vi.fn(),
+  createDrain: vi.fn(),
   closeStreams: vi.fn(),
   stopImports: vi.fn(),
   drain: vi.fn(),
@@ -14,7 +15,10 @@ const mocks = vi.hoisted(() => ({
   env: { dev: false, building: false },
 }));
 vi.mock('$app/environment', () => mocks.env);
-vi.mock('$lib/server/shutdown', () => ({ installShutdown: mocks.install }));
+vi.mock('$lib/server/shutdown', () => ({ createDrain: mocks.createDrain }));
+vi.mock('$lib/server/embed-slot', () => ({
+  registerEmbeddedDrain: mocks.install,
+}));
 vi.mock('$lib/server/host', () => ({
   shellProfile: mocks.profile,
   drainShell: mocks.drain,
@@ -83,14 +87,17 @@ it('still starts the owner link and imports on the local profile', async () => {
   expect(mocks.fresh).toHaveBeenCalledOnce();
   expect(mocks.imports).toHaveBeenCalledOnce();
 });
-it('installs the SIGTERM/SIGINT drain once the runtime is ready, not under vite dev or build', async () => {
+it('hands the ordered drain to the entries once the runtime is ready, not under vite dev or build', async () => {
   mocks.imports.mockResolvedValue({});
+  const drainFn = vi.fn();
+  mocks.createDrain.mockReturnValue(drainFn);
   await init();
-  expect(mocks.install).toHaveBeenCalledWith({
+  expect(mocks.createDrain).toHaveBeenCalledWith({
     drain: mocks.drain,
     endStreams: mocks.closeStreams,
     stopWork: mocks.stopImports,
   });
+  expect(mocks.install).toHaveBeenCalledWith(drainFn);
   mocks.install.mockClear();
   mocks.env.dev = true;
   await init();
