@@ -1,8 +1,8 @@
 /**
- * Dispatch maintenance (internal): the orphan sweep.
+ * Dispatch maintenance (internal): the orphan sweep and lease release.
  *
- * Never runs inside `process()`; runs from `DispatchBus.maintain()` and the
- * retention `dispatch` task.
+ * Neither runs inside `process()`; both run from `DispatchBus.maintain()`
+ * (the orphan sweep also from the retention `dispatch` task).
  *
  * **Orphan sweep.** A `processing` row whose lease expired more than the
  * orphan threshold ago is failed with `[smrt:DISPATCH_LEASE_ORPHANED]` only
@@ -254,4 +254,91 @@ export async function sweepOrphanedDispatchLeases(
     }
   }
   return failed;
+}
+
+/** Release modes of {@link releaseDispatchLeases}. */
+export type DispatchReleaseMode = 'expired' | 'afterDrain' | 'legacy';
+
+const RELEASE_MODES: readonly string[] = ['expired', 'afterDrain', 'legacy'];
+
+/** Options of {@link releaseDispatchLeases}. */
+export interface DispatchReleaseOptions {
+  mode: DispatchReleaseMode;
+  tenantScope?: DispatchTenantScope;
+  now?: Date;
+  dryRun?: boolean;
+}
+
+/** Throw unless `mode` is a release mode, naming the option. */
+export function assertReleaseMode(mode: unknown): DispatchReleaseMode {
+  if (typeof mode !== 'string' || !RELEASE_MODES.includes(mode)) {
+    throw new Error(
+      `DispatchBus: release must be 'expired', 'afterDrain' or 'legacy' (got ${String(mode)})`,
+    );
+  }
+  return mode as DispatchReleaseMode;
+}
+
+/**
+ * Move leased `processing` rows back to `pending`, attempt count kept, lease
+ * cleared and `[smrt:DISPATCH_RELEASED]` noted in `last_error`:
+ *
+ * - `expired`: leases that already expired;
+ * - `afterDrain`: every lease this release wrote, live or expired (a
+ *   timed-out attempt has no token but keeps its expiry). Only after every
+ *   worker of this release has stopped;
+ * - `legacy`: rows an older core left `processing` without a lease.
+ *
+ * Owner-exact tenant scope, as the orphan sweep. Rows an attempt in this
+ * process is running are never released.
+ *
+ * @returns The ids released (or, under `dryRun`, that would be).
+ */
+export async function releaseDispatchLeases(
+  db: DatabaseInterface,
+  options: DispatchReleaseOptions,
+): Promise<string[]> {
+  const mode = assertReleaseMode(options.mode);
+  const now = options.now ?? new Date();
+  const { params, bind } = placeholders();
+  const reason = formatDispatchFailureReason(
+    DISPATCH_FAILURE_CODES.released,
+    `lease released (${mode})`,
+  );
+  // Bound in statement-text order: SET first, then WHERE.
+  const set = options.dryRun
+    ? ''
+    : `status = 'pending', last_error = ${bind(reason)},
+         updated_at = ${bind(now.toISOString())},
+         lease_token = NULL, claimed_until = NULL`;
+  const conditions = ["status = 'processing'"];
+  if (mode === 'expired') {
+    conditions.push(
+      'claimed_until IS NOT NULL',
+      `claimed_until < ${bind(now.toISOString())}`,
+    );
+  } else if (mode === 'afterDrain') {
+    conditions.push('(lease_token IS NOT NULL OR claimed_until IS NOT NULL)');
+  } else {
+    conditions.push('lease_token IS NULL', 'claimed_until IS NULL');
+  }
+  const tenant = maintenanceTenantCondition(options.tenantScope, bind);
+  if (tenant) conditions.push(tenant);
+  const held = locallyHeldLeaseIds(db);
+  if (held.length > 0) {
+    conditions.push(`id NOT IN (${held.map(bind).join(', ')})`);
+  }
+  const where = conditions.join(' AND ');
+  const result = options.dryRun
+    ? await db.query(
+        `SELECT CAST(id AS TEXT) AS id FROM _smrt_dispatch WHERE ${where}`,
+        ...params,
+      )
+    : await db.query(
+        `UPDATE _smrt_dispatch SET ${set} WHERE ${where} RETURNING id`,
+        ...params,
+      );
+  return ((result.rows ?? []) as Record<string, unknown>[]).map((row) =>
+    String(row.id),
+  );
 }

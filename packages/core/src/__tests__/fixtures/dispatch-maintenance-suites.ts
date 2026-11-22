@@ -258,3 +258,103 @@ export function defineMaintenanceTenantCases(
     });
   });
 }
+
+/** T20: release expired, after-drain and legacy leases, tenant-exact. */
+export function defineLeaseReleaseCases(openDatabase: DispatchOpener): void {
+  const open = useOpener(openDatabase);
+  const future = () => new Date(Date.now() + 3_600_000).toISOString();
+
+  async function seed(tenantId: string | null = null, prefix = '') {
+    const ctx = await open();
+    const rows = [
+      {
+        ...abandoned(`${prefix}expired`, 'job.run', { tenantId }),
+        attempts: 3,
+      },
+      {
+        ...abandoned(`${prefix}live`, 'job.run', { tenantId }),
+        claimedUntil: future(),
+      },
+      {
+        ...abandoned(`${prefix}legacy`, 'job.run', { tenantId }),
+        leaseToken: null,
+        claimedUntil: null,
+      },
+      { id: `${prefix}waiting`, type: 'job.run', tenantId },
+    ];
+    for (const row of rows) await insertRawDispatch(ctx.db, row);
+    return ctx;
+  }
+
+  it('release-leases expired, legacy and after-drain move rows to pending with attempts kept', async () => {
+    const { bus, db } = await seed();
+
+    const preview = await bus.maintain({
+      release: 'expired',
+      sweepOrphans: false,
+      dryRun: true,
+    });
+    expect(preview).toMatchObject({ released: 1, orphaned: 0, dryRun: true });
+    expect((await dispatchLeaseRow(db, 'expired')).status).toBe('processing');
+
+    expect(
+      (await bus.maintain({ release: 'expired', sweepOrphans: false }))
+        .released,
+    ).toBe(1);
+    const expired = await dispatchLeaseRow(db, 'expired');
+    expect(expired).toMatchObject({
+      status: 'pending',
+      attempts: 3,
+      leaseToken: null,
+      claimedUntil: null,
+    });
+    expect(expired.lastError?.startsWith('[smrt:DISPATCH_RELEASED]')).toBe(
+      true,
+    );
+    expect((await dispatchLeaseRow(db, 'live')).status).toBe('processing');
+    expect((await dispatchLeaseRow(db, 'legacy')).status).toBe('processing');
+
+    expect(
+      (await bus.maintain({ release: 'legacy', sweepOrphans: false })).released,
+    ).toBe(1);
+    expect((await dispatchLeaseRow(db, 'legacy')).status).toBe('pending');
+    expect((await dispatchLeaseRow(db, 'live')).status).toBe('processing');
+
+    // Rollback after every worker stopped: no leased row remains.
+    expect(
+      (await bus.maintain({ release: 'afterDrain', sweepOrphans: false }))
+        .released,
+    ).toBe(1);
+    const live = await dispatchLeaseRow(db, 'live');
+    expect(live).toMatchObject({ status: 'pending', leaseToken: null });
+    expect((await dispatchLeaseRow(db, 'waiting')).status).toBe('pending');
+  });
+
+  it('release is tenant-exact', async () => {
+    const ctx = await seed(TENANT_A, 'a-');
+    for (const row of [
+      { ...abandoned('b-expired', 'job.run', { tenantId: TENANT_B }) },
+      { ...abandoned('g-expired', 'job.run') },
+    ]) {
+      await insertRawDispatch(ctx.db, row);
+    }
+    setDispatchTenantResolver(() => TENANT_A);
+    expect(
+      (await ctx.bus.maintain({ release: 'afterDrain', sweepOrphans: false }))
+        .released,
+    ).toBe(2);
+    expect((await dispatchLeaseRow(ctx.db, 'b-expired')).status).toBe(
+      'processing',
+    );
+    expect((await dispatchLeaseRow(ctx.db, 'g-expired')).status).toBe(
+      'processing',
+    );
+  });
+
+  it('rejects an unknown release mode', async () => {
+    const { bus } = await open();
+    await expect(
+      bus.maintain({ release: 'everything' as never }),
+    ).rejects.toThrow(/release/);
+  });
+}

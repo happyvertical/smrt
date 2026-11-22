@@ -7,6 +7,7 @@
 import { describe } from 'vitest';
 import {
   defineLeaseOrphanCases,
+  defineLeaseReleaseCases,
   defineMaintenanceTenantCases,
 } from '../__tests__/fixtures/dispatch-maintenance-suites';
 import {
@@ -19,4 +20,5 @@ describe.each(dispatchTestEngines)('dispatch orphan sweep on %s', (engine) => {
     openDispatchTestDatabase(engine as 'sqlite', options);
   defineLeaseOrphanCases(open);
   defineMaintenanceTenantCases(open);
+  defineLeaseReleaseCases(open);
 });

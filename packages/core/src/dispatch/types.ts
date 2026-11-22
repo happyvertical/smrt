@@ -304,6 +304,14 @@ export interface DispatchMaintainOptions {
    * at its row, in milliseconds (default one day; a positive integer).
    */
   orphanedLeaseAfterMs?: number;
+  /**
+   * Also move leased `processing` rows back to `pending`, attempts kept,
+   * before the sweep: `'expired'` (leases already expired), `'afterDrain'`
+   * (every lease, live or expired; only once every worker of this release
+   * has stopped, as in a rollback) or `'legacy'` (rows an older core left
+   * `processing` without a lease).
+   */
+  release?: 'expired' | 'afterDrain' | 'legacy';
   /** Count what would change without writing. */
   dryRun?: boolean;
 }
@@ -312,6 +320,8 @@ export interface DispatchMaintainOptions {
 export interface DispatchMaintainResult {
   /** Rows failed with `[smrt:DISPATCH_LEASE_ORPHANED]` (or that would be). */
   orphaned: number;
+  /** Rows moved back to `pending` by `release` (or that would be). */
+  released: number;
   dryRun: boolean;
 }
 

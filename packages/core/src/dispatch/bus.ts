@@ -68,7 +68,9 @@ import {
 } from './lease-heartbeat.js';
 import {
   assertPositiveMs,
+  assertReleaseMode,
   DISPATCH_ORPHAN_ROUTE_CHECK,
+  releaseDispatchLeases,
   sweepOrphanedDispatchLeases,
 } from './maintenance.js';
 import { Dispatch } from './models/Dispatch.js';
@@ -972,7 +974,7 @@ export class DispatchBus {
 
   /**
    * Maintain the dispatch queue: fail abandoned leases that no subscription
-   * can route.
+   * can route, and (with `release`) move leases back to `pending`.
    *
    * Never runs inside `process()`. A routed row is never failed here: it
    * waits for its subscriber, which reclaims it under its claim budget. A
@@ -997,10 +999,26 @@ export class DispatchBus {
             'orphanedLeaseAfterMs',
             options.orphanedLeaseAfterMs,
           );
+    const release =
+      options.release === undefined
+        ? undefined
+        : assertReleaseMode(options.release);
     await this.initialize();
     const tenantScope = resolveDispatchTenantScope();
     const dryRun = options.dryRun === true;
     const now = new Date();
+    let released = 0;
+    if (release !== undefined) {
+      // Released rows are pending again, so the sweep below never sees them.
+      released = (
+        await releaseDispatchLeases(this.db, {
+          mode: release,
+          tenantScope,
+          now,
+          dryRun,
+        })
+      ).length;
+    }
     let orphaned = 0;
     if (options.sweepOrphans !== false) {
       orphaned = (
@@ -1013,7 +1031,7 @@ export class DispatchBus {
         })
       ).length;
     }
-    return { orphaned, dryRun };
+    return { orphaned, released, dryRun };
   }
 
   /**

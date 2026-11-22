@@ -6,6 +6,7 @@
 import { describe } from 'vitest';
 import {
   defineLeaseOrphanCases,
+  defineLeaseReleaseCases,
   defineMaintenanceTenantCases,
 } from '../__tests__/fixtures/dispatch-maintenance-suites';
 import {
@@ -18,4 +19,5 @@ describe.skipIf(!postgresDispatchUrl)('dispatch orphan sweep on pg', () => {
     openPostgresDispatchDatabase('lease_orphan', options);
   defineLeaseOrphanCases(open);
   defineMaintenanceTenantCases(open);
+  defineLeaseReleaseCases(open);
 });
