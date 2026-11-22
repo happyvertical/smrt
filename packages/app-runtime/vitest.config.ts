@@ -30,6 +30,15 @@ export default defineConfig({
       // (features -> cli -> desktop -> app-runtime would cycle), so scan its
       // source for the manifest instead of resolving a package (#5116).
       include: ['src/**/*.ts', '../features/src/**/*.ts'],
+      // Defaults, plus smrt-features' tests and fixtures: only its models are
+      // wanted, not its test-only fixture classes.
+      exclude: [
+        '**/*.d.ts',
+        '**/node_modules/**',
+        '**/dist/**',
+        '../features/src/**/*.{test,spec}.ts',
+        '../features/src/__tests__/**',
+      ],
     }),
   ],
   test: {
