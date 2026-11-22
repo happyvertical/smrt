@@ -151,7 +151,10 @@ CREATE TABLE IF NOT EXISTS _smrt_dispatch (
   tenant_id TEXT,
   metadata TEXT,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  lease_token TEXT,
+  claimed_until TIMESTAMP,
+  max_attempts INTEGER
 );
 
 CREATE INDEX IF NOT EXISTS idx_smrt_dispatch_status
@@ -183,6 +186,19 @@ CREATE INDEX IF NOT EXISTS idx_smrt_dispatch_status_processed
 
 CREATE INDEX IF NOT EXISTS idx_smrt_dispatch_status_updated
   ON _smrt_dispatch(status, updated_at);
+
+-- Dispatch lease (1.22.0): keyset-paged candidate phases of
+-- DispatchBus.process(): pending rows by (created_at, id), expired leases by
+-- (claimed_until, id), NULL-lease processing rows by (updated_at, id). New
+-- names, so an existing index is never redefined in place.
+CREATE INDEX IF NOT EXISTS idx_smrt_dispatch_status_created_id
+  ON _smrt_dispatch(status, created_at, id);
+
+CREATE INDEX IF NOT EXISTS idx_smrt_dispatch_status_claimed_id
+  ON _smrt_dispatch(status, claimed_until, id);
+
+CREATE INDEX IF NOT EXISTS idx_smrt_dispatch_status_updated_id
+  ON _smrt_dispatch(status, updated_at, id);
 `;
 
 /**
@@ -1869,7 +1885,12 @@ function toPostgresTenantUuid(ddl: string): string {
 // id ever opened); the bootstrap fills it from the ids still present or
 // referenced after its DDL replay and before this stamp
 // (`system/ai-run-ids.ts`).
-export const SMRT_SCHEMA_VERSION = '1.20.0';
+// 1.22.0 adds the dispatch lease: `_smrt_dispatch.lease_token`,
+// `claimed_until` and the per-row claim budget `max_attempts`, with the
+// `(status, created_at, id)`, `(status, claimed_until, id)` and
+// `(status, updated_at, id)` paging indexes. 1.21.0 is held by another
+// change in flight and is not used here.
+export const SMRT_SCHEMA_VERSION = '1.22.0';
 
 /**
  * Canonical form of the system DDL that {@link SMRT_SCHEMA_DDL_CHECKSUMS} covers.
@@ -1934,4 +1955,6 @@ export const SMRT_SCHEMA_DDL_CHECKSUMS: Readonly<Record<string, string>> =
       'b9ea16aaf8c5d3232245395dbd6374c0878594f3e2e443f1ae58e64c726acca1',
     '1.20.0':
       'c507de3133c44e3350196c1a30ad821c3faf96b79392d885d3465a6d57dfc4f8',
+    '1.22.0':
+      '0bc1232d9ded0d8d03aa4a57d8d3abf8b6112d0bc7348b683ffc2ca74254c217',
   });
