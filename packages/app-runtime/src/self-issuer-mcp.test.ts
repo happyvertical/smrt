@@ -61,7 +61,11 @@ afterEach(async () => {
 });
 afterAll(() => disableTenancy());
 
-async function fixture(label: string) {
+async function fixture(
+  label: string,
+  scopePermissions: Record<string, string[]> = { [READ]: [READ] },
+) {
+  const scopeNames = Object.keys(scopePermissions);
   const root = await realpath(
     await mkdtemp(join(tmpdir(), `smrt-self-issuer-${label}-`)),
   );
@@ -99,7 +103,7 @@ async function fixture(label: string) {
 
   const authorization = await SmrtOAuthAuthorizationService.create({
     db,
-    scopePermissions: { [READ]: [READ] },
+    scopePermissions,
   });
   const storage = await SmrtOAuthAuthorizationStorage.create({ db });
   const keys = await generateKeyPair('ES256');
@@ -113,14 +117,14 @@ async function fixture(label: string) {
       algorithm: 'ES256',
       keyId: 'self',
     },
-    scopes: [READ],
+    scopes: scopeNames,
     resources: [RESOURCE],
   });
   const clientId = randomUUID();
   await storage.registerClient({
     id: clientId,
     redirectUris: [REDIRECT],
-    allowedScopes: [READ],
+    allowedScopes: scopeNames,
     tokenEndpointAuthMethod: 'none',
     createdAt: new Date(),
   });
@@ -129,13 +133,17 @@ async function fixture(label: string) {
     authMethod: 'magic-link',
   });
   const verifier = 'a'.repeat(43);
-  const issue = async (resource = RESOURCE, session = sessionId) => {
+  const issueTokens = async (
+    resource = RESOURCE,
+    session = sessionId,
+    scope: string = READ,
+  ) => {
     const request = await server.parseAuthorizationRequest(
       new URLSearchParams({
         client_id: clientId,
         redirect_uri: REDIRECT,
         response_type: 'code',
-        scope: READ,
+        scope,
         code_challenge: createHash('sha256')
           .update(verifier)
           .digest('base64url'),
@@ -154,8 +162,10 @@ async function fixture(label: string) {
         resource,
       }),
     );
-    return tokens.access_token;
+    return tokens;
   };
+  const issue = async (resource = RESOURCE, session = sessionId) =>
+    (await issueTokens(resource, session)).access_token;
 
   const hostedOptions = (withSelf: boolean) => ({
     appId: `self-${label}`,
@@ -179,7 +189,7 @@ async function fixture(label: string) {
               server,
               authorization,
               resource: RESOURCE,
-              scopes: [READ],
+              scopes: scopeNames,
             },
           },
         }
@@ -268,6 +278,7 @@ async function fixture(label: string) {
     server,
     sessionId,
     issue,
+    issueTokens,
     hosted,
     external,
     call,
@@ -546,5 +557,55 @@ describe('app as its own MCP issuer (#5080)', () => {
     membership.status = MembershipStatus.SUSPENDED;
     await membership.save();
     expect((await f.call(auth, token)).ok).toBe(false);
+  });
+
+  it('connects a limited agent that requests every scope, with only the scopes its role holds (#5110)', async () => {
+    const all = { [READ]: [READ], 'notes.write': ['notes.write'] };
+    const f = await fixture('agent-narrowed', all);
+    const agent = await f.addAgent([READ]);
+    const auth = createHostedMcpResourceAuth({
+      profile: 'self-hosted',
+      runtime: f.hosted,
+      env: {},
+    })()!;
+    const tokens = await f.issueTokens(
+      RESOURCE,
+      agent.session,
+      `${READ} notes.write`,
+    );
+    expect(tokens.scope).toBe(READ);
+    const checked = await f.call(auth, tokens.access_token);
+    expect(checked).toMatchObject({
+      ok: true,
+      principal: { id: agent.userId, kind: 'agent', scopes: [READ] },
+    });
+    if (!checked.ok) throw new Error('unreachable');
+    expect(
+      await f.hosted.runAsPrincipal(
+        checked.principal as never,
+        async (bound) => [...bound.scopes],
+      ),
+    ).toEqual([READ]);
+
+    // The owner holds both permissions once granted and gets both scopes.
+    const ownerPermission = await (
+      await PermissionCollection.create({ db: f.db })
+    ).findOrCreate('notes.write', { name: 'notes.write' });
+    const ownerRole = await (
+      await RoleCollection.create({ db: f.db })
+    ).findSystemRoleBySlug(DEFAULT_ROLE_SLUGS.OWNER);
+    await (await RolePermissionCollection.create({ db: f.db })).addPermission(
+      ownerRole?.id as string,
+      ownerPermission.id as string,
+    );
+    expect(
+      (await f.issueTokens(RESOURCE, f.sessionId, `${READ} notes.write`)).scope,
+    ).toBe(`${READ} notes.write`);
+
+    // Nothing the agent holds: consent is refused outright.
+    const nothing = await f.addAgent([]);
+    await expect(
+      f.issueTokens(RESOURCE, nothing.session, `${READ} notes.write`),
+    ).rejects.toMatchObject({ error: 'access_denied' });
   });
 });

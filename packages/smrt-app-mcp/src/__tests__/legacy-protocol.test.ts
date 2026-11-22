@@ -355,3 +355,130 @@ describe.each([
     });
   });
 });
+
+/**
+ * Consent-narrowed tokens (#5110): the resource advertises read+write, a token
+ * may carry only notes.read, and legacy requests must see exactly what modern
+ * ones do (filtered catalog, forbidden == unknown, unmapped tool closed).
+ */
+function narrowedFixture() {
+  const calls: string[] = [];
+  const NARROW = 'narrow.token.aaaaaaaaaaaaaaaa';
+  const FULL = 'full.token.aaaaaaaaaaaaaaaaaa';
+  const tokens: Record<string, { sub: string; scope: string }> = {
+    [NARROW]: { sub: 'narrow', scope: READ },
+    [FULL]: { sub: 'full', scope: `${READ} ${WRITE}` },
+  };
+  const runtime = {
+    mcpSelfIssuer: {
+      issuer: 'https://app.example/oauth',
+      resource: URL_,
+      scopes: [READ, WRITE],
+      verifyAccessToken: async (token: string) => {
+        const claims = tokens[token];
+        if (!claims) throw new Error('bad token');
+        return { ...claims, tenant_id: 't1' };
+      },
+      validateGrant: async () => true,
+    },
+    resolveMcpPrincipal: async (identity: { subject: string }) => ({
+      id: identity.subject,
+      tenantId: 't1',
+      kind: 'human',
+      tenantBinding: 'direct' as const,
+    }),
+  };
+  const serverOptions = {
+    models: [],
+    requiredScopes: [],
+    smrtOptions: () => ({}),
+    workflowTools: [
+      tool('note_list', 'read', calls),
+      tool('note_create', 'write', calls),
+      tool('note_misc', 'read', calls),
+    ],
+    toolScopes: { note_list: [READ], note_create: [WRITE] },
+  };
+  const shared = {
+    auth: createHostedMcpResourceAuth({ profile: 'cloud', runtime }),
+    checkOrigin: false,
+    legacy: 'stateless' as const,
+  };
+  const mount = (kind: 'app' | 'route'): McpSvelteKitHandler =>
+    kind === 'app'
+      ? mountMcpAppRoute({ ...serverOptions, ...shared } as never)
+      : mountMcpRoute(
+          createDefaultMcpAppServer(serverOptions as never),
+          shared,
+        );
+  return { calls, mount, NARROW, FULL };
+}
+
+describe.each([
+  'app',
+  'route',
+] as const)('narrowed tokens on legacy and modern paths via %s mount', (kind) => {
+  it('filters the catalog identically and keeps unmapped tools closed', async () => {
+    const { mount, NARROW, FULL } = narrowedFixture();
+    const handler = mount(kind);
+    const legacyNarrow = await send(
+      handler,
+      'legacy',
+      'tools/list',
+      {},
+      NARROW,
+    );
+    const modernNarrow = await send(
+      handler,
+      'modern',
+      'tools/list',
+      {},
+      NARROW,
+    );
+    expect(names(legacyNarrow)).toEqual(['note_list']);
+    expect(legacyNarrow.json?.result.tools).toEqual(
+      modernNarrow.json?.result.tools,
+    );
+    const legacyFull = await send(handler, 'legacy', 'tools/list', {}, FULL);
+    const modernFull = await send(handler, 'modern', 'tools/list', {}, FULL);
+    // note_misc has no mapping: it needs both advertised scopes, which FULL has.
+    expect(names(legacyFull)).toEqual([
+      'note_create',
+      'note_list',
+      'note_misc',
+    ]);
+    expect(legacyFull.json?.result.tools).toEqual(
+      modernFull.json?.result.tools,
+    );
+  });
+
+  it('refuses out-of-scope and unmapped calls like an unknown tool, on both paths', async () => {
+    const { mount, calls, NARROW, FULL } = narrowedFixture();
+    const handler = mount(kind);
+    for (const era of ['legacy', 'modern'] as const) {
+      const call = (name: string, token = NARROW) =>
+        send(handler, era, 'tools/call', { name, arguments: {} }, token);
+      const unknown = await call('note_nothing');
+      for (const name of ['note_create', 'note_misc']) {
+        const refused = await call(name);
+        expect(refused.status).toBe(unknown.status);
+        expect(refused.json?.error.code).toBe(unknown.json?.error.code);
+        expect(refused.json?.error.message.replace(name, 'X')).toEqual(
+          unknown.json?.error.message.replace('note_nothing', 'X'),
+        );
+        expect(refused.json?.error.data).toEqual(unknown.json?.error.data);
+      }
+      expect(calls).toEqual([]);
+      const allowed = await call('note_list');
+      expect(allowed.json?.result.structuredContent).toEqual({
+        ok: 'note_list',
+      });
+      for (const name of ['note_create', 'note_misc']) {
+        expect((await call(name, FULL)).json?.result.structuredContent).toEqual(
+          { ok: name },
+        );
+      }
+      calls.length = 0;
+    }
+  });
+});

@@ -17,10 +17,10 @@ map. The parent primary key is never assumed to be `id`; the related primary
 key is the default projection when `select` is omitted. Only the visible
 parent page is hydrated.
 
-Pagination is adapter-aware: SQLite uses `LIMIT -1` for offset-only reads,
-while DuckDB and PostgreSQL use `LIMIT ALL`. In-memory DuckDB and JSON adapters
-retain their engine hint even when no URL or database type is present, so the
-generated syntax remains legal for the actual driver.
+An offset-only read emits `LIMIT 9223372036854775807` before `OFFSET`, the same
+clause `list()` uses (see [query-bounds](query-bounds.md)); it means "no limit"
+on every engine, so the syntax stays legal even for a handle that reports no
+engine (an in-process PostgreSQL handle with a `memory://` URL).
 
 Internal result aliases are bounded `__smrt_lr_N` identifiers. The allocator
 reserves declared and live parent table columns, and parent columns are
