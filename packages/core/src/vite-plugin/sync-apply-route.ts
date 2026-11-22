@@ -17,6 +17,7 @@
  */
 
 import { join } from 'node:path';
+import { resolvePermissionCollection } from '../permission-collection.js';
 import { isFrameworkBaseClass } from '../registry/framework-base-classes.js';
 import type {
   SmartObjectDefinition,
@@ -28,7 +29,6 @@ import {
   collectRouteReadonlyFields,
   getApiPublicAccess,
   getApiWritableAllowlist,
-  resolvePermissionCollection,
   usesPrincipalContext,
 } from './route-policy.js';
 import { generateCollectionAccessImports } from './sveltekit-config-import.js';

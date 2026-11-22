@@ -1139,6 +1139,34 @@ export async function withResolvedTenancy<T>(
 }
 
 /**
+ * Run `fn` as `actor` outside any one model's tenancy (a route that reads
+ * across models, such as the change feed): in the actor's tenant context,
+ * or in a system context for a system actor, when that is not already the
+ * active one. No decision is bound.
+ */
+export async function withActorContext<T>(
+  actor: RequestActor,
+  fn: () => Promise<T>,
+): Promise<T> {
+  const source = getTenantPolicySource();
+  if (actor.system) {
+    return source && !source.systemContextActive()
+      ? source.runInContext('system', fn)
+      : fn();
+  }
+  if (!actor.tenantId) return fn();
+  if (getRequestTenantContext()?.tenantId === actor.tenantId) return fn();
+  const context: RequestTenancyContext = {
+    tenantId: actor.tenantId,
+    ...(actor.userId ? { userId: actor.userId } : {}),
+    ...(actor.permissions ? { permissions: actor.permissions } : {}),
+  };
+  return source
+    ? source.runInContext(context, fn)
+    : runInRequestTenantContext(context, fn);
+}
+
+/**
  * Bind the resolved tenancy for the rest of the current request, entering
  * the actor's tenant context when none is active (the emitted SvelteKit
  * routes, whose handlers run in their own request scope), whether or not

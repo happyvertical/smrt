@@ -83,6 +83,68 @@ Tests: `src/__tests__/update-input-fields.test.ts` executes all seven
 transports; `packages/cli/src/__tests__/cli-writable-policy.test.ts`;
 `packages/chat/src/tool-loop.test.ts`.
 
+### Host-resolved principal on runtime REST (#5195)
+
+`APIConfig.resolvePrincipal(req)` returns the request's
+`APIRequestPrincipal` (`{ tenantId, allowCrossTenant, authenticated, userId?,
+permissions?, callerKind?, superAdminBypass? }`) or `null` (anonymous). The
+host decides it; nothing in the request changes it. `handleRequest` calls it
+once per request, before custom routes and before `authMiddleware`, with the
+request as received, and passes the result (`ResolvedRequestPrincipal`,
+`generators/request-principal.ts`) explicitly to every check: CRUD, custom
+actions, each `sync/apply` item, subtype re-checks, `_changes`, `_events`,
+`_inference` and `_preflight`. Rebuilt requests (sync items, subtype checks)
+never resolve it again. A throw, or a value of the wrong shape, is a 500 that
+carries only a request id. Permissions are copied into a `Set` once. The
+answer is kept per request object (`requestPrincipals`, carried to the
+request an `authMiddleware` returns); a request without one is a 500, never
+another caller. With `resolvePrincipal` configured, `resolveTenant` (kept
+for hosts that supply only a tenant) is not called. The principal's tenant,
+user, permissions, grant and sign-in are the settled principal of
+`resolveRequestActor` (`settledPrincipalOf`); `_changes`, `_events` and
+`_inference` run as that actor (`withActorContext`: its tenant, or a system
+context for a cross-tenant grant; `_events` captures it at open).
+
+When it is configured, runtime REST enforces, from the principal:
+
+| Rule | Where | Refusal |
+|---|---|---|
+| Sign-in: `authenticated`, unless `api.public` opens the route (`'read'`: reads only), as `requireRouteAuth` decides on the emitted routes | `admitObjectRequest`, `authorizeRowModel`, sync `authorize`; `_changes` / `_events` are never public (`authenticateFeedRequest`) | 401; sync `auth_required` |
+| `<collection>.<action>` through one `requirePermission(principal, model, action)`: create, update, delete; mutating custom actions as `<collection>.<method>` (or the `operationPermissions` alias); each sync item as `<collection>.<op>`; a subtype row's own model on create, update, delete and sync | `routeCrudOperation`, `dispatchCustomCollectionAction`, sync `authorize`, `authorizeRowModel` | 403 `PERMISSION_DENIED`; sync `forbidden` |
+| A write body naming a tenant other than `tenantId` (`tenantId`, `tenant_id`, or an ownership column of the model, any spelling of the column; `null` included) | `assertWriteTenant` on create (base and selected subtype), update (and the subtype row's model), sync `prepare` | 403 `TENANT_MISMATCH`; sync `forbidden` |
+| Query filters on a tenant ownership column are removed unless `allowCrossTenant` | `withoutTenantFilters` in `applyTenantReadScope` (list, count) | none: the filter is ignored |
+| Read redaction, query field checks and `_preflight` use `principal.permissions` | `getPublicJsonOptions(principal)` | — |
+
+The permission collection is `resolvePermissionCollection()`
+(`src/permission-collection.ts`), the function the emitted CRUD, action and
+sync routes use: `@smrt({ collection })`, else the model's manifest
+collection. `api.public: true` models need no permission (as on the emitted
+routes). `superAdminBypass` stands in for a permission only on a model with
+`tenantScoped: { allowSuperAdminBypass: true }`; the emitted routes'
+`tenantContext.superAdminBypass` skips the check on every model. GET custom
+actions need no permission, as on the emitted routes. `authMiddleware`, when
+also set, runs after these checks as an extra check and can only refuse.
+`APIContext.user` / `permissions` are not read.
+
+`APIConfig.onRequest(principal, { route, model?, action? })` is the seam for
+rate limits and metering (#5198, #5199): called once right after resolution
+(`route` is `object`, `sync/apply`, `_changes`, `_events`, `_inference`,
+`_preflight`, `custom` or `unmatched`; an object route names its model and
+`list` / `get` / `count` / `create` / `update` / `delete` or the custom
+action), and once per sync item after the item was authorized. A returned
+`Response` answers the request; for a sync item the batch stops there and
+items after it are not applied (earlier ones stay applied). A throw is a 500.
+
+Without `resolvePrincipal`, the tenant is `resolveTenant`'s answer or the
+fixed `APIContext` one, and the fixed principal applies to every request
+(`tenantId`, `allowCrossTenant`, `permissions`;
+`authenticated` = an `authMiddleware` is configured), `authMiddleware` alone
+decides authentication and authorization, and none of the rules above apply:
+behaviour is unchanged. `onRequest` then receives that fixed principal.
+Tests: `src/__tests__/rest-request-principal.optional.test.ts` (SQLite, and
+PostgreSQL in the `test:postgres` lane),
+`packages/tenancy/src/__tests__/rest-request-tenant.test.ts` (real tenancy).
+
 ### Request tenancy: one resolver for every request path (#5375)
 
 Runtime REST, the emitted SvelteKit routes, both sync apply paths and both MCP
@@ -301,8 +363,9 @@ of the subtypes it was given that open the read on `api`
 (`servedFamilyTypes()`, a `_meta_type in [...]` filter). A row the route does
 not read is `404` / `not_found`. An update or delete through the base of a
 row whose own model is a subtype needs that subtype's action (`405` /
-`op_not_allowed`) and authorization: its `authMiddleware` decision under its
-own name, or its `api.public` without middleware. Every REST server also
+`op_not_allowed`) and authorization: with `resolvePrincipal`, its sign-in and
+`<collection>.<action>`, then its `authMiddleware` decision under its own
+name; without, that decision, or its `api.public` without middleware. Every REST server also
 admits each subtype per request (`settleFamilyAdmission`): its rows are read
 through the base only when it is switched on for the request's tenant and, for
 a read, the caller may read the subtype itself (its `authMiddleware` decision
@@ -327,7 +390,8 @@ on what `ObjectRegistry.resolveCreateTarget()` returned: runtime REST and the
 emitted SvelteKit POST route with `'api'`, the in-process MCP generator and
 both emitted MCP servers with `'mcp'`, the CLI with `'cli'` (before it
 prompts). A selected subtype also authorizes the create itself: runtime REST
-runs its `authMiddleware` decision (or its `api.public`), the emitted route
+runs its sign-in and `<collection>.create` when the host resolves principals,
+then its `authMiddleware` decision (or its `api.public`), the emitted route
 `requireCreateTargetAccess` (an authenticated principal and the family's
 `<collection>.create` unless the subtype is `public: true`), even when the
 base is public. A subtype that is abstract, has
@@ -480,7 +544,8 @@ binding name there, however convenient it reads.
 
 `GET {basePath}/_inference[?tier=<tier>]` (`src/generators/inference-status-route.ts`)
 on the runtime `APIGenerator` returns the ambient principal's `InferenceStatus`
-(`{ available, mode, reason?, tier? }`, never a key), runs
+(`{ available, mode, reason?, tier? }`, never a key), runs inside a
+host-resolved principal's tenant, runs
 `authMiddleware('_inference', 'status')` when one is configured, and refuses
 non-`GET` with 405. SvelteKit apps serve the same body from their own
 `+server.ts` with `createInferenceStatusHandler()`; no route file is
@@ -503,7 +568,9 @@ instead — so there is no handle in the module to invoke by mistake. A syntheti
 returns a `Response` rather than a boolean, and may consult session stores,
 rate-limit, or audit. The app-auth layer therefore reports `unknown`, which is the
 honest answer, and a future `authPredicate` seam can fill it in without changing
-the contract.
+the contract. `appAuthConfigured` is true when either `authMiddleware` or
+`resolvePrincipal` is configured; the caller's permission slugs are the
+request principal's.
 
 The static layers preflight predicts against are exported from the same module —
 `isApiActionEnabledForObject`, `isRestActionRoutable`, `isRestRoutePublic`,
@@ -775,7 +842,7 @@ connection.
 Core never imports smrt-dev-mcp; only the generated file does, at consumer
 runtime. The route carries the auto-generated header so the sweep owns it.
 
-Generated SvelteKit write routes (#2977) call `requireRoutePermission(locals, action)` after `requireRouteAuth`: CRUD writes need `<collection>.create|update|delete` and mutating custom actions `<collection>.<method>` in the session permission snapshot on `locals`, else 403 (fail-closed; `api.public: true` stays open, `tenantContext.superAdminBypass` skips). See `packages/users/agents/permissions.md`.
+Generated SvelteKit write routes (#2977) call `requireRoutePermission(locals, action)` after `requireRouteAuth`: CRUD writes need `<collection>.create|update|delete` and mutating custom actions `<collection>.<method>` in the session permission snapshot on `locals`, else 403 (fail-closed; `api.public: true` stays open, `tenantContext.superAdminBypass` skips). See `packages/users/agents/permissions.md`. Runtime REST enforces the same slugs when the host resolves principals; see "Host-resolved principal on runtime REST" above.
 
 ## MCP protocol identifiers (#3219)
 

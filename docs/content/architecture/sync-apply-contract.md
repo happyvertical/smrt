@@ -244,11 +244,15 @@ interceptors guard sync exactly like CRUD:
   with a foreign row's id rejects with `id_conflict` without touching it.
 - Creates are stamped with the context tenant; a forged `tenantId` in the
   payload is stripped by the writable policy before it ever reaches the model.
+  On runtime REST with a host-resolved principal, a payload naming a tenant
+  other than the principal's rejects the item (`forbidden`) instead, and each
+  item needs its `<collection>.<op>` permission.
 - Each item runs inside the request tenancy of its target model (#5375),
   resolved per item at request time whatever the manifest declares: the actor
   from `locals` on the generated route (with the complete-principal
-  requirement of an `api.principalContext` model) or from the host's
-  `APIConfig.resolveTenant` on the runtime REST server, the target's policy,
+  requirement of an `api.principalContext` model) or from the principal the
+  runtime REST server's host resolved once for the request
+  (`APIConfig.resolvePrincipal`, else `resolveTenant`), the target's policy,
   and the STI members its segment serves. The item's lookup and write see
   only rows of admitted types: an update of a row whose type the segment does
   not serve (a subtype whose tenancy differs from the base's) is rejected

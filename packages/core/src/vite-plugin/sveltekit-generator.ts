@@ -38,6 +38,7 @@ import {
   BUILD_SCHEMA_MODULE,
   generateBuildSchemaModule,
 } from '../migrations/build-schema.js';
+import { resolvePermissionCollection } from '../permission-collection.js';
 import {
   buildDefaultListOrderBy,
   DEFAULT_LIST_LIMIT,
@@ -80,7 +81,6 @@ import {
   getApiPublicAccess,
   getApiWritableAllowlist,
   isTenantScoped,
-  resolvePermissionCollection,
   usesPrincipalContext,
 } from './route-policy.js';
 import {
