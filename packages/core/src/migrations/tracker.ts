@@ -880,14 +880,17 @@ export class MigrationTracker {
       Boolean(options.postgresSafe);
     let split = context.plan?.get(definition.id);
     let routing = context.routing;
+    // Why this definition must not run at all; returned before anything is
+    // recorded or run.
+    let planRefusal: Error | null = null;
     if (sequential) {
       routing = !!this.options.useConcurrentIndexes;
       try {
         split = this.planDefinition(definition);
-      } catch {
-        // Nothing to check a retry against: one recorded with a phase-1
-        // marker is refused below as another plan. Any other run fails as
-        // the statements are executed, as before.
+      } catch (error) {
+        // A retry recorded with a phase-1 marker is refused below as another
+        // plan; any other run is refused with this error.
+        planRefusal = error instanceof Error ? error : new Error(String(error));
         split = undefined;
       }
     }
@@ -1010,6 +1013,18 @@ export class MigrationTracker {
           // Rolled back migrations can be re-applied without --force
           break;
       }
+    }
+
+    if (planRefusal) {
+      return {
+        success: false,
+        applied: false,
+        skipped: false,
+        name: definition.id,
+        checksum,
+        execution_time_ms: 0,
+        error: planRefusal,
+      };
     }
 
     if (options.dryRun) {
