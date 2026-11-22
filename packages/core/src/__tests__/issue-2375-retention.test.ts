@@ -460,7 +460,7 @@ describe('runRetentionSweep (#2375)', () => {
     const result = await runRetentionSweep(db);
     const dispatch = result.tasks.find((task) => task.task === 'dispatch');
 
-    expect(dispatch?.details).toEqual({ completed: 1, failed: 1 });
+    expect(dispatch?.details).toEqual({ completed: 1, failed: 1, orphaned: 0 });
     expect(dispatch?.pruned).toBe(2);
     expect(await countRows('_smrt_dispatch')).toBe(0);
   });
@@ -476,8 +476,85 @@ describe('runRetentionSweep (#2375)', () => {
     const result = await runRetentionSweep(db, { dryRun: true });
     const dispatch = result.tasks.find((task) => task.task === 'dispatch');
 
-    expect(dispatch?.details).toEqual({ completed: 1, failed: 0 });
+    expect(dispatch?.details).toEqual({ completed: 1, failed: 0, orphaned: 0 });
     expect(await countRows('_smrt_dispatch')).toBe(1);
+  });
+
+  it('dispatch retention runs the orphan sweep in system scope; dry run mutates nothing', async () => {
+    // An abandoned lease no subscription routes, two days old.
+    await db.query(
+      `INSERT INTO _smrt_dispatch
+         (id, type, source, status, attempts, lease_token, claimed_until,
+          tenant_id, created_at, updated_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+      'd-orphan',
+      'nobody.listens',
+      'tests',
+      'processing',
+      1,
+      'gone',
+      daysAgo(2),
+      'tenant-x',
+      daysAgo(200),
+      daysAgo(2),
+    );
+
+    const preview = await runRetentionSweep(db, { dryRun: true });
+    expect(
+      preview.tasks.find((task) => task.task === 'dispatch')?.details,
+    ).toEqual({ completed: 0, failed: 0, orphaned: 1 });
+    const unchanged = await db.query(
+      'SELECT status, lease_token FROM _smrt_dispatch WHERE id = $1',
+      'd-orphan',
+    );
+    expect(unchanged.rows[0]).toMatchObject({
+      status: 'processing',
+      lease_token: 'gone',
+    });
+
+    const live = await runRetentionSweep(db);
+    const dispatch = live.tasks.find((task) => task.task === 'dispatch');
+    expect(dispatch?.details).toEqual({ completed: 0, failed: 0, orphaned: 1 });
+    // Orphan-failing is not a deletion.
+    expect(dispatch?.pruned).toBe(0);
+    const failed = await db.query(
+      'SELECT status, last_error FROM _smrt_dispatch WHERE id = $1',
+      'd-orphan',
+    );
+    expect(failed.rows[0]?.status).toBe('failed');
+    expect(
+      String(failed.rows[0]?.last_error).startsWith(
+        '[smrt:DISPATCH_LEASE_ORPHANED]',
+      ),
+    ).toBe(true);
+
+    // Dead-lettered rows age out from failure time, not from creation.
+    await runRetentionSweep(db);
+    expect(await countRows('_smrt_dispatch')).toBe(1);
+  });
+
+  it('honours the dispatch orphan threshold in days', async () => {
+    await db.query(
+      `INSERT INTO _smrt_dispatch
+         (id, type, source, status, attempts, lease_token, claimed_until,
+          created_at, updated_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+      'd-orphan-young',
+      'nobody.listens',
+      'tests',
+      'processing',
+      1,
+      'gone',
+      daysAgo(2),
+      daysAgo(2),
+      daysAgo(2),
+    );
+    const result = await runRetentionSweep(db, {
+      dispatch: { orphanedLeaseAfterDays: 3 },
+    });
+    expect(
+      result.tasks.find((task) => task.task === 'dispatch')?.details?.orphaned,
+    ).toBe(0);
   });
 
   it('deletes nothing under dryRun but reports what it would delete', async () => {

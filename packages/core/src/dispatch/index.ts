@@ -77,6 +77,8 @@ export type {
   DispatchHandler,
   DispatchLeaseOptions,
   DispatchListOptions,
+  DispatchMaintainOptions,
+  DispatchMaintainResult,
   DispatchMetadata,
   DispatchProcessOptions,
   DispatchProcessStats,

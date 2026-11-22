@@ -290,6 +290,31 @@ export interface DispatchBusOptions {
   leaseDb?: DatabaseInterface;
 }
 
+/**
+ * Options for {@link DispatchBus.maintain}.
+ */
+export interface DispatchMaintainOptions {
+  /**
+   * Fail abandoned leases that no subscription can route (default `true`).
+   * A routed row is never failed by maintenance.
+   */
+  sweepOrphans?: boolean;
+  /**
+   * How long a lease must have been expired before the orphan sweep looks
+   * at its row, in milliseconds (default one day; a positive integer).
+   */
+  orphanedLeaseAfterMs?: number;
+  /** Count what would change without writing. */
+  dryRun?: boolean;
+}
+
+/** Result of {@link DispatchBus.maintain}. */
+export interface DispatchMaintainResult {
+  /** Rows failed with `[smrt:DISPATCH_LEASE_ORPHANED]` (or that would be). */
+  orphaned: number;
+  dryRun: boolean;
+}
+
 /** The lease options of {@link DispatchBusOptions}. */
 export type DispatchLeaseOptions = Pick<
   DispatchBusOptions,

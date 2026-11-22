@@ -114,6 +114,12 @@ export interface DispatchRetentionPolicy {
   completedOlderThanDays?: number;
   /** Drop failed dispatches last touched more than this many days ago (default 90). */
   failedOlderThanDays?: number;
+  /**
+   * Fail `processing` rows whose lease expired more than this many days ago
+   * and that no subscription can route (default 1). Routed rows are never
+   * failed: they wait for their subscriber.
+   */
+  orphanedLeaseAfterDays?: number;
 }
 
 /**
@@ -226,7 +232,11 @@ export const DEFAULT_RETENTION_POLICY: {
   // stay for the aiUsage window.
   aiTranscripts: { maxAgeDays: 30 },
   contexts: {},
-  dispatch: { completedOlderThanDays: 30, failedOlderThanDays: 90 },
+  dispatch: {
+    completedOlderThanDays: 30,
+    failedOlderThanDays: 90,
+    orphanedLeaseAfterDays: 1,
+  },
   // 30 days is generous relative to any realistic runOnce() client retry —
   // see RunOnceClaimsRetentionPolicy for the replay consequence of a shorter
   // window.
@@ -922,11 +932,37 @@ function dispatchTask(policy: RetentionPolicy): RetentionTask | null {
         failedOlderThanDays: config.failedOlderThanDays,
         dryRun: context.dryRun,
       });
+      // Then fail abandoned leases no subscription routes (a status change,
+      // not a deletion, so not counted in `pruned`). Explicit system scope:
+      // every row, each routed only by its own tenant's subscriptions; the
+      // route check of a global row is the named cross-tenant read.
+      const { DISPATCH_ORPHAN_ROUTE_CHECK, sweepOrphanedDispatchLeases } =
+        await import('../dispatch/maintenance.js');
+      const { DispatchSubscriptionCollection } = await import(
+        '../dispatch/collections/DispatchSubscriptions.js'
+      );
+      const orphanDays =
+        config.orphanedLeaseAfterDays ??
+        DEFAULT_RETENTION_POLICY.dispatch.orphanedLeaseAfterDays ??
+        1;
+      const orphaned = (await DispatchSubscriptionCollection.tableExists(db))
+        ? await sweepOrphanedDispatchLeases(db, {
+            tenantScope: { enforced: false, tenantId: null },
+            now: context.now,
+            orphanedLeaseAfterMs: Math.max(
+              1,
+              Math.round(orphanDays * MS_PER_DAY),
+            ),
+            dryRun: context.dryRun,
+            allowCrossTenant: DISPATCH_ORPHAN_ROUTE_CHECK,
+          })
+        : [];
       return {
         pruned: result.completedDeleted + result.failedDeleted,
         details: {
           completed: result.completedDeleted,
           failed: result.failedDeleted,
+          orphaned: orphaned.length,
         },
       };
     },

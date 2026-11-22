@@ -66,6 +66,11 @@ import {
   locallyHeldLeaseIds,
   startLeaseHeartbeat,
 } from './lease-heartbeat.js';
+import {
+  assertPositiveMs,
+  DISPATCH_ORPHAN_ROUTE_CHECK,
+  sweepOrphanedDispatchLeases,
+} from './maintenance.js';
 import { Dispatch } from './models/Dispatch.js';
 import { DispatchSubscription } from './models/DispatchSubscription.js';
 import { dispatchPatternDialect } from './pattern.js';
@@ -90,6 +95,8 @@ import type {
   DispatchHandler,
   DispatchLeaseOptions,
   DispatchListOptions,
+  DispatchMaintainOptions,
+  DispatchMaintainResult,
   DispatchMetadata,
   DispatchProcessOptions,
   DispatchProcessStats,
@@ -961,6 +968,52 @@ export class DispatchBus {
       resolveDispatchTenantScope(),
       this.lease.maxAttempts,
     );
+  }
+
+  /**
+   * Maintain the dispatch queue: fail abandoned leases that no subscription
+   * can route.
+   *
+   * Never runs inside `process()`. A routed row is never failed here: it
+   * waits for its subscriber, which reclaims it under its claim budget. A
+   * subscription counts as a route whether it is enabled or disabled.
+   *
+   * Scope is owner-exact and derived server-side: an active tenant touches
+   * only its own rows (never global rows); tenancy on without a tenant
+   * touches global rows only; tenancy off touches every row, each routed
+   * only by its own tenant's subscriptions (a global row by any tenant's).
+   *
+   * Run it (or `smrt db:prune`, whose `dispatch` task runs the same sweep)
+   * at least daily: without a polling processor or maintenance there is no
+   * elapsed-time bound on an abandoned row.
+   */
+  async maintain(
+    options: DispatchMaintainOptions = {},
+  ): Promise<DispatchMaintainResult> {
+    const orphanedLeaseAfterMs =
+      options.orphanedLeaseAfterMs === undefined
+        ? undefined
+        : assertPositiveMs(
+            'orphanedLeaseAfterMs',
+            options.orphanedLeaseAfterMs,
+          );
+    await this.initialize();
+    const tenantScope = resolveDispatchTenantScope();
+    const dryRun = options.dryRun === true;
+    const now = new Date();
+    let orphaned = 0;
+    if (options.sweepOrphans !== false) {
+      orphaned = (
+        await sweepOrphanedDispatchLeases(this.db, {
+          tenantScope,
+          now,
+          orphanedLeaseAfterMs,
+          dryRun,
+          allowCrossTenant: DISPATCH_ORPHAN_ROUTE_CHECK,
+        })
+      ).length;
+    }
+    return { orphaned, dryRun };
   }
 
   /**
