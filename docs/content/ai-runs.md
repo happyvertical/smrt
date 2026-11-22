@@ -117,9 +117,10 @@ Reading the picture:
 
 `_smrt_ai_usage` keeps its name and its existing columns: `id`, `provider`,
 `model`, `operation`, `prompt_tokens`, `completion_tokens`, `total_tokens`,
-`estimated_cost`, `duration`, `class_name`, `tenant_id`, `tags`, `created_at`,
-`prompt_key`, `tier_requested`, `tier_resolved`, `run_id` and `call_id`. It
-gains:
+`estimated_cost`, `duration_ms` (named `duration` before schema 1.21.0; see
+"Upgrading to 1.21.0" in section 9), `class_name`, `tenant_id`, `tags`,
+`created_at`, `prompt_key`, `tier_requested`, `tier_resolved`, `run_id` and
+`call_id`. It gains:
 
 | Column | Meaning |
 |---|---|
@@ -302,14 +303,18 @@ to a worker, so it is not a reason on the run.
 `_smrt_ai_run_events` has: `id` (stable), `run_id`, `seq`, `parent_event_id`,
 `type`, `call_id`, `step_index`, `name`, `status`, `duration`, `payload`,
 `payload_ref`, `truncated`, `created_at`, `child_run_id` (for a `handoff` to a
-child run), and, for `call` events only, the reservation: `reservation` (its
-state, section 6.4), `reserved_tokens` and `reserved_cost`. The reservation
-amounts and the child run are typed columns, never part of the payload,
-because a payload may be capped, cut or redacted.
+child run), and, for `call` events only, the reservation: `call_state` (its
+state, section 6.4; named `reservation` before schema 1.21.0),
+`reserved_tokens` and `reserved_cost`, and the call's ledger (section 6.4,
+"The call ledger"): `call_proof`, `call_row`, `call_rate`, `call_usage`,
+`ended_at`, `usage_source`, `charged_tokens` and `charged_cost`. The
+reservation amounts and the child run are typed columns, never part of the
+payload, because a payload may be capped, cut or redacted. Readers never
+return `call_proof`, `call_row`, `call_rate` or `call_usage`.
 
-The columns `reservation`, `reserved_tokens`, `reserved_cost` and
+The columns `call_state`, `reserved_tokens`, `reserved_cost` and
 `child_run_id` hold a call's reservation and a handoff's child run, and an
-index on `(type, reservation, created_at)` serves the sweep in section 6.7.
+index on `(type, call_state, created_at)` serves the sweep in section 6.7.
 
 | Event type | What it records |
 |---|---|
@@ -787,7 +792,7 @@ a new one.
 
 ### 6.4 The reservation's life: reserve, settle, release
 
-Each call's reservation is written on its `call` event, in the `reservation`
+Each call's reservation is written on its `call` event, in the `call_state`
 column, and moves from state to state as the call goes. Every move is a
 conditional update that succeeds only from the expected state, so the same
 move can never be applied twice. The worked example (section 6.9, points B,
@@ -892,8 +897,9 @@ are each one short transaction. Step by step:
     WHERE id = $1;
    ```
 
-   then insert the `call` event (`reservation = 'reserved'`, the amounts, the
-   call id) and commit. The model is called **after** the commit.
+   then insert the `call` event (`call_state = 'reserved'`, the amounts, the
+   call id, `call_rate`, and for a tracked call its proof, billed row and
+   mode) and commit. The model is called **after** the commit.
 
 **What a refused reservation records.** A run stopped at a budget
 limit gets a `stop_detail`, JSON on the run row, saying what was asked for and
@@ -923,11 +929,16 @@ reason leave it NULL.
 
    ```sql
    UPDATE _smrt_ai_run_events
-      SET reservation = 'settled', status = $3
+      SET call_state = 'settled', status = $3,
+          ended_at = COALESCE(ended_at, $4)
     WHERE run_id = $1 AND call_id = $2 AND type = 'call'
-      AND reservation = 'reserved'
+      AND call_state = 'reserved'
    RETURNING reserved_tokens, reserved_cost;
    ```
+
+   (This is the path of a call reserved without a ledger: a direct
+   `reserveAiCall` or a pre-1.21.0 call. A tracked call is settled through
+   its ledger, below.)
 
    If no row came back, try `released` or `abandoned` → `settled_late` the same
    way. If that also returns nothing, the call was already settled, or (when no
@@ -950,8 +961,8 @@ and logs and swallows their failures. For a call inside a run:
   **inside the settle transaction** (step 3), with the same insert the
   persistence handler uses.
 - **The handlers run only after the settle has committed**, never before it
-  and never when it failed. The persistence handler's insert then finds the
-  row already there and does nothing; other handlers run as before, outside
+  and never when it failed. The persistence handler skips the record (the
+  call's ledger wrote its row); other handlers run as before, outside
   the transaction, and their failures are logged. So a usage row of a call in
   a run is written by its settlement, and every handler sees the call only
   once it is charged.
@@ -968,7 +979,10 @@ and logs and swallows their failures. For a call inside a run:
   while one is already being written), so a stuck settlement of one run
   never slows another run's reservation.
   Each pending settlement is written once, even by concurrent writers of the
-  list, and its handlers are called once, when it commits. A settlement
+  list, and its handlers are called once, when it commits. A tracked call's
+  queued close leaves the list when its ledger applies or refuses it (a call
+  whose reservation was pruned is refused and its amount reported, section
+  6.6). Any other settlement
   leaves the list only when it is written, or, when its run no longer
   exists, once its usage row is written on its own, without a run, so the
   spend stays in the billing ledger (with a warning; its handlers are then
@@ -996,7 +1010,72 @@ returned, and no handler ever saw the call. That is the same documented limit
 as a lost provider response.
 
 A call outside any run has no reservation; its usage row is written by the
-persistence handler, deduplicated on `id = call_id`.
+persistence handler.
+
+#### The call ledger (schema 1.21.0)
+
+A tracked call's `call` event is its ledger, and one transaction decides
+everything from it, whichever process step or closer delivers the input.
+
+- **Written at reservation and admission.** The reservation insert records
+  `call_rate`, the rate the reservation was sized with (NULL: uncosted for
+  the life of the call). Admission records `call_proof`, the SHA-256 of a
+  per-call secret that travels only in the call's usage tags
+  (`aiCallProof`) and the handle; `call_row`, the provider, model,
+  operation, class and tags the usage row will carry (the sink attribution's
+  tags, the client's provider-level `usageTags`, the call's tags, then core's
+  own; the user from an explicit `userId` tag, else the ambient user at
+  admission) and the admission instant, which is the usage row's
+  `created_at`; and `call_usage`, the call's mode. A held share is admitted
+  in one guarded transaction that finds it only while it is `reserved` and
+  not yet admitted.
+- **Mode.** A client that declares `usageFeatures.parts` (a
+  `@happyvertical/ai` release with sdk#1576) is billed in **parts mode**:
+  each usage event names its part (`{ call, index, last? }`), the amount is
+  the sum of the distinct parts, and it is final (`usage_source =
+  'complete'`) as soon as the last part is known and every part has counts;
+  otherwise it is `parts` and can only grow. A count-less part is charged the
+  reservation (`provisional`) until its counts arrive, once. Every other
+  client is billed in **single mode**: counts stated to `succeed()`
+  (`response`), else the last counted event (`event`), else `provisional` or
+  `fallback`; nothing changes the amount after the sender's closing write.
+- **Price.** The tokens times `call_rate` (prompt times `input`, completion
+  times `output`, per 1K; a missing split counts as zero), or a cost the
+  single-mode sender stated. An event's own cost and the rate card at
+  completion are never used.
+- **One merge.** The first charge moves the call to `settled` (from
+  `reserved`) or `settled_late` (from `released` or `abandoned`), returns
+  the reservation once and adds the call to the chain once. A later part
+  moves the chain, `charged_tokens` / `charged_cost` and the usage row by the
+  difference only, and still records the counts and `usage_source` when the
+  difference is zero. A part that arrives while the call is still
+  `reserved` (the sender's closing write is in flight or queued) is parked
+  on `call_usage`; whichever closer commits (the sender, its queued close,
+  `releaseAiCall`, or the sweep's reconciliation) charges it once.
+- **The window.** One hour after the call first left `reserved`
+  (`ended_at`, written once), nothing changes its charge, the sender
+  included: a late close records its status and counts `late_sender`. A call
+  not yet charged still takes its sender's first charge while its event
+  exists. A sender whose event was pruned is refused (`reservation_gone`),
+  never charged as `unreserved`. Every refused late amount, with its call id,
+  tenant, amount and reason, is kept (on the event, or on the run row once
+  the event is gone) and listed by `checkAiRunTotals` so it can be billed
+  deliberately.
+- **Claims.** An event with `aiCallId` or `aiCallProof` is never ordinary
+  usage. In the call's own process its secret binds it to the call; any
+  other claim is refused, writes no row and runs no handler, whatever it
+  names. A delivery from another process is refused as `relay_unsupported`
+  in this version (relay intake is a follow-up, #5526); when its proof
+  matches, its amount is kept for the totals check. Core removes
+  caller-supplied `aiCallId` and `aiCallProof` from call options and client
+  tag defaults.
+- **Handlers** receive one record per tracked call, from the sender, after
+  its closing write commits, with `tags.aiCallId` and never the secret. A
+  handler that forwards its record into a usage recorder must remove
+  `aiCallId` first, or the recorder refuses it.
+- **Owned transactions.** `beginAiRunCall` refuses (`TypeError`) a context
+  whose database is a transaction: the ledger is written only in
+  transactions core owns.
 
 ### 6.5 Transactions and lock order
 
@@ -1049,16 +1128,22 @@ the event that justifies each change, they do not drift through crashes or
 retries. Drift would come only from a bug or a hand edit, so totals are never
 rebuilt automatically, and resuming never recomputes them.
 
-`checkAiRunTotals(runId)` compares a run's own totals with its usage
-rows. It can do so only while every `settled`, `settled_late` and `unreserved`
-call event of the run still has its usage row; otherwise it reports the run as
-unverifiable, never as wrong. It reads the run's stored totals and those
-usage rows in one statement, so a settlement or a prune that commits while it
-runs is seen whole or not at all; a run that is gone is not found.
+`checkAiRunTotals(runId)` compares a run's own totals with the amounts
+charged to its calls: a tracked call's `charged_tokens` and `charged_cost`,
+and, for a call charged before schema 1.21.0, its usage row. A run whose
+trajectory was pruned is reported as unverifiable, never as wrong, and so is
+one with a pre-1.21.0 charged call whose usage row is gone. It reads the
+run's stored totals, its call events and those usage rows in one statement,
+so a settlement or a prune that commits while it runs is seen whole or not at
+all; a run that is gone is not found. Its `refused` list holds every late
+amount the ledger refused (call id, tenant, tokens, cost, reason:
+`late_sender`, `reservation_gone`, `relay_unsupported`), never charged, so an
+operator can bill it deliberately.
 
 `repairAiRunTotals(runId)` is an explicit operator action. It
-refuses an unverifiable run. Otherwise it recomputes the run's own totals from
-its usage rows, takes the difference from the stored values, and adds that
+refuses an unverifiable run (`AiRunTotalsUnverifiableError`). Otherwise it
+recomputes the run's own totals from the amounts charged, logs each refused
+late amount, takes the difference from the stored values, and adds that
 difference to the run's own and inclusive totals and to the inclusive totals
 of every ancestor, in one chain transaction, root first. It never touches
 descendants (their totals are their own) and never touches `reserved_*`
@@ -1385,6 +1470,13 @@ retries, and its `reason` is one typed code:
   and the `ai-runs` sweep does the same for a `stopped` or `waiting-approval`
   descendant of any final or missing ancestor (section 6.7), so each is then
   pruned like a finished run.
+- **Calls whose charge can still change.** A run keeps its events while any
+  of its calls is still `reserved` (a share not yet admitted included), or
+  first ended less than one hour ago (schema 1.21.0, section 6.4 "The call
+  ledger"), whatever its own status and age; usage retention keeps such a
+  call's usage row too. Inside that hour the event and the row both exist,
+  so every permitted correction has what it needs; after it, nothing reads
+  them to change a charge.
 - **Protection is inherited.** A run is protected while **any ancestor** is
   protected, and it is pruned only after the protecting ancestor is pruned.
   So a final child, such as a stopped fusion under a durable `stopped`
@@ -1529,6 +1621,60 @@ table, and a migrate of a JSON database that still holds
 - **New columns** on existing tables are added by the system compatibility
   step, with a schema version bump, so a legacy database ends in the same shape
   as a fresh install.
+
+### Upgrading to 1.21.0
+
+Schema 1.21.0 (the call ledger, section 6.4) is an **enforced cutover**: it
+renames `_smrt_ai_run_events.reservation` to `call_state` and
+`_smrt_ai_usage.duration` to `duration_ms`, so every accounting and usage
+insert of an older core fails against it. Usage an older core incurs on the
+new schema is not recorded: its tracked calls fail before they are sent, but
+its untracked usage and external-agent reports fail to insert after the
+provider answered, and caps that meter usage rows under-count for it. Only
+stopping older workers prevents that.
+
+1. **Drain.** Stop every older worker, usage recorder, relay consumer and
+   sweeper, and let in-flight calls and queued settlements finish.
+2. **Start the new version.** Its bootstrap makes the change, in one
+   transaction that first takes the events table's lock (`ACCESS EXCLUSIVE`
+   on PostgreSQL, the write transaction elsewhere), so no reservation can be
+   inserted between its count and the rename.
+3. **If it reports `AI_RUN_CUTOVER_BLOCKED`**, a reservation the sweep would
+   still treat as live is outstanding (younger than the smallest
+   `callTimeoutMs` on its chain plus one minute, else younger than one hour):
+   an older worker is still working, or one stopped with a call in flight.
+   Nothing was changed. Finish step 1 and retry. For a worker that crashed,
+   either wait out the call's timeout, or set
+   `SMRT_AI_RUN_CUTOVER_ABANDON=<event id>` to the id the error names as the
+   oldest live reservation: that abandons the live reservations explicitly
+   (their room is returned, they are not billed), logs their ids and
+   proceeds. The override applies only while that reservation is still the
+   oldest live one on the database being bootstrapped, so it cannot waive
+   another database or a later state. Reservations already past the
+   threshold do not block; they are carried over as pre-1.21.0 calls,
+   counted in a warning, and the new sweep settles or abandons them as the
+   old one would have.
+4. **A single-process host restarted during a call** meets step 3 on its
+   own; a `callTimeoutMs` on its runs bounds the wait.
+
+SQL of your own that reads `_smrt_ai_run_events.reservation` reads
+`call_state`; SQL that reads `_smrt_ai_usage.duration` reads `duration_ms`.
+Existing values carry over; the new ledger columns stay NULL on old rows, and
+a call charged before the cutover is charged as it stands and never changed
+by an event.
+
+**Rollback.** Drain as in step 1, then rename both columns back
+(`ALTER TABLE _smrt_ai_run_events RENAME COLUMN call_state TO reservation`,
+`ALTER TABLE _smrt_ai_usage RENAME COLUMN duration_ms TO duration`; on DuckDB
+drop the two tables' explicit indexes first) and delete the `1.21.0` row from
+`_smrt_migrations`. The added columns stay; an older core ignores them. A
+database rolled back without removing the stamp is still upgraded again: the
+bootstrap treats 1.21.0 as applied only while both renamed columns exist.
+
+Limits: on DuckDB 1.4.3 an older core's call-event insert (an `INSERT ...
+SELECT ... ON CONFLICT`) is accepted with the unknown column dropped; its
+settle, sweep and usage writes still fail, and DuckDB's single writer process
+keeps an older worker from running beside a newer one on the same file.
 
 ## 10. What is deliberately not here
 

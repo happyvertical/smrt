@@ -47,6 +47,20 @@ present and `persist` is on, plus `usage.handlers`; instances also keep an
   and `Agent.initialize()` wires `options.ai` through `withAiUsage()`. Other raw
   `getAI()` sites attach it through `resolveInferenceTarget({ usage })` or
   `withAiUsage()` (#4756; list in [inference.md](inference.md)).
+- Claims (#5516): an event whose `tags` carry `aiCallId` or `aiCallProof`
+  is never ordinary usage. The recorder, the instance pipeline
+  (`handleAiUsageCallback`) and `dispatchAiUsageEvent` classify the raw
+  event first (`classifyAiUsageClaim`, `system/ai-call-ledger.ts`): a
+  well-formed pair whose secret names a call open in this process goes to
+  that call's ledger; anything else is refused (`no_proof`, `no_call_id`,
+  `malformed`, `relay_unsupported`), logged, counted on the call's
+  reservation only when found by id in the event's own tenant, and writes
+  no row and runs no handler. `dispatchAiUsageEvent` lets through only the
+  sender's own record (`markSenderRecord`); `AiUsagePersistenceHandler`
+  skips any event with `aiCallId` (the ledger writes those rows). A handler
+  that forwards its record into a recorder must drop `aiCallId` first.
+  Core removes caller-supplied `aiCallId`/`aiCallProof` from call options and
+  provider-level `usageTags` before the SDK sees them (warned once).
 - Cost rates: `aiCostRateKeys()` tries `provider:model`, `model`, then for a
   gateway id (`openai/gpt-4.1-mini`) `openai:gpt-4.1-mini` and `gpt-4.1-mini`,
   one leading segment at a time. Rate lookups use own keys only. The
@@ -89,7 +103,12 @@ DDL replay creates the indexes. No backfill, except the call id split: one
 guarded UPDATE sets `entry_call_id = COALESCE(call_id, id)`, then `call_id = id`,
 and finds nothing to change on a second run. Other old rows keep NULL columns
 and their `tags`. A writer must not depend on the columns without
-`ensureSystemTables()` having run. `pruneAiUsage()` is unchanged.
+`ensureSystemTables()` having run. Schema 1.21.0 renames the latency column
+`duration` to `duration_ms` (the cutover fence, below); readers select it
+`AS duration`, so `SmrtAiUsageEvent.duration` and every reader field keep
+their names. `pruneAiUsage()` skips a row whose call is still `reserved` or
+first ended less than an hour ago (one `NOT EXISTS` on
+`idx_smrt_ai_run_events_call`).
 
 ## AI runs (`_smrt_ai_runs`, #4753, #5005)
 
@@ -218,8 +237,9 @@ lock timeout, a write conflict on the job row) is rethrown as is, so
 `withAiRunTransaction` retries it.
 
 **Call ids.** Every tracked call gets a call id before it is sent; its usage
-row is written with `id = call_id` (`ON CONFLICT (id) DO NOTHING`), so a
-retried save never makes a second row. `entry_call_id` is the entry call's id
+row is written with `id = call_id`, by the call's ledger only (inserted, or
+updated in place when the row under the id is the call's own run and
+tenant), so a retried save never makes a second row. `entry_call_id` is the entry call's id
 (the `callId` tag), shared by every call of an alias chain or fusion. A
 transcript joins on `_smrt_ai_usage.entry_call_id = _smrt_ai_transcripts.call_id`.
 
@@ -289,6 +309,102 @@ function covers a provider `ai` in another; `.client(` on a receiver whose
 origin the file does not show counts as tracked; a quote inside a regular
 expression literal blanks the rest of its line.
 
+**The call ledger** (#5516, schema 1.21.0; `system/ai-call-ledger.ts`,
+`system/ai-call-ledger-schema.ts`, internal, not on any entry point). A
+tracked call's `call` event (E) is its ledger. The reservation insert writes
+`call_rate` (the `rate` it was sized with, JSON per 1K, or NULL: uncosted for
+good); admission writes `call_proof` (hex SHA-256 of a 32-byte secret),
+`call_row` (provider, model, operation, class and the billed row's tags, and
+the admission instant) and `call_usage` (`{ mode }`), in the reservation's
+own transaction for an ordinary call and in `admitHeldCall`'s one guarded
+transaction for a held share (`call_state = 'reserved' AND call_proof IS
+NULL`). Later writes add the fold's state and refusal counts to `call_usage`,
+`ended_at` (once, when E first leaves `reserved`), `usage_source`
+(`complete | parts | response | event | provisional | fallback`; any other
+stored value is left alone) and `charged_tokens` / `charged_cost`.
+
+- **Mode** is fixed at admission from the client's declared capability: a
+  client with `usageFeatures.parts` (sdk#1576; feature-detected, the SDK is
+  not released yet) is `parts`, every other one (a host's own engine, a
+  public `beginAiRunCall` caller such as smrt-chat) is `single`.
+- **The fold** (`foldCallUsage`, pure): parts mode sums distinct parts by the
+  producer's `{ call, index, last?, uncounted? }` (an `uncounted` part,
+  sdk#1585, is treated as count-less, so it never completes the call), a
+  counted report replaces a count-less one once, ranges keep state small (more than 32 gaps refused), overflow is
+  refused before any write; `complete` (last known, every index counted) is
+  final at once, otherwise `parts` and growing. Single mode: counts stated to
+  `succeed()` (`response`), else the last counted event (`event`), else
+  `provisional` / `fallback` (the reserved tokens, NULL counts). Price:
+  a cost stated to a single-mode `succeed()`, else `call_rate` times the
+  split (a missing split is zero), else NULL; an event's own cost and the
+  rate card at completion are never inputs.
+- **One merge** (`applyCallUsage`, `applyCallUsageLocked`): the only writer
+  of a tracked call's charge, chain locked first, then E (`FOR UPDATE` on
+  PostgreSQL), then the usage row (`created_at` = the admission instant,
+  tags from `call_row`, tenant = the run row's). First charge moves
+  `reserved` (closer) or `released | abandoned` (sender while E exists; an
+  in-process late part within the window) to `settled | settled_late`; a
+  merge moves the chain and `charged_*` by the difference only, persists
+  `call_usage`, `usage_source` and the sender's status even with no
+  difference, and rewrites a usage row an older pruner removed. A delivery
+  that finds E `reserved` parks on `call_usage`; the closer (the sender's
+  close, its queued close, `releaseAiCall`, the sweep) charges it once.
+  `fail()` and `releaseAiCall` settle when usage is parked (release returns
+  `false`). The sweep charges parked parts, else abandons.
+- **The window** W (`AI_CALL_USAGE_WINDOW_MS`, one hour, equal to
+  `AI_RUN_SWEEP_DEFAULTS.staleReservationMs`) from `ended_at`: after it
+  nothing changes a charged call. The sender's late close records its status
+  and counts `late_sender`; a sender whose E was pruned is refused
+  (`reservation_gone`, never charged as `unreserved`) and its amount goes to
+  `_smrt_ai_runs.refused_usage`. Every refused late amount (call id, tenant,
+  amount, reason) is listed by `checkAiRunTotals().refused` and logged by
+  `repairAiRunTotals`, so an operator can bill it deliberately.
+- **Binding in process**: the secret travels in the call's `usageTags` as
+  `aiCallProof` and in the handle's closure; a module-local locator maps it to
+  the open handle (memory), then for 60 s after close to the ledger (parts:
+  applied as a late part; single: refused `no_part`). Another module graph
+  (another worker) has no locator: its deliveries are refused
+  `relay_unsupported` (relay intake is #5526) and, when the proof matches E,
+  their amounts are kept in `call_usage.late` for the totals check. Raw
+  events are checked before normalization (provider, model, timestamp,
+  `part`, counts); no normalization default decides anything.
+- **Handlers** get one record per tracked call, from the sender, after its
+  closing write (or its queued close) commits, with the ledger's amounts and
+  `tags.aiCallId`, never the proof. Late parts, the sweep and corrections
+  notify nobody.
+- **Owned transactions**: `beginAiRunCall` throws `TypeError` for a context
+  database that is a transaction (`isKnownDatabaseTransaction`, or an
+  adapter handle with `commit` and `rollback`); a bound `transaction()`
+  callback handle with neither mark is not recognized (limit L2).
+- **Readers** never return `call_proof`, `call_row`, `call_rate`,
+  `call_usage`; `AiRunEvent.reservation` reads `call_state`.
+- **Retention**: a run keeps its events while any call is `reserved` or
+  (admitted on 1.21.0) first ended less than W ago; `pruneAiUsage` keeps such
+  a call's row.
+- **Totals**: `checkAiRunTotals` / `repairAiRunTotals` use `charged_*` (a
+  pre-1.21.0 call's usage row otherwise); a run with `trajectory_pruned = 1`
+  is `verifiable: false` and repair throws `AiRunTotalsUnverifiableError`
+  (#5353).
+- **Cutover** (`ensureAiCallLedgerCutover`, from `bootstrapSystemTables`
+  after the compatibility pass and before the DDL replay): renames
+  `_smrt_ai_run_events.reservation` → `call_state` (under `LOCK TABLE ...
+  ACCESS EXCLUSIVE` on PostgreSQL, the write transaction elsewhere, behind
+  the live-reservation blocker `AI_RUN_CUTOVER_BLOCKED` and the
+  `SMRT_AI_RUN_CUTOVER_ABANDON=<oldest live event id>` override) and
+  `_smrt_ai_usage.duration` → `duration_ms`, then adds the ledger columns;
+  DuckDB drops the table's explicit indexes before a rename. The fast path
+  needs the stamp and both renamed columns. DuckDB 1.4.3 accepts 1.20.0's
+  `INSERT ... SELECT ... ON CONFLICT` event insert (it drops the unknown
+  column), so there the fence is the settle, sweep and usage statements and
+  DuckDB's single writer process. Drain and rollback: `docs/content/ai-runs.md`
+  "Upgrading to 1.21.0".
+
+Tests: `ai-call-usage-fold`, `ai-call-ledger`, `ai-call-usage-merge`,
+`ai-tracked-delivery`, `ai-tracked-delivery-workers`,
+`ai-call-usage-retention`, `ai-call-attribution`, `ai-call-ledger-cutover`,
+`ai-call-proof-storage`, `ai-sdk-usage-contract` (`.test.ts`), PostgreSQL
+`ai-call-ledger-postgres.optional.test.ts`.
+
 **Fusions.** The executor opens the fusion run through the context's
 `openRun()` (`SmrtClass#openInferenceRun` → `openAiEntryRun`) before the
 first seat and closes it at the end; `recordRun()` is no longer passed. A
@@ -350,10 +466,12 @@ trajectories and run rows (below). Worker reconciliation on claim:
 `reconcileAiRunOnClaim`, which establishes the claimed run's tenant once and
 carries it into every descendant lookup, reservation read, reconciliation
 and status lock, so a row that left the tenant after discovery is neither
-reconciled nor failed. `checkAiRunTotals` reads the run's stored totals and
-its charged calls with their own usage rows in one statement anchored on the
-run: a settle or prune committing meanwhile is seen whole or not at all, and
-a run that is gone is `AiRunNotFoundError`.
+reconciled nor failed. `checkAiRunTotals` reads the run's stored totals, its
+call events (their `charged_*` and refusals) and, for pre-1.21.0 calls,
+their own usage rows in one statement anchored on the run: a settle or
+prune committing meanwhile is seen whole or not at all, and a run that is
+gone is `AiRunNotFoundError`. A 1.21.0 call event is reconciled through the
+ledger (parked parts charged, else abandoned).
 
 **Retention** (page section 8). A finished, unprotected run keeps its
 trajectory `aiRuns.trajectoryMaxAgeDays` (30) after `finished_at`; with
@@ -366,7 +484,8 @@ are deleted, and deletes the checkpoint unless the run `failed`. Protected:
 `running`, `waiting-approval`, durable `stopped`, `experiment_id` set,
 `retain` set, and (through the top-down order) every descendant of a
 protected run; a child is never pruned before its parent, and a run with a
-call still `reserved` keeps its events. Run rows go with their usage rows (only
+call still `reserved`, or with a 1.21.0 call that first ended less than an
+hour ago, keeps its events (page query and the recheck under the lock). Run rows go with their usage rows (only
 those of the run's own tenant: `run_id` is not a foreign key) at
 the `aiUsage.maxAgeDays` limit (90) counted from `finished_at`, never while
 the trajectory is kept, top down; the failed run's checkpoint goes with its
@@ -407,7 +526,8 @@ one guarded UPDATE, and added events, checkpoints and evaluations; later
 columns; 1.19.0 adds `idx_smrt_ai_runs_finished`; 1.20.0 adds
 `_smrt_ai_run_ids` and its backfill (`backfillAiRunIdRegistry`, from
 `bootstrapSystemTables`, not from a compatibility pass, so it sees the
-replayed DDL). On PostgreSQL a table with
+replayed DDL); 1.21.0 is the call ledger's enforced cutover (above). On
+PostgreSQL a table with
 legacy timezone-naive timestamps is left alone and the bootstrap fails closed
 until the audited timestamp migration has run.
 
