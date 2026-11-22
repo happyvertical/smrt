@@ -82,6 +82,7 @@ import {
   GENERATED_CLIENT_CRUD_METHODS,
   generateClientModule,
 } from './generated-client.js';
+import { isGeneratedRouteSource } from './generated-route-files.js';
 import { assertSvelteKitObjectRoutesValid } from './generated-route-preflight.js';
 import {
   assertNoHostToolNameCollisions,
@@ -89,7 +90,6 @@ import {
 } from './host-tool-names.js';
 import { importBuildAwareModule } from './import-build-aware.js';
 import { injectPackageStamps, packageStampText } from './package-stamp.js';
-import { AUTO_GENERATED_ROUTE_HEADER } from './route-header.js';
 import {
   findCliApiCoherenceViolations,
   generateSvelteKitRoutes,
@@ -2107,9 +2107,7 @@ export function smrtPlugin(
       return true;
     }
     try {
-      return readFileSync(absoluteFile, 'utf-8').startsWith(
-        AUTO_GENERATED_ROUTE_HEADER,
-      );
+      return isGeneratedRouteSource(readFileSync(absoluteFile, 'utf-8'));
     } catch {
       return false;
     }

@@ -20,6 +20,10 @@ import type { SmartObjectManifest } from '../scanner/types';
 // Mock node:fs module (same setup as sveltekit-generator.test.ts).
 vi.mock('node:fs', () => ({
   existsSync: vi.fn(),
+  // Route ownership inspects planned paths with lstat; nothing exists here.
+  lstatSync: vi.fn(() => {
+    throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
+  }),
   mkdirSync: vi.fn(),
   writeFileSync: vi.fn(),
   readFileSync: vi.fn(),

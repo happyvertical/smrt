@@ -31,12 +31,12 @@
  *   starts with {@link AUTO_GENERATED_ROUTE_HEADER}.
  */
 
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type {
   SmartObjectDefinition,
   SmartObjectManifest,
 } from '../scanner/types';
+import type { RouteFilePlan } from './generated-route-files.js';
 import { AUTO_GENERATED_ROUTE_HEADER } from './route-header.js';
 import { generateCollectionAccessImports } from './sveltekit-config-import.js';
 import type { SvelteKitOptions } from './sveltekit-generator.js';
@@ -85,15 +85,16 @@ export function manifestHasTenantScopedObject(
 }
 
 /**
- * Generate the `_changes/+server.ts` route. Returns true when a route was
- * written. Disabled with `sveltekit: { changesRoute: { enabled: false } }`;
- * skipped (with a log line) when the manifest has no objects to anchor the
- * database on.
+ * Plan the `_changes/+server.ts` route. Returns true when a route was
+ * emitted into `plan`. Disabled with `sveltekit: { changesRoute: { enabled:
+ * false } }`; skipped (with a log line) when the manifest has no objects to
+ * anchor the database on.
  */
 export function generateChangesRoute(
   projectRoot: string,
   manifest: SmartObjectManifest,
   options: SvelteKitOptions,
+  plan: RouteFilePlan,
 ): boolean {
   if (options.changesRoute?.enabled === false) {
     return false;
@@ -116,12 +117,12 @@ export function generateChangesRoute(
     ]),
   );
 
-  if (!existsSync(routeDir)) {
-    mkdirSync(routeDir, { recursive: true });
-  }
-  const filePath = join(routeDir, '+server.ts');
-  writeFileSync(filePath, content, 'utf-8');
-  console.log(`[smrt] Generated: ${filePath}`);
+  plan.emit({
+    root: join(projectRoot, options.routesDir),
+    routeDir,
+    content,
+    label: '_changes',
+  });
   return true;
 }
 

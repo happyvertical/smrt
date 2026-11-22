@@ -34,26 +34,27 @@
  *   {@link AUTO_GENERATED_ROUTE_HEADER}.
  */
 
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { SmartObjectManifest } from '../scanner/types';
 import {
   manifestHasTenantScopedObject,
   resolveAnchorClassName,
 } from './changes-route.js';
+import type { RouteFilePlan } from './generated-route-files.js';
 import { AUTO_GENERATED_ROUTE_HEADER } from './route-header.js';
 import { generateCollectionAccessImports } from './sveltekit-config-import.js';
 import type { SvelteKitOptions } from './sveltekit-generator.js';
 
 /**
- * Generate the `_events/+server.ts` route. Returns true when a route was
- * written. Disabled with `sveltekit: { eventsRoute: { enabled: false } }`;
+ * Plan the `_events/+server.ts` route. Returns true when a route was emitted
+ * into `plan`. Disabled with `sveltekit: { eventsRoute: { enabled: false } }`;
  * skipped (with a log line) when the manifest has no objects to anchor on.
  */
 export function generateEventsRoute(
   projectRoot: string,
   manifest: SmartObjectManifest,
   options: SvelteKitOptions,
+  plan: RouteFilePlan,
   webManifestHash?: string,
 ): boolean {
   if (options.eventsRoute?.enabled === false) {
@@ -81,12 +82,12 @@ export function generateEventsRoute(
     ]),
   );
 
-  if (!existsSync(routeDir)) {
-    mkdirSync(routeDir, { recursive: true });
-  }
-  const filePath = join(routeDir, '+server.ts');
-  writeFileSync(filePath, content, 'utf-8');
-  console.log(`[smrt] Generated: ${filePath}`);
+  plan.emit({
+    root: join(projectRoot, options.routesDir),
+    routeDir,
+    content,
+    label: '_events',
+  });
   return true;
 }
 

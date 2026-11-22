@@ -12,7 +12,9 @@ export function canonicalSvelteKitPath(path: string): string {
   let existing = resolve(path);
   while (!existsSync(existing)) {
     const parent = dirname(existing);
-    if (parent === existing) return existing;
+    // No ancestor exists (only reachable with a stubbed file system): keep
+    // the prospective descendants rather than collapsing to the root.
+    if (parent === existing) return resolve(existing, ...descendants);
     descendants.unshift(basename(existing));
     existing = parent;
   }

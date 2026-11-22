@@ -20,10 +20,22 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { consumerResolvesImport } from './consumer-import.js';
 import {
   consumerHasSmrtDevMcp,
-  generateDevPlaneRoute,
+  generateDevPlaneRoute as generateDevPlaneRouteInto,
   willGenerateDevPlaneRoute,
 } from './dev-plane-route.js';
+import { RouteFilePlan } from './generated-route-files.js';
 import type { SvelteKitOptions } from './sveltekit-generator.js';
+
+/** Plan, check and commit the route as the generator does; true if written. */
+function generateDevPlaneRoute(
+  projectRoot: string,
+  routeOptions: SvelteKitOptions,
+): boolean {
+  const plan = new RouteFilePlan();
+  generateDevPlaneRouteInto(projectRoot, routeOptions, plan);
+  plan.preflight();
+  return plan.commit().length > 0;
+}
 
 const specifier = '@happyvertical/smrt-dev-mcp/dev-plane';
 const options: SvelteKitOptions = {

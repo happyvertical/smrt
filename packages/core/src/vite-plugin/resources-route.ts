@@ -62,15 +62,13 @@
  * ## Preserving a hand-written route
  *
  * Every consumer today hand-writes this route (the reference implementation
- * in the issue). `clearGeneratedRouteFiles` (in `sveltekit-generator.ts`)
- * already only deletes `+server.ts` files that start with
- * {@link AUTO_GENERATED_ROUTE_HEADER}, so a hand-written `_resources` route —
- * which never carries that header — survives the pre-generation sweep
- * untouched. This emitter additionally checks `existsSync` on the target
- * path before writing: by the time it runs, anything still there is
- * necessarily hand-written (a generator-owned copy would already have been
- * swept), so its mere presence is sufficient to skip generation and leave it
- * alone.
+ * in the issue). The generated-route sweep deletes only files the
+ * generated-route predicate (`generated-route-files.ts`) accepts, so a
+ * hand-written `_resources` route survives it. This route is emitted with
+ * the `yield` policy: when it is the only claimant of its path and an
+ * application `+server.ts` or `+server.js` occupies it, the preflight leaves
+ * that handler alone and nothing is written. A generated handler with lines
+ * added above its header is neither, so generation refuses and names it.
  *
  * Once a consumer's `_resources` route IS generator-owned (no hand-written
  * file present, `smrt-users` resolvable), its path is generator-owned for
@@ -84,9 +82,12 @@
  * manual `.gitignore` edit outside the managed block is preserved.
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { consumerResolvesImport } from './consumer-import.js';
+import {
+  inspectRouteDirectory,
+  type RouteFilePlan,
+} from './generated-route-files.js';
 import { AUTO_GENERATED_ROUTE_HEADER } from './route-header.js';
 import { resolveSvelteKitConfigImport } from './sveltekit-config-import.js';
 import type { SvelteKitOptions } from './sveltekit-generator.js';
@@ -116,15 +117,20 @@ export function willGenerateResourcesRoute(
   ) {
     return false;
   }
-  const routeDir = join(projectRoot, options.routesDir, '_resources');
-  for (const name of ['+server.ts', '+server.js']) {
-    const file = join(routeDir, name);
-    if (!existsSync(file)) continue;
-    if (!readFileSync(file, 'utf-8').startsWith(AUTO_GENERATED_ROUTE_HEADER)) {
-      return false;
-    }
-  }
-  return true;
+  return !resourcesRouteOccupied(projectRoot, options);
+}
+
+/** Whether an application file (or an uninspectable entry) holds `_resources`. */
+function resourcesRouteOccupied(
+  projectRoot: string,
+  options: SvelteKitOptions,
+): boolean {
+  const routesRoot = join(projectRoot, options.routesDir);
+  const inspection = inspectRouteDirectory(
+    routesRoot,
+    join(routesRoot, '_resources'),
+  );
+  return inspection.application.length > 0 || inspection.blocking.length > 0;
 }
 
 /** Whether `_resources` is occupied by its generated utility or a preserved
@@ -135,26 +141,21 @@ export function reservesResourcesRoute(
   options: SvelteKitOptions,
 ): boolean {
   if (willGenerateResourcesRoute(projectRoot, options)) return true;
-  const routeDir = join(projectRoot, options.routesDir, '_resources');
-  return ['+server.ts', '+server.js'].some((name) => {
-    const file = join(routeDir, name);
-    return (
-      existsSync(file) &&
-      !readFileSync(file, 'utf-8').startsWith(AUTO_GENERATED_ROUTE_HEADER)
-    );
-  });
+  return resourcesRouteOccupied(projectRoot, options);
 }
 
 /**
- * Generate the `_resources/+server.ts` route. Returns true when a route was
- * written. Disabled with `sveltekit: { resourcesRoute: { enabled: false } }`;
- * skipped (with a log line) when `@happyvertical/smrt-users` is not
- * resolvable from the consumer, or when a hand-written route already
- * occupies the path.
+ * Plan the `_resources/+server.ts` route. Returns true when a route was
+ * emitted into `plan`. Disabled with `sveltekit: { resourcesRoute: { enabled:
+ * false } }`; skipped (with a log line) when `@happyvertical/smrt-users` is
+ * not resolvable from the consumer. The route is a fallback: it is emitted
+ * only when no other route claims its path, and it yields to a hand-written
+ * handler (see the module doc).
  */
 export function generateResourcesRoute(
   projectRoot: string,
   options: SvelteKitOptions,
+  plan: RouteFilePlan,
 ): boolean {
   if (options.resourcesRoute?.enabled === false) {
     return false;
@@ -170,33 +171,19 @@ export function generateResourcesRoute(
   }
 
   const routeDir = join(projectRoot, options.routesDir, '_resources');
-  const filePath = join(routeDir, '+server.ts');
+  // A fallback: an earlier route at this path (a model whose collection is
+  // `_resources`) keeps its content.
+  if (plan.claims(routeDir)) return false;
 
-  // By this point in generation, clearGeneratedRouteFiles has already swept
-  // any previously generator-owned copy at this path — anything still here
-  // is necessarily hand-written. Preserve it rather than clobbering a
-  // consumer's customized discovery route. Check every server-module
-  // extension SvelteKit resolves by default (`.js` and `.ts` — see
-  // https://svelte.dev/docs/kit/configuration#moduleExtensions), not only
-  // `.ts`: a hand-written `+server.js` is invisible to a `.ts`-only check,
-  // so the generator would write `+server.ts` alongside it and SvelteKit
-  // would then refuse the route with "Multiple endpoint files found".
-  const existingServerFile = ['+server.ts', '+server.js'].find((name) =>
-    existsSync(join(routeDir, name)),
-  );
-  if (existingServerFile) {
-    console.log(
-      `[smrt] Preserving hand-written _resources route (${existingServerFile}, not generator-owned)`,
-    );
-    return false;
-  }
-
-  if (!existsSync(routeDir)) {
-    mkdirSync(routeDir, { recursive: true });
-  }
-  writeFileSync(
-    filePath,
-    generateResourcesRouteTemplate(
+  // The preflight preserves a hand-written handler, `+server.ts` or
+  // `+server.js` (both server-module extensions SvelteKit resolves by default,
+  // https://svelte.dev/docs/kit/configuration#moduleExtensions), rather than
+  // clobbering a consumer's customized discovery route or writing a second
+  // endpoint beside it.
+  plan.emit({
+    root: join(projectRoot, options.routesDir),
+    routeDir,
+    content: generateResourcesRouteTemplate(
       resolveSvelteKitConfigImport(projectRoot, routeDir, options),
       resolveSvelteKitConfigImport(projectRoot, routeDir, {
         configPath: options.configPath,
@@ -204,9 +191,13 @@ export function generateResourcesRoute(
       }),
       options,
     ),
-    'utf-8',
-  );
-  console.log(`[smrt] Generated: ${filePath}`);
+    label: '_resources',
+    policy: 'yield',
+    onYield: (file) =>
+      console.log(
+        `[smrt] Preserving hand-written _resources route (${file}, not generator-owned)`,
+      ),
+  });
   return true;
 }
 

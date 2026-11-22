@@ -4,6 +4,7 @@
 
 import {
   existsSync,
+  lstatSync,
   mkdirSync,
   readdirSync,
   readFileSync,
@@ -17,6 +18,10 @@ import type { SmartObjectManifest } from '../scanner/types';
 // Mock node:fs module
 vi.mock('node:fs', () => ({
   existsSync: vi.fn(),
+  // Route ownership inspects planned paths with lstat; nothing exists here.
+  lstatSync: vi.fn(() => {
+    throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
+  }),
   mkdirSync: vi.fn(),
   writeFileSync: vi.fn(),
   readFileSync: vi.fn(),
@@ -190,11 +195,37 @@ function expectCollectionAccessImports(
   expect(content).not.toMatch(/import \{ getCollection \} from/);
 }
 
+const ABSENT = () => {
+  throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
+};
+
+/**
+ * Route ownership `lstat`s planned paths. Make `files` (and every directory
+ * above them) exist as regular files and directories; everything else is
+ * absent.
+ */
+function mockRouteTree(files: string[]): void {
+  vi.mocked(lstatSync).mockImplementation(((path: string) => {
+    const target = path.toString();
+    const stats = (file: boolean) => ({
+      isFile: () => file,
+      isDirectory: () => !file,
+      isSymbolicLink: () => false,
+    });
+    if (files.includes(target)) return stats(true);
+    if (files.some((file) => file.startsWith(`${target}/`))) {
+      return stats(false);
+    }
+    return ABSENT();
+  }) as never);
+}
+
 describe('SvelteKit Route Generator', () => {
   const projectRoot = '/test/project';
 
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(lstatSync).mockImplementation(ABSENT as never);
     // Default mock implementations
     vi.mocked(existsSync).mockReturnValue(false);
     vi.mocked(readFileSync).mockReturnValue('');
@@ -2450,6 +2481,7 @@ describe('SvelteKit Route Generator', () => {
 
         return '';
       });
+      mockRouteTree([join(projectRoot, 'src/routes/api', '+server.ts')]);
 
       const manifest: SmartObjectManifest = {
         version: '1',
@@ -4652,6 +4684,14 @@ describe('SvelteKit Route Generator', () => {
       vi.mocked(existsSync).mockImplementation(
         (path) => path.toString() === resourcesServerPath,
       );
+      mockRouteTree([resourcesServerPath]);
+      // A hand-written handler has content; an empty file would read as an
+      // interrupted generated write, which a yield route refuses.
+      vi.mocked(readFileSync).mockImplementation((path) =>
+        path.toString() === resourcesServerPath
+          ? 'export const GET = () => new Response();\n'
+          : '',
+      );
 
       await generateSvelteKitRoutes(projectRoot, resourcesManifest, {
         enabled: true,
@@ -4688,6 +4728,7 @@ describe('consumer external import and reserved resource routes (#2852)', () => 
   const projectRoot = '/test/project-review';
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(lstatSync).mockImplementation(ABSENT as never);
     vi.mocked(readdirSync).mockReturnValue([] as never);
   });
 
@@ -4749,6 +4790,7 @@ describe('consumer external import and reserved resource routes (#2852)', () => 
         ? 'export const GET = () => new Response();'
         : '',
     );
+    mockRouteTree([manualRoute]);
     mockSmrtUsersResolve.mockImplementation(() => 'file:///fake/sveltekit.js');
     const manifest: SmartObjectManifest = {
       version: '1',
