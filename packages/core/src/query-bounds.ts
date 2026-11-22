@@ -45,6 +45,16 @@ export const DEFAULT_LIST_LIMIT = 50;
 export const MAX_LIST_LIMIT = 1000;
 
 /**
+ * The `LIMIT` clause a read emits before an `OFFSET` when the caller gave no
+ * limit: SQLite rejects a bare `OFFSET`. The largest signed 64-bit value means
+ * "no limit" on SQLite, DuckDB and PostgreSQL alike, so it needs no engine
+ * detection (an in-process PostgreSQL handle can report no engine, and
+ * PostgreSQL rejects SQLite's `LIMIT -1`). Internal: not re-exported from the
+ * package entry points.
+ */
+export const UNBOUNDED_LIMIT_SQL = ' LIMIT 9223372036854775807';
+
+/**
  * A `limit`/`offset` value that cannot be honored.
  *
  * Extends `ValidationError` so the retry classifier never retries it, and

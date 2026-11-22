@@ -5,6 +5,7 @@
  */
 
 import type { DatabaseInterface } from '@happyvertical/sql';
+import { UNBOUNDED_LIMIT_SQL } from '../../query-bounds.js';
 import { tableExists } from '../../system/compatibility.js';
 import { toSafeInteger } from '../../utils/safe-integer.js';
 import { Dispatch, type DispatchData } from '../models/Dispatch.js';
@@ -307,6 +308,7 @@ export class DispatchCollection {
     }
 
     if (options.offset !== undefined) {
+      if (options.limit === undefined) sql += UNBOUNDED_LIMIT_SQL;
       sql += ` OFFSET $${paramIndex++}`;
       params.push(options.offset);
     }

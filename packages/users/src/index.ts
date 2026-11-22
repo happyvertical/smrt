@@ -487,6 +487,7 @@ export {
   type SmrtOAuthAuthorizationServiceOptions,
   SmrtOAuthAuthorizationStorage,
   type SmrtOAuthAuthorizationStorageOptions,
+  type SmrtOAuthConsentScopes,
   type SmrtOAuthGrantSummary,
   type SwitchTenantResult,
   syncPermissionCatalog,

@@ -51,6 +51,7 @@ import {
   MAX_LIST_LIMIT,
   QueryBoundsError,
   QueryOrderByError,
+  UNBOUNDED_LIMIT_SQL,
 } from './query-bounds';
 import { ObjectRegistry } from './registry';
 import { getRegistryGeneration } from './registry/generation.js';
@@ -60,6 +61,10 @@ import {
   resolveOneToManyInverse,
   resolveRelationshipTargetName,
 } from './relationship-loader';
+import {
+  isReservedInstanceField,
+  warnReservedInstanceField,
+} from './reserved-field-names';
 import { detectEngine } from './schema/ddl/index';
 import { verifyPersistenceTable } from './schema/table-verifier';
 import {
@@ -2646,10 +2651,7 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     }
     if (boundedOffset !== undefined) {
       if (boundedLimit === undefined) {
-        // SQLite requires LIMIT before OFFSET. SQLite uses -1 for an
-        // unlimited limit; DuckDB and PostgreSQL use the standard LIMIT ALL.
-        limitOffsetSql +=
-          this.getDatabaseEngine() === 'sqlite' ? ' LIMIT -1' : ' LIMIT ALL';
+        limitOffsetSql += UNBOUNDED_LIMIT_SQL;
       }
       limitOffsetSql += ` OFFSET $${nextParameter++}`;
       limitOffsetValues.push(boundedOffset);
@@ -3661,6 +3663,9 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     }
 
     if (boundedOffset !== undefined) {
+      if (boundedLimit === undefined) {
+        limitOffsetSql += UNBOUNDED_LIMIT_SQL;
+      }
       limitOffsetSql += ` OFFSET $${paramIndex++}`;
       limitOffsetValues.push(boundedOffset);
     }
@@ -4283,11 +4288,22 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
         );
       }
     }
+    // Every key passed the check above, so an `options` key here names a field
+    // the model declares as assignable. It is still never assigned: on the
+    // instance that property is its service options. An undeclared or
+    // read-only `options` key was refused above, exactly like any other.
+    let assignable = values;
+    if (Object.keys(values).some(isReservedInstanceField)) {
+      assignable = Object.fromEntries(
+        Object.entries(values).filter(([key]) => !isReservedInstanceField(key)),
+      ) as typeof values;
+      warnReservedInstanceField(instance.constructor, name);
+    }
     await this.withAuditMutation(
       instance,
       'updated',
       async (bound) => {
-        Object.assign(bound, values);
+        Object.assign(bound, assignable);
         await bound.save();
       },
       context,
@@ -4658,10 +4674,25 @@ export class SmrtCollection<ModelType extends SmrtObject> extends SmrtClass {
     // `existing` may be a SmrtObject instance (no index signature); read its
     // dynamic fields through a record view.
     const existingRecord = existing as unknown as Record<string, unknown>;
+    // A field named `options` never takes part: on an instance that property
+    // is its service options, so it is neither compared nor assigned. Only a
+    // model that declares the field is told so; an undeclared `options` key is
+    // ignored like any other key the model does not declare.
+    if (
+      Object.keys(data).some(
+        (key) => isReservedInstanceField(key) && Object.hasOwn(fields, key),
+      )
+    ) {
+      warnReservedInstanceField(
+        this._itemClass,
+        this.getResolvedItemQualifiedName(),
+      );
+    }
     const diff = Object.keys(data).reduce(
       (acc, key) => {
         if (
           validKeys.has(key) &&
+          !isReservedInstanceField(key) &&
           !this.areEquivalentValues(
             existingRecord[key],
             data[key],

@@ -116,6 +116,7 @@ export {
 export {
   SmrtOAuthAuthorizationService,
   type SmrtOAuthAuthorizationServiceOptions,
+  type SmrtOAuthConsentScopes,
   type SmrtOAuthGrantSummary,
 } from './OAuthAuthorizationService.js';
 export {

@@ -1995,6 +1995,13 @@ const context = await authorization.validateAccessTokenClaims(payload);
 if (!context) throw new Error('Authorization is no longer active.');
 ```
 
+Consent grants the requested scopes the user holds (requested ∩ held), refuses
+with `access_denied` when none remain, and the stored grant, tokens and token
+response `scope` carry only that subset; refresh never widens it. Pass
+`refuseUnheldScopes: true` to `SmrtOAuthAuthorizationService.create` for
+all-or-nothing consent. An authorization request with no `scope` is now refused
+with `access_denied`. `consentScopes(request, sessionId)` previews the set.
+
 The SvelteKit export `createOAuthHandlers` supplies optional session-aware
 consent and account-grant routes. `listGrants(sessionId)` and
 `revokeGrant(sessionId, grantId)` confine account management to the signed-in
