@@ -227,7 +227,36 @@ transcript joins on `_smrt_ai_usage.entry_call_id = _smrt_ai_transcripts.call_id
 client whose calls that carry a `runContext` option are calls of that run:
 reserved (or, with a held reservation, taking it), sent with the run's usage
 tags and the output limit the reservation decided, then settled with their
-usage row; the usage handlers run only after the settle commits. The run
+usage row; the usage handlers run only after the settle commits. A call's
+usage still reaches it after it ended, because the SDK does not await
+`onUsage` and an app's own callback runs first. Its capture stays registered
+for 60 s (`ai-run-client.ts`), and `beginAiRunCall` opens a route for the
+call id it minted (`src/system/ai-run-late-usage.ts`, not exported; bounded
+to 10 000 calls and one hour per process) holding the call's database, run
+and tenant; the route, not the caller, holds the once-only state.
+`dispatchAiUsageEvent` hands an event carrying `aiCallId` and `runId` to the
+route only when the pipeline's persistence database, the `runId` tag and
+the event's tenant all match, so a caller's `aiCallId` tag alone (another
+database, tenant or run) is never applied to the call. The route takes an
+event only when it has something to apply, once: a call released without
+usage settles late (`settled_late`); a call settled from its response or
+fallback row (a decision that recorded no usage included) gets its usage
+row and its tenant-bounded chain's totals corrected to the provider's
+measured counts, after its settlement has committed (a queued settlement
+included), retried on failure (a redelivery retries too), never touching a
+row of another run or tenant under the id and never taking a total below
+zero. An event without token counts never replaces counts. Every event the
+route does not take reaches the handlers as it would without it; the
+settled event itself is marked (`markAiRunSettledUsageEvent`) and never
+routed back. **Known limit (#5516):** the route is process-local. A late
+event delivered on another worker, or after the route expired (one hour, or
+10 000 newer calls in the process), keeps the provisional counts: a call
+settled from its response or fallback row keeps those counts (a detectable
+estimate, never another call's usage) and the event reaches the handlers
+again. A released call is still settled from its persisted reservation by
+the persistence handler (`reconcileLateAiRunUsage`), so its row and its
+run's totals agree. A durable cross-worker correction is tracked in #5516.
+The run
 context is always passed explicitly, never read from a process-wide variable;
 `serializeAiRunContext` / `restoreAiRunContext` carry it through a job payload
 (tenant-checked). Without `runTracking` a client is exactly as before.

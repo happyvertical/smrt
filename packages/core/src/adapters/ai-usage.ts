@@ -120,6 +120,69 @@ export const AI_USAGE_TAG_COLUMNS = Object.freeze({
  */
 export const AI_OWN_CALL_ID_TAG = 'aiCallId';
 
+// ---------------------------------------------------------------------------
+// Tracked calls' usage, wherever it is delivered (#5005)
+// ---------------------------------------------------------------------------
+
+const settledRunEvents = new WeakSet<object>();
+
+/**
+ * Mark the event a tracked call's settlement wrote, which the usage handlers
+ * then receive: it is the call's own record, never routed back to the call
+ * or reconciled again.
+ *
+ * @internal Called by the settlement only.
+ */
+export function markAiRunSettledUsageEvent(event: SmrtAiUsageEvent): void {
+  settledRunEvents.add(event);
+}
+
+/** Late usage of tracked calls (`system/ai-run-late-usage.ts` installs it). */
+interface AiRunLateUsageHooks {
+  /** Hand the event to its call's route; whether the route took it. */
+  route(event: SmrtAiUsageEvent, db: DatabaseInterface): Promise<boolean>;
+  /** Settle a released call whose route is gone; whether it did. */
+  reconcile(event: SmrtAiUsageEvent, db: DatabaseInterface): Promise<boolean>;
+}
+
+let lateUsageHooks: AiRunLateUsageHooks | undefined;
+
+/** @internal Installed once by `system/ai-run-late-usage.ts`. */
+export function setAiRunLateUsageHooks(hooks: AiRunLateUsageHooks): void {
+  lateUsageHooks = hooks;
+}
+
+/** The database each persistence handler writes to. */
+const persistenceDatabases = new WeakMap<object, DatabaseInterface>();
+
+function lateUsageCandidate(event: SmrtAiUsageEvent): boolean {
+  return (
+    !settledRunEvents.has(event) &&
+    typeof event.tags?.[AI_OWN_CALL_ID_TAG] === 'string' &&
+    typeof event.tags?.runId === 'string'
+  );
+}
+
+/**
+ * Hand a usage event of a tracked call to that call's route, when the
+ * pipeline writes to a database (its persistence handler) the route can be
+ * checked against. Returns whether the route took it; an event it does not
+ * take goes to every handler as usual.
+ *
+ * @internal Used by `dispatchAiUsageEvent`.
+ */
+export async function routeAiRunCallUsage(
+  event: SmrtAiUsageEvent,
+  handlers: readonly AiUsageHandler[],
+): Promise<boolean> {
+  if (!lateUsageHooks || !lateUsageCandidate(event)) return false;
+  for (const handler of handlers) {
+    const db = persistenceDatabases.get(handler as object);
+    if (db) return lateUsageHooks.route(event, db);
+  }
+  return false;
+}
+
 /** A lifted tag value: a non-empty string, else NULL. */
 function liftedTag(
   tags: Record<string, string> | undefined,
@@ -215,10 +278,22 @@ export async function insertAiUsageRow(
  * Deduplicates on the call id (`aiCallId` tag) when the call carries one.
  */
 export class AiUsagePersistenceHandler implements AiUsageHandler {
-  constructor(private readonly db: DatabaseInterface) {}
+  constructor(private readonly db: DatabaseInterface) {
+    persistenceDatabases.set(this, db);
+  }
 
   async handle(event: SmrtAiUsageEvent): Promise<void> {
     try {
+      // A released tracked call whose route this process no longer has is
+      // settled from its persisted reservation, so its row and its run's
+      // totals agree.
+      if (
+        lateUsageHooks &&
+        lateUsageCandidate(event) &&
+        (await lateUsageHooks.reconcile(event, this.db))
+      ) {
+        return;
+      }
       await insertAiUsageRow(this.db, event);
     } catch (error) {
       throw new Error(

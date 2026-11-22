@@ -25,7 +25,7 @@ import type { DatabaseInterface } from '@happyvertical/sql';
 import { observeAiTranscriptUsage } from '../ai-transcripts.js';
 import type { AiUsageConfig } from '../config.js';
 import { config } from '../config.js';
-import { AiUsagePersistenceHandler } from './ai-usage.js';
+import { AiUsagePersistenceHandler, routeAiRunCallUsage } from './ai-usage.js';
 import { estimateAiUsageCost } from './cost-rates.js';
 
 const logger = createLogger({ level: 'info' });
@@ -360,6 +360,10 @@ export async function dispatchAiUsageEvent(
       usageConfig.costRates,
     );
   }
+  // A tracked call's usage that arrived after its call stopped listening
+  // still belongs to the call: it is settled or corrected there (priced as
+  // above), and its handlers run once, never a second time here.
+  if (await routeAiRunCallUsage(event, handlers)) return;
 
   const results = await Promise.allSettled(
     handlers.map((handler) => handler.handle(event)),
