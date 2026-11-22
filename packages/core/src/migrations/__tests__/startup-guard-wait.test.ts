@@ -211,6 +211,17 @@ describe('assertDatabaseMigratedForBuild wait mode (#5530)', () => {
     ).resolves.toBeDefined();
   });
 
+  it('clamps the initial delay to maxDelayMs', async () => {
+    readLast.mockResolvedValue(STALE);
+    const c = clock();
+    await expect(
+      assertDatabaseMigratedForBuild(newDb(), {
+        wait: { timeoutMs: 1_500, maxDelayMs: 250, ...c },
+      }),
+    ).rejects.toMatchObject({ code: 'DB_MIGRATION_REQUIRED' });
+    expect(c.sleeps).toEqual([250, 250, 250, 250, 250, 250]);
+  });
+
   it('parses the env value strictly', () => {
     const at = (v?: string) =>
       migrationWaitFromEnv({ [MIGRATION_WAIT_TIMEOUT_ENV]: v });

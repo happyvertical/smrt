@@ -93,7 +93,10 @@ export async function assertDatabaseMigratedForBuild(
     wait.sleep ??
     ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
   const startedAt = now();
-  let delay = wait.initialDelayMs ?? DEFAULT_MIGRATION_WAIT_INITIAL_DELAY_MS;
+  let delay = Math.min(
+    wait.initialDelayMs ?? DEFAULT_MIGRATION_WAIT_INITIAL_DELAY_MS,
+    maxDelayMs,
+  );
   for (let attempt = 1; ; attempt++) {
     try {
       await assertOnce(db, recordOptions);
