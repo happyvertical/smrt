@@ -5,9 +5,11 @@
 
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { defineLeaseSettleFenceCases } from '../__tests__/fixtures/dispatch-lease-suites';
 import {
   type DispatchTestDatabase,
   dispatchStatus,
+  dispatchTestEngines,
   insertRawDispatch,
   openDispatchTestDatabase,
 } from '../__tests__/fixtures/dispatch-test-db';
@@ -30,6 +32,14 @@ function failSettleWritesFor(db: DatabaseInterface, id: string): () => void {
     mutable.query = original;
   };
 }
+
+describe.each(
+  dispatchTestEngines,
+)('dispatch settle fencing on %s', (engine) => {
+  defineLeaseSettleFenceCases((options) =>
+    openDispatchTestDatabase(engine as 'sqlite', options),
+  );
+});
 
 describe('dispatch settle-error isolation on sqlite', () => {
   let ctx: DispatchTestDatabase;

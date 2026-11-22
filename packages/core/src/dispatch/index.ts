@@ -49,6 +49,12 @@ export {
   DispatchSubscription,
   type DispatchSubscriptionData,
 } from './models/DispatchSubscription.js';
+// Framework reason codes on failed dispatches (`[smrt:CODE] detail`)
+export {
+  DISPATCH_FAILURE_CODES,
+  type DispatchFailureCode,
+  parseDispatchFailureReason,
+} from './reasons.js';
 // Tenant resolver inversion hook (registered by @happyvertical/smrt-tenancy)
 export {
   type DispatchTenantResolver,
@@ -69,9 +75,11 @@ export type {
   DispatchCleanupResult,
   DispatchEmitOptions,
   DispatchHandler,
+  DispatchLeaseOptions,
   DispatchListOptions,
   DispatchMetadata,
   DispatchProcessOptions,
+  DispatchProcessStats,
   DispatchRetryOptions,
   DispatchStatus,
   DispatchSubscribeOptions,

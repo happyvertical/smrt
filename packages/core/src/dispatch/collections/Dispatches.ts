@@ -138,19 +138,28 @@ export class DispatchCollection {
   }
 
   /**
-   * Update an existing dispatch
+   * Update an existing dispatch.
+   *
+   * Refuses a row a `DispatchBus.process()` attempt holds under a lease
+   * (`status = 'processing'` with a lease token): such a row changes only
+   * through its holder's token-fenced writes, so a full-row write from a
+   * stale read can never overwrite a live lease. A missing row is a no-op.
+   *
+   * @throws Error with code `DISPATCH_ROW_LEASED` for a leased row.
    */
   static async update(
     db: DatabaseInterface,
     dispatch: Dispatch,
   ): Promise<void> {
     const row = dispatch.toRow();
-    await db.query(
+    const result = await db.query(
       `UPDATE _smrt_dispatch SET
         type = $1, source = $2, source_id = $3, payload = $4, status = $5,
         attempts = $6, last_error = $7, processed_at = $8, processed_by = $9,
         target_subscriber = $10, correlation_id = $11, metadata = $12, updated_at = $13
-       WHERE id = $14`,
+       WHERE id = $14
+         AND NOT (status = 'processing' AND lease_token IS NOT NULL)
+       RETURNING id`,
       row.type,
       row.source,
       row.source_id,
@@ -166,6 +175,20 @@ export class DispatchCollection {
       row.updated_at,
       row.id,
     );
+    if ((result.rows ?? []).length > 0) return;
+    const current = await db.query(
+      `SELECT 1 AS leased FROM _smrt_dispatch
+        WHERE id = $1 AND status = 'processing' AND lease_token IS NOT NULL`,
+      row.id,
+    );
+    if ((current.rows ?? []).length > 0) {
+      throw Object.assign(
+        new Error(
+          `DISPATCH_ROW_LEASED: dispatch ${row.id} is held under a lease and cannot be overwritten`,
+        ),
+        { code: 'DISPATCH_ROW_LEASED' },
+      );
+    }
   }
 
   /**

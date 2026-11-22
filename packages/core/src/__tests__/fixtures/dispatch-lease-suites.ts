@@ -6,7 +6,10 @@
 
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, expect, it, vi } from 'vitest';
-import type { DispatchMetadata } from '../../dispatch/types';
+import type {
+  DispatchMetadata,
+  DispatchProcessStats,
+} from '../../dispatch/types';
 import {
   type DispatchTestDatabase,
   type DispatchTestOpenOptions,
@@ -248,6 +251,75 @@ export function defineLocalLeaseRegistryCases(
     } finally {
       renewals.restore();
     }
+  });
+}
+
+/** T05, T06: settle is fenced by the token alone. */
+export function defineLeaseSettleFenceCases(
+  openDatabase: DispatchOpener,
+): void {
+  const open = useOpener(openDatabase);
+
+  it.each([
+    [
+      'reclaim',
+      "UPDATE _smrt_dispatch SET lease_token = 'next-holder' WHERE id = $1",
+      { status: 'processing', leaseToken: 'next-holder' },
+    ],
+    [
+      'cap sweep',
+      "UPDATE _smrt_dispatch SET status = 'failed', lease_token = NULL, last_error = '[smrt:DISPATCH_ATTEMPTS_EXHAUSTED] swept' WHERE id = $1",
+      { status: 'failed', leaseToken: null },
+    ],
+    [
+      'retry',
+      "UPDATE _smrt_dispatch SET status = 'pending', lease_token = NULL WHERE id = $1",
+      { status: 'pending', leaseToken: null },
+    ],
+  ] as const)('stale settle after %s reports lease-lost and leaves row', async (_writer, takeover, expected) => {
+    const { bus, db } = await open();
+    await bus.subscribe({ signalType: 'job.run', subscriber: 'worker' });
+    await insertRawDispatch(db, { id: 'contested', type: 'job.run' });
+
+    const before = await dispatchLeaseRow(db, 'contested');
+    let stats: DispatchProcessStats | undefined;
+    const count = await bus.process(
+      'worker',
+      async () => {
+        // Another writer acts between this handler and its settle.
+        await db.query(takeover, 'contested');
+      },
+      { onStats: (value) => (stats = value) },
+    );
+
+    expect(count).toBe(0);
+    expect(stats?.leaseLost).toBe(1);
+    expect(stats?.completed).toBe(0);
+    const row = await dispatchLeaseRow(db, 'contested');
+    expect({ status: row.status, leaseToken: row.leaseToken }).toEqual(
+      expected,
+    );
+    expect(row.lastError).toBe(
+      expected.status === 'failed'
+        ? '[smrt:DISPATCH_ATTEMPTS_EXHAUSTED] swept'
+        : before.lastError,
+    );
+  });
+
+  it('settles as a win after the event loop was blocked past leaseMs', async () => {
+    const { bus, db } = await open({ bus: { leaseMs: 1_000 } });
+    await bus.subscribe({ signalType: 'job.run', subscriber: 'worker' });
+    await insertRawDispatch(db, { id: 'blocked', type: 'job.run' });
+
+    const count = await bus.process('worker', async () => {
+      const until = Date.now() + 1_300;
+      while (Date.now() < until) {
+        // Busy: no timer (and so no renewal) runs.
+      }
+    });
+
+    expect(count).toBe(1);
+    expect((await dispatchLeaseRow(db, 'blocked')).status).toBe('completed');
   });
 }
 

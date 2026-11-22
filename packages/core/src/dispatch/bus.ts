@@ -67,6 +67,7 @@ import {
 import { Dispatch } from './models/Dispatch.js';
 import { DispatchSubscription } from './models/DispatchSubscription.js';
 import { dispatchPatternDialect } from './pattern.js';
+import { encodeHandlerError } from './reasons.js';
 import { retryFailedDispatches } from './retry.js';
 import { isDispatchRoutedTo } from './routing.js';
 import {
@@ -831,9 +832,12 @@ export class DispatchBus {
       });
       outcome = { status: 'completed', subscriber };
     } catch (error) {
+      // Handler text can never read as a framework `[smrt:CODE]` reason.
       outcome = {
         status: 'failed',
-        error: error instanceof Error ? error.message : String(error),
+        error: encodeHandlerError(
+          error instanceof Error ? error.message : String(error),
+        ),
       };
     } finally {
       // No renewal is sent once the handler returned.
@@ -906,6 +910,7 @@ export class DispatchBus {
       this.db,
       options,
       resolveDispatchTenantScope(),
+      this.lease.maxAttempts,
     );
   }
 
