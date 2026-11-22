@@ -310,6 +310,14 @@ instances and never use this path to overwrite a loaded revision.
   `maxAttempts` is `attempts < n`, so a row with NULL `attempts` is not
   retried under it (it is without it). Never write dispatch state from
   a stale read with the full-row `DispatchCollection.update()`.
+- `process()` keeps handler failure and outcome-write failure apart: only a
+  handler that throws records `failed` with its own error. An outcome write
+  that throws (the `completed` or the `failed` write, row serialization
+  included) is not retried and never relabels the row: it is logged as
+  `dispatch.settle_error` with the `outcome` it tried to record, the row
+  stays `processing` and is not counted, the batch continues, and
+  `process()` rejects only on setup errors. Recovering such a row needs the
+  lease/reclaim work (P6); until then it stays `processing`.
 - Tables: `_smrt_dispatch`, `_smrt_dispatch_subscriptions`
 - Status: `pending → processing → completed` (or `failed`)
 - Tenancy (`dispatch/tenant-resolver.ts`): `emit` stamps the server-derived

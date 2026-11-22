@@ -748,6 +748,13 @@ export class DispatchBus {
   /**
    * Run the handler for a dispatch this call claimed and record the outcome.
    *
+   * Handler failure and outcome-write failure are kept apart: only a handler
+   * that throws records `failed` (with the handler's error). An outcome
+   * write that throws (including serializing the row) is never relabelled
+   * as a handler failure and is not retried: it is logged as
+   * `dispatch.settle_error` with the outcome it tried to record, and the
+   * row stays `processing`. The rest of the batch still runs.
+   *
    * @returns `true` when the handler succeeded and the row was marked
    *   completed.
    */
@@ -756,22 +763,40 @@ export class DispatchBus {
     handler: DispatchHandler,
     dispatch: Dispatch,
   ): Promise<boolean> {
+    let handlerError: unknown;
+    let handled = false;
     try {
-      // Invoke handler
       await handler(dispatch.payload, dispatch.getMetadata());
-
-      // Mark as completed
-      dispatch.markCompleted(subscriber);
-      await DispatchCollection.update(this.db, dispatch);
-      return true;
+      handled = true;
     } catch (error) {
-      // Mark as failed
-      const errorMessage =
-        error instanceof Error ? error.message : String(error);
-      dispatch.markFailed(errorMessage);
+      handlerError = error;
+    }
+
+    if (handled) {
+      dispatch.markCompleted(subscriber);
+    } else {
+      dispatch.markFailed(
+        handlerError instanceof Error
+          ? handlerError.message
+          : String(handlerError),
+      );
+    }
+
+    try {
       await DispatchCollection.update(this.db, dispatch);
+    } catch (settleError) {
+      logger.warn('dispatch.settle_error: could not record the outcome', {
+        id: dispatch.id,
+        type: dispatch.type,
+        outcome: handled ? 'completed' : 'failed',
+        error:
+          settleError instanceof Error
+            ? settleError.message
+            : String(settleError),
+      });
       return false;
     }
+    return handled;
   }
 
   /**
