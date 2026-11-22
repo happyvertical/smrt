@@ -201,6 +201,10 @@ describe('generateSyncApplyRouteTemplate', () => {
       'prepareWriteInput(target.registryKey, payload, stored)',
     );
     expect(content).not.toContain('applySyncWritablePolicy');
+    // One import: a second declaration fails to parse in the emitted route.
+    expect(
+      content.match(/\bprepareWriteInput,|\bprepareWriteInput \}/g),
+    ).toHaveLength(1);
     expect(content).toContain("from '@happyvertical/smrt-core'");
     // #3416: collections resolve through the generated access prelude.
     expect(content).toContain(
