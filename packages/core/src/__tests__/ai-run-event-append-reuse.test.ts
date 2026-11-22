@@ -78,6 +78,8 @@ describe.each(aiRunTestEngines)('event append on %s', (engine) => {
       { type: 'observation', payload: { note: 'ok' } },
       { redact: async (payload) => payload },
     );
-    expect((await getRunTrajectory(db, run.id))?.entries).toHaveLength(1);
+    expect(
+      (await getRunTrajectory(db, run.id, { tenantId: 'tenant-one' }))?.entries,
+    ).toHaveLength(1);
   });
 });

@@ -66,8 +66,10 @@ async function input() {
   };
 }
 async function usage(parentId: string) {
-  const handoff = (await getRunTrajectory(h.db, parentId))!.entries.flatMap(
-    ({ event }) => (event?.type === 'handoff' ? [event] : []),
+  const handoff = (await getRunTrajectory(h.db, parentId, {
+    allowCrossTenant: true,
+  }))!.entries.flatMap(({ event }) =>
+    event?.type === 'handoff' ? [event] : [],
   )[0];
   expect(handoff).toMatchObject({ status: 'done', name: 'Plan and load' });
   const child = await getAiRun(h.db, handoff.childRunId!);
@@ -77,9 +79,9 @@ async function usage(parentId: string) {
     calls: 1,
   });
   expect(
-    (await getRunTrajectory(h.db, child!.id))!.entries.filter(
-      ({ event }) => event?.type === 'call',
-    ),
+    (await getRunTrajectory(h.db, child!.id, {
+      allowCrossTenant: true,
+    }))!.entries.filter(({ event }) => event?.type === 'call'),
   ).toHaveLength(1);
   return (
     await h.db.query(

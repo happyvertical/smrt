@@ -505,7 +505,10 @@ describe('#4760 hosted inference gate seam', () => {
       spend: '5200000',
     });
 
-    const report = await reportAiUsage(db, { by: ['tier'] });
+    const report = await reportAiUsage(db, {
+      allowCrossTenant: true,
+      by: ['tier'],
+    });
     expect(report.totals).toMatchObject({
       calls: 0,
       blocked: 1,

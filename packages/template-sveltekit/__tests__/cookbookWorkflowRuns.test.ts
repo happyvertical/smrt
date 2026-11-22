@@ -154,7 +154,10 @@ describe('cookbook workflow runs', () => {
     expect(execute.mock.calls[1][0].prompt.text).toContain(
       'Workflow step 2/3: revise',
     );
-    const checks = ((await getRunTrajectory(db, created.id))?.entries ?? [])
+    const checks = (
+      (await getRunTrajectory(db, created.id, { allowCrossTenant: true }))
+        ?.entries ?? []
+    )
       .map((entry) => entry.event)
       .filter((event) => event?.type === 'check');
     expect(checks.map((event) => event?.status)).toEqual([

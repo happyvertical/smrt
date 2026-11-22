@@ -181,9 +181,9 @@ describe.each(aiRunTestEngines)('ledger ownership on %s', (engine) => {
     await heldRow(db, callId, 'other-run', 'tenant-one');
     await reserveAiCall(db, run.id, { callId, inputTokens: 10 });
     const entry = async () =>
-      (await getRunTrajectory(db, run.id))?.entries.find(
-        (candidate) => candidate.event?.callId === callId,
-      );
+      (
+        await getRunTrajectory(db, run.id, { tenantId: 'tenant-one' })
+      )?.entries.find((candidate) => candidate.event?.callId === callId);
     expect((await entry())?.usage).toBeFalsy();
 
     // The call's own row, once it exists, is shown (control).

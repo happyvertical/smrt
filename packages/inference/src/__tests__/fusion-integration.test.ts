@@ -181,7 +181,7 @@ describe('fusions through a SmrtObject (#4753)', () => {
       expect(JSON.parse(String(row.tags)).fusionKey).toBe('review-pair');
     }
 
-    const runs = await listAiRuns(db);
+    const runs = await listAiRuns(db, { allowCrossTenant: true });
     expect(runs).toHaveLength(1);
     expect(runs[0]).toMatchObject({
       id: runId,
@@ -202,11 +202,14 @@ describe('fusions through a SmrtObject (#4753)', () => {
     ]);
     expect(seats[0]?.usage).toMatchObject({ totalTokens: 10 });
 
-    const report = await reportAiRuns(db);
+    const report = await reportAiRuns(db, { allowCrossTenant: true });
     expect(report.buckets).toEqual([
       expect.objectContaining({ fusionKey: 'review-pair', runs: 1, ok: 1 }),
     ]);
-    const byFusion = await reportAiUsage(db, { by: ['fusion'] });
+    const byFusion = await reportAiUsage(db, {
+      allowCrossTenant: true,
+      by: ['fusion'],
+    });
     expect(byFusion.buckets[0]).toMatchObject({
       key: { fusion: 'review-pair' },
       calls: 3,
@@ -218,7 +221,10 @@ describe('fusions through a SmrtObject (#4753)', () => {
     await expect(
       instance.do('Review this contract', { tier: 'best' }),
     ).rejects.toBeInstanceOf(InferenceFusionError);
-    const runs = await listAiRuns(db, { status: 'failed' });
+    const runs = await listAiRuns(db, {
+      allowCrossTenant: true,
+      status: 'failed',
+    });
     expect(runs).toHaveLength(1);
     expect(runs[0]).toMatchObject({ seats: 2, degradedSeats: 2 });
   });

@@ -62,9 +62,10 @@ export function workflowScenarios(database: () => Promise<DatabaseInterface>) {
       [0, 1, 'test.workflow.propose'],
       [1, 1, 'test.workflow.refine'],
     ]);
-    const events = ((await getRunTrajectory(db, run.id))?.entries ?? []).map(
-      (entry) => entry.event?.type,
-    );
+    const events = (
+      (await getRunTrajectory(db, run.id, { allowCrossTenant: true }))
+        ?.entries ?? []
+    ).map((entry) => entry.event?.type);
     expect(events).toEqual(['call', 'check', 'call', 'check']);
   });
 

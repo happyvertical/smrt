@@ -718,7 +718,8 @@ export function createCookbookWorkflowRuns(
         if (state.status !== 'failed' || state.stopReason !== 'check_failed')
           return false;
         const checks = (
-          (await getRunTrajectory(options.db, state.id))?.entries ?? []
+          (await getRunTrajectory(options.db, state.id, { tenantId }))
+            ?.entries ?? []
         )
           .map((entry) => entry.event)
           .filter((event) => event?.type === 'check');

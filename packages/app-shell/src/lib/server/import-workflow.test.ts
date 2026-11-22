@@ -210,7 +210,9 @@ it.each([
     'proving',
     'review',
   ]);
-  const events = await getRunTrajectory(h.db, run.id);
+  const events = await getRunTrajectory(h.db, run.id, {
+    allowCrossTenant: true,
+  });
   const handoff = events!.entries.flatMap(({ event }) =>
     event?.type === 'handoff' ? [event] : [],
   )[0];
@@ -575,12 +577,16 @@ it.each([
   expect(current.state).toBe('done');
   expect(calls).toBe(2);
   if (engine === 'codex') expect(offeredTools).toEqual([[], []]);
-  const handoffs = (await getRunTrajectory(h.db, started.id))!.entries.flatMap(
-    ({ event }) => (event?.type === 'handoff' ? [event] : []),
+  const handoffs = (await getRunTrajectory(h.db, started.id, {
+    allowCrossTenant: true,
+  }))!.entries.flatMap(({ event }) =>
+    event?.type === 'handoff' ? [event] : [],
   );
   expect(handoffs).toHaveLength(2);
   for (const handoff of handoffs) {
-    const child = await getRunTrajectory(h.db, handoff.childRunId!);
+    const child = await getRunTrajectory(h.db, handoff.childRunId!, {
+      allowCrossTenant: true,
+    });
     expect(child!.entries.some(({ event }) => event?.type === 'action')).toBe(
       false,
     );
@@ -976,7 +982,9 @@ it('repairs malformed multiplication with the exact grammar and records its diag
   expect(texts[1]).toContain('left');
   expect(texts[1]).toContain('args');
   expect(texts[1]).toContain('not args or symbols');
-  const checks = (await getRunTrajectory(h.db, started.id))!.entries
+  const checks = (await getRunTrajectory(h.db, started.id, {
+    allowCrossTenant: true,
+  }))!.entries
     .map((e) => e.event)
     .filter((e) => e?.type === 'check');
   expect(checks[0]?.payload).toMatchObject({

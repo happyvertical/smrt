@@ -30,7 +30,9 @@ afterEach(async () => {
 });
 
 async function storedPayload(db: DatabaseInterface, runId: string) {
-  const trajectory = await getRunTrajectory(db, runId);
+  const trajectory = await getRunTrajectory(db, runId, {
+    allowCrossTenant: true,
+  });
   return trajectory?.entries[0]?.event?.payload;
 }
 
@@ -135,7 +137,9 @@ describe.each(aiRunTestEngines)('run event redaction on %s', (engine) => {
       ),
     ).rejects.toBeInstanceOf(AiRunClaimLostError);
     expect(redactorCalls).toBe(0);
-    expect((await getRunTrajectory(db, run.id))?.entries).toEqual([]);
+    expect(
+      (await getRunTrajectory(db, run.id, { allowCrossTenant: true }))?.entries,
+    ).toEqual([]);
   });
 
   it('applies only the built-in redactor on read, never the host one', async () => {

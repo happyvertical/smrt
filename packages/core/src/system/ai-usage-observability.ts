@@ -18,6 +18,10 @@ import { DEFAULT_AI_COST_RATES } from '../adapters/cost-rates.js';
 import { EXTERNAL_AGENT_USAGE_OPERATION } from '../external-agent-usage.js';
 import { INFERENCE_BLOCKED_OPERATION } from '../inference-gate.js';
 import { toSafeInteger } from '../utils/safe-integer.js';
+import {
+  type AiUsageTenantScope,
+  requireAiUsageScope,
+} from './ai-usage-scope.js';
 
 // ============================================================================
 // Shared helpers
@@ -356,7 +360,7 @@ export async function recordAiEvaluation(
 }
 
 /** Filters for {@link listAiEvaluations}. */
-export interface AiEvaluationListOptions {
+export interface AiEvaluationListOptions extends AiUsageTenantScope {
   callId?: string;
   runId?: string;
   metric?: string;
@@ -471,8 +475,9 @@ function hydrateUsageRow(row: Record<string, unknown>): AiEvaluationUsageRow {
  */
 export async function listAiEvaluations(
   db: DatabaseInterface,
-  options: AiEvaluationListOptions = {},
+  options: AiEvaluationListOptions,
 ): Promise<AiEvaluationWithUsage[]> {
+  requireAiUsageScope('listAiEvaluations', options ?? {});
   const conditions: string[] = [];
   const params: unknown[] = [];
   const add = (sql: string, value: unknown) => {
@@ -607,7 +612,7 @@ export type AiUsageReportDimension =
   (typeof AI_USAGE_REPORT_DIMENSIONS)[number];
 
 /** Options for {@link reportAiUsage}. */
-export interface AiUsageReportOptions {
+export interface AiUsageReportOptions extends AiUsageTenantScope {
   /** Grouping dimensions, in order. Default `['prompt']`. */
   by?: AiUsageReportDimension[];
   /**
@@ -924,8 +929,9 @@ async function transcribedCalls(
  */
 export async function reportAiUsage(
   db: DatabaseInterface,
-  options: AiUsageReportOptions = {},
+  options: AiUsageReportOptions,
 ): Promise<AiUsageReport> {
+  requireAiUsageScope('reportAiUsage', options ?? {});
   const by: AiUsageReportDimension[] =
     options.by && options.by.length > 0 ? [...new Set(options.by)] : ['prompt'];
   for (const dimension of by) {

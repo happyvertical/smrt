@@ -401,7 +401,10 @@ export const aiUsageCommand: CLICommand = {
       const filters = {
         since,
         until,
-        ...(options.tenant ? { tenantId: options.tenant } : {}),
+        // Without --tenant this operator command reads every tenant.
+        ...(options.tenant
+          ? { tenantId: options.tenant }
+          : { allowCrossTenant: true }),
       };
       const report = await reportAiUsage(db, { by, ...filters });
       // Runs are totalled over the window the usage report used, so both

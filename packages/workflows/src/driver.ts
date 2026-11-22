@@ -325,7 +325,7 @@ export function createWorkflowRunDriver(options: WorkflowRunDriverOptions) {
     afterSeq: number,
     stepIndex: number,
   ): Promise<string | null> => {
-    const trajectory = await getRunTrajectory(db, runId);
+    const trajectory = await getRunTrajectory(db, runId, { tenantId });
     const candidates = (trajectory?.entries ?? [])
       .map((entry) => entry.event)
       .filter(
@@ -339,7 +339,7 @@ export function createWorkflowRunDriver(options: WorkflowRunDriverOptions) {
   };
 
   const lastSeq = async (runId: string) => {
-    const trajectory = await getRunTrajectory(db, runId);
+    const trajectory = await getRunTrajectory(db, runId, { tenantId });
     return (trajectory?.entries ?? []).reduce(
       (max, entry) => Math.max(max, entry.event?.seq ?? 0),
       0,
@@ -350,7 +350,7 @@ export function createWorkflowRunDriver(options: WorkflowRunDriverOptions) {
     runId: string,
     requestEventId: string,
   ): Promise<'approved' | 'refused' | null> => {
-    const trajectory = await getRunTrajectory(db, runId);
+    const trajectory = await getRunTrajectory(db, runId, { tenantId });
     for (const entry of [...(trajectory?.entries ?? [])].reverse()) {
       const event = entry.event;
       if (

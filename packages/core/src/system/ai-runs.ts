@@ -24,6 +24,10 @@ import {
   insertAiRunRowTx,
   withAiRunTransaction,
 } from './ai-run-model.js';
+import {
+  type AiUsageTenantScope,
+  requireAiUsageScope,
+} from './ai-usage-scope.js';
 
 function getRows(result: unknown): Record<string, unknown>[] {
   if (Array.isArray(result)) return result as Record<string, unknown>[];
@@ -287,7 +291,7 @@ const READ_STATUSES: readonly string[] = [
 ];
 
 /** Filters for {@link listAiRuns}. */
-export interface ListAiRunsOptions {
+export interface ListAiRunsOptions extends AiUsageTenantScope {
   id?: string;
   /** One run type (`fusion`, `turn`, `workflow`, `@scope/pkg:type`). */
   type?: string;
@@ -319,8 +323,9 @@ function statusCondition(status: string): string {
 /** Runs of every type, newest first. */
 export async function listAiRuns(
   db: DatabaseInterface,
-  options: ListAiRunsOptions = {},
+  options: ListAiRunsOptions,
 ): Promise<AiRunRecord[]> {
+  requireAiUsageScope('listAiRuns', options ?? {});
   const conditions: string[] = [];
   const params: unknown[] = [];
   const add = (sql: string, value: unknown) => {
@@ -405,7 +410,7 @@ export interface AiRunReportBucket extends AiRunReportStats {
 }
 
 /** Options for {@link reportAiRuns}. */
-export interface AiRunReportOptions {
+export interface AiRunReportOptions extends AiUsageTenantScope {
   /** Only runs of this type (`smrt ai:usage --by fusion` passes `fusion`). */
   type?: string;
   since?: Date;
@@ -523,8 +528,9 @@ async function eventCounts(
  */
 export async function reportAiRuns(
   db: DatabaseInterface,
-  options: AiRunReportOptions = {},
+  options: AiRunReportOptions,
 ): Promise<AiRunReport> {
+  requireAiUsageScope('reportAiRuns', options ?? {});
   const windowConditions: string[] = [];
   const windowParams: unknown[] = [];
   if (options.type) {

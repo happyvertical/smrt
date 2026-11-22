@@ -897,9 +897,15 @@ describe('AI call transcripts (#4780)', () => {
           labelled: true,
         }),
       ).toEqual([]);
-      const evaluations = await listAiEvaluations(db, { callId });
+      const evaluations = await listAiEvaluations(db, {
+        allowCrossTenant: true,
+        callId,
+      });
       expect(evaluations[0]?.usage.map((row) => row.callId)).toEqual([callId]);
-      const report = await reportAiUsage(db, { by: ['tenant'] });
+      const report = await reportAiUsage(db, {
+        allowCrossTenant: true,
+        by: ['tenant'],
+      });
       expect(report.totals.evaluations).toEqual({ rejected: 1 });
     });
   });

@@ -468,9 +468,9 @@ describe.each(aiRunTestEngines)('AI run lifecycle on %s (#5005)', (engine) => {
       status: 'running',
     });
     expect(
-      (await getRunTrajectory(database, root.id))?.entries.some(
-        (entry) => entry.event?.type === 'check',
-      ),
+      (
+        await getRunTrajectory(database, root.id, { allowCrossTenant: true })
+      )?.entries.some((entry) => entry.event?.type === 'check'),
     ).toBe(false);
 
     // The worker that holds the claim changes the status as before.
@@ -718,7 +718,9 @@ describe.each(aiRunTestEngines)('AI run lifecycle on %s (#5005)', (engine) => {
       type: 'observation',
       payloadRef: 'chat-message:42',
     });
-    const trajectory = await getRunTrajectory(database, run.id);
+    const trajectory = await getRunTrajectory(database, run.id, {
+      allowCrossTenant: true,
+    });
     const [redacted, capped, referenced] = trajectory?.entries ?? [];
     expect(JSON.stringify(redacted?.event?.payload)).not.toContain('Alice');
     expect(JSON.stringify(redacted?.event?.payload)).not.toContain(
@@ -766,7 +768,9 @@ describe.each(aiRunTestEngines)('AI run lifecycle on %s (#5005)', (engine) => {
       value: true,
       evaluator: 'human',
     });
-    const trajectory = await getRunTrajectory(database, run.id);
+    const trajectory = await getRunTrajectory(database, run.id, {
+      allowCrossTenant: true,
+    });
     expect(trajectory?.entries.map((entry) => entry.event?.type)).toEqual([
       'call',
       'action',
@@ -788,8 +792,13 @@ describe.each(aiRunTestEngines)('AI run lifecycle on %s (#5005)', (engine) => {
 
     // The same reader for the call: its run's trajectory.
     expect(
-      (await getRunTrajectory(database, { callId: reservation.callId }))?.run
-        ?.id,
+      (
+        await getRunTrajectory(
+          database,
+          { callId: reservation.callId },
+          { allowCrossTenant: true },
+        )
+      )?.run?.id,
     ).toBe(run.id);
     // A call on its own: one entry, no run.
     await database.query(
@@ -797,7 +806,11 @@ describe.each(aiRunTestEngines)('AI run lifecycle on %s (#5005)', (engine) => {
        VALUES ('solo', 'openai', 'gpt-4o', 'message', 3, 'solo', 'solo', $1)`,
       new Date().toISOString(),
     );
-    const solo = await getRunTrajectory(database, { callId: 'solo' });
+    const solo = await getRunTrajectory(
+      database,
+      { callId: 'solo' },
+      { allowCrossTenant: true },
+    );
     expect(solo?.run).toBeNull();
     expect(solo?.entries).toHaveLength(1);
     expect(solo?.entries[0]?.usage?.callId).toBe('solo');
@@ -808,7 +821,8 @@ describe.each(aiRunTestEngines)('AI run lifecycle on %s (#5005)', (engine) => {
       reservation.callId,
     );
     expect(
-      (await getRunTrajectory(database, run.id))?.entries[0]?.usage,
+      (await getRunTrajectory(database, run.id, { allowCrossTenant: true }))
+        ?.entries[0]?.usage,
     ).toBeNull();
 
     // A pruned trajectory: the row and its counts, no events.
@@ -817,7 +831,9 @@ describe.each(aiRunTestEngines)('AI run lifecycle on %s (#5005)', (engine) => {
               approvals_refused = 1 WHERE id = $1`,
       run.id,
     );
-    const pruned = await getRunTrajectory(database, run.id);
+    const pruned = await getRunTrajectory(database, run.id, {
+      allowCrossTenant: true,
+    });
     expect(pruned?.entries).toEqual([]);
     expect(pruned?.pruned).toEqual({
       checksPassed: 4,

@@ -101,7 +101,7 @@ describe.each(aiRunTestEngines)('AI run readers on %s (#5005)', (engine) => {
       new Date('2026-01-01T00:00:00Z').toISOString(),
     );
 
-    const listed = await listAiRuns(db);
+    const listed = await listAiRuns(db, { allowCrossTenant: true });
     expect(listed.map((run) => [run.id, run.type, run.status])).toEqual(
       expect.arrayContaining([
         [workflow.id, 'workflow', 'stopped'],
@@ -111,9 +111,13 @@ describe.each(aiRunTestEngines)('AI run readers on %s (#5005)', (engine) => {
       ]),
     );
     expect(
-      (await listAiRuns(db, { status: 'stopped' })).map((run) => run.id),
+      (await listAiRuns(db, { allowCrossTenant: true, status: 'stopped' })).map(
+        (run) => run.id,
+      ),
     ).toEqual([workflow.id]);
-    expect((await listAiRuns(db, { type: 'workflow' }))[0]).toMatchObject({
+    expect(
+      (await listAiRuns(db, { allowCrossTenant: true, type: 'workflow' }))[0],
+    ).toMatchObject({
       definitionKey: 'brief',
       calls: 1,
       tokens: 10,
@@ -121,12 +125,16 @@ describe.each(aiRunTestEngines)('AI run readers on %s (#5005)', (engine) => {
       trajectoryPruned: false,
     });
     expect(
-      (await listAiRuns(db, { status: 'ok', type: 'fusion' })).map(
-        (run) => run.id,
-      ),
+      (
+        await listAiRuns(db, {
+          allowCrossTenant: true,
+          status: 'ok',
+          type: 'fusion',
+        })
+      ).map((run) => run.id),
     ).toEqual(['legacy']);
 
-    const report = await reportAiRuns(db);
+    const report = await reportAiRuns(db, { allowCrossTenant: true });
     expect(report.totals).toMatchObject({
       runs: 4,
       running: 1,
@@ -148,7 +156,10 @@ describe.each(aiRunTestEngines)('AI run readers on %s (#5005)', (engine) => {
       approvalsRefused: 1,
       approvalRate: 0,
     });
-    expect((await reportAiRuns(db, { type: 'fusion' })).totals).toMatchObject({
+    expect(
+      (await reportAiRuns(db, { allowCrossTenant: true, type: 'fusion' }))
+        .totals,
+    ).toMatchObject({
       runs: 1,
       ok: 1,
       done: 1,

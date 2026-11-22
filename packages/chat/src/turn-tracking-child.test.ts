@@ -108,7 +108,10 @@ describe('a workflow step turn as a child run', () => {
       inclusiveCalls: 2,
       inclusiveTokens: 80,
     });
-    const handoffs = ((await getRunTrajectory(db, parent.id))?.entries ?? [])
+    const handoffs = (
+      (await getRunTrajectory(db, parent.id, { allowCrossTenant: true }))
+        ?.entries ?? []
+    )
       .map((entry) => entry.event)
       .filter((event) => event?.type === 'handoff');
     expect(handoffs).toHaveLength(1);
@@ -240,7 +243,10 @@ describe('a workflow step turn as a child run', () => {
         reservedCalls: 0,
         reservedTokens: 0,
       });
-      const events = ((await getRunTrajectory(db, turn.runId))?.entries ?? [])
+      const events = (
+        (await getRunTrajectory(db, turn.runId, { allowCrossTenant: true }))
+          ?.entries ?? []
+      )
         .map((entry) => entry.event)
         .filter((event) => event?.type === 'call');
       expect(events).toEqual([
@@ -259,7 +265,10 @@ describe('a workflow step turn as a child run', () => {
     expect((await getAiRun(db, turn.runId))?.status).toBe('cancelled');
     await expect(call()).rejects.toBeInstanceOf(AiRunStoppedError);
     await turn.finish('failed');
-    const handoff = ((await getRunTrajectory(db, parent.id))?.entries ?? [])
+    const handoff = (
+      (await getRunTrajectory(db, parent.id, { allowCrossTenant: true }))
+        ?.entries ?? []
+    )
       .map((entry) => entry.event)
       .find((event) => event?.type === 'handoff');
     expect(handoff?.status).toBe('cancelled');

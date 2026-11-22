@@ -109,7 +109,9 @@ describe.each(engines)('workflow runs on %s', (engine) => {
     expect(String(usage[0]?.template_hash)).toMatch(/^[0-9a-f]{12}$/);
     expect(usage[1]).toMatchObject({ prompt_key: 'test.workflow.refine' });
 
-    const trajectory = await getRunTrajectory(db, started.id);
+    const trajectory = await getRunTrajectory(db, started.id, {
+      allowCrossTenant: true,
+    });
     const events = (trajectory?.entries ?? []).map((entry) => entry.event);
     expect(events.map((event) => [event?.type, event?.status])).toEqual([
       ['call', 'ok'],
@@ -197,7 +199,9 @@ describe.each(engines)('workflow runs on %s', (engine) => {
     expect((await driver.run(run.id, 'owner')).status).toBe('done');
     expect(calls[1]?.text).toContain('mul requires left and right');
     expect(calls[1]?.text).toContain('model-only fragment');
-    const events = (await getRunTrajectory(db, run.id))!.entries
+    const events = (await getRunTrajectory(db, run.id, {
+      allowCrossTenant: true,
+    }))!.entries
       .map((e) => e.event)
       .filter((e) => e?.type === 'check');
     expect(events.map((e) => e?.status)).toEqual(['failed', 'passed']);
@@ -247,9 +251,9 @@ describe.each(engines)('workflow runs on %s', (engine) => {
     );
     const large = await many.start({ ownerId: 'owner' });
     await many.run(large.id, 'owner');
-    const event = (await getRunTrajectory(db, large.id))?.entries.find(
-      (e) => e.event?.type === 'check',
-    )?.event;
+    const event = (
+      await getRunTrajectory(db, large.id, { allowCrossTenant: true })
+    )?.entries.find((e) => e.event?.type === 'check')?.event;
     expect(event?.truncated).toBe(false);
     expect(
       new TextEncoder().encode(JSON.stringify(event?.payload)).byteLength,
@@ -307,7 +311,9 @@ describe.each(engines)('workflow runs on %s', (engine) => {
       status: 'failed',
       stopReason: 'check_failed',
     });
-    const events = (await getRunTrajectory(db, run.id))?.entries ?? [];
+    const events =
+      (await getRunTrajectory(db, run.id, { allowCrossTenant: true }))
+        ?.entries ?? [];
     expect(events.at(-1)?.event).toMatchObject({
       type: 'check',
       status: 'failed',
@@ -376,9 +382,10 @@ describe.each(engines)('workflow runs on %s', (engine) => {
           stopReason: 'check_failed',
         });
       }
-      const events = ((await getRunTrajectory(db, run.id))?.entries ?? []).map(
-        (entry) => entry.event,
-      );
+      const events = (
+        (await getRunTrajectory(db, run.id, { allowCrossTenant: true }))
+          ?.entries ?? []
+      ).map((entry) => entry.event);
       const request = events.find((event) => event?.status === 'requested');
       const decision = events.find(
         (event) => event?.status === (approved ? 'approved' : 'refused'),
@@ -443,7 +450,10 @@ describe.each(engines)('workflow runs on %s', (engine) => {
       ['approved', 2],
     ]);
     expect(calls).toHaveLength(1);
-    const approvalEvents = ((await getRunTrajectory(db, run.id))?.entries ?? [])
+    const approvalEvents = (
+      (await getRunTrajectory(db, run.id, { allowCrossTenant: true }))
+        ?.entries ?? []
+    )
       .map((entry) => entry.event)
       .filter((event) => event?.type === 'approval');
     expect(
@@ -834,9 +844,10 @@ describe.each(engines)('workflow runs on %s', (engine) => {
       totals: { tokens: 0, inclusiveTokens: 950, stepsUsed: 1 },
     });
     expect(children).toHaveLength(2);
-    const events = ((await getRunTrajectory(db, run.id))?.entries ?? []).map(
-      (entry) => entry.event,
-    );
+    const events = (
+      (await getRunTrajectory(db, run.id, { allowCrossTenant: true }))
+        ?.entries ?? []
+    ).map((entry) => entry.event);
     const handoffs = events.filter((event) => event?.type === 'handoff');
     expect(handoffs.map((event) => event?.childRunId)).toEqual(children);
     // The check of the step points at the handoff to the child that answered.
@@ -1177,7 +1188,10 @@ describe('workflow run safety', () => {
       stepsUsed: 2,
       status: 'done',
     });
-    const reservations = ((await getRunTrajectory(db, run.id))?.entries ?? [])
+    const reservations = (
+      (await getRunTrajectory(db, run.id, { allowCrossTenant: true }))
+        ?.entries ?? []
+    )
       .map((entry) => entry.event)
       .filter((event) => event?.type === 'call')
       .map((event) => event?.reservation);

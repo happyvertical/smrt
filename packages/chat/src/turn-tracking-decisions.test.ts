@@ -62,7 +62,10 @@ async function turn(
 }
 
 async function approvalEvents(runId: string) {
-  return ((await getRunTrajectory(db, runId))?.entries ?? [])
+  return (
+    (await getRunTrajectory(db, runId, { allowCrossTenant: true }))?.entries ??
+    []
+  )
     .map((entry) => entry.event)
     .filter((event) => event?.type === 'approval');
 }

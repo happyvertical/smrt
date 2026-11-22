@@ -186,7 +186,10 @@ describe.skipIf(!pgUrl)(
         evaluator: 'human',
       });
       expect(evaluation.tenantId).toBe(tenantId);
-      const [read] = await listAiEvaluations(db, { runId: 'pg-run' });
+      const [read] = await listAiEvaluations(db, {
+        allowCrossTenant: true,
+        runId: 'pg-run',
+      });
       expect(read?.usage).toHaveLength(2);
       expect(read?.createdAt).toBeInstanceOf(Date);
 
