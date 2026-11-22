@@ -324,11 +324,14 @@ describe.each([
       const fk = diff.changes.find(
         (change) => change.type === 'add_foreign_key',
       );
-      // The JSON adapter does not expose getTableSchema, so it cannot
-      // inspect an existing constraint. SQLite and DuckDB add the key by
-      // rebuilding the table, after the planned parent exists.
+      // The JSON adapter exposes getTableSchema from @happyvertical/sql
+      // 0.116.8, so the key is planned there too; its child holds a row and
+      // the planned parent does not exist yet, so the plan refuses to add it
+      // with the parent-data advisory. SQLite and DuckDB (empty child) add
+      // the key by rebuilding the table, after the planned parent exists.
       if (engine === 'json') {
-        expect(fk).toBeUndefined();
+        expect(fk?.kindHint).toBe('foreign-key.parent-data-missing');
+        expect(fk?.sqlStatements).toBeUndefined();
       } else {
         expect(fk?.engineUnsupported).toBeUndefined();
         expect(
