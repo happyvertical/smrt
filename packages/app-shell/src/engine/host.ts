@@ -464,7 +464,12 @@ export class AppHost extends EventEmitter {
     this.store = opts.store;
     this.workerUrl = opts.workerUrl ?? defaultWorkerUrl();
     this.workerLimits = opts.workerLimits;
-    this.appLimits = opts.appLimits;
+    // The method-run window belongs to the host, not to a worker: a swap must
+    // not renew the period. Always this host's own (a draft does not share live's).
+    this.appLimits = opts.appLimits && {
+      ...opts.appLimits,
+      methodRunState: new Float64Array(new SharedArrayBuffer(16)),
+    };
     this.frozenNow = opts.frozen === true;
     this.#autoApprove = opts.autoApprove === true;
     this.draft = readDraftMarker(dataDir);
