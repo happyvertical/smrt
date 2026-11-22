@@ -592,7 +592,7 @@ forms and the changes/import Apply show it as is, never the stale-digest line.
 
 | Limit | Refuses | Counted by |
 |---|---|---|
-| `maxModels` | a boot whose definition has more models than the stored one and than the cap (an app already over can still reopen) | `_app_meta` definition vs new definition |
+| `maxModels` | a boot whose definition has more models than the stored one and than the cap (an app already over can still reopen). A downward (undo) migration is exempt: undoing a removal restores models the app already held, even under a lowered cap | `_app_meta` definition vs new definition |
 | `maxRows`, `maxRowsPerModel` | create (engine, generated REST POST, `<model>_create` tool), `importRecords`, a method's creates, `loadRecords`/`extractModel`/`mergeRecords` that GROW the app past the cap | `COUNT(*)` per table, cached per worker |
 | `maxMethodRuns` + `methodRunPeriodMs` | a method run (engine, REST/tool method) after N runs in the period | in memory, window starts at the first run |
 
@@ -626,7 +626,10 @@ under the lock. That is one `COUNT(*)` per table per such write, not a scan per
 engine write; an app that writes mostly over REST pays it each time. Migration
 steps are counted before and after inside their transaction, so a refusal
 rolls the step back. Undo (`undoTo`, restoring archived rows or a deleted
-model) is exempt from the caps: it restores what the app already held.
+model) is exempt from the caps: it restores what the app already held. The
+model-count check skips a `direction: 'down'` boot; the row caps already gate
+only `up` migrations, and method runs and the statement timeout never involve
+a migration.
 Not enforced: storage
 bytes (the cloud profile meters storage separately), requests per period and
 the 429 rate limit (core hooks, #5195). The method-run
