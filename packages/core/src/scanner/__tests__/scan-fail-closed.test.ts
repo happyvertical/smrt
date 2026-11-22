@@ -68,9 +68,19 @@ async function build(files: Record<string, string>) {
 describe('class decorator config in the generated manifest', () => {
   const CLOSED = `const closed = { tableName: 'fail_closed_vaults', api: false, mcp: false, cli: false };`;
 
-  it('applies a config passed as a same-file constant', async () => {
+  it('fails the build on a config passed as a same-file constant and says to inline it', async () => {
+    await expect(
+      build({
+        'src/models/vault.ts': `${CORE}\n${CLOSED}\n@smrt(closed)\nexport class FailClosedVault extends SmrtObject {\n  name = '';\n  apiSecret = '';\n}`,
+      }),
+    ).rejects.toThrow(
+      /vault\.ts.*closed.*FailClosedVault.*write the options inline/s,
+    );
+  });
+
+  it('applies a same-file constant spread into an inline config', async () => {
     const { entry } = await build({
-      'src/models/vault.ts': `${CORE}\n${CLOSED}\n@smrt(closed)\nexport class FailClosedVault extends SmrtObject {\n  name = '';\n  apiSecret = '';\n}`,
+      'src/models/vault.ts': `${CORE}\n${CLOSED}\n@smrt({ ...closed })\nexport class FailClosedVault extends SmrtObject { name = ''; }`,
     });
     const vault = entry('FailClosedVault');
 
@@ -82,23 +92,6 @@ describe('class decorator config in the generated manifest', () => {
     });
     expect(vault?.schema?.tableName).toBe('fail_closed_vaults');
     expect(resolveStandardCrudActions(vault?.decoratorConfig.api)).toEqual([]);
-  });
-
-  it('generates the same entry whether the constant is passed or spread', async () => {
-    const passed = await build({
-      'src/models/vault.ts': `${CORE}\n${CLOSED}\n@smrt(closed)\nexport class FailClosedVault extends SmrtObject { name = ''; }`,
-    });
-    const spread = await build({
-      'src/models/vault.ts': `${CORE}\n${CLOSED}\n@smrt({ ...closed })\nexport class FailClosedVault extends SmrtObject { name = ''; }`,
-    });
-    const strip = (definition: SmartObjectDefinition | undefined) => ({
-      ...definition,
-      filePath: undefined,
-    });
-
-    expect(strip(passed.entry('FailClosedVault'))).toEqual(
-      strip(spread.entry('FailClosedVault')),
-    );
   });
 
   it('fails the build on a config it cannot read', async () => {
