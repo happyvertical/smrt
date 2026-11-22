@@ -7,6 +7,7 @@
 
 import { makeId } from '@happyvertical/utils';
 import { toSafeBooleanInteger } from '../../utils/safe-integer.js';
+import { matchesDispatchPattern } from '../pattern.js';
 
 /**
  * Raw subscription data as stored in the database
@@ -106,10 +107,15 @@ export class DispatchSubscription {
   /**
    * Check if this subscription matches a given signal type
    *
-   * Supports wildcard patterns:
+   * Every `*` stands for one or more characters other than `.`; everything
+   * else is literal and case-sensitive:
    * - 'campaign.*' matches 'campaign.started', 'campaign.completed'
-   * - '*' matches everything
+   * - '*' matches any single-segment type ('deploy'), not 'a.b'
    * - 'campaign.*.completed' matches 'campaign.summer.completed'
+   * - 'invoice.v*' matches 'invoice.v2', not 'invoice.v'
+   *
+   * Uses the shared compiler (`dispatch/pattern.ts`) that also builds the SQL
+   * candidate predicate of `DispatchBus.process()`, so both always agree.
    *
    * @param signalType - The signal type to match against
    * @returns True if this subscription matches the signal type
@@ -118,35 +124,7 @@ export class DispatchSubscription {
     if (!this.enabled) {
       return false;
     }
-
-    // Exact match
-    if (this.signalType === signalType) {
-      return true;
-    }
-
-    // If no wildcards, no match
-    if (!this.signalType.includes('*')) {
-      return false;
-    }
-
-    // Convert wildcard pattern to regex
-    // First escape special regex characters except * and .
-    // Then convert . to \. and * to [^.]+
-    let pattern = this.signalType;
-
-    // Escape regex special chars except * and .
-    pattern = pattern.replace(/[+?^${}()|[\]\\]/g, '\\$&');
-
-    // Escape dots
-    pattern = pattern.replace(/\./g, '\\.');
-
-    // Convert * to match one segment (anything except .)
-    pattern = pattern.replace(/\*/g, '[^.]+');
-
-    // Create regex for full match
-    const regex = new RegExp(`^${pattern}$`);
-
-    return regex.test(signalType);
+    return matchesDispatchPattern(this.signalType, signalType);
   }
 
   /**
