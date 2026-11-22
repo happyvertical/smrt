@@ -832,6 +832,16 @@ reconciliation abandoned while its process was in fact still alive is likewise
 charged once when that process settles it: it finds `abandoned` and takes the
 late-usage path.
 
+**Usage that arrives after the call.** A provider can report a call's usage
+after the call returned. The process that made the call still routes that
+usage to it for an hour (or until 10 000 newer calls): a released call is
+charged on the late-usage path, and a call settled from its response or
+fallback row is corrected to the measured counts, once. On another process,
+or later than that, a released call is still charged from its stored
+reservation, but a call settled from its response keeps those provisional
+counts: an estimate that a later reconciliation can find, never another
+call's usage. A durable cross-worker correction is tracked in #5516.
+
 **Actual amounts.** The tokens charged are the usage row's `total_tokens`, else
 `prompt_tokens + completion_tokens`. The cost charged is `estimated_cost`, or
 nothing (and one uncosted call) when it is NULL. A call that
@@ -996,7 +1006,9 @@ returned, and no handler ever saw the call. That is the same documented limit
 as a lost provider response.
 
 A call outside any run has no reservation; its usage row is written by the
-persistence handler, deduplicated on `id = call_id`.
+persistence handler under its own id. Only a tracked call's events keep the
+`aiCallId` tag as their row id; a call that carries the tag otherwise
+(copied from another call's options) still gets a row of its own.
 
 ### 6.5 Transactions and lock order
 

@@ -110,9 +110,11 @@ describe('#3077 public AI usage recorder', () => {
       className: 'ComposeRoute',
       tenantId: 'tenant-explicit',
       promptKey: 'site.compose',
-      runId: 'run-1',
-      tags: { feature: 'compose', promptKey: 'site.compose', runId: 'run-1' },
+      tags: { feature: 'compose', promptKey: 'site.compose' },
     });
+    // A caller's runId tag does not place an untracked call in a run.
+    expect(rows[0]?.runId ?? null).toBeNull();
+    expect(rows[0]?.tags).not.toHaveProperty('runId');
     // gateway id priced at the openai:gpt-4o-mini default rate
     expect(rows[0].estimatedCost).toBeCloseTo(0.00045, 8);
   });
