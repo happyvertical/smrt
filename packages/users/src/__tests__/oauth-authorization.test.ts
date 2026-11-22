@@ -601,7 +601,18 @@ describe('durable OAuth on the configured SQLite/PostgreSQL executor', () => {
     ).toBe(false);
   });
 
-  async function fixture() {
+  async function fixture(
+    narrowing: {
+      scopePermissions?: Record<string, string[]>;
+      requested?: string;
+      refuseUnheldScopes?: boolean;
+      serverScopes?: string[];
+    } = {},
+  ) {
+    const scopePermissions = narrowing.scopePermissions ?? {
+      read: ['catalog.read'],
+    };
+    const scopeNames = narrowing.serverScopes ?? Object.keys(scopePermissions);
     const options = { db: isolated.baseDb };
     const users = await UserCollection.create(options);
     const user = await users.create({
@@ -645,7 +656,8 @@ describe('durable OAuth on the configured SQLite/PostgreSQL executor', () => {
     const foreignSession = await sessions.createSession(foreign.id as string);
     const authorization = await SmrtOAuthAuthorizationService.create({
       ...options,
-      scopePermissions: { read: ['catalog.read'] },
+      scopePermissions,
+      refuseUnheldScopes: narrowing.refuseUnheldScopes,
     });
     const keys = await generateKeyPair('ES256');
     const server = createAuthorizationServer({
@@ -658,14 +670,14 @@ describe('durable OAuth on the configured SQLite/PostgreSQL executor', () => {
         algorithm: 'ES256',
         keyId: 'test',
       },
-      scopes: ['read'],
+      scopes: scopeNames,
       resources: [resource],
     });
     const clientId = randomUUID();
     await storage.registerClient({
       id: clientId,
       redirectUris: [redirectUri],
-      allowedScopes: ['read'],
+      allowedScopes: scopeNames,
       tokenEndpointAuthMethod: 'none',
       createdAt: new Date(),
     });
@@ -674,7 +686,7 @@ describe('durable OAuth on the configured SQLite/PostgreSQL executor', () => {
       client_id: clientId,
       redirect_uri: redirectUri,
       response_type: 'code',
-      scope: 'read',
+      scope: narrowing.requested ?? 'read',
       code_challenge: createHash('sha256').update(verifier).digest('base64url'),
       code_challenge_method: 'S256',
       resource,
@@ -701,6 +713,8 @@ describe('durable OAuth on the configured SQLite/PostgreSQL executor', () => {
       foreign,
       tenant,
       membership,
+      role,
+      permission,
       sessions,
       sessionId,
       foreignSession,
@@ -927,5 +941,291 @@ describe('durable OAuth on the configured SQLite/PostgreSQL executor', () => {
     expect((await handlers.consent(event(url.origin))).status).toBe(303);
     await f.sessions.destroySession(f.sessionId);
     expect((await handlers.consent(event(url.origin))).status).toBe(403);
+  });
+
+  describe('consent narrows to the scopes the user holds (#5110)', () => {
+    // The fixture user holds catalog.read only.
+    const mapping = {
+      read: ['catalog.read'],
+      write: ['catalog.write'],
+      open: [],
+    };
+    const exchange = async (
+      f: Awaited<ReturnType<typeof fixture>>,
+      approved: { redirectUri: string },
+    ) =>
+      f.server.token(
+        new URLSearchParams({
+          grant_type: 'authorization_code',
+          code: new URL(approved.redirectUri).searchParams.get(
+            'code',
+          ) as string,
+          client_id: f.clientId,
+          redirect_uri: redirectUri,
+          code_verifier: 'a'.repeat(43),
+          resource,
+        }),
+      );
+
+    it('issues the held subset: stored grant, token response and access token', async () => {
+      const f = await fixture({
+        scopePermissions: mapping,
+        requested: 'read write',
+      });
+      const tokens = await exchange(
+        f,
+        await f.authorization.approve(f.server, f.request, f.sessionId),
+      );
+      expect(tokens.scope).toBe('read');
+      const payload = await f.server.verifyAccessToken(
+        tokens.access_token,
+        resource,
+      );
+      expect(payload.scope).toBe('read');
+      expect(
+        (await f.authorization.listGrants(f.sessionId)).map(
+          (grant) => grant.scopes,
+        ),
+      ).toEqual([['read']]);
+      expect(await f.authorization.validateAccessTokenClaims(payload)).not.toBe(
+        null,
+      );
+      // The narrowed grant never covers what it was narrowed away from.
+      expect(
+        await f.authorization.validateAccessTokenClaims({
+          ...payload,
+          scope: 'read write',
+        }),
+      ).toBeNull();
+      const [grant] = await f.authorization.listGrants(f.sessionId);
+      await f.authorization.revokeGrant(f.sessionId, grant.id);
+      expect(
+        await f.authorization.validateAccessTokenClaims(payload),
+      ).toBeNull();
+    });
+
+    it('grants everything requested to a user who holds every permission, unmapped scopes never', async () => {
+      const f = await fixture({
+        scopePermissions: mapping,
+        requested: 'read open',
+      });
+      const tokens = await exchange(
+        f,
+        await f.authorization.approve(f.server, f.request, f.sessionId),
+      );
+      expect(tokens.scope).toBe('read open');
+      expect(f.request.scopes).toEqual(['read', 'open']);
+    });
+
+    it('refuses with access_denied when nothing requested is held', async () => {
+      const f = await fixture({
+        scopePermissions: mapping,
+        requested: 'write',
+      });
+      await expect(
+        f.authorization.approve(f.server, f.request, f.sessionId),
+      ).rejects.toMatchObject({ error: 'access_denied', status: 403 });
+      expect(await f.authorization.listGrants(f.sessionId)).toEqual([]);
+    });
+
+    it('can be set to refuse any unheld scope instead of narrowing', async () => {
+      const strict = await fixture({
+        scopePermissions: mapping,
+        requested: 'read write',
+        refuseUnheldScopes: true,
+      });
+      await expect(
+        strict.authorization.approve(
+          strict.server,
+          strict.request,
+          strict.sessionId,
+        ),
+      ).rejects.toMatchObject({ error: 'access_denied' });
+      const held = await fixture({
+        scopePermissions: mapping,
+        requested: 'read',
+        refuseUnheldScopes: true,
+      });
+      expect(
+        (
+          await exchange(
+            held,
+            await held.authorization.approve(
+              held.server,
+              held.request,
+              held.sessionId,
+            ),
+          )
+        ).scope,
+      ).toBe('read');
+    });
+
+    it('shows the narrowed set on the consent data and refuses an empty one', async () => {
+      const f = await fixture({
+        scopePermissions: mapping,
+        requested: 'read write',
+      });
+      const handlers = createOAuthHandlers({
+        server: f.server,
+        authorization: f.authorization,
+        getSessionId: () => f.sessionId,
+      });
+      const url = new URL(
+        `https://service.example/oauth/authorize?${f.params}`,
+      );
+      const shown = await (
+        await handlers.authorize({ url, request: new Request(url) })
+      ).json();
+      expect(shown.scopes).toEqual(['read']);
+      expect(shown.requestedScopes).toEqual(['read', 'write']);
+
+      const none = new URLSearchParams(f.params);
+      none.set('scope', 'write');
+      const noneUrl = new URL(
+        `https://service.example/oauth/authorize?${none}`,
+      );
+      const refused = await handlers.authorize({
+        url: noneUrl,
+        request: new Request(noneUrl),
+      });
+      expect(refused.status).toBe(403);
+      expect((await refused.json()).error).toBe('access_denied');
+
+      const full = new URLSearchParams(f.params);
+      full.set('scope', 'read open');
+      const fullUrl = new URL(
+        `https://service.example/oauth/authorize?${full}`,
+      );
+      const all = await (
+        await handlers.authorize({
+          url: fullUrl,
+          request: new Request(fullUrl),
+        })
+      ).json();
+      expect(all.scopes).toEqual(['read', 'open']);
+      expect(all.requestedScopes).toBeUndefined();
+    });
+
+    it('refuses a refresh once the role loses the permission, never widening or clamping up', async () => {
+      const f = await fixture({
+        scopePermissions: mapping,
+        requested: 'read write',
+      });
+      const tokens = await exchange(
+        f,
+        await f.authorization.approve(f.server, f.request, f.sessionId),
+      );
+      expect(tokens.scope).toBe('read');
+      await (
+        await RolePermissionCollection.create({ db: isolated.baseDb })
+      ).removePermission(f.role.id as string, f.permission.id as string);
+      await expect(
+        f.server.token(
+          new URLSearchParams({
+            grant_type: 'refresh_token',
+            refresh_token: tokens.refresh_token as string,
+            client_id: f.clientId,
+            resource,
+          }),
+        ),
+      ).rejects.toThrow();
+      const payload = await f.server.verifyAccessToken(
+        tokens.access_token,
+        resource,
+      );
+      expect(
+        await f.authorization.validateAccessTokenClaims(payload),
+      ).toBeNull();
+    });
+
+    it('drops a scope with no permission mapping (never grants it); strict mode refuses', async () => {
+      const options = {
+        scopePermissions: { read: ['catalog.read'] },
+        serverScopes: ['read', 'extra'],
+        requested: 'read extra',
+      };
+      const f = await fixture(options);
+      expect(
+        (
+          await exchange(
+            f,
+            await f.authorization.approve(f.server, f.request, f.sessionId),
+          )
+        ).scope,
+      ).toBe('read');
+      const strict = await fixture({ ...options, refuseUnheldScopes: true });
+      await expect(
+        strict.authorization.approve(
+          strict.server,
+          strict.request,
+          strict.sessionId,
+        ),
+      ).rejects.toMatchObject({ error: 'access_denied' });
+    });
+
+    it('refuses an authorization request with no scope parameter', async () => {
+      const f = await fixture({ scopePermissions: mapping });
+      const params = new URLSearchParams(f.params);
+      params.delete('scope');
+      const handlers = createOAuthHandlers({
+        server: f.server,
+        authorization: f.authorization,
+        getSessionId: () => f.sessionId,
+      });
+      const url = new URL(`https://service.example/oauth/authorize?${params}`);
+      const response = await handlers.authorize({
+        url,
+        request: new Request(url),
+      });
+      // Either the SDK rejects the request or consent grants nothing.
+      expect(response.status).toBeGreaterThanOrEqual(400);
+      expect(await f.authorization.listGrants(f.sessionId)).toEqual([]);
+      await expect(
+        f.authorization.approve(
+          f.server,
+          { ...f.request, scopes: [] },
+          f.sessionId,
+        ),
+      ).rejects.toMatchObject({ error: 'access_denied' });
+    });
+
+    it('never widens on refresh', async () => {
+      const f = await fixture({
+        scopePermissions: mapping,
+        requested: 'read write',
+      });
+      const tokens = await exchange(
+        f,
+        await f.authorization.approve(f.server, f.request, f.sessionId),
+      );
+      const refresh = (scope?: string, token = tokens.refresh_token) =>
+        f.server.token(
+          new URLSearchParams({
+            grant_type: 'refresh_token',
+            refresh_token: token as string,
+            client_id: f.clientId,
+            resource,
+            ...(scope ? { scope } : {}),
+          }),
+        );
+      await expect(refresh('read write')).rejects.toMatchObject({
+        error: 'invalid_scope',
+      });
+      // A refused widening burns that refresh token; start from a fresh grant.
+      const again = await exchange(
+        f,
+        await f.authorization.approve(f.server, f.request, f.sessionId),
+      );
+      const rotated = await refresh(undefined, again.refresh_token);
+      expect(rotated.scope).toBe('read');
+      const payload = await f.server.verifyAccessToken(
+        rotated.access_token,
+        resource,
+      );
+      expect(payload.scope).toBe('read');
+      expect(await f.authorization.validateAccessTokenClaims(payload)).not.toBe(
+        null,
+      );
+    });
   });
 });

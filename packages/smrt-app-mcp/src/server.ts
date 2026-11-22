@@ -123,6 +123,13 @@ export interface McpAppPrincipal {
   roles?: string[];
   scopes?: string[];
   /**
+   * Scopes a tool with no `toolScopes`/`requiredScopes` mapping requires of
+   * this principal. Stamped by the bearer adapter with every scope the
+   * resource advertises, so a token narrowed by consent (#5110) neither sees
+   * nor calls an unmapped tool. Absent: unmapped tools need no scope.
+   */
+  unmappedToolScopes?: readonly string[];
+  /**
    * Binding mode carried from the authentication adapter, never request
    * input: local owner tokens are `direct`; hosted access tokens default to
    * `direct-or-inherited` unless their mapping narrows it.
@@ -751,7 +758,10 @@ export function createMcpAppServer(
     }
   }
 
-  function requiredScopesFor(tool: MCPTool): readonly string[] {
+  function requiredScopesFor(
+    tool: MCPTool,
+    principal?: McpAppPrincipal | null,
+  ): readonly string[] {
     const required = new Set(
       workflowToolsByName.get(tool.name)?.requiredScopes ?? [],
     );
@@ -759,6 +769,10 @@ export function createMcpAppServer(
       if (matchesToolPattern(tool.name, pattern)) {
         for (const scope of scopes) required.add(scope);
       }
+    }
+    // Fail closed: an unmapped tool needs every scope the adapter names.
+    if (required.size === 0 && Array.isArray(principal?.unmappedToolScopes)) {
+      return [...principal.unmappedToolScopes];
     }
     return [...required];
   }
@@ -822,7 +836,7 @@ export function createMcpAppServer(
     tool: MCPTool,
     principal: McpAppPrincipal | null,
   ): Promise<boolean> {
-    const scopes = requiredScopesFor(tool);
+    const scopes = requiredScopesFor(tool, principal);
     if (scopes.length > 0) {
       const held = principal?.scopes;
       if (!Array.isArray(held) || !scopes.every((s) => held.includes(s))) {
@@ -885,6 +899,20 @@ export function createMcpAppServer(
       if (
         !passesBasePolicy(tool, principal, publicPatterns) ||
         !(await passesToolPolicy(tool, principal))
+      )
+        return undefined;
+    }
+    // Fail closed like an unmapped tool: a private resource no tool references
+    // needs every scope the adapter names (a consent-narrowed token lacks some).
+    if (
+      associated.length === 0 &&
+      !resource.public &&
+      Array.isArray(principal?.unmappedToolScopes)
+    ) {
+      const held = principal.scopes;
+      if (
+        !Array.isArray(held) ||
+        !principal.unmappedToolScopes.every((scope) => held.includes(scope))
       )
         return undefined;
     }
@@ -1138,6 +1166,10 @@ export function createMcpAppServer(
       copy.roles = Object.freeze([...principal.roles]) as string[];
     if (principal.scopes)
       copy.scopes = Object.freeze([...principal.scopes]) as string[];
+    if (principal.unmappedToolScopes)
+      copy.unmappedToolScopes = Object.freeze([
+        ...principal.unmappedToolScopes,
+      ]);
     return Object.freeze(copy);
   }
 
@@ -1498,7 +1530,7 @@ export function createMcpAppServer(
           continue;
         // Scopes are re-checked against the originating tool so a revoked or
         // narrowed credential cannot keep driving a task it can no longer start.
-        const scopes = requiredScopesFor(tool);
+        const scopes = requiredScopesFor(tool, principal);
         const held = principal.scopes;
         if (
           scopes.length > 0 &&
