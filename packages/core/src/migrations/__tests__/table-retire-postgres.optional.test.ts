@@ -67,30 +67,60 @@ function hookAfter(
   after: () => Promise<void>,
 ): DatabaseInterface & { fired: () => boolean; dropped: () => string[] } {
   const state = { fired: false, dropped: [] as string[] };
-  const wrap = (handle: DatabaseInterface): DatabaseInterface =>
-    new Proxy(handle, {
-      get(target, key, receiver) {
-        if (key === 'fired') return () => state.fired;
-        if (key === 'dropped') return () => [...state.dropped];
-        const value = Reflect.get(target, key, receiver);
-        if (typeof value !== 'function') return value;
-        if (key === 'transaction')
-          return <T>(work: (tx: DatabaseInterface) => Promise<T>) =>
-            value.call(target, (tx: DatabaseInterface) => work(wrap(tx)));
-        if (key !== 'query' && key !== 'execute') return value.bind(target);
-        return async (sql: string, ...args: unknown[]) => {
-          if (/^\s*DROP TABLE/i.test(String(sql)))
-            state.dropped.push(String(sql).trim());
-          if (key === 'execute') return value.call(target, sql, ...args);
-          const result = await value.call(target, sql, ...args);
-          if (!state.fired && matches(sql)) {
-            state.fired = true;
-            await after();
-          }
-          return result;
-        };
+  // The migration lock only locks handles whose maker claims their
+  // connection (#5435). This wrapper forwards every member to the handle it
+  // wraps, so it claims what that handle claims, for itself; and it wraps
+  // the pinned session database the lock runs the migration on.
+  const AFFINITY = Symbol.for('@happyvertical/sql/connection-affinity');
+  // (A Proxy cannot: the adapter's claim is a non-configurable property, so
+  // a proxy must report the target's claim, which names the target.)
+  const wrap = (handle: DatabaseInterface): DatabaseInterface => {
+    const target = handle as unknown as Record<string | symbol, any>;
+    const wrapper: Record<string | symbol, unknown> = {
+      ...target,
+      fired: () => state.fired,
+      dropped: () => [...state.dropped],
+      query: async (sql: string, ...args: unknown[]) => {
+        if (/^\s*DROP TABLE/i.test(String(sql)))
+          state.dropped.push(String(sql).trim());
+        const result = await target.query(sql, ...args);
+        if (!state.fired && matches(sql)) {
+          state.fired = true;
+          await after();
+        }
+        return result;
       },
-    });
+    };
+    if (typeof target.execute === 'function')
+      wrapper.execute = (sql: unknown, ...args: unknown[]) => {
+        if (/^\s*DROP TABLE/i.test(String(sql)))
+          state.dropped.push(String(sql).trim());
+        return target.execute(sql, ...args);
+      };
+    if (typeof target.transaction === 'function')
+      wrapper.transaction = <T>(work: (tx: DatabaseInterface) => Promise<T>) =>
+        target.transaction((tx: DatabaseInterface) => work(wrap(tx)));
+    if (typeof target.acquireSession === 'function')
+      wrapper.acquireSession = async () => {
+        const session = await target.acquireSession();
+        const inner = session.database?.();
+        const database = inner ? wrap(inner) : undefined;
+        return {
+          query: (sql: string, ...args: unknown[]) =>
+            session.query(sql, ...args),
+          isActive: () => session.isActive(),
+          release: () => session.release(),
+          ...(session.destroy ? { destroy: () => session.destroy() } : {}),
+          ...(database ? { database: () => database } : {}),
+        };
+      };
+    const claim = target[AFFINITY] as { kind: string } | undefined;
+    if (claim)
+      Object.defineProperty(wrapper, AFFINITY, {
+        value: Object.freeze({ kind: claim.kind, handle: wrapper }),
+      });
+    return wrapper as unknown as DatabaseInterface;
+  };
   return wrap(db) as DatabaseInterface & {
     fired: () => boolean;
     dropped: () => string[];

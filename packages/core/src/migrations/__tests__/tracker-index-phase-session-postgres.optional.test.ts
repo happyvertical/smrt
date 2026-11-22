@@ -10,6 +10,7 @@
 import { randomUUID } from 'node:crypto';
 import { type DatabaseInterface, getDatabase } from '@happyvertical/sql';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { createMigrationDefinition } from '../generator.js';
 import { MigrationTracker } from '../tracker.js';
 
 const pgUrl = process.env.SMRT_TEST_POSTGRES_URL;
@@ -18,7 +19,10 @@ const adminUrl =
   process.env.SMRT_TEST_POSTGRES_URL;
 
 const definition = (id: string, up: string[]) =>
-  ({ id, up, down: [], checksum: id }) as never;
+  createMigrationDefinition(id, up, [], {
+    packageName: '@idxphase/fixture',
+    version: '1',
+  });
 
 describe.skipIf(!pgUrl)('tracker index phase on its own session', () => {
   let admin: DatabaseInterface;
