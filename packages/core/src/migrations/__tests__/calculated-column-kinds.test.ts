@@ -541,7 +541,7 @@ describe.skipIf(process.env.SMRT_TEST_PGLITE !== '1')(
         items: schema,
       });
     };
-    const migrate = () =>
+    const migrate = (fillRequiredFromDefault?: string[]) =>
       migrateSmrtSchemas({
         db,
         packageName: '@app/a',
@@ -551,6 +551,7 @@ describe.skipIf(process.env.SMRT_TEST_PGLITE !== '1')(
         atomic: true,
         postgresSafe: false,
         useConcurrentIndexes: false,
+        fillRequiredFromDefault,
       });
     const liveChecks = async () =>
       (
@@ -644,7 +645,10 @@ describe.skipIf(process.env.SMRT_TEST_PGLITE !== '1')(
           ...fill,
         }),
       );
-      expect(await migrate()).toMatchObject({ applied: true, refused: false });
+      // A default fills existing NULLs only on request (#5455).
+      expect(
+        await migrate('backfill' in fill ? undefined : ['items.qty']),
+      ).toMatchObject({ applied: true, refused: false });
       expect(await totals()).toEqual([['a', 0]]);
       expect(await liveChecks()).toEqual([rule.name]);
       await expect(insertStrict('b', null)).rejects.toThrow();

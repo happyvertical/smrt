@@ -265,9 +265,12 @@ for (const { name, type, engine } of engines) {
       }
     });
 
-    it('always reports orphan columns; a NOT NULL orphan without a default is a blocking warning', async () => {
+    it('always reports orphan columns; a NOT NULL orphan without a default is made nullable (#5455)', async () => {
       await db.query(
         'CREATE TABLE users (id TEXT PRIMARY KEY, name TEXT, legacy_note TEXT, legacy_code TEXT NOT NULL)',
+      );
+      await db.query(
+        "INSERT INTO users (id, name, legacy_code) VALUES ('u0', 'kept', 'c0')",
       );
       const manifest = {
         users: schema('users', {
@@ -278,51 +281,43 @@ for (const { name, type, engine } of engines) {
 
       const diff = await comparer().compare(manifest);
       const orphans = diff.changes.filter((c) => c.type === 'orphan_column');
-      expect(orphans.map((c) => c.name).sort()).toEqual([
-        'legacy_code',
-        'legacy_note',
-      ]);
+      expect(orphans.map((c) => c.name)).toEqual(['legacy_note']);
 
-      const harmless = orphans.find(
-        (c) => c.name === 'legacy_note',
-      ) as SchemaChange;
+      const harmless = orphans[0] as SchemaChange;
       expect(harmless.advisory?.severity).toBe('info');
       expect(harmless.sql).toBeUndefined();
       expect(isAdvisoryOnlyChange(harmless)).toBe(true);
 
-      const blocking = orphans.find(
+      // Every ORM insert would fail on it: dropping NOT NULL keeps its
+      // values and rejects no row, so it applies without a flag.
+      const relaxed = diff.changes.find(
         (c) => c.name === 'legacy_code',
       ) as SchemaChange;
-      expect(blocking.advisory?.severity).toBe('warning');
-      expect(blocking.advisory?.message).toMatch(
-        /every ORM insert into users will fail/,
-      );
-      expect(blocking.mismatch?.actual).toMatch(/NOT NULL/);
-      expect(blocking.advisory?.suggestedSql?.join('\n')).toContain(
-        'DROP COLUMN "legacy_code"',
-      );
-
-      // Report-only: nothing executable, so the diff is "drift but no
-      // statements" — visible, never silently in sync. The blocking orphan
-      // counts as a change; an info-only orphan on its own would not.
-      expect(diff.has_changes).toBe(true);
-      expect(hasActionableChanges(diff)).toBe(false);
-      expect(getSQLFromDiff(diff)).toEqual([]);
-
-      const infoOnly = await comparer().compare({
-        users: schema('users', {
-          id: { type: 'TEXT', primaryKey: true },
-          name: { type: 'TEXT' },
-          legacy_code: { type: 'TEXT', notNull: true },
-        }),
+      expect(relaxed).toMatchObject({
+        type: 'alter_column',
+        alteration: 'drop_not_null',
       });
-      expect(infoOnly.changes.map((c) => c.type)).toEqual(['orphan_column']);
-      expect(infoOnly.has_changes).toBe(false);
+      expect(relaxed.mismatch?.actual).toMatch(/NOT NULL/);
+      expect(hasActionableChanges(diff)).toBe(true);
+      await applyStatements(db, getSQLFromDiff(diff));
+      await db.query("INSERT INTO users (id, name) VALUES ('u1', 'n')");
+      const kept = await db.query(
+        "SELECT legacy_code FROM users WHERE id = 'u0'",
+      );
+      expect(kept.rows[0]?.legacy_code).toBe('c0');
+      // Both orphans are now info-only reports: nothing left to change.
+      const settled = await comparer().compare(manifest);
+      expect(settled.changes.map((c) => c.type)).toEqual([
+        'orphan_column',
+        'orphan_column',
+      ]);
+      expect(settled.has_changes).toBe(false);
     });
 
     it('drops orphan columns only when includeDroppedColumns is set (renamed required field scenario)', async () => {
       // A `required` field renamed title → headline: the old NOT NULL column
-      // would break every insert. --drop-columns removes it.
+      // would break every insert. Without --drop-columns it is made nullable
+      // (#5455); --drop-columns removes it.
       await db.query(
         "CREATE TABLE posts (id TEXT PRIMARY KEY, title TEXT NOT NULL, headline TEXT NOT NULL DEFAULT '')",
       );
@@ -336,9 +331,10 @@ for (const { name, type, engine } of engines) {
         }),
       };
 
-      const reportOnly = await comparer().compare(manifest);
-      expect(reportOnly.changes.map((c) => c.type)).toEqual(['orphan_column']);
-      expect(reportOnly.changes[0].advisory?.severity).toBe('warning');
+      const relaxOnly = await comparer().compare(manifest);
+      expect(
+        relaxOnly.changes.map((c) => [c.type, c.name, c.alteration]),
+      ).toEqual([['alter_column', 'title', 'drop_not_null']]);
 
       const withDrop = await comparer({ includeDroppedColumns: true }).compare(
         manifest,
@@ -969,7 +965,10 @@ for (const { name, type, engine } of engines) {
           }),
         };
 
-        const diff = await comparer().compare(manifest);
+        // The NULL in status is filled from the default only on request (#5455).
+        const diff = await comparer({
+          fillRequiredFromDefault: ['items.status'],
+        }).compare(manifest);
         const executable = getSQLFromDiff(diff).filter(
           (sql) => !sql.startsWith('--'),
         );
@@ -996,29 +995,37 @@ for (const { name, type, engine } of engines) {
         expect((await comparer().compare(manifest)).changes).toEqual([]);
       });
 
-      it('an orphan NOT NULL column on SQLite points at --drop-columns (no in-place relax)', async () => {
+      it('relaxes an orphan NOT NULL column on SQLite through the table rebuild, keeping its values (#5455)', async () => {
         await db.query(
           'CREATE TABLE posts (id TEXT PRIMARY KEY, title TEXT NOT NULL)',
         );
+        await db.query("INSERT INTO posts (id, title) VALUES ('p1', 'old')");
         const manifest = {
           posts: schema('posts', { id: { type: 'TEXT', primaryKey: true } }),
         };
-        const relaxed = await comparer({ relaxColumns: true }).compare(
-          manifest,
+        const relaxed = await comparer().compare(manifest);
+        expect(
+          relaxed.changes.map((c) => [c.type, c.name, c.alteration]),
+        ).toEqual([['alter_column', 'title', 'drop_not_null']]);
+        await applyAtomically(
+          db,
+          getSQLFromDiff(relaxed).filter((sql) => !sql.startsWith('--')),
         );
-        expect(relaxed.changes).toEqual([
-          expect.objectContaining({
-            type: 'orphan_column',
-            name: 'title',
-            advisory: expect.objectContaining({ severity: 'warning' }),
-          }),
+        await db.query("INSERT INTO posts (id) VALUES ('p2')");
+        expect(
+          (await db.query('SELECT id, title FROM posts ORDER BY id')).rows,
+        ).toEqual([
+          { id: 'p1', title: 'old' },
+          { id: 'p2', title: null },
         ]);
-        expect(relaxed.changes[0].advisory?.message).toMatch(/--drop-columns/);
+        const after = await comparer().compare(manifest);
+        expect(after.changes.map((c) => c.type)).toEqual(['orphan_column']);
+        expect(after.changes[0].advisory?.severity).toBe('info');
       });
     }
 
     if (engine === 'duckdb') {
-      it('repairs nullability drift with a backfill + SET NOT NULL when the manifest has a default', async () => {
+      it('fills NULLs from the default and enforces NOT NULL only when asked to (#5455)', async () => {
         await db.query('CREATE TABLE items (id TEXT PRIMARY KEY, status TEXT)');
         await db.query(
           "INSERT INTO items (id, status) VALUES ('i1', NULL), ('i2', 'live')",
@@ -1030,7 +1037,15 @@ for (const { name, type, engine } of engines) {
           }),
         };
 
-        const diff = await comparer().compare(manifest);
+        const stopped = await comparer().compare(manifest);
+        expect(
+          stopped.changes.find((c) => c.alteration === 'set_not_null')
+            ?.kindHint,
+        ).toBe('column.required-nulls');
+
+        const diff = await comparer({
+          fillRequiredFromDefault: ['items.status'],
+        }).compare(manifest);
         expect(
           diff.changes.map((c) => `${c.type}:${c.alteration}`).sort(),
         ).toEqual(['alter_column:set_default', 'alter_column:set_not_null']);
@@ -1125,7 +1140,7 @@ for (const { name, type, engine } of engines) {
         expect((await comparer().compare(manifest)).changes).toEqual([]);
       });
 
-      it('relaxes an orphan NOT NULL column with relaxColumns so inserts keep working (rename-required-field scenario)', async () => {
+      it('relaxes an orphan NOT NULL column so inserts keep working (rename-required-field scenario, #5455)', async () => {
         await db.query(
           'CREATE TABLE posts (id TEXT PRIMARY KEY, title TEXT NOT NULL)',
         );
@@ -1137,18 +1152,9 @@ for (const { name, type, engine } of engines) {
           }),
         };
 
-        // Without the flag: the new column is added, the orphan is a warning,
-        // and inserts through the model layer would still fail on `title`.
-        const reportOnly = await comparer().compare(manifest);
-        expect(reportOnly.changes.map((c) => c.type)).toEqual([
-          'add_column',
-          'orphan_column',
-        ]);
-        expect(reportOnly.changes[1].advisory?.severity).toBe('warning');
-
-        const relaxed = await comparer({ relaxColumns: true }).compare(
-          manifest,
-        );
+        // No flag needed: inserts through the model layer would fail on
+        // `title`, and dropping its NOT NULL keeps its values.
+        const relaxed = await comparer().compare(manifest);
         expect(
           relaxed.changes.map((c) => `${c.type}:${c.alteration ?? ''}`),
         ).toEqual(['add_column:', 'alter_column:drop_not_null']);
@@ -1263,7 +1269,7 @@ describe('SchemaComparer PostgreSQL SQL shape for #2369 (mocked adapter)', () =>
     expect(diff.changes).toEqual([]);
   });
 
-  it('emits backfill + SET NOT NULL, SET DEFAULT with a jsonb cast, and DROP NOT NULL / DROP DEFAULT only when relaxing', async () => {
+  it('emits SET NOT NULL, SET DEFAULT with a jsonb cast, and DROP NOT NULL / DROP DEFAULT only when relaxing', async () => {
     const columns = {
       id: { type: 'text', notNull: true, primaryKey: true },
       status: { type: 'text', notNull: false, defaultValue: null },
@@ -1279,10 +1285,10 @@ describe('SchemaComparer PostgreSQL SQL shape for #2369 (mocked adapter)', () =>
       }),
     };
 
+    // No live NULLs (the probe finds none), so nothing is filled (#5455).
     const reportOnly = await pgComparer(columns).compare(manifest);
     expect(getSQLFromDiff(reportOnly)).toEqual([
       `ALTER TABLE "items" ALTER COLUMN "status" SET DEFAULT 'draft'`,
-      `UPDATE "items" SET "status" = 'draft' WHERE "status" IS NULL`,
       `ALTER TABLE "items" ALTER COLUMN "status" SET NOT NULL`,
       `ALTER TABLE "items" ALTER COLUMN "meta" SET DEFAULT '{}'::jsonb`,
       `ALTER TABLE "items" ALTER COLUMN "note" DROP NOT NULL`,

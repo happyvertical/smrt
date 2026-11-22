@@ -620,15 +620,11 @@ export async function planSqliteTableRebuildsWithConstraints(
       setDefaults.set(name, declared);
       continue;
     }
-    // set_not_null: rows holding NULL take the declared default, as on
-    // PostgreSQL; the differ has already stopped a column with NULLs and no
-    // default to fill them with.
-    tightenColumns.set(
-      name,
-      declared === undefined
-        ? quoteIdentifier(name)
-        : `COALESCE(${quoteIdentifier(name)}, ${declared})`,
-    );
+    // set_not_null: copied as is. The differ plans it only for a column it
+    // found without NULLs (a fill comes through `backfills` above, #5455), so
+    // a NULL written since fails the copy instead of taking a value nobody
+    // chose.
+    tightenColumns.set(name, quoteIdentifier(name));
   }
   const knownColumns = new Set(
     [...context.columns, ...appendColumns.map((column) => column.name)].map(

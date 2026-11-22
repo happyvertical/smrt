@@ -1610,7 +1610,7 @@ describe('smrt app local-profile commands on Windows (smrt#4837)', () => {
     const fixture = makeFixture();
     expect(await fixture.run(['migrate', '--bogus'], onWindows)).toBe(1);
     expect(fixture.stderrJson().message).toBe(
-      'Usage: smrt app migrate [--relax-columns]',
+      'Usage: smrt app migrate [--relax-columns] [--fill-required <table>.<column>]...',
     );
   });
 });
@@ -1911,6 +1911,31 @@ describe('smrt app migrate', () => {
     ]);
     expectNoLocks(fixture);
     expect(await fixture.run(['migrate', '--unknown'])).toBe(1);
+    expect(fixture.calls.smrt).toHaveLength(1);
+  });
+
+  it('forwards --fill-required, the remedy the required-NULLs stop names (#5455)', async () => {
+    const fixture = makeFixture();
+    expect(
+      await fixture.run([
+        'migrate',
+        '--fill-required',
+        'profiles.email',
+        '--fill-required=profiles.score',
+        '--relax-columns',
+      ]),
+    ).toBe(0);
+    expect(fixture.calls.smrt[0].args).toEqual([
+      'db:migrate',
+      '--fill-required',
+      'profiles.email',
+      '--fill-required=profiles.score',
+      '--relax-columns',
+    ]);
+    expectNoLocks(fixture);
+    // A missing or malformed target is a usage error; nothing runs.
+    expect(await fixture.run(['migrate', '--fill-required'])).toBe(1);
+    expect(await fixture.run(['migrate', '--fill-required', 'email'])).toBe(1);
     expect(fixture.calls.smrt).toHaveLength(1);
   });
 

@@ -739,7 +739,7 @@ describe.each([
     return result;
   }
 
-  it('reports orphan columns, NOT NULL orphans, unique indexes, stale defaults and unrequested relaxations', async () => {
+  it('reports orphan columns, unique indexes and stale defaults, and relaxes a NOT NULL orphan (#5455)', async () => {
     await db.query(
       "CREATE TABLE items (id TEXT PRIMARY KEY, value TEXT DEFAULT 'old', relaxed TEXT NOT NULL, legacy TEXT, legacy_required TEXT NOT NULL, email TEXT UNIQUE)",
     );
@@ -756,11 +756,17 @@ describe.each([
     expect(kinds).toEqual(
       expect.arrayContaining([
         'column.orphan',
-        'column.orphan-not-null',
         'index.orphan',
         'column.relaxation-report',
       ]),
     );
+    expect(kinds).not.toContain('column.orphan-not-null');
+    // On SQLite the one table rebuild that relaxes `relaxed` covers it too.
+    expect(
+      result.changes
+        .filter((change) => change.name === 'legacy_required')
+        .map((change) => [change.type, change.alteration]),
+    ).toEqual([['alter_column', 'drop_not_null']]);
     expect(collectUnactionableChanges(result, engine)).toEqual([]);
   });
 

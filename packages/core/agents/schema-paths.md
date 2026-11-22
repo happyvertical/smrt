@@ -1034,8 +1034,9 @@ classifies as no-ops.
 
 Removing an ordinary inline `NOT NULL` clause from a manifest-nullable column
 applies by default on SQLite, as on PostgreSQL (#4937); it used to need
-`relaxColumns: true` / `smrt db:migrate --relax-columns`. The flag still
-controls a stale default and an orphan `NOT NULL` column. The local application
+`relaxColumns: true` / `smrt db:migrate --relax-columns`. So does dropping
+NOT NULL from an orphan column without a default (#5455). The flag still
+controls a stale default. The local application
 entry point forwards `smrt app migrate --relax-columns` under its existing
 operation lock and refuses a live application writer.
 
@@ -1080,11 +1081,18 @@ and always reports what it will not touch:
 
 - **Strengthening** (`SET NOT NULL`, `SET DEFAULT`) is executable on all three
   engines (SQLite by table rebuild, DuckDB by rebuild or index wrap, #4937).
-  `SET NOT NULL` is preceded by an `UPDATE … WHERE c IS NULL`
-  backfill of the manifest default (a DuckDB rebuild copies with `COALESCE`
-  instead, because DuckDB refuses an `ALTER` after an `UPDATE`); without a default the live data is probed
-  and, if NULLs exist, the change is reported (comment SQL + `advisory`) instead
-  of emitting an ALTER that would abort the atomic batch.
+  Before `SET NOT NULL` the live data is probed. Existing NULLs are filled only
+  from an explicit backfill (#5455, data-shape rule 5): the field's per-row
+  `backfill`, or its declared default when the caller names the column in
+  `fillRequiredFromDefault` (`smrt db:migrate --fill-required <table>.<column>`,
+  repeatable; an entry that fills nothing is a notice). Either is planned as a
+  backfill (PostgreSQL/DuckDB `UPDATE … WHERE c IS NULL` or a DuckDB rebuild
+  `COALESCE`, SQLite rebuild `COALESCE(c, (backfill))`) and probed like one.
+  A declared default alone is what new rows get, not evidence of what old
+  rows held: with NULLs and no backfill the change is the
+  `column.required-nulls` stop on every engine, naming both remedies. Without
+  NULLs `SET NOT NULL` (SQLite: a rebuild that copies the column as is, so a
+  NULL written after the probe fails the copy) applies.
 - **Relaxing.** On every engine the migrator drops `NOT NULL` from a column the
   manifest declares nullable by default, with no flag and no opt-out (#4897,
   #4937). It
@@ -1097,15 +1105,23 @@ and always reports what it will not touch:
   `Altered column <table>.<column> (drop_not_null)`, and `migrateSmrtSchemas` /
   `getPendingSchemaStatements` return it in `relaxedColumns` (the former also
   logs one `Relaxed <table>.<column>` line each). This covers nullability only.
-  `DROP DEFAULT` and orphan `DROP NOT NULL` remain report-only advisories until
-  the caller passes `relaxColumns` (`db:migrate --relax-columns`); any other
-  kind of drift is never changed silently.
+  `DROP DEFAULT` remains a report-only advisory until the caller passes
+  `relaxColumns` (`db:migrate --relax-columns`); any other kind of drift is
+  never changed silently.
 - **Orphans** — DB columns absent from the manifest, DB tables no manifest
   declares (`SchemaDiff.orphan_tables`), and unclaimed `*_key` unique constraint
-  indexes — are always reported. A NOT NULL orphan without a default is a
-  `warning` advisory (every ORM insert fails on it); `includeDroppedColumns`
-  (`--drop-columns`) drops it, `relaxColumns` relaxes it. Advisory-only changes
-  carry no SQL, never reach the tracker, and do not fail `db:migrate`.
+  indexes — are always reported. A NOT NULL orphan without a default (a removed
+  required field; `DEFAULT NULL` counts as none) would fail every ORM insert, so
+  migrate drops its NOT NULL by default on every engine, the same relaxation as
+  a manifest-nullable column (#5455): in place on PostgreSQL and DuckDB, through
+  the #4413 rebuild on SQLite (an AUTOINCREMENT table stops there with
+  `column.rebuild-unavailable`). Its values stay; it is listed in
+  `relaxedColumns`, also when one SQLite rebuild relaxes several columns.
+  `includeDroppedColumns` (`--drop-columns`) drops the column instead. A
+  column the database fills (a PostgreSQL identity column, a generated
+  column) blocks no insert and is only reported (`info`); a primary-key column
+  cannot lose NOT NULL and stays the warning report `column.orphan-not-null`. Advisory-only changes carry no SQL, never reach the tracker, and do
+  not fail `db:migrate`.
 - **ADD COLUMN** is planned per engine: DuckDB rejects every inline constraint
   (add with `DEFAULT`, then `SET NOT NULL`, `CREATE UNIQUE INDEX`); SQLite
   rejects inline `UNIQUE` (separate `CREATE UNIQUE INDEX <table>_<col>_key`, the
@@ -1137,9 +1153,10 @@ and always reports what it will not touch:
   `SET NOT NULL` is bracketed by `DROP INDEX`/recreate from `duckdb_indexes().sql`.
 - **SQLite** has no `ALTER COLUMN`: a nullability or default alteration is a
   table rebuild (#4937, see "The three engines apply the same kinds"). A NOT NULL
-  tightening with a declared `backfill` is performed by the same rebuild
-  (`COALESCE(col, backfill)` in the copy), which also consumes `type_upgrade`
-  placeholders.
+  tightening with a declared `backfill` (or a `fillRequiredFromDefault` fill)
+  is performed by the same rebuild (`COALESCE(col, backfill)` in the copy),
+  which also consumes `type_upgrade` placeholders; a tightening without one
+  copies the column as is.
 - Defaults compare through `canonicalizeDefault()`, which folds engine
   renderings (`'x'::text`, `CAST('t' AS BOOLEAN)`, `CURRENT_TIMESTAMP` vs
   `now()`) by manifest type; an unclassifiable rendering skips the comparison

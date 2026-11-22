@@ -130,16 +130,20 @@ describe('#4937 DuckDB change kinds apply when ALTER cannot', () => {
     await db.query(
       "INSERT INTO items VALUES ('a', NULL, NULL), ('b', 'keep', 'keep')",
     );
-    await migrate({
-      items: table(
-        'items',
-        {
-          v: { type: 'TEXT', notNull: true, defaultValue: 'filled' },
-          w: { type: 'TEXT', notNull: true, backfill: "'row:' || id" },
-        },
-        { indexes: [{ name: 'items_w_idx', columns: ['w'] }] },
-      ),
-    });
+    // v's NULL is filled from its default on request (#5455).
+    await migrate(
+      {
+        items: table(
+          'items',
+          {
+            v: { type: 'TEXT', notNull: true, defaultValue: 'filled' },
+            w: { type: 'TEXT', notNull: true, backfill: "'row:' || id" },
+          },
+          { indexes: [{ name: 'items_w_idx', columns: ['w'] }] },
+        ),
+      },
+      { fillRequiredFromDefault: ['items.v'] },
+    );
     expect(
       (await db.query('SELECT id, v, w FROM items ORDER BY id')).rows,
     ).toEqual([
@@ -414,16 +418,19 @@ describe('#4937 DuckDB change kinds apply when ALTER cannot', () => {
     // Filling NULLs needs an UPDATE, and DuckDB then refuses the ALTER, so the
     // table must be rebuilt. DuckDB cannot copy rows into a table whose key
     // points at itself in one statement, so this stays a stop.
-    const diff = await plan({
-      items: table(
-        'items',
-        {
-          parent_id: { type: 'TEXT' },
-          v: { type: 'TEXT', notNull: true, defaultValue: 'd' },
-        },
-        selfKey,
-      ),
-    });
+    const diff = await plan(
+      {
+        items: table(
+          'items',
+          {
+            parent_id: { type: 'TEXT' },
+            v: { type: 'TEXT', notNull: true, defaultValue: 'd' },
+          },
+          selfKey,
+        ),
+      },
+      { fillRequiredFromDefault: ['items.v'] },
+    );
     const change = diff.changes.find(
       (item) => item.alteration === 'set_not_null',
     );

@@ -287,12 +287,16 @@ T2) live in app-runtime's `src/operator-primitives.test.ts`.
 
 `smrt app migrate --relax-columns` explicitly forwards constraint relaxation to
 `db:migrate` under the same operation lock and writer-lease refusal. Without the
-flag, a stale default and an orphan NOT NULL column stay as they are; `DROP NOT
-NULL` of a manifest-nullable column applies by default on every engine (#4897,
-#4937, happyvertical/smrt#4920). SQLite does it with the tracker-owned atomic
+flag, a stale default stays as it is; `DROP NOT NULL` of a manifest-nullable
+column, and of a NOT NULL column without a default that no field declares,
+applies by default on every engine (#4897, #4937, #5455,
+happyvertical/smrt#4920). SQLite does it with the tracker-owned atomic
 rebuild; see the core schema-paths contract for unsupported shapes and FK
-validation. Unknown migrate options fail
-before touching local custody or starting the child command.
+validation. `--fill-required <table>.<column>` (repeatable, also
+`--fill-required=<table>.<column>`) is forwarded the same way: it is the
+remedy the `column.required-nulls` stop names (#5455). Unknown or malformed
+migrate options fail before touching local custody or starting the child
+command.
 
 Production persistence and task/schedule worker starts require the last migrate
 fingerprint to match the build's stamp. The stamp is bundled with the app's

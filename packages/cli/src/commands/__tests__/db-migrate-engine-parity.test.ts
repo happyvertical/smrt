@@ -143,7 +143,21 @@ const SCENARIOS: Scenario[] = [
     },
   },
   {
-    name: 'enforces NOT NULL after filling NULLs from the default',
+    name: 'stops at NULLs a default alone would fill (#5455)',
+    setup: [
+      'CREATE TABLE items (id TEXT PRIMARY KEY, v TEXT)',
+      "INSERT INTO items VALUES ('a', NULL), ('b', 'kept')",
+    ],
+    schemas: {
+      items: table('items', {
+        v: { type: 'TEXT', notNull: true, defaultValue: 'filled' },
+      }),
+    },
+    outcome: 'refused',
+    stopKind: 'column.required-nulls',
+  },
+  {
+    name: 'enforces NOT NULL after filling NULLs from the default on request',
     setup: [
       'CREATE TABLE items (id TEXT PRIMARY KEY, v TEXT)',
       'CREATE INDEX items_v_idx ON items (v)',
@@ -159,6 +173,7 @@ const SCENARIOS: Scenario[] = [
       ),
       child: child(),
     },
+    options: { fillRequiredFromDefault: ['items.v'] },
     outcome: 'applied',
     verify: async (db) => {
       expect(

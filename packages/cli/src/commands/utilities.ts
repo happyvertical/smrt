@@ -32,6 +32,7 @@ import {
   type MigrationDefinition,
   type MigrationResult,
   rowSecurityFailure,
+  unusedRequiredFills,
   unusedRetireConfirmations,
 } from '@happyvertical/smrt-core/migrations';
 import { renderForeignKeyAddStatements } from '@happyvertical/smrt-core/schema';
@@ -370,6 +371,7 @@ interface DbMigrateOptions {
   'confirm-removed-package'?: string | readonly string[];
   'confirm-recompute'?: string | readonly string[];
   'confirm-retire-table'?: string | readonly string[];
+  'fill-required'?: string | readonly string[];
   'repair-data'?: boolean;
   'upgrade-sti'?: boolean;
   'drop-indexes'?: boolean;
@@ -1777,6 +1779,12 @@ export default testManifest;
           'Make one ordinary column calculated although stored values differ from the expression, as <table>.<column>: the stored values are replaced by the calculated ones, and the run records it. Without it the conversion applies only when no stored value changes, and stops otherwise, naming the count and example rows. Repeat for each column.',
         multiple: true,
       },
+      'fill-required': {
+        type: 'string',
+        description:
+          "Fill the NULLs of one column becoming required with its field's declared default, as <table>.<column>, then enforce NOT NULL. Without it (or a backfill declared on the field) NULLs in such a column stop the migrate. Repeat for each column.",
+        multiple: true,
+      },
       'confirm-retire-table': {
         type: 'string',
         description:
@@ -1821,7 +1829,7 @@ export default testManifest;
       'relax-columns': {
         type: 'boolean',
         description:
-          'Apply constraint relaxations the manifest implies: DROP DEFAULT on live columns stricter than the manifest, and DROP NOT NULL on orphan NOT NULL columns. Off by default, except that every engine always drops NOT NULL from a column the manifest declares nullable; every relaxation is reported.',
+          'Apply DROP DEFAULT on live columns stricter than the manifest. Off by default. Every engine always drops NOT NULL from a column the manifest declares nullable and from a NOT NULL column without a default that no field declares; every relaxation is reported.',
         default: false,
       },
       'apply-unblocked': {
@@ -2131,6 +2139,13 @@ export default testManifest;
             : Array.isArray(recomputeOption)
               ? [...recomputeOption]
               : [];
+        const fillOption = options['fill-required'];
+        const fillRequired =
+          typeof fillOption === 'string'
+            ? [fillOption]
+            : Array.isArray(fillOption)
+              ? [...fillOption]
+              : [];
         const retireOption = options['confirm-retire-table'];
         const confirmRetireTables =
           typeof retireOption === 'string'
@@ -2140,6 +2155,7 @@ export default testManifest;
               : [];
         const comparer = new SchemaComparer(db, {
           confirmRecompute,
+          fillRequiredFromDefault: fillRequired,
           includeDroppedIndexes: Boolean(options['drop-indexes']),
           includeDroppedColumns: Boolean(options['drop-columns']),
           dropLegacyNaturalKey: Boolean(options['drop-legacy-natural-key']),
@@ -2363,6 +2379,12 @@ export default testManifest;
           confirmRetireTables,
           diff.changes,
           '--confirm-retire-table',
+        ))
+          console.log(notice);
+        for (const notice of unusedRequiredFills(
+          fillRequired,
+          diff.changes,
+          '--fill-required',
         ))
           console.log(notice);
         for (const id of confirmRecompute) {

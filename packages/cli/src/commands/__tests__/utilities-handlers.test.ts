@@ -255,6 +255,7 @@ vi.mock('@happyvertical/smrt-core/migrations', async () => {
     },
     parsePostgresTimeoutMs: actual.parsePostgresTimeoutMs,
     unusedRetireConfirmations: actual.unusedRetireConfirmations,
+    unusedRequiredFills: actual.unusedRequiredFills,
     assertMigrationSeesEveryRow: actual.assertMigrationSeesEveryRow,
     assertTablesReadable: (db: unknown, tables: unknown, engine: unknown) =>
       h.assertTablesReadable(db, tables, engine),

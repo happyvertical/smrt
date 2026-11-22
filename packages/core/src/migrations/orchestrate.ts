@@ -25,6 +25,7 @@ import {
   getSQLFromChanges,
   hasActionableChanges,
   isAdvisoryOnlyChange,
+  REQUIRED_FILL_FROM_DEFAULT_NOTE,
   resolveMigrationEngine,
 } from './differ.js';
 import {
@@ -81,7 +82,17 @@ export function collectRelaxedColumns(
       continue;
     }
     const statements = change.sqlStatements ?? (change.sql ? [change.sql] : []);
-    if (statements.every((statement) => statement.trim().startsWith('--'))) {
+    // A SQLite column relaxed by the one rebuild a sibling change carries is
+    // comment-only here, but relaxed all the same.
+    const coveredByRebuild = statements.some((statement) =>
+      /^-- SQLite: .* is rebuilt with .* in one table rebuild \(no change needed\)$/.test(
+        statement.trim(),
+      ),
+    );
+    if (
+      !coveredByRebuild &&
+      statements.every((statement) => statement.trim().startsWith('--'))
+    ) {
       continue;
     }
     relaxed.push({
@@ -169,6 +180,14 @@ export interface MigrateSmrtSchemasOptions {
    * ordinary column becomes calculated only while no stored value would change.
    */
   confirmRecompute?: string[];
+  /**
+   * `table.column` of each column becoming required whose existing NULLs
+   * should be filled with the field's declared default
+   * (`smrt db:migrate --fill-required`, #5455). Without it, or a per-row
+   * `backfill` declared on the field, live NULLs stop the run with
+   * `column.required-nulls`.
+   */
+  fillRequiredFromDefault?: string[];
   /**
    * Retire these declared tables although the live table is not the one any
    * release their declaration lists describes (#5005): exact table names, no
@@ -303,6 +322,8 @@ export async function getPendingSchemaStatements(
     relaxColumns?: boolean;
     /** See {@link MigrateSmrtSchemasOptions.confirmRecompute}. */
     confirmRecompute?: readonly string[];
+    /** See {@link MigrateSmrtSchemasOptions.fillRequiredFromDefault}. */
+    fillRequiredFromDefault?: readonly string[];
     tables?: Iterable<string>;
     /**
      * See `MigrateSmrtSchemasOptions.confirmRetireTables`, and its hazard:
@@ -325,6 +346,7 @@ export async function getPendingSchemaStatements(
     emptyTextAsNull: options.emptyTextAsNull,
     relaxColumns: options.relaxColumns,
     confirmRecompute: options.confirmRecompute,
+    fillRequiredFromDefault: options.fillRequiredFromDefault,
     // Declared retirements (#5005), in a whole-schema run only. A run limited
     // to tables neither plans nor reports them: retiring waits for the next
     // whole-schema migrate, which the build stamp forces before production
@@ -447,6 +469,37 @@ export function unusedRetireConfirmations(
 }
 
 /**
+ * A notice for each `table.column` asked to be filled from its default that
+ * fills nothing: no column of that name becomes required with NULLs to fill
+ * from a declared default (#5455).
+ * @internal
+ */
+export function unusedRequiredFills(
+  names: readonly string[],
+  changes: readonly SchemaChange[],
+  form: 'fillRequiredFromDefault' | '--fill-required',
+): string[] {
+  const used = new Set(
+    changes
+      .filter(
+        (change) =>
+          change.type === 'alter_column' &&
+          change.alteration === 'set_not_null' &&
+          change.kindHint !== 'column.required-nulls' &&
+          // The fill this run chose; a field's own backfill wins over it.
+          (change.note ?? '').startsWith(REQUIRED_FILL_FROM_DEFAULT_NOTE),
+      )
+      .map((change) => `${change.table}.${change.name}`),
+  );
+  return [...new Set(names)]
+    .filter((name) => !used.has(name))
+    .map(
+      (name) =>
+        `Ignoring ${form} ${name}: no column of that name becomes required with NULLs to fill from a declared default (a field's own backfill, when it declares one, fills them instead).`,
+    );
+}
+
+/**
  * Apply any pending schema changes from `ObjectRegistry` to `db`.
  *
  * Returns `applied: false` (with no error) if the database is already in
@@ -484,6 +537,7 @@ export async function migrateSmrtSchemas(
     emptyTextAsNull: options.emptyTextAsNull,
     relaxColumns: options.relaxColumns,
     confirmRecompute: options.confirmRecompute,
+    fillRequiredFromDefault: options.fillRequiredFromDefault,
     tables: options.tables,
     confirmRetireTables: options.confirmRetireTables,
   });
@@ -545,6 +599,11 @@ export async function migrateSmrtSchemas(
         (id) =>
           `Ignoring --confirm-recompute ${id}: no ordinary column of that name is being made calculated.`,
       ),
+    ...unusedRequiredFills(
+      options.fillRequiredFromDefault ?? [],
+      pending.diff.changes,
+      'fillRequiredFromDefault',
+    ),
   ];
   for (const notice of notices) logger.info(notice);
   if (!proceed) {

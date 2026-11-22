@@ -193,17 +193,20 @@ describe('#4937 SQLite change kinds apply by table rebuild', () => {
     expect(getSQLFromDiff(report)).toEqual([]);
   });
 
-  it('enforces NOT NULL, filling NULLs from the default or the backfill', async () => {
+  it('enforces NOT NULL, filling NULLs from the backfill or, on request, the default (#5455)', async () => {
     await db.query('CREATE TABLE items (id TEXT PRIMARY KEY, v TEXT, w TEXT)');
     await db.query(
       "INSERT INTO items VALUES ('a', NULL, NULL), ('b', 'keep', 'keep')",
     );
-    await migrate({
-      items: table('items', {
-        v: { type: 'TEXT', notNull: true, defaultValue: 'filled' },
-        w: { type: 'TEXT', notNull: true, backfill: "'row:' || id" },
-      }),
-    });
+    await migrate(
+      {
+        items: table('items', {
+          v: { type: 'TEXT', notNull: true, defaultValue: 'filled' },
+          w: { type: 'TEXT', notNull: true, backfill: "'row:' || id" },
+        }),
+      },
+      { fillRequiredFromDefault: ['items.v'] },
+    );
     expect(
       (await db.query('SELECT id, v, w FROM items ORDER BY id')).rows,
     ).toEqual([
@@ -434,9 +437,12 @@ describe('#4937 SQLite change kinds apply by table rebuild', () => {
       ),
     });
 
+    // The NULL in v is filled from its default on request (#5455).
+    const fill = { fillRequiredFromDefault: ['items.v'] };
+
     it('when a later statement of the batch fails', async () => {
       const before = await snapshot();
-      const diff = await plan(schemas());
+      const diff = await plan(schemas(), fill);
       const results = await apply([
         ...getSQLFromDiff(diff),
         'SELECT this_is_not_valid_sql()',
@@ -447,7 +453,7 @@ describe('#4937 SQLite change kinds apply by table rebuild', () => {
 
     it('when a row stops fitting after the plan was made', async () => {
       const before = await snapshot();
-      const diff = await plan(schemas());
+      const diff = await plan(schemas(), fill);
       // A writer slips in a row with a NULL the plan did not see. The copy into
       // the new table then breaks NOT NULL, halfway through the rebuild. The
       // default of the column keeps the planned NULL fill from hiding it.
@@ -455,7 +461,7 @@ describe('#4937 SQLite change kinds apply by table rebuild', () => {
       await db.query("DELETE FROM items WHERE id = 'c'");
       const statements = getSQLFromDiff(diff).map((sql) =>
         sql.startsWith('INSERT INTO "_smrt_rebuild_items"')
-          ? sql.replace('COALESCE("v", \'filled\')', 'NULL')
+          ? sql.replace('COALESCE("v", (\'filled\'))', 'NULL')
           : sql,
       );
       expect(statements.some((sql) => sql.includes(', NULL, "w"'))).toBe(true);

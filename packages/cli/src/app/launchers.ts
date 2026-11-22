@@ -21,6 +21,34 @@ import type { DatabaseInterface } from '@happyvertical/sql';
 import { AppCommandError } from './errors.js';
 import { type AppContext, preparedStateRoot } from './runtime.js';
 
+const APP_MIGRATE_USAGE =
+  'Usage: smrt app migrate [--relax-columns] [--fill-required <table>.<column>]...';
+
+/**
+ * The options `smrt app migrate` forwards to `smrt db:migrate`:
+ * `--relax-columns` at most once, and `--fill-required <table>.<column>`
+ * (or `--fill-required=<table>.<column>`) any number of times, which the
+ * `column.required-nulls` stop names as a remedy (#5455).
+ */
+function isAppMigrateUsage(args: readonly string[]): boolean {
+  let relax = 0;
+  for (let index = 0; index < args.length; index++) {
+    const arg = args[index];
+    if (arg === '--relax-columns') {
+      relax += 1;
+      continue;
+    }
+    const target = arg.startsWith('--fill-required=')
+      ? arg.slice('--fill-required='.length)
+      : arg === '--fill-required'
+        ? args[++index]
+        : undefined;
+    if (target === undefined || !/^[^\s.-][^\s.]*\.[^\s.]+$/.test(target))
+      return false;
+  }
+  return relax <= 1;
+}
+
 /**
  * Prepare the schema explicitly: under the operation lock, refuse while a
  * local writer is live, establish local storage custody without creating
@@ -30,8 +58,8 @@ export async function prepareMigration(
   context: AppContext,
   args: readonly string[] = [],
 ): Promise<number> {
-  if (args.some((arg) => arg !== '--relax-columns') || args.length > 1) {
-    throw new AppCommandError('Usage: smrt app migrate [--relax-columns]', 2);
+  if (!isAppMigrateUsage(args)) {
+    throw new AppCommandError(APP_MIGRATE_USAGE, 2);
   }
   const runtime = await context.deps.resolveRuntime(context.sourceRoot);
   const stateRoot = preparedStateRoot(context);

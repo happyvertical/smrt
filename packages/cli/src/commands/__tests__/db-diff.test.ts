@@ -468,11 +468,10 @@ describe('db:diff (real SQLite + real SchemaComparer)', () => {
     expect(out).toContain('idx_widgets_name');
   });
 
-  it('never hides an orphan NOT NULL column behind "up to date" (#2369)', async () => {
+  it('never hides an orphan NOT NULL column behind "up to date" (#2369, #5455)', async () => {
     // Renamed required field: `title` lingers NOT NULL in the DB while the
-    // manifest only knows `headline`. Nothing is executable without a flag,
-    // but the finding must be printed — this is exactly the state where
-    // every ORM insert fails while the old differ said "in sync".
+    // manifest only knows `headline`. Every ORM insert would fail on it, so
+    // the diff shows the DROP NOT NULL db:migrate applies.
     await createTable(
       "CREATE TABLE posts (id TEXT PRIMARY KEY, title TEXT NOT NULL, headline TEXT NOT NULL DEFAULT '')",
     );
@@ -490,11 +489,11 @@ describe('db:diff (real SQLite + real SchemaComparer)', () => {
     await requireCommandHandler(dbDiffCommand)([], {});
 
     const out = output();
-    expect(out).toContain('no migrations needed (see notes below)');
-    expect(out).toContain('need an operator decision');
-    expect(out).toContain('posts.title: orphan column (TEXT NOT NULL)');
-    expect(out).toContain('--drop-columns');
-    expect(out).not.toContain('Changes Detected');
+    expect(out).toContain('Changes Detected');
+    expect(out).toContain(
+      'posts.title: TEXT NOT NULL → (not in manifest) (drop_not_null)',
+    );
+    expect(out).toContain('auto-applied by smrt db:migrate');
   });
 
   it('lists orphan-column drops when --drop-columns is set (#2369)', async () => {

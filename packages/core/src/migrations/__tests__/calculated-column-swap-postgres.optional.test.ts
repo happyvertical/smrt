@@ -153,7 +153,7 @@ describe.skipIf(!pgUrl)(
         items: schema,
       });
     };
-    const migrate = () =>
+    const migrate = (fillRequiredFromDefault?: string[]) =>
       migrateSmrtSchemas({
         db,
         packageName: '@app/a',
@@ -163,6 +163,7 @@ describe.skipIf(!pgUrl)(
         atomic: true,
         postgresSafe: false,
         useConcurrentIndexes: false,
+        fillRequiredFromDefault,
       });
     const unchanged = async () =>
       expect(await migrate()).toMatchObject({
@@ -505,7 +506,15 @@ describe.skipIf(!pgUrl)(
           { checks: [rule] },
         ),
       );
-      const result = await migrate();
+      // Without a request the default fills nothing: the NULL stops the run
+      // by name (#5455).
+      if (!('backfill' in fill))
+        expect(kinds(await migrate())).toContain(
+          'invents-data:column.required-nulls',
+        );
+      const result = await migrate(
+        'backfill' in fill ? undefined : ['items.qty'],
+      );
       expect(kinds(result)).toEqual([]);
       expect(result).toMatchObject({ applied: true, refused: false });
       expect(await rows()).toEqual([['a', 0, 0]]);

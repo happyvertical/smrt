@@ -55,7 +55,7 @@ export const APP_COMMANDS: Readonly<Record<string, string>> = Object.freeze({
   'export [--encrypted] [path]':
     'Write a logical, asset-aware export bundle (optionally as an encrypted snapshot)',
   'import <path>': 'Import a logical export bundle into an empty application',
-  'migrate [--relax-columns]':
+  'migrate [--relax-columns] [--fill-required <table>.<column>]':
     'Prepare storage custody and run smrt db:migrate under the lock',
   'token [list|revoke <id>] [--scopes ...]':
     'Local: issue, list, or revoke a scoped bearer token for a local MCP client',

@@ -115,6 +115,22 @@ a policy would filter fails the batch with the same error. Run it as a role
 with `BYPASSRLS`, or as the owner without `FORCE`; see
 `docs/content/postgres-permissions.md`.
 
+## `--fill-required` (#5455)
+
+A field that becomes required over a column holding NULLs stops with
+`column.required-nulls`: its default is what new rows get, not what old rows
+held. `--fill-required <table>.<column>` (repeatable; `fillRequiredFromDefault`
+in `migrateSmrtSchemas`) fills those NULLs with the field's declared default in
+the same batch, then enforces NOT NULL. A per-row `@field({ backfill })` does
+the same without a flag, and wins when both are given. A name that fills
+nothing (no NULLs, no default, not becoming required, or a field backfill
+fills it instead) prints `Ignoring --fill-required …`; each fill names its
+source in the change note. `smrt app migrate` forwards the flag too.
+
+A required field that is removed leaves a NOT NULL column no insert fills;
+migrate drops its NOT NULL on every engine (SQLite by table rebuild) and lists
+it with the other relaxations. `--drop-columns` drops it instead.
+
 ## `--null-orphans`
 
 This explicit data step stays available. It clears orphan foreign-key references

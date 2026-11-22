@@ -178,7 +178,7 @@ export const SCHEMA_CHANGE_KINDS = {
   'column.relaxation-report': {
     type: 'alter_column',
     engines: report(
-      'A stale default or an orphan NOT NULL has not been opted into (relaxColumns); existing values stay unchanged.',
+      'Dropping a stale default has not been opted into (relaxColumns); existing values stay unchanged.',
     ),
   },
   'column.rebuild-covered': {
@@ -393,6 +393,9 @@ export const SCHEMA_CHANGE_KINDS = {
       'The undeclared column is retained with its stored values.',
     ),
   },
+  // The differ reports this only for a primary-key column, which cannot lose
+  // NOT NULL; any other such orphan has its NOT NULL dropped instead
+  // (`column.drop-not-null`, #5455).
   'column.orphan-not-null': {
     type: 'orphan_column',
     engines: report(

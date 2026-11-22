@@ -109,7 +109,7 @@ export const dbDiffCommand: CLICommand = {
     'relax-columns': {
       type: 'boolean',
       description:
-        'Include constraint relaxations in the diff (DROP DEFAULT on live columns stricter than the manifest, DROP NOT NULL on orphan NOT NULL columns). Off by default, except that every engine always includes DROP NOT NULL for a column the manifest declares nullable; relaxations are always reported.',
+        'Include DROP DEFAULT on live columns stricter than the manifest in the diff. Off by default. Every engine always includes DROP NOT NULL for a column the manifest declares nullable and for a NOT NULL column without a default that no field declares; relaxations are always reported.',
       default: false,
     },
     'postgres-timestamp-legacy-timezone': {

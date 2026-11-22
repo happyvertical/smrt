@@ -554,9 +554,12 @@ describe('schema orchestration', () => {
     ).toEqual([]);
   });
 
-  it('reports an orphan NOT NULL column without manual drift or executable SQL (#4925)', async () => {
+  it('makes an orphan NOT NULL column nullable so inserts work, and lists it (#5455)', async () => {
     await db.query(
       'CREATE TABLE documents (id TEXT PRIMARY KEY, legacy_code TEXT NOT NULL, legacy_note TEXT);',
+    );
+    await db.query(
+      "INSERT INTO documents (id, legacy_code) VALUES ('d0', 'kept')",
     );
     vi.spyOn(ObjectRegistry, 'getAllSchemasAsDefinitions').mockReturnValue({
       documents: {
@@ -571,22 +574,33 @@ describe('schema orchestration', () => {
     });
 
     const pending = await getPendingSchemaStatements(db);
-    expect(pending.statements).toEqual([]);
-    expect(pending.hasChanges).toBe(false);
+    expect(pending.hasChanges).toBe(true);
     expect(
       pending.diff.changes
-        .map((c) => `${c.name}:${c.advisory?.severity}`)
+        .map((c) => `${c.name}:${c.alteration ?? c.advisory?.severity}`)
         .sort(),
-    ).toEqual(['legacy_code:warning', 'legacy_note:info']);
-    // Retaining the column loses or invents no data, even when inserts fail.
+    ).toEqual(['legacy_code:drop_not_null', 'legacy_note:info']);
     expect(pending.unactionableChanges).toEqual([]);
     expect(pending.hasManualDrift).toBe(false);
+    expect(pending.relaxedColumns).toEqual([
+      {
+        table: 'documents',
+        column: 'legacy_code',
+        alteration: 'drop_not_null',
+      },
+    ]);
 
     const result = await migrateSmrtSchemas({ db, packageName: 'test' });
-    expect(result.applied).toBe(false);
-    expect(result.statements).toEqual([]);
-    expect(result.unactionableChanges).toEqual([]);
-    expect(result.hasManualDrift).toBe(false);
+    expect(result).toMatchObject({ refused: false, applied: true });
+    expect(result.relaxedColumns).toEqual(pending.relaxedColumns);
+    await db.query("INSERT INTO documents (id) VALUES ('d1')");
+    expect(
+      (await db.query('SELECT id, legacy_code FROM documents ORDER BY id'))
+        .rows,
+    ).toEqual([
+      { id: 'd0', legacy_code: 'kept' },
+      { id: 'd1', legacy_code: null },
+    ]);
   });
 
   it('surfaces incompatible type_mismatch changes as unactionableChanges', async () => {

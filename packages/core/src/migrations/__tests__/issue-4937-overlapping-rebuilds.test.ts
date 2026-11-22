@@ -288,7 +288,10 @@ describe.each<Engine>([
       ['root first', ['grands', 'parents', 'children']],
       ['middle first', ['parents', 'grands', 'children']],
     ])('builds each table once in its final shape (%s)', async (_label, order) => {
-      await migrate(ordered(schemas, order));
+      // c3's NULL note is filled from the default on request (#5455).
+      await migrate(ordered(schemas, order), {
+        fillRequiredFromDefault: ['children.note'],
+      });
       expect(await rows('grands')).toEqual([{ id: 'g1', v: 1 }]);
       expect(await rows('parents')).toEqual([
         { id: 'p1', grand_id: 'g1', w: 'w:p1', added: 'a:p1' },

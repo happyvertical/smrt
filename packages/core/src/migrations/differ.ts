@@ -251,19 +251,19 @@ export interface DiffOptions {
   /**
    * Emit executable `drop_column` changes for columns that exist in the
    * database but not in the manifest. Default: false. Orphan columns are
-   * always *reported* as `orphan_column` advisories regardless — a NOT NULL
-   * orphan without a default is flagged as a warning because every ORM
-   * insert (which never supplies the column) will fail on it (#2369).
+   * always *reported* as `orphan_column` advisories regardless, except that
+   * a NOT NULL orphan without a default, which every ORM insert (never
+   * supplying the column) would fail on (#2369), is made nullable (#5455).
    */
   includeDroppedColumns?: boolean;
   /**
-   * Execute constraint relaxations instead of only reporting them:
-   * `DROP DEFAULT` on live columns that are stricter than the manifest,
-   * `DROP NOT NULL` on orphan NOT NULL columns, and (SQLite only) the
-   * table-rebuild `DROP NOT NULL`. Default: false — those are reported as
-   * advisories with the suggested SQL. On PostgreSQL, `DROP NOT NULL` on a
-   * column the manifest declares nullable is always executable (it loses no
-   * data and rejects no row) and is listed per column by the orchestrator.
+   * Execute `DROP DEFAULT` on live columns that are stricter than the
+   * manifest instead of only reporting it. Default: false — it is reported
+   * as an advisory with the suggested SQL. `DROP NOT NULL` on a column the
+   * manifest declares nullable, and on a NOT NULL column without a default
+   * that no field declares (#5455), is always executable on every engine (it
+   * loses no data and rejects no row) and is listed per column by the
+   * orchestrator.
    * Strengthening repairs (`SET NOT NULL`, `SET DEFAULT`) are always emitted
    * where the engine supports `ALTER COLUMN` (#2369).
    */
@@ -292,6 +292,14 @@ export interface DiffOptions {
    * Without it a conversion applies only while no stored value would change.
    */
   confirmRecompute?: readonly string[];
+  /**
+   * `table.column` of each column becoming required whose existing NULLs the
+   * caller wants filled with the field's declared default (#5455). Without
+   * it, or a per-row `backfill` declared on the field, live NULLs stop the
+   * migrate (`column.required-nulls`): the default is what new rows get, not
+   * proof of what old rows held.
+   */
+  fillRequiredFromDefault?: readonly string[];
   /**
    * Explicit engine hint forwarded to `detectEngine` when picking the DDL
    * strategy used for *existing-table* SQL (ALTER/CREATE INDEX/etc.). Use
@@ -4703,7 +4711,7 @@ export class SchemaComparer {
         });
         continue;
       }
-      changes.push(this.describeOrphanColumn(tableName, colName, dbCol));
+      changes.push(await this.describeOrphanColumn(tableName, colName, dbCol));
     }
 
     changes.push(
@@ -5709,15 +5717,34 @@ export class SchemaComparer {
       const quotedTable = this.quoteIdentifier(tableName);
       const quotedCol = this.quoteIdentifier(colName);
       const setNotNull = `ALTER TABLE ${quotedTable} ALTER COLUMN ${quotedCol} SET NOT NULL`;
+      // #5455: existing NULLs are filled only from an explicit backfill: the
+      // field's own `backfill`, or its declared default when the caller
+      // names the column in `fillRequiredFromDefault`. A default alone is
+      // what new rows get, not what old rows held, so NULLs then stop.
+      const fillFromDefault =
+        colDef.backfill === undefined &&
+        hasManifestDefault &&
+        manifestDefaultSql !== undefined &&
+        (this.options.fillRequiredFromDefault ?? []).includes(
+          `${tableName}.${colName}`,
+        );
+      const fillDef: ColumnDefinition = fillFromDefault
+        ? { ...colDef, backfill: manifestDefaultSql }
+        : colDef;
+      // Which value fills the NULLs, for the operator and the unused-fill
+      // notice: the field's own backfill wins over a fill request.
+      const fillNote = fillFromDefault
+        ? `${REQUIRED_FILL_FROM_DEFAULT_NOTE} (${manifestDefaultSql})`
+        : `existing NULLs filled from the field's backfill (${colDef.backfill})`;
       const backfillNeeded =
-        Boolean(colDef.backfill) &&
+        Boolean(fillDef.backfill) &&
         (await this.columnHasNulls(tableName, colName));
       const unusableBackfill =
-        backfillNeeded && colDef.backfill
+        backfillNeeded && fillDef.backfill
           ? await this.probeBackfill(
               tableName,
               colName,
-              colDef.backfill,
+              fillDef.backfill,
               true,
               this.isUniqueTarget(tableName, colName, colDef),
             )
@@ -5749,14 +5776,68 @@ export class SchemaComparer {
           type: 'alter_column',
           table: tableName,
           name: colName,
-          column: colDef,
+          column: fillDef,
           alteration: 'set_not_null',
           mismatch: { expected: 'NOT NULL', actual: 'NULL' },
+          note: fillNote,
           sql: sqliteBackfillPlaceholderSql(colName),
         });
-      } else if (!this.supportsAlterColumn()) {
+      } else if (
+        backfillNeeded &&
+        fillDef.backfill &&
+        this.supportsAlterColumn()
+      ) {
+        // #3008: fill the NULLs from the declared per-row backfill, then
+        // tighten — the recovery path for a column an older db:migrate
+        // added nullable.
         changes.push({
           ...this.buildAlterColumnChange({
+            tableName,
+            colName,
+            colDef: fillDef,
+            alteration: 'set_not_null',
+            expected: 'NOT NULL',
+            actual: 'NULL',
+            statements: await this.backfillStatements(
+              tableName,
+              colName,
+              fillDef.backfill,
+            ),
+          }),
+          note: fillNote,
+        });
+      } else if (await this.columnHasNulls(tableName, colName)) {
+        // Live NULLs and no explicit backfill: any value migrate wrote would
+        // be invented (#5455), and the engine would reject SET NOT NULL
+        // mid-batch anyway. Stop, naming the ways to supply one.
+        const fill = hasManifestDefault
+          ? `, or rerun with fillRequiredFromDefault / --fill-required ${tableName}.${colName} to fill them with the field's default (${manifestDefaultSql})`
+          : '';
+        changes.push({
+          type: 'alter_column',
+          table: tableName,
+          name: colName,
+          column: colDef,
+          alteration: 'set_not_null',
+          kindHint: 'column.required-nulls',
+          mismatch: { expected: 'NOT NULL', actual: 'NULL' },
+          sql: `-- ${tableName}.${colName} is required by the manifest but live rows hold NULL; UPDATE those rows, then migrate again`,
+          advisory: {
+            severity: 'warning',
+            message: `${tableName}.${colName} is required by the manifest but live rows hold NULL, and no backfill is given. Fill the NULLs and migrate again, declare a per-row backfill on the field (@field({ backfill }))${fill}.`,
+            suggestedSql: [
+              `UPDATE ${quotedTable} SET ${quotedCol} = <value> WHERE ${quotedCol} IS NULL`,
+              this.supportsAlterColumn()
+                ? setNotNull
+                : '-- SQLite: migrate again to enforce NOT NULL through a table rebuild',
+            ],
+          },
+        });
+      } else if (!this.supportsAlterColumn()) {
+        // No NULLs: SQLite tightens through the table rebuild (#4937), whose
+        // copy fails on a NULL written after this check.
+        changes.push(
+          this.buildAlterColumnChange({
             tableName,
             colName,
             colDef,
@@ -5765,68 +5846,7 @@ export class SchemaComparer {
             actual: 'NULL',
             statements: null,
           }),
-          ...(!hasManifestDefault &&
-          (await this.columnHasNulls(tableName, colName))
-            ? { kindHint: 'column.required-nulls' as const }
-            : {}),
-        });
-      } else if (backfillNeeded && colDef.backfill) {
-        // #3008: fill the NULLs from the declared per-row backfill, then
-        // tighten — the recovery path for a column an older db:migrate
-        // added nullable.
-        changes.push(
-          this.buildAlterColumnChange({
-            tableName,
-            colName,
-            colDef,
-            alteration: 'set_not_null',
-            expected: 'NOT NULL',
-            actual: 'NULL',
-            statements: await this.backfillStatements(
-              tableName,
-              colName,
-              colDef.backfill,
-            ),
-          }),
         );
-      } else if (hasManifestDefault && manifestDefaultSql !== undefined) {
-        // Backfill NULLs with the manifest default so the constraint can be
-        // enforced on a populated table, then tighten.
-        changes.push(
-          this.buildAlterColumnChange({
-            tableName,
-            colName,
-            colDef,
-            alteration: 'set_not_null',
-            expected: 'NOT NULL',
-            actual: 'NULL',
-            statements: [
-              `UPDATE ${quotedTable} SET ${quotedCol} = ${manifestDefaultSql} WHERE ${quotedCol} IS NULL`,
-              ...(await this.setNotNullStatements(tableName, colName)),
-            ],
-          }),
-        );
-      } else if (await this.columnHasNulls(tableName, colName)) {
-        // No default to backfill with and live NULLs exist: the engine would
-        // reject SET NOT NULL and abort the whole atomic batch. Report it
-        // with the exact remediation instead.
-        changes.push({
-          type: 'alter_column',
-          table: tableName,
-          name: colName,
-          column: colDef,
-          alteration: 'set_not_null',
-          mismatch: { expected: 'NOT NULL', actual: 'NULL' },
-          sql: `-- ${tableName}.${colName} is required by the manifest but live rows hold NULL and the column has no default to backfill; UPDATE those rows, then run: ${setNotNull}`,
-          advisory: {
-            severity: 'warning',
-            message: `${tableName}.${colName} is required by the manifest but live rows hold NULL and there is no default to backfill. Backfill the NULLs, then rerun db:migrate (or declare a default on the field).`,
-            suggestedSql: [
-              `UPDATE ${quotedTable} SET ${quotedCol} = <value> WHERE ${quotedCol} IS NULL`,
-              setNotNull,
-            ],
-          },
-        });
       } else {
         changes.push(
           this.buildAlterColumnChange({
@@ -5943,19 +5963,32 @@ export class SchemaComparer {
   }
 
   /**
-   * Describe a DB column that has no manifest counterpart. Warn when it
-   * is NOT NULL without a default: ORM inserts never supply it, so every
-   * insert fails with a not-null violation while `db:status` would otherwise
-   * say the schema is in sync (#2369).
+   * Describe a DB column that has no manifest counterpart: an `info` report,
+   * or, when it is NOT NULL without a default (ORM inserts never supply it,
+   * so every insert would fail, #2369), the `DROP NOT NULL` that keeps it
+   * insertable (#5455).
    */
-  private describeOrphanColumn(
+  private async describeOrphanColumn(
     tableName: string,
     colName: string,
     dbCol: SqlTableSchemaInfo['columns'][string],
-  ): SchemaChange {
+  ): Promise<SchemaChange> {
+    // `DEFAULT NULL` gives an insert that omits the column nothing either.
     const dbHasDefault =
-      dbCol.defaultValue !== null && dbCol.defaultValue !== undefined;
-    const blocking = dbCol.notNull === true && !dbHasDefault;
+      dbCol.defaultValue !== null &&
+      dbCol.defaultValue !== undefined &&
+      !/^\(?\s*null\s*\)?(::[\w\s]+)?$/i.test(
+        String(dbCol.defaultValue).trim(),
+      );
+    // A column the database fills itself (identity, generated) takes no
+    // value from an insert, so it blocks none.
+    const filledByDatabase =
+      dbCol.generated === true ||
+      (dbCol.notNull === true &&
+        !dbHasDefault &&
+        (await this.isIdentityColumn(tableName, colName)));
+    const blocking =
+      dbCol.notNull === true && !dbHasDefault && !filledByDatabase;
     const quotedTable = this.quoteIdentifier(tableName);
     const quotedCol = this.quoteIdentifier(colName);
     const dropSql = `ALTER TABLE ${quotedTable} DROP COLUMN ${quotedCol}`;
@@ -5979,32 +6012,79 @@ export class SchemaComparer {
       };
     }
 
-    if (this.options.relaxColumns && this.supportsAlterColumn()) {
-      // Opted-in, engine can relax in place: make it executable so inserts
-      // keep working without destroying the column's data.
+    // A primary-key column cannot lose NOT NULL on any engine; report it as
+    // before (every insert fails until it is declared again or dropped).
+    if (
+      dbCol.primaryKey === true ||
+      (await this.isSqliteKeyColumn(tableName, colName))
+    ) {
       return {
-        type: 'alter_column',
-        table: tableName,
-        name: colName,
-        alteration: 'drop_not_null',
-        mismatch: { expected: '(not in manifest)', actual: shape },
-        sql: relaxSql,
+        ...base,
+        advisory: {
+          severity: 'warning',
+          message: `${tableName}.${colName} is part of the primary key, NOT NULL without a default, and not in the manifest: every ORM insert into ${tableName} will fail. Declare the field again, or change the key by hand.`,
+          suggestedSql: [],
+        },
       };
     }
 
-    const fix = this.supportsAlterColumn()
-      ? `Pass relaxColumns / --relax-columns to drop the NOT NULL (keeps data), or includeDroppedColumns / --drop-columns to drop the column.`
-      : `SQLite cannot drop NOT NULL in place; pass includeDroppedColumns / --drop-columns to drop the column (or rebuild the table, #2370).`;
+    // #5455: no declared field writes the column, so with NOT NULL and no
+    // default every ORM insert into the table would fail. Dropping NOT NULL
+    // keeps every value and rejects no row, so it applies on every engine,
+    // like a manifest-nullable column (#4897): in place on PostgreSQL and
+    // DuckDB, through the table rebuild on SQLite (#4413).
     return {
-      ...base,
-      advisory: {
-        severity: 'warning',
-        message: `${tableName}.${colName} is NOT NULL without a default and is not in the manifest — every ORM insert into ${tableName} will fail (not-null violation). ${fix}`,
-        suggestedSql: this.supportsAlterColumn()
-          ? [relaxSql, dropSql]
-          : [dropSql],
-      },
+      type: 'alter_column',
+      table: tableName,
+      name: colName,
+      alteration: 'drop_not_null',
+      mismatch: { expected: '(not in manifest)', actual: shape },
+      sql: this.supportsAlterColumn()
+        ? relaxSql
+        : `-- SQLite: dropping NOT NULL from ${colName} requires table recreation (column not in the manifest; #2370)`,
     };
+  }
+
+  /**
+   * SQLite: is the column part of the primary key? The adapter marks only a
+   * single-column key, so a composite key's columns are read here.
+   */
+  private async isSqliteKeyColumn(
+    tableName: string,
+    colName: string,
+  ): Promise<boolean> {
+    if (this.engine !== 'sqlite') return false;
+    try {
+      const result = await this.db.query(
+        `SELECT pk FROM pragma_table_info(${this.quoteLiteral(tableName)}) WHERE name = ${this.quoteLiteral(colName)}`,
+      );
+      return Number((result.rows?.[0] as { pk?: unknown } | undefined)?.pk) > 0;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * PostgreSQL: is the live column an identity column (`GENERATED ... AS
+   * IDENTITY`)? The adapter reports one as NOT NULL with no default, yet the
+   * database fills it on every insert. False elsewhere and when the catalog
+   * cannot be read.
+   */
+  private async isIdentityColumn(
+    tableName: string,
+    colName: string,
+  ): Promise<boolean> {
+    if (this.engine !== 'postgres') return false;
+    try {
+      const result = await this.db.query(
+        `SELECT a.attidentity::text AS identity FROM pg_attribute a WHERE a.attrelid = to_regclass(${this.quoteLiteral(this.quoteIdentifier(tableName))}) AND a.attname = ${this.quoteLiteral(colName)} AND NOT a.attisdropped`,
+      );
+      const value = (result.rows?.[0] as { identity?: unknown } | undefined)
+        ?.identity;
+      return typeof value === 'string' && value.trim() !== '';
+    } catch {
+      return false;
+    }
   }
 
   /**
@@ -7750,6 +7830,14 @@ export class SchemaComparer {
 /**
  * Generate a SchemaDiff from manifest and database
  */
+/**
+ * The start of the `note` on a required-column change whose NULLs are filled
+ * with the field's declared default on request (`fillRequiredFromDefault`,
+ * #5455). The field's own `backfill` notes say so instead.
+ */
+export const REQUIRED_FILL_FROM_DEFAULT_NOTE =
+  "existing NULLs filled with the field's default (fillRequiredFromDefault)";
+
 export async function generateSchemaDiff(
   db: DatabaseInterface,
   manifestSchemas: Record<string, SchemaDefinition>,

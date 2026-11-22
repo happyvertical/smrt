@@ -150,10 +150,18 @@ postgresDescribe(
         }),
       };
 
-      const diff = await compare(manifest);
+      // The NULL in status is filled from the default only on request (#5455).
+      const stopped = await compare(manifest);
+      expect(
+        stopped.changes.find((c) => c.name === 'status' && c.kindHint)
+          ?.kindHint,
+      ).toBe('column.required-nulls');
+      const diff = await compare(manifest, {
+        fillRequiredFromDefault: [`${table}.status`],
+      });
       expect(getSQLFromDiff(diff)).toEqual([
         `ALTER TABLE "${table}" ALTER COLUMN "status" SET DEFAULT 'draft'`,
-        `UPDATE "${table}" SET "status" = 'draft' WHERE "status" IS NULL`,
+        `UPDATE "${table}" SET "status" = ('draft') WHERE "status" IS NULL`,
         `ALTER TABLE "${table}" ALTER COLUMN "status" SET NOT NULL`,
         `ALTER TABLE "${table}" ALTER COLUMN "meta" SET DEFAULT '{}'::jsonb`,
         `ALTER TABLE "${table}" ALTER COLUMN "kind" SET DEFAULT 'b'`,
@@ -399,7 +407,7 @@ postgresDescribe(
       expect(Object.keys(live?.columns ?? {})).not.toContain('claim_key');
     });
 
-    it('rename-required-field scenario: orphan NOT NULL is warned, relaxed with relaxColumns, and inserts keep working', async () => {
+    it('rename-required-field scenario: an orphan NOT NULL column is relaxed without a flag, and inserts keep working (#5455)', async () => {
       const table = T('posts');
       await create(
         `CREATE TABLE "${table}" (id TEXT PRIMARY KEY, title TEXT NOT NULL)`,
@@ -413,33 +421,23 @@ postgresDescribe(
         }),
       };
 
-      const reportOnly = await compare(manifest);
-      expect(reportOnly.changes.map((c) => c.type)).toEqual([
-        'add_column',
-        'orphan_column',
-      ]);
-      expect(reportOnly.changes[1].advisory?.severity).toBe('warning');
-      expect(reportOnly.changes[1].advisory?.suggestedSql).toEqual([
+      // No flag: an ORM insert (which never supplies `title`) would fail on
+      // it, and dropping its NOT NULL keeps the stored value.
+      const relaxed = await compare(manifest);
+      expect(
+        relaxed.changes.map((c) => `${c.type}:${c.alteration ?? ''}`),
+      ).toEqual(['add_column:', 'alter_column:drop_not_null']);
+      expect(getSQLFromDiff(relaxed)).toContain(
         `ALTER TABLE "${table}" ALTER COLUMN "title" DROP NOT NULL`,
-        `ALTER TABLE "${table}" DROP COLUMN "title"`,
-      ]);
-      // Without the flag the orphan is untouched: an ORM insert (which never
-      // supplies `title`) fails with 23502 after the add.
-      await apply(getSQLFromDiff(reportOnly));
-      // (the SDK wraps the 23502 as a generic DatabaseError — E1 in the epic —
-      // so only the rejection itself is asserted here)
-      await expect(
-        db.query(`INSERT INTO "${table}" (id, headline) VALUES ('p2', 'new')`),
-      ).rejects.toThrow();
-
-      const relaxed = await compare(manifest, { relaxColumns: true });
-      expect(getSQLFromDiff(relaxed)).toEqual([
-        `ALTER TABLE "${table}" ALTER COLUMN "title" DROP NOT NULL`,
-      ]);
+      );
       await apply(getSQLFromDiff(relaxed));
       await db.query(
         `INSERT INTO "${table}" (id, headline) VALUES ('p2', 'new')`,
       );
+      const kept = await db.query(
+        `SELECT title FROM "${table}" WHERE id = 'p1'`,
+      );
+      expect(kept.rows[0]?.title).toBe('old');
 
       const after = await compare(manifest);
       expect(after.changes.map((c) => c.type)).toEqual(['orphan_column']);

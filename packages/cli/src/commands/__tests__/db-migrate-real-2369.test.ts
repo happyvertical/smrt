@@ -105,7 +105,7 @@ describe('db:migrate (real SQLite, #2369)', () => {
     return logSpy.mock.calls.map((call) => call.join(' ')).join('\n');
   }
 
-  it('warns about a renamed required field every run and drops it only with --drop-columns', async () => {
+  it('makes a renamed required field nullable and drops it only with --drop-columns', async () => {
     await withDb(async (db) => {
       await db.query(
         'CREATE TABLE posts (id TEXT PRIMARY KEY, title TEXT NOT NULL)',
@@ -119,36 +119,30 @@ describe('db:migrate (real SQLite, #2369)', () => {
       }),
     );
 
-    // Run 1: adds `headline`, warns about `title`, does not fail.
-    // (The applied column is asserted on the live schema rather than the
-    // log line.)
+    // Run 1: adds `headline` and drops NOT NULL from `title`, which no field
+    // writes and every insert would fail on (#5455); its value stays.
     await requireCommandHandler(utilityCommands['db:migrate'])([], {});
     let out = output();
     await withDb(async (db) => {
       const cols = await db.getTableSchema?.('posts');
       expect(cols?.columns.headline).toMatchObject({ notNull: true });
+      expect(cols?.columns.title?.notNull).toBeFalsy();
     });
-    expect(out).toContain('need an operator decision');
-    expect(out).toContain('posts.title: orphan column (TEXT NOT NULL)');
-    expect(out).toContain('--drop-columns');
+    expect(out).toContain('Altered column posts.title (drop_not_null)');
     expect(process.exitCode).toBeUndefined();
 
-    // The orphan still breaks an ORM-style insert that omits it.
+    // An ORM-style insert that omits it now works.
     await withDb(async (db) => {
-      await expect(
-        db.query("INSERT INTO posts (id, headline) VALUES ('p2', 'new')"),
-      ).rejects.toThrow();
+      await db.query("INSERT INTO posts (id, headline) VALUES ('p2', 'new')");
+      const kept = await db.query("SELECT title FROM posts WHERE id = 'p1'");
+      expect(kept.rows[0]?.title).toBe('old');
+      await db.query("DELETE FROM posts WHERE id = 'p2'");
     });
 
-    // Run 2 (no flag): nothing to apply, the warning is repeated — never
-    // reported as in sync.
+    // Run 2 (no flag): nothing to apply.
     logSpy.mockClear();
     await requireCommandHandler(utilityCommands['db:migrate'])([], {});
     out = output();
-    expect(out).toContain('posts.title: orphan column (TEXT NOT NULL)');
-    expect(out).toContain(
-      'No migrations needed - see the live schema findings',
-    );
     expect(out).not.toContain('Applying');
 
     // Run 3: --drop-columns removes the orphan; inserts work again.

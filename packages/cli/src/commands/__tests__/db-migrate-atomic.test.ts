@@ -238,6 +238,7 @@ vi.mock('@happyvertical/smrt-core/migrations', async () => {
     MigrationTracker: MockMigrationTracker,
     parsePostgresTimeoutMs: actual.parsePostgresTimeoutMs,
     unusedRetireConfirmations: actual.unusedRetireConfirmations,
+    unusedRequiredFills: actual.unusedRequiredFills,
     // The fixture database runs no catalog query; nothing here is under
     // row-level security (#5452).
     assertMigrationSeesEveryRow: async () => {},
