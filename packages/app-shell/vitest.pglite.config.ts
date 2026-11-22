@@ -32,6 +32,8 @@ const SQLITE_ONLY = [
   'migrations.test.ts',
   'portable-export.test.ts',
   'round3-data.test.ts',
+  // builds a SQLite user app (app.db), then moves it into PostgreSQL (#5193)
+  'sqlite-to-postgres.test.ts',
   'safety-round4.test.ts',
   // a story whose steps depend on each other: methods snapshot to a file, and
   // the profiles step reads app.db

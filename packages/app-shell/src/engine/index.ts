@@ -133,6 +133,7 @@ export {
   PORTABLE_USER_APP_FORMAT,
   type PortableUserApp,
   type PortableUserAppTable,
+  readAppMetaValue,
   type UserAppInspection,
   type UserAppVerification,
   verifyUserApp,
@@ -157,6 +158,16 @@ export {
   type WritableModel,
   type Write,
 } from './sandbox.ts';
+export {
+  isMigratedToPostgres,
+  MIGRATION_COMPLETION_KEY,
+  type MigrateToPostgresOptions,
+  type MigrateToPostgresResult,
+  migrateUserAppToPostgres,
+  POSTGRES_MIGRATION_MARKER,
+  type PostgresMigrationMarker,
+  readPostgresMigrationMarker,
+} from './sqlite-to-postgres.ts';
 export {
   MemoryVersionStore,
   type VersionMigration,

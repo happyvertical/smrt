@@ -27,11 +27,13 @@ import { createProviderReadinessProbe } from '@happyvertical/smrt-app-runtime';
 import { createSmrtSvelteKitRuntime } from '@happyvertical/smrt-app-runtime/sveltekit';
 import './registry.ts';
 import '../objects/index.ts';
+import { cloudLimitsFromEnv } from './app-limits-env.ts';
 import { installChangeFeedPolicy } from './change-feed.ts';
 import {
   configureShell,
   type ShellContext,
   type ShellProfile,
+  shellProfileSync,
 } from './host.ts';
 import { lifecycleFromEnv } from './host-lifecycle.ts';
 import { installShellInference } from './inference.ts';
@@ -97,6 +99,9 @@ function cloudAppDatabase(): ShellContext['appDatabase'] {
   };
 }
 
+// Cloud only, and read lazily: the desktop never parses these variables.
+const cloudLimits = cloudLimitsFromEnv(() => shellProfileSync());
+
 configureShell({
   profile: profileOfRuntime,
   db: async () =>
@@ -111,6 +116,12 @@ configureShell({
   secretMasterKey: () => runtime.secretMasterKey(),
   // Hosted only (the desktop ignores it): how many apps this process keeps.
   lifecycle: lifecycleFromEnv(),
+  // Cloud only: the operator's per-app caps and statement timeout (none set:
+  // uncapped); a getter, so the profile is known when it is read.
+  get workerLimits() {
+    return cloudLimits.workerLimits;
+  },
+  appLimits: () => cloudLimits.appLimits(),
   // Cloud only (a local owner's app is a file in the data root).
   appDatabase: cloudAppDatabase(),
 });

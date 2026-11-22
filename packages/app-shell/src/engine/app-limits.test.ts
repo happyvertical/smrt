@@ -172,6 +172,30 @@ describe.each(['sqlite', 'postgres'] as const)('app caps on %s', (kind) => {
     expect(Object.keys(first.host.describe().models ?? {})).toHaveLength(2);
   });
 
+  it('undoing a model removal succeeds under a lowered model cap and restores the records', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'app-limits-u-'));
+    const store = new MemoryVersionStore();
+    const first = await open(kind, undefined, dir, store);
+    for (const name of ['A', 'B', 'C'])
+      await first.run({
+        type: 'defineModel',
+        name,
+        fields: { t: { type: 'text' } },
+      });
+    await first.host.create('C', { t: 'keep' });
+    await first.host.close();
+    const low = await open(kind, { maxModels: 1 }, dir, store);
+    await low.run({ type: 'removeModel', model: 'C' });
+    expect(Object.keys(low.host.describe().models ?? {})).toHaveLength(2);
+    await low.run({ type: 'undo' });
+    expect(Object.keys(low.host.describe().models ?? {})).toHaveLength(3);
+    expect((await low.host.list('C')).map((r) => r.t)).toEqual(['keep']);
+    // A forward add past the cap is still refused.
+    await expect(
+      low.run({ type: 'defineModel', name: 'D', fields: {} }),
+    ).rejects.toThrow(/app limit reached \(maxModels\)/);
+  });
+
   it('refuses a method run over the period cap, and a method that would add rows over the row cap', async () => {
     const { host, run } = await open(kind, {
       maxMethodRuns: 2,
@@ -198,6 +222,68 @@ describe.each(['sqlite', 'postgres'] as const)('app caps on %s', (kind) => {
       /app limit reached \(maxMethodRuns\): 2 of the 2 method runs allowed/,
     );
     expect(await host.list('A')).toHaveLength(2);
+  });
+
+  it('a definition change (worker swap) does not renew the method-run period', async () => {
+    const { host, run } = await open(kind, {
+      maxMethodRuns: 1,
+      methodRunPeriodMs: 3_600_000,
+    });
+    await run({
+      type: 'defineModel',
+      name: 'A',
+      fields: { t: { type: 'text' } },
+    });
+    await run({
+      type: 'addMethod',
+      model: 'A',
+      name: 'noop',
+      method: { description: 'noop', code: 'return 1;' },
+    });
+    await host.runMethod('A', 'noop');
+    await run({
+      type: 'defineModel',
+      name: 'B',
+      fields: { t: { type: 'text' } },
+    });
+    await expect(host.runMethod('A', 'noop')).rejects.toThrow(
+      /app limit reached \(maxMethodRuns\)/,
+    );
+  });
+
+  it('a draft has its own method-run window, which its own swaps do not renew', async () => {
+    const { host, run, dir } = await open(kind, {
+      maxMethodRuns: 1,
+      methodRunPeriodMs: 3_600_000,
+    });
+    await run({
+      type: 'defineModel',
+      name: 'A',
+      fields: { t: { type: 'text' } },
+    });
+    await run({
+      type: 'addMethod',
+      model: 'A',
+      name: 'noop',
+      method: { description: 'noop', code: 'return 1;' },
+    });
+    await host.runMethod('A', 'noop');
+    const draft = await host.forkDraft(`${dir}-draft`, {
+      store: new MemoryVersionStore(),
+    });
+    hosts.push(draft);
+    await draft.runMethod('A', 'noop'); // its own allowance, not live's used one
+    await draft.execute(
+      {
+        type: 'defineModel',
+        name: 'B',
+        fields: { t: { type: 'text' } },
+      },
+      { author: 't', approved: true },
+    );
+    await expect(draft.runMethod('A', 'noop')).rejects.toThrow(
+      /app limit reached \(maxMethodRuns\)/,
+    );
   });
 
   it('a method adding rows over the row cap is refused as a limit, none applied', async () => {

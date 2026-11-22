@@ -110,6 +110,20 @@ export function resetHostedInference(): void {
 }
 
 /**
+ * Whether the tenant's plan grants `inference.hosted` (and no override
+ * disables it), through the stores `installHostedInferenceGate` built. Throws
+ * when no gate is installed: an unchecked answer is never "yes" or "no".
+ */
+export async function isHostedInferenceEntitled(
+  tenantId: string,
+): Promise<boolean> {
+  const current = installed;
+  if (!current || getInferenceGate() !== current.gate)
+    throw new Error('the hosted inference gate is not installed');
+  return inTenant(tenantId, () => current.deps.entitled(tenantId));
+}
+
+/**
  * Throws when a hosted target may not be used for `tenantId`: no gate is
  * registered, or the tenant's plan does not grant `inference.hosted`. The
  * error is core's `InferenceUnavailableError` (`entitlement`), so the owner
@@ -128,8 +142,6 @@ export async function assertHostedInferenceEntitled(
   const current = installed;
   if (!current || getInferenceGate() !== current.gate)
     throw refuse('gate-error');
-  const entitled = await inTenant(tenantId, () =>
-    current.deps.entitled(tenantId),
-  );
+  const entitled = await isHostedInferenceEntitled(tenantId);
   if (!entitled) throw refuse('subscription');
 }

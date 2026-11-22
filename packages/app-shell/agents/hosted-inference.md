@@ -33,8 +33,32 @@ features/subscriptions/gate on SQLite, fake resolver), `hooks.server.test.ts`.
   plan ("not included in the current plan"), spend cap ("limit has been
   reached", with the reset date), gate error; the plan and cap messages point
   the owner at their own API key in Settings.
+- **Provisioning and the entitlement listener.** `hosted-provisioning.ts`
+  (`installHostedProvisioning`, called from `init` right after the gate): cloud
+  only, and only when the operator configured a gateway
+  (`SMRT_INFERENCE_HOSTED_*`; none = inert; an incomplete one, gateway variables without `SMRT_INFERENCE_HOSTED_PROVIDER`, or a missing `SMRT_SECRET_MASTER_KEY` reject `init`).
+  It registers smrt-inference's entitlement-change listener with
+  smrt-subscriptions (`registerEntitlementChangeListener`, one registration however
+  often it is installed). The billing writer (the host's webhook, wrapped in
+  `trackEntitlementChange`, in the tenant it changes) then reconciles the tenant:
+  a plan that gains or changes `inference.hosted` provisions a gateway key for each
+  active member of the tenant (budget from the grant's `metadata.budget`; a grant
+  with none fails the reconcile, reported in the outcome's `failures`), one that
+  loses it revokes them. The provisioner's own re-check uses the shell's stores
+  (`isHostedInferenceEntitled`), so a stale event after a downgrade does not
+  mint a key. The keys are secrets, so `SMRT_SECRET_MASTER_KEY` is checked at `init`. The shell
+  has no billing writer: the code that writes plan changes and calls
+  `trackEntitlementChange` lives outside this repository, so the listener is an
+  exported, tested entry point that stays idle until a host calls it in this process.
 - **Not covered.** PostgreSQL (the spend reader's JSON tag matching and
-  required-tenancy reads run on SQLite here); provisioning keys and the
-  entitlement change listener (smrt-inference `hosted.ts`) are not wired by the
-  shell yet; `plugins.remote`, `sync.devices`, `backup.vault` and
-  `cloud.hosted` have no shell surface to gate.
+  required-tenancy reads, and the provisioner's per-tenant advisory lock, which
+  needs a pool of at least three connections, run on SQLite here); a scheduled
+  repair reconcile and provisioning for a member who joins while the tenant is
+  already entitled (the host calls `provision()`; no tenant listing or member
+  flow in the shell); the caller (user) of an engine, MCP or job call, so
+  per-user caps and attribution there wait for #5188/#5189/#5375;
+  a removed member's active key is budget-synced but not revoked while the
+  tenant stays entitled;
+  `plugins.remote`, `sync.devices`, `backup.vault` and `cloud.hosted` have no
+  shell surface to gate. `cloud.hosted` is deliberately not a gate on the whole
+  cloud shell (v1 decision); the gate is code-local, so that stays possible.

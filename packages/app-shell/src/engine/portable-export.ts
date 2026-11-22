@@ -142,8 +142,16 @@ export interface ImportUserAppOptions {
    */
   database?: DatabaseConfig;
   bundle: PortableUserApp;
+  /**
+   * PostgreSQL only: a fact recorded ONCE in the app's `_app_meta`, inside the
+   * same transaction that inserts the rows, so it exists exactly when the whole
+   * import committed. Refused for SQLite.
+   */
+  completion?: { key: string; value: string };
   /** Test seam: observe phases (`staged`, `verified`, `published`). */
   onPhase?: (phase: string) => void | Promise<void>;
+  /** Test seam: runs inside the PostgreSQL transaction, after every row is in; throwing rolls it back. */
+  onTransaction?: () => void | Promise<void>;
 }
 
 export interface ImportUserAppResult {
@@ -392,6 +400,31 @@ async function inDatabase<T>(
       return fn(postgresPortable(tx));
     }),
   );
+}
+
+/**
+ * One `_app_meta` value of an app on PostgreSQL. Null means "no such row" (also a
+ * schema or meta table that does not exist: a dropped schema holds nothing). A
+ * database that could not be READ (lock timeout, connection blip) throws a
+ * retryable error: it is never reported as "no row".
+ */
+export async function readAppMetaValue(options: {
+  dataDir: string;
+  database: DatabaseConfig;
+  key: string;
+}): Promise<string | null> {
+  if (options.database.kind === 'sqlite')
+    throw new EngineError('this reads a PostgreSQL app', 'refused');
+  try {
+    return await inDatabase(options.dataDir, options.database, 'read', (db) =>
+      db.metaValue(options.key),
+    );
+  } catch (e) {
+    throw new Error(
+      `could not read the app's database to check its migration record; try again (${e instanceof Error ? e.name : 'error'})`,
+      { cause: e },
+    );
+  }
 }
 
 /** True when the directory holds an app.db the engine has started. */
@@ -748,6 +781,8 @@ export async function importUserApp(
 ): Promise<ImportUserAppResult> {
   const database = options.database ?? SQLITE;
   const { bundle } = options;
+  if (options.completion && database.kind === 'sqlite')
+    refuse('A completion record is for a PostgreSQL import.');
   const problems = checkUserAppBundle(bundle);
   if (problems.length)
     refuse(`The user app section is not usable: ${problems[0]}.`);
@@ -833,7 +868,11 @@ async function importPostgres(
       found: meta && names.length ? await compare(db, bundle) : null,
     };
   });
-  if (state.found?.ok) return result('already-imported');
+  // An all-empty schema that matches an all-empty bundle is still completed by a
+  // migration (a crash after the tables were built, before the commit, leaves
+  // exactly that); anything holding rows that matches is left alone.
+  if (state.found?.ok && !(options.completion && state.populated === 0))
+    return result('already-imported');
   if (state.populated > 0)
     refuse(
       'The target already holds a different user app database; nothing was overwritten.',
@@ -859,6 +898,9 @@ async function importPostgres(
       const verified = await compare(db, bundle);
       if (!verified.ok)
         refuse('The imported user app database did not match the bundle.');
+      if (options.completion)
+        await db.recordMeta(options.completion.key, options.completion.value);
+      await options.onTransaction?.();
       await options.onPhase?.('verified');
     });
   } finally {
