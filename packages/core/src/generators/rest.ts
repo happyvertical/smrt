@@ -46,7 +46,9 @@ import {
 } from '../request-input';
 import {
   assertPrincipalScopeUsable,
+  currentPrincipalFrame,
   PrincipalRecord,
+  requestEnded,
   runInPrincipalRecord,
 } from '../request-principal-scope';
 import {
@@ -536,6 +538,27 @@ interface ResolvedRequestTenant {
 }
 
 /**
+ * The enforced principal of a request from its snapshot: everything from the
+ * snapshot, and its own tenant for the exposure gate and create targets (an
+ * ambient context is never adopted).
+ */
+function principalFromSnapshot(
+  principal: RequestPrincipal,
+): ResolvedRequestPrincipal {
+  return {
+    enforced: true,
+    principal,
+    tenantId: principal.tenantId,
+    userId: principal.userId,
+    allowCrossTenant: principal.allowCrossTenant,
+    authenticated: principal.authenticated,
+    effectiveTenantId: principal.tenantId,
+    permissions: principal.permissions,
+    superAdminBypass: principal.superAdminBypass,
+  };
+}
+
+/**
  * The answer to an operation the tenant gate (or the tenancy interceptor)
  * refused for want of a tenant: 403 for a signed-in caller, 401 for an
  * anonymous one. Matched by error code, so it holds across copies of the
@@ -821,6 +844,37 @@ export class APIGenerator {
       return this.createCorsResponse(req);
     }
 
+    // A handler invoked inside a request that acts for a host-resolved
+    // principal (nested dispatch) inherits that request exactly: its own
+    // `resolvePrincipal`, fixed context and enforcement are not consulted,
+    // and its operations run in frames of the outer record, so they can
+    // narrow what the outer request admitted, never widen it (#5195).
+    const outer = currentPrincipalFrame();
+    if (outer) {
+      if (outer.record.state === 'ended') {
+        const ended = requestEnded();
+        return this.addCorsHeaders(
+          this.createJsonResponse(
+            {
+              error: {
+                code: ended.code,
+                message: ended.publicMessage,
+                ok: false,
+                status: ended.status,
+              },
+            },
+            ended.status,
+          ),
+          req,
+        );
+      }
+      return this.handleResolvedRequest(
+        req,
+        url,
+        principalFromSnapshot(outer.record.snapshot),
+      );
+    }
+
     // The principal is resolved once, here, and carried to every check the
     // request reaches; nothing below resolves it again (#5195).
     let principal: ResolvedRequestPrincipal;
@@ -972,21 +1026,9 @@ export class APIGenerator {
     const ambientTenant =
       typeof ambient === 'string' && ambient ? ambient : null;
     if (this.config.resolvePrincipal) {
-      const principal = normalizeRequestPrincipal(
-        await this.config.resolvePrincipal(req),
+      return principalFromSnapshot(
+        normalizeRequestPrincipal(await this.config.resolvePrincipal(req)),
       );
-      return {
-        enforced: true,
-        principal,
-        tenantId: principal.tenantId,
-        userId: principal.userId,
-        allowCrossTenant: principal.allowCrossTenant,
-        authenticated: principal.authenticated,
-        // The principal's own tenant: an ambient context is never adopted.
-        effectiveTenantId: principal.tenantId,
-        permissions: principal.permissions,
-        superAdminBypass: principal.superAdminBypass,
-      };
     }
     const tenantId =
       typeof this.context.tenantId === 'string' && this.context.tenantId

@@ -148,7 +148,13 @@ equal member signatures; anything else is 403 `TENANT_CONTEXT_CONFLICT`
 (`RequestPrincipalScopeError`). Work that kept the context of an ended
 record is refused by the request-tenancy interceptor (`REQUEST_ENDED`), and
 `requirePermission` refuses unless the live record's snapshot is the
-principal checked. `getRequestPrincipal()` (core root) returns the live
+principal checked. A handler invoked while a record is live (nested
+dispatch, `handleRequest` sees `currentPrincipalFrame()`) inherits it
+exactly: its own `resolvePrincipal`, fixed context and enforcement are not
+consulted, no new record is made, and its operations open frames of the
+outer record (so a read grant still refuses writes and a ceiling only
+narrows); under an ended record it answers 403 `REQUEST_ENDED`.
+`getRequestPrincipal()` (core root) returns the live
 record's snapshot, else `undefined` (outside a request, after it ended, in
 another thread). The first core copy defines
 `globalThis.__smrtRequestPrincipalScope` (frozen, non-writable,

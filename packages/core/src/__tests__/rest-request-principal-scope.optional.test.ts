@@ -353,6 +353,45 @@ for (const type of ['sqlite', 'postgres'] as const) {
       }
     });
 
+    it('a handler invoked inside a request runs as that request', async () => {
+      let innerResolutions = 0;
+      const inner = new APIGenerator(
+        {
+          basePath: '/api',
+          resolvePrincipal: () => {
+            innerResolutions += 1;
+            return {
+              ...(known.writer as APIRequestPrincipal),
+              tenantId: TENANT_B,
+            };
+          },
+        },
+        { db },
+      ).generateHandler();
+      const { status, seen } = await inspect(handler(), 'writer', async () => {
+        const outer = getRequestPrincipal();
+        let innerPrincipal: RequestPrincipal | undefined;
+        inspectWork = () => {
+          innerPrincipal = getRequestPrincipal();
+          return undefined;
+        };
+        const response = await inner(
+          new Request(
+            `http://local/api/${segmentOf('ScopeRecordNote')}/inspect`,
+            { method: 'POST', body: '{}' },
+          ),
+        );
+        return {
+          status: response.status,
+          same: Object.is(innerPrincipal, outer),
+          tenantId: innerPrincipal?.tenantId,
+        };
+      });
+      expect(status).toBe(200);
+      expect(seen).toEqual({ status: 200, same: true, tenantId: TENANT_A });
+      expect(innerResolutions).toBe(0);
+    });
+
     it('a worker thread sees no principal', async () => {
       const { seen } = await inspect(handler(), 'writer', async () => {
         const worker = new Worker(
