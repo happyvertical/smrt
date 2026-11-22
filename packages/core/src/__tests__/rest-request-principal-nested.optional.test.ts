@@ -186,6 +186,8 @@ for (const type of ['sqlite', 'postgres'] as const) {
       outerSeesPages = false;
       const docs = new NestedScopeDocCollection({ db });
       await docs.initialize();
+      // The PostgreSQL database outlives a test: start each from no rows.
+      await db.query(`DELETE FROM ${docs.tableName}`);
       await docs.create({ title: 'doc' } as never);
       const page = new NestedScopePage({ db, title: 'page', page: 'p' });
       await page.initialize();
