@@ -14,7 +14,7 @@
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { getDatabase } from '@happyvertical/sql';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { AiUsagePersistenceHandler } from '../adapters/ai-usage';
+import { insertAiUsageRow } from '../adapters/ai-usage';
 import {
   listAiEvaluations,
   recordAiEvaluation,
@@ -143,25 +143,30 @@ describe.skipIf(!pgUrl)(
     it('persists lifted tags and reports and labels them', async () => {
       await db.query('DELETE FROM _smrt_ai_evaluations');
       await db.query('DELETE FROM _smrt_ai_usage');
-      const handler = new AiUsagePersistenceHandler(db);
       const tenantId = '7d3c1e0a-1a2b-4c5d-8e9f-0a1b2c3d4e5f';
       for (const [promptKey, duration] of [
         ['pg.key', 10],
         ['pg.key', 30],
         [undefined, 20],
       ] as const) {
-        await handler.handle({
-          provider: 'openai',
-          model: 'gpt-4o',
-          operation: 'chat',
-          usage: { promptTokens: 2, completionTokens: 1, totalTokens: 3 },
-          duration,
-          timestamp: new Date(),
-          tenantId,
-          tags: promptKey
-            ? { promptKey, runId: 'pg-run', tierResolved: 'good' }
-            : undefined,
-        });
+        // A `runId` tag on an untracked event no longer places a row in a
+        // run; a tracked call's settlement names the run explicitly.
+        await insertAiUsageRow(
+          db,
+          {
+            provider: 'openai',
+            model: 'gpt-4o',
+            operation: 'chat',
+            usage: { promptTokens: 2, completionTokens: 1, totalTokens: 3 },
+            duration,
+            timestamp: new Date(),
+            tenantId,
+            tags: promptKey
+              ? { promptKey, runId: 'pg-run', tierResolved: 'good' }
+              : undefined,
+          },
+          { runId: promptKey ? 'pg-run' : null },
+        );
       }
 
       const report = await reportAiUsage(db, {
