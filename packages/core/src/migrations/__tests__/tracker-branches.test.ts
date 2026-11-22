@@ -456,7 +456,10 @@ describe('MigrationTracker statement execution fallbacks', () => {
           query: async (sql: string, ...params: unknown[]) => {
             insideTx.push(sql);
             if (sql.includes("SET status = 'failed'")) marker = params[1];
-            return { rows: [] };
+            // The marker write must match exactly this attempt's record.
+            return sql.includes('RETURNING id')
+              ? { rows: [{ id: 'row' }] }
+              : { rows: [] };
           },
         };
         return cb(tx);

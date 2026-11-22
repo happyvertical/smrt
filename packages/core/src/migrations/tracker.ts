@@ -893,6 +893,12 @@ export class MigrationTracker {
         planRefusal = error instanceof Error ? error : new Error(String(error));
         split = undefined;
       }
+      // The first half commits with its record in one transaction, or not
+      // at all.
+      if (split && !this.db.transaction)
+        planRefusal = new Error(
+          `Migration ${definition.id}: a postgres-safe run outside an atomic batch commits this migration's first half together with its record, which needs a database adapter with transaction support. Nothing was run.`,
+        );
     }
     const force = Boolean(
       options.force || options.forceMigrations?.includes(definition.id),
@@ -1312,17 +1318,31 @@ export class MigrationTracker {
     },
   ): Promise<MigrationResult> {
     const { row, checksum } = run;
-    if (run.firstHalf)
-      await this.runPostgresFirstHalf(run.firstHalf, (db) =>
-        db.query(
-          `UPDATE _smrt_schema_migrations
+    if (run.firstHalf) {
+      // Resolved before the first half runs: a first-half `SET LOCAL
+      // search_path` must not move the marker to another table.
+      const table = await this.trackingTableName();
+      if (!table)
+        throw new Error(
+          `Migration ${definition.id}: the schema holding the tracking table could not be resolved. Nothing was run.`,
+        );
+      await this.runPostgresFirstHalf(run.firstHalf, async (db) => {
+        const written = await db.query(
+          `UPDATE ${table}
            SET status = 'failed', execution_time_ms = ?, error_message = ?
-           WHERE id = ?`,
+           WHERE id = ? AND attempts = ? AND status = 'running' RETURNING id`,
           Date.now() - run.startTime,
           concurrentIndexPendingMessage(row.digest, row.notStarted),
           row.id,
-        ),
-      );
+          row.attempts,
+        );
+        // Exactly this attempt's record, or the first half rolls back.
+        if (written.rows.length !== 1)
+          throw new Error(
+            `Migration ${definition.id}: its record changed while its first half ran; the first half was rolled back. Re-run to retry it.`,
+          );
+      });
+    }
     const phaseOne: MigrationResult = {
       success: true,
       applied: true,
@@ -1360,13 +1380,16 @@ export class MigrationTracker {
     record?: (db: DatabaseInterface) => Promise<unknown>,
   ): Promise<void> {
     if (!this.db.transaction) {
+      // Never reached with a record: a split without transactions is
+      // refused before anything runs.
+      if (record)
+        throw new Error('A first half with its record needs a transaction.');
       for (const sql of statements)
         await runRetireAwareStatement(
           (statement) => this.db.query(statement),
           this.dbEngine,
           sql,
         );
-      await record?.(this.db);
       return;
     }
     await this.db.transaction(async (tx) => {

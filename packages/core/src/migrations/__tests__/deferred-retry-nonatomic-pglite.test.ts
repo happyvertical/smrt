@@ -138,5 +138,42 @@ describe.skipIf(process.env.SMRT_TEST_PGLITE !== '1')(
       expect(retry.success, errorOf(retry)).toBe(true);
       expect(await counts()).toEqual(['a:1']);
     });
+
+    it('refuses a split, before anything runs, on a handle without transactions', async () => {
+      const def = dataThenIndex('nonatomic_no_transaction');
+      const plain: DatabaseInterface = { ...db, transaction: undefined };
+
+      const result = await tracker(plain).apply(def, { postgresSafe: true });
+
+      expect(result.success).toBe(false);
+      expect(errorOf(result)).toContain('transaction');
+      expect(await counts()).toEqual(['a:0', 'b:0']);
+      expect(await row(def.id)).toBeUndefined();
+    });
+
+    it('writes the marker to the tracking table it resolved, whatever the first half sets', async () => {
+      await db.query('CREATE SCHEMA other_ns');
+      await db.query(
+        'CREATE TABLE other_ns._smrt_schema_migrations (LIKE public._smrt_schema_migrations INCLUDING ALL)',
+      );
+      const def = definition('nonatomic_search_path', [
+        'SET LOCAL search_path TO other_ns',
+        'UPDATE public.child SET n = n + 1',
+        uniqueIndex,
+      ]);
+
+      const first = await tracker().apply(def, { postgresSafe: true });
+
+      expect(first.success).toBe(false);
+      expect(await counts()).toEqual(['a:1', 'b:1']);
+      expect((await row(def.id))?.error_message?.startsWith(MARKER)).toBe(true);
+      await fixDuplicates();
+      const retry = await tracker().apply(def, {
+        postgresSafe: true,
+        reconcile: true,
+      });
+      expect(retry.success, errorOf(retry)).toBe(true);
+      expect(await counts()).toEqual(['a:1']);
+    });
   },
 );
