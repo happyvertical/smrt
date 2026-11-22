@@ -172,6 +172,30 @@ describe.each(['sqlite', 'postgres'] as const)('app caps on %s', (kind) => {
     expect(Object.keys(first.host.describe().models ?? {})).toHaveLength(2);
   });
 
+  it('undoing a model removal succeeds under a lowered model cap and restores the records', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'app-limits-u-'));
+    const store = new MemoryVersionStore();
+    const first = await open(kind, undefined, dir, store);
+    for (const name of ['A', 'B', 'C'])
+      await first.run({
+        type: 'defineModel',
+        name,
+        fields: { t: { type: 'text' } },
+      });
+    await first.host.create('C', { t: 'keep' });
+    await first.host.close();
+    const low = await open(kind, { maxModels: 1 }, dir, store);
+    await low.run({ type: 'removeModel', model: 'C' });
+    expect(Object.keys(low.host.describe().models ?? {})).toHaveLength(2);
+    await low.run({ type: 'undo' });
+    expect(Object.keys(low.host.describe().models ?? {})).toHaveLength(3);
+    expect((await low.host.list('C')).map((r) => r.t)).toEqual(['keep']);
+    // A forward add past the cap is still refused.
+    await expect(
+      low.run({ type: 'defineModel', name: 'D', fields: {} }),
+    ).rejects.toThrow(/app limit reached \(maxModels\)/);
+  });
+
   it('refuses a method run over the period cap, and a method that would add rows over the row cap', async () => {
     const { host, run } = await open(kind, {
       maxMethodRuns: 2,
