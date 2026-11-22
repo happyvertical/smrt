@@ -4,7 +4,7 @@ import { onMount, untrack } from 'svelte';
 import { goto, invalidate, invalidateAll } from '$app/navigation';
 import ImportReview from '$lib/components/ImportReview.svelte';
 import { IMPORT_MAX_BYTES } from '$lib/import-limits';
-import { ApiError } from '$lib/ui/api';
+import { ApiError, isLimitRefusal } from '$lib/ui/api';
 import { applyBlock, changesApi, plural } from '$lib/ui/changes';
 import { DEPENDS } from '$lib/ui/events';
 import { type ImportState, importStages } from '$lib/ui/import';
@@ -51,9 +51,10 @@ async function apply() {
     await changesApi.apply(changes.digest, { generation: changes.generation });
   } catch (cause) {
     if (cause instanceof ApiError && cause.status === 409) {
-      error = cause.message.startsWith("Can't apply yet")
-        ? cause.message
-        : 'These changes were different when you last looked. Review them again, then Apply.';
+      error =
+        isLimitRefusal(cause) || cause.message.startsWith("Can't apply yet")
+          ? cause.message
+          : 'These changes were different when you last looked. Review them again, then Apply.';
       await invalidate(DEPENDS.changes);
     } else
       error =

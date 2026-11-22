@@ -28,6 +28,7 @@ import { approvalStatuses, getApprovalView } from '../approvals.ts';
 import type { CatalogResponse, CatalogTool } from '../catalog.ts';
 import { getShellDb } from '../host.ts';
 import { PolicyError, type Principal } from '../owner.ts';
+import { ownerText } from '../owner-text.ts';
 import { callTool, toolsFor } from '../policy.ts';
 import { type CallScope, LIVE_SCOPE, type Target } from '../target.ts';
 import { describeModelError } from './diagnostics.ts';
@@ -350,7 +351,9 @@ export async function runTurn(options: RunTurnOptions): Promise<TurnStop> {
       activeMs += Date.now() - started;
       if (error instanceof PolicyError) return refuse(error.message);
       const message =
-        error instanceof Error ? oneLine(error.message, 300) : 'it failed';
+        error instanceof Error
+          ? oneLine(ownerText(error.message, 'assistant tool'), 300)
+          : 'it failed';
       return {
         ok: false,
         summary: message,

@@ -26,21 +26,26 @@ import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync } from 'node:fs';
 import { join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { getCurrentTenant } from '@happyvertical/smrt-tenancy';
+import { getCurrentTenant, withTenant } from '@happyvertical/smrt-tenancy';
 import { TenantCollection } from '@happyvertical/smrt-users';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import type { DatabaseConfig } from '../../engine/db/index.ts';
 import { CapacityError } from '../../engine/errors.ts';
 import {
   AppHost,
+  type AppLimits,
   bundledWorkerUrl,
   discardOrphanDraft,
   EngineError,
+  isMigratedToPostgres,
+  type MigrateToPostgresResult,
+  migrateUserAppToPostgres,
   type WorkerLimits,
   wantsBundledWorker,
 } from '../../engine/index.ts';
 import { AppDraftCollection } from '../objects/AppDraft.ts';
 import { AppImportCollection } from '../objects/AppImport.ts';
+import { ApprovalCollection } from '../objects/Approval.ts';
 import { ChangeBatchCollection } from '../objects/ChangeBatch.ts';
 import { ChangeCardCollection } from '../objects/ChangeCard.ts';
 import { versionSummary } from '../ui/command-summary.ts';
@@ -51,7 +56,7 @@ import {
   type HostLifecyclePolicy,
   type HostMetrics,
 } from './host-lifecycle.ts';
-import { PolicyError } from './owner.ts';
+import { assertOwner, PolicyError } from './owner.ts';
 import type { Target } from './target.ts';
 import { DraftVersionStore, ShellVersionStore } from './version-store.ts';
 
@@ -90,6 +95,16 @@ export interface ShellContext {
   workerUrl?: URL | string;
   /** V8 limits of each app worker thread (engine default when absent). */
   workerLimits?: WorkerLimits;
+  /**
+   * Cloud only (#5503): the per-app caps (`AppLimits`) of one tenant's app,
+   * passed to its live host and to a draft host reopened after a restart (a
+   * draft forked from live inherits them from the engine). Called each time an
+   * app opens, so a change of plan applies on the next open. Absent, or
+   * returning undefined: no caps. The desktop never calls it.
+   */
+  appLimits?: (
+    tenantId: string,
+  ) => AppLimits | undefined | Promise<AppLimits | undefined>;
   /**
    * How many apps one process keeps open (#5192): idle eviction, a cap on
    * open apps, a cap on concurrent wakes. Honoured by the `cloud` profile only;
@@ -470,6 +485,7 @@ export function openDraftHost(
   dir: string,
   pin: string | null = null,
   database: DatabaseConfig | null = null,
+  appLimits?: AppLimits,
 ): Promise<AppHost> {
   return withConnections(database, 'draft', () =>
     AppHost.open(dir, {
@@ -477,6 +493,7 @@ export function openDraftHost(
       workerUrl: workerUrl(),
       workerLimits: budgetedLimits(),
       autoApprove: true,
+      ...(appLimits ? { appLimits } : {}),
       // A draft on PostgreSQL reopens with the LIVE app's config; its own
       // schema comes from the marker in `dir`.
       ...(database ? { database } : {}),
@@ -551,7 +568,14 @@ async function adoptDraft(
     return;
   }
   try {
-    const draft = await openDraftHost(db, slot.id, dir, holder.pin, database);
+    const draft = await openDraftHost(
+      db,
+      slot.id,
+      dir,
+      holder.pin,
+      database,
+      await appLimitsOf(holder),
+    );
     wireHostEvents(draft, 'draft', holder.tenantId);
     slot.host = lifecycleOn() ? leased(holder, draft) : draft;
   } catch (e) {
@@ -604,19 +628,83 @@ async function liveDatabase(
 ): Promise<DatabaseConfig | null> {
   const provider = requireContext().appDatabase;
   if (!provider || holder.tenantId === null) return null;
+  const app = await store.appRow();
+  const schema = appSchemaName(holder.tenantId, app.id as string);
   // An app that already lives in a SQLite file is never opened on a new, empty
   // PostgreSQL schema: its rows would seem to vanish and new writes would
-  // diverge from the file. Fail closed until an explicit migration (#5193)
-  // moves it. A PostgreSQL app keeps no app.db.
-  if (existsSync(join(liveDir, 'app.db')))
+  // diverge from the file. Fail closed until the explicit migration
+  // (`migrateOwnAppToPostgres`, #5193) has moved it AND its schema still
+  // holds it. A PostgreSQL app keeps no app.db.
+  if (
+    existsSync(join(liveDir, 'app.db')) &&
+    !(await isMigratedToPostgres(liveDir, provider.config(schema)))
+  )
     throw new EngineError(
       'this app still lives in a SQLite file; an explicit migration to PostgreSQL is required before it can open',
       'refused',
     );
-  const app = await store.appRow();
-  const schema = appSchemaName(holder.tenantId, app.id as string);
   await provider.provision(schema);
   return provider.config(schema);
+}
+
+/**
+ * Migrate one tenant's SQLite app into its PostgreSQL schema (#5193), so the
+ * refusal above clears. Idempotent and safe to rerun after any crash; the
+ * SQLite file is only read and stays as the backup. Refuses (nothing written)
+ * unless: the cloud profile has `appDatabase`, no changes wait and no working
+ * copy exists (neither is carried). The tenant, app and
+ * schema come from the shell's own rows, never from input.
+ *
+ * NOT wired to any caller yet: who may run it (an operator, the owner) is the
+ * hosted caller/principal work (#5188/#5195/#5375).
+ */
+export async function migrateOwnAppToPostgres(): Promise<MigrateToPostgresResult> {
+  const provider = requireContext().appDatabase;
+  if (!provider)
+    throw new EngineError(
+      'there is no PostgreSQL database for apps configured',
+      'refused',
+    );
+  // The caller's own tenant, from the verified principal; never an argument.
+  const tenant = safeId((await assertOwner()).tenantId, 'the tenant');
+  const db = await getShellDb();
+  const store = new ShellVersionStore(db, tenant);
+  const app = await store.appRow();
+  const { live, draft } = tenantAppDirs(
+    await dataRoot(),
+    tenant,
+    app.id as string,
+  );
+  // None of these is carried across; each is named so the owner knows what to settle.
+  if (existsSync(draft))
+    throw new EngineError(
+      'an open draft (working copy) exists; apply or discard it before migrating',
+      'refused',
+    );
+  const pending = await withTenant(
+    { tenantId: tenant, permissions: new Set<string>() },
+    async () => ({
+      changes: await hasWaitingChanges(db),
+      approvals: await hasUnsettledApprovals(db),
+    }),
+  );
+  if (pending.changes)
+    throw new EngineError(
+      'changes are waiting; apply or discard them before migrating',
+      'refused',
+    );
+  if (pending.approvals)
+    throw new EngineError(
+      'an approval is unsettled (pending, accepted, executing, or approved with no result, i.e. a crashed execution); decide it before migrating',
+      'refused',
+    );
+  const schema = appSchemaName(tenant, app.id as string);
+  return migrateUserAppToPostgres({
+    dataDir: live,
+    database: provider.config(schema),
+    versions: await store.list(),
+    provision: () => provider.provision(schema),
+  });
 }
 
 /**
@@ -629,6 +717,49 @@ export async function discardStaleDraft(dir: string): Promise<void> {
   await discardOrphanDraft(dir, database ?? undefined);
 }
 
+/** True when an approval is still waiting to be decided or applied. */
+async function hasUnsettledApprovals(db: DatabaseInterface): Promise<boolean> {
+  const approvals = await ApprovalCollection.create({ db });
+  // `approved` without a result is a crashed execution (the store reads it as
+  // executing); with a result it is settled.
+  for (const status of ['pending', 'accepted', 'executing'])
+    if ((await approvals.list({ where: { status }, limit: 1 })).length)
+      return true;
+  // Every `approved` row by keyset (stable `id` order, `id > last`): a crashed
+  // one cannot be skipped or repeated by paging, however the rows were inserted.
+  const page = 200;
+  let last: string | null = null;
+  for (;;) {
+    const rows: Awaited<ReturnType<typeof approvals.list>> =
+      await approvals.list({
+        where: last
+          ? { status: 'approved', 'id >': last }
+          : { status: 'approved' },
+        orderBy: 'id ASC',
+        limit: page,
+      });
+    if (rows.some((row) => !row.result)) return true;
+    if (rows.length < page) return false;
+    last = rows[rows.length - 1].id as string;
+  }
+}
+
+/** True when an open or held batch has an active card. */
+async function hasWaitingChanges(db: DatabaseInterface): Promise<boolean> {
+  const batches = await ChangeBatchCollection.create({ db });
+  const cards = await ChangeCardCollection.create({ db });
+  for (const status of ['open', 'held']) {
+    for (const batch of await batches.list({ where: { status }, limit: 100 })) {
+      const active = await cards.list({
+        where: { batchId: batch.id as string, status: 'active' },
+        limit: 1,
+      });
+      if (active.length) return true;
+    }
+  }
+  return false;
+}
+
 /**
  * Changes waiting freeze live structure even when their working copy is not
  * open (a restart or a crash mid-rebuild): the cards are the truth, the copy
@@ -638,20 +769,14 @@ async function freezeForWaitingChanges(
   db: DatabaseInterface,
   live: AppHost,
 ): Promise<void> {
-  const batches = await ChangeBatchCollection.create({ db });
-  const cards = await ChangeCardCollection.create({ db });
-  for (const status of ['open', 'held']) {
-    for (const batch of await batches.list({ where: { status }, limit: 100 })) {
-      const active = await cards.list({
-        where: { batchId: batch.id as string, status: 'active' },
-        limit: 1,
-      });
-      if (active.length) {
-        live.setFrozen(true);
-        return;
-      }
-    }
-  }
+  if (await hasWaitingChanges(db)) live.setFrozen(true);
+}
+
+/** The caps of a cloud tenant's app (#5503); none on the desktop. */
+async function appLimitsOf(holder: Holder): Promise<AppLimits | undefined> {
+  const limits = requireContext().appLimits;
+  if (!limits || !holder.tenantId) return undefined;
+  return (await limits(holder.tenantId)) ?? undefined;
 }
 
 /** Open one holder's live host: the app, its draft, the freeze. */
@@ -662,11 +787,13 @@ async function openLive(holder: Holder): Promise<AppHost> {
   const dirs = await directoriesFor(holder, store);
   mkdirSync(dirs.live, { recursive: true, mode: 0o700 });
   const database = await liveDatabase(holder, store, dirs.live);
+  const appLimits = await appLimitsOf(holder);
   const host = await withConnections(database, 'live', () =>
     AppHost.open(dirs.live, {
       store,
       workerUrl: workerUrl(),
       workerLimits: budgetedLimits(),
+      ...(appLimits ? { appLimits } : {}),
       ...(database ? { database } : {}),
     }),
   );

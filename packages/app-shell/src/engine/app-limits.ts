@@ -16,6 +16,13 @@ export interface AppLimits {
   maxMethodRuns?: number;
   /** Length of the method-run period in ms (a rolling window from its first run). */
   methodRunPeriodMs?: number;
+  /**
+   * Set by the host, never by a caller: the method-run window ([start, runs])
+   * in memory shared by every worker of one host, so a swap (a definition
+   * change) starts a new worker without renewing the period. A host makes its
+   * own and ignores one passed in.
+   */
+  methodRunState?: Float64Array;
 }
 
 export type AppLimitName =
@@ -93,8 +100,8 @@ export class AppCaps {
   readonly limits: AppLimits;
   private cache: Map<string, number> | null = null;
   private tail: Promise<void> = Promise.resolve();
-  private windowStart = 0;
-  private runs = 0;
+  // [window start, runs]: shared across the workers of a host when given.
+  private run: Float64Array;
 
   private models: () => CapModel[];
   private countTable: (table: string, h: unknown) => Promise<number>;
@@ -107,6 +114,7 @@ export class AppCaps {
     clock: () => number = Date.now,
   ) {
     this.limits = assertAppLimits(limits);
+    this.run = limits.methodRunState ?? new Float64Array(2);
     this.models = models;
     this.countTable = countTable;
     this.clock = clock;
@@ -243,19 +251,20 @@ export class AppCaps {
     const { maxMethodRuns, methodRunPeriodMs } = this.limits;
     if (maxMethodRuns === undefined || !methodRunPeriodMs) return;
     const t = this.clock();
-    if (!this.windowStart || t - this.windowStart >= methodRunPeriodMs) {
-      this.windowStart = t;
-      this.runs = 0;
+    const r = this.run;
+    if (!r[0] || t - r[0] >= methodRunPeriodMs) {
+      r[0] = t;
+      r[1] = 0;
     }
-    if (this.runs >= maxMethodRuns)
+    if (r[1] >= maxMethodRuns)
       throw new AppLimitError(
         'maxMethodRuns',
         maxMethodRuns,
-        this.runs,
+        r[1],
         1,
-        `${n(this.runs)} of the ${n(maxMethodRuns)} method runs allowed in this period are used; the period renews in ${Math.ceil((this.windowStart + methodRunPeriodMs - t) / 1000)} s`,
+        `${n(r[1])} of the ${n(maxMethodRuns)} method runs allowed in this period are used; the period renews in ${Math.ceil((r[0] + methodRunPeriodMs - t) / 1000)} s`,
       );
-    this.runs++;
+    r[1]++;
   }
 
   /** Refuse a model added past the cap. `prior` is the model count before. */
