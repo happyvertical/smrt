@@ -15,7 +15,9 @@ import {
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { vi } from 'vitest';
 import '../objects/index.ts';
-import { configureShell, resetShell } from './host.ts';
+import { applyOwnBatch } from './approvals.ts';
+import { cancelChecks, changesState, flushChecks } from './changes.ts';
+import { configureShell, resetShell, type ShellContext } from './host.ts';
 import { resetShellInference } from './inference.ts';
 import { type Principal, runAs, setOwnerCheck } from './owner.ts';
 import { prepareShellSchema } from './schema.ts';
@@ -32,7 +34,9 @@ export interface ShellHarness {
   close(): Promise<void>;
 }
 
-export async function openShell(): Promise<ShellHarness> {
+export async function openShell(
+  extra: Partial<ShellContext> = {},
+): Promise<ShellHarness> {
   const dir = mkdtempSync(join(tmpdir(), 'shell-test-'));
   // The real driver: the vitest setup would pre-create registered tables.
   const actual =
@@ -80,6 +84,7 @@ export async function openShell(): Promise<ShellHarness> {
     dataRoot: async () => dir,
     // A fixed test key stands in for the runtime's vault-held master key.
     secretMasterKey: async () => TEST_MASTER_KEY,
+    ...extra,
   });
   return {
     dir,
@@ -88,12 +93,27 @@ export async function openShell(): Promise<ShellHarness> {
     member: { id: ids.member, tenantId: tenant.id as string },
     stranger: { id: 'u-stranger', tenantId: tenant.id as string },
     async close() {
+      cancelChecks();
+      await flushChecks();
       resetShellInference();
       await resetShell();
       setOwnerCheck(null);
       rmSync(dir, { recursive: true, force: true });
     },
   };
+}
+
+/**
+ * Tests that build structure through the builder get changes waiting (#5178):
+ * apply them as the owner, the way a person would, so live has the structure.
+ */
+export async function applyWaiting(owner: Principal): Promise<void> {
+  await runAs(owner, async () => {
+    await changesState();
+    await flushChecks(); // the debounced exact checks pin the digest
+    const state = await changesState();
+    if (state.count) await applyOwnBatch(state.digest);
+  });
 }
 
 export { runAs };

@@ -7,6 +7,7 @@
 
 import { startRestServer } from '@happyvertical/smrt-core';
 import './__smrt-register__.js';
+import { pathToFileURL } from 'node:url';
 import { Content } from './content';
 
 async function startServer() {
@@ -43,7 +44,10 @@ async function startServer() {
 }
 
 // Start if running directly
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (
+  process.argv[1] &&
+  import.meta.url === pathToFileURL(process.argv[1]).href
+) {
   startServer().catch(console.error);
 }
 

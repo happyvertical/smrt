@@ -1,5 +1,7 @@
 # Draft UI validation
 
+> Retired (#5178). The Live/Draft bar, `DraftBar.svelte`, `draft-bar.ts` and `/draft/review` are gone; the changes waiting UI (README "Changes waiting UI") replaces them. Kept as a record of the old QA.
+
 The content header owns draft controls on home, model, history and review pages; welcome and settings have none. Chat is hidden during onboarding. The publish review is one column: a summary first (loaded tables with counts and a row preview, then only non-empty Added, Removed, Changed and Archived lists and one quiet line for the rest), then Publish, then collapsed ordered changes (importer bookkeeping hidden) and full method code. The review page has no header review link. The saved owner view selects the
 layout description; loaders and mutations carry that description's explicit
 target. Changing copies remounts forms and returns home. Approvals always name

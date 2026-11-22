@@ -11,9 +11,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { RouteFilePlan } from './generated-route-files.js';
 import {
   consumerHasSmrtUsers,
-  generateResourcesRoute,
+  generateResourcesRoute as generateResourcesRouteInto,
   reservesResourcesRoute,
   willGenerateResourcesRoute,
 } from './resources-route.js';
@@ -21,6 +22,17 @@ import {
   generateSvelteKitRoutes,
   type SvelteKitOptions,
 } from './sveltekit-generator.js';
+
+/** Plan, check and commit the route as the generator does; true if written. */
+function generateResourcesRoute(
+  projectRoot: string,
+  routeOptions: SvelteKitOptions,
+): boolean {
+  const plan = new RouteFilePlan();
+  generateResourcesRouteInto(projectRoot, routeOptions, plan);
+  plan.preflight();
+  return plan.commit().length > 0;
+}
 
 const options: SvelteKitOptions = {
   enabled: true,

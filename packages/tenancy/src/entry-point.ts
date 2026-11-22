@@ -9,9 +9,10 @@
  * pass-through and return rows across **all** tenants.
  *
  * `runTenantScopedEntryPoint()` closes that gap. `@happyvertical/smrt-core`'s
- * `MCPGenerator` is the only in-repo generated surface that wraps its
- * per-tool execution in this gate today (via `setTenantEntryPointRunner`
- * below). Core's `CLIGenerator`, which used to wrap its per-command execution
+ * `MCPGenerator` wraps its per-tool execution in this gate, and its runtime
+ * REST server (`APIGenerator`) wraps every operation on a tenant-scoped model
+ * in it with the tenant the host supplies per request (both via
+ * `setTenantEntryPointRunner` below). Core's `CLIGenerator`, which used to wrap its per-command execution
  * in the same gate, was retired as unused public API (#2664); the live local
  * CLI transport (`packages/cli/src/cli-generator.ts`, the shipped `smrt
  * <object>:<action>` binary) has never called this gate and is not
@@ -23,9 +24,11 @@
  */
 
 import {
+  getTenantId,
   hasTenantContext,
   isSystemContext,
   TenantContextError,
+  TenantIsolationError,
   withSystemContext,
   withTenant,
 } from './context.js';
@@ -86,7 +89,9 @@ export interface TenantEntryPointOptions {
  *
  * Resolution order (tenant-scoped models only):
  * 1. A tenant context is already active, or an explicit `withSystemContext()`
- *    bypass is in effect (e.g. `runAsSystem()`, migrations) → run as-is.
+ *    bypass is in effect (e.g. `runAsSystem()`, migrations) → run as-is,
+ *    except that an explicit `tenantId` naming a different tenant than the
+ *    active context is refused with `TenantIsolationError`.
  * 2. `allowCrossTenant` was explicitly set → run in system context. Checked
  *    before `tenantId` so an explicit cross-tenant opt-in wins over a default
  *    principal/host tenant rather than being silently scoped.
@@ -129,7 +134,23 @@ export async function runTenantScopedEntryPoint<T>(
   // honors `withSystemContext()` (migrations, `runAsSystem()`), so the gate must
   // not fail-close over it (hasTenantContext() is false for the system marker).
   if (!scoped) return fn();
-  if (hasTenantContext() || isSystemContext()) return fn();
+  if (hasTenantContext()) {
+    // A caller that names its tenant runs only inside that tenant. An active
+    // context for another tenant is refused, never silently adopted; a caller
+    // that names none keeps the context its host entered.
+    if (
+      typeof tenantId === 'string' &&
+      tenantId &&
+      !allowCrossTenant &&
+      getTenantId() !== tenantId
+    ) {
+      throw new TenantIsolationError(
+        `The ${surface} caller's tenant does not match the active tenant context.`,
+      );
+    }
+    return fn();
+  }
+  if (isSystemContext()) return fn();
 
   // Explicit operator opt-in to cross-tenant access. Checked before the tenant
   // selector so a deliberate `--all-tenants` / `allowCrossTenant` overrides a

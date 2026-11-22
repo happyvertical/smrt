@@ -1,5 +1,139 @@
 # @happyvertical/smrt-svelte
 
+## 0.69.0
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.69.0
+  - @happyvertical/smrt-chat@0.69.0
+  - @happyvertical/smrt-fields@0.69.0
+  - @happyvertical/smrt-inference@0.69.0
+  - @happyvertical/smrt-languages@0.69.0
+  - @happyvertical/smrt-mcp-apps@0.69.0
+  - @happyvertical/smrt-web@0.69.0
+  - @happyvertical/smrt-ui@0.69.0
+  - @happyvertical/smrt-types@0.69.0
+
+## 0.68.0
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.68.0
+  - @happyvertical/smrt-chat@0.68.0
+  - @happyvertical/smrt-fields@0.68.0
+  - @happyvertical/smrt-inference@0.68.0
+  - @happyvertical/smrt-languages@0.68.0
+  - @happyvertical/smrt-mcp-apps@0.68.0
+  - @happyvertical/smrt-web@0.68.0
+  - @happyvertical/smrt-ui@0.68.0
+  - @happyvertical/smrt-types@0.68.0
+
+## 0.67.0
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.67.0
+  - @happyvertical/smrt-chat@0.67.0
+  - @happyvertical/smrt-fields@0.67.0
+  - @happyvertical/smrt-inference@0.67.0
+  - @happyvertical/smrt-languages@0.67.0
+  - @happyvertical/smrt-mcp-apps@0.67.0
+  - @happyvertical/smrt-web@0.67.0
+  - @happyvertical/smrt-ui@0.67.0
+  - @happyvertical/smrt-types@0.67.0
+
+## 0.66.1
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.66.1
+  - @happyvertical/smrt-chat@0.66.1
+  - @happyvertical/smrt-fields@0.66.1
+  - @happyvertical/smrt-inference@0.66.1
+  - @happyvertical/smrt-languages@0.66.1
+  - @happyvertical/smrt-mcp-apps@0.66.1
+  - @happyvertical/smrt-web@0.66.1
+  - @happyvertical/smrt-ui@0.66.1
+  - @happyvertical/smrt-types@0.66.1
+
+## 0.66.0
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.66.0
+  - @happyvertical/smrt-chat@0.66.0
+  - @happyvertical/smrt-fields@0.66.0
+  - @happyvertical/smrt-inference@0.66.0
+  - @happyvertical/smrt-languages@0.66.0
+  - @happyvertical/smrt-mcp-apps@0.66.0
+  - @happyvertical/smrt-web@0.66.0
+  - @happyvertical/smrt-ui@0.66.0
+  - @happyvertical/smrt-types@0.66.0
+
+## 0.65.0
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.65.0
+  - @happyvertical/smrt-chat@0.65.0
+  - @happyvertical/smrt-fields@0.65.0
+  - @happyvertical/smrt-inference@0.65.0
+  - @happyvertical/smrt-languages@0.65.0
+  - @happyvertical/smrt-mcp-apps@0.65.0
+  - @happyvertical/smrt-web@0.65.0
+  - @happyvertical/smrt-ui@0.65.0
+  - @happyvertical/smrt-types@0.65.0
+
+## 0.64.0
+
+### Patch Changes
+
+- @happyvertical/smrt-chat@0.64.0
+  - @happyvertical/smrt-fields@0.64.0
+  - @happyvertical/smrt-inference@0.64.0
+  - @happyvertical/smrt-languages@0.64.0
+  - @happyvertical/smrt-core@0.64.0
+  - @happyvertical/smrt-mcp-apps@0.64.0
+  - @happyvertical/smrt-ui@0.64.0
+  - @happyvertical/smrt-web@0.64.0
+  - @happyvertical/smrt-types@0.64.0
+
+## 0.63.0
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.63.0
+  - @happyvertical/smrt-chat@0.63.0
+  - @happyvertical/smrt-fields@0.63.0
+  - @happyvertical/smrt-inference@0.63.0
+  - @happyvertical/smrt-languages@0.63.0
+  - @happyvertical/smrt-mcp-apps@0.63.0
+  - @happyvertical/smrt-web@0.63.0
+  - @happyvertical/smrt-ui@0.63.0
+  - @happyvertical/smrt-types@0.63.0
+
+## 0.62.14
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.62.14
+  - @happyvertical/smrt-chat@0.62.14
+  - @happyvertical/smrt-fields@0.62.14
+  - @happyvertical/smrt-inference@0.62.14
+  - @happyvertical/smrt-languages@0.62.14
+  - @happyvertical/smrt-mcp-apps@0.62.14
+  - @happyvertical/smrt-web@0.62.14
+  - @happyvertical/smrt-ui@0.62.14
+  - @happyvertical/smrt-types@0.62.14
+
 ## 0.62.13
 
 ### Patch Changes

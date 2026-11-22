@@ -370,8 +370,23 @@ reversal lever.
   suite's parallel shape without silently changing coverage. The core and
   package matrices run concurrently. Every PR also runs affected knowledge
   freshness: it has no paths filter, because the merge group always runs the
-  check and a PR that skipped it was ejected there (#5045). The complete suite
-  runs for `merge_group`.
+  check and a PR that skipped it was ejected there (#5045).
+- Merge groups (#5364): `validation-scope` runs `scripts/merge-group-scope.mjs`,
+  which wraps `scripts/ci-impact.mjs` against `merge_group.base_sha`. The
+  suite runs `affected` (Turbo `...[base_sha]`, the PR shape) only when that
+  plan is not full; any global or unowned input (root config, lockfile,
+  `scripts/`, workflows, `docs/content`, `docs/knowledge`), any change to `core`, `scanner` or
+  `vitest`, an unreadable base, or any failure to decide selects `full`.
+  Turbo task-level edges (`pkg#task` dependsOn in `turbo.json`) count as
+  dependencies. Coverage Gate, Test Integration, the seed build, Publish
+  Dry Run, knowledge freshness and the control-plane regression run in every
+  merge group in both shapes. PostgreSQL suites follow the same plan: the scope
+  job passes the affected list to `postgres-test-shard.mjs`
+  (`POSTGRES_AFFECTED`), `all` when full, and an empty list skips the shards
+  while `postgres-required` still reports. The base is sound only because the
+  queue uses `ALLGREEN` grouping: an entry merges only when every earlier
+  entry did, so the diff against the base is exactly what the group adds. Do
+  not switch the queue to `HEADGREEN` without reverting this.
 
 All four test matrices — `affected-core-tests`, `affected-package-tests`,
 `test-core`, and `test-packages` — set `max-parallel` to their shard count;
@@ -492,13 +507,14 @@ Rollout status:
 4. Done. The required status list is `Required CI` and `postgres-required`
    (the latter added to the `Repository CI / required` ruleset on 2026-09-23,
    after the lane was proven green on `main`: run 35875902114).
-5. Done. The repository merge queue uses squash merges, one entry built and
-   one merged at a time, zero wait, all-green behavior, and a 180-minute check
-   timeout. The one-entry width is load-bearing: `verifyFence()` in
-   `scripts/release-admission.mjs` refuses to close or publish a
-   [release window](release-window.md) on a wider queue. A serial queue makes
-   every entry wait for the runs ahead of it, so the length of one merge-group
-   run is what to shorten.
+5. Done. The repository merge queue uses squash merges and a 180-minute check
+   timeout. Width is a throughput setting, not a release invariant: the
+   [release window](release-window.md) drains every granted group head and
+   revokes any untracked live grant before freezing, so `verifyFence()` in
+   `scripts/release-admission.mjs` only requires that a `merge_queue` rule
+   exists on main. Batching (several groups building, several PRs per group) is
+   supported; a stacked group is admitted once the group beneath it has merged
+   (reconciliation runs every 10 minutes).
 
 When merge queue mode is enabled, the main workflow skips duplicate tests and
 the standalone build. The versioned release build, exact-artifact publication,

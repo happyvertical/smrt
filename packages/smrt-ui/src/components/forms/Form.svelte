@@ -25,6 +25,7 @@ import {
   createControlInteractionRegistry,
 } from './control-interaction.js';
 import { setControlInteractionContext } from './control-interaction-context.js';
+import { validateBeforeSubmit } from './form-validation.js';
 import StagedControlReview from './StagedControlReview.svelte';
 
 export interface Props extends Omit<HTMLFormAttributes, 'class'> {
@@ -40,6 +41,13 @@ export interface Props extends Omit<HTMLFormAttributes, 'class'> {
   oninteraction?: (event: ControlInteractionEvent) => void;
   /** Render the built-in human review surface for staged changes. */
   stagedReview?: boolean;
+  /**
+   * Opt in to validate-before-submit (#5346): each invalid field shows its
+   * reason next to it once touched or after a submit attempt, and submit is
+   * blocked until the form is valid. Never takes over the POST; pair with
+   * `preventDefault={false}` for a native/SvelteKit form-action submit.
+   */
+  validate?: boolean;
   /** Form controls and content inside the form. */
   children: Snippet;
 }
@@ -51,6 +59,7 @@ let {
   interactionRegistry,
   oninteraction,
   stagedReview = true,
+  validate = false,
   id,
   name,
   onsubmit,
@@ -82,6 +91,12 @@ setControlInteractionContext({
 $effect(() => {
   if (!oninteraction) return;
   return resolvedInteractionRegistry.subscribe(oninteraction);
+});
+
+$effect(() => {
+  if (!validate || !formElement) return;
+  const handle = validateBeforeSubmit(formElement);
+  return () => handle.destroy();
 });
 
 export function getInteractionRegistry(): ControlInteractionRegistry {

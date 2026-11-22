@@ -51,3 +51,65 @@ excludes `packages/core/src/__tests__/**` (the fixture's own folder), which the
 `**/__tests__/**` pattern did not match at that depth, so recapture was
 impossible once the fixture existed. The file name keeps `origin-main` so the
 history stays easy to follow.
+
+## Digest updates for intended changes to generated source
+
+The comparison still pins every artifact. When a change is meant to alter
+emitted source, the digests of exactly the files it alters are replaced by
+hand with the new values, and the change is listed here. Manifest, schema,
+DDL, migration and OpenAPI digests have not moved since the recapture above.
+
+- Generated list routes (`compat_plain/+server.ts`, `compatroots/+server.ts`):
+  the list and count handlers answer a where clause the collection refuses
+  with its 400 status.
+- List query grammar (#5439): the same two list routes read their filter with
+  `parseRestListWhere(searchParams, model)` inside the typed-400 guard, so a
+  repeated query parameter is refused and boolean/datetime values are decoded
+  against the model's fields; the list route's refusal body keeps the
+  normalized error code.
+- Generated write paths (both MCP servers `single/index.ts` and
+  `modular/handlers/index.ts`, the list and item routes of each model, and
+  `sync/apply/+server.ts`): each writable policy asks
+  `ObjectRegistry.isServiceOptionInput()` which body keys are fields.
+- Generated read routes (the list and item routes of each model:
+  `compat_plain/+server.ts`, `compat_plain/[id]/+server.ts`,
+  `compatroots/+server.ts`, `compatroots/[id]/+server.ts`): every list,
+  count and point read resolves its tenant read scope at request time with
+  `resolveAnonymousTenantReadScope()`, for every model, since tenancy can be
+  registered at runtime. The same four files then also enter the caller's
+  tenant through core's request hooks when the model is tenant-scoped at
+  request time, and choose the read cache policy and ETag tenant
+  discriminator at request time.
+- Request-path checks (#5164): both MCP servers (`single/index.ts`,
+  `modular/handlers/index.ts`), the list and item routes of each model, and
+  `sync/apply/+server.ts` apply the update-input, filter and tenant write gate
+  rules (an update assigns declared fields only, a list filter names readable
+  fields, a write to a tenant-scoped model needs a tenant, a create through a
+  base selects only subtypes open on the transport).
+- Sync tenant (#5164): `sync/apply/+server.ts` enters the caller's tenant for
+  a model whose tenancy is registered at runtime, as the CRUD routes do.
+- Ambient request tenant (#5164): the list and item routes of each model and
+  `sync/apply/+server.ts` read the request's tenant for the runtime exposure
+  gate from `locals`, else from the tenant context already active for the
+  request.
+- Request tenancy (#5375): the list and item routes of each model and
+  `sync/apply/+server.ts` resolve the request's tenancy through core
+  (`enterRequestTenancy`) for every model, with no generation-time tenancy
+  switch, and read the cache policy and validator from the bound tenancy.
+- MCP request tenancy (#5375): both MCP servers (`single/index.ts`,
+  `modular/handlers/index.ts`) run each tool inside the tenancy resolved for
+  its model at call time.
+- Sync create type (#5375): `sync/apply/+server.ts` rejects a create whose
+  payload selects a type its STI target does not write.
+- MCP served models (#5375): both MCP servers (`single/index.ts`,
+  `modular/handlers/index.ts`) pass the models they serve to each tool's
+  request tenancy, so a family member outside them is not served through its
+  base.
+- MCP tenancy at call time (#5375): both MCP servers (`single/index.ts`,
+  `modular/handlers/index.ts`) turn the installed tenancy layer on when a
+  tool's model is tenant-scoped at call time.
+- Emitted family members (#5375): the list and item routes of an STI model
+  with members, and `sync/apply/+server.ts` of a manifest with an STI family,
+  pass the family members (sync: the models) the manifest generates to the
+  request tenancy, so a member registered elsewhere is not served through its
+  base (sti case only; the plain case has no family and is unchanged).

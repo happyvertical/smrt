@@ -1,7 +1,12 @@
 <script lang="ts">
+import { Button, toaster } from '@happyvertical/smrt-ui';
 import { onMount, untrack } from 'svelte';
+import { goto, invalidate, invalidateAll } from '$app/navigation';
 import ImportReview from '$lib/components/ImportReview.svelte';
 import { IMPORT_MAX_BYTES } from '$lib/import-limits';
+import { ApiError, isLimitRefusal } from '$lib/ui/api';
+import { applyBlock, changesApi, plural } from '$lib/ui/changes';
+import { DEPENDS } from '$lib/ui/events';
 import { type ImportState, importStages } from '$lib/ui/import';
 import type { PageProps } from './$types';
 
@@ -31,6 +36,42 @@ const active = $derived(
     !['discarded', 'published', 'cancelled'].includes(current.status),
 );
 const review = $derived(current?.status === 'review');
+// The import's changes wait like any others: Apply is the same digest-pinned
+// route as the Changes waiting page, using the one `changes` the layout loads.
+const changes = $derived(data.changes ?? null);
+const block = $derived(changes ? applyBlock(changes) : 'none');
+const waiting = $derived(
+  !active && !review && changes && changes.count > 0 ? changes.count : 0,
+);
+async function apply() {
+  if (!changes || block || busy) return;
+  busy = true;
+  error = '';
+  try {
+    await changesApi.apply(changes.digest, { generation: changes.generation });
+  } catch (cause) {
+    if (cause instanceof ApiError && cause.status === 409) {
+      error =
+        isLimitRefusal(cause) || cause.message.startsWith("Can't apply yet")
+          ? cause.message
+          : 'These changes were different when you last looked. Review them again, then Apply.';
+      await invalidate(DEPENDS.changes);
+    } else
+      error =
+        cause instanceof ApiError
+          ? cause.message
+          : 'The import could not be applied. Try again.';
+    busy = false;
+    return;
+  }
+  busy = false;
+  toaster.success('Applied. Your app is live', {
+    duration: 8000,
+    action: { label: 'See History', run: () => goto('/history') },
+  });
+  await goto('/', { invalidateAll: true });
+  await invalidateAll();
+}
 async function refresh() {
   const response = await fetch('/api/shell/import');
   const body = await response.json();
@@ -122,8 +163,8 @@ async function action(name: string) {
 <svelte:head><title>Import a workbook</title></svelte:head>
 <div class="smrt-app-shell__page" data-smrt-component="AppShellImport">
   <header class="smrt-app-shell__head" data-smrt-part="header"><h1>Import a workbook</h1></header>
-  <p>Load an Excel workbook into a draft. Check the proof, then review and publish it in one step.</p>
-  <p>A large workbook can take about a minute to import. Reviewing and publishing a large import can each take a while.</p>
+  <p>Load an Excel workbook. Check the proof, then review and apply it in one step.</p>
+  <p>A large workbook can take about a minute to import. Reviewing and applying a large import can each take a while.</p>
   {#if error}<p class="smrt-app-shell__alert smrt-app-shell__alert-warn" role="alert" data-smrt-part="status">{error}</p>{/if}
   {#if reading}<p role="status">Reading the workbook</p>{/if}
   {#if active || review}
@@ -132,15 +173,19 @@ async function action(name: string) {
     {#if visibleProgress.length}<ol data-smrt-part="list" aria-label="Import progress">{#each visibleProgress as entry, index (index)}<li aria-current={index === visibleProgress.length - 1 && entry.stage === current?.step ? 'step' : undefined}>{importStages[entry.stage]}</li>{/each}</ol>{/if}
     {#if current?.state === 'stopped'}<p>{current.reason === 'budget' || current.stopReason?.startsWith('max_') ? 'This import reached its time or work limit. Resume to give it more time and continue, or discard it and try a smaller workbook.' : 'Your progress is saved. Resume to continue.'}</p>{/if}
     {#if review}
-      <p>The workbook passed its proof. Review it, then publish in one step.</p>
-      <p>To inspect the imported records first, choose Draft in the Live/Draft switch, then open a table from the menu.</p>
-      <a class="smrt-app-shell__btn smrt-app-shell__btn-primary" href="/draft/review" data-smrt-part="trigger">Review and publish</a>
+      <p>The workbook passed its proof. Review it, then apply it in one step.</p>
+      <a class="smrt-app-shell__btn" href="/changes" data-smrt-part="trigger">Review</a>
+      <Button disabled={busy || block !== null} onclick={apply}>Apply {changes ? plural(changes.count, 'change') : 'the import'}</Button>
+      {#if changes && block}<p role="status" data-smrt-part="description">{block}</p>{/if}
       <button class="smrt-app-shell__btn" disabled={busy} onclick={() => action('discard')}>Discard import</button>
     {:else}
       <button class="smrt-app-shell__btn" disabled={busy} onclick={() => action(current?.state === 'stopped' ? 'resume' : 'stop')}>{current?.state === 'stopped' ? 'Resume import' : 'Pause import'}</button>
       <button class="smrt-app-shell__btn" disabled={busy} onclick={() => action('cancel')}>Cancel import</button>
     {/if}
   {:else}
+    {#if waiting}
+      <p role="status" data-smrt-part="status">You have {plural(waiting, 'change')} waiting. Apply or discard {waiting === 1 ? 'it' : 'them'} before importing a workbook. <a href="/changes">Review them</a></p>
+    {/if}
     {#if current}
       <p role="status">{importStages[current.status] ?? 'The import could not finish'}</p>
       {#if current.note}<p>{current.note}</p>{/if}
@@ -155,7 +200,7 @@ async function action(name: string) {
       ondragover={(event) => { event.preventDefault(); dragging = true; }} ondragleave={() => { dragging = false; }}
       ondrop={(event) => { event.preventDefault(); dragging = false; void upload(event.dataTransfer?.files[0]); }}>
       <p>{dragging ? 'Drop your workbook here' : 'Drop an .xlsx workbook here, or choose a file.'}</p>
-      <label>Choose a workbook <input aria-label="Choose a workbook" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" disabled={busy} onchange={(event) => { void upload(event.currentTarget.files?.[0]); }} /></label>
+      <label>Choose a workbook <input aria-label="Choose a workbook" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" disabled={busy || waiting > 0} onchange={(event) => { void upload(event.currentTarget.files?.[0]); }} /></label>
       <p>Up to 25 MB. Change the cell limit in <a href="/settings/import">Import settings</a>.</p>
     </section>
   {/if}

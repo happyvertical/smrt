@@ -33,9 +33,22 @@
 
 import { createHash } from 'node:crypto';
 import { resolveDispatchTenantScope } from '../dispatch/tenant-resolver.js';
+import {
+  type ApiCacheShape,
+  PRIVATE_READ_CACHE_CONTROL,
+  type ReadCacheControlOptions,
+  requestedSharedCacheControl,
+  resolveReadCacheControl,
+} from './read-cache-control.js';
 
-/** Default Cache-Control for generated reads: private conditional revalidation. */
-export const PRIVATE_READ_CACHE_CONTROL = 'private, no-cache';
+// The pure Cache-Control policy lives in a leaf module that imports nothing
+// (no node:crypto, registry, or interceptors), so the browser entry and the
+// Vite plugin can load it; the public names stay exported from here.
+export {
+  PRIVATE_READ_CACHE_CONTROL,
+  type ReadCacheControlOptions,
+  resolveReadCacheControl,
+};
 
 /**
  * Compute the strong ETag for a serialized response body.
@@ -43,9 +56,15 @@ export const PRIVATE_READ_CACHE_CONTROL = 'private, no-cache';
  * SHA-256 of the exact JSON text, base64url-encoded and quoted per RFC 9110.
  * Deterministic for a given body, so any change to the underlying data (which
  * changes the serialized JSON) changes the ETag.
+ *
+ * @param discriminator - The request tenancy the body was read under
+ *   (`etagDiscriminator`): a change of tenancy changes the ETag even when the
+ *   body is the same. Omitted, the ETag is the body's hash alone.
  */
-export function computeBodyEtag(body: string): string {
-  return `"${createHash('sha256').update(body).digest('base64url')}"`;
+export function computeBodyEtag(body: string, discriminator?: string): string {
+  const hash = createHash('sha256');
+  if (discriminator !== undefined) hash.update(`${discriminator}\u0000`);
+  return `"${hash.update(body).digest('base64url')}"`;
 }
 
 /**
@@ -65,85 +84,6 @@ export function ifNoneMatchSatisfied(
     const opaque = tag.startsWith('W/') ? tag.slice(2) : tag;
     return opaque === etag;
   });
-}
-
-interface ApiCacheShape {
-  cache?: { sMaxage?: unknown };
-  public?: unknown;
-}
-
-/** Model-level context that constrains the cache policy beyond `api` config. */
-export interface ReadCacheControlOptions {
-  /**
-   * Whether the model is tenant-scoped (`@smrt({ tenantScoped })` or the
-   * `@TenantScoped()` decorator, ANY mode including `'optional'`). Tenant
-   * scoping keys the response body on request identity (session cookie), which
-   * shared caches cannot see — they key on the URL alone — so honoring
-   * `sMaxage` would serve one tenant's rows to other tenants or to anonymous
-   * visitors. Fail-closed: tenant-scoped models NEVER emit shared-cache
-   * headers (#1757 review finding).
-   */
-  tenantScoped?: boolean;
-  /**
-   * Whether the response body varies with caller permissions because at least
-   * one field has `@field({ readPermission })`. Shared caches key on URL, not
-   * user permission sets, so this also fails private regardless of `sMaxage`.
-   */
-  permissionScoped?: boolean;
-}
-
-/**
- * The shared Cache-Control string the `api` config asks for, or null when the
- * config does not (validly) opt into shared caching. Config-only — the
- * tenant-scoped restriction is applied by `resolveReadCacheControl`.
- */
-function requestedSharedCacheControl(apiConfig: unknown): string | null {
-  if (!apiConfig || typeof apiConfig !== 'object') {
-    return null;
-  }
-
-  const config = apiConfig as ApiCacheShape;
-  const publicRead = config.public === true || config.public === 'read';
-  const sMaxage = config.cache?.sMaxage;
-
-  if (
-    publicRead &&
-    typeof sMaxage === 'number' &&
-    Number.isFinite(sMaxage) &&
-    sMaxage > 0
-  ) {
-    // Shared caches serve for sMaxage seconds; browsers (max-age=0) always
-    // revalidate, so end users see edits immediately via cheap 304s.
-    return `public, max-age=0, s-maxage=${Math.floor(sMaxage)}`;
-  }
-
-  return null;
-}
-
-/**
- * Resolve the Cache-Control header for a generated read response from a
- * model's `@smrt({ api })` config (defensively typed — the config arrives as
- * `unknown` from the registry at runtime and from the manifest at build time).
- *
- * Only models that opted out of auth via `public: true` (or `'read'`, which
- * makes reads public) may emit shared-cache headers, and only when they also
- * configure a positive `cache.sMaxage`. Everything else — including a
- * non-public model that configures `sMaxage` — stays `private, no-cache`.
- *
- * Tenant-scoped and permission-scoped models are ALWAYS `private, no-cache`
- * regardless of config: their response bodies vary with request identity
- * (tenant or permissions, invisible to URL-keyed shared caches), so shared
- * caching would leak one caller's representation to another caller.
- */
-export function resolveReadCacheControl(
-  apiConfig: unknown,
-  options: ReadCacheControlOptions = {},
-): string {
-  if (options.tenantScoped || options.permissionScoped) {
-    return PRIVATE_READ_CACHE_CONTROL;
-  }
-
-  return requestedSharedCacheControl(apiConfig) ?? PRIVATE_READ_CACHE_CONTROL;
 }
 
 /** Whether an `api` config opts reads out of auth (`public: true | 'read'`). */
@@ -241,9 +181,10 @@ export function conditionalJsonResponse(
   request: Request,
   payload: unknown,
   cacheControl: string,
+  discriminator?: string,
 ): Response {
   const body = JSON.stringify(payload);
-  const etag = computeBodyEtag(body);
+  const etag = computeBodyEtag(body, discriminator);
 
   if (ifNoneMatchSatisfied(request.headers.get('if-none-match'), etag)) {
     return new Response(null, {
@@ -504,6 +445,14 @@ export interface ConditionalGetRouteHelperOptions
    * Ignored on the v1 body-hash path, whose ETag already covers the whole body.
    */
   manifestHash?: string;
+  /**
+   * Registry name of the model the route reads. When given, the emitted helper
+   * decides at request time — from the live registry, so tenancy registered
+   * after generation counts — whether the model is tenant-scoped: if it is,
+   * the ETag is keyed on the active tenant and reads are private, whatever
+   * the manifest said at generation.
+   */
+  readScopeModel?: string;
 }
 
 /**
@@ -560,6 +509,28 @@ export function generateConditionalGetRouteHelper(
   // the base-table version representation cannot see, so keep the v1 body-hash
   // ETag (query-first but correct). See useBodyHash.
   const useBodyHash = options.useBodyHash || options.permissionScoped === true;
+  // Request-time tenancy (#5375): with a model name, the emitted helper reads
+  // the tenancy the handler resolved (`enterTenancy`) and switches to the
+  // private policy when any row the read may return is tenant-scoped, and
+  // keys the validator on the actor's scope, the admitted types and the
+  // policy fingerprint, so a validator issued before a registration changed
+  // a member's policy never revalidates.
+  const liveModel = options.readScopeModel;
+  const tenantCacheControl = resolveReadCacheControl(apiConfig, {
+    ...options,
+    tenantScoped: true,
+  });
+  const liveImport = liveModel
+    ? `import { boundTenancyCacheScoped as tenancyCacheScoped, boundTenancyEtagDiscriminator as tenancyEtagDiscriminator } from '@happyvertical/smrt-core';
+const TENANT_READ_CACHE_CONTROL = '${tenantCacheControl}';
+`
+    : '';
+  const baseCacheControl = liveModel
+    ? '(tenancyCacheScoped() ? TENANT_READ_CACHE_CONTROL : READ_CACHE_CONTROL)'
+    : 'READ_CACHE_CONTROL';
+  const cacheControlExpression = options.runtimeExposure
+    ? `runtimeExposureGateActive() ? 'private, no-store' : ${baseCacheControl}`
+    : baseCacheControl;
   if (useBodyHash) {
     return `
 // Conditional GET (#1757 v1): a strong body-hash ETag over the serialized
@@ -570,9 +541,13 @@ import { createHash } from 'node:crypto';
 
 ${options.runtimeExposure ? "import { hasRuntimeExposureGate as runtimeExposureGateActive } from '@happyvertical/smrt-core';" : ''}
 const READ_CACHE_CONTROL = '${cacheControl}';
-
-function bodyEtag(body: string): string {
-  return \`"\${createHash('sha256').update(body).digest('base64url')}"\`;
+${liveImport}
+function bodyEtag(body: string, discriminator?: string): string {
+  // The request tenancy the body was read under keys the ETag too, so a
+  // tenancy change revalidates nothing even when the body is the same.
+  const hash = createHash('sha256');
+  if (discriminator !== undefined) hash.update(\`\${discriminator}\\u0000\`);
+  return \`"\${hash.update(body).digest('base64url')}"\`;
 }
 
 function ifNoneMatchSatisfied(header: string | null, etag: string): boolean {
@@ -587,17 +562,17 @@ function ifNoneMatchSatisfied(header: string | null, etag: string): boolean {
 
 function conditionalJson(request: Request, payload: unknown): Response {
   const body = JSON.stringify(payload);
-  const etag = bodyEtag(body);
+  const etag = bodyEtag(body, ${liveModel ? 'tenancyEtagDiscriminator()' : 'undefined'});
   if (ifNoneMatchSatisfied(request.headers.get('if-none-match'), etag)) {
     return new Response(null, {
       status: 304,
-      headers: { 'cache-control': ${options.runtimeExposure ? "runtimeExposureGateActive() ? 'private, no-store' : READ_CACHE_CONTROL" : 'READ_CACHE_CONTROL'}, etag },
+      headers: { 'cache-control': ${cacheControlExpression}, etag },
     });
   }
   return new Response(body, {
     status: 200,
     headers: {
-      'cache-control': ${options.runtimeExposure ? "runtimeExposureGateActive() ? 'private, no-store' : READ_CACHE_CONTROL" : 'READ_CACHE_CONTROL'},
+      'cache-control': ${cacheControlExpression},
       'content-type': 'application/json',
       etag,
     },
@@ -616,11 +591,13 @@ function conditionalJson(request: Request, payload: unknown): Response {
     'getTableVersion',
     'ifNoneMatchHasConcreteMatch',
     'ifNoneMatchSatisfied',
-    ...(tenantScoped ? ['resolveTenantEtagDiscriminator'] : []),
+    ...(tenantScoped && !liveModel ? ['resolveTenantEtagDiscriminator'] : []),
   ].join(',\n  ');
-  const representationExtra = tenantScoped
-    ? 'resolveTenantEtagDiscriminator()'
-    : 'undefined';
+  const representationExtra = liveModel
+    ? 'tenancyEtagDiscriminator()'
+    : tenantScoped
+      ? 'resolveTenantEtagDiscriminator()'
+      : 'undefined';
 
   // The build-time web-collection shape digest (#1764) salts the ETag so a
   // shape-only deploy (no table write) busts every read validator — the
@@ -649,7 +626,7 @@ import {
 
 ${options.runtimeExposure ? "import { hasRuntimeExposureGate as runtimeExposureGateActive } from '@happyvertical/smrt-core';" : ''}
 const READ_CACHE_CONTROL = '${cacheControl}';
-${manifestHashConstant}
+${liveImport}${manifestHashConstant}
 async function conditionalVersionedRead(
   request: Request,
   db: Parameters<typeof getTableVersion>[0],
@@ -665,7 +642,7 @@ async function conditionalVersionedRead(
   const notModified = () =>
     new Response(null, {
       status: 304,
-      headers: { 'cache-control': ${options.runtimeExposure ? "runtimeExposureGateActive() ? 'private, no-store' : READ_CACHE_CONTROL" : 'READ_CACHE_CONTROL'}, etag },
+      headers: { 'cache-control': ${cacheControlExpression}, etag },
     });
   if (ifNoneMatchHasConcreteMatch(ifNoneMatch, etag)) {
     return notModified();
@@ -678,7 +655,7 @@ async function conditionalVersionedRead(
   return new Response(JSON.stringify(payload), {
     status: 200,
     headers: {
-      'cache-control': ${options.runtimeExposure ? "runtimeExposureGateActive() ? 'private, no-store' : READ_CACHE_CONTROL" : 'READ_CACHE_CONTROL'},
+      'cache-control': ${cacheControlExpression},
       'content-type': 'application/json',
       etag,
     },

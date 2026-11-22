@@ -16,10 +16,17 @@ import {
   getCookbookToolService,
 } from '../cookbook/tools.js';
 import {
+  assertCreateTargetSurface,
+  isCreateOpenOnSurface,
+} from '../create-target';
+import { importOptionalDependency } from '../lazy-external';
+import {
   type McpGetSerializer,
   resolveMcpGetSerializer,
 } from '../mcp-serializer.js';
 import type { PublicJsonOptions, SmrtObject } from '../object';
+import { publicSerializerOf } from '../public-json';
+import { assertQueryAccess } from '../query-access';
 import {
   buildDefaultListOrderBy,
   resolveListLimit,
@@ -32,12 +39,18 @@ import type {
   ApiSerializerReference,
   RegisteredClass,
 } from '../registry/types.js';
+import { runToolInRequestTenancy } from '../request-actor';
+import { applyUpdateInput, assertCreateInput } from '../request-input';
 import {
   isRuntimeModelEnabled,
   type RuntimeExposureContext,
   subscribeRuntimeExposure,
 } from '../runtime-exposure.js';
 import type { FieldDefinition, MethodDefinition } from '../scanner/types.js';
+import {
+  identifierArgument,
+  requireIdentifierArgument,
+} from '../tool-arguments';
 import { resolveDisplayLabelField } from '../ui-metadata.js';
 import {
   isQualifiedName,
@@ -71,7 +84,6 @@ import {
   type RuntimeOptions,
 } from './mcp-runtime-template.js';
 import { canonicalMcpToolNames, type McpToolTarget } from './mcp-tool-name.js';
-import { runWithTenantGate } from './tenant-gate.js';
 import {
   buildToolInputSchema,
   describeAction,
@@ -133,6 +145,16 @@ function normalizePublicToolError(
     return { code: error.code, message: error.message };
   if (!error || typeof error !== 'object') return undefined;
   const candidate = error as { code?: unknown; publicMessage?: unknown };
+  // Another tenant's row is refused as a plain permission denial, unless the
+  // error states its own public message.
+  if (
+    candidate.code === 'TENANT_ISOLATION_VIOLATION' &&
+    !(
+      typeof candidate.publicMessage === 'string' &&
+      candidate.publicMessage.length > 0
+    )
+  )
+    return { code: 'permission_denied', message: 'Permission denied.' };
   if (
     typeof candidate.code !== 'string' ||
     !/^[A-Za-z][A-Za-z0-9_.:-]{0,127}$/.test(candidate.code) ||
@@ -1193,8 +1215,16 @@ export class MCPGenerator {
       objectName,
       exposureContext,
     );
+    // A create offers only the subtypes whose own `mcp` surface opens create,
+    // the same rule `executeAction` applies to the selector.
     const variants = catalog.polymorphic
-      ? [catalog.base, ...catalog.subtypes].map((target) => ({
+      ? [
+          catalog.base,
+          ...catalog.subtypes.filter(
+            (target) =>
+              action !== 'create' || isCreateOpenOnSurface(target.name, 'mcp'),
+          ),
+        ].map((target) => ({
           name: target.name,
           discriminator: target.name,
           label: target.label,
@@ -1739,12 +1769,9 @@ export class MCPGenerator {
     options: PublicJsonOptions = this.getPublicJsonOptions(),
   ): unknown {
     if (value === null || typeof value !== 'object') return value;
-    const publicSource = value as {
-      toPublicJSON?: (options?: PublicJsonOptions) => unknown;
-    };
-    if (typeof publicSource.toPublicJSON === 'function') {
-      return publicSource.toPublicJSON(options);
-    }
+    // The serialiser the value's class provides, never an instance property.
+    const serialize = publicSerializerOf(value);
+    if (serialize) return serialize(options);
     if (Array.isArray(value)) {
       if (seen.has(value)) return value;
       seen.add(value);
@@ -1769,6 +1796,11 @@ export class MCPGenerator {
    * Mass-assignment guard (#1540): strip framework/server-managed and
    * `@field({ readonly: true })` fields from a create/update body, and — when an
    * `@smrt({ api: { writable: [...] } })` allowlist is set — intersect with it.
+   *
+   * Tool arguments set fields and nothing else: `_`-prefixed keys and the keys
+   * that configure a service of the object
+   * (`ObjectRegistry.isServiceOptionInput`) never reach construction or a
+   * loaded instance.
    */
   private applyWritablePolicy(
     objectName: string | undefined,
@@ -1811,6 +1843,7 @@ export class MCPGenerator {
     const result: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(data)) {
       if (key.startsWith('_')) continue;
+      if (ObjectRegistry.isServiceOptionInput(objectName, key)) continue;
       if (serverManaged.has(key)) continue;
       if (readonly.has(key)) continue;
       if (writable && !writable.includes(key)) continue;
@@ -1860,6 +1893,8 @@ export class MCPGenerator {
         surface: 'mcp',
         tenantId: this.context.tenantId,
       });
+      // A subtype whose own surface closes create is not a target here.
+      assertCreateTargetSurface(objectName, target, 'mcp');
       args = target.data;
       if (target.collectionName !== objectName) {
         const classInfo = ObjectRegistry.getClass(target.name);
@@ -1876,19 +1911,36 @@ export class MCPGenerator {
     const mutating = action !== 'list' && action !== 'get';
     this.requireToolAuth(targetObjectName, mutating);
 
-    // Fail-closed tenant context (#1554). For tenant-scoped objects, establish
-    // the context from the principal's tenant (or an explicit cross-tenant
-    // opt-in); without either, this throws when tenancy is enabled rather than
-    // letting an optional-scoped read range across all tenants. Tenant-scoping
-    // is resolved inside tenancy by class name so it matches the interceptor.
-    return runWithTenantGate(
+    // Fail-closed tenant context (#1554), decided by the request tenancy of
+    // the tool's model (#5375): the tenancy it has now, the STI members the
+    // tool serves, the context's tenant or explicit cross-tenant grant. A
+    // tenant-scoped model refuses a call with neither; the bound decision
+    // holds every collection call of the tool.
+    const run = () =>
+      this.runAction(targetCollection, action, args, targetObjectName);
+    if (!targetObjectName) return run();
+    const modelScope = this.resolveClassScope(ObjectRegistry.getAllClasses());
+    return runToolInRequestTenancy(
       {
-        className: targetObjectName,
-        tenantId: this.context.tenantId,
-        allowCrossTenant: this.context.allowCrossTenant,
-        surface: 'MCP',
+        model: targetObjectName,
+        action,
+        principal: {
+          tenantId: this.context.tenantId,
+          allowCrossTenant: this.context.allowCrossTenant,
+          userId: this.context.user?.id,
+          // A family member that is not public is served through its base
+          // only to a caller with a principal, as its own tool would be.
+          authenticated: !!this.context.user,
+        },
+        ...(modelScope
+          ? {
+              modelScope: new Set(
+                [...modelScope].map((info) => info.qualifiedName || info.name),
+              ),
+            }
+          : {}),
       },
-      () => this.runAction(targetCollection, action, args, targetObjectName),
+      run,
     );
   }
 
@@ -1909,14 +1961,15 @@ export class MCPGenerator {
   private async tenantScopedObjectNames(tools: MCPTool[]): Promise<string[]> {
     let isTenantScopedClass: ((name: string) => boolean) | undefined;
     try {
-      // Held in a variable so neither TypeScript's declaration emit (TS2307 —
-      // core deliberately does not depend on tenancy) nor the bundler tries to
-      // statically resolve this optional sibling package. Same pattern as
-      // `tenant-gate.ts` / `embeddings/provider.ts`.
-      const tenancySpecifier = '@happyvertical/smrt-tenancy';
-      const tenancy = (await import(/* @vite-ignore */ tenancySpecifier)) as {
-        isTenantScopedClass?: (name: string) => boolean;
-      };
+      // Passed as a function argument so neither TypeScript's declaration
+      // emit (TS2307 — core deliberately does not depend on tenancy) nor a
+      // bundler resolves this optional sibling package: a local constant is
+      // folded into a literal `import()` in dist, which a consumer's Vite
+      // import analysis then fails to resolve.
+      const tenancy = (await importOptionalDependency(
+        '@happyvertical/smrt-tenancy',
+        'Install @happyvertical/smrt-tenancy to gate tenant-scoped tools.',
+      )) as { isTenantScopedClass?: (name: string) => boolean };
       isTenantScopedClass = tenancy.isTenantScopedClass;
     } catch {
       isTenantScopedClass = undefined;
@@ -2010,6 +2063,15 @@ export class MCPGenerator {
           offset: resolveListOffset(args.offset),
         };
 
+        // A filter or ordering may name only fields this caller may read: the
+        // same permissions the rows are projected with. The count below uses
+        // the same filter.
+        assertQueryAccess(
+          objectName,
+          { where: args.where, orderBy: args.orderBy },
+          this.getPublicJsonOptions(),
+        );
+
         if (args.where) {
           listOptions.where = args.where as (typeof listOptions)['where'];
         }
@@ -2039,11 +2101,13 @@ export class MCPGenerator {
       }
 
       case 'get': {
-        if (!args.id && !args.slug) {
-          throw new Error('Either id or slug is required');
-        }
-
-        const filter = (args.id ? args.id : args.slug) as string;
+        // An identifier is a non-empty string; any other value is refused
+        // before it can be read as a filter.
+        const filter = requireIdentifierArgument(
+          args,
+          ['id', 'slug'],
+          'Either id or slug is required',
+        );
         const item = await collection.get(filter);
 
         if (!item) {
@@ -2059,6 +2123,8 @@ export class MCPGenerator {
           objectName,
           args,
         );
+        // Create input names declared fields and settable accessors only.
+        if (objectName) assertCreateInput(objectName, createData, collection);
         // Server-set ownership context (not caller-controlled).
         if (this.context.user) {
           createData.created_by = this.context.user.id;
@@ -2075,10 +2141,11 @@ export class MCPGenerator {
       }
 
       case 'update': {
-        const id = args.id as string | undefined;
-        if (!id) {
-          throw new Error('ID is required for update');
-        }
+        const id = requireIdentifierArgument(
+          args,
+          ['id'],
+          'ID is required for update',
+        );
 
         const existing = await collection.get(id);
         if (!existing) {
@@ -2092,7 +2159,8 @@ export class MCPGenerator {
           existing,
           'updated',
           async (bound) => {
-            Object.assign(bound, updateData);
+            // Arguments set declared fields and settable accessors only.
+            applyUpdateInput(bound, updateData, objectName);
 
             // Add user context. `updated_by` is a server-set audit column, not a
             // declared model field, so assign it through a record view.
@@ -2109,16 +2177,18 @@ export class MCPGenerator {
       }
 
       case 'delete': {
-        if (!args.id) {
-          throw new Error('ID is required for delete');
-        }
+        const id = requireIdentifierArgument(
+          args,
+          ['id'],
+          'ID is required for delete',
+        );
 
-        const toDelete = await collection.get(args.id as string);
+        const toDelete = await collection.get(id);
         if (!toDelete) {
           throw new Error('Object not found');
         }
 
-        await collection.delete(args.id as string);
+        await collection.delete(id);
 
         return { success: true, message: 'Object deleted successfully' };
       }
@@ -2192,7 +2262,9 @@ export class MCPGenerator {
     args: ToolArgs,
     objectName?: string,
   ): Promise<unknown> {
-    const id = args.id;
+    // The row a custom action runs on is named by a string id, like every
+    // other tool's.
+    const id = identifierArgument(args, 'id');
     const [methodName, methodDef] = objectName
       ? resolveCustomActionMethod(
           await ObjectRegistry.getAllMethods(objectName),
@@ -2221,7 +2293,7 @@ export class MCPGenerator {
 
       // If an ID is provided, get the specific object and call the method on it
       if (id) {
-        const object = await collection.get(id as string);
+        const object = await collection.get(id);
         if (!object) {
           throw new Error('Object not found');
         }
@@ -2723,6 +2795,8 @@ export const tools: Array<{
 ${indent}  const limit = args.limit ?? 50;
 ${indent}  const offset = args.offset ?? 0;
 ${indent}  const where = args.where ?? {};
+${indent}  // A filter may name only fields the configured permissions may read.
+${indent}  assertQueryAccess(${JSON.stringify(lookup)}, { where: args.where }, PUBLIC_JSON_OPTIONS);
 
 ${indent}  const collection = await ObjectRegistry.getCollection(${JSON.stringify(lookup)}, {
 ${indent}    persistence: { type: process.env.DATABASE_TYPE || 'sqlite', url: process.env.DATABASE_URL || ':memory:' },
@@ -2730,7 +2804,7 @@ ${indent}    ai: aiConfig
 ${indent}  });
 
 ${indent}  const items = await collection.list({ where, limit, offset });
-${indent}  const itemsPublic = items.map((item) => item.toPublicJSON(PUBLIC_JSON_OPTIONS));
+${indent}  const itemsPublic = items.map((item) => toPublicJSONValue(item, PUBLIC_JSON_OPTIONS));
 ${indent}  const structuredContent = {
 ${indent}    data: itemsPublic,
 ${indent}    meta: { total: await collection.count({ where }), limit, offset, count: items.length },
@@ -2740,16 +2814,14 @@ ${indent}}`;
 
             case 'get':
               return `${indent}case '${tool.name}': {
-${indent}  if (!args.id && !args.slug) {
-${indent}    throw new Error('Either id or slug is required');
-${indent}  }
+${indent}  // An identifier is a non-empty string; any other value is refused.
+${indent}  const filter = requireIdentifierArgument(args, ['id', 'slug'], 'Either id or slug is required');
 
 ${indent}  const collection = await ObjectRegistry.getCollection(${JSON.stringify(lookup)}, {
 ${indent}    persistence: { type: process.env.DATABASE_TYPE || 'sqlite', url: process.env.DATABASE_URL || ':memory:' },
 ${indent}    ai: aiConfig
 ${indent}  });
 
-${indent}  const filter = args.id || args.slug;
 ${indent}  const item = await collection.get(filter);
 
 ${indent}  if (!item) {
@@ -2763,17 +2835,18 @@ ${indent}}`;
               return `${indent}case '${tool.name}': {
 ${indent}  const { collection, objectName: targetObjectName, data } = await resolveCreateTarget(${JSON.stringify(lookup)}, args, aiConfig);
 
-${indent}  const newItem = await collection.create(applyWritablePolicy(targetObjectName, data));
+${indent}  const createData = applyWritablePolicy(targetObjectName, data);
+${indent}  // Create input names declared fields and settable accessors only.
+${indent}  assertCreateInput(targetObjectName, createData, collection);
+${indent}  const newItem = await collection.create(createData);
 
-${indent}  return successResult(newItem.toPublicJSON(PUBLIC_JSON_OPTIONS));
+${indent}  return successResult(toPublicJSONValue(newItem, PUBLIC_JSON_OPTIONS));
 ${indent}}`;
 
             case 'update':
               return `${indent}case '${tool.name}': {
-${indent}  const { id, ...updateData } = args;
-${indent}  if (!id) {
-${indent}    throw new Error('ID is required for update');
-${indent}  }
+${indent}  const { id: _id, ...updateData } = args;
+${indent}  const id = requireIdentifierArgument(args, ['id'], 'ID is required for update');
 
 ${indent}  const collection = await ObjectRegistry.getCollection(${JSON.stringify(lookup)}, {
 ${indent}    persistence: { type: process.env.DATABASE_TYPE || 'sqlite', url: process.env.DATABASE_URL || ':memory:' },
@@ -2786,30 +2859,29 @@ ${indent}    throw new Error('Object not found');
 ${indent}  }
 
 ${indent}  await collection.withAuditMutation(existing, 'updated', async (bound) => {
-${indent}    Object.assign(bound, applyWritablePolicy(${JSON.stringify(lookup)}, updateData));
+${indent}    // Arguments set declared fields and settable accessors only.
+${indent}    applyUpdateInput(bound, applyWritablePolicy(${JSON.stringify(lookup)}, updateData), ${JSON.stringify(lookup)});
 ${indent}    await bound.save();
 ${indent}  });
 
-${indent}  return successResult(existing.toPublicJSON(PUBLIC_JSON_OPTIONS));
+${indent}  return successResult(toPublicJSONValue(existing, PUBLIC_JSON_OPTIONS));
 ${indent}}`;
 
             case 'delete':
               return `${indent}case '${tool.name}': {
-${indent}  if (!args.id) {
-${indent}    throw new Error('ID is required for delete');
-${indent}  }
+${indent}  const id = requireIdentifierArgument(args, ['id'], 'ID is required for delete');
 
 ${indent}  const collection = await ObjectRegistry.getCollection(${JSON.stringify(lookup)}, {
 ${indent}    persistence: { type: process.env.DATABASE_TYPE || 'sqlite', url: process.env.DATABASE_URL || ':memory:' },
 ${indent}    ai: aiConfig
 ${indent}  });
 
-${indent}  const toDelete = await collection.get(args.id);
+${indent}  const toDelete = await collection.get(id);
 ${indent}  if (!toDelete) {
 ${indent}    throw new Error('Object not found');
 ${indent}  }
 
-${indent}  await collection.delete(args.id);
+${indent}  await collection.delete(id);
 
 ${indent}  return successResult({ success: true, message: 'Object deleted successfully' });
 ${indent}}`;
@@ -2852,7 +2924,8 @@ ${indent}}`;
                       )
                       .join(', ')}]`;
               return `${indent}case '${tool.name}': {
-${indent}  const { id, options, ...directArgs } = args;
+${indent}  const { id: _id, options, ...directArgs } = args;
+${indent}  const id = identifierArgument(args, 'id');
 
 ${indent}  if (${JSON.stringify(metadata.scope)} === 'item' && !id) {
 ${indent}    throw new Error(${JSON.stringify(`ID is required for custom action ${action}`)});
@@ -2942,21 +3015,54 @@ ${indent}}`;
 
 import { ObjectRegistry, normalizeCustomActionFailure, SMRT_CUSTOM_ACTION_ERROR_METADATA_KEY } from '@happyvertical/smrt-core';
 import { hasRuntimeExposureGate, isRuntimeModelEnabled } from '@happyvertical/smrt-core';
+import { applyUpdateInput, assertCreateInput, assertCreateTargetSurface, assertQueryAccess, identifierArgument, publicSerializerOf, requireIdentifierArgument, toPublicJSONValue } from '@happyvertical/smrt-core';
 import { COOKBOOK_TOOL_NAMES, getCookbookToolService } from '@happyvertical/smrt-core/cookbook/tools';
-${hasTenantScoped ? "import { enableTenancy, runTenantScopedEntryPoint } from '@happyvertical/smrt-tenancy';\n" : ''}${
+import { runToolInRequestTenancy } from '@happyvertical/smrt-core';
+${hasTenantScoped ? "import { enableTenancy } from '@happyvertical/smrt-tenancy';\n" : ''}${
   hasTenantScoped
     ? `
-// Install the tenancy interceptor so tenant-scoped tools are filtered and the
-// gate fail-closes when no tenant is supplied (#1554).
+// Install the tenancy interceptor so tenant-scoped tools are filtered (#1554).
 enableTenancy();
-const TENANT_SCOPED = new Set(${JSON.stringify(tenantScopedSet)});
-const MCP_TENANT_ID = process.env.SMRT_MCP_TENANT_ID || undefined;
-const MCP_ALLOW_CROSS_TENANT = process.env.SMRT_MCP_ALLOW_CROSS_TENANT === 'true';
 `
     : ''
 }
+// Every tool runs inside the request tenancy its model has when it is
+// called, decided per call (#5375); the tenant is taken from the environment.
+const MCP_TENANT_ID = process.env.SMRT_MCP_TENANT_ID || undefined;
+const MCP_ALLOW_CROSS_TENANT = process.env.SMRT_MCP_ALLOW_CROSS_TENANT === 'true';
+
 
 const TOOL_TARGETS: Record<string, { objectName: string; action: string; registryKey?: string }> = ${JSON.stringify(toolTargets)};
+// The models this server serves: a family member outside them is not served
+// through its base's tools.
+const SERVED_MODELS: ReadonlySet<string> = new Set(Object.values(TOOL_TARGETS).map((target) => target.registryKey || target.objectName));
+
+// Tenancy is decided when a tool is called, not when this server was
+// generated (#5375): when the application installed smrt-tenancy and the
+// tool's model (or a member of its STI family) is tenant-scoped now, a
+// registration made after generation included, the tenancy layer is turned
+// on before the tool runs.
+type ToolTenancyLayer = {
+  enableTenancy(): void;
+  isTenancyEnabled(): boolean;
+  isTenantScopedClass(name: string): boolean;
+};
+let toolTenancyLayer: ToolTenancyLayer | null | undefined;
+async function ensureToolTenancy(model: string): Promise<void> {
+  if (toolTenancyLayer === undefined) {
+    try {
+      const specifier = '@happyvertical/smrt-tenancy';
+      toolTenancyLayer = (await import(/* @vite-ignore */ specifier)) as ToolTenancyLayer;
+    } catch {
+      toolTenancyLayer = null;
+    }
+  }
+  const layer = toolTenancyLayer;
+  if (!layer || layer.isTenancyEnabled()) return;
+  if ([model, ...ObjectRegistry.getDescendants(model)].some((name) => layer.isTenantScopedClass(name))) {
+    layer.enableTenancy();
+  }
+}
 export function runtimeToolEnabled(name: string): boolean {
   if (!hasRuntimeExposureGate()) return true;
   const target = TOOL_TARGETS[name];
@@ -2976,7 +3082,7 @@ const GET_SERIALIZERS: Record<string, { importPath: string; exportName: string }
 
 async function serializeGetResult(toolName: string, item: any): Promise<any> {
   const reference = GET_SERIALIZERS[toolName];
-  if (!reference) return item.toPublicJSON(PUBLIC_JSON_OPTIONS);
+  if (!reference) return toPublicJSONValue(item, PUBLIC_JSON_OPTIONS);
   const serializerModule = await import(reference.importPath);
   const serializer = serializerModule[reference.exportName];
   if (typeof serializer !== 'function') {
@@ -3012,6 +3118,8 @@ function applyWritablePolicy(objectName: string, data: any): Record<string, any>
   const result: Record<string, any> = {};
   for (const [key, value] of Object.entries(data as Record<string, any>)) {
     if (key.startsWith('_')) continue;
+    // Arguments set fields only, never a service of the object.
+    if (ObjectRegistry.isServiceOptionInput(objectName, key)) continue;
     if (serverManaged.has(key)) continue;
     if (readonly.has(key)) continue;
     if (writable && !writable.includes(key)) continue;
@@ -3025,6 +3133,8 @@ async function resolveCreateTarget(baseObjectName: string, args: Record<string, 
   const target = ObjectRegistry.resolveCreateTarget(baseObjectName, args, {
     surface: 'mcp', tenantId: process.env.SMRT_MCP_TENANT_ID,
   });
+  // A subtype whose own surface closes create is not a target here.
+  assertCreateTargetSurface(baseObjectName, target, 'mcp');
   const objectName = target.collectionName;
   const collection = await ObjectRegistry.getCollection(target.collectionName, {
     persistence: { type: process.env.DATABASE_TYPE || 'sqlite', url: process.env.DATABASE_URL || ':memory:' },
@@ -3040,7 +3150,9 @@ async function resolveCreateTarget(baseObjectName: string, args: Record<string, 
  */
 function toPublicResult(value: any, seen: WeakSet<object> = new WeakSet()): any {
   if (value === null || typeof value !== 'object') return value;
-  if (typeof value.toPublicJSON === 'function') return value.toPublicJSON(PUBLIC_JSON_OPTIONS);
+  // The serialiser the value's class provides, never an instance property.
+  const serialize = publicSerializerOf(value);
+  if (serialize) return serialize(PUBLIC_JSON_OPTIONS);
   if (Array.isArray(value)) {
     if (seen.has(value)) return value;
     seen.add(value);
@@ -3075,6 +3187,9 @@ function errorResult(structuredContent: any, text: string, _meta?: Record<string
 
 function normalizePublicToolError(error: any): { code: string; message: string } | undefined {
   if (!error || typeof error !== 'object') return undefined;
+  // Another tenant's row is refused as a plain permission denial, unless the
+  // error states its own public message.
+  if (error.code === 'TENANT_ISOLATION_VIOLATION' && !(typeof error.publicMessage === 'string' && error.publicMessage.length > 0)) return { code: 'permission_denied', message: 'Permission denied.' };
   if (
     typeof error.code !== 'string' ||
     !/^[A-Za-z][A-Za-z0-9_.:-]{0,127}$/.test(error.code) ||
@@ -3112,21 +3227,17 @@ ${switchCases}
           throw new Error(\`Unknown tool: \${name}\`);
       }
     };
-${
-  hasTenantScoped
-    ? `
-    // Fail-closed tenant context for tenant-scoped tools (#1554).
-    const toolObject = TOOL_TARGETS[name]?.objectName;
-    const result =
-      toolObject && TENANT_SCOPED.has(toolObject.toLowerCase())
-        ? await runTenantScopedEntryPoint(
-            { tenantScoped: true, tenantId: MCP_TENANT_ID, allowCrossTenant: MCP_ALLOW_CROSS_TENANT, surface: 'MCP' },
-            runToolBody,
-          )
-        : await runToolBody();`
-    : `
-    const result = await runToolBody();`
-}
+
+    // The request tenancy of the tool's model, resolved per call (#5375).
+    const toolTarget = TOOL_TARGETS[name];
+    const toolModel = toolTarget?.registryKey || toolTarget?.objectName;
+    if (toolModel) await ensureToolTenancy(toolModel);
+    const result = toolModel
+      ? await runToolInRequestTenancy(
+          { model: toolModel, action: toolTarget.action, principal: { tenantId: MCP_TENANT_ID, allowCrossTenant: MCP_ALLOW_CROSS_TENANT, userId: process.env.SMRT_MCP_USER_ID, authenticated: true }, modelScope: SERVED_MODELS },
+          runToolBody,
+        )
+      : await runToolBody();
 
     return result;
   } catch (error) {

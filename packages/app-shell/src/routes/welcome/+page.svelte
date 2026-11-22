@@ -14,7 +14,7 @@ import {
 
 let step = $state<1 | 2>(page.url.searchParams.get('step') === '2' ? 2 : 1);
 let ready = $state(false);
-let start = $state<'fresh' | 'wizard' | 'spreadsheet'>('fresh');
+let start = $state<'fresh' | 'spreadsheet'>('fresh');
 let busy = $state(false);
 let error = $state('');
 let heading: HTMLHeadingElement | undefined = $state();
@@ -95,7 +95,7 @@ async function skip() {
       class="smrt-app-shell__card"
       onsubmit={(e) => {
         e.preventDefault();
-        if (start !== 'wizard') void finish();
+        void finish();
       }}
     >
       <fieldset>
@@ -111,20 +111,13 @@ async function skip() {
           <input type="radio" name="start" value="spreadsheet" bind:group={start} />
           <span>
             <strong>From a spreadsheet</strong>
-            <span class="smrt-app-shell__muted">Bring an Excel workbook into a draft, then review and publish it.</span>
-          </span>
-        </label>
-        <label class="smrt-app-shell__choice smrt-app-shell__choice-off">
-          <input type="radio" name="start" value="wizard" disabled aria-describedby="wizard-soon" />
-          <span>
-            <strong>Wizard</strong>
-            <span class="smrt-app-shell__muted" id="wizard-soon">A guided setup for a whole project. Coming soon.</span>
+            <span class="smrt-app-shell__muted">Bring an Excel workbook in, then review and apply it.</span>
           </span>
         </label>
       </fieldset>
       <div class="smrt-app-shell-welcome__actions">
         <button type="button" class="smrt-app-shell__btn" onclick={() => go(1)} disabled={busy}>Back</button>
-        <button type="submit" class="smrt-app-shell__btn smrt-app-shell__btn-primary" disabled={busy || start === 'wizard'}>
+        <button type="submit" class="smrt-app-shell__btn smrt-app-shell__btn-primary" disabled={busy}>
           {busy ? 'Starting…' : 'Start'}
         </button>
       </div>

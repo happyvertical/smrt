@@ -69,6 +69,7 @@ import {
   quoteIdentifier,
   quoteStringLiteral,
 } from '../schema/sql-identifiers.js';
+import { sqliteUserObjectName } from '../schema/sqlite-internal-names.js';
 import type {
   RetireConfirmationSource,
   SchemaChange,
@@ -343,7 +344,7 @@ async function readInboundForeignKeys(
   const target = table.toLowerCase();
   const tables = rowsOf(
     await db.query(
-      `SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name`,
+      `SELECT name FROM sqlite_master WHERE type = 'table' AND ${sqliteUserObjectName()} ORDER BY name`,
     ),
   );
   for (const { name } of tables) {

@@ -175,6 +175,13 @@ export type {
 } from './config';
 // Global configuration (callable function)
 export { config } from './config';
+// Which STI subtypes a create through a base may select on a transport.
+export {
+  assertCreateTargetSurface,
+  type CreateSurface,
+  CreateTargetError,
+  isCreateOpenOnSurface,
+} from './create-target';
 // Canonical bounded query protocol — adapters supply their own authorization
 // and execution, while this runtime normalizes the shared envelope (#2444).
 export {
@@ -535,14 +542,17 @@ export {
   packagesSeenInput,
   readConfirmedRetirements,
   readLastMigrateRecord,
+  readRecordedSystemSchema,
   recordSuccessfulMigrate,
   type UnloadedBuildPackage,
 } from './migrations/migrate-record.js';
 export * from './migrations/migration-run-decision.js';
 export {
   checkOldestSupportedRelease,
+  checkUnrecordedDatabaseAge,
   compareReleases,
   OLDEST_SUPPORTED_RELEASE,
+  OLDEST_SUPPORTED_SYSTEM_SCHEMA,
 } from './migrations/oldest-supported.js';
 export {
   computeManifestSchemaFingerprint,
@@ -550,7 +560,12 @@ export {
   manifestTableEntries,
   tryComputeManifestSchemaFingerprint,
 } from './migrations/schema-fingerprint.js';
-export { assertDatabaseMigratedForBuild } from './migrations/startup-guard.js';
+export {
+  assertDatabaseMigratedForBuild,
+  MIGRATION_WAIT_TIMEOUT_ENV,
+  type MigrationWaitOptions,
+  type StartupGuardOptions,
+} from './migrations/startup-guard.js';
 export * from './object';
 export {
   type OperationPermissionAlias,
@@ -581,6 +596,20 @@ export {
   type ResolvedPostgresTimeouts,
   resolvePostgresTimeouts,
 } from './postgres-timeouts';
+// The public serialiser an object's class provides, for request-facing
+// output; never an own property of the instance.
+export {
+  publicSerializerOf,
+  toPublicJSONValue,
+  toPublicResultValue,
+} from './public-json';
+// Which fields a caller may filter and sort a list by: the ones it may read.
+export {
+  assertQueryAccess,
+  parseRestListWhere,
+  QueryFieldError,
+  type RequestQuery,
+} from './query-access';
 // Shared list query bounds for every generated read surface (#2367)
 export {
   buildDefaultListOrderBy,
@@ -588,7 +617,6 @@ export {
   DEFAULT_LIST_ORDER_BY,
   type ListBoundOptions,
   MAX_LIST_LIMIT,
-  parseRestListWhere,
   QueryBoundsError,
   QueryOrderByError,
   resolveListLimit,
@@ -654,6 +682,86 @@ export {
   type SubclassExposureEscalation,
   surfaceOpensOperation,
 } from './registry/subclass-exposure';
+// Request tenancy (#5375): the one resolver and decision set every request
+// path uses, the actor rule, and the policy source smrt-tenancy installs.
+export {
+  enterRequestTenancy,
+  type LocalsPrincipal,
+  principalFromLocals,
+  type RequestActorInput,
+  type RequestTenancyEntryInput,
+  type RequestTenancyOperation,
+  RequestTenantConflictError,
+  resolveRequestActor,
+  resolveTenancyForRequest,
+  runInRequestTenancy,
+  runToolInRequestTenancy,
+  type SettledRequestPrincipal,
+  tenancyReadScope,
+} from './request-actor';
+// What an update body may set on a loaded object: declared fields and
+// settable accessors. Every request-facing update path assigns through
+// `applyUpdateInput`.
+export {
+  applyUpdateInput,
+  assertCreateInput,
+  assertUpdateInput,
+  updateInputRulesFor,
+} from './request-input';
+// The principal of the current REST request (#5195): read-only, and
+// `undefined` outside one.
+export {
+  getRequestPrincipal,
+  RequestPrincipalScopeError,
+} from './request-principal-scope';
+export {
+  boundMemberTenancy,
+  boundTenancyCacheScoped,
+  boundTenancyEtagDiscriminator,
+  type CustomActionShape,
+  cachePolicy,
+  customActionScope,
+  ensureRequestTenancyInterceptor,
+  enterResolvedTenancy,
+  etagDiscriminator,
+  getResolvedTenancy,
+  getTenantPolicySource,
+  listMixedTenancyFamilies,
+  type MemberTenancy,
+  type MixedTenancyFamily,
+  memberTenancyOf,
+  type ReadDecision,
+  type RequestActor,
+  type RequestTenancy,
+  type RequestTenancyContext,
+  RequestTenancyError,
+  type ResolveRequestTenancyInput,
+  readScope,
+  resolveRequestTenancy,
+  resolveStrictModelKey,
+  scopeActionOptions,
+  scopedOptionProperties,
+  servesTenantScopedRows,
+  setTenantPolicySource,
+  type TenancyRefusal,
+  TenantPolicyChangedError,
+  type TenantPolicyConfig,
+  type TenantPolicyLookup,
+  type TenantPolicySource,
+  throwIfRefused,
+  withResolvedTenancy,
+  writeGate,
+} from './request-tenancy';
+// The tenant scope request-facing reads add when no interceptor narrows them,
+// and the request tenant context hooks smrt-tenancy installs.
+export {
+  type EnterRequestTenantContext,
+  enterRequestTenantContext,
+  getRequestTenantContext,
+  type RequestTenantContext,
+  type RequestTenantContextHooks,
+  setRequestTenantContextHooks,
+} from './request-tenant-context';
 // Revision compare-and-swap predicate helpers (#2620)
 export {
   POSTGRES_REVISION_GUARD_EXPRESSION,
@@ -697,6 +805,14 @@ export {
 } from './schema/system-table-shapes';
 // Schema types (for generated code from SchemaCodeGenerator)
 export type { SchemaDefinition } from './schema/types';
+// Option keys that configure services rather than describe a row, and the
+// request-body rule built on them.
+export {
+  isServiceOptionInput,
+  isServiceOptionKey,
+  SMRT_SERVICE_OPTION_KEYS,
+  type SmrtServiceOptionKey,
+} from './service-options';
 // Universal signaling system
 export * from './signals/index';
 export {
@@ -722,11 +838,22 @@ export type {
 } from './system/types';
 // Table existence verification cache (for test setup reset)
 export { resetVerifiedTables } from './table-cache';
+export {
+  isTenantScopedModel,
+  resolveAnonymousTenantReadScope,
+  scopeTenantReadOptions,
+} from './tenant-read-scope';
 // Testing utilities (for test setup only)
 export {
   getTestDatabase,
   type TestDatabaseOptions,
 } from './testing/database';
+// Identifier arguments of generated tools are checked before use.
+export {
+  identifierArgument,
+  requireIdentifierArgument,
+  ToolArgumentError,
+} from './tool-arguments';
 // AI function calling tools
 export * from './tools/index';
 export {
@@ -780,6 +907,29 @@ export {
   parseQualifiedName,
   qualifiedNamesEqual,
 } from './utils/qualified-names';
+// How `where` keys resolve to columns, shared by the collection and by anything
+// that inspects a filter before it runs (interceptors, generated routes).
+export {
+  applyWhereScope,
+  assertGetFilter,
+  effectiveWhereOperator,
+  mergeOwnedWhere,
+  normalizeWhereKey,
+  type ResolvedWhereKey,
+  resolveWhereKey,
+  WhereClauseError,
+  whereColumnName,
+} from './where-keys';
+export {
+  assignUpdateInput,
+  classifyUpdateKey,
+  isWriteInputError,
+  resolveUpdateInput,
+  STRUCTURAL_UPDATE_RULES,
+  type UpdateInputRules,
+  type UpdateKeyKind,
+  WriteInputError,
+} from './write-input';
 // Preserve the synchronous build API without importing the Vite/scanner graph
 // into every Node runtime. Node >=26 supports synchronous require(ESM).
 export const smrtPlugin: typeof import('./vite-plugin/index').smrtPlugin = (

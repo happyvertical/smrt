@@ -5,6 +5,7 @@ import { generatedExpression } from '../generated-fields.js';
  * Lightweight implementation with optional Swagger UI
  */
 
+import { isCreateOpenOnSurface } from '../create-target';
 import { ObjectRegistry } from '../registry';
 import { readFieldEnum } from '../registry/manifest-field-merge.js';
 import {
@@ -351,7 +352,14 @@ function generatePaths(
 
     if (shouldInclude('create')) {
       const targets = ObjectRegistry.getCreateTargets(key, exposureContext);
-      const choices = [targets.base, ...targets.subtypes];
+      // The choices REST accepts: subtypes whose own `api` surface opens
+      // create.
+      const choices = [
+        targets.base,
+        ...targets.subtypes.filter((target) =>
+          isCreateOpenOnSurface(target.name, 'api'),
+        ),
+      ];
       const createSchema = targets.polymorphic
         ? {
             allOf: [

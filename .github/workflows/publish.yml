@@ -288,6 +288,10 @@ jobs:
             # the app from source, which reads the generated catalog and CLI
             # version. All three are build outputs outside dist/.
             find packages/planner/app -type f -print
+            # The app shell publishes its adapter-node server build at build/
+            # (a start entry for consumers); like app/ above it is a build
+            # output outside dist/, and a reused dist would otherwise ship without it.
+            find packages/app-shell/build -type f -print
             # The wrapper crate version moves with the package version; the
             # published smrt-desktop tarball ships both files (the rest of the
             # wrapper is tracked source from the checkout).

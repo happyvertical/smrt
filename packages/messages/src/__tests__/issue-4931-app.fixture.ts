@@ -24,25 +24,45 @@ export function registerAppModels(): {
   NotificationOptOut: typeof SmrtNotificationOptOut;
 } {
   class Account extends SmrtAccount {}
-  smrt({ packageName: '@local/issue-4931-messages' })(Account);
+  smrt({ replaceParent: true, packageName: '@local/issue-4931-messages' })(
+    Account,
+  );
   class EmailAccount extends SmrtEmailAccount {}
-  smrt({ packageName: '@local/issue-4931-messages' })(EmailAccount);
+  smrt({ replaceParent: true, packageName: '@local/issue-4931-messages' })(
+    EmailAccount,
+  );
   class Email extends SmrtEmail {}
-  smrt({ packageName: '@local/issue-4931-messages' })(Email);
+  smrt({ replaceParent: true, packageName: '@local/issue-4931-messages' })(
+    Email,
+  );
   class Message extends SmrtMessage {}
-  smrt({ packageName: '@local/issue-4931-messages' })(Message);
+  smrt({ replaceParent: true, packageName: '@local/issue-4931-messages' })(
+    Message,
+  );
   class MessagingEndpoint extends SmrtMessagingEndpoint {}
-  smrt({ packageName: '@local/issue-4931-messages' })(MessagingEndpoint);
+  smrt({ replaceParent: true, packageName: '@local/issue-4931-messages' })(
+    MessagingEndpoint,
+  );
   class PersonaMessageRoute extends SmrtPersonaMessageRoute {}
-  smrt({ packageName: '@local/issue-4931-messages' })(PersonaMessageRoute);
+  smrt({ replaceParent: true, packageName: '@local/issue-4931-messages' })(
+    PersonaMessageRoute,
+  );
   class TelegramAccount extends SmrtTelegramAccount {}
-  smrt({ packageName: '@local/issue-4931-messages' })(TelegramAccount);
+  smrt({ replaceParent: true, packageName: '@local/issue-4931-messages' })(
+    TelegramAccount,
+  );
   class ZulipAccount extends SmrtZulipAccount {}
-  smrt({ packageName: '@local/issue-4931-messages' })(ZulipAccount);
+  smrt({ replaceParent: true, packageName: '@local/issue-4931-messages' })(
+    ZulipAccount,
+  );
   class NotificationOptOut extends SmrtNotificationOptOut {}
-  smrt({ packageName: '@local/issue-4931-messages' })(NotificationOptOut);
+  smrt({ replaceParent: true, packageName: '@local/issue-4931-messages' })(
+    NotificationOptOut,
+  );
   class EmailFolder extends SmrtEmailFolder {}
-  smrt({ packageName: '@local/issue-4931-messages' })(EmailFolder);
+  smrt({ replaceParent: true, packageName: '@local/issue-4931-messages' })(
+    EmailFolder,
+  );
   return {
     EmailFolder,
     Account,

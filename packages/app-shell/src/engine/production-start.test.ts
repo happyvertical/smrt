@@ -8,6 +8,7 @@ import { join } from 'node:path';
 import { parseRuntimeReportSpec } from '@happyvertical/smrt-reports';
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import { AppHost, type Command, MemoryVersionStore } from './index.ts';
+import { onPglite } from './pglite-env.ts';
 
 const root = mkdtempSync(join(tmpdir(), 'engine-production-start-'));
 const saved = {
@@ -46,7 +47,9 @@ it('reads and writes app.db through core collections under NODE_ENV=production',
   expect((await live.get('Note', String(created.id)))?.size).toBe(2);
 });
 
-it('covers a draft copy and the read-only report worker', async () => {
+it('covers a draft copy and the read-only report worker', {
+  skip: onPglite,
+}, async () => {
   await run(live, {
     type: 'defineReport',
     name: 'sizes',
@@ -100,7 +103,9 @@ it('undoes the migration (the down steps), then reads', async () => {
   expect(live.def.models.Note.fields.rank).toBeUndefined();
 });
 
-it('publishes a draft that adds a field and reads it from live', async () => {
+it('publishes a draft that adds a field and reads it from live', {
+  skip: onPglite,
+}, async () => {
   const publishRoot = join(root, 'publish');
   const host = await AppHost.open(join(publishRoot, 'live'), {
     store: new MemoryVersionStore(),

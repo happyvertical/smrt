@@ -522,6 +522,8 @@ export class TenantInvitationService {
     const user = await users.get({ id: userId }, { cache: false });
     if (
       !user ||
+      // A service principal (#5245) is never invited, accepted or mailed.
+      !user.canHoldSession() ||
       (user.status !== UserStatus.PENDING && user.status !== UserStatus.ACTIVE)
     )
       throw new TenantInvitationError('Invitation is unavailable');

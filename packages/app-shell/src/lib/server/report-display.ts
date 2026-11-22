@@ -4,6 +4,34 @@ import type { AppDefinition, ReportDef } from '../../engine/index.ts';
 import { fieldLabel } from '../ui/fields.ts';
 import { HttpError } from './http.ts';
 
+/**
+ * The owner's sentence for a failure `reportFailure` described. That message
+ * is written for the model (it names the spec path, which holds brackets the
+ * chat chip refuses), so the owner gets a fixed plain sentence instead, with
+ * no path, field list or raw reason in it.
+ */
+export function reportFailureForOwner(message: string): string {
+  const path = /^The report definition is invalid at (spec[\w.[\]]*):/.exec(
+    message,
+  )?.[1];
+  if (!path) return message;
+  const part = /^spec\.(filters|having|sort|dimensions|measures)\b/.exec(
+    path,
+  )?.[1];
+  if (part === 'filters' && /\.op$/.test(path))
+    return 'A filter in that report used a comparison the app cannot do, so nothing was run.';
+  const what = {
+    filters: 'A filter',
+    having: 'A condition on the totals',
+    sort: 'The sorting',
+    dimensions: 'A grouping',
+    measures: 'A total or count',
+  }[part ?? ''];
+  return what
+    ? `${what} in that report was not valid, so nothing was run.`
+    : 'That report was not set up correctly, so nothing was run.';
+}
+
 /** Never forward a compiler/driver message: it can contain SQL or file paths. */
 export function reportFailure(
   error: unknown,

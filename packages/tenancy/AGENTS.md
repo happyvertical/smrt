@@ -50,6 +50,17 @@ Hooks into SmrtCollection via `GlobalInterceptors.register()` (priority 100, run
 
 Mismatches throw `TenantIsolationError`. Missing required context throws `TenantContextError`.
 
+The tenant filter is recognised by the column a key resolves to, not by the
+literal `tenantId` key. Filter keys are caller spelling (`tenant_id`,
+`TenantId`, `tenantId =` all resolve to the tenant column), so every hook that
+reads a filter (list in object and DNF form, get, the hierarchy read scope)
+finds direct tenant filters with core's `resolveWhereKey()` and validates every
+one present. Keys with an explicit non-equality operator are not direct
+filters; the tenant predicate is added beside them. Core then refuses a record
+with two keys for one column and operator, so the predicate this interceptor
+adds is never replaced. Any new code here that asks "is the tenant already
+filtered?" must go through `directTenantFilterValues()`.
+
 With a hierarchy read scope active, `beforeList` allows only its qualified model
 allowlist and bounds list-family reads to its tenant IDs (plus explicit NULL
 rows for catalogs). `beforeGet` retains the active-tenant predicate; neither hook
@@ -61,7 +72,9 @@ It requires `enableTenancy()` and refuses nesting. See README "Authorized hierar
 read scopes" for bootstrap, RLS composition and the direct-database boundary.
 
 
-**Optional-mode reads with no context pass through UNFILTERED at the interceptor.** That is intentional for trusted/admin call paths, but it means the interceptor alone does not protect a tenant-scoped model exposed as `@smrt({ api: { public } })`: an anonymous HTTP read has no context, so the interceptor would return every tenant's rows. The generated REST + SvelteKit read routes close this by injecting a `{ tenantId: null }` filter when tenancy is enabled but no context is active, so public/anonymous reads fail closed to **global (NULL-tenant) rows only** — mirroring the dispatch resolver's *enforced, no active tenant → global rows only* rule (#1782). Authenticated reads still scope to the caller's tenant via the interceptor.
+**Optional-mode reads with no context pass through UNFILTERED at the interceptor**, outside a request. That is intentional for trusted/admin call paths. Request paths (runtime REST, emitted routes, both sync apply paths, both MCP surfaces) resolve the request's tenancy in core (`src/request-tenancy.ts`, #5375) and bind it (runtime REST also refuses a caller with no tenant every custom collection action of a tenant-scoped model): core's `smrt-request-tenancy` interceptor (priority 110, before this one) holds every collection call of the request to rows without an owner (`{ <ownership field>: null }`, the configured `field`, never a literal `tenantId`) for a caller with no tenant, refuses a write by a caller with no tenant (rows without an owner included) or under a cross-tenant read grant, restricts the STI family table to the admitted types, decides every save and delete under the policy of the row's stored type and instance `_meta_type` (another policy than the class written through is refused, since this interceptor stamps and checks the owner under that class's policy) and, in an STI family with members, against the stored owner as well as the one the instance carries, and refuses a member whose policy changed after admission. A model the request did not resolve is held to the same rules under its live policy. Code that enters `withSystemContext()` inside a request acts as the system (and code that enters `withTenant()` in a request with no tenant acts in that tenant), except in a request admitted under a cross-tenant read grant, which writes no tenant-scoped row whatever context its code enters. This interceptor reads the bound policy for every member (`boundMemberTenancy`) instead of a fresh lookup, the member's `autoPopulate` included, and treats a bound member that is not `scoped` with a mode and field (a failed lookup) as an isolation error, never as unscoped.
+
+**`enableTenancy()` installs the policy source core decides with** (`setTenantPolicySource`): `policyOf(key)` is `getTenantScopedConfig()` by qualified key, reported as absent, resolved, or failed (an ambiguous or stale selector is `failed`, never "not scoped"; a failure always carries a reason), plus the system, bypass and hierarchy probes (`hierarchyReadScopeKey` keys read validators on the active hierarchy scope) and the context runners (a refreshed context keeps its other fields). For a principal the REST host resolves (#5195) it also lends `runForPrincipal(context | null, fn)` (`runInPrincipalContext`, internal: a frozen projection of the principal on this package's storage, its read-only permissions, never the bypass flag; `null` runs with no tenant and no system context) and `generation()`, a process-wide counter (`Symbol.for('smrt:tenant-policy-generation')`) bumped by every registration, removal, `clearTenantScopedRegistry()`, enable and disable. The request tenant context hooks (`setRequestTenantContextHooks`: enter, current, run, and the super-admin bypass, which answers only while tenancy is enabled) are installed when this package is loaded, enabled or not, so a route carrying a complete principal (`api.principalContext`) enters it for a model with no tenancy and an active context of another tenant refuses the request. `disableTenancy()` removes the policy source and keeps the context hooks. Enabled tenancy without a policy source refuses every scoped request. `runTenantScopedEntryPoint()` remains for direct callers; no generated surface uses it. Tests: `src/__tests__/effective-tenancy-*.test.ts`, `src/__tests__/rest-write-tenant-gate.test.ts`, `src/__tests__/rest-request-tenant.test.ts`.
 
 ## Read-Path Coverage (#2365)
 

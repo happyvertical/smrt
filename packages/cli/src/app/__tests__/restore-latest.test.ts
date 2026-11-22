@@ -7,7 +7,14 @@
  */
 
 import { randomBytes } from 'node:crypto';
-import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import {
@@ -19,6 +26,7 @@ import {
   writeVaultSyncRecord,
 } from '@happyvertical/smrt-app-runtime';
 import { describe, expect, it } from 'vitest';
+import { verifyUserAppDatabase } from '../restore-latest.js';
 import {
   ACCOUNT,
   APP_ID,
@@ -29,6 +37,7 @@ import {
   setMarker,
   siblings,
 } from './restore-test-support.js';
+import { loadTestEngine } from './user-app-test-support.js';
 
 installRestoreHooks();
 
@@ -356,6 +365,92 @@ describe('smrt app restore-latest', () => {
     const result = await h.run(desktop, 'device-desktop');
     expect(result.code).toBe(1);
     expect(result.stderr).toContain('integrity check');
+    expect(existsSync(desktop)).toBe(false);
+    expect(siblings(h.root, desktop)).toEqual([]);
+  });
+
+  it('verifies the user app database of the snapshot too (#5193)', async () => {
+    const h = await harness();
+    const laptop = join(h.root, 'laptop');
+    await h.boot(laptop, 'v1');
+    const { AppHost, MemoryVersionStore } = await loadTestEngine();
+    const host = await AppHost.open(join(laptop, 'user-app'), {
+      store: new MemoryVersionStore(),
+    });
+    await host.execute(
+      {
+        type: 'defineModel',
+        name: 'Chore',
+        fields: { title: { type: 'text' } },
+      },
+      { author: 't' },
+    );
+    await host.close();
+    await h.relay.publish(laptop, 'device-laptop', h.keys);
+    const desktop = join(h.root, 'desktop');
+    expect((await h.run(desktop, 'device-desktop')).code).toBe(0);
+    expect(existsSync(join(desktop, 'user-app', 'app.db'))).toBe(true);
+    // The check leaves no write-ahead files beside the restored database.
+    expect(existsSync(join(desktop, 'user-app', 'app.db-wal'))).toBe(false);
+    expect(existsSync(join(desktop, 'user-app', 'app.db-shm'))).toBe(false);
+  });
+
+  it('names what is wrong with a user app database it cannot accept (#5193)', async () => {
+    const candidate = join(
+      mkdtempSync(join(tmpdir(), 'smrt-user-app-verify-')),
+      'candidate',
+    );
+    mkdirSync(join(candidate, 'user-app'), { recursive: true });
+    writeFileSync(join(candidate, 'user-app', 'app.db'), 'x');
+    const engine = (inspection: object | Error) =>
+      (async () => ({
+        inspectUserApp: async () => {
+          if (inspection instanceof Error) throw inspection;
+          return inspection;
+        },
+      })) as never;
+    await expect(
+      verifyUserAppDatabase(
+        candidate,
+        engine({ integrity: false, recorded: false }),
+      ),
+    ).rejects.toThrow(/user app database failed its integrity check/);
+    await expect(
+      verifyUserAppDatabase(
+        candidate,
+        engine({ integrity: true, recorded: false }),
+      ),
+    ).rejects.toThrow(/no readable definition/);
+    // The engine is missing or cannot open it: fail closed, never accept.
+    await expect(
+      verifyUserAppDatabase(candidate, engine(new Error('not installed'))),
+    ).rejects.toThrow(/could not be checked/);
+    await expect(
+      verifyUserAppDatabase(
+        candidate,
+        engine({ integrity: true, recorded: true }),
+      ),
+    ).resolves.toBeUndefined();
+    // No user app in the snapshot: nothing to check.
+    await expect(
+      verifyUserAppDatabase(join(candidate, 'nowhere'), engine(new Error('x'))),
+    ).resolves.toBeUndefined();
+    rmSync(join(candidate, '..'), { recursive: true, force: true });
+  });
+
+  it('refuses a snapshot whose user app database fails its integrity check (#5193)', async () => {
+    const h = await harness();
+    const laptop = join(h.root, 'laptop');
+    await h.boot(laptop, 'v1');
+    mkdirSync(join(laptop, 'user-app'), { recursive: true });
+    writeFileSync(join(laptop, 'user-app', 'app.db'), randomBytes(8192), {
+      mode: 0o600,
+    });
+    await h.relay.publish(laptop, 'device-laptop', h.keys);
+    const desktop = join(h.root, 'desktop');
+    const result = await h.run(desktop, 'device-desktop');
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain('could not be checked');
     expect(existsSync(desktop)).toBe(false);
     expect(siblings(h.root, desktop)).toEqual([]);
   });

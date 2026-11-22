@@ -21,13 +21,26 @@ import {
   crossPackageRef,
   field,
   foreignKey,
+  ObjectRegistry,
   SmrtObject,
   smrt,
   usesEmbeddedRevisionFallback,
   withEmbeddedWriteQueue,
 } from '@happyvertical/smrt-core';
 import { TenantScoped, tenantId } from '@happyvertical/smrt-tenancy/decorators';
-import { assertHydratedMailAccess, decideMailAccess } from '../access.js';
+import {
+  assertHydratedMailAccess,
+  decideMailAccess,
+  inMailSystemAccess,
+  type MailPrincipal,
+  resolveMailPrincipal,
+} from '../access.js';
+import {
+  approvedDraftChanged,
+  auditMailAction,
+  holdAgentSend,
+  stampHandledBy,
+} from '../send-approval.js';
 import type {
   MessageOptions,
   MessageSendResult,
@@ -88,6 +101,60 @@ async function saveSendLifecycle(message: Message): Promise<void> {
     lifecycleSaves.delete(message);
   }
 }
+
+const DRAFT_CARRIED_FIELDS = new Set(['tenantId', 'metadata', 'correlationId']);
+
+/**
+ * Stored fields declared by Message and Email. A derived reply/forward draft
+ * starts without any of them; the registry adds subclass fields at runtime.
+ */
+const DRAFT_RESET_FIELDS = [
+  'accountId',
+  'personaId',
+  'endpointId',
+  'correlationId',
+  'threadId',
+  'subject',
+  'body',
+  'fromAddress',
+  'fromName',
+  'toAddresses',
+  'date',
+  'isRead',
+  'isFlagged',
+  'hasAttachments',
+  'size',
+  'metadata',
+  'sendStatus',
+  'sentAt',
+  'sendError',
+  'retryCount',
+  'maxRetries',
+  'scheduledSendAt',
+  'inReplyToMessageId',
+  'handledById',
+  'handledByKind',
+  'handledAt',
+  'createdAt',
+  'updatedAt',
+  'messageId',
+  'inReplyTo',
+  'providerMessageId',
+  'ccAddresses',
+  'bccAddresses',
+  'replyToAddress',
+  'replyToName',
+  'textBody',
+  'htmlBody',
+  'folderId',
+  'folderPath',
+  'labels',
+  'flags',
+  'isAnswered',
+  'isDraft',
+  'rawMessage',
+  'headers',
+];
 
 @TenantScoped({ mode: 'optional' })
 @smrt({
@@ -168,6 +235,24 @@ export class Message extends SmrtObject {
   @field({ description: 'The earlier message this one replies to.' })
   inReplyToMessageId = '';
 
+  // Who handled this message last (a person or an agent), recorded from the
+  // host-supplied acting principal by triage, drafting and sending.
+  @field({
+    readonly: true,
+    description: 'The person or assistant who last acted on this message.',
+  })
+  handledById: string | null = null;
+  @field({
+    readonly: true,
+    description: 'Whether a person or an assistant last acted on this message.',
+  })
+  handledByKind: string | null = null;
+  @field({
+    readonly: true,
+    description: 'When someone last acted on this message.',
+  })
+  handledAt: Date | null = null;
+
   // Timestamps
   @field({ description: 'When this message was recorded.' })
   createdAt = new Date();
@@ -207,6 +292,12 @@ export class Message extends SmrtObject {
       this.scheduledSendAt = options.scheduledSendAt || null;
     if (options.inReplyToMessageId !== undefined)
       this.inReplyToMessageId = options.inReplyToMessageId;
+    if (options.handledById !== undefined)
+      this.handledById = options.handledById;
+    if (options.handledByKind !== undefined)
+      this.handledByKind = options.handledByKind;
+    if (options.handledAt !== undefined)
+      this.handledAt = options.handledAt || null;
     if (options.createdAt) this.createdAt = options.createdAt;
     if (options.updatedAt) this.updatedAt = options.updatedAt;
     rememberNotificationOrigin(this);
@@ -243,6 +334,7 @@ export class Message extends SmrtObject {
 
   private async finalizeSendLifecycle(
     result: MessageSendResult,
+    actor: MailPrincipal | null = null,
   ): Promise<void> {
     if (!this.id) throw new Error('Cannot finalize an unsaved message send');
 
@@ -264,12 +356,20 @@ export class Message extends SmrtObject {
           current.metadata,
           !result.success && result.outcomeUnknown === true,
         );
+        if (actor) stampHandledBy(this, actor, nextRevision);
         const values = {
           send_status: sendStatus,
           sent_at: result.success ? result.sentAt : null,
           send_error: sendError,
           updated_at: nextRevision,
           ...(metadata === undefined ? {} : { metadata }),
+          ...(actor
+            ? {
+                handled_by_id: this.handledById,
+                handled_by_kind: this.handledByKind,
+                handled_at: this.handledAt,
+              }
+            : {}),
         };
         if (useEmbeddedFallback) {
           await this.db.upsert(this.tableName, ['id'], {
@@ -520,6 +620,60 @@ export class Message extends SmrtObject {
       };
     }
 
+    // The acting principal (host-supplied). Trusted system work (sync, the
+    // notification outbox) has none and is never held or stamped.
+    const actor = inMailSystemAccess() ? null : await resolveMailPrincipal();
+
+    // Send-as: from any mail account, everything but trusted system work
+    // sends only from the account's own address. Sending as anyone else needs
+    // a delegation grant, which does not exist yet, so it is refused.
+    if (!inMailSystemAccess() && 'email' in account) {
+      const from = (this.fromAddress || '').trim().toLowerCase();
+      const own = String((account as { email?: unknown }).email ?? '')
+        .trim()
+        .toLowerCase();
+      if (from && from !== own) {
+        return {
+          success: false,
+          error: "Mail can only be sent from the account's own address.",
+          sentAt: new Date(),
+        };
+      }
+    }
+
+    // Agents follow the account's send policy: by default the draft is held
+    // for a person's approval and nothing leaves (smrt#5141).
+    // Trusted system work is not held, except a persona (agent) message: a
+    // system drain must never send an agent's message around its approval.
+    const held =
+      inMailSystemAccess() && !this.personaId
+        ? null
+        : await holdAgentSend(this, account, options, actor);
+    if (held) {
+      // A held message is a draft: out of any pending/scheduled outbox, and
+      // decidable by a person. Content is untouched, so the binding holds.
+      const toDraft =
+        held.pendingApproval !== undefined && this.sendStatus !== 'draft';
+      if (toDraft) this.sendStatus = 'draft';
+      if (held.pendingApproval?.created) stampHandledBy(this, actor);
+      if (toDraft || held.pendingApproval?.created) await this.save();
+      // A refused send of a queued message fails definitely (nothing left),
+      // so it does not linger as `pending` for a later drain.
+      if (
+        held.pendingApproval === undefined &&
+        (this.sendStatus === 'pending' || this.sendStatus === 'scheduled') &&
+        this.isPersisted
+      ) {
+        this.sendStatus = 'failed';
+        this.sendError = held.error ?? 'Send refused';
+        this.updatedAt = new Date();
+        await saveSendLifecycle(this);
+      }
+      return held;
+    }
+    // Audited before anything is claimed: an audit failure sends nothing.
+    if (actor) await auditMailAction('messages.send', this);
+
     // Get sender from account
     let sender: Awaited<ReturnType<typeof account.createSender>>;
     try {
@@ -611,6 +765,18 @@ export class Message extends SmrtObject {
       await saveSendLifecycle(this);
     }
 
+    // A send an approval released must still be the approved draft now that
+    // the row is claimed (attachment rows are not covered by the claim).
+    if (await approvedDraftChanged(this)) {
+      const changed: MessageSendResult = {
+        success: false,
+        error: 'The draft changed after it was approved; nothing was sent.',
+        sentAt: new Date(),
+      };
+      await this.finalizeSendLifecycle(changed, actor);
+      return changed;
+    }
+
     let result: MessageSendResult;
     try {
       await assertProtectedSenderHandoff(this, options);
@@ -628,8 +794,18 @@ export class Message extends SmrtObject {
         sentAt: new Date(),
       };
     }
-    await this.finalizeSendLifecycle(result);
+    await this.finalizeSendLifecycle(result, actor);
     return result;
+  }
+
+  /** Who last acted on this message, or null. */
+  getHandledBy(): { id: string; kind: string; at: Date | null } | null {
+    if (!this.handledById) return null;
+    return {
+      id: this.handledById,
+      kind: this.handledByKind || 'agent',
+      at: this.handledAt,
+    };
   }
 
   /**
@@ -718,7 +894,36 @@ export class Message extends SmrtObject {
     delete rest.slug;
     delete rest.context;
     delete rest._skipLoad;
+    // `this.options` of a hydrated row carries every stored column. A derived
+    // draft must not inherit any of them (htmlBody, bcc, messageId, headers,
+    // send state, handled-by, ...); createReply/createForward then set back
+    // only what reply/forward semantics define. Only connection and tenant
+    // context survive.
+    // `personaId` is dropped on purpose: a reply is authored by the replying
+    // principal, so it falls under that principal's hold rules, not the
+    // persona the inbound message happened to be addressed through.
+    // `metadata` and `correlationId` stay: the protected-notification
+    // handoff keys its provenance on them, so a derived draft of a protected
+    // notification must keep failing closed. Neither is sent as mail content.
+    for (const name of this.draftFieldNames()) {
+      if (!DRAFT_CARRIED_FIELDS.has(name)) delete rest[name];
+    }
     return rest;
+  }
+
+  /** Every stored field name of this message's class, including subclasses. */
+  private draftFieldNames(): string[] {
+    const names = new Set<string>(DRAFT_RESET_FIELDS);
+    try {
+      for (const key of ObjectRegistry.getFields(
+        this.getResolvedQualifiedName(),
+      ).keys()) {
+        names.add(key);
+      }
+    } catch {
+      // The static list above still covers every field this package declares.
+    }
+    return [...names];
   }
 
   /**
@@ -766,7 +971,8 @@ export class Message extends SmrtObject {
       fromAddress: '',
       fromName: '',
       body: this.buildQuotedBody(),
-      hasAttachments: this.hasAttachments,
+      // Attachment rows are not copied, so the draft has none.
+      hasAttachments: false,
       inReplyToMessageId: '',
       sendStatus: 'draft',
       isRead: true,

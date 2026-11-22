@@ -41,7 +41,16 @@ test('confirms once and returns enveloped viewer-run and archive results', async
       },
     },
   );
-  expect(forged.status(), await forged.text()).toBe(403);
+  // The shared write-input rule refuses the undeclared `confirmed` field
+  // before any report-specific check runs; nothing is created either way.
+  expect(forged.status(), await forged.text()).toBe(400);
+  expect(await forged.json()).toMatchObject({
+    error: { code: 'VALIDATION_UNKNOWN_FIELD' },
+  });
+  const afterForged = await ownerPage.request.get(
+    `${referenceApp.baseURL}/api/runtimereports`,
+  );
+  expect(await afterForged.json()).toEqual(await list.json());
   const confirmed = await ownerPage.request.post(confirmUrl, {
     headers,
     data: { spec, specHash },

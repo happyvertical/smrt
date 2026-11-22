@@ -6,6 +6,7 @@ import {
   ensurePostgresChangeFeedAppendFunction,
   ensurePostgresChangeFeedHelpers,
 } from '../change-feed.js';
+import { backfillAiRunIdRegistry } from './ai-run-ids.js';
 import {
   assertPostgresSystemTimestampsCurrent,
   ensureBootstrapSystemTableCompatibility,
@@ -104,6 +105,11 @@ async function bootstrapSystemTables(
       await db.query(statement);
     }
   }
+  // 1.20.0: reserve every run id still present or referenced. After the
+  // compatibility step and the DDL replay (the registry exists, old labels
+  // are evaluations) and before the stamp, so an interrupted backfill runs
+  // again; once stamped, this whole function returns above.
+  await backfillAiRunIdRegistry(db, typeHint);
   await ensurePostgresChangeFeedAppendFunction(db, { typeHint });
   await assertPostgresSystemTimestampsCurrent(db, typeHint);
 

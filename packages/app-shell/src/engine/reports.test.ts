@@ -7,6 +7,7 @@ import { reportCsv } from '@happyvertical/smrt-reports/display';
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import { reportCell } from '../lib/ui/reports.ts';
 import { AppHost, type Command, MemoryVersionStore } from './index.ts';
+import { onPglite } from './pglite-env.ts';
 
 const dir = mkdtempSync(join(tmpdir(), 'reports-4916-'));
 const store = new MemoryVersionStore();
@@ -123,7 +124,9 @@ it('refuses hidden/foreign fields and dependent mutations; rename and undo rewri
   expect(host.def.reports?.sales.spec.dimensions[0].field).toBe('day');
 });
 
-it('renames/removes/replaces with undo, survives restart and runs frozen and draft', async () => {
+it('renames/removes/replaces with undo, survives restart and runs frozen and draft', {
+  skip: onPglite,
+}, async () => {
   await run({ type: 'renameReport', from: 'sales', to: 'monthly' });
   await run({ type: 'removeReport', name: 'monthly' });
   await expect(host.runReport('monthly')).rejects.toThrow(/unknown report/);
@@ -193,7 +196,9 @@ it('keeps display label aliases distinct and rejects prototype names', async () 
   ).rejects.toThrow(/invalid report name/);
 });
 
-it('terminates a timed-out aggregate without stopping the live worker', async () => {
+it('terminates a timed-out aggregate without stopping the live worker', {
+  skip: onPglite,
+}, async () => {
   await run({
     type: 'defineModel',
     name: 'Slow',
@@ -331,4 +336,30 @@ it('retains money/date dimension formats and the compiler bucket metadata', asyn
   expect(result.columns.find((c) => c.id === 'price')?.format).toBe('money');
   expect(result.columns.find((c) => c.id === 'day')?.format).toBe('date');
   expect(result.columns.find((c) => c.id === 'month')?.format).toBeUndefined();
+});
+
+it('fills every column of a top-N count by a linked record, with a cell for each header (#5172)', async () => {
+  const result = await host.runReport(
+    spec({
+      title: 'Top customers',
+      dimensions: [{ field: 'customer', as: 'customer' }],
+      measures: [
+        { fn: 'count', as: 'order_count' },
+        { fn: 'sum', field: 'total', as: 'revenue' },
+      ],
+      sort: [{ by: 'order_count', direction: 'desc' }],
+      limit: 1,
+    }),
+  );
+  expect(result.columns.map((c) => c.id)).toEqual([
+    'customer',
+    'order_count',
+    'revenue',
+  ]);
+  for (const row of result.rows)
+    for (const column of result.columns) {
+      expect(Object.hasOwn(row, column.id)).toBe(true);
+      expect(reportCell(row[column.id], column, row)).not.toBe('');
+    }
+  expect(result.rows[0].order_count).toBe(3);
 });

@@ -37,7 +37,7 @@ it('hosts the effective app STI children when the exposure list names their prov
           tableStrategy: 'sti',
           ...(packageName === '@fixture/provider'
             ? { api: { include: ['list', 'get', 'create'] } }
-            : {}),
+            : { replaceParent: true }),
         },
       } as SmartObjectDefinition;
     }
@@ -137,7 +137,7 @@ it('aliases colliding host routes while preserving storage, permissions and prov
         ...object('@fixture/z'),
         extends: 'Account',
         extendsQualified: '@fixture/a:Account',
-        decoratorConfig: { tableName: 'a_accounts' },
+        decoratorConfig: { tableName: 'a_accounts', replaceParent: true },
       },
     },
   };

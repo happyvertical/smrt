@@ -370,6 +370,39 @@ export function enterTenantContext(
 }
 
 /**
+ * Run `fn` as a host-resolved request principal (#5195). Internal: lent to
+ * core as the policy source's `runForPrincipal`, never exported.
+ *
+ * Replaces whatever context is active with a frozen projection of the
+ * principal (its tenant, user and read-only permissions, and never the
+ * super-admin bypass flag), or, for `null`, with no tenant and no system
+ * context.
+ *
+ * @internal
+ */
+export function runInPrincipalContext<T>(
+  context: {
+    tenantId: string;
+    userId?: string;
+    permissions?: ReadonlySet<string>;
+  } | null,
+  fn: () => Promise<T>,
+): Promise<T> {
+  if (!context) {
+    return tenantStorage.run(undefined as unknown as ContextStoreValue, fn);
+  }
+  const projected = Object.freeze({
+    tenantId: context.tenantId,
+    ...(context.userId ? { userId: context.userId } : {}),
+    // A read-only view from core; declared as a `Set` for consumers, whose
+    // mutators throw inside a principal request.
+    permissions: (context.permissions ?? new Set<string>()) as Set<string>,
+    superAdminBypass: false,
+  }) as TenantContextData;
+  return tenantStorage.run(projected, fn);
+}
+
+/**
  * Run code in system context (bypasses tenant checks)
  *
  * Use this for:

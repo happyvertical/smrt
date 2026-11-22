@@ -300,15 +300,23 @@ export async function planNotificationProfileRecipients(
     // The core planner owns live-DDL preservation and rowid/index/trigger copying.
     const incoming = (
       await db.query(
-        "SELECT name, sql FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name<>?",
-        table,
+        "SELECT name, sql FROM main.sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite\\_%' ESCAPE '\\'",
       )
     ).rows;
     for (const row of incoming) {
-      const refs = (
-        await db.query(`PRAGMA foreign_key_list(${quote(String(row.name))})`)
-      ).rows;
-      if (refs.some((r) => r.table === table))
+      const refs =
+        // Read in `main`, where the table was listed: a temporary table of
+        // the same name would otherwise answer for a real child.
+        (
+          await db.query(
+            `PRAGMA main.foreign_key_list(${quote(String(row.name))})`,
+          )
+        ).rows;
+      // SQLite resolves a referenced table name case-insensitively, and the
+      // table's own self-reference counts: the staging copy would be its child.
+      if (
+        refs.some((r) => String(r.table).toLowerCase() === table.toLowerCase())
+      )
         throw new Error(
           'SQLite profile maintenance requires an explicit inbound-FK-safe migration window.',
         );

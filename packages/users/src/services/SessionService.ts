@@ -9,6 +9,7 @@ import {
   type CreateSessionOptions,
   SessionCollection,
 } from '../collections/SessionCollection.js';
+import { TenantCollection } from '../collections/TenantCollection.js';
 import { UserCollection } from '../collections/UserCollection.js';
 import type { Membership } from '../models/Membership.js';
 import {
@@ -164,6 +165,7 @@ export class SessionService {
   private sessionCollection!: SessionCollection;
   private userCollection!: UserCollection;
   private membershipCollection!: MembershipCollection;
+  private tenantCollection!: TenantCollection;
   private permissionResolver!: PermissionResolver;
   private defaultTTL: number;
   private autoExtend: boolean;
@@ -181,6 +183,7 @@ export class SessionService {
     this.sessionCollection = await SessionCollection.create(this.options);
     this.userCollection = await UserCollection.create(this.options);
     this.membershipCollection = await MembershipCollection.create(this.options);
+    this.tenantCollection = await TenantCollection.create(this.options);
     this.permissionResolver = await PermissionResolver.create(this.options);
   }
 
@@ -225,7 +228,8 @@ export class SessionService {
       // Otherwise a suspended user's probe can keep extending an otherwise
       // valid session indefinitely even though no context is returned.
       const initialUser = await this.userCollection.get(session.userId);
-      if (!initialUser?.isActive()) return null;
+      if (!initialUser?.isActive() || !initialUser.canHoldSession())
+        return null;
 
       // A layered session is valid only while the session it rides on is
       // (#3276). Un-enrolling a device, or revoking its bearer, therefore
@@ -251,7 +255,8 @@ export class SessionService {
           return null;
         }
         const parentUser = await this.userCollection.get(parentSession.userId);
-        if (!parentUser?.isActive()) return null;
+        if (!parentUser?.isActive() || !parentUser.canHoldSession())
+          return null;
         parent = {
           sessionId: parentSession.id as string,
           userId: parentSession.userId,
@@ -269,7 +274,7 @@ export class SessionService {
       const tenantId = session.tenantId;
 
       const user = await this.userCollection.get(userId);
-      if (!user?.isActive()) return null;
+      if (!user?.isActive() || !user.canHoldSession()) return null;
 
       let permissions: string[] = [];
       let membership: Membership | null = null;
@@ -490,6 +495,7 @@ export class SessionService {
       }
       const current = await this.sessionCollection.findValidSession(sessionId);
       if (!current) return failClosed;
+      await this.rememberTenant(membership);
       return { switched: true, sessionId, session: current, rotated: false };
     }
 
@@ -524,12 +530,53 @@ export class SessionService {
       parentSessionId: session.parentSessionId,
     });
 
+    await this.rememberTenant(membership);
     return {
       switched: true,
       sessionId: rotated.id as string,
       session: rotated,
       rotated: true,
     };
+  }
+
+  /**
+   * Record the tenant a user just switched into (#5358). Best effort: a failed
+   * write must never fail or undo a switch that already succeeded.
+   */
+  private async rememberTenant(membership: Membership): Promise<void> {
+    try {
+      membership.lastSelectedAt = new Date();
+      await membership.save();
+    } catch {
+      // The remembered tenant is a convenience hint; ignore write failures.
+    }
+  }
+
+  /**
+   * The tenant `userId` last switched a session into, for an app's sign-in step
+   * to resume (#5358). Usable while the session is still tenantless.
+   *
+   * Returns the tenant id only while the user still holds an ACTIVE membership
+   * there AND the tenant is ACTIVE; a removed or suspended membership, an
+   * inactive tenant, or no recorded switch returns `null` (the next most
+   * recently selected valid tenant is NOT substituted). Grants nothing: the app
+   * must still call `switchTenant()` / `switchSessionTenant()`, which runs the
+   * normal membership checks. Clearing the tenant (`switchTenant(id, null)`)
+   * does not forget it. The value is per user and never crosses users.
+   */
+  async lastActiveTenantFor(userId: string): Promise<string | null> {
+    if (!userId) return null;
+    const all = await this.membershipCollection.findByUser(userId);
+    const latest = all
+      .filter((m) => m.lastSelectedAt)
+      .sort(
+        (a, b) =>
+          (b.lastSelectedAt as Date).getTime() -
+          (a.lastSelectedAt as Date).getTime(),
+      )[0];
+    if (!latest?.isActive() || !latest.tenantId) return null;
+    const tenant = await this.tenantCollection.get({ id: latest.tenantId });
+    return tenant?.isActive() ? latest.tenantId : null;
   }
 
   /**

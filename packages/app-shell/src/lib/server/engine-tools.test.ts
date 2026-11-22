@@ -1,9 +1,16 @@
 import { parseRuntimeReportSpec } from '@happyvertical/smrt-reports';
 import { afterAll, beforeAll, expect, it } from 'vitest';
-import { discardNow, historyFor, startDraft } from './drafts.ts';
+import { ENGINE_TOOLS } from '../../engine/tool-definitions.ts';
+import { discardChanges, waitingCount } from './changes.ts';
+import { historyFor } from './drafts.ts';
 import { getHost } from './host.ts';
 import { callTool, toolsFor } from './policy.ts';
-import { openShell, type ShellHarness } from './test-support.ts';
+import {
+  applyWaiting,
+  openShell,
+  runAs,
+  type ShellHarness,
+} from './test-support.ts';
 
 let h: ShellHarness;
 beforeAll(async () => {
@@ -24,6 +31,8 @@ it('offers engine additions only to the owner and dispatches reports through the
     name: 'Sale',
     fields: { amount: { type: 'money' } },
   });
+  // structure waits for the owner; apply it so the records below have a model
+  await applyWaiting(h.owner);
   const host = await getHost();
   await host.create('Sale', { amount: 100 });
   const spec = parseRuntimeReportSpec({
@@ -36,6 +45,7 @@ it('offers engine additions only to the owner and dispatches reports through the
     name: 'sales',
     definition: { spec },
   });
+  await applyWaiting(h.owner);
   const result = await callTool(h.owner, 'app_runreport', {
     report: 'sales',
   });
@@ -44,34 +54,23 @@ it('offers engine additions only to the owner and dispatches reports through the
     summary: 'Ran Revenue: 1 row',
     reportName: 'sales',
   });
-  await startDraft('Load preview', h.owner.id);
-  const loaded = await callTool(
-    h.owner,
-    'app_loadrecords',
-    {
-      model: 'Sale',
-      mode: 'insert',
-      rows: [{ amount: 200 }, { amount: 300 }],
-    },
-    { structure: 'draft', records: 'draft' },
-  );
-  const repeated = await callTool(
-    h.owner,
-    'app_loadrecords',
-    {
-      model: 'Sale',
-      mode: 'upsert',
-      key: ['amount'],
-      rows: [{ amount: 200 }, { amount: 300 }],
-    },
-    { structure: 'draft', records: 'draft' },
-  );
+  const loaded = await callTool(h.owner, 'app_loadrecords', {
+    model: 'Sale',
+    mode: 'insert',
+    rows: [{ amount: 200 }, { amount: 300 }],
+  });
+  const repeated = await callTool(h.owner, 'app_loadrecords', {
+    model: 'Sale',
+    mode: 'upsert',
+    key: ['amount'],
+    rows: [{ amount: 200 }, { amount: 300 }],
+  });
   expect(repeated.structuredContent).toMatchObject({
     summary: 'Loaded 0 Sale: 0 inserted, 0 updated, 2 unchanged',
   });
-  await discardNow();
-  await host.create('Sale', { amount: 200 });
-  await host.create('Sale', { amount: 300 });
+  // the load waits: live has only the first record until the owner applies
+  expect(await host.countRows('Sale')).toBe(1);
+  await applyWaiting(h.owner);
   expect(loaded.structuredContent).toMatchObject({
     summary: 'Loaded 2 Sale: 2 inserted, 0 updated, 0 unchanged',
   });
@@ -80,10 +79,12 @@ it('offers engine additions only to the owner and dispatches reports through the
     field: 'amount',
     calculated: { value: 9 },
   });
-  expect(gated.pending?.status).toBe('pending_approval');
+  expect(gated.pending).toBeUndefined();
+  expect(gated.structuredContent).toMatchObject({ status: 'change_waiting' });
   expect((await host.list('Sale')).map((row) => row.amount).sort()).toEqual([
     100, 200, 300,
   ]);
+  await runAs(h.owner, () => discardChanges());
 });
 
 it('uses the kept record label in a draft merge summary without exposing ids', async () => {
@@ -92,16 +93,15 @@ it('uses the kept record label in a draft merge summary without exposing ids', a
     label: 'Customers',
     fields: { name: { type: 'text' } },
   });
+  await applyWaiting(h.owner);
   const host = await getHost();
   const keep = await host.create('Customer', { name: 'Acme Ltd' });
   const other = await host.create('Customer', { name: 'Duplicate' });
-  await startDraft('Merge', h.owner.id);
-  const result = await callTool(
-    h.owner,
-    'app_mergerecords',
-    { model: 'Customer', keep: keep.id, merge: [other.id] },
-    { structure: 'draft', records: 'draft' },
-  );
+  const result = await callTool(h.owner, 'app_mergerecords', {
+    model: 'Customer',
+    keep: keep.id,
+    merge: [other.id],
+  });
   expect(result.structuredContent).toMatchObject({
     summary: 'Merged 1 Customers into Acme Ltd',
     humanSummary: 'Merge 1 record in Customers',
@@ -117,18 +117,15 @@ it('uses the kept record label in a draft merge summary without exposing ids', a
       ),
     ),
   ).not.toContain(String(keep.id));
-  await discardNow();
+  await runAs(h.owner, () => discardChanges());
 });
 
 it('describes a report key rename as a link change without printing either key', async () => {
-  await startDraft('Report link', h.owner.id);
   try {
-    const result = await callTool(
-      h.owner,
-      'app_renamereport',
-      { from: 'sales', to: 'draftSummary' },
-      { structure: 'draft', records: 'draft' },
-    );
+    const result = await callTool(h.owner, 'app_renamereport', {
+      from: 'sales',
+      to: 'draftSummary',
+    });
     expect(result.structuredContent).toMatchObject({
       summary: 'Changed the link of report Revenue.',
     });
@@ -136,7 +133,7 @@ it('describes a report key rename as a link change without printing either key',
       (result.structuredContent as { summary: string }).summary,
     ).not.toMatch(/sales|draftSummary/);
   } finally {
-    await discardNow();
+    await runAs(h.owner, () => discardChanges());
   }
 });
 
@@ -179,24 +176,78 @@ it.each([
   'calcluated',
   'type',
   'constructor',
-])('refuses unknown tool argument %s without storing a draft step', async (key) => {
-  await startDraft('Argument validation', h.owner.id);
-  try {
-    const { hostFor } = await import('./host.ts');
-    const host = await hostFor('draft');
-    const version = host.version;
-    const definition = structuredClone(host.def);
-    await expect(
-      callTool(
-        h.owner,
-        'app_setcalculation',
-        { model: 'Sale', field: 'amount', calculated: null, [key]: true },
-        { structure: 'draft', records: 'draft' },
-      ),
-    ).rejects.toThrow('unknown tool argument');
-    expect(host.version).toBe(version);
-    expect(host.def).toEqual(definition);
-  } finally {
-    await discardNow();
-  }
+])('refuses unknown tool argument %s without storing a change', async (key) => {
+  const host = await getHost();
+  const version = host.version;
+  const definition = structuredClone(host.def);
+  await expect(
+    callTool(h.owner, 'app_setcalculation', {
+      model: 'Sale',
+      field: 'amount',
+      calculated: null,
+      [key]: true,
+    }),
+  ).rejects.toThrow('unknown tool argument');
+  expect(host.version).toBe(version);
+  expect(host.def).toEqual(definition);
+  expect(await runAs(h.owner, () => waitingCount())).toBe(0);
+});
+
+it('runs a not-equal report however the filter is spelled, and explains a bad comparison in plain words (#5172)', async () => {
+  await callTool(h.owner, 'app_definemodel', {
+    name: 'Order',
+    fields: { status: { type: 'text' }, qty: { type: 'integer' } },
+  });
+  await applyWaiting(h.owner);
+  const host = await getHost();
+  for (const status of ['Open', 'Open', 'Cancelled', null])
+    await host.create('Order', { status, qty: 1 });
+  const count = async (filter: Record<string, unknown>) => {
+    const out = await callTool(h.owner, 'app_runreport', {
+      report: {
+        title: 'Orders',
+        source: 'Order',
+        measures: [{ fn: 'count', as: 'order_count' }],
+        filters: [filter],
+      },
+    });
+    if (out.isError) throw new Error(JSON.stringify(out.structuredContent));
+    return (out.structuredContent as { rows: { order_count: number }[] })
+      .rows[0].order_count;
+  };
+  const viaGrammar = await count({
+    field: 'status',
+    op: 'ne',
+    value: 'Cancelled',
+  });
+  for (const op of ['!=', '<>', 'neq', 'not_equal', 'notEqual', ' NE '])
+    expect(await count({ field: 'status', op, value: 'Cancelled' })).toBe(
+      viaGrammar,
+    );
+  expect(viaGrammar).toBeGreaterThanOrEqual(2);
+  const advertised = JSON.stringify(
+    ENGINE_TOOLS.find((t) => t.name === 'app_runreport'),
+  );
+  expect(advertised).toContain('eq, ne, gt');
+  const failed = await callTool(h.owner, 'app_runreport', {
+    report: {
+      title: 'Orders',
+      source: 'Order',
+      measures: [{ fn: 'count', as: 'order_count' }],
+      filters: [{ field: 'status', op: 'sounds-like', value: 'Open' }],
+    },
+  });
+  const value = failed.structuredContent as {
+    summary: string;
+    error: string;
+  };
+  expect(failed.isError).toBe(true);
+  // The model gets the path and the real reason so it can correct itself ...
+  expect(value.error).toContain('spec.filters[0].op');
+  expect(value.error).toContain('eq, ne');
+  expect(value.error).not.toContain('Report could not run');
+  // ... the owner gets one plain sentence the chip will actually show.
+  expect(value.summary).toBe(
+    'A filter in that report used a comparison the app cannot do, so nothing was run.',
+  );
 });

@@ -24,6 +24,7 @@ const REQUIRED_COLUMNS: readonly string[] = [
   'users.email_key',
   'users.username_key',
   'users.status',
+  'users.principal_kind',
   'memberships.user_id',
   'memberships.tenant_id',
   'memberships.role_id',

@@ -79,7 +79,8 @@ holds and refusals using the host's existing audit rail. Do not pass a no-op sin
 in production. Hosts with multiple processes must invalidate each process's
 engine/preference cache when persisted state changes.
 
-With `activation`, enable/template writes await the coordinator before this CAS.
+With `activation`, enable/template writes and `app.undo` (which can restore a
+disabled recipe) await the coordinator before this CAS.
 `activation_failed` includes a clear migration failure and leaves cookbook state
 unchanged. A later authority, preference or CAS refusal may retain migrated code
 and tables, but grants no tenant exposure. Approval consumption/completion keeps

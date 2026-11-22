@@ -29,7 +29,7 @@ import { createMigrationDefinition } from '../migrations/generator';
 import { collectStatementsFromDiff } from '../migrations/orchestrate';
 import { MigrationTracker } from '../migrations/tracker';
 import { SmrtObject } from '../object';
-import { ObjectRegistry } from '../registry';
+import { ObjectRegistry, smrt } from '../registry';
 import { createConsumerWorkspace } from '../registry/__tests__/helpers/consumer-workspace';
 import {
   createCookbookRuntimeExposure,
@@ -72,14 +72,14 @@ const appSource = (
   custom = true,
 ) => `import { smrt, SmrtCollection } from '@happyvertical/smrt-core';
 import { Customer as CustomerBase, Profile as ProfileBase, Base as BaseBase } from '${UP}';
-@smrt({})
+@smrt({ replaceParent: true })
 export class AppCustomer extends CustomerBase { ${custom ? "favoritePose = ''; visits = 0;" : ''} greeting() { return 'app'; } }
 export { AppCustomer as Customer };
 @smrt({})
 export class Customers extends SmrtCollection<AppCustomer> { static readonly _itemClass = AppCustomer; }
-@smrt({})
+@smrt({ replaceParent: true })
 export class Profile extends ProfileBase { badge = ''; }
-@smrt({})
+@smrt({ replaceParent: true })
 export class Base extends BaseBase { extra = ''; }
 `;
 
@@ -162,8 +162,9 @@ function runtime(up: SmartObjectManifest, app?: SmartObjectManifest) {
   class AppBase extends Base {
     extra = '';
   }
-  // Native decorators execute before generated isolated registrations.
-  ObjectRegistry.register(AppCustomer, { packageName: APP });
+  // The model's own `@smrt({ replaceParent: true })` runs under its local
+  // class name before the generated registration supplies the public name.
+  smrt({ replaceParent: true })(AppCustomer);
   register(AppCustomer, app, 'Customer');
   register(AppProfile, app, 'Profile');
   register(AppBase, app, 'Base');
@@ -402,6 +403,24 @@ describe('same-name app subclass', () => {
     expect(up.objects[`${UP}:Leaf`].schema?.columns).toHaveProperty(
       'base_value',
     );
+  });
+
+  it('refuses at generation a replacement of an installed STI model that names a table of its own', async () => {
+    ws.write(
+      'app/src/models.ts',
+      `import { smrt } from '@happyvertical/smrt-core';
+import { Profile as ProfileBase } from '${UP}';
+@smrt({ replaceParent: true, tableName: 'a2_app_profiles' })
+export class Profile extends ProfileBase { badge = ''; }
+`,
+    );
+    await expect(scan(ws.path('app'), APP, [UP])).rejects.toMatchObject({
+      code: 'CONFIG_SAME_NAME_REPLACEMENT_TABLE_MISMATCH',
+      details: expect.objectContaining({
+        childTable: 'a2_app_profiles',
+        parentTable: 'a2_profiles',
+      }),
+    });
   });
 
   it('keeps provider cookbook defaults and hidden fields on generated app STI creates', async () => {
@@ -809,6 +828,28 @@ describe('same-name app subclass', () => {
     );
   });
 
+  it('keeps replacement lineage and runtime overrides across a registry snapshot restore', () => {
+    runtime(up, app);
+    ObjectRegistry.registerOverride(`${APP}:Profile`, { mcp: false });
+    const restoreSnapshot = snapshotObjectRegistryState();
+    restoreSnapshot();
+    expect(ObjectRegistry.getRuntimeOverride(`${APP}:Profile`)).toEqual({
+      mcp: false,
+    });
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    expect(ObjectRegistry.getInheritanceChain(`${UP}:Person`)).toEqual([
+      `${UP}:Profile`,
+      `${UP}:Person`,
+    ]);
+    expect(ObjectRegistry.getInheritanceChain(`${APP}:Profile`)).toEqual([
+      `${UP}:Profile`,
+      `${APP}:Profile`,
+    ]);
+    expect(warn).not.toHaveBeenCalledWith(
+      expect.stringContaining('Circular inheritance detected'),
+    );
+  });
+
   it('keeps the provider cookbook identity when gating an app replacement', async () => {
     db = await getTestDatabase({
       type: databaseType,
@@ -1012,10 +1053,9 @@ describe('same-name app subclass', () => {
       new Request('http://fixture/api/profiles', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          title: 'STI name',
-          firstName: 'Person',
-        }),
+        // A create through the base names the base's own fields; a subtype's
+        // field (`firstName`) needs the subtype selected.
+        body: JSON.stringify({ title: 'STI name' }),
       }),
     );
     expect(created.status).toBe(201);

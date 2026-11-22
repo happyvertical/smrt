@@ -80,19 +80,28 @@
  *
  * Contention note: appends serialize on the head of the log. Each append is
  * one small INSERT (issued from the write path *after* the user's row was
- * written), so the serialization window is one statement; conflicts resolve
- * with a bounded retry loop and are impossible on single-writer engines
- * (SQLite). PostgreSQL invokes that INSERT through the framework-owned
- * `_smrt_append_change` function so failure isolation remains one statement.
+ * written), so the serialization window is one statement. On PostgreSQL every
+ * allocator takes the feed's transaction-scoped head lock before reading
+ * `MAX(seq)` (#5271): READ COMMITTED appenders wait their turn and then
+ * succeed instead of losing a primary-key race and retrying, and the drain
+ * only tries the lock so a reader never waits on the head. A
+ * REPEATABLE READ / SERIALIZABLE transaction stages instead, since its fixed
+ * snapshot could read a stale `MAX(seq)`. Conflicts that remain (older helper
+ * bodies mid-rollout) resolve with a time-budgeted retry loop; they are
+ * impossible on single-writer engines (SQLite). PostgreSQL invokes that INSERT
+ * through the framework-owned `_smrt_append_change` function so failure
+ * isolation remains one statement.
  *
  * ## Failure semantics
  *
  * A feed-write failure must never fail the user's write. The interceptor
- * wraps the append in a try/catch: on failure it logs a warning (deduped per
- * database) and continues. The trade-off is availability of the user's
- * write over completeness of the feed — consumers already need a
- * full-resync path for cursors older than the retention window, and the
- * same path covers a (rare) dropped feed row. PostgreSQL runs the INSERT in a
+ * wraps the append in a try/catch: on failure it logs a warning (at most once
+ * a minute per database and table, with a count of what it suppressed) and
+ * continues. The trade-off is availability of the user's write over
+ * completeness of the feed: the dropped change is not marked in the log —
+ * sequences stay contiguous and a resync is only signalled for pruned or
+ * foreign cursors — so a consumer is not told it missed it. PostgreSQL runs
+ * the INSERT in a
  * PL/pgSQL exception subtransaction and returns a caught SQLSTATE as data;
  * JavaScript only throws/logs after PostgreSQL has restored the caller's
  * transaction, so a swallowed append failure cannot surface later as 25P02.
@@ -137,10 +146,18 @@ import {
   isChangeFeedSensitiveTable,
   isChangeFeedSensitiveWrite,
 } from './change-feed-sensitivity.js';
+import {
+  type ChangeFeedWriteOwner,
+  changeFeedWriteOwner,
+  noteChangeFeedWriteOwner,
+  resolveChangeFeedTenantId,
+} from './change-feed-tenant.js';
 import { type ChangeSignal, publishChangeSignal } from './change-signals.js';
 import { resolveDbCacheKey } from './collection-cache.js';
 import { resolveDispatchTenantScope } from './dispatch/tenant-resolver.js';
 import {
+  databaseReadScope,
+  deferUntilFrameworkCommit,
   isEmbeddedDatabase,
   usesPostgresDialect,
   withEmbeddedWriteQueue,
@@ -385,11 +402,58 @@ export const DEFAULT_CHANGES_LIMIT = 500;
 export const MAX_CHANGES_LIMIT = 5_000;
 
 /**
- * Maximum append attempts under sequence contention. Conflicts only occur
- * with concurrent writers on MVCC engines and resolve as soon as the
- * blocking transaction commits, so a small bound is ample.
+ * Retry budget for a lost sequence race (#5271).
+ *
+ * A conflict on `MAX(seq) + 1` is retried until this much time has passed
+ * since the first attempt, and at least {@link MIN_APPEND_ATTEMPTS} times. On
+ * READ COMMITTED PostgreSQL with the v6 helpers installed the head lock means
+ * the retry should never run; it remains for a database still holding older
+ * helper bodies mid-rollout and keeps one retry policy across engines. The
+ * deadline is checked before and after each pause, never mid-attempt: a
+ * single attempt can wait for the head lock for as long as `lock_timeout` /
+ * `statement_timeout` allow.
  */
-const MAX_APPEND_ATTEMPTS = 20;
+const APPEND_RETRY_BUDGET_MS = 2_000;
+
+/** Attempt floor under {@link APPEND_RETRY_BUDGET_MS} (the former hard cap). */
+const MIN_APPEND_ATTEMPTS = 20;
+
+/** Monotonic milliseconds, for retry deadlines that ignore wall-clock jumps. */
+function monotonicNow(): number {
+  return performance.now();
+}
+
+/**
+ * Whether a retry loop may try again after `attempts` conflicts that have
+ * spent `spentMs` of the budget.
+ */
+function retryBudgetRemains(attempts: number, spentMs: number): boolean {
+  return attempts < MIN_APPEND_ATTEMPTS || spentMs < APPEND_RETRY_BUDGET_MS;
+}
+
+/**
+ * The error thrown when sequence contention outlasts the retry budget.
+ *
+ * It keeps the database's `code`, carries the last database error as its
+ * `cause`, and repeats that error's message, because the append-failure
+ * warning logs only `message`.
+ */
+function retryBudgetExhausted(
+  operation: string,
+  lastError: unknown,
+  attempts: number,
+): Error {
+  const detail =
+    lastError instanceof Error ? lastError.message : String(lastError);
+  const error = new Error(
+    `${operation} could not allocate a change-feed sequence within the ` +
+      `${APPEND_RETRY_BUDGET_MS}ms retry budget (${attempts} attempts): ${detail}`,
+    { cause: lastError },
+  ) as Error & { code?: string };
+  const code = (lastError as { code?: unknown } | null)?.code;
+  if (typeof code === 'string') error.code = code;
+  return error;
+}
 
 /**
  * Jittered pause before an append (or a settling drain) re-contends for the
@@ -398,10 +462,10 @@ const MAX_APPEND_ATTEMPTS = 20;
  * Retrying a lost `MAX(seq)+1` race immediately lets a writer in a tight loop
  * win every round: the loser re-reads the head just as the winner commits its
  * next row, and on a contended host one writer was starved for all
- * {@link MAX_APPEND_ATTEMPTS}. A random delay, growing to a small cap,
- * desynchronizes the writers. Worst case across every retry stays well under
- * a second, and inside a caller transaction the append helper has already
- * rolled its own subtransaction back, so the pause holds no feed locks.
+ * of its attempts. A random delay, growing to a small cap,
+ * desynchronizes the writers. Each pause is at most 40 ms, and inside a
+ * caller transaction the append helper has already rolled its own
+ * subtransaction back, so the pause holds no feed locks.
  */
 function waitBeforeAppendRetry(attempt: number): Promise<void> {
   const ceilingMs = Math.min(2 ** attempt, 40);
@@ -413,7 +477,9 @@ function waitBeforeAppendRetry(attempt: number): Promise<void> {
 /**
  * Maximum bounded drain batches one {@link drainChangeFeed} call sequences.
  * A cap rather than "until empty" so a pathological writer cannot make one
- * reader drain forever; the remainder is picked up by the next drain.
+ * reader drain forever; the remainder is picked up by the next drain. Only
+ * successful batches count against it: a pass lost to a sequence conflict
+ * spends the retry budget instead (#5271).
  */
 const MAX_DRAIN_PASSES = 50;
 
@@ -846,17 +912,22 @@ export async function ensureChangeFeedTable(
  * (`COALESCE(MAX(seq), 0) + 1`) and retried on primary-key conflict, which
  * keeps committed sequences contiguous and makes commit order equal
  * sequence order — the property the cursor guarantee rests on (see the
- * module docs). Throws after {@link MAX_APPEND_ATTEMPTS} consecutive
- * conflicts or on any non-conflict database error; the framework's
+ * module docs). Throws once conflicts outlast the retry budget
+ * ({@link APPEND_RETRY_BUDGET_MS}, at least {@link MIN_APPEND_ATTEMPTS}
+ * attempts) or on any non-conflict database error; the framework's
  * interceptor catches and logs instead of failing the user's write.
  *
  * **Returns `null` for a staged append** (PostgreSQL, #2649): an append issued
- * inside a caller-managed transaction is written to `_smrt_changes_pending`
+ * inside a caller-managed transaction that has already written, or on a
+ * REPEATABLE READ / SERIALIZABLE transaction (#5271), is written to
+ * `_smrt_changes_pending`
  * and receives its sequence from the next {@link drainChangeFeed} after that
  * transaction commits, so no sequence exists to return yet. The entry is
  * durable and ordered — it simply is not numbered at this instant. Callers
  * that need the sequence (an SSE event id, say) must treat `null` as "not
- * available yet", never as a failure: a failure still throws.
+ * available yet", never as a failure: a failure still throws. Such an append
+ * also throws, with the database's `42P01`, when `_smrt_changes_pending` is
+ * missing: it is never allocated directly instead.
  *
  * **PostgreSQL transaction safety (#2026).** The INSERT runs inside the
  * framework-owned `_smrt_append_change` PL/pgSQL function. Its exception
@@ -947,7 +1018,8 @@ export async function appendChange(
     publishSignals(db, drainedSignals);
   };
 
-  for (let attempt = 1; attempt <= MAX_APPEND_ATTEMPTS; attempt++) {
+  const startedAt = monotonicNow();
+  for (let attempt = 1; ; attempt++) {
     try {
       // The append is a root-connection write; on embedded engines it goes
       // through the per-database write queue so it can never overlap a
@@ -993,21 +1065,27 @@ export async function appendChange(
       }
       return seq;
     } catch (error) {
-      if (!isUniqueViolation(error) || attempt === MAX_APPEND_ATTEMPTS) {
+      if (!isUniqueViolation(error)) {
         // Nothing was proven about the drain; hold its signals for a settling
         // drain rather than dropping or publishing them.
         queueDeferredSignals(db, drainedSignals);
         throw error;
       }
+      if (!retryBudgetRemains(attempt, monotonicNow() - startedAt)) {
+        queueDeferredSignals(db, drainedSignals);
+        throw retryBudgetExhausted('appendChange', error, attempt);
+      }
       // Sequence head contention: another append won the value. Re-running
       // recomputes MAX(seq) against the now-committed head.
       await waitBeforeAppendRetry(attempt);
+      // The pause itself can spend the rest of the budget; recheck so no
+      // attempt starts after it (#5405).
+      if (!retryBudgetRemains(attempt, monotonicNow() - startedAt)) {
+        queueDeferredSignals(db, drainedSignals);
+        throw retryBudgetExhausted('appendChange', error, attempt);
+      }
     }
   }
-
-  // Unreachable: the loop returns a seq or throws on the final attempt. Present
-  // so the function satisfies its `Promise<number | null>` contract structurally.
-  throw new Error('appendChange exhausted retries without allocating a seq');
 }
 
 /**
@@ -1100,7 +1178,8 @@ export async function appendChanges(
     if (sequenced) publishSignals(db, drainedSignals);
     else queueDeferredSignals(db, drainedSignals);
   };
-  for (let attempt = 1; attempt <= MAX_APPEND_ATTEMPTS; attempt++) {
+  const startedAt = monotonicNow();
+  for (let attempt = 1; ; attempt++) {
     try {
       const rows = getQueryRows(
         await withEmbeddedWriteQueue(db, isEmbeddedDatabase(db), () =>
@@ -1158,16 +1237,23 @@ export async function appendChanges(
       settleDrainedSignals(true);
       return result;
     } catch (error) {
-      if (!isUniqueViolation(error) || attempt === MAX_APPEND_ATTEMPTS) {
+      if (!isUniqueViolation(error)) {
         queueDeferredSignals(db, drainedSignals);
         throw error;
       }
+      if (!retryBudgetRemains(attempt, monotonicNow() - startedAt)) {
+        queueDeferredSignals(db, drainedSignals);
+        throw retryBudgetExhausted('appendChanges', error, attempt);
+      }
       await waitBeforeAppendRetry(attempt);
+      // The pause itself can spend the rest of the budget; recheck so no
+      // attempt starts after it (#5405).
+      if (!retryBudgetRemains(attempt, monotonicNow() - startedAt)) {
+        queueDeferredSignals(db, drainedSignals);
+        throw retryBudgetExhausted('appendChanges', error, attempt);
+      }
     }
   }
-  throw new Error(
-    'appendChanges exhausted retries without allocating a sequence',
-  );
 }
 
 /**
@@ -1191,7 +1277,12 @@ export async function appendChanges(
  * Call it explicitly from a scheduled job when a deployment writes *only*
  * through transactions and reads the feed from a connection that cannot write
  * (a read replica or a read-only role), because neither self-draining path is
- * then available.
+ * then available. A drain on a REPEATABLE READ or SERIALIZABLE transaction
+ * allocates nothing (#5271), so a deployment whose default isolation is not
+ * READ COMMITTED must run this on a READ COMMITTED connection, or staged
+ * entries never become visible. When the head of the log is busy, or another
+ * session holds a `SHARE` lock on `_smrt_changes`, the drain returns without
+ * waiting and a later one sequences the rows.
  *
  * Best-effort by the feed's failure policy: a drain that cannot run leaves the
  * staged entries in place for the next attempt and never throws into the
@@ -1251,7 +1342,15 @@ async function drainChangeFeedDetailed(
   // Each call sequences one bounded batch; loop so a large backlog is not left
   // behind, with a hard iteration cap so a persistent failure cannot spin.
   const maxPasses = Math.max(1, options.maxPasses ?? MAX_DRAIN_PASSES);
-  for (let pass = 0; pass < maxPasses; pass++) {
+  // A pass lost to a sequence conflict does not count as a pass: it spends
+  // the retry budget instead (#5271). Only conflicting passes and their
+  // pauses are charged to that budget, so time spent on successful passes
+  // (their statements and signal settlement) never shortens it. The write
+  // path (`settle: false`) never retries, so it stays exactly one statement.
+  let conflictMs = 0;
+  let conflicts = 0;
+  for (let pass = 0; pass < maxPasses; ) {
+    const passStartedAt = monotonicNow();
     // The live sensitive set rides with every drain (#2982): the helper drops
     // their staged rows before allocating a sequence, so the feed never
     // records them — including entries an older replica staged. It travels as
@@ -1271,20 +1370,27 @@ async function drainChangeFeedDetailed(
         String(failure.error_message || 'PostgreSQL change-feed drain failed'),
       ) as Error & { code: string };
       error.code = String(failure.error_code);
-      // A concurrent autocommit append can win the head between this drain's
-      // MAX(seq) read and its insert. The whole batch rolled back, so the
-      // staged rows are still there — recompute and try again. Like the
-      // appender's own conflict retry, a settling drain pauses first so a
-      // tight-loop appender cannot win every pass (#3062); the write-path
-      // drain (`settle: false`, one pass) never pauses.
+      // An appender running older helper bodies (no head lock, mid-rollout)
+      // can win the head between this drain's MAX(seq) read and its insert.
+      // The whole batch rolled back, so the staged rows are still there —
+      // recompute and try again. Like the appender's own conflict retry, a
+      // settling drain pauses first so a tight-loop appender cannot win every
+      // pass (#3062); the write-path drain never retries.
       if (isUniqueViolation(error)) {
-        if (settle && pass + 1 < maxPasses) {
-          await waitBeforeAppendRetry(pass + 1);
-        }
+        conflicts += 1;
+        if (!settle) break;
+        conflictMs += monotonicNow() - passStartedAt;
+        if (!retryBudgetRemains(conflicts, conflictMs)) break;
+        const pauseStartedAt = monotonicNow();
+        await waitBeforeAppendRetry(conflicts);
+        conflictMs += monotonicNow() - pauseStartedAt;
+        // The pause itself can spend the rest of the budget (#5405).
+        if (!retryBudgetRemains(conflicts, conflictMs)) break;
         continue;
       }
       throw error;
     }
+    pass += 1;
     const sequenced = rows.filter((row) => row.drained_seq != null);
     drained += sequenced.length;
     for (const row of sequenced) {
@@ -1565,6 +1671,39 @@ export async function getChangesSince(
   db: DatabaseInterface,
   options: GetChangesOptions,
 ): Promise<ChangeFeedPage> {
+  // An embedded engine runs a framework transaction on the root's own
+  // connection, so a read issued on the root while one is open would see its
+  // uncommitted feed rows — and could advance a cursor past a sequence that a
+  // rollback then frees for a different change. Every framework write
+  // transaction holds the per-database write queue for its whole duration,
+  // so reading through the same queue waits for it to commit or roll back.
+  // Re-entrant: a read made inside that transaction (or any other queue hold)
+  // runs at once and sees its own work, as before.
+  return withEmbeddedWriteQueue(db, isEmbeddedDatabase(db), () =>
+    readChangesSince(db, options),
+  );
+}
+
+/**
+ * {@link getChangesSince} for a reader that may go away while its read waits
+ * in the write queue: when the read reaches the front and `isCancelled()` is
+ * true, nothing runs and it resolves to `null`. Internal to the `_events`
+ * stream.
+ */
+export async function getChangesSinceUnlessCancelled(
+  db: DatabaseInterface,
+  options: GetChangesOptions,
+  isCancelled: () => boolean,
+): Promise<ChangeFeedPage | null> {
+  return withEmbeddedWriteQueue(db, isEmbeddedDatabase(db), () =>
+    isCancelled() ? Promise.resolve(null) : readChangesSince(db, options),
+  );
+}
+
+async function readChangesSince(
+  db: DatabaseInterface,
+  options: GetChangesOptions,
+): Promise<ChangeFeedPage> {
   const { since } = options;
   if (!Number.isFinite(since) || since < 0) {
     throw new Error(
@@ -1732,6 +1871,30 @@ export async function getChangesSince(
   params.push(limit);
 
   const rows = getQueryRows(await db.query(sql, ...params));
+
+  // The floor the pruned-gap check above compared against was read in an
+  // EARLIER statement. A retention prune that committed between that read
+  // and the page query deleted rows in (since, newFloor) that the page can no
+  // longer contain — and nothing in the page shows it, because filters
+  // legitimately hide rows too. Re-read the floor AFTER the page: a prune
+  // that committed before the page query is visible to this later statement
+  // under every isolation level the feed runs at, and a prune that committed
+  // after the page query cannot have removed anything the page missed. So a
+  // cursor this read would otherwise have advanced past deleted rows is
+  // always answered with a resync instead.
+  const recheckRows = getQueryRows(
+    await db.query(`SELECT MIN(seq) AS floor FROM ${CHANGE_FEED_TABLE}`),
+  );
+  const floorAfterPage = toSeqNumber(recheckRows[0]?.floor);
+  if (floorAfterPage === 0 || since < floorAfterPage - 1) {
+    return {
+      changes: [],
+      cursor: since,
+      resyncRequired: true,
+      resyncCursor: servedHorizon,
+    };
+  }
+
   const entries = rows.map(rowToEntry);
   // Re-check against the live set: a table declared sensitive while the query
   // was in flight is not in the NOT IN list above, and its rows must still not
@@ -2169,8 +2332,20 @@ async function deleteCounted(
 
 export const CHANGE_FEED_WAS_PERSISTED_KEY = '_smrtChangeFeedWasPersisted';
 
-/** Databases we already warned about after a failed feed append. */
-const warnedAppendFailures = new Set<string>();
+/**
+ * Append-failure and unresolved-owner logging state per `warning kind +
+ * database + table`: when it last logged and how many occurrences it has
+ * suppressed since. A persistent failure on one table keeps reporting (at most
+ * once per {@link APPEND_FAILURE_LOG_INTERVAL_MS}), a failure on one table
+ * never silences another's, and one kind never silences the other.
+ */
+const appendFailureLog = new Map<
+  string,
+  { lastLoggedAt: number; suppressed: number }
+>();
+
+/** Minimum interval between warnings of one kind for one table. */
+const APPEND_FAILURE_LOG_INTERVAL_MS = 60_000;
 
 /** Databases we already warned about after a failed signal publish (#1763). */
 const warnedSignalPublishFailures = new Set<string>();
@@ -2232,11 +2407,39 @@ export function registerChangeFeedWriter(): void {
     ): Promise<void> {
       const wasPersisted =
         context.metadata?.[CHANGE_FEED_WAS_PERSISTED_KEY] === true;
-      await appendForInstance(instance, wasPersisted ? 'update' : 'create');
+      // The owner of the row the save persisted, recorded by the save path
+      // from the serialized row (a `transformJSON()` hook may set an owner
+      // column the instance field does not hold).
+      await appendForInstance(
+        instance,
+        wasPersisted ? 'update' : 'create',
+        changeFeedWriteOwner(context),
+      );
     },
 
-    async afterDelete(instance: SmrtObject): Promise<void> {
-      await appendForInstance(instance, 'delete');
+    beforeDelete(instance: SmrtObject, context: InterceptorContext): void {
+      // Provisional owner, read before any model hook runs. The delete path
+      // replaces it with the owner its DELETE statement returned for the row
+      // it removed; this one stands only when the delete removed nothing.
+      // Neither a field cleared in memory nor a model `afterDelete` hook that
+      // clears it can then turn a tombstone into a global entry.
+      try {
+        noteChangeFeedWriteOwner(context, resolveChangeFeedTenantId(instance));
+      } catch {
+        // Unresolved ownership: record nothing rather than a global entry.
+        noteChangeFeedWriteOwner(context, undefined);
+      }
+    },
+
+    async afterDelete(
+      instance: SmrtObject,
+      context: InterceptorContext,
+    ): Promise<void> {
+      await appendForInstance(
+        instance,
+        'delete',
+        changeFeedWriteOwner(context),
+      );
     },
 
     bulkMutation: {
@@ -2249,12 +2452,17 @@ export function registerChangeFeedWriter(): void {
               context.metadata?.[CHANGE_FEED_WAS_PERSISTED_KEY] === true
                 ? 'update'
                 : 'create',
+            owner: changeFeedWriteOwner(context),
           })),
         );
       },
       async afterDelete(entries): Promise<void> {
         await recordInstanceChanges(
-          entries.map(({ instance }) => ({ instance, operation: 'delete' })),
+          entries.map(({ instance, context }) => ({
+            instance,
+            operation: 'delete',
+            owner: changeFeedWriteOwner(context),
+          })),
         );
       },
     },
@@ -2269,9 +2477,11 @@ export function unregisterChangeFeedWriter(): boolean {
 async function appendForInstance(
   instance: SmrtObject,
   operation: ChangeOperation,
+  owner?: ChangeFeedWriteOwner,
 ): Promise<void> {
   let db: DatabaseInterface;
   let table: string;
+  let rowTenantId: string | null;
   try {
     table = instance.tableName;
     // Framework-owned tables are bookkeeping, not client-syncable data —
@@ -2287,6 +2497,16 @@ async function appendForInstance(
     // that name, closing the read path and the signal bus for it.
     if (isChangeFeedSensitiveWrite(table, instance.constructor)) return;
     db = instance.db;
+    // The row's real ownership field, not just a `tenantId` property: an
+    // entry recorded as global is served to every tenant.
+    const tenantId = owner
+      ? owner.tenantId
+      : resolveChangeFeedTenantId(instance);
+    if (tenantId === undefined) {
+      warnAmbiguousTenant(db, table);
+      return;
+    }
+    rowTenantId = tenantId;
   } catch {
     // Not a fully initialized SmrtObject (e.g. plain-object doubles in
     // tests) — nothing to record.
@@ -2294,11 +2514,13 @@ async function appendForInstance(
   }
 
   try {
-    const id = (instance as { id?: unknown }).id;
-    const tenantId = (instance as unknown as Record<string, unknown>).tenantId;
+    // The id the write's statement bound, captured with its owner; a hook
+    // that reassigns `id` afterwards cannot move the entry to another row.
+    const id =
+      owner?.rowId !== undefined
+        ? owner.rowId
+        : (instance as { id?: unknown }).id;
     const rowId = typeof id === 'string' && id ? id : null;
-    const rowTenantId =
-      typeof tenantId === 'string' && tenantId ? tenantId : null;
     const seq = await appendChange(db, {
       table,
       rowId,
@@ -2317,22 +2539,14 @@ async function appendForInstance(
     // Publish a coarse live signal for the SSE `_events` route (#1763). This
     // runs only after the durable feed append SUCCEEDED (same try block, so a
     // failed append never emits a signal — "no signal without a durable feed
-    // row"). Its own try/catch (distinct dedup key) keeps a signal-publish
-    // problem from failing the user's write or masking the append's own
-    // failure semantics above.
-    try {
-      publishChangeSignal(db, {
-        table,
-        operation,
-        rowId,
-        tenantId: rowTenantId,
-        seq,
-      });
-    } catch (error) {
-      warnSignalPublishFailureOnce(db, table, error);
-    }
+    // row"), and only once the write has committed (see publishWhenCommitted).
+    // publishSignals has its own try/catch, so a signal problem never fails
+    // the user's write or masks the append's failure semantics above.
+    publishWhenCommitted(db, [
+      { table, operation, rowId, tenantId: rowTenantId, seq },
+    ]);
   } catch (error) {
-    warnAppendFailureOnce(db, table, error);
+    warnAppendFailure(db, table, error);
   }
 }
 
@@ -2343,7 +2557,12 @@ async function appendForInstance(
  * single-instance writer does.
  */
 export async function recordInstanceChanges(
-  entries: readonly { instance: SmrtObject; operation: ChangeOperation }[],
+  entries: readonly {
+    instance: SmrtObject;
+    operation: ChangeOperation;
+    /** The owner the write path recorded for the row it wrote or removed. */
+    owner?: ChangeFeedWriteOwner;
+  }[],
 ): Promise<void> {
   const prepared: Array<{
     db: DatabaseInterface;
@@ -2356,16 +2575,24 @@ export async function recordInstanceChanges(
       // Same authoritative class-level check as the single-instance writer.
       if (isChangeFeedSensitiveWrite(table, entry.instance.constructor))
         continue;
-      const id = (entry.instance as { id?: unknown }).id;
-      const tenantId = (entry.instance as unknown as Record<string, unknown>)
-        .tenantId;
+      const id =
+        entry.owner?.rowId !== undefined
+          ? entry.owner.rowId
+          : (entry.instance as { id?: unknown }).id;
+      const tenantId = entry.owner
+        ? entry.owner.tenantId
+        : resolveChangeFeedTenantId(entry.instance);
+      if (tenantId === undefined) {
+        warnAmbiguousTenant(entry.instance.db, table);
+        continue;
+      }
       prepared.push({
         db: entry.instance.db,
         input: {
           table,
           rowId: typeof id === 'string' && id ? id : null,
           operation: entry.operation,
-          tenantId: typeof tenantId === 'string' && tenantId ? tenantId : null,
+          tenantId,
         },
       });
     } catch {
@@ -2386,50 +2613,153 @@ export async function recordInstanceChanges(
       db,
       prepared.map(({ input }) => input),
     );
+    const signals: ChangeSignal[] = [];
     for (let index = 0; index < prepared.length; index++) {
       const seq = sequences[index];
       if (seq == null) continue;
       const input = prepared[index].input;
-      try {
-        publishChangeSignal(db, {
-          table: input.table,
-          operation: input.operation ?? 'update',
-          rowId: input.rowId ?? null,
-          tenantId: input.tenantId ?? null,
-          seq,
-        });
-      } catch (error) {
-        warnSignalPublishFailureOnce(db, input.table, error);
-      }
+      signals.push({
+        table: input.table,
+        operation: input.operation ?? 'update',
+        rowId: input.rowId ?? null,
+        tenantId: input.tenantId ?? null,
+        seq,
+      });
     }
+    publishWhenCommitted(db, signals);
   } catch (error) {
-    warnAppendFailureOnce(db, prepared[0].input.table, error);
+    warnAppendFailure(db, prepared[0].input.table, error);
   }
+}
+
+/**
+ * Publish write-path signals once their write has committed.
+ *
+ * An append made on a framework transaction's handle is sequenced inside that
+ * transaction on SQLite and DuckDB (and on PostgreSQL when it is the
+ * transaction's first statement). Published at once, its signal would
+ * announce a write a later rollback undoes, and the rollback frees the
+ * sequence for the next write — a subscriber that dedupes by sequence then
+ * drops the real change. The signals are therefore handed to the
+ * transaction and published after it commits, in order, and dropped if it
+ * rolls back. Outside a framework transaction (autocommit) they publish now.
+ * Writes inside a transaction the framework does not manage (a raw
+ * `db.transaction()`, or a caller-owned one) still publish immediately.
+ */
+function publishWhenCommitted(
+  db: DatabaseInterface,
+  signals: ChangeSignal[],
+): void {
+  if (signals.length === 0) return;
+  if (deferUntilFrameworkCommit(db, (root) => publishSignals(root, signals))) {
+    return;
+  }
+  publishSignals(db, signals);
 }
 
 /** Record a framework-owned mutation that intentionally bypasses save hooks. */
 export async function recordInstanceChange(
   instance: SmrtObject,
   operation: ChangeOperation = 'update',
+  owner?: ChangeFeedWriteOwner,
 ): Promise<void> {
-  await appendForInstance(instance, operation);
+  await appendForInstance(instance, operation, owner);
 }
 
-function warnAppendFailureOnce(
+/** Rate-limited feed warnings; each kind keeps its own buckets. */
+type FeedWarningKind = 'append-failure' | 'unresolved-owner';
+
+/**
+ * Admit a feed warning of `kind`, at most once per {@link
+ * APPEND_FAILURE_LOG_INTERVAL_MS} per `database + table`, reporting how many
+ * were suppressed in between.
+ */
+function takeAppendFailureWarning(
+  db: DatabaseInterface,
+  table: string,
+  kind: FeedWarningKind,
+): { suppressed: number } | null {
+  // One bucket per database, whichever handle failed: a framework
+  // transaction's handle resolves to its root, and a private database (a
+  // per-connection in-memory one) is keyed weakly by its root handle so its
+  // buckets go with it.
+  const scope = databaseReadScope(db);
+  const log =
+    typeof scope === 'string'
+      ? appendFailureLog
+      : privateAppendFailureLog(scope);
+  const key =
+    typeof scope === 'string'
+      ? `${kind}\u0000${scope}\u0000${table}`
+      : `${kind}\u0000${table}`;
+  const now = Date.now();
+  const state = log.get(key);
+  if (state && now - state.lastLoggedAt < APPEND_FAILURE_LOG_INTERVAL_MS) {
+    state.suppressed++;
+    return null;
+  }
+  log.set(key, { lastLoggedAt: now, suppressed: 0 });
+  return { suppressed: state?.suppressed ?? 0 };
+}
+
+/** Append-failure buckets of private databases, held weakly by root handle. */
+let privateAppendFailureLogs = new WeakMap<
+  object,
+  Map<string, { lastLoggedAt: number; suppressed: number }>
+>();
+
+function privateAppendFailureLog(
+  root: object,
+): Map<string, { lastLoggedAt: number; suppressed: number }> {
+  let log = privateAppendFailureLogs.get(root);
+  if (!log) {
+    log = new Map();
+    privateAppendFailureLogs.set(root, log);
+  }
+  return log;
+}
+
+/** Log a failed feed append (rate-limited per table). */
+function warnAppendFailure(
   db: DatabaseInterface,
   table: string,
   error: unknown,
 ): void {
   try {
-    const dbKey = resolveDbCacheKey(db);
-    if (warnedAppendFailures.has(dbKey)) return;
-    warnedAppendFailures.add(dbKey);
+    const allowed = takeAppendFailureWarning(db, table, 'append-failure');
+    if (!allowed) return;
     logger.warn(
       `Change feed: failed to append a change entry for '${table}'. The ` +
-        'write itself succeeded; the feed is missing this change (further ' +
-        'failures for this database are suppressed). Consumers recover on ' +
-        'full resync.',
-      { error: error instanceof Error ? error.message : String(error) },
+        'write itself succeeded; the feed is missing this change, and nothing ' +
+        'in the feed marks the gap.',
+      {
+        error: error instanceof Error ? error.message : String(error),
+        suppressedSinceLastWarning: allowed.suppressed,
+      },
+    );
+  } catch {
+    // Logging must never propagate into the write path.
+  }
+}
+
+/**
+ * A row whose owner cannot be resolved (ownership fields that name two
+ * different tenants, or a failed ownership lookup) is not recorded:
+ * recording it under either tenant (or as global) would serve it to readers
+ * who may not see it. The warning is rate-limited to once a minute per
+ * database and table, with a count of suppressed warnings, using separate
+ * buckets from append failures.
+ */
+function warnAmbiguousTenant(db: DatabaseInterface, table: string): void {
+  try {
+    const allowed = takeAppendFailureWarning(db, table, 'unresolved-owner');
+    if (!allowed) return;
+    logger.warn(
+      `Change feed: the owner of a '${table}' row could not be resolved ` +
+        '(its ownership fields name different tenants, or the ownership ' +
+        'lookup failed), so its change was not recorded. Fix the row or the ' +
+        'ownership registration; until then consumers of this table may miss it.',
+      { suppressedSinceLastWarning: allowed.suppressed },
     );
   } catch {
     // Logging must never propagate into the write path.
@@ -2479,7 +2809,8 @@ function warnSignalPublishFailureOnce(
  * Reset the append-failure and signal-publish warning dedups (test helper).
  */
 export function resetChangeFeedWarnings(): void {
-  warnedAppendFailures.clear();
+  appendFailureLog.clear();
+  privateAppendFailureLogs = new WeakMap();
   warnedSignalPublishFailures.clear();
   warnedDrainFailures.clear();
   // The append path's drain interval is process state too; a test that asserts

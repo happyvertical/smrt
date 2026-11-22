@@ -14,6 +14,14 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * A per-app cap refused the call (#5503): its message names the cap and the
+ * numbers, so every surface shows it as is, never a generic stale-state line.
+ */
+export function isLimitRefusal(e: unknown): boolean {
+  return e instanceof ApiError && e.code === 'app_limit';
+}
+
 export function isPendingApproval(v: unknown): v is PendingApproval {
   return (
     !!v &&
@@ -30,24 +38,28 @@ export async function api<T>(
     method?: string;
     body?: unknown;
     fetch?: Fetch;
-    target?: Target;
+    /** `null`: the route names no copy (changes waiting routes). */
+    target?: Target | null;
   } = {},
 ): Promise<{ status: number; data: T }> {
   const doFetch = init.fetch ?? fetch;
   let response: Response;
   try {
-    response = await doFetch(targetPath(path, init.target ?? 'live'), {
-      method: init.method ?? 'GET',
-      headers: {
-        ...(init.body !== undefined
-          ? { 'content-type': 'application/json' }
-          : {}),
-        ...(path.startsWith('/api/app/')
-          ? { 'x-shell-target': init.target ?? 'live' }
-          : {}),
+    response = await doFetch(
+      init.target === null ? path : targetPath(path, init.target ?? 'live'),
+      {
+        method: init.method ?? 'GET',
+        headers: {
+          ...(init.body !== undefined
+            ? { 'content-type': 'application/json' }
+            : {}),
+          ...(path.startsWith('/api/app/')
+            ? { 'x-shell-target': init.target ?? 'live' }
+            : {}),
+        },
+        body: init.body !== undefined ? JSON.stringify(init.body) : undefined,
       },
-      body: init.body !== undefined ? JSON.stringify(init.body) : undefined,
-    });
+    );
   } catch {
     throw new ApiError(0, 'Could not reach the app. Check your connection.');
   }

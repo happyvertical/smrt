@@ -8,7 +8,7 @@ import {
 } from './issue-4921-smrt.fixture.js';
 
 // Same simple name as the class it extends: replaces it.
-@smrt({ packageName: '@local/app-fixture4921' })
+@smrt({ packageName: '@local/app-fixture4921', replaceParent: true })
 export class Shared4921 extends SmrtShared {
   loyaltyTier: string = 'bronze';
   appOnly() {
@@ -19,7 +19,7 @@ export class AppSharedCollection4921 extends SmrtCollection<Shared4921> {
   static readonly _itemClass = Shared4921;
 }
 
-@smrt({ packageName: '@local/app-fixture4921' })
+@smrt({ packageName: '@local/app-fixture4921', replaceParent: true })
 export class Own4921 extends SmrtOwn {
   loyaltyTier: string = 'bronze';
   appOnly() {
@@ -49,7 +49,7 @@ export class Account4921 extends SmrtObject {
 export const linkInitializations = { count: 0 };
 
 // Same-named junction subclass that overrides a lifecycle method.
-@smrt({ packageName: '@local/app-fixture4921' })
+@smrt({ packageName: '@local/app-fixture4921', replaceParent: true })
 export class Link4921 extends SmrtLink {
   override async initialize(): Promise<this> {
     linkInitializations.count += 1;

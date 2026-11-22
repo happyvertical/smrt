@@ -302,7 +302,7 @@ describe('the assistant status reflects the engine', () => {
 });
 
 describe('finishing onboarding', () => {
-  it('Wizard is coming soon; Fresh needs a ready assistant; Skip always works', async () => {
+  it('Wizard is gone (400); Fresh needs a ready assistant; Skip always works', async () => {
     const home = tempDir();
     const bin = tempDir();
     installFakeCli(bin, 'codex');
@@ -311,7 +311,7 @@ describe('finishing onboarding', () => {
 
     const wizard = await post('complete', { start: 'wizard' });
     expect(wizard.status).toBe(400);
-    expect(wizard.body.error).toMatch(/coming soon/i);
+    expect(wizard.body.error).toMatch(/unknown start/i);
     expect((await post('complete', { start: 'other' })).status).toBe(400);
 
     // api engine with no key: not ready

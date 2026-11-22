@@ -429,8 +429,13 @@ export function createWorkflowRunDriver(options: WorkflowRunDriverOptions) {
      */
     async start(input: StartWorkflowRun): Promise<WorkflowRunState> {
       if (!input.ownerId) throw new Error('Workflow runs require an owner');
+      // Read once: the id checked for presence is the id opened.
+      const id = input.id;
       const { run } = await ai.openRun({
-        ...(input.id ? { id: input.id } : {}),
+        // Any id the caller passed goes to core, which refuses a malformed
+        // one (an empty string included) before writing: an explicit id is
+        // never replaced by a generated one.
+        ...(id !== undefined ? { id } : {}),
         type: WORKFLOW_RUN_TYPE,
         definitionKey: definition.key,
         definitionVersion: definition.version,
@@ -1096,63 +1101,84 @@ export function createWorkflowRunDriver(options: WorkflowRunDriverOptions) {
       ownerId: string,
       retryOptions: { id?: string; budget?: AiRunBudget } = {},
     ): Promise<WorkflowRunState> {
+      // Read once: the id checked for presence is the id opened.
+      const id = retryOptions.id;
       const store = storeFor(ownerId);
       const failed = await store.load(runId);
       if (failed && failed.run.definitionKey !== definition.key) {
         throw new WorkflowRunNotFoundError(runId);
       }
-      if (!failed) {
-        // Not visible, or pruned: core decides which and refuses.
-        const visible = await getAiRun(db, runId);
+      // Not visible, or pruned: core decides which and refuses. Only this
+      // owner's workflow runs in this tenant are ever read here (each a
+      // predicate of the one statement): another owner's run is never read
+      // into this process. Another definition's run of this owner is not
+      // this caller's.
+      const own =
+        failed?.run ??
+        (await getAiRun(db, runId, {
+          tenantId,
+          ownerId,
+          type: WORKFLOW_RUN_TYPE,
+        }));
+      if (own && own.definitionKey !== definition.key) {
+        throw new WorkflowRunNotFoundError(runId);
+      }
+      // Core compares the owner again under its lock and refuses another
+      // owner's source before its checkpoint is read. A row the scoped read
+      // could not see that core refuses as `not_retryable` is another
+      // owner's or another type's run in this tenant: not this caller's
+      // (core treats another tenant's run as absent, `retry_source_pruned`).
+      const notThisCallers = (error: unknown): never => {
         if (
-          visible &&
-          (visible.type !== WORKFLOW_RUN_TYPE ||
-            visible.definitionKey !== definition.key ||
-            visible.ownerId !== ownerId ||
-            (visible.tenantId ?? null) !== tenantId)
+          own === null &&
+          error instanceof AiRunResumeRefusedError &&
+          error.reason === 'not_retryable'
         ) {
           throw new WorkflowRunNotFoundError(runId);
         }
-      }
-      const { run } = await ai.openRun({
-        ...(retryOptions.id ? { id: retryOptions.id } : {}),
-        type: WORKFLOW_RUN_TYPE,
-        definitionKey: definition.key,
-        definitionVersion: definition.version,
-        ownerId,
-        retryOfRunId: runId,
-        ...(retryOptions.budget ? { budget: retryOptions.budget } : {}),
-        retry: {
-          acceptsVersion,
-          carry: (checkpoint) => {
-            let source = checkpoint.state;
-            if (
-              checkpoint.definitionVersion !== definition.version &&
-              definition.olderCheckpoints &&
-              isWorkflowCheckpointState(source)
-            ) {
-              source = definition.olderCheckpoints.migrate(
-                source,
-                checkpoint.definitionVersion,
-              );
-            }
-            if (!isWorkflowCheckpointState(source)) {
-              throw new TypeError(
-                `Workflow run ${runId} has a checkpoint this package cannot read`,
-              );
-            }
-            const stepIndex = source.stepIndex;
-            return {
-              state: {
-                ...initialWorkflowState(source.input, source.inputRef),
-                stepIndex,
-                outputs: source.outputs.slice(0, stepIndex),
-              },
-              highestStepIndex: stepIndex > 0 ? stepIndex - 1 : null,
-            };
+        throw error;
+      };
+      const { run } = await ai
+        .openRun({
+          ...(id !== undefined ? { id } : {}),
+          type: WORKFLOW_RUN_TYPE,
+          definitionKey: definition.key,
+          definitionVersion: definition.version,
+          ownerId,
+          retryOfRunId: runId,
+          ...(retryOptions.budget ? { budget: retryOptions.budget } : {}),
+          retry: {
+            acceptsVersion,
+            carry: (checkpoint) => {
+              let source = checkpoint.state;
+              if (
+                checkpoint.definitionVersion !== definition.version &&
+                definition.olderCheckpoints &&
+                isWorkflowCheckpointState(source)
+              ) {
+                source = definition.olderCheckpoints.migrate(
+                  source,
+                  checkpoint.definitionVersion,
+                );
+              }
+              if (!isWorkflowCheckpointState(source)) {
+                throw new TypeError(
+                  `Workflow run ${runId} has a checkpoint this package cannot read`,
+                );
+              }
+              const stepIndex = source.stepIndex;
+              return {
+                state: {
+                  ...initialWorkflowState(source.input, source.inputRef),
+                  stepIndex,
+                  outputs: source.outputs.slice(0, stepIndex),
+                },
+                highestStepIndex: stepIndex > 0 ? stepIndex - 1 : null,
+              };
+            },
           },
-        },
-      });
+        })
+        .catch(notThisCallers);
       return current(store, run.id);
     },
   };

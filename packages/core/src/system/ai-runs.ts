@@ -19,6 +19,11 @@
 
 import type { DatabaseInterface } from '@happyvertical/sql';
 import type { InferenceRunStatus } from '../inference.js';
+import {
+  assertAiRunId,
+  insertAiRunRowTx,
+  withAiRunTransaction,
+} from './ai-run-model.js';
 
 function getRows(result: unknown): Record<string, unknown>[] {
   if (Array.isArray(result)) return result as Record<string, unknown>[];
@@ -92,7 +97,7 @@ export async function recordAiRun(
   db: DatabaseInterface,
   input: AiRunInput,
 ): Promise<void> {
-  const id = requireText(input.id, 'id');
+  const id = assertAiRunId(requireText(input.id, 'id'), 'recordAiRun');
   const fusionKey = requireText(input.fusionKey, 'fusionKey');
   const mode = requireText(input.mode, 'mode');
   if (!AI_RUN_STATUSES.includes(input.status)) {
@@ -104,29 +109,29 @@ export async function recordAiRun(
   const degradedSeats = requireCount(input.degradedSeats, 'degradedSeats');
   const duration = Math.max(0, Math.round(Number(input.duration) || 0));
   const createdAt = input.createdAt ?? new Date();
-  await db.query(
-    `INSERT INTO _smrt_ai_runs
-      (id, type, definition_key, mode, tenant_id, class_name, prompt_key, seats,
-       degraded_seats, status, degraded, stop_reason, duration, details,
-       started_at, finished_at, created_at)
-     VALUES ($1, 'fusion', $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13,
-             $14, $15, $16)`,
-    id,
-    fusionKey,
-    mode,
-    input.tenantId ?? null,
-    input.className ?? null,
-    input.promptKey ?? null,
-    seats,
-    degradedSeats,
-    input.status === 'failed' ? 'failed' : 'done',
-    input.status === 'degraded' ? 1 : 0,
-    input.status === 'failed' ? 'error' : null,
-    duration,
-    JSON.stringify(input.details ?? {}),
-    new Date(createdAt.getTime() - duration).toISOString(),
-    createdAt.toISOString(),
-    createdAt.toISOString(),
+  const details = JSON.stringify(input.details ?? {});
+  // Through the one run-row writer, in its own transaction: the id's digest
+  // is reserved with the row, so a used id is refused (AiRunIdUsedError).
+  await withAiRunTransaction(db, (tx) =>
+    insertAiRunRowTx(tx, {
+      id,
+      type: 'fusion',
+      definition_key: fusionKey,
+      mode,
+      tenant_id: input.tenantId ?? null,
+      class_name: input.className ?? null,
+      prompt_key: input.promptKey ?? null,
+      seats,
+      degraded_seats: degradedSeats,
+      status: input.status === 'failed' ? 'failed' : 'done',
+      degraded: input.status === 'degraded' ? 1 : 0,
+      stop_reason: input.status === 'failed' ? 'error' : null,
+      duration,
+      details,
+      started_at: new Date(createdAt.getTime() - duration).toISOString(),
+      finished_at: createdAt.toISOString(),
+      created_at: createdAt.toISOString(),
+    }),
   );
 }
 
@@ -405,7 +410,10 @@ export interface AiRunReportOptions {
   type?: string;
   since?: Date;
   until?: Date;
-  /** Total only this tenant; `null` totals only global runs. */
+  /**
+   * Total only this tenant's runs; `null` only global runs. Applied as a SQL
+   * predicate of the page query; other tenants' runs are only counted.
+   */
   tenantId?: string | null;
 }
 
@@ -505,8 +513,8 @@ async function eventCounts(
  * fusion seats, own calls, tokens and cost, checks and approvals with their
  * rates (saved counts for a pruned trajectory), and median active time.
  * Reads bounded keyset pages and aggregates in memory, like
- * `reportAiUsage()`; a tenant filter selects what is totalled and counts the
- * rest in `excluded`.
+ * `reportAiUsage()`; a tenant filter is a predicate of the page query, and
+ * the runs it leaves out are counted in `excluded` with one `COUNT(*)`.
  */
 export async function reportAiRuns(
   db: DatabaseInterface,
@@ -527,6 +535,32 @@ export async function reportAiRuns(
     windowConditions.push(`created_at <= $${windowParams.length}`);
   }
   const tenantFiltered = options.tenantId !== undefined;
+  let otherTenants = 0;
+  if (tenantFiltered) {
+    // Other tenants' runs are counted, never read (served by
+    // idx_smrt_ai_runs_tenant_created for the page query).
+    const countParams = [...windowParams];
+    let other: string;
+    if (options.tenantId === null) other = 'tenant_id IS NOT NULL';
+    else {
+      countParams.push(options.tenantId);
+      other = `(tenant_id IS NULL OR tenant_id <> $${countParams.length})`;
+    }
+    otherTenants = count(
+      getRows(
+        await db.query(
+          `SELECT COUNT(*) AS n FROM _smrt_ai_runs
+            WHERE ${[...windowConditions, other].join(' AND ')}`,
+          ...countParams,
+        ),
+      )[0]?.n,
+    );
+    if (options.tenantId === null) windowConditions.push('tenant_id IS NULL');
+    else {
+      windowParams.push(options.tenantId);
+      windowConditions.push(`tenant_id = $${windowParams.length}`);
+    }
+  }
 
   const totals = emptyStats();
   const buckets = new Map<
@@ -535,7 +569,7 @@ export async function reportAiRuns(
       typeof emptyStats
     >
   >();
-  const excluded = { otherTenants: 0 };
+  const excluded = { otherTenants };
   let lastId: string | null = null;
   for (;;) {
     const params = [...windowParams];
@@ -560,11 +594,7 @@ export async function reportAiRuns(
     );
     if (page.length === 0) break;
     lastId = String(page[page.length - 1]?.id);
-    const counted = page.filter(
-      (row) =>
-        !tenantFiltered || nullableString(row.tenant_id) === options.tenantId,
-    );
-    excluded.otherTenants += page.length - counted.length;
+    const counted = page;
     const live = await eventCounts(
       db,
       counted

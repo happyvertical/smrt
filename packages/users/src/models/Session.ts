@@ -154,14 +154,15 @@ export function generateSessionId(): string {
  *
  * @example
  * ```typescript
- * const session = await sessions.create({
+ * // Mint through SessionCollection.createSession: it refuses principals
+ * // that may never hold a session (#5245).
+ * const session = await sessions.createSession({
  *   userId: user.id,
  *   tenantId: tenant.id,
- *   expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+ *   ttl: 7 * 24 * 60 * 60,
  *   userAgent: request.headers.get('user-agent'),
  *   ipAddress: getClientAddress(event)
  * });
- * await session.save();
  * ```
  */
 @smrt({

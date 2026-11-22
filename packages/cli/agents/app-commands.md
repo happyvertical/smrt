@@ -190,6 +190,38 @@ Agent docs (#4878): `install` runs `docs:agents`, `dev` refreshes a missing or s
   device signer and the entitlement arrive through
   `AppCommandDependencies.backup` and fail closed. Contract, scope rules and
   threat table: [backup-targets.md](backup-targets.md).
+- **App shell user app** (#5193, `user-app-portability.ts`): the shell keeps
+  the person's app in `<data root>/user-app/app.db`, which the manifest never
+  lists. When the local data root holds one, `export` writes a schemaVersion-3
+  bundle whose `userApp` section is the engine's `exportUserApp`
+  (`@happyvertical/smrt-app-shell/engine`, loaded from the project's installed
+  shell or injected with `deps.userAppEngine`; the CLI has no package edge to
+  the shell, which would close a build cycle, and never opens app.db; the CLI tests inject a small fake engine through that seam, never another package's build output, and the real engine's round trip is covered in the shell's `portable-export.test.ts`): current definition, the version history read from the shell's
+  `app_versions` rows, every table with every row and column (hidden fields,
+  timestamps, `_archive` so undo keeps working) and per-table SHA-256 digests (table definitions are digested and must be a single
+  CREATE TABLE / CREATE INDEX of that table).
+  `import` accepts schemaVersion 2 (no section) and 3, checks the section
+  against its digests and against the bundle's own version rows, builds the
+  database in a staging directory, verifies counts and digests, renames it in,
+  and is idempotent and resumable (a matching target is `already-imported`; a
+  rerun after rows committed completes the user app; a rollback takes it back
+  out). The CLI itself reads and writes a local (SQLite) installation; the same
+  `format: 2` bundle (typed values, no SQL) is what the engine installs into a
+  hosted PostgreSQL schema and exports back (`importUserApp({ database })`,
+  `packages/app-shell/agents/engine.md`). Not migrated: changes
+  waiting (#5178: a `change_batches` row `open`/`held` with an active
+  `change_cards` row, or an open `app_drafts` working copy; export refuses with
+  "apply them or discard them", via `hasChangesWaiting`, the one place to adapt
+  if the concept changes) and approvals still waiting (`pending`/`accepted`/
+  `executing`), which are dropped and reported in `notices`; decided approvals
+  stay. Export while the app is stopped for an exact pair of databases.
+  `restore-latest` also checks the candidate's `user-app/app.db`
+  (`inspectUserApp`: integrity and a valid recorded definition) and fails
+  closed when the engine is missing. The cloud plan carries the section
+  (`plan.bundle.userApp`, in the bundle digest; `verifyCloudMigration` compares
+  digests); `runSharedCloudMigration` refuses it (the shared sync/apply stream has
+  no receiver for run-time tables; a per-tenant receiver needs the caller
+  hand-off, #5188).
 - **Cloud migration** (#4806, `cloud-migration.ts`, library only; hosted
   routes and `smrt app cloud` commands are follow-ups): built on a
   `smrt-cloud-link-v1` link (app-runtime README). `planCloudMigration`

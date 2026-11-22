@@ -16,6 +16,7 @@ import {
   mcp: false,
   cli: false,
   conflictColumns: ['id'],
+  tenantScoped: { mode: 'optional' },
 })
 export class AppVersion extends SmrtObject {
   @field({ type: 'integer', required: true })

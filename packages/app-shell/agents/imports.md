@@ -41,15 +41,38 @@ spreadsheet package's 250,000; `/settings/import` saves an integer in
   bytes are private `imports/<id>.xlsx` (directory 0700, files 0600). Cleanup
   runs on workbook/app failure, cancellation, discard and publish, and reconciles
   missed draft events after restart. Engine failures retain input for explicit
-  retry (a new run; attempt key saved before admission). A paused run retains
+  retry (a new run; attempt key saved before admission). Recovery reads the
+  saved attempt only through the owner's workflow kit (tenant, owner and
+  definition scoped), never by bare run id; an attempt id that names anyone
+  else's run is refused by core as used. A paused run retains
   input for resume. Polling exposes typed failure reasons and bounded timestamped
   stage history; internal origins and admission keys never enter that projection.
 - The draft id is saved before `startDraft` forks. The workflow owns a durable
-  hold, restored by `adoptDraft`: no draft reads/edits or publish while loading
-  or proving. Recovery discards only its recorded draft, then repeats the step.
+  hold, restored by `adoptDraft`: no reads/edits or Apply while loading
+  or proving. Recovery discards only its recorded copy, then repeats the step.
   Proof failure discards it; successful proof seals hidden provenance, ends
-  the workflow, then releases the hold. Publish uses the existing digest-pinned
-  draft Approval. No live write path is added.
+  the workflow, then releases the hold. No live write path is added.
+- Changes waiting (#5207): `createEngineImportTarget`'s `onCommand` hook wraps
+  its one `host.execute`; the workflow passes `recordImportCommand` (changes.ts),
+  which runs the command on the held copy and records it on ITS TABLE's card
+  (define, fields, 500-row loads, provenance hides; a report is its own card),
+  all sharing group `import:<id>`; /changes shows them under one collapsible
+  header. It refuses unless the import holds the copy and can only record
+  (`invariants.test.ts`: callers are changes.ts and import-workflow.ts, no apply
+  or live path). A rebuild (Remove, Put back, Quick edit of the table name or
+  choices) replays all active cards but moves the provenance `hideField`s after
+  the last load, because tables look each other up by a field the hide makes
+  invisible; there is no tail fast path (a Remove replays every load, so /changes
+  says "Rebuilding your changes"). A rebuilt copy has a new draft id: the import
+  row follows it (`setWorkingCopyReplaced`) and reconcile waits for `settled()`.
+  A held batch whose copy is gone (failed, repeated, cancelled, discarded import)
+  is retired and its cards drop their commands; an import is never "put back".
+  Apply is the page's Apply button on `POST /api/shell/changes/apply` (layout
+  `changes.digest`; 409 means review again). Another batch waiting refuses a new
+  import in plain words ("You have N changes waiting...") instead of joining it.
+  Template records: `template-records.ts` turns `importTemplate` with records
+  into ONE card (template + `loadRecords` in link order + hides of a temporary
+  `templateId` key field), so Apply brings the records.
 - An import reuses an open draft only when `discardIfUnused` proves it empty:
   the host's `discardIfEmpty` checks the chain and closes on the change queue
   edits use, so a racing edit keeps the draft or is refused, never lost (#5122).
@@ -101,13 +124,22 @@ check events keep only code/path/message. A refused plan is distinct from an
 unavailable engine and retries the retained upload without a settings detour.
 Unrepresentable formulas map as plain cached-value columns; review lists them
 under “Formulas not translated”. A proposed translation still must pass proof.
+Whole results (#5168): the engine types a product with a decimal operand
+(Hours × Rate) as decimal, which an integer/money column refuses, so
+`createEngineImportTarget` stores `floor(x + 0.5)` (the proof's own rounding;
+`round(x, 0)` is not doubled) and a plain `=A*B` imports as planned. A calculation
+that cannot be built or fails proof falls back to its saved values (`savedValueFallback`:
+the field becomes a plain column on its `cachedColumn`, listed under “Formulas not
+translated”) and the load repeats; only when no calculation is left to fall back
+is the import discarded, with a message naming the failing finding or calculation.
+Regression: `src/engine/import-hours-rate.test.ts`.
 
 Shell host event wiring formats every changed summary through the same label-based
 formatter as History, with both the before and after definitions (including removed
 fields). Calculations show label-based expressions in import review and History.
 The totals view omits integer checksums except quantity/count/units/qty; the exact
-proof still checks every numeric column. Review points owners to the Live/Draft
-switch to inspect the imported data before publishing.
+proof still checks every numeric column. Review points owners to the changes waiting
+view (`/changes`).
 
 The engine report tool advertises a count/sum/filter example validated by
 `parseRuntimeReportSpec`, and specifies exact model/field names for ad-hoc queries.

@@ -12,8 +12,8 @@ importers:
         specifier: 0.5.15
         version: 0.5.15
       '@happyvertical/sql':
-        specifier: 0.115.0
-        version: 0.115.0(@electric-sql/pglite@0.5.15)
+        specifier: 0.116.6
+        version: 0.116.6(@electric-sql/pglite@0.5.15)
 
 packages:
 
@@ -51,8 +51,8 @@ packages:
   '@electric-sql/pglite@0.5.15':
     resolution: {integrity: sha512-ERZWgaRTxueGV4cvL1tfpAOzFCWTXoUtbCBqnf2FhHDVs/so9eAKaanvrwWF9Dntx7BYsmFQujVQ0/B4S8Mmiw==}
 
-  '@happyvertical/sql@0.115.0':
-    resolution: {integrity: sha512-7uXBefoeZ1ywf/b7g7KI+LGMT97bxmxaMrvtB2GcVGKYwUpdpAfDqDhHb1N5bDBgfx4cNDCgF9jxellVL2T1yw==}
+  '@happyvertical/sql@0.116.6':
+    resolution: {integrity: sha512-safWwzUvLALcnifGjV2tpAqnOgdnbYQ5kx7q915oW6hf5+SPsosR6h4wbE/lDZJiYwc+fgBs1sN+h/q8CoSVag==}
     hasBin: true
     peerDependencies:
       '@electric-sql/pglite': '>=0.5.0 <1'
@@ -66,8 +66,8 @@ packages:
       '@sqliteai/sqlite-vector':
         optional: true
 
-  '@happyvertical/utils@0.115.0':
-    resolution: {integrity: sha512-KpXKf+HqtDsObV8ugIbNxvcz34hqcrdRPWZvXz4SyNKtb3e0FxzfPwiGDxL3jZMbi+bipfDMf9HYneuapjPTeA==}
+  '@happyvertical/utils@0.116.6':
+    resolution: {integrity: sha512-oJH9Ox6e/WzhXo6P3GR0s1Jqb6oWAstk+2z2+7LMV2IIuDC3vvzzV8z4Q+x8+UUzBog65gnZ1sagbd3CJPYBzQ==}
     hasBin: true
 
   '@libsql/client@0.17.2':
@@ -175,8 +175,8 @@ packages:
     resolution: {integrity: sha512-buewHzMvYL29jdeQTVILecSaZKnt/RJWjoZCF5OW60Z67/GmSLBkOFM7qh1PI3zFNtJbaZL5eQu1vLfazOwj4g==}
     engines: {node: '>=12.20.0'}
 
-  js-base64@3.9.6:
-    resolution: {integrity: sha512-LjkzbLtU6Lx6fjXMYGEACEB7rdtqZtxkBe9aS1ZpDNUyWgUivw3yBEIhQ37OVygJYRt+C+9e9fVT8PpFzH2Hww==}
+  js-base64@3.9.7:
+    resolution: {integrity: sha512-UT2XYOCbXOXYoymbytretRDFnb6E6vYPqC1blehA/alnG6vRC0mNTQ6ijXYAPtiCG9o1FDNJXJvQtCwbChFDRQ==}
 
   libsql@0.5.29:
     resolution: {integrity: sha512-8lMP8iMgiBzzoNbAPQ59qdVcj6UaE/Vnm+fiwX4doX4Narook0a4GPKWBEv+CR8a1OwbfkgL18uBfBjWdF0Fzg==}
@@ -300,8 +300,8 @@ packages:
   whatwg-url@5.0.0:
     resolution: {integrity: sha512-saE57nupxk6v3HY35+jzBwYa0rKSy0XR8JSxZPwgLr7ys0IBzhGviA1/TUGJLmSVqs8pb9AnvICXEuOHLprYTw==}
 
-  ws@8.22.2:
-    resolution: {integrity: sha512-/rEZ2ejown2N5gxVTHUu9bVVC7ttu0/Tgzf5hbTOixR3Fs7mbbXgn2DbdbcKgJOmpQMtrIUWivtYuVMnp/W/yA==}
+  ws@8.23.0:
+    resolution: {integrity: sha512-wCkmX8QMOrKjgO8HW2WyDbTSGeqkocxgDzS9iR79rEAexty6/2qzilx3Ag8Tqf9ykop3irLKle0MtVn5qjVnoQ==}
     engines: {node: '>=10.0.0'}
     peerDependencies:
       bufferutil: ^4.0.1
@@ -347,10 +347,10 @@ snapshots:
 
   '@electric-sql/pglite@0.5.15': {}
 
-  '@happyvertical/sql@0.115.0(@electric-sql/pglite@0.5.15)':
+  '@happyvertical/sql@0.116.6(@electric-sql/pglite@0.5.15)':
     dependencies:
       '@duckdb/node-api': 1.4.3-r.3
-      '@happyvertical/utils': 0.115.0
+      '@happyvertical/utils': 0.116.6
       '@libsql/client': 0.17.2
       pg: 8.23.1
       sqlite-vss: 0.1.2
@@ -362,7 +362,7 @@ snapshots:
       - pg-native
       - utf-8-validate
 
-  '@happyvertical/utils@0.115.0':
+  '@happyvertical/utils@0.116.6':
     dependencies:
       '@paralleldrive/cuid2': 3.3.0
       '@types/pluralize': 0.0.33
@@ -374,7 +374,7 @@ snapshots:
     dependencies:
       '@libsql/core': 0.17.4
       '@libsql/hrana-client': 0.9.0
-      js-base64: 3.9.6
+      js-base64: 3.9.7
       libsql: 0.5.29
       promise-limit: 2.7.0
     transitivePeerDependencies:
@@ -384,7 +384,7 @@ snapshots:
 
   '@libsql/core@0.17.4':
     dependencies:
-      js-base64: 3.9.6
+      js-base64: 3.9.7
 
   '@libsql/darwin-arm64@0.5.29':
     optional: true
@@ -396,7 +396,7 @@ snapshots:
     dependencies:
       '@libsql/isomorphic-ws': 0.1.5
       cross-fetch: 4.1.0
-      js-base64: 3.9.6
+      js-base64: 3.9.7
       node-fetch: 3.3.2
     transitivePeerDependencies:
       - bufferutil
@@ -406,7 +406,7 @@ snapshots:
   '@libsql/isomorphic-ws@0.1.5':
     dependencies:
       '@types/ws': 8.18.2
-      ws: 8.22.2
+      ws: 8.23.0
     transitivePeerDependencies:
       - bufferutil
       - utf-8-validate
@@ -477,7 +477,7 @@ snapshots:
     dependencies:
       fetch-blob: 3.2.0
 
-  js-base64@3.9.6: {}
+  js-base64@3.9.7: {}
 
   libsql@0.5.29:
     dependencies:
@@ -587,6 +587,6 @@ snapshots:
       tr46: 0.0.3
       webidl-conversions: 3.0.1
 
-  ws@8.22.2: {}
+  ws@8.23.0: {}
 
   xtend@4.0.2: {}

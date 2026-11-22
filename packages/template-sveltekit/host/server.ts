@@ -2336,6 +2336,12 @@ export function createCookbookHost(options: CookbookHostOptions) {
               {
                 basePath: '/api',
                 authMiddleware: () => async (request) => request,
+                // The session hook verified this principal. Its tenant is the
+                // one every operation of this request runs in.
+                resolveTenant: () => ({
+                  tenantId: locals.tenantId,
+                  authenticated: true,
+                }),
               },
               {
                 tenantId: locals.tenantId,

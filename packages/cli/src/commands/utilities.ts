@@ -10,6 +10,7 @@ import { createRequire } from 'node:module';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
+  checkUnrecordedDatabaseAge,
   collectConfirmedRecomputes,
   collectMigrateRecordInput,
   confirmedRetirementsOf,
@@ -23,6 +24,7 @@ import {
   planForeignKeyCreation,
   planPostgresSystemTimestampMigrations,
   readLastMigrateRecord,
+  readRecordedSystemSchema,
   recordSuccessfulMigrate,
   SchemaComparer,
 } from '@happyvertical/smrt-core';
@@ -2319,6 +2321,16 @@ export default testManifest;
         const lastMigrate = await readLastMigrateRecord(db, {
           engineHint: dbType,
         });
+        if (lastMigrate.state !== 'recorded') {
+          // No record: date the system tables. Nothing in this run has
+          // prepared them yet, so the stamps are the database's own. An old
+          // stamp is a warning, not a stop: it cannot say which release last
+          // migrated the application tables.
+          const ageWarning = checkUnrecordedDatabaseAge(
+            await readRecordedSystemSchema(db, { engineHint: dbType }),
+          );
+          if (ageWarning) console.warn(`\n⚠️  ${ageWarning}\n`);
+        }
         const removedOption = options['confirm-removed-package'];
         const confirmedRemoved =
           typeof removedOption === 'string'
@@ -3907,6 +3919,27 @@ export default testManifest;
         );
       }
 
+      // ========== STI Family Tenancy (#5375) ==========
+      // Warning-level and read-only: an STI member whose tenancy differs from
+      // its table owner's is not served through the owner's routes.
+      try {
+        const { runStiTenancyDoctorSection } = await import(
+          './doctor-sti-tenancy.js'
+        );
+        const section = runStiTenancyDoctorSection(cwd);
+        if (section.applies) {
+          console.log('🧬 STI Family Tenancy\n');
+          for (const line of section.lines) console.log(line);
+          warnings.push(...section.warnings);
+          passed.push(...section.passed);
+          console.log();
+        }
+      } catch (error) {
+        warnings.push(
+          `STI family tenancy check skipped: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+
       // ========== Live Database Parity (opt-in) ==========
       // Off by default because it opens a connection and issues catalog
       // queries; `--db` is what turns doctor's database section from "a URL is
@@ -4001,6 +4034,35 @@ export default testManifest;
             );
           } else {
             passed.push('Deprecated qualified-name references');
+          }
+        }
+        console.log();
+
+        // The AI run id registry (schema 1.20.0): run ids an older core
+        // left unreserved, and parent links that predate a reuse.
+        console.log('🪪  AI Run Id Registry\n');
+        const { runAiRunIdRegistryCheck, formatAiRunIdRegistryCheck } =
+          await import('./doctor-ai-run-ids.js');
+        const runIds = await runAiRunIdRegistryCheck();
+        if (!runIds.check) {
+          check(
+            'AI run id registry',
+            false,
+            runIds.error ?? 'Could not check the AI run id registry',
+          );
+        } else {
+          for (const line of formatAiRunIdRegistryCheck(runIds.check)) {
+            console.log(line);
+          }
+          if (
+            runIds.check.unregisteredIds > 0 ||
+            runIds.check.childrenOlderThanParent > 0
+          ) {
+            warnings.push(
+              `AI run ids: ${runIds.check.unregisteredIds} unreserved, ${runIds.check.childrenOlderThanParent} parent link(s) older than their parent`,
+            );
+          } else {
+            passed.push('AI run id registry');
           }
         }
         console.log();

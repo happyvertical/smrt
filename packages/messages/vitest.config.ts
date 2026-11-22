@@ -9,6 +9,8 @@ export default defineConfig({
     fileParallelism: false,
     globals: true,
     environment: 'node',
+    testTimeout: 30000,
+    hookTimeout: 30000,
     setupFiles: [resolve(__dirname, '../vitest/src/setup.ts')],
   },
 });

@@ -59,6 +59,12 @@ import {
   type SnapshotKeyProvider,
   type SnapshotOpenContext,
 } from './snapshot-framing.js';
+import {
+  hasUserApp,
+  loadUserAppEngine,
+  type UserAppEngine,
+  userAppDirectory,
+} from './user-app-portability.js';
 
 /** Usage of `smrt app restore-latest`. */
 export const RESTORE_LATEST_USAGE =
@@ -177,6 +183,8 @@ export interface RestoreLatestOptions {
   originRetired?: boolean;
   /** Only settle an interrupted swap. */
   recoverOnly?: boolean;
+  /** Test seam: replace the loader of the app shell engine. */
+  userAppEngine?: () => Promise<UserAppEngine>;
 }
 
 /** Secret-free outcome. */
@@ -231,6 +239,42 @@ function verifyDatabase(candidate: string): void {
     );
   } finally {
     database?.close();
+  }
+}
+
+/**
+ * The app shell's user app database (`user-app/app.db`), when the snapshot
+ * carries one: SQLite integrity and a readable, valid recorded definition,
+ * checked by the engine (the only code that opens it). Without the engine the
+ * restore fails closed rather than install a database nothing has checked.
+ */
+export async function verifyUserAppDatabase(
+  candidate: string,
+  load: () => Promise<UserAppEngine>,
+): Promise<void> {
+  if (!hasUserApp(candidate)) return;
+  let inspection: Awaited<ReturnType<UserAppEngine['inspectUserApp']>>;
+  try {
+    inspection = await (await load()).inspectUserApp({
+      dataDir: userAppDirectory(candidate),
+    });
+  } catch {
+    throw new RestoreLatestError(
+      'candidate_invalid',
+      'The snapshot carries an app shell user app that could not be checked.',
+    );
+  }
+  if (!inspection.integrity) {
+    throw new RestoreLatestError(
+      'candidate_invalid',
+      'The snapshot user app database failed its integrity check.',
+    );
+  }
+  if (!inspection.recorded) {
+    throw new RestoreLatestError(
+      'candidate_invalid',
+      'The snapshot user app database has no readable definition.',
+    );
   }
 }
 
@@ -604,6 +648,10 @@ export async function restoreLatest(
       await renewal.check();
       rmSync(download, { force: true });
       verifyDatabase(candidate);
+      await verifyUserAppDatabase(
+        candidate,
+        options.userAppEngine ?? (() => loadUserAppEngine(options.sourceRoot)),
+      );
       verifyInstallation(
         candidate,
         liveRoot,
@@ -741,6 +789,7 @@ export async function runRestoreLatestOperation(
       replaceInstallation: args.includes('--replace-installation'),
       originRetired: args.includes('--origin-retired'),
       recoverOnly: args.includes('--recover'),
+      userAppEngine: context.deps.userAppEngine,
     }),
   );
   context.io.stdout(`${JSON.stringify(report, null, 2)}\n`);

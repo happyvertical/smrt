@@ -7,14 +7,14 @@ import {
   json,
   ownerOf,
   readJson,
-  targetOf,
 } from '$lib/server/http';
+import { runAs } from '$lib/server/owner';
 import { reportFailure } from '$lib/server/report-display';
 import type { RequestHandler } from './$types';
 
 export const GET: RequestHandler = guarded(async (event) => {
   await ownerOf(event);
-  const host = await hostFor(targetOf(event));
+  const host = await hostFor('live');
   const name = ident(event.params.name, 'report');
   if (!Object.hasOwn(host.describe().reports ?? {}, name))
     throw new HttpError(404, 'This report is no longer available.');
@@ -27,7 +27,7 @@ export const GET: RequestHandler = guarded(async (event) => {
 
 export const POST: RequestHandler = guarded(async (event) => {
   const owner = await ownerOf(event);
-  const target = targetOf(event);
+  const target = 'live';
   const name = ident(event.params.name, 'report');
   const body = await readJson(event.request);
   if (body.action !== 'rename' && body.action !== 'remove')
@@ -42,10 +42,12 @@ export const POST: RequestHandler = guarded(async (event) => {
     if (!report)
       throw new HttpError(404, 'This report is no longer available.');
     return json(
-      await runCommand(
-        { type: 'defineReport', name, definition: { ...report, label } },
-        owner.id,
-        target,
+      await runAs(owner, () =>
+        runCommand(
+          { type: 'defineReport', name, definition: { ...report, label } },
+          owner.id,
+          target,
+        ),
       ),
     );
   }
@@ -60,5 +62,5 @@ export const POST: RequestHandler = guarded(async (event) => {
             'report name',
           ),
         };
-  return json(await runCommand(command, owner.id, target));
+  return json(await runAs(owner, () => runCommand(command, owner.id, target)));
 });

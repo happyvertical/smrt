@@ -156,6 +156,7 @@ describe('cookbook app customization points', () => {
           packageName: '@fixture/app',
           filePath: localFile,
           extendsQualified: '@happyvertical/smrt-profiles:Profile',
+          decoratorConfig: { tableName: 'profiles', replaceParent: true },
         },
       },
     };

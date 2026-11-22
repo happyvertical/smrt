@@ -110,7 +110,7 @@ describe.each<Engine>([
         ).rows.map((row) => String(row.index_name))
       : (
           await db.query(
-            "SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = ? AND name NOT LIKE 'sqlite_%' ORDER BY name",
+            "SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = ? AND name NOT LIKE 'sqlite\\_%' ESCAPE '\\' ORDER BY name",
             name,
           )
         ).rows.map((row) => String(row.name));

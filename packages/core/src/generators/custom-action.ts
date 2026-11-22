@@ -538,6 +538,37 @@ export function buildCustomActionInputSchema(
 }
 
 /**
+ * Whether a custom GET action's declared parameters carry the request's
+ * tenant read scope into the method: a single `options` parameter (handed the
+ * scoped options object), or parameters named after every one of the model's
+ * ownership properties (each handed its scope value). Any other parameter list
+ * -- none, parameters that only carry the caller's input, or parameters naming
+ * only some of the ownership properties -- reaches the method without the
+ * whole scope, so the emitted SvelteKit routes run such an action inside the
+ * tenant gate instead (refused for a caller with no tenant), deciding against
+ * the ownership properties the live registry reports at request time. Runtime
+ * REST does not use this rule: it refuses a caller with no tenant every custom
+ * collection action of a tenant-scoped model. The names come from scanned
+ * parameter metadata only; a method without it does not receive the scope,
+ * and its source is never read to guess its parameters.
+ *
+ * @param parameterNames - The action's scanned parameter names, in order
+ * @param ownershipProperties - The ownership property names of the model read
+ */
+export function readActionReceivesTenantScope(
+  parameterNames: readonly string[],
+  ownershipProperties: Iterable<string>,
+): boolean {
+  if (parameterNames.length === 1 && parameterNames[0] === 'options') {
+    return true;
+  }
+  const owners = [...new Set(ownershipProperties)];
+  return (
+    owners.length > 0 && owners.every((name) => parameterNames.includes(name))
+  );
+}
+
+/**
  * Translate a transport object into the method's call arguments. Legacy
  * actions retain their single options-bag invocation; scanner metadata enables
  * an exact positional projection without changing legacy action behavior.

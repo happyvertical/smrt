@@ -3,7 +3,7 @@ import { EMPTY_APP, type VersionRecord } from '../../engine/index.ts';
 import { App } from '../objects/App.ts';
 import { closeHost, getHost } from './host.ts';
 import { runAs } from './owner.ts';
-import { openShell, type ShellHarness } from './test-support.ts';
+import { applyWaiting, openShell, type ShellHarness } from './test-support.ts';
 import { ShellVersionStore } from './version-store.ts';
 
 let h: ShellHarness;
@@ -59,6 +59,7 @@ describe('host restart', () => {
       await runAs(h2.owner, () =>
         App.defineModel('Chore', { title: { type: 'text' } }),
       );
+      await applyWaiting(h2.owner);
       const host = await getHost();
       await host.create('Chore', { title: 'survives' });
       const version = host.version;
@@ -89,6 +90,24 @@ describe('host restart', () => {
         await expect(
           runAs(h3.owner, () => App.defineModel(name)),
         ).rejects.toThrow(/reserved/);
+    } finally {
+      await h3.close();
+    }
+  });
+});
+
+describe('a host that lost its claim', () => {
+  it('is dropped, and the next request opens the app again', async () => {
+    const h3 = await openShell();
+    try {
+      const first = await getHost();
+      // What the engine emits when the heartbeat or a claim transaction finds
+      // the claim gone (engine tests cover the engine side).
+      first.emit('claim-lost', new Error('claim lost'));
+      await new Promise((r) => setTimeout(r, 50));
+      const again = await getHost();
+      expect(again).not.toBe(first);
+      expect(again.version).toBe(first.version);
     } finally {
       await h3.close();
     }

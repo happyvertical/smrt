@@ -16,6 +16,7 @@
 
 import { createLogger } from '@happyvertical/logger';
 import { ObjectRegistry, toSnakeCase } from '@happyvertical/smrt-core';
+import { bumpTenantPolicyGeneration } from './enabled-state.js';
 
 const logger = createLogger({ level: 'info' });
 
@@ -155,6 +156,7 @@ export function registerTenantScopedConstructor(
   const resolved = { ...DEFAULT_CONFIG, ...config };
   unregisteredDecoratorRegistrations.set(target.name, resolved);
   tenantScopedClasses.set(target.name, resolved);
+  bumpTenantPolicyGeneration();
 }
 
 /**
@@ -196,6 +198,7 @@ export function registerTenantScopedClass(
     ...config,
   };
   tenantScopedClasses.set(className, resolved);
+  bumpTenantPolicyGeneration();
 
   auditedSelectors.delete(className);
   if (isQualifiedClassName(className)) {
@@ -225,6 +228,7 @@ export function registerTenantScopedClass(
  * @see registerTenantScopedClass
  */
 export function unregisterTenantScopedClass(className: string): void {
+  bumpTenantPolicyGeneration();
   auditedSelectors.delete(className);
   tenantScopedClasses.delete(className);
   if (isQualifiedClassName(className)) {
@@ -507,6 +511,7 @@ export function getAllTenantScopedClasses(): Map<string, TenantScopedConfig> {
  * @see unregisterTenantScopedClass
  */
 export function clearTenantScopedRegistry(): void {
+  bumpTenantPolicyGeneration();
   auditedSelectors.clear();
   tenantScopedClasses.clear();
   directSimpleRegistrations.clear();

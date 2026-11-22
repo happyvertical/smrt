@@ -20,6 +20,8 @@ before changing a transition, the guard predicates, or the surface.
 - Tenant: every statement names `tenant_id`, the work runs in
   `withTenant(principal.tenantId)`, and a conflicting active context is
   refused. Principal tenant ids must be UUIDs.
+- Edit-then-approve is a kind opt-in (`allowRevisedApproval`), refused once
+  any approval exists; quorum counts only approvals of the bound revision.
 - Policy may only tighten (`assertPolicyTightens` on write, `effectiveRules`
   clamps on read). Quorum and expiry are fixed at request time; decide-time
   permissions are the request snapshot plus the current kind and policy slugs.

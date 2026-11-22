@@ -6,15 +6,31 @@ export type EngineErrorCode =
   | 'refused'
   | 'approval_required'
   | 'worker_crashed'
+  | 'stale_fence'
   | 'migration_failed';
 
 /** A refusal or mistake the caller can act on (as opposed to a crash). */
 export class EngineError extends Error {
   readonly code: EngineErrorCode;
-  constructor(message: string, code: EngineErrorCode = 'invalid') {
+  /** Extra JSON a route returns beside `error` and `code` (e.g. the blockers that refused Apply). */
+  readonly details?: Record<string, unknown>;
+  constructor(
+    message: string,
+    code: EngineErrorCode = 'invalid',
+    details?: Record<string, unknown>,
+  ) {
     super(message);
     this.name = 'EngineError';
     this.code = code;
+    this.details = details;
+  }
+}
+
+/** The budget of database connections has no room: retry later. Never a verdict on the caller's data. */
+export class CapacityError extends EngineError {
+  constructor(message: string) {
+    super(message, 'refused');
+    this.name = 'CapacityError';
   }
 }
 
@@ -45,4 +61,44 @@ export class AppError extends EngineError {
     super(message, 'invalid');
     this.name = 'AppError';
   }
+}
+
+/**
+ * This host (or one of its workers) no longer owns the app: the ownership
+ * generation stored in the app's database moved on (another host opened the
+ * app, or a publish or restore swapped its schema). Nothing was written.
+ * Reopen the app to take ownership again; never retry the same call blindly.
+ */
+export class StaleFenceError extends EngineError {
+  constructor(message: string, details?: Record<string, unknown>) {
+    super(
+      message.startsWith('stale fence: ') ? message : `stale fence: ${message}`,
+      'stale_fence',
+      details,
+    );
+    this.name = 'StaleFenceError';
+  }
+}
+
+/** The host's claim on its app is gone (its session ended); the app must be reopened (#5470). */
+export class ClaimLostError extends StaleFenceError {
+  constructor(message: string) {
+    super(message, { resource: 'claim' });
+    this.name = 'ClaimLostError';
+  }
+}
+
+/** The version store's current version is not what the caller expected; nothing was written (#5470). */
+export class StaleStoreError extends StaleFenceError {
+  constructor(message: string, details: Record<string, unknown> = {}) {
+    super(message, { resource: 'store', ...details });
+    this.name = 'StaleStoreError';
+  }
+}
+
+/** Is `e` (or a cause of it) a stale-fence refusal, even if a library wrapped it? */
+export function isStaleFence(e: unknown): boolean {
+  for (let i = 0, x = e as any; x && i < 6; i++, x = x.cause)
+    if (x.code === 'stale_fence' || x.name === 'StaleFenceError') return true;
+  return false;
 }

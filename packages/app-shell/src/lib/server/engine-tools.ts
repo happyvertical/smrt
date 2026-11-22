@@ -8,13 +8,17 @@ export { ENGINE_TOOLS, isEngineTool } from '../../engine/index.ts';
 
 // Owner-only engine catalog adapters. Presentation summaries carry human labels;
 // the existing catalog policy and builder remain the execution and approval gates.
-import type { RuntimeReportSpec } from '@happyvertical/smrt-reports';
+import {
+  RUNTIME_REPORT_FILTER_OPS,
+  type RuntimeReportSpec,
+} from '@happyvertical/smrt-reports';
 import type { Command } from '../../engine/index.ts';
 import { toolSummary } from '../assistant/tool-summary.ts';
 import { commandSummary } from '../ui/command-summary.ts';
 import { fieldLabel, recordLabel } from '../ui/fields.ts';
 import type { RecordRow } from '../ui/types.ts';
 import { runCommand } from './builder.ts';
+import { structureHost } from './changes.ts';
 import { hostFor } from './host.ts';
 import { assertOwner } from './owner.ts';
 import { reportFailure } from './report-display.ts';
@@ -60,6 +64,60 @@ function validateArgs(name: string, args: Record<string, unknown>) {
   }
 }
 
+/** Comparison spellings a model reaches for, mapped to the grammar's names. */
+const OP_ALIASES: Record<string, string> = {
+  '=': 'eq',
+  '==': 'eq',
+  '!=': 'ne',
+  '<>': 'ne',
+  '>': 'gt',
+  '>=': 'gte',
+  '<': 'lt',
+  '<=': 'lte',
+  neq: 'ne',
+  not_equal: 'ne',
+  notequal: 'ne',
+  not_equals: 'ne',
+  notequals: 'ne',
+  equals: 'eq',
+  is_null: 'isNull',
+  isnull: 'isNull',
+  is_not_null: 'isNotNull',
+  isnotnull: 'isNotNull',
+  not_in: 'notIn',
+  notin: 'notIn',
+  ...Object.fromEntries(
+    RUNTIME_REPORT_FILTER_OPS.map((op) => [op.toLowerCase(), op]),
+  ),
+};
+const alsoOp = (entry: unknown) => {
+  if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return entry;
+  const op = (entry as { op?: unknown }).op;
+  const mapped =
+    typeof op === 'string'
+      ? OP_ALIASES[
+          op
+            .trim()
+            .toLowerCase()
+            .replace(/[\s-]+/g, '_')
+        ]
+      : undefined;
+  return mapped ? { ...entry, op: mapped } : entry;
+};
+/** "status != Open" means ne: spell the comparison the grammar's way first. */
+export function normalizeReportOps(report: unknown): unknown {
+  if (!report || typeof report !== 'object' || Array.isArray(report))
+    return report;
+  const spec = report as { filters?: unknown; having?: unknown };
+  return {
+    ...spec,
+    ...(Array.isArray(spec.filters)
+      ? { filters: spec.filters.map(alsoOp) }
+      : {}),
+    ...(Array.isArray(spec.having) ? { having: spec.having.map(alsoOp) } : {}),
+  };
+}
+
 export async function runEngineTool(
   name: string,
   args: Record<string, unknown>,
@@ -70,10 +128,13 @@ export async function runEngineTool(
   if (name === 'app_runreport') {
     const host = await hostFor(scope.records);
     const result = await host
-      .runReport(args.report as string | RuntimeReportSpec, {
-        maxRows: args.maxRows as number | undefined,
-        timeoutMs: args.timeoutMs as number | undefined,
-      })
+      .runReport(
+        normalizeReportOps(args.report) as string | RuntimeReportSpec,
+        {
+          maxRows: args.maxRows as number | undefined,
+          timeoutMs: args.timeoutMs as number | undefined,
+        },
+      )
       .catch((error) => {
         const report =
           typeof args.report === 'string'
@@ -97,7 +158,8 @@ export async function runEngineTool(
   const type = own(ENGINE_COMMAND_TYPES, name);
   if (!type) throw new Error('unknown engine tool');
   // The caller cannot override the command discriminant or supply approval.
-  const host = await hostFor(scope.structure);
+  // Planned against the app as it will be (the changes waiting included).
+  const host = await structureHost();
   const command = { ...args, type } as Command;
   const plan = await host.plan(command);
   const before = structuredClone(host.def);
@@ -142,7 +204,8 @@ export async function runEngineTool(
   const result = await runCommand(
     { ...args, type } as Command,
     owner.id,
-    scope.structure,
+    'live',
+    scope.source ?? 'api',
   );
   if ('status' in result && result.status === 'pending_approval') return result;
   if (

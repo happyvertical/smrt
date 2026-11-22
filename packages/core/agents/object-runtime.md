@@ -104,6 +104,64 @@ than part of the default core suite: it requires the repository's
 executable; otherwise Playwright's managed Chromium is used. The normal test
 suite covers the same helper through `toPlainObject()` on Node.
 
+## Services never come from data
+
+A model is constructed from one options bag that holds service configuration
+beside field values. `SMRT_SERVICE_OPTION_KEYS` (`src/service-options.ts`:
+`db`, `persistence`, `fs`, `ai`, `decisions`, `inference`, `usage`, `logging`,
+`metrics`, `pubsub`, `sanitization`, `signals`) names the service keys once. It
+is derived from `SmrtClassOptions`: a new option without a `service`/`internal`
+decision in `SMRT_CLASS_OPTION_KINDS` is a type error.
+
+- Every path where a collection builds a model goes through one builder
+  (`SmrtCollection.buildItemOptions()` over `buildItemOptions()`): `create()`,
+  `createMany()`, STI creation by `_meta_type`/`createType`, and row hydration
+  (`hydrateResultRow()`, `createPolymorphic()`), including keys merged from a
+  stored `_meta_data` blob. Data goes in first, the service keys are taken out
+  of it, and every service the collection binds is applied last: always its
+  `db`, `ai` and `decisions`, and any other service key it was created with
+  (`Collection.create({ db, fs })` gives its objects that `fs`, on create and
+  on every load). A service the collection does not bind resolves from
+  configuration.
+- Control keys in create data keep their meaning: `id`, `_meta_type`,
+  `_skipLoad`, `_insertOnly`, `_adoptNaturalKey`, `_skipAutoEmbeddings` and
+  symbol-keyed options a model defines. Only the service keys are taken out.
+- To create through another database handle or AI client, bind a collection
+  to it (`await Collection.create({ db: transaction })`). A service key in
+  create data that is not a declared field is ignored and logged once per
+  model and key.
+- A model may declare a real field named like a service option (a `metrics`
+  column). Its value travels beside the options under a symbol key no JSON can
+  carry, and `initializePropertiesFromOptions()` reads service-named fields
+  from there, so the field keeps its row value and `options.metrics` stays
+  service configuration. `new Model({ ... })` called directly has no such
+  split and reads its options bag as before.
+- Request-facing write paths drop a body key when
+  `ObjectRegistry.isServiceOptionInput(model, key)` is true: a service key the
+  model (or an ancestor) does not declare as a field, and always `options`,
+  the instance property that holds the service options. See
+  [generators.md](generators.md) ("Write bodies set fields only").
+
+Tests: `src/service-options.test.ts`,
+`src/__tests__/create-data-service-options.test.ts`,
+`src/__tests__/create-control-flags.cases.ts` (SQLite and PostgreSQL).
+
+**A `get()` / `delete()` filter names a row.** `collection.get(filter)` and
+`collection.delete(id)` take an id or slug string, or a plain object with at
+least one condition. A number, a boolean, an array, `null`, `{}` or a class
+instance carries no condition and would select whichever row the engine
+returns first, so `assertGetFilter()` (`src/where-keys.ts`) refuses it before
+`beforeGet` runs: `WhereClauseError`, code `INVALID_GET_FILTER`, a typed 400.
+`update()`, `findById()` and `findOne()` reach the same guard through `get()`.
+
+**`collection.update(id, values)` assigns declared fields only.** A key must
+be an own entry of the model's field map or write-through map; `constructor`,
+`toString` and other names a plain object inherits are refused like any
+undeclared key (`WriteInputError`, `VALIDATION_UNKNOWN_FIELD`, a typed 400).
+Request-facing update paths use the wider `applyUpdateInput()` rule, which also
+accepts settable accessors; see [generators.md](generators.md) ("An update
+sets declared fields and settable accessors").
+
 ## SmrtCollection Query
 
 Projection, latest-related, facets, counts, and bounded read plans are
@@ -131,6 +189,36 @@ renders `IS NULL` and `{ 'deletedAt !=': null }` renders `IS NOT NULL`.
 `contains` and dot-notation JSON paths reject at the boundary; use `like` with
 explicit wildcards. Adding operators requires SQL support first.
 `src/__tests__/issue-2276-where-contract.test.ts` executes the accepted set.
+
+**WHERE keys are caller spelling, not column names.** `ownerId`, `owner_id`,
+`OwnerId` and `ownerId =` all resolve to the column `owner_id`
+(`resolveWhereKey()` in `src/where-keys.ts`, the one definition of that
+mapping). `convertWhereKeys` runs last, after interceptors and the collection's
+own predicates are merged, and refuses a record in which two keys resolve to
+the same column and operator (`WhereClauseError`, code `INVALID_WHERE_CLAUSE`,
+a typed 400). A predicate an interceptor or the collection added is therefore
+in the query or the query does not run; no other spelling replaces it. Two
+operators on one column are a range and stay legal. An array under the default
+operator is an `in`, so `{ ownerId: [a], 'owner_id in': [b] }` is refused too.
+In the DNF form each condition record is checked alone; records of one branch
+are ANDed by the SQL layer. Hydration filters (`loadFromId`, `loadFromSlug`,
+`getId`) apply the same rule after `beforeGet`.
+
+Anything that inspects a filter before the collection resolves it compares
+`resolveWhereKey(key).column`, never a literal key: a `beforeList`/`beforeGet`
+interceptor deciding whether a column is already filtered, or a route forcing a
+scope. Collection-owned predicates (`mergeOwnedWhere`, used for the STI
+discriminator) win over a caller key for the same column and operator under any
+spelling; a caller key with another operator stays as its own condition even
+when written exactly like the owned key (`_meta_type: [a, b]` beside an owned
+`_meta_type: x` becomes `'_meta_type in'`; equality moves between `field =` and
+the bare `field`), so both spellings filter alike. A forced scope
+(`applyWhereScope`) drops every caller filter on its columns, any operator.
+Reads that can return before `list()` (semantic search with an empty ranking)
+check the caller filter first, so a refused filter is refused whatever the
+stored data; their ranked ids are ANDed with the caller filter as a separate
+condition, so a caller filter on `id` narrows the ranking under any spelling. Tests: `src/__tests__/where-key-collisions.test.ts`,
+`packages/tenancy/src/__tests__/tenant-filter-key-spellings.test.ts`.
 
 STI child collections auto-filter by `_meta_type`. Query bounds — `LIMIT 1` on `get()`, the `limit`/`offset` parser, the `orderBy` whitelist and sensitive/permission refusals, and the deterministic generated-list ordering (#2367) — are in [query-bounds.md](query-bounds.md).
 
@@ -229,8 +317,11 @@ instances and never use this path to overwrite a loaded revision.
 This is rule 3 of the [data shape rules](data-shape-rules.md): an app hardens a
 smrt class by overriding fields on a subclass, and the name decides the reach.
 
-An app class that extends a smrt class and declares the SAME simple name takes
-over the registry entry (`sti-child-wins`, `registry/collision-policy.ts`) and
+An app class that extends a smrt class, declares the SAME simple name and
+declares `replaceParent: true` takes over the registry entry
+(`same-name-subclass-replaces-parent`, `registry/collision-policy.ts`;
+`replaceParent: false` and an undeclared same-named subclass are refused, see
+[app-subclasses.md](app-subclasses.md)) and
 records the old key in `replacedQualifiedNames`. smrt's own collections follow
 it: `create()` and non-STI hydration build the app's class (`get()`/`list()` on
 a shared table already resolved by `_meta_type`), and the STI discriminator is

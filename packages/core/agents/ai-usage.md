@@ -122,8 +122,34 @@ approval counts, `retain`, `trajectory_pruned`), `_smrt_ai_run_events`
 (`(run_id, seq)` unique inline; `call` events carry the reservation state and
 amounts as typed columns), `_smrt_ai_run_checkpoints` (durable runs only: a
 checkpoint row is what makes a run durable; `revision` is compare-and-swap),
-`_smrt_ai_evaluations`. No foreign keys between them: retention deletes in
-its own order and an evaluation may outlive its target.
+`_smrt_ai_evaluations`, `_smrt_ai_run_ids` (1.20.0: the hex SHA-256 of every
+run id ever opened, no tenant column, never deleted). No foreign keys
+between them: retention deletes in its own order and an evaluation may
+outlive its target.
+
+**Run identity** (`ai-run-model.ts` `insertAiRunRowTx`, `ai-run-ids.ts`). A
+run id names at most one run for the lifetime of the database. Every run
+row is written through `insertAiRunRowTx` (`openAiRun`, the deprecated
+`recordAiRun`; `ai-run-insert-sites.test.ts` fails on any other `INSERT INTO
+_smrt_ai_runs`), which in the caller's transaction refuses an id whose
+digest is reserved or whose run row still exists, then reserves the digest
+before the row; a unique violation from a concurrent opener that committed
+first is the same final `AiRunIdUsedError` (`AI_RUN_ID_USED`), never
+retried. A caller-chosen id must be a non-empty, well-formed string without
+NUL (`TypeError`, before any read). Without the registry table an open fails
+with a `TypeError` before any write and creates nothing. `pruneAiRuns`
+reserves the id before it locks and deletes the row (the open's lock order:
+registry key, then run row). The 1.20.0 bootstrap backfills the digest of
+every id still present or referenced (runs, events, checkpoints, usage,
+evaluations, transcripts) after its compatibility step and DDL replay and
+before its stamp, in keyset pages (SQL `sha256` on PostgreSQL and DuckDB,
+TypeScript on SQLite). The guarantee holds from cutover: reuse before the
+upgrade is not repaired; `checkAiRunIdRegistry(db)` (`smrt doctor --db`)
+counts referenced ids with neither row and children created before their
+parent. Deploy: drain older-core openers and sweepers first, never run an
+older core against a 1.20.0 database, keep the registry through restores. A
+refusal discloses that an id was used, even after expiry; callers choose
+unguessable ids.
 
 **Opening needs tracking.** `openAiRun(store, input)` throws
 `AiRunTrackingDisabledError` while `store.usageTracking` is off
@@ -144,14 +170,39 @@ reads the whole chain and refuses with `AiRunResumeRefusedError`:
 `not_resumable`, `ancestor_missing`, `ancestor_final`, `budget_unchanged`,
 `budget_lowered`, `above_ceiling`, `definition_changed`; a retry (`openAiRun`
 with `retryOfRunId`) adds `not_retryable` and `retry_source_pruned` (the
-failed run or its checkpoint is gone).
+failed run or its checkpoint is gone); a retry for another owner than the
+failed run's (`ownerId ?? null` compared under the source lock, before the
+checkpoint is read or `carry` runs) is `not_retryable`. `openAiRun` compares the locked
+parent's and retry source's `tenant_id` (null-safe) with `store.tenantId`
+before reading anything else: another tenant's run is treated as absent
+(`AiRunNotFoundError` for a parent, `retry_source_pruned` for a retry), and
+refusal messages never name the other run's definition. Each referenced
+run is first looked up by id and the store's tenant (a SQL predicate)
+before anything of it is locked or read, its depth is walked in that tenant,
+and the row returned is the one inserted, read inside the open's
+transaction. `openAiRun` reads each public property of `store` and `input`
+exactly once (own fields and getters alike; `satisfies` keeps the copy
+exhaustive) and serializes tags, budget and the first checkpoint before its
+first write, so a caller-owned transaction never commits half an open.
+Every chain walk (`readAiRunChainIds`,
+hence `lockAiRunChain`, fences and charges) and every descendant walk
+(`readAiRunDescendantIds`, cancel; the sweep's non-durable subtree) stops at
+a tenant boundary, with the tenant as a predicate of each lookup (another
+tenant's run is never read), and the sweep's orphan repair and both
+retention passes join a parent only within the child's tenant (null-safe),
+so a parent of another tenant reads as a missing one. A link written before
+this check never carries a charge, stop, cancel or retention decision
+across tenants.
 
 **Accounting.** Run totals are the budget authority and change only in short
 transactions that lock the chain root first (claim fence, then run rows by
 depth and id, then event rows) together with the event that justifies the
 change; usage rows are the billing ledger and are never read for a budget.
 A call is charged once: own totals of its run, inclusive totals of the run
-and every ancestor. The reservation state machine is `reserved` → `settled`
+and every ancestor, and only against its own usage row (the row under its
+id, of its run, in its run's tenant): when another run's or tenant's row
+holds the id, settlement returns the reservation and charges nothing, and
+the stale-reservation reconciler never settles from such a row. The reservation state machine is `reserved` → `settled`
 | `released` | `abandoned` → `settled_late`, plus `unreserved`; every move is
 guarded on the expected state. A refused reservation stops the calling run
 with a typed reason and `stop_detail` and throws `AiRunStoppedError`; a
@@ -190,7 +241,28 @@ resort.
 transcript?, label? })` (`src/tracked-ai-client.ts`) is the entry point for code that
 is not a `SmrtObject` (chat, the app shell, background workers). It is built
 for ONE tenant and database (an internal `SmrtClass` host: nothing is kept per
-process) and refuses a run context of another database or tenant.
+process) and refuses a run context of another database or tenant: bound at
+`client()` or passed on a single call (`message(x, { runContext })`, streams
+too), the context's database, its declared tenant and its run row's tenant
+must all be the client's, checked before anything is reserved or sent;
+the context is copied before the check and only the copy is used, so
+changing the caller's object afterwards cannot move a call to another run;
+the accepted copy carries the client's validated tenant (an explicit `null`
+included), so accounting never looks a context's tenant up again; the
+database is likewise captured at construction, never re-read from the
+caller's options. A context's tenant reaches every lookup of its call: the
+reservation, the claim fence (the chain is read in that tenant before the
+fence is called), a held reservation's admission, settlement, release and a
+child's stop. A held reservation (a fusion seat's share) is admitted just
+before it is sent in both modes: a context's claim fence is asserted first,
+in the same transaction (`AiRunClaimLostError` for a worker whose claim was
+taken over); with `checkRunning` the chain is locked and
+must be `running`; either way the held call's own event must still be
+`reserved` in that run, else the call is refused (`AiRunNotFoundError` for a
+run that is gone, `AiRunTransitionError` for a reservation released or
+abandoned meanwhile) and nothing is sent. A
+call of a run is billed to the run row's tenant (the settlement writes the
+usage row with it and the handlers see it), never the ambient tenant.
 `openRun(input)` opens a run there (`AiRunTrackingDisabledError` while usage
 persistence is off); `client(prompt, { runContext? })` returns a client made
 for one prompt: every call on it is tagged with the prompt's `promptKey` and
@@ -224,7 +296,11 @@ fusion tier does not run untracked (`AiRunTrackingDisabledError` from
 `openRun`). Every seat and the judge reserve together, all or none
 (`stop_detail.requested` is the sum over all of them); a seat's first call
 takes its share, the judge checks its chain is still `running` first, and
-shares never taken are released at the end. Inside a run (the entry call
+shares never taken are released at the end. The parent's claim fence is
+read once and asserted by the reservation, every seat's admission and the
+run's close and stop (each release and the finish in their own
+transactions): a worker whose claim was taken over releases, finishes and
+stops nothing (`AiRunClaimLostError`). Inside a run (the entry call
 carries a `runContext`), the fusion is a child run and the parent gets a
 `handoff` event (`child_run_id`, `call_id` = the entry call, no reservation),
 written with the child's row and ended `done`, `stopped`, `cancelled` or
@@ -249,9 +325,20 @@ earlier run, possibly pruned) and `handoff` (`running` until its child ends).
 A `check` or `approval` request points at the judged `call` or `handoff`
 event. A decision counts once, in the run that recorded it; a request counts
 only as requested; approval rate = approved / (approved + refused).
-Payloads are redacted (host redactor, then the transcript redactor) and
+Payloads are redacted through the transcripts' one path
+(`redactAiTranscriptPart`: an event-specific `options.redact`, then the host
+redactor with the run row's tenant, read behind the claim fence, then the
+built-in redactor) and
 capped (head and tail kept, `truncated`); `payload_ref` points at content the
-host owns, and the framework stores nothing behind it.
+host owns, and the framework stores nothing behind it. Read-time rule:
+`getRunTrajectory` runs only the built-in redactor again on stored payloads
+(credential-named fields, token shapes; the host redactor runs on the write
+path only and is never called by a read), so a payload stored by an earlier
+version is masked by today's built-in rules; a truncated payload's `head` and
+`tail` (JSON text fragments) are masked at string level
+(`maskSecretFieldsInJsonText`: credential-named field values, then token
+shapes), never returned as stored. A host's field-based policy installed
+after a payload was written does not apply to it.
 
 **The `ai-runs` task** (retention sweep, `sweepAiRuns`): reconciles `call`
 reservations older than the smallest `callTimeoutMs` on their chain plus a
@@ -260,22 +347,38 @@ run that is not durable after 24 quiet hours as `failed` / `abandoned`;
 cancels any run left under a cancelled ancestor and any `waiting-approval` or
 durable `stopped` run under a final or missing ancestor; then prunes
 trajectories and run rows (below). Worker reconciliation on claim:
-`reconcileAiRunOnClaim`.
+`reconcileAiRunOnClaim`, which establishes the claimed run's tenant once and
+carries it into every descendant lookup, reservation read, reconciliation
+and status lock, so a row that left the tenant after discovery is neither
+reconciled nor failed. `checkAiRunTotals` reads the run's stored totals and
+its charged calls with their own usage rows in one statement anchored on the
+run: a settle or prune committing meanwhile is seen whole or not at all, and
+a run that is gone is `AiRunNotFoundError`.
 
 **Retention** (page section 8). A finished, unprotected run keeps its
 trajectory `aiRuns.trajectoryMaxAgeDays` (30) after `finished_at`; with
 `trajectorySampleRate` below 1, a run outside the sample (decided from its
-id) loses it once finished. Pruning saves the check and approval counts on
+id) loses it once finished. The destructive recheck under the run lock uses
+the bound that selected the run: the cutoff for a run in the sample, `now`
+for one outside it. Pruning saves the check and approval counts on
 the row and sets `trajectory_pruned` in the same transaction as the events
 are deleted, and deletes the checkpoint unless the run `failed`. Protected:
 `running`, `waiting-approval`, durable `stopped`, `experiment_id` set,
 `retain` set, and (through the top-down order) every descendant of a
 protected run; a child is never pruned before its parent, and a run with a
-call still `reserved` keeps its events. Run rows go with their usage rows at
+call still `reserved` keeps its events. Run rows go with their usage rows (only
+those of the run's own tenant: `run_id` is not a foreign key) at
 the `aiUsage.maxAgeDays` limit (90) counted from `finished_at`, never while
 the trajectory is kept, top down; the failed run's checkpoint goes with its
 row. Usage rows keep their own policy. Evaluations are never swept. Index:
 `idx_smrt_ai_runs_finished` (schema 1.19.0).
+
+**Scoped reads.** `getAiRun(db, id, scope?)` and `readAiRunCheckpoint(db, id,
+scope?)` take an `AiRunReadScope` (`{ tenantId, ownerId?, type? }`): every
+field given is a predicate of the one statement (the checkpoint is read
+joined to its run), so a run outside the scope is never read, only not
+found. Callers that authorize by tenant and owner (the workflow checkpoint
+store, its retry pre-check) read through it.
 
 **Readers.** `listAiRuns(db, { id?, type?, definitionKey?, status?,
 parentRunId?, experimentId?, tenantId?, since?, until?, limit? })` returns
@@ -285,8 +388,13 @@ work). `reportAiRuns(db, { type?, since?, until?, tenantId? })` groups by
 `(type, definition_key)`: runs per status, degraded, seats, own calls,
 tokens and cost, checks and approval decisions with their rates (from the
 events, or the saved counts of a pruned trajectory), p50 active time; other
-tenants counted in `excluded`. `getRunTrajectory(runId | { callId })` is the
-one reader for a call in a run and a call on its own. CLI: `smrt ai:usage
+tenants counted in `excluded` (`tenantId` is a predicate of the page query;
+the rest is one `COUNT(*)`, never read). `getRunTrajectory(runId | { callId })` is the
+one reader for a call in a run and a call on its own; a usage row leads it
+only to a run of the row's tenant (the run is read by id and tenant in one
+statement, and every event page is scoped to the run's tenant, so a pruned
+and reused id never yields another tenant's run), a call on its own carries only its tenant's evaluations, and a
+run's usage rows and evaluations are joined within the run's tenant. CLI: `smrt ai:usage
 --runs` (every type), `--by fusion` (fusion runs).
 
 **Upgrades.** Schema 1.14.0 created the fusion table; 1.17.0 rebuilt it once
@@ -296,7 +404,10 @@ created_at` and `started_at = created_at - duration`), moved stored `ok` /
 `degraded` to `done` (with `degraded`) and `failed` to `failed` / `error` in
 one guarded UPDATE, and added events, checkpoints and evaluations; later
 1.17.0 work added `stop_detail`, `retry_of_run_id` and double-precision cost
-columns; 1.19.0 adds `idx_smrt_ai_runs_finished`. On PostgreSQL a table with
+columns; 1.19.0 adds `idx_smrt_ai_runs_finished`; 1.20.0 adds
+`_smrt_ai_run_ids` and its backfill (`backfillAiRunIdRegistry`, from
+`bootstrapSystemTables`, not from a compatibility pass, so it sees the
+replayed DDL). On PostgreSQL a table with
 legacy timezone-naive timestamps is left alone and the bootstrap fails closed
 until the audited timestamp migration has run.
 
@@ -347,7 +458,14 @@ recorded when the verdict is known. Rules:
 `prompt`, `model`, `tier`, `class`, `tenant`, `fusion`, `source`, `template`
 (the `templateHash` tag, #4781). `transcripts: true` adds `transcripts` to each
 bucket and the totals: calls (distinct `entry_call_id`) with a transcript row of
-the same tenant, looked up per page by id; never content, so not audited. It reads bounded keyset pages and
+the same tenant, looked up per page by id; never content, so not audited.
+`tenantId` is a SQL predicate of the usage pages
+(`idx_smrt_ai_usage_tenant_created`), the evaluation lookups and the
+transcript lookups; `excluded` (other tenants' calls, every external-agent
+measurement in the window) is counted with two `COUNT(*)` queries, so other
+tenants' rows are never read. Evaluation labels are looked up per page for
+that page's call and run ids (`IN` lists of at most 500). It reads bounded
+keyset pages and
 aggregates in memory so the median and tag dimensions stay portable. Pages
 are keyed on `id` within the `created_at` window: correct, but on very large
 windows each page rescans the window; keyset on `(created_at, id)` is a

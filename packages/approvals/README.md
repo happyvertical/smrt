@@ -54,8 +54,13 @@ const opened = await approvals.requestApproval(author, {
 });
 
 // Only a human of the same tenant holding the
-// kind's permission, may decide, once.
-await approvals.decide(editor, opened.request.id, { decision: 'approve' });
+// kind's permission, may decide, once. Name the revision the editor reviewed
+// (required on kinds with `allowRevisedApproval`, which also accept
+// `revisedSubjectRevisionHash` for edit-then-approve).
+await approvals.decide(editor, opened.request.id, {
+  decision: 'approve',
+  expectedSubjectRevisionHash: revisionHash(post),
+});
 
 // The consumer presents the revision it is about to act on.
 const used = await approvals.consume(publisher, opened.request.id, revisionHash(post));

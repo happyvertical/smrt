@@ -5,10 +5,10 @@ description: "Unified multi-channel messaging with STI-based hierarchies"
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-19T14:06:44Z"
+  at: "2026-11-20T00:35:42Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:461d8d0aa830df1c829a4057cfadceab54626c06e7a23e09314a4c6418ffaf34"
+source_revision: "sha256:8f8b85d9d8a0a2d1d4caca84fe0e039d2f55d577865e4d6068d1314d28c8a835"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/messages/package.json"
@@ -25,6 +25,9 @@ sources:
   - id: "agents-4"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/messages/agents/profile-recipients.md"
     title: "@happyvertical/smrt-messages packages/messages/agents/profile-recipients.md"
+  - id: "agents-5"
+    resource: "https://github.com/happyvertical/smrt/blob/main/packages/messages/agents/send-approval.md"
+    title: "@happyvertical/smrt-messages packages/messages/agents/send-approval.md"
 ---
 
 # @happyvertical/smrt-messages
@@ -42,9 +45,11 @@ sources:
 - `packages/messages/agents/mail-search.md`
 - `packages/messages/agents/notification-outbox.md`
 - `packages/messages/agents/profile-recipients.md`
+- `packages/messages/agents/send-approval.md`
 
 ## Framework dependencies
 
+- [smrt-approvals](/components/smrt-approvals.md)
 - [smrt-core](/components/smrt-core.md)
 - [smrt-jobs](/components/smrt-jobs.md)
 - [smrt-ledgers](/components/smrt-ledgers.md)

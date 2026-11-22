@@ -12,8 +12,9 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
+import { createLogger } from '@happyvertical/logger';
 import { validateCookbook } from '../cookbook/validate.js';
-import { manifestExportCandidates } from '../manifest/package-manifest-exports.js';
+import { readInstalledPackageManifest } from '../manifest/installed-package-manifest.js';
 
 /** The cookbook file `smrt cookbook apply` writes at the project root. */
 export const COOKBOOK_FILE = 'smrt.cookbook.json';
@@ -37,29 +38,19 @@ function readJson(file: string): unknown {
   return JSON.parse(fs.readFileSync(file, 'utf8'));
 }
 
-/** The package's JSON manifest, found the way the consumer plugin finds it. */
+/**
+ * The package's JSON manifest, found the way the consumer plugin finds it:
+ * the nearest `node_modules/<package>` at or above the project, so hoisted and
+ * workspace installs resolve too.
+ */
 function readPackageManifest(
   projectRoot: string,
   packageName: string,
 ): PackageManifestJson | null {
-  const dir = path.join(projectRoot, 'node_modules', packageName);
-  const candidates = [
-    ...manifestExportCandidates(dir),
-    path.join(dir, 'dist', 'manifest.json'),
-    path.join(dir, 'manifest.json'),
-  ];
-  for (const file of candidates) {
-    if (!file.endsWith('.json') || !fs.existsSync(file)) continue;
-    try {
-      const parsed = readJson(file);
-      if (parsed && typeof parsed === 'object') {
-        return parsed as PackageManifestJson;
-      }
-    } catch {
-      // Keep probing; the consumer plugin reports an unreadable manifest.
-    }
-  }
-  return null;
+  return (
+    readInstalledPackageManifest<PackageManifestJson>(packageName, projectRoot)
+      ?.manifest ?? null
+  );
 }
 
 function objectRef(
@@ -105,9 +96,13 @@ export function resolveCookbookHostedObjects(
 
   const declared = new Set<string>();
   const recipes = new Map<string, RecipeEntry>();
+  const unreadable: string[] = [];
   for (const packageName of packages) {
     const manifest = readPackageManifest(projectRoot, packageName);
-    if (!manifest) continue;
+    if (!manifest) {
+      unreadable.push(packageName);
+      continue;
+    }
     for (const [key, def] of Object.entries(manifest.objects ?? {})) {
       const ref = objectRef(
         key,
@@ -121,6 +116,16 @@ export function resolveCookbookHostedObjects(
         recipes.set(recipe.id, recipe);
       }
     }
+  }
+
+  if (unreadable.length > 0) {
+    // Its recipes and models cannot be hosted; say so instead of silently
+    // hosting fewer routes than the cookbook selects.
+    createLogger({ level: 'info' }).warn(
+      `[smrt] ${COOKBOOK_FILE}: no readable JSON manifest for ${unreadable.join(', ')}; ` +
+        'its recipes and models are not hosted. Install and build the package, ' +
+        'or pass smrt({ expose }) explicitly.',
+    );
   }
 
   const hosted = new Set<string>();

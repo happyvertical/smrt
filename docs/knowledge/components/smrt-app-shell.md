@@ -5,10 +5,10 @@ description: "A smrt app that builds and runs a person's own smrt app from defin
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-19T06:25:00Z"
+  at: "2026-11-22T04:35:02Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:50ba8f3d4761952e820b346d8b42748671c4f7974d4ad6cd0acc10e6a334a55f"
+source_revision: "sha256:553856f220d356989f26431d9b12ffcb9593be7cf21c39e11a3c2fc37cd66fb2"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/app-shell/package.json"
@@ -17,17 +17,29 @@ sources:
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/app-shell/AGENTS.md"
     title: "@happyvertical/smrt-app-shell packages/app-shell/AGENTS.md"
   - id: "agents-2"
+    resource: "https://github.com/happyvertical/smrt/blob/main/packages/app-shell/agents/cloud-profile.md"
+    title: "@happyvertical/smrt-app-shell packages/app-shell/agents/cloud-profile.md"
+  - id: "agents-3"
+    resource: "https://github.com/happyvertical/smrt/blob/main/packages/app-shell/agents/deploy.md"
+    title: "@happyvertical/smrt-app-shell packages/app-shell/agents/deploy.md"
+  - id: "agents-4"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/app-shell/agents/draft-ui.md"
     title: "@happyvertical/smrt-app-shell packages/app-shell/agents/draft-ui.md"
-  - id: "agents-3"
+  - id: "agents-5"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/app-shell/agents/engine.md"
     title: "@happyvertical/smrt-app-shell packages/app-shell/agents/engine.md"
-  - id: "agents-4"
+  - id: "agents-6"
+    resource: "https://github.com/happyvertical/smrt/blob/main/packages/app-shell/agents/hosted-inference.md"
+    title: "@happyvertical/smrt-app-shell packages/app-shell/agents/hosted-inference.md"
+  - id: "agents-7"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/app-shell/agents/imports.md"
     title: "@happyvertical/smrt-app-shell packages/app-shell/agents/imports.md"
-  - id: "agents-5"
+  - id: "agents-8"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/app-shell/agents/shared-pieces.md"
     title: "@happyvertical/smrt-app-shell packages/app-shell/agents/shared-pieces.md"
+  - id: "agents-9"
+    resource: "https://github.com/happyvertical/smrt/blob/main/packages/app-shell/agents/storage-metering.md"
+    title: "@happyvertical/smrt-app-shell packages/app-shell/agents/storage-metering.md"
 ---
 
 # @happyvertical/smrt-app-shell
@@ -42,10 +54,14 @@ sources:
 ## Documentation
 
 - `packages/app-shell/AGENTS.md`
+- `packages/app-shell/agents/cloud-profile.md`
+- `packages/app-shell/agents/deploy.md`
 - `packages/app-shell/agents/draft-ui.md`
 - `packages/app-shell/agents/engine.md`
+- `packages/app-shell/agents/hosted-inference.md`
 - `packages/app-shell/agents/imports.md`
 - `packages/app-shell/agents/shared-pieces.md`
+- `packages/app-shell/agents/storage-metering.md`
 
 ## Framework dependencies
 
@@ -54,6 +70,7 @@ sources:
 - [smrt-chat](/components/smrt-chat.md)
 - [smrt-config](/components/smrt-config.md)
 - [smrt-core](/components/smrt-core.md)
+- [smrt-features](/components/smrt-features.md)
 - [smrt-inference](/components/smrt-inference.md)
 - [smrt-jobs](/components/smrt-jobs.md)
 - [smrt-preferences](/components/smrt-preferences.md)
@@ -62,6 +79,7 @@ sources:
 - [smrt-reports](/components/smrt-reports.md)
 - [smrt-secrets](/components/smrt-secrets.md)
 - [smrt-spreadsheets](/components/smrt-spreadsheets.md)
+- [smrt-subscriptions](/components/smrt-subscriptions.md)
 - [smrt-svelte](/components/smrt-svelte.md)
 - [smrt-tenancy](/components/smrt-tenancy.md)
 - [smrt-ui](/components/smrt-ui.md)
@@ -78,9 +96,12 @@ sources:
 ## Exports
 
 - `.`
+- `./embed`
 - `./engine`
 - `./engine/worker`
 - `./manifest`
+- `./shutdown`
+- `./start`
 
 ## Models
 
@@ -100,6 +121,10 @@ sources:
 - `AssistantMessageCollection` (collection `assistantmessages`, extends `SmrtCollection`)
 - `AssistantThread` (collection `assistantthreads`, extends `SmrtObject`)
 - `AssistantThreadCollection` (collection `assistantthreads`, extends `SmrtCollection`)
+- `ChangeBatch` (collection `changebatches`, extends `SmrtObject`)
+- `ChangeBatchCollection` (collection `changebatches`, extends `SmrtCollection`)
+- `ChangeCard` (collection `changecards`, extends `SmrtObject`)
+- `ChangeCardCollection` (collection `changecards`, extends `SmrtCollection`)
 
 ## MCP tools
 
@@ -110,18 +135,14 @@ sources:
 - `decide_approvals`: decide on `@happyvertical/smrt-app-shell:Approval`
 - `defineModel_apps`: defineModel on `@happyvertical/smrt-app-shell:App`
 - `describe_apps`: describe on `@happyvertical/smrt-app-shell:App`
-- `discardDraft_apps`: discardDraft on `@happyvertical/smrt-app-shell:App`
 - `enableRecipe_apps`: enableRecipe on `@happyvertical/smrt-app-shell:App`
 - `exportTemplate_apps`: exportTemplate on `@happyvertical/smrt-app-shell:App`
 - `hideField_apps`: hideField on `@happyvertical/smrt-app-shell:App`
 - `history_apps`: history on `@happyvertical/smrt-app-shell:App`
 - `importTemplate_apps`: importTemplate on `@happyvertical/smrt-app-shell:App`
 - `pending_approvals`: pending on `@happyvertical/smrt-app-shell:Approval`
-- `previewPublish_apps`: previewPublish on `@happyvertical/smrt-app-shell:App`
-- `publishDraft_apps`: publishDraft on `@happyvertical/smrt-app-shell:App`
 - `removeField_apps`: removeField on `@happyvertical/smrt-app-shell:App`
 - `removeModel_apps`: removeModel on `@happyvertical/smrt-app-shell:App`
 - `renameField_apps`: renameField on `@happyvertical/smrt-app-shell:App`
-- `startDraft_apps`: startDraft on `@happyvertical/smrt-app-shell:App`
 - `undoTo_apps`: undoTo on `@happyvertical/smrt-app-shell:App`
 - `undo_apps`: undo on `@happyvertical/smrt-app-shell:App`

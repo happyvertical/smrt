@@ -23,6 +23,27 @@ export interface SyncRowIdentity {
   model: string;
   tenantColumn?: string;
   sti?: boolean;
+  /**
+   * Ownership columns to return for each deleted row (as text), so the
+   * caller attributes the row the statement actually removed.
+   */
+  ownerColumns?: readonly string[];
+}
+
+/**
+ * Each deleted row's id (as the statement returned it, as text) and its
+ * returned ownership columns. The caller matches ids in the engine's
+ * canonical id form; ids are never case-folded here, so two text ids that
+ * differ only in case stay two rows. A column the row does not carry (a JSON
+ * row without the key) is left out, never filled in as empty.
+ */
+export type DeletedRowOwners = Array<{
+  id: string;
+  columns: Record<string, unknown>;
+}>;
+
+function ownerAlias(index: number): string {
+  return `_smrt_owner_${index}`;
 }
 
 function dialect(db: DatabaseInterface) {
@@ -144,13 +165,29 @@ export async function deleteSyncRows(
   filter: Record<string, unknown>,
   didDelete: (count: number) => void,
   incoming?: { rowId: string; tenantId: string | null; revision: SyncRevision },
-): Promise<{ affected: number }> {
+): Promise<{ affected: number; owners?: DeletedRowOwners }> {
+  const ownerColumns = identity.ownerColumns ?? [];
   if (isJsonAdapterHandle(db)) {
     if (incoming)
       throw RuntimeError.invalidState('Sync tombstones require a SQL database');
+    // No RETURNING here; the embedded write queue serializes framework
+    // writes, so the rows read just before the delete are the rows it removes.
+    const before =
+      ownerColumns.length > 0
+        ? await db.list(identity.tableName, filter)
+        : undefined;
     const result = await db.delete(identity.tableName, filter);
     didDelete(result.affected);
-    return result;
+    if (!before) return result;
+    const owners: DeletedRowOwners = before.map((row) => ({
+      id: String(row.id),
+      columns: Object.fromEntries(
+        ownerColumns
+          .filter((column) => Object.hasOwn(row, column))
+          .map((column) => [column, row[column]]),
+      ),
+    }));
+    return { affected: result.affected, owners };
   }
   const { sql, values } = buildWhere(filter, 1, dialect(db));
   const tenant = identity.tenantColumn
@@ -159,6 +196,14 @@ export async function deleteSyncRows(
       ' AS VARCHAR) AS _sync_deleted_tenant'
     : '';
   const discriminator = identity.sti ? ', _meta_type' : '';
+  // Cast to text in the statement: native DuckDB would otherwise return a
+  // UUID owner as a HUGEINT wrapper rather than its canonical string.
+  const owner = ownerColumns
+    .map(
+      (column, index) =>
+        `, CAST(${quote(column)} AS VARCHAR) AS ${ownerAlias(index)}`,
+    )
+    .join('');
   const result = await db.query(
     'DELETE FROM ' +
       quote(identity.tableName) +
@@ -166,10 +211,24 @@ export async function deleteSyncRows(
       sql +
       ' RETURNING CAST(id AS VARCHAR) AS _sync_deleted_id, _sync_origin_device_id, _sync_revision' +
       tenant +
-      discriminator,
+      discriminator +
+      owner,
     ...values,
   );
   didDelete(result.rows.length);
+  const owners: DeletedRowOwners | undefined =
+    ownerColumns.length > 0
+      ? result.rows.map((row) => ({
+          id: String(row._sync_deleted_id),
+          columns: Object.fromEntries(
+            ownerColumns.flatMap((column, index) =>
+              Object.hasOwn(row, ownerAlias(index))
+                ? [[column, row[ownerAlias(index)]]]
+                : [],
+            ),
+          ),
+        }))
+      : undefined;
   for (const row of result.rows) {
     if (!incoming && row._sync_origin_device_id == null) continue;
     const rowId = String(row._sync_deleted_id);
@@ -204,7 +263,76 @@ export async function deleteSyncRows(
     }
     await putSyncTombstone(db, identity, rowId, model, tenantId, revision);
   }
-  return { affected: result.rows.length };
+  return { affected: result.rows.length, owners };
+}
+
+/**
+ * The ids (as text) of the rows stored under `ids` — the proof a delete that
+ * removed nothing needs before treating its id as absent. Reads only `id`,
+ * which the delete's own `RETURNING` already needs, so it asks for no
+ * privilege the delete did not.
+ */
+export async function existingRowIds(
+  db: DatabaseInterface,
+  tableName: string,
+  ids: readonly unknown[],
+): Promise<string[]> {
+  if (ids.length === 0) return [];
+  if (isJsonAdapterHandle(db)) {
+    const rows = await db.list(tableName, { 'id in': [...ids] });
+    return rows.map((row) => String(row.id));
+  }
+  const { sql, values } = buildWhere({ 'id in': [...ids] }, 1, dialect(db));
+  const result = await db.query(
+    `SELECT CAST(id AS VARCHAR) AS _smrt_existing_id FROM ${quote(tableName)} ${sql}`,
+    ...values,
+  );
+  return result.rows.map((row) => String(row._smrt_existing_id));
+}
+
+/**
+ * `UPDATE table SET … WHERE filter RETURNING columns` (each cast to text) in
+ * one statement, so the caller learns the exact row it updated without a
+ * separate read that could see another row version or, inside a
+ * caller-managed PostgreSQL transaction, abort it on failure. SQL adapters
+ * only.
+ */
+export async function updateRowsReturning(
+  db: DatabaseInterface,
+  tableName: string,
+  filter: Record<string, unknown>,
+  updates: Record<string, unknown>,
+  columns: readonly string[],
+): Promise<{ affected: number; rows: Array<Record<string, unknown>> }> {
+  const engine = dialect(db);
+  const entries = Object.entries(updates);
+  const assignments = entries
+    .map(
+      ([column], index) =>
+        `${quote(column)} = ${engine === 'postgres' ? `$${index + 1}` : '?'}`,
+    )
+    .join(', ');
+  const { sql, values } = buildWhere(filter, entries.length + 1, engine);
+  const returning = [
+    'CAST(id AS VARCHAR) AS _smrt_updated_id',
+    ...columns.map(
+      (column, index) =>
+        `CAST(${quote(column)} AS VARCHAR) AS ${ownerAlias(index)}`,
+    ),
+  ].join(', ');
+  const result = await db.query(
+    `UPDATE ${quote(tableName)} SET ${assignments} ${sql} RETURNING ${returning}`,
+    ...entries.map(([, value]) => value),
+    ...values,
+  );
+  return {
+    affected: result.rows.length,
+    rows: result.rows.map((row) =>
+      Object.fromEntries(
+        columns.map((column, index) => [column, row[ownerAlias(index)]]),
+      ),
+    ),
+  };
 }
 
 export async function nullSyncReference(

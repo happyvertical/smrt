@@ -5,18 +5,15 @@
  * (`$lib/server/policy`). Risky calls (`<model>_delete`, risky builder
  * methods) return `pending_approval` and wait for the owner.
  *
- * Which copy of the app a client works on is named by the URL it was
- * configured with, never by state an earlier call left behind:
- *   /mcp                  the live app (default). While a draft is open its
- *                         structure is frozen: builder tools are refused,
- *                         naming the draft; record tools keep working.
- *   /mcp?target=draft     the open draft, for tools and builder alike (a draft
- *                         approves its own risky changes; live is untouched).
+ * The scope is named by the URL a client was configured with, never by state
+ * an earlier call left behind:
+ *   /mcp                  the live app (default). Record tools work on live;
+ *                         every structural tool becomes a change waiting for
+ *                         the owner (builder tools never reach live).
  *   /mcp?scope=assistant  the assistant's split, resolved per call from the
- *                         owner's state: builder tools on the draft when one is
- *                         open, record tools on the copy the owner is viewing.
+ *                         owner's state.
  *   /mcp?scope=import-plan  private workbook planning: no tools; every call denied.
- * Anything else is a 400.
+ * `?target=` is refused (400), and anything else is a 400 too.
  *
  * Auth: the owner's session cookie, or an owner-minted local MCP token
  * (`Authorization: Bearer`). `tools/list` is not cached by clients: the
@@ -51,12 +48,8 @@ function mount(
 }
 
 type Handler = ReturnType<typeof mount>;
-const handlers: Record<
-  'live' | 'draft' | 'assistant' | 'import-plan',
-  Handler
-> = {
+const handlers: Record<'live' | 'assistant' | 'import-plan', Handler> = {
   live: mount(() => scopeFor('live')),
-  draft: mount(() => scopeFor('draft')),
   assistant: mount((principal) => assistantScope(principal)),
   'import-plan': mount(() => scopeFor('live'), 'none'),
 };

@@ -59,6 +59,27 @@ export class SlackMessage extends Message {
   }
 
   /**
+   * Reply in the same channel and thread. `channelId` is routing identity
+   * (SlackSender posts to it), so it is restored after the base draft reset;
+   * a reply to a top-level message starts that message's thread.
+   */
+  override createReply(options?: { replyAll?: boolean }): SlackMessage {
+    const reply = super.createReply(options) as SlackMessage;
+    reply.channelId = this.channelId;
+    reply.channelName = this.channelName;
+    reply.slackThreadTs = this.slackThreadTs || this.slackTs;
+    return reply;
+  }
+
+  /** Forward into the same channel, outside the original's thread. */
+  override createForward(): SlackMessage {
+    const forward = super.createForward() as SlackMessage;
+    forward.channelId = this.channelId;
+    forward.channelName = this.channelName;
+    return forward;
+  }
+
+  /**
    * Get reactions as parsed array
    */
   getReactions(): Array<{ name: string; count: number; users?: string[] }> {

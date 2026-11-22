@@ -11,6 +11,8 @@ import {
   cancelAiRun,
   createTrackedAiClient,
   getAiRun,
+  pruneAiRuns,
+  pruneAiRunTrajectories,
   readAiRunCheckpoint,
   stopAiRun,
 } from '@happyvertical/smrt-core';
@@ -34,6 +36,7 @@ import {
   WORKFLOW_RUN_HANDLER,
   type WorkflowRunJobsOptions,
   WorkflowRunKeyConflictError,
+  WorkflowRunKeyExpiredError,
   type WorkflowStep,
   workflowStopFence,
 } from '../index.js';
@@ -215,6 +218,33 @@ describe('workflow run jobs', () => {
       bound.start({ ...startInput(), input: { prompt: 'Different request' } }),
     ).rejects.toBeInstanceOf(WorkflowRunKeyConflictError);
     expect(await jobsOf(first.id)).toHaveLength(1);
+  });
+
+  it('refuses a key whose run retention removed, for the same and a changed request', async () => {
+    const bound = install();
+    const first = await bound.start(startInput('expiring'));
+    await worker();
+    await end(first.id);
+    await jobSettled(first.id);
+    await db.query(
+      "UPDATE _smrt_ai_runs SET finished_at = '2000-01-01T00:00:00.000Z' WHERE id = $1",
+      first.id,
+    );
+    await pruneAiRunTrajectories(db, { maxAgeMs: 0 });
+    await pruneAiRuns(db, { maxAgeMs: 0 });
+    expect(await getAiRun(db, first.id)).toBeNull();
+    await expect(bound.start(startInput('expiring'))).rejects.toBeInstanceOf(
+      WorkflowRunKeyExpiredError,
+    );
+    await expect(
+      bound.start({
+        ...startInput('expiring'),
+        input: { prompt: 'Different request' },
+      }),
+    ).rejects.toBeInstanceOf(WorkflowRunKeyExpiredError);
+    expect(await getAiRun(db, first.id)).toBeNull();
+    // A new key starts a new run.
+    expect((await bound.start(startInput('renewed'))).status).toBe('running');
   });
 
   it('admits the job again when a start crashed between the run and its job', async () => {

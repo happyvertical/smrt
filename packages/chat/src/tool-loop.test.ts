@@ -162,6 +162,24 @@ class ToolLoopSerializedNote extends SmrtObject {
   title = '';
 }
 
+// A model with no `api.writable` allowlist: an update reaches the row with
+// every key the write policy does not drop.
+@smrt({
+  api: { include: ['list', 'get', 'create', 'update'] },
+  collection: 'tool_loop_plain_notes',
+  tableName: 'tool_loop_plain_notes',
+  tenantScoped: { field: 'tenantId', mode: 'optional' },
+})
+class ToolLoopPlainNote extends SmrtObject {
+  tenantId: string | null = null;
+
+  @field()
+  title = '';
+
+  @field({ sensitive: true })
+  internalMemo = '';
+}
+
 function toolCall(name: string, args: Record<string, unknown>): AIResponse {
   return {
     content: '',
@@ -407,6 +425,7 @@ describe('runToolLoop', () => {
     ObjectRegistry.register(AppNote, {
       name: 'ToolLoopNote',
       packageName: '@fixture/c4-app',
+      replaceParent: true,
     });
     const effective = '@fixture/c4-app:ToolLoopNote';
     try {
@@ -902,6 +921,117 @@ describe('runToolLoop', () => {
     });
     expect(result.invocations[0]?.observation).not.toHaveProperty(
       'internalMemo',
+    );
+  });
+
+  it('an update sets declared fields only and is observed through the class serialiser', async () => {
+    await grant('tool_loop_plain_notes.update');
+    const notes = await ObjectRegistry.getCollection('ToolLoopPlainNote', {
+      db,
+    });
+    const seeded = await notes.create({ title: 'Original' });
+    (seeded as ToolLoopPlainNote).internalMemo = 'never expose this';
+    await seeded.save();
+    const update = async (args: Record<string, unknown>) => {
+      const ai = makeAI((_m, options, call) =>
+        call === 0 && toolsOffered(options)
+          ? toolCall('tool_loop_plain_notes.update', { id: seeded.id, ...args })
+          : textResponse('done'),
+      );
+      const result = await runToolLoop({
+        ai,
+        db,
+        messages: [{ role: 'user', content: 'update note' }],
+        tools: tools(['tool_loop_plain_notes.update']),
+        principal: {
+          runAsUserId: userId,
+          tenantId,
+          allowedTools: ['tool_loop_plain_notes.update'],
+        },
+        audit: () => {},
+      });
+      const invocation = result.invocations[0];
+      if (!invocation) throw new Error('expected one invocation');
+      return invocation;
+    };
+    const stored = async () =>
+      (
+        (await notes.get(String(seeded.id), {
+          cache: false,
+        })) as ToolLoopPlainNote
+      ).title;
+
+    for (const key of [
+      'toPublicJSON',
+      'toJSON',
+      'save',
+      'constructor',
+      'notAField',
+    ]) {
+      const refused = await update({ title: 'Changed', [key]: 0 });
+      expect(refused).toMatchObject({ ok: false, error: 'invalid_request' });
+      expect(refused.observation).toMatchObject({
+        code: 'VALIDATION_UNKNOWN_FIELD',
+        error: `Field '${key}' cannot be set.`,
+      });
+      expect(JSON.stringify(refused.observation)).not.toContain(
+        'never expose this',
+      );
+      expect(await stored()).toBe('Original');
+    }
+
+    const applied = await update({ title: 'Renamed' });
+    expect(applied.ok).toBe(true);
+    expect(applied.observation).toMatchObject({ title: 'Renamed' });
+    expect(applied.observation).not.toHaveProperty('internalMemo');
+    expect(await stored()).toBe('Renamed');
+  });
+
+  it('a read filters only on fields the principal may read', async () => {
+    await grant('tool_loop_plain_notes.read');
+    const notes = await ObjectRegistry.getCollection('ToolLoopPlainNote', {
+      db,
+    });
+    const seeded = await notes.create({ title: 'Filtered' });
+    (seeded as ToolLoopPlainNote).internalMemo = 'never expose this';
+    await seeded.save();
+    const read = async (where: Record<string, unknown>) => {
+      const ai = makeAI((_m, options, call) =>
+        call === 0 && toolsOffered(options)
+          ? toolCall('tool_loop_plain_notes.read', { where })
+          : textResponse('done'),
+      );
+      const result = await runToolLoop({
+        ai,
+        db,
+        messages: [{ role: 'user', content: 'find notes' }],
+        tools: tools(['tool_loop_plain_notes.read']),
+        principal: {
+          runAsUserId: userId,
+          tenantId,
+          allowedTools: ['tool_loop_plain_notes.read'],
+        },
+        audit: () => {},
+      });
+      const invocation = result.invocations[0];
+      if (!invocation) throw new Error('expected one invocation');
+      return invocation;
+    };
+
+    for (const key of ['internalMemo', 'internal_memo', 'noSuchField']) {
+      const refused = await read({ [key]: 'never expose this' });
+      expect(refused).toMatchObject({ ok: false, error: 'invalid_request' });
+      expect(refused.observation).toMatchObject({
+        code: 'QUERY_FIELD_NOT_ALLOWED',
+        error: `Invalid filter field: '${key}'.`,
+      });
+    }
+
+    const served = await read({ title: 'Filtered' });
+    expect(served.ok).toBe(true);
+    expect(served.observation).toMatchObject([{ title: 'Filtered' }]);
+    expect(JSON.stringify(served.observation)).not.toContain(
+      'never expose this',
     );
   });
 
@@ -3187,6 +3317,7 @@ describe('server approval policy', () => {
       });
       ObjectRegistry.register(SameNameIdentity, {
         packageName: '@fixture/safety-app',
+        replaceParent: true,
       });
       ObjectRegistry.register(PrivateSetting, {
         packageName: '@fixture/safety-app',

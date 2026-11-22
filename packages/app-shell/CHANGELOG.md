@@ -1,5 +1,234 @@
 # @happyvertical/smrt-app-shell
 
+## 0.69.0
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.69.0
+  - @happyvertical/smrt-app-runtime@0.69.0
+  - @happyvertical/smrt-chat@0.69.0
+  - @happyvertical/smrt-features@0.69.0
+  - @happyvertical/smrt-inference@0.69.0
+  - @happyvertical/smrt-jobs@0.69.0
+  - @happyvertical/smrt-preferences@0.69.0
+  - @happyvertical/smrt-profiles@0.69.0
+  - @happyvertical/smrt-prompts@0.69.0
+  - @happyvertical/smrt-reports@0.69.0
+  - @happyvertical/smrt-secrets@0.69.0
+  - @happyvertical/smrt-app-mcp@0.69.0
+  - @happyvertical/smrt-svelte@0.69.0
+  - @happyvertical/smrt-web@0.69.0
+  - @happyvertical/smrt-subscriptions@0.69.0
+  - @happyvertical/smrt-tenancy@0.69.0
+  - @happyvertical/smrt-users@0.69.0
+  - @happyvertical/smrt-workflows@0.69.0
+  - @happyvertical/smrt-spreadsheets@0.69.0
+  - @happyvertical/smrt-config@0.69.0
+  - @happyvertical/smrt-ui@0.69.0
+
+## 0.68.0
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.68.0
+  - @happyvertical/smrt-app-runtime@0.68.0
+  - @happyvertical/smrt-chat@0.68.0
+  - @happyvertical/smrt-features@0.68.0
+  - @happyvertical/smrt-inference@0.68.0
+  - @happyvertical/smrt-jobs@0.68.0
+  - @happyvertical/smrt-preferences@0.68.0
+  - @happyvertical/smrt-profiles@0.68.0
+  - @happyvertical/smrt-prompts@0.68.0
+  - @happyvertical/smrt-reports@0.68.0
+  - @happyvertical/smrt-secrets@0.68.0
+  - @happyvertical/smrt-app-mcp@0.68.0
+  - @happyvertical/smrt-svelte@0.68.0
+  - @happyvertical/smrt-web@0.68.0
+  - @happyvertical/smrt-subscriptions@0.68.0
+  - @happyvertical/smrt-tenancy@0.68.0
+  - @happyvertical/smrt-users@0.68.0
+  - @happyvertical/smrt-workflows@0.68.0
+  - @happyvertical/smrt-spreadsheets@0.68.0
+  - @happyvertical/smrt-config@0.68.0
+  - @happyvertical/smrt-ui@0.68.0
+
+## 0.67.0
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.67.0
+  - @happyvertical/smrt-app-runtime@0.67.0
+  - @happyvertical/smrt-chat@0.67.0
+  - @happyvertical/smrt-inference@0.67.0
+  - @happyvertical/smrt-jobs@0.67.0
+  - @happyvertical/smrt-preferences@0.67.0
+  - @happyvertical/smrt-profiles@0.67.0
+  - @happyvertical/smrt-prompts@0.67.0
+  - @happyvertical/smrt-reports@0.67.0
+  - @happyvertical/smrt-secrets@0.67.0
+  - @happyvertical/smrt-app-mcp@0.67.0
+  - @happyvertical/smrt-svelte@0.67.0
+  - @happyvertical/smrt-web@0.67.0
+  - @happyvertical/smrt-tenancy@0.67.0
+  - @happyvertical/smrt-users@0.67.0
+  - @happyvertical/smrt-workflows@0.67.0
+  - @happyvertical/smrt-spreadsheets@0.67.0
+  - @happyvertical/smrt-config@0.67.0
+  - @happyvertical/smrt-ui@0.67.0
+
+## 0.66.1
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.66.1
+  - @happyvertical/smrt-app-runtime@0.66.1
+  - @happyvertical/smrt-chat@0.66.1
+  - @happyvertical/smrt-inference@0.66.1
+  - @happyvertical/smrt-jobs@0.66.1
+  - @happyvertical/smrt-preferences@0.66.1
+  - @happyvertical/smrt-profiles@0.66.1
+  - @happyvertical/smrt-prompts@0.66.1
+  - @happyvertical/smrt-reports@0.66.1
+  - @happyvertical/smrt-secrets@0.66.1
+  - @happyvertical/smrt-app-mcp@0.66.1
+  - @happyvertical/smrt-svelte@0.66.1
+  - @happyvertical/smrt-web@0.66.1
+  - @happyvertical/smrt-tenancy@0.66.1
+  - @happyvertical/smrt-users@0.66.1
+  - @happyvertical/smrt-workflows@0.66.1
+  - @happyvertical/smrt-spreadsheets@0.66.1
+  - @happyvertical/smrt-config@0.66.1
+  - @happyvertical/smrt-ui@0.66.1
+
+## 0.66.0
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.66.0
+  - @happyvertical/smrt-app-runtime@0.66.0
+  - @happyvertical/smrt-chat@0.66.0
+  - @happyvertical/smrt-inference@0.66.0
+  - @happyvertical/smrt-jobs@0.66.0
+  - @happyvertical/smrt-preferences@0.66.0
+  - @happyvertical/smrt-profiles@0.66.0
+  - @happyvertical/smrt-prompts@0.66.0
+  - @happyvertical/smrt-reports@0.66.0
+  - @happyvertical/smrt-secrets@0.66.0
+  - @happyvertical/smrt-app-mcp@0.66.0
+  - @happyvertical/smrt-svelte@0.66.0
+  - @happyvertical/smrt-web@0.66.0
+  - @happyvertical/smrt-tenancy@0.66.0
+  - @happyvertical/smrt-users@0.66.0
+  - @happyvertical/smrt-workflows@0.66.0
+  - @happyvertical/smrt-spreadsheets@0.66.0
+  - @happyvertical/smrt-config@0.66.0
+  - @happyvertical/smrt-ui@0.66.0
+
+## 0.65.0
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.65.0
+  - @happyvertical/smrt-app-runtime@0.65.0
+  - @happyvertical/smrt-chat@0.65.0
+  - @happyvertical/smrt-inference@0.65.0
+  - @happyvertical/smrt-jobs@0.65.0
+  - @happyvertical/smrt-preferences@0.65.0
+  - @happyvertical/smrt-profiles@0.65.0
+  - @happyvertical/smrt-prompts@0.65.0
+  - @happyvertical/smrt-reports@0.65.0
+  - @happyvertical/smrt-secrets@0.65.0
+  - @happyvertical/smrt-app-mcp@0.65.0
+  - @happyvertical/smrt-svelte@0.65.0
+  - @happyvertical/smrt-web@0.65.0
+  - @happyvertical/smrt-tenancy@0.65.0
+  - @happyvertical/smrt-users@0.65.0
+  - @happyvertical/smrt-workflows@0.65.0
+  - @happyvertical/smrt-spreadsheets@0.65.0
+  - @happyvertical/smrt-config@0.65.0
+  - @happyvertical/smrt-ui@0.65.0
+
+## 0.64.0
+
+### Patch Changes
+
+- Updated dependencies [cde1c08]
+  - @happyvertical/smrt-users@0.64.0
+  - @happyvertical/smrt-app-runtime@0.64.0
+  - @happyvertical/smrt-chat@0.64.0
+  - @happyvertical/smrt-inference@0.64.0
+  - @happyvertical/smrt-preferences@0.64.0
+  - @happyvertical/smrt-svelte@0.64.0
+  - @happyvertical/smrt-config@0.64.0
+  - @happyvertical/smrt-core@0.64.0
+  - @happyvertical/smrt-jobs@0.64.0
+  - @happyvertical/smrt-profiles@0.64.0
+  - @happyvertical/smrt-prompts@0.64.0
+  - @happyvertical/smrt-reports@0.64.0
+  - @happyvertical/smrt-secrets@0.64.0
+  - @happyvertical/smrt-app-mcp@0.64.0
+  - @happyvertical/smrt-ui@0.64.0
+  - @happyvertical/smrt-web@0.64.0
+  - @happyvertical/smrt-spreadsheets@0.64.0
+  - @happyvertical/smrt-tenancy@0.64.0
+  - @happyvertical/smrt-workflows@0.64.0
+
+## 0.63.0
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.63.0
+  - @happyvertical/smrt-app-runtime@0.63.0
+  - @happyvertical/smrt-chat@0.63.0
+  - @happyvertical/smrt-inference@0.63.0
+  - @happyvertical/smrt-jobs@0.63.0
+  - @happyvertical/smrt-preferences@0.63.0
+  - @happyvertical/smrt-profiles@0.63.0
+  - @happyvertical/smrt-prompts@0.63.0
+  - @happyvertical/smrt-reports@0.63.0
+  - @happyvertical/smrt-secrets@0.63.0
+  - @happyvertical/smrt-app-mcp@0.63.0
+  - @happyvertical/smrt-svelte@0.63.0
+  - @happyvertical/smrt-web@0.63.0
+  - @happyvertical/smrt-tenancy@0.63.0
+  - @happyvertical/smrt-users@0.63.0
+  - @happyvertical/smrt-workflows@0.63.0
+  - @happyvertical/smrt-spreadsheets@0.63.0
+  - @happyvertical/smrt-config@0.63.0
+  - @happyvertical/smrt-ui@0.63.0
+
+## 0.62.14
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.62.14
+  - @happyvertical/smrt-app-runtime@0.62.14
+  - @happyvertical/smrt-chat@0.62.14
+  - @happyvertical/smrt-inference@0.62.14
+  - @happyvertical/smrt-jobs@0.62.14
+  - @happyvertical/smrt-preferences@0.62.14
+  - @happyvertical/smrt-profiles@0.62.14
+  - @happyvertical/smrt-prompts@0.62.14
+  - @happyvertical/smrt-reports@0.62.14
+  - @happyvertical/smrt-secrets@0.62.14
+  - @happyvertical/smrt-app-mcp@0.62.14
+  - @happyvertical/smrt-svelte@0.62.14
+  - @happyvertical/smrt-web@0.62.14
+  - @happyvertical/smrt-tenancy@0.62.14
+  - @happyvertical/smrt-users@0.62.14
+  - @happyvertical/smrt-workflows@0.62.14
+  - @happyvertical/smrt-spreadsheets@0.62.14
+  - @happyvertical/smrt-config@0.62.14
+  - @happyvertical/smrt-ui@0.62.14
+
 ## 0.62.13
 
 ### Patch Changes

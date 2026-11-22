@@ -33,7 +33,9 @@ import type {
 } from '@happyvertical/email';
 import {
   assertMailAccess,
+  inMailSystemAccess,
   MailAccessError,
+  resolveMailPrincipal,
   runWithMailSystemAccess,
 } from './access.js';
 import type { EmailCollection } from './collections/EmailCollection.js';
@@ -49,6 +51,7 @@ import {
 } from './mail-sync.js';
 import type { Email } from './models/Email.js';
 import type { EmailAccount } from './models/EmailAccount.js';
+import { auditMailAction, stampHandledBy } from './send-approval.js';
 
 /** What to do to the selected messages. */
 export type MailTriageAction =
@@ -322,6 +325,8 @@ export async function triageMailMessages(
   // can see, so it takes the read scope as well as the triage scope.
   await assertMailAccess(account, 'read');
   await assertMailAccess(account, 'triage');
+  // Recorded as "handled by" on each row the server accepted.
+  const actor = inMailSystemAccess() ? null : await resolveMailPrincipal();
 
   const result: MailTriageResult = {
     action: action.kind,
@@ -508,7 +513,10 @@ export async function triageMailMessages(
               { folderId, folderPath },
               { keepBodies: true, deriveState: true },
             );
+            stampHandledBy(row, actor);
             await row.save();
+            if (actor)
+              await auditMailAction(`messages.triage.${action.kind}`, row);
             if (folderId) touched.add(folderId);
             result.updated.push(row.id);
           } catch (error) {

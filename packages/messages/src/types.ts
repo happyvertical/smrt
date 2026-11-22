@@ -107,6 +107,12 @@ export interface MessageSendResult {
    * opposed to a definite rejection. Callers must not blindly resend it.
    */
   outcomeUnknown?: boolean;
+  /**
+   * Set when an agent's send was held for a person's approval instead of
+   * leaving (see `send-approval.ts`). Nothing was sent; the draft is
+   * unchanged and waits under `approvalId`.
+   */
+  pendingApproval?: { approvalId: string; created: boolean };
   sentAt: Date;
 }
 
@@ -205,6 +211,9 @@ export interface MessageOptions extends SmrtObjectOptions {
   maxRetries?: number;
   scheduledSendAt?: Date | null;
   inReplyToMessageId?: string;
+  handledById?: string | null;
+  handledByKind?: string | null;
+  handledAt?: Date | null;
 }
 
 /**
@@ -330,7 +339,16 @@ export interface EmailAccountOptions extends AccountOptions {
   lastSyncError?: string | null;
   /** More changes were waiting when the last run stopped. */
   backlog?: boolean;
+  /** Agent send policy; null means `require_approval`. */
+  agentSendPolicy?: AgentSendPolicy | null;
 }
+
+/**
+ * What happens when an agent sends from a mail account. `require_approval`
+ * (the default, also what null means) holds the draft until a person with
+ * `send` approves it; `auto_send` lets it leave. Person sends are unaffected.
+ */
+export type AgentSendPolicy = 'require_approval' | 'auto_send';
 
 /**
  * Options for creating EmailFolder

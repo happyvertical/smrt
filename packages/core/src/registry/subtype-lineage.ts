@@ -1,12 +1,14 @@
 /** Qualified manifest lineage outlives registrations replaced by descendants. */
 
 import { ConfigurationError } from '../errors';
+import { sameNameSubclassChoice } from '../manifest/model-replacements.js';
 import { getRegistryGeneration } from './generation';
 import { transferRuntimeOverride } from './runtime-overrides';
 import { getClasses, getInheritanceCache } from './shared-state';
 import type { RegisteredClass } from './types';
 
 declare global {
+  var __smrtRuntimeCoexisting: Set<string> | undefined;
   var __smrtSubtypeParents: Map<string, string> | undefined;
   var __smrtReplacedDeclarations: Map<string, RegisteredClass> | undefined;
 }
@@ -44,20 +46,69 @@ function parents(): Map<string, string> {
   globalThis.__smrtSubtypeParents ??= new Map();
   return globalThis.__smrtSubtypeParents;
 }
+/**
+ * Registry keys of run-time models (`registerRuntimeModel`) that extend a
+ * registered class without `replaces`: they coexist with that class by their
+ * own definition, so a later registration of the class never asks them for a
+ * `replaceParent` declaration (#5143).
+ */
+export function runtimeCoexistingModels(): Set<string> {
+  globalThis.__smrtRuntimeCoexisting ??= new Set();
+  return globalThis.__smrtRuntimeCoexisting;
+}
 export function clearSubtypeLineage(): void {
   parents().clear();
   replacedDeclarations().clear();
+  runtimeCoexistingModels().clear();
+}
+
+/**
+ * Test registry snapshots restore the whole lineage, including the run-time
+ * coexistence set, that ObjectRegistry.clear() drops; nothing recorded after
+ * the snapshot survives its restore.
+ */
+export function snapshotSubtypeLineage(): () => void {
+  return captureSubtypeLineage();
 }
 
 /** Roll back only the edited identities, retaining unrelated registrations. */
 export function checkpointSubtypeLineage(
   names: ReadonlySet<string>,
 ): () => void {
-  const links = new Map([...names].map((name) => [name, parents().get(name)]));
-  const declarations = new Map(
-    [...names].map((name) => [name, replacedDeclarations().get(name)]),
+  return captureSubtypeLineage(names);
+}
+
+/**
+ * The one capture of subtype lineage: `names` limits parents, retained
+ * declarations and run-time coexistence membership to those identities, so a
+ * named restore leaves every other key as it is at restore time; without
+ * `names` the whole lineage is replaced. Everything is saved by value, since
+ * `clearSubtypeLineage()` empties the live collections in place.
+ */
+function captureSubtypeLineage(names?: ReadonlySet<string>): () => void {
+  const links = names
+    ? new Map([...names].map((name) => [name, parents().get(name)]))
+    : new Map<string, string | undefined>(parents());
+  const declarations = names
+    ? new Map(
+        [...names].map((name) => [name, replacedDeclarations().get(name)]),
+      )
+    : new Map<string, RegisteredClass | undefined>(replacedDeclarations());
+  const coexisting = new Map(
+    [...(names ?? runtimeCoexistingModels())].map((name) => [
+      name,
+      runtimeCoexistingModels().has(name),
+    ]),
   );
   return () => {
+    if (!names) {
+      parents().clear();
+      replacedDeclarations().clear();
+      runtimeCoexistingModels().clear();
+    }
+    for (const [name, member] of coexisting)
+      if (member) runtimeCoexistingModels().add(name);
+      else runtimeCoexistingModels().delete(name);
     for (const [name, parent] of links)
       if (parent) parents().set(name, parent);
       else parents().delete(name);
@@ -77,6 +128,10 @@ export function recordSubtypeParent(
   }
   parents().set(name, parent);
 }
+/** The same-named qualified parent recorded for `name`, if any. */
+export function recordedSubtypeParent(name: string): string | undefined {
+  return parents().get(name);
+}
 export function isSubtypeOf(child: string, ancestor: string): boolean {
   const visited = new Set<string>();
   for (
@@ -89,7 +144,31 @@ export function isSubtypeOf(child: string, ancestor: string): boolean {
   }
   return false;
 }
-/** Late intermediate manifests can connect a previously disjoint parent/leaf. */
+/**
+ * Whether `child` replaces `ancestor`: every same-named class on the recorded
+ * path from `child` up to `ancestor` declares `replaceParent: true` (#5143).
+ * Ancestry alone never replaces: a recorded class that declares nothing is
+ * not a replacement (registration refuses it).
+ */
+export function replacesAncestor(child: string, ancestor: string): boolean {
+  const visited = new Set<string>();
+  for (let current = child; !visited.has(current); ) {
+    visited.add(current);
+    const parent = parents().get(current);
+    if (!parent) return false;
+    const entry =
+      getClasses().get(current) ?? replacedDeclarations().get(current);
+    if (sameNameSubclassChoice(entry?.config) !== 'replace') return false;
+    if (parent === ancestor) return true;
+    current = parent;
+  }
+  return false;
+}
+
+/**
+ * Late intermediate manifests can connect a previously disjoint parent/leaf.
+ * Only a declared replacement (`replacesAncestor`) removes its parent.
+ */
 export function reconcileSubtypeLineage(): void {
   if (parents().size === 0) return;
   const classes = getClasses();
@@ -117,7 +196,7 @@ export function reconcileSubtypeLineage(): void {
           childKey === parentKey ||
           child.name !== parent.name ||
           child.schema?.tableName !== parent.schema?.tableName ||
-          !isSubtypeOf(childKey, parentKey)
+          !replacesAncestor(childKey, parentKey)
         )
           continue;
         child.replacedQualifiedNames = [

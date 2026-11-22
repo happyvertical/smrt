@@ -15,15 +15,22 @@ import { clearCache, loadConfig } from '@happyvertical/smrt-config';
 import { build } from 'esbuild';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SmrtCollection } from '../collection.js';
+import { assertCreateTargetSurface } from '../create-target.js';
 import { field } from '../decorators/index.js';
 import { reportUnexpectedHttpError } from '../generators/route-error';
 import { clearManifestCache } from '../manifest/manifest-loader.js';
 import { SmrtObject } from '../object.js';
-import { parseRestListWhere } from '../query-bounds.js';
+import { publicSerializerOf, toPublicJSONValue } from '../public-json.js';
+import { assertQueryAccess, parseRestListWhere } from '../query-access.js';
 import { ObjectRegistry, smrt } from '../registry.js';
+import { assertCreateInput } from '../request-input.js';
 import { setRuntimeExposureGate } from '../runtime-exposure.js';
 import type { SmartObjectManifest } from '../scanner/types.js';
+import { isServiceOptionInput } from '../service-options.js';
 import { snapshotObjectRegistryState } from '../test-utils.js';
+import { applyWhereScope, WhereClauseError } from '../where-keys.js';
+import { assignUpdateInput } from '../write-input.js';
+import { generateClientModule } from './generated-client.js';
 import { generateSvelteKitRoutes } from './sveltekit-generator.js';
 
 // Canonical instance injection prevents provider/env/file configuration fallback.
@@ -60,6 +67,25 @@ function createManifest(
   };
 }
 
+/**
+ * Tell the core shim the tenancy each manifest model has at request time
+ * (#5375): its `decoratorConfig.tenantScoped`, by registry key.
+ */
+function declareTenancy(manifest: SmartObjectManifest): void {
+  const state = globalThis as Record<string, unknown>;
+  state.__smrtGeneratedTenantPolicies ??= {};
+  const policies = state.__smrtGeneratedTenantPolicies as Record<
+    string,
+    unknown
+  >;
+  for (const [key, object] of Object.entries(manifest.objects)) {
+    const tenantScoped = (
+      object.decoratorConfig as { tenantScoped?: unknown } | undefined
+    )?.tenantScoped;
+    if (tenantScoped) policies[object.qualifiedName ?? key] = tenantScoped;
+  }
+}
+
 function writeWorkspaceTenancyShim(projectRoot: string): void {
   const packageDir = join(
     projectRoot,
@@ -88,6 +114,7 @@ function writeWorkspaceTenancyShim(projectRoot: string): void {
       'export function getCurrentTenant() { return globalThis.__smrtGeneratedActiveTenantContext; }',
       'export function hasTenantContext() { return Boolean(globalThis.__smrtGeneratedActiveTenantContext); }',
       'export function isSuperAdminBypass() { return false; }',
+      'export function isSystemContext() { return globalThis.__smrtGeneratedSystemContext === true; }',
       'export function isTenancyEnabled() { return true; }',
       'export function enterTenantContext(context) {',
       '  globalThis.__smrtGeneratedActiveTenantContext = context;',
@@ -184,7 +211,10 @@ function writeWorkspaceCoreShim(projectRoot: string): void {
       'export const ObjectRegistry = {',
       '  resolveCreateTarget(name, data, context) { return globalThis.__smrtGeneratedRegistry?.resolveCreateTarget(name, data, context) ?? { name, collectionName: name, data }; },',
       '  getFields(name) { return globalThis.__smrtGeneratedRegistry?.getFields(name) ?? new Map(); },',
+      // The real request-key rule over the fixture registry's fields.
+      '  isServiceOptionInput(name, key) { return globalThis.__smrtGeneratedIsServiceOptionInput(key, (field) => (globalThis.__smrtGeneratedRegistry?.getFields(name) ?? new Map()).has(field)); },',
       '  getConfig(name) { return globalThis.__smrtGeneratedRegistry?.getConfig(name) ?? {}; },',
+      '  getClass(name) { return globalThis.__smrtGeneratedRegistry?.getClass?.(name); },',
       '  async getCollection(...args) {',
       '    globalThis.__smrtGeneratedHelperCalls.push(args);',
       '    if (globalThis.__smrtGeneratedCollectionResolver) return globalThis.__smrtGeneratedCollectionResolver(...args);',
@@ -211,7 +241,79 @@ function writeWorkspaceCoreShim(projectRoot: string): void {
       "  return 'W/\"' + version + '-' + representation + '\"';",
       '}',
       'export async function getTableVersion() { return 1; }',
-      `export const parseRestListWhere = (${parseRestListWhere.toString()});`,
+      // The real list query parser, over the real registry.
+      'export const parseRestListWhere = (...args) => globalThis.__smrtGeneratedRequestHelpers.parseRestListWhere(...args);',
+      // The real scope helper: the emitted tenant-scoped list route calls it.
+      'export const applyWhereScope = globalThis.__smrtGeneratedApplyWhereScope;',
+      // Request tenancy (#5375): every emitted handler resolves it with one
+      // core call. The shim records each call; a test that needs a decision
+      // installs \`__smrtGeneratedTenancy(input)\`, which returns the
+      // resolved tenancy (\`readScope\`, \`scopeOptions\`) or throws the
+      // typed refusal. The real rule runs in smrt-tenancy's
+      // effective-tenancy suites.
+      'export function enterRequestTenancy(input) {',
+      '  (globalThis.__smrtGeneratedTenancyCalls ??= []).push(input);',
+      '  if (globalThis.__smrtGeneratedTenancy) return globalThis.__smrtGeneratedTenancy(input);',
+      // Core's actor rule over the tenancy shim's context, and its write
+      // and action decisions for the model's tenancy as the fixture registry
+      // reports it at request time (`getConfig(name).tenantScoped`).
+      '  const refuse = (status, message) => { throw Object.assign(new Error(message), { status, publicMessage: message }); };',
+      "  const record = (value) => value && typeof value === 'object' ? value : undefined;",
+      "  const text = (value) => typeof value === 'string' && value ? value : undefined;",
+      '  const l = record(input.locals) ?? {};',
+      '  const user = record(l.user); const session = record(l.session); const context = record(l.tenantContext);',
+      '  const tenantId = text(l.tenantId ?? user?.tenantId ?? session?.tenantId ?? context?.tenantId);',
+      '  const userId = text(l.userId ?? user?.id ?? user?.userId ?? session?.userId ?? context?.userId);',
+      '  const raw = l.permissions ?? l.permissionSet ?? l.smrtPermissions ?? context?.permissions;',
+      "  const permissions = raw instanceof Set ? raw : Array.isArray(raw) && raw.every((v) => typeof v === 'string') ? new Set(raw) : undefined;",
+      '  const authenticated = !!user || !!session || l.smrtAuth === true;',
+      "  if (input.requirePrincipal && (!tenantId || !userId || !permissions)) refuse(403, 'Authenticated principal context is incomplete');",
+      '  const active = globalThis.__smrtGeneratedActiveTenantContext;',
+      '  let actorTenant = tenantId;',
+      '  if (active) {',
+      '    const userMismatch = input.requirePrincipal ? active.userId !== userId : !!userId && !!active.userId && active.userId !== userId;',
+      "    if ((tenantId && active.tenantId !== tenantId) || userMismatch) refuse(403, 'Tenant context does not match authenticated principal');",
+      '    actorTenant = active.tenantId;',
+      '    if (input.requirePrincipal) enterRequestTenantContext({ ...active, tenantId, userId, permissions });',
+      '  }',
+      '  const policy = globalThis.__smrtGeneratedTenantPolicies?.[input.model] ?? globalThis.__smrtGeneratedRegistry?.getConfig?.(input.model)?.tenantScoped;',
+      '  const system = globalThis.__smrtGeneratedSystemContext === true;',
+      '  const bypass = context?.superAdminBypass === true && !!policy && policy.allowSuperAdminBypass === true;',
+      "  const mutating = input.operation === 'action' ? input.action?.mutating === true : input.operation !== 'list' && input.operation !== 'get';",
+      "  const receivesScope = input.action?.itemScoped === true || (Array.isArray(input.action?.parameters) && input.action.parameters.length === 1 && input.action.parameters[0] === 'options');",
+      "  const needsTenant = !!policy && !system && !actorTenant && !bypass && (mutating || (input.operation === 'action' && !receivesScope));",
+      "  if (needsTenant) refuse(authenticated ? 403 : 401, 'Tenant context required');",
+      '  if (!active && actorTenant) enterRequestTenantContext(input.requirePrincipal ? { tenantId, userId, permissions } : { tenantId });',
+      '  return { model: input.model, readScope: globalThis.__smrtGeneratedReadScope?.(input.model) };',
+      '}',
+      'export function tenancyReadScope(tenancy) { return tenancy?.readScope; }',
+      'export function scopeActionOptions(tenancy, options) { return tenancy?.scopeOptions ? tenancy.scopeOptions(options) : options; }',
+      'export function boundTenancyCacheScoped() { return globalThis.__smrtGeneratedTenancyCacheScoped === true; }',
+      'export function boundTenancyEtagDiscriminator() { return undefined; }',
+      'export async function runInRequestTenancy(input, fn) {',
+      '  const tenancy = enterRequestTenancy(input);',
+      '  return fn(tenancy);',
+      '}',
+      'export function getRequestTenantContext() { return globalThis.__smrtGeneratedActiveTenantContext; }',
+      'export function enterRequestTenantContext(context) { globalThis.__smrtGeneratedActiveTenantContext = context; (globalThis.__smrtGeneratedTenantContexts ??= []).push(context); }',
+      // The real request helpers. `applyUpdateInput` runs the real update
+      // rule over the fixture registry's fields.
+      'export const publicSerializerOf = (value) => globalThis.__smrtGeneratedRequestHelpers.publicSerializerOf(value);',
+      'export const toPublicJSONValue = (value, options) => globalThis.__smrtGeneratedRequestHelpers.toPublicJSONValue(value, options);',
+      // The fixture registry declares no field policy, so a list query passes
+      // the check; `request-query-fields.test.ts` executes the real rule.
+      'export const assertQueryAccess = (...args) => globalThis.__smrtGeneratedRequestHelpers.assertQueryAccess?.(...args);',
+      // The real create-target rule, over the registry the test installs.
+      'export const assertCreateTargetSurface = (...args) => globalThis.__smrtGeneratedRequestHelpers.assertCreateTargetSurface(...args);',
+      'export const assertCreateInput = (...args) => globalThis.__smrtGeneratedRequestHelpers.assertCreateInput(...args);',
+      'export const applyUpdateInput = (instance, data, name) => {',
+      '  const fields = globalThis.__smrtGeneratedRegistry?.getFields(name) ?? new Map();',
+      '  return globalThis.__smrtGeneratedRequestHelpers.assignUpdateInput(instance, data, {',
+      '    declaresField: (key) => fields.has(key),',
+      '    hasFieldMetadata: fields.size > 0,',
+      '  });',
+      '};',
+      "export function resolveTenantEtagDiscriminator() { return 't:global'; }",
       'export function ifNoneMatchHasConcreteMatch() { return false; }',
       'export function ifNoneMatchSatisfied() { return false; }',
       'export function normalizeCustomActionFailure() { return undefined; }',
@@ -258,6 +360,19 @@ describe('generated SvelteKit helper runtime', () => {
   beforeEach(async () => {
     (globalThis as Record<string, unknown>).__smrtGeneratedReportError =
       reportUnexpectedHttpError;
+    (globalThis as Record<string, unknown>).__smrtGeneratedApplyWhereScope =
+      applyWhereScope;
+    (
+      globalThis as Record<string, unknown>
+    ).__smrtGeneratedIsServiceOptionInput = isServiceOptionInput;
+    (globalThis as Record<string, unknown>).__smrtGeneratedRequestHelpers = {
+      assertCreateInput,
+      assertCreateTargetSurface,
+      assignUpdateInput,
+      parseRestListWhere,
+      publicSerializerOf,
+      toPublicJSONValue,
+    };
     (globalThis as Record<string, unknown>).__smrtGeneratedHelperCalls = [];
     (globalThis as Record<string, unknown>).__smrtGeneratedHelperRegistrations =
       [];
@@ -305,7 +420,17 @@ describe('generated SvelteKit helper runtime', () => {
 
   afterEach(() => {
     setRuntimeExposureGate(undefined);
+    delete (globalThis as Record<string, unknown>)
+      .__smrtGeneratedTenantPolicies;
+    delete (globalThis as Record<string, unknown>).__smrtGeneratedTenancyCalls;
+    delete (globalThis as Record<string, unknown>).__smrtGeneratedTenancy;
     delete (globalThis as Record<string, unknown>).__smrtGeneratedReportError;
+    delete (globalThis as Record<string, unknown>)
+      .__smrtGeneratedApplyWhereScope;
+    delete (globalThis as Record<string, unknown>)
+      .__smrtGeneratedIsServiceOptionInput;
+    delete (globalThis as Record<string, unknown>)
+      .__smrtGeneratedRequestHelpers;
     vi.restoreAllMocks();
     clearCache();
 
@@ -353,8 +478,10 @@ describe('generated SvelteKit helper runtime', () => {
     writeFileSync(
       svelteKitShim,
       [
-        'export function error(status: number, message: string): never {',
-        '  throw Object.assign(new Error(message), { status });',
+        // As SvelteKit: a string becomes { message }, an object is the body.
+        'export function error(status: number, body: string | { message: string }): never {',
+        "  const payload = typeof body === 'string' ? { message: body } : body;",
+        '  throw Object.assign(new Error(payload.message), { status, body: payload });',
         '}',
         'export function json(body: unknown, init: ResponseInit = {}): Response {',
         '  return new Response(JSON.stringify(body), init);',
@@ -414,7 +541,7 @@ describe('generated SvelteKit helper runtime', () => {
     );
   }
 
-  async function importGeneratedItemActionPost() {
+  async function importGeneratedItemActionPost(tenantScoped = false) {
     const objectFilePath = join(projectRoot, 'src/lib/objects/Widget.ts');
     const manifest = createManifest(projectRoot, objectFilePath, ['inspect']);
     manifest.objects.Widget.methods = {
@@ -434,7 +561,11 @@ describe('generated SvelteKit helper runtime', () => {
           inspect: { method: 'POST', path: 'inspect' },
         },
       },
-    };
+      ...(tenantScoped ? { tenantScoped: { mode: 'optional' } } : {}),
+    } as never;
+    // The model's tenancy at request time (#5375); the manifest flag above
+    // no longer selects anything in the emitted route.
+    if (tenantScoped) declareTenancy(manifest);
 
     await generateSvelteKitRoutes(projectRoot, manifest, {
       configFileName: 'smrt.ts',
@@ -447,6 +578,44 @@ describe('generated SvelteKit helper runtime', () => {
     return await bundleGeneratedRoute(
       'src/routes/api/widgets/[id]/inspect/+server.ts',
       'generated-item-action-post-route.mjs',
+    );
+  }
+
+  async function importGeneratedCollectionActionGet() {
+    const objectFilePath = join(projectRoot, 'src/lib/objects/Widget.ts');
+    const manifest = createManifest(projectRoot, objectFilePath, ['recent']);
+    manifest.objects.Widget.methods = {
+      recent: {
+        async: true,
+        isStatic: true,
+        isPublic: true,
+        name: 'recent',
+        parameters: [],
+        returnType: 'Promise<unknown>',
+      },
+    };
+    manifest.objects.Widget.decoratorConfig = {
+      api: {
+        include: ['recent'],
+        routes: {
+          recent: { method: 'GET', path: 'recent', scope: 'collection' },
+        },
+      },
+      tenantScoped: { mode: 'optional' },
+    } as never;
+    declareTenancy(manifest);
+
+    await generateSvelteKitRoutes(projectRoot, manifest, {
+      configFileName: 'smrt.ts',
+      configPath: 'src/lib/server',
+      enabled: true,
+      objectsDir: 'src/lib/objects',
+      routesDir: 'src/routes/api',
+    });
+
+    return await bundleGeneratedRoute(
+      'src/routes/api/widgets/recent/+server.ts',
+      'generated-collection-action-get-route.mjs',
     );
   }
 
@@ -724,6 +893,7 @@ describe('generated SvelteKit helper runtime', () => {
       const Parent = Widget;
       ObjectRegistry.register(class Widget extends Parent {}, {
         packageName: '@test/generated-app',
+        replaceParent: true,
       });
     }
     const globals = globalThis as Record<string, unknown>;
@@ -1308,7 +1478,7 @@ describe('generated SvelteKit helper runtime', () => {
       // a mocked factory. It must construct and initialize against this DB.
       writeFileSync(
         join(projectRoot, 'node_modules/@happyvertical/smrt-core/index.js'),
-        `export const { ObjectRegistry, isRuntimeModelEnabled, hasRuntimeExposureGate, createGeneratedCollectionAccess, normalizeCustomActionFailure, normalizeTypedHttpError, reportUnexpectedHttpError, canonicalReadRepresentation, computeTableVersionEtag, getTableVersion, ifNoneMatchHasConcreteMatch, ifNoneMatchSatisfied, parseRestListWhere } = globalThis.__smrt4320Core;`,
+        `export const { ObjectRegistry, isRuntimeModelEnabled, hasRuntimeExposureGate, createGeneratedCollectionAccess, normalizeCustomActionFailure, normalizeTypedHttpError, reportUnexpectedHttpError, canonicalReadRepresentation, computeTableVersionEtag, getTableVersion, ifNoneMatchHasConcreteMatch, ifNoneMatchSatisfied, parseRestListWhere, applyWhereScope, resolveAnonymousTenantReadScope, scopeTenantReadOptions, publicSerializerOf, toPublicJSONValue, assertQueryAccess, assertCreateTargetSurface, assertCreateInput, isTenantScopedModel, enterRequestTenantContext, getRequestTenantContext, resolveTenantEtagDiscriminator, enterRequestTenancy, tenancyReadScope, scopeActionOptions, boundTenancyCacheScoped, boundTenancyEtagDiscriminator, runInRequestTenancy } = globalThis.__smrt4320Core;`,
       );
       const objectFilePath = join(projectRoot, 'src/lib/objects/Widget.ts');
       writeFileSync(
@@ -1735,6 +1905,250 @@ describe('generated SvelteKit helper runtime', () => {
     }
   });
 
+  /**
+   * A write to a tenant-scoped model needs a tenant. With tenancy enabled and
+   * no tenant context after the principal's tenant was read, the emitted
+   * create, update, delete and mutating-action handlers refuse the request
+   * before they reach the collection: 403 for a signed-in caller, 401 for an
+   * anonymous one. Only an explicitly cross-tenant principal writes without a
+   * tenant. The tenancy package is the recording stand-in above, with
+   * enforcement on.
+   */
+  describe('generated write routes of a tenant-scoped model require a tenant', () => {
+    const state = globalThis as Record<string, unknown>;
+    const WRITES = ['widgets.create', 'widgets.update', 'widgets.delete'];
+    let touched: string[];
+
+    async function importTenantWrites(
+      api: Record<string, unknown> = {},
+      tenantScoped: Record<string, unknown> = { mode: 'optional' },
+    ) {
+      const objectFilePath = join(projectRoot, 'src/lib/objects/Widget.ts');
+      const manifest = createManifest(projectRoot, objectFilePath, [
+        'create',
+        'update',
+        'delete',
+      ]);
+      manifest.objects.Widget.decoratorConfig = {
+        api: { include: ['create', 'update', 'delete'], ...api },
+        tenantScoped,
+      } as never;
+      declareTenancy(manifest);
+      await generateSvelteKitRoutes(projectRoot, manifest, {
+        configFileName: 'smrt.ts',
+        configPath: 'src/lib/server',
+        enabled: true,
+        objectsDir: 'src/lib/objects',
+        routesDir: 'src/routes/api',
+      });
+      touched = [];
+      const item = {
+        name: 'Widget',
+        save: async () => {
+          touched.push('save');
+        },
+        toPublicJSON: () => ({ id: 'widget-1' }),
+      };
+      state.__smrtGeneratedRouteCollection = {
+        create: async () => {
+          touched.push('create');
+          return item;
+        },
+        delete: async () => {
+          touched.push('delete');
+        },
+        get: async () => {
+          touched.push('get');
+          return item;
+        },
+        withAuditMutation: async (
+          bound: typeof item,
+          _action: string,
+          mutate: (bound: typeof item) => Promise<void>,
+        ) => mutate(bound),
+      };
+      const collection = await bundleGeneratedRoute(
+        'src/routes/api/widgets/+server.ts',
+        'tenant-write-collection.mjs',
+      );
+      const single = await bundleGeneratedRoute(
+        'src/routes/api/widgets/[id]/+server.ts',
+        'tenant-write-item.mjs',
+      );
+      const body = () =>
+        new Request('http://localhost/api/widgets', {
+          body: JSON.stringify({ name: 'Renamed' }),
+          method: 'POST',
+        });
+      return {
+        create: (locals: unknown) =>
+          collection.POST({ locals, request: body() }),
+        update: (locals: unknown) =>
+          single.PUT({ locals, params: { id: 'widget-1' }, request: body() }),
+        remove: (locals: unknown) =>
+          single.DELETE({
+            locals,
+            params: { id: 'widget-1' },
+            request: body(),
+          }),
+      };
+    }
+
+    afterEach(() => {
+      delete state.__smrtGeneratedSystemContext;
+    });
+
+    it('refuses create, update and delete by a signed-in caller with no tenant', async () => {
+      const routes = await importTenantWrites();
+      const locals = { permissions: WRITES, user: { id: 'user-1' } };
+      for (const write of [routes.create, routes.update, routes.remove]) {
+        await expect(write(locals)).rejects.toMatchObject({
+          status: 403,
+          message: 'Tenant context required',
+        });
+      }
+      // Refused before the collection was reached.
+      expect(touched).toEqual([]);
+      expect(state.__smrtGeneratedTenantContexts ?? []).toEqual([]);
+    });
+
+    it('refuses an anonymous write to a public model with a 401', async () => {
+      const routes = await importTenantWrites({ public: true });
+      for (const write of [routes.create, routes.update, routes.remove]) {
+        await expect(write({})).rejects.toMatchObject({ status: 401 });
+      }
+      expect(touched).toEqual([]);
+    });
+
+    it('writes inside the tenant of the signed-in caller', async () => {
+      const routes = await importTenantWrites();
+      const locals = {
+        permissions: WRITES,
+        tenantId: 'tenant-a',
+        user: { id: 'user-1' },
+      };
+      expect((await routes.create(locals)).status).toBe(201);
+      expect(state.__smrtGeneratedActiveTenantContext).toMatchObject({
+        tenantId: 'tenant-a',
+      });
+      expect((await routes.update(locals)).status).toBe(200);
+      expect((await routes.remove(locals)).status).toBe(200);
+      expect(touched).toEqual(['create', 'get', 'save', 'get', 'delete']);
+    });
+
+    it('refuses a super-admin bypass on a model that does not opt in', async () => {
+      const routes = await importTenantWrites();
+      const superAdmin = {
+        tenantContext: { superAdminBypass: true },
+        user: { id: 'operator' },
+      };
+      for (const write of [routes.create, routes.update, routes.remove]) {
+        await expect(write(superAdmin)).rejects.toMatchObject({
+          status: 403,
+          message: 'Tenant context required',
+        });
+      }
+      expect(touched).toEqual([]);
+    });
+
+    it('writes for an explicitly cross-tenant principal', async () => {
+      const routes = await importTenantWrites(
+        {},
+        { mode: 'optional', allowSuperAdminBypass: true },
+      );
+      // A verified super-admin bypass published by the tenancy session hook,
+      // on a model that opts in to it.
+      const superAdmin = {
+        tenantContext: { superAdminBypass: true },
+        user: { id: 'operator' },
+      };
+      expect((await routes.create(superAdmin)).status).toBe(201);
+      // A system context the host entered around the request.
+      state.__smrtGeneratedSystemContext = true;
+      expect(
+        (
+          await routes.update({
+            permissions: WRITES,
+            user: { id: 'operator' },
+          })
+        ).status,
+      ).toBe(200);
+      expect(touched).toEqual(['create', 'get', 'save']);
+    });
+
+    it('refuses a mutating custom action by a caller with no tenant', async () => {
+      const route = await importGeneratedItemActionPost(true);
+      let invoked = 0;
+      state.__smrtGeneratedRouteCollection = {
+        get: async () => ({
+          inspect: async () => {
+            invoked += 1;
+            return { ok: true };
+          },
+        }),
+      };
+      const call = (locals: Record<string, unknown>) =>
+        route.POST({
+          locals: {
+            permissions: ['widgets.inspect'],
+            user: { id: 'user-1' },
+            ...locals,
+          },
+          params: { id: 'widget-1' },
+          request: new Request(
+            'http://localhost/api/widgets/widget-1/inspect',
+            {
+              method: 'POST',
+            },
+          ),
+        });
+      await expect(call({})).rejects.toMatchObject({
+        status: 403,
+        message: 'Tenant context required',
+      });
+      expect(invoked).toBe(0);
+      expect((await call({ tenantId: 'tenant-a' })).status).toBe(200);
+      expect(invoked).toBe(1);
+    });
+
+    it('refuses a collection read action by a caller with no tenant', async () => {
+      const route = await importGeneratedCollectionActionGet();
+      let invoked = 0;
+      class WidgetCollectionStub {
+        static async recent() {
+          invoked += 1;
+          return { items: [] };
+        }
+      }
+      state.__smrtGeneratedRouteCollection = new WidgetCollectionStub();
+      state.__smrtGeneratedRegistry = {
+        getClass: () => ({ constructor: WidgetCollectionStub }),
+        getConfig: () => ({}),
+      };
+      const call = (locals: Record<string, unknown>) =>
+        route.GET({
+          locals: { user: { id: 'user-1' }, ...locals },
+          params: {},
+          request: new Request('http://localhost/api/widgets/recent'),
+          url: new URL('http://localhost/api/widgets/recent'),
+        });
+      await expect(call({})).rejects.toMatchObject({
+        status: 403,
+        message: 'Tenant context required',
+      });
+      expect(invoked).toBe(0);
+      expect((await call({ tenantId: 'tenant-a' })).status).toBe(200);
+      expect(invoked).toBe(1);
+    });
+
+    it('keeps a context the host already entered', async () => {
+      const routes = await importTenantWrites({ public: true });
+      state.__smrtGeneratedActiveTenantContext = { tenantId: 'tenant-a' };
+      expect((await routes.create({})).status).toBe(201);
+      expect(touched).toEqual(['create']);
+    });
+  });
+
   describe('generated write routes enforce operation permissions (#2977)', () => {
     async function importGeneratedWrite(
       include: string[],
@@ -1847,7 +2261,9 @@ describe('generated SvelteKit helper runtime', () => {
         'perm-item-route.mjs',
       );
       const saved: string[] = [];
+      // `name` is the field the update below sets.
       const item = {
+        name: 'Widget',
         save: async () => {
           saved.push('save');
         },
@@ -2219,6 +2635,524 @@ describe('generated SvelteKit helper runtime', () => {
     it('rejects a malformed ?offset the same way', async () => {
       const { invoke } = await listWithQuery('?offset=abc');
       await expect(invoke()).rejects.toMatchObject({ status: 400 });
+    });
+  });
+
+  /**
+   * The generated client's `list(params)` and the emitted list route read one
+   * query grammar: an `[in]` list and an `orderBy` list arrive as one
+   * comma-joined value each, a boolean is decoded against its field, and a
+   * repeated parameter is refused rather than narrowed to its last value.
+   */
+  describe('generated list route reads the generated client list grammar', () => {
+    const modelKey = '@fixture/listgrammar:GrammarRow';
+
+    async function withGrammarRoute(
+      run: (context: {
+        client: {
+          list(params?: unknown): Promise<{
+            items: Array<Record<string, unknown>>;
+            count: number;
+          }>;
+        };
+        invoke: (query: string) => Promise<Response>;
+        listCalls: number;
+      }) => Promise<void>,
+    ): Promise<void> {
+      clearManifestCache();
+      const restore = snapshotObjectRegistryState();
+      class GrammarRow extends SmrtObject {
+        @field({ type: 'text' })
+        name = '';
+
+        @field({ type: 'integer' })
+        rank = 0;
+
+        @field({ type: 'boolean' })
+        active = false;
+
+        constructor(options: Record<string, unknown> = {}) {
+          super(options);
+          if (options.name !== undefined) this.name = options.name as string;
+          if (options.rank !== undefined) this.rank = options.rank as number;
+          if (options.active !== undefined)
+            this.active = options.active as boolean;
+        }
+      }
+      class GrammarRowCollection extends SmrtCollection<GrammarRow> {
+        static readonly _itemClass = GrammarRow;
+      }
+      let db:
+        | Awaited<
+            ReturnType<
+              typeof import('../testing/database.js')['getTestDatabase']
+            >
+          >
+        | undefined;
+      try {
+        smrt({
+          packageName: '@fixture/listgrammar',
+          tableName: 'grammar_rows',
+          collection: 'grammarrows',
+          api: { include: ['list'] },
+        })(GrammarRow);
+        ObjectRegistry.registerCollection(modelKey, GrammarRowCollection);
+        const { getTestDatabase } = await import('../testing/database.js');
+        db = await getTestDatabase({ classes: [modelKey] });
+        const rows = await GrammarRowCollection.create({ db });
+        for (const seed of [
+          { name: 'A', rank: 1, active: true },
+          { name: 'B', rank: 1, active: false },
+          { name: 'C', rank: 2, active: true },
+          { name: 'D', rank: 3, active: false },
+        ]) {
+          await (await rows.create(seed)).save();
+        }
+        const tracked = {
+          count: (options: Record<string, unknown>) => rows.count(options),
+          db: rows.db,
+          list: (options: Record<string, unknown>) => {
+            context.listCalls += 1;
+            return rows.list(options);
+          },
+          tableName: rows.tableName,
+        };
+        (globalThis as Record<string, unknown>).__smrtGeneratedRouteCollection =
+          tracked;
+        // The real field-access rule, over the real registry.
+        (
+          (globalThis as Record<string, unknown>)
+            .__smrtGeneratedRequestHelpers as Record<string, unknown>
+        ).assertQueryAccess = assertQueryAccess;
+
+        const objectFilePath = join(
+          projectRoot,
+          'src/lib/objects/GrammarRow.ts',
+        );
+        writeFileSync(objectFilePath, 'export class GrammarRow {}\n');
+        const manifest: SmartObjectManifest = {
+          version: '1',
+          timestamp: 0,
+          packageName: '@fixture/listgrammar',
+          objects: {
+            [modelKey]: {
+              className: 'GrammarRow',
+              name: 'GrammarRow',
+              collection: 'grammarrows',
+              qualifiedName: modelKey,
+              decoratorConfig: { api: { include: ['list'] } },
+              fields: {
+                name: { type: 'text' },
+                rank: { type: 'integer' },
+                active: { type: 'boolean' },
+              },
+              filePath: objectFilePath,
+              methods: {},
+            } as SmartObjectManifest['objects'][string],
+          },
+        };
+        await generateSvelteKitRoutes(projectRoot, manifest, {
+          configFileName: 'smrt.ts',
+          configPath: 'src/lib/server',
+          enabled: true,
+          objectsDir: 'src/lib/objects',
+          routesDir: 'src/routes/api',
+        });
+        const route = await bundleGeneratedRoute(
+          'src/routes/api/grammarrows/+server.ts',
+          'generated-list-grammar-route.mjs',
+        );
+        const invoke = async (query: string) => {
+          const url = new URL(`http://localhost/api/grammarrows${query}`);
+          return route.GET({
+            locals: { user: { id: 'user-1' } },
+            request: new Request(url),
+            url,
+          }) as Promise<Response>;
+        };
+
+        const clientPath = join(projectRoot, 'generated-client.mjs');
+        writeFileSync(clientPath, generateClientModule(manifest), 'utf-8');
+        const { createClient } = await import(pathToFileURL(clientPath).href);
+        vi.stubGlobal('fetch', async (input: string | URL) => {
+          const url = new URL(String(input), 'http://localhost');
+          try {
+            return await invoke(url.search);
+          } catch (cause) {
+            const status = (cause as { status?: unknown }).status;
+            if (typeof status !== 'number') throw cause;
+            return Response.json(
+              { error: (cause as Error).message },
+              { status },
+            );
+          }
+        });
+        const context = {
+          client: createClient('/api').grammarrows,
+          invoke,
+          listCalls: 0,
+        };
+        await run(context);
+      } finally {
+        vi.unstubAllGlobals();
+        await db?.close?.();
+        restore();
+      }
+    }
+
+    it('returns every matching row for [in], orderBy and boolean filters', async () => {
+      await withGrammarRoute(async ({ client }) => {
+        const names = (body: { items: Array<Record<string, unknown>> }) =>
+          body.items.map((item) => item.name);
+
+        expect(
+          names(
+            await client.list({
+              'name[in]': ['A', 'B', 'C'],
+              orderBy: ['rank DESC', 'name DESC'],
+            }),
+          ),
+        ).toEqual(['C', 'B', 'A']);
+        expect(
+          names(
+            await client.list({
+              where: { name: { op: 'in', value: ['A', 'D'] } },
+              orderBy: 'name ASC',
+            }),
+          ),
+        ).toEqual(['A', 'D']);
+        expect(
+          names(await client.list({ active: true, orderBy: 'name ASC' })),
+        ).toEqual(['A', 'C']);
+        expect(
+          names(
+            await client.list({
+              where: { active: false, 'rank >=': 1 },
+              orderBy: 'name ASC',
+            }),
+          ),
+        ).toEqual(['B', 'D']);
+      });
+    });
+
+    it('refuses a repeated parameter with a 400 before querying, and keeps comma-delimited [in]', async () => {
+      await withGrammarRoute(async (context) => {
+        const refusal = await context
+          .invoke('?name%5Bin%5D=A&name%5Bin%5D=B')
+          .then(
+            () => undefined,
+            (cause: { status?: number; body?: unknown }) => cause,
+          );
+        expect(refusal?.status).toBe(400);
+        // The public body SvelteKit serializes keeps the refusal's code.
+        expect(JSON.parse(JSON.stringify(refusal?.body))).toEqual({
+          message: expect.stringContaining('more than once'),
+          code: 'REPEATED_QUERY_PARAMETER',
+        });
+        for (const query of [
+          '?rank%5Bgte%5D=3&rank%20%3E%3D=1',
+          '?rank%20%3E%3D=1&rank%5Bgte%5D=3',
+        ]) {
+          await expect(context.invoke(query)).rejects.toMatchObject({
+            status: 400,
+            body: { code: 'REPEATED_QUERY_PARAMETER' },
+          });
+        }
+        await expect(context.invoke('?__proto__=x')).rejects.toMatchObject({
+          status: 400,
+          body: { code: 'QUERY_FIELD_NOT_ALLOWED' },
+        });
+        await expect(
+          context.invoke('?orderBy=name&orderBy=rank'),
+        ).rejects.toMatchObject({ status: 400 });
+        expect(context.listCalls).toBe(0);
+
+        const joined = await context.invoke(
+          '?name%5Bin%5D=A,B&orderBy=name%20ASC',
+        );
+        expect(joined.status).toBe(200);
+        expect(
+          (
+            (await joined.json()) as { items: Array<Record<string, unknown>> }
+          ).items.map((item) => item.name),
+        ).toEqual(['A', 'B']);
+      });
+    });
+  });
+
+  /**
+   * Emitted create and update handlers hand the collection field values only.
+   * A request body never carries a service option key, the `options` bag or an
+   * underscore control key into construction or onto a loaded item, unless
+   * the model declares a field with that name.
+   */
+  describe('generated write routes take fields only from the body', () => {
+    const SERVICE_KEYS = [
+      'db',
+      'persistence',
+      'fs',
+      'ai',
+      'decisions',
+      'inference',
+      'usage',
+      'logging',
+      'metrics',
+      'pubsub',
+      'sanitization',
+      'signals',
+    ];
+    const body = () => ({
+      name: 'Widget',
+      ...Object.fromEntries(SERVICE_KEYS.map((key) => [key, { from: key }])),
+      options: { db: 'file:/elsewhere.db' },
+      _insertOnly: true,
+      _skipLoad: false,
+      _className: 'Other',
+    });
+    const declareFields = (...names: string[]) => {
+      (globalThis as Record<string, unknown>).__smrtGeneratedRegistry = {
+        getConfig: () => ({}),
+        getFields: () => new Map(names.map((name) => [name, {}])),
+        resolveCreateTarget: (name: string, data: unknown) => ({
+          name,
+          collectionName: name,
+          data,
+        }),
+      };
+    };
+
+    async function importGeneratedItemPut() {
+      const objectFilePath = join(projectRoot, 'src/lib/objects/Widget.ts');
+      await generateSvelteKitRoutes(
+        projectRoot,
+        createManifest(projectRoot, objectFilePath, ['update']),
+        {
+          configFileName: 'smrt.ts',
+          configPath: 'src/lib/server',
+          enabled: true,
+          objectsDir: 'src/lib/objects',
+          routesDir: 'src/routes/api',
+        },
+      );
+      return await bundleGeneratedRoute(
+        'src/routes/api/widgets/[id]/+server.ts',
+        'generated-put-route.mjs',
+      );
+    }
+
+    async function post(...declared: string[]) {
+      const route = await importGeneratedCollectionPost();
+      declareFields(...declared);
+      const created: Array<Record<string, unknown>> = [];
+      (globalThis as Record<string, unknown>).__smrtGeneratedRouteCollection = {
+        create: async (data: Record<string, unknown>) => {
+          created.push(data);
+          return { toPublicJSON: () => data };
+        },
+      };
+      const response = await route.POST({
+        locals: { permissions: ['widgets.create'], user: { id: 'user-1' } },
+        request: new Request('http://localhost/api/widgets', {
+          body: JSON.stringify(body()),
+          method: 'POST',
+        }),
+      });
+      return { created, response };
+    }
+
+    async function put(...declared: string[]) {
+      const route = await importGeneratedItemPut();
+      declareFields(...declared);
+      // The loaded item already holds `name`, the field the body updates.
+      const item: Record<string, unknown> = {
+        name: 'Before',
+        options: { db: 'collection-db' },
+        save: async () => {},
+        toPublicJSON: () => ({}),
+      };
+      (globalThis as Record<string, unknown>).__smrtGeneratedRouteCollection = {
+        get: async () => item,
+        withAuditMutation: async (
+          bound: unknown,
+          _action: string,
+          mutate: (bound: unknown) => Promise<void>,
+        ) => mutate(bound),
+      };
+      const response = await route.PUT({
+        locals: { permissions: ['widgets.update'], user: { id: 'user-1' } },
+        params: { id: 'widget-1' },
+        request: new Request('http://localhost/api/widgets/widget-1', {
+          body: JSON.stringify(body()),
+          method: 'PUT',
+        }),
+      });
+      return { item, response };
+    }
+
+    it('POST passes only field values to create', async () => {
+      const { created, response } = await post();
+      expect(response.status).toBe(201);
+      expect(created).toEqual([{ name: 'Widget' }]);
+    });
+
+    it('POST keeps a service-named key the model declares as a field', async () => {
+      const { created } = await post('metrics', 'usage');
+      expect(created).toEqual([
+        {
+          name: 'Widget',
+          usage: { from: 'usage' },
+          metrics: { from: 'metrics' },
+        },
+      ]);
+    });
+
+    it('PUT assigns only field values onto the loaded item', async () => {
+      const { item, response } = await put();
+      expect(response.status).toBe(200);
+      expect(Object.keys(item).sort()).toEqual(
+        ['name', 'options', 'save', 'toPublicJSON'].sort(),
+      );
+      expect(item.name).toBe('Widget');
+      expect(item.options).toEqual({ db: 'collection-db' });
+    });
+
+    it('PUT keeps a service-named key the model declares as a field', async () => {
+      const { item, response } = await put('name', 'metrics');
+      expect(response.status).toBe(200);
+      expect(item.metrics).toEqual({ from: 'metrics' });
+      expect(item.options).toEqual({ db: 'collection-db' });
+      expect(Object.hasOwn(item, 'usage')).toBe(false);
+    });
+  });
+
+  /**
+   * The emitted list route of a tenant-scoped, publicly readable model. With
+   * tenancy enabled and no tenant context, the only tenant predicate it hands
+   * the collection is its own `{ tenantId: null }`, whatever spelling of the
+   * tenant key the query string carries.
+   */
+  describe('generated list route tenant read scope', () => {
+    // Core's resolver, reduced to what these tests need: rows without an
+    // owner when no tenant context is active, nothing otherwise.
+    beforeEach(() => {
+      (globalThis as Record<string, unknown>).__smrtGeneratedReadScope = () =>
+        (globalThis as Record<string, unknown>)
+          .__smrtGeneratedActiveTenantContext
+          ? undefined
+          : { tenantId: null };
+    });
+    afterEach(() => {
+      (globalThis as Record<string, unknown>).__smrtGeneratedReadScope =
+        undefined;
+    });
+
+    async function importTenantScopedList() {
+      const objectFilePath = join(projectRoot, 'src/lib/objects/Widget.ts');
+      const manifest = createManifest(projectRoot, objectFilePath, ['list']);
+      manifest.objects.Widget.decoratorConfig = {
+        api: { include: ['list'], public: 'read' },
+        tenantScoped: { mode: 'optional' },
+      } as never;
+      await generateSvelteKitRoutes(projectRoot, manifest, {
+        configFileName: 'smrt.ts',
+        configPath: 'src/lib/server',
+        enabled: true,
+        objectsDir: 'src/lib/objects',
+        routesDir: 'src/routes/api',
+      });
+      return await bundleGeneratedRoute(
+        'src/routes/api/widgets/+server.ts',
+        'generated-tenant-list-route.mjs',
+      );
+    }
+
+    async function listWithQuery(
+      query: string,
+      locals: Record<string, unknown>,
+      list: (
+        options: Record<string, unknown>,
+      ) => Promise<unknown[]> = async () => [],
+    ) {
+      const route = await importTenantScopedList();
+      const listCalls: Array<Record<string, unknown>> = [];
+      const countCalls: Array<Record<string, unknown>> = [];
+      (globalThis as Record<string, unknown>).__smrtGeneratedRouteCollection = {
+        count: async (options: Record<string, unknown>) => {
+          countCalls.push(options);
+          return 0;
+        },
+        db: { type: 'sqlite', url: ':memory:' },
+        list: async (options: Record<string, unknown>) => {
+          listCalls.push(options);
+          return list(options);
+        },
+        tableName: 'widgets',
+      };
+      const url = new URL(`http://localhost/api/widgets${query}`);
+      const invoke = () =>
+        route.GET({ locals, request: new Request(url), url });
+      return { countCalls, invoke, listCalls };
+    }
+
+    it.each([
+      '?tenantId=x&tenant_id=tenant-b',
+      '?tenant_id=tenant-b&tenantId=x',
+      '?TenantId=tenant-b',
+      '?%20tenant_id=tenant-b',
+      '?tenant_id%20%3D=tenant-b',
+      '?tenant_id%5B%3D%5D=tenant-b',
+      '?TenantId%5Bin%5D=tenant-a,tenant-b',
+      '?tenant_id%5Bne%5D=x',
+    ])('an anonymous read keeps only its own tenant predicate for %s', async (query) => {
+      const { countCalls, invoke, listCalls } = await listWithQuery(
+        `${query}&title=kept`,
+        {},
+      );
+      const response = await invoke();
+      expect(response.status).toBe(200);
+      expect(listCalls[0].where).toEqual({ title: 'kept', tenantId: null });
+      expect(countCalls[0].where).toEqual({ title: 'kept', tenantId: null });
+    });
+
+    it('passes the caller filter through unchanged when a tenant context is active', async () => {
+      const { invoke, listCalls } = await listWithQuery(
+        '?tenantId=tenant-a&tenant_id=tenant-b',
+        { tenantId: 'tenant-a', user: { id: 'user-1' } },
+      );
+      await invoke();
+      // The collection and the tenant interceptor decide what to do with it;
+      // the route adds no scope of its own here.
+      expect(listCalls[0].where).toEqual({
+        tenantId: 'tenant-a',
+        tenant_id: 'tenant-b',
+      });
+    });
+
+    it('answers a where clause the collection refuses with its 4xx status', async () => {
+      const refused = await listWithQuery(
+        '?title=a&Title=b',
+        { tenantId: 'tenant-a', user: { id: 'user-1' } },
+        async () => {
+          throw new WhereClauseError(
+            "Invalid WHERE clause: 'title' and 'Title' both filter 'title' with operator '='.",
+          );
+        },
+      );
+      await expect(refused.invoke()).rejects.toMatchObject({
+        status: 400,
+        message: expect.stringContaining("both filter 'title'"),
+      });
+
+      // Any other failure is rethrown untouched.
+      const failure = new Error('driver failure');
+      const failed = await listWithQuery(
+        '',
+        { tenantId: 'tenant-a', user: { id: 'user-1' } },
+        async () => {
+          throw failure;
+        },
+      );
+      await expect(failed.invoke()).rejects.toBe(failure);
     });
   });
 });

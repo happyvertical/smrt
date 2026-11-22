@@ -273,6 +273,9 @@ export function shellFileWanted(rel) {
     rel === 'tsconfig.json' ||
     rel === 'vite.config.ts' ||
     rel === 'tools/manifest-guard.ts' ||
+    // Written into build/ by svelte.config.js's adapter step (#5546).
+    rel === 'tools/start-entry.js' ||
+    rel === 'tools/embed-entry.js' ||
     rel.startsWith('src/') ||
     rel.startsWith('static/')
   );

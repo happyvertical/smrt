@@ -14,12 +14,14 @@
  */
 
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import {
+  installTestTenancySource,
+  removeTestTenancySource,
+  setTestRuntimeTenancy,
+} from '../__tests__/fixtures/test-tenancy-source';
 import { SmrtCollection } from '../collection';
 import { field } from '../decorators';
-import {
-  setDispatchTenantResolver,
-  setTenantScopedClassResolver,
-} from '../dispatch';
+import { setDispatchTenantResolver } from '../dispatch';
 import { SmrtObject } from '../object';
 import { ObjectRegistry, smrt } from '../registry';
 import { getTestDatabase } from '../testing/database';
@@ -105,6 +107,7 @@ describe('REST tenant-scoped public read fails closed to global rows (#1782)', (
   };
 
   beforeAll(async () => {
+    installTestTenancySource();
     db = await getTestDatabase({
       type: 'sqlite',
       url: ':memory:',
@@ -124,13 +127,14 @@ describe('REST tenant-scoped public read fails closed to global rows (#1782)', (
   });
 
   afterAll(async () => {
+    removeTestTenancySource();
     await db?.close?.();
   });
 
   afterEach(() => {
     // Reset the ambient resolvers so no test leaks tenant scope into another.
     setDispatchTenantResolver(undefined);
-    setTenantScopedClassResolver(undefined);
+    setTestRuntimeTenancy(undefined);
   });
 
   const list = (query = '') =>
@@ -194,6 +198,33 @@ describe('REST tenant-scoped public read fails closed to global rows (#1782)', (
         expect(leaked).toEqual([]);
       }
     });
+
+    it.each([
+      // Two spellings of the tenant key, in both orders.
+      '?tenantId=x&tenant_id=tenant-a',
+      '?tenant_id=tenant-a&tenantId=x',
+      '?tenantId=x&TenantId=tenant-a',
+      // Spellings other than the two canonical ones, alone.
+      '?TenantId=tenant-a',
+      '?%20tenant_id=tenant-a',
+      '?tenant_id%20%3D=tenant-a',
+      '?tenant_id%5B%3D%5D=tenant-a',
+      // Operators on an aliased spelling.
+      '?TenantId%5Bin%5D=tenant-a,tenant-b',
+      '?TenantId%5Bne%5D=x',
+    ])('no spelling of the tenant filter survives beside the scope: %s', async (query) => {
+      setDispatchTenantResolver(() => undefined);
+      const res = await list(query);
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { name: string }[];
+      expect(body.map((i) => i.name)).toEqual(['global-row']);
+
+      const counted = await handler(
+        new Request(`http://local/api/v1/publictenantdoc/count${query}`),
+      );
+      expect(counted.status).toBe(200);
+      expect(((await counted.json()) as { count: number }).count).toBe(1);
+    });
   });
 
   describe('tenancy disabled (no resolver)', () => {
@@ -224,9 +255,7 @@ describe('REST tenant-scoped public read fails closed to global rows (#1782)', (
 
     it('fails closed to global rows when the resolver marks it tenant-scoped', async () => {
       setDispatchTenantResolver(() => undefined);
-      setTenantScopedClassResolver((name) =>
-        name.includes('Pattern1TenantDoc'),
-      );
+      setTestRuntimeTenancy((name) => name.includes('Pattern1TenantDoc'));
 
       const res = await p1list();
       expect(res.status).toBe(200);
@@ -239,7 +268,7 @@ describe('REST tenant-scoped public read fails closed to global rows (#1782)', (
       // can't recognize the Pattern-1 model → unfiltered (documents the gap the
       // hook closes).
       setDispatchTenantResolver(() => undefined);
-      setTenantScopedClassResolver(undefined);
+      setTestRuntimeTenancy(undefined);
 
       const res = await p1list();
       expect(res.status).toBe(200);

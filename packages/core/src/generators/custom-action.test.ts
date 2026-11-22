@@ -5,6 +5,7 @@ import {
   buildCustomActionInvocationArgs,
   isFrameworkLifecycleMethod,
   normalizeCustomActionFailure,
+  readActionReceivesTenantScope,
   resolveCustomActionMetadata,
   resolveCustomActionNames,
 } from './custom-action.js';
@@ -380,5 +381,40 @@ describe('framework lifecycle method exclusion (#2638)', () => {
         ),
       ).sort(),
     ).toEqual(['recordLogin']);
+  });
+});
+
+describe('custom read action scope reception', () => {
+  it('receives the scope through a single options parameter', () => {
+    expect(readActionReceivesTenantScope(['options'], ['tenantId'])).toBe(true);
+    expect(readActionReceivesTenantScope(['options'], [])).toBe(true);
+  });
+
+  it('receives the scope through parameters named after every ownership property', () => {
+    expect(readActionReceivesTenantScope(['tenantId'], ['tenantId'])).toBe(
+      true,
+    );
+    expect(
+      readActionReceivesTenantScope(
+        ['organizationId', 'limit', 'tenantId'],
+        ['tenantId', 'organizationId'],
+      ),
+    ).toBe(true);
+  });
+
+  it('does not receive the scope when a parameter names only some ownership properties', () => {
+    expect(
+      readActionReceivesTenantScope(
+        ['organizationId'],
+        ['tenantId', 'organizationId'],
+      ),
+    ).toBe(false);
+  });
+
+  it('does not receive the scope through other parameters', () => {
+    expect(readActionReceivesTenantScope([], ['tenantId'])).toBe(false);
+    expect(readActionReceivesTenantScope(['limit'], ['tenantId'])).toBe(false);
+    expect(readActionReceivesTenantScope(['options', 'limit'], [])).toBe(false);
+    expect(readActionReceivesTenantScope(['tenantId'], [])).toBe(false);
   });
 });

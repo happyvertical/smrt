@@ -129,6 +129,7 @@ export {
   packagesSeenInput,
   readConfirmedRetirements,
   readLastMigrateRecord,
+  readRecordedSystemSchema,
   recordSuccessfulMigrate,
   type UnloadedBuildPackage,
 } from './migrate-record.js';
@@ -172,8 +173,10 @@ export {
 } from './null-equal-indexes.js';
 export {
   checkOldestSupportedRelease,
+  checkUnrecordedDatabaseAge,
   compareReleases,
   OLDEST_SUPPORTED_RELEASE,
+  OLDEST_SUPPORTED_SYSTEM_SCHEMA,
 } from './oldest-supported.js';
 // High-level schema orchestration over ObjectRegistry
 export {
@@ -253,7 +256,12 @@ export {
   type SqliteTableRebuildPlan,
   sqliteRebuildPlaceholderSql,
 } from './sqlite-rebuild.js';
-export { assertDatabaseMigratedForBuild } from './startup-guard.js';
+export {
+  assertDatabaseMigratedForBuild,
+  MIGRATION_WAIT_TIMEOUT_ENV,
+  type MigrationWaitOptions,
+  type StartupGuardOptions,
+} from './startup-guard.js';
 // Core classes
 export {
   buildConcurrentIndexPlan,

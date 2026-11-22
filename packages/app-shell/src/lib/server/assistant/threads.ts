@@ -74,7 +74,10 @@ export interface NewMessage {
   toolCalls?: AIToolCall[];
   toolCallId?: string;
   /** A tool chip, or (assistant messages) `{ cliSession: { tool, id } }`. */
-  meta?: ThreadMessage['tool'] | { cliSession: { tool: string; id: string } };
+  meta?:
+    | ThreadMessage['tool']
+    | { cliSession: { tool: string; id: string } }
+    | { block: 'changes' };
 }
 
 export async function appendMessage(
@@ -126,6 +129,20 @@ function parse<T>(text: string): T | undefined {
 export async function viewMessages(threadId: string): Promise<ThreadMessage[]> {
   const out: ThreadMessage[] = [];
   for (const m of await rows(threadId)) {
+    if (
+      m.role === 'assistant' &&
+      !m.content &&
+      parse<{ block?: string }>(m.meta)?.block === 'changes'
+    ) {
+      out.push({
+        id: m.id as string,
+        seq: m.seq,
+        role: 'assistant',
+        content: '',
+        block: 'changes',
+      });
+      continue;
+    }
     if (m.role === 'assistant' && !m.content) continue; // tool-call-only step
     const tool = parse<NonNullable<ThreadMessage['tool']>>(m.meta);
     out.push({

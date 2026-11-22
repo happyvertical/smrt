@@ -20,23 +20,37 @@ export function registerAppModels(): {
   Person: typeof SmrtPerson;
 } {
   class ApiKey extends SmrtApiKey {}
-  smrt({ packageName: '@local/issue-4931-profiles' })(ApiKey);
+  smrt({ replaceParent: true, packageName: '@local/issue-4931-profiles' })(
+    ApiKey,
+  );
   class AuditLog extends SmrtAuditLog {}
-  smrt({ packageName: '@local/issue-4931-profiles' })(AuditLog);
+  smrt({ replaceParent: true, packageName: '@local/issue-4931-profiles' })(
+    AuditLog,
+  );
   class MagicLinkToken extends SmrtMagicLinkToken {}
-  smrt({ packageName: '@local/issue-4931-profiles' })(MagicLinkToken);
+  smrt({ replaceParent: true, packageName: '@local/issue-4931-profiles' })(
+    MagicLinkToken,
+  );
   class NostrIdentity extends SmrtNostrIdentity {}
-  smrt({ packageName: '@local/issue-4931-profiles' })(NostrIdentity);
+  smrt({ replaceParent: true, packageName: '@local/issue-4931-profiles' })(
+    NostrIdentity,
+  );
   class OidcIdentity extends SmrtOidcIdentity {}
-  smrt({ packageName: '@local/issue-4931-profiles' })(OidcIdentity);
+  smrt({ replaceParent: true, packageName: '@local/issue-4931-profiles' })(
+    OidcIdentity,
+  );
   class OidcProfileEmailReservation extends SmrtOidcProfileEmailReservation {}
-  smrt({ packageName: '@local/issue-4931-profiles' })(
+  smrt({ replaceParent: true, packageName: '@local/issue-4931-profiles' })(
     OidcProfileEmailReservation,
   );
   class Person extends SmrtPerson {}
-  smrt({ packageName: '@local/issue-4931-profiles' })(Person);
+  smrt({ replaceParent: true, packageName: '@local/issue-4931-profiles' })(
+    Person,
+  );
   class ProfileType extends SmrtProfileType {}
-  smrt({ packageName: '@local/issue-4931-profiles' })(ProfileType);
+  smrt({ replaceParent: true, packageName: '@local/issue-4931-profiles' })(
+    ProfileType,
+  );
   return {
     ProfileType,
     ApiKey,

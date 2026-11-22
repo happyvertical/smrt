@@ -21,6 +21,7 @@ import {
 } from './identity.js';
 import type { VaultRestoreProvider } from './restore-latest.js';
 import type { SnapshotKeyProvider } from './snapshot-framing.js';
+import type { UserAppEngine } from './user-app-portability.js';
 
 /** Output sinks. Each call receives complete text including the newline. */
 export interface AppCommandIo {
@@ -100,6 +101,12 @@ export interface AppCommandDependencies {
    * `restore-latest` (#4805). Absent means restore-latest fails closed.
    */
   vaultRestore?: VaultRestoreProvider;
+  /**
+   * The app shell engine for the user app in export, import and restore
+   * checks (#5193). Absent means it is loaded from the project's installed
+   * `@happyvertical/smrt-app-shell`.
+   */
+  userAppEngine?: () => Promise<UserAppEngine>;
   /** Host platform for the operator-copy gate; defaults to `os.platform()`. */
   platform?(): NodeJS.Platform;
 }

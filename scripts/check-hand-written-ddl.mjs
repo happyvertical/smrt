@@ -61,6 +61,35 @@ export const RUNTIME_MANAGED_SCHEMA_PATHS = Object.keys(RUNTIME_MANAGED_OPENERS)
   'builds the schema of the database it declares runtime-managed',
 ]);
 
+/**
+ * The engine's per-database dialect modules: the `_archive` table the engine
+ * keeps beside the app tables is the same bookkeeping `app-runtime.ts` created
+ * before #5186, now spelled once per database (SQLite, PostgreSQL) under
+ * `engine/db/*-dialect.ts`. The exemption moved with the statement; it did not grow.
+ */
+export const RUNTIME_MANAGED_DIALECT_PATHS = [
+  [
+    'packages/app-shell/src/engine/db/sqlite-dialect.ts',
+    "the engine's SQLite statements for the runtime-managed app database",
+  ],
+  [
+    'packages/app-shell/src/engine/db/postgres-dialect.ts',
+    "the engine's PostgreSQL statements for the runtime-managed app database",
+  ],
+  [
+    'packages/app-shell/src/engine/db/postgres-copy.ts',
+    "copies, dumps and restores the runtime-managed app database's schema (#5187): it replays the shape read from the catalog of the app's own schema into a draft, rehearsal or restore schema, and declares none",
+  ],
+  [
+    'packages/app-shell/src/engine/db/sqlite-portable.ts',
+    "installs a portable export (#5193) into the runtime-managed app database: a table the definition no longer names (archived for undo) and a hidden field's column come back from the typed column descriptors of the bundle, with the database's own types; it declares no shape of its own",
+  ],
+  [
+    'packages/app-shell/src/engine/db/postgres-portable.ts',
+    "installs a portable export (#5193) into the runtime-managed app schema: a table the definition no longer names (archived for undo) and a hidden field's column come back from the typed column descriptors of the bundle, with the database's own types; it declares no shape of its own",
+  ],
+];
+
 const STATEMENT =
   /\b(CREATE|ALTER|DROP)\s+(?:(?:GLOBAL\s+|LOCAL\s+)?(?:TEMP|TEMPORARY)\s+|VIRTUAL\s+|UNLOGGED\s+)?TABLE\s+(?:IF\s+(?:NOT\s+)?EXISTS\s+)?(?:ONLY\s+)?/gi;
 
@@ -131,7 +160,12 @@ function isScanned(rel, pkg) {
 }
 
 function exemption(rel) {
-  for (const [prefix] of [...MIGRATOR_PATHS, ...SYSTEM_TABLE_PATHS, ...RUNTIME_MANAGED_SCHEMA_PATHS]) {
+  for (const [prefix] of [
+    ...MIGRATOR_PATHS,
+    ...SYSTEM_TABLE_PATHS,
+    ...RUNTIME_MANAGED_SCHEMA_PATHS,
+    ...RUNTIME_MANAGED_DIALECT_PATHS,
+  ]) {
     if (rel === prefix || rel.startsWith(prefix)) return prefix;
   }
   return undefined;

@@ -5,10 +5,10 @@ description: "Commerce models for the SMRT framework - contracts, fulfillments, 
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-18T18:10:13Z"
+  at: "2026-11-21T20:33:59Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:c5bf2c6463d7ffff0ac0d07deb88dfd5621288be912bf6f46962acad13851176"
+source_revision: "sha256:2d523446d14971894b4edb4658d95b87fe4289fe597e1c25c50f0cbcf47e3c09"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/commerce/package.json"
@@ -95,6 +95,9 @@ sources:
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/commerce/agents/received-sales-contract-money.md"
     title: "@happyvertical/smrt-commerce packages/commerce/agents/received-sales-contract-money.md"
   - id: "agents-28"
+    resource: "https://github.com/happyvertical/smrt/blob/main/packages/commerce/agents/settlement-accounts.md"
+    title: "@happyvertical/smrt-commerce packages/commerce/agents/settlement-accounts.md"
+  - id: "agents-29"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/commerce/agents/tax-codes.md"
     title: "@happyvertical/smrt-commerce packages/commerce/agents/tax-codes.md"
 ---
@@ -137,6 +140,7 @@ sources:
 - `packages/commerce/agents/purchasing-ui.md`
 - `packages/commerce/agents/quote-ui.md`
 - `packages/commerce/agents/received-sales-contract-money.md`
+- `packages/commerce/agents/settlement-accounts.md`
 - `packages/commerce/agents/tax-codes.md`
 
 ## Framework dependencies

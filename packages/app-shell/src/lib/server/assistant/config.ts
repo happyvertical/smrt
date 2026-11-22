@@ -15,6 +15,7 @@ import {
   tryResolveConfiguredAIProvider,
 } from '@happyvertical/smrt-config';
 import {
+  INFERENCE_PRESETS,
   type InferenceResolver,
   type InferenceTierRequest,
   resolveInference,
@@ -24,9 +25,14 @@ import {
   inferenceUnavailableMessage,
   isInferenceUnavailableError,
 } from '@happyvertical/smrt-core/inference-availability';
-import { ChatGPTSignedOutError } from '@happyvertical/smrt-inference/server';
+import {
+  ChatGPTSignedOutError,
+  inferenceKeyOrigin,
+} from '@happyvertical/smrt-inference/server';
 import type { AssistantStatus } from '../../assistant/events.ts';
 import { CHATGPT_ASSISTANT_CLASS, CHATGPT_SETTINGS_HREF } from '../chatgpt.ts';
+import { shellProfile } from '../host.ts';
+import { assertHostedInferenceEntitled } from '../hosted-inference.ts';
 import { type Principal, runAs } from '../owner.ts';
 import { assistantSystemPrompt } from './guidance.ts';
 
@@ -133,13 +139,21 @@ export async function resolveAssistantOptions(
   principal: Principal,
   config: AssistantConfigOptions = {},
 ): Promise<Record<string, unknown>> {
-  const base = baseOptions(config.env ?? process.env);
+  // Hosted: the deployment's own key (config, environment) is the operator's,
+  // and hosted inference is not wired (#5194). Only a key the owner saved
+  // answers; with none the assistant is unavailable and says so. Leaving out
+  // `base` is not enough: an app `inference.tiers` binding that names a
+  // provider, or core's own provider-environment fill, would still run on the
+  // operator's key, so the resolved target is checked below.
+  const hosted = (await shellProfile()) === 'cloud';
+  const base = hosted ? undefined : baseOptions(config.env ?? process.env);
   const resolved = await runAs(principal, () =>
     resolveInferenceTarget({
       tier: tierOf(config),
       ...(base ? { base: base as Record<string, unknown> } : {}),
       tenantId: principal.tenantId,
       className: 'AppShellAssistant',
+      ...(config.resolver ? { resolver: config.resolver } : {}),
       usage: { className: 'AppShellAssistant', tenantId: principal.tenantId },
       // The thread is stored in shell.db: no second transcript copy.
       transcript: false,
@@ -147,7 +161,134 @@ export async function resolveAssistantOptions(
   );
   assertApiKeyOptions(resolved.options);
   if (!resolved.options) throw new AssistantNotConfiguredError();
+  if (hosted) await assertCloudTarget(resolved, principal.tenantId);
   return resolved.options;
+}
+
+/**
+ * Hosted: the target is either the platform's hosted inference (only for a
+ * tenant whose plan grants `inference.hosted`, through the registered gate) or
+ * the owner's own key. A hosted binding is never silently swapped for another
+ * key: a tenant that lost the entitlement is told so.
+ */
+async function assertCloudTarget(
+  resolved: Parameters<typeof assertOwnerSuppliedKey>[0],
+  tenantId: string,
+): Promise<void> {
+  if (resolved.resolution.target?.source !== 'hosted') {
+    assertOwnerSuppliedKey(resolved);
+    return;
+  }
+  const target = resolved.resolution.target;
+  const key = target.apiKey;
+  // Only the operator's own gateway, through a stored hosted binding with its
+  // own key: never an endpoint an owner could have typed.
+  if (
+    !resolved.bound ||
+    resolved.resolution.via !== 'resolver' ||
+    typeof key !== 'string' ||
+    key.trim() === '' ||
+    resolved.options?.apiKey !== key.trim() ||
+    !(await isHostedGatewayEndpoint(target.baseUrl))
+  )
+    throw new AssistantNotConfiguredError();
+  await assertHostedInferenceEntitled(tenantId);
+}
+
+async function isHostedGatewayEndpoint(baseUrl: string | undefined) {
+  if (!baseUrl?.trim()) return false;
+  try {
+    const { getHostedGatewayConfig } = await import(
+      '@happyvertical/smrt-inference/node'
+    );
+    return (
+      new URL(baseUrl).origin ===
+      new URL(getHostedGatewayConfig().baseUrl).origin
+    );
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Hosted: the resolved target must run on a key this tenant saved itself. The
+ * stored-key layer (the user's, else the tenant's, from smrt-secrets) is the
+ * only resolver answer that reports `source: 'byo'` WITH its own literal
+ * `apiKey`; an app binding (`app`), an environment-named key, a local server
+ * or the operator's hosted source never does. The client options must carry
+ * exactly that key, so nothing was filled in from the provider environment.
+ * Throws {@link AssistantNotConfiguredError}.
+ */
+function assertOwnerSuppliedKey(resolved: {
+  options: Record<string, unknown> | undefined;
+  bound: boolean;
+  resolution: {
+    via?: string;
+    target?: {
+      source?: string;
+      apiKey?: unknown;
+      provider?: string;
+      preset?: string;
+      baseUrl?: string;
+    };
+  };
+}): void {
+  const target = resolved.resolution.target;
+  const key = target?.apiKey;
+  if (
+    !resolved.bound ||
+    resolved.resolution.via !== 'resolver' ||
+    target?.source !== 'byo' ||
+    typeof key !== 'string' ||
+    key.trim() === '' ||
+    resolved.options?.apiKey !== key.trim()
+  )
+    throw new AssistantNotConfiguredError();
+  assertPublicProviderEndpoint(target);
+}
+
+/**
+ * Hosted, the server sends the owner's key to the target's endpoint, so the
+ * endpoint must be the provider's own public https one: never an address the
+ * owner typed (internal network) and never a local server. A stored key that
+ * carries a custom base URL, or an origin that is not https, is refused.
+ */
+export function assertPublicProviderEndpoint(target: {
+  provider?: string;
+  preset?: string;
+  baseUrl?: string;
+}): void {
+  const custom = target.baseUrl?.trim();
+  let own: string | null = null;
+  try {
+    own = inferenceKeyOrigin({
+      ...(target.provider ? { provider: target.provider } : {}),
+      ...(target.preset ? { preset: target.preset } : {}),
+    });
+  } catch {
+    own = null;
+  }
+  let used: string | null = own;
+  if (custom) {
+    try {
+      used = new URL(custom).origin;
+    } catch {
+      used = null;
+    }
+    // A preset (OpenRouter, ...) reaches the target as an OpenAI-compatible
+    // base URL, so the origin may also be one of the presets' own endpoints.
+    const presetOrigins = new Set<string>();
+    for (const preset of Object.values(INFERENCE_PRESETS)) {
+      try {
+        presetOrigins.add(new URL(preset.baseUrl).origin);
+      } catch {
+        // a preset without a URL has no origin to allow
+      }
+    }
+    if (used !== own && !(used && presetOrigins.has(used)))
+      throw new AssistantNotConfiguredError();
+  }
+  if (!used?.startsWith('https:')) throw new AssistantNotConfiguredError();
 }
 
 /**
@@ -240,7 +381,7 @@ export function unavailableBody(error: unknown):
       error: error.message,
     };
   if (isInferenceUnavailableError(error)) {
-    const message = inferenceUnavailableMessage(error.reason);
+    const message = unavailableMessage(error);
     return {
       type: 'unavailable',
       configured: false,
@@ -250,4 +391,27 @@ export function unavailableBody(error: unknown):
     };
   }
   return undefined;
+}
+
+/** The owner-facing sentence for an unavailable error, naming the cap's reset. */
+function unavailableMessage(error: {
+  reason: Parameters<typeof inferenceUnavailableMessage>[0];
+  entitlement?: { policy: string; resetsAt?: string };
+}): string {
+  const policy = error.entitlement?.policy;
+  const base = inferenceUnavailableMessage(error.reason, policy);
+  if (error.reason !== 'entitlement') return base;
+  if (policy === 'tenant-cap' || policy === 'user-cap') {
+    const resets = error.entitlement?.resetsAt;
+    return `${base} ${
+      resets ? `It resets ${resets.slice(0, 10)}. ` : ''
+    }You can add your own API key in Settings to keep going.`;
+  }
+  if (
+    policy === 'subscription' ||
+    policy === 'no-tenant' ||
+    policy === 'gate-error'
+  )
+    return `${base} Upgrade your plan, or add your own API key in Settings.`;
+  return base;
 }

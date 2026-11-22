@@ -14,12 +14,19 @@ import {
   type InferenceControllerSession,
   type InferenceSettingsController,
   type InferenceSettingsHost,
+  InferenceSettingsService,
+  inferenceKeyOrigin,
 } from '@happyvertical/smrt-inference/server';
 import { createPreferenceStore } from '@happyvertical/smrt-preferences';
 import './inference-registry.ts';
 import { asSettingsOwner, assistantSettings } from './agent-cli/service.ts';
 import { CHATGPT_ASSISTANT_CLASS, lazyChatgptConnection } from './chatgpt.ts';
-import { getShellDb, getShellSecretMasterKey, shellDbSync } from './host.ts';
+import {
+  getShellDb,
+  getShellSecretMasterKey,
+  shellDbSync,
+  shellProfile,
+} from './host.ts';
 import {
   currentPrincipal,
   type Principal,
@@ -32,7 +39,41 @@ let host: InferenceSettingsHost | undefined;
 
 /** The shell's inference host, built on first use over shell.db. */
 export function shellInference(): InferenceSettingsHost {
-  host ??= createInferenceSettingsHost({
+  host ??= tenantOnlyInCloud(createShellInferenceHost());
+  return host;
+}
+
+/**
+ * Hosted, an owner is the owner of ONE tenant, not of the deployment: the
+ * shared host lets any session holding the right write app-scope rows
+ * (`_smrt_inference_overrides`, which every tenant's resolution layers
+ * under its own), so the settings service is rebuilt with an authorizer that
+ * admits this tenant's own scope only. Every app-scope write (a tier or
+ * default tier at `app`, an alias, a fusion, the transcript setting) is then
+ * refused with the host's 403 outcome. The desktop keeps the shared host's
+ * rule: its one owner is the deployment.
+ */
+function tenantOnlyInCloud(base: InferenceSettingsHost): InferenceSettingsHost {
+  return {
+    ...base,
+    async settingsService(session, permission) {
+      if ((await shellProfile()) !== 'cloud')
+        return base.settingsService(session, permission);
+      return InferenceSettingsService.create(
+        { db: shellDbSync() },
+        {
+          authorize: (request) =>
+            session.can(permission) &&
+            request.scopeType === 'tenant' &&
+            request.scopeId === session.tenantId,
+        },
+      );
+    },
+  };
+}
+
+function createShellInferenceHost(): InferenceSettingsHost {
+  return createInferenceSettingsHost({
     database: getShellDb,
     masterKeyProvider: getShellSecretMasterKey,
     // Read only after `getShellDb()` has resolved (every route and every
@@ -53,7 +94,6 @@ export function shellInference(): InferenceSettingsHost {
       },
     },
   });
-  return host;
 }
 
 /**
@@ -77,15 +117,76 @@ let controller: InferenceSettingsController | undefined;
  * one the template uses too), over the shell's host and preference store.
  */
 export function shellInferenceController(): InferenceSettingsController {
-  controller ??= createInferenceSettingsController({
-    host: shellInference(),
-    preferenceStore: async () =>
-      createPreferenceStore({ db: await getShellDb() }),
-  });
+  controller ??= withoutServerProbesInCloud(
+    createInferenceSettingsController({
+      host: shellInference(),
+      preferenceStore: async () =>
+        createPreferenceStore({ db: await getShellDb() }),
+    }),
+  );
   return controller;
 }
 
-/** The session the controller sees: the owner holds every right here. */
+const NO_PROBES = {
+  ok: false as const,
+  status: 403,
+  error: 'This is not available on the hosted app.',
+};
+
+const NO_ENDPOINT = {
+  ok: false as const,
+  status: 403,
+  error: 'A custom or local endpoint is not available on the hosted app.',
+};
+
+/**
+ * Hosted, the probes are refused: they make the SERVER connect to an address
+ * the owner typed (an internal-network request), read the operator's key
+ * variables for a configured candidate, and look at the server's own
+ * loopback for local model servers. None of that is a tenant's to do.
+ */
+function withoutServerProbesInCloud(
+  inner: InferenceSettingsController,
+): InferenceSettingsController {
+  return {
+    ...inner,
+    async saveKey(session, change) {
+      if ((await shellProfile()) === 'cloud') {
+        // The key is later SENT to its endpoint by the server: hosted, only a
+        // provider's own public https endpoint may hold one, never an address
+        // the owner typed (an internal-network request) or a local server.
+        let origin: string | null = null;
+        try {
+          origin = inferenceKeyOrigin(change);
+        } catch {
+          origin = null; // the inner host refuses it with its own message
+        }
+        if (change.baseUrl?.trim() || (origin && !origin.startsWith('https:')))
+          return { ...NO_ENDPOINT };
+      }
+      return inner.saveKey(session, change);
+    },
+    async testConnection(session, input) {
+      if ((await shellProfile()) === 'cloud') return { ...NO_PROBES };
+      return inner.testConnection(session, input);
+    },
+    async testCandidate(session, candidate) {
+      if ((await shellProfile()) === 'cloud') return { ...NO_PROBES };
+      return inner.testCandidate(session, candidate);
+    },
+    async discoverModels(session) {
+      if ((await shellProfile()) === 'cloud') return { discovered: [] };
+      return inner.discoverModels(session);
+    },
+  };
+}
+
+/**
+ * The session the controller sees: the owner holds every right here. That is
+ * the desktop's one-owner-one-deployment rule; hosted, the right is checked
+ * against the SCOPE of each write by {@link shellInference}'s authorizer, so
+ * `can: () => true` never reaches an app-scope row.
+ */
 export function ownerSession(owner: Principal): InferenceControllerSession {
   return { tenantId: owner.tenantId, can: () => true };
 }
@@ -104,7 +205,11 @@ export async function asOwner<T>(
   },
   fn: (owner: Principal, session: InferenceControllerSession) => Promise<T>,
 ): Promise<T> {
-  await getShellDb(); // the override resolver reads it synchronously
-  const owner = await requireOwner(principalFromLocals(locals));
+  // The override resolver reads the database synchronously. Hosted, the
+  // database is handed out only inside a tenant's context, so open it as the
+  // request's own principal (nobody: the owner check below answers 401).
+  const requester = principalFromLocals(locals);
+  if (requester) await runAs(requester, () => getShellDb());
+  const owner = await requireOwner(requester);
   return runAs(owner, () => fn(owner, ownerSession(owner)));
 }

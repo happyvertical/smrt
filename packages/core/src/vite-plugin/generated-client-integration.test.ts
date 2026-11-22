@@ -43,8 +43,10 @@ import { SmrtCollection } from '../collection';
 import { field } from '../decorators';
 import { APIGenerator } from '../generators/rest';
 import { SmrtObject } from '../object';
+import { parseRestListWhere } from '../query-access';
 import { ObjectRegistry, smrt } from '../registry';
 import type { SmartObjectManifest } from '../scanner/types.js';
+import { snapshotObjectRegistryState } from '../test-utils';
 import { getTestDatabase } from '../testing/database';
 import { generateTypeDeclarationFile, smrtPlugin } from './index.js';
 
@@ -61,10 +63,18 @@ class GenClientProduct extends SmrtObject {
   @field({ type: 'integer' })
   price: number = 0;
 
+  @field({ type: 'boolean' })
+  featured: boolean = false;
+
+  @field({ type: 'datetime' })
+  releasedAt: Date | null = null;
+
   constructor(options: any = {}) {
     super(options);
     if (options.name !== undefined) this.name = options.name;
     if (options.price !== undefined) this.price = options.price;
+    if (options.featured !== undefined) this.featured = options.featured;
+    if (options.releasedAt !== undefined) this.releasedAt = options.releasedAt;
   }
 }
 
@@ -99,6 +109,8 @@ describe('generated client <-> generated server integration (#1794/#1796/#1797)'
   let collection: GenClientProductCollection;
   let createClient: (basePath?: string) => GeneratedClient;
   let handler: (req: Request) => Promise<Response>;
+  let clientSource = '';
+  let declarationSource = '';
 
   beforeAll(async () => {
     // Register the collection so the server can auto-discover it WITHOUT an
@@ -181,13 +193,25 @@ export class GenClientProduct extends SmrtObject {
 @smrt({
   api: {
     public: true,
-    routes: { describe: { path: 'descriptions/[tone]' } },
+    routes: {
+      describe: { path: 'descriptions/[tone]' },
+      caption: { path: 'captions/[toString]' },
+      glance: { method: 'GET', path: 'glances/[tone]' },
+    },
   },
 })
 export class ArtCollection extends SmrtObject {
+  async glance(tone: string): Promise<string> {
+    return tone;
+  }
+
   async describe(tone: string): Promise<string> {
     void tone;
     return 'item model, not SmrtCollection';
+  }
+
+  async caption(toString: string): Promise<string> {
+    return toString;
   }
 }
 
@@ -262,47 +286,76 @@ export class GenClientReadonly extends SmrtObject {
     await getHook(plugin, 'buildStart').call(plugin);
 
     const load = getHook(plugin, 'load').bind(plugin);
-    const clientSource = (await load('\0smrt:client')) as string;
+    clientSource = (await load('\0smrt:client')) as string;
+    declarationSource = readFileSync(
+      join(projectRoot, 'src', 'types', 'virtual-modules.d.ts'),
+      'utf-8',
+    );
+
+    // Evaluate the generated ESM the way a bundler would: write it to disk and
+    // dynamic-import it. This exercises the ACTUAL emitted source, not a
+    // hand-rolled reimplementation. Source-shape assertions live in their own
+    // test so a behavioural regression fails at its own assertion.
+    clientModuleDir = mkdtempSync(join(tmpdir(), 'smrt-gen-client-mod-'));
+    const clientModulePath = join(clientModuleDir, 'client.mjs');
+    writeFileSync(clientModulePath, clientSource, 'utf-8');
+    const mod = await import(pathToFileURL(clientModulePath).href);
+    createClient = mod.createClient;
+
+    // Real in-memory SQLite collection + generated server. No registerCollection
+    // on the APIGenerator — force the auto-discovery path.
+    db = await getTestDatabase({
+      type: 'sqlite',
+      url: ':memory:',
+      classes: ['GenClientProduct'],
+    });
+    collection = await GenClientProductCollection.create({ db });
+    const api = new APIGenerator({ basePath: '/api/v1' }, { db });
+    handler = api.generateHandler();
+  }, 60_000);
+
+  it('emits every fetcher async with the route signature its manifest declares', () => {
+    expect(Object.keys(createClient().genclientsecrets)).toEqual(['reveal']);
     // The client key is the manifest `collection` segment. `GenClientProduct`
     // pluralizes to `genclientproducts`; assert that here so a future
-    // inflection change surfaces as a readable failure rather than an
-    // `undefined.list()` TypeError below.
+    // inflection change surfaces as a readable failure.
     expect(clientSource).toContain('"genclientproducts":');
     expect(clientSource).toContain('"genClientProductCollection":');
     expect(clientSource.match(/\n {2}"genclientproducts":/g)).toHaveLength(1);
     expect(clientSource.match(/\n {2}"contents":/g)).toHaveLength(1);
     expect(clientSource).toContain('"contents2":');
-    expect(clientSource).toContain('findFeatured: (options)');
-    expect(clientSource).not.toContain('findFeatured: (id, options)');
-    expect(clientSource).not.toContain('list: (id, options)');
-    expect(clientSource).toContain('invalidItemScope: (options)');
-    expect(clientSource).not.toContain('invalidItemScope: (id, options)');
-    expect(clientSource).toContain('invalidCollectionScope: (id, options)');
-    expect(clientSource).not.toContain('invalidCollectionScope: (options)');
-    expect(clientSource).toContain('describe: (id, options)');
-    expect(clientSource).not.toContain('describe: (options)');
-    expect(clientSource).toContain('featured: (options)');
-    expect(clientSource).toContain('summarize: (id, options)');
-    expect(clientSource).toContain('findUnread: (options)');
-    expect(clientSource).not.toContain('findUnread: (id, options)');
+    expect(clientSource).toContain('findFeatured: async (options)');
+    expect(clientSource).not.toContain('findFeatured: async (id, options)');
+    expect(clientSource).not.toContain('list: async (id, options)');
+    expect(clientSource).toContain('invalidItemScope: async (options)');
+    expect(clientSource).not.toContain('invalidItemScope: async (id, options)');
+    expect(clientSource).toContain(
+      'invalidCollectionScope: async (id, options)',
+    );
+    expect(clientSource).not.toContain(
+      'invalidCollectionScope: async (options)',
+    );
+    expect(clientSource).toContain('describe: async (id, options)');
+    expect(clientSource).not.toContain('describe: async (options)');
+    expect(clientSource).toContain('caption: async (id, options)');
+    expect(clientSource).toContain('featured: async (options)');
+    expect(clientSource).toContain('summarize: async (id, options)');
+    expect(clientSource).toContain('findUnread: async (options)');
+    expect(clientSource).not.toContain('findUnread: async (id, options)');
     const customOnlyClientSource = clientSource.match(
       /\n {2}"genclientsecrets": \{([\s\S]*?)\n {2}\}/,
     )?.[1];
-    expect(customOnlyClientSource).toContain('reveal: (options)');
+    expect(customOnlyClientSource).toContain('reveal: async (options)');
     expect(customOnlyClientSource).not.toMatch(
       /\b(list|get|create|update|delete|search):/,
     );
     const partialClientSource = clientSource.match(
       /\n {2}"genclientreadonlies": \{([\s\S]*?)\n {2}\}/,
     )?.[1];
-    expect(partialClientSource).toContain('get: (id)');
-    expect(partialClientSource).toContain('ping: (id, options)');
+    expect(partialClientSource).toContain('get: async (id)');
+    expect(partialClientSource).toContain('ping: async (id, options)');
     expect(partialClientSource).not.toMatch(
       /\b(list|create|update|delete|search):/,
-    );
-    const declarationSource = readFileSync(
-      join(projectRoot, 'src', 'types', 'virtual-modules.d.ts'),
-      'utf-8',
     );
     expect(declarationSource).toContain(
       '"genclientproducts": CrudOperations<import(\'@happyvertical/smrt-virt-types\').GenClientProductData> & {\n      invalidCollectionScope(id: string, options?: Record<string, never>): Promise<any>;',
@@ -351,28 +404,7 @@ export class GenClientReadonly extends SmrtObject {
     );
     expect(declarationSource).toContain('error?: string | SmrtClientFailure;');
     expect(declarationSource).toContain('code?: string;');
-
-    // Evaluate the generated ESM the way a bundler would: write it to disk and
-    // dynamic-import it. This exercises the ACTUAL emitted source, not a
-    // hand-rolled reimplementation.
-    clientModuleDir = mkdtempSync(join(tmpdir(), 'smrt-gen-client-mod-'));
-    const clientModulePath = join(clientModuleDir, 'client.mjs');
-    writeFileSync(clientModulePath, clientSource, 'utf-8');
-    const mod = await import(pathToFileURL(clientModulePath).href);
-    createClient = mod.createClient;
-    expect(Object.keys(createClient().genclientsecrets)).toEqual(['reveal']);
-
-    // Real in-memory SQLite collection + generated server. No registerCollection
-    // on the APIGenerator — force the auto-discovery path.
-    db = await getTestDatabase({
-      type: 'sqlite',
-      url: ':memory:',
-      classes: ['GenClientProduct'],
-    });
-    collection = await GenClientProductCollection.create({ db });
-    const api = new APIGenerator({ basePath: '/api/v1' }, { db });
-    handler = api.generateHandler();
-  }, 60_000);
+  });
 
   afterAll(async () => {
     await db?.close?.();
@@ -602,6 +634,782 @@ export class GenClientReadonly extends SmrtObject {
     await client.genclientproducts.list().catch((error: Error) => {
       expect(error.message).toContain(failure.message);
       expect(error.message).not.toContain('[object Object]');
+    });
+  });
+
+  /** Record the exact URL string each generated fetcher passes to `fetch`. */
+  function recordRequestedUrls(): string[] {
+    const urls: string[] = [];
+    vi.stubGlobal('fetch', async (input: string | URL) => {
+      urls.push(String(input));
+      return Response.json({ id: 'recorded', result: 'ok' });
+    });
+    return urls;
+  }
+
+  it('sends a caller-supplied id as one encoded path segment for get, update, delete and item actions', async () => {
+    const urls = recordRequestedUrls();
+    const client = createClient('/api/v1');
+    const id = 'a/../b?x=1#frag';
+    const encoded = encodeURIComponent(id);
+
+    await client.genclientproducts.get(id);
+    await client.genclientproducts.update(id, { name: 'Renamed' });
+    await client.genclientproducts.delete(id);
+    const readonlyClient = client.genclientreadonlies as unknown as {
+      ping(id: string, options?: Record<string, never>): Promise<unknown>;
+    };
+    await readonlyClient.ping(id);
+
+    expect(urls).toEqual([
+      `/api/v1/genclientproducts/${encoded}`,
+      `/api/v1/genclientproducts/${encoded}`,
+      `/api/v1/genclientproducts/${encoded}`,
+      `/api/v1/genclientreadonlies/${encoded}/ping`,
+    ]);
+    // Resolved against an origin, the request stays on its collection route.
+    for (const url of urls) {
+      const { pathname } = new URL(url, 'http://local');
+      expect(pathname.split('/').slice(0, 5)).toEqual([
+        '',
+        'api',
+        'v1',
+        pathname.split('/')[3],
+        encoded,
+      ]);
+    }
+  });
+
+  it('encodes a percent sign in an id instead of passing an escape through', async () => {
+    const urls = recordRequestedUrls();
+    const client = createClient('/api/v1');
+
+    await client.genclientproducts.get('a%2F..%2Fb');
+
+    expect(urls).toEqual(['/api/v1/genclientproducts/a%252F..%252Fb']);
+    expect(
+      decodeURIComponent(
+        new URL(urls[0], 'http://local').pathname.split('/')[4],
+      ),
+    ).toBe('a%2F..%2Fb');
+  });
+
+  it('keeps ordinary ids unchanged in item URLs', async () => {
+    const urls = recordRequestedUrls();
+    const client = createClient('/api/v1');
+
+    await client.genclientproducts.get('3f2b8c1e-4d5a-4b6c-9e7f-0a1b2c3d4e5f');
+
+    expect(urls).toEqual([
+      '/api/v1/genclientproducts/3f2b8c1e-4d5a-4b6c-9e7f-0a1b2c3d4e5f',
+    ]);
+  });
+
+  it('still sends a request for an id it sent one for before, now encoded', async () => {
+    const urls = recordRequestedUrls();
+    const client = createClient('/api/v1');
+
+    await client.genclientproducts.get(undefined as unknown as string);
+    await client.genclientproducts.get(42 as unknown as string);
+
+    expect(urls).toEqual([
+      '/api/v1/genclientproducts/undefined',
+      '/api/v1/genclientproducts/42',
+    ]);
+  });
+
+  it('rejects, without throwing or sending, an id that cannot be encoded', async () => {
+    const urls = recordRequestedUrls();
+    const client = createClient('/api/v1');
+    const loneSurrogate = 'a\uD800b';
+
+    let pending: Promise<unknown> | undefined;
+    expect(() => {
+      pending = client.genclientproducts.get(loneSurrogate);
+    }).not.toThrow();
+    expect(pending).toBeInstanceOf(Promise);
+    await expect(pending).rejects.toThrow(
+      /Invalid generated client route parameter id/,
+    );
+    await expect(
+      client.genclientproducts.update(loneSurrogate, {}),
+    ).rejects.toThrow(/Invalid generated client route parameter id/);
+    const art = client.artcollections as unknown as {
+      describe(id: string, options?: Record<string, unknown>): Promise<unknown>;
+    };
+    await expect(art.describe(loneSurrogate, { tone: 'warm' })).rejects.toThrow(
+      /Invalid generated client route parameter id/,
+    );
+    expect(urls).toEqual([]);
+  });
+
+  it('rejects with URIError, rather than throws, for a named route parameter that cannot be encoded', async () => {
+    const urls = recordRequestedUrls();
+    const client = createClient('/api/v1');
+    const art = client.artcollections as unknown as {
+      describe(id: string, options?: Record<string, unknown>): Promise<unknown>;
+    };
+
+    const pending = art.describe('1', { tone: 'a\uD800b' });
+    expect(pending).toBeInstanceOf(Promise);
+    await expect(pending).rejects.toThrow(URIError);
+    expect(urls).toEqual([]);
+  });
+
+  it('encodes a value that looks like a route placeholder as data', async () => {
+    const urls = recordRequestedUrls();
+    const client = createClient('/api/v1');
+    const art = client.artcollections as unknown as {
+      describe(id: string, options?: Record<string, unknown>): Promise<unknown>;
+    };
+
+    await art.describe('[tone]', { tone: '[tone]' });
+
+    expect(urls).toEqual([
+      '/api/v1/artcollections/%5Btone%5D/descriptions/%5Btone%5D',
+    ]);
+  });
+
+  it('refuses an empty, "." or ".." id before any request is sent', async () => {
+    const urls = recordRequestedUrls();
+    const client = createClient('/api/v1');
+
+    for (const id of ['', '.', '..']) {
+      await expect(client.genclientproducts.get(id)).rejects.toThrow(
+        /Invalid generated client route parameter id/,
+      );
+      await expect(client.genclientproducts.delete(id)).rejects.toThrow(
+        /Invalid generated client route parameter id/,
+      );
+    }
+    expect(urls).toEqual([]);
+  });
+
+  it('list() forwards its params as query parameters', async () => {
+    const urls = recordRequestedUrls();
+    const client = createClient('/api/v1');
+
+    await client.genclientproducts.list({
+      limit: 1,
+      offset: 2,
+      name: 'Widget',
+      unset: undefined,
+    });
+    await client.genclientproducts.list();
+
+    expect(urls).toEqual([
+      '/api/v1/genclientproducts?limit=1&offset=2&name=Widget',
+      '/api/v1/genclientproducts',
+    ]);
+  });
+
+  it('list() params narrow the rows the server returns', async () => {
+    for (const name of ['Limited A', 'Limited B']) {
+      const row = await collection.create({ name, price: 7 });
+      await row.save();
+    }
+    stubFetchToServer(handler);
+    const client = createClient('/api/v1');
+
+    const page = (await client.genclientproducts.list({
+      price: 7,
+      limit: 1,
+    })) as Array<Record<string, unknown>>;
+    const all = (await client.genclientproducts.list({
+      price: 7,
+    })) as Array<Record<string, unknown>>;
+
+    expect(page).toHaveLength(1);
+    expect(all.map((row) => row.name).sort()).toEqual([
+      'Limited A',
+      'Limited B',
+    ]);
+  });
+
+  it('rejects, rather than throws, when a named route parameter is missing', async () => {
+    const urls = recordRequestedUrls();
+    const client = createClient('/api/v1');
+    const art = client.artcollections as unknown as {
+      describe(id: string, options?: Record<string, unknown>): Promise<unknown>;
+    };
+
+    let pending: Promise<unknown> | undefined;
+    expect(() => {
+      pending = art.describe('1', {});
+    }).not.toThrow();
+    expect(pending).toBeInstanceOf(Promise);
+    await expect(pending).rejects.toThrow(
+      /Missing generated client route parameter: tone/,
+    );
+    expect(urls).toEqual([]);
+  });
+
+  it('treats a named route parameter that is not an own property as missing', async () => {
+    const urls = recordRequestedUrls();
+    const client = createClient('/api/v1');
+    const art = client.artcollections as unknown as {
+      caption(id: string, options?: Record<string, unknown>): Promise<unknown>;
+    };
+
+    let pending: Promise<unknown> | undefined;
+    expect(() => {
+      pending = art.caption('1', {});
+    }).not.toThrow();
+    await expect(pending).rejects.toThrow(
+      /Missing generated client route parameter: toString/,
+    );
+    await expect(
+      art.caption('1', Object.create({ toString: 'inherited' })),
+    ).rejects.toThrow(/Missing generated client route parameter: toString/);
+    expect(urls).toEqual([]);
+
+    // An own property is used, and read exactly once.
+    let reads = 0;
+    const options = {};
+    // Not enumerable, so the request body does not read it too.
+    Object.defineProperty(options, 'toString', {
+      enumerable: false,
+      get() {
+        reads += 1;
+        return reads === 1 ? 'short' : '..';
+      },
+    });
+    await art.caption('1', options);
+    expect(reads).toBe(1);
+    expect(urls).toEqual(['/api/v1/artcollections/1/captions/short']);
+  });
+
+  it('reads an enumerable named route parameter once and sends that value in the body or query', async () => {
+    const requests: Array<{ url: string; body: unknown }> = [];
+    vi.stubGlobal('fetch', async (input: string | URL, init?: RequestInit) => {
+      requests.push({ url: String(input), body: init?.body });
+      return Response.json({ result: 'ok' });
+    });
+    const client = createClient('/api/v1');
+    const art = client.artcollections as unknown as {
+      caption(id: string, options?: Record<string, unknown>): Promise<unknown>;
+      glance(id: string, options?: Record<string, unknown>): Promise<unknown>;
+    };
+    const countingOptions = (name: string) => {
+      const state = { reads: 0 };
+      const options: Record<string, unknown> = { extra: 'kept' };
+      Object.defineProperty(options, name, {
+        enumerable: true,
+        get() {
+          state.reads += 1;
+          return state.reads === 1 ? 'first' : 'later';
+        },
+      });
+      return { options, state };
+    };
+
+    const post = countingOptions('toString');
+    await art.caption('1', post.options);
+    expect(post.state.reads).toBe(1);
+    expect(requests[0].url).toBe('/api/v1/artcollections/1/captions/first');
+    expect(JSON.parse(String(requests[0].body))).toEqual({
+      extra: 'kept',
+      toString: 'first',
+    });
+
+    const get = countingOptions('tone');
+    await art.glance('1', get.options);
+    expect(get.state.reads).toBe(1);
+    expect(requests[1].url).toBe(
+      '/api/v1/artcollections/1/glances/first?extra=kept',
+    );
+    expect(requests[1].body).toBeUndefined();
+  });
+
+  it("a body-bearing action keeps the options' own toJSON() and the path value read once", async () => {
+    const requests: Array<{ url: string; method?: string; body: unknown }> = [];
+    vi.stubGlobal('fetch', async (input: string | URL, init?: RequestInit) => {
+      requests.push({
+        url: String(input),
+        method: init?.method,
+        body: init?.body,
+      });
+      return Response.json({ result: 'ok' });
+    });
+    const art = createClient('/api/v1').artcollections as unknown as {
+      describe(id: string, options?: unknown): Promise<unknown>;
+    };
+    class DescribeOptions {
+      tone = 'warm';
+      backing = 'not for the wire';
+      toJSON() {
+        return { tone: this.tone, mood: `${this.tone}-derived` };
+      }
+    }
+
+    await art.describe('1', new DescribeOptions());
+
+    expect(requests).toHaveLength(1);
+    expect(requests[0].url).toBe('/api/v1/artcollections/1/descriptions/warm');
+    expect(requests[0].method).not.toBe('GET');
+    expect(JSON.parse(String(requests[0].body))).toEqual({
+      tone: 'warm',
+      mood: 'warm-derived',
+    });
+  });
+
+  it('a GET custom action keeps String() for array members and JSON for objects', async () => {
+    const urls = recordRequestedUrls();
+    const client = createClient('/api/v1');
+    const collectionClient =
+      client.genClientProductCollection as typeof client.genClientProductCollection & {
+        findFeatured(options?: Record<string, unknown>): Promise<unknown>;
+      };
+
+    await collectionClient.findFeatured({
+      tags: [1, 'two', { a: 1 }, [3, 4], null],
+      filter: { a: [1, 2] },
+      flag: false,
+    });
+
+    expect([
+      ...new URL(urls[0], 'http://local').searchParams.entries(),
+    ]).toEqual([
+      ['tags', '1'],
+      ['tags', 'two'],
+      ['tags', '[object Object]'],
+      ['tags', '3,4'],
+      ['tags', 'null'],
+      ['filter', '{"a":[1,2]}'],
+      ['flag', 'false'],
+    ]);
+  });
+
+  it('a GET custom action sends a Date option as its ISO string', async () => {
+    const urls = recordRequestedUrls();
+    const client = createClient('/api/v1');
+    const collectionClient =
+      client.genClientProductCollection as typeof client.genClientProductCollection & {
+        findFeatured(options?: Record<string, unknown>): Promise<unknown>;
+      };
+
+    await collectionClient.findFeatured({
+      since: new Date('2026-03-04T05:06:07.890Z'),
+    });
+
+    expect(new URL(urls[0], 'http://local').searchParams.get('since')).toBe(
+      '2026-03-04T05:06:07.890Z',
+    );
+  });
+
+  /** A generated-client fetcher call that must reject before any request. */
+  async function expectListRejected(
+    params: unknown,
+    message: RegExp,
+  ): Promise<void> {
+    const urls = recordRequestedUrls();
+    const client = createClient('/api/v1');
+    let pending: Promise<unknown> | undefined;
+    expect(() => {
+      pending = client.genclientproducts.list(params);
+    }).not.toThrow();
+    await expect(pending).rejects.toThrow(message);
+    expect(urls).toEqual([]);
+  }
+
+  it('list() sends an [in] list and an orderBy list as one comma-joined value each', async () => {
+    const urls = recordRequestedUrls();
+    const client = createClient('/api/v1');
+    const releasedAt = new Date('2026-03-04T05:06:07.890Z');
+
+    await client.genclientproducts.list({
+      'id[in]': ['a', 'b'],
+      orderBy: ['price DESC', 'name ASC'],
+      'releasedAt[gte]': releasedAt,
+      featured: false,
+    });
+
+    expect(urls).toHaveLength(1);
+    const params = new URL(urls[0], 'http://local').searchParams;
+    expect([...params.entries()]).toEqual([
+      ['id[in]', 'a,b'],
+      ['orderBy', 'price DESC,name ASC'],
+      ['releasedAt[gte]', '2026-03-04T05:06:07.890Z'],
+      ['featured', 'false'],
+    ]);
+  });
+
+  it('list() flattens a structured where into field parameters', async () => {
+    const urls = recordRequestedUrls();
+    const client = createClient('/api/v1');
+
+    await client.genclientproducts.list({
+      where: {
+        name: 'Widget',
+        'price >=': 3,
+        id: { op: 'in', value: ['a', 'b'] },
+        featured: { op: '=', value: true },
+      },
+      limit: 5,
+    });
+
+    const params = new URL(urls[0], 'http://local').searchParams;
+    expect([...params.entries()]).toEqual([
+      ['name', 'Widget'],
+      ['price[gte]', '3'],
+      ['id[in]', 'a,b'],
+      ['featured', 'true'],
+      ['limit', '5'],
+    ]);
+  });
+
+  it.each([
+    [{ 'id[in]': [] }, /empty list would match every row/],
+    [{ orderBy: [] }, /empty list would match every row/],
+    [{ where: { id: { op: 'in', value: [] } } }, /empty list/],
+    [{ name: null }, /null has no list query form/],
+    [{ where: { name: null } }, /null has no list query form/],
+    [{ name: ['a', 'b'] }, /a list needs the \[in\] operator/],
+    [{ 'name[in]': ['a,b', 'c'] }, /cannot contain a comma/],
+    [{ name: { nested: true } }, /expected a string, number, boolean or Date/],
+    [{ releasedAt: new Date('not a date') }, /invalid Date/],
+    [{ price: Number.NaN }, /not a finite number/],
+    [{ name: 'a', where: { name: 'b' } }, /given more than once/],
+    [{ where: { 'name not like': 'a%' } }, /unsupported operator/],
+    [{ 'name[eq]': 'a' }, /unsupported operator/],
+    [{ where: { limit: 1 } }, /not a filterable field name/],
+    [{ where: [{ name: 'a' }] }, /expected an object of conditions/],
+    ['name=a', /expected a plain object/],
+    [new Map([['name', 'a']]), /expected a plain object/],
+    [new URLSearchParams('name=a'), /expected a plain object/],
+    [new Date(0), /expected a plain object/],
+    [{ where: new Map([['name', 'a']]) }, /expected an object of conditions/],
+    [
+      { where: new URLSearchParams('name=a') },
+      /expected an object of conditions/,
+    ],
+    [{ 'name[in]': 'a,b' }, /must be a non-empty list/],
+    [
+      { where: { name: { op: 'in', value: 'Smith, Jr.' } } },
+      /must be a non-empty list/,
+    ],
+    [{ where: { 'name in': 'a' } }, /must be a non-empty list/],
+    [null, /expected a plain object/],
+    [{ where: { price: { op: null, value: 10 } } }, /unsupported operator/],
+    [{ where: { price: { op: false, value: 10 } } }, /unsupported operator/],
+    [{ where: { price: { op: '', value: 10 } } }, /unsupported operator/],
+    [{ name: 'a\uD800' }, /not a well-formed string/],
+    [{ 'name[in]': ['a', '\uDC00b'] }, /not a well-formed string/],
+    [{ 'na\uD800me': 'a' }, /not a well-formed string/],
+    [{ orderBy: ['name\uD800 ASC'] }, /not a well-formed string/],
+  ])('list(%o) rejects before sending a request', async (params, message) => {
+    await expectListRejected(params, message);
+  });
+
+  it('list() [in], orderBy, boolean and datetime filters return every matching row from the REST route', async () => {
+    const early = new Date('2026-01-01T00:00:00.000Z');
+    const late = new Date('2026-06-01T00:00:00.000Z');
+    const seeds = [
+      { name: 'Grammar A', price: 40, featured: true, releasedAt: early },
+      { name: 'Grammar B', price: 40, featured: false, releasedAt: late },
+      { name: 'Grammar C', price: 41, featured: true, releasedAt: late },
+      { name: 'Grammar D', price: 42, featured: false, releasedAt: null },
+    ];
+    for (const seed of seeds) {
+      const row = await collection.create(seed);
+      await row.save();
+    }
+    stubFetchToServer(handler);
+    const client = createClient('/api/v1');
+    const names = (rows: unknown) =>
+      (rows as Array<Record<string, unknown>>).map((row) => row.name);
+
+    expect(
+      names(
+        await client.genclientproducts.list({
+          'name[in]': ['Grammar A', 'Grammar B', 'Grammar C'],
+          orderBy: ['price DESC', 'name DESC'],
+        }),
+      ),
+    ).toEqual(['Grammar C', 'Grammar B', 'Grammar A']);
+    expect(
+      names(
+        await client.genclientproducts.list({
+          where: { name: { op: 'in', value: ['Grammar A', 'Grammar D'] } },
+          orderBy: 'name ASC',
+        }),
+      ),
+    ).toEqual(['Grammar A', 'Grammar D']);
+    expect(
+      names(
+        await client.genclientproducts.list({
+          'name[like]': 'Grammar %',
+          featured: true,
+          orderBy: 'name ASC',
+        }),
+      ),
+    ).toEqual(['Grammar A', 'Grammar C']);
+    expect(
+      names(
+        await client.genclientproducts.list({
+          where: { 'name like': 'Grammar %', featured: false },
+          orderBy: 'name ASC',
+        }),
+      ),
+    ).toEqual(['Grammar B', 'Grammar D']);
+    expect(
+      names(
+        await client.genclientproducts.list({
+          'name[like]': 'Grammar %',
+          'releasedAt[gte]': late,
+          orderBy: 'name ASC',
+        }),
+      ),
+    ).toEqual(['Grammar B', 'Grammar C']);
+    expect(
+      names(
+        await client.genclientproducts.list({
+          'name[like]': 'Grammar %',
+          releasedAt: early,
+        }),
+      ),
+    ).toEqual(['Grammar A']);
+  });
+
+  it('the REST list and count routes refuse a repeated query parameter and keep comma-delimited [in]', async () => {
+    for (const name of ['Repeat A', 'Repeat B']) {
+      const row = await collection.create({ name, price: 50 });
+      await row.save();
+    }
+    for (const path of ['genclientproducts', 'genclientproducts/count']) {
+      const repeated = await handler(
+        new Request(
+          `http://local/api/v1/${path}?name%5Bin%5D=Repeat%20A&name%5Bin%5D=Repeat%20B`,
+        ),
+      );
+      expect(repeated.status).toBe(400);
+      expect(JSON.stringify(await repeated.json())).toContain(
+        'REPEATED_QUERY_PARAMETER',
+      );
+    }
+    const repeatedLimit = await handler(
+      new Request('http://local/api/v1/genclientproducts?limit=1&limit=2'),
+    );
+    expect(repeatedLimit.status).toBe(400);
+
+    const joined = await handler(
+      new Request(
+        'http://local/api/v1/genclientproducts?name%5Bin%5D=Repeat%20A,Repeat%20B&orderBy=name%20ASC',
+      ),
+    );
+    expect(joined.status).toBe(200);
+    expect(
+      ((await joined.json()) as Array<Record<string, unknown>>).map(
+        (row) => row.name,
+      ),
+    ).toEqual(['Repeat A', 'Repeat B']);
+    const count = await handler(
+      new Request(
+        'http://local/api/v1/genclientproducts/count?name%5Bin%5D=Repeat%20A,Repeat%20B',
+      ),
+    );
+    expect(await count.json()).toEqual({ count: 2 });
+  });
+
+  it('list() with a key that is not a field rejects with 400 QUERY_FIELD_NOT_ALLOWED', async () => {
+    stubFetchToServer(handler);
+    const client = createClient('/api/v1');
+
+    await expect(
+      client.genclientproducts.list({ cache: false }),
+    ).rejects.toMatchObject({
+      name: 'SmrtClientError',
+      status: 400,
+      code: 'QUERY_FIELD_NOT_ALLOWED',
+    });
+  });
+
+  it.each([
+    ['price%5Bgte%5D=100&price%20%3E%3D=10'],
+    ['price%20%3E%3D=10&price%5Bgte%5D=100'],
+  ])('the REST list and count routes refuse two spellings of one predicate (?%s)', async (query) => {
+    for (const path of ['genclientproducts', 'genclientproducts/count']) {
+      const response = await handler(
+        new Request(`http://local/api/v1/${path}?${query}`),
+      );
+      expect(response.status).toBe(400);
+      expect(JSON.stringify(await response.json())).toContain(
+        'REPEATED_QUERY_PARAMETER',
+      );
+    }
+  });
+
+  it('a boolean column compared with like keeps its string pattern in both spellings', async () => {
+    for (const query of ['featured like=1', 'featured[like]=1']) {
+      expect(
+        parseRestListWhere(new URLSearchParams(query), 'GenClientProduct'),
+      ).toEqual({ 'featured like': '1' });
+    }
+    // Equality on the same column still decodes.
+    expect(
+      parseRestListWhere(new URLSearchParams('featured=1'), 'GenClientProduct'),
+    ).toEqual({ featured: true });
+    for (const query of ['featured%20like=1', 'featured%5Blike%5D=1']) {
+      for (const path of ['genclientproducts', 'genclientproducts/count']) {
+        const response = await handler(
+          new Request(`http://local/api/v1/${path}?${query}`),
+        );
+        expect(response.status).toBe(200);
+      }
+    }
+  });
+
+  it('the REST list and count routes refuse a __proto__ filter key as a field', async () => {
+    for (const path of ['genclientproducts', 'genclientproducts/count']) {
+      const response = await handler(
+        new Request(`http://local/api/v1/${path}?__proto__=x`),
+      );
+      expect(response.status).toBe(400);
+      expect(JSON.stringify(await response.json())).toContain(
+        'QUERY_FIELD_NOT_ALLOWED',
+      );
+    }
+    stubFetchToServer(handler);
+    await expect(
+      createClient('/api/v1').genclientproducts.list(
+        JSON.parse('{"__proto__":"x"}'),
+      ),
+    ).rejects.toMatchObject({ status: 400, code: 'QUERY_FIELD_NOT_ALLOWED' });
+  });
+
+  it.each([
+    // An instant with Z or an offset becomes UTC, keeping every digit.
+    ['2026-03-04T05:06:07Z', '2026-03-04T05:06:07.000Z'],
+    ['2026-03-04T05:06:07.5Z', '2026-03-04T05:06:07.500Z'],
+    ['2026-03-04T05:06:07.123456Z', '2026-03-04T05:06:07.123456Z'],
+    ['2026-03-04T07:06:07.123456+02:00', '2026-03-04T05:06:07.123456Z'],
+    ['2026-03-04T00:30:00-0130', '2026-03-04T02:00:00.000Z'],
+    ['2026-03-04T05:06Z', '2026-03-04T05:06:00.000Z'],
+    // A date alone is UTC midnight.
+    ['2026-03-04', '2026-03-04T00:00:00.000Z'],
+    // Anything else passes through as sent: no server-zone reading.
+    ['2026-03-04T05:06:07', '2026-03-04T05:06:07'],
+    ['2026-03-04 05:06:07Z', '2026-03-04 05:06:07Z'],
+    ['1', '1'],
+    ['2026-02-30T00:00:00Z', '2026-02-30T00:00:00Z'],
+    ['2026-03-04T05:06:07+25:00', '2026-03-04T05:06:07+25:00'],
+  ])('a datetime filter value %s is read as %s', (sent, read) => {
+    const where = parseRestListWhere(
+      new URLSearchParams({ releasedAt: sent, 'created_at[gte]': sent }),
+      'GenClientProduct',
+    );
+    expect(where.releasedAt).toBe(read);
+    expect(where['created_at >=']).toBe(read);
+  });
+
+  it('a datetime filter keeps microseconds on PostgreSQL (PGlite)', async () => {
+    const pg = await getTestDatabase({
+      type: 'pglite',
+      url: ':memory:',
+      classes: ['GenClientProduct'],
+    });
+    try {
+      const products = await GenClientProductCollection.create({ db: pg });
+      const row = await products.create({ name: 'Micro', price: 1 });
+      await row.save();
+      await pg.query(
+        `UPDATE ${products.tableName} SET released_at = '2026-03-04T05:06:07.123456Z'`,
+      );
+      const pgHandler = new APIGenerator(
+        { basePath: '/api/v1' },
+        { db: pg },
+      ).generateHandler();
+      const names = async (query: string) => {
+        const response = await pgHandler(
+          new Request(`http://local/api/v1/genclientproducts?${query}`),
+        );
+        expect(response.status).toBe(200);
+        return ((await response.json()) as Array<{ name: string }>).map(
+          (item) => item.name,
+        );
+      };
+      const enc = encodeURIComponent;
+
+      expect(
+        await names(`releasedAt=${enc('2026-03-04T05:06:07.123456Z')}`),
+      ).toEqual(['Micro']);
+      expect(
+        await names(`releasedAt=${enc('2026-03-04T07:06:07.123456+02:00')}`),
+      ).toEqual(['Micro']);
+      expect(
+        await names(`releasedAt=${enc('2026-03-04T05:06:07.123Z')}`),
+      ).toEqual([]);
+      expect(
+        await names(
+          `releasedAt%5Bgte%5D=${enc('2026-03-04T05:06:07.123457Z')}`,
+        ),
+      ).toEqual([]);
+      expect(
+        await names(`releasedAt%5Bgt%5D=${enc('2026-03-04T05:06:07.123455Z')}`),
+      ).toEqual(['Micro']);
+      expect(
+        await names(
+          `releasedAt%5Blte%5D=${enc('2026-03-04T05:06:07.123456Z')}`,
+        ),
+      ).toEqual(['Micro']);
+    } finally {
+      await pg.close?.();
+    }
+  });
+
+  describe('a column declared with different types across a family is not decoded', () => {
+    function declareFamily(order: 'text-first' | 'boolean-first') {
+      @smrt({ tableStrategy: 'sti' })
+      class FlagFamilyBase extends SmrtObject {
+        @field({ type: 'boolean' })
+        settled: boolean = false;
+      }
+      const declareText = () => {
+        class FlagTextMember extends FlagFamilyBase {
+          @field({ type: 'text' })
+          flag: string = '';
+        }
+        smrt()(FlagTextMember);
+      };
+      const declareBoolean = () => {
+        class FlagBooleanMember extends FlagFamilyBase {
+          @field({ type: 'boolean' })
+          flag: boolean = false;
+        }
+        smrt()(FlagBooleanMember);
+      };
+      if (order === 'text-first') {
+        declareText();
+        declareBoolean();
+      } else {
+        declareBoolean();
+        declareText();
+      }
+    }
+
+    it.each([
+      'text-first',
+      'boolean-first',
+    ] as const)('in registration order %s', (order) => {
+      const restore = snapshotObjectRegistryState();
+      try {
+        declareFamily(order);
+        for (const model of [
+          'FlagFamilyBase',
+          'FlagTextMember',
+          'FlagBooleanMember',
+        ]) {
+          const where = parseRestListWhere(
+            new URLSearchParams('flag=true&settled=true'),
+            model,
+          );
+          // The disputed column passes through; the agreed one decodes.
+          expect(where.flag).toBe('true');
+          expect(where.settled).toBe(true);
+        }
+      } finally {
+        restore();
+      }
     });
   });
 });

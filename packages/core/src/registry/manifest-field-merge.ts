@@ -108,9 +108,41 @@ function assignDefinedMeta(
   }
 }
 
+/**
+ * Field policy attributes a definition may state at the top level.
+ *
+ * `sensitive` and `readPermission` decide who reads a value, `readonly` who
+ * writes it, and `transient` whether it has a column. Consumers read each from
+ * `_meta`, so every registration path copies them there, whatever else the
+ * model declares. A build-time manifest states them in both places already; a
+ * run-time definition (`registerRuntimeModel()`) states them only at the top
+ * level, and would otherwise register a field without its policy.
+ */
+const FIELD_POLICY_ATTRIBUTES = [
+  'sensitive',
+  'readonly',
+  'readPermission',
+  'transient',
+] as const;
+
+function assignFieldPolicy(
+  target: Record<string, unknown>,
+  fieldDef: ManifestFieldInput,
+): void {
+  for (const key of FIELD_POLICY_ATTRIBUTES) {
+    const value = fieldDef[key] ?? fieldDef._meta?.[key];
+    if (value !== undefined) target[key] = value;
+  }
+}
+
+/**
+ * @param _generatedModel - Kept for existing callers. It once limited the
+ *   policy attributes to models with a generated field; they are always
+ *   copied now.
+ */
 export function createFieldFromManifest(
   fieldDef: ManifestFieldInput,
-  generatedModel = false,
+  _generatedModel = false,
 ): RegisteredField {
   const meta: FieldMeta = {};
 
@@ -141,17 +173,7 @@ export function createFieldFromManifest(
 
   const generated = generatedExpression(fieldDef);
   if (generated !== undefined) metaRecord.generated = generated;
-  if (generatedModel) {
-    for (const key of [
-      'sensitive',
-      'readonly',
-      'readPermission',
-      'transient',
-    ] as const) {
-      const value = fieldDef[key] ?? fieldDef._meta?.[key];
-      if (value !== undefined) metaRecord[key] = value;
-    }
-  }
+  assignFieldPolicy(metaRecord, fieldDef);
 
   // Preserve top-level `related` for relationship-graph lookups
   // (foreignKey / crossPackageRef / oneToMany / manyToMany all rely on it).
@@ -165,10 +187,14 @@ export function createFieldFromManifest(
   return out;
 }
 
+/**
+ * @param _generatedModel - Kept for existing callers; see
+ *   {@link createFieldFromManifest}.
+ */
 export function mergeManifestField(
   existingField: RegisteredField,
   fieldDef: ManifestFieldInput,
-  generatedModel = false,
+  _generatedModel = false,
 ): RegisteredField {
   const hasTenancyMarker =
     existingField.__tenancy?.isTenantIdField ||
@@ -210,17 +236,7 @@ export function mergeManifestField(
 
   const generated = generatedExpression(fieldDef);
   if (generated !== undefined) nextMetaRecord.generated = generated;
-  if (generatedModel) {
-    for (const key of [
-      'sensitive',
-      'readonly',
-      'readPermission',
-      'transient',
-    ] as const) {
-      const value = fieldDef[key] ?? fieldDef._meta?.[key];
-      if (value !== undefined) nextMetaRecord[key] = value;
-    }
-  }
+  assignFieldPolicy(nextMetaRecord, fieldDef);
   return {
     ...existingField,
     ...(generated !== undefined ? { generated } : {}),

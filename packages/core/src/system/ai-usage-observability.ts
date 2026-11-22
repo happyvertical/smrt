@@ -612,7 +612,11 @@ export interface AiUsageReportOptions {
   by?: AiUsageReportDimension[];
   since?: Date;
   until?: Date;
-  /** Total only this tenant; `null` totals only global rows. */
+  /**
+   * Total only this tenant's rows; `null` only global rows. Applied as a
+   * SQL predicate of the page queries; other tenants' rows are only counted
+   * (`excluded.otherTenants`), never read.
+   */
   tenantId?: string | null;
   /**
    * Also count, per bucket and in the totals, the calls that have a stored
@@ -789,6 +793,68 @@ function dimensionValue(
 }
 
 const REPORT_PAGE_SIZE = 1000;
+/** Ids per `IN` list of a page lookup. */
+const REPORT_LOOKUP_CHUNK = 500;
+
+/**
+ * The evaluation labels of a page's calls (by usage row id) and runs (by
+ * `run_id`), keyed by `(tenant, target)`. Only rows of the report's tenant
+ * filter are read.
+ */
+async function pageEvaluationLabels(
+  db: DatabaseInterface,
+  page: Record<string, unknown>[],
+  tenantId: string | null | undefined,
+  targetKey: (tenant: string | null, id: string) => string,
+): Promise<{ byCall: Map<string, string[]>; byRun: Map<string, string[]> }> {
+  const byCall = new Map<string, string[]>();
+  const byRun = new Map<string, string[]>();
+  const lookups: Array<['call_id' | 'run_id', string[]]> = [
+    ['call_id', [...new Set(page.map((row) => String(row.id)))]],
+    [
+      'run_id',
+      [
+        ...new Set(
+          page
+            .map((row) => nullableString(row.run_id))
+            .filter((id): id is string => id !== null),
+        ),
+      ],
+    ],
+  ];
+  for (const [column, ids] of lookups) {
+    for (let start = 0; start < ids.length; start += REPORT_LOOKUP_CHUNK) {
+      const chunk = ids.slice(start, start + REPORT_LOOKUP_CHUNK);
+      const params: unknown[] = [...chunk];
+      const conditions = [
+        'label IS NOT NULL',
+        `${column} IN (${chunk.map((_, index) => `$${index + 1}`).join(', ')})`,
+      ];
+      // An evaluation judges one call or one run: a call label has no run.
+      if (column === 'run_id') conditions.push('call_id IS NULL');
+      if (tenantId === null) conditions.push('tenant_id IS NULL');
+      else if (tenantId !== undefined) {
+        params.push(tenantId);
+        conditions.push(`tenant_id = $${params.length}`);
+      }
+      for (const row of getRows(
+        await db.query(
+          `SELECT call_id, run_id, label, tenant_id FROM _smrt_ai_evaluations
+            WHERE ${conditions.join(' AND ')}
+            ORDER BY created_at, id`,
+          ...params,
+        ),
+      )) {
+        const target = nullableString(row[column]);
+        if (!target) continue;
+        const map = column === 'call_id' ? byCall : byRun;
+        const key = targetKey(nullableString(row.tenant_id), target);
+        map.set(key, [...(map.get(key) ?? []), String(row.label)]);
+      }
+    }
+  }
+  return { byCall, byRun };
+}
 
 /**
  * The `(tenant, call id)` keys of a page's calls that have a stored
@@ -867,48 +933,60 @@ export async function reportAiUsage(
     windowParams.push(options.until.toISOString());
     windowConditions.push(`created_at <= $${windowParams.length}`);
   }
-
   const tenantFiltered = options.tenantId !== undefined;
-  const tenantMatches = (tenant: string | null) =>
-    !tenantFiltered || tenant === options.tenantId;
-
-  // Evaluation labels in scope, indexed by (tenant, target) so a label only
-  // ever counts on rows of its own tenant, the rule listAiEvaluations()
-  // applies: a run id is a free-form tag another tenant can reuse after the
-  // evaluation was recorded. Evaluations are far fewer than usage rows.
-  const targetKey = (tenant: string | null, id: string) =>
-    JSON.stringify([tenant, id]);
-  const evaluationsByCall = new Map<string, string[]>();
-  const evaluationsByRun = new Map<string, string[]>();
-  {
-    const conditions: string[] = ['label IS NOT NULL'];
-    const params: unknown[] = [];
-    if (options.tenantId === null) conditions.push('tenant_id IS NULL');
-    else if (options.tenantId !== undefined) {
-      params.push(options.tenantId);
-      conditions.push(`tenant_id = $${params.length}`);
+  const excluded = { otherTenants: 0, externalAgent: 0 };
+  const pageConditions = [...windowConditions];
+  const pageParams = [...windowParams];
+  if (tenantFiltered) {
+    // The tenant filter is a predicate of the page queries (served by
+    // idx_smrt_ai_usage_tenant_created): another tenant's rows are never
+    // read. What the report has always said about the rest of the window
+    // (other tenants' calls, every external-agent measurement) is counted
+    // in SQL instead.
+    // The same test as the page loop's (`operation` and a case-sensitive
+    // id prefix): LIKE is case-insensitive on SQLite, so a prefix compare.
+    const prefix = `${EXTERNAL_AGENT_USAGE_OPERATION}:`;
+    const external = `operation = '${EXTERNAL_AGENT_USAGE_OPERATION}' AND substr(id, 1, ${prefix.length}) = '${prefix}'`;
+    const countParams = [...windowParams];
+    let otherTenant: string;
+    if (options.tenantId === null) otherTenant = 'tenant_id IS NOT NULL';
+    else {
+      countParams.push(options.tenantId);
+      otherTenant = `(tenant_id IS NULL OR tenant_id <> $${countParams.length})`;
     }
-    const rows = getRows(
-      await db.query(
-        `SELECT call_id, run_id, label, tenant_id FROM _smrt_ai_evaluations
-          WHERE ${conditions.join(' AND ')}`,
-        ...params,
+    const where = (extra: string) => [...windowConditions, extra].join(' AND ');
+    const count = (rows: Record<string, unknown>[]) => Number(rows[0]?.n ?? 0);
+    excluded.externalAgent = count(
+      getRows(
+        await db.query(
+          `SELECT COUNT(*) AS n FROM _smrt_ai_usage WHERE ${where(external)}`,
+          ...windowParams,
+        ),
       ),
     );
-    for (const row of rows) {
-      const label = String(row.label);
-      const tenant = nullableString(row.tenant_id);
-      const callId = nullableString(row.call_id);
-      const runId = nullableString(row.run_id);
-      // An evaluation judges one call or one run.
-      const [map, key] = callId
-        ? [evaluationsByCall, targetKey(tenant, callId)]
-        : runId
-          ? [evaluationsByRun, targetKey(tenant, runId)]
-          : [null, ''];
-      if (map) map.set(key, [...(map.get(key) ?? []), label]);
+    excluded.otherTenants = count(
+      getRows(
+        await db.query(
+          `SELECT COUNT(*) AS n FROM _smrt_ai_usage
+            WHERE ${where(`NOT (${external}) AND ${otherTenant}`)}`,
+          ...countParams,
+        ),
+      ),
+    );
+    if (options.tenantId === null) pageConditions.push('tenant_id IS NULL');
+    else {
+      pageParams.push(options.tenantId);
+      pageConditions.push(`tenant_id = $${pageParams.length}`);
     }
   }
+
+  // Evaluation labels are keyed by (tenant, target) so a label only ever
+  // counts on rows of its own tenant, the rule listAiEvaluations() applies:
+  // a run id is a free-form tag another tenant can reuse after the
+  // evaluation was recorded. They are looked up per page, for that page's
+  // calls and runs only.
+  const targetKey = (tenant: string | null, id: string) =>
+    JSON.stringify([tenant, id]);
 
   const withTranscripts = options.transcripts === true;
   const totals = emptyAccumulator(withTranscripts);
@@ -918,12 +996,11 @@ export async function reportAiUsage(
   >();
   const runLabelsCounted = new Set<string>();
   let unattributedCalls = 0;
-  const excluded = { otherTenants: 0, externalAgent: 0 };
 
   let lastId: string | null = null;
   for (;;) {
-    const params = [...windowParams];
-    const conditions = [...windowConditions];
+    const params = [...pageParams];
+    const conditions = [...pageConditions];
     if (lastId !== null) {
       params.push(lastId);
       conditions.push(`id > $${params.length}`);
@@ -946,6 +1023,8 @@ export async function reportAiUsage(
     const transcribed = withTranscripts
       ? await transcribedCalls(db, page, options.tenantId, targetKey)
       : null;
+    const { byCall: evaluationsByCall, byRun: evaluationsByRun } =
+      await pageEvaluationLabels(db, page, options.tenantId, targetKey);
 
     for (const row of page) {
       const id = String(row.id);
@@ -953,14 +1032,10 @@ export async function reportAiUsage(
         row.operation === EXTERNAL_AGENT_USAGE_OPERATION &&
         id.startsWith(`${EXTERNAL_AGENT_USAGE_OPERATION}:`)
       ) {
-        excluded.externalAgent++;
+        // Counted in SQL above when a tenant filter applies.
+        if (!tenantFiltered) excluded.externalAgent++;
         continue;
       }
-      if (!tenantMatches(nullableString(row.tenant_id))) {
-        excluded.otherTenants++;
-        continue;
-      }
-
       const tags = parseTags(row.tags);
       const key: AiUsageReportBucket['key'] = {};
       for (const dimension of by)

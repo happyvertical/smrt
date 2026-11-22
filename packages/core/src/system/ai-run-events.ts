@@ -13,9 +13,9 @@
 
 import type { DatabaseInterface } from '@happyvertical/sql';
 import {
-  type AiTranscriptMessage,
-  getTranscriptRedactor,
+  maskSecretFieldsInJsonText,
   redactAiTranscriptMessages,
+  redactAiTranscriptPart,
 } from '../ai-transcripts.js';
 import {
   AI_RUN_COLUMNS,
@@ -27,6 +27,7 @@ import {
   assertAiRunFence,
   dateOrNull,
   forUpdate,
+  getAiRun,
   getRows,
   newAiRunId,
   num,
@@ -203,7 +204,8 @@ export function capAiRunEventPayload(
 async function redactPayload(
   input: AiRunEventInput,
   runId: string,
-  redact: AiRunEventRedactor | undefined,
+  tenantId: string | null,
+  options: AppendAiRunEventOptions,
 ): Promise<unknown> {
   if (input.payload === undefined || input.payload === null) return null;
   const context = {
@@ -211,22 +213,22 @@ async function redactPayload(
     type: input.type,
     name: input.name ?? null,
   };
-  let payload = redact ? await redact(input.payload, context) : input.payload;
-  // The transcript host redactor and the built-in one (page section 8: the
-  // same redactor transcripts use).
-  let messages: AiTranscriptMessage[] = [{ role: 'event', content: payload }];
-  const host = getTranscriptRedactor();
-  if (host) {
-    messages = await host(messages, {
+  const payload = options.redact
+    ? await options.redact(input.payload, context)
+    : input.payload;
+  // The transcripts' redaction path (page section 8): the host redactor with
+  // the run's tenant, then the built-in one.
+  const messages = await redactAiTranscriptPart(
+    [{ role: 'event', content: payload }],
+    {
       part: 'tools',
       callId: input.callId ?? runId,
-      tenantId: null,
+      tenantId,
       operation: `run-event:${input.type}`,
-    });
-  }
-  messages = redactAiTranscriptMessages(messages);
-  payload = messages[0]?.content ?? null;
-  return payload;
+    },
+    {},
+  );
+  return messages[0]?.content ?? null;
 }
 
 /**
@@ -311,18 +313,46 @@ export async function appendAiRunEvent(
     throw new TypeError(`appendAiRunEvent: unknown event type ${input.type}`);
   }
   checkEventStatus(input.type, input.status ?? null);
-  const redacted = await redactPayload(input, runId, options.redact);
+  // The tenant the payload was redacted for; the final lock is taken in it.
+  let tenantId: string | null | undefined;
+  if (input.payload !== undefined && input.payload !== null) {
+    // The host redactor applies the run's tenant rules, so it needs the
+    // run's tenant before anything is stored. Read behind the claim fence,
+    // like every other step of an append: a worker whose claim was taken
+    // over gets AiRunClaimLostError before the run is read or redacted.
+    tenantId = await withAiRunTransaction(
+      db,
+      async (tx) => {
+        await assertAiRunFence(tx, runId, options.fence);
+        const run = await getAiRun(tx.db, runId);
+        if (!run) throw new AiRunNotFoundError(runId);
+        return run.tenantId ?? null;
+      },
+      options,
+    );
+  }
+  const redacted = await redactPayload(input, runId, tenantId ?? null, options);
   const capped = capAiRunEventPayload(redacted, options.maxPayloadBytes);
   const id = input.id ?? newAiRunId();
   const seq = await withAiRunTransaction(
     db,
     async (tx) => {
       await assertAiRunFence(tx, runId, options.fence);
+      // Locked in the tenant the payload was redacted for: a run whose id
+      // was pruned and reused by another tenant while the redactor ran is
+      // not found, and the payload is never written into its trajectory.
+      const scoped =
+        tenantId === undefined
+          ? { sql: '', params: [] as unknown[] }
+          : tenantId === null
+            ? { sql: ' AND tenant_id IS NULL', params: [] as unknown[] }
+            : { sql: ' AND tenant_id = $2', params: [tenantId] };
       const locked = getRows(
         await aiRunQuery(
           tx.db,
-          `SELECT id FROM _smrt_ai_runs WHERE id = $1${forUpdate(tx)}`,
+          `SELECT id FROM _smrt_ai_runs WHERE id = $1${scoped.sql}${forUpdate(tx)}`,
           runId,
+          ...scoped.params,
         ),
       );
       if (!locked[0]) throw new AiRunNotFoundError(runId);
@@ -523,18 +553,81 @@ export async function getRunTrajectory(
   db: DatabaseInterface,
   target: string | { runId: string } | { callId: string },
 ): Promise<AiRunTrajectory | null> {
+  return readTrajectory(db, target, undefined);
+}
+
+/** SQL predicate on `tenant_id` (null-safe) at parameter `index`. */
+function tenantPredicate(
+  tenant: string | null,
+  index: number,
+  column = 'tenant_id',
+): { sql: string; params: unknown[] } {
+  return tenant === null
+    ? { sql: `${column} IS NULL`, params: [] }
+    : { sql: `${column} = $${index}`, params: [tenant] };
+}
+
+/**
+ * {@link getRunTrajectory}, with the run read in `tenant` when one is given:
+ * the tenant is a predicate of the run's lookup and of every event page, so
+ * the run (and its events) can never be another tenant's, even if the id was
+ * pruned and reused between statements.
+ */
+/** The read-time redaction of one stored payload (built-in rules only). */
+function redactStoredPayload(payload: unknown): unknown {
+  const envelope = payload as {
+    truncated?: unknown;
+    head?: unknown;
+    tail?: unknown;
+  } | null;
+  const fragment = (value: unknown) =>
+    typeof value === 'string'
+      ? String(
+          redactAiTranscriptMessages([
+            { role: 'event', content: maskSecretFieldsInJsonText(value) },
+          ])[0]?.content ?? '',
+        )
+      : value;
+  if (
+    envelope &&
+    typeof envelope === 'object' &&
+    envelope.truncated === true &&
+    ('head' in envelope || 'tail' in envelope)
+  ) {
+    return {
+      ...envelope,
+      head: fragment(envelope.head),
+      tail: fragment(envelope.tail),
+    };
+  }
+  return (
+    redactAiTranscriptMessages([{ role: 'event', content: payload }])[0]
+      ?.content ?? null
+  );
+}
+
+async function readTrajectory(
+  db: DatabaseInterface,
+  target: string | { runId: string } | { callId: string },
+  expectedTenant: string | null | undefined,
+): Promise<AiRunTrajectory | null> {
   if (typeof target === 'object' && 'callId' in target) {
     const usage = getRows(
       await aiRunQuery(
         db,
-        `SELECT ${USAGE_COLUMNS}, run_id FROM _smrt_ai_usage WHERE id = $1`,
+        `SELECT ${USAGE_COLUMNS}, run_id, tenant_id FROM _smrt_ai_usage WHERE id = $1`,
         target.callId,
       ),
     );
     if (!usage[0]) return null;
     const runId = text(usage[0].run_id);
+    const usageTenant = text(usage[0].tenant_id) ?? null;
     if (runId) {
-      const inRun = await getRunTrajectory(db, runId);
+      // A usage row leads only to a run of its own tenant: `run_id` is not a
+      // foreign key, so a row naming another tenant's run is read as a call
+      // on its own. The run is read in the row's tenant (one query, a SQL
+      // predicate), never checked first and read after.
+      const inRun = await readTrajectory(db, runId, usageTenant);
       if (inRun) return inRun;
     }
     return {
@@ -548,8 +641,11 @@ export async function getRunTrajectory(
             await aiRunQuery(
               db,
               `SELECT ${EVALUATION_COLUMNS} FROM _smrt_ai_evaluations
-                WHERE call_id = $1 ORDER BY created_at, id`,
+                WHERE call_id = $1 AND ${
+                  usageTenant === null ? 'tenant_id IS NULL' : 'tenant_id = $2'
+                } ORDER BY created_at, id`,
               target.callId,
+              ...(usageTenant === null ? [] : [usageTenant]),
             ),
           ).map(toEvaluation),
         },
@@ -558,11 +654,19 @@ export async function getRunTrajectory(
     };
   }
   const runId = typeof target === 'string' ? target : target.runId;
+  const expected =
+    expectedTenant === undefined
+      ? { sql: '', params: [] as unknown[] }
+      : (() => {
+          const predicate = tenantPredicate(expectedTenant, 2, 'r.tenant_id');
+          return { sql: ` AND ${predicate.sql}`, params: predicate.params };
+        })();
   const runRows = getRows(
     await aiRunQuery(
       db,
-      `SELECT ${AI_RUN_COLUMNS} FROM _smrt_ai_runs r WHERE r.id = $1`,
+      `SELECT ${AI_RUN_COLUMNS} FROM _smrt_ai_runs r WHERE r.id = $1${expected.sql}`,
       runId,
+      ...expected.params,
     ),
   );
   if (!runRows[0]) return null;
@@ -571,8 +675,11 @@ export async function getRunTrajectory(
     await aiRunQuery(
       db,
       `SELECT ${EVALUATION_COLUMNS} FROM _smrt_ai_evaluations
-        WHERE run_id = $1 ORDER BY created_at, id`,
+        WHERE run_id = $1 AND ${
+          run.tenantId === null ? 'tenant_id IS NULL' : 'tenant_id = $2'
+        } ORDER BY created_at, id`,
       runId,
+      ...(run.tenantId === null ? [] : [run.tenantId]),
     ),
   ).map(toEvaluation);
   if (run.trajectoryPruned) {
@@ -595,14 +702,32 @@ export async function getRunTrajectory(
     const page = getRows(
       await aiRunQuery(
         db,
-        `SELECT * FROM _smrt_ai_run_events
-          WHERE run_id = $1 AND seq > $2 ORDER BY seq LIMIT $3`,
+        // Events of this run only while the run with this id is the one
+        // read above (its tenant), page after page.
+        `SELECT * FROM _smrt_ai_run_events e
+          WHERE e.run_id = $1 AND e.seq > $2
+            AND EXISTS (SELECT 1 FROM _smrt_ai_runs r
+                         WHERE r.id = e.run_id AND ${
+                           tenantPredicate(run.tenantId, 4, 'r.tenant_id').sql
+})
+          ORDER BY e.seq LIMIT $3`,
         runId,
         lastSeq,
         PAGE,
+        ...tenantPredicate(run.tenantId, 4).params,
       ),
     ).map(toAiRunEvent);
     if (page.length === 0) break;
+    // Stored payloads go through the built-in redactor again on read (the
+    // host redactor runs on the write path only): a payload stored under an
+    // earlier version is masked by today's built-in rules. A truncated
+    // payload's `head` and `tail` are fragments of JSON text that field
+    // rules cannot parse, so they are masked at string level (credential
+    // fields and token shapes), never returned as stored.
+    for (const event of page) {
+      if (event.payload === null || event.payload === undefined) continue;
+      event.payload = redactStoredPayload(event.payload);
+    }
     lastSeq = page[page.length - 1]?.seq ?? lastSeq;
     const callIds = [
       ...new Set(
@@ -613,13 +738,22 @@ export async function getRunTrajectory(
     ];
     const usageById = new Map<string, AiRunTrajectoryUsage>();
     const evaluationsBy = new Map<string, AiRunTrajectoryEvaluation[]>();
+    // Usage rows and evaluations join only within the run's tenant.
+    const tenantParams = run.tenantId === null ? [] : [run.tenantId];
+    const tenantSql = (index: number) =>
+      run.tenantId === null ? 'tenant_id IS NULL' : `tenant_id = $${index}`;
     if (callIds.length > 0) {
       const marks = callIds.map((_, i) => `$${i + 1}`).join(', ');
       for (const row of getRows(
         await aiRunQuery(
           db,
-          `SELECT ${USAGE_COLUMNS} FROM _smrt_ai_usage WHERE id IN (${marks})`,
+          // A call's own row only: its id, this run, the run's tenant.
+          `SELECT ${USAGE_COLUMNS} FROM _smrt_ai_usage
+            WHERE id IN (${marks}) AND run_id = $${callIds.length + 1}
+              AND ${tenantSql(callIds.length + 2)}`,
           ...callIds,
+          runId,
+          ...tenantParams,
         ),
       )) {
         usageById.set(String(row.id), toUsage(row));
@@ -631,8 +765,10 @@ export async function getRunTrajectory(
         await aiRunQuery(
           db,
           `SELECT ${EVALUATION_COLUMNS} FROM _smrt_ai_evaluations
-            WHERE call_id IN (${marks}) ORDER BY created_at, id`,
+            WHERE call_id IN (${marks}) AND ${tenantSql(callIds.length + 1)}
+            ORDER BY created_at, id`,
           ...callIds,
+          ...tenantParams,
         ),
       )) {
         const key = String(row.call_id);

@@ -26,6 +26,10 @@ export class SignalBus {
   /**
    * Create a new SignalBus
    *
+   * Sanitization is applied only when `options.sanitization` is a config
+   * object (`{}` selects the standard redactions); omitted or `false`, signals
+   * reach adapters unmodified.
+   *
    * @param options - Configuration options
    */
   constructor(options?: { sanitization?: SanitizationConfig | false }) {

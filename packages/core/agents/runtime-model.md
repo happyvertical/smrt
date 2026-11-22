@@ -29,6 +29,14 @@ and method surfaces of a decorated class.
 - **Additive refresh.** Default registration keeps the first exposure config.
   Explicit `refresh: true` refreshes runtime metadata and validators; it never
   drops storage. The [app model editor](app-models.md) owns versioned edits.
+- **Field policy.** A field definition's `sensitive` and `readPermission` are
+  registered with the field, whether or not the model has a calculated field:
+  `createFieldFromManifest()` / `mergeManifestField()`
+  (`src/registry/manifest-field-merge.ts`) copy the policy attributes a
+  definition states at the top level (`sensitive`, `readPermission`,
+  `readonly`, `transient`) into `_meta`, where projection, filters and write
+  policies read them. A run-time definition states them only at the top level.
+  Test: `src/__tests__/runtime-model-field-policy.test.ts`.
 - **Sync columns.** Entry columns include `_sync_origin_device_id` and
   `_sync_revision`; deletes read them.
 - **Tables are not created for you.** Run `planRuntimeModelDDL` output in the
@@ -41,8 +49,8 @@ and method surfaces of a decorated class.
 `extends: '@pkg:Class'` registers a class that extends the real constructor
 (inherited fields, methods and `_meta_type` lookup work) and may share the
 parent's simple name (`@local/app:Profile` extends
-`@happyvertical/smrt-profiles:Profile`) without the STI child-wins rule
-replacing the parent. `findClass('Profile')` is then ambiguous: use qualified
+`@happyvertical/smrt-profiles:Profile`) without replacing the parent (the
+run-time counterpart of a decorated class's `replaceParent` is `replaces`). `findClass('Profile')` is then ambiguous: use qualified
 names.
 
 Answers to the open checks of #4869, each with a test in

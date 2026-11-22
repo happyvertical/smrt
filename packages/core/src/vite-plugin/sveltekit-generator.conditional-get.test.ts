@@ -20,6 +20,10 @@ import type { SmartObjectManifest } from '../scanner/types';
 // Mock node:fs module (same setup as sveltekit-generator.test.ts).
 vi.mock('node:fs', () => ({
   existsSync: vi.fn(),
+  // Route ownership inspects planned paths with lstat; nothing exists here.
+  lstatSync: vi.fn(() => {
+    throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
+  }),
   mkdirSync: vi.fn(),
   writeFileSync: vi.fn(),
   readFileSync: vi.fn(),
@@ -101,13 +105,13 @@ describe('SvelteKit generated routes: conditional GET (#1757)', () => {
       );
     }
     expect(collectionRoute).toContain(
-      "import { parseRestListWhere } from '@happyvertical/smrt-core';",
+      "import { assertQueryAccess, parseRestListWhere } from '@happyvertical/smrt-core';",
     );
     expect(collectionRoute).toContain(
-      '...parseRestListWhere(url.searchParams)',
+      'applyWhereScope(query.where, tenancyReadScope(tenancy))',
     );
     expect(collectionRoute).toContain(
-      "const orderBy = url.searchParams.get('orderBy') || LIST_ORDER_BY;",
+      'const orderBy = query.orderBy || LIST_ORDER_BY;',
     );
     expect(itemRoute).toContain('{ displayLabel: true }');
     expect(collectionRoute).toContain(
@@ -164,15 +168,17 @@ describe('SvelteKit generated routes: conditional GET (#1757)', () => {
     expect(itemRoute).toContain(
       'return conditionalVersionedRead(request, collection.db, collection.tableName, async () => {',
     );
-    expect(itemRoute).toContain('return item.toPublicJSON(publicJsonOptions);');
+    expect(itemRoute).toContain(
+      'return toPublicJSONValue(item, publicJsonOptions);',
+    );
 
     // Mutation handlers stay as-is (plain json responses, no conditional).
     expect(collectionRoute).toContain(
-      'return json(item.toPublicJSON(publicJsonOptions), { status: 201 });',
+      'return json(toPublicJSONValue(item, publicJsonOptions), { status: 201 });',
     );
     expect(itemRoute).toContain('export const PUT: RequestHandler');
     expect(itemRoute).toMatch(
-      /PUT[\s\S]*return json\(item\.toPublicJSON\(publicJsonOptions\)\);/,
+      /PUT[\s\S]*return json\(toPublicJSONValue\(item, publicJsonOptions\)\);/,
     );
   });
 

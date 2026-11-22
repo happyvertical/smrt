@@ -40,6 +40,24 @@ function fixture() {
     col TEXT, record_id TEXT, value TEXT, created_at TEXT)`);
   let sequence = 0;
   const db = {
+    // What the SQLite adapter's `getTableSchema` reports (the engine reads
+    // column metadata through it, not through SQL of its own).
+    getTableSchema: async (table: string) => {
+      const rows = sqlite
+        .prepare('SELECT name, type, hidden FROM pragma_table_xinfo(?)')
+        .all(table) as { name: string; type: string; hidden: number }[];
+      return rows.length
+        ? {
+            tableName: table,
+            columns: Object.fromEntries(
+              rows.map((r) => [
+                r.name,
+                { type: r.type, generated: r.hidden > 1 },
+              ]),
+            ),
+          }
+        : null;
+    },
     query: async (sql: string, params: any[] = []) => ({
       rows: sqlite.prepare(sql).all(...params),
     }),

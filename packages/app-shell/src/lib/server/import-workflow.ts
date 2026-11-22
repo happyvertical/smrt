@@ -26,6 +26,7 @@ import {
   type Finding,
   IMPORT_PLAN_GUIDE,
   IMPORT_PLAN_SCHEMA,
+  type ImportPlan,
   ImportPlanError,
   ImportRunError,
   importPlanRule,
@@ -60,6 +61,12 @@ import { AppDraftCollection } from '../objects/AppDraft.ts';
 import { type AppImport, AppImportCollection } from '../objects/AppImport.ts';
 import type { ImportState } from '../ui/import.ts';
 import { assistantEngine, engineLabel } from './assistant/engine.ts';
+import {
+  recordImportCommand,
+  settled,
+  setWorkingCopyReplaced,
+  waitingCount,
+} from './changes.ts';
 import { discardIfUnused, discardNow, startDraft } from './drafts.ts';
 import { subscribe } from './events.ts';
 import { getDraftSlot } from './host.ts';
@@ -71,6 +78,41 @@ import {
 import { IMPORT_MAX_BYTES, importSettings } from './import-settings.ts';
 import { shellInference } from './inference.ts';
 import { type Principal, requireOwner, runAs } from './owner.ts';
+
+/**
+ * A calculation the app cannot build or whose proof fails keeps the workbook's
+ * saved values as a plain column (the same way untranslatable formulas do).
+ * Null unless every error is a calculation failure with a saved column to use.
+ */
+export function savedValueFallback(
+  plan: ImportPlan,
+  errors: { code: string; table?: string; field?: string }[],
+): ImportPlan | null {
+  if (
+    !errors.length ||
+    errors.some(
+      (e) =>
+        !['calculated-mismatch', 'calculated-invalid'].includes(e.code) ||
+        !e.table ||
+        !e.field,
+    )
+  )
+    return null;
+  const next = structuredClone(plan);
+  let changed = false;
+  for (const e of errors) {
+    const field = next.tables
+      .find((t) => t.key === e.table)
+      ?.fields.find((f) => f.key === e.field);
+    if (!field || field.calculated === undefined || !field.cachedColumn)
+      continue;
+    field.column = field.cachedColumn;
+    delete field.calculated;
+    delete field.cachedColumn;
+    changed = true;
+  }
+  return changed ? next : null;
+}
 
 export const IMPORT_BUDGET = {
   maxTokens: 400_000,
@@ -328,6 +370,22 @@ export function createShellImportService(options: ShellImportOptions) {
       if (e.code !== 'ENOENT') throw e;
     });
   };
+  /**
+   * An import has its own copy, so it cannot start while other changes wait
+   * (or while an unrelated copy is open): say so in plain words. A copy nobody
+   * used is reused.
+   */
+  const refuseWhileChangesWait = async (owner: Principal, doing: string) => {
+    if (!(await getDraftSlot())) return;
+    if (await discardIfUnused()) return;
+    const waiting = await runAs(owner, () => waitingCount());
+    throw new HttpError(
+      409,
+      waiting > 0
+        ? `You have ${waiting} ${waiting === 1 ? 'change' : 'changes'} waiting. Apply or discard ${waiting === 1 ? 'it' : 'them'} before ${doing}.`
+        : `Another set of changes is open. Apply or discard it before ${doing}.`,
+    );
+  };
   const discardOwned = async (row: AppImport) => {
     const slot = await getDraftSlot();
     if (row.draftId && slot?.id === row.draftId) {
@@ -575,143 +633,231 @@ export function createShellImportService(options: ShellImportOptions) {
                 message: f.message,
               })),
             };
-          // Re-entry must discard only the draft whose identity this import durably recorded.
-          await discardOwned(row);
-          await ensureActive();
-          try {
-            await startDraft(
-              'Workbook import',
-              row.ownerId,
-              async (id) => {
-                await save(row, {
-                  draftId: id,
-                  status: 'loading',
-                  stage: 'loading',
-                });
-              },
-              HOLD,
-            );
-            const slot = await getDraftSlot();
-            if (!slot?.host || slot.id !== row.draftId)
-              throw new Error('Import draft is unavailable');
-            const target = createEngineImportTarget(
-              slot.host,
-              ensureActive,
-              async (engineNames) => {
-                await ensureActive();
-                await save(row, {}, { plan: { ...plan, engineNames } });
-              },
-            );
-            const proofTarget = {
-              ...target,
-              count: async (table: string) => {
-                await ensureActive();
-                await save(row, { stage: 'proving' });
-                return target.count(table);
-              },
-            };
-            const proof = await runImport({
-              plan,
-              workbook: book,
-              target: proofTarget,
-              limits: { maxCells: row.maxCells },
-              batchSize: 500,
-            });
+          // A calculation the app cannot build or prove keeps its saved values
+          // instead (as untranslatable formulas do); each pass removes at least one.
+          for (;;) {
+            // Re-entry must discard only the draft whose identity this import durably recorded.
+            await discardOwned(row);
             await ensureActive();
-            await save(
-              row,
-              {},
-              {
-                plan: { ...plan, engineNames: target.names },
-                findings: proof.findings,
-                proof,
-              },
-            );
-            if (!proof.ok) {
-              await discardOwned(row);
+            try {
+              await startDraft(
+                'Workbook import',
+                row.ownerId,
+                async (id) => {
+                  await save(row, {
+                    draftId: id,
+                    status: 'loading',
+                    stage: 'loading',
+                  });
+                },
+                HOLD,
+              );
+              const slot = await getDraftSlot();
+              if (!slot?.host || slot.id !== row.draftId)
+                throw new Error('The import copy is unavailable');
+              const importHost = slot.host;
+              const importer: Principal = {
+                id: row.ownerId,
+                tenantId: row.tenantId,
+              };
+              const target = createEngineImportTarget(
+                importHost,
+                ensureActive,
+                async (engineNames) => {
+                  await ensureActive();
+                  await save(row, {}, { plan: { ...plan, engineNames } });
+                },
+                // Every command is also a card of the changes waiting, one per table.
+                ({ command, run }) =>
+                  recordImportCommand(importer, {
+                    host: importHost,
+                    group: `import:${row.id}`,
+                    command,
+                    run,
+                  }),
+              );
+              const proofTarget = {
+                ...target,
+                count: async (table: string) => {
+                  await ensureActive();
+                  await save(row, { stage: 'proving' });
+                  return target.count(table);
+                },
+              };
+              const proof = await runImport({
+                plan,
+                workbook: book,
+                target: proofTarget,
+                limits: { maxCells: row.maxCells },
+                batchSize: 500,
+              });
+              await ensureActive();
               await save(
                 row,
-                { status: 'failed', stage: 'proving' },
+                {},
                 {
                   plan: { ...plan, engineNames: target.names },
                   findings: proof.findings,
                   proof,
-                  reason: 'workbook',
-                  note: 'The loaded data did not match the workbook. The draft was discarded. Correct the workbook and try again.',
+                },
+              );
+              if (!proof.ok) {
+                await discardOwned(row);
+                const fallback = savedValueFallback(
+                  plan,
+                  proof.findings
+                    .filter((f) => f.severity === 'error')
+                    .map((f) => ({
+                      code: f.code,
+                      table: f.table,
+                      field: f.field,
+                    })),
+                );
+                if (fallback) {
+                  plan = fallback;
+                  await save(
+                    row,
+                    {},
+                    {
+                      plan,
+                      untranslatedFormulas: untranslatedFormulas(plan, book),
+                      findings: [],
+                      proof: undefined,
+                    },
+                  );
+                  continue;
+                }
+                const first = proof.findings.find(
+                  (f) => f.severity === 'error',
+                );
+                await save(
+                  row,
+                  { status: 'failed', stage: 'proving' },
+                  {
+                    plan: { ...plan, engineNames: target.names },
+                    findings: proof.findings,
+                    proof,
+                    reason: 'workbook',
+                    note: `The loaded data did not match the workbook${first?.message ? `: ${first.message}` : ''}. Nothing was added to your app.`,
+                  },
+                );
+                await removeBytes(row);
+                return { failure: 'The imported data did not pass its proof.' };
+              }
+              await target.seal();
+              await ensureActive();
+              await save(row, { status: 'proven', stage: 'proving' });
+              return {
+                complete: true,
+                note: 'The workbook data was loaded and proven. Nothing is in your app until you apply it.',
+              };
+            } catch (error) {
+              if (error instanceof AiRunClaimLostError) throw error;
+              try {
+                await context.assertActive();
+              } catch (guard) {
+                if (guard instanceof AiRunClaimLostError) throw guard;
+              }
+
+              await discardOwned(row);
+              if (
+                error instanceof AiRunStoppedError ||
+                context.signal.aborted ||
+                (await getAiRun(db, context.runId))?.status !== 'running'
+              )
+                throw error;
+              if (error instanceof EngineImportError && error.field) {
+                const fallback = savedValueFallback(plan, [
+                  {
+                    code: 'calculated-invalid',
+                    table: error.table,
+                    field: error.field,
+                  },
+                ]);
+                if (fallback) {
+                  plan = fallback;
+                  await save(
+                    row,
+                    {},
+                    {
+                      plan,
+                      untranslatedFormulas: untranslatedFormulas(plan, book),
+                      findings: [],
+                      proof: undefined,
+                    },
+                  );
+                  continue;
+                }
+              }
+              const note =
+                error instanceof EngineImportError &&
+                error.reason === 'table-exists'
+                  ? 'These tables already exist. Importing into existing tables is not supported.'
+                  : error instanceof EngineImportError
+                    ? error.field
+                      ? `The calculation “${plan.tables.find((t) => t.key === error.table)?.fields.find((f) => f.key === error.field)?.label ?? 'Calculated field'}” in “${plan.tables.find((t) => t.key === error.table)?.label ?? 'Imported table'}” could not be built as a formula in this app, and its saved values could not be used instead. Nothing was added to your app.`
+                      : 'A table or report cannot be represented in this app. Revise the workbook and try again.'
+                    : error instanceof ImportRunError &&
+                        error.code === 'target-not-empty'
+                      ? 'These tables already exist. Importing into existing tables is not supported.'
+                      : 'The app could not load this workbook. Nothing was added to your app. Restart the app and try importing again.';
+              const detail = details(row);
+              if (error instanceof EngineImportError && error.field)
+                detail.findings = [
+                  ...(detail.findings ?? []),
+                  {
+                    code: 'calculated-invalid',
+                    severity: 'error',
+                    table: error.table,
+                    field: error.field,
+                    sheet: plan.tables.find((t) => t.key === error.table)
+                      ?.source.sheet,
+                    count: 1,
+                    message:
+                      'This calculation cannot be represented by the app.',
+                  },
+                ];
+              await save(
+                row,
+                { status: 'failed' },
+                {
+                  ...detail,
+                  reason:
+                    error instanceof EngineImportError ||
+                    error instanceof ImportRunError
+                      ? 'workbook'
+                      : 'app',
+                  note,
                 },
               );
               await removeBytes(row);
-              return { failure: 'The imported data did not pass its proof.' };
+              return { failure: note };
             }
-            await target.seal();
-            await ensureActive();
-            await save(row, { status: 'proven', stage: 'proving' });
-            return {
-              complete: true,
-              note: 'The workbook data was loaded into a draft and proven.',
-            };
-          } catch (error) {
-            if (error instanceof AiRunClaimLostError) throw error;
-            try {
-              await context.assertActive();
-            } catch (guard) {
-              if (guard instanceof AiRunClaimLostError) throw guard;
-            }
-
-            await discardOwned(row);
-            if (
-              error instanceof AiRunStoppedError ||
-              context.signal.aborted ||
-              (await getAiRun(db, context.runId))?.status !== 'running'
-            )
-              throw error;
-            const note =
-              error instanceof EngineImportError &&
-              error.reason === 'table-exists'
-                ? 'These tables already exist. Importing into existing tables is not supported.'
-                : error instanceof EngineImportError
-                  ? error.field
-                    ? `The calculation “${plan.tables.find((t) => t.key === error.table)?.fields.find((f) => f.key === error.field)?.label ?? 'Calculated field'}” in “${plan.tables.find((t) => t.key === error.table)?.label ?? 'Imported table'}” uses a formula this app cannot represent. Correct it in the workbook and try again.`
-                    : 'A table or report cannot be represented in this app. Revise the workbook and try again.'
-                  : error instanceof ImportRunError &&
-                      error.code === 'target-not-empty'
-                    ? 'These tables already exist. Importing into existing tables is not supported.'
-                    : 'The app could not load this workbook. Its draft was discarded. Restart the app and try importing again.';
-            const detail = details(row);
-            if (error instanceof EngineImportError && error.field)
-              detail.findings = [
-                ...(detail.findings ?? []),
-                {
-                  code: 'calculated-invalid',
-                  severity: 'error',
-                  table: error.table,
-                  field: error.field,
-                  sheet: plan.tables.find((t) => t.key === error.table)?.source
-                    .sheet,
-                  count: 1,
-                  message: 'This calculation cannot be represented by the app.',
-                },
-              ];
-            await save(
-              row,
-              { status: 'failed' },
-              {
-                ...detail,
-                reason:
-                  error instanceof EngineImportError ||
-                  error instanceof ImportRunError
-                    ? 'workbook'
-                    : 'app',
-                note,
-              },
-            );
-            await removeBytes(row);
-            return { failure: note };
           }
         },
       },
     ],
   };
+  // A workflow step runs on a job, outside any request. Enter the import
+  // owner's own tenant context for every hook, so the shell rows it writes
+  // carry the owner's tenant and the reads that follow find them.
+  for (const step of definition.steps) {
+    for (const hook of ['execute', 'variables', 'check'] as const) {
+      const inner = step[hook] as
+        | ((...args: never[]) => Promise<unknown>)
+        | undefined;
+      if (!inner) continue;
+      (step as unknown as Record<string, unknown>)[hook] = async (
+        ...args: unknown[]
+      ) => {
+        const context = args[args.length - 1] as { input: unknown };
+        const row = await fromInput(context.input);
+        return runAs({ id: row.ownerId, tenantId: row.tenantId }, () =>
+          inner(...(args as never[])),
+        );
+      };
+    }
+  }
   const kit = createWorkflowRunJobs<{ importId: string }>({
     db,
     definition,
@@ -813,7 +959,16 @@ export function createShellImportService(options: ShellImportOptions) {
     const pending = details(row).retry;
     if (!pending) return;
     try {
-      const existing = await getAiRun(db, pending.id);
+      // Read through the owner's own workflow kit (tenant, owner and
+      // definition scoped): a saved id naming a run of anyone else is never
+      // read, only not found, and the retry under it is then refused by
+      // core because the id is used.
+      const existing = await mine(owner)
+        .get(pending.id)
+        .catch((error) => {
+          if (error instanceof WorkflowRunNotFoundError) return null;
+          throw error;
+        });
       if (!existing) {
         await mine(owner).retry(pending.from, {
           id: pending.id,
@@ -872,6 +1027,10 @@ export function createShellImportService(options: ShellImportOptions) {
       return null;
     }
     if (run.status === 'done' && details(row).proof?.ok) {
+      // A Remove in the review rebuilds the copy under a new id: wait it out.
+      await settled();
+      const fresh = await (await collection()).get(row.id as string);
+      if (fresh) row.draftId = fresh.draftId;
       const draft = await (await AppDraftCollection.create({ db })).get(
         row.draftId,
       );
@@ -942,6 +1101,14 @@ export function createShellImportService(options: ShellImportOptions) {
     tail = result.catch(() => {});
     return result;
   };
+  // A rebuilt working copy has a new id: the review follows it.
+  setWorkingCopyReplaced(async (from, to) => {
+    const rows = await (await collection()).list({
+      where: { draftId: from },
+      limit: 1,
+    });
+    if (rows[0]) await save(rows[0], { draftId: to });
+  });
   const unsubscribe = subscribe((event) => {
     if (
       event.type !== 'draft' ||
@@ -1060,11 +1227,7 @@ export function createShellImportService(options: ShellImportOptions) {
               'Another workbook import is open. Finish it or discard it first.',
             );
         }
-        if ((await getDraftSlot()) && !(await discardIfUnused()))
-          throw new HttpError(
-            409,
-            'A draft is already open. Publish or discard it before importing a workbook.',
-          );
+        await refuseWhileChangesWait(owner, 'importing a workbook');
         const maxCells = (await importSettings(owner)).maxCells;
         const bytes = await readUpload(request);
         const book = await readWorkbook(bytes, maxCells);
@@ -1129,6 +1292,7 @@ export function createShellImportService(options: ShellImportOptions) {
       });
       // Reconcile external publish/discard even if its event was lost in a crash.
       if (row.status === 'review' && !(await getDraftSlot())) {
+        await settled();
         const draft = await (await AppDraftCollection.create({ db })).get(
           row.draftId,
         );
@@ -1171,11 +1335,7 @@ export function createShellImportService(options: ShellImportOptions) {
               409,
               'This import cannot be retried. Choose a workbook to start again.',
             );
-          if ((await getDraftSlot()) && !(await discardIfUnused()))
-            throw new HttpError(
-              409,
-              'A draft is already open. Publish or discard it before trying again.',
-            );
+          await refuseWhileChangesWait(owner, 'trying again');
           const usage = config.toJSON().usage;
           if (usage?.enabled === false || usage?.persist === false)
             throw new HttpError(
@@ -1259,6 +1419,7 @@ export function createShellImportService(options: ShellImportOptions) {
       });
     },
     dispose() {
+      setWorkingCopyReplaced(null);
       unsubscribe();
       kit.dispose();
     },

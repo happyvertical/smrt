@@ -1112,6 +1112,9 @@ async function portability(
     env: environment.env,
     paths: environment.paths,
     assetRoot: environment.assetRoot,
+    ...(context.deps.userAppEngine
+      ? { userAppEngine: context.deps.userAppEngine }
+      : {}),
     ...(snapshotKeys
       ? {
           sealBundle: async (bundle: Buffer, destination: string) => {

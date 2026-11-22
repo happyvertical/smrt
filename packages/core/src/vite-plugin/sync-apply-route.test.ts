@@ -19,12 +19,27 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { build } from 'esbuild';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { SmartObjectManifest } from '../scanner/types';
+import { RouteFilePlan } from './generated-route-files';
 import { generateCollectionAccessImports } from './sveltekit-config-import';
+import type { SvelteKitOptions } from './sveltekit-generator';
 import {
   collectSyncApplyTargets,
-  generateSyncApplyRoute,
+  generateSyncApplyRoute as generateSyncApplyRouteInto,
   generateSyncApplyRouteTemplate,
+  syncModelScope,
 } from './sync-apply-route';
+
+/** Plan, check and commit the route as the generator does; true if written. */
+function generateSyncApplyRoute(
+  projectRoot: string,
+  manifest: SmartObjectManifest,
+  options: SvelteKitOptions,
+): boolean {
+  const plan = new RouteFilePlan();
+  generateSyncApplyRouteInto(projectRoot, manifest, options, plan);
+  plan.preflight();
+  return plan.commit().length > 0;
+}
 
 function manifestWith(
   objects: Record<string, Record<string, unknown>>,
@@ -84,7 +99,6 @@ describe('collectSyncApplyTargets', () => {
       readonlyFields: ['sku'],
       writableAllowlist: null,
       publicAccess: false,
-      tenantScoped: false,
     });
     const report = targets.find((t) => t.segment === 'reports');
     expect(report).toMatchObject({
@@ -92,8 +106,11 @@ describe('collectSyncApplyTargets', () => {
       ops: ['create'],
       writableAllowlist: ['title'],
       publicAccess: true,
-      tenantScoped: true,
     });
+    // Tenancy is resolved per item at request time (#5375), never from the
+    // manifest.
+    expect(product).not.toHaveProperty('tenantScoped');
+    expect(report).not.toHaveProperty('tenantScoped');
   });
 
   it('skips api-disabled objects, collection classes, and read-only APIs', () => {
@@ -206,20 +223,97 @@ describe('generateSyncApplyRouteTemplate', () => {
     expect(content).toContain('hasAuthenticatedPrincipal');
     expect(content).toContain('permissionCollection: "products"');
     expect(content).toContain('hasOperationPermission(locals');
-    expect(content).toContain('target.publicAccess === true');
+    expect(content).toContain('target.publicAccess !== true');
     expect(content).toContain("'auth_required'");
   });
 
-  it('establishes tenant context only when a target is tenant-scoped', () => {
-    expect(content).toContain('establishTenantContext(locals);');
-    expect(content).toContain("from '@happyvertical/smrt-tenancy'");
-
+  it('runs every item inside the request tenancy its target has at request time', () => {
+    // Per item, with that target's own principal requirement (#5375).
+    expect(content).toContain('runInRequestTenancy(');
+    expect(content).toContain(
+      'operation: op, locals, requirePrincipal: target.principalContext',
+    );
+    // The manifest's tenancy flag selects nothing: the same route source is
+    // emitted with or without tenant-scoped models.
+    expect(content).not.toContain('@happyvertical/smrt-tenancy');
+    expect(content).not.toContain('tenantScoped:');
     const withoutTenants = generateSyncApplyRouteTemplate(
       collectSyncApplyTargets(manifestWith({ Product: productDef })),
       ACCESS_IMPORTS,
     );
-    expect(withoutTenants).not.toContain('establishTenantContext');
-    expect(withoutTenants).not.toContain('@happyvertical/smrt-tenancy');
+    expect(withoutTenants).toContain('runInRequestTenancy(');
+  });
+
+  it('scopes a singleton STI base, so a later subtype is not synced through it', () => {
+    const base = {
+      qualifiedName: '@fixture/app:Revision',
+      className: 'Revision',
+      packageName: '@fixture/app',
+      collection: 'revisions',
+      fields: {},
+      methods: {},
+      decoratorConfig: { tableStrategy: 'sti', api: { include: ['update'] } },
+    };
+    const single = manifestWith({
+      '@fixture/app:Revision': base,
+      Product: productDef,
+    });
+    const scope = syncModelScope(single);
+    expect(scope).toEqual(['@fixture/app:Revision', 'Product']);
+    const route = generateSyncApplyRouteTemplate(
+      collectSyncApplyTargets(single),
+      ACCESS_IMPORTS,
+      scope,
+    );
+    expect(route).toContain('modelScope: SYNC_MODEL_SCOPE');
+  });
+
+  it('limits family members served through a base to the models the manifest generates', () => {
+    const base = {
+      qualifiedName: '@fixture/app:Revision',
+      className: 'Revision',
+      packageName: '@fixture/app',
+      collection: 'revisions',
+      fields: {},
+      methods: {},
+      decoratorConfig: { tableStrategy: 'sti', api: { include: ['update'] } },
+    };
+    const child = {
+      qualifiedName: '@fixture/app:DraftRevision',
+      className: 'DraftRevision',
+      packageName: '@fixture/app',
+      collection: 'revisions',
+      extends: 'Revision',
+      extendsQualified: '@fixture/app:Revision',
+      fields: {},
+      methods: {},
+      decoratorConfig: { api: { include: ['update'] } },
+    };
+    const family = manifestWith({
+      '@fixture/app:Revision': base,
+      '@fixture/app:DraftRevision': child,
+      Product: productDef,
+    });
+    const scope = syncModelScope(family);
+    expect(scope).toEqual([
+      '@fixture/app:DraftRevision',
+      '@fixture/app:Revision',
+      'Product',
+    ]);
+    const scoped = generateSyncApplyRouteTemplate(
+      collectSyncApplyTargets(family),
+      ACCESS_IMPORTS,
+      scope,
+    );
+    expect(scoped).toContain(
+      `const SYNC_MODEL_SCOPE: ReadonlySet<string> = new Set(${JSON.stringify(scope)});`,
+    );
+    expect(scoped).toContain('modelScope: SYNC_MODEL_SCOPE');
+    // A manifest without a family carries no model list (unchanged source).
+    expect(syncModelScope(manifestWith({ Product: productDef }))).toBe(
+      undefined,
+    );
+    expect(content).not.toContain('SYNC_MODEL_SCOPE');
   });
 });
 
@@ -314,6 +408,11 @@ describe('generated sync-apply route runtime: operation permissions (#3011)', ()
   afterEach(() => {
     rmSync(projectRoot, { force: true, recursive: true });
     delete (globalThis as Record<string, unknown>).__smrtSyncCreateCalls;
+    delete (globalThis as Record<string, unknown>).__smrtSyncDeclaredFields;
+    delete (globalThis as Record<string, unknown>).__smrtSyncStoredRow;
+    delete (globalThis as Record<string, unknown>).__smrtSyncTenantContext;
+    delete (globalThis as Record<string, unknown>).__smrtSyncSystemContext;
+    delete (globalThis as Record<string, unknown>).__smrtSyncTenantPolicies;
   });
 
   async function importRoute(
@@ -322,6 +421,20 @@ describe('generated sync-apply route runtime: operation permissions (#3011)', ()
     POST: (event: { locals: unknown; request: Request }) => Promise<Response>;
   }> {
     const targets = collectSyncApplyTargets(manifestWith(objects));
+    // Each model's tenancy at request time (#5375), from its manifest entry.
+    (globalThis as Record<string, unknown>).__smrtSyncTenantPolicies =
+      Object.fromEntries(
+        Object.entries(objects)
+          .filter(
+            ([, object]) =>
+              !!(object.decoratorConfig as { tenantScoped?: unknown })
+                ?.tenantScoped,
+          )
+          .map(([key, object]) => [
+            key,
+            (object.decoratorConfig as { tenantScoped?: unknown }).tenantScoped,
+          ]),
+      );
     const routePath = join(projectRoot, 'route.ts');
     writeFileSync(
       routePath,
@@ -333,7 +446,7 @@ describe('generated sync-apply route runtime: operation permissions (#3011)', ()
     const kitShim = join(projectRoot, 'kit-shim.ts');
     writeFileSync(
       kitShim,
-      'export function json(body: unknown, init: ResponseInit = {}): Response {\n  return new Response(JSON.stringify(body), init);\n}\n',
+      'export function json(body: unknown, init: ResponseInit = {}): Response {\n  return new Response(JSON.stringify(body), init);\n}\nexport function error(status: number, message: string): never {\n  throw Object.assign(new Error(message), { status });\n}\n',
     );
     const smrtShim = join(projectRoot, 'smrt-shim.ts');
     writeFileSync(
@@ -341,13 +454,31 @@ describe('generated sync-apply route runtime: operation permissions (#3011)', ()
       [
         'export async function getCollection() {',
         '  return {',
-        '    async get() { return null; },',
+        '    // A stored row, when a test supplies one for an update.',
+        '    async get() { return (globalThis as any).__smrtSyncStoredRow ?? null; },',
         '    async create(data: Record<string, unknown>) {',
         '      (globalThis as any).__smrtSyncCreateCalls.push(data);',
         "      return { id: data.id, updated_at: '2026-01-01T00:00:00.000Z', async save() {}, async delete() {} };",
         '    },',
+        '    async withAuditMutation(row: unknown, _action: string, mutate: (bound: unknown) => Promise<void>) {',
+        '      return mutate(row);',
+        '    },',
         '  };',
         '}',
+      ].join('\n'),
+    );
+    // Tenancy with enforcement on: the context a route enters is recorded,
+    // and tests set an ambient or system context through `globalThis`.
+    const tenancyShim = join(projectRoot, 'tenancy-shim.ts');
+    writeFileSync(
+      tenancyShim,
+      [
+        'const state = globalThis as any;',
+        'export function getCurrentTenant() { return state.__smrtSyncTenantContext; }',
+        'export function hasTenantContext() { return Boolean(state.__smrtSyncTenantContext); }',
+        'export function isSystemContext() { return state.__smrtSyncSystemContext === true; }',
+        'export function isTenancyEnabled() { return true; }',
+        'export function enterTenantContext(context: unknown) { state.__smrtSyncTenantContext = context; }',
       ].join('\n'),
     );
     // The REAL core engine, so the generated authorize() closure is exercised
@@ -355,7 +486,58 @@ describe('generated sync-apply route runtime: operation permissions (#3011)', ()
     const coreEntry = join(projectRoot, 'core-entry.ts');
     writeFileSync(
       coreEntry,
-      `export * from ${JSON.stringify(fileURLToPath(new URL('../sync/apply.ts', import.meta.url)))}; export * from ${JSON.stringify(fileURLToPath(new URL('../runtime-exposure.ts', import.meta.url)))};`,
+      [
+        `export * from ${JSON.stringify(fileURLToPath(new URL('../sync/apply.ts', import.meta.url)))}; export * from ${JSON.stringify(fileURLToPath(new URL('../runtime-exposure.ts', import.meta.url)))};`,
+        // The route asks the registry which body keys never reach a model.
+        // The real rule runs here over the field names a test declares
+        // (none by default), standing in for the registry's field lookup.
+        `import { isServiceOptionInput } from ${JSON.stringify(fileURLToPath(new URL('../service-options.ts', import.meta.url)))};`,
+        // The fixture models are plain tables (no STI type selection).
+        'export const ObjectRegistry = { getTableStrategy: () => undefined, isServiceOptionInput: (_name: string, key: string) => isServiceOptionInput(key, (field: string) => ((globalThis as any).__smrtSyncDeclaredFields ?? []).includes(field)) };',
+        // The route assigns an update payload through `applyUpdateInput`. The
+        // fixture rows are structural, so the real rule runs with nothing
+        // registered about them.
+        `import { assignUpdateInput, resolveUpdateInput, STRUCTURAL_UPDATE_RULES } from ${JSON.stringify(fileURLToPath(new URL('../write-input.ts', import.meta.url)))};`,
+        'export const applyUpdateInput = (row: object, data: Record<string, unknown>) => assignUpdateInput(row, data, STRUCTURAL_UPDATE_RULES);',
+        'export const assertUpdateInput = (row: object, data: Record<string, unknown>) => { resolveUpdateInput(row, data, STRUCTURAL_UPDATE_RULES); };',
+        // The fixture models are structural; nothing is registered to check create input against.
+        'export const assertCreateInput = () => {};',
+        // Request tenancy (#5375): core's actor rule and write gate over the
+        // tenancy shim's context, for the tenancy each model has at request
+        // time (from its manifest entry, or a run-time registration a test
+        // declares). The real rule runs in smrt-tenancy's effective-tenancy
+        // suites.
+        'export const getRequestTenantContext = () => (globalThis as any).__smrtSyncTenantContext;',
+        'export const enterRequestTenantContext = (context: unknown) => { (globalThis as any).__smrtSyncTenantContext = context; };',
+        'export async function runInRequestTenancy(input: any, fn: (t: unknown) => Promise<unknown>) {',
+        '  const state = globalThis as any;',
+        '  const refuse = (status: number) => { throw Object.assign(new Error(status === 401 ? "auth" : "forbidden"), { status, code: "TENANT_CONTEXT_REQUIRED" }); };',
+        "  const record = (value: unknown) => (value && typeof value === 'object' ? value : undefined) as any;",
+        "  const text = (value: unknown) => (typeof value === 'string' && value ? value : undefined);",
+        '  const l = record(input.locals) ?? {};',
+        '  const user = record(l.user); const session = record(l.session); const context = record(l.tenantContext);',
+        '  const tenantId = text(l.tenantId ?? user?.tenantId ?? session?.tenantId ?? context?.tenantId);',
+        '  const userId = text(l.userId ?? user?.id ?? user?.userId ?? session?.userId ?? context?.userId);',
+        '  const raw = l.permissions ?? l.permissionSet ?? l.smrtPermissions ?? context?.permissions;',
+        "  const permissions = raw instanceof Set ? raw : Array.isArray(raw) && raw.every((v: unknown) => typeof v === 'string') ? new Set(raw) : undefined;",
+        '  const authenticated = !!user || !!session || l.smrtAuth === true;',
+        '  if (input.requirePrincipal && (!tenantId || !userId || !permissions)) refuse(403);',
+        '  const active = state.__smrtSyncTenantContext;',
+        '  let actorTenant = tenantId;',
+        '  if (active) {',
+        '    const userMismatch = input.requirePrincipal ? active.userId !== userId : !!userId && !!active.userId && active.userId !== userId;',
+        '    if ((tenantId && active.tenantId !== tenantId) || userMismatch) refuse(403);',
+        '    actorTenant = active.tenantId;',
+        '    if (input.requirePrincipal) state.__smrtSyncTenantContext = { ...active, tenantId, userId, permissions };',
+        '  }',
+        '  const policy = state.__smrtSyncTenantPolicies?.[input.model] ?? ((state.__smrtSyncRuntimeTenantModels ?? []).includes(input.model) ? { mode: "optional" } : undefined);',
+        '  const system = state.__smrtSyncSystemContext === true;',
+        '  const bypass = context?.superAdminBypass === true && policy?.allowSuperAdminBypass === true;',
+        '  if (policy && !system && !actorTenant && !bypass) refuse(authenticated ? 403 : 401);',
+        '  if (!active && actorTenant && (policy || input.requirePrincipal)) state.__smrtSyncTenantContext = input.requirePrincipal ? { tenantId, userId, permissions } : { tenantId };',
+        '  return fn({ model: input.model });',
+        '}',
+      ].join('\n'),
     );
     const outFile = join(projectRoot, 'route.mjs');
     await build({
@@ -376,6 +558,9 @@ describe('generated sync-apply route runtime: operation permissions (#3011)', ()
             }));
             b.onResolve({ filter: /^@happyvertical\/smrt-core$/ }, () => ({
               path: coreEntry,
+            }));
+            b.onResolve({ filter: /^@happyvertical\/smrt-tenancy$/ }, () => ({
+              path: tenancyShim,
             }));
           },
         },
@@ -415,6 +600,228 @@ describe('generated sync-apply route runtime: operation permissions (#3011)', ()
     methods: {},
     decoratorConfig: { api: { include: ['list', 'get', 'create'] } },
   };
+
+  describe('tenant and principal context (the CRUD route helper)', () => {
+    const tenantDef = {
+      className: 'TenantWidget',
+      collection: 'tenantwidgets',
+      fields: {
+        name: { type: 'text' },
+        code: { type: 'text', readonly: true },
+        total: { type: 'integer', generated: { col: 'name' } },
+      },
+      methods: {},
+      displayLabelProjection: { field: 'name' },
+      decoratorConfig: {
+        api: { include: ['list', 'get', 'create'] },
+        tenantScoped: { mode: 'optional' },
+      },
+    };
+    const principalDef = {
+      ...tenantDef,
+      className: 'PrincipalWidget',
+      collection: 'principalwidgets',
+      decoratorConfig: {
+        api: { include: ['list', 'get', 'create'], principalContext: true },
+        tenantScoped: { mode: 'optional' },
+      },
+    };
+    const publicDef = {
+      ...tenantDef,
+      className: 'PublicWidget',
+      collection: 'publicwidgets',
+      decoratorConfig: {
+        api: { include: ['list', 'get', 'create'], public: true },
+        tenantScoped: { mode: 'optional' },
+      },
+    };
+    const bypassDef = {
+      ...tenantDef,
+      className: 'BypassWidget',
+      collection: 'bypasswidgets',
+      decoratorConfig: {
+        api: { include: ['list', 'get', 'create'] },
+        tenantScoped: { mode: 'optional', allowSuperAdminBypass: true },
+      },
+    };
+    const state = globalThis as Record<string, unknown>;
+    // One route serving all the models, as a generated app has.
+    const apply = async (
+      object: string,
+      locals: unknown,
+      payload: Record<string, unknown> = { name: 'Widget' },
+    ) => {
+      const route = await importRoute({
+        TenantWidget: tenantDef,
+        PrincipalWidget: principalDef,
+        PublicWidget: publicDef,
+        BypassWidget: bypassDef,
+      });
+      return firstResult(
+        await route.POST({
+          locals,
+          request: new Request('http://localhost/api/sync/apply', {
+            body: JSON.stringify({
+              items: [
+                {
+                  itemId: 'q-1',
+                  object,
+                  op: 'create',
+                  id: '0f8fad5b-d9cb-469f-a165-70867728950e',
+                  payload,
+                },
+              ],
+            }),
+            method: 'POST',
+          }),
+        }),
+      );
+    };
+
+    it('strips the same read-only fields as the CRUD route', async () => {
+      const [target] = collectSyncApplyTargets(
+        manifestWith({ TenantWidget: tenantDef }),
+      );
+      // Read-only, calculated and projected-label fields, from the one
+      // function both generators call.
+      expect(target.readonlyFields).toEqual(['code', 'total', 'displayLabel']);
+
+      const result = await apply(
+        'tenantwidgets',
+        {
+          tenantId: 'tenant-a',
+          permissions: ['tenantwidgets.create'],
+          user: { id: 'user-1' },
+        },
+        {
+          name: 'Widget',
+          code: 'forged',
+          total: 999,
+          displayLabel: 'forged',
+          tenantId: 'tenant-b',
+        },
+      );
+      expect(result).toMatchObject({ status: 'applied' });
+      expect(createCalls).toEqual([
+        {
+          name: 'Widget',
+          id: '0f8fad5b-d9cb-469f-a165-70867728950e',
+          _insertOnly: true,
+        },
+      ]);
+    });
+
+    it('reads the tenant from every place the CRUD route does', async () => {
+      for (const locals of [
+        { tenantId: 'tenant-a' },
+        { user: { id: 'user-1', tenantId: 'tenant-a' } },
+        { session: { tenantId: 'tenant-a' } },
+        { tenantContext: { tenantId: 'tenant-a' } },
+      ]) {
+        delete state.__smrtSyncTenantContext;
+        createCalls.length = 0;
+        const result = await apply('tenantwidgets', {
+          user: { id: 'user-1' },
+          permissions: ['tenantwidgets.create'],
+          ...locals,
+        });
+        expect(result).toMatchObject({ status: 'applied' });
+        expect(state.__smrtSyncTenantContext).toMatchObject({
+          tenantId: 'tenant-a',
+        });
+        expect(createCalls).toHaveLength(1);
+      }
+    });
+
+    it('rejects a write by a signed-in caller with no tenant', async () => {
+      const result = await apply('tenantwidgets', {
+        user: { id: 'user-1' },
+        permissions: ['tenantwidgets.create'],
+      });
+      expect(result).toMatchObject({ status: 'rejected', reason: 'forbidden' });
+      expect(createCalls).toHaveLength(0);
+    });
+
+    it('rejects an anonymous write to a public model with no tenant', async () => {
+      const result = await apply('publicwidgets', {});
+      expect(result).toMatchObject({
+        status: 'rejected',
+        reason: 'auth_required',
+      });
+      expect(createCalls).toHaveLength(0);
+    });
+
+    it('rejects a super-admin bypass on a model that does not opt in', async () => {
+      const result = await apply('tenantwidgets', {
+        user: { id: 'operator' },
+        tenantContext: { superAdminBypass: true },
+      });
+      expect(result).toMatchObject({ status: 'rejected', reason: 'forbidden' });
+      expect(createCalls).toHaveLength(0);
+    });
+
+    it('applies a write for an explicitly cross-tenant principal or an active context', async () => {
+      const superAdmin = await apply('bypasswidgets', {
+        user: { id: 'operator' },
+        tenantContext: { superAdminBypass: true },
+      });
+      expect(superAdmin).toMatchObject({ status: 'applied' });
+
+      state.__smrtSyncSystemContext = true;
+      const system = await apply('publicwidgets', {});
+      expect(system).toMatchObject({ status: 'applied' });
+      delete state.__smrtSyncSystemContext;
+
+      state.__smrtSyncTenantContext = { tenantId: 'tenant-a' };
+      const ambient = await apply('publicwidgets', {});
+      expect(ambient).toMatchObject({ status: 'applied' });
+      expect(createCalls).toHaveLength(3);
+    });
+
+    it('rejects a tenant that does not match the active context', async () => {
+      state.__smrtSyncTenantContext = { tenantId: 'tenant-b' };
+      const result = await apply('tenantwidgets', {
+        tenantId: 'tenant-a',
+        user: { id: 'user-1' },
+        permissions: ['tenantwidgets.create'],
+      });
+      expect(result).toMatchObject({ status: 'rejected', reason: 'forbidden' });
+      expect(createCalls).toHaveLength(0);
+    });
+
+    it('requires a complete principal for a principal-context model and enters it', async () => {
+      const incomplete = await apply('principalwidgets', {
+        smrtAuth: true,
+        tenantContext: {
+          tenantId: 'tenant-a',
+          permissions: ['principalwidgets.create'],
+        },
+      });
+      expect(incomplete).toMatchObject({
+        status: 'rejected',
+        reason: 'forbidden',
+      });
+      expect(createCalls).toHaveLength(0);
+
+      const complete = await apply('principalwidgets', {
+        user: { id: 'user-1' },
+        tenantContext: {
+          tenantId: 'tenant-a',
+          userId: 'user-1',
+          permissions: new Set(['principalwidgets.create']),
+        },
+      });
+      expect(complete).toMatchObject({ status: 'applied' });
+      expect(state.__smrtSyncTenantContext).toMatchObject({
+        tenantId: 'tenant-a',
+        userId: 'user-1',
+      });
+      expect(
+        (state.__smrtSyncTenantContext as { permissions: Set<string> })
+          .permissions,
+      ).toEqual(new Set(['principalwidgets.create']));
+    });
+  });
 
   it('rejects a signed-in principal lacking <collection>.create as forbidden', async () => {
     const route = await importRoute({ Widget: widgetDef });
@@ -510,6 +917,104 @@ describe('generated sync-apply route runtime: operation permissions (#3011)', ()
       await route.POST({ locals: {}, request: createBatch('widgets') }),
     );
     expect(result).toMatchObject({ status: 'applied' });
+  });
+
+  describe('payloads set fields only', () => {
+    const ITEM_ID = '0f8fad5b-d9cb-469f-a165-70867728950e';
+    const SERVICE_KEYS = [
+      'db',
+      'persistence',
+      'fs',
+      'ai',
+      'decisions',
+      'inference',
+      'usage',
+      'logging',
+      'metrics',
+      'pubsub',
+      'sanitization',
+      'signals',
+    ];
+    const payload = () => ({
+      name: 'Widget',
+      ...Object.fromEntries(SERVICE_KEYS.map((key) => [key, { from: key }])),
+      options: { db: 'file:/elsewhere.db' },
+      _skipLoad: false,
+      _className: 'Other',
+    });
+    const batch = (op: 'create' | 'update') =>
+      new Request('http://localhost/api/sync/apply', {
+        body: JSON.stringify({
+          items: [
+            {
+              itemId: 'q-1',
+              object: 'widgets',
+              op,
+              id: ITEM_ID,
+              payload: payload(),
+            },
+          ],
+        }),
+        method: 'POST',
+      });
+    const writer = {
+      permissions: ['widgets.create', 'widgets.update'],
+      user: { id: 'u' },
+    };
+    const writableDef = {
+      ...widgetDef,
+      decoratorConfig: {
+        api: { include: ['list', 'get', 'create', 'update'] },
+      },
+    };
+
+    it('a create payload reaches the collection with field values only', async () => {
+      const route = await importRoute({ Widget: writableDef });
+      const result = await firstResult(
+        await route.POST({ locals: writer, request: batch('create') }),
+      );
+      expect(result).toMatchObject({ status: 'applied' });
+      expect(createCalls).toEqual([
+        { name: 'Widget', id: ITEM_ID, _insertOnly: true },
+      ]);
+    });
+
+    it('a create payload keeps a service-named key the model declares as a field', async () => {
+      (globalThis as Record<string, unknown>).__smrtSyncDeclaredFields = [
+        'metrics',
+      ];
+      const route = await importRoute({ Widget: writableDef });
+      await route.POST({ locals: writer, request: batch('create') });
+      expect(createCalls).toEqual([
+        {
+          name: 'Widget',
+          metrics: { from: 'metrics' },
+          id: ITEM_ID,
+          _insertOnly: true,
+        },
+      ]);
+    });
+
+    it('an update payload assigns field values only onto the stored row', async () => {
+      const stored: Record<string, unknown> = {
+        id: ITEM_ID,
+        name: 'Before',
+        updated_at: '2026-01-01T00:00:00.000Z',
+        options: { db: 'collection-db' },
+        save: async () => {},
+      };
+      (globalThis as Record<string, unknown>).__smrtSyncStoredRow = stored;
+      const route = await importRoute({ Widget: writableDef });
+      const result = await firstResult(
+        await route.POST({ locals: writer, request: batch('update') }),
+      );
+      expect(result).toMatchObject({ status: 'applied' });
+      expect(stored.name).toBe('Widget');
+      expect(stored.options).toEqual({ db: 'collection-db' });
+      expect(Object.keys(stored).sort()).toEqual(
+        ['id', 'name', 'options', 'save', 'updated_at'].sort(),
+      );
+    });
   });
 
   // #2807: two models share the `records` segment. In either manifest

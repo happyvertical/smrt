@@ -1,6 +1,6 @@
 {
   "name": "@happyvertical/smrt-messages",
-  "version": "0.62.13",
+  "version": "0.69.0",
   "smrtJsdoc": "strict",
   "description": "Unified multi-channel messaging with STI-based hierarchies",
   "type": "module",
@@ -105,6 +105,7 @@
     }
   },
   "devDependencies": {
+    "@happyvertical/smrt-approvals": "workspace:*",
     "@happyvertical/smrt-ledgers": "workspace:*",
     "@happyvertical/smrt-vitest": "workspace:*",
     "@sveltejs/package": "^2.5.8",

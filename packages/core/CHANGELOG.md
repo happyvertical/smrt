@@ -1,5 +1,196 @@
 # @happyvertical/smrt-core
 
+## 0.69.0
+
+### Minor Changes
+
+- ### Breaking Changes
+  
+  - async generated client fetchers; list() sends its params (#5565) (core)
+  
+  ### Features
+  
+  - embed entry with handler and drain; build ./start on them (#5550) (app-shell)
+  - hosted engine follow-ups: caps wiring, hosted keys, migration (#5183) (#5540) (app-shell)
+
+### Patch Changes
+
+- @happyvertical/smrt-config@0.69.0
+  - @happyvertical/smrt-scanner@0.69.0
+  - @happyvertical/smrt-types@0.69.0
+
+## 0.68.0
+
+### Minor Changes
+
+- ### Breaking Changes
+  
+  - route generation never overwrites application routes (#5523) (core)
+  
+  ### Features
+  
+  - opt-in wait mode for the startup migration guard (#5531) (core)
+  - hosted engine wave 4 and milestone 2 slices (#5183) (#5527) (app-shell)
+  
+  ### Bug Fixes
+  
+  - audit patch train: test cleanup, build order, flakes, ledger (#5509)
+
+### Patch Changes
+
+- @happyvertical/smrt-config@0.68.0
+  - @happyvertical/smrt-scanner@0.68.0
+  - @happyvertical/smrt-types@0.68.0
+
+## 0.67.0
+
+### Minor Changes
+
+- ### Breaking Changes
+  
+  - require verify for SmrtServer auth and cap request bodies (#5482) (core)
+  
+  ### Features
+  
+  - post issued invoices to the settlement chart and sweep unposted ones (#5501) (commerce)
+  - user apps on PostgreSQL and a sign-in landing on the cloud profile (#5191) (#5418) (app-shell)
+  - user app export and import across SQLite and PostgreSQL (#5193) (#5419) (portability)
+  
+  ### Bug Fixes
+  
+  - stop change-feed append retries once the time budget is spent (#5478) (core)
+  - match a reference to the notification table as SQLite does (#5461) (messages)
+
+### Patch Changes
+
+- @happyvertical/smrt-config@0.67.0
+  - @happyvertical/smrt-scanner@0.67.0
+  - @happyvertical/smrt-types@0.67.0
+
+## 0.66.1
+
+### Patch Changes
+
+- ### Bug Fixes
+  
+  - make payment pushes reach QuickBooks and recoverable (#5420) (#5421) (commerce)
+- @happyvertical/smrt-config@0.66.1
+  - @happyvertical/smrt-scanner@0.66.1
+  - @happyvertical/smrt-types@0.66.1
+
+## 0.66.0
+
+### Minor Changes
+
+- ### Breaking Changes
+  
+  - record change-feed entries under the row's real tenant field (#5359) (core)
+  - request paths enforce per-field write, filter and tenant checks (#5414) (core)
+  - serialize PostgreSQL change-feed sequence allocation (#5411) (core)
+  
+  ### Features
+  
+  - worker lifecycle for many apps in one process (#5192) (#5398) (app-shell)
+  - draft fork, undo snapshot and publish on PostgreSQL (#5187) (#5397) (app-shell)
+
+### Patch Changes
+
+- @happyvertical/smrt-config@0.66.0
+  - @happyvertical/smrt-scanner@0.66.0
+  - @happyvertical/smrt-types@0.66.0
+
+## 0.65.0
+
+### Minor Changes
+
+- ### Breaking Changes
+  
+  - order generated activation by parent; same-name replacement needs replaceParent (#5410) (core)
+  - read and check PostgreSQL index DDL as the server reads it (#5356) (core)
+  - AI run tenancy and usage accounting, with a lifetime run id registry (#5399) (core)
+  - guard the app model editor (identity, ownership, storage, admission) (#5317) (core)
+  
+  ### Features
+  
+  - ensureTenantSettlementAccounts and ledger-scoped recordPayment (#5412) (#5413) (commerce)
+  - engine takes an injected database and stops assuming SQLite (#5374) (app-shell)
+  
+  ### Bug Fixes
+  
+  - safer SQLite table rebuilds and an atomic money-column rescale (#5396) (core)
+  - ordered, committed-only change-feed delivery (#5324) (core)
+  - allow batched merge queues in release admission (#5380) (release)
+  
+  ### Other Changes
+  
+  - test: real-PostgreSQL CI coverage and SDK bump (#5386) (#5387) (app-shell)
+  - ci: retry transient install and apt failures, rebalance app-shell shard (#5385) (workflows)
+  - chore: bump @happyvertical SDK catalog to 0.116.4 (#5294) (deps)
+
+### Patch Changes
+
+- @happyvertical/smrt-config@0.65.0
+  - @happyvertical/smrt-scanner@0.65.0
+  - @happyvertical/smrt-types@0.65.0
+
+## 0.64.0
+
+### Patch Changes
+
+- @happyvertical/smrt-config@0.64.0
+  - @happyvertical/smrt-scanner@0.64.0
+  - @happyvertical/smrt-types@0.64.0
+
+## 0.63.0
+
+### Minor Changes
+
+- ### Breaking Changes
+  
+  - one meaning per where key and per create input key (#5307) (core)
+  
+  ### Features
+  
+  - cloud tier wave 1: atomic methods, cloud accounts, app portability (#5218) (app-shell)
+  
+  ### Bug Fixes
+  
+  - reset inbound content and identity on reply and forward drafts (#5329) (messages)
+  - restore subtype lineage and runtime overrides in registry test snapshots (#5335) (core)
+  - make the DATETIME to TIMESTAMP script run, all or nothing (#5289) (core)
+  
+  ### Other Changes
+  
+  - perf: worker memory: nursery cap, bundle, lazy reports (#5212) (#5318) (app-shell)
+
+### Patch Changes
+
+- @happyvertical/smrt-config@0.63.0
+  - @happyvertical/smrt-scanner@0.63.0
+  - @happyvertical/smrt-types@0.63.0
+
+## 0.62.14
+
+### Patch Changes
+
+- ### Features
+  
+  - agent send policy, held sends and handled-by (#5250) (messages)
+  - non-login service principals for agent accounts (#5254) (users)
+  - edit-then-approve and a mail-send approval gate (#5249) (approvals)
+  - changes waiting replaces the owner-facing draft (#5178 slices 1-6) (#5228) (app-shell)
+  
+  ### Bug Fixes
+  
+  - make customer methods atomic, serialized and limit-checked (#5235) (app-shell)
+  
+  ### Other Changes
+  
+  - docs: sync the shared development kernel with have-config main (#5237) (agents)
+- @happyvertical/smrt-config@0.62.14
+  - @happyvertical/smrt-scanner@0.62.14
+  - @happyvertical/smrt-types@0.62.14
+
 ## 0.62.13
 
 ### Patch Changes

@@ -675,6 +675,31 @@ export async function switchSessionTenant(
   return result.switched;
 }
 
+/**
+ * The tenant `userId` last switched into via {@link switchSessionTenant} (or
+ * `SessionService.switchTenant`), for an app's post-sign-in step to resume
+ * (#5358). Works while the session is tenantless. Returns `null` unless the user
+ * still holds an ACTIVE membership there and the tenant is ACTIVE. It grants
+ * nothing: pass the result to {@link switchSessionTenant}, which runs the normal
+ * membership checks. Opt-in; apps that never call it behave as before.
+ *
+ * @example
+ * ```typescript
+ * const last = await lastActiveTenantFor(locals.user.id, { db });
+ * if (last) await switchSessionTenant(event, last, { db });
+ * ```
+ */
+export async function lastActiveTenantFor(
+  userId: string,
+  options: SmrtClassOptions & { ttl?: number },
+): Promise<string | null> {
+  const service = await getOrCreateSessionService(
+    options,
+    options.ttl ?? DEFAULT_SESSION_TTL,
+  );
+  return service.lastActiveTenantFor(userId);
+}
+
 function getOidcProviderName(
   event: SvelteKitRequestEvent,
   options: OidcSvelteKitOptions,

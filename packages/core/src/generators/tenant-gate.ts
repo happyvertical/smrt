@@ -10,8 +10,11 @@
  * through the interceptor's optional-mode pass-through and return rows across
  * **all** tenants.
  *
- * `MCPGenerator` (`generators/mcp.ts`) is the ONLY in-repo caller of
- * {@link runWithTenantGate} today, passing `surface: 'MCP'`. Core's
+ * `MCPGenerator` (`generators/mcp.ts`, `surface: 'MCP'`) and the runtime REST
+ * server (`APIGenerator` in `generators/rest.ts`, `surface: 'REST'`, with the
+ * tenant of the principal its host supplies per request through
+ * `APIConfig.resolvePrincipal`) are
+ * the in-repo callers of {@link runWithTenantGate}. Core's
  * `CLIGenerator`, which used to call this with `surface: 'CLI'` and the
  * `--tenant`/`--all-tenants` flags documented on {@link TenantGateOptions}
  * below, was retired as unused public API (#2664). The live local CLI
@@ -19,8 +22,8 @@
  * <object>:<action>` binary) has never called this gate and has no
  * `--tenant`/`--all-tenants` flags of its own — it is NOT tenant-isolation
  * fail-closed today. Do not read this module as evidence that it is; see
- * `packages/tenancy/src/__tests__/cli-mcp-tenant-context.spec.ts` for the
- * MCP-only coverage this leaves in place.
+ * `packages/tenancy/src/__tests__/cli-mcp-tenant-context.spec.ts` for the MCP
+ * coverage and `rest-write-tenant-gate.test.ts` for the REST coverage.
  *
  * Core exposes an injectable runner slot that tenancy fills at `enableTenancy()`
  * time (the same inversion pattern as the DispatchBus tenant resolver and
@@ -45,7 +48,9 @@ export interface TenantGateOptions {
   tenantScoped?: boolean;
   /**
    * Explicit operator-provided tenant selector (`context.tenantId` for
-   * MCPGenerator, today's only caller; core's retired `CLIGenerator` used to
+   * MCPGenerator, the tenant of the host's `resolvePrincipal` answer for the
+   * REST server;
+   * core's retired `CLIGenerator` used to
    * pass this from a `--tenant` flag the shipped local CLI does not have,
    * #2664).
    */

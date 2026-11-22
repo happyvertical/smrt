@@ -116,6 +116,14 @@ export function planImpact({ base, head, baseSnapshot, headSnapshot, changes, er
   };
   // Union both graphs: deleting an edge must not drop a former consumer.
   const reverse = new Map();
+  // Task-level edges from turbo.json (`pkg#task` dependsOn `other#build`) are
+  // dependencies the manifests do not declare (#5364).
+  for (const snapshot of [baseSnapshot, headSnapshot]) {
+    for (const [consumer, dependency] of snapshot?.turboEdges ?? []) {
+      if (!reverse.has(dependency)) reverse.set(dependency, new Set());
+      reverse.get(dependency).add(consumer);
+    }
+  }
   for (const graph of [before, after]) {
     for (const pkg of graph.values()) {
       for (const field of DEPENDENCY_FIELDS) {
@@ -182,7 +190,21 @@ export function readSnapshot(cwd, commit) {
   const files = git(cwd, 'ls-tree', '-r', '--name-only', '-z', commit).split('\0').filter(Boolean);
   const workspaceConfig = git(cwd, 'show', `${commit}:pnpm-workspace.yaml`);
   const manifests = Object.fromEntries(files.filter((path) => packageManifest.test(path)).map((path) => [path, JSON.parse(git(cwd, 'show', `${commit}:${path}`))]));
-  return { files, workspaceConfig, manifests };
+  return { files, workspaceConfig, manifests, turboEdges: turboTaskEdges(JSON.parse(git(cwd, 'show', `${commit}:turbo.json`))) };
+}
+
+/** `pkg#task` entries whose dependsOn names another package's task. */
+export function turboTaskEdges(turbo) {
+  const edges = [];
+  for (const [key, task] of Object.entries(turbo?.tasks ?? {})) {
+    const consumer = key.includes('#') ? key.slice(0, key.lastIndexOf('#')) : undefined;
+    if (!consumer) continue;
+    for (const entry of task?.dependsOn ?? []) {
+      const at = typeof entry === 'string' ? entry.lastIndexOf('#') : -1;
+      if (at > 0 && !entry.startsWith('^')) edges.push([consumer, entry.slice(0, at)]);
+    }
+  }
+  return edges;
 }
 
 export function planFromGit({ cwd = process.cwd(), base, head }) {

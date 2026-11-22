@@ -30,22 +30,28 @@ import {
   AiRunError,
   AiRunNotFoundError,
   type AiRunRow,
+  type AiRunScopedTxOptions,
   type AiRunStopDetail,
   AiRunStoppedError,
+  AiRunTransitionError,
   type AiRunTx,
   type AiRunTxOptions,
   aiRunActiveTime,
   aiRunQuery,
   dateOrNull,
+  expectedTenantOf,
   getAiRun,
   getRows,
   isAiRunFinal,
   lockAiRun,
   lockAiRunChain,
   lockAiRunChainFenced,
+  lockAiRunChainInTenant,
   newAiRunId,
   num,
   readAiRunChainIds,
+  settlementTenantOf,
+  text,
   withAiRunTransaction,
   writeAiRunTotals,
 } from './ai-run-model.js';
@@ -270,7 +276,12 @@ export async function reserveAiCalls(
   const result = await withAiRunTransaction(
     db,
     async (tx): Promise<AiCallReservation[] | AiRunStoppedError> => {
-      const chain = await lockAiRunChainFenced(tx, runId, options.fence);
+      const chain = await lockAiRunChainFenced(
+        tx,
+        runId,
+        options.fence,
+        expectedTenantOf(options),
+      );
       if (supplied.length > 0) {
         // A call id names one call: its one event and its usage row's id.
         const taken = getRows(
@@ -360,7 +371,10 @@ export async function reserveAiCall(
  * The check a fusion makes just before sending its judge under the
  * reservation it already holds (page section 6.3): its chain must still be
  * `running`. When it is not, the judge's reservation is released and the
- * fusion run takes the stop it found; the error is thrown.
+ * fusion run takes the stop it found; the error is thrown. With
+ * `options.fence`, the claim fence is asserted first, before the chain is
+ * locked: a worker whose claim was taken over gets
+ * {@link AiRunClaimLostError} and changes nothing.
  */
 export async function assertAiRunStillRunning(
   db: DatabaseInterface,
@@ -370,16 +384,53 @@ export async function assertAiRunStillRunning(
   const result = await withAiRunTransaction(
     db,
     async (tx) => {
-      const chain = await lockAiRunChain(tx, runId);
+      const chain = await lockAiRunChainFenced(
+        tx,
+        runId,
+        options.fence,
+        expectedTenantOf(options),
+      );
       const stopped = await checkAiRunChainRunning(tx, chain);
       if (stopped && options.releaseCallId) {
         await releaseInTx(tx, chain, options.releaseCallId, 'cancelled');
+      }
+      if (!stopped && options.releaseCallId) {
+        // The held call is sent only while its own event is still reserved
+        // in this run: a reservation released or abandoned meanwhile (a
+        // claim reconciliation, the sweep) is never spent.
+        const run = chain[chain.length - 1] as AiRunRow;
+        await assertAiCallReservedTx(tx, run, options.releaseCallId);
       }
       return stopped;
     },
     options,
   );
   if (result) throw result;
+}
+
+/** Throw unless the run's call event `callId` is still `reserved`. */
+async function assertAiCallReservedTx(
+  tx: AiRunTx,
+  run: AiRunRow,
+  callId: string,
+): Promise<void> {
+  const rows = getRows(
+    await aiRunQuery(
+      tx.db,
+      `SELECT reservation FROM _smrt_ai_run_events
+        WHERE run_id = $1 AND call_id = $2 AND type = 'call'`,
+      run.id,
+      callId,
+    ),
+  );
+  if (rows[0]?.reservation !== 'reserved') {
+    throw new AiRunTransitionError(
+      `AI call ${callId} of run ${run.id} is no longer reserved`,
+      run.id,
+      run.status,
+      run.status,
+    );
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -501,11 +552,34 @@ export interface SettleAiCallInput {
   status?: string;
 }
 
+/** Whether the usage row under the call id is this call's (run and tenant). */
+async function ownsUsageRow(
+  tx: AiRunTx,
+  input: { runId: string; callId: string },
+  tenantId: string | null,
+): Promise<boolean> {
+  return (
+    getRows(
+      await aiRunQuery(
+        tx.db,
+        `SELECT id FROM _smrt_ai_usage
+          WHERE id = $1 AND run_id = $2 AND ${
+            tenantId === null ? 'tenant_id IS NULL' : 'tenant_id = $3'
+          }`,
+        input.callId,
+        input.runId,
+        ...(tenantId === null ? [] : [tenantId]),
+      ),
+    ).length > 0
+  );
+}
+
 async function settleInTx(
   tx: AiRunTx,
   input: SettleAiCallInput,
+  expectedTenant?: string | null,
 ): Promise<AiCallSettlement> {
-  const chain = await lockAiRunChain(tx, input.runId);
+  const chain = await lockAiRunChainInTenant(tx, input.runId, expectedTenant);
   const status = input.status ?? 'ok';
   const usage = input.usage;
   let path: AiCallSettlement;
@@ -548,14 +622,37 @@ async function settleInTx(
       path = existing[0] ? 'already_settled' : 'unreserved';
     }
   }
-  const inserted = await insertAiUsageRow(tx.db, usage, {
-    id: input.callId,
-    runId: input.runId,
-  });
+  // A call of a run is billed to the run's tenant (global `null` included),
+  // whatever tenant the caller's context or the ambient resolver named.
+  const runTenant = chain[chain.length - 1]?.tenantId ?? null;
+  const inserted = await insertAiUsageRow(
+    tx.db,
+    { ...usage, tenantId: runTenant },
+    { id: input.callId, runId: input.runId },
+  );
   if (path === 'already_settled') return path;
   if (path === 'unreserved') {
     // The one case where the insert, not the event, guards double charging.
     if (!inserted) return 'already_settled';
+  } else if (!inserted && !(await ownsUsageRow(tx, input, runTenant))) {
+    // The call id is held by a usage row that is not this call's (another
+    // run's or tenant's): charging would bill a call with no billing row of
+    // its own. Its reservation is returned and nothing is charged.
+    logger.warn(
+      `[smrt] AI run ${input.runId} call ${input.callId}: its usage row id is held by another run's row; released it without a charge`,
+    );
+    // Recorded as released, not settled: the call was charged nothing.
+    await aiRunQuery(
+      tx.db,
+      `UPDATE _smrt_ai_run_events SET reservation = 'released'
+        WHERE run_id = $1 AND call_id = $2 AND type = 'call'`,
+      input.runId,
+      input.callId,
+    );
+    await chargeChain(tx, chain, null, returned);
+    return 'already_settled';
+  }
+  if (path === 'unreserved') {
     await insertAiRunEventTx(tx, input.runId, {
       id: newAiRunId(),
       type: 'call',
@@ -597,7 +694,11 @@ export async function settleAiCall(
   input: SettleAiCallInput,
   options: AiRunTxOptions = {},
 ): Promise<AiCallSettlement> {
-  return withAiRunTransaction(db, (tx) => settleInTx(tx, input), options);
+  return withAiRunTransaction(
+    db,
+    (tx) => settleInTx(tx, input, expectedTenantOf(options)),
+    options,
+  );
 }
 
 async function releaseInTx(
@@ -640,7 +741,14 @@ export async function releaseAiCall(
   return withAiRunTransaction(
     db,
     async (tx) => {
-      const chain = await lockAiRunChain(tx, input.runId);
+      // With `options.fence`, the claim fence is asserted before the chain
+      // is locked: a worker whose claim was taken over releases nothing.
+      const chain = await lockAiRunChainFenced(
+        tx,
+        input.runId,
+        options.fence,
+        expectedTenantOf(options),
+      );
       return releaseInTx(tx, chain, input.callId, input.status);
     },
     options,
@@ -682,12 +790,24 @@ export async function reconcileAiCall(
   return withAiRunTransaction(
     db,
     async (tx) => {
-      const chain = await lockAiRunChain(tx, runId);
+      const chain = await lockAiRunChainInTenant(
+        tx,
+        runId,
+        expectedTenantOf(options),
+      );
+      // Only this call's own row is evidence of its usage: the one under
+      // its id, of its run, in its run's tenant.
+      const tenant = chain[chain.length - 1]?.tenantId ?? null;
       const usage = getRows(
         await aiRunQuery(
           tx.db,
-          'SELECT * FROM _smrt_ai_usage WHERE id = $1',
+          `SELECT * FROM _smrt_ai_usage
+            WHERE id = $1 AND run_id = $2 AND ${
+              tenant === null ? 'tenant_id IS NULL' : 'tenant_id = $3'
+            }`,
           callId,
+          runId,
+          ...(tenant === null ? [] : [tenant]),
         ),
       );
       if (usage[0]) {
@@ -736,10 +856,15 @@ export async function reconcileAiCall(
   );
 }
 
-/** The run and its descendants that are not durable, stopping at durable ones. */
+/**
+ * The run and its descendants that are not durable, stopping at durable ones
+ * and at a child of another tenant (never this run's). Every lookup carries
+ * the run's tenant as a predicate.
+ */
 async function nonDurableSubtree(
   db: DatabaseInterface,
   runId: string,
+  tenant: string | null,
 ): Promise<string[]> {
   const out = [runId];
   const queue = [runId];
@@ -750,10 +875,12 @@ async function nonDurableSubtree(
         db,
         `SELECT r.id FROM _smrt_ai_runs r
           WHERE r.parent_run_id = $1
+            AND ${tenant === null ? 'r.tenant_id IS NULL' : 'r.tenant_id = $2'}
             AND NOT EXISTS (SELECT 1 FROM _smrt_ai_run_checkpoints c
                              WHERE c.run_id = r.id)
           ORDER BY r.id`,
         parent,
+        ...(tenant === null ? [] : [tenant]),
       ),
     );
     for (const child of children) {
@@ -786,20 +913,45 @@ export async function reconcileAiRunOnClaim(
   runId: string,
   options: AiRunTxOptions = {},
 ): Promise<AiRunClaimReconciliation> {
-  const ids = await nonDurableSubtree(db, runId);
   const out: AiRunClaimReconciliation = {
     settled: 0,
     abandoned: 0,
     abandonedRuns: [],
   };
+  // The claimed run's tenant, established once and carried into every
+  // descendant lookup, reservation read and status lock below: a row that
+  // left the tenant after discovery is neither reconciled nor failed.
+  const expected = expectedTenantOf(options);
+  const root = getRows(
+    await aiRunQuery(
+      db,
+      `SELECT tenant_id FROM _smrt_ai_runs WHERE id = $1${
+        expected === undefined
+          ? ''
+          : expected === null
+            ? ' AND tenant_id IS NULL'
+            : ' AND tenant_id = $2'
+      }`,
+      runId,
+      ...(expected === undefined || expected === null ? [] : [expected]),
+    ),
+  )[0];
+  if (!root) return out;
+  const tenant = text(root.tenant_id) ?? null;
+  const scoped: AiRunScopedTxOptions = { ...options, expectedTenant: tenant };
+  const ids = await nonDurableSubtree(db, runId, tenant);
   for (const id of ids) {
     const reserved = getRows(
       await aiRunQuery(
         db,
-        `SELECT call_id FROM _smrt_ai_run_events
-          WHERE run_id = $1 AND type = 'call' AND reservation = 'reserved'
-          ORDER BY seq`,
+        `SELECT e.call_id FROM _smrt_ai_run_events e
+           JOIN _smrt_ai_runs r ON r.id = e.run_id
+          WHERE e.run_id = $1 AND e.type = 'call'
+            AND e.reservation = 'reserved'
+            AND ${tenant === null ? 'r.tenant_id IS NULL' : 'r.tenant_id = $2'}
+          ORDER BY e.seq`,
         id,
+        ...(tenant === null ? [] : [tenant]),
       ),
     );
     for (const row of reserved) {
@@ -807,7 +959,7 @@ export async function reconcileAiRunOnClaim(
         db,
         id,
         String(row.call_id),
-        options,
+        scoped,
       );
       if (outcome === 'settled') out.settled++;
       else if (outcome === 'abandoned') out.abandoned++;
@@ -817,7 +969,7 @@ export async function reconcileAiRunOnClaim(
     const failed = await withAiRunTransaction(
       db,
       async (tx) => {
-        const run = await lockAiRun(tx, id);
+        const run = await lockAiRun(tx, id, tenant);
         if (run?.status !== 'running') return false;
         return writeAiRunStatusTx(tx, run, 'failed', {
           stopReason: 'abandoned',
@@ -1024,6 +1176,27 @@ export async function sweepAiRuns(
  * Candidates are read by their parent, so a deeper descendant is repaired
  * in a later round of the same sweep, once its parent has been.
  */
+/**
+ * Whether a run row with this id exists, in any tenant. An existence check
+ * only (no column of the row is read): a chain that ends at a parent of
+ * another tenant is not orphaned.
+ */
+async function aiRunRowExists(
+  tx: AiRunTx,
+  runId: string | null,
+): Promise<boolean> {
+  if (runId === null) return false;
+  return (
+    getRows(
+      await aiRunQuery(
+        tx.db,
+        'SELECT 1 AS present FROM _smrt_ai_runs WHERE id = $1',
+        runId,
+      ),
+    ).length > 0
+  );
+}
+
 async function repairOrphanedAiRuns(
   db: DatabaseInterface,
   batch: number,
@@ -1037,6 +1210,8 @@ async function repairOrphanedAiRuns(
         db,
         `SELECT r.id FROM _smrt_ai_runs r
            LEFT JOIN _smrt_ai_runs p ON p.id = r.parent_run_id
+                  AND (p.tenant_id = r.tenant_id
+                       OR (p.tenant_id IS NULL AND r.tenant_id IS NULL))
           WHERE r.parent_run_id IS NOT NULL
             AND (
               (r.status = 'running' AND p.status = 'cancelled')
@@ -1044,7 +1219,13 @@ async function repairOrphanedAiRuns(
                    OR (r.status = 'stopped'
                        AND EXISTS (SELECT 1 FROM _smrt_ai_run_checkpoints c
                                     WHERE c.run_id = r.id)))
-                  AND (p.id IS NULL
+                  -- Orphaned only when the parent row is truly absent: a
+                  -- parent of another tenant (a link written before parents
+                  -- were tenant-checked) is checked for existence only, and
+                  -- its child is left alone.
+                  AND ((p.id IS NULL
+                        AND NOT EXISTS (SELECT 1 FROM _smrt_ai_runs fp
+                                         WHERE fp.id = r.parent_run_id))
                        OR p.status IN ('cancelled', 'failed', 'done')
                        OR (p.status = 'stopped'
                            AND NOT EXISTS (SELECT 1 FROM _smrt_ai_run_checkpoints pc
@@ -1077,7 +1258,10 @@ async function repairOrphanedAiRuns(
           if (!stoppedBy && run.status !== 'running') {
             stoppedBy =
               ancestors.find(isAiRunFinal)?.id ??
-              ((chain[0] as AiRunRow).parentRunId !== null ? run.id : null);
+              ((chain[0] as AiRunRow).parentRunId !== null &&
+              !(await aiRunRowExists(tx, (chain[0] as AiRunRow).parentRunId))
+                ? run.id
+                : null);
           }
           if (!stoppedBy) return false;
           return writeAiRunStatusTx(tx, run, 'cancelled', {
@@ -1100,6 +1284,8 @@ async function repairOrphanedAiRuns(
 interface PendingSettlement {
   input: SettleAiCallInput;
   afterCommit?: () => Promise<void>;
+  /** The tenant the call's run was established in, when known. */
+  expectedTenant?: string | null;
   /** The write in flight for this entry, followed by every flush. */
   settling?: Promise<PendingOutcome>;
   /** When its last "still pending" warning was logged (ms since epoch). */
@@ -1151,9 +1337,11 @@ export function deferAiRunSettlement(
   input: SettleAiCallInput,
   afterCommit?: () => Promise<void>,
 ): void {
+  const expectedTenant = settlementTenantOf(input);
   pendingList(db, true)?.push({
     input,
     ...(afterCommit ? { afterCommit } : {}),
+    ...(expectedTenant !== undefined ? { expectedTenant } : {}),
   });
 }
 
@@ -1206,7 +1394,12 @@ async function writeEntry(
   const { callId, runId } = entry.input;
   const now = (options.now ?? (() => new Date()))();
   try {
-    await settleAiCall(db, entry.input, options);
+    await settleAiCall(db, entry.input, {
+      ...options,
+      ...(entry.expectedTenant !== undefined
+        ? { expectedTenant: entry.expectedTenant }
+        : {}),
+    } as AiRunScopedTxOptions);
     removePending(list, entry);
     return 'written';
   } catch (error) {
@@ -1382,22 +1575,14 @@ export interface AiRunTotalsCheck {
 
 const COST_TOLERANCE = 1e-6;
 
-async function computeOwnTotals(
-  db: DatabaseInterface,
-  runId: string,
-): Promise<{ computed: AiRunOwnTotals; missing: number }> {
-  const rows = getRows(
-    await aiRunQuery(
-      db,
-      `SELECT e.reserved_tokens, u.id AS usage_id, u.prompt_tokens,
-              u.completion_tokens, u.total_tokens, u.estimated_cost
-         FROM _smrt_ai_run_events e
-         LEFT JOIN _smrt_ai_usage u ON u.id = e.call_id
-        WHERE e.run_id = $1 AND e.type = 'call'
-          AND e.reservation IN ('settled', 'settled_late', 'unreserved')`,
-      runId,
-    ),
-  );
+const OWN_TOTALS_USAGE = `u.id AS usage_id, u.prompt_tokens, u.completion_tokens,
+              u.total_tokens, u.estimated_cost`;
+
+/** Fold charged call rows (`reserved_tokens` plus their usage row) into totals. */
+function foldOwnTotals(rows: Record<string, unknown>[]): {
+  computed: AiRunOwnTotals;
+  missing: number;
+} {
   const computed: AiRunOwnTotals = {
     tokens: 0,
     cost: 0,
@@ -1429,6 +1614,28 @@ async function computeOwnTotals(
   return { computed, missing };
 }
 
+async function computeOwnTotals(
+  db: DatabaseInterface,
+  runId: string,
+): Promise<{ computed: AiRunOwnTotals; missing: number }> {
+  const rows = getRows(
+    await aiRunQuery(
+      db,
+      `SELECT e.reserved_tokens, ${OWN_TOTALS_USAGE}
+         FROM _smrt_ai_run_events e
+         JOIN _smrt_ai_runs r ON r.id = e.run_id
+         -- Only the call's own row: its id, its run, its run's tenant.
+         LEFT JOIN _smrt_ai_usage u ON u.id = e.call_id AND u.run_id = e.run_id
+              AND (u.tenant_id = r.tenant_id
+                   OR (u.tenant_id IS NULL AND r.tenant_id IS NULL))
+        WHERE e.run_id = $1 AND e.type = 'call'
+          AND e.reservation IN ('settled', 'settled_late', 'unreserved')`,
+      runId,
+    ),
+  );
+  return foldOwnTotals(rows);
+}
+
 function sameTotals(a: AiRunOwnTotals, b: AiRunOwnTotals): boolean {
   return (
     a.tokens === b.tokens &&
@@ -1448,15 +1655,40 @@ export async function checkAiRunTotals(
   db: DatabaseInterface,
   runId: string,
 ): Promise<AiRunTotalsCheck> {
-  const run = await getAiRun(db, runId);
-  if (!run) throw new AiRunNotFoundError(runId);
+  // One statement anchored on the run: its stored totals and every charged
+  // call with its own usage row are read in one snapshot, so a settle or a
+  // prune committing meanwhile is seen whole or not at all, and a run that
+  // is gone reads as not found, never as stored totals beside empty
+  // figures.
+  const rows = getRows(
+    await aiRunQuery(
+      db,
+      `SELECT r.tokens AS run_tokens, r.cost_used AS run_cost,
+              r.calls AS run_calls, r.uncosted_calls AS run_uncosted,
+              e.id AS event_id, e.reserved_tokens, ${OWN_TOTALS_USAGE}
+         FROM _smrt_ai_runs r
+         LEFT JOIN _smrt_ai_run_events e ON e.run_id = r.id
+              AND e.type = 'call'
+              AND e.reservation IN ('settled', 'settled_late', 'unreserved')
+         -- Only the call's own row: its id, its run, its run's tenant.
+         LEFT JOIN _smrt_ai_usage u ON u.id = e.call_id AND u.run_id = r.id
+              AND (u.tenant_id = r.tenant_id
+                   OR (u.tenant_id IS NULL AND r.tenant_id IS NULL))
+        WHERE r.id = $1`,
+      runId,
+    ),
+  );
+  const first = rows[0];
+  if (!first) throw new AiRunNotFoundError(runId);
   const stored: AiRunOwnTotals = {
-    tokens: run.tokens,
-    cost: run.costUsed,
-    calls: run.calls,
-    uncostedCalls: run.uncostedCalls,
+    tokens: num(first.run_tokens),
+    cost: num(first.run_cost),
+    calls: num(first.run_calls),
+    uncostedCalls: num(first.run_uncosted),
   };
-  const { computed, missing } = await computeOwnTotals(db, runId);
+  const { computed, missing } = foldOwnTotals(
+    rows.filter((row) => row.event_id !== null && row.event_id !== undefined),
+  );
   if (missing > 0) {
     return {
       runId,

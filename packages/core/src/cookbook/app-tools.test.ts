@@ -1226,6 +1226,201 @@ describe('app customization tools', () => {
     expect(engine.cookbook().recipes).not.toContain('customers');
   });
 
+  it('disables the last recipe of a customised provider and keeps its field for re-enable', async () => {
+    await write('app.addField', {
+      list: 'Customers',
+      label: 'Preferred instructor',
+      kind: 'text',
+    });
+    expect(await approve('recipes.disable', { id: 'customers' })).toMatchObject(
+      { status: 'ok' },
+    );
+    expect(editor.snapshot().cookbook.recipes).not.toContain('customers');
+    expect(editor.snapshot().cookbook.models?.fields[CUSTOMER]).toHaveProperty(
+      'preferredInstructor',
+    );
+    expect(
+      await call('recipes.enable', {
+        id: 'customers',
+        expectedRevision: engine.snapshot().revision,
+      }),
+    ).toMatchObject({ status: 'ok' });
+    const customers = (await lists()).find((list) => list.id === CUSTOMER);
+    expect(customers?.fields.map((field) => field.name)).toContain(
+      'preferredInstructor',
+    );
+  });
+
+  it('activates the recipes an undo restores before applying it', async () => {
+    expect(await approve('recipes.disable', { id: 'customers' })).toMatchObject(
+      { status: 'ok' },
+    );
+    const activate = vi.fn(async (_ids: Iterable<string>) => {});
+    options.activation = { activate };
+    expect(await approve('app.undo', {})).toMatchObject({ status: 'ok' });
+    expect(activate).toHaveBeenCalledTimes(1);
+    expect([...(activate.mock.calls[0][0] as Iterable<string>)]).toEqual([
+      CUSTOMER,
+    ]);
+    expect(editor.snapshot().cookbook.recipes).toContain('customers');
+
+    // A failed activation undoes nothing.
+    expect(await approve('recipes.disable', { id: 'customers' })).toMatchObject(
+      { status: 'ok' },
+    );
+    activate.mockRejectedValueOnce(new Error('loader failed'));
+    const revision = editor.snapshot().revision;
+    await expect(approve('app.undo', {})).rejects.toThrow(
+      /Recipe activation failed; nothing was undone/,
+    );
+    expect(editor.snapshot().revision).toBe(revision);
+    expect(editor.snapshot().cookbook.recipes).not.toContain('customers');
+  });
+
+  it('rechecks live permission after activation, inside the editor edit', async () => {
+    expect(await approve('recipes.disable', { id: 'customers' })).toMatchObject(
+      { status: 'ok' },
+    );
+    // The permission is revoked while the recipe is being activated.
+    options.activation = {
+      activate: async () => {
+        permission = false;
+      },
+    };
+    const revision = editor.snapshot().revision;
+    await expect(
+      call('recipes.enable', {
+        id: 'customers',
+        expectedRevision: engine.snapshot().revision,
+      }),
+    ).rejects.toThrow();
+    expect(editor.snapshot().revision).toBe(revision);
+    expect(editor.snapshot().cookbook.recipes).not.toContain('customers');
+  });
+
+  it('refuses to apply over a host cookbook that changed while recipes were activating', async () => {
+    expect(await approve('recipes.disable', { id: 'customers' })).toMatchObject(
+      { status: 'ok' },
+    );
+    // The host updates its cookbook during activation, after the tool's own
+    // comparison and before the editor journals anything.
+    options.activation = {
+      activate: async () => {
+        engine.run({ name: 'add_recipes', input: { ids: ['customers'] } });
+      },
+    };
+    const revision = editor.snapshot().revision;
+    const hostRevision = engine.snapshot().revision;
+    await expect(
+      call('recipes.enable', {
+        id: 'customers',
+        expectedRevision: hostRevision,
+      }),
+    ).rejects.toThrow(/cookbook changed before this action could apply/);
+    expect(editor.snapshot().revision).toBe(revision);
+    expect(engine.snapshot().revision).toBe(hostRevision + 1);
+    expect(await editor.history()).toHaveLength(1);
+  });
+
+  it('refuses an approved undo over a host cookbook that changed while it was activating', async () => {
+    const revision = editor.snapshot().revision;
+    const edit = await editor.apply(
+      {
+        type: 'create_list',
+        name: 'Gear',
+        list: {
+          label: 'Gear',
+          icon: 'box',
+          displayField: 'title',
+          fields: { title: { type: 'text' } },
+        },
+      },
+      {
+        actor: USER,
+        tenantId: TENANT,
+        expectedRevision: revision,
+        requestId: randomUUID(),
+      },
+    );
+    options.activation = {
+      activate: async () => {
+        engine.run({ name: 'remove_recipes', input: { ids: ['customers'] } });
+      },
+    };
+    const hostRevision = engine.snapshot().revision;
+    await expect(approve('app.undo', {})).rejects.toThrow(
+      /cookbook changed before this action could apply/,
+    );
+    expect(editor.snapshot().revision).toBe(edit.revision);
+    expect(engine.snapshot().revision).toBe(hostRevision + 1);
+  });
+
+  it('denies an approval-free template apply when permission is revoked while emptiness is checked', async () => {
+    options.catalog = {
+      ...catalog,
+      cookbooks: [
+        {
+          id: 'fixture',
+          name: 'Fixture',
+          document: { ...initial(), recipes: [] },
+        },
+      ],
+    };
+    let revoke = false;
+    options.activation = {
+      activate: async () => {
+        revoke = true;
+      },
+    };
+    options.isAppEmpty = async () => {
+      if (revoke) permission = false;
+      return true;
+    };
+    service = createCookbookToolService(options);
+    const revision = editor.snapshot().revision;
+    const trusted = { ...context, initialSetup: true };
+    const preview = await call('cookbook.apply', { id: 'fixture' }, trusted);
+    expect(preview.approvalRequired).toBe(false);
+    await expect(
+      call(
+        'cookbook.apply',
+        {
+          id: 'fixture',
+          apply: true,
+          expectedRevision: engine.snapshot().revision,
+          previewToken: preview.previewToken,
+        },
+        trusted,
+      ),
+    ).rejects.toThrow();
+    expect(editor.snapshot().revision).toBe(revision);
+    expect(editor.snapshot().cookbook.recipes).toContain('customers');
+  });
+
+  it('loads nothing for an undo the editor refuses', async () => {
+    expect(await approve('recipes.disable', { id: 'customers' })).toMatchObject(
+      { status: 'ok' },
+    );
+    const activate = vi.fn(async (_ids: Iterable<string>) => {});
+    options.activation = { activate };
+    // The tool admits the owner; the editor's own authorization refuses.
+    const refusing = editor;
+    editor = await createAppModelEditor({
+      db,
+      application: 'c6',
+      tenantId: TENANT,
+      packageName: APP,
+      cookbook: initial(),
+      catalog,
+      authorize: () => false,
+    });
+    await expect(approve('app.undo', {})).rejects.toThrow(
+      /MODEL_EDIT_FORBIDDEN/,
+    );
+    expect(activate).not.toHaveBeenCalled();
+    editor = refusing;
+  });
+
   it('asks about missing choices/currency and ambiguous field labels without journaling', async () => {
     expect(
       await write('app.addField', {

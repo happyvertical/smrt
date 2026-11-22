@@ -19,6 +19,7 @@ are not prerequisites for unrelated user-package work.
 | `src/services/PasskeyCredentialService.ts`, `src/sveltekit/passkey-handlers.ts`, `src/svelte/passkey.ts` | passkey (WebAuthn) sign-in and passkey lifecycle (#3275); library does all verification | this file, "Security boundaries"; README "Passkey sign-in" |
 | `src/services/TenantInvitationService.ts`, `src/services/MailboxAuthenticationService.ts` | exact-role invitations, preserved identity, one-use generations and embedded transaction send budgets | [agents/family-invitations.md](agents/family-invitations.md) |
 | `src/services/oauth-cimd.ts`, `src/services/oauth-cimd-fetch.ts` | opt-in Client ID Metadata Documents for the SDK OAuth server (#5081): required origin policy, SSRF-pinned fetch, cache | [agents/oauth-authorization.md](agents/oauth-authorization.md#client-id-metadata-documents-5081) |
+| `src/services/ServicePrincipalService.ts` | non-login service principals (#5245): tenant-bound, idempotent per key, permanent retire; sessions refused at mint and resolve | [agents/service-principals.md](agents/service-principals.md) |
 | `src/retention.ts` | expired session/token/CLI-auth reaping and retention sweep wiring | [agents/retention.md](agents/retention.md) |
 
 ## Models and authority

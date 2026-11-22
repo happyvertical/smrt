@@ -169,7 +169,18 @@ ${classMembers.join('\n\n')}
 
   constructor(options: any = {}) {
     super(options);
-    Object.assign(this, options);
+${renderConstructorAssignments([
+  ...(includeTenantIdField && tenantScoped
+    ? [tenantScoped.field ?? 'tenantId']
+    : []),
+  ...properties.map((prop) => prop.name),
+  ...relationships
+    .filter(
+      (relationship) =>
+        relationship.type !== 'oneToMany' && relationship.type !== 'manyToMany',
+    )
+    .map((relationship) => relationship.name),
+])}
   }
 }
 ${companionSnippets}`;
@@ -290,6 +301,21 @@ function renderSmrtDecorator(options: {
   return Object.keys(decoratorConfig).length > 0
     ? `@smrt(${JSON.stringify(decoratorConfig, null, 2)})`
     : '@smrt()';
+}
+
+/**
+ * Constructor lines that copy each declared field from the options. Only the
+ * declared fields: a blanket `Object.assign(this, options)` would install any
+ * option key (a request body's included) as an own property, shadowing a
+ * method or a serialiser.
+ */
+function renderConstructorAssignments(fields: string[]): string {
+  return fields
+    .map(
+      (field) =>
+        `    if ('${field}' in options) this.${field} = options.${field};`,
+    )
+    .join('\n');
 }
 
 function renderTenantIdField(tenantScoped: TenantScopedDefinition): string {

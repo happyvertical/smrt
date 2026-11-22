@@ -60,10 +60,11 @@ it.each([
   if (state === 'empty')
     expect(container.textContent).toContain('No matching records');
   if (state === 'truncated') {
-    expect(container.textContent?.toLowerCase()).toContain('bounded sample');
+    expect(container.textContent).toContain('Showing only the first rows');
+    expect(container.textContent?.toLowerCase()).not.toContain('bounded');
     expect(
       container.querySelector('a[href$="csv?target=draft"]')?.textContent,
-    ).toBe('Download bounded sample CSV');
+    ).toBe('Download the rows shown as CSV');
     expect(
       container
         .querySelector('a[href$="csv?target=draft"]')
@@ -71,7 +72,7 @@ it.each([
     ).toBe('report-csv-sample');
     expect(
       container.querySelector('#report-csv-sample')?.textContent,
-    ).toContain('same capped sample');
+    ).toContain('only the rows shown here');
   }
   if (state === 'error')
     expect(container.querySelector('[role="alert"]')?.textContent).toBe(

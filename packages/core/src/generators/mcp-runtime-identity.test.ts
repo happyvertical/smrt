@@ -24,6 +24,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { REQUEST_HELPER_EXPORTS } from '../__tests__/fixtures/emitted-core-stub.js';
 import { SmrtObject } from '../object.js';
 import { ObjectRegistry } from '../registry.js';
 import { snapshotObjectRegistryState } from '../test-utils.js';
@@ -50,7 +51,10 @@ async function installRecordingRuntime(outputDirectory: string) {
   await Promise.all(
     Object.values(packages).map((dir) => mkdir(dir, { recursive: true })),
   );
+  // `title` is the field the update below sets: an update assigns only what
+  // the loaded object already declares.
   const item = `{
+    title: '',
     toPublicJSON() { return {}; },
     async save() {},
     async delete() {},
@@ -104,10 +108,12 @@ export { hasRuntimeExposureGate, isRuntimeModelEnabled, subscribeRuntimeExposure
   },
   getConfig(name) { record('config', name); return {}; },
   getFields(name) { record('fields', name); return new Map(); },
+  isServiceOptionInput(name) { record('service-option-input', name); return false; },
   getClass(name) { record('class', name); return { constructor: { ping() { return { ok: true }; } } }; },
 };
 export function normalizeCustomActionFailure() { return undefined; }
 export const SMRT_CUSTOM_ACTION_ERROR_METADATA_KEY = 'smrt';
+${REQUEST_HELPER_EXPORTS}
 `,
     ),
     writeFile(
@@ -266,6 +272,8 @@ console.log(JSON.stringify({ resolved, results, serializerFailure }));
     );
     expect(resolved).toContain(`collection:${PICK_B}`);
     expect(resolved).toContain(`config:${PICK_B}`);
+    // Create and update ask the scoped class which argument keys are fields.
+    expect(resolved).toContain(`service-option-input:${PICK_B}`);
     expect(resolved).toContain(`audit-updated:${PICK_B}`);
     expect(resolved).toContain(`delete:${PICK_B}`);
     expect(serializerFailure).toMatchObject({

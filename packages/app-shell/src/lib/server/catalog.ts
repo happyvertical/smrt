@@ -8,18 +8,23 @@ import {
   type McpAppServer,
 } from '@happyvertical/smrt-app-mcp';
 import {
+  EngineError,
   FIELD_NAME_PATTERN,
   FIELD_TYPES,
   isRiskyTool,
+  STRUCTURAL_COMMANDS,
 } from '../../engine/index.ts';
 import { App } from '../objects/App.ts';
 import { Approval } from '../objects/Approval.ts';
 import { collectIssuedApprovals, type PendingApproval } from './approvals.ts';
 import { runAppTool } from './builder.ts';
+import { reviseChangeCard } from './changes.ts';
 import { ENGINE_TOOLS, isEngineTool, runEngineTool } from './engine-tools.ts';
 import { getShellDb, hostFor, shellDbSync } from './host.ts';
 import { HttpError } from './http.ts';
 import { runAs } from './owner.ts';
+import { ownerSafe } from './owner-text.ts';
+import { reportFailureForOwner } from './report-display.ts';
 import {
   type CallScope,
   LIVE_SCOPE,
@@ -169,6 +174,38 @@ function withBuilderSchema<
   };
 }
 
+/**
+ * The one tool of a comment turn (#5206): replace the commands of the card the
+ * turn is about. Hand-written (not an `App` method, so no REST/CLI/MCP is
+ * generated), listed only while a comment turn is open, and it never applies.
+ */
+export const CHANGE_REVISE_TOOL: CatalogTool = {
+  name: 'change_revise',
+  description:
+    'Replace the engine command of the ONE waiting change the owner commented on. `cardId` is that change; `command` is the new command object, like {"type":"addField","model":"Order","field":"fulfillment","definition":{"type":"choice","choices":["Pickup","Delivery"]}}. It only edits that change: it never applies anything, and the owner still reviews and applies.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      cardId: { type: 'string', description: 'The id of the change.' },
+      command: {
+        type: 'object',
+        description: 'One engine command, with its `type`.',
+      },
+    },
+    required: ['cardId', 'command'],
+    additionalProperties: false,
+  },
+  side: 'shell',
+  risky: false,
+};
+
+/** Builder tool names for structural commands (`app_<type>`), as the assistant sees them. */
+const STRUCTURAL_TOOL_NAMES: ReadonlySet<string> = new Set(
+  Object.entries(STRUCTURAL_COMMANDS)
+    .filter(([, structural]) => structural)
+    .map(([type]) => `app_${type.toLowerCase()}`),
+);
+
 /** Tools of the shell's own models, for `principal`. */
 export async function listShellTools(
   principal: McpAppPrincipal,
@@ -230,7 +267,19 @@ export async function listCatalog(
   const app = (await listAppTools(scope.records)).filter(
     (t) => !taken.has(t.name),
   );
-  return [...shell, ...app].sort((a, b) => (a.name < b.name ? -1 : 1));
+  const all = [...shell, ...app].sort((a, b) => (a.name < b.name ? -1 : 1));
+  // A comment turn is about ONE card: read tools and change_revise only. No
+  // structural builder tool (those make new cards) and no record writes.
+  if (scope.reviseCardId)
+    return [
+      ...all.filter(
+        (t) =>
+          !STRUCTURAL_TOOL_NAMES.has(t.name) &&
+          (t.side === 'shell' || /_(list|get)$/.test(t.name)),
+      ),
+      CHANGE_REVISE_TOOL,
+    ].sort((a, b) => (a.name < b.name ? -1 : 1));
+  return all;
 }
 
 function asText(value: unknown): { type: 'text'; text: string }[] {
@@ -247,8 +296,11 @@ export async function dispatchTool(
   args: Record<string, unknown>,
   scope: CallScope = LIVE_SCOPE,
 ): Promise<CatalogResponse> {
+  // Driver text (and a database host) never leaves as a tool error (#5464).
   const { value, issued } = await collectIssuedApprovals(() =>
-    dispatchInner(principal, tool, args, scope),
+    ownerSafe(`tool ${tool.name}`, () =>
+      dispatchInner(principal, tool, args, scope),
+    ),
   );
   return issued.length ? { ...value, pending: issued[0] } : value;
 }
@@ -266,6 +318,20 @@ async function dispatchInner(
     // The builder methods read the copy from the scope entered here.
     return runAs({ id: principal.id, tenantId: principal.tenantId ?? '' }, () =>
       withScope(scope, async () => {
+        if (tool.name === CHANGE_REVISE_TOOL.name) {
+          // Only the card this turn was scoped to, whatever the model asks for.
+          const cardId = scope.reviseCardId;
+          const extra = Object.keys(args).filter(
+            (k) => k !== 'cardId' && k !== 'command',
+          );
+          if (!cardId || args.cardId !== cardId || extra.length)
+            throw new EngineError(
+              'this turn can only change the one change you were asked about',
+              'refused',
+            );
+          const value = await reviseChangeCard(cardId, args.command);
+          return { content: asText(value), structuredContent: value };
+        }
         if (isEngineTool(tool.name)) {
           try {
             const value = await runEngineTool(tool.name, args, scope);
@@ -277,7 +343,7 @@ async function dispatchInner(
             // Both assistant engines retain it as an error, not a report result.
             const value = {
               kind: 'report_failure',
-              summary: error.message,
+              summary: reportFailureForOwner(error.message),
               error: error.message,
             };
             return {

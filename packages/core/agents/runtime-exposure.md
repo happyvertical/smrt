@@ -118,6 +118,31 @@ STI family), and logical FK/cross-package-reference plus physical FK closure.
 Routes and web/tool definitions remain the AOT superset and retain their gates.
 App subclasses stay behind deferred module imports, including their providers.
 
+Registration order is derived, never listed. The generator resolves each model's
+parent from its raw `extends`/`extendsQualified` before classifying anything (only
+an absent field means no parent; a blank, non-string, malformed, ambiguous, self-
+or cycle-forming declaration fails generation naming the object and field), sorts
+the manifest's objects by key, and persists `models[].parent` (the parent's
+manifest key). `activationClosure()` returns `modules` in parent-first order with a
+code-unit tie-break, from those parents, whatever order models are requested or
+listed; a graph without `parent` loads in sorted order. A `parent` that is not
+among the model's own `dependencies` is refused before any loader runs. A cycle made only of plain
+subclass edges falls back to the edges the registry enforces (same-named
+replacement pairs, competing collection bindings); a cycle among those, or a
+module that imports the module of a same-named child while hosting that child's
+parent, fails generation. Only that direct import is ordered at generation; a
+same-named child reached through a helper, barrel, alias or subpath still fails
+closed at boot with the parent-first refusal. Collections register after their item and its effective
+replacement; of two collections bound to one effective item the one of the more
+derived item registers last and serves it. A collection's explicit `collectionOf`
+binds that item only (a simple name resolves in the collection's own package
+first; another package's class of that name binds only when the collection's
+generic names that same class, else generation asks for a qualified
+`collectionOf`); one that names no manifest entry fails generation rather than
+falling back to the generic or a naming convention. Those cross-module edges are persisted
+as optional `modules[].after`. SvelteKit generation validates before it clears
+previously generated routes. Regenerate the activation manifest to gain the order.
+
 The generator parses static imports/re-exports with the existing Oxc transformer;
 it never evaluates provider code. A provider barrel is a conservative activation
 unit: importing any of its declared modules includes its full manifest inventory
@@ -125,7 +150,9 @@ and static dependency closure. Splitting a provider into independently activatab
 units requires genuinely independent published modules; a per-model callback
 cannot undo a barrel's registration side effects. App source modules retain
 individual loaders. An app model also activates its declared collection module;
-collection receivers bind to the effective replacement identity, with existing
+collection receivers bind to their item's key and its effective replacement
+identity (a simple item name resolves in the collection's own package, replaced or
+not), with existing
 HTTP CLI action metadata retained. Route serializers are deferred until the gated handler calls
 them, with their static model dependencies included in the activation graph.
 Every required reference must be in the build manifest;
@@ -138,6 +165,12 @@ fail activation before migration and remain refused on retry until regeneration
 and restart. This contract is for a fixed build graph, not
 package installation at runtime. Runtime table bindings that disagree with the AOT
 physical names are refused; regenerate the graph with the host's bindings.
+A closure table already held by a standalone run-time model (an app editor
+list) is refused before any loader runs, so the process never holds two
+unrelated class families on one table; run-time subclasses and replacements
+that share a model's table are not refused.
+`coordinator.manifest` exposes the installed graph (for example to the app model
+editor's `activation` option for its name and table checks).
 
 A host supplies its existing database, persisted cookbook store, tenant gate and
 always-on models. Install the readiness gate **before accepting requests**, and
@@ -179,7 +212,8 @@ closed until activation/recovery succeeds. The coordinator owns schema/code
 readiness, not cookbook persistence, permission grants or tenant state.
 
 Pass the coordinator as `createCookbookToolService({ activation, ... })` in a
-lazy host. `recipes.enable` and applying a template reuse `coveredModels` on the
+lazy host. `recipes.enable`, applying a template and `app.undo` (on the
+cookbook it restores) reuse `coveredModels` on the
 private staged document, await activation after any required approval, recheck
 live authority/preference and revision, then commit through the existing CAS
 adapter. Migration failure returns `CookbookToolError` with `activation_failed`

@@ -180,7 +180,7 @@ describe('ProfileMetadata model + collection', () => {
   });
 
   it('validates a stored value against its metafield', async () => {
-    const { db, profile, metafields, metadata } = await setup(dbUrl);
+    const { profile, metafields, metadata } = await setup(dbUrl);
 
     const field = await metafields.create({
       name: 'Age',
@@ -189,7 +189,6 @@ describe('ProfileMetadata model + collection', () => {
     await field.save();
 
     const record = await metadata.create({
-      db,
       profileId: profile.id,
       metafieldId: field.id,
       value: '5',

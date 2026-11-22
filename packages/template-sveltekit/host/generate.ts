@@ -68,7 +68,7 @@ export async function generateCookbookSubclasses(
         throw new Error(`Model has no safe public import: ${id}`);
       return {
         file: join(directory, model.packageId, `${model.name}.ts`),
-        source: `import { ${exportName} as ${model.name}Base } from '${importPath}';\nimport { smrt } from '@happyvertical/smrt-core';\n\n@smrt({})\nexport class ${model.name} extends ${model.name}Base {}\n`,
+        source: `import { ${exportName} as ${model.name}Base } from '${importPath}';\nimport { smrt } from '@happyvertical/smrt-core';\n\n@smrt({ replaceParent: true })\nexport class ${model.name} extends ${model.name}Base {}\n`,
       };
     });
   const written: string[] = [];

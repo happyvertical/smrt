@@ -20,6 +20,7 @@ import {
   MemoryVersionStore,
   type Template,
 } from './index.ts';
+import { onPglite } from './pglite-env.ts';
 import {
   METHOD_SNAPSHOTS_KEPT,
   pruneMethodSnapshots,
@@ -242,7 +243,9 @@ describe('snapshot retention', () => {
     );
   });
 
-  it('the worker prunes after each applied method write; cleanUp prunes old migrations', async () => {
+  it('the worker prunes after each applied method write; cleanUp prunes old migrations', {
+    skip: onPglite,
+  }, async () => {
     const dir = tmp('prune3');
     const host = await AppHost.open(dir, { store: new MemoryVersionStore() });
     try {

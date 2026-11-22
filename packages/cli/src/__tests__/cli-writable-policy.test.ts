@@ -36,6 +36,20 @@ class CliWritablePolicyRows extends SmrtCollection<CliWritablePolicyRow> {
   static readonly _itemClass = CliWritablePolicyRow;
 }
 
+@smrt({
+  tableName: 'cli_update_input_rows',
+  api: { include: ['list', 'get', 'create', 'update'] },
+  cli: true,
+})
+class CliUpdateInputRow extends SmrtObject {
+  @field()
+  title: string = '';
+}
+
+class CliUpdateInputRows extends SmrtCollection<CliUpdateInputRow> {
+  static readonly _itemClass = CliUpdateInputRow;
+}
+
 @smrt({ idType: 'text' })
 class CliInlineContact extends SmrtObject {
   @field({ required: true }) name = '';
@@ -148,5 +162,50 @@ describe('generated CLI write policy', () => {
     ]);
     const updated = await rows.get({ id: created!.id! });
     expect(updated).toMatchObject({ title: 'Renamed', status: 'pending' });
+  });
+
+  it('refuses an update key that is not a field of the model', async () => {
+    await getTestDatabase({ db, classes: ['CliUpdateInputRow'] });
+    const rows = await CliUpdateInputRows.create({ db });
+    const handler = new CLIGenerator(
+      { prompt: false, colors: false },
+      { db },
+    ).generateHandler();
+    const file = (name: string, body: unknown) => {
+      const path = join(dir, name);
+      writeFileSync(path, JSON.stringify(body));
+      return path;
+    };
+    const created = await rows.create({ title: 'Original' });
+    const id = String(created.id);
+
+    for (const key of ['toJSON', 'save', 'constructor', 'notAField']) {
+      await expect(
+        handler([
+          'cliupdateinputrow:update',
+          id,
+          '--from-file',
+          file(`${key}.json`, { title: 'Changed', [key]: 0 }),
+        ]),
+      ).rejects.toThrow(`Field '${key}' cannot be set.`);
+      expect(await rows.get(id, { cache: false })).toMatchObject({
+        title: 'Original',
+      });
+    }
+
+    // A service option key and the options bag never reach the row either.
+    await handler([
+      'cliupdateinputrow:update',
+      id,
+      '--from-file',
+      file('fields.json', {
+        title: 'Renamed',
+        db: 'file:/elsewhere.db',
+        options: { db: 'file:/elsewhere.db' },
+      }),
+    ]);
+    const updated = await rows.get(id, { cache: false });
+    expect(updated).toMatchObject({ title: 'Renamed' });
+    expect(updated?.db).toBe(db);
   });
 });

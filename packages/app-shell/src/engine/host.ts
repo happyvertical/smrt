@@ -15,6 +15,7 @@ import {
   parseRuntimeReportSpec,
   type RuntimeReportSpec,
 } from '@happyvertical/smrt-reports';
+import type { AppLimits } from './app-limits.ts';
 import {
   type Command,
   type ExecuteOptions,
@@ -26,6 +27,37 @@ import {
   type Template,
 } from './commands.ts';
 import { assertLoadBounds, type LoadPreview } from './data-migrations.ts';
+import {
+  type AppClaim,
+  acquireAppOwnership,
+  assertDatabaseConfig,
+  type ClaimOptions,
+  claimAppDatabase,
+  copySuffix,
+  type DatabaseConfig,
+  dialectFor,
+  type EngineDialect,
+  type HostDatabase,
+  SQLITE,
+  sideSchemaName,
+  withSchemaAdmin,
+} from './db/index.ts';
+import {
+  acquireOwnership,
+  DEFAULT_LOCK_TIMEOUT_MS,
+  dropSchema,
+  forkSchema,
+  listSideSchemas,
+  markPublished,
+  readDumpHeader,
+  readPublished,
+  restoreDump,
+  revokeSchema,
+  type SqlDatabase,
+  schemaExists,
+  swapSchemas,
+} from './db/postgres-copy.ts';
+import { assertSchemaName, isSideSchema } from './db/schema-name.ts';
 import {
   type AppDefinition,
   builtInFields,
@@ -41,8 +73,6 @@ import {
   restRouteAllowed,
   type Step,
   snake,
-  sqlType,
-  storageFamily,
   tableFor,
   toolNamesFor,
   validate,
@@ -60,7 +90,13 @@ import {
   sameDir,
   writeDraftMarker,
 } from './draft.ts';
-import { ApprovalRequiredError, EngineError } from './errors.ts';
+import {
+  ApprovalRequiredError,
+  CapacityError,
+  ClaimLostError,
+  EngineError,
+  StaleFenceError,
+} from './errors.ts';
 import type { ExtractPreview } from './extract-model.ts';
 import { WORKBOOK_LOOKUP, WORKBOOK_ROW } from './import-bookkeeping.ts';
 import type { MergePreview } from './merge-records.ts';
@@ -76,7 +112,10 @@ import {
   listMethods,
   makeRehearsalDir,
   moveAside,
+  type PublishJournal,
   type PublishMethod,
+  publishHappened,
+  readJournal,
   reconcilePublish,
   removeJournal,
   removeRehearsal,
@@ -89,8 +128,9 @@ import {
   titleField,
 } from './reports.ts';
 import { checkSyntax } from './sandbox.ts';
+import { resolveSnapshot } from './snapshots.ts';
 import type { VersionRecord, VersionStore } from './store.ts';
-import { AppCallError, AppWorker } from './worker-handle.ts';
+import { AppCallError, AppWorker, type WorkerLimits } from './worker-handle.ts';
 import type { BootInfo, WorkerOp } from './worker-protocol.ts';
 
 type Row = Record<string, unknown>;
@@ -100,6 +140,17 @@ export interface HostOptions {
   store: VersionStore;
   /** The worker entry. Defaults to `./app-worker.ts` or `.js` next to this module. */
   workerUrl?: URL | string;
+  /**
+   * V8 memory limits of each app worker thread. Default: a 16 MiB young
+   * generation and a 512 MiB old generation (see `DEFAULT_WORKER_LIMITS`).
+   */
+  workerLimits?: WorkerLimits;
+  /**
+   * Per-app caps (#5198): models, records, method runs. A call over a cap is
+   * refused with an `AppLimitError` message naming the cap and the numbers.
+   * Absent: unlimited, as on the desktop.
+   */
+  appLimits?: AppLimits;
   /**
    * Start frozen: every structural command is refused (see
    * {@link AppHost.setFrozen}). Records, reports, the app's own tools and REST
@@ -114,7 +165,51 @@ export interface HostOptions {
    * there is no setter, so it cannot be turned on later or for the live host.
    */
   autoApprove?: boolean;
+  /**
+   * The database the app runs on (see `DatabaseConfig`). Default: SQLite in
+   * `dataDir`, as the desktop does. A PostgreSQL config needs its schema; one
+   * without it refuses to open. The host owns a PGlite client it was given
+   * only in the sense of serving it to workers: closing it stays the caller's.
+   */
+  database?: DatabaseConfig;
+  /**
+   * PostgreSQL only: how long a schema swap (publish, snapshot restore) waits
+   * for another session's lock on the app's tables before it gives up and
+   * changes nothing. Default 5000 ms.
+   */
+  swapLockTimeoutMs?: number;
+  /**
+   * PostgreSQL server only (#5470): bounds of the claim's transactions and its
+   * heartbeat. Defaults: 5 s lock wait, 10 s statement, 10 s idle in a
+   * transaction, a heartbeat every 5 s.
+   */
+  claimOptions?: ClaimOptions;
+  /**
+   * Tests only: a claim over an in-process PGlite (see `unprovenClaim`) in
+   * place of the one a PostgreSQL server host makes itself. Production PGlite
+   * hosts have none.
+   */
+  claim?: AppClaim;
+  /**
+   * Allow a claimed LIVE host whose version store cannot commit inside the
+   * claim's transaction (it has no `commitIn`). Refused otherwise, since such a
+   * store could not be fenced. For tests and for the portable import's
+   * throwaway start-up, which has no shell store.
+   */
+  allowUnfencedStore?: boolean;
 }
+
+/**
+ * Where a copy of the live data sits while it is worked on: a directory's
+ * `app.db` (SQLite) or a schema of the live app's database (PostgreSQL).
+ */
+interface CopyPlace {
+  dir: string;
+  /** PostgreSQL: the copy's own database config (same server, its own schema). */
+  database?: DatabaseConfig;
+}
+
+const schemaOf = (c: DatabaseConfig) => (c.kind === 'sqlite' ? '' : c.schema);
 
 export interface ForkDraftOptions {
   /**
@@ -268,7 +363,40 @@ interface Analysis {
   apply: (author: string) => Promise<ExecuteResult>;
 }
 
+/**
+ * The split worker bundle (`tools/bundle-worker.mjs`, #5213): next to the
+ * compiled engine or in the source tree (tests). Absent until built.
+ * It is the package's `worker-bundle/`, outside `dist/`: never published.
+ * A host whose engine copy is inlined in its own build passes `near`, the
+ * published `engine/worker` URL, to find the package's `dist/`.
+ */
+export function bundledWorkerUrl(
+  near: URL | string = import.meta.url,
+): URL | null {
+  for (const f of [
+    '../../worker-bundle/app-worker.js', // dist/engine/ and src/engine/ alike
+  ]) {
+    const u = new URL(f, near);
+    if (existsSync(fileURLToPath(u))) return u;
+  }
+  return null;
+}
+
+/** `SMRT_APP_SHELL_WORKER=bundle` selects the bundled worker (a host's `workerUrl` wins). */
+export function wantsBundledWorker(): boolean {
+  return process.env.SMRT_APP_SHELL_WORKER === 'bundle';
+}
+
 function defaultWorkerUrl(): URL {
+  if (wantsBundledWorker()) {
+    const bundled = bundledWorkerUrl();
+    if (!bundled)
+      throw new EngineError(
+        'SMRT_APP_SHELL_WORKER=bundle but the worker bundle is not built (run the package build)',
+        'refused',
+      );
+    return bundled;
+  }
   for (const f of ['./app-worker.ts', './app-worker.js']) {
     const u = new URL(f, import.meta.url);
     if (existsSync(fileURLToPath(u))) return u;
@@ -289,6 +417,22 @@ export class AppHost extends EventEmitter {
   lastSwapMs = 0;
   private store: VersionStore;
   private workerUrl: URL | string;
+  private workerLimits: WorkerLimits | undefined;
+  private appLimits: AppLimits | undefined;
+  private database: DatabaseConfig;
+  private dialect: EngineDialect;
+  private releaseDatabase?: () => Promise<void>;
+  /** PostgreSQL server: the claim this live host's swap and store commits run on (#5470). */
+  private claim?: AppClaim;
+  private claimLost: Error | null = null;
+  private readonly allowUnfencedStore: boolean;
+  /**
+   * What the chosen database cannot do yet, said plainly, for the shell to
+   * show the owner (and a publish whose journal could not be marked finished).
+   * Empty: PostgreSQL has every undo point SQLite has (#5187).
+   */
+  readonly notices: string[] = [];
+  private lockTimeoutMs: number;
   private app!: AppWorker;
   private closed = false;
   #autoApprove = false;
@@ -303,17 +447,44 @@ export class AppHost extends EventEmitter {
   /** Changes are applied one at a time. Work inside the queue must not wait on it. */
   private queue: Promise<unknown> = Promise.resolve();
 
-  private constructor(dataDir: string, opts: HostOptions) {
+  private constructor(
+    dataDir: string,
+    opts: HostOptions,
+    database: HostDatabase,
+  ) {
     super();
     this.dataDir = dataDir;
+    this.database = database.config;
+    this.dialect = dialectFor(database.config);
+    this.releaseDatabase = database.release;
+    this.claim = database.claim;
+    this.allowUnfencedStore = opts.allowUnfencedStore === true;
+    this.claim?.onLost((e) => this.loseClaim(e));
+    this.lockTimeoutMs = opts.swapLockTimeoutMs ?? DEFAULT_LOCK_TIMEOUT_MS;
     this.store = opts.store;
     this.workerUrl = opts.workerUrl ?? defaultWorkerUrl();
+    this.workerLimits = opts.workerLimits;
+    // The method-run window belongs to the host, not to a worker: a swap must
+    // not renew the period. Always this host's own (a draft does not share live's).
+    this.appLimits = opts.appLimits && {
+      ...opts.appLimits,
+      methodRunState: new Float64Array(new SharedArrayBuffer(16)),
+    };
     this.frozenNow = opts.frozen === true;
     this.#autoApprove = opts.autoApprove === true;
     this.draft = readDraftMarker(dataDir);
   }
 
   static async open(dataDir: string, opts: HostOptions): Promise<AppHost> {
+    // 0 turns lock_timeout off (a dump or swap would wait forever); a fraction
+    // floors to 0 and a negative or NaN makes the server refuse the setting.
+    // Refuse before anything is opened or claimed.
+    const lockMs = opts.swapLockTimeoutMs;
+    if (lockMs !== undefined && (!Number.isInteger(lockMs) || lockMs < 1))
+      throw new EngineError(
+        'swapLockTimeoutMs must be a whole number of ms, 1 or more',
+        'refused',
+      );
     if (opts.autoApprove) {
       const marker = readDraftMarker(dataDir);
       if (!marker || sameDir(marker.liveDir, dataDir))
@@ -323,15 +494,97 @@ export class AppHost extends EventEmitter {
         );
     }
     mkdirSync(join(dataDir, 'snapshots'), { recursive: true });
-    const host = new AppHost(dataDir, opts);
-    await host.boot();
-    return host;
+    if (opts.database) assertDatabaseConfig(opts.database);
+    let config: DatabaseConfig = opts.database ?? SQLITE;
+    // A draft on PostgreSQL lives in a schema of its own, named in its marker:
+    // the caller passes the live app's config, the schema comes from here.
+    const marker = readDraftMarker(dataDir);
+    if (marker?.schema) {
+      if (config.kind === 'sqlite')
+        throw new EngineError(
+          "this draft lives on PostgreSQL; open it with the live app's database config",
+          'refused',
+        );
+      if (
+        !marker.liveSchema ||
+        marker.liveSchema !== config.schema ||
+        !isSideSchema(marker.schema, marker.liveSchema, 'd')
+      )
+        throw new EngineError(
+          `the draft marker in ${dataDir} names ${marker.schema}, which is not a draft schema of ${config.schema}; not trusting it`,
+          'refused',
+        );
+      config = { ...config, schema: assertSchemaName(marker.schema) };
+    } else if (marker && config.kind !== 'sqlite')
+      throw new EngineError(
+        'this draft is a SQLite copy; it cannot open on PostgreSQL',
+        'refused',
+      );
+    // A live host owns its app's side schemas (start-up recovery and the sweep
+    // drop them): claim the app before anything is touched, so a second host
+    // on the same schema refuses instead of dropping the first one's copies.
+    // A draft lives in a schema of its own and is claimed by its live host.
+    const claim = marker
+      ? undefined
+      : (opts.claim ??
+        (await claimAppDatabase(config, {
+          // The swap and the drops wait up to the host's lock timeout; the
+          // claim's own statement limit must not cut that wait short.
+          lockTimeoutMs: opts.swapLockTimeoutMs,
+          statementTimeoutMs: Math.max(
+            10_000,
+            (opts.swapLockTimeoutMs ?? DEFAULT_LOCK_TIMEOUT_MS) + 5_000,
+          ),
+          ...opts.claimOptions,
+        })));
+    const database: HostDatabase = {
+      config,
+      release: claim ? () => claim.release() : undefined,
+      claim,
+    };
+    try {
+      const host = new AppHost(dataDir, opts, database);
+      await host.boot();
+      return host;
+    } catch (e) {
+      await claim?.release();
+      throw e;
+    }
   }
 
   private async boot() {
+    // PostgreSQL: take ownership first (#5190). Advancing the generation
+    // fences every worker of an earlier host, so nothing of theirs can commit
+    // while this start-up recovers, sweeps and opens the app.
+    // With a claim (#5470) every step here is a claim transaction, so a host
+    // whose claim died bumps and drops nothing.
+    if (this.claim) await this.checkClaimedStore();
+    const fence = this.claim
+      ? await acquireOwnership(
+          this.claim.admin,
+          schemaOf(this.database),
+          this.lockTimeoutMs,
+        )
+      : await acquireAppOwnership(this.database, this.lockTimeoutMs);
+    if (fence !== undefined)
+      this.database = { ...this.database, fence } as DatabaseConfig;
     let cur = await this.store.current();
-    // Finish or undo a publish a crash interrupted, before the app opens.
+    // Finish or undo a publish a crash interrupted, before the app opens. On
+    // PostgreSQL the schemas are put right first, while the journal still
+    // says what was going on. A boot-time undo moves the store's current
+    // version, so it is read again.
+    const journal = readJournal(this.dataDir);
+    let atomicOutcome: 'rolled-forward' | 'rolled-back' | null = null;
+    if (journal?.pg) {
+      const r = await this.reconcilePgPublish(journal, cur);
+      cur = r.current;
+      atomicOutcome = r.atomic;
+    }
     this.recovery = reconcilePublish(this.dataDir, cur);
+    if (atomicOutcome) this.recovery = atomicOutcome;
+    // A crash outside the journal's window (a rehearsal or a restore that
+    // never got to swap) leaves a side schema: drop the app's own.
+    if (this.onServer && !this.draft) await this.sweepSideSchemas();
     if (cur === null) {
       await this.store.append({
         version: 0,
@@ -367,13 +620,46 @@ export class AppHost extends EventEmitter {
     await this.app.ready;
   }
 
+  /** Connections parked by `retireApp` for the next worker; see there. */
+  private spare: (() => void) | null = null;
+
   private spawn(def: AppDefinition, version: number, migration?: Migration) {
-    return new AppWorker(this.workerUrl, {
+    const worker = new AppWorker(this.workerUrl, {
       dataDir: this.dataDir,
       def,
       version,
       migration,
+      limits: this.workerLimits,
+      appLimits: this.appLimits,
+      database: this.database,
+      lockTimeoutMs: this.lockTimeoutMs,
+      ...(this.spare ? { reservation: this.spare } : {}),
     });
+    this.spare = null; // taken over: the new worker returns it when it exits
+    return worker;
+  }
+
+  /**
+   * Stop the app worker for a replacement, keeping its pool's share of the
+   * connection budget (#5464): between the retire and the respawn nothing else
+   * on the server can take it, so the replacement (or the rollback to the old
+   * app) cannot be refused for lack of connections and leave no worker.
+   */
+  private async retireApp() {
+    this.keepBudget(this.app);
+    await this.app.retire();
+  }
+
+  /** Park the connections of `w` (about to be stopped) for the next worker. */
+  private keepBudget(w: AppWorker | undefined) {
+    if (w) this.spare ??= w.surrenderBudget();
+  }
+
+  /** Give back connections parked for a worker that will not come. */
+  private releaseSpare() {
+    const r = this.spare;
+    this.spare = null;
+    r?.();
   }
 
   // ---------- the change queue ----------
@@ -381,13 +667,16 @@ export class AppHost extends EventEmitter {
   private run<T>(fn: () => Promise<T>): Promise<T> {
     if (this.closed)
       return Promise.reject(new EngineError('the host is closed', 'refused'));
+    if (this.claimLost) return Promise.reject(this.claimLost);
     // Re-check when the work starts: a discard or close that ran ahead of this
     // item on the queue must refuse it, not let it restart a worker on the
     // removed directory (#5122).
     const guarded = () =>
       this.closed
         ? Promise.reject(new EngineError('the host is closed', 'refused'))
-        : fn();
+        : this.claimLost
+          ? Promise.reject(this.claimLost)
+          : fn();
     const p = this.queue.then(guarded, guarded);
     this.queue = p.catch(() => {});
     return p;
@@ -406,18 +695,32 @@ export class AppHost extends EventEmitter {
   ) {
     const t0 = performance.now();
     const migrating = !!migration?.steps.length;
-    if (migrating) await this.app.retire();
-    const next = this.spawn(def, version, migration);
+    if (migrating) await this.retireApp();
+    let next: AppWorker | undefined;
     let booted: BootInfo;
     try {
+      next = this.spawn(def, version, migration);
       booted = await next.ready;
     } catch (e) {
-      await next.terminate();
-      if (migrating) {
-        this.app = this.spawn(this.def, this.version);
-        await this.app.ready.catch(() => {}); // surfaced later by the dead worker
+      try {
+        if (next) {
+          this.keepBudget(next);
+          await next.terminate();
+        }
+        if (migrating) {
+          this.app = this.spawn(this.def, this.version);
+          await this.app.ready.catch(() => {});
+          this.app.settleBudget();
+        }
+      } finally {
+        this.releaseSpare();
       }
-      if (e instanceof EngineError && e.code === 'refused') throw e;
+      if (e instanceof CapacityError) throw e;
+      if (
+        e instanceof EngineError &&
+        (e.code === 'refused' || e.code === 'stale_fence')
+      )
+        throw e;
       throw new EngineError(
         `the app did not start with this change, so it was not applied: ${(e as Error).message}`,
         'migration_failed',
@@ -473,7 +776,9 @@ export class AppHost extends EventEmitter {
   ): Promise<ChangeResult> {
     const errs = [
       ...validate(next),
-      ...refuseChanges(this.def, next, converting),
+      ...refuseChanges(this.def, next, converting, (t) =>
+        this.dialect.columnType(t),
+      ),
     ];
     if (errs.length) throw new EngineError(errs.join('\n'));
     const v = (await this.store.maxVersion()) + 1;
@@ -1189,7 +1494,8 @@ export class AppHost extends EventEmitter {
       type: string;
       generated: boolean;
     } | null>('columnInfo', table, snake(field));
-    if (info && storageFamily(info.type) !== storageFamily(sqlType(to.type)))
+    const { storageFamily, columnType } = this.dialect;
+    if (info && storageFamily(info.type) !== storageFamily(columnType(to.type)))
       throw new EngineError(
         'existing column has a different storage family; change its type explicitly',
       );
@@ -1204,7 +1510,11 @@ export class AppHost extends EventEmitter {
                   ? 'number'
                   : family === 'date'
                     ? 'date'
-                    : 'text',
+                    : family === 'boolean'
+                      ? 'boolean'
+                      : family === 'json'
+                        ? 'json'
+                        : 'text',
           })
         : undefined;
     return {
@@ -1631,6 +1941,8 @@ export class AppHost extends EventEmitter {
         dataDir: this.dataDir,
         def,
         version: this.version,
+        limits: this.workerLimits,
+        appLimits: this.appLimits,
         validateOnly: true,
       });
       try {
@@ -1703,6 +2015,440 @@ export class AppHost extends EventEmitter {
     };
   }
 
+  // ---------- PostgreSQL: copies of the app's schema ----------
+
+  private get onServer() {
+    return this.database.kind !== 'sqlite';
+  }
+
+  /** The app's database config, pointed at a new side schema (a draft, a rehearsal, an aside). */
+  private sideDatabase(tag: 'd' | 'r' | 'o' | 'n'): DatabaseConfig {
+    return {
+      ...this.database,
+      schema: sideSchemaName(schemaOf(this.database), tag),
+    } as DatabaseConfig;
+  }
+
+  /**
+   * The host's own schema work (swap, drop, revoke, sweep). A live host with a
+   * claim runs it as claim transactions (#5470); every other host on a
+   * connection of its own.
+   */
+  private admin<T>(work: (db: SqlDatabase) => Promise<T>): Promise<T> {
+    return this.claim
+      ? work(this.claim.admin)
+      : withSchemaAdmin(this.database, work);
+  }
+
+  /** The claim died: retire the worker; every call now refuses with the claim's error. */
+  private loseClaim(e: Error) {
+    this.claimLost = e;
+    void this.app?.terminate().catch(() => {});
+    // This host serves nothing more. Reopening the app (a new claim) is the
+    // caller's: nothing listens for this event yet.
+    this.emit('claim-lost', e);
+  }
+
+  /** Refuse to open on a claim whose store cannot be committed in it, or that cannot see it. */
+  private async checkClaimedStore() {
+    const store = this.store;
+    if (this.draft) return;
+    if (!store.commitIn || !store.reachable) {
+      if (this.allowUnfencedStore) return;
+      throw new EngineError(
+        'this host holds a claim on its app, but its version store cannot commit inside the claim (no commitIn); it cannot be fenced. Not opening.',
+        'refused',
+      );
+    }
+    await store.current();
+    const reach = store.reachable.bind(store);
+    if (!(await this.claim?.transaction((tx) => reach(tx))))
+      throw new EngineError(
+        "the claim connection cannot see the version store's own app row, so it is on another database than the shell's; not opening",
+        'refused',
+      );
+  }
+
+  /** The error that lost this host's claim (#5470), or null: a lost host serves nothing. */
+  get lostClaim(): Error | null {
+    return this.claimLost;
+  }
+
+  /** Does this host commit the store inside the swap's transaction (#5470)? */
+  private get atomic() {
+    return !!this.claim && !!this.store.commitIn;
+  }
+
+  /** A live copy of the app's schema (rows, keys, sequences, policies, ownership, grants). */
+  private forkSchemaTo(target: string) {
+    return withSchemaAdmin(this.database, (db) =>
+      forkSchema(
+        db,
+        schemaOf(this.database),
+        target,
+        this.ownerBase(),
+        this.lockTimeoutMs,
+      ),
+    );
+  }
+
+  /**
+   * The ownership generation this host holds (#5190); `undefined` on SQLite,
+   * which keeps its writer lease instead. Every worker it starts carries it.
+   */
+  get fence(): number | undefined {
+    return this.database.kind === 'sqlite' ? undefined : this.database.fence;
+  }
+
+  /**
+   * Replace the live schema by `next` (the live one goes to `aside`) in one
+   * transaction, which also advances the ownership generation: this host
+   * adopts the new one for the workers it starts next, and every worker that
+   * still holds the old one is fenced out. The ownership check always runs, so
+   * a host that lost ownership changes nothing, a rollback included: it must
+   * find the generation its own swap produced. `maybeSwapped` (the forward
+   * swap's reply was lost, so its generation was never adopted) expects the
+   * one past the held one: the caller only gets here when this publish's own
+   * aside (a name no other operation uses) exists, so that swap committed.
+   */
+  private async swapSchemasIn(
+    next: string,
+    aside: string,
+    maybeSwapped = false,
+    within?: (tx: any) => Promise<void>,
+  ) {
+    const { fence } = await this.admin((db) =>
+      swapSchemas(
+        db,
+        {
+          live: schemaOf(this.database),
+          next,
+          aside,
+          owner: this.ownerBase(),
+          expectFence:
+            this.fence === undefined
+              ? undefined
+              : maybeSwapped
+                ? this.fence + 1
+                : this.fence,
+          within,
+        },
+        this.lockTimeoutMs,
+      ),
+    );
+    if (fence !== null)
+      this.database = { ...this.database, fence } as DatabaseConfig;
+  }
+
+  /**
+   * Drop a schema the swap moved aside: its privileges go first (a session
+   * that still holds a plan on it fails instead of writing to data nobody
+   * reads), then the schema. A failure leaves the aside for the next start.
+   */
+  private async dropAsideSchemaOrThrow(aside: string) {
+    await this.admin((db) => revokeSchema(db, aside, this.ownerBase()));
+    await this.dropSideSchemaOrThrow(aside);
+  }
+
+  /** Drop a side schema; a failure is left for the next start's cleanup unless `strict`. */
+  private async dropSideSchema(
+    schema: string,
+    strict = false,
+    expectFence?: number,
+  ) {
+    try {
+      await this.dropSideSchemaOrThrow(schema, expectFence);
+    } catch (e) {
+      if (strict) throw e;
+    }
+  }
+
+  /** The full schema name of the app the copies of this host belong to. */
+  private ownerBase() {
+    return schemaOf(this.database);
+  }
+
+  private dropSideSchemaOrThrow(schema: string, expectFence?: number) {
+    // A draft drops its own schema, which its LIVE app owns.
+    const owner =
+      this.draft?.schema === schema && this.draft.liveSchema
+        ? this.draft.liveSchema
+        : this.ownerBase();
+    if (!isSideSchema(schema, owner))
+      throw new EngineError(
+        `${schema} is not a side schema; only a draft, rehearsal, aside or restore schema is dropped here`,
+        'refused',
+      );
+    return this.admin((db) =>
+      dropSchema(db, schema, this.lockTimeoutMs, owner, expectFence),
+    );
+  }
+
+  /** Drop rehearsal, aside and restore schemas of this app that nothing uses (run at start, before the app opens). */
+  private async sweepSideSchemas() {
+    const base = schemaOf(this.database);
+    await this.admin(async (db) => {
+      for (const n of await listSideSchemas(db, base, 'ron'))
+        await dropSchema(db, n, this.lockTimeoutMs, base);
+    });
+  }
+
+  /**
+   * A publish a crash interrupted: put the schemas right. The journal and the
+   * store say which way: a journal marked `committed` (the store had the
+   * versions before the old data was dropped) or a store at the published
+   * version means only the old data's schema is left to remove, however many
+   * edits followed; otherwise the old schema comes back and the rehearsal goes.
+   */
+  private async reconcilePgPublish(
+    j: PublishJournal,
+    current: number | null,
+  ): Promise<{
+    current: number | null;
+    atomic: 'rolled-forward' | 'rolled-back' | null;
+  }> {
+    const pg = j.pg;
+    if (!pg) return { current, atomic: null };
+    if (pg.schema !== schemaOf(this.database))
+      throw new EngineError(
+        `the publish journal in ${this.dataDir} belongs to schema ${pg.schema}, not ${schemaOf(this.database)}; not guessing`,
+        'refused',
+      );
+    for (const n of [pg.staging, pg.aside])
+      if (!isSideSchema(n, pg.schema, 'ro'))
+        throw new EngineError(
+          `the publish journal names ${n}, which is not a side schema of ${pg.schema}; not touching it`,
+          'refused',
+        );
+    const has = (db: SqlDatabase, n: string) =>
+      db.transaction((tx) => schemaExists(tx, n));
+    const drop = async (db: SqlDatabase, n: string) => {
+      if (await has(db, n))
+        await dropSchema(db, n, this.lockTimeoutMs, pg.schema);
+    };
+    if (j.atomic && this.claim && this.store.commitIn) {
+      // #5470: the swap and the store were one transaction, so the schemas say
+      // which way. The aside is there while the publish is not final; the
+      // readiness record says whether its new worker was ever brought up (and
+      // so may have served and been written to).
+      const outcome = await this.admin(async (db) => {
+        if (!(await has(db, pg.aside))) {
+          await drop(db, pg.staging);
+          return null;
+        }
+        if ((await readPublished(db, pg.schema)) === j.id) {
+          await drop(db, pg.aside);
+          await drop(db, pg.staging);
+          return 'rolled-forward' as const;
+        }
+        // Nothing was served on the new data: can it start? If so it is
+        // ready, whatever the crash interrupted; if not, undo the publish.
+        if (current !== null && (await this.startsOn(current))) {
+          await markPublished(db, pg.schema, j.id as string);
+          await drop(db, pg.aside);
+          await drop(db, pg.staging);
+          return 'rolled-forward' as const;
+        }
+        await this.compensate(pg, j, current, false);
+        await drop(db, pg.staging);
+        return 'rolled-back' as const;
+      });
+      return {
+        current:
+          outcome === 'rolled-back' ? await this.store.current() : current,
+        atomic: outcome,
+      };
+    }
+    await this.admin(async (db) => {
+      if (publishHappened(j, current)) {
+        await drop(db, pg.aside);
+        await drop(db, pg.staging);
+      } else {
+        if (await has(db, pg.aside)) {
+          const swapped = await swapSchemas(
+            db,
+            {
+              live: pg.schema,
+              next: pg.aside,
+              aside: pg.staging,
+              owner: pg.schema,
+              expectFence: this.fence,
+            },
+            this.lockTimeoutMs,
+          );
+          if (swapped.fence !== null)
+            this.database = {
+              ...this.database,
+              fence: swapped.fence,
+            } as DatabaseConfig;
+        }
+        await drop(db, pg.staging);
+      }
+    });
+    return { current, atomic: null };
+  }
+
+  /** Does a worker start on `version`'s definition and the live data? (Boot recovery's readiness test.) */
+  private async startsOn(version: number): Promise<boolean> {
+    let worker: AppWorker | undefined;
+    try {
+      const rec = await this.store.get(version);
+      if (!rec || validate(rec.definition).length) return false;
+      worker = this.spawn(rec.definition, version);
+      await worker.ready;
+      return true;
+    } catch {
+      return false;
+    } finally {
+      await worker?.terminate().catch(() => {});
+    }
+  }
+
+  /**
+   * Undo a publish whose swap committed: swap the old data back and, in the
+   * same claim transaction, point the store at the old version again and
+   * reopen the draft the publish had marked published. `final` is the store's
+   * current version now. Records the publish wrote stay as never-current
+   * history, which keeps version numbers unique.
+   */
+  private async compensate(
+    pg: { staging: string; aside: string },
+    j: Pick<PublishJournal, 'oldVersion' | 'draftId' | 'numbers'>,
+    final: number | null,
+    maybeSwapped: boolean,
+  ) {
+    const store = this.store;
+    await this.swapSchemasIn(pg.aside, pg.staging, maybeSwapped, async (tx) => {
+      await store.commitIn?.(tx, [], j.oldVersion, final);
+      if (
+        j.draftId &&
+        !(await store.reopenDraftIn?.(tx, j.draftId, j.numbers ?? []))
+      )
+        throw new EngineError(
+          'the draft the publish marked published has changed since, so the publish cannot be undone safely; not touching it',
+          'refused',
+        );
+    });
+  }
+
+  /**
+   * PostgreSQL: put the data back as it was in a snapshot of this app (a file
+   * of `snapshots/`, by name). The snapshot becomes a side schema, then one
+   * transaction swaps it in; the data it replaces is first kept as a snapshot
+   * of its own, so a restore can be undone by another. Refused unless the
+   * snapshot was taken at the version the app is on (the definition and the
+   * tables must agree). Live waits while it runs; a failed restore leaves the
+   * app as it was.
+   */
+  restoreSnapshot(
+    name: string,
+    opts: { approved?: boolean } = {},
+  ): Promise<{
+    version: number;
+    restoredFrom: string;
+    /** The snapshot of the data this restore replaced. */
+    snapshot: string;
+  }> {
+    if (!this.onServer)
+      return Promise.reject(
+        new EngineError(
+          'restoring a snapshot is for PostgreSQL; on SQLite the snapshot is a database file',
+          'refused',
+        ),
+      );
+    return this.run(async () => {
+      if (this.frozenNow)
+        throw new EngineError(
+          'the app is frozen while a draft is open; restore after it is published or discarded',
+          'refused',
+        );
+      const file = resolveSnapshot(join(this.dataDir, 'snapshots'), name);
+      if (!file.endsWith('.pgdump'))
+        throw new EngineError(
+          `${name} is a SQLite database file, not a PostgreSQL dump; it cannot be restored here`,
+          'refused',
+        );
+      const header = readDumpHeader(file);
+      const schema = schemaOf(this.database);
+      if (header.schema !== schema)
+        throw new EngineError(
+          `${name} was taken of schema ${header.schema}, not this app's ${schema}`,
+          'refused',
+        );
+      if (header.version !== this.version)
+        throw new EngineError(
+          `${name} was taken at version ${header.version}; the app is on version ${this.version}. Undo to that version first.`,
+          'refused',
+        );
+      if (opts.approved !== true)
+        throw new ApprovalRequiredError({
+          summary: `restore the data from ${name}`,
+          risky: true,
+          preview: {
+            snapshot: name,
+            takenAt: header.takenAt,
+            version: header.version,
+          },
+        });
+      await this.drainInflight();
+      const side = schemaOf(this.sideDatabase('n'));
+      const aside = schemaOf(this.sideDatabase('o'));
+      const kept = await this.callApp<string>(
+        'snapshot',
+        'migrate-before-restore',
+      );
+      try {
+        await withSchemaAdmin(this.database, (db) =>
+          restoreDump(db, file, side, this.ownerBase()),
+        );
+        let swapped = false;
+        // #5470: the swap and a compare of the store's pointer are one
+        // transaction (the version is unchanged by a restore): a host that
+        // lost the store to another one swaps nothing.
+        const version = this.version;
+        const same = this.atomic
+          ? (tx: any) =>
+              this.store.commitIn?.(tx, [], version, version) ??
+              Promise.resolve()
+          : undefined;
+        try {
+          await this.retireApp();
+          await this.swapSchemasIn(side, aside, false, same);
+          swapped = true;
+          this.app = this.spawn(this.def, this.version);
+          await this.app.ready;
+        } catch (e) {
+          try {
+            this.keepBudget(this.app);
+            await this.app.terminate().catch(() => {});
+            // Ask the catalog, not the flag: a swap that committed with its reply
+            // lost left the aside behind and the data replaced.
+            const there =
+              swapped ||
+              (await this.admin((db) =>
+                db.transaction((tx) => schemaExists(tx, aside)),
+              ));
+            if (there) await this.swapSchemasIn(aside, side, !swapped, same);
+            this.app = this.spawn(this.def, this.version);
+            await this.app.ready.catch(() => {});
+            this.app.settleBudget();
+          } finally {
+            this.releaseSpare();
+          }
+          throw e;
+        }
+        await this.dropAsideSchemaOrThrow(aside).catch(() => {});
+      } finally {
+        await this.dropSideSchema(side);
+      }
+      this.emit('changed', {
+        version: this.version,
+        summary: `restored from ${name}`,
+      });
+      return { version: this.version, restoredFrom: name, snapshot: kept };
+    });
+  }
+
   // ---------- the running app ----------
 
   /** Talk to the app. Callers inside the change queue use this; others use onApp. */
@@ -1710,8 +2456,19 @@ export class AppHost extends EventEmitter {
     try {
       return await this.app.call<T>(op, ...args);
     } catch (e) {
+      // A call in flight when the claim was lost sees the loss, not the
+      // retired worker's crash. The worker commits on its own connection, so
+      // whether this call took effect is unknown (never "wrote nothing").
+      if (this.claimLost) {
+        const lost = new ClaimLostError(
+          'this host lost its claim on the app while this call was running, so whether the call took effect is unknown; reopen the app and check before repeating it.',
+        );
+        lost.cause = e;
+        throw lost;
+      }
       if (e instanceof AppCallError) {
-        if (e.user) throw new EngineError(e.message, 'invalid');
+        if (e.stale) throw new StaleFenceError(e.message);
+        if (e.user) throw new EngineError(e.message, 'invalid', e.details);
         throw new EngineError(e.message, 'refused');
       }
       throw e;
@@ -1728,6 +2485,7 @@ export class AppHost extends EventEmitter {
       if (q === this.queue) break;
     }
     if (this.closed) throw new EngineError('the host is closed', 'refused');
+    if (this.claimLost) throw this.claimLost;
     this.inflight++;
     try {
       return await this.callApp<T>(op, ...args);
@@ -1782,18 +2540,29 @@ export class AppHost extends EventEmitter {
       await this.drainInflight();
       mkdirSync(dirname(dir), { recursive: true });
       mkdirSync(dir); // EEXIST: someone else made it first; not ours to remove
+      // PostgreSQL: the draft is a schema beside the live one, in the same database.
+      const schema = this.onServer
+        ? sideSchemaName(schemaOf(this.database), 'd')
+        : undefined;
+      const liveSchema = schema ? schemaOf(this.database) : undefined;
       try {
-        await this.callApp('copyTo', join(dir, 'app.db'));
-        writeDraftMarker(dir, this.dataDir, base.version);
+        if (schema) await this.forkSchemaTo(schema);
+        else await this.callApp('copyTo', join(dir, 'app.db'));
+        writeDraftMarker(dir, this.dataDir, base.version, schema, liveSchema);
         await opts.store.append(structuredClone(base));
         await opts.store.setCurrent(base.version);
         return await AppHost.open(dir, {
           store: opts.store,
           workerUrl: this.workerUrl,
+          workerLimits: this.workerLimits,
+          appLimits: this.appLimits,
           autoApprove: true,
+          database: schema ? this.database : undefined,
+          swapLockTimeoutMs: this.lockTimeoutMs,
         });
       } catch (e) {
         rmSync(dir, { recursive: true, force: true });
+        if (schema) await this.dropSideSchema(schema);
         throw e;
       }
     });
@@ -1808,7 +2577,10 @@ export class AppHost extends EventEmitter {
     if (!this.draft)
       throw new EngineError('only a draft can be discarded', 'refused');
     await this.close();
-    removeDraftDirectory(this.dataDir);
+    // Its schema first: if that fails the marker is still there to retry.
+    if (this.draft.schema)
+      await this.dropSideSchema(this.draft.schema, true, this.fence);
+    removeDraftDirectory(this.dataDir, true);
   }
 
   /**
@@ -1829,7 +2601,9 @@ export class AppHost extends EventEmitter {
       await this.drainInflight();
       this.closed = true;
       await this.app.terminate();
-      removeDraftDirectory(this.dataDir);
+      if (draft.schema)
+        await this.dropSideSchema(draft.schema, true, this.fence);
+      removeDraftDirectory(this.dataDir, true);
       return true;
     });
   }
@@ -1906,12 +2680,13 @@ export class AppHost extends EventEmitter {
    * writing the result as one standalone file, `dir/final/app.db`. Touches
    * nothing but `dir`.
    */
-  private async replay(dir: string, chain: DraftChain, numbers: number[]) {
+  private async replay(place: CopyPlace, chain: DraftChain, numbers: number[]) {
+    const dir = place.dir;
     const boots: BootInfo[] = [];
     const dataSteps: PublishDataStep[][] = [];
     const allSteps = chain.versions.flatMap((r) => r.migration?.steps ?? []);
     let archives = { values: 0, tables: 0 };
-    const file = join(dir, 'final', 'app.db');
+    const file = place.database ? '' : join(dir, 'final', 'app.db');
     // The worker that applied the previous version: it holds exactly the
     // definition and data the next version's previews must read, so it answers
     // them instead of a second worker booted just for that.
@@ -1949,6 +2724,10 @@ export class AppHost extends EventEmitter {
               dataDir: dir,
               def: chain.base.definition,
               version: chain.baseVersion,
+              limits: this.workerLimits,
+              appLimits: this.appLimits,
+              database: place.database,
+              lockTimeoutMs: this.lockTimeoutMs,
             });
           carried = null;
           try {
@@ -1992,6 +2771,10 @@ export class AppHost extends EventEmitter {
           dataDir: dir,
           def: rec.definition,
           version: numbers[i],
+          limits: this.workerLimits,
+          appLimits: this.appLimits,
+          database: place.database,
+          lockTimeoutMs: this.lockTimeoutMs,
           migration: steps.length
             ? { steps, direction: 'up', version: numbers[i] }
             : undefined,
@@ -2004,7 +2787,9 @@ export class AppHost extends EventEmitter {
               numbers,
               archivedTables(allSteps),
             );
-            await w.call('copyTo', file);
+            // SQLite: the result is written as one standalone file. On
+            // PostgreSQL the rehearsal schema already is the result.
+            if (!place.database) await w.call('copyTo', file);
           }
         } catch (e) {
           await w.terminate().catch(() => {});
@@ -2041,16 +2826,28 @@ export class AppHost extends EventEmitter {
       await this.drainInflight();
       const numbers = await this.nextNumbers(chain);
       const dir = makeRehearsalDir(this.dataDir);
+      let place: CopyPlace = { dir };
       try {
-        await this.callApp('copyTo', join(dir, 'app.db'));
+        if (this.onServer) {
+          place = { dir, database: this.sideDatabase('r') };
+          await this.forkSchemaTo(schemaOf(place.database as DatabaseConfig));
+        } else await this.callApp('copyTo', join(dir, 'app.db'));
       } catch (e) {
         removeRehearsal(this.dataDir, dir);
         throw e;
       }
-      return { chain, digest, numbers, dir, from: this.def, at: this.version };
+      return {
+        chain,
+        digest,
+        numbers,
+        dir,
+        place,
+        from: this.def,
+        at: this.version,
+      };
     });
     try {
-      const r = await this.replay(ctx.dir, ctx.chain, ctx.numbers);
+      const r = await this.replay(ctx.place, ctx.chain, ctx.numbers);
       const final =
         ctx.chain.versions[ctx.chain.versions.length - 1].definition;
       return {
@@ -2104,6 +2901,8 @@ export class AppHost extends EventEmitter {
       };
     } finally {
       removeRehearsal(this.dataDir, ctx.dir);
+      if (ctx.place.database)
+        await this.dropSideSchema(schemaOf(ctx.place.database));
     }
   }
 
@@ -2175,18 +2974,48 @@ export class AppHost extends EventEmitter {
       ? `[draft: ${opts.draftName.replace(/\s+/g, ' ').trim()}] `
       : '';
     const oldVersion = this.version;
+    const atomic = this.atomic;
     const dir = makeRehearsalDir(this.dataDir);
     const t0 = performance.now();
     let retired = false;
     let journaled = false;
     let asideStarted = false;
+    let swapped = false;
     let next: AppWorker | null = null;
     let snapshot = '';
+    let journal: PublishJournal | null = null;
     let archives = { values: 0, tables: 0 };
+    const stamp = now();
+    const records: VersionRecord[] = chain.versions.map((rec, i) => ({
+      version: numbers[i],
+      parent: i === 0 ? oldVersion : numbers[i - 1],
+      author: rec.author,
+      summary: `${tag}${rec.summary}`,
+      definition: structuredClone(rec.definition),
+      migration: rec.migration?.steps.length
+        ? { steps: structuredClone(rec.migration.steps) }
+        : null,
+      createdAt: stamp,
+    }));
+    // PostgreSQL: the rehearsal is a schema beside live, swapped in by rename.
+    const pg = this.onServer
+      ? {
+          schema: schemaOf(this.database),
+          staging: schemaOf(this.sideDatabase('r')),
+          aside: schemaOf(this.sideDatabase('o')),
+        }
+      : null;
+    const place: CopyPlace = pg
+      ? {
+          dir,
+          database: { ...this.database, schema: pg.staging } as DatabaseConfig,
+        }
+      : { dir };
     try {
-      await this.callApp('copyTo', join(dir, 'app.db'));
+      if (pg) await this.forkSchemaTo(pg.staging);
+      else await this.callApp('copyTo', join(dir, 'app.db'));
       await stage('copied');
-      const r = await this.replay(dir, chain, numbers);
+      const r = await this.replay(place, chain, numbers);
       if (this.replayDigest(digest, r.dataSteps) !== opts.expect)
         throw new EngineError(
           'the draft or live data counts changed since review; review it again',
@@ -2197,49 +3026,84 @@ export class AppHost extends EventEmitter {
       snapshot = join(
         this.dataDir,
         'snapshots',
-        `${Date.now()}-0-migrate-prepublish.db`,
+        `${Date.now()}-0-migrate-prepublish.${copySuffix(this.database)}`,
       );
       await this.callApp('copyTo', snapshot);
       await stage('snapshotted');
-      writeJournal(this.dataDir, {
+      journal = {
         format: 1,
         oldVersion,
         finalVersion: finalNumber,
         rehearsal: dir,
         snapshot,
         startedAt: now(),
-      });
+        ...(pg ? { pg } : {}),
+        ...(pg && atomic
+          ? {
+              atomic: true,
+              id: randomUUID(),
+              draftId: this.store.publishingDraft?.() ?? null,
+              numbers,
+            }
+          : {}),
+      };
+      writeJournal(this.dataDir, journal);
       journaled = true;
       await stage('journaled');
       retired = true;
-      await this.app.retire();
+      await this.retireApp();
       await stage('retired');
       asideStarted = true;
-      moveAside(this.dataDir);
-      await stage('moved-aside');
-      renameSync(r.file, join(this.dataDir, 'app.db'));
-      await stage('swapped');
+      if (pg) {
+        // One transaction renames live aside and the rehearsal into place.
+        await stage('moved-aside');
+        // #5470: the store's write is part of this transaction.
+        await this.swapSchemasIn(
+          pg.staging,
+          pg.aside,
+          false,
+          atomic
+            ? (tx) =>
+                this.store.commitIn?.(
+                  tx,
+                  records,
+                  finalNumber,
+                  oldVersion,
+                  true,
+                ) ?? Promise.resolve()
+            : undefined,
+        );
+        swapped = true;
+        await stage('swapped');
+      } else {
+        moveAside(this.dataDir);
+        await stage('moved-aside');
+        renameSync(r.file, join(this.dataDir, 'app.db'));
+        await stage('swapped');
+      }
       next = this.spawn(finalDef, finalNumber);
       await next.ready;
       await stage('respawned');
-      const stamp = now();
-      await this.persistVersions(
-        chain.versions.map((rec, i) => ({
-          version: numbers[i],
-          parent: i === 0 ? oldVersion : numbers[i - 1],
-          author: rec.author,
-          summary: `${tag}${rec.summary}`,
-          definition: structuredClone(rec.definition),
-          migration: rec.migration?.steps.length
-            ? { steps: structuredClone(rec.migration.steps) }
-            : null,
-          createdAt: stamp,
-        })),
-        finalNumber,
-      );
+      if (atomic && pg && journal?.id)
+        // The new worker is up: say so, so no later boot undoes the publish
+        // over what it serves.
+        await this.admin((db) =>
+          markPublished(db, pg.schema, journal?.id as string),
+        );
+      else await this.persistVersions(records, finalNumber);
     } catch (e) {
       await this.abortPublish(
-        { retired, asideStarted, journaled, next, dir },
+        {
+          retired,
+          asideStarted,
+          journaled,
+          next,
+          dir,
+          pg,
+          swapped,
+          journal: atomic ? journal : null,
+          finalNumber,
+        },
         e,
       );
       throw e; // not reached when abortPublish throws its own
@@ -2254,13 +3118,30 @@ export class AppHost extends EventEmitter {
     } catch {
       // too late to matter
     }
+    // Say so in the journal before the old data goes. If that write fails the
+    // old data and the journal stay (the next start finishes the clean-up:
+    // `publishHappened` reads a store at or past the final version as
+    // published) and the owner is told, never left to find out at a restart.
+    let marked = true;
     try {
-      dropAside(this.dataDir);
-      removeJournal(this.dataDir);
-      removeRehearsal(this.dataDir, dir);
-    } catch {
-      // leftovers are removed at the next start (reconcilePublish)
+      if (journal) writeJournal(this.dataDir, { ...journal, committed: true });
+    } catch (e) {
+      marked = false;
+      this.notices.push(
+        `The publish is done, but its journal could not be marked finished (${(e as Error).message}); the old data is kept until the next start, which removes it. Free some disk space or fix the data directory.`,
+      );
     }
+    if (marked)
+      try {
+        // PostgreSQL: the old data's schema goes; if that fails the journal
+        // stays, and the next start removes it (the journal says published).
+        if (pg) await this.dropAsideSchemaOrThrow(pg.aside);
+        dropAside(this.dataDir);
+        removeJournal(this.dataDir);
+        removeRehearsal(this.dataDir, dir);
+      } catch {
+        // leftovers are removed at the next start (reconcilePublish)
+      }
     const summary = `${tag}published ${chain.versions.length} change${chain.versions.length === 1 ? '' : 's'}`;
     this.emit('changed', { version: finalNumber, summary });
     return {
@@ -2281,26 +3162,58 @@ export class AppHost extends EventEmitter {
       journaled: boolean;
       next: AppWorker | null;
       dir: string;
+      pg: { schema: string; staging: string; aside: string } | null;
+      swapped: boolean;
+      /** The journal of an atomic publish (#5470): the store committed with the swap. */
+      journal?: PublishJournal | null;
+      finalNumber?: number;
     },
     cause: unknown,
   ) {
     try {
-      if (s.next) await s.next.terminate().catch(() => {});
+      if (s.next) {
+        this.keepBudget(s.next);
+        await s.next.terminate().catch(() => {});
+      }
       if (s.retired) {
         await this.app.terminate().catch(() => {});
-        if (s.asideStarted) restoreAside(this.dataDir);
+        if (s.asideStarted && !s.pg) restoreAside(this.dataDir);
+      }
+      if (s.pg) {
+        // The swap is one transaction: either it happened (put the old schema
+        // back) or live was never touched. The rehearsal goes either way.
+        // Ask the catalog, not the flag: if the swap committed but its reply
+        // was lost, the aside is there.
+        if (
+          s.swapped ||
+          (await this.admin((db) =>
+            db.transaction((tx) => schemaExists(tx, s.pg?.aside ?? '')),
+          ))
+        ) {
+          // An atomic publish's swap carried the store's write: undo both.
+          if (s.journal && s.finalNumber !== undefined)
+            await this.compensate(s.pg, s.journal, s.finalNumber, !s.swapped);
+          else await this.swapSchemasIn(s.pg.aside, s.pg.staging, !s.swapped);
+        }
+        await this.dropSideSchemaOrThrow(s.pg.staging);
       }
       if (s.journaled) removeJournal(this.dataDir);
       removeRehearsal(this.dataDir, s.dir);
       if (s.retired) {
         this.app = this.spawn(this.def, this.version);
-        await this.app.ready.catch(() => {}); // restartApp() can retry
+        await this.app.ready.catch(() => {});
+        this.app.settleBudget();
       }
     } catch (e2) {
+      // A lost claim changes nothing more, whatever state the swap left: the
+      // next opener's boot recovers from the journal and the catalog.
+      if (e2 instanceof ClaimLostError) throw e2;
       throw new EngineError(
         `${(cause as Error).message}; and putting the old data back failed: ${(e2 as Error).message}. It is restored when the app next starts.`,
         'migration_failed',
       );
+    } finally {
+      this.releaseSpare();
     }
   }
 
@@ -2328,6 +3241,10 @@ export class AppHost extends EventEmitter {
         dataDir: this.dataDir,
         def: this.def,
         version: this.version,
+        limits: this.workerLimits,
+        appLimits: this.appLimits,
+        database: this.database,
+        lockTimeoutMs: this.lockTimeoutMs,
         readOnly: true,
       });
       let timer: ReturnType<typeof setTimeout> | undefined;
@@ -2519,7 +3436,12 @@ export class AppHost extends EventEmitter {
   async close() {
     await this.queue;
     this.closed = true;
-    await this.app.terminate();
+    this.releaseSpare();
+    try {
+      await this.app.terminate();
+    } finally {
+      await this.releaseDatabase?.();
+    }
   }
 }
 
@@ -2527,4 +3449,37 @@ export class AppHost extends EventEmitter {
 function shown(fd: FieldDef): FieldDef {
   const { hidden: _hidden, ...rest } = fd;
   return rest;
+}
+
+/**
+ * Discard a draft directory no host holds (a crash left it). On PostgreSQL the
+ * draft's schema goes too, through the live app's `database` config; on SQLite
+ * `discardDraftDirectory` is enough.
+ */
+export async function discardOrphanDraft(
+  dataDir: string,
+  database: DatabaseConfig = SQLITE,
+): Promise<void> {
+  const marker = readDraftMarker(dataDir);
+  if (marker?.schema) {
+    if (database.kind === 'sqlite')
+      throw new EngineError(
+        "this draft lives on PostgreSQL; pass the live app's database config",
+        'refused',
+      );
+    if (
+      !marker.liveSchema ||
+      marker.liveSchema !== database.schema ||
+      !isSideSchema(marker.schema, marker.liveSchema, 'd')
+    )
+      throw new EngineError(
+        `the draft marker in ${dataDir} names ${marker.schema}, which is not a draft schema of ${database.schema}; not dropping it`,
+        'refused',
+      );
+    const schema = assertSchemaName(marker.schema);
+    await withSchemaAdmin({ ...database, schema }, (db) =>
+      dropSchema(db, schema, undefined, marker.liveSchema),
+    );
+  }
+  removeDraftDirectory(dataDir, true);
 }

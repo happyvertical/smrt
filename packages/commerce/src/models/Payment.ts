@@ -1013,13 +1013,36 @@ export class Payment extends SmrtObject {
       ? new Date(`${effectiveOn}T12:00:00Z`)
       : new Date();
     // Dynamic import to avoid hard dependency on smrt-ledgers
-    const { JournalCollection } = await import('@happyvertical/smrt-ledgers');
+    const { AccountCollection, JournalCollection } = await import(
+      '@happyvertical/smrt-ledgers'
+    );
+
+    // A ledger-scoped chart posts into its own ledger (#5412): the journal
+    // takes the cash account's ledger (and the payment's tenant), and a
+    // non-empty `ledgerId` must be that ledger. `ledgerId: ''` means "whatever
+    // the cash account says"; ledger-less (legacy) cash accounts keep posting
+    // to a ledger-less journal.
+    const cashAccount = await (
+      await AccountCollection.create(this.options)
+    ).get({ id: options.cashAccountId }, { cache: false });
+    const journalLedgerId = cashAccount?.ledgerId ?? null;
+    if (
+      journalLedgerId &&
+      options.ledgerId &&
+      options.ledgerId !== journalLedgerId
+    )
+      throw new Error(
+        'Settlement accounts do not belong to the ledger recordPayment was given',
+      );
 
     // Create the journal collection
     const journalCollection = await JournalCollection.create(this.options);
 
     // Create a new journal for this payment
     const journal = await journalCollection.create({
+      ...(journalLedgerId
+        ? { ledgerId: journalLedgerId, tenantId: this.tenantId }
+        : {}),
       date: effectiveDate,
       description:
         this.kind === 'refund'

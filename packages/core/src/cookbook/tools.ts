@@ -706,6 +706,36 @@ export function createCookbookToolService(options: CookbookToolOptions) {
     await options.approvals.consume(context.tenantId!, record!.id);
     return record!.id;
   }
+  /**
+   * Apply through the editor with this service's coordinator: the editor
+   * activates restored recipes only after its own admission.
+   */
+  async function editorApply(
+    editor: NonNullable<
+      ReturnType<NonNullable<CookbookToolOptions['modelEditorFor']>>
+    >,
+    edit: Parameters<typeof editor.apply>[0],
+    unchanged: string,
+    context: Parameters<typeof editor.apply>[1],
+    admit: () => Promise<void>,
+  ) {
+    try {
+      return await editor.apply(edit, context, {
+        ...(options.activation ? { activation: options.activation } : {}),
+        admit,
+      });
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        error.message.startsWith('MODEL_ACTIVATION_FAILED')
+      )
+        fail(
+          'activation_failed',
+          `Recipe activation failed; ${unchanged}: ${error.message.replace(/^MODEL_ACTIVATION_FAILED: /, '')}`,
+        );
+      throw error;
+    }
+  }
   async function invokeApp(
     name: AppToolName,
     args: Record<string, unknown>,
@@ -714,6 +744,7 @@ export function createCookbookToolService(options: CookbookToolOptions) {
     const editor = options.modelEditorFor?.(context);
     if (!editor) return fail('unavailable', 'Your app editor is unavailable.');
     const before = editor.snapshot();
+    const hostBefore = options.engineFor?.(context)?.state();
     const read = async (result: CookbookToolResult) => {
       await options.audit({
         context,
@@ -741,7 +772,7 @@ export function createCookbookToolService(options: CookbookToolOptions) {
         changes: history.map((row) => ({
           revision: row.revision,
           actor: row.actor,
-          status: row.status,
+          status: row.abandoned ? 'abandoned' : row.status,
           change: JSON.parse(row.command),
           summary: (JSON.parse(row.command) as { summary?: string }).summary,
           undoes: row.undoes,
@@ -762,10 +793,14 @@ export function createCookbookToolService(options: CookbookToolOptions) {
     }
     if (name === 'app.undo') {
       const history = await editor.history();
-      const undone = new Set(history.map((row) => row.undoes));
+      // An abandoned row never applied, so its `undoes` reversed nothing.
+      const undone = new Set(
+        history.flatMap((row) => (row.abandoned ? [] : [row.undoes])),
+      );
       const previous = history.findLast(
         (row) =>
           row.status === 'applied' &&
+          !row.abandoned &&
           row.undoes === undefined &&
           !undone.has(row.revision),
       );
@@ -821,8 +856,10 @@ export function createCookbookToolService(options: CookbookToolOptions) {
         summary: planned.summary,
       });
       await assertAllowed(context, name);
-      const receipt = await editor.apply(
+      const receipt = await editorApply(
+        editor,
         { ...planned.edit, summary: planned.summary },
+        'nothing was undone',
         {
           actor: context.userId!,
           tenantId: context.tenantId!,
@@ -847,6 +884,21 @@ export function createCookbookToolService(options: CookbookToolOptions) {
               }
             : {}),
         },
+        // Activation may have taken time: recheck live authority, and that the
+        // host cookbook is still what the caller approved, last.
+        async () => {
+          await assertAllowed(context, name);
+          const host = options.engineFor?.(context);
+          if (
+            host &&
+            hostBefore !== undefined &&
+            !same(host.state(), hostBefore)
+          )
+            fail(
+              'conflict',
+              'The cookbook changed before this action could apply.',
+            );
+        },
       );
       if (context.workflowAction)
         return (await recoverDesign(name, args, context))!;
@@ -870,6 +922,18 @@ export function createCookbookToolService(options: CookbookToolOptions) {
       )
         await options.approvals.complete(context.tenantId!, hold, false, {
           status: 'refused',
+        });
+      // The editor also checks installed models that are not loaded and
+      // tables the database keeps; report that as a naming collision.
+      if (
+        planned.edit.type === 'create_list' &&
+        error instanceof Error &&
+        /^MODEL_(NAME|TABLE)_COLLISION\b/.test(error.message)
+      )
+        return read({
+          status: 'collision',
+          summary: `“${planned.edit.list.label}” is already used; choose a different list name.`,
+          candidates: [],
         });
       throw error;
     }
@@ -1187,8 +1251,11 @@ export function createCookbookToolService(options: CookbookToolOptions) {
       }
       try {
         await assertAllowed(context, name);
+        // With an editor, activation runs inside editor.apply, after the
+        // editor's own authorization and durable revision check.
         if (
           options.activation &&
+          !options.modelEditorFor?.(context) &&
           (name === 'recipes.enable' || name === 'cookbook.apply')
         ) {
           try {
@@ -1246,8 +1313,10 @@ export function createCookbookToolService(options: CookbookToolOptions) {
             );
           await options.audit(event('requested', summary));
           await assertAllowed(context, name);
-          await editor.apply(
+          await editorApply(
+            editor,
             { type: 'import', cookbook: staged.cookbook(), summary },
+            'cookbook unchanged',
             {
               actor: context.userId!,
               tenantId: context.tenantId!,
@@ -1264,6 +1333,29 @@ export function createCookbookToolService(options: CookbookToolOptions) {
                     } satisfies AppModelOperation,
                   }
                 : {}),
+            },
+            // Recheck after activation, inside the edit: live authority and,
+            // for an approval-free template apply, that the app is still empty.
+            async () => {
+              await assertAllowed(context, name);
+              if (
+                name === 'cookbook.apply' &&
+                !hold &&
+                !(await options.isAppEmpty(context))
+              )
+                fail(
+                  'conflict',
+                  'Your app now contains records. Preview again before applying.',
+                );
+              // Live authority again after the awaited emptiness check.
+              await assertAllowed(context, name);
+              // The host's own state must still be what the caller approved:
+              // an update made while recipes were loading is never overwritten.
+              if (!same(options.engineFor(context)!.state(), before))
+                fail(
+                  'conflict',
+                  'The cookbook changed before this action could apply.',
+                );
             },
           );
           if (context.workflowAction)

@@ -4,13 +4,12 @@ import {
   asSettingsOwner,
   assistantSettings,
 } from '$lib/server/agent-cli/service';
+import { shellProfile } from '$lib/server/host';
 import { principalFromLocals } from '$lib/server/owner';
-import { api } from '$lib/ui/api';
 import { DEPENDS } from '$lib/ui/events';
 import { isPluginRequest } from '$lib/ui/layout';
-import { loadDescription } from '$lib/ui/load';
+import { loadChanges, loadDescription } from '$lib/ui/load';
 import { needsWelcome } from '$lib/ui/onboarding-client';
-import type { DraftInfo, Target } from '$lib/ui/types';
 import type { LayoutServerLoad } from './$types';
 
 /**
@@ -23,6 +22,7 @@ const sessionLoad = createSessionLayoutLoad();
 
 export const load: LayoutServerLoad = async (event) => {
   event.depends(DEPENDS.shell);
+  event.depends(DEPENDS.changes);
   const { session } = sessionLoad(event);
   // As a plugin view in Claude, Codex or ChatGPT the shell has no chat of its
   // own (the host app is the chat).
@@ -31,23 +31,23 @@ export const load: LayoutServerLoad = async (event) => {
     embed: event.url.searchParams.get('embed'),
   });
   if (!session.authenticated)
-    return { session, description: null, embedded, onboardingComplete: false };
+    return {
+      session,
+      description: null,
+      changes: null,
+      embedded,
+      onboardingComplete: false,
+    };
   // Check ownership before reading the saved copy. Signed-in members have no shell.
   const liveResult = await loadDescription(event.fetch, 'live');
-  const draftState = liveResult.ok
-    ? (
-        await api<{ draft: DraftInfo | null; view: Target }>(
-          '/api/shell/draft',
-          { fetch: event.fetch },
-        )
-      ).data
-    : { draft: null, view: 'live' as const };
-  const result =
-    draftState.view === 'draft' && draftState.draft?.publishable
-      ? await loadDescription(event.fetch, 'draft')
-      : liveResult;
+  // Records and the structure the owner sees are always live: changes waiting
+  // (#5178) never replace the view, they wait beside it.
+  const result = liveResult;
   const liveDescription = liveResult.ok ? liveResult.description : null;
   const description = result.ok ? result.description : null;
+  // The ONE source of the waiting count: the header pill, /changes and
+  // History all read it from here.
+  const changes = description ? await loadChanges(event.fetch) : null;
   // First run: an owner with an empty app who has not finished or skipped the
   // welcome steps is sent there once. An app that already has models is in
   // use, so it is never interrupted (the steps stay open from Settings).
@@ -60,8 +60,11 @@ export const load: LayoutServerLoad = async (event) => {
     onboardingComplete =
       settings?.onboarding != null ||
       Object.keys(description.models).length > 0;
+    // The welcome steps connect a local AI tool or a ChatGPT plan; the hosted
+    // app has neither, so nobody is sent there.
     if (
       settings &&
+      (await shellProfile()) === 'local' &&
       needsWelcome({
         pathname: event.url.pathname,
         modelCount: Object.keys(description.models).length,
@@ -80,6 +83,7 @@ export const load: LayoutServerLoad = async (event) => {
     session,
     description,
     liveDescription,
+    changes,
     embedded,
     onboardingComplete,
   };

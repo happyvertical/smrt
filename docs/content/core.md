@@ -68,7 +68,10 @@ class Document extends SmrtObject {
 
   constructor(options: any = {}) {
     super(options);
-    Object.assign(this, options);
+    // Copy declared fields only: a blanket Object.assign(this, options) would
+    // install any option key, a request body's included, on the instance.
+    if (options.title !== undefined) this.title = options.title;
+    if (options.content !== undefined) this.content = options.content;
   }
 
   // AI-powered content validation
@@ -230,6 +233,24 @@ const recentDocs = await documents.list({
 const isQuality = await doc.isHighQuality();
 const summary = await doc.generateSummary();
 ```
+
+The values passed to `create()` and `createMany()` describe the row. The new
+object's services (its database, AI client and the other service options:
+`db`, `persistence`, `fs`, `ai`, `decisions`, `inference`, `usage`, `logging`,
+`metrics`, `pubsub`, `sanitization`, `signals`) always come from the collection
+and from configuration, never from those values. To create through another
+database handle or AI client, bind a collection to it:
+
+```typescript
+await db.transaction(async (tx) => {
+  const documents = await DocumentCollection.create({ db: tx });
+  await documents.create({ title: 'Written in the transaction' });
+});
+```
+
+Control keys such as `id`, `_meta_type` and `_insertOnly` keep their meaning in
+create data. The generated REST, MCP and SvelteKit write routes apply the same
+rule to request bodies, which set fields only.
 
 ## AI-Powered Methods
 
@@ -579,7 +600,7 @@ CLI generation does not live here. `@happyvertical/smrt-core` shipped an in-proc
 
 ### REST API Generation
 
-`APIGenerator` serves REST for whatever `@smrt()` objects are registered. `APIConfig` is `{ basePath?, enableCors?, allowedOrigins?, allowCredentials?, customRoutes?, authMiddleware?, port?, hostname?, eventsRoute?, manifestHash?, playbookPreflight? }` — there is no `collections`, `outputDir`, `includeSwagger`, or `middleware` option, and no `generate()` method.
+`APIGenerator` serves REST for whatever `@smrt()` objects are registered; `createRestServer(objects)` / `startRestServer(objects)` serve only `objects`. `APIConfig` is `{ basePath?, enableCors?, allowedOrigins?, allowCredentials?, customRoutes?, authMiddleware?, resolvePrincipal?, onRequest?, port?, hostname?, eventsRoute?, manifestHash?, playbookPreflight? }` — there is no `collections`, `outputDir`, `includeSwagger`, or `middleware` option, and no `generate()` method.
 
 ```typescript
 import { APIGenerator, startRestServer } from '@happyvertical/smrt-core/generators';
@@ -592,12 +613,169 @@ const handler = generator.generateHandler(); // (req: Request) => Promise<Respon
 generator.registerCollection('products', productCollection);
 const { server, url } = generator.createServer();
 
-// Or the startRestServer() convenience wrapper: warns for any of the passed
-// classes not already registered by their own @smrt() decorator (it does not
-// register them itself), starts a Node http.Server, and resolves a
-// graceful-shutdown function.
+// Or the startRestServer() convenience wrapper: serves the passed classes and
+// no other registered model (a class not registered by its own @smrt()
+// decorator is warned about and not served), starts a Node http.Server, and
+// resolves a graceful-shutdown function.
 const shutdown = await startRestServer([Product, Order], { db }, { basePath: '/api/v1' });
 ```
+
+Each request resolves to one model, and that model's qualified name
+(`@scope/pkg:Class`) is what `authMiddleware(objectName, action)` receives and
+what every policy lookup uses, so same-named models of two packages keep their
+own policies. A collection segment that two models serve is refused rather
+than served by registration order; give each a distinct `collection`, or
+`api: false` on the one that should not be served. `startRestServer` refuses to
+start when two of the passed classes share a segment. A create through an STI
+base selects (`createType`) only subtypes whose own `api` surface opens
+`create`.
+
+#### The host says who each request acts for
+
+Every request resolves the tenancy its model has *now* (declared, or
+registered at run time with `registerTenantScopedClass()`) and runs inside
+it. The server cannot derive a caller from a `Request`, so the host supplies a
+principal, once per request, from what its authentication verified:
+
+```typescript
+const generator = new APIGenerator({
+  basePath: '/api/v1',
+  // Called once per request, before anything else runs. Return null for an
+  // anonymous caller. A throw is answered with a 500 that carries no detail.
+  resolvePrincipal: async (req) => {
+    const session = await sessionOf(req);
+    return session
+      ? {
+          tenantId: session.tenantId ?? null,
+          allowCrossTenant: false,
+          authenticated: true,
+          userId: session.userId,
+          permissions: session.permissions, // e.g. ['products.create']
+        }
+      : null;
+  },
+});
+```
+
+A host that supplies only a tenant can keep `resolveTenant(req)` instead,
+returning `{ tenantId }`, `{ allowCrossTenant: true }` or neither; when both
+options are configured the principal decides and `resolveTenant` is not
+called. Either way the tenant is applied the same way:
+
+- `{ tenantId }` runs the operation inside that tenant.
+- `{ allowCrossTenant: true }` runs it across tenants, for this request's
+  operation only: on a GET it reads every tenant and writes no tenant-scoped
+  row of any model (a custom read action that saves one is refused, from a
+  `withSystemContext()` block or a nested request scope too). Inside a
+  tenant context the host entered, the grant does not widen it: the request
+  stays in that tenant, and a principal naming another tenant is refused; a
+  GET with that grant still writes no tenant-scoped row. Only for a principal
+  that is explicitly cross-tenant.
+- Neither: a read of an optional-mode model serves rows without an owner
+  only, a required-mode read is refused, and every write (create, update,
+  delete, mutating custom action, sync item) is refused with
+  `403 TENANT_CONTEXT_REQUIRED` (`401` for an anonymous caller), rows without
+  an owner included. Write global rows from a system context.
+
+Code that enters a system context inside a request (`withSystemContext()`)
+acts as the system, and code that enters a tenant context in a request with
+no tenant acts in that tenant, as each does outside a request, except in a
+request admitted under a cross-tenant read grant, which writes no
+tenant-scoped row whatever context its code enters.
+
+With `resolvePrincipal` configured the server also enforces, from that
+principal and from nothing in the request:
+
+- **Sign-in.** A route that is not `@smrt({ api: { public } })` needs
+  `authenticated` (`401`); `public: 'read'` opens reads only. `_changes` and
+  `_events` are never public.
+- **Permissions.** Create, update and delete need `<collection>.<action>`, a
+  mutating custom action `<collection>.<method>`, each `sync/apply` item
+  `<collection>.<op>`, and a row of an STI subtype its own model's slug too.
+  The slug collection is the one the generated SvelteKit routes and the
+  smrt-users permission catalog use. A missing permission is
+  `403 PERMISSION_DENIED` (a sync item is `rejected` / `forbidden`).
+  `api.public: true` models need none. `superAdminBypass: true` stands in for
+  a permission only on a model with `tenantScoped: { allowSuperAdminBypass: true }`.
+- **Tenant.** The tenant is the principal's, applied as above. A write body
+  that names another tenant
+  (`tenantId`, `tenant_id` or the model's ownership field, `null` included)
+  is `403 TENANT_MISMATCH`; the principal's own tenant is accepted. Query
+  filters on the tenant are ignored unless `allowCrossTenant`. `_changes`,
+  `_events` and `_inference` read in the principal's tenant. A host that
+  already wraps the handler in `withTenant(...)` keeps that context; a
+  principal naming a different tenant is refused with 403.
+- **Field reads.** Read redaction and `_preflight` use `permissions`.
+
+`authMiddleware`, when also configured, runs after these checks and can only
+refuse. `onRequest(principal, { route, model?, action? })` is called once per
+request right after the principal is resolved, and once per `sync/apply` item
+after the item was authorized; returning a `Response` (for example a 429)
+answers the request with it. For a sync item it rejects only that item
+(`auth_required` for a 401, the retryable `rate_limited` for a 429, else
+`forbidden`), and the rest of the batch goes on.
+
+Without `resolvePrincipal` the tenant comes from `resolveTenant` or the
+server's fixed `APIContext` (`tenantId`, `allowCrossTenant`), its
+`permissions` apply to every request, and
+`authMiddleware` alone decides authentication and authorization; a server
+that serves one tenant can rely on that.
+
+A request reaches a model in this order: the principal and `onRequest` (with
+`resolvePrincipal`), authentication (its sign-in and `authMiddleware`, or the
+model's `api.public`), then the runtime exposure gate for the request's
+tenant (a switched-off model answers `404` only to an admitted caller), then
+the operation inside the request's tenancy. A caller with no tenant is
+refused every custom collection action of a tenant-scoped model, GET actions
+included, whatever the method's parameters; the CRUD list, get and count
+reads are the ones that serve it global rows. A caller with a tenant, or an
+explicitly cross-tenant one, is served custom actions, and every collection
+call inside them, of its own model or of any other tenant-scoped model, is
+held to the request's tenancy. Raw `query()` inside an action is governed by
+the raw-query policy, not by this rule. A refusal because a row belongs to
+another tenant is a plain `403 permission_denied`; a model whose tenancy
+cannot be resolved, or changed while the request was served, is refused with
+403.
+
+**STI families.** A route to an STI model serves rows of a subtype only when
+the subtype's tenancy equals the route model's (scoped or not, mode, ownership
+field, super-admin bypass opt-in). A subtype with any other tenancy is not
+served through the base: its rows leave the base's lists and counts, point
+reads answer 404, a base create selecting it is refused, and sync items for it
+on a shared segment are rejected (`not_found`). Give such a subtype its own
+`collection` (route and sync segment), or align its tenancy. The runtime warns
+once per family and `smrt doctor` lists the families the manifest declares. A
+row whose stored type is not registered in the process is never served, and
+neither is a row with no stored type (`_meta_type` NULL): generated schemas
+declare the column `NOT NULL`, but a table created before that, or written
+outside SMRT, may hold such rows. Backfill them with the base's key
+(`UPDATE <table> SET _meta_type = '<base key>' WHERE _meta_type IS NULL`)
+before upgrading. The same holds for a collection read inside a request of an
+STI family other than the route's (for example in a custom action): a base
+never serves rows of a subtype whose tenancy differs from its own. Writes
+inside a request follow the row's type, not only the class written through: a
+save or delete whose stored row, or whose instance `_meta_type`, names a type
+with other tenancy than that class is refused with `403
+TENANT_MEMBER_EXCLUDED`, and so is one whose stored row belongs to another
+tenant than the request's, whatever owner the instance carries (a new row
+taking the id of such a row is refused as a taken id). Write those rows
+through their own model, or from a system context. A subtype of
+equal tenancy is served through its base only
+where it is served on its own (switched on for the tenant, readable by the
+caller, its `api.principalContext` requirement met, on an MCP server's model
+list, and, on emitted SvelteKit routes, generated from the same manifest: a
+subtype registered at run time outside the manifest is not served through a
+generated base route; regenerate the routes with it in the manifest). A sync create on an STI segment writes
+the segment's own type: a payload selecting another type (`createType` or
+`_meta_type`) is rejected `invalid_payload`.
+
+Validators of reads change with this release, and a validator issued before a
+registration changed any served model's tenancy never revalidates. A read
+through a base that serves a subtype whose reads are not public (served only
+to a signed-in caller) is never shared-cached, and its validator names the
+subtypes served, with tenancy on or off. A response
+a shared cache already holds from before a run-time registration lives until
+its own `s-maxage`.
 
 OpenAPI documentation is a separate concern, generated by `generateOpenAPISpec()` (`@happyvertical/smrt-core/generators/swagger`) rather than an `includeSwagger` option on `APIGenerator`.
 
@@ -1064,6 +1242,14 @@ const total = await collection.count({
   where: { 'price >': 50 }
 });
 ```
+
+A key may be written in camelCase or snake_case (`categoryId` and `category_id`
+name the same column), but a column gets one condition per operator. A `where`
+in which two keys resolve to the same column and operator, such as
+`{ categoryId: 'a', category_id: 'b' }`, is rejected with a `WhereClauseError`
+(`INVALID_WHERE_CLAUSE`, HTTP 400 on generated routes) instead of keeping
+whichever key came last. Different operators on one column, as with the two
+`price` conditions above, are combined with AND.
 
 #### Query bounds
 

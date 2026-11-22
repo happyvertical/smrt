@@ -1671,7 +1671,7 @@ describe('smrt app export / import', () => {
     const serialized = readFileSync(bundle, 'utf8');
     expect(serialized).not.toContain(TOKEN);
     expect(JSON.parse(serialized)).toMatchObject({
-      schemaVersion: 2,
+      schemaVersion: 3,
       application: 'ops-app',
     });
 
@@ -1831,7 +1831,7 @@ describe('smrt app export / import', () => {
       expectedKind: 'export-bundle',
     });
     const parsed = JSON.parse(readFileSync(restored, 'utf8'));
-    expect(parsed).toMatchObject({ schemaVersion: 2, application: 'ops-app' });
+    expect(parsed).toMatchObject({ schemaVersion: 3, application: 'ops-app' });
     expect(readFileSync(restored, 'utf8')).not.toContain(TOKEN);
 
     expect(

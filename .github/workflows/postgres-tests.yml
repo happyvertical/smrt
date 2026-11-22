@@ -55,7 +55,27 @@ jobs:
     outputs:
       run: ${{ steps.decide.outputs.run }}
       trusted: ${{ steps.decide.outputs.trusted }}
+      affected: ${{ steps.decide.outputs.affected }}
     steps:
+      # Merge groups run only the suites whose package, or a dependency of it,
+      # changed against merge_group.base_sha (#5364). scripts/merge-group-scope.mjs
+      # selects `all` for any global, shared or unreadable input.
+      - name: Checkout merge group
+        if: github.event_name == 'merge_group'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          filter: blob:none
+
+      - name: Select affected suites
+        id: affected
+        if: github.event_name == 'merge_group'
+        env:
+          BASE_SHA: ${{ github.event.merge_group.base_sha }}
+          HEAD_SHA: ${{ github.event.merge_group.head_sha }}
+        run: node scripts/merge-group-scope.mjs --base "$BASE_SHA" --head "$HEAD_SHA"
+
       # A PR whose every changed file is documentation cannot change a suite's
       # outcome. Every other event (merge groups included) always runs.
       - name: Detect code changes
@@ -78,10 +98,21 @@ jobs:
           REPOSITORY: ${{ github.repository }}
           CODE_CHANGED: ${{ steps.filter.outputs.code }}
           FORK_SANDBOX: ${{ inputs.fork_sandbox == true }}
+          SCOPE_POSTGRES: ${{ steps.affected.outputs.postgres }}
         run: |
           set -euo pipefail
           trusted=true
           run=true
+          affected=all
+          if [ "$EVENT_NAME" = merge_group ]; then
+            # An empty selection is only believable from a successful scope step.
+            if [ -z "$SCOPE_POSTGRES" ]; then
+              echo "::error::merge-group PostgreSQL scope produced no selection"
+              exit 1
+            fi
+            affected=$SCOPE_POSTGRES
+            if [ "$affected" = '[]' ]; then run=false; fi
+          fi
           if [ "$EVENT_NAME" = pull_request ]; then
             # Fork code runs only in the sandboxed Fork PR Validation call.
             if [ "$HEAD_REPO" != "$REPOSITORY" ] && [ "$FORK_SANDBOX" != true ]; then
@@ -90,8 +121,11 @@ jobs:
             if [ "$CODE_CHANGED" != true ]; then run=false; fi
           fi
           if [ "$trusted" != true ]; then run=false; fi
-          echo "trusted=$trusted" >> "$GITHUB_OUTPUT"
-          echo "run=$run" >> "$GITHUB_OUTPUT"
+          {
+            echo "trusted=$trusted"
+            echo "run=$run"
+            echo "affected=$affected"
+          } >> "$GITHUB_OUTPUT"
           echo "trusted=$trusted run=$run"
 
   postgres:
@@ -177,6 +211,7 @@ jobs:
             xargs -r pnpm turbo run test:postgres --concurrency=2 --continue --summarize
         env:
           POSTGRES_SHARD: ${{ matrix.shard }}
+          POSTGRES_AFFECTED: ${{ needs.scope.outputs.affected }}
           CI_POSTGRES_BASE_URL: postgresql://smrt_ci:smrt_ci@127.0.0.1:5432/postgres
           CI_POSTGRES_ADMIN_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -253,7 +288,7 @@ jobs:
             exit 1
           fi
           if [ "$RUN" != true ]; then
-            echo "Documentation-only change; PostgreSQL suites not needed."
+            echo "No change can affect a PostgreSQL suite; suites not needed."
             exit 0
           fi
           if [ "$POSTGRES" != success ]; then

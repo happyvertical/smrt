@@ -4,6 +4,7 @@
 
 import {
   existsSync,
+  lstatSync,
   mkdirSync,
   readdirSync,
   readFileSync,
@@ -17,6 +18,10 @@ import type { SmartObjectManifest } from '../scanner/types';
 // Mock node:fs module
 vi.mock('node:fs', () => ({
   existsSync: vi.fn(),
+  // Route ownership inspects planned paths with lstat; nothing exists here.
+  lstatSync: vi.fn(() => {
+    throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
+  }),
   mkdirSync: vi.fn(),
   writeFileSync: vi.fn(),
   readFileSync: vi.fn(),
@@ -190,11 +195,37 @@ function expectCollectionAccessImports(
   expect(content).not.toMatch(/import \{ getCollection \} from/);
 }
 
+const ABSENT = () => {
+  throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
+};
+
+/**
+ * Route ownership `lstat`s planned paths. Make `files` (and every directory
+ * above them) exist as regular files and directories; everything else is
+ * absent.
+ */
+function mockRouteTree(files: string[]): void {
+  vi.mocked(lstatSync).mockImplementation(((path: string) => {
+    const target = path.toString();
+    const stats = (file: boolean) => ({
+      isFile: () => file,
+      isDirectory: () => !file,
+      isSymbolicLink: () => false,
+    });
+    if (files.includes(target)) return stats(true);
+    if (files.some((file) => file.startsWith(`${target}/`))) {
+      return stats(false);
+    }
+    return ABSENT();
+  }) as never);
+}
+
 describe('SvelteKit Route Generator', () => {
   const projectRoot = '/test/project';
 
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(lstatSync).mockImplementation(ABSENT as never);
     // Default mock implementations
     vi.mocked(existsSync).mockReturnValue(false);
     vi.mocked(readFileSync).mockReturnValue('');
@@ -1283,7 +1314,7 @@ describe('SvelteKit Route Generator', () => {
       expect(content).toContain('await collection.create');
       expect(content).not.toContain('await item.save()');
       expect(content).toContain(
-        "import { ObjectRegistry, normalizeTypedHttpError, reportUnexpectedHttpError } from '@happyvertical/smrt-core';",
+        "import { assertCreateInput, assertCreateTargetSurface, ObjectRegistry, normalizeTypedHttpError, reportUnexpectedHttpError } from '@happyvertical/smrt-core';",
       );
       expect(content).toContain('function smrtRouteErrorResponse');
       expect(content).toContain(
@@ -1351,7 +1382,12 @@ describe('SvelteKit Route Generator', () => {
       // Should include PUT handler
       expect(content).toContain('export const PUT: RequestHandler');
       expect(content).toContain("collection.withAuditMutation(item, 'updated'");
-      expect(content).toContain('Object.assign(bound, data)');
+      // The body is assigned through the shared update-input rule, for the
+      // route's own model.
+      expect(content).toMatch(
+        /applyUpdateInput\(bound, data, "[^"]*Product"\);/,
+      );
+      expect(content).not.toContain('Object.assign(bound');
       expect(content).toContain('await bound.save()');
       expect(content).toContain(
         'return smrtRouteErrorResponse(cause, request);',
@@ -1545,7 +1581,13 @@ describe('SvelteKit Route Generator', () => {
         /Object\.fromEntries\([\s\S]*\),\n\s*\) as ActionArgs\[0\];/,
       );
       expect(content).toContain("ObjectRegistry.getClass('Document')");
-      expect(content).toContain('await ClassRef.browseFacts(options)');
+      // A GET action taking options receives the scope of the request's
+      // tenancy, resolved at request time (nothing for a model that is not
+      // tenant-scoped).
+      expect(content).toContain(
+        'const scopedOptions = scopeActionOptions(tenancy, options);',
+      );
+      expect(content).toContain('await ClassRef.browseFacts(scopedOptions)');
       expect(content).not.toContain('params.id');
 
       const searchFactsRoute = vi
@@ -1562,14 +1604,16 @@ describe('SvelteKit Route Generator', () => {
       // the string '2', so the generated call decodes it. `query: string`
       // needs no decoding and is passed straight through (#2686).
       expect(searchContent).toContain('ClassRef.searchFacts(');
-      expect(searchContent).toContain('toCustomActionNumber(options.limit)');
+      expect(searchContent).toContain(
+        'toCustomActionNumber(scopedOptions.limit)',
+      );
       // `query: string` needs no decoding and is passed straight through.
-      expect(searchContent).toContain('options.query');
+      expect(searchContent).toContain('scopedOptions.query');
       expect(searchContent).not.toContain(
-        'toCustomActionNumber(options.query)',
+        'toCustomActionNumber(scopedOptions.query)',
       );
       expect(searchContent).toContain(
-        "import { normalizeCustomActionFailure, normalizeTypedHttpError, reportUnexpectedHttpError, toCustomActionNumber } from '@happyvertical/smrt-core';",
+        "import { normalizeCustomActionFailure, normalizeTypedHttpError, reportUnexpectedHttpError, scopeActionOptions, toCustomActionNumber } from '@happyvertical/smrt-core';",
       );
 
       const reservedRoute = vi
@@ -1583,7 +1627,7 @@ describe('SvelteKit Route Generator', () => {
         'new URL(request.url).searchParams.entries(),',
       );
       expect(reservedContent).toContain(
-        'await ClassRef.searchReserved(options.__smrt_options, options.query)',
+        'await ClassRef.searchReserved(scopedOptions.__smrt_options, scopedOptions.query)',
       );
     });
 
@@ -1726,7 +1770,7 @@ describe('SvelteKit Route Generator', () => {
       );
       expect(content).toContain('...pathParams,');
       expect(content).toContain(
-        'await item.evaluateReviewProfileAction(options)',
+        'await item.evaluateReviewProfileAction(scopedOptions)',
       );
     });
 
@@ -1791,8 +1835,8 @@ describe('SvelteKit Route Generator', () => {
       const content = restoreRoute?.[1] as string;
 
       expect(content).toContain('type ActionArgs = Parameters<');
-      expect(content).toContain("from '@happyvertical/smrt-tenancy'");
-      expect(content).toContain('establishTenantContext(locals);');
+      expect(content).not.toContain('@happyvertical/smrt-tenancy');
+      expect(content).toContain("enterTenancy(locals, 'action', {");
       expect(content).toContain('const rawBody = await request.text();');
       expect(content).toContain(
         "const body: unknown = rawBody.trim() === '' ? undefined : JSON.parse(rawBody);",
@@ -1872,7 +1916,8 @@ describe('SvelteKit Route Generator', () => {
 
       expect(content).toContain('export const GET: RequestHandler');
       expect(content).toContain('export const PUT: RequestHandler');
-      expect(content).toContain('await item.getFactsState(options)');
+      // GET item actions receive the request's tenant read scope.
+      expect(content).toContain('await item.getFactsState(scopedOptions)');
       expect(content).toContain('await item.syncFacts(options)');
     });
 
@@ -1930,7 +1975,7 @@ describe('SvelteKit Route Generator', () => {
         );
       expect(browseFactsRoute).toBeDefined();
       const content = browseFactsRoute?.[1] as string;
-      expect(content).toContain('await item.browseFacts(options)');
+      expect(content).toContain('await item.browseFacts(scopedOptions)');
 
       // The route stays exactly where the receiver puts it — under `[id]`, on
       // the instance. What changed in #2686 is that the contradiction is no
@@ -2437,6 +2482,7 @@ describe('SvelteKit Route Generator', () => {
 
         return '';
       });
+      mockRouteTree([join(projectRoot, 'src/routes/api', '+server.ts')]);
 
       const manifest: SmartObjectManifest = {
         version: '1',
@@ -3325,11 +3371,16 @@ describe('SvelteKit Route Generator', () => {
       expect(collectionContent).toContain(
         'const { limit, offset } = listBounds(url);',
       );
+      // The caller's filter and ordering are read once, through the checked
+      // `listQuery`, before the bounds reach the collection.
       expect(collectionContent).toContain(
-        "const orderBy = url.searchParams.get('orderBy') || LIST_ORDER_BY;",
+        'const query = listQuery(url, publicJsonOptions);',
       );
       expect(collectionContent).toContain(
-        'const count = await collection.count({ where });',
+        'const orderBy = query.orderBy || LIST_ORDER_BY;',
+      );
+      expect(collectionContent).toContain(
+        'const count = await collection.count({ where }).catch(rejectListQuery);',
       );
       expect(collectionContent).not.toContain(
         "Number(url.searchParams.get('limit')) || 50",
@@ -4634,6 +4685,14 @@ describe('SvelteKit Route Generator', () => {
       vi.mocked(existsSync).mockImplementation(
         (path) => path.toString() === resourcesServerPath,
       );
+      mockRouteTree([resourcesServerPath]);
+      // A hand-written handler has content; an empty file would read as an
+      // interrupted generated write, which a yield route refuses.
+      vi.mocked(readFileSync).mockImplementation((path) =>
+        path.toString() === resourcesServerPath
+          ? 'export const GET = () => new Response();\n'
+          : '',
+      );
 
       await generateSvelteKitRoutes(projectRoot, resourcesManifest, {
         enabled: true,
@@ -4670,6 +4729,7 @@ describe('consumer external import and reserved resource routes (#2852)', () => 
   const projectRoot = '/test/project-review';
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(lstatSync).mockImplementation(ABSENT as never);
     vi.mocked(readdirSync).mockReturnValue([] as never);
   });
 
@@ -4731,6 +4791,7 @@ describe('consumer external import and reserved resource routes (#2852)', () => 
         ? 'export const GET = () => new Response();'
         : '',
     );
+    mockRouteTree([manualRoute]);
     mockSmrtUsersResolve.mockImplementation(() => 'file:///fake/sveltekit.js');
     const manifest: SmartObjectManifest = {
       version: '1',

@@ -1,16 +1,31 @@
 // The user app's definition: plain, versioned JSON. The engine turns it into
 // run-time smrt models (core's `registerRuntimeModel`) and table changes.
+
+import { workerData } from 'node:worker_threads';
 import {
   type GeneratedExpression,
   type RuntimeFieldType,
   type RuntimeModelDefinition,
   runtimeModelEntry,
 } from '@happyvertical/smrt-core';
-import { parseRuntimeReportSpec } from '@happyvertical/smrt-reports';
 import type { LoadRecordsCommand } from './data-migrations.ts';
+import { sqliteDialect } from './db/sqlite-dialect.ts';
 import type { ExtractModelCommand } from './extract-model.ts';
 import type { MergeRecordsCommand } from './merge-records.ts';
 import type { ReportDef } from './reports.ts';
+
+/**
+ * Checks a report spec for `validate`. The app worker never validates a
+ * definition (the host does, before it starts one), so there it does NOT
+ * import the reports package, about 3 MiB of heap that only report paths
+ * need (#5214). Everywhere else it is loaded with this module, as before.
+ */
+const parseRuntimeReportSpec: typeof import('@happyvertical/smrt-reports').parseRuntimeReportSpec =
+  workerData?.appWorker
+    ? () => {
+        throw new Error('report specs are checked on the host');
+      }
+    : (await import('@happyvertical/smrt-reports')).parseRuntimeReportSpec;
 
 export const USER_PKG = '@local/app';
 export const FORMAT = 1;
@@ -280,29 +295,19 @@ export function visible(fields: Record<string, FieldDef>) {
   );
 }
 
-/** Core's run-time field type and the SQLite column type it gets. */
-const TYPE_MAP: Record<FieldType, [RuntimeFieldType, string]> = {
-  text: ['text', 'TEXT'],
-  number: ['decimal', 'REAL'],
-  integer: ['integer', 'INTEGER'],
-  boolean: ['boolean', 'INTEGER'],
-  date: ['datetime', 'DATETIME'],
-  money: ['integer', 'INTEGER'], // minor units (cents)
-  choice: ['text', 'TEXT'],
-  reference: ['text', 'TEXT'], // the referenced record's id
-  json: ['json', 'TEXT'],
+/** Core's run-time field type of each app field type. */
+const RUNTIME_TYPE: Record<FieldType, RuntimeFieldType> = {
+  text: 'text',
+  number: 'decimal',
+  integer: 'integer',
+  boolean: 'boolean',
+  date: 'datetime',
+  money: 'integer', // minor units (cents)
+  choice: 'text',
+  reference: 'text', // the referenced record's id
+  json: 'json',
 };
-export const sqlType = (t: FieldType) => TYPE_MAP[t][1];
-export const runtimeType = (t: FieldType) => TYPE_MAP[t][0];
-
-/** Storage family of a declared SQLite column type, to compare columns. */
-export function storageFamily(declared: string): string {
-  const t = declared.toUpperCase();
-  if (/DATE|TIME/.test(t)) return 'date';
-  if (/INT|BOOL/.test(t)) return 'integer';
-  if (/REAL|FLOA|DOUB|DEC|NUMERIC/.test(t)) return 'real';
-  return 'text';
-}
+export const runtimeType = (t: FieldType) => RUNTIME_TYPE[t];
 
 const isObj = (v: unknown): v is Record<string, unknown> =>
   !!v && typeof v === 'object' && !Array.isArray(v);
@@ -544,6 +549,8 @@ export function refuseChanges(
   prev: AppDefinition,
   next: AppDefinition,
   converting = new Set<string>(),
+  /** The database's column type of a field type (default: SQLite's). */
+  columnType: (t: FieldType) => string = sqliteDialect.columnType,
 ): string[] {
   const errs: string[] = [];
   for (const [m, md] of Object.entries(prev.models)) {
@@ -553,7 +560,7 @@ export function refuseChanges(
       const nf = nm.fields[f];
       if (
         nf &&
-        sqlType(nf.type) !== sqlType(fd.type) &&
+        columnType(nf.type) !== columnType(fd.type) &&
         !converting.has(`${m}.${f}`)
       )
         errs.push(
@@ -801,7 +808,15 @@ export function coerceValue(fd: FieldDef, v: unknown): Coerced {
             ? Number(v)
             : Number.NaN;
       if (!Number.isFinite(n)) return bad('a number');
-      return { ok: true, value: fd.type === 'number' ? n : Math.round(n) };
+      if (fd.type === 'number') return { ok: true, value: n };
+      // Whole numbers are stored exactly but read back as JavaScript numbers,
+      // so one outside the safe range is refused now, not on the next read.
+      const whole = Math.round(n);
+      if (!Number.isSafeInteger(whole))
+        return bad(
+          `a whole number between -${Number.MAX_SAFE_INTEGER} and ${Number.MAX_SAFE_INTEGER} (received ${String(v)})`,
+        );
+      return { ok: true, value: whole };
     }
     case 'boolean':
       if (v === true || v === 'true' || v === 1)

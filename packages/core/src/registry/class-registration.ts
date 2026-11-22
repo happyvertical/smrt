@@ -20,6 +20,7 @@ import {
   declareChangeFeedSensitiveTable,
   setChangeFeedSensitiveClassResolver,
 } from '../change-feed-sensitivity.js';
+import { setChangeFeedTenantFieldResolver } from '../change-feed-tenant.js';
 import { ConfigurationError } from '../errors';
 import {
   discoverManifestSync,
@@ -28,6 +29,14 @@ import {
   lookupInManifest,
   readProjectManifestSync,
 } from '../manifest/manifest-loader.js';
+import {
+  type SameNameSubclassChoice,
+  sameNameCoexistenceUnsupported,
+  sameNameParentUnregistered,
+  sameNameReplacementTableMismatch,
+  sameNameSubclassChoice,
+  sameNameSubclassUndeclared,
+} from '../manifest/model-replacements.js';
 import {
   cloneManifestSchemaColumns,
   findWorkspaceRootSync,
@@ -105,9 +114,12 @@ import {
   findReplacement,
   isSubtypeOf,
   reconcileSubtypeLineage,
+  recordedSubtypeParent,
   recordSubtypeParent,
   replacedDeclarations,
+  replacesAncestor,
   retainReplacedDeclaration,
+  runtimeCoexistingModels,
 } from './subtype-lineage';
 import type {
   RegisteredClass,
@@ -187,28 +199,43 @@ function inheritedStiCollection(ctor: typeof SmrtObject): string | undefined {
   return base?.collection;
 }
 
-function assertRegisteredStiParent(ctor: typeof SmrtObject): void {
+/** The unregistered direct parent of an STI descendant, if it has one. */
+function unregisteredStiParent(
+  ctor: typeof SmrtObject,
+): typeof SmrtObject | undefined {
   const directParent = Object.getPrototypeOf(ctor) as typeof SmrtObject;
   if (
     !directParent ||
     directParent === SmrtObject ||
     getConstructorIndex().has(directParent)
   )
-    return;
+    return undefined;
   for (
     let ancestor = Object.getPrototypeOf(directParent) as typeof SmrtObject;
     ancestor && ancestor !== SmrtObject && ancestor !== Function.prototype;
     ancestor = Object.getPrototypeOf(ancestor) as typeof SmrtObject
   ) {
     const key = getConstructorIndex().get(ancestor);
-    if (key && getClasses().get(key)?.config.tableStrategy === 'sti') {
-      throw new ConfigurationError(
-        `STI descendant ${ctor.name} has unregistered direct parent ${directParent.name}; decorate the intermediate with @smrt()`,
-        'CONFIG_STI_UNREGISTERED_PARENT',
-        { className: ctor.name, parentName: directParent.name },
-      );
-    }
+    if (key && getClasses().get(key)?.config.tableStrategy === 'sti')
+      return directParent;
   }
+  return undefined;
+}
+
+function stiUnregisteredParentError(
+  ctor: { name: string },
+  directParent: { name: string },
+): ConfigurationError {
+  return new ConfigurationError(
+    `STI descendant ${ctor.name} has unregistered direct parent ${directParent.name}; decorate the intermediate with @smrt()`,
+    'CONFIG_STI_UNREGISTERED_PARENT',
+    { className: ctor.name, parentName: directParent.name },
+  );
+}
+
+function assertRegisteredStiParent(ctor: typeof SmrtObject): void {
+  const directParent = unregisteredStiParent(ctor);
+  if (directParent) throw stiUnregisteredParentError(ctor, directParent);
 }
 
 /**
@@ -406,6 +433,201 @@ function resolveSourceManifestPackage(
 }
 
 /**
+ * How a class being registered relates to the registered classes of its own
+ * simple name (#5143), read once per registration and shared by every site
+ * that decides whether it replaces a same-named class.
+ */
+interface SameNameLineage {
+  /** The name the class registers under, for messages. */
+  ownName: string;
+  /** What the class declares (`replaceParent`), if anything. */
+  choice: SameNameSubclassChoice | undefined;
+  /** Registry key of the same-named class it directly extends. */
+  parentKey: string | undefined;
+  /** Registry keys of the same-named classes that directly extend it. */
+  childKeys: ReadonlySet<string>;
+  /** What a registered same-named child declares. */
+  choiceOf(
+    key: string,
+    entry: RegisteredClass,
+  ): SameNameSubclassChoice | undefined;
+}
+
+/**
+ * What a registered class declares about its same-named parent. A class
+ * registered under its parent's own key can only have replaced it: the two
+ * cannot both hold one key, so that pair needs no declaration.
+ */
+function declaredChoiceOf(
+  key: string,
+  entry: RegisteredClass,
+  parentKey: string | undefined,
+): SameNameSubclassChoice | undefined {
+  return (
+    sameNameSubclassChoice(entry.config) ??
+    (parentKey !== undefined && key === parentKey ? 'replace' : undefined)
+  );
+}
+
+/**
+ * The registered same-named class `ctor` directly extends: the nearest one on
+ * its prototype chain, or, when that parent is a manifest stub with no
+ * prototype to walk, the one declared lineage names.
+ */
+function findSameNameParent(
+  ctor: typeof SmrtObject,
+  name: string,
+  ownKey: string | undefined,
+  declaredParentKey: string | undefined,
+): [string, RegisteredClass] | undefined {
+  const byConstructor = new Map<unknown, [string, RegisteredClass]>();
+  for (const [key, entry] of getClasses()) {
+    if (entry.name === name && entry.constructor !== ctor) {
+      byConstructor.set(entry.constructor, [key, entry]);
+    }
+  }
+  if (byConstructor.size === 0) return undefined;
+  for (
+    let proto = Object.getPrototypeOf(ctor);
+    typeof proto === 'function' && proto !== SmrtObject;
+    proto = Object.getPrototypeOf(proto)
+  ) {
+    const found = byConstructor.get(proto);
+    if (found) return found;
+    // A registered class of another simple name in between is the direct
+    // parent: a replacement replaces exactly one model, the one whose name it
+    // registers under, never a same-named ancestor above that class (a model
+    // exported as `Customer` that extends `Customer` extends `Root` replaces
+    // `Customer` when it registers under that name, not `Root`).
+    const between = getConstructorIndex().get(proto);
+    const betweenEntry =
+      between === undefined
+        ? undefined
+        : (getClasses().get(between) ?? replacedDeclarations().get(between));
+    if (betweenEntry && betweenEntry.name !== name) return undefined;
+  }
+  const declared =
+    declaredParentKey ?? (ownKey ? recordedSubtypeParent(ownKey) : undefined);
+  if (!declared || declared === ownKey) return undefined;
+  const entry = getClasses().get(declared);
+  return entry && entry.name === name && entry.constructor !== ctor
+    ? [declared, entry]
+    : undefined;
+}
+
+/**
+ * The registered same-named classes that directly extend `ctor`. With
+ * `deferAcrossUnregistered`, a class reached only through an unregistered
+ * intermediate constructor is left for that intermediate to claim when it
+ * registers: in a single-table family the intermediate must register (the STI
+ * parent rule), so deciding the pair now could hand `ctor`'s identity to a
+ * class that replaces only the intermediate (#5143).
+ */
+function findSameNameChildren(
+  ctor: typeof SmrtObject,
+  name: string,
+  ownName: string,
+  deferAcrossUnregistered = false,
+): Array<[string, RegisteredClass]> {
+  const candidates = [...getClasses()].filter(
+    ([key, entry]) =>
+      entry.name === name &&
+      entry.constructor !== ctor &&
+      !runtimeCoexistingModels().has(key),
+  );
+  const constructors = new Set<unknown>(
+    candidates.map(([, entry]) => entry.constructor),
+  );
+  return candidates.filter(([key, entry]) => {
+    if (
+      (entry.constructor as { _isManifestStub?: boolean })._isManifestStub ===
+      true
+    ) {
+      return (
+        key !== ownName &&
+        (entry.extends === ownName || recordedSubtypeParent(key) === ownName)
+      );
+    }
+    for (
+      let proto = Object.getPrototypeOf(entry.constructor);
+      typeof proto === 'function' && proto !== SmrtObject;
+      proto = Object.getPrototypeOf(proto)
+    ) {
+      if (proto === ctor) return true;
+      // A registered same-named class in between is the direct parent.
+      if (constructors.has(proto)) return false;
+      // So is a registered class of another simple name: a replacement is
+      // recognised through its direct parent only, in either direction.
+      if (getConstructorIndex().has(proto)) return false;
+      if (deferAcrossUnregistered && !getConstructorIndex().has(proto))
+        return false;
+    }
+    return false;
+  });
+}
+
+/** Whether `ctor` heads or joins a single-table family as it registers. */
+function joinsStiFamily(
+  ctor: typeof SmrtObject,
+  config: SmartObjectConfig,
+): boolean {
+  if (config.tableStrategy === 'sti') return true;
+  for (
+    let proto = Object.getPrototypeOf(ctor);
+    typeof proto === 'function' && proto !== SmrtObject;
+    proto = Object.getPrototypeOf(proto)
+  ) {
+    const key = getConstructorIndex().get(proto);
+    if (key && ObjectRegistry.getTableStrategy(key) === 'sti') return true;
+  }
+  return false;
+}
+
+/**
+ * Whether the same-named class `ctor` extends has registered, live or kept
+ * as the declaration a replacement took over: a registered constructor of
+ * that name on its prototype chain, or the declared/recorded parent key.
+ */
+function sameNameParentKnown(
+  ctor: typeof SmrtObject,
+  name: string,
+  declaredParentKey: string | undefined,
+): boolean {
+  if (
+    declaredParentKey &&
+    (getClasses().has(declaredParentKey) ||
+      replacedDeclarations().has(declaredParentKey))
+  )
+    return true;
+  for (
+    let proto = Object.getPrototypeOf(ctor);
+    typeof proto === 'function' && proto !== SmrtObject;
+    proto = Object.getPrototypeOf(proto)
+  ) {
+    const key = getConstructorIndex().get(proto);
+    if (!key) continue;
+    const entry = getClasses().get(key) ?? replacedDeclarations().get(key);
+    if (entry?.name === name) return true;
+  }
+  return false;
+}
+
+/**
+ * Whether the class `ctor` directly extends is registered (live or kept as
+ * the declaration a replacement took over) under a simple name other than
+ * `name`.
+ */
+function directParentRegisteredUnderAnotherName(
+  ctor: typeof SmrtObject,
+  name: string,
+): boolean {
+  const key = getConstructorIndex().get(Object.getPrototypeOf(ctor));
+  if (!key) return false;
+  const entry = getClasses().get(key) ?? replacedDeclarations().get(key);
+  return !!entry && entry.name !== name;
+}
+
+/**
  * Build `CollisionInputs` for the decorator-origin path (`register()`).
  * Manifest-origin inputs are built separately inside `registerFromManifest`.
  */
@@ -419,6 +641,7 @@ function buildDecoratorCollisionInputs(args: {
   existing: RegisteredClass;
   existingKey: string;
   matchKind: MatchKind;
+  sameName: SameNameLineage;
 }): CollisionInputs {
   const {
     ctor,
@@ -430,18 +653,19 @@ function buildDecoratorCollisionInputs(args: {
     existing,
     existingKey,
     matchKind,
+    sameName,
   } = args;
   const existingTableName =
     existing.schema?.tableName || existing.config?.tableName;
 
-  let newExtendsExisting = false;
-  let existingExtendsNew = false;
-  try {
-    newExtendsExisting = ctor.prototype instanceof existing.constructor;
-    existingExtendsNew = existing.constructor.prototype instanceof ctor;
-  } catch {
-    // `instanceof` can throw for non-function constructors. Keep both false.
-  }
+  // The same-named class this one directly extends, and the registered
+  // same-named classes that directly extend it (#5143): read once from the
+  // prototype chain and from declared lineage, so a manifest stub (which has
+  // no prototype to test) and a deeper ancestor behind a registered
+  // intermediate are both told apart.
+  const newExtendsExisting = sameName.parentKey === existingKey;
+  const existingExtendsNew =
+    !newExtendsExisting && sameName.childKeys.has(existingKey);
 
   const bothSourceFilesKnown = !!(newSourceFile && existing.sourceFilePath);
   const sameSourceFile =
@@ -467,6 +691,8 @@ function buildDecoratorCollisionInputs(args: {
     newInBundledContext,
     newExtendsExisting,
     existingExtendsNew,
+    newDeclaredChoice: sameName.choice,
+    existingDeclaredChoice: sameName.choiceOf(existingKey, existing),
     samePackage,
     existingIsPackageQualified,
     sameName: name === existing.name,
@@ -505,6 +731,7 @@ function applyRegisterCollisionPolicy(args: {
   existing: RegisteredClass;
   existingKey: string;
   matchKind: MatchKind;
+  sameName: SameNameLineage;
   upsertExistingEntry: (
     existingKey: string,
     existing: RegisteredClass,
@@ -514,6 +741,14 @@ function applyRegisterCollisionPolicy(args: {
   const decision = decideCollisionPolicy(inputs);
 
   switch (decision.policy) {
+    case 'retain-as-replaced':
+      // The registered class is this one's declared replacement. The
+      // same-name pass that ran before the collision checks already arranged
+      // for this declaration to be kept for ancestry.
+      verboseLog(
+        `[registry] ${decision.scenario}: '${args.name}' is replaced by '${args.existingKey}' (${decision.reason})`,
+      );
+      return false;
     case 'accept':
     case 'replace': {
       // Both map to the same operation for the decorator path:
@@ -522,7 +757,7 @@ function applyRegisterCollisionPolicy(args: {
       // can tell which scenario fired.
       const newKey = args.upsertExistingEntry(args.existingKey, args.existing);
       if (
-        decision.scenario === 'sti-child-wins' ||
+        decision.scenario === 'same-name-subclass-replaces-parent' ||
         decision.scenario === 'manifest-stub-replacement'
       ) {
         verboseLog(
@@ -537,6 +772,30 @@ function applyRegisterCollisionPolicy(args: {
       );
       return true;
     case 'throw': {
+      if (decision.scenario === 'same-name-subclass-undeclared') {
+        throw sameNameSubclassUndeclared(
+          args.sameName.ownName,
+          args.existingKey,
+        );
+      }
+      if (decision.scenario === 'same-name-parent-of-undeclared') {
+        throw sameNameSubclassUndeclared(
+          args.existingKey,
+          args.sameName.ownName,
+        );
+      }
+      if (decision.scenario === 'same-name-subclass-coexists') {
+        throw sameNameCoexistenceUnsupported(
+          args.sameName.ownName,
+          args.existingKey,
+        );
+      }
+      if (decision.scenario === 'same-name-parent-of-coexisting') {
+        throw sameNameCoexistenceUnsupported(
+          args.existingKey,
+          args.sameName.ownName,
+        );
+      }
       const matchSuffix =
         args.matchKind === 'case-insensitive'
           ? ` (case-insensitive match with "${args.existingKey}")`
@@ -584,6 +843,7 @@ function buildManifestCollisionInputs(args: {
   existingKey: string;
   registrationKey: string;
   matchKind: MatchKind;
+  newDeclaredChoice: SameNameSubclassChoice | undefined;
 }): CollisionInputs {
   const {
     name,
@@ -596,50 +856,8 @@ function buildManifestCollisionInputs(args: {
   } = args;
   const newClassName = objectDef.className || name;
   const newExtends = objectDef.extendsQualified ?? objectDef.extends;
-
-  // When an incoming manifest's `extends` points at the existing entry,
-  // OR the existing entry's `extends` points at the incoming class, we
-  // have an STI inheritance relationship. Each side checks:
-  //   - the simple name of the other
-  //   - the key under which the other is registered
-  //   - a case-insensitive fallback
-  //
-  // The `existingKey` comparison is load-bearing for cross-package STI:
-  // `existing.extends` is stored post-`qualifyExtendsName()`, so it may
-  // be the fully-qualified parent key like `@pkg:Parent`. Without this
-  // comparison, `existingExtendsNew` falsely reads as false and the
-  // arriving parent manifest would be registered as a duplicate instead
-  // of skipped. See the deep-review report on #1140 for the fix rationale.
-  const knownAncestor =
-    existing.replacedQualifiedNames?.includes(registrationKey) === true ||
-    isSubtypeOf(existingKey, registrationKey);
-  const newExtendsExisting =
-    !knownAncestor &&
-    (isSubtypeOf(registrationKey, existingKey) ||
-      !!(
-        newExtends &&
-        (newExtends === existing.name ||
-          newExtends === existingKey ||
-          newExtends.toLowerCase() === existing.name.toLowerCase())
-      ));
-  const existingExtendsNew =
-    knownAncestor ||
-    (!newExtendsExisting &&
-      !!(
-        existing.extends &&
-        (existing.extends === newClassName ||
-          existing.extends === name ||
-          existing.extends === registrationKey ||
-          existing.extends.toLowerCase() === newClassName.toLowerCase())
-      ));
-
   const newSourceFile = objectDef.filePath;
   const bothSourceFilesKnown = !!(newSourceFile && existing.sourceFilePath);
-  const existingIsPackageQualified = !!existing.packageName?.startsWith('@');
-  const samePackage =
-    !!packageName &&
-    !!existing.packageName &&
-    packageName === existing.packageName;
   // Built manifests carry package-relative paths, so two packages' same-named
   // classes at one relative path (`src/models/Account.ts`) have equal paths
   // (#4948). A re-export is ONE package's class arriving twice: when both
@@ -652,7 +870,52 @@ function buildManifestCollisionInputs(args: {
     bothSourceFilesKnown &&
     newSourceFile === existing.sourceFilePath &&
     !differentKnownPackages;
+  // A class does not extend itself: an entry arriving again under its own
+  // key, or as a re-export of the registered class, has no inheritance edge
+  // with it even though a simple `extends` equals its own name (#5143).
+  const sameClass = registrationKey === existingKey || sameSourceFile;
 
+  // An incoming manifest's `extends` naming the existing entry, or the
+  // existing entry's `extends` naming the incoming class, is a same-named
+  // inheritance pair. A qualified parent (`extendsQualified`, or an `extends`
+  // stored post-`qualifyExtendsName()`) is compared by key; a simple one, from
+  // a manifest that predates `extendsQualified`, by name.
+  // Each side is the other's parent only when it is the DIRECT same-named
+  // parent, or when every class between them is a declared replacement
+  // (`replacesAncestor`) (#5143).
+  const alreadyReplaced =
+    existing.replacedQualifiedNames?.includes(registrationKey) === true;
+  const existingReplacesNew =
+    !sameClass &&
+    (alreadyReplaced || replacesAncestor(existingKey, registrationKey));
+  const existingDirectlyExtendsNew =
+    !sameClass &&
+    !!existing.extends &&
+    (isQualifiedName(existing.extends)
+      ? existing.extends === registrationKey
+      : existing.extends === newClassName ||
+        existing.extends === name ||
+        existing.extends.toLowerCase() === newClassName.toLowerCase());
+  const knownAncestor = existingReplacesNew || existingDirectlyExtendsNew;
+  const newExtendsExisting =
+    !sameClass &&
+    !knownAncestor &&
+    !!newExtends &&
+    (isQualifiedName(newExtends)
+      ? newExtends === existingKey
+      : newExtends === existing.name ||
+        newExtends.toLowerCase() === existing.name.toLowerCase());
+  const existingExtendsNew = knownAncestor;
+  const existingDeclaredChoice: SameNameSubclassChoice | undefined =
+    existingReplacesNew
+      ? 'replace'
+      : declaredChoiceOf(existingKey, existing, registrationKey);
+
+  const existingIsPackageQualified = !!existing.packageName?.startsWith('@');
+  const samePackage =
+    !!packageName &&
+    !!existing.packageName &&
+    packageName === existing.packageName;
   return {
     origin: 'manifest',
     matchKind,
@@ -665,6 +928,8 @@ function buildManifestCollisionInputs(args: {
     newInBundledContext: false,
     newExtendsExisting,
     existingExtendsNew,
+    newDeclaredChoice: args.newDeclaredChoice,
+    existingDeclaredChoice,
     samePackage,
     existingIsPackageQualified,
     sameName: newClassName === existing.name,
@@ -713,6 +978,173 @@ function mergedChecks(
   return merged.length > 0 ? { checks: merged } : {};
 }
 
+/** The table a registered class stores rows in; a collection has none. */
+function storageTableOf(entry: RegisteredClass): string | undefined {
+  return entry.collectionOf ? undefined : entry.schema?.tableName;
+}
+
+/**
+ * A declared replacement shares its parent's table, in either load order.
+ * Collections store nothing and pass `undefined`.
+ */
+function assertReplacementSharesTable(
+  childKey: string,
+  parentKey: string,
+  childTable: string | undefined,
+  parentTable: string | undefined,
+): void {
+  if (!childTable || !parentTable || childTable === parentTable) return;
+  throw sameNameReplacementTableMismatch(
+    childKey,
+    parentKey,
+    childTable,
+    parentTable,
+  );
+}
+
+/** The refusal a manifest collision's `throw` decision stands for. */
+function manifestCollisionRefusal(
+  scenario: string,
+  registrationKey: string,
+  existingKey: string,
+): Error {
+  if (scenario === 'same-name-subclass-undeclared')
+    return sameNameSubclassUndeclared(registrationKey, existingKey);
+  if (scenario === 'same-name-parent-of-undeclared')
+    return sameNameSubclassUndeclared(existingKey, registrationKey);
+  if (scenario === 'same-name-subclass-coexists')
+    return sameNameCoexistenceUnsupported(registrationKey, existingKey);
+  if (scenario === 'same-name-parent-of-coexisting')
+    return sameNameCoexistenceUnsupported(existingKey, registrationKey);
+  // Any other manifest collision defaults to skip, never throw: this is
+  // unreachable for them. Guard against future drift.
+  return new Error(
+    `decideCollisionPolicy returned 'throw' for manifest origin (scenario: ${scenario}). This is a bug.`,
+  );
+}
+
+/**
+ * Registered classes of the entry's simple name that its declared choice
+ * decides (#5143): the canonical-name match, and every class of that name it
+ * directly extends or that directly extends it, found whether or not the
+ * simple name is ambiguous and in either load order.
+ */
+function manifestCollisionCandidates(
+  registrationKey: string,
+  simpleClassName: string,
+  manifestParent: string | undefined,
+  existingCanonical: string | undefined,
+): Set<string> {
+  const candidates = new Set<string>();
+  if (existingCanonical) candidates.add(existingCanonical);
+  for (const [key, entry] of getClasses()) {
+    if (key === registrationKey || entry.name !== simpleClassName) continue;
+    // A run-time model without `replaces` coexists by its own definition.
+    if (runtimeCoexistingModels().has(key)) continue;
+    if (
+      manifestParent === key ||
+      entry.extends === registrationKey ||
+      recordedSubtypeParent(key) === registrationKey ||
+      replacesAncestor(key, registrationKey)
+    ) {
+      candidates.add(key);
+    }
+  }
+  return candidates;
+}
+
+/**
+ * Check a package manifest entry against the registry without changing it:
+ * throws what registering the entry would throw for a declared choice, a
+ * refused coexistence or a replacement on another table. A package manifest
+ * validates every entry with this before it registers any (#5143), so a
+ * refused package leaves the registry as it was. Relations between two
+ * entries of one package, and a sibling an earlier entry would discover, are
+ * only visible while registering.
+ */
+export function validateManifestEntry(
+  name: string,
+  objectDef: SmartObjectDefinition,
+  manifestPackageName?: string,
+): void {
+  const packageName = objectDef.packageName || manifestPackageName;
+  const simpleClassName = objectDef.className || name;
+  const registrationKey = (
+    packageName
+      ? createQualifiedName(packageName, simpleClassName)
+      : objectDef.qualifiedName || name
+  ) as string;
+  const manifestParent = objectDef.extendsQualified ?? objectDef.extends;
+  if (objectDef.decoratorConfig?.replaceParent === false)
+    throw sameNameCoexistenceUnsupported(
+      registrationKey,
+      manifestParent ?? 'the class it extends',
+    );
+  if (
+    findReplacement(registrationKey) &&
+    replacedDeclarations().has(registrationKey)
+  )
+    return;
+  const ownChoice = sameNameSubclassChoice(objectDef.decoratorConfig);
+  const incomingTableName = objectDef.collectionOf
+    ? undefined
+    : (objectDef.schema?.tableName ??
+      objectDef.decoratorConfig?.tableName ??
+      tableNameFromClass(
+        Object.defineProperty(() => undefined, 'name', {
+          value: simpleClassName,
+        }),
+      ));
+  const replaced = new Set<string>();
+  for (const existingKey of manifestCollisionCandidates(
+    registrationKey,
+    simpleClassName,
+    manifestParent,
+    getCanonicalClassName(simpleClassName),
+  )) {
+    // An earlier candidate's replacement removes this one when registering.
+    if (replaced.has(existingKey)) continue;
+    const existing = getClasses().get(existingKey);
+    if (!existing) continue;
+    const decision = decideCollisionPolicy(
+      buildManifestCollisionInputs({
+        name,
+        objectDef,
+        packageName,
+        existing,
+        existingKey,
+        registrationKey,
+        matchKind: 'canonical-name',
+        newDeclaredChoice: ownChoice,
+      }),
+    );
+    if (decision.policy === 'throw')
+      throw manifestCollisionRefusal(
+        decision.scenario,
+        registrationKey,
+        existingKey,
+      );
+    if (decision.policy === 'retain-as-replaced')
+      assertReplacementSharesTable(
+        existingKey,
+        registrationKey,
+        storageTableOf(existing),
+        incomingTableName,
+      );
+    if (decision.policy === 'replace') {
+      assertReplacementSharesTable(
+        registrationKey,
+        existingKey,
+        incomingTableName,
+        storageTableOf(existing),
+      );
+      replaced.add(existingKey);
+    }
+    if (decision.policy === 'skip' || decision.policy === 'merge-manifest')
+      return;
+  }
+}
+
 /**
  * Execute the collision policy for `registerFromManifest()`. Returns
  * `'return'` when the policy fully resolves the collision (caller should
@@ -735,7 +1167,10 @@ function applyManifestCollisionPolicy(args: {
   registrationKey: string;
   matchKind: MatchKind;
   replacedQualifiedNames: Set<string>;
-}): 'return' | 'continue' {
+  newDeclaredChoice: SameNameSubclassChoice | undefined;
+  /** The table the incoming entry stores rows in; `undefined` for a collection. */
+  incomingTableName: string | undefined;
+}): 'return' | 'continue' | 'retain' {
   const inputs = buildManifestCollisionInputs(args);
   const decision = decideCollisionPolicy(inputs);
 
@@ -745,7 +1180,27 @@ function applyManifestCollisionPolicy(args: {
         `[registry] ${decision.scenario}: skipping manifest '${args.name}' (${decision.reason})`,
       );
       return 'return';
+    case 'retain-as-replaced':
+      // The registered class declared that it replaces this one. Whichever
+      // registered first, this declaration is kept for ancestry only; the
+      // caller retains it once it is built.
+      assertReplacementSharesTable(
+        args.existingKey,
+        args.registrationKey,
+        storageTableOf(args.existing),
+        args.incomingTableName,
+      );
+      verboseLog(
+        `[registry] ${decision.scenario}: '${args.name}' is replaced by '${args.existingKey}' (${decision.reason})`,
+      );
+      return 'retain';
     case 'replace':
+      assertReplacementSharesTable(
+        args.registrationKey,
+        args.existingKey,
+        args.incomingTableName,
+        storageTableOf(args.existing),
+      );
       retainReplacedDeclaration(args.existingKey, args.existing);
       args.replacedQualifiedNames.add(args.existingKey);
       for (const ancestor of args.existing.replacedQualifiedNames ?? []) {
@@ -796,10 +1251,10 @@ function applyManifestCollisionPolicy(args: {
       // policy). Treat defensively as return-no-op.
       return 'return';
     case 'throw':
-      // Manifest collisions default to skip, never throw — this branch is
-      // unreachable from the manifest origin. Guard against future drift.
-      throw new Error(
-        `decideCollisionPolicy returned 'throw' for manifest origin (scenario: ${decision.scenario}). This is a bug.`,
+      throw manifestCollisionRefusal(
+        decision.scenario,
+        args.registrationKey,
+        args.existingKey,
       );
   }
 }
@@ -1026,6 +1481,70 @@ setChangeFeedSensitiveClassResolver((ctor) => {
   return getClasses().get(key)?.config?.sensitive === true;
 });
 
+// The registry's ownership-field lookup, handed to the change feed so it
+// records each change under the tenant the row really belongs to. Without it
+// a custom tenant field (e.g. `organizationId`) would be recorded as global
+// and served to every tenant.
+setChangeFeedTenantFieldResolver((ctor) => {
+  if (typeof ctor !== 'function') return undefined;
+  const key = getConstructorIndex().get(ctor as typeof SmrtObject);
+  if (!key) return undefined;
+  // Every applicable ownership column — runtime registrations, the declared
+  // or ownership tenant column, `@tenantId`-marked fields and `tenant_id` —
+  // so a runtime source cannot hide a declared owner that disagrees with it:
+  // the feed compares them all and records nothing on disagreement.
+  const columns = [...ObjectRegistry.getOwnershipColumns(key)];
+  const declared = ObjectRegistry.getOwnershipTenantColumn(key);
+  if (declared && !columns.includes(declared)) columns.push(declared);
+  // The merged field set persistence serializes (`toJSON()` reads the same
+  // one): a subtype registered from a manifest that lists only its own fields
+  // still stores the owner field it inherits, so that column is stored too.
+  const registered = getClasses().get(key);
+  let fields = registered?.inheritedFields;
+  if (!fields) {
+    // A subtype's own declarations may omit the owner field its parent
+    // declares; until the merged set is resolved (write paths warm it with
+    // `ObjectRegistry.getAllFields()` first) its ownership is unknown, never
+    // "no owner column". A class with no registered parent has nothing to
+    // merge, so its own fields are complete.
+    const parent = registered?.extends;
+    if (
+      parent &&
+      parent !== 'SmrtObject' &&
+      parent !== 'SmrtClass' &&
+      parent !== 'SmrtCollection'
+    ) {
+      // A failed lookup (the feed records nothing), not `undefined`, which
+      // means a class the registry does not know.
+      throw new Error(`Inherited fields of ${key} are not resolved`);
+    }
+    fields = ObjectRegistry.getFields(key);
+  }
+  for (const [name, field] of fields) {
+    const column = toSnakeCase(name);
+    if (
+      (field.__tenancy?.isTenantIdField ||
+        field._meta?.__tenancy?.isTenantIdField) &&
+      !columns.includes(column)
+    ) {
+      columns.push(column);
+    }
+  }
+  const fieldNames = [...fields.keys()];
+  return columns.map((column) => {
+    const fieldName = fieldNames.find(
+      (candidate) => toSnakeCase(candidate) === column,
+    );
+    return {
+      column,
+      field:
+        fieldName ??
+        column.replace(/_([a-z0-9])/g, (_, char: string) => char.toUpperCase()),
+      stored: fieldName !== undefined,
+    };
+  });
+});
+
 function setSmrtTableName(ctor: typeof SmrtObject, tableName: string): void {
   const existing = Object.getOwnPropertyDescriptor(ctor, 'SMRT_TABLE_NAME');
   if (existing?.value === tableName) {
@@ -1141,6 +1660,25 @@ function registerUntracked(
         'CONFIG_TENANT_MANIFEST_CONFLICT',
       );
     }
+  }
+
+  // A same-named subclass replaces its parent or takes a class name of its
+  // own (#5143). `replaceParent: false` would keep it registered next to its
+  // parent; it is refused here, before a re-registration, promotion or
+  // collision can change the registry, whichever of the two loads first.
+  if (
+    config.replaceParent === false ||
+    (config.replaceParent === undefined &&
+      isolatedManifestEntry?.decoratorConfig?.replaceParent === false)
+  ) {
+    throw sameNameCoexistenceUnsupported(
+      explicitPackageName
+        ? createQualifiedName(explicitPackageName, name)
+        : name,
+      isolatedManifestEntry?.extendsQualified ??
+        (Object.getPrototypeOf(ctor) as { name?: string })?.name ??
+        'the class it extends',
+    );
   }
 
   function upsertExistingEntry(
@@ -1357,6 +1895,24 @@ function registerUntracked(
         getConstructorIndex().delete(targetEntry.constructor);
       }
     } else {
+      // A live replacement keeps the table of every same-named class it
+      // replaced (#5143): a re-registration that would move it elsewhere is
+      // refused before the entry changes.
+      const proposedPackage =
+        explicitPackageName || constructorEntry.packageName;
+      const proposedTable = resolveTableName(ctor, name, {
+        ...constructorEntry.config,
+        ...config,
+        ...(proposedPackage ? { packageName: proposedPackage } : {}),
+      });
+      for (const replacedKey of constructorEntry.replacedQualifiedNames ?? []) {
+        assertReplacementSharesTable(
+          constructorKey,
+          replacedKey,
+          proposedTable,
+          replacedDeclarations().get(replacedKey)?.schema?.tableName,
+        );
+      }
       upsertExistingEntry(constructorKey, constructorEntry);
       return;
     }
@@ -1404,33 +1960,119 @@ function registerUntracked(
     !!existing.packageName &&
     existing.packageName !== newPackageName;
 
-  // A same-named runtime subclass on its parent's table is a replacement,
-  // even with explicit package attribution. Prototype ancestry works at every
-  // depth and is never inferred from the shared name/table alone.
-  for (const key of getClasses().keys()) {
-    const existing = getClasses().get(key)!;
-    if (existing.name !== name || ctor === existing.constructor) continue;
-    const incomingTable =
-      config.tableName ??
-      isolatedManifestEntry?.schema?.tableName ??
-      isolatedManifestEntry?.decoratorConfig?.tableName ??
-      existing.schema?.tableName;
-    if (incomingTable !== existing.schema?.tableName) continue;
-    if (ctor.prototype instanceof existing.constructor) {
+  // Same-named inheritance (#5143). A class that extends a registered class
+  // of its own simple name is a replacement of that parent only when it
+  // declares `replaceParent: true`: never inferred from the packages
+  // involved, the shared name or table, or which registered first. The
+  // parent is found by prototype identity (at every depth, through
+  // unregistered intermediates) or, for a manifest stub, by declared lineage.
+  const ownName = ownQualifiedKey ?? name;
+  const declaredChoice = sameNameSubclassChoice({
+    replaceParent:
+      config.replaceParent ??
+      isolatedManifestEntry?.decoratorConfig?.replaceParent ??
+      promotedRuntimeConfig?.replaceParent,
+  });
+  const deferAcrossUnregistered = joinsStiFamily(ctor, config);
+  const sameNameParent = findSameNameParent(
+    ctor,
+    name,
+    ownQualifiedKey,
+    isolatedManifestEntry?.extendsQualified,
+  );
+  const sameNameChildren = findSameNameChildren(
+    ctor,
+    name,
+    ownName,
+    deferAcrossUnregistered,
+  ).filter(([key]) => key !== sameNameParent?.[0]);
+  const sameName: SameNameLineage = {
+    ownName,
+    // A class registered under its parent's own key can only replace it.
+    choice:
+      declaredChoice ??
+      (sameNameParent?.[0] === ownName ? 'replace' : undefined),
+    parentKey: sameNameParent?.[0],
+    childKeys: new Set(sameNameChildren.map(([key]) => key)),
+    choiceOf: (key, entry) => declaredChoiceOf(key, entry, ownName),
+  };
+  const sharedTableWith = (existing: RegisteredClass) =>
+    config.tableName ??
+    isolatedManifestEntry?.schema?.tableName ??
+    isolatedManifestEntry?.decoratorConfig?.tableName ??
+    existing.schema?.tableName;
+  let replacedByExisting: RegisteredClass | undefined;
+  // A class that declares how it relates to a same-named parent registers
+  // after that parent (its constructor or its manifest declaration). Before
+  // it, nothing tells this registration what to inherit, so the order fails
+  // closed rather than registering a model whose tenancy, table and lineage
+  // depend on load order (#5143). A class already registered, or whose
+  // recorded parent it has already replaced, is a re-registration. A class
+  // whose direct parent is registered under another name is not a same-named
+  // subclass under this name: a model exported under its parent's name
+  // (`export { AppCustomer as Customer }`) decorates under its local name and
+  // is checked when its generated registration supplies the public one.
+  if (
+    declaredChoice &&
+    !sameNameParent &&
+    !getConstructorIndex().has(ctor) &&
+    !directParentRegisteredUnderAnotherName(ctor, name) &&
+    !sameNameParentKnown(
+      ctor,
+      name,
+      isolatedManifestEntry?.extendsQualified ??
+        (ownQualifiedKey ? recordedSubtypeParent(ownQualifiedKey) : undefined),
+    )
+  )
+    throw sameNameParentUnregistered(
+      ownName,
+      (Object.getPrototypeOf(ctor) as { name?: string })?.name,
+      isolatedManifestEntry?.extendsQualified,
+    );
+  if (sameNameParent) {
+    const [key, existing] = sameNameParent;
+    if (!sameName.choice) throw sameNameSubclassUndeclared(ownName, key);
+    const incomingTable = sharedTableWith(existing);
+    if (incomingTable === existing.schema?.tableName) {
       // Build fresh child metadata while retaining the declared base separately.
       isolatedSubtypeParent = [key, existing];
-      const { previousQualifiedNames: _aliases, ...parentConfig } =
-        existing.config;
+      const {
+        previousQualifiedNames: _aliases,
+        replaceParent: _parentChoice,
+        ...parentConfig
+      } = existing.config;
       config = {
         ...parentConfig,
         ...isolatedManifestEntry?.decoratorConfig,
         ...config,
+        ...(declaredChoice ? { replaceParent: true } : {}),
         tableName: incomingTable,
       };
       promotedCollectionConstructor ??= existing.collectionConstructor;
-      break;
+    } else if (declaredChoice) {
+      assertReplacementSharesTable(
+        ownName,
+        key,
+        incomingTable,
+        existing.schema?.tableName,
+      );
     }
-    if (existing.constructor.prototype instanceof ctor) return;
+  }
+  for (const [key, existing] of sameNameChildren) {
+    const choice = sameName.choiceOf(key, existing);
+    if (!choice) throw sameNameSubclassUndeclared(key, ownName);
+    if (choice === 'subtype')
+      throw sameNameCoexistenceUnsupported(key, ownName);
+    assertReplacementSharesTable(
+      key,
+      ownName,
+      existing.schema?.tableName,
+      sharedTableWith(existing),
+    );
+    // Already kept as that class's replaced parent: nothing changes.
+    if (replacedDeclarations().has(ownName)) return;
+    replacedByExisting = existing;
+    break;
   }
 
   const replayReplacement = ownQualifiedKey
@@ -1460,6 +2102,7 @@ function registerUntracked(
       existing,
       existingKey: name,
       matchKind: 'exact-key',
+      sameName,
       upsertExistingEntry,
     });
     if (handled) return;
@@ -1502,6 +2145,7 @@ function registerUntracked(
       existing,
       existingKey,
       matchKind: 'case-insensitive',
+      sameName,
       upsertExistingEntry,
     });
     if (handled) return;
@@ -2206,6 +2850,43 @@ function registerUntracked(
       registration,
       getConstructorFieldDecorators().get(registration.constructor)?.keys(),
     );
+  if (sameNameParent) recordSubtypeParent(registrationKey, sameNameParent[0]);
+  // A subclass registered before this class could only record its parent by
+  // simple name, which is its own: name the parent now, so both load orders
+  // describe one inheritance chain.
+  for (const [childKey, child] of sameNameChildren) {
+    if (!qualifiedName || child.extends === registrationKey) continue;
+    child.extends = registrationKey;
+    child.inheritanceChain = undefined;
+    child.inheritedFields = undefined;
+    child.inheritedMethods = undefined;
+    recordSubtypeParent(childKey, registrationKey);
+    getInheritanceCache().clear();
+  }
+  if (replacedByExisting) {
+    // A manifest stub declared that it replaces this class and registered
+    // first (a replacement constructor cannot: it is refused before its
+    // parent, CONFIG_SAME_NAME_PARENT_UNREGISTERED). Keep this declaration for ancestry only,
+    // exactly as if it had been registered first and then replaced. Its
+    // aliases follow the replacement, so they must be free of other claimants
+    // just as in the parent-first order.
+    assertQualifiedNameAliasesAvailable(
+      registrationKey,
+      registration,
+      replacedByExisting,
+    );
+    retainReplacedDeclaration(registrationKey, registration);
+    replacedByExisting.replacedQualifiedNames = [
+      ...new Set([
+        ...(replacedByExisting.replacedQualifiedNames ?? []),
+        registrationKey,
+        ...(registration.replacedQualifiedNames ?? []),
+      ]),
+    ];
+    getConstructorIndex().set(ctor, registrationKey);
+    getInheritanceCache().clear();
+    return;
+  }
   assertQualifiedNameAliasesAvailable(registrationKey, registration);
   if (isolatedSubtypeParent) {
     const [parentKey, parent] = isolatedSubtypeParent;
@@ -2415,7 +3096,23 @@ export function registerCollection(
   collectionConstructor: NonNullable<RegisteredClass['collectionConstructor']>,
 ): void {
   const registered = findClass(objectName);
-  if (registered) {
+  // A collection names its item class; a simple name shared with a
+  // same-named class of another package must not hand this collection to that
+  // class (#5143).
+  const itemClass = (collectionConstructor as { _itemClass?: unknown })
+    ._itemClass;
+  // A qualified key is an explicit binding (generated activation binds a
+  // collection declaration's executable class under the declaration's own
+  // key, whose entry is a manifest stub): it is always honoured.
+  const ownsItem =
+    !registered ||
+    isQualifiedName(objectName) ||
+    typeof itemClass !== 'function' ||
+    registered.constructor === itemClass ||
+    ObjectRegistry.getEffectiveClassByConstructor(
+      itemClass as typeof SmrtObject,
+    ) === registered;
+  if (registered && ownsItem) {
     registered.collectionConstructor = collectionConstructor;
   }
 
@@ -2432,8 +3129,8 @@ export function registerCollection(
 
 // resolveManifestCollision was removed in Release C (#1134). Its three-branch
 // decision is now represented as explicit rows in the collision-policy
-// decision table — see `manifest-same-source-file`, `manifest-sti-child-wins`,
-// `manifest-sti-parent-skip`, `manifest-default-skip` scenarios in
+// decision table — see `manifest-same-source-file`, the `same-name-*` rows
+// (#5143) and `manifest-default-skip` scenarios in
 // packages/core/src/registry/collision-policy.ts.
 
 type TenantScopedOptions = Exclude<
@@ -2938,7 +3635,7 @@ export interface RuntimeManifestRegistrationOptions {
    * Qualified key of a registered class the entry extends. When that class
    * has a real constructor, the registered class extends it (inherited
    * methods and field accessors work) and the entry may share its simple
-   * name without the STI child-wins rule replacing the parent's registration.
+   * name without replacing the parent's registration (unless `replaceParent`).
    */
   extendsRegistered?: string;
   /** Opt-in same-name app replacement; the ordinary runtime API still coexists. */
@@ -3023,6 +3720,18 @@ function registerFromManifestUntracked(
     ? createQualifiedName(packageName, simpleClassName)
     : objectDef.qualifiedName;
   const registrationKey = (qualifiedNameEarly || name) as string;
+  // A same-named subclass replaces its parent or takes a class name of its
+  // own (#5143): an entry that declares `replaceParent: false` is refused
+  // before anything is recorded, in either arrival order. A run-time model
+  // states replacement through its own `replaces` option instead.
+  if (
+    !runtimeOptions?.extendsRegistered &&
+    objectDef.decoratorConfig?.replaceParent === false
+  )
+    throw sameNameCoexistenceUnsupported(
+      registrationKey,
+      objectDef.extendsQualified ?? objectDef.extends ?? 'the class it extends',
+    );
   const effectiveReplacement = findReplacement(registrationKey);
   if (
     effectiveReplacement &&
@@ -3032,45 +3741,60 @@ function registerFromManifestUntracked(
     return;
   const replacedQualifiedNames = new Set<string>();
   const manifestParent = objectDef.extendsQualified ?? objectDef.extends;
+  // What this class declares about a same-named parent (#5143). A run-time
+  // model states it through its own option (`replaces`); without it the model
+  // keeps its documented coexistence next to the parent it names.
+  const ownChoice: SameNameSubclassChoice | undefined =
+    runtimeOptions?.extendsRegistered
+      ? runtimeOptions.replaceParent
+        ? 'replace'
+        : undefined
+      : sameNameSubclassChoice(objectDef.decoratorConfig);
+  // The table this entry stores rows in, as registration resolves it below;
+  // a collection stores none.
+  const incomingTableName = objectDef.collectionOf
+    ? undefined
+    : (objectDef.schema?.tableName ??
+      objectDef.decoratorConfig?.tableName ??
+      tableNameFromClass(
+        Object.defineProperty(() => undefined, 'name', {
+          value: simpleClassName,
+        }),
+      ));
   // A run-time subclass keeps its same-named parent registered next to it, so
   // the lineage that lets a descendant replace its parent is not recorded.
   if (!runtimeOptions?.extendsRegistered || runtimeOptions.replaceParent) {
     recordSubtypeParent(registrationKey, manifestParent);
   }
+  if (runtimeOptions?.extendsRegistered && !runtimeOptions.replaceParent)
+    runtimeCoexistingModels().add(registrationKey);
+  else if (runtimeOptions?.extendsRegistered)
+    runtimeCoexistingModels().delete(registrationKey);
 
   // Release C (#1134): collision resolution routes through
-  // decideCollisionPolicy. See collision-policy.ts for the 16-row decision
-  // table; applyManifestCollisionPolicy below turns a policy into registry
+  // decideCollisionPolicy. See collision-policy.ts for the decision table;
+  // applyManifestCollisionPolicy below turns a policy into registry
   // mutations.
   //
-  // Two collision checks, matching pre-C behavior:
+  // Candidates, each fed through the table on its own:
   //   1. Canonical-name lookup (case-insensitive simple-name match; covers
-  //      issue #950's STI child-wins and issue #951's qualified coexistence).
-  //   2. Exact-key match (handles re-registration with same qualified key).
+  //      issue #951's qualified coexistence).
+  //   2. Every registered class of this simple name that this entry directly
+  //      extends or that directly extends it (#5143). The declared
+  //      `replaceParent` decides those pairs, so they are found whether or
+  //      not the simple name is ambiguous and in either load order.
+  //   3. Exact-key match (handles re-registration with same qualified key).
   //
-  // The ambiguous case (multiple existing entries share the simple name —
-  // `getCanonicalClassName` returns undefined) is NOT fed through the table.
-  // It falls through both checks into the new-registration code below,
-  // preserving issue #951's coexistence semantics.
-  // An aggregate can load the app before its upstream declaration. Retain
-  // that declaration for ancestry without restoring it as an effective model.
+  // An ambiguous simple name with no such pair (`getCanonicalClassName`
+  // returns undefined) is NOT fed through the table. It falls through into
+  // the new-registration code below, preserving issue #951's coexistence
+  // semantics.
+  // An aggregate can load a replacement before the declaration it replaces:
+  // that declaration is retained for ancestry without becoming an effective
+  // model (`retain-as-replaced`).
   let replacedBy = runtimeOptions?.extendsRegistered
     ? undefined
     : effectiveReplacement;
-  if (!runtimeOptions?.extendsRegistered && !replacedBy) {
-    for (const key of getClasses().keys()) {
-      const entry = getClasses().get(key)!;
-      if (
-        entry.name === simpleClassName &&
-        isSubtypeOf(key, registrationKey) &&
-        entry.schema?.tableName ===
-          (objectDef.schema?.tableName ?? objectDef.decoratorConfig?.tableName)
-      ) {
-        replacedBy = entry;
-        break;
-      }
-    }
-  }
   const runtimeParent = runtimeOptions?.extendsRegistered
     ? (getClasses().get(runtimeOptions.extendsRegistered) ??
       replacedDeclarations().get(runtimeOptions.extendsRegistered) ??
@@ -3083,24 +3807,39 @@ function registerFromManifestUntracked(
     runtimeOptions?.extendsRegistered !== undefined &&
     existingCanonical === runtimeOptions.extendsRegistered &&
     existingCanonical !== registrationKey;
-  if (existingCanonical && !sharesParentName && !replacedBy) {
-    const existing = getClasses().get(existingCanonical);
-    if (existing) {
-      const outcome = applyManifestCollisionPolicy({
-        name,
-        objectDef,
-        packageName,
-        existing,
-        existingKey: existingCanonical,
+  const candidates = runtimeOptions?.extendsRegistered
+    ? new Set<string>(
+        existingCanonical && !sharesParentName ? [existingCanonical] : [],
+      )
+    : manifestCollisionCandidates(
         registrationKey,
-        matchKind: 'canonical-name',
-        replacedQualifiedNames,
-      });
-      if (outcome === 'return') return;
-      // outcome === 'continue' means policy was replace (child-wins) or
-      // coexist — fall through into the new-registration code below.
-    }
-    // else: stale map entry (key exists but class was removed) — allow registration
+        simpleClassName,
+        manifestParent,
+        existingCanonical,
+      );
+  for (const existingKey of candidates) {
+    if (replacedBy) break;
+    // An earlier candidate's replacement may have removed this one.
+    const existing = getClasses().get(existingKey);
+    // A stale key (class removed since) allows registration.
+    if (!existing) continue;
+    const collision = {
+      name,
+      objectDef,
+      packageName,
+      existing,
+      existingKey,
+      registrationKey,
+      matchKind: 'canonical-name' as const,
+      replacedQualifiedNames,
+      newDeclaredChoice: ownChoice,
+      incomingTableName,
+    };
+    const outcome = applyManifestCollisionPolicy(collision);
+    if (outcome === 'return') return;
+    if (outcome === 'retain') replacedBy = existing;
+    // outcome === 'continue' means policy was replace or coexist — fall
+    // through into the new-registration code below.
   }
 
   if (!replacedBy && getClasses().has(registrationKey)) {
@@ -3115,6 +3854,8 @@ function registerFromManifestUntracked(
       registrationKey,
       matchKind: 'exact-key',
       replacedQualifiedNames,
+      newDeclaredChoice: ownChoice,
+      incomingTableName,
     });
     if (outcome === 'return') return;
   }
@@ -3197,8 +3938,15 @@ function registerFromManifestUntracked(
     }
   }
 
-  // Get config from manifest
-  const config = objectDef.decoratorConfig || {};
+  // Get config from manifest. A run-time model's declared replacement is
+  // recorded where every other class records it, so one predicate reads it.
+  const { replaceParent: _inheritedChoice, ...runtimeModelConfig } =
+    objectDef.decoratorConfig || {};
+  const config: SmartObjectConfig = !runtimeOptions?.extendsRegistered
+    ? objectDef.decoratorConfig || {}
+    : runtimeOptions.replaceParent
+      ? { ...runtimeModelConfig, replaceParent: true }
+      : runtimeModelConfig;
   const tableName = config.tableName || tableNameFromClass(stubConstructor);
   assertStiSensitivity(
     { ...config, tableName },
@@ -3332,11 +4080,20 @@ function registerFromManifestUntracked(
   };
   // #3338: a deprecated alias must never name a second live class.
   if (replacedBy) {
+    // Its aliases follow the replacement: free of other claimants, as when
+    // this declaration registers first (#5143).
+    assertQualifiedNameAliasesAvailable(
+      registrationKey,
+      registration,
+      replacedBy,
+    );
     retainReplacedDeclaration(registrationKey, registration);
     replacedBy.replacedQualifiedNames = [
       ...new Set([
         ...(replacedBy.replacedQualifiedNames ?? []),
         registrationKey,
+        // Whatever this declaration had itself replaced follows it.
+        ...replacedQualifiedNames,
       ]),
     ];
     getInheritanceCache().clear();

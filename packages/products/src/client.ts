@@ -5,6 +5,7 @@
  * No manual client code needed - everything is generated from @smrt() decorated classes.
  */
 
+import { pathToFileURL } from 'node:url';
 import createClient from '@happyvertical/smrt-virt-client'; // Virtual module from Vite plugin
 import type { CategoryData, ProductData } from '@happyvertical/smrt-virt-types'; // Virtual module from Vite plugin
 
@@ -73,7 +74,10 @@ async function demonstrateClient() {
 }
 
 // Run demonstration if called directly
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (
+  process.argv[1] &&
+  import.meta.url === pathToFileURL(process.argv[1]).href
+) {
   demonstrateClient().catch(console.error);
 }
 

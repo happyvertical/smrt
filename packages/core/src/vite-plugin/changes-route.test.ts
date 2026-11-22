@@ -7,7 +7,7 @@
  * guard, tenant-context establishment, database anchoring.
  */
 
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { SmartObjectManifest } from '../scanner/types';
@@ -23,11 +23,20 @@ vi.mock('node:fs', () => ({
 }));
 
 // Import after mocking
-import { generateChangesRoute } from './changes-route';
+import { generateChangesRoute as generateChangesRouteInto } from './changes-route';
+import { RouteFilePlan } from './generated-route-files';
 import { AUTO_GENERATED_ROUTE_HEADER } from './route-header';
 import type { SvelteKitOptions } from './sveltekit-generator';
 
 const projectRoot = '/test/project';
+
+// The writer renders into the route-file plan and never touches the disk.
+let plan = new RouteFilePlan();
+const generateChangesRoute = (
+  root: string,
+  manifest: SmartObjectManifest,
+  options: SvelteKitOptions,
+) => generateChangesRouteInto(root, manifest, options, plan);
 
 const baseOptions: SvelteKitOptions = {
   enabled: true,
@@ -42,19 +51,16 @@ function buildManifest(
 }
 
 function writtenRouteContent(): string {
-  const call = vi
-    .mocked(writeFileSync)
-    .mock.calls.find(
-      (args) => typeof args[0] === 'string' && args[0].endsWith('+server.ts'),
-    );
-  expect(call).toBeDefined();
-  return String(call?.[1]);
+  const entry = plan.entries().at(-1);
+  expect(entry).toBeDefined();
+  return String(entry?.content);
 }
 
 describe('generateChangesRoute (#1758)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(existsSync).mockReturnValue(false);
+    plan = new RouteFilePlan();
   });
 
   it('emits an auth-guarded _changes route anchored on the first object', () => {
@@ -84,15 +90,10 @@ describe('generateChangesRoute (#1758)', () => {
     );
 
     expect(generated).toBe(true);
-    expect(mkdirSync).toHaveBeenCalledWith(
+    expect(plan.entries().map(({ routeDir }) => routeDir)).toEqual([
       join(projectRoot, 'src/routes/api', '_changes'),
-      { recursive: true },
-    );
-    expect(writeFileSync).toHaveBeenCalledWith(
-      join(projectRoot, 'src/routes/api', '_changes', '+server.ts'),
-      expect.any(String),
-      'utf-8',
-    );
+    ]);
+    expect(writeFileSync).not.toHaveBeenCalled();
 
     const content = writtenRouteContent();
     // Cleanup pass recognizes generated files by this exact header.
@@ -225,11 +226,11 @@ describe('generateChangesRoute (#1758)', () => {
         changesRoute: { enabled: false },
       }),
     ).toBe(false);
-    expect(writeFileSync).not.toHaveBeenCalled();
+    expect(plan.entries()).toEqual([]);
 
     expect(
       generateChangesRoute(projectRoot, buildManifest({}), baseOptions),
     ).toBe(false);
-    expect(writeFileSync).not.toHaveBeenCalled();
+    expect(plan.entries()).toEqual([]);
   });
 });

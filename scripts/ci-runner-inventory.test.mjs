@@ -745,7 +745,7 @@ test('Windows custody installs every package scheduled by its build and manifest
   const options = { cwd: repoRoot, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], timeout: 30000 };
   const installed = new Set(JSON.parse(execFileSync('pnpm', ['ls', '--depth', '-1', '--json', ...filters], options)).map(({ name }) => name));
   const builds = steps.filter(({ run }) => run?.startsWith('pnpm turbo run '));
-  assert.equal(builds.length, 3, 'check both build steps and core test-manifest generation');
+  assert.equal(builds.length, 2, 'check the closure build and core test-manifest generation');
   for (const { name, run } of builds) {
     const args = run.match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/g).slice(2)
       .map((arg) => arg.replace(/['"]/g, ''));

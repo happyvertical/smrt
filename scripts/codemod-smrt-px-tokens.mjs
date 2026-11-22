@@ -24,6 +24,7 @@
  */
 
 import { readFileSync, writeFileSync } from 'node:fs';
+import { pathToFileURL } from 'node:url';
 import { allPackageSrcDirs, listFiles } from './smrt-token-scan-lib.mjs';
 
 const TEST_FILE = /__tests__|\.(test|spec)\./;
@@ -123,4 +124,9 @@ function main() {
   );
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) main();
+if (
+  process.argv[1] &&
+  import.meta.url === pathToFileURL(process.argv[1]).href
+) {
+  main();
+}

@@ -97,11 +97,17 @@
       "@happyvertical/smrt-app-shell": [
         "./packages/app-shell/src/lib/objects/index.ts"
       ],
+      "@happyvertical/smrt-app-shell/embed": [
+        "./packages/app-shell/src/lib/server/embed.ts"
+      ],
       "@happyvertical/smrt-app-shell/engine": [
         "./packages/app-shell/src/engine/index.ts"
       ],
       "@happyvertical/smrt-app-shell/engine/worker": [
         "./packages/app-shell/src/engine/app-worker.ts"
+      ],
+      "@happyvertical/smrt-app-shell/shutdown": [
+        "./packages/app-shell/src/lib/server/shutdown.ts"
       ],
       "@happyvertical/smrt-approvals": [
         "./packages/approvals/src/index.ts"

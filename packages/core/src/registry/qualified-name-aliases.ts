@@ -263,13 +263,22 @@ export function assertQualifiedNameAliasesAvailable(
   }
 
   const classes = getClasses();
+  // A declaration a replacement retains keeps its aliases (they resolve to
+  // the replacement), so it is a claimant like any live class (#5143). Its
+  // own identity is not live.
+  const retained = [...replacedDeclarations()].filter(
+    ([key]) => !classes.has(key),
+  );
   if (seen.size === 0) {
     // The overwhelmingly common case has no aliases on either side. Inspect
     // values without allocating a key/value tuple and identity arrays for every
     // class at every registration. An existing declaration still takes the
     // complete collision path below, including source-only identities.
     let existingAliases = false;
-    for (const other of classes.values()) {
+    for (const other of [
+      ...classes.values(),
+      ...retained.map(([, declaration]) => declaration),
+    ]) {
       if (other === replacing || sameClass(other, entry)) continue;
       const previous = other.config?.previousQualifiedNames;
       if (Array.isArray(previous) && previous.length > 0) {
@@ -289,10 +298,13 @@ export function assertQualifiedNameAliasesAvailable(
   ];
   const selfIdentities = new Set(identities(entry, registrationKey));
 
-  for (const [key, other] of classes) {
+  const retainedKeys = new Set(retained.map(([key]) => key));
+  for (const [key, other] of [...classes, ...retained]) {
     if (other === replacing || sameClass(other, entry)) continue;
     const otherName = ownName(other, key);
-    for (const identity of seen.size > 0 ? identities(other, key) : []) {
+    for (const identity of seen.size > 0 && !retainedKeys.has(key)
+      ? identities(other, key)
+      : []) {
       if (seen.has(identity)) {
         throw collision(
           `${self} declares previousQualifiedNames "${identity}", but "${identity}" is a live registered class. ` +

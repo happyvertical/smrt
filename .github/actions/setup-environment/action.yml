@@ -308,6 +308,16 @@ runs:
         echo "Installing ONNX Runtime system dependencies..."
         node_path="$(command -v node)"
         sudo "$node_path" "$GITHUB_WORKSPACE/scripts/configure-ubuntu-apt-mirrors.mjs"
+        # Hosted images ship the packages.microsoft.com source. Nothing below
+        # comes from it, yet its HTTP 429 fails `apt-get update` (exit 100 under
+        # Error-Mode=any) and the whole job. Park it, hosted runners only, and
+        # let apt retry transient fetch errors. Best effort: both are optional.
+        if [ "${RUNNER_ENVIRONMENT:-}" = "github-hosted" ]; then
+          for source_file in $(grep -rlE 'packages\.microsoft\.com' /etc/apt/sources.list.d 2>/dev/null || true); do
+            sudo mv "$source_file" "$source_file.disabled" || true
+          done
+          echo 'Acquire::Retries "5";' | sudo tee /etc/apt/apt.conf.d/80-ci-retries >/dev/null || true
+        fi
         apt_update() {
           sudo "$node_path" "$GITHUB_WORKSPACE/scripts/run-bounded-command.mjs" \
             --stage 'apt-get update' \
@@ -376,13 +386,43 @@ runs:
           pnpm config set --location=project --json overrides "$updated_overrides"
           echo "✓ Added SDK workspace overrides to pnpm-workspace.yaml"
 
+          install_args="--no-frozen-lockfile"
           echo "Installing with SDK workspace packages (--no-frozen-lockfile)"
-          pnpm install --no-frozen-lockfile --loglevel error
         else
+          install_args="--frozen-lockfile"
           echo "Installing with frozen lockfile"
-          pnpm install --frozen-lockfile --loglevel error
         fi
+
+        # Retry only transient network failures (registry 5xx/429, resets and
+        # timeouts, the onnxruntime binary download), never a real resolution
+        # or lockfile error. An install that fails here fails the whole job:
+        # 13 jobs in 3 PR runs lost 3.5-4.5 min each to a registry 503.
+        # `pnpm install` is idempotent, so a second attempt is safe.
+        install_log="$(mktemp)"
+        attempt=1
+        max_attempts=3
+        while true; do
+          set +e
+          pnpm install $install_args --loglevel error 2>&1 | tee "$install_log"
+          status=${PIPESTATUS[0]}
+          set -e
+          if [ "$status" -eq 0 ]; then
+            break
+          fi
+          if [ "$attempt" -ge "$max_attempts" ] || ! grep -qiE 'ERR_PNPM_FETCH_(5[0-9]{2}|429)|ERR_PNPM_META_FETCH_FAIL|ETIMEDOUT|ECONNRESET|ECONNREFUSED|EAI_AGAIN|ENOTFOUND|socket hang up|network timeout|onnxruntime.*(download|fetch|ECONN|ETIMEDOUT)|503 Service|Service Temporarily Unavailable' "$install_log"; then
+            exit "$status"
+          fi
+          delay=$((attempt * 30))
+          echo "::warning::pnpm install hit a transient network failure (attempt $attempt/$max_attempts); retrying in ${delay}s"
+          sleep "$delay"
+          attempt=$((attempt + 1))
+        done
+        rm -f "$install_log"
       env:
+        # Per-request retries inside pnpm itself, before the loop above.
+        npm_config_fetch_retries: '5'
+        npm_config_fetch_retry_mintimeout: '10000'
+        npm_config_fetch_retry_maxtimeout: '60000'
         # Force ONNX Runtime to skip CUDA installation
         ONNXRUNTIME_NODE_INSTALL_CUDA: 'skip'
         # Authentication token for the configured npm registry.

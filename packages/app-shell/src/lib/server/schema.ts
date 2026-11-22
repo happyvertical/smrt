@@ -8,14 +8,22 @@
 //
 // Additive only: for every registered model's table that does not exist yet,
 // run core's DDL (create table, indexes, triggers) for the database's engine.
-// Existing tables are never altered or dropped; the user app's tables live in
-// app.db and are the worker's business, not this function's.
+// Existing tables are never dropped; the user app's tables live in app.db and
+// are the worker's business, not this function's. The one alteration is the
+// desktop's: a database made before the shell models became tenant-scoped gets
+// its `tenant_id` column added, and its rows given the installation's one
+// tenant, so the owner's app is still the owner's app (`adoptTenantScope`).
+// This function is the local runtime's; a deployed database is migrated by
+// `smrt db:migrate` and never reaches it.
 import {
   detectEngine,
   ObjectRegistry,
   planForeignKeyCreation,
 } from '@happyvertical/smrt-core';
-import { getDDLStrategy } from '@happyvertical/smrt-core/schema';
+import {
+  createSchemaManager,
+  getDDLStrategy,
+} from '@happyvertical/smrt-core/schema';
 import type { DatabaseInterface } from '@happyvertical/sql';
 
 type Query = { rows?: unknown[] } | unknown[];
@@ -41,13 +49,97 @@ async function tableExists(
  */
 export async function prepareShellSchema(
   db: DatabaseInterface,
+  options: { hosted?: boolean } = {},
+): Promise<string[]> {
+  const created = await createMissingTables(db, options.hosted === true);
+  await adoptTenantScope(db);
+  return created;
+}
+
+/** The shell's own tables that hold one owner's data (tenant-scoped). */
+export const TENANT_SCOPED_TABLES = [
+  'apps',
+  'app_versions',
+  'app_drafts',
+  'app_draft_versions',
+  'approvals',
+  'assistant_threads',
+  'assistant_messages',
+  'change_cards',
+] as const;
+
+/**
+ * SQLite (the desktop): give an older database the tenant column its models
+ * now carry, and the installation's one tenant to every row without one.
+ * Idempotent; with zero or several tenants it adds the column and leaves the
+ * rows alone (no guess about whose they are).
+ */
+async function adoptTenantScope(db: DatabaseInterface): Promise<void> {
+  const engine = detectEngine(
+    (db as { url?: string }).url ?? '',
+    (db as { type?: string }).type,
+  );
+  if (engine !== 'sqlite') return;
+  let sole: string | null | undefined;
+  for (const table of TENANT_SCOPED_TABLES) {
+    if (!(await tableExists(db, engine, table))) continue;
+    // The model declares the column; the schema manager adds it to the
+    // existing table (no hand-written DDL here).
+    const schema = Object.values(
+      ObjectRegistry.getAllSchemasAsDefinitions(),
+    ).find((candidate) => candidate.tableName === table);
+    if (schema) await createSchemaManager(db).ensureTable(schema);
+    if (sole === undefined) {
+      const res = (await db
+        .query('SELECT id FROM tenants LIMIT 2')
+        .catch(() => ({ rows: [] }))) as Query;
+      const rows = (Array.isArray(res) ? res : (res.rows ?? [])) as {
+        id: string;
+      }[];
+      sole = rows.length === 1 ? rows[0].id : null;
+    }
+    if (sole)
+      await db.query(
+        `UPDATE ${table} SET tenant_id = ? WHERE tenant_id IS NULL`,
+        sole,
+      );
+  }
+}
+
+/**
+ * Packages whose models only the hosted (cloud) profile uses (#5194): the
+ * hosted inference gate's plans, subscriptions and feature overrides. The
+ * build manifest registers them in every process, but a desktop database
+ * never gets their tables (a deployed database gets them from `smrt db:migrate`).
+ */
+export const HOSTED_ONLY_PACKAGES = [
+  '@happyvertical/smrt-features',
+  '@happyvertical/smrt-subscriptions',
+] as const;
+
+export function hostedOnlyTables(): Set<string> {
+  const tables = new Set<string>();
+  for (const packageName of HOSTED_ONLY_PACKAGES)
+    for (const name of ObjectRegistry.getClassesByPackage(packageName).keys()) {
+      const table = ObjectRegistry.getTableName(name);
+      if (table) tables.add(table);
+    }
+  return tables;
+}
+
+async function createMissingTables(
+  db: DatabaseInterface,
+  hosted = false,
 ): Promise<string[]> {
   const engine = detectEngine(
     (db as { url?: string }).url ?? '',
     (db as { type?: string }).type,
   );
   const strategy = getDDLStrategy(engine);
-  const schemas = Object.values(ObjectRegistry.getAllSchemasAsDefinitions());
+  const skip = hosted ? new Set<string>() : hostedOnlyTables();
+  const schemas = Object.values(
+    ObjectRegistry.getAllSchemasAsDefinitions(),
+  ).filter((schema) => !skip.has(schema.tableName));
   const missing = [];
   for (const schema of schemas)
     if (!(await tableExists(db, engine, schema.tableName)))

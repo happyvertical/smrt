@@ -28,6 +28,7 @@ import { approvalStatuses, getApprovalView } from '../approvals.ts';
 import type { CatalogResponse, CatalogTool } from '../catalog.ts';
 import { getShellDb } from '../host.ts';
 import { PolicyError, type Principal } from '../owner.ts';
+import { ownerText } from '../owner-text.ts';
 import { callTool, toolsFor } from '../policy.ts';
 import { type CallScope, LIVE_SCOPE, type Target } from '../target.ts';
 import { describeModelError } from './diagnostics.ts';
@@ -45,12 +46,7 @@ import {
   ModelFailure,
   type ModelToolCall,
 } from './model.ts';
-import {
-  assistantMode,
-  copyNote,
-  type ModeContext,
-  STRUCTURAL_TOOLS,
-} from './scope.ts';
+import { assistantMode, type ModeContext, STRUCTURAL_TOOLS } from './scope.ts';
 import { appendMessage, historyFor, threadApprovalIds } from './threads.ts';
 
 export interface TurnLimits {
@@ -86,6 +82,10 @@ export const DEFAULT_LIMITS: TurnLimits = {
 /** Tools the assistant never gets, even though the owner's `/mcp` has them. */
 export const ASSISTANT_DENIED_TOOLS: ReadonlySet<string> = new Set([
   'approval_decide',
+  // History is the owner's (changes waiting): undo and clean up are theirs.
+  'app_undo',
+  'app_undoto',
+  'app_cleanup',
 ]);
 
 const TOOL_NAME = /^[A-Za-z0-9_-]{1,64}$/;
@@ -286,11 +286,16 @@ export async function runTurn(options: RunTurnOptions): Promise<TurnStop> {
   // turn ends by telling the person which copy it was.
   let changedIn: ModeContext | null = null;
   const finish = async (stop: TurnStop): Promise<TurnStop> => {
-    const note = changedIn ? copyNote(changedIn) : null;
-    if (note) {
+    // A turn that made changes ends in the "N changes waiting" block, drawn
+    // from the live changes state (never from what was true when it was sent).
+    if (changedIn) {
       changedIn = null;
-      emit({ type: 'text', delta: `\n\n${note}` });
-      await appendMessage(thread, { role: 'assistant', content: note });
+      emit({ type: 'changes_block' });
+      await appendMessage(thread, {
+        role: 'assistant',
+        content: '',
+        meta: { block: 'changes' },
+      });
     }
     emit({ type: 'done', stop });
     await run?.finish(
@@ -346,7 +351,9 @@ export async function runTurn(options: RunTurnOptions): Promise<TurnStop> {
       activeMs += Date.now() - started;
       if (error instanceof PolicyError) return refuse(error.message);
       const message =
-        error instanceof Error ? oneLine(error.message, 300) : 'it failed';
+        error instanceof Error
+          ? oneLine(ownerText(error.message, 'assistant tool'), 300)
+          : 'it failed';
       return {
         ok: false,
         summary: message,
@@ -359,22 +366,13 @@ export async function runTurn(options: RunTurnOptions): Promise<TurnStop> {
       const text = cut(textOf(response), limits.toolResultChars);
       const ok = response.isError !== true;
       const structural = STRUCTURAL_TOOLS.has(call.name);
-      const copy: Target | undefined = !mode.draft
-        ? undefined
-        : structural
-          ? mode.scope.structure
-          : offered.get(call.name)?.side === 'app' ||
-              call.name === 'app_runreport'
-            ? mode.scope.records
-            : undefined;
-      if (ok && structural && mode.draft) changedIn = mode;
-      // The model is told which copy it acted on, so it can say so.
+      const copy: Target | undefined = undefined;
+      if (ok && structural) changedIn = mode;
+      // The model is told structure only waits, so it can say so.
       const where =
-        copy === 'draft'
-          ? `[This acted on the draft "${mode.draft}", not the live app.] `
-          : copy === 'live'
-            ? '[This acted on the live app.] '
-            : '';
+        ok && structural
+          ? '[This is now waiting for the owner to review and apply; the live app is unchanged.] '
+          : '';
       return {
         ok,
         summary: toolSummary(

@@ -10,6 +10,10 @@ import type { SmartObjectManifest } from '../scanner/types';
 
 vi.mock('node:fs', () => ({
   existsSync: vi.fn(),
+  // Route ownership inspects planned paths with lstat; nothing exists here.
+  lstatSync: vi.fn(() => {
+    throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
+  }),
   mkdirSync: vi.fn(),
   writeFileSync: vi.fn(),
   readFileSync: vi.fn(),
@@ -95,19 +99,19 @@ describe('Issue #1565: generated route read permissions', () => {
     }
 
     expect(collectionRoute).toContain(
-      'items.map((item) => item.toPublicJSON(publicJsonOptions))',
+      'items.map((item) => toPublicJSONValue(item, publicJsonOptions))',
     );
     expect(collectionRoute).toContain(
       'return conditionalJson(request, { items: items_public, count, limit, offset });',
     );
     expect(collectionRoute).toContain(
-      'return json(item.toPublicJSON(publicJsonOptions), { status: 201 });',
+      'return json(toPublicJSONValue(item, publicJsonOptions), { status: 201 });',
     );
     expect(itemRoute).toContain(
-      'return conditionalJson(request, item.toPublicJSON(publicJsonOptions));',
+      'return conditionalJson(request, toPublicJSONValue(item, publicJsonOptions));',
     );
     expect(itemRoute).toContain(
-      'return json(item.toPublicJSON(publicJsonOptions));',
+      'return json(toPublicJSONValue(item, publicJsonOptions));',
     );
   });
 
@@ -124,7 +128,7 @@ describe('Issue #1565: generated route read permissions', () => {
 
     for (const content of [collectionRoute, itemRoute]) {
       expect(content).toContain('function applyReadPermissionRedaction(');
-      expect(content).toContain('if (hasPublicJson(value))');
+      expect(content).toContain('const serialize = publicSerializerOf(value);');
       expect(content).toContain(
         'for (const [key, entry] of Object.entries(out))',
       );

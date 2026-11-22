@@ -38,6 +38,55 @@ const NODE_ONLY_GROUPS: ReadonlyArray<{
   },
   {
     reason:
+      'Tenant read scope of server read routes (runtime REST and the emitted SvelteKit routes), resolved per request from the live registry and the tenancy hooks; a browser has no tenant context to scope by',
+    names: [
+      'isTenantScopedModel',
+      'resolveAnonymousTenantReadScope',
+      'scopeTenantReadOptions',
+    ],
+  },
+  {
+    reason:
+      'The principal a host resolved for the current REST request (#5195): read from the request execution scope of the server handler; a browser serves no request',
+    names: ['RequestPrincipalScopeError', 'getRequestPrincipal'],
+  },
+  {
+    reason:
+      'Request tenancy of server request paths (#5375): the actor rule, the resolver, its decisions and the execution-scope binding every server transport uses; a browser serves no request to resolve',
+    names: [
+      'RequestTenancyError',
+      'RequestTenantConflictError',
+      'TenantPolicyChangedError',
+      'boundTenancyCacheScoped',
+      'boundTenancyEtagDiscriminator',
+      'cachePolicy',
+      'customActionScope',
+      'ensureRequestTenancyInterceptor',
+      'enterRequestTenancy',
+      'enterResolvedTenancy',
+      'etagDiscriminator',
+      'getResolvedTenancy',
+      'listMixedTenancyFamilies',
+      'memberTenancyOf',
+      'principalFromLocals',
+      'readScope',
+      'resolveRequestActor',
+      'resolveRequestTenancy',
+      'resolveStrictModelKey',
+      'resolveTenancyForRequest',
+      'runInRequestTenancy',
+      'runToolInRequestTenancy',
+      'scopeActionOptions',
+      'scopedOptionProperties',
+      'servesTenantScopedRows',
+      'tenancyReadScope',
+      'throwIfRefused',
+      'withResolvedTenancy',
+      'writeGate',
+    ],
+  },
+  {
+    reason:
       'REST server bootstrap (node:http); belongs behind `@happyvertical/smrt-core/generators/rest`. Model packages that import startRestServer from the root are tracked by #3616',
     names: [
       'APIGenerator',
@@ -109,7 +158,12 @@ const NODE_ONLY_GROUPS: ReadonlyArray<{
   {
     reason:
       'Server half of the runtime (node:http, MCP server); belongs behind `@happyvertical/smrt-core/runtime`. createSmrtClient (fetch) is exported from the browser entry',
-    names: ['SmrtMCPServer', 'createMCPServer', 'createSmrtServer'],
+    names: [
+      'SmrtMCPServer',
+      'SmrtServerConfigError',
+      'createMCPServer',
+      'createSmrtServer',
+    ],
   },
   {
     reason:

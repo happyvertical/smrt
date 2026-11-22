@@ -39,6 +39,7 @@ import {
   type SnapshotKeyProvider,
   writeEncryptedSnapshot,
 } from '../snapshot-framing.js';
+import { loadTestEngine } from './user-app-test-support.js';
 
 export const APP_ID = 'restore-app';
 export const ACCOUNT = 'acct-family';
@@ -359,6 +360,7 @@ export async function harness() {
         resolveRuntime: async () =>
           resolveApplicationRuntime({ profile: 'local' }) as never,
         snapshotKeys: overrides.keys ?? keys,
+        userAppEngine: async () => loadTestEngine(),
         vaultRestore: relay.provider(deviceId, overrides.timers),
       },
     });

@@ -1,17 +1,29 @@
 // The JSON routes, called as functions with a fake SvelteKit event. The owner
 // session is the only way in; the verified principal comes from `locals`.
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { EngineError } from '../engine/index.ts';
 import { App } from '../lib/objects/App.ts';
 import { type Approval, ApprovalCollection } from '../lib/objects/Approval.ts';
-import { listApprovalViews } from '../lib/server/approvals.ts';
+import { ChangeCardCollection } from '../lib/objects/ChangeCard.ts';
+import { applyOwnBatch, listApprovalViews } from '../lib/server/approvals.ts';
+import {
+  changesState,
+  discardChanges,
+  flushChecks,
+} from '../lib/server/changes.ts';
 import { type ShellEvent, subscribe } from '../lib/server/events.ts';
-import { getHost } from '../lib/server/host.ts';
+import { getHost, getShellDb } from '../lib/server/host.ts';
 import { runAs } from '../lib/server/owner.ts';
-import { openShell, type ShellHarness } from '../lib/server/test-support.ts';
+import {
+  applyWaiting,
+  openShell,
+  type ShellHarness,
+} from '../lib/server/test-support.ts';
 import * as appRoute from './api/app/[...path]/+server.ts';
 import * as eventsRoute from './api/events/+server.ts';
 import * as approvalsRoute from './api/shell/approvals/+server.ts';
 import * as approvalRoute from './api/shell/approvals/[id]/+server.ts';
+import * as answerRoute from './api/shell/changes/questions/[id]/answer/+server.ts';
 import * as describeRoute from './api/shell/describe/+server.ts';
 import * as historyRoute from './api/shell/history/+server.ts';
 import * as recordsRoute from './api/shell/records/[model]/+server.ts';
@@ -24,6 +36,7 @@ beforeAll(async () => {
   await runAs(h.owner, () =>
     App.defineModel('Chore', { title: { type: 'text' } }),
   );
+  await applyWaiting(h.owner);
 });
 afterAll(async () => {
   await h.close();
@@ -203,6 +216,42 @@ describe('owner flows', () => {
     expect(hist.versions.at(-1).current).toBe(true);
   });
 
+  it('a cap refusal from the engine keeps its code and numbers in the response (#5198)', async () => {
+    const host = await getHost();
+    const spy = vi.spyOn(host, 'create').mockRejectedValue(
+      new EngineError(
+        'app limit reached (maxRows): this app holds 3 records of the 3 allowed; adding 1 would pass the limit',
+        'invalid',
+        {
+          code: 'app_limit',
+          cap: 'maxRows',
+          limit: 3,
+          current: 3,
+          requested: 1,
+        },
+      ),
+    );
+    try {
+      const res = await recordsRoute.POST(
+        event(h.owner, 'POST', '/api/shell/records/Chore', {
+          body: { title: 'one too many' },
+          params: { model: 'Chore' },
+        }),
+      );
+      expect(res.status).toBe(400);
+      expect(await res.json()).toMatchObject({
+        code: 'app_limit',
+        cap: 'maxRows',
+        limit: 3,
+        current: 3,
+        requested: 1,
+        error: expect.stringContaining('app limit reached (maxRows)'),
+      });
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   it('request bodies are validated', async () => {
     const noJson = await recordsRoute.POST(
       event(h.owner, 'POST', '/api/shell/records/Chore', {
@@ -339,10 +388,11 @@ describe('owner flows', () => {
   });
 
   it('undo reverses the last change', async () => {
-    const before = (await getHost()).version;
     await runAs(h.owner, () =>
       App.addField('Chore', 'extra', { type: 'text' }),
     );
+    await applyWaiting(h.owner);
+    const before = (await getHost()).version - 1;
     const res = await undoRoute.POST(event(h.owner, 'POST', '/api/shell/undo'));
     expect(res.status).toBe(200);
     expect((await getHost()).version).toBe(before);
@@ -356,6 +406,7 @@ describe('owner flows', () => {
     await runAs(h.owner, () =>
       App.defineModel('Gauge', { reading: { type: 'text' } }),
     );
+    await applyWaiting(h.owner);
     const row = await host.create('Gauge', { reading: '5' });
     await host.execute(
       {
@@ -422,28 +473,66 @@ describe('owner flows', () => {
       text += dec.decode((await reader.read()).value);
     expect(text).toContain('event: shell');
     ac.abort();
+    await runAs(h.owner, () => discardChanges());
   });
 });
 
-it('keeps builder and approved-command snapshot paths server-side', async () => {
+it('keeps builder and applied-change snapshot paths server-side', async () => {
   const out = await runAs(h.owner, () =>
     App.defineModel('PrivateSnapshot', { value: { type: 'text' } }),
   );
   expect(out).not.toHaveProperty('snapshot');
-  const pending = (await runAs(h.owner, () =>
+  await applyWaiting(h.owner);
+  const waiting = await runAs(h.owner, () =>
     App.removeField('PrivateSnapshot', 'value'),
-  )) as { approvalId: string };
-  const response = await approvalRoute.POST(
-    event(h.owner, 'POST', `/api/shell/approvals/${pending.approvalId}`, {
-      body: { approve: true },
-      params: { id: pending.approvalId },
+  );
+  expect(waiting).not.toHaveProperty('snapshot');
+  await runAs(h.owner, () => changesState());
+  await flushChecks(); // the debounced exact checks pin the digest
+  const state = await runAs(h.owner, () => changesState());
+  const applied = await runAs(h.owner, () => applyOwnBatch(state.digest));
+  expect(applied.status).toBe('approved');
+  expect(applied.result).not.toHaveProperty('snapshot');
+  const views = await listApprovalViews({ status: 'approved' });
+  expect(views.find((a) => a.id === applied.id)?.result).not.toHaveProperty(
+    'snapshot',
+  );
+});
+
+it('answering a stored destructive review choice is refused and makes no card', async () => {
+  await runAs(h.owner, () => App.defineModel('Keep', { n: { type: 'text' } }));
+  await applyWaiting(h.owner);
+  await runAs(h.owner, () => App.addField('Keep', 'extra', { type: 'text' }));
+  const waiting = await runAs(h.owner, () => changesState());
+  // bypass the storage-time filter: the row holds a destructive command
+  const cards = await ChangeCardCollection.create({ db: await getShellDb() });
+  const row = await cards.get(waiting.cards[0].id);
+  if (!row) throw new Error('card missing');
+  row.questions = JSON.stringify([
+    {
+      kind: 'question',
+      id: 'q_evil',
+      text: 'Add a note?',
+      choices: [
+        {
+          label: 'Sure',
+          command: { type: 'removeModel', model: 'Keep' },
+        },
+      ],
+      state: 'open',
+    },
+  ]);
+  await row.save();
+  const res = await answerRoute.POST(
+    event(h.owner, 'POST', '/api/shell/changes/questions/q_evil/answer', {
+      body: { choice: 0 },
+      params: { id: 'q_evil' },
     }),
   );
-  const approved = await response.json();
-  expect(approved.status).toBe('approved');
-  expect(approved.result).not.toHaveProperty('snapshot');
-  const views = await listApprovalViews({ status: 'approved' });
-  expect(
-    views.find((a) => a.id === pending.approvalId)?.result,
-  ).not.toHaveProperty('snapshot');
+  expect(res.status).toBe(409);
+  const after = await runAs(h.owner, () => changesState());
+  expect(after.count).toBe(1);
+  expect(after.cards).toHaveLength(waiting.cards.length);
+  expect((await getHost()).def.models).toHaveProperty('Keep');
+  await runAs(h.owner, () => discardChanges());
 });

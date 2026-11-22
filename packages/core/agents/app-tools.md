@@ -108,7 +108,9 @@ clarifications/collisions, holds and refusals with transport identity. Applied
 versus pending comes from the durable journal; a failed publication can leave
 additive DDL with a pending revision and closed models. It does not claim
 rollback of committed schema changes. Reopening the editor recovers through
-its existing protocol. Owner/permission checks run again after audit/approval
+its existing protocol; a revision that can never complete is abandoned by an
+operator (`abandonAppModelRevision`, see app-models.md), after which
+`app.history` reports it as `abandoned` and `app.undo` skips it. Owner/permission checks run again after audit/approval
 awaits, and journal CAS serializes competing revisions.
 
 ## Test design and evidence

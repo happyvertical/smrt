@@ -294,11 +294,33 @@ writes only `src/manifest/test-manifest.json` (`outputMode: 'explicit'`; its
 Turbo outputs exclude `.smrt/`). Disabling knowledge in a production build
 removes a previous local knowledge artifact, so consumers cannot mistake it for
 current enabled output.
+Installed-package discovery (`manifest/discover-smrt-packages.ts`) caches its
+answer in `.smrt/discovery-cache.json`, keyed on the nearest lockfile at or
+above the project (a workspace app has none of its own), the project's
+`package.json`, each selected manifest, and a stat signature (mtime, ctime,
+size, device and inode) of the manifest candidates of every installed
+directory of a dependency that had no manifest yet, together with where that
+name resolves now (a repointed workspace link invalidates it); selected
+providers' manifests and package.json use the same full stat marker, so building
+a linked workspace package invalidates the cache in this process and the
+next. A discovery that throws is never cached. Repeat calls in one process
+reuse the answer while a stat-only fingerprint of those inputs holds, without
+re-reading or re-hashing the lockfile (module-private, no new export).
 `new ManifestBuilder(projectRoot)` keeps discovery, package identity, and output
 at that explicit root, including installed providers and external base classes;
 omitting the argument retains the current-working-directory
 behavior. Both manifest writers retain declared package dependencies when merging
-their local and consumed-object projections.
+their local and consumed-object projections. A consumed package's entry carried
+forward from the previous `.smrt/manifest.json` is kept only while its provider
+is installed (nearest `node_modules` at or above the project), its installed
+manifest declares it, and the installed version is the one it records
+(`retainInstalledCarriedEntries`, `manifest/installed-package-manifest.ts`,
+#5035). When the consumer's write has just aggregated a provider, that
+provider's declarations decide alone, including an empty set and an
+executable-only (`static-manifest.js`) provider whose manifest the JSON check
+cannot read; that module is imported at its current file revision, so a
+provider rebuilt in place between two builds in one process is re-read; otherwise a model removed from a consumed package stays in the file
+schema commands read.
 
 Test manifests carry `artifactPurpose: 'test'` and are valid only as the active
 test manifest of the run that registered them. Every other reader refuses them
@@ -364,6 +386,156 @@ remain skipped, ancestor-hoisted installs resolve normally, and handwritten
 `+server.ts`/`+server.js` ownership and explicit disablement remain unchanged.
 Do not change a package's export map to accommodate a mismatched detector.
 
+Dev-server rescans (`smrtPlugin` `watch`/`hmr`): Vite's watcher reports
+absolute paths, so `shouldRescan` matches the project-relative POSIX path
+against `include`/`exclude` (an absolute pattern under the root is made
+relative). It ignores the plugin's own outputs (`+server.*` under `routesDir`,
+`smrt-register.ts`, `virtual-modules.d.ts`, the knowledge route
+(`knowledgeRoutePath` as the last generation resolved it, outside `routesDir`;
+the watcher never evaluates the project config itself), any file whose source
+the generated-route predicate accepts (`isGeneratedRouteSource`)), or each
+regeneration would trigger the next. After a rescan, change,
+add and unlink alike invalidate every loaded virtual module by its resolved
+`\0smrt:*` id in each Vite environment's module graph and send that
+environment's hot channel a full reload; `server.reloadModule` cannot be used
+because it skips modules without a file. `watcher-dev-server.test.ts` drives a
+real Vite dev server; a handler test with a relative path cannot see either
+defect. Rescans are serialized: one runs and at most one waits; events that
+arrive meanwhile join the waiting one, which scans the latest sources once the
+running one finishes, so an older scan never publishes over a newer one.
+
+Route generation validates every object's routes
+(`assertSvelteKitObjectRoutesValid`, `vite-plugin/generated-route-preflight.ts`:
+the generator's own claim pass per object) before `generateSvelteKitRoutes()`
+sweeps the route tree, on the producer's direct path and the coordinator path
+alike, so a duplicate or mixed-host custom route fails with the previous
+routes still on disk. It checks only what rendering already enforced: two
+claims on one handler file (`Conflicting SvelteKit route`, within an object or
+across objects) stay a hosted-consumer (`rejectRouteCollisions`) rule, so a
+producer-only app still generates STI siblings that share a collection or a
+static action whose path is `[id]` beside CRUD, exactly as before. A model
+route at the sync-apply path (a `sync` collection with an `apply` action, when
+a syncable model generates `sync/apply`) fails during rendering, below.
+
+Route generation never replaces or shadows an application route file (#5437,
+`vite-plugin/generated-route-files.ts`). A route file is generated only when
+it is a regular `+server.ts` at the unresolved path whose first bytes, after
+at most one byte-order mark, are the route header (`isGeneratedRouteFile`);
+any `+server.js` and any other `+server.ts` (hand-written, empty, unreadable,
+symlinked, or a directory) is application code. Every reader of the header
+(the sweep, the knowledge clear, `findGeneratedRouteFiles`, the `_resources`
+reservation, `sync/apply`, the watcher fallback) uses this predicate.
+`generateSvelteKitRoutes()` renders every route writer (CRUD, custom actions,
+knowledge, `sync/apply`, `_changes`, `_events`, `_dev`, `_resources`) into an
+in-memory `RouteFilePlan` (writers import no mutating `node:fs` call; a source
+guard enforces it), then runs a read-only preflight over every lexical spelling
+of every planned path. A conflict throws `ApplicationRouteConflictError`
+(`code: 'SMRT_ROUTE_OWNERSHIP_CONFLICT'`, `phase: 'preflight'`, `files`,
+`routes`; not a package export) naming every conflict before `beforeCleanup`,
+the sweep, the config and registration writes, any route file, `.gitignore` or
+any directory creation. The preflight walks each existing path component from
+the routes root (for a knowledge `basePath` that climbs out with `..`, from
+the deepest directory the root and the destination share): a symlinked
+component whose target is missing, a non-directory component, or one that
+cannot be inspected refuses; only a genuinely missing component counts as
+absent. Every directory the sweep will walk must be listable, or the
+preflight refuses. Case behaviour is probed read-only inside the nearest
+existing directory of the destination (`destinationCaseBehaviour`): on a
+case-insensitive volume, planned paths that differ only by case are one path;
+when it cannot be determined (nothing to probe), case-only claims refuse. The
+hosted claim pass and the plan use the same key (`physicalRouteFileKey`). The
+knowledge clear skips a path another producer in the build owns
+(`protectedRoutePaths`), compared the way emission compares it. The sweep and the commit re-run
+the predicate immediately before each unlink or replacement; the commit
+creates an absent leaf with an exclusive open and stops with `phase: 'commit'`
+(listing the files already written) instead of overwriting an application
+file found there. `_resources` and `sync/apply` yield (leave an application
+`+server.ts`/`+server.js` in place and write nothing) only as the sole
+claimant of their path, and name the application file they keep; a yield
+route refuses when the occupying `+server.ts` carries the header after its
+first line terminator (LF, CR, U+2028 or U+2029), is empty, or holds only
+part of the header (an interrupted
+generated write). A header mention on the first line of a hand-written
+handler still yields. `_resources` is a fallback, emitted
+only when no other route claims its path. A `refuse` and a `yield` emit on one
+path, or an emit to a coordinator `protectedRoutePaths` entry, throw
+`Conflicting SvelteKit route` during rendering; two `refuse` emits keep the
+later one. A `configFileName` whose resolved name (after dot segments)
+starts with `+` is rejected. `smrt generate`
+keeps the refusal as `cause` and copies its `code`.
+Scope: `+server.ts`/`+server.js` files under the routes root and at the
+knowledge route path that exist when the invocation starts. The guarantee
+constrains the route writers, the commit and the sweeps only: the plugin's
+other outputs (registration module, declarations, build-schema module,
+`.gitignore`, config file, artifact staging) keep their own writers, so such an
+output aliased to an existing application handler (for example a symlinked
+`smrt-register.ts`) can still overwrite it (#5469). A refusal leaves that
+invocation's outputs untouched; on a coordinated hosting move the new root is
+committed before the former root is reconciled, so a nested refusal fails the
+build after the new root changed. Concurrent generation, editor races and
+hard links are #5460. An interrupted write is replaced next run only if its
+complete header survived; an empty or partial-header file refuses until the
+operator removes or restores it. Dev publication order is unchanged: a refused
+rescan may already have published the scan's declarations, manifest and
+knowledge.
+
+The generated API client (`generateClientModule`, behind both
+`@happyvertical/smrt-virt-client` and `@smrt/client`) sends every
+caller-supplied path value (an item `id`, a named route parameter) as exactly
+one `encodeURIComponent` segment (`__smrtPathSegment`). An empty, `.` or `..`
+value cannot be one segment, and a lone UTF-16 surrogate cannot be encoded, so
+its request promise rejects (nothing is sent) instead of the request resolving
+onto another route. Every fetcher is `async`, so any bad argument (a missing
+named route parameter, or one that cannot be encoded, which rejects with its
+`URIError`) rejects like a failed request. A named route parameter is read
+once and only as the caller's own property; an inherited one (`toString`) is
+missing. Static collection and route segments are emitted as JSON string
+literals.
+
+`list(params)` writes the one query grammar both list routes read
+(`parseRestListWhere`, `src/query-access.ts`, shared by runtime REST list and
+count and the emitted SvelteKit list route): `limit`, `offset`, `orderBy` (a
+string, or a list of terms comma-joined), `field=value` and `field[op]=value`
+with `op` one of `gt`, `gte`, `lt`, `lte`, `ne`, `in`, `like`. An `[in]`
+operand is a non-empty list sent as one comma-joined value; comma-joining is
+the form every deployed list route already splits, so a new client stays
+correct against an older server. `params.where` (`{ field: value }`,
+`{ field: { op, value } }` or `{ 'field op': value }`, the WebMCP list-tool
+shape) flattens into the same parameters; `params` and `where` must be plain
+records (`list(null)`, a `Map`, `URLSearchParams` or `Date` rejects; only
+`undefined` omits them). A value is a string, number, boolean, bigint or
+`Date` (its ISO string); a query name or value that is not a well-formed
+string (a lone surrogate) rejects, and an explicit `op` in a structured
+condition must be a supported operator string (`null`, `false`, `''` reject).
+An empty or scalar `[in]`
+operand (in every form, `{ op: 'in', value }` included), `null`, an `[in]`
+member holding a comma, an object value, a list without `[in]`, an unsupported
+operator or one parameter given twice rejects before any request. The routes
+refuse a repeated query parameter, and two parameters naming one predicate
+(`price[gte]` and `price >=`), with 400 `REPEATED_QUERY_PARAMETER` instead of
+keeping one value. They refuse a key the caller may not filter (unknown or
+unreadable field, `__proto__` included, since the parsed record has no
+prototype, and a non-field option such as `cache`) with 400
+`QUERY_FIELD_NOT_ALLOWED`; the emitted SvelteKit route keeps the code in its
+public error body. Decoding follows the operator the collection applies (the
+bracket token, or the one written in a whitespace-form key, so `featured like`
+keeps its string pattern). A value compared against a `boolean` field
+(`true`/`false`/`1`/`0`) becomes a boolean. One compared against a `datetime`
+field (including `created_at`, `updated_at`) that is an ISO-8601 instant with
+`Z` or an offset, or a date alone (UTC midnight), becomes its UTC ISO string
+with every fractional digit kept, never a millisecond `Date`, so PostgreSQL
+microsecond comparisons stay exact. Anything else, an offset-less date-time
+included, passes through unchanged, as does a column whose declarations
+disagree on its type. An already-emitted SvelteKit route must be regenerated
+to get the 400s and the decoding. GET custom actions keep their own
+serialization (arrays repeat the key with `String(member)`, objects
+JSON-encode), except that a `Date` is sent as its ISO string, the form their
+routes decode for a `Date` parameter. A named route parameter must be the
+caller's own property and is read once; that value is the one the query or
+the JSON body carries, and a body otherwise follows the options' own
+`toJSON()`. The list
+response shape is unchanged here.
+
 
 `src/vite-preset/` (`@happyvertical/smrt-core/vite`, `smrt()`) composes the Oxc
 decorator block, `smrtConsumer`, then `smrtPlugin` with the template path
@@ -399,7 +571,10 @@ preset fills that allowlist: with `smrt.cookbook.json` present it is the models
 of the cookbook's recipes plus `features`, minus models the cookbook `exposure`
 turns off for `api` or a recipe's `options[model].exposure.api === false`
 (`vite-preset/cookbook-exposure.ts`; recipe `{ exclude }` narrowing is not
-applied by the build yet). `smrt({ expose })` replaces the derived list. No
+applied by the build yet). Each consumed package's manifest is read from the
+nearest `node_modules` at or above the project, as the consumer plugin does,
+so hoisted and workspace installs host too; a package without a readable JSON
+manifest is named in a warning rather than silently hosting nothing. `smrt({ expose })` replaces the derived list. No
 cookbook and no `expose` keeps `svelteKit: true` (nothing hosted). The producer's
 `@happyvertical/smrt-virt-web` still covers only the app's own models; read
 package models from `@smrt/web`. `smrt({ objectsDir })` is passed to the hosting

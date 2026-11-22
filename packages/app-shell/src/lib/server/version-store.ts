@@ -9,8 +9,19 @@
 // Draft: `AppDraftVersion` rows of one draft plus that draft's own pointer
 // (`AppDraft.currentVersion`). Its first row is the live base the draft was
 // copied from.
+//
+// Hosted app: a store is made for ONE tenant (`tenantId`) and every operation
+// runs inside that tenant's context (`inTenant`), so the tenant-scoped models
+// read and write only that tenant's rows whatever the caller's context is.
+// `appRow()` is the tenant-to-app mapping: the tenant's `App` row, created on
+// the tenant's first request.
+import { getCurrentTenant, withTenant } from '@happyvertical/smrt-tenancy';
 import type { DatabaseInterface } from '@happyvertical/sql';
-import type { VersionRecord, VersionStore } from '../../engine/index.ts';
+import {
+  StaleStoreError,
+  type VersionRecord,
+  type VersionStore,
+} from '../../engine/index.ts';
 import { type App, AppCollection } from '../objects/App.ts';
 import { AppDraftCollection } from '../objects/AppDraft.ts';
 import {
@@ -25,6 +36,29 @@ import {
 export const APP_SLUG = 'app';
 
 type VersionRow = AppVersion | AppDraftVersion;
+
+/** The rows of a raw query result (adapters return `{ rows }`). */
+const rowsOf = (r: unknown): unknown[] =>
+  ((r as { rows?: unknown[] })?.rows ?? []) as unknown[];
+
+/**
+ * Run `fn` inside the store's own tenant. A store belongs to ONE tenant in the
+ * hosted app and never trusts the ambient context to be that tenant: it
+ * refuses when a different tenant is ambient, and enters its own when none is
+ * (the engine calls stores from its own queue, outside any request). With no
+ * tenant (the desktop's single owner) it changes nothing.
+ */
+function inTenant<T>(
+  tenantId: string | null | undefined,
+  fn: () => Promise<T>,
+): Promise<T> {
+  if (!tenantId) return fn();
+  const ambient = getCurrentTenant();
+  if (ambient?.tenantId && ambient.tenantId !== tenantId)
+    return Promise.reject(new Error('this store belongs to another tenant'));
+  if (ambient?.tenantId === tenantId) return fn();
+  return withTenant({ tenantId, permissions: new Set<string>() }, fn);
+}
 
 function toRecord(row: VersionRow): VersionRecord {
   const migration = row.migration
@@ -84,8 +118,17 @@ export interface PublishMark {
 export class ShellVersionStore implements VersionStore {
   /** The draft the next `commit` publishes (see {@link PublishMark}); drafts.ts sets and clears it. */
   publishing: PublishMark | null = null;
+  /** The `App` row's id, once read on the shell's own connection (`reachable` needs it inside a claim transaction). */
+  private appId: string | null = null;
 
-  constructor(private readonly db: DatabaseInterface) {}
+  constructor(
+    private readonly db: DatabaseInterface,
+    private readonly tenantId: string | null = null,
+  ) {}
+
+  private scoped<T>(fn: () => Promise<T>): Promise<T> {
+    return inTenant(this.tenantId, fn);
+  }
 
   private versions(db: DatabaseInterface = this.db) {
     return AppVersionCollection.create({ db });
@@ -106,18 +149,24 @@ export class ShellVersionStore implements VersionStore {
   }
 
   /** The singleton App row, created on first use. */
-  async appRow(db: DatabaseInterface = this.db): Promise<App> {
-    const apps = await this.apps(db);
-    const rows = await apps.list({ where: { slug: APP_SLUG }, limit: 1 });
-    if (rows[0]) return rows[0];
-    const created = await apps.create({
-      slug: APP_SLUG,
-      name: 'My app',
-      currentVersion: -1,
-      definition: '',
+  appRow(db: DatabaseInterface = this.db): Promise<App> {
+    return this.scoped(async () => {
+      const apps = await this.apps(db);
+      const rows = await apps.list({ where: { slug: APP_SLUG }, limit: 1 });
+      if (rows[0]) {
+        this.appId ??= rows[0].id as string;
+        return rows[0];
+      }
+      const created = await apps.create({
+        slug: APP_SLUG,
+        name: 'My app',
+        currentVersion: -1,
+        definition: '',
+      });
+      await created.save();
+      this.appId ??= created.id as string;
+      return created;
     });
-    await created.save();
-    return created;
   }
 
   async current(): Promise<number | null> {
@@ -139,18 +188,22 @@ export class ShellVersionStore implements VersionStore {
     await app.save();
   }
 
-  async setCurrent(version: number): Promise<void> {
-    await this.point(version, this.db);
+  setCurrent(version: number): Promise<void> {
+    return this.scoped(() => this.point(version, this.db));
   }
 
-  async get(version: number): Promise<VersionRecord | null> {
-    const row = await this.row(version);
-    return row ? toRecord(row) : null;
+  get(version: number): Promise<VersionRecord | null> {
+    return this.scoped(async () => {
+      const row = await this.row(version);
+      return row ? toRecord(row) : null;
+    });
   }
 
-  async list(): Promise<VersionRecord[]> {
-    const rows = await (await this.versions()).list({ limit: 100000 });
-    return rows.map(toRecord).sort((a, b) => a.version - b.version);
+  list(): Promise<VersionRecord[]> {
+    return this.scoped(async () => {
+      const rows = await (await this.versions()).list({ limit: 100000 });
+      return rows.map(toRecord).sort((a, b) => a.version - b.version);
+    });
   }
 
   private async insert(
@@ -163,8 +216,8 @@ export class ShellVersionStore implements VersionStore {
     await created.save();
   }
 
-  async append(record: VersionRecord): Promise<void> {
-    await this.insert(record, this.db);
+  append(record: VersionRecord): Promise<void> {
+    return this.scoped(() => this.insert(record, this.db));
   }
 
   /**
@@ -174,7 +227,14 @@ export class ShellVersionStore implements VersionStore {
    * pointer where it was. When a publish names its draft ({@link publishing}),
    * the draft's `published` mark is in the same transaction.
    */
-  async commit(records: VersionRecord[], current: number): Promise<void> {
+  commit(records: VersionRecord[], current: number): Promise<void> {
+    return this.scoped(() => this.commitScoped(records, current));
+  }
+
+  private async commitScoped(
+    records: VersionRecord[],
+    current: number,
+  ): Promise<void> {
     const db = this.db;
     if (typeof db.transaction !== 'function')
       throw new Error('the shell database cannot run transactions');
@@ -197,13 +257,109 @@ export class ShellVersionStore implements VersionStore {
     });
   }
 
-  async markPurged(version: number): Promise<void> {
-    await markRowPurged(await this.row(version));
+  /**
+   * `commit` inside the hosted engine's claim transaction `tx`, which also
+   * holds the schema swap (#5470). The pointer moves only if it is still
+   * `expected` (a compare-and-set on the `App` row, whose lock lasts until the
+   * transaction ends); otherwise nothing is written and the swap rolls back
+   * with it. Only `tx` is used: no other connection may be touched inside it.
+   */
+  commitIn(
+    tx: unknown,
+    records: VersionRecord[],
+    current: number,
+    expected: number | null,
+    markDraft = false,
+  ): Promise<void> {
+    return this.scoped(async () => {
+      const txDb = tx as DatabaseInterface;
+      for (const r of records) await this.insert(r, txDb);
+      const app = await this.appRow(txDb);
+      const rec = await this.row(current, txDb);
+      if (!rec) throw new Error(`version ${current} is not stored`);
+      let name = app.name;
+      try {
+        name = JSON.parse(rec.definition).name ?? name;
+      } catch {
+        /* keep the name */
+      }
+      const hit = await txDb.query(
+        `UPDATE apps SET current_version = ?, definition = ?, name = ? WHERE id = ? AND current_version = ?${this.tenantClause} RETURNING id`,
+        [
+          current,
+          rec.definition,
+          name,
+          app.id,
+          expected ?? -1,
+          ...this.tenantParam,
+        ],
+      );
+      if (!rowsOf(hit).length)
+        throw new StaleStoreError(
+          `the stored current version is no longer ${expected ?? 'empty'}; nothing was written. Reopen the app.`,
+          { expected },
+        );
+      const mark = markDraft ? this.publishing : null;
+      if (mark) {
+        const draft = await (await AppDraftCollection.create({ db: txDb })).get(
+          mark.draftId,
+        );
+        if (draft?.status !== 'open')
+          throw new Error('the draft is no longer open');
+        draft.status = 'published';
+        draft.endedAt = new Date().toISOString();
+        draft.publishedVersions = JSON.stringify(records.map((r) => r.version));
+        await draft.save();
+      }
+    });
   }
 
-  async maxVersion(): Promise<number> {
-    const rows = await (await this.versions()).list({ limit: 100000 });
-    return rows.length ? Math.max(...rows.map((r) => Number(r.version))) : -1;
+  reachable(tx: unknown): Promise<boolean> {
+    return this.scoped(async () => {
+      const id = this.appId ?? ((await this.appRow()).id as string);
+      const found = await (tx as DatabaseInterface).query(
+        `SELECT id FROM apps WHERE id = ?${this.tenantClause}`,
+        [id, ...this.tenantParam],
+      );
+      return rowsOf(found).length > 0;
+    });
+  }
+
+  /** Raw SQL bypasses the tenancy interceptor: a hosted store names its tenant itself. */
+  private get tenantClause() {
+    return this.tenantId ? ' AND tenant_id = ?' : '';
+  }
+  private get tenantParam(): string[] {
+    return this.tenantId ? [this.tenantId] : [];
+  }
+
+  publishingDraft(): string | null {
+    return this.publishing?.draftId ?? null;
+  }
+
+  reopenDraftIn(
+    tx: unknown,
+    draftId: string,
+    numbers: number[],
+  ): Promise<boolean> {
+    return this.scoped(async () => {
+      const hit = await (tx as DatabaseInterface).query(
+        `UPDATE app_drafts SET status = 'open', ended_at = '', published_versions = '' WHERE id = ? AND status = 'published' AND published_versions = ?${this.tenantClause} RETURNING id`,
+        [draftId, JSON.stringify(numbers), ...this.tenantParam],
+      );
+      return rowsOf(hit).length > 0;
+    });
+  }
+
+  markPurged(version: number): Promise<void> {
+    return this.scoped(async () => markRowPurged(await this.row(version)));
+  }
+
+  maxVersion(): Promise<number> {
+    return this.scoped(async () => {
+      const rows = await (await this.versions()).list({ limit: 100000 });
+      return rows.length ? Math.max(...rows.map((r) => Number(r.version))) : -1;
+    });
   }
 }
 
@@ -216,7 +372,12 @@ export class DraftVersionStore implements VersionStore {
   constructor(
     private readonly db: DatabaseInterface,
     readonly draftId: string,
+    private readonly tenantId: string | null = null,
   ) {}
+
+  private scoped<T>(fn: () => Promise<T>): Promise<T> {
+    return inTenant(this.tenantId, fn);
+  }
 
   private versions() {
     return AppDraftVersionCollection.create({ db: this.db });
@@ -238,44 +399,54 @@ export class DraftVersionStore implements VersionStore {
     return rows[0] ?? null;
   }
 
-  async current(): Promise<number | null> {
-    const v = Number((await this.draftRow()).currentVersion);
-    return v < 0 ? null : v;
-  }
-
-  async setCurrent(version: number): Promise<void> {
-    if (!(await this.row(version)))
-      throw new Error(`version ${version} is not stored`);
-    const draft = await this.draftRow();
-    draft.currentVersion = version;
-    await draft.save();
-  }
-
-  async get(version: number): Promise<VersionRecord | null> {
-    const row = await this.row(version);
-    return row ? toRecord(row) : null;
-  }
-
-  async list(): Promise<VersionRecord[]> {
-    const rows = await (await this.versions()).list({
-      where: { draftId: this.draftId },
-      limit: 100000,
+  current(): Promise<number | null> {
+    return this.scoped(async () => {
+      const v = Number((await this.draftRow()).currentVersion);
+      return v < 0 ? null : v;
     });
-    return rows.map(toRecord).sort((a, b) => a.version - b.version);
   }
 
-  async append(record: VersionRecord): Promise<void> {
-    if (await this.row(record.version))
-      throw new Error(`version ${record.version} already exists`);
-    const created = await (await this.versions()).create({
-      draftId: this.draftId,
-      ...columnsOf(record),
+  setCurrent(version: number): Promise<void> {
+    return this.scoped(async () => {
+      if (!(await this.row(version)))
+        throw new Error(`version ${version} is not stored`);
+      const draft = await this.draftRow();
+      draft.currentVersion = version;
+      await draft.save();
     });
-    await created.save();
   }
 
-  async markPurged(version: number): Promise<void> {
-    await markRowPurged(await this.row(version));
+  get(version: number): Promise<VersionRecord | null> {
+    return this.scoped(async () => {
+      const row = await this.row(version);
+      return row ? toRecord(row) : null;
+    });
+  }
+
+  list(): Promise<VersionRecord[]> {
+    return this.scoped(async () => {
+      const rows = await (await this.versions()).list({
+        where: { draftId: this.draftId },
+        limit: 100000,
+      });
+      return rows.map(toRecord).sort((a, b) => a.version - b.version);
+    });
+  }
+
+  append(record: VersionRecord): Promise<void> {
+    return this.scoped(async () => {
+      if (await this.row(record.version))
+        throw new Error(`version ${record.version} already exists`);
+      const created = await (await this.versions()).create({
+        draftId: this.draftId,
+        ...columnsOf(record),
+      });
+      await created.save();
+    });
+  }
+
+  markPurged(version: number): Promise<void> {
+    return this.scoped(async () => markRowPurged(await this.row(version)));
   }
 
   async maxVersion(): Promise<number> {
