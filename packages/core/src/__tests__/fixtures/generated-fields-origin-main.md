@@ -122,3 +122,7 @@ DDL, migration and OpenAPI digests have not moved since the recapture above.
   `single/index.ts` and `modular/handlers/index.ts`): the emitted
   `applyWritablePolicy` helper is gone. Create and update arguments pass
   `prepareWriteInput()` from core; an update compares them with the loaded row.
+- Protected fields the caller cannot read (#5195): the emitted item route,
+  the emitted sync route and both emitted MCP servers pass the caller's read
+  permissions (`locals`, `PUBLIC_JSON_OPTIONS`) to `prepareWriteInput()`, which
+  refuses such a field whatever its value instead of comparing it.

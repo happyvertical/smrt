@@ -302,7 +302,7 @@ console.log(JSON.stringify({ resolved, results, serializerFailure }));
       /registryKey["']?\s*:\s*["']@fixture\/pick-b3490:PickedThing["']/,
     );
     expect(emitted).toContain(
-      `prepareWriteInput(${JSON.stringify(PICK_B)}, updateData, existing)`,
+      `prepareWriteInput(${JSON.stringify(PICK_B)}, updateData, existing, PUBLIC_JSON_OPTIONS)`,
     );
   });
 });

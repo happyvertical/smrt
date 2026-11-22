@@ -1122,7 +1122,9 @@ export async function invokeManifestTool(
       // settable accessors, nothing else: the rule REST and MCP apply.
       applyUpdateInput(
         item,
-        prepareWriteInput(registryKeyFor(tool), rest, item),
+        prepareWriteInput(registryKeyFor(tool), rest, item, {
+          permissions: run.permissions,
+        }),
         registryKeyFor(tool),
       );
       await item.save();

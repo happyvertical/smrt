@@ -3654,7 +3654,7 @@ ${generateNotFoundError(className)}
   try {
     // A field the caller may not write is compared with the loaded row: an
     // unchanged value is accepted, a changed one refused.
-    const data = prepareWriteInput(${JSON.stringify(className)}, body, item);
+    const data = prepareWriteInput(${JSON.stringify(className)}, body, item, publicJsonOptions);
     await collection.withAuditMutation(item, 'updated', async (bound) => {
       // The body sets declared fields and settable accessors, nothing else.
       applyUpdateInput(bound, data, ${JSON.stringify(className)});

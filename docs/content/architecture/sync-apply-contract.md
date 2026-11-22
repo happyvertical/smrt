@@ -289,7 +289,10 @@ relaxation:
   allowlist, or `_`-prefixed) is accepted on an update when it equals the
   stored value and otherwise rejects the item `invalid_payload` with
   `details: { code: 'VALIDATION_FIELD_NOT_WRITABLE', field }`; on a create
-  any non-null protected field rejects the item. Other items in the batch
+  any non-null protected field rejects the item. A protected field the
+  caller cannot read (`sensitive`, a `readPermission` they do not hold) is
+  never compared with the stored value: it rejects the item whatever its
+  value, so a batch of guesses confirms nothing. Other items in the batch
   proceed.
 - The row UUID is taken **only** from the validated envelope `id` field and
   injected after the policy runs. A payload `id` is dead on arrival.

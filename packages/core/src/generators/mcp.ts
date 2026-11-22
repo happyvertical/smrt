@@ -2101,7 +2101,12 @@ export class MCPGenerator {
         // A protected field is compared with the loaded row: an unchanged
         // value is accepted, a changed one refused. Server-managed keys
         // (incl. `id`) are skipped.
-        const updateData = prepareWriteInput(objectName, args, existing);
+        const updateData = prepareWriteInput(
+          objectName,
+          args,
+          existing,
+          this.getPublicJsonOptions(),
+        );
         await collection.withAuditMutation(
           existing,
           'updated',
@@ -2807,7 +2812,7 @@ ${indent}  }
 
 ${indent}  // A field the caller may not write is compared with the loaded row: an
 ${indent}  // unchanged value is accepted, a changed one refused.
-${indent}  const writable = prepareWriteInput(${JSON.stringify(lookup)}, updateData, existing);
+${indent}  const writable = prepareWriteInput(${JSON.stringify(lookup)}, updateData, existing, PUBLIC_JSON_OPTIONS);
 ${indent}  await collection.withAuditMutation(existing, 'updated', async (bound) => {
 ${indent}    // Arguments set declared fields and settable accessors only.
 ${indent}    applyUpdateInput(bound, writable, ${JSON.stringify(lookup)});

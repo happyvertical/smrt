@@ -2657,7 +2657,12 @@ export class APIGenerator {
 
     // A field the caller may not write is compared with the loaded row: an
     // unchanged value is accepted, a changed one refused (#5195).
-    const data = prepareWriteInput(objectName, body, object);
+    const data = prepareWriteInput(
+      objectName,
+      body,
+      object,
+      this.getPublicJsonOptions(req),
+    );
     // The body sets declared fields and settable accessors, nothing else.
     await collection.withAuditMutation(object, 'updated', async (bound) => {
       applyUpdateInput(bound, data, objectName);
@@ -2969,7 +2974,9 @@ export class APIGenerator {
           if (!normalizeTypedHttpError(error)) throw error;
           throw new SyncApplyRejection('forbidden');
         }
-        return prepareWriteInput(resolvedName, payload, stored);
+        return prepareWriteInput(resolvedName, payload, stored, {
+          permissions: principal.permissions,
+        });
       },
     };
   }

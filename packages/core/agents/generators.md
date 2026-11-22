@@ -36,6 +36,26 @@ data, stored?)` (`src/request-input.ts`, over `resolveWriteBody` in
     a value that would persist identically is accepted and left out, so a
     fetched record can be sent back as is; a different value is refused;
   - create (no stored value): a non-null value is refused, null is left out.
+- A protected field the caller cannot read is never compared (the answer
+  would confirm a guess of a value their responses omit): naming it on an
+  update is refused with the same `VALIDATION_FIELD_NOT_WRITABLE`, whatever
+  its value. Not readable means absent from the stored row's own public
+  projection for the caller (`toPublicJSON({ permissions })`): a `sensitive`
+  field, a `readPermission` field the caller does not hold, a field the row's
+  class withholds. Each path passes the permissions its own responses are
+  projected with as `prepareWriteInput`'s fourth argument (REST and sync: the
+  request principal; emitted routes: `locals`; MCP: the server's
+  permissions; the assistant: the run's); omitted, none is held, so the
+  CLI refuses such a field too. Only a protected field the caller reads in
+  their own GET keeps the unchanged round trip. Tests:
+  `__tests__/fixtures/protected-field-writes.ts` (every transport),
+  `__tests__/protected-field-read-visibility.test.ts`.
+- A protected field is judged by the write's effect as well as by the keys the
+  body names: when a settable accessor in the body (`tags` over a read-only
+  `tagsJson`) changes one, `assignUpdateInput` puts every declared field back
+  and refuses with the same 400 naming the backing field. A setter whose
+  effect leaves protected fields alone, or sets the value they hold, applies.
+  Test: `__tests__/protected-field-alias.test.ts`.
 - The refusal is `FieldNotWritableError`: code
   `VALIDATION_FIELD_NOT_WRITABLE`, a typed 400 whose `details.field` names the
   field (`TypedHttpFailure.details.field` in the HTTP body). Sync apply rejects
@@ -50,7 +70,8 @@ data, stored?)` (`src/request-input.ts`, over `resolveWriteBody` in
   so an STI row written through its base keeps both.
 
 Every one of these paths calls `prepareWriteInput`, so a protected field sent
-back unchanged is accepted and a changed one is refused: MCP reports it as a
+back unchanged is accepted (when the caller can read it) and a changed one is
+refused: MCP reports it as a
 tool error (code `VALIDATION_FIELD_NOT_WRITABLE`, the field in its message),
 the CLI exits with the same message, and the assistant loop returns a failed
 tool invocation. The emitted MCP servers import it from

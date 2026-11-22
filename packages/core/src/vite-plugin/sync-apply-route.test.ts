@@ -198,7 +198,7 @@ describe('generateSyncApplyRouteTemplate', () => {
   it('delegates to the shared core engine and policy helper', () => {
     expect(content).toContain('processSyncApplyBatch');
     expect(content).toContain(
-      'prepareWriteInput(target.registryKey, payload, stored)',
+      'prepareWriteInput(target.registryKey, payload, stored, getPublicJsonOptions(locals))',
     );
     expect(content).not.toContain('applySyncWritablePolicy');
     // One import: a second declaration fails to parse in the emitted route.

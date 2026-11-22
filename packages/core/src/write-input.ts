@@ -192,6 +192,14 @@ export interface UpdateInputRules {
    */
   isProtected?(key: string): boolean;
   /**
+   * Whether the caller can read `key` of the stored object in its own
+   * response. A protected key the caller cannot read is never compared with
+   * the stored value (the answer would confirm a guess of a value the caller
+   * may not see): it refuses the body whatever its value. Defaults to
+   * readable.
+   */
+  isReadable?(key: string): boolean;
+  /**
    * Whether `incoming` would persist as the value `stored` holds for `key`.
    * Defaults to {@link sameStoredValue} without a declared type.
    */
@@ -344,6 +352,12 @@ export interface WriteBodyPolicy {
    */
   isProtected(key: string): boolean;
   /**
+   * Whether the caller can read `key` of the stored object in its own
+   * response; see {@link UpdateInputRules.isReadable}. Only consulted on an
+   * update. Defaults to readable.
+   */
+  isReadable?(key: string): boolean;
+  /**
    * Keys skipped without a comparison besides
    * {@link SERVER_MANAGED_WRITE_KEYS}: keys that configure a service of the
    * object, keys the model only writes into its output (`displayLabel`).
@@ -360,6 +374,8 @@ export interface WriteBodyPolicy {
  * - {@link SERVER_MANAGED_WRITE_KEYS} and the keys `policy.isSkipped` names
  *   are left out and never compared.
  * - A key the caller may not write (`policy.isProtected`):
+ *   - on an update, a key the caller cannot read (`policy.isReadable`) refuses
+ *     the body whatever its value, since comparing it would confirm guesses;
  *   - on an update (`stored` given), is left out when its value would
  *     persist as the stored value, so a record read from the API can be sent
  *     back as is, and refuses the body otherwise;
@@ -383,9 +399,13 @@ export function resolveWriteBody(
     if (isServerManagedWriteKey(key)) continue;
     if (policy.isSkipped?.(key)) continue;
     if (policy.isProtected(key)) {
-      if (stored)
+      if (stored) {
+        // A key the caller cannot read is never compared: the answer would
+        // confirm a guess of a value they may not see.
+        if (policy.isReadable && !policy.isReadable(key))
+          throw new FieldNotWritableError(key);
         assertProtectedUnchanged(stored, key, value, policy.sameValue);
-      else if (value != null) throw new FieldNotWritableError(key);
+      } else if (value != null) throw new FieldNotWritableError(key);
       continue;
     }
     result[key] = value;
@@ -413,6 +433,8 @@ export function resolveUpdateInput(
   for (const key of Object.keys(data)) {
     if (rules.isEmittedOnly?.(key)) continue;
     if (rules.isProtected?.(key)) {
+      if (rules.isReadable && !rules.isReadable(key))
+        throw new FieldNotWritableError(key);
       assertProtectedUnchanged(target, key, data[key], rules.sameValue);
       continue;
     }
@@ -451,7 +473,58 @@ export function assignUpdateInput(
 ): void {
   const keys = resolveUpdateInput(target, data, rules);
   const writable = target as Record<string, unknown>;
+  // A settable accessor writes through to other fields: a protected one must
+  // hold the value it had, whatever key the body used to reach it.
+  const guarded = keys.some(
+    (key) => classifyUpdateKey(target, key) === 'accessor',
+  )
+    ? protectedFieldsOf(target, rules)
+    : [];
+  const declared = guarded.length
+    ? Object.keys(target).filter(
+        (key) =>
+          !key.startsWith('_') &&
+          !isServerManagedWriteKey(key) &&
+          rules.declaresField(key),
+      )
+    : [];
+  const before = new Map(
+    declared.map((key) => [key, storedValueOf(target, key)] as const),
+  );
   for (const key of keys) writable[key] = data[key];
+  for (const key of guarded) {
+    const was = before.get(key);
+    const now = storedValueOf(target, key);
+    if (now === was) continue;
+    const same =
+      was !== STORED_UNMATCHABLE &&
+      (rules.sameValue
+        ? rules.sameValue(key, was, now)
+        : sameStoredValue(undefined, was, now));
+    if (same) continue;
+    // A refused body changes nothing: put every declared field back.
+    for (const [name, value] of before) {
+      if (value === STORED_UNMATCHABLE) continue;
+      try {
+        writable[name] = value;
+      } catch {
+        // A field that refuses assignment was not changed through one.
+      }
+    }
+    throw new FieldNotWritableError(key);
+  }
+}
+
+/** The declared fields of `target` the caller may not write. */
+function protectedFieldsOf(target: object, rules: UpdateInputRules): string[] {
+  if (!rules.isProtected) return [];
+  return Object.keys(target).filter(
+    (key) =>
+      !key.startsWith('_') &&
+      !isServerManagedWriteKey(key) &&
+      rules.declaresField(key) &&
+      rules.isProtected?.(key),
+  );
 }
 
 /**

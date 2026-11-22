@@ -13,6 +13,8 @@
  * `write-input.ts` for the rule.
  */
 
+import type { PublicJsonOptions } from './object';
+import { publicSerializerOf } from './public-json';
 import { ObjectRegistry } from './registry';
 import type { SmrtObjectConstructor } from './registry/types';
 import {
@@ -150,6 +152,32 @@ function writePolicyOf(names: readonly string[]): {
 }
 
 /**
+ * Whether the caller reads each key of `stored` in their own response: the
+ * keys of the object's public projection for `read`. A `sensitive` field, a
+ * `readPermission` field the caller does not hold, or a field the object's
+ * class withholds is not readable. An object with no public serialiser has
+ * nothing hidden. Without `read`, no permission is held (fail closed).
+ */
+function readabilityOf(
+  stored: object,
+  read: PublicJsonOptions | undefined,
+): (key: string) => boolean {
+  let visible: Set<string> | undefined;
+  return (key) => {
+    if (!visible) {
+      const serialize = publicSerializerOf(stored);
+      if (!serialize) return true;
+      const projected = serialize(read) as Record<string, unknown> | null;
+      visible = new Set(Object.keys(projected ?? {}));
+      const meta = projected?._meta_data;
+      if (meta && typeof meta === 'object')
+        for (const name of Object.keys(meta)) visible.add(name);
+    }
+    return visible.has(key);
+  };
+}
+
+/**
  * The update rules of a model.
  *
  * @param instance - The loaded object the body will be assigned onto
@@ -157,10 +185,13 @@ function writePolicyOf(names: readonly string[]): {
  *   together with the policy of the instance's own class, and it is the model
  *   used when the instance's class is not registered (a structural row, a
  *   test double)
+ * @param read - Read projection of the caller (their permissions): a
+ *   protected field they cannot read is refused whatever its value
  */
 export function updateInputRulesFor(
   instance: object,
   model?: string,
+  read?: PublicJsonOptions,
 ): UpdateInputRules {
   const own = modelOfInstance(instance);
   const name = own ?? model;
@@ -187,6 +218,7 @@ export function updateInputRulesFor(
     hasFieldMetadata: hasFieldMetadata(name),
     isEmittedOnly: policy.isEmittedOnly,
     isProtected: policy.isProtected,
+    isReadable: readabilityOf(instance, read),
     sameValue: policy.sameValue,
   };
 }
@@ -213,20 +245,30 @@ export function updateInputRulesFor(
  *     value, since there is no stored value to match, and left out when null.
  *   The policy of the route's model and of the stored row's own class both
  *   hold, so an STI row written through its base route keeps both.
+ * - A protected field the caller cannot read is never compared (see
+ *   `read` below): the answer would confirm a guess.
  * - Every other key is kept; {@link applyUpdateInput} and
  *   {@link assertCreateInput} then refuse a key that is not a declared field
  *   or settable accessor.
  *
  * @param model - Registry key of the route's model, or of the create target
  * @param data - The request body
+ * - A protected field the caller cannot read (`sensitive`, a `readPermission`
+ *   they do not hold, a field the class withholds: anything their own
+ *   response omits) is never compared: naming it on an update is refused
+ *   whatever its value, so the refusal cannot confirm a guess.
+ *
  * @param stored - The loaded object an update targets; omit for a create
+ * @param read - Read projection of the caller (their permissions), the one
+ *   their responses are serialised with; omitted, no permission is held
  * @throws {FieldNotWritableError} a typed 400 naming the first protected
- *   field the body would change
+ *   field the body would change or may not compare
  */
 export function prepareWriteInput(
   model: string | undefined,
   data: unknown,
   stored?: object,
+  read?: PublicJsonOptions,
 ): Record<string, unknown> {
   const ownModel = stored ? modelOfInstance(stored) : undefined;
   const names = [ownModel, model].filter(
@@ -244,6 +286,7 @@ export function prepareWriteInput(
       isSkipped: (key) =>
         ObjectRegistry.isServiceOptionInput(serviceModel, key) ||
         policy.isEmittedOnly(key),
+      isReadable: stored ? readabilityOf(stored, read) : undefined,
       sameValue: policy.sameValue,
     },
     stored,

@@ -110,7 +110,7 @@ describe('Issue #1540 (2b): writable-field allowlist on generated routes', () =>
     );
     expect(itemRoute).toContain('const body: unknown = await request.json();');
     expect(itemRoute).toContain(
-      'const data = prepareWriteInput("Widget", body, item);',
+      'const data = prepareWriteInput("Widget", body, item, publicJsonOptions);',
     );
 
     // No route-local copy of the policy.

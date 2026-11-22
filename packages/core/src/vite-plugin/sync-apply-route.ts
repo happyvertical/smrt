@@ -334,6 +334,18 @@ function requestTenantOf(locals: unknown): string | undefined {
   return typeof active === 'string' && active ? active : undefined;
 }
 
+// The permissions the caller's own responses are projected with, from the same
+// snapshot the CRUD routes use: a protected field they cannot read is never
+// compared with the stored value.
+function getPublicJsonOptions(locals: unknown): { permissions?: Iterable<string> } {
+  const l = readRecord(locals);
+  const permissions = l.permissions ?? l.permissionSet ?? l.smrtPermissions;
+  if (Array.isArray(permissions) || permissions instanceof Set) {
+    return { permissions };
+  }
+  return {};
+}
+
 function hasGrantedPermission(value: unknown, permission: string): boolean {
   if (Array.isArray(value)) return value.includes(permission);
   if (value instanceof Set) return value.has(permission);
@@ -435,7 +447,7 @@ export const POST: RequestHandler = async ({ locals, request }) => {
         // service options are skipped, and a field the caller may not write
         // is refused when the payload would change the stored value.
         prepare: (payload: Record<string, unknown>, stored) =>
-          prepareWriteInput(target.registryKey, payload, stored),
+          prepareWriteInput(target.registryKey, payload, stored, getPublicJsonOptions(locals)),
       };
     },
   });

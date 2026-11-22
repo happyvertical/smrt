@@ -62,9 +62,30 @@ export class ProtectedWriteListedCollection extends SmrtCollection<ProtectedWrit
   static readonly _itemClass = ProtectedWriteListed;
 }
 
+/** Protected fields the caller cannot read: a guess must not be confirmed. */
+@smrt({ api: { include: ['list', 'get', 'create', 'update'] } })
+export class ProtectedWriteSecret extends SmrtObject {
+  @field({ type: 'text' })
+  label: string = '';
+
+  @field({ type: 'text', readonly: true, sensitive: true })
+  secretHash: string = '';
+
+  @field({
+    type: 'text',
+    readonly: true,
+    readPermission: 'protectedwritesecret.read_gated',
+  })
+  gated: string = '';
+}
+export class ProtectedWriteSecretCollection extends SmrtCollection<ProtectedWriteSecret> {
+  static readonly _itemClass = ProtectedWriteSecret;
+}
+
 export const PROTECTED_WRITE_CLASSES = [
   'ProtectedWriteRecord',
   'ProtectedWriteListed',
+  'ProtectedWriteSecret',
 ];
 
 /** What a transport answered to one write. */
@@ -76,7 +97,7 @@ interface Outcome {
   text: string;
 }
 
-type Model = 'record' | 'listed';
+type Model = 'record' | 'listed' | 'secret';
 
 interface Transport {
   name: string;
@@ -113,6 +134,7 @@ export function describeProtectedFieldWrites(
     let db: DatabaseInterface;
     let records: ProtectedWriteRecordCollection;
     let listed: ProtectedWriteListedCollection;
+    let secrets: ProtectedWriteSecretCollection;
     let rest: (req: Request) => Promise<Response>;
     let emitted: EmittedProject;
     const segment = {} as Record<Model, string>;
@@ -127,13 +149,19 @@ export function describeProtectedFieldWrites(
         'ProtectedWriteListed',
         ProtectedWriteListedCollection as never,
       );
+      ObjectRegistry.registerCollection(
+        'ProtectedWriteSecret',
+        ProtectedWriteSecretCollection as never,
+      );
       const opened = await open();
       db = opened.db;
       records = await ProtectedWriteRecordCollection.create({ db });
       listed = await ProtectedWriteListedCollection.create({ db });
+      secrets = await ProtectedWriteSecretCollection.create({ db });
       for (const [model, name] of [
         ['record', 'ProtectedWriteRecord'],
         ['listed', 'ProtectedWriteListed'],
+        ['secret', 'ProtectedWriteSecret'],
       ] as const) {
         const info = ObjectRegistry.getClass(name);
         if (!info) throw new Error(`${name} is not registered`);
@@ -146,6 +174,7 @@ export function describeProtectedFieldWrites(
       );
       api.registerCollection(segment.record, records as never);
       api.registerCollection(segment.listed, listed as never);
+      api.registerCollection(segment.secret, secrets as never);
       rest = api.generateHandler();
       emitted = await emitTransports(PROTECTED_WRITE_CLASSES, {
         db,
@@ -289,7 +318,7 @@ export function describeProtectedFieldWrites(
         };
       };
       const toolOf = (model: Model, verb: 'create' | 'update') =>
-        `${model === 'record' ? 'protectedwriterecord' : 'protectedwritelisted'}_${verb}`;
+        `${{ record: 'protectedwriterecord', listed: 'protectedwritelisted', secret: 'protectedwritesecret' }[model]}_${verb}`;
       const toolTransport = (
         name: string,
         call: (tool: string, args: unknown) => Promise<never>,
@@ -592,6 +621,78 @@ export function describeProtectedFieldWrites(
         const [created] = await records.list({ where: { label: okLabel } });
         expect(created?.code).toBe('');
         expect(Number(created?.revision)).toBe(0);
+      });
+    });
+
+    describe.each(
+      TRANSPORTS.filter(
+        (name) => engine === 'SQLite' || !FILE_DATABASE_TRANSPORTS.has(name),
+      ),
+    )('%s: protected fields the caller cannot read', (name) => {
+      const GUESS = 'guess-that-is-wrong';
+      const CORRECT = 'hash-that-is-correct';
+      const GATED = 'gated-value';
+
+      async function seedSecret(label: string) {
+        const row = await secrets.create({
+          label,
+          secretHash: CORRECT,
+          gated: GATED,
+        } as never);
+        return row.id as string;
+      }
+      const snapshot = async (id: string) => {
+        const row = await secrets.get(id, { cache: false } as never);
+        return {
+          label: row?.label,
+          secretHash: row?.secretHash,
+          gated: row?.gated,
+        };
+      };
+
+      it('refuses a correct and a wrong guess identically, comparing nothing', async () => {
+        const id = await seedSecret(`${name}: oracle`);
+        const before = await snapshot(id);
+        for (const key of ['secretHash', 'gated'] as const) {
+          const correct = await transport(name).update('secret', id, {
+            label: 'not applied',
+            [key]: key === 'secretHash' ? CORRECT : GATED,
+          });
+          const wrong = await transport(name).update('secret', id, {
+            label: 'not applied',
+            [key]: GUESS,
+          });
+          expect(correct.applied, correct.text).toBe(false);
+          expect(wrong.applied, wrong.text).toBe(false);
+          expect(correct.code).toBe('VALIDATION_FIELD_NOT_WRITABLE');
+          expect(correct.field).toBe(key);
+          // The same answer: nothing about the stored value is revealed.
+          expect(correct).toEqual({ ...wrong, text: correct.text });
+          expect(correct.text.replace(CORRECT, '').replace(GATED, '')).toBe(
+            wrong.text.replace(GUESS, ''),
+          );
+          expect(correct.text).not.toContain(
+            key === 'secretHash' ? GATED : CORRECT,
+          );
+        }
+        expect(await snapshot(id)).toEqual(before);
+      });
+
+      it('still accepts the record the caller read sent back', async () => {
+        const id = await seedSecret(`${name}: visible round trip`);
+        const body = await fetchRecord('secret', id);
+        expect(body).not.toHaveProperty('secretHash');
+        expect(body).not.toHaveProperty('gated');
+        const outcome = await transport(name).update('secret', id, {
+          ...body,
+          label: `${name}: visible round trip, edited`,
+        });
+        expect(outcome.applied, outcome.text).toBe(true);
+        expect(await snapshot(id)).toEqual({
+          label: `${name}: visible round trip, edited`,
+          secretHash: CORRECT,
+          gated: GATED,
+        });
       });
     });
 
