@@ -56,16 +56,24 @@ export function createOAuthHandlers<Event extends OAuthHandlerEvent>(
     return id;
   };
   return {
-    /** Return validated scope/client information for the host's consent page. */
+    /** Validated client info for the consent page; `scopes` is what consent would grant. */
     authorize: (event: Event) =>
       guarded(async () => {
         const id = await session(event);
         await options.authorization.listGrants(id); // Prove a live session, not just a cookie.
-        return json(
-          await options.server.parseAuthorizationRequest(
-            event.url.searchParams,
-          ),
+        const parsed = await options.server.parseAuthorizationRequest(
+          event.url.searchParams,
         );
+        // Show what consent would grant, not what the client asked for.
+        const { requested, granted } =
+          await options.authorization.consentScopes(parsed, id);
+        return json({
+          ...parsed,
+          scopes: granted,
+          ...(granted.length === requested.length
+            ? {}
+            : { requestedScopes: requested }),
+        });
       }),
     /** A successful POST requires same-origin explicit approval and a fresh session. */
     consent: (event: Event) =>
