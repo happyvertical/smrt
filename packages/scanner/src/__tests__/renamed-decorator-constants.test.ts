@@ -1,8 +1,7 @@
 /**
- * A decorator imported under another name is never trusted as a read-only
- * SMRT call, so a module constant passed to it is reported rather than read.
- * The base scanner read such a constant as an empty config, dropping what it
- * stated; a decorator imported under its own name reads it.
+ * A module constant passed as a class decorator's whole argument is never
+ * read: the scan fails and says to write the options inline. The base
+ * scanner read it as an empty config, dropping what it stated.
  */
 
 import { describe, expect, it } from 'vitest';
@@ -16,23 +15,16 @@ const parse = (source: string) => {
   };
 };
 
-describe('a module constant passed to a decorator', () => {
-  it('fails for the model decorator imported under another name, naming the fix', () => {
+describe('a module constant passed as a decorator whole argument', () => {
+  it.each([
+    ['smrt as model', '@model(OPTIONS)'],
+    ['smrt', '@smrt(OPTIONS)'],
+  ])('fails for the model decorator imported as %s, naming the fix', (binding, decorator) => {
     const { errors } = parse(
-      `import { SmrtObject, smrt as model } from '@happyvertical/smrt-core';\nconst OPTIONS = { api: false };\n@model(OPTIONS)\nexport class Account extends SmrtObject {}\n`,
+      `import { SmrtObject, ${binding} } from '@happyvertical/smrt-core';\nconst OPTIONS = { api: false };\n${decorator}\nexport class Account extends SmrtObject {}\n`,
     );
     expect(errors).toHaveLength(1);
     expect(errors[0]).toContain('OPTIONS');
-    expect(errors[0]).toContain('`@model()`');
-    expect(errors[0]).toContain('under its own name (`smrt`)');
-    expect(errors[0]).toContain('inline');
-  });
-
-  it('reads it for the model decorator imported under its own name', () => {
-    const { errors, config } = parse(
-      `import { SmrtObject, smrt } from '@happyvertical/smrt-core';\nconst OPTIONS = { api: false };\n@smrt(OPTIONS)\nexport class Account extends SmrtObject {}\n`,
-    );
-    expect(errors).toEqual([]);
-    expect(config).toEqual({ api: false });
+    expect(errors[0]).toContain('write the options inline');
   });
 });

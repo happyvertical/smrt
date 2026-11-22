@@ -76,16 +76,16 @@ describe('report source provenance', () => {
 
   it('applies both orders to joins.*.source', async () => {
     const before = await scanReport(
-      `const join = { source: 'Invoice', on: { id: 'id' } };`,
-      `{ source: 'Invoice', joins: { owners: { source: ImportedAccount, ...join } } }`,
+      `const join = { source: 'Invoice' };`,
+      `{ source: 'Invoice', joins: { owners: { source: ImportedAccount, ...join, on: { id: 'id' } } } }`,
     );
     expect(before.errors).toEqual([]);
     expect(before.report.joins?.owners.source).toBe('Invoice');
     expect(before.report.joins?.owners.sourceQualified).toBeUndefined();
 
     const after = await scanReport(
-      `const join = { source: 'Invoice', on: { id: 'id' } };`,
-      `{ source: 'Invoice', joins: { owners: { ...join, source: ImportedAccount } } }`,
+      `const join = { source: 'Invoice' };`,
+      `{ source: 'Invoice', joins: { owners: { ...join, source: ImportedAccount, on: { id: 'id' } } } }`,
     );
     expect(after.errors).toEqual([]);
     expect(after.report.joins?.owners.source).toBe('Account');

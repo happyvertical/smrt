@@ -146,6 +146,57 @@ describe('a shared options constant, as the base scanner reads it', () => {
     expect(config).toEqual({ api: false });
   });
 
+  const NESTED = "const POLICY = { api: { include: ['list'] } };";
+  it.each([
+    [
+      'a default import named field',
+      "import field from 'forms-lib';",
+      '@field(POLICY)',
+    ],
+    [
+      'a local function named field',
+      'function field(options: unknown) { return (..._: unknown[]) => options; }',
+      '@field(POLICY)',
+    ],
+    [
+      'a renamed import named formField',
+      "import { field as formField } from 'forms-lib';",
+      '@formField(POLICY)',
+    ],
+    [
+      'a renamed import named field',
+      "import { normalize as field } from 'forms-lib';",
+      '@field(POLICY)',
+    ],
+    [
+      'a validator factory under the field decorator',
+      "import { field } from '@happyvertical/smrt-core';\nimport { makeValidator } from 'forms-lib';",
+      '@field({ validate: makeValidator({ ...POLICY }) })',
+    ],
+  ])('flags a nested constant spread into the model decorator after %s received it', (_label, imports, decorator) => {
+    const { errors } = parse(
+      `${CORE}\n${imports}\n${NESTED}\n@smrt({ ...POLICY })\nexport class Account extends SmrtObject {\n  ${decorator}\n  label: string = '';\n}\n`,
+    );
+    // Flagged on both; a call the scanner also reads by name as an SMRT
+    // decorator adds its own whole-argument error on this branch.
+    expect(errors).toBeGreaterThan(0);
+  });
+
+  it('flags a nested constant spread into the model decorator after a local function named method received it', () => {
+    const { errors } = parse(
+      `${CORE}\nfunction method(options: unknown) { return (..._: unknown[]) => options; }\n${NESTED}\n@smrt({ ...POLICY })\nexport class Account extends SmrtObject {\n  @method(POLICY)\n  review(): void {}\n}\n`,
+    );
+    expect(errors).toBeGreaterThan(0);
+  });
+
+  it('reads a nested constant spread directly into a literal model decorator', () => {
+    const { errors, config } = parse(
+      `${CORE}\n${NESTED}\n@smrt({ ...POLICY })\nexport class Account extends SmrtObject {}\n`,
+    );
+    expect(errors).toBe(0);
+    expect(config).toEqual({ api: { include: ['list'] } });
+  });
+
   it('reads a flat constant spread into the model decorator after another decorator received it', () => {
     const { errors, config } = parse(
       `${CORE}\nimport { field as formField } from 'forms-lib';\nconst POLICY = { api: true };\n@smrt({ ...POLICY })\nexport class Account extends SmrtObject {\n  @formField(POLICY)\n  label: string = '';\n}\n`,

@@ -31,39 +31,27 @@ function scan(source: string) {
 
 describe('decorator config given as a reference', () => {
   describe('@smrt(CONFIG)', () => {
-    it('reads a module constant passed as the whole argument', () => {
-      const { config, errors } = scan(`
-        const CLOSED = {
-          tableName: 'reference_widgets',
-          api: false,
-          mcp: false,
-          cli: { include: ['list'] },
-        };
+    it('fails on a module constant passed as the whole argument and says to inline it', () => {
+      const { errors } = scan(`
+        const CLOSED = { tableName: 'reference_widgets', api: false };
 
         @smrt(CLOSED)
         class ReferenceWidget extends SmrtObject {}
       `);
 
-      expect(errors).toHaveLength(0);
-      expect(config).toEqual({
-        tableName: 'reference_widgets',
-        api: false,
-        mcp: false,
-        cli: { include: ['list'] },
-      });
+      expect(errors).toHaveLength(1);
+      expect(errors[0].message).toContain('CLOSED');
+      expect(errors[0].message).toContain('ReferenceWidget');
+      expect(errors[0].message).toContain('write the options inline');
     });
 
-    it('reads the same config whether the constant is passed or spread', () => {
-      const constant = `const CLOSED = { api: false, mcp: false, cli: false } as const;`;
-      const passed = scan(
-        `${constant}\n@smrt(CLOSED)\nclass ReferenceWidget extends SmrtObject {}`,
-      );
-      const spread = scan(
-        `${constant}\n@smrt({ ...CLOSED })\nclass ReferenceWidget extends SmrtObject {}`,
+    it('reads a spread of the constant inside an inline config', () => {
+      const { config, errors } = scan(
+        `const CLOSED = { api: false, mcp: false, cli: false } as const;\n@smrt({ ...CLOSED })\nclass ReferenceWidget extends SmrtObject {}`,
       );
 
-      expect(passed.errors).toHaveLength(0);
-      expect(passed.config).toEqual(spread.config);
+      expect(errors).toHaveLength(0);
+      expect(config).toEqual({ api: false, mcp: false, cli: false });
     });
 
     it('keeps an argument-free decorator distinct from an unreadable one', () => {
@@ -125,12 +113,12 @@ describe('decorator config given as a reference', () => {
       }
     });
 
-    it('fails when the passed constant was built from an unreadable value', () => {
+    it('fails when a spread constant was built from an unreadable value', () => {
       const { errors } = scan(`
         import { IMPORTED } from './shared.js';
         const CLOSED = { ...IMPORTED, mcp: false };
 
-        @smrt(CLOSED)
+        @smrt({ ...CLOSED })
         class ReferenceWidget extends SmrtObject {}
       `);
 
@@ -142,7 +130,7 @@ describe('decorator config given as a reference', () => {
       const { classes, errors } = scan(`
         const SHARED = { cli: { include: ['list'] } };
 
-        @smrt(SHARED)
+        @smrt({ ...SHARED })
         class ReferenceWidget extends SmrtObject {}
 
         @smrt({ ...SHARED })
@@ -157,21 +145,15 @@ describe('decorator config given as a reference', () => {
   });
 
   describe('referenced values inside a config', () => {
-    it('reads scalar, array, object, member and enum references', () => {
+    it('reads scalar and enum references', () => {
       const { config, errors } = scan(`
         enum Strategy { Single = 'sti', Class = 'cti' }
         const TABLE = 'reference_widgets';
-        const READ_ACTIONS = ['list', 'get'] as const;
-        const MCP = { include: ['list'] };
-        const LIMITS = { cli: { include: ['list', 'get'] } };
         const closed = false;
 
         @smrt({
           tableName: TABLE,
           tableStrategy: Strategy.Single,
-          api: { include: READ_ACTIONS },
-          mcp: MCP,
-          cli: LIMITS.cli,
           ai: closed,
           closed,
         })
@@ -182,12 +164,26 @@ describe('decorator config given as a reference', () => {
       expect(config).toEqual({
         tableName: 'reference_widgets',
         tableStrategy: 'sti',
-        api: { include: ['list', 'get'] },
-        mcp: { include: ['list'] },
-        cli: { include: ['list', 'get'] },
         ai: false,
         closed: false,
       });
+    });
+
+    it('fails on an array, object or member reference, which hands over the shared value', () => {
+      const { errors } = scan(`
+        const READ_ACTIONS = ['list', 'get'] as const;
+        const MCP = { include: ['list'] };
+        const LIMITS = { cli: { include: ['list', 'get'] } };
+
+        @smrt({ api: { include: READ_ACTIONS }, mcp: MCP, cli: LIMITS.cli })
+        class ReferenceWidget extends SmrtObject {}
+      `);
+
+      expect(errors.map((e) => e.message).join('\n')).toEqual(
+        expect.stringContaining('READ_ACTIONS'),
+      );
+      expect(errors.some((e) => e.message.includes('MCP'))).toBe(true);
+      expect(errors.some((e) => e.message.includes('LIMITS'))).toBe(true);
     });
 
     it('reads a spread of a same-file array constant', () => {
@@ -283,29 +279,15 @@ describe('decorator config given as a reference', () => {
       }
     });
 
-    it('follows a constant that holds another constant by reference', () => {
-      const declared = `
+    it('fails on a constant that holds another constant by reference', () => {
+      const { errors } = scan(`
         const API = { include: ['list'] };
         const POLICY = { api: API, mcp: false };
-      `;
-      const clean = scan(`${declared}
         @smrt({ ...POLICY })
         class ReferenceWidget extends SmrtObject {}
       `);
-      expect(clean.errors).toHaveLength(0);
-      expect(clean.config).toEqual({ api: { include: ['list'] }, mcp: false });
-
-      for (const mutation of [
-        `API.include.push('delete');`,
-        `POLICY.api.include.pop();`,
-      ]) {
-        const changed = scan(`${declared}
-          ${mutation}
-          @smrt({ ...POLICY })
-          class ReferenceWidget extends SmrtObject {}
-        `);
-        expect(changed.errors.length).toBeGreaterThanOrEqual(1);
-      }
+      expect(errors).toHaveLength(1);
+      expect(errors[0].message).toContain('API');
     });
 
     it('does not treat a scalar constant as changeable', () => {
@@ -340,8 +322,8 @@ describe('decorator config given as a reference', () => {
       });
     });
 
-    it('reads options passed as a constant', () => {
-      const { config, errors } = scan(`
+    it('fails on options passed as a constant and says to inline them', () => {
+      const { errors } = scan(`
         const SCOPE = { field: 'orgId' };
 
         @TenantScoped(SCOPE)
@@ -349,8 +331,9 @@ describe('decorator config given as a reference', () => {
         class ReferenceWidget extends SmrtObject {}
       `);
 
-      expect(errors).toHaveLength(0);
-      expect(config?.tenantScoped).toEqual({ field: 'orgId' });
+      expect(errors).toHaveLength(1);
+      expect(errors[0].message).toContain('@TenantScoped()');
+      expect(errors[0].message).toContain('write the options inline');
     });
 
     it.each([
@@ -445,14 +428,15 @@ describe('decorator config given as a reference', () => {
       return { config: classes[0]?.methods[0]?.decoratorConfig, errors };
     }
 
-    it('reads options passed as a constant', () => {
-      const { config, errors } = methodConfig(`
+    it('fails on options passed as a constant and says to inline them', () => {
+      const { errors } = methodConfig(`
         @method(WITHHELD)
         async review(): Promise<void> {}
       `);
 
-      expect(errors).toHaveLength(0);
-      expect(config).toEqual({ expose: false, reason: 'internal' });
+      expect(errors).toHaveLength(1);
+      expect(errors[0].message).toContain('ReferenceWidget.review');
+      expect(errors[0].message).toContain('write the options inline');
     });
 
     it.each([

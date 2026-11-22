@@ -49,14 +49,14 @@ describe('a scalar copied from an object constant', () => {
     expect(fields.apiToken.sensitive).not.toBe(false);
   });
 
-  it('reads the member of an object nothing writes', () => {
-    const { errors, fields } = scan(
+  it('fails on the member of an object even when nothing writes it', () => {
+    const { errors } = scan(
       `@field({ sensitive: SECRET_FLAG }) apiToken = '';`,
       `const POLICY = { sensitive: true };\nconst SECRET_FLAG = POLICY.sensitive;`,
     );
 
-    expect(errors).toHaveLength(0);
-    expect(fields.apiToken.sensitive).toBe(true);
+    expect(errors).toHaveLength(1);
+    expect(errors[0].message).toContain('ClosureLedger.apiToken');
   });
 });
 
@@ -71,16 +71,14 @@ describe('a constant held by a static property', () => {
     expect(errors.map((e) => e.message).join('\n')).toContain('SLOTS');
   });
 
-  it('reads a constant only the static property holds', () => {
-    const { errors, definition } = scan(
+  it('fails on a constant even when only the static property holds it', () => {
+    const { errors } = scan(
       `static uiSlots = SLOTS;`,
       `const SLOTS = { sources: { id: 'sources', label: 'Sources' } };`,
     );
 
-    expect(errors).toHaveLength(0);
-    expect(definition.staticProperties?.uiSlots).toEqual({
-      sources: { id: 'sources', label: 'Sources' },
-    });
+    expect(errors).toHaveLength(1);
+    expect(errors[0].message).toContain('SLOTS');
   });
 });
 
@@ -242,13 +240,13 @@ describe('review round 3', () => {
       expect(errors.length).toBeGreaterThan(0);
     });
 
-    it('reads a nested constant only the static property reaches', () => {
+    it('fails on a nested constant even when only the static property reaches it', () => {
       const { errors } = scan(
         `static uiSlots = SLOTS;`,
         `const FLAGS = { sensitive: false };\nconst SLOTS = { f: FLAGS };`,
       );
 
-      expect(errors).toHaveLength(0);
+      expect(errors.length).toBeGreaterThan(0);
     });
   });
 

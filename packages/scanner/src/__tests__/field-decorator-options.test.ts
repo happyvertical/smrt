@@ -55,27 +55,26 @@ describe('field decorator options', () => {
     expect(fields.rank._meta?.unique).toBe(true);
   });
 
-  it('keeps array element indices and fails on a hole before the element read', () => {
+  it('fails on an element read from an array constant with a hole', () => {
     // At runtime FLAGS[1] is `true`; dropping the hole would read `false`.
     const { errors, fields } = scanModel(
       `@field({ sensitive: FLAGS[1] }) apiSecret = '';`,
       'const FLAGS = [, true, false] as const;',
     );
 
-    expect(errors).toHaveLength(1);
-    expect(errors[0].message).toContain('a hole in [, true, false]');
-    expect(errors[0].message).toContain('option `sensitive`');
+    expect(errors.length).toBeGreaterThan(0);
+    expect(errors.map((e) => e.message).join('\n')).toContain('FLAGS');
     expect(fields.apiSecret?.sensitive).not.toBe(false);
   });
 
-  it('reads an element of a same-file array constant by its index', () => {
-    const { errors, fields } = scanModel(
+  it('fails on an element of a same-file array constant read by its index', () => {
+    const { errors } = scanModel(
       `@field({ sensitive: FLAGS[1] }) apiSecret = '';`,
       'const FLAGS = [false, true, false] as const;',
     );
 
-    expect(errors).toHaveLength(0);
-    expect(fields.apiSecret?.sensitive).toBe(true);
+    expect(errors).toHaveLength(1);
+    expect(errors[0].message).toContain('FLAGS');
   });
 
   it('reads a string-literal computed key in a single-table child override like a plain key', () => {
@@ -137,18 +136,15 @@ export class OptionChild extends OptionBase {
     const { errors, fields } = scanModel(
       `
       @field({ sensitive: true, maxLength: MAX_SECRET_LENGTH }) apiSecret = '';
-      @field({ transient: true, maxLength: LIMITS.scratch }) scratch = '';
       @field({ unique: true, required: true, maxLength: MAX_SECRET_LENGTH * 2 }) handle = '';
       @field({ default: Tier.Free, description: \`Tier, one of \${TIER_COUNT}\` }) tier = '';
       @field({ ...SECRET, maxLength: 12 }) token = '';
-      @field(SECRET) recoveryCode = '';
       @field({ ui: { ...WIDE, group: GROUP }, readPermission }) notes = '';
     `,
       `
       enum Tier { Free = 'free', Paid = 'paid' }
       const MAX_SECRET_LENGTH = 64;
       const TIER_COUNT = 2;
-      const LIMITS = { scratch: 32 } as const;
       const SECRET = { sensitive: true, readonly: true };
       const WIDE = { widget: 'textarea' };
       const GROUP = 'details';
@@ -158,7 +154,6 @@ export class OptionChild extends OptionBase {
 
     expect(errors).toHaveLength(0);
     expect(fields.apiSecret).toMatchObject({ sensitive: true, maxLength: 64 });
-    expect(fields.scratch).toMatchObject({ transient: true, maxLength: 32 });
     expect(fields.handle).toMatchObject({ required: true, maxLength: 128 });
     expect(fields.handle._meta?.unique).toBe(true);
     expect(fields.tier).toMatchObject({
@@ -170,15 +165,28 @@ export class OptionChild extends OptionBase {
       readonly: true,
       maxLength: 12,
     });
-    expect(fields.recoveryCode).toMatchObject({
-      sensitive: true,
-      readonly: true,
-    });
     expect(fields.notes._meta?.ui).toEqual({
       widget: 'textarea',
       group: 'details',
     });
     expect(fields.notes.readPermission).toBe('accounts.notes.read');
+  });
+
+  it('fails on a member of an object constant or a constant passed as the whole options', () => {
+    const { errors } = scanModel(
+      `
+      @field({ transient: true, maxLength: LIMITS.scratch }) scratch = '';
+      @field(SECRET) recoveryCode = '';
+    `,
+      `
+      const LIMITS = { scratch: 32 } as const;
+      const SECRET = { sensitive: true, readonly: true };
+    `,
+    );
+
+    const messages = errors.map((e) => e.message).join('\n');
+    expect(messages).toContain('LIMITS');
+    expect(messages).toContain('SECRET');
   });
 
   it.each([
@@ -576,7 +584,7 @@ export class OptionChild extends OptionBase {
   });
 
   describe('static properties carried in the manifest', () => {
-    it('reads a literal or same-file constant initializer', () => {
+    it('reads a literal or scalar-constant initializer and fails on an object constant', () => {
       const { errors, definition } = scanModel(
         `
         static uiSlots = SLOTS;
@@ -585,11 +593,11 @@ export class OptionChild extends OptionBase {
         `const ROUTE = 'sources';\nconst SLOTS = { sources: { id: 'sources', label: 'Sources', order: 1 } };`,
       );
 
-      expect(errors).toHaveLength(0);
-      expect(definition.staticProperties).toEqual({
-        uiSlots: { sources: { id: 'sources', label: 'Sources', order: 1 } },
-        adminRoutes: [{ path: 'sources', component: 'SourcesPanel' }],
-      });
+      expect(errors).toHaveLength(1);
+      expect(errors[0].message).toContain('SLOTS');
+      expect(definition.staticProperties?.adminRoutes).toEqual([
+        { path: 'sources', component: 'SourcesPanel' },
+      ]);
     });
 
     it('fails on an initializer it cannot read and names the class', () => {

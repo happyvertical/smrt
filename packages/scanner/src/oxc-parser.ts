@@ -1531,8 +1531,6 @@ function createDecoratorConfigContext(
   const constants = collectModuleConstants(body, sourceText, {
     resolveReferences: true,
     enums,
-    importAliases,
-    importBindings,
   });
   return {
     constants,
@@ -1716,7 +1714,7 @@ function classReferenceName(node: Expression): string | undefined {
 
 /**
  * Collect module-scope `const` literals so decorator configs can be resolved
- * at scan time: `@smrt({ ...NAME })`, `@smrt(NAME)`, `{ field: NAME }`.
+ * at scan time: `@smrt({ ...NAME })`, `{ field: NAME }` for a scalar.
  *
  * Declaration order is honoured: a constant may use an earlier constant, and
  * each is extracted against the map built so far. Only `const` is considered —
@@ -1745,8 +1743,6 @@ function collectModuleConstants(
   options: {
     resolveReferences?: boolean;
     enums?: DecoratorConfigContext['enums'];
-    importAliases?: Map<string, string>;
-    importBindings?: Map<string, ImportBinding>;
   },
 ): Map<string, ModuleConstant> {
   const constants = new Map<string, ModuleConstant>();
@@ -1830,7 +1826,7 @@ function collectModuleConstants(
     }
   }
 
-  taintUnsafeModuleConstantReferences(body, constants, sourceText, options);
+  taintUnsafeModuleConstantReferences(body, constants, sourceText);
   propagateModuleConstantTaint(constants);
   return constants;
 }
@@ -1889,51 +1885,12 @@ function taintUnsafeModuleConstantReferences(
   body: Statement[],
   constants: Map<string, ModuleConstant>,
   sourceText: string,
-  imports: {
-    importAliases?: Map<string, string>;
-    importBindings?: Map<string, ImportBinding>;
-  } = {},
 ): void {
   if (![...constants.values()].some((constant) => constant.kind !== 'scalar')) {
     return;
   }
 
   const tainted = new Set<string>();
-  // Every read-only reference of each object/array constant, to judge the
-  // ones a static property holds once the walk is complete.
-  const safeReferences = new Map<
-    string,
-    Array<{
-      node: Record<string, unknown>;
-      staticInitializer?: boolean;
-      /** The module constant whose initializer holds this reference. */
-      inConstant?: string;
-    }>
-  >();
-  const taint = (
-    node: Record<string, unknown>,
-    renamed?: { local?: string; imported?: string },
-  ): void => {
-    const name = node.name as string;
-    if (tainted.has(name)) return;
-    tainted.add(name);
-    const unresolved: UnresolvedSpread = {
-      expression: sliceSource(node as unknown as BaseNode, sourceText) ?? name,
-      start:
-        typeof node.start === 'number' ? (node.start as number) : undefined,
-      ...(renamed?.local
-        ? {
-            hint:
-              `\`${name}\` is passed to \`@${renamed.local}()\`, a decorator imported under another name, which ` +
-              `is not read as a read-only SMRT decorator. Import the decorator under its own name ` +
-              `(\`${renamed.imported}\`), or write the options inline.`,
-          }
-        : {}),
-    };
-    const constant = constants.get(name);
-    constant?.unsafeReferences.push(unresolved);
-    constant?.unresolved.push(unresolved);
-  };
 
   const visit = (
     value: unknown,
@@ -1959,25 +1916,21 @@ function taintUnsafeModuleConstantReferences(
       // A scalar cannot be mutated through a reference, so it never taints.
       (constants.get(node.name)?.kind ?? 'scalar') !== 'scalar' &&
       !shadowed.has(node.name) &&
-      !isTypeOnlyReference(node, ancestors)
+      !isTypeOnlyReference(node, ancestors) &&
+      !isSafeModuleConstantReference(node, ancestors, constants)
     ) {
-      const via: {
-        name?: boolean;
-        staticInitializer?: boolean;
-        renamed?: { local?: string; imported?: string };
-      } = {};
-      if (
-        !isSafeModuleConstantReference(node, ancestors, constants, imports, via)
-      ) {
-        taint(node, via.renamed);
-      } else if (!via.name) {
-        const references = safeReferences.get(node.name) ?? [];
-        references.push({
-          node,
-          staticInitializer: via.staticInitializer,
-          inConstant: enclosingConstant(ancestors, constants),
-        });
-        safeReferences.set(node.name, references);
+      const name = node.name;
+      if (!tainted.has(name)) {
+        tainted.add(name);
+        const unresolved = {
+          expression:
+            sliceSource(node as unknown as BaseNode, sourceText) ?? name,
+          start:
+            typeof node.start === 'number' ? (node.start as number) : undefined,
+        };
+        const constant = constants.get(name);
+        constant?.unsafeReferences.push(unresolved);
+        constant?.unresolved.push(unresolved);
       }
     }
 
@@ -1993,98 +1946,6 @@ function taintUnsafeModuleConstantReferences(
   };
 
   visit(body, [], new Set());
-
-  // A static property that holds a constant keeps a second, writable
-  // reference to it on the class, which runtime code reaches through the
-  // class or `this.constructor` where no static walk can follow. A write
-  // through it changes every object reachable from that constant: the
-  // constant itself, every constant it holds by reference or spreads with
-  // nested objects, and every constant that holds one of those, at any depth.
-  // So the static property is safe only when it is the sole reader of that
-  // whole group; otherwise its reference taints the constant like an escape
-  // (taint then propagates through the group, see
-  // `propagateModuleConstantTaint`).
-  const groups = sharedObjectGroups(constants);
-  for (const [name, references] of safeReferences) {
-    for (const held of references.filter((r) => r.staticInitializer)) {
-      const group = groups.get(name) ?? new Set([name]);
-      let readers = 0;
-      for (const member of group) {
-        for (const reference of safeReferences.get(member) ?? []) {
-          // A reference inside another member's initializer is the edge
-          // that put it in the group, not a reader of its own.
-          if (reference.inConstant && group.has(reference.inConstant)) continue;
-          readers++;
-        }
-      }
-      if (readers > 1) taint(held.node);
-    }
-  }
-}
-
-/** The top-level module constant whose initializer `ancestors` lie in. */
-function enclosingConstant(
-  ancestors: Array<Record<string, unknown>>,
-  constants: Map<string, ModuleConstant>,
-): string | undefined {
-  for (let index = ancestors.length - 1; index >= 0; index--) {
-    const node = ancestors[index];
-    if (node.type !== 'VariableDeclarator') continue;
-    const id = node.id as Record<string, unknown> | undefined;
-    return id?.type === 'Identifier' &&
-      typeof id.name === 'string' &&
-      constants.has(id.name)
-      ? id.name
-      : undefined;
-  }
-  return undefined;
-}
-
-/**
- * For each object or array constant, the constants that share objects with
- * it: linked by a by-reference use (`{ inner: POLICY }`) or by a spread whose
- * source holds nested objects (`{ ...WRAPPER }`), in either direction and
- * transitively. A write to any object of a group is visible to every reader
- * of the group.
- */
-function sharedObjectGroups(
-  constants: Map<string, ModuleConstant>,
-): Map<string, Set<string>> {
-  const links = new Map<string, Set<string>>();
-  const link = (a: string, b: string) => {
-    if (!links.has(a)) links.set(a, new Set());
-    links.get(a)?.add(b);
-  };
-  for (const [name, constant] of constants) {
-    // A scalar copies a value out of the group when it is declared: it is a
-    // reader of the group, never part of it.
-    if (constant.kind === 'scalar') continue;
-    for (const dependency of constant.dependencies) {
-      const source = constants.get(dependency.name);
-      if (!source || source.kind === 'scalar') continue;
-      if (dependency.shared || hasNestedReferenceValue(source.value)) {
-        link(name, dependency.name);
-        link(dependency.name, name);
-      }
-    }
-  }
-  const groups = new Map<string, Set<string>>();
-  for (const start of links.keys()) {
-    if (groups.has(start)) continue;
-    const group = new Set<string>([start]);
-    const queue = [start];
-    while (queue.length > 0) {
-      const next = queue.pop() as string;
-      for (const linked of links.get(next) ?? []) {
-        if (!group.has(linked)) {
-          group.add(linked);
-          queue.push(linked);
-        }
-      }
-    }
-    for (const member of group) groups.set(member, group);
-  }
-  return groups;
 }
 
 function createsLexicalScope(node: Record<string, unknown>): boolean {
@@ -2312,105 +2173,35 @@ function hasNestedReferenceValue(value: unknown): boolean {
   );
 }
 
-/**
- * Whether `node` is the call of a decorator this scanner reads, as opposed to
- * an arbitrary function the constant would escape into. `parent` is the
- * node's direct ancestor.
- *
- * The decorator is named by its local identifier. A callee bound by a renamed
- * import (`import { normalize as field }`, `import { field as formField }`,
- * `import { smrt as model }`) is never trusted as a read-only SMRT call,
- * whatever either name is, so a constant passed to it escapes, as the base
- * scanner treats it; `renamed` receives the import so the diagnostic can
- * name the fix. A callee imported or declared under its own name keeps the
- * name rule.
- */
-function isReadDecoratorCall(
-  node: Record<string, unknown>,
-  parent: Record<string, unknown> | undefined,
-  importAliases?: Map<string, string>,
-  renamed?: { local?: string; imported?: string },
-): boolean {
-  if (
-    node.type !== 'CallExpression' ||
-    parent?.type !== 'Decorator' ||
-    parent.expression !== node
-  ) {
-    return false;
-  }
-  const callee = node.callee as Record<string, unknown> | undefined;
-  if (
-    callee?.type === 'Identifier' &&
-    typeof callee.name === 'string' &&
-    importAliases?.has(callee.name)
-  ) {
-    if (renamed) {
-      renamed.local = callee.name;
-      renamed.imported = importAliases.get(callee.name);
-    }
-    return false;
-  }
-  const name = resolveDecoratorName(parent as unknown as Decorator);
-  return name !== null && READ_DECORATOR_NAMES.has(name);
-}
-
 function isSafeModuleConstantReference(
   identifier: Record<string, unknown>,
   ancestors: Array<Record<string, unknown>>,
   constants: Map<string, ModuleConstant>,
-  // The import-alias table marks a decorator callee bound by a renamed
-  // import, which is never a read-only SMRT call (`isReadDecoratorCall`).
-  imports: {
-    importAliases?: Map<string, string>;
-    importBindings?: Map<string, ImportBinding>;
-  } = {},
-  /**
-   * Set to how the occurrence was judged safe: `name` when it is not a
-   * reference at all (a declaration, a property key), `staticInitializer`
-   * when a manifest static property holds it; `renamed` when it was judged
-   * unsafe because a decorator under a renamed import receives it.
-   */
-  via: {
-    name?: boolean;
-    staticInitializer?: boolean;
-    renamed?: { local?: string; imported?: string };
-  } = {},
 ): boolean {
   let child = identifier;
-  // Set once the walk passes a position that READS the constant as a value
-  // (`{ api: CFG }`, `[CFG]`, `CFG.api`, `@smrt(CFG)`) rather than copying it.
-  let readAsValue = false;
 
   for (let index = ancestors.length - 1; index >= 0; index--) {
     const parent = ancestors[index];
 
-    if (child === identifier) {
-      if (parent.type === 'VariableDeclarator' && parent.id === child) {
-        via.name = true;
-        return true;
-      }
+    if (parent.type === 'VariableDeclarator' && parent.id === child) {
+      return true;
+    }
 
-      // A non-computed key is a name, not a reference. For a shorthand
-      // property the key and value are distinct nodes over the same text;
-      // the VALUE occurrence is the reference and is judged below.
-      if (
-        parent.type === 'Property' &&
-        parent.key === child &&
-        parent.computed === false &&
-        parent.value !== child
-      ) {
-        via.name = true;
-        return true;
-      }
+    if (
+      parent.type === 'Property' &&
+      parent.key === child &&
+      parent.computed === false &&
+      parent.shorthand === false
+    ) {
+      return true;
+    }
 
-      if (
-        parent.type === 'MemberExpression' &&
-        parent.property === child &&
-        parent.computed === false
-      ) {
-        via.name = true;
-        return true;
-      }
+    if (
+      parent.type === 'MemberExpression' &&
+      parent.property === child &&
+      parent.computed === false
+    ) {
+      return true;
     }
 
     if (
@@ -2425,11 +2216,7 @@ function isSafeModuleConstantReference(
       continue;
     }
 
-    if (
-      !readAsValue &&
-      parent.type === 'SpreadElement' &&
-      parent.argument === child
-    ) {
+    if (parent.type === 'SpreadElement' && parent.argument === child) {
       const name =
         typeof identifier.name === 'string' ? identifier.name : undefined;
       const constant = name ? constants.get(name) : undefined;
@@ -2444,86 +2231,26 @@ function isSafeModuleConstantReference(
       );
       if (moduleConstantInitializer) return true;
 
-      // A spread copies only the top level, so nested values stay shared with
-      // whatever receives the copy. A decorator this scanner reads does not
-      // mutate its config; anything else might.
-      const renamed: { local?: string; imported?: string } = {};
-      const read = ancestors.some((ancestor, at) =>
-        isReadDecoratorCall(
-          ancestor,
-          ancestors[at - 1],
-          imports.importAliases,
-          renamed,
-        ),
-      );
-      if (!read && renamed.local) via.renamed = renamed;
-      return read;
-    }
-
-    // The constant itself, or one of its members, is read as a value. Keep
-    // walking through the literal that holds it: the reference is safe only
-    // if that literal ends up as a read decorator's argument or as another
-    // module constant's initializer.
-    if (
-      (parent.type === 'MemberExpression' &&
-        parent.object === child &&
-        (parent.computed === false ||
-          (parent.property as Record<string, unknown> | undefined)?.type ===
-            'Literal')) ||
-      (parent.type === 'Property' && parent.value === child) ||
-      (parent.type === 'SpreadElement' && parent.argument === child) ||
-      parent.type === 'ObjectExpression' ||
-      parent.type === 'ArrayExpression'
-    ) {
-      child = parent;
-      readAsValue = true;
-      continue;
-    }
-
-    if (
-      parent.type === 'CallExpression' &&
-      Array.isArray(parent.arguments) &&
-      parent.arguments.includes(child)
-    ) {
-      const renamed: { local?: string; imported?: string } = {};
-      const read = isReadDecoratorCall(
-        parent,
-        ancestors[index - 1],
-        imports.importAliases,
-        renamed,
-      );
-      if (!read && renamed.local) via.renamed = renamed;
-      return read;
-    }
-
-    // The initializer of a static property the scanner reads into the
-    // manifest: a read by the class, like a decorator argument.
-    if (
-      parent.type === 'PropertyDefinition' &&
-      parent.value === child &&
-      parent.static === true &&
-      parent.computed === false
-    ) {
-      const key = parent.key as Record<string, unknown> | undefined;
-      const read =
-        key?.type === 'Identifier' &&
-        typeof key.name === 'string' &&
-        MANIFEST_STATIC_PROPERTIES.has(key.name);
-      if (read) via.staticInitializer = true;
-      return read;
-    }
-
-    if (parent.type === 'VariableDeclarator' && parent.init === child) {
-      // Recorded while that declarator was extracted as a module constant;
-      // any other declaration (a `let`, a function-local alias) is an escape.
-      return [...constants.values()].some((candidate) =>
-        candidate.dependencies.some(
-          (dependency) =>
-            dependency.shared === true &&
-            dependency.name === identifier.name &&
-            dependency.start === identifier.start,
-        ),
-      );
+      const smrtDecorator = ancestors.some((ancestor) => {
+        if (
+          ancestor.type !== 'Decorator' ||
+          !ancestor.expression ||
+          typeof ancestor.expression !== 'object'
+        ) {
+          return false;
+        }
+        const expression = ancestor.expression as Record<string, unknown>;
+        if (
+          expression.type !== 'CallExpression' ||
+          !expression.callee ||
+          typeof expression.callee !== 'object'
+        ) {
+          return false;
+        }
+        const callee = expression.callee as Record<string, unknown>;
+        return callee.type === 'Identifier' && callee.name === 'smrt';
+      });
+      return smrtDecorator;
     }
 
     return false;
@@ -3122,39 +2849,6 @@ export function summarizeJsDoc(
 }
 
 /**
- * Decorators whose arguments this scanner reads into the manifest. A module
- * constant handed to one of them is read, not mutated, so the reference is
- * not an escape.
- */
-const READ_DECORATOR_NAMES: ReadonlySet<string> = new Set([
-  'smrt',
-  'TenantScoped',
-  'report',
-  'method',
-  'field',
-  'meta',
-  'tenantId',
-  'foreignKey',
-  'crossPackageRef',
-  'oneToMany',
-  'manyToMany',
-  'groupBy',
-  'aggregate',
-  'sum',
-  'avg',
-  'min',
-  'max',
-  'count',
-  'minute',
-  'hour',
-  'day',
-  'week',
-  'month',
-  'quarter',
-  'year',
-]);
-
-/**
  * What each positional argument of a field decorator holds, by decorator.
  *
  * - `options`: an options object. Read statically; an unreadable value is a
@@ -3294,10 +2988,9 @@ function isNamedDecorator(
  * Extract a class or method decorator's configuration object.
  *
  * `@smrt()` and a bare `@smrt` declare no config and read as `{}`. Any
- * argument that IS supplied must resolve to an object: a literal, or an
- * identifier naming a same-file module constant (`@smrt(MODEL_CONFIG)`).
- * Anything else — a call, an imported constant, a non-object — is recorded
- * as unresolved and becomes a scan error. Supplied config that cannot be read
+ * argument that IS supplied must be an inline object literal. Anything else
+ * (a module constant, a call, an import, a non-object) is recorded as
+ * unresolved and becomes a scan error. Supplied config that cannot be read
  * is never the same thing as no config: `{}` here would publish every
  * default-open surface the argument was written to close.
  */
@@ -3314,16 +3007,11 @@ function extractDecoratorConfig(
       return extractObjectLiteral(arg, sourceText, ctx) as RawDecoratorConfig;
     }
     if (arg && ctx?.resolveReferences) {
-      const value = extractValue(arg, sourceText, ctx);
-      if (isPlainRecord(value)) return value as RawDecoratorConfig;
-      // `extractValue` already recorded an expression it could not resolve.
-      // One that resolved to something other than an object is not a config.
-      if (value !== UNRESOLVED && value !== undefined) {
-        ctx.unresolved.push({
-          expression: sliceSource(arg, sourceText) ?? '<argument>',
-          start: arg.start,
-        });
-      }
+      ctx.unresolved.push({
+        expression: sliceSource(arg, sourceText) ?? '<argument>',
+        start: arg.start,
+        hint: 'A decorator config must be an inline object literal: write the options inline instead of passing a constant or other value.',
+      });
     }
   }
 
