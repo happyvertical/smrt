@@ -1322,7 +1322,7 @@ describe('mountAssistantRoutes', () => {
           usageRows.every((row) => row.prompt_key === 'chat.assistant.system'),
         ).toBe(true);
         const callEvents = await query(
-          `SELECT reservation FROM _smrt_ai_run_events
+          `SELECT call_state AS reservation FROM _smrt_ai_run_events
             WHERE run_id = $1 AND type = 'call'`,
           runId,
         );
@@ -1622,7 +1622,7 @@ describe('mountAssistantRoutes', () => {
             }),
           ]);
           const callEvents = await query(
-            `SELECT call_id, reservation, status FROM _smrt_ai_run_events
+            `SELECT call_id, call_state AS reservation, status FROM _smrt_ai_run_events
               WHERE type = 'call'`,
           );
           expect(callEvents).toEqual([
@@ -1695,7 +1695,7 @@ describe('mountAssistantRoutes', () => {
           ]);
           expect(
             await query(
-              `SELECT reservation, status FROM _smrt_ai_run_events WHERE type = 'call'`,
+              `SELECT call_state AS reservation, status FROM _smrt_ai_run_events WHERE type = 'call'`,
             ),
           ).toEqual([{ reservation: 'released', status: 'failed' }]);
           expect(await query('SELECT id FROM _smrt_ai_usage')).toEqual([]);
@@ -1714,7 +1714,7 @@ describe('mountAssistantRoutes', () => {
           await sendOnce(routes, 'cli-fail-usage');
           expect(
             await query(
-              `SELECT reservation, status FROM _smrt_ai_run_events WHERE type = 'call'`,
+              `SELECT call_state AS reservation, status FROM _smrt_ai_run_events WHERE type = 'call'`,
             ),
           ).toEqual([{ reservation: 'settled', status: 'failed' }]);
           expect(

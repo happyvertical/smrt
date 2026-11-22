@@ -104,6 +104,8 @@ describe('calls of a run through smrt-inference (#5005)', () => {
             model,
             operation: 'message',
             usage: { promptTokens: 7, completionTokens: 3, totalTokens: 10 },
+            duration: 1,
+            timestamp: new Date(),
             tags: options.usageTags,
           },
           {},
@@ -193,8 +195,8 @@ describe('calls of a run through smrt-inference (#5005)', () => {
     // Its own call id, written as an unreserved call event of the run.
     const events = rows(
       await db.query(
-        `SELECT reservation, call_id FROM _smrt_ai_run_events
-          WHERE run_id = $1 AND type = 'call' AND reservation = 'unreserved'`,
+        `SELECT call_state AS reservation, call_id FROM _smrt_ai_run_events
+          WHERE run_id = $1 AND type = 'call' AND call_state = 'unreserved'`,
         run.id,
       ),
     );
@@ -276,7 +278,7 @@ describe('calls of a run through smrt-inference (#5005)', () => {
       expect(gate[0]?.call_id).toBe(gate[0]?.id);
       const events = rows(
         await db.query(
-          `SELECT name, reservation FROM _smrt_ai_run_events
+          `SELECT name, call_state AS reservation FROM _smrt_ai_run_events
             WHERE run_id = $1 AND type = 'call' ORDER BY seq`,
           runId,
         ),
@@ -384,7 +386,7 @@ describe('calls of a run through smrt-inference (#5005)', () => {
       });
       const events = rows(
         await db.query(
-          `SELECT name, reservation FROM _smrt_ai_run_events
+          `SELECT name, call_state AS reservation FROM _smrt_ai_run_events
             WHERE run_id = $1 AND type = 'call' ORDER BY seq`,
           runId,
         ),

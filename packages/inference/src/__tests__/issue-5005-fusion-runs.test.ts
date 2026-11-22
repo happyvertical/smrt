@@ -128,6 +128,8 @@ describe('fusion runs opened at the start (#5005)', () => {
             model,
             operation: 'message',
             usage: { promptTokens: 7, completionTokens: 3, totalTokens: 10 },
+            duration: 1,
+            timestamp: new Date(),
             tags: options.usageTags,
           },
           {},
@@ -176,7 +178,7 @@ describe('fusion runs opened at the start (#5005)', () => {
     });
     const events = rows(
       await db.query(
-        `SELECT type, name, reservation, call_id FROM _smrt_ai_run_events
+        `SELECT type, name, call_state AS reservation, call_id FROM _smrt_ai_run_events
           WHERE run_id = $1 ORDER BY seq`,
         runId,
       ),
@@ -222,7 +224,7 @@ describe('fusion runs opened at the start (#5005)', () => {
     expect(child).toMatchObject({ parent_run_id: parent.id, status: 'done' });
     const handoff = rows(
       await db.query(
-        `SELECT type, status, child_run_id, call_id, reservation
+        `SELECT type, status, child_run_id, call_id, call_state AS reservation
            FROM _smrt_ai_run_events WHERE run_id = $1`,
         parent.id,
       ),
@@ -337,7 +339,7 @@ describe('fusion runs opened at the start (#5005)', () => {
     const reserved = rows(
       await db.query(
         `SELECT call_id FROM _smrt_ai_run_events
-          WHERE run_id = $1 AND type = 'call' AND reservation = 'reserved'`,
+          WHERE run_id = $1 AND type = 'call' AND call_state = 'reserved'`,
         fusionId,
       ),
     );
@@ -388,7 +390,7 @@ describe('fusion runs opened at the start (#5005)', () => {
     expect(await getAiRun(db, fusionId)).toMatchObject({ status: 'running' });
     const judge = rows(
       await db.query(
-        `SELECT reservation FROM _smrt_ai_run_events
+        `SELECT call_state AS reservation FROM _smrt_ai_run_events
           WHERE run_id = $1 AND type = 'call' AND name = 'synthesis'`,
         fusionId,
       ),

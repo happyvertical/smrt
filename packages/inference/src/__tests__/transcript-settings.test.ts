@@ -200,7 +200,7 @@ describe('transcript settings (#4781)', () => {
     const tenantId = randomUUID();
     await db.query(
       `INSERT INTO _smrt_ai_usage
-         (id, provider, model, operation, duration, tenant_id, prompt_key,
+         (id, provider, model, operation, duration_ms, tenant_id, prompt_key,
           call_id, tags, created_at)
        VALUES ($1,'openai','gpt-4o','chat',1,$2,'p.one','c1',$3,$4)`,
       'u-1',

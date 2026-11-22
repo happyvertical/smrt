@@ -37,7 +37,7 @@ describe('doctor AI run id registry', () => {
     ).toHaveLength(2);
 
     await db.query(
-      `INSERT INTO _smrt_ai_usage (id, provider, model, operation, duration, run_id)
+      `INSERT INTO _smrt_ai_usage (id, provider, model, operation, duration_ms, run_id)
        VALUES ('u-old', 'openai', 'gpt-4o', 'chat', 1, 'never-registered')`,
     );
     const flagged = await runAiRunIdRegistryCheck({ db, typeHint: 'sqlite' });

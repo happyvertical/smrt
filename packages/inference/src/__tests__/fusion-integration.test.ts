@@ -117,6 +117,8 @@ describe('fusions through a SmrtObject (#4753)', () => {
             model,
             operation: 'message',
             usage: { promptTokens: 7, completionTokens: 3, totalTokens: 10 },
+            duration: 1,
+            timestamp: new Date(),
             tags: options.usageTags,
           },
           {},

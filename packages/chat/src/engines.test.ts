@@ -538,7 +538,7 @@ console.log(JSON.stringify({type:'result',subtype:'success',result:'Done',usage:
     expect(
       rows(
         await db.query(
-          "SELECT reservation, status FROM _smrt_ai_run_events WHERE type = 'call'",
+          "SELECT call_state AS reservation, status FROM _smrt_ai_run_events WHERE type = 'call'",
         ),
       ),
     ).toEqual([{ reservation: 'settled', status: 'ok' }]);

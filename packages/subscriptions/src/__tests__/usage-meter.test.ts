@@ -44,7 +44,7 @@ async function seedAiUsage(
     await metrics.db.query(
       `INSERT INTO _smrt_ai_usage
         (id, provider, model, operation, prompt_tokens, completion_tokens,
-         total_tokens, estimated_cost, duration, class_name, tenant_id, tags, created_at)
+         total_tokens, estimated_cost, duration_ms, class_name, tenant_id, tags, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       `usage-${counter}`,
       'openai',
