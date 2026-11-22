@@ -405,9 +405,19 @@ export const POST = mountMcpAppRoute({
   ask for fewer. Consent grants the requested scopes the user holds, so an
   agent whose role holds only `notes.read` receives a token whose `scope` is
   `notes.read` (RFC 6749 section 3.3) and can call only the tools that scope
-  covers. See "Scopes and narrowing" below.
-- **Protocol era.** Paperclip speaks the 2025 JSON-RPC handshake. The
-  endpoint refuses it today (#5109), so a stock app does not connect yet.
+  covers. A limited agent therefore needs two things from the app: mount with
+  `legacy: 'stateless'` (next bullet) and a complete `toolScopes` map with
+  `requiredScopes: []`; no `scopePermissions` workaround is needed. See "Scopes
+  and narrowing" below.
+- **Protocol era.** Paperclip speaks the 2025 JSON-RPC handshake (unversioned
+  `tools/list`, then `initialize` with `2025-06-18`). The endpoint is
+  modern-only by default and answers it `-32022`, so a stock app does not
+  connect. Mount with `legacy: 'stateless'` (`mountMcpAppRoute` or
+  `mountMcpRoute`; mount-time only) to opt in (#5109). Legacy requests are
+  served by the same per-request server factory and bound principal as modern
+  ones, so the OAuth challenge, grant liveness, live role cap, `toolScopes`,
+  404 for unknown or forbidden tools, and approvals apply unchanged; legacy
+  clients get stateless semantics (no sessions, no `list_changed`).
 - **Webhook receivers** must currently be public HTTPS on port 443 (#5111).
   The dispatcher's `transport` option is a test-only seam: it skips the
   HTTPS, port 443 and SSRF rules and must not be used in production.
@@ -427,11 +437,19 @@ option of the SDK `createMcpHandler` switched on locally for every row marked
 (a) and the dispatcher `transport` seam used for row 6 (b); nothing else was
 patched.
 
+The "Fail without patch (#5109)" rows below describe the default,
+modern-only mount. The opt-in `legacy: 'stateless'` is the supported way to
+run them, and it is what local patch (a) switched on. The opt-in is covered by
+in-process tests (`legacy-protocol.test.ts`: both mounts, handshake, role
+filtered list, call, forbidden equals unknown, 401 challenge, revoked grant,
+approval hold, modern unchanged, default `-32022`); the live Paperclip run
+has not been repeated against the shipped option.
+
 | # | Step | Result | Evidence |
 | --- | --- | --- | --- |
-| 1 | OAuth connect: discovery, registration, resource, refresh | Fail without patch (#5109); passes with local patch (a); CIMD not run | Probe 401 with `WWW-Authenticate`, then RFC 9728 and RFC 8414 path-insertion fetches, both 200; DCR `POST /oauth/register` 201 (`application_type: web`, https callback); code exchange with S256 and `resource`; refresh grant with `resource` after expiry returned 200 and a new token. Without (a) the connection fails at the handshake: #5109. CIMD is refused by design for a private host (`invalid_url`). |
+| 1 | OAuth connect: discovery, registration, resource, refresh | Fail by default (#5109), passes with `legacy: 'stateless'` (local patch (a) in this run); CIMD not run | Probe 401 with `WWW-Authenticate`, then RFC 9728 and RFC 8414 path-insertion fetches, both 200; DCR `POST /oauth/register` 201 (`application_type: web`, https callback); code exchange with S256 and `resource`; refresh grant with `resource` after expiry returned 200 and a new token. Without (a) the connection fails at the handshake: #5109. CIMD is refused by design for a private host (`invalid_url`). |
 | 2 | Per-agent connection and install | Pass | Two connections, each authorized as a different smrt agent user, installed on one Paperclip agent each; the audit store shows two distinct principals of kind `agent`; access for the other agent was `off` once its default `tools:use` grant was removed. |
-| 3 | Tool listing and annotations | Fail without patch (#5109); passes with local patch (a) | Agent with write and delete roles saw 4 tools (`readOnlyHint` on list/get, `destructiveHint` on delete); the read-only agent saw 2. Paperclip classed them read, write and destructive. |
+| 3 | Tool listing and annotations | Fail by default (#5109), passes with `legacy: 'stateless'` (local patch (a) in this run) | Agent with write and delete roles saw 4 tools (`readOnlyHint` on list/get, `destructiveHint` on delete); the read-only agent saw 2. Paperclip classed them read, write and destructive. |
 | 4a | Scoped call, then refusal after the role permission is revoked | Pass | `note_create` ran; after removing `notes.write` from the role the next call returned "Unknown MCP tool", audited `denied` (`mcp_tool_access_denied`); `note_list` still ran with the capped scopes. |
 | 4b | Refusal after the grant is revoked | Pass | The next call returned 401 `invalid_token`; the refresh was refused; Paperclip showed "OAuth authorization has expired. Reconnect"; the other agent's connection was unaffected. |
 | 5 | Gated destructive call held, person approves, runs once | Pass | `note_delete` answered `approval_pending`; retry before approval stayed pending; a human with `approvals.approve-mcp-tool` approved; the identical retry deleted the note once; a further identical call opened a new pending request. Audit: `approval_requested`, `approval_pending`, `approval_consumed`. |
