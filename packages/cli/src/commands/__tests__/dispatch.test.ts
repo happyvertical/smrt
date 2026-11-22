@@ -68,6 +68,35 @@ describe('dispatch commands', () => {
 
   const allOutput = () => logSpy.mock.calls.map((c) => c.join(' ')).join('\n');
 
+  // Helper: insert a raw dispatch row (lease and reason shapes included).
+  async function insertRow(
+    db: Awaited<ReturnType<typeof openBus>>['db'],
+    row: {
+      id: string;
+      status?: string;
+      attempts?: number;
+      leaseToken?: string;
+      claimedUntil?: string;
+      lastError?: string;
+    },
+  ) {
+    const at = new Date(Date.now() - 7_200_000).toISOString();
+    await db.query(
+      `INSERT INTO _smrt_dispatch
+         (id, type, source, payload, status, attempts, last_error, lease_token,
+          claimed_until, metadata, created_at, updated_at)
+       VALUES ($1, 'job.run', 'test', '{}', $2, $3, $4, $5, $6, '{}', $7, $8)`,
+      row.id,
+      row.status ?? 'pending',
+      row.attempts ?? 0,
+      row.lastError ?? null,
+      row.leaseToken ?? null,
+      row.claimedUntil ?? null,
+      at,
+      at,
+    );
+  }
+
   describe('dispatch:list', () => {
     it('reports when no dispatches are found', async () => {
       await requireCommandHandler(dispatchCommands['dispatch:list'])([], {});
@@ -166,9 +195,185 @@ describe('dispatch commands', () => {
       });
       expect(process.exitCode).toBe(1);
     });
+
+    it('process --dry shows an expired lease with its phase; the live CLI needs --include-expired to take it', async () => {
+      const { db, bus } = await openBus();
+      await bus.subscribe({ signalType: 'job.run', subscriber: 'worker' });
+      const past = new Date(Date.now() - 3_600_000).toISOString();
+      await insertRow(db, {
+        id: 'expired-row',
+        status: 'processing',
+        leaseToken: 'gone',
+        claimedUntil: past,
+      });
+      await insertRow(db, { id: 'pending-row' });
+      await db.close?.();
+
+      await requireCommandHandler(dispatchCommands['dispatch:process'])([], {
+        subscriber: 'worker',
+        dry: true,
+      });
+      const preview = allOutput();
+      expect(preview).toMatch(/expired-row.*\[expired\]/);
+      expect(preview).toMatch(/pending-row.*\[dated\]/);
+      expect(preview).toContain('would be processed: 1');
+      expect(preview).toContain('processed only with --include-expired: 1');
+
+      logSpy.mockClear();
+      await requireCommandHandler(dispatchCommands['dispatch:process'])([], {
+        subscriber: 'worker',
+      });
+      expect(allOutput()).toContain('Processed 1 dispatch');
+      const after = await openBus();
+      const rows = await after.db.query(
+        'SELECT id, status, lease_token FROM _smrt_dispatch ORDER BY id',
+      );
+      expect(rows.rows).toEqual([
+        { id: 'expired-row', status: 'processing', lease_token: 'gone' },
+        {
+          id: 'pending-row',
+          status: 'completed',
+          lease_token: expect.any(String),
+        },
+      ]);
+      await after.db.close?.();
+
+      logSpy.mockClear();
+      await requireCommandHandler(dispatchCommands['dispatch:process'])([], {
+        subscriber: 'worker',
+        'include-expired': true,
+      });
+      expect(allOutput()).toContain('Processed 1 dispatch');
+    });
+  });
+
+  describe('dispatch:release-leases', () => {
+    it('releases expired leases by default, legacy rows with --legacy, every lease with --after-drain', async () => {
+      const { db } = await openBus();
+      const past = new Date(Date.now() - 3_600_000).toISOString();
+      const future = new Date(Date.now() + 3_600_000).toISOString();
+      await insertRow(db, {
+        id: 'expired',
+        status: 'processing',
+        leaseToken: 'a',
+        claimedUntil: past,
+      });
+      await insertRow(db, {
+        id: 'live',
+        status: 'processing',
+        leaseToken: 'b',
+        claimedUntil: future,
+      });
+      await insertRow(db, { id: 'legacy', status: 'processing' });
+      await db.close?.();
+
+      const release = requireCommandHandler(
+        dispatchCommands['dispatch:release-leases'],
+      );
+      await release([], { dry: true });
+      expect(allOutput()).toContain('Would release 1 lease');
+      await release([], {});
+      expect(allOutput()).toContain('Released 1 lease');
+      await release([], { legacy: true });
+      await release([], { 'after-drain': true });
+
+      const after = await openBus();
+      const rows = await after.db.query(
+        `SELECT id, status, lease_token FROM _smrt_dispatch
+          WHERE status = 'processing' AND lease_token IS NOT NULL`,
+      );
+      // Rollback check: no leased processing row remains.
+      expect(rows.rows).toEqual([]);
+      const statuses = await after.db.query(
+        'SELECT id, status FROM _smrt_dispatch ORDER BY id',
+      );
+      expect(statuses.rows).toEqual([
+        { id: 'expired', status: 'pending' },
+        { id: 'legacy', status: 'pending' },
+        { id: 'live', status: 'pending' },
+      ]);
+      await after.db.close?.();
+    });
+
+    it('rejects --legacy together with --after-drain', async () => {
+      await requireCommandHandler(dispatchCommands['dispatch:release-leases'])(
+        [],
+        { legacy: true, 'after-drain': true },
+      );
+      expect(process.exitCode).toBe(1);
+    });
+  });
+
+  describe('dispatch:list --reason', () => {
+    it('filters by an exact framework reason code', async () => {
+      const { db } = await openBus();
+      await insertRow(db, {
+        id: 'exhausted',
+        status: 'failed',
+        lastError: '[smrt:DISPATCH_ATTEMPTS_EXHAUSTED] after 5 claims',
+      });
+      await insertRow(db, {
+        id: 'forged',
+        status: 'failed',
+        lastError: 'handler: [smrt:DISPATCH_ATTEMPTS_EXHAUSTED] x',
+      });
+      await insertRow(db, {
+        id: 'lookalike',
+        status: 'failed',
+        lastError: '[smrt:DISPATCH-ATTEMPTS-EXHAUSTED] x',
+      });
+      await db.close?.();
+
+      await requireCommandHandler(dispatchCommands['dispatch:list'])([], {
+        reason: 'DISPATCH_ATTEMPTS_EXHAUSTED',
+        json: true,
+      });
+      const listed = JSON.parse(String(logSpy.mock.calls[0]?.[0])) as Array<{
+        id: string;
+      }>;
+      expect(listed.map((row) => row.id)).toEqual(['exhausted']);
+    });
+
+    it('rejects an unknown reason code', async () => {
+      await requireCommandHandler(dispatchCommands['dispatch:list'])([], {
+        reason: 'NOPE',
+      });
+      expect(process.exitCode).toBe(1);
+    });
   });
 
   describe('dispatch:retry', () => {
+    it('defaults to the claim budget and revives exhausted rows with --reset-attempts', async () => {
+      const { db } = await openBus();
+      // Under the default budget (5) but over the old CLI default (3).
+      await insertRow(db, { id: 'three', status: 'failed', attempts: 3 });
+      await insertRow(db, {
+        id: 'spent',
+        status: 'failed',
+        attempts: 5,
+        lastError: '[smrt:DISPATCH_ATTEMPTS_EXHAUSTED] after 5 claims',
+      });
+      await db.close?.();
+
+      const retry = requireCommandHandler(dispatchCommands['dispatch:retry']);
+      await retry([], {});
+      expect(allOutput()).toContain('Reset 1 failed dispatch');
+      await retry([], { 'reset-attempts': true });
+      expect(allOutput()).toContain(
+        'Reset 1 failed dispatch(es) to pending (attempts reset)',
+      );
+
+      const after = await openBus();
+      const rows = await after.db.query(
+        'SELECT id, status, attempts FROM _smrt_dispatch ORDER BY id',
+      );
+      expect(rows.rows).toEqual([
+        { id: 'spent', status: 'pending', attempts: 0 },
+        { id: 'three', status: 'pending', attempts: 3 },
+      ]);
+      await after.db.close?.();
+    });
+
     it('resets failed dispatches to pending', async () => {
       await requireCommandHandler(dispatchCommands['dispatch:retry'])([], {
         'max-attempts': 5,

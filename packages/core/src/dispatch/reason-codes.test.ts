@@ -67,5 +67,36 @@ describe('dispatch failure reasons', () => {
       );
       expect(parseDispatchFailureReason(row.lastError)).toBeNull();
     });
+
+    it('list({ reason }) matches the framework prefix exactly', async () => {
+      const { bus, db } = ctx;
+      const rows: Array<[string, string]> = [
+        ['framework', '[smrt:DISPATCH_ATTEMPTS_EXHAUSTED] after 5 claims'],
+        ['bare', '[smrt:DISPATCH_ATTEMPTS_EXHAUSTED]'],
+        ['forged', 'handler: [smrt:DISPATCH_ATTEMPTS_EXHAUSTED] x'],
+        // `_` is literal, never a wildcard.
+        ['dash', '[smrt:DISPATCH-ATTEMPTS-EXHAUSTED] x'],
+        ['longer', '[smrt:DISPATCH_ATTEMPTS_EXHAUSTEDX] x'],
+        ['other', '[smrt:DISPATCH_LEASE_ORPHANED] x'],
+      ];
+      for (const [id, lastError] of rows) {
+        await insertRawDispatch(db, {
+          id,
+          type: 'job.run',
+          status: 'failed',
+          lastError,
+        });
+      }
+      const listed = await bus.list({
+        reason: DISPATCH_FAILURE_CODES.attemptsExhausted,
+      });
+      expect(listed.map((dispatch) => dispatch.id).sort()).toEqual([
+        'bare',
+        'framework',
+      ]);
+      await expect(bus.list({ reason: 'NOT_A_CODE' as never })).rejects.toThrow(
+        /reason/,
+      );
+    });
   });
 });

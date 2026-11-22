@@ -8,6 +8,10 @@ import type { DatabaseInterface } from '@happyvertical/sql';
 import { tableExists } from '../../system/compatibility.js';
 import { toSafeInteger } from '../../utils/safe-integer.js';
 import { Dispatch, type DispatchData } from '../models/Dispatch.js';
+import {
+  assertDispatchFailureCode,
+  dispatchFailureReasonPrefix,
+} from '../reasons.js';
 import type { DispatchTenantScope } from '../tenant-resolver.js';
 import type {
   DispatchCleanupOptions,
@@ -282,6 +286,17 @@ export class DispatchCollection {
     if (options.correlationId !== undefined) {
       conditions.push(`correlation_id = $${paramIndex++}`);
       params.push(options.correlationId);
+    }
+
+    if (options.reason !== undefined) {
+      // Exact prefix comparison (no LIKE: `_` and `%` stay literal).
+      const prefix = dispatchFailureReasonPrefix(
+        assertDispatchFailureCode(options.reason),
+      );
+      conditions.push(
+        `substr(last_error, 1, ${prefix.length}) = $${paramIndex++}`,
+      );
+      params.push(prefix);
     }
 
     // Tenant isolation (S5 #1398). Scope is derived server-side by the bus;

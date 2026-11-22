@@ -122,13 +122,16 @@ export function legacyLeaseCutoff(
 /**
  * SQL of the claimable states of a row: `pending`, a lease that expired
  * before the call began and, with legacy reclaim on, a row an older core
- * left `processing` without a lease before the legacy cutoff.
+ * left `processing` without a lease before the legacy cutoff. With
+ * `pendingOnly` (`process({ phases: 'pending' })`), `pending` alone.
  */
 export function claimableStateSql(
   bind: (value: unknown) => string,
   callStart: Date,
   legacyCutoff: Date | undefined,
+  pendingOnly = false,
 ): string {
+  if (pendingOnly) return "status = 'pending'";
   const branches = [
     "status = 'pending'",
     `(status = 'processing' AND claimed_until IS NOT NULL AND claimed_until < ${bind(callStart.toISOString())})`,
@@ -177,6 +180,8 @@ export async function claimDispatchLease(
     callStart: Date;
     settings: DispatchLeaseSettings;
     tenantScope?: DispatchTenantScope;
+    /** Claim only a `pending` row (no reclaim). */
+    pendingOnly?: boolean;
   },
 ): Promise<DispatchLease | null> {
   const now = new Date();
@@ -197,6 +202,7 @@ export async function claimDispatchLease(
       bind,
       input.callStart,
       legacyLeaseCutoff(input.settings, input.callStart),
+      input.pendingOnly,
     ),
   ];
   pushTenantPredicate(

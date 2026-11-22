@@ -45,6 +45,7 @@ import {
   candidateCursor,
   DISPATCH_CANDIDATE_PHASES,
   type DispatchCandidateCursor,
+  type DispatchCandidatePhase,
   failExhaustedCandidates,
   hydrateCandidate,
   readCandidatePage,
@@ -110,6 +111,19 @@ import type {
 } from './types.js';
 
 const logger = createLogger({ level: 'info' });
+
+/**
+ * Validate `process({ phases })`: `'pending'` claims only pending rows (no
+ * reclaim of expired or legacy leases, no cap sweep of them); `'all'`
+ * (default) every phase.
+ */
+function resolvePendingOnly(phases: unknown): boolean {
+  if (phases === undefined || phases === 'all') return false;
+  if (phases === 'pending') return true;
+  throw new Error(
+    `DispatchBus: phases must be 'pending' or 'all' (got ${String(phases)})`,
+  );
+}
 
 /**
  * Registered in-memory handler
@@ -638,6 +652,7 @@ export class DispatchBus {
       options.maxExecutionMs === undefined
         ? this.lease.maxExecutionMs
         : assertMaxExecutionMs(options.maxExecutionMs, this.lease.leaseMs);
+    const pendingOnly = resolvePendingOnly(options.phases);
     await this.initialize();
     // Renewals and outcome writes must commit independently of a handler;
     // a handle that provably cannot is refused before anything is claimed.
@@ -730,7 +745,9 @@ export class DispatchBus {
     const callStart = new Date();
     // Opt-in legacy reclaim (unset by default): lease-less rows an older
     // core left `processing` before this cutoff are claimable.
-    const legacyCutoff = legacyLeaseCutoff(this.lease, callStart);
+    const legacyCutoff = pendingOnly
+      ? undefined
+      : legacyLeaseCutoff(this.lease, callStart);
     // Rows this call claimed are never claimed again by it.
     const claimedThisCall = new Set<string>();
 
@@ -745,6 +762,7 @@ export class DispatchBus {
       tenantScope,
       callStart,
       legacyCutoff,
+      pendingOnly,
       maxAttempts: this.lease.maxAttempts,
       reason: formatDispatchFailureReason(
         DISPATCH_FAILURE_CODES.attemptsExhausted,
@@ -763,6 +781,7 @@ export class DispatchBus {
 
     candidates: for (const phase of DISPATCH_CANDIDATE_PHASES) {
       if (phase === 'legacy' && legacyCutoff === undefined) continue;
+      if (pendingOnly && (phase === 'expired' || phase === 'legacy')) continue;
       let cursor: DispatchCandidateCursor | undefined;
       while (stats.claimed < limit) {
         if (pages > 0) {
@@ -818,6 +837,7 @@ export class DispatchBus {
             callStart,
             settings: this.lease,
             tenantScope,
+            pendingOnly,
           });
           if (!lease) {
             continue;
@@ -863,6 +883,88 @@ export class DispatchBus {
 
     options.onStats?.({ ...stats });
     return stats.completed;
+  }
+
+  /**
+   * Preview what `process()` would claim for `subscriber`, without writing:
+   * the same candidate query (phases in the same order, routing, patterns,
+   * `signalTypes`, claim budget and tenant scope, `limit` applied after
+   * matching), each row with the phase it would be claimed from. The cap
+   * sweep is not run; rows a running attempt of this process holds and rows
+   * the bus cannot read are left out.
+   */
+  async previewProcess(
+    subscriber: string,
+    options: Pick<
+      DispatchProcessOptions,
+      'limit' | 'signalTypes' | 'phases'
+    > = {},
+  ): Promise<Array<{ dispatch: Dispatch; phase: DispatchCandidatePhase }>> {
+    const pendingOnly = resolvePendingOnly(options.phases);
+    await this.initialize();
+    const tenantScope = resolveDispatchTenantScope();
+    const subscriptions = await DispatchSubscriptionCollection.findBySubscriber(
+      this.db,
+      subscriber,
+      true,
+      tenantScope,
+    );
+    if (subscriptions.length === 0) return [];
+    // The same limit rule as process(): negative means no limit.
+    const limit =
+      typeof options.limit === 'number' && options.limit < 0
+        ? Number.POSITIVE_INFINITY
+        : options.limit || 100;
+    const pageSize = Math.min(limit, DispatchBus.CANDIDATE_PAGE_SIZE);
+    const engine = getDatabaseEngine(this.db);
+    const dialect = dispatchPatternDialect(engine);
+    const nativeTimestamps = engine === 'postgres';
+    const signalTypes =
+      options.signalTypes && options.signalTypes.length > 0
+        ? options.signalTypes
+        : undefined;
+    const callStart = new Date();
+    const legacyCutoff = pendingOnly
+      ? undefined
+      : legacyLeaseCutoff(this.lease, callStart);
+    const preview: Array<{
+      dispatch: Dispatch;
+      phase: DispatchCandidatePhase;
+    }> = [];
+    for (const phase of DISPATCH_CANDIDATE_PHASES) {
+      if (phase === 'legacy' && legacyCutoff === undefined) continue;
+      if (pendingOnly && (phase === 'expired' || phase === 'legacy')) continue;
+      let cursor: DispatchCandidateCursor | undefined;
+      while (preview.length < limit) {
+        const rows = await readCandidatePage(this.db, {
+          dialect,
+          nativeTimestamps,
+          subscriber,
+          subscriptions,
+          signalTypes,
+          tenantScope,
+          phase,
+          cursor,
+          pageSize,
+          callStart,
+          legacyCutoff,
+          maxAttempts: this.lease.maxAttempts,
+        });
+        for (const row of rows) {
+          if (preview.length >= limit) break;
+          cursor = candidateCursor(row);
+          if (isLeaseHeldLocally(this.db, cursor.id)) continue;
+          const dispatch = hydrateCandidate(row, phase);
+          if (!dispatch) continue;
+          if (!isDispatchRoutedTo(dispatch, subscriber, subscriptions))
+            continue;
+          preview.push({ dispatch, phase });
+        }
+        if (rows.length < pageSize) break;
+      }
+      if (preview.length >= limit) break;
+    }
+    return preview;
   }
 
   /** Page size of the candidate query (bounded by `options.limit`). */

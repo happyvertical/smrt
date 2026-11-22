@@ -24,6 +24,16 @@ export type DispatchFailureCode =
 
 const KNOWN_CODES = new Set<string>(Object.values(DISPATCH_FAILURE_CODES));
 
+/** Throw unless `code` is a framework reason code. */
+export function assertDispatchFailureCode(code: unknown): DispatchFailureCode {
+  if (typeof code !== 'string' || !KNOWN_CODES.has(code)) {
+    throw new Error(
+      `Unknown dispatch reason ${String(code)}; expected one of ${[...KNOWN_CODES].join(', ')}`,
+    );
+  }
+  return code as DispatchFailureCode;
+}
+
 /** The `last_error` prefix of framework reason `code`. */
 export function dispatchFailureReasonPrefix(code: DispatchFailureCode): string {
   return `[smrt:${code}]`;

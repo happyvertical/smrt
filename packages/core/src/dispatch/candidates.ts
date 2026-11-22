@@ -108,6 +108,11 @@ export interface DispatchCandidateQuery {
    * is before it are candidates of the `legacy` phase.
    */
   legacyCutoff?: Date;
+  /**
+   * `process({ phases: 'pending' })`: only `pending` rows; the cap sweep
+   * then leaves expired and legacy leases alone.
+   */
+  pendingOnly?: boolean;
 }
 
 /**
@@ -153,7 +158,12 @@ export async function failExhaustedCandidates(
     ...(query.dialect === 'glob'
       ? ["lower(typeof(attempts)) IN ('integer', 'bigint', 'null')"]
       : []),
-    claimableStateSql(bind, query.callStart, query.legacyCutoff),
+    claimableStateSql(
+      bind,
+      query.callStart,
+      query.legacyCutoff,
+      query.pendingOnly,
+    ),
   ];
   if (query.signalTypes && query.signalTypes.length > 0) {
     conditions.push(`type IN (${query.signalTypes.map(bind).join(', ')})`);

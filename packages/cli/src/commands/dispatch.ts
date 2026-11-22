@@ -6,6 +6,7 @@
 
 import type {
   DispatchBus,
+  DispatchFailureCode,
   DispatchRetryOptions,
   DispatchStatus,
 } from '@happyvertical/smrt-core';
@@ -18,6 +19,7 @@ interface DispatchListCliOptions {
   status?: DispatchStatus;
   source?: string;
   type?: string;
+  reason?: string;
   limit?: number;
   json?: boolean;
 }
@@ -27,12 +29,21 @@ interface DispatchProcessCliOptions {
   subscriber?: string;
   limit?: number;
   dry?: boolean;
+  'include-expired'?: boolean;
 }
 
 /** Parsed options for `dispatch:retry`. */
 interface DispatchRetryCliOptions {
   'max-attempts'?: number;
+  'reset-attempts'?: boolean;
   type?: string;
+}
+
+/** Parsed options for `dispatch:release-leases`. */
+interface DispatchReleaseLeasesCliOptions {
+  'after-drain'?: boolean;
+  legacy?: boolean;
+  dry?: boolean;
 }
 
 /** Parsed options for `dispatch:cleanup`. */
@@ -114,6 +125,11 @@ export const dispatchCommands: Record<string, CLICommand> = {
         description: 'Filter by signal type',
         short: 't',
       },
+      reason: {
+        type: 'string',
+        description:
+          'Only rows failed or released for this framework reason (e.g. DISPATCH_ATTEMPTS_EXHAUSTED); exact match',
+      },
       limit: {
         type: 'number',
         description: 'Maximum results (default: 50)',
@@ -138,6 +154,7 @@ export const dispatchCommands: Record<string, CLICommand> = {
           status: options.status,
           source: options.source,
           type: options.type,
+          reason: options.reason as DispatchFailureCode | undefined,
           limit: options.limit || 50,
         });
 
@@ -202,7 +219,14 @@ export const dispatchCommands: Record<string, CLICommand> = {
       },
       dry: {
         type: 'boolean',
-        description: 'Show what would be processed without executing',
+        description:
+          'Show what would be processed (the same candidate query, with the phase of each row) without executing',
+        default: false,
+      },
+      'include-expired': {
+        type: 'boolean',
+        description:
+          'Also reclaim rows whose lease expired (default: pending rows only)',
         default: false,
       },
     },
@@ -229,23 +253,30 @@ export const dispatchCommands: Record<string, CLICommand> = {
             console.log(`  • ${sub.signalType} → ${sub.handler}()`);
           }
 
-          const pending = await bus.list({
-            status: 'pending',
+          // The bus's own read-only candidate query: same phases, routing,
+          // patterns, budget and tenant scope as a live run.
+          const preview = await bus.previewProcess(options.subscriber, {
             limit: options.limit || 100,
           });
-
-          // Filter by subscription patterns
-          const matching = pending.filter((d) =>
-            subscriptions.some((s) => s.matches(d.type)),
+          const reclaims = preview.filter(
+            ({ phase }) => phase === 'expired' || phase === 'legacy',
           );
+          const taken = options['include-expired']
+            ? preview
+            : preview.filter((entry) => !reclaims.includes(entry));
+          const line = ({
+            dispatch,
+            phase,
+          }: (typeof preview)[number]): string =>
+            `  • ${dispatch.id} - ${dispatch.type} (from ${dispatch.source}) [${phase}]`;
 
-          console.log(
-            `\nPending dispatches that would be processed: ${matching.length}`,
-          );
-          for (const dispatch of matching) {
+          console.log(`\nDispatches that would be processed: ${taken.length}`);
+          for (const entry of taken) console.log(line(entry));
+          if (!options['include-expired'] && reclaims.length > 0) {
             console.log(
-              `  • ${dispatch.id.substring(0, 8)} - ${dispatch.type} (from ${dispatch.source})`,
+              `\nExpired leases, processed only with --include-expired: ${reclaims.length}`,
             );
+            for (const entry of reclaims) console.log(line(entry));
           }
           return;
         }
@@ -263,7 +294,12 @@ export const dispatchCommands: Record<string, CLICommand> = {
             );
             processed++;
           },
-          { limit: options.limit || 100 },
+          {
+            limit: options.limit || 100,
+            // The logging handler does no work: reclaiming another worker's
+            // expired lease needs an explicit opt-in.
+            phases: options['include-expired'] ? 'all' : 'pending',
+          },
         );
 
         console.log(`\nProcessed ${result} dispatch(es).`);
@@ -287,9 +323,15 @@ export const dispatchCommands: Record<string, CLICommand> = {
     options: {
       'max-attempts': {
         type: 'number',
-        description: 'Maximum attempts before giving up (default: 3)',
+        description:
+          "Only retry rows with fewer attempts than this (default: each row's claim budget, 5 unless configured)",
         short: 'm',
-        default: 3,
+      },
+      'reset-attempts': {
+        type: 'boolean',
+        description:
+          'Reset the attempt count, reviving rows whose claim budget is spent',
+        default: false,
       },
       type: {
         type: 'string',
@@ -305,19 +347,88 @@ export const dispatchCommands: Record<string, CLICommand> = {
         db = context.db;
         const { bus } = context;
 
-        const retryOptions: DispatchRetryOptions = {
-          maxAttempts: options['max-attempts'] || 3,
-        };
+        // Without --max-attempts the bus applies each row's claim budget.
+        const retryOptions: DispatchRetryOptions = {};
+        if (options['max-attempts']) {
+          retryOptions.maxAttempts = options['max-attempts'];
+        }
+        if (options['reset-attempts']) {
+          retryOptions.resetAttempts = true;
+        }
 
         if (options.type) {
           retryOptions.signalTypes = [options.type];
         }
 
         const count = await bus.retry(retryOptions);
-        console.log(`Reset ${count} failed dispatch(es) to pending.`);
+        console.log(
+          `Reset ${count} failed dispatch(es) to pending${retryOptions.resetAttempts ? ' (attempts reset)' : ''}.`,
+        );
       } catch (error) {
         console.error(
           'Error retrying dispatches:',
+          error instanceof Error ? error.message : error,
+        );
+        process.exitCode = 1;
+        return;
+      } finally {
+        await closeDatabaseConnection(db);
+      }
+    },
+  },
+
+  'dispatch:release-leases': {
+    name: 'dispatch:release-leases',
+    description:
+      'Move leased processing dispatches back to pending (attempts kept): expired leases by default',
+    args: [],
+    options: {
+      'after-drain': {
+        type: 'boolean',
+        description:
+          'Release every lease, live or expired. Only after every dispatch worker has stopped (rollback)',
+        default: false,
+      },
+      legacy: {
+        type: 'boolean',
+        description:
+          'Release rows an older core left processing without a lease (after draining it)',
+        default: false,
+      },
+      dry: {
+        type: 'boolean',
+        description: 'Count the rows that would be released',
+        default: false,
+      },
+    },
+    handler: async (
+      _args: string[],
+      options: DispatchReleaseLeasesCliOptions,
+    ) => {
+      let db: DatabaseInterface | undefined;
+
+      try {
+        if (options['after-drain'] && options.legacy) {
+          throw new Error('--after-drain and --legacy cannot be combined');
+        }
+        const release = options['after-drain']
+          ? 'afterDrain'
+          : options.legacy
+            ? 'legacy'
+            : 'expired';
+        const context = await getDispatchBus();
+        db = context.db;
+        const result = await context.bus.maintain({
+          release,
+          sweepOrphans: false,
+          dryRun: options.dry === true,
+        });
+        console.log(
+          `${options.dry ? 'Would release' : 'Released'} ${result.released} lease(s) (${release}).`,
+        );
+      } catch (error) {
+        console.error(
+          'Error releasing dispatch leases:',
           error instanceof Error ? error.message : error,
         );
         process.exitCode = 1;

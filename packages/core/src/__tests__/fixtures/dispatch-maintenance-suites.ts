@@ -651,3 +651,89 @@ export function defineLeaseLegacySqliteCases(
     expect((await dispatchLeaseRow(db, 'old-claim')).status).toBe('completed');
   });
 }
+
+/** T32 (library half): the read-only preview and the pending-only phases. */
+export function defineProcessPreviewCases(openDatabase: DispatchOpener): void {
+  const open = useOpener(openDatabase);
+
+  async function seed(options?: Parameters<DispatchOpener>[0]) {
+    const ctx = await open(options);
+    await ctx.bus.subscribe({ signalType: 'job.*', subscriber: 'worker' });
+    await insertRawDispatch(ctx.db, abandoned('expired', 'job.run'));
+    await insertRawDispatch(ctx.db, {
+      id: 'dated',
+      type: 'job.run',
+      createdAt: ago(60_000),
+    });
+    await insertRawDispatch(ctx.db, {
+      id: 'undated',
+      type: 'job.run',
+      createdAt: null,
+    });
+    await insertRawDispatch(ctx.db, { id: 'unrouted', type: 'mail.send' });
+    return ctx;
+  }
+
+  it('previewProcess lists claimable rows with their phase and writes nothing', async () => {
+    const { bus, db } = await seed();
+    const all = await bus.previewProcess('worker');
+    expect(all.map(({ dispatch, phase }) => [dispatch.id, phase])).toEqual([
+      ['expired', 'expired'],
+      ['undated', 'undated'],
+      ['dated', 'dated'],
+    ]);
+    const expired = await dispatchLeaseRow(db, 'expired');
+    expect(expired.status).toBe('processing');
+    expect(expired.leaseToken).toBe('gone-expired');
+    expect(expired.attempts).toBe(1);
+
+    const pending = await bus.previewProcess('worker', { phases: 'pending' });
+    expect(pending.map(({ dispatch }) => dispatch.id)).toEqual([
+      'undated',
+      'dated',
+    ]);
+    // The limit applies after matching.
+    const first = await bus.previewProcess('worker', { limit: 1 });
+    expect(first.map(({ dispatch }) => dispatch.id)).toEqual(['expired']);
+  });
+
+  it("phases: 'pending' neither reclaims nor cap-sweeps an expired lease", async () => {
+    const { bus, db } = await seed({ bus: { maxAttempts: 2 } });
+    await insertRawDispatch(db, {
+      ...abandoned('expired-at-cap', 'job.run'),
+      attempts: 2,
+    });
+
+    const calls: string[] = [];
+    await bus.process(
+      'worker',
+      async (_payload, metadata) => {
+        calls.push(metadata.id);
+      },
+      { phases: 'pending' },
+    );
+    expect(calls).toEqual(['undated', 'dated']);
+    expect((await dispatchLeaseRow(db, 'expired')).leaseToken).toBe(
+      'gone-expired',
+    );
+    expect((await dispatchLeaseRow(db, 'expired-at-cap')).status).toBe(
+      'processing',
+    );
+
+    calls.length = 0;
+    await bus.process('worker', async (_payload, metadata) => {
+      calls.push(metadata.id);
+    });
+    expect(calls).toEqual(['expired']);
+    expect((await dispatchLeaseRow(db, 'expired-at-cap')).status).toBe(
+      'failed',
+    );
+  });
+
+  it('rejects an unknown phases value', async () => {
+    const { bus } = await seed();
+    await expect(
+      bus.process('worker', async () => {}, { phases: 'some' as never }),
+    ).rejects.toThrow(/phases/);
+  });
+}

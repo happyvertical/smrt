@@ -6,6 +6,7 @@
 
 import type { DatabaseInterface } from '@happyvertical/sql';
 import type { PostgresTimeoutConfig } from '../postgres-timeouts.js';
+import type { DispatchFailureCode } from './reasons.js';
 import type { DispatchTenantScope } from './tenant-resolver.js';
 
 /**
@@ -99,6 +100,12 @@ export interface DispatchProcessOptions {
    * (an integer of at least `leaseMs`).
    */
   maxExecutionMs?: number;
+  /**
+   * `'all'` (default) claims pending rows and reclaims expired (and, when
+   * opted in, legacy) leases; `'pending'` claims pending rows only and
+   * leaves every leased row, spent or not, alone.
+   */
+  phases?: 'pending' | 'all';
 }
 
 /** Counters of one `DispatchBus.process()` call. */
@@ -141,6 +148,12 @@ export interface DispatchListOptions {
   targetSubscriber?: string;
   /** Filter by correlation ID */
   correlationId?: string;
+  /**
+   * Only rows whose `last_error` starts with this framework reason
+   * (`[smrt:<CODE>]`), compared exactly (no pattern matching). Handler text
+   * never matches. An unknown code throws.
+   */
+  reason?: DispatchFailureCode;
   /**
    * Active tenant scope used to filter results (S5 #1398).
    *
