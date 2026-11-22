@@ -54,9 +54,11 @@ was sent but whose response was lost is blindly re-sent with no duplicate rows �
 the ambiguous-failure AC. Result → durable-transition mapping follows the
 sync-apply-contract's "Web outbox (#1762)" consumer notes: `applied` → remove /
 `synced`; `conflict` → remove + fire `onConflict` / `synced` (a conflict is a
-RESOLVED outcome, not a failure); retryable `write_failed` → keep + backoff /
-`pending`; `auth_required`/`forbidden` → PAUSE the loop until re-auth, keep
-queued; other terminal rejections → remove / `failed`; network/non-200/lost
+RESOLVED outcome, not a failure); retryable `write_failed` and `rate_limited`
+(a host throttled the item, #5195) → keep + backoff / `pending`;
+`auth_required`/`forbidden` → PAUSE the loop until re-auth, keep queued; other
+terminal rejections, and any reason the engine does not know → remove /
+`failed`; network/non-200/lost
 response → whole batch stays `pending`.
 
 **Shared, namespace-keyed engine** (`offline/engine.ts`,

@@ -17,6 +17,7 @@
  */
 
 import { join } from 'node:path';
+import { resolvePermissionCollection } from '../permission-collection.js';
 import { isFrameworkBaseClass } from '../registry/framework-base-classes.js';
 import type {
   SmartObjectDefinition,
@@ -25,12 +26,9 @@ import type {
 import type { RouteFilePlan } from './generated-route-files.js';
 import { AUTO_GENERATED_ROUTE_HEADER } from './route-header.js';
 import {
-  allowsSuperAdminBypass,
   collectRouteReadonlyFields,
-  generateTenantContextHelper,
   getApiPublicAccess,
   getApiWritableAllowlist,
-  resolvePermissionCollection,
   usesPrincipalContext,
 } from './route-policy.js';
 import { generateCollectionAccessImports } from './sveltekit-config-import.js';
@@ -70,9 +68,6 @@ interface SyncTargetSpec {
   readonlyFields: string[];
   writableAllowlist: string[] | null;
   publicAccess: boolean | 'read';
-  tenantScoped: boolean;
-  /** `tenantScoped.allowSuperAdminBypass`: a verified bypass may write. */
-  allowSuperAdminBypass: boolean;
   /** `api.principalContext`: writes need a complete principal. */
   principalContext: boolean;
 }
@@ -193,8 +188,6 @@ export function collectSyncApplyTargets(
       readonlyFields: collectRouteReadonlyFields(objectDef),
       writableAllowlist: getApiWritableAllowlist(apiConfig),
       publicAccess: getApiPublicAccess(apiConfig),
-      tenantScoped: !!objectDef.decoratorConfig?.tenantScoped,
-      allowSuperAdminBypass: allowsSuperAdminBypass(objectDef),
       principalContext: usesPrincipalContext(objectDef),
     };
     bySegment.set(objectDef.collection, { target, isStiChild });
@@ -215,8 +208,6 @@ function serializeTargets(targets: SyncTargetSpec[]): string {
       `readonlyFields: ${JSON.stringify(target.readonlyFields)}`,
       `writableAllowlist: ${JSON.stringify(target.writableAllowlist)}`,
       `publicAccess: ${JSON.stringify(target.publicAccess)}`,
-      `tenantScoped: ${JSON.stringify(target.tenantScoped)}`,
-      `allowSuperAdminBypass: ${JSON.stringify(target.allowSuperAdminBypass)}`,
       `principalContext: ${JSON.stringify(target.principalContext)}`,
     ];
     return `  ${JSON.stringify(target.segment)}: {\n    ${fields.join(',\n    ')},\n  },`;
@@ -225,31 +216,62 @@ function serializeTargets(targets: SyncTargetSpec[]): string {
 }
 
 /**
+ * The registry keys of the models a manifest generates, when it declares an
+ * STI family with members: a sync item through a family base serves only
+ * those members (#5375), never one registered elsewhere. `undefined` when no
+ * family has members, so the route then carries no model list.
+ */
+export function syncModelScope(
+  manifest: SmartObjectManifest,
+): string[] | undefined {
+  const models = orderedManifestObjectEntries(manifest).filter(
+    ([, objectDef]) => !isCollectionManifestClass(manifest, objectDef),
+  );
+  const hasStiAncestor = (objectDef: SmartObjectDefinition): boolean => {
+    // A singleton STI base is a family too: it must exclude later subtypes.
+    if (objectDef.decoratorConfig?.tableStrategy === 'sti') return true;
+    const seen = new Set<string>();
+    let child = objectDef;
+    let parentName = child.extendsQualified || child.extends;
+    while (parentName && !seen.has(parentName)) {
+      seen.add(parentName);
+      const parent = findManifestObjectByName(manifest, parentName, child);
+      if (!parent) return false;
+      if (parent.decoratorConfig?.tableStrategy === 'sti') return true;
+      child = parent;
+      parentName = parent.extendsQualified || parent.extends;
+    }
+    return false;
+  };
+  if (!models.some(([, objectDef]) => hasStiAncestor(objectDef))) {
+    return undefined;
+  }
+  return models
+    .map(
+      ([key, objectDef]) =>
+        objectDef.qualifiedName ??
+        (objectDef.packageName
+          ? `${objectDef.packageName}:${objectDef.className}`
+          : objectDef.className || key),
+    )
+    .sort(compareText);
+}
+
+/**
  * Render the generated `+server.ts` content for the sync-apply route.
  * Exported for tests.
+ *
+ * @param modelScope - Registry keys of the models the manifest generates
+ *   ({@link syncModelScope}), when it declares an STI family with members
  */
 export function generateSyncApplyRouteTemplate(
   targets: SyncTargetSpec[],
   collectionAccessImports: string,
+  modelScope?: readonly string[],
 ): string {
-  const anyTenantScoped = targets.some((target) => target.tenantScoped);
-  const needsTenantContext = targets.some(
-    (target) => target.tenantScoped || target.principalContext,
-  );
-
-  // The tenant and principal helper of the generated CRUD routes, emitted by
-  // the same generator function. One route serves many models here, so the
-  // principal requirement is passed per item instead of baked in.
-  // Without a tenant-scoped model in the manifest the core request-context
-  // form is emitted: a model whose tenancy is registered at runtime still
-  // runs in the caller's tenant.
-  const tenantHelper = generateTenantContextHelper(
-    'per-target',
-    anyTenantScoped,
-    !needsTenantContext,
-    'per-target',
-  );
-
+  const scopeConstant = modelScope
+    ? `\n// The models this manifest generates: a sync item through an STI base\n// serves only these members of its family.\nconst SYNC_MODEL_SCOPE: ReadonlySet<string> = new Set(${JSON.stringify(modelScope)});\n`
+    : '';
   return `${AUTO_GENERATED_ROUTE_HEADER}
 // DO NOT EDIT - changes will be overwritten
 //
@@ -264,7 +286,7 @@ import {
   SyncApplyRejection,
   type SyncApplyTarget,
 } from '@happyvertical/smrt-core';
-import { applyUpdateInput, assertCreateInput, assertUpdateInput, isRuntimeModelEnabled, ${needsTenantContext ? 'isTenantScopedModel, ' : ''}ObjectRegistry } from '@happyvertical/smrt-core';
+import { applyUpdateInput, assertCreateInput, assertUpdateInput, getRequestTenantContext as getCurrentTenant, isRuntimeModelEnabled, ObjectRegistry, runInRequestTenancy } from '@happyvertical/smrt-core';
 import { error, json } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 ${collectionAccessImports}
@@ -282,7 +304,7 @@ function hasAuthenticatedPrincipal(locals: unknown): boolean {
     l.smrtAuth === true
   );
 }
-${tenantHelper}
+
 interface SyncTargetConfig {
   /** Manifest registry key (may be package-qualified), as CRUD routes use. */
   registryKey: string;
@@ -293,10 +315,6 @@ interface SyncTargetConfig {
   readonlyFields: string[];
   writableAllowlist: string[] | null;
   publicAccess: boolean | 'read';
-  /** The model is tenant-scoped: a write needs a tenant. */
-  tenantScoped: boolean;
-  /** A verified super-admin bypass may write this model with no tenant. */
-  allowSuperAdminBypass: boolean;
   /** \`api.principalContext\`: a write needs a complete principal. */
   principalContext: boolean;
 }
@@ -304,7 +322,7 @@ interface SyncTargetConfig {
 // One entry per syncable model, keyed by the collection route segment its
 // generated CRUD routes use.
 const SYNC_TARGETS: Record<string, SyncTargetConfig> = ${serializeTargets(targets)};
-
+${scopeConstant}
 function readRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object'
     ? (value as Record<string, unknown>)
@@ -380,15 +398,27 @@ export const POST: RequestHandler = async ({ locals, request }) => {
         collection,
         // After the item was authorized, as on the CRUD routes: a model the
         // runtime exposure gate closes for the request's tenant is unknown.
-        run: async (_op, apply) => {
+        // Each item then runs inside the tenancy its model has now (#5375),
+        // whatever the manifest declared: the actor from \`locals\` (or the
+        // tenant the host entered), a write gate, and the decision bound for
+        // the item's lookup and write. A refusal rejects the item.
+        run: async (op, apply) => {
           if (!isRuntimeModelEnabled({ qualifiedName: target.registryKey, replacedQualifiedNames: target.replacedQualifiedNames }, { surface: 'rest', locals, tenantId: requestTenantOf(locals) })) {
             throw new SyncApplyRejection('unknown_object');
           }
-          return apply();
+          return runInRequestTenancy(
+            { model: target.registryKey, operation: op, locals, requirePrincipal: target.principalContext${modelScope ? ', modelScope: SYNC_MODEL_SCOPE' : ''} },
+            () => apply(),
+          );
         },
         // A payload is checked against the row before replay or staleness.
         assertUpdate: (row, data) => assertUpdateInput(row, data, target.registryKey),
         assertCreate: (data) => assertCreateInput(target.registryKey, data, collection),
+        // A sync create writes the target's own type: on an STI target a
+        // payload selecting another type is rejected, never written as this one.
+        acceptsCreateType: (payload: Record<string, unknown>) =>
+          ObjectRegistry.getTableStrategy(target.registryKey) !== 'sti' ||
+          ['createType', '_meta_type'].every((selector) => payload[selector] === undefined || payload[selector] === target.registryKey),
         mutate: async (row, op, data) => {
           await collection.withAuditMutation(row as import('@happyvertical/smrt-core').SmrtObject, op === 'update' ? 'updated' : 'deleted', async (bound) => {
             if (op === 'update') {
@@ -410,24 +440,6 @@ export const POST: RequestHandler = async ({ locals, request }) => {
               return 'forbidden' as const;
             }
           }
-          // The same order as the generated CRUD route: after auth and the
-          // operation permission, enter the principal's tenant (also for a
-          // model whose tenancy is registered at runtime), then require one
-          // for a tenant-scoped model.
-          if (target.tenantScoped || target.principalContext || isTenantScopedModel(target.registryKey)) {
-            try {
-              establishTenantContext(locals, target.principalContext);
-            } catch {
-              return 'forbidden' as const;
-            }
-${
-  anyTenantScoped
-    ? `            if (target.tenantScoped && !hasTenantWriteContext(locals, target.allowSuperAdminBypass)) {
-              return authenticated ? ('forbidden' as const) : ('auth_required' as const);
-            }
-`
-    : ''
-}          }
           return 'ok' as const;
         },
         prepare: (payload: Record<string, unknown>) =>
@@ -475,6 +487,7 @@ export function generateSyncApplyRoute(
       generateCollectionAccessImports(projectRoot, routeDir, options, [
         'getCollection',
       ]),
+      syncModelScope(manifest),
     ),
     label: 'sync/apply',
     policy: 'yield',

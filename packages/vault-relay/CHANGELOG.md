@@ -1,5 +1,12 @@
 # @happyvertical/smrt-vault-relay
 
+## 0.69.0
+
+### Patch Changes
+
+- @happyvertical/smrt-features@0.69.0
+  - @happyvertical/smrt-subscriptions@0.69.0
+
 ## 0.68.0
 
 ### Patch Changes

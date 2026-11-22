@@ -14,12 +14,14 @@
  */
 
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import {
+  installTestTenancySource,
+  removeTestTenancySource,
+  setTestRuntimeTenancy,
+} from '../__tests__/fixtures/test-tenancy-source';
 import { SmrtCollection } from '../collection';
 import { field } from '../decorators';
-import {
-  setDispatchTenantResolver,
-  setTenantScopedClassResolver,
-} from '../dispatch';
+import { setDispatchTenantResolver } from '../dispatch';
 import { SmrtObject } from '../object';
 import { ObjectRegistry, smrt } from '../registry';
 import { getTestDatabase } from '../testing/database';
@@ -105,6 +107,7 @@ describe('REST tenant-scoped public read fails closed to global rows (#1782)', (
   };
 
   beforeAll(async () => {
+    installTestTenancySource();
     db = await getTestDatabase({
       type: 'sqlite',
       url: ':memory:',
@@ -124,13 +127,14 @@ describe('REST tenant-scoped public read fails closed to global rows (#1782)', (
   });
 
   afterAll(async () => {
+    removeTestTenancySource();
     await db?.close?.();
   });
 
   afterEach(() => {
     // Reset the ambient resolvers so no test leaks tenant scope into another.
     setDispatchTenantResolver(undefined);
-    setTenantScopedClassResolver(undefined);
+    setTestRuntimeTenancy(undefined);
   });
 
   const list = (query = '') =>
@@ -251,9 +255,7 @@ describe('REST tenant-scoped public read fails closed to global rows (#1782)', (
 
     it('fails closed to global rows when the resolver marks it tenant-scoped', async () => {
       setDispatchTenantResolver(() => undefined);
-      setTenantScopedClassResolver((name) =>
-        name.includes('Pattern1TenantDoc'),
-      );
+      setTestRuntimeTenancy((name) => name.includes('Pattern1TenantDoc'));
 
       const res = await p1list();
       expect(res.status).toBe(200);
@@ -266,7 +268,7 @@ describe('REST tenant-scoped public read fails closed to global rows (#1782)', (
       // can't recognize the Pattern-1 model → unfiltered (documents the gap the
       // hook closes).
       setDispatchTenantResolver(() => undefined);
-      setTenantScopedClassResolver(undefined);
+      setTestRuntimeTenancy(undefined);
 
       const res = await p1list();
       expect(res.status).toBe(200);

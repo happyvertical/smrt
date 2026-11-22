@@ -6,48 +6,47 @@
  */
 
 import { pathToFileURL } from 'node:url';
-import { startRestServer } from '@happyvertical/smrt-core';
+import {
+  type APIRequestPrincipal,
+  startRestServer,
+} from '@happyvertical/smrt-core';
 import { Category } from './lib/models/Category';
 import { Product } from './lib/models/Product';
 
 /**
- * Reference auth stub (#1540). Generated routes are FAIL-CLOSED: without an
- * `authMiddleware` (or `@smrt({ api: { public: true } })` on the model) every
- * route returns 401. This stub demonstrates the contract — replace it with your
- * real auth (verify a session cookie / bearer token, attach the principal).
+ * Reference principal resolver (#1540, #5195). Generated routes are
+ * FAIL-CLOSED: a route that is not `@smrt({ api: { public } })` answers 401
+ * to a caller who is not signed in, and every write needs the
+ * `<collection>.<action>` permission (`products.create`, `categories.update`,
+ * ...). The server enforces both from the principal returned here, once per
+ * request, and nothing in the request can change it.
  *
- * Returning the (optionally augmented) request allows the call; returning a
- * `Response` rejects it.
+ * Tenant-scoped models (`Product` is `@TenantScoped`) run inside the
+ * principal's tenant: when tenancy is enabled, a principal with no tenant
+ * reads global rows only and cannot write, and a write body that names
+ * another tenant is refused with 403.
+ *
+ * Replace the stub with your real authentication: verify the session cookie
+ * or bearer token and return the tenant, user and permission slugs of the
+ * verified principal, never values from a header or parameter the caller
+ * controls. Return `null` for an anonymous caller.
  */
-function demoAuthMiddleware(_objectName: string, _action: string) {
-  return async (req: Request): Promise<Request | Response> => {
-    const token = req.headers.get('authorization');
-    if (!token) {
-      return new Response(
-        JSON.stringify({ error: 'Authentication required' }),
-        {
-          status: 401,
-          headers: { 'Content-Type': 'application/json' },
-        },
-      );
-    }
-    // TODO: verify `token` and attach the resolved principal to the request.
-    return req;
+function demoResolvePrincipal(req: Request): APIRequestPrincipal | null {
+  const token = req.headers.get('authorization');
+  if (!token) return null;
+  // TODO: verify `token` and return its principal. This stub verifies
+  // nothing, so it knows no tenant and grants only what the demo needs.
+  return {
+    tenantId: null,
+    allowCrossTenant: false,
+    authenticated: true,
+    permissions: [
+      'products.create',
+      'products.update',
+      'categories.create',
+      'categories.update',
+    ],
   };
-}
-
-/**
- * Reference tenant resolver. Tenant-scoped models (`Product` is
- * `@TenantScoped`) run inside the tenant of the request: when tenancy is
- * enabled, a request with no tenant reads global rows only and cannot write.
- *
- * Return the tenant of the principal `demoAuthMiddleware` verified — from the
- * verified token or session, never from a header or parameter the caller
- * controls. This stub verifies nothing, so it knows no tenant.
- */
-function demoResolveTenant(_req: Request): { tenantId?: string } {
-  // TODO: return { tenantId: <tenant of the verified principal> }.
-  return {};
 }
 
 async function startServer() {
@@ -55,7 +54,7 @@ async function startServer() {
 
   // Start server with registered SMRT objects. Secure defaults (#1540): bind to
   // loopback, an explicit CORS origin allowlist (never `*`), and a fail-closed
-  // auth middleware.
+  // principal resolver.
   const shutdown = await startRestServer(
     [Product, Category], // SMRT objects to generate API for
     {}, // context
@@ -65,8 +64,7 @@ async function startServer() {
       basePath: '/api/v1',
       enableCors: true,
       allowedOrigins: ['http://localhost:3000'],
-      authMiddleware: demoAuthMiddleware,
-      resolveTenant: demoResolveTenant,
+      resolvePrincipal: demoResolvePrincipal,
     },
   );
 

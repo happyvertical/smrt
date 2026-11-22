@@ -92,3 +92,24 @@ DDL, migration and OpenAPI digests have not moved since the recapture above.
   `sync/apply/+server.ts` read the request's tenant for the runtime exposure
   gate from `locals`, else from the tenant context already active for the
   request.
+- Request tenancy (#5375): the list and item routes of each model and
+  `sync/apply/+server.ts` resolve the request's tenancy through core
+  (`enterRequestTenancy`) for every model, with no generation-time tenancy
+  switch, and read the cache policy and validator from the bound tenancy.
+- MCP request tenancy (#5375): both MCP servers (`single/index.ts`,
+  `modular/handlers/index.ts`) run each tool inside the tenancy resolved for
+  its model at call time.
+- Sync create type (#5375): `sync/apply/+server.ts` rejects a create whose
+  payload selects a type its STI target does not write.
+- MCP served models (#5375): both MCP servers (`single/index.ts`,
+  `modular/handlers/index.ts`) pass the models they serve to each tool's
+  request tenancy, so a family member outside them is not served through its
+  base.
+- MCP tenancy at call time (#5375): both MCP servers (`single/index.ts`,
+  `modular/handlers/index.ts`) turn the installed tenancy layer on when a
+  tool's model is tenant-scoped at call time.
+- Emitted family members (#5375): the list and item routes of an STI model
+  with members, and `sync/apply/+server.ts` of a manifest with an STI family,
+  pass the family members (sync: the models) the manifest generates to the
+  request tenancy, so a member registered elsewhere is not served through its
+  base (sti case only; the plain case has no family and is unchanged).
