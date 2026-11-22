@@ -33,6 +33,7 @@ import type { DatabaseConfig } from '../../engine/db/index.ts';
 import { CapacityError } from '../../engine/errors.ts';
 import {
   AppHost,
+  type AppLimits,
   bundledWorkerUrl,
   discardOrphanDraft,
   EngineError,
@@ -94,6 +95,16 @@ export interface ShellContext {
   workerUrl?: URL | string;
   /** V8 limits of each app worker thread (engine default when absent). */
   workerLimits?: WorkerLimits;
+  /**
+   * Cloud only (#5503): the per-app caps (`AppLimits`) of one tenant's app,
+   * passed to its live host and to a draft host reopened after a restart (a
+   * draft forked from live inherits them from the engine). Called each time an
+   * app opens, so a change of plan applies on the next open. Absent, or
+   * returning undefined: no caps. The desktop never calls it.
+   */
+  appLimits?: (
+    tenantId: string,
+  ) => AppLimits | undefined | Promise<AppLimits | undefined>;
   /**
    * How many apps one process keeps open (#5192): idle eviction, a cap on
    * open apps, a cap on concurrent wakes. Honoured by the `cloud` profile only;
@@ -474,6 +485,7 @@ export function openDraftHost(
   dir: string,
   pin: string | null = null,
   database: DatabaseConfig | null = null,
+  appLimits?: AppLimits,
 ): Promise<AppHost> {
   return withConnections(database, 'draft', () =>
     AppHost.open(dir, {
@@ -481,6 +493,7 @@ export function openDraftHost(
       workerUrl: workerUrl(),
       workerLimits: budgetedLimits(),
       autoApprove: true,
+      ...(appLimits ? { appLimits } : {}),
       // A draft on PostgreSQL reopens with the LIVE app's config; its own
       // schema comes from the marker in `dir`.
       ...(database ? { database } : {}),
@@ -555,7 +568,14 @@ async function adoptDraft(
     return;
   }
   try {
-    const draft = await openDraftHost(db, slot.id, dir, holder.pin, database);
+    const draft = await openDraftHost(
+      db,
+      slot.id,
+      dir,
+      holder.pin,
+      database,
+      await appLimitsOf(holder),
+    );
     wireHostEvents(draft, 'draft', holder.tenantId);
     slot.host = lifecycleOn() ? leased(holder, draft) : draft;
   } catch (e) {
@@ -748,6 +768,13 @@ async function freezeForWaitingChanges(
   if (await hasWaitingChanges(db)) live.setFrozen(true);
 }
 
+/** The caps of a cloud tenant's app (#5503); none on the desktop. */
+async function appLimitsOf(holder: Holder): Promise<AppLimits | undefined> {
+  const limits = requireContext().appLimits;
+  if (!limits || !holder.tenantId) return undefined;
+  return (await limits(holder.tenantId)) ?? undefined;
+}
+
 /** Open one holder's live host: the app, its draft, the freeze. */
 async function openLive(holder: Holder): Promise<AppHost> {
   const db = await getShellDb();
@@ -756,11 +783,13 @@ async function openLive(holder: Holder): Promise<AppHost> {
   const dirs = await directoriesFor(holder, store);
   mkdirSync(dirs.live, { recursive: true, mode: 0o700 });
   const database = await liveDatabase(holder, store, dirs.live);
+  const appLimits = await appLimitsOf(holder);
   const host = await withConnections(database, 'live', () =>
     AppHost.open(dirs.live, {
       store,
       workerUrl: workerUrl(),
       workerLimits: budgetedLimits(),
+      ...(appLimits ? { appLimits } : {}),
       ...(database ? { database } : {}),
     }),
   );
