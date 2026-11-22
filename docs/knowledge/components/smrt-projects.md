@@ -5,10 +5,10 @@ description: "Provider-agnostic project management models (Issues, PRs, Reposito
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-21T20:33:21Z"
+  at: "2026-11-22T01:37:18Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:3fbccdfba8d53cc2f5ec2581d00cb575278cc3e5e8432f811ad433a528147f06"
+source_revision: "sha256:1db1254ac31440ebc6ae6cf260764953c8ced6f2f0f9c5c20813b0b00bdb5624"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/projects/package.json"
