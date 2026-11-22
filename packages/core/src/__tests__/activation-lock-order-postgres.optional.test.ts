@@ -9,6 +9,8 @@
  * are run here with both actors in one process; where the activation queue
  * then serializes them, the case says so.
  */
+import { type ChildProcess, fork } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import type { Cookbook } from '@happyvertical/smrt-types';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -76,7 +78,7 @@ function activationFixture(
   const graph = buildActivationManifest(manifest, {
     [MODEL]: { specifier: MODEL, models: [MODEL], dependencies: [] },
   } as never);
-  const loader = vi.fn(async () => {
+  const register = async () => {
     const Class = { PoThing: class extends SmrtObject {} }.PoThing;
     ObjectRegistry.register(Class, {
       ...entry.decoratorConfig,
@@ -85,7 +87,8 @@ function activationFixture(
       _manifest: { ...manifest, objects: { [MODEL]: entry } },
       _manifestKey: MODEL,
     } as never);
-  });
+  };
+  const loader = vi.fn(register);
   const coordinator = createActivationCoordinator({
     scope: `po-${Math.random().toString(36).slice(2)}`,
     db,
@@ -95,7 +98,7 @@ function activationFixture(
     readEnabled: async () => [],
     ...extra,
   } as never);
-  return { coordinator, loader };
+  return { coordinator, loader, register };
 }
 
 const book = (): Cookbook => ({
@@ -389,4 +392,185 @@ describe.skipIf(!pgUrl)('activation and the editor as migrate runs', () => {
     expect(await edit).toBe('committed');
     expect(coordinator.isReady(MODEL)).toBe(false);
   }, 60_000);
+
+  it('an old-release holder keeps an activation, a whole-schema run and an editor in another process all waiting with no DDL, then all finish (A2)', async () => {
+    const holder = await holdKey(await suite.pool());
+    const child = await spawnEditor(suite.url);
+    try {
+      const { coordinator } = activationFixture(await suite.pool());
+      const activation = coordinator.activate([MODEL]);
+      const run = migrateSmrtSchemas({
+        db: await suite.pool(),
+        packageName: '@po/app',
+        engineHint: 'postgres',
+      });
+      const opened = child.request({ op: 'open' });
+      await until(
+        async () => (await suite.running(/pg_try_advisory_lock/)).length >= 3,
+        20_000,
+        'three runs to poll the key',
+      );
+      expect(
+        await suite.sql(
+          `SELECT table_name FROM information_schema.tables WHERE table_name IN ('${TABLE}', 'po_child_notes')`,
+        ),
+      ).toEqual([]);
+      await holder.release();
+      await activation;
+      await run;
+      expect(await opened).toMatchObject({ done: 'open' });
+      expect(coordinator.isReady(MODEL)).toBe(true);
+    } finally {
+      await child.close();
+    }
+  }, 90_000);
+
+  it('an editor in another process cannot claim the table of an activation paused in its loader; the table never has both owners (A35)', async () => {
+    const child = await spawnEditor(suite.url);
+    try {
+      expect(await child.request({ op: 'open' })).toMatchObject({
+        done: 'open',
+      });
+      const pause = gate();
+      const atLoader = gate();
+      const { coordinator, loader, register } = activationFixture(
+        await suite.pool(),
+      );
+      loader.mockImplementationOnce(async () => {
+        atLoader.open();
+        await pause.promise;
+        await register();
+      });
+      const activation = coordinator.activate([MODEL]);
+      await atLoader.promise;
+      const edit = child.request({ op: 'create_list', name: SAME_TABLE_LIST });
+      await until(
+        async () => (await suite.running(/pg_try_advisory_lock/)).length > 0,
+        20_000,
+        'the editor to wait at the key',
+      );
+      const claims = async () =>
+        (
+          await suite.sql(
+            `SELECT 1 FROM public._smrt_app_model_changes WHERE after_doc LIKE '%${SAME_TABLE_LIST}%'`,
+          )
+        ).length;
+      expect(await claims()).toBe(0);
+      pause.open();
+      await activation;
+      expect(coordinator.isReady(MODEL)).toBe(true);
+      const outcome = await edit;
+      // The editor refuses by its own rule (the table is now an installed
+      // model's); at no point do the claim and the readiness both exist.
+      expect(outcome).toHaveProperty('error');
+      expect(await claims()).toBe(0);
+    } finally {
+      await child.close();
+    }
+  }, 90_000);
+
+  it('a holder calling the editor while an earlier edit waits for its key is refused before joining the edit queue (A56)', async () => {
+    const editorPool = await suite.pool();
+    const editor = await editorFor(editorPool);
+    const holderPool = await suite.pool();
+    const hold = gate();
+    let refusal: unknown;
+    const holder = withMigrationLock(
+      holderPool,
+      async () => {
+        await hold.promise;
+        try {
+          await createList(editor, 'PoSecond');
+        } catch (error) {
+          refusal = error;
+        }
+      },
+      { timeoutMs: 0 },
+    );
+    await until(async () => (await suite.holderPid()) !== undefined);
+    const first = createList(editor, 'PoFirst');
+    await until(
+      async () => (await suite.running(/pg_try_advisory_lock/)).length > 0,
+    );
+    hold.open();
+    // Watchdog: without the guard the holder waits behind the first edit,
+    // which waits for the holder.
+    await Promise.race([
+      holder,
+      new Promise((_, reject) =>
+        setTimeout(
+          () => reject(new Error('watchdog: holder never returned')),
+          15_000,
+        ),
+      ),
+    ]);
+    expect(refusal).toBeInstanceOf(MigrationLockOrderError);
+    await first;
+    expect(editor.snapshot().revision).toBe(1);
+  }, 60_000);
 });
+
+const CHILD = fileURLToPath(
+  new URL('./fixtures/lock-editor-child.mjs', import.meta.url),
+);
+
+/** An app model editor in a child process, driven over IPC. */
+async function spawnEditor(url: string) {
+  const child: ChildProcess = fork(CHILD, [], {
+    env: {
+      ...process.env,
+      LOCK_CHILD_DATABASE_URL: url,
+      LOCK_CHILD_TENANT: TENANT,
+      LOCK_CHILD_APPLICATION: 'po-child',
+    },
+    stdio: ['ignore', 'inherit', 'inherit', 'ipc'],
+  });
+  const messages: Array<Record<string, unknown>> = [];
+  const waiters: Array<(message: Record<string, unknown>) => boolean> = [];
+  child.on('message', (message) => {
+    messages.push(message as Record<string, unknown>);
+    for (const waiter of [...waiters])
+      if (waiter(message as Record<string, unknown>))
+        waiters.splice(waiters.indexOf(waiter), 1);
+  });
+  const next = (predicate: (message: Record<string, unknown>) => boolean) =>
+    new Promise<Record<string, unknown>>((resolve) => {
+      const found = messages.find(predicate);
+      if (found) {
+        messages.splice(messages.indexOf(found), 1);
+        resolve(found);
+        return;
+      }
+      waiters.push((message) => {
+        if (!predicate(message)) return false;
+        messages.splice(messages.indexOf(message), 1);
+        resolve(message);
+        return true;
+      });
+    });
+  await next((message) => message.at === 'ready');
+  return {
+    request(message: Record<string, unknown>) {
+      const reply = next(
+        (answer) => answer.done === message.op || 'error' in answer,
+      );
+      child.send(message);
+      return reply;
+    },
+    async close() {
+      if (child.exitCode === null) {
+        child.send({ op: 'exit' });
+        await new Promise((resolve) => {
+          const timer = setTimeout(() => {
+            child.kill();
+            resolve(undefined);
+          }, 5000);
+          child.once('exit', () => {
+            clearTimeout(timer);
+            resolve(undefined);
+          });
+        });
+      }
+    },
+  };
+}

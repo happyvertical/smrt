@@ -24,6 +24,7 @@ import {
   MigrationRunOverlapError,
   withMigrationLock,
 } from '../migration-lock.js';
+import { rescaleMoneyColumnsToMinorUnits } from '../minor-units.js';
 import { migrateSmrtSchemas } from '../orchestrate.js';
 import {
   registerRetiredTables,
@@ -414,6 +415,32 @@ describe.skipIf(!pgUrl)('migrate runs exclude each other on PostgreSQL', () => {
     expect(
       await readConfirmedRetirements(second, { engineHint: 'postgres' }),
     ).toHaveLength(1);
+  }, 60_000);
+
+  it('a money rescale on lock.db claims its marker in a real transaction: a second runner waits on the claim and finds it applied, multiplied once (A46)', async () => {
+    const options = { engineHint: 'postgres', backfillName: 'test:a46' };
+    // The marker table, outside every run.
+    await rescaleMoneyColumnsToMinorUnits(first, [], {
+      ...options,
+      backfillName: 'test:a46-setup',
+    });
+    await first.query(
+      'CREATE TABLE a46_orders (id text PRIMARY KEY, total double precision)',
+    );
+    await first.query("INSERT INTO a46_orders VALUES ('o1', 19.99)");
+    const targets = [{ table: 'a46_orders', columns: ['total'] }];
+    const outcomes = await Promise.all([
+      withMigrationLock(first, (lock) =>
+        rescaleMoneyColumnsToMinorUnits(lock.db, targets, options),
+      ),
+      rescaleMoneyColumnsToMinorUnits(second, targets, options),
+    ]);
+    expect(outcomes.map((outcome) => outcome.ran).sort()).toEqual([
+      false,
+      true,
+    ]);
+    const [row] = await suite.sql('SELECT total FROM a46_orders');
+    expect(Number(row.total)).toBe(1999);
   }, 60_000);
 
   it('two runs that both record a migration of the same change: unserialized they collide, through migrateSmrtSchemas both end cleanly (#5569)', async () => {

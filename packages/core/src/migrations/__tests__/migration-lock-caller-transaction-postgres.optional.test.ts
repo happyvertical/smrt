@@ -29,6 +29,7 @@ import {
   MigrationRunOverlapError,
   withMigrationLock,
 } from '../migration-lock.js';
+import { rescaleMoneyColumnsToMinorUnits } from '../minor-units.js';
 import { migrateSmrtSchemas } from '../orchestrate.js';
 import {
   createPgSuite,
@@ -302,5 +303,49 @@ describe.skipIf(!pgUrl)('migration lock on a caller transaction', () => {
       expect(lock).toMatchObject({ held: true, kind: 'transaction' });
       expect(lock.db).toBe(tx);
     });
+  }, 60_000);
+
+  it('a transaction that rescaled a table and then migrates while a holder waits on that table is refused at once; the holder finishes after the rollback (A16)', async () => {
+    await rescaleMoneyColumnsToMinorUnits(db, [], {
+      engineHint: 'postgres',
+      backfillName: 'test:a16-setup',
+    });
+    await db.query(
+      'CREATE TABLE a16_orders (id text PRIMARY KEY, total double precision)',
+    );
+    await db.query("INSERT INTO a16_orders VALUES ('o1', 19.99)");
+    const tx = await db.beginTransaction!();
+    try {
+      // The rescale takes the backfill claim and rewrites the table, so the
+      // transaction holds an ACCESS EXCLUSIVE lock on it.
+      await rescaleMoneyColumnsToMinorUnits(
+        tx as unknown as DatabaseInterface,
+        [{ table: 'a16_orders', columns: ['total'] }],
+        { engineHint: 'postgres', backfillName: 'test:a16' },
+      );
+      const holder = withMigrationLock(other, async (lock) => {
+        await lock.db.query('ALTER TABLE a16_orders ADD COLUMN note text');
+      });
+      await until(
+        async () => (await suite.waiting(/ALTER TABLE a16_orders/)).length > 0,
+        15_000,
+        "the holder's ALTER to wait on the transaction",
+      );
+      const started = Date.now();
+      await expect(
+        migrate(tx as unknown as DatabaseInterface),
+      ).rejects.toBeInstanceOf(MigrationLockBusyError);
+      expect(Date.now() - started).toBeLessThan(1000);
+      await tx.rollback();
+      await holder;
+    } finally {
+      if (tx.isActive()) await tx.rollback();
+    }
+    const columns = (
+      await db.query(
+        "SELECT column_name FROM information_schema.columns WHERE table_name = 'a16_orders'",
+      )
+    ).rows.map((row) => String(row.column_name));
+    expect(columns).toContain('note');
   }, 60_000);
 });
