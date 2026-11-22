@@ -18,7 +18,7 @@ behaviour and tests are the baseline and must not change.
 | User app data | `<data root>/user-app` (+ `-draft`), SQLite file | PostgreSQL, one schema per app (`appSchemaName`), its draft a side schema; the directory `<SMRT_APP_SHELL_DATA_ROOT>/tenants/<tenant id>/<app id>` (+ `-draft`) keeps only the engine's marker, journal and snapshots. SQLite files when `DATABASE_URL` is unset (tests) |
 | Data-root custody and lease | yes | never |
 | Assistant engines | `api`, `chatgpt`, `claude-code`, `codex` | `api` on the owner's own key only |
-| Operator key (config/env) | the assistant's `base` | never used: the resolved target must carry the tenant's own stored key, else "unavailable" (#5194 wires hosted inference) |
+| Operator key (config/env) | the assistant's `base` | never used: the resolved target must carry the tenant's own stored key, else "unavailable" unless a stored hosted binding passes the gate (`hosted-inference.md`) |
 | `/settings/inference` authority | the one owner is the deployment (app scope writable) | tenant scope only; app-scope writes and server-side probes refused |
 | Workbook import | yes | refused (404): its job runner is the local runtime's |
 
@@ -251,7 +251,7 @@ are #5188/#5189). The portable export/import still refuse a PostgreSQL app (engi
   provider was exercised. The welcome/connect-AI UI still shows desktop options.
 - `required` mode and RLS policies for the shell tables (above); the
   `database-rls` request transaction is not used by the shell's long-lived stores.
-- Hosted inference (#5194), workbook import in cloud, a statement timeout per
+- Hosted inference: gate, entitlement and provisioning landed (#5194, `hosted-inference.md`); the caller-aware parts wait for #5188/#5189/#5375. Workbook import in cloud, a statement timeout per
   operation (the database layer, not the registry), a cross-process lock for the first sign-in of one account (the insert-only
   ids already prevent a second tenant).
 
