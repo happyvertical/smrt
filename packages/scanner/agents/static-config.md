@@ -38,10 +38,9 @@ takes the natural-key default, and an absent model is a missing table.
 A decorator is recognized as the base scanner recognizes it. A class or
 method decorator (`@smrt`, `@report`, `@TenantScoped`, `@method`) is named
 by the name it is imported under, so a renamed import
-(`import { smrt as model }`) reads as `smrt`; a decorator under a renamed
-import does not accept a shared module constant, though (`@model(OPTIONS)`
-fails the scan: the escape check never trusts a call through a renamed
-import as a read-only SMRT call). A field decorator is named by
+(`import { smrt as model }`) reads as `smrt`. Its argument must be an inline
+object literal: a constant passed as the whole argument fails the scan. A
+field decorator is named by
 its local identifier, and `RawDecorator.name` is that identifier. A
 namespace member (`@core.field()`, `@(core['field'])()`, `@(core[KEY])()`) is
 not a decorator call the scanner reads, whichever package the namespace
@@ -62,12 +61,11 @@ reads it.
 | Template literal, with or without substitutions of static scalars | read |
 | Object and array literals of static values, nested; numeric keys (`{ 0: 'draft' }`) by their string form; the empty-string key `''` | read |
 | `as const`, `as T`, `satisfies T`, `<T>x`, `x!`, parentheses | transparent |
-| Identifier naming a same-file module-scope `const` scalar, array or object | read |
-| Member of such a constant object (`LIMITS.max`, `LIMITS['max']`); same-file `enum` member | read |
-| Shorthand property naming such a constant (`{ readPermission }`) | read |
-| Object spread of a constant object or inline object, at any depth | read |
-| Array spread of a constant array or inline array | read |
-| Whole argument given as a constant (`@smrt(CONFIG)`, `@field(SECRET)`, `static uiSlots = SLOTS`) | read (a static property must be the constant's only reader, see below) |
+| Identifier naming a same-file module-scope `const` scalar; same-file `enum` member | read |
+| Shorthand property naming such a scalar (`{ readPermission }`) | read |
+| Identifier or member of a same-file object or array constant (`{ mcp: MCP }`, `LIMITS.max`, `FLAGS[1]`) | **error** (the constant escapes, see below) |
+| Object or array spread of an inline literal, or of a constant the escape check trusts (see below) | read |
+| Whole decorator argument that is not an inline object literal (`@smrt(CONFIG)`, `@method(CONFIG)`, `@TenantScoped(CONFIG)`, `@field(SECRET)`), or a static property given a constant (`static uiSlots = SLOTS`) | **error**: write the options inline |
 | Regular-expression literal | read as the same `RegExp` (JSON form `{}`, as before) |
 | `new Date(<static arguments>)` | read as that `Date` (JSON form: ISO string) |
 | Relationship target: `'Name'`, class reference `Target` / `ns.Target`, `() => Target` thunk, same-file string or thunk constant | by reference: recorded by the class's own name (see "Class references") |
@@ -91,31 +89,24 @@ literal in the same file. Imports are not followed.
 constant itself rather than a copy. The snapshot of a constant's initializer
 is trusted only while nothing in the module can change the object:
 
-- A scalar constant is immutable. One read from an object constant's member
-  (`const S = POLICY.sensitive`) carries that object's taint: a write to the
-  object anywhere in the module taints the scalar too.
-- An object or array constant is trusted when every reference to it is a
-  read the scanner understands: a spread, a value or member read inside a
-  read decorator's argument, a manifest static property initializer, or
-  another module constant's initializer.
-- Any other reference (assignment through it, a method call on it, passing
-  it to a function, an alias) taints the constant. A decorator that uses a
-  tainted constant reports the tainting expression.
-- A spread copy with no nested objects is unaffected by a mutation written
-  after it. A constant passed or nested by reference is affected wherever the
-  mutation is written.
-- Taint follows constants built from constants, in both directions when
-  nested values are shared.
-- A manifest static property that holds a constant (`static uiSlots =
-  SLOTS`) keeps a second, writable reference on the class, which runtime code
-  reaches through the class or `this.constructor`. It reaches every object of
-  the constant's group: constants it holds by reference or spreads with nested
-  objects, constants that hold one of those, transitively. It is trusted only
-  when it is the sole reader of that whole group (references inside the
-  group's own object initializers do not count; a scalar copied out of the
-  group, `const S = POLICY.sensitive`, is a reader); otherwise the static
-  reference taints the group.
+The escape check is the base scanner's rule, unchanged:
+
+- A scalar constant is immutable and never tainted.
+- An object or array constant is trusted only where every reference to it is
+  a declaration, a non-computed key, a spread of a constant with no nested
+  objects, a spread inside another module constant's initializer, or a
+  spread of a constant with nested objects inside a literal `@smrt(...)`.
+- Any other reference taints the constant: a value or member read
+  (`{ mcp: MCP }`, `LIMITS.max`, `FLAGS[1]`, `const S = POLICY.sensitive`), a
+  whole decorator argument, a static property initializer, a spread inside
+  any other decorator or call, an assignment, a method call, an alias. A
+  decorator that uses a tainted constant reports the tainting expression.
+- Taint follows constants built from constants.
 - An unused tainted constant reports nothing.
+- The rule is by source position and name, not by binding or evaluation
+  order: a spread of a flat constant ignores taint written after it in the
+  file, and `smrt` is matched as an identifier. The base scanner shares both
+  residuals; a binding-based rule is tracked in #5471.
 
 Each class gets its own copy of a constant's nested values.
 
@@ -401,8 +392,8 @@ now stops the build. The message names the file, class and member.
 | An undecorated class over a superclass the scan cannot read or accept whose binding reaches a framework base or a model by identity (`extends Mixin(SmrtObject)`, `Mixin(FrameworkObject)` over an aliased import, `Mixin(models.Base)`, a collection imported through a barrel or through a directory whose `package.json` declares an entry) | Import the parent class from the file that declares it and write `extends Parent`. Decorating the class does not help: a decorated class's parent must be provable too |
 | A class named `SmrtObject`, `SmrtClass`, `SmrtCollection`, `SmrtJunction`, `SmrtJunctionBase`, `SmrtHierarchical`, `SmrtPolymorphicAssociation`, `SmrtReport` or `SmrtReportCollection` outside the framework package that owns the name, or published under one by its `@smrt({ name })` option or export name | Rename the class or its public name; the framework reserves these names |
 | `moduleSuffixes` in the active text of the project root's `tsconfig.json`, of a config it extends by a relative path, or of a config it references (with or without a leading `./`) | Remove the option and import platform files explicitly (`./Base.ios`) |
-| A constant shared by a manifest static property (`uiSlots` etc.) and any other reader | Give the static property its own constant |
-| A module constant passed to a decorator imported under another name (`@model(OPTIONS)` with `import { smrt as model }`, or another library's decorator renamed on import) and read by an SMRT decorator | Import the SMRT decorator under its own name, or write the options inline |
+| A constant passed as a decorator's whole argument (`@smrt(OPTIONS)`, `@model(OPTIONS)`, `@method(OPTIONS)`, `@TenantScoped(OPTIONS)`) | Write the options inline: `@smrt({ api: false })` |
+| An object or array constant read as a value, held by a static property, or handed to another call | Inline the value |
 | Two models of one class name in a package | Rename one |
 | A parent, relationship target, report source or collection item imported through a relative barrel, `export *`, `export { A } from`, an import passed on, a default re-export or a renamed export | Import it from the file that declares it |
 | ... imported through a tsconfig `paths` alias, a `baseUrl` bare import, `$lib`, `@/`, `~`, `#imports` or a bundler alias | Import it by relative path from the declaring file |
@@ -432,6 +423,25 @@ now stops the build. The message names the file, class and member.
 | An empty `@foreignKey('')` target | Name the related model |
 | Hand-built `RawDecorator` text that is not a literal where a literal is required | Pass a string literal, or the options object where the decorator takes one |
 | `smrt-scan` with a target, parent or collection item from another package (a name qualified with another package included), or a target no scanned class declares | Build with `ManifestBuilder` or the Vite plugin, which read dependency manifests |
+
+## Upgrading: inline decorator options
+
+Inline decorator options; a constant passed as the whole argument of a
+decorator now fails the scan.
+
+```typescript
+// before
+const OPTIONS = { api: false };
+@smrt(OPTIONS)
+
+// after
+@smrt({ api: false })
+```
+
+Previously the options were silently ignored, so an API restriction could be
+dropped. The same holds for `@method`, `@TenantScoped`, `@report` and a
+renamed import of any of them (`@model(OPTIONS)`). A spread inside an inline
+literal (`@smrt({ ...OPTIONS })`) is read as before.
 
 ## Upgrading: foreign keys to another package's model
 

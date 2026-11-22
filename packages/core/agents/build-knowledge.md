@@ -39,7 +39,7 @@ Write decorator config so the scanner can read it:
 const INTERNAL = { api: false, mcp: false, cli: false } as const; // same file
 const MAX_KEY_LENGTH = 64;
 
-@smrt({ tableName: 'vault_keys', ...INTERNAL }) // or @smrt(SOME_CONST)
+@smrt({ tableName: 'vault_keys', ...INTERNAL })
 class VaultKey extends SmrtObject {
   @field({ sensitive: true, maxLength: MAX_KEY_LENGTH })
   secret = '';
@@ -47,9 +47,9 @@ class VaultKey extends SmrtObject {
 ```
 
 A value imported from another module must be inlined; imports are not
-followed. A decorator imported under another name (`import { smrt as model }`)
-does not accept a shared module constant: `@model(OPTIONS)` fails the scan.
-Import the decorator under its own name, or write the options inline.
+followed. A constant passed as a decorator's whole argument
+(`@smrt(OPTIONS)`, `@method(OPTIONS)`, `@TenantScoped(OPTIONS)`) fails the
+scan: write the options inline.
 
 **Imported parents.** A class whose `extends` is imported from another scoped
 package carries that package's identity (`extendsQualified`, #4145) and the
