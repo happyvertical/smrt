@@ -1027,6 +1027,7 @@ export async function handleEventsRoute(
   // any tenant ALS context and must filter against this fixed value. Captured
   // before a subscriber slot is reserved, so nothing between the reservation
   // and the response can fail without releasing it.
+  const tenantScope = resolveDispatchTenantScope();
   const releaseSubscriberSlot = tryReserveChangeEventSubscriberSlot(
     db,
     options.maxSubscribers,
@@ -1052,7 +1053,6 @@ export async function handleEventsRoute(
     return eventStreamStartFailedResponse();
   }
 
-  const tenantScope = resolveDispatchTenantScope();
   return new Response(
     buildChangeEventStream(db, {
       cursor,
