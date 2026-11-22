@@ -28,8 +28,8 @@ import {
   rowsOf,
 } from '../__tests__/fixtures/dispatch-test-db';
 
-/** Status bound by the full-row outcome write (`DispatchCollection.update`). */
-const STATUS_PARAM = 4;
+/** The lease settle write; group 1 is the outcome it records. */
+const outcomeWrite = /^UPDATE _smrt_dispatch SET status = '(completed|failed)'/;
 
 /**
  * Make the outcome writes for dispatch `id` throw: every one, or only those
@@ -45,9 +45,9 @@ function failOutcomeWritesFor(
   mutable.query = ((sql: string, ...params: unknown[]) => {
     const text = sql.replace(/\s+/g, ' ').trim();
     if (
-      text.startsWith('UPDATE _smrt_dispatch SET type =') &&
-      params[params.length - 1] === id &&
-      (status === undefined || params[STATUS_PARAM] === status)
+      outcomeWrite.test(text) &&
+      params.includes(id) &&
+      (status === undefined || text.match(outcomeWrite)?.[1] === status)
     ) {
       return Promise.reject(new Error('injected outcome write failure'));
     }
@@ -178,22 +178,20 @@ describe('dispatch outcome-write isolation on sqlite', () => {
     expect(settleErrors()).toEqual([]);
   });
 
-  it('a payload the outcome write cannot serialize leaves the row processing and is logged', async () => {
+  it('a payload the handler made unserializable does not affect the outcome write', async () => {
     const { bus, db } = ctx;
     const count = await bus.process('worker', async (payload, metadata) => {
       if (metadata.id === 'unsettled') {
-        // A cycle: the full-row write cannot serialize the payload.
+        // A cycle: the lease settle writes only status columns, never the
+        // payload, so it still records the outcome.
         (payload as Record<string, unknown>).self = payload;
       }
     });
 
-    expect(count).toBe(2);
+    expect(count).toBe(3);
     expect(await dispatchStatus(db, 'first')).toBe('completed');
-    expect(await dispatchStatus(db, 'unsettled')).toBe('processing');
-    expect(await lastError(db, 'unsettled')).toBeNull();
+    expect(await dispatchStatus(db, 'unsettled')).toBe('completed');
     expect(await dispatchStatus(db, 'last')).toBe('completed');
-    expect(settleErrors()).toEqual([
-      expect.objectContaining({ id: 'unsettled', outcome: 'completed' }),
-    ]);
+    expect(settleErrors()).toEqual([]);
   });
 });

@@ -222,7 +222,27 @@ export interface DispatchBusOptions {
    * from 500 ms, capped at 5 s between attempts; `false` disables it.
    */
   startupRetry?: DispatchBusStartupRetry | false;
+  /**
+   * Lease length in milliseconds (default 300 000, an integer of at least
+   * 1 000). `process()` claims a row with a lease of this length; a row whose
+   * lease expired before a later `process()` call began is claimed again by
+   * that call (at-least-once delivery).
+   */
+  leaseMs?: number;
+  /**
+   * Claim budget per row (default 5, an integer of at least 1). A row is not
+   * claimed once `attempts` reached it. It bounds claims, not handler
+   * invocations: a process that stops between a claim and its handler still
+   * spends one.
+   */
+  maxAttempts?: number;
 }
+
+/** The lease options of {@link DispatchBusOptions}. */
+export type DispatchLeaseOptions = Pick<
+  DispatchBusOptions,
+  'leaseMs' | 'maxAttempts'
+>;
 
 /** Startup retry budget for {@link DispatchBusOptions.startupRetry}. */
 export interface DispatchBusStartupRetry {
