@@ -1147,6 +1147,62 @@ and always reports what it will not touch:
   round-trip test (create from each DDL strategy → compare → zero changes) in
   `src/migrations/__tests__/issue-2369-*.test.ts` guards this.
 
+### An existing table is compared or the run stops
+
+Table names come from a catalog query that works on any handle. A table's
+shape comes from the adapter's `getTableSchema()`, which a handle may lack.
+`inspectTableSchema()` (`src/schema/inspection.ts`) therefore reads
+PostgreSQL and SQLite from their catalogs through the handle itself when the
+adapter has no inspector, so such a handle is compared like the database and
+sees its own uncommitted DDL. On any other engine the adapter must provide
+`getTableSchema()`. The SQLite reader reads the catalog the SQL adapter's
+inspector reads and confirms the engine first (`SELECT sqlite_version()`; an
+in-memory DuckDB handle can read as SQLite by its URL). The two return the same
+description except that the adapter's inspector hides indexes named like
+`sqliteX_…` (it treats `_` as a wildcard) and marks only the first column of
+a composite primary key, while the reader describes both. The reader names the
+`main` schema in every pragma, so a temporary table of the same name never
+answers for the permanent one, and matches names exactly;
+`unreadable-table.test.ts` holds them side by side, so change them together.
+
+A table the catalog lists that still cannot be described throws
+`TableSchemaUnreadableError` from `compare()` and `compareTable()`, before
+anything is planned, applied or recorded: a handle without an inspector on an
+engine core does not read itself (DuckDB, say), an inspector that returns
+nothing for the table, a PostgreSQL view standing where the table should be
+when read through a handle without an inspector. Such a table used to compare
+as "no changes", so the rest of the plan applied and the run was recorded as a
+migrate of a schema it never read. `getLiveSchema()` returning `undefined`
+means "not there" only for a table the catalog does not list.
+
+Table names are matched exactly everywhere in the plan, but two cases make the
+engine and the plan disagree about which table a declared name means, so
+`compare()` and `compareTable()` stop before planning with a named error and
+change nothing:
+
+- `TableSpellingMismatchError` (SQLite, DuckDB): a declared `items` and a
+  catalog table spelled `Items`. The engine resolves identifiers without regard
+  to ASCII case, so the two are one table to it and two to the plan (an orphan
+  drop, an index predicate lookup or a rebuild would each address the wrong
+  one). Only ASCII letters fold; `é` and `É` are different tables.
+- `TemporaryTableShadowError` (SQLite): a `temp` table with the name of a
+  declared table. Unqualified DDL resolves to the temporary table first, so a
+  migrate would change it and record success while the permanent table stayed as
+  it was. The reader's `main`-qualified pragmas keep inspection on the
+  permanent table; the refusal keeps the DDL there too.
+
+An exact-name match is unaffected. Rename the table (or the declaration) or drop
+the temporary table.
+
+The one exemption is the JSON adapter: its tables take their shape from the
+data they hold, it exposes no inspector, and `smrt db:migrate` does not run
+there, so its existing tables are still not compared. It is exempt only when
+positively identified (`isJsonAdapterHandle`) or named by an explicit
+`engineHint: 'json'`; `json` inferred from `exportTable` alone is not enough,
+so a legacy wrapper that only forwards `exportTable` must pass the hint. Tests:
+`unreadable-table.test.ts` (SQLite, DuckDB) and
+`unreadable-table-postgres.optional.test.ts`.
+
 ### `schema.ddl` is a preview, not the table
 
 `SchemaDefinition.ddl` / `manifest.json` `schema.ddl` is the engine-neutral
