@@ -125,7 +125,13 @@ export async function isMigratedToPostgres(
     database,
     key: MIGRATION_COMPLETION_KEY,
   });
-  return value !== null;
+  if (value === null) return false;
+  try {
+    // The row must be THIS schema's own fact (a copied schema would carry another's).
+    return parseCompletion(value).schema === database.schema;
+  } catch {
+    return false;
+  }
 }
 
 function writeMarker(dataDir: string, marker: PostgresMigrationMarker): void {
@@ -207,6 +213,8 @@ export async function migrateUserAppToPostgres(
     rows,
     migratedAt: new Date().toISOString(),
   };
+  // A schema with no completion row and no data (a crash after the tables were
+  // built, before the commit) is completed by this import; one holding rows is not.
   const imported = await importUserApp({
     dataDir,
     database,

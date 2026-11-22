@@ -13,6 +13,7 @@ import { installChangeReview } from '$lib/server/change-review';
 import { closeAllStreams } from '$lib/server/events';
 import { drainShell, shellProfile } from '$lib/server/host';
 import { installHostedInferenceGate } from '$lib/server/hosted-inference';
+import { installHostedProvisioning } from '$lib/server/hosted-provisioning';
 import { shellImports, stopShellImports } from '$lib/server/import-runtime';
 import {
   ensureOwnerHandoff,
@@ -37,6 +38,11 @@ export const init = async () => {
   // Hosted: the hosted inference gate is registered, or the server does not
   // start (#5194). The desktop never registers one.
   await installHostedInferenceGate({
+    db: async () => (await runtime.deployedRuntime()).db,
+  });
+  // Plan changes provision or revoke the members' hosted keys, where the
+  // operator configured a gateway (#5194). Inert otherwise and on the desktop.
+  await installHostedProvisioning({
     db: async () => (await runtime.deployedRuntime()).db,
   });
   // The hosted app has no owner link to hand off and no embedded job runner

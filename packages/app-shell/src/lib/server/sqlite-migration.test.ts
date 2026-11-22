@@ -198,6 +198,25 @@ describe('what refuses the move', () => {
     );
   });
 
+  it('an approved approval with no result (a crashed execution) counts as unsettled', async () => {
+    const { who } = await seed('crashed@example.test');
+    await runAs(who, async () =>
+      (await ApprovalCollection.create({ db: h.db })).create({
+        command: '{}',
+        actionKey: 'k2',
+        summary: 's',
+        preview: '{}',
+        status: 'approved',
+        result: '',
+        requestedBy: who.id,
+      } as never),
+    );
+    await useShell(true);
+    await expect(runAs(who, () => migrateOwnAppToPostgres())).rejects.toThrow(
+      /approval is unsettled/,
+    );
+  });
+
   it('an unsettled approval, named as an approval', async () => {
     const { who } = await seed('approval@example.test');
     await runAs(who, async () =>

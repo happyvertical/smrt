@@ -18,7 +18,7 @@ behaviour and tests are the baseline and must not change.
 | User app data | `<data root>/user-app` (+ `-draft`), SQLite file | PostgreSQL, one schema per app (`appSchemaName`), its draft a side schema; the directory `<SMRT_APP_SHELL_DATA_ROOT>/tenants/<tenant id>/<app id>` (+ `-draft`) keeps only the engine's marker, journal and snapshots. SQLite files when `DATABASE_URL` is unset (tests) |
 | Data-root custody and lease | yes | never |
 | Assistant engines | `api`, `chatgpt`, `claude-code`, `codex` | `api` on the owner's own key only |
-| Operator key (config/env) | the assistant's `base` | never used: the resolved target must carry the tenant's own stored key, else "unavailable" (#5194 wires hosted inference) |
+| Operator key (config/env) | the assistant's `base` | never used: the resolved target must carry the tenant's own stored key, else "unavailable" unless a stored hosted binding passes the gate (`hosted-inference.md`) |
 | `/settings/inference` authority | the one owner is the deployment (app scope writable) | tenant scope only; app-scope writes and server-side probes refused |
 | Workbook import | yes | refused (404): its job runner is the local runtime's |
 
@@ -253,14 +253,22 @@ engine.md "SQLite to PostgreSQL in place") has moved it. v1 decisions:
   app's owner (tenant from the verified principal, never an argument), so a
   command must supply that principal.
 - **Refuses** (nothing written) while there is an open draft, waiting changes, or
-  an unsettled approval (pending, accepted, executing), each named in the message.
+  an unsettled approval (pending, accepted, executing, or approved with no result), each named in the message.
 - **The kept `app.db`** stays until an operator removes it; it is a snapshot as of
   migration time, not a live fallback (the PostgreSQL app diverges at its first
   write).
 - **Downgrade** is unsupported once the app has taken writes on PostgreSQL. Before
-  any write an operator may return to SQLite by hand: `DROP SCHEMA <app schema>
-  CASCADE` (which removes the completion row) and delete `postgres-migration.json`.
-  Afterwards the refusal applies again until a new migration.
+  any write, by hand: (1) stop the host; (2) check nothing was written (the
+  schema's `_app_meta` `version` equals the completion row's `version`, and
+  `_smrt_changes`/the tables hold no row newer than `migratedAt`); (3) `DROP SCHEMA
+  <app schema> CASCADE` (this removes the completion row) and delete
+  `postgres-migration.json`; (4) serve the app from SQLite again by starting the
+  host WITHOUT `appDatabase` (the profile setting that returns the app to its
+  `app.db`). With `appDatabase` still set, the host refuses the app after the row
+  is gone (it is offline) until `app.db` is served that way or it is migrated again.
+- The completion row is an engine convention in the app's own schema, not
+  tamper-evident against the same database role: a role that can write the schema
+  can forge or remove it.
 
 ## Remaining (not in this slice)
 
@@ -269,7 +277,7 @@ engine.md "SQLite to PostgreSQL in place") has moved it. v1 decisions:
   provider was exercised. The welcome/connect-AI UI still shows desktop options.
 - `required` mode and RLS policies for the shell tables (above); the
   `database-rls` request transaction is not used by the shell's long-lived stores.
-- Hosted inference (#5194), workbook import in cloud, a statement timeout per
+- Hosted inference: gate, entitlement and provisioning landed (#5194, `hosted-inference.md`); the caller-aware parts wait for #5188/#5189/#5375. Workbook import in cloud, a statement timeout per
   operation (the database layer, not the registry), a cross-process lock for the first sign-in of one account (the insert-only
   ids already prevent a second tenant).
 

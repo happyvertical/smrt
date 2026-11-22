@@ -403,8 +403,10 @@ async function inDatabase<T>(
 }
 
 /**
- * One `_app_meta` value of an app on PostgreSQL, or null (also when the
- * schema or its meta table does not exist: a dropped schema holds nothing).
+ * One `_app_meta` value of an app on PostgreSQL. Null means "no such row" (also a
+ * schema or meta table that does not exist: a dropped schema holds nothing). A
+ * database that could not be READ (lock timeout, connection blip) throws a
+ * retryable error: it is never reported as "no row".
  */
 export async function readAppMetaValue(options: {
   dataDir: string;
@@ -417,8 +419,11 @@ export async function readAppMetaValue(options: {
     return await inDatabase(options.dataDir, options.database, 'read', (db) =>
       db.metaValue(options.key),
     );
-  } catch {
-    return null;
+  } catch (e) {
+    throw new Error(
+      `could not read the app's database to check its migration record; try again (${e instanceof Error ? e.name : 'error'})`,
+      { cause: e },
+    );
   }
 }
 
@@ -863,7 +868,11 @@ async function importPostgres(
       found: meta && names.length ? await compare(db, bundle) : null,
     };
   });
-  if (state.found?.ok) return result('already-imported');
+  // An all-empty schema that matches an all-empty bundle is still completed by a
+  // migration (a crash after the tables were built, before the commit, leaves
+  // exactly that); anything holding rows that matches is left alone.
+  if (state.found?.ok && !(options.completion && state.populated === 0))
+    return result('already-imported');
   if (state.populated > 0)
     refuse(
       'The target already holds a different user app database; nothing was overwritten.',

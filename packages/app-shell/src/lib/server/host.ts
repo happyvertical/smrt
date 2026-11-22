@@ -700,10 +700,16 @@ export async function discardStaleDraft(dir: string): Promise<void> {
 /** True when an approval is still waiting to be decided or applied. */
 async function hasUnsettledApprovals(db: DatabaseInterface): Promise<boolean> {
   const approvals = await ApprovalCollection.create({ db });
+  // `approved` without a result is a crashed execution (the store reads it as
+  // executing); with a result it is settled.
   for (const status of ['pending', 'accepted', 'executing'])
     if ((await approvals.list({ where: { status }, limit: 1 })).length)
       return true;
-  return false;
+  const approved = await approvals.list({
+    where: { status: 'approved' },
+    limit: 1000,
+  });
+  return approved.some((row) => !row.result);
 }
 
 /** True when an open or held batch has an active card. */

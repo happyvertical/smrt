@@ -68,6 +68,20 @@ async function desktopApp(rows = 3) {
   return { store, dataDir, file: join(dataDir, 'app.db') };
 }
 
+async function importEmptyProbe(
+  bundle: Awaited<ReturnType<typeof exportUserApp>>,
+  database: DatabaseConfig,
+): Promise<string> {
+  const { importUserApp: imp } = await import('./index.ts');
+  const completion = { key: 'sqlite-migration', value: '{}' };
+  try {
+    await imp({ dataDir: dir(), database, bundle });
+  } catch {
+    // an inconsistent digest is refused; the probe below is the real check
+  }
+  return (await imp({ dataDir: dir(), database, bundle, completion })).status;
+}
+
 describe('migrateUserAppToPostgres', () => {
   it('moves every row, writes the marker and keeps the SQLite file and its user rows', async () => {
     const { store, dataDir, file } = await desktopApp();
@@ -258,6 +272,61 @@ describe('migrateUserAppToPostgres', () => {
       versions: [],
     }).catch(() => {});
     expect(await isMigratedToPostgres(fresh.dataDir, database)).toBe(false);
+  });
+
+  it('a row recorded for another schema is not migrated', async () => {
+    const { store, dataDir } = await desktopApp();
+    const a = await schemaConfig();
+    const b = await schemaConfig();
+    await migrateUserAppToPostgres({
+      dataDir,
+      database: a,
+      versions: await store.list(),
+    });
+    await pg.exec(
+      `CREATE TABLE "${b.schema}"._app_meta AS SELECT * FROM "${a.schema}"._app_meta`,
+    );
+    expect(await isMigratedToPostgres(dataDir, a)).toBe(true);
+    expect(await isMigratedToPostgres(dataDir, b)).toBe(false);
+  });
+
+  it('a database that cannot be read throws a retryable error, a missing schema is just not migrated', async () => {
+    const { dataDir } = await desktopApp();
+    expect(
+      await isMigratedToPostgres(dataDir, {
+        kind: 'pglite',
+        schema: 'app_never_created',
+        client: pg,
+      }),
+    ).toBe(false);
+    const broken = {
+      kind: 'pglite',
+      schema: 'app_broken',
+      client: {
+        query: async () => {
+          throw new Error('lock timeout');
+        },
+        exec: async () => {
+          throw new Error('lock timeout');
+        },
+        transaction: async () => {
+          throw new Error('lock timeout');
+        },
+      },
+    } as unknown as DatabaseConfig;
+    await expect(isMigratedToPostgres(dataDir, broken)).rejects.toThrow(
+      /could not read/,
+    );
+  });
+
+  it('an empty bundle into an empty built schema is completed, not refused', async () => {
+    const { store, dataDir } = await desktopApp(0);
+    const database = await schemaConfig();
+    const versions = await store.list();
+    const bundle = await exportUserApp({ dataDir, versions });
+    for (const t of bundle.tables) t.rows = [];
+    const recomputed = await importEmptyProbe(bundle, database);
+    expect(recomputed).toBe('imported');
   });
 
   it('refuses a SQLite target and a missing SQLite app', async () => {
