@@ -167,9 +167,11 @@ Guarantees, precisely:
 - **Rejections precede replay detection.** A create whose payload names a key
   that is not a declared field or settable accessor is `invalid_payload`
   even when its row already exists, and a create naming a row the route does
-  not serve (an STI subtype outside it) is `id_conflict`, never `applied` or
-  `create_conflict`. Both are terminal: a client must not read them as "the
-  row exists". Before this contract, such a replay could answer `applied` or
+  not serve (an STI subtype outside it), or a row of a subtype the caller
+  may not read (the host's read gate for that subtype refuses it, checked
+  with `SyncApplyTarget.admitRow(row, 'create')`), is `id_conflict`, never
+  `applied` or `create_conflict`. Both are terminal: a client must not read
+  them as "the row exists". Before this contract, such a replay could answer `applied` or
   `create_conflict`.
 
 ## Conflict policy v1 (server-authoritative LWW)
@@ -242,12 +244,27 @@ interceptors guard sync exactly like CRUD:
   with a foreign row's id rejects with `id_conflict` without touching it.
 - Creates are stamped with the context tenant; a forged `tenantId` in the
   payload is stripped by the writable policy before it ever reaches the model.
-- The generated SvelteKit route establishes tenant context from `locals` per
-  item, with the helper the generated CRUD routes emit (one generator
-  function, `generateTenantContextHelper`), including the complete-principal
-  requirement of an `api.principalContext` model. The runtime REST server
-  runs each item inside the tenant gate with the tenant its host supplies
-  (`APIConfig.resolveTenant`), like its CRUD routes.
+- Each item runs inside the request tenancy of its target model (#5375),
+  resolved per item at request time whatever the manifest declares: the actor
+  from `locals` on the generated route (with the complete-principal
+  requirement of an `api.principalContext` model) or from the host's
+  `APIConfig.resolveTenant` on the runtime REST server, the target's policy,
+  and the STI members its segment serves. The item's lookup and write see
+  only rows of admitted types: an update of a row whose type the segment does
+  not serve (a subtype whose tenancy differs from the base's) is rejected
+  `not_found`, a create naming such a row collides as an opaque
+  `id_conflict` whatever the payload, and a delete of it is the idempotent
+  no-op of a missing row (`applied`, row untouched). Give such a subtype its
+  own segment, or align its tenancy. A create's replay lookup reads only the
+  types the segment reads; the types a create may write are a separate set.
+- A sync create writes its target's own type. The payload's type selector
+  (`createType`, or the `_meta_type` alias) is read before the writable
+  policy drops it; on an STI target, one naming any other type rejects the
+  item `invalid_payload` and writes nothing (hosts implement
+  `SyncApplyTarget.acceptsCreateType`). A selector naming the target's own
+  type is consumed before field validation and replay comparison, so it is
+  applied like a create that names no type. A target that is not STI drops
+  the selector with the other framework keys.
 - A write needs a tenant. With tenancy enabled, an item for a tenant-scoped
   model from a caller with no tenant is rejected (`forbidden`, or
   `auth_required` for an anonymous caller), global rows included, unless the

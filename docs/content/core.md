@@ -632,8 +632,10 @@ base selects (`createType`) only subtypes whose own `api` surface opens
 
 #### Tenant-scoped models need a tenant per request
 
-Every operation on a tenant-scoped model runs inside the tenant gate. The
-server cannot derive a tenant from a `Request`, so the host supplies it:
+Every request resolves the tenancy its model has *now* (declared, or
+registered at run time with `registerTenantScopedClass()`) and runs inside
+it. The server cannot derive a tenant from a `Request`, so the host supplies
+it:
 
 ```typescript
 const generator = new APIGenerator({
@@ -647,11 +649,25 @@ const generator = new APIGenerator({
 ```
 
 - `{ tenantId }` runs the operation inside that tenant.
-- `{ allowCrossTenant: true }` runs it across tenants; only for a principal
+- `{ allowCrossTenant: true }` runs it across tenants, for this request's
+  operation only: on a GET it reads every tenant and writes no tenant-scoped
+  row of any model (a custom read action that saves one is refused, from a
+  `withSystemContext()` block or a nested request scope too). Inside a
+  tenant context the host entered, the grant does not widen it: the request
+  stays in that tenant, and a principal naming another tenant is refused; a
+  GET with that grant still writes no tenant-scoped row. Only for a principal
   that is explicitly cross-tenant.
-- Neither: a read of an optional-mode model serves global rows only, and every
-  write (create, update, delete, custom action, sync item) is refused with
-  `403 TENANT_CONTEXT_REQUIRED` (`401` for an anonymous caller).
+- Neither: a read of an optional-mode model serves rows without an owner
+  only, a required-mode read is refused, and every write (create, update,
+  delete, mutating custom action, sync item) is refused with
+  `403 TENANT_CONTEXT_REQUIRED` (`401` for an anonymous caller), rows without
+  an owner included. Write global rows from a system context.
+
+Code that enters a system context inside a request (`withSystemContext()`)
+acts as the system, and code that enters a tenant context in a request with
+no tenant acts in that tenant, as each does outside a request, except in a
+request admitted under a cross-tenant read grant, which writes no
+tenant-scoped row whatever context its code enters.
 
 Take the tenant from the principal your authentication verified, never from
 request input. A server that serves one tenant can set `APIContext.tenantId`
@@ -661,14 +677,57 @@ neither (naming a different tenant than that context is refused with 403).
 A request reaches a model in this order: authentication (`authMiddleware`, or
 the model's `api.public`), then the runtime exposure gate for the request's
 tenant (a switched-off model answers `404` only to an admitted caller), then
-the operation inside the tenant gate. A caller with no tenant is refused
-every custom collection action of a tenant-scoped model, GET actions
+the operation inside the request's tenancy. A caller with no tenant is
+refused every custom collection action of a tenant-scoped model, GET actions
 included, whatever the method's parameters; the CRUD list, get and count
 reads are the ones that serve it global rows. A caller with a tenant, or an
-explicitly cross-tenant one, is served custom actions as before.
-A refusal because a row belongs to another tenant is a plain
-`403 permission_denied`.
+explicitly cross-tenant one, is served custom actions, and every collection
+call inside them, of its own model or of any other tenant-scoped model, is
+held to the request's tenancy. Raw `query()` inside an action is governed by
+the raw-query policy, not by this rule. A refusal because a row belongs to
+another tenant is a plain `403 permission_denied`; a model whose tenancy
+cannot be resolved, or changed while the request was served, is refused with
+403.
 
+**STI families.** A route to an STI model serves rows of a subtype only when
+the subtype's tenancy equals the route model's (scoped or not, mode, ownership
+field, super-admin bypass opt-in). A subtype with any other tenancy is not
+served through the base: its rows leave the base's lists and counts, point
+reads answer 404, a base create selecting it is refused, and sync items for it
+on a shared segment are rejected (`not_found`). Give such a subtype its own
+`collection` (route and sync segment), or align its tenancy. The runtime warns
+once per family and `smrt doctor` lists the families the manifest declares. A
+row whose stored type is not registered in the process is never served, and
+neither is a row with no stored type (`_meta_type` NULL): generated schemas
+declare the column `NOT NULL`, but a table created before that, or written
+outside SMRT, may hold such rows. Backfill them with the base's key
+(`UPDATE <table> SET _meta_type = '<base key>' WHERE _meta_type IS NULL`)
+before upgrading. The same holds for a collection read inside a request of an
+STI family other than the route's (for example in a custom action): a base
+never serves rows of a subtype whose tenancy differs from its own. Writes
+inside a request follow the row's type, not only the class written through: a
+save or delete whose stored row, or whose instance `_meta_type`, names a type
+with other tenancy than that class is refused with `403
+TENANT_MEMBER_EXCLUDED`, and so is one whose stored row belongs to another
+tenant than the request's, whatever owner the instance carries (a new row
+taking the id of such a row is refused as a taken id). Write those rows
+through their own model, or from a system context. A subtype of
+equal tenancy is served through its base only
+where it is served on its own (switched on for the tenant, readable by the
+caller, its `api.principalContext` requirement met, on an MCP server's model
+list, and, on emitted SvelteKit routes, generated from the same manifest: a
+subtype registered at run time outside the manifest is not served through a
+generated base route; regenerate the routes with it in the manifest). A sync create on an STI segment writes
+the segment's own type: a payload selecting another type (`createType` or
+`_meta_type`) is rejected `invalid_payload`.
+
+Validators of reads change with this release, and a validator issued before a
+registration changed any served model's tenancy never revalidates. A read
+through a base that serves a subtype whose reads are not public (served only
+to a signed-in caller) is never shared-cached, and its validator names the
+subtypes served, with tenancy on or off. A response
+a shared cache already holds from before a run-time registration lives until
+its own `s-maxage`.
 
 OpenAPI documentation is a separate concern, generated by `generateOpenAPISpec()` (`@happyvertical/smrt-core/generators/swagger`) rather than an `includeSwagger` option on `APIGenerator`.
 

@@ -24,6 +24,7 @@ export const REQUEST_HELPER_NAMES = [
   'identifierArgument',
   'publicSerializerOf',
   'requireIdentifierArgument',
+  'runToolInRequestTenancy',
   'toPublicJSONValue',
 ] as const;
 

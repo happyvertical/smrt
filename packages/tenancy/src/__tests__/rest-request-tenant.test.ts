@@ -766,7 +766,9 @@ describe('runtime REST request tenant', () => {
     // action filtering by its options is handed the scoped options, as before.
     const UNSCANNED: Array<[string, string, string[]]> = [
       ['declaring no parameters', 'memos/unscanned', EVERY_ROW],
-      ['taking options', `memos/filtered?tenantId=${TENANT_B}`, ['global']],
+      // An explicitly cross-tenant caller reads every tenant: its own filter
+      // narrows the rows as the CRUD list's would (#5375).
+      ['taking options', `memos/filtered?tenantId=${TENANT_B}`, ['b']],
       [
         'taking a destructured, defaulted page and options',
         'memos/windowed?limit=50',

@@ -12,6 +12,7 @@
 import { createLogger } from '@happyvertical/logger';
 import type { SmrtObject } from '@happyvertical/smrt-core';
 import {
+  boundMemberTenancy,
   type CollectionInterceptor,
   type DispatchBus,
   GlobalInterceptors,
@@ -19,13 +20,16 @@ import {
   type ListOptions,
   type QueryInterceptResult,
   type QueryOptions,
+  type RequestTenantContextHooks,
   resolveGetStringFilter,
   resolveWhereKey,
   setAiUsageTenantResolver,
   setDispatchTenantResolver,
   setRequestTenantContextHooks,
   setTenantEntryPointRunner,
+  setTenantPolicySource,
   setTenantScopedClassResolver,
+  type TenantPolicyLookup,
   whereColumnName,
 } from '@happyvertical/smrt-core';
 import {
@@ -36,10 +40,16 @@ import {
   isSystemContext,
   TenantContextError,
   TenantIsolationError,
+  withSystemContext,
+  withTenant,
 } from './context.js';
 import { isTenancyEnabled, setTenancyEnabled } from './enabled-state.js';
 import { runTenantScopedEntryPoint } from './entry-point.js';
-import { getTenantScopedConfig, isTenantScopedClass } from './registry.js';
+import {
+  getTenantScopedConfig,
+  isTenantScopedClass,
+  type TenantScopedConfig,
+} from './registry.js';
 
 import { assertTenantReadAllowed } from './tenant-global-queries.js';
 import { getTenantGlobalReadScope } from './tenant-global-read-scope.js';
@@ -207,6 +217,59 @@ function getTenancyIdentity(
 }
 
 /**
+ * The tenancy configuration the interceptor applies to a class: inside a
+ * request whose tenancy was resolved (#5375), the policy bound to that
+ * request for the route model and every STI member it serves, never a fresh
+ * lookup that may have changed since admission; otherwise the live
+ * registration.
+ */
+function effectiveConfig(
+  tenancyIdentity: string,
+): TenantScopedConfig | undefined {
+  const bound = boundMemberTenancy(tenancyIdentity);
+  if (!bound) return getTenantScopedConfig(tenancyIdentity);
+  if (bound.state === 'unscoped') return undefined;
+  // A failed lookup, or a scoped policy missing its mode or field, is never
+  // read as "not scoped".
+  if (bound.state !== 'scoped' || !bound.mode || !bound.field) {
+    throw new TenantIsolationError(
+      `The tenancy of ${tenancyIdentity} could not be resolved`,
+    );
+  }
+  return {
+    mode: bound.mode,
+    field: bound.field,
+    autoFilter: true,
+    autoPopulate: bound.autoPopulate,
+    allowSuperAdminBypass: bound.allowSuperAdminBypass,
+  };
+}
+
+/** The tenancy policy source core reads on request paths (#5375). */
+function tenantPolicyOf(key: string): TenantPolicyLookup {
+  try {
+    const config = getTenantScopedConfig(key);
+    return config
+      ? {
+          kind: 'resolved',
+          policy: {
+            mode: config.mode,
+            field: config.field,
+            allowSuperAdminBypass: config.allowSuperAdminBypass === true,
+            autoPopulate: config.autoPopulate !== false,
+          },
+        }
+      : { kind: 'absent' };
+  } catch (error) {
+    return {
+      kind: 'failed',
+      reason:
+        (error instanceof Error ? error.message : '') || 'policy lookup failed',
+    };
+  }
+}
+
+/**
  * Whether an active super-admin bypass applies to this class (#2973).
  *
  * The ambient `withSuperAdminBypass()` flag only lifts tenant enforcement for
@@ -216,7 +279,7 @@ function getTenancyIdentity(
  */
 function isSuperAdminBypassAllowed(tenancyIdentity: string): boolean {
   if (!isSuperAdminBypass()) return false;
-  return getTenantScopedConfig(tenancyIdentity)?.allowSuperAdminBypass === true;
+  return effectiveConfig(tenancyIdentity)?.allowSuperAdminBypass === true;
 }
 
 /**
@@ -318,7 +381,7 @@ export function createTenantInterceptor(
     ): ListOptions | undefined {
       // Check if this class is tenant-scoped
       const tenancyIdentity = getTenancyIdentity(className, context);
-      if (!isTenantScopedClass(tenancyIdentity)) {
+      if (!effectiveConfig(tenancyIdentity)) {
         return; // Not tenant-scoped, pass through
       }
 
@@ -337,7 +400,7 @@ export function createTenantInterceptor(
         return; // System context bypasses tenant checks
       }
 
-      const config = getTenantScopedConfig(tenancyIdentity);
+      const config = effectiveConfig(tenancyIdentity);
       const tenantContext = getCurrentTenant();
       if (hierarchyReadScope) {
         const tenantField = config?.field || 'tenantId';
@@ -506,7 +569,7 @@ export function createTenantInterceptor(
       context: InterceptorContext,
     ): string | Record<string, unknown> | undefined {
       const tenancyIdentity = getTenancyIdentity(className, context);
-      if (!isTenantScopedClass(tenancyIdentity)) {
+      if (!effectiveConfig(tenancyIdentity)) {
         return;
       }
 
@@ -524,7 +587,7 @@ export function createTenantInterceptor(
         return; // System context bypasses tenant checks
       }
 
-      const config = getTenantScopedConfig(tenancyIdentity);
+      const config = effectiveConfig(tenancyIdentity);
       const tenantContext = getCurrentTenant();
 
       if (!tenantContext) {
@@ -600,7 +663,7 @@ export function createTenantInterceptor(
       context: InterceptorContext,
     ): QueryInterceptResult | undefined {
       const tenancyIdentity = getTenancyIdentity(className, context);
-      if (!isTenantScopedClass(tenancyIdentity)) {
+      if (!effectiveConfig(tenancyIdentity)) {
         return;
       }
 
@@ -671,7 +734,7 @@ export function createTenantInterceptor(
       }
 
       const tenancyIdentity = getTenancyIdentity(className, context);
-      if (!isTenantScopedClass(tenancyIdentity)) {
+      if (!effectiveConfig(tenancyIdentity)) {
         return;
       }
 
@@ -686,7 +749,7 @@ export function createTenantInterceptor(
         return; // System context bypasses tenant checks
       }
 
-      const config = getTenantScopedConfig(tenancyIdentity);
+      const config = effectiveConfig(tenancyIdentity);
       const tenantField = config?.field || 'tenantId';
       const instanceRecord = instance as unknown as Record<string, unknown>;
       const instanceTenantId = instanceRecord[tenantField];
@@ -739,7 +802,7 @@ export function createTenantInterceptor(
       const className = context.className;
 
       const tenancyIdentity = getTenancyIdentity(className, context);
-      if (!isTenantScopedClass(tenancyIdentity)) {
+      if (!effectiveConfig(tenancyIdentity)) {
         return;
       }
 
@@ -754,7 +817,7 @@ export function createTenantInterceptor(
         return; // System context bypasses tenant checks
       }
 
-      const config = getTenantScopedConfig(tenancyIdentity);
+      const config = effectiveConfig(tenancyIdentity);
       const tenantField = config?.field || 'tenantId';
       const instanceTenantId = (instance as unknown as Record<string, unknown>)[
         tenantField
@@ -861,6 +924,44 @@ export function createTenantInterceptor(
 let registeredInterceptor: CollectionInterceptor | null = null;
 
 /**
+ * The request tenant context lent to core, so request paths (the generated
+ * routes, sync items, tool calls) enter the caller's tenant and read the
+ * active one without importing this package. Lent when this package is
+ * loaded, whether or not tenancy is enabled: a route that carries a complete
+ * principal (`api.principalContext`) into this context store does so for a
+ * model with no tenancy too, and an active context must agree with the
+ * request's principal either way. Extra fields of an active context being
+ * refreshed (its database, metadata, bypass flag) are kept. The super-admin
+ * bypass applies only while tenancy is enabled, by the interceptor's own
+ * rule: to a class that opts in, never inside a bounded hierarchy read scope.
+ */
+const requestTenantContextHooks: RequestTenantContextHooks = {
+  enter: (context) =>
+    enterTenantContext({
+      ...(context as unknown as Record<string, unknown>),
+      tenantId: context.tenantId,
+      ...(context.userId ? { userId: context.userId } : {}),
+      permissions: new Set(context.permissions ?? []),
+    }),
+  current: () => getCurrentTenant(),
+  run: (context, fn) =>
+    withTenant(
+      {
+        ...(context as unknown as Record<string, unknown>),
+        tenantId: context.tenantId,
+        ...(context.userId ? { userId: context.userId } : {}),
+        permissions: new Set(context.permissions ?? []),
+      } as Parameters<typeof withTenant>[0],
+      fn,
+    ),
+  isSuperAdminBypass: (className) =>
+    isTenancyEnabled() &&
+    !getTenantHierarchyReadScope() &&
+    isSuperAdminBypassAllowed(className),
+};
+setRequestTenantContextHooks(requestTenantContextHooks);
+
+/**
  * Enable tenant enforcement globally
  *
  * Call this once at application startup to enable automatic tenant isolation.
@@ -914,23 +1015,43 @@ export function enableTenancy(options: TenantInterceptorOptions = {}): void {
   // caller and the instance name none (#3077).
   setAiUsageTenantResolver(() => getTenantId());
 
-  // Lend core the request tenant context and the super-admin bypass, so the
-  // generated read routes of a model whose tenancy is registered at runtime
-  // can establish the caller's tenant and honour a bypass without importing
-  // this package.
-  setRequestTenantContextHooks({
-    enter: (context) =>
-      enterTenantContext({
-        tenantId: context.tenantId,
-        ...(context.userId ? { userId: context.userId } : {}),
-        permissions: new Set(context.permissions ?? []),
-      }),
-    current: () => getCurrentTenant(),
-    // The interceptor's own rule for a read: the bypass flag applies only to
-    // a class that opts in, and never inside a bounded hierarchy read scope.
-    isSuperAdminBypass: (className) =>
-      !getTenantHierarchyReadScope() && isSuperAdminBypassAllowed(className),
+  // The policy source core's request tenancy resolver reads (#5375): the
+  // effective configuration of a class (failure-preserving), the system,
+  // bypass and hierarchy probes, and the context runners.
+  setTenantPolicySource({
+    policyOf: tenantPolicyOf,
+    systemContextActive: () => isSystemContext(),
+    superAdminBypassActive: () => isSuperAdminBypass(),
+    hierarchyReadCollections: () => getTenantHierarchyReadScope()?.collections,
+    hierarchyReadScopeKey: () => {
+      const scope = getTenantHierarchyReadScope();
+      return scope
+        ? JSON.stringify([
+            [...scope.collections].sort(),
+            [...scope.tenantIds].sort(),
+            scope.includeGlobal === true,
+          ])
+        : undefined;
+    },
+    // Extra fields of a context core refreshes (its database, metadata) are
+    // kept; tenant, user and permissions are core's.
+    runInContext: (context, fn) =>
+      context === 'system'
+        ? withSystemContext(fn)
+        : withTenant(
+            {
+              ...(context as unknown as Record<string, unknown>),
+              tenantId: context.tenantId,
+              ...(context.userId ? { userId: context.userId } : {}),
+              permissions: new Set(context.permissions ?? []),
+            } as Parameters<typeof withTenant>[0],
+            fn,
+          ),
   });
+
+  // The request tenant context hooks are lent at load (below); while tenancy
+  // is enabled they also answer the super-admin bypass.
+  setRequestTenantContextHooks(requestTenantContextHooks);
 
   setTenancyEnabled(true);
 }
@@ -973,8 +1094,11 @@ export function disableTenancy(): void {
   setTenantScopedClassResolver(undefined);
   // Clear the AI usage ambient-tenant resolver (#3077).
   setAiUsageTenantResolver(undefined);
-  // Clear the request tenant context hooks.
-  setRequestTenantContextHooks(undefined);
+  // Clear the policy source. The request tenant context stays lent: it is
+  // this package's context store, enabled or not, and the bypass hook
+  // answers `false` once tenancy is disabled.
+  setRequestTenantContextHooks(requestTenantContextHooks);
+  setTenantPolicySource(undefined);
   registeredInterceptor = null;
   setTenancyEnabled(false);
 }

@@ -31,6 +31,18 @@ const packageDir = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const browserEntry = resolve(packageDir, 'dist/browser.js');
 const browserHost = resolve(packageDir, 'dist/host.browser.js');
 const cascadeProbe = process.argv.includes('--pglite-cascade');
+// A bundle built with NODE_ENV=test (a test run that builds the app) reports a
+// test environment in the page; the entry must still evaluate there.
+const testEnvBuild = process.argv.includes('--test-env');
+const nodeEnvDefine = testEnvBuild
+  ? Object.fromEntries(
+      [
+        'process.env.NODE_ENV',
+        'global.process.env.NODE_ENV',
+        'globalThis.process.env.NODE_ENV',
+      ].map((key) => [key, JSON.stringify('test')]),
+    )
+  : undefined;
 if (!existsSync(browserEntry)) {
   throw new Error(`${browserEntry} is missing; run \`pnpm build\` first`);
 }
@@ -106,6 +118,7 @@ document.body.textContent = 'browser entry evaluated: PGlite SET NULL cascade (m
     customLogger: logger,
     logLevel: 'warn',
     root: packageDir,
+    define: nodeEnvDefine,
     oxc: { decorator: { legacy: true } },
     build: {
       outDir: outputDir,
@@ -175,7 +188,9 @@ document.body.textContent = 'browser entry evaluated: PGlite SET NULL cascade (m
       .waitForFunction(
         () => document.body.textContent?.includes('browser entry evaluated'),
         undefined,
-        { timeout: 10_000 },
+        // The PGlite cascade opens two databases in the page; on a loaded
+        // host it outlasts a 10s budget without anything being wrong.
+        { timeout: 60_000 },
       )
       .catch(() => {
         throw new Error(

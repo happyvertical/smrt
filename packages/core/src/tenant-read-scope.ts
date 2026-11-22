@@ -1,5 +1,9 @@
 /**
- * The tenant scope of a request-facing read, resolved at request time.
+ * The tenant scope of a read, resolved from the live registry.
+ *
+ * Request paths no longer call these helpers: they resolve the request's
+ * tenancy once with `request-tenancy.ts` (#5375), whose policy source keeps a
+ * failed lookup distinct from "not scoped". These remain for direct callers.
  *
  * An `optional`-mode tenant-scoped model read with no active tenant passes
  * the tenancy interceptor unfiltered. Request-facing reads (runtime REST, the
@@ -16,8 +20,9 @@
  * column.
  *
  * Core cannot import smrt-tenancy. The request tenant context and the
- * super-admin bypass are reached through hooks smrt-tenancy installs when
- * tenancy is enabled ({@link setRequestTenantContextHooks}).
+ * super-admin bypass are reached through hooks smrt-tenancy installs when it
+ * is loaded; the bypass answers only while tenancy is enabled
+ * ({@link setRequestTenantContextHooks}).
  */
 
 import {
@@ -35,6 +40,10 @@ import { resolveWhereKey, whereColumnName } from './where-keys';
  * `registerTenantScopedClass()` registration reported by smrt-tenancy.
  *
  * @param className - Simple or qualified class name
+ *
+ * @deprecated Request paths decide tenancy with the request tenancy resolver
+ * (`resolveRequestTenancy`, `readScope`, `scopeActionOptions`; #5375), which
+ * preserves a failed policy lookup instead of reading it as unscoped.
  */
 export function isTenantScopedModel(className: string): boolean {
   return (
@@ -95,6 +104,10 @@ function tenantOwnershipFields(className: string): Map<string, string> {
  * `applyWhereScope()` so no caller filter on those columns survives.
  *
  * @param className - Simple or qualified class name
+ *
+ * @deprecated Request paths decide tenancy with the request tenancy resolver
+ * (`resolveRequestTenancy`, `readScope`, `scopeActionOptions`; #5375), which
+ * preserves a failed policy lookup instead of reading it as unscoped.
  */
 export function resolveAnonymousTenantReadScope(
   className: string,
@@ -124,6 +137,10 @@ export function resolveAnonymousTenantReadScope(
  *
  * @param className - Simple or qualified class name of the model read
  * @param options - The options built from the request (may be undefined)
+ *
+ * @deprecated Request paths decide tenancy with the request tenancy resolver
+ * (`resolveRequestTenancy`, `readScope`, `scopeActionOptions`; #5375), which
+ * preserves a failed policy lookup instead of reading it as unscoped.
  */
 export function scopeTenantReadOptions<T>(className: string, options: T): T {
   const fields = tenantOwnershipFields(className);

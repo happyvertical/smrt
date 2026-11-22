@@ -391,6 +391,10 @@ export function loadLocalTestManifestSync(): Manifest | null | undefined {
     return cached;
   }
 
+  // A bundle built with NODE_ENV=test reports a test environment on a host
+  // with no `process` and no filesystem; there is no local manifest to read.
+  if (!nodeHost()) return null;
+
   // Use LocalManifestReader for unified local loading
   // This checks: active test snapshot -> .smrt/manifest.json -> dist/manifest.json
   const manager = new LocalManifestReader(process.cwd());
