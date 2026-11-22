@@ -200,6 +200,13 @@ export interface UpdateInputRules {
    */
   isReadable?(key: string): boolean;
   /**
+   * Whether the model's `api.writable` allowlist names `key`. A settable
+   * accessor named there is declared writable: it may change the columns it
+   * writes through to, which are protected against a direct write. An
+   * accessor not named there is judged by its effect.
+   */
+  isDeclaredWritable?(key: string): boolean;
+  /**
    * Whether `incoming` would persist as the value `stored` holds for `key`.
    * Defaults to {@link sameStoredValue} without a declared type.
    */
@@ -473,8 +480,12 @@ export function assignUpdateInput(
 ): void {
   const keys = resolveUpdateInput(target, data, rules);
   const writable = target as Record<string, unknown>;
+  // An accessor the model declared writable (`api.writable`) writes through
+  // to its own backing columns; any other accessor is judged by its effect.
   const accessors = keys.filter(
-    (key) => classifyUpdateKey(target, key) === 'accessor',
+    (key) =>
+      classifyUpdateKey(target, key) === 'accessor' &&
+      !rules.isDeclaredWritable?.(key),
   );
   // A settable accessor writes through to other fields: a protected field
   // must hold the value it had, whatever key the body used to reach it.
@@ -490,9 +501,22 @@ export function assignUpdateInput(
       !isServerManagedWriteKey(key) &&
       rules.declaresField(key),
   );
-  const before = new Map(
-    declared.map((key) => [key, storedValueOf(target, key)] as const),
+  const snapshot = () =>
+    new Map(declared.map((key) => [key, storedValueOf(target, key)] as const));
+  const restore = snapshot();
+  // Declared writable accessors apply first, and what they change is the
+  // baseline the others are judged against.
+  const rest = keys.filter(
+    (key) =>
+      !(
+        classifyUpdateKey(target, key) === 'accessor' &&
+        rules.isDeclaredWritable?.(key)
+      ),
   );
+  for (const key of keys) {
+    if (!rest.includes(key)) writable[key] = data[key];
+  }
+  const before = snapshot();
 
   // A field the caller cannot read must not answer by its value: the outcome
   // may not tell an equal assignment from a different one. Any assignment to
@@ -518,7 +542,7 @@ export function assignUpdateInput(
         },
       });
     }
-    for (const key of keys) writable[key] = data[key];
+    for (const key of rest) writable[key] = data[key];
   } finally {
     for (const [key, descriptor] of originals) {
       Object.defineProperty(target, key, descriptor);
@@ -548,7 +572,7 @@ export function assignUpdateInput(
   }
   if (refused === undefined) return;
   // A refused body changes nothing: put every declared field back.
-  for (const [name, value] of before) {
+  for (const [name, value] of restore) {
     if (value === STORED_UNMATCHABLE) continue;
     try {
       writable[name] = value;

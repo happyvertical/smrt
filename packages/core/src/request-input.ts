@@ -102,6 +102,7 @@ function isReadonlyDefinition(def: {
 function writePolicyOf(names: readonly string[]): {
   isEmittedOnly(key: string): boolean;
   isProtected(key: string): boolean;
+  isDeclaredWritable(key: string): boolean;
   sameValue(key: string, stored: unknown, incoming: unknown): boolean;
 } {
   let fields:
@@ -140,6 +141,10 @@ function writePolicyOf(names: readonly string[]): {
   );
   return {
     isEmittedOnly: (key) => projectsDisplayLabel && key === 'displayLabel',
+    // Named in every `api.writable` allowlist the model has: the author
+    // declared the key writable, whatever it writes through to.
+    isDeclaredWritable: (key) =>
+      allowlists.length > 0 && allowlists.every((list) => list.includes(key)),
     isProtected: (key) => {
       if (key.startsWith('_')) return true;
       if (allowlists.some((list) => !list.includes(key))) return true;
@@ -218,6 +223,7 @@ export function updateInputRulesFor(
     hasFieldMetadata: hasFieldMetadata(name),
     isEmittedOnly: policy.isEmittedOnly,
     isProtected: policy.isProtected,
+    isDeclaredWritable: policy.isDeclaredWritable,
     isReadable: readabilityOf(instance, read),
     sameValue: policy.sameValue,
   };

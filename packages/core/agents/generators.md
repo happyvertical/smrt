@@ -50,8 +50,14 @@ data, stored?)` (`src/request-input.ts`, over `resolveWriteBody` in
   their own GET keeps the unchanged round trip. Tests:
   `__tests__/fixtures/protected-field-writes.ts` (every transport),
   `__tests__/protected-field-read-visibility.test.ts`.
+- An accessor named in the model's `api.writable` allowlist is declared
+  writable: it may change the columns it writes through to (commerce
+  `TaxCode.components` over `componentsJson`, `TaxSettings.taxRegistrations`
+  over `taxRegistrationsJson`), hidden columns included since such a write
+  always applies and confirms nothing. A direct write of the backing column
+  stays refused. A model with no allowlist gets the effect guard below.
 - A protected field is judged by the write's effect as well as by the keys the
-  body names: when a settable accessor in the body (`tags` over a read-only
+  body names: when a settable accessor not named in `api.writable` in the body (`tags` over a read-only
   `tagsJson`) changes one, `assignUpdateInput` puts every declared field back
   and refuses with the same 400 naming the backing field. A setter whose
   effect leaves protected fields alone, or sets the value they hold, applies.
@@ -60,10 +66,12 @@ data, stored?)` (`src/request-input.ts`, over `resolveWriteBody` in
   assignment to it while the accessor runs, even an equal value, and refuses
   with the 400 naming the accessor key, never the hidden field, so the answer
   is the same for every value. A write-only setter over such a field (a
-  `password` setter hashing into a sensitive column) is therefore refused too;
-  set it server-side. Without `read` options for the request none is held, so
+  `password` setter hashing into a sensitive column) is therefore refused too
+  unless the model's `api.writable` names the accessor; otherwise set it
+  server-side. Without `read` options for the request none is held, so
   every `readPermission` field counts as hidden here.
-  Test: `__tests__/protected-field-alias.test.ts`.
+  Tests: `__tests__/protected-field-alias.test.ts`,
+  `commerce/src/__tests__/tax-accessor-writes.test.ts`.
 - The refusal is `FieldNotWritableError`: code
   `VALIDATION_FIELD_NOT_WRITABLE`, a typed 400 whose `details.field` names the
   field (`TypedHttpFailure.details.field` in the HTTP body). Sync apply rejects
