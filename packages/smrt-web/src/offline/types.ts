@@ -31,7 +31,8 @@ export type SyncApplyStatus = 'applied' | 'conflict' | 'rejected';
 /**
  * Machine-readable reasons a sync-apply item was `conflict` or `rejected`.
  * Mirrors core's `SyncApplyReason` union. Drives the engine's result mapping:
- * `auth_required`/`forbidden` pause the loop; `write_failed` retries; the rest
+ * `auth_required`/`forbidden` pause the loop; `write_failed` and
+ * `rate_limited` retry; the rest, and any reason the engine does not know,
  * are terminal.
  */
 export type SyncApplyReason =
@@ -45,6 +46,7 @@ export type SyncApplyReason =
   | 'not_found'
   | 'id_conflict'
   | 'write_failed'
+  | 'rate_limited'
   | 'stale_write'
   | 'create_conflict';
 
@@ -202,7 +204,8 @@ export interface OutboxCommand {
  *
  * - `applied` → removed, `synced`.
  * - `conflict` → removed, `onConflict` fired, `synced` (a RESOLVED outcome).
- * - `rejected` with `write_failed` → kept, backoff, `pending` (retryable).
+ * - `rejected` with `write_failed` or `rate_limited` → kept, backoff,
+ *   `pending` (retryable).
  * - `rejected` with `auth_required` / `forbidden` → the whole loop pauses until
  *   re-auth (a later enqueue or `retry()`), kept `pending`.
  * - `rejected` with any other reason → removed, `failed` (terminal).
