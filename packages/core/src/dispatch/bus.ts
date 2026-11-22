@@ -53,6 +53,7 @@ import { DispatchSubscriptionCollection } from './collections/DispatchSubscripti
 import { Dispatch } from './models/Dispatch.js';
 import { DispatchSubscription } from './models/DispatchSubscription.js';
 import { dispatchPatternDialect } from './pattern.js';
+import { retryFailedDispatches } from './retry.js';
 import { isDispatchRoutedTo } from './routing.js';
 import {
   resolveDispatchTenantId,
@@ -778,19 +779,14 @@ export class DispatchBus {
     // Tenant isolation (S5 #1398): only the active tenant's failed dispatches
     // (plus global ones) are eligible — a tenant's retry() must not reset
     // another tenant's rows. Scope is derived server-side; callers cannot widen
-    // it.
-    const retryable = await DispatchCollection.findRetryable(
+    // it. One conditional UPDATE (`status = 'failed'` in its WHERE) so a row
+    // another worker claimed, completed or retried meanwhile is never
+    // reverted; the count comes from RETURNING.
+    return retryFailedDispatches(
       this.db,
       options,
       resolveDispatchTenantScope(),
     );
-
-    for (const dispatch of retryable) {
-      dispatch.resetForRetry();
-      await DispatchCollection.update(this.db, dispatch);
-    }
-
-    return retryable.length;
   }
 
   /**

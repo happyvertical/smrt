@@ -300,6 +300,11 @@ instances and never use this path to overwrite a loaded revision.
   that fails to hydrate is skipped with one `dispatch.malformed_row` warning
   per call and never blocks later rows. Bind placeholders in statement-text
   order: SQLite allocates `$n` slots by first occurrence.
+- `retry()` (`dispatch/retry.ts`) is one `UPDATE ... WHERE status = 'failed'
+  AND <filters, tenant> RETURNING id`: it never reverts a row claimed,
+  completed or retried meanwhile, and returns the RETURNING count. NULL
+  `attempts` counts as 0 for `maxAttempts`. Never write dispatch state from
+  a stale read with the full-row `DispatchCollection.update()`.
 - Tables: `_smrt_dispatch`, `_smrt_dispatch_subscriptions`
 - Status: `pending → processing → completed` (or `failed`)
 - Tenancy (`dispatch/tenant-resolver.ts`): `emit` stamps the server-derived
