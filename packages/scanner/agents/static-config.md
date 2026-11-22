@@ -60,7 +60,7 @@ reads it.
 | `Infinity`, `NaN`, or any value or folded result that is not a finite number | **error** (JSON writes it as `null`, which clears a limit) |
 | Template literal, with or without substitutions of static scalars | read |
 | Object and array literals of static values, nested; numeric keys (`{ 0: 'draft' }`) by their string form; the empty-string key `''` | read |
-| `as const`, `as T`, `satisfies T`, `<T>x`, `x!`, parentheses | transparent |
+| `as const`, `as T`, `satisfies T`, `<T>x`, `x!`, parentheses | transparent, up to eight nested around one value |
 | Identifier naming a same-file module-scope `const` scalar; same-file `enum` member | read |
 | Shorthand property naming such a scalar (`{ readPermission }`) | read |
 | Identifier or member of a same-file object or array constant (`{ mcp: MCP }`, `LIMITS.max`, `FLAGS[1]`) | **error** (the constant escapes, see below) |
@@ -91,7 +91,9 @@ is trusted only while nothing in the module can change the object:
 
 The escape check is the base scanner's rule, unchanged:
 
-- A scalar constant is immutable and never tainted.
+- A scalar constant is immutable and never tainted by its own references;
+  one copied from an object constant's member (`const S = POLICY.sensitive`)
+  carries that object's diagnostic.
 - An object or array constant is trusted only where every reference to it is
   a declaration, a non-computed key, a spread of a constant with no nested
   objects, a spread inside another module constant's initializer, or a
