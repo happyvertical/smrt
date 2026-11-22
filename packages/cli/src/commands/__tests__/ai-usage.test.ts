@@ -110,7 +110,7 @@ describe('formatAiUsageReport', () => {
     await db.close?.();
   });
 
-  it('prints unattributed rows, uncosted counts, exclusions and the cost basis', async () => {
+  it('prints unattributed rows, uncosted counts, exclusions and the cost basis without other tenants', async () => {
     const report = await reportAiUsage(db, {
       by: ['prompt'],
       tenantId: 'tenant-a',
@@ -122,7 +122,9 @@ describe('formatAiUsageReport', () => {
     expect(text).toContain('accepted=1');
     expect(text).toContain('(+1 uncosted)');
     expect(text).toContain('Unattributed (no prompt key): 1 call(s)');
-    expect(text).toContain('Excluded from totals: 1 of other tenants');
+    // Tenant-b's row is not read, so it is not counted anywhere.
+    expect(text).toContain('Excluded from totals: none');
+    expect(text).not.toContain('other tenants');
     expect(text).toContain(
       'Cost basis: estimated_cost as recorded at call time',
     );
@@ -204,7 +206,7 @@ describe('formatAiRunReport (--by fusion, #4753)', () => {
     await db.close?.();
   });
 
-  it('totals runs per fusion with outcome counts and exclusions', async () => {
+  it('totals runs per fusion with outcome counts for one tenant only', async () => {
     const text = formatAiRunReport(
       await reportAiRuns(db, { tenantId: 'tenant-a', type: 'fusion' }),
     );
@@ -217,7 +219,8 @@ describe('formatAiRunReport (--by fusion, #4753)', () => {
     expect(
       formatAiRunReport(await reportAiRuns(db, { tenantId: 'tenant-a' })),
     ).toMatch(/fusion review-pair\s+2\s+2\s+1/);
-    expect(text).toContain('Excluded from totals: 1 run(s) of other tenants');
+    // Tenant-b's run is not read, so the report says nothing about it.
+    expect(text).not.toContain('other tenants');
   });
 
   it('says so when no run was recorded', async () => {

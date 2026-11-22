@@ -388,8 +388,8 @@ work). `reportAiRuns(db, { type?, since?, until?, tenantId? })` groups by
 `(type, definition_key)`: runs per status, degraded, seats, own calls,
 tokens and cost, checks and approval decisions with their rates (from the
 events, or the saved counts of a pruned trajectory), p50 active time; other
-tenants counted in `excluded` (`tenantId` is a predicate of the page query;
-the rest is one `COUNT(*)`, never read). `getRunTrajectory(runId | { callId })` is the
+tenants are neither read nor counted (`tenantId` is a predicate of the page
+query; `excluded.otherTenants` is always 0, deprecated). `getRunTrajectory(runId | { callId })` is the
 one reader for a call in a run and a call on its own; a usage row leads it
 only to a run of the row's tenant (the run is read by id and tenant in one
 statement, and every event page is scoped to the run's tenant, so a pruned
@@ -463,9 +463,9 @@ the same tenant, looked up per page by id; never content, so not audited.
 is the start it used, so no caller reads the whole history by accident (the
 inference settings page passes none). `tenantId` is a SQL predicate of the usage pages
 (`idx_smrt_ai_usage_tenant_created`), the evaluation lookups and the
-transcript lookups; `excluded` (other tenants' calls, every external-agent
-measurement in the window) is counted with two `COUNT(*)` queries, so other
-tenants' rows are never read. Evaluation labels are looked up per page for
+transcript lookups, so other tenants' rows are neither read nor counted:
+`excluded.otherTenants` is always 0 (deprecated) and `excluded.externalAgent`
+counts the filtered tenant's measurements. Evaluation labels are looked up per page for
 that page's call and run ids (`IN` lists of at most 500). It reads bounded
 keyset pages and
 aggregates in memory so the median and tag dimensions stay portable. Pages
@@ -481,8 +481,8 @@ selects what is totalled, never what is accounted for:
   `unattributedCalls` counts calls without a prompt key.
 - `estimatedCost` sums recorded costs only; rows without a rate are
   `uncostedCalls`, never priced as zero. `costBasis` states the rate card.
-- Rows outside `tenantId` and external-agent measurements are counted in
-  `excluded`, not dropped silently.
+- External-agent measurements are counted in `excluded.externalAgent`, not
+  dropped silently. Rows of other tenants are not read at all.
 - A run-level or call-level label counts once per bucket containing the
   run or call and once in the totals; a label naming a usage row counts on
   that row. A label naming several targets judges the narrowest (usage row,

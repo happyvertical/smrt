@@ -8,10 +8,10 @@
  * recorded substitutions and evaluation labels per bucket.
  *
  * A filter selects what is totalled, never what is accounted for: calls
- * without a prompt key print as unattributed, and rows a `--tenant` filter
- * leaves out are counted under "excluded" rather than vanishing. Without
- * `--since` the report covers core's default window (the last 30 days), and
- * prints it.
+ * without a prompt key print as unattributed, and external-agent
+ * measurements are counted under "excluded" rather than vanishing.
+ * `--tenant` reads only that tenant's rows. Without `--since` the report
+ * covers core's default window (the last 30 days), and prints it.
  *
  * `--by fusion` also totals fusion runs from `_smrt_ai_runs` (#4753), and
  * `--runs` totals runs of every type (#5005), through `reportAiRuns()`:
@@ -213,10 +213,9 @@ export function formatAiUsageReport(report: AiUsageReport): string {
   lines.push(
     `  Unattributed (no prompt key): ${formatInt(report.unattributedCalls)} call(s)`,
   );
+  // Other tenants' rows are never read (core filters in SQL), so only
+  // external-agent measurements are ever excluded.
   const excluded = [
-    report.excluded.otherTenants > 0
-      ? `${formatInt(report.excluded.otherTenants)} of other tenants`
-      : null,
     report.excluded.externalAgent > 0
       ? `${formatInt(report.excluded.externalAgent)} external-agent measurement(s)`
       : null,
@@ -306,12 +305,6 @@ export function formatAiRunReport(report: AiRunReport): string {
       `  (no ${report.type ? `${report.type} ` : ''}runs recorded in this window)`,
     );
   lines.push(rule, render(totalRow));
-  if (report.excluded.otherTenants > 0) {
-    lines.push(
-      '',
-      `  Excluded from totals: ${formatInt(report.excluded.otherTenants)} run(s) of other tenants`,
-    );
-  }
   return lines.join('\n');
 }
 
@@ -343,8 +336,7 @@ export const aiUsageCommand: CLICommand = {
     },
     tenant: {
       type: 'string',
-      description:
-        'Total only this tenant id; other tenants are counted as excluded',
+      description: 'Read and total only this tenant id',
     },
     'with-transcripts': {
       type: 'boolean',

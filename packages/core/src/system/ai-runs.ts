@@ -411,8 +411,8 @@ export interface AiRunReportOptions {
   since?: Date;
   until?: Date;
   /**
-   * Total only this tenant's runs; `null` only global runs. Applied as a SQL
-   * predicate of the page query; other tenants' runs are only counted.
+   * Read and total only this tenant's runs; `null` only global runs. The
+   * filter is a SQL predicate: runs of other tenants are never read.
    */
   tenantId?: string | null;
 }
@@ -426,8 +426,13 @@ export interface AiRunReport {
   totals: AiRunReportStats;
   /** Most runs first. */
   buckets: AiRunReportBucket[];
-  /** Runs in the window a tenant filter left out. */
-  excluded: { otherTenants: number };
+  excluded: {
+    /**
+     * @deprecated Always 0. The tenant filter is applied in SQL, so runs of
+     * other tenants are neither read nor counted.
+     */
+    otherTenants: number;
+  };
 }
 
 const REPORT_PAGE_SIZE = 1000;
@@ -513,8 +518,8 @@ async function eventCounts(
  * fusion seats, own calls, tokens and cost, checks and approvals with their
  * rates (saved counts for a pruned trajectory), and median active time.
  * Reads bounded keyset pages and aggregates in memory, like
- * `reportAiUsage()`; a tenant filter is a predicate of the page query, and
- * the runs it leaves out are counted in `excluded` with one `COUNT(*)`.
+ * `reportAiUsage()`; a tenant filter is a predicate of the page query, so
+ * other tenants' runs are never read or counted.
  */
 export async function reportAiRuns(
   db: DatabaseInterface,
@@ -535,31 +540,10 @@ export async function reportAiRuns(
     windowConditions.push(`created_at <= $${windowParams.length}`);
   }
   const tenantFiltered = options.tenantId !== undefined;
-  let otherTenants = 0;
-  if (tenantFiltered) {
-    // Other tenants' runs are counted, never read (served by
-    // idx_smrt_ai_runs_tenant_created for the page query).
-    const countParams = [...windowParams];
-    let other: string;
-    if (options.tenantId === null) other = 'tenant_id IS NOT NULL';
-    else {
-      countParams.push(options.tenantId);
-      other = `(tenant_id IS NULL OR tenant_id <> $${countParams.length})`;
-    }
-    otherTenants = count(
-      getRows(
-        await db.query(
-          `SELECT COUNT(*) AS n FROM _smrt_ai_runs
-            WHERE ${[...windowConditions, other].join(' AND ')}`,
-          ...countParams,
-        ),
-      )[0]?.n,
-    );
-    if (options.tenantId === null) windowConditions.push('tenant_id IS NULL');
-    else {
-      windowParams.push(options.tenantId);
-      windowConditions.push(`tenant_id = $${windowParams.length}`);
-    }
+  if (options.tenantId === null) windowConditions.push('tenant_id IS NULL');
+  else if (options.tenantId !== undefined) {
+    windowParams.push(options.tenantId);
+    windowConditions.push(`tenant_id = $${windowParams.length}`);
   }
 
   const totals = emptyStats();
@@ -569,7 +553,7 @@ export async function reportAiRuns(
       typeof emptyStats
     >
   >();
-  const excluded = { otherTenants };
+  const excluded = { otherTenants: 0 };
   let lastId: string | null = null;
   for (;;) {
     const params = [...windowParams];

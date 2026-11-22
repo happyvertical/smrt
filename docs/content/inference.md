@@ -385,8 +385,8 @@ smrt ai:usage --by source --tenant <id>
 
 Filters choose what is totalled, never what is accounted for: calls without
 a prompt key print as `(unattributed)`, calls without a cost rate are counted
-as uncosted, hosted-gate blocks count as `blocked`, and other tenants' rows
-are counted as excluded. Without `--since` a report covers the last 30 days.
+as uncosted, and hosted-gate blocks count as `blocked`. `--tenant` reads only
+that tenant's rows. Without `--since` a report covers the last 30 days.
 
 **Evaluations.** A call cannot grade itself, so record the verdict when
 you know it: `recordAiEvaluation(db, { callId | runId, label?, value?,
