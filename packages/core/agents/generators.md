@@ -131,6 +131,36 @@ inside a system context. `_changes`, `_events` and `_inference` run as that
 actor the same way (`withActorContext`; a cross-tenant grant in a system
 context; `_events` captures it at open).
 
+**The principal record** (`src/request-principal-scope.ts`). With
+`resolvePrincipal`, the rest of the request runs inside one
+`PrincipalRecord` (snapshot, state `open` / `closing` / `ended`) bound in an
+async context and ended in a `finally` when `handleRequest` returns. REST's
+own resolutions (the route, each sync item) open an operation frame
+(`withResolvedTenancy(..., { principal: true })` →
+`runPrincipalOperationFrame`): its tenancy and, per family, a ceiling
+(admitted, creatable, member signatures) intersected with the enclosing
+frame's. Inside a principal request `getResolvedTenancy()` reads the current
+frame, never the released slot, and every other `withResolvedTenancy` /
+`enterResolvedTenancy` (request code, an in-process tool call) goes through
+`enterNonWidening`: it binds only for an actor equal to the frame's field by
+field and, for a family with a ceiling, admitted and creatable subsets with
+equal member signatures; anything else is 403 `TENANT_CONTEXT_CONFLICT`
+(`RequestPrincipalScopeError`). Work that kept the context of an ended
+record is refused by the request-tenancy interceptor (`REQUEST_ENDED`), and
+`requirePermission` refuses unless the live record's snapshot is the
+principal checked. `getRequestPrincipal()` (core root) returns the live
+record's snapshot, else `undefined` (outside a request, after it ended, in
+another thread). The first core copy defines
+`globalThis.__smrtRequestPrincipalScope` (frozen, non-writable,
+non-configurable `{ version, read, enterNonWidening, recordOf }`, no entry
+function); later copies adopt it to read. Only the creating copy binds
+records: a server built with `resolvePrincipal` in a later copy, an
+unsupported shared object, or a released `__smrtRequestTenancyScope` slot an
+older core created first throws at construction and refuses each request
+(500 `REQUEST_PRINCIPAL_SCOPE_UNSUPPORTED`). An older copy loading later is
+not detectable; one core version per process is a prerequisite. Tests:
+`src/__tests__/rest-request-principal-scope.optional.test.ts`.
+
 When it is configured, runtime REST enforces, from the principal:
 
 | Rule | Where | Refusal |
