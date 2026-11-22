@@ -324,8 +324,10 @@ NULL`). Later writes add the fold's state and refusal counts to `call_usage`,
 stored value is left alone) and `charged_tokens` / `charged_cost`.
 
 - **Mode** is fixed at admission from the client's declared capability: a
-  client with `usageFeatures.parts` (sdk#1576; feature-detected, the SDK is
-  not released yet) is `parts`, every other one (a host's own engine, a
+  client with `usageFeatures.parts` (every `getAI()` client of
+  `@happyvertical/ai` 0.117.0 and later, sdk#1585; checked on the client,
+  never assumed from the version) is `parts`, every other one (a host's own
+  engine, a
   public `beginAiRunCall` caller such as smrt-chat) is `single`.
 - **The fold** (`foldCallUsage`, pure): parts mode sums distinct parts by the
   producer's `{ call, index, last?, uncounted? }` (an `uncounted` part,

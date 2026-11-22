@@ -1,8 +1,9 @@
 /**
  * What core relies on from the SDK's usage events, and what the
  * provider-level callback still does for a tracked call (#5516, plan
- * sections 3.2 and 4; test contract T26). sdk#1576 is not released: a client
- * declaring `usageFeatures.parts` is modelled by the stub, and the per-call
+ * sections 3.2 and 4; test contract T26). Here a client declaring
+ * `usageFeatures.parts` is modelled by the stub (the released SDK is
+ * exercised in `ai-sdk-usage-real.test.ts`), and the per-call
  * sink (R5) is not used, so the provider-level callback keeps every observer
  * it had and binds the event to its call by the call's secret.
  */
