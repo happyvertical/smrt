@@ -62,6 +62,15 @@ beforeEach(() => {
     addEventListener() {},
     removeEventListener() {},
   }));
+  // jsdom has no ResizeObserver; the toast viewport measures its anchor with one.
+  vi.stubGlobal(
+    'ResizeObserver',
+    class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  );
   // The panel asks the server about the assistant; a quiet answer is enough.
   vi.stubGlobal(
     'fetch',
@@ -252,6 +261,14 @@ describe('desktop layout', () => {
       '--smrt-admin-shell-panel-width: 400px',
     );
     expect(panel()?.textContent).not.toMatch(/Using /);
+  });
+
+  it('anchors toasts to the content region so they never sit over the chat column', async () => {
+    await render();
+    const toasts = q('[data-smrt-component="ToastViewport"]');
+    expect(toasts?.getAttribute('style')).toContain(
+      '--smrt-toast-viewport-right',
+    );
   });
 
   it('has a resizable separator between the chat and the content', async () => {

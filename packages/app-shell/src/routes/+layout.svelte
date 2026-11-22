@@ -119,6 +119,16 @@ $effect(() => {
   if (isOwner) live.start();
   else live.stop();
 });
+// Toasts sit in the bottom corner of the page's own content region, so the
+// docked chat column (composer and Send) is never under one. Without the
+// region (setup, plugin frames without chrome) they fall back to the window.
+let toastAnchor = $state<HTMLElement | null>(null);
+$effect(() => {
+  void page.url.pathname;
+  void panelOpen;
+  void plugin;
+  toastAnchor = document.getElementById('smrt-admin-shell-main');
+});
 onMount(() => {
   if (isFramed(window)) plugin = true;
   // The welcome steps ask for the chat to be open once they finish.
@@ -178,7 +188,7 @@ onMount(() => {
     <p class="smrt-app-shell-layout__live-note" role="status" data-smrt-part="status">Reconnecting to your app…</p>
   {/if}
 </AppShell>
-<ToastViewport />
+<ToastViewport anchor={toastAnchor} />
 
 <style>
 @layer smrt.reset, smrt.structure, smrt.theme;
