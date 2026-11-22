@@ -29,6 +29,7 @@ import {
   type WaitingResult,
 } from './changes.ts';
 import { hostFor } from './host.ts';
+import { authorCaller } from './owner.ts';
 import { type PublicExecuteResult, publicChangeResult } from './results.ts';
 import type { Target } from './target.ts';
 import { templateCommands, templateSummary } from './template-records.ts';
@@ -51,9 +52,16 @@ export type BuilderResult =
 export type CommandSource = 'assistant' | 'api' | 'owner';
 
 /** Owner-facing delete details, separate from executable model keys and record ids. */
-async function recordPreview(host: AppHost, model: string, id?: string) {
+async function recordPreview(
+  host: AppHost,
+  author: string,
+  model: string,
+  id?: string,
+) {
   const definition = host.def.models[model];
-  const record = id ? await host.get(model, id) : undefined;
+  const record = id
+    ? await host.get(authorCaller(host, author), model, id)
+    : undefined;
   const title =
     definition?.titleField ??
     Object.entries(definition?.fields ?? {}).find(
@@ -171,7 +179,7 @@ export async function requestCommandApproval(
       : undefined;
   const keep =
     command.type === 'mergeRecords'
-      ? await host.get(command.model, command.keep)
+      ? await host.get(authorCaller(host, author), command.model, command.keep)
       : undefined;
   const labelFor = (record: RecordRow | undefined) => {
     if (!record || !model) return 'the selected record';
@@ -192,7 +200,11 @@ export async function requestCommandApproval(
             .slice(0, 10)
             .map(async (id) =>
               labelFor(
-                (await host.get(command.model, id)) as RecordRow | undefined,
+                (await host.get(
+                  authorCaller(host, author),
+                  command.model,
+                  id,
+                )) as RecordRow | undefined,
               ),
             ),
         )
@@ -265,7 +277,7 @@ export async function runAppTool(
 ) {
   const host = await hostFor(target);
   try {
-    return await host.callAppTool(name, args);
+    return await host.callAppTool(authorCaller(host, author), name, args);
   } catch (e) {
     if (e instanceof ApprovalRequiredError) {
       const model = Object.entries(host.def.models).find(([model, md]) =>
@@ -274,6 +286,7 @@ export async function runAppTool(
       const details = model
         ? await recordPreview(
             host,
+            author,
             model,
             typeof args.id === 'string' ? args.id : undefined,
           )
@@ -300,7 +313,7 @@ export async function runRest(
 ) {
   const host = await hostFor(target);
   try {
-    return await host.rest(req);
+    return await host.rest(authorCaller(host, author), req);
   } catch (e) {
     if (e instanceof ApprovalRequiredError) {
       const action: ApprovalAction = {
@@ -316,6 +329,7 @@ export async function runRest(
       const details = model
         ? await recordPreview(
             host,
+            author,
             model,
             route[3] ? decodeURIComponent(route[3]) : undefined,
           )
@@ -354,14 +368,20 @@ export async function requestRecordDelete(
   target: Target,
 ): Promise<PendingApproval | { deleted: string }> {
   const host = await hostFor(target);
-  const record = await host.get(model, id); // 404s for a missing record
-  if (target === 'draft') return host.remove(model, id);
+  const caller = authorCaller(host, author);
+  const record = await host.get(caller, model, id); // 404s for a missing record
+  if (target === 'draft') return host.remove(caller, model, id);
   return requestApproval(
     { kind: 'record-delete', model, id },
     {
       summary: `Delete record in ${host.def.models[model]?.label ?? humanize(model)}`,
       risky: true,
-      preview: { model, id, record, ...(await recordPreview(host, model, id)) },
+      preview: {
+        model,
+        id,
+        record,
+        ...(await recordPreview(host, author, model, id)),
+      },
     },
     author,
   );

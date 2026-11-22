@@ -10,6 +10,7 @@
 // ones that need a claim to die inject it) and, with
 // `SMRT_TEST_POSTGRES_URL`, the ones marked [S] on a real server, where the
 // claim's proof, a terminated session and the pool of one are real.
+
 import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -31,6 +32,7 @@ import {
   DraftVersionStore,
   ShellVersionStore,
 } from '../lib/server/version-store.ts';
+import { hostOwner } from '../test/engine-principal.ts';
 import { createClaim } from './db/claim.ts';
 import type { AppClaim, DatabaseConfig, PGliteClient } from './db/index.ts';
 import { withSchemaAdmin } from './db/index.ts';
@@ -223,7 +225,7 @@ describe.each(backends)('the version store in the swap (%s)', (backend) => {
       ['Dishes', 5],
       ['Garage', 8],
     ] as const)
-      await live.host.create('Chore', { title, points });
+      await live.host.create(hostOwner(live.host), 'Chore', { title, points });
     return live;
   };
   const reopen = async (
@@ -235,7 +237,9 @@ describe.each(backends)('the version store in the swap (%s)', (backend) => {
     return openOn(live.dir, live.schema, extra);
   };
   const titles = async (host: AppHost) =>
-    (await host.list('Chore')).map((r) => String(r.title)).sort();
+    (await host.list(hostOwner(host), 'Chore'))
+      .map((r) => String(r.title))
+      .sort();
   const draftRow = async (id: string) =>
     (await (
       await AppDraftCollection.create({ db: shell as never })
@@ -323,7 +327,9 @@ describe.each(backends)('the version store in the swap (%s)', (backend) => {
     expect(await live.store.maxVersion()).toBe(moved);
     expect(await sideSchemas(live.schema)).toEqual([]);
     expect(await titles(live.host)).toEqual(['Bins', 'Dishes', 'Garage']);
-    expect((await live.host.list('Chore'))[0]).toHaveProperty('points');
+    expect(
+      (await live.host.list(hostOwner(live.host), 'Chore'))[0],
+    ).toHaveProperty('points');
     expect((await draftRow(d.id)).status).toBe('open');
   });
 
@@ -338,7 +344,9 @@ describe.each(backends)('the version store in the swap (%s)', (backend) => {
     ).rejects.toThrow(/did not start/);
     expect(live.host.version).toBe(before);
     expect(await live.store.current()).toBe(before);
-    expect((await live.host.list('Chore'))[0]).toHaveProperty('points');
+    expect(
+      (await live.host.list(hostOwner(live.host), 'Chore'))[0],
+    ).toHaveProperty('points');
     expect(await sideSchemas(live.schema)).toEqual([]);
     const row = await draftRow(d.id);
     expect(row.status).toBe('open');
@@ -350,7 +358,9 @@ describe.each(backends)('the version store in the swap (%s)', (backend) => {
     expect(result.versions[0]).toBeGreaterThan(kept);
     expect(await live.store.current()).toBe(result.version);
     expect((await draftRow(d.id)).status).toBe('published');
-    expect((await live.host.list('Chore'))[0]).toHaveProperty('score');
+    expect(
+      (await live.host.list(hostOwner(live.host), 'Chore'))[0],
+    ).toHaveProperty('score');
   });
 
   it('4. two publishes in a row: the second readiness record replaces the one a fork copied', async () => {
@@ -392,7 +402,10 @@ describe.each(backends)('the version store in the swap (%s)', (backend) => {
     live.host.setFrozen(false);
     await run(live.host, { type: 'undo' });
     expect(live.host.version).toBeLessThan(result.version);
-    await live.host.create('Chore', { title: 'Kept', points: 1 });
+    await live.host.create(hostOwner(live.host), 'Chore', {
+      title: 'Kept',
+      points: 1,
+    });
     rmSync(join(live.dir, `${JOURNAL_FILE}.tmp`), { recursive: true });
     const again = await reopen(live);
     expect(again.host.recovery).toBe('rolled-forward');
@@ -411,7 +424,10 @@ describe.each(backends)('the version store in the swap (%s)', (backend) => {
       dumpSchema(db, live.schema, file),
     );
     const name = file.split('/').pop() as string;
-    await live.host.create('Chore', { title: 'After', points: 1 });
+    await live.host.create(hostOwner(live.host), 'Chore', {
+      title: 'After',
+      points: 1,
+    });
     const moved = await moveStore(live.store);
     const err = await live.host.restoreSnapshot(name, OK).catch((e) => e);
     expect(err).toBeInstanceOf(StaleStoreError);
@@ -484,7 +500,9 @@ describe.each(backends)('the version store in the swap (%s)', (backend) => {
         live.claim?.kill();
         await live.claim?.transaction(async () => {}).catch(() => {});
         expect(live.host.lostClaim).toBeTruthy();
-        const refused = await live.host.list('Chore').catch((e) => e);
+        const refused = await live.host
+          .list(hostOwner(live.host), 'Chore')
+          .catch((e) => e);
         expect(refused).toBeInstanceOf(ClaimLostError);
         expect(refused.message).toMatch(/wrote nothing/);
         // A worker call that was already running when the claim went.
@@ -519,7 +537,9 @@ describe.each(backends)('the version store in the swap (%s)', (backend) => {
     expect(await live.store.current()).toBe(before);
     expect(await live.store.maxVersion()).toBe(versionsBefore);
     expect(await sideSchemas(live.schema)).toEqual([]);
-    expect((await live.host.list('Chore'))[0]).toHaveProperty('points');
+    expect(
+      (await live.host.list(hostOwner(live.host), 'Chore'))[0],
+    ).toHaveProperty('points');
     expect((await draftRow(d.id)).status).toBe('open');
   });
 
@@ -539,9 +559,9 @@ describe.each(backends)('the version store in the swap (%s)', (backend) => {
         // The lost claim retired the worker: the host refuses every call.
         expect(live.claim?.lost).toBe(true);
         expect(live.host.appAlive).toBe(false);
-        await expect(live.host.list('Chore')).rejects.toBeInstanceOf(
-          ClaimLostError,
-        );
+        await expect(
+          live.host.list(hostOwner(live.host), 'Chore'),
+        ).rejects.toBeInstanceOf(ClaimLostError);
         const journal = JSON.parse(
           readFileSync(join(live.dir, JOURNAL_FILE), 'utf8'),
         );
@@ -560,7 +580,9 @@ describe.each(backends)('the version store in the swap (%s)', (backend) => {
         const again = await reopen(live);
         expect(again.host.recovery).toBe('rolled-forward');
         expect(again.host.version).toBe(journal.finalVersion);
-        expect((await again.host.list('Chore'))[0]).toHaveProperty('score');
+        expect(
+          (await again.host.list(hostOwner(again.host), 'Chore'))[0],
+        ).toHaveProperty('score');
         expect(await readiness(again)).toBe(journal.id);
         expect(await sideSchemas(live.schema)).toEqual([]);
         expect((await draftRow(d.id)).status).toBe('published');
@@ -583,7 +605,9 @@ describe.each(backends)('the version store in the swap (%s)', (backend) => {
         expect(Object.keys(again.host.def.models.Chore.fields)).not.toContain(
           'done',
         );
-        expect((await again.host.list('Chore'))[0]).toHaveProperty('points');
+        expect(
+          (await again.host.list(hostOwner(again.host), 'Chore'))[0],
+        ).toHaveProperty('points');
         const row = await draftRow(d.id);
         expect(row.status).toBe('open');
         expect(await sideSchemas(live.schema)).toEqual([]);
@@ -599,7 +623,10 @@ describe.each(backends)('the version store in the swap (%s)', (backend) => {
             live.claim?.breakWith(new Error('the database refuses work'));
           }
         });
-        await live.host.create('Chore', { title: 'Later', score: 2 });
+        await live.host.create(hostOwner(live.host), 'Chore', {
+          title: 'Later',
+          score: 2,
+        });
         rmSync(join(live.dir, `${JOURNAL_FILE}.tmp`), { recursive: true });
         await live.host.close();
         hosts.splice(hosts.indexOf(live.host), 1);
@@ -695,7 +722,7 @@ describe.each(backends)('the version store in the swap (%s)', (backend) => {
       expect(await live.store.maxVersion()).toBe(before);
       expect((await draftRow(d.id)).status).toBe('open');
       await expect(
-        live.host.create('Chore', { title: 'x' }),
+        live.host.create(hostOwner(live.host), 'Chore', { title: 'x' }),
       ).rejects.toBeInstanceOf(ClaimLostError);
     });
 
@@ -717,7 +744,9 @@ describe.each(backends)('the version store in the swap (%s)', (backend) => {
       expect(await b.store.current()).toBe(before);
       expect(await b.store.maxVersion()).toBe(before);
       expect(await titles(b.host)).toEqual(['Bins', 'Dishes', 'Garage']);
-      expect((await b.host.list('Chore'))[0]).toHaveProperty('points');
+      expect((await b.host.list(hostOwner(b.host), 'Chore'))[0]).toHaveProperty(
+        'points',
+      );
     });
 
     it('12b. a host paused inside the swap transaction: the server ends its idle session, another host opens, the COMMIT fails', async () => {
@@ -739,7 +768,10 @@ describe.each(backends)('the version store in the swap (%s)', (backend) => {
         name: 'Chore',
         fields: { title: { type: 'text' }, points: { type: 'integer' } },
       });
-      await live.host.create('Chore', { title: 'Bins', points: 1 });
+      await live.host.create(hostOwner(live.host), 'Chore', {
+        title: 'Bins',
+        points: 1,
+      });
       const d = await drafted(live);
       const before = live.host.version;
       const result = publish(live, d).catch((e) => e);
@@ -766,10 +798,12 @@ describe.each(backends)('the version store in the swap (%s)', (backend) => {
       // claim's error (a call in flight at that moment does too).
       for (let i = 0; i < 100 && !live.host.lostClaim; i++)
         await new Promise((r) => setTimeout(r, 100));
-      const err = await live.host.create('Chore', { title: 'x' }).then(
-        () => undefined,
-        (e) => e,
-      );
+      const err = await live.host
+        .create(hostOwner(live.host), 'Chore', { title: 'x' })
+        .then(
+          () => undefined,
+          (e) => e,
+        );
       expect(err).toBeInstanceOf(ClaimLostError);
       expect(live.host.appAlive).toBe(false);
     });

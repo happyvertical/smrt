@@ -33,7 +33,11 @@ Configuration is environment only. adapter-node reads `HOST`, `PORT`,
 `SOCKET_PATH`, `ORIGIN`, `SHUTDOWN_TIMEOUT` (seconds, default 30). The profile
 and storage come from app-runtime: `SMRT_RUNTIME_PROFILE`, `SMRT_APP_ID`,
 `SMRT_DATA_DIR` (local; a dedicated directory outside the working directory and
-its state root), `DATABASE_URL` and the provider settings (hosted). Liveness:
+its state root), `DATABASE_URL` and the provider settings (hosted). Hosted apps
+on PostgreSQL optionally split the credentials: `DATABASE_URL` stays the admin and
+`SMRT_APP_SHELL_RUNTIME_DATABASE_URL` is the unprivileged login user operations
+run as (cloud-profile.md "User apps on PostgreSQL"); the shared pool and the
+operation deadline have their own `SMRT_APP_SHELL_*` variables there. Liveness:
 `GET /api/_runtime/health`.
 
 ## Stopping: SIGTERM and SIGINT

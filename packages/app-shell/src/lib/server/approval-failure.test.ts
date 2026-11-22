@@ -1,5 +1,6 @@
 import { writeFileSync } from 'node:fs';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { hostOwner } from '../../test/engine-principal.ts';
 import { decideApproval, returnedFailure } from './approvals.ts';
 import { getHost } from './host.ts';
 import { callTool } from './policy.ts';
@@ -43,7 +44,9 @@ describe('an approved action that comes back as an error is a failed approval', 
     });
     await applyWaiting(h.owner);
     const host = await getHost();
-    const rec = (await host.create('Chore', { title: 'gone soon' })) as {
+    const rec = (await host.create(hostOwner(host), 'Chore', {
+      title: 'gone soon',
+    })) as {
       id: string;
     };
     const pending = await callTool(h.owner, 'chore_delete', { id: rec.id });
@@ -52,7 +55,7 @@ describe('an approved action that comes back as an error is a failed approval', 
     );
     const id = (approvalId.result ?? approvalId).approvalId as string;
     // The record disappears between the request and the decision.
-    await host.remove('Chore', rec.id);
+    await host.remove(hostOwner(host), 'Chore', rec.id);
     const outcome = await decideApproval(id, true, h.owner.id);
     expect(outcome.status).toBe('failed');
   });
@@ -77,7 +80,10 @@ it('the real undo and decision routes preserve records and version after a later
     },
     { author: h.owner.id, approved: true },
   );
-  const row = await host.create('UndoContact', { name: 'Acme', amount: 1 });
+  const row = await host.create(hostOwner(host), 'UndoContact', {
+    name: 'Acme',
+    amount: 1,
+  });
   await host.execute(
     {
       type: 'loadRecords',
@@ -108,7 +114,9 @@ it('the real undo and decision routes preserve records and version after a later
   const pending = await undo(event('/api/shell/undo'));
   expect(pending.status).toBe(202);
   const approval = await pending.json();
-  await host.update('UndoContact', String(row.id), { amount: 3 });
+  await host.update(hostOwner(host), 'UndoContact', String(row.id), {
+    amount: 3,
+  });
   const version = host.version;
   const response = await decide(
     event(
@@ -123,7 +131,9 @@ it('the real undo and decision routes preserve records and version after a later
   expect(result.error).toContain('Contacts “Acme”');
   expect(result.error).not.toContain('the app did not start');
   expect(host.version).toBe(version);
-  expect((await host.get('UndoContact', String(row.id)))?.amount).toBe(3);
+  expect(
+    (await host.get(hostOwner(host), 'UndoContact', String(row.id)))?.amount,
+  ).toBe(3);
   const persisted = await getApprovalView(approval.approvalId);
   expect(persisted?.status).toBe('failed');
   expect(persisted?.summary).toBe('Undo: load into Contacts');
@@ -188,7 +198,7 @@ it('refuses a known undo conflict before storage through HTTP and the assistant,
     },
     { author: h.owner.id, approved: true },
   );
-  const row = await host.create('Order', {
+  const row = await host.create(hostOwner(host), 'Order', {
     name: 'QA changed order',
     amount: 1,
   });
@@ -202,7 +212,7 @@ it('refuses a known undo conflict before storage through HTTP and the assistant,
     },
     { author: h.owner.id, approved: true },
   );
-  await host.update('Order', String(row.id), { amount: 3 });
+  await host.update(hostOwner(host), 'Order', String(row.id), { amount: 3 });
   const count = await pendingApprovalCount();
   const version = host.version;
   const reason =
@@ -233,7 +243,9 @@ it('refuses a known undo conflict before storage through HTTP and the assistant,
   });
   expect(await pendingApprovalCount()).toBe(count);
   expect(host.version).toBe(version);
-  expect((await host.get('Order', String(row.id)))?.amount).toBe(3);
+  expect(
+    (await host.get(hostOwner(host), 'Order', String(row.id)))?.amount,
+  ).toBe(3);
   // Simulate a pre-upgrade pending row using the real engine conflict preview.
   const plan = await host.plan({ type: 'undo' });
   const legacy = await requestApproval(
@@ -257,9 +269,11 @@ it('refuses a known undo conflict before storage through HTTP and the assistant,
   expect((await denied.json()).status).toBe('denied');
   expect(await pendingApprovalCount()).toBe(count);
   expect(host.version).toBe(version);
-  expect((await host.get('Order', String(row.id)))?.amount).toBe(3);
+  expect(
+    (await host.get(hostOwner(host), 'Order', String(row.id)))?.amount,
+  ).toBe(3);
   // Removing the conflict restores the ordinary decidable undo path.
-  await host.update('Order', String(row.id), { amount: 2 });
+  await host.update(hostOwner(host), 'Order', String(row.id), { amount: 2 });
   const allowed = await undo(event('/api/shell/undo'));
   expect(allowed.status).toBe(202);
   const pending = await allowed.json();
@@ -271,5 +285,7 @@ it('refuses a known undo conflict before storage through HTTP and the assistant,
     ),
   );
   expect((await applied.json()).status).toBe('approved');
-  expect((await host.get('Order', String(row.id)))?.amount).toBe(1);
+  expect(
+    (await host.get(hostOwner(host), 'Order', String(row.id)))?.amount,
+  ).toBe(1);
 });

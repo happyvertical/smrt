@@ -41,19 +41,31 @@ export function appLimitsFromEnv(
 }
 
 /**
- * The operator's statement timeout for every app's PostgreSQL statements (ms),
- * as `WorkerLimits.statementTimeoutMs` (#5192, wired here by #5503), or
- * undefined when `SMRT_APP_SHELL_STATEMENT_TIMEOUT_MS` is not set (no
- * timeout, as before). SQLite ignores it. A bad value is refused at start.
+ * The operator's timeouts for every app's PostgreSQL work (ms), as
+ * `WorkerLimits` (#5192, wired here by #5503): `statementTimeoutMs` from
+ * `SMRT_APP_SHELL_STATEMENT_TIMEOUT_MS` (the server cancels one statement) and
+ * `opDeadlineMs` from `SMRT_APP_SHELL_OP_TIMEOUT_MS` (the broker cancels,
+ * rolls back and revokes a whole operation, #5188). Undefined when neither is
+ * set (nothing here; the shell's hosted default for the operation deadline is
+ * `DEFAULT_OP_DEADLINE_MS`). SQLite ignores both. A bad value is refused at start.
  */
 export function workerLimitsFromEnv(
   env: Record<string, string | undefined> = process.env,
 ): WorkerLimits | undefined {
-  const name = 'SMRT_APP_SHELL_STATEMENT_TIMEOUT_MS';
-  const raw = env[name];
-  if (raw === undefined || raw === '') return undefined;
-  return { statementTimeoutMs: whole(name, raw, 1) };
+  const limits: WorkerLimits = {};
+  for (const [name, field] of [
+    ['SMRT_APP_SHELL_STATEMENT_TIMEOUT_MS', 'statementTimeoutMs'],
+    ['SMRT_APP_SHELL_OP_TIMEOUT_MS', 'opDeadlineMs'],
+  ] as const) {
+    const raw = env[name];
+    if (raw === undefined || raw === '') continue;
+    limits[field] = whole(name, raw, 1);
+  }
+  return Object.keys(limits).length ? limits : undefined;
 }
+
+/** How long a user's operation (data lane) may stay open on hosted PostgreSQL unless the operator sets `SMRT_APP_SHELL_OP_TIMEOUT_MS` (ms, then every lane). */
+export const DEFAULT_OP_DEADLINE_MS = 60_000;
 
 /**
  * The env-derived pieces of a `ShellContext`, read only once the profile is

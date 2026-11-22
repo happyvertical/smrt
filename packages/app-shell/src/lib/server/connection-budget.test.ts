@@ -17,10 +17,15 @@ import {
   vi,
 } from 'vitest';
 import { createSqliteChangeEngine } from '../../engine/change-engine.ts';
-import type { DatabaseConfig } from '../../engine/db/index.ts';
+import {
+  type DatabaseConfig,
+  POOL_CANCEL_RESERVE,
+  POOL_DEFAULTS,
+} from '../../engine/db/index.ts';
 import { CapacityError, EngineError } from '../../engine/errors.ts';
 import { AppHost, MemoryVersionStore } from '../../engine/index.ts';
 import { AppWorker } from '../../engine/worker-handle.ts';
+import { hostOwner } from '../../test/engine-principal.ts';
 import { type CloudHarness, openCloudShell } from './cloud-test-support.ts';
 import {
   closeHost,
@@ -37,6 +42,13 @@ import {
   HOST_OVERHEAD,
   HostLifecycle,
 } from './host-lifecycle.ts';
+
+/** A budget with no shared pool: every worker reserves a pool of its own (the self-hosted path). */
+const perWorker = (l: HostLifecycle) => ({
+  poolSize: l.workerBudget.poolSize,
+  take: l.workerBudget.take,
+});
+
 import { runAs } from './owner.ts';
 
 describe('HostLifecycle connection budget', () => {
@@ -53,25 +65,69 @@ describe('HostLifecycle connection budget', () => {
     expect(() => l.takeConnections(2)).not.toThrow();
   });
 
-  it('derives the budget from maxOpenApps: a fixed allowance per app', () => {
+  it('derives the budget from maxOpenApps: a fixed allowance per app plus the one shared pool', () => {
     const l = new HostLifecycle();
     l.configure({ maxOpenApps: 2 });
-    expect(l.metrics(0).maxConnections).toBe(2 * appAllowance());
-    l.takeConnections(2 * appAllowance());
+    const total = 2 * appAllowance() + POOL_DEFAULTS.max + POOL_CANCEL_RESERVE;
+    expect(l.metrics(0).maxConnections).toBe(total);
+    l.takeConnections(total);
     expect(() => l.takeConnections(1)).toThrow(ConnectionBudgetError);
   });
 
-  it('scales the derived budget with the pool size the config asks for', () => {
+  it('does not scale with a pool size a config asks for: the process shares one pool', () => {
     const l = new HostLifecycle();
     l.configure({ maxOpenApps: 1 });
-    // Pools of 10: a live pool, a draft pool and a swap's pool, plus overhead.
-    const b = l.workerBudget;
-    b.take(10);
-    b.take(10);
-    b.take(10);
+    const config = {
+      kind: 'postgres' as const,
+      schema: 'app_x',
+      connection: { url: NOWHERE, max: 50 },
+    };
+    const pool = l.brokerPool(config);
+    // The pool and its cancel reserve are taken once, however many apps ask.
+    expect(l.connectionsInUse).toBe(POOL_DEFAULTS.max + POOL_CANCEL_RESERVE);
+    expect(l.brokerPool({ ...config, schema: 'app_y' })).toBe(pool);
+    expect(l.connectionsInUse).toBe(POOL_DEFAULTS.max + POOL_CANCEL_RESERVE);
     l.takeConnections(HOST_OVERHEAD.live + HOST_OVERHEAD.draft);
-    expect(l.metrics(0).maxConnections).toBe(appAllowance(10));
-    expect(() => b.take(10)).toThrow(ConnectionBudgetError);
+    expect(l.metrics(0).maxConnections).toBe(l.connectionsInUse);
+    expect(l.metrics(0).brokerPool).toEqual({
+      inUse: 0,
+      queued: 0,
+      max: POOL_DEFAULTS.max,
+    });
+  });
+
+  it('sizes the pool from the budget that is left, or from brokerPoolSize', () => {
+    const config = {
+      kind: 'postgres' as const,
+      schema: 'app_x',
+      connection: { url: NOWHERE },
+    };
+    const a = new HostLifecycle();
+    a.configure({ maxAppConnections: 20, maxOpenApps: 2 });
+    // 20 - 2 apps x 3 - 1 cancel
+    expect(a.brokerPool(config).stats.max).toBe(13);
+    const b = new HostLifecycle();
+    b.configure({ maxAppConnections: 20, brokerPoolSize: 4 });
+    expect(b.brokerPool(config).stats.max).toBe(4);
+    expect(b.connectionsInUse).toBe(4 + POOL_CANCEL_RESERVE);
+  });
+
+  it('refuses a pool that does not fit at once, keeps nothing, and gives it back on reset', () => {
+    const config = {
+      kind: 'postgres' as const,
+      schema: 'app_x',
+      connection: { url: NOWHERE },
+    };
+    const l = new HostLifecycle();
+    l.configure({ maxAppConnections: 4, brokerPoolSize: 4 });
+    expect(() => l.brokerPool(config)).toThrow(ConnectionBudgetError);
+    expect(l.connectionsInUse).toBe(0);
+    const ok = new HostLifecycle();
+    ok.configure({ maxAppConnections: 5, brokerPoolSize: 4 });
+    ok.brokerPool(config);
+    expect(ok.connectionsInUse).toBe(5);
+    ok.reset();
+    expect(ok.connectionsInUse).toBe(0);
   });
 
   it('limits nothing without a policy or without any cap', () => {
@@ -141,7 +197,7 @@ describe('a hosted app on the budget', () => {
   });
 });
 
-describe('every worker reserves its pool for as long as it lives', () => {
+describe('without a shared pool, every worker reserves its own for as long as it lives', () => {
   let dir: string;
   let url: string;
   const config = (max?: number): DatabaseConfig => ({
@@ -159,14 +215,15 @@ describe('every worker reserves its pool for as long as it lives', () => {
       def: {} as never,
       version: 1,
       database,
-      limits: { connections: budget.workerBudget },
+      limits: { connections: perWorker(budget) },
     });
 
   beforeAll(() => {
     dir = mkdtempSync(join(tmpdir(), 'budget-worker-'));
     url = join(dir, 'stub.mjs');
-    // A worker that boots (or fails to, or crashes) without any database, and
-    // reports the pool size it was given.
+    // A worker that boots (or fails to, or crashes) without any database. The
+    // pool is the host thread's now (the broker's backend, sized by the
+    // reservation), so a worker is told only its schema and port.
     writeFileSync(
       url,
       `import { parentPort, workerData as w } from 'node:worker_threads';
@@ -174,7 +231,7 @@ describe('every worker reserves its pool for as long as it lives', () => {
        parentPort.on('message', () => {}); // stays alive until terminated
        if (w.dataDir === 'fail')
          parentPort.postMessage({ ready: false, error: 'connect ECONNREFUSED db.internal' });
-       else parentPort.postMessage({ ready: true, pool: w.database.connection.max });`,
+       else parentPort.postMessage({ ready: true, kind: w.database.kind, hasPort: !!w.database.port, connection: w.database.connection });`,
     );
   });
   afterAll(() => rmSync(dir, { recursive: true, force: true }));
@@ -183,9 +240,12 @@ describe('every worker reserves its pool for as long as it lives', () => {
     const l = new HostLifecycle();
     l.configure({ maxAppConnections: 10 });
     const w = open(l, config()); // names no pool: the budget's size is used
-    expect(((await w.ready) as { pool?: number }).pool).toBe(
-      l.workerBudget.poolSize,
-    );
+    // The worker holds no connection details at all, only its end of the port.
+    expect(await w.ready).toMatchObject({
+      kind: 'postgres',
+      hasPort: true,
+      connection: undefined,
+    });
     expect(l.connectionsInUse).toBe(l.workerBudget.poolSize);
     await w.terminate();
     expect(l.connectionsInUse).toBe(0);
@@ -231,6 +291,70 @@ describe('every worker reserves its pool for as long as it lives', () => {
     });
     expect(l.connectionsInUse).toBe(0);
     await w.terminate();
+  });
+});
+
+describe('workers share the one pool', () => {
+  let dir: string;
+  let url: string;
+  const config: DatabaseConfig = {
+    kind: 'postgres',
+    schema: 'app_x',
+    connection: { url: NOWHERE, max: 7 },
+  };
+  const open = (l: HostLifecycle, dataDir = 'ok') =>
+    new AppWorker(url, {
+      dataDir,
+      def: {} as never,
+      version: 1,
+      database: config,
+      limits: { connections: l.workerBudget },
+    });
+
+  beforeAll(() => {
+    dir = mkdtempSync(join(tmpdir(), 'budget-shared-'));
+    url = join(dir, 'stub.mjs');
+    writeFileSync(
+      url,
+      `import { parentPort, workerData as w } from 'node:worker_threads';
+       if (w.dataDir === 'crash') process.exit(1);
+       parentPort.on('message', () => {});
+       parentPort.postMessage({ ready: true });`,
+    );
+  });
+  afterAll(() => rmSync(dir, { recursive: true, force: true }));
+
+  it('reserves the pool once for any number of workers, and a worker owns none of it', async () => {
+    const l = new HostLifecycle();
+    l.configure({ maxAppConnections: 10, brokerPoolSize: 4 });
+    const a = open(l);
+    await a.ready;
+    expect(l.connectionsInUse).toBe(4 + POOL_CANCEL_RESERVE);
+    const b = open(l); // a swap's, a report's, a rehearsal's worker
+    const c = open(l);
+    await Promise.all([b.ready, c.ready]);
+    expect(l.connectionsInUse).toBe(4 + POOL_CANCEL_RESERVE);
+    await a.terminate();
+    await b.terminate();
+    await c.terminate();
+    // The pool outlives any worker: it is the process's.
+    expect(l.connectionsInUse).toBe(4 + POOL_CANCEL_RESERVE);
+    expect(a.surrenderBudget()).toBeNull();
+  });
+
+  it('refuses a worker at once when the pool does not fit, with nothing kept', () => {
+    const l = new HostLifecycle();
+    l.configure({ maxAppConnections: 4, brokerPoolSize: 4 });
+    expect(() => open(l)).toThrow(ConnectionBudgetError);
+    expect(l.connectionsInUse).toBe(0);
+  });
+
+  it('a crashed worker costs the budget nothing', async () => {
+    const l = new HostLifecycle();
+    l.configure({ maxAppConnections: 10, brokerPoolSize: 4 });
+    const crashed = open(l, 'crash');
+    await expect(crashed.ready).rejects.toThrow();
+    expect(l.connectionsInUse).toBe(4 + POOL_CANCEL_RESERVE);
   });
 });
 
@@ -312,7 +436,7 @@ describe('no connections left during a publish check', () => {
       store: new MemoryVersionStore(),
     });
     await live.execute({ type: 'defineModel', name: 'Chore', fields: {} }, as);
-    const built = await engine.rebuild({ id: 'o' }, live, {
+    const built = await engine.rebuild(hostOwner(live), live, {
       draftDir: join(dir, 'draft'),
       store: new MemoryVersionStore(),
       commands: [
@@ -332,7 +456,7 @@ describe('no connections left during a publish check', () => {
       .spyOn(live, 'previewPublish')
       .mockRejectedValue(new ConnectionBudgetError());
     const err = await engine
-      .checkBatch({ id: 'o' }, live, built.draft)
+      .checkBatch(hostOwner(live), live, built.draft)
       .catch((e) => e);
     spy.mockRestore();
     expect(err).toBeInstanceOf(CapacityError);
@@ -368,7 +492,7 @@ async function stubHost(budget = 2) {
   const host = await AppHost.open(join(dir, 'live'), {
     store: new MemoryVersionStore(),
     workerUrl: stub,
-    workerLimits: { connections: l.workerBudget },
+    workerLimits: { connections: perWorker(l) },
   });
   // Make the host a server PostgreSQL one (the stub never connects anywhere).
   const inner = host as unknown as Inner;

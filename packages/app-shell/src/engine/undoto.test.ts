@@ -1,8 +1,10 @@
 // Slice 4 of draft/publish: undoTo(version) = undo repeated, one decision.
+
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
+import { hostOwner } from '../test/engine-principal.ts';
 import { AppHost, ApprovalRequiredError, MemoryVersionStore } from './index.ts';
 
 const root = mkdtempSync(join(tmpdir(), 'engine-undoto-'));
@@ -34,7 +36,7 @@ async function build(store = new MemoryVersionStore()) {
     ['a', 'note a', '3'],
     ['b', 'note b', 'lots'],
   ])
-    await host.create('Chore', { title, notes, points });
+    await host.create(hostOwner(host), 'Chore', { title, notes, points });
   await host.execute(
     {
       type: 'addField',
@@ -102,7 +104,7 @@ describe('undoTo', () => {
       const r = await host.execute({ type: 'undoTo', version: 1 }, OK);
       expect(r).toMatchObject({ version: 1 });
       expect(host.version).toBe(1);
-      const rows = await host.list('Chore');
+      const rows = await host.list(hostOwner(host), 'Chore');
       expect(rows.find((x) => x.title === 'a')).toMatchObject({
         notes: 'note a',
         points: '3',
@@ -122,8 +124,10 @@ describe('undoTo', () => {
   it('counts the values a type change would overwrite', async () => {
     const { host } = await build();
     try {
-      const rows = await host.list('Chore');
-      await host.update('Chore', rows[0].id as string, { points: 99 });
+      const rows = await host.list(hostOwner(host), 'Chore');
+      await host.update(hostOwner(host), 'Chore', rows[0].id as string, {
+        points: 99,
+      });
       const plan = await host.plan({ type: 'undoTo', version: 3 });
       expect(plan.preview?.replaced).toBe(1);
     } finally {
@@ -211,7 +215,8 @@ describe('undoTo', () => {
       expect(host.def.models.Chore.methods).toEqual({});
       expect(await store.current()).toBe(4);
       expect(
-        (await host.list('Chore')).find((x) => x.title === 'a')?.points,
+        (await host.list(hostOwner(host), 'Chore')).find((x) => x.title === 'a')
+          ?.points,
       ).toBe(3);
       store.setCurrent = real;
       await host.execute({ type: 'undoTo', version: 1 }, OK);
@@ -247,7 +252,10 @@ describe('undo across a removal that was added again', () => {
         definition: { type: 'text' },
       } as const;
       await host.execute(addSize, AUTHOR);
-      const made = await host.create('Chore', { title: 'a', size: 'big' });
+      const made = await host.create(hostOwner(host), 'Chore', {
+        title: 'a',
+        size: 'big',
+      });
       await host.execute(
         { type: 'removeField', model: 'Chore', field: 'size' },
         OK,
@@ -256,7 +264,9 @@ describe('undo across a removal that was added again', () => {
       await host.execute({ type: 'undoTo', version: defined }, AUTHOR);
       expect(host.version).toBe(defined);
       expect(host.describe().models.Chore.fields).not.toHaveProperty('size');
-      expect((await host.get('Chore', made.id as string)).title).toBe('a');
+      expect(
+        (await host.get(hostOwner(host), 'Chore', made.id as string)).title,
+      ).toBe('a');
     } finally {
       await host.close();
     }
@@ -274,12 +284,16 @@ describe('undo across a removal that was added again', () => {
       } as const;
       await host.execute(gizmo, AUTHOR);
       const first = host.version;
-      const row = await host.create('Gizmo', { name: 'original' });
+      const row = await host.create(hostOwner(host), 'Gizmo', {
+        name: 'original',
+      });
       await host.execute({ type: 'removeModel', model: 'Gizmo' }, OK);
       await host.execute(gizmo, AUTHOR);
       await host.execute({ type: 'undoTo', version: first }, AUTHOR);
       expect(host.version).toBe(first);
-      expect((await host.get('Gizmo', row.id as string)).name).toBe('original');
+      expect(
+        (await host.get(hostOwner(host), 'Gizmo', row.id as string)).name,
+      ).toBe('original');
     } finally {
       await host.close();
     }

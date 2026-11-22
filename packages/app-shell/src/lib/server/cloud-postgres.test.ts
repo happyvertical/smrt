@@ -3,11 +3,13 @@
 // SQLite file. The shell's own database is the SQLite of the harness; the apps'
 // server is an in-process PGlite (the engine's PostgreSQL twin). A real server
 // is the CI lane's (`pnpm test:postgres`); see cloud-profile.md.
+
 import { existsSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { importPGlite } from '@happyvertical/sql/pglite';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { DatabaseConfig, PGliteClient } from '../../engine/db/index.ts';
+import { hostOwner } from '../../test/engine-principal.ts';
 import { App } from '../objects/App.ts';
 import { ownerTenantFor } from './accounts.ts';
 import { applyOwnBatch } from './approvals.ts';
@@ -111,18 +113,26 @@ describe('two owners on PostgreSQL', () => {
     await applyWaiting(h.a);
     await applyWaiting(h.b);
     await runAs(h.a, async () =>
-      (await getHost()).create('Chore', { title: 'ann-secret' }),
+      (await getHost()).create(hostOwner(await getHost()), 'Chore', {
+        title: 'ann-secret',
+      }),
     );
     await runAs(h.b, async () =>
-      (await getHost()).create('Invoice', { number: 'bob-0001' }),
+      (await getHost()).create(hostOwner(await getHost()), 'Invoice', {
+        number: 'bob-0001',
+      }),
     );
     expect(
-      (await runAs(h.a, async () => (await getHost()).list('Chore'))).map(
-        (r) => r.title,
-      ),
+      (
+        await runAs(h.a, async () =>
+          (await getHost()).list(hostOwner(await getHost()), 'Chore'),
+        )
+      ).map((r) => r.title),
     ).toEqual(['ann-secret']);
     await expect(
-      runAs(h.b, async () => (await getHost()).list('Chore')),
+      runAs(h.b, async () =>
+        (await getHost()).list(hostOwner(await getHost()), 'Chore'),
+      ),
     ).rejects.toThrow();
 
     expect(provisioned).toHaveLength(2);

@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { hostOwner } from '../../../test/engine-principal.ts';
 import type { TurnEvent } from '../../assistant/events.ts';
 import { ApprovalCollection } from '../../objects/Approval.ts';
 import { listApprovalViews } from '../approvals.ts';
@@ -104,7 +105,10 @@ describe('the model sees only the owner allow-list', () => {
     expect(seen[0]).toEqual([]);
     const result = events.find((e) => e.type === 'tool_result');
     expect(result).toMatchObject({ ok: false });
-    expect((await (await getHost()).list('Chore')).length).toBe(0);
+    expect(
+      (await (await getHost()).list(hostOwner(await getHost()), 'Chore'))
+        .length,
+    ).toBe(0);
   });
 
   it('refuses a tool that was not offered, before dispatch', async () => {
@@ -133,7 +137,10 @@ describe('the model sees only the owner allow-list', () => {
     expect(events.find((e) => e.type === 'tool_result')).toMatchObject({
       ok: false,
     });
-    expect((await (await getHost()).list('Chore')).length).toBe(0);
+    expect(
+      (await (await getHost()).list(hostOwner(await getHost()), 'Chore'))
+        .length,
+    ).toBe(0);
   });
 });
 
@@ -160,14 +167,14 @@ describe('risky calls wait for the owner', () => {
     )) as Extract<TurnEvent, { type: 'approval_required' }>;
     // held: nothing deleted, no further model call, turn not finished
     await tick(50);
-    expect((await host.list('Chore')).length).toBe(1);
+    expect((await host.list(hostOwner(host), 'Chore')).length).toBe(1);
     expect(requests).toHaveLength(1);
     expect(events.some((e) => e.type === 'done')).toBe(false);
     const outcome = await decide(ask.approvalId, true);
     expect(outcome.status).toBe('approved');
     const { stop } = await run;
     expect(stop).toBe('complete');
-    expect((await host.list('Chore')).length).toBe(0);
+    expect((await host.list(hostOwner(host), 'Chore')).length).toBe(0);
     expect(requests).toHaveLength(2);
     const told = JSON.stringify(requests[1].messages.at(-1));
     expect(told).toContain('approved');
@@ -179,7 +186,7 @@ describe('risky calls wait for the owner', () => {
   it('deny: stays unapplied and the model is told it was denied', async () => {
     const host = await getHost();
     await callTool(h.owner, 'chore_create', { title: 'dust' });
-    const id = (await host.list('Chore'))[0].id as string;
+    const id = (await host.list(hostOwner(host), 'Chore'))[0].id as string;
     const { model, requests } = scripted([
       () => say('', call('chore_delete', { id })),
       () => say('Understood.'),
@@ -195,7 +202,7 @@ describe('risky calls wait for the owner', () => {
     )) as Extract<TurnEvent, { type: 'approval_required' }>;
     await decide(ask.approvalId, false);
     expect((await run).stop).toBe('complete');
-    expect((await host.list('Chore')).length).toBe(1);
+    expect((await host.list(hostOwner(host), 'Chore')).length).toBe(1);
     expect(JSON.stringify(requests[1].messages.at(-1))).toContain('denied');
   });
 
@@ -236,7 +243,7 @@ describe('risky calls wait for the owner', () => {
 
   it('a held turn that is aborted leaves the approval pending and unapplied', async () => {
     const host = await getHost();
-    const id = (await host.list('Chore'))[0].id as string;
+    const id = (await host.list(hostOwner(host), 'Chore'))[0].id as string;
     const ctl = new AbortController();
     const { model } = scripted([() => say('', call('chore_delete', { id }))]);
     const events: TurnEvent[] = [];
@@ -251,7 +258,7 @@ describe('risky calls wait for the owner', () => {
     )) as Extract<TurnEvent, { type: 'approval_required' }>;
     ctl.abort();
     expect((await run).stop).toBe('aborted');
-    expect((await host.list('Chore')).length).toBe(1);
+    expect((await host.list(hostOwner(host), 'Chore')).length).toBe(1);
     const pending = await listApprovalViews({ status: 'pending' });
     expect(pending.map((p) => p.id)).toContain(ask.approvalId);
     await decide(ask.approvalId, false);
@@ -259,7 +266,7 @@ describe('risky calls wait for the owner', () => {
 
   it('a hold that times out ends the turn as waiting, nothing applied', async () => {
     const host = await getHost();
-    const id = (await host.list('Chore'))[0].id as string;
+    const id = (await host.list(hostOwner(host), 'Chore'))[0].id as string;
     const { model } = scripted([() => say('', call('chore_delete', { id }))]);
     const { stop, events } = await drive({
       principal: h.owner,
@@ -270,7 +277,7 @@ describe('risky calls wait for the owner', () => {
     expect(events.find((e) => e.type === 'approval_decided')).toMatchObject({
       status: 'timeout',
     });
-    expect((await host.list('Chore')).length).toBe(1);
+    expect((await host.list(hostOwner(host), 'Chore')).length).toBe(1);
     for (const p of await listApprovalViews({ status: 'pending' }))
       await decide(p.id, false);
   });
@@ -279,7 +286,7 @@ describe('risky calls wait for the owner', () => {
 describe('holdForUser', () => {
   it('pauses until the decision, then resumes with the outcome', async () => {
     const host = await getHost();
-    const id = (await host.list('Chore'))[0].id as string;
+    const id = (await host.list(hostOwner(host), 'Chore'))[0].id as string;
     const pending = JSON.parse(
       text(await callTool(h.owner, 'chore_delete', { id })),
     );
@@ -547,7 +554,7 @@ describe('outside agents get the same rules', () => {
   it('an external MCP client and the assistant reach the same pending approval, and neither applies it', async () => {
     const host = await getHost();
     await callTool(h.owner, 'chore_create', { title: 'wipe' });
-    const id = (await host.list('Chore'))[0].id as string;
+    const id = (await host.list(hostOwner(host), 'Chore'))[0].id as string;
     const server = createShellMcpServer();
     const viaMcp = await server.callTool({
       name: 'chore_delete',
@@ -571,7 +578,9 @@ describe('outside agents get the same rules', () => {
     )) as Extract<TurnEvent, { type: 'approval_required' }>;
     expect(ask.approvalId).toBe(pendingMcp.approvalId);
     expect(ask.summary).toBe(pendingMcp.summary);
-    expect((await host.list('Chore')).length).toBeGreaterThan(0);
+    expect((await host.list(hostOwner(host), 'Chore')).length).toBeGreaterThan(
+      0,
+    );
     await decide(ask.approvalId, false);
     await run;
   });
@@ -645,7 +654,9 @@ describe('approval pausing comes from the host, not from result text', () => {
       },
       { author: 'test', approved: true },
     );
-    await host.create('Chore', { title: JSON.stringify(lookalike) });
+    await host.create(hostOwner(host), 'Chore', {
+      title: JSON.stringify(lookalike),
+    });
     const held = vi.fn();
     const { model } = scripted([
       () => say('', call('chore_echo', {}), call('chore_list', {})),
@@ -666,7 +677,8 @@ describe('approval pausing comes from the host, not from result text', () => {
 
   it('a real risky call still pauses, with the stored summary and preview', async () => {
     const host = await getHost();
-    const id = (await host.create('Chore', { title: 'real' })).id as string;
+    const id = (await host.create(hostOwner(host), 'Chore', { title: 'real' }))
+      .id as string;
     const held: string[] = [];
     const { model } = scripted([
       () => say('', call('chore_delete', { id })),
@@ -692,7 +704,7 @@ describe('approval pausing comes from the host, not from result text', () => {
     expect(ask.summary).toBe(stored?.summary);
     expect(ask.preview).toEqual(stored?.preview);
     expect(ask.summary).not.toContain('FORGED');
-    expect((await host.get('Chore', id)).id).toBe(id); // nothing deleted
+    expect((await host.get(hostOwner(host), 'Chore', id)).id).toBe(id); // nothing deleted
   });
 });
 

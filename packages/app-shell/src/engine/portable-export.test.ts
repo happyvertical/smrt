@@ -1,8 +1,10 @@
 // Full-fidelity export/import of app.db (#5193).
+
 import { existsSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
+import { hostOwner } from '../test/engine-principal.ts';
 import {
   AppHost,
   checkUserAppBundle,
@@ -38,8 +40,16 @@ async function build() {
     },
     AUTHOR,
   );
-  await host.create('Chore', { title: 'a', notes: 'note a', secret: 's-a' });
-  await host.create('Chore', { title: 'b', notes: 'note b', secret: 's-b' });
+  await host.create(hostOwner(host), 'Chore', {
+    title: 'a',
+    notes: 'note a',
+    secret: 's-a',
+  });
+  await host.create(hostOwner(host), 'Chore', {
+    title: 'b',
+    notes: 'note b',
+    secret: 's-b',
+  });
   await host.execute(
     { type: 'hideField', model: 'Chore', field: 'secret' },
     AUTHOR,
@@ -105,13 +115,47 @@ describe('portable user app', () => {
     for (const v of bundle.versions) await store2.append(v);
     await store2.setCurrent(bundle.version);
     const host2 = await AppHost.open(target, { store: store2 });
-    const before = await host2.list('Chore');
+    const before = await host2.list(hostOwner(host2), 'Chore');
     expect(before).toHaveLength(2);
     const undone = await host2.execute({ type: 'undo' }, OK);
     expect(undone).toBeTruthy();
-    const after = await host2.list('Chore');
+    const after = await host2.list(hostOwner(host2), 'Chore');
     expect(after.map((r: any) => r.notes).sort()).toEqual(['note a', 'note b']);
     await host2.close();
+  });
+
+  it("a SQLite bundle keeps core's framework tables and round-trips them", async () => {
+    const { host, store, dataDir } = await build();
+    const bundle = await exportOf(store, dataDir);
+    await host.close();
+    // The database holds core's `_smrt_*` bookkeeping tables, and a SQLite
+    // export carries them as it always did. Only a PostgreSQL target filters
+    // them (its own boot makes them; see portable-export-postgres.test.ts).
+    const Database = (await import('libsql')).default;
+    const db = new Database(join(dataDir, 'app.db'));
+    const held = (
+      db
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'table'")
+        .all() as {
+        name: string;
+      }[]
+    )
+      .map((r) => r.name)
+      .filter((n) => n.startsWith('_smrt_'));
+    db.close();
+    expect(held.length).toBeGreaterThan(0);
+    const carried = bundle.tables
+      .map((t) => t.name)
+      .filter((n) => n.startsWith('_smrt_'));
+    expect(carried.sort()).toEqual(held.sort());
+    const target = dir();
+    const result = await importUserApp({ dataDir: target, bundle });
+    expect(result.status).toBe('imported');
+    const again = await exportUserApp({
+      dataDir: target,
+      versions: bundle.versions,
+    });
+    expect(again.digest).toBe(bundle.digest);
   });
 
   it('is idempotent: a matching target is left alone, another is refused', async () => {

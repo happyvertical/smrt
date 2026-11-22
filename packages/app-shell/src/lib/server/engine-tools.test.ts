@@ -1,6 +1,7 @@
 import { parseRuntimeReportSpec } from '@happyvertical/smrt-reports';
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import { ENGINE_TOOLS } from '../../engine/tool-definitions.ts';
+import { hostOwner } from '../../test/engine-principal.ts';
 import { discardChanges, waitingCount } from './changes.ts';
 import { historyFor } from './drafts.ts';
 import { getHost } from './host.ts';
@@ -34,7 +35,7 @@ it('offers engine additions only to the owner and dispatches reports through the
   // structure waits for the owner; apply it so the records below have a model
   await applyWaiting(h.owner);
   const host = await getHost();
-  await host.create('Sale', { amount: 100 });
+  await host.create(hostOwner(host), 'Sale', { amount: 100 });
   const spec = parseRuntimeReportSpec({
     version: 1,
     title: 'Revenue',
@@ -69,7 +70,7 @@ it('offers engine additions only to the owner and dispatches reports through the
     summary: 'Loaded 0 Sale: 0 inserted, 0 updated, 2 unchanged',
   });
   // the load waits: live has only the first record until the owner applies
-  expect(await host.countRows('Sale')).toBe(1);
+  expect(await host.countRows(hostOwner(host), 'Sale')).toBe(1);
   await applyWaiting(h.owner);
   expect(loaded.structuredContent).toMatchObject({
     summary: 'Loaded 2 Sale: 2 inserted, 0 updated, 0 unchanged',
@@ -81,9 +82,9 @@ it('offers engine additions only to the owner and dispatches reports through the
   });
   expect(gated.pending).toBeUndefined();
   expect(gated.structuredContent).toMatchObject({ status: 'change_waiting' });
-  expect((await host.list('Sale')).map((row) => row.amount).sort()).toEqual([
-    100, 200, 300,
-  ]);
+  expect(
+    (await host.list(hostOwner(host), 'Sale')).map((row) => row.amount).sort(),
+  ).toEqual([100, 200, 300]);
   await runAs(h.owner, () => discardChanges());
 });
 
@@ -95,8 +96,12 @@ it('uses the kept record label in a draft merge summary without exposing ids', a
   });
   await applyWaiting(h.owner);
   const host = await getHost();
-  const keep = await host.create('Customer', { name: 'Acme Ltd' });
-  const other = await host.create('Customer', { name: 'Duplicate' });
+  const keep = await host.create(hostOwner(host), 'Customer', {
+    name: 'Acme Ltd',
+  });
+  const other = await host.create(hostOwner(host), 'Customer', {
+    name: 'Duplicate',
+  });
   const result = await callTool(h.owner, 'app_mergerecords', {
     model: 'Customer',
     keep: keep.id,
@@ -201,7 +206,7 @@ it('runs a not-equal report however the filter is spelled, and explains a bad co
   await applyWaiting(h.owner);
   const host = await getHost();
   for (const status of ['Open', 'Open', 'Cancelled', null])
-    await host.create('Order', { status, qty: 1 });
+    await host.create(hostOwner(host), 'Order', { status, qty: 1 });
   const count = async (filter: Record<string, unknown>) => {
     const out = await callTool(h.owner, 'app_runreport', {
       report: {

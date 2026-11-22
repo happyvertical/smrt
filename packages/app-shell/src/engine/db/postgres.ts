@@ -9,10 +9,16 @@
 // every statement (collections, REST, tools, migrations) is scoped, with or
 // without a transaction of its own.
 
+import { randomUUID } from 'node:crypto';
+import { declareRuntimeManagedDatabase } from '@happyvertical/smrt-core/migrations';
 import { getDatabase } from '@happyvertical/sql';
 import { EngineError, StaleFenceError } from '../errors.ts';
+import {
+  BrokeredDatabase,
+  brokerClient,
+  createTransport,
+} from './broker-client.ts';
 import { createClaim } from './claim.ts';
-import { createBridgeClient } from './pglite-bridge.ts';
 import { releaseAppLock, tryAppLock } from './postgres-copy.ts';
 import { assertSchemaName } from './schema-name.ts';
 import type {
@@ -75,7 +81,23 @@ const STATEMENTS = [
 export function scopeDatabase<T extends object>(
   db: T,
   schema: string,
-  options: { statementTimeoutMs?: number; fence?: number } = {},
+  options: {
+    statementTimeoutMs?: number;
+    fence?: number;
+    /**
+     * The host's broker already opened the transaction and wrote the search
+     * path, the statement timeout, the caller's settings and role and checked
+     * the fence (`broker.ts`), so nothing is applied per statement.
+     */
+    brokered?: boolean;
+    /**
+     * Report this `url` (a `postgres:` marker without credentials) instead of
+     * the adapter's: core treats a handle with no `postgres:` url as embedded
+     * (one connection, an in-process write queue), which a broker-backed server
+     * is not.
+     */
+    serverUrl?: string;
+  } = {},
 ): T {
   const path = `"${assertSchemaName(schema)}"`;
   const timeout = options.statementTimeoutMs;
@@ -86,6 +108,7 @@ export function scopeDatabase<T extends object>(
   if (fence !== undefined && (!Number.isSafeInteger(fence) || fence < 1))
     throw new RangeError('fence must be a whole number, 1 or more');
   const apply = async (h: Handle) => {
+    if (options.brokered) return;
     await (timeout === undefined
       ? h.query(`SELECT set_config('search_path', ?, true)`, [path])
       : h.query(
@@ -171,6 +194,8 @@ export function scopeDatabase<T extends object>(
     get(target, prop, receiver) {
       if (typeof prop === 'string' && Object.hasOwn(members, prop))
         return members[prop];
+      if (prop === 'url' && options.serverUrl !== undefined)
+        return options.serverUrl;
       const value = Reflect.get(target, prop, receiver);
       // Only plain values (the adapter's `engine`, `url`, flags) and the
       // table-free operations pass. A function or an object member
@@ -210,33 +235,48 @@ export const SCOPED_MEMBERS = new Set<string>([
   'table',
 ]);
 
-/** Open the database a worker was told to open, scoped to its schema. */
-export async function openPostgres(
+/**
+ * The database a worker was told to open, behind the host's broker: one
+ * schema-scoped handle over the port, used only inside operations
+ * (`BrokeredDatabase.run`). The worker holds no connection and no credentials.
+ */
+export async function openBrokered(
   config: Extract<WorkerDatabaseConfig, { kind: 'postgres' | 'pglite' }>,
-) {
+): Promise<BrokeredDatabase> {
   const schema = assertSchemaName(config.schema);
-  const raw: Handle =
-    config.kind === 'postgres'
-      ? await getDatabase({ type: 'postgres', ...config.connection } as any)
-      : await getDatabase({
-          type: 'pglite',
-          client: await createBridgeClient(config.port),
-        } as any);
-  const found = (
-    await raw.query('SELECT 1 AS x FROM pg_namespace WHERE nspname = ?', [
-      schema,
-    ])
-  ).rows;
-  if (!found.length) {
-    await raw.close?.();
-    throw new EngineError(
-      `schema ${schema} does not exist; the host creates an app's schema before it starts`,
-      'refused',
-    );
-  }
-  return scopeDatabase(raw, schema, {
-    statementTimeoutMs: config.statementTimeoutMs,
-    fence: config.fence,
+  const transport = await createTransport(config.port);
+  const raw: Handle = await getDatabase({
+    type: 'pglite',
+    client: brokerClient(transport),
+    cache: false,
+  } as any);
+  // A statement runs in the transaction the host opened for the operation.
+  // The url is a `postgres:` marker, unique to this worker: core then tracks
+  // "system tables exist" once per worker (not once per operation's handle) and
+  // does not treat the handle as an embedded, single-connection database.
+  const scoped = scopeDatabase(raw, schema, {
+    brokered: true,
+    serverUrl: `postgres://broker.invalid/${schema}/${randomUUID()}`,
+  });
+  // As `openAppDatabase` does for SQLite: the engine versions its own schema.
+  // The per-operation handles share this handle's `client`, which is what core reads.
+  declareRuntimeManagedDatabase(scoped as any, {
+    owner: '@happyvertical/smrt-app-shell',
+    reason:
+      "The engine builds app.db's schema from the app definition with its own versioned steps (_app_meta.version); core's migrate never runs against it.",
+  });
+  // The schema must exist before anything runs (the host creates it).
+  return new BrokeredDatabase(transport, scoped, async (db) => {
+    const found = (
+      await db.query('SELECT 1 AS x FROM pg_namespace WHERE nspname = ?', [
+        schema,
+      ])
+    ).rows;
+    if (!found.length)
+      throw new EngineError(
+        `schema ${schema} does not exist; the host creates an app's schema before it starts`,
+        'refused',
+      );
   });
 }
 
@@ -252,7 +292,7 @@ export async function openAdmin(
   if (config.kind === 'postgres') {
     const raw: Handle = await getDatabase({
       type: 'postgres',
-      ...config.connection,
+      ...(config.admin ?? config.connection),
       max: 1,
       // A pool of its own: the shared per-process cache would hand back (and
       // closing would end) a connection another operation is using.
@@ -304,7 +344,7 @@ export async function claimApp(
   if (config.kind !== 'postgres') return undefined;
   const raw: Handle = await getDatabase({
     type: 'postgres',
-    ...config.connection,
+    ...(config.admin ?? config.connection),
     max: 1,
     idleTimeoutMillis: 0,
     connectionTimeoutMillis: 0,

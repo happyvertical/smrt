@@ -4,10 +4,12 @@
 // is their PostgreSQL counterpart for the engine paths that differ: column
 // conversion, rename, drop with archive, table archive, undo, clean up,
 // calculated columns, record loads, merge, extract, methods and reports.
+
 import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { hostOwner } from '../test/engine-principal.ts';
 import { harnessDatabase } from './db/harness.ts';
 import {
   AppHost,
@@ -81,7 +83,8 @@ describe('migrations on PostgreSQL (sequential, one app)', () => {
       ['Lawn', null, null],
     ] as const)
       ids.push(
-        (await host.create('Chore', { title, points, notes })).id as string,
+        (await host.create(hostOwner(host), 'Chore', { title, points, notes }))
+          .id as string,
       );
     expect(await colType('u_chores', 'done')).toBe('boolean');
     expect((await raw(`SELECT count(*)::int AS n FROM u_chores`))[0].n).toBe(4);
@@ -104,8 +107,12 @@ describe('migrations on PostgreSQL (sequential, one app)', () => {
         r.points == null ? null : Number(r.points),
       ),
     ).toEqual([3, 5, null, null]);
-    late = (await host.create('Chore', { title: 'Windows', points: 7 }))
-      .id as string;
+    late = (
+      await host.create(hostOwner(host), 'Chore', {
+        title: 'Windows',
+        points: 7,
+      })
+    ).id as string;
   });
 
   it('renameField keeps data and renames the generated tool parameter', async () => {
@@ -115,7 +122,9 @@ describe('migrations on PostgreSQL (sequential, one app)', () => {
       from: 'title',
       to: 'name',
     });
-    expect((await host.get('Chore', ids[0])).name).toBe('Bins');
+    expect((await host.get(hostOwner(host), 'Chore', ids[0])).name).toBe(
+      'Bins',
+    );
     expect(await cols('u_chores')).toContain('name');
   });
 
@@ -146,7 +155,10 @@ describe('migrations on PostgreSQL (sequential, one app)', () => {
       field: 'nickname',
       definition: { type: 'text' },
     });
-    await host.create('Profile', { name: 'Sam', nickname: 'Sammy' });
+    await host.create(hostOwner(host), 'Profile', {
+      name: 'Sam',
+      nickname: 'Sammy',
+    });
     await run({
       type: 'renameField',
       model: 'Profile',
@@ -154,7 +166,9 @@ describe('migrations on PostgreSQL (sequential, one app)', () => {
       to: 'callMe',
     });
     expect(await cols('profiles')).toContain('call_me');
-    expect((await host.list('Profile'))[0].callMe).toBe('Sammy');
+    expect((await host.list(hostOwner(host), 'Profile'))[0].callMe).toBe(
+      'Sammy',
+    );
   });
 
   it('removeModel moves the table aside', async () => {
@@ -163,7 +177,7 @@ describe('migrations on PostgreSQL (sequential, one app)', () => {
       name: 'Errand',
       fields: { what: { type: 'text' } },
     });
-    await host.create('Errand', { what: 'post office' });
+    await host.create(hostOwner(host), 'Errand', { what: 'post office' });
     await run({ type: 'removeModel', model: 'Errand' });
     const tables = (
       await raw(
@@ -189,7 +203,7 @@ describe('migrations on PostgreSQL (sequential, one app)', () => {
       run({ type: 'renameField', model: 'Chore', from: 'name', to: 'extra' }),
     ).rejects.toBeInstanceOf(EngineError);
     expect(host.version).toBe(before);
-    expect(await host.list('Chore')).toHaveLength(5);
+    expect(await host.list(hostOwner(host), 'Chore')).toHaveLength(5);
     expect(await cols('u_chores')).toContain('name');
     expect(host.appAlive).toBe(true);
   });
@@ -197,20 +211,28 @@ describe('migrations on PostgreSQL (sequential, one app)', () => {
   it('restart: state is intact', async () => {
     await host.close();
     host = await open();
-    expect((await host.get('Chore', ids[0])).name).toBe('Bins');
+    expect((await host.get(hostOwner(host), 'Chore', ids[0])).name).toBe(
+      'Bins',
+    );
   });
 
   it('undo walks back through every kind of step', async () => {
     const undo = () => host.execute({ type: 'undo' }, { author: 'test' });
     await undo(); // remove model Errand
-    expect((await host.list('Errand'))[0].what).toBe('post office');
+    expect((await host.list(hostOwner(host), 'Errand'))[0].what).toBe(
+      'post office',
+    );
     await undo(); // define Errand
     await undo(); // rename nickname -> callMe
-    expect((await host.list('Profile'))[0].nickname).toBe('Sammy');
+    expect((await host.list(hostOwner(host), 'Profile'))[0].nickname).toBe(
+      'Sammy',
+    );
     await undo(); // add nickname
     await undo(); // enable profiles
     await undo(); // remove notes
-    expect((await host.get('Chore', ids[0])).notes).toBe('blue bin');
+    expect((await host.get(hostOwner(host), 'Chore', ids[0])).notes).toBe(
+      'blue bin',
+    );
     expect(
       (
         await raw(`SELECT count(*)::int AS n FROM _archive WHERE col = 'notes'`)
@@ -220,9 +242,11 @@ describe('migrations on PostgreSQL (sequential, one app)', () => {
     expect(await cols('u_chores')).toContain('title');
     await expect(undo()).rejects.toBeInstanceOf(ApprovalRequiredError);
     await run({ type: 'undo' }); // change type (approved)
-    expect((await host.get('Chore', ids[2])).points).toBe('lots');
+    expect((await host.get(hostOwner(host), 'Chore', ids[2])).points).toBe(
+      'lots',
+    );
     expect(await colType('u_chores', 'points')).toBe('text');
-    expect((await host.get('Chore', late)).points).toBe('7');
+    expect((await host.get(hostOwner(host), 'Chore', late)).points).toBe('7');
   });
 
   it('cleanUp makes old changes permanent; undo past one is refused', async () => {
@@ -256,7 +280,7 @@ describe('data flows on PostgreSQL', () => {
       name: 'Customer',
       fields: { name: { type: 'text' } },
     });
-    await host.create('Customer', { name: 'Ada' });
+    await host.create(hostOwner(host), 'Customer', { name: 'Ada' });
     await run({
       type: 'defineModel',
       name: 'Sale',
@@ -276,10 +300,14 @@ describe('data flows on PostgreSQL', () => {
         },
       },
     });
-    const row = await host.create('Sale', { code: 'a', qty: 3, price: 125 });
+    const row = await host.create(hostOwner(host), 'Sale', {
+      code: 'a',
+      qty: 3,
+      price: 125,
+    });
     expect(row.total).toBe(375);
     await expect(
-      host.update('Sale', String(row.id), { total: 1 }),
+      host.update(hostOwner(host), 'Sale', String(row.id), { total: 1 }),
     ).rejects.toThrow(/read-only/);
     const cmd: Command = {
       type: 'loadRecords',
@@ -299,15 +327,24 @@ describe('data flows on PostgreSQL', () => {
       rejected: 0,
     });
     await run(cmd);
-    expect(await host.list('Sale')).toHaveLength(51);
+    expect(await host.list(hostOwner(host), 'Sale')).toHaveLength(51);
     await run({ type: 'undo' });
-    expect(await host.list('Sale')).toHaveLength(1);
+    expect(await host.list(hostOwner(host), 'Sale')).toHaveLength(1);
   });
 
   it('merges records and undoes; extracts a model and undoes', async () => {
-    const keep = String((await host.create('Customer', { name: 'Bob' })).id);
-    const other = String((await host.create('Customer', { name: 'B' })).id);
-    await host.create('Sale', { code: 'm', qty: 1, price: 1, customer: other });
+    const keep = String(
+      (await host.create(hostOwner(host), 'Customer', { name: 'Bob' })).id,
+    );
+    const other = String(
+      (await host.create(hostOwner(host), 'Customer', { name: 'B' })).id,
+    );
+    await host.create(hostOwner(host), 'Sale', {
+      code: 'm',
+      qty: 1,
+      price: 1,
+      customer: other,
+    });
     const merge: Command = {
       type: 'mergeRecords',
       model: 'Customer',
@@ -321,11 +358,13 @@ describe('data flows on PostgreSQL', () => {
     });
     await run(merge);
     expect(
-      (await host.list('Sale')).find((s) => s.code === 'm')?.customer,
+      (await host.list(hostOwner(host), 'Sale')).find((s) => s.code === 'm')
+        ?.customer,
     ).toBe(keep);
     await run({ type: 'undo' });
     expect(
-      (await host.list('Sale')).find((s) => s.code === 'm')?.customer,
+      (await host.list(hostOwner(host), 'Sale')).find((s) => s.code === 'm')
+        ?.customer,
     ).toBe(other);
 
     await run({
@@ -334,7 +373,7 @@ describe('data flows on PostgreSQL', () => {
       fields: { place: { type: 'text' } },
     });
     for (const place of ['Park', 'Park', 'Zoo'])
-      await host.create('Visit', { place });
+      await host.create(hostOwner(host), 'Visit', { place });
     const extract: Command = {
       type: 'extractModel',
       model: 'Visit',
@@ -346,16 +385,13 @@ describe('data flows on PostgreSQL', () => {
       create: 2,
     });
     await run(extract);
-    expect((await host.list('Place')).map((r) => r.name).sort()).toEqual([
-      'Park',
-      'Zoo',
-    ]);
+    expect(
+      (await host.list(hostOwner(host), 'Place')).map((r) => r.name).sort(),
+    ).toEqual(['Park', 'Zoo']);
     await run({ type: 'undo' });
-    expect((await host.list('Visit')).map((r) => r.place).sort()).toEqual([
-      'Park',
-      'Park',
-      'Zoo',
-    ]);
+    expect(
+      (await host.list(hostOwner(host), 'Visit')).map((r) => r.place).sort(),
+    ).toEqual(['Park', 'Park', 'Zoo']);
   });
 
   it('methods run atomically with an undo point (a dump file) and reports aggregate', async () => {
@@ -368,8 +404,15 @@ describe('data flows on PostgreSQL', () => {
         code: `app.update('Sale', record.id, { qty: record.qty + 1 }); return 'ok';`,
       },
     });
-    const sale = (await host.list('Sale')).find((s) => s.code === 'a');
-    const out = await host.runMethod('Sale', 'bump', String(sale?.id));
+    const sale = (await host.list(hostOwner(host), 'Sale')).find(
+      (s) => s.code === 'a',
+    );
+    const out = await host.runMethod(
+      hostOwner(host),
+      'Sale',
+      'bump',
+      String(sale?.id),
+    );
     expect(out.result).toBe('ok');
     // The pre-write undo point is a dump file, not a table in the database.
     expect(String(out.snapshot)).toMatch(/-method-Sale\.bump\.pgdump$/);
@@ -379,7 +422,9 @@ describe('data flows on PostgreSQL', () => {
         `SELECT 1 FROM pg_namespace WHERE nspname <> 'app' AND nspname LIKE 'app%'`,
       ),
     ).toEqual([]);
-    expect((await host.get('Sale', String(sale?.id))).qty).toBe(4);
+    expect(
+      (await host.get(hostOwner(host), 'Sale', String(sale?.id))).qty,
+    ).toBe(4);
 
     await run({
       type: 'defineReport',
@@ -393,7 +438,7 @@ describe('data flows on PostgreSQL', () => {
         } as never,
       },
     });
-    const report = await host.runReport('byCode');
+    const report = await host.runReport(hostOwner(host), 'byCode');
     expect(report.rows.find((r) => r.code === 'a')?.qty).toBe(4);
   });
 
@@ -414,7 +459,7 @@ describe('data flows on PostgreSQL', () => {
       ['a', 5],
       ['b', 6],
     ] as const)
-      await host.create('Item', {
+      await host.create(hostOwner(host), 'Item', {
         code,
         when: '2026-01-05',
         done: true,
@@ -423,7 +468,7 @@ describe('data flows on PostgreSQL', () => {
         price: 1.5,
       });
     const snapshot = async () =>
-      (await host.list('Item')).sort((x, y) =>
+      (await host.list(hostOwner(host), 'Item')).sort((x, y) =>
         String(x.code).localeCompare(String(y.code)),
       );
     const before = await snapshot();
@@ -459,11 +504,13 @@ describe('data flows on PostgreSQL', () => {
     // The same load again; an edit outside it must refuse the undo.
     await run(cmd);
     const row = (await snapshot())[0];
-    await host.update('Item', String(row.id), { count: 77 });
+    await host.update(hostOwner(host), 'Item', String(row.id), { count: 77 });
     await expect(run({ type: 'undo' })).rejects.toThrow(
       /changed since the command/,
     );
-    expect((await host.get('Item', String(row.id))).count).toBe(77);
+    expect(
+      (await host.get(hostOwner(host), 'Item', String(row.id))).count,
+    ).toBe(77);
   });
 
   it.each([
@@ -477,7 +524,7 @@ describe('data flows on PostgreSQL', () => {
       name: model,
       fields: { k: def as never, note: { type: 'text' } },
     });
-    await host.create(model, { k: first, note: 'old' });
+    await host.create(hostOwner(host), model, { k: first, note: 'old' });
     const cmd: Command = {
       type: 'loadRecords',
       model,
@@ -493,7 +540,7 @@ describe('data flows on PostgreSQL', () => {
       update: 1,
     });
     await run(cmd);
-    const rows = await host.list(model);
+    const rows = await host.list(hostOwner(host), model);
     expect(rows).toHaveLength(2);
     expect(rows.find((r) => r.k === first)?.note).toBe('new');
 
@@ -525,7 +572,7 @@ describe('data flows on PostgreSQL', () => {
       name: 'Big',
       fields: { n: { type: 'integer' } },
     });
-    const rec = await host.create('Big', { n: 42 });
+    const rec = await host.create(hostOwner(host), 'Big', { n: 42 });
     await raw(`UPDATE u_bigs SET n = 9007199254740993 WHERE id = $1`, [rec.id]);
     expect((await raw(`SELECT n::text AS n FROM u_bigs`))[0].n).toBe(
       '9007199254740993',

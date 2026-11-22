@@ -4,6 +4,14 @@
 // Nothing here runs unless the `cloud` profile is configured with a policy:
 // the desktop keeps its one host open for as long as the process lives.
 
+import {
+  BrokerPool,
+  type DatabaseConfig,
+  POOL_CANCEL_RESERVE,
+  POOL_DEFAULTS,
+  poolKey,
+  postgresPoolDriver,
+} from '../../engine/db/index.ts';
 import { CapacityError } from '../../engine/errors.ts';
 
 /** What a hosted process does about the apps it holds. Every field is optional. */
@@ -20,13 +28,25 @@ export interface HostLifecyclePolicy {
   memoryCeilingMb?: number;
   /**
    * At most this many PostgreSQL connections held by all apps of this process
-   * together (#5464): every worker's pool for as long as the worker lives
-   * (live, draft, a swap's new worker, a report or rehearsal worker), plus a
-   * fixed overhead per open host (see `HOST_OVERHEAD`). Default with
-   * `maxOpenApps`: that many apps at `APP_ALLOWANCE` each; without it, no
-   * budget. Never applies to SQLite or PGlite apps.
+   * together (#5464): the one shared pool every app worker's operations go
+   * through (`brokerPoolSize` slots plus one reserved for cancelling a stuck
+   * statement), plus a fixed overhead per open host (see `HOST_OVERHEAD`).
+   * Default with `maxOpenApps`: that many apps at `appAllowance()` each plus
+   * the pool; without it, no budget. Never applies to SQLite or PGlite apps.
    */
   maxAppConnections?: number;
+  /**
+   * The shared pool's slots: the most connections all apps of this process
+   * use for their operations at once (#5188). Default: what
+   * `maxAppConnections` leaves after the hosts' overhead, else 10.
+   */
+  brokerPoolSize?: number;
+  /** Most transactions one app may have open at once. Default 4. */
+  perAppTransactions?: number;
+  /** Most operations waiting for a pool slot; the next is refused with a 503. Default 64. */
+  maxQueued?: number;
+  /** How long an operation waits for a pool slot before it is refused (ms). Default 5000. */
+  acquireTimeoutMs?: number;
   /** What one open app is budgeted at (MiB). Default 80. */
   appMemoryMb?: number;
   /** At most this many apps waking at once; the rest queue. Default 2. */
@@ -69,12 +89,14 @@ export interface HostMetrics {
   /** PostgreSQL connections held by app workers now, and the budget (null: none). */
   connections: number;
   maxConnections: number | null;
+  /** The shared broker pool (#5188): slots in use, waiting requests, slots; null before any PostgreSQL app opened. */
+  brokerPool: { inUse: number; queued: number; max: number } | null;
   draining: boolean;
   /** The process's resident memory (bytes). */
   rssBytes: number;
 }
 
-/** The pool of a worker whose config names none: the budget sets it, so it is what is reserved. */
+/** What `ConnectionBudget.poolSize` reports; the shared pool (`brokerPool`) is sized by the policy instead. */
 export const POOL_SIZE = 2;
 /**
  * Connections a host holds beside its workers' pools: a live host keeps one
@@ -83,11 +105,10 @@ export const POOL_SIZE = 2;
  */
 export const HOST_OVERHEAD = { live: 2, draft: 1 } as const;
 /**
- * Per app in the derived budget, for pools of `pool` connections: live and
- * draft pools, one more worker (swap, report, rehearsal), and both hosts' overhead.
+ * Per app in the derived budget: both hosts' overhead (live and draft). The
+ * connections operations use are the one shared pool, counted once.
  */
-export const appAllowance = (pool: number = POOL_SIZE) =>
-  3 * pool + HOST_OVERHEAD.live + HOST_OVERHEAD.draft;
+export const appAllowance = () => HOST_OVERHEAD.live + HOST_OVERHEAD.draft;
 
 /** The refusal when the budget has no room. Its message names no server and is safe to show. */
 export class ConnectionBudgetError extends CapacityError {
@@ -117,7 +138,7 @@ export class HostLifecycle {
   private slots = 0;
   // An object, so a release after `reset()` settles the old count, not the new.
   private conns = { used: 0 };
-  private poolSeen: number = POOL_SIZE;
+  private pools = new Map<string, { pool: BrokerPool; release: () => void }>();
   private gateWaiters: (() => void)[] = [];
   private changeWaiters: (() => void)[] = [];
   private timer: ReturnType<typeof setInterval> | null = null;
@@ -136,6 +157,10 @@ export class HostLifecycle {
         'idleMs',
         'maxOpenApps',
         'maxAppConnections',
+        'brokerPoolSize',
+        'perAppTransactions',
+        'maxQueued',
+        'acquireTimeoutMs',
         'memoryCeilingMb',
         'appMemoryMb',
         'maxConcurrentWakes',
@@ -157,6 +182,11 @@ export class HostLifecycle {
 
   /** Forget the counters (and a drain). */
   reset() {
+    for (const { pool, release } of this.pools.values()) {
+      void pool.close().catch(() => {});
+      release();
+    }
+    this.pools.clear();
     this.draining = false;
     this.wakes = 0;
     this.failedWakes = 0;
@@ -167,7 +197,6 @@ export class HostLifecycle {
     this.slots = 0;
     this.gateWaiters = [];
     this.conns = { used: 0 };
-    this.poolSeen = POOL_SIZE;
   }
 
   /**
@@ -196,19 +225,68 @@ export class HostLifecycle {
     if (p.maxAppConnections !== undefined)
       return Math.floor(p.maxAppConnections);
     const apps = this.maxOpen;
-    // The pool size follows the largest one asked for, so a config with
-    // a bigger `connection.max` scales the budget instead of starving it.
-    return apps === null ? null : apps * appAllowance(this.poolSeen);
+    // Each open app's hosts, plus the one shared pool (slots and cancel reserve).
+    return apps === null
+      ? null
+      : apps * appAllowance() + this.brokerSlots() + POOL_CANCEL_RESERVE;
   }
 
-  /** What a worker's `WorkerLimits.connections` is: this budget, pool size included. */
+  /**
+   * The shared pool's slots: the policy's, else what an explicit connection
+   * budget leaves after the open apps' overhead (at least 2), else the default.
+   */
+  private brokerSlots(): number {
+    const p = this.policy;
+    if (p?.brokerPoolSize !== undefined) return Math.floor(p.brokerPoolSize);
+    if (p?.maxAppConnections !== undefined)
+      return Math.max(
+        2,
+        Math.floor(p.maxAppConnections) -
+          (this.maxOpen ?? 0) * appAllowance() -
+          POOL_CANCEL_RESERVE,
+      );
+    return POOL_DEFAULTS.max;
+  }
+
+  /**
+   * The process's ONE connection pool for the server `config` reaches (#5188):
+   * created on first use, its slots and cancel reserve taken from the
+   * connection budget once (a refusal throws a `ConnectionBudgetError`, nothing
+   * kept), then shared by every app worker. It replaces the per-worker pools.
+   */
+  brokerPool(
+    config: Extract<DatabaseConfig, { kind: 'postgres' }>,
+  ): BrokerPool {
+    const key = poolKey(config);
+    const have = this.pools.get(key);
+    if (have) return have.pool;
+    const slots = this.brokerSlots();
+    const release = this.takeConnections(slots + POOL_CANCEL_RESERVE);
+    try {
+      const p = this.policy;
+      const pool = new BrokerPool(postgresPoolDriver(config, slots), {
+        max: slots,
+        perApp: Math.floor(p?.perAppTransactions ?? POOL_DEFAULTS.perApp),
+        maxQueued: Math.floor(p?.maxQueued ?? POOL_DEFAULTS.maxQueued),
+        acquireTimeoutMs: Math.floor(
+          p?.acquireTimeoutMs ?? POOL_DEFAULTS.acquireTimeoutMs,
+        ),
+      });
+      this.pools.set(key, { pool, release });
+      return pool;
+    } catch (e) {
+      release();
+      throw e;
+    }
+  }
+
+  /** What a worker's `WorkerLimits.connections` is: this budget and its one shared pool. */
   get workerBudget() {
     return {
       poolSize: POOL_SIZE,
-      take: (n: number) => {
-        this.poolSeen = Math.max(this.poolSeen, n);
-        return this.takeConnections(n);
-      },
+      take: (n: number) => this.takeConnections(n),
+      pool: (config: Extract<DatabaseConfig, { kind: 'postgres' }>) =>
+        this.brokerPool(config),
     };
   }
 
@@ -319,6 +397,18 @@ export class HostLifecycle {
     this.timer = null;
   }
 
+  private poolStats(): HostMetrics['brokerPool'] {
+    if (!this.pools.size) return null;
+    const sum = { inUse: 0, queued: 0, max: 0 };
+    for (const { pool } of this.pools.values()) {
+      const s = pool.stats;
+      sum.inUse += s.inUse;
+      sum.queued += s.queued;
+      sum.max += s.max;
+    }
+    return sum;
+  }
+
   metrics(open: number): HostMetrics {
     return {
       open,
@@ -332,6 +422,7 @@ export class HostLifecycle {
       maxOpen: this.maxOpen,
       connections: this.conns.used,
       maxConnections: this.policy ? this.connectionBudget() : null,
+      brokerPool: this.poolStats(),
       draining: this.draining,
       rssBytes: process.memoryUsage.rss(),
     };
@@ -342,6 +433,10 @@ const ENV_FIELDS = {
   SMRT_APP_SHELL_IDLE_MS: 'idleMs',
   SMRT_APP_SHELL_MAX_OPEN_APPS: 'maxOpenApps',
   SMRT_APP_SHELL_MAX_APP_CONNECTIONS: 'maxAppConnections',
+  SMRT_APP_SHELL_BROKER_POOL_SIZE: 'brokerPoolSize',
+  SMRT_APP_SHELL_PER_APP_TRANSACTIONS: 'perAppTransactions',
+  SMRT_APP_SHELL_MAX_QUEUED_OPERATIONS: 'maxQueued',
+  SMRT_APP_SHELL_POOL_ACQUIRE_TIMEOUT_MS: 'acquireTimeoutMs',
   SMRT_APP_SHELL_MEMORY_CEILING_MB: 'memoryCeilingMb',
   SMRT_APP_SHELL_APP_MEMORY_MB: 'appMemoryMb',
   SMRT_APP_SHELL_MAX_CONCURRENT_WAKES: 'maxConcurrentWakes',

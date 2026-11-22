@@ -142,7 +142,10 @@ export function postgresPortable(tx: Tx): PortableDb {
           `${odd.name} is a view, foreign or partitioned table; it cannot be moved`,
           'refused',
         );
-      return rows.map((r) => String(r.name)).filter((n) => n !== META_TABLE);
+      // Core's `_smrt_*` system tables are made by the target's own boot, never the app's data.
+      return rows
+        .map((r) => String(r.name))
+        .filter((n) => n !== META_TABLE && !n.startsWith('_smrt_'));
     },
     async columns(table) {
       return (await attributesOf(table)).map((a) => ({

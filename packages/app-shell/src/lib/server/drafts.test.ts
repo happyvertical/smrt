@@ -11,6 +11,7 @@ import {
   EMPTY_APP,
   type VersionRecord,
 } from '../../engine/index.ts';
+import { hostOwner } from '../../test/engine-principal.ts';
 import { App } from '../objects/App.ts';
 import { AppDraftCollection } from '../objects/AppDraft.ts';
 import { AppDraftVersionCollection } from '../objects/AppDraftVersion.ts';
@@ -46,7 +47,9 @@ beforeAll(async () => {
     { type: 'defineModel', name: 'Chore', fields: { title: { type: 'text' } } },
     { author: h.owner.id, approved: true },
   );
-  await (await getHost()).create('Chore', { title: 'live-1' });
+  await (await getHost()).create(hostOwner(await getHost()), 'Chore', {
+    title: 'live-1',
+  });
 });
 afterAll(async () => {
   off();
@@ -55,7 +58,11 @@ afterAll(async () => {
 
 const asOwner = <T>(fn: () => Promise<T>) => runAs(h.owner, fn);
 const titles = async (target: 'live' | 'draft') =>
-  (await (await hostFor(target)).list('Chore'))
+  (
+    await (
+      await hostFor(target)
+    ).list(hostOwner(await hostFor(target)), 'Chore')
+  )
     .map((r) => String(r.title))
     .sort();
 const decide = async (approvalId: string, approve: boolean) => {
@@ -195,8 +202,16 @@ describe('starting a draft', () => {
   });
 
   it('records are separate: a live write is not in the draft and the reverse', async () => {
-    await (await hostFor('live')).create('Chore', { title: 'live-2' });
-    await (await hostFor('draft')).create('Chore', { title: 'draft-1' });
+    await (await hostFor('live')).create(
+      hostOwner(await hostFor('live')),
+      'Chore',
+      { title: 'live-2' },
+    );
+    await (await hostFor('draft')).create(
+      hostOwner(await hostFor('draft')),
+      'Chore',
+      { title: 'draft-1' },
+    );
     expect(await titles('live')).toEqual(['live-1', 'live-2']);
     expect(await titles('draft')).toEqual(['draft-1', 'live-1']);
     // the events say which copy changed

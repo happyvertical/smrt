@@ -1,6 +1,7 @@
 // Changes waiting (#5178, slice #5203): structural commands become cards and
 // reach live only through the owner's Apply; remove / put back / quick edit /
 // discard / undo; adoption of an open draft. In-process SQLite, real workers.
+
 import {
   afterAll,
   afterEach,
@@ -12,6 +13,7 @@ import {
 } from 'vitest';
 import type { Command } from '../../engine/index.ts';
 import { STRUCTURAL_COMMANDS } from '../../engine/index.ts';
+import { hostOwner } from '../../test/engine-principal.ts';
 import { App } from '../objects/App.ts';
 import { ApprovalCollection } from '../objects/Approval.ts';
 import { applyOwnBatch } from './approvals.ts';
@@ -63,7 +65,9 @@ beforeAll(async () => {
     name: 'Chore',
     fields: { title: { type: 'text' } },
   });
-  await (await getHost()).create('Chore', { title: 'live-1' });
+  await (await getHost()).create(hostOwner(await getHost()), 'Chore', {
+    title: 'live-1',
+  });
   await liveDo({
     type: 'defineModel',
     name: 'Pet',
@@ -138,9 +142,13 @@ describe('interception', () => {
     });
     expect(s.canApply).toBe(true);
     // records keep working on live
-    await live.create('Chore', { title: 'live-2' });
-    expect(await live.countRows('Chore')).toBe(2);
-    await live.remove('Chore', (await live.list('Chore'))[1].id as string);
+    await live.create(hostOwner(live), 'Chore', { title: 'live-2' });
+    expect(await live.countRows(hostOwner(live), 'Chore')).toBe(2);
+    await live.remove(
+      hostOwner(live),
+      'Chore',
+      (await live.list(hostOwner(live), 'Chore'))[1].id as string,
+    );
   });
 
   it('a second card builds on the first (planned and run on the working copy)', async () => {
@@ -316,7 +324,10 @@ describe('apply and undo', () => {
     const s = await state();
     await asOwner(() => applyOwnBatch(s.digest));
     const live = await getHost();
-    await live.create('Chore', { title: 'after-apply', nickname: 'nick' });
+    await live.create(hostOwner(live), 'Chore', {
+      title: 'after-apply',
+      nickname: 'nick',
+    });
     const applied = (await state()).lastApplied;
     expect(applied).toBeTruthy();
     await expect(
@@ -325,7 +336,9 @@ describe('apply and undo', () => {
     await asOwner(() => undoOwnBatch(applied?.batchId, applied?.undoDigest));
     expect(live.def.models.Chore.fields.nickname).toBeUndefined();
     expect(
-      (await live.list('Chore')).some((r) => r.title === 'after-apply'),
+      (await live.list(hostOwner(live), 'Chore')).some(
+        (r) => r.title === 'after-apply',
+      ),
     ).toBe(true);
     await expect(
       asOwner(() => undoOwnBatch(applied?.batchId, applied?.undoDigest)),
@@ -665,7 +678,7 @@ describe('a stale digest leaves a way forward', () => {
       ),
     );
     const reviewed = await state();
-    await live.create('Pet', { name: 'stuck-1', age: 5 });
+    await live.create(hostOwner(live), 'Pet', { name: 'stuck-1', age: 5 });
     await expect(
       asOwner(() => applyOwnBatch(reviewed.digest)),
     ).rejects.toMatchObject({ details: { reason: 'changed' } });
@@ -695,7 +708,10 @@ describe('archive counts are pinned by the digest', () => {
     );
     const reviewed = await state();
     expect(reviewed.overwrites?.archivedValues).toBe(0);
-    await live.create('Gizmo', { name: 'g1', scratch: 'keep me' });
+    await live.create(hostOwner(live), 'Gizmo', {
+      name: 'g1',
+      scratch: 'keep me',
+    });
     await expect(
       asOwner(() => applyOwnBatch(reviewed.digest)),
     ).rejects.toMatchObject({ details: { reason: 'changed' } });
@@ -720,7 +736,7 @@ describe('overwrites are shown and pinned, never blocking', () => {
 
   it('a load that overwrites rows shows the count and still applies', async () => {
     const live = await getHost();
-    await live.create('Pet', { name: 'ow-a', age: 1 });
+    await live.create(hostOwner(live), 'Pet', { name: 'ow-a', age: 1 });
     await asOwner(() =>
       addLoad([
         { name: 'ow-a', age: 2 },
@@ -732,14 +748,19 @@ describe('overwrites are shown and pinned, never blocking', () => {
     expect(s.checkState).toBe('ok');
     expect(s.canApply).toBe(true);
     await asOwner(() => applyOwnBatch(s.digest));
-    expect((await live.list('Pet')).map((r) => r.name)).toContain('ow-new');
+    expect(
+      (await live.list(hostOwner(live), 'Pet')).map((r) => r.name),
+    ).toContain('ow-new');
   });
 
   it('records added to live meanwhile that overwrite nothing do not change the digest', async () => {
     const live = await getHost();
     await asOwner(() => addLoad([{ name: 'pin-1', age: 1 }]));
     const reviewed = await state();
-    await live.create('Pet', { name: 'unrelated-while-waiting', age: 9 });
+    await live.create(hostOwner(live), 'Pet', {
+      name: 'unrelated-while-waiting',
+      age: 9,
+    });
     const out = await asOwner(() => applyOwnBatch(reviewed.digest));
     expect(out.status).toBe('approved');
   });
@@ -749,7 +770,7 @@ describe('overwrites are shown and pinned, never blocking', () => {
     await asOwner(() => addLoad([{ name: 'pin-2', age: 1 }]));
     const reviewed = await state();
     expect(reviewed.overwrites?.recordsUpdated).toBe(0);
-    await live.create('Pet', { name: 'pin-2', age: 5 });
+    await live.create(hostOwner(live), 'Pet', { name: 'pin-2', age: 5 });
     await expect(
       asOwner(() => applyOwnBatch(reviewed.digest)),
     ).rejects.toMatchObject({

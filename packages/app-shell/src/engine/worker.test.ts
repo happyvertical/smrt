@@ -2,6 +2,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { hostOwner } from '../test/engine-principal.ts';
 import {
   AppHost,
   EngineError,
@@ -19,7 +20,7 @@ beforeAll(async () => {
     { type: 'defineModel', name: 'Chore', fields: { title: { type: 'text' } } },
     { author: 't' },
   );
-  await host.create('Chore', { title: 'kept' });
+  await host.create(hostOwner(host), 'Chore', { title: 'kept' });
 });
 afterAll(async () => {
   await host.close();
@@ -33,10 +34,10 @@ describe('worker robustness', () => {
     await new Promise((r) => setTimeout(r, 50));
     expect(host.appAlive).toBe(false);
     for (const call of [
-      () => host.list('Chore'),
-      () => host.create('Chore', { title: 'x' }),
-      () => host.appTools(),
-      () => host.rest({ method: 'GET', url: '/api/chores' }),
+      () => host.list(hostOwner(host), 'Chore'),
+      () => host.create(hostOwner(host), 'Chore', { title: 'x' }),
+      () => host.appTools(hostOwner(host)),
+      () => host.rest(hostOwner(host), { method: 'GET', url: '/api/chores' }),
       () => host.plan({ type: 'removeField', model: 'Chore', field: 'title' }),
     ]) {
       const err = await call().then(
@@ -52,10 +53,10 @@ describe('worker robustness', () => {
 
     await host.restartApp();
     expect(host.appAlive).toBe(true);
-    const rows = await host.list('Chore');
+    const rows = await host.list(hostOwner(host), 'Chore');
     expect(rows.map((r) => r.title)).toEqual(['kept']);
-    await host.create('Chore', { title: 'after' });
-    expect(await host.list('Chore')).toHaveLength(2);
+    await host.create(hostOwner(host), 'Chore', { title: 'after' });
+    expect(await host.list(hostOwner(host), 'Chore')).toHaveLength(2);
   });
 
   it('changes still work after a restart and the change queue is not stuck', async () => {
@@ -68,7 +69,9 @@ describe('worker robustness', () => {
       },
       { author: 't' },
     );
-    expect(Object.keys((await host.list('Chore'))[0])).toContain('room');
+    expect(
+      Object.keys((await host.list(hostOwner(host), 'Chore'))[0]),
+    ).toContain('room');
   });
 
   it('a worker that cannot start leaves the previous app running', async () => {
@@ -97,7 +100,7 @@ describe('worker robustness', () => {
     ).rejects.toThrow(/already holds/);
     expect(host.version).toBe(before + 0);
     expect(host.appAlive).toBe(true);
-    expect(await host.list('Chore')).toHaveLength(2);
+    expect(await host.list(hostOwner(host), 'Chore')).toHaveLength(2);
   });
 
   it('a closed host refuses further work', async () => {
@@ -108,7 +111,9 @@ describe('worker robustness', () => {
       },
     );
     await other.close();
-    await expect(other.list('Chore')).rejects.toBeInstanceOf(EngineError);
+    await expect(other.list(hostOwner(other), 'Chore')).rejects.toBeInstanceOf(
+      EngineError,
+    );
     await expect(
       other.execute({ type: 'undo' }, { author: 't' }),
     ).rejects.toBeInstanceOf(EngineError);
@@ -118,7 +123,7 @@ describe('worker robustness', () => {
     const seen: string[] = [];
     host.on('changed', (e) => seen.push(`c:${e.summary}`));
     host.on('records', (e) => seen.push(`r:${e.model}`));
-    await host.create('Chore', { title: 'ev' });
+    await host.create(hostOwner(host), 'Chore', { title: 'ev' });
     await host.restartApp();
     expect(seen).toEqual(['r:Chore', 'c:app restarted']);
   });

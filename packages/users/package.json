@@ -39,6 +39,10 @@
       "types": "./dist/permission-registry.d.ts",
       "import": "./dist/permission-registry.js"
     },
+    "./postgres-settings": {
+      "types": "./dist/postgres-settings.d.ts",
+      "import": "./dist/postgres-settings.js"
+    },
     "./step-up": {
       "types": "./dist/step-up.d.ts",
       "import": "./dist/step-up.js"
