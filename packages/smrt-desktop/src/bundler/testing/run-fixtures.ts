@@ -296,13 +296,14 @@ export function createFixture(options: FixtureOptions = {}): Fixture {
   };
 
   const acquire = (acquireOptions: AcquireNodeBinaryOptions) => {
-    const layout = nodeDistLayout(NODE_VERSION, acquireOptions.target);
+    const version = acquireOptions.version;
+    const layout = nodeDistLayout(version, acquireOptions.target);
     const platform = acquireOptions.target.nodePlatform;
     const arch = acquireOptions.target.nodeArch;
     const archive =
       layout.kind === 'exe'
         ? pe({ machine: arch === 'arm64' ? 'arm64' : 'x64' })
-        : nodeTarGz(NODE_VERSION, platform, arch, {
+        : nodeTarGz(version, platform, arch, {
             binary: machoThin({
               cpu: arch === 'arm64' ? 'arm64' : 'x86_64',
               filetype: 2,
@@ -313,7 +314,7 @@ export function createFixture(options: FixtureOptions = {}): Fixture {
     return acquireNodeBinary({
       ...acquireOptions,
       archivePath,
-      pins: { [NODE_VERSION]: { [layout.distFile]: sha256(archive) } },
+      pins: { [version]: { [layout.distFile]: sha256(archive) } },
     });
   };
 
