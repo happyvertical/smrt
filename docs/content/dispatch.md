@@ -127,9 +127,17 @@ await bus.subscribe({ signalType: 'agent.*.completed', subscriber: 'Logger' });
 ```
 
 **Wildcard Rules:**
-- `*` matches exactly one segment (anything except `.`)
+- Each `*` matches one or more characters other than `.`, so a wildcard never
+  spans a segment boundary
 - `campaign.*` matches `campaign.started` but NOT `campaign.summer.started`
+- A wildcard may sit inside a segment: `invoice.v*` matches `invoice.v2` but
+  NOT `invoice.v`
 - Multiple wildcards allowed: `*.*.completed`
+- Matching is case-sensitive on every database
+
+`process()` handles the oldest routed rows first, and the `limit` and
+`signalTypes` options apply to routed rows only, so newer or unrelated
+dispatches never hide an older one.
 
 ## Dispatch Lifecycle
 
@@ -371,9 +379,11 @@ Retry failed dispatches.
 
 ```typescript
 const count = await bus.retry({
-  maxAttempts: 3,            // Only retry if under this limit
-  signalTypes: ['campaign.*'] // Optional: filter by type
+  maxAttempts: 3,                      // Only retry if under this limit
+  signalTypes: ['campaign.completed'] // Optional: exact types (no wildcards)
 });
+// Returns the number of rows this call moved back to pending. Rows another
+// worker claimed or completed in the meantime are left alone.
 ```
 
 ### bus.cleanup(options)
