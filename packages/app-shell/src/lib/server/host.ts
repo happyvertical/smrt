@@ -718,25 +718,29 @@ export async function discardStaleDraft(dir: string): Promise<void> {
 }
 
 /** True when an approval is still waiting to be decided or applied. */
-export async function hasUnsettledApprovals(
-  db: DatabaseInterface,
-  pageSize = 500,
-): Promise<boolean> {
+async function hasUnsettledApprovals(db: DatabaseInterface): Promise<boolean> {
   const approvals = await ApprovalCollection.create({ db });
   // `approved` without a result is a crashed execution (the store reads it as
   // executing); with a result it is settled.
   for (const status of ['pending', 'accepted', 'executing'])
     if ((await approvals.list({ where: { status }, limit: 1 })).length)
       return true;
-  // Every `approved` row, in pages: a crashed one must not hide behind settled ones.
-  for (let offset = 0; ; offset += pageSize) {
-    const page = await approvals.list({
-      where: { status: 'approved' },
-      limit: pageSize,
-      offset,
-    });
-    if (page.some((row) => !row.result)) return true;
-    if (page.length < pageSize) return false;
+  // Every `approved` row by keyset (stable `id` order, `id > last`): a crashed
+  // one cannot be skipped or repeated by paging, however the rows were inserted.
+  const page = 200;
+  let last: string | null = null;
+  for (;;) {
+    const rows: Awaited<ReturnType<typeof approvals.list>> =
+      await approvals.list({
+        where: last
+          ? { status: 'approved', 'id >': last }
+          : { status: 'approved' },
+        orderBy: 'id ASC',
+        limit: page,
+      });
+    if (rows.some((row) => !row.result)) return true;
+    if (rows.length < page) return false;
+    last = rows[rows.length - 1].id as string;
   }
 }
 

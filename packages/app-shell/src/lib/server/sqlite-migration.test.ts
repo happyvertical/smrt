@@ -5,7 +5,7 @@
 import { existsSync, mkdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { importPGlite } from '@happyvertical/sql/pglite';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { DatabaseConfig, PGliteClient } from '../../engine/db/index.ts';
 import { App } from '../objects/App.ts';
 import { ApprovalCollection } from '../objects/Approval.ts';
@@ -27,7 +27,6 @@ import {
   closeHost,
   configureShell,
   getHost,
-  hasUnsettledApprovals,
   migrateOwnAppToPostgres,
   tenantAppDirs,
 } from './host.ts';
@@ -218,13 +217,14 @@ describe('what refuses the move', () => {
     );
   });
 
-  it('a crashed approval is found behind many settled ones (paged, not capped)', async () => {
+  it('a crashed approval is found behind more than a page of settled ones, whatever the insertion order', async () => {
     const { who } = await seed('paged@example.test');
-    const make = (key: string, result: string) =>
+    const make = (id: string, result: string) =>
       runAs(who, async () =>
         (await ApprovalCollection.create({ db: h.db })).create({
+          id,
           command: '{}',
-          actionKey: key,
+          actionKey: id,
           summary: 's',
           preview: '{}',
           status: 'approved',
@@ -232,9 +232,35 @@ describe('what refuses the move', () => {
           requestedBy: who.id,
         } as never),
       );
-    for (let i = 0; i < 5; i++) await make(`ok${i}`, '{"ok":true}');
-    await make('crashed', '');
-    expect(await runAs(who, () => hasUnsettledApprovals(h.db, 2))).toBe(true);
+    // The crashed row has the SMALLEST id but is inserted LAST, behind 250 settled rows.
+    for (let i = 1; i <= 250; i++)
+      await make(`ok-${String(i).padStart(4, '0')}`, '{"ok":true}');
+    await make('aaaa-crashed', '');
+    await useShell(true);
+    const calls: Array<{ where?: unknown; orderBy?: unknown }> = [];
+    const original = ApprovalCollection.prototype.list;
+    const spy = vi
+      .spyOn(ApprovalCollection.prototype, 'list')
+      .mockImplementation(function (this: unknown, options: never) {
+        calls.push(options ?? {});
+        return original.call(this as never, options);
+      } as never);
+    try {
+      await expect(runAs(who, () => migrateOwnAppToPostgres())).rejects.toThrow(
+        /approval is unsettled/,
+      );
+    } finally {
+      spy.mockRestore();
+    }
+    // Paging reads are ordered by id (keyset), never bare limit/offset.
+    const approvedReads = calls.filter(
+      (c) => (c.where as { status?: string })?.status === 'approved',
+    );
+    expect(approvedReads.length).toBeGreaterThan(0);
+    for (const c of approvedReads) {
+      expect(c.orderBy).toBe('id ASC');
+      expect(c).not.toHaveProperty('offset');
+    }
   });
 
   it('an unsettled approval, named as an approval', async () => {
