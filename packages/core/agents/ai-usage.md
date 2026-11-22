@@ -325,20 +325,50 @@ earlier run, possibly pruned) and `handoff` (`running` until its child ends).
 A `check` or `approval` request points at the judged `call` or `handoff`
 event. A decision counts once, in the run that recorded it; a request counts
 only as requested; approval rate = approved / (approved + refused).
-Payloads are redacted through the transcripts' one path
-(`redactAiTranscriptPart`: an event-specific `options.redact`, then the host
-redactor with the run row's tenant, read behind the claim fence, then the
-built-in redactor) and
-capped (head and tail kept, `truncated`); `payload_ref` points at content the
-host owns, and the framework stores nothing behind it. Read-time rule:
-`getRunTrajectory` runs only the built-in redactor again on stored payloads
-(credential-named fields, token shapes; the host redactor runs on the write
-path only and is never called by a read), so a payload stored by an earlier
-version is masked by today's built-in rules; a truncated payload's `head` and
-`tail` (JSON text fragments) are masked at string level
-(`maskSecretFieldsInJsonText`: credential-named field values, then token
-shapes), never returned as stored. A host's field-based policy installed
-after a payload was written does not apply to it.
+Payloads are redacted on the transcripts' path (`input.payload` is read
+once; an event-specific `options.redact`, then the host redactor with the run
+row's tenant, read behind the claim fence; then the value is turned into
+inert JSON data once, every property read once and `toJSON` run there and
+nowhere later, and the built-in redactor runs on that value) and capped at
+`maxPayloadBytes` (omitted means 16 KiB; anything but a safe integer >= 256,
+`null` included, is a `RangeError` before anything is read or written): a
+larger payload is stored as `{ truncated, originalBytes, redaction, head,
+tail }`, the head and tail of exactly the redacted JSON text, cut between
+whole characters, with the row's `truncated` flag set. `redaction` is
+`builtInRedactionStamp()` (`ai-transcripts.ts`):
+`CORE_REDACTION_RULES_VERSION * 1000` plus smrt-config's
+`SECRET_VALUE_RULES_VERSION`; only `appendAiRunEvent` writes it, through a
+private insert. The public `capAiRunEventPayload` redacts nothing and never
+stamps, and the public `insertAiRunEventTx` drops a `redaction` field from a
+`truncated` payload. Raise the matching version with any change to what the
+built-in rules mask: `src/redaction-rules-ledger.json` (core) and config's
+`src/secret-value-rules-ledger.json` pin the source between the rules markers
+and the corpus output to each version (their ledger tests compile the marked
+region on its own; core's corpus runs with config's value rules replaced by
+the identity, so a config-only change bumps config's version, and with it the
+stamp, without a core edit). `pnpm check:redaction-ledgers` (CI: CI Control
+Plane Regression) fails when a row the base already has is edited or
+removed, or a version does not increase. `payload_ref` points at content the
+host owns, and the framework stores nothing behind it. Read-time rule,
+applied in `toAiRunEvent` (so `getRunTrajectory` and a host converting rows
+itself agree): the row's payload is turned into inert data once (text
+parsed, an object value read once). The `truncated` flag has three states:
+`1`, `1n`, `'1'` or `true` is a cut row (verified as below); `0`, `0n`, `'0'`
+or `false` is whole; anything else (a missing column, `2`, an unrecognised
+value) never verifies: an envelope-shaped payload (`truncated: true` with a
+`head` or `tail`) is withheld, any other payload is read as whole.
+`insertAiRunEventTx` reads each declared field once (prototype getters
+included) and strips and stores those values. A row not flagged is redacted again by the built-in redactor only, as a
+structured value whatever its fields (the host redactor runs on the write
+path only); a flagged row returns `{ truncated, originalBytes, head, tail }`
+as written only when it has exactly the writer's five fields and a stamp
+strictly equal to the current one (`redaction` dropped). Every other flagged
+row (no payload; no stamp, as every row stored before the stamp existed; an
+older, newer or malformed stamp; other fields) returns `head: ''`, `tail:
+''`, `withheld: ['head', 'tail']` and `originalBytes` only when it is a valid
+byte count (else `null`): a cut can fall before the delimiter a rule needs,
+so stored fragments are never masked and shown. A host's field-based policy
+installed after a payload was written does not apply to it.
 
 **The `ai-runs` task** (retention sweep, `sweepAiRuns`): reconciles `call`
 reservations older than the smallest `callTimeoutMs` on their chain plus a
