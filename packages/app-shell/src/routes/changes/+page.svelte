@@ -4,7 +4,7 @@ import { tick } from 'svelte';
 import { goto, invalidate, invalidateAll } from '$app/navigation';
 import ChangeCard from '$lib/components/ChangeCard.svelte';
 import ChangeCardExtras from '$lib/components/ChangeCardExtras.svelte';
-import { ApiError } from '$lib/ui/api';
+import { ApiError, isLimitRefusal } from '$lib/ui/api';
 import {
   activeCards,
   applyBlock,
@@ -170,9 +170,10 @@ async function apply() {
     await changesApi.apply(changes.digest, gen());
   } catch (e) {
     if (e instanceof ApiError && e.status === 409) {
-      error = e.message.startsWith("Can't apply yet")
-        ? e.message
-        : 'These changes were different when you last looked. Review them again, then Apply.';
+      error =
+        isLimitRefusal(e) || e.message.startsWith("Can't apply yet")
+          ? e.message
+          : 'These changes were different when you last looked. Review them again, then Apply.';
       await refresh();
     } else fail(e);
     busy = false;

@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   stopImports: vi.fn(),
   drain: vi.fn(),
   gate: vi.fn(),
+  provisioning: vi.fn(),
   env: { dev: false, building: false },
 }));
 vi.mock('$app/environment', () => mocks.env);
@@ -21,6 +22,9 @@ vi.mock('$lib/server/host', () => ({
 }));
 vi.mock('$lib/server/hosted-inference', () => ({
   installHostedInferenceGate: mocks.gate,
+}));
+vi.mock('$lib/server/hosted-provisioning', () => ({
+  installHostedProvisioning: mocks.provisioning,
 }));
 vi.mock('$lib/server/owner-handoff', () => ({
   ensureOwnerHandoff: mocks.handoff,
@@ -106,4 +110,16 @@ it('registers the hosted inference gate at startup and does not start without it
   mocks.gate.mockRejectedValueOnce(new Error('no kill switch table'));
   await expect(init()).rejects.toThrow('no kill switch table');
   expect(mocks.handoff).not.toHaveBeenCalled();
+});
+it('registers hosted provisioning after the gate, and only once the gate is in', async () => {
+  mocks.profile.mockResolvedValue('cloud');
+  await expect(init()).resolves.toBeUndefined();
+  expect(mocks.provisioning).toHaveBeenCalledOnce();
+  expect(mocks.gate.mock.invocationCallOrder[0]).toBeLessThan(
+    mocks.provisioning.mock.invocationCallOrder[0],
+  );
+  mocks.provisioning.mockClear();
+  mocks.gate.mockRejectedValueOnce(new Error('no kill switch table'));
+  await expect(init()).rejects.toThrow('no kill switch table');
+  expect(mocks.provisioning).not.toHaveBeenCalled();
 });

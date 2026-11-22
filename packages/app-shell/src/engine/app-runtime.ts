@@ -176,7 +176,9 @@ export class AppRuntime {
     for (const report of Object.values(this.def.reports ?? {}))
       await compileReport(this.def, report.spec);
     if (readOnly) return { statements: [], snapshot: null };
-    if (this.caps)
+    // Undo (a downward migration) restores what the app already held, so it
+    // is exempt (engine.md, per-app caps); only forward changes are held.
+    if (this.caps && migration?.direction !== 'down')
       this.caps.checkModels(
         Object.keys(this.def.models).length,
         await this.storedModelCount(),
