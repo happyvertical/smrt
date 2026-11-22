@@ -4,11 +4,15 @@
  * Tests for schema comparison and diff generation.
  */
 
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import type { DatabaseInterface } from '@happyvertical/sql';
-import { getDatabase } from '@happyvertical/sql';
+import { clearConnectionCache, getDatabase } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SchemaGenerator } from '../../schema/generator.js';
 import type { SchemaDefinition, SchemaDiff } from '../../schema/types.js';
+import { decideSchemaChange } from '../change-kinds.js';
 import {
   getSQLFromDiff,
   hasActionableChanges,
@@ -3069,5 +3073,78 @@ describe('SchemaComparer json -> jsonb preservation walk timeout (#3041)', () =>
     expect(upgrades[0].advisory?.message).toContain('statement timeout');
     expect(upgrades[0].advisory?.suggestedSql).toBeUndefined();
     expect(getSQLFromDiff(diff)).toEqual([]);
+  });
+});
+
+// The JSON adapter keeps a table's DDL in `<table>.schema.sql`, written only
+// by its own writes and `exportTable()`; DDL run through `query()` lives in
+// memory until then. Since `@happyvertical/sql` 0.116.8 the adapter can
+// describe its tables, so the differ sees drift on existing JSON tables. It
+// reports that drift and executes none of it.
+describe('existing tables on the JSON adapter', () => {
+  let dir: string;
+  let json: DatabaseInterface;
+
+  beforeEach(async () => {
+    dir = mkdtempSync(path.join(tmpdir(), 'smrt-adapter-advisory-'));
+    await clearConnectionCache();
+    json = await getDatabase({
+      type: 'json',
+      url: dir,
+      writeStrategy: 'immediate',
+    } as never);
+    await json.query(
+      'CREATE TABLE advisory_items (id TEXT PRIMARY KEY, name TEXT)',
+    );
+    await json.insert('advisory_items', { id: 'a', name: 'first' });
+  });
+
+  afterEach(async () => {
+    await json?.close?.();
+    await clearConnectionCache();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  const schema = (): Record<string, SchemaDefinition> => ({
+    advisory_items: {
+      tableName: 'advisory_items',
+      columns: {
+        id: { type: 'TEXT', primaryKey: true },
+        name: { type: 'TEXT' },
+        label: { type: 'TEXT' },
+      },
+      indexes: [{ name: 'advisory_items_name', columns: ['name'] }],
+      triggers: [],
+      foreignKeys: [],
+      dependencies: [],
+      version: '1',
+    },
+  });
+
+  it('reports existing JSON tables as advisory, executes nothing, and parity shows the drift', async () => {
+    expect(typeof json.getTableSchema).toBe('function');
+    const diff = await new SchemaComparer(json, { engineHint: 'json' }).compare(
+      schema(),
+    );
+    const changes = diff.changes.filter(
+      (change) => change.table === 'advisory_items',
+    );
+    expect(changes.map((change) => [change.type, change.name])).toEqual(
+      expect.arrayContaining([
+        ['add_column', 'label'],
+        ['add_index', 'advisory_items_name'],
+      ]),
+    );
+    for (const change of changes) {
+      expect(change.kindHint).toBe('json.ddl-not-durable');
+      expect(change.sqlStatements).toBeUndefined();
+      expect(change.advisory?.message).toContain('convert');
+      expect(decideSchemaChange(change, 'json').decision).toBe('report');
+    }
+    expect(diff.has_changes).toBe(true);
+    expect(getSQLFromDiff(diff)).toEqual([]);
+    // Nothing ran: the live table is unchanged.
+    const live = await json.getTableSchema?.('advisory_items');
+    expect(Object.keys(live?.columns ?? {}).sort()).toEqual(['id', 'name']);
   });
 });

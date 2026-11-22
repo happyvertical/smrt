@@ -15,6 +15,11 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { SmrtCollection } from '../collection';
 import { field } from '../decorators/index.js';
 import { withEmbeddedWriteTransaction } from '../embedded-write-queue';
+import {
+  isJsonAdapterHandle,
+  isKnownNativeDuckDbHandle,
+  noteNativeDuckDbHandle,
+} from '../native-duckdb';
 import { SmrtObject } from '../object';
 import { ObjectRegistry, smrt } from '../registry';
 import { getTestDatabase } from '../testing/database';
@@ -139,5 +144,18 @@ describe('the JSON adapter is never identified as native in a transaction (#3737
     expect(
       rows.find((row: { id: string }) => row.id === created.id)?.enabled,
     ).toBe(false);
+  });
+
+  // `@happyvertical/sql` 0.116.8 gives the JSON root `getTableSchema`, the
+  // native adapter's structural marker. The JSON-only capabilities are checked
+  // first, so the root and its transaction handles stay non-native.
+  it('does not treat a JSON root with getTableSchema as native DuckDB', async () => {
+    expect(typeof db.getTableSchema).toBe('function');
+    expect(isJsonAdapterHandle(db)).toBe(true);
+    noteNativeDuckDbHandle(db);
+    expect(isKnownNativeDuckDbHandle(db)).toBe(false);
+    await db.transaction?.(async (tx) => {
+      expect(isKnownNativeDuckDbHandle(tx)).toBe(false);
+    });
   });
 });

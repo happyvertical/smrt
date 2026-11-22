@@ -22,6 +22,11 @@ export interface SchemaChangeKind {
    * to a table the build owns (#4927, P22).
    */
   additive?: true;
+  /**
+   * A producer hint that any change type may carry, such as the JSON
+   * adapter's report-only drift; `type` names the most common one.
+   */
+  anyChangeType?: true;
 }
 const engines = (policy: SchemaChangePolicy) => ({
   postgres: policy,
@@ -578,6 +583,15 @@ export const SCHEMA_CHANGE_KINDS = {
       ),
     },
   },
+  'json.ddl-not-durable': {
+    // Carried by any change type the differ plans for an existing table on
+    // the JSON adapter (`type` is the most common one).
+    type: 'add_column',
+    anyChangeType: true,
+    engines: report(
+      'The JSON adapter keeps DDL run through query() in memory only until its next write to the table, so the change is reported and not executed.',
+    ),
+  },
 } as const satisfies Record<string, SchemaChangeKind>;
 
 export type SchemaChangeKindId = keyof typeof SCHEMA_CHANGE_KINDS;
@@ -644,8 +658,12 @@ export function classifySchemaChange(
   change: SchemaChangeInput,
 ): SchemaChangeKindId | 'unlisted' {
   if (change.kindHint) {
-    const hinted = SCHEMA_CHANGE_KINDS[change.kindHint];
-    return hinted?.type === change.type ? change.kindHint : 'unlisted';
+    const hinted = SCHEMA_CHANGE_KINDS[change.kindHint] as
+      | SchemaChangeKind
+      | undefined;
+    return hinted?.type === change.type || hinted?.anyChangeType
+      ? change.kindHint
+      : 'unlisted';
   }
   const executable = hasExecutableSchemaSql(change);
   const statements = change.sqlStatements ?? (change.sql ? [change.sql] : []);

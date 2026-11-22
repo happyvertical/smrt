@@ -4,10 +4,14 @@
  * The JSON adapter wraps the same `DuckDBConnection` class and the same SQL
  * dialect, but persists a table to `<table>.json` only from its own
  * insert/update/upsert/delete, so a raw write there is lost on the next
- * process. Only a root native handle can be told apart structurally: it
- * exposes `getTableSchema`, which the JSON adapter does not. A transaction
- * handle exposes neither marker (it carries the root's `client` and nothing
- * more), so it is recognized through its client once the root was noted.
+ * process. Only a root handle can be told apart structurally. A JSON root
+ * carries JSON-only capabilities (`inferSchemaFromJSON`,
+ * `getTableLoadErrors`), checked first: since `@happyvertical/sql` 0.116.8 it
+ * also exposes `getTableSchema`, so that alone does not mean native. A native
+ * root exposes `getTableSchema` and none of the JSON-only capabilities. A
+ * transaction handle exposes no marker (it carries the root's `client` and
+ * nothing more), so it is recognized through its client once the root was
+ * noted.
  *
  * Roots are noted wherever core sees one before binding to a transaction:
  * `SmrtClass.initialize()`, `withDatabase()` (the handle being swapped out)

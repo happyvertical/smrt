@@ -325,7 +325,10 @@ describe('R11 differ tolerance: UUID <-> TEXT are equivalent for structural ids'
     const addRelatedId = diff.changes.find(
       (change) => change.type === 'add_column' && change.name === 'related_id',
     );
-    expect(addRelatedId?.sql).toContain(
+    // An existing JSON-adapter table is reported, not altered: the planned
+    // statement is the advisory's suggested SQL.
+    expect(addRelatedId?.kindHint).toBe('json.ddl-not-durable');
+    expect(addRelatedId?.advisory?.suggestedSql?.join('\n')).toContain(
       'ALTER TABLE "things" ADD COLUMN "related_id" TEXT',
     );
   });

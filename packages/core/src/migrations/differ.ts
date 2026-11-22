@@ -100,6 +100,7 @@ import {
   type DuckDbRebuildPlan,
   planDuckDbTableChanges,
 } from './duckdb-rebuild.js';
+import { reportJsonTableChange } from './json-adapter-ddl.js';
 import { resolveRetirementContext } from './retire-context.js';
 import {
   planTableRetirements,
@@ -914,11 +915,14 @@ export class SchemaComparer {
           diff.has_changes = true;
         } else {
           // Table exists - compare columns and indexes
-          const tableChanges = await this.compareTable(
+          let tableChanges = await this.compareTable(
             tableName,
             schema,
             manifestSchemas,
           );
+          // The JSON adapter does not persist DDL run through query().
+          if (this.engine === 'json')
+            tableChanges = tableChanges.map(reportJsonTableChange);
           if (tableChanges.length > 0) {
             diff.changes.push(...tableChanges);
             // Info-level report-only notes (a harmless orphan column, a stale

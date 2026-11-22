@@ -9,8 +9,11 @@
  * repaired schema and assert it reports clean.
  */
 
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import type { DatabaseInterface } from '@happyvertical/sql';
-import { getDatabase } from '@happyvertical/sql';
+import { clearConnectionCache, getDatabase } from '@happyvertical/sql';
 import { afterEach, describe, expect, it } from 'vitest';
 import { getSystemTableDDL } from '../system/schema.js';
 import {
@@ -1328,5 +1331,59 @@ describe('checkLiveSchemaParity uuid/text info finding is engine-gated (#2772)',
     });
 
     expect(find(report.findings, 'column_type_drift', 'id')).toBeUndefined();
+  });
+});
+
+// `@happyvertical/sql` 0.116.8 lets the JSON adapter describe its tables, so
+// live parity reads them instead of stopping with LiveSchemaParityError.
+describe('checkLiveSchemaParity on the JSON adapter', () => {
+  let dir: string;
+  let json: DatabaseInterface | undefined;
+
+  afterEach(async () => {
+    await json?.close?.();
+    json = undefined;
+    await clearConnectionCache();
+    if (dir) rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('reports existing JSON tables as advisory, executes nothing, and parity shows the drift', async () => {
+    dir = mkdtempSync(path.join(tmpdir(), 'smrt-adapter-parity-'));
+    await clearConnectionCache();
+    json = await getDatabase({
+      type: 'json',
+      url: dir,
+      writeStrategy: 'immediate',
+    } as never);
+    await json.query(
+      'CREATE TABLE parity_items (id TEXT PRIMARY KEY, name TEXT)',
+    );
+    await json.insert('parity_items', { id: 'a', name: 'first' });
+
+    const report = await checkLiveSchemaParity({
+      db: json,
+      schemas: {
+        parity_items: {
+          tableName: 'parity_items',
+          columns: {
+            id: { type: 'TEXT', primaryKey: true },
+            name: { type: 'TEXT' },
+            label: { type: 'TEXT' },
+          },
+          indexes: [],
+          triggers: [],
+          foreignKeys: [],
+          dependencies: [],
+          version: '1',
+        },
+      },
+      includeSystemTables: false,
+      engineHint: 'json',
+    });
+
+    expect(report.engine).toBe('json');
+    const missing = find(report.findings, 'missing_column', 'label');
+    expect(missing?.severity).toBe('error');
+    expect(report.ok).toBe(false);
   });
 });

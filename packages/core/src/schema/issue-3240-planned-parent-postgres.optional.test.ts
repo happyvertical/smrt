@@ -324,11 +324,12 @@ describe.each([
       const fk = diff.changes.find(
         (change) => change.type === 'add_foreign_key',
       );
-      // The JSON adapter does not expose getTableSchema, so it cannot
-      // inspect an existing constraint. SQLite and DuckDB add the key by
-      // rebuilding the table, after the planned parent exists.
+      // The JSON adapter reports every change to an existing table and runs
+      // none (it does not persist DDL run through query()). SQLite and DuckDB
+      // add the key by rebuilding the table, after the planned parent exists.
       if (engine === 'json') {
-        expect(fk).toBeUndefined();
+        expect(fk?.kindHint).toBe('json.ddl-not-durable');
+        expect(fk?.sqlStatements).toBeUndefined();
       } else {
         expect(fk?.engineUnsupported).toBeUndefined();
         expect(
