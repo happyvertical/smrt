@@ -29,7 +29,10 @@
  */
 
 import { createLogger } from '@happyvertical/logger';
-import { redactSecretValues } from '@happyvertical/smrt-config';
+import {
+  redactSecretValues,
+  SECRET_VALUE_RULES_VERSION,
+} from '@happyvertical/smrt-config';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { resolveAiUsageTenantId } from './adapters/ai-usage-recorder.js';
 import {
@@ -48,11 +51,6 @@ export const AI_CALL_ID_TAG = 'callId';
 export const DEFAULT_TRANSCRIPT_SAMPLE = 0.1;
 /** Default per-row byte cap. */
 export const DEFAULT_TRANSCRIPT_MAX_BYTES = 65_536;
-/**
- * Values shorter than this are masked only as a whole token (not inside a
- * longer word), so a short secret is still masked without garbling text.
- */
-export const MIN_SENSITIVE_VALUE_LENGTH = 4;
 
 // ============================================================================
 // Config
@@ -240,25 +238,39 @@ export function getTranscriptRedactor(): AiTranscriptRedactor | undefined {
   return globalThis.__smrtAiTranscriptRedactor;
 }
 
+/**
+ * Version of the built-in redaction rules between the markers below (field
+ * names, structure walk, embedded JSON, exact values). Raise it with any
+ * change to what they mask. `ai-redaction-rules-ledger.test.ts` pins their
+ * source and their output on a fixed corpus to each version.
+ *
+ * @internal
+ */
+export const CORE_REDACTION_RULES_VERSION = 1;
+
+/**
+ * The stamp of the built-in redaction a run event envelope was written
+ * under: core's rules version composed with smrt-config's value rules
+ * version (`redactSecretValues()`), read from the installed config, so a
+ * change of either gives a new stamp. Stored cut text is returned as written
+ * only under the current stamp.
+ *
+ * @internal Used by the run event writer and reader.
+ */
+export function builtInRedactionStamp(): number {
+  return CORE_REDACTION_RULES_VERSION * 1000 + SECRET_VALUE_RULES_VERSION;
+}
+
+// built-in-redaction-rules:begin
+/**
+ * Values shorter than this are masked only as a whole token (not inside a
+ * longer word), so a short secret is still masked without garbling text.
+ */
+export const MIN_SENSITIVE_VALUE_LENGTH = 4;
+
 /** Field names whose values are masked wherever they appear (tool args, …). */
 const SECRET_FIELD =
   /^(?:api[-_]?key|authorization|password|passwd|secret|client[-_]?secret|access[-_]?token|refresh[-_]?token|private[-_]?key|x[-_]api[-_]key)$/i;
-
-/**
- * The value of every credential-named field (`"apiKey": "..."`, as
- * {@link SECRET_FIELD} names them) masked in JSON *text* that cannot be
- * parsed, such as the head or tail of a truncated payload: the built-in
- * redactor's field rule, applied at string level.
- *
- * @internal Used by the run-event reader.
- */
-export function maskSecretFieldsInJsonText(text: string): string {
-  return text.replace(
-    /"((?:[^"\\]|\\.)*)"(\s*:\s*)("(?:[^"\\]|\\.)*(?:"|$)|[^,}\]\s]+)/g,
-    (whole, key: string, colon: string) =>
-      SECRET_FIELD.test(key) ? `"${key}"${colon}"[REDACTED]"` : whole,
-  );
-}
 
 /** Exact values the built-in redactor masks for one call. */
 export interface AiTranscriptRedactionValues {
@@ -449,6 +461,7 @@ export function redactAiTranscriptMessages(
       redactValue(message, replacements, seen) as AiTranscriptMessage,
   );
 }
+// built-in-redaction-rules:end
 
 // ============================================================================
 // Size cap

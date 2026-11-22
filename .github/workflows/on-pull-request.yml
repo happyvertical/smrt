@@ -515,6 +515,14 @@ jobs:
       - name: Run CI control-plane regressions
         run: pnpm test:ci-scripts
 
+      # #5352: a redaction rules change must append a ledger row with a higher
+      # version, never rewrite one the base already has. Needs the base
+      # history this job's full checkout provides.
+      - name: Check redaction rules ledgers are append-only
+        env:
+          BASE_SHA: ${{ github.event.merge_group.base_sha || github.event.pull_request.base.sha }}
+        run: node scripts/check-redaction-ledgers.mjs --base "$BASE_SHA"
+
       - name: Build core for built-core control-plane regressions
         run: pnpm turbo run build --filter='@happyvertical/smrt-core'
 
