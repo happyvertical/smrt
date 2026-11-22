@@ -712,7 +712,8 @@ refuse. `onRequest(principal, { route, model?, action? })` is called once per
 request right after the principal is resolved, and once per `sync/apply` item
 after the item was authorized; returning a `Response` (for example a 429)
 answers the request with it. For a sync item it rejects only that item
-(`forbidden`, or `auth_required` for a 401), and the rest of the batch goes on.
+(`auth_required` for a 401, the retryable `rate_limited` for a 429, else
+`forbidden`), and the rest of the batch goes on.
 
 Without `resolvePrincipal` the tenant comes from `resolveTenant` or the
 server's fixed `APIContext` (`tenantId`, `allowCrossTenant`), its

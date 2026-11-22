@@ -568,6 +568,65 @@ describe('Sync-apply batch endpoint (#1759)', () => {
     });
   });
 
+  describe('a host answer for one item (#5195)', () => {
+    it('a throttled item is rejected as retryable', async () => {
+      const answers: Array<() => Response | undefined> = [
+        () => undefined,
+        () => new Response('slow down', { status: 429 }),
+        () => new Response('sign in', { status: 401 }),
+        () => new Response('no', { status: 403 }),
+        () => {
+          throw new Error('meter unavailable');
+        },
+      ];
+      let next = 0;
+      const api = new APIGenerator({
+        basePath: '/api/v1',
+        resolvePrincipal: () => ({
+          tenantId: null,
+          allowCrossTenant: false,
+          authenticated: true,
+        }),
+        onRequest: (_principal, info) => {
+          if (info.route !== 'sync/apply' || !info.model) return undefined;
+          return answers[next++]?.();
+        },
+      });
+      api.registerCollection('syncapplynotes', notes);
+      const ids = [
+        'a1a1a1a1-5195-4111-8111-111111111111',
+        'a2a2a2a2-5195-4111-8111-111111111111',
+        'a3a3a3a3-5195-4111-8111-111111111111',
+        'a4a4a4a4-5195-4111-8111-111111111111',
+        'a5a5a5a5-5195-4111-8111-111111111111',
+      ];
+      const res = await api.generateHandler()(
+        syncRequest(
+          ids.map((id, i) => ({
+            itemId: `throttle-${i}`,
+            object: 'syncapplynotes',
+            op: 'create',
+            id,
+            payload: { title: `throttle ${i}` },
+          })),
+        ),
+      );
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as SyncApplyBatchResponse;
+      expect(
+        body.results.map((result) => [result.status, result.reason]),
+      ).toEqual([
+        ['applied', undefined],
+        ['rejected', 'rate_limited'],
+        ['rejected', 'auth_required'],
+        ['rejected', 'forbidden'],
+        ['rejected', 'write_failed'],
+      ]);
+      expect(await notes.get(ids[0])).toBeTruthy();
+      for (const id of ids.slice(1)) expect(await notes.get(id)).toBeNull();
+    });
+  });
+
   describe('per-item gating and authorization', () => {
     it('rejects unknown objects and disabled ops per-item without failing the batch', async () => {
       const { results } = await apply([

@@ -307,8 +307,8 @@ export interface APIConfig {
    * once per `sync/apply` item after that item was authorized, with the
    * route, model and action. Returning a `Response` answers the request with
    * it. For a sync item it rejects that item only, before any of it is
-   * applied (`auth_required` for a 401, otherwise `forbidden`), and the
-   * batch goes on. A throw is a 500 with no detail (a sync item:
+   * applied (`auth_required` for a 401, the retryable `rate_limited` for a
+   * 429, otherwise `forbidden`), and the batch goes on. A throw is a 500 with no detail (a sync item:
    * `write_failed`). Without `resolvePrincipal` it receives the fixed
    * {@link APIContext} principal.
    */
@@ -2848,9 +2848,9 @@ export class APIGenerator {
         }
         // The per-item seam for the host (#5198, #5199), after the item
         // was authorized and before anything of it is applied. An answer
-        // rejects this item only (401: `auth_required`, otherwise
-        // `forbidden`); a throw rejects it as `write_failed`. The rest of
-        // the batch goes on.
+        // rejects this item only (401: `auth_required`, 429: the retryable
+        // `rate_limited`, otherwise `forbidden`); a throw rejects it as
+        // `write_failed`. The rest of the batch goes on.
         let answer: undefined | Response;
         try {
           answer = await this.config.onRequest?.(principal.principal, {
@@ -2863,6 +2863,9 @@ export class APIGenerator {
           throw new SyncApplyRejection('write_failed');
         }
         if (answer instanceof Response) {
+          if (answer.status === 429) {
+            throw new SyncApplyRejection('rate_limited');
+          }
           return answer.status === 401 ? 'auth_required' : 'forbidden';
         }
         return 'ok';

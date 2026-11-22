@@ -159,7 +159,8 @@ rate limits and metering (#5198, #5199): called once right after resolution
 `list` / `get` / `count` / `create` / `update` / `delete` or the custom
 action), and once per sync item after the item was authorized. A returned
 `Response` answers the request. For a sync item it rejects that item only,
-before any of it is applied (`auth_required` for a 401, else `forbidden`),
+before any of it is applied (`auth_required` for a 401, the retryable
+`rate_limited` for a 429, else `forbidden`),
 and the batch goes on. A throw is a 500 (a sync item: `write_failed`).
 
 Without `resolvePrincipal`, the tenant is `resolveTenant`'s answer or the

@@ -1183,7 +1183,7 @@ for (const type of ['sqlite', 'postgres'] as const) {
           expect.objectContaining({
             itemId: 'limited',
             status: 'rejected',
-            reason: 'forbidden',
+            reason: 'rate_limited',
           }),
           expect.objectContaining({
             itemId: 'unsigned',
