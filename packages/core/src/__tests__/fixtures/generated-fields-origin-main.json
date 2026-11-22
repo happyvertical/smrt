@@ -15,17 +15,17 @@
         "ddl/duckdb": "36150aa4f686620718a4bc0411c0425439bb0f3df6ffaa3d38b809c79a88becb",
         "migration": "bc5a587ce702dd8fe3c1a841568ca95c57b8458483e28d9d949e1ef31905fc0b",
         "source/modular/config.ts": "4e8b1d0155d884e3bb3d3cddeb4f717723778359b5ce2f22901fca9467921708",
-        "source/modular/handlers/index.ts": "35b60c8b6d9e84fa20b741ca872dd48ea82e8c04019d91149295cdcff5af3400",
+        "source/modular/handlers/index.ts": "5ba006d3d88a53d0ccabc2158b604bbda931a8dc9f8b6848ad8b362d32c5aaeb",
         "source/modular/index.ts": "b9f49a7c9e30a97237272b8fb10648b53b691eb2216ecb8d86cee5b02fee1aea",
         "source/modular/tools/index.ts": "373feae6968fa10d677776e33199797de7bcfd26c81816f4422a739dce08edcb",
-        "source/single/index.ts": "f156ef73b2040a04ac197820a6bc533de31ad8b81f31661f500ab07ba38af0e7",
+        "source/single/index.ts": "c700d91577b1eec6f1335a374536da38a6ee30f85013971219560dd748906535",
         "source/sveltekit/src/lib/server/smrt-register.ts": "f2bc573c66de6f80aa2a31960d85e307c0470ae430ffd71a428c3fabfd8d8ada",
         "source/sveltekit/src/lib/server/smrt.ts": "0ccb2afbd8cc5f2d935fa82bbb52653417890b2e4e225b9fae5c773282f23dbf",
         "source/sveltekit/src/routes/api/_changes/+server.ts": "0d90d327ad6437bc07aee0466797ac19851716d3e93d1781c34c7a457725819e",
         "source/sveltekit/src/routes/api/_events/+server.ts": "7d2cc146aa19cdf11640693976bc506fb86e26483970a82e26232dd3c7cb5040",
-        "source/sveltekit/src/routes/api/compat_plain/[id]/+server.ts": "238249a0b9b989490440f491f03e021f59d8c2394f5e7ba198dd1baf7894a66f",
-        "source/sveltekit/src/routes/api/compat_plain/+server.ts": "c0962103f4121460251b33cbc483471f91a1d2f114fed1cb4351ff1dd563c35f",
-        "source/sveltekit/src/routes/api/sync/apply/+server.ts": "bb53842b82bee3173d9cc8f4c757a057a9f1d8c6d62f0dfb0ac68555f032edff"
+        "source/sveltekit/src/routes/api/compat_plain/[id]/+server.ts": "2bb452bf3e8d2b0946ec904e9628b0c14c244327aa1c2cf9b7092f79159fa780",
+        "source/sveltekit/src/routes/api/compat_plain/+server.ts": "1b8aeed44d7ec2a733fb081abf6585cc8ac7c03f19bde5998962714ea8f99e20",
+        "source/sveltekit/src/routes/api/sync/apply/+server.ts": "e1ce125a63afc3f44ab7604639edb61230f9d7c749d0f7815e18fd4ec25934ca"
       }
     },
     "sti": {
@@ -46,17 +46,17 @@
         "ddl/duckdb": "19d3509309e8bad5b325f2576ab0dc7ee1235479b5a51cea0b00331e5f2308ec",
         "migration": "bc5a587ce702dd8fe3c1a841568ca95c57b8458483e28d9d949e1ef31905fc0b",
         "source/modular/config.ts": "4e8b1d0155d884e3bb3d3cddeb4f717723778359b5ce2f22901fca9467921708",
-        "source/modular/handlers/index.ts": "b5cfaabe86a8b5698028b67801bc57991e14fc9d03b1de9236ba48cffb46ff8d",
+        "source/modular/handlers/index.ts": "d27e18d642456d8e3c9b8bac5619e0799a570e2fc167f9b8ba5df206b2917e0d",
         "source/modular/index.ts": "b9f49a7c9e30a97237272b8fb10648b53b691eb2216ecb8d86cee5b02fee1aea",
         "source/modular/tools/index.ts": "ad79e570331f654d456fc7f5c938c7cb2a77dd994c123d2f33b19537dec67a4e",
-        "source/single/index.ts": "ada6cb15b2c149244f683717940a1ffab8286d789b8058172c85f478e4015357",
+        "source/single/index.ts": "fec214c80b7c70cfb02458e5a57aee1173b5699f224fa0d313399e901cbe9bbf",
         "source/sveltekit/src/lib/server/smrt-register.ts": "f25b7af11be15449c72773d5047a2eb581977682b950ccae39d2e71d536a0897",
         "source/sveltekit/src/lib/server/smrt.ts": "0ccb2afbd8cc5f2d935fa82bbb52653417890b2e4e225b9fae5c773282f23dbf",
         "source/sveltekit/src/routes/api/_changes/+server.ts": "51b9498c2881de41b4fc1d18155386746071681028f215478e2365cd03835e6f",
         "source/sveltekit/src/routes/api/_events/+server.ts": "f0473b6d66e0e35cb1a36c3997a2aa06215f20a18ffef3a08b86637191a14927",
-        "source/sveltekit/src/routes/api/compatroots/[id]/+server.ts": "93499511962df73657c4369044f4b5cfb3b380acf86872041cacfc69f6b7c463",
-        "source/sveltekit/src/routes/api/compatroots/+server.ts": "899b3a92a5af404434b35dae506b754bdba99164f11a6072733c564cfb8ba5df",
-        "source/sveltekit/src/routes/api/sync/apply/+server.ts": "ca8fc21109384ddb67d3c9b32dfe9112d505f386327082e301a7a1ee381f1e50"
+        "source/sveltekit/src/routes/api/compatroots/[id]/+server.ts": "effcac08dab8ca940d433bf3f15203bca6df28ae009d3982778420172d9f6772",
+        "source/sveltekit/src/routes/api/compatroots/+server.ts": "a6ba301093bdc2e814cb01c9818b89fb3e2dfc9ac5ef1d878543876478a5ccb6",
+        "source/sveltekit/src/routes/api/sync/apply/+server.ts": "6af5e55d79c41440897a4068db2f83e19e002d6a298239c786398d62e3cab895"
       }
     }
   }
