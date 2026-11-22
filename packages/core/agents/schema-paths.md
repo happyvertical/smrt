@@ -1952,13 +1952,21 @@ Operational commands: `packages/cli/AGENTS.md`.
 `postgresSafe` batch defers to its concurrent phase (a foreign-key `VALIDATE
 CONSTRAINT` and every statement after it, and the index builds) commit as
 they run, and nothing records how far an attempt got. The protocol below is
-the atomic batch's (`db:migrate --postgres-safe`). A non-atomic `postgresSafe`
-run (`applyAll` without `atomic`, or a direct `apply()`) splits and runs a
-definition as before: it writes no phase-1 marker and refuses none of the
-deferred statements below (#5522 extends the protocol there); a marked
-record it meets is checked like any other and, run outside the batch's plan,
-refused as another plan. An atomic `postgresSafe` batch that lists one
-migration id twice is refused before anything runs. Before any statement of
+the atomic batch's (`db:migrate --postgres-safe`), and a non-atomic
+`postgresSafe` run (`applyAll` without `atomic`, or a direct `apply()`)
+follows it per definition (#5522). There a split needs an adapter with
+transactions: the first half commits in one transaction with the phase-1
+marker, written to the tracking table resolved before the first half runs
+and to exactly that attempt's `running` record (otherwise the first half
+rolls back); the deferred statements then run as the atomic phase 2 runs
+them. A definition whose plan is refused runs nothing and records nothing.
+The failure write after a failed first half matches the same attempt still
+`running`, so a lost commit acknowledgement never removes a marker that
+committed. Phase-2 outcomes are written on the pinned session, before its
+row lock is released, never on a second pool checkout. A record an older
+smrt wrote on these paths carries no marker and is retried as before. A
+`postgresSafe` batch that lists one migration id twice is refused before
+anything runs. Before any statement of
 a retry runs (dry runs included, with the check held per call so a dry run
 cannot change what a concurrent run on the same tracker checks), `apply()`
 checks a `failed` row that carries the phase-1 marker:
@@ -2068,9 +2076,9 @@ session baseline that could not be restored, is reported; on a shared handle
 handle goes back to the caller as it is, and on a pooled session (discarded on
 release) it is logged.
 
-**Upgrade.** This changes atomic `postgresSafe` batches; non-atomic runs and
-a direct `apply()` behave as before (a marked record they meet is refused as
-another plan). A retry that earlier replayed may now be refused: a changed
+**Upgrade.** This changes atomic `postgresSafe` batches and, since #5522,
+non-atomic runs and a direct `apply()`, which now record the phase-1 marker
+(a split there needs an adapter with transactions). A retry that earlier replayed may now be refused: a changed
 definition or plan, deferred lists with data changes or other `ALTER TABLE`
 forms after the deferred phase started, retries in another mode, retries
 under the batch-wide `--force`, unreadable or damaged plan tags, and
@@ -2097,7 +2105,7 @@ changed: a deferred `SET ROLE` or `SET search_path` no longer reaches a later
 migration's deferred statements; put the `SET` in every migration that needs
 it. Refused before anything runs: a deferred statement whose setting changes
 cannot be named (above, including any deferred text the lexer cannot read)
-and an atomic batch listing an id twice. A session that cannot be put back
+and a `postgresSafe` batch listing an id twice. A session that cannot be put back
 fails closed (above). Dry runs read the migration history only: they no
 longer create or alter the tracking table or check the system timestamps.
 `db:migrate --dry-run` reports the refusals the real run gives and exits 1.
