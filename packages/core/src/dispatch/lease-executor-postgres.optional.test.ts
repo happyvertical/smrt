@@ -55,7 +55,9 @@ describe.skipIf(!postgresDispatchUrl)('dispatch lease executor on pg', () => {
     expect((await dispatchLeaseRow(ctx.db, 'work')).status).toBe('pending');
 
     // A transaction handle: refused too.
-    await ctx.db.transaction(async (tx) => {
+    const inTransaction = ctx.db.transaction?.bind(ctx.db);
+    if (!inTransaction) throw new Error('PostgreSQL adapter has transaction()');
+    await inTransaction(async (tx) => {
       const txBus = await createDispatchBus({ db: tx });
       await expect(txBus.process('worker', async () => {})).rejects.toThrow(
         DISPATCH_LEASE_EXECUTOR_UNSAFE,
@@ -66,13 +68,17 @@ describe.skipIf(!postgresDispatchUrl)('dispatch lease executor on pg', () => {
     // client inside an open transaction.
     const pair = await openPool(String(ctx.url), 2);
     const pairBus = await createDispatchBus({ db: pair, leaseMs: 1_000 });
+    const inPairTransaction = pair.transaction?.bind(pair);
+    if (!inPairTransaction) {
+      throw new Error('PostgreSQL adapter has transaction()');
+    }
     const renewals = interceptRenewals(pair);
     try {
       let before: string | null = null;
       let observed: string | null = null;
       const count = await pairBus.process('worker', async () => {
         before = (await dispatchLeaseRow(ctx.db, 'work')).claimedUntil;
-        await pair.transaction(async (tx) => {
+        await inPairTransaction(async (tx) => {
           await tx.query('SELECT 1');
           const start = Date.now();
           while (renewals.count < 2 && Date.now() - start < 5_000) {
