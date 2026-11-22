@@ -962,6 +962,12 @@ async function runSession<T>(
   const { run, finish } = await acquireSessionRun(db, options, deadline);
   try {
     return await runAsHolder(run.databaseKey, () => work(run));
+  } catch (error) {
+    // The work failed because the lock's connection ended: say so, so the
+    // caller knows another run may be migrating and a rerun converges.
+    if (!run.session.isActive() && !(error instanceof MigrationLockLostError))
+      throw new MigrationLockLostError(error);
+    throw error;
   } finally {
     await finish();
   }
