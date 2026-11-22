@@ -328,7 +328,8 @@ only as requested; approval rate = approved / (approved + refused).
 Payloads are redacted through the transcripts' one path
 (`redactAiTranscriptPart`: an event-specific `options.redact`, then the host
 redactor with the run row's tenant, read behind the claim fence, then the
-built-in redactor) and
+built-in redactor with `options.redactValues` `{ secrets, sensitive }`
+masked exactly) and
 capped (head and tail kept, `truncated`); `payload_ref` points at content the
 host owns, and the framework stores nothing behind it. Read-time rule:
 `getRunTrajectory` runs only the built-in redactor again on stored payloads

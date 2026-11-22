@@ -13,6 +13,7 @@
 
 import type { DatabaseInterface } from '@happyvertical/sql';
 import {
+  type AiTranscriptRedactionValues,
   maskSecretFieldsInJsonText,
   redactAiTranscriptMessages,
   redactAiTranscriptPart,
@@ -146,6 +147,12 @@ export interface AppendAiRunEventOptions extends AiRunTxOptions {
   maxPayloadBytes?: number;
   /** Runs before the built-in redactor (which always runs). */
   redact?: AiRunEventRedactor;
+  /**
+   * Exact values the built-in redactor masks in the payload, as for a
+   * transcript: the client's credentials (`secrets`) and the calling
+   * object's `sensitive` field values.
+   */
+  redactValues?: AiTranscriptRedactionValues;
 }
 
 /** One stored event. */
@@ -217,7 +224,7 @@ async function redactPayload(
     ? await options.redact(input.payload, context)
     : input.payload;
   // The transcripts' redaction path (page section 8): the host redactor with
-  // the run's tenant, then the built-in one.
+  // the run's tenant, then the built-in one with the caller's exact values.
   const messages = await redactAiTranscriptPart(
     [{ role: 'event', content: payload }],
     {
@@ -226,7 +233,7 @@ async function redactPayload(
       tenantId,
       operation: `run-event:${input.type}`,
     },
-    {},
+    options.redactValues ?? {},
   );
   return messages[0]?.content ?? null;
 }

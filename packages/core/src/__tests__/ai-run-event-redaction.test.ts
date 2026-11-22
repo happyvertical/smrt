@@ -68,6 +68,37 @@ describe.each(aiRunTestEngines)('run event redaction on %s', (engine) => {
     expect(seen[1]?.tenantId).toBeNull();
   });
 
+  it('masks the exact secret and sensitive values a transcript would', async () => {
+    const db = await newAiRunTestDatabase(engine);
+    const run = await openAiRun(
+      { db, usageTracking: true, tenantId: 'tenant-one' },
+      { type: 'turn' },
+    );
+    const secret = 'byo-key-0123456789abcdef';
+    await appendAiRunEvent(
+      db,
+      run.id,
+      {
+        type: 'observation',
+        payload: {
+          error: `provider said: invalid key ${secret}`,
+          result: { holder: 'Dana Example', note: 'card for Dana Example' },
+        },
+      },
+      {
+        redactValues: {
+          secrets: [secret],
+          sensitive: [{ field: 'holder', value: 'Dana Example' }],
+        },
+      },
+    );
+    const stored = JSON.stringify(await storedPayload(db, run.id));
+    expect(stored).not.toContain(secret);
+    expect(stored).not.toContain('Dana Example');
+    expect(stored).toContain('[REDACTED]');
+    expect(stored).toContain('[REDACTED:holder]');
+  });
+
   it('still masks credential-named keys (control)', async () => {
     const db = await newAiRunTestDatabase(engine);
     const run = await openAiRun(
