@@ -8,8 +8,11 @@
  * transaction through the tracker), then checks that the rows survive, the
  * indexes and keys come back and the schema converges.
  */
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import type { DatabaseInterface } from '@happyvertical/sql';
-import { getDatabase } from '@happyvertical/sql';
+import { clearConnectionCache, getDatabase } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { SchemaDefinition } from '../../schema/types.js';
 import { classifySchemaChange } from '../change-kinds.js';
@@ -91,7 +94,7 @@ describe('#4937 DuckDB change kinds apply when ALTER cannot', () => {
       )
     ).rows.map((row) => row.index_name);
 
-  it('moves the indexes aside for default and NOT NULL drift on an indexed table', async () => {
+  it('rebuilds an indexed table for default and NOT NULL drift', async () => {
     await db.query(
       "CREATE TABLE items (id TEXT PRIMARY KEY, v TEXT NOT NULL, w TEXT DEFAULT 'old')",
     );
@@ -107,9 +110,10 @@ describe('#4937 DuckDB change kinds apply when ALTER cannot', () => {
       },
       { relaxColumns: true },
     );
+    // One rebuild carries both changes; the second is covered by it.
     expect(diff.changes.map(classifySchemaChange).sort()).toEqual([
       'column.drop-not-null',
-      'column.set-default',
+      'column.rebuild-covered',
     ]);
     expect(await indexNames()).toEqual(['items_v_idx']);
     expect((await db.query('SELECT * FROM items')).rows).toEqual([
@@ -432,5 +436,73 @@ describe('#4937 DuckDB change kinds apply when ALTER cannot', () => {
       'column.rebuild-unavailable',
     );
     expect(change?.sql).toContain('references itself');
+  });
+});
+
+// In a database file DuckDB cannot create an index again in the transaction
+// that dropped it around an ALTER ("already exists"), so every ALTER-class
+// change on an indexed table takes the rebuild.
+describe('#4937 DuckDB ALTER-class changes on an indexed table in a file', () => {
+  let dir: string;
+  let db: DatabaseInterface;
+  beforeEach(async () => {
+    dir = mkdtempSync(path.join(tmpdir(), 'smrt-indexed-file-'));
+    await clearConnectionCache();
+    db = await getDatabase({ type: 'duckdb', url: path.join(dir, 'items.db') });
+  });
+  afterEach(async () => {
+    await db.close?.();
+    await clearConnectionCache();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('rebuilds an indexed table for drop_column and set_not_null in a file database', async () => {
+    await db.query(
+      'CREATE TABLE items (id TEXT PRIMARY KEY, sku TEXT, v TEXT, old TEXT)',
+    );
+    await db.query('CREATE UNIQUE INDEX items_sku ON items (sku)');
+    await db.query("INSERT INTO items VALUES ('a', 's1', 'x', 'o')");
+    await db.query('CHECKPOINT');
+    const schema = {
+      items: table(
+        'items',
+        { sku: { type: 'TEXT' }, v: { type: 'TEXT', notNull: true } },
+        { indexes: [{ name: 'items_sku', columns: ['sku'], unique: true }] },
+      ),
+    };
+    const diff = await new SchemaComparer(db, {
+      engineHint: 'duckdb',
+      includeDroppedColumns: true,
+    }).compare(schema);
+    expect(diff.changes.map(classifySchemaChange).sort()).toEqual(
+      expect.arrayContaining(['column.drop', 'column.set-not-null']),
+    );
+    const tracker = new MigrationTracker({ db, engineHint: 'duckdb' });
+    await tracker.initialize();
+    const [result] = await tracker.applyAll(
+      [
+        createMigrationDefinition(
+          `indexed_file_${Date.now()}`,
+          getSQLFromDiff(diff).filter((sql) => !sql.startsWith('--')),
+        ),
+      ],
+      { atomic: true },
+    );
+    expect(result.error).toBeUndefined();
+    expect((await db.query('SELECT * FROM items')).rows).toEqual([
+      { id: 'a', sku: 's1', v: 'x' },
+    ]);
+    const indexes = await db.query(
+      "SELECT index_name, is_unique FROM duckdb_indexes() WHERE table_name = 'items'",
+    );
+    expect(indexes.rows).toEqual([
+      { index_name: 'items_sku', is_unique: true },
+    ]);
+    await expect(
+      db.query("INSERT INTO items (id, sku, v) VALUES ('b', 's1', 'y')"),
+    ).rejects.toThrow();
+    await expect(
+      db.query("INSERT INTO items (id, sku, v) VALUES ('c', 's2', NULL)"),
+    ).rejects.toThrow();
   });
 });

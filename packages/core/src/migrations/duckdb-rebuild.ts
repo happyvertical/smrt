@@ -3,17 +3,18 @@
  *
  * DuckDB refuses an `ALTER` in three situations that PostgreSQL accepts:
  *
- * - the table has an index: the index must be dropped around the `ALTER`, and
- *   a type change or column drop still fails when the index covers the column;
+ * - the table has an index: the index would have to be dropped around the
+ *   `ALTER`, and in a database file it cannot be created again in the same
+ *   transaction ("already exists");
  * - another table has a foreign key onto it: nothing on it can be altered;
  * - the same transaction already ran an `UPDATE`: "outstanding updates".
  *
  * It also has no `ADD CONSTRAINT`, so a foreign key can only be added or
  * removed by building the table again.
  *
- * This module is the post-pass over one table's changes. When every change
- * works with `ALTER`, it only wraps the index-sensitive ones in `DROP INDEX` /
- * `CREATE INDEX`. Otherwise it folds the table's changes into one rebuild
+ * This module is the post-pass over one table's changes. When the table has
+ * no index, nothing references it and every change works with `ALTER`, the
+ * changes stand as generated. Otherwise it folds the table's changes into one rebuild
  * that runs in the migration's transaction: copy the table and every table that
  * references it into staging tables, drop them, create them again from their
  * live definitions (the target with its changes), copy the rows back and
@@ -1097,16 +1098,13 @@ export async function planDuckDbTableChanges(
   const group = referencingGroup(tableName, references);
   const inbound = group.order.length > 1;
 
-  const coveredByIndex = (column: string): boolean =>
-    table.indexes.some((index) => index.columns.includes(column));
   const rebuildNeeded =
     mustRebuild ||
     (inbound && (alterClass.length > 0 || addsWithAlter.length > 0)) ||
-    alterClass.some(
-      (change) =>
-        (change.type === 'type_upgrade' || change.type === 'drop_column') &&
-        coveredByIndex(change.name as string),
-    );
+    // DuckDB refuses an ALTER on an indexed table, and in a database file it
+    // cannot create an index again in the transaction that dropped it around
+    // the ALTER ("already exists"), so an indexed table is rebuilt.
+    (table.indexes.length > 0 && alterClass.length > 0);
 
   const planned = plannedReferenceBlock(
     rebuildNeeded ? group.order : alterClass.length > 0 ? [tableName] : [],
@@ -1114,38 +1112,8 @@ export async function planDuckDbTableChanges(
   );
   if (planned) return block(planned);
 
-  if (!rebuildNeeded) {
-    // Every change works with ALTER once the indexes are out of the way.
-    if (table.indexes.length === 0) return unplanned;
-    const drop = table.indexes.map(
-      (index) => `DROP INDEX ${quoteIdentifier(index.name)}`,
-    );
-    return {
-      changes: changes.map((change) => {
-        const statements = statementsOf(change);
-        if (
-          !alterClass.includes(change) ||
-          statements.some((sql) => /^\s*DROP\s+INDEX\b/i.test(sql))
-        )
-          return change;
-        const dropped = change.type === 'drop_column' ? change.name : undefined;
-        const wrapped = [
-          ...drop,
-          ...statements,
-          ...table.indexes
-            .filter((index) => !dropped || !index.columns.includes(dropped))
-            .map((index) => index.sql),
-        ];
-        return {
-          ...change,
-          sql: wrapped[wrapped.length - 1],
-          sqlStatements: wrapped,
-        };
-      }),
-      constraintChanges: constraints,
-      planInConstraints: false,
-    };
-  }
+  // No index and nothing referencing the table: ALTER works as generated.
+  if (!rebuildNeeded) return unplanned;
 
   if (group.cyclic)
     return block(

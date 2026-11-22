@@ -1092,6 +1092,12 @@ compatibility pass, which plans and applies on one connection, includes its
 own temporary views. `db:diff`, `db:status` and the doctor's migrate preview
 build a plan, so they bind every view of the database; live parity does not.
 
+Any other ALTER-class change (`drop_column`, NOT NULL, default) on an indexed
+DuckDB table takes the same rebuild: the ALTER route would drop the indexes
+around the change, and in a database file DuckDB cannot create an index again
+in the transaction that dropped it (`issue-4937-duckdb-parity.test.ts`, "in a
+file database").
+
 Probing plans without a type change (an `ADD COLUMN` or `DROP COLUMN` already
 leaves a `SELECT *` view unbound on main) is not done here. Tests:
 `decimal-widening-views.test.ts`, `table-rebuild-comments.test.ts`,

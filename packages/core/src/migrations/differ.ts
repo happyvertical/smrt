@@ -1164,8 +1164,7 @@ export class SchemaComparer {
       foreignKeyChanges = planned.constraintChanges;
       planInConstraints = planned.planInConstraints;
     } else if (this.engine === 'duckdb') {
-      // DuckDB rebuilds the table when ALTER cannot do the change, and
-      // otherwise moves the indexes out of ALTER's way (#4937).
+      // DuckDB rebuilds the table when ALTER cannot do the change (#4937).
       const planned = await planDuckDbTableChanges({
         db: this.db,
         tableName,

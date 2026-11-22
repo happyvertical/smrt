@@ -60,8 +60,8 @@ const unresolvedPolicy = (exception: string): SchemaChangePolicy => ({
  *
  * Every kind that applies on PostgreSQL applies on SQLite and DuckDB too
  * (#4937). SQLite rebuilds the table where it has no ALTER (NOT NULL, default,
- * foreign key, column type). DuckDB moves the indexes out of ALTER's way and
- * rebuilds the table where ALTER cannot do the change. The entries below say,
+ * foreign key, column type). DuckDB rebuilds the table where ALTER cannot do
+ * the change (an indexed or referenced table, a type change). The entries below say,
  * per engine, what stays different and why:
  *
  * - PostgreSQL alone adds the shared-table CHECK (`check.*`). The rule stays in
