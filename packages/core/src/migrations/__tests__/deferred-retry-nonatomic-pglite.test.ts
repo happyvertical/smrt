@@ -175,5 +175,45 @@ describe.skipIf(process.env.SMRT_TEST_PGLITE !== '1')(
       expect(retry.success, errorOf(retry)).toBe(true);
       expect(await counts()).toEqual(['a:1']);
     });
+
+    it('writes the outcome on the pinned session, never waiting on a second checkout', async () => {
+      await fixDuplicates();
+      // A pool of one connection: while the session is checked out, a query
+      // on the handle waits for it to come back.
+      let held = false;
+      let waiting: Array<() => void> = [];
+      const pool: DatabaseInterface = {
+        ...db,
+        query: (async (sql: string, ...vars: unknown[]) => {
+          while (held) await new Promise<void>((r) => waiting.push(r));
+          return db.query(sql, ...vars);
+        }) as DatabaseInterface['query'],
+        acquireSession: async () => {
+          held = true;
+          return {
+            query: (sql: string, ...vars: unknown[]) => db.query(sql, ...vars),
+            release: async () => {
+              held = false;
+              const ready = waiting;
+              waiting = [];
+              for (const resume of ready) resume();
+            },
+          };
+        },
+      } as DatabaseInterface;
+      const def = dataThenIndex('nonatomic_pool_of_one');
+
+      const result = await within(
+        tracker(pool).apply(def, { postgresSafe: true }),
+        15_000,
+      );
+
+      expect(result).not.toBe('timedOut');
+      expect(
+        result === 'timedOut' ? undefined : result.success,
+        result === 'timedOut' ? '' : errorOf(result),
+      ).toBe(true);
+      expect((await row(def.id))?.status).toBe('completed');
+    }, 30_000);
   },
 );
