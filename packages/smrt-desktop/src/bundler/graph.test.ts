@@ -125,6 +125,11 @@ describe('graph on a hoisted tree', () => {
       '{"name":"x","version":"1","dependencies":{"a":1}}',
       '{"name":"x","version":"1","dependencies":[]}',
       '{"name":"x","version":"1","peerDependenciesMeta":[]}',
+      '{"name":"x","version":"1","peerDependenciesMeta":null}',
+      '{"name":"x","version":"1","peerDependenciesMeta":true}',
+      '{"name":"x","version":"1","peerDependenciesMeta":{"a":[]}}',
+      '{"name":"x","version":"1","peerDependenciesMeta":{"a":true}}',
+      '{"name":"x","version":"1","peerDependenciesMeta":{"a":{"optional":null}}}',
       '{"name":"x","version":"1","peerDependenciesMeta":{"a":null}}',
       '{"name":"x","version":"1","peerDependenciesMeta":{"a":{"optional":"true"}}}',
     ]) {
@@ -135,6 +140,29 @@ describe('graph on a hoisted tree', () => {
       expect(error.code).toBe('invalid_package_json');
       expect(error.subjects).toEqual(['bad']);
       rmSync(join(modules, 'bad'), { recursive: true });
+    }
+  });
+
+  it('accepts empty and future peer metadata without making peers optional', async () => {
+    install([{ name: 'a', deps: ['absent'], peer: ['absent'] }]);
+    for (const metadata of [{}, { absent: { future: 'value' } }]) {
+      writeFileSync(
+        join(modules, 'a/package.json'),
+        JSON.stringify({
+          name: 'a',
+          version: '1.0.0',
+          dependencies: { absent: '*' },
+          peerDependencies: { absent: '*' },
+          peerDependenciesMeta: metadata,
+        }),
+      );
+      const graph = await graphOf(['a']);
+      expect(graph.missing).toEqual([
+        { from: 'node_modules/a', name: 'absent' },
+      ]);
+      expect(() => assertNoMissingDependencies(graph)).toThrow(
+        expect.objectContaining({ code: 'unresolved_dependency' }),
+      );
     }
   });
 
