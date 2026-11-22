@@ -3,8 +3,8 @@
  * failed cleanup (#5325), against a real PostgreSQL server (PGlite): a stale
  * read of a record never takes it over; runs that share one handle take
  * turns for their whole run; a record another run took over stops the
- * batch; cleanup that did not take effect is reported; and no deferred
- * statement runs while the tracking table's schema is unknown.
+ * batch; cleanup that did not take effect is reported; and a batch check
+ * that fails without refusing a definition rejects the batch.
  *
  * Runs under `pnpm test:pglite` (and so in the PostgreSQL lane); skipped on the
  * default SQLite run.
@@ -373,6 +373,44 @@ describe.skipIf(process.env.SMRT_TEST_PGLITE !== '1')(
             ]),
           ]),
         ).rejects.toThrow(/earlier migration run/);
+      });
+    });
+    describe('a non-atomic batch check that fails without refusing a definition', () => {
+      it.each([
+        ['an error', new Error('connection reset')],
+        ['a falsy value', undefined],
+      ])('rejects the batch with %s, never checking it again', async (_, rejection) => {
+        await fixDuplicates();
+        const done = definition('check_done', [
+          'CREATE INDEX IF NOT EXISTS child_n_idx ON child (n)',
+        ]);
+        const pending = definition('check_pending', [
+          'CREATE INDEX IF NOT EXISTS child_pid_idx ON child (pid)',
+        ]);
+        const [applied] = await tracker().applyAll([done], {
+          postgresSafe: true,
+        });
+        expect(applied?.success, errorOf(applied)).toBe(true);
+        let failed = false;
+        const failingOnce: DatabaseInterface = {
+          ...db,
+          query: (async (sql: string, ...vars: unknown[]) => {
+            if (!failed && sql.startsWith('SET lock_timeout')) {
+              failed = true;
+              throw rejection;
+            }
+            return db.query(sql, ...vars);
+          }) as DatabaseInterface['query'],
+        };
+
+        const run = tracker(failingOnce).applyAll([done, pending], {
+          postgresSafe: true,
+        });
+
+        if (rejection) await expect(run).rejects.toBe(rejection);
+        else await expect(run).rejects.toBeUndefined();
+        expect(await row(pending.id)).toBeUndefined();
+        expect(await indexValid('child_pid_idx')).toEqual([]);
       });
     });
   },

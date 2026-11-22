@@ -387,6 +387,12 @@ type PlannedSplit = { regular: string[]; concurrent: string[] };
  * state — on a pooled adapter a top-level `db.query` may land on a different
  * connection, so the SET would silently not apply to the DDL (issue #2362).
  */
+/**
+ * Errors of the non-atomic batch check that refuse a definition, as opposed
+ * to a failure of the check itself (which is never checked again).
+ */
+const batchCheckRefusals = new WeakSet<object>();
+
 /** The last queued turn per shared connection. */
 const sharedHandleRuns = new WeakMap<object, Promise<void>>();
 
@@ -593,16 +599,21 @@ export class MigrationTracker {
    * definitions. When it refuses, only the definitions {@link apply} would
    * run (not skip as already applied) are checked again, so a definition
    * that will not run neither is refused nor refuses the batch. A batch the
-   * check accepts reads nothing.
+   * check accepts reads nothing. Only a refusal of a definition is checked
+   * again (`isRefusal`; by default anything the check throws, for checks
+   * that only plan): a failure of the check itself propagates as it was
+   * thrown, whatever its value.
    */
   private async checkDefinitionsToRun<T>(
     definitions: MigrationDefinition[],
     options: ApplyMigrationsOptions,
     check: (definitions: MigrationDefinition[]) => T | Promise<T>,
+    isRefusal: (error: unknown) => boolean = () => true,
   ): Promise<T> {
     try {
       return await check(definitions);
     } catch (refusal) {
+      if (!isRefusal(refusal)) throw refusal;
       const toRun = await this.definitionsToRun(definitions, options);
       if (toRun.length === definitions.length) throw refusal;
       return await check(toRun);
@@ -618,7 +629,9 @@ export class MigrationTracker {
    * create is checked against its table in run order (each definition's
    * transactional statements, then its concurrent ones) with the same
    * exception as the atomic concurrent phase. A refusal rejects the batch
-   * with nothing run and nothing recorded.
+   * with nothing run and nothing recorded; the refusals of a definition
+   * (its plan, a refused create) are marked in {@link batchCheckRefusals},
+   * failures of the check itself are not.
    */
   private async preflightSequentialBatch(
     definitions: MigrationDefinition[],
@@ -629,10 +642,18 @@ export class MigrationTracker {
       runsFirst?: boolean;
     }> = [];
     for (const definition of definitions) {
-      const { concurrent, regular } = planPostgresStatements(
-        definition.up,
-        !!this.options.useConcurrentIndexes,
-      );
+      let planned: { concurrent: string[]; regular: string[] };
+      try {
+        planned = planPostgresStatements(
+          definition.up,
+          !!this.options.useConcurrentIndexes,
+        );
+      } catch (error) {
+        if (typeof error === 'object' && error !== null)
+          batchCheckRefusals.add(error);
+        throw error;
+      }
+      const { concurrent, regular } = planned;
       lists.push(
         { migrationName: definition.id, statements: regular, runsFirst: true },
         { migrationName: definition.id, statements: concurrent },
@@ -654,10 +675,14 @@ export class MigrationTracker {
         'any migration of the batch ran',
       );
     } catch (error) {
-      if (error instanceof ConcurrentIndexRefusal)
-        throw new Error(`Migration ${error.migrationName}: ${error.message}`, {
-          cause: error,
-        });
+      if (error instanceof ConcurrentIndexRefusal) {
+        const refusal = new Error(
+          `Migration ${error.migrationName}: ${error.message}`,
+          { cause: error },
+        );
+        batchCheckRefusals.add(refusal);
+        throw refusal;
+      }
       throw error;
     } finally {
       await session.release();
@@ -1445,8 +1470,11 @@ export class MigrationTracker {
       options.postgresSafe &&
       !options.dryRun
     ) {
-      await this.checkDefinitionsToRun(definitions, options, (toRun) =>
-        this.preflightSequentialBatch(toRun),
+      await this.checkDefinitionsToRun(
+        definitions,
+        options,
+        (toRun) => this.preflightSequentialBatch(toRun),
+        (error) => batchCheckRefusals.has(error as object),
       );
     }
 
