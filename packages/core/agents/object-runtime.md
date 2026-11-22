@@ -305,6 +305,10 @@ instances and never use this path to overwrite a loaded revision.
   completed or retried meanwhile, and returns the RETURNING count. NULL
   `attempts` counts as 0 for `maxAttempts`. Never write dispatch state from
   a stale read with the full-row `DispatchCollection.update()`.
+- A `process()` outcome write that throws is isolated to its row (logged as
+  `dispatch.settle_error`, row left `processing`); the batch continues and
+  `process()` rejects only on setup errors. Recovering such a row needs the
+  lease/reclaim work (P6); until then it stays `processing`.
 - Tables: `_smrt_dispatch`, `_smrt_dispatch_subscriptions`
 - Status: `pending → processing → completed` (or `failed`)
 - Tenancy (`dispatch/tenant-resolver.ts`): `emit` stamps the server-derived

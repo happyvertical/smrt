@@ -760,7 +760,21 @@ export class DispatchBus {
       const errorMessage =
         error instanceof Error ? error.message : String(error);
       dispatch.markFailed(errorMessage);
-      await DispatchCollection.update(this.db, dispatch);
+      try {
+        await DispatchCollection.update(this.db, dispatch);
+      } catch (settleError) {
+        // A status write that throws is isolated to its row: the rest of
+        // the batch still runs and process() still resolves. The row stays
+        // `processing`.
+        logger.warn('dispatch.settle_error: could not record the outcome', {
+          id: dispatch.id,
+          type: dispatch.type,
+          error:
+            settleError instanceof Error
+              ? settleError.message
+              : String(settleError),
+        });
+      }
       return false;
     }
   }
