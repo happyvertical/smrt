@@ -606,12 +606,13 @@ describe('durable OAuth on the configured SQLite/PostgreSQL executor', () => {
       scopePermissions?: Record<string, string[]>;
       requested?: string;
       refuseUnheldScopes?: boolean;
+      serverScopes?: string[];
     } = {},
   ) {
     const scopePermissions = narrowing.scopePermissions ?? {
       read: ['catalog.read'],
     };
-    const scopeNames = Object.keys(scopePermissions);
+    const scopeNames = narrowing.serverScopes ?? Object.keys(scopePermissions);
     const options = { db: isolated.baseDb };
     const users = await UserCollection.create(options);
     const user = await users.create({
@@ -712,6 +713,8 @@ describe('durable OAuth on the configured SQLite/PostgreSQL executor', () => {
       foreign,
       tenant,
       membership,
+      role,
+      permission,
       sessions,
       sessionId,
       foreignSession,
@@ -1101,6 +1104,63 @@ describe('durable OAuth on the configured SQLite/PostgreSQL executor', () => {
       ).json();
       expect(all.scopes).toEqual(['read', 'open']);
       expect(all.requestedScopes).toBeUndefined();
+    });
+
+    it('refuses a refresh once the role loses the permission, never widening or clamping up', async () => {
+      const f = await fixture({
+        scopePermissions: mapping,
+        requested: 'read write',
+      });
+      const tokens = await exchange(
+        f,
+        await f.authorization.approve(f.server, f.request, f.sessionId),
+      );
+      expect(tokens.scope).toBe('read');
+      await (
+        await RolePermissionCollection.create({ db: isolated.baseDb })
+      ).removePermission(f.role.id as string, f.permission.id as string);
+      await expect(
+        f.server.token(
+          new URLSearchParams({
+            grant_type: 'refresh_token',
+            refresh_token: tokens.refresh_token as string,
+            client_id: f.clientId,
+            resource,
+          }),
+        ),
+      ).rejects.toThrow();
+      const payload = await f.server.verifyAccessToken(
+        tokens.access_token,
+        resource,
+      );
+      expect(
+        await f.authorization.validateAccessTokenClaims(payload),
+      ).toBeNull();
+    });
+
+    it('drops a scope with no permission mapping (never grants it); strict mode refuses', async () => {
+      const options = {
+        scopePermissions: { read: ['catalog.read'] },
+        serverScopes: ['read', 'extra'],
+        requested: 'read extra',
+      };
+      const f = await fixture(options);
+      expect(
+        (
+          await exchange(
+            f,
+            await f.authorization.approve(f.server, f.request, f.sessionId),
+          )
+        ).scope,
+      ).toBe('read');
+      const strict = await fixture({ ...options, refuseUnheldScopes: true });
+      await expect(
+        strict.authorization.approve(
+          strict.server,
+          strict.request,
+          strict.sessionId,
+        ),
+      ).rejects.toMatchObject({ error: 'access_denied' });
     });
 
     it('never widens on refresh', async () => {

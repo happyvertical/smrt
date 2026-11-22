@@ -222,11 +222,17 @@ scopes (none: 403 `insufficient_scope` with `scope="..."` naming them);
 `scopes_supported` is unchanged. Which tools a token may call is decided per
 tool: `toolScopes` and a workflow tool's `requiredScopes` list the scopes that
 tool needs, `tools/list` hides tools the token does not cover, and a call
-outside them is refused exactly like an unknown tool. A tool with no scope
-requirement is available to any token the resource accepts, and
-`requiredScopes` on `mountMcpAppRoute` is the baseline every tool needs. With
-narrowed tokens, keep it `[]` and map each tool to its own scope. The live role
-cap (runtime binder) still applies on every call.
+outside them is refused exactly like an unknown tool. Fail closed: a tool with
+no `toolScopes`/`requiredScopes` mapping requires every scope the resource
+advertises, so a narrowed token neither sees nor calls it. Apps that want
+narrowed tokens must map every tool in `toolScopes`. `requiredScopes` on
+`mountMcpAppRoute` is the baseline every tool needs; keep it `[]` and map each
+tool to its own scope. The live role cap (runtime binder) still applies on every
+call.
+
+Consent only ever removes scopes: one with no `scopePermissions` entry is dropped
+from the grant, never added. A host that wants a request containing an unheld or
+unmapped scope refused outright sets `refuseUnheldScopes: true`.
 
 ## Agent-ready app checklist
 

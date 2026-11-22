@@ -52,16 +52,18 @@ function setup(revoked = new Set<string>()) {
       note_create: ['notes.write'],
       note_delete: ['notes.delete'],
     },
-    workflowTools: ['note_list', 'note_create', 'note_delete'].map((name) => ({
-      name,
-      description: name,
-      inputSchema: { type: 'object' as const, properties: {} },
-      outputSchema: { type: 'object' as const, properties: {} },
-      effect: name === 'note_list' ? ('read' as const) : ('write' as const),
-      idempotent: name === 'note_list',
-      openWorld: false,
-      execute: () => ({ content: [{ type: 'text' as const, text: name }] }),
-    })),
+    workflowTools: ['note_list', 'note_create', 'note_delete', 'note_misc'].map(
+      (name) => ({
+        name,
+        description: name,
+        inputSchema: { type: 'object' as const, properties: {} },
+        outputSchema: { type: 'object' as const, properties: {} },
+        effect: name === 'note_list' ? ('read' as const) : ('write' as const),
+        idempotent: name === 'note_list',
+        openWorld: false,
+        execute: () => ({ content: [{ type: 'text' as const, text: name }] }),
+      }),
+    ),
     auditSink: sink,
     smrtOptions: () => ({}),
     auth,
@@ -142,11 +144,28 @@ describe('tokens narrower than the advertised scopes (#5110)', () => {
       'note_create',
       'note_delete',
       'note_list',
+      'note_misc',
     ]);
     expect(await list(app, tokenFor(['notes.read', 'notes.write']))).toEqual([
       'note_create',
       'note_list',
     ]);
+  });
+
+  it('fails closed: an unmapped tool needs every advertised scope', async () => {
+    const app = setup();
+    for (const scopes of [['notes.read'], ['notes.read', 'notes.write']]) {
+      const token = tokenFor(scopes);
+      expect(await list(app, token)).not.toContain('note_misc');
+      const refused = await call(app, token, 'note_misc');
+      expect(refused).toEqual(await call(app, token, 'no_such_tool'));
+      expect(refused.body.error).toMatchObject({
+        message: 'Unknown MCP tool.',
+      });
+    }
+    const full = await call(app, tokenFor(ALL), 'note_misc');
+    expect(full.status).toBe(200);
+    expect(full.body.error).toBeUndefined();
   });
 
   it('refuses a tool outside the token scopes exactly like an unknown tool', async () => {

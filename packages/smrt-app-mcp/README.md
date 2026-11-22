@@ -73,7 +73,8 @@ export const POST = mountMcpAppRoute({
   OAuth tokens that consent narrowed to a subset of the advertised scopes (#5110),
   keep `requiredScopes: []` and map each tool with `toolScopes`: the resource
   accepts a token carrying at least one advertised scope (none is 403
-  `insufficient_scope`) and each tool needs only its own scopes.
+  `insufficient_scope`) and each mapped tool needs only its own scopes. A tool
+  with no mapping requires every advertised scope (fail closed), so map them all.
 - **Effects** — `effects` (also on `createMcpAppServer`) limits the catalog to
   tools whose effect is listed: `'read'`, `'write'`, `'destructive'`, the
   WebMCP vocabulary. `mcpToolEffect` classifies with the existing read-only

@@ -557,6 +557,8 @@ export function createMcpResourceAuth(
               kind: fields.kind as string | undefined,
               roles,
               scopes: [...granted],
+              // Tools without a scope mapping need every advertised scope.
+              ...(scopes.length ? { unmappedToolScopes: [...scopes] } : {}),
               tenantBinding:
                 (fields.tenantBinding as McpTenantBinding | undefined) ??
                 'direct-or-inherited',
