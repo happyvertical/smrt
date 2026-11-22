@@ -9,6 +9,13 @@ import {
   LEGACY_POSTGRES_CHANGE_FEED_APPEND_FUNCTION_IDENTITY,
 } from './schema.js';
 
+/**
+ * The advisory lock every writer of a system table takes on PostgreSQL
+ * (`bootstrap.ts`, the decimal width step in `decimal-width.ts`).
+ */
+export const SYSTEM_TABLE_BOOTSTRAP_LOCK_SQL =
+  "SELECT pg_advisory_xact_lock(hashtext('smrt'), hashtext('system-tables'))";
+
 type DatabaseWithConfig = DatabaseInterface & {
   config?: {
     type?: string;
@@ -1281,12 +1288,8 @@ export async function ensureAiRunsSystemTableCompatibility(
     'TEXT',
     typeHint,
   );
-  for (const column of AI_RUN_DOUBLE_COLUMNS) {
-    await widenRealColumn(db, '_smrt_ai_runs', column, typeHint);
-  }
-  if (await tableExists(db, '_smrt_ai_run_events', typeHint)) {
-    await widenRealColumn(db, '_smrt_ai_run_events', 'reserved_cost', typeHint);
-  }
+  // The REAL cost columns of an early table are widened on every start,
+  // outside the version gate (`decimal-width.ts`).
   await db.query(
     `UPDATE _smrt_ai_runs
         SET degraded = CASE WHEN status = 'degraded' THEN 1 ELSE degraded END,
@@ -1296,60 +1299,6 @@ export async function ensureAiRunsSystemTableCompatibility(
             status = CASE WHEN status IN ('ok', 'degraded') THEN 'done' ELSE status END
       WHERE status IN ('ok', 'degraded')
          OR (status = 'failed' AND stop_reason IS NULL)`,
-  );
-}
-
-/** The accumulating cost columns of `_smrt_ai_runs`, DOUBLE PRECISION. */
-const AI_RUN_DOUBLE_COLUMNS = ['cost_used', 'inclusive_cost', 'reserved_cost'];
-
-/**
- * Change a 32-bit REAL column to DOUBLE PRECISION on PostgreSQL and DuckDB.
- * SQLite stores REAL as an 8-byte float already, so it is left alone. A
- * column that is already double (or missing) is not touched, so the step is
- * idempotent.
- */
-async function widenRealColumn(
-  db: DatabaseInterface,
-  tableName: string,
-  columnName: string,
-  typeHint?: string,
-): Promise<void> {
-  const engine = getDatabaseEngine(db, typeHint);
-  if (engine === 'postgres') {
-    const rows = getQueryRows(
-      await db.query(
-        `SELECT data_type FROM information_schema.columns
-          WHERE table_schema = current_schema()
-            AND table_name = $1 AND column_name = $2`,
-        tableName,
-        columnName,
-      ),
-    );
-    if (rows[0]?.data_type !== 'real') return;
-    await db.query(
-      `ALTER TABLE ${tableName} ALTER COLUMN ${columnName} TYPE DOUBLE PRECISION`,
-    );
-    return;
-  }
-  if (engine !== 'duckdb') return;
-  const rows = getQueryRows(await db.query(`PRAGMA table_info(${tableName})`));
-  const type = String(
-    rows.find((row) => row.name === columnName)?.type ?? '',
-  ).toUpperCase();
-  if (type !== 'FLOAT' && type !== 'REAL' && type !== 'FLOAT4') return;
-  // DuckDB refuses to alter a table its indexes depend on; the DDL replay
-  // that follows the compatibility pass recreates them.
-  const indexes = getQueryRows(
-    await db.query(
-      `SELECT index_name FROM duckdb_indexes() WHERE table_name = $1`,
-      tableName,
-    ),
-  );
-  for (const row of indexes) {
-    await db.query(`DROP INDEX IF EXISTS ${String(row.index_name)}`);
-  }
-  await db.query(
-    `ALTER TABLE ${tableName} ALTER COLUMN ${columnName} TYPE DOUBLE`,
   );
 }
 

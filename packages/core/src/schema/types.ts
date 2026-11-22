@@ -320,6 +320,14 @@ export interface MigrationResult {
   error?: Error | string;
   /** Whether this was a rollback operation */
   rolled_back?: boolean;
+  /**
+   * Found after the migration committed: on DuckDB, views that no longer
+   * bind (created by another connection while it ran). The migration is
+   * applied; each warning names the view and how to recreate it.
+   */
+  warnings?: Array<
+    Error & { view: { database: string; schema: string; name: string } }
+  >;
 }
 
 /**

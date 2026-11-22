@@ -177,7 +177,9 @@ describe.each([
       sql.includes(REBUILD_PLAN_STALE_MARKER),
     );
     const firstWrite = statements.findIndex((sql) =>
-      /^\s*(CREATE TABLE "_smrt_rebuild_|DROP TABLE "guarded_)/.test(sql),
+      /^\s*(CREATE TABLE (?:"[^"]+"\.){0,2}"_smrt_rebuild_|DROP TABLE (?:"[^"]+"\.){0,2}"guarded_)/.test(
+        sql,
+      ),
     );
     expect(check).toBeGreaterThanOrEqual(0);
     expect(firstWrite).toBeGreaterThan(check);
@@ -687,8 +689,13 @@ describe('combined DuckDB rebuilds read every table once', () => {
         if (key !== 'query')
           return typeof value === 'function' ? value.bind(target) : value;
         return async (sql: string, ...args: unknown[]) => {
+          // The rebuild starts reading a table at duckdb_tables(); a change
+          // made mid-reading is refused as an unclassifiable column instead.
           if (
-            /PRAGMA table_info\("children"\)/.test(String(sql)) &&
+            /^SELECT sql, comment, database_name, schema_name FROM duckdb_tables\(\)/.test(
+              String(sql),
+            ) &&
+            args[0] === 'children' &&
             ++reads === 2
           ) {
             // Between the child's reading and the parent plan's reading of it.

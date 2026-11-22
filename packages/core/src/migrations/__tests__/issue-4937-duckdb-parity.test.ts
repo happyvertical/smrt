@@ -353,8 +353,9 @@ describe('#4937 DuckDB change kinds apply when ALTER cannot', () => {
       const diff = await plan(schemas('REAL'));
       const statements = getSQLFromDiff(diff);
       // Fail after the old tables are dropped and the new ones filled.
+      // Every name in the plan is qualified with its catalog and schema.
       const last = statements.findIndex((sql) =>
-        sql.startsWith('DROP TABLE "_smrt_rebuild_'),
+        sql.startsWith('DROP TABLE "memory"."main"."_smrt_rebuild_'),
       );
       expect(last).toBeGreaterThan(0);
       statements.splice(last, 0, 'SELECT this_is_not_valid_sql()');

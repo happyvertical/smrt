@@ -210,7 +210,7 @@ describe.each(engines)('run id registry upgrade on %s', (engine) => {
         ),
       ),
     ).toHaveLength(1);
-    expect(SMRT_SCHEMA_VERSION).toBe('1.20.0');
+    expect(SMRT_SCHEMA_VERSION).toBe('1.21.0');
     const statements: string[] = [];
     const restore = recordStatements(db, (sql) => statements.push(sql));
     await ensureSystemTables(db, hint(engine));

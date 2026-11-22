@@ -407,7 +407,10 @@ one guarded UPDATE, and added events, checkpoints and evaluations; later
 columns; 1.19.0 adds `idx_smrt_ai_runs_finished`; 1.20.0 adds
 `_smrt_ai_run_ids` and its backfill (`backfillAiRunIdRegistry`, from
 `bootstrapSystemTables`, not from a compatibility pass, so it sees the
-replayed DDL). On PostgreSQL a table with
+replayed DDL); 1.21.0 declares `_smrt_ai_usage.estimated_cost` DOUBLE
+PRECISION. A 4-byte `estimated_cost` or run/event cost column is widened on
+every start, outside the version gate, and a blocker defers it with a warning
+(`system/decimal-width.ts`, see `schema-paths.md`). On PostgreSQL a table with
 legacy timezone-naive timestamps is left alone and the bootstrap fails closed
 until the audited timestamp migration has run.
 

@@ -98,6 +98,7 @@ import {
 import {
   combineDuckDbRebuilds,
   type DuckDbRebuildPlan,
+  moveViewProbesLast,
   planDuckDbTableChanges,
 } from './duckdb-rebuild.js';
 import { reportJsonTableChange } from './json-adapter-ddl.js';
@@ -992,6 +993,10 @@ export class SchemaComparer {
         }
       }
 
+      // A DuckDB column type change checks every view after the last
+      // changing statement of the migration.
+      if (this.engine === 'duckdb')
+        diff.changes = moveViewProbesLast(diff.changes);
       return diff;
     } finally {
       this.plannedTables.clear();
@@ -4126,16 +4131,19 @@ export class SchemaComparer {
         // int4-vs-int8 drift the general INTEGER bucket also hides. Widening
         // (float4 -> float8) is lossless and safe to auto-plan; narrowing
         // (float8 -> float4) can lose precision, so it stays advisory-only.
+        // The JSON adapter is DuckDB-backed, so its float widths are DuckDB's
+        // (its existing-table changes are reported, never run).
+        const floatEngine = this.engine === 'json' ? 'duckdb' : this.engine;
         if (
-          (this.engine === 'postgres' || this.engine === 'duckdb') &&
+          (floatEngine === 'postgres' || floatEngine === 'duckdb') &&
           normalizedExpected === 'REAL' &&
           normalizedActual === 'REAL'
         ) {
           const expectedPrecision = floatPrecisionOf(
             expectedEngineType,
-            this.engine,
+            floatEngine,
           );
-          const actualPrecision = floatPrecisionOf(dbCol.type, this.engine);
+          const actualPrecision = floatPrecisionOf(dbCol.type, floatEngine);
           if (
             expectedPrecision &&
             actualPrecision &&

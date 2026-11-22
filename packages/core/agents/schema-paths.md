@@ -1031,6 +1031,86 @@ All the drifted columns of one table share a single rebuild: the first change
 carries the plan and the rest become `no change needed` comments that the CLI
 classifies as no-ops.
 
+### A DuckDB column type change is a guarded rebuild; views are never touched (P5a)
+
+Decimal fields map to `DOUBLE` on DuckDB and the JSON adapter (a bare DuckDB
+`REAL` is 4 bytes). A legacy `FLOAT` column is a `type_upgrade`, and on
+DuckDB every `type_upgrade` takes the table rebuild of
+`migrations/duckdb-rebuild.ts`, indexed or not: a full copy of the table and
+of every table that references it, in the migration's transaction. Planning
+refuses (a `--` comment, kind `type.rebuild-unavailable`) when the catalog
+cannot be read, the target column is generated, the two generated-column
+classifiers disagree, the foreign-key group is cyclic, a dependency-tracked
+view (`enable_view_dependencies`) depends on the group, or any view of the
+database does not bind (a view that fails before the change proves nothing
+after it).
+
+SMRT never drops, creates or replaces a view (`migrations/view-guard.ts`). A
+type-change plan:
+
+- starts with a guard (`REBUILD_PLAN_VIEWS_STALE_MARKER`,
+  `ViewsChangedSincePlanError`) on `current_database()`, `current_schema()`,
+  a fingerprint of every view of the database (catalog, schema, name,
+  temporary flag, SQL) and the planned source type of each converted column;
+  then the table guard (`TableChangedSincePlanError`), which now also covers
+  table, column and index comments;
+- names every table, staging table, index and probe `"db"."schema"."name"`,
+  so a temporary object of the same name or another current schema cannot
+  redirect a statement;
+- copies stored columns only (a column is generated when its live
+  `CREATE TABLE` item says `GENERATED ALWAYS AS` and DuckDB's binder refuses
+  `EXPLAIN INSERT` into it), keeps generated columns in the new definition,
+  writes the comments again after the indexes, and checks every stored
+  column's values (`sum(hash(…))` against the old rows cast to the final
+  type) with the columns, indexes, foreign keys and row count;
+- ends, after the last changing statement of the whole migration
+  (`moveViewProbesLast`), with one `SELECT * FROM "db"."schema"."view" LIMIT 0`
+  per view. A probe carries no comment; the tracker recognises it by its exact
+  shape and reads the view from its quoted identifiers. A failure rolls the
+  migration back: `DependentViewTypeError` when DuckDB says the view's
+  contents were altered (it names the view, the migration and every table it
+  changes, with the recovery steps), `DependentViewCheckError` for any other
+  failure (a missing file, function or extension), `DependentObjectError` for
+  "Cannot alter/drop entry" from a dependency-tracked view.
+
+Recovery: save the view's SQL, comment and column comments; drop it and every
+view that reads it; migrate; recreate them in order, keeping a published
+`FLOAT` with `::FLOAT` where readers expect it; reapply the comments
+(`decimal-widening-views.test.ts`, "documented recovery").
+
+Executors: the tracker refuses a migration that holds a rebuild, a guard or a
+probe on an adapter without `transaction()`, before any statement
+(`MigrationTransactionRequiredError`). A caller that runs `sqlStatements`
+itself must run them in one transaction and roll back on the first failure:
+DuckDB keeps a transaction open after a failed statement, and a later
+`COMMIT` keeps what ran before it. After commit the tracker probes every view
+again; one that no longer binds (created by another connection while the
+migration ran) is a `ViewInvalidatedAfterCommitWarning` in
+`MigrationResult.warnings` and the log. Not checked: views in other attached
+databases and other connections' temporary views; only the system
+compatibility pass, which plans and applies on one connection, includes its
+own temporary views. `db:diff`, `db:status` and the doctor's migrate preview
+build a plan, so they bind every view of the database; live parity does not.
+
+Probing plans without a type change (an `ADD COLUMN` or `DROP COLUMN` already
+leaves a `SELECT *` view unbound on main) is not done here. Tests:
+`decimal-widening-views.test.ts`, `table-rebuild-comments.test.ts`,
+`table-rebuild-generated.test.ts`, `duckdb-decimal-double.test.ts`.
+
+System columns: `_smrt_contexts.confidence`, `_smrt_ai_usage.estimated_cost`,
+the three `_smrt_ai_runs` cost columns and `_smrt_ai_run_events.reserved_cost`
+are DOUBLE PRECISION (schema 1.21.0). `system/decimal-width.ts` widens a
+4-byte one on every start, outside the version gate, after the bootstrap:
+DuckDB and the JSON adapter (in memory) through the same rebuild in a
+transaction of its own; PostgreSQL with a lock-free width probe, then each
+`ALTER … TYPE DOUBLE PRECISION` in a savepoint under the system-table lock with
+a 5 s lock timeout. A known blocker (the planning refusals above, a failed
+probe or guard, a dependency error; on PostgreSQL any failure, with its
+SQLSTATE) defers the column with a warning and the start goes on; any other
+DuckDB failure still fails the start. Nothing is attempted inside a caller's
+transaction. Live parity reports a deferred system column as a width warning
+(`system-decimal-width.test.ts`, `system-decimal-width-postgres.optional.test.ts`).
+
 ### Explicit SQLite NOT NULL relaxation (#4413)
 
 Removing an ordinary inline `NOT NULL` clause from a manifest-nullable column

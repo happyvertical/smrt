@@ -138,8 +138,12 @@ async function readShape(
       indexes = [];
     } else {
       columns = rowsOf(await db.query(`PRAGMA table_info(${table})`)).map(
-        (row) =>
-          `${row.name}:${String(row.type).toUpperCase()}:${Number(row.notnull)}:${row.dflt_value ?? ''}`,
+        (row) => {
+          // SQLite keeps a column's declared type text, but REAL and DOUBLE
+          // PRECISION are the same 8-byte float there (schema 1.21.0).
+          const type = String(row.type).toUpperCase();
+          return `${row.name}:${engine === 'sqlite' && type === 'REAL' ? 'DOUBLE PRECISION' : type}:${Number(row.notnull)}:${row.dflt_value ?? ''}`;
+        },
       );
       if (engine === 'sqlite') {
         indexes = rowsOf(await db.query(`PRAGMA index_list(${table})`))

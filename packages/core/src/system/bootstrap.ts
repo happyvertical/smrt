@@ -11,12 +11,14 @@ import {
   assertPostgresSystemTimestampsCurrent,
   ensureBootstrapSystemTableCompatibility,
   getDatabaseEngine,
+  SYSTEM_TABLE_BOOTSTRAP_LOCK_SQL,
   tableExists,
 } from './compatibility.js';
+import {
+  reportSystemDecimalWidening,
+  widenSystemDecimalColumns,
+} from './decimal-width.js';
 import { getSystemTableDDL, SMRT_SCHEMA_VERSION } from './schema.js';
-
-const SYSTEM_TABLE_BOOTSTRAP_LOCK_SQL =
-  "SELECT pg_advisory_xact_lock(hashtext('smrt'), hashtext('system-tables'))";
 
 /**
  * Timeout budget for the PostgreSQL system-table bootstrap transaction.
@@ -373,9 +375,14 @@ export async function ensureSystemTables(
     (await isSystemSchemaVersionApplied(db, typeHint))
   ) {
     await ensurePostgresChangeFeedHelpers(db, typeHint);
+    reportSystemDecimalWidening(await widenSystemDecimalColumns(db, typeHint));
     return;
   }
   await runSerializedAgainstSystemTableBootstrap(db, typeHint, (scopedDb) =>
     bootstrapSystemTables(scopedDb, typeHint),
   );
+  // Outside the version gate and the bootstrap transaction: a 4-byte system
+  // decimal column is widened on any start, and a blocker defers it with a
+  // warning instead of failing the start (`decimal-width.ts`).
+  reportSystemDecimalWidening(await widenSystemDecimalColumns(db, typeHint));
 }

@@ -686,7 +686,7 @@ function compareColumns(
           details: { expected: column.type, actual: live.type },
         });
       } else if (
-        (engine === 'postgres' || engine === 'duckdb') &&
+        (engine === 'postgres' || engine === 'duckdb' || engine === 'json') &&
         expectedBucket === 'REAL' &&
         actualBucket === 'REAL'
       ) {
@@ -697,7 +697,7 @@ function compareColumns(
         // (see `legacy_integer_width` below). Detect it here instead.
         //
         // Engine-gated to match the differ's own repair gate (`differ.ts`,
-        // `this.engine === 'postgres' || this.engine === 'duckdb'`): SQLite
+        // PostgreSQL, DuckDB and the DuckDB-backed JSON adapter): SQLite
         // stores every real as an 8-byte double regardless of the declared
         // type name, so there is no narrowing and no `type_upgrade` path —
         // flagging it there would be a permanent, unclearable warning
@@ -711,18 +711,27 @@ function compareColumns(
         ) {
           const widening =
             expectedPrecision === 'double' && actualPrecision === 'single';
+          // `db:migrate` cannot widen an existing JSON-adapter table (it
+          // reports, never runs, DDL there), so that drift stays an error
+          // until the table is converted.
+          const unrepairable =
+            widening && engine === 'json' && table.origin !== 'system';
           findings.push({
             kind: 'column_type_drift',
             // Consistent with the other width findings (`legacy_integer_width`
             // below): a maintenance concern to schedule, not a broken write path.
-            severity: 'warning',
+            severity: unrepairable ? 'error' : 'warning',
             table: table.name,
             target: column.name,
             origin: table.origin,
             message: `Column \`${table.name}.${column.name}\` is \`${live.type}\` (${actualPrecision}-precision) in the live database but declared \`${column.type}\` (${expectedPrecision}-precision).`,
-            recommendation: widening
-              ? 'Run `smrt db:migrate` to widen this column to double precision (lossless).'
-              : 'Narrowing to single precision can lose data; confirm the narrower declaration is intentional before repairing it manually.',
+            recommendation: !widening
+              ? 'Narrowing to single precision can lose data; confirm the narrower declaration is intentional before repairing it manually.'
+              : table.origin === 'system'
+                ? 'A system column is widened on start; this one was deferred by a blocker (a view that projects it or does not bind, or a dependency-tracked view), named in the start-up warning. Remove the blocker and restart.'
+                : unrepairable
+                  ? 'The JSON adapter does not persist DDL, so `smrt db:migrate` does not widen this column; convert the table (create it again in the new shape, copy its rows, export it).'
+                  : 'Run `smrt db:migrate` to widen this column to double precision (lossless).',
             details: { expected: column.type, actual: live.type },
           });
         }
@@ -853,7 +862,9 @@ function floatPrecisionOf(
     .trim()
     .replace(/\(\s*\d+(\s*,\s*\d+)?\s*\)/g, '');
   if (/^(REAL|FLOAT4)$/.test(upper)) return 'single';
-  if (engine === 'duckdb' && upper === 'FLOAT') return 'single';
+  // The JSON adapter is DuckDB-backed: its bare FLOAT is 4 bytes too.
+  if ((engine === 'duckdb' || engine === 'json') && upper === 'FLOAT')
+    return 'single';
   if (/^(FLOAT8|DOUBLE|DOUBLE PRECISION|FLOAT)$/.test(upper)) return 'double';
   return null;
 }

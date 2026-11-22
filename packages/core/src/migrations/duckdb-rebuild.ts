@@ -30,7 +30,22 @@
  * {@link combineDuckDbRebuilds}, so a rebuild never creates a table again from a
  * definition another change of the same migration has replaced. Every rebuild
  * ends by checking each table of its group against the plan (columns, indexes,
- * foreign keys, row count) and fails the transaction when they differ.
+ * foreign keys, row count, and the values of every stored column) and fails
+ * the transaction when they differ.
+ *
+ * A column type change (`type_upgrade`) always takes the rebuild (P5a): one
+ * route, one set of guards. Its plan never touches a view (`view-guard.ts`):
+ * it is refused while a view does not bind or a dependency-tracked view
+ * depends on the group, starts with a guard on the target database, schema,
+ * views and source column types, and ends with a bind probe per view.
+ *
+ * Every table, staging table, index and probe is named `"db"."schema"."name"`
+ * from planning, and the guard pins the current database and schema, so a
+ * temporary object of the same name or another current schema cannot redirect
+ * a statement. The copy lists stored columns only: generated columns are
+ * classified by the live definition text and by DuckDB's binder, and the plan
+ * is refused when the two disagree. Table, column and index comments are
+ * written again after the indexes.
  */
 import {
   quoteIdentifier,
@@ -48,6 +63,17 @@ import {
   type SqliteRebuildPlanResult,
 } from './sqlite-rebuild.js';
 import type { DatabaseInterface } from './types.js';
+import {
+  errorMessages,
+  listViews,
+  parseViewProbe,
+  type QualifiedView,
+  qualifiedViewName,
+  REBUILD_PLAN_VIEWS_STALE_MARKER,
+  unboundViews,
+  ViewsChangedSincePlanError,
+  viewProbeStatement,
+} from './view-guard.js';
 
 /** Prefix of the staging tables a rebuild creates inside its transaction. */
 export const DUCKDB_REBUILD_TABLE_PREFIX = '_smrt_rebuild_';
@@ -79,12 +105,19 @@ export interface PlanDuckDbTableChangesOptions {
    * it references.
    */
   plannedReferences?: Edge[];
+  /**
+   * Also check the connection's temporary views. Set when the plan runs on the
+   * connection that planned it (the system compatibility pass); another
+   * connection's temporary views are not visible.
+   */
+  includeTemporaryViews?: boolean;
 }
 
 /** A live table as the rebuild reads it. */
 export interface TableInfo {
   name: string;
   createSql: string;
+  /** Every column, generated ones included, in catalog order. */
   columns: string[];
   indexes: Array<{ name: string; sql: string; columns: string[] }>;
   /**
@@ -92,8 +125,43 @@ export interface TableInfo {
    * catalog gave them when the table was read. The rebuild compares the live
    * catalog with these before it touches the table ({@link planGuardStatements}).
    */
-  catalog?: { tableSql: string; indexSql: string[] };
+  catalog?: {
+    tableSql: string;
+    indexSql: string[];
+    /** The table's comments as {@link COMMENTS_FINGERPRINT} rendered them. */
+    comments?: string;
+  };
+  /** The catalog (database) and schema the table was read in. */
+  database?: string;
+  schema?: string;
+  /** `duckdb_columns().data_type` per column. */
+  types?: Record<string, string>;
+  /** Table, column and index comments, replayed after a rebuild. */
+  comments?: {
+    table: string | null;
+    columns: Array<[string, string]>;
+    indexes: Array<[string, string]>;
+  };
+  /** Stored (not generated) columns, set once classified ({@link classifyColumns}). */
+  stored?: string[];
+  /** Generated columns, set once classified. */
+  generated?: string[];
 }
+
+/**
+ * @internal Test seams for the generated-column classifier (P5a). Never set
+ * outside tests.
+ */
+export const duckDbRebuildTestHooks: {
+  /** Override the text scan's answer for one column. */
+  textScanGenerated?: (
+    table: string,
+    column: string,
+    scanned: boolean,
+  ) => boolean;
+  /** Override the stored-column list a table is copied with. */
+  storedColumns?: (table: string, stored: string[]) => string[];
+} = {};
 
 const statementsOf = (change: SchemaChange): string[] =>
   change.sqlStatements ?? (change.sql ? [change.sql] : []);
@@ -116,8 +184,27 @@ function plannedReferenceBlock(
 }
 
 function blockedSql(name: string, reason: string): string {
-  return `-- DuckDB: ${quoteIdentifier(name)} requires a table rebuild, blocked: ${reason}`;
+  // One line: a reason can quote a database message, and every line of the
+  // refusal must stay inside the comment.
+  return `-- DuckDB: ${quoteIdentifier(name)} requires a table rebuild, blocked: ${reason}`.replace(
+    /\s+/g,
+    ' ',
+  );
 }
+
+/** `"db"."schema"."name"` for an object of the table's schema. */
+function qualified(info: TableInfo, name: string): string {
+  return info.database !== undefined && info.schema !== undefined
+    ? `${quoteIdentifier(info.database)}.${quoteIdentifier(info.schema)}.${quoteIdentifier(name)}`
+    : quoteIdentifier(name);
+}
+
+/**
+ * The table's table, column and index comments as one text, rendered by the
+ * same expression at planning and in the plan guard.
+ */
+const COMMENTS_FINGERPRINT = (where: string) =>
+  `CAST(struct_pack(t := (SELECT comment FROM duckdb_tables() WHERE ${where}), c := (SELECT list(struct_pack(n := column_name, m := comment) ORDER BY column_index) FROM duckdb_columns() WHERE ${where}), i := (SELECT list(struct_pack(n := index_name, m := comment) ORDER BY index_name) FROM duckdb_indexes() WHERE ${where} AND sql IS NOT NULL)) AS VARCHAR)`;
 
 async function readTable(
   db: DatabaseInterface,
@@ -126,17 +213,33 @@ async function readTable(
   const where =
     'database_name = current_database() AND schema_name = current_schema() AND table_name = ?';
   const table = await db.query(
-    `SELECT sql FROM duckdb_tables() WHERE ${where}`,
+    `SELECT sql, comment, database_name, schema_name FROM duckdb_tables() WHERE ${where}`,
     name,
   );
-  const createSql = String((table.rows[0] as { sql?: unknown })?.sql ?? '');
+  const tableRow = table.rows[0] as
+    | {
+        sql?: unknown;
+        comment?: unknown;
+        database_name?: unknown;
+        schema_name?: unknown;
+      }
+    | undefined;
+  const createSql = String(tableRow?.sql ?? '');
   if (!createSql) return undefined;
-  const columns = (
-    await db.query(`PRAGMA table_info(${quoteIdentifier(name)})`)
-  ).rows.map((row) => String((row as { name?: unknown }).name));
+  const columnRows = (
+    await db.query(
+      `SELECT column_name, data_type, comment FROM duckdb_columns() WHERE ${where} ORDER BY column_index`,
+      name,
+    )
+  ).rows as Array<{
+    column_name?: unknown;
+    data_type?: unknown;
+    comment?: unknown;
+  }>;
+  const columns = columnRows.map((row) => String(row.column_name));
   const indexRows = (
     await db.query(
-      `SELECT index_name, sql FROM duckdb_indexes() WHERE ${where} AND sql IS NOT NULL`,
+      `SELECT index_name, sql, comment FROM duckdb_indexes() WHERE ${where} AND sql IS NOT NULL`,
       name,
     )
   ).rows;
@@ -157,6 +260,12 @@ async function readTable(
       },
     ];
   });
+  const comments = await db.query(
+    `SELECT ${COMMENTS_FINGERPRINT(where.replace('table_name = ?', 'table_name = $1'))} AS comments`,
+    name,
+  );
+  const text = (value: unknown) =>
+    typeof value === 'string' && value.length > 0 ? value : null;
   return {
     name,
     createSql: createSql.replace(/;\s*$/, ''),
@@ -168,7 +277,184 @@ async function readTable(
         const sql = (row as { sql?: unknown }).sql;
         return typeof sql === 'string' ? [sql] : [];
       }),
+      comments: String((comments.rows[0] as { comments?: unknown })?.comments),
     },
+    database: String(tableRow?.database_name),
+    schema: String(tableRow?.schema_name),
+    types: Object.fromEntries(
+      columnRows.map((row) => [String(row.column_name), String(row.data_type)]),
+    ),
+    comments: {
+      table: text(tableRow?.comment),
+      columns: columnRows.flatMap((row) => {
+        const comment = text(row.comment);
+        return comment === null ? [] : [[String(row.column_name), comment]];
+      }) as Array<[string, string]>,
+      indexes: indexRows.flatMap((row) => {
+        const { index_name: indexName, comment } = row as {
+          index_name?: unknown;
+          comment?: unknown;
+        };
+        const value = text(comment);
+        return value === null || typeof indexName !== 'string'
+          ? []
+          : [[indexName, value]];
+      }) as Array<[string, string]>,
+    },
+  };
+}
+
+/** Whether a column definition item is generated, read outside literals and quoted names. */
+function isGeneratedDefinition(item: string): boolean {
+  let bare = '';
+  for (let index = 0; index < item.length; ) {
+    const char = item[index];
+    if (char === "'" || char === '"') {
+      let cursor = index + 1;
+      while (cursor < item.length) {
+        if (item[cursor] === char) {
+          if (item[cursor + 1] === char) {
+            cursor += 2;
+            continue;
+          }
+          break;
+        }
+        cursor++;
+      }
+      bare += ' ';
+      index = cursor + 1;
+      continue;
+    }
+    bare += char;
+    index++;
+  }
+  return /\bGENERATED\s+ALWAYS\s+AS\b/i.test(bare);
+}
+
+/**
+ * Classify every column of a table as stored or generated, twice: by its
+ * definition in the live `CREATE TABLE` text and by DuckDB's binder (an
+ * `EXPLAIN INSERT` into the column, which only a generated column refuses).
+ * Returns the reason when the two disagree or a column does not map to exactly
+ * one definition; otherwise sets `stored` and `generated` on `info`.
+ */
+async function classifyColumns(
+  db: DatabaseInterface,
+  info: TableInfo,
+): Promise<string | undefined> {
+  const definitions = new Map<string, string[]>();
+  for (const item of parseCreateTableBody(info.createSql)?.items ?? []) {
+    const name = readColumnDefinitionName(item);
+    if (!name) continue;
+    const key = name.toLowerCase();
+    definitions.set(key, [...(definitions.get(key) ?? []), item]);
+  }
+  const stored: string[] = [];
+  const generated: string[] = [];
+  const table = qualified(info, info.name);
+  for (const column of info.columns) {
+    const items = definitions.get(column.toLowerCase()) ?? [];
+    if (items.length !== 1)
+      return `column "${column}" of table "${info.name}" does not map to exactly one definition in its CREATE TABLE statement`;
+    const scanned = isGeneratedDefinition(items[0]);
+    const text =
+      duckDbRebuildTestHooks.textScanGenerated?.(info.name, column, scanned) ??
+      scanned;
+    const quoted = quoteIdentifier(column);
+    let binder: boolean | undefined;
+    try {
+      await db.query(
+        `EXPLAIN INSERT INTO ${table} (${quoted}) SELECT ${quoted} FROM ${table} LIMIT 0`,
+      );
+      binder = false;
+    } catch (error) {
+      binder = errorMessages(error).some((message) =>
+        /Cannot insert into a generated column/i.test(message),
+      )
+        ? true
+        : undefined;
+    }
+    if (binder === undefined || binder !== text)
+      return `column "${column}" of table "${info.name}" cannot be classified as stored or generated (its definition and DuckDB disagree)`;
+    (text ? generated : stored).push(column);
+  }
+  info.stored = stored;
+  info.generated = generated;
+  return undefined;
+}
+
+/** The stored columns a table is copied with. */
+const copyColumns = (info: TableInfo): string[] => {
+  const stored = info.stored ?? info.columns;
+  return duckDbRebuildTestHooks.storedColumns?.(info.name, stored) ?? stored;
+};
+
+/**
+ * Catalog entries that depend on a table of the group and are not tables of
+ * the group (views created with `enable_view_dependencies`): DuckDB refuses
+ * to drop the table while they exist.
+ */
+async function readDependents(
+  db: DatabaseInterface,
+  tables: TableInfo[],
+): Promise<string[]> {
+  const names = tables.map((info) => quoteStringLiteral(info.name)).join(', ');
+  const scope =
+    'database_name = current_database() AND schema_name = current_schema()';
+  const { rows } = await db.query(
+    `SELECT DISTINCT v.database_name, v.schema_name, v.view_name, CAST(d.refobjid AS VARCHAR) AS oid
+       FROM duckdb_dependencies() d
+       JOIN duckdb_tables() t ON t.table_oid = d.objid
+       LEFT JOIN duckdb_views() v ON v.view_oid = d.refobjid
+      WHERE t.${scope.replace(' AND ', ' AND t.')} AND t.table_name IN (${names})
+        AND d.deptype <> 'a'
+        AND d.refobjid NOT IN (SELECT table_oid FROM duckdb_tables() WHERE ${scope} AND table_name IN (${names}))
+      ORDER BY 1, 2, 3, 4`,
+  );
+  return rows.map((row) =>
+    typeof row.view_name === 'string'
+      ? qualifiedViewName({
+          database: String(row.database_name),
+          schema: String(row.schema_name),
+          name: row.view_name,
+        })
+      : `catalog entry ${String(row.oid)}`,
+  );
+}
+
+/** The views a column type change is checked against, as of planning. */
+export interface DuckDbViewSnapshot {
+  database: string;
+  schema: string;
+  /** Whether the connection's temporary views are included. */
+  temporary: boolean;
+  /** {@link viewFingerprintSql} as of planning. */
+  fingerprint: string;
+  views: QualifiedView[];
+}
+
+/**
+ * Every view of the current database (and the temporary ones, when asked) as
+ * one text: catalog, schema, name, temporary flag and SQL. The same
+ * expression runs at planning and in the plan guard.
+ */
+const viewFingerprintSql = (temporary: boolean) =>
+  `(SELECT coalesce(md5(CAST(list(struct_pack(d := database_name, s := schema_name, v := view_name, t := temporary, q := sql) ORDER BY database_name, schema_name, view_name) AS VARCHAR)), 'none') FROM duckdb_views() WHERE NOT internal AND (database_name = current_database()${temporary ? " OR database_name = 'temp'" : ''}))`;
+
+async function readViewSnapshot(
+  db: DatabaseInterface,
+  temporary: boolean,
+): Promise<DuckDbViewSnapshot> {
+  const { rows } = await db.query(
+    `SELECT current_database() AS database_name, current_schema() AS schema_name, ${viewFingerprintSql(temporary)} AS fingerprint`,
+  );
+  const row = rows[0] as Record<string, unknown>;
+  return {
+    database: String(row.database_name),
+    schema: String(row.schema_name),
+    temporary,
+    fingerprint: String(row.fingerprint),
+    views: await listViews(db, { includeTemporary: temporary }),
   };
 }
 
@@ -274,6 +560,20 @@ export interface DuckDbTableRebuild {
   removedKeyColumns: string[];
   /** Foreign keys the rebuild adds. */
   addedKeys: Array<{ column: string; parent: string }>;
+  /**
+   * Every final column, generated ones included (`columns` lists the stored
+   * columns the copy fills). Defaults to `columns`.
+   */
+  allColumns?: string[];
+  /**
+   * The stored columns whose values the content check compares, each with
+   * the expression over the old rows it must equal and its final type.
+   */
+  content?: Array<{ column: string; source: string; type: string }>;
+  /** Columns whose type the rebuild changes, with their type at planning. */
+  upgraded?: Array<{ column: string; from: string }>;
+  /** The views checked around a column type change, as of planning. */
+  views?: DuckDbViewSnapshot;
 }
 
 /**
@@ -295,8 +595,6 @@ export interface DuckDbPlanResult extends SqliteRebuildPlanResult {
   rebuild?: DuckDbRebuildPlan;
 }
 
-const stagingName = (name: string) =>
-  quoteIdentifier(`${DUCKDB_REBUILD_TABLE_PREFIX}${name}`);
 /** The temporary table the rebuild check writes its findings to. */
 const CHECK_TABLE = quoteIdentifier('_smrt_check_rebuild');
 /** The temporary table the plan guard writes its findings to. */
@@ -327,9 +625,13 @@ const literalList = (values: string[]) =>
 function checkStatements(
   expected: Array<{
     table: string;
+    /** `"db"."schema"."table"` and its staging copy. */
+    target: string;
+    staging: string;
     columns: string[];
     indexes: string[];
     keys: string[];
+    content: Array<{ column: string; source: string; type: string }>;
   }>,
 ): string[] {
   const where = (table: string) =>
@@ -367,10 +669,22 @@ function checkStatements(
       problem(
         item.table,
         'a row count of',
-        `(SELECT count(*) FROM ${quoteIdentifier(item.table)})`,
-        `(SELECT count(*) FROM ${stagingName(item.table)})`,
+        `(SELECT count(*) FROM ${item.target})`,
+        `(SELECT count(*) FROM ${item.staging})`,
       ),
     );
+    // Every stored value must be the old one (cast to the column's final
+    // type): a stored column left out of the copy, or a wrong source, shows
+    // here even when the names and the row count agree.
+    for (const entry of item.content)
+      problems.push(
+        problem(
+          item.table,
+          `values of ${quoteIdentifier(entry.column)} with checksum`,
+          `(SELECT sum(hash(${quoteIdentifier(entry.column)})) FROM ${item.target})`,
+          `(SELECT sum(hash(CAST((${entry.source}) AS ${entry.type}))) FROM ${item.staging})`,
+        ),
+      );
   }
   return [
     `CREATE TEMP TABLE ${CHECK_TABLE} AS SELECT problem FROM (${problems.join(' UNION ALL ')}) WHERE problem IS NOT NULL`,
@@ -401,6 +715,11 @@ function planGuardStatements(tables: TableInfo[]): string[] {
     const changed = [
       `(SELECT sql FROM duckdb_tables() WHERE ${where(info.name)}) IS DISTINCT FROM ${quoteStringLiteral(info.catalog.tableSql)}`,
       `list_sort(coalesce((SELECT list(sql) FROM duckdb_indexes() WHERE ${where(info.name)} AND sql IS NOT NULL), []::VARCHAR[])) IS DISTINCT FROM list_sort(${literalList(info.catalog.indexSql)})`,
+      ...(info.catalog.comments === undefined
+        ? []
+        : [
+            `${COMMENTS_FINGERPRINT(where(info.name))} IS DISTINCT FROM ${quoteStringLiteral(info.catalog.comments)}`,
+          ]),
     ].join(' OR ');
     problems.push(
       `SELECT CASE WHEN ${changed} THEN ${quoteStringLiteral(rebuildPlanStaleMessage(info.name))} END AS problem`,
@@ -413,6 +732,48 @@ function planGuardStatements(tables: TableInfo[]): string[] {
     `DROP TABLE temp.${PLAN_GUARD_TABLE}`,
   ];
 }
+
+/** The temporary table the views guard writes its finding to. */
+const VIEWS_GUARD_TABLE = quoteIdentifier('_smrt_rebuild_views_guard');
+
+/**
+ * Statements that stop a column type change when the database it was planned
+ * against is not the one it runs on (P5a, E4): the current database and
+ * schema (every name in the plan is qualified with them), the views of the
+ * database, and the type of each column it converts. They run first, before
+ * the table guard, and roll the transaction back with
+ * {@link REBUILD_PLAN_VIEWS_STALE_MARKER}.
+ */
+function viewsGuardStatements(
+  snapshot: DuckDbViewSnapshot,
+  upgraded: Array<{ table: string; column: string; from: string }>,
+): string[] {
+  const changed = [
+    `current_database() IS DISTINCT FROM ${quoteStringLiteral(snapshot.database)}`,
+    `current_schema() IS DISTINCT FROM ${quoteStringLiteral(snapshot.schema)}`,
+    `${viewFingerprintSql(snapshot.temporary)} IS DISTINCT FROM ${quoteStringLiteral(snapshot.fingerprint)}`,
+    ...upgraded.map(
+      ({ table, column, from }) =>
+        `(SELECT data_type FROM duckdb_columns() WHERE database_name = ${quoteStringLiteral(snapshot.database)} AND schema_name = ${quoteStringLiteral(snapshot.schema)} AND table_name = ${quoteStringLiteral(table)} AND column_name = ${quoteStringLiteral(column)}) IS DISTINCT FROM ${quoteStringLiteral(from)}`,
+    ),
+  ].join(' OR ');
+  return [
+    `CREATE TEMP TABLE ${VIEWS_GUARD_TABLE} AS SELECT problem FROM (SELECT CASE WHEN ${changed} THEN ${quoteStringLiteral(`${REBUILD_PLAN_VIEWS_STALE_MARKER}. Nothing was changed; run the migrate again`)} END AS problem) WHERE problem IS NOT NULL`,
+    `SELECT error(CAST(list(problem) AS VARCHAR)) FROM temp.${VIEWS_GUARD_TABLE} HAVING count(*) > 0`,
+    `DROP TABLE temp.${VIEWS_GUARD_TABLE}`,
+  ];
+}
+
+const CREATE_TABLE_NAME =
+  /^(\s*CREATE\s+TABLE\s+)("(?:[^"]|"")+"|[^\s(]+)(?=\s*\()/i;
+const CREATE_INDEX_TARGET =
+  /^(\s*CREATE\s+(?:UNIQUE\s+)?INDEX\s+(?:IF\s+NOT\s+EXISTS\s+)?(?:"(?:[^"]|"")+"|[^\s(]+)\s+ON\s+)("(?:[^"]|"")+"|[^\s(]+)/i;
+
+/** The statement with its table name replaced by `name`, or `undefined`. */
+const qualifyStatement = (pattern: RegExp, sql: string, name: string) =>
+  pattern.test(sql)
+    ? sql.replace(pattern, (_all, head: string) => `${head}${name}`)
+    : undefined;
 
 /**
  * The statements of one rebuild of a group of tables: copy every table, drop
@@ -465,25 +826,65 @@ function buildGroupRebuild(
       };
   }
 
-  // First of all: every table must still be the one this plan was built from.
-  const statements: string[] = planGuardStatements(tables);
+  // Every name is qualified with the catalog and schema the tables were read
+  // in; the views guard pins both for a column type change.
+  const anchor = tables[0];
+  const target = (name: string) => qualified(anchor, name);
+  const staging = (name: string) =>
+    qualified(anchor, `${DUCKDB_REBUILD_TABLE_PREFIX}${name}`);
+  const qualifyIndex = (sql: string, name: string) =>
+    qualifyStatement(CREATE_INDEX_TARGET, sql, target(name)) ?? sql;
+
+  // A column type change: the views as of planning, and the source types.
+  const snapshots = [...rebuilds.values()].flatMap((rebuild) =>
+    rebuild.views ? [rebuild.views] : [],
+  );
+  if (
+    snapshots.some(
+      (snapshot) =>
+        snapshot.fingerprint !== snapshots[0].fingerprint ||
+        snapshot.database !== snapshots[0].database ||
+        snapshot.schema !== snapshots[0].schema,
+    )
+  )
+    throw new ViewsChangedSincePlanError();
+  const snapshot = snapshots.find((item) => item.temporary) ?? snapshots[0];
+  const upgraded = [...rebuilds.values()].flatMap((rebuild) =>
+    (rebuild.upgraded ?? []).map((item) => ({ table: rebuild.table, ...item })),
+  );
+
+  // First of all: the database, its views and every table must still be the
+  // ones this plan was built from.
+  const statements: string[] = [
+    ...(snapshot ? viewsGuardStatements(snapshot, upgraded) : []),
+    ...planGuardStatements(tables),
+  ];
   for (const name of dropOrder)
     statements.push(
-      `CREATE TABLE ${stagingName(name)} AS SELECT * FROM ${quoteIdentifier(name)}`,
+      `CREATE TABLE ${staging(name)} AS SELECT * FROM ${target(name)}`,
     );
   for (const name of [...dropOrder].reverse())
-    statements.push(`DROP TABLE ${quoteIdentifier(name)}`);
+    statements.push(`DROP TABLE ${target(name)}`);
   for (const name of createOrder) {
     const info = byName.get(name) as TableInfo;
     const rebuild = rebuilds.get(name);
-    const columns = rebuild?.columns ?? info.columns;
+    const columns = rebuild?.columns ?? copyColumns(info);
     const sources =
-      rebuild?.sources ?? info.columns.map((column) => quoteIdentifier(column));
-    statements.push(rebuild?.createSql ?? info.createSql);
+      rebuild?.sources ?? columns.map((column) => quoteIdentifier(column));
+    const create = qualifyStatement(
+      CREATE_TABLE_NAME,
+      rebuild?.createSql ?? info.createSql,
+      target(name),
+    );
+    if (!create)
+      return {
+        blocked: `the CREATE TABLE statement of table "${name}" could not be read`,
+      };
+    statements.push(create);
     statements.push(
-      `INSERT INTO ${quoteIdentifier(name)} (${columns
+      `INSERT INTO ${target(name)} (${columns
         .map((column) => quoteIdentifier(column))
-        .join(', ')}) SELECT ${sources.join(', ')} FROM ${stagingName(name)}`,
+        .join(', ')}) SELECT ${sources.join(', ')} FROM ${staging(name)}`,
     );
   }
   const followUps = names.flatMap(
@@ -491,10 +892,47 @@ function buildGroupRebuild(
   );
   for (const name of createOrder)
     statements.push(
-      ...(rebuilds.get(name)?.indexes ??
-        (byName.get(name) as TableInfo).indexes.map((index) => index.sql)),
+      ...(
+        rebuilds.get(name)?.indexes ??
+        (byName.get(name) as TableInfo).indexes.map((index) => index.sql)
+      ).map((sql) => qualifyIndex(sql, name)),
     );
-  statements.push(...followUps);
+  statements.push(
+    ...followUps.map((sql) => {
+      const index = readIndexName(sql);
+      return index && names.includes(index.table)
+        ? qualifyIndex(sql, index.table)
+        : sql;
+    }),
+  );
+
+  // The comments the drop discarded.
+  for (const name of createOrder) {
+    const info = byName.get(name) as TableInfo;
+    const rebuild = rebuilds.get(name);
+    const finalColumns = new Set(rebuild?.allColumns ?? info.columns);
+    const finalIndexes = new Set(
+      (rebuild?.indexes ?? info.indexes.map((index) => index.sql)).map(
+        (sql) => readIndexName(sql)?.name,
+      ),
+    );
+    const comments = info.comments;
+    if (!comments) continue;
+    if (comments.table !== null)
+      statements.push(
+        `COMMENT ON TABLE ${target(name)} IS ${quoteStringLiteral(comments.table)}`,
+      );
+    for (const [column, comment] of comments.columns)
+      if (finalColumns.has(column))
+        statements.push(
+          `COMMENT ON COLUMN ${target(name)}.${quoteIdentifier(column)} IS ${quoteStringLiteral(comment)}`,
+        );
+    for (const [index, comment] of comments.indexes)
+      if (finalIndexes.has(index))
+        statements.push(
+          `COMMENT ON INDEX ${qualified(anchor, index)} IS ${quoteStringLiteral(comment)}`,
+        );
+  }
 
   // What the plan meant to build, table by table.
   const expected: Parameters<typeof checkStatements>[0] = [];
@@ -512,16 +950,27 @@ function buildGroupRebuild(
       return { blocked: `an index of table "${name}" could not be read` };
     expected.push({
       table: name,
-      columns: rebuild?.columns ?? info.columns,
+      target: target(name),
+      staging: staging(name),
+      columns: rebuild?.allColumns ?? rebuild?.columns ?? info.columns,
       indexes: indexes.map((index) => (index as { name: string }).name),
       keys: finalKeys(name).map(
         (reference) => `${reference.columns}->${reference.parent}`,
       ),
+      content:
+        rebuild?.content ??
+        (info.stored ?? []).map((column) => ({
+          column,
+          source: quoteIdentifier(column),
+          type: info.types?.[column] ?? 'VARCHAR',
+        })),
     });
   }
   statements.push(...checkStatements(expected));
-  for (const name of dropOrder)
-    statements.push(`DROP TABLE ${stagingName(name)}`);
+  for (const name of dropOrder) statements.push(`DROP TABLE ${staging(name)}`);
+  // Last: every view of the database must still bind (a column type change).
+  if (snapshot)
+    statements.push(...snapshot.views.map((view) => viewProbeStatement(view)));
   return { statements };
 }
 
@@ -616,11 +1065,17 @@ export async function planDuckDbTableChanges(
     planInConstraints: false,
   });
 
-  // These need a rebuild whatever the catalog says.
+  // These need a rebuild whatever the catalog says. A column type change is
+  // always a rebuild (P5a): the ALTER route had its own guards, probes and an
+  // unguarded fallback when the catalog could not be read.
+  const typeChanges = alterClass.filter(
+    (change) => change.type === 'type_upgrade',
+  );
   const mustRebuild =
     foreignKeyOps.length > 0 ||
     addsWithAlter.some(hasUpdate) ||
-    alterClass.some(hasUpdate);
+    alterClass.some(hasUpdate) ||
+    typeChanges.length > 0;
   let table: TableInfo | undefined;
   let references: DuckDbReference[] = [];
   try {
@@ -810,19 +1265,86 @@ export async function planDuckDbTableChanges(
       `live schema introspection failed (${error instanceof Error ? error.message : String(error)})`,
     );
   }
-  const kept = table.columns.filter((column) => !dropColumns.has(column));
+
+  // Stored columns only are copied; every table of the group is classified.
+  let views: DuckDbViewSnapshot | undefined;
+  try {
+    for (const info of tables) {
+      const unclassified = await classifyColumns(db, info);
+      if (unclassified) return block(unclassified);
+    }
+    const generatedTarget = [...columnTypes.keys()].find((column) =>
+      table.generated?.includes(column),
+    );
+    if (generatedTarget)
+      return block(
+        `the column "${generatedTarget}" is generated; its type follows its expression and is not converted by a rebuild`,
+      );
+    // A dependency-tracked view blocks the drop itself.
+    const dependents = await readDependents(db, tables);
+    if (dependents.length > 0)
+      return block(
+        `${dependents.join(', ')} depend${dependents.length === 1 ? 's' : ''} on the table (a view created with enable_view_dependencies); drop ${dependents.length === 1 ? 'it' : 'them'} first`,
+      );
+    if (typeChanges.length > 0) {
+      // Every view must bind before the change, or its check after the change
+      // proves nothing.
+      views = await readViewSnapshot(
+        db,
+        options.includeTemporaryViews === true,
+      );
+      const unbound = await unboundViews(db, views.views);
+      if (unbound.length > 0)
+        return block(
+          `a column type change is checked against every view, and ${unbound
+            .map(
+              ({ view, message }) =>
+                `${qualifiedViewName(view)} does not bind (${message})`,
+            )
+            .join(
+              '; ',
+            )}; repair or drop ${unbound.length === 1 ? 'it' : 'them'} first`,
+        );
+    }
+  } catch (error) {
+    return block(
+      `live schema introspection failed (${error instanceof Error ? error.message : String(error)})`,
+    );
+  }
+
+  const stored = table.stored ?? table.columns;
+  const kept = stored.filter((column) => !dropColumns.has(column));
+  const copied = copyColumns(table).filter(
+    (column) => !dropColumns.has(column),
+  );
+  const sourceOf = (column: string) => {
+    const expression = tighten.get(column) ?? quoteIdentifier(column);
+    const type = columnTypes.get(column);
+    return type ? `CAST(${expression} AS ${type})` : expression;
+  };
   const rebuild: DuckDbTableRebuild = {
     table: tableName,
     createSql: target,
-    columns: [...kept, ...appended.map((column) => column.name)],
+    columns: [...copied, ...appended.map((column) => column.name)],
     sources: [
-      ...kept.map((column) => {
-        const expression = tighten.get(column) ?? quoteIdentifier(column);
-        const type = columnTypes.get(column);
-        return type ? `CAST(${expression} AS ${type})` : expression;
-      }),
+      ...copied.map(sourceOf),
       ...appended.map((column) => column.copy),
     ],
+    allColumns: [
+      ...table.columns.filter((column) => !dropColumns.has(column)),
+      ...appended.map((column) => column.name),
+    ],
+    content: kept.map((column) => ({
+      column,
+      source: sourceOf(column),
+      type: columnTypes.get(column) ?? table.types?.[column] ?? 'VARCHAR',
+    })),
+    upgraded: typeChanges.flatMap((change) => {
+      const column = change.name as string;
+      const from = table.types?.[column];
+      return from ? [{ column, from }] : [];
+    }),
+    ...(views ? { views } : {}),
     indexes: table.indexes
       .filter(
         (index) => !index.columns.some((column) => dropColumns.has(column)),
@@ -1062,4 +1584,41 @@ export function combineDuckDbRebuilds(
     ];
   }
   return { changes: result, blocked };
+}
+
+/**
+ * Move every view bind probe of a migration's changes to the end of its last
+ * executable change, once each (P5a, E3).
+ *
+ * A rebuild ends with the probes for its own column type change, but a later
+ * change of the same migration (a column added to another table that a
+ * `SELECT *` view reads) can also change a view's result columns. Checked
+ * after the last changing statement, a probe covers the whole migration.
+ */
+export function moveViewProbesLast(changes: SchemaChange[]): SchemaChange[] {
+  const probes: string[] = [];
+  const stripped = changes.map((change) => {
+    const statements = change.sqlStatements;
+    if (!statements?.some((sql) => parseViewProbe(sql))) return change;
+    for (const sql of statements)
+      if (parseViewProbe(sql) && !probes.includes(sql)) probes.push(sql);
+    const rest = statements.filter((sql) => !parseViewProbe(sql));
+    return { ...change, sql: rest[0], sqlStatements: rest };
+  });
+  if (probes.length === 0) return changes;
+  const executable = (change: SchemaChange) =>
+    change.type !== 'type_mismatch' &&
+    change.phase !== 'pre_foreign_key' &&
+    statementsOf(change).some((sql) => !/^\s*--/.test(sql));
+  let last = -1;
+  stripped.forEach((change, index) => {
+    if (executable(change)) last = index;
+  });
+  if (last === -1) return changes;
+  const carrier = stripped[last];
+  stripped[last] = {
+    ...carrier,
+    sqlStatements: [...statementsOf(carrier), ...probes],
+  };
+  return stripped;
 }

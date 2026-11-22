@@ -50,8 +50,40 @@ import type {
   MigrationTrackerOptions,
   RollbackOptions,
 } from './types.js';
+import {
+  asDependentObjectError,
+  asViewProbeFailure,
+  asViewsChangedSincePlan,
+  changedTablesOf,
+  checkViewsAfterCommit,
+  hasViewProbes,
+  MigrationTransactionRequiredError,
+  requiresTransaction,
+} from './view-guard.js';
 
 const logger = createLogger({ level: 'info' });
+
+/**
+ * The statement a migration failed on, keyed by the error the database raised
+ * for it, so the failure can be named (a view probe names its view).
+ */
+const failedStatements = new WeakMap<object, string>();
+
+async function runRecordingFailure(
+  run: (sql: string) => Promise<unknown>,
+  sql: string,
+): Promise<void> {
+  try {
+    await run(sql);
+  } catch (error) {
+    if (error && typeof error === 'object' && !failedStatements.has(error))
+      failedStatements.set(error, sql);
+    throw error;
+  }
+}
+
+const failedStatementOf = (error: unknown): string | undefined =>
+  error && typeof error === 'object' ? failedStatements.get(error) : undefined;
 
 /**
  * Row type for _smrt_schema_migrations table
@@ -415,6 +447,12 @@ export class MigrationTracker {
    * `CONCURRENTLY` DDL has run. `null` on every ordinary path.
    */
   private concurrentIndexPlan: ConcurrentIndexPlan | null = null;
+  /**
+   * Probe every view after a migration with view probes commits. Off on the
+   * transaction-scoped tracker of an atomic batch: its parent checks after
+   * the batch commits.
+   */
+  private postCommitViewCheck = true;
 
   constructor(options: MigrationTrackerOptions) {
     this.db = options.db;
@@ -814,6 +852,21 @@ export class MigrationTracker {
       };
     }
 
+    // A table rebuild, its guards and view probes hold only in one
+    // transaction that rolls back on the first failure. Refuse before
+    // anything runs, the migration record included.
+    if (!this.db.transaction && requiresTransaction(definition.up)) {
+      return {
+        success: false,
+        applied: false,
+        skipped: false,
+        name: definition.id,
+        checksum,
+        execution_time_ms: 0,
+        error: new MigrationTransactionRequiredError(definition.id),
+      };
+    }
+
     // Get batch number
     if (this.currentBatch === null) {
       this.currentBatch = await this.getNextBatch();
@@ -924,6 +977,13 @@ export class MigrationTracker {
         id,
       );
 
+      // After commit, every view must still bind; one created by another
+      // connection while the migration ran is reported, not prevented.
+      const warnings =
+        this.postCommitViewCheck && hasViewProbes(definition.up)
+          ? await this.viewsAfterCommit()
+          : [];
+
       return {
         success: true,
         applied: true,
@@ -931,11 +991,20 @@ export class MigrationTracker {
         name: definition.id,
         checksum,
         execution_time_ms: executionTime,
+        ...(warnings.length > 0 ? { warnings } : {}),
       };
     } catch (error) {
-      // A rebuild that found its table changed since the plan stops by name.
+      // A rebuild that found its table, a view or the target database changed
+      // since the plan, or a view a type change would leave unbound, stops by
+      // name.
       const migrationError =
         asTableChangedSincePlan(error) ??
+        asViewsChangedSincePlan(error) ??
+        asViewProbeFailure(error, failedStatementOf(error), {
+          migration: definition.id,
+          tables: changedTablesOf(definition.up),
+        }) ??
+        asDependentObjectError(error) ??
         (error instanceof Error ? error : new Error(String(error)));
 
       // Mark as failed. In an outer atomic Postgres transaction, a DDL error
@@ -1065,6 +1134,7 @@ export class MigrationTracker {
             useConcurrentIndexes: false,
           });
           txTracker.concurrentIndexPlan = deferred;
+          txTracker.postCommitViewCheck = false;
           txTracker.sqliteRebuildTransactionOwned =
             this.sqliteRebuildTransactionOwned;
           if (this.sqliteRebuildTransactionOwned) {
@@ -1099,7 +1169,7 @@ export class MigrationTracker {
         });
 
         if (!deferred) {
-          return committed;
+          return this.withViewsAfterCommit(committed, definitions);
         }
 
         return await this.applyDeferredConcurrentIndexes(
@@ -2091,6 +2161,45 @@ export class MigrationTracker {
     }
   }
 
+  /** Views that no longer bind after a commit, logged and returned. */
+  private async viewsAfterCommit() {
+    try {
+      const warnings = await checkViewsAfterCommit(this.db);
+      for (const warning of warnings) logger.warn(`[smrt] ${warning.message}`);
+      return warnings;
+    } catch (error) {
+      logger.warn(
+        `[smrt] Views could not be checked after the migration committed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return [];
+    }
+  }
+
+  /** Attach post-commit view warnings to the applied results that probed views. */
+  private async withViewsAfterCommit(
+    results: MigrationResult[],
+    definitions: MigrationDefinition[],
+  ): Promise<MigrationResult[]> {
+    const probed = new Set(
+      definitions
+        .filter((definition) => hasViewProbes(definition.up))
+        .map((definition) => definition.id),
+    );
+    if (
+      !results.some(
+        (result) => result.success && result.applied && probed.has(result.name),
+      )
+    )
+      return results;
+    const warnings = await this.viewsAfterCommit();
+    if (warnings.length === 0) return results;
+    return results.map((result) =>
+      result.success && result.applied && probed.has(result.name)
+        ? { ...result, warnings }
+        : result,
+    );
+  }
+
   /**
    * Execute SQL statements with appropriate transaction handling
    */
@@ -2122,9 +2231,13 @@ export class MigrationTracker {
         if (this.sqliteRebuildTransactionOwned)
           await this.assertSqliteForeignKeysSuspended(tx as DatabaseInterface);
         for (const sql of statements) {
-          await runRetireAwareStatement(
-            (statement) => tx.query(statement),
-            this.dbEngine,
+          await runRecordingFailure(
+            (text) =>
+              runRetireAwareStatement(
+                (statement) => tx.query(statement),
+                this.dbEngine,
+                text,
+              ),
             sql,
           );
         }
@@ -2132,11 +2245,16 @@ export class MigrationTracker {
           await this.checkSqliteForeignKeys(tx as DatabaseInterface);
       });
     } else {
-      // Fallback to sequential execution
+      // Fallback to sequential execution. A plan that rebuilds a table or
+      // checks views never reaches here (apply() refuses it first).
       for (const sql of statements) {
-        await runRetireAwareStatement(
-          (statement) => this.db.query(statement),
-          this.dbEngine,
+        await runRecordingFailure(
+          (text) =>
+            runRetireAwareStatement(
+              (statement) => this.db.query(statement),
+              this.dbEngine,
+              text,
+            ),
           sql,
         );
       }

@@ -563,6 +563,16 @@ export {
   type MigrationWaitOptions,
   type StartupGuardOptions,
 } from './migrations/startup-guard.js';
+export {
+  asViewsChangedSincePlan,
+  DependentObjectError,
+  DependentViewCheckError,
+  DependentViewTypeError,
+  MigrationTransactionRequiredError,
+  type QualifiedView,
+  ViewInvalidatedAfterCommitWarning,
+  ViewsChangedSincePlanError,
+} from './migrations/view-guard.js';
 export * from './object';
 export {
   type OperationPermissionAlias,

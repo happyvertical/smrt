@@ -81,7 +81,10 @@ async function readSystemShape(db: DatabaseInterface): Promise<SystemShape> {
     )
       .map(
         (column) =>
-          `${column.name}:${column.type}:${column.notnull}:${column.dflt_value ?? ''}`,
+          // SQLite gives REAL and DOUBLE PRECISION the same 8-byte REAL
+          // affinity and the width step leaves SQLite columns alone, so a
+          // legacy `REAL` and a fresh `DOUBLE PRECISION` are one shape.
+          `${column.name}:${column.type === 'DOUBLE PRECISION' ? 'REAL' : column.type}:${column.notnull}:${column.dflt_value ?? ''}`,
       )
       .sort();
 

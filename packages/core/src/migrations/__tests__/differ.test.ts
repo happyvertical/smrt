@@ -1318,7 +1318,7 @@ describe('SchemaComparer INTEGER→REAL widening for rate columns (#2361)', () =
     expect(diff.changes.filter((c) => c.type === 'type_mismatch')).toEqual([]);
   });
 
-  it('emits a native ALTER COLUMN TYPE on DuckDB', async () => {
+  it('plans the DuckDB widening as a rebuild, and refuses it when the definition cannot be read', async () => {
     const mockDuckDb = {
       url: '/path/to/test.duckdb',
       query: async () => ({ rows: [{ name: 'invoice_line_items' }] }),
@@ -1335,10 +1335,16 @@ describe('SchemaComparer INTEGER→REAL widening for rate columns (#2361)', () =
     const typeUpgrades = diff.changes.filter((c) => c.type === 'type_upgrade');
     expect(typeUpgrades).toHaveLength(1);
     expect(typeUpgrades[0].name).toBe('tax_rate');
-    // DuckDB maps the abstract REAL straight through; exact-decimal semantics
-    // remain intentionally outside the INTEGER/BIGINT contract.
-    expect(typeUpgrades[0].sql).toBe(
-      'ALTER TABLE "invoice_line_items" ALTER COLUMN "tax_rate" TYPE REAL',
+    // DuckDB maps the abstract REAL to DOUBLE (a bare DuckDB REAL is 4
+    // bytes), and a DuckDB type change is always the guarded table rebuild:
+    // this mock shows no CREATE TABLE text, so it is refused, never planned as
+    // a bare ALTER.
+    expect(typeUpgrades[0].kindHint).toBe('type.rebuild-unavailable');
+    expect(typeUpgrades[0].sql).toContain(
+      'no CREATE TABLE statement found for the table',
+    );
+    expect(getSQLFromDiff(diff).filter((sql) => !sql.startsWith('--'))).toEqual(
+      [],
     );
   });
 
@@ -2672,11 +2678,9 @@ describe('SchemaComparer float-width drift (#2770)', () => {
     expect(diff.has_changes).toBe(true);
   });
 
-  it('reports narrowing (double precision -> real) as an advisory only, never executable', async () => {
-    // Unreachable through the ordinary manifest pipeline on PostgreSQL (the
-    // abstract REAL type always maps to DOUBLE PRECISION there), but DuckDB's
-    // base strategy maps REAL straight through, so a legacy DuckDB column
-    // that was widened by hand to DOUBLE is a real narrowing candidate.
+  it('is a no-op on DuckDB when the live column is DOUBLE (the declared REAL maps to DOUBLE)', async () => {
+    // The abstract REAL maps to double precision on every engine, DuckDB
+    // included, so a DOUBLE column is the converged shape, not narrowing.
     const mockDuckDb = {
       url: '/path/to/test.duckdb',
       query: async () => ({ rows: [{ name: 'products' }] }),
@@ -2694,13 +2698,9 @@ describe('SchemaComparer float-width drift (#2770)', () => {
     }).compare(priceManifest());
 
     const typeUpgrades = diff.changes.filter((c) => c.type === 'type_upgrade');
-    expect(typeUpgrades).toHaveLength(1);
-    expect(typeUpgrades[0].sql).toBeUndefined();
-    expect(typeUpgrades[0].sqlStatements).toBeUndefined();
-    expect(typeUpgrades[0].advisory?.severity).toBe('warning');
-    expect(typeUpgrades[0].advisory?.message).toContain('Narrowing');
+    expect(typeUpgrades).toEqual([]);
     expect(getSQLFromDiff(diff)).toEqual([]);
-    expect(diff.has_changes).toBe(true);
+    expect(diff.has_changes).toBe(false);
   });
 
   it('is a no-op once the live column already matches the declared precision', async () => {
@@ -2725,14 +2725,12 @@ describe('SchemaComparer float-width drift (#2770)', () => {
     expect(diff.has_changes).toBe(false);
   });
 
-  it('is a no-op on DuckDB when a converged REAL column reports live type FLOAT', async () => {
-    // Review finding: DuckDB's information_schema normalizes REAL/FLOAT4 to
-    // the bare string "FLOAT" (never "REAL"), and reports its
-    // double-precision type as "DOUBLE" (never "FLOAT"). floatPrecisionOf
-    // previously classified bare FLOAT as double-precision unconditionally
-    // (correct for PostgreSQL, where FLOAT never appears live), which made
-    // every already-converged DuckDB REAL column permanently misreport as
-    // narrowing drift with no `db:migrate` able to clear it.
+  it('plans the widening on DuckDB when a REAL column still reports live type FLOAT', async () => {
+    // DuckDB's information_schema normalizes REAL/FLOAT4 to the bare string
+    // "FLOAT" and reports its double-precision type as "DOUBLE". The declared
+    // REAL now maps to DOUBLE, so a live FLOAT column is single-precision
+    // drift: a type upgrade (refused here only because the mock shows no
+    // CREATE TABLE text for the rebuild), never a type mismatch.
     const mockDuckDb = {
       url: '/path/to/test.duckdb',
       query: async () => ({ rows: [{ name: 'products' }] }),
@@ -2749,9 +2747,14 @@ describe('SchemaComparer float-width drift (#2770)', () => {
       ignoreTypeMismatches: false,
     }).compare(priceManifest());
 
-    expect(diff.changes.filter((c) => c.type === 'type_upgrade')).toEqual([]);
+    const typeUpgrades = diff.changes.filter((c) => c.type === 'type_upgrade');
+    expect(typeUpgrades).toHaveLength(1);
+    expect(typeUpgrades[0].mismatch).toEqual({
+      expected: 'DOUBLE',
+      actual: 'FLOAT',
+    });
+    expect(typeUpgrades[0].kindHint).toBe('type.rebuild-unavailable');
     expect(diff.changes.filter((c) => c.type === 'type_mismatch')).toEqual([]);
-    expect(diff.has_changes).toBe(false);
   });
 });
 

@@ -299,3 +299,14 @@ export type {
   StiDiscriminatorMigration,
   TableSchemaInfo,
 } from './types.js';
+// DuckDB column type changes and views (P5a)
+export {
+  asViewsChangedSincePlan,
+  DependentObjectError,
+  DependentViewCheckError,
+  DependentViewTypeError,
+  MigrationTransactionRequiredError,
+  type QualifiedView,
+  ViewInvalidatedAfterCommitWarning,
+  ViewsChangedSincePlanError,
+} from './view-guard.js';

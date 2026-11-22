@@ -21,7 +21,7 @@ CREATE TABLE IF NOT EXISTS _smrt_contexts (
   value TEXT,
   metadata TEXT,
   version INTEGER DEFAULT 1,
-  confidence REAL DEFAULT 1.0,
+  confidence DOUBLE PRECISION DEFAULT 1.0,
   success_count INTEGER DEFAULT 0,
   failure_count INTEGER DEFAULT 0,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -238,7 +238,7 @@ CREATE TABLE IF NOT EXISTS _smrt_ai_usage (
   prompt_tokens INTEGER,
   completion_tokens INTEGER,
   total_tokens INTEGER,
-  estimated_cost REAL,
+  estimated_cost DOUBLE PRECISION,
   duration INTEGER NOT NULL,
   class_name TEXT,
   tenant_id TEXT,
@@ -1869,7 +1869,12 @@ function toPostgresTenantUuid(ddl: string): string {
 // id ever opened); the bootstrap fills it from the ids still present or
 // referenced after its DDL replay and before this stamp
 // (`system/ai-run-ids.ts`).
-export const SMRT_SCHEMA_VERSION = '1.20.0';
+// 1.21.0 stores `_smrt_contexts.confidence` and `_smrt_ai_usage.estimated_cost`
+// as DOUBLE PRECISION: a bare REAL is a 4-byte float on PostgreSQL and DuckDB.
+// Existing installs are widened on every start, outside this gate, together
+// with the `_smrt_ai_runs` and `_smrt_ai_run_events` cost columns
+// (`system/decimal-width.ts`).
+export const SMRT_SCHEMA_VERSION = '1.21.0';
 
 /**
  * Canonical form of the system DDL that {@link SMRT_SCHEMA_DDL_CHECKSUMS} covers.
@@ -1934,4 +1939,6 @@ export const SMRT_SCHEMA_DDL_CHECKSUMS: Readonly<Record<string, string>> =
       'b9ea16aaf8c5d3232245395dbd6374c0878594f3e2e443f1ae58e64c726acca1',
     '1.20.0':
       'c507de3133c44e3350196c1a30ad821c3faf96b79392d885d3465a6d57dfc4f8',
+    '1.21.0':
+      '87343f3ba00f1612c7d6b60cffb37e3d584ff0c77b3d6d99491b82c371ffcb26',
   });

@@ -1112,10 +1112,10 @@ describe('checkLiveSchemaParity float-width drift (#2770)', () => {
     expect(find(report.findings, 'column_type_drift', 'price')).toBeUndefined();
   });
 
-  // The narrowing direction (a real repair concern on an engine with fixed
-  // float widths) is covered on a DuckDB-shaped mock instead, mirroring how
-  // `differ.test.ts` already tests DuckDB narrowing without a live server.
-  it('flags a declared REAL column backed by a wider live type on DuckDB', async () => {
+  // DuckDB is covered on a DuckDB-shaped mock, mirroring how `differ.test.ts`
+  // tests it without a live server. The abstract REAL maps to DOUBLE there, so
+  // a live DOUBLE column is converged.
+  it('does not flag a declared REAL column backed by a live DOUBLE on DuckDB', async () => {
     const duckDb = {
       url: 'analytics.duckdb',
       query: async (sql: string) => {
@@ -1143,20 +1143,14 @@ describe('checkLiveSchemaParity float-width drift (#2770)', () => {
       engineHint: 'duckdb',
     });
 
-    const drift = find(report.findings, 'column_type_drift', 'price');
-    expect(drift?.severity).toBe('warning');
-    expect(drift?.recommendation).toContain('Narrowing');
-    expect(drift?.details).toEqual({
-      expected: 'REAL',
-      actual: 'DOUBLE',
-    });
+    expect(find(report.findings, 'column_type_drift', 'price')).toBeUndefined();
     expect(report.counts.error).toBe(0);
   });
 
-  // Companion regression to the DuckDB narrowing test above: DuckDB's
-  // information_schema normalizes REAL/FLOAT4 to the bare string "FLOAT"
-  // (never "REAL"), so a converged column must not misreport as drift.
-  it('does not flag a converged DuckDB REAL column reporting live type FLOAT', async () => {
+  // DuckDB's information_schema normalizes REAL/FLOAT4 to the bare string
+  // "FLOAT", so a declared REAL (DOUBLE) column still holding the 4-byte type
+  // is single-precision drift that `db:migrate` widens.
+  it('flags a DuckDB REAL column whose live type is still single-precision FLOAT', async () => {
     const duckDb = {
       url: 'analytics.duckdb',
       query: async (sql: string) => {
@@ -1184,7 +1178,10 @@ describe('checkLiveSchemaParity float-width drift (#2770)', () => {
       engineHint: 'duckdb',
     });
 
-    expect(find(report.findings, 'column_type_drift', 'price')).toBeUndefined();
+    const drift = find(report.findings, 'column_type_drift', 'price');
+    expect(drift?.severity).toBe('warning');
+    expect(drift?.recommendation).toContain('db:migrate');
+    expect(drift?.details).toEqual({ expected: 'DOUBLE', actual: 'FLOAT' });
   });
 
   it('does not flag a column whose live type already matches', async () => {

@@ -508,7 +508,7 @@ export const SCHEMA_CHANGE_KINDS = {
   'type.rebuild-unavailable': {
     type: 'type_upgrade',
     engines: unresolved(
-      'The table rebuild cannot be planned: the live table definition cannot be read or rewritten safely, or on DuckDB rebuilds that overlap cannot be combined or a new table references the table.',
+      'The table rebuild cannot be planned: the live table definition cannot be read or rewritten safely, or on DuckDB rebuilds that overlap cannot be combined, a new table references the table, a view does not bind or a dependency-tracked view depends on it, or its columns cannot be classified as stored or generated.',
     ),
   },
   'foreign-key.add': {

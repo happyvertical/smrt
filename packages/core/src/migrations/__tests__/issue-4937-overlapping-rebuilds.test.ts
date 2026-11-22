@@ -653,7 +653,7 @@ describe('duckdb: the rebuild checks what it built', () => {
     const before = await state();
     const result = await applyWith((statements) => {
       const at = statements.findIndex((sql) =>
-        /^CREATE TABLE "?children"?\s*\(/.test(sql),
+        /^CREATE TABLE (?:"[^"]+"\.){0,2}"?children"?\s*\(/.test(sql),
       );
       statements[at] = statements[at].replace(
         /,\s*FOREIGN KEY \(parent_id\) REFERENCES parents\(id\)/,

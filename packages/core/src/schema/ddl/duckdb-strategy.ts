@@ -80,6 +80,11 @@ export class DuckDBStrategy extends BaseDDLStrategy {
     switch (type) {
       case 'INTEGER':
         return 'BIGINT';
+      case 'REAL':
+        // A bare DuckDB REAL is a 4-byte float (24-bit mantissa); decimal
+        // fields must round-trip like they do on PostgreSQL (DOUBLE PRECISION)
+        // and SQLite (8-byte REAL).
+        return 'DOUBLE';
       case 'TIMESTAMP':
         return 'TIMESTAMP'; // DuckDB supports TIMESTAMP natively
       case 'JSON':

@@ -208,6 +208,19 @@ const NODE_ONLY_GROUPS: ReadonlyArray<{
   },
   {
     reason:
+      'DuckDB column type changes around views and the JSON-adapter decimal conversion (node:fs, DuckDB catalogs); migrations run in a Node process, never a browser (P5a)',
+    names: [
+      'DependentObjectError',
+      'DependentViewCheckError',
+      'DependentViewTypeError',
+      'MigrationTransactionRequiredError',
+      'ViewInvalidatedAfterCommitWarning',
+      'ViewsChangedSincePlanError',
+      'asViewsChangedSincePlan',
+    ],
+  },
+  {
+    reason:
       'Provider tool-schema preparation sits with the Node-side generators; browsers never send generated tools to a provider (#4872)',
     names: ['toProviderToolSchema'],
   },
