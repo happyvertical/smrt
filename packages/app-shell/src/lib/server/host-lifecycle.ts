@@ -233,16 +233,18 @@ export class HostLifecycle {
 
   /**
    * The shared pool's slots: the policy's, else what an explicit connection
-   * budget leaves after the open apps' overhead (at least 2), else the default.
+   * budget leaves after the open apps' overhead (at least 1), else the default.
+   * With no cap on open apps, room is kept for one app's hosts (`HOST_OVERHEAD`
+   * is taken before a worker opens), so the first app can always open.
    */
   private brokerSlots(): number {
     const p = this.policy;
     if (p?.brokerPoolSize !== undefined) return Math.floor(p.brokerPoolSize);
     if (p?.maxAppConnections !== undefined)
       return Math.max(
-        2,
+        1,
         Math.floor(p.maxAppConnections) -
-          (this.maxOpen ?? 0) * appAllowance() -
+          Math.max(this.maxOpen ?? 1, 1) * appAllowance() -
           POOL_CANCEL_RESERVE,
       );
     return POOL_DEFAULTS.max;

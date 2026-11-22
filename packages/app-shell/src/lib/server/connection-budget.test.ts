@@ -74,6 +74,23 @@ describe('HostLifecycle connection budget', () => {
     expect(() => l.takeConnections(1)).toThrow(ConnectionBudgetError);
   });
 
+  it.each([
+    20, 5, 4,
+  ])('a budget of %i with no cap on open apps still lets the first app open', (budget) => {
+    const l = new HostLifecycle();
+    l.configure({ maxAppConnections: budget });
+    // withConnections takes the live host's overhead before the worker opens.
+    const release = l.takeConnections(HOST_OVERHEAD.live);
+    const pool = l.brokerPool({
+      kind: 'postgres' as const,
+      schema: 'app_first',
+      connection: { url: NOWHERE, max: 50 },
+    });
+    expect(pool.stats.max).toBeGreaterThanOrEqual(1);
+    expect(l.connectionsInUse).toBeLessThanOrEqual(budget);
+    release();
+  });
+
   it('does not scale with a pool size a config asks for: the process shares one pool', () => {
     const l = new HostLifecycle();
     l.configure({ maxOpenApps: 1 });
