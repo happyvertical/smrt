@@ -93,6 +93,15 @@ const onboarding = $derived(
   !data.onboardingComplete || page.url.pathname === '/welcome',
 );
 const plan = $derived(planLayout({ owner: isOwner && !onboarding, plugin }));
+// Model display labels for the chat's plain-words record steps.
+const modelLabels = $derived(
+  Object.fromEntries(
+    Object.entries(data.description?.models ?? {}).map(([key, model]) => [
+      key,
+      model.label,
+    ]),
+  ),
+);
 // The chat column's open/closed choice, kept per owner on this device.
 const openKey = $derived(assistantOpenKey(data.session.user?.id));
 let panelOpen = $state(false);
@@ -179,7 +188,7 @@ onMount(() => {
   bind:panelOpen
 >
   {#snippet panel({ open })}
-    <AssistantPanel {open} owner={data.session.user} changes={data.changes} onapply={applyFromChat} />
+    <AssistantPanel {open} owner={data.session.user} changes={data.changes} {modelLabels} onapply={applyFromChat} />
   {/snippet}
   {@render children()}
   <!-- Screen readers hear changes made elsewhere (the assistant, another tab). -->

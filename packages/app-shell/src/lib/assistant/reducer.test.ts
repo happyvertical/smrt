@@ -425,7 +425,7 @@ describe('quiet steps per turn (#5395)', () => {
     const view = groupTurns(s);
     expect(view.map((i) => i.kind)).toEqual(['user', 'steps', 'assistant']);
     expect(view[1]).toMatchObject({
-      line: 'Checked the app structure · Looked up 40 orders and 1 more',
+      line: 'Checked the app structure · looked up 40 orders and 1 more',
       failed: false,
       live: false,
       retry: 'hi',
@@ -472,5 +472,164 @@ describe('quiet steps per turn (#5395)', () => {
     expect(stepLabel('dog_list')).toBe('Working on it');
     const steps = groupTurns(s)[1];
     expect(JSON.stringify(steps)).not.toMatch(/dog_list|Dog list/);
+  });
+});
+
+describe('one reply per turn (#5395)', () => {
+  const tool = (
+    id: string,
+    name: string,
+    summary = 'Completed this action',
+  ): Action[] => [
+    ev({ type: 'tool_call', id, name, args: '{}' }),
+    ev({ type: 'tool_result', id, name, ok: true, summary }),
+  ];
+  const chunks = run([
+    { type: 'send', text: 'add people' },
+    ev({ type: 'text', delta: "I'll look at the app first." }),
+    ...tool('1', 'app_describe', 'Checked the app structure'),
+    ev({ type: 'text', delta: 'Enabling the people model.' }),
+    ...tool('2', 'app_a', 'enable profiles'),
+    ev({ type: 'text', delta: 'Profiles already have names.' }),
+    ...tool('3', 'app_b', 'Made a report'),
+    ev({ type: 'text', delta: 'All set: your people are in.' }),
+    ev({ type: 'done', stop: 'complete' }),
+  ]);
+
+  it('renders one reply, the final text; earlier chunks join the steps list in order', () => {
+    const view = groupTurns(chunks);
+    expect(view.map((i) => i.kind)).toEqual(['user', 'steps', 'assistant']);
+    expect(view[2]).toMatchObject({ text: 'All set: your people are in.' });
+    const steps = view[1] as Extract<(typeof view)[number], { kind: 'steps' }>;
+    expect(steps.rows.map((r) => [r.narration ?? false, r.label])).toEqual([
+      [true, "I'll look at the app first."],
+      [false, 'Checked the app structure'],
+      [true, 'Enabling the people model.'],
+      [false, 'Enable profiles'],
+      [true, 'Profiles already have names.'],
+      [false, 'Made a report'],
+    ]);
+    // Narration is not a step: the line counts tool phrases only, in sentence case.
+    expect(steps.line).toBe(
+      'Checked the app structure · enable profiles and 1 more',
+    );
+  });
+
+  it('a stored thread of separate assistant messages folds the same way', () => {
+    const reopened = reduce(initialState, {
+      type: 'loaded',
+      threadId: 't',
+      messages: [
+        { id: '1', seq: 1, role: 'user', content: 'go' },
+        { id: '2', seq: 2, role: 'assistant', content: 'Looking.' },
+        {
+          id: '3',
+          seq: 3,
+          role: 'tool',
+          content: '',
+          tool: {
+            id: '3',
+            name: 'app_describe',
+            ok: true,
+            summary: 'Checked the app structure',
+          },
+        },
+        { id: '4', seq: 4, role: 'assistant', content: 'Done.' },
+      ],
+    });
+    expect(groupTurns(reopened).map((i) => i.kind)).toEqual([
+      'user',
+      'steps',
+      'assistant',
+    ]);
+  });
+
+  it('a turn without tools keeps every reply, and an earlier turn is untouched', () => {
+    const s = run([
+      { type: 'send', text: 'hi' },
+      ev({ type: 'text', delta: 'One.' }),
+      ev({ type: 'changes_block' }),
+      ev({ type: 'text', delta: 'Two.' }),
+    ]);
+    expect(groupTurns(s).filter((i) => i.kind === 'assistant')).toHaveLength(2);
+    const two = reduce(chunks, { type: 'send', text: 'again' });
+    expect(groupTurns(two).filter((i) => i.kind === 'assistant')).toHaveLength(
+      1,
+    );
+  });
+
+  it('the fold applies to the one long final reply of an older turn', () => {
+    expect(foldsReply('line\n'.repeat(9))).toBe(true);
+  });
+});
+
+describe('plain-words record steps (#5395)', () => {
+  const write = (id: string, name: string): Action[] => [
+    ev({ type: 'tool_call', id, name, args: '{}' }),
+    ev({
+      type: 'tool_result',
+      id,
+      name,
+      ok: true,
+      summary: 'Completed this action',
+    }),
+  ];
+  const s = run([
+    { type: 'send', text: 'add data' },
+    ...[1, 2, 3, 4].flatMap((n) => write(`c${n}`, 'customer_create')),
+    ...Array.from({ length: 10 }, (_, n) =>
+      write(`o${n}`, 'order_create'),
+    ).flat(),
+    ev({ type: 'text', delta: 'Done.' }),
+    ev({ type: 'done', stop: 'complete' }),
+  ]);
+
+  it('groups repeats under the model label, with no per-row done', () => {
+    const steps = groupTurns(s)[1] as Extract<
+      ReturnType<typeof groupTurns>[number],
+      { kind: 'steps' }
+    >;
+    expect(steps.rows.map((r) => r.label)).toEqual([
+      'Added 4 customers',
+      'Added 10 orders',
+    ]);
+    expect(steps.line).toBe('Added 4 customers · added 10 orders');
+  });
+
+  it('uses the app model label (Profile) and singular for one', () => {
+    const one = run([
+      { type: 'send', text: 'x' },
+      ...write('p1', 'customer_create'),
+      ...write('p2', 'customer_create'),
+      ...write('p3', 'order_update'),
+      ev({ type: 'text', delta: 'ok' }),
+      ev({ type: 'done', stop: 'complete' }),
+    ]);
+    const steps = groupTurns(one, {
+      customer: 'Profile',
+      order: 'Category',
+    })[1] as Extract<ReturnType<typeof groupTurns>[number], { kind: 'steps' }>;
+    expect(steps.line).toBe('Added 2 profiles · updated 1 category');
+  });
+
+  it('keeps failed record steps and sentence-cases other lines', () => {
+    const bad = run([
+      { type: 'send', text: 'x' },
+      ev({ type: 'tool_call', id: 'f', name: 'customer_create', args: '{}' }),
+      ev({
+        type: 'tool_result',
+        id: 'f',
+        name: 'customer_create',
+        ok: false,
+        summary: 'A required value was missing.',
+      }),
+      ev({ type: 'done', stop: 'complete' }),
+    ]);
+    const steps = groupTurns(bad)[1] as Extract<
+      ReturnType<typeof groupTurns>[number],
+      { kind: 'steps' }
+    >;
+    expect(steps.failed).toBe(true);
+    expect(steps.rows[0].label).toBe('A required value was missing.');
   });
 });

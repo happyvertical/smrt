@@ -1,12 +1,13 @@
 // The dock's state as a pure reducer: the thread, the streaming reply,
 // tool-call chips and approval cards. No DOM, no fetch.
+
+import { humanize } from '../ui/fields.ts';
 import type {
   AssistantStatus,
   ThreadMessage,
   TurnEvent,
   TurnStop,
 } from './events.ts';
-
 import {
   reportLink,
   reportPresentation,
@@ -550,6 +551,8 @@ export interface StepRow {
   label: string;
   state: 'running' | 'ok' | 'error';
   failures: number;
+  /** What the assistant said between steps (not a step): no tick, kept in order. */
+  narration?: boolean;
 }
 
 /** A turn's tool steps as one quiet line that opens to the list. */
@@ -579,6 +582,49 @@ export type TurnView = Exclude<Item, { kind: 'tool' }> | StepsView | ReportView;
 
 const PHRASES_SHOWN = 2;
 
+/** Display labels of the app's models, by model key (the layout's description). */
+export type ModelLabels = Record<string, string | undefined>;
+
+const squash = (value: string) => value.toLowerCase().replace(/[^a-z0-9]/g, '');
+const lowerFirst = (text: string) =>
+  /^[A-Z][a-z]/.test(text)
+    ? text.charAt(0).toLowerCase() + text.slice(1)
+    : text;
+const upperFirst = (text: string) =>
+  text.charAt(0).toUpperCase() + text.slice(1);
+
+function pluralNoun(word: string): string {
+  if (/[^aeiou]y$/i.test(word)) return `${word.slice(0, -1)}ies`;
+  if (/(?:s|x|z|ch|sh)$/i.test(word)) return `${word}es`;
+  return `${word}s`;
+}
+
+const RECORD_WRITE =
+  /^([a-z][a-z\d]*(?:[._-][a-z][a-z\d]*)*)[._-](create|update|delete|remove)$/i;
+const RECORD_VERB = {
+  create: 'Added',
+  update: 'Updated',
+  delete: 'Deleted',
+  remove: 'Deleted',
+} as const;
+
+/** A record tool (`customer_create`) as what it did and to which model. */
+function recordWrite(name: string, labels: ModelLabels) {
+  const match = name.startsWith('app_') ? null : RECORD_WRITE.exec(name);
+  if (!match) return;
+  const key = match[1];
+  const wanted = squash(key);
+  const found = Object.entries(labels).find(
+    ([model, label]) => label && squash(model) === wanted,
+  );
+  const label = found?.[1]?.trim() || humanize(key.replace(/[._-]/g, ' '));
+  return {
+    verb: RECORD_VERB[match[2].toLowerCase() as keyof typeof RECORD_VERB],
+    noun: lowerFirst(label),
+    key: `${match[2].toLowerCase() === 'remove' ? 'delete' : match[2].toLowerCase()}:${wanted}`,
+  };
+}
+
 function stepRow(item: ViewItem & { kind: 'tool' }): StepRow {
   const failures = 'failures' in item ? item.failures : 1;
   const label =
@@ -586,16 +632,73 @@ function stepRow(item: ViewItem & { kind: 'tool' }): StepRow {
       ? stepLabel(item.name)
       : item.summary ||
         (item.state === 'ok' ? stepLabel(item.name) : 'This did not work.');
-  return { id: item.id, label, state: item.state, failures };
+  return { id: item.id, label: upperFirst(label), state: item.state, failures };
 }
 
+/**
+ * The step rows: finished record writes ("customer_create" four times) are
+ * ONE row in plain words from the model's label ("Added 4 customers"); the
+ * narration between steps keeps its place as a row without a tick.
+ */
+function stepRows(items: ViewItem[], labels: ModelLabels): StepRow[] {
+  const rows: StepRow[] = [];
+  const groups = new Map<string, { row: StepRow; n: number }>();
+  for (const item of items) {
+    if (item.kind === 'assistant') {
+      rows.push({
+        id: item.id,
+        label: item.text.trim(),
+        state: 'ok',
+        failures: 1,
+        narration: true,
+      });
+      continue;
+    }
+    if (item.kind !== 'tool') continue;
+    const write =
+      item.state === 'ok' ? recordWrite(item.name, labels) : undefined;
+    if (!write) {
+      rows.push(stepRow(item));
+      continue;
+    }
+    const group = groups.get(write.key);
+    if (group) {
+      group.n += 1;
+      group.row.label = recordPhrase(write, group.n);
+      continue;
+    }
+    const row: StepRow = {
+      id: item.id,
+      label: recordPhrase(write, 1),
+      state: 'ok',
+      failures: 1,
+    };
+    groups.set(write.key, { row, n: 1 });
+    rows.push(row);
+  }
+  return rows;
+}
+
+function recordPhrase(
+  write: NonNullable<ReturnType<typeof recordWrite>>,
+  n: number,
+) {
+  return `${write.verb} ${n} ${n === 1 ? write.noun : pluralNoun(write.noun)}`;
+}
+
+/** Sentence case: the line starts with a capital, later phrases do not. */
 function stepsLine(rows: StepRow[], failed: boolean): string {
   if (failed) return "Something didn't work";
   const done = [
-    ...new Set(rows.filter((r) => r.state === 'ok').map((r) => r.label)),
+    ...new Set(
+      rows.filter((r) => r.state === 'ok' && !r.narration).map((r) => r.label),
+    ),
   ];
   if (done.length === 0) return 'Working on it';
-  const shown = done.slice(0, PHRASES_SHOWN).join(' · ');
+  const shown = done
+    .slice(0, PHRASES_SHOWN)
+    .map((label, i) => (i === 0 ? upperFirst(label) : lowerFirst(label)))
+    .join(' · ');
   const more = done.length - PHRASES_SHOWN;
   return more > 0 ? `${shown} and ${more} more` : shown;
 }
@@ -606,7 +709,10 @@ function stepsLine(rows: StepRow[], failed: boolean): string {
  * report a step made moves after the reply text. Works on a reopened thread
  * the same as on a live one.
  */
-export function groupTurns(state: DockState): TurnView[] {
+export function groupTurns(
+  state: DockState,
+  labels: ModelLabels = {},
+): TurnView[] {
   const items = collapseFailures(state.items);
   const out: TurnView[] = [];
   let start = 0;
@@ -622,8 +728,18 @@ export function groupTurns(state: DockState): TurnView[] {
       out.push(...(turn as TurnView[]));
       continue;
     }
-    const rows = tools.map(stepRow);
-    const failed = rows.at(-1)?.state === 'error';
+    // One reply per turn: the final text. Earlier chunks (the engine
+    // narrating between tool calls) move into the steps list.
+    const replies = turn.filter((i) => i.kind === 'assistant');
+    const finalReply = replies.at(-1);
+    const rows = stepRows(
+      turn.filter(
+        (i) =>
+          i.kind === 'tool' || (i.kind === 'assistant' && i !== finalReply),
+      ),
+      labels,
+    );
+    const failed = rows.findLast((r) => !r.narration)?.state === 'error';
     const live = state.running && end === items.length;
     const asked = turn[0].kind === 'user' ? turn[0].text : '';
     const steps: StepsView = {
@@ -647,7 +763,9 @@ export function groupTurns(state: DockState): TurnView[] {
           ]
         : [],
     );
-    const rest = turn.filter((i) => i.kind !== 'tool') as TurnView[];
+    const rest = turn.filter(
+      (i) => i.kind !== 'tool' && !(i.kind === 'assistant' && i !== finalReply),
+    ) as TurnView[];
     const lastReply = rest.findLastIndex((i) => i.kind === 'assistant');
     const at = lastReply === -1 ? rest.length : lastReply + 1;
     const first = rest[0]?.kind === 'user' ? 1 : 0;

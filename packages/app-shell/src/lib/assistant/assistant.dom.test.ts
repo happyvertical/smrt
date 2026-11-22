@@ -315,9 +315,9 @@ it('reopens old tool chips as human lines without JSON, SQL or snapshot paths', 
     props: { open: true },
   });
   await vi.waitFor(() =>
-    expect(container.textContent).toContain('add Product.notes'),
+    expect(container.textContent).toContain('Add Product.notes'),
   );
-  expect(container.textContent).toContain('Checked the app structure');
+  expect(container.textContent).toContain('checked the app structure');
   for (const chip of container.querySelectorAll('.chip')) {
     expect(chip.textContent).not.toMatch(/[{}]|ALTER TABLE|\/private/);
     expect(chip.getAttribute('title')).not.toMatch(
@@ -593,7 +593,7 @@ describe('quieter steps (#5395)', () => {
       container.querySelectorAll('.smrt-assistant-panel__steps'),
     ).toHaveLength(1);
     expect(stepsButton()?.textContent).toContain(
-      'Checked the app structure · Looked up 40 orders',
+      'Checked the app structure · looked up 40 orders',
     );
     expect(stepsButton()?.getAttribute('aria-expanded')).toBe('false');
     expect(
@@ -606,6 +606,64 @@ describe('quieter steps (#5395)', () => {
       ).toHaveLength(2),
     );
     expect(container.textContent).not.toMatch(/app_|zzz|Zzz/);
+  });
+
+  it('a turn of several text chunks shows ONE reply; the earlier chunks sit in the steps list', async () => {
+    stubTurn([
+      { type: 'text', delta: "I'll look at the current app first." },
+      ...results(true),
+      { type: 'text', delta: 'All done, your app is ready.' },
+      { type: 'done', stop: 'complete' },
+    ]);
+    await open();
+    await say('Look around');
+    await vi.waitFor(() => expect(container.textContent).toContain('All done'));
+    const replies = container.querySelectorAll('.smrt-assistant-panel__reply');
+    expect(replies).toHaveLength(1);
+    expect(replies[0].textContent).toContain('All done');
+    expect(
+      container.querySelector('.smrt-assistant-panel__steplist'),
+    ).toBeNull();
+    stepsButton()?.click();
+    await vi.waitFor(() =>
+      expect(
+        container.querySelector('.smrt-assistant-panel__steplist')?.textContent,
+      ).toContain("I'll look at the current app first."),
+    );
+  });
+
+  it('record steps read as plain grouped words with the model label and no per-row done', async () => {
+    const write = (id: string, name: string) => [
+      { type: 'tool_call', id, name, args: '{}' },
+      {
+        type: 'tool_result',
+        id,
+        name,
+        ok: true,
+        summary: 'Completed this action',
+      },
+    ];
+    stubTurn([
+      ...[1, 2, 3, 4].flatMap((n) => write(`c${n}`, 'customer_create')),
+      ...[1, 2, 3].flatMap((n) => write(`o${n}`, 'order_create')),
+      { type: 'text', delta: 'Added them.' },
+      { type: 'done', stop: 'complete' },
+    ]);
+    await open({ modelLabels: { customer: 'Profile', order: 'Order' } });
+    await say('Add data');
+    await vi.waitFor(() =>
+      expect(container.textContent).toContain('Added them.'),
+    );
+    expect(stepsButton()?.textContent).toContain(
+      'Added 4 profiles · added 3 orders',
+    );
+    stepsButton()?.click();
+    await vi.waitFor(() =>
+      expect(
+        container.querySelectorAll('.smrt-assistant-panel__steplist li'),
+      ).toHaveLength(2),
+    );
+    expect(container.textContent).not.toMatch(/Completed this action|done/);
   });
 
   it('a failed step opens itself in red and Try again sends the same question', async () => {

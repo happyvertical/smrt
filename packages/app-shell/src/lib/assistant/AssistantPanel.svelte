@@ -40,12 +40,15 @@ let {
   open = true,
   owner = null,
   changes = null,
+  modelLabels = {},
   onapply,
 }: {
   open?: boolean;
   owner?: OwnerProfile | null;
   /** The ONE changes state (the layout's): the reply block reads its numbers here. */
   changes?: ChangesState | null;
+  /** The app's model labels by model key: record steps say "Added 4 customers". */
+  modelLabels?: Record<string, string | undefined>;
   /** The owner's Apply click from the block; `applyNow` is which button it was. Throws a plain message to show. */
   onapply?: (applyNow: boolean) => Promise<void>;
 } = $props();
@@ -68,7 +71,7 @@ const canSend = $derived(
     draft.trim().length > 0,
 );
 const announce = $derived(announcement(dock));
-const turns = $derived(groupTurns(dock));
+const turns = $derived(groupTurns(dock, modelLabels));
 // A turn's steps line: open by the owner's choice; a failed one opens itself.
 let stepsOpen = $state<Record<string, boolean>>({});
 const lastSteps = $derived(turns.findLast((t) => t.kind === 'steps')?.id);
@@ -336,16 +339,16 @@ onDestroy(() => controller?.abort());
           <ul id={`steps-${item.id}`} class="smrt-assistant-panel__steplist">
             {#each item.rows as row (row.id)}
               <li class:smrt-assistant-panel__err={row.state === 'error'} title={row.state === 'error' ? row.label : undefined}>
-                <span aria-hidden="true">{row.state === 'running' ? '…' : row.state === 'ok' ? '✓' : '!'}</span>
+                {#if !row.narration}<span aria-hidden="true">{row.state === 'running' ? '…' : row.state === 'ok' ? '✓' : '!'}</span>{/if}
                 <span>{row.label}{#if row.failures > 1} Tried {row.failures} times.{/if}</span>
-                <span class="smrt-assistant-panel__sr-only">{row.state === 'running' ? 'running' : row.state === 'ok' ? 'done' : 'did not work'}</span>
+                {#if !row.narration && row.state !== 'ok'}<span class="smrt-assistant-panel__sr-only">{row.state === 'running' ? 'running' : 'did not work'}</span>{/if}
               </li>
             {/each}
           </ul>
         {/if}
         {#if item.failed && item.retry && item.id === lastSteps}
           <div class="smrt-assistant-panel__oops" role="alert">
-            <span>{item.rows.at(-1)?.label ?? "Something didn't work."}</span>
+            <span>{item.rows.findLast((r) => !r.narration)?.label ?? "Something didn't work."}</span>
             <button type="button" class="smrt-app-shell__btn" disabled={dock.running} onclick={() => void submit(item.retry)}>Try again</button>
           </div>
         {/if}
