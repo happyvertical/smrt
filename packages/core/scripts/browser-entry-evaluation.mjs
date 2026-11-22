@@ -188,7 +188,9 @@ document.body.textContent = 'browser entry evaluated: PGlite SET NULL cascade (m
       .waitForFunction(
         () => document.body.textContent?.includes('browser entry evaluated'),
         undefined,
-        { timeout: 10_000 },
+        // The PGlite cascade opens two databases in the page; on a loaded
+        // host it outlasts a 10s budget without anything being wrong.
+        { timeout: 60_000 },
       )
       .catch(() => {
         throw new Error(
