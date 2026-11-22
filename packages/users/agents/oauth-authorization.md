@@ -13,8 +13,10 @@ consent for the requested scopes whose configured permissions the session holds
 (requested ∩ held, #5110). The stored grant, the SDK code, the token response
 `scope` (RFC 6749 section 3.3) and both tokens carry only that subset, passed by
 approving `{ ...request, scopes: granted }`; the SDK refresh path refuses any
-scope beyond the grant (`invalid_scope`) and narrows to the revalidated set, so
-refresh never widens. No held scope: `access_denied`. `refuseUnheldScopes: true`
+scope beyond the grant (`invalid_scope`); a role that lost a mapped permission
+gets the whole refresh refused (no partial clamp), so refresh never widens. A
+request with no `scope` parameter now yields `access_denied` (it used to store
+an empty grant). No held scope: `access_denied`. `refuseUnheldScopes: true`
 restores all-or-nothing consent. `consentScopes()` and the `authorize` handler
 report the narrowed `scopes` (and `requestedScopes` when different). Existing magic-link,
 password and OIDC sessions work without a separate identity mapping. Parent

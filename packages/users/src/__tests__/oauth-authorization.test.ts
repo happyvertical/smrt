@@ -1163,6 +1163,32 @@ describe('durable OAuth on the configured SQLite/PostgreSQL executor', () => {
       ).rejects.toMatchObject({ error: 'access_denied' });
     });
 
+    it('refuses an authorization request with no scope parameter', async () => {
+      const f = await fixture({ scopePermissions: mapping });
+      const params = new URLSearchParams(f.params);
+      params.delete('scope');
+      const handlers = createOAuthHandlers({
+        server: f.server,
+        authorization: f.authorization,
+        getSessionId: () => f.sessionId,
+      });
+      const url = new URL(`https://service.example/oauth/authorize?${params}`);
+      const response = await handlers.authorize({
+        url,
+        request: new Request(url),
+      });
+      // Either the SDK rejects the request or consent grants nothing.
+      expect(response.status).toBeGreaterThanOrEqual(400);
+      expect(await f.authorization.listGrants(f.sessionId)).toEqual([]);
+      await expect(
+        f.authorization.approve(
+          f.server,
+          { ...f.request, scopes: [] },
+          f.sessionId,
+        ),
+      ).rejects.toMatchObject({ error: 'access_denied' });
+    });
+
     it('never widens on refresh', async () => {
       const f = await fixture({
         scopePermissions: mapping,

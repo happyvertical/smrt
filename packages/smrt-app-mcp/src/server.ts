@@ -902,6 +902,20 @@ export function createMcpAppServer(
       )
         return undefined;
     }
+    // Fail closed like an unmapped tool: a private resource no tool references
+    // needs every scope the adapter names (a consent-narrowed token lacks some).
+    if (
+      associated.length === 0 &&
+      !resource.public &&
+      Array.isArray(principal?.unmappedToolScopes)
+    ) {
+      const held = principal.scopes;
+      if (
+        !Array.isArray(held) ||
+        !principal.unmappedToolScopes.every((scope) => held.includes(scope))
+      )
+        return undefined;
+    }
     if (options.resourcePolicy) {
       try {
         if (
@@ -1152,6 +1166,10 @@ export function createMcpAppServer(
       copy.roles = Object.freeze([...principal.roles]) as string[];
     if (principal.scopes)
       copy.scopes = Object.freeze([...principal.scopes]) as string[];
+    if (principal.unmappedToolScopes)
+      copy.unmappedToolScopes = Object.freeze([
+        ...principal.unmappedToolScopes,
+      ]);
     return Object.freeze(copy);
   }
 

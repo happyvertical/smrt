@@ -13,6 +13,7 @@ import { describe, expect, it } from 'vitest';
 import { createInMemoryMcpAuditSink } from '../audit.js';
 import { createMcpResourceAuth } from '../auth.js';
 import { MCP_TOOL_ACCESS_DENIED_CODE } from '../errors.js';
+import { createMcpAppServer } from '../server.js';
 import { mountMcpAppRoute } from '../sveltekit.js';
 
 const RESOURCE = 'https://app.example/api/mcp';
@@ -214,5 +215,37 @@ describe('tokens narrower than the advertised scopes (#5110)', () => {
     if (!result.ok) expect(result.response.status).toBe(401);
     const metadata = await app.auth.metadataResponse().json();
     expect(metadata.scopes_supported).toEqual(ALL);
+  });
+});
+
+describe('private resources under narrowed tokens (#5110)', () => {
+  const uri = 'ui://app/v1/orphan.html';
+  const app = createMcpAppServer({
+    smrtOptions: () => ({}),
+    serverInfo: { name: 'narrowed', version: '1' },
+    allowedClassNames: [],
+    resources: [
+      { uri, version: 'v1', name: 'Orphan', html: '<!doctype html><p>x</p>' },
+    ],
+    resourcePolicy: () => true,
+  });
+  const principal = (scopes: string[]) => ({
+    id: 'user-1',
+    tenantId: 'tenant-a',
+    kind: 'agent',
+    scopes,
+    unmappedToolScopes: ALL,
+  });
+  it('hides and refuses a resource no tool references unless every scope is held', async () => {
+    const narrowed = principal(['notes.read']);
+    expect(await app.listResources?.({ principal: narrowed })).toEqual([]);
+    await expect(
+      app.readResource?.({ uri, principal: narrowed }),
+    ).rejects.toMatchObject({ status: 404 });
+    const full = principal(ALL);
+    expect(await app.listResources?.({ principal: full })).toHaveLength(1);
+    expect(
+      (await app.readResource?.({ uri, principal: full }))?.text,
+    ).toContain('x');
   });
 });

@@ -230,6 +230,13 @@ narrowed tokens must map every tool in `toolScopes`. `requiredScopes` on
 tool to its own scope. The live role cap (runtime binder) still applies on every
 call.
 
+Migration: an app that kept `requiredScopes` equal to every advertised scope now
+accepts narrowed tokens at authentication, and every tool then answers 404
+instead of 403 `insufficient_scope`. Use `requiredScopes: []` with a complete
+`toolScopes` map. A private resource no tool references also needs every
+advertised scope, and an authorization request with no `scope` parameter is now
+refused with `access_denied` instead of storing an empty grant.
+
 Consent only ever removes scopes: one with no `scopePermissions` entry is dropped
 from the grant, never added. A host that wants a request containing an unheld or
 unmapped scope refused outright sets `refuseUnheldScopes: true`.
