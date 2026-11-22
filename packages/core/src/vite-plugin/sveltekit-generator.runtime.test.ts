@@ -29,7 +29,7 @@ import type { SmartObjectManifest } from '../scanner/types.js';
 import { isServiceOptionInput } from '../service-options.js';
 import { snapshotObjectRegistryState } from '../test-utils.js';
 import { applyWhereScope, WhereClauseError } from '../where-keys.js';
-import { assignUpdateInput } from '../write-input.js';
+import { assignUpdateInput, resolveWriteBody } from '../write-input.js';
 import { generateClientModule } from './generated-client.js';
 import { generateSvelteKitRoutes } from './sveltekit-generator.js';
 
@@ -306,6 +306,16 @@ function writeWorkspaceCoreShim(projectRoot: string): void {
       // The real create-target rule, over the registry the test installs.
       'export const assertCreateTargetSurface = (...args) => globalThis.__smrtGeneratedRequestHelpers.assertCreateTargetSurface(...args);',
       'export const assertCreateInput = (...args) => globalThis.__smrtGeneratedRequestHelpers.assertCreateInput(...args);',
+      // The real write-body rule over the fixture registry's field policy.
+      'export const prepareWriteInput = (name, data, stored) => {',
+      '  const fields = globalThis.__smrtGeneratedRegistry?.getFields(name) ?? new Map();',
+      '  const api = (globalThis.__smrtGeneratedRegistry?.getConfig(name) ?? {}).api;',
+      "  const writable = api && typeof api === 'object' && Array.isArray(api.writable) ? api.writable : null;",
+      '  return globalThis.__smrtGeneratedRequestHelpers.resolveWriteBody(data, {',
+      "    isProtected: (key) => key.startsWith('_') || (writable !== null && !writable.includes(key)) || fields.get(key)?.readonly === true || fields.get(key)?._meta?.readonly === true,",
+      '    isSkipped: (key) => ObjectRegistry.isServiceOptionInput(name, key),',
+      '  }, stored);',
+      '};',
       'export const applyUpdateInput = (instance, data, name) => {',
       '  const fields = globalThis.__smrtGeneratedRegistry?.getFields(name) ?? new Map();',
       '  return globalThis.__smrtGeneratedRequestHelpers.assignUpdateInput(instance, data, {',
@@ -371,6 +381,7 @@ describe('generated SvelteKit helper runtime', () => {
       assignUpdateInput,
       parseRestListWhere,
       publicSerializerOf,
+      resolveWriteBody,
       toPublicJSONValue,
     };
     (globalThis as Record<string, unknown>).__smrtGeneratedHelperCalls = [];
@@ -918,6 +929,18 @@ describe('generated SvelteKit helper runtime', () => {
           }),
         });
       expect((await call({ name: 'base', type: 'article' })).status).toBe(201);
+      // The selected subtype's read-only field is refused on a create.
+      const locked = await call({
+        name: 'selected',
+        createType: child,
+        type: 'article',
+        detail: 'own field',
+        locked: 'forbidden',
+      });
+      expect(locked.status).toBe(400);
+      expect((await locked.json()).error).toMatchObject({
+        code: 'VALIDATION_FIELD_NOT_WRITABLE',
+      });
       expect(
         (
           await call({
@@ -925,7 +948,6 @@ describe('generated SvelteKit helper runtime', () => {
             createType: child,
             type: 'article',
             detail: 'own field',
-            locked: 'forbidden',
           })
         ).status,
       ).toBe(201);
@@ -2901,13 +2923,17 @@ describe('generated SvelteKit helper runtime', () => {
       'sanitization',
       'signals',
     ];
+    const CONTROL_KEYS = {
+      _insertOnly: true,
+      _skipLoad: false,
+      _className: 'Other',
+    };
+    let withControls = false;
     const body = () => ({
       name: 'Widget',
       ...Object.fromEntries(SERVICE_KEYS.map((key) => [key, { from: key }])),
       options: { db: 'file:/elsewhere.db' },
-      _insertOnly: true,
-      _skipLoad: false,
-      _className: 'Other',
+      ...(withControls ? CONTROL_KEYS : {}),
     });
     const declareFields = (...names: string[]) => {
       (globalThis as Record<string, unknown>).__smrtGeneratedRegistry = {
@@ -2989,10 +3015,32 @@ describe('generated SvelteKit helper runtime', () => {
       return { item, response };
     }
 
+    afterEach(() => {
+      withControls = false;
+    });
+
     it('POST passes only field values to create', async () => {
       const { created, response } = await post();
       expect(response.status).toBe(201);
       expect(created).toEqual([{ name: 'Widget' }]);
+    });
+
+    it('POST refuses underscore control keys and creates nothing', async () => {
+      withControls = true;
+      const { created, response } = await post();
+      expect(response.status).toBe(400);
+      expect((await response.json()).error.code).toBe(
+        'VALIDATION_FIELD_NOT_WRITABLE',
+      );
+      expect(created).toEqual([]);
+    });
+
+    it('PUT refuses underscore control keys that change the item', async () => {
+      withControls = true;
+      const { item, response } = await put();
+      expect(response.status).toBe(400);
+      expect(item.name).toBe('Before');
+      expect(Object.hasOwn(item, '_insertOnly')).toBe(false);
     });
 
     it('POST keeps a service-named key the model declares as a field', async () => {

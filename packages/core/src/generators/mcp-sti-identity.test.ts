@@ -147,20 +147,25 @@ describe('MCP STI create across same-named subtypes (#3490)', () => {
     [VARIANT_B, 'b', { beta: 'y' }],
   ])('creates %s through that subtype only', async (metaType, label, kept) => {
     created.length = 0;
-    const response = await new MCPGenerator(
-      { classNames: [BASE] },
-      { user },
-    ).handleToolCall({
-      method: 'tools/call',
-      params: {
-        name: 'stishape_create',
-        arguments: { _meta_type: metaType, alpha: 'x', beta: 'y' },
-      },
-    });
+    const call = (args: Record<string, unknown>) =>
+      new MCPGenerator({ classNames: [BASE] }, { user }).handleToolCall({
+        method: 'tools/call',
+        params: {
+          name: 'stishape_create',
+          arguments: { _meta_type: metaType, ...args },
+        },
+      });
+
+    // The subtype's own write policy applies: the other subtype's field is
+    // not writable here, so a value for it is refused and nothing is created.
+    const refused = await call({ alpha: 'x', beta: 'y' });
+    expect(refused.isError).toBe(true);
+    expect(created).toHaveLength(0);
+
+    const response = await call(kept);
     expect(response.isError).not.toBe(true);
     expect(created).toHaveLength(1);
     expect(created[0].by).toBe(label);
-    // The subtype's own write policy applied: only its field survives.
     expect(created[0].data).toMatchObject(kept);
     expect(Object.keys(created[0].data)).not.toContain(
       label === 'a' ? 'beta' : 'alpha',

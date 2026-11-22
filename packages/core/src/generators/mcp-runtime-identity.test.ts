@@ -271,9 +271,9 @@ console.log(JSON.stringify({ resolved, results, serializerFailure }));
       [],
     );
     expect(resolved).toContain(`collection:${PICK_B}`);
-    expect(resolved).toContain(`config:${PICK_B}`);
-    // Create and update ask the scoped class which argument keys are fields.
-    expect(resolved).toContain(`service-option-input:${PICK_B}`);
+    // Which argument keys are fields is decided by the shared write rule in
+    // core (`prepareWriteInput`), called with the scoped class on every create
+    // and update (the emitted source is checked below).
     expect(resolved).toContain(`audit-updated:${PICK_B}`);
     expect(resolved).toContain(`delete:${PICK_B}`);
     expect(serializerFailure).toMatchObject({
@@ -300,6 +300,9 @@ console.log(JSON.stringify({ resolved, results, serializerFailure }));
     ).join('\n');
     expect(emitted).toMatch(
       /registryKey["']?\s*:\s*["']@fixture\/pick-b3490:PickedThing["']/,
+    );
+    expect(emitted).toContain(
+      `prepareWriteInput(${JSON.stringify(PICK_B)}, updateData, existing, PUBLIC_JSON_OPTIONS)`,
     );
   });
 });

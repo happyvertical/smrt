@@ -1269,7 +1269,7 @@ describe('smrtConsumer explicit SvelteKit route hosting (#2850)', () => {
       'const tenancy = enterTenancy(locals, "list");',
     );
     expect(readFileSync(collectionRoute, 'utf8')).toContain(
-      'function applyWritablePolicy',
+      'prepareWriteInput(target.collectionName, target.data)',
     );
     expect(
       readFileSync(

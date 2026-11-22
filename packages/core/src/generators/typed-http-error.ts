@@ -6,11 +6,18 @@
  * structured failure. Untyped errors and every 5xx remain opaque so transport
  * layers never turn implementation failures into client-visible detail.
  */
+import { notWritableFieldOf } from '../write-input';
+
 export interface TypedHttpFailure {
   code: string;
   message: string;
   ok: false;
   status: number;
+  /**
+   * The field a write may not change (`VALIDATION_FIELD_NOT_WRITABLE`).
+   * Present on that refusal only.
+   */
+  details?: { field: string };
 }
 
 const TENANT_ISOLATION_CODE = 'TENANT_ISOLATION_VIOLATION';
@@ -72,6 +79,7 @@ export function normalizeTypedHttpError(
     return undefined;
   }
 
+  const field = notWritableFieldOf(error);
   return {
     code:
       typeof details.code === 'string'
@@ -88,5 +96,6 @@ export function normalizeTypedHttpError(
           : 'Request rejected',
     ok: false,
     status,
+    ...(field ? { details: { field } } : {}),
   };
 }
