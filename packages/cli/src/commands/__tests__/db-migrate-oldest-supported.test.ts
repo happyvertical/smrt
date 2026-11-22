@@ -6,6 +6,7 @@ import {
   collectMigrateRecordInput,
   ObjectRegistry,
   OLDEST_SUPPORTED_RELEASE,
+  OLDEST_SUPPORTED_SYSTEM_SCHEMA,
   readLastMigrateRecord,
   recordSuccessfulMigrate,
   type SchemaDefinition,
@@ -69,6 +70,7 @@ describe('db:migrate release floor (#4933, real SQLite)', () => {
   let dbUrl: string;
   let logs: ReturnType<typeof vi.spyOn>;
   let errors: ReturnType<typeof vi.spyOn>;
+  let warns: ReturnType<typeof vi.spyOn>;
   let schemas: Record<string, SchemaDefinition>;
 
   async function withDb<T>(
@@ -85,10 +87,11 @@ describe('db:migrate release floor (#4933, real SQLite)', () => {
     process.exitCode = undefined;
     logs.mockClear();
     errors.mockClear();
+    warns.mockClear();
     const command = utilityCommands['db:migrate'];
     const parsed = parseCliCommandArgs(['db:migrate', ...flags], [command]);
     await requireCommandHandler(command)(parsed.args, parsed.options);
-    return [...logs.mock.calls, ...errors.mock.calls]
+    return [...logs.mock.calls, ...errors.mock.calls, ...warns.mock.calls]
       .map((call) => call.join(' '))
       .join('\n');
   }
@@ -124,7 +127,7 @@ describe('db:migrate release floor (#4933, real SQLite)', () => {
     );
     logs = vi.spyOn(console, 'log').mockImplementation(() => {});
     errors = vi.spyOn(console, 'error').mockImplementation(() => {});
-    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    warns = vi.spyOn(console, 'warn').mockImplementation(() => {});
     process.exitCode = undefined;
   });
   afterEach(() => {
@@ -180,6 +183,54 @@ describe('db:migrate release floor (#4933, real SQLite)', () => {
       expect((await db.query('SELECT title FROM posts')).rows).toEqual([
         { title: 'old' },
       ]);
+    });
+  });
+  /** `_smrt_migrations` as an earlier release left it, with no migrate record. */
+  async function stampSystemSchema(db: DatabaseInterface, version: string) {
+    await db.query(`CREATE TABLE _smrt_migrations (
+      id TEXT PRIMARY KEY, version TEXT NOT NULL UNIQUE,
+      applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, description TEXT, checksum TEXT)`);
+    await db.query(
+      "INSERT INTO _smrt_migrations (id, version, description) VALUES ('stamp', ?, 'earlier release')",
+      version,
+    );
+  }
+  it('no record and system tables older than the floor warns and proceeds', async () => {
+    delete schemas.posts.columns.required_value;
+    const [major, minor] = (OLDEST_SUPPORTED_SYSTEM_SCHEMA as string)
+      .split('.')
+      .map(Number);
+    const older = `${major}.${minor - 1}.0`;
+    await withDb(async (db) => {
+      await db.query('CREATE TABLE posts (id TEXT PRIMARY KEY, title TEXT)');
+      await db.query("INSERT INTO posts VALUES ('p1', 'old')");
+      await stampSystemSchema(db, older);
+    });
+    const out = await run();
+    expect(process.exitCode ?? 0).toBe(0);
+    expect(out).toContain('This database has no migrate record');
+    expect(out).toContain(
+      `last prepared by a smrt release older than ${OLDEST_SUPPORTED_RELEASE} (system schema ${older}`,
+    );
+    await withDb(async (db) => {
+      expect((await db.getTableSchema?.('posts'))?.columns).toHaveProperty(
+        'note',
+      );
+    });
+  });
+  it('no record and system tables at the floor proceeds', async () => {
+    delete schemas.posts.columns.required_value;
+    await withDb(async (db) => {
+      await db.query('CREATE TABLE posts (id TEXT PRIMARY KEY, title TEXT)');
+      await db.query("INSERT INTO posts VALUES ('p1', 'old')");
+      await stampSystemSchema(db, OLDEST_SUPPORTED_SYSTEM_SCHEMA as string);
+    });
+    await run();
+    expect(process.exitCode ?? 0).toBe(0);
+    await withDb(async (db) => {
+      expect((await db.getTableSchema?.('posts'))?.columns).toHaveProperty(
+        'note',
+      );
     });
   });
 });

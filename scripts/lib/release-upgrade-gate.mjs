@@ -243,11 +243,19 @@ export async function capture({
     });
     if (result.refused || result.hasManualDrift)
       throw new Error(`Capture refused: ${describeStops(result).join('\n')}`);
-    return await introspect(db, build.release, {
+    const snapshot = await introspect(db, build.release, {
       modelTables: Object.keys(
         build.ObjectRegistry.getAllSchemasAsDefinitions(),
       ),
     });
+    // The release's system-table schema version. Migrate dates a database
+    // that has no migrate record by it, so the floor record needs it when
+    // this release becomes the oldest supported one.
+    assertSystemSchema(
+      build.SMRT_SCHEMA_VERSION,
+      `the build of ${build.release} (SMRT_SCHEMA_VERSION)`,
+    );
+    return { ...snapshot, systemSchema: build.SMRT_SCHEMA_VERSION };
   } finally {
     await db.close();
   }
@@ -949,6 +957,20 @@ export function validateOldest(directory, compare) {
   if (snapshot.release !== record.release)
     throw new Error('Oldest supported release does not match snapshot.release');
   compare(record.release, record.release);
+  // Migrate warns about a database with no migrate record whose system tables
+  // are older than this version, so a missing or wrong value would silence
+  // the warning for every such database, or raise it for supported ones.
+  if (
+    typeof record.systemSchema !== 'string' ||
+    !/^\d+\.\d+\.\d+$/.test(record.systemSchema)
+  )
+    throw new Error(
+      'oldest-supported.json must name systemSchema, the system-table schema version (SMRT_SCHEMA_VERSION) of the oldest supported release',
+    );
+  if (record.systemSchema !== snapshot.systemSchema)
+    throw new Error(
+      'Oldest supported systemSchema does not match snapshot.systemSchema',
+    );
   if (record.history.length) {
     if (
       !record.upgradeFirstTo ||
@@ -1013,13 +1035,16 @@ export function moveOldest({
   const previous = validateOldest(directory, compare);
   if (compare(to, previous.release) <= 0)
     throw new Error('Oldest supported release must move forward');
+  let systemSchema;
   for (const version of [to, upgradeFirstTo]) {
     const snapshot = readJSON(
       path.join(directory, `snapshots/${version}.json`),
     );
     if (snapshot.release !== version)
       throw new Error(`Snapshot does not match ${version}`);
+    if (version === to) systemSchema = snapshot.systemSchema;
   }
+  assertSystemSchema(systemSchema, `Snapshot ${to}`);
   if (
     compare(upgradeFirstTo, previous.release) < 0 ||
     compare(upgradeFirstTo, to) >= 0
@@ -1031,6 +1056,7 @@ export function moveOldest({
   const next = {
     release: to,
     snapshot: `snapshots/${to}.json`,
+    systemSchema,
     decision: `${reason.trim()} Older databases must first upgrade with smrt ${upgradeFirstTo}.`,
     upgradeFirstTo,
     recordedAt,
@@ -1050,8 +1076,22 @@ export const MIN_MODEL_TABLE_SHARE = 0.9;
  * tables, or markedly fewer model tables than the previous snapshot (#4933).
  * An empty snapshot restores nothing, so the rehearsal would pass vacuously.
  */
+/**
+ * A system-table schema version (`SMRT_SCHEMA_VERSION`) is three numbers.
+ * Migrate dates a database that has no migrate record by it, so a snapshot
+ * without one, or a floor record with a malformed one, would silence or
+ * misdirect that warning.
+ */
+export function assertSystemSchema(value, label) {
+  if (typeof value !== 'string' || !/^\d+\.\d+\.\d+$/.test(value))
+    throw new Error(
+      `${label} must record systemSchema, the system-table schema version as major.minor.patch; got ${JSON.stringify(value)}`,
+    );
+}
+
 export function assertSnapshotPlausible(snapshot, previous) {
   const label = `release snapshot ${snapshot.release}`;
+  assertSystemSchema(snapshot.systemSchema, label);
   const count = snapshot.modelTables?.length ?? 0;
   if (!Object.keys(snapshot.tables ?? {}).length || count === 0)
     throw new Error(
@@ -1226,6 +1266,17 @@ export async function save({
   const build = await loadBuild(root, { manifests: false });
   const compare = build.compareReleases ?? compareReleases;
   const oldest = validateOldest(directory, compare);
+  // Every snapshot already saved must name its system schema before this one
+  // is written or anything is pruned: `check` refuses an undated snapshot that
+  // survives pruning, and pruning must not hide one. The release this capture
+  // replaces is skipped: saving it again is how it is repaired.
+  for (const release of snapshotVersions(directory)) {
+    if (release === snapshot.release) continue;
+    assertSystemSchema(
+      readJSON(path.join(directory, `snapshots/${release}.json`)).systemSchema,
+      `release snapshot ${release}`,
+    );
+  }
   const older = snapshotVersions(directory)
     .filter((version) => compare(version, snapshot.release) < 0)
     .sort(compare)

@@ -1795,7 +1795,8 @@ definition mismatch always appends, with `confirmed_retirements` (system schema
 1.18.0; JSON, one entry per table: table, package, last owner, release, `by`
 flag or code, the differences confirmed); other rows leave it NULL. This permanent ledger has no retention/prune task.
 `readLastMigrateRecord` is SELECT-only and returns `state: 'none'` for an absent
-or empty table: the first run under this scheme, not a schema mismatch. The latest
+or empty table: no record, not a schema mismatch (the release floor then warns
+from the database's system tables, see "Release upgrade gate"). The latest
 row orders by `created_at`, then `id`. Call the writer on the caller's database
 handle while its migration lock is held; it also works without a tracker.
 
@@ -2298,8 +2299,81 @@ declaring package. A table the code simply stopped declaring, with no
 declaration, still fails as an old column that holds data.
 
 Migrate refuses a database whose last migrate record is older than the floor.
-It names the supported release and the first upgrade to run. A database without
-a record is a first run under this scheme and proceeds. To move the floor, run
+It names the supported release and the first upgrade to run.
+
+**A database without a record is checked against its system tables, with a
+warning only.** Migrate records start at 0.61.4, later than the floor, so the
+databases the floor exists for never have one. Releases stamp their
+`SMRT_SCHEMA_VERSION` in `_smrt_migrations` when they prepare system tables
+(`smrt db:migrate`, the first model use), but not when an app migrates through
+`migrateSmrtSchemas`. `oldest-supported.json` names the floor release's value
+(`systemSchema`; 1.15.0 for 0.60.17, first shipped in 0.60.16), and
+`readRecordedSystemSchema()` reads the highest stamp, SELECT-only and before
+the run prepares anything. With no record and a highest stamp below the
+floor's, `checkUnrecordedDatabaseAge()` returns a warning, and
+`migrateSmrtSchemas` (logger), `smrt db:migrate` (stderr) and
+`smrt doctor --db` ("Database release") print it; the run proceeds. No record
+and no stamp, or a stamp at or above the floor's, is silent.
+
+**What the warning can decide, and what it cannot.** A stamp is evidence that
+some release at that system schema prepared the system tables. It is never
+evidence about the application tables, and never proof that an older release
+did not run later. The warning fires only when every stamp is below the
+floor's, so:
+
+| History | Highest stamp | Warns? | Supported? |
+|---|---|---|---|
+| Last prepared and migrated by 0.60.15 or earlier | below 1.15.0 | Yes | No |
+| Prepared by 0.60.15 or earlier, application tables last migrated by 0.60.16 through `migrateSmrtSchemas` only | below 1.15.0 | Yes | No (still below the floor) |
+| Prepared by 0.60.15 or earlier, application tables migrated by 0.60.17 to 0.61.3 through `migrateSmrtSchemas` only | below 1.15.0 | Yes (a false alarm) | Yes |
+| Last migrated by 0.60.16 | 1.15.0 | No (a miss) | No |
+| Older database that model code of a newer build started before its migrate | that build's | No (a miss) | Not proven |
+| Older database that this build's `smrt db:migrate` prepared, with no record written (the run ended with manual interventions or table errors) | this build's | No from then on (a miss) | Not proven |
+| No `_smrt_migrations` table, or no complete stamp | none | No | Not proven |
+
+The cutoff for the first upgrade hop is the last application migration, not
+the stamp: if the application tables were last migrated by a release below
+0.60.17, upgrade with smrt 0.60.17 first.
+
+Nothing in the database tells these apart, so the check is a warning and the
+run proceeds; it can raise a false alarm on the third row and misses the
+fourth to seventh. `smrt doctor --db` says "age not proven" when there is no
+record and the stamp does not warn, never a pass. The tracker table `_smrt_schema_migrations` has the
+same shape from 0.60.0 to 0.61.3, its rows carry the app's version rather than
+smrt's, and the core system schema did not change between 0.60.16 and 0.60.17,
+so neither tells these apart. Refusing on the stamp refused a supported
+database (the third row); admitting with a warning is the chosen trade. The
+warning's closing sentence ("an app on smrt 0.60.17 to 0.61.3 ... is safe to
+continue") is derived from the floor: it names the supported releases up to
+0.61.3, the last release without migrate records, and is left out once the
+floor is past it. Only
+a migrate record, which exists from 0.61.4, can refuse a run:
+`checkOldestSupportedRelease()` is unchanged and decides only from one. Once a
+run has written its record the stamp is never read again.
+
+`readRecordedSystemSchema` reads a stamp only when the whole stored value is
+`major.minor.patch` or that with `+deferred-compat`; any other value
+(`9.0.0garbage`, `9.1.0-beta`) is not a stamp and never outranks one.
+
+Tests (`oldest-supported.test.ts`, SQLite and DuckDB; the PostgreSQL file
+also asserts the logged warning): the seeded-stamp cases
+stand in for the releases that cannot run here (0.60.15 and earlier, 0.60.16,
+0.60.17 to 0.61.3). The entry points of this build are exercised directly:
+`ensureSystemTables` stamps this build's schema before migrate and leaves the
+run silent (fifth row); `migrateSmrtSchemas` reads the stamp before its own
+run stamps, warns once, and writes the record that ends the check.
+
+Each snapshot records its release's `systemSchema` (`capture` reads
+`SMRT_SCHEMA_VERSION` of the built checkout); `move-oldest` copies the new
+floor's into `oldest-supported.json`, and the gate fails when the two differ
+or the value is missing or not `major.minor.patch`. The same check runs when a
+release is captured (`capture` refuses a build with no `SMRT_SCHEMA_VERSION`),
+on every snapshot in `check` (with the table-count rule), and in `save` on the
+`systemSchema` of every snapshot already saved, before it writes the new one or
+prunes (the release being saved again is skipped, so saving that release again
+repairs a non-floor snapshot; an undated floor snapshot must be corrected by
+hand, follow-up #5544), and
+before `move-oldest` writes the floor. To move the floor, run
 `node scripts/release-upgrade-gate.mjs move-oldest --to <release>
 --upgrade-first-to <release> --reason "<why old upgrade code can be removed>"`
 on one shell line. Both releases must have saved snapshots. The command appends
