@@ -341,44 +341,29 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         .ok_or("missing main window configuration")?
         .clone();
     let main = tauri::WebviewWindowBuilder::from_config(app, &main_config)?;
-    let main = if app
-        .config()
-        .plugins
-        .0
-        .get("smrt-desktop")
-        .and_then(|v| v.get("privateDocuments"))
-        .is_some()
-    {
+    let main = if documents_enabled {
         main.initialization_script(
             crate::document_ui::ANCHOR_SCRIPT
                 .replace("__SMRT_PRIVATE_ACTION_CAPABILITY__", &action_key),
         )
+        .on_new_window(move |_, _| {
+            crate::document_ui::unsupported(&popup_app);
+            tauri::webview::NewWindowResponse::Deny
+        })
     } else {
         main
     };
     // Keep WebKit's download delegate absent: its shouldPerformDownload
     // path bypasses navigation policy before response-time download callbacks.
     // Trusted main-frame anchors use the guarded native retrieval instead.
-    main.on_new_window(move |_, _| {
-        crate::document_ui::unsupported(&popup_app);
-        tauri::webview::NewWindowResponse::Deny
-    })
-    .on_navigation(move |url| {
+    main.on_navigation(move |url| {
+        // Opt-out products retain the original navigation and popup behavior.
+        if !documents_enabled {
+            return true;
+        }
         if url.scheme() == "smrt-private-document" {
             crate::document_ui::action(&nav_app, url);
             return false;
-        }
-        // The stricter origin boundary belongs to the opt-in document
-        // capability; existing products retain their navigation contract.
-        if nav_app
-            .config()
-            .plugins
-            .0
-            .get("smrt-desktop")
-            .and_then(|v| v.get("privateDocuments"))
-            .is_none()
-        {
-            return true;
         }
         if url.scheme() == "tauri"
             || (url.scheme() == "http" && url.host_str() == Some("tauri.localhost"))
