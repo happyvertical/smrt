@@ -6,6 +6,10 @@ import {
   ensurePostgresChangeFeedAppendFunction,
   ensurePostgresChangeFeedHelpers,
 } from '../change-feed.js';
+import {
+  aiCallLedgerColumnsPresent,
+  ensureAiCallLedgerCutover,
+} from './ai-call-ledger-schema.js';
 import { backfillAiRunIdRegistry } from './ai-run-ids.js';
 import {
   assertPostgresSystemTimestampsCurrent,
@@ -75,7 +79,11 @@ async function isSystemSchemaVersionApplied(
       `SELECT 1 FROM _smrt_migrations WHERE version = ${versionParam} LIMIT 1`,
       SMRT_SCHEMA_VERSION,
     );
-    return getQueryRows(rows).length > 0;
+    if (getQueryRows(rows).length === 0) return false;
+    // 1.21.0 counts as applied only while both renamed columns exist: a
+    // database rolled back by renaming them without removing the stamp is
+    // upgraded again.
+    return await aiCallLedgerColumnsPresent(db, typeHint);
   } catch (error) {
     if (engine === 'postgres') throw error;
     return false;
@@ -96,6 +104,10 @@ async function bootstrapSystemTables(
   if (await isSystemSchemaVersionApplied(db, typeHint)) return;
 
   await ensureBootstrapSystemTableCompatibility(db, typeHint);
+  // 1.21.0: the call ledger's renames (behind the live-reservation blocker)
+  // and columns, after the older passes and before the DDL replay that
+  // recreates the indexes on the renamed columns.
+  await ensureAiCallLedgerCutover(db, typeHint);
   const engine = getDatabaseEngine(db, typeHint);
   for (const ddl of getSystemTableDDL(engine)) {
     for (const statement of ddl

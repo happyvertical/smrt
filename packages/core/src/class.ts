@@ -2829,7 +2829,7 @@ export class SmrtClass {
         row.estimated_cost === null || row.estimated_cost === undefined
           ? undefined
           : Number(row.estimated_cost),
-      duration: toSafeInteger(row.duration ?? 0, 'AI usage duration'),
+      duration: toSafeInteger(row.duration_ms ?? 0, 'AI usage duration'),
       className:
         row.class_name === null || row.class_name === undefined
           ? undefined
@@ -2886,7 +2886,7 @@ export class SmrtClass {
              COALESCE(SUM(prompt_tokens), 0) AS prompt_tokens,
              COALESCE(SUM(completion_tokens), 0) AS completion_tokens,
              COALESCE(SUM(total_tokens), 0) AS total_tokens,
-             COALESCE(SUM(duration), 0) AS total_duration,
+             COALESCE(SUM(duration_ms), 0) AS total_duration,
              COALESCE(SUM(estimated_cost), 0) AS estimated_cost,
              MAX(created_at) AS last_used
       FROM _smrt_ai_usage

@@ -417,13 +417,13 @@ async function assertAiCallReservedTx(
   const rows = getRows(
     await aiRunQuery(
       tx.db,
-      `SELECT reservation FROM _smrt_ai_run_events
+      `SELECT call_state FROM _smrt_ai_run_events
         WHERE run_id = $1 AND call_id = $2 AND type = 'call'`,
       run.id,
       callId,
     ),
   );
-  if (rows[0]?.reservation !== 'reserved') {
+  if (rows[0]?.call_state !== 'reserved') {
     throw new AiRunTransitionError(
       `AI call ${callId} of run ${run.id} is no longer reserved`,
       run.id,
@@ -517,9 +517,9 @@ async function moveReservation(
     await aiRunQuery(
       tx.db,
       `UPDATE _smrt_ai_run_events
-          SET reservation = $3, status = COALESCE($4, status)
+          SET call_state = $3, status = COALESCE($4, status)
         WHERE run_id = $1 AND call_id = $2 AND type = 'call'
-          AND reservation IN (${marks})
+          AND call_state IN (${marks})
         RETURNING reserved_tokens, reserved_cost`,
       runId,
       callId,
@@ -644,7 +644,7 @@ async function settleInTx(
     // Recorded as released, not settled: the call was charged nothing.
     await aiRunQuery(
       tx.db,
-      `UPDATE _smrt_ai_run_events SET reservation = 'released'
+      `UPDATE _smrt_ai_run_events SET call_state = 'released'
         WHERE run_id = $1 AND call_id = $2 AND type = 'call'`,
       input.runId,
       input.callId,
@@ -768,7 +768,7 @@ function usageFromRow(row: Record<string, unknown>): SmrtAiUsageEvent {
       totalTokens: nullable(row.total_tokens),
     } as SmrtAiUsageEvent['usage'],
     estimatedCost: nullable(row.estimated_cost),
-    duration: num(row.duration),
+    duration: num(row.duration_ms),
     timestamp: dateOrNull(row.created_at) ?? new Date(0),
   } as SmrtAiUsageEvent;
 }
@@ -947,7 +947,7 @@ export async function reconcileAiRunOnClaim(
         `SELECT e.call_id FROM _smrt_ai_run_events e
            JOIN _smrt_ai_runs r ON r.id = e.run_id
           WHERE e.run_id = $1 AND e.type = 'call'
-            AND e.reservation = 'reserved'
+            AND e.call_state = 'reserved'
             AND ${tenant === null ? 'r.tenant_id IS NULL' : 'r.tenant_id = $2'}
           ORDER BY e.seq`,
         id,
@@ -1097,7 +1097,7 @@ export async function sweepAiRuns(
       await aiRunQuery(
         db,
         `SELECT run_id, call_id, created_at FROM _smrt_ai_run_events
-          WHERE type = 'call' AND reservation = 'reserved' AND created_at < $1
+          WHERE type = 'call' AND call_state = 'reserved' AND created_at < $1
           ORDER BY created_at, id LIMIT $2 OFFSET $3`,
         new Date(now.getTime() - graceMs).toISOString(),
         batch,
@@ -1124,7 +1124,7 @@ export async function sweepAiRuns(
           AND NOT EXISTS (SELECT 1 FROM _smrt_ai_run_events e
                            WHERE e.run_id = r.id
                              AND (e.created_at >= $1
-                                  OR (e.type = 'call' AND e.reservation = 'reserved')))
+                                  OR (e.type = 'call' AND e.call_state = 'reserved')))
         ORDER BY r.id LIMIT $2`,
       cutoff.toISOString(),
       batch,
@@ -1145,7 +1145,7 @@ export async function sweepAiRuns(
             `SELECT 1 AS x FROM _smrt_ai_run_events
               WHERE run_id = $1
                 AND (created_at >= $2
-                     OR (type = 'call' AND reservation = 'reserved'))
+                     OR (type = 'call' AND call_state = 'reserved'))
               LIMIT 1`,
             id,
             cutoff.toISOString(),
@@ -1629,7 +1629,7 @@ async function computeOwnTotals(
               AND (u.tenant_id = r.tenant_id
                    OR (u.tenant_id IS NULL AND r.tenant_id IS NULL))
         WHERE e.run_id = $1 AND e.type = 'call'
-          AND e.reservation IN ('settled', 'settled_late', 'unreserved')`,
+          AND e.call_state IN ('settled', 'settled_late', 'unreserved')`,
       runId,
     ),
   );
@@ -1669,7 +1669,7 @@ export async function checkAiRunTotals(
          FROM _smrt_ai_runs r
          LEFT JOIN _smrt_ai_run_events e ON e.run_id = r.id
               AND e.type = 'call'
-              AND e.reservation IN ('settled', 'settled_late', 'unreserved')
+              AND e.call_state IN ('settled', 'settled_late', 'unreserved')
          -- Only the call's own row: its id, its run, its run's tenant.
          LEFT JOIN _smrt_ai_usage u ON u.id = e.call_id AND u.run_id = r.id
               AND (u.tenant_id = r.tenant_id

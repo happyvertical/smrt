@@ -477,7 +477,7 @@ export async function listAiTranscripts(
     await db.query(
       `SELECT id, provider, model, operation, class_name, tenant_id, prompt_key,
               tier_requested, tier_resolved, run_id, call_id, entry_call_id,
-              total_tokens, estimated_cost, duration, created_at
+              total_tokens, estimated_cost, duration_ms AS duration, created_at
          FROM _smrt_ai_usage
         WHERE entry_call_id IN (${list(usageParams, callIds)})${scoped(usageParams)}
         ORDER BY created_at ASC, id ASC`,

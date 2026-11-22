@@ -171,7 +171,7 @@ export async function insertAiUsageRow(
   const result = await db.query(
     `INSERT INTO _smrt_ai_usage
       (id, provider, model, operation, prompt_tokens, completion_tokens,
-       total_tokens, estimated_cost, duration, class_name, tenant_id, tags, created_at,
+       total_tokens, estimated_cost, duration_ms, class_name, tenant_id, tags, created_at,
        prompt_key, tier_requested, tier_resolved, run_id, call_id,
        entry_call_id, template_hash, step_index, step_name, step_instance_id,
        attempt)

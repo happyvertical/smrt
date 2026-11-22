@@ -553,7 +553,7 @@ const MAX_TRANSCRIPT_LIMIT = 500;
 
 const USAGE_COLUMNS = `id, provider, model, operation, tenant_id, tier_requested,
        tier_resolved, run_id, entry_call_id, prompt_tokens, completion_tokens,
-       total_tokens, estimated_cost, duration, tags, template_hash,
+       total_tokens, estimated_cost, duration_ms AS duration, tags, template_hash,
        step_instance_id, attempt`;
 
 /**

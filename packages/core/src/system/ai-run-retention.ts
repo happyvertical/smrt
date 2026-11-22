@@ -154,7 +154,7 @@ export async function pruneAiRunTrajectories(
         AND r.finished_at < $1
         AND NOT EXISTS (SELECT 1 FROM _smrt_ai_run_events e
                          WHERE e.run_id = r.id AND e.type = 'call'
-                           AND e.reservation = 'reserved')`;
+                           AND e.call_state = 'reserved')`;
       where += tenantCondition(retention, params);
       if (lastId !== null) {
         params.push(lastId);
@@ -277,7 +277,7 @@ async function pruneOneTrajectory(
         await aiRunQuery(
           tx.db,
           `SELECT 1 AS x FROM _smrt_ai_run_events
-            WHERE run_id = $1 AND type = 'call' AND reservation = 'reserved'
+            WHERE run_id = $1 AND type = 'call' AND call_state = 'reserved'
             LIMIT 1`,
           runId,
         ),

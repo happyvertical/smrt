@@ -529,7 +529,7 @@ export async function listAiEvaluations(
     await db.query(
       `SELECT id, provider, model, operation, class_name, tenant_id, prompt_key,
               tier_requested, tier_resolved, run_id, call_id, entry_call_id,
-              total_tokens, estimated_cost, duration, created_at
+              total_tokens, estimated_cost, duration_ms AS duration, created_at
          FROM _smrt_ai_usage
         WHERE ${predicates.join(' OR ')}
         ORDER BY created_at ASC, id ASC`,
@@ -1010,7 +1010,8 @@ export async function reportAiUsage(
       await db.query(
         `SELECT id, provider, model, operation, class_name, tenant_id, prompt_key,
                 tier_requested, tier_resolved, run_id, entry_call_id, prompt_tokens,
-                completion_tokens, total_tokens, estimated_cost, duration, tags
+                completion_tokens, total_tokens, estimated_cost,
+                duration_ms AS duration, tags
            FROM _smrt_ai_usage
           ${conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : ''}
           ORDER BY id ASC

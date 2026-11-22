@@ -316,8 +316,11 @@ describe.each(aiRunTestEngines)('1.21.0 cutover on %s', (engine) => {
         `DELETE FROM _smrt_migrations WHERE version = '${SMRT_SCHEMA_VERSION}'`,
       );
     }
+    // A 1.20.0 core writes again. (A fresh reservation would block the
+    // re-upgrade, as it should: the drain comes first.)
     for (const writer of [
-      'event insert',
+      'sweep select',
+      'moveReservation',
       'usage-row insert',
       'external-agent insert',
     ]) {
@@ -335,18 +338,39 @@ describe.each(aiRunTestEngines)('1.21.0 cutover on %s', (engine) => {
     );
   });
 
+  // DuckDB 1.4.3 accepts an `INSERT ... SELECT ... ON CONFLICT` that names
+  // a column the table lacks (it drops the value): 1.20.0's event insert is
+  // the one statement the rename does not stop there. Its settle, sweep and
+  // usage insert still fail, and DuckDB has a single writer process, so an
+  // older worker cannot run beside a newer one on the same file.
+  const gated = (name: string) =>
+    engine !== 'duckdb' || name !== 'event insert';
+
   it.each(
-    Object.keys(V1_20_WRITERS).filter(
-      (name) => name !== 'trajectory prune' || true,
-    ),
+    Object.keys(V1_20_WRITERS),
   )('the 1.20.0 %s fails against the new schema', async (name) => {
     const db = await fileDatabase(engine);
     const run = await openAiRun(
       { db, usageTracking: true, tenantId: 't' },
       { type: 'turn' },
     );
+    const attempt = V1_20_WRITERS[name]?.(db, {
+      runId: run.id,
+      callId: 'old',
+    });
+    if (gated(name)) {
+      await expect(attempt).rejects.toThrow();
+      return;
+    }
+    await attempt;
+    const rows = rowsOf(
+      await db.query(
+        "SELECT call_state FROM _smrt_ai_run_events WHERE call_id = 'old-new'",
+      ),
+    );
+    expect(rows).toEqual([{ call_state: null }]);
     await expect(
-      V1_20_WRITERS[name]?.(db, { runId: run.id, callId: 'old' }),
+      V1_20_WRITERS.moveReservation?.(db, { runId: run.id, callId: 'old-new' }),
     ).rejects.toThrow();
   });
 
@@ -361,7 +385,7 @@ describe.each(aiRunTestEngines)('1.21.0 cutover on %s', (engine) => {
       'event insert',
       'usage-row insert',
       'external-agent insert',
-    ]) {
+    ].filter(gated)) {
       await expect(
         V1_20_WRITERS[writer]?.(db, { runId: run.id, callId: 'old' }),
       ).rejects.toThrow();

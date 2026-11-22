@@ -333,7 +333,7 @@ async function readHeldReservation(
   const rows = getRows(
     await aiRunQuery(
       db,
-      `SELECT r.status, e.reservation FROM _smrt_ai_runs r
+      `SELECT r.status, e.call_state FROM _smrt_ai_runs r
          LEFT JOIN _smrt_ai_run_events e
            ON e.run_id = r.id AND e.call_id = $2 AND e.type = 'call'
         WHERE r.id = $1${
@@ -350,7 +350,7 @@ async function readHeldReservation(
   );
   const row = rows[0];
   if (!row) throw new AiRunNotFoundError(runId);
-  if (row.reservation !== 'reserved') {
+  if (row.call_state !== 'reserved') {
     const status = String(row.status) as AiRunStatus;
     throw new AiRunTransitionError(
       `AI call ${callId} of run ${runId} is no longer reserved`,

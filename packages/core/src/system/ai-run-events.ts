@@ -263,7 +263,7 @@ export async function insertAiRunEventTx(
         `INSERT INTO _smrt_ai_run_events
            (id, run_id, seq, parent_event_id, type, call_id, step_index, name,
             status, duration, payload, payload_ref, truncated, child_run_id,
-            reservation, reserved_tokens, reserved_cost, created_at)
+            call_state, reserved_tokens, reserved_cost, created_at)
          SELECT $1, $2, COALESCE(MAX(seq), 0) + 1, $3, $4, $5, $6, $7, $8, $9,
                 $10, $11, $12, $13, $14, $15, $16, $17
            FROM _smrt_ai_run_events
@@ -416,7 +416,7 @@ export function toAiRunEvent(row: Record<string, unknown>): AiRunEvent {
     payloadRef: text(row.payload_ref),
     truncated: num(row.truncated) !== 0 || row.truncated === true,
     childRunId: text(row.child_run_id),
-    reservation: text(row.reservation) as AiRunReservationState | null,
+    reservation: text(row.call_state) as AiRunReservationState | null,
     reservedTokens:
       row.reserved_tokens === null || row.reserved_tokens === undefined
         ? null
@@ -532,7 +532,7 @@ function toEvaluation(row: Record<string, unknown>): AiRunTrajectoryEvaluation {
 
 const USAGE_COLUMNS = `id, entry_call_id, provider, model, operation, prompt_key,
   template_hash, tier_requested, tier_resolved, prompt_tokens,
-  completion_tokens, total_tokens, estimated_cost, duration, step_index,
+  completion_tokens, total_tokens, estimated_cost, duration_ms AS duration, step_index,
   step_name, step_instance_id, attempt, created_at`;
 
 const EVALUATION_COLUMNS =

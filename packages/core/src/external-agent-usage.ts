@@ -455,7 +455,7 @@ export class ExternalAgentUsageRecorder {
         const won = await tx.query(
           // `call_id` and `entry_call_id` are the row's own id, as for every
           // usage row (#5005).
-          `INSERT INTO _smrt_ai_usage (id,call_id,entry_call_id,provider,model,operation,prompt_tokens,completion_tokens,total_tokens,estimated_cost,duration,class_name,tenant_id,tags,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT (id) DO NOTHING RETURNING id`,
+          `INSERT INTO _smrt_ai_usage (id,call_id,entry_call_id,provider,model,operation,prompt_tokens,completion_tokens,total_tokens,estimated_cost,duration_ms,class_name,tenant_id,tags,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT (id) DO NOTHING RETURNING id`,
           receipt.id,
           receipt.id,
           receipt.id,

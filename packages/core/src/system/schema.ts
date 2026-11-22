@@ -239,7 +239,7 @@ CREATE TABLE IF NOT EXISTS _smrt_ai_usage (
   completion_tokens INTEGER,
   total_tokens INTEGER,
   estimated_cost REAL,
-  duration INTEGER NOT NULL,
+  duration_ms INTEGER NOT NULL,
   class_name TEXT,
   tenant_id TEXT,
   tags TEXT,
@@ -416,7 +416,8 @@ CREATE TABLE IF NOT EXISTS _smrt_ai_runs (
   mode TEXT,
   seats INTEGER,
   degraded_seats INTEGER,
-  details TEXT
+  details TEXT,
+  refused_usage TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_smrt_ai_runs_created
@@ -475,10 +476,18 @@ CREATE TABLE IF NOT EXISTS _smrt_ai_run_events (
   payload_ref TEXT,
   truncated INTEGER NOT NULL DEFAULT 0,
   child_run_id TEXT,
-  reservation TEXT,
+  call_state TEXT,
   reserved_tokens INTEGER,
   reserved_cost DOUBLE PRECISION,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  call_proof TEXT,
+  call_row TEXT,
+  call_rate TEXT,
+  call_usage TEXT,
+  ended_at TIMESTAMP,
+  usage_source TEXT,
+  charged_tokens INTEGER,
+  charged_cost DOUBLE PRECISION,
   UNIQUE(run_id, seq)
 );
 
@@ -489,7 +498,7 @@ CREATE INDEX IF NOT EXISTS idx_smrt_ai_run_events_child
   ON _smrt_ai_run_events(child_run_id);
 
 CREATE INDEX IF NOT EXISTS idx_smrt_ai_run_events_sweep
-  ON _smrt_ai_run_events(type, reservation, created_at);
+  ON _smrt_ai_run_events(type, call_state, created_at);
 
 CREATE INDEX IF NOT EXISTS idx_smrt_ai_run_events_payload_ref
   ON _smrt_ai_run_events(payload_ref);
