@@ -821,6 +821,51 @@ export async function ensureDispatchSystemTableCompatibility(
     'tenant_id',
     typeHint,
   );
+  // Dispatch lease (schema 1.22.0): nullable, so existing rows need no
+  // rewrite. The columns come first so the paging indexes over them can be
+  // created here (the bus initialize path) and by the bootstrap DDL replay.
+  await addColumnIfMissing(
+    db,
+    '_smrt_dispatch',
+    'lease_token',
+    'TEXT',
+    typeHint,
+  );
+  await addColumnIfMissing(
+    db,
+    '_smrt_dispatch',
+    'claimed_until',
+    timestampColumnType(db, typeHint),
+    typeHint,
+  );
+  await addColumnIfMissing(
+    db,
+    '_smrt_dispatch',
+    'max_attempts',
+    integerColumnType(db, typeHint),
+    typeHint,
+  );
+  await addIndexIfMissing(
+    db,
+    'idx_smrt_dispatch_status_created_id',
+    '_smrt_dispatch',
+    'status, created_at, id',
+    typeHint,
+  );
+  await addIndexIfMissing(
+    db,
+    'idx_smrt_dispatch_status_claimed_id',
+    '_smrt_dispatch',
+    'status, claimed_until, id',
+    typeHint,
+  );
+  await addIndexIfMissing(
+    db,
+    'idx_smrt_dispatch_status_updated_id',
+    '_smrt_dispatch',
+    'status, updated_at, id',
+    typeHint,
+  );
 }
 
 export async function ensureDispatchSubscriptionsSystemTableCompatibility(
@@ -1070,6 +1115,16 @@ export async function ensureDeferredSystemTableCompatibility(
   }
 
   return { settled: jobsExists && jobEventsExists };
+}
+
+/**
+ * A TIMESTAMP column added to an existing system table, rendered as the
+ * system DDL renders it (`TIMESTAMPTZ` on PostgreSQL).
+ */
+function timestampColumnType(db: DatabaseInterface, typeHint?: string): string {
+  return getDatabaseEngine(db, typeHint) === 'postgres'
+    ? 'TIMESTAMPTZ'
+    : 'TIMESTAMP';
 }
 
 /** An INTEGER column added to an existing system table (BIGINT off SQLite). */

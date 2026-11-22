@@ -17,6 +17,8 @@ import {
   dispatchPatternSql,
   matchesDispatchPattern,
 } from '../../dispatch/pattern';
+import type { DispatchBusOptions } from '../../dispatch/types';
+import { getSystemTableDDLForEngine } from '../../system/schema';
 import { getTestDatabase } from '../../testing/database';
 
 export type DispatchTestEngine = 'sqlite' | 'duckdb' | 'pglite' | 'postgres';
@@ -35,6 +37,23 @@ export interface DispatchTestDatabase {
   close(): Promise<void>;
 }
 
+export interface DispatchTestOpenOptions {
+  /** Runs on the empty database before the bus initializes it. */
+  preload?: (db: DatabaseInterface) => Promise<void>;
+  /** Bus options other than the database. */
+  bus?: Omit<DispatchBusOptions, 'db' | 'persistence'>;
+}
+
+/** Run each `;`-separated statement of `ddl`. */
+export async function runStatements(
+  db: DatabaseInterface,
+  ddl: string,
+): Promise<void> {
+  for (const statement of ddl.split(';')) {
+    if (statement.trim()) await db.query(statement);
+  }
+}
+
 export function rowsOf(result: unknown): Record<string, unknown>[] {
   if (Array.isArray(result)) return result as Record<string, unknown>[];
   const rows = (result as { rows?: unknown } | null)?.rows;
@@ -44,6 +63,7 @@ export function rowsOf(result: unknown): Record<string, unknown>[] {
 /** Open an empty database of `engine` with the dispatch tables. */
 export async function openDispatchTestDatabase(
   engine: Exclude<DispatchTestEngine, 'postgres'>,
+  options: DispatchTestOpenOptions = {},
 ): Promise<DispatchTestDatabase> {
   let db: DatabaseInterface;
   let file: string | undefined;
@@ -65,7 +85,8 @@ export async function openDispatchTestDatabase(
       url: ':memory:',
     })) as DatabaseInterface;
   }
-  const bus = await createDispatchBus({ db });
+  await options.preload?.(db);
+  const bus = await createDispatchBus({ ...options.bus, db });
   return {
     engine,
     db,
@@ -82,12 +103,12 @@ export const postgresDispatchUrl = process.env.SMRT_TEST_POSTGRES_URL;
 
 /**
  * Open a PostgreSQL database in a fresh schema of its own (optional lane).
- * `close()` drops the schema. `timeZone` sets the session `TimeZone` of
- * every pooled connection (through the connection `options`).
+ * `close()` drops the schema. `options.timeZone` sets the session
+ * `TimeZone` of every pooled connection (through the connection `options`).
  */
 export async function openPostgresDispatchDatabase(
   label: string,
-  session: { timeZone?: string } = {},
+  options: DispatchTestOpenOptions & { timeZone?: string } = {},
 ): Promise<DispatchTestDatabase> {
   const url = postgresDispatchUrl;
   if (!url) throw new Error('SMRT_TEST_POSTGRES_URL is not set');
@@ -102,16 +123,17 @@ export async function openPostgresDispatchDatabase(
   } as Parameters<typeof getDatabase>[0])) as DatabaseInterface;
   await admin.query(`CREATE SCHEMA ${schema}`);
   const separator = url.includes('?') ? '&' : '?';
-  const options = [
+  const connectionOptions = [
     `-c search_path=${schema}`,
-    ...(session.timeZone ? [`-c TimeZone=${session.timeZone}`] : []),
+    ...(options.timeZone ? [`-c TimeZone=${options.timeZone}`] : []),
   ].join(' ');
   const db = (await getDatabase({
     type: 'postgres',
-    url: `${url}${separator}options=${encodeURIComponent(options)}`,
+    url: `${url}${separator}options=${encodeURIComponent(connectionOptions)}`,
     dbid: `smrt-test-dispatch-${randomUUID()}`,
   } as Parameters<typeof getDatabase>[0])) as DatabaseInterface;
-  const bus = await createDispatchBus({ db });
+  await options.preload?.(db);
+  const bus = await createDispatchBus({ ...options.bus, db });
   return {
     engine: 'postgres',
     db,
@@ -137,8 +159,33 @@ export async function insertRawDispatch(
     createdAt?: string | null;
     updatedAt?: string | null;
     lastError?: string | null;
+    leaseToken?: string | null;
+    claimedUntil?: string | null;
+    maxAttempts?: number | null;
   },
 ): Promise<void> {
+  if (
+    row.leaseToken !== undefined ||
+    row.claimedUntil !== undefined ||
+    row.maxAttempts !== undefined
+  ) {
+    await insertRawDispatch(db, {
+      ...row,
+      leaseToken: undefined,
+      claimedUntil: undefined,
+      maxAttempts: undefined,
+    });
+    await db.query(
+      `UPDATE _smrt_dispatch
+          SET lease_token = $1, claimed_until = $2, max_attempts = $3
+        WHERE id = $4`,
+      row.leaseToken ?? null,
+      row.claimedUntil ?? null,
+      row.maxAttempts ?? null,
+      row.id,
+    );
+    return;
+  }
   await db.query(
     `INSERT INTO _smrt_dispatch
        (id, type, source, payload, status, attempts, last_error,
@@ -250,6 +297,182 @@ export async function patternSqlMismatches(
     }
   }
   return mismatches;
+}
+
+/** The `_smrt_dispatch` DDL as shipped in system schema 1.20.0 (pre-lease). */
+export const DISPATCH_TABLE_DDL_1_20_0 = `
+CREATE TABLE _smrt_dispatch (
+  id TEXT PRIMARY KEY,
+  type TEXT NOT NULL,
+  source TEXT NOT NULL,
+  source_id TEXT,
+  payload TEXT,
+  status TEXT NOT NULL DEFAULT 'pending',
+  attempts INTEGER DEFAULT 0,
+  last_error TEXT,
+  processed_at TIMESTAMP,
+  processed_by TEXT,
+  target_subscriber TEXT,
+  correlation_id TEXT,
+  tenant_id TEXT,
+  metadata TEXT,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX idx_smrt_dispatch_status ON _smrt_dispatch(status);
+CREATE INDEX idx_smrt_dispatch_status_updated ON _smrt_dispatch(status, updated_at)`;
+
+/** {@link DISPATCH_TABLE_DDL_1_20_0} rendered for `engine` as bootstrap would. */
+export function legacyDispatchDdl(engine: DispatchTestEngine): string {
+  return getSystemTableDDLForEngine(
+    DISPATCH_TABLE_DDL_1_20_0,
+    engine === 'sqlite'
+      ? 'sqlite'
+      : engine === 'duckdb'
+        ? 'duckdb'
+        : 'postgres',
+  );
+}
+
+/** Lease columns and indexes the dispatch lease adds to `_smrt_dispatch`. */
+export const DISPATCH_LEASE_COLUMNS = [
+  'lease_token',
+  'claimed_until',
+  'max_attempts',
+] as const;
+export const DISPATCH_LEASE_INDEXES = {
+  idx_smrt_dispatch_status_created_id: ['status', 'created_at', 'id'],
+  idx_smrt_dispatch_status_claimed_id: ['status', 'claimed_until', 'id'],
+  idx_smrt_dispatch_status_updated_id: ['status', 'updated_at', 'id'],
+} as const;
+
+/**
+ * Column types of `_smrt_dispatch` (lower-cased) and the ordered columns of
+ * every index on it, read from the engine catalog.
+ */
+export async function readDispatchTableShape(
+  db: DatabaseInterface,
+  engine: DispatchTestEngine,
+): Promise<{
+  columns: Record<string, string>;
+  indexes: Record<string, string[]>;
+}> {
+  const columns: Record<string, string> = {};
+  const indexes: Record<string, string[]> = {};
+  if (engine === 'sqlite') {
+    for (const row of rowsOf(
+      await db.query('PRAGMA table_info(_smrt_dispatch)'),
+    )) {
+      columns[String(row.name)] = String(row.type).toLowerCase();
+    }
+    for (const index of rowsOf(
+      await db.query('PRAGMA index_list(_smrt_dispatch)'),
+    )) {
+      const name = String(index.name);
+      if (name.startsWith('sqlite_autoindex_')) continue;
+      indexes[name] = rowsOf(await db.query(`PRAGMA index_info(${name})`)).map(
+        (info) => String(info.name),
+      );
+    }
+    return { columns, indexes };
+  }
+  if (engine === 'duckdb') {
+    for (const row of rowsOf(
+      await db.query(
+        "SELECT column_name, data_type FROM duckdb_columns() WHERE table_name = '_smrt_dispatch'",
+      ),
+    )) {
+      columns[String(row.column_name)] = String(row.data_type).toLowerCase();
+    }
+    for (const row of rowsOf(
+      await db.query(
+        "SELECT index_name, expressions FROM duckdb_indexes() WHERE table_name = '_smrt_dispatch'",
+      ),
+    )) {
+      indexes[String(row.index_name)] = parseIndexColumnList(row.expressions);
+    }
+    return { columns, indexes };
+  }
+  for (const row of rowsOf(
+    await db.query(
+      "SELECT column_name, data_type FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = '_smrt_dispatch'",
+    ),
+  )) {
+    columns[String(row.column_name)] = String(row.data_type).toLowerCase();
+  }
+  for (const row of rowsOf(
+    await db.query(
+      "SELECT indexname, indexdef FROM pg_indexes WHERE schemaname = current_schema() AND tablename = '_smrt_dispatch'",
+    ),
+  )) {
+    const def = String(row.indexdef);
+    const list = def.slice(def.lastIndexOf('(') + 1, def.lastIndexOf(')'));
+    indexes[String(row.indexname)] = parseIndexColumnList(list);
+  }
+  return { columns, indexes };
+}
+
+/**
+ * The lease part of a `_smrt_dispatch` shape: the lease column types and the
+ * ordered columns of the lease indexes and of the retention index they sit
+ * beside. Two databases agree on the lease schema iff these are equal.
+ */
+export function leaseShapeOf(shape: {
+  columns: Record<string, string>;
+  indexes: Record<string, string[]>;
+}): Record<string, unknown> {
+  return {
+    columns: Object.fromEntries(
+      DISPATCH_LEASE_COLUMNS.map((name) => [name, shape.columns[name] ?? null]),
+    ),
+    indexes: Object.fromEntries(
+      [
+        ...Object.keys(DISPATCH_LEASE_INDEXES),
+        'idx_smrt_dispatch_status_updated',
+      ].map((name) => [name, shape.indexes[name] ?? null]),
+    ),
+  };
+}
+
+function parseIndexColumnList(value: unknown): string[] {
+  const text = Array.isArray(value) ? value.join(',') : String(value ?? '');
+  return text
+    .replace(/^\[|\]$/g, '')
+    .split(',')
+    .map((part) => part.trim().replace(/^'|'$/g, '').replace(/^"|"$/g, ''))
+    .filter(Boolean);
+}
+
+/** Lease-relevant columns of one dispatch row, read directly. */
+export async function dispatchLeaseRow(
+  db: DatabaseInterface,
+  id: string,
+): Promise<{
+  status: string;
+  attempts: number | null;
+  leaseToken: string | null;
+  claimedUntil: string | null;
+  maxAttempts: number | null;
+  lastError: string | null;
+}> {
+  const row = rowsOf(
+    await db.query(
+      `SELECT status, attempts, lease_token, CAST(claimed_until AS TEXT) AS claimed_until,
+              max_attempts, last_error
+         FROM _smrt_dispatch WHERE id = $1`,
+      id,
+    ),
+  )[0];
+  if (!row) throw new Error(`no dispatch ${id}`);
+  const int = (value: unknown) => (value == null ? null : Number(value));
+  return {
+    status: String(row.status),
+    attempts: int(row.attempts),
+    leaseToken: (row.lease_token as string | null) ?? null,
+    claimedUntil: (row.claimed_until as string | null) ?? null,
+    maxAttempts: int(row.max_attempts),
+    lastError: (row.last_error as string | null) ?? null,
+  };
 }
 
 /** Status of one dispatch row, read directly. */
