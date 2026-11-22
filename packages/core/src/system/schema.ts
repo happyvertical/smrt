@@ -1878,7 +1878,12 @@ function toPostgresTenantUuid(ddl: string): string {
 // id ever opened); the bootstrap fills it from the ids still present or
 // referenced after its DDL replay and before this stamp
 // (`system/ai-run-ids.ts`).
-export const SMRT_SCHEMA_VERSION = '1.20.0';
+// 1.21.0 is the AI call ledger (#5516): `_smrt_ai_run_events.reservation`
+// renamed `call_state` and `_smrt_ai_usage.duration` renamed `duration_ms`
+// (the enforced cutover, behind the live-reservation blocker of
+// `system/ai-call-ledger-schema.ts`), the call event's ledger columns and
+// `_smrt_ai_runs.refused_usage`.
+export const SMRT_SCHEMA_VERSION = '1.21.0';
 
 /**
  * Canonical form of the system DDL that {@link SMRT_SCHEMA_DDL_CHECKSUMS} covers.
@@ -1943,4 +1948,6 @@ export const SMRT_SCHEMA_DDL_CHECKSUMS: Readonly<Record<string, string>> =
       'b9ea16aaf8c5d3232245395dbd6374c0878594f3e2e443f1ae58e64c726acca1',
     '1.20.0':
       'c507de3133c44e3350196c1a30ad821c3faf96b79392d885d3465a6d57dfc4f8',
+    '1.21.0':
+      '39bb1591ba064dac197ae8319e2aa89162c2fb41f5ed31b10032d06b39642089',
   });
