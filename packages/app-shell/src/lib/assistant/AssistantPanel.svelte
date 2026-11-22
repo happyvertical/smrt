@@ -687,7 +687,7 @@ onDestroy(() => controller?.abort());
     color: var(--smrt-color-on-primary-container, inherit);
   }
   .smrt-assistant-panel__folded {
-    mask-image: linear-gradient(#000 60%, transparent);
+    mask-image: linear-gradient(currentColor 60%, transparent);
   }
   .smrt-assistant-panel__more {
     color: var(--smrt-color-primary);
@@ -728,7 +728,7 @@ onDestroy(() => controller?.abort());
     border-radius: var(--smrt-radius-md, 0.5rem);
   }
   .smrt-assistant-panel__steplist {
-    border-inline-start: 2px solid var(--smrt-color-outline-variant, currentColor);
+    border-inline-start: 0.125rem solid var(--smrt-color-outline-variant, currentColor);
   }
   .smrt-assistant-panel__err {
     color: var(--smrt-color-error);
