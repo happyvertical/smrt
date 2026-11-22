@@ -185,7 +185,7 @@ fn retrieve_with_timeout(
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.split(';').next())
         .map(str::trim)
-        != Some("application/pdf")
+        .is_none_or(|mime| !mime.eq_ignore_ascii_case("application/pdf"))
     {
         return Err("The server did not return a PDF. Reopen the document to retry.");
     }
@@ -359,10 +359,16 @@ mod tests {
 
     #[test]
     fn owner_authorized_exact_bytes_and_cross_owner_denial() {
-        assert_eq!(
-            retrieve(&server(200, "application/pdf", PDF, ""), "session=owner").unwrap(),
-            PDF
-        );
+        for mime in [
+            "application/pdf",
+            "Application/PDF",
+            "APPLICATION/pdf; charset=binary",
+        ] {
+            assert_eq!(
+                retrieve(&server(200, mime, PDF, ""), "session=owner").unwrap(),
+                PDF
+            );
+        }
         assert!(retrieve(&server(403, "application/pdf", PDF, ""), "session=owner").is_err());
         assert!(retrieve(&origin(), "").is_err());
     }
