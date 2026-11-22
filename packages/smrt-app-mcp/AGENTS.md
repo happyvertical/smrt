@@ -89,6 +89,12 @@ tool policy; `./sveltekit` owns the stateless Streamable HTTP transport.
   needs authentication, which the OAuth challenge requires. Agent principals
   (`kind: 'agent'`, #5086) pass the default policy only when `principalKinds`
   lists them.
+- Scope narrowing (#5110): consent may grant fewer scopes than the resource
+  advertises, so `createMcpResourceAuth` needs only one advertised scope (none:
+  403 `insufficient_scope`, `scope=` challenge; metadata unchanged). Per-tool
+  needs come from `toolScopes`/workflow `requiredScopes`; an unmapped tool is
+  open to any accepted token, and `requiredScopes` must stay `[]` for narrowed
+  tokens. Tests: `narrowed-token.test.ts`.
 - `mountMcpToolsRoute`/`mountMcpCallRoute` share the modern route's
   `auth`/`bindPrincipal` sequence (`authenticateAndDispatch`): a bearer agent
   lists and calls with the same live-capped scopes on every route. `mountMcpRoute`

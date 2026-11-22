@@ -203,6 +203,31 @@ supplies the flag, so it does not replace per-operation scopes (`toolScopes`),
 actions that must not proceed on the agent's word alone. Patterns that match no
 tool log a one-time warning.
 
+### Scopes and narrowing
+
+A client may request more scopes than the signed-in user holds. Consent grants
+the requested scopes whose mapped permissions the user holds (requested ∩ held)
+and refuses with `access_denied` only when none remain. Nobody, human or agent,
+receives a scope whose permissions their role lacks. The consent data
+(`createOAuthHandlers().authorize`) lists the narrowed `scopes`, with the
+original in `requestedScopes` when they differ; the stored grant, the access
+and refresh tokens and the token response `scope` carry only the narrowed set.
+A refresh never widens: asking for more than the grant is `invalid_scope`, and a
+role that lost a mapped permission is refused. To keep all-or-nothing consent for
+an app that needs it, pass `refuseUnheldScopes: true` to
+`SmrtOAuthAuthorizationService.create`.
+
+The resource then requires a token to carry at least one of its advertised
+scopes (none: 403 `insufficient_scope` with `scope="..."` naming them);
+`scopes_supported` is unchanged. Which tools a token may call is decided per
+tool: `toolScopes` and a workflow tool's `requiredScopes` list the scopes that
+tool needs, `tools/list` hides tools the token does not cover, and a call
+outside them is refused exactly like an unknown tool. A tool with no scope
+requirement is available to any token the resource accepts, and
+`requiredScopes` on `mountMcpAppRoute` is the baseline every tool needs. With
+narrowed tokens, keep it `[]` and map each tool to its own scope. The live role
+cap (runtime binder) still applies on every call.
+
 ## Agent-ready app checklist
 
 In order; each step names where it is specified.
@@ -284,9 +309,13 @@ registration, login and consent pieces are the host's own.
 ```ts
 const authorization = await SmrtOAuthAuthorizationService.create({
   db,
-  // [] = any valid session may consent. Only for a resource that serves
-  // agent users; never for resources humans consent to (see "Scopes" below).
-  scopePermissions: { 'notes.read': [], 'notes.write': [], 'notes.delete': [] },
+  // scope -> permissions the user must hold. A client that asks for more
+  // scopes than the user holds gets a token for the subset (see "Scopes").
+  scopePermissions: {
+    'notes.read': ['notes.read'],
+    'notes.write': ['notes.write'],
+    'notes.delete': ['notes.delete'],
+  },
 });
 const server = createCimdAuthorizationServer({
   issuer: 'https://app.example/oauth', storage, signingKey,
@@ -359,13 +388,11 @@ export const POST = mountMcpAppRoute({
 - **Registration.** DCR works as is. CIMD needs a client document at a public
   HTTPS URL with a default port, which the issuer fetches with its SSRF guard;
   it cannot be exercised from a private lab network.
-- **Scopes (#5110).** The resource requires a token to carry every scope it
-  advertises, and consent refuses a user who lacks a mapped permission, so a
-  limited-role agent can only connect if each scope maps to `[]`. That makes
-  the consent-time upper bound vacuous: the grant records no permissions and
-  an empty permission ceiling, and only the live role cap (the runtime binder)
-  and `toolScopes` limit what the agent can do. Use it only for resources
-  served to agent users, never for human consent.
+- **Scopes.** Paperclip requests every scope in `scopes_supported` and cannot
+  ask for fewer. Consent grants the requested scopes the user holds, so an
+  agent whose role holds only `notes.read` receives a token whose `scope` is
+  `notes.read` (RFC 6749 section 3.3) and can call only the tools that scope
+  covers. See "Scopes and narrowing" below.
 - **Protocol era.** Paperclip speaks the 2025 JSON-RPC handshake. The
   endpoint refuses it today (#5109), so a stock app does not connect yet.
 - **Webhook receivers** must currently be public HTTPS on port 443 (#5111).
@@ -390,7 +417,7 @@ patched.
 | # | Step | Result | Evidence |
 | --- | --- | --- | --- |
 | 1 | OAuth connect: discovery, registration, resource, refresh | Fail without patch (#5109); passes with local patch (a); CIMD not run | Probe 401 with `WWW-Authenticate`, then RFC 9728 and RFC 8414 path-insertion fetches, both 200; DCR `POST /oauth/register` 201 (`application_type: web`, https callback); code exchange with S256 and `resource`; refresh grant with `resource` after expiry returned 200 and a new token. Without (a) the connection fails at the handshake: #5109. CIMD is refused by design for a private host (`invalid_url`). |
-| 2 | Per-agent connection and install | Pass (needs #5110 configuration for a limited role) | Two connections, each authorized as a different smrt agent user, installed on one Paperclip agent each; the audit store shows two distinct principals of kind `agent`; access for the other agent was `off` once its default `tools:use` grant was removed. |
+| 2 | Per-agent connection and install | Pass | Two connections, each authorized as a different smrt agent user, installed on one Paperclip agent each; the audit store shows two distinct principals of kind `agent`; access for the other agent was `off` once its default `tools:use` grant was removed. |
 | 3 | Tool listing and annotations | Fail without patch (#5109); passes with local patch (a) | Agent with write and delete roles saw 4 tools (`readOnlyHint` on list/get, `destructiveHint` on delete); the read-only agent saw 2. Paperclip classed them read, write and destructive. |
 | 4a | Scoped call, then refusal after the role permission is revoked | Pass | `note_create` ran; after removing `notes.write` from the role the next call returned "Unknown MCP tool", audited `denied` (`mcp_tool_access_denied`); `note_list` still ran with the capped scopes. |
 | 4b | Refusal after the grant is revoked | Pass | The next call returned 401 `invalid_token`; the refresh was refused; Paperclip showed "OAuth authorization has expired. Reconnect"; the other agent's connection was unaffected. |
@@ -446,7 +473,8 @@ The route example's `accounts` and `mcpServer` are application dependencies, not
 new framework services. Mount metadata at the exact `metadataUrl`, including
 the resource path inserted after `/.well-known/oauth-protected-resource` per
 RFC 9728. Missing credentials return a 401 discovery challenge; invalid tokens
-return 401 `invalid_token`; insufficient scopes return 403 `insufficient_scope`.
+return 401 `invalid_token`; a token that carries none of the resource's scopes
+returns 403 `insufficient_scope` with a `scope` challenge listing them.
 Responses never include the bearer credential, claims, or upstream errors.
 Protect every protocol request with the same check, including discovery,
 resource reads, task continuation and reconnects. Keep the app's operation
@@ -497,6 +525,8 @@ const authorization = await SmrtOAuthAuthorizationService.create({
   db,
   // scope -> permissions the user must hold; unknown scopes fail closed
   scopePermissions: { 'items.read': ['items.read'] },
+  // Default: grant requested ∩ held. `refuseUnheldScopes: true` instead
+  // refuses a request for any scope the user cannot hold.
 });
 const storage = await SmrtOAuthAuthorizationStorage.create({ db });
 const server = createCimdAuthorizationServer({

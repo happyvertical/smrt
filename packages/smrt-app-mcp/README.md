@@ -67,9 +67,13 @@ export const POST = mountMcpAppRoute({
   or `resourcePolicy` is composed with this default and can only narrow it;
   for a wider policy, call `createMcpAppServer` and `mountMcpRoute` directly.
   Because the default is principal-aware, `tools/list` stays `private` even
-  with a public-cache attestation. A scope applies uniformly to every
+  with a public-cache attestation. `requiredScopes` applies uniformly to every
   published tool, so a read scope such as `items.read` must be paired with
-  `effects: ['read']` (below) unless the app adds per-operation policy.
+  `effects: ['read']` (below) unless the app adds per-operation policy. For
+  OAuth tokens that consent narrowed to a subset of the advertised scopes (#5110),
+  keep `requiredScopes: []` and map each tool with `toolScopes`: the resource
+  accepts a token carrying at least one advertised scope (none is 403
+  `insufficient_scope`) and each tool needs only its own scopes.
 - **Effects** — `effects` (also on `createMcpAppServer`) limits the catalog to
   tools whose effect is listed: `'read'`, `'write'`, `'destructive'`, the
   WebMCP vocabulary. `mcpToolEffect` classifies with the existing read-only
