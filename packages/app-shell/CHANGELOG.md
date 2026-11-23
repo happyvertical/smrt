@@ -1,5 +1,32 @@
 # @happyvertical/smrt-app-shell
 
+## 0.70.0
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.70.0
+  - @happyvertical/smrt-app-runtime@0.70.0
+  - @happyvertical/smrt-chat@0.70.0
+  - @happyvertical/smrt-features@0.70.0
+  - @happyvertical/smrt-inference@0.70.0
+  - @happyvertical/smrt-jobs@0.70.0
+  - @happyvertical/smrt-preferences@0.70.0
+  - @happyvertical/smrt-profiles@0.70.0
+  - @happyvertical/smrt-prompts@0.70.0
+  - @happyvertical/smrt-reports@0.70.0
+  - @happyvertical/smrt-secrets@0.70.0
+  - @happyvertical/smrt-app-mcp@0.70.0
+  - @happyvertical/smrt-svelte@0.70.0
+  - @happyvertical/smrt-web@0.70.0
+  - @happyvertical/smrt-subscriptions@0.70.0
+  - @happyvertical/smrt-tenancy@0.70.0
+  - @happyvertical/smrt-users@0.70.0
+  - @happyvertical/smrt-workflows@0.70.0
+  - @happyvertical/smrt-spreadsheets@0.70.0
+  - @happyvertical/smrt-config@0.70.0
+  - @happyvertical/smrt-ui@0.70.0
+
 ## 0.69.0
 
 ### Patch Changes

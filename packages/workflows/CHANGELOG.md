@@ -1,5 +1,14 @@
 # @happyvertical/smrt-workflows
 
+## 0.70.0
+
+### Patch Changes
+
+- Updated dependencies
+  - @happyvertical/smrt-core@0.70.0
+  - @happyvertical/smrt-jobs@0.70.0
+  - @happyvertical/smrt-prompts@0.70.0
+
 ## 0.69.0
 
 ### Patch Changes
