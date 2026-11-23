@@ -581,6 +581,8 @@ export interface ReportView {
   id: string;
   report?: ToolItem['report'];
   href?: string;
+  /** The owner's request this report answers: it names the columns they want. */
+  asked?: string;
 }
 
 export type TurnView = Exclude<Item, { kind: 'tool' }> | StepsView | ReportView;
@@ -786,6 +788,7 @@ export function groupTurns(
               kind: 'report' as const,
               id: `${t.id}:report`,
               ...(t.report ? { report: t.report } : {}),
+              ...(asked ? { asked } : {}),
               ...(t.reportHref ? { href: t.reportHref } : {}),
             },
           ]

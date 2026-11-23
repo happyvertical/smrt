@@ -355,7 +355,7 @@ onDestroy(() => controller?.abort());
         {/if}
       {:else if item.kind === 'report'}
         {#if item.report}
-          {@const shown = keyColumns(item.report.result)}
+          {@const shown = keyColumns(item.report.result, undefined, item.asked)}
           <div class="smrt-assistant-panel__result" role="group" aria-label={`Report: ${shown.result.title}`}>
             <p class="smrt-assistant-panel__result-h">{shown.result.title}</p>
             <ReportResult result={shown.result} fit formatCell={reportCell} cellHref={reportCellHref} />

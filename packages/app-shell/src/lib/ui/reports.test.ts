@@ -137,6 +137,57 @@ it('keeps the columns the report charts for the chat and counts the rest', () =>
   expect(key.result.chart).toEqual({ type: 'table' });
   expect(key.result.rows).toBe(wide.rows);
 });
+it('shows the first column plus the ones the owner asked for, and counts the rest (#5608)', () => {
+  const key = keyColumns(
+    wide,
+    3,
+    'Top customers by money spent, with their order count and their town',
+  );
+  // four are asked for: the first three are shown, the rest counted
+  expect(key.result.columns.map((c) => c.id)).toEqual([
+    'customer',
+    'town',
+    'spent',
+  ]);
+  expect(key.hidden).toBe(3);
+  const email = {
+    ...wide,
+    columns: [
+      ...wide.columns.slice(0, 1),
+      {
+        id: 'email',
+        label: 'Email',
+        role: 'dimension' as const,
+        type: 'string' as const,
+      },
+      ...wide.columns.slice(2),
+    ],
+  };
+  const shown = keyColumns(email, 3, 'with their order count and their email');
+  expect(shown.result.columns.map((c) => c.id)).toEqual([
+    'customer',
+    'email',
+    'orders',
+  ]);
+  expect(shown.hidden).toBe(3);
+  expect(shown.result.columns.length + shown.hidden).toBe(email.columns.length);
+});
+it('matches a plural label to a singular request and the reverse, and ignores a missing request (#5608)', () => {
+  const plural = {
+    ...wide,
+    columns: wide.columns.map((c) =>
+      c.id === 'orders' ? { ...c, label: 'Orders' } : c,
+    ),
+  };
+  expect(
+    keyColumns(plural, 3, 'show the order').result.columns.map((c) => c.id),
+  ).toContain('orders');
+  expect(keyColumns(wide, 3).result.columns.map((c) => c.id)).toEqual([
+    'customer',
+    'spent',
+    'orders',
+  ]);
+});
 it('falls back to the first columns, and shows a small report whole', () => {
   const plain = { ...wide, chart: { type: 'table' as const } };
   expect(keyColumns(plain).result.columns.map((c) => c.id)).toEqual([
