@@ -27,6 +27,7 @@ import type {
 import {
   assertPostgresSystemTimestampsCurrent,
   getDatabaseEngine,
+  LegacySystemTimestampsError,
 } from '../system/compatibility.js';
 import {
   CREATE_SMRT_SCHEMA_MIGRATIONS_TABLE,
@@ -71,9 +72,13 @@ import type {
 
 const logger = createLogger({ level: 'info' });
 
-/** How `assertPostgresSystemTimestampsCurrent`'s own refusal begins. */
-const LEGACY_SYSTEM_TIMESTAMPS_REFUSAL =
-  'Legacy SMRT system timestamps remain (';
+/**
+ * Database handles a failed SQLite rebuild left without verified foreign key
+ * enforcement, with the setting to restore. Bound to the handle, not to a
+ * tracker: every tracker built on the same handle refuses migration work
+ * until `PRAGMA foreign_keys` reads back as restored.
+ */
+const sqliteForeignKeysToRestore = new WeakMap<object, number>();
 
 /**
  * Row type for _smrt_schema_migrations table
@@ -540,8 +545,6 @@ export class MigrationTracker {
    * `CONCURRENTLY` DDL has run. `null` on every ordinary path.
    */
   private concurrentIndexPlan: ConcurrentIndexPlan | null = null;
-  /** Set while a failed rebuild left foreign key enforcement unrestored. */
-  private sqliteForeignKeysToRestore: number | null = null;
 
   constructor(options: MigrationTrackerOptions) {
     this.db = options.db;
@@ -615,15 +618,24 @@ export class MigrationTracker {
     try {
       await assertPostgresSystemTimestampsCurrent(this.db, this.engineHint);
     } catch (error) {
-      // Its own refusal is framework text (it names system columns, which are
-      // identifiers) and keeps its message; a failed catalog read is closed
-      // by `initialize`.
-      if (
-        error instanceof Error &&
-        error.message.startsWith(LEGACY_SYSTEM_TIMESTAMPS_REFUSAL)
-      )
+      // Only its own refusal, recognised by the type it is constructed with,
+      // keeps its framework text; any other rejection (a failed catalog read,
+      // whatever its message says) is closed by `initialize`.
+      if (error instanceof LegacySystemTimestampsError)
         throw markFrameworkError(error);
       throw error;
+    }
+  }
+
+  /**
+   * Run a read of the tracking table, closing its failure like every other
+   * executor failure: the database's text never reaches the caller.
+   */
+  private async closedRead<T>(read: () => Promise<T>): Promise<T> {
+    try {
+      return await read();
+    } catch (error) {
+      throw closeFailure(error, 'unknown');
     }
   }
 
@@ -631,13 +643,15 @@ export class MigrationTracker {
    * Get all applied migrations ordered by applied_at
    */
   async getAppliedMigrations(): Promise<SchemaMigrationRecord[]> {
-    await this.initialize();
+    return this.closedRead(async () => {
+      await this.initialize();
 
-    const result = await this.db.query(
-      `SELECT * FROM _smrt_schema_migrations WHERE status = 'completed' ORDER BY applied_at ASC`,
-    );
+      const result = await this.db.query(
+        `SELECT * FROM _smrt_schema_migrations WHERE status = 'completed' ORDER BY applied_at ASC`,
+      );
 
-    return (result.rows as MigrationRow[]).map(hydrateMigrationRow);
+      return (result.rows as MigrationRow[]).map(hydrateMigrationRow);
+    });
   }
 
   /**
@@ -655,14 +669,16 @@ export class MigrationTracker {
    * Check if a migration has been applied
    */
   async isApplied(migrationId: string): Promise<boolean> {
-    await this.initialize();
+    return this.closedRead(async () => {
+      await this.initialize();
 
-    const result = await this.db.query(
-      `SELECT 1 FROM _smrt_schema_migrations WHERE name = ? AND status = 'completed' LIMIT 1`,
-      migrationId,
-    );
+      const result = await this.db.query(
+        `SELECT 1 FROM _smrt_schema_migrations WHERE name = ? AND status = 'completed' LIMIT 1`,
+        migrationId,
+      );
 
-    return result.rows.length > 0;
+      return result.rows.length > 0;
+    });
   }
 
   /**
@@ -774,32 +790,36 @@ export class MigrationTracker {
    * Get a single migration record by name
    */
   async getMigration(name: string): Promise<SchemaMigrationRecord | null> {
-    await this.initialize();
+    return this.closedRead(async () => {
+      await this.initialize();
 
-    const result = await this.db.query(
-      `SELECT * FROM _smrt_schema_migrations WHERE name = ? LIMIT 1`,
-      name,
-    );
+      const result = await this.db.query(
+        `SELECT * FROM _smrt_schema_migrations WHERE name = ? LIMIT 1`,
+        name,
+      );
 
-    if (result.rows.length === 0) return null;
+      if (result.rows.length === 0) return null;
 
-    const row = result.rows[0] as MigrationRow;
-    return hydrateMigrationRow(row);
+      const row = result.rows[0] as MigrationRow;
+      return hydrateMigrationRow(row);
+    });
   }
 
   /**
    * Get the next batch number
    */
   async getNextBatch(): Promise<number> {
-    await this.initialize();
+    return this.closedRead(async () => {
+      await this.initialize();
 
-    const result = await this.db.query(
-      `SELECT MAX(batch) as max_batch FROM _smrt_schema_migrations`,
-    );
+      const result = await this.db.query(
+        `SELECT MAX(batch) as max_batch FROM _smrt_schema_migrations`,
+      );
 
-    const row = result.rows[0] as { max_batch?: unknown } | undefined;
-    const maxBatch = toSafeInteger(row?.max_batch ?? 0, 'Migration batch');
-    return toSafeInteger(maxBatch + 1, 'Next migration batch');
+      const row = result.rows[0] as { max_batch?: unknown } | undefined;
+      const maxBatch = toSafeInteger(row?.max_batch ?? 0, 'Migration batch');
+      return toSafeInteger(maxBatch + 1, 'Next migration batch');
+    });
   }
 
   /**
@@ -2232,31 +2252,33 @@ export class MigrationTracker {
   async getHistory(
     options: { limit?: number; since?: Date; status?: MigrationStatus } = {},
   ): Promise<SchemaMigrationRecord[]> {
-    await this.initialize();
+    return this.closedRead(async () => {
+      await this.initialize();
 
-    let sql = `SELECT * FROM _smrt_schema_migrations WHERE 1=1`;
-    const params: unknown[] = [];
+      let sql = `SELECT * FROM _smrt_schema_migrations WHERE 1=1`;
+      const params: unknown[] = [];
 
-    if (options.status) {
-      sql += ` AND status = ?`;
-      params.push(options.status);
-    }
+      if (options.status) {
+        sql += ` AND status = ?`;
+        params.push(options.status);
+      }
 
-    if (options.since) {
-      sql += ` AND applied_at >= ?`;
-      params.push(options.since.toISOString());
-    }
+      if (options.since) {
+        sql += ` AND applied_at >= ?`;
+        params.push(options.since.toISOString());
+      }
 
-    sql += ` ORDER BY applied_at DESC`;
+      sql += ` ORDER BY applied_at DESC`;
 
-    if (options.limit) {
-      sql += ` LIMIT ?`;
-      params.push(options.limit);
-    }
+      if (options.limit) {
+        sql += ` LIMIT ?`;
+        params.push(options.limit);
+      }
 
-    const result = await this.db.query(sql, ...params);
+      const result = await this.db.query(sql, ...params);
 
-    return (result.rows as MigrationRow[]).map(hydrateMigrationRow);
+      return (result.rows as MigrationRow[]).map(hydrateMigrationRow);
+    });
   }
 
   private needsSqliteRebuildSafety(statements: string[]): boolean {
@@ -2311,8 +2333,8 @@ export class MigrationTracker {
       throw frameworkError('Cannot read SQLite rebuild connection settings');
     // Both settings are always restored. The first failure is the one the
     // caller sees; a restore that fails after it is kept beside it, closed.
-    // If foreign key enforcement could not be verified as restored, this
-    // tracker refuses further work until it is (see
+    // If foreign key enforcement could not be verified as restored, every
+    // tracker on this handle refuses further work until it is (see
     // {@link assertSqliteForeignKeysRestored}).
     let failure: Error | null = null;
     let result: T | undefined;
@@ -2346,7 +2368,8 @@ export class MigrationTracker {
       await this.db.query(`PRAGMA foreign_keys = ${foreignKeys}`);
       await this.assertSqliteForeignKeySetting(foreignKeys);
     });
-    this.sqliteForeignKeysToRestore = restored ? null : foreignKeys;
+    if (restored) sqliteForeignKeysToRestore.delete(this.db);
+    else sqliteForeignKeysToRestore.set(this.db, foreignKeys);
     if (failure !== null) throw failure;
     return result as T;
   }
@@ -2357,13 +2380,13 @@ export class MigrationTracker {
    * next writer would otherwise commit rows no foreign key checks.
    */
   private async assertSqliteForeignKeysRestored(): Promise<void> {
-    const expected = this.sqliteForeignKeysToRestore;
-    if (expected === null) return;
+    const expected = sqliteForeignKeysToRestore.get(this.db);
+    if (expected === undefined) return;
     const current = Number(
       (await this.db.query('PRAGMA foreign_keys')).rows[0]?.foreign_keys,
     );
     if (current === expected) {
-      this.sqliteForeignKeysToRestore = null;
+      sqliteForeignKeysToRestore.delete(this.db);
       return;
     }
     throw frameworkError(

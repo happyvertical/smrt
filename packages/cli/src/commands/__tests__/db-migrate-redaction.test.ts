@@ -252,7 +252,8 @@ describe('db:migrate prints closed failure reasons', () => {
     const printed = output.join('\n');
     expect(process.exitCode).toBe(1);
     expect(printed).toContain('recording the migrate run failed');
-    expect(printed).toContain('run db:migrate again to record the run');
+    expect(printed).toContain('confirmations from this run');
+    expect(printed).toContain('must be recorded or audited by the operator');
     expect(printed).not.toContain(CANARY);
     expect(printed).not.toContain('Failed SQL');
   });

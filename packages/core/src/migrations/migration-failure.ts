@@ -34,6 +34,7 @@ export type FailurePhase =
   | 'index-check'
   | 'catalog-read'
   | 'commit'
+  | 'ledger-read'
   | 'ledger-record'
   | 'unknown';
 
@@ -133,6 +134,37 @@ export function sqlstateOf(error: unknown): string | null {
     if (isSqlstate(code)) return code;
   }
   return null;
+}
+
+/**
+ * Whether `error`, or an error it wraps, came from the database: the SQL
+ * adapter's wrapper (`DATABASE_ERROR`, a `context` with the driver error or
+ * SQL), core's `DatabaseError` (`DB_` codes), a driver error (a SQLSTATE, a `SQLITE_` code, PostgreSQL's
+ * `severity`), or the adapter's sanitized driver snapshot.
+ */
+export function isDatabaseError(error: unknown): boolean {
+  for (const current of wrappedErrors(error)) {
+    const { code, name, severity, context } = current as {
+      code?: unknown;
+      name?: unknown;
+      severity?: unknown;
+      context?: { originalError?: unknown; sql?: unknown } | null;
+    };
+    if (
+      code === 'DATABASE_ERROR' ||
+      isSqlstate(code) ||
+      (typeof code === 'string' &&
+        (code.startsWith('DB_') || code.startsWith('SQLITE_'))) ||
+      name === 'DatabaseError' ||
+      name === 'DatabaseDriverError' ||
+      typeof severity === 'string' ||
+      (typeof context === 'object' &&
+        context !== null &&
+        (context.originalError !== undefined || context.sql !== undefined))
+    )
+      return true;
+  }
+  return false;
 }
 
 /**
@@ -288,9 +320,19 @@ function guardOwnFailure(
 /** Errors the executor raised itself, with framework text only. */
 const frameworkErrors = new WeakSet<object>();
 
+/**
+ * The same mark, readable across module copies (the CLI reads it to decide
+ * that an error's text may be printed). Non-enumerable; set only here.
+ */
+export const FRAMEWORK_ERROR_BRAND = Symbol.for(
+  '@happyvertical/smrt-core/migrations:framework-error',
+);
+
 /** Mark `error` as raised by the framework with framework text only. */
 export function markFrameworkError<T extends object>(error: T): T {
   frameworkErrors.add(error);
+  if (Object.isExtensible(error))
+    Object.defineProperty(error, FRAMEWORK_ERROR_BRAND, { value: true });
   return error;
 }
 
@@ -452,6 +494,8 @@ function describe(
   const prefix = migrationId === null ? '' : `Migration ${migrationId}: `;
   const cause = `(SQLSTATE ${sqlstate ?? 'unavailable'}; ${WITHHELD})`;
   const suffix = explanation === null ? '' : `: ${explanation}`;
+  if (phase === 'ledger-read')
+    return `${prefix}reading the last migrate run failed ${cause}${suffix}`;
   if (phase === 'ledger-record')
     return `${prefix}recording the migrate run failed ${cause}${suffix}`;
   if (ordinal === null && (phase === 'commit' || phase === 'unknown'))

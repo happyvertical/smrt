@@ -1953,7 +1953,7 @@ fixed kind, phase (`regular`, `concurrent-index`, `index-check`,
 `catalog-read`, `commit`, `ledger-record`, `unknown`), SQLSTATE (`unavailable`
 on SQLite/DuckDB) and an optional fixed `explanation` (index checks, catalog
 reads; a failed ledger write says the run's schema changes are committed and
-to run `db:migrate` again). `.code` is the SQLSTATE or `null`. Closing is the
+its unrecorded confirmations must be recorded or audited by the operator). `.code` is the SQLSTATE or `null`. Closing is the
 default at every public executor entry (`apply`, `applyAll`, `rollback`,
 `initialize`): every error the executor did not raise itself is closed,
 including non-database errors thrown inside them (a caller's `onProgress`,

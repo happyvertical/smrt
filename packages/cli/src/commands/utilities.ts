@@ -69,6 +69,10 @@ import {
   shouldFailDbMigrate,
 } from './db-migrate-actions.js';
 import { dbMigrateAgentScheduleSlugsCommand } from './db-migrate-agent-schedule-slugs.js';
+import {
+  mayPrintErrorText,
+  migrateFailureText,
+} from './db-migrate-failure-output.js';
 import { dbMigrateInt8Command } from './db-migrate-int8.js';
 import { dbMigrateLedgerAccountsCommand } from './db-migrate-ledger-accounts.js';
 import { dbMigrateNullEqualIndexesCommand } from './db-migrate-null-equal-indexes.js';
@@ -192,23 +196,25 @@ export function migrationResultRan(result: MigrationResult): boolean {
 }
 
 /**
- * Whether `error` is core's closed `MigrationStatementFailure`: it carries no
- * driver text, and nothing it wraps is printed. Read by shape, so test doubles
- * of the migrations module need not provide the class.
+ * A failed tracker result as an error `db:migrate` can print: the result's
+ * own text only when it may be printed (see `migrateFailureText`), and then
+ * the original as `cause`; a database failure is rendered closed and the
+ * original is not kept.
  */
-function isClosedMigrationFailure(error: unknown): boolean {
-  return (
-    error instanceof Error &&
-    error.name === 'MigrationStatementFailure' &&
-    'phase' in error
-  );
-}
-
 function migrationResultError(result: MigrationResult): Error {
-  const cause = result.error instanceof Error ? result.error : undefined;
-  return new Error(`${result.name}: ${migrationErrorMessage(result.error)}`, {
-    cause,
-  });
+  // Tracker string results are its own fixed checksum/retry refusals. Driver
+  // failures are always closed Error objects at the tracker boundary.
+  if (
+    result.error === undefined ||
+    typeof result.error === 'string' ||
+    mayPrintErrorText(result.error)
+  )
+    return new Error(`${result.name}: ${migrationErrorMessage(result.error)}`, {
+      cause: result.error instanceof Error ? result.error : undefined,
+    });
+  return new Error(
+    `${result.name}: ${migrateFailureText(`migration ${result.name}`, result.error)}`,
+  );
 }
 
 type DDLPreviewEngine = 'sqlite' | 'duckdb' | 'json' | 'postgres';
@@ -293,7 +299,9 @@ async function settleDeferredCompatibilityAfterMigrate(
   } catch (error) {
     console.warn(
       `⚠️  System-table bootstrap did not complete: ${redactDatabaseUrlsInText(
-        error instanceof Error ? error.message : String(error),
+        migrateFailureText('the system-table bootstrap', error, {
+          closeAll: true,
+        }),
       )}`,
     );
     console.warn('   It will be retried the next time the framework starts.\n');
@@ -313,7 +321,9 @@ async function settleDeferredCompatibilityAfterMigrate(
   } catch (error) {
     console.warn(
       `⚠️  Deferred system-table compatibility did not complete: ${redactDatabaseUrlsInText(
-        error instanceof Error ? error.message : String(error),
+        migrateFailureText('the deferred compatibility pass', error, {
+          closeAll: true,
+        }),
       )}`,
     );
     console.warn('   It will be retried the next time the framework starts.\n');
@@ -631,27 +641,6 @@ export function assessDecoratorSupport(input: {
     message:
       'No decorator transform configured - add oxc: { decorator: { legacy: true, emitDecoratorMetadata: true } } to vite.config (Vite 8+), or "experimentalDecorators": true to tsconfig.json (vite<8)',
   };
-}
-
-/**
- * Narrowed shape for SMRT/database errors that attach a `context` payload with
- * the original driver error and offending SQL. Used for richer CLI diagnostics.
- */
-interface ErrorWithContext {
-  context?: {
-    originalError?: unknown;
-    sql?: unknown;
-  };
-}
-
-function getErrorContext(error: unknown): ErrorWithContext['context'] {
-  if (error && typeof error === 'object' && 'context' in error) {
-    const context = (error as ErrorWithContext).context;
-    if (context && typeof context === 'object') {
-      return context;
-    }
-  }
-  return undefined;
 }
 
 // ---------------------------------------------------------------------------
@@ -1869,6 +1858,9 @@ export default testManifest;
       let migrationLock:
         | { assertHeld(): Promise<void>; release(): Promise<void> }
         | undefined;
+      // The operation a database failure is reported against: fixed text,
+      // the only description such a failure prints.
+      let operation = 'db:migrate';
 
       try {
         const forceSelection = resolveForceMigrationSelection(
@@ -2171,7 +2163,9 @@ export default testManifest;
               }
             : {}),
         });
+        operation = 'reading the database schema';
         const diff = await comparer.compare(manifestSchemas);
+        operation = 'planning the migration';
         const engine = tracker.getEngine();
         const tablePlan = planForeignKeyCreation(diff.added_tables, engine);
         const plannedTableDDL = new Map(
@@ -2267,7 +2261,7 @@ export default testManifest;
                 beforeCount = await countOrphanRows(db, countSql);
               } catch (error) {
                 console.log(
-                  `   ✗ ${item.tableName}.${item.column}: orphan-count probe failed, withholding this disposition: ${redactDatabaseUrlsInText(error instanceof Error ? error.message : String(error))}`,
+                  `   ✗ ${item.tableName}.${item.column}: orphan-count probe failed, withholding this disposition: ${redactDatabaseUrlsInText(migrateFailureText('the orphan-count probe', error, { closeAll: true }))}`,
                 );
                 continue;
               }
@@ -2413,6 +2407,7 @@ export default testManifest;
 
         // No migration writes, including system bootstrap, precede the gate.
         if (postgresTimestampMigration && !isDryRun) {
+          operation = 'the system timestamp conversion';
           await migratePostgresSystemTimestamps(
             db,
             postgresTimestampMigration,
@@ -2420,7 +2415,9 @@ export default testManifest;
           );
         }
 
+        operation = 'initializing the migration tracker';
         if (!isDryRun) await tracker.initialize();
+        operation = 'the schema migration';
 
         // #2608: the pre-R11 `text` -> `uuid` convergence has to run before
         // every `CREATE TABLE` in this batch — `planForeignKeyCreation()` only
@@ -2946,22 +2943,19 @@ export default testManifest;
             ).length;
           } catch (error) {
             errorCount++;
+            // A database failure prints a fixed phrase and its SQLSTATE
+            // only; its message, driver context and stack are withheld,
+            // also with --verbose.
             const errorMsg = redactDatabaseUrlsInText(
-              error instanceof Error ? error.message : String(error),
+              migrateFailureText('the atomic schema migration', error),
             );
             console.error(`  ✗ atomic schema migration failed: ${errorMsg}`);
-            // Show underlying database error if available
             if (
+              options.verbose &&
               error instanceof Error &&
-              !isClosedMigrationFailure(error) &&
-              !isClosedMigrationFailure(error.cause) &&
-              getErrorContext(error)?.originalError
+              error.stack &&
+              mayPrintErrorText(error)
             ) {
-              console.error(
-                `     Cause: ${redactDatabaseUrlsInText(String(getErrorContext(error)?.originalError))}`,
-              );
-            }
-            if (options.verbose && error instanceof Error && error.stack) {
               console.error(`\n${redactDatabaseUrlsInText(error.stack)}\n`);
             }
             console.error(
@@ -3016,7 +3010,7 @@ export default testManifest;
               );
             } catch (error) {
               console.log(
-                `   ✓ ${pending.tableName}.${pending.column}: orphan references nulled and foreign key added (post-apply count unavailable: ${redactDatabaseUrlsInText(error instanceof Error ? error.message : String(error))})`,
+                `   ✓ ${pending.tableName}.${pending.column}: orphan references nulled and foreign key added (post-apply count unavailable: ${redactDatabaseUrlsInText(migrateFailureText('the orphan-count probe', error, { closeAll: true }))})`,
               );
             }
           }
@@ -3029,6 +3023,7 @@ export default testManifest;
 
         // 13.5 Handle safe data repair requested via --repair-data
         if (repairData) {
+          operation = 'the STI discriminator repair';
           console.log(
             '\n🔄 Repairing STI discriminators to qualified names...\n',
           );
@@ -3147,16 +3142,14 @@ export default testManifest;
                   }
                 } catch (error: unknown) {
                   const qualifiedName = resolution.currentQualifiedName;
+                  // A failed UPDATE's diagnostic can carry row values.
                   const errorMsg = redactDatabaseUrlsInText(
-                    error instanceof Error ? error.message : String(error),
+                    migrateFailureText('the discriminator update', error, {
+                      closeAll: true,
+                    }),
                   );
-                  const originalError = getErrorContext(error)?.originalError
-                    ? redactDatabaseUrlsInText(
-                        String(getErrorContext(error)?.originalError),
-                      )
-                    : undefined;
                   console.error(
-                    `  ✗ ${tableName}: "${metaType}" → "${qualifiedName}" failed: ${originalError || errorMsg}`,
+                    `  ✗ ${tableName}: "${metaType}" → "${qualifiedName}" failed: ${errorMsg}`,
                   );
                   stiErrorCount++;
                 }
@@ -3264,6 +3257,7 @@ export default testManifest;
             stiErrorCount === 0 &&
             (applySchemaMigrations || schemaUpToDate)
           ) {
+            operation = 'recording the migrate run';
             await recordSuccessfulMigrate(db, {
               engineHint: dbType,
               input: recordInput,
@@ -3285,31 +3279,22 @@ export default testManifest;
         console.error(
           formatSchemaCommandFailureHeader(error, '\n❌ Migration failed:'),
         );
-        if (error instanceof Error) {
-          console.error(`   ${redactDatabaseUrlsInText(error.message)}`);
-          // A closed migration failure carries no driver text; nothing else
-          // from it (or anything it wraps) is printed.
-          const ctx = isClosedMigrationFailure(error)
-            ? undefined
-            : getErrorContext(error);
-          if (ctx) {
-            if (ctx.originalError) {
-              console.error(
-                `   Database error: ${redactDatabaseUrlsInText(String(ctx.originalError))}`,
-              );
-            }
-            if (ctx.sql) {
-              console.error(
-                `   Failed SQL: ${redactDatabaseUrlsInText(String(ctx.sql))}`,
-              );
-            }
-          }
-          if (options.verbose && error.stack) {
-            console.error('\nStack trace:');
-            console.error(redactDatabaseUrlsInText(error.stack));
-          }
-        } else {
-          console.error(redactDatabaseUrlsInText(String(error)));
+        // A database failure prints a fixed phrase naming the operation and
+        // its SQLSTATE only: never its message, driver context (the original
+        // error, the SQL) or stack, also with --verbose. Errors the framework
+        // closed, and errors that did not come from the database, print
+        // their own text.
+        console.error(
+          `   ${redactDatabaseUrlsInText(migrateFailureText(operation, error))}`,
+        );
+        if (
+          options.verbose &&
+          error instanceof Error &&
+          error.stack &&
+          mayPrintErrorText(error)
+        ) {
+          console.error('\nStack trace:');
+          console.error(redactDatabaseUrlsInText(error.stack));
         }
         process.exitCode = 1;
         return;

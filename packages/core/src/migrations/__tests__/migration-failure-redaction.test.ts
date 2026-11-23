@@ -11,7 +11,15 @@ import { inspect } from 'node:util';
 import type { DatabaseInterface } from '@happyvertical/sql';
 import { getDatabase } from '@happyvertical/sql';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { ObjectRegistry } from '../../registry.js';
+import type { SchemaDefinition } from '../../schema/types.js';
+import { ensureSystemTables } from '../../system/bootstrap.js';
+import { snapshotObjectRegistryState } from '../../test-utils.js';
 import { getTestDatabase } from '../../testing/database.js';
+import {
+  readLastMigrateRecord,
+  recordSuccessfulMigrate,
+} from '../migrate-record.js';
 import {
   FRAMEWORK_GUARD_ERRCODE_SQL,
   FRAMEWORK_GUARD_SQLSTATE,
@@ -22,6 +30,7 @@ import {
   sqlstateOf,
   statementKindOf,
 } from '../migration-failure.js';
+import { migrateSmrtSchemas } from '../orchestrate.js';
 import {
   REBUILD_PLAN_STALE_MARKER,
   rebuildPlanStaleMessage,
@@ -711,6 +720,96 @@ describe('migration failures are closed reasons (sqlite)', () => {
     expect(after.success).toBe(true);
   });
 
+  it('refuses work on the same handle from a new tracker while foreign keys stay off', async () => {
+    await db.query('PRAGMA foreign_keys = ON');
+    echoingDriver();
+    const query = db.query.bind(db);
+    let swallowRestore = true;
+    (db as { query: unknown }).query = async (
+      sql: string,
+      ...values: unknown[]
+    ) => {
+      if (swallowRestore && sql === 'PRAGMA foreign_keys = 1')
+        return { rows: [] };
+      return query(sql, ...values);
+    };
+
+    const failed = await tracker.apply(
+      definition('0016d_fk_handle', [
+        SQLITE_RELAX_REBUILD_MARKER,
+        'CREATE TABLE fk_handle_probe (a TEXT)',
+        `ALTER TABLE fk_handle_probe ADD COLUMN b TEXT DEFAULT '${CANARY}'`,
+      ]),
+    );
+    expect(failed.success).toBe(false);
+
+    // A second tracker on the same handle (as the orchestrator builds one
+    // per call) is refused too, by direct apply and by a batch.
+    const second = new MigrationTracker({ db });
+    const refusals = [
+      await second
+        .apply(definition('0016e_other', ['CREATE TABLE other_a (a TEXT)']))
+        .then(
+          () => null,
+          (thrown: unknown) => thrown,
+        ),
+      await new MigrationTracker({ db })
+        .applyAll([
+          definition('0016f_other', ['CREATE TABLE other_b (a TEXT)']),
+        ])
+        .then(
+          () => null,
+          (thrown: unknown) => thrown,
+        ),
+    ];
+    for (const refused of refusals)
+      expect((refused as Error | null)?.message).toContain(
+        'SQLite foreign key enforcement was not restored',
+      );
+    expect(
+      (await query(`SELECT name FROM sqlite_master WHERE name LIKE 'other_%'`))
+        .rows,
+    ).toEqual([]);
+
+    swallowRestore = false;
+    await query('PRAGMA foreign_keys = ON');
+    const after = await new MigrationTracker({ db }).apply(
+      definition('0016e_other', ['CREATE TABLE other_a (a TEXT)']),
+    );
+    expect(after.success).toBe(true);
+  });
+
+  it('closes a failing read of the tracking table by every read helper', async () => {
+    const query = db.query.bind(db);
+    (db as { query: unknown }).query = async (
+      sql: string,
+      ...values: unknown[]
+    ) => {
+      if (/^SELECT [\s\S]* FROM _smrt_schema_migrations/.test(sql.trim()))
+        throw Object.assign(new Error(`read refused (${CANARY})`), {
+          context: { originalError: new Error(CANARY), sql },
+        });
+      return query(sql, ...values);
+    };
+    const reads: Array<() => Promise<unknown>> = [
+      () => tracker.getAppliedMigrations(),
+      () => tracker.getPendingMigrations([definition('0018_p', [])]),
+      () => tracker.isApplied('0018_p'),
+      () => tracker.getMigration('0018_p'),
+      () => tracker.getNextBatch(),
+      () => tracker.getHistory({ limit: 5 }),
+      () => tracker.detectDrift([definition('0018_p', [])]),
+    ];
+    for (const read of reads) {
+      const thrown = await read().then(
+        () => null,
+        (error: unknown) => error,
+      );
+      expect(thrown).toBeInstanceOf(MigrationStatementFailure);
+      expect(everyRendering(thrown)).not.toContain(CANARY);
+    }
+  });
+
   it('refuses a retry without repeating the stored failure text', async () => {
     await db.query(
       `INSERT INTO _smrt_schema_migrations (id, name, version, checksum, status, attempts, is_reversible, error_message)
@@ -1116,3 +1215,208 @@ describe.skipIf(process.env.SMRT_TEST_PGLITE !== '1')(
     });
   },
 );
+
+describe('initialize keeps only its own legacy-timestamp refusal', () => {
+  // A PostgreSQL handle whose DDL succeeds and whose system-timestamp catalog
+  // query is answered by `catalog`.
+  const postgresHandle = (catalog: () => Promise<unknown>) =>
+    ({
+      query: async (sql: string) =>
+        sql.includes("data_type = 'timestamp without time zone'")
+          ? catalog()
+          : { rows: [] },
+    }) as unknown as DatabaseInterface;
+
+  it('closes a catalog failure whose message imitates the refusal', async () => {
+    const tracker = new MigrationTracker({
+      db: postgresHandle(async () => {
+        throw Object.assign(
+          new Error(
+            `Legacy SMRT system timestamps remain (${CANARY}); run the explicit audited migratePostgresSystemTimestamps() migration before bootstrap`,
+          ),
+          { code: '42501', context: { originalError: new Error(CANARY) } },
+        );
+      }),
+      engineHint: 'postgres',
+    });
+    const thrown = await tracker.initialize().then(
+      () => null,
+      (error: unknown) => error,
+    );
+    expect(thrown).toBeInstanceOf(MigrationStatementFailure);
+    expect((thrown as MigrationStatementFailure).code).toBe('42501');
+    expect(everyRendering(thrown)).not.toContain(CANARY);
+    expect(everyRendering(thrown)).not.toContain('Legacy SMRT');
+  });
+
+  it('keeps the refusal it raises itself', async () => {
+    const tracker = new MigrationTracker({
+      db: postgresHandle(async () => ({
+        rows: [{ table_name: '_smrt_jobs', column_name: 'created_at' }],
+      })),
+      engineHint: 'postgres',
+    });
+    await expect(tracker.initialize()).rejects.toThrow(
+      'Legacy SMRT system timestamps remain (_smrt_jobs.created_at)',
+    );
+  });
+});
+
+describe('the migrate-run ledger is read and written closed', () => {
+  const entries: SchemaDefinition = {
+    tableName: 'ledger_closed_entries',
+    columns: { id: { type: 'TEXT', primaryKey: true, notNull: true } },
+    indexes: [],
+    foreignKeys: [],
+    triggers: [],
+    dependencies: [],
+    version: '',
+  };
+  const input = {
+    release: '0.0.1',
+    packages: ['@fixture/app'],
+    fingerprint: 'b'.repeat(64),
+  };
+  let db: DatabaseInterface;
+  let restore: () => void;
+  beforeEach(async () => {
+    db = await getDatabase({ type: 'sqlite', url: ':memory:' });
+    restore = snapshotObjectRegistryState();
+    ObjectRegistry.clear();
+    vi.spyOn(ObjectRegistry, 'getAllSchemasAsDefinitions').mockReturnValue({
+      [entries.tableName]: structuredClone(entries),
+    });
+    await ensureSystemTables(db, 'sqlite');
+  });
+  afterEach(async () => {
+    vi.restoreAllMocks();
+    restore();
+    await db.close?.();
+  });
+
+  const rejection = (run: () => Promise<unknown>) =>
+    run().then(
+      () => null,
+      (error: unknown) => error,
+    );
+
+  it('closes a rejected read, directly and through migrateSmrtSchemas', async () => {
+    const query = db.query.bind(db);
+    (db as { query: unknown }).query = async (
+      sql: string,
+      ...values: unknown[]
+    ) => {
+      if (sql.includes('FROM _smrt_migrate_runs ORDER BY'))
+        throw Object.assign(new Error(`ledger read refused (${CANARY})`), {
+          code: '42501',
+          context: { originalError: new Error(CANARY), sql },
+        });
+      return query(sql, ...values);
+    };
+    for (const run of [
+      () => readLastMigrateRecord(db),
+      () => migrateSmrtSchemas({ db, packageName: '@fixture/app' }),
+    ]) {
+      const thrown = await rejection(run);
+      expect(thrown).toBeInstanceOf(MigrationStatementFailure);
+      expect((thrown as MigrationStatementFailure).phase).toBe('ledger-read');
+      expect((thrown as Error).message).toContain(
+        'reading the last migrate run failed (SQLSTATE 42501',
+      );
+      expect(everyRendering(thrown)).not.toContain(CANARY);
+    }
+    // Nothing was applied before the refusal.
+    expect(
+      (
+        await query(
+          `SELECT name FROM sqlite_master WHERE name = 'ledger_closed_entries'`,
+        )
+      ).rows,
+    ).toEqual([]);
+  });
+
+  it('closes a stored row that does not decode, without an excerpt of it', async () => {
+    await db.query(
+      `INSERT INTO _smrt_migrate_runs (id, release, packages, fingerprint, created_at) VALUES ('x', '0.0.0', ?, ?, ?)`,
+      `not json ${CANARY}`,
+      'c'.repeat(64),
+      new Date().toISOString(),
+    );
+    for (const run of [
+      () => readLastMigrateRecord(db),
+      () => migrateSmrtSchemas({ db, packageName: '@fixture/app' }),
+    ]) {
+      const thrown = await rejection(run);
+      expect(thrown).toBeInstanceOf(MigrationStatementFailure);
+      expect((thrown as MigrationStatementFailure).phase).toBe('ledger-read');
+      expect(everyRendering(thrown)).not.toContain(CANARY);
+      expect(everyRendering(thrown)).not.toContain('not json');
+    }
+  });
+
+  it('says a failed ledger write left this run unrecorded, without promising a rerun records it', async () => {
+    vi.spyOn(db, 'execute').mockRejectedValueOnce(
+      Object.assign(new Error(`trigger refused ${CANARY}`), {
+        code: 'SQLITE_CONSTRAINT',
+        context: { originalError: new Error(CANARY) },
+      }),
+    );
+    const thrown = await rejection(() =>
+      recordSuccessfulMigrate(db, {
+        input,
+        engineHint: 'sqlite',
+        confirmedRetirements: [],
+        recomputes: [{ table: 't', column: 'c', rows: 1 }],
+      }),
+    );
+    expect(thrown).toBeInstanceOf(MigrationStatementFailure);
+    const message = (thrown as Error).message;
+    expect(message).toContain('schema changes this run applied are committed');
+    expect(message).toContain('run record was not written');
+    expect(message).toContain('are not recorded');
+    expect(message).not.toContain('run db:migrate again');
+    expect(everyRendering(thrown)).not.toContain(CANARY);
+  });
+
+  it('gives a failure that is not the database the closed reason without that advice', async () => {
+    vi.spyOn(db, 'execute').mockRejectedValueOnce(
+      new TypeError(`unexpected value ${CANARY}`),
+    );
+    const thrown = await rejection(() =>
+      recordSuccessfulMigrate(db, { input, engineHint: 'sqlite' }),
+    );
+    expect(thrown).toBeInstanceOf(MigrationStatementFailure);
+    expect((thrown as Error).message).toBe(
+      'recording the migrate run failed (SQLSTATE unavailable; database message withheld)',
+    );
+  });
+});
+
+describe('migration failure redaction on native DuckDB', () => {
+  it('withholds authored error text from every rendering and persisted history', async () => {
+    const db = await getDatabase({ type: 'duckdb', url: ':memory:' });
+    const output = captureOutput();
+    try {
+      const tracker = new MigrationTracker({ db, engineHint: 'duckdb' });
+      await tracker.initialize();
+      const result = await tracker.apply(
+        definition('duckdb_authored_failure', [`SELECT error('${CANARY}')`]),
+      );
+      expect(result.success).toBe(false);
+      expect(result.error).toBeInstanceOf(MigrationStatementFailure);
+      expect(everyRendering(result.error)).not.toContain(CANARY);
+      expect(output()).not.toContain(CANARY);
+      const row = (
+        await db.query(
+          'SELECT error_message FROM _smrt_schema_migrations WHERE name = ?',
+          'duckdb_authored_failure',
+        )
+      ).rows[0] as { error_message: string };
+      expect(row.error_message).toBe((result.error as Error).message);
+      expect(row.error_message).not.toContain(CANARY);
+    } finally {
+      vi.restoreAllMocks();
+      await db.close?.();
+    }
+  });
+});
