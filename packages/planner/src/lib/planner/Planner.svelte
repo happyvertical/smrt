@@ -459,7 +459,7 @@ const dockToggles = $derived(
 {#snippet back()}
   <a class="smrt-planner__back" href={backLink?.href} data-planner-back data-smrt-part="nav">
     <span aria-hidden="true">←</span>
-    <span>{backLink?.label}</span>
+    <span class="smrt-planner__back-label">{backLink?.label}</span>
   </a>
 {/snippet}
 
@@ -627,6 +627,22 @@ const dockToggles = $derived(
     block-size: 2rem;
     padding-inline: var(--smrt-spacing-2);
     white-space: nowrap;
+  }
+  /* Phone width: the arrow alone, so the brand and the header's actions keep
+  their room (the label stays the link's accessible name). Same breakpoint
+  as the shell's phone layout. */
+  @media (max-width: 48rem) {
+    .smrt-planner__back {
+      justify-content: center;
+      min-inline-size: 2rem;
+    }
+    .smrt-planner__back-label {
+      position: absolute;
+      inline-size: 0.0625rem;
+      block-size: 0.0625rem;
+      overflow: hidden;
+      clip-path: inset(50%);
+    }
   }
 }
 
