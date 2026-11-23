@@ -120,6 +120,36 @@ describe('AdminShell docked panel', () => {
     expect(panelEl().textContent).toContain('chat');
   });
 
+  it('panelSide end puts the panel after main, flips its keys and drag, and keeps the stored width', async () => {
+    const { shell, adapter } = renderPanel({
+      panelSize: 400,
+      panelSide: 'end',
+    });
+    const main = document.getElementById('smrt-admin-shell-main');
+    expect(
+      Boolean(
+        main &&
+          main.compareDocumentPosition(panelEl()) &
+            Node.DOCUMENT_POSITION_FOLLOWING,
+      ),
+    ).toBe(true);
+    expect(
+      document
+        .querySelector('.smrt-admin-shell__body')
+        ?.getAttribute('data-panel-side'),
+    ).toBe('end');
+    // The panel grows toward the content, so ArrowLeft grows it.
+    await fireEvent.keyDown(separator(), { key: 'ArrowLeft' });
+    expect(shell.panelSize('panel')).toBe(416);
+    await fireEvent.keyDown(separator(), { key: 'ArrowRight', shiftKey: true });
+    expect(shell.panelSize('panel')).toBe(352);
+    await fireEvent.pointerDown(separator(), { button: 0, clientX: 700 });
+    await fireEvent.pointerMove(separator(), { clientX: 640 });
+    expect(shell.panelSize('panel')).toBe(412);
+    await fireEvent.pointerUp(separator(), { clientX: 640 });
+    expect(adapter.writes.at(-1)?.sizes).toEqual({ panel: 412 });
+  });
+
   it('hides the panel when closed but keeps it mounted', async () => {
     const { view } = renderPanel({ panelOpen: false });
     expect(panelEl()).toHaveAttribute('hidden');
