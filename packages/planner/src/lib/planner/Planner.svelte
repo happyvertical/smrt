@@ -9,6 +9,7 @@ import {
 } from '@happyvertical/smrt-svelte/cookbook';
 import { ShellDockTool } from '@happyvertical/smrt-svelte/workspace';
 import type { DataSurfaceRegistry } from '@happyvertical/smrt-ui/data-surface';
+import { tryGetThemeContext } from '@happyvertical/smrt-ui/themes';
 import { type ComponentProps, onMount, tick, untrack } from 'svelte';
 import { aiState } from '../ai/instance.ts';
 import smrtMark from '../assets/smrt-mark.svg';
@@ -45,6 +46,7 @@ import { RUNTIME_REPORT_MODEL } from '../reports/sources.ts';
 import { entryIndex } from '../sections/entries.ts';
 import { sectionInfo, sectionTitle } from '../sections/info.ts';
 import { sectionIdFromSlug } from '../sections/path.ts';
+import { provideHostedTheme } from '../theme/host.ts';
 import { DEFAULT_PRESET } from '../theme/theme.ts';
 import { appHref, setBasePath } from './app.svelte.ts';
 import { PLANNER_TAB_IDS } from './commands/index.ts';
@@ -94,6 +96,10 @@ let {
   onreset,
   resetDisabledReason,
 }: PlannerProps = $props();
+
+// A host's ThemeProvider above the planner makes its own provider a follower:
+// on Auto it tracks the host's scheme rather than the device's (#5030).
+provideHostedTheme(tryGetThemeContext() !== null);
 
 const nativeExportLabel = $derived(exportLabel?.trim() || 'Export the app');
 const showExportLabel = $derived(Boolean(exportLabel?.trim()));
