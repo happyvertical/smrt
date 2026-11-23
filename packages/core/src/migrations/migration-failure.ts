@@ -14,7 +14,10 @@
  * Identifiers (index, table and migration names) may appear in messages: they
  * are schema names, not values, and are not treated as secrets.
  */
-import { classifyIndexStatement } from './postgres-create-index.js';
+import {
+  classifyIndexStatement,
+  readPostgresTokens,
+} from './postgres-create-index.js';
 
 /** Fixed statement kinds; the only SQL-derived text a reason may carry. */
 export type StatementKind =
@@ -168,28 +171,39 @@ export function isDatabaseError(error: unknown): boolean {
 }
 
 /**
- * Comments, string literals, dollar-quoted bodies and quoted identifiers,
- * which classification must not read: their contents can hold any words.
+ * Classify without keeping any SQL text. Reuse the forward-only lexer rather
+ * than a global opaque-text regex: unterminated comments/quotes must not
+ * trigger repeated backtracking over authored input.
  */
-const SQL_OPAQUE_RE =
-  /--[^\n]*|\/\*[\s\S]*?\*\/|[Ee]?'(?:[^'\\]|''|\\.)*'|\$([A-Za-z_][A-Za-z_0-9]*)?\$[\s\S]*?\$\1\$|"(?:[^"]|"")*"/g;
-
-/** Classify a statement into a fixed kind without keeping any of its text. */
 export function statementKindOf(sql: string): StatementKind {
   const index = classifyIndexStatement(sql);
   if (index.kind === 'create-index' || index.kind === 'drop-index')
     return index.kind;
-  const head = sql
-    .replace(SQL_OPAQUE_RE, (token) => (token.startsWith('"') ? '""' : ' '))
-    .trimStart()
-    .toLowerCase();
-  if (/^alter\s+table\b/.test(head))
-    return /\bvalidate\s+constraint\b/.test(head)
+  const tokens = readPostgresTokens(sql);
+  if (!Array.isArray(tokens)) return 'other';
+  const wordAt = (position: number): string | undefined => {
+    const token = tokens[position];
+    return token?.kind === 'word' ? token.value : undefined;
+  };
+  if (wordAt(0) === 'alter' && wordAt(1) === 'table') {
+    return tokens.some(
+      (_, position) =>
+        wordAt(position) === 'validate' &&
+        wordAt(position + 1) === 'constraint',
+    )
       ? 'validate-constraint'
       : 'alter-table';
-  if (/^create\s+(?:\w+\s+)*table\b/.test(head)) return 'create-table';
-  if (/^drop\s+table\b/.test(head)) return 'drop-table';
-  if (/^(?:insert|update|delete)\b/.test(head)) return 'data-change';
+  }
+  if (wordAt(0) === 'create') {
+    for (let position = 1; position < tokens.length; position++) {
+      const word = wordAt(position);
+      if (!word) break;
+      if (word === 'table') return 'create-table';
+    }
+  }
+  if (wordAt(0) === 'drop' && wordAt(1) === 'table') return 'drop-table';
+  if (['insert', 'update', 'delete'].includes(wordAt(0) ?? ''))
+    return 'data-change';
   return 'other';
 }
 

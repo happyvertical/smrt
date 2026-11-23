@@ -250,6 +250,38 @@ describe('closed failure helpers', () => {
     );
   });
 
+  it('uses SQL lexical boundaries for nested comments and quoted words', () => {
+    expect(
+      statementKindOf(
+        '/* outer /* inner */ CREATE TABLE hidden */ ALTER TABLE visible ADD COLUMN c TEXT',
+      ),
+    ).toBe('alter-table');
+    for (const opaque of [
+      "'VALIDATE CONSTRAINT'",
+      '$body$VALIDATE CONSTRAINT$body$',
+      '"VALIDATE" "CONSTRAINT"',
+      '/* VALIDATE CONSTRAINT */ 1',
+    ]) {
+      expect(
+        statementKindOf(`ALTER TABLE t ADD COLUMN c TEXT DEFAULT ${opaque}`),
+      ).toBe('alter-table');
+    }
+    expect(statementKindOf('CREATE TEMPORARY TABLE t (id INT)')).toBe(
+      'create-table',
+    );
+    expect(statementKindOf('DROP TABLE t')).toBe('drop-table');
+    expect(statementKindOf('INSERT INTO t VALUES (1)')).toBe('data-change');
+  });
+
+  it.each([
+    '/*' + 'a/*'.repeat(20_000),
+    "'" + "\\'".repeat(20_000),
+    '$'.repeat(60_001),
+    '$tag$' + 'unclosed '.repeat(10_000),
+  ])('classifies hostile opaque input without retaining its contents', (sql) => {
+    expect(statementKindOf(sql)).toBe('other');
+  });
+
   it('keeps replacement tokens in a migration id literal in the stack', () => {
     const failure = new MigrationStatementFailure(
       { code: '42601' },
