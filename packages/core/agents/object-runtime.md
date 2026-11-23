@@ -42,7 +42,13 @@ See [audit contract](../../../docs/content/audit-trail.md).
   a junction ineligible for batching, preserving its virtual per-row save path.
   Junction batches write new rows in one statement. Known collisions take
   the per-row path. A late untracked collision updates the existing row in
-  place, while a tracked collision rolls back all additions. Callers still
+  place: the instance adopts the stored id before completion, so hooks,
+  interceptors and the change feed see that row and an `update`, never a
+  phantom id. The stored row is matched by conflict key exactly as the database
+  stores it (case-sensitive text, integers; only a native UUID's letter case is
+  folded), and only when every input matches one returned row; a group whose
+  conflict key holds another type (a date, a boolean, a decimal) takes the
+  per-row path before anything is written. A tracked collision rolls back all additions. Callers still
   own the transaction for an atomic remove-and-add replacement.
 - `SmrtCollection.createMany(inputs)` is the bulk create: all-or-nothing, in
   input order, joined to the caller's transaction. An eligible batch (the
@@ -324,6 +330,21 @@ instances and never use this path to overwrite a loaded revision.
 - Multi-level STI collections read their own discriminator and every registered descendant, never sibling branches. Decorate every intermediate with `@smrt()`; registration rejects an undecorated intermediate beneath an STI root.
 - `@smrt({ abstract: true })` makes a registered STI type readable but prevents saving an instance with its own discriminator. A base collection can still create a concrete descendant by passing that descendant's `_meta_type`. Generated surfaces expose only `list` and `get` for abstract models, including when custom actions were explicitly included.
 - Set `validateSubtype: true` on a foreign key or cross-package reference targeting an STI child when it must reject sibling rows. Save checks through the child's collection, and `loadRelated()` rejects a stored sibling row. The physical FK targets the shared root table, so the collection's discriminator and tenant read scope provide the subtype check. Saves fail when the subtype target cannot be loaded, even if ordinary cross-package validation is disabled.
+
+## Late parents
+
+An inheritance chain read while a parent is unregistered (or whose `extends`
+resolved to the class itself) is partial. `registry/partial-chain.ts` marks it
+on the registration under a registered symbol, so every loaded copy of core
+sees the mark and none caches it as complete. A partial chain holds for one
+registry generation. Every `register()` / `registerFromManifest()` ends by
+re-deriving partial chains, and re-merging `inheritedFields` already derived
+from them, so synchronous readers (`restFieldReadPermissions()`, query access,
+request input, generators) see a parent as soon as it registers. A table name
+an object or collection derived from a partial chain is derived again after the
+registry changes. A parent that never registers costs one chain walk per
+partial class per registration. Complete chains rely on the targeted
+invalidation in `class-registration.ts`.
 
 ## Same-named subclass replaces its parent (#4921)
 

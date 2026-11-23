@@ -3,10 +3,11 @@
  * create/update routes (mass-assignment guard).
  *
  * Generated SvelteKit create (POST) and update (PUT) handlers must run the
- * request body through `applyWritablePolicy`, which strips framework /
- * server-managed (`id`, `tenantId`, timestamps, `_`-prefixed) and
- * `@field({ readonly: true })` fields, and — when `api.writable` is set —
- * intersects with that allowlist.
+ * request body through core's `prepareWriteInput` (#5195), which skips
+ * server-managed keys and refuses a protected field (read-only, outside
+ * `api.writable`, `_`-prefixed) the body would set or change. The policy is
+ * read from the registry at run time, so nothing about it is baked into the
+ * emitted source; `protected-field-writes.test.ts` executes the routes.
  */
 
 import {
@@ -99,32 +100,28 @@ describe('Issue #1540 (2b): writable-field allowlist on generated routes', () =>
     const collectionRoute = findRouteContent('widgets/+server.ts');
     const itemRoute = findRouteContent('widgets/[id]/+server.ts');
 
-    // Helper present in both files that have a write handler.
-    expect(collectionRoute).toContain('function applyWritablePolicy');
-    expect(itemRoute).toContain('function applyWritablePolicy');
-
-    // POST + PUT bodies are routed through the guard.
+    // POST + PUT bodies go through the shared rule; the update compares
+    // against the loaded item.
     expect(collectionRoute).toContain(
       'const body: unknown = await request.json();',
     );
     expect(collectionRoute).toContain(
-      'const data = applyWritablePolicy(target.data, target.collectionName',
+      'const data = prepareWriteInput(target.collectionName, target.data);',
     );
     expect(itemRoute).toContain('const body: unknown = await request.json();');
-    expect(itemRoute).toContain('const data = applyWritablePolicy(body);');
-
-    // Server-managed fields are always stripped; read-only fields are listed.
-    expect(collectionRoute).toContain("'tenantId'");
-    expect(collectionRoute).toContain('READONLY_FIELDS');
-    expect(collectionRoute).toContain('"secretKey"');
-
-    // No explicit allowlist configured → null (strip-only mode).
-    expect(collectionRoute).toContain(
-      'const WRITABLE_ALLOWLIST: string[] | null = null;',
+    expect(itemRoute).toContain(
+      'const data = prepareWriteInput("Widget", body, item, publicJsonOptions);',
     );
+
+    // No route-local copy of the policy.
+    for (const route of [collectionRoute, itemRoute]) {
+      expect(route).not.toContain('function applyWritablePolicy');
+      expect(route).not.toContain('READONLY_FIELDS');
+      expect(route).not.toContain('WRITABLE_ALLOWLIST');
+    }
   });
 
-  it('emits the configured writable allowlist', async () => {
+  it('does not bake the writable allowlist into the route', async () => {
     await generate({
       objects: {
         Gadget: {
@@ -144,8 +141,7 @@ describe('Issue #1540 (2b): writable-field allowlist on generated routes', () =>
     } as unknown as SmartObjectManifest);
 
     const collectionRoute = findRouteContent('gadgets/+server.ts');
-    expect(collectionRoute).toContain(
-      'const WRITABLE_ALLOWLIST: string[] | null = ["name","price"];',
-    );
+    expect(collectionRoute).toContain('prepareWriteInput(');
+    expect(collectionRoute).not.toContain('WRITABLE_ALLOWLIST');
   });
 });

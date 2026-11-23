@@ -79,6 +79,7 @@ import { bumpRegistryGeneration } from './generation';
 import {
   buildInheritanceChain,
   getEffectiveFieldsSync,
+  refreshPartialInheritance,
 } from './inheritance-resolver';
 import {
   createFieldFromManifest,
@@ -1615,6 +1616,8 @@ export function register(
     reconcileSubtypeLineage();
     applyRuntimeOverrides();
     bumpRegistryGeneration();
+    // A class registered now may be the missing parent of one already read.
+    refreshPartialInheritance();
   }
 }
 
@@ -3686,6 +3689,8 @@ export function registerFromManifest(
     reconcileSubtypeLineage();
     applyRuntimeOverrides();
     bumpRegistryGeneration();
+    // A class registered now may be the missing parent of one already read.
+    refreshPartialInheritance();
   }
 }
 

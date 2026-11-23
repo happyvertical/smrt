@@ -7,6 +7,7 @@
 import {
   AiUsagePersistenceHandler,
   ensureSystemTables,
+  insertAiUsageRow,
   recordAiEvaluation,
   recordAiRun,
   reportAiRuns,
@@ -86,12 +87,18 @@ describe('formatAiUsageReport', () => {
       timestamp: new Date(),
       tenantId: 'tenant-a',
     };
-    await handler.handle({
-      ...base,
-      duration: 120,
-      estimatedCost: 0.002,
-      tags: { promptKey: 'content.summarize', runId: 'run-1' },
-    });
+    // A call of run-1, written as a run's settlement writes it (a runId tag
+    // on an untracked event no longer places a row in a run).
+    await insertAiUsageRow(
+      db,
+      {
+        ...base,
+        duration: 120,
+        estimatedCost: 0.002,
+        tags: { promptKey: 'content.summarize', runId: 'run-1' },
+      },
+      { runId: 'run-1' },
+    );
     await handler.handle({ ...base, duration: 80 });
     await handler.handle({
       ...base,

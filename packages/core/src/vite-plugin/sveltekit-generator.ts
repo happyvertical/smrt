@@ -75,11 +75,9 @@ import {
 } from './resources-route.js';
 import { AUTO_GENERATED_ROUTE_HEADER } from './route-header.js';
 import {
-  collectRouteReadonlyFields,
   generateTenantContextHelper,
   getApiConfigObject,
   getApiPublicAccess,
-  getApiWritableAllowlist,
   isTenantScoped,
   usesPrincipalContext,
 } from './route-policy.js';
@@ -443,69 +441,6 @@ function findObjectDefByRegistryKey(
       (objectDef) => objectDef.className === extractSimpleClassName(className),
     )
   );
-}
-
-/**
- * Emit the mass-assignment guard helper injected into generated route files
- * (#1540, 2b). It strips framework/server-managed (`id`, `tenantId`,
- * timestamps, `_`-prefixed) and `@field({ readonly: true })` fields from
- * request bodies, and — when a `writable` allowlist is configured — intersects
- * with it. Applied to every generated `create`/`update` handler.
- *
- * A body sets fields and nothing else: the keys that configure a service of
- * the object are dropped by the same `ObjectRegistry.isServiceOptionInput`
- * rule the runtime REST and MCP transports apply, evaluated for the route's
- * model (or the selected create target).
- */
-function generateWritablePolicyHelper(
-  className: string,
-  objectDef: SmartObjectDefinition,
-  dynamicTarget = false,
-): string {
-  // The same read-only set the generated sync-apply route uses.
-  const readonly = collectRouteReadonlyFields(objectDef);
-  const writable = getApiWritableAllowlist(objectDef.decoratorConfig?.api);
-
-  return `
-// Mass-assignment guard (#1540): strip framework/server-managed + read-only
-// fields from create/update request bodies before they reach the model.
-const WRITABLE_ALLOWLIST: string[] | null = ${
-    writable ? JSON.stringify(writable) : 'null'
-  };
-const READONLY_FIELDS: string[] = ${JSON.stringify(readonly)};
-const SERVER_MANAGED_FIELDS = [
-  'id',
-  'tenantId',
-  'tenant_id',
-  'createdAt',
-  'created_at',
-  'updatedAt',
-  'updated_at',
-];
-
-function applyWritablePolicy(data: unknown${dynamicTarget ? ', targetName?: string' : ''}): Record<string, unknown> {
-  if (!data || typeof data !== 'object') return {};
-${
-  dynamicTarget
-    ? `  const readonlyFields = targetName ? [...ObjectRegistry.getFields(targetName)].filter(([, field]) => field.readonly === true || field._meta?.readonly === true).map(([name]) => name) : READONLY_FIELDS;
-  if (targetName && typeof ObjectRegistry.getConfig(targetName).display?.label === 'object') readonlyFields.push('displayLabel');
-  const api = targetName ? ObjectRegistry.getConfig(targetName).api : undefined;
-  const writable = targetName ? (api && typeof api === 'object' && Array.isArray(api.writable) ? api.writable : null) : WRITABLE_ALLOWLIST;
-`
-    : ''
-}  const result: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(data as Record<string, unknown>)) {
-    if (key.startsWith('_')) continue;
-    // A body sets fields only, never a service of the object.
-    if (ObjectRegistry.isServiceOptionInput(${dynamicTarget ? `targetName ?? ${JSON.stringify(className)}` : JSON.stringify(className)}, key)) continue;
-    if (SERVER_MANAGED_FIELDS.includes(key)) continue;
-    if (${dynamicTarget ? 'readonlyFields' : 'READONLY_FIELDS'}.includes(key)) continue;
-    if (${dynamicTarget ? 'writable' : 'WRITABLE_ALLOWLIST'} && !${dynamicTarget ? 'writable' : 'WRITABLE_ALLOWLIST'}.includes(key)) continue;
-    result[key] = value;
-  }
-  return result;
-}
-`;
 }
 
 function toFieldColumnAlias(fieldName: string): string {
@@ -3443,11 +3378,11 @@ function generateCollectionRouteTemplate(
 
 import { error${hasPost ? ', json' : ''} } from '@sveltejs/kit';
 ${hasGet ? "import { assertQueryAccess, parseRestListWhere } from '@happyvertical/smrt-core';\n" : ''}${hasGet ? "import { applyWhereScope, tenancyReadScope } from '@happyvertical/smrt-core';\n" : ''}${hasGet && !hasPost ? "import { normalizeTypedHttpError } from '@happyvertical/smrt-core';\n" : ''}
-${serializerImports ? `${serializerImports}\n` : ''}${hasPost ? "import { assertCreateInput, assertCreateTargetSurface, ObjectRegistry, normalizeTypedHttpError, reportUnexpectedHttpError } from '@happyvertical/smrt-core';\n" : ''}
+${serializerImports ? `${serializerImports}\n` : ''}${hasPost ? "import { assertCreateInput, assertCreateTargetSurface, ObjectRegistry, normalizeTypedHttpError, prepareWriteInput, reportUnexpectedHttpError } from '@happyvertical/smrt-core';\n" : ''}
 ${modelType.importStatement ? `${modelType.importStatement}\n` : ''}import type { RequestHandler } from './$types';
 ${collectionAccessImports}
 // Note: ${className} is auto-registered by the Vite plugin scanner
-${generateAuthGuardHelper(objectDef, semanticManifest)}${generateTenantContextHelper(usesPrincipalContext(objectDef), readScopeModelName(objectDef, className), tenancyFamilyScope(objectDef, semanticManifest))}${hasPost ? generateWritablePolicyHelper(className, objectDef, true) : ''}${hasPost ? generateTypedRouteErrorHelper() : ''}${hasPost ? generateCreateTargetAccessHelper() : ''}${hasGet ? generateListBoundsHelper(objectDef) : ''}${hasGet ? generateListQueryHelper(className) : ''}${hasGet ? generateConditionalGetRouteHelper(objectDef.decoratorConfig?.api, { runtimeExposure: true, tenantScoped: isTenantScoped(objectDef), permissionScoped: listUsesPermissionScopedBody, modelName: className, readScopeModel: readScopeModelName(objectDef, className), useBodyHash: listUsesBodyHash, manifestHash: webManifestHash }) : ''}`;
+${generateAuthGuardHelper(objectDef, semanticManifest)}${generateTenantContextHelper(usesPrincipalContext(objectDef), readScopeModelName(objectDef, className), tenancyFamilyScope(objectDef, semanticManifest))}${hasPost ? generateTypedRouteErrorHelper() : ''}${hasPost ? generateCreateTargetAccessHelper() : ''}${hasGet ? generateListBoundsHelper(objectDef) : ''}${hasGet ? generateListQueryHelper(className) : ''}${hasGet ? generateConditionalGetRouteHelper(objectDef.decoratorConfig?.api, { runtimeExposure: true, tenantScoped: isTenantScoped(objectDef), permissionScoped: listUsesPermissionScopedBody, modelName: className, readScopeModel: readScopeModelName(objectDef, className), useBodyHash: listUsesBodyHash, manifestHash: webManifestHash }) : ''}`;
 
   // #1782: tenant-scoped reads fail closed to global (NULL-tenant) rows when no
   // tenant context is active (public/anonymous read). The scope is resolved at
@@ -3523,7 +3458,9 @@ ${routeGuardPreamble(objectDef, true, 'create')}
     // a subtype authorizes its own create as well as the base.
     assertCreateTargetSurface('${className}', target, 'api');
     if (target.collectionName !== '${className}') requireCreateTargetAccess(locals, target.name);
-    const data = applyWritablePolicy(target.data, target.collectionName === '${className}' ? undefined : target.name);
+    // A create sets no field the caller may not write: server-managed keys
+    // are skipped, a protected field sent with a value is refused.
+    const data = prepareWriteInput(target.collectionName, target.data);
     const collection = await getCollection${modelType.typeName ? `<${modelType.typeName}>` : ''}(target.collectionName);
     // Create input names declared fields and settable accessors only.
     assertCreateInput(target.collectionName, data, collection);
@@ -3652,10 +3589,10 @@ function generateItemRouteTemplate(
 // DO NOT EDIT - changes will be overwritten
 
 import { error${hasPut || hasDelete ? ', json' : ''} } from '@sveltejs/kit';
-${serializerImports ? `${serializerImports}\n` : ''}${hasGet || hasPut || hasDelete ? "import { normalizeTypedHttpError, reportUnexpectedHttpError } from '@happyvertical/smrt-core';\n" : ''}${hasPut ? "import { applyUpdateInput, ObjectRegistry } from '@happyvertical/smrt-core';\n" : ''}${hasGet ? "import { tenancyReadScope } from '@happyvertical/smrt-core';\n" : ''}
+${serializerImports ? `${serializerImports}\n` : ''}${hasGet || hasPut || hasDelete ? "import { normalizeTypedHttpError, reportUnexpectedHttpError } from '@happyvertical/smrt-core';\n" : ''}${hasPut ? "import { applyUpdateInput, prepareWriteInput, ObjectRegistry } from '@happyvertical/smrt-core';\n" : ''}${hasGet ? "import { tenancyReadScope } from '@happyvertical/smrt-core';\n" : ''}
 ${modelType.importStatement ? `${modelType.importStatement}\n` : ''}import type { RequestHandler } from './$types';
 ${collectionAccessImports}
-${generateAuthGuardHelper(objectDef, semanticManifest)}${generateTenantContextHelper(usesPrincipalContext(objectDef), readScopeModelName(objectDef, className), tenancyFamilyScope(objectDef, semanticManifest))}${hasPut ? generateWritablePolicyHelper(className, objectDef) : ''}${hasPut || hasDelete ? generateTypedRouteErrorHelper() : ''}${hasGet || hasPut || hasDelete ? generateRouteReadErrorHelper() : ''}${hasGet ? generateConditionalGetRouteHelper(objectDef.decoratorConfig?.api, { runtimeExposure: true, tenantScoped: isTenantScoped(objectDef), permissionScoped: getUsesPermissionScopedBody, modelName: className, readScopeModel: readScopeModelName(objectDef, className), useBodyHash: getUsesBodyHash, manifestHash: webManifestHash }) : ''}`;
+${generateAuthGuardHelper(objectDef, semanticManifest)}${generateTenantContextHelper(usesPrincipalContext(objectDef), readScopeModelName(objectDef, className), tenancyFamilyScope(objectDef, semanticManifest))}${hasPut || hasDelete ? generateTypedRouteErrorHelper() : ''}${hasGet || hasPut || hasDelete ? generateRouteReadErrorHelper() : ''}${hasGet ? generateConditionalGetRouteHelper(objectDef.decoratorConfig?.api, { runtimeExposure: true, tenantScoped: isTenantScoped(objectDef), permissionScoped: getUsesPermissionScopedBody, modelName: className, readScopeModel: readScopeModelName(objectDef, className), useBodyHash: getUsesBodyHash, manifestHash: webManifestHash }) : ''}`;
 
   // #1782: a tenant-scoped single read fails closed to global (NULL-tenant)
   // rows when no tenant context is active, so a public/anonymous GET /:id can't
@@ -3714,8 +3651,10 @@ ${generateCollectionLoad(className, { typeName: modelType.typeName })}
 ${generateNotFoundError(className)}
 
   const body: unknown = await request.json();
-  const data = applyWritablePolicy(body);
   try {
+    // A field the caller may not write is compared with the loaded row: an
+    // unchanged value is accepted, a changed one refused.
+    const data = prepareWriteInput(${JSON.stringify(className)}, body, item, publicJsonOptions);
     await collection.withAuditMutation(item, 'updated', async (bound) => {
       // The body sets declared fields and settable accessors, nothing else.
       applyUpdateInput(bound, data, ${JSON.stringify(className)});

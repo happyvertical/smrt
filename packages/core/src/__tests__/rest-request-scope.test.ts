@@ -341,27 +341,15 @@ describe('runtime REST request scope', () => {
       expect(await stored()).toMatchObject({ note: 'kept', stamp: 'original' });
     });
 
-    it('leaves fields the subtype withholds unchanged on CRUD', async () => {
-      const response = await handler()(
+    const put = (body: Record<string, unknown>) =>
+      handler()(
         new Request(`http://local/api/${segmentOf('ScopeDoc')}/${id}`, {
           method: 'PUT',
           headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({
-            title: 'after',
-            note: 'changed',
-            stamp: 'changed',
-          }),
+          body: JSON.stringify(body),
         }),
       );
-      expect(response.status).toBe(200);
-      expect(await stored()).toEqual({
-        title: 'after',
-        note: 'kept',
-        stamp: 'original',
-      });
-    });
-
-    it('leaves fields the subtype withholds unchanged on sync apply', async () => {
+    const sync = async (payload: Record<string, unknown>) => {
       const response = await handler()(
         new Request('http://local/api/sync/apply', {
           method: 'POST',
@@ -373,15 +361,47 @@ describe('runtime REST request scope', () => {
                 object: segmentOf('ScopeDoc'),
                 op: 'update',
                 id,
-                payload: { title: 'synced', note: 'changed', stamp: 'changed' },
+                payload,
               },
             ],
           }),
         }),
       );
+      return ((await response.json()) as { results: Array<unknown> })
+        .results[0];
+    };
+
+    it('refuses a change to a field the subtype withholds on CRUD, and accepts it unchanged', async () => {
+      const refused = await put({
+        title: 'after',
+        note: 'changed',
+        stamp: 'changed',
+      });
+      expect(refused.status).toBe(400);
+      expect(await stored()).toEqual({
+        title: 'before',
+        note: 'kept',
+        stamp: 'original',
+      });
+      const response = await put({
+        title: 'after',
+        note: 'kept',
+        stamp: 'original',
+      });
+      expect(response.status).toBe(200);
+      expect(await stored()).toEqual({
+        title: 'after',
+        note: 'kept',
+        stamp: 'original',
+      });
+    });
+
+    it('refuses a change to a field the subtype withholds on sync apply, and accepts it unchanged', async () => {
       expect(
-        ((await response.json()) as { results: Array<{ status: string }> })
-          .results[0],
+        await sync({ title: 'synced', note: 'changed', stamp: 'changed' }),
+      ).toMatchObject({ status: 'rejected', reason: 'invalid_payload' });
+      expect(
+        await sync({ title: 'synced', note: 'kept', stamp: 'original' }),
       ).toMatchObject({ status: 'applied' });
       expect(await stored()).toEqual({
         title: 'synced',

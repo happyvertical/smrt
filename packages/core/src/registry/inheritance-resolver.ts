@@ -15,8 +15,15 @@ import {
 } from '../schema/field-inheritance';
 import { prependSmrtSystemFields } from '../system-fields';
 import { isFrameworkBaseClass } from './framework-base-classes';
+import { getRegistryGeneration } from './generation';
 import { findClass, findClassStrict } from './name-resolver';
 import {
+  clearPartialChain,
+  markPartialChain,
+  partialChainGeneration,
+} from './partial-chain';
+import {
+  getClasses,
   getInheritanceCache,
   getInheritanceConfig,
   verboseLog,
@@ -112,13 +119,79 @@ function findParentClassStrict(
   }
 }
 
+/**
+ * A chain computed while one of its `extends` links did not resolve (see
+ * `partial-chain.ts`) holds only for the registry generation it was computed
+ * at: a parent that registers later changes the generation. This re-derives
+ * such a chain once the generation moved. When the chain is unchanged the
+ * merged state is kept; when it changed (the parent now resolves), the merged
+ * methods are dropped and merged fields that were already derived are derived
+ * again at once, so synchronous readers of `inheritedFields` see the parent's
+ * fields without waiting for an asynchronous `getAllFields()`. Complete chains
+ * are not tracked; they are dropped by the targeted invalidation on
+ * replacement.
+ */
+function refreshStalePartialChain(registered: RegisteredClass): void {
+  const generation = partialChainGeneration(registered);
+  if (generation === undefined || generation === getRegistryGeneration()) {
+    return;
+  }
+  const previous = registered.inheritanceChain;
+  const hadFields = registered.inheritedFields !== undefined;
+  clearPartialChain(registered);
+  registered.inheritanceChain = undefined;
+  const key = registered.qualifiedName ?? registered.name;
+  if (findClass(key) !== registered) {
+    // Not reachable under its own name: leave everything to be derived on
+    // the next read through the registration that owns the name.
+    registered.inheritedFields = undefined;
+    registered.inheritedMethods = undefined;
+    return;
+  }
+  const chain = getInheritanceChain(key);
+  if (
+    previous &&
+    previous.length === chain.length &&
+    previous.every((name, index) => name === chain[index])
+  ) {
+    return;
+  }
+  registered.inheritedMethods = undefined;
+  registered.inheritedFields = undefined;
+  if (!hadFields) return;
+  try {
+    registered.inheritedFields = new Map(getResolvedFieldsSync(registered));
+  } catch {
+    // An unresolvable ancestor (or a strict missing-ancestor policy) leaves
+    // the fields to the next getAllFields(), which reports it.
+  }
+}
+
+/**
+ * Re-derive every class whose stored chain is partial and older than the
+ * current registry generation. Registration calls this once it has finished,
+ * so a parent that just registered is reflected in each dependant's chain and
+ * merged fields before any later reader runs.
+ */
+export function refreshPartialInheritance(): void {
+  for (const registered of new Set(getClasses().values())) {
+    if (partialChainGeneration(registered) === undefined) continue;
+    try {
+      refreshStalePartialChain(registered);
+    } catch {
+      // Never let one class's derivation fail a registration; the next read
+      // of that class derives and reports it.
+    }
+  }
+}
+
 export function getInheritanceChain(
   className: string,
   pending?: RegisteredClass,
 ): string[] {
   const cache = getInheritanceCache();
 
-  // Check cache first
+  // Check cache first (it holds complete chains only)
   const cached = pending ? undefined : cache.get(className);
   if (cached) {
     return cached;
@@ -128,6 +201,14 @@ export function getInheritanceChain(
   const registered = pending ?? findClass(className);
   if (!registered) {
     return [];
+  }
+  if (!pending) refreshStalePartialChain(registered);
+  if (
+    !pending &&
+    registered.inheritanceChain &&
+    partialChainGeneration(registered) !== undefined
+  ) {
+    return registered.inheritanceChain;
   }
 
   // Check if already computed and stored
@@ -144,6 +225,7 @@ export function getInheritanceChain(
   const visited = new Set<RegisteredClass>(); // Cycle detection using object identity
   let current: RegisteredClass | undefined = registered;
   let circularDetected = false;
+  let partial = false;
   while (current) {
     // Cycle detection: use object identity to handle cases where distinct
     // classes share the same name (e.g., histrio:Performer vs smrt-video:Performer)
@@ -157,6 +239,10 @@ export function getInheritanceChain(
             `Check that '${current.extends ?? current.name}' resolves to the correct package class.`,
         );
         circularDetected = true;
+      } else {
+        // The parent link resolved to the class itself: its real parent (a
+        // same-named class in another package) is not registered yet.
+        partial = true;
       }
       break;
     }
@@ -191,6 +277,7 @@ export function getInheritanceChain(
     // installed or the manifest is stale. We gracefully end the chain
     // here instead of mutating registry state during a read operation.
     if (!parent) {
+      partial = true;
       verboseLog(
         `[ObjectRegistry] Parent class '${current.extends}' not found ` +
           `while building inheritance chain. Ensure the parent package ` +
@@ -205,9 +292,16 @@ export function getInheritanceChain(
   // Caching a broken chain from a circular detection would cause all future
   // lookups to return incorrect inheritance data (e.g., ["VideoShot","VideoShot"]
   // instead of ["Content","VideoShot"]), breaking STI table resolution.
+  // A chain that ended at an unresolved parent holds for this registry
+  // generation only (see partial-chain.ts).
   if (!pending && !circularDetected) {
     registered.inheritanceChain = chain;
-    cache.set(className, chain);
+    if (partial) {
+      markPartialChain(registered, getRegistryGeneration());
+    } else {
+      clearPartialChain(registered);
+      cache.set(className, chain);
+    }
   }
 
   return chain;
@@ -236,6 +330,7 @@ export async function getAllFields(
   await ObjectRegistry.ensureManifestLoaded(className);
 
   // Check if class has inheritedFields cache (set during manifest loading)
+  refreshStalePartialChain(registered);
   if (registered.inheritedFields) {
     return prependSmrtSystemFields(new Map(registered.inheritedFields));
   }
@@ -476,6 +571,7 @@ export async function getAllMethods(
   }
 
   // Check cache first
+  refreshStalePartialChain(registered);
   if (registered.inheritedMethods) {
     return new Map(registered.inheritedMethods);
   }
