@@ -43,6 +43,10 @@
       "types": "./dist/postgres-settings.d.ts",
       "import": "./dist/postgres-settings.js"
     },
+    "./postgres-policies": {
+      "types": "./dist/postgres-policies.d.ts",
+      "import": "./dist/postgres-policies.js"
+    },
     "./step-up": {
       "types": "./dist/step-up.d.ts",
       "import": "./dist/step-up.js"

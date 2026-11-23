@@ -5,10 +5,10 @@ description: "Multi-tenant user management for the SMRT framework - users, tenan
 status: "stable"
 generated:
   by: "smrt/scripts/generate-knowledge-okf.ts"
-  at: "2026-11-23T02:20:34Z"
+  at: "2026-11-23T17:57:32Z"
 audience: "internal"
 evidence_level: "source-inspected"
-source_revision: "sha256:8787ec1a3e53a5706850e42f545402c1b6ea624cff9654a73b6ae68416f090b9"
+source_revision: "sha256:a66a4907c7ceadf06c8039bb2a04a786e77ccc3ecf50aa596de3b2c4b46fcbf8"
 sources:
   - id: "manifest"
     resource: "https://github.com/happyvertical/smrt/blob/main/packages/users/package.json"
@@ -88,6 +88,7 @@ sources:
 - `./operator`
 - `./permission-registry`
 - `./playground`
+- `./postgres-policies`
 - `./postgres-settings`
 - `./step-up`
 - `./svelte`
